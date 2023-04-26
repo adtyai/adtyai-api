@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Button, Form, Label, Message, Pagination, Table } from 'semantic-ui-react';
+import { Button, Form, Label, Modal, Pagination, Table } from 'semantic-ui-react';
 import { Link } from 'react-router-dom';
-import { API, copy, showError, showInfo, showSuccess, showWarning, timestamp2string } from '../helpers';
+import { API, copy, showError, showSuccess, showWarning, timestamp2string } from '../helpers';
 
 import { ITEMS_PER_PAGE } from '../constants';
 
@@ -34,6 +34,9 @@ const TokensTable = () => {
   const [activePage, setActivePage] = useState(1);
   const [searchKeyword, setSearchKeyword] = useState('');
   const [searching, setSearching] = useState(false);
+  const [showTopUpModal, setShowTopUpModal] = useState(false);
+  const [targetTokenIdx, setTargetTokenIdx] = useState(0);
+  const [redemptionCode, setRedemptionCode] = useState('');
 
   const loadTokens = async (startIdx) => {
     const res = await API.get(`/api/token/?p=${startIdx}`);
@@ -140,6 +143,28 @@ const TokensTable = () => {
     setLoading(false);
   };
 
+  const topUp = async () => {
+    if (redemptionCode === '') {
+      return;
+    }
+    const res = await API.post('/api/token/topup/', {
+      id: tokens[targetTokenIdx].id,
+      key: redemptionCode
+    });
+    const { success, message, data } = res.data;
+    if (success) {
+      showSuccess('充值成功！');
+      let newTokens = [...tokens];
+      let realIdx = (activePage - 1) * ITEMS_PER_PAGE + targetTokenIdx;
+      newTokens[realIdx].remain_times += data;
+      setTokens(newTokens);
+      setRedemptionCode('');
+      setShowTopUpModal(false);
+    } else {
+      showError(message);
+    }
+  }
+
   return (
     <>
       <Form onSubmit={searchTokens}>
@@ -200,14 +225,6 @@ const TokensTable = () => {
             <Table.HeaderCell
               style={{ cursor: 'pointer' }}
               onClick={() => {
-                sortToken('accessed_time');
-              }}
-            >
-              访问时间
-            </Table.HeaderCell>
-            <Table.HeaderCell
-              style={{ cursor: 'pointer' }}
-              onClick={() => {
                 sortToken('expired_time');
               }}
             >
@@ -230,10 +247,9 @@ const TokensTable = () => {
                   <Table.Cell>{token.id}</Table.Cell>
                   <Table.Cell>{token.name ? token.name : '无'}</Table.Cell>
                   <Table.Cell>{renderStatus(token.status)}</Table.Cell>
-                  <Table.Cell>{token.unlimited_times ? "无限制" : token.remain_times}</Table.Cell>
+                  <Table.Cell>{token.unlimited_times ? '无限制' : token.remain_times}</Table.Cell>
                   <Table.Cell>{renderTimestamp(token.created_time)}</Table.Cell>
-                  <Table.Cell>{renderTimestamp(token.accessed_time)}</Table.Cell>
-                  <Table.Cell>{token.expired_time === -1 ? "永不过期" : renderTimestamp(token.expired_time)}</Table.Cell>
+                  <Table.Cell>{token.expired_time === -1 ? '永不过期' : renderTimestamp(token.expired_time)}</Table.Cell>
                   <Table.Cell>
                     <div>
                       <Button
@@ -243,12 +259,21 @@ const TokensTable = () => {
                           if (await copy(token.key)) {
                             showSuccess('已复制到剪贴板！');
                           } else {
-                            showWarning('无法复制到剪贴板，请手动复制，已将令牌填入搜索框。')
+                            showWarning('无法复制到剪贴板，请手动复制，已将令牌填入搜索框。');
                             setSearchKeyword(token.key);
                           }
                         }}
                       >
                         复制
+                      </Button>
+                      <Button
+                        size={'small'}
+                        color={'yellow'}
+                        onClick={() => {
+                          setTargetTokenIdx(idx);
+                          setShowTopUpModal(true);
+                        }}>
+                        充值
                       </Button>
                       <Button
                         size={'small'}
@@ -306,6 +331,34 @@ const TokensTable = () => {
           </Table.Row>
         </Table.Footer>
       </Table>
+
+      <Modal
+        onClose={() => setShowTopUpModal(false)}
+        onOpen={() => setShowTopUpModal(true)}
+        open={showTopUpModal}
+        size={'mini'}
+      >
+        <Modal.Header>通过兑换码为令牌「{tokens[targetTokenIdx]?.name}」充值</Modal.Header>
+        <Modal.Content>
+          <Modal.Description>
+            {/*<Image src={status.wechat_qrcode} fluid />*/}
+            <Form size='large'>
+              <Form.Input
+                fluid
+                placeholder='兑换码'
+                name='redemptionCode'
+                value={redemptionCode}
+                onChange={(e) => {
+                  setRedemptionCode(e.target.value);
+                }}
+              />
+              <Button color='' fluid size='large' onClick={topUp}>
+                充值
+              </Button>
+            </Form>
+          </Modal.Description>
+        </Modal.Content>
+      </Modal>
     </>
   );
 };
