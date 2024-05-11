@@ -64,6 +64,7 @@ export default function SettingsDrawing(props) {
     setInputs(currentInputs);
     setInputsRow(structuredClone(currentInputs));
     refForm.current.setValues(currentInputs);
+    localStorage.setItem('mj_notify_enabled', String(inputs.MjNotifyEnabled));
   }, [props.options]);
   return (
     <>
