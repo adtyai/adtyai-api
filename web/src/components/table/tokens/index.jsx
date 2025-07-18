@@ -4,7 +4,7 @@ import TokensTable from './TokensTable.jsx';
 import TokensActions from './TokensActions.jsx';
 import TokensFilters from './TokensFilters.jsx';
 import TokensDescription from './TokensDescription.jsx';
-import EditToken from '../../../pages/Token/EditToken';
+import EditTokenModal from './modals/EditTokenModal';
 import { useTokensData } from '../../../hooks/tokens/useTokensData';
 
 const TokensPage = () => {
@@ -21,6 +21,7 @@ const TokensPage = () => {
     selectedKeys,
     setEditingToken,
     setShowEdit,
+    batchCopyTokens,
     batchDeleteTokens,
     copyText,
 
@@ -41,7 +42,7 @@ const TokensPage = () => {
 
   return (
     <>
-      <EditToken
+      <EditTokenModal
         refresh={refresh}
         editingToken={editingToken}
         visiable={showEdit}
@@ -63,6 +64,7 @@ const TokensPage = () => {
               selectedKeys={selectedKeys}
               setEditingToken={setEditingToken}
               setShowEdit={setShowEdit}
+              batchCopyTokens={batchCopyTokens}
               batchDeleteTokens={batchDeleteTokens}
               copyText={copyText}
               t={t}
