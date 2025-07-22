@@ -18,4 +18,4 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 // 为了向后兼容，这里重新导出新的 PricingPage 组件
-export { default } from './PricingPage.jsx'; 
+export { default } from './PricingPage'; 
