@@ -7,26 +7,27 @@ import { VCHART_OPTION } from '@/lib/vchart'
 import { useTheme } from '@/context/theme-provider'
 import { DEFAULT_TIME_GRANULARITY } from '@/features/dashboard/constants'
 import { processChartData } from '@/features/dashboard/lib'
-import type {
-  ProcessedChartData,
-  QuotaDataItem,
-} from '@/features/dashboard/types'
+import type { QuotaDataItem } from '@/features/dashboard/types'
 
 let themeManagerPromise: Promise<
   (typeof import('@visactor/vchart'))['ThemeManager']
 > | null = null
 
-type ChartTab = '1' | '2' | '3' | '4'
+type ChartTab = 'trend' | 'proportion' | 'top'
+type ChartSpecKey = 'spec_model_line' | 'spec_pie' | 'spec_rank_bar'
 
 const CHART_TABS: {
   value: ChartTab
   labelKey: string
-  specKey: keyof ProcessedChartData
+  specKey: ChartSpecKey
 }[] = [
-  { value: '1', labelKey: 'Quota Distribution', specKey: 'spec_line' },
-  { value: '2', labelKey: 'Call Trend', specKey: 'spec_model_line' },
-  { value: '3', labelKey: 'Call Proportion', specKey: 'spec_pie' },
-  { value: '4', labelKey: 'Top Models', specKey: 'spec_rank_bar' },
+  { value: 'trend', labelKey: 'Call Trend', specKey: 'spec_model_line' },
+  {
+    value: 'proportion',
+    labelKey: 'Call Count Distribution',
+    specKey: 'spec_pie',
+  },
+  { value: 'top', labelKey: 'Call Count Ranking', specKey: 'spec_rank_bar' },
 ]
 
 interface ModelChartsProps {
@@ -38,7 +39,7 @@ interface ModelChartsProps {
 export function ModelCharts(props: ModelChartsProps) {
   const { t } = useTranslation()
   const { resolvedTheme } = useTheme()
-  const [activeTab, setActiveTab] = useState<ChartTab>('1')
+  const [activeTab, setActiveTab] = useState<ChartTab>('trend')
   const [themeReady, setThemeReady] = useState(false)
   const themeManagerRef = useRef<
     (typeof import('@visactor/vchart'))['ThemeManager'] | null
