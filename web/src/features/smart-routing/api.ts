@@ -556,7 +556,8 @@ export async function refreshChannelBalance(
 }
 
 export type CostBackfillJob = {
-  job_id: string | number
+  /** Decimal UnixNano as a string; never parse to number (loses precision). */
+  job_id: string
   status: 'running' | 'done' | 'failed'
   scanned?: number
   inserted?: number
@@ -574,7 +575,21 @@ export async function startCostBackfill(): Promise<
   return softMutate<CostBackfillJob>('post', '/cost/backfill', {})
 }
 
-/** GET /cost/backfill — latest job or null. */
-export async function getCostBackfillStatus(): Promise<CostBackfillJob | null> {
-  return softGet<CostBackfillJob | null>('/cost/backfill', null)
+/**
+ * GET /cost/backfill[?job_id=] — latest job (or null). With a job id the
+ * backend answers 404 job_not_found when it is not the latest job; that
+ * envelope is returned so the caller can say so.
+ */
+export async function getCostBackfillStatus(
+  jobId?: string
+): Promise<ApiEnvelope<CostBackfillJob | null>> {
+  try {
+    const res = await api.get<ApiEnvelope<CostBackfillJob | null>>(
+      `${SMART_ROUTING_API_PREFIX}/cost/backfill`,
+      { ...softGetConfig, params: jobId ? { job_id: jobId } : undefined }
+    )
+    return res.data ?? { success: false, message: 'empty response' }
+  } catch (err) {
+    return envelopeFromError<CostBackfillJob | null>(err)
+  }
 }

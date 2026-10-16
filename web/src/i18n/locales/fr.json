@@ -7349,6 +7349,8 @@
     "Upstream does not support balance query": "Le fournisseur ne prend pas en charge la consultation du solde",
     "Ledger kind arrears": "Arriérés",
     "Balance is low: too many concurrent requests. Wait for running requests to finish or top up.": "Solde faible : trop de requêtes simultanées. Attendez la fin des requêtes en cours ou rechargez.",
-    "HMAC secret is not set: user identity verification is disabled. Set the inbox HMAC secret and enable identity validation in Chatwoot.": "Secret HMAC non défini : la vérification d’identité est désactivée. Définissez le secret HMAC de la boîte et activez la validation d’identité dans Chatwoot."
+    "HMAC secret is not set: user identity verification is disabled. Set the inbox HMAC secret and enable identity validation in Chatwoot.": "Secret HMAC non défini : la vérification d’identité est désactivée. Définissez le secret HMAC de la boîte et activez la validation d’identité dans Chatwoot.",
+    "Backfill job not found": "Tâche de rattrapage introuvable",
+    "Balances updated. Disabled {{count}} channel(s) with no balance: {{names}}": "Soldes mis à jour. {{count}} canal(aux) sans solde désactivé(s) : {{names}}"
   }
 }

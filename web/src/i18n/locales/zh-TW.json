@@ -7389,6 +7389,8 @@
     "Upstream does not support balance query": "上游不支援餘額查詢",
     "Ledger kind arrears": "欠費",
     "Balance is low: too many concurrent requests. Wait for running requests to finish or top up.": "餘額偏低：並發請求過多。請等待進行中的請求完成，或先儲值。",
-    "HMAC secret is not set: user identity verification is disabled. Set the inbox HMAC secret and enable identity validation in Chatwoot.": "未設定 HMAC 金鑰：使用者身分驗證未啟用。請設定收件匣 HMAC 金鑰，並在 Chatwoot 中開啟身分驗證。"
+    "HMAC secret is not set: user identity verification is disabled. Set the inbox HMAC secret and enable identity validation in Chatwoot.": "未設定 HMAC 金鑰：使用者身分驗證未啟用。請設定收件匣 HMAC 金鑰，並在 Chatwoot 中開啟身分驗證。",
+    "Backfill job not found": "找不到該回填任務",
+    "Balances updated. Disabled {{count}} channel(s) with no balance: {{names}}": "餘額已更新，已停用 {{count}} 個餘額不足的渠道：{{names}}"
   }
 }

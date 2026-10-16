@@ -7349,6 +7349,8 @@
     "Upstream does not support balance query": "Поставщик не поддерживает запрос баланса",
     "Ledger kind arrears": "Задолженность",
     "Balance is low: too many concurrent requests. Wait for running requests to finish or top up.": "Низкий баланс: слишком много одновременных запросов. Дождитесь их завершения или пополните счёт.",
-    "HMAC secret is not set: user identity verification is disabled. Set the inbox HMAC secret and enable identity validation in Chatwoot.": "Секрет HMAC не задан: проверка личности отключена. Задайте секрет HMAC входящих и включите проверку в Chatwoot."
+    "HMAC secret is not set: user identity verification is disabled. Set the inbox HMAC secret and enable identity validation in Chatwoot.": "Секрет HMAC не задан: проверка личности отключена. Задайте секрет HMAC входящих и включите проверку в Chatwoot.",
+    "Backfill job not found": "Задача дозаполнения не найдена",
+    "Balances updated. Disabled {{count}} channel(s) with no balance: {{names}}": "Балансы обновлены. Отключено каналов без баланса: {{count}} — {{names}}"
   }
 }

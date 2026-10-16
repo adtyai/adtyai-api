@@ -627,6 +627,8 @@ export async function testAllChannels(): Promise<{
 export async function updateAllChannelsBalance(): Promise<{
   success: boolean
   message?: string
+  /** Channels auto-disabled because their balance was <= 0. */
+  data?: { disabled_channels?: Array<{ id: number; name: string }> }
 }> {
   const res = await api.get(
     '/api/channel/update_balance',

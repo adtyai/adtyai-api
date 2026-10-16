@@ -93,16 +93,17 @@ export function ScoresPage(props: ScoresPageProps) {
   const doRefreshBalance = async (channelId: number) => {
     const res = await refreshChannelBalance(channelId)
     const status = res.data?.status
-    if (status === 'ok') {
+    if (status === 'ok' && res.success) {
       toast.success(
         t('Balance updated: {{balance}}', { balance: res.data?.balance ?? 0 })
       )
     } else if (status === 'unsupported') {
       toast.info(t('Upstream does not support balance query'))
     } else {
-      toast.error(
-        `${t('Balance query failed')}: ${routingErrorText(t, res, t('Failed'))}`
-      )
+      // failed (200 status=failed or 502 balance_query_failed): show the
+      // upstream reason, never a "success" with balance 0.
+      const reason = res.data?.error || routingErrorText(t, res, t('Failed'))
+      toast.error(`${t('Balance query failed')}: ${reason}`)
     }
   }
 

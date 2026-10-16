@@ -14,6 +14,7 @@ const CODE_KEYS: Record<string, string> = {
   scheme_not_found: 'Weight scheme not found',
   scheme_weights_mismatch: 'Weights do not match the selected scheme',
   backfill_running: 'A backfill job is already running',
+  job_not_found: 'Backfill job not found',
   backfill_disabled: 'History backfill is disabled in routing config',
   refresh_running: 'A full balance refresh is already running',
   balance_query_failed: 'Balance query failed',

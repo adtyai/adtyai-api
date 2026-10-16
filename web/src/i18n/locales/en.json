@@ -8282,6 +8282,8 @@
     "Upstream does not support balance query": "Upstream does not support balance query",
     "Ledger kind arrears": "Ledger kind arrears",
     "Balance is low: too many concurrent requests. Wait for running requests to finish or top up.": "Balance is low: too many concurrent requests. Wait for running requests to finish or top up.",
-    "HMAC secret is not set: user identity verification is disabled. Set the inbox HMAC secret and enable identity validation in Chatwoot.": "HMAC secret is not set: user identity verification is disabled. Set the inbox HMAC secret and enable identity validation in Chatwoot."
+    "HMAC secret is not set: user identity verification is disabled. Set the inbox HMAC secret and enable identity validation in Chatwoot.": "HMAC secret is not set: user identity verification is disabled. Set the inbox HMAC secret and enable identity validation in Chatwoot.",
+    "Backfill job not found": "Backfill job not found",
+    "Balances updated. Disabled {{count}} channel(s) with no balance: {{names}}": "Balances updated. Disabled {{count}} channel(s) with no balance: {{names}}"
   }
 }

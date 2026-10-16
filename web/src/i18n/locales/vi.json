@@ -7349,6 +7349,8 @@
     "Upstream does not support balance query": "Nhà cung cấp không hỗ trợ truy vấn số dư",
     "Ledger kind arrears": "Nợ cước",
     "Balance is low: too many concurrent requests. Wait for running requests to finish or top up.": "Số dư thấp: quá nhiều yêu cầu đồng thời. Hãy chờ các yêu cầu đang chạy hoàn tất hoặc nạp thêm.",
-    "HMAC secret is not set: user identity verification is disabled. Set the inbox HMAC secret and enable identity validation in Chatwoot.": "Chưa đặt khóa HMAC: xác minh danh tính đang tắt. Hãy đặt khóa HMAC cho hộp thư và bật xác minh danh tính trong Chatwoot."
+    "HMAC secret is not set: user identity verification is disabled. Set the inbox HMAC secret and enable identity validation in Chatwoot.": "Chưa đặt khóa HMAC: xác minh danh tính đang tắt. Hãy đặt khóa HMAC cho hộp thư và bật xác minh danh tính trong Chatwoot.",
+    "Backfill job not found": "Không tìm thấy tác vụ bù dữ liệu",
+    "Balances updated. Disabled {{count}} channel(s) with no balance: {{names}}": "Đã cập nhật số dư. Đã tắt {{count}} kênh hết số dư: {{names}}"
   }
 }

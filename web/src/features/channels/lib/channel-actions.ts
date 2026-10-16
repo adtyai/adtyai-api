@@ -666,11 +666,25 @@ export async function handleUpdateAllBalances(
   try {
     const response = await updateAllChannelsBalance()
     if (response.success) {
-      toast.success(
-        i18next.t(
-          'Updating all channel balances. This may take a while. Please refresh to see results.'
+      const disabled = response.data?.disabled_channels ?? []
+      if (disabled.length > 0) {
+        toast.warning(
+          i18next.t(
+            'Balances updated. Disabled {{count}} channel(s) with no balance: {{names}}',
+            {
+              count: disabled.length,
+              names: disabled.map((c) => `${c.name} (#${c.id})`).join(', '),
+            }
+          ),
+          { duration: 10000 }
         )
-      )
+      } else {
+        toast.success(
+          i18next.t(
+            'Updating all channel balances. This may take a while. Please refresh to see results.'
+          )
+        )
+      }
       queryClient?.invalidateQueries({ queryKey: channelsQueryKeys.lists() })
       onSuccess?.()
     } else {

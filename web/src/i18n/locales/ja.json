@@ -7349,6 +7349,8 @@
     "Upstream does not support balance query": "上流は残高照会に対応していません",
     "Ledger kind arrears": "未払い",
     "Balance is low: too many concurrent requests. Wait for running requests to finish or top up.": "残高が少ないため同時リクエストが多すぎます。実行中のリクエストの完了を待つか、チャージしてください。",
-    "HMAC secret is not set: user identity verification is disabled. Set the inbox HMAC secret and enable identity validation in Chatwoot.": "HMAC シークレット未設定：本人確認が無効です。受信箱の HMAC シークレットを設定し、Chatwoot で本人確認を有効にしてください。"
+    "HMAC secret is not set: user identity verification is disabled. Set the inbox HMAC secret and enable identity validation in Chatwoot.": "HMAC シークレット未設定：本人確認が無効です。受信箱の HMAC シークレットを設定し、Chatwoot で本人確認を有効にしてください。",
+    "Backfill job not found": "バックフィルジョブが見つかりません",
+    "Balances updated. Disabled {{count}} channel(s) with no balance: {{names}}": "残高を更新しました。残高不足の {{count}} 件のチャネルを無効化しました：{{names}}"
   }
 }

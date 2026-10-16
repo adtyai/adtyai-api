@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -19,12 +20,19 @@ const BACKFILL_QUERY_KEY = ['smart-routing', 'cost-backfill'] as const
 /** Root-only: start a background cost backfill (202 + job_id) and poll its status. */
 export function CostBackfillCard() {
   const { t } = useTranslation()
+  // Track the job we started by its string id; ids are never coerced to
+  // numbers (UnixNano exceeds Number.MAX_SAFE_INTEGER).
+  const [jobId, setJobId] = useState<string | undefined>(undefined)
   const statusQuery = useQuery({
-    queryKey: BACKFILL_QUERY_KEY,
-    queryFn: getCostBackfillStatus,
-    refetchInterval: (q) => (q.state.data?.status === 'running' ? 2000 : false),
+    queryKey: [...BACKFILL_QUERY_KEY, jobId ?? 'latest'],
+    queryFn: () => getCostBackfillStatus(jobId),
+    refetchInterval: (q) =>
+      q.state.data?.data?.status === 'running' ? 2000 : false,
   })
-  const job = statusQuery.data
+  const envelope = statusQuery.data
+  const notFound =
+    envelope?.success === false && envelope.code === 'job_not_found'
+  const job = envelope?.success ? envelope.data : null
   const running = job?.status === 'running'
 
   const start = async () => {
@@ -35,15 +43,18 @@ export function CostBackfillCard() {
           ? t('A backfill job is already running')
           : routingErrorText(t, res, t('Backfill failed to start'))
       )
+      setJobId(undefined)
       void statusQuery.refetch()
       return
     }
     toast.success(t('Backfill started'))
-    void statusQuery.refetch()
+    setJobId(res.data?.job_id != null ? String(res.data.job_id) : undefined)
   }
 
   let statusText = t('No backfill run yet')
-  if (job?.status === 'running') {
+  if (notFound) {
+    statusText = t('Backfill job not found')
+  } else if (job?.status === 'running') {
     statusText = t('Running…')
   } else if (job?.status === 'done') {
     statusText = t('Done: scanned {{scanned}}, inserted {{inserted}}', {
@@ -73,7 +84,7 @@ export function CostBackfillCard() {
         </Button>
         <span
           className={
-            job?.status === 'failed'
+            job?.status === 'failed' || notFound
               ? 'text-destructive text-sm'
               : 'text-muted-foreground text-sm'
           }
