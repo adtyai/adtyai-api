@@ -164,7 +164,11 @@ test('root search inside system settings omits sidebar-hidden adtyai pages', asy
   )
 
   expect(entries.length).toBeGreaterThan(0)
+  // balance-adjustments 仍封死；企业协议价已挂侧栏，应出现在搜索
   for (const entry of entries) {
-    expect(entry).not.toMatch(/enterprise|balance adjust|企业|余额调整/i)
+    expect(entry).not.toMatch(/balance adjust|余额调整/i)
   }
+  expect(entries.some((e) => /enterprise pricing|企业协议价/i.test(e ?? ''))).toBe(
+    true
+  )
 })

@@ -42,6 +42,7 @@ export const USER_MENU_KEYS: MenuKeyDef[] = [
  */
 export const ADMIN_MENU_KEYS: MenuKeyDef[] = [
   { key: 'orders', labelKey: 'Topup orders' },
+  { key: 'enterprise-pricing', labelKey: 'Enterprise pricing' },
   { key: 'alerts', labelKey: 'Telegram alerts' },
   { key: 'chatwoot', labelKey: 'Chatwoot customer support' },
   { key: 'bepusdt', labelKey: 'BEpusdt gateway' },

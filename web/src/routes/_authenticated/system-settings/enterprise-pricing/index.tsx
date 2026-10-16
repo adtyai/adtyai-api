@@ -16,15 +16,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { createFileRoute, redirect } from '@tanstack/react-router'
 
-// Feature page kept; sidebar hidden. Direct URL sealed → system settings home.
+import { createFileRoute } from '@tanstack/react-router'
+
+import { EnterprisePricingSettings } from '@/features/system-settings/enterprise-pricing'
+
 export const Route = createFileRoute(
   '/_authenticated/system-settings/enterprise-pricing/'
 )({
-  beforeLoad: () => {
-    throw redirect({
-      to: '/system-settings',
-    })
-  },
+  component: EnterprisePricingSettings,
 })

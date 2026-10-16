@@ -110,9 +110,25 @@ export function getSystemSettingsNavGroups(
           title: t('Billing & Payment'),
           icon: CreditCard,
           items: [
-            ...getBillingSectionNavItems(t),
+            ...(() => {
+              const billing = getBillingSectionNavItems(t)
+              const ep = {
+                title: t('Enterprise pricing'),
+                url: '/system-settings/enterprise-pricing',
+              }
+              const idx = billing.findIndex(
+                (i) => i.url === '/system-settings/billing/group-pricing'
+              )
+              if (idx < 0) return [...billing, ep]
+              return [
+                ...billing.slice(0, idx + 1),
+                ep,
+                ...billing.slice(idx + 1),
+              ]
+            })(),
             // 易支付 / BEpusdt 已并入「支付网关」页，不再单独占侧栏项
             // 分组显示名已并入「分组定价」页，不再单独占侧栏项
+            // 企业协议价挂在「分组定价」旁（独立页，不换分组，按用户设折扣）
             // 充值/退款/赠送/返佣业务入口并入支付树，去掉独立顶栏项
             {
               title: t('Topup orders'),

@@ -69,6 +69,10 @@ describe('system-settings Root-only nav (A39/A08) and no A30 audit', () => {
     expect(menu).toBeUndefined()
     expect(group).toBeUndefined()
     expect(groupPricing).toBeDefined()
+    const enterprise = links.find(
+      (i) => i.url === '/system-settings/enterprise-pricing'
+    )
+    expect(enterprise).toBeDefined()
     expect(sidebarModules).toBeDefined()
     expect(admins).toBeUndefined()
     expect(status).toBeUndefined()
@@ -113,6 +117,17 @@ describe('system-settings Root-only nav (A39/A08) and no A30 audit', () => {
     expect(byParent['Billing & Payment']).toContain(
       '/system-settings/billing/group-pricing'
     )
+    expect(byParent['Billing & Payment']).toContain(
+      '/system-settings/enterprise-pricing'
+    )
+    // 企业协议价紧挨分组定价
+    {
+      const billing = byParent['Billing & Payment'] as string[]
+      const gp = billing.indexOf('/system-settings/billing/group-pricing')
+      const ep = billing.indexOf('/system-settings/enterprise-pricing')
+      expect(gp).toBeGreaterThanOrEqual(0)
+      expect(ep).toBe(gp + 1)
+    }
     expect(byParent['Billing & Payment']).toEqual(
       expect.arrayContaining([
         '/system-settings/orders',
