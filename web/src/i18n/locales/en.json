@@ -8122,6 +8122,8 @@
     "Request number is required": "Request number is required",
     "Invalid number": "Invalid number",
     "Order {{order_no}} is fully refunded and cannot be credited": "Order {{order_no}} is fully refunded and cannot be credited",
-    "This order is fully refunded and cannot be credited": "This order is fully refunded and cannot be credited"
+    "This order is fully refunded and cannot be credited": "This order is fully refunded and cannot be credited",
+    "Open-source notice: this product is based on the AGPL-licensed upstream project": "Open-source notice: this product is based on the AGPL-licensed upstream project",
+    "Open-source compliance": "Open-source compliance"
   }
 }

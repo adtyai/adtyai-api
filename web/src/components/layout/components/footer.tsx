@@ -42,12 +42,6 @@ interface FooterProps {
   className?: string
 }
 
-const NEW_API_FOOTER_ATTRIBUTION_KEY = [
-  'footer',
-  'new' + 'api',
-  'projectAttributionSuffix',
-].join('.')
-
 function FooterLinkItem(props: { link: FooterLink }) {
   const { t } = useTranslation()
   const isExternal = props.link.href.startsWith('http')
@@ -121,23 +115,31 @@ function LegalLinks(props: { leadingSeparator?: boolean }) {
   )
 }
 
-// inline=true returns just the inner span for composition in a parent flex
-// row. inline=false wraps in a centered/right-aligned div (default).
-export function ProjectAttribution(props: { currentYear: number; inline?: boolean }) {
+/**
+ * AGPL upstream attribution for the About compliance zone only.
+ * Do NOT render this in the site footer next to the ADTY AI copyright —
+ * that produced a dual "© … New API" line users saw as brand residue.
+ */
+export function ProjectAttribution(props: {
+  currentYear?: number
+  inline?: boolean
+}) {
   const { t } = useTranslation()
+  void props.currentYear
   const content = (
     <span className='text-muted-foreground/60'>
-      &copy; {props.currentYear}{' '}
-      {/* AGPL 署名：保留上游项目名原文，不走 i18n（"New API" 已被译为站名）。 */}
+      {t(
+        'Open-source notice: this product is based on the AGPL-licensed upstream project'
+      )}{' '}
       <a
         href='https://github.com/QuantumNous/new-api'
         target='_blank'
         rel='noopener noreferrer'
-        className='hover:text-muted-foreground transition-colors'
+        className='hover:text-muted-foreground underline-offset-2 hover:underline'
       >
-        New API
+        QuantumNous/new-api
       </a>
-      . {t(NEW_API_FOOTER_ATTRIBUTION_KEY)}
+      .
     </span>
   )
   if (props.inline) {
@@ -167,6 +169,7 @@ export function Footer(props: FooterProps) {
   const isDemoSiteMode = Boolean(demoSiteEnabled)
   const currentYear = new Date().getFullYear()
 
+  // Demo-site fallback columns: keep structure, no docs.newapi.pro defaults.
   const fallbackColumns = useMemo<FooterColumnProps[]>(
     () => [
       {
@@ -174,15 +177,15 @@ export function Footer(props: FooterProps) {
         links: [
           {
             text: t('footer.columns.about.links.aboutProject'),
-            href: 'https://docs.newapi.pro/wiki/project-introduction/',
+            href: '/about',
           },
           {
             text: t('footer.columns.about.links.contact'),
-            href: 'https://docs.newapi.pro/support/community-interaction/',
+            href: '/about',
           },
           {
             text: t('footer.columns.about.links.features'),
-            href: 'https://docs.newapi.pro/wiki/features-introduction/',
+            href: '/pricing',
           },
         ],
       },
@@ -191,15 +194,15 @@ export function Footer(props: FooterProps) {
         links: [
           {
             text: t('footer.columns.docs.links.quickStart'),
-            href: 'https://docs.newapi.pro/getting-started/',
+            href: docsLink || '/about',
           },
           {
             text: t('footer.columns.docs.links.installation'),
-            href: 'https://docs.newapi.pro/installation/',
+            href: docsLink || '/about',
           },
           {
             text: t('footer.columns.docs.links.apiDocs'),
-            href: 'https://docs.newapi.pro/api/',
+            href: docsLink || '/about',
           },
         ],
       },
@@ -207,21 +210,17 @@ export function Footer(props: FooterProps) {
         title: t('footer.columns.related.title'),
         links: [
           {
-            text: t('footer.columns.related.links.oneApi'),
-            href: 'https://github.com/songquanpeng/one-api',
+            text: t('About'),
+            href: '/about',
           },
           {
-            text: t('footer.columns.related.links.midjourney'),
-            href: 'https://github.com/novicezk/midjourney-proxy',
-          },
-          {
-            text: t('footer.columns.related.links.newApiKeyTool'),
-            href: 'https://github.com/Calcium-Ion/new-api-key-tool',
+            text: t('Model Square'),
+            href: '/pricing',
           },
         ],
       },
     ],
-    [t]
+    [t, docsLink]
   )
 
   const displayColumns = props.columns ?? fallbackColumns
@@ -242,7 +241,6 @@ export function Footer(props: FooterProps) {
             />
             <div className='border-border/60 text-muted-foreground/45 flex w-full flex-wrap items-center justify-center gap-x-3 gap-y-1 border-t pt-4 text-xs sm:w-auto sm:justify-end sm:border-t-0 sm:border-l sm:pt-0 sm:pl-5'>
               <LegalLinks />
-              <ProjectAttribution currentYear={currentYear} inline />
             </div>
           </div>
         </div>
@@ -313,9 +311,6 @@ export function Footer(props: FooterProps) {
             &copy; {currentYear} {displayName}.{' '}
             {props.copyright ?? t('footer.defaultCopyright')}
           </div>
-        </div>
-        <div className='mt-4'>
-          <ProjectAttribution currentYear={currentYear} />
         </div>
       </div>
     </footer>

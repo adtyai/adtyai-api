@@ -18,10 +18,8 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import type { TFunction } from 'i18next'
 import {
-  Activity,
   LayoutDashboard,
   Bell,
-  ClipboardList,
   Box,
   Route,
   Coins,
@@ -38,7 +36,6 @@ import {
   Gift,
   MessageCircle,
   Tags,
-  UserPlus,
   UsersRound,
   Wrench,
 } from 'lucide-react'
@@ -149,22 +146,6 @@ function getSystemSettingsNavGroups(t: TFunction): NavGroup[] {
           url: '/system-settings/groups',
           icon: Tags,
           requiredRole: ROLE.SUPER_ADMIN,
-        },
-        {
-          title: t('Create administrator'),
-          url: '/system-settings/admins',
-          icon: UserPlus,
-          requiredRole: ROLE.SUPER_ADMIN,
-        },
-        {
-          title: t('Service status'),
-          url: '/system-settings/status',
-          icon: Activity,
-        },
-        {
-          title: t('Daily reconcile'),
-          url: '/system-settings/reconcile',
-          icon: ClipboardList,
         },
         {
           title: t('Affiliate commissions'),

@@ -47,7 +47,12 @@ function EmptyAboutState() {
             )}
           </p>
         </div>
-        <ProjectAttribution currentYear={currentYear} />
+        <div className='border-border/40 space-y-2 border-t pt-6'>
+          <p className='text-muted-foreground text-xs font-medium tracking-wide uppercase'>
+            {t('Open-source compliance')}
+          </p>
+          <ProjectAttribution currentYear={currentYear} />
+        </div>
       </div>
     </div>
   )

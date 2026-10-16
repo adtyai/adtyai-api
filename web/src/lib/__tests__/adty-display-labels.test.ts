@@ -8,8 +8,6 @@ import {
   formatSnapshot,
 } from "@/features/system-settings/business-params/lib/groups";
 import { orderStatusLabelKey } from "@/features/system-settings/orders/lib/orders";
-import { backfillStatusLabelKey } from "@/features/system-settings/reconcile/lib/format";
-import { probeErrorLabelKey } from "@/features/system-settings/status/lib/format";
 import { riskReasonLabelKey } from "@/features/system-settings/utils/status-labels";
 import {
   ledgerNote,
@@ -39,25 +37,8 @@ describe("adty display labels", () => {
     }
     expect(riskReasonLabelKey("conc")).toBeNull();
   });
-  it("probe errors (sanitizeProbeErr)", () => {
-    for (const e of [
-      "timeout",
-      "connection refused",
-      "dns error",
-      "tls error",
-      "invalid url",
-      "request failed",
-    ]) {
-      hasZh(probeErrorLabelKey(e) as string);
-    }
-    expect(probeErrorLabelKey("http 503")).toBeNull();
-  });
-  it("order need_manual, backfill none, unknown raw", () => {
+  it("order need_manual and unknown raw", () => {
     hasZh(orderStatusLabelKey("need_manual"));
-    for (const s of ["none", "ran", "partial", "ok"]) {
-      hasZh(backfillStatusLabelKey(s));
-    }
-    expect(backfillStatusLabelKey("weird")).toBe("weird");
     expect(orderStatusLabelKey("weird")).toBe("weird");
   });
   it("ledger reasons map; unknown kept", () => {
