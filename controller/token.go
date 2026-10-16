@@ -333,6 +333,9 @@ func AddToken(c *gin.Context) {
 		common.ApiErrorT(c, "Maximum number of tokens reached ({{max}})", map[string]any{"max": maxTokens})
 		return
 	}
+	if !tokenGroupAllowed(c, token.Group) {
+		return
+	}
 	if token.Group == "auto" {
 		if !setTokenAutoGroups(c, &token, request.AutoGroups.Groups) {
 			return
@@ -459,6 +462,9 @@ func UpdateToken(c *gin.Context) {
 		if request.AllowUserQuotaQuery != nil {
 			cleanToken.AllowUserQuotaQuery = *request.AllowUserQuotaQuery
 		}
+		if token.Group != cleanToken.Group && !tokenGroupAllowed(c, token.Group) {
+			return
+		}
 		cleanToken.Group = token.Group
 		cleanToken.CrossGroupRetry = token.CrossGroupRetry
 		if token.Group != "auto" {
@@ -572,4 +578,21 @@ func GetTokenKeysBatch(c *gin.Context) {
 	params["returned_ids"] = returnedIDs
 	common.SetContextKey(c, constant.ContextKeyTokenAuditSucceeded, true)
 	common.ApiSuccess(c, gin.H{"keys": keysMap})
+}
+
+// tokenGroupAllowed 审查 N-P2-12：令牌分组必须是用户可用分组（或用户自身分组），否则建令牌时就拒绝，而不是到 relay 才拒。
+func tokenGroupAllowed(c *gin.Context, group string) bool {
+	if group == "" || group == "auto" {
+		return true
+	}
+	userGroup, err := model.GetUserGroup(c.GetInt("id"), false)
+	if err != nil {
+		common.ApiError(c, err)
+		return false
+	}
+	if group == userGroup || service.GroupInUserUsableGroups(userGroup, group) {
+		return true
+	}
+	common.ApiErrorT(c, "Group {{group}} is not available to you", map[string]any{"group": group})
+	return false
 }

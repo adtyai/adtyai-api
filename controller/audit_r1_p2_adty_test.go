@@ -92,3 +92,16 @@ func TestWalletAllowDebtOnDialect(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, ok)
 }
+
+// 审查 N-P2-12：建令牌时不能选自己无权使用的分组。
+func TestAddTokenRejectsUnusableGroup(t *testing.T) {
+	database := adtyTestDB(t)
+	require.NoError(t, database.AutoMigrate(&model.Token{}))
+	u := model.User{Username: "erin12", Password: "unused-password", AffCode: "n212", Group: "default"}
+	require.NoError(t, database.Create(&u).Error)
+	rec := adtyCall(AddToken, http.MethodPost, "/api/token/", `{"name":"t","group":"svip-not-usable","unlimited_quota":true}`, u.Id, common.RoleCommonUser, nil)
+	require.Contains(t, rec.Body.String(), "is not available to you", rec.Body.String())
+	var n int64
+	require.NoError(t, database.Model(&model.Token{}).Where("user_id = ?", u.Id).Count(&n).Error)
+	require.Zero(t, n)
+}
