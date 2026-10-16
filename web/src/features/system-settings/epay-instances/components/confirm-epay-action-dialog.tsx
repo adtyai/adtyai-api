@@ -166,7 +166,7 @@ export function ConfirmEpayActionDialog({
             disabled={busy}
             onClick={() => void handleConfirm()}
           >
-            {t('Confirm')
+            {confirmLabel}
           </Button>
         </DialogFooter>
       </DialogContent>
