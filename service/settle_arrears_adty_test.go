@@ -47,3 +47,38 @@ func TestPostConsumeQuotaWalletShortfallChargesIntoArrears(t *testing.T) {
 	assert.Equal(t, -575, q)
 	assert.Equal(t, 675, info.WalletBonusConsumed+info.WalletPaidConsumed)
 }
+
+// 审查 R-P2-4：扣成负数时写 consume_arrears 标记流水（delta=0，balance_after 为负）。
+func TestSettleIntoArrearsWritesLedgerMarker(t *testing.T) {
+	truncate(t)
+	const uid = 9103
+	seedUser(t, uid, 100)
+	w := &WalletFunding{userId: uid}
+	require.NoError(t, w.PreConsume(50))
+	require.NoError(t, w.Settle(625))
+	var e model.LedgerEntry
+	require.NoError(t, model.DB.Where("user_id = ? AND kind = ?", uid, model.LedgerKindConsumeArrears).First(&e).Error)
+	assert.Equal(t, int64(0), e.Delta)
+	assert.Equal(t, int64(-575), e.BalanceAfter)
+}
+
+// 审查 R-P2-3：低余额时单用户并发位有上限，释放后可再占。
+func TestLowBalanceSlotLimit(t *testing.T) {
+	resetLowBalanceSlotsForTest()
+	prev := LowBalanceMaxInflight
+	LowBalanceMaxInflight = 2
+	t.Cleanup(func() { LowBalanceMaxInflight = prev; resetLowBalanceSlotsForTest() })
+	assert.True(t, isLowBalance(700))
+	r1, ok := acquireLowBalanceSlot(77)
+	require.True(t, ok)
+	_, ok = acquireLowBalanceSlot(77)
+	require.True(t, ok)
+	_, ok = acquireLowBalanceSlot(77)
+	require.False(t, ok, "third concurrent request must be rejected")
+	r1()
+	r1() // 幂等
+	_, ok = acquireLowBalanceSlot(77)
+	require.True(t, ok)
+	_, ok = acquireLowBalanceSlot(78)
+	require.True(t, ok, "other users unaffected")
+}

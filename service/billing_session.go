@@ -38,7 +38,14 @@ type BillingSession struct {
 	settled          bool   // Settle 全部完成（资金 + 令牌）
 	refunded         bool   // Refund 已调用
 	lang             string // 请求声明的语言，为空表示未声明
+	releaseSlot      func() // 审查 R-P2-3：低余额并发位，Settle/Refund 时释放
 	mu               sync.Mutex
+}
+
+func (s *BillingSession) releaseLowBalanceSlot() {
+	if s.releaseSlot != nil {
+		s.releaseSlot()
+	}
 }
 
 // Settle 根据实际消耗额度进行结算。
@@ -47,6 +54,7 @@ type BillingSession struct {
 func (s *BillingSession) Settle(actualQuota int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	defer s.releaseLowBalanceSlot()
 	if s.settled {
 		return nil
 	}
@@ -87,6 +95,7 @@ func (s *BillingSession) Settle(actualQuota int) error {
 
 // Refund 退还所有预扣费，幂等安全，异步执行。
 func (s *BillingSession) Refund(c *gin.Context) {
+	s.releaseLowBalanceSlot()
 	s.mu.Lock()
 	if s.settled || s.refunded || !s.needsRefundLocked() {
 		s.mu.Unlock()
@@ -417,7 +426,19 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 			funding:   &WalletFunding{userId: relayInfo.UserId},
 			lang:      i18n.StatedLang(c),
 		}
+		// 审查 R-P2-3：低余额时限制单用户并发，防止并发请求成批透支
+		if isLowBalance(userQuota) {
+			release, ok := acquireLowBalanceSlot(relayInfo.UserId)
+			if !ok {
+				return nil, types.NewErrorWithStatusCode(
+					fmt.Errorf("too many concurrent requests while balance is low (max %d)", LowBalanceMaxInflight),
+					types.ErrorCodeInsufficientUserQuota, http.StatusTooManyRequests,
+					types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog())
+			}
+			session.releaseSlot = release
+		}
 		if apiErr := session.preConsume(c, preConsumedQuota); apiErr != nil {
+			session.releaseLowBalanceSlot()
 			return nil, apiErr
 		}
 		return session, nil
