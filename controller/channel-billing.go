@@ -55,6 +55,9 @@ type OpenAICreditGrants struct {
 
 const maxAdvancedCustomBalanceResponseBytes = 256 << 10
 
+// errBalanceUnsupported 表示渠道上游不提供可用的余额接口（审查 R-P1-2）。
+var errBalanceUnsupported = errors.New("balance endpoint unsupported by upstream")
+
 type channelBalanceResult struct {
 	Balance     float64
 	RawResponse string
@@ -669,6 +672,10 @@ func updateStandardChannelBalance(channel *model.Channel) (float64, error) {
 	err = common.Unmarshal(body, &subscription)
 	if err != nil {
 		return 0, err
+	}
+	// 审查 R-P1-2：上游不支持 billing 接口（返回空对象）时不能当成余额 0
+	if subscription.Object == "" && subscription.HardLimitUSD == 0 {
+		return 0, errBalanceUnsupported
 	}
 	now := time.Now()
 	startDate := fmt.Sprintf("%s-01", now.Format("2006-01"))

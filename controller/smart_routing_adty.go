@@ -2,13 +2,16 @@ package controller
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service/smartrouting"
 	"github.com/gin-gonic/gin"
@@ -846,12 +849,12 @@ func AdtyRoutingBalanceRefresh(c *gin.Context) {
 			adtyFail(c, http.StatusNotFound, "not_found", "channel not found", nil)
 			return
 		}
-		res, err := updateChannelBalance(ch)
-		if err != nil {
-			adtyFail(c, http.StatusBadGateway, "balance_query_failed", err.Error(), nil)
+		r := routingRefreshOneBalance(ch)
+		if r.Status == "failed" {
+			adtyFail(c, http.StatusBadGateway, "balance_query_failed", r.Error, nil)
 			return
 		}
-		srOK(c, gin.H{"channel_id": ch.Id, "balance": res.Balance, "raw_response": res.RawResponse, "updated_at": time.Now().Unix()})
+		srOK(c, r)
 		return
 	}
 	if !routingBalanceRefreshRunning.CompareAndSwap(false, true) {
@@ -865,7 +868,7 @@ func AdtyRoutingBalanceRefresh(c *gin.Context) {
 				common.SysError(common.LogText("routing balance refresh panic: %v", r))
 			}
 		}()
-		if err := updateAllChannelsBalance(); err != nil {
+		if err := routingRefreshAllBalances(); err != nil {
 			common.SysError(common.LogText("routing balance refresh failed: %s", err.Error()))
 		}
 	}()
@@ -958,4 +961,67 @@ func routingChannelExists(c *gin.Context, channelID int) bool {
 		return false
 	}
 	return true
+}
+
+// routingBalanceResult 审查 R-P1-2：路由页刷新余额的单渠道结果。
+// status: ok（已写余额）/ unsupported（上游无余额接口，未写、未当 0）/ failed（查询出错）。
+type routingBalanceResult struct {
+	ChannelID   int     `json:"channel_id"`
+	Status      string  `json:"status"`
+	Balance     float64 `json:"balance"`
+	RawResponse string  `json:"raw_response,omitempty"`
+	Error       string  `json:"error,omitempty"`
+	UpdatedAt   int64   `json:"updated_at"`
+}
+
+func isBalanceUnsupportedErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, errBalanceUnsupported) {
+		return true
+	}
+	return strings.Contains(err.Error(), "Not implemented")
+}
+
+// routingRefreshOneBalance 只查询并写入余额（由 updateChannelBalance 内部写库），
+// 绝不禁用渠道；低余额交给 balance_patrol 告警/熔断统一处理。
+func routingRefreshOneBalance(ch *model.Channel) routingBalanceResult {
+	r := routingBalanceResult{ChannelID: ch.Id, UpdatedAt: time.Now().Unix()}
+	if ch.Type == constant.ChannelTypeTaskPlugin || ch.ChannelInfo.IsMultiKey {
+		r.Status = "unsupported"
+		return r
+	}
+	res, err := updateChannelBalance(ch)
+	switch {
+	case isBalanceUnsupportedErr(err):
+		r.Status = "unsupported"
+	case err != nil:
+		r.Status = "failed"
+		r.Error = err.Error()
+	default:
+		r.Status = "ok"
+		r.Balance = res.Balance
+		r.RawResponse = res.RawResponse
+	}
+	return r
+}
+
+// routingRefreshAllBalances 审查 R-P1-2：替代官方 updateAllChannelsBalance（余额<=0 会禁用渠道）。
+func routingRefreshAllBalances() error {
+	channels, err := model.GetAllChannels(0, 0, true, false)
+	if err != nil {
+		return err
+	}
+	counts := map[string]int{}
+	for _, ch := range channels {
+		if ch.Status != common.ChannelStatusEnabled {
+			continue
+		}
+		r := routingRefreshOneBalance(ch)
+		counts[r.Status]++
+		time.Sleep(common.RequestInterval)
+	}
+	common.SysLog(common.LogText("routing balance refresh done: ok=%d unsupported=%d failed=%d", counts["ok"], counts["unsupported"], counts["failed"]))
+	return nil
 }
