@@ -153,3 +153,5 @@ jobs:
           echo '```' >> $GITHUB_STEP_SUMMARY
           docker buildx imagetools inspect ghcr.io/adtyai/adtyai-api:${TAG} >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
+
+# adtyai: ensure workflow registered

@@ -166,3 +166,5 @@ jobs:
             checksums-windows.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+# adtyai: ensure workflow registered

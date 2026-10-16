@@ -172,3 +172,5 @@ jobs:
           echo "---" >> $GITHUB_STEP_SUMMARY
           docker buildx imagetools inspect ghcr.io/adtyai/adtyai-api:${{ needs.prepare.outputs.version }} >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
+
+# adtyai: ensure workflow registered
