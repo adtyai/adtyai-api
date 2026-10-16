@@ -257,7 +257,6 @@ export async function completeOrder(
 // ADTY fixed-tier topup APIs
 // ============================================================================
 
-
 /**
  * GET /api/topup/tiers — fixed tiers, first_topup_bonus_rate, pay_methods
  */
@@ -299,12 +298,9 @@ export async function createAdtyTopupOrder(
 export async function getAdtyTopupOrder(
   orderNo: string
 ): Promise<ApiResponse<AdtyTopupOrder>> {
-  const res = await api.get(
-    `/api/topup/order/${  encodeURIComponent(orderNo)}`,
-    {
-      skipErrorHandler: true,
-      skipBusinessError: true,
-    } as Record<string, unknown>
-  )
+  const res = await api.get(`/api/topup/order/${encodeURIComponent(orderNo)}`, {
+    skipErrorHandler: true,
+    skipBusinessError: true,
+  } as Record<string, unknown>)
   return res.data
 }

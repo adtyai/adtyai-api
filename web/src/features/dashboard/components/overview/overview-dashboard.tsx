@@ -301,7 +301,7 @@ function StartStepItem(props: {
             </span>
             <span className='truncate'>{props.step.title}</span>
             {props.step.completed && (
-              <span className='bg-success/10 text-success ring-success/20 rounded-md px-1.5 py-0.5 text-[11px] font-medium ring-1 ring-inset whitespace-nowrap'>
+              <span className='bg-success/10 text-success ring-success/20 rounded-md px-1.5 py-0.5 text-[11px] font-medium whitespace-nowrap ring-1 ring-inset'>
                 {t('Completed')}
               </span>
             )}
@@ -514,7 +514,7 @@ function QuickActionItem(props: { action: QuickAction }) {
   return (
     <Button
       variant='outline'
-      className='hover:border-primary/40 hover:bg-primary/5 h-auto justify-start rounded-lg border-border/80 px-3 py-3 text-left shadow-none'
+      className='hover:border-primary/40 hover:bg-primary/5 border-border/80 h-auto justify-start rounded-lg px-3 py-3 text-left shadow-none'
       render={<Link to={props.action.to} />}
     >
       <span className='bg-primary/10 text-primary flex size-8 shrink-0 items-center justify-center rounded-lg'>
@@ -791,7 +791,7 @@ export function OverviewDashboard() {
           <div id={setupGuideId} hidden={!setupGuideExpanded}>
             {setupGuideExpanded && (
               <CardStaggerContainer className='grid items-stretch gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]'>
-                <CardStaggerItem className='border-primary/20 from-primary/5 h-full overflow-hidden rounded-2xl border bg-gradient-to-r to-card shadow-[0_1px_2px_rgba(16,24,40,.04)]'>
+                <CardStaggerItem className='border-primary/20 from-primary/5 to-card h-full overflow-hidden rounded-2xl border bg-gradient-to-r shadow-[0_1px_2px_rgba(16,24,40,.04)]'>
                   <div className='relative h-full overflow-hidden p-4 sm:p-5'>
                     <SetupGuideBackdrop />
                     <div className='relative grid gap-5 lg:grid-cols-[minmax(0,1fr)_21rem]'>
@@ -850,7 +850,10 @@ export function OverviewDashboard() {
                         </ol>
 
                         <div className='border-warning/30 bg-warning/10 text-warning-foreground flex flex-wrap items-center gap-2 rounded-xl border px-3 py-2.5 text-xs sm:text-[13px]'>
-                          <Gift className='size-4 shrink-0' aria-hidden='true' />
+                          <Gift
+                            className='size-4 shrink-0'
+                            aria-hidden='true'
+                          />
                           <span className='min-w-0 flex-1'>
                             {t(
                               'After three steps: first top-up gets {{percent}}% bonus (not stacked with tier bonus; higher one applies).',
@@ -877,7 +880,7 @@ export function OverviewDashboard() {
                   </div>
                 </CardStaggerItem>
 
-                <CardStaggerItem className='bg-card h-full rounded-2xl border border-border/80 p-4 shadow-[0_1px_2px_rgba(16,24,40,.04)] sm:p-5'>
+                <CardStaggerItem className='bg-card border-border/80 h-full rounded-2xl border p-4 shadow-[0_1px_2px_rgba(16,24,40,.04)] sm:p-5'>
                   <div className='flex h-full flex-col gap-4'>
                     <div className='flex flex-col gap-1'>
                       <h3 className='text-[15px] font-semibold tracking-tight'>

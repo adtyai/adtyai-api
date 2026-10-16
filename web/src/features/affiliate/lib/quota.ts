@@ -16,7 +16,10 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { formatBillingCurrencyFromUSD, getCurrencyDisplay } from '@/lib/currency'
+import {
+  formatBillingCurrencyFromUSD,
+  getCurrencyDisplay,
+} from '@/lib/currency'
 
 /** Convert aff quota units to USD (quotaPerUnit = 1 USD). */
 export function affQuotaToUsd(quota: number | null | undefined): number {
@@ -46,8 +49,11 @@ export function formatAffUsd(quota: number | null | undefined): string {
 export function formatAffRate(rate: number | null | undefined): string {
   if (rate == null || Number.isNaN(Number(rate))) return '-'
   const pct = Number(rate) * 100
-  const s = pct.toFixed(2).replace(/\.0+$/, '').replace(/(\.[1-9]*)0+$/, '$1')
-  return `${s  }%`
+  const s = pct
+    .toFixed(2)
+    .replace(/\.0+$/, '')
+    .replace(/(\.[1-9]*)0+$/, '$1')
+  return `${s}%`
 }
 
 export function estimateWithdrawFeeQuota(
@@ -63,8 +69,11 @@ export function estimateWithdrawFeeQuota(
 }
 
 export function newWithdrawIdemKey(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+  if (
+    typeof crypto !== 'undefined' &&
+    typeof crypto.randomUUID === 'function'
+  ) {
     return crypto.randomUUID()
   }
-  return `aff-wd-${  Date.now()  }-${  Math.random().toString(36).slice(2, 10)}`
+  return `aff-wd-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 }

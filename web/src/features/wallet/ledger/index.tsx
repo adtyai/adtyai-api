@@ -262,9 +262,7 @@ export function WalletLedgerPage() {
                   >
                     {t('Previous page')}
                   </Button>
-                  <span>
-                    {t('Page {{n}}', { n: page + 1 })}
-                  </span>
+                  <span>{t('Page {{n}}', { n: page + 1 })}</span>
                   <Button
                     type='button'
                     variant='ghost'

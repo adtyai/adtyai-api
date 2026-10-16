@@ -203,6 +203,9 @@ export type WeightPreview = {
   /** Unix seconds expiry from backend. */
   expires_at?: number
   intent?: Record<string, unknown>
+  /** Set when the preview request failed (F-P2-2). */
+  error?: string
+  error_code?: string
 }
 
 export type WeightHistoryEntry = {
@@ -233,5 +236,6 @@ export type DecisionRow = {
 export type ApiEnvelope<T> = {
   success: boolean
   message?: string
+  code?: string
   data?: T
 }

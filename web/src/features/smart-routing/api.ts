@@ -88,10 +88,28 @@ async function softMutate<T>(
     }
     return res.data ?? { success: false, message: 'empty response' }
   } catch (err) {
-    const message =
-      err instanceof Error ? err.message : 'request failed (backend unavailable)'
-    return { success: false, message }
+    return envelopeFromError<T>(err)
   }
+}
+
+/**
+ * F-P2-1: on 4xx/5xx keep the backend's {code,message} instead of axios'
+ * generic "Request failed with status code 400".
+ */
+export function envelopeFromError<T>(err: unknown): ApiEnvelope<T> {
+  const data = (err as { response?: { data?: unknown } })?.response?.data
+  if (data && typeof data === 'object') {
+    const d = data as { message?: unknown; code?: unknown }
+    const code = typeof d.code === 'string' ? d.code : undefined
+    const message =
+      typeof d.message === 'string' && d.message ? d.message : code
+    if (message) {
+      return { success: false, message, code }
+    }
+  }
+  const message =
+    err instanceof Error ? err.message : 'request failed (backend unavailable)'
+  return { success: false, message }
 }
 
 export async function getRoutingConfig(): Promise<RoutingConfig> {
@@ -166,20 +184,16 @@ function normalizeScheme(raw: unknown): WeightScheme | null {
   if (!raw || typeof raw !== 'object') return null
   const row = raw as Record<string, unknown>
   const idVal = row.id
-  const name =
-    typeof row.name === 'string' ? row.name : String(idVal ?? '')
+  const name = typeof row.name === 'string' ? row.name : String(idVal ?? '')
   if (!name && idVal == null) return null
   return {
     id: idVal != null ? String(idVal) : name,
     name: name || String(idVal),
     weights: fromBackendWeights(row.weights),
     note: typeof row.note === 'string' ? row.note : undefined,
-    created_at:
-      typeof row.created_at === 'string' ? row.created_at : undefined,
-    created_by:
-      row.created_by != null ? String(row.created_by) : undefined,
-    is_default:
-      Boolean(row.is_default) || name === 'balanced_default',
+    created_at: typeof row.created_at === 'string' ? row.created_at : undefined,
+    created_by: row.created_by != null ? String(row.created_by) : undefined,
+    is_default: Boolean(row.is_default) || name === 'balanced_default',
   }
 }
 
@@ -195,9 +209,7 @@ export async function getWeightSchemes(): Promise<WeightScheme[]> {
       },
     ]
   }
-  return data
-    .map(normalizeScheme)
-    .filter((s): s is WeightScheme => s != null)
+  return data.map(normalizeScheme).filter((s): s is WeightScheme => s != null)
 }
 
 export async function createWeightScheme(body: {
@@ -233,11 +245,7 @@ export async function updateWeightScheme(
   }
   if (body.preview_token) payload.preview_token = body.preview_token
   if (body.activate) payload.activate = true
-  const res = await softMutate<unknown>(
-    'put',
-    `/weight-schemes/${id}`,
-    payload
-  )
+  const res = await softMutate<unknown>('put', `/weight-schemes/${id}`, payload)
   if (!res.success) {
     return { success: false, message: res.message }
   }
@@ -281,10 +289,8 @@ function mapPreviewItem(row: BackendPreviewRow): WeightPreviewItem {
     model: row.model,
     share_now: Number(row.rw_now ?? row.share_now ?? 0),
     share_new: Number(row.rw_new ?? row.share_new ?? 0),
-    score_now:
-      row.score_now != null ? Number(row.score_now) : undefined,
-    score_new:
-      row.score_new != null ? Number(row.score_new) : undefined,
+    score_now: row.score_now != null ? Number(row.score_now) : undefined,
+    score_new: row.score_new != null ? Number(row.score_new) : undefined,
   }
 }
 
@@ -300,8 +306,7 @@ function normalizePreview(data: unknown): WeightPreview {
       typeof raw.preview_token === 'string' && raw.preview_token
         ? raw.preview_token
         : undefined,
-    expires_at:
-      typeof raw.expires_at === 'number' ? raw.expires_at : undefined,
+    expires_at: typeof raw.expires_at === 'number' ? raw.expires_at : undefined,
     intent: raw.intent,
   }
 }
@@ -328,11 +333,17 @@ export async function previewWeightScheme(body: {
       payload
     )
     if (!res.success || res.data === undefined) {
-      return { items: [] }
+      // F-P2-2: surface failure explicitly (not "no scores yet").
+      return {
+        items: [],
+        error: res.message || 'preview failed',
+        error_code: res.code,
+      }
     }
     return normalizePreview(res.data)
-  } catch {
-    return { items: [] }
+  } catch (err) {
+    const env = envelopeFromError<unknown>(err)
+    return { items: [], error: env.message, error_code: env.code }
   }
 }
 

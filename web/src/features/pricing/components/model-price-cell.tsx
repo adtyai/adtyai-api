@@ -43,7 +43,7 @@ export type ModelPriceCellOptions = {
   selectedGroup?: string
 }
 
-export function ModelPriceCell(props: {
+function ModelPriceCellInner(props: {
   model: PricingModel
   options?: ModelPriceCellOptions
   showExpression?: boolean
@@ -266,4 +266,18 @@ export function ModelPriceCell(props: {
       </span>
     </span>
   )
+}
+
+export function ModelPriceCell(
+  props: Parameters<typeof ModelPriceCellInner>[0]
+) {
+  if (props.model.price_configured === false) {
+    return <UnpricedLabel />
+  }
+  return <ModelPriceCellInner {...props} />
+}
+
+function UnpricedLabel() {
+  const { t } = useTranslation()
+  return <span className='text-muted-foreground text-sm'>{t('Unpriced')}</span>
 }

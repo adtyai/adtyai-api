@@ -4935,6 +4935,7 @@
     "Quota must be a positive number": "Quota must be a positive number",
     "Quota must be zero or greater": "Quota must be zero or greater",
     "Redemption failed, please try again later": "Redemption failed, please try again later",
+    "This redemption code has already been used": "This redemption code has already been used",
     "Redemption quota must be positive": "Redemption quota must be positive",
     "Quota Per Unit": "Quota Per Unit",
     "Quota reminder (tokens)": "Quota reminder (tokens)",
@@ -8253,6 +8254,13 @@
     "Gateway trade number": "Gateway trade number",
     "Trade no. from the payment gateway backend": "Trade no. from the payment gateway backend",
     "Root only. Manual complete credits paid and immediate bonus for a pending order (same path as payment callback). Enter the gateway trade number as evidence; your own orders and orders that never started a payment are rejected.": "Root only. Manual complete credits paid and immediate bonus for a pending order (same path as payment callback). Enter the gateway trade number as evidence; your own orders and orders that never started a payment are rejected.",
-    "Weights must be non-negative and sum to more than 0": "Weights must be non-negative and sum to more than 0"
+    "Weights must be non-negative and sum to more than 0": "Weights must be non-negative and sum to more than 0",
+    "Unpriced": "Unpriced",
+    "Preview expired or does not match this change; preview again": "Preview expired or does not match this change; preview again",
+    "Preview expired or already used; preview again": "Preview expired or already used; preview again",
+    "Nothing to save": "Nothing to save",
+    "Save failed on server": "Save failed on server",
+    "This history snapshot cannot be restored": "This history snapshot cannot be restored",
+    "Preview failed": "Preview failed"
   }
 }

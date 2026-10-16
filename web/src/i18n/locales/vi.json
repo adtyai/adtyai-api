@@ -4933,6 +4933,7 @@
     "Quota must be a positive number": "Hạn mức phải là một số dương",
     "Quota must be zero or greater": "Hạn mức không được âm",
     "Redemption failed, please try again later": "Đổi mã thất bại, vui lòng thử lại sau",
+    "This redemption code has already been used": "Mã đổi thưởng này đã được sử dụng",
     "Redemption quota must be positive": "Hạn mức của mã đổi thưởng phải là số dương",
     "Quota Per Unit": "Định mức mỗi đơn vị",
     "Quota reminder (tokens)": "Nhắc nhở hạn mức (token)",
@@ -7317,6 +7318,7 @@
     "Order created. Payment checkout will open once the channel is ready.": "Đã tạo đơn. Cổng thanh toán sẽ mở khi kênh sẵn sàng.",
     "Bonus can be used for API calls, cannot be withdrawn, and does not earn affiliate commission. Spend bonus balance before paid balance.": "Thưởng dùng gọi API, không rút, không hoa hồng. Tiêu thưởng trước số đã nạp.",
     "Redemption code": "Mã đổi",
-    "Redemption face value is credited as bonus": "Mệnh giá mã được cộng vào thưởng"
+    "Redemption face value is credited as bonus": "Mệnh giá mã được cộng vào thưởng",
+    "Unpriced": "Chưa định giá"
   }
 }

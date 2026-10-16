@@ -78,7 +78,6 @@ describe('adty-topup helpers', () => {
   })
 })
 
-
 describe('USDT checkout helpers', () => {
   it('formats countdown as M:SS', () => {
     expect(formatCountdown(0)).toBe('0:00')
@@ -125,8 +124,8 @@ describe('USDT checkout helpers', () => {
   })
 
   it('fails only when neither usdt nor pay_url', () => {
-    expect(
-      resolveAdtyCheckoutLaunch({ order: { order_no: 'TP3' } }).kind
-    ).toBe('fail')
+    expect(resolveAdtyCheckoutLaunch({ order: { order_no: 'TP3' } }).kind).toBe(
+      'fail'
+    )
   })
 })

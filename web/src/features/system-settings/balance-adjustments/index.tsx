@@ -273,7 +273,7 @@ export function BalanceAdjustmentsSettings() {
                             <span className='text-muted-foreground line-clamp-2 text-xs'>
                               {row.reason || '-'}
                               {row.reject_reason
-                                ? ` · ${  row.reject_reason}`
+                                ? ` · ${row.reject_reason}`
                                 : ''}
                             </span>
                           </TableCell>

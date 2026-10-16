@@ -143,13 +143,14 @@ describe('format helpers', () => {
   })
 
   it('paymentLabel', () => {
-    expect(paymentLabel({ payment_method: 'alipay', payment_provider: 'epay' })).toBe(
-      'Alipay / Epay'
-    )
+    expect(
+      paymentLabel({ payment_method: 'alipay', payment_provider: 'epay' })
+    ).toBe('Alipay / Epay')
     expect(paymentLabel({ payment_method: 'usdt' })).toBe('USDT')
     expect(
-      paymentLabel({ payment_method: 'wxpay', payment_provider: 'epay' }, (k) =>
-        ({ 'WeChat Pay': '微信支付', Epay: '易支付' })[k] ?? k
+      paymentLabel(
+        { payment_method: 'wxpay', payment_provider: 'epay' },
+        (k) => ({ 'WeChat Pay': '微信支付', Epay: '易支付' })[k] ?? k
       )
     ).toBe('微信支付 / 易支付')
     expect(

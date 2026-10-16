@@ -70,9 +70,7 @@ export function DataTableColumnHeader<TData, TValue>({
           {column.getIsSorted() === 'asc' && (
             <ArrowUpIcon className='ms-2 h-4 w-4' />
           )}
-          {!column.getIsSorted() && (
-            <CaretSortIcon className='ms-2 h-4 w-4' />
-          )}
+          {!column.getIsSorted() && <CaretSortIcon className='ms-2 h-4 w-4' />}
         </DropdownMenuTrigger>
         <DropdownMenuContent align='start'>
           <DropdownMenuItem onClick={() => column.toggleSorting(false)}>

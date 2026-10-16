@@ -46,7 +46,14 @@ export function AffiliateCenterPage() {
     <SectionPageLayout>
       <SectionPageLayout.Title>{t('Invite & rewards')}</SectionPageLayout.Title>
       <SectionPageLayout.Actions>
-        <Button variant='outline' size='sm' className='h-8' render={<Link to='/affiliate/withdraw' />}>{t('Commissions & withdraw')}</Button>
+        <Button
+          variant='outline'
+          size='sm'
+          className='h-8'
+          render={<Link to='/affiliate/withdraw' />}
+        >
+          {t('Commissions & withdraw')}
+        </Button>
         <Button
           type='button'
           variant='outline'
@@ -65,7 +72,6 @@ export function AffiliateCenterPage() {
               'Invite friends to register. You earn commission on their paid top-ups (gift amounts excluded).'
             )}
           </p>
-
 
           {self.isLoading ? (
             <div className='text-muted-foreground flex min-h-40 items-center justify-center text-sm'>
@@ -86,20 +92,16 @@ export function AffiliateCenterPage() {
                 {(
                   [
                     [t('Invites'), String(data.aff_count ?? 0), null],
-                    [
-                      t('Total earned'),
-                      formatAffUsd(data.aff_history),
-                      null,
-                    ],
+                    [t('Total earned'), formatAffUsd(data.aff_history), null],
                     [
                       t('Available to withdraw'),
                       formatAffUsd(data.aff_quota),
-                      `${t('Frozen')  } ${  formatAffUsd(data.frozen_quota)}`,
+                      `${t('Frozen')} ${formatAffUsd(data.frozen_quota)}`,
                     ],
                     [
                       t('Top-up commission rate'),
                       formatAffRate(data.topup_rate),
-                      `${t('Freeze days')  }: ${  String(data.freeze_days ?? 0)}`,
+                      `${t('Freeze days')}: ${String(data.freeze_days ?? 0)}`,
                     ],
                   ] as [string, string, string | null][]
                 ).map(([label, value, sub]) => (
@@ -195,11 +197,11 @@ export function AffiliateCenterPage() {
                         ],
                         [
                           t('Freeze period'),
-                          `${String(data.freeze_days ?? 0)  } ${  t('days')}`,
+                          `${String(data.freeze_days ?? 0)} ${t('days')}`,
                         ],
                         [
                           t('Minimum withdraw'),
-                          `$${  Number(data.min_withdraw_usd || 0).toFixed(2)}`,
+                          `$${Number(data.min_withdraw_usd || 0).toFixed(2)}`,
                         ],
                         [
                           t('Withdraw fee rate'),

@@ -4933,6 +4933,7 @@
     "Quota must be a positive number": "Квота должна быть положительным числом",
     "Quota must be zero or greater": "Квота не может быть отрицательной",
     "Redemption failed, please try again later": "Не удалось активировать код, повторите попытку позже",
+    "This redemption code has already been used": "Этот код уже был использован",
     "Redemption quota must be positive": "Квота кода активации должна быть положительной",
     "Quota Per Unit": "Квота на единицу",
     "Quota reminder (tokens)": "Напоминание о квоте (токены)",
@@ -7317,6 +7318,7 @@
     "Order created. Payment checkout will open once the channel is ready.": "Заказ создан. Окно оплаты откроется, когда канал будет готов.",
     "Bonus can be used for API calls, cannot be withdrawn, and does not earn affiliate commission. Spend bonus balance before paid balance.": "Бонус для API, без вывода и без реферальных. Сначала списывается бонус.",
     "Redemption code": "Код обмена",
-    "Redemption face value is credited as bonus": "Номинал кода зачисляется как бонус"
+    "Redemption face value is credited as bonus": "Номинал кода зачисляется как бонус",
+    "Unpriced": "Цена не задана"
   }
 }

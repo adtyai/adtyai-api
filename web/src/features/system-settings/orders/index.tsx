@@ -498,7 +498,10 @@ function OrderDetailBody({
         label={t('Already refunded')}
         value={formatUsd(selected.refunded_amount)}
       />
-      <DetailRow label={t('Payment method')} value={paymentLabel(selected, t)} />
+      <DetailRow
+        label={t('Payment method')}
+        value={paymentLabel(selected, t)}
+      />
       <DetailRow
         label={t('Provider trade no')}
         value={selected.provider_trade_no || '—'}

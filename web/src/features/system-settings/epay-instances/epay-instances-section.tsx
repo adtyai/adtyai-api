@@ -31,7 +31,6 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-
 import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -56,9 +55,7 @@ export function EpayInstancesSection() {
   const { t } = useTranslation()
   const list = useEpayInstances()
   // Audit P0-2: payee account writes are root-only; admins get read-only view.
-  const isRoot = useAuthStore(
-    (s) => s.auth.user?.role === ROLE.SUPER_ADMIN
-  )
+  const isRoot = useAuthStore((s) => s.auth.user?.role === ROLE.SUPER_ADMIN)
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<EpayInstanceView | null>(null)
   const [actionRow, setActionRow] = useState<EpayInstanceView | null>(null)
@@ -67,8 +64,7 @@ export function EpayInstancesSection() {
   const data = list.data
   const rows = data ?? []
   const primary = useMemo(() => primaryInstance(data ?? []), [data])
-  const isForbidden =
-    (list.error as { status?: number } | null)?.status === 403
+  const isForbidden = (list.error as { status?: number } | null)?.status === 403
 
   return (
     <SettingsSection title={t('Epay instances')}>
@@ -245,61 +241,61 @@ export function EpayInstancesSection() {
                       </TableCell>
                       <TableCell>
                         {isRoot ? (
-                        <div className='flex flex-wrap items-center gap-1.5'>
-                          {!row.is_primary && row.status === 'enabled' ? (
-                            <Button
-                              type='button'
-                              variant='outline'
-                              size='sm'
-                              className='h-7 px-2.5 text-xs'
-                              onClick={() => {
-                                setActionRow(row)
-                                setAction('set-primary')
-                              }}
-                            >
-                              {t('Set as primary')}
-                            </Button>
-                          ) : null}
-                          {row.status === 'enabled' ? (
+                          <div className='flex flex-wrap items-center gap-1.5'>
+                            {!row.is_primary && row.status === 'enabled' ? (
+                              <Button
+                                type='button'
+                                variant='outline'
+                                size='sm'
+                                className='h-7 px-2.5 text-xs'
+                                onClick={() => {
+                                  setActionRow(row)
+                                  setAction('set-primary')
+                                }}
+                              >
+                                {t('Set as primary')}
+                              </Button>
+                            ) : null}
+                            {row.status === 'enabled' ? (
+                              <Button
+                                type='button'
+                                variant='ghost'
+                                size='sm'
+                                className='h-7 px-2.5 text-xs'
+                                onClick={() => {
+                                  setActionRow(row)
+                                  setAction('disable')
+                                }}
+                              >
+                                {t('Disable')}
+                              </Button>
+                            ) : (
+                              <Button
+                                type='button'
+                                variant='outline'
+                                size='sm'
+                                className='h-7 px-2.5 text-xs'
+                                onClick={() => {
+                                  setActionRow(row)
+                                  setAction('enable')
+                                }}
+                              >
+                                {t('Enable')}
+                              </Button>
+                            )}
                             <Button
                               type='button'
                               variant='ghost'
                               size='sm'
                               className='h-7 px-2.5 text-xs'
                               onClick={() => {
-                                setActionRow(row)
-                                setAction('disable')
+                                setEditing(row)
+                                setFormOpen(true)
                               }}
                             >
-                              {t('Disable')}
+                              {t('Edit')}
                             </Button>
-                          ) : (
-                            <Button
-                              type='button'
-                              variant='outline'
-                              size='sm'
-                              className='h-7 px-2.5 text-xs'
-                              onClick={() => {
-                                setActionRow(row)
-                                setAction('enable')
-                              }}
-                            >
-                              {t('Enable')}
-                            </Button>
-                          )}
-                          <Button
-                            type='button'
-                            variant='ghost'
-                            size='sm'
-                            className='h-7 px-2.5 text-xs'
-                            onClick={() => {
-                              setEditing(row)
-                              setFormOpen(true)
-                            }}
-                          >
-                            {t('Edit')}
-                          </Button>
-                        </div>
+                          </div>
                         ) : (
                           <span className='text-muted-foreground text-xs'>
                             {t('Root only')}

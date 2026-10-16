@@ -119,10 +119,9 @@ export function AffiliateWithdrawPage() {
     }
     if (amountNum + 1e-9 < Number(data.min_withdraw_usd || 0)) {
       setLocalError(
-        `${t('Below minimum withdraw') 
-          } ($${ 
-          Number(data.min_withdraw_usd).toFixed(2) 
-          })`
+        `${t('Below minimum withdraw')} ($${Number(
+          data.min_withdraw_usd
+        ).toFixed(2)})`
       )
       return
     }
@@ -264,58 +263,59 @@ export function AffiliateWithdrawPage() {
                     ) : null}
                     {!commissions.isLoading &&
                       (filteredCommissions.length === 0 ? (
-                      <TableRow>
-                        <TableCell
-                          colSpan={7}
-                          className='text-muted-foreground h-20 text-center text-sm'
-                        >
-                          {t('No commissions')}
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      filteredCommissions.map((row) => (
-                        <TableRow key={row.id}>
-                          <TableCell className='text-xs whitespace-nowrap'>
-                            {row.created_at
-                              ? new Date(row.created_at).toLocaleString()
-                              : '-'}
-                          </TableCell>
-                          <TableCell>{row.invitee_id}</TableCell>
-                          <TableCell>
-                            <span className='font-mono text-[12px]'>
-                              {row.source} {row.order_no}
-                            </span>
-                          </TableCell>
-                          <TableCell>
-                            ${Number(row.paid_amount_usd || 0).toFixed(2)}
-                          </TableCell>
-                          <TableCell>
-                            {formatAffRate(row.rate_snapshot)}
-                          </TableCell>
-                          <TableCell className='font-semibold'>
-                            {formatAffUsd(row.commission_quota)}
-                          </TableCell>
-                          <TableCell>
-                            <span
-                              className={cn(
-                                'inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px] font-medium ring-1 ring-inset',
-                                statusTone(row.status)
-                              )}
-                            >
-                              {t(
-                                commissionStatusLabel(
-                                  row.status as AffCommissionStatus
-                                )
-                              )}
-                              {row.status === 'frozen' && row.unfreeze_at
-                                ? ` · ${ 
-                                  new Date(row.unfreeze_at).toLocaleDateString()}`
-                                : ''}
-                            </span>
+                        <TableRow>
+                          <TableCell
+                            colSpan={7}
+                            className='text-muted-foreground h-20 text-center text-sm'
+                          >
+                            {t('No commissions')}
                           </TableCell>
                         </TableRow>
-                      ))
-                    ))}
+                      ) : (
+                        filteredCommissions.map((row) => (
+                          <TableRow key={row.id}>
+                            <TableCell className='text-xs whitespace-nowrap'>
+                              {row.created_at
+                                ? new Date(row.created_at).toLocaleString()
+                                : '-'}
+                            </TableCell>
+                            <TableCell>{row.invitee_id}</TableCell>
+                            <TableCell>
+                              <span className='font-mono text-[12px]'>
+                                {row.source} {row.order_no}
+                              </span>
+                            </TableCell>
+                            <TableCell>
+                              ${Number(row.paid_amount_usd || 0).toFixed(2)}
+                            </TableCell>
+                            <TableCell>
+                              {formatAffRate(row.rate_snapshot)}
+                            </TableCell>
+                            <TableCell className='font-semibold'>
+                              {formatAffUsd(row.commission_quota)}
+                            </TableCell>
+                            <TableCell>
+                              <span
+                                className={cn(
+                                  'inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px] font-medium ring-1 ring-inset',
+                                  statusTone(row.status)
+                                )}
+                              >
+                                {t(
+                                  commissionStatusLabel(
+                                    row.status as AffCommissionStatus
+                                  )
+                                )}
+                                {row.status === 'frozen' && row.unfreeze_at
+                                  ? ` · ${new Date(
+                                      row.unfreeze_at
+                                    ).toLocaleDateString()}`
+                                  : ''}
+                              </span>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      ))}
                   </TableBody>
                 </Table>
               </section>

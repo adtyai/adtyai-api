@@ -80,9 +80,7 @@ function dualWindow(row: ChannelScoreRow): string {
 export function ScoresPage(props: ScoresPageProps) {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const isRoot = useAuthStore(
-    (s) => s.auth.user?.role === ROLE.SUPER_ADMIN
-  )
+  const isRoot = useAuthStore((s) => s.auth.user?.role === ROLE.SUPER_ADMIN)
   const [model, setModel] = useState('')
   const scoresQuery = useScores(model.trim() || undefined)
   const stagesQuery = useBreakerStages()
@@ -113,7 +111,9 @@ export function ScoresPage(props: ScoresPageProps) {
     <div className='flex h-full min-h-0 flex-col gap-4 overflow-auto pb-4'>
       <div className='flex flex-wrap items-end gap-2'>
         <div className='flex flex-col gap-1'>
-          <span className='text-muted-foreground text-xs'>{t('Filter by model')}</span>
+          <span className='text-muted-foreground text-xs'>
+            {t('Filter by model')}
+          </span>
           <Input
             className='max-w-xs'
             placeholder={t('Model name (optional)')}
@@ -142,7 +142,9 @@ export function ScoresPage(props: ScoresPageProps) {
           title={t('No score rows')}
           description={
             channelFilter
-              ? t('No rows for this channel filter. Clear the filter to see all.')
+              ? t(
+                  'No rows for this channel filter. Clear the filter to see all.'
+                )
               : t(
                   'Scores appear after real traffic. Columns stay ready for backend /scores.'
                 )
@@ -197,19 +199,19 @@ export function ScoresPage(props: ScoresPageProps) {
                         isNew={row.is_new}
                       />
                     </TableCell>
-                    <TableCell className='tabular-nums text-xs'>
+                    <TableCell className='text-xs tabular-nums'>
                       {dim(row, 'connectivity', 's_conn')}
                     </TableCell>
-                    <TableCell className='tabular-nums text-xs'>
+                    <TableCell className='text-xs tabular-nums'>
                       {dim(row, 'price', 's_price')}
                     </TableCell>
-                    <TableCell className='tabular-nums text-xs'>
+                    <TableCell className='text-xs tabular-nums'>
                       {dim(row, 'speed', 's_speed')}
                     </TableCell>
-                    <TableCell className='tabular-nums text-xs'>
+                    <TableCell className='text-xs tabular-nums'>
                       {dim(row, 'stability', 's_stab')}
                     </TableCell>
-                    <TableCell className='tabular-nums text-xs'>
+                    <TableCell className='text-xs tabular-nums'>
                       {dim(row, 'authenticity', 's_auth')}
                     </TableCell>
                     <TableCell className='text-muted-foreground text-xs'>
@@ -231,13 +233,13 @@ export function ScoresPage(props: ScoresPageProps) {
                         showInflight
                       />
                     </TableCell>
-                    <TableCell className='tabular-nums text-xs'>
+                    <TableCell className='text-xs tabular-nums'>
                       <RatioRateCell
                         missing={row.missing_cost}
                         value={row.cost_ratio_rate}
                       />
                     </TableCell>
-                    <TableCell className='tabular-nums text-xs'>
+                    <TableCell className='text-xs tabular-nums'>
                       <LiveEstimateCell value={row.cost_live_30m} />
                     </TableCell>
                     <TableCell className='tabular-nums'>

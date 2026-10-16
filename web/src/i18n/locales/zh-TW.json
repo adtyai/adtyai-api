@@ -4933,6 +4933,7 @@
     "Quota must be a positive number": "配額必須是正數",
     "Quota must be zero or greater": "額度不能為負數",
     "Redemption failed, please try again later": "兌換失敗，請稍後再試",
+    "This redemption code has already been used": "該兌換碼已被使用",
     "Redemption quota must be positive": "兌換碼額度必須大於 0",
     "Quota Per Unit": "每單位配額",
     "Quota reminder (tokens)": "配額提醒（token）",
@@ -7357,6 +7358,7 @@
     "Enable or disable only via Enable / Disable on the list (requires a second confirmation). Do not PUT enabled.": "啟用或停用請用列表上的「啟用 / 停用」按鈕。",
     "Dual-admin balance adjustment approvals. Create pending requests; approve executes AdjustQuota; reject leaves balances unchanged. All decisions require a second confirmation.": "餘額調整需雙人審批：新建後為待審批，批准時立即調整餘額，駁回不動餘額。",
     "Enterprise agreement pricing. Match priority: group+model > model only > group only > all. Applied as group ratio × discount. Create / update / delete require a second confirmation.": "企業協議價。匹配優先級：分組+模型 > 僅模型 > 僅分組 > 全部。生效為分組倍率×折扣。",
-    "Second confirmation is required": "需要確認"
+    "Second confirmation is required": "需要確認",
+    "Unpriced": "未定價"
   }
 }

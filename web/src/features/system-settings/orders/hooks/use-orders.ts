@@ -19,11 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
-import {
-  completeAdminOrder,
-  getAdminOrder,
-  listAdminOrders,
-} from '../api'
+import { completeAdminOrder, getAdminOrder, listAdminOrders } from '../api'
 import type { AdminOrdersListParams } from '../types'
 
 export const ADMIN_ORDERS_QUERY_KEY = ['admin-topup-orders'] as const

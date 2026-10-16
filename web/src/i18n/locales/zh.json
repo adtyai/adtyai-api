@@ -4935,6 +4935,7 @@
     "Quota must be a positive number": "配额必须是正数",
     "Quota must be zero or greater": "额度不能为负数",
     "Redemption failed, please try again later": "兑换失败，请稍后重试",
+    "This redemption code has already been used": "该兑换码已被使用",
     "Redemption quota must be positive": "兑换码额度必须大于 0",
     "Quota Per Unit": "每单位配额",
     "Quota reminder (tokens)": "配额提醒（token）",
@@ -8253,6 +8254,13 @@
     "Gateway trade number": "网关交易号",
     "Trade no. from the payment gateway backend": "支付网关后台的交易号",
     "Root only. Manual complete credits paid and immediate bonus for a pending order (same path as payment callback). Enter the gateway trade number as evidence; your own orders and orders that never started a payment are rejected.": "仅 root 可操作。手动补单会为待支付订单入账实充与即时赠送（与支付回调同一路径）。须填写网关交易号作为凭证；自己的订单、从未拉起支付的订单会被拒绝。",
-    "Weights must be non-negative and sum to more than 0": "权重须为非负数且合计大于 0"
+    "Weights must be non-negative and sum to more than 0": "权重须为非负数且合计大于 0",
+    "Unpriced": "未定价",
+    "Preview expired or does not match this change; preview again": "预览已过期或与本次改动不一致，请重新预览",
+    "Preview expired or already used; preview again": "预览已过期或已使用，请重新预览",
+    "Nothing to save": "没有可保存的改动",
+    "Save failed on server": "服务端保存失败",
+    "This history snapshot cannot be restored": "该历史快照无法恢复",
+    "Preview failed": "预览失败"
   }
 }

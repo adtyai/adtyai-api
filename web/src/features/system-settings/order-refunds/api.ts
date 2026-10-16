@@ -27,7 +27,7 @@ const okish = (s: number) =>
 export async function getTopupOrderByNo(orderNo: string): Promise<TopupOrder> {
   const no = orderNo.trim()
   const res = await api.get<OrderOneResponse>(
-    `/api/topup/order/${  encodeURIComponent(no)}`,
+    `/api/topup/order/${encodeURIComponent(no)}`,
     {
       validateStatus: (s) => (s >= 200 && s < 300) || s === 403 || s === 404,
     }
@@ -66,7 +66,7 @@ export async function adminRefundTopupOrder(
   }
 ): Promise<RefundOneResponse> {
   const res = await api.post<RefundOneResponse>(
-    `/api/admin/orders/${  encodeURIComponent(orderNo.trim())  }/refund`,
+    `/api/admin/orders/${encodeURIComponent(orderNo.trim())}/refund`,
     body,
     { validateStatus: okish }
   )

@@ -33,7 +33,7 @@ import { formatPrice, stripTrailingZeros } from '../lib/price'
 import type { PricingModel } from '../types'
 import type { ModelPriceCellOptions } from './model-price-cell'
 
-export function CachedPriceCell(props: {
+function CachedPriceCellInner(props: {
   model: PricingModel
   options: ModelPriceCellOptions
 }) {
@@ -148,4 +148,18 @@ export function CachedPriceCell(props: {
       </div>
     </div>
   )
+}
+
+export function CachedPriceCell(
+  props: Parameters<typeof CachedPriceCellInner>[0]
+) {
+  if (props.model.price_configured === false) {
+    return <UnpricedLabel />
+  }
+  return <CachedPriceCellInner {...props} />
+}
+
+function UnpricedLabel() {
+  const { t } = useTranslation()
+  return <span className='text-muted-foreground text-sm'>{t('Unpriced')}</span>
 }

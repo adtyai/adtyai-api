@@ -17,13 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { AlertTriangle, Clock, Copy, ExternalLink, Loader2 } from 'lucide-react'
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -73,7 +67,9 @@ export function AdtyUsdtCashierDialog({
 
   const orderNo =
     (order?.order_no as string | undefined) ||
-    (typeof order?.['order_no'] === 'string' ? (order['order_no'] as string) : '')
+    (typeof order?.['order_no'] === 'string'
+      ? (order['order_no'] as string)
+      : '')
 
   const amountStr = usdt ? formatUsdtPayAmount(usdt) : ''
   const expireAt = usdt?.expire_at ?? 0
@@ -105,7 +101,11 @@ export function AdtyUsdtCashierDialog({
   // Poll order status
   useEffect(() => {
     if (!open || !orderNo || !usdt) return
-    if (pollStatus === 'paid' || pollStatus === 'failed' || pollStatus === 'need_manual') {
+    if (
+      pollStatus === 'paid' ||
+      pollStatus === 'failed' ||
+      pollStatus === 'need_manual'
+    ) {
       return
     }
     if (expired) {
@@ -150,7 +150,9 @@ export function AdtyUsdtCashierDialog({
         }
         if (status === 'failed') {
           stopPoll()
-          toast.error(t('USDT payment failed or expired. Do not transfer again.'))
+          toast.error(
+            t('USDT payment failed or expired. Do not transfer again.')
+          )
           return
         }
       } catch {
@@ -210,7 +212,9 @@ export function AdtyUsdtCashierDialog({
       title={t('USDT Payment')}
       description={
         orderNo
-          ? t('Order {{no}} · confirmed on-chain automatically', { no: orderNo })
+          ? t('Order {{no}} · confirmed on-chain automatically', {
+              no: orderNo,
+            })
           : t('Transfer the exact USDT amount on TRON TRC20')
       }
       contentClassName='sm:max-w-lg'
@@ -318,7 +322,9 @@ export function AdtyUsdtCashierDialog({
               ) : (
                 <>
                   {t('Time remaining')}{' '}
-                  <b className='font-mono text-lg'>{formatCountdown(remaining)}</b>
+                  <b className='font-mono text-lg'>
+                    {formatCountdown(remaining)}
+                  </b>
                   {t(', do not transfer after timeout')}
                 </>
               )}
@@ -364,7 +370,7 @@ function InfoRow({
   mono?: boolean
 }) {
   return (
-    <div className='flex justify-between gap-3 border-b border-dashed border-border/80 pb-2'>
+    <div className='border-border/80 flex justify-between gap-3 border-b border-dashed pb-2'>
       <span className='text-muted-foreground shrink-0'>{label}</span>
       <span
         className={cn(

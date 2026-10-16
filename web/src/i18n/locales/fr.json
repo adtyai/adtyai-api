@@ -4933,6 +4933,7 @@
     "Quota must be a positive number": "Le quota doit être un nombre positif",
     "Quota must be zero or greater": "Le quota ne peut pas être négatif",
     "Redemption failed, please try again later": "Échec de l’échange, veuillez réessayer plus tard",
+    "This redemption code has already been used": "Ce code d’échange a déjà été utilisé",
     "Redemption quota must be positive": "Le quota du code d'échange doit être positif",
     "Quota Per Unit": "Quota par unité",
     "Quota reminder (tokens)": "Rappel de quota (jetons)",
@@ -7317,6 +7318,7 @@
     "Order created. Payment checkout will open once the channel is ready.": "Commande créée. Le paiement s’ouvrira quand le canal sera prêt.",
     "Bonus can be used for API calls, cannot be withdrawn, and does not earn affiliate commission. Spend bonus balance before paid balance.": "Le bonus sert aux appels API, non retirable, hors affiliation. Le bonus est débité en premier.",
     "Redemption code": "Code d’échange",
-    "Redemption face value is credited as bonus": "La valeur du code est créditée en bonus"
+    "Redemption face value is credited as bonus": "La valeur du code est créditée en bonus",
+    "Unpriced": "Prix non défini"
   }
 }

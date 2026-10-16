@@ -52,8 +52,7 @@ const RANK_PALETTE: Record<number, string> = {
 function RankBadge(props: { rank: number }) {
   const rank = props.rank
   const isPodium = rank <= 3
-  const palette =
-    RANK_PALETTE[rank] ?? 'bg-muted text-muted-foreground'
+  const palette = RANK_PALETTE[rank] ?? 'bg-muted text-muted-foreground'
   return (
     <span
       className={cn(

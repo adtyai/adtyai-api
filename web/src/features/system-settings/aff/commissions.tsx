@@ -189,7 +189,7 @@ export function AffCommissionsSettings() {
                           </span>
                         </TableCell>
                         <TableCell>
-                          {`$${  Number(row.paid_amount_usd || 0).toFixed(2)}`}
+                          {`$${Number(row.paid_amount_usd || 0).toFixed(2)}`}
                         </TableCell>
                         <TableCell>
                           {formatAffRate(row.rate_snapshot)}

@@ -340,7 +340,13 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
             </span>
           )}
           <div className='grid grid-cols-[repeat(auto-fit,minmax(88px,1fr))] gap-x-3 gap-y-2'>
-            {priceSummary}
+            {props.model.price_configured === false ? (
+              <span className='text-muted-foreground col-span-full text-sm'>
+                {t('Unpriced')}
+              </span>
+            ) : (
+              priceSummary
+            )}
           </div>
         </div>
         {(groups.length > 0 || endpoints.length > 0) && (

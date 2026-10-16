@@ -20,7 +20,9 @@ For commercial licensing, please contact support@quantumnous.com
 import type { TopupOrder } from '../types'
 
 /** Order credit base used for refund hint (prefer credit_amount_usd). */
-export function orderCreditUsd(order: Pick<TopupOrder, 'credit_amount_usd' | 'paid_amount_usd'>): number {
+export function orderCreditUsd(
+  order: Pick<TopupOrder, 'credit_amount_usd' | 'paid_amount_usd'>
+): number {
   const credit = Number(order.credit_amount_usd)
   if (Number.isFinite(credit) && credit > 0) return credit
   const paid = Number(order.paid_amount_usd)
@@ -43,10 +45,13 @@ export function canRefundOrder(order: TopupOrder | null | undefined): boolean {
 }
 
 export function newRefundRequestId(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+  if (
+    typeof crypto !== 'undefined' &&
+    typeof crypto.randomUUID === 'function'
+  ) {
     return crypto.randomUUID()
   }
-  return `refund-${  Date.now()  }-${  Math.random().toString(36).slice(2, 10)}`
+  return `refund-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 }
 
 export function refundErrorMessage(

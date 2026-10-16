@@ -4933,6 +4933,7 @@
     "Quota must be a positive number": "クォータは正の数である必要があります",
     "Quota must be zero or greater": "クォータは負の値にできません",
     "Redemption failed, please try again later": "引き換えに失敗しました。しばらくしてから再試行してください",
+    "This redemption code has already been used": "この引き換えコードは既に使用されています",
     "Redemption quota must be positive": "引き換えコードのクォータは正の値にしてください",
     "Quota Per Unit": "ユニットあたりのクォータ",
     "Quota reminder (tokens)": "クォータリマインダー (トークン)",
@@ -7317,6 +7318,7 @@
     "Order created. Payment checkout will open once the channel is ready.": "注文を作成しました。チャネル準備後に決済画面を開きます。",
     "Bonus can be used for API calls, cannot be withdrawn, and does not earn affiliate commission. Spend bonus balance before paid balance.": "ボーナスは API 利用に使え、出金不可・紹介報酬対象外。消費時はボーナス優先です。",
     "Redemption code": "交換コード",
-    "Redemption face value is credited as bonus": "交換コード額面はボーナスに加算"
+    "Redemption face value is credited as bonus": "交換コード額面はボーナスに加算",
+    "Unpriced": "未設定"
   }
 }

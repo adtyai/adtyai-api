@@ -69,6 +69,8 @@ export type PricingModel = {
   model_ratio: number
   completion_ratio: number
   model_price?: number
+  /** N-P2-17: false = no fixed price / ratio configured (backend shows fallback). */
+  price_configured?: boolean
   cache_ratio?: number | null
   create_cache_ratio?: number | null
   image_ratio?: number | null

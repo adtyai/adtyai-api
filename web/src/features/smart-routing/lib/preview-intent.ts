@@ -19,7 +19,10 @@ export function previewIntentFor(opts: {
   currentWeights?: ScoreWeights
   nextWeights: ScoreWeights
   schemeName?: string
-}): { kind: 'update_weights' | 'activate_scheme' | 'put_config'; scheme_name?: string } {
+}): {
+  kind: 'update_weights' | 'activate_scheme' | 'put_config'
+  scheme_name?: string
+} {
   const active = opts.activeScheme || undefined
   const schemeChanging = Boolean(opts.schemeName && opts.schemeName !== active)
   const weightsChanging = !sameWeights(opts.nextWeights, opts.currentWeights)

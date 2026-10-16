@@ -122,11 +122,9 @@ export function ConfirmBalanceAdjustDialog({
           return
         }
         toast.success(
-          `${t('Approved') 
-            } · ${ 
-            formatAdjustUsd(res.data.balance_before) 
-            } → ${ 
-            formatAdjustUsd(res.data.balance_after)}`
+          `${t('Approved')} · ${formatAdjustUsd(
+            res.data.balance_before
+          )} → ${formatAdjustUsd(res.data.balance_after)}`
         )
         onOpenChange(false)
         onDone?.(res.data)
@@ -239,7 +237,7 @@ export function ConfirmBalanceAdjustDialog({
                 value={selfReason}
                 onChange={(e) => {
                   setSelfReason(e.target.value)
-                            }}
+                }}
                 rows={2}
                 disabled={busy}
                 placeholder={t('Required for sole-admin self-approve')}
@@ -255,14 +253,13 @@ export function ConfirmBalanceAdjustDialog({
                 value={rejectReason}
                 onChange={(e) => {
                   setRejectReason(e.target.value)
-                            }}
+                }}
                 rows={2}
                 disabled={busy}
                 placeholder={t('Reject reason is required')}
               />
             </div>
           ) : null}
-
 
           {localError ? (
             <div className='text-destructive border-destructive/30 bg-destructive/5 rounded-lg border px-3 py-2 text-xs'>

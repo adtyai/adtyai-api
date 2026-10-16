@@ -61,8 +61,6 @@ import {
   WEIGHT_DIM_KEYS,
   WEIGHT_DIM_LABEL_KEYS,
 } from '../constants'
-import { previewIntentFor, validWeights } from '../lib/preview-intent'
-import { fromBackendWeights } from '../lib/weight-map'
 import {
   ROUTING_CONFIG_QUERY_KEY,
   usePutRoutingConfig,
@@ -72,6 +70,9 @@ import {
   WEIGHT_HISTORY_QUERY_KEY,
   WEIGHT_SCHEMES_QUERY_KEY,
 } from '../hooks/use-routing-config'
+import { routingErrorText } from '../lib/error-text'
+import { previewIntentFor, validWeights } from '../lib/preview-intent'
+import { fromBackendWeights } from '../lib/weight-map'
 import type {
   ScoreWeights,
   SimulateResult,
@@ -81,9 +82,7 @@ import type {
 
 export function StrategyPage() {
   const { t } = useTranslation()
-  const isRoot = useAuthStore(
-    (s) => s.auth.user?.role === ROLE.SUPER_ADMIN
-  )
+  const isRoot = useAuthStore((s) => s.auth.user?.role === ROLE.SUPER_ADMIN)
   const configQuery = useRoutingConfig()
   const schemesQuery = useWeightSchemes()
   const historyQuery = useWeightHistory()
@@ -131,7 +130,7 @@ export function StrategyPage() {
     },
     onSuccess: (res) => {
       if (!res.success) {
-        toast.error(res.message || t('Save failed'))
+        toast.error(routingErrorText(t, res, t('Save failed')))
         return
       }
       toast.success(t('Scheme saved'))
@@ -204,7 +203,7 @@ export function StrategyPage() {
       setPreviewOpen(false)
       clearPendingPreview()
       if (!res.success) {
-        toast.error(res.message || t('Rollback failed'))
+        toast.error(routingErrorText(t, res, t('Rollback failed')))
         return
       }
       toast.success(t('Rolled back'))
@@ -231,7 +230,7 @@ export function StrategyPage() {
     setPreviewOpen(false)
     clearPendingPreview()
     if (!res.success) {
-      toast.error(res.message || t('Save failed'))
+      toast.error(routingErrorText(t, res, t('Save failed')))
       return
     }
     toast.success(switched ? t('Switched scheme') : t('Weights applied'))
@@ -287,7 +286,7 @@ export function StrategyPage() {
     const res = await putConfig.mutateAsync({ enabled: pendingEnable })
     setPendingEnable(null)
     if (!res.success) {
-      toast.error(res.message || t('Save failed'))
+      toast.error(routingErrorText(t, res, t('Save failed')))
       return
     }
     toast.success(
@@ -330,7 +329,7 @@ export function StrategyPage() {
       const json = JSON.parse(text) as unknown
       const res = await importWeightScheme(json)
       if (!res.success) {
-        toast.error(res.message || t('Import failed'))
+        toast.error(routingErrorText(t, res, t('Import failed')))
         return
       }
       toast.success(t('Scheme imported'))
@@ -344,7 +343,7 @@ export function StrategyPage() {
     if (!isRoot) return
     const res = await rollbackToOfficial()
     if (!res.success) {
-      toast.error(res.message || t('Rollback failed'))
+      toast.error(routingErrorText(t, res, t('Rollback failed')))
       return
     }
     toast.success(t('Rolled back to official channel weights'))
@@ -374,7 +373,11 @@ export function StrategyPage() {
             </span>
           </div>
           {isRoot ? (
-            <Button variant='outline' size='sm' onClick={() => void doRollbackOfficial()}>
+            <Button
+              variant='outline'
+              size='sm'
+              onClick={() => void doRollbackOfficial()}
+            >
               {t('One-click back to official routing')}
             </Button>
           ) : null}
@@ -394,7 +397,9 @@ export function StrategyPage() {
           <div className='grid gap-3 sm:grid-cols-2 lg:grid-cols-5'>
             {WEIGHT_DIM_KEYS.map((key) => (
               <div key={key} className='flex flex-col gap-1.5'>
-                <Label htmlFor={`w-${key}`}>{t(WEIGHT_DIM_LABEL_KEYS[key])}</Label>
+                <Label htmlFor={`w-${key}`}>
+                  {t(WEIGHT_DIM_LABEL_KEYS[key])}
+                </Label>
                 <Input
                   id={`w-${key}`}
                   type='number'
@@ -423,9 +428,7 @@ export function StrategyPage() {
             {isRoot ? (
               <>
                 <Button
-                  onClick={() =>
-                    void applyWeights({ kind: 'put_config' })
-                  }
+                  onClick={() => void applyWeights({ kind: 'put_config' })}
                 >
                   {t('Preview & apply')}
                 </Button>
@@ -524,14 +527,19 @@ export function StrategyPage() {
               ['region_filter', 'Region / compliance filter'],
             ] as const
           ).map(([field, labelKey]) => (
-            <div key={field} className='flex items-center justify-between gap-2 rounded-md border px-3 py-2'>
+            <div
+              key={field}
+              className='flex items-center justify-between gap-2 rounded-md border px-3 py-2'
+            >
               <span className='text-sm'>{t(labelKey)}</span>
               <Switch
                 checked={Boolean(config?.[field])}
                 disabled={!isRoot}
                 onCheckedChange={(v) => {
                   void putConfig.mutateAsync({ [field]: v }).then((res) => {
-                    if (!res.success) toast.error(res.message || t('Save failed'))
+                    if (!res.success) {
+                      toast.error(routingErrorText(t, res, t('Save failed')))
+                    }
                   })
                 }}
               />
@@ -589,9 +597,7 @@ export function StrategyPage() {
                     <TableCell className='tabular-nums'>
                       {(item.share_pct ?? 0).toFixed(1)}%
                     </TableCell>
-                    <TableCell>
-                      {item.half_open ? t('Yes') : t('No')}
-                    </TableCell>
+                    <TableCell>{item.half_open ? t('Yes') : t('No')}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -678,9 +684,7 @@ export function StrategyPage() {
           if (!open) clearPendingPreview()
         }}
         title={
-          pendingRollbackId
-            ? t('Preview rollback')
-            : t('Preview weight change')
+          pendingRollbackId ? t('Preview rollback') : t('Preview weight change')
         }
         desc={
           previewReady
@@ -695,6 +699,16 @@ export function StrategyPage() {
         disabled={!previewReady}
         handleConfirm={() => void confirmApplyWeights()}
       >
+        {preview?.error ? (
+          <p className='text-destructive mt-3 text-sm'>
+            {t('Preview failed')}:{' '}
+            {routingErrorText(
+              t,
+              { message: preview.error, code: preview.error_code },
+              preview.error
+            )}
+          </p>
+        ) : null}
         {previewReady && previewEmpty ? (
           <p className='text-muted-foreground mt-3 text-sm'>
             {t('No scores yet; changes take effect once scoring starts.')}
