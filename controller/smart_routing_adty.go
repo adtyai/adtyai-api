@@ -12,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service/smartrouting"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 func srOK(c *gin.Context, data any) {
@@ -58,6 +59,18 @@ func AdtyRoutingPutConfig(c *gin.Context) {
 			return
 		}
 		delete(patch, "preview_token")
+	}
+	// 审查 N-P1-3：前端可显式声明 kind（仅校验取值，不参与合并；指纹只看目标方案名+权重）
+	if raw, ok := patch["kind"]; ok {
+		var kind string
+		_ = json.Unmarshal(raw, &kind)
+		switch kind {
+		case "", "put_config", "activate_scheme", "update_weights":
+		default:
+			adtyFail(c, http.StatusBadRequest, "invalid_kind", "kind must be put_config, activate_scheme or update_weights", nil)
+			return
+		}
+		delete(patch, "kind")
 	}
 	if len(patch) == 0 {
 		adtyFail(c, http.StatusBadRequest, "empty_patch", "no config field to update", nil)
@@ -199,6 +212,15 @@ func AdtyRoutingCreateScheme(c *gin.Context) {
 	if w == "" {
 		w = model.DefaultWeightJSON
 	}
+	// 审查 N-P2-4：权重校验 + 重名 409
+	if _, err := smartrouting.ParseWeightsJSON(w); err != nil {
+		adtyFail(c, http.StatusBadRequest, "invalid_weights", err.Error(), nil)
+		return
+	}
+	if routingSchemeNameTaken(req.Name, 0) {
+		adtyFail(c, http.StatusConflict, "name_exists", "scheme name already exists", nil)
+		return
+	}
 	row := model.RoutingWeightScheme{Name: req.Name, Weights: w, Note: req.Note, CreatedBy: operatorID(c)}
 	if err := model.DB.Create(&row).Error; err != nil {
 		adtyFail(c, http.StatusBadRequest, "bad_request", err.Error(), nil)
@@ -242,8 +264,18 @@ func AdtyRoutingUpdateScheme(c *gin.Context) {
 		wp, parseErr = smartrouting.ParseWeightsJSON(row.Weights)
 	}
 	if parseErr != nil {
-		adtyFail(c, http.StatusBadRequest, "bad_request", parseErr.Error(), nil)
+		adtyFail(c, http.StatusBadRequest, "invalid_weights", parseErr.Error(), nil)
 		return
+	}
+	if req.Name != "" && req.Name != row.Name {
+		if routingSchemeNameTaken(req.Name, row.ID) {
+			adtyFail(c, http.StatusConflict, "name_exists", "scheme name already exists", nil)
+			return
+		}
+		if row.Name == smartrouting.GetConfig().ActiveWeightScheme && !req.Activate {
+			adtyFail(c, http.StatusConflict, "scheme_active", "cannot rename the active scheme", nil)
+			return
+		}
 	}
 
 	// P0: any activate or weight change MUST present a matching preview_token.
@@ -275,7 +307,10 @@ func AdtyRoutingUpdateScheme(c *gin.Context) {
 	if req.Note != "" {
 		row.Note = req.Note
 	}
-	_ = model.DB.Save(&row).Error
+	if err := model.DB.Save(&row).Error; err != nil {
+		adtyFail(c, http.StatusInternalServerError, "save_failed", err.Error(), nil)
+		return
+	}
 	_ = model.SaveWeightSnapshot("scheme", operatorID(c), map[string]any{"op": "update", "id": id, "activate": req.Activate}, row)
 	if req.Activate {
 		cfg := smartrouting.GetConfig()
@@ -303,7 +338,15 @@ func AdtyRoutingDeleteScheme(c *gin.Context) {
 		adtyFail(c, http.StatusBadRequest, "bad_request", "cannot delete balanced_default", nil)
 		return
 	}
-	_ = model.DB.Delete(&row).Error
+	// 审查 N-P2-4：不能删除正在使用的方案
+	if row.Name == smartrouting.GetConfig().ActiveWeightScheme {
+		adtyFail(c, http.StatusConflict, "scheme_active", "cannot delete the active scheme", nil)
+		return
+	}
+	if err := model.DB.Delete(&row).Error; err != nil {
+		adtyFail(c, http.StatusInternalServerError, "delete_failed", err.Error(), nil)
+		return
+	}
 	srOK(c, gin.H{"deleted": id})
 }
 
@@ -407,6 +450,16 @@ func AdtyRoutingImportScheme(c *gin.Context) {
 	if req.Weights == "" {
 		req.Weights = model.DefaultWeightJSON
 	}
+	// 审查 N-P2-4：导入校验权重；重名 409（导出→改名→导入可往返）
+	if _, err := smartrouting.ParseWeightsJSON(req.Weights); err != nil {
+		adtyFail(c, http.StatusBadRequest, "invalid_weights", err.Error(), nil)
+		return
+	}
+	if routingSchemeNameTaken(req.Name, 0) {
+		adtyFail(c, http.StatusConflict, "name_exists", "scheme name already exists", nil)
+		return
+	}
+	req.CreatedAt, req.UpdatedAt = time.Time{}, time.Time{}
 	if err := model.DB.Create(&req).Error; err != nil {
 		adtyFail(c, http.StatusBadRequest, "bad_request", err.Error(), nil)
 		return
@@ -538,6 +591,9 @@ func AdtyRoutingListTags(c *gin.Context) {
 }
 
 func AdtyRoutingCreateTag(c *gin.Context) {
+	if !requireRoutingRoot(c) {
+		return
+	}
 	var req model.ChannelRouteTag
 	if err := common.DecodeJson(c.Request.Body, &req); err != nil || req.ChannelID == 0 || req.Tag == "" {
 		adtyFail(c, http.StatusBadRequest, "bad_request", "channel_id and tag required", nil)
@@ -546,6 +602,16 @@ func AdtyRoutingCreateTag(c *gin.Context) {
 	if req.Model == "" {
 		req.Model = "*"
 	}
+	if !routingChannelExists(c, req.ChannelID) {
+		return
+	}
+	switch req.Tag {
+	case "excluded", "fake_model", "fallback_only", "locked":
+	default:
+		adtyFail(c, http.StatusBadRequest, "invalid_tag", "tag must be excluded, fake_model, fallback_only or locked", nil)
+		return
+	}
+	req.ID = 0
 	req.CreatedBy = operatorID(c)
 	if err := model.DB.Create(&req).Error; err != nil {
 		adtyFail(c, http.StatusBadRequest, "bad_request", err.Error(), nil)
@@ -556,16 +622,30 @@ func AdtyRoutingCreateTag(c *gin.Context) {
 }
 
 func AdtyRoutingDeleteTag(c *gin.Context) {
+	if !requireRoutingRoot(c) {
+		return
+	}
 	id, _ := strconv.ParseInt(c.Query("id"), 10, 64)
 	if id == 0 {
 		adtyFail(c, http.StatusBadRequest, "bad_request", "id required", nil)
 		return
 	}
-	_ = model.DB.Delete(&model.ChannelRouteTag{}, id).Error
+	res := model.DB.Delete(&model.ChannelRouteTag{}, id)
+	if res.Error != nil {
+		adtyFail(c, http.StatusInternalServerError, "delete_failed", res.Error.Error(), nil)
+		return
+	}
+	if res.RowsAffected == 0 {
+		adtyFail(c, http.StatusNotFound, "not_found", "tag not found", nil)
+		return
+	}
 	srOK(c, gin.H{"deleted": id})
 }
 
 func AdtyRoutingClearFakeModel(c *gin.Context) {
+	if !requireRoutingRoot(c) {
+		return
+	}
 	var req struct {
 		ChannelID int    `json:"channel_id"`
 		Model     string `json:"model"`
@@ -578,8 +658,12 @@ func AdtyRoutingClearFakeModel(c *gin.Context) {
 	if req.Model != "" {
 		q = q.Where("model = ?", req.Model)
 	}
-	_ = q.Delete(&model.ChannelRouteTag{}).Error
-	srOK(c, gin.H{"cleared": true})
+	res := q.Delete(&model.ChannelRouteTag{})
+	if res.Error != nil {
+		adtyFail(c, http.StatusInternalServerError, "delete_failed", res.Error.Error(), nil)
+		return
+	}
+	srOK(c, gin.H{"cleared": true, "deleted": res.RowsAffected})
 }
 
 // breaker
@@ -611,15 +695,40 @@ func AdtyRoutingGetPrices(c *gin.Context) {
 }
 
 func AdtyRoutingPutPrices(c *gin.Context) {
+	if !requireRoutingRoot(c) {
+		return
+	}
 	var rows []model.ChannelCostPrice
 	if err := common.DecodeJson(c.Request.Body, &rows); err != nil {
 		adtyFail(c, http.StatusBadRequest, "bad_request", "invalid json", nil)
 		return
 	}
-	for i := range rows {
-		rows[i].UpdatedBy = operatorID(c)
-		rows[i].UpdatedAt = time.Now()
-		_ = model.DB.Save(&rows[i]).Error
+	// 审查 N-P2-5：先全部校验（渠道存在、数值非负），再在一个事务里写，失败不吞
+	for _, r := range rows {
+		if r.ChannelID <= 0 || r.Model == "" {
+			adtyFail(c, http.StatusBadRequest, "bad_request", "channel_id and model required", nil)
+			return
+		}
+		if r.RechargeCreditsPerCNY < 0 || r.ChannelRatio < 0 || r.ModelRefUSDPerMTok < 0 || r.InPriceUSD < 0 || r.OutPriceUSD < 0 {
+			adtyFail(c, http.StatusBadRequest, "invalid_price", "prices must be >= 0", map[string]any{"channel_id": r.ChannelID, "model": r.Model})
+			return
+		}
+		if !routingChannelExists(c, r.ChannelID) {
+			return
+		}
+	}
+	if err := model.DB.Transaction(func(tx *gorm.DB) error {
+		for i := range rows {
+			rows[i].UpdatedBy = operatorID(c)
+			rows[i].UpdatedAt = time.Now()
+			if err := tx.Save(&rows[i]).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		adtyFail(c, http.StatusInternalServerError, "save_failed", err.Error(), nil)
+		return
 	}
 	_ = model.SaveWeightSnapshot("price", operatorID(c), map[string]any{"op": "put_prices", "n": len(rows)}, rows)
 	srOK(c, rows)
@@ -779,8 +888,19 @@ func AdtyRoutingMarkAuthFlag(c *gin.Context) {
 	var req struct {
 		FalsePositive bool `json:"false_positive"`
 	}
+	if !requireRoutingRoot(c) {
+		return
+	}
 	_ = common.DecodeJson(c.Request.Body, &req)
-	_ = model.DB.Model(&model.ChannelAuthFlag{}).Where("id = ?", id).Update("false_positive", req.FalsePositive).Error
+	res := model.DB.Model(&model.ChannelAuthFlag{}).Where("id = ?", id).Update("false_positive", req.FalsePositive)
+	if res.Error != nil {
+		adtyFail(c, http.StatusInternalServerError, "save_failed", res.Error.Error(), nil)
+		return
+	}
+	if res.RowsAffected == 0 {
+		adtyFail(c, http.StatusNotFound, "not_found", "auth flag not found", nil)
+		return
+	}
 	srOK(c, gin.H{"id": id, "false_positive": req.FalsePositive})
 }
 
@@ -818,4 +938,24 @@ func AdtyRoutingDecisions(c *gin.Context) {
 // POST /weights/rollback alias
 func AdtyRoutingWeightsRollback(c *gin.Context) {
 	AdtyRoutingSchemeRollback(c)
+}
+
+func routingSchemeNameTaken(name string, exceptID int64) bool {
+	var n int64
+	q := model.DB.Model(&model.RoutingWeightScheme{}).Where("name = ?", name)
+	if exceptID > 0 {
+		q = q.Where("id <> ?", exceptID)
+	}
+	_ = q.Count(&n).Error
+	return n > 0
+}
+
+// routingChannelExists 审查 N-P2-5：渠道不存在 → 404，不再静默成功。
+func routingChannelExists(c *gin.Context, channelID int) bool {
+	var n int64
+	if err := model.DB.Model(&model.Channel{}).Where("id = ?", channelID).Count(&n).Error; err != nil || n == 0 {
+		adtyFail(c, http.StatusNotFound, "channel_not_found", "channel not found", map[string]any{"channel_id": channelID})
+		return false
+	}
+	return true
 }

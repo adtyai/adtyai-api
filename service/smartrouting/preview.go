@@ -26,13 +26,14 @@ type PreviewIntent struct {
 	OperatorID int         `json:"operator_id"`
 }
 
+// Fingerprint 审查 N-P1-3：只绑定“变更后的目标”（方案名 + 权重），不绑定 kind / scheme_id。
+// 前端 preview 声明的 kind（put_config / activate_scheme / update_weights）与后端按字段推断的 kind
+// 不一致时不再误判 mismatch；token 仍单次有效、10 分钟过期、绑定操作人，且目标不同即拒绝。
 func (i PreviewIntent) Fingerprint() string {
 	b, _ := json.Marshal(struct {
-		Kind       string      `json:"kind"`
-		SchemeID   int64       `json:"scheme_id"`
 		SchemeName string      `json:"scheme_name"`
 		Weights    WeightParts `json:"weights"`
-	}{i.Kind, i.SchemeID, i.SchemeName, i.Weights})
+	}{i.SchemeName, i.Weights})
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:])
 }
@@ -150,6 +151,10 @@ func ParseWeightsJSON(raw string) (WeightParts, error) {
 	}
 	if err := json.Unmarshal([]byte(raw), &w); err != nil {
 		return w, fmt.Errorf("bad weights json: %w", err)
+	}
+	// 审查 N-P2-4：各分量不得为负
+	if w.Conn < 0 || w.Price < 0 || w.Speed < 0 || w.Stab < 0 || w.Auth < 0 {
+		return w, errors.New("weights must be >= 0")
 	}
 	if w.Sum() <= 0 {
 		return w, errors.New("weights sum must be > 0")

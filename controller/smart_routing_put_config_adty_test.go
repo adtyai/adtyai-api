@@ -3,6 +3,7 @@ package controller
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
@@ -94,4 +95,52 @@ func TestRoutingRollbackBadSnapshot(t *testing.T) {
 	rec := adtyCall(AdtyRoutingSchemeRollback, http.MethodPost, "/x", string(body), 1, common.RoleRootUser, nil)
 	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
 	require.Contains(t, rec.Body.String(), "bad_snapshot")
+}
+
+func routingPreview(t *testing.T, body string) string {
+	t.Helper()
+	rec := adtyCall(AdtyRoutingPreviewScheme, http.MethodPost, "/x", body, 1, common.RoleRootUser, nil)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var pv struct {
+		Data struct {
+			PreviewToken string `json:"preview_token"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &pv))
+	return pv.Data.PreviewToken
+}
+
+// 审查 N-P1-3：按前端原样回放三个按钮。
+func TestRoutingFrontendFlowsReplay(t *testing.T) {
+	before := setupRoutingConfigTest(t)
+	w := `{"conn":40,"price":20,"speed":20,"stab":10,"auth":10}`
+
+	// F1 预览并应用：preview kind=put_config → PUT {weights, token}
+	tok := routingPreview(t, `{"weights":`+w+`,"kind":"put_config"}`)
+	code, out := routingCall(t, AdtyRoutingPutConfig, `{"weights":`+w+`,"preview_token":"`+tok+`"}`)
+	require.Equal(t, http.StatusOK, code, out)
+
+	// F2 切换方案：preview kind=activate_scheme + scheme_name → PUT {weights, active_weight_scheme, kind, token}
+	require.NoError(t, model.DB.Create(&model.RoutingWeightScheme{Name: "fast", Weights: `{"conn":10,"price":10,"speed":60,"stab":10,"auth":10}`}).Error)
+	var sch model.RoutingWeightScheme
+	require.NoError(t, model.DB.Where("name = ?", "fast").First(&sch).Error)
+	sw := `{"conn":10,"price":10,"speed":60,"stab":10,"auth":10}`
+	tok = routingPreview(t, `{"weights":`+sw+`,"scheme_id":`+strconv.FormatInt(sch.ID, 10)+`,"scheme_name":"fast","kind":"activate_scheme"}`)
+	code, out = routingCall(t, AdtyRoutingPutConfig, `{"weights":`+sw+`,"active_weight_scheme":"fast","kind":"activate_scheme","preview_token":"`+tok+`"}`)
+	require.Equal(t, http.StatusOK, code, out)
+	require.Equal(t, "fast", smartrouting.GetConfig().ActiveWeightScheme)
+
+	// F3 总开关
+	code, out = routingCall(t, AdtyRoutingPutConfig, `{"enabled":false,"kind":"put_config"}`)
+	require.Equal(t, http.StatusOK, code, out)
+	after := smartrouting.GetConfig()
+	require.False(t, after.Enabled)
+	require.Equal(t, before.BalancePatrolEnabled, after.BalancePatrolEnabled)
+	require.Equal(t, before.TokenSkewFail, after.TokenSkewFail)
+
+	// 目标不一致仍拒绝
+	tok = routingPreview(t, `{"weights":`+w+`}`)
+	code, out = routingCall(t, AdtyRoutingPutConfig, `{"weights":{"conn":99,"price":1,"speed":0,"stab":0,"auth":0},"preview_token":"`+tok+`"}`)
+	require.Equal(t, http.StatusBadRequest, code)
+	require.Equal(t, "preview_required", out["code"])
 }
