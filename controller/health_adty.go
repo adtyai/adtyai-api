@@ -9,7 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// AdminGetHealth GET /api/admin/health
+// AdminGetHealth was GET /api/admin/health. Route unregistered per 总裁（服务状态删除）；handler/表保留.
 // 只读汇总；同步轻量刷新 postgres/redis 以保证页新鲜。
 func AdminGetHealth(c *gin.Context) {
 	summary, err := model.BuildHealthSummary(c.Request.Context(), true)

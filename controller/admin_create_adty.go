@@ -37,7 +37,7 @@ func adminCreateReject(c *gin.Context, status int, code, msg string, extra map[s
 	c.JSON(status, gin.H{"success": false, "message": msg, "code": code})
 }
 
-// AdminCreateAdmin POST /api/admin/admins — A36 sensitive entry.
+// AdminCreateAdmin was POST /api/admin/admins (A36). Route unregistered per 总裁（菜单删除）；handler kept for tests/restore.
 // Root only + confirm=true; always creates role=Admin (never Root). Password is never audited.
 func AdminCreateAdmin(c *gin.Context) {
 	if c.GetInt("role") < common.RoleRootUser {

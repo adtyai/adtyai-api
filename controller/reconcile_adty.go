@@ -10,7 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// AdminGetReconcile GET /api/admin/reconcile?date=YYYY-MM-DD&force=true
+// AdminGetReconcile was GET /api/admin/reconcile. Route unregistered per 总裁（每日对账删除）；日任务仍跑.
 // date 缺省=昨天（Asia/Shanghai）。force 缺省=false：当日已 ok 则直接返回（skipped）；
 // force=true 重跑对账（含缺 bucket 补跑）。
 func AdminGetReconcile(c *gin.Context) {

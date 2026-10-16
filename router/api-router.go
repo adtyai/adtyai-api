@@ -180,11 +180,8 @@ func SetApiRouter(router *gin.Engine) {
 			adminAlerts.POST("/test", controller.AdminTestAlerts)
 		}
 
-		adminAdmins := apiRouter.Group("/admin/admins")
-		adminAdmins.Use(middleware.AdminAuth())
-		{
-			adminAdmins.POST("", controller.AdminCreateAdmin)
-		}
+		// 总裁：停暴露「新增管理员」——表与 controller 保留，不再注册路由。
+		// adminAdmins := apiRouter.Group("/admin/admins") ...
 
 		adminChatwoot := apiRouter.Group("/admin/chatwoot")
 		adminChatwoot.Use(middleware.AdminAuth())
@@ -214,17 +211,14 @@ func SetApiRouter(router *gin.Engine) {
 			adminOverview.GET("", controller.AdminGetOverview)
 		}
 
-		adminHealth := apiRouter.Group("/admin/health")
-		adminHealth.Use(middleware.AdminAuth())
-		{
-			adminHealth.GET("", controller.AdminGetHealth)
-			adminHealth.POST("/refresh", controller.AdminRefreshHealth)
-		}
+		// 总裁：停暴露「服务状态」「每日对账」——探活表/日对账任务仍后台跑，不再注册管理端路由。
+		// adminHealth / adminReconcile 已下线。
 
-		adminReconcile := apiRouter.Group("/admin/reconcile")
-		adminReconcile.Use(middleware.AdminAuth())
+		// 侧栏角标：风控/提现/充值待处理条数
+		adtyAdmin := apiRouter.Group("/adty/admin")
+		adtyAdmin.Use(middleware.AdminAuth())
 		{
-			adminReconcile.GET("", controller.AdminGetReconcile)
+			adtyAdmin.GET("/sidebar_badges", controller.AdminGetSidebarBadges)
 		}
 
 		// adtyai U16 / A17 流水

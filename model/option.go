@@ -203,6 +203,7 @@ func InitOptionMap() {
 
 	common.OptionMapRWMutex.Unlock()
 	loadOptionsFromDatabase()
+	persistSanitizedBrandOptions()
 	InitAdtyTopupBonusFromOptions()
 	InitAdtyBusinessParamsFromOptions()
 }
@@ -300,6 +301,7 @@ func UpdateOption(key string, value string) error {
 	if err := validateOptionValue(key, value); err != nil {
 		return err
 	}
+	value = sanitizeBrandOptionValue(key, value)
 	dbValue, err := encodeOptionValueForDB(key, value)
 	if err != nil {
 		return err
@@ -400,6 +402,7 @@ func updateOptionMap(key string, value string) (err error) {
 		common.OptionMapRWMutex.Unlock()
 		return nil
 	}
+	value = sanitizeBrandOptionValue(key, value)
 	common.OptionMapRWMutex.Lock()
 	defer common.OptionMapRWMutex.Unlock()
 	common.OptionMap[key] = value
