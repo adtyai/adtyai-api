@@ -170,7 +170,8 @@ func CompleteTopupOrderBy(orderNo string, operatorID int) (*TopupOrder, error) {
 			out = &order
 			return nil // 幂等
 		}
-		if order.Status != TopupOrderStatusPending {
+		// 审查 N-P2-8：超时置 expired 后，已验签的迟到支付仍须入账，不能吞掉真实付款
+		if order.Status != TopupOrderStatusPending && order.Status != TopupOrderStatusExpired {
 			return ErrTopupOrderStatusInvalid
 		}
 

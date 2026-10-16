@@ -173,6 +173,7 @@ func main() {
 	controller.RegisterScheduledSystemTasks()
 	service.StartSystemTaskRunner()
 	smartrouting.StartBackgroundLoops()
+	model.StartTopupOrderExpiryLoop() // 审查 N-P2-8
 
 	if os.Getenv("BATCH_UPDATE_ENABLED") == "true" {
 		common.BatchUpdateEnabled = true
