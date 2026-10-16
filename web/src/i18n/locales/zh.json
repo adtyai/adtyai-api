@@ -8069,6 +8069,10 @@
     "Diff": "差额",
     "Last backup": "最近备份",
     "Not enabled": "未开启",
+    "Per-account reconcile start date": "按账户核对起始日",
+    "YYYY-MM-DD (Asia/Shanghai); empty = off": "日期，格式为 年-月-日（北京时间）；留空即关闭",
+    "Start date must be YYYY-MM-DD or empty": "起始日必须为 年-月-日 格式，或留空",
+    "Once a date is set, daily reconcile also checks paid and bonus accounts separately. Report only; does not affect whether it balances. Leave empty to turn off.": "填日期后，每日对账额外按充值/赠送账户核对，只报告，不影响是否对平；留空即关闭。",
     "Only the Admin role can be created": "只能创建管理员角色",
     "Failed to create administrator, please try again later": "新增管理员失败，请稍后重试"
   }

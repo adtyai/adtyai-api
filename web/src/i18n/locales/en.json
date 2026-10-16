@@ -8069,6 +8069,10 @@
     "Diff": "Diff",
     "Last backup": "Last backup",
     "Not enabled": "Not enabled",
+    "Per-account reconcile start date": "Per-account reconcile start date",
+    "YYYY-MM-DD (Asia/Shanghai); empty = off": "YYYY-MM-DD (Asia/Shanghai); empty = off",
+    "Start date must be YYYY-MM-DD or empty": "Start date must be YYYY-MM-DD or empty",
+    "Once a date is set, daily reconcile also checks paid and bonus accounts separately. Report only; does not affect whether it balances. Leave empty to turn off.": "Once a date is set, daily reconcile also checks paid and bonus accounts separately. Report only; does not affect whether it balances. Leave empty to turn off.",
     "Only the Admin role can be created": "Only the Admin role can be created",
     "Failed to create administrator, please try again later": "Failed to create administrator, please try again later"
   }
