@@ -147,6 +147,11 @@ func applyBusinessParamUpdates(c *gin.Context, items []businessParamPutItem) {
 			adtyFail(c, http.StatusBadRequest, "unknown_key", "unknown key", map[string]any{"key": key})
 			return
 		}
+		// 审查 N-P1-4：资金类参数仅 root 可改
+		if businessParamFundKeys[key] && c.GetInt("role") < common.RoleRootUser {
+			adtyFail(c, http.StatusForbidden, "root_only", "fund parameter requires root", map[string]any{"key": key})
+			return
+		}
 		raw := stringifyBPValue(it.Value)
 		nv, err := model.NormalizeBusinessParamValue(key, raw)
 		if err != nil {
@@ -178,5 +183,21 @@ func applyBusinessParamUpdates(c *gin.Context, items []businessParamPutItem) {
 		})
 	}
 
+	for key, nv := range normalized {
+		if oldValues[key] != nv {
+			common.SysLog(common.LogText("business param changed: operator=%d key=%s old=%q new=%q", c.GetInt("id"), key, oldValues[key], nv))
+			model.RecordLog(c.GetInt("id"), model.LogTypeManage, common.NewMessage("Business parameter {{key}} changed from {{old}} to {{new}}",
+				map[string]any{"key": key, "old": oldValues[key], "new": nv}))
+		}
+	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": changed})
+}
+
+// businessParamFundKeys 审查 N-P1-4：涉及资金（加赠、汇率、返佣、提现、订单超时、新用户额度、调额上限）的参数。
+var businessParamFundKeys = map[string]bool{
+	"TopupBonusTiers": true, "FirstTopupBonusRate": true, "Price": true,
+	"BepusdtOrderTimeoutMinutes": true, "UsdtUnderpayTolerance": true, "TopupOrderTimeoutMinutes": true,
+	"AffTopupCommissionRate": true, "AffSubscriptionCommissionRate": true, "AffFreezeDays": true,
+	"AffMinWithdrawAmount": true, "AffWithdrawFeeRate": true, "BalanceAdjustMaxAmount": true,
+	"SelfApproveAlertAmount": true, "QuotaForNewUser": true, "RefundAlertAmount": true,
 }

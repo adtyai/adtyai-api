@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/gin-gonic/gin"
 )
 
@@ -14,6 +15,7 @@ func TestAdminPutBusinessParams_NoLongerRequiresConfirm(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
+	c.Set("role", common.RoleRootUser)
 	// 无 confirm：应直接进入业务校验（用越界值止于 out_of_range，避免无 DB 路径），不得再是 confirm_required
 	body, _ := json.Marshal(map[string]any{
 		"key":   "FirstTopupBonusRate",
@@ -39,6 +41,7 @@ func TestAdminPutBusinessParams_OutOfRangeParams(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
+	c.Set("role", common.RoleRootUser)
 	body, _ := json.Marshal(map[string]any{
 		"confirm": true,
 		"key":     "FirstTopupBonusRate",
@@ -78,6 +81,7 @@ func TestAdminPutBusinessParams_InvalidIdStyleCodes(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
+	c.Set("role", common.RoleRootUser)
 	c.Request = httptest.NewRequest(http.MethodGet, "/api/admin/risk-reviews/abc", nil)
 	c.Params = gin.Params{{Key: "id", Value: "abc"}}
 	AdminGetRiskReview(c)
@@ -97,6 +101,7 @@ func TestAdminPutBusinessParams_BatchOutOfRangeReportsOffendingKey(t *testing.T)
 	for i := 0; i < 20; i++ {
 		w := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(w)
+		c.Set("role", common.RoleRootUser)
 		body, _ := json.Marshal(map[string]any{
 			"confirm": true,
 			"items": []map[string]any{
@@ -127,6 +132,7 @@ func putBP(t *testing.T, payload map[string]any) (int, map[string]any) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
+	c.Set("role", common.RoleRootUser)
 	body, _ := json.Marshal(payload)
 	c.Request = httptest.NewRequest(http.MethodPut, "/api/admin/business-params", bytes.NewReader(body))
 	c.Request.Header.Set("Content-Type", "application/json")
@@ -160,6 +166,31 @@ func TestAdminPutBusinessParams_TopupTiersCodes(t *testing.T) {
 		}
 		if msg, _ := resp["message"].(string); msg == "" {
 			t.Fatalf("%v: empty message %v", c.value, resp)
+		}
+	}
+}
+
+// 审查 N-P1-4：管理员改资金参数 403 root_only；非资金参数不受影响（止于校验）。
+func TestAdminPutBusinessParams_FundKeysRootOnly(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, tc := range []struct {
+		key, value, want string
+	}{
+		{"AffTopupCommissionRate", "0.5", "root_only"},
+		{"TopupBonusTiers", "[50]", "root_only"},
+		{"DiskAlertWarnPct", "10", "out_of_range"},
+	} {
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Set("role", common.RoleAdminUser)
+		body, _ := json.Marshal(map[string]any{"key": tc.key, "value": tc.value})
+		c.Request = httptest.NewRequest(http.MethodPut, "/api/admin/business-params", bytes.NewReader(body))
+		c.Request.Header.Set("Content-Type", "application/json")
+		AdminPutBusinessParams(c)
+		var resp map[string]any
+		_ = json.Unmarshal(w.Body.Bytes(), &resp)
+		if resp["code"] != tc.want {
+			t.Fatalf("%s: want %s got %v", tc.key, tc.want, w.Body.String())
 		}
 	}
 }
