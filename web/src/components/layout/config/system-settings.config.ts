@@ -87,15 +87,7 @@ export function getSystemSettingsNavGroups(
           icon: CreditCard,
           items: [
             ...getBillingSectionNavItems(t),
-            // 易支付 / BEpusdt → 官方支付网关旁
-            {
-              title: t('Epay instances'),
-              url: '/system-settings/epay-instances',
-            },
-            {
-              title: t('BEpusdt gateway'),
-              url: '/system-settings/bepusdt',
-            },
+            // 易支付 / BEpusdt 已并入「支付网关」页，不再单独占侧栏项
             // 分组显示名 → 官方分组定价旁
             {
               title: t('Group display names'),

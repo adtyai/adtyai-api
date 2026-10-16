@@ -16,12 +16,16 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 
-import { EpayInstancesSettings } from '@/features/system-settings/epay-instances'
-
+// Merged into Billing → Payment Gateway. Keep route so old bookmarks do not 404.
 export const Route = createFileRoute(
   '/_authenticated/system-settings/epay-instances/'
 )({
-  component: EpayInstancesSettings,
+  beforeLoad: () => {
+    throw redirect({
+      to: '/system-settings/billing/$section',
+      params: { section: 'payment' },
+    })
+  },
 })

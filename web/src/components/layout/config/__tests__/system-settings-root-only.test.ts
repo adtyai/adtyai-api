@@ -95,10 +95,17 @@ describe('system-settings Root-only nav (A39/A08) and no A30 audit', () => {
     expect(byParent['Site & Branding']).toContain(
       '/system-settings/site/sidebar-modules'
     )
+    expect(byParent['Billing & Payment']).not.toContain(
+      '/system-settings/epay-instances'
+    )
+    expect(byParent['Billing & Payment']).not.toContain(
+      '/system-settings/bepusdt'
+    )
+    expect(byParent['Billing & Payment']).toContain(
+      '/system-settings/billing/payment'
+    )
     expect(byParent['Billing & Payment']).toEqual(
       expect.arrayContaining([
-        '/system-settings/epay-instances',
-        '/system-settings/bepusdt',
         '/system-settings/groups',
         '/system-settings/orders',
         '/system-settings/order-refunds',
