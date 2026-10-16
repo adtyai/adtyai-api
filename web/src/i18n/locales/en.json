@@ -8076,6 +8076,7 @@
     "Only the Admin role can be created": "Only the Admin role can be created",
     "Failed to create administrator, please try again later": "Failed to create administrator, please try again later",
     "First +{{percent}}%": "First +{{percent}}%",
+    "First +{{first}}% · Tier +{{tier}}%": "First +{{first}}% · Tier +{{tier}}%",
     "+{{percent}}%": "+{{percent}}%",
     "First only · best of first/tier": "First only · best of first/tier",
     "Bonus · first {{percent}}%": "Bonus · first {{percent}}%"

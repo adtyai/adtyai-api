@@ -8076,6 +8076,7 @@
     "Only the Admin role can be created": "只能创建管理员角色",
     "Failed to create administrator, please try again later": "新增管理员失败，请稍后重试",
     "First +{{percent}}%": "首充+{{percent}}%",
+    "First +{{first}}% · Tier +{{tier}}%": "首充+{{first}}% · 档+{{tier}}%",
     "+{{percent}}%": "+{{percent}}%",
     "First only · best of first/tier": "仅限首笔 · 与档位取高",
     "Bonus · first {{percent}}%": "赠送 · 首充 {{percent}}%"

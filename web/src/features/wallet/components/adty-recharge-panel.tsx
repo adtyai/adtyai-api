@@ -341,7 +341,17 @@ export function AdtyRechargePanel({
               typeof tier.bonus_percent === 'number'
                 ? tier.bonus_percent
                 : firstTopupBonusRateToPercent(tier.bonus_rate)
-            const showFirst = firstEligible && firstPercent >= tierPct
+            const tierLabel =
+              firstEligible && tierPct > 0
+                ? t('First +{{first}}% · Tier +{{tier}}%', {
+                    first: firstPercent,
+                    tier: tierPct,
+                  })
+                : firstEligible
+                  ? t('First +{{percent}}%', { percent: firstPercent })
+                  : tierPct > 0
+                    ? t('+{{percent}}%', { percent: tierPct })
+                    : null
             return (
               <button
                 key={amount}
@@ -362,20 +372,20 @@ export function AdtyRechargePanel({
                 <div className='pr-6 text-lg font-semibold tracking-tight tabular-nums'>
                   {formatUsdAmount(amount)}
                 </div>
-                <div className='mt-1.5 truncate'>
-                  <span
-                    className={cn(
-                      'inline-block max-w-full truncate rounded px-1.5 py-0.5 text-[11px] leading-4',
-                      showFirst
-                        ? 'bg-primary/10 text-primary'
-                        : 'bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300'
-                    )}
-                  >
-                    {showFirst
-                      ? t('First +{{percent}}%', { percent: firstPercent })
-                      : t('+{{percent}}%', { percent: tierPct })}
-                  </span>
-                </div>
+                {tierLabel && (
+                  <div className='mt-1.5 truncate'>
+                    <span
+                      className={cn(
+                        'inline-block max-w-full truncate rounded px-1.5 py-0.5 text-[11px] leading-4',
+                        firstEligible
+                          ? 'bg-primary/10 text-primary'
+                          : 'bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300'
+                      )}
+                    >
+                      {tierLabel}
+                    </span>
+                  </div>
+                )}
               </button>
             )
           })}
