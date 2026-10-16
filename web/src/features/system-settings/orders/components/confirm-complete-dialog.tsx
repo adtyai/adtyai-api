@@ -37,6 +37,7 @@ import { getServerErrorMessage } from '@/lib/server-error-message'
 
 import { useCompleteAdminOrder } from '../hooks/use-orders'
 import {
+  canCompleteOrder,
   completeErrorMessage,
   formatUsd,
   orderUserDisplay,
@@ -179,7 +180,7 @@ export function ConfirmCompleteDialog({
           </Button>
           <Button
             type='button'
-            disabled={busy || order.status !== 'pending' || !tradeNo.trim()}
+            disabled={busy || !canCompleteOrder(order) || !tradeNo.trim()}
             onClick={() => void handleConfirm()}
           >
             {t('Complete')}

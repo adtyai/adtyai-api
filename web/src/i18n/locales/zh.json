@@ -8261,6 +8261,7 @@
     "Nothing to save": "没有可保存的改动",
     "Save failed on server": "服务端保存失败",
     "This history snapshot cannot be restored": "该历史快照无法恢复",
-    "Preview failed": "预览失败"
+    "Preview failed": "预览失败",
+    "Request failed (HTTP {{status}})": "请求失败（HTTP {{status}}）"
   }
 }

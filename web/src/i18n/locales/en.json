@@ -8261,6 +8261,7 @@
     "Nothing to save": "Nothing to save",
     "Save failed on server": "Save failed on server",
     "This history snapshot cannot be restored": "This history snapshot cannot be restored",
-    "Preview failed": "Preview failed"
+    "Preview failed": "Preview failed",
+    "Request failed (HTTP {{status}})": "Request failed (HTTP {{status}})"
   }
 }

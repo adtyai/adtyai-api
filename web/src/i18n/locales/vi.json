@@ -7319,6 +7319,15 @@
     "Bonus can be used for API calls, cannot be withdrawn, and does not earn affiliate commission. Spend bonus balance before paid balance.": "Thưởng dùng gọi API, không rút, không hoa hồng. Tiêu thưởng trước số đã nạp.",
     "Redemption code": "Mã đổi",
     "Redemption face value is credited as bonus": "Mệnh giá mã được cộng vào thưởng",
-    "Unpriced": "Chưa định giá"
+    "Unpriced": "Chưa định giá",
+    "Preview expired or does not match this change; preview again": "Bản xem trước đã hết hạn hoặc không khớp với thay đổi này; hãy xem trước lại",
+    "Preview expired or already used; preview again": "Bản xem trước đã hết hạn hoặc đã được dùng; hãy xem trước lại",
+    "Only root can change routing strategy": "Chỉ root mới có thể thay đổi chiến lược định tuyến",
+    "Weights must be non-negative and sum to more than 0": "Trọng số phải không âm và tổng lớn hơn 0",
+    "Nothing to save": "Không có gì để lưu",
+    "Save failed on server": "Lưu thất bại trên máy chủ",
+    "This history snapshot cannot be restored": "Không thể khôi phục bản chụp lịch sử này",
+    "Preview failed": "Xem trước thất bại",
+    "Request failed (HTTP {{status}})": "Yêu cầu thất bại (HTTP {{status}})"
   }
 }

@@ -7319,6 +7319,15 @@
     "Bonus can be used for API calls, cannot be withdrawn, and does not earn affiliate commission. Spend bonus balance before paid balance.": "ボーナスは API 利用に使え、出金不可・紹介報酬対象外。消費時はボーナス優先です。",
     "Redemption code": "交換コード",
     "Redemption face value is credited as bonus": "交換コード額面はボーナスに加算",
-    "Unpriced": "未設定"
+    "Unpriced": "未設定",
+    "Preview expired or does not match this change; preview again": "プレビューの有効期限切れ、または今回の変更と一致しません。再度プレビューしてください",
+    "Preview expired or already used; preview again": "プレビューの有効期限切れ、または使用済みです。再度プレビューしてください",
+    "Only root can change routing strategy": "ルーティング戦略を変更できるのは root のみです",
+    "Weights must be non-negative and sum to more than 0": "重みは 0 以上で、合計が 0 より大きい必要があります",
+    "Nothing to save": "保存する変更はありません",
+    "Save failed on server": "サーバー側で保存に失敗しました",
+    "This history snapshot cannot be restored": "この履歴スナップショットは復元できません",
+    "Preview failed": "プレビューに失敗しました",
+    "Request failed (HTTP {{status}})": "リクエストに失敗しました（HTTP {{status}}）"
   }
 }

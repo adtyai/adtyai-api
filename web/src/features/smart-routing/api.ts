@@ -97,7 +97,9 @@ async function softMutate<T>(
  * generic "Request failed with status code 400".
  */
 export function envelopeFromError<T>(err: unknown): ApiEnvelope<T> {
-  const data = (err as { response?: { data?: unknown } })?.response?.data
+  const response = (err as { response?: { data?: unknown; status?: number } })
+    ?.response
+  const data = response?.data
   if (data && typeof data === 'object') {
     const d = data as { message?: unknown; code?: unknown }
     const code = typeof d.code === 'string' ? d.code : undefined
@@ -105,6 +107,15 @@ export function envelopeFromError<T>(err: unknown): ApiEnvelope<T> {
       typeof d.message === 'string' && d.message ? d.message : code
     if (message) {
       return { success: false, message, code }
+    }
+  }
+  // F2-P2-3: non-JSON error body (e.g. gateway HTML 502) → keep HTTP status.
+  if (typeof response?.status === 'number') {
+    return {
+      success: false,
+      message: `HTTP ${response.status}`,
+      code: 'http_error',
+      status: response.status,
     }
   }
   const message =

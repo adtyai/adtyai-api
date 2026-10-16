@@ -187,6 +187,7 @@ export function OrdersSettings() {
                   { value: 'pending', label: t('Pending') },
                   { value: 'paid', label: t('Paid') },
                   { value: 'failed', label: t('Failed') },
+                  { value: 'expired', label: t('Expired') },
                   { value: 'need_manual', label: t('Needs manual review') },
                 ]}
                 value={statusDraft}
@@ -202,6 +203,7 @@ export function OrdersSettings() {
                   <SelectItem value='pending'>{t('Pending')}</SelectItem>
                   <SelectItem value='paid'>{t('Paid')}</SelectItem>
                   <SelectItem value='failed'>{t('Failed')}</SelectItem>
+                  <SelectItem value='expired'>{t('Expired')}</SelectItem>
                   <SelectItem value='need_manual'>
                     {t('Needs manual review')}
                   </SelectItem>

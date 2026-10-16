@@ -17,7 +17,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-export const TOPUP_ORDER_STATUSES = ['pending', 'paid', 'failed'] as const
+export const TOPUP_ORDER_STATUSES = [
+  'pending',
+  'paid',
+  'failed',
+  'expired',
+] as const
 
 export type TopupOrderStatus = (typeof TOPUP_ORDER_STATUSES)[number] | string
 

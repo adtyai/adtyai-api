@@ -14,9 +14,12 @@ const CODE_KEYS: Record<string, string> = {
 
 export function routingErrorText(
   t: TFunction,
-  res: { message?: string; code?: string } | undefined,
+  res: { message?: string; code?: string; status?: number } | undefined,
   fallback: string
 ): string {
+  if (res?.code === 'http_error' && res.status) {
+    return t('Request failed (HTTP {{status}})', { status: res.status })
+  }
   const key = res?.code ? CODE_KEYS[res.code] : undefined
   if (key) {
     return res?.message && res.message !== res.code

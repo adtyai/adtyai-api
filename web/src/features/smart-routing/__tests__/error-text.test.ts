@@ -38,6 +38,22 @@ describe('F-P2-1 backend reason on 4xx', () => {
   })
 })
 
+describe('F2-P2-3 non-JSON 5xx keeps status', () => {
+  it('html 502 → http_error with status', () => {
+    const err = Object.assign(
+      new Error('Request failed with status code 502'),
+      {
+        response: { status: 502, data: '<html>Bad Gateway</html>' },
+      }
+    )
+    const env = envelopeFromError(err)
+    expect(env).toMatchObject({ code: 'http_error', status: 502 })
+    const t = ((k: string, o?: { status?: number }) =>
+      k.replace('{{status}}', String(o?.status))) as never
+    expect(routingErrorText(t, env, 'x')).toBe('Request failed (HTTP 502)')
+  })
+})
+
 describe('F-P2-2 preview failure is explicit', () => {
   it('returns error instead of silent empty', async () => {
     post.mockRejectedValueOnce(axios400)

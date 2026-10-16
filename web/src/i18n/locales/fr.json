@@ -7319,6 +7319,15 @@
     "Bonus can be used for API calls, cannot be withdrawn, and does not earn affiliate commission. Spend bonus balance before paid balance.": "Le bonus sert aux appels API, non retirable, hors affiliation. Le bonus est débité en premier.",
     "Redemption code": "Code d’échange",
     "Redemption face value is credited as bonus": "La valeur du code est créditée en bonus",
-    "Unpriced": "Prix non défini"
+    "Unpriced": "Prix non défini",
+    "Preview expired or does not match this change; preview again": "Aperçu expiré ou ne correspondant pas à cette modification ; relancez l’aperçu",
+    "Preview expired or already used; preview again": "Aperçu expiré ou déjà utilisé ; relancez l’aperçu",
+    "Only root can change routing strategy": "Seul root peut modifier la stratégie de routage",
+    "Weights must be non-negative and sum to more than 0": "Les poids doivent être positifs ou nuls et leur somme supérieure à 0",
+    "Nothing to save": "Rien à enregistrer",
+    "Save failed on server": "Échec de l’enregistrement côté serveur",
+    "This history snapshot cannot be restored": "Cet instantané d’historique ne peut pas être restauré",
+    "Preview failed": "Échec de l’aperçu",
+    "Request failed (HTTP {{status}})": "Échec de la requête (HTTP {{status}})"
   }
 }

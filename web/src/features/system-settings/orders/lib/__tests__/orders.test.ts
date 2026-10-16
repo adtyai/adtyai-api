@@ -80,8 +80,10 @@ describe('buildAdminOrdersQuery', () => {
 })
 
 describe('canCompleteOrder', () => {
-  it('true only for pending', () => {
+  it('true for pending and expired (late payment)', () => {
     expect(canCompleteOrder({ status: 'pending' })).toBe(true)
+    expect(canCompleteOrder({ status: 'expired' })).toBe(true)
+    expect(orderStatusLabelKey('expired')).toBe('Expired')
     expect(canCompleteOrder({ status: 'paid' })).toBe(false)
     expect(canCompleteOrder({ status: 'failed' })).toBe(false)
     expect(canCompleteOrder(null)).toBe(false)

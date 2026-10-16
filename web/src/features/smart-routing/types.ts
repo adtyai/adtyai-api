@@ -237,5 +237,7 @@ export type ApiEnvelope<T> = {
   success: boolean
   message?: string
   code?: string
+  /** HTTP status when the error body was not a JSON envelope. */
+  status?: number
   data?: T
 }

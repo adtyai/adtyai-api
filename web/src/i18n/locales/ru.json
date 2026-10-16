@@ -7319,6 +7319,15 @@
     "Bonus can be used for API calls, cannot be withdrawn, and does not earn affiliate commission. Spend bonus balance before paid balance.": "Бонус для API, без вывода и без реферальных. Сначала списывается бонус.",
     "Redemption code": "Код обмена",
     "Redemption face value is credited as bonus": "Номинал кода зачисляется как бонус",
-    "Unpriced": "Цена не задана"
+    "Unpriced": "Цена не задана",
+    "Preview expired or does not match this change; preview again": "Предпросмотр истёк или не соответствует изменению; выполните его заново",
+    "Preview expired or already used; preview again": "Предпросмотр истёк или уже использован; выполните его заново",
+    "Only root can change routing strategy": "Изменять стратегию маршрутизации может только root",
+    "Weights must be non-negative and sum to more than 0": "Веса должны быть неотрицательными, а их сумма больше 0",
+    "Nothing to save": "Нечего сохранять",
+    "Save failed on server": "Ошибка сохранения на сервере",
+    "This history snapshot cannot be restored": "Этот снимок истории нельзя восстановить",
+    "Preview failed": "Ошибка предпросмотра",
+    "Request failed (HTTP {{status}})": "Ошибка запроса (HTTP {{status}})"
   }
 }

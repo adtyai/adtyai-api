@@ -65,12 +65,12 @@ export function buildAdminOrdersQuery(
   return out
 }
 
-/** Only pending is completable on the UI; backend is authoritative (409 otherwise). */
+/** pending and expired (late payment) are completable; backend is authoritative (409 otherwise). */
 export function canCompleteOrder(
   order: Pick<TopupOrder, 'status'> | null | undefined
 ): boolean {
   if (!order) return false
-  return order.status === 'pending'
+  return order.status === 'pending' || order.status === 'expired'
 }
 
 export function orderStatusLabelKey(status: string): string {
@@ -81,6 +81,8 @@ export function orderStatusLabelKey(status: string): string {
       return 'Paid'
     case 'failed':
       return 'Failed'
+    case 'expired':
+      return 'Expired'
     case 'need_manual':
       return 'Needs manual review'
     default:

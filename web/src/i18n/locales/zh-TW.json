@@ -7359,6 +7359,15 @@
     "Dual-admin balance adjustment approvals. Create pending requests; approve executes AdjustQuota; reject leaves balances unchanged. All decisions require a second confirmation.": "餘額調整需雙人審批：新建後為待審批，批准時立即調整餘額，駁回不動餘額。",
     "Enterprise agreement pricing. Match priority: group+model > model only > group only > all. Applied as group ratio × discount. Create / update / delete require a second confirmation.": "企業協議價。匹配優先級：分組+模型 > 僅模型 > 僅分組 > 全部。生效為分組倍率×折扣。",
     "Second confirmation is required": "需要確認",
-    "Unpriced": "未定價"
+    "Unpriced": "未定價",
+    "Preview expired or does not match this change; preview again": "預覽已過期或與本次變更不一致，請重新預覽",
+    "Preview expired or already used; preview again": "預覽已過期或已使用，請重新預覽",
+    "Only root can change routing strategy": "僅 root 可修改路由策略",
+    "Weights must be non-negative and sum to more than 0": "權重須為非負數且合計大於 0",
+    "Nothing to save": "沒有可儲存的變更",
+    "Save failed on server": "伺服器端儲存失敗",
+    "This history snapshot cannot be restored": "該歷史快照無法還原",
+    "Preview failed": "預覽失敗",
+    "Request failed (HTTP {{status}})": "請求失敗（HTTP {{status}}）"
   }
 }
