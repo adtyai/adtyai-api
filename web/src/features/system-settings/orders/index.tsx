@@ -42,7 +42,9 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { ROLE } from '@/lib/roles'
 import { cn } from '@/lib/utils'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { ConfirmCompleteDialog } from './components/confirm-complete-dialog'
 import { useAdminOrderDetail, useAdminOrders } from './hooks/use-orders'
@@ -89,6 +91,8 @@ function DetailRow({ label, value }: { label: string; value: ReactNode }) {
 
 export function OrdersSettings() {
   const { t } = useTranslation()
+  // Audit P1-1: manual complete is root-only on the backend.
+  const isRoot = useAuthStore((s) => s.auth.user?.role === ROLE.SUPER_ADMIN)
   const [statusDraft, setStatusDraft] = useState('all')
   const [orderNoDraft, setOrderNoDraft] = useState('')
   const [userIdDraft, setUserIdDraft] = useState('')
@@ -362,7 +366,7 @@ export function OrdersSettings() {
                             </span>
                           </TableCell>
                           <TableCell>
-                            {canCompleteOrder(row) ? (
+                            {isRoot && canCompleteOrder(row) ? (
                               <Button
                                 type='button'
                                 variant='outline'
@@ -437,6 +441,8 @@ function OrderDetailBody({
   onComplete: (order: TopupOrder) => void
 }) {
   const { t } = useTranslation()
+  // Audit P1-1: manual complete is root-only on the backend.
+  const isRoot = useAuthStore((s) => s.auth.user?.role === ROLE.SUPER_ADMIN)
   if (!selectedNo) {
     return (
       <p className='text-muted-foreground text-xs'>
@@ -506,7 +512,7 @@ function OrderDetailBody({
         value={formatUnixTime(selected.complete_time)}
       />
       <div className='flex flex-wrap items-center gap-2 pt-1'>
-        {canCompleteOrder(selected) ? (
+        {isRoot && canCompleteOrder(selected) ? (
           <Button type='button' size='sm' onClick={() => onComplete(selected)}>
             {t('Complete')}
           </Button>

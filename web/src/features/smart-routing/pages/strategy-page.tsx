@@ -61,6 +61,7 @@ import {
   WEIGHT_DIM_KEYS,
   WEIGHT_DIM_LABEL_KEYS,
 } from '../constants'
+import { previewIntentFor } from '../lib/preview-intent'
 import { fromBackendWeights } from '../lib/weight-map'
 import {
   ROUTING_CONFIG_QUERY_KEY,
@@ -77,13 +78,6 @@ import type {
   WeightHistoryEntry,
   WeightPreview,
 } from '../types'
-
-function sameWeights(a: ScoreWeights, b?: ScoreWeights): boolean {
-  if (!b) return false
-  return WEIGHT_DIM_KEYS.every(
-    (k) => (Number(a[k]) || 0) === (Number(b[k]) || 0)
-  )
-}
 
 export function StrategyPage() {
   const { t } = useTranslation()
@@ -164,16 +158,12 @@ export function StrategyPage() {
     setPendingSchemeName(opts?.schemeName ?? null)
     // P1-3: the preview intent must fingerprint-match what PUT /config will
     // compute server-side (kind, scheme_id=0, scheme_name=new active scheme).
-    const activeScheme = config?.active_weight_scheme || undefined
-    const targetScheme = opts?.schemeName || activeScheme
-    const schemeChanging = Boolean(
-      opts?.schemeName && opts.schemeName !== activeScheme
-    )
-    const weightsChanging = !sameWeights(next, config?.weights)
-    let kind = 'update_weights'
-    if (schemeChanging) {
-      kind = weightsChanging ? 'put_config' : 'activate_scheme'
-    }
+    const { kind, scheme_name: targetScheme } = previewIntentFor({
+      activeScheme: config?.active_weight_scheme,
+      currentWeights: config?.weights,
+      nextWeights: next,
+      schemeName: opts?.schemeName,
+    })
     const result = await previewWeightScheme({
       weights: next,
       scheme_name: targetScheme,

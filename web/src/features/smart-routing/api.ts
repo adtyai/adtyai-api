@@ -119,26 +119,6 @@ export type PutRoutingConfigBody = Partial<RoutingConfig> & {
   preview_token?: string
 }
 
-/** Raw backend config (no FE normalization) — used as merge base for PUT. */
-export async function getRawRoutingConfig(): Promise<Record<
-  string,
-  unknown
-> | null> {
-  try {
-    const res = await api.get<ApiEnvelope<Record<string, unknown>>>(
-      `${SMART_ROUTING_API_PREFIX}/config`,
-      softGetConfig
-    )
-    const data = res.data?.data
-    if (res.data?.success && data && typeof data === 'object') {
-      return data
-    }
-    return null
-  } catch {
-    return null
-  }
-}
-
 /** Convert a FE patch into backend field names/shapes. */
 export function toBackendConfigPatch(
   patch: PutRoutingConfigBody
@@ -163,26 +143,16 @@ export function toBackendConfigPatch(
 }
 
 /**
- * PUT /config — audit P1-3: never send a bare partial body.
- * The backend decodes the body into a full Config and overwrites it, so a
- * partial patch silently zeroes every omitted field. We always GET the live
- * raw config, overlay only the changed fields and send the full object
- * (also correct once the backend switches to merge semantics).
- * Weight/scheme changes must include preview_token from preview.
+ * PUT /config — audit P1-3 contract (prep/contract-smart-routing-toggle-config.md):
+ * backend merges the body (only present fields change), so send only the patch.
+ * Toggle: {enabled}. Weights/scheme changes must include preview_token.
  */
 export async function putRoutingConfig(
   patch: PutRoutingConfigBody
 ): Promise<ApiEnvelope<RoutingConfig>> {
-  const current = await getRawRoutingConfig()
-  if (!current) {
-    return {
-      success: false,
-      message: 'cannot load current routing config; refusing to overwrite',
-    }
-  }
-  const body: Record<string, unknown> = {
-    ...current,
-    ...toBackendConfigPatch(patch),
+  const body = toBackendConfigPatch(patch)
+  if (Object.keys(body).filter((k) => k !== 'preview_token').length === 0) {
+    return { success: false, message: 'empty_patch' }
   }
   return softMutate<RoutingConfig>('put', '/config', body)
 }

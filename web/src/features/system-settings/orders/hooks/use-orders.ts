@@ -62,7 +62,8 @@ export function useAdminOrderDetail(orderNo: string | null) {
 export function useCompleteAdminOrder() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (orderNo: string) => completeAdminOrder(orderNo),
+    mutationFn: (args: { orderNo: string; tradeNo: string }) =>
+      completeAdminOrder(args.orderNo, args.tradeNo),
     onSuccess: (data) => {
       if (data.success) {
         void qc.invalidateQueries({ queryKey: ADMIN_ORDERS_QUERY_KEY })

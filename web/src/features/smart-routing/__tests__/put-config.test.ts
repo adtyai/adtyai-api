@@ -1,50 +1,41 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const get = vi.fn()
 const put = vi.fn()
-vi.mock('@/lib/api', () => ({ api: { get, put, post: vi.fn(), delete: vi.fn() } }))
+vi.mock('@/lib/api', () => ({
+  api: { get: vi.fn(), put, post: vi.fn(), delete: vi.fn() },
+}))
 
 const { putRoutingConfig } = await import('../api')
 
-const live = {
-  enabled: true,
-  balance_patrol_enabled: true,
-  token_skew_suspect: 0.2,
-  halfopen_stage2_stable_cycles: 3,
-  active_weight_scheme: 'balanced_default',
-  weights: { conn: 30, price: 20, speed: 20, stab: 20, auth: 10 },
-}
-
-describe('putRoutingConfig (audit P1-3)', () => {
+describe('putRoutingConfig (audit P1-3 merge contract)', () => {
   beforeEach(() => {
-    get.mockReset()
     put.mockReset()
-    get.mockResolvedValue({ data: { success: true, data: live } })
-    put.mockResolvedValue({ data: { success: true, data: live } })
+    put.mockResolvedValue({ data: { success: true, data: {} } })
   })
 
-  it('toggle sends full live config with only enabled changed', async () => {
+  it('toggle sends only {enabled}', async () => {
     await putRoutingConfig({ enabled: false })
-    const body = put.mock.calls[0][1]
-    expect(body).toEqual({ ...live, enabled: false })
+    expect(put.mock.calls[0][1]).toEqual({ enabled: false })
   })
 
-  it('weight apply keeps every other field', async () => {
+  it('weight apply sends backend weight keys + token only', async () => {
     await putRoutingConfig({
-      weights: { connectivity: 40, price: 20, speed: 20, stability: 10, authenticity: 10 } as never,
+      weights: {
+        connectivity: 40,
+        price: 20,
+        speed: 20,
+        stability: 10,
+        authenticity: 10,
+      } as never,
       preview_token: 'tok',
     })
     const body = put.mock.calls[0][1]
-    expect(body.enabled).toBe(true)
-    expect(body.balance_patrol_enabled).toBe(true)
-    expect(body.halfopen_stage2_stable_cycles).toBe(3)
-    expect(body.preview_token).toBe('tok')
-    expect(body.active_weight_scheme).toBe('balanced_default')
+    expect(Object.keys(body).sort()).toEqual(['preview_token', 'weights'])
+    expect(body.weights).toMatchObject({ conn: 40, stab: 10, auth: 10 })
   })
 
-  it('refuses to PUT when live config cannot be loaded', async () => {
-    get.mockRejectedValue(new Error('down'))
-    const res = await putRoutingConfig({ enabled: false })
+  it('refuses an empty patch', async () => {
+    const res = await putRoutingConfig({ preview_token: 'tok' })
     expect(res.success).toBe(false)
     expect(put).not.toHaveBeenCalled()
   })

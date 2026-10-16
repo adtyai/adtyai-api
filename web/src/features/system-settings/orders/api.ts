@@ -78,12 +78,18 @@ export async function getAdminOrder(orderNo: string): Promise<TopupOrder> {
   return body.data
 }
 
+/**
+ * Audit P1-1 contract: root-only; body must carry the gateway trade number
+ * (`trade_no`) as evidence. 400 trade_no_required / 403 self_complete_forbidden /
+ * 409 no_payment_attempt | trade_no_duplicate | order_status_invalid.
+ */
 export async function completeAdminOrder(
-  orderNo: string
+  orderNo: string,
+  tradeNo: string
 ): Promise<AdminOrderCompleteResponse> {
   const res = await api.post<AdminOrderCompleteResponse>(
-    `/api/admin/orders/${  encodeURIComponent(orderNo.trim())  }/complete`,
-    { confirm: true },
+    `/api/admin/orders/${encodeURIComponent(orderNo.trim())}/complete`,
+    { trade_no: tradeNo.trim() },
     {
       validateStatus: (s) =>
         (s >= 200 && s < 300) ||
@@ -93,7 +99,12 @@ export async function completeAdminOrder(
         s === 409,
     }
   )
-  if (res.status === 403 || res.status === 404 || res.status === 409) {
+  if (
+    res.status === 400 ||
+    res.status === 403 ||
+    res.status === 404 ||
+    res.status === 409
+  ) {
     throwHttp(res.status, res.data?.message, res.data?.code)
   }
   return res.data

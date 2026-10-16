@@ -173,6 +173,18 @@ describe('completeErrorMessage', () => {
       'Second confirmation is required'
     )
     expect(completeErrorMessage(500, undefined, 'boom')).toBe('boom')
+    expect(completeErrorMessage(400, 'trade_no_required', 'x')).toBe(
+      'Gateway trade number is required'
+    )
+    expect(completeErrorMessage(403, 'self_complete_forbidden', 'x')).toBe(
+      'You cannot complete your own order'
+    )
+    expect(completeErrorMessage(409, 'no_payment_attempt', 'x')).toBe(
+      'This order never started a real payment; cannot complete'
+    )
+    expect(completeErrorMessage(409, 'trade_no_duplicate', 'x')).toBe(
+      'This trade number is already used by another order'
+    )
   })
 })
 

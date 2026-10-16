@@ -199,6 +199,16 @@ export function completeErrorMessage(
   code: string | undefined,
   fallback: string
 ): string {
+  if (code === 'trade_no_required') return 'Gateway trade number is required'
+  if (code === 'self_complete_forbidden') {
+    return 'You cannot complete your own order'
+  }
+  if (code === 'no_payment_attempt') {
+    return 'This order never started a real payment; cannot complete'
+  }
+  if (code === 'trade_no_duplicate') {
+    return 'This trade number is already used by another order'
+  }
   if (status === 403) return 'Insufficient permissions'
   if (status === 404 || code === 'not_found') return 'Order not found'
   if (status === 409) return 'Order status does not allow complete'

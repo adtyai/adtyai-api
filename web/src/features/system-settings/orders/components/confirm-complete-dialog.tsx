@@ -22,6 +22,8 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import {
   Dialog,
   DialogContent,
@@ -57,11 +59,13 @@ export function ConfirmCompleteDialog({
   const { t } = useTranslation()
   const mut = useCompleteAdminOrder()
   const [localError, setLocalError] = useState<string | null>(null)
+  const [tradeNo, setTradeNo] = useState('')
   const busy = mut.isPending
 
   useEffect(() => {
     if (open) {
       setLocalError(null)
+      setTradeNo('')
       mut.reset()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -72,8 +76,15 @@ export function ConfirmCompleteDialog({
   async function handleConfirm() {
     if (!order) return
     setLocalError(null)
+    if (!tradeNo.trim()) {
+      setLocalError(t('Gateway trade number is required'))
+      return
+    }
     try {
-      const res = await mut.mutateAsync(order.order_no)
+      const res = await mut.mutateAsync({
+        orderNo: order.order_no,
+        tradeNo,
+      })
       if (!res.success) {
         const msg = getServerErrorMessage(res, t('Complete failed'))
         setLocalError(msg)
@@ -104,7 +115,7 @@ export function ConfirmCompleteDialog({
           <DialogTitle>{t('Complete topup order')}</DialogTitle>
           <DialogDescription>
             {t(
-              'Manual complete credits paid and immediate bonus for a pending order (same path as payment callback). Requires a second confirmation.'
+              'Root only. Manual complete credits paid and immediate bonus for a pending order (same path as payment callback). Enter the gateway trade number as evidence; your own orders and orders that never started a payment are rejected.'
             )}
           </DialogDescription>
         </DialogHeader>
@@ -139,6 +150,18 @@ export function ConfirmCompleteDialog({
               {formatUsd(order.bonus_amount_usd)}
             </div>
           </div>
+          <div className='grid gap-1.5'>
+            <Label htmlFor='complete-trade-no'>
+              {t('Gateway trade number')}
+            </Label>
+            <Input
+              id='complete-trade-no'
+              value={tradeNo}
+              disabled={busy}
+              placeholder={t('Trade no. from the payment gateway backend')}
+              onChange={(e) => setTradeNo(e.target.value)}
+            />
+          </div>
           {localError ? (
             <div className='text-destructive border-destructive/30 bg-destructive/5 rounded-lg border px-3 py-2 text-xs'>
               {localError}
@@ -156,7 +179,7 @@ export function ConfirmCompleteDialog({
           </Button>
           <Button
             type='button'
-            disabled={busy || order.status !== 'pending'}
+            disabled={busy || order.status !== 'pending' || !tradeNo.trim()}
             onClick={() => void handleConfirm()}
           >
             {t('Complete')}
