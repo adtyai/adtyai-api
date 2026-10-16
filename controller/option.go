@@ -3,6 +3,7 @@ package controller
 import (
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"slices"
 	"sort"
@@ -197,6 +198,9 @@ func UpdateOption(c *gin.Context) {
 	// 合规门槛已永久放开；compliance_* 字段仅保留落库兼容，禁止经通用 option API 改写。
 	if isPaymentComplianceOptionKey(option.Key) {
 		common.ApiErrorT(c, "Compliance confirmation fields cannot be changed through the general settings API")
+		return
+	}
+	if !validateOptionKeyAndType(c, option.Key, option.Value.(string)) {
 		return
 	}
 	if option.Key == "TaskPublicAddress" && option.Value.(string) != "" {
@@ -427,4 +431,35 @@ func UpdateOption(c *gin.Context) {
 		"success": true,
 		"message": "",
 	})
+}
+
+// validateOptionKeyAndType 审查 N-P2-9：已知 key 中当前值是数字的 key 新值也必须是合法数字
+// （防止 QuotaPerUnit="abc" 被存成 0 使计费失效）；QuotaPerUnit 必须 > 0。
+func validateOptionKeyAndType(c *gin.Context, key, value string) bool {
+	common.OptionMapRWMutex.RLock()
+	cur, known := common.OptionMap[key]
+	common.OptionMapRWMutex.RUnlock()
+	if !known {
+		return true // 配置型 key（如 billing_setting.*）由各自的校验处理
+	}
+	cur = strings.TrimSpace(cur)
+	if cur == "" {
+		return true
+	}
+	if _, err := strconv.ParseFloat(cur, 64); err != nil {
+		return true // 非数字型选项
+	}
+	if cur == "true" || cur == "false" {
+		return true
+	}
+	f, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
+	if err != nil || math.IsNaN(f) || math.IsInf(f, 0) {
+		common.ApiErrorStatus(c, http.StatusBadRequest, common.NewMessage("Option {{key}} must be a number", map[string]any{"key": key}))
+		return false
+	}
+	if key == "QuotaPerUnit" && f <= 0 {
+		common.ApiErrorStatus(c, http.StatusBadRequest, common.NewMessage("Option {{key}} must be greater than 0", map[string]any{"key": key}))
+		return false
+	}
+	return true
 }

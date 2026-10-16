@@ -105,3 +105,28 @@ func TestAddTokenRejectsUnusableGroup(t *testing.T) {
 	require.NoError(t, database.Model(&model.Token{}).Where("user_id = ?", u.Id).Count(&n).Error)
 	require.Zero(t, n)
 }
+
+// 审查 N-P2-9：数字型选项拒绝非法值，QuotaPerUnit 必须 > 0。
+func TestOptionNumericValidation(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	common.OptionMapRWMutex.Lock()
+	prev, had := common.OptionMap["QuotaPerUnit"]
+	if common.OptionMap == nil {
+		common.OptionMap = map[string]string{}
+	}
+	common.OptionMap["QuotaPerUnit"] = "500000"
+	common.OptionMapRWMutex.Unlock()
+	t.Cleanup(func() {
+		common.OptionMapRWMutex.Lock()
+		if had {
+			common.OptionMap["QuotaPerUnit"] = prev
+		} else {
+			delete(common.OptionMap, "QuotaPerUnit")
+		}
+		common.OptionMapRWMutex.Unlock()
+	})
+	for _, v := range []string{`"abc"`, `0`, `-1`} {
+		rec := adtyCall(UpdateOption, http.MethodPut, "/api/option/", `{"key":"QuotaPerUnit","value":`+v+`}`, 1, common.RoleRootUser, nil)
+		require.Equal(t, http.StatusBadRequest, rec.Code, v+" "+rec.Body.String())
+	}
+}
