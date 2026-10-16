@@ -67,19 +67,36 @@ export type ChannelScoreRow = {
   channel_name?: string
   model?: string
   score: number | null
+  /** Five dimension scores (aliases: s_conn / s_price / … from backend). */
   connectivity?: number | null
   price?: number | null
   speed?: number | null
   stability?: number | null
   authenticity?: number | null
+  s_conn?: number | null
+  s_price?: number | null
+  s_speed?: number | null
+  s_stab?: number | null
+  s_auth?: number | null
   route_weight?: number | null
   share_pct?: number | null
   sample_30m?: number
+  samples?: number
   status_label?: string
   half_open_stage?: HalfOpenStage
   half_open_success?: number
   half_open_inflight?: number
   cooldown_remain_sec?: number
+  /** Dual-window detail (5min / 60min); empty until backend ships. */
+  conn_short?: number | null
+  conn_long?: number | null
+  speed_short?: number | null
+  speed_long?: number | null
+  /** Capability filter reason when excluded from candidates. */
+  ability_filter_reason?: string | null
+  /** Soft RPM / in-flight throttle. */
+  rate_limited?: boolean
+  rate_limit_remain_sec?: number | null
   /** Multiplier × recharge rate estimate (CNY / MTok). */
   cost_ratio_rate?: number | null
   /** Last-30-min local estimate (CNY / MTok). */

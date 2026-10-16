@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
+import { useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -44,13 +45,41 @@ import {
   useBreakerStages,
   useScores,
 } from '../hooks/use-scores'
+import type { ChannelScoreRow } from '../types'
 
 type ScoresPageProps = {
   initialChannelId?: string
 }
 
+function dim(
+  row: ChannelScoreRow,
+  primary: keyof ChannelScoreRow,
+  alias: keyof ChannelScoreRow
+): string {
+  const v = row[primary] ?? row[alias]
+  return typeof v === 'number' && Number.isFinite(v) ? v.toFixed(1) : '—'
+}
+
+function dualWindow(row: ChannelScoreRow): string {
+  const cs = row.conn_short
+  const cl = row.conn_long
+  const ss = row.speed_short
+  const sl = row.speed_long
+  if (cs == null && cl == null && ss == null && sl == null) return '—'
+  const conn =
+    cs != null || cl != null
+      ? `C ${cs != null ? cs.toFixed(0) : '—'}/${cl != null ? cl.toFixed(0) : '—'}`
+      : null
+  const speed =
+    ss != null || sl != null
+      ? `S ${ss != null ? ss.toFixed(0) : '—'}/${sl != null ? sl.toFixed(0) : '—'}`
+      : null
+  return [conn, speed].filter(Boolean).join(' · ')
+}
+
 export function ScoresPage(props: ScoresPageProps) {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const isRoot = useAuthStore(
     (s) => s.auth.user?.role === ROLE.SUPER_ADMIN
   )
@@ -64,10 +93,21 @@ export function ScoresPage(props: ScoresPageProps) {
   )
 
   const rows = scoresQuery.data ?? []
-  const filtered =
+  const channelFilter =
     props.initialChannelId != null && props.initialChannelId !== ''
-      ? rows.filter((r) => String(r.channel_id) === props.initialChannelId)
-      : rows
+      ? props.initialChannelId
+      : null
+  const filtered = channelFilter
+    ? rows.filter((r) => String(r.channel_id) === channelFilter)
+    : rows
+
+  const clearChannelFilter = () => {
+    void navigate({
+      to: '/smart-routing/$section',
+      params: { section: 'scores' },
+      search: {},
+    })
+  }
 
   return (
     <div className='flex h-full min-h-0 flex-col gap-4 overflow-auto pb-4'>
@@ -81,6 +121,11 @@ export function ScoresPage(props: ScoresPageProps) {
             onChange={(e) => setModel(e.target.value)}
           />
         </div>
+        {channelFilter ? (
+          <Button variant='secondary' size='sm' onClick={clearChannelFilter}>
+            {t('Clear channel filter')} (#{channelFilter})
+          </Button>
+        ) : null}
         <Button
           variant='outline'
           onClick={() => {
@@ -95,104 +140,152 @@ export function ScoresPage(props: ScoresPageProps) {
       {filtered.length === 0 ? (
         <EmptyHint
           title={t('No score rows')}
-          description={t(
-            'Scores appear after real traffic. Columns stay ready for backend /scores.'
-          )}
+          description={
+            channelFilter
+              ? t('No rows for this channel filter. Clear the filter to see all.')
+              : t(
+                  'Scores appear after real traffic. Columns stay ready for backend /scores.'
+                )
+          }
         />
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>{t('Channel')}</TableHead>
-              <TableHead>{t('Model')}</TableHead>
-              <TableHead>{t('Overall score')}</TableHead>
-              <TableHead>{t('Half-open')}</TableHead>
-              <TableHead>{t('Multiplier × rate')}</TableHead>
-              <TableHead>{t('Last-30-min estimate')}</TableHead>
-              <TableHead>{t('Share')}</TableHead>
-              <TableHead>{t('Samples')}</TableHead>
-              <TableHead />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filtered.map((row) => {
-              const stage = stageByChannel.get(row.channel_id)
-              return (
-                <TableRow key={`${row.channel_id}-${row.model ?? ''}`}>
-                  <TableCell>
-                    {row.channel_name || `#${row.channel_id}`}
-                    {row.layer === 'official' ? (
-                      <span className='text-muted-foreground ml-1 text-xs'>
-                        ({t('Official')})
-                      </span>
-                    ) : null}
-                  </TableCell>
-                  <TableCell className='font-mono text-xs'>
-                    {row.model || '—'}
-                  </TableCell>
-                  <TableCell>
-                    <ScoreBadge
-                      score={row.score}
-                      dataInsufficient={row.data_insufficient}
-                      noData={row.no_data}
-                      isNew={row.is_new}
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <HalfOpenBadge
-                      stage={stage?.stage ?? row.half_open_stage}
-                      successCount={
-                        stage?.success_count ?? row.half_open_success
-                      }
-                      inflight={stage?.inflight ?? row.half_open_inflight}
-                      cooldownRemainSec={
-                        stage?.cooldown_remain_sec ?? row.cooldown_remain_sec
-                      }
-                      showInflight
-                    />
-                  </TableCell>
-                  <TableCell className='tabular-nums text-xs'>
-                    <RatioRateCell
-                      missing={row.missing_cost}
-                      value={row.cost_ratio_rate}
-                    />
-                  </TableCell>
-                  <TableCell className='tabular-nums text-xs'>
-                    <LiveEstimateCell value={row.cost_live_30m} />
-                  </TableCell>
-                  <TableCell className='tabular-nums'>
-                    {row.share_pct != null
-                      ? `${row.share_pct.toFixed(1)}%`
-                      : '—'}
-                  </TableCell>
-                  <TableCell className='tabular-nums'>
-                    {row.sample_30m ?? '—'}
-                  </TableCell>
-                  <TableCell>
-                    {row.fake_model && isRoot ? (
-                      <Button
-                        size='sm'
-                        variant='outline'
-                        onClick={() => {
-                          void clearFakeModel(row.channel_id).then((res) => {
-                            if (!res.success) {
-                              toast.error(res.message || t('Failed'))
-                              return
-                            }
-                            toast.success(t('Fake-model flag cleared'))
-                            void scoresQuery.refetch()
-                          })
-                        }}
-                      >
-                        {t('Clear fake-model')}
-                      </Button>
-                    ) : null}
-                  </TableCell>
-                </TableRow>
-              )
-            })}
-          </TableBody>
-        </Table>
+        <div className='overflow-x-auto'>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{t('Channel')}</TableHead>
+                <TableHead>{t('Model')}</TableHead>
+                <TableHead>{t('Overall score')}</TableHead>
+                <TableHead>{t('Connectivity')}</TableHead>
+                <TableHead>{t('Price')}</TableHead>
+                <TableHead>{t('Speed')}</TableHead>
+                <TableHead>{t('Stability')}</TableHead>
+                <TableHead>{t('Authenticity')}</TableHead>
+                <TableHead>{t('Dual window')}</TableHead>
+                <TableHead>{t('Route weight')}</TableHead>
+                <TableHead>{t('Half-open')}</TableHead>
+                <TableHead>{t('Multiplier × rate')}</TableHead>
+                <TableHead>{t('Last-30-min estimate')}</TableHead>
+                <TableHead>{t('Share')}</TableHead>
+                <TableHead>{t('Samples')}</TableHead>
+                <TableHead>{t('Ability filter')}</TableHead>
+                <TableHead>{t('Rate limited')}</TableHead>
+                <TableHead />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filtered.map((row) => {
+                const stage = stageByChannel.get(row.channel_id)
+                return (
+                  <TableRow key={`${row.channel_id}-${row.model ?? ''}`}>
+                    <TableCell>
+                      {row.channel_name || `#${row.channel_id}`}
+                      {row.layer === 'official' ? (
+                        <span className='text-muted-foreground ml-1 text-xs'>
+                          ({t('Official')})
+                        </span>
+                      ) : null}
+                    </TableCell>
+                    <TableCell className='font-mono text-xs'>
+                      {row.model || '—'}
+                    </TableCell>
+                    <TableCell>
+                      <ScoreBadge
+                        score={row.score}
+                        dataInsufficient={row.data_insufficient}
+                        noData={row.no_data}
+                        isNew={row.is_new}
+                      />
+                    </TableCell>
+                    <TableCell className='tabular-nums text-xs'>
+                      {dim(row, 'connectivity', 's_conn')}
+                    </TableCell>
+                    <TableCell className='tabular-nums text-xs'>
+                      {dim(row, 'price', 's_price')}
+                    </TableCell>
+                    <TableCell className='tabular-nums text-xs'>
+                      {dim(row, 'speed', 's_speed')}
+                    </TableCell>
+                    <TableCell className='tabular-nums text-xs'>
+                      {dim(row, 'stability', 's_stab')}
+                    </TableCell>
+                    <TableCell className='tabular-nums text-xs'>
+                      {dim(row, 'authenticity', 's_auth')}
+                    </TableCell>
+                    <TableCell className='text-muted-foreground text-xs'>
+                      {dualWindow(row)}
+                    </TableCell>
+                    <TableCell className='tabular-nums'>
+                      {row.route_weight != null ? row.route_weight : '—'}
+                    </TableCell>
+                    <TableCell>
+                      <HalfOpenBadge
+                        stage={stage?.stage ?? row.half_open_stage}
+                        successCount={
+                          stage?.success_count ?? row.half_open_success
+                        }
+                        inflight={stage?.inflight ?? row.half_open_inflight}
+                        cooldownRemainSec={
+                          stage?.cooldown_remain_sec ?? row.cooldown_remain_sec
+                        }
+                        showInflight
+                      />
+                    </TableCell>
+                    <TableCell className='tabular-nums text-xs'>
+                      <RatioRateCell
+                        missing={row.missing_cost}
+                        value={row.cost_ratio_rate}
+                      />
+                    </TableCell>
+                    <TableCell className='tabular-nums text-xs'>
+                      <LiveEstimateCell value={row.cost_live_30m} />
+                    </TableCell>
+                    <TableCell className='tabular-nums'>
+                      {row.share_pct != null
+                        ? `${row.share_pct.toFixed(1)}%`
+                        : '—'}
+                    </TableCell>
+                    <TableCell className='tabular-nums'>
+                      {row.sample_30m ?? row.samples ?? '—'}
+                    </TableCell>
+                    <TableCell className='max-w-[10rem] truncate text-xs'>
+                      {row.ability_filter_reason || '—'}
+                    </TableCell>
+                    <TableCell className='text-xs'>
+                      {row.rate_limited
+                        ? row.rate_limit_remain_sec != null
+                          ? t('Rate limited · {{sec}}s', {
+                              sec: row.rate_limit_remain_sec,
+                            })
+                          : t('Rate limited')
+                        : '—'}
+                    </TableCell>
+                    <TableCell>
+                      {row.fake_model && isRoot ? (
+                        <Button
+                          size='sm'
+                          variant='outline'
+                          onClick={() => {
+                            void clearFakeModel(row.channel_id).then((res) => {
+                              if (!res.success) {
+                                toast.error(res.message || t('Failed'))
+                                return
+                              }
+                              toast.success(t('Fake-model flag cleared'))
+                              void scoresQuery.refetch()
+                            })
+                          }}
+                        >
+                          {t('Clear fake-model')}
+                        </Button>
+                      ) : null}
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
+            </TableBody>
+          </Table>
+        </div>
       )}
 
       <div>

@@ -93,6 +93,7 @@ export function StrategyPage() {
 
   const [preview, setPreview] = useState<WeightPreview | null>(null)
   const [previewOpen, setPreviewOpen] = useState(false)
+  const [pendingSchemeId, setPendingSchemeId] = useState<string | null>(null)
   const [pendingEnable, setPendingEnable] = useState<boolean | null>(null)
   const [schemeName, setSchemeName] = useState('')
   const [simulateModel, setSimulateModel] = useState('')
@@ -123,26 +124,52 @@ export function StrategyPage() {
     },
   })
 
-  const applyWeights = async () => {
+  const applyWeights = async (opts?: {
+    schemeId?: string
+    nextWeights?: ScoreWeights
+  }) => {
     if (!isRoot) {
       toast.error(t('Only root can change routing strategy'))
       return
     }
-    const result = await previewWeightScheme({ weights })
+    const next = opts?.nextWeights ?? weights
+    if (opts?.nextWeights) {
+      setDraftWeights({ ...opts.nextWeights })
+    }
+    setPendingSchemeId(opts?.schemeId ?? null)
+    const result = await previewWeightScheme({
+      weights: next,
+      scheme_id: opts?.schemeId,
+    })
     setPreview(result)
     setPreviewOpen(true)
   }
 
+  const previewReady = Boolean(preview && preview.items.length > 0)
+
   const confirmApplyWeights = async () => {
-    const res = await putConfig.mutateAsync({ weights })
+    if (!previewReady) {
+      toast.error(t('Preview required before apply'))
+      return
+    }
+    const payload: Parameters<typeof putConfig.mutateAsync>[0] = {
+      weights: draftWeights ?? weights,
+    }
+    if (pendingSchemeId) {
+      payload.active_weight_scheme_id = pendingSchemeId
+    }
+    const switched = Boolean(pendingSchemeId)
+    const res = await putConfig.mutateAsync(payload)
     setPreviewOpen(false)
+    setPendingSchemeId(null)
     if (!res.success) {
       toast.error(res.message || t('Save failed'))
       return
     }
-    toast.success(t('Weights applied'))
+    toast.success(switched ? t('Switched scheme') : t('Weights applied'))
     setDraftWeights(null)
     void qc.invalidateQueries({ queryKey: WEIGHT_HISTORY_QUERY_KEY })
+    void qc.invalidateQueries({ queryKey: ROUTING_CONFIG_QUERY_KEY })
   }
 
   const toggleEnabled = async (next: boolean) => {
@@ -330,16 +357,9 @@ export function StrategyPage() {
                     className='hover:underline'
                     disabled={!isRoot}
                     onClick={() => {
-                      setDraftWeights({ ...s.weights })
-                      void putConfig.mutateAsync({
-                        active_weight_scheme_id: s.id,
-                        weights: s.weights,
-                      }).then((res) => {
-                        if (!res.success) {
-                          toast.error(res.message || t('Save failed'))
-                          return
-                        }
-                        toast.success(t('Switched scheme'))
+                      void applyWeights({
+                        schemeId: s.id,
+                        nextWeights: { ...s.weights },
                       })
                     }}
                   >
@@ -559,18 +579,22 @@ export function StrategyPage() {
 
       <ConfirmDialog
         open={previewOpen}
-        onOpenChange={setPreviewOpen}
+        onOpenChange={(open) => {
+          setPreviewOpen(open)
+          if (!open) setPendingSchemeId(null)
+        }}
         title={t('Preview weight change')}
         desc={
-          preview && preview.items.length > 0
+          previewReady
             ? t(
                 'Review share_now → share_new below, then confirm. Changes take effect next scoring cycle.'
               )
             : t(
-                'Backend preview unavailable; applying will still send the new weights. Confirm?'
+                'Backend preview unavailable or empty. Confirm apply is disabled until share_now → share_new is returned.'
               )
         }
         confirmText={t('Confirm apply')}
+        disabled={!previewReady}
         handleConfirm={() => void confirmApplyWeights()}
       >
         {preview && preview.items.length > 0 ? (

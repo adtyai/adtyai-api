@@ -29,7 +29,7 @@ export function RatioRateCell(props: RatioRateCellProps) {
   if (props.missing) {
     return (
       <span className='text-amber-600 dark:text-amber-400'>
-        {t('Fill rate & multiplier')}
+        {t('Cost pending')}
       </span>
     )
   }

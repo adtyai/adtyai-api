@@ -262,6 +262,15 @@ export async function clearFakeModel(
   })
 }
 
+/** Soft-fail clear of a daily cost guard exclusion (root). */
+export async function clearCostGuard(
+  channelId: number
+): Promise<ApiEnvelope<unknown>> {
+  return softMutate('post', '/cost/guards/clear', {
+    channel_id: channelId,
+  })
+}
+
 export async function rollbackToOfficial(): Promise<ApiEnvelope<unknown>> {
   return softMutate('post', '/weights/rollback', { to: 'official' })
 }

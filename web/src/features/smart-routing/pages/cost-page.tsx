@@ -47,6 +47,7 @@ import {
 import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
 
+import { clearCostGuard } from '../api'
 import { LiveEstimateCell, RatioRateCell } from '../components/cost-cells'
 import { EmptyHint } from '../components/empty-hint'
 import {
@@ -266,6 +267,7 @@ export function CostPage() {
                   <TableHead>{t('Today')}</TableHead>
                   <TableHead>{t('7d avg')}</TableHead>
                   <TableHead>{t('Excluded')}</TableHead>
+                  <TableHead />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -281,6 +283,28 @@ export function CostPage() {
                       {(g.daily_avg_7d ?? 0).toFixed(2)}
                     </TableCell>
                     <TableCell>{g.excluded ? t('Yes') : t('No')}</TableCell>
+                    <TableCell>
+                      {g.excluded && isRoot ? (
+                        <Button
+                          size='sm'
+                          variant='outline'
+                          onClick={() => {
+                            void clearCostGuard(g.channel_id).then((res) => {
+                              if (!res.success) {
+                                toast.error(
+                                  res.message || t('Release guard failed')
+                                )
+                                return
+                              }
+                              toast.success(t('Cost guard released'))
+                              void guardsQuery.refetch()
+                            })
+                          }}
+                        >
+                          {t('Release guard')}
+                        </Button>
+                      ) : null}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>

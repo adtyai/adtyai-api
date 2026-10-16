@@ -22,9 +22,22 @@ import { type TFunction } from 'i18next'
 /**
  * Base navigation item type
  */
+export type NavBadgeBreakdownItem = {
+  /** Already localized label */
+  label: string
+  /** null = placeholder when backend has not split yet */
+  count: number | null
+}
+
 type BaseNavItem = {
   title: string
   badge?: string
+  /**
+   * Optional Popover rows for the badge (e.g. smart-routing alert categories).
+   * When set, clicking the badge shows a breakdown; sum of numeric counts
+   * should equal the badge number when the backend has split the totals.
+   */
+  badgeBreakdown?: NavBadgeBreakdownItem[]
   icon?: React.ElementType
   activeUrls?: (LinkProps['to'] | (string & {}))[]
   configUrls?: (LinkProps['to'] | (string & {}))[]

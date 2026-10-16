@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { Link, useLocation } from '@tanstack/react-router'
+import { useTranslation } from 'react-i18next'
 import { ChevronRight } from 'lucide-react'
 import { type ReactNode, useState, useEffect } from 'react'
 
@@ -36,6 +37,13 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import {
+  Popover,
+  PopoverContent,
+  PopoverHeader,
+  PopoverTitle,
+  PopoverTrigger,
+} from '@/components/ui/popover'
+import {
   SidebarGroup,
   SidebarGroupLabel,
   SidebarMenu,
@@ -49,6 +57,7 @@ import {
 
 import { checkIsActive } from '../lib/url-utils'
 import type {
+  NavBadgeBreakdownItem,
   NavCollapsible,
   NavChatPresets,
   NavLink,
@@ -111,10 +120,71 @@ export function NavGroup({ title, items }: NavGroupProps) {
 }
 
 /**
- * Navigation badge component
+ * Navigation badge component. Optional breakdown opens a Popover on click
+ * (used by smart-routing alert categories). stopPropagation so collapsible
+ * / link parents do not toggle when opening the popover.
  */
-function NavBadge({ children }: { children: ReactNode }) {
-  return <Badge className='shrink-0 px-1 py-0 text-xs'>{children}</Badge>
+function NavBadge({
+  children,
+  breakdown,
+}: {
+  children: ReactNode
+  breakdown?: NavBadgeBreakdownItem[]
+}) {
+  const { t } = useTranslation()
+  const badge = (
+    <Badge className='shrink-0 px-1 py-0 text-xs'>{children}</Badge>
+  )
+  if (!breakdown || breakdown.length === 0) {
+    return badge
+  }
+  return (
+    <Popover>
+      <PopoverTrigger
+        render={
+          <button
+            type='button'
+            className='inline-flex shrink-0'
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+            }}
+            onPointerDown={(e) => {
+              e.stopPropagation()
+            }}
+          />
+        }
+      >
+        {badge}
+      </PopoverTrigger>
+      <PopoverContent align='start' className='w-56 p-3' side='right'>
+        <PopoverHeader>
+          <PopoverTitle className='text-sm'>{t('Alert breakdown')}</PopoverTitle>
+        </PopoverHeader>
+        <ul className='mt-2 space-y-1.5 text-sm'>
+          {breakdown.map((row) => (
+            <li
+              key={row.label}
+              className='flex items-center justify-between gap-2'
+            >
+              <span className='text-muted-foreground'>{row.label}</span>
+              <span className='tabular-nums'>
+                {row.count == null ? '—' : row.count}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+function renderNavBadge(
+  badge: string | undefined,
+  breakdown?: NavBadgeBreakdownItem[]
+) {
+  if (!badge) return null
+  return <NavBadge breakdown={breakdown}>{badge}</NavBadge>
 }
 
 /**
@@ -137,7 +207,7 @@ function SidebarMenuLink({ item, href }: { item: NavLink; href: string }) {
       >
         {item.icon && <item.icon className='shrink-0' />}
         <span className='min-w-0 flex-1 truncate'>{item.title}</span>
-        {item.badge && <NavBadge>{item.badge}</NavBadge>}
+        {renderNavBadge(item.badge, item.badgeBreakdown)}
       </SidebarMenuButton>
     </SidebarMenuItem>
   )
@@ -180,7 +250,7 @@ function SidebarMenuCollapsible({
       >
         {item.icon && <item.icon className='shrink-0' />}
         <span className='min-w-0 flex-1 truncate'>{item.title}</span>
-        {item.badge && <NavBadge>{item.badge}</NavBadge>}
+        {renderNavBadge(item.badge, item.badgeBreakdown)}
         <ChevronRight className='ms-auto size-4 shrink-0 transition-transform duration-200 group-data-[panel-open]/collapsible-trigger:rotate-90' />
       </CollapsibleTrigger>
       <CollapsibleContent className='CollapsibleContent'>
@@ -199,7 +269,7 @@ function SidebarMenuCollapsible({
               >
                 {subItem.icon && <subItem.icon className='shrink-0' />}
                 <span className='min-w-0 flex-1 truncate'>{subItem.title}</span>
-                {subItem.badge && <NavBadge>{subItem.badge}</NavBadge>}
+                {renderNavBadge(subItem.badge, subItem.badgeBreakdown)}
               </SidebarMenuSubButton>
             </SidebarMenuSubItem>
           ))}
@@ -233,7 +303,7 @@ function SidebarMenuCollapsedDropdown({
         >
           {item.icon && <item.icon className='shrink-0' />}
           <span className='min-w-0 flex-1 truncate'>{item.title}</span>
-          {item.badge && <NavBadge>{item.badge}</NavBadge>}
+          {renderNavBadge(item.badge, item.badgeBreakdown)}
           <ChevronRight className='ms-auto size-4 shrink-0 transition-transform duration-200 group-data-[popup-open]/dropdown-trigger:rotate-90' />
         </DropdownMenuTrigger>
         <DropdownMenuContent side='right' align='start' sideOffset={4}>

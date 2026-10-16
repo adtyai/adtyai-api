@@ -91,10 +91,42 @@ export function useSidebarView(): ResolvedSidebarView {
         const filtered = group.items.filter(
           (item) => item.requiredRole === undefined || role >= item.requiredRole
         )
-        const routingBadge = pendingBadge(
+        const routingAlertTotal =
           (sidebarBadges.channel_alert || 0) +
-            (sidebarBadges.reconcile_alert || 0)
-        )
+          (sidebarBadges.reconcile_alert || 0)
+        const routingBadge = pendingBadge(routingAlertTotal)
+        const bd = sidebarBadges.channel_alert_breakdown
+        const routingBreakdown = routingBadge
+          ? [
+              {
+                label: t('Breaker'),
+                count: bd?.breaker ?? null,
+              },
+              {
+                label: t('Banned'),
+                count: bd?.banned ?? null,
+              },
+              {
+                label: t('Balance low'),
+                count: bd?.balance ?? null,
+              },
+              {
+                label: t('Fake model'),
+                count: bd?.fake_model ?? null,
+              },
+              {
+                label: t('Daily cost guard'),
+                count: bd?.cost_guard ?? null,
+              },
+              {
+                label: t('Reconcile'),
+                count:
+                  sidebarBadges.reconcile_alert != null
+                    ? sidebarBadges.reconcile_alert
+                    : null,
+              },
+            ]
+          : undefined
         const items =
           group.id === 'admin' && (settingsBadge || routingBadge)
             ? filtered.map((item) => {
@@ -124,7 +156,11 @@ export function useSidebarView(): ResolvedSidebarView {
                   return { ...item, badge: settingsBadge }
                 }
                 if (isSmartRouting && routingBadge) {
-                  return { ...item, badge: routingBadge }
+                  return {
+                    ...item,
+                    badge: routingBadge,
+                    badgeBreakdown: routingBreakdown,
+                  }
                 }
                 return item
               })
@@ -134,7 +170,7 @@ export function useSidebarView(): ResolvedSidebarView {
           !(group.id === 'admin' && (settingsBadge || routingBadge))
         return unchanged ? group : { ...group, items }
       })
-  }, [configFilteredRoot, userRole, userVisible, adminVisible, sidebarBadges])
+  }, [configFilteredRoot, userRole, userVisible, adminVisible, sidebarBadges, t])
 
   const view = resolveSidebarView(pathname)
 
