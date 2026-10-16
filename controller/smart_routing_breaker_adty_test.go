@@ -26,16 +26,16 @@ func TestBreakerHalfOpenLifecycle(t *testing.T) {
 
 	// 冷却未到 → 无半开、无回退
 	smartrouting.InvalidateHalfOpenCache()
-	require.Nil(t, smartrouting.HalfOpenFallback("m", "default"))
+	require.Nil(t, smartrouting.HalfOpenFallback("m", "default", nil))
 	// 冷却到期 → 推进到 half_2，空候选可回退到该渠道
 	require.NoError(t, model.DB.Model(&model.ChannelBreakerState{}).Where("channel_id = ?", ch.Id).Update("cooldown_until", time.Now().Add(-time.Second)).Error)
 	list := smartrouting.AdvanceHalfOpen()
 	require.Len(t, list, 1)
 	require.Equal(t, "half_2", list[0].Stage)
-	fb := smartrouting.HalfOpenFallback("m", "default")
+	fb := smartrouting.HalfOpenFallback("m", "default", nil)
 	require.NotNil(t, fb)
 	require.Equal(t, ch.Id, fb.Id)
-	require.Nil(t, smartrouting.HalfOpenFallback("other-model", "default"))
+	require.Nil(t, smartrouting.HalfOpenFallback("other-model", "default", nil))
 
 	// 手动启用 → closed
 	smartrouting.ResetBreakerOnManualEnable(ch.Id)

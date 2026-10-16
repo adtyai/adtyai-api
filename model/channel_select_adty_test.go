@@ -53,7 +53,7 @@ func TestRandomChannelZeroWeightsUniform(t *testing.T) {
 func TestRandomChannelHalfOpenFallback(t *testing.T) {
 	withChannelCache(t, nil, "default", "m")
 	half := &Channel{Id: 9, Status: common.ChannelStatusScoreBroken}
-	HalfOpenFallbackHook = func(modelName, group string) *Channel { return half }
+	HalfOpenFallbackHook = func(modelName, group string, accept func(*Channel) bool) *Channel { return half }
 	ch, err := GetRandomSatisfiedChannel("default", "m", 0, nil)
 	require.NoError(t, err)
 	require.NotNil(t, ch)

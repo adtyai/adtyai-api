@@ -235,7 +235,7 @@ func StartHalfOpenLoop() {
 }
 
 // HalfOpenFallback 审查 N-P1-2：候选为空时挑一个到期半开、服务该模型与分组、inflight 未满的渠道。
-func HalfOpenFallback(modelName, group string) *model.Channel {
+func HalfOpenFallback(modelName, group string, accept func(*model.Channel) bool) *model.Channel {
 	cfg := GetConfig()
 	for _, h := range ListHalfOpenReady() {
 		ch, err := model.GetChannelById(h.ChannelID, true)
@@ -243,6 +243,9 @@ func HalfOpenFallback(modelName, group string) *model.Channel {
 			continue
 		}
 		if !channelServesModel(ch, modelName) || !channelInGroup(ch, group) {
+			continue
+		}
+		if accept != nil && !accept(ch) {
 			continue
 		}
 		if HalfOpenInflightFull(h.ChannelID, cfg.HalfOpenMaxInflight) {

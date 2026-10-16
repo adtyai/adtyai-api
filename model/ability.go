@@ -221,8 +221,9 @@ func GetChannel(
 		}
 	} else {
 		// 审查 N-P1-2：无可用渠道时回退到冷却到期的半开渠道
-		if len(filters) == 0 && retry == 0 {
-			if ch := halfOpenFallback(model, group); ch != nil {
+		// 审查 R-P1-1：不再要求 filters 为空，改为对回退渠道做 ChannelSatisfiesFilters 校验
+		if retry == 0 {
+			if ch := halfOpenFallback(model, group, filters); ch != nil {
 				return ch, nil
 			}
 		}

@@ -1,5 +1,7 @@
 package model
 
+import "github.com/QuantumNous/new-api/dto"
+
 // SmartWeightHook overlays route_weight on official priority bands.
 // Registered by service/smartrouting.Init to avoid model→service import cycle.
 var SmartWeightHook func(channels []*Channel, modelName, group string) ([]*Channel, []int)
@@ -50,19 +52,32 @@ func ConfirmChannelSelected(channelID int) bool {
 }
 
 // HalfOpenFallbackHook 审查 N-P1-2：候选为空（健康渠道全部熔断）时，返回一个冷却到期、可半开探测的渠道。
-var HalfOpenFallbackHook func(modelName, group string) *Channel
+// accept 用于让调用方按请求过滤条件（ChannelSatisfiesFilters）筛掉不合格的候选。
+var HalfOpenFallbackHook func(modelName, group string, accept func(*Channel) bool) *Channel
 
 // RegisterHalfOpenFallbackHook sets the empty-candidate half-open fallback.
-func RegisterHalfOpenFallbackHook(fn func(modelName, group string) *Channel) {
+func RegisterHalfOpenFallbackHook(fn func(modelName, group string, accept func(*Channel) bool) *Channel) {
 	HalfOpenFallbackHook = fn
 }
 
 // halfOpenFallback 选一个到期半开渠道并占用 inflight；没有则 nil。
-func halfOpenFallback(modelName, group string) *Channel {
+// 审查 R-P1-1：分发中间件对每个请求都带过滤条件（FilterRequestPath 等），
+// 回退候选必须通过 ChannelSatisfiesFilters 校验，而不是要求 filters 为空。
+func halfOpenFallback(modelName, group string, filters []dto.ChannelFilter) *Channel {
 	if HalfOpenFallbackHook == nil {
 		return nil
 	}
-	ch := HalfOpenFallbackHook(modelName, group)
+	accept := func(ch *Channel) bool {
+		if ch == nil {
+			return false
+		}
+		ok, _ := ChannelSatisfiesFilters(ch, modelName, filters)
+		return ok
+	}
+	ch := HalfOpenFallbackHook(modelName, group, accept)
+	if ch != nil && !accept(ch) {
+		return nil
+	}
 	if ch == nil || !ConfirmChannelSelected(ch.Id) {
 		return nil
 	}
