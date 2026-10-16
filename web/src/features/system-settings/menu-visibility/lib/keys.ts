@@ -54,7 +54,6 @@ export const ADMIN_MENU_KEYS: MenuKeyDef[] = [
   { key: 'aff-withdrawals', labelKey: 'Affiliate withdrawals' },
   { key: 'bonus-ledger', labelKey: 'Bonus ledger' },
   { key: 'order-refunds', labelKey: 'Order refunds' },
-  { key: 'menu-visibility', labelKey: 'Menu visibility' },
   { key: 'groups', labelKey: 'Group display names' },
   { key: 'channels', labelKey: 'Channels' },
   { key: 'models', labelKey: 'Models' },

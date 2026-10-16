@@ -51,7 +51,7 @@ function flattenLinks(items: NavItem[]): Array<{ url?: string; requiredRole?: nu
 }
 
 describe('system-settings Root-only nav (A39/A08) and no A30 audit', () => {
-  it('menu-visibility and groups require SUPER_ADMIN; audit entry is gone', () => {
+  it('menu-visibility sidebar gone; groups require SUPER_ADMIN; audit entry is gone', () => {
     const groups = SYSTEM_SETTINGS_VIEW.getNavGroups(t)
     const links = flattenLinks(groups.flatMap((g) => g.items))
     const menu = links.find((i) => i.url === '/system-settings/menu-visibility')
@@ -60,8 +60,12 @@ describe('system-settings Root-only nav (A39/A08) and no A30 audit', () => {
     const admins = links.find((i) => i.url === '/system-settings/admins')
     const status = links.find((i) => i.url === '/system-settings/status')
     const reconcile = links.find((i) => i.url === '/system-settings/reconcile')
+    const sidebarModules = links.find(
+      (i) => i.url === '/system-settings/site/sidebar-modules'
+    )
 
-    expect(menu?.requiredRole).toBe(ROLE.SUPER_ADMIN)
+    expect(menu).toBeUndefined()
+    expect(sidebarModules).toBeDefined()
     expect(group?.requiredRole).toBe(ROLE.SUPER_ADMIN)
     expect(admins).toBeUndefined()
     expect(status).toBeUndefined()
@@ -85,8 +89,11 @@ describe('system-settings Root-only nav (A39/A08) and no A30 audit', () => {
         .map((i) => [i.title, (i.items ?? []).map((s) => s.url as string)])
     )
 
-    expect(byParent['Site & Branding']).toContain(
+    expect(byParent['Site & Branding']).not.toContain(
       '/system-settings/menu-visibility'
+    )
+    expect(byParent['Site & Branding']).toContain(
+      '/system-settings/site/sidebar-modules'
     )
     expect(byParent['Billing & Payment']).toEqual(
       expect.arrayContaining([

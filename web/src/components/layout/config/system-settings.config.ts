@@ -74,12 +74,7 @@ export function getSystemSettingsNavGroups(
           icon: Settings,
           items: [
             ...getSiteSectionNavItems(t),
-            // 菜单显隐 → 官方站点/侧栏模块旁
-            {
-              title: t('Menu visibility'),
-              url: '/system-settings/menu-visibility',
-              requiredRole: ROLE.SUPER_ADMIN,
-            },
+            // 菜单显隐已并入「侧边栏模块」页，不再单独占侧栏项
           ],
         },
         {

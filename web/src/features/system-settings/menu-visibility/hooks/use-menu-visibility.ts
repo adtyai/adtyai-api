@@ -24,11 +24,12 @@ import type { MenuVisibilityPutInput } from '../types'
 
 export const MENU_VISIBILITY_QUERY_KEY = ['admin-menu-visibility'] as const
 
-export function useMenuVisibility() {
+export function useMenuVisibility(options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: MENU_VISIBILITY_QUERY_KEY,
     queryFn: getMenuVisibility,
     staleTime: 15_000,
+    enabled: options?.enabled ?? true,
     retry: (count, err) => {
       if ((err as { status?: number })?.status === 403) return false
       return count < 2
