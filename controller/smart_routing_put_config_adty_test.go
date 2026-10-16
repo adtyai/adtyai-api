@@ -14,7 +14,7 @@ import (
 
 func setupRoutingConfigTest(t *testing.T) smartrouting.Config {
 	t.Helper()
-	database := modelManagementDB(t, "sqlite", "")
+	database := adtyTestDB(t)
 	require.NoError(t, database.AutoMigrate(&model.RoutingWeightSnapshot{}, &model.RoutingWeightScheme{}))
 	prev := smartrouting.GetConfig()
 	t.Cleanup(func() { smartrouting.SetConfig(prev) })

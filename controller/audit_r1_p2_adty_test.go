@@ -14,7 +14,7 @@ import (
 
 // 审查 P2-6：管理员不能给自己建/改企业协议价；root 可以。
 func TestEnterprisePricingSelfForbiddenForAdmin(t *testing.T) {
-	database := modelManagementDB(t, "sqlite", "")
+	database := adtyTestDB(t)
 	require.NoError(t, database.AutoMigrate(&model.EnterprisePriceRule{}))
 	require.NoError(t, model.EnsureEnterprisePriceSchema(database))
 	bob := model.User{Username: "bob26", Password: "unused-password", Role: common.RoleAdminUser, AffCode: "p26b"}
@@ -40,7 +40,7 @@ func TestEnterprisePricingSelfForbiddenForAdmin(t *testing.T) {
 
 // 审查 P2-8：重复兑换提示「已被使用」。
 func TestRedeemUsedCodeMessage(t *testing.T) {
-	database := modelManagementDB(t, "sqlite", "")
+	database := adtyTestDB(t)
 	require.NoError(t, database.AutoMigrate(&model.Redemption{}, &model.UserBonusWallet{}, &model.LedgerIdempotency{}, &model.Log{}))
 	require.NoError(t, model.EnsureLedgerSchema(database))
 	u := model.User{Username: "carol28", Password: "unused-password", AffCode: "p28c"}
@@ -55,7 +55,7 @@ func TestRedeemUsedCodeMessage(t *testing.T) {
 
 // 审查 P2-9：档位赠送金额两位小数，无浮点尾巴。
 func TestTopupTiersBonusAmountRounded(t *testing.T) {
-	modelManagementDB(t, "sqlite", "")
+	adtyTestDB(t)
 	require.NoError(t, model.DB.AutoMigrate(&model.EpayInstance{}))
 	rec := adtyCall(GetTopupTiers, http.MethodGet, "/api/topup/tiers", "", 0, 0, nil)
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
@@ -72,4 +72,23 @@ func TestTopupTiersBonusAmountRounded(t *testing.T) {
 		s := strconv.FormatFloat(tr.BonusAmount, 'f', -1, 64)
 		require.LessOrEqual(t, len(s), len(strconv.FormatFloat(tr.BonusAmount, 'f', 2, 64)), s)
 	}
+}
+
+// 审查 P0-1（方言覆盖，ADTY_TEST_PG=1 时跑 PostgreSQL）：结算补扣照扣成欠费，下一次预留失败。
+func TestWalletAllowDebtOnDialect(t *testing.T) {
+	database := adtyTestDB(t)
+	require.NoError(t, database.AutoMigrate(&model.UserBonusWallet{}, &model.AdtyWalletConsumeHourly{}, &model.LedgerIdempotency{}))
+	require.NoError(t, model.EnsureLedgerSchema(database))
+	u := model.User{Username: "dave01", Password: "unused-password", AffCode: "p01d", Quota: 100}
+	require.NoError(t, database.Create(&u).Error)
+	require.NoError(t, model.IncreaseUserBonusQuota(u.Id, 300, "topup_bonus", "seed", "test", "p01-dialect"))
+	b, p, err := model.DecreaseUserWalletAllowDebt(u.Id, 675)
+	require.NoError(t, err)
+	require.Equal(t, [2]int{300, 375}, [2]int{b, p})
+	var after model.User
+	require.NoError(t, database.Select("quota").First(&after, u.Id).Error)
+	require.Equal(t, -275, after.Quota)
+	_, _, ok, err := model.TryReserveUserWallet(u.Id, 1)
+	require.NoError(t, err)
+	require.False(t, ok)
 }

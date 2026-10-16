@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 func adtyCall(handler gin.HandlerFunc, method, path, body string, uid, role int, params gin.Params) *httptest.ResponseRecorder {
@@ -27,7 +29,7 @@ func adtyCall(handler gin.HandlerFunc, method, path, body string, uid, role int,
 
 func seedCompleteFixture(t *testing.T) (rootID, aliceID int) {
 	t.Helper()
-	database := modelManagementDB(t, "sqlite", "")
+	database := adtyTestDB(t)
 	require.NoError(t, database.AutoMigrate(&model.TopupOrder{}, &model.UserBonusWallet{}, &model.LedgerIdempotency{}, &model.Log{}, &model.AffCommission{}, &model.EpayInstance{}))
 	require.NoError(t, model.EnsureLedgerSchema(database))
 	root := model.User{Username: "root1", Password: "unused-password", Role: common.RoleRootUser, AffCode: "p11r"}
@@ -87,4 +89,13 @@ func TestCreateTopupOrderRejectsUnknownPaymentMethod(t *testing.T) {
 	var n int64
 	require.NoError(t, model.DB.Model(&model.TopupOrder{}).Where("user_id = ? AND payment_method IN ?", aliceID, []string{"foo", ""}).Count(&n).Error)
 	require.Zero(t, n)
+}
+
+// adtyTestDB 默认 sqlite；ADTY_TEST_PG=1 且设置 TEST_POSTGRES_DSN（回环）时在 PostgreSQL 隔离库上跑。
+func adtyTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	if os.Getenv("ADTY_TEST_PG") == "1" && os.Getenv("TEST_POSTGRES_DSN") != "" {
+		return modelManagementDB(t, "postgres", os.Getenv("TEST_POSTGRES_DSN"))
+	}
+	return modelManagementDB(t, "sqlite", "")
 }
