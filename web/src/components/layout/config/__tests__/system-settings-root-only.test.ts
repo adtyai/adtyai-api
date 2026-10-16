@@ -127,10 +127,12 @@ describe('system-settings Root-only nav (A39/A08) and no A30 audit', () => {
     )
     expect(byParent['Operations']).toEqual(
       expect.arrayContaining([
-        '/system-settings/business-params',
         '/system-settings/alerts',
         '/system-settings/chatwoot',
       ])
+    )
+    expect(byParent['Operations']).not.toContain(
+      '/system-settings/business-params'
     )
   })
 })

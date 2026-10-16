@@ -44,7 +44,6 @@ export const ADMIN_MENU_KEYS: MenuKeyDef[] = [
   { key: 'orders', labelKey: 'Topup orders' },
   { key: 'alerts', labelKey: 'Telegram alerts' },
   { key: 'chatwoot', labelKey: 'Chatwoot customer support' },
-  { key: 'business-params', labelKey: 'Business parameters' },
   { key: 'bepusdt', labelKey: 'BEpusdt gateway' },
   { key: 'epay-instances', labelKey: 'Epay instances' },
   { key: 'risk-reviews', labelKey: 'Risk reviews' },
@@ -57,7 +56,6 @@ export const ADMIN_MENU_KEYS: MenuKeyDef[] = [
   { key: 'models', labelKey: 'Models' },
   { key: 'users', labelKey: 'Users' },
   { key: 'redemption-codes', labelKey: 'Redemption Codes' },
-  { key: 'subscriptions', labelKey: 'Subscriptions' },
   { key: 'system-settings', labelKey: 'System Settings' },
 ]
 

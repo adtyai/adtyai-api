@@ -84,3 +84,15 @@ describe('useTopNavLinks docs', () => {
     expect(result.current.some((l) => l.title === 'Docs')).toBe(false)
   })
 })
+
+describe('useTopNavLinks rankings offline', () => {
+  it('never exposes /rankings even when HeaderNavModules enables it', () => {
+    const { result } = linksFor({
+      HeaderNavModules: JSON.stringify({
+        rankings: { enabled: true, requireAuth: false },
+      }),
+    })
+    expect(result.current.some((l) => l.href === '/rankings')).toBe(false)
+    expect(result.current.some((l) => l.title === 'Rankings')).toBe(false)
+  })
+})

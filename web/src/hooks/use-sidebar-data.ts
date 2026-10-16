@@ -20,7 +20,6 @@ import {
   Activity,
   Box,
   ClipboardList,
-  CreditCard,
   FileText,
   FlaskConical,
   Key,
@@ -160,18 +159,13 @@ export function useSidebarData(): SidebarData {
             icon: Ticket,
           },
           {
-            title: t('Subscriptions'),
-            url: '/subscriptions',
-            icon: CreditCard,
-          },
-          {
             title: t('System Info'),
             url: '/system-info',
             icon: ServerCog,
             requiredRole: ROLE.SUPER_ADMIN,
           },
           {
-            title: t('Task Plugins'),
+            title: t('Plugins'),
             url: '/task-plugins',
             icon: PlugZap,
             requiredRole: ROLE.SUPER_ADMIN,

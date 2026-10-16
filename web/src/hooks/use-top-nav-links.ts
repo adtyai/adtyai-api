@@ -38,7 +38,6 @@ export type TopNavLink = {
  *   home: true,
  *   console: true,
  *   pricing: { enabled: true, requireAuth: false },
- *   rankings: { enabled: true, requireAuth: false },
  *   docs: true,
  *   about: true
  * }
@@ -79,12 +78,7 @@ export function useTopNavLinks(): TopNavLink[] {
     links.push({ title: t('Model Square'), href: '/pricing', requiresAuth })
   }
 
-  // Rankings
-  const rankings = modules?.rankings
-  if (rankings && typeof rankings === 'object' && rankings.enabled) {
-    const requiresAuth = rankings.requireAuth && !isAuthed
-    links.push({ title: t('Rankings'), href: '/rankings', requiresAuth })
-  }
+  // Rankings: 下线入口（路由保留，顶栏/页脚不再露出）
 
   // Docs: only when docs_link is configured (no fallback /docs route)
   if (modules?.docs !== false && docsLink) {

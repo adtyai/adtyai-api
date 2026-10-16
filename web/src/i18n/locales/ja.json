@@ -6091,7 +6091,7 @@
     "Task plugin *": "タスクプラグイン *",
     "Task plugin setting updated": "タスクプラグイン設定を更新しました",
     "Task plugins": "タスクプラグイン",
-    "Task Plugins": "タスクプラグイン",
+    "Task Plugins": "プラグイン",
     "The longest log time range must be at least 1 day": "ログの最長期間は 1 日以上にしてください",
     "The longest time range a user can view at once in the logs and on the dashboard, and the longest range any export can cover.": "ユーザーがログとダッシュボードで一度に表示できる最長の期間です。どのエクスポートもこの期間を超えられません。",
     "Task pricing": "タスク料金",

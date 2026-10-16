@@ -170,11 +170,7 @@ export function getSystemSettingsNavGroups(
           icon: Wrench,
           items: [
             ...getOperationsSectionNavItems(t),
-            // 业务参数 / Telegram / Chatwoot → 运维与通知类入口
-            {
-              title: t('Business parameters'),
-              url: '/system-settings/business-params',
-            },
+            // Telegram / Chatwoot → 运维与通知类入口（业务参数菜单已下线，运行时 key 仍保留）
             {
               title: t('Telegram alerts'),
               url: '/system-settings/alerts',
