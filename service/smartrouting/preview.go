@@ -1,0 +1,158 @@
+package smartrouting
+
+import (
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"sync"
+	"time"
+)
+
+var (
+	ErrPreviewRequired = errors.New("preview_required: call POST /weight-schemes/preview first and pass preview_token")
+	ErrPreviewInvalid  = errors.New("preview_token invalid or expired")
+	ErrPreviewMismatch = errors.New("preview_token does not match requested change")
+)
+
+// PreviewIntent describes a weight/scheme change that must be previewed first (P0 server gate).
+type PreviewIntent struct {
+	Kind       string      `json:"kind"` // activate_scheme | update_weights | put_config
+	SchemeID   int64       `json:"scheme_id,omitempty"`
+	SchemeName string      `json:"scheme_name,omitempty"`
+	Weights    WeightParts `json:"weights,omitempty"`
+	OperatorID int         `json:"operator_id"`
+}
+
+func (i PreviewIntent) Fingerprint() string {
+	b, _ := json.Marshal(struct {
+		Kind       string      `json:"kind"`
+		SchemeID   int64       `json:"scheme_id"`
+		SchemeName string      `json:"scheme_name"`
+		Weights    WeightParts `json:"weights"`
+	}{i.Kind, i.SchemeID, i.SchemeName, i.Weights})
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
+}
+
+type previewEntry struct {
+	Intent    PreviewIntent
+	ExpiresAt time.Time
+	Used      bool
+}
+
+var (
+	previewMu sync.Mutex
+	previewStore = map[string]*previewEntry{}
+)
+
+const previewTTL = 10 * time.Minute
+
+func newPreviewToken() string {
+	var b [16]byte
+	_, _ = rand.Read(b[:])
+	return hex.EncodeToString(b[:])
+}
+
+// IssuePreviewToken stores intent and returns an opaque token (TTL 10m, single-use on confirm).
+func IssuePreviewToken(intent PreviewIntent) (token string, expiresAt time.Time) {
+	previewMu.Lock()
+	defer previewMu.Unlock()
+	// purge expired
+	now := time.Now()
+	for k, v := range previewStore {
+		if now.After(v.ExpiresAt) || v.Used {
+			delete(previewStore, k)
+		}
+	}
+	token = newPreviewToken()
+	expiresAt = now.Add(previewTTL)
+	previewStore[token] = &previewEntry{Intent: intent, ExpiresAt: expiresAt}
+	return token, expiresAt
+}
+
+// ConsumePreviewToken validates token matches intent and marks it used.
+func ConsumePreviewToken(token string, intent PreviewIntent) error {
+	if token == "" {
+		return ErrPreviewRequired
+	}
+	previewMu.Lock()
+	defer previewMu.Unlock()
+	ent, ok := previewStore[token]
+	if !ok || ent.Used || time.Now().After(ent.ExpiresAt) {
+		if ok {
+			delete(previewStore, token)
+		}
+		return ErrPreviewInvalid
+	}
+	if ent.Intent.OperatorID != 0 && intent.OperatorID != 0 && ent.Intent.OperatorID != intent.OperatorID {
+		return ErrPreviewMismatch
+	}
+	if ent.Intent.Fingerprint() != intent.Fingerprint() {
+		return ErrPreviewMismatch
+	}
+	ent.Used = true
+	delete(previewStore, token)
+	return nil
+}
+
+// RequirePreviewForConfigChange returns nil if no weight/scheme change, else validates token.
+func RequirePreviewForConfigChange(old, neu Config, operatorID int, previewToken string) error {
+	weightsChanged := old.Weights != neu.Weights
+	schemeChanged := old.ActiveWeightScheme != neu.ActiveWeightScheme && neu.ActiveWeightScheme != ""
+	if !weightsChanged && !schemeChanged {
+		return nil
+	}
+	intent := PreviewIntent{
+		Kind:       "put_config",
+		SchemeName: neu.ActiveWeightScheme,
+		Weights:    neu.Weights,
+		OperatorID: operatorID,
+	}
+	if schemeChanged && !weightsChanged {
+		intent.Kind = "activate_scheme"
+	} else if weightsChanged && !schemeChanged {
+		intent.Kind = "update_weights"
+	}
+	return ConsumePreviewToken(previewToken, intent)
+}
+
+// RequirePreviewForSchemeUpdate validates token for scheme weight edit.
+func RequirePreviewForSchemeUpdate(schemeID int64, name string, weights WeightParts, operatorID int, previewToken string) error {
+	intent := PreviewIntent{
+		Kind:       "update_weights",
+		SchemeID:   schemeID,
+		SchemeName: name,
+		Weights:    weights,
+		OperatorID: operatorID,
+	}
+	return ConsumePreviewToken(previewToken, intent)
+}
+
+// RequirePreviewForActivate validates token for switching active scheme by name.
+func RequirePreviewForActivate(schemeName string, weights WeightParts, operatorID int, previewToken string) error {
+	intent := PreviewIntent{
+		Kind:       "activate_scheme",
+		SchemeName: schemeName,
+		Weights:    weights,
+		OperatorID: operatorID,
+	}
+	return ConsumePreviewToken(previewToken, intent)
+}
+
+// ParseWeightsJSON parses scheme weights JSON into WeightParts.
+func ParseWeightsJSON(raw string) (WeightParts, error) {
+	var w WeightParts
+	if raw == "" {
+		return DefaultWeights(), nil
+	}
+	if err := json.Unmarshal([]byte(raw), &w); err != nil {
+		return w, fmt.Errorf("bad weights json: %w", err)
+	}
+	if w.Sum() <= 0 {
+		return w, errors.New("weights sum must be > 0")
+	}
+	return w, nil
+}

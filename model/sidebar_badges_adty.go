@@ -5,6 +5,8 @@ type SidebarBadges struct {
 	RiskPending     int64 `json:"risk_pending"`
 	WithdrawPending int64 `json:"withdraw_pending"`
 	TopupPending    int64 `json:"topup_pending"`
+	ChannelAlert    int64 `json:"channel_alert"`
+	ReconcileAlert  int64 `json:"reconcile_alert"`
 }
 
 // BuildSidebarBadges returns pending counts:
@@ -28,9 +30,13 @@ func BuildSidebarBadges() (*SidebarBadges, error) {
 		Count(&topup).Error; err != nil {
 		return nil, err
 	}
+	channelAlert := CountScoreBrokenChannels() + CountFakeModelTags() + CountActiveCostGuards()
+	reconcileAlert := LatestReconcileDiffCount()
 	return &SidebarBadges{
 		RiskPending:     risk,
 		WithdrawPending: withdraw,
 		TopupPending:    topup,
+		ChannelAlert:    channelAlert,
+		ReconcileAlert:  reconcileAlert,
 	}, nil
 }

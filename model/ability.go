@@ -140,20 +140,55 @@ func GetChannel(
 	}
 	channel := Channel{}
 	if len(abilities) > 0 {
-		// Randomly choose one
-		weightSum := uint(0)
-		for _, ability_ := range abilities {
-			weightSum += ability_.Weight + 10
+		// Load channels and apply smart routing weights when enabled (adtyai).
+		ids := make([]int, 0, len(abilities))
+		for _, a := range abilities {
+			ids = append(ids, a.ChannelId)
 		}
-		// Randomly choose one
-		weight := common.GetRandomInt(int(weightSum))
-		for _, ability_ := range abilities {
-			weight -= int(ability_.Weight) + 10
-			//log.Printf("weight: %d, ability weight: %d", weight, *ability_.Weight)
-			if weight <= 0 {
-				channel.Id = ability_.ChannelId
+		var chans []*Channel
+		_ = DB.Where("id IN ?", ids).Find(&chans).Error
+		byID := map[int]*Channel{}
+		for _, ch := range chans {
+			byID[ch.Id] = ch
+		}
+		ordered := make([]*Channel, 0, len(abilities))
+		officialW := make([]int, 0, len(abilities))
+		for _, a := range abilities {
+			ch := byID[a.ChannelId]
+			if ch == nil {
+				continue
+			}
+			ordered = append(ordered, ch)
+			officialW = append(officialW, int(a.Weight)+10)
+		}
+		picked := ordered
+		weights := officialW
+		if SmartWeightHook != nil && len(ordered) > 0 {
+			picked, weights = ApplySmartWeights(ordered, model, group)
+		}
+		if len(picked) == 0 {
+			return nil, nil
+		}
+		weightSum := 0
+		for _, w := range weights {
+			weightSum += w
+		}
+		if weightSum <= 0 {
+			weightSum = len(weights) * 100
+			for i := range weights {
+				weights[i] = 100
+			}
+		}
+		weight := common.GetRandomInt(weightSum)
+		for i, ch := range picked {
+			weight -= weights[i]
+			if weight < 0 {
+				channel.Id = ch.Id
 				break
 			}
+		}
+		if channel.Id == 0 && len(picked) > 0 {
+			channel.Id = picked[len(picked)-1].Id
 		}
 	} else {
 		return nil, nil

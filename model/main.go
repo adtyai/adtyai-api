@@ -417,6 +417,9 @@ func migrateDB() error {
 	if err := EnsureGroupMetaSchema(DB); err != nil {
 		common.SysError(common.LogText("failed to ensure group_meta: %s", err.Error()))
 	}
+	if err := EnsureSmartRoutingSchema(DB); err != nil {
+		common.SysError(common.LogText("failed to ensure smart_routing: %s", err.Error()))
+	}
 	if err := EnsureTopupOrderIndexes(DB); err != nil {
 		common.SysError(common.LogText("failed to ensure topup_orders indexes: %s", err.Error()))
 	}

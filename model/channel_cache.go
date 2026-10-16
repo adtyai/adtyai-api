@@ -168,12 +168,10 @@ func GetRandomSatisfiedChannel(
 	targetPriority := int64(sortedUniquePriorities[retry])
 
 	// get the priority for the given retry number
-	var sumWeight = 0
 	var targetChannels []*Channel
 	for _, channelId := range channels {
 		if channel, ok := channelsIDM[channelId]; ok {
 			if channel.GetPriority() == targetPriority {
-				sumWeight += channel.GetWeight()
 				targetChannels = append(targetChannels, channel)
 			}
 		} else {
@@ -183,6 +181,17 @@ func GetRandomSatisfiedChannel(
 
 	if len(targetChannels) == 0 {
 		return nil, errors.New(fmt.Sprintf("no channel found, group: %s, model: %s, priority: %d", group, model, targetPriority))
+	}
+
+	// adtyai smart routing: overlay route_weight (never writes channels.weight)
+	targetChannels, smartWs := ApplySmartWeights(targetChannels, model, group)
+	if len(targetChannels) == 0 {
+		// H2: only half-open left in this band → skip to next priority via retry
+		return nil, nil
+	}
+	var sumWeight = 0
+	for _, w := range smartWs {
+		sumWeight += w
 	}
 
 	// smoothing factor and adjustment
@@ -206,8 +215,9 @@ func GetRandomSatisfiedChannel(
 	randomWeight := rand.Intn(totalWeight)
 
 	// Find a channel based on its weight
-	for _, channel := range targetChannels {
-		randomWeight -= channel.GetWeight()*smoothingFactor + smoothingAdjustment
+	for i, channel := range targetChannels {
+		w := smartWs[i]
+		randomWeight -= w*smoothingFactor + smoothingAdjustment
 		if randomWeight < 0 {
 			return channel, nil
 		}

@@ -268,6 +268,7 @@ const (
 	ChannelStatusEnabled          = 1 // don't use 0, 0 is the default value!
 	ChannelStatusManuallyDisabled = 2 // also don't use 0
 	ChannelStatusAutoDisabled     = 3
+	ChannelStatusScoreBroken      = 4 // adtyai smart routing breaker (score/banned/balance)
 )
 
 const (

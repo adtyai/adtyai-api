@@ -388,3 +388,12 @@ func appendEnterprisePriceSnapshot(relayInfo *relaycommon.RelayInfo, other *mode
 		other.SetPublic("enterprise_discount", d)
 	}
 }
+
+// AppendRouteDecisionInfo writes smart-routing decision under other.route (admin-visible via other).
+func AppendRouteDecisionInfo(other *model.LogOther, decision any) {
+	if other == nil || decision == nil {
+		return
+	}
+	other.SetAdmin("route", decision)
+}
+

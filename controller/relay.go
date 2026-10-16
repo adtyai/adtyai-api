@@ -25,6 +25,7 @@ import (
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/service/smartrouting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 
 	"github.com/gin-gonic/gin"
@@ -200,15 +201,35 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		if newAPIError == nil {
 			service.MarkRequestPolicySuccess(c, relayInfo.StreamStatus)
 			relayInfo.LastError = nil
+			// adtyai smart routing: collect success sample
+			smartrouting.OnAttemptEndSuccess(c, smartrouting.AttemptEvent{
+				ChannelID: channel.Id,
+				Model:     relayInfo.OriginModelName,
+				UserID:    relayInfo.UserId,
+				TokenID:   relayInfo.TokenId,
+				RequestID: requestId,
+				ReqModel:  relayInfo.OriginModelName,
+				Pinned:    c.GetBool("smart_routing_pinned"),
+			})
 			return
 		}
 
 		newAPIError = service.NormalizeViolationFeeError(newAPIError)
 		relayInfo.LastError = newAPIError
 
+		// adtyai smart routing: collect failure sample (before retry decision)
+		smartrouting.OnAttemptEndFromError(c, channel.Id, relayInfo.OriginModelName, relayInfo.UserId, relayInfo.TokenId, requestId, 0, newAPIError, c.GetBool("smart_routing_pinned"))
+
 		decision := service.DecideRelayRetry(c, newAPIError, common.RetryTimes-retryParam.GetRetry())
 		service.RecordPolicyFailure(c, channel.Id, newAPIError, decision)
 		processChannelError(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError, relayInfo)
+
+		if decision.Action == "retry" {
+			if !smartrouting.RetryBudgetAllows() {
+				break
+			}
+			smartrouting.MarkRetryUsed()
+		}
 
 		if decision.Action != "retry" {
 			break

@@ -1,0 +1,351 @@
+package smartrouting
+
+import (
+	"context"
+	"fmt"
+	"sync"
+	"time"
+
+	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/relaykit/types"
+)
+
+type HalfOpenInfo struct {
+	ChannelID int
+	Model     string
+	Stage     string // half_2 | half_10
+}
+
+var (
+	rateLimitUntil   = map[int]time.Time{}
+	rateLimitMu      sync.Mutex
+	consecFails      = map[int]int{}
+	consecFailMu     sync.Mutex
+)
+
+func halfOpenOKKey(channelID int) string {
+	return fmt.Sprintf("sr:halfopen:%d:ok", channelID)
+}
+func halfOpenInflightKey(channelID int) string {
+	return fmt.Sprintf("sr:halfopen:%d:inflight", channelID)
+}
+
+// EvaluateBreaker applies score thresholds + peer-worse (optional).
+func EvaluateBreaker(channelID int, modelName string, ent *ScoreEntry, cfg Config) {
+	if ent == nil || ent.Insufficient {
+		return
+	}
+	ch, err := model.GetChannelById(channelID, true)
+	if err != nil || ch == nil {
+		return
+	}
+	// never touch manual/auto-disabled
+	if ch.Status == common.ChannelStatusManuallyDisabled || ch.Status == common.ChannelStatusAutoDisabled {
+		return
+	}
+	autoBan := ch.GetAutoBan()
+
+	st := loadBreakerState(channelID)
+
+	// hysteresis: recovery to normal needs score>=65 handled in half-open path
+	if ent.Score < 40 {
+		st.LowScoreStreak++
+	} else {
+		st.LowScoreStreak = 0
+	}
+
+	if cfg.PeerWorseBreakEnabled && ent.Samples >= cfg.MinSamples {
+		if gap := peerMedianGap(modelName, ent.Score); gap >= cfg.PeerWorseGap {
+			tripBreaker(channelID, modelName, ch, st, "peer_worse", ent.Score, autoBan, cfg)
+			return
+		}
+	}
+
+	if st.LowScoreStreak >= 2 {
+		tripBreaker(channelID, modelName, ch, st, "score_low", ent.Score, autoBan, cfg)
+		return
+	}
+	saveBreakerState(st)
+}
+
+func peerMedianGap(modelName string, thisScore float64) float64 {
+	var scores []float64
+	for _, s := range GetAllScores() {
+		if s != nil && s.Model == modelName && !s.Insufficient && s.State != "broken" {
+			scores = append(scores, s.Score)
+		}
+	}
+	if len(scores) < 2 {
+		return 0
+	}
+	// simple average as proxy for median
+	sum := 0.0
+	for _, v := range scores {
+		sum += v
+	}
+	med := sum / float64(len(scores))
+	return med - thisScore
+}
+
+func tripBreaker(channelID int, modelName string, ch *model.Channel, st *model.ChannelBreakerState, reason string, score float64, autoBan bool, cfg Config) {
+	from := st.Stage
+	if !autoBan {
+		// only degrade weights, no status=4
+		st.Reason = reason + "_no_ban"
+		saveBreakerState(st)
+		model.RecordBreakerEvent(channelID, modelName, from, "degraded", reason+"_no_ban", score)
+		return
+	}
+	cool := st.CooldownSec
+	if cool <= 0 {
+		cool = cfg.CooldownInitialSec
+	}
+	st.Stage = "open"
+	st.CooldownSec = cool
+	st.CooldownUntil = time.Now().Add(time.Duration(cool) * time.Second)
+	st.HalfOpenOK = 0
+	st.Reason = reason
+	saveBreakerState(st)
+	model.UpdateChannelStatus(channelID, "", common.ChannelStatusScoreBroken, reason)
+	model.RecordBreakerEvent(channelID, modelName, from, "open", reason, score)
+	clearHalfOpenCounters(channelID)
+}
+
+// TripImmediate for banned/balance/consec fails.
+func TripImmediate(channelID int, reason string) {
+	cfg := GetConfig()
+	ch, err := model.GetChannelById(channelID, true)
+	if err != nil || ch == nil || !ch.GetAutoBan() {
+		return
+	}
+	if ch.Status == common.ChannelStatusManuallyDisabled || ch.Status == common.ChannelStatusAutoDisabled {
+		return
+	}
+	st := loadBreakerState(channelID)
+	cool := st.CooldownSec
+	if cool <= 0 {
+		cool = cfg.CooldownInitialSec
+	}
+	st.Stage = "open"
+	st.CooldownUntil = time.Now().Add(time.Duration(cool) * time.Second)
+	st.CooldownSec = cool
+	st.HalfOpenOK = 0
+	st.Reason = reason
+	saveBreakerState(st)
+	model.UpdateChannelStatus(channelID, "", common.ChannelStatusScoreBroken, reason)
+	model.RecordBreakerEvent(channelID, "", st.Stage, "open", reason, 0)
+	clearHalfOpenCounters(channelID)
+}
+
+func loadBreakerState(channelID int) *model.ChannelBreakerState {
+	var st model.ChannelBreakerState
+	if err := model.DB.First(&st, "channel_id = ?", channelID).Error; err != nil {
+		return &model.ChannelBreakerState{ChannelID: channelID, Stage: "closed", CooldownSec: GetConfig().CooldownInitialSec}
+	}
+	return &st
+}
+
+func saveBreakerState(st *model.ChannelBreakerState) {
+	if st == nil {
+		return
+	}
+	st.UpdatedAt = time.Now()
+	_ = model.DB.Save(st).Error
+}
+
+// ListHalfOpenReady returns channels whose cooldown elapsed (stage open→half_2 or already half_*).
+func ListHalfOpenReady() []HalfOpenInfo {
+	var rows []model.ChannelBreakerState
+	now := time.Now()
+	_ = model.DB.Where("stage IN ? AND cooldown_until <= ?", []string{"open", "half_2", "half_10"}, now).Find(&rows).Error
+	out := make([]HalfOpenInfo, 0, len(rows))
+	for _, r := range rows {
+		stage := r.Stage
+		if stage == "open" {
+			stage = "half_2"
+			r.Stage = "half_2"
+			saveBreakerState(&r)
+		}
+		out = append(out, HalfOpenInfo{ChannelID: r.ChannelID, Stage: stage})
+	}
+	return out
+}
+
+func HalfOpenInflightFull(channelID, max int) bool {
+	if max <= 0 {
+		max = 2
+	}
+	ctx := context.Background()
+	if common.RedisEnabled && common.RDB != nil {
+		n, err := common.RDB.Get(ctx, halfOpenInflightKey(channelID)).Int()
+		if err != nil {
+			return false
+		}
+		return n >= max
+	}
+	return false
+}
+
+func IncHalfOpenInflight(channelID int) {
+	ctx := context.Background()
+	if common.RedisEnabled && common.RDB != nil {
+		key := halfOpenInflightKey(channelID)
+		common.RDB.Incr(ctx, key)
+		common.RDB.Expire(ctx, key, 2*time.Minute)
+	}
+}
+
+func DecHalfOpenInflight(channelID int) {
+	ctx := context.Background()
+	if common.RedisEnabled && common.RDB != nil {
+		key := halfOpenInflightKey(channelID)
+		n, err := common.RDB.Decr(ctx, key).Result()
+		if err == nil && n < 0 {
+			common.RDB.Set(ctx, key, 0, 2*time.Minute)
+		}
+	}
+}
+
+// OnHalfOpenResult H6 atomic success counting + ramp 2%→10%→100%.
+func OnHalfOpenResult(channelID int, success bool) {
+	cfg := GetConfig()
+	st := loadBreakerState(channelID)
+	if st.Stage != "half_2" && st.Stage != "half_10" && st.Stage != "open" {
+		return
+	}
+	if st.Stage == "open" {
+		st.Stage = "half_2"
+	}
+	ctx := context.Background()
+	if !success {
+		// fail → re-open, cooldown double
+		cool := st.CooldownSec * 2
+		if cool < cfg.CooldownInitialSec {
+			cool = cfg.CooldownInitialSec
+		}
+		if cool > cfg.CooldownMaxSec {
+			cool = cfg.CooldownMaxSec
+		}
+		st.Stage = "open"
+		st.CooldownSec = cool
+		st.CooldownUntil = time.Now().Add(time.Duration(cool) * time.Second)
+		st.HalfOpenOK = 0
+		st.Reason = "halfopen_fail"
+		saveBreakerState(st)
+		model.UpdateChannelStatus(channelID, "", common.ChannelStatusScoreBroken, "halfopen_fail")
+		clearHalfOpenCounters(channelID)
+		model.RecordBreakerEvent(channelID, "", "halfopen", "open", "halfopen_fail", 0)
+		return
+	}
+	// success
+	var ok int64
+	if common.RedisEnabled && common.RDB != nil {
+		ok, _ = common.RDB.Incr(ctx, halfOpenOKKey(channelID)).Result()
+		common.RDB.Expire(ctx, halfOpenOKKey(channelID), time.Hour)
+	} else {
+		st.HalfOpenOK++
+		ok = int64(st.HalfOpenOK)
+	}
+	if st.Stage == "half_2" && int(ok) >= cfg.HalfOpenSuccessNeeded {
+		st.Stage = "half_10"
+		st.Stage2Since = time.Now()
+		st.HalfOpenOK = int(ok)
+		saveBreakerState(st)
+		clearHalfOpenOK(channelID)
+		model.RecordBreakerEvent(channelID, "", "half_2", "half_10", "ramp", 0)
+		return
+	}
+	if st.Stage == "half_10" {
+		need := time.Duration(cfg.ScoreRefreshSec*cfg.HalfOpenStage2Stable) * time.Second
+		if st.Stage2Since.IsZero() {
+			st.Stage2Since = time.Now()
+			saveBreakerState(st)
+			return
+		}
+		if time.Since(st.Stage2Since) >= need {
+			// full recovery
+			st.Stage = "closed"
+			st.CooldownSec = cfg.CooldownInitialSec
+			st.HalfOpenOK = 0
+			st.Reason = ""
+			saveBreakerState(st)
+			model.UpdateChannelStatus(channelID, "", common.ChannelStatusEnabled, "halfopen_recovered")
+			clearHalfOpenCounters(channelID)
+			model.RecordBreakerEvent(channelID, "", "half_10", "closed", "recovered", 70)
+		}
+	}
+}
+
+func clearHalfOpenCounters(channelID int) {
+	clearHalfOpenOK(channelID)
+	ctx := context.Background()
+	if common.RedisEnabled && common.RDB != nil {
+		common.RDB.Del(ctx, halfOpenInflightKey(channelID))
+	}
+}
+
+func clearHalfOpenOK(channelID int) {
+	ctx := context.Background()
+	if common.RedisEnabled && common.RDB != nil {
+		common.RDB.Del(ctx, halfOpenOKKey(channelID))
+	}
+}
+
+func MarkRateLimitCooldown(channelID int) {
+	cfg := GetConfig()
+	rateLimitMu.Lock()
+	rateLimitUntil[channelID] = time.Now().Add(time.Duration(cfg.RateLimitCooldownSec) * time.Second)
+	rateLimitMu.Unlock()
+}
+
+func InRateLimitCooldown(channelID int) bool {
+	rateLimitMu.Lock()
+	defer rateLimitMu.Unlock()
+	t, ok := rateLimitUntil[channelID]
+	return ok && time.Now().Before(t)
+}
+
+func NoteAttemptResult(channelID int, success bool, class ErrClass) {
+	if class == ClassBanned || class == ClassBalance {
+		TripImmediate(channelID, string(class))
+		consecFailMu.Lock()
+		consecFails[channelID] = 0
+		consecFailMu.Unlock()
+		return
+	}
+	if class == ClassRateLimit {
+		MarkRateLimitCooldown(channelID)
+		// never status=4 on single 429
+		return
+	}
+	cfg := GetConfig()
+	consecFailMu.Lock()
+	defer consecFailMu.Unlock()
+	if success {
+		consecFails[channelID] = 0
+		return
+	}
+	if FailWeight(class) <= 0 {
+		return
+	}
+	consecFails[channelID]++
+	if consecFails[channelID] >= cfg.ConsecutiveFailBreak {
+		consecFails[channelID] = 0
+		go TripImmediate(channelID, "consec_fail")
+	}
+}
+
+// IsHalfOpenChannel reports whether channel is currently in half-open stage.
+func IsHalfOpenChannel(channelID int) bool {
+	st := loadBreakerState(channelID)
+	return st.Stage == "half_2" || st.Stage == "half_10"
+}
+
+// ShouldEnableChannelRespectScoreBroken keeps official ShouldEnable from reviving status=4.
+func ShouldEnableChannelRespectScoreBroken(err *types.NewAPIError, status int) bool {
+	if status == common.ChannelStatusScoreBroken {
+		return false
+	}
+	return false // caller still uses service.ShouldEnableChannel
+}
