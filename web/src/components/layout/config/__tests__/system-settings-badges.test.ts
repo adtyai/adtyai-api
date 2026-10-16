@@ -38,6 +38,13 @@ function findByUrl(
   return undefined
 }
 
+function findParentByTitle(
+  items: NavItem[],
+  title: string
+): { badge?: string; items?: { badge?: string }[] } | undefined {
+  return items.find((item) => item.title === title && 'items' in item)
+}
+
 describe('system settings sidebar badges', () => {
   it('omits badge when counts are zero or missing', () => {
     const groups = getSystemSettingsNavGroups(t)
@@ -45,6 +52,8 @@ describe('system settings sidebar badges', () => {
     expect(findByUrl(items, '/system-settings/risk-reviews')?.badge).toBeUndefined()
     expect(findByUrl(items, '/system-settings/aff-withdrawals')?.badge).toBeUndefined()
     expect(findByUrl(items, '/system-settings/orders')?.badge).toBeUndefined()
+    expect(findParentByTitle(items, 'Security & Limits')?.badge).toBeUndefined()
+    expect(findParentByTitle(items, 'Billing & Payment')?.badge).toBeUndefined()
   })
 
   it('shows counts for risk / withdraw / topup when > 0', () => {
@@ -57,5 +66,40 @@ describe('system settings sidebar badges', () => {
     expect(findByUrl(items, '/system-settings/risk-reviews')?.badge).toBe('3')
     expect(findByUrl(items, '/system-settings/aff-withdrawals')?.badge).toBe('12')
     expect(findByUrl(items, '/system-settings/orders')?.badge).toBe('99+')
+  })
+
+  it('父级角标 = 子项待办合计（收起也能看见）', () => {
+    const groups = getSystemSettingsNavGroups(t, {
+      risk_pending: 52,
+      withdraw_pending: 12,
+      topup_pending: 5,
+    })
+    const items = groups.flatMap((g) => g.items)
+
+    // Security & Limits：仅风控 52
+    expect(findParentByTitle(items, 'Security & Limits')?.badge).toBe('52')
+    // Billing & Payment：提现 12 + 充值 5 = 17
+    expect(findParentByTitle(items, 'Billing & Payment')?.badge).toBe('17')
+    // 无子项 badge 的父级不加角标
+    expect(findParentByTitle(items, 'Site & Branding')?.badge).toBeUndefined()
+    expect(findParentByTitle(items, 'Operations')?.badge).toBeUndefined()
+  })
+
+  it('父级合计超 99 显示 99+', () => {
+    const groups = getSystemSettingsNavGroups(t, {
+      risk_pending: 40,
+      withdraw_pending: 50,
+      topup_pending: 20,
+    })
+    const items = groups.flatMap((g) => g.items)
+    expect(findParentByTitle(items, 'Billing & Payment')?.badge).toBe('70')
+    expect(findParentByTitle(items, 'Security & Limits')?.badge).toBe('40')
+
+    const capped = getSystemSettingsNavGroups(t, {
+      withdraw_pending: 60,
+      topup_pending: 50,
+    })
+    const cappedItems = capped.flatMap((g) => g.items)
+    expect(findParentByTitle(cappedItems, 'Billing & Payment')?.badge).toBe('99+')
   })
 })

@@ -40,11 +40,32 @@ import { getSiteSectionNavItems } from '@/features/system-settings/site/section-
 
 import type { SidebarBadges } from '@/features/system-settings/sidebar-badges/types'
 
-import type { NavGroup, SidebarView } from '../types'
+import type { NavGroup, NavItem, SidebarView } from '../types'
 
 function pendingBadge(count: number | undefined): string | undefined {
   if (count === undefined || !Number.isFinite(count) || count <= 0) return undefined
   return count > 99 ? '99+' : String(Math.floor(count))
+}
+
+/** Parse child badge text ("12", "99+") into a countable integer. */
+function parseBadgeCount(badge: string | undefined): number {
+  if (!badge) return 0
+  const n = Number.parseInt(badge, 10)
+  return Number.isFinite(n) && n > 0 ? n : 0
+}
+
+/**
+ * Parent (collapsible) badge = sum of child pending badges.
+ * Shown when collapsed so pending work is visible without expanding.
+ */
+function withParentBadges(items: NavItem[]): NavItem[] {
+  return items.map((item) => {
+    if (!('items' in item) || !item.items?.length) return item
+    const sum = item.items.reduce((acc, sub) => acc + parseBadgeCount(sub.badge), 0)
+    const badge = pendingBadge(sum)
+    if (!badge) return item
+    return { ...item, badge }
+  })
 }
 
 /**
@@ -62,7 +83,7 @@ export function getSystemSettingsNavGroups(
     {
       id: 'system-administration',
       title: t('System Administration'),
-      items: [
+      items: withParentBadges([
         {
           title: t('Operations overview'),
           url: '/system-settings/overview',
@@ -160,7 +181,7 @@ export function getSystemSettingsNavGroups(
             },
           ],
         },
-      ],
+      ]),
     },
   ]
 }
