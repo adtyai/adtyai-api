@@ -430,9 +430,12 @@ test('task log prices use localized unit labels from pricing metadata', async ()
     matched_tier: 'images',
   })
   expect(preview).toHaveTextContent('images · images $0.25/image')
-  await act(() => i18n.changeLanguage('zh-CN'))
+  // Do not await act() here: the re-render lands, but React's act() promise
+  // can stay pending after earlier tests in this file, hanging until timeout.
+  // Let findByRole poll (it wraps its checks in act itself).
+  await i18n.changeLanguage('zh-CN')
   expect(
-    screen.getByRole('button', { name: /images · images/ })
+    await screen.findByRole('button', { name: /images · images \$0\.25\/张/ })
   ).toHaveTextContent('images · images $0.25/张')
 })
 
