@@ -68,3 +68,15 @@ func halfOpenFallback(modelName, group string) *Channel {
 	}
 	return ch
 }
+
+// OnChannelManuallyEnabledHook 审查 N-P2-7：管理员手动启用渠道后同步重置熔断状态。
+var OnChannelManuallyEnabledHook func(channelID int)
+
+func RegisterOnChannelManuallyEnabledHook(fn func(channelID int)) { OnChannelManuallyEnabledHook = fn }
+
+// NotifyChannelManuallyEnabled 调用重置挂钩（未注册时无操作）。
+func NotifyChannelManuallyEnabled(channelID int) {
+	if OnChannelManuallyEnabledHook != nil {
+		OnChannelManuallyEnabledHook(channelID)
+	}
+}

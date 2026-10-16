@@ -281,6 +281,7 @@ func Init() {
 	model.RegisterSmartWeightHook(SmartWeights)
 	model.RegisterOnChannelSelectedHook(OnChannelSelected)
 	model.RegisterHalfOpenFallbackHook(HalfOpenFallback)
+	model.RegisterOnChannelManuallyEnabledHook(ResetBreakerOnManualEnable)
 	StartHalfOpenLoop()
 	EnsureDefaultSchemeInDB()
 }

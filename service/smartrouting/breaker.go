@@ -516,3 +516,23 @@ func ShouldEnableChannelRespectScoreBroken(err *types.NewAPIError, status int) b
 	}
 	return false // caller still uses service.ShouldEnableChannel
 }
+
+// ResetBreakerOnManualEnable 审查 N-P2-7：手动启用后熔断状态回到 closed，避免 status=1 而 stage=open 不一致。
+func ResetBreakerOnManualEnable(channelID int) {
+	var st model.ChannelBreakerState
+	if err := model.DB.First(&st, "channel_id = ?", channelID).Error; err != nil {
+		return // 没有熔断记录
+	}
+	if st.Stage == "closed" {
+		return
+	}
+	from := st.Stage
+	st.Stage = "closed"
+	st.CooldownSec = GetConfig().CooldownInitialSec
+	st.CooldownUntil = time.Time{}
+	st.HalfOpenOK = 0
+	st.Reason = "manual_enable"
+	saveBreakerState(&st)
+	clearHalfOpenCounters(channelID)
+	model.RecordBreakerEvent(channelID, "", from, "closed", "manual_enable", 0)
+}

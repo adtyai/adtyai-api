@@ -1278,6 +1278,9 @@ func UpdateChannelStatus(c *gin.Context) {
 		return
 	}
 	changed := model.UpdateChannelStatus(id, "", req.Status, "manual operation")
+	if changed && req.Status == common.ChannelStatusEnabled {
+		model.NotifyChannelManuallyEnabled(id) // 审查 N-P2-7
+	}
 	if changed {
 		model.InitChannelCache()
 		if req.Status != common.ChannelStatusEnabled {
@@ -1307,6 +1310,9 @@ func BatchUpdateChannelStatus(c *gin.Context) {
 	for _, id := range req.Ids {
 		if model.UpdateChannelStatus(id, "", req.Status, "manual batch operation") {
 			changedCount++
+			if req.Status == common.ChannelStatusEnabled {
+				model.NotifyChannelManuallyEnabled(id) // 审查 N-P2-7
+			}
 			if req.Status != common.ChannelStatusEnabled {
 				disabledIDs = append(disabledIDs, id)
 			}
