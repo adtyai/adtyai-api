@@ -734,6 +734,10 @@ func (user *User) finishInsert(inviterId int) {
 			_ = inviteUser(inviterId)
 		}
 	}
+	// 审查 N-P2-13：邀请人数与是否发邀请奖励无关（官方只在 QuotaForInviter>0 时 +1，二开返佣场景下 aff_count 恒 0）
+	if inviterId != 0 && !(operation_setting.IsPaymentComplianceConfirmed() && common.QuotaForInviter > 0) {
+		_ = DB.Model(&User{}).Where("id = ?", inviterId).Update("aff_count", gorm.Expr("aff_count + ?", 1)).Error
+	}
 }
 
 func (user *User) FinishInsert(inviterId int) {
@@ -789,6 +793,10 @@ func (user *User) FinalizeOAuthUserCreation(inviterId int) {
 			RecordLog(inviterId, LogTypeSystem, common.NewMessage("Bonus for inviting a user {{quota}}", map[string]any{"quota": logger.FormatQuota(common.QuotaForInviter)}))
 			_ = inviteUser(inviterId)
 		}
+	}
+	// 审查 N-P2-13：邀请人数与是否发邀请奖励无关（官方只在 QuotaForInviter>0 时 +1，二开返佣场景下 aff_count 恒 0）
+	if inviterId != 0 && !(operation_setting.IsPaymentComplianceConfirmed() && common.QuotaForInviter > 0) {
+		_ = DB.Model(&User{}).Where("id = ?", inviterId).Update("aff_count", gorm.Expr("aff_count + ?", 1)).Error
 	}
 }
 
