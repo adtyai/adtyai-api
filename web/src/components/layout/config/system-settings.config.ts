@@ -18,7 +18,6 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import type { TFunction } from 'i18next'
 import {
-  LayoutDashboard,
   Box,
   Route,
   CreditCard,
@@ -42,9 +41,19 @@ import type { SidebarBadges } from '@/features/system-settings/sidebar-badges/ty
 
 import type { NavGroup, NavItem, SidebarView } from '../types'
 
-function pendingBadge(count: number | undefined): string | undefined {
+export function pendingBadge(count: number | undefined): string | undefined {
   if (count === undefined || !Number.isFinite(count) || count <= 0) return undefined
   return count > 99 ? '99+' : String(Math.floor(count))
+}
+
+/** Root「系统设置」角标 = risk + withdraw + topup 合计；无待办则不显。 */
+export function sumSidebarBadges(badges?: SidebarBadges): string | undefined {
+  if (!badges) return undefined
+  return pendingBadge(
+    (badges.risk_pending || 0) +
+      (badges.withdraw_pending || 0) +
+      (badges.topup_pending || 0)
+  )
 }
 
 /** Parse child badge text ("12", "99+") into a countable integer. */
@@ -84,11 +93,6 @@ export function getSystemSettingsNavGroups(
       id: 'system-administration',
       title: t('System Administration'),
       items: withParentBadges([
-        {
-          title: t('Operations overview'),
-          url: '/system-settings/overview',
-          icon: LayoutDashboard,
-        },
         {
           title: t('Site & Branding'),
           icon: Settings,

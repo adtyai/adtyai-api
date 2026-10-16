@@ -65,17 +65,6 @@ export interface UpdatePasskeyDomainsResponse extends UpdateOptionResponse {
   data: PasskeyDomainChange
 }
 
-export type ConfirmPaymentComplianceResponse = {
-  success: boolean
-  message: string
-  data?: {
-    confirmed: boolean
-    terms_version: string
-    confirmed_at: number
-    confirmed_by: number
-  }
-}
-
 export type SystemTaskStatus = 'pending' | 'running' | 'succeeded' | 'failed'
 
 export type SystemTask<

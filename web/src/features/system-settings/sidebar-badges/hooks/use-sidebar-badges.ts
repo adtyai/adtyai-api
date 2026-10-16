@@ -18,7 +18,6 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import { useQuery } from '@tanstack/react-query'
-import { useLocation } from '@tanstack/react-router'
 
 import { useIsAdmin } from '@/hooks/use-admin'
 
@@ -30,14 +29,12 @@ export const SIDEBAR_BADGES_QUERY_KEY = ['adty-sidebar-badges'] as const
 const POLL_MS = 30_000
 
 /**
- * Poll sidebar pending counts while an admin is in System Settings.
+ * Poll sidebar pending counts for admins (root「系统设置」+ 钻入侧栏都要用).
  * Failures resolve to zeros (getSidebarBadges never throws).
  */
 export function useSidebarBadges(): SidebarBadges {
   const isAdmin = useIsAdmin()
-  const pathname = useLocation({ select: (l) => l.pathname })
-  const inSystemSettings = pathname.startsWith('/system-settings')
-  const enabled = isAdmin && inSystemSettings
+  const enabled = isAdmin
 
   const { data } = useQuery({
     queryKey: SIDEBAR_BADGES_QUERY_KEY,

@@ -82,7 +82,6 @@ import { Route as AuthenticatedSystemSettingsOperationsIndexRouteImport } from '
 import { Route as AuthenticatedSystemSettingsOperationsSectionRouteImport } from './routes/_authenticated/system-settings/operations/$section'
 import { Route as AuthenticatedSystemSettingsOrderRefundsIndexRouteImport } from './routes/_authenticated/system-settings/order-refunds/index'
 import { Route as AuthenticatedSystemSettingsOrdersIndexRouteImport } from './routes/_authenticated/system-settings/orders/index'
-import { Route as AuthenticatedSystemSettingsOverviewIndexRouteImport } from './routes/_authenticated/system-settings/overview/index'
 import { Route as AuthenticatedSystemSettingsRequestPoliciesIndexRouteImport } from './routes/_authenticated/system-settings/request-policies/index'
 import { Route as AuthenticatedSystemSettingsRequestPoliciesSectionRouteImport } from './routes/_authenticated/system-settings/request-policies/$section'
 import { Route as AuthenticatedSystemSettingsRiskReviewsIndexRouteImport } from './routes/_authenticated/system-settings/risk-reviews/index'
@@ -500,12 +499,6 @@ const AuthenticatedSystemSettingsOrdersIndexRoute =
     path: '/orders/',
     getParentRoute: () => AuthenticatedSystemSettingsRouteRoute,
   } as any)
-const AuthenticatedSystemSettingsOverviewIndexRoute =
-  AuthenticatedSystemSettingsOverviewIndexRouteImport.update({
-    id: '/overview/',
-    path: '/overview/',
-    getParentRoute: () => AuthenticatedSystemSettingsRouteRoute,
-  } as any)
 const AuthenticatedSystemSettingsRequestPoliciesIndexRoute =
   AuthenticatedSystemSettingsRequestPoliciesIndexRouteImport.update({
     id: '/request-policies/',
@@ -630,7 +623,6 @@ export interface FileRoutesByFullPath {
   '/system-settings/operations/': typeof AuthenticatedSystemSettingsOperationsIndexRoute
   '/system-settings/order-refunds/': typeof AuthenticatedSystemSettingsOrderRefundsIndexRoute
   '/system-settings/orders/': typeof AuthenticatedSystemSettingsOrdersIndexRoute
-  '/system-settings/overview/': typeof AuthenticatedSystemSettingsOverviewIndexRoute
   '/system-settings/request-policies/': typeof AuthenticatedSystemSettingsRequestPoliciesIndexRoute
   '/system-settings/risk-reviews/': typeof AuthenticatedSystemSettingsRiskReviewsIndexRoute
   '/system-settings/security/': typeof AuthenticatedSystemSettingsSecurityIndexRoute
@@ -711,7 +703,6 @@ export interface FileRoutesByTo {
   '/system-settings/operations': typeof AuthenticatedSystemSettingsOperationsIndexRoute
   '/system-settings/order-refunds': typeof AuthenticatedSystemSettingsOrderRefundsIndexRoute
   '/system-settings/orders': typeof AuthenticatedSystemSettingsOrdersIndexRoute
-  '/system-settings/overview': typeof AuthenticatedSystemSettingsOverviewIndexRoute
   '/system-settings/request-policies': typeof AuthenticatedSystemSettingsRequestPoliciesIndexRoute
   '/system-settings/risk-reviews': typeof AuthenticatedSystemSettingsRiskReviewsIndexRoute
   '/system-settings/security': typeof AuthenticatedSystemSettingsSecurityIndexRoute
@@ -796,7 +787,6 @@ export interface FileRoutesById {
   '/_authenticated/system-settings/operations/': typeof AuthenticatedSystemSettingsOperationsIndexRoute
   '/_authenticated/system-settings/order-refunds/': typeof AuthenticatedSystemSettingsOrderRefundsIndexRoute
   '/_authenticated/system-settings/orders/': typeof AuthenticatedSystemSettingsOrdersIndexRoute
-  '/_authenticated/system-settings/overview/': typeof AuthenticatedSystemSettingsOverviewIndexRoute
   '/_authenticated/system-settings/request-policies/': typeof AuthenticatedSystemSettingsRequestPoliciesIndexRoute
   '/_authenticated/system-settings/risk-reviews/': typeof AuthenticatedSystemSettingsRiskReviewsIndexRoute
   '/_authenticated/system-settings/security/': typeof AuthenticatedSystemSettingsSecurityIndexRoute
@@ -880,7 +870,6 @@ export interface FileRouteTypes {
     | '/system-settings/operations/'
     | '/system-settings/order-refunds/'
     | '/system-settings/orders/'
-    | '/system-settings/overview/'
     | '/system-settings/request-policies/'
     | '/system-settings/risk-reviews/'
     | '/system-settings/security/'
@@ -961,7 +950,6 @@ export interface FileRouteTypes {
     | '/system-settings/operations'
     | '/system-settings/order-refunds'
     | '/system-settings/orders'
-    | '/system-settings/overview'
     | '/system-settings/request-policies'
     | '/system-settings/risk-reviews'
     | '/system-settings/security'
@@ -1045,7 +1033,6 @@ export interface FileRouteTypes {
     | '/_authenticated/system-settings/operations/'
     | '/_authenticated/system-settings/order-refunds/'
     | '/_authenticated/system-settings/orders/'
-    | '/_authenticated/system-settings/overview/'
     | '/_authenticated/system-settings/request-policies/'
     | '/_authenticated/system-settings/risk-reviews/'
     | '/_authenticated/system-settings/security/'
@@ -1585,13 +1572,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSystemSettingsOrdersIndexRouteImport
       parentRoute: typeof AuthenticatedSystemSettingsRouteRoute
     }
-    '/_authenticated/system-settings/overview/': {
-      id: '/_authenticated/system-settings/overview/'
-      path: '/overview'
-      fullPath: '/system-settings/overview/'
-      preLoaderRoute: typeof AuthenticatedSystemSettingsOverviewIndexRouteImport
-      parentRoute: typeof AuthenticatedSystemSettingsRouteRoute
-    }
     '/_authenticated/system-settings/request-policies/': {
       id: '/_authenticated/system-settings/request-policies/'
       path: '/request-policies'
@@ -1706,7 +1686,6 @@ interface AuthenticatedSystemSettingsRouteRouteChildren {
   AuthenticatedSystemSettingsOperationsIndexRoute: typeof AuthenticatedSystemSettingsOperationsIndexRoute
   AuthenticatedSystemSettingsOrderRefundsIndexRoute: typeof AuthenticatedSystemSettingsOrderRefundsIndexRoute
   AuthenticatedSystemSettingsOrdersIndexRoute: typeof AuthenticatedSystemSettingsOrdersIndexRoute
-  AuthenticatedSystemSettingsOverviewIndexRoute: typeof AuthenticatedSystemSettingsOverviewIndexRoute
   AuthenticatedSystemSettingsRequestPoliciesIndexRoute: typeof AuthenticatedSystemSettingsRequestPoliciesIndexRoute
   AuthenticatedSystemSettingsRiskReviewsIndexRoute: typeof AuthenticatedSystemSettingsRiskReviewsIndexRoute
   AuthenticatedSystemSettingsSecurityIndexRoute: typeof AuthenticatedSystemSettingsSecurityIndexRoute
@@ -1771,8 +1750,6 @@ const AuthenticatedSystemSettingsRouteRouteChildren: AuthenticatedSystemSettings
       AuthenticatedSystemSettingsOrderRefundsIndexRoute,
     AuthenticatedSystemSettingsOrdersIndexRoute:
       AuthenticatedSystemSettingsOrdersIndexRoute,
-    AuthenticatedSystemSettingsOverviewIndexRoute:
-      AuthenticatedSystemSettingsOverviewIndexRoute,
     AuthenticatedSystemSettingsRequestPoliciesIndexRoute:
       AuthenticatedSystemSettingsRequestPoliciesIndexRoute,
     AuthenticatedSystemSettingsRiskReviewsIndexRoute:

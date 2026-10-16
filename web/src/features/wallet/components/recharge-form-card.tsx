@@ -140,7 +140,8 @@ export function RechargeFormCard({
   const hasWaffoPaymentMethods =
     Array.isArray(waffoPayMethods) && waffoPayMethods.length > 0
   const minTopup = getMinTopupAmount(topupInfo)
-  const redemptionEnabled = topupInfo?.enable_redemption !== false
+  // 前端不再因合规未确认隐藏兑换码；enable_redemption 原绑合规态
+  const redemptionEnabled = true
 
   if (loading) {
     return (

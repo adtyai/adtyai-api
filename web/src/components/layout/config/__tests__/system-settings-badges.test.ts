@@ -20,7 +20,10 @@ import type { TFunction } from 'i18next'
 import { describe, expect, it } from 'vitest'
 
 import type { NavItem } from '../../types'
-import { getSystemSettingsNavGroups } from '../system-settings.config'
+import {
+  getSystemSettingsNavGroups,
+  sumSidebarBadges,
+} from '../system-settings.config'
 
 const t = ((key: string) => key) as unknown as TFunction
 
@@ -103,4 +106,29 @@ describe('system settings sidebar badges', () => {
     const cappedItems = capped.flatMap((g) => g.items)
     expect(findParentByTitle(cappedItems, 'Billing & Payment')?.badge).toBe('99+')
   })
+
+  it('顶层系统设置角标合计 = risk+withdraw+topup', () => {
+    expect(
+      sumSidebarBadges({
+        risk_pending: 52,
+        withdraw_pending: 12,
+        topup_pending: 5,
+      })
+    ).toBe('69')
+    expect(
+      sumSidebarBadges({
+        risk_pending: 0,
+        withdraw_pending: 0,
+        topup_pending: 0,
+      })
+    ).toBeUndefined()
+    expect(
+      sumSidebarBadges({
+        risk_pending: 40,
+        withdraw_pending: 50,
+        topup_pending: 20,
+      })
+    ).toBe('99+')
+  })
+
 })

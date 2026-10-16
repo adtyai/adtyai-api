@@ -242,7 +242,7 @@ export function Wallet() {
                     onRedemptionCodeChange={setRedemptionCode}
                     onRedeem={handleRedeem}
                     redeeming={redeeming}
-                    redemptionEnabled={topupInfo?.enable_redemption !== false}
+                    redemptionEnabled
                     onUsdtPaid={() => {
                       void fetchUser()
                       void refetchAdtyTopup()
@@ -274,9 +274,6 @@ export function Wallet() {
               user={user}
               affiliateLink={affiliateLink}
               onTransfer={() => setTransferDialogOpen(true)}
-              complianceConfirmed={
-                topupInfo?.payment_compliance_confirmed !== false
-              }
               loading={affiliateLoading}
             />
           </div>

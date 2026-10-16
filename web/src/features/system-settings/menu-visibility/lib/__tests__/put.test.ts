@@ -57,9 +57,9 @@ describe('normalizeSideDraft', () => {
     expect(draft.customKeys).toEqual(['future_mod'])
   })
 
-  it('admin overview false from server', () => {
-    const draft = normalizeSideDraft('admin', { overview: false })
-    expect(draft.values.overview).toBe(false)
+  it('admin orders false from server', () => {
+    const draft = normalizeSideDraft('admin', { orders: false })
+    expect(draft.values.orders).toBe(false)
     expect(draft.values.chatwoot).toBe(true)
   })
 })
@@ -92,7 +92,7 @@ describe('buildSideMap / buildMenuVisibilityPut', () => {
   it('can emit empty map for a side wholesale clear', () => {
     const initial = viewToDrafts({
       user: { wallet: false },
-      admin: { overview: true },
+      admin: { orders: true },
     })
     const emptyUser = { values: {}, customKeys: [] as string[] }
     const put = buildMenuVisibilityPut(
@@ -116,12 +116,12 @@ describe('buildSideMap / buildMenuVisibilityPut', () => {
       },
       admin: {
         ...initial.admin,
-        values: { ...initial.admin.values, overview: false },
+        values: { ...initial.admin.values, orders: false },
       },
     }
     const put = buildMenuVisibilityPut(current, initial)
     expect(put?.user?.wallet).toBe(false)
-    expect(put?.admin?.overview).toBe(false)
+    expect(put?.admin?.orders).toBe(false)
   })
 })
 

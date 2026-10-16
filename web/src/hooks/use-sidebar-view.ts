@@ -20,7 +20,10 @@ import { useLocation } from '@tanstack/react-router'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { getSystemSettingsNavGroups } from '@/components/layout/config/system-settings.config'
+import {
+  getSystemSettingsNavGroups,
+  sumSidebarBadges,
+} from '@/components/layout/config/system-settings.config'
 import { resolveSidebarView } from '@/components/layout/lib/sidebar-view-registry'
 import { useSidebarBadges } from '@/features/system-settings/sidebar-badges/hooks/use-sidebar-badges'
 import type { NavGroup, ResolvedSidebarView } from '@/components/layout/types'
@@ -76,6 +79,7 @@ export function useSidebarView(): ResolvedSidebarView {
   const rootNavGroups = useMemo<NavGroup[]>(() => {
     const role = userRole ?? ROLE.GUEST
     const isAdmin = role >= ROLE.ADMIN
+    const settingsBadge = sumSidebarBadges(sidebarBadges)
     return applyRootMenuVisibility(
       configFilteredRoot,
       userVisible,
@@ -83,12 +87,34 @@ export function useSidebarView(): ResolvedSidebarView {
     )
       .filter((group) => (group.id === 'admin' ? isAdmin : true))
       .map((group) => {
-        const items = group.items.filter(
+        const filtered = group.items.filter(
           (item) => item.requiredRole === undefined || role >= item.requiredRole
         )
-        return items.length === group.items.length ? group : { ...group, items }
+        const items =
+          group.id === 'admin' && settingsBadge
+            ? filtered.map((item) => {
+                const isSystemSettings =
+                  ('activeUrls' in item &&
+                    Array.isArray(item.activeUrls) &&
+                    item.activeUrls.some(
+                      (u) =>
+                        typeof u === 'string' &&
+                        u.startsWith('/system-settings')
+                    )) ||
+                  ('url' in item &&
+                    typeof item.url === 'string' &&
+                    item.url.startsWith('/system-settings'))
+                return isSystemSettings
+                  ? { ...item, badge: settingsBadge }
+                  : item
+              })
+            : filtered
+        const unchanged =
+          items.length === group.items.length &&
+          !(group.id === 'admin' && settingsBadge)
+        return unchanged ? group : { ...group, items }
       })
-  }, [configFilteredRoot, userRole, userVisible, adminVisible])
+  }, [configFilteredRoot, userRole, userVisible, adminVisible, sidebarBadges])
 
   const view = resolveSidebarView(pathname)
 

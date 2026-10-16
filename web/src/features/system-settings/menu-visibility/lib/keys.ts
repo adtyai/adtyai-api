@@ -39,10 +39,8 @@ export const USER_MENU_KEYS: MenuKeyDef[] = [
 
 /**
  * Known admin-side menu keys (system-settings path tails + root admin nav).
- * Accept uses `overview`.
  */
 export const ADMIN_MENU_KEYS: MenuKeyDef[] = [
-  { key: 'overview', labelKey: 'Operations overview' },
   { key: 'orders', labelKey: 'Topup orders' },
   { key: 'alerts', labelKey: 'Telegram alerts' },
   { key: 'chatwoot', labelKey: 'Chatwoot customer support' },

@@ -80,11 +80,11 @@ describe('system-settings Root-only nav (A39/A08) and no A30 audit', () => {
     const groups = SYSTEM_SETTINGS_VIEW.getNavGroups(t)
     const top = groups.flatMap((g) => g.items)
 
-    // 顶层只剩官方折叠 + 运营总览，无独立二开 url
+    // 顶层只剩官方折叠父级，无运营总览、无独立二开 url
     const topUrls = top
       .filter((i) => 'url' in i && i.url)
       .map((i) => i.url as string)
-    expect(topUrls).toEqual(['/system-settings/overview'])
+    expect(topUrls).toEqual([])
 
     const byParent = Object.fromEntries(
       top
