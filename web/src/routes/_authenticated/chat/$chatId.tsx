@@ -154,6 +154,7 @@ function ChatRouteComponent() {
   }
 
   return (
+    // oxlint-disable-next-line react/iframe-missing-sandbox -- admin-configured chat preset site needs full origin (login cookies, scripts)
     <iframe
       src={iframeSrc}
       key={iframeSrc}

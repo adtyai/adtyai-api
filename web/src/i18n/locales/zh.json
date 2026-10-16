@@ -8225,6 +8225,8 @@
     "Probe 2% · success 5/5": "待放量 2% · 成功 5/5",
     "Cost pending": "待填成本",
     "Preview required before apply": "须先完成预览才能应用",
+    "Top-ups and refunds only; API usage charges are shown in Usage logs.": "此处仅列充值与退款；API 调用消费请在「使用日志」查看。",
+    "Root only": "仅 root 可操作",
     "No scores yet; changes take effect once scoring starts.": "暂无评分，应用后生效",
     "Backend preview unavailable or empty. Confirm apply is disabled until share_now → share_new is returned.": "后端预览不可用或结果为空。在返回 share_now→share_new 之前，确认应用已禁用。",
     "Release guard": "人工解除",

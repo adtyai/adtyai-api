@@ -252,13 +252,15 @@ export function ScoresPage(props: ScoresPageProps) {
                       {row.ability_filter_reason || '—'}
                     </TableCell>
                     <TableCell className='text-xs'>
-                      {row.rate_limited
-                        ? row.rate_limit_remain_sec != null
-                          ? t('Rate limited · {{sec}}s', {
-                              sec: row.rate_limit_remain_sec,
-                            })
-                          : t('Rate limited')
-                        : '—'}
+                      {!row.rate_limited && '—'}
+                      {row.rate_limited && row.rate_limit_remain_sec != null
+                        ? t('Rate limited · {{sec}}s', {
+                            sec: row.rate_limit_remain_sec,
+                          })
+                        : null}
+                      {row.rate_limited && row.rate_limit_remain_sec == null
+                        ? t('Rate limited')
+                        : null}
                     </TableCell>
                     <TableCell>
                       {row.fake_model && isRoot ? (

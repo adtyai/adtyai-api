@@ -115,7 +115,7 @@ describe('datetimeLocalToUnix / note', () => {
     expect(datetimeLocalToUnix('')).toBeUndefined()
     const u = datetimeLocalToUnix('2026-10-15T16:00')
     expect(typeof u).toBe('number')
-    expect(u!).toBeGreaterThan(0)
+    expect(u).toBeGreaterThan(0)
   })
 
   it('builds note from reason and ref', () => {

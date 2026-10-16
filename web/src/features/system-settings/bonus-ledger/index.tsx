@@ -282,12 +282,12 @@ export function BonusLedgerSettings() {
                     </TableRow>
                   ) : (
                     rows.map((row) => {
-                      const deltaCls =
-                        row.delta > 0
-                          ? 'text-amber-600 font-medium'
-                          : row.delta < 0
-                            ? 'text-slate-800 font-medium'
-                            : 'text-muted-foreground'
+                      let deltaCls = 'text-muted-foreground'
+                      if (row.delta > 0) {
+                        deltaCls = 'text-amber-600 font-medium'
+                      } else if (row.delta < 0) {
+                        deltaCls = 'text-slate-800 font-medium'
+                      }
                       return (
                         <TableRow key={`${row.id}-${row.created_at}`}>
                           <TableCell>

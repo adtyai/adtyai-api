@@ -261,7 +261,9 @@ export function AffiliateWithdrawPage() {
                           {t('Loading...')}
                         </TableCell>
                       </TableRow>
-                    ) : filteredCommissions.length === 0 ? (
+                    ) : null}
+                    {!commissions.isLoading &&
+                      (filteredCommissions.length === 0 ? (
                       <TableRow>
                         <TableCell
                           colSpan={7}
@@ -313,7 +315,7 @@ export function AffiliateWithdrawPage() {
                           </TableCell>
                         </TableRow>
                       ))
-                    )}
+                    ))}
                   </TableBody>
                 </Table>
               </section>

@@ -192,12 +192,9 @@ export function AdtyUsdtCashierDialog({
   }
 
   const fxRate = usdt?.usdt_fx_rate
-  const tierAmount =
-    typeof order?.amount_usd === 'number'
-      ? order.amount_usd
-      : typeof order?.amount === 'number'
-        ? order.amount
-        : undefined
+  const tierAmount = [order?.amount_usd, order?.amount].find(
+    (v): v is number => typeof v === 'number'
+  )
 
   const statusLabel = (() => {
     if (pollStatus === 'paid') return t('Paid')

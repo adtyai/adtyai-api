@@ -84,12 +84,9 @@ const FALLBACK_FIRST_TOPUP_BONUS_PERCENT = 10
 
 /** Convert FirstTopupBonusRate fraction (0.10) or percent (10) to display percent. */
 function firstTopupBonusRateToPercent(rate: unknown): number | null {
-  const n =
-    typeof rate === 'number'
-      ? rate
-      : typeof rate === 'string'
-        ? Number(rate)
-        : Number.NaN
+  let n = Number.NaN
+  if (typeof rate === 'number') n = rate
+  else if (typeof rate === 'string') n = Number(rate)
   if (!Number.isFinite(n) || n < 0) return null
   const percent = n <= 1 ? n * 100 : n
   return Math.round(percent * 100) / 100
@@ -359,7 +356,7 @@ function StartStepItem(props: {
           {body}
         </button>
       ) : (
-        <Link to={props.step.to!} className={rowClass}>
+        <Link to={props.step.to ?? '/'} className={rowClass}>
           {body}
         </Link>
       )}

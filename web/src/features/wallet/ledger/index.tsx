@@ -57,6 +57,12 @@ import {
 } from './lib/ledger'
 import type { WalletLedgerSelfParams } from './types'
 
+function deltaClass(delta: number | null | undefined, positive: string) {
+  if (delta != null && delta > 0) return positive
+  if (delta != null && delta < 0) return 'text-slate-800 font-medium'
+  return 'text-muted-foreground'
+}
+
 export function WalletLedgerPage() {
   const { t, i18n } = useTranslation()
   const [accountDraft, setAccountDraft] = useState('all')
@@ -239,6 +245,11 @@ export function WalletLedgerPage() {
                   <div className='text-muted-foreground mt-0.5 text-xs'>
                     {t('Total {{count}} records', { count: total })}
                   </div>
+                  <div className='text-muted-foreground mt-0.5 text-xs'>
+                    {t(
+                      'Top-ups and refunds only; API usage charges are shown in Usage logs.'
+                    )}
+                  </div>
                 </div>
                 <div className='text-muted-foreground flex items-center gap-2 text-xs'>
                   <Button
@@ -290,18 +301,14 @@ export function WalletLedgerPage() {
                   ) : (
                     rows.map((row) => {
                       const cols = splitAccountColumns(row)
-                      const paidCls =
-                        cols.paidDelta != null && cols.paidDelta > 0
-                          ? 'text-emerald-600 font-medium'
-                          : cols.paidDelta != null && cols.paidDelta < 0
-                            ? 'text-slate-800 font-medium'
-                            : 'text-muted-foreground'
-                      const bonusCls =
-                        cols.bonusDelta != null && cols.bonusDelta > 0
-                          ? 'text-amber-600 font-medium'
-                          : cols.bonusDelta != null && cols.bonusDelta < 0
-                            ? 'text-slate-800 font-medium'
-                            : 'text-muted-foreground'
+                      const paidCls = deltaClass(
+                        cols.paidDelta,
+                        'text-emerald-600 font-medium'
+                      )
+                      const bonusCls = deltaClass(
+                        cols.bonusDelta,
+                        'text-amber-600 font-medium'
+                      )
                       return (
                         <TableRow key={`${row.id}-${row.created_at}`}>
                           <TableCell>

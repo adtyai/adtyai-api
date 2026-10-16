@@ -149,7 +149,7 @@ export function getSyncExpressionPricing(expression: string, t: (key: string) =>
       ).join(' ∧ '),
       lines: fields.map((field) => ({
         label: t(field.shortLabel),
-        value: `$${formatPricingNumber(Number(tier[field.tierField!]))}`,
+        value: `$${formatPricingNumber(Number(field.tierField ? tier[field.tierField] : undefined))}`,
       })),
     })),
   }

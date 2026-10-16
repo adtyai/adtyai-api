@@ -187,16 +187,17 @@ export async function putRoutingConfig(
   return softMutate<RoutingConfig>('put', '/config', body)
 }
 
+function firstString(...vals: unknown[]): string | undefined {
+  for (const v of vals) if (typeof v === 'string') return v
+  return undefined
+}
+
 function normalizeScheme(raw: unknown): WeightScheme | null {
   if (!raw || typeof raw !== 'object') return null
   const row = raw as Record<string, unknown>
   const idVal = row.id
   const name =
-    typeof row.name === 'string'
-      ? row.name
-      : idVal != null
-        ? String(idVal)
-        : ''
+    typeof row.name === 'string' ? row.name : String(idVal ?? '')
   if (!name && idVal == null) return null
   return {
     id: idVal != null ? String(idVal) : name,
@@ -397,30 +398,18 @@ function normalizeHistoryEntry(raw: unknown): WeightHistoryEntry | null {
   const row = raw as Record<string, unknown>
   const id = row.id != null ? String(row.id) : ''
   if (!id) return null
-  const created =
-    typeof row.created_at === 'string'
-      ? row.created_at
-      : typeof row.at === 'string'
-        ? row.at
-        : ''
-  let summary =
-    typeof row.summary === 'string'
-      ? row.summary
-      : typeof row.kind === 'string'
-        ? row.kind
-        : undefined
+  const created = firstString(row.created_at, row.at) ?? ''
+  let summary = firstString(row.summary, row.kind)
   if (!summary && typeof row.diff === 'string') {
     summary = row.diff.slice(0, 120)
   }
   return {
     id,
     at: created,
-    by:
-      row.by != null
-        ? String(row.by)
-        : row.operator_id != null
-          ? String(row.operator_id)
-          : undefined,
+    by: (() => {
+      const v = row.by ?? row.operator_id
+      return v != null ? String(v) : undefined
+    })(),
     summary,
     scheme_name:
       typeof row.scheme_name === 'string' ? row.scheme_name : undefined,

@@ -67,7 +67,9 @@ export function Rankings() {
 
           {rankingsQuery.isLoading ? (
             <RankingsLoading />
-          ) : !snapshot ? (
+          ) : null}
+          {!rankingsQuery.isLoading &&
+            (!snapshot ? (
             <RankingsError
               message={
                 rankingsQuery.error instanceof Error
@@ -94,7 +96,7 @@ export function Rankings() {
                 droppers={snapshot.top_droppers}
               />
             </>
-          )}
+          ))}
         </PageTransition>
       </div>
     </PublicLayout>

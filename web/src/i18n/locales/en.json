@@ -8225,6 +8225,8 @@
     "Probe 2% · success 5/5": "Probe 2% · success 5/5",
     "Cost pending": "Cost pending",
     "Preview required before apply": "Preview required before apply",
+    "Top-ups and refunds only; API usage charges are shown in Usage logs.": "Top-ups and refunds only; API usage charges are shown in Usage logs.",
+    "Root only": "Root only",
     "No scores yet; changes take effect once scoring starts.": "No scores yet; changes take effect once scoring starts.",
     "Backend preview unavailable or empty. Confirm apply is disabled until share_now → share_new is returned.": "Backend preview unavailable or empty. Confirm apply is disabled until share_now → share_new is returned.",
     "Release guard": "Release guard",

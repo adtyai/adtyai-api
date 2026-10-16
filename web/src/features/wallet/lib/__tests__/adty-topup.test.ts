@@ -53,16 +53,16 @@ describe('adty-topup helpers', () => {
   it('takes max of first vs tier when eligible', () => {
     const plan = computeAdtyBonusPlan(100, tiers[1], 0.1, true)
     expect(plan).not.toBeNull()
-    expect(plan!.chosenBonusUSD).toBe(10)
-    expect(plan!.usedFirst).toBe(true)
-    expect(plan!.creditTotalUSD).toBe(110)
+    expect(plan?.chosenBonusUSD).toBe(10)
+    expect(plan?.usedFirst).toBe(true)
+    expect(plan?.creditTotalUSD).toBe(110)
   })
 
   it('uses tier only when not first-eligible', () => {
     const plan = computeAdtyBonusPlan(100, tiers[1], 0.1, false)
-    expect(plan!.chosenBonusUSD).toBe(2.5)
-    expect(plan!.usedFirst).toBe(false)
-    expect(plan!.creditTotalUSD).toBe(102.5)
+    expect(plan?.chosenBonusUSD).toBe(2.5)
+    expect(plan?.usedFirst).toBe(false)
+    expect(plan?.creditTotalUSD).toBe(102.5)
   })
 
   it('computes local pay via Price', () => {

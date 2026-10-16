@@ -32,6 +32,9 @@ import {
   TableRow,
 } from '@/components/ui/table'
 
+import { ROLE } from '@/lib/roles'
+import { useAuthStore } from '@/stores/auth-store'
+
 import { SettingsSection } from '../components/settings-section'
 import { ConfirmEpayActionDialog } from './components/confirm-epay-action-dialog'
 import { InstanceFormDialog } from './components/instance-form-dialog'
@@ -52,6 +55,10 @@ type Action = 'set-primary' | 'disable' | 'enable'
 export function EpayInstancesSection() {
   const { t } = useTranslation()
   const list = useEpayInstances()
+  // Audit P0-2: payee account writes are root-only; admins get read-only view.
+  const isRoot = useAuthStore(
+    (s) => s.auth.user?.role === ROLE.SUPER_ADMIN
+  )
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<EpayInstanceView | null>(null)
   const [actionRow, setActionRow] = useState<EpayInstanceView | null>(null)
@@ -93,18 +100,20 @@ export function EpayInstancesSection() {
               <RefreshCw className='size-3.5' />
               {t('Refresh')}
             </Button>
-            <Button
-              type='button'
-              size='sm'
-              className='h-8'
-              onClick={() => {
-                setEditing(null)
-                setFormOpen(true)
-              }}
-            >
-              <Plus className='size-3.5' />
-              {t('Create instance')}
-            </Button>
+            {isRoot ? (
+              <Button
+                type='button'
+                size='sm'
+                className='h-8'
+                onClick={() => {
+                  setEditing(null)
+                  setFormOpen(true)
+                }}
+              >
+                <Plus className='size-3.5' />
+                {t('Create instance')}
+              </Button>
+            ) : null}
           </div>
         </div>
 
@@ -235,22 +244,21 @@ export function EpayInstancesSection() {
                         </span>
                       </TableCell>
                       <TableCell>
+                        {isRoot ? (
                         <div className='flex flex-wrap items-center gap-1.5'>
                           {!row.is_primary && row.status === 'enabled' ? (
-                            <>
-                              <Button
-                                type='button'
-                                variant='outline'
-                                size='sm'
-                                className='h-7 px-2.5 text-xs'
-                                onClick={() => {
-                                  setActionRow(row)
-                                  setAction('set-primary')
-                                }}
-                              >
-                                {t('Set as primary')}
-                              </Button>
-                            </>
+                            <Button
+                              type='button'
+                              variant='outline'
+                              size='sm'
+                              className='h-7 px-2.5 text-xs'
+                              onClick={() => {
+                                setActionRow(row)
+                                setAction('set-primary')
+                              }}
+                            >
+                              {t('Set as primary')}
+                            </Button>
                           ) : null}
                           {row.status === 'enabled' ? (
                             <Button
@@ -266,20 +274,18 @@ export function EpayInstancesSection() {
                               {t('Disable')}
                             </Button>
                           ) : (
-                            <>
-                              <Button
-                                type='button'
-                                variant='outline'
-                                size='sm'
-                                className='h-7 px-2.5 text-xs'
-                                onClick={() => {
-                                  setActionRow(row)
-                                  setAction('enable')
-                                }}
-                              >
-                                {t('Enable')}
-                              </Button>
-                            </>
+                            <Button
+                              type='button'
+                              variant='outline'
+                              size='sm'
+                              className='h-7 px-2.5 text-xs'
+                              onClick={() => {
+                                setActionRow(row)
+                                setAction('enable')
+                              }}
+                            >
+                              {t('Enable')}
+                            </Button>
                           )}
                           <Button
                             type='button'
@@ -294,6 +300,11 @@ export function EpayInstancesSection() {
                             {t('Edit')}
                           </Button>
                         </div>
+                        ) : (
+                          <span className='text-muted-foreground text-xs'>
+                            {t('Root only')}
+                          </span>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))

@@ -170,11 +170,10 @@ export function StrategyPage() {
       opts?.schemeName && opts.schemeName !== activeScheme
     )
     const weightsChanging = !sameWeights(next, config?.weights)
-    const kind = schemeChanging
-      ? weightsChanging
-        ? 'put_config'
-        : 'activate_scheme'
-      : 'update_weights'
+    let kind = 'update_weights'
+    if (schemeChanging) {
+      kind = weightsChanging ? 'put_config' : 'activate_scheme'
+    }
     const result = await previewWeightScheme({
       weights: next,
       scheme_name: targetScheme,

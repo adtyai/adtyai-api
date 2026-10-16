@@ -84,8 +84,8 @@ describe('buildSideMap / buildMenuVisibilityPut', () => {
     }
     const put = buildMenuVisibilityPut(current, initial)
     expect(put).not.toBeNull()
-    expect(put!.user).toBeDefined()
-    expect(put!.user!.wallet).toBe(false)
+    expect(put?.user).toBeDefined()
+    expect(put?.user?.wallet).toBe(false)
     expect(put).not.toHaveProperty('admin')
   })
 
