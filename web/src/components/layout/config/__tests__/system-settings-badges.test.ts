@@ -96,6 +96,7 @@ describe('system settings sidebar badges', () => {
     expect(findParentByTitle(items, 'Security & Limits')?.badge).toBe('40')
 
     const capped = getSystemSettingsNavGroups(t, {
+      risk_pending: 0,
       withdraw_pending: 60,
       topup_pending: 50,
     })
