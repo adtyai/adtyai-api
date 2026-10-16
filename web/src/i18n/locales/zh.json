@@ -7288,11 +7288,11 @@
     "After three steps: first top-up gets {{percent}}% bonus (not stacked with tier bonus; higher one applies).": "三步完成后：去首充，首充送 {{percent}}%（与档位赠送不叠加，取较高）",
     "Go top up": "去充值",
     "Wallet Top-up": "钱包充值",
-    "USD pricing · full amount credited · tier bonus extra": "美元计价，实付全额到账，另按档位赠送",
+    "USD pricing · full amount credited · tier bonus extra": "美元计价 · 全额到账 · 档位加赠",
     "First top-up bonus {{percent}}%": "首充送 {{percent}}%",
-    "First top-up only; not stacked with tier bonus — higher one applies. You have not used first top-up yet.": "仅限首笔，与档位赠送不叠加、取较高。你尚未首充。",
+    "First top-up only; not stacked with tier bonus — higher one applies. You have not used first top-up yet.": "仅限首笔，与档位取高",
     "Select top-up tier": "选择充值档位",
-    "Tier bonus about 1%–8%, increases with amount": "赠送约 1%~8%，随档位递增",
+    "Tier bonus about 1%–8%, increases with amount": "赠送约 1%~8%",
     "Full amount credited": "实付全额到账",
     "Tier bonus {{percent}}%": "档位赠送 {{percent}}%",
     "First top-up {{percent}}% · +{{bonus}}": "首充可得 {{percent}}% · +{{bonus}}",
@@ -7317,7 +7317,7 @@
     "Invalid top-up tier. Please choose a listed amount.": "非法档位，请选择列表中的金额",
     "Failed to create top-up order": "创建充值订单失败",
     "Order created. Payment checkout will open once the channel is ready.": "订单已创建。支付通道就绪后将打开收银台。",
-    "Bonus can be used for API calls, cannot be withdrawn, and does not earn affiliate commission. Spend bonus balance before paid balance.": "赠送部分可用于调用，不可提现、不参与邀请返佣。消费时先扣赠送再扣实充。",
+    "Bonus can be used for API calls, cannot be withdrawn, and does not earn affiliate commission. Spend bonus balance before paid balance.": "赠送可用于调用，不可提现、不计返佣；先扣赠送再扣实充。",
     "Redemption code": "兑换码",
     "Redemption face value is credited as bonus": "兑换码面额计入赠送",
     "Failed to open payment checkout": "无法打开支付收银台",
@@ -8074,6 +8074,10 @@
     "Start date must be YYYY-MM-DD or empty": "起始日必须为 年-月-日 格式，或留空",
     "Once a date is set, daily reconcile also checks paid and bonus accounts separately. Report only; does not affect whether it balances. Leave empty to turn off.": "填日期后，每日对账额外按充值/赠送账户核对，只报告，不影响是否对平；留空即关闭。",
     "Only the Admin role can be created": "只能创建管理员角色",
-    "Failed to create administrator, please try again later": "新增管理员失败，请稍后重试"
+    "Failed to create administrator, please try again later": "新增管理员失败，请稍后重试",
+    "First +{{percent}}%": "首充+{{percent}}%",
+    "+{{percent}}%": "+{{percent}}%",
+    "First only · best of first/tier": "仅限首笔 · 与档位取高",
+    "Bonus · first {{percent}}%": "赠送 · 首充 {{percent}}%"
   }
 }

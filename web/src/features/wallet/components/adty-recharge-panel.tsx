@@ -322,82 +322,63 @@ export function AdtyRechargePanel({
         contentClassName='space-y-5'
       >
         {firstEligible && (
-          <div className='rounded-xl border border-amber-200 bg-gradient-to-br from-amber-50 to-orange-50 p-4 dark:border-amber-900/50 dark:from-amber-950/40 dark:to-orange-950/30'>
+          <div className='rounded-xl border border-amber-200 bg-gradient-to-br from-amber-50 to-orange-50 px-3.5 py-2.5 dark:border-amber-900/50 dark:from-amber-950/40 dark:to-orange-950/30'>
             <div className='flex items-center gap-1.5 text-[13px] font-semibold text-amber-800 dark:text-amber-200'>
-              <Gift className='h-4 w-4' />
+              <Gift className='h-4 w-4 shrink-0' />
               {t('First top-up bonus {{percent}}%', { percent: firstPercent })}
+              <span className='font-normal text-amber-800/70 dark:text-amber-200/70'>
+                · {t('First only · best of first/tier')}
+              </span>
             </div>
-            <p className='mt-1 text-xs leading-5 text-amber-800/80 dark:text-amber-200/80'>
-              {t(
-                'First top-up only; not stacked with tier bonus — higher one applies. You have not used first top-up yet.'
-              )}
-            </p>
           </div>
         )}
 
-        <div className='space-y-2.5'>
-          <div className='flex items-end justify-between gap-2'>
-            <div>
-              <Label className='text-muted-foreground text-xs font-medium tracking-wider uppercase'>
-                {t('Select top-up tier')}
-              </Label>
-              <p className='text-muted-foreground mt-0.5 text-xs'>
-                {t('Tier bonus about 1%–8%, increases with amount')}
-              </p>
-            </div>
-          </div>
-          <div className='grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5'>
-            {tiers.map((tier) => {
-              const amount = Number(tier.amount)
-              const selected = selectedAmount === amount
-              const tierPct =
-                typeof tier.bonus_percent === 'number'
-                  ? tier.bonus_percent
-                  : firstTopupBonusRateToPercent(tier.bonus_rate)
-              const firstExtra = firstEligible
-                ? Math.round(amount * toFirstFraction(firstTopupBonusRate) * 100) /
-                  100
-                : 0
-              return (
-                <button
-                  key={amount}
-                  type='button'
-                  onClick={() => setSelectedAmount(amount)}
-                  className={cn(
-                    'relative rounded-xl border bg-background p-3.5 text-left transition-colors',
-                    selected
-                      ? 'border-primary ring-primary/20 bg-primary/5 ring-2'
-                      : 'border-border hover:border-primary/40'
-                  )}
-                >
-                  {selected && (
-                    <span className='bg-primary text-primary-foreground absolute top-2.5 right-2.5 grid h-5 w-5 place-items-center rounded-full'>
-                      <Check className='h-3 w-3' />
-                    </span>
-                  )}
-                  <div className='text-lg font-semibold'>
-                    {formatUsdAmount(amount)}
-                  </div>
-                  <div className='text-muted-foreground mt-0.5 text-[11.5px]'>
-                    {t('Full amount credited')}
-                  </div>
-                  <div className='mt-2'>
-                    <span className='rounded bg-amber-50 px-1.5 py-0.5 text-[11.5px] text-amber-700 dark:bg-amber-950/50 dark:text-amber-300'>
-                      {t('Tier bonus {{percent}}%', { percent: tierPct })}
-                    </span>
-                  </div>
-                  {firstEligible && (
-                    <div className='text-primary mt-1.5 text-[11.5px]'>
-                      {t('First top-up {{percent}}% · +{{bonus}}', {
-                        percent: firstPercent,
-                        bonus: formatUsdAmount(firstExtra),
-                      })}
-                    </div>
-                  )}
-                </button>
-              )
-            })}
-          </div>
+        <div className='grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5'>
+          {tiers.map((tier) => {
+            const amount = Number(tier.amount)
+            const selected = selectedAmount === amount
+            const tierPct =
+              typeof tier.bonus_percent === 'number'
+                ? tier.bonus_percent
+                : firstTopupBonusRateToPercent(tier.bonus_rate)
+            const showFirst = firstEligible && firstPercent >= tierPct
+            return (
+              <button
+                key={amount}
+                type='button'
+                onClick={() => setSelectedAmount(amount)}
+                className={cn(
+                  'relative rounded-xl border bg-background px-3.5 py-3 text-left transition-colors',
+                  selected
+                    ? 'border-primary ring-primary/20 bg-primary/5 ring-2'
+                    : 'border-border hover:border-primary/40'
+                )}
+              >
+                {selected && (
+                  <span className='bg-primary text-primary-foreground absolute top-2 right-2 grid h-5 w-5 place-items-center rounded-full'>
+                    <Check className='h-3 w-3' />
+                  </span>
+                )}
+                <div className='pr-6 text-lg font-semibold tracking-tight tabular-nums'>
+                  {formatUsdAmount(amount)}
+                </div>
+                <div className='mt-1.5 truncate'>
+                  <span
+                    className={cn(
+                      'inline-block max-w-full truncate rounded px-1.5 py-0.5 text-[11px] leading-4',
+                      showFirst
+                        ? 'bg-primary/10 text-primary'
+                        : 'bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300'
+                    )}
+                  >
+                    {showFirst
+                      ? t('First +{{percent}}%', { percent: firstPercent })
+                      : t('+{{percent}}%', { percent: tierPct })}
+                  </span>
+                </div>
+              </button>
+            )
+          })}
         </div>
 
         <div className='space-y-2.5'>
@@ -499,14 +480,10 @@ export function AdtyRechargePanel({
         />
         <SummaryRow
           label={
-            firstEligible && bonusPlan
-              ? t(
-                  'Bonus (higher of first {{first}}% and tier {{tier}}%)',
-                  {
-                    first: bonusPlan.firstPercent,
-                    tier: bonusPlan.tierPercent,
-                  }
-                )
+            firstEligible && bonusPlan?.usedFirst
+              ? t('Bonus · first {{percent}}%', {
+                  percent: bonusPlan.firstPercent,
+                })
               : t('Tier bonus')
           }
           value={
@@ -612,10 +589,6 @@ export function AdtyRechargePanel({
   )
 }
 
-function toFirstFraction(rate: number): number {
-  if (!Number.isFinite(rate) || rate < 0) return 0.1
-  return rate > 1 ? rate / 100 : rate
-}
 
 function SummaryRow({
   label,

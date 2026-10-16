@@ -160,14 +160,16 @@ export function pickDefaultPayMethod(
   return methods.find((m) => m.available) ?? methods[0]
 }
 
+/** Display USD with a plain `$` prefix (never locale `US$`). */
 export function formatUsdAmount(amount: number): string {
   if (!Number.isFinite(amount)) return '-'
-  return new Intl.NumberFormat(undefined, {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: amount % 1 === 0 ? 0 : 2,
+  const abs = Math.abs(amount)
+  const digits = abs % 1 === 0 ? 0 : 2
+  const body = abs.toLocaleString('en-US', {
+    minimumFractionDigits: digits,
     maximumFractionDigits: 2,
-  }).format(amount)
+  })
+  return amount < 0 ? `-$${body}` : `$${body}`
 }
 
 

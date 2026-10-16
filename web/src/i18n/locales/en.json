@@ -7288,11 +7288,11 @@
     "After three steps: first top-up gets {{percent}}% bonus (not stacked with tier bonus; higher one applies).": "After three steps: first top-up gets {{percent}}% bonus (not stacked with tier bonus; higher one applies).",
     "Go top up": "Go top up",
     "Wallet Top-up": "Wallet Top-up",
-    "USD pricing · full amount credited · tier bonus extra": "USD pricing · full amount credited · tier bonus extra",
+    "USD pricing · full amount credited · tier bonus extra": "USD · full credit · tier bonus",
     "First top-up bonus {{percent}}%": "First top-up bonus {{percent}}%",
-    "First top-up only; not stacked with tier bonus — higher one applies. You have not used first top-up yet.": "First top-up only; not stacked with tier bonus — higher one applies. You have not used first top-up yet.",
+    "First top-up only; not stacked with tier bonus — higher one applies. You have not used first top-up yet.": "First only · best of first/tier",
     "Select top-up tier": "Select top-up tier",
-    "Tier bonus about 1%–8%, increases with amount": "Tier bonus about 1%–8%, increases with amount",
+    "Tier bonus about 1%–8%, increases with amount": "Bonus about 1%–8%",
     "Full amount credited": "Full amount credited",
     "Tier bonus {{percent}}%": "Tier bonus {{percent}}%",
     "First top-up {{percent}}% · +{{bonus}}": "First top-up {{percent}}% · +{{bonus}}",
@@ -7317,7 +7317,7 @@
     "Invalid top-up tier. Please choose a listed amount.": "Invalid top-up tier. Please choose a listed amount.",
     "Failed to create top-up order": "Failed to create top-up order",
     "Order created. Payment checkout will open once the channel is ready.": "Order created. Payment checkout will open once the channel is ready.",
-    "Bonus can be used for API calls, cannot be withdrawn, and does not earn affiliate commission. Spend bonus balance before paid balance.": "Bonus can be used for API calls, cannot be withdrawn, and does not earn affiliate commission. Spend bonus balance before paid balance.",
+    "Bonus can be used for API calls, cannot be withdrawn, and does not earn affiliate commission. Spend bonus balance before paid balance.": "Bonus for API use only; no withdraw/affiliate. Bonus spent before paid.",
     "Redemption code": "Redemption code",
     "Redemption face value is credited as bonus": "Redemption face value is credited as bonus",
     "Failed to open payment checkout": "Failed to open payment checkout",
@@ -8074,6 +8074,10 @@
     "Start date must be YYYY-MM-DD or empty": "Start date must be YYYY-MM-DD or empty",
     "Once a date is set, daily reconcile also checks paid and bonus accounts separately. Report only; does not affect whether it balances. Leave empty to turn off.": "Once a date is set, daily reconcile also checks paid and bonus accounts separately. Report only; does not affect whether it balances. Leave empty to turn off.",
     "Only the Admin role can be created": "Only the Admin role can be created",
-    "Failed to create administrator, please try again later": "Failed to create administrator, please try again later"
+    "Failed to create administrator, please try again later": "Failed to create administrator, please try again later",
+    "First +{{percent}}%": "First +{{percent}}%",
+    "+{{percent}}%": "+{{percent}}%",
+    "First only · best of first/tier": "First only · best of first/tier",
+    "Bonus · first {{percent}}%": "Bonus · first {{percent}}%"
   }
 }

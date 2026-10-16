@@ -24,6 +24,7 @@ import {
   computePayLocalAmount,
   firstTopupBonusRateToPercent,
   formatCountdown,
+  formatUsdAmount,
   isFixedTierAmount,
   remainingSecondsUntil,
   resolveAdtyCheckoutLaunch,
@@ -67,6 +68,13 @@ describe('adty-topup helpers', () => {
   it('computes local pay via Price', () => {
     expect(computePayLocalAmount(1000, 7.3)).toBe(7300)
     expect(computePayLocalAmount(10, 7.3)).toBe(73)
+  })
+
+  it('formats USD with a plain $ prefix (not US$)', () => {
+    expect(formatUsdAmount(100)).toBe('$100')
+    expect(formatUsdAmount(10.5)).toBe('$10.50')
+    expect(formatUsdAmount(100000)).toBe('$100,000')
+    expect(formatUsdAmount(NaN)).toBe('-')
   })
 })
 
