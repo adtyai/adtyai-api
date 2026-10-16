@@ -96,7 +96,6 @@ export function AdtyRechargePanel({
   tiers,
   payMethods,
   firstTopupBonusRate,
-  firstEligible,
   loading,
   price = 1,
   redemptionCode,
@@ -107,7 +106,6 @@ export function AdtyRechargePanel({
   onUsdtPaid,
 }: AdtyRechargePanelProps) {
   const { t } = useTranslation()
-  const firstPercent = firstTopupBonusRateToPercent(firstTopupBonusRate)
 
   const [selectedAmount, setSelectedAmount] = useState<number | null>(null)
   const [selectedMethod, setSelectedMethod] = useState<AdtyPayMethod | null>(
@@ -154,10 +152,11 @@ export function AdtyRechargePanel({
             selectedAmount,
             selectedTier,
             firstTopupBonusRate,
-            firstEligible
+            // UI: always show tier bonus only (first-topup gift removed from display)
+            false
           )
         : null,
-    [selectedAmount, selectedTier, firstTopupBonusRate, firstEligible]
+    [selectedAmount, selectedTier, firstTopupBonusRate]
   )
 
   const payLocal = useMemo(
@@ -321,18 +320,6 @@ export function AdtyRechargePanel({
         }
         contentClassName='space-y-5'
       >
-        {firstEligible && (
-          <div className='rounded-xl border border-amber-200 bg-gradient-to-br from-amber-50 to-orange-50 px-3.5 py-2.5 dark:border-amber-900/50 dark:from-amber-950/40 dark:to-orange-950/30'>
-            <div className='flex items-center gap-1.5 text-[13px] font-semibold text-amber-800 dark:text-amber-200'>
-              <Gift className='h-4 w-4 shrink-0' />
-              {t('First top-up bonus {{percent}}%', { percent: firstPercent })}
-              <span className='font-normal text-amber-800/70 dark:text-amber-200/70'>
-                · {t('First only · best of first/tier')}
-              </span>
-            </div>
-          </div>
-        )}
-
         <div className='grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5'>
           {tiers.map((tier) => {
             const amount = Number(tier.amount)
@@ -342,16 +329,7 @@ export function AdtyRechargePanel({
                 ? tier.bonus_percent
                 : firstTopupBonusRateToPercent(tier.bonus_rate)
             const tierLabel =
-              firstEligible && tierPct > 0
-                ? t('First +{{first}}% · Tier +{{tier}}%', {
-                    first: firstPercent,
-                    tier: tierPct,
-                  })
-                : firstEligible
-                  ? t('First +{{percent}}%', { percent: firstPercent })
-                  : tierPct > 0
-                    ? t('+{{percent}}%', { percent: tierPct })
-                    : null
+              tierPct > 0 ? t('+{{percent}}%', { percent: tierPct }) : null
             return (
               <button
                 key={amount}
@@ -375,12 +353,7 @@ export function AdtyRechargePanel({
                 {tierLabel && (
                   <div className='mt-1.5 truncate'>
                     <span
-                      className={cn(
-                        'inline-block max-w-full truncate rounded px-1.5 py-0.5 text-[11px] leading-4',
-                        firstEligible
-                          ? 'bg-primary/10 text-primary'
-                          : 'bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300'
-                      )}
+                      className='inline-block max-w-full truncate rounded bg-amber-50 px-1.5 py-0.5 text-[11px] leading-4 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300'
                     >
                       {tierLabel}
                     </span>
@@ -489,13 +462,7 @@ export function AdtyRechargePanel({
           }
         />
         <SummaryRow
-          label={
-            firstEligible && bonusPlan?.usedFirst
-              ? t('Bonus · first {{percent}}%', {
-                  percent: bonusPlan.firstPercent,
-                })
-              : t('Tier bonus')
-          }
+          label={t('Tier bonus')}
           value={
             bonusPlan ? (
               <span className='text-amber-600'>
