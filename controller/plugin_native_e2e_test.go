@@ -30,6 +30,7 @@ type nativeRouteBilling struct {
 	preConsumed int
 	userID      int
 	settled     bool
+	info        *relaycommon.RelayInfo // ADTY B-03：像真实 BillingSession 一样回填钱包拆分
 }
 
 func (b *nativeRouteBilling) Settle(int) error {
@@ -56,8 +57,13 @@ func (b *nativeRouteBilling) GetPreConsumedQuota() int {
 
 func (b *nativeRouteBilling) Reserve(quota int) error {
 	b.events = append(b.events, "reserve")
-	if err := model.DecreaseUserQuota(b.userID, quota, true); err != nil {
+	bonus, paid, err := model.DecreaseUserWallet(b.userID, quota)
+	if err != nil {
 		return err
+	}
+	if b.info != nil {
+		b.info.WalletBonusConsumed += bonus
+		b.info.WalletPaidConsumed += paid
 	}
 	b.preConsumed = quota
 	return nil
@@ -75,7 +81,7 @@ func TestKlingNativeRouteSubmitPollSettleAndQuery(t *testing.T) {
 	previousRedisEnabled := common.RedisEnabled
 	database, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, database.AutoMigrate(&model.User{}, &model.Channel{}, &model.Task{}, &model.Log{}))
+	require.NoError(t, database.AutoMigrate(&model.User{}, &model.Channel{}, &model.Task{}, &model.Log{}, &model.UserBonusWallet{}, &model.LedgerEntry{}, &model.AdtyWalletConsumeHourly{}))
 	model.DB = database
 	model.LOG_DB = database
 	common.MemoryCacheEnabled = false
@@ -180,6 +186,7 @@ func TestKlingNativeRouteSubmitPollSettleAndQuery(t *testing.T) {
 			LockedChannel: &channel,
 		},
 	}
+	billing.info = relayInfo
 
 	outcome, taskErr := executeTaskSubmissionWith(submitContext, relayInfo, relay.RelayTaskSubmit)
 	require.Nil(t, taskErr)

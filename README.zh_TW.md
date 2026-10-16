@@ -1,10 +1,10 @@
 <div align="center">
 
-![new-api](/web/public/logo.png)
+![adtyai](/web/public/logo.png)
 
-# New API
+# ADTY AI
 
-**連接模型、應用程式與 Agent 的 AI 閘道**
+**基於 New API 的 AI 閘道 — adtyai**
 
 <p align="center">
   <a href="./README.zh_CN.md">简体中文</a> |
@@ -15,50 +15,35 @@
 </p>
 
 <p align="center">
-  <a href="https://raw.githubusercontent.com/Calcium-Ion/new-api/main/LICENSE">
-    <img src="https://img.shields.io/github/license/Calcium-Ion/new-api?color=brightgreen" alt="license">
-  </a>
-  <a href="https://github.com/Calcium-Ion/new-api/releases/latest">
-    <img src="https://img.shields.io/github/v/release/Calcium-Ion/new-api?color=brightgreen&include_prereleases" alt="release">
-  </a>
-  <a href="https://hub.docker.com/r/CalciumIon/new-api">
-    <img src="https://img.shields.io/badge/docker-dockerHub-blue" alt="docker">
-  </a>
-  <a href="https://atomgit.com/QuantumNous/new-api" target="_blank">
-    <img alt="AtomGit G-Star" src="https://atomgit.com/QuantumNous/new-api/star/badge.svg"/>
+  <a href="./LICENSE">
+    <img src="https://img.shields.io/badge/license-AGPL--3.0-brightgreen" alt="license">
+  </a><!--
+  --><a href="https://github.com/adtyai/adtyai-api">
+    <img src="https://img.shields.io/badge/version-v1.0.0--adtyai-brightgreen" alt="version">
+  </a><!--
+  --><a href="https://github.com/adtyai/adtyai-api/pkgs/container/adtyai-api">
+    <img src="https://img.shields.io/badge/image-ghcr.io%2Fadtyai%2Fadtyai--api-blue" alt="ghcr">
   </a>
 </p>
 
 <p align="center">
-  <a href="https://trendshift.io/repositories/20180" target="_blank">
-    <img src="https://trendshift.io/api/badge/repositories/20180" alt="QuantumNous%2Fnew-api | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/>
-  </a>
-  <br>
-  <a href="https://hellogithub.com/repository/QuantumNous/new-api" target="_blank">
-    <img src="https://api.hellogithub.com/v1/widgets/recommend.svg?rid=539ac4217e69431684ad4a0bab768811&claim_uid=tbFPfKIDHpc4TzR" alt="Featured｜HelloGitHub" style="width: 250px; height: 54px;" width="250" height="54" />
-  </a>
-  <a href="https://atomgit.com/QuantumNous/new-api" target="_blank">
-    <img alt="AtomGit G-Star" src="https://atomgit.com/QuantumNous/new-api/star/new_badge.svg" width="250" height="55" />
-  </a>
-</p>
-
-<p align="center">
-  <a href="#capabilities">核心能力</a> •
+  <a href="#screenshots">截圖</a> •
+  <a href="#capabilities">能力</a> •
   <a href="#quick-start">快速開始</a> •
-  <a href="#deployment">部署維運</a> •
-  <a href="#development">開發擴充</a> •
-  <a href="#documentation">文件社群</a>
+  <a href="#deployment">部署</a> •
+  <a href="#development">開發</a> •
+  <a href="#documentation">文件</a>
 </p>
 
 </div>
 
 ---
 
-## 📝 項目說明
+## 📝 專案說明
 
-New API 是面向應用程式、Agent 和團隊的自託管 AI 閘道。將不同供應商的模型服務接入統一入口，在同一套控制台中管理渠道、存取權限、用量與成本。
+**adtyai**（站名 **ADTY AI**）是基於官方 [New API](https://github.com/QuantumNous/new-api) 的自託管 AI 閘道二開。保留官方能力，並加上 adtyai 的計費、運維與品牌。倉庫：<https://github.com/adtyai/adtyai-api>。映像：`ghcr.io/adtyai/adtyai-api`。
 
-你可以用它為團隊分配已授權的模型資源，在切換上游時減少用戶端改動，或建置自己的多模型服務。支援接入 OpenAI、Anthropic、Google Gemini、Azure OpenAI、AWS Bedrock、Vertex AI、DeepSeek、通義千問及其他相容服務。
+可用於團隊共享已授權的模型存取、切換上游而無需逐一改客戶端，或自建帶控制台的多模型服務。上游包括 OpenAI、Anthropic、Google Gemini、Azure OpenAI、AWS Bedrock、Vertex AI、DeepSeek、通義千問等相容服務。
 
 > [!IMPORTANT]
 > - 本專案僅面向合法授權的 AI API 閘道、組織內部鑑權、多模型管理、用量統計、成本核算和私有化部署場景。
@@ -156,7 +141,7 @@ docker run --name new-api -d --restart unless-stopped \
   -p 127.0.0.1:3000:3000 \
   -e TZ=Asia/Shanghai \
   -v "$(pwd)/data:/data" \
-  calciumion/new-api:latest
+  ghcr.io/adtyai/adtyai-api:latest
 ```
 
 開啟 [http://localhost:3000](http://localhost:3000)，依初始化精靈建立管理員帳號。SQLite 資料庫存放在掛載的 `data` 目錄中，更換容器後仍會保留。
@@ -193,7 +178,7 @@ curl --fail-with-body http://localhost:3000/v1/responses \
 儲存庫的 [Compose 設定](./docker-compose.yml) 預設啟動 **New API + PostgreSQL + Redis**，並提供 MySQL 和獨立 ClickHouse 日誌資料庫的設定範例。
 
 ```bash
-git clone https://github.com/QuantumNous/new-api.git
+git clone https://github.com/adtyai/adtyai-api.git
 cd new-api
 ```
 
@@ -320,7 +305,7 @@ bun run dev -- --port 5173
 
 <div align="center">
 
-[![Star History Chart](https://api.star-history.com/svg?repos=Calcium-Ion/new-api&type=Date)](https://star-history.com/#Calcium-Ion/new-api&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=adtyai/adtyai-api&type=Date)](https://star-history.com/#adtyai/adtyai-api&Date)
 
 </div>
 
@@ -328,12 +313,12 @@ bun run dev -- --port 5173
 
 <div align="center">
 
-### 💖 感謝使用 New API
+### 💖 感謝使用 ADTY AI
 
-如果這個項目對你有幫助，歡迎給我們一個 ⭐️ Star！
+如果本專案對你有幫助，歡迎給個 ⭐️ Star。
 
-**[官方文件](https://docs.newapi.ai/zh/docs)** • **[問題回饋](https://github.com/Calcium-Ion/new-api/issues)** • **[最新發布](https://github.com/Calcium-Ion/new-api/releases)**
+**[倉庫](https://github.com/adtyai/adtyai-api)** • **[上游 New API](https://github.com/QuantumNous/new-api)**
 
-<sub>Built with ❤️ by QuantumNous</sub>
+<sub>基於 QuantumNous 的 [New API](https://github.com/QuantumNous/new-api) · adtyai 品牌二開</sub>
 
 </div>

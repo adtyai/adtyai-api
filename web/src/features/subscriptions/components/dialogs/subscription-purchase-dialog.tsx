@@ -22,11 +22,11 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import { Dialog } from '@/components/dialog'
-import { GroupBadge } from '@/components/group-badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Combobox } from '@/components/ui/combobox'
 import { Separator } from '@/components/ui/separator'
+import { UserGroupBadge } from '@/components/user-group-badge'
 import { useSystemConfig } from '@/hooks/use-system-config'
 import { formatQuota } from '@/lib/format'
 import { handleServerError } from '@/lib/handle-server-error'
@@ -280,7 +280,7 @@ export function SubscriptionPurchaseDialog(props: Props) {
               <span className='text-muted-foreground text-sm'>
                 {t('Upgrade Group')}
               </span>
-              <GroupBadge group={plan.upgrade_group} />
+              <UserGroupBadge group={plan.upgrade_group} />
             </div>
           )}
           <Separator />

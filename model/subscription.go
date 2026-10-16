@@ -579,6 +579,7 @@ func CompleteSubscriptionOrder(tradeNo string, providerPayload string, expectedP
 	var logMoney float64
 	var logPaymentMethod string
 	var upgradeGroup string
+	newlyCompleted := false
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		var order SubscriptionOrder
 		if err := lockForUpdate(tx).Where(refCol+" = ?", tradeNo).First(&order).Error; err != nil {
@@ -631,6 +632,7 @@ func CompleteSubscriptionOrder(tradeNo string, providerPayload string, expectedP
 		logPlanTitle = plan.Title
 		logMoney = order.Money
 		logPaymentMethod = order.PaymentMethod
+		newlyCompleted = true
 		return nil
 	})
 	if err != nil {
@@ -645,6 +647,20 @@ func CompleteSubscriptionOrder(tradeNo string, providerPayload string, expectedP
 			"amount": fmt.Sprintf("%.2f", logMoney),
 			"method": logPaymentMethod,
 		}))
+	}
+	// A7: async aff commission after commit for direct-pay subscription; failures do not block activation.
+	// Balance purchases go through PurchaseSubscriptionWithBalance and never hit this path.
+	if newlyCompleted && tradeNo != "" {
+		go func(ono string) {
+			defer func() {
+				if r := recover(); r != nil {
+					common.SysError(common.LogText("subscription aff commission panic trade_no=%s: %v", ono, r))
+				}
+			}()
+			if err := ProcessSubscriptionAffCommission(ono); err != nil {
+				common.SysError(common.LogText("subscription aff commission failed trade_no=%s: %s", ono, err.Error()))
+			}
+		}(tradeNo)
 	}
 	return nil
 }

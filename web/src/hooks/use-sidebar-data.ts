@@ -30,6 +30,7 @@ import {
   PlugZap,
   Radio,
   ServerCog,
+  Share2,
   Settings,
   ShieldCheck,
   Ticket,
@@ -115,6 +116,12 @@ export function useSidebarData(): SidebarData {
             title: t('Wallet'),
             url: '/wallet',
             icon: Wallet,
+          },
+          {
+            title: t('Invite & rewards'),
+            url: '/affiliate',
+            activeUrls: ['/affiliate', '/affiliate/withdraw'],
+            icon: Share2,
           },
           {
             title: t('Profile'),

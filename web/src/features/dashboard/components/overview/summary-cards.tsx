@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { ArrowRight, Flame, ShieldCheck, TrendingDown } from 'lucide-react'
+import { ArrowRight } from 'lucide-react'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -253,106 +253,77 @@ export function SummaryCards() {
   })
 
   return (
-    <div className='bg-card overflow-hidden rounded-2xl border shadow-xs'>
-      <div className='grid xl:grid-cols-[minmax(0,1fr)_19rem]'>
-        <div className='flex flex-col gap-2.5 p-3 sm:gap-3 sm:p-5'>
-          <div className='flex flex-wrap items-start justify-between gap-3'>
-            <div className='flex flex-col gap-1'>
-              <h3 className='text-sm font-semibold sm:text-base'>
-                {t('Usage at a glance')}
-              </h3>
-              <p className='text-muted-foreground text-xs sm:text-sm'>
-                {t('Monitor balance, usage, and request volume')}
-              </p>
-            </div>
-          </div>
-          <StaggerContainer className='grid grid-cols-3 gap-1.5 sm:gap-3'>
-            {items.map((it) => (
-              <StaggerItem
-                key={it.key}
-                className='bg-background/60 rounded-lg border px-2 py-1.5 sm:rounded-xl sm:p-3'
-              >
-                <StatCard
-                  title={it.title}
-                  value={it.value}
-                  description={it.desc}
-                  icon={it.icon}
-                  tone={it.tone}
-                  sparkline={it.sparkline}
-                  sparklineVariant={it.sparklineVariant}
-                  loading={loading}
-                  compactMobile
-                />
-              </StaggerItem>
-            ))}
-          </StaggerContainer>
-        </div>
+    <div className='flex flex-col gap-3'>
+      <div className='flex flex-col gap-1 px-0.5'>
+        <h3 className='text-sm font-semibold sm:text-base'>
+          {t('Usage at a glance')}
+        </h3>
+        <p className='text-muted-foreground text-xs sm:text-sm'>
+          {t('Monitor balance, usage, and request volume')}
+        </p>
+      </div>
 
-        <div className='flex flex-col justify-between gap-3 border-t bg-[linear-gradient(135deg,color-mix(in_oklch,var(--overview-accent-2)_12%,var(--background))_0%,color-mix(in_oklch,oklch(0.82_0.04_155)_8%,var(--background))_48%,color-mix(in_oklch,var(--overview-accent-1)_7%,var(--background))_100%)] p-3 sm:gap-4 sm:p-5 xl:border-t-0 xl:border-l'>
-          <div className='flex flex-col gap-2 sm:gap-3'>
-            <div className='flex items-center justify-between'>
-              <span className='text-muted-foreground text-xs font-medium'>
-                {t('Credit remaining')}
+      <StaggerContainer className='grid grid-cols-2 gap-3 lg:grid-cols-4'>
+        <StaggerItem className='col-span-2 lg:col-span-1'>
+          <div className='from-primary to-violet-600 text-primary-foreground flex h-full flex-col justify-between gap-3 rounded-xl bg-gradient-to-br p-4 shadow-sm'>
+            <div className='flex items-start justify-between gap-2'>
+              <span className='text-[13px] text-white/80'>
+                {t('Available Balance')}
               </span>
-              <span className='flex items-center gap-1.5'>
+              <span className='flex items-center gap-1.5 rounded-md bg-white/15 px-1.5 py-0.5 text-[11px] font-medium text-white/90'>
                 <span
                   className={cn('size-1.5 rounded-full', healthCfg.dotClass)}
                   aria-hidden='true'
                 />
-                <span className='text-muted-foreground text-[11px] font-medium'>
-                  {t(healthCfg.labelKey)}
-                </span>
+                {t(healthCfg.labelKey)}
               </span>
             </div>
-
-            <div className='font-mono text-xl font-semibold tracking-tight sm:text-2xl'>
+            <div className='text-[28px] leading-none font-semibold tracking-tight'>
               {formatQuota(remainQuota)}
             </div>
-
-            <div className='grid grid-cols-2 gap-2'>
-              <div className='bg-background/60 rounded-lg px-2.5 py-2'>
-                <div className='text-muted-foreground flex items-center gap-1 text-[11px] leading-none font-medium'>
-                  <Flame className='size-3 shrink-0' aria-hidden='true' />
-                  <span className='truncate'>{t('Last 24h usage')}</span>
-                </div>
-                <div className='text-foreground mt-1.5 truncate text-xs font-semibold tabular-nums'>
-                  {formatQuota(recentUsage)}
-                </div>
-              </div>
-              <div className='bg-background/60 rounded-lg px-2.5 py-2'>
-                <div className='text-muted-foreground flex items-center gap-1 text-[11px] leading-none font-medium'>
-                  {runwayDays !== null && runwayDays < 3 ? (
-                    <TrendingDown
-                      className='size-3 shrink-0'
-                      aria-hidden='true'
-                    />
-                  ) : (
-                    <ShieldCheck
-                      className='size-3 shrink-0'
-                      aria-hidden='true'
-                    />
-                  )}
-                  <span className='truncate'>{t('Runway')}</span>
-                </div>
-                <div
-                  className={cn(
-                    'mt-1.5 truncate text-xs font-semibold tabular-nums',
-                    healthLevel === 'critical' && 'text-destructive',
-                    healthLevel === 'caution' && 'text-warning'
-                  )}
-                >
-                  {runwayDisplay}
-                </div>
-              </div>
+            <div className='text-[11px] text-white/75'>
+              {t('Last 24h usage')}: {formatQuota(recentUsage)}
+              {runwayDays !== null ? ` · ${t('Runway')} ${runwayDisplay}` : ''}
+            </div>
+            <div className='flex flex-wrap gap-2'>
+              <Button
+                size='sm'
+                className='bg-white text-primary hover:bg-white/90 h-7 px-3 text-xs font-medium'
+                render={<Link to='/wallet' />}
+              >
+                {t('Top up now')}
+              </Button>
+              <Button
+                size='sm'
+                variant='ghost'
+                className='h-7 px-3 text-xs text-white/90 hover:bg-white/15 hover:text-white'
+                render={<Link to='/wallet/ledger' />}
+              >
+                {t('View billing & ledger')}
+                <ArrowRight data-icon='inline-end' className='size-3.5' />
+              </Button>
             </div>
           </div>
+        </StaggerItem>
 
-          <Button className='justify-between' render={<Link to='/wallet' />}>
-            <span>{t('Wallet')}</span>
-            <ArrowRight data-icon='inline-end' />
-          </Button>
-        </div>
-      </div>
+        {items.map((it) => (
+          <StaggerItem key={it.key}>
+            <div className='bg-card h-full rounded-xl border border-border/80 p-4 shadow-[0_1px_2px_rgba(16,24,40,.04)]'>
+              <StatCard
+                title={it.title}
+                value={it.value}
+                description={it.desc}
+                icon={it.icon}
+                tone={it.tone}
+                sparkline={it.sparkline}
+                sparklineVariant={it.sparklineVariant}
+                loading={loading}
+                compactMobile
+              />
+            </div>
+          </StaggerItem>
+        ))}
+      </StaggerContainer>
     </div>
   )
 }

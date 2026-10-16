@@ -20,6 +20,7 @@ import { Link, useSearch } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 
 import { useStatus } from '@/hooks/use-status'
+import { useSystemConfig } from '@/hooks/use-system-config'
 
 import { AuthLayout } from '../auth-layout'
 import { TermsFooter } from '../components/terms-footer'
@@ -29,25 +30,28 @@ export function SignIn() {
   const { t } = useTranslation()
   const { redirect } = useSearch({ from: '/(auth)/sign-in' })
   const { status } = useStatus()
+  const { systemName } = useSystemConfig()
 
   return (
     <AuthLayout>
-      <div className='w-full space-y-8'>
-        <div className='space-y-2'>
-          <h2 className='text-center text-2xl font-semibold tracking-tight sm:text-left'>
-            {t('Sign in')}
+      <div className='w-full space-y-7'>
+        <div className='space-y-1.5'>
+          <h2 className='text-foreground text-[26px] font-semibold tracking-tight'>
+            {t('Welcome back')}
           </h2>
+          <p className='text-muted-foreground text-sm'>
+            {t('Sign in to {{name}} console', { name: systemName })}
+          </p>
           {!status?.self_use_mode_enabled &&
             status?.register_enabled !== false && (
-              <p className='text-muted-foreground text-left text-sm sm:text-base'>
+              <p className='text-muted-foreground pt-1 text-sm'>
                 {t("Don't have an account?")}{' '}
                 <Link
                   to='/sign-up'
-                  className='hover:text-primary font-medium underline underline-offset-4'
+                  className='text-primary font-medium hover:underline'
                 >
-                  {t('Sign up')}
+                  {t('Sign up for free')}
                 </Link>
-                .
               </p>
             )}
         </div>

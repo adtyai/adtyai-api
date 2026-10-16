@@ -24,8 +24,8 @@ import {
   BadgeListCell,
   DataTableColumnHeader,
 } from '@/components/data-table'
-import { GroupBadge } from '@/components/group-badge'
 import { StatusBadge } from '@/components/status-badge'
+import { UserGroupBadge } from '@/components/user-group-badge'
 import { getLobeIcon } from '@/lib/lobe-icon'
 
 import { parseTags } from '../lib/filters'
@@ -191,7 +191,7 @@ export function usePricingColumns(
         return (
           <BadgeListCell
             items={groups.map((group) => (
-              <GroupBadge key={group} group={group} size='sm' />
+              <UserGroupBadge key={group} group={group} size='sm' />
             ))}
             tooltipClassName='max-w-[280px] p-2'
           />

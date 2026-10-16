@@ -121,6 +121,20 @@ func main() {
 	// 数据看板
 	go model.UpdateQuotaData()
 
+	// M2：启动补偿——补回充值入账异步计佣在进程重启时丢失的内存任务（非定时）
+	if common.IsMasterNode {
+		go func() {
+			n, err := model.CompensateMissingTopupAffCommissions(500)
+			if err != nil {
+				common.SysError(common.LogText("aff commission compensate on startup: %s", err.Error()))
+				return
+			}
+			if n > 0 {
+				common.SysLog(common.LogText("aff commission compensate on startup processed=%d", n))
+			}
+		}()
+	}
+
 	if os.Getenv("CHANNEL_UPDATE_FREQUENCY") != "" {
 		frequency, err := strconv.Atoi(os.Getenv("CHANNEL_UPDATE_FREQUENCY"))
 		if err != nil {

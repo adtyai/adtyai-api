@@ -73,6 +73,16 @@ var auditContentTemplates = map[string]string{
 	"subscription.plan_reset":       "Reset active subscriptions for plan ${plan_id}",
 	"subscription.user_plan_reset":  "Reset active plan ${plan_id} subscriptions for user ${target_user_id}",
 	"subscription.user_quota_reset": "Administrator reset the quota of subscription plan ${plan_title} (ID: ${plan_id})",
+	"risk_review.approve":           "Approved risk review ${risk_review_id} (${old_status}->${new_status}, amount ${amount_usd})",
+	"risk_review.reject":            "Rejected risk review ${risk_review_id} (${old_status}->${new_status}, amount ${amount_usd})",
+	"aff.commission_void":            "Voided aff commission ${commission_id} order ${order_no} quota ${quota}",
+	"aff.withdraw_approve":           "Approved aff withdrawal ${withdrawal_id}",
+	"aff.withdraw_reject":            "Rejected aff withdrawal ${withdrawal_id}",
+	"aff.withdraw_mark_paid":         "Marked aff withdrawal ${withdrawal_id} paid",
+	"aff.withdraw_mark_failed":       "Marked aff withdrawal ${withdrawal_id} pay_failed",
+	"aff.withdraw_mark_unknown":      "Marked aff withdrawal ${withdrawal_id} pay_unknown",
+	"aff.withdraw_retry":             "Retried aff withdrawal ${withdrawal_id}",
+	"topup.admin_complete":          "Admin completed topup order ${order_no}",
 }
 
 func recordPasskeyDomainAudit(c *gin.Context, change *model.PasskeyDomainChange, confirmed bool, err error) {

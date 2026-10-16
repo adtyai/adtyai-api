@@ -376,9 +376,49 @@ func migrateDB() error {
 		&CasbinRule{},
 		&AuthzRole{},
 		&UserAccessToken{},
+		&UserBonusWallet{},
+		&LedgerIdempotency{},
+		&OpsJobRun{},
+		&AdtyWalletConsumeHourly{},
+		&TopupOrder{},
+		&FirstTopupClaim{},
+		&RiskReview{},
+		&EpayInstance{},
+		&AffCommission{},
+		&AffWithdrawal{},
+		&TopupRefund{},
+		&BalanceAdjustRequest{},
+		&OpsAlertEvent{},
+		&EnterprisePriceRule{},
+		&GroupMeta{},
 	)
 	if err != nil {
 		return err
+	}
+	// ledger_entries 走分区迁移，不经 AutoMigrate（避免破坏 PARTITION BY）
+	if err := EnsureLedgerSchema(DB); err != nil {
+		return fmt.Errorf("ensure ledger schema: %w", err)
+	}
+	if err := EnsureOpsJobRunsTable(DB); err != nil {
+		return fmt.Errorf("ensure ops_job_runs: %w", err)
+	}
+	if err := EnsureHealthProbesTable(DB); err != nil {
+		return fmt.Errorf("ensure health_probes: %w", err)
+	}
+	if err := EnsureFirstTopupClaimIndexes(DB); err != nil {
+		common.SysError(common.LogText("failed to ensure first_topup_claims indexes: %s", err.Error()))
+	}
+	if err := EnsureEpayInstanceIndexes(DB); err != nil {
+		common.SysError(common.LogText("failed to ensure epay_instances indexes: %s", err.Error()))
+	}
+	if err := EnsureEnterprisePriceSchema(DB); err != nil {
+		common.SysError(common.LogText("failed to ensure enterprise_price_rules: %s", err.Error()))
+	}
+	if err := EnsureGroupMetaSchema(DB); err != nil {
+		common.SysError(common.LogText("failed to ensure group_meta: %s", err.Error()))
+	}
+	if err := EnsureTopupOrderIndexes(DB); err != nil {
+		common.SysError(common.LogText("failed to ensure topup_orders indexes: %s", err.Error()))
 	}
 	if err := InitializeUserAuthVersions(); err != nil {
 		return err

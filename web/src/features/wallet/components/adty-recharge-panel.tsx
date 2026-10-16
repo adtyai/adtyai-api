@@ -1,0 +1,664 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+import { Link } from '@tanstack/react-router'
+import {
+  Check,
+  Gift,
+  Loader2,
+  Receipt,
+  WalletCards,
+  AlertTriangle,
+} from 'lucide-react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
+
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { IconBadge } from '@/components/ui/icon-badge'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Skeleton } from '@/components/ui/skeleton'
+import { TitledCard } from '@/components/ui/titled-card'
+import { cn } from '@/lib/utils'
+
+import { createAdtyTopupOrder } from '../api'
+import {
+  computeAdtyBonusPlan,
+  computePayLocalAmount,
+  findTier,
+  firstTopupBonusRateToPercent,
+  formatUsdAmount,
+  isFixedTierAmount,
+  pickDefaultPayMethod,
+  resolveAdtyCheckoutLaunch,
+} from '../lib/adty-topup'
+import { formatCurrency } from '../lib/format'
+import { submitPaymentForm } from '../lib/payment'
+import type {
+  AdtyPayMethod,
+  AdtyTopupOrder,
+  AdtyTopupTier,
+  AdtyUsdtCashier,
+} from '../types'
+
+import { AdtyUsdtCashierDialog } from './adty-usdt-cashier-dialog'
+
+export interface AdtyRechargePanelProps {
+  tiers: AdtyTopupTier[]
+  payMethods: AdtyPayMethod[]
+  firstTopupBonusRate: number
+  firstEligible: boolean
+  loading?: boolean
+  /** status.price — local currency per 1 USD credit */
+  price?: number
+  redemptionCode: string
+  onRedemptionCodeChange: (code: string) => void
+  onRedeem: () => void
+  redeeming: boolean
+  redemptionEnabled?: boolean
+  /** Refresh balance / first-topup after USDT paid */
+  onUsdtPaid?: () => void
+}
+
+function payMethodLabel(method: AdtyPayMethod, t: (k: string) => string) {
+  if (method.type === 'alipay') return t('Alipay')
+  if (method.type === 'wxpay' || method.type === 'wechat') return t('WeChat Pay')
+  if (method.type === 'usdt') return t('USDT-TRC20')
+  return method.name || method.type
+}
+
+function payMethodHint(method: AdtyPayMethod, t: (k: string) => string) {
+  if (!method.available) {
+    return method.maintenance_reason || t('Temporarily unavailable')
+  }
+  if (method.type === 'usdt') return t('On-chain transfer · about 1–3 min')
+  return t('CNY payment · instant credit')
+}
+
+export function AdtyRechargePanel({
+  tiers,
+  payMethods,
+  firstTopupBonusRate,
+  firstEligible,
+  loading,
+  price = 1,
+  redemptionCode,
+  onRedemptionCodeChange,
+  onRedeem,
+  redeeming,
+  redemptionEnabled = true,
+  onUsdtPaid,
+}: AdtyRechargePanelProps) {
+  const { t } = useTranslation()
+  const firstPercent = firstTopupBonusRateToPercent(firstTopupBonusRate)
+
+  const [selectedAmount, setSelectedAmount] = useState<number | null>(null)
+  const [selectedMethod, setSelectedMethod] = useState<AdtyPayMethod | null>(
+    null
+  )
+  const [submitting, setSubmitting] = useState(false)
+  const [usdtOpen, setUsdtOpen] = useState(false)
+  const [usdtCashier, setUsdtCashier] = useState<AdtyUsdtCashier | null>(null)
+  const [usdtOrder, setUsdtOrder] = useState<AdtyTopupOrder | null>(null)
+
+  useEffect(() => {
+    if (tiers.length === 0) return
+    setSelectedAmount((prev) => {
+      if (prev != null && isFixedTierAmount(prev, tiers)) return prev
+      // Prefer $100 if present, else middle, else first
+      const prefer = tiers.find((x) => Number(x.amount) === 100)
+      return Number((prefer ?? tiers[Math.min(6, tiers.length - 1)]).amount)
+    })
+  }, [tiers])
+
+  useEffect(() => {
+    if (payMethods.length === 0) {
+      setSelectedMethod(null)
+      return
+    }
+    setSelectedMethod((prev) => {
+      if (prev) {
+        const fresh = payMethods.find((m) => m.type === prev.type)
+        if (fresh) return fresh
+      }
+      return pickDefaultPayMethod(payMethods) ?? null
+    })
+  }, [payMethods])
+
+  const selectedTier = useMemo(
+    () => (selectedAmount != null ? findTier(tiers, selectedAmount) : undefined),
+    [tiers, selectedAmount]
+  )
+
+  const bonusPlan = useMemo(
+    () =>
+      selectedAmount != null
+        ? computeAdtyBonusPlan(
+            selectedAmount,
+            selectedTier,
+            firstTopupBonusRate,
+            firstEligible
+          )
+        : null,
+    [selectedAmount, selectedTier, firstTopupBonusRate, firstEligible]
+  )
+
+  const payLocal = useMemo(
+    () =>
+      selectedAmount != null
+        ? computePayLocalAmount(selectedAmount, price)
+        : 0,
+    [selectedAmount, price]
+  )
+
+  const unavailableMethods = payMethods.filter((m) => !m.available)
+  const anyAvailable = payMethods.some((m) => m.available)
+  const methodBlocked = !selectedMethod || !selectedMethod.available
+
+  const handleSelectMethod = (method: AdtyPayMethod) => {
+    if (!method.available) {
+      toast.error(
+        method.maintenance_reason ||
+          t('This payment method is under maintenance')
+      )
+      return
+    }
+    setSelectedMethod(method)
+  }
+
+  const handleSubmit = async () => {
+    if (selectedAmount == null || !selectedTier) {
+      toast.error(t('Please select a top-up tier'))
+      return
+    }
+    if (!isFixedTierAmount(selectedAmount, tiers)) {
+      toast.error(t('Invalid top-up tier. Please choose a listed amount.'))
+      return
+    }
+    if (!selectedMethod) {
+      toast.error(t('Please select a payment method'))
+      return
+    }
+    if (!selectedMethod.available) {
+      toast.error(
+        selectedMethod.maintenance_reason ||
+          t('This payment method is under maintenance')
+      )
+      return
+    }
+
+    setSubmitting(true)
+    try {
+      const res = await createAdtyTopupOrder({
+        amount: selectedAmount,
+        payment_method: selectedMethod.type,
+      })
+      if (!res?.success) {
+        const code = res?.code
+        if (code === 'payment_maintenance') {
+          toast.error(
+            res?.message ||
+              t('Payment channel is under maintenance. Please try again later.')
+          )
+          return
+        }
+        const msg =
+          code === 'invalid_tier_amount'
+            ? t('Invalid top-up tier. Please choose a listed amount.')
+            : res?.message || t('Failed to create top-up order')
+        toast.error(msg)
+        return
+      }
+
+      const launch = resolveAdtyCheckoutLaunch(res.data)
+      if (launch.kind === 'usdt') {
+        setUsdtOrder(launch.order)
+        setUsdtCashier(launch.usdt)
+        setUsdtOpen(true)
+        return
+      }
+      if (launch.kind === 'epay') {
+        if (launch.payParams && Object.keys(launch.payParams).length > 0) {
+          submitPaymentForm(launch.payUrl, launch.payParams)
+        } else {
+          window.open(launch.payUrl, '_blank', 'noopener,noreferrer')
+        }
+        toast.success(t('Redirecting to payment page...'))
+        return
+      }
+
+      toast.error(t('Failed to open payment checkout'))
+    } catch (err) {
+      const status = (
+        err as {
+          response?: {
+            status?: number
+            data?: { message?: string; code?: string }
+          }
+        }
+      )?.response
+      const code = status?.data?.code
+      if (
+        status?.status === 503 ||
+        code === 'payment_maintenance'
+      ) {
+        toast.error(
+          status?.data?.message ||
+            t('Payment channel is under maintenance. Please try again later.')
+        )
+      } else if (
+        status?.status === 400 ||
+        code === 'invalid_tier_amount'
+      ) {
+        toast.error(t('Invalid top-up tier. Please choose a listed amount.'))
+      } else {
+        toast.error(
+          status?.data?.message || t('Failed to create top-up order')
+        )
+      }
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  if (loading) {
+    return (
+      <TitledCard
+        title={t('Wallet Top-up')}
+        description={t('USD pricing · full amount credited · tier bonus extra')}
+        icon={<WalletCards className='h-4 w-4' />}
+        iconTone='success'
+        disableHoverEffect
+        contentClassName='space-y-4'
+      >
+        <Skeleton className='h-20 w-full' />
+        <div className='grid grid-cols-2 gap-2 sm:grid-cols-4 md:grid-cols-5'>
+          {Array.from({ length: 10 }, (_, i) => (
+            <Skeleton key={i} className='h-24 rounded-xl' />
+          ))}
+        </div>
+        <Skeleton className='h-16 w-full' />
+      </TitledCard>
+    )
+  }
+
+  return (
+    <div className='grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(300px,340px)] xl:items-start'>
+      <div className='space-y-4'>
+      <TitledCard
+        title={t('Select top-up tier')}
+        description={t('Tier bonus about 1%–8%, increases with amount')}
+        icon={<WalletCards className='h-4 w-4' />}
+        iconTone='success'
+        disableHoverEffect
+        action={
+          <Button
+            variant='outline'
+            size='sm'
+            className='w-full gap-2 sm:w-auto'
+            render={<Link to='/wallet/ledger' />}
+          >
+            <Receipt className='h-4 w-4' />
+            {t('Billing & ledger')}
+          </Button>
+        }
+        contentClassName='space-y-5'
+      >
+        {firstEligible && (
+          <div className='rounded-xl border border-amber-200 bg-gradient-to-br from-amber-50 to-orange-50 p-4 dark:border-amber-900/50 dark:from-amber-950/40 dark:to-orange-950/30'>
+            <div className='flex items-center gap-1.5 text-[13px] font-semibold text-amber-800 dark:text-amber-200'>
+              <Gift className='h-4 w-4' />
+              {t('First top-up bonus {{percent}}%', { percent: firstPercent })}
+            </div>
+            <p className='mt-1 text-xs leading-5 text-amber-800/80 dark:text-amber-200/80'>
+              {t(
+                'First top-up only; not stacked with tier bonus — higher one applies. You have not used first top-up yet.'
+              )}
+            </p>
+          </div>
+        )}
+
+        <div className='space-y-2.5'>
+          <div className='flex items-end justify-between gap-2'>
+            <div>
+              <Label className='text-muted-foreground text-xs font-medium tracking-wider uppercase'>
+                {t('Select top-up tier')}
+              </Label>
+              <p className='text-muted-foreground mt-0.5 text-xs'>
+                {t('Tier bonus about 1%–8%, increases with amount')}
+              </p>
+            </div>
+          </div>
+          <div className='grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5'>
+            {tiers.map((tier) => {
+              const amount = Number(tier.amount)
+              const selected = selectedAmount === amount
+              const tierPct =
+                typeof tier.bonus_percent === 'number'
+                  ? tier.bonus_percent
+                  : firstTopupBonusRateToPercent(tier.bonus_rate)
+              const firstExtra = firstEligible
+                ? Math.round(amount * toFirstFraction(firstTopupBonusRate) * 100) /
+                  100
+                : 0
+              return (
+                <button
+                  key={amount}
+                  type='button'
+                  onClick={() => setSelectedAmount(amount)}
+                  className={cn(
+                    'relative rounded-xl border bg-background p-3.5 text-left transition-colors',
+                    selected
+                      ? 'border-primary ring-primary/20 bg-primary/5 ring-2'
+                      : 'border-border hover:border-primary/40'
+                  )}
+                >
+                  {selected && (
+                    <span className='bg-primary text-primary-foreground absolute top-2.5 right-2.5 grid h-5 w-5 place-items-center rounded-full'>
+                      <Check className='h-3 w-3' />
+                    </span>
+                  )}
+                  <div className='text-lg font-semibold'>
+                    {formatUsdAmount(amount)}
+                  </div>
+                  <div className='text-muted-foreground mt-0.5 text-[11.5px]'>
+                    {t('Full amount credited')}
+                  </div>
+                  <div className='mt-2'>
+                    <span className='rounded bg-amber-50 px-1.5 py-0.5 text-[11.5px] text-amber-700 dark:bg-amber-950/50 dark:text-amber-300'>
+                      {t('Tier bonus {{percent}}%', { percent: tierPct })}
+                    </span>
+                  </div>
+                  {firstEligible && (
+                    <div className='text-primary mt-1.5 text-[11.5px]'>
+                      {t('First top-up {{percent}}% · +{{bonus}}', {
+                        percent: firstPercent,
+                        bonus: formatUsdAmount(firstExtra),
+                      })}
+                    </div>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+        <div className='space-y-2.5'>
+          <Label className='text-muted-foreground text-xs font-medium tracking-wider uppercase'>
+            {t('Payment Method')}
+          </Label>
+          <div className='grid grid-cols-1 gap-2 sm:grid-cols-3'>
+            {payMethods.map((method) => {
+              const selected = selectedMethod?.type === method.type
+              const disabled = !method.available
+              return (
+                <button
+                  key={method.type}
+                  type='button'
+                  onClick={() => handleSelectMethod(method)}
+                  disabled={disabled && !selected}
+                  className={cn(
+                    'flex items-center gap-3 rounded-xl border p-3 text-left transition-colors',
+                    disabled && 'bg-muted/40 cursor-not-allowed opacity-60',
+                    !disabled && selected
+                      ? 'border-primary ring-primary/20 ring-2'
+                      : !disabled && 'border-border hover:border-primary/40'
+                  )}
+                  aria-disabled={disabled}
+                  title={
+                    disabled
+                      ? method.maintenance_reason ||
+                        t('Temporarily unavailable')
+                      : undefined
+                  }
+                >
+                  <PayMethodBadge type={method.type} disabled={disabled} />
+                  <div className='min-w-0'>
+                    <div
+                      className={cn(
+                        'truncate text-sm font-medium',
+                        disabled && 'text-muted-foreground'
+                      )}
+                    >
+                      {payMethodLabel(method, t)}
+                      {disabled ? ` · ${t('Under maintenance')}` : ''}
+                    </div>
+                    <div className='text-muted-foreground truncate text-[11.5px]'>
+                      {payMethodHint(method, t)}
+                    </div>
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+          {unavailableMethods.length > 0 && (
+            <Alert className='border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-100'>
+              <AlertTriangle className='h-4 w-4' />
+              <AlertDescription className='text-[12.5px]'>
+                {unavailableMethods
+                  .map(
+                    (m) =>
+                      m.maintenance_reason ||
+                      `${payMethodLabel(m, t)}: ${t('Temporarily unavailable')}`
+                  )
+                  .filter((v, i, arr) => arr.indexOf(v) === i)
+                  .join(' · ')}
+                {!anyAvailable
+                  ? ` ${t('You can wait for the channel or contact support.')}`
+                  : ''}
+              </AlertDescription>
+            </Alert>
+          )}
+          <p className='text-muted-foreground text-xs'>
+            {t(
+              'Alipay / WeChat go through partner checkout; bank cards are not supported yet.'
+            )}
+          </p>
+        </div>
+      </TitledCard>
+      </div>
+
+      <div className='space-y-4 xl:sticky xl:top-4'>
+      <TitledCard
+        title={t('Order confirmation')}
+        icon={<Receipt className='h-4 w-4' />}
+        iconTone='info'
+        disableHoverEffect
+        contentClassName='space-y-3'
+      >
+        <SummaryRow
+          label={t('Top-up tier')}
+          value={
+            selectedAmount != null ? formatUsdAmount(selectedAmount) : '—'
+          }
+        />
+        <SummaryRow
+          label={t('Amount paid (credited in full)')}
+          value={
+            selectedAmount != null
+              ? formatUsdAmount(selectedAmount)
+              : '—'
+          }
+        />
+        <SummaryRow
+          label={
+            firstEligible && bonusPlan
+              ? t(
+                  'Bonus (higher of first {{first}}% and tier {{tier}}%)',
+                  {
+                    first: bonusPlan.firstPercent,
+                    tier: bonusPlan.tierPercent,
+                  }
+                )
+              : t('Tier bonus')
+          }
+          value={
+            bonusPlan ? (
+              <span className='text-amber-600'>
+                +{formatUsdAmount(bonusPlan.chosenBonusUSD)}
+              </span>
+            ) : (
+              '—'
+            )
+          }
+        />
+        <SummaryRow
+          label={t('Total credited')}
+          value={
+            bonusPlan ? (
+              <span className='text-primary text-base font-semibold'>
+                {formatUsdAmount(bonusPlan.creditTotalUSD)}
+              </span>
+            ) : (
+              '—'
+            )
+          }
+        />
+        <SummaryRow
+          label={t('Pay amount (rate {{rate}})', {
+            rate: Number.isFinite(price) ? price : 1,
+          })}
+          value={`¥${formatCurrency(payLocal)}`}
+        />
+
+        <Button
+          className='mt-2 h-11 w-full text-[15px]'
+          disabled={
+            submitting ||
+            selectedAmount == null ||
+            methodBlocked ||
+            !anyAvailable
+          }
+          onClick={() => void handleSubmit()}
+        >
+          {submitting && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
+          {methodBlocked || !anyAvailable
+            ? t('Payment channel unavailable')
+            : t('Pay now ¥{{amount}}', { amount: formatCurrency(payLocal) })}
+        </Button>
+        <p className='text-muted-foreground text-[11.5px] leading-5'>
+          {t(
+            'Bonus can be used for API calls, cannot be withdrawn, and does not earn affiliate commission. Spend bonus balance before paid balance.'
+          )}
+        </p>
+      </TitledCard>
+
+      {redemptionEnabled ? (
+        <TitledCard
+          title={t('Redemption code')}
+          icon={
+            <IconBadge tone='warning' size='xs'>
+              <Gift />
+            </IconBadge>
+          }
+          disableHoverEffect
+          contentClassName='space-y-2'
+        >
+          <div className='grid grid-cols-[minmax(0,1fr)_auto] gap-2'>
+            <Input
+              value={redemptionCode}
+              onChange={(e) => onRedemptionCodeChange(e.target.value)}
+              placeholder={t('Enter your redemption code')}
+              className='h-9 min-w-0'
+            />
+            <Button
+              onClick={onRedeem}
+              disabled={redeeming}
+              variant='outline'
+              className='h-9 px-4'
+            >
+              {redeeming && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
+              {t('Redeem')}
+            </Button>
+          </div>
+          <p className='text-muted-foreground text-[11.5px]'>
+            {t('Redemption face value is credited as bonus')}
+          </p>
+        </TitledCard>
+      ) : null}
+      </div>
+
+      <AdtyUsdtCashierDialog
+        open={usdtOpen}
+        onOpenChange={(next) => {
+          setUsdtOpen(next)
+          if (!next) {
+            setUsdtCashier(null)
+            setUsdtOrder(null)
+          }
+        }}
+        order={usdtOrder}
+        usdt={usdtCashier}
+        onPaid={onUsdtPaid}
+      />
+    </div>
+  )
+}
+
+function toFirstFraction(rate: number): number {
+  if (!Number.isFinite(rate) || rate < 0) return 0.1
+  return rate > 1 ? rate / 100 : rate
+}
+
+function SummaryRow({
+  label,
+  value,
+}: {
+  label: string
+  value: ReactNode
+}) {
+  return (
+    <div className='flex justify-between gap-3 border-b border-dashed border-border/80 pb-2 text-[13px] last:border-0'>
+      <span className='text-muted-foreground'>{label}</span>
+      <span className='text-right font-medium'>{value}</span>
+    </div>
+  )
+}
+
+function PayMethodBadge({
+  type,
+  disabled,
+}: {
+  type: string
+  disabled?: boolean
+}) {
+  const base =
+    'grid h-9 w-9 shrink-0 place-items-center rounded-lg text-sm font-bold text-white'
+  if (disabled) {
+    return <span className={cn(base, 'bg-slate-400')}>{badgeChar(type)}</span>
+  }
+  if (type === 'alipay') {
+    return <span className={cn(base, 'bg-sky-500')}>{badgeChar(type)}</span>
+  }
+  if (type === 'wxpay' || type === 'wechat') {
+    return <span className={cn(base, 'bg-emerald-500')}>{badgeChar(type)}</span>
+  }
+  if (type === 'usdt') {
+    return <span className={cn(base, 'bg-teal-600')}>{badgeChar(type)}</span>
+  }
+  return <span className={cn(base, 'bg-primary')}>{badgeChar(type)}</span>
+}
+
+function badgeChar(type: string): string {
+  if (type === 'alipay') return '支'
+  if (type === 'wxpay' || type === 'wechat') return '微'
+  if (type === 'usdt') return '₮'
+  return type.slice(0, 1).toUpperCase()
+}

@@ -26,6 +26,9 @@ type Midjourney struct {
 
 	TokenId          int `json:"-" gorm:"default:0"`
 	BillingChannelId int `json:"-" gorm:"default:0"`
+	// ADTY B-03：本任务钱包出资拆分（赠送 / 实充），失败退款按此反向退；切换前老任务为 0。
+	AdtyWalletBonus int `json:"-" gorm:"column:adty_wallet_bonus;default:0"`
+	AdtyWalletPaid  int `json:"-" gorm:"column:adty_wallet_paid;default:0"`
 }
 
 // TaskQueryParams 用于包含所有搜索条件的结构体，可以根据需求添加更多字段
@@ -175,7 +178,7 @@ func (midjourney *Midjourney) Update() error {
 
 func (midjourney *Midjourney) UpdateBillingState() error {
 	return DB.Model(midjourney).
-		Select("quota", "token_id", "billing_channel_id").
+		Select("quota", "token_id", "billing_channel_id", "adty_wallet_bonus", "adty_wallet_paid").
 		Updates(midjourney).Error
 }
 

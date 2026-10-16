@@ -89,12 +89,8 @@ func GetOptions(c *gin.Context) {
 			continue
 		}
 		value := common.Interface2String(v)
-		isSensitiveKey := strings.HasSuffix(k, "Token") ||
-			strings.HasSuffix(k, "Secret") ||
-			strings.HasSuffix(k, "Key") ||
-			strings.HasSuffix(k, "secret") ||
-			strings.HasSuffix(k, "api_key")
-		if isSensitiveKey {
+		// A15: Chatwoot Website Token is a public exception (handled in IsSensitiveOptionKey).
+		if model.IsSensitiveOptionKey(k) {
 			continue
 		}
 		options = append(options, &model.Option{
@@ -123,6 +119,17 @@ func GetOptions(c *gin.Context) {
 		Key:   "CompletionRatioMeta",
 		Value: buildCompletionRatioMetaValue(optionValues),
 	})
+	// A15: sensitive Token/Secret — no plaintext; secret_set + hm_ fingerprint
+	secSet, secFp := model.BepusdtApiTokenSecretMeta()
+	options = append(options, &model.Option{Key: "BepusdtApiToken.secret_set", Value: strconv.FormatBool(secSet)})
+	if secFp != "" {
+		options = append(options, &model.Option{Key: "BepusdtApiToken.fingerprint", Value: secFp})
+	}
+	cwSet, cwFp := model.ChatwootHmacSecretMeta()
+	options = append(options, &model.Option{Key: "ChatwootHmacSecret.secret_set", Value: strconv.FormatBool(cwSet)})
+	if cwFp != "" {
+		options = append(options, &model.Option{Key: "ChatwootHmacSecret.fingerprint", Value: cwFp})
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
@@ -415,8 +422,14 @@ func UpdateOption(c *gin.Context) {
 	}
 	err = model.UpdateOption(option.Key, option.Value.(string))
 	if err != nil {
+		var bpErr *model.BusinessParamError
 		if errors.Is(err, system_setting.ErrPasskeyRPIDInvalid) {
 			writeSecurityOperationError(c, err)
+		} else if errors.As(err, &bpErr) {
+			// 业务参数（含 TopupBonusTiers）：与 /api/admin/business-params 同一套 code + params
+			// 保持通用配置接口原有的 HTTP 200 + success:false 口径（上游配置页按此处理），只补 code + params
+			code, msg, params := businessParamErrorPayload(err)
+			adtyFail(c, http.StatusOK, code, msg, params)
 		} else {
 			common.ApiError(c, err)
 		}

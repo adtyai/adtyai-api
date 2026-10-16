@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 import { z } from 'zod'
 
 import { Wallet } from '@/features/wallet'
@@ -28,9 +28,14 @@ const walletSearchSchema = z.object({
 export const Route = createFileRoute('/_authenticated/wallet/')({
   component: RouteComponent,
   validateSearch: walletSearchSchema,
+  beforeLoad: ({ search }) => {
+    // Legacy ?show_history=true opened BillingHistoryDialog; now go to U16 ledger.
+    if (search.show_history) {
+      throw redirect({ to: '/wallet/ledger' })
+    }
+  },
 })
 
 function RouteComponent() {
-  const { show_history } = Route.useSearch()
-  return <Wallet initialShowHistory={show_history} />
+  return <Wallet />
 }

@@ -19,14 +19,15 @@ For commercial licensing, please contact support@quantumnous.com
 import { useTranslation } from 'react-i18next'
 
 import { BadgeCell, TruncatedCell } from '@/components/data-table'
-import { GroupBadge } from '@/components/group-badge'
 import { StatusBadge } from '@/components/status-badge'
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { UserGroupBadge } from '@/components/user-group-badge'
 import { useMediaQuery } from '@/hooks'
+import { useGroupDisplayName } from '@/hooks/use-group-display-name'
 import { cn } from '@/lib/utils'
 
 import { GroupRatioBadge, type GroupRatio } from './auto-group-visuals'
@@ -41,19 +42,23 @@ type ApiKeyGroupCellProps = {
 export function ApiKeyGroupCell(props: ApiKeyGroupCellProps) {
   const { t } = useTranslation()
   const isMobile = useMediaQuery('(max-width: 640px)')
+  const displayGroup = useGroupDisplayName()
 
   const group = props.group?.trim() || ''
   if (group !== 'auto') {
+    const shown = group ? displayGroup(group) : ''
+    let groupTooltip: string = t('Follow user group')
+    if (group) groupTooltip = shown === group ? group : `${shown} (${group})`
     const ratio =
       group && typeof props.ratio === 'number' ? props.ratio : undefined
     return (
       <TruncatedCell
         className={isMobile ? 'w-full' : 'max-w-50'}
         tabIndex={0}
-        tooltipContent={group || t('Follow user group')}
+        tooltipContent={groupTooltip}
         tooltipClassName='break-all'
       >
-        <GroupBadge
+        <UserGroupBadge
           group={group}
           ratio={ratio}
           ratioLabel={group ? undefined : t('Inherited')}

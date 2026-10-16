@@ -60,7 +60,30 @@ func HandleGroupRatio(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) hostty
 		groupRatioInfo.GroupRatio = ratio_setting.GetGroupRatio(relayInfo.UsingGroup)
 	}
 
+	// A8：按最终 UsingGroup 匹配企业协议价，在分组倍率之后再乘；快照写入 RelayInfo 供结算沿用。
+	attachEnterprisePrice(relayInfo, &groupRatioInfo)
+
 	return groupRatioInfo
+}
+
+// attachEnterprisePrice 匹配协议价并乘进 GroupRatio；同时快照 rule_id/discount。
+func attachEnterprisePrice(relayInfo *relaycommon.RelayInfo, groupRatioInfo *hosttypes.GroupRatioInfo) {
+	if relayInfo == nil || groupRatioInfo == nil {
+		return
+	}
+	modelName := relayInfo.OriginModelName
+	if bm := relayInfo.GetBillingModelName(); bm != "" {
+		modelName = bm
+	}
+	ruleId, discount := model.MatchEnterprisePriceRule(relayInfo.UserId, relayInfo.UsingGroup, modelName)
+	relayInfo.EnterpriseRuleId = ruleId
+	if discount <= 0 {
+		discount = 1.0
+	}
+	relayInfo.EnterpriseDiscount = discount
+	if discount != 1.0 {
+		groupRatioInfo.GroupRatio = model.EffectiveGroupRatio(groupRatioInfo.GroupRatio, discount)
+	}
 }
 
 func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens int, meta *types.TokenCountMeta) (hosttypes.PriceData, error) {
@@ -200,6 +223,7 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 		priceData.QuotaToPreConsume = quota
 	}
 
+	stampEnterpriseOnPriceData(info, &priceData)
 	if common.DebugEnabled {
 		logger.LogDebug(c, "model_price_helper result: %s", priceData.ToSetting())
 	}
@@ -273,6 +297,8 @@ func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) (hostt
 		Quota:          quota,
 		GroupRatioInfo: groupRatioInfo,
 	}
+	stampEnterpriseOnPriceData(info, &priceData)
+	info.PriceData = priceData
 	return priceData, nil
 }
 
@@ -415,9 +441,18 @@ func modelPriceHelperTiered(c *gin.Context, info *relaycommon.RelayInfo, billing
 		GroupRatioInfo:    groupRatioInfo,
 		QuotaToPreConsume: preConsumedQuota,
 	}
+	stampEnterpriseOnPriceData(info, &priceData)
 
 	logger.LogDebug(c, "model_price_helper_tiered result: model=%s preConsume=%d quotaBeforeGroup=%.2f groupRatio=%.2f tier=%s", billingModelName, preConsumedQuota, quotaBeforeGroup, groupRatioInfo.GroupRatio, trace.MatchedTier)
 
 	info.PriceData = priceData
 	return priceData, nil
+}
+
+func stampEnterpriseOnPriceData(info *relaycommon.RelayInfo, priceData *hosttypes.PriceData) {
+	if info == nil || priceData == nil {
+		return
+	}
+	priceData.EnterpriseRuleId = info.EnterpriseRuleId
+	priceData.EnterpriseDiscount = info.EnterpriseDiscount
 }

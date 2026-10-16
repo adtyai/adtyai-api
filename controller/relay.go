@@ -92,17 +92,18 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			service.RecordRequestPolicyTermination(c, newAPIError)
 			logger.LogError(c, common.LogText("relay error: %s", common.LocalLogPreview(newAPIError.Error())))
 			newAPIError.SetMessage(common.MessageWithRequestId(newAPIError.Error(), requestId))
+			upstreamURLs := common.UpstreamAddresses(c)
 			switch relayFormat {
 			case types.RelayFormatOpenAIRealtime:
-				helper.WssError(c, ws, newAPIError.ToOpenAIError())
+				helper.WssError(c, ws, newAPIError.ToOpenAIError(upstreamURLs...))
 			case types.RelayFormatClaude:
 				c.JSON(newAPIError.StatusCode, gin.H{
 					"type":  "error",
-					"error": newAPIError.ToClaudeError(),
+					"error": newAPIError.ToClaudeError(upstreamURLs...),
 				})
 			default:
 				c.JSON(newAPIError.StatusCode, gin.H{
-					"error": newAPIError.ToOpenAIError(),
+					"error": newAPIError.ToOpenAIError(upstreamURLs...),
 				})
 			}
 		}
@@ -621,6 +622,9 @@ func executeTaskSubmissionWith(
 	task.PrivateData.BillingSource = relayInfo.BillingSource
 	task.PrivateData.SubscriptionId = relayInfo.SubscriptionId
 	task.PrivateData.TokenId = relayInfo.TokenId
+	// ADTY B-03 H-B：提交时的钱包出资拆分，失败退款按此反向退
+	task.PrivateData.WalletBonus = relayInfo.WalletBonusConsumed
+	task.PrivateData.WalletPaid = relayInfo.WalletPaidConsumed
 	task.PrivateData.NodeName = common.NodeName
 	task.PrivateData.BillingContext = &model.TaskBillingContext{
 		ModelPrice:      relayInfo.PriceData.ModelPrice,
@@ -696,6 +700,14 @@ func executeTaskSubmissionWith(
 		taskErr = service.TaskErrorWrapperLocal(errors.New("failed to settle task billing"), "task_billing_settlement_failed", http.StatusInternalServerError)
 		diagnostics.failed("settle", "billing_error", taskErr, true)
 		return nil, taskErr
+	}
+	// ADTY B-03 H-B：提交阶段结算若改变了钱包拆分，同步回写任务
+	if task.PrivateData.WalletBonus != relayInfo.WalletBonusConsumed || task.PrivateData.WalletPaid != relayInfo.WalletPaidConsumed {
+		task.PrivateData.WalletBonus = relayInfo.WalletBonusConsumed
+		task.PrivateData.WalletPaid = relayInfo.WalletPaidConsumed
+		if err := task.UpdatePrivateData(); err != nil {
+			common.SysError(common.LogText("task %s: write back wallet split failed: %s", task.TaskID, err.Error()))
+		}
 	}
 	if task.Status != model.TaskStatusFailure {
 		service.MarkRequestPolicySuccess(c, nil)

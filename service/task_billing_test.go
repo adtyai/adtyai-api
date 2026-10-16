@@ -60,6 +60,10 @@ func TestMain(m *testing.M) {
 		&model.UserSubscription{},
 		&model.SystemTask{},
 		&model.SystemTaskLock{},
+		&model.UserBonusWallet{},
+		&model.LedgerEntry{},
+		&model.AdtyWalletConsumeHourly{},
+		&model.LedgerIdempotency{},
 	); err != nil {
 		panic("failed to migrate: " + err.Error())
 	}
@@ -75,6 +79,9 @@ func truncate(t *testing.T) {
 	t.Helper()
 	t.Cleanup(func() {
 		model.DB.Exec("DELETE FROM tasks")
+		model.DB.Exec("DELETE FROM ledger_idempotency")
+		model.DB.Exec("DELETE FROM ledger_entries")
+		model.DB.Exec("DELETE FROM user_bonus_wallets")
 		model.DB.Exec("DELETE FROM users")
 		model.DB.Exec("DELETE FROM tokens")
 		model.DB.Exec("DELETE FROM logs")
@@ -142,6 +149,11 @@ func seedChargedAccounting(t *testing.T, userID, channelID, tokenID, quota, requ
 }
 
 func makeTask(userId, channelId, quota, tokenId int, billingSource string, subscriptionId int) *model.Task {
+	// ADTY B-03：钱包任务默认视为提交时全部从实充扣（新任务都有拆分）
+	walletPaid := 0
+	if billingSource != BillingSourceSubscription {
+		walletPaid = quota
+	}
 	return &model.Task{
 		TaskID:    "task_" + time.Now().Format("150405.000"),
 		UserId:    userId,
@@ -159,6 +171,7 @@ func makeTask(userId, channelId, quota, tokenId int, billingSource string, subsc
 			BillingSource:  billingSource,
 			SubscriptionId: subscriptionId,
 			TokenId:        tokenId,
+			WalletPaid:     walletPaid,
 			BillingContext: &model.TaskBillingContext{
 				ModelPrice:      0.02,
 				GroupRatio:      1.0,
@@ -855,8 +868,10 @@ func TestRefundMidjourneyQuotaUsesLegacyChannelFallbackWithoutTokenAdjustment(t 
 		Action:    "IMAGINE",
 		ChannelId: channelID,
 		Quota:     chargedQuota,
-		TokenId:   0,
-		Progress:  "0%",
+		// ADTY B-03：提交时记录的拆分（全实充）
+		AdtyWalletPaid: chargedQuota,
+		TokenId:        0,
+		Progress:       "0%",
 	}
 	require.NoError(t, task.Insert())
 
@@ -1809,4 +1824,53 @@ func TestSettle_TokenRecalcFallsBackToCompletionTokens(t *testing.T) {
 			assert.Equal(t, testCase.wantQuota, task.Quota)
 		})
 	}
+}
+
+// ADTY B-03 H-B：老任务（无拆分）失败退款全部退赠送；新任务按拆分退并持久化扣减后的拆分
+func TestRefundTaskQuota_WalletSplitAndLegacy(t *testing.T) {
+	truncate(t)
+	ctx := context.Background()
+	const userID, tokenID, channelID = 1, 1, 1
+	seedUser(t, userID, 10000)
+	seedToken(t, tokenID, userID, "sk-test-key", 5000)
+	seedChannel(t, channelID)
+	seedChargedAccounting(t, userID, channelID, tokenID, 3000, 1)
+
+	legacy := makeTask(userID, channelID, 3000, tokenID, BillingSourceWallet, 0)
+	legacy.PrivateData.WalletPaid = 0
+	require.NoError(t, model.DB.Create(legacy).Error)
+	assert.True(t, RefundTaskQuota(ctx, legacy, "legacy failed"))
+	assert.Equal(t, 10000, getUserQuota(t, userID))
+	bonus, err := model.GetUserBonusBalance(userID)
+	require.NoError(t, err)
+	assert.Equal(t, int64(3000), bonus)
+
+	split := makeTask(userID, channelID, 1000, tokenID, BillingSourceWallet, 0)
+	split.TaskID = "task_split"
+	split.PrivateData.WalletBonus, split.PrivateData.WalletPaid = 400, 600
+	require.NoError(t, model.DB.Create(split).Error)
+	assert.True(t, RefundTaskQuota(ctx, split, "split failed"))
+	assert.Equal(t, 10600, getUserQuota(t, userID))
+	bonus, err = model.GetUserBonusBalance(userID)
+	require.NoError(t, err)
+	assert.Equal(t, int64(3400), bonus)
+	var reloaded model.Task
+	require.NoError(t, model.DB.Where("task_id = ?", "task_split").First(&reloaded).Error)
+	assert.Zero(t, reloaded.PrivateData.WalletBonus)
+	assert.Zero(t, reloaded.PrivateData.WalletPaid)
+}
+
+// ADTY B-03 L-3：请求内退回超出本请求拆分时，超出部分退赠送，不报错
+func TestReturnRelayWalletSplitExcessGoesToBonus(t *testing.T) {
+	truncate(t)
+	const userID = 1
+	seedUser(t, userID, 1000)
+	info := &relaycommon.RelayInfo{UserId: userID, WalletBonusConsumed: 100, WalletPaidConsumed: 200}
+	require.NoError(t, returnRelayWalletSplit(info, 350))
+	assert.Equal(t, 1200, getUserQuota(t, userID))
+	bonus, err := model.GetUserBonusBalance(userID)
+	require.NoError(t, err)
+	assert.Equal(t, int64(150), bonus)
+	assert.Zero(t, info.WalletBonusConsumed)
+	assert.Zero(t, info.WalletPaidConsumed)
 }

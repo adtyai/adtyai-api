@@ -18,7 +18,12 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test, vi } from 'vitest'
+
+// A08: display names come from /api/status; identity here (code fallback).
+vi.mock('@/hooks/use-group-display-name', () => ({
+  useGroupDisplayName: () => (code: string | null | undefined) => code ?? '',
+}))
 
 const { createInstance } = await import('i18next')
 const { I18nextProvider, initReactI18next } = await import('react-i18next')

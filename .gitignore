@@ -44,3 +44,6 @@ relaykit/relayconvert/chat_responses_live_local_test.go
 service/openaicompat/chat_responses_live_local_test.go
 go.work
 go.work.sum
+
+# A45 import apply backup (local only; never commit)
+scripts/a45_legacy_defaults.rollback.json

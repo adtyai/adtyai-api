@@ -67,6 +67,15 @@ var accessTokenExemptRoutes = []string{
 	"GET /api/subscription/epay/return",
 	"POST /api/subscription/epay/return",
 
+	// adtyai 二开：公开充值档位 + 支付回调（验签，不走登录）。
+	"GET /api/pay/epay/notify/:instance_id",
+	"GET /api/pay/usdt/notify",
+	"GET /api/topup/tiers",
+	"GET /api/user/bepusdt/notify",
+	"POST /api/pay/epay/notify/:instance_id",
+	"POST /api/pay/usdt/notify",
+	"POST /api/user/bepusdt/notify",
+
 	// API key authentication (TokenAuthReadOnly).
 	"GET /api/usage/token/",
 	"GET /api/log/token",

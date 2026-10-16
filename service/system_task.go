@@ -63,6 +63,14 @@ func RegisterSystemTaskHandler(h SystemTaskHandler) {
 	systemTaskHandlers[h.Type()] = h
 }
 
+// LookupSystemTaskHandler returns the registered handler for taskType, if any.
+func LookupSystemTaskHandler(taskType string) (SystemTaskHandler, bool) {
+	systemTaskHandlersMu.RLock()
+	defer systemTaskHandlersMu.RUnlock()
+	h, ok := systemTaskHandlers[taskType]
+	return h, ok
+}
+
 func registeredSystemTaskHandlers() []SystemTaskHandler {
 	systemTaskHandlersMu.RLock()
 	defer systemTaskHandlersMu.RUnlock()

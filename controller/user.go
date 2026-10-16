@@ -126,19 +126,24 @@ func loginMethodFromContext(c *gin.Context) string {
 }
 
 // recordLoginAudit 记录登录成功审计日志（对所有用户启用，仅记录成功，不记录失败）。
+// 管理员（role≥Admin）写 action=admin_login，并在 Other 中标 ip_first_seen（A30 / A17#21）。
 func recordLoginAudit(user *model.User, c *gin.Context) {
 	method := loginMethodFromContext(c)
 	ip := c.ClientIP()
-	extra := model.AuditOther{
-		LoginMethod: method,
-		UserAgent:   c.Request.UserAgent(),
-	}
 	content := fmt.Sprintf("Logged in successfully via %s", method)
 	params := map[string]any{
 		"method": method,
 	}
 	if verifiedMethod := c.GetString("login_verification_method"); verifiedMethod != "" {
 		params["verification_method"] = verifiedMethod
+	}
+	if user.Role >= common.RoleAdminUser {
+		model.RecordAdminLoginAudit(user.Id, user.Role, user.Username, content, ip, method, params, c)
+		return
+	}
+	extra := model.AuditOther{
+		LoginMethod: method,
+		UserAgent:   c.Request.UserAgent(),
 	}
 	model.RecordLoginLog(user.Id, user.Role, user.Username, content, ip, "login", params, extra, c)
 }
@@ -282,6 +287,15 @@ func Register(c *gin.Context) {
 	}
 	if common.EmailVerificationEnabled {
 		cleanUser.Email = user.Email
+	}
+	cleanUser.RegisterIp = c.ClientIP()
+	cleanUser.RegisterDeviceFp = c.GetHeader("X-Device-FP")
+	if inviterId != 0 {
+		if err := model.AssertNoInviteCycle(0, inviterId); err != nil {
+			// new user id unknown yet; still reject pathological inviter self-loops in chain
+			common.ApiErrorT(c, "Invalid invitation code")
+			return
+		}
 	}
 	if err := cleanUser.Insert(inviterId); err != nil {
 		if errors.Is(err, model.ErrEmailAlreadyTaken) {

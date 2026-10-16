@@ -25,7 +25,7 @@ import {
   StaticDataTable,
   staticDataTableClassNames as tableStyles,
 } from '@/components/data-table'
-import { GroupBadge } from '@/components/group-badge'
+import { UserGroupBadge } from '@/components/user-group-badge'
 import { getPerfMetrics } from '@/features/performance-metrics/api'
 import {
   formatLatency,
@@ -219,7 +219,7 @@ export function ModelDetailsPerformance(props: { model: PricingModel }) {
               header: t('Group'),
               className: tableStyles.compactHeaderCell,
               cellClassName: tableStyles.compactCell,
-              cell: (perf) => <GroupBadge group={perf.group} size='sm' />,
+              cell: (perf) => <UserGroupBadge group={perf.group} size='sm' />,
             },
             {
               id: 'tps',

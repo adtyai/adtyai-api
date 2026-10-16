@@ -19,22 +19,23 @@ For commercial licensing, please contact support@quantumnous.com
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { ErrorState } from '@/components/error-state'
 import { SectionPageLayout } from '@/components/layout'
 import { useStatus } from '@/hooks/use-status'
 import { useSystemConfig } from '@/hooks/use-system-config'
 import { getSelf } from '@/lib/api'
 
 import { AffiliateRewardsCard } from './components/affiliate-rewards-card'
-import { BillingHistoryDialog } from './components/dialogs/billing-history-dialog'
 import { CreemConfirmDialog } from './components/dialogs/creem-confirm-dialog'
 import { PaymentConfirmDialog } from './components/dialogs/payment-confirm-dialog'
 import { TransferDialog } from './components/dialogs/transfer-dialog'
-import { RechargeFormCard } from './components/recharge-form-card'
+import { AdtyRechargePanel } from './components/adty-recharge-panel'
 import { SubscriptionPlansCard } from './components/subscription-plans-card'
 import { WalletStatsCard } from './components/wallet-stats-card'
-import { DEFAULT_DISCOUNT_RATE, PAYMENT_TYPES } from './constants'
+import { DEFAULT_DISCOUNT_RATE } from './constants'
 import {
   useTopupInfo,
+  useAdtyTopup,
   usePayment,
   useAffiliate,
   useRedemption,
@@ -50,30 +51,18 @@ import {
 import type {
   UserWalletData,
   PaymentMethod,
-  PresetAmount,
   CreemProduct,
-  WaffoPayMethod,
 } from './types'
 
-interface WalletProps {
-  initialShowHistory?: boolean
-}
-
-export function Wallet(props: WalletProps) {
+export function Wallet() {
   const { t } = useTranslation()
   const [user, setUser] = useState<UserWalletData | null>(null)
   const [userLoading, setUserLoading] = useState(true)
   const [topupAmount, setTopupAmount] = useState(0)
-  const [selectedPreset, setSelectedPreset] = useState<number | null>(null)
-  const [selectedPaymentMethod, setSelectedPaymentMethod] =
-    useState<PaymentMethod>()
-  const [selectedWaffoMethodIndex, setSelectedWaffoMethodIndex] = useState<
-    number | null
-  >(null)
-  const [paymentLoading, setPaymentLoading] = useState<string | null>(null)
+  const [selectedPaymentMethod] = useState<PaymentMethod>()
+  const [selectedWaffoMethodIndex] = useState<number | null>(null)
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false)
   const [transferDialogOpen, setTransferDialogOpen] = useState(false)
-  const [billingDialogOpen, setBillingDialogOpen] = useState(false)
   const [redemptionCode, setRedemptionCode] = useState('')
   const [creemDialogOpen, setCreemDialogOpen] = useState(false)
   const [selectedCreemProduct, setSelectedCreemProduct] =
@@ -82,7 +71,17 @@ export function Wallet(props: WalletProps) {
 
   const { status } = useStatus()
   const { currency } = useSystemConfig()
-  const { topupInfo, presetAmounts, loading: topupLoading } = useTopupInfo()
+  const { topupInfo } = useTopupInfo()
+  const {
+    tiers: adtyTiers,
+    payMethods: adtyPayMethods,
+    firstTopupBonusRate,
+    firstEligible,
+    loading: adtyLoading,
+    available: adtyAvailable,
+    error: adtyError,
+    refetch: refetchAdtyTopup,
+  } = useAdtyTopup()
 
   // Calculate effective exchange rate - when display type is USD, use rate of 1
   const effectiveUsdExchangeRate = useMemo(() => {
@@ -129,13 +128,6 @@ export function Wallet(props: WalletProps) {
     fetchUser()
   }, [fetchUser])
 
-  useEffect(() => {
-    if (props.initialShowHistory) {
-      setBillingDialogOpen(true)
-      window.history.replaceState({}, '', window.location.pathname)
-    }
-  }, [props.initialShowHistory])
-
   // Initialize topup amount when topup info is loaded
   const topupAmountInitializedRef = useRef(false)
   useEffect(() => {
@@ -149,46 +141,6 @@ export function Wallet(props: WalletProps) {
       calculatePaymentAmount(minTopup, defaultPaymentType)
     }
   }, [topupInfo, calculatePaymentAmount])
-
-  // Get current payment type (selected or default)
-  const getCurrentPaymentType = useCallback(() => {
-    return selectedPaymentMethod?.type || getDefaultPaymentType(topupInfo)
-  }, [selectedPaymentMethod, topupInfo])
-
-  // Handle preset selection
-  const handleSelectPreset = (preset: PresetAmount) => {
-    setTopupAmount(preset.value)
-    setSelectedPreset(preset.value)
-    calculatePaymentAmount(preset.value, getCurrentPaymentType())
-  }
-
-  // Handle topup amount change
-  const handleTopupAmountChange = (amount: number) => {
-    setTopupAmount(amount)
-    setSelectedPreset(null)
-    calculatePaymentAmount(amount, getCurrentPaymentType())
-  }
-
-  // Handle payment method selection
-  const handlePaymentMethodSelect = async (method: PaymentMethod) => {
-    setSelectedPaymentMethod(method)
-    setSelectedWaffoMethodIndex(null)
-    setPaymentLoading(method.type)
-
-    try {
-      // Validate minimum topup
-      const minTopup = getMinTopupAmount(topupInfo)
-      if (topupAmount < minTopup) {
-        return
-      }
-
-      // Calculate payment amount and show confirmation dialog
-      await calculatePaymentAmount(topupAmount, method.type)
-      setConfirmDialogOpen(true)
-    } finally {
-      setPaymentLoading(null)
-    }
-  }
 
   // Handle payment confirmation
   const handlePaymentConfirm = async () => {
@@ -219,6 +171,7 @@ export function Wallet(props: WalletProps) {
     if (success) {
       setRedemptionCode('')
       await fetchUser()
+      await refetchAdtyTopup()
     }
   }
 
@@ -231,12 +184,6 @@ export function Wallet(props: WalletProps) {
     return success
   }
 
-  // Handle Creem product selection
-  const handleCreemProductSelect = (product: CreemProduct) => {
-    setSelectedCreemProduct(product)
-    setCreemDialogOpen(true)
-  }
-
   // Handle Creem payment confirmation
   const handleCreemConfirm = async () => {
     if (!selectedCreemProduct) return
@@ -246,27 +193,6 @@ export function Wallet(props: WalletProps) {
       setCreemDialogOpen(false)
       setSelectedCreemProduct(null)
       await fetchUser()
-    }
-  }
-
-  const handleWaffoMethodSelect = async (
-    method: WaffoPayMethod,
-    index: number
-  ) => {
-    const loadingKey = `waffo-${index}`
-    setSelectedPaymentMethod({
-      name: method.name,
-      type: PAYMENT_TYPES.WAFFO,
-      icon: method.icon,
-    })
-    setSelectedWaffoMethodIndex(index)
-    setPaymentLoading(loadingKey)
-
-    try {
-      await calculatePaymentAmount(topupAmount, PAYMENT_TYPES.WAFFO)
-      setConfirmDialogOpen(true)
-    } finally {
-      setPaymentLoading(null)
     }
   }
 
@@ -285,10 +211,16 @@ export function Wallet(props: WalletProps) {
   return (
     <>
       <SectionPageLayout>
-        <SectionPageLayout.Title>{t('Wallet')}</SectionPageLayout.Title>
+        <SectionPageLayout.Title>{t('Wallet Top-up')}</SectionPageLayout.Title>
         <SectionPageLayout.Content>
           <div className='mx-auto flex w-full max-w-7xl flex-col gap-4 sm:gap-5'>
-            <WalletStatsCard user={user} loading={userLoading} />
+            <p className='text-muted-foreground -mt-1 text-[13px]'>
+              {t('USD pricing · full amount credited · tier bonus extra')}
+            </p>
+            <WalletStatsCard
+              user={user}
+              loading={userLoading}
+            />
 
             <div
               className={
@@ -298,37 +230,36 @@ export function Wallet(props: WalletProps) {
               }
             >
               <div id='wallet-add-funds' className='scroll-mt-4'>
-                <RechargeFormCard
-                  topupInfo={topupInfo}
-                  presetAmounts={presetAmounts}
-                  selectedPreset={selectedPreset}
-                  onSelectPreset={handleSelectPreset}
-                  topupAmount={topupAmount}
-                  onTopupAmountChange={handleTopupAmountChange}
-                  paymentAmount={paymentAmount}
-                  calculating={calculating}
-                  onPaymentMethodSelect={handlePaymentMethodSelect}
-                  paymentLoading={paymentLoading}
-                  redemptionCode={redemptionCode}
-                  onRedemptionCodeChange={setRedemptionCode}
-                  onRedeem={handleRedeem}
-                  redeeming={redeeming}
-                  topupLink={topupInfo?.topup_link}
-                  loading={topupLoading}
-                  priceRatio={(status?.price as number) || 1}
-                  usdExchangeRate={effectiveUsdExchangeRate}
-                  onOpenBilling={() => setBillingDialogOpen(true)}
-                  creemProducts={topupInfo?.creem_products}
-                  enableCreemTopup={topupInfo?.enable_creem_topup}
-                  onCreemProductSelect={handleCreemProductSelect}
-                  enableWaffoTopup={topupInfo?.enable_waffo_topup}
-                  waffoPayMethods={topupInfo?.waffo_pay_methods}
-                  waffoMinTopup={topupInfo?.waffo_min_topup}
-                  onWaffoMethodSelect={handleWaffoMethodSelect}
-                  enableWaffoPancakeTopup={
-                    topupInfo?.enable_waffo_pancake_topup
-                  }
-                />
+                {adtyAvailable || adtyLoading ? (
+                  <AdtyRechargePanel
+                    tiers={adtyTiers}
+                    payMethods={adtyPayMethods}
+                    firstTopupBonusRate={firstTopupBonusRate}
+                    firstEligible={firstEligible}
+                    loading={adtyLoading}
+                    price={(status?.price as number) || 1}
+                    redemptionCode={redemptionCode}
+                    onRedemptionCodeChange={setRedemptionCode}
+                    onRedeem={handleRedeem}
+                    redeeming={redeeming}
+                    redemptionEnabled={topupInfo?.enable_redemption !== false}
+                    onUsdtPaid={() => {
+                      void fetchUser()
+                      void refetchAdtyTopup()
+                    }}
+                  />
+                ) : (
+                  <ErrorState
+                    title={t('Failed to load top-up options')}
+                    description={
+                      adtyError ||
+                      t(
+                        'Please try again. If the problem persists, contact support.'
+                      )
+                    }
+                    onRetry={() => void refetchAdtyTopup()}
+                  />
+                )}
               </div>
 
               <SubscriptionPlansCard
@@ -373,10 +304,6 @@ export function Wallet(props: WalletProps) {
         transferring={transferring}
       />
 
-      <BillingHistoryDialog
-        open={billingDialogOpen}
-        onOpenChange={setBillingDialogOpen}
-      />
 
       <CreemConfirmDialog
         open={creemDialogOpen}

@@ -287,3 +287,86 @@ export interface BillingHistoryResponse {
 export interface CompleteOrderRequest {
   trade_no: string
 }
+
+// ============================================================================
+// ADTY fixed-tier topup (GET /api/topup/tiers)
+// ============================================================================
+
+/** One fixed topup tier from GET /api/topup/tiers */
+export interface AdtyTopupTier {
+  /** USD tier amount (must be one of 13 fixed amounts) */
+  amount: number
+  /** Tier bonus rate as 0–1 fraction */
+  bonus_rate: number
+  /** Tier bonus as percent (e.g. 2.5) */
+  bonus_percent: number
+  /** Precomputed tier bonus USD */
+  bonus_amount: number
+}
+
+/** Payment method availability from GET /api/topup/tiers */
+export interface AdtyPayMethod {
+  type: string
+  name: string
+  available: boolean
+  maintenance_reason?: string
+}
+
+/** data of GET /api/topup/tiers */
+export interface AdtyTopupTiersData {
+  tiers: AdtyTopupTier[]
+  first_topup_bonus_rate: number
+  pay_methods: AdtyPayMethod[]
+}
+
+export type AdtyTopupTiersResponse = ApiResponse<AdtyTopupTiersData>
+
+/** data of GET /api/topup/first-recharge */
+export interface AdtyFirstRechargeData {
+  first_topup_bonus_rate: number
+  eligible: boolean
+}
+
+export type AdtyFirstRechargeResponse = ApiResponse<AdtyFirstRechargeData>
+
+/** POST /api/topup/order body */
+export interface AdtyCreateTopupOrderRequest {
+  amount: number
+  payment_method: string
+}
+
+/** Minimal order shape returned by create/get (fields used by UI) */
+export interface AdtyTopupOrder {
+  order_no?: string
+  amount?: number
+  payment_method?: string
+  status?: string
+  [key: string]: unknown
+}
+
+/** USDT cashier payload from POST /api/topup/order (payment_method=usdt) */
+export interface AdtyUsdtCashier {
+  payment_address: string
+  /** Exact amount string from BEpusdt — prefer for copy/display */
+  payment_amount: string
+  pay_usdt: number
+  payment_currency?: string
+  payment_url?: string
+  transaction_id?: string
+  /** Unix seconds */
+  expire_at: number
+  usdt_fx_rate: number
+  timeout_minutes?: number
+}
+
+/** Successful create-order payload (epay: pay_url; usdt: usdt cashier) */
+export interface AdtyCreateTopupOrderData {
+  order: AdtyTopupOrder
+  pay_url?: string
+  pay_params?: Record<string, string>
+  usdt?: AdtyUsdtCashier
+}
+
+export type AdtyCreateTopupOrderResponse = ApiResponse<AdtyCreateTopupOrderData> & {
+  code?: string
+}

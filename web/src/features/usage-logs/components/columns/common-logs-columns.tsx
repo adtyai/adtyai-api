@@ -21,7 +21,6 @@ import { GitBranch, Sparkles, KeyRound } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { GroupBadge } from '@/components/group-badge'
 import { StatusBadge, type StatusBadgeProps } from '@/components/status-badge'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
@@ -35,6 +34,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { UserGroupBadge } from '@/components/user-group-badge'
 import { usePricingData } from '@/features/pricing/hooks/use-pricing-data'
 import {
   normalizeTierLabel,
@@ -647,7 +647,7 @@ export function useCommonLogsColumns(
             {(group || groupRatio != null) && (
               <span className='block max-w-full truncate text-xs leading-none'>
                 {group ? (
-                  <GroupBadge
+                  <UserGroupBadge
                     group={group}
                     label={sensitiveVisible ? undefined : '••••'}
                     type='text'

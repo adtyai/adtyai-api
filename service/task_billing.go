@@ -117,10 +117,33 @@ func taskAdjustFunding(task *model.Task, delta int) error {
 	if taskIsSubscription(task) {
 		return model.PostConsumeUserSubscriptionDelta(task.PrivateData.SubscriptionId, int64(delta))
 	}
+	// ADTY B-03 H-B：补扣记拆分；退款按任务记录的拆分反向退（事后退款写流水，不碰拆分表）。
 	if delta > 0 {
-		return model.DecreaseUserQuota(task.UserId, delta, false)
+		bonus, paid, err := model.DecreaseUserWallet(task.UserId, delta)
+		if err != nil {
+			return err
+		}
+		model.ApplyUserQuotaCacheDelta(task.UserId, -int64(delta))
+		task.PrivateData.WalletBonus += bonus
+		task.PrivateData.WalletPaid += paid
+		return nil
 	}
-	return model.IncreaseUserQuota(task.UserId, -delta, false)
+	bonus, paid, legacy := model.SplitRefundByRecorded(-delta, task.PrivateData.WalletBonus, task.PrivateData.WalletPaid)
+	if legacy {
+		common.SysLog(common.LogText("task %s has no wallet split (pre-cutover), refunding %d entirely to bonus", task.TaskID, -delta))
+	} else if bonus > task.PrivateData.WalletBonus {
+		common.SysLog(common.LogText("task %s refund %d exceeds recorded split (bonus=%d paid=%d), excess %d to bonus",
+			task.TaskID, -delta, task.PrivateData.WalletBonus, task.PrivateData.WalletPaid, bonus-task.PrivateData.WalletBonus))
+	}
+	if err := model.RefundUserWalletAfterTheFact(task.UserId, bonus, paid, "task_refund", task.TaskID); err != nil {
+		return err
+	}
+	task.PrivateData.WalletBonus -= bonus
+	task.PrivateData.WalletPaid -= paid
+	if task.PrivateData.WalletBonus < 0 {
+		task.PrivateData.WalletBonus = 0
+	}
+	return nil
 }
 
 // taskAdjustTokenQuota 调整任务的令牌额度，delta > 0 表示扣费，delta < 0 表示退还。
@@ -297,7 +320,7 @@ func RefundTaskQuota(ctx context.Context, task *model.Task, reason string) bool 
 	// 5. 资金退款完成后再清除持久化标记。
 	// 回写失败必须显式告警，避免漏掉潜在的重复退款风险。
 	task.Quota = 0
-	if err := task.UpdateQuota(); err != nil {
+	if err := task.UpdateQuotaAndPrivateData(); err != nil {
 		logger.LogError(ctx, common.LogText("refund succeeded but clearing the task quota failed, task %s: %s", task.TaskID, err.Error()))
 	}
 	return true
@@ -338,7 +361,7 @@ func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int
 	taskAdjustTokenQuota(ctx, task, quotaDelta)
 
 	task.Quota = actualQuota
-	if err := task.UpdateQuota(); err != nil {
+	if err := task.UpdateQuotaAndPrivateData(); err != nil {
 		logger.LogError(ctx, common.LogText("failed to write back the settled task quota, task %s: %s", task.TaskID, err.Error()))
 	}
 
@@ -417,9 +440,14 @@ func RecalculateTaskQuotaByTokens(ctx context.Context, task *model.Task, totalTo
 
 	// 计算 OtherRatios 乘积（视频折扣、时长等）
 	otherMultiplier := 1.0
+	entDiscount := 1.0
 	if priceData := taskBillingContextPriceData(task.PrivateData.BillingContext); priceData != nil {
 		otherMultiplier = priceData.OtherRatioMultiplier()
+		if priceData.EnterpriseDiscount > 0 {
+			entDiscount = priceData.EnterpriseDiscount
+		}
 	}
+	finalGroupRatio = model.EffectiveGroupRatio(finalGroupRatio, entDiscount)
 
 	// 计算实际应扣费额度: totalTokens * modelRatio * groupRatio * otherMultiplier（饱和转换，防止溢出成负数）
 	actualQuota, clamp := common.QuotaFromFloatChecked(float64(totalTokens) * modelRatio * finalGroupRatio * otherMultiplier)

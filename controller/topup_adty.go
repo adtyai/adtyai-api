@@ -1,0 +1,248 @@
+package controller
+
+import (
+	"errors"
+	"net/http"
+	"strings"
+
+	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
+	"github.com/gin-gonic/gin"
+)
+
+type adtyTopupOrderReq struct {
+	Amount        int64  `json:"amount"`         // 美元档位
+	PaymentMethod string `json:"payment_method"` // alipay|wxpay|usdt
+}
+
+// GetTopupTiers GET /api/topup/tiers
+func GetTopupTiers(c *gin.Context) {
+	percents := model.GetTopupBonusTierPercents()
+	tiers := make([]gin.H, 0, len(model.FixedTopupAmountsUSD))
+	for i, amt := range model.FixedTopupAmountsUSD {
+		rate := percents[i] / 100.0
+		bonus := float64(amt) * rate
+		tiers = append(tiers, gin.H{
+			"amount":        amt,
+			"bonus_rate":    rate,
+			"bonus_percent": percents[i],
+			"bonus_amount":  bonus,
+		})
+	}
+	epayOK, epayReason := model.HasUsablePrimaryEpay()
+	if epayReason == "" {
+		epayReason = "支付维护中"
+	}
+	usdtOK, usdtReason := service.IsAdtyUsdtAvailable()
+	if usdtReason == "" {
+		usdtReason = "支付维护中"
+	}
+	payMethods := []gin.H{
+		{"type": "alipay", "name": "支付宝", "available": epayOK, "maintenance_reason": ternaryStr(epayOK, "", epayReason)},
+		{"type": "wxpay", "name": "微信", "available": epayOK, "maintenance_reason": ternaryStr(epayOK, "", epayReason)},
+		{"type": "usdt", "name": "USDT", "available": usdtOK, "maintenance_reason": ternaryStr(usdtOK, "", usdtReason)},
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data": gin.H{
+			"tiers":                  tiers,
+			"first_topup_bonus_rate": model.GetFirstTopupBonusRate(),
+			"pay_methods":            payMethods,
+		},
+	})
+}
+
+func ternaryStr(cond bool, a, b string) string {
+	if cond {
+		return a
+	}
+	return b
+}
+
+// GetFirstRechargeInfo GET /api/topup/first-recharge
+func GetFirstRechargeInfo(c *gin.Context) {
+	userId := c.GetInt("id")
+	hasRecord, err := model.UserHasFirstTopupRecord(userId)
+	if err != nil {
+		adtyFail(c, http.StatusOK, "bad_request", err.Error(), nil)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data": gin.H{
+			"first_topup_bonus_rate": model.GetFirstTopupBonusRate(),
+			"eligible":               !hasRecord,
+		},
+	})
+}
+
+// CreateTopupOrder POST /api/topup/order — 固定档位；支付宝/微信走主用易支付拉起。
+func CreateTopupOrder(c *gin.Context) {
+	var req adtyTopupOrderReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		adtyFail(c, http.StatusBadRequest, "invalid_parameters", "invalid parameters", nil)
+		return
+	}
+	if !model.IsFixedTopupAmount(req.Amount) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"message": "amount must be one of the fixed tiers",
+			"code":    "invalid_tier_amount",
+		})
+		return
+	}
+	method := strings.ToLower(strings.TrimSpace(req.PaymentMethod))
+	needEpay := method == "alipay" || method == "wxpay"
+	if needEpay {
+		ok, reason := model.HasUsablePrimaryEpay()
+		if !ok {
+			if reason == "" {
+				reason = "支付维护中"
+			}
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"success": false,
+				"message": reason,
+				"code":    "payment_maintenance",
+			})
+			return
+		}
+	}
+	if method == "usdt" {
+		ok, reason := service.IsAdtyUsdtAvailable()
+		if !ok {
+			if reason == "" {
+				reason = "支付维护中"
+			}
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"success": false,
+				"message": reason,
+				"code":    "payment_maintenance",
+			})
+			return
+		}
+	}
+
+	userId := c.GetInt("id")
+	deviceFp := c.GetHeader("X-Device-FP")
+	order, err := model.CreateTopupOrder(userId, req.Amount, method, deviceFp, c.ClientIP())
+	if err != nil {
+		if errors.Is(err, model.ErrInvalidTopupAmount) {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error(), "code": "invalid_tier_amount"})
+			return
+		}
+		adtyFail(c, http.StatusOK, "bad_request", err.Error(), nil)
+		return
+	}
+
+	resp := gin.H{"order": order}
+	if needEpay {
+		payURL, params, inst, err := StartEpayPurchaseForOrder(order, method)
+		if err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"success": false,
+				"message": "支付维护中",
+				"code":    "payment_maintenance",
+				"data":    gin.H{"order": order},
+			})
+			return
+		}
+		// 回写实例与汇率快照；失败则不得返回 pay_url（审查中优）
+		fx := model.CurrentTopupFxRate()
+		payCNY := float64(order.AmountUSD) * fx
+		if err := model.DB.Model(order).Updates(map[string]any{
+			"epay_instance_id":    inst.Id,
+			"fx_rate":             fx,
+			"pay_cny":             payCNY,
+			"payment_provider":    "epay",
+			"bonus_rate_snapshot": order.BonusAmountUSD / float64(order.AmountUSD),
+		}).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"message": "failed to bind payment snapshot",
+				"code":    "epay_snapshot_failed",
+				"data":    gin.H{"order": order},
+			})
+			return
+		}
+		order.EpayInstanceId = inst.Id
+		order.FxRate = fx
+		order.PayCNY = payCNY
+		order.PaymentProvider = "epay"
+		resp["pay_url"] = payURL
+		resp["pay_params"] = params
+	}
+	if method == "usdt" {
+		cashier, err := StartUsdtPurchaseForOrder(order)
+		if err != nil {
+			_ = model.DB.Model(order).Update("status", model.TopupOrderStatusFailed).Error
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"success": false,
+				"message": "支付维护中",
+				"code":    "payment_maintenance",
+				"data":    gin.H{"order": order},
+			})
+			return
+		}
+		resp["order"] = order
+		resp["usdt"] = cashier
+	}
+
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": resp})
+}
+
+// GetTopupOrder GET /api/topup/order/:no
+func GetTopupOrder(c *gin.Context) {
+	orderNo := c.Param("no")
+	order, err := model.GetTopupOrderByNo(orderNo)
+	if err != nil {
+		if errors.Is(err, model.ErrTopupOrderNotFound) {
+			adtyFail(c, http.StatusNotFound, "not_found", "order not found", nil)
+			return
+		}
+		adtyFail(c, http.StatusOK, "bad_request", err.Error(), nil)
+		return
+	}
+	userId := c.GetInt("id")
+	role := c.GetInt("role")
+	if order.UserId != userId && role < common.RoleAdminUser {
+		adtyFail(c, http.StatusForbidden, "forbidden", "forbidden", nil)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": order})
+}
+
+type adminCompleteAdtyTopupReq struct {
+	Confirm bool `json:"confirm"`
+}
+
+// AdminCompleteAdtyTopup POST /api/admin/orders/:no/complete — 最小闭环补单/验收入账。
+func AdminCompleteAdtyTopup(c *gin.Context) {
+	orderNo := c.Param("no")
+	var req adminCompleteAdtyTopupReq
+	_ = c.ShouldBindJSON(&req)
+	if !req.Confirm {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"message": "confirm=true required",
+			"code":    "confirm_required",
+		})
+		return
+	}
+	order, err := model.CompleteTopupOrder(orderNo)
+	if err != nil {
+		status := http.StatusOK
+		code := "bad_request"
+		if errors.Is(err, model.ErrTopupOrderNotFound) {
+			status = http.StatusNotFound
+			code = "not_found"
+		} else if errors.Is(err, model.ErrTopupOrderStatusInvalid) {
+			status = http.StatusConflict
+			code = "order_status_invalid"
+		}
+		adtyFail(c, status, code, err.Error(), nil)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": order})
+}

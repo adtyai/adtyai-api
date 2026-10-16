@@ -123,18 +123,19 @@ function LegalLinks(props: { leadingSeparator?: boolean }) {
 
 // inline=true returns just the inner span for composition in a parent flex
 // row. inline=false wraps in a centered/right-aligned div (default).
-function ProjectAttribution(props: { currentYear: number; inline?: boolean }) {
+export function ProjectAttribution(props: { currentYear: number; inline?: boolean }) {
   const { t } = useTranslation()
   const content = (
-    <span className='text-muted-foreground/45'>
+    <span className='text-muted-foreground/60'>
       &copy; {props.currentYear}{' '}
+      {/* AGPL 署名：保留上游项目名原文，不走 i18n（"New API" 已被译为站名）。 */}
       <a
         href='https://github.com/QuantumNous/new-api'
         target='_blank'
         rel='noopener noreferrer'
-        className='text-foreground/70 hover:text-foreground font-medium transition-colors'
+        className='hover:text-muted-foreground transition-colors'
       >
-        {t('New API')}
+        New API
       </a>
       . {t(NEW_API_FOOTER_ATTRIBUTION_KEY)}
     </span>
@@ -143,7 +144,7 @@ function ProjectAttribution(props: { currentYear: number; inline?: boolean }) {
     return content
   }
   return (
-    <div className='text-muted-foreground/45 text-center text-xs sm:text-right'>
+    <div className='text-muted-foreground/60 text-center text-[11px] leading-relaxed'>
       {content}
     </div>
   )
@@ -157,9 +158,12 @@ export function Footer(props: FooterProps) {
     footerHtml,
     demoSiteEnabled,
   } = useSystemConfig()
+  const { status } = useStatus()
+  const docsLink =
+    typeof status?.docs_link === 'string' ? status.docs_link : ''
 
   const displayLogo = systemLogo || props.logo || '/logo.png'
-  const displayName = systemName || props.name || 'New API'
+  const displayName = systemName || props.name || 'ADTY AI'
   const isDemoSiteMode = Boolean(demoSiteEnabled)
   const currentYear = new Date().getFullYear()
 
@@ -246,60 +250,71 @@ export function Footer(props: FooterProps) {
     )
   }
 
+  // adtyai：默认四列页脚（品牌 / 产品 / 支持 / 条款）；演示站模式仍用官方列。
+  const productLinks: FooterLink[] = [
+    { text: t('Model Square'), href: '/pricing' },
+    ...(docsLink ? [{ text: t('Docs'), href: docsLink }] : []),
+  ]
+  const supportLinks: FooterLink[] = [{ text: t('About'), href: '/about' }]
+  const legalLinks: FooterLink[] = [
+    ...(status?.user_agreement_enabled
+      ? [{ text: t('User Agreement'), href: '/user-agreement' }]
+      : []),
+    ...(status?.privacy_policy_enabled
+      ? [{ text: t('Privacy Policy'), href: '/privacy-policy' }]
+      : []),
+  ]
+  const adtyColumns: FooterColumnProps[] = [
+    { title: t('Product'), links: productLinks },
+    { title: t('footer.supportTitle'), links: supportLinks },
+    ...(legalLinks.length > 0
+      ? [{ title: t('Terms'), links: legalLinks }]
+      : []),
+  ]
+  const columnsToShow = isDemoSiteMode ? displayColumns : adtyColumns
+
   return (
     <footer
-      className={cn('border-border/40 relative z-10 border-t', props.className)}
+      className={cn('border-border/60 relative z-10 border-t', props.className)}
     >
-      <div className='mx-auto max-w-6xl px-6 py-12 md:py-16'>
-        <div className='flex flex-col justify-between gap-10 md:flex-row md:gap-16'>
-          {/* Brand column */}
-          <div className='shrink-0'>
+      <div className='mx-auto max-w-6xl px-6 py-12 md:py-14'>
+        <div className='grid grid-cols-2 gap-8 md:grid-cols-4'>
+          <div className='col-span-2 md:col-span-1'>
             <Link to='/' className='group flex items-center gap-2.5'>
               <img
                 src={displayLogo}
                 alt={displayName}
                 className='size-7 rounded-lg object-contain'
               />
-              <span className='text-sm font-semibold tracking-tight'>
+              <span className='text-base font-bold tracking-tight'>
                 {displayName}
               </span>
             </Link>
-            <p className='text-muted-foreground/60 mt-3 max-w-[200px] text-xs leading-relaxed'>
-              {t('Powerful API Management Platform')}
+            <p className='text-muted-foreground mt-3 max-w-[220px] text-sm leading-relaxed'>
+              {t('One key to access all mainstream models')}
             </p>
           </div>
-
-          {/* Links columns */}
-          {isDemoSiteMode && (
-            <div className='grid grid-cols-3 gap-8 md:gap-16'>
-              {displayColumns.map((column, index) => (
-                <div key={index}>
-                  <p className='text-muted-foreground/50 mb-3 text-xs font-medium tracking-wider uppercase'>
-                    {t(column.title)}
-                  </p>
-                  <ul className='space-y-2.5'>
-                    {column.links.map((link, linkIndex) => (
-                      <li key={linkIndex}>
-                        <FooterLinkItem link={link} />
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
+          {columnsToShow.map((column) => (
+            <div key={column.title}>
+              <p className='mb-3 text-sm font-semibold'>{t(column.title)}</p>
+              <ul className='space-y-2.5'>
+                {column.links.map((link) => (
+                  <li key={link.href}>
+                    <FooterLinkItem link={link} />
+                  </li>
+                ))}
+              </ul>
             </div>
-          )}
+          ))}
         </div>
 
-        {/* Copyright + optional legal links inline on the left, project
-            attribution on the right; wraps on narrow screens. */}
-        <div className='border-border/30 mt-12 flex flex-col items-center justify-between gap-x-3 gap-y-2 border-t pt-6 sm:flex-row'>
-          <div className='text-muted-foreground/40 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-xs sm:justify-start'>
-            <span>
-              &copy; {currentYear} {displayName}.{' '}
-              {props.copyright ?? t('footer.defaultCopyright')}
-            </span>
-            <LegalLinks leadingSeparator />
+        <div className='border-border/40 mt-10 flex flex-col items-center justify-center gap-x-3 gap-y-2 border-t pt-6 sm:flex-row'>
+          <div className='text-muted-foreground/70 text-xs'>
+            &copy; {currentYear} {displayName}.{' '}
+            {props.copyright ?? t('footer.defaultCopyright')}
           </div>
+        </div>
+        <div className='mt-4'>
           <ProjectAttribution currentYear={currentYear} />
         </div>
       </div>

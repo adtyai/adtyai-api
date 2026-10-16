@@ -23,10 +23,10 @@ import { useTranslation } from 'react-i18next'
 
 import { CopyButton } from '@/components/copy-button'
 import { Dialog } from '@/components/dialog'
-import { GroupBadge } from '@/components/group-badge'
 import { StatusBadge, type StatusVariant } from '@/components/status-badge'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
+import { UserGroupBadge } from '@/components/user-group-badge'
 import { getUserAvatarFallback, getUserAvatarStyle } from '@/lib/avatar'
 import dayjs from '@/lib/dayjs'
 import { formatLogQuota, formatTimestampToDate } from '@/lib/format'
@@ -224,7 +224,7 @@ export function CommonLogMobileCard<TData>(props: {
             let fieldContent = <span className='truncate'>{field.value}</span>
             if (id === 'group') {
               fieldContent = (
-                <GroupBadge
+                <UserGroupBadge
                   group={field.value}
                   type='text'
                   className='max-w-full text-sm'

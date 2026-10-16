@@ -19,6 +19,13 @@ For commercial licensing, please contact support@quantumnous.com
 import { isCancelledError } from '@tanstack/react-query'
 import { isCancel } from 'axios'
 import i18next from 'i18next'
+import { settingKeyLabel } from '@/features/system-settings/business-params/lib/groups'
+
+import {
+  adtyBackendMessageCodes,
+  resolveAdtyErrorKey,
+  resolveAdtyHttpStatusKey,
+} from './adty-error-codes'
 
 export const safeServerErrorMessage = Symbol('safeServerErrorMessage')
 
@@ -122,6 +129,60 @@ export function getServerErrorMessageKey(value: unknown): string | null {
   return null
 }
 
+/** Codes whose `{key}` param names a business parameter. */
+const BUSINESS_PARAM_KEY_CODES: ReadonlySet<string> = new Set([
+  'unknown_key',
+  'out_of_range',
+  'topup_tiers_count_mismatch',
+  'topup_tiers_not_ascending',
+  'param_rule_violation',
+])
+
+/**
+ * unknown_key / out_of_range: show the business parameter's localized name
+ * instead of its raw key; unmapped keys keep the raw key.
+ */
+export function businessParamKeyLabel(
+  code: unknown,
+  params: Record<string, unknown> | undefined
+): { key?: string; other_key?: string; tier?: number } {
+  if (typeof code !== 'string' || !BUSINESS_PARAM_KEY_CODES.has(code)) return {}
+  const out: { key?: string; other_key?: string; tier?: number } = {}
+  const other = params?.other_key
+  if (typeof other === 'string' && settingKeyLabel(other) !== other) {
+    out.other_key = i18next.t(settingKeyLabel(other))
+  }
+  // index 是 0 起的档位下标，界面显示「第 index+1 档」
+  const index = params?.index
+  if (typeof index === 'number' && Number.isInteger(index) && index >= 0) {
+    out.tier = index + 1
+  }
+  const raw = params?.key
+  if (typeof raw === 'string' && settingKeyLabel(raw) !== raw) {
+    out.key = i18next.t(settingKeyLabel(raw))
+  }
+  return out
+}
+
+/**
+ * adtyai admin APIs return a stable `code` plus optional `params`; translate
+ * them by code so console toasts never surface the English fallback message.
+ */
+export function getAdtyServerErrorMessage(value: unknown): string | null {
+  for (const source of getServerErrorSources(value)) {
+    if (source[safeServerErrorMessage]) break
+    const resolved = resolveAdtyErrorKey(source.code, source.params)
+    if (resolved) {
+      return i18next.t(resolved.key, {
+        ...resolved.params,
+        ...businessParamKeyLabel(source.code, resolved.params),
+        interpolation: { escapeValue: false },
+      })
+    }
+  }
+  return null
+}
+
 export function getServerErrorStatus(value: unknown): number | undefined {
   for (const source of getServerErrorSources(value)) {
     const status = isRecord(source.response)
@@ -183,6 +244,47 @@ export function translateServerText(
   return t(text, { skipInterpolation: true })
 }
 
+function isSecurityVerificationRequest(config: unknown): boolean {
+  if (!isRecord(config)) return false
+  if (config.singleUseAuthorization) return true
+  const headers = config.headers
+  if (!isRecord(headers)) return false
+  return typeof headers.has === 'function'
+    ? Boolean((headers.has as (name: string) => unknown)('X-Security-Proof'))
+    : 'X-Security-Proof' in headers
+}
+
+/**
+ * No recognized code: 401/403/429 fall back to a localized sentence by HTTP
+ * status instead of the backend's English text. A localized `message_key` and
+ * codes that intentionally surface the backend message keep precedence.
+ *
+ * Applies to every page using getServerErrorMessage, upstream ones included:
+ * if upstream later adds a 403 carrying neither `message_key` nor `code`, it
+ * will also show as 「没有权限」 (likewise 401 / 429).
+ */
+function getHttpStatusFallbackMessage(
+  value: unknown,
+  sources: Record<string | symbol, unknown>[]
+): string | null {
+  const key = resolveAdtyHttpStatusKey(getServerErrorStatus(value))
+  if (!key) return null
+  for (const source of sources) {
+    if (typeof source.message_key === 'string' && source.message_key) {
+      return null
+    }
+    // Security-verification requests present the backend's own rejection.
+    if (isSecurityVerificationRequest(source.config)) return null
+    if (
+      typeof source.code === 'string' &&
+      adtyBackendMessageCodes.has(source.code)
+    ) {
+      return null
+    }
+  }
+  return i18next.t(key)
+}
+
 export function getServerErrorMessage(
   value: unknown,
   fallback?: string
@@ -201,6 +303,10 @@ export function getServerErrorMessage(
   }
   const key = getServerErrorMessageKey(value)
   if (key) return i18next.t(key)
+  const adtyMessage = getAdtyServerErrorMessage(value)
+  if (adtyMessage) return adtyMessage
+  const statusMessage = getHttpStatusFallbackMessage(value, sources)
+  if (statusMessage) return statusMessage
   for (const source of sources) {
     if (
       source instanceof Error ||

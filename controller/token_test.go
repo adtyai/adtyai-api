@@ -661,7 +661,7 @@ func TestGetTokenUsageFollowsTheUserQuotaSwitchAndIPWhitelist(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			db := setupTokenControllerTestDB(t)
-			require.NoError(t, db.AutoMigrate(&model.User{}))
+			require.NoError(t, db.AutoMigrate(&model.User{}, &model.UserBonusWallet{}, &model.AdtyWalletConsumeHourly{}))
 			// Initialize production column quoting for the token key lookup.
 			t.Setenv("LOG_SQL_DSN", "")
 			require.NoError(t, model.InitLogDB())

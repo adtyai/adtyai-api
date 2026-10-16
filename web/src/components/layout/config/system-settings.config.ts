@@ -18,13 +18,28 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import type { TFunction } from 'i18next'
 import {
+  Activity,
+  LayoutDashboard,
+  Bell,
+  ClipboardList,
   Box,
   Route,
+  Coins,
   CreditCard,
   Layout,
   Settings,
   Shield,
   ShieldAlert,
+  SlidersHorizontal,
+  Wallet,
+  HandCoins,
+  Undo2,
+  Receipt,
+  Gift,
+  MessageCircle,
+  Tags,
+  UserPlus,
+  UsersRound,
   Wrench,
 } from 'lucide-react'
 
@@ -36,6 +51,7 @@ import { getOperationsSectionNavItems } from '@/features/system-settings/operati
 import { getPolicySectionNavItems } from '@/features/system-settings/request-policies/section-registry'
 import { getSecuritySectionNavItems } from '@/features/system-settings/security/section-registry.tsx'
 import { getSiteSectionNavItems } from '@/features/system-settings/site/section-registry.tsx'
+import { ROLE } from '@/lib/roles'
 
 import type { NavGroup, SidebarView } from '../types'
 
@@ -52,6 +68,11 @@ function getSystemSettingsNavGroups(t: TFunction): NavGroup[] {
       id: 'system-administration',
       title: t('System Administration'),
       items: [
+        {
+          title: t('Operations overview'),
+          url: '/system-settings/overview',
+          icon: LayoutDashboard,
+        },
         {
           title: t('Site & Branding'),
           icon: Settings,
@@ -87,6 +108,90 @@ function getSystemSettingsNavGroups(t: TFunction): NavGroup[] {
           icon: Layout,
           items: getContentSectionNavItems(t),
         },
+        {
+          title: t('Business parameters'),
+          url: '/system-settings/business-params',
+          icon: SlidersHorizontal,
+        },
+        {
+          title: t('Risk reviews'),
+          url: '/system-settings/risk-reviews',
+          icon: ShieldAlert,
+        },
+        {
+          title: t('Epay instances'),
+          url: '/system-settings/epay-instances',
+          icon: Wallet,
+        },
+        {
+          title: t('BEpusdt gateway'),
+          url: '/system-settings/bepusdt',
+          icon: Coins,
+        },
+        {
+          title: t('Telegram alerts'),
+          url: '/system-settings/alerts',
+          icon: Bell,
+        },
+        {
+          title: t('Chatwoot customer support'),
+          url: '/system-settings/chatwoot',
+          icon: MessageCircle,
+        },
+        {
+          title: t('Menu visibility'),
+          url: '/system-settings/menu-visibility',
+          icon: Layout,
+          requiredRole: ROLE.SUPER_ADMIN,
+        },
+        {
+          title: t('Group display names'),
+          url: '/system-settings/groups',
+          icon: Tags,
+          requiredRole: ROLE.SUPER_ADMIN,
+        },
+        {
+          title: t('Create administrator'),
+          url: '/system-settings/admins',
+          icon: UserPlus,
+          requiredRole: ROLE.SUPER_ADMIN,
+        },
+        {
+          title: t('Service status'),
+          url: '/system-settings/status',
+          icon: Activity,
+        },
+        {
+          title: t('Daily reconcile'),
+          url: '/system-settings/reconcile',
+          icon: ClipboardList,
+        },
+        {
+          title: t('Affiliate commissions'),
+          url: '/system-settings/aff-commissions',
+          icon: UsersRound,
+        },
+        {
+          title: t('Affiliate withdrawals'),
+          url: '/system-settings/aff-withdrawals',
+          icon: HandCoins,
+        },
+        {
+          title: t('Topup orders'),
+          url: '/system-settings/orders',
+          icon: Receipt,
+        },
+        {
+          title: t('Bonus ledger'),
+          url: '/system-settings/bonus-ledger',
+          icon: Gift,
+        },
+        {
+          title: t('Order refunds'),
+          url: '/system-settings/order-refunds',
+          icon: Undo2,
+        },
+        // Hidden from sidebar (routes/pages kept): enterprise-pricing, balance-adjustments
         {
           title: t('Operations'),
           icon: Wrench,

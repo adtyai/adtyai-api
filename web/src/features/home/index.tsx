@@ -26,7 +26,13 @@ import { useTheme } from '@/context/theme-provider'
 import { isLikelyHtml } from '@/lib/content-format'
 import { useAuthStore } from '@/stores/auth-store'
 
-import { CTA, Features, Hero, HowItWorks, Stats } from './components'
+import {
+  AdtyBonusBanner,
+  AdtyFeatures,
+  AdtyHero,
+  AdtySteps,
+  AdtyVendorWall,
+} from './components/adty'
 import { useHomePageContent } from './hooks'
 
 export function Home() {
@@ -122,11 +128,11 @@ export function Home() {
 
   return (
     <PublicLayout showMainContainer={false}>
-      <Hero isAuthenticated={isAuthenticated} />
-      <Stats />
-      <Features />
-      <HowItWorks />
-      <CTA isAuthenticated={isAuthenticated} />
+      <AdtyHero isAuthenticated={isAuthenticated} />
+      <AdtyVendorWall />
+      <AdtySteps />
+      <AdtyFeatures />
+      <AdtyBonusBanner isAuthenticated={isAuthenticated} />
       <Footer />
     </PublicLayout>
   )

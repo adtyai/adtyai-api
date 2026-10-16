@@ -61,6 +61,7 @@ func (s *BillingSession) Settle(actualQuota int) error {
 			return err
 		}
 		s.fundingSettled = true
+		s.syncWalletSplit()
 	}
 	// 2) 调整令牌额度
 	var tokenErr error
@@ -267,13 +268,18 @@ func (s *BillingSession) reserveFunding(delta int, requireAvailableQuota bool) e
 			}
 			return nil
 		}
-		// 与结算补扣（SettleBilling 正差额 → WalletFunding.Settle）语义一致：
-		// 全额无条件扣减，余额不足的部分记为欠费（余额可为负），不中断请求，
-		// 保证日志记录的预扣额度与用户余额的实际变动始终对账一致。
-		// DecreaseUserQuota 仅在数据库错误时失败。
-		if err := model.DecreaseUserQuota(funding.userId, delta, false); err != nil {
+		// ADTY：余额不扣负。不够则失败回滚，映 403（与 PreConsume / Settle 一致）。
+		// ADTY H2：用 DecreaseUserWallet 拿到拆分，退款时按原钱包退回。
+		bonus, paid, err := model.DecreaseUserWallet(funding.userId, delta)
+		if err != nil {
+			if errors.Is(err, model.ErrInsufficientWalletBalance) {
+				return types.NewErrorWithStatusCode(err, types.ErrorCodeInsufficientUserQuota, http.StatusForbidden, types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog())
+			}
 			return types.NewError(err, types.ErrorCodeUpdateDataError, types.ErrOptionWithSkipRetry())
 		}
+		model.ApplyUserQuotaCacheDelta(funding.userId, -int64(delta))
+		funding.bonusConsumed += bonus
+		funding.paidConsumed += paid
 		funding.consumed += delta
 		return nil
 	case *SubscriptionFunding:
@@ -295,11 +301,11 @@ func (s *BillingSession) reserveFunding(delta int, requireAvailableQuota bool) e
 func (s *BillingSession) rollbackFundingReserve(delta int) {
 	switch funding := s.funding.(type) {
 	case *WalletFunding:
-		if err := model.IncreaseUserQuota(funding.userId, delta, false); err != nil {
+		// ADTY H2：按原拆分反向退回（先实充后赠送），写流水
+		if err := funding.Settle(-delta); err != nil {
 			common.SysLog(common.LogText("error rolling back wallet funding reserve: %s", err.Error()))
-		} else {
-			funding.consumed -= delta
 		}
+		s.syncWalletSplit()
 	case *SubscriptionFunding:
 		if err := model.PostConsumeUserSubscriptionDelta(funding.subscriptionId, -int64(delta)); err != nil {
 			common.SysLog(common.LogText("error rolling back subscription funding reserve: %s", err.Error()))
@@ -358,6 +364,7 @@ func (s *BillingSession) syncRelayInfo() {
 	info := s.relayInfo
 	info.FinalPreConsumedQuota = s.preConsumedQuota
 	info.BillingSource = s.funding.Source()
+	s.syncWalletSplit()
 
 	if sub, ok := s.funding.(*SubscriptionFunding); ok {
 		info.SubscriptionId = sub.subscriptionId
@@ -479,5 +486,15 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 			return nil, apiErr
 		}
 		return session, nil
+	}
+}
+
+// syncWalletSplit ADTY B-03：把钱包出资拆分同步到 RelayInfo（任务提交时写进 PrivateData）。
+func (s *BillingSession) syncWalletSplit() {
+	if s.relayInfo == nil {
+		return
+	}
+	if w, ok := s.funding.(*WalletFunding); ok {
+		s.relayInfo.WalletBonusConsumed, s.relayInfo.WalletPaidConsumed = w.walletSplit()
 	}
 }

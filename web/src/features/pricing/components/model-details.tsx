@@ -36,7 +36,6 @@ import { useTranslation } from 'react-i18next'
 import { CopyButton } from '@/components/copy-button'
 import { StaticDataTable } from '@/components/data-table'
 import { sideDrawerContentClassName } from '@/components/drawer-layout'
-import { GroupBadge } from '@/components/group-badge'
 import { PublicLayout } from '@/components/layout'
 import { Button } from '@/components/ui/button'
 import {
@@ -48,6 +47,7 @@ import {
 } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { UserGroupBadge } from '@/components/user-group-badge'
 import { getPerfMetrics } from '@/features/performance-metrics/api'
 import {
   formatLatency,
@@ -56,6 +56,7 @@ import {
   getSuccessRateTextClass,
 } from '@/features/performance-metrics/lib/format'
 import { PluginIcon } from '@/features/task-plugins/components/plugin-icon'
+import { useGroupDisplayName } from '@/hooks/use-group-display-name'
 import { getLobeIcon } from '@/lib/lobe-icon'
 import { requireServerSuccess } from '@/lib/server-error-message'
 import { cn } from '@/lib/utils'
@@ -516,6 +517,7 @@ function ModelBackendSignalsSection(props: { model: PricingModel }) {
 
 function ModelBackendProviderSection(props: { model: PricingModel }) {
   const { t } = useTranslation()
+  const displayGroup = useGroupDisplayName()
   const model = props.model
   const groups = normalizeCatalogItems(model.enable_groups)
   const endpoints = normalizeCatalogItems(model.supported_endpoint_types)
@@ -539,7 +541,7 @@ function ModelBackendProviderSection(props: { model: PricingModel }) {
   if (groups.length > 0) {
     cells.push(
       <CatalogInfoCell key='groups' label={t('Groups')}>
-        <CatalogPillList items={groups} />
+        <CatalogPillList items={groups.map(displayGroup)} />
       </CatalogInfoCell>
     )
   }
@@ -938,7 +940,7 @@ function AutoGroupChain(props: { model: PricingModel; autoGroups: string[] }) {
       <span className='text-muted-foreground/40'>→</span>
       {autoChain.map((g, idx) => (
         <span key={g} className='flex items-center gap-1'>
-          <GroupBadge group={g} size='sm' />
+          <UserGroupBadge group={g} size='sm' />
           {idx < autoChain.length - 1 && (
             <span className='text-muted-foreground/40'>→</span>
           )}
@@ -1198,7 +1200,7 @@ function ProviderGroupPricingSection(
             return (
               <div key={group} className='overflow-hidden rounded-lg border'>
                 <div className='bg-muted/20 flex items-center justify-between gap-3 border-b px-3 py-2'>
-                  <GroupBadge group={group} size='sm' />
+                  <UserGroupBadge group={group} size='sm' />
                   <span className='text-muted-foreground font-mono text-xs'>
                     {ratio}x
                   </span>
@@ -1389,7 +1391,7 @@ function ProviderGroupPricingSection(
             header: t('Group'),
             className: thClass,
             cellClassName: 'py-2.5',
-            cell: (group) => <GroupBadge group={group} size='sm' />,
+            cell: (group) => <UserGroupBadge group={group} size='sm' />,
           },
           {
             id: 'ratio',

@@ -132,6 +132,9 @@ type RelayInfo struct {
 	ChatToGeminiStreamState any
 	ReceivedResponseCount   int
 	FinalPreConsumedQuota   int // 最终预消耗的配额
+	// EnterpriseRuleId / EnterpriseDiscount：A8 协议价快照（预扣写入，结算沿用；改价只影响新请求）
+	EnterpriseRuleId        int64
+	EnterpriseDiscount      float64 // 1.0=无折扣；匹配后写入，结算不再查库
 	// ForcePreConsume 为 true 时禁用 BillingSession 的信任额度旁路，
 	// 强制预扣全额。用于异步任务（视频/音乐生成等），因为请求返回后任务仍在运行，
 	// 必须在提交前锁定全额。
@@ -142,6 +145,9 @@ type RelayInfo struct {
 	// BillingSource indicates whether this request is billed from wallet quota or subscription.
 	// "" or "wallet" => wallet; "subscription" => subscription
 	BillingSource string
+	// ADTY B-03：本请求钱包净出资拆分（赠送 / 实充），由 BillingSession / postConsume 维护。
+	WalletBonusConsumed int
+	WalletPaidConsumed  int
 	// SubscriptionId is the user_subscriptions.id used when BillingSource == "subscription"
 	SubscriptionId int
 	// SubscriptionPreConsumed is the amount pre-consumed on subscription item (quota units or 1)
@@ -847,6 +853,15 @@ func (info *RelayInfo) GetOriginModelName() string {
 
 // GetBillingModelName returns the effective pricing identity without changing
 // either the client-visible model or the model sent to the selected channel.
+
+// GetEnterpriseDiscount returns snapshotted A8 discount (default 1.0).
+func (info *RelayInfo) GetEnterpriseDiscount() float64 {
+	if info == nil || info.EnterpriseDiscount <= 0 {
+		return 1.0
+	}
+	return info.EnterpriseDiscount
+}
+
 func (info *RelayInfo) GetBillingModelName() string {
 	if info == nil {
 		return ""

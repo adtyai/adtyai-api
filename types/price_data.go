@@ -14,6 +14,8 @@ type GroupRatioInfo struct {
 }
 
 type PriceData struct {
+	EnterpriseRuleId     int64   // A8 协议价快照
+	EnterpriseDiscount   float64 // A8；0 或未设视为 1
 	FreeModel            bool
 	ModelPrice           float64
 	ModelRatio           float64

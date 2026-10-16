@@ -116,9 +116,13 @@ type TaskPrivateData struct {
 	// other private task state so public task DTOs cannot expose it by accident.
 	Execution *TaskExecutionSnapshot `json:"execution,omitempty"`
 	// 计费上下文：用于异步退款/差额结算（轮询阶段读取）
-	BillingSource  string              `json:"billing_source,omitempty"`  // "wallet" 或 "subscription"
-	SubscriptionId int                 `json:"subscription_id,omitempty"` // 订阅 ID，用于订阅退款
-	TokenId        int                 `json:"token_id,omitempty"`        // 令牌 ID，用于令牌额度退款
+	BillingSource  string `json:"billing_source,omitempty"`  // "wallet" 或 "subscription"
+	SubscriptionId int    `json:"subscription_id,omitempty"` // 订阅 ID，用于订阅退款
+	TokenId        int    `json:"token_id,omitempty"`        // 令牌 ID，用于令牌额度退款
+	// ADTY B-03：本任务从赠送/实充各净扣了多少（提交预扣 + 补扣 − 退回），事后退款按此反向退。
+	// 切换前的老任务两者都为 0。
+	WalletBonus    int                 `json:"adty_wallet_bonus,omitempty"`
+	WalletPaid     int                 `json:"adty_wallet_paid,omitempty"`
 	NodeName       string              `json:"node_name,omitempty"`       // 发起任务的节点名，轮询结算阶段据此归属日志而非最后查询节点
 	BillingContext *TaskBillingContext `json:"billing_context,omitempty"` // 计费参数快照（用于轮询阶段重新计算）
 	// ResponsesBackground records that the openai_responses create request
@@ -543,6 +547,16 @@ func (Task *Task) Update() error {
 
 func (t *Task) UpdateQuota() error {
 	return DB.Model(t).Update("quota", t.Quota).Error
+}
+
+// UpdateQuotaAndPrivateData ADTY B-03：额度与钱包拆分（在 private_data 里）一起回写。
+func (t *Task) UpdateQuotaAndPrivateData() error {
+	return DB.Model(t).Select("quota", "private_data").Updates(t).Error
+}
+
+// UpdatePrivateData ADTY B-03：仅回写 private_data（提交阶段结算后同步钱包拆分）。
+func (t *Task) UpdatePrivateData() error {
+	return DB.Model(t).Select("private_data").Updates(t).Error
 }
 
 // UpdateWithStatus performs a conditional UPDATE guarded by fromStatus (CAS).

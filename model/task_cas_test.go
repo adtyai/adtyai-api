@@ -60,6 +60,10 @@ func TestMain(m *testing.M) {
 		&SystemTask{},
 		&SystemTaskLock{},
 		&UserAccessToken{},
+		&UserBonusWallet{},
+		&LedgerEntry{},
+		&LedgerIdempotency{},
+		&AdtyWalletConsumeHourly{},
 	); err != nil {
 		panic("failed to migrate: " + err.Error())
 	}
@@ -80,6 +84,10 @@ func truncateTables(t *testing.T) {
 		DB.Exec("DELETE FROM tokens")
 		DB.Exec("DELETE FROM user_access_tokens")
 		DB.Exec("DELETE FROM user_oauth_bindings")
+		DB.Exec("DELETE FROM ledger_idempotency")
+		DB.Exec("DELETE FROM ledger_entries")
+		DB.Exec("DELETE FROM adty_wallet_consume_hourly")
+		DB.Exec("DELETE FROM user_bonus_wallets")
 		DB.Exec("DELETE FROM users")
 		DB.Exec("DELETE FROM logs")
 		DB.Exec("DELETE FROM channels")

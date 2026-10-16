@@ -102,6 +102,7 @@ func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, m
 	other := model.NewLogOther()
 	other.SetPublic("model_ratio", modelRatio)
 	other.SetPublic("group_ratio", groupRatio)
+	appendEnterprisePriceSnapshot(relayInfo, other)
 	other.SetPublic("completion_ratio", completionRatio)
 	other.SetPublic("cache_tokens", cacheTokens)
 	other.SetPublic("cache_ratio", cacheRatio)
@@ -373,5 +374,17 @@ func InjectTieredBillingInfo(other *model.LogOther, relayInfo *relaycommon.Relay
 		if snap.EstimatedFixedPrice != nil {
 			other.SetPublic("fixed_price", *snap.EstimatedFixedPrice)
 		}
+	}
+}
+
+func appendEnterprisePriceSnapshot(relayInfo *relaycommon.RelayInfo, other *model.LogOther) {
+	if relayInfo == nil || other == nil {
+		return
+	}
+	if relayInfo.EnterpriseRuleId > 0 {
+		other.SetPublic("enterprise_rule_id", relayInfo.EnterpriseRuleId)
+	}
+	if d := relayInfo.GetEnterpriseDiscount(); d > 0 && d != 1.0 {
+		other.SetPublic("enterprise_discount", d)
 	}
 }

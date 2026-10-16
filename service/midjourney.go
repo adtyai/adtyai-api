@@ -71,7 +71,11 @@ func SettleMidjourneyTaskBilling(relayInfo *relaycommon.RelayInfo, task *model.M
 		return false, errors.New("Midjourney task must be persisted before billing")
 	}
 
+	bonusBefore, paidBefore := relayInfo.WalletBonusConsumed, relayInfo.WalletPaidConsumed
 	result, billingErr := postConsumeQuotaWithResult(relayInfo, task.Quota, 0, true)
+	// ADTY B-03 H-B：记下本任务钱包出资拆分，失败退款按此反向退
+	task.AdtyWalletBonus = relayInfo.WalletBonusConsumed - bonusBefore
+	task.AdtyWalletPaid = relayInfo.WalletPaidConsumed - paidBefore
 	if !result.FundingApplied {
 		task.Quota = 0
 		task.TokenId = 0
@@ -99,7 +103,15 @@ func RefundMidjourneyQuota(ctx context.Context, task *model.Midjourney, reason s
 		return true
 	}
 
-	if err := model.IncreaseUserQuota(task.UserId, quota, false); err != nil {
+	// ADTY B-03 H-B：按提交时记录的拆分反向退（事后退款写流水，不碰拆分表）；老任务全退赠送
+	bonus, paid, legacy := model.SplitRefundByRecorded(quota, task.AdtyWalletBonus, task.AdtyWalletPaid)
+	if legacy {
+		common.SysLog(common.LogText("Midjourney task %s has no wallet split (pre-cutover), refunding %d entirely to bonus", task.MjId, quota))
+	} else if bonus > task.AdtyWalletBonus {
+		common.SysLog(common.LogText("Midjourney task %s refund %d exceeds recorded split (bonus=%d paid=%d), excess %d to bonus",
+			task.MjId, quota, task.AdtyWalletBonus, task.AdtyWalletPaid, bonus-task.AdtyWalletBonus))
+	}
+	if err := model.RefundUserWalletAfterTheFact(task.UserId, bonus, paid, "mj_refund", task.MjId); err != nil {
 		logger.LogWarn(ctx, common.LogText("failed to refund Midjourney user quota, task %s: %s", task.MjId, err.Error()))
 		return false
 	}
@@ -130,6 +142,7 @@ func RefundMidjourneyQuota(ctx context.Context, task *model.Midjourney, reason s
 	})
 
 	task.Quota = 0
+	task.AdtyWalletBonus, task.AdtyWalletPaid = 0, 0
 	if err := task.UpdateBillingState(); err != nil {
 		logger.LogError(ctx, common.LogText("Midjourney refund succeeded but clearing the quota failed, task %s: %s", task.MjId, err.Error()))
 	}

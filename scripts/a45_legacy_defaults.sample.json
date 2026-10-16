@@ -1,0 +1,10 @@
+{
+  "_comment": "A45 老版六项占位样例。等 I5 开机从老版二开核实后替换本文件（或另存 JSON）再 -apply。值须落在 business-params catalog 范围内。勿对联调/生产直跑 -apply 除非总裁确认。",
+  "_source": "REPLACE_ME_AFTER_I5 — currently mirrors code placeholders in model/business_params.go",
+  "TopupOrderTimeoutMinutes": 60,
+  "AffTopupCommissionRate": 0.1,
+  "AffSubscriptionCommissionRate": 0.1,
+  "AffMinWithdrawAmount": 10,
+  "AffWithdrawFeeRate": 0,
+  "BalanceLowAlertThreshold": 0
+}

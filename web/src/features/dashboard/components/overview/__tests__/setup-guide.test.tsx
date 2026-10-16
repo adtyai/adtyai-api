@@ -34,11 +34,15 @@ import { useSystemConfigStore } from '@/stores/system-config-store'
 import { OverviewDashboard } from '../overview-dashboard'
 
 const storageKey = 'dashboard_overview_setup_guide_expanded'
+const sampleCopiedKey = 'dashboard_overview_setup_guide_sample_copied'
 let client: QueryClient
 let keyLookupError: Error | null
+/** Fraction form matching backend FirstTopupBonusRate; null simulates missing API field → fallback 10%. */
+let mockFirstTopupBonusRate: number | null
 
 beforeEach(() => {
   window.localStorage.clear()
+  window.localStorage.setItem(sampleCopiedKey, 'copied')
   useSystemConfigStore.setState(useSystemConfigStore.getInitialState(), true)
   useAuthStore.getState().auth.setUser({
     id: 1,
@@ -52,6 +56,7 @@ beforeEach(() => {
     defaultOptions: { queries: { retry: false } },
   })
   keyLookupError = null
+  mockFirstTopupBonusRate = 0.1
   vi.spyOn(api, 'get').mockImplementation(async (url) => {
     switch (url) {
       case '/api/token/?p=1&size=10':
@@ -72,6 +77,17 @@ beforeEach(() => {
               announcements_enabled: false,
               faq_enabled: false,
               uptime_kuma_enabled: false,
+            },
+          },
+        }
+      case '/api/topup/tiers':
+        return {
+          data: {
+            success: true,
+            data: {
+              first_topup_bonus_rate: mockFirstTopupBonusRate,
+              tiers: [],
+              pay_methods: [],
             },
           },
         }
@@ -141,7 +157,7 @@ describe('overview setup guide', () => {
     ).toBeVisible()
     expect(
       screen.getByRole('heading', {
-        name: 'Build on your API gateway in minutes',
+        name: 'Three steps to get started',
       })
     ).toBeVisible()
     await waitFor(() =>
@@ -179,6 +195,7 @@ describe('overview setup guide', () => {
 
   it('keeps the existing progress banner when an incomplete guide is manually collapsed', async () => {
     const user = userEvent.setup()
+    window.localStorage.removeItem(sampleCopiedKey)
     useAuthStore
       .getState()
       .auth.setUser({ id: 1, username: 'new-user', role: 1 })
@@ -202,13 +219,14 @@ describe('overview setup guide', () => {
   })
 
   it('removes the collapsed progress banner when the remaining setup step completes', async () => {
+    // key + sample copied, no request yet => 2/3
     useAuthStore.getState().auth.setUser({
       id: 1,
       username: 'dashboard-user',
       role: 1,
-      quota: 1000000,
     })
     window.localStorage.setItem(storageKey, 'collapsed')
+    window.localStorage.setItem(sampleCopiedKey, 'copied')
     await renderOverview()
     expect(await screen.findByText('Setup progress: 2/3')).toBeVisible()
 
@@ -217,7 +235,6 @@ describe('overview setup guide', () => {
         id: 1,
         username: 'dashboard-user',
         role: 1,
-        quota: 1000000,
         request_count: 1,
       })
     })
@@ -229,6 +246,7 @@ describe('overview setup guide', () => {
 
   it('does not show a completed setup entry when the key lookup fails', async () => {
     keyLookupError = new Error('Key lookup unavailable')
+    window.localStorage.removeItem(sampleCopiedKey)
     await renderOverview()
 
     expect(
@@ -237,5 +255,41 @@ describe('overview setup guide', () => {
     expect(
       screen.queryByRole('button', { name: 'Setup guide' })
     ).not.toBeInTheDocument()
+  })
+
+  it('shows the first top-up tip from FirstTopupBonusRate inside the setup guide', async () => {
+    const user = userEvent.setup()
+    await renderOverview()
+    await user.click(await screen.findByRole('button', { name: 'Setup guide' }))
+    expect(
+      screen.getByText(/first top-up gets 10% bonus/i)
+    ).toBeVisible()
+    expect(screen.getByText('Go top up')).toBeVisible()
+    expect(
+      screen.getByRole('heading', { name: 'Three steps to get started' })
+    ).toBeVisible()
+    expect(screen.getByText('Create API token')).toBeVisible()
+    expect(screen.getByText('Copy sample code')).toBeVisible()
+    expect(screen.getByText('Send a test request')).toBeVisible()
+  })
+
+  it('formats FirstTopupBonusRate from /api/topup/tiers (e.g. 0.15 → 15%)', async () => {
+    mockFirstTopupBonusRate = 0.15
+    const user = userEvent.setup()
+    await renderOverview()
+    await user.click(await screen.findByRole('button', { name: 'Setup guide' }))
+    expect(
+      screen.getByText(/first top-up gets 15% bonus/i)
+    ).toBeVisible()
+  })
+
+  it('falls back to 10% when first_topup_bonus_rate is missing', async () => {
+    mockFirstTopupBonusRate = null
+    const user = userEvent.setup()
+    await renderOverview()
+    await user.click(await screen.findByRole('button', { name: 'Setup guide' }))
+    expect(
+      screen.getByText(/first top-up gets 10% bonus/i)
+    ).toBeVisible()
   })
 })

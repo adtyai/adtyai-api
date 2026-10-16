@@ -42,6 +42,8 @@ func GetStatus(c *gin.Context) {
 
 	cs := console_setting.GetConsoleSetting()
 	passkeySetting := system_setting.PasskeySettingsSnapshot()
+	// A08: build outside OptionMap lock (DB read)
+	groupDisplayNames := model.BuildGroupDisplayNameMap()
 	common.OptionMapRWMutex.RLock()
 	defer common.OptionMapRWMutex.RUnlock()
 
@@ -107,6 +109,11 @@ func GetStatus(c *gin.Context) {
 		// 模块管理配置
 		"HeaderNavModules":    common.OptionMap["HeaderNavModules"],
 		"SidebarModulesAdmin": common.OptionMap["SidebarModulesAdmin"],
+		// A39 菜单显隐（JSON map；缺 key = 显示）
+		"SidebarUserVisible":  model.MenuVisibilityMapFromRaw(common.OptionMap[model.OptSidebarUserVisible]),
+		"SidebarAdminVisible": model.MenuVisibilityMapFromRaw(common.OptionMap[model.OptSidebarAdminVisible]),
+		// A08 分组代号 → 显示名（缺 meta 时回落为 code）
+		"GroupDisplayNames": groupDisplayNames,
 
 		"oidc_enabled":                system_setting.GetOIDCSettings().Enabled,
 		"oidc_client_id":              system_setting.GetOIDCSettings().ClientId,

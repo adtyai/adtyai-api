@@ -68,6 +68,177 @@ func SetApiRouter(router *gin.Engine) {
 		// in Pancake's matching webhook slot; handler enforces env match.
 		apiRouter.POST("/waffo-pancake/webhook/:env", anonymousRequestBodyLimit, controller.WaffoPancakeWebhook)
 
+		// adtyai 二开：充值档位 / 首充 / 下单（最小闭环；真支付回调后续接同一 CompleteTopupOrder）
+		topupRoute := apiRouter.Group("/topup")
+		{
+			topupRoute.GET("/tiers", controller.GetTopupTiers)
+			topupAuth := topupRoute.Group("")
+			topupAuth.Use(middleware.UserAuth())
+			{
+				topupAuth.GET("/first-recharge", controller.GetFirstRechargeInfo)
+				topupAuth.POST("/order", middleware.TopupOrderRateLimit(), controller.CreateTopupOrder)
+				topupAuth.GET("/order/:no", controller.GetTopupOrder)
+			}
+		}
+		adminOrders := apiRouter.Group("/admin/orders")
+		adminOrders.Use(middleware.AdminAuth())
+		{
+			adminOrders.GET("", controller.AdminListTopupOrders)
+			adminOrders.GET("/:no", controller.AdminGetTopupOrder)
+			adminOrders.POST("/:no/complete", controller.AdminCompleteAdtyTopup)
+			adminOrders.POST("/:no/refund", controller.AdminRefundTopupOrder)
+		}
+		adminRisk := apiRouter.Group("/admin/risk-reviews")
+		adminRisk.Use(middleware.AdminAuth())
+		{
+			adminRisk.GET("", controller.AdminListRiskReviews)
+			adminRisk.GET("/:id", controller.AdminGetRiskReview)
+			adminRisk.POST("/:id/approve", controller.AdminApproveRiskReview)
+			adminRisk.POST("/:id/reject", controller.AdminRejectRiskReview)
+		}
+		adminEpay := apiRouter.Group("/admin/epay-instances")
+		adminEpay.Use(middleware.AdminAuth())
+		{
+			adminEpay.GET("", controller.AdminListEpayInstances)
+			adminEpay.GET("/:id", controller.AdminGetEpayInstance)
+			adminEpay.POST("", controller.AdminCreateEpayInstance)
+			adminEpay.PUT("/:id", controller.AdminUpdateEpayInstance)
+			adminEpay.POST("/:id/set-primary", controller.AdminSetEpayInstancePrimary)
+			adminEpay.POST("/:id/disable", controller.AdminDisableEpayInstance)
+			adminEpay.POST("/:id/enable", controller.AdminEnableEpayInstance)
+		}
+		adminEpayOps := apiRouter.Group("/admin/epay")
+		adminEpayOps.Use(middleware.AdminAuth())
+		{
+			adminEpayOps.POST("/manual-complete", controller.AdminEpayManualComplete)
+		}
+		// adtyai 易支付回调：不依赖登录态，按 instance_id 取密钥验签
+		apiRouter.GET("/pay/epay/notify/:instance_id", controller.AdtyEpayNotify)
+		apiRouter.POST("/pay/epay/notify/:instance_id", anonymousRequestBodyLimit, controller.AdtyEpayNotify)
+
+		// adtyai USDT / BEpusdt：新路径只验签；老路径默认关闭
+		apiRouter.GET("/pay/usdt/notify", controller.AdtyUsdtNotify)
+		apiRouter.POST("/pay/usdt/notify", anonymousRequestBodyLimit, controller.AdtyUsdtNotify)
+		apiRouter.GET("/user/bepusdt/notify", controller.AdtyBepusdtLegacyNotify)
+		apiRouter.POST("/user/bepusdt/notify", anonymousRequestBodyLimit, controller.AdtyBepusdtLegacyNotify)
+
+		// adtyai A7 返佣 / 提现
+		affRoute := apiRouter.Group("/aff")
+		affRoute.Use(middleware.UserAuth())
+		{
+			affRoute.GET("/self", controller.GetAffSelf)
+			affRoute.GET("/commissions/self", controller.ListAffCommissionsSelf)
+			affRoute.POST("/withdraw", controller.CreateAffWithdraw)
+			affRoute.GET("/withdrawals", controller.ListAffWithdrawalsSelf)
+			affRoute.GET("/withdrawals/:id", controller.GetAffWithdrawalSelf)
+		}
+		adminAff := apiRouter.Group("/admin/aff")
+		adminAff.Use(middleware.AdminAuth())
+		{
+			adminAff.GET("/commissions", controller.AdminListAffCommissions)
+			adminAff.POST("/commissions/:id/void", controller.AdminVoidAffCommission)
+			adminAff.GET("/withdrawals", controller.AdminListAffWithdrawals)
+			adminAff.POST("/withdrawals/:id/approve", controller.AdminApproveAffWithdrawal)
+			adminAff.POST("/withdrawals/:id/reject", controller.AdminRejectAffWithdrawal)
+			adminAff.POST("/withdrawals/:id/mark-paid", controller.AdminMarkAffWithdrawalPaid)
+			adminAff.POST("/withdrawals/:id/mark-failed", controller.AdminMarkAffWithdrawalFailed)
+			adminAff.POST("/withdrawals/:id/mark-unknown", controller.AdminMarkAffWithdrawalUnknown)
+			adminAff.POST("/withdrawals/:id/retry", controller.AdminRetryAffWithdrawal)
+			adminAff.GET("/self-invite-reviews", controller.AdminListAffSelfInviteReviews)
+		}
+
+
+		adminBA := apiRouter.Group("/admin/balance-adjustments")
+		adminBA.Use(middleware.AdminAuth(), middleware.FeatureFrozen())
+		{
+			adminBA.POST("", controller.AdminCreateBalanceAdjustment)
+			adminBA.GET("", controller.AdminListBalanceAdjustments)
+			adminBA.POST("/:id/approve", controller.AdminApproveBalanceAdjustment)
+			adminBA.POST("/:id/reject", controller.AdminRejectBalanceAdjustment)
+		}
+		adminEP := apiRouter.Group("/admin/enterprise-pricing")
+		adminEP.Use(middleware.AdminAuth(), middleware.FeatureFrozen())
+		{
+			adminEP.GET("", controller.AdminListEnterprisePricing)
+			adminEP.POST("", controller.AdminCreateEnterprisePricing)
+			adminEP.PUT("/:id", controller.AdminUpdateEnterprisePricing)
+			adminEP.DELETE("/:id", controller.AdminDeleteEnterprisePricing)
+		}
+		adminBP := apiRouter.Group("/admin/business-params")
+		adminBP.Use(middleware.AdminAuth())
+		{
+			adminBP.GET("", controller.AdminGetBusinessParams)
+			adminBP.PUT("", controller.AdminPutBusinessParams)
+			adminBP.PUT("/:key", controller.AdminPutBusinessParamByKey)
+		}
+
+		adminAlerts := apiRouter.Group("/admin/alerts")
+		adminAlerts.Use(middleware.AdminAuth())
+		{
+			adminAlerts.GET("", controller.AdminGetAlerts)
+			adminAlerts.PUT("", controller.AdminPutAlerts)
+			adminAlerts.POST("/test", controller.AdminTestAlerts)
+		}
+
+		adminAdmins := apiRouter.Group("/admin/admins")
+		adminAdmins.Use(middleware.AdminAuth())
+		{
+			adminAdmins.POST("", controller.AdminCreateAdmin)
+		}
+
+		adminChatwoot := apiRouter.Group("/admin/chatwoot")
+		adminChatwoot.Use(middleware.AdminAuth())
+		{
+			adminChatwoot.GET("", controller.AdminGetChatwoot)
+			adminChatwoot.PUT("", controller.AdminPutChatwoot)
+		}
+
+		adminMenuVis := apiRouter.Group("/admin/menu-visibility")
+		adminMenuVis.Use(middleware.AdminAuth())
+		{
+			adminMenuVis.GET("", controller.AdminGetMenuVisibility)
+			adminMenuVis.PUT("", controller.AdminPutMenuVisibility)
+		}
+
+		adminGroups := apiRouter.Group("/admin/groups")
+		adminGroups.Use(middleware.AdminAuth())
+		{
+			adminGroups.GET("", controller.AdminGetGroups)
+			adminGroups.POST("", controller.AdminPostGroup)
+			adminGroups.PUT("/:code", controller.AdminPutGroup)
+		}
+
+		adminOverview := apiRouter.Group("/admin/overview")
+		adminOverview.Use(middleware.AdminAuth())
+		{
+			adminOverview.GET("", controller.AdminGetOverview)
+		}
+
+		adminHealth := apiRouter.Group("/admin/health")
+		adminHealth.Use(middleware.AdminAuth())
+		{
+			adminHealth.GET("", controller.AdminGetHealth)
+			adminHealth.POST("/refresh", controller.AdminRefreshHealth)
+		}
+
+		adminReconcile := apiRouter.Group("/admin/reconcile")
+		adminReconcile.Use(middleware.AdminAuth())
+		{
+			adminReconcile.GET("", controller.AdminGetReconcile)
+		}
+
+		// adtyai U16 / A17 流水
+		walletRoute := apiRouter.Group("/wallet")
+		walletRoute.Use(middleware.UserAuth())
+		{
+			walletRoute.GET("/ledger/self", controller.GetWalletLedgerSelf)
+		}
+		adminWallet := apiRouter.Group("/admin/wallet")
+		adminWallet.Use(middleware.AdminAuth())
+		{
+			adminWallet.GET("/bonus-ledger", controller.AdminListBonusLedger)
+		}
+
 		// Universal secure verification routes
 		apiRouter.GET("/verify/methods", middleware.UserAuth(), middleware.DisableCache(), controller.GetVerificationMethods)
 		apiRouter.POST("/verify", middleware.UserAuth(), middleware.CriticalRateLimit(), middleware.UserCriticalRateLimit("security-verification"), middleware.DisableCache(), controller.UniversalVerify)

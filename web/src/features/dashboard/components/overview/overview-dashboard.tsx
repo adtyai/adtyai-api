@@ -26,8 +26,8 @@ import {
   ChevronUp,
   Circle,
   Copy,
-  CreditCard,
   FileText,
+  Gift,
   KeyRound,
   ListChecks,
   RadioTower,
@@ -51,7 +51,7 @@ import { IconBadge, type IconBadgeTone } from '@/components/ui/icon-badge'
 import { fetchTokenKey, getApiKeys } from '@/features/keys/api'
 import type { ApiKey } from '@/features/keys/types'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
-import { getUserModels } from '@/lib/api'
+import { api, getUserModels } from '@/lib/api'
 import { handleServerError } from '@/lib/handle-server-error'
 import { MOTION_TRANSITION } from '@/lib/motion'
 import { ROLE } from '@/lib/roles'
@@ -72,6 +72,28 @@ import { UptimePanel } from './uptime-panel'
 
 const SETUP_GUIDE_VISIBILITY_STORAGE_KEY =
   'dashboard_overview_setup_guide_expanded'
+const SETUP_GUIDE_SAMPLE_COPIED_STORAGE_KEY =
+  'dashboard_overview_setup_guide_sample_copied'
+/**
+ * Fallback when /api/topup/tiers is unavailable.
+ * Matches backend DefaultFirstTopupBonusRate=0.10.
+ * TODO: once business-params API exposes FirstTopupBonusRate on /api/status,
+ * prefer that field and keep this as last-resort fallback only.
+ */
+const FALLBACK_FIRST_TOPUP_BONUS_PERCENT = 10
+
+/** Convert FirstTopupBonusRate fraction (0.10) or percent (10) to display percent. */
+function firstTopupBonusRateToPercent(rate: unknown): number | null {
+  const n =
+    typeof rate === 'number'
+      ? rate
+      : typeof rate === 'string'
+        ? Number(rate)
+        : NaN
+  if (!Number.isFinite(n) || n < 0) return null
+  const percent = n <= 1 ? n * 100 : n
+  return Math.round(percent * 100) / 100
+}
 
 const SETUP_GUIDE_CODE_PATTERN = [
   'const request = await client.responses.create({',
@@ -93,11 +115,13 @@ type DashboardActionPath =
   | '/pricing'
 
 interface StartStep {
+  id: 'create-token' | 'copy-sample' | 'send-request'
   title: string
   description: string
-  to: DashboardActionPath
+  to?: DashboardActionPath
   icon: LucideIcon
   completed: boolean
+  actionLabel?: string
 }
 
 interface QuickAction {
@@ -140,9 +164,36 @@ function saveSetupGuideExpanded(expanded: boolean): void {
   )
 }
 
+function getSampleCopied(): boolean {
+  if (typeof window === 'undefined') return false
+  return (
+    window.localStorage.getItem(SETUP_GUIDE_SAMPLE_COPIED_STORAGE_KEY) ===
+    'copied'
+  )
+}
+
+function saveSampleCopied(): void {
+  if (typeof window === 'undefined') return
+  window.localStorage.setItem(SETUP_GUIDE_SAMPLE_COPIED_STORAGE_KEY, 'copied')
+}
+
 function getCurrentOrigin(): string {
   if (typeof window === 'undefined') return ''
   return window.location.origin
+}
+
+function getBaseUrlV1(sourceUrl?: string): string {
+  const fallback = `${getCurrentOrigin()}/v1`
+  const trimmed = sourceUrl?.trim()
+  if (!trimmed) return fallback
+  const withoutTrailingSlash = trimmed.replace(/\/+$/, '')
+  if (withoutTrailingSlash.endsWith('/v1/chat/completions')) {
+    return withoutTrailingSlash.replace(/\/chat\/completions$/, '')
+  }
+  if (withoutTrailingSlash.endsWith('/v1')) {
+    return withoutTrailingSlash
+  }
+  return `${withoutTrailingSlash}/v1`
 }
 
 function normalizeEndpoint(sourceUrl?: string): string {
@@ -181,6 +232,16 @@ function buildCurlCommand(args: {
     `  -H "Authorization: Bearer ${args.apiKey}" \\`,
     `  -d '{"model":"${args.model}","messages":[{"role":"user","content":"Say hello in one sentence."}]}'`,
   ].join('\n')
+}
+
+function getDayGreetingKey():
+  | 'Good morning, {{name}}'
+  | 'Good afternoon, {{name}}'
+  | 'Good evening, {{name}}' {
+  const hour = new Date().getHours()
+  if (hour < 12) return 'Good morning, {{name}}'
+  if (hour < 18) return 'Good afternoon, {{name}}'
+  return 'Good evening, {{name}}'
 }
 
 function SetupGuideBackdrop(props: { compact?: boolean }) {
@@ -225,9 +286,48 @@ function StartStepItem(props: {
   step: StartStep
   index: number
   isLast: boolean
+  onCopySample?: () => void
 }) {
+  const { t } = useTranslation()
   const Icon = props.step.icon
   const StatusIcon = props.step.completed ? Check : Circle
+  const body = (
+    <>
+      <span className='flex min-w-0 items-start gap-2.5'>
+        <span className='bg-muted mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg'>
+          <Icon className='size-3.5' aria-hidden='true' />
+        </span>
+        <span className='flex min-w-0 flex-col gap-0.5'>
+          <span className='flex items-center gap-2 text-sm font-medium'>
+            <span className='text-muted-foreground font-mono text-xs tabular-nums'>
+              {props.index + 1}.
+            </span>
+            <span className='truncate'>{props.step.title}</span>
+            {props.step.completed && (
+              <span className='bg-success/10 text-success ring-success/20 rounded-md px-1.5 py-0.5 text-[11px] font-medium ring-1 ring-inset whitespace-nowrap'>
+                {t('Completed')}
+              </span>
+            )}
+          </span>
+          <span className='text-muted-foreground line-clamp-2 text-xs'>
+            {props.step.description}
+          </span>
+        </span>
+      </span>
+      {!props.step.completed && props.step.id === 'copy-sample' ? (
+        <span className='bg-primary text-primary-foreground inline-flex h-7 shrink-0 items-center rounded-lg px-2.5 text-xs font-medium'>
+          {props.step.actionLabel ?? t('Copy')}
+        </span>
+      ) : (
+        <ArrowRight
+          className='text-muted-foreground size-4 shrink-0'
+          aria-hidden='true'
+        />
+      )}
+    </>
+  )
+  const rowClass =
+    'bg-background/70 hover:bg-muted/50 focus-visible:ring-ring flex min-w-0 flex-1 items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-left shadow-xs transition-colors outline-none focus-visible:ring-2'
 
   return (
     <li className='relative flex gap-3 pb-2.5 last:pb-0'>
@@ -249,31 +349,20 @@ function StartStepItem(props: {
         />
       </span>
 
-      <Link
-        to={props.step.to}
-        className='bg-background/70 hover:bg-muted/50 focus-visible:ring-ring flex min-w-0 flex-1 items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-left shadow-xs transition-colors outline-none focus-visible:ring-2'
-      >
-        <span className='flex min-w-0 items-start gap-2.5'>
-          <span className='bg-muted mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg'>
-            <Icon className='size-3.5' aria-hidden='true' />
-          </span>
-          <span className='flex min-w-0 flex-col gap-0.5'>
-            <span className='flex items-center gap-2 text-sm font-medium'>
-              <span className='text-muted-foreground font-mono text-xs tabular-nums'>
-                {props.index + 1}.
-              </span>
-              <span className='truncate'>{props.step.title}</span>
-            </span>
-            <span className='text-muted-foreground line-clamp-1 text-xs'>
-              {props.step.description}
-            </span>
-          </span>
-        </span>
-        <ArrowRight
-          className='text-muted-foreground size-4 shrink-0'
-          aria-hidden='true'
-        />
-      </Link>
+      {props.step.id === 'copy-sample' ? (
+        <button
+          type='button'
+          className={rowClass}
+          onClick={props.onCopySample}
+          aria-label={props.step.actionLabel ?? t('Copy sample code')}
+        >
+          {body}
+        </button>
+      ) : (
+        <Link to={props.step.to!} className={rowClass}>
+          {body}
+        </Link>
+      )}
     </li>
   )
 }
@@ -281,6 +370,7 @@ function StartStepItem(props: {
 function RequestPreview(props: {
   example: RequestExample
   signals: HeroSignal[]
+  onSampleCopied?: () => void
 }) {
   const { t } = useTranslation()
   const shouldReduceMotion = useReducedMotion()
@@ -311,6 +401,7 @@ function RequestPreview(props: {
       })
       const copied = await copyToClipboard(realCurl)
       if (copied) {
+        props.onSampleCopied?.()
         toast.success(t('Copied to clipboard'))
       } else {
         toast.error(t('Failed to copy to clipboard'))
@@ -426,14 +517,14 @@ function QuickActionItem(props: { action: QuickAction }) {
   return (
     <Button
       variant='outline'
-      className='h-auto justify-start rounded-xl px-3 py-3 text-left'
+      className='hover:border-primary/40 hover:bg-primary/5 h-auto justify-start rounded-lg border-border/80 px-3 py-3 text-left shadow-none'
       render={<Link to={props.action.to} />}
     >
-      <span className='bg-muted flex size-9 shrink-0 items-center justify-center rounded-lg'>
+      <span className='bg-primary/10 text-primary flex size-8 shrink-0 items-center justify-center rounded-lg'>
         <Icon className='size-4' aria-hidden='true' />
       </span>
       <span className='flex min-w-0 flex-1 flex-col gap-0.5'>
-        <span className='truncate text-sm font-medium'>
+        <span className='truncate text-[13px] font-medium'>
           {props.action.title}
         </span>
         <span className='text-muted-foreground line-clamp-2 text-xs leading-relaxed'>
@@ -475,10 +566,10 @@ export function OverviewDashboard() {
   const [manualSetupGuideExpanded, setManualSetupGuideExpanded] = useState<
     boolean | null
   >(() => getSavedSetupGuideExpanded())
+  const [sampleCopied, setSampleCopied] = useState(() => getSampleCopied())
+  const { copyToClipboard } = useCopyToClipboard({ notify: false })
 
   const requestCount = Number(user?.request_count ?? 0)
-  const remainQuota = Number(user?.quota ?? 0)
-  const usedQuota = Number(user?.used_quota ?? 0)
   const isAdmin = Boolean(user?.role && user.role >= ROLE.ADMIN)
 
   const apiKeysQuery = useQuery({
@@ -499,36 +590,79 @@ export function OverviewDashboard() {
     staleTime: 5 * 60 * 1000,
   })
 
+  // Public tiers endpoint already returns FirstTopupBonusRate (fraction).
+  const firstTopupBonusQuery = useQuery({
+    queryKey: ['dashboard', 'overview', 'first-topup-bonus-rate'],
+    queryFn: async () => {
+      const res = await api.get('/api/topup/tiers', { skipErrorHandler: true })
+      const rate = res?.data?.data?.first_topup_bonus_rate
+      return firstTopupBonusRateToPercent(rate)
+    },
+    staleTime: 5 * 60 * 1000,
+  })
+
+  const firstTopupBonusPercent =
+    firstTopupBonusQuery.data ?? FALLBACK_FIRST_TOPUP_BONUS_PERCENT
+
   const preferredKey = useMemo(
     () => getPreferredKey(apiKeysQuery.data ?? []),
     [apiKeysQuery.data]
   )
 
+  const sampleBaseUrl = useMemo(() => {
+    const fromApiInfo = apiInfoItems[0]?.url
+    return getBaseUrlV1(fromApiInfo)
+  }, [apiInfoItems])
+
+  const markSampleCopied = () => {
+    saveSampleCopied()
+    setSampleCopied(true)
+  }
+
+  const handleCopySample = async () => {
+    const sample = [
+      `Base URL: ${sampleBaseUrl}`,
+      'Authorization: Bearer <your-api-key>',
+    ].join('\n')
+    const copied = await copyToClipboard(sample)
+    if (copied) {
+      markSampleCopied()
+      toast.success(t('Copied to clipboard'))
+    } else {
+      toast.error(t('Failed to copy to clipboard'))
+    }
+  }
+
   const startSteps = useMemo<StartStep[]>(
     () => [
       {
-        title: t('Create API Key'),
-        description: t('Create a key for your app or service'),
+        id: 'create-token',
+        title: t('Create API token'),
+        description: t('Create a sk- token under API Keys'),
         to: '/keys',
         icon: KeyRound,
         completed: Boolean(preferredKey),
       },
       {
-        title: t('Add credits'),
-        description: t('Keep enough balance before production traffic'),
-        to: '/wallet',
-        icon: CreditCard,
-        completed: remainQuota > 0 || usedQuota > 0,
+        id: 'copy-sample',
+        title: t('Copy sample code'),
+        description: t('Base URL {{url}} + your token', {
+          url: sampleBaseUrl,
+        }),
+        icon: Copy,
+        completed: sampleCopied,
+        actionLabel: t('Copy'),
       },
       {
-        title: t('Send a request'),
-        description: t('Verify routing with Playground or your client'),
+        id: 'send-request',
+        title: t('Send a test request'),
+        description: t('Send one test call and confirm a normal response'),
         to: '/playground',
         icon: TerminalSquare,
         completed: requestCount > 0,
       },
     ],
-    [preferredKey, remainQuota, requestCount, t, usedQuota]
+    [preferredKey, requestCount, sampleBaseUrl, sampleCopied, t]
   )
 
   const quickActions = useMemo<QuickAction[]>(
@@ -647,10 +781,20 @@ export function OverviewDashboard() {
       </SectionPageLayout.Actions>
       <SectionPageLayout.Content>
         <div className='flex flex-col gap-4'>
+          <div className='px-0.5'>
+            <p className='text-foreground text-[22px] font-semibold tracking-tight'>
+              {t(getDayGreetingKey(), {
+                name: user?.username || user?.display_name || '',
+              })}
+            </p>
+            <p className='text-muted-foreground mt-1 text-[13px]'>
+              {t('This is your account overview')}
+            </p>
+          </div>
           <div id={setupGuideId} hidden={!setupGuideExpanded}>
             {setupGuideExpanded && (
               <CardStaggerContainer className='grid items-stretch gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]'>
-                <CardStaggerItem className='bg-card h-full overflow-hidden rounded-2xl border shadow-xs'>
+                <CardStaggerItem className='border-primary/20 from-primary/5 h-full overflow-hidden rounded-2xl border bg-gradient-to-r to-card shadow-[0_1px_2px_rgba(16,24,40,.04)]'>
                   <div className='relative h-full overflow-hidden p-4 sm:p-5'>
                     <SetupGuideBackdrop />
                     <div className='relative grid gap-5 lg:grid-cols-[minmax(0,1fr)_21rem]'>
@@ -665,11 +809,16 @@ export function OverviewDashboard() {
                               {t('Get started')}
                             </div>
                             <h3 className='text-xl font-semibold tracking-tight sm:text-2xl'>
-                              {t('Build on your API gateway in minutes')}
+                              {t('Three steps to get started')}
                             </h3>
                             <p className='text-muted-foreground max-w-xl text-sm leading-relaxed'>
+                              {t('Setup progress: {{completed}}/{{total}}', {
+                                completed: completedStepCount,
+                                total: startSteps.length,
+                              })}
+                              {' · '}
                               {t(
-                                'A focused home for keys, balance, routing, and service health.'
+                                'Create a token, copy the sample, then send a test request.'
                               )}
                             </p>
                           </div>
@@ -694,31 +843,48 @@ export function OverviewDashboard() {
                         <ol className='bg-background/45 rounded-2xl border p-2 backdrop-blur'>
                           {startSteps.map((step, index) => (
                             <StartStepItem
-                              key={step.title}
+                              key={step.id}
                               step={step}
                               index={index}
                               isLast={index === startSteps.length - 1}
+                              onCopySample={handleCopySample}
                             />
                           ))}
                         </ol>
+
+                        <div className='border-warning/30 bg-warning/10 text-warning-foreground flex flex-wrap items-center gap-2 rounded-xl border px-3 py-2.5 text-xs sm:text-[13px]'>
+                          <Gift className='size-4 shrink-0' aria-hidden='true' />
+                          <span className='min-w-0 flex-1'>
+                            {t(
+                              'After three steps: first top-up gets {{percent}}% bonus (not stacked with tier bonus; higher one applies).',
+                              { percent: firstTopupBonusPercent }
+                            )}
+                          </span>
+                          <Button
+                            size='sm'
+                            variant='outline'
+                            className='h-7 shrink-0 px-2.5 text-xs'
+                            render={<Link to='/wallet' />}
+                          >
+                            {t('Go top up')}
+                          </Button>
+                        </div>
                       </div>
 
                       <RequestPreview
                         example={requestExample}
                         signals={heroSignals}
+                        onSampleCopied={markSampleCopied}
                       />
                     </div>
                   </div>
                 </CardStaggerItem>
 
-                <CardStaggerItem className='bg-card h-full rounded-2xl border p-4 shadow-xs sm:p-5'>
+                <CardStaggerItem className='bg-card h-full rounded-2xl border border-border/80 p-4 shadow-[0_1px_2px_rgba(16,24,40,.04)] sm:p-5'>
                   <div className='flex h-full flex-col gap-4'>
                     <div className='flex flex-col gap-1'>
-                      <div className='text-muted-foreground text-xs font-medium tracking-wider uppercase'>
-                        {t('Recommended actions')}
-                      </div>
-                      <h3 className='text-lg font-semibold tracking-tight'>
-                        {t('Keep the platform ready')}
+                      <h3 className='text-[15px] font-semibold tracking-tight'>
+                        {t('Quick links')}
                       </h3>
                     </div>
                     <div className='grid gap-2'>

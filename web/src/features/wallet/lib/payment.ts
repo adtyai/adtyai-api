@@ -67,9 +67,22 @@ export function submitPaymentForm(
   form.action = url
   form.method = 'POST'
 
-  // Don't open in new tab for Safari
+  // Don't open in new tab for Safari.
+  // form.target="_blank" leaves window.opener set; open a named blank
+  // window, clear opener, then point the form at that name. Avoid the
+  // noopener windowFeatures flag here — some browsers drop the browsing
+  // context name and form.target would miss the window.
   if (!isSafariBrowser()) {
-    form.target = '_blank'
+    const targetName = 'adty_epay_checkout'
+    const win = window.open('about:blank', targetName)
+    if (win) {
+      try {
+        win.opener = null
+      } catch {
+        // ignore if the browsing context forbids clearing opener
+      }
+    }
+    form.target = targetName
   }
 
   // Add form parameters

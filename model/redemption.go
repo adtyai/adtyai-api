@@ -174,13 +174,20 @@ func Redeem(key string, userId int) (quota int, err error) {
 		if result.RowsAffected == 0 {
 			return errors.New("redemption code already used")
 		}
-		return creditTopUpQuota(tx, userId, redemption.Quota, nil)
+		// A27/A4：兑换码入赠送钱包，经 AdjustQuota 写余额+流水，不直接写 users.quota。
+		if _, err := AdjustQuota(tx, userId, "bonus", int64(redemption.Quota),
+			"adtyai redemption bonus", "redemption", strconv.Itoa(redemption.Id),
+			"redeem:"+strconv.Itoa(redemption.Id), 0, "redemption_bonus"); err != nil {
+			return err
+		}
+		_ = invalidateUserCache(userId)
+		return nil
 	})
 	if err != nil {
 		common.SysError(common.LogText("redemption failed: %s", err.Error()))
 		return 0, ErrRedeemFailed
 	}
-	syncCreditUserQuotaCache(userId, redemption.Quota, common.LogText("redemption"))
+	// bonus 不在 users.quota 缓存内，不做 quota 缓存增量（与 CompleteTopupOrder bonus 路径一致）。
 	RecordLog(userId, LogTypeTopup, common.NewMessage("Topped up {{quota}} with a redemption code, code ID {{id}}", map[string]any{"quota": logger.FormatQuota(redemption.Quota), "id": redemption.Id}))
 	return redemption.Quota, nil
 }

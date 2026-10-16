@@ -119,6 +119,13 @@ func PreWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usag
 	if ok {
 		actualGroupRatio = userGroupRatio
 	}
+	// A8：结算沿用预扣快照折扣；若 auto 刚切组则按最终分组重匹配。
+	if exists {
+		rid, d := model.MatchEnterprisePriceRule(relayInfo.UserId, relayInfo.UsingGroup, modelName)
+		relayInfo.EnterpriseRuleId = rid
+		relayInfo.EnterpriseDiscount = d
+	}
+	actualGroupRatio = model.EffectiveGroupRatio(actualGroupRatio, relayInfo.GetEnterpriseDiscount())
 
 	quotaInfo := QuotaInfo{
 		InputDetails: TokenDetails{
@@ -451,10 +458,17 @@ func postConsumeQuotaWithResult(relayInfo *relaycommon.RelayInfo, quota int, pre
 		}
 	} else {
 		// Wallet
+		// ADTY B-03：记本请求钱包拆分；quota<0 属请求内退回，按本请求拆分反向退（先实充后赠送），不写流水
 		if quota > 0 {
-			err = model.DecreaseUserQuota(relayInfo.UserId, quota, false)
+			var bonus, paid int
+			bonus, paid, err = model.DecreaseUserWallet(relayInfo.UserId, quota)
+			if err == nil {
+				model.ApplyUserQuotaCacheDelta(relayInfo.UserId, -int64(quota))
+				relayInfo.WalletBonusConsumed += bonus
+				relayInfo.WalletPaidConsumed += paid
+			}
 		} else {
-			err = model.IncreaseUserQuota(relayInfo.UserId, -quota, false)
+			err = returnRelayWalletSplit(relayInfo, -quota)
 		}
 		if err != nil {
 			return result, err
@@ -553,4 +567,30 @@ func quotaNotifyContent(lang string, notifyType string, prompt string, remaining
 		topUpLink := PaymentReturnURL("/wallet")
 		return i18n.Translate(lang, i18n.MsgNotifyQuotaLowEmail, map[string]any{"Prompt": prompt, "Quota": remaining, "Link": topUpLink}), []any{prompt, remaining, topUpLink, topUpLink}
 	}
+}
+
+// returnRelayWalletSplit ADTY B-03：请求内退回 amount，按本请求已记拆分先退实充再退赠送；
+// 超出本请求拆分的部分（理论上不应出现）退赠送并打日志（L-3，与老任务保守口径一致，不让多出来的变成可提现实充）。
+func returnRelayWalletSplit(relayInfo *relaycommon.RelayInfo, amount int) error {
+	if amount <= 0 {
+		return nil
+	}
+	paid := amount
+	if paid > relayInfo.WalletPaidConsumed {
+		paid = relayInfo.WalletPaidConsumed
+	}
+	bonus := amount - paid
+	if bonus > relayInfo.WalletBonusConsumed {
+		common.SysLog(common.LogText("wallet return exceeds request split: user=%d amount=%d bonus=%d paid=%d, excess %d to bonus",
+			relayInfo.UserId, amount, relayInfo.WalletBonusConsumed, relayInfo.WalletPaidConsumed, bonus-relayInfo.WalletBonusConsumed))
+	}
+	if err := model.ReturnReservedUserWallet(relayInfo.UserId, bonus, paid); err != nil {
+		return err
+	}
+	relayInfo.WalletBonusConsumed -= bonus
+	relayInfo.WalletPaidConsumed -= paid
+	if relayInfo.WalletBonusConsumed < 0 {
+		relayInfo.WalletBonusConsumed = 0
+	}
+	return nil
 }

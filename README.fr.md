@@ -1,10 +1,10 @@
 <div align="center">
 
-![new-api](/web/public/logo.png)
+![adtyai](/web/public/logo.png)
 
-# New API
+# ADTY AI
 
-**Une passerelle IA pour les modèles, les applications et les agents**
+**Passerelle IA basée sur New API — adtyai**
 
 <p align="center">
   <a href="./README.zh_CN.md">简体中文</a> |
@@ -15,36 +15,20 @@
 </p>
 
 <p align="center">
-  <a href="https://raw.githubusercontent.com/Calcium-Ion/new-api/main/LICENSE">
-    <img src="https://img.shields.io/github/license/Calcium-Ion/new-api?color=brightgreen" alt="licence">
+  <a href="./LICENSE">
+    <img src="https://img.shields.io/badge/license-AGPL--3.0-brightgreen" alt="license">
   </a><!--
-  --><a href="https://github.com/Calcium-Ion/new-api/releases/latest">
-    <img src="https://img.shields.io/github/v/release/Calcium-Ion/new-api?color=brightgreen&include_prereleases" alt="version">
+  --><a href="https://github.com/adtyai/adtyai-api">
+    <img src="https://img.shields.io/badge/version-v1.0.0--adtyai-brightgreen" alt="version">
   </a><!--
-  --><a href="https://hub.docker.com/r/CalciumIon/new-api">
-    <img src="https://img.shields.io/badge/docker-dockerHub-blue" alt="docker">
-  </a>
-  <a href="https://atomgit.com/QuantumNous/new-api" target="_blank">
-    <img alt="AtomGit G-Star" src="https://atomgit.com/QuantumNous/new-api/star/badge.svg"/>
+  --><a href="https://github.com/adtyai/adtyai-api/pkgs/container/adtyai-api">
+    <img src="https://img.shields.io/badge/image-ghcr.io%2Fadtyai%2Fadtyai--api-blue" alt="ghcr">
   </a>
 </p>
 
 <p align="center">
-  <a href="https://trendshift.io/repositories/20180" target="_blank">
-    <img src="https://trendshift.io/api/badge/repositories/20180" alt="QuantumNous%2Fnew-api | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/>
-  </a>
-  <br>
-  <a href="https://hellogithub.com/repository/QuantumNous/new-api" target="_blank">
-    <img src="https://api.hellogithub.com/v1/widgets/recommend.svg?rid=539ac4217e69431684ad4a0bab768811&claim_uid=tbFPfKIDHpc4TzR" alt="Featured｜HelloGitHub" style="width: 250px; height: 54px;" width="250" height="54" />
-  </a><!--
-  -->
-  <a href="https://atomgit.com/QuantumNous/new-api" target="_blank">
-    <img alt="AtomGit G-Star" src="https://atomgit.com/QuantumNous/new-api/star/new_badge.svg" width="250" height="55" />
-  </a>
-</p>
-
-<p align="center">
-  <a href="#capabilities">Fonctionnalités</a> •
+  <a href="#screenshots">Captures</a> •
+  <a href="#capabilities">Capacités</a> •
   <a href="#quick-start">Démarrage rapide</a> •
   <a href="#deployment">Déploiement</a> •
   <a href="#development">Développement</a> •
@@ -57,9 +41,9 @@
 
 ## 📝 Description du projet
 
-New API est une passerelle IA auto-hébergée pour les applications, les agents et les équipes. Connectez vos fournisseurs de modèles, exposez une API commune à vos clients et gérez le routage, les accès, les usages et les coûts depuis une même console.
+**adtyai** (nom du site **ADTY AI**) est une passerelle IA auto-hébergée issue du projet officiel [New API](https://github.com/QuantumNous/new-api). Les capacités amont sont conservées, avec facturation, ops et marque propres à adtyai. Dépôt : <https://github.com/adtyai/adtyai-api>. Image : `ghcr.io/adtyai/adtyai-api`.
 
-Utilisez-la pour partager des accès autorisés au sein d'une équipe, changer de fournisseur sans reconfigurer chaque client ou exploiter un service privé multi-modèles. Les fournisseurs incluent OpenAI, Anthropic, Google Gemini, Azure OpenAI, AWS Bedrock, Vertex AI, DeepSeek, Qwen et d'autres services compatibles.
+Partagez l’accès aux modèles autorisés, changez de fournisseur sans reconfigurer chaque client, ou opérez un service multi-modèles privé avec console web.
 
 > [!IMPORTANT]
 > - Ce projet est exclusivement destiné aux scénarios de passerelle API d'IA légalement autorisés, d'authentification organisationnelle, de gestion multi-modèles, d'analyse d'utilisation, de comptabilisation des coûts et de déploiement privé.
@@ -157,7 +141,7 @@ docker run --name new-api -d --restart unless-stopped \
   -p 127.0.0.1:3000:3000 \
   -e TZ=Asia/Shanghai \
   -v "$(pwd)/data:/data" \
-  calciumion/new-api:latest
+  ghcr.io/adtyai/adtyai-api:latest
 ```
 
 Ouvrez [http://localhost:3000](http://localhost:3000) et suivez l'assistant pour créer le compte administrateur. Le répertoire `data` conserve la base SQLite lors du remplacement du conteneur.
@@ -194,7 +178,7 @@ curl --fail-with-body http://localhost:3000/v1/responses \
 La [configuration Compose](./docker-compose.yml) du dépôt démarre **New API + PostgreSQL + Redis** par défaut. Elle contient aussi des exemples pour MySQL et une base de journaux ClickHouse distincte.
 
 ```bash
-git clone https://github.com/QuantumNous/new-api.git
+git clone https://github.com/adtyai/adtyai-api.git
 cd new-api
 ```
 
@@ -321,7 +305,7 @@ Consultez [NOTICE](./NOTICE) et les [licences tierces](./THIRD-PARTY-LICENSES.md
 
 <div align="center">
 
-[![Graphique de l'historique des étoiles](https://api.star-history.com/svg?repos=Calcium-Ion/new-api&type=Date)](https://star-history.com/#Calcium-Ion/new-api&Date)
+[![Graphique de l'historique des étoiles](https://api.star-history.com/svg?repos=adtyai/adtyai-api&type=Date)](https://star-history.com/#adtyai/adtyai-api&Date)
 
 </div>
 
@@ -329,12 +313,12 @@ Consultez [NOTICE](./NOTICE) et les [licences tierces](./THIRD-PARTY-LICENSES.md
 
 <div align="center">
 
-### 💖 Merci d'utiliser New API
+### 💖 Merci d’utiliser ADTY AI
 
-Si ce projet vous est utile, bienvenue à nous donner une ⭐️ Étoile！
+Si ce projet vous aide, laissez une ⭐️ Star.
 
-**[Documentation officielle](https://docs.newapi.ai/en/docs)** • **[Commentaires sur les problèmes](https://github.com/Calcium-Ion/new-api/issues)** • **[Dernière version](https://github.com/Calcium-Ion/new-api/releases)**
+**[Dépôt](https://github.com/adtyai/adtyai-api)** • **[New API amont](https://github.com/QuantumNous/new-api)**
 
-<sub>Construit avec ❤️ par QuantumNous</sub>
+<sub>Basé sur [New API](https://github.com/QuantumNous/new-api) par QuantumNous · marque adtyai</sub>
 
 </div>

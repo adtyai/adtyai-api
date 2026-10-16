@@ -17,6 +17,8 @@ type AuditOther struct {
 	RootInfo    AuditFields       `json:"root_info,omitempty"`
 	LoginMethod string            `json:"login_method,omitempty"`
 	UserAgent   string            `json:"user_agent,omitempty"`
+	// IpFirstSeen is set only for action=admin_login (A30); stored in Other JSON, not a column.
+	IpFirstSeen *bool `json:"ip_first_seen,omitempty"`
 }
 
 type AuditOperation struct {

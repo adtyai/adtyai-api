@@ -22,11 +22,17 @@ import { useTranslation } from 'react-i18next'
 
 import { resolveSidebarView } from '@/components/layout/lib/sidebar-view-registry'
 import type { NavGroup, ResolvedSidebarView } from '@/components/layout/types'
+import {
+  applyNestedAdminMenuVisibility,
+  applyRootMenuVisibility,
+  parseMenuVisibilityMap,
+} from '@/lib/menu-visibility'
 import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
 
 import { useSidebarConfig } from './use-sidebar-config'
 import { useSidebarData } from './use-sidebar-data'
+import { useStatus } from './use-status'
 
 /** Sentinel key used for the root navigation in animation `key=` props */
 const ROOT_VIEW_KEY = '__root'
@@ -50,11 +56,28 @@ export function useSidebarView(): ResolvedSidebarView {
   const userRole = useAuthStore((s) => s.auth.user?.role)
   const rootSidebarData = useSidebarData()
   const configFilteredRoot = useSidebarConfig(rootSidebarData.navGroups)
+  const { status } = useStatus()
+  // A39: status-driven menu visibility (missing key = visible), AND-ed
+  // on top of sidebar_modules. Entry-only; route guards are unchanged.
+  const rawUserVisible = status?.SidebarUserVisible
+  const rawAdminVisible = status?.SidebarAdminVisible
+  const userVisible = useMemo(
+    () => parseMenuVisibilityMap(rawUserVisible),
+    [rawUserVisible]
+  )
+  const adminVisible = useMemo(
+    () => parseMenuVisibilityMap(rawAdminVisible),
+    [rawAdminVisible]
+  )
 
   const rootNavGroups = useMemo<NavGroup[]>(() => {
     const role = userRole ?? ROLE.GUEST
     const isAdmin = role >= ROLE.ADMIN
-    return configFilteredRoot
+    return applyRootMenuVisibility(
+      configFilteredRoot,
+      userVisible,
+      adminVisible
+    )
       .filter((group) => (group.id === 'admin' ? isAdmin : true))
       .map((group) => {
         const items = group.items.filter(
@@ -62,7 +85,7 @@ export function useSidebarView(): ResolvedSidebarView {
         )
         return items.length === group.items.length ? group : { ...group, items }
       })
-  }, [configFilteredRoot, userRole])
+  }, [configFilteredRoot, userRole, userVisible, adminVisible])
 
   const view = resolveSidebarView(pathname)
 
@@ -70,7 +93,10 @@ export function useSidebarView(): ResolvedSidebarView {
     return {
       key: view.id,
       view,
-      navGroups: view.getNavGroups(t),
+      navGroups:
+        view.id === 'system-settings'
+          ? applyNestedAdminMenuVisibility(view.getNavGroups(t), adminVisible)
+          : view.getNavGroups(t),
     }
   }
 

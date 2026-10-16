@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/gin-contrib/static"
 	"github.com/gin-gonic/gin"
@@ -204,6 +205,38 @@ func UserCriticalRateLimit(scope string) func(c *gin.Context) {
 		"UC:"+scope,
 	)
 }
+
+
+// TopupOrderRateLimit limits POST /api/topup/order per authenticated user using
+// adtyai options TopupOrderRateLimitNum / TopupOrderRateLimitDuration.
+// Reads options on EVERY request so Admin hot-updates apply without restart.
+func TopupOrderRateLimit() func(c *gin.Context) {
+	return func(c *gin.Context) {
+		num, duration := model.GetTopupOrderRateLimit()
+		if num <= 0 || duration <= 0 {
+			c.Next()
+			return
+		}
+		userID := c.GetInt("id")
+		if userID == 0 {
+			c.Status(http.StatusUnauthorized)
+			c.Abort()
+			return
+		}
+		mark := "TO"
+		if common.RedisEnabled {
+			userRedisRateLimiter(c, num, duration, redisUserRateLimitKey(mark, userID))
+			return
+		}
+		inMemoryRateLimiter.Init(common.RateLimitKeyExpirationDuration)
+		key := fmt.Sprintf("%s:user:%d", mark, userID)
+		if !inMemoryRateLimiter.Request(key, num, duration) {
+			writeRateLimited(c, duration)
+			return
+		}
+	}
+}
+
 
 func DownloadRateLimit() func(c *gin.Context) {
 	return rateLimitFactory(common.DownloadRateLimitNum, common.DownloadRateLimitDuration, "DW")

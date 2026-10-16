@@ -33,17 +33,28 @@ type FundingSource interface {
 var ErrInsufficientWalletQuota = errors.New("wallet quota insufficient")
 
 type WalletFunding struct {
-	userId   int
-	consumed int // 实际预扣的用户额度
+	userId        int
+	consumed      int // 实际预扣合计
+	bonusConsumed int // 其中来自赠送
+	paidConsumed  int // 其中来自实充
 }
 
 func (w *WalletFunding) Source() string { return BillingSourceWallet }
+
+// NewWalletFundingForAccept ADTY B-03 accept 用：直接走真实 WalletFunding 预扣/结算/退回。
+func NewWalletFundingForAccept(userId int) *WalletFunding { return &WalletFunding{userId: userId} }
+
+// WalletSplitForAccept accept 用：当前净出资拆分。
+func (w *WalletFunding) WalletSplitForAccept() (bonus, paid int) { return w.walletSplit() }
+
+// walletSplit ADTY B-03：当前净出资拆分。
+func (w *WalletFunding) walletSplit() (bonus, paid int) { return w.bonusConsumed, w.paidConsumed }
 
 func (w *WalletFunding) PreConsume(amount int) error {
 	if amount <= 0 {
 		return nil
 	}
-	reserved, err := model.TryReserveUserQuota(w.userId, amount)
+	bonus, paid, reserved, err := model.TryReserveUserWallet(w.userId, amount)
 	if err != nil {
 		return err
 	}
@@ -51,6 +62,8 @@ func (w *WalletFunding) PreConsume(amount int) error {
 		return ErrInsufficientWalletQuota
 	}
 	w.consumed = amount
+	w.bonusConsumed = bonus
+	w.paidConsumed = paid
 	return nil
 }
 
@@ -59,18 +72,51 @@ func (w *WalletFunding) Settle(delta int) error {
 		return nil
 	}
 	if delta > 0 {
-		return model.DecreaseUserQuota(w.userId, delta, false)
+		// 结算补扣：先赠送后实充；实充不够则整笔失败（映 ErrInsufficientWalletQuota → 403）
+		bonus, paid, err := model.DecreaseUserWallet(w.userId, delta)
+		if err != nil {
+			if errors.Is(err, model.ErrInsufficientWalletBalance) {
+				return ErrInsufficientWalletQuota
+			}
+			return err
+		}
+		model.ApplyUserQuotaCacheDelta(w.userId, -int64(delta))
+		w.bonusConsumed += bonus
+		w.paidConsumed += paid
+		w.consumed += delta
+		return nil
 	}
-	return model.IncreaseUserQuota(w.userId, -delta, false)
+	// delta < 0：多扣退回。按原扣顺序反向：先退实充再退赠送。
+	refund := -delta
+	fromPaid := refund
+	if fromPaid > w.paidConsumed {
+		fromPaid = w.paidConsumed
+	}
+	fromBonus := refund - fromPaid
+	if fromBonus > w.bonusConsumed {
+		fromBonus = w.bonusConsumed
+		fromPaid = refund - fromBonus
+	}
+	// ADTY B-03 H-A：请求内退回，不写流水
+	if err := model.ReturnReservedUserWallet(w.userId, fromBonus, fromPaid); err != nil {
+		return err
+	}
+	w.bonusConsumed -= fromBonus
+	w.paidConsumed -= fromPaid
+	w.consumed -= refund
+	return nil
 }
 
 func (w *WalletFunding) Refund() error {
-	if w.consumed <= 0 {
+	if w.consumed <= 0 && w.bonusConsumed <= 0 && w.paidConsumed <= 0 {
 		return nil
 	}
-	// IncreaseUserQuota 是 quota += N 的非幂等操作，不能重试，否则会多退额度。
-	// 订阅的 RefundSubscriptionPreConsume 有 requestId 幂等保护所以可以重试。
-	return model.IncreaseUserQuota(w.userId, w.consumed, false)
+	// 按原拆分退回赠送/实充，不能整笔加回实充。ADTY B-03 H-A：请求内退回，不写流水。
+	if err := model.ReturnReservedUserWallet(w.userId, w.bonusConsumed, w.paidConsumed); err != nil {
+		return err
+	}
+	w.bonusConsumed, w.paidConsumed, w.consumed = 0, 0, 0
+	return nil
 }
 
 // ---------------------------------------------------------------------------

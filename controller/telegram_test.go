@@ -361,6 +361,10 @@ func TestTelegramOAuthConfigurationAndLegacyEndpoints(t *testing.T) {
 	fixture := setupTelegramOAuthTest(t)
 	previousBotToken := common.TelegramBotToken
 	t.Cleanup(func() { common.TelegramBotToken = previousBotToken })
+	// Sensitive options are encrypted at rest and fail closed without ADTY_SECRET_KEY.
+	t.Cleanup(common.InitAdtySecretKeys) // runs after Setenv restores env
+	t.Setenv("ADTY_SECRET_KEY", "telegram-test-secret")
+	common.InitAdtySecretKeys()
 	require.NoError(t, model.UpdateOptionsBulk(map[string]string{
 		"telegram.client_id": "12345", "telegram.client_secret": "telegram-client-secret",
 		"TelegramBotToken": "stored-legacy-token", "TelegramOAuthEnabled": "true",

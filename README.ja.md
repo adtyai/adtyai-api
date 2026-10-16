@@ -1,10 +1,10 @@
 <div align="center">
 
-![new-api](/web/public/logo.png)
+![adtyai](/web/public/logo.png)
 
-# New API
+# ADTY AI
 
-**モデル、アプリケーション、Agent をつなぐ AI ゲートウェイ**
+**New API ベースの AI ゲートウェイ — adtyai**
 
 <p align="center">
   <a href="./README.zh_CN.md">简体中文</a> |
@@ -15,36 +15,20 @@
 </p>
 
 <p align="center">
-  <a href="https://raw.githubusercontent.com/Calcium-Ion/new-api/main/LICENSE">
-    <img src="https://img.shields.io/github/license/Calcium-Ion/new-api?color=brightgreen" alt="license">
+  <a href="./LICENSE">
+    <img src="https://img.shields.io/badge/license-AGPL--3.0-brightgreen" alt="license">
   </a><!--
-  --><a href="https://github.com/Calcium-Ion/new-api/releases/latest">
-    <img src="https://img.shields.io/github/v/release/Calcium-Ion/new-api?color=brightgreen&include_prereleases" alt="release">
+  --><a href="https://github.com/adtyai/adtyai-api">
+    <img src="https://img.shields.io/badge/version-v1.0.0--adtyai-brightgreen" alt="version">
   </a><!--
-  --><a href="https://hub.docker.com/r/CalciumIon/new-api">
-    <img src="https://img.shields.io/badge/docker-dockerHub-blue" alt="docker">
-  </a>
-  <a href="https://atomgit.com/QuantumNous/new-api" target="_blank">
-    <img alt="AtomGit G-Star" src="https://atomgit.com/QuantumNous/new-api/star/badge.svg"/>
+  --><a href="https://github.com/adtyai/adtyai-api/pkgs/container/adtyai-api">
+    <img src="https://img.shields.io/badge/image-ghcr.io%2Fadtyai%2Fadtyai--api-blue" alt="ghcr">
   </a>
 </p>
 
 <p align="center">
-  <a href="https://trendshift.io/repositories/20180" target="_blank">
-    <img src="https://trendshift.io/api/badge/repositories/20180" alt="QuantumNous%2Fnew-api | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/>
-  </a>
-  <br>
-  <a href="https://hellogithub.com/repository/QuantumNous/new-api" target="_blank">
-    <img src="https://api.hellogithub.com/v1/widgets/recommend.svg?rid=539ac4217e69431684ad4a0bab768811&claim_uid=tbFPfKIDHpc4TzR" alt="Featured｜HelloGitHub" style="width: 250px; height: 54px;" width="250" height="54" />
-  </a><!--
-  -->
-  <a href="https://atomgit.com/QuantumNous/new-api" target="_blank">
-    <img alt="AtomGit G-Star" src="https://atomgit.com/QuantumNous/new-api/star/new_badge.svg" width="250" height="55" />
-  </a>
-</p>
-
-<p align="center">
-  <a href="#capabilities">主な機能</a> •
+  <a href="#screenshots">スクリーンショット</a> •
+  <a href="#capabilities">機能</a> •
   <a href="#quick-start">クイックスタート</a> •
   <a href="#deployment">デプロイ</a> •
   <a href="#development">開発</a> •
@@ -55,11 +39,11 @@
 
 ---
 
-## 📝 プロジェクト説明
+## 📝 プロジェクト概要
 
-New API は、アプリケーション、Agent、チーム向けのセルフホスト型 AI ゲートウェイです。各社のモデルサービスを共通の入口に接続し、ルーティング、アクセス権、使用量、コストを一つの管理画面で扱えます。
+**adtyai**（サイト名 **ADTY AI**）は公式 [New API](https://github.com/QuantumNous/new-api) をベースにしたセルフホスト AI ゲートウェイのフォークです。上流機能を維持しつつ、adtyai 向けの課金・運用・ブランディングを追加しています。リポジトリ: <https://github.com/adtyai/adtyai-api>。イメージ: `ghcr.io/adtyai/adtyai-api`。
 
-チーム内で許可済みのモデルを共有する、クライアントの再設定を減らしてプロバイダーを切り替える、複数モデルを扱うプライベートサービスを構築するといった用途に使えます。OpenAI、Anthropic、Google Gemini、Azure OpenAI、AWS Bedrock、Vertex AI、DeepSeek、Qwen などに対応しています。
+チームでの認可済みモデル共有、クライアント再設定なしのプロバイダ切替、Web コンソール付きのプライベート多モデル運用などに使えます。
 
 > [!IMPORTANT]
 > - 本プロジェクトは、合法的に許可された AI API ゲートウェイ、組織レベルの認証、マルチモデル管理、利用量分析、コスト管理、プライベートデプロイのシナリオのみを対象としています。
@@ -157,7 +141,7 @@ docker run --name new-api -d --restart unless-stopped \
   -p 127.0.0.1:3000:3000 \
   -e TZ=Asia/Shanghai \
   -v "$(pwd)/data:/data" \
-  calciumion/new-api:latest
+  ghcr.io/adtyai/adtyai-api:latest
 ```
 
 [http://localhost:3000](http://localhost:3000) を開き、初期設定ウィザードで管理者アカウントを作成します。SQLite データベースはマウントした `data` ディレクトリに保存され、コンテナを置き換えても残ります。
@@ -194,7 +178,7 @@ curl --fail-with-body http://localhost:3000/v1/responses \
 リポジトリの [Compose 設定](./docker-compose.yml) は、既定で **New API + PostgreSQL + Redis** を起動します。MySQL と独立した ClickHouse ログデータベースの設定例も含まれます。
 
 ```bash
-git clone https://github.com/QuantumNous/new-api.git
+git clone https://github.com/adtyai/adtyai-api.git
 cd new-api
 ```
 
@@ -321,7 +305,7 @@ AGPLv3 第 7 条に基づく[追加条項](./NOTICE)が適用されます。変�
 
 <div align="center">
 
-[![スター履歴チャート](https://api.star-history.com/svg?repos=Calcium-Ion/new-api&type=Date)](https://star-history.com/#Calcium-Ion/new-api&Date)
+[![スター履歴チャート](https://api.star-history.com/svg?repos=adtyai/adtyai-api&type=Date)](https://star-history.com/#adtyai/adtyai-api&Date)
 
 </div>
 
@@ -329,12 +313,12 @@ AGPLv3 第 7 条に基づく[追加条項](./NOTICE)が適用されます。変�
 
 <div align="center">
 
-### 💖 New APIをご利用いただきありがとうございます
+### 💖 ADTY AI をご利用いただきありがとうございます
 
-このプロジェクトがあなたのお役に立てたなら、ぜひ ⭐️ スターをください！
+役に立った場合は ⭐️ Star をお願いします。
 
-**[公式ドキュメント](https://docs.newapi.ai/ja/docs)** • **[問題フィードバック](https://github.com/Calcium-Ion/new-api/issues)** • **[最新リリース](https://github.com/Calcium-Ion/new-api/releases)**
+**[リポジトリ](https://github.com/adtyai/adtyai-api)** • **[上流 New API](https://github.com/QuantumNous/new-api)**
 
-<sub>❤️ で構築された QuantumNous</sub>
+<sub>[New API](https://github.com/QuantumNous/new-api) by QuantumNous ベース · adtyai ブランド</sub>
 
 </div>

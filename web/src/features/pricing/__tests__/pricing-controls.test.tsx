@@ -27,6 +27,11 @@ import {
 } from '../components/pricing-toolbar'
 import type { PricingModel } from '../types'
 
+// A08: display names come from /api/status; identity here (code fallback).
+vi.mock('@/hooks/use-group-display-name', () => ({
+  useGroupDisplayName: () => (code: string | null | undefined) => code ?? '',
+}))
+
 function toolbarProps(): PricingToolbarProps {
   return {
     filteredCount: 2,

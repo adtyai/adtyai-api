@@ -110,15 +110,21 @@ type User struct {
 	StripeCustomer       string                     `json:"stripe_customer" gorm:"type:varchar(64);column:stripe_customer;index"`
 	CreatedAt            int64                      `json:"created_at" gorm:"autoCreateTime;column:created_at"`
 	LastLoginAt          int64                      `json:"last_login_at" gorm:"default:0;column:last_login_at"`
+	RegisterIp           string                     `json:"-" gorm:"type:varchar(64);column:register_ip"`
+	RegisterDeviceFp     string                     `json:"-" gorm:"type:varchar(128);column:register_device_fp"`
 	AuthVersion          int64                      `json:"-" gorm:"type:bigint;not null;default:1;column:auth_version"`
 	AdminPermissions     map[string]map[string]bool `json:"admin_permissions,omitempty" gorm:"-:all"`
 }
 
 func (user *User) ToBaseUser() *UserBase {
+	total := user.Quota
+	if bonus, err := GetUserBonusBalance(user.Id); err == nil {
+		total += int(bonus)
+	}
 	cache := &UserBase{
 		Id:          user.Id,
 		Group:       user.Group,
-		Quota:       user.Quota,
+		Quota:       total, // 缓存存实充+赠送合计
 		Status:      user.Status,
 		Role:        user.Role,
 		Username:    user.Username,
@@ -1248,17 +1254,21 @@ func ValidateAccessToken(token string) (*User, error) {
 	return user, nil
 }
 
-// GetUserQuota gets quota from Redis first, falls back to DB if needed
+// GetUserQuota 返回可用余额合计（实充 users.quota + 赠送 user_bonus_wallets）。
+// Redis 开启时缓存存合计；fromDB 时以数据库为准。
 func GetUserQuota(id int, fromDB bool) (quota int, err error) {
 	if !fromDB && common.RedisEnabled {
 		return getUserQuotaCache(id)
 	}
-	err = DB.Model(&User{}).Where("id = ?", id).Select("quota").Find(&quota).Error
+	paid, err := GetUserPaidQuota(id)
 	if err != nil {
 		return 0, err
 	}
-
-	return quota, nil
+	bonus, err := GetUserBonusBalance(id)
+	if err != nil {
+		return 0, err
+	}
+	return paid + int(bonus), nil
 }
 
 func GetUserUsedQuota(id int) (quota int, err error) {
@@ -1344,15 +1354,7 @@ func IncreaseUserQuota(id int, quota int, db bool) (err error) {
 	if err := common.ValidateWalletQuota(quota); err != nil {
 		return err
 	}
-	if !db && common.BatchUpdateEnabled {
-		addNewRecord(BatchUpdateTypeUserQuota, id, quota)
-		gopool.Go(func() {
-			if err := cacheIncrUserQuota(id, int64(quota)); err != nil {
-				common.SysLog(common.LogText("failed to increase user quota: %s", err.Error()))
-			}
-		})
-		return nil
-	}
+	// ADTY H1：users.quota（实充）不走批量更新，一律同步落库（批量落库无下限、绕过双钱包）。
 	if err := increaseUserQuota(id, quota); err != nil {
 		return err
 	}
@@ -1388,24 +1390,21 @@ func DecreaseUserQuota(id int, quota int, db bool) (err error) {
 	if quota < 0 {
 		return errors.New("quota cannot be negative")
 	}
+	// ADTY H1：扣费一律走双钱包（先赠送后实充、不扣负），不走批量；成功后再改缓存。
+	if err := decreaseUserQuota(id, quota); err != nil {
+		return err
+	}
 	gopool.Go(func() {
-		err := cacheDecrUserQuota(id, int64(quota))
-		if err != nil {
+		if err := cacheDecrUserQuota(id, int64(quota)); err != nil {
 			common.SysLog(common.LogText("failed to decrease user quota: %s", err.Error()))
 		}
 	})
-	if !db && common.BatchUpdateEnabled {
-		addNewRecord(BatchUpdateTypeUserQuota, id, -quota)
-		return nil
-	}
-	return decreaseUserQuota(id, quota)
+	return nil
 }
 
 func decreaseUserQuota(id int, quota int) (err error) {
-	err = DB.Model(&User{}).Where("id = ?", id).Update("quota", gorm.Expr("quota - ?", quota)).Error
-	if err != nil {
-		return err
-	}
+	// 两本账：先扣赠送再扣实充（结算补扣等路径）
+	_, _, err = DecreaseUserWallet(id, quota)
 	return err
 }
 
@@ -1541,3 +1540,4 @@ func RootUserExists() bool {
 	}
 	return true
 }
+

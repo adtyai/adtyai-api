@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
 
+import { getAdtyDeviceFp } from './lib/device-fp'
 import type {
   RedemptionRequest,
   PaymentRequest,
@@ -39,6 +40,11 @@ import type {
   WaffoPaymentResponse,
   WaffoPancakePaymentRequest,
   WaffoPancakePaymentResponse,
+  AdtyTopupTiersResponse,
+  AdtyFirstRechargeResponse,
+  AdtyCreateTopupOrderRequest,
+  AdtyCreateTopupOrderResponse,
+  AdtyTopupOrder,
 } from './types'
 
 // ============================================================================
@@ -244,5 +250,61 @@ export async function completeOrder(
   request: CompleteOrderRequest
 ): Promise<ApiResponse> {
   const res = await api.post('/api/user/topup/complete', request)
+  return res.data
+}
+
+// ============================================================================
+// ADTY fixed-tier topup APIs
+// ============================================================================
+
+
+/**
+ * GET /api/topup/tiers — fixed tiers, first_topup_bonus_rate, pay_methods
+ */
+export async function getAdtyTopupTiers(): Promise<AdtyTopupTiersResponse> {
+  const res = await api.get('/api/topup/tiers', {
+    skipErrorHandler: true,
+  } as Record<string, unknown>)
+  return res.data
+}
+
+/**
+ * GET /api/topup/first-recharge — whether current user is first-topup eligible
+ */
+export async function getAdtyFirstRecharge(): Promise<AdtyFirstRechargeResponse> {
+  const res = await api.get('/api/topup/first-recharge', {
+    skipErrorHandler: true,
+  } as Record<string, unknown>)
+  return res.data
+}
+
+/**
+ * POST /api/topup/order — only fixed tier amounts; invalid → 400
+ */
+export async function createAdtyTopupOrder(
+  request: AdtyCreateTopupOrderRequest
+): Promise<AdtyCreateTopupOrderResponse> {
+  const res = await api.post('/api/topup/order', request, {
+    skipBusinessError: true,
+    headers: {
+      'X-Device-FP': getAdtyDeviceFp(),
+    },
+  })
+  return res.data
+}
+
+/**
+ * GET /api/topup/order/:no — poll order status (pending | paid | failed | need_manual)
+ */
+export async function getAdtyTopupOrder(
+  orderNo: string
+): Promise<ApiResponse<AdtyTopupOrder>> {
+  const res = await api.get(
+    '/api/topup/order/' + encodeURIComponent(orderNo),
+    {
+      skipErrorHandler: true,
+      skipBusinessError: true,
+    } as Record<string, unknown>
+  )
   return res.data
 }

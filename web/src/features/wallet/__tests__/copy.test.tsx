@@ -16,8 +16,15 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import {
+  createMemoryHistory,
+  createRootRoute,
+  createRouter,
+  RouterContextProvider,
+} from '@tanstack/react-router'
 import { act, render, screen } from '@testing-library/react'
 import { createInstance } from 'i18next'
+import type { ReactNode } from 'react'
 import { I18nextProvider, initReactI18next } from 'react-i18next'
 import { beforeEach, expect, it, vi } from 'vitest'
 
@@ -29,6 +36,18 @@ import { api } from '@/lib/api'
 import { RechargeFormCard } from '../components/recharge-form-card'
 
 const i18n = createInstance()
+
+function renderWithI18n(ui: ReactNode) {
+  const router = createRouter({
+    routeTree: createRootRoute(),
+    history: createMemoryHistory({ initialEntries: ['/'] }),
+  })
+  return render(
+    <I18nextProvider i18n={i18n}>
+      <RouterContextProvider router={router}>{ui}</RouterContextProvider>
+    </I18nextProvider>
+  )
+}
 
 beforeEach(async () => {
   await i18n.use(initReactI18next).init({
@@ -79,34 +98,32 @@ it.each([
 ])(
   'translates recharge presets and minimum amount without changing precision at price ratio $priceRatio',
   async ({ priceRatio, paid, saved, full }) => {
-    render(
-      <I18nextProvider i18n={i18n}>
-        <RechargeFormCard
-          topupInfo={{
-            enable_online_topup: true,
-            enable_stripe_topup: false,
-            pay_methods: [],
-            min_topup: 1,
-            stripe_min_topup: 1,
-            amount_options: [100, 20],
-            discount: {},
-          }}
-          presetAmounts={[{ value: 100, discount: 0.8 }, { value: 20 }]}
-          selectedPreset={null}
-          topupAmount={1}
-          paymentAmount={priceRatio}
-          priceRatio={priceRatio}
-          calculating={false}
-          paymentLoading={null}
-          redemptionCode=''
-          redeeming={false}
-          onSelectPreset={vi.fn()}
-          onTopupAmountChange={vi.fn()}
-          onPaymentMethodSelect={vi.fn()}
-          onRedemptionCodeChange={vi.fn()}
-          onRedeem={vi.fn()}
-        />
-      </I18nextProvider>
+    renderWithI18n(
+      <RechargeFormCard
+        topupInfo={{
+          enable_online_topup: true,
+          enable_stripe_topup: false,
+          pay_methods: [],
+          min_topup: 1,
+          stripe_min_topup: 1,
+          amount_options: [100, 20],
+          discount: {},
+        }}
+        presetAmounts={[{ value: 100, discount: 0.8 }, { value: 20 }]}
+        selectedPreset={null}
+        topupAmount={1}
+        paymentAmount={priceRatio}
+        priceRatio={priceRatio}
+        calculating={false}
+        paymentLoading={null}
+        redemptionCode=''
+        redeeming={false}
+        onSelectPreset={vi.fn()}
+        onTopupAmountChange={vi.fn()}
+        onPaymentMethodSelect={vi.fn()}
+        onRedemptionCodeChange={vi.fn()}
+        onRedeem={vi.fn()}
+      />
     )
     expect(screen.getByRole('button', { name: /^100 / })).toHaveTextContent(
       `优惠 20%支付 ${paid} • 节省 ${saved}`

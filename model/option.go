@@ -126,6 +126,17 @@ func InitOptionMap() {
 	common.OptionMap["WaffoPancakeStoreID"] = setting.WaffoPancakeStoreID
 	common.OptionMap["WaffoPancakeProductID"] = setting.WaffoPancakeProductID
 	common.OptionMap["TopupGroupRatio"] = common.TopupGroupRatio2JSONString()
+	common.OptionMap["TopupBonusTiers"] = DefaultTopupBonusTiersJSON()
+	common.OptionMap["FirstTopupBonusRate"] = "0.10"
+	common.OptionMap["BepusdtBaseURL"] = ""
+	common.OptionMap["BepusdtApiToken"] = ""
+	common.OptionMap["BepusdtLegacyNotifyEnabled"] = "false"
+	common.OptionMap["BepusdtTradeType"] = "usdt.trc20"
+	common.OptionMap["BepusdtCurrency"] = "USD"
+	SeedAlertsOptionsIntoOptionMap()
+	SeedChatwootOptionsIntoOptionMap()
+	SeedMenuVisibilityOptionsIntoOptionMap()
+	SeedBusinessParamsIntoOptionMap()
 	common.OptionMap["Chats"] = setting.Chats2JsonString()
 	common.OptionMap["AutoGroups"] = setting.AutoGroups2JsonString()
 	common.OptionMap["DefaultUseAutoGroup"] = strconv.FormatBool(setting.DefaultUseAutoGroup)
@@ -192,6 +203,8 @@ func InitOptionMap() {
 
 	common.OptionMapRWMutex.Unlock()
 	loadOptionsFromDatabase()
+	InitAdtyTopupBonusFromOptions()
+	InitAdtyBusinessParamsFromOptions()
 }
 
 func loadOptionsFromDatabase() {
@@ -206,7 +219,22 @@ func loadOptionsFromDatabase() {
 	defer passkeyOptionMutex.Unlock()
 	options, _ := AllOption()
 	passkeyOptions := make(map[string]string)
+	legacySecrets := make(map[string]string)
+	defer func() {
+		if len(legacySecrets) > 0 {
+			migrateLegacyOptionSecrets(legacySecrets)
+		}
+	}()
 	for _, option := range options {
+		plain, needsMigrate, decErr := decodeOptionValueFromDB(option.Key, option.Value)
+		if decErr != nil {
+			common.SysError(common.LogText("failed to decrypt option %s: %s", option.Key, decErr.Error()))
+			continue
+		}
+		if needsMigrate {
+			legacySecrets[option.Key] = plain
+		}
+		option.Value = plain
 		if IsPasskeyDomainOption(option.Key) {
 			passkeyOptions[option.Key] = option.Value
 			continue
@@ -246,10 +274,19 @@ func validateOptionValue(key string, value string) error {
 	if key == "MaxTokenAutoGroups" {
 		return setting.ValidateMaxTokenAutoGroups(value)
 	}
+	if IsBusinessParamKey(key) {
+		// 带上 key/value，通用配置保存路径与业务参数接口回同一套 code + params
+		if err := ValidateBusinessParam(key, value, nil); err != nil {
+			return &BusinessParamError{Key: key, Value: value, Err: err}
+		}
+	}
 	return nil
 }
 
 func UpdateOption(key string, value string) error {
+	if err := RejectOptionSecretPrefix(map[string]string{key: value}); err != nil {
+		return err
+	}
 	if IsRequestPolicyOption(key) {
 		return UpdateRequestPolicyOptions(map[string]string{key: value})
 	}
@@ -263,13 +300,17 @@ func UpdateOption(key string, value string) error {
 	if err := validateOptionValue(key, value); err != nil {
 		return err
 	}
+	dbValue, err := encodeOptionValueForDB(key, value)
+	if err != nil {
+		return err
+	}
 	// Save to database first
 	option := Option{
 		Key: key,
 	}
 	// https://gorm.io/docs/update.html#Save-All-Fields
 	DB.FirstOrCreate(&option, Option{Key: key})
-	option.Value = value
+	option.Value = dbValue
 	// Save is a combination function.
 	// If save value does not contain primary key, it will execute Create,
 	// otherwise it will execute Update (with all fields).
@@ -286,6 +327,9 @@ func UpdateOption(key string, value string) error {
 func UpdateOptionsBulk(values map[string]string) error {
 	if len(values) == 0 {
 		return nil
+	}
+	if err := RejectOptionSecretPrefix(values); err != nil {
+		return err
 	}
 	for key := range values {
 		if IsPasskeyDomainOption(key) {
@@ -318,8 +362,12 @@ func UpdateOptionsBulk(values map[string]string) error {
 		}
 	}
 
-	err := DB.Transaction(func(tx *gorm.DB) error {
-		for k, v := range values {
+	dbValues, err := encodeOptionValuesForDB(values)
+	if err != nil {
+		return err
+	}
+	err = DB.Transaction(func(tx *gorm.DB) error {
+		for k, v := range dbValues {
 			option := Option{Key: k}
 			if err := tx.FirstOrCreate(&option, Option{Key: k}).Error; err != nil {
 				return err
@@ -578,6 +626,41 @@ func updateOptionMap(key string, value string) (err error) {
 		setting.WaffoPancakeMinTopUp, _ = strconv.Atoi(value)
 	case "TopupGroupRatio":
 		err = common.UpdateTopupGroupRatioByJSONString(value)
+	case "TopupBonusTiers":
+		err = UpdateTopupBonusTiersByJSONString(value)
+	case "FirstTopupBonusRate":
+		err = UpdateFirstTopupBonusRateString(value)
+	case "BepusdtOrderTimeoutMinutes", "UsdtUnderpayTolerance", "TopupOrderTimeoutMinutes",
+		"AffTopupCommissionRate", "AffSubscriptionCommissionRate", "AffFreezeDays",
+		"AffMinWithdrawAmount", "AffWithdrawFeeRate", "BalanceAdjustMaxAmount",
+		"SelfApproveAlertAmount", "EpayFailureDemoteThreshold", "ChannelGracePeriodSeconds",
+		"PayUnknownEscalateHours", "BalanceLowAlertThreshold", "BackupContactType",
+		"BackupContact", "TopupOrderRateLimitNum", "TopupOrderRateLimitDuration",
+		"DiskAlertWarnPct", "DiskAlertCritPct", "ChannelBalanceAlertUsd", "DailyReportTime",
+		"BackupRetentionDays", "AlertMergeMinutes", "RefundAlertAmount", "RefundAlertDailyCount":
+		err = applyBusinessParamRuntime(key, value)
+	case "BepusdtBaseURL":
+		setting.SetBepusdtBaseURL(value)
+	case "BepusdtApiToken":
+		setting.SetBepusdtApiToken(value)
+	case "BepusdtLegacyNotifyEnabled":
+		setting.SetBepusdtLegacyNotifyEnabled(value == "true")
+	case "BepusdtTradeType":
+		setting.SetBepusdtTradeType(value)
+	case "BepusdtCurrency":
+		setting.SetBepusdtCurrency(value)
+	case "AdtyTelegramBotToken":
+		setting.SetAdtyTelegramBotToken(value)
+	case "TelegramUrgentChatId":
+		setting.SetTelegramUrgentChatId(value)
+	case "TelegramPendingChatId":
+		setting.SetTelegramPendingChatId(value)
+	case "AdtyAlertUrgentEnabled":
+		setting.SetAdtyAlertUrgentEnabled(value == "true")
+	case "AdtyAlertPendingEnabled":
+		setting.SetAdtyAlertPendingEnabled(value == "true")
+	case "AdtyAlertKindEnabled":
+		setting.SetAdtyAlertKindEnabledJSON(value)
 	case "GitHubClientId":
 		common.GitHubClientId = value
 	case "GitHubClientSecret":
