@@ -35,7 +35,7 @@ import {
 import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
 
-import { clearFakeModel } from '../api'
+import { clearFakeModel, refreshChannelBalance } from '../api'
 import { LiveEstimateCell, RatioRateCell } from '../components/cost-cells'
 import { EmptyHint } from '../components/empty-hint'
 import { HalfOpenBadge } from '../components/half-open-badge'
@@ -45,6 +45,7 @@ import {
   useBreakerStages,
   useScores,
 } from '../hooks/use-scores'
+import { routingErrorText } from '../lib/error-text'
 import type { ChannelScoreRow } from '../types'
 
 type ScoresPageProps = {
@@ -89,6 +90,21 @@ export function ScoresPage(props: ScoresPageProps) {
   const stageByChannel = new Map(
     (stagesQuery.data ?? []).map((s) => [s.channel_id, s])
   )
+  const doRefreshBalance = async (channelId: number) => {
+    const res = await refreshChannelBalance(channelId)
+    const status = res.data?.status
+    if (status === 'ok') {
+      toast.success(
+        t('Balance updated: {{balance}}', { balance: res.data?.balance ?? 0 })
+      )
+    } else if (status === 'unsupported') {
+      toast.info(t('Upstream does not support balance query'))
+    } else {
+      toast.error(
+        `${t('Balance query failed')}: ${routingErrorText(t, res, t('Failed'))}`
+      )
+    }
+  }
 
   const rows = scoresQuery.data ?? []
   const channelFilter =
@@ -264,7 +280,16 @@ export function ScoresPage(props: ScoresPageProps) {
                         ? t('Rate limited')
                         : null}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className='flex flex-wrap gap-1'>
+                      {isRoot ? (
+                        <Button
+                          size='sm'
+                          variant='ghost'
+                          onClick={() => void doRefreshBalance(row.channel_id)}
+                        >
+                          {t('Refresh balance')}
+                        </Button>
+                      ) : null}
                       {row.fake_model && isRoot ? (
                         <Button
                           size='sm'

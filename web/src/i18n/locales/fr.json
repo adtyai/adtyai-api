@@ -7328,6 +7328,27 @@
     "Save failed on server": "Échec de l’enregistrement côté serveur",
     "This history snapshot cannot be restored": "Cet instantané d’historique ne peut pas être restauré",
     "Preview failed": "Échec de l’aperçu",
-    "Request failed (HTTP {{status}})": "Échec de la requête (HTTP {{status}})"
+    "Request failed (HTTP {{status}})": "Échec de la requête (HTTP {{status}})",
+    "Unknown config field": "Champ de configuration inconnu",
+    "Weight scheme not found": "Schéma de pondération introuvable",
+    "Weights do not match the selected scheme": "Les poids ne correspondent pas au schéma choisi",
+    "A backfill job is already running": "Une tâche de rattrapage est déjà en cours",
+    "History backfill is disabled in routing config": "Le rattrapage historique est désactivé dans la configuration",
+    "A full balance refresh is already running": "Une actualisation complète des soldes est déjà en cours",
+    "Balance query failed": "Échec de la requête de solde",
+    "Too many requests, please try again later": "Trop de requêtes, veuillez réessayer plus tard",
+    "Backfill failed to start": "Échec du démarrage du rattrapage",
+    "Backfill started": "Rattrapage démarré",
+    "No backfill run yet": "Aucun rattrapage exécuté",
+    "Running…": "En cours…",
+    "Done: scanned {{scanned}}, inserted {{inserted}}": "Terminé : {{scanned}} analysés, {{inserted}} insérés",
+    "Historical cost backfill": "Rattrapage des coûts historiques",
+    "Rebuild cost ledger from usage logs in the background.": "Reconstruit le registre des coûts à partir des journaux en arrière-plan.",
+    "Start backfill": "Lancer le rattrapage",
+    "Refresh balance": "Actualiser le solde",
+    "Upstream does not support balance query": "Le fournisseur ne prend pas en charge la consultation du solde",
+    "Ledger kind arrears": "Arriérés",
+    "Balance is low: too many concurrent requests. Wait for running requests to finish or top up.": "Solde faible : trop de requêtes simultanées. Attendez la fin des requêtes en cours ou rechargez.",
+    "HMAC secret is not set: user identity verification is disabled. Set the inbox HMAC secret and enable identity validation in Chatwoot.": "Secret HMAC non défini : la vérification d’identité est désactivée. Définissez le secret HMAC de la boîte et activez la validation d’identité dans Chatwoot."
   }
 }

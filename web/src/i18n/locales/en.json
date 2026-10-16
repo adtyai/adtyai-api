@@ -8262,6 +8262,26 @@
     "Save failed on server": "Save failed on server",
     "This history snapshot cannot be restored": "This history snapshot cannot be restored",
     "Preview failed": "Preview failed",
-    "Request failed (HTTP {{status}})": "Request failed (HTTP {{status}})"
+    "Request failed (HTTP {{status}})": "Request failed (HTTP {{status}})",
+    "Unknown config field": "Unknown config field",
+    "Weight scheme not found": "Weight scheme not found",
+    "Weights do not match the selected scheme": "Weights do not match the selected scheme",
+    "A backfill job is already running": "A backfill job is already running",
+    "History backfill is disabled in routing config": "History backfill is disabled in routing config",
+    "A full balance refresh is already running": "A full balance refresh is already running",
+    "Balance query failed": "Balance query failed",
+    "Backfill failed to start": "Backfill failed to start",
+    "Backfill started": "Backfill started",
+    "No backfill run yet": "No backfill run yet",
+    "Running…": "Running…",
+    "Done: scanned {{scanned}}, inserted {{inserted}}": "Done: scanned {{scanned}}, inserted {{inserted}}",
+    "Historical cost backfill": "Historical cost backfill",
+    "Rebuild cost ledger from usage logs in the background.": "Rebuild cost ledger from usage logs in the background.",
+    "Start backfill": "Start backfill",
+    "Refresh balance": "Refresh balance",
+    "Upstream does not support balance query": "Upstream does not support balance query",
+    "Ledger kind arrears": "Ledger kind arrears",
+    "Balance is low: too many concurrent requests. Wait for running requests to finish or top up.": "Balance is low: too many concurrent requests. Wait for running requests to finish or top up.",
+    "HMAC secret is not set: user identity verification is disabled. Set the inbox HMAC secret and enable identity validation in Chatwoot.": "HMAC secret is not set: user identity verification is disabled. Set the inbox HMAC secret and enable identity validation in Chatwoot."
   }
 }

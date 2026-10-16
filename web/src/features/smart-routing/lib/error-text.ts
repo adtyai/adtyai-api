@@ -10,6 +10,13 @@ const CODE_KEYS: Record<string, string> = {
   empty_patch: 'Nothing to save',
   save_failed: 'Save failed on server',
   bad_snapshot: 'This history snapshot cannot be restored',
+  unknown_field: 'Unknown config field',
+  scheme_not_found: 'Weight scheme not found',
+  scheme_weights_mismatch: 'Weights do not match the selected scheme',
+  backfill_running: 'A backfill job is already running',
+  backfill_disabled: 'History backfill is disabled in routing config',
+  refresh_running: 'A full balance refresh is already running',
+  balance_query_failed: 'Balance query failed',
 }
 
 export function routingErrorText(
@@ -17,6 +24,9 @@ export function routingErrorText(
   res: { message?: string; code?: string; status?: number } | undefined,
   fallback: string
 ): string {
+  if (res?.status === 429) {
+    return t('Too many requests, please try again later')
+  }
   if (res?.code === 'http_error' && res.status) {
     return t('Request failed (HTTP {{status}})', { status: res.status })
   }

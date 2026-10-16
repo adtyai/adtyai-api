@@ -25,6 +25,11 @@ export const MODEL_PRICING_SETTINGS_PATH =
 
 const MODEL_PRICE_ERROR_CODE = 'model_price_error'
 export const FALLBACK_ERROR_CONTENT = 'An unknown error occurred'
+/** R-P2-3 backend 429 while wallet balance is low (per-user concurrency cap). */
+export const LOW_BALANCE_CONCURRENCY_CONTENT =
+  'Balance is low: too many concurrent requests. Wait for running requests to finish or top up.'
+const LOW_BALANCE_CONCURRENCY_RE =
+  /too many concurrent requests while balance is low/i
 
 type MessageErrorState = {
   content: string
@@ -48,7 +53,10 @@ export function getMessageErrorState(
     return null
   }
 
-  const content = getMessageContent(message) || FALLBACK_ERROR_CONTENT
+  const raw = getMessageContent(message) || FALLBACK_ERROR_CONTENT
+  const content = LOW_BALANCE_CONCURRENCY_RE.test(raw)
+    ? LOW_BALANCE_CONCURRENCY_CONTENT
+    : raw
   const isModelPriceError = message.errorCode === MODEL_PRICE_ERROR_CODE
 
   return {

@@ -106,7 +106,7 @@ export function envelopeFromError<T>(err: unknown): ApiEnvelope<T> {
     const message =
       typeof d.message === 'string' && d.message ? d.message : code
     if (message) {
-      return { success: false, message, code }
+      return { success: false, message, code, status: response?.status }
     }
   }
   // F2-P2-3: non-JSON error body (e.g. gateway HTML 502) → keep HTTP status.
@@ -527,4 +527,54 @@ export async function clearCostGuard(
 
 export async function rollbackToOfficial(): Promise<ApiEnvelope<unknown>> {
   return softMutate('post', '/weights/rollback', { to: 'official' })
+}
+
+export type BalanceRefreshResult = {
+  channel_id: number
+  status: 'ok' | 'unsupported' | 'failed'
+  balance?: number
+  error?: string
+  updated_at?: number | string
+}
+
+/** POST /balance/refresh — per channel returns ok|unsupported (200) or failed (502 balance_query_failed). */
+export async function refreshChannelBalance(
+  channelId: number
+): Promise<ApiEnvelope<BalanceRefreshResult>> {
+  const res = await softMutate<BalanceRefreshResult>(
+    'post',
+    '/balance/refresh',
+    { channel_id: channelId }
+  )
+  if (!res.success && res.code === 'balance_query_failed') {
+    return {
+      ...res,
+      data: { channel_id: channelId, status: 'failed', error: res.message },
+    }
+  }
+  return res
+}
+
+export type CostBackfillJob = {
+  job_id: string | number
+  status: 'running' | 'done' | 'failed'
+  scanned?: number
+  inserted?: number
+  error?: string
+  from?: number | string
+  to?: number | string
+  started_at?: number | string
+  finished_at?: number | string
+}
+
+/** POST /cost/backfill — 202 {job_id,status:"running"}; 409 backfill_running. */
+export async function startCostBackfill(): Promise<
+  ApiEnvelope<CostBackfillJob>
+> {
+  return softMutate<CostBackfillJob>('post', '/cost/backfill', {})
+}
+
+/** GET /cost/backfill — latest job or null. */
+export async function getCostBackfillStatus(): Promise<CostBackfillJob | null> {
+  return softGet<CostBackfillJob | null>('/cost/backfill', null)
 }

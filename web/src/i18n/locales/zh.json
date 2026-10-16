@@ -8262,6 +8262,26 @@
     "Save failed on server": "服务端保存失败",
     "This history snapshot cannot be restored": "该历史快照无法恢复",
     "Preview failed": "预览失败",
-    "Request failed (HTTP {{status}})": "请求失败（HTTP {{status}}）"
+    "Request failed (HTTP {{status}})": "请求失败（HTTP {{status}}）",
+    "Unknown config field": "未知的配置字段",
+    "Weight scheme not found": "权重方案不存在",
+    "Weights do not match the selected scheme": "权重与所选方案不一致",
+    "A backfill job is already running": "已有回填任务在运行",
+    "History backfill is disabled in routing config": "路由配置中未开启历史回填",
+    "A full balance refresh is already running": "全量余额刷新正在进行",
+    "Balance query failed": "余额查询失败",
+    "Backfill failed to start": "回填启动失败",
+    "Backfill started": "回填已开始",
+    "No backfill run yet": "尚未运行过回填",
+    "Running…": "运行中…",
+    "Done: scanned {{scanned}}, inserted {{inserted}}": "完成：扫描 {{scanned}} 条，写入 {{inserted}} 条",
+    "Historical cost backfill": "历史成本回填",
+    "Rebuild cost ledger from usage logs in the background.": "在后台根据使用日志重建成本账。",
+    "Start backfill": "开始回填",
+    "Refresh balance": "刷新余额",
+    "Upstream does not support balance query": "上游不支持余额查询",
+    "Ledger kind arrears": "欠费",
+    "Balance is low: too many concurrent requests. Wait for running requests to finish or top up.": "余额偏低：并发请求过多。请等待进行中的请求完成，或先充值。",
+    "HMAC secret is not set: user identity verification is disabled. Set the inbox HMAC secret and enable identity validation in Chatwoot.": "未设置 HMAC 密钥：用户身份校验未启用。请设置收件箱 HMAC 密钥，并在 Chatwoot 中开启身份校验。"
   }
 }

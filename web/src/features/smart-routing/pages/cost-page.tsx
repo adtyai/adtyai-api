@@ -48,6 +48,7 @@ import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
 
 import { clearCostGuard } from '../api'
+import { CostBackfillCard } from '../components/cost-backfill-card'
 import { LiveEstimateCell, RatioRateCell } from '../components/cost-cells'
 import { EmptyHint } from '../components/empty-hint'
 import {
@@ -60,9 +61,7 @@ import type { ChannelPriceRow } from '../types'
 
 export function CostPage() {
   const { t } = useTranslation()
-  const isRoot = useAuthStore(
-    (s) => s.auth.user?.role === ROLE.SUPER_ADMIN
-  )
+  const isRoot = useAuthStore((s) => s.auth.user?.role === ROLE.SUPER_ADMIN)
   const pricesQuery = usePrices()
   const guardsQuery = useCostGuards()
   const rankingsQuery = useCostRankings(isRoot)
@@ -91,6 +90,7 @@ export function CostPage() {
 
   return (
     <div className='flex h-full min-h-0 flex-col gap-4 overflow-auto pb-4'>
+      {isRoot ? <CostBackfillCard /> : null}
       <Card>
         <CardHeader>
           <CardTitle>{t('Cost entry (default: rate + multiplier)')}</CardTitle>
@@ -133,13 +133,13 @@ export function CostPage() {
                     <TableCell className='tabular-nums'>
                       {row.channel_ratio ?? '—'}
                     </TableCell>
-                    <TableCell className='tabular-nums text-xs'>
+                    <TableCell className='text-xs tabular-nums'>
                       <RatioRateCell
                         missing={row.missing_cost}
                         value={row.cost_ratio_rate}
                       />
                     </TableCell>
-                    <TableCell className='tabular-nums text-xs'>
+                    <TableCell className='text-xs tabular-nums'>
                       <LiveEstimateCell value={row.cost_live_30m} />
                     </TableCell>
                     <TableCell className='tabular-nums'>
@@ -170,8 +170,7 @@ export function CostPage() {
           {editing ? (
             <div className='bg-muted/30 flex flex-col gap-3 rounded-lg border p-4'>
               <p className='text-sm font-medium'>
-                {t('Edit')}:{' '}
-                {editing.channel_name || `#${editing.channel_id}`}
+                {t('Edit')}: {editing.channel_name || `#${editing.channel_id}`}
               </p>
               <div className='grid gap-3 sm:grid-cols-2'>
                 <div className='flex flex-col gap-1.5'>
@@ -185,9 +184,7 @@ export function CostPage() {
                       const n = Number(e.target.value)
                       setEditing({
                         ...editing,
-                        recharge_credits_per_cny: Number.isFinite(n)
-                          ? n
-                          : null,
+                        recharge_credits_per_cny: Number.isFinite(n) ? n : null,
                       })
                     }}
                   />
@@ -235,7 +232,10 @@ export function CostPage() {
                 </CollapsibleContent>
               </Collapsible>
               <div className='flex gap-2'>
-                <Button onClick={() => void saveRow()} disabled={putPrice.isPending}>
+                <Button
+                  onClick={() => void saveRow()}
+                  disabled={putPrice.isPending}
+                >
                   {t('Save')}
                 </Button>
                 <Button variant='ghost' onClick={() => setEditing(null)}>

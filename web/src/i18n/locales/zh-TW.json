@@ -7368,6 +7368,27 @@
     "Save failed on server": "伺服器端儲存失敗",
     "This history snapshot cannot be restored": "該歷史快照無法還原",
     "Preview failed": "預覽失敗",
-    "Request failed (HTTP {{status}})": "請求失敗（HTTP {{status}}）"
+    "Request failed (HTTP {{status}})": "請求失敗（HTTP {{status}}）",
+    "Unknown config field": "未知的設定欄位",
+    "Weight scheme not found": "權重方案不存在",
+    "Weights do not match the selected scheme": "權重與所選方案不一致",
+    "A backfill job is already running": "已有回填任務在執行",
+    "History backfill is disabled in routing config": "路由設定中未開啟歷史回填",
+    "A full balance refresh is already running": "全量餘額重新整理正在進行",
+    "Balance query failed": "餘額查詢失敗",
+    "Too many requests, please try again later": "請求過於頻繁，請稍後再試",
+    "Backfill failed to start": "回填啟動失敗",
+    "Backfill started": "回填已開始",
+    "No backfill run yet": "尚未執行過回填",
+    "Running…": "執行中…",
+    "Done: scanned {{scanned}}, inserted {{inserted}}": "完成：掃描 {{scanned}} 筆，寫入 {{inserted}} 筆",
+    "Historical cost backfill": "歷史成本回填",
+    "Rebuild cost ledger from usage logs in the background.": "在背景依使用日誌重建成本帳。",
+    "Start backfill": "開始回填",
+    "Refresh balance": "重新整理餘額",
+    "Upstream does not support balance query": "上游不支援餘額查詢",
+    "Ledger kind arrears": "欠費",
+    "Balance is low: too many concurrent requests. Wait for running requests to finish or top up.": "餘額偏低：並發請求過多。請等待進行中的請求完成，或先儲值。",
+    "HMAC secret is not set: user identity verification is disabled. Set the inbox HMAC secret and enable identity validation in Chatwoot.": "未設定 HMAC 金鑰：使用者身分驗證未啟用。請設定收件匣 HMAC 金鑰，並在 Chatwoot 中開啟身分驗證。"
   }
 }

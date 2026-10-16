@@ -23,7 +23,6 @@ import { Info, RefreshCw, Save, ShieldAlert } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useForm, type Resolver } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
-import { backupContactTypeLabelKey } from '@/features/system-settings/utils/status-labels'
 import { toast } from 'sonner'
 import { z } from 'zod'
 
@@ -43,15 +42,13 @@ import {
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
+import { backupContactTypeLabelKey } from '@/features/system-settings/utils/status-labels'
 import { ROLE } from '@/lib/roles'
 import { getServerErrorMessage } from '@/lib/server-error-message'
 import { useAuthStore } from '@/stores/auth-store'
 
 import { SettingsForm } from '../components/settings-form-layout'
-import {
-  useChatwootConfig,
-  usePutChatwootConfig,
-} from './hooks/use-chatwoot'
+import { useChatwootConfig, usePutChatwootConfig } from './hooks/use-chatwoot'
 import {
   CHATWOOT_FORM_DEFAULTS,
   buildChatwootPut,
@@ -69,6 +66,15 @@ const schema = z.object({
 })
 
 type FormValues = z.infer<typeof schema>
+
+function chatwootWarningText(t: (k: string) => string, w: string): string {
+  if (w.startsWith('hmac_secret_missing')) {
+    return t(
+      'HMAC secret is not set: user identity verification is disabled. Set the inbox HMAC secret and enable identity validation in Chatwoot.'
+    )
+  }
+  return w
+}
 
 export function ChatwootSettings() {
   const { t } = useTranslation()
@@ -209,6 +215,17 @@ export function ChatwootSettings() {
               'Configure Chatwoot widget script, website token, base URL and HMAC secret. HMAC is write-only; GET only returns secret_set and fingerprint. Backup contact is read-only here.'
             )}
           </p>
+
+          {(chatwootQuery.data?.warnings ?? []).map((w) => (
+            <div
+              key={w}
+              role='alert'
+              className='flex gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-[13px] leading-5 text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-100'
+            >
+              <ShieldAlert className='mt-0.5 size-4 shrink-0' />
+              <span>{chatwootWarningText(t, w)}</span>
+            </div>
+          ))}
 
           <div className='grid gap-3 md:grid-cols-2'>
             <div className='flex gap-2.5 rounded-lg border border-indigo-100 bg-indigo-50/70 px-3.5 py-2.5 text-[13px] leading-5 text-indigo-950 dark:border-indigo-900/40 dark:bg-indigo-950/30 dark:text-indigo-100'>
@@ -400,7 +417,9 @@ export function ChatwootSettings() {
                         {t('Contact type')}
                       </div>
                       <div className='text-xs'>
-                        {backupContactTypeText(chatwootQuery.data.backup_contact_type)}
+                        {backupContactTypeText(
+                          chatwootQuery.data.backup_contact_type
+                        )}
                       </div>
                     </div>
                     <div className='md:col-span-2'>

@@ -7328,6 +7328,27 @@
     "Save failed on server": "Ошибка сохранения на сервере",
     "This history snapshot cannot be restored": "Этот снимок истории нельзя восстановить",
     "Preview failed": "Ошибка предпросмотра",
-    "Request failed (HTTP {{status}})": "Ошибка запроса (HTTP {{status}})"
+    "Request failed (HTTP {{status}})": "Ошибка запроса (HTTP {{status}})",
+    "Unknown config field": "Неизвестное поле конфигурации",
+    "Weight scheme not found": "Схема весов не найдена",
+    "Weights do not match the selected scheme": "Веса не совпадают с выбранной схемой",
+    "A backfill job is already running": "Задача дозаполнения уже выполняется",
+    "History backfill is disabled in routing config": "Дозаполнение истории отключено в настройках",
+    "A full balance refresh is already running": "Полное обновление балансов уже выполняется",
+    "Balance query failed": "Не удалось запросить баланс",
+    "Too many requests, please try again later": "Слишком много запросов, повторите позже",
+    "Backfill failed to start": "Не удалось запустить дозаполнение",
+    "Backfill started": "Дозаполнение запущено",
+    "No backfill run yet": "Дозаполнение ещё не запускалось",
+    "Running…": "Выполняется…",
+    "Done: scanned {{scanned}}, inserted {{inserted}}": "Готово: просмотрено {{scanned}}, добавлено {{inserted}}",
+    "Historical cost backfill": "Дозаполнение исторических затрат",
+    "Rebuild cost ledger from usage logs in the background.": "Восстанавливает журнал затрат по логам в фоне.",
+    "Start backfill": "Запустить дозаполнение",
+    "Refresh balance": "Обновить баланс",
+    "Upstream does not support balance query": "Поставщик не поддерживает запрос баланса",
+    "Ledger kind arrears": "Задолженность",
+    "Balance is low: too many concurrent requests. Wait for running requests to finish or top up.": "Низкий баланс: слишком много одновременных запросов. Дождитесь их завершения или пополните счёт.",
+    "HMAC secret is not set: user identity verification is disabled. Set the inbox HMAC secret and enable identity validation in Chatwoot.": "Секрет HMAC не задан: проверка личности отключена. Задайте секрет HMAC входящих и включите проверку в Chatwoot."
   }
 }

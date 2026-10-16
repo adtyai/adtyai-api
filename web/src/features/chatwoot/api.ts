@@ -10,6 +10,8 @@ export type ChatwootPublicConfig = {
 export type ChatwootIdentity = {
   identifier: string
   identifier_hash?: string
+  /** false when backend has no HMAC secret: do not pass email/hash. */
+  identity_verified?: boolean
   name?: string
   email?: string
 }
@@ -43,6 +45,10 @@ export function identityAttrs(id: ChatwootIdentity): Record<string, unknown> {
   const attrs: Record<string, unknown> = {}
   if (id.name) {
     attrs.name = id.name
+  }
+  // R-P2-9: unverified identity → never hand email/hash to the widget.
+  if (id.identity_verified === false) {
+    return attrs
   }
   if (id.email) {
     attrs.email = id.email

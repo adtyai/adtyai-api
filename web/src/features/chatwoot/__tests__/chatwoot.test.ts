@@ -51,3 +51,18 @@ describe('chatwoot (N-P2-10)', () => {
     })
   })
 })
+
+describe('chatwoot unverified identity (R-P2-9)', () => {
+  it('drops email and hash when identity_verified=false', async () => {
+    const { identityAttrs } = await import('../api')
+    expect(
+      identityAttrs({
+        identifier: '7',
+        identity_verified: false,
+        email: 'a@b.c',
+        identifier_hash: 'x',
+        name: 'n',
+      })
+    ).toEqual({ name: 'n' })
+  })
+})

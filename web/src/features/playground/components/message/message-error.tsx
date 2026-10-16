@@ -45,6 +45,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import {
   FALLBACK_ERROR_CONTENT,
   getMessageErrorState,
+  LOW_BALANCE_CONCURRENCY_CONTENT,
   isAdminRole,
   MODEL_PRICING_SETTINGS_PATH,
 } from '../../lib'
@@ -107,8 +108,9 @@ export function MessageError({
       <AlertTitle>{t('Error')}</AlertTitle>
       <AlertDescription className='space-y-2'>
         <p>
-          {errorState.content === FALLBACK_ERROR_CONTENT
-            ? t(FALLBACK_ERROR_CONTENT)
+          {errorState.content === FALLBACK_ERROR_CONTENT ||
+          errorState.content === LOW_BALANCE_CONCURRENCY_CONTENT
+            ? t(errorState.content)
             : errorState.content}
         </p>
         {actions}

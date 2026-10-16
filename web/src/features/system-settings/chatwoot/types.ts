@@ -26,6 +26,8 @@ export type ChatwootConfigView = {
   backup_contact_type: string
   backup_contact: string
   backup_contact_note: string
+  /** R-P2-9: e.g. hmac_secret_missing: ... */
+  warnings?: string[]
 }
 
 export type ChatwootPutInput = {

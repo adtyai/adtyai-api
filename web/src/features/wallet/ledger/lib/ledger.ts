@@ -28,6 +28,7 @@ export const LEDGER_KIND_OPTIONS = [
   'topup_tier_bonus',
   'topup_first_bonus',
   'api_consume_hourly',
+  'consume_arrears',
   'topup_refund',
   'topup_refund_bonus_claw',
   'balance_adjust',
@@ -104,6 +105,8 @@ export function ledgerKindLabelKey(kind: string): string {
       return 'Ledger kind first bonus'
     case 'api_consume_hourly':
       return 'Ledger kind api consume'
+    case 'consume_arrears':
+      return 'Ledger kind arrears'
     case 'topup_refund':
       return 'Ledger kind refund'
     case 'topup_refund_bonus_claw':

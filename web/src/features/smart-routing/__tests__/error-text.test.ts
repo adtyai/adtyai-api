@@ -24,7 +24,7 @@ const axios400 = Object.assign(
 
 describe('F-P2-1 backend reason on 4xx', () => {
   it('keeps backend code + message', () => {
-    expect(envelopeFromError(axios400)).toEqual({
+    expect(envelopeFromError(axios400)).toMatchObject({
       success: false,
       code: 'preview_required',
       message: 'preview_token does not match requested change',
