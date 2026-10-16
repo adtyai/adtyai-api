@@ -24,6 +24,11 @@ import {
   DEFAULT_SCORE_WEIGHTS,
   SMART_ROUTING_API_PREFIX,
 } from './constants'
+import {
+  fromBackendWeights,
+  resolveSchemePreviewArgs,
+  toBackendWeights,
+} from './lib/weight-map'
 import type {
   ApiEnvelope,
   BreakerEvent,
@@ -34,9 +39,11 @@ import type {
   CostRankingRow,
   DecisionRow,
   RoutingConfig,
+  ScoreWeights,
   SimulateResult,
   WeightHistoryEntry,
   WeightPreview,
+  WeightPreviewItem,
   WeightScheme,
 } from './types'
 
@@ -88,32 +95,97 @@ async function softMutate<T>(
 }
 
 export async function getRoutingConfig(): Promise<RoutingConfig> {
-  const data = await softGet<RoutingConfig>('/config', {
+  const data = await softGet<Record<string, unknown>>('/config', {
     ...DEFAULT_ROUTING_CONFIG,
     weights: { ...DEFAULT_SCORE_WEIGHTS },
-  })
+  } as unknown as Record<string, unknown>)
+  const scheme =
+    (typeof data.active_weight_scheme === 'string' &&
+      data.active_weight_scheme) ||
+    (typeof data.active_weight_scheme_id === 'string' &&
+      data.active_weight_scheme_id) ||
+    undefined
+  const weights = fromBackendWeights(data.weights)
   return {
     ...DEFAULT_ROUTING_CONFIG,
-    ...data,
-    weights: { ...DEFAULT_SCORE_WEIGHTS, ...data.weights },
+    ...(data as Partial<RoutingConfig>),
+    active_weight_scheme: scheme,
+    active_weight_scheme_id: scheme,
+    weights: { ...DEFAULT_SCORE_WEIGHTS, ...weights },
   }
 }
 
+export type PutRoutingConfigBody = Partial<RoutingConfig> & {
+  preview_token?: string
+}
+
+/** PUT /config — weight/scheme changes must include preview_token from preview. */
 export async function putRoutingConfig(
-  patch: Partial<RoutingConfig>
+  patch: PutRoutingConfigBody
 ): Promise<ApiEnvelope<RoutingConfig>> {
-  return softMutate<RoutingConfig>('put', '/config', patch)
+  const body: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(patch)) {
+    if (v === undefined) continue
+    if (k === 'weights' && v && typeof v === 'object') {
+      body.weights = toBackendWeights(v as ScoreWeights)
+      continue
+    }
+    if (k === 'active_weight_scheme_id') {
+      // Backend field is active_weight_scheme (name), not _id
+      if (patch.active_weight_scheme === undefined) {
+        body.active_weight_scheme = v
+      }
+      continue
+    }
+    if (k === 'preview_token') {
+      body.preview_token = v
+      continue
+    }
+    body[k] = v
+  }
+  return softMutate<RoutingConfig>('put', '/config', body)
+}
+
+function normalizeScheme(raw: unknown): WeightScheme | null {
+  if (!raw || typeof raw !== 'object') return null
+  const row = raw as Record<string, unknown>
+  const idVal = row.id
+  const name =
+    typeof row.name === 'string'
+      ? row.name
+      : idVal != null
+        ? String(idVal)
+        : ''
+  if (!name && idVal == null) return null
+  return {
+    id: idVal != null ? String(idVal) : name,
+    name: name || String(idVal),
+    weights: fromBackendWeights(row.weights),
+    note: typeof row.note === 'string' ? row.note : undefined,
+    created_at:
+      typeof row.created_at === 'string' ? row.created_at : undefined,
+    created_by:
+      row.created_by != null ? String(row.created_by) : undefined,
+    is_default:
+      Boolean(row.is_default) || name === 'balanced_default',
+  }
 }
 
 export async function getWeightSchemes(): Promise<WeightScheme[]> {
-  return softGet<WeightScheme[]>('/weight-schemes', [
-    {
-      id: 'balanced_default',
-      name: 'Balanced',
-      weights: { ...DEFAULT_SCORE_WEIGHTS },
-      is_default: true,
-    },
-  ])
+  const data = await softGet<unknown[]>('/weight-schemes', [])
+  if (!Array.isArray(data) || data.length === 0) {
+    return [
+      {
+        id: 'balanced_default',
+        name: 'balanced_default',
+        weights: { ...DEFAULT_SCORE_WEIGHTS },
+        is_default: true,
+      },
+    ]
+  }
+  return data
+    .map(normalizeScheme)
+    .filter((s): s is WeightScheme => s != null)
 }
 
 export async function createWeightScheme(body: {
@@ -121,14 +193,47 @@ export async function createWeightScheme(body: {
   weights: RoutingConfig['weights']
   note?: string
 }): Promise<ApiEnvelope<WeightScheme>> {
-  return softMutate<WeightScheme>('post', '/weight-schemes', body)
+  const res = await softMutate<unknown>('post', '/weight-schemes', {
+    name: body.name,
+    weights: toBackendWeights(body.weights),
+    note: body.note,
+  })
+  if (!res.success) {
+    return { success: false, message: res.message }
+  }
+  const scheme = normalizeScheme(res.data)
+  return {
+    success: true,
+    message: res.message,
+    data: scheme ?? undefined,
+  }
 }
 
 export async function updateWeightScheme(
   id: string,
-  body: Partial<WeightScheme>
+  body: Partial<WeightScheme> & { preview_token?: string; activate?: boolean }
 ): Promise<ApiEnvelope<WeightScheme>> {
-  return softMutate<WeightScheme>('put', `/weight-schemes/${id}`, body)
+  const payload: Record<string, unknown> = {}
+  if (body.name !== undefined) payload.name = body.name
+  if (body.note !== undefined) payload.note = body.note
+  if (body.weights !== undefined) {
+    payload.weights = toBackendWeights(body.weights)
+  }
+  if (body.preview_token) payload.preview_token = body.preview_token
+  if (body.activate) payload.activate = true
+  const res = await softMutate<unknown>(
+    'put',
+    `/weight-schemes/${id}`,
+    payload
+  )
+  if (!res.success) {
+    return { success: false, message: res.message }
+  }
+  return {
+    success: true,
+    message: res.message,
+    data: normalizeScheme(res.data) ?? undefined,
+  }
 }
 
 export async function deleteWeightScheme(
@@ -137,17 +242,83 @@ export async function deleteWeightScheme(
   return softMutate('delete', `/weight-schemes/${id}`)
 }
 
+type BackendPreviewRow = {
+  channel_id?: number
+  channel_name?: string
+  model?: string
+  rw_now?: number
+  rw_new?: number
+  share_now?: number
+  share_new?: number
+  score_now?: number
+  score_new?: number
+}
+
+type BackendPreviewPayload = {
+  preview?: BackendPreviewRow[]
+  items?: BackendPreviewRow[]
+  preview_token?: string
+  expires_at?: number
+  intent?: Record<string, unknown>
+}
+
+function mapPreviewItem(row: BackendPreviewRow): WeightPreviewItem {
+  return {
+    channel_id: Number(row.channel_id) || 0,
+    channel_name: row.channel_name,
+    model: row.model,
+    share_now: Number(row.rw_now ?? row.share_now ?? 0),
+    share_new: Number(row.rw_new ?? row.share_new ?? 0),
+    score_now:
+      row.score_now != null ? Number(row.score_now) : undefined,
+    score_new:
+      row.score_new != null ? Number(row.score_new) : undefined,
+  }
+}
+
+function normalizePreview(data: unknown): WeightPreview {
+  if (!data || typeof data !== 'object') {
+    return { items: [] }
+  }
+  const raw = data as BackendPreviewPayload
+  const rows = raw.preview ?? raw.items ?? []
+  return {
+    items: Array.isArray(rows) ? rows.map(mapPreviewItem) : [],
+    preview_token:
+      typeof raw.preview_token === 'string' && raw.preview_token
+        ? raw.preview_token
+        : undefined,
+    expires_at:
+      typeof raw.expires_at === 'number' ? raw.expires_at : undefined,
+    intent: raw.intent,
+  }
+}
+
 export async function previewWeightScheme(body: {
   weights: RoutingConfig['weights']
-  scheme_id?: string
+  scheme_id?: string | number
+  scheme_name?: string
+  kind?: string
 }): Promise<WeightPreview> {
   try {
-    const res = await softMutate<WeightPreview>(
+    const schemeArgs = resolveSchemePreviewArgs({
+      schemeId: body.scheme_id,
+      schemeName: body.scheme_name,
+    })
+    const payload: Record<string, unknown> = {
+      weights: toBackendWeights(body.weights),
+      ...schemeArgs,
+    }
+    if (body.kind) payload.kind = body.kind
+    const res = await softMutate<BackendPreviewPayload>(
       'post',
       '/weight-schemes/preview',
-      body
+      payload
     )
-    return res.data ?? { items: [] }
+    if (!res.success || res.data === undefined) {
+      return { items: [] }
+    }
+    return normalizePreview(res.data)
   } catch {
     return { items: [] }
   }
@@ -165,17 +336,78 @@ export async function exportWeightScheme(
 export async function importWeightScheme(
   payload: unknown
 ): Promise<ApiEnvelope<WeightScheme>> {
-  return softMutate<WeightScheme>('post', '/weight-schemes/import', payload)
+  const res = await softMutate<unknown>(
+    'post',
+    '/weight-schemes/import',
+    payload
+  )
+  if (!res.success) {
+    return { success: false, message: res.message }
+  }
+  return {
+    success: true,
+    message: res.message,
+    data: normalizeScheme(res.data) ?? undefined,
+  }
+}
+
+function normalizeHistoryEntry(raw: unknown): WeightHistoryEntry | null {
+  if (!raw || typeof raw !== 'object') return null
+  const row = raw as Record<string, unknown>
+  const id = row.id != null ? String(row.id) : ''
+  if (!id) return null
+  const created =
+    typeof row.created_at === 'string'
+      ? row.created_at
+      : typeof row.at === 'string'
+        ? row.at
+        : ''
+  let summary =
+    typeof row.summary === 'string'
+      ? row.summary
+      : typeof row.kind === 'string'
+        ? row.kind
+        : undefined
+  if (!summary && typeof row.diff === 'string') {
+    summary = row.diff.slice(0, 120)
+  }
+  return {
+    id,
+    at: created,
+    by:
+      row.by != null
+        ? String(row.by)
+        : row.operator_id != null
+          ? String(row.operator_id)
+          : undefined,
+    summary,
+    scheme_name:
+      typeof row.scheme_name === 'string' ? row.scheme_name : undefined,
+    snapshot:
+      typeof row.snapshot === 'string' ||
+      (row.snapshot && typeof row.snapshot === 'object')
+        ? (row.snapshot as string | Record<string, unknown>)
+        : undefined,
+  }
 }
 
 export async function getWeightHistory(): Promise<WeightHistoryEntry[]> {
-  return softGet<WeightHistoryEntry[]>('/weight-schemes/history', [])
+  const data = await softGet<unknown[]>('/weight-schemes/history', [])
+  if (!Array.isArray(data)) return []
+  return data
+    .map(normalizeHistoryEntry)
+    .filter((e): e is WeightHistoryEntry => e != null)
 }
 
 export async function rollbackWeightScheme(body: {
-  snapshot_id: string
+  snapshot_id: string | number
+  preview_token?: string
 }): Promise<ApiEnvelope<unknown>> {
-  return softMutate('post', '/weight-schemes/rollback', body)
+  const payload: Record<string, unknown> = {
+    snapshot_id: Number(body.snapshot_id) || body.snapshot_id,
+  }
+  if (body.preview_token) payload.preview_token = body.preview_token
+  return softMutate('post', '/weight-schemes/rollback', payload)
 }
 
 export async function simulateRouting(body: {

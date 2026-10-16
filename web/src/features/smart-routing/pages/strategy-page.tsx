@@ -61,6 +61,7 @@ import {
   WEIGHT_DIM_KEYS,
   WEIGHT_DIM_LABEL_KEYS,
 } from '../constants'
+import { fromBackendWeights } from '../lib/weight-map'
 import {
   ROUTING_CONFIG_QUERY_KEY,
   usePutRoutingConfig,
@@ -73,6 +74,7 @@ import {
 import type {
   ScoreWeights,
   SimulateResult,
+  WeightHistoryEntry,
   WeightPreview,
 } from '../types'
 
@@ -94,6 +96,12 @@ export function StrategyPage() {
   const [preview, setPreview] = useState<WeightPreview | null>(null)
   const [previewOpen, setPreviewOpen] = useState(false)
   const [pendingSchemeId, setPendingSchemeId] = useState<string | null>(null)
+  const [pendingSchemeName, setPendingSchemeName] = useState<string | null>(
+    null
+  )
+  const [pendingRollbackId, setPendingRollbackId] = useState<string | null>(
+    null
+  )
   const [pendingEnable, setPendingEnable] = useState<boolean | null>(null)
   const [schemeName, setSchemeName] = useState('')
   const [simulateModel, setSimulateModel] = useState('')
@@ -124,9 +132,17 @@ export function StrategyPage() {
     },
   })
 
+  const clearPendingPreview = () => {
+    setPendingSchemeId(null)
+    setPendingSchemeName(null)
+    setPendingRollbackId(null)
+  }
+
   const applyWeights = async (opts?: {
     schemeId?: string
+    schemeName?: string
     nextWeights?: ScoreWeights
+    kind?: string
   }) => {
     if (!isRoot) {
       toast.error(t('Only root can change routing strategy'))
@@ -136,32 +152,61 @@ export function StrategyPage() {
     if (opts?.nextWeights) {
       setDraftWeights({ ...opts.nextWeights })
     }
+    setPendingRollbackId(null)
     setPendingSchemeId(opts?.schemeId ?? null)
+    setPendingSchemeName(opts?.schemeName ?? null)
     const result = await previewWeightScheme({
       weights: next,
       scheme_id: opts?.schemeId,
+      scheme_name: opts?.schemeName,
+      kind: opts?.kind,
     })
     setPreview(result)
     setPreviewOpen(true)
   }
 
-  const previewReady = Boolean(preview && preview.items.length > 0)
+  const tokenOk = Boolean(preview?.preview_token)
+  const previewReady = Boolean(
+    tokenOk && preview && preview.items.length > 0
+  )
 
   const confirmApplyWeights = async () => {
-    if (!previewReady) {
+    if (!previewReady || !preview?.preview_token) {
       toast.error(t('Preview required before apply'))
       return
     }
+    const token = preview.preview_token
+
+    if (pendingRollbackId) {
+      const res = await rollbackWeightScheme({
+        snapshot_id: pendingRollbackId,
+        preview_token: token,
+      })
+      setPreviewOpen(false)
+      clearPendingPreview()
+      if (!res.success) {
+        toast.error(res.message || t('Rollback failed'))
+        return
+      }
+      toast.success(t('Rolled back'))
+      setDraftWeights(null)
+      void qc.invalidateQueries({ queryKey: WEIGHT_HISTORY_QUERY_KEY })
+      void qc.invalidateQueries({ queryKey: ROUTING_CONFIG_QUERY_KEY })
+      return
+    }
+
+    const schemeName = pendingSchemeName || pendingSchemeId || undefined
     const payload: Parameters<typeof putConfig.mutateAsync>[0] = {
       weights: draftWeights ?? weights,
+      preview_token: token,
     }
-    if (pendingSchemeId) {
-      payload.active_weight_scheme_id = pendingSchemeId
+    if (schemeName) {
+      payload.active_weight_scheme = schemeName
     }
-    const switched = Boolean(pendingSchemeId)
+    const switched = Boolean(schemeName)
     const res = await putConfig.mutateAsync(payload)
     setPreviewOpen(false)
-    setPendingSchemeId(null)
+    clearPendingPreview()
     if (!res.success) {
       toast.error(res.message || t('Save failed'))
       return
@@ -170,6 +215,40 @@ export function StrategyPage() {
     setDraftWeights(null)
     void qc.invalidateQueries({ queryKey: WEIGHT_HISTORY_QUERY_KEY })
     void qc.invalidateQueries({ queryKey: ROUTING_CONFIG_QUERY_KEY })
+  }
+
+  const startRollbackPreview = async (h: WeightHistoryEntry) => {
+    if (!isRoot) return
+    let nextWeights = draftWeights ?? weights
+    let schemeName: string | undefined
+    if (h.snapshot) {
+      try {
+        const snap =
+          typeof h.snapshot === 'string'
+            ? (JSON.parse(h.snapshot) as Record<string, unknown>)
+            : h.snapshot
+        if (snap.weights) {
+          nextWeights = fromBackendWeights(snap.weights)
+        }
+        if (typeof snap.active_weight_scheme === 'string') {
+          schemeName = snap.active_weight_scheme
+        }
+      } catch {
+        /* soft-fail: preview with current draft */
+      }
+    }
+    if (h.scheme_name && !schemeName) schemeName = h.scheme_name
+    setDraftWeights({ ...nextWeights })
+    setPendingRollbackId(h.id)
+    setPendingSchemeId(null)
+    setPendingSchemeName(schemeName ?? null)
+    const result = await previewWeightScheme({
+      weights: nextWeights,
+      scheme_name: schemeName,
+      kind: 'put_config',
+    })
+    setPreview(result)
+    setPreviewOpen(true)
   }
 
   const toggleEnabled = async (next: boolean) => {
@@ -320,7 +399,11 @@ export function StrategyPage() {
           <div className='flex flex-wrap items-end gap-2'>
             {isRoot ? (
               <>
-                <Button onClick={() => void applyWeights()}>
+                <Button
+                  onClick={() =>
+                    void applyWeights({ kind: 'put_config' })
+                  }
+                >
                   {t('Preview & apply')}
                 </Button>
                 <Input
@@ -359,7 +442,9 @@ export function StrategyPage() {
                     onClick={() => {
                       void applyWeights({
                         schemeId: s.id,
+                        schemeName: s.name,
                         nextWeights: { ...s.weights },
+                        kind: 'activate_scheme',
                       })
                     }}
                   >
@@ -524,21 +609,7 @@ export function StrategyPage() {
                           size='sm'
                           variant='outline'
                           onClick={() => {
-                            void rollbackWeightScheme({
-                              snapshot_id: h.id,
-                            }).then((res) => {
-                              if (!res.success) {
-                                toast.error(res.message || t('Rollback failed'))
-                                return
-                              }
-                              toast.success(t('Rolled back'))
-                              void qc.invalidateQueries({
-                                queryKey: ROUTING_CONFIG_QUERY_KEY,
-                              })
-                              void qc.invalidateQueries({
-                                queryKey: WEIGHT_HISTORY_QUERY_KEY,
-                              })
-                            })
+                            void startRollbackPreview(h)
                           }}
                         >
                           {t('Rollback')}
@@ -581,16 +652,20 @@ export function StrategyPage() {
         open={previewOpen}
         onOpenChange={(open) => {
           setPreviewOpen(open)
-          if (!open) setPendingSchemeId(null)
+          if (!open) clearPendingPreview()
         }}
-        title={t('Preview weight change')}
+        title={
+          pendingRollbackId
+            ? t('Preview rollback')
+            : t('Preview weight change')
+        }
         desc={
           previewReady
             ? t(
-                'Review share_now → share_new below, then confirm. Changes take effect next scoring cycle.'
+                'Review route weight now → new below, then confirm. Changes take effect next scoring cycle.'
               )
             : t(
-                'Backend preview unavailable or empty. Confirm apply is disabled until share_now → share_new is returned.'
+                'Backend preview unavailable, empty, or missing preview_token. Confirm is disabled until a valid preview is returned.'
               )
         }
         confirmText={t('Confirm apply')}
@@ -603,8 +678,8 @@ export function StrategyPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>{t('Channel')}</TableHead>
-                  <TableHead>{t('Now')}</TableHead>
-                  <TableHead>{t('New')}</TableHead>
+                  <TableHead>{t('RW now')}</TableHead>
+                  <TableHead>{t('RW new')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -615,10 +690,10 @@ export function StrategyPage() {
                       {item.model ? ` / ${item.model}` : ''}
                     </TableCell>
                     <TableCell className='tabular-nums'>
-                      {(item.share_now * 100).toFixed(1)}%
+                      {Number(item.share_now).toFixed(1)}
                     </TableCell>
                     <TableCell className='tabular-nums'>
-                      {(item.share_new * 100).toFixed(1)}%
+                      {Number(item.share_new).toFixed(1)}
                     </TableCell>
                   </TableRow>
                 ))}

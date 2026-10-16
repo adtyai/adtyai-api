@@ -38,6 +38,9 @@ export type WeightScheme = {
 
 export type RoutingConfig = {
   enabled: boolean
+  /** Backend field: active scheme name (e.g. balanced_default). */
+  active_weight_scheme?: string
+  /** @deprecated FE alias; prefer active_weight_scheme. */
   active_weight_scheme_id?: string
   weights: ScoreWeights
   /** Soft caps / breaker params (read/write for root). */
@@ -185,12 +188,21 @@ export type WeightPreviewItem = {
   channel_id: number
   channel_name?: string
   model?: string
+  /** Mapped from backend rw_now (route weight). */
   share_now: number
+  /** Mapped from backend rw_new (route weight). */
   share_new: number
+  score_now?: number
+  score_new?: number
 }
 
 export type WeightPreview = {
   items: WeightPreviewItem[]
+  /** Server gate token from POST /weight-schemes/preview; required on Confirm PUT. */
+  preview_token?: string
+  /** Unix seconds expiry from backend. */
+  expires_at?: number
+  intent?: Record<string, unknown>
 }
 
 export type WeightHistoryEntry = {
@@ -199,6 +211,8 @@ export type WeightHistoryEntry = {
   by?: string
   summary?: string
   scheme_name?: string
+  /** Raw snapshot JSON (config) when backend returns it; used for rollback preview. */
+  snapshot?: string | Record<string, unknown>
 }
 
 export type DecisionRow = {
