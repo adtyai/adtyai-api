@@ -44,6 +44,14 @@ func InitOptionMap() {
 	common.OptionMap["EmailVerificationEnabled"] = strconv.FormatBool(common.EmailVerificationEnabled)
 	common.OptionMap["GitHubOAuthEnabled"] = strconv.FormatBool(common.GitHubOAuthEnabled)
 	common.OptionMap["LinuxDOOAuthEnabled"] = strconv.FormatBool(common.LinuxDOOAuthEnabled)
+	// 审查 R-P2-5 补：前端会写的 key 必须在全新库上已初始化（与上游 new-api 一致的默认值）
+	common.OptionMap["LinuxDOClientId"] = ""
+	common.OptionMap["LinuxDOClientSecret"] = ""
+	common.OptionMap["LinuxDOMinimumTrustLevel"] = strconv.Itoa(common.LinuxDOMinimumTrustLevel)
+	common.OptionMap["HeaderNavModules"] = ""
+	common.OptionMap["SidebarModulesAdmin"] = ""
+	common.OptionMap["model_deployment.ionet.enabled"] = "false"
+	common.OptionMap["model_deployment.ionet.api_key"] = ""
 	common.OptionMap["TelegramOAuthEnabled"] = strconv.FormatBool(common.TelegramOAuthEnabled)
 	common.OptionMap["WeChatAuthEnabled"] = strconv.FormatBool(common.WeChatAuthEnabled)
 	common.OptionMap["TurnstileCheckEnabled"] = strconv.FormatBool(common.TurnstileCheckEnabled)
