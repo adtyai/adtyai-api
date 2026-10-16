@@ -1,10 +1,13 @@
 package controller
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"net/http"
 	"strconv"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/gin-gonic/gin"
 )
@@ -97,6 +100,7 @@ func AdminCreateEpayInstance(c *gin.Context) {
 		adtyFail(c, http.StatusBadRequest, "bad_request", err.Error(), nil)
 		return
 	}
+	epayAdminAudit(c, "create", row.Id, req.PartnerId, req.Secret)
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": row.ToView()})
 }
 
@@ -137,6 +141,7 @@ func AdminUpdateEpayInstance(c *gin.Context) {
 		adtyFail(c, status, code, err.Error(), nil)
 		return
 	}
+	epayAdminAudit(c, "update", id, derefStr(req.PartnerId), derefStr(req.Secret))
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": row.ToView()})
 }
 
@@ -162,6 +167,7 @@ func AdminSetEpayInstancePrimary(c *gin.Context) {
 		adtyFail(c, status, code, err.Error(), nil)
 		return
 	}
+	epayAdminAudit(c, "set_primary", id, "", "")
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": row.ToView()})
 }
 
@@ -184,6 +190,7 @@ func AdminDisableEpayInstance(c *gin.Context) {
 		adtyFail(c, status, code, err.Error(), nil)
 		return
 	}
+	epayAdminAudit(c, "disable", id, "", "")
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": row.ToView()})
 }
 
@@ -207,5 +214,26 @@ func AdminEnableEpayInstance(c *gin.Context) {
 		adtyFail(c, status, code, err.Error(), nil)
 		return
 	}
+	epayAdminAudit(c, "enable", id, "", "")
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": row.ToView()})
+}
+
+// epayAdminAudit 审查 P0-2：收款账户每次写操作留审计（操作人、动作、实例、partner、密钥指纹）。
+func epayAdminAudit(c *gin.Context, action string, instanceID int64, partnerID, secret string) {
+	operatorID := c.GetInt("id")
+	fp := ""
+	if secret != "" {
+		sum := sha256.Sum256([]byte(secret))
+		fp = hex.EncodeToString(sum[:])[:12]
+	}
+	common.SysLog(common.LogText("epay instance %s: operator=%d instance=%d partner=%q secret_fp=%s", action, operatorID, instanceID, partnerID, fp))
+	model.RecordLog(operatorID, model.LogTypeManage, common.NewMessage("Epay instance {{action}}: instance {{id}} partner {{partner}} secret_fp {{fp}}",
+		map[string]any{"action": action, "id": instanceID, "partner": partnerID, "fp": fp}))
+}
+
+func derefStr(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
 }

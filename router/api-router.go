@@ -80,14 +80,7 @@ func SetApiRouter(router *gin.Engine) {
 				topupAuth.GET("/order/:no", controller.GetTopupOrder)
 			}
 		}
-		adminOrders := apiRouter.Group("/admin/orders")
-		adminOrders.Use(middleware.AdminAuth())
-		{
-			adminOrders.GET("", controller.AdminListTopupOrders)
-			adminOrders.GET("/:no", controller.AdminGetTopupOrder)
-			adminOrders.POST("/:no/complete", controller.AdminCompleteAdtyTopup)
-			adminOrders.POST("/:no/refund", controller.AdminRefundTopupOrder)
-		}
+		registerAdtyPaymentAdminRoutes(apiRouter, middleware.AdminAuth(), middleware.RootAuth())
 		adminRisk := apiRouter.Group("/admin/risk-reviews")
 		adminRisk.Use(middleware.AdminAuth())
 		{
@@ -95,22 +88,6 @@ func SetApiRouter(router *gin.Engine) {
 			adminRisk.GET("/:id", controller.AdminGetRiskReview)
 			adminRisk.POST("/:id/approve", controller.AdminApproveRiskReview)
 			adminRisk.POST("/:id/reject", controller.AdminRejectRiskReview)
-		}
-		adminEpay := apiRouter.Group("/admin/epay-instances")
-		adminEpay.Use(middleware.AdminAuth())
-		{
-			adminEpay.GET("", controller.AdminListEpayInstances)
-			adminEpay.GET("/:id", controller.AdminGetEpayInstance)
-			adminEpay.POST("", controller.AdminCreateEpayInstance)
-			adminEpay.PUT("/:id", controller.AdminUpdateEpayInstance)
-			adminEpay.POST("/:id/set-primary", controller.AdminSetEpayInstancePrimary)
-			adminEpay.POST("/:id/disable", controller.AdminDisableEpayInstance)
-			adminEpay.POST("/:id/enable", controller.AdminEnableEpayInstance)
-		}
-		adminEpayOps := apiRouter.Group("/admin/epay")
-		adminEpayOps.Use(middleware.AdminAuth())
-		{
-			adminEpayOps.POST("/manual-complete", controller.AdminEpayManualComplete)
 		}
 		// adtyai 易支付回调：不依赖登录态，按 instance_id 取密钥验签
 		apiRouter.GET("/pay/epay/notify/:instance_id", controller.AdtyEpayNotify)
@@ -640,5 +617,42 @@ func SetApiRouter(router *gin.Engine) {
 			deploymentsRoute.POST("/:id/extend", controller.ExtendDeployment)
 			deploymentsRoute.DELETE("/:id", controller.DeleteDeployment)
 		}
+	}
+}
+
+// registerAdtyPaymentAdminRoutes 订单/易支付实例管理路由。
+// 审查 P0-2 / P1-1：只读开放给管理员；收款账户写操作（新建/修改/设主用/启停）与人工补单仅 root。
+func registerAdtyPaymentAdminRoutes(apiRouter *gin.RouterGroup, adminAuth, rootAuth gin.HandlerFunc) {
+	adminOrders := apiRouter.Group("/admin/orders")
+	adminOrders.Use(adminAuth)
+	{
+		adminOrders.GET("", controller.AdminListTopupOrders)
+		adminOrders.GET("/:no", controller.AdminGetTopupOrder)
+		adminOrders.POST("/:no/refund", controller.AdminRefundTopupOrder)
+	}
+	rootOrders := apiRouter.Group("/admin/orders")
+	rootOrders.Use(rootAuth)
+	{
+		rootOrders.POST("/:no/complete", controller.AdminCompleteAdtyTopup)
+	}
+	adminEpay := apiRouter.Group("/admin/epay-instances")
+	adminEpay.Use(adminAuth)
+	{
+		adminEpay.GET("", controller.AdminListEpayInstances)
+		adminEpay.GET("/:id", controller.AdminGetEpayInstance)
+	}
+	rootEpay := apiRouter.Group("/admin/epay-instances")
+	rootEpay.Use(rootAuth)
+	{
+		rootEpay.POST("", controller.AdminCreateEpayInstance)
+		rootEpay.PUT("/:id", controller.AdminUpdateEpayInstance)
+		rootEpay.POST("/:id/set-primary", controller.AdminSetEpayInstancePrimary)
+		rootEpay.POST("/:id/disable", controller.AdminDisableEpayInstance)
+		rootEpay.POST("/:id/enable", controller.AdminEnableEpayInstance)
+	}
+	rootEpayOps := apiRouter.Group("/admin/epay")
+	rootEpayOps.Use(rootAuth)
+	{
+		rootEpayOps.POST("/manual-complete", controller.AdminEpayManualComplete)
 	}
 }

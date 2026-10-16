@@ -116,7 +116,7 @@ func CreateTopupOrder(userId int, amountUSD int64, paymentMethod, deviceFp, clie
 		DeviceFp:              deviceFp,
 		ClientIP:              clientIP,
 		PaymentMethod:         paymentMethod,
-		PaymentProvider:       "adtyai", // 最小闭环占位；真易支付/USDT 后续接
+		PaymentProvider:       TopupOrderProviderPlaceholder, // 占位；真易支付/USDT 后续接
 		Status:                TopupOrderStatusPending,
 		CreateTime:            common.GetTimestamp(),
 	}
@@ -142,7 +142,16 @@ func GetTopupOrderByNo(orderNo string) (*TopupOrder, error) {
 // 总裁令：首充多送已停，不再入队 risk_reviews / 不写 first_topup_claims。幂等：已 paid 直接返回。
 // 本函数是最小闭环的「回调入账路径」；真支付回调后续应调同一入口。
 // 加锁顺序：订单行 →（AdjustQuota 内）user_bonus_wallets → users。
+// TopupOrderProviderPlaceholder 下单时的占位 provider；未真实拉起支付前保持此值。
+const TopupOrderProviderPlaceholder = "adtyai"
+
+// CompleteTopupOrder 支付回调等系统路径入账（operator_id=0 表示系统）。
 func CompleteTopupOrder(orderNo string) (*TopupOrder, error) {
+	return CompleteTopupOrderBy(orderNo, 0)
+}
+
+// CompleteTopupOrderBy 入账；operatorID>0 为人工补单的操作人，写入 ledger_entries.operator_id。
+func CompleteTopupOrderBy(orderNo string, operatorID int) (*TopupOrder, error) {
 	if orderNo == "" {
 		return nil, ErrTopupOrderNotFound
 	}
@@ -186,7 +195,7 @@ func CompleteTopupOrder(orderNo string) (*TopupOrder, error) {
 		if paidQuota > 0 {
 			if _, err := AdjustQuota(tx, order.UserId, "paid", int64(paidQuota),
 				"adtyai topup paid", "topup_order", order.OrderNo,
-				"topup_paid:"+order.OrderNo, 0, "topup_paid"); err != nil {
+				"topup_paid:"+order.OrderNo, operatorID, "topup_paid"); err != nil {
 				return err
 			}
 		}
@@ -195,7 +204,7 @@ func CompleteTopupOrder(orderNo string) (*TopupOrder, error) {
 		if bonusQuota > 0 {
 			if _, err := AdjustQuota(tx, order.UserId, "bonus", int64(bonusQuota),
 				"adtyai topup bonus", "topup_order", order.OrderNo,
-				"topup_bonus:"+order.OrderNo, 0, "topup_tier_bonus"); err != nil {
+				"topup_bonus:"+order.OrderNo, operatorID, "topup_tier_bonus"); err != nil {
 				return err
 			}
 		}

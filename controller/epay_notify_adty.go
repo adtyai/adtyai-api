@@ -72,6 +72,9 @@ func StartEpayPurchaseForOrder(order *model.TopupOrder, payMethod string) (payUR
 		return "", nil, inst, err
 	}
 	_ = model.ResetEpayInstanceFailureStreak(inst.Id)
+	// 审查 P2-1：拉起所用汇率/金额回传给调用方写快照，避免二次取汇率导致网关金额与 pay_cny 不一致。
+	order.FxRate = fx
+	order.PayCNY = payCNY
 	return uri, params, inst, nil
 }
 
@@ -216,8 +219,57 @@ func AdminEpayManualComplete(c *gin.Context) {
 		adtyFail(c, http.StatusBadRequest, "invalid_parameters", "order_no and trade_no required", nil)
 		return
 	}
-	if existing, err := model.FindTopupOrderByProviderTradeNo(req.TradeNo); err == nil && existing != nil {
-		if existing.OrderNo != req.OrderNo || existing.Status == model.TopupOrderStatusPaid {
+	adminManualCompleteTopup(c, req.OrderNo, req.TradeNo, "epay_manual_complete")
+}
+
+// adminManualCompleteTopup 审查 P1-1：人工补单统一口径（路由层已限 root）。
+//   - 必须有真实支付凭证：外部网关交易号 trade_no 必填，且全局唯一；
+//   - 订单必须真实拉起过支付（payment_provider 为 epay/bepusdt 等，非占位 adtyai/空），否则 409 no_payment_attempt；
+//   - 不能给自己的订单补单（403 self_complete_forbidden）；
+//   - 入账流水写真实 operator_id，并记管理日志。
+func adminManualCompleteTopup(c *gin.Context, orderNo, tradeNo, source string) {
+	tradeNo = strings.TrimSpace(tradeNo)
+	if orderNo == "" {
+		adtyFail(c, http.StatusBadRequest, "invalid_parameters", "order_no required", nil)
+		return
+	}
+	if tradeNo == "" {
+		adtyFail(c, http.StatusBadRequest, "trade_no_required", "trade_no (gateway transaction no) required", nil)
+		return
+	}
+	operatorID := c.GetInt("id")
+	if operatorID <= 0 {
+		adtyFail(c, http.StatusForbidden, "forbidden", "operator unknown", nil)
+		return
+	}
+	order, err := model.GetTopupOrderByNo(orderNo)
+	if err != nil {
+		if errors.Is(err, model.ErrTopupOrderNotFound) {
+			adtyFail(c, http.StatusNotFound, "not_found", "order not found", nil)
+			return
+		}
+		adtyFail(c, http.StatusOK, "bad_request", err.Error(), nil)
+		return
+	}
+	if order.UserId == operatorID {
+		adtyFail(c, http.StatusForbidden, "self_complete_forbidden", "cannot complete your own order", nil)
+		return
+	}
+	if order.Status == model.TopupOrderStatusPaid {
+		c.JSON(http.StatusOK, gin.H{"success": true, "data": order})
+		return
+	}
+	if order.Status != model.TopupOrderStatusPending {
+		adtyFail(c, http.StatusConflict, "order_status_invalid", model.ErrTopupOrderStatusInvalid.Error(), nil)
+		return
+	}
+	provider := strings.TrimSpace(order.PaymentProvider)
+	if provider == "" || provider == model.TopupOrderProviderPlaceholder {
+		adtyFail(c, http.StatusConflict, "no_payment_attempt", "order never started a real payment", nil)
+		return
+	}
+	if existing, err := model.FindTopupOrderByProviderTradeNo(tradeNo); err == nil && existing != nil {
+		if existing.OrderNo != orderNo || existing.Status == model.TopupOrderStatusPaid {
 			c.JSON(http.StatusConflict, gin.H{
 				"success": false, "message": "trade_no already used", "code": "trade_no_duplicate",
 			})
@@ -227,7 +279,7 @@ func AdminEpayManualComplete(c *gin.Context) {
 		adtyFail(c, http.StatusOK, "bad_request", err.Error(), nil)
 		return
 	}
-	if err := model.AttachProviderTradeNo(req.OrderNo, req.TradeNo); err != nil {
+	if err := model.AttachProviderTradeNo(orderNo, tradeNo); err != nil {
 		if errors.Is(err, model.ErrEpayTradeNoDuplicate) {
 			c.JSON(http.StatusConflict, gin.H{
 				"success": false, "message": "trade_no already used", "code": "trade_no_duplicate",
@@ -237,7 +289,7 @@ func AdminEpayManualComplete(c *gin.Context) {
 		adtyFail(c, http.StatusOK, "bad_request", err.Error(), nil)
 		return
 	}
-	order, err := model.CompleteTopupOrder(req.OrderNo)
+	done, err := model.CompleteTopupOrderBy(orderNo, operatorID)
 	if err != nil {
 		status := http.StatusOK
 		code := "bad_request"
@@ -251,7 +303,10 @@ func AdminEpayManualComplete(c *gin.Context) {
 		adtyFail(c, status, code, err.Error(), nil)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"success": true, "data": order})
+	common.SysLog(common.LogText("admin manual complete: operator=%d order=%s user=%d trade_no=%s source=%s", operatorID, orderNo, done.UserId, tradeNo, source))
+	model.RecordLog(done.UserId, model.LogTypeManage, common.NewMessage("Admin {{operator}} manually completed top-up order {{order}} (trade_no {{trade}})",
+		map[string]any{"operator": operatorID, "order": orderNo, "trade": tradeNo}))
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": done})
 }
 
 // epayParseMoneyCents 把金额字符串解析为分（四舍五入）。空串或非法返回 error。

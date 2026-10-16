@@ -95,6 +95,15 @@ func CreateTopupOrder(c *gin.Context) {
 		return
 	}
 	method := strings.ToLower(strings.TrimSpace(req.PaymentMethod))
+	// 审查 P1-2：只接受真实可拉起的支付方式，杜绝无支付的僵尸 pending 单。
+	if method != "alipay" && method != "wxpay" && method != "usdt" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"message": "payment_method must be one of alipay, wxpay, usdt",
+			"code":    "invalid_payment_method",
+		})
+		return
+	}
 	needEpay := method == "alipay" || method == "wxpay"
 	if needEpay {
 		ok, reason := model.HasUsablePrimaryEpay()
@@ -141,6 +150,9 @@ func CreateTopupOrder(c *gin.Context) {
 	if needEpay {
 		payURL, params, inst, err := StartEpayPurchaseForOrder(order, method)
 		if err != nil {
+			// 审查 P1-2：拉起失败置 failed，避免永久 pending（与 USDT 分支一致）
+			_ = model.DB.Model(order).Update("status", model.TopupOrderStatusFailed).Error
+			order.Status = model.TopupOrderStatusFailed
 			c.JSON(http.StatusServiceUnavailable, gin.H{
 				"success": false,
 				"message": "支付维护中",
@@ -150,8 +162,9 @@ func CreateTopupOrder(c *gin.Context) {
 			return
 		}
 		// 回写实例与汇率快照；失败则不得返回 pay_url（审查中优）
-		fx := model.CurrentTopupFxRate()
-		payCNY := float64(order.AmountUSD) * fx
+		// 审查 P2-1：用拉起时同一份汇率/金额，不再二次取汇率
+		fx := order.FxRate
+		payCNY := order.PayCNY
 		if err := model.DB.Model(order).Updates(map[string]any{
 			"epay_instance_id":    inst.Id,
 			"fx_rate":             fx,
@@ -215,21 +228,14 @@ func GetTopupOrder(c *gin.Context) {
 }
 
 // AdminCompleteAdtyTopup POST /api/admin/orders/:no/complete — 最小闭环补单/验收入账（不再要求 confirm）。
+type adminCompleteTopupReq struct {
+	TradeNo string `json:"trade_no"`
+}
+
+// AdminCompleteAdtyTopup POST /api/admin/orders/:no/complete（仅 root）。
+// 审查 P1-1：必须带网关交易号 trade_no；占位/未拉起支付的订单 409；不能给自己补单；流水记 operator_id。
 func AdminCompleteAdtyTopup(c *gin.Context) {
-	orderNo := c.Param("no")
-	order, err := model.CompleteTopupOrder(orderNo)
-	if err != nil {
-		status := http.StatusOK
-		code := "bad_request"
-		if errors.Is(err, model.ErrTopupOrderNotFound) {
-			status = http.StatusNotFound
-			code = "not_found"
-		} else if errors.Is(err, model.ErrTopupOrderStatusInvalid) {
-			status = http.StatusConflict
-			code = "order_status_invalid"
-		}
-		adtyFail(c, status, code, err.Error(), nil)
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"success": true, "data": order})
+	var req adminCompleteTopupReq
+	_ = c.ShouldBindJSON(&req)
+	adminManualCompleteTopup(c, c.Param("no"), req.TradeNo, "admin_order_complete")
 }
