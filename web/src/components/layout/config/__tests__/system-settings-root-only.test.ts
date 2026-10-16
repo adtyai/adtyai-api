@@ -19,7 +19,6 @@ For commercial licensing, please contact support@quantumnous.com
 import type { TFunction } from 'i18next'
 import { describe, expect, it } from 'vitest'
 
-import { ROLE } from '@/lib/roles'
 
 import type { NavItem } from '../../types'
 import { SYSTEM_SETTINGS_VIEW } from '../system-settings.config'
@@ -51,11 +50,14 @@ function flattenLinks(items: NavItem[]): Array<{ url?: string; requiredRole?: nu
 }
 
 describe('system-settings Root-only nav (A39/A08) and no A30 audit', () => {
-  it('menu-visibility sidebar gone; groups require SUPER_ADMIN; audit entry is gone', () => {
+  it('menu-visibility/groups sidebar gone; group-pricing kept; audit entry is gone', () => {
     const groups = SYSTEM_SETTINGS_VIEW.getNavGroups(t)
     const links = flattenLinks(groups.flatMap((g) => g.items))
     const menu = links.find((i) => i.url === '/system-settings/menu-visibility')
     const group = links.find((i) => i.url === '/system-settings/groups')
+    const groupPricing = links.find(
+      (i) => i.url === '/system-settings/billing/group-pricing'
+    )
     const audit = links.find((i) => i.url === '/system-settings/audit')
     const admins = links.find((i) => i.url === '/system-settings/admins')
     const status = links.find((i) => i.url === '/system-settings/status')
@@ -65,8 +67,9 @@ describe('system-settings Root-only nav (A39/A08) and no A30 audit', () => {
     )
 
     expect(menu).toBeUndefined()
+    expect(group).toBeUndefined()
+    expect(groupPricing).toBeDefined()
     expect(sidebarModules).toBeDefined()
-    expect(group?.requiredRole).toBe(ROLE.SUPER_ADMIN)
     expect(admins).toBeUndefined()
     expect(status).toBeUndefined()
     expect(reconcile).toBeUndefined()
@@ -104,9 +107,14 @@ describe('system-settings Root-only nav (A39/A08) and no A30 audit', () => {
     expect(byParent['Billing & Payment']).toContain(
       '/system-settings/billing/payment'
     )
+    expect(byParent['Billing & Payment']).not.toContain(
+      '/system-settings/groups'
+    )
+    expect(byParent['Billing & Payment']).toContain(
+      '/system-settings/billing/group-pricing'
+    )
     expect(byParent['Billing & Payment']).toEqual(
       expect.arrayContaining([
-        '/system-settings/groups',
         '/system-settings/orders',
         '/system-settings/order-refunds',
         '/system-settings/bonus-ledger',

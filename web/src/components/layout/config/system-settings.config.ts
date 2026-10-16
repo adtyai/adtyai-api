@@ -37,7 +37,6 @@ import { getOperationsSectionNavItems } from '@/features/system-settings/operati
 import { getPolicySectionNavItems } from '@/features/system-settings/request-policies/section-registry'
 import { getSecuritySectionNavItems } from '@/features/system-settings/security/section-registry.tsx'
 import { getSiteSectionNavItems } from '@/features/system-settings/site/section-registry.tsx'
-import { ROLE } from '@/lib/roles'
 
 import type { SidebarBadges } from '@/features/system-settings/sidebar-badges/types'
 
@@ -88,12 +87,7 @@ export function getSystemSettingsNavGroups(
           items: [
             ...getBillingSectionNavItems(t),
             // 易支付 / BEpusdt 已并入「支付网关」页，不再单独占侧栏项
-            // 分组显示名 → 官方分组定价旁
-            {
-              title: t('Group display names'),
-              url: '/system-settings/groups',
-              requiredRole: ROLE.SUPER_ADMIN,
-            },
+            // 分组显示名已并入「分组定价」页，不再单独占侧栏项
             // 充值/退款/赠送/返佣业务入口并入支付树，去掉独立顶栏项
             {
               title: t('Topup orders'),

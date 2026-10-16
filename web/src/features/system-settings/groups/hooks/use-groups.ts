@@ -24,11 +24,12 @@ import type { GroupMetaCreateInput, GroupMetaPutInput } from '../types'
 
 export const GROUPS_QUERY_KEY = ['admin-groups'] as const
 
-export function useGroupMetas() {
+export function useGroupMetas(options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: GROUPS_QUERY_KEY,
     queryFn: listGroupMetas,
     staleTime: 15_000,
+    enabled: options?.enabled ?? true,
     retry: (count, err) => {
       if ((err as { status?: number })?.status === 403) return false
       return count < 2
