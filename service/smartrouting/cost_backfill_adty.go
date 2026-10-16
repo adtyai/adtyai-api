@@ -93,7 +93,7 @@ func BackfillCostFromLogs(from, to time.Time, limit int) (scanned, inserted int,
 
 // BackfillJob 审查 R-P2-7：成本回填改为后台任务，HTTP 请求只负责启动并返回 job id。
 type BackfillJob struct {
-	ID         int64  `json:"job_id"`
+	ID         string `json:"job_id"` // 审查 R3-P2-1：字符串，避免 JS 丢精度
 	Status     string `json:"status"` // running|done|failed
 	From       int64  `json:"from"`
 	To         int64  `json:"to"`
@@ -117,7 +117,7 @@ func StartBackfillJob(from, to time.Time, limit int) (BackfillJob, bool) {
 		backfillMu.Unlock()
 		return cur, false
 	}
-	job := &BackfillJob{ID: time.Now().UnixNano(), Status: "running", From: from.Unix(), To: to.Unix(), StartedAt: time.Now().Unix()}
+	job := &BackfillJob{ID: strconv.FormatInt(time.Now().UnixNano(), 10), Status: "running", From: from.Unix(), To: to.Unix(), StartedAt: time.Now().Unix()}
 	backfillJob = job
 	snap := *job
 	backfillMu.Unlock()

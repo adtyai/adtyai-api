@@ -894,7 +894,13 @@ func AdtyRoutingCostBackfillStatus(c *gin.Context) {
 	if !requireRoutingRoot(c) {
 		return
 	}
-	srOK(c, smartrouting.GetBackfillJob())
+	job := smartrouting.GetBackfillJob()
+	// 审查 R3-P2-1：可选 ?job_id=<字符串>，与最近任务不符时 404
+	if id := c.Query("job_id"); id != "" && (job == nil || job.ID != id) {
+		adtyFail(c, http.StatusNotFound, "job_not_found", "backfill job not found", nil)
+		return
+	}
+	srOK(c, job)
 }
 
 var routingBalanceRefreshRunning atomic.Bool

@@ -58,6 +58,9 @@ const maxAdvancedCustomBalanceResponseBytes = 256 << 10
 // errBalanceUnsupported 表示渠道上游不提供可用的余额接口（审查 R-P1-2）。
 var errBalanceUnsupported = errors.New("balance endpoint unsupported by upstream")
 
+// errBalanceMalformed 审查 R3-P2-2：上游返回 JSON 但缺少余额字段。
+var errBalanceMalformed = errors.New("balance response missing expected fields")
+
 type channelBalanceResult struct {
 	Balance     float64
 	RawResponse string
@@ -674,8 +677,14 @@ func updateStandardChannelBalance(channel *model.Channel) (float64, error) {
 		return 0, err
 	}
 	// 审查 R-P1-2：上游不支持 billing 接口（返回空对象）时不能当成余额 0
-	if subscription.Object == "" && subscription.HardLimitUSD == 0 {
+	var subFields map[string]json.RawMessage
+	_ = common.Unmarshal(body, &subFields)
+	if len(subFields) == 0 {
 		return 0, errBalanceUnsupported
+	}
+	// 审查 R3-P2-2：返回了 JSON 但没有 hard_limit_usd（非标准结构）→ 查询失败，不当成余额 0
+	if _, ok := subFields["hard_limit_usd"]; !ok {
+		return 0, errBalanceMalformed
 	}
 	now := time.Now()
 	startDate := fmt.Sprintf("%s-01", now.Format("2006-01"))
@@ -692,6 +701,10 @@ func updateStandardChannelBalance(channel *model.Channel) (float64, error) {
 	err = common.Unmarshal(body, &usage)
 	if err != nil {
 		return 0, err
+	}
+	var usageFields map[string]json.RawMessage
+	if _ = common.Unmarshal(body, &usageFields); usageFields["total_usage"] == nil {
+		return 0, errBalanceMalformed
 	}
 	balance := subscription.HardLimitUSD - usage.TotalUsage/100
 	channel.UpdateBalance(balance)
@@ -734,10 +747,23 @@ func UpdateChannelBalance(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
+// disabledChannelBrief 审查 R3-P2-3：官方「更新全部余额」因余额<=0 禁用的渠道。
+type disabledChannelBrief struct {
+	Id   int    `json:"id"`
+	Name string `json:"name"`
+}
+
 func updateAllChannelsBalance() error {
+	_, err := updateAllChannelsBalanceReport()
+	return err
+}
+
+// updateAllChannelsBalanceReport 保留官方行为（余额<=0 禁用），返回被禁用的渠道列表。
+func updateAllChannelsBalanceReport() ([]disabledChannelBrief, error) {
+	disabled := []disabledChannelBrief{}
 	channels, err := model.GetAllChannels(0, 0, true, false)
 	if err != nil {
-		return err
+		return disabled, err
 	}
 	for _, channel := range channels {
 		if channel.Status != common.ChannelStatusEnabled {
@@ -757,25 +783,27 @@ func updateAllChannelsBalance() error {
 			// err is nil & balance <= 0 means quota is used up
 			if result.Balance <= 0 {
 				service.DisableChannel(*types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, "", channel.GetAutoBan()), "Insufficient balance")
+				disabled = append(disabled, disabledChannelBrief{Id: channel.Id, Name: channel.Name})
 			}
 		}
 		time.Sleep(common.RequestInterval)
 	}
-	return nil
+	return disabled, nil
 }
 
 func UpdateAllChannelsBalance(c *gin.Context) {
 	// TODO: make it async
-	err := updateAllChannelsBalance()
+	disabled, err := updateAllChannelsBalanceReport()
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
+	// 审查 R3-P2-3：附带被禁用渠道列表，前端据此提示
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
+		"data":    gin.H{"disabled_channels": disabled},
 	})
-	return
 }
 
 func AutomaticallyUpdateChannels(frequency int) {

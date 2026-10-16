@@ -43,6 +43,14 @@ func TestRoutingCostBackfillWritesLedger(t *testing.T) {
 		}
 		require.NoError(t, json.Unmarshal(st.Body.Bytes(), &out))
 		require.Equal(t, "done", out.Data["status"])
+		// 审查 R3-P2-1：job_id 是字符串；按字符串查询，错 id 404
+		jid, ok := out.Data["job_id"].(string)
+		require.True(t, ok, "job_id must be a JSON string: %v", out.Data["job_id"])
+		require.Equal(t, job.ID, jid)
+		st = adtyCall(AdtyRoutingCostBackfillStatus, http.MethodGet, "/x?job_id="+jid, "", 1, common.RoleRootUser, nil)
+		require.Equal(t, http.StatusOK, st.Code, st.Body.String())
+		st = adtyCall(AdtyRoutingCostBackfillStatus, http.MethodGet, "/x?job_id=nope", "", 1, common.RoleRootUser, nil)
+		require.Equal(t, http.StatusNotFound, st.Code, st.Body.String())
 	}
 	var n int64
 	require.NoError(t, model.DB.Model(&model.ChannelCostLedger{}).Where("channel_id = ?", 7).Count(&n).Error)
