@@ -3,6 +3,7 @@ package controller
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"sort"
@@ -547,6 +548,8 @@ func AdtyRoutingSchemeRollback(c *gin.Context) {
 		return
 	}
 	if req.To == "official" {
+		// 应急路径：有意不要求 preview/二次确认（总裁口径），只补审计（终审 P2-2）
+		before := smartrouting.GetConfig()
 		cfg := smartrouting.GetConfig()
 		cfg.Enabled = false
 		if err := smartrouting.SaveConfig(cfg, operatorID(c)); err != nil {
@@ -554,6 +557,7 @@ func AdtyRoutingSchemeRollback(c *gin.Context) {
 			return
 		}
 		_ = model.SaveWeightSnapshot("rollback", operatorID(c), map[string]any{"to": "official"}, cfg)
+		recordRoutingRollbackAudit(c, "official", 0, before, smartrouting.GetConfig())
 		srOK(c, gin.H{"rolled_back": "official"})
 		return
 	}
@@ -579,7 +583,37 @@ func AdtyRoutingSchemeRollback(c *gin.Context) {
 		adtyFail(c, http.StatusInternalServerError, "save_failed", err.Error(), nil)
 		return
 	}
+	recordRoutingRollbackAudit(c, "snapshot", req.SnapshotID, old, smartrouting.GetConfig())
 	srOK(c, gin.H{"rolled_back": req.SnapshotID})
+}
+
+// recordRoutingRollbackAudit 终审 P2-2：路由回滚写管理审计（audit_logs，category=operation，
+// action=routing.rollback）：操作人 id/用户名/角色、时间（created_at）、回滚前后配置。
+func recordRoutingRollbackAudit(c *gin.Context, to string, snapshotID int64, before, after smartrouting.Config) {
+	uid := operatorID(c)
+	username, _ := model.GetUsernameById(uid, false)
+	adminInfo := &model.AuditAdminInfo{AdminID: uid, AdminUsername: username, AdminRole: c.GetInt("role")}
+	params := map[string]any{
+		"to":             to,
+		"snapshot_id":    snapshotID,
+		"operator_id":    uid,
+		"operator_name":  username,
+		"at":             time.Now().Unix(),
+		"before_enabled": before.Enabled,
+		"before_scheme":  before.ActiveWeightScheme,
+		"before_weights": before.Weights,
+		"after_enabled":  after.Enabled,
+		"after_scheme":   after.ActiveWeightScheme,
+		"after_weights":  after.Weights,
+	}
+	content := fmt.Sprintf("Smart routing rollback to %s by %s (#%d): enabled %t->%t, scheme %q->%q",
+		to, username, uid, before.Enabled, after.Enabled, before.ActiveWeightScheme, after.ActiveWeightScheme)
+	model.RecordAuditLog(c, model.AuditLog{
+		UserId: uid, Username: username, ActorRole: c.GetInt("role"),
+		Category: model.AuditCategoryOperation, Action: "routing.rollback", Content: content,
+		Other:   model.AuditOther{AdminInfo: adminInfo, Op: &model.AuditOperation{Action: "routing.rollback", Params: params}},
+		Success: true,
+	})
 }
 
 func AdtyRoutingSimulate(c *gin.Context) {
