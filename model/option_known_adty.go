@@ -20,7 +20,7 @@ func IsKnownOptionKey(key string) bool {
 	if ok {
 		return true
 	}
-	if IsRequestPolicyOption(key) || IsPasskeyDomainOption(key) || IsModelPricingOption(key) || key == operation_setting.ToolPriceOptionKey {
+	if IsRequestPolicyOption(key) || IsPasskeyDomainOption(key) || IsModelPricingOption(key) || IsBusinessParamKey(key) || key == operation_setting.ToolPriceOptionKey {
 		return true
 	}
 	if parts := strings.SplitN(key, ".", 2); len(parts) == 2 && parts[1] != "" {
