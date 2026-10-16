@@ -80,32 +80,16 @@ type RefundExceedsAvailableError struct {
 func (e *RefundExceedsAvailableError) Error() string { return ErrRefundExceedsAvailable.Error() }
 func (e *RefundExceedsAvailableError) Unwrap() error { return ErrRefundExceedsAvailable }
 
-// BuildTopupBonusPlanForUser 读取首充资格并计算赠送计划。
+// BuildTopupBonusPlanForUser 计算赠送计划。
+// 总裁令：不再查首充资格 / device / IP；结算只走档位。
 func BuildTopupBonusPlanForUser(userId int, amountUSD int64, deviceFp, clientIP string) (BonusPlan, error) {
+	_ = userId
+	_ = deviceFp
+	_ = clientIP
 	if !IsFixedTopupAmount(amountUSD) {
 		return BonusPlan{}, ErrInvalidTopupAmount
 	}
-	hasRecord, err := UserHasFirstTopupRecord(userId)
-	if err != nil {
-		return BonusPlan{}, err
-	}
-	firstCandidate := !hasRecord
-	deviceOK := false
-	if deviceFp != "" {
-		used, err := DeviceFpClaimed(deviceFp)
-		if err != nil {
-			return BonusPlan{}, err
-		}
-		deviceOK = !used
-	}
-	ipConflict := false
-	if clientIP != "" {
-		ipConflict, err = IPHasClaimedFirstTopup(clientIP)
-		if err != nil {
-			return BonusPlan{}, err
-		}
-	}
-	return ComputeBonusPlan(amountUSD, firstCandidate, deviceOK, ipConflict)
+	return ComputeBonusPlan(amountUSD, false, false, false)
 }
 
 // CreateTopupOrder 校验档位、快照赠送、落库 pending 订单（不发起支付）。
@@ -155,7 +139,7 @@ func GetTopupOrderByNo(orderNo string) (*TopupOrder, error) {
 }
 
 // CompleteTopupOrder 支付成功入账：实充/立刻赠送均经 AdjustQuota 写余额+流水（A4/A13）；
-// 首充多送 pending → risk_reviews；快照不变。幂等：已 paid 直接返回。
+// 总裁令：首充多送已停，不再入队 risk_reviews / 不写 first_topup_claims。幂等：已 paid 直接返回。
 // 本函数是最小闭环的「回调入账路径」；真支付回调后续应调同一入口。
 // 加锁顺序：订单行 →（AdjustQuota 内）user_bonus_wallets → users。
 func CompleteTopupOrder(orderNo string) (*TopupOrder, error) {
@@ -193,7 +177,7 @@ func CompleteTopupOrder(orderNo string) (*TopupOrder, error) {
 		if err != nil {
 			return err
 		}
-		_ = pendingQuota // 多送进 risk_reviews，审批后再入账（本块不自动加）
+		_ = pendingQuota // 首充多送已停；历史 PendingExtraUSD 亦不入队
 
 		// 入账经 AdjustQuota（A4/A13）：不直接写 users.quota / bonus；锁序由 AdjustQuota 保证（bonus→users）。
 		// 订单行已 FOR UPDATE；同事务内 AdjustQuota 再锁 wallet/users 不致死锁。
@@ -207,41 +191,19 @@ func CompleteTopupOrder(orderNo string) (*TopupOrder, error) {
 			}
 		}
 
-		// 立刻赠送（档位或首充取高后的 immediate 部分）
+		// 立刻赠送：仅档位（首充取高已停）；ledger kind 统一 topup_tier_bonus
 		if bonusQuota > 0 {
-			kind := "topup_tier_bonus"
-			if order.ApplyFirstImmediately {
-				kind = "topup_first_bonus"
-			}
 			if _, err := AdjustQuota(tx, order.UserId, "bonus", int64(bonusQuota),
 				"adtyai topup bonus", "topup_order", order.OrderNo,
-				"topup_bonus:"+order.OrderNo, 0, kind); err != nil {
+				"topup_bonus:"+order.OrderNo, 0, "topup_tier_bonus"); err != nil {
 				return err
 			}
 		}
 
-		// 首充多送进人工待审
-		if order.PendingExtraUSD > 0 {
-			if err := InsertRiskReviewTx(tx, RiskReviewKindFirstTopupExtra, order.UserId, order.OrderNo,
-				order.PendingExtraUSD, order.PendingReason); err != nil {
-				return err
-			}
-		}
-
-		// 领取记录：立刻享首充 → claimed；仅 pending 多送 → pending_review（不占 device 唯一也可写账号行）
-		if order.IsFirstCandidate {
-			status := FirstTopupStatusPendingReview
-			if order.ApplyFirstImmediately {
-				status = FirstTopupStatusClaimed
-			}
-			// 缺指纹时仍写账号行（status=pending_review），device_fp 为 NULL，不触唯一冲突
-			if order.ApplyFirstImmediately || order.PendingExtraUSD > 0 {
-				if err := InsertFirstTopupClaimTx(tx, order.UserId, order.DeviceFp, order.ClientIP,
-					order.OrderNo, order.Id, status); err != nil {
-					return err
-				}
-			}
-		}
+		// 总裁令：首充多送风控队列停入队；历史 PendingExtraUSD 快照也不再入队、不写 claim
+		_ = order.PendingExtraUSD
+		_ = order.IsFirstCandidate
+		_ = order.ApplyFirstImmediately
 
 		order.Status = TopupOrderStatusPaid
 		order.CompleteTime = common.GetTimestamp()

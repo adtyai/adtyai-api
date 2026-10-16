@@ -92,7 +92,7 @@ func fptr(v float64) *float64 { return &v }
 func BusinessParamCatalog() []BusinessParamDef {
 	return []BusinessParamDef{
 		{Key: "TopupBonusTiers", Type: BPTypeJSON, Default: DefaultTopupBonusTiersJSON(), Snapshot: "order", Page: "A10", Notes: "13 rates % matching FixedTopupAmountsUSD; 0-100 non-decreasing"},
-		{Key: "FirstTopupBonusRate", Type: BPTypeNumber, Default: "0.10", Min: fptr(0), Max: fptr(1), Snapshot: "order", Page: "A11"},
+		{Key: "FirstTopupBonusRate", Type: BPTypeNumber, Default: "0", Min: fptr(0), Max: fptr(1), Snapshot: "order", Page: "A11", Notes: "总裁令停用：GetFirstTopupBonusRate 恒 0，改此值不再生效"},
 		{Key: "Price", Type: BPTypeNumber, Default: "7.3", Min: fptr(1), Max: fptr(20), Snapshot: "order", Page: "A33", Notes: "official CNY/USD; no UsdToCnyRate"},
 		{Key: "BepusdtOrderTimeoutMinutes", Type: BPTypeNumber, Default: "15", Min: fptr(5), Max: fptr(120), Snapshot: "order", Page: "A13"},
 		{Key: "UsdtUnderpayTolerance", Type: BPTypeNumber, Default: "0.01", Min: fptr(0), Max: fptr(1), Snapshot: "order", Page: "A13"},
@@ -678,6 +678,10 @@ func validateIntRange(value string, min, max int) error {
 
 // BusinessParamCurrentValue returns string value from OptionMap or default / live official.
 func BusinessParamCurrentValue(key string) string {
+	// 总裁令：首充赠送停用，对外展示恒 0（忽略 OptionMap 旧值）
+	if key == "FirstTopupBonusRate" {
+		return "0"
+	}
 	common.OptionMapRWMutex.RLock()
 	v := common.OptionMap[key]
 	common.OptionMapRWMutex.RUnlock()
@@ -689,8 +693,6 @@ func BusinessParamCurrentValue(key string) string {
 		return strconv.FormatFloat(operation_setting.Price, 'f', -1, 64)
 	case "QuotaForNewUser":
 		return strconv.Itoa(common.QuotaForNewUser)
-	case "FirstTopupBonusRate":
-		return strconv.FormatFloat(GetFirstTopupBonusRate(), 'f', -1, 64)
 	case "TopupBonusTiers":
 		b, _ := json.Marshal(GetTopupBonusTierPercents())
 		return string(b)

@@ -20,7 +20,7 @@ var DefaultTopupBonusTierPercents = []float64{
 	1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 8,
 }
 
-const DefaultFirstTopupBonusRate = 0.10
+const DefaultFirstTopupBonusRate = 0.0 // 总裁令：首充赠送已停用，恒为 0
 
 var (
 	ErrInvalidTopupAmount = errors.New("topup amount must be one of the fixed tiers")
@@ -124,10 +124,9 @@ func GetTopupBonusTierPercents() []float64 {
 }
 
 // GetFirstTopupBonusRate 当前首充比例（0–1）。
+// 总裁令：首充赠送整条停用，对外/结算恒返回 0（内存态可仍被 option 写入，但不生效）。
 func GetFirstTopupBonusRate() float64 {
-	topupBonusMu.RLock()
-	defer topupBonusMu.RUnlock()
-	return firstTopupRate
+	return 0
 }
 
 // IsFixedTopupAmount 是否属于 13 个固定档位。
@@ -167,75 +166,42 @@ type BonusPlan struct {
 	FirstBonusRate     float64 // 0–1 snapshot of configured first rate
 	TierBonusUSD        float64
 	FirstBonusUSD      float64
-	ChosenBonusUSD     float64 // max(tier, first) if first eligible path; else tier
+	ChosenBonusUSD     float64 // 现仅档位；历史字段名保留
 	ImmediateBonusUSD  float64 // 立刻入赠送账
-	PendingExtraUSD    float64 // 进 pending_review 的首充多送
-	IsFirstCandidate   bool    // 账号侧尚无 claimed
-	ApplyFirstImmediately bool // 立刻按较高比例入账（有合法 device_fp 且设备未占用、IP 未冲突）
+	PendingExtraUSD    float64 // 已停用：恒 0（不再进首充多送风控）
+	IsFirstCandidate   bool    // 已停用：恒 false
+	ApplyFirstImmediately bool // 已停用：恒 false
 	PendingReason      string
 }
 
-// ComputeBonusPlan 按金额与首充资格计算赠送拆分（不写库）。
-// firstCandidate: 该账号尚未 claimed。
-// deviceOK: device_fp 非空且未被其他账号占用。
-// ipConflict: 已有 claimed 记录同 IP。
+// ComputeBonusPlan 按金额计算赠送拆分（不写库）。
+// 总裁令：不再与首充取高；firstCandidate/deviceOK/ipConflict 保留签名兼容，一律忽略。
+// 结算只走档位赠送；PendingExtraUSD / ApplyFirstImmediately 恒为 0/false（首充多送风控不再入队）。
 func ComputeBonusPlan(amountUSD int64, firstCandidate, deviceOK, ipConflict bool) (BonusPlan, error) {
+	_ = firstCandidate
+	_ = deviceOK
+	_ = ipConflict
 	rate, ok := TierBonusRateForAmount(amountUSD)
 	if !ok {
 		return BonusPlan{}, ErrInvalidTopupAmount
 	}
 	idx := TierIndexForAmount(amountUSD)
-	firstRate := GetFirstTopupBonusRate()
 	amt := decimal.NewFromInt(amountUSD)
 	tierUSD, _ := amt.Mul(decimal.NewFromFloat(rate)).Round(4).Float64()
-	firstUSD, _ := amt.Mul(decimal.NewFromFloat(firstRate)).Round(4).Float64()
 
-	plan := BonusPlan{
-		TierIndex:        idx,
-		TierBonusRate:     rate,
-		FirstBonusRate:   firstRate,
-		TierBonusUSD:      tierUSD,
-		FirstBonusUSD:    firstUSD,
-		IsFirstCandidate: firstCandidate,
-	}
-
-	if !firstCandidate {
-		plan.ChosenBonusUSD = tierUSD
-		plan.ImmediateBonusUSD = tierUSD
-		return plan, nil
-	}
-
-	// 首充候选人：取较高；是否立刻给满取决于 device / IP。
-	chosen := firstUSD
-	if tierUSD > chosen {
-		chosen = tierUSD
-	}
-	plan.ChosenBonusUSD = chosen
-	extra, _ := decimal.NewFromFloat(chosen).Sub(decimal.NewFromFloat(tierUSD)).Round(4).Float64()
-	if extra < 0 {
-		extra = 0
-	}
-
-	switch {
-	case !deviceOK:
-		// 缺指纹：实付+档位赠送立刻到账，首充多送进 pending_review
-		plan.ImmediateBonusUSD = tierUSD
-		plan.PendingExtraUSD = extra
-		plan.PendingReason = "missing_device_fp"
-		plan.ApplyFirstImmediately = false
-	case ipConflict:
-		plan.ImmediateBonusUSD = tierUSD
-		plan.PendingExtraUSD = extra
-		plan.PendingReason = "ip_conflict"
-		plan.ApplyFirstImmediately = false
-	default:
-		plan.ImmediateBonusUSD = chosen
-		plan.PendingExtraUSD = 0
-		plan.ApplyFirstImmediately = true
-	}
-	return plan, nil
+	return BonusPlan{
+		TierIndex:             idx,
+		TierBonusRate:          rate,
+		FirstBonusRate:        0, // 首充已停
+		TierBonusUSD:           tierUSD,
+		FirstBonusUSD:         0,
+		ChosenBonusUSD:        tierUSD,
+		ImmediateBonusUSD:     tierUSD,
+		PendingExtraUSD:       0,
+		IsFirstCandidate:      false,
+		ApplyFirstImmediately: false,
+	}, nil
 }
-
 // DollarsToQuota 美元额度 → 内部 quota 整数。
 func DollarsToQuota(dollars float64) (int, error) {
 	if dollars <= 0 {

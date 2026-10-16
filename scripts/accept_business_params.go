@@ -64,16 +64,16 @@ func main() {
 	}
 	fmt.Printf("(2) without UpdateOption FirstTopupBonusRate stays %s OK (confirm gate is API)\n", before)
 
-	// (3) confirm-equivalent: UpdateOption with valid value
+	// (3) FirstTopupBonusRate 已停用：UpdateOption 可写 option，但 Get/Current 恒 0
 	must(model.ValidateBusinessParam("FirstTopupBonusRate", "0.18", nil))
 	must(model.UpdateOption("FirstTopupBonusRate", "0.18"))
-	if model.BusinessParamCurrentValue("FirstTopupBonusRate") != "0.18" {
-		panic("(3) value not updated")
+	if model.BusinessParamCurrentValue("FirstTopupBonusRate") != "0" {
+		panic("(3) CurrentValue want 0 (disabled) got " + model.BusinessParamCurrentValue("FirstTopupBonusRate"))
 	}
-	if !almost(model.GetFirstTopupBonusRate(), 0.18) {
-		panic(fmt.Sprintf("(3) runtime rate want 0.18 got %v", model.GetFirstTopupBonusRate()))
+	if !almost(model.GetFirstTopupBonusRate(), 0) {
+		panic(fmt.Sprintf("(3) runtime rate want 0 got %v", model.GetFirstTopupBonusRate()))
 	}
-	fmt.Println("(3) confirm UpdateOption FirstTopupBonusRate=0.18 OK")
+	fmt.Println("(3) FirstTopupBonusRate disabled: UpdateOption ignored for Get/Current (=0) OK")
 
 	// (4) out of range
 	if err := model.ValidateBusinessParam("FirstTopupBonusRate", "1.5", nil); err == nil {
@@ -100,7 +100,7 @@ func main() {
 	}
 	must(model.DB.Create(&u).Error)
 	must(model.EnsureUserBonusWallet(model.DB, u.Id))
-	// set rate to 0.10, create order, then change to 0.18 — snapshot stays 0.10
+	// 首充已停：订单 FirstBonusRate 快照恒 0；改 option 不影响
 	must(model.UpdateOption("FirstTopupBonusRate", "0.10"))
 	ord, err := model.CreateTopupOrder(u.Id, 100, "alipay", "fp-bp-"+common.GetRandomString(8), "10.9.9.9")
 	must(err)
@@ -108,10 +108,13 @@ func main() {
 	must(model.UpdateOption("FirstTopupBonusRate", "0.18"))
 	reloaded, err := model.GetTopupOrderByNo(ord.OrderNo)
 	must(err)
-	if !almost(reloaded.FirstBonusRate, snapFirst) || !almost(snapFirst, 0.10) {
-		panic(fmt.Sprintf("(5) snapshot mutated: snap=%v reloaded=%v live=%v", snapFirst, reloaded.FirstBonusRate, model.GetFirstTopupBonusRate()))
+	if !almost(reloaded.FirstBonusRate, snapFirst) || !almost(snapFirst, 0) {
+		panic(fmt.Sprintf("(5) first snapshot want 0: snap=%v reloaded=%v live=%v", snapFirst, reloaded.FirstBonusRate, model.GetFirstTopupBonusRate()))
 	}
-	fmt.Printf("(5) order %s FirstBonusRate snapshot=%.2f intact after live→0.18 OK\n", ord.OrderNo, snapFirst)
+	if !almost(ord.BonusAmountUSD, 2.5) {
+		panic(fmt.Sprintf("(5) tier bonus want 2.5 got %v", ord.BonusAmountUSD))
+	}
+	fmt.Printf("(5) order %s FirstBonusRate snapshot=0 tier-only OK\n", ord.OrderNo)
 
 	// (6) TopupOrderRateLimit wired
 	must(model.UpdateOption("TopupOrderRateLimitNum", "12"))
@@ -149,28 +152,28 @@ func main() {
 	}
 	fmt.Printf("(7) batch illegal sibling → none applied (err=%v) OK\n", err7)
 
-	// (8) batch two legal items → both take effect
+	// (8) batch：FirstTopupBonusRate 仍恒 0；其它合法项生效
 	must(model.ApplyBusinessParamUpdates(map[string]string{
 		"FirstTopupBonusRate":    "0.16",
 		"TopupOrderRateLimitNum": "15",
 	}))
-	if model.BusinessParamCurrentValue("FirstTopupBonusRate") != "0.16" {
-		panic("(8) FirstTopupBonusRate want 0.16 got " + model.BusinessParamCurrentValue("FirstTopupBonusRate"))
+	if model.BusinessParamCurrentValue("FirstTopupBonusRate") != "0" {
+		panic("(8) FirstTopupBonusRate want 0 (disabled) got " + model.BusinessParamCurrentValue("FirstTopupBonusRate"))
 	}
 	if model.BusinessParamCurrentValue("TopupOrderRateLimitNum") != "15" {
 		panic("(8) TopupOrderRateLimitNum want 15 got " + model.BusinessParamCurrentValue("TopupOrderRateLimitNum"))
 	}
-	if !almost(model.GetFirstTopupBonusRate(), 0.16) {
-		panic(fmt.Sprintf("(8) runtime rate want 0.16 got %v", model.GetFirstTopupBonusRate()))
+	if !almost(model.GetFirstTopupBonusRate(), 0) {
+		panic(fmt.Sprintf("(8) runtime rate want 0 got %v", model.GetFirstTopupBonusRate()))
 	}
 	n8, _ := model.GetTopupOrderRateLimit()
 	if n8 != 15 {
 		panic(fmt.Sprintf("(8) runtime rate-limit num want 15 got %d", n8))
 	}
-	fmt.Println("(8) batch two legal → both applied OK")
+	fmt.Println("(8) batch: FirstTopup stays 0, TopupOrderRateLimitNum=15 OK")
 
 	// restore sensible defaults for shared accept DB
-	must(model.UpdateOption("FirstTopupBonusRate", "0.10"))
+	must(model.UpdateOption("FirstTopupBonusRate", "0"))
 	must(model.UpdateOption("TopupOrderRateLimitNum", "10"))
 	must(model.UpdateOption("TopupOrderRateLimitDuration", "60"))
 	_ = operation_setting.Price

@@ -62,18 +62,14 @@ func ternaryStr(cond bool, a, b string) string {
 }
 
 // GetFirstRechargeInfo GET /api/topup/first-recharge
+// 总裁令：首充赠送已停；rate=0、eligible=false，供前端过渡清双标签/横幅。
 func GetFirstRechargeInfo(c *gin.Context) {
-	userId := c.GetInt("id")
-	hasRecord, err := model.UserHasFirstTopupRecord(userId)
-	if err != nil {
-		adtyFail(c, http.StatusOK, "bad_request", err.Error(), nil)
-		return
-	}
+	_ = c.GetInt("id")
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data": gin.H{
-			"first_topup_bonus_rate": model.GetFirstTopupBonusRate(),
-			"eligible":               !hasRecord,
+			"first_topup_bonus_rate": 0.0,
+			"eligible":               false,
 		},
 	})
 }
