@@ -46,7 +46,7 @@ export const adtyErrorCodeKeys: Record<string, KeyResolver> = {
   username_taken: 'Username already exists',
   db_error: 'Failed to create administrator, please try again later',
   create_failed: 'Failed to create administrator, please try again later',
-  feature_frozen: 'This feature is temporarily frozen',
+  feature_frozen: 'This feature is not available yet',
   // State
   status_invalid: 'The current status does not allow this action',
   order_status_invalid: 'The current order status does not allow this action',

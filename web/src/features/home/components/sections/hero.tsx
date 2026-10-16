@@ -52,6 +52,7 @@ export function Hero(props: HeroProps) {
     (status?.docs_link as string | undefined) || ''
 
   const renderDocsButton = () => {
+    if (!docsUrl.trim()) return null
     const isExternal = docsUrl.startsWith('http')
     if (isExternal) {
       return (
