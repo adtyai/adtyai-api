@@ -6,6 +6,7 @@ type PaymentSetting struct {
 	AmountOptions  []int           `json:"amount_options"`
 	AmountDiscount map[int]float64 `json:"amount_discount"` // 充值金额对应的折扣，例如 100 元 0.9 表示 100 元充值享受 9 折优惠
 
+	// Compliance* 字段保留以兼容已落库的 payment_setting JSON；业务侧不再读取。
 	ComplianceConfirmed    bool   `json:"compliance_confirmed"`
 	ComplianceTermsVersion string `json:"compliance_terms_version"`
 	ComplianceConfirmedAt  int64  `json:"compliance_confirmed_at"`
@@ -30,7 +31,7 @@ func GetPaymentSetting() *PaymentSetting {
 	return &paymentSetting
 }
 
+// IsPaymentComplianceConfirmed 总裁令：支付合规门槛永久放开（等价始终已确认）。
 func IsPaymentComplianceConfirmed() bool {
-	return paymentSetting.ComplianceConfirmed &&
-		paymentSetting.ComplianceTermsVersion == CurrentComplianceTermsVersion
+	return true
 }

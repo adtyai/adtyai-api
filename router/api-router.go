@@ -205,14 +205,8 @@ func SetApiRouter(router *gin.Engine) {
 			adminGroups.PUT("/:code", controller.AdminPutGroup)
 		}
 
-		adminOverview := apiRouter.Group("/admin/overview")
-		adminOverview.Use(middleware.AdminAuth())
-		{
-			adminOverview.GET("", controller.AdminGetOverview)
-		}
-
-		// 总裁：停暴露「服务状态」「每日对账」——探活表/日对账任务仍后台跑，不再注册管理端路由。
-		// adminHealth / adminReconcile 已下线。
+		// 总裁：停暴露「运营总览」「服务状态」「每日对账」——日报任务仍跑，不再注册管理端路由。
+		// adminOverview / adminHealth / adminReconcile 已下线。
 
 		// 侧栏角标：风控/提现/充值待处理条数
 		adtyAdmin := apiRouter.Group("/adty/admin")
@@ -386,7 +380,6 @@ func SetApiRouter(router *gin.Engine) {
 			optionRoute.PATCH("/model_pricing", controller.UpdateModelPricingConfig)
 			optionRoute.POST("/model_pricing/convert", controller.PreviewModelPricingConversion)
 			optionRoute.POST("/model_pricing/preview", controller.PreviewModelPricing)
-			optionRoute.POST("/payment_compliance", controller.ConfirmPaymentCompliance)
 			optionRoute.GET("/channel_affinity_cache", controller.GetChannelAffinityCacheStats)
 			optionRoute.DELETE("/channel_affinity_cache", controller.ClearChannelAffinityCache)
 			optionRoute.POST("/rest_model_ratio", controller.ResetModelRatio)

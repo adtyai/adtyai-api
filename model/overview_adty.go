@@ -6,7 +6,7 @@ import (
 )
 
 // OverviewDayStats 单日经营摘要（Asia/Shanghai 自然日）。
-// 无毛利/成本字段。
+// 无毛利/成本字段。日报等内部汇总复用；运营总览 HTTP 已下线。
 type OverviewDayStats struct {
 	Date              string  `json:"date"`
 	TopupPaidUSD      float64 `json:"topup_paid_usd"`      // topup_orders.status=paid 的 paid_amount_usd 合计
@@ -14,15 +14,6 @@ type OverviewDayStats struct {
 	ConsumeQuota      int64   `json:"consume_quota"`       // 小时汇总扣费 |delta| 合计（paid+bonus）
 	ConsumeQuotaPaid  int64   `json:"consume_quota_paid"`  // account=paid
 	ConsumeQuotaBonus int64   `json:"consume_quota_bonus"` // account=bonus
-}
-
-// AdminOverviewResponse GET /api/admin/overview 响应 data。
-type AdminOverviewResponse struct {
-	AsOf               string           `json:"as_of"`
-	Timezone           string           `json:"timezone"`
-	Today              OverviewDayStats `json:"today"`
-	Yesterday          OverviewDayStats `json:"yesterday"`
-	PendingWithdrawals int64            `json:"pending_withdrawals"`
 }
 
 // pendingAffWithdrawStatuses 待处理/未完结提现口径：
@@ -36,35 +27,6 @@ var pendingAffWithdrawStatuses = []string{
 	AffWithdrawStatusApproved,
 	AffWithdrawStatusPayFailed,
 	AffWithdrawStatusPayUnknown,
-}
-
-// BuildAdminOverview 只读汇总；时区 Asia/Shanghai。
-func BuildAdminOverview() (*AdminOverviewResponse, error) {
-	loc := ShanghaiLocation()
-	now := time.Now().In(loc)
-	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
-	yesterdayStart := todayStart.AddDate(0, 0, -1)
-
-	today, err := buildOverviewDayStats(todayStart)
-	if err != nil {
-		return nil, err
-	}
-	yesterday, err := buildOverviewDayStats(yesterdayStart)
-	if err != nil {
-		return nil, err
-	}
-	pending, err := countPendingAffWithdrawals()
-	if err != nil {
-		return nil, err
-	}
-
-	return &AdminOverviewResponse{
-		AsOf:               now.Format(time.RFC3339),
-		Timezone:           ReconcileTimezone,
-		Today:              *today,
-		Yesterday:          *yesterday,
-		PendingWithdrawals: pending,
-	}, nil
 }
 
 func buildOverviewDayStats(dayStartShanghai time.Time) (*OverviewDayStats, error) {
