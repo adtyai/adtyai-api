@@ -47,6 +47,8 @@ type ChatwootConfigView struct {
 	BackupContactType     string `json:"backup_contact_type"`
 	BackupContact         string `json:"backup_contact"`
 	BackupContactNote     string `json:"backup_contact_note"`
+	// 审查 R-P2-9：配置了挂件但没配 HMAC 密钥时给出提示（身份校验无法生效）
+	Warnings []string `json:"warnings"`
 }
 
 // BuildChatwootConfigView assembles safe GET payload; backup contact is read-only here (A45 owns writes).
@@ -62,7 +64,16 @@ func BuildChatwootConfigView() ChatwootConfigView {
 		BackupContactType:     typ,
 		BackupContact:         contact,
 		BackupContactNote:     "Read-only from A45 business-params (BackupContactType / BackupContact). Change via PUT /api/admin/business-params.",
+		Warnings:              chatwootWarnings(set),
 	}
+}
+
+func chatwootWarnings(hmacSet bool) []string {
+	out := []string{}
+	if chatwootOption(OptChatwootWebsiteToken) != "" && !hmacSet {
+		out = append(out, "hmac_secret_missing: identity verification disabled; set the inbox HMAC secret and enable identity validation in Chatwoot")
+	}
+	return out
 }
 
 // ChatwootPutInput is the PUT body (pointers = present). Empty/omitted hmac_secret leaves secret unchanged.

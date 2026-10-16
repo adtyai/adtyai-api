@@ -58,7 +58,13 @@ func GetChatwootIdentity(c *gin.Context) {
 	if name == "" {
 		name = user.Username
 	}
-	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{
-		"identifier": identifier, "identifier_hash": hash, "name": name, "email": user.Email,
-	}})
+	// 审查 R-P2-9：未配 HMAC 时 identity_verified=false，且不下发 email（未校验身份时不把邮箱交给第三方挂件）
+	verified := hash != ""
+	data := gin.H{"identifier": identifier, "identifier_hash": hash, "name": name, "identity_verified": verified}
+	if verified {
+		data["email"] = user.Email
+	} else {
+		data["email"] = ""
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": data})
 }
