@@ -27,13 +27,22 @@ func TestRoutingCostBackfillWritesLedger(t *testing.T) {
 	}
 	body := `{"from":` + strconv.FormatInt(now-3600, 10) + `,"to":` + strconv.FormatInt(now+1, 10) + `}`
 	for round, want := range []float64{3, 0} {
+		// 审查 R-P2-7：POST 只启动后台任务（202），GET 查状态
 		rec := adtyCall(AdtyRoutingCostBackfill, http.MethodPost, "/x", body, 1, common.RoleRootUser, nil)
-		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+		require.Equal(t, http.StatusAccepted, rec.Code, rec.Body.String())
+		var job *smartrouting.BackfillJob
+		require.Eventually(t, func() bool {
+			job = smartrouting.GetBackfillJob()
+			return job != nil && job.Status != "running"
+		}, 10*time.Second, 20*time.Millisecond)
+		require.Equal(t, "done", job.Status, job.Error)
+		require.Equal(t, want, float64(job.Inserted), "round %d", round)
+		st := adtyCall(AdtyRoutingCostBackfillStatus, http.MethodGet, "/x", "", 1, common.RoleRootUser, nil)
 		var out struct {
-			Data map[string]float64 `json:"data"`
+			Data map[string]any `json:"data"`
 		}
-		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
-		require.Equal(t, want, out.Data["inserted"], "round %d", round)
+		require.NoError(t, json.Unmarshal(st.Body.Bytes(), &out))
+		require.Equal(t, "done", out.Data["status"])
 	}
 	var n int64
 	require.NoError(t, model.DB.Model(&model.ChannelCostLedger{}).Where("channel_id = ?", 7).Count(&n).Error)

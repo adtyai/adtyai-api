@@ -227,6 +227,7 @@ func SetApiRouter(router *gin.Engine) {
 			adtyRouting.GET("/cost/live", controller.AdtyRoutingCostLive)
 			adtyRouting.GET("/cost/guards", controller.AdtyRoutingCostGuards)
 			adtyRouting.POST("/cost/backfill", controller.AdtyRoutingCostBackfill)
+			adtyRouting.GET("/cost/backfill", controller.AdtyRoutingCostBackfillStatus)
 			adtyRouting.POST("/balance/refresh", controller.AdtyRoutingBalanceRefresh)
 			adtyRouting.GET("/auth-flags", controller.AdtyRoutingAuthFlags)
 			adtyRouting.PUT("/auth-flags/:id/mark", controller.AdtyRoutingMarkAuthFlag)

@@ -354,6 +354,7 @@ var accessTokenRouteRules = map[string]accessTokenRouteRule{
 	"GET /api/adty/routing/cost/live":                  accessTokenSessionRule,
 	"GET /api/adty/routing/cost/guards":                accessTokenSessionRule,
 	"POST /api/adty/routing/cost/backfill":             accessTokenSessionRule,
+	"GET /api/adty/routing/cost/backfill":              accessTokenSessionRule,
 	"POST /api/adty/routing/balance/refresh":           accessTokenSessionRule,
 	"GET /api/adty/routing/auth-flags":                 accessTokenSessionRule,
 	"PUT /api/adty/routing/auth-flags/:id/mark":        accessTokenSessionRule,

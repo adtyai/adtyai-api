@@ -876,12 +876,25 @@ func AdtyRoutingCostBackfill(c *gin.Context) {
 	if req.From > 0 {
 		from = time.Unix(req.From, 0)
 	}
-	scanned, inserted, err := smartrouting.BackfillCostFromLogs(from, to, req.Limit)
-	if err != nil {
-		adtyFail(c, http.StatusBadRequest, "backfill_failed", err.Error(), nil)
+	if !to.After(from) {
+		adtyFail(c, http.StatusBadRequest, "backfill_failed", "to must be after from", nil)
 		return
 	}
-	srOK(c, gin.H{"from": from.Unix(), "to": to.Unix(), "scanned": scanned, "inserted": inserted})
+	// 审查 R-P2-7：后台执行，立即返回 job；进度用 GET /api/adty/routing/cost/backfill 查询
+	job, started := smartrouting.StartBackfillJob(from, to, req.Limit)
+	if !started {
+		adtyFail(c, http.StatusConflict, "backfill_running", "a backfill job is already running", map[string]any{"job_id": job.ID})
+		return
+	}
+	c.JSON(http.StatusAccepted, gin.H{"success": true, "data": job})
+}
+
+// AdtyRoutingCostBackfillStatus GET /api/adty/routing/cost/backfill（root）：最近一次回填任务状态。
+func AdtyRoutingCostBackfillStatus(c *gin.Context) {
+	if !requireRoutingRoot(c) {
+		return
+	}
+	srOK(c, smartrouting.GetBackfillJob())
 }
 
 var routingBalanceRefreshRunning atomic.Bool
