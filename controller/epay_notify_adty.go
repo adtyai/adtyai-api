@@ -180,6 +180,16 @@ func AdtyEpayNotify(c *gin.Context) {
 		return
 	}
 	tradeNo := verifyInfo.TradeNo
+	// 审查 R-P2-8：订单已入账（含人工补单）时幂等返回 success，不再入账；交易号不一致只记告警，避免网关无限重试
+	if order.Status == model.TopupOrderStatusPaid {
+		if tradeNo != "" && order.ProviderTradeNo != tradeNo {
+			logger.LogWarn(c.Request.Context(), common.LogText(
+				"adty epay notify for already-paid order with different trade_no order=%s bound=%s notify=%s (ignored, no credit)",
+				orderNo, order.ProviderTradeNo, tradeNo))
+		}
+		c.String(http.StatusOK, "success")
+		return
+	}
 	if tradeNo != "" {
 		if err := model.AttachProviderTradeNo(orderNo, tradeNo); err != nil {
 			if errors.Is(err, model.ErrEpayTradeNoDuplicate) {
