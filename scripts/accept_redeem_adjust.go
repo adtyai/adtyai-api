@@ -90,9 +90,9 @@ func main() {
 	}
 	fmt.Println("(3) redemption status=used OK")
 
-	// (4) 同码再兑 → ErrRedeemFailed，余额不变
-	if _, err := model.Redeem(r.Key, u.Id); err != model.ErrRedeemFailed {
-		panic(fmt.Sprintf("(4) second redeem want ErrRedeemFailed got %v", err))
+	// (4) 同码再兑 → ErrRedemptionUsed（审查 P2-8），余额不变
+	if _, err := model.Redeem(r.Key, u.Id); err != model.ErrRedemptionUsed {
+		panic(fmt.Sprintf("(4) second redeem want ErrRedemptionUsed got %v", err))
 	}
 	paid2, _ := model.GetUserPaidQuota(u.Id)
 	bonus2, _ := model.GetUserBonusBalance(u.Id)

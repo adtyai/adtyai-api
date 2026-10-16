@@ -2,6 +2,7 @@ package controller
 
 import (
 	"errors"
+	"math"
 	"net/http"
 	"strings"
 
@@ -22,7 +23,8 @@ func GetTopupTiers(c *gin.Context) {
 	tiers := make([]gin.H, 0, len(model.FixedTopupAmountsUSD))
 	for i, amt := range model.FixedTopupAmountsUSD {
 		rate := percents[i] / 100.0
-		bonus := float64(amt) * rate
+		// 审查 P2-9：金额保留 2 位，消除浮点尾巴（0.44999999999999996 → 0.45）
+		bonus := math.Round(float64(amt)*rate*100) / 100
 		tiers = append(tiers, gin.H{
 			"amount":        amt,
 			"bonus_rate":    rate,

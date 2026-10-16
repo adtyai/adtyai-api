@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/gin-gonic/gin"
 )
@@ -89,6 +90,9 @@ func AdminCreateEnterprisePricing(c *gin.Context) {
 		adtyFail(c, http.StatusBadRequest, "invalid_parameters", "invalid expires_at", nil)
 		return
 	}
+	if !enterprisePriceSelfAllowed(c, req.UserId) {
+		return
+	}
 	row, err := model.CreateEnterprisePriceRule(model.EnterprisePriceCreateInput{
 		UserId:    req.UserId,
 		GroupCode: req.GroupCode,
@@ -124,6 +128,9 @@ func AdminUpdateEnterprisePricing(c *gin.Context) {
 		return
 	}
 	before, _ := model.GetEnterprisePriceRule(id)
+	if before != nil && !enterprisePriceSelfAllowed(c, before.UserId) {
+		return
+	}
 	row, err := model.UpdateEnterprisePriceRule(id, model.EnterprisePriceUpdateInput{
 		GroupCode:    req.GroupCode,
 		ModelName:    req.ModelName,
@@ -169,4 +176,13 @@ func AdminDeleteEnterprisePricing(c *gin.Context) {
 		params["before"] = before
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "deleted"})
+}
+
+// enterprisePriceSelfAllowed 审查 P2-6：管理员不能给自己设/改协议价；root 不受限。
+func enterprisePriceSelfAllowed(c *gin.Context, targetUserID int) bool {
+	if targetUserID > 0 && targetUserID == c.GetInt("id") && c.GetInt("role") < common.RoleRootUser {
+		adtyFail(c, http.StatusForbidden, "self_pricing_forbidden", "cannot set enterprise pricing for yourself", nil)
+		return false
+	}
+	return true
 }

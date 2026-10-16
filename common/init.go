@@ -64,6 +64,10 @@ func InitEnv() {
 		CryptoSecret = SessionSecret
 	}
 	InitAdtySecretKeys()
+	// 审查 P2-5：缺 ADTY_SECRET_KEY 时易支付实例密钥无法加解密，支付会静默不可用 → 启动即告警。
+	if strings.TrimSpace(os.Getenv("ADTY_SECRET_KEY")) == "" {
+		log.Println(LogText("WARNING: ADTY_SECRET_KEY is not set; epay instances cannot be created or used and top-up payment will show maintenance. Set ADTY_SECRET_KEY to a long random string."))
+	}
 	if err := InitSessionCookieSettings(); err != nil {
 		log.Fatal(err)
 	}

@@ -133,6 +133,9 @@ func GetRedemptionById(id int) (*Redemption, error) {
 	return &redemption, err
 }
 
+// ErrRedemptionUsed 兑换码已被使用（审查 P2-8：向用户给出明确提示）。
+var ErrRedemptionUsed = errors.New("redemption code already used")
+
 func Redeem(key string, userId int) (quota int, err error) {
 	if key == "" {
 		return 0, errors.New("redemption code not provided")
@@ -152,8 +155,11 @@ func Redeem(key string, userId int) (quota int, err error) {
 		if err != nil {
 			return errors.New("invalid redemption code")
 		}
+		if redemption.Status == common.RedemptionCodeStatusUsed {
+			return ErrRedemptionUsed
+		}
 		if redemption.Status != common.RedemptionCodeStatusEnabled {
-			return errors.New("redemption code already used")
+			return errors.New("redemption code disabled")
 		}
 		if redemption.ExpiredTime != 0 && redemption.ExpiredTime < common.GetTimestamp() {
 			return errors.New("redemption code expired")
@@ -172,7 +178,7 @@ func Redeem(key string, userId int) (quota int, err error) {
 			return result.Error
 		}
 		if result.RowsAffected == 0 {
-			return errors.New("redemption code already used")
+			return ErrRedemptionUsed
 		}
 		// A27/A4：兑换码入赠送钱包，经 AdjustQuota 写余额+流水，不直接写 users.quota。
 		if _, err := AdjustQuota(tx, userId, "bonus", int64(redemption.Quota),
@@ -185,6 +191,9 @@ func Redeem(key string, userId int) (quota int, err error) {
 	})
 	if err != nil {
 		common.SysError(common.LogText("redemption failed: %s", err.Error()))
+		if errors.Is(err, ErrRedemptionUsed) {
+			return 0, ErrRedemptionUsed
+		}
 		return 0, ErrRedeemFailed
 	}
 	// bonus 不在 users.quota 缓存内，不做 quota 缓存增量（与 CompleteTopupOrder bonus 路径一致）。
