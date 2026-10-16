@@ -19,3 +19,12 @@ describe('previewIntentFor (N-P1-3)', () => {
     expect(previewIntentFor({ activeScheme: 'fast', currentWeights: cur, nextWeights: nxt, schemeName: 'fast' })).toEqual({ kind: 'update_weights', scheme_name: 'fast' })
   })
 })
+
+describe('validWeights (N-P2-4 FE guard)', () => {
+  it('rejects negative and all-zero', async () => {
+    const { validWeights } = await import('../lib/preview-intent')
+    expect(validWeights(cur)).toBe(true)
+    expect(validWeights({ ...(cur as object), price: -1 } as never)).toBe(false)
+    expect(validWeights({ connectivity: 0, price: 0, speed: 0, stability: 0, authenticity: 0 } as never)).toBe(false)
+  })
+})

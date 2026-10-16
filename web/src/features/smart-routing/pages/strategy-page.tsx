@@ -61,7 +61,7 @@ import {
   WEIGHT_DIM_KEYS,
   WEIGHT_DIM_LABEL_KEYS,
 } from '../constants'
-import { previewIntentFor } from '../lib/preview-intent'
+import { previewIntentFor, validWeights } from '../lib/preview-intent'
 import { fromBackendWeights } from '../lib/weight-map'
 import {
   ROUTING_CONFIG_QUERY_KEY,
@@ -117,11 +117,18 @@ export function StrategyPage() {
   )
 
   const saveSchemeMut = useMutation({
-    mutationFn: () =>
-      createWeightScheme({
+    mutationFn: async () => {
+      if (!validWeights(weights)) {
+        return {
+          success: false,
+          message: t('Weights must be non-negative and sum to more than 0'),
+        }
+      }
+      return createWeightScheme({
         name: schemeName.trim() || t('Untitled scheme'),
         weights,
-      }),
+      })
+    },
     onSuccess: (res) => {
       if (!res.success) {
         toast.error(res.message || t('Save failed'))
@@ -150,6 +157,10 @@ export function StrategyPage() {
       return
     }
     const next = opts?.nextWeights ?? weights
+    if (!validWeights(next)) {
+      toast.error(t('Weights must be non-negative and sum to more than 0'))
+      return
+    }
     if (opts?.nextWeights) {
       setDraftWeights({ ...opts.nextWeights })
     }

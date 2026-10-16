@@ -80,7 +80,7 @@ export async function getTaskPluginOptions(): Promise<TaskPluginOption[]> {
   const response = await api.get<{
     success: boolean
     data: TaskPluginOption[]
-  }>('/api/task_plugin_options')
+  }>('/api/task_plugin_options', { skipErrorHandler: true })
   return requireServerSuccess(response.data).data
 }
 

@@ -30,3 +30,16 @@ export function previewIntentFor(opts: {
   }
   return { kind, scheme_name: schemeChanging ? opts.schemeName : active }
 }
+
+/** N-P2-4 (FE guard): weights must be finite, non-negative and sum > 0. */
+export function validWeights(w: ScoreWeights): boolean {
+  let sum = 0
+  for (const k of WEIGHT_DIM_KEYS) {
+    const v = Number(w[k])
+    if (!Number.isFinite(v) || v < 0) {
+      return false
+    }
+    sum += v
+  }
+  return sum > 0
+}

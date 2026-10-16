@@ -8252,6 +8252,7 @@
     "This trade number is already used by another order": "This trade number is already used by another order",
     "Gateway trade number": "Gateway trade number",
     "Trade no. from the payment gateway backend": "Trade no. from the payment gateway backend",
-    "Root only. Manual complete credits paid and immediate bonus for a pending order (same path as payment callback). Enter the gateway trade number as evidence; your own orders and orders that never started a payment are rejected.": "Root only. Manual complete credits paid and immediate bonus for a pending order (same path as payment callback). Enter the gateway trade number as evidence; your own orders and orders that never started a payment are rejected."
+    "Root only. Manual complete credits paid and immediate bonus for a pending order (same path as payment callback). Enter the gateway trade number as evidence; your own orders and orders that never started a payment are rejected.": "Root only. Manual complete credits paid and immediate bonus for a pending order (same path as payment callback). Enter the gateway trade number as evidence; your own orders and orders that never started a payment are rejected.",
+    "Weights must be non-negative and sum to more than 0": "Weights must be non-negative and sum to more than 0"
   }
 }

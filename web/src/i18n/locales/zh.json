@@ -8252,6 +8252,7 @@
     "This trade number is already used by another order": "该交易号已被其他订单占用",
     "Gateway trade number": "网关交易号",
     "Trade no. from the payment gateway backend": "支付网关后台的交易号",
-    "Root only. Manual complete credits paid and immediate bonus for a pending order (same path as payment callback). Enter the gateway trade number as evidence; your own orders and orders that never started a payment are rejected.": "仅 root 可操作。手动补单会为待支付订单入账实充与即时赠送（与支付回调同一路径）。须填写网关交易号作为凭证；自己的订单、从未拉起支付的订单会被拒绝。"
+    "Root only. Manual complete credits paid and immediate bonus for a pending order (same path as payment callback). Enter the gateway trade number as evidence; your own orders and orders that never started a payment are rejected.": "仅 root 可操作。手动补单会为待支付订单入账实充与即时赠送（与支付回调同一路径）。须填写网关交易号作为凭证；自己的订单、从未拉起支付的订单会被拒绝。",
+    "Weights must be non-negative and sum to more than 0": "权重须为非负数且合计大于 0"
   }
 }
