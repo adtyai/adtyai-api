@@ -159,6 +159,9 @@ func SetApiRouter(router *gin.Engine) {
 		// 总裁：停暴露「新增管理员」——表与 controller 保留，不再注册路由。
 		// adminAdmins := apiRouter.Group("/admin/admins") ...
 
+		// 审查 N-P2-10：前端挂件用的公开配置 + 登录用户身份 HMAC
+		apiRouter.GET("/chatwoot/config", controller.GetChatwootPublicConfig)
+		apiRouter.GET("/chatwoot/identity", middleware.UserAuth(), controller.GetChatwootIdentity)
 		adminChatwoot := apiRouter.Group("/admin/chatwoot")
 		adminChatwoot.Use(middleware.AdminAuth())
 		{

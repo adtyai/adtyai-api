@@ -1,6 +1,9 @@
 package model
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"strings"
 
@@ -131,4 +134,34 @@ func SeedChatwootOptionsIntoOptionMap() {
 	common.OptionMap[OptChatwootWebsiteToken] = ""
 	common.OptionMap[OptChatwootHmacSecret] = ""
 	common.OptionMap[OptChatwootBaseUrl] = ""
+}
+
+// ChatwootPublicConfig 审查 N-P2-10：前端加载挂件所需的公开配置（不含 HMAC 密钥）。
+type ChatwootPublicConfig struct {
+	Enabled          bool   `json:"enabled"`
+	BaseURL          string `json:"base_url"`
+	WebsiteToken     string `json:"website_token"`
+	IdentityVerified bool   `json:"identity_verification"`
+}
+
+func GetChatwootPublicConfig() ChatwootPublicConfig {
+	base := strings.TrimRight(chatwootOption(OptChatwootBaseUrl), "/")
+	tok := chatwootOption(OptChatwootWebsiteToken)
+	return ChatwootPublicConfig{
+		Enabled:          base != "" && tok != "",
+		BaseURL:          base,
+		WebsiteToken:     tok,
+		IdentityVerified: chatwootOption(OptChatwootHmacSecret) != "",
+	}
+}
+
+// ChatwootIdentityHash HMAC-SHA256(ChatwootHmacSecret, identifier) 的 hex，对应 Chatwoot setUser 的 identifier_hash。
+func ChatwootIdentityHash(identifier string) (string, bool) {
+	sec := chatwootOption(OptChatwootHmacSecret)
+	if sec == "" {
+		return "", false
+	}
+	m := hmac.New(sha256.New, []byte(sec))
+	m.Write([]byte(identifier))
+	return hex.EncodeToString(m.Sum(nil)), true
 }
