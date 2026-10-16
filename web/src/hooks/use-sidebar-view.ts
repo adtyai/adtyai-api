@@ -20,7 +20,9 @@ import { useLocation } from '@tanstack/react-router'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { getSystemSettingsNavGroups } from '@/components/layout/config/system-settings.config'
 import { resolveSidebarView } from '@/components/layout/lib/sidebar-view-registry'
+import { useSidebarBadges } from '@/features/system-settings/sidebar-badges/hooks/use-sidebar-badges'
 import type { NavGroup, ResolvedSidebarView } from '@/components/layout/types'
 import {
   applyNestedAdminMenuVisibility,
@@ -57,6 +59,7 @@ export function useSidebarView(): ResolvedSidebarView {
   const rootSidebarData = useSidebarData()
   const configFilteredRoot = useSidebarConfig(rootSidebarData.navGroups)
   const { status } = useStatus()
+  const sidebarBadges = useSidebarBadges()
   // A39: status-driven menu visibility (missing key = visible), AND-ed
   // on top of sidebar_modules. Entry-only; route guards are unchanged.
   const rawUserVisible = status?.SidebarUserVisible
@@ -95,7 +98,10 @@ export function useSidebarView(): ResolvedSidebarView {
       view,
       navGroups:
         view.id === 'system-settings'
-          ? applyNestedAdminMenuVisibility(view.getNavGroups(t), adminVisible)
+          ? applyNestedAdminMenuVisibility(
+              getSystemSettingsNavGroups(t, sidebarBadges),
+              adminVisible
+            )
           : view.getNavGroups(t),
     }
   }

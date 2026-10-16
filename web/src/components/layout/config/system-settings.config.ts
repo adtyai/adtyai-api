@@ -39,7 +39,14 @@ import { getSecuritySectionNavItems } from '@/features/system-settings/security/
 import { getSiteSectionNavItems } from '@/features/system-settings/site/section-registry.tsx'
 import { ROLE } from '@/lib/roles'
 
+import type { SidebarBadges } from '@/features/system-settings/sidebar-badges/types'
+
 import type { NavGroup, SidebarView } from '../types'
+
+function pendingBadge(count: number | undefined): string | undefined {
+  if (count === undefined || !Number.isFinite(count) || count <= 0) return undefined
+  return count > 99 ? '99+' : String(Math.floor(count))
+}
 
 /**
  * Sidebar nav groups for the System Settings nested view.
@@ -48,7 +55,10 @@ import type { NavGroup, SidebarView } from '../types'
  * the matching official parent (Site / Billing / Security / Operations)
  * so the drill-in sidebar is not a long flat list of custom items.
  */
-function getSystemSettingsNavGroups(t: TFunction): NavGroup[] {
+export function getSystemSettingsNavGroups(
+  t: TFunction,
+  badges?: SidebarBadges
+): NavGroup[] {
   return [
     {
       id: 'system-administration',
@@ -101,6 +111,7 @@ function getSystemSettingsNavGroups(t: TFunction): NavGroup[] {
             {
               title: t('Topup orders'),
               url: '/system-settings/orders',
+              badge: pendingBadge(badges?.topup_pending),
             },
             {
               title: t('Order refunds'),
@@ -117,6 +128,7 @@ function getSystemSettingsNavGroups(t: TFunction): NavGroup[] {
             {
               title: t('Affiliate withdrawals'),
               url: '/system-settings/aff-withdrawals',
+              badge: pendingBadge(badges?.withdraw_pending),
             },
           ],
         },
@@ -138,6 +150,7 @@ function getSystemSettingsNavGroups(t: TFunction): NavGroup[] {
             {
               title: t('Risk reviews'),
               url: '/system-settings/risk-reviews',
+              badge: pendingBadge(badges?.risk_pending),
             },
           ],
         },
