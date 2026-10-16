@@ -17,7 +17,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import { ShieldAlert } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -54,20 +53,10 @@ type Props = {
 }
 
 function balanceConfirmLabel(
-  step: boolean,
   action: 'approve' | 'reject',
   t: (key: string) => string
 ): string {
-  if (step) {
-    if (action === 'approve') {
-      return t('Confirm approve')
-    }
-    return t('Confirm reject')
-  }
-  if (action === 'approve') {
-    return t('Approve')
-  }
-  return t('Reject')
+  return action === 'approve' ? t('Approve') : t('Reject')
 }
 
 export function ConfirmBalanceAdjustDialog({
@@ -81,7 +70,6 @@ export function ConfirmBalanceAdjustDialog({
   const userId = useAuthStore((s) => s.auth.user?.id)
   const approve = useApproveBalanceAdjustment()
   const reject = useRejectBalanceAdjustment()
-  const [step, setStep] = useState(false)
   const [selfReason, setSelfReason] = useState('')
   const [rejectReason, setRejectReason] = useState('')
   const [localError, setLocalError] = useState<string | null>(null)
@@ -92,7 +80,6 @@ export function ConfirmBalanceAdjustDialog({
 
   useEffect(() => {
     if (open) {
-      setStep(false)
       setSelfReason('')
       setRejectReason('')
       setLocalError(null)
@@ -116,11 +103,6 @@ export function ConfirmBalanceAdjustDialog({
     if (action === 'reject' && !rejectReason.trim()) {
       const msg = t('Reject reason is required')
       setLocalError(msg)
-      return
-    }
-
-    if (!step) {
-      setStep(true)
       return
     }
 
@@ -257,8 +239,7 @@ export function ConfirmBalanceAdjustDialog({
                 value={selfReason}
                 onChange={(e) => {
                   setSelfReason(e.target.value)
-                  setStep(false)
-                }}
+                            }}
                 rows={2}
                 disabled={busy}
                 placeholder={t('Required for sole-admin self-approve')}
@@ -274,8 +255,7 @@ export function ConfirmBalanceAdjustDialog({
                 value={rejectReason}
                 onChange={(e) => {
                   setRejectReason(e.target.value)
-                  setStep(false)
-                }}
+                            }}
                 rows={2}
                 disabled={busy}
                 placeholder={t('Reject reason is required')}
@@ -283,19 +263,6 @@ export function ConfirmBalanceAdjustDialog({
             </div>
           ) : null}
 
-          {step ? (
-            <div className='rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-100'>
-              <div className='mb-1 flex items-center gap-1 font-medium'>
-                <ShieldAlert className='size-3.5' />
-                {t('Requires second confirmation')}
-              </div>
-              {t('Click again to submit this sensitive action.')}
-            </div>
-          ) : (
-            <div className='text-muted-foreground text-xs'>
-              {t('Requires second confirmation')}
-            </div>
-          )}
 
           {localError ? (
             <div className='text-destructive border-destructive/30 bg-destructive/5 rounded-lg border px-3 py-2 text-xs'>
@@ -318,7 +285,7 @@ export function ConfirmBalanceAdjustDialog({
             disabled={busy || row.status !== 'pending'}
             onClick={() => void handleConfirm()}
           >
-            {balanceConfirmLabel(step, action, t)}
+            {balanceConfirmLabel(action, t)}
           </Button>
         </DialogFooter>
       </DialogContent>

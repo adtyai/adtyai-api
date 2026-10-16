@@ -1,4 +1,3 @@
-import { ShieldAlert } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -60,13 +59,11 @@ export function ConfirmActionDialog({
   const { t } = useTranslation()
   const approve = useApproveRiskReview()
   const reject = useRejectRiskReview()
-  const [step, setStep] = useState(false)
   const [localError, setLocalError] = useState<string | null>(null)
   const busy = approve.isPending || reject.isPending
 
   useEffect(() => {
     if (open) {
-      setStep(false)
       setLocalError(null)
       approve.reset()
       reject.reset()
@@ -78,10 +75,6 @@ export function ConfirmActionDialog({
 
   async function handleConfirm() {
     if (!row || !action) return
-    if (!step) {
-      setStep(true)
-      return
-    }
     setLocalError(null)
     try {
       const res =
@@ -115,12 +108,8 @@ export function ConfirmActionDialog({
           'Reject does not credit the bonus/gift. Paid amount stays settled. Requires a second confirmation.'
         )
 
-  let confirmButtonLabel = t('Reject')
-  if (action === 'approve') {
-    confirmButtonLabel = step ? t('Confirm approve') : t('Approve')
-  } else if (step) {
-    confirmButtonLabel = t('Confirm reject')
-  }
+  const confirmButtonLabel =
+    action === 'approve' ? t('Approve') : t('Reject')
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -162,19 +151,6 @@ export function ConfirmActionDialog({
               </div>
             ) : null}
           </div>
-          {step ? (
-            <div className='rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-100'>
-              <div className='mb-1 flex items-center gap-1 font-medium'>
-                <ShieldAlert className='size-3.5' />
-                {t('Requires second confirmation')}
-              </div>
-              {t('Click again to submit this sensitive action.')}
-            </div>
-          ) : (
-            <div className='text-muted-foreground text-xs'>
-              {t('Requires second confirmation')}
-            </div>
-          )}
           {localError ? (
             <div className='text-destructive border-destructive/30 bg-destructive/5 rounded-lg border px-3 py-2 text-xs'>
               {localError}

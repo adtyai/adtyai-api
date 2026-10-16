@@ -251,10 +251,6 @@ export function BusinessParamsSettings() {
                                   <Pencil className='size-3.5' />
                                   {t('Edit')}
                                 </Button>
-                                <span className='inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10.5px] font-medium text-amber-700 ring-1 ring-amber-200 bg-amber-50 dark:bg-amber-950/40 dark:text-amber-200 dark:ring-amber-900/50 whitespace-nowrap'>
-                                  <ShieldAlert className='size-3' />
-                                  {t('Requires second confirmation')}
-                                </span>
                               </div>
                             </TableCell>
                           </TableRow>

@@ -67,7 +67,6 @@ export function EditParamDialog({
   const { t } = useTranslation()
   const update = useUpdateBusinessParam()
   const [draft, setDraft] = useState('')
-  const [confirmStep, setConfirmStep] = useState(false)
   const [localError, setLocalError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -81,7 +80,6 @@ export function EditParamDialog({
       } else {
         setDraft(row.value)
       }
-      setConfirmStep(false)
       setLocalError(null)
       update.reset()
     }
@@ -104,11 +102,6 @@ export function EditParamDialog({
       // parsePutValue only throws i18n keys
       const msg = t(err instanceof Error ? err.message : 'Invalid value')
       setLocalError(msg)
-      return
-    }
-
-    if (!confirmStep) {
-      setConfirmStep(true)
       return
     }
 
@@ -176,7 +169,6 @@ export function EditParamDialog({
               draft={draft}
               onDraftChange={(next) => {
                 setDraft(next)
-                setConfirmStep(false)
                 setLocalError(null)
               }}
             />
@@ -202,21 +194,9 @@ export function EditParamDialog({
               </p>
             ) : null}
           </div>
-
-          {confirmStep ? (
-            <div className='rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-100'>
-              {t(
-                'Second confirmation required before saving. Money-related values only affect new orders.'
-              )}
-              <div className='mt-1 font-mono'>
-                {row.value || '—'} → {draft.trim() || '—'}
-              </div>
+            <div className='text-muted-foreground text-xs font-mono'>
+              {row.value || '—'} → {draft.trim() || '—'}
             </div>
-          ) : (
-            <div className='text-muted-foreground text-xs'>
-              {t('Requires second confirmation')}
-            </div>
-          )}
 
           {localError ? (
             <div className='text-destructive border-destructive/30 bg-destructive/5 rounded-lg border px-3 py-2 text-xs'>
@@ -230,22 +210,16 @@ export function EditParamDialog({
             type='button'
             variant='outline'
             disabled={update.isPending}
-            onClick={() => {
-              if (confirmStep) {
-                setConfirmStep(false)
-                return
-              }
-              onOpenChange(false)
-            }}
+            onClick={() => onOpenChange(false)}
           >
-            {confirmStep ? t('Back') : t('Cancel')}
+            {t('Cancel')}
           </Button>
           <Button
             type='button'
             disabled={update.isPending || draft.trim() === ''}
             onClick={() => void handleSave()}
           >
-            {saveButtonLabel(update.isPending, confirmStep, t)}
+            {update.isPending ? t('Saving...') : t('Save')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -253,15 +227,6 @@ export function EditParamDialog({
   )
 }
 
-function saveButtonLabel(
-  pending: boolean,
-  confirmStep: boolean,
-  t: (key: string) => string
-) {
-  if (pending) return t('Saving...')
-  if (confirmStep) return t('Confirm save')
-  return t('Continue')
-}
 
 function ParamValueEditor({
   row,

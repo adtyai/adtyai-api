@@ -92,7 +92,7 @@ describe('adty error codes', () => {
         code: 'confirm_required',
         message: 'confirm=true required',
       })
-    ).toBe('需要二次确认')
+    ).toBe('需要确认')
     expect(
       getServerErrorMessage({
         response: {

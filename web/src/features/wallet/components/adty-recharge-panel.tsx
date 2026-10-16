@@ -329,7 +329,9 @@ export function AdtyRechargePanel({
                 ? tier.bonus_percent
                 : firstTopupBonusRateToPercent(tier.bonus_rate)
             const tierLabel =
-              tierPct > 0 ? t('+{{percent}}%', { percent: tierPct }) : null
+              tierPct > 0
+                ? t('Top-up bonus {{percent}}%', { percent: tierPct })
+                : null
             return (
               <button
                 key={amount}
@@ -462,11 +464,13 @@ export function AdtyRechargePanel({
           }
         />
         <SummaryRow
-          label={t('Tier bonus')}
+          label={t('Top-up extra bonus')}
           value={
             bonusPlan ? (
               <span className='text-amber-600'>
-                +{formatUsdAmount(bonusPlan.chosenBonusUSD)}
+                {t('{{amount}} credit', {
+                  amount: formatUsdAmount(bonusPlan.chosenBonusUSD),
+                })}
               </span>
             ) : (
               '—'
@@ -487,7 +491,9 @@ export function AdtyRechargePanel({
         />
         <SummaryRow
           label={t('Pay amount (rate {{rate}})', {
-            rate: Number.isFinite(price) ? price : 1,
+            rate: Number.isFinite(price)
+              ? Number(price).toFixed(2)
+              : '1.00',
           })}
           value={`¥${formatCurrency(payLocal)}`}
         />

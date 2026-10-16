@@ -16,7 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { ShieldAlert } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -58,13 +57,11 @@ export function ConfirmEpayActionDialog({
   const setPrimary = useSetEpayPrimary()
   const disable = useDisableEpayInstance()
   const enable = useEnableEpayInstance()
-  const [step, setStep] = useState(false)
   const [localError, setLocalError] = useState<string | null>(null)
   const busy = setPrimary.isPending || disable.isPending || enable.isPending
 
   useEffect(() => {
     if (open) {
-      setStep(false)
       setLocalError(null)
       setPrimary.reset()
       disable.reset()
@@ -77,10 +74,6 @@ export function ConfirmEpayActionDialog({
 
   async function handleConfirm() {
     if (!row || !action) return
-    if (!step) {
-      setStep(true)
-      return
-    }
     setLocalError(null)
     try {
       let res
@@ -152,19 +145,6 @@ export function ConfirmEpayActionDialog({
             {' · '}
             <span className='font-mono'>{row.partner_id}</span>
           </div>
-          {step ? (
-            <div className='rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-100'>
-              <div className='mb-1 flex items-center gap-1 font-medium'>
-                <ShieldAlert className='size-3.5' />
-                {t('Requires second confirmation')}
-              </div>
-              {t('Click again to submit this sensitive action.')}
-            </div>
-          ) : (
-            <div className='text-muted-foreground text-xs'>
-              {t('Requires second confirmation')}
-            </div>
-          )}
           {localError ? (
             <div className='text-destructive border-destructive/30 bg-destructive/5 rounded-lg border px-3 py-2 text-xs'>
               {localError}
@@ -186,7 +166,7 @@ export function ConfirmEpayActionDialog({
             disabled={busy}
             onClick={() => void handleConfirm()}
           >
-            {step ? t('Confirm') : confirmLabel}
+            {t('Confirm')
           </Button>
         </DialogFooter>
       </DialogContent>

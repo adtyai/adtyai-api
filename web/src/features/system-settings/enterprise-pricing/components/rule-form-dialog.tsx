@@ -17,7 +17,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import { ShieldAlert } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -77,7 +76,6 @@ export function RuleFormDialog({ open, onOpenChange, editing }: Props) {
   const [modelName, setModelName] = useState('')
   const [discountPct, setDiscountPct] = useState('100')
   const [expiresLocal, setExpiresLocal] = useState('')
-  const [confirmStep, setConfirmStep] = useState(false)
   const [localError, setLocalError] = useState<string | null>(null)
 
   const isEdit = Boolean(editing)
@@ -98,7 +96,6 @@ export function RuleFormDialog({ open, onOpenChange, editing }: Props) {
       setDiscountPct('100')
       setExpiresLocal('')
     }
-    setConfirmStep(false)
     setLocalError(null)
     create.reset()
     update.reset()
@@ -128,11 +125,6 @@ export function RuleFormDialog({ open, onOpenChange, editing }: Props) {
         setLocalError(t('Invalid expires at'))
         return
       }
-    }
-
-    if (!confirmStep) {
-      setConfirmStep(true)
-      return
     }
 
     const group = groupCode.trim()
@@ -225,8 +217,7 @@ export function RuleFormDialog({ open, onOpenChange, editing }: Props) {
                 value={userId}
                 onChange={(e) => {
                   setUserId(e.target.value)
-                  setConfirmStep(false)
-                }}
+                              }}
               />
             </div>
           )}
@@ -240,8 +231,7 @@ export function RuleFormDialog({ open, onOpenChange, editing }: Props) {
               value={groupCode}
               onChange={(e) => {
                 setGroupCode(e.target.value)
-                setConfirmStep(false)
-              }}
+                          }}
             />
           </div>
           <div className='grid gap-1.5'>
@@ -253,8 +243,7 @@ export function RuleFormDialog({ open, onOpenChange, editing }: Props) {
               value={modelName}
               onChange={(e) => {
                 setModelName(e.target.value)
-                setConfirmStep(false)
-              }}
+                          }}
             />
           </div>
           <div className='grid gap-1.5'>
@@ -268,8 +257,7 @@ export function RuleFormDialog({ open, onOpenChange, editing }: Props) {
               value={discountPct}
               onChange={(e) => {
                 setDiscountPct(e.target.value)
-                setConfirmStep(false)
-              }}
+                          }}
             />
             <p className='text-muted-foreground text-[11.5px]'>
               {t('10–100%; submitted as 0.1–1 multiplier after group ratio.')}
@@ -286,27 +274,12 @@ export function RuleFormDialog({ open, onOpenChange, editing }: Props) {
               value={expiresLocal}
               onChange={(e) => {
                 setExpiresLocal(e.target.value)
-                setConfirmStep(false)
-              }}
+                          }}
             />
             <p className='text-muted-foreground text-[11.5px]'>
               {t('Leave empty for no expiry. Clear on edit sends "" to API.')}
             </p>
           </div>
-
-          {confirmStep ? (
-            <div className='rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-100'>
-              <div className='mb-1 flex items-center gap-1 font-medium'>
-                <ShieldAlert className='size-3.5' />
-                {t('Requires second confirmation')}
-              </div>
-              {t('Click again to submit this sensitive action.')}
-            </div>
-          ) : (
-            <div className='text-muted-foreground text-xs'>
-              {t('Requires second confirmation')}
-            </div>
-          )}
 
           {localError ? (
             <div className='text-destructive border-destructive/30 bg-destructive/5 rounded-lg border px-3 py-2 text-xs'>
@@ -329,7 +302,7 @@ export function RuleFormDialog({ open, onOpenChange, editing }: Props) {
             disabled={busy}
             onClick={() => void handleSave()}
           >
-            {confirmStep ? t('Confirm save') : t('Save')}
+            {t('Save')}
           </Button>
         </DialogFooter>
       </DialogContent>

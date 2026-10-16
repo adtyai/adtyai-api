@@ -17,7 +17,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import { ShieldAlert } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -68,7 +67,6 @@ export function ConfirmRefundDialog({
 }: Props) {
   const { t } = useTranslation()
   const mut = useAdminRefundTopupOrder()
-  const [step, setStep] = useState(false)
   const [amountStr, setAmountStr] = useState('')
   const [reason, setReason] = useState('')
   const [localError, setLocalError] = useState<string | null>(null)
@@ -77,7 +75,6 @@ export function ConfirmRefundDialog({
 
   useEffect(() => {
     if (open) {
-      setStep(false)
       setAmountStr(hint > 0 ? hint.toFixed(2) : '')
       setReason('')
       setLocalError(null)
@@ -100,10 +97,6 @@ export function ConfirmRefundDialog({
     if (!reason.trim()) {
       const msg = t('Refund reason is required')
       setLocalError(msg)
-      return
-    }
-    if (!step) {
-      setStep(true)
       return
     }
     const requestId = newRefundRequestId()
@@ -182,8 +175,7 @@ export function ConfirmRefundDialog({
               value={amountStr}
               onChange={(e) => {
                 setAmountStr(e.target.value)
-                setStep(false)
-              }}
+                        }}
               disabled={mut.isPending}
             />
           </div>
@@ -194,39 +186,13 @@ export function ConfirmRefundDialog({
               value={reason}
               onChange={(e) => {
                 setReason(e.target.value)
-                setStep(false)
-              }}
+                        }}
               rows={3}
               disabled={mut.isPending}
               placeholder={t('Refund reason (required)')}
             />
           </div>
 
-          {step ? (
-            <div className='rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-100'>
-              <div className='mb-1 flex items-center gap-1 font-medium'>
-                <ShieldAlert className='size-3.5' />
-                {t('Requires second confirmation')}
-              </div>
-              <div>
-                {t('Order No.')}:{' '}
-                <span className='font-mono'>{order.order_no}</span>
-              </div>
-              <div>
-                {t('Amount')}: {fmtUsd(Number(amountStr) || 0)}
-              </div>
-              <div className='break-all'>
-                {t('Reason')}: {reason.trim()}
-              </div>
-              <div className='mt-1'>
-                {t('Click again to submit this sensitive action.')}
-              </div>
-            </div>
-          ) : (
-            <div className='text-muted-foreground text-xs'>
-              {t('Requires second confirmation')} · {t('Request number')}
-            </div>
-          )}
 
           {localError ? (
             <div className='text-destructive border-destructive/30 bg-destructive/5 rounded-lg border px-3 py-2 text-xs'>
@@ -249,7 +215,7 @@ export function ConfirmRefundDialog({
             disabled={mut.isPending}
             onClick={() => void handleConfirm()}
           >
-            {step ? t('Confirm refund') : t('Continue')}
+            {t('Refund')}
           </Button>
         </DialogFooter>
       </DialogContent>

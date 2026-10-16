@@ -16,7 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { ShieldAlert } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -60,7 +59,6 @@ export function InstanceFormDialog({ open, onOpenChange, editing }: Props) {
   // Create-only: edit must not toggle enabled (enable/disable go through /enable|/disable + confirm).
   const [enabled, setEnabled] = useState(true)
   const [secret, setSecret] = useState('')
-  const [confirmStep, setConfirmStep] = useState(false)
   const [localError, setLocalError] = useState<string | null>(null)
 
   const isEdit = Boolean(editing)
@@ -84,7 +82,6 @@ export function InstanceFormDialog({ open, onOpenChange, editing }: Props) {
       setEnabled(true)
     }
     setSecret('')
-    setConfirmStep(false)
     setLocalError(null)
     create.reset()
     update.reset()
@@ -104,13 +101,6 @@ export function InstanceFormDialog({ open, onOpenChange, editing }: Props) {
     }
     if (Number.isNaN(limit) || limit < 0) {
       setLocalError(t('Daily limit must be a non-negative number'))
-      return
-    }
-
-    // Changing secret or creating with secret needs second confirm step
-    const needsConfirm = !isEdit || secretChanging
-    if (needsConfirm && !confirmStep) {
-      setConfirmStep(true)
       return
     }
 
@@ -216,7 +206,6 @@ export function InstanceFormDialog({ open, onOpenChange, editing }: Props) {
               value={name}
               onChange={(e) => {
                 setName(e.target.value)
-                setConfirmStep(false)
               }}
             />
           </div>
@@ -228,7 +217,6 @@ export function InstanceFormDialog({ open, onOpenChange, editing }: Props) {
               value={partnerId}
               onChange={(e) => {
                 setPartnerId(e.target.value)
-                setConfirmStep(false)
               }}
             />
           </div>
@@ -240,7 +228,6 @@ export function InstanceFormDialog({ open, onOpenChange, editing }: Props) {
               value={payAddress}
               onChange={(e) => {
                 setPayAddress(e.target.value)
-                setConfirmStep(false)
               }}
             />
           </div>
@@ -252,7 +239,6 @@ export function InstanceFormDialog({ open, onOpenChange, editing }: Props) {
               value={callbackBase}
               onChange={(e) => {
                 setCallbackBase(e.target.value)
-                setConfirmStep(false)
               }}
             />
           </div>
@@ -265,7 +251,6 @@ export function InstanceFormDialog({ open, onOpenChange, editing }: Props) {
               value={dailyLimit}
               onChange={(e) => {
                 setDailyLimit(e.target.value)
-                setConfirmStep(false)
               }}
             />
             <p className='text-muted-foreground text-[11.5px]'>
@@ -280,7 +265,6 @@ export function InstanceFormDialog({ open, onOpenChange, editing }: Props) {
                 checked={enabled}
                 onCheckedChange={(v) => {
                   setEnabled(v)
-                  setConfirmStep(false)
                 }}
               />
             </div>
@@ -301,30 +285,12 @@ export function InstanceFormDialog({ open, onOpenChange, editing }: Props) {
               value={secret}
               onChange={(e) => {
                 setSecret(e.target.value)
-                setConfirmStep(false)
               }}
             />
             <p className='text-muted-foreground text-[11.5px]'>
               {t('Never re-displayed after save; only fingerprint is shown.')}
             </p>
           </div>
-
-          {confirmStep ? (
-            <div className='rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-100'>
-              <div className='mb-1 flex items-center gap-1 font-medium'>
-                <ShieldAlert className='size-3.5' />
-                {t('Requires second confirmation')}
-              </div>
-              {secretChanging
-                ? t('Changing the secret requires a second confirmation.')
-                : t('Creating an instance stores an encrypted secret.')}
-            </div>
-          ) : null}
-          {!confirmStep && needsConfirmHint(isEdit, secretChanging) ? (
-            <div className='text-muted-foreground text-xs'>
-              {t('Requires second confirmation')}
-            </div>
-          ) : null}
 
           {localError ? (
             <div className='text-destructive border-destructive/30 bg-destructive/5 rounded-lg border px-3 py-2 text-xs'>
@@ -347,7 +313,7 @@ export function InstanceFormDialog({ open, onOpenChange, editing }: Props) {
             disabled={busy}
             onClick={() => void handleSave()}
           >
-            {confirmStep ? t('Confirm save') : t('Save')}
+            {t('Save')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -355,6 +321,3 @@ export function InstanceFormDialog({ open, onOpenChange, editing }: Props) {
   )
 }
 
-function needsConfirmHint(isEdit: boolean, secretChanging: boolean) {
-  return !isEdit || secretChanging
-}

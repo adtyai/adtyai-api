@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import { Info, Plus, RefreshCw, ShieldAlert } from 'lucide-react'
+import { Info, Plus, RefreshCw } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -308,10 +308,6 @@ export function BalanceAdjustmentsSettings() {
                                 >
                                   {t('Reject')}
                                 </Button>
-                                <span className='inline-flex items-center gap-1 rounded bg-amber-50 px-1.5 py-0.5 text-[10.5px] font-medium whitespace-nowrap text-amber-700 ring-1 ring-amber-200 dark:bg-amber-950/40 dark:text-amber-200 dark:ring-amber-900/50'>
-                                  <ShieldAlert className='size-3' />
-                                  {t('Requires second confirmation')}
-                                </span>
                               </div>
                             ) : (
                               <span className='text-muted-foreground text-xs'>
