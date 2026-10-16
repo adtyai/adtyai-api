@@ -21,20 +21,45 @@ import { describe, expect, it } from 'vitest'
 
 import { ROLE } from '@/lib/roles'
 
+import type { NavItem } from '../../types'
 import { SYSTEM_SETTINGS_VIEW } from '../system-settings.config'
 
 const t = ((key: string) => key) as unknown as TFunction
 
+function flattenLinks(items: NavItem[]): Array<{ url?: string; requiredRole?: number; title: string }> {
+  const out: Array<{ url?: string; requiredRole?: number; title: string }> = []
+  for (const item of items) {
+    if ('items' in item && item.items) {
+      for (const sub of item.items) {
+        out.push({
+          url: sub.url as string | undefined,
+          requiredRole: sub.requiredRole,
+          title: sub.title,
+        })
+      }
+      continue
+    }
+    if ('url' in item) {
+      out.push({
+        url: item.url as string | undefined,
+        requiredRole: item.requiredRole,
+        title: item.title,
+      })
+    }
+  }
+  return out
+}
+
 describe('system-settings Root-only nav (A39/A08) and no A30 audit', () => {
   it('menu-visibility and groups require SUPER_ADMIN; audit entry is gone', () => {
     const groups = SYSTEM_SETTINGS_VIEW.getNavGroups(t)
-    const items = groups.flatMap((g) => g.items)
-    const menu = items.find((i) => i.url === '/system-settings/menu-visibility')
-    const group = items.find((i) => i.url === '/system-settings/groups')
-    const audit = items.find((i) => i.url === '/system-settings/audit')
-    const admins = items.find((i) => i.url === '/system-settings/admins')
-    const status = items.find((i) => i.url === '/system-settings/status')
-    const reconcile = items.find((i) => i.url === '/system-settings/reconcile')
+    const links = flattenLinks(groups.flatMap((g) => g.items))
+    const menu = links.find((i) => i.url === '/system-settings/menu-visibility')
+    const group = links.find((i) => i.url === '/system-settings/groups')
+    const audit = links.find((i) => i.url === '/system-settings/audit')
+    const admins = links.find((i) => i.url === '/system-settings/admins')
+    const status = links.find((i) => i.url === '/system-settings/status')
+    const reconcile = links.find((i) => i.url === '/system-settings/reconcile')
 
     expect(menu?.requiredRole).toBe(ROLE.SUPER_ADMIN)
     expect(group?.requiredRole).toBe(ROLE.SUPER_ADMIN)
@@ -42,5 +67,48 @@ describe('system-settings Root-only nav (A39/A08) and no A30 audit', () => {
     expect(status).toBeUndefined()
     expect(reconcile).toBeUndefined()
     expect(audit).toBeUndefined()
+  })
+
+  it('二开项挂在官方父级下，不再作为顶栏独立项', () => {
+    const groups = SYSTEM_SETTINGS_VIEW.getNavGroups(t)
+    const top = groups.flatMap((g) => g.items)
+
+    // 顶层只剩官方折叠 + 运营总览，无独立二开 url
+    const topUrls = top
+      .filter((i) => 'url' in i && i.url)
+      .map((i) => i.url as string)
+    expect(topUrls).toEqual(['/system-settings/overview'])
+
+    const byParent = Object.fromEntries(
+      top
+        .filter((i) => 'items' in i && i.items)
+        .map((i) => [i.title, (i.items ?? []).map((s) => s.url as string)])
+    )
+
+    expect(byParent['Site & Branding']).toContain(
+      '/system-settings/menu-visibility'
+    )
+    expect(byParent['Billing & Payment']).toEqual(
+      expect.arrayContaining([
+        '/system-settings/epay-instances',
+        '/system-settings/bepusdt',
+        '/system-settings/groups',
+        '/system-settings/orders',
+        '/system-settings/order-refunds',
+        '/system-settings/bonus-ledger',
+        '/system-settings/aff-commissions',
+        '/system-settings/aff-withdrawals',
+      ])
+    )
+    expect(byParent['Security & Limits']).toContain(
+      '/system-settings/risk-reviews'
+    )
+    expect(byParent['Operations']).toEqual(
+      expect.arrayContaining([
+        '/system-settings/business-params',
+        '/system-settings/alerts',
+        '/system-settings/chatwoot',
+      ])
+    )
   })
 })

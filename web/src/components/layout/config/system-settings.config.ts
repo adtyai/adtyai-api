@@ -19,24 +19,13 @@ For commercial licensing, please contact support@quantumnous.com
 import type { TFunction } from 'i18next'
 import {
   LayoutDashboard,
-  Bell,
   Box,
   Route,
-  Coins,
   CreditCard,
   Layout,
   Settings,
   Shield,
   ShieldAlert,
-  SlidersHorizontal,
-  Wallet,
-  HandCoins,
-  Undo2,
-  Receipt,
-  Gift,
-  MessageCircle,
-  Tags,
-  UsersRound,
   Wrench,
 } from 'lucide-react'
 
@@ -55,9 +44,9 @@ import type { NavGroup, SidebarView } from '../types'
 /**
  * Sidebar nav groups for the System Settings nested view.
  *
- * Kept as a single group because the workspace title in the sidebar
- * header already provides top-level context — the inner group label
- * scopes the items as "administration" actions.
+ * Official section trees stay intact; ADTY 二开 entries are nested under
+ * the matching official parent (Site / Billing / Security / Operations)
+ * so the drill-in sidebar is not a long flat list of custom items.
  */
 function getSystemSettingsNavGroups(t: TFunction): NavGroup[] {
   return [
@@ -73,7 +62,15 @@ function getSystemSettingsNavGroups(t: TFunction): NavGroup[] {
         {
           title: t('Site & Branding'),
           icon: Settings,
-          items: getSiteSectionNavItems(t),
+          items: [
+            ...getSiteSectionNavItems(t),
+            // 菜单显隐 → 官方站点/侧栏模块旁
+            {
+              title: t('Menu visibility'),
+              url: '/system-settings/menu-visibility',
+              requiredRole: ROLE.SUPER_ADMIN,
+            },
+          ],
         },
         {
           title: t('Authentication'),
@@ -83,7 +80,45 @@ function getSystemSettingsNavGroups(t: TFunction): NavGroup[] {
         {
           title: t('Billing & Payment'),
           icon: CreditCard,
-          items: getBillingSectionNavItems(t),
+          items: [
+            ...getBillingSectionNavItems(t),
+            // 易支付 / BEpusdt → 官方支付网关旁
+            {
+              title: t('Epay instances'),
+              url: '/system-settings/epay-instances',
+            },
+            {
+              title: t('BEpusdt gateway'),
+              url: '/system-settings/bepusdt',
+            },
+            // 分组显示名 → 官方分组定价旁
+            {
+              title: t('Group display names'),
+              url: '/system-settings/groups',
+              requiredRole: ROLE.SUPER_ADMIN,
+            },
+            // 充值/退款/赠送/返佣业务入口并入支付树，去掉独立顶栏项
+            {
+              title: t('Topup orders'),
+              url: '/system-settings/orders',
+            },
+            {
+              title: t('Order refunds'),
+              url: '/system-settings/order-refunds',
+            },
+            {
+              title: t('Bonus ledger'),
+              url: '/system-settings/bonus-ledger',
+            },
+            {
+              title: t('Affiliate commissions'),
+              url: '/system-settings/aff-commissions',
+            },
+            {
+              title: t('Affiliate withdrawals'),
+              url: '/system-settings/aff-withdrawals',
+            },
+          ],
         },
         {
           title: t('Models'),
@@ -98,7 +133,13 @@ function getSystemSettingsNavGroups(t: TFunction): NavGroup[] {
         {
           title: t('Security & Limits'),
           icon: ShieldAlert,
-          items: getSecuritySectionNavItems(t),
+          items: [
+            ...getSecuritySectionNavItems(t),
+            {
+              title: t('Risk reviews'),
+              url: '/system-settings/risk-reviews',
+            },
+          ],
         },
         {
           title: t('Console Content'),
@@ -106,77 +147,24 @@ function getSystemSettingsNavGroups(t: TFunction): NavGroup[] {
           items: getContentSectionNavItems(t),
         },
         {
-          title: t('Business parameters'),
-          url: '/system-settings/business-params',
-          icon: SlidersHorizontal,
-        },
-        {
-          title: t('Risk reviews'),
-          url: '/system-settings/risk-reviews',
-          icon: ShieldAlert,
-        },
-        {
-          title: t('Epay instances'),
-          url: '/system-settings/epay-instances',
-          icon: Wallet,
-        },
-        {
-          title: t('BEpusdt gateway'),
-          url: '/system-settings/bepusdt',
-          icon: Coins,
-        },
-        {
-          title: t('Telegram alerts'),
-          url: '/system-settings/alerts',
-          icon: Bell,
-        },
-        {
-          title: t('Chatwoot customer support'),
-          url: '/system-settings/chatwoot',
-          icon: MessageCircle,
-        },
-        {
-          title: t('Menu visibility'),
-          url: '/system-settings/menu-visibility',
-          icon: Layout,
-          requiredRole: ROLE.SUPER_ADMIN,
-        },
-        {
-          title: t('Group display names'),
-          url: '/system-settings/groups',
-          icon: Tags,
-          requiredRole: ROLE.SUPER_ADMIN,
-        },
-        {
-          title: t('Affiliate commissions'),
-          url: '/system-settings/aff-commissions',
-          icon: UsersRound,
-        },
-        {
-          title: t('Affiliate withdrawals'),
-          url: '/system-settings/aff-withdrawals',
-          icon: HandCoins,
-        },
-        {
-          title: t('Topup orders'),
-          url: '/system-settings/orders',
-          icon: Receipt,
-        },
-        {
-          title: t('Bonus ledger'),
-          url: '/system-settings/bonus-ledger',
-          icon: Gift,
-        },
-        {
-          title: t('Order refunds'),
-          url: '/system-settings/order-refunds',
-          icon: Undo2,
-        },
-        // Hidden from sidebar (routes/pages kept): enterprise-pricing, balance-adjustments
-        {
           title: t('Operations'),
           icon: Wrench,
-          items: getOperationsSectionNavItems(t),
+          items: [
+            ...getOperationsSectionNavItems(t),
+            // 业务参数 / Telegram / Chatwoot → 运维与通知类入口
+            {
+              title: t('Business parameters'),
+              url: '/system-settings/business-params',
+            },
+            {
+              title: t('Telegram alerts'),
+              url: '/system-settings/alerts',
+            },
+            {
+              title: t('Chatwoot customer support'),
+              url: '/system-settings/chatwoot',
+            },
+          ],
         },
       ],
     },
