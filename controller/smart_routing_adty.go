@@ -2,6 +2,7 @@ package controller
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"strconv"
 	"time"
@@ -32,31 +33,72 @@ func AdtyRoutingGetConfig(c *gin.Context) {
 }
 
 // PUT /api/adty/routing/config
-// Changing active_weight_scheme or weights requires preview_token from POST /weight-schemes/preview (P0 server gate).
+// 审查 P1-3：合并语义（JSON merge）——只更新请求体里出现的字段，未出现的字段保持当前值。
+// 只有 weights / active_weight_scheme 实际发生变化时才需要 preview_token（P0 server gate）；
+// 纯启停 {"enabled":false} 等非权重字段无需 token。契约见 prep/contract-smart-routing-toggle-config.md。
 func AdtyRoutingPutConfig(c *gin.Context) {
 	if !requireRoutingRoot(c) {
 		return
 	}
-	var req struct {
-		smartrouting.Config
-		PreviewToken string `json:"preview_token"`
-	}
-	if err := common.DecodeJson(c.Request.Body, &req); err != nil {
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
 		adtyFail(c, http.StatusBadRequest, "bad_request", "invalid json", nil)
 		return
 	}
+	var patch map[string]json.RawMessage
+	if err := json.Unmarshal(body, &patch); err != nil || patch == nil {
+		adtyFail(c, http.StatusBadRequest, "bad_request", "invalid json: body must be a JSON object", nil)
+		return
+	}
+	var previewToken string
+	if raw, ok := patch["preview_token"]; ok {
+		if err := json.Unmarshal(raw, &previewToken); err != nil {
+			adtyFail(c, http.StatusBadRequest, "bad_request", "preview_token must be a string", nil)
+			return
+		}
+		delete(patch, "preview_token")
+	}
+	if len(patch) == 0 {
+		adtyFail(c, http.StatusBadRequest, "empty_patch", "no config field to update", nil)
+		return
+	}
 	old := smartrouting.GetConfig()
-	if err := smartrouting.RequirePreviewForConfigChange(old, req.Config, operatorID(c), req.PreviewToken); err != nil {
+	neu, err := mergeRoutingConfig(old, patch)
+	if err != nil {
+		adtyFail(c, http.StatusBadRequest, "bad_request", "invalid field: "+err.Error(), nil)
+		return
+	}
+	if err := smartrouting.RequirePreviewForConfigChange(old, neu, operatorID(c), previewToken); err != nil {
 		adtyFail(c, http.StatusBadRequest, "preview_required", err.Error(), map[string]any{
 			"hint": "POST /api/adty/routing/weight-schemes/preview then retry with preview_token",
 		})
 		return
 	}
-	if err := smartrouting.SaveConfig(req.Config, operatorID(c)); err != nil {
+	if err := smartrouting.SaveConfig(neu, operatorID(c)); err != nil {
 		adtyFail(c, http.StatusBadRequest, "bad_request", err.Error(), nil)
 		return
 	}
 	srOK(c, smartrouting.GetConfig())
+}
+
+// mergeRoutingConfig 以当前配置的深拷贝为底，把 patch 中出现的字段覆盖上去。
+func mergeRoutingConfig(cur smartrouting.Config, patch map[string]json.RawMessage) (smartrouting.Config, error) {
+	var neu smartrouting.Config
+	base, err := json.Marshal(cur)
+	if err != nil {
+		return neu, err
+	}
+	if err := json.Unmarshal(base, &neu); err != nil {
+		return neu, err
+	}
+	p, err := json.Marshal(patch)
+	if err != nil {
+		return neu, err
+	}
+	if err := json.Unmarshal(p, &neu); err != nil {
+		return neu, err
+	}
+	return neu, nil
 }
 
 // GET /api/adty/routing/scores
@@ -292,6 +334,10 @@ func AdtyRoutingPreviewScheme(c *gin.Context) {
 			}
 		}
 	}
+	// 审查 P1-3：未指定方案时按当前生效方案出指纹，与 PUT /config 合并后的 active_weight_scheme 一致。
+	if req.SchemeName == "" && req.SchemeID == 0 {
+		req.SchemeName = smartrouting.GetConfig().ActiveWeightScheme
+	}
 	kind := req.Kind
 	if kind == "" {
 		if req.SchemeName != "" && req.SchemeName != smartrouting.GetConfig().ActiveWeightScheme {
@@ -390,7 +436,10 @@ func AdtyRoutingSchemeRollback(c *gin.Context) {
 	if req.To == "official" {
 		cfg := smartrouting.GetConfig()
 		cfg.Enabled = false
-		_ = smartrouting.SaveConfig(cfg, operatorID(c))
+		if err := smartrouting.SaveConfig(cfg, operatorID(c)); err != nil {
+			adtyFail(c, http.StatusInternalServerError, "save_failed", err.Error(), nil)
+			return
+		}
 		_ = model.SaveWeightSnapshot("rollback", operatorID(c), map[string]any{"to": "official"}, cfg)
 		srOK(c, gin.H{"rolled_back": "official"})
 		return
@@ -400,16 +449,22 @@ func AdtyRoutingSchemeRollback(c *gin.Context) {
 		adtyFail(c, http.StatusNotFound, "not_found", "snapshot not found", nil)
 		return
 	}
+	// 审查 P2-3：快照解析失败 / 不是可回滚的配置 → 400 bad_snapshot；保存失败 → 500，不再误报成功。
 	var cfg smartrouting.Config
-	if err := json.Unmarshal([]byte(snap.Snapshot), &cfg); err == nil && (cfg.ActiveWeightScheme != "" || cfg.Weights.Sum() > 0) {
-		old := smartrouting.GetConfig()
-		if err := smartrouting.RequirePreviewForConfigChange(old, cfg, operatorID(c), req.PreviewToken); err != nil {
-			adtyFail(c, http.StatusBadRequest, "preview_required", err.Error(), map[string]any{
-				"hint": "preview the target scheme/weights then pass preview_token",
-			})
-			return
-		}
-		_ = smartrouting.SaveConfig(cfg, operatorID(c))
+	if err := json.Unmarshal([]byte(snap.Snapshot), &cfg); err != nil || (cfg.ActiveWeightScheme == "" && cfg.Weights.Sum() <= 0) {
+		adtyFail(c, http.StatusBadRequest, "bad_snapshot", "snapshot is not a restorable routing config", nil)
+		return
+	}
+	old := smartrouting.GetConfig()
+	if err := smartrouting.RequirePreviewForConfigChange(old, cfg, operatorID(c), req.PreviewToken); err != nil {
+		adtyFail(c, http.StatusBadRequest, "preview_required", err.Error(), map[string]any{
+			"hint": "preview the target scheme/weights then pass preview_token",
+		})
+		return
+	}
+	if err := smartrouting.SaveConfig(cfg, operatorID(c)); err != nil {
+		adtyFail(c, http.StatusInternalServerError, "save_failed", err.Error(), nil)
+		return
 	}
 	srOK(c, gin.H{"rolled_back": req.SnapshotID})
 }

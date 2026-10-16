@@ -124,7 +124,6 @@ func SetApiRouter(router *gin.Engine) {
 			adminAff.GET("/self-invite-reviews", controller.AdminListAffSelfInviteReviews)
 		}
 
-
 		adminBA := apiRouter.Group("/admin/balance-adjustments")
 		adminBA.Use(middleware.AdminAuth(), middleware.FeatureFrozen())
 		{
