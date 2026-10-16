@@ -200,6 +200,11 @@ func UpdateOption(c *gin.Context) {
 		common.ApiErrorT(c, "Compliance confirmation fields cannot be changed through the general settings API")
 		return
 	}
+	// 审查 R-P2-5：未知 key 不再写入 options 表
+	if !model.IsKnownOptionKey(option.Key) {
+		common.ApiErrorStatus(c, http.StatusBadRequest, common.NewMessage("Unknown option {{key}}", map[string]any{"key": option.Key}))
+		return
+	}
 	if !validateOptionKeyAndType(c, option.Key, option.Value.(string)) {
 		return
 	}

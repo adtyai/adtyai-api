@@ -130,3 +130,12 @@ func TestOptionNumericValidation(t *testing.T) {
 		require.Equal(t, http.StatusBadRequest, rec.Code, v+" "+rec.Body.String())
 	}
 }
+
+// 审查 R-P2-5：通用 option PUT 拒绝未知 key，已注册分层配置前缀仍可写入判定为已知。
+func TestOptionRejectsUnknownKey(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := adtyCall(UpdateOption, http.MethodPut, "/api/option/", `{"key":"TotallyUnknownKey","value":"x"}`, 1, common.RoleRootUser, nil)
+	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+	require.False(t, model.IsKnownOptionKey("nosuch_setting.foo"))
+	require.True(t, model.IsKnownOptionKey("channel_affinity_setting.enabled"))
+}
