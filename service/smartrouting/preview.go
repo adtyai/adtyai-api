@@ -144,6 +144,17 @@ func RequirePreviewForActivate(schemeName string, weights WeightParts, operatorI
 }
 
 // ParseWeightsJSON parses scheme weights JSON into WeightParts.
+// ValidateWeights 审查 R-P2-1：各分量 >=0 且总和 >0。
+func ValidateWeights(w WeightParts) error {
+	if w.Conn < 0 || w.Price < 0 || w.Speed < 0 || w.Stab < 0 || w.Auth < 0 {
+		return errors.New("weights must be >= 0")
+	}
+	if w.Sum() <= 0 {
+		return errors.New("weights sum must be > 0")
+	}
+	return nil
+}
+
 func ParseWeightsJSON(raw string) (WeightParts, error) {
 	var w WeightParts
 	if raw == "" {

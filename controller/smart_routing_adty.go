@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -80,9 +81,38 @@ func AdtyRoutingPutConfig(c *gin.Context) {
 		return
 	}
 	old := smartrouting.GetConfig()
+	// 审查 R-P2-2：未知字段不再静默忽略
+	if unknown := unknownRoutingConfigKeys(old, patch); len(unknown) > 0 {
+		adtyFail(c, http.StatusBadRequest, "unknown_field", "unknown config field: "+strings.Join(unknown, ","), map[string]any{"fields": unknown})
+		return
+	}
 	neu, err := mergeRoutingConfig(old, patch)
 	if err != nil {
 		adtyFail(c, http.StatusBadRequest, "bad_request", "invalid field: "+err.Error(), nil)
+		return
+	}
+	// 审查 R-P2-2：active_weight_scheme 必须存在；只切方案名时权重取该方案的值，同时给出时必须一致
+	if neu.ActiveWeightScheme != old.ActiveWeightScheme {
+		var row model.RoutingWeightScheme
+		if err := model.DB.Where("name = ?", neu.ActiveWeightScheme).First(&row).Error; err != nil {
+			adtyFail(c, http.StatusBadRequest, "scheme_not_found", "active_weight_scheme does not exist: "+neu.ActiveWeightScheme, nil)
+			return
+		}
+		sw, err := smartrouting.ParseWeightsJSON(row.Weights)
+		if err != nil {
+			adtyFail(c, http.StatusBadRequest, "bad_scheme", "scheme weights invalid: "+err.Error(), nil)
+			return
+		}
+		if _, hasW := patch["weights"]; !hasW {
+			neu.Weights = sw
+		} else if neu.Weights != sw {
+			adtyFail(c, http.StatusBadRequest, "scheme_weights_mismatch", "weights do not match active_weight_scheme", nil)
+			return
+		}
+	}
+	// 审查 R-P2-1：与方案 CRUD 同一套规则（各项 >=0，总和 >0）
+	if err := smartrouting.ValidateWeights(neu.Weights); err != nil {
+		adtyFail(c, http.StatusBadRequest, "invalid_weights", err.Error(), nil)
 		return
 	}
 	if err := smartrouting.RequirePreviewForConfigChange(old, neu, operatorID(c), previewToken); err != nil {
@@ -96,6 +126,22 @@ func AdtyRoutingPutConfig(c *gin.Context) {
 		return
 	}
 	srOK(c, smartrouting.GetConfig())
+}
+
+// unknownRoutingConfigKeys 返回 patch 中 Config 没有的 JSON 字段名。
+func unknownRoutingConfigKeys(cur smartrouting.Config, patch map[string]json.RawMessage) []string {
+	known := map[string]json.RawMessage{}
+	if b, err := json.Marshal(cur); err == nil {
+		_ = json.Unmarshal(b, &known)
+	}
+	var out []string
+	for k := range patch {
+		if _, ok := known[k]; !ok {
+			out = append(out, k)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // mergeRoutingConfig 以当前配置的深拷贝为底，把 patch 中出现的字段覆盖上去。
@@ -366,13 +412,23 @@ func AdtyRoutingPreviewScheme(c *gin.Context) {
 		adtyFail(c, http.StatusBadRequest, "bad_request", "invalid json", nil)
 		return
 	}
+	// 审查 R-P2-1：显式给了权重就必须合法（不再接受负数）
+	if req.Weights != (smartrouting.WeightParts{}) {
+		if err := smartrouting.ValidateWeights(req.Weights); err != nil {
+			adtyFail(c, http.StatusBadRequest, "invalid_weights", err.Error(), nil)
+			return
+		}
+	}
 	w := req.Weights
 	if w.Sum() <= 0 {
 		w = smartrouting.GetConfig().Weights
 	}
 	if req.SchemeName == "" && req.SchemeID > 0 {
 		var row model.RoutingWeightScheme
-		if err := model.DB.First(&row, req.SchemeID).Error; err == nil {
+		if err := model.DB.First(&row, req.SchemeID).Error; err != nil {
+			adtyFail(c, http.StatusNotFound, "scheme_not_found", "scheme not found", nil)
+			return
+		} else {
 			req.SchemeName = row.Name
 			if req.Weights.Sum() <= 0 {
 				if pw, err := smartrouting.ParseWeightsJSON(row.Weights); err == nil {
