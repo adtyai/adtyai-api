@@ -22,6 +22,8 @@ var (
 	rateLimitMu      sync.Mutex
 	consecFails      = map[int]int{}
 	consecFailMu     sync.Mutex
+	halfOpenInflightLocal = map[int]int{}
+	halfOpenInflightMu    sync.Mutex
 )
 
 func halfOpenOKKey(channelID int) string {
@@ -172,28 +174,64 @@ func ListHalfOpenReady() []HalfOpenInfo {
 	return out
 }
 
+func halfOpenInflightCount(channelID int) int {
+	ctx := context.Background()
+	if common.RedisEnabled && common.RDB != nil {
+		n, err := common.RDB.Get(ctx, halfOpenInflightKey(channelID)).Int()
+		if err == nil {
+			return n
+		}
+		// Redis miss/error: do NOT treat as empty (would bypass H1); fall back to local.
+	}
+	halfOpenInflightMu.Lock()
+	defer halfOpenInflightMu.Unlock()
+	return halfOpenInflightLocal[channelID]
+}
+
 func HalfOpenInflightFull(channelID, max int) bool {
+	if max <= 0 {
+		max = 2
+	}
+	return halfOpenInflightCount(channelID) >= max
+}
+
+func tryIncHalfOpenLocal(channelID, max int) bool {
+	halfOpenInflightMu.Lock()
+	defer halfOpenInflightMu.Unlock()
+	if halfOpenInflightLocal[channelID] >= max {
+		return false
+	}
+	halfOpenInflightLocal[channelID]++
+	return true
+}
+
+// TryIncHalfOpenInflight atomically reserves one in-flight slot. False when at max (H1).
+func TryIncHalfOpenInflight(channelID, max int) bool {
 	if max <= 0 {
 		max = 2
 	}
 	ctx := context.Background()
 	if common.RedisEnabled && common.RDB != nil {
-		n, err := common.RDB.Get(ctx, halfOpenInflightKey(channelID)).Int()
+		key := halfOpenInflightKey(channelID)
+		n, err := common.RDB.Incr(ctx, key).Result()
 		if err != nil {
+			return tryIncHalfOpenLocal(channelID, max)
+		}
+		common.RDB.Expire(ctx, key, 2*time.Minute)
+		if int(n) > max {
+			common.RDB.Decr(ctx, key)
 			return false
 		}
-		return n >= max
+		halfOpenInflightMu.Lock()
+		halfOpenInflightLocal[channelID] = int(n)
+		halfOpenInflightMu.Unlock()
+		return true
 	}
-	return false
+	return tryIncHalfOpenLocal(channelID, max)
 }
 
 func IncHalfOpenInflight(channelID int) {
-	ctx := context.Background()
-	if common.RedisEnabled && common.RDB != nil {
-		key := halfOpenInflightKey(channelID)
-		common.RDB.Incr(ctx, key)
-		common.RDB.Expire(ctx, key, 2*time.Minute)
-	}
+	_ = TryIncHalfOpenInflight(channelID, GetConfig().HalfOpenMaxInflight)
 }
 
 func DecHalfOpenInflight(channelID int) {
@@ -203,8 +241,32 @@ func DecHalfOpenInflight(channelID int) {
 		n, err := common.RDB.Decr(ctx, key).Result()
 		if err == nil && n < 0 {
 			common.RDB.Set(ctx, key, 0, 2*time.Minute)
+			n = 0
 		}
+		halfOpenInflightMu.Lock()
+		if err == nil {
+			if n < 0 {
+				n = 0
+			}
+			halfOpenInflightLocal[channelID] = int(n)
+		} else if halfOpenInflightLocal[channelID] > 0 {
+			halfOpenInflightLocal[channelID]--
+		}
+		halfOpenInflightMu.Unlock()
+		return
 	}
+	halfOpenInflightMu.Lock()
+	if halfOpenInflightLocal[channelID] > 0 {
+		halfOpenInflightLocal[channelID]--
+	}
+	halfOpenInflightMu.Unlock()
+}
+
+// ResetHalfOpenInflightForTest clears local counters (unit tests).
+func ResetHalfOpenInflightForTest() {
+	halfOpenInflightMu.Lock()
+	halfOpenInflightLocal = map[int]int{}
+	halfOpenInflightMu.Unlock()
 }
 
 // OnHalfOpenResult H6 atomic success counting + ramp 2%→10%→100%.
@@ -264,7 +326,21 @@ func OnHalfOpenResult(channelID int, success bool) {
 			return
 		}
 		if time.Since(st.Stage2Since) >= need {
-			// full recovery
+			// hysteresis: full recovery requires Score≥65 (P1-7)
+			best := 0.0
+			has := false
+			for _, s := range GetAllScores() {
+				if s == nil || s.ChannelID != channelID || s.Insufficient {
+					continue
+				}
+				has = true
+				if s.Score > best {
+					best = s.Score
+				}
+			}
+			if has && best < 65 {
+				return // stay half_10 until score recovers
+			}
 			st.Stage = "closed"
 			st.CooldownSec = cfg.CooldownInitialSec
 			st.HalfOpenOK = 0
@@ -272,7 +348,11 @@ func OnHalfOpenResult(channelID int, success bool) {
 			saveBreakerState(st)
 			model.UpdateChannelStatus(channelID, "", common.ChannelStatusEnabled, "halfopen_recovered")
 			clearHalfOpenCounters(channelID)
-			model.RecordBreakerEvent(channelID, "", "half_10", "closed", "recovered", 70)
+			recScore := best
+			if !has {
+				recScore = 70
+			}
+			model.RecordBreakerEvent(channelID, "", "half_10", "closed", "recovered", recScore)
 		}
 	}
 }
@@ -283,6 +363,9 @@ func clearHalfOpenCounters(channelID int) {
 	if common.RedisEnabled && common.RDB != nil {
 		common.RDB.Del(ctx, halfOpenInflightKey(channelID))
 	}
+	halfOpenInflightMu.Lock()
+	delete(halfOpenInflightLocal, channelID)
+	halfOpenInflightMu.Unlock()
 }
 
 func clearHalfOpenOK(channelID int) {

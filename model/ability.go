@@ -179,16 +179,45 @@ func GetChannel(
 				weights[i] = 100
 			}
 		}
-		weight := common.GetRandomInt(weightSum)
-		for i, ch := range picked {
-			weight -= weights[i]
-			if weight < 0 {
-				channel.Id = ch.Id
+		remaining := make([]int, len(weights))
+		copy(remaining, weights)
+		for attempt := 0; attempt < len(picked); attempt++ {
+			sum := 0
+			for _, w := range remaining {
+				sum += w
+			}
+			if sum <= 0 {
+				break
+			}
+			weight := common.GetRandomInt(sum)
+			for i, ch := range picked {
+				if remaining[i] <= 0 {
+					continue
+				}
+				weight -= remaining[i]
+				if weight < 0 {
+					if ConfirmChannelSelected(ch.Id) {
+						channel.Id = ch.Id
+					} else {
+						remaining[i] = 0
+					}
+					break
+				}
+			}
+			if channel.Id != 0 {
 				break
 			}
 		}
 		if channel.Id == 0 && len(picked) > 0 {
-			channel.Id = picked[len(picked)-1].Id
+			for _, ch := range picked {
+				if ConfirmChannelSelected(ch.Id) {
+					channel.Id = ch.Id
+					break
+				}
+			}
+		}
+		if channel.Id == 0 {
+			return nil, nil
 		}
 	} else {
 		return nil, nil

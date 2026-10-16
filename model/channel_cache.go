@@ -203,23 +203,44 @@ func GetRandomSatisfiedChannel(
 		// each channel's effective weight = 100
 		sumWeight = len(targetChannels) * 100
 		smoothingAdjustment = 100
+		for i := range smartWs {
+			smartWs[i] = 100
+		}
 	} else if sumWeight/len(targetChannels) < 10 {
 		// when the average weight is less than 10, set smoothing factor to 100
 		smoothingFactor = 100
 	}
+	_ = sumWeight
 
-	// Calculate the total weight of all channels up to endIdx
-	totalWeight := sumWeight * smoothingFactor
-
-	// Generate a random value in the range [0, totalWeight)
-	randomWeight := rand.Intn(totalWeight)
-
-	// Find a channel based on its weight
-	for i, channel := range targetChannels {
-		w := smartWs[i]
-		randomWeight -= w*smoothingFactor + smoothingAdjustment
-		if randomWeight < 0 {
-			return channel, nil
+	// Find a channel based on its weight; reselect if half-open inflight rejects (P0-1).
+	remaining := make([]int, len(smartWs))
+	copy(remaining, smartWs)
+	for attempt := 0; attempt < len(targetChannels); attempt++ {
+		sum := 0
+		for _, w := range remaining {
+			sum += w
+		}
+		if sum <= 0 {
+			break
+		}
+		total := sum * smoothingFactor
+		if total <= 0 {
+			break
+		}
+		rw := rand.Intn(total)
+		for i, channel := range targetChannels {
+			w := remaining[i]
+			if w <= 0 {
+				continue
+			}
+			rw -= w*smoothingFactor + smoothingAdjustment
+			if rw < 0 {
+				if ConfirmChannelSelected(channel.Id) {
+					return channel, nil
+				}
+				remaining[i] = 0 // half-open full or other reject → try another
+				break
+			}
 		}
 	}
 	// return null if no channel is not found

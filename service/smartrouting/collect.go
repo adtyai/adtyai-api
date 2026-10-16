@@ -28,9 +28,12 @@ func OnAttemptEnd(c *gin.Context, ev AttemptEvent) {
 	RecordSample(ev)
 	IncRPM(ev.ChannelID)
 
+	// Pair with TryIncHalfOpenInflight at selection (P0-1). Dec even if stage flipped.
 	if IsHalfOpenChannel(ev.ChannelID) {
 		DecHalfOpenInflight(ev.ChannelID)
 		OnHalfOpenResult(ev.ChannelID, ev.Success)
+	} else if halfOpenInflightCount(ev.ChannelID) > 0 {
+		DecHalfOpenInflight(ev.ChannelID)
 	}
 
 	NoteAttemptResult(ev.ChannelID, ev.Success, ev.Class)

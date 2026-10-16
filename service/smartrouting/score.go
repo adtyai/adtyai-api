@@ -2,11 +2,13 @@ package smartrouting
 
 import (
 	"math"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 )
@@ -44,10 +46,12 @@ func storeScores(m map[string]*ScoreEntry) {
 
 // ComputeConnScore dual-window EWMA connectivity 0-100.
 func ComputeConnScore(channelID int, modelName string, cfg Config) (score float64, samples int, insufficient bool) {
-	shortOK, shortFail, _, _, tokS, _ := ReadWindow(channelID, modelName, cfg.EWMAShortMin)
-	longOK, longFail, _, _, tokL, _ := ReadWindow(channelID, modelName, cfg.EWMALongMin)
+	shortOK, shortFail, _, _, tokS, _, ufailS := ReadWindow(channelID, modelName, cfg.EWMAShortMin)
+	longOK, longFail, _, _, tokL, _, ufailL := ReadWindow(channelID, modelName, cfg.EWMALongMin)
 	shortOK, shortFail, _ = ApplySampleCap(shortOK, shortFail, tokS, cfg.SampleCapPerToken)
 	longOK, longFail, _ = ApplySampleCap(longOK, longFail, tokL, cfg.SampleCapPerToken)
+	shortFail = ApplyUserFailMeltCap(shortFail, ufailS, cfg.UserFailMeltCap)
+	longFail = ApplyUserFailMeltCap(longFail, ufailL, cfg.UserFailMeltCap)
 	shortTot := shortOK + shortFail
 	longTot := longOK + longFail
 	samples = int(longTot)
@@ -66,22 +70,25 @@ func ComputeConnScore(channelID int, modelName string, cfg Config) (score float6
 	return 100 * rate, samples, false
 }
 
-// ComputeSpeedScore only successful requests (ops②); returns 50 if insufficient.
+// ComputeSpeedScore dual-window EWMA on successful latency only (P1-6); 70 if insufficient.
 func ComputeSpeedScore(channelID int, modelName string, cfg Config, peerP50 map[string]float64) float64 {
-	_, _, latSum, latN, _, _ := ReadWindow(channelID, modelName, cfg.EWMALongMin)
-	if latN < 5 {
+	_, _, latSumS, latNS, _, _, _ := ReadWindow(channelID, modelName, cfg.EWMAShortMin)
+	_, _, latSumL, latNL, _, _, _ := ReadWindow(channelID, modelName, cfg.EWMALongMin)
+	if latNL < 5 {
 		return 70
 	}
-	avg := latSum / float64(latN)
+	longAvg := latSumL / float64(latNL)
+	shortAvg := longAvg
+	if latNS >= 3 {
+		shortAvg = latSumS / float64(latNS)
+	}
+	w := cfg.EWMAShortWeight
+	avg := w*shortAvg + (1-w)*longAvg
 	peer := peerP50[modelName]
 	if peer <= 0 {
 		peer = avg
 	}
-	// faster than peer → higher score; clamp
-	ratio := peer / math.Max(avg, 1)
-	s := 100 * math.Min(math.Max(ratio, 0.1), 2.0) / 2.0 * 100 / 50 // map [0.1,2] → roughly [10,100]
-	// simpler: S = clamp(100 * peer/this, 10, 100)
-	s = 100 * peer / math.Max(avg, 1)
+	s := 100 * peer / math.Max(avg, 1)
 	return clamp(s, 10, 100)
 }
 
@@ -96,7 +103,11 @@ func clamp(v, lo, hi float64) float64 {
 }
 
 // ComputePriceScore §4.7: prefer live 30m unit; else ratio+fx; else 50.
+// Non-token modalities skip price dimension when PriceScoreSkipNonToken (P1-5).
 func ComputePriceScore(channelID int, modelName string, cfg Config, minUnit float64) (score float64, unit float64) {
+	if cfg.PriceScoreSkipNonToken && IsNonTokenPricedModel(modelName, channelID) {
+		return 50, 0
+	}
 	unit = LiveUnitCNY(channelID, modelName, cfg)
 	if unit <= 0 {
 		unit = ConfiguredUnitCNY(channelID, modelName)
@@ -177,12 +188,12 @@ func ConfiguredUnitCNY(channelID int, modelName string) float64 {
 	}
 	ratio := p.ChannelRatio
 	if ratio <= 0 {
-		ratio = 1
+		// P1-9: unset ratio → treat as unconfigured → S_price=50 (unit 0)
+		return 0
 	}
 	ref := p.ModelRefUSDPerMTok
 	if ref <= 0 {
 		if mp, ok := ratio_setting.GetModelPrice(modelName, false); ok && mp > 0 {
-			// model price is USD per 1k? In NewAPI model_price is often $ / 1M or quota; use as ref if positive
 			ref = mp
 		}
 	}
@@ -190,6 +201,35 @@ func ConfiguredUnitCNY(channelID int, modelName string) float64 {
 		return 0
 	}
 	return ref * ratio / n
+}
+
+// IsNonTokenPricedModel detects image/audio/video style models that must not use chat-token price score.
+func IsNonTokenPricedModel(modelName string, channelID int) bool {
+	m := strings.ToLower(modelName)
+	for _, p := range []string{
+		"dall-e", "tts-", "whisper", "suno", "midjourney", "mj_", "stable-diffusion",
+		"flux", "veo", "runway", "luma", "sora", "gpt-image", "imagen",
+	} {
+		if strings.Contains(m, p) {
+			return true
+		}
+	}
+	if channelID <= 0 || model.DB == nil {
+		return false
+	}
+	ch, err := model.CacheGetChannel(channelID)
+	if err != nil || ch == nil {
+		ch2, err2 := model.GetChannelById(channelID, true)
+		if err2 != nil || ch2 == nil {
+			return false
+		}
+		ch = ch2
+	}
+	switch ch.Type {
+	case constant.ChannelTypeMidjourney, constant.ChannelTypeMidjourneyPlus, constant.ChannelTypeSunoAPI:
+		return true
+	}
+	return false
 }
 
 // RouteWeightFromScore score→route_weight; 70→100, quadratic.
@@ -243,7 +283,7 @@ func RefreshAllScores() {
 	peerLat := map[string]float64{}
 	peerN := map[string]int{}
 	for _, p := range pairs {
-		_, _, latSum, latN, _, _ := ReadWindow(p.ChannelID, p.Model, cfg.EWMALongMin)
+		_, _, latSum, latN, _, _, _ := ReadWindow(p.ChannelID, p.Model, cfg.EWMALongMin)
 		if latN > 0 {
 			peerLat[p.Model] += latSum / float64(latN)
 			peerN[p.Model]++

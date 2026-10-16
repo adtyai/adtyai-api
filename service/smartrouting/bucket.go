@@ -110,12 +110,13 @@ func RecordSample(ev AttemptEvent) {
 }
 
 // ReadWindow aggregates buckets for last n minutes using Redis TIME.
-func ReadWindow(channelID int, modelName string, minutes int) (ok, fail, latSum float64, latN int, tokenShare map[int]float64, userFailRatio map[int]float64) {
+func ReadWindow(channelID int, modelName string, minutes int) (ok, fail, latSum float64, latN int, tokenShare map[int]float64, userFailRatio map[int]float64, userFailAbs map[int]float64) {
 	ctx := context.Background()
 	now, _ := RedisTIME(ctx)
 	tokenShare = map[int]float64{}
 	userFail := map[int]float64{}
 	userTot := map[int]float64{}
+	userFailAbs = map[int]float64{}
 	for i := 0; i < minutes; i++ {
 		m := minuteFloor(now.Add(-time.Duration(i) * time.Minute))
 		if common.RedisEnabled && common.RDB != nil {
@@ -168,7 +169,29 @@ func ReadWindow(channelID int, modelName string, minutes int) (ok, fail, latSum 
 			userFailRatio[id] = userFail[id] / tot
 		}
 	}
+	for id, v := range userFail {
+		userFailAbs[id] = v
+	}
 	return
+}
+
+// ApplyUserFailMeltCap drops excess fail weight when one user dominates failures (P1-3).
+// Cap is max share of total fail any single user may contribute toward melt/score.
+func ApplyUserFailMeltCap(fail float64, userFail map[int]float64, cap float64) float64 {
+	if fail <= 0 || cap <= 0 || len(userFail) == 0 {
+		return fail
+	}
+	var excess float64
+	for _, v := range userFail {
+		if v/fail > cap {
+			excess += v - fail*cap
+		}
+	}
+	out := fail - excess
+	if out < 0 {
+		return 0
+	}
+	return out
 }
 
 func parseF(s string) float64 {

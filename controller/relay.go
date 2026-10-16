@@ -163,6 +163,12 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		relayInfo.PerformanceBusinessRejection = false
 		relayInfo.PerformanceOutputTokens = 0
 		relayInfo.RetryIndex = retryParam.GetRetry()
+		smartrouting.SetRequestCaps(smartrouting.RequestCaps{
+			IsStream:   relayInfo.IsStream,
+			NeedTools:  len(relayInfo.RealtimeTools) > 0,
+			NeedVision: false,
+			NeedJSON:   false,
+		})
 		channel, channelErr := getChannel(c, relayInfo, retryParam)
 		if channelErr != nil {
 			logger.LogError(c, channelErr.Error())
@@ -225,6 +231,10 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		processChannelError(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError, relayInfo)
 
 		if decision.Action == "retry" {
+			// P1-4: 429 same-channel short wait before next attempt
+			if smartrouting.Classify(newAPIError) == smartrouting.ClassRateLimit {
+				smartrouting.WaitRetryAfter(2)
+			}
 			if !smartrouting.RetryBudgetAllows() {
 				break
 			}

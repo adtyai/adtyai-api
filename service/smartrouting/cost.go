@@ -66,7 +66,8 @@ func estimateCost(channelID int, modelName string, prompt, completion int) (usd,
 	}
 	ratio := p.ChannelRatio
 	if ratio <= 0 {
-		ratio = 1
+		// P1-9: unfilled ratio → no estimate (matches S_price=50 path)
+		return 0, 0, "none"
 	}
 	ref := p.ModelRefUSDPerMTok
 	if ref <= 0 {

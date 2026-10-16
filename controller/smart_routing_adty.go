@@ -18,6 +18,14 @@ func srOK(c *gin.Context, data any) {
 
 func operatorID(c *gin.Context) int { return c.GetInt("id") }
 
+func requireRoutingRoot(c *gin.Context) bool {
+	if c.GetInt("role") < common.RoleRootUser {
+		adtyFail(c, http.StatusForbidden, "forbidden", "root only", nil)
+		return false
+	}
+	return true
+}
+
 // GET /api/adty/routing/config
 func AdtyRoutingGetConfig(c *gin.Context) {
 	srOK(c, smartrouting.GetConfig())
@@ -26,6 +34,9 @@ func AdtyRoutingGetConfig(c *gin.Context) {
 // PUT /api/adty/routing/config
 // Changing active_weight_scheme or weights requires preview_token from POST /weight-schemes/preview (P0 server gate).
 func AdtyRoutingPutConfig(c *gin.Context) {
+	if !requireRoutingRoot(c) {
+		return
+	}
 	var req struct {
 		smartrouting.Config
 		PreviewToken string `json:"preview_token"`
@@ -129,6 +140,9 @@ func AdtyRoutingListSchemes(c *gin.Context) {
 }
 
 func AdtyRoutingCreateScheme(c *gin.Context) {
+	if !requireRoutingRoot(c) {
+		return
+	}
 	var req struct {
 		Name    string          `json:"name"`
 		Weights json.RawMessage `json:"weights"`
@@ -152,6 +166,9 @@ func AdtyRoutingCreateScheme(c *gin.Context) {
 }
 
 func AdtyRoutingUpdateScheme(c *gin.Context) {
+	if !requireRoutingRoot(c) {
+		return
+	}
 	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
 	var row model.RoutingWeightScheme
 	if err := model.DB.First(&row, id).Error; err != nil {
@@ -230,6 +247,9 @@ func AdtyRoutingUpdateScheme(c *gin.Context) {
 }
 
 func AdtyRoutingDeleteScheme(c *gin.Context) {
+	if !requireRoutingRoot(c) {
+		return
+	}
 	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
 	var row model.RoutingWeightScheme
 	if err := model.DB.First(&row, id).Error; err != nil {
@@ -327,6 +347,9 @@ func AdtyRoutingExportScheme(c *gin.Context) {
 }
 
 func AdtyRoutingImportScheme(c *gin.Context) {
+	if !requireRoutingRoot(c) {
+		return
+	}
 	var req model.RoutingWeightScheme
 	if err := common.DecodeJson(c.Request.Body, &req); err != nil || req.Name == "" {
 		adtyFail(c, http.StatusBadRequest, "bad_request", "invalid scheme", nil)
@@ -352,6 +375,9 @@ func AdtyRoutingSchemeHistory(c *gin.Context) {
 }
 
 func AdtyRoutingSchemeRollback(c *gin.Context) {
+	if !requireRoutingRoot(c) {
+		return
+	}
 	var req struct {
 		SnapshotID   int64  `json:"snapshot_id"`
 		To           string `json:"to"`

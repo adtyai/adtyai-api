@@ -279,7 +279,19 @@ func SaveConfig(c Config, operatorID int) error {
 func Init() {
 	LoadConfigFromOptions()
 	model.RegisterSmartWeightHook(SmartWeights)
+	model.RegisterOnChannelSelectedHook(OnChannelSelected)
 	EnsureDefaultSchemeInDB()
+}
+
+// OnChannelSelected reserves half-open in-flight when a half-open channel is picked (P0-1).
+func OnChannelSelected(channelID int) bool {
+	if !Enabled() {
+		return true
+	}
+	if !IsHalfOpenChannel(channelID) {
+		return true
+	}
+	return TryIncHalfOpenInflight(channelID, GetConfig().HalfOpenMaxInflight)
 }
 
 func EnsureDefaultSchemeInDB() {

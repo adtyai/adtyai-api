@@ -81,6 +81,11 @@ func SmartWeights(channels []*model.Channel, modelName, group string) ([]*model.
 			excluded = append(excluded, RouteExcluded{ID: ch.Id, Why: "rpm_full"})
 			continue
 		}
+		caps := GetRequestCaps()
+		if why := CapabilityReject(ch.Id, caps.NeedTools, caps.NeedVision, caps.NeedJSON, caps.NeedContext); why != "" {
+			excluded = append(excluded, RouteExcluded{ID: ch.Id, Why: why})
+			continue
+		}
 		// fallback_only deferred
 		fallbackOnly := model.HasRouteTag(ch.Id, modelName, "fallback_only")
 		locked := model.HasRouteTag(ch.Id, modelName, "locked")
@@ -117,10 +122,15 @@ func SmartWeights(channels []*model.Channel, modelName, group string) ([]*model.
 		}
 	}
 
-	// half-open injection (status=4 cooling done)
+	// half-open injection (status=4 cooling done); prefer non-stream when configured (P1-2)
 	halfList := ListHalfOpenReady()
 	var halfCands []cand
+	caps := GetRequestCaps()
+	skipHalfForStream := cfg.HalfOpenPreferNonStream && caps.IsStream
 	for _, h := range halfList {
+		if skipHalfForStream {
+			continue
+		}
 		if h.Model != "" && h.Model != "*" && h.Model != modelName {
 			continue
 		}

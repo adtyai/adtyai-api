@@ -21,6 +21,10 @@ func DecideRelayRetry(c *gin.Context, err *types.NewAPIError, retryTimes int) Po
 	if err == nil {
 		return PolicyDecision{Action: "stop", Reason: "request_completed", Source: "system"}
 	}
+	// P1-8: once any response bytes reached the client (stream started), never switch channel.
+	if c != nil && c.Writer != nil && c.Writer.Written() {
+		return PolicyDecision{Action: "stop", Reason: "stream_or_response_started", Source: "smart_routing"}
+	}
 	if ShouldSkipRetryAfterChannelAffinityFailure(c) {
 		source := RequestPolicy(c).SessionModeSource
 		if source == "" {

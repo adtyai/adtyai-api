@@ -118,3 +118,13 @@ func TestFloorShareMath(t *testing.T) {
 		t.Fatalf("got %v", each)
 	}
 }
+
+
+func TestIsNonTokenPricedModelByName(t *testing.T) {
+	if !IsNonTokenPricedModel("dall-e-3", 0) {
+		t.Fatal("dall-e")
+	}
+	if IsNonTokenPricedModel("gpt-4o", 0) {
+		t.Fatal("gpt should be token")
+	}
+}

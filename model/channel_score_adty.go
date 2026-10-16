@@ -4,19 +4,32 @@ package model
 // Registered by service/smartrouting.Init to avoid model→service import cycle.
 var SmartWeightHook func(channels []*Channel, modelName, group string) ([]*Channel, []int)
 
+// OnChannelSelectedHook is called after a channel is picked for an outbound attempt.
+// Return false to reject the pick (e.g. half-open in-flight full) so the caller can reselect.
+var OnChannelSelectedHook func(channelID int) bool
+
 // RegisterSmartWeightHook sets the smart-routing weight hook.
 func RegisterSmartWeightHook(fn func(channels []*Channel, modelName, group string) ([]*Channel, []int)) {
 	SmartWeightHook = fn
 }
 
+// RegisterOnChannelSelectedHook sets the post-pick hook (half-open inflight reserve).
+func RegisterOnChannelSelectedHook(fn func(channelID int) bool) {
+	OnChannelSelectedHook = fn
+}
+
 // ApplySmartWeights returns channels + effective weights for one priority band.
-// When hook is nil or returns empty weights, falls back to GetWeight().
+// When hook returns (nil, nil) that is H2 skip-band. Otherwise falls back to GetWeight().
 func ApplySmartWeights(channels []*Channel, modelName, group string) ([]*Channel, []int) {
 	if len(channels) == 0 {
 		return channels, nil
 	}
 	if SmartWeightHook != nil {
 		out, weights := SmartWeightHook(channels, modelName, group)
+		// H2: only half-open left → skip this priority band
+		if out == nil && weights == nil {
+			return nil, nil
+		}
 		if len(out) > 0 && len(weights) == len(out) {
 			return out, weights
 		}
@@ -26,4 +39,12 @@ func ApplySmartWeights(channels []*Channel, modelName, group string) ([]*Channel
 		weights[i] = ch.GetWeight()
 	}
 	return channels, weights
+}
+
+// ConfirmChannelSelected runs OnChannelSelectedHook; true when selection is accepted.
+func ConfirmChannelSelected(channelID int) bool {
+	if OnChannelSelectedHook == nil {
+		return true
+	}
+	return OnChannelSelectedHook(channelID)
 }
