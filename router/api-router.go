@@ -157,7 +157,7 @@ func SetApiRouter(router *gin.Engine) {
 			adminBA.POST("/:id/reject", controller.AdminRejectBalanceAdjustment)
 		}
 		adminEP := apiRouter.Group("/admin/enterprise-pricing")
-		adminEP.Use(middleware.AdminAuth(), middleware.FeatureFrozen())
+		adminEP.Use(middleware.AdminAuth())
 		{
 			adminEP.GET("", controller.AdminListEnterprisePricing)
 			adminEP.POST("", controller.AdminCreateEnterprisePricing)

@@ -66,10 +66,6 @@ func mapEnterprisePriceErr(err error) (int, string) {
 
 // AdminListEnterprisePricing GET /api/admin/enterprise-pricing
 func AdminListEnterprisePricing(c *gin.Context) {
-	if adminFeatureFrozen {
-		respondAdminFeatureFrozen(c)
-		return
-	}
 	userId, _ := strconv.Atoi(c.Query("user_id"))
 	offset, _ := strconv.Atoi(c.DefaultQuery("p", "0"))
 	limit, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
@@ -83,10 +79,6 @@ func AdminListEnterprisePricing(c *gin.Context) {
 
 // AdminCreateEnterprisePricing POST /api/admin/enterprise-pricing
 func AdminCreateEnterprisePricing(c *gin.Context) {
-	if adminFeatureFrozen {
-		respondAdminFeatureFrozen(c)
-		return
-	}
 	var req enterprisePriceCreateReq
 	if err := c.ShouldBindJSON(&req); err != nil {
 		adtyFail(c, http.StatusBadRequest, "invalid_parameters", "invalid parameters", nil)
@@ -116,10 +108,6 @@ func AdminCreateEnterprisePricing(c *gin.Context) {
 
 // AdminUpdateEnterprisePricing PUT /api/admin/enterprise-pricing/:id
 func AdminUpdateEnterprisePricing(c *gin.Context) {
-	if adminFeatureFrozen {
-		respondAdminFeatureFrozen(c)
-		return
-	}
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil || id <= 0 {
 		adtyFail(c, http.StatusBadRequest, "invalid_id", "invalid id", nil)
@@ -161,10 +149,6 @@ func AdminUpdateEnterprisePricing(c *gin.Context) {
 
 // AdminDeleteEnterprisePricing DELETE /api/admin/enterprise-pricing/:id
 func AdminDeleteEnterprisePricing(c *gin.Context) {
-	if adminFeatureFrozen {
-		respondAdminFeatureFrozen(c)
-		return
-	}
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil || id <= 0 {
 		adtyFail(c, http.StatusBadRequest, "invalid_id", "invalid id", nil)

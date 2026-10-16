@@ -85,13 +85,13 @@ func EnsureEnterprisePriceSchema(db *gorm.DB) error {
 	return nil
 }
 
-// enterprisePriceMatchFrozen disables runtime A8 matching for this release.
-// Flip to false to restore MatchEnterprisePriceRule without changing call sites
+// enterprisePriceMatchFrozen was a release freeze for A8 runtime matching.
+// false = MatchEnterprisePriceRule applies protocol discounts again
 // (relay/helper/price.go attachEnterprisePrice, service/quota.go).
-const enterprisePriceMatchFrozen = true
+const enterprisePriceMatchFrozen = false
 
 // MatchEnterprisePriceRule 按优先级取一条未过期规则：分组+模型 > 仅模型 > 仅分组 > 全部。
-// 无匹配返回 discount=1、ruleId=0。本版开关开启时一律无匹配（调用点可不动）。
+// 无匹配返回 discount=1、ruleId=0。
 func MatchEnterprisePriceRule(userId int, groupCode, modelName string) (ruleId int64, discount float64) {
 	discount = 1.0
 	if enterprisePriceMatchFrozen {

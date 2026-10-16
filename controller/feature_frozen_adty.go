@@ -6,8 +6,9 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// adminFeatureFrozen gates enterprise-pricing / balance-adjustments admin HTTP
-// for this release. Flip to false to restore the handlers without rewriting them.
+// adminFeatureFrozen gates balance-adjustments admin HTTP for this release.
+// Enterprise-pricing (A8) was unfrozen; keep this true for balance-adjust only.
+// Flip to false to restore balance-adjust handlers without rewriting them.
 const adminFeatureFrozen = true
 
 // respondAdminFeatureFrozen writes the release-freeze 403 payload.
