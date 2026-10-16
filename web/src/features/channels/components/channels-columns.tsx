@@ -93,6 +93,8 @@ import { TaskPluginChannelBadge } from './channel-type-badge'
 import { useChannels } from './channels-provider'
 import { DataTableRowActions } from './data-table-row-actions'
 import { DataTableTagRowActions } from './data-table-tag-row-actions'
+import { ScoreBadge } from '@/features/smart-routing/components/score-badge'
+import { useSmartRoutingEnabled } from '@/features/smart-routing/hooks/use-routing-config'
 import { BalanceQueryDialog } from './dialogs/balance-query-dialog'
 import {
   CodexUsageDialog,
@@ -275,8 +277,44 @@ function ChannelFieldCell({
  * Weight cell component with inline editing
  */
 function WeightCell({ channel }: { channel: Channel }) {
+  const { t } = useTranslation()
+  const smartRoutingOn = useSmartRoutingEnabled()
+
   if (isTagAggregateRow(channel)) {
+    if (smartRoutingOn) {
+      return (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <span className='text-muted-foreground inline-flex cursor-help text-xs tabular-nums opacity-60'>
+                {channel.weight ?? 0}
+              </span>
+            }
+          />
+          <TooltipContent>
+            <p>{t('Traffic is now decided by score')}</p>
+          </TooltipContent>
+        </Tooltip>
+      )
+    }
     return <TagWeightCell channel={channel} />
+  }
+
+  if (smartRoutingOn) {
+    return (
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <span className='text-muted-foreground inline-flex cursor-help text-xs tabular-nums opacity-60'>
+              {channel.weight ?? 0}
+            </span>
+          }
+        />
+        <TooltipContent>
+          <p>{t('Traffic is now decided by score')}</p>
+        </TooltipContent>
+      </Tooltip>
+    )
   }
 
   return (
@@ -1160,6 +1198,31 @@ export function useChannelsColumns(
         meta: { mobileHidden: true },
         cell: ({ row }) => <PriorityCell channel={row.original} />,
         size: 100,
+      },
+
+      // Smart routing overall score (read-only; details in Smart Routing menu)
+      {
+        id: 'smart_score',
+        header: t('Overall score'),
+        meta: { mobileHidden: true },
+        cell: ({ row }) => {
+          if (isTagAggregateRow(row.original)) {
+            return <span className='text-muted-foreground text-xs'>—</span>
+          }
+          // Backend may attach score later; until then show placeholder link.
+          const score = (row.original as Channel & { smart_score?: number | null })
+            .smart_score
+          return (
+            <ScoreBadge
+              score={score ?? null}
+              channelId={row.original.id}
+              linkToDetail
+              noData={score == null}
+            />
+          )
+        },
+        size: 100,
+        enableSorting: false,
       },
 
       // Weight column

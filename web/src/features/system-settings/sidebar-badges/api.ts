@@ -55,6 +55,12 @@ export async function getSidebarBadges(): Promise<SidebarBadges> {
       risk_pending: asCount(data.risk_pending),
       withdraw_pending: asCount(data.withdraw_pending),
       topup_pending: asCount(data.topup_pending),
+      channel_alert: asCount(
+        (data as { channel_alert?: unknown }).channel_alert
+      ),
+      reconcile_alert: asCount(
+        (data as { reconcile_alert?: unknown }).reconcile_alert
+      ),
     }
   } catch {
     return EMPTY_SIDEBAR_BADGES

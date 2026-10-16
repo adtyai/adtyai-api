@@ -44,6 +44,8 @@ describe('getSidebarBadges', () => {
       risk_pending: 2,
       withdraw_pending: 1,
       topup_pending: 4,
+      channel_alert: 0,
+      reconcile_alert: 0,
     })
   })
 

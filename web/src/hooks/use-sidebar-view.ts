@@ -22,6 +22,7 @@ import { useTranslation } from 'react-i18next'
 
 import {
   getSystemSettingsNavGroups,
+  pendingBadge,
   sumSidebarBadges,
 } from '@/components/layout/config/system-settings.config'
 import { resolveSidebarView } from '@/components/layout/lib/sidebar-view-registry'
@@ -90,8 +91,12 @@ export function useSidebarView(): ResolvedSidebarView {
         const filtered = group.items.filter(
           (item) => item.requiredRole === undefined || role >= item.requiredRole
         )
+        const routingBadge = pendingBadge(
+          (sidebarBadges.channel_alert || 0) +
+            (sidebarBadges.reconcile_alert || 0)
+        )
         const items =
-          group.id === 'admin' && settingsBadge
+          group.id === 'admin' && (settingsBadge || routingBadge)
             ? filtered.map((item) => {
                 const isSystemSettings =
                   ('activeUrls' in item &&
@@ -104,14 +109,29 @@ export function useSidebarView(): ResolvedSidebarView {
                   ('url' in item &&
                     typeof item.url === 'string' &&
                     item.url.startsWith('/system-settings'))
-                return isSystemSettings
-                  ? { ...item, badge: settingsBadge }
-                  : item
+                const isSmartRouting =
+                  ('items' in item &&
+                    Array.isArray(item.items) &&
+                    item.items.some(
+                      (sub) =>
+                        typeof sub.url === 'string' &&
+                        sub.url.startsWith('/smart-routing')
+                    )) ||
+                  ('url' in item &&
+                    typeof item.url === 'string' &&
+                    item.url.startsWith('/smart-routing'))
+                if (isSystemSettings && settingsBadge) {
+                  return { ...item, badge: settingsBadge }
+                }
+                if (isSmartRouting && routingBadge) {
+                  return { ...item, badge: routingBadge }
+                }
+                return item
               })
             : filtered
         const unchanged =
           items.length === group.items.length &&
-          !(group.id === 'admin' && settingsBadge)
+          !(group.id === 'admin' && (settingsBadge || routingBadge))
         return unchanged ? group : { ...group, items }
       })
   }, [configFilteredRoot, userRole, userVisible, adminVisible, sidebarBadges])

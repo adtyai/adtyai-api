@@ -28,6 +28,7 @@ import {
   MessageSquare,
   PlugZap,
   Radio,
+  Route,
   ServerCog,
   Share2,
   Settings,
@@ -142,6 +143,32 @@ export function useSidebarData(): SidebarData {
             title: t('Channels'),
             url: '/channels',
             icon: Radio,
+          },
+          {
+            title: t('Smart Routing'),
+            icon: Route,
+            items: [
+              {
+                title: t('Routing strategy'),
+                url: '/smart-routing/strategy',
+              },
+              {
+                title: t('Channel scores & half-open'),
+                url: '/smart-routing/scores',
+              },
+              {
+                title: t('Rankings by model'),
+                url: '/smart-routing/rankings',
+              },
+              {
+                title: t('Cost guardrails'),
+                url: '/smart-routing/cost',
+              },
+              {
+                title: t('Routing decisions'),
+                url: '/smart-routing/decisions',
+              },
+            ],
           },
           {
             title: t('Models'),

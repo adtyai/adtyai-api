@@ -22,6 +22,9 @@ export type SidebarBadges = {
   risk_pending: number
   withdraw_pending: number
   topup_pending: number
+  /** Smart routing alerts: breaker / balance / fake model / cost guard / reconcile. */
+  channel_alert?: number
+  reconcile_alert?: number
 }
 
 export type SidebarBadgesResponse = {
@@ -34,4 +37,6 @@ export const EMPTY_SIDEBAR_BADGES: SidebarBadges = {
   risk_pending: 0,
   withdraw_pending: 0,
   topup_pending: 0,
+  channel_alert: 0,
+  reconcile_alert: 0,
 }
