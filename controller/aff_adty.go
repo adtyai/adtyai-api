@@ -150,6 +150,9 @@ func AdminVoidAffCommission(c *gin.Context) {
 		} else if errors.Is(err, model.ErrAffCommissionStatusInvalid) {
 			status = http.StatusConflict
 			code = "status_invalid"
+		} else if errors.Is(err, model.ErrAffCommissionAlreadyWithdrawn) {
+			status = http.StatusConflict
+			code = "commission_already_withdrawn"
 		}
 		adtyFail(c, status, code, err.Error(), nil)
 		return

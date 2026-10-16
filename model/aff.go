@@ -687,6 +687,9 @@ func ReleaseDueAffCommissions(userId int) (int, error) {
 }
 
 // VoidAffCommission 管理端作废：冲正可提现余额 + 审计由 controller 写。需在外层 confirm。
+// ErrAffCommissionAlreadyWithdrawn 返佣已被提现，可用返佣余额不足以冲正（审查 N-P1-6）。
+var ErrAffCommissionAlreadyWithdrawn = errors.New("aff commission already withdrawn; available aff balance insufficient to reverse")
+
 func VoidAffCommission(id int64, operatorId int) (*AffCommission, error) {
 	var out *AffCommission
 	err := DB.Transaction(func(tx *gorm.DB) error {
@@ -724,11 +727,16 @@ func VoidAffCommission(id int64, operatorId int) (*AffCommission, error) {
 			return ErrAffCommissionStatusInvalid
 		}
 		if c.Status == AffCommissionStatusAvailable {
-			// 允许扣成不足时尽量扣（作废必须冲正）；与退款扣回不同，这里要求足够或强制减（可为负）
-			if err := tx.Model(&User{}).Where("id = ?", c.InviterId).Updates(map[string]any{
+			// 审查 N-P1-6：已解冻的返佣可能已被提现打款；可用返佣余额不足以冲正时拒绝作废，
+			// 绝不把 aff_quota 扣成负数（否则提现套现后无法追回）。须走线下追回后再处理。
+			res := tx.Model(&User{}).Where("id = ? AND aff_quota >= ?", c.InviterId, c.CommissionQuota).Updates(map[string]any{
 				"aff_quota": gorm.Expr("aff_quota - ?", c.CommissionQuota),
-			}).Error; err != nil {
-				return err
+			})
+			if res.Error != nil {
+				return res.Error
+			}
+			if res.RowsAffected != 1 {
+				return ErrAffCommissionAlreadyWithdrawn
 			}
 			var after int
 			if err := tx.Model(&User{}).Where("id = ?", c.InviterId).Select("aff_quota").Scan(&after).Error; err != nil {
