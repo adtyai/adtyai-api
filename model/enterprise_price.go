@@ -186,9 +186,6 @@ func validateDiscount(d float64) error {
 }
 
 func CreateEnterprisePriceRule(in EnterprisePriceCreateInput) (*EnterprisePriceRule, error) {
-	if !in.Confirm {
-		return nil, ErrEnterprisePriceConfirmRequired
-	}
 	if in.UserId <= 0 {
 		return nil, ErrEnterprisePriceUserRequired
 	}
@@ -220,9 +217,6 @@ func CreateEnterprisePriceRule(in EnterprisePriceCreateInput) (*EnterprisePriceR
 }
 
 func UpdateEnterprisePriceRule(id int64, in EnterprisePriceUpdateInput) (*EnterprisePriceRule, error) {
-	if !in.Confirm {
-		return nil, ErrEnterprisePriceConfirmRequired
-	}
 	if id <= 0 {
 		return nil, ErrEnterprisePriceNotFound
 	}
@@ -267,9 +261,7 @@ func UpdateEnterprisePriceRule(id int64, in EnterprisePriceUpdateInput) (*Enterp
 }
 
 func DeleteEnterprisePriceRule(id int64, confirm bool) error {
-	if !confirm {
-		return ErrEnterprisePriceConfirmRequired
-	}
+	_ = confirm // 已废弃，保留参数兼容调用方
 	if id <= 0 {
 		return ErrEnterprisePriceNotFound
 	}

@@ -89,7 +89,7 @@ func AdminApproveBalanceAdjustment(c *gin.Context) {
 	}
 	approverId := c.GetInt("id")
 
-	result, err := model.ApproveBalanceAdjust(id, approverId, req.Confirm, selfReason)
+	result, err := model.ApproveBalanceAdjust(id, approverId, true, selfReason) // confirm 已废弃
 	if err != nil {
 		status, code := mapBalanceAdjustErr(err)
 		adtyFail(c, status, code, err.Error(), nil)
@@ -117,7 +117,7 @@ func AdminRejectBalanceAdjustment(c *gin.Context) {
 		reason = strings.TrimSpace(req.Reason)
 	}
 	approverId := c.GetInt("id")
-	row, err := model.RejectBalanceAdjust(id, approverId, req.Confirm, reason)
+	row, err := model.RejectBalanceAdjust(id, approverId, true, reason) // confirm 已废弃
 	if err != nil {
 		status, code := mapBalanceAdjustErr(err)
 		adtyFail(c, status, code, err.Error(), nil)

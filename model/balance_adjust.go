@@ -151,10 +151,8 @@ type ApproveBalanceAdjustResult struct {
 // ApproveBalanceAdjust 批准并同事务执行 AdjustQuota；pending→executed。
 // confirm 一律必 true（自批/他批）；selfApproveReason 仅单超管自批时必填。
 func ApproveBalanceAdjust(id int64, approverId int, confirm bool, selfApproveReason string) (*ApproveBalanceAdjustResult, error) {
+	_ = confirm // 已废弃，不再校验
 	selfApproveReason = strings.TrimSpace(selfApproveReason)
-	if !confirm {
-		return nil, ErrBalanceAdjustConfirmRequired
-	}
 	var out *ApproveBalanceAdjustResult
 
 	err := DB.Transaction(func(tx *gorm.DB) error {
@@ -249,9 +247,7 @@ func ApproveBalanceAdjust(id int64, approverId int, confirm bool, selfApproveRea
 
 // RejectBalanceAdjust 驳回：pending→rejected，不动余额。confirm 一律必 true。
 func RejectBalanceAdjust(id int64, approverId int, confirm bool, rejectReason string) (*BalanceAdjustRequest, error) {
-	if !confirm {
-		return nil, ErrBalanceAdjustConfirmRequired
-	}
+	_ = confirm // 已废弃，不再校验
 	rejectReason = strings.TrimSpace(rejectReason)
 	if rejectReason == "" {
 		return nil, ErrBalanceAdjustRejectRequired

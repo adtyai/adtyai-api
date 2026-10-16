@@ -501,7 +501,13 @@ func AttachProviderTradeNo(orderNo, tradeNo string) error {
 	})
 }
 
-// CurrentTopupFxRate 充值 CNY/USD（官方 Price）。
+// CurrentTopupFxRate 充值 CNY/USD：实时汇率 + 向上浮 0.10～0.50（两位小数）。
+// 拉取失败时回落 operation_setting.Price，再回落 7.3。
 func CurrentTopupFxRate() float64 {
-	return operation_setting.Price
+	return common.GetEffectiveTopupFxRate(operation_setting.Price)
+}
+
+// CurrentTopupFxSnapshot 暴露完整汇率快照（档位页/状态接口展示用）。
+func CurrentTopupFxSnapshot() common.TopupFxSnapshot {
+	return common.GetTopupFxSnapshot(operation_setting.Price)
 }

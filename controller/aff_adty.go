@@ -139,12 +139,7 @@ func AdminVoidAffCommission(c *gin.Context) {
 		adtyFail(c, http.StatusBadRequest, "invalid_id", "invalid id", nil)
 		return
 	}
-	var req affConfirmReq
-	_ = c.ShouldBindJSON(&req)
-	if !req.Confirm {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "confirm=true required", "code": "confirm_required"})
-		return
-	}
+	_ = c.ShouldBindJSON(&affConfirmReq{}) // confirm 已废弃
 	row, err := model.VoidAffCommission(id, c.GetInt("id"))
 	if err != nil {
 		status := http.StatusOK
@@ -175,13 +170,9 @@ func AdminListAffWithdrawals(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": rows, "total": total})
 }
 
+// adminAffWithdrawConfirm 兼容旧客户端仍可读 body；confirm 字段已废弃，恒为通过。
 func adminAffWithdrawConfirm(c *gin.Context) bool {
-	var req affConfirmReq
-	_ = c.ShouldBindJSON(&req)
-	if !req.Confirm {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "confirm=true required", "code": "confirm_required"})
-		return false
-	}
+	_ = c.ShouldBindJSON(&affConfirmReq{})
 	return true
 }
 
@@ -211,11 +202,7 @@ func AdminRejectAffWithdrawal(c *gin.Context) {
 		return
 	}
 	var req affConfirmReq
-	_ = c.ShouldBindJSON(&req)
-	if !req.Confirm {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "confirm=true required", "code": "confirm_required"})
-		return
-	}
+	_ = c.ShouldBindJSON(&req) // confirm 已废弃；仍读 Reason
 	row, err := model.RejectAffWithdrawal(id, c.GetInt("id"), req.Reason)
 	if err != nil {
 		writeAffWithdrawErr(c, err)

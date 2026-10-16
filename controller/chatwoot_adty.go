@@ -17,7 +17,7 @@ func AdminGetChatwoot(c *gin.Context) {
 }
 
 // AdminPutChatwoot PUT /api/admin/chatwoot
-// Root only. Changing script or setting hmac_secret requires confirm=true.
+// Root only. 不再要求 confirm（前端普通确认框即可）。
 func AdminPutChatwoot(c *gin.Context) {
 	var req model.ChatwootPutInput
 	if err := common.DecodeJson(c.Request.Body, &req); err != nil {
@@ -27,10 +27,6 @@ func AdminPutChatwoot(c *gin.Context) {
 	role := c.GetInt("role")
 	if role < common.RoleRootUser {
 		c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "only root can update chatwoot settings", "code": "forbidden"})
-		return
-	}
-	if model.ChatwootPutNeedsConfirm(req) && !req.Confirm {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "confirm=true required to change chatwoot script or hmac secret", "code": "confirm_required"})
 		return
 	}
 	_, _, err := model.ApplyChatwootPut(req)

@@ -38,7 +38,7 @@ func adminCreateReject(c *gin.Context, status int, code, msg string, extra map[s
 }
 
 // AdminCreateAdmin was POST /api/admin/admins (A36). Route unregistered per 总裁（菜单删除）；handler kept for tests/restore.
-// Root only + confirm=true; always creates role=Admin (never Root). Password is never audited.
+// Root only；不再要求 confirm；always creates role=Admin (never Root). Password is never audited.
 func AdminCreateAdmin(c *gin.Context) {
 	if c.GetInt("role") < common.RoleRootUser {
 		adminCreateReject(c, http.StatusForbidden, "root_required", "only root can create administrators", nil)
@@ -53,10 +53,6 @@ func AdminCreateAdmin(c *gin.Context) {
 	req.Email = strings.TrimSpace(req.Email)
 	req.DisplayName = strings.TrimSpace(req.DisplayName)
 	who := map[string]any{"username": req.Username}
-	if !req.Confirm {
-		adminCreateReject(c, http.StatusBadRequest, "confirm_required", "confirm=true required to create an administrator", who)
-		return
-	}
 	if req.Role != nil && *req.Role != common.RoleAdminUser {
 		who["requested_role"] = *req.Role
 		adminCreateReject(c, http.StatusBadRequest, "role_not_allowed", "this endpoint only creates role=Admin", who)

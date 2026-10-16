@@ -5,14 +5,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
 
-func TestAdminRiskReviewConfirmRequired(t *testing.T) {
+func TestAdminRiskReviewNoLongerRequiresConfirm(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	cases := []struct {
 		name string
@@ -25,17 +24,18 @@ func TestAdminRiskReviewConfirmRequired(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			w := httptest.NewRecorder()
 			c, _ := gin.CreateTestContext(w)
-			body, _ := json.Marshal(map[string]any{"confirm": false})
-			c.Request = httptest.NewRequest(http.MethodPost, "/api/admin/risk-reviews/1/"+tc.name, bytes.NewReader(body))
+			// 无 confirm + 非法 id：应在 id 校验处 400，不得再是 confirm_required
+			body, _ := json.Marshal(map[string]any{})
+			c.Request = httptest.NewRequest(http.MethodPost, "/api/admin/risk-reviews/bad/"+tc.name, bytes.NewReader(body))
 			c.Request.Header.Set("Content-Type", "application/json")
-			c.Params = gin.Params{{Key: "id", Value: "1"}}
+			c.Params = gin.Params{{Key: "id", Value: "bad"}}
 			c.Set("id", 1)
 			tc.fn(c)
 			require.Equal(t, http.StatusBadRequest, w.Code)
 			var resp map[string]any
 			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
-			require.Equal(t, "confirm_required", resp["code"])
-			require.True(t, strings.Contains(resp["message"].(string), "confirm"))
+			require.NotEqual(t, "confirm_required", resp["code"], "confirm gate must be removed: %v", resp)
+			require.Equal(t, "invalid_id", resp["code"])
 		})
 	}
 }

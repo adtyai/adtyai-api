@@ -44,6 +44,7 @@ func GetStatus(c *gin.Context) {
 	passkeySetting := system_setting.PasskeySettingsSnapshot()
 	// A08: build outside OptionMap lock (DB read)
 	groupDisplayNames := model.BuildGroupDisplayNameMap()
+	topupFx := model.CurrentTopupFxRate()
 	common.OptionMapRWMutex.RLock()
 	defer common.OptionMapRWMutex.RUnlock()
 
@@ -97,7 +98,9 @@ func GetStatus(c *gin.Context) {
 		"password_login_encryption_enabled": common.PasswordLoginEncryptionEnabled,
 
 		"usd_exchange_rate": operation_setting.USDExchangeRate,
-		"price":             operation_setting.Price,
+		"price":             topupFx,                 // 充值计价用活汇率（上浮后）；展示「支付金额（汇率 x.xx）」
+		"configured_price":  operation_setting.Price, // 业务参数/回落值
+		"topup_fx_rate":     topupFx,
 		"stripe_unit_price": setting.StripeUnitPrice,
 
 		// 面板启用开关

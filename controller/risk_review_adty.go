@@ -52,19 +52,14 @@ func AdminGetRiskReview(c *gin.Context) {
 }
 
 // AdminApproveRiskReview POST /api/admin/risk-reviews/:id/approve
-// 动钱接口：必须 confirm=true；成功后写最小审计（谁/哪条/何时/旧→新/金额）。
+// 动钱接口；成功后写最小审计（谁/哪条/何时/旧→新/金额）。不再要求 confirm。
 func AdminApproveRiskReview(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil || id <= 0 {
 		adtyFail(c, http.StatusBadRequest, "invalid_id", "invalid id", nil)
 		return
 	}
-	var req adminRiskReviewConfirmReq
-	_ = c.ShouldBindJSON(&req)
-	if !req.Confirm {
-		adtyFail(c, http.StatusBadRequest, "confirm_required", "confirm=true required", nil)
-		return
-	}
+	_ = c.ShouldBindJSON(&adminRiskReviewConfirmReq{}) // confirm 已废弃
 	row, err := model.ApproveRiskReview(id, c.GetInt("id"))
 	if err != nil {
 		status := http.StatusOK
@@ -91,19 +86,14 @@ func AdminApproveRiskReview(c *gin.Context) {
 }
 
 // AdminRejectRiskReview POST /api/admin/risk-reviews/:id/reject
-// 必须 confirm=true；不入账；写最小审计。
+// 不入账；写最小审计。不再要求 confirm。
 func AdminRejectRiskReview(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil || id <= 0 {
 		adtyFail(c, http.StatusBadRequest, "invalid_id", "invalid id", nil)
 		return
 	}
-	var req adminRiskReviewConfirmReq
-	_ = c.ShouldBindJSON(&req)
-	if !req.Confirm {
-		adtyFail(c, http.StatusBadRequest, "confirm_required", "confirm=true required", nil)
-		return
-	}
+	_ = c.ShouldBindJSON(&adminRiskReviewConfirmReq{}) // confirm 已废弃
 	row, err := model.RejectRiskReview(id, c.GetInt("id"))
 	if err != nil {
 		status := http.StatusOK

@@ -101,7 +101,7 @@ func AdminCreateEpayInstance(c *gin.Context) {
 }
 
 // AdminUpdateEpayInstance PUT /api/admin/epay-instances/:id
-// 改密钥属敏感操作，须 confirm=true。
+// 改密钥不再要求 confirm（前端普通确认框即可）。
 func AdminUpdateEpayInstance(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil || id <= 0 {
@@ -113,13 +113,7 @@ func AdminUpdateEpayInstance(c *gin.Context) {
 		adtyFail(c, http.StatusBadRequest, "invalid_parameters", "invalid parameters", nil)
 		return
 	}
-	if req.Secret != nil && !req.Confirm {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false, "message": "confirm=true required to change secret", "code": "confirm_required",
-		})
-		return
-	}
-	// enabled 不得经 PUT 改动：须 POST .../disable 或 .../enable + confirm。
+	// enabled 不得经 PUT 改动：须 POST .../disable 或 .../enable。
 	if req.Enabled != nil {
 		msg := "use disable/enable endpoint"
 		adtyFail(c, http.StatusBadRequest, "use_disable_endpoint", msg, nil)
@@ -153,14 +147,7 @@ func AdminSetEpayInstancePrimary(c *gin.Context) {
 		adtyFail(c, http.StatusBadRequest, "invalid_id", "invalid id", nil)
 		return
 	}
-	var req epayConfirmReq
-	_ = c.ShouldBindJSON(&req)
-	if !req.Confirm {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false, "message": "confirm=true required", "code": "confirm_required",
-		})
-		return
-	}
+	_ = c.ShouldBindJSON(&epayConfirmReq{}) // confirm 已废弃
 	row, err := model.SetEpayInstancePrimary(id)
 	if err != nil {
 		status := http.StatusBadRequest
@@ -185,14 +172,7 @@ func AdminDisableEpayInstance(c *gin.Context) {
 		adtyFail(c, http.StatusBadRequest, "invalid_id", "invalid id", nil)
 		return
 	}
-	var req epayConfirmReq
-	_ = c.ShouldBindJSON(&req)
-	if !req.Confirm {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false, "message": "confirm=true required", "code": "confirm_required",
-		})
-		return
-	}
+	_ = c.ShouldBindJSON(&epayConfirmReq{}) // confirm 已废弃
 	row, err := model.DisableEpayInstance(id)
 	if err != nil {
 		status := http.StatusOK
@@ -208,21 +188,14 @@ func AdminDisableEpayInstance(c *gin.Context) {
 }
 
 // AdminEnableEpayInstance POST /api/admin/epay-instances/:id/enable
-// 重新启用；不自动设主用（enable ≠ set-primary）。须 confirm=true。
+// 重新启用；不自动设主用（enable ≠ set-primary）。不再要求 confirm。
 func AdminEnableEpayInstance(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil || id <= 0 {
 		adtyFail(c, http.StatusBadRequest, "invalid_id", "invalid id", nil)
 		return
 	}
-	var req epayConfirmReq
-	_ = c.ShouldBindJSON(&req)
-	if !req.Confirm {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false, "message": "confirm=true required", "code": "confirm_required",
-		})
-		return
-	}
+	_ = c.ShouldBindJSON(&epayConfirmReq{}) // confirm 已废弃
 	row, err := model.EnableEpayInstance(id)
 	if err != nil {
 		status := http.StatusOK

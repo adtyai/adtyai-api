@@ -205,17 +205,11 @@ type epayManualCompleteReq struct {
 }
 
 // AdminEpayManualComplete POST /api/admin/epay/manual-complete
-// 按易支付交易号查重；同交易号二次补单 409；须 confirm=true。
+// 按易支付交易号查重；同交易号二次补单 409。不再要求 confirm。
 func AdminEpayManualComplete(c *gin.Context) {
 	var req epayManualCompleteReq
 	if err := c.ShouldBindJSON(&req); err != nil {
 		adtyFail(c, http.StatusBadRequest, "invalid_parameters", "invalid parameters", nil)
-		return
-	}
-	if !req.Confirm {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false, "message": "confirm=true required", "code": "confirm_required",
-		})
 		return
 	}
 	if req.OrderNo == "" || req.TradeNo == "" {

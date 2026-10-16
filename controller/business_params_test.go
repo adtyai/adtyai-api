@@ -10,13 +10,14 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func TestAdminPutBusinessParams_RequiresConfirm(t *testing.T) {
+func TestAdminPutBusinessParams_NoLongerRequiresConfirm(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
+	// 无 confirm：应直接进入业务校验（用越界值止于 out_of_range，避免无 DB 路径），不得再是 confirm_required
 	body, _ := json.Marshal(map[string]any{
 		"key":   "FirstTopupBonusRate",
-		"value": "0.20",
+		"value": "2",
 	})
 	c.Request = httptest.NewRequest(http.MethodPut, "/api/admin/business-params", bytes.NewReader(body))
 	c.Request.Header.Set("Content-Type", "application/json")
@@ -26,8 +27,11 @@ func TestAdminPutBusinessParams_RequiresConfirm(t *testing.T) {
 	}
 	var resp map[string]any
 	_ = json.Unmarshal(w.Body.Bytes(), &resp)
-	if resp["code"] != "confirm_required" {
-		t.Fatalf("want confirm_required got %v", resp)
+	if resp["code"] == "confirm_required" {
+		t.Fatalf("confirm gate must be removed, got %v", resp)
+	}
+	if resp["code"] != "out_of_range" {
+		t.Fatalf("want out_of_range (proves past confirm), got %v body=%s", resp["code"], w.Body.String())
 	}
 }
 

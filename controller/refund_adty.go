@@ -17,7 +17,7 @@ type adminRefundReq struct {
 }
 
 // AdminRefundTopupOrder POST /api/admin/orders/:no/refund
-// 敏感操作：必带 amount、reason、request_id、confirm=true；系统只记账。
+// 敏感操作：必带 amount、reason、request_id；系统只记账。不再要求 confirm。
 func AdminRefundTopupOrder(c *gin.Context) {
 	orderNo := strings.TrimSpace(c.Param("no"))
 	if orderNo == "" {
@@ -27,10 +27,6 @@ func AdminRefundTopupOrder(c *gin.Context) {
 	var req adminRefundReq
 	if err := c.ShouldBindJSON(&req); err != nil {
 		adtyFail(c, http.StatusBadRequest, "invalid_parameters", "invalid parameters", nil)
-		return
-	}
-	if !req.Confirm {
-		adtyFail(c, http.StatusBadRequest, "confirm_required", "confirm=true required", nil)
 		return
 	}
 	if strings.TrimSpace(req.RequestId) == "" {

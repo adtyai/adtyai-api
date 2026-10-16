@@ -43,6 +43,7 @@ func GetTopupTiers(c *gin.Context) {
 		{"type": "wxpay", "name": "微信", "available": epayOK, "maintenance_reason": ternaryStr(epayOK, "", epayReason)},
 		{"type": "usdt", "name": "USDT", "available": usdtOK, "maintenance_reason": ternaryStr(usdtOK, "", usdtReason)},
 	}
+	fxSnap := model.CurrentTopupFxSnapshot()
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
@@ -50,6 +51,10 @@ func GetTopupTiers(c *gin.Context) {
 			"tiers":                  tiers,
 			"first_topup_bonus_rate": model.GetFirstTopupBonusRate(),
 			"pay_methods":            payMethods,
+			"fx_rate":                fxSnap.EffectiveRate,
+			"fx_base_rate":           fxSnap.BaseRate,
+			"fx_float":               fxSnap.FloatApplied,
+			"fx_source":              fxSnap.Source,
 		},
 	})
 }
@@ -209,23 +214,9 @@ func GetTopupOrder(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": order})
 }
 
-type adminCompleteAdtyTopupReq struct {
-	Confirm bool `json:"confirm"`
-}
-
-// AdminCompleteAdtyTopup POST /api/admin/orders/:no/complete — 最小闭环补单/验收入账。
+// AdminCompleteAdtyTopup POST /api/admin/orders/:no/complete — 最小闭环补单/验收入账（不再要求 confirm）。
 func AdminCompleteAdtyTopup(c *gin.Context) {
 	orderNo := c.Param("no")
-	var req adminCompleteAdtyTopupReq
-	_ = c.ShouldBindJSON(&req)
-	if !req.Confirm {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"message": "confirm=true required",
-			"code":    "confirm_required",
-		})
-		return
-	}
 	order, err := model.CompleteTopupOrder(orderNo)
 	if err != nil {
 		status := http.StatusOK

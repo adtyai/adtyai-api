@@ -96,7 +96,7 @@ func AdminCreateEnterprisePricing(c *gin.Context) {
 		Discount:  req.Discount,
 		ExpiresAt: exp,
 		CreatedBy: c.GetInt("id"),
-		Confirm:   req.Confirm,
+		Confirm:   true, // confirm 闸已撤，恒放行
 	})
 	if err != nil {
 		status, code := mapEnterprisePriceErr(err)
@@ -130,7 +130,7 @@ func AdminUpdateEnterprisePricing(c *gin.Context) {
 		Discount:     req.Discount,
 		ExpiresAt:    exp,
 		ClearExpires: clearExp,
-		Confirm:      req.Confirm,
+		Confirm:      true, // confirm 闸已撤，恒放行
 	})
 	if err != nil {
 		status, code := mapEnterprisePriceErr(err)
@@ -154,16 +154,9 @@ func AdminDeleteEnterprisePricing(c *gin.Context) {
 		adtyFail(c, http.StatusBadRequest, "invalid_id", "invalid id", nil)
 		return
 	}
-	var req enterprisePriceDeleteReq
-	_ = c.ShouldBindJSON(&req)
-	// 也接受 query ?confirm=true
-	if !req.Confirm {
-		if c.Query("confirm") == "true" {
-			req.Confirm = true
-		}
-	}
+	_ = c.ShouldBindJSON(&enterprisePriceDeleteReq{}) // confirm 已废弃
 	before, _ := model.GetEnterprisePriceRule(id)
-	err = model.DeleteEnterprisePriceRule(id, req.Confirm)
+	err = model.DeleteEnterprisePriceRule(id, true)
 	if err != nil {
 		status, code := mapEnterprisePriceErr(err)
 		c.JSON(status, gin.H{"success": false, "message": err.Error(), "code": code})

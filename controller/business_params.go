@@ -38,15 +38,11 @@ func AdminGetBusinessParams(c *gin.Context) {
 }
 
 // AdminPutBusinessParams PUT /api/admin/business-params
-// Body: {confirm:true, key, value} or {confirm:true, items:[{key,value},...]}
+// Body: {key, value} or {items:[{key,value},...]}（confirm 字段忽略，不再校验）
 func AdminPutBusinessParams(c *gin.Context) {
 	var req businessParamPutReq
 	if err := common.DecodeJson(c.Request.Body, &req); err != nil {
 		adtyFail(c, http.StatusBadRequest, "bad_request", "invalid json", nil)
-		return
-	}
-	if !req.Confirm {
-		adtyFail(c, http.StatusBadRequest, "confirm_required", "confirm=true required", nil)
 		return
 	}
 	items := req.Items
@@ -69,10 +65,6 @@ func AdminPutBusinessParamByKey(c *gin.Context) {
 	}
 	if err := common.DecodeJson(c.Request.Body, &req); err != nil {
 		adtyFail(c, http.StatusBadRequest, "bad_request", "invalid json", nil)
-		return
-	}
-	if !req.Confirm {
-		adtyFail(c, http.StatusBadRequest, "confirm_required", "confirm=true required", nil)
 		return
 	}
 	applyBusinessParamUpdates(c, []businessParamPutItem{{Key: key, Value: req.Value}})
