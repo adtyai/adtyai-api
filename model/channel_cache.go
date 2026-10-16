@@ -138,10 +138,17 @@ func GetRandomSatisfiedChannel(
 	}
 
 	if len(channels) == 0 {
+		// 审查 N-P1-2：全部熔断时回退到冷却到期的半开渠道，否则模型永久不可用
+		if len(filters) == 0 && retry == 0 {
+			if ch := halfOpenFallback(model, group); ch != nil {
+				return ch, nil
+			}
+		}
 		return nil, nil
 	}
 
-	if len(channels) == 1 {
+	// 审查 N-P1-2：智能路由挂钩时单渠道也要走 ApplySmartWeights，才能注入半开渠道
+	if len(channels) == 1 && SmartWeightHook == nil {
 		if channel, ok := channelsIDM[channels[0]]; ok {
 			return channel, nil
 		}
@@ -199,10 +206,9 @@ func GetRandomSatisfiedChannel(
 	smoothingAdjustment := 0
 
 	if sumWeight == 0 {
-		// when all channels have weight 0, set sumWeight to the number of channels and set smoothing adjustment to 100
-		// each channel's effective weight = 100
+		// 审查 N-P1-1：全 0 时每个渠道等权 100 均匀随机；不再叠加 smoothingAdjustment
+		// （原写法每个渠道减 200 而区间只有 n*100，导致恒选第一个渠道）。
 		sumWeight = len(targetChannels) * 100
-		smoothingAdjustment = 100
 		for i := range smartWs {
 			smartWs[i] = 100
 		}

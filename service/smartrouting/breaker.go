@@ -18,10 +18,10 @@ type HalfOpenInfo struct {
 }
 
 var (
-	rateLimitUntil   = map[int]time.Time{}
-	rateLimitMu      sync.Mutex
-	consecFails      = map[int]int{}
-	consecFailMu     sync.Mutex
+	rateLimitUntil        = map[int]time.Time{}
+	rateLimitMu           sync.Mutex
+	consecFails           = map[int]int{}
+	consecFailMu          sync.Mutex
 	halfOpenInflightLocal = map[int]int{}
 	halfOpenInflightMu    sync.Mutex
 )
@@ -112,6 +112,7 @@ func tripBreaker(channelID int, modelName string, ch *model.Channel, st *model.C
 	model.UpdateChannelStatus(channelID, "", common.ChannelStatusScoreBroken, reason)
 	model.RecordBreakerEvent(channelID, modelName, from, "open", reason, score)
 	clearHalfOpenCounters(channelID)
+	InvalidateHalfOpenCache()
 }
 
 // TripImmediate for banned/balance/consec fails.
@@ -125,6 +126,7 @@ func TripImmediate(channelID int, reason string) {
 		return
 	}
 	st := loadBreakerState(channelID)
+	from := st.Stage // 审查 N-P2-2：首次熔断记 closed→open
 	cool := st.CooldownSec
 	if cool <= 0 {
 		cool = cfg.CooldownInitialSec
@@ -136,7 +138,8 @@ func TripImmediate(channelID int, reason string) {
 	st.Reason = reason
 	saveBreakerState(st)
 	model.UpdateChannelStatus(channelID, "", common.ChannelStatusScoreBroken, reason)
-	model.RecordBreakerEvent(channelID, "", st.Stage, "open", reason, 0)
+	model.RecordBreakerEvent(channelID, "", from, "open", reason, 0)
+	InvalidateHalfOpenCache()
 	clearHalfOpenCounters(channelID)
 }
 
@@ -154,10 +157,34 @@ func saveBreakerState(st *model.ChannelBreakerState) {
 	}
 	st.UpdatedAt = time.Now()
 	_ = model.DB.Save(st).Error
+	InvalidateHalfOpenCache()
 }
 
 // ListHalfOpenReady returns channels whose cooldown elapsed (stage open→half_2 or already half_*).
+// 审查 N-P1-2 / N-P2-3：状态推进与查库由后台 AdvanceHalfOpen 定时完成，热路径只读内存快照。
 func ListHalfOpenReady() []HalfOpenInfo {
+	halfOpenCacheMu.RLock()
+	list, at := halfOpenCache, halfOpenCacheAt
+	halfOpenCacheMu.RUnlock()
+	if time.Since(at) > halfOpenCacheMaxAge {
+		// 后台没跑起来（测试/单机启动早期）时兜底同步刷新一次
+		return AdvanceHalfOpen()
+	}
+	out := make([]HalfOpenInfo, len(list))
+	copy(out, list)
+	return out
+}
+
+var (
+	halfOpenCacheMu     sync.RWMutex
+	halfOpenCache       []HalfOpenInfo
+	halfOpenCacheAt     time.Time
+	halfOpenCacheMaxAge = 15 * time.Second
+	halfOpenLoopOnce    sync.Once
+)
+
+// AdvanceHalfOpen 把冷却到期的 open 推进到 half_2，并刷新内存快照。
+func AdvanceHalfOpen() []HalfOpenInfo {
 	var rows []model.ChannelBreakerState
 	now := time.Now()
 	_ = model.DB.Where("stage IN ? AND cooldown_until <= ?", []string{"open", "half_2", "half_10"}, now).Find(&rows).Error
@@ -168,10 +195,62 @@ func ListHalfOpenReady() []HalfOpenInfo {
 			stage = "half_2"
 			r.Stage = "half_2"
 			saveBreakerState(&r)
+			model.RecordBreakerEvent(r.ChannelID, "", "open", "half_2", "cooldown_elapsed", 0)
 		}
 		out = append(out, HalfOpenInfo{ChannelID: r.ChannelID, Stage: stage})
 	}
-	return out
+	halfOpenCacheMu.Lock()
+	halfOpenCache, halfOpenCacheAt = out, time.Now()
+	halfOpenCacheMu.Unlock()
+	cp := make([]HalfOpenInfo, len(out))
+	copy(cp, out)
+	return cp
+}
+
+// InvalidateHalfOpenCache 熔断状态变更后让下次读取重新加载。
+func InvalidateHalfOpenCache() {
+	halfOpenCacheMu.Lock()
+	halfOpenCacheAt = time.Time{}
+	halfOpenCacheMu.Unlock()
+}
+
+// StartHalfOpenLoop 后台每 5s 推进一次半开状态（幂等）。
+func StartHalfOpenLoop() {
+	halfOpenLoopOnce.Do(func() {
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					common.SysError(common.LogText("half-open loop panic: %v", r))
+				}
+			}()
+			t := time.NewTicker(5 * time.Second)
+			defer t.Stop()
+			for range t.C {
+				if model.DB != nil {
+					AdvanceHalfOpen()
+				}
+			}
+		}()
+	})
+}
+
+// HalfOpenFallback 审查 N-P1-2：候选为空时挑一个到期半开、服务该模型与分组、inflight 未满的渠道。
+func HalfOpenFallback(modelName, group string) *model.Channel {
+	cfg := GetConfig()
+	for _, h := range ListHalfOpenReady() {
+		ch, err := model.GetChannelById(h.ChannelID, true)
+		if err != nil || ch == nil || ch.Status != common.ChannelStatusScoreBroken {
+			continue
+		}
+		if !channelServesModel(ch, modelName) || !channelInGroup(ch, group) {
+			continue
+		}
+		if HalfOpenInflightFull(h.ChannelID, cfg.HalfOpenMaxInflight) {
+			continue
+		}
+		return ch
+	}
+	return nil
 }
 
 func halfOpenInflightCount(channelID int) int {
@@ -421,8 +500,13 @@ func NoteAttemptResult(channelID int, success bool, class ErrClass) {
 
 // IsHalfOpenChannel reports whether channel is currently in half-open stage.
 func IsHalfOpenChannel(channelID int) bool {
-	st := loadBreakerState(channelID)
-	return st.Stage == "half_2" || st.Stage == "half_10"
+	// 审查 N-P2-3：读内存快照，不在热路径查库
+	for _, h := range ListHalfOpenReady() {
+		if h.ChannelID == channelID {
+			return true
+		}
+	}
+	return false
 }
 
 // ShouldEnableChannelRespectScoreBroken keeps official ShouldEnable from reviving status=4.

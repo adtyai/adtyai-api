@@ -48,3 +48,23 @@ func ConfirmChannelSelected(channelID int) bool {
 	}
 	return OnChannelSelectedHook(channelID)
 }
+
+// HalfOpenFallbackHook 审查 N-P1-2：候选为空（健康渠道全部熔断）时，返回一个冷却到期、可半开探测的渠道。
+var HalfOpenFallbackHook func(modelName, group string) *Channel
+
+// RegisterHalfOpenFallbackHook sets the empty-candidate half-open fallback.
+func RegisterHalfOpenFallbackHook(fn func(modelName, group string) *Channel) {
+	HalfOpenFallbackHook = fn
+}
+
+// halfOpenFallback 选一个到期半开渠道并占用 inflight；没有则 nil。
+func halfOpenFallback(modelName, group string) *Channel {
+	if HalfOpenFallbackHook == nil {
+		return nil
+	}
+	ch := HalfOpenFallbackHook(modelName, group)
+	if ch == nil || !ConfirmChannelSelected(ch.Id) {
+		return nil
+	}
+	return ch
+}

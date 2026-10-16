@@ -280,6 +280,8 @@ func Init() {
 	LoadConfigFromOptions()
 	model.RegisterSmartWeightHook(SmartWeights)
 	model.RegisterOnChannelSelectedHook(OnChannelSelected)
+	model.RegisterHalfOpenFallbackHook(HalfOpenFallback)
+	StartHalfOpenLoop()
 	EnsureDefaultSchemeInDB()
 }
 

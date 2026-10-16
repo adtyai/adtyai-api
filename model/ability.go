@@ -220,6 +220,12 @@ func GetChannel(
 			return nil, nil
 		}
 	} else {
+		// 审查 N-P1-2：无可用渠道时回退到冷却到期的半开渠道
+		if len(filters) == 0 && retry == 0 {
+			if ch := halfOpenFallback(model, group); ch != nil {
+				return ch, nil
+			}
+		}
 		return nil, nil
 	}
 	err = DB.First(&channel, "id = ?", channel.Id).Error
