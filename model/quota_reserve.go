@@ -3,6 +3,7 @@ package model
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/QuantumNous/new-api/common"
 	"gorm.io/gorm"
@@ -231,6 +232,9 @@ func TryReserveUserWallet(id int, quota int) (bonus int, paid int, ok bool, err 
 
 // ErrInsufficientWalletBalance 两本账合计不足以完成扣减（结算补扣等）。
 // 整笔事务回滚，users.quota / bonus 均不改；上游可 errors.Is 后映 403。
+// LedgerKindConsumeArrears 审查 R-P2-4：结算扣成负数（欠费）的标记流水。
+const LedgerKindConsumeArrears = "consume_arrears"
+
 var ErrInsufficientWalletBalance = errors.New("insufficient wallet balance")
 
 // DecreaseUserWallet 结算补扣：锁行后先扣赠送再扣实充。
@@ -300,6 +304,14 @@ func decreaseUserWallet(id int, quota int, allowDebt bool) (bonus int, paid int,
 			}
 			if allowDebt && fromPaid > user.Quota {
 				common.SysLog(common.LogText("user %d settled into arrears: charged %d, paid balance before %d", id, fromPaid, user.Quota))
+				// 审查 R-P2-4：欠费可见。delta=0 的标记流水（消费本身由小时汇总记账，避免重复计入对账）；
+				// balance_after 为扣后（负）余额，管理端按 kind=consume_arrears 即可查出欠费用户。
+				shortfall := fromPaid - max(user.Quota, 0)
+				if err := writeLedgerEntryTx(tx, id, "paid", LedgerKindConsumeArrears, 0, int64(user.Quota-fromPaid),
+					fmt.Sprintf("settled into arrears: charged %d, paid before %d, shortfall %d", fromPaid, user.Quota, shortfall),
+					"billing", "", 0); err != nil {
+					return err
+				}
 			}
 		}
 		// B-03：同事务记出资拆分
