@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -682,19 +683,84 @@ func AdtyRoutingCostGuards(c *gin.Context) {
 	srOK(c, rows)
 }
 
+// AdtyRoutingCostBackfill POST /api/adty/routing/cost/backfill（root）
+// 审查 N-P1-5：真实从本地消费日志回填成本流水。body: {"from":unix,"to":unix,"limit":n}，默认最近 24h。
 func AdtyRoutingCostBackfill(c *gin.Context) {
-	cfg := smartrouting.GetConfig()
-	if !cfg.HistoryBackfillEnabled {
-		adtyFail(c, http.StatusBadRequest, "bad_request", "history_backfill_enabled=false", nil)
+	if !requireRoutingRoot(c) {
 		return
 	}
-	// skeleton: mark accepted; actual log→bucket backfill can be expanded
-	srOK(c, gin.H{"accepted": true, "note": "backfill skeleton; enable and extend from local logs"})
+	cfg := smartrouting.GetConfig()
+	if !cfg.HistoryBackfillEnabled {
+		adtyFail(c, http.StatusBadRequest, "backfill_disabled", "history_backfill_enabled=false", nil)
+		return
+	}
+	var req struct {
+		From  int64 `json:"from"`
+		To    int64 `json:"to"`
+		Limit int   `json:"limit"`
+	}
+	_ = c.ShouldBindJSON(&req)
+	to := time.Now()
+	if req.To > 0 {
+		to = time.Unix(req.To, 0)
+	}
+	from := to.Add(-24 * time.Hour)
+	if req.From > 0 {
+		from = time.Unix(req.From, 0)
+	}
+	scanned, inserted, err := smartrouting.BackfillCostFromLogs(from, to, req.Limit)
+	if err != nil {
+		adtyFail(c, http.StatusBadRequest, "backfill_failed", err.Error(), nil)
+		return
+	}
+	srOK(c, gin.H{"from": from.Unix(), "to": to.Unix(), "scanned": scanned, "inserted": inserted})
 }
 
+var routingBalanceRefreshRunning atomic.Bool
+
+// AdtyRoutingBalanceRefresh POST /api/adty/routing/balance/refresh（root）
+// 审查 N-P1-5：真实刷新渠道余额。带 channel_id 同步刷新该渠道并返回余额；不带则后台刷新全部启用渠道（同一时间只跑一个）。
 func AdtyRoutingBalanceRefresh(c *gin.Context) {
-	// reuse official balance update path via channel id if provided
-	srOK(c, gin.H{"accepted": true, "note": "trigger official AutomaticallyUpdateChannels / per-channel balance API from admin UI"})
+	if !requireRoutingRoot(c) {
+		return
+	}
+	var req struct {
+		ChannelID int `json:"channel_id"`
+	}
+	_ = c.ShouldBindJSON(&req)
+	if req.ChannelID == 0 {
+		req.ChannelID, _ = strconv.Atoi(c.Query("channel_id"))
+	}
+	if req.ChannelID > 0 {
+		ch, err := model.GetChannelById(req.ChannelID, true)
+		if err != nil || ch == nil {
+			adtyFail(c, http.StatusNotFound, "not_found", "channel not found", nil)
+			return
+		}
+		res, err := updateChannelBalance(ch)
+		if err != nil {
+			adtyFail(c, http.StatusBadGateway, "balance_query_failed", err.Error(), nil)
+			return
+		}
+		srOK(c, gin.H{"channel_id": ch.Id, "balance": res.Balance, "raw_response": res.RawResponse, "updated_at": time.Now().Unix()})
+		return
+	}
+	if !routingBalanceRefreshRunning.CompareAndSwap(false, true) {
+		adtyFail(c, http.StatusConflict, "refresh_running", "a full balance refresh is already running", nil)
+		return
+	}
+	go func() {
+		defer routingBalanceRefreshRunning.Store(false)
+		defer func() {
+			if r := recover(); r != nil {
+				common.SysError(common.LogText("routing balance refresh panic: %v", r))
+			}
+		}()
+		if err := updateAllChannelsBalance(); err != nil {
+			common.SysError(common.LogText("routing balance refresh failed: %s", err.Error()))
+		}
+	}()
+	c.JSON(http.StatusAccepted, gin.H{"success": true, "data": gin.H{"started": true}})
 }
 
 // auth flags
