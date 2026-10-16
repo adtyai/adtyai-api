@@ -50,7 +50,7 @@ export function parseSystemVersion(
   const match = value
     ?.trim()
     .match(
-      /^v?(\d+(?:\.\d+){2,})(?:-(alpha|beta|rc|patch)(?:\.(\d+))?(?:-i18nfix\.(\d+))?)?(?:\+[\da-zA-Z.-]+)?$/
+      /^v?(\d+(?:\.\d+){2,})(?:-(alpha|beta|rc|patch)(?:\.(\d+))?(?:-i18nfix\.(\d+))?)?(?:-adtyai)?(?:\+[\da-zA-Z.-]+)?$/
     )
   if (!match || (match[4] && match[2] !== 'rc')) return null
 
@@ -111,5 +111,5 @@ export function selectLatestRelease(payload: unknown): SystemRelease | null {
 }
 
 export function getSystemReleaseUrl(release: SystemRelease): string {
-  return `https://github.com/QuantumNous/new-api/releases/tag/${encodeURIComponent(release.tag_name)}`
+  return `https://github.com/adtyai/adtyai-api/releases/tag/${encodeURIComponent(release.tag_name)}`
 }

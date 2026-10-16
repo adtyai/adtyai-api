@@ -41,6 +41,9 @@ describe('system release ordering', () => {
     ['dev', 'v1.0.0', null],
     ['', 'v1.0.0', null],
     ['v1.0.0-custom.1', 'v1.0.0', null],
+    ['v1.0.0-adtyai', 'v1.0.0', 0],
+    ['v1.0.0-adtyai', 'v1.0.1-adtyai', -1],
+    ['v1.0.0-rc.44', 'v1.0.0-adtyai', -1],
     ['v1.0.0-rc.36-2-gabcdef', 'v1.0.0', null],
   ])('compares %s against %s as %s', (current, latest, expected) => {
     expect(compareSystemVersions(current, latest)).toBe(expected)
