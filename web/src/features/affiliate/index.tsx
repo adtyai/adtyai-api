@@ -94,12 +94,12 @@ export function AffiliateCenterPage() {
                     [
                       t('Available to withdraw'),
                       formatAffUsd(data.aff_quota),
-                      t('Frozen') + ' ' + formatAffUsd(data.frozen_quota),
+                      `${t('Frozen')  } ${  formatAffUsd(data.frozen_quota)}`,
                     ],
                     [
                       t('Top-up commission rate'),
                       formatAffRate(data.topup_rate),
-                      t('Freeze days') + ': ' + String(data.freeze_days ?? 0),
+                      `${t('Freeze days')  }: ${  String(data.freeze_days ?? 0)}`,
                     ],
                   ] as [string, string, string | null][]
                 ).map(([label, value, sub]) => (
@@ -195,11 +195,11 @@ export function AffiliateCenterPage() {
                         ],
                         [
                           t('Freeze period'),
-                          String(data.freeze_days ?? 0) + ' ' + t('days'),
+                          `${String(data.freeze_days ?? 0)  } ${  t('days')}`,
                         ],
                         [
                           t('Minimum withdraw'),
-                          '$' + Number(data.min_withdraw_usd || 0).toFixed(2),
+                          `$${  Number(data.min_withdraw_usd || 0).toFixed(2)}`,
                         ],
                         [
                           t('Withdraw fee rate'),

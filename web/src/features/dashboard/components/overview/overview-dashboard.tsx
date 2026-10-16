@@ -89,7 +89,7 @@ function firstTopupBonusRateToPercent(rate: unknown): number | null {
       ? rate
       : typeof rate === 'string'
         ? Number(rate)
-        : NaN
+        : Number.NaN
   if (!Number.isFinite(n) || n < 0) return null
   const percent = n <= 1 ? n * 100 : n
   return Math.round(percent * 100) / 100

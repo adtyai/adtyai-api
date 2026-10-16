@@ -64,7 +64,7 @@ export async function updateEpayInstance(
   input: EpayUpdateInput
 ): Promise<EpayOneResponse> {
   const res = await api.put<EpayOneResponse>(
-    '/api/admin/epay-instances/' + id,
+    `/api/admin/epay-instances/${  id}`,
     input,
     { validateStatus: okish }
   )
@@ -75,7 +75,7 @@ export async function setEpayInstancePrimary(
   id: number
 ): Promise<EpayOneResponse> {
   const res = await api.post<EpayOneResponse>(
-    '/api/admin/epay-instances/' + id + '/set-primary',
+    `/api/admin/epay-instances/${  id  }/set-primary`,
     { confirm: true },
     { validateStatus: okish }
   )
@@ -86,7 +86,7 @@ export async function disableEpayInstance(
   id: number
 ): Promise<EpayOneResponse> {
   const res = await api.post<EpayOneResponse>(
-    '/api/admin/epay-instances/' + id + '/disable',
+    `/api/admin/epay-instances/${  id  }/disable`,
     { confirm: true },
     { validateStatus: okish }
   )
@@ -95,7 +95,7 @@ export async function disableEpayInstance(
 
 export async function enableEpayInstance(id: number): Promise<EpayOneResponse> {
   const res = await api.post<EpayOneResponse>(
-    '/api/admin/epay-instances/' + id + '/enable',
+    `/api/admin/epay-instances/${  id  }/enable`,
     { confirm: true },
     { validateStatus: okish }
   )

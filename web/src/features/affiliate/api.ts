@@ -86,7 +86,7 @@ export async function listAffWithdrawalsSelf(params?: {
 
 export async function getAffWithdrawalSelf(id: number): Promise<AffWithdrawal> {
   const res = await api.get<AffOneResponse<AffWithdrawal>>(
-    '/api/aff/withdrawals/' + id,
+    `/api/aff/withdrawals/${  id}`,
     {
       validateStatus: (s) => (s >= 200 && s < 300) || s === 403 || s === 404,
     }

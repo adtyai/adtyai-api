@@ -119,10 +119,10 @@ export function AffiliateWithdrawPage() {
     }
     if (amountNum + 1e-9 < Number(data.min_withdraw_usd || 0)) {
       setLocalError(
-        t('Below minimum withdraw') +
-          ' ($' +
-          Number(data.min_withdraw_usd).toFixed(2) +
-          ')'
+        `${t('Below minimum withdraw') 
+          } ($${ 
+          Number(data.min_withdraw_usd).toFixed(2) 
+          })`
       )
       return
     }
@@ -306,8 +306,8 @@ export function AffiliateWithdrawPage() {
                                 )
                               )}
                               {row.status === 'frozen' && row.unfreeze_at
-                                ? ' · ' +
-                                  new Date(row.unfreeze_at).toLocaleDateString()
+                                ? ` · ${ 
+                                  new Date(row.unfreeze_at).toLocaleDateString()}`
                                 : ''}
                             </span>
                           </TableCell>

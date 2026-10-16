@@ -147,7 +147,7 @@ export function formatUnixTime(
 
 export function formatUsd(n: number | null | undefined): string {
   if (n == null || Number.isNaN(Number(n))) return '—'
-  return '$' + Number(n).toFixed(2)
+  return `$${  Number(n).toFixed(2)}`
 }
 
 /** Backend payment_method (alipay | wxpay | usdt) → i18n key; unknown raw. */

@@ -68,8 +68,8 @@ export function menuKeysForUrl(
     // `alerts` with /system-settings/alerts (Telegram).
     if (
       segments.length >= 2 &&
-      segments[segments.length - 1] === 'alerts' &&
-      segments[segments.length - 2] === 'operations'
+      segments.at(-1) === 'alerts' &&
+      segments.at(-2) === 'operations'
     ) {
       keys.add('operations-alerts')
       return [...keys]

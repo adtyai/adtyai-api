@@ -19,6 +19,6 @@ For commercial licensing, please contact support@quantumnous.com
 export function generateAffInviteLink(affCode: string): string {
   if (typeof window === 'undefined' || !affCode) return ''
   return (
-    window.location.origin + '/sign-up?aff=' + encodeURIComponent(affCode)
+    `${window.location.origin  }/sign-up?aff=${  encodeURIComponent(affCode)}`
   )
 }

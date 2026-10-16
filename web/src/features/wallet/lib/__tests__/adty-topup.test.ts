@@ -74,7 +74,7 @@ describe('adty-topup helpers', () => {
     expect(formatUsdAmount(100)).toBe('$100')
     expect(formatUsdAmount(10.5)).toBe('$10.50')
     expect(formatUsdAmount(100000)).toBe('$100,000')
-    expect(formatUsdAmount(NaN)).toBe('-')
+    expect(formatUsdAmount(Number.NaN)).toBe('-')
   })
 })
 

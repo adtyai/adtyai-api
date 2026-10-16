@@ -62,7 +62,7 @@ export async function putGroupMeta(
   input: GroupMetaPutInput
 ): Promise<GroupMetaOneResponse> {
   const res = await api.put<GroupMetaOneResponse>(
-    '/api/admin/groups/' + encodeURIComponent(code),
+    `/api/admin/groups/${  encodeURIComponent(code)}`,
     input,
     { validateStatus: okish }
   )

@@ -69,7 +69,7 @@ export async function adminVoidAffCommission(
   id: number
 ): Promise<AffOneResponse<AffCommission>> {
   const res = await api.post<AffOneResponse<AffCommission>>(
-    '/api/admin/aff/commissions/' + id + '/void',
+    `/api/admin/aff/commissions/${  id  }/void`,
     { confirm: true },
     { validateStatus: okish }
   )
@@ -119,7 +119,7 @@ export async function adminAffWithdrawAction(
   const body: { confirm: true; reason?: string } = { confirm: true }
   if (action === 'reject' && extra?.reason) body.reason = extra.reason
   const res = await api.post<AffOneResponse<AffWithdrawal>>(
-    '/api/admin/aff/withdrawals/' + id + '/' + action,
+    `/api/admin/aff/withdrawals/${  id  }/${  action}`,
     body,
     { validateStatus: okish }
   )
@@ -159,7 +159,7 @@ export async function adminApproveRiskReview(
   id: number
 ): Promise<{ success: boolean; message?: string; code?: string }> {
   const res = await api.post(
-    '/api/admin/risk-reviews/' + id + '/approve',
+    `/api/admin/risk-reviews/${  id  }/approve`,
     { confirm: true },
     { validateStatus: okish }
   )
@@ -170,7 +170,7 @@ export async function adminRejectRiskReview(
   id: number
 ): Promise<{ success: boolean; message?: string; code?: string }> {
   const res = await api.post(
-    '/api/admin/risk-reviews/' + id + '/reject',
+    `/api/admin/risk-reviews/${  id  }/reject`,
     { confirm: true },
     { validateStatus: okish }
   )

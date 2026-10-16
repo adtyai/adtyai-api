@@ -46,7 +46,7 @@ export function newRefundRequestId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID()
   }
-  return 'refund-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10)
+  return `refund-${  Date.now()  }-${  Math.random().toString(36).slice(2, 10)}`
 }
 
 export function refundErrorMessage(

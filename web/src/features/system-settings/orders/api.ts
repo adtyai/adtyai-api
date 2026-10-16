@@ -61,7 +61,7 @@ export async function listAdminOrders(
 export async function getAdminOrder(orderNo: string): Promise<TopupOrder> {
   const no = orderNo.trim()
   const res = await api.get<AdminOrderDetailResponse>(
-    '/api/admin/orders/' + encodeURIComponent(no),
+    `/api/admin/orders/${  encodeURIComponent(no)}`,
     {
       validateStatus: (s) =>
         (s >= 200 && s < 300) || s === 403 || s === 404,
@@ -82,7 +82,7 @@ export async function completeAdminOrder(
   orderNo: string
 ): Promise<AdminOrderCompleteResponse> {
   const res = await api.post<AdminOrderCompleteResponse>(
-    '/api/admin/orders/' + encodeURIComponent(orderNo.trim()) + '/complete',
+    `/api/admin/orders/${  encodeURIComponent(orderNo.trim())  }/complete`,
     { confirm: true },
     {
       validateStatus: (s) =>

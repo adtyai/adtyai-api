@@ -277,7 +277,7 @@ export function RiskReviewsSettings() {
                 <div className='border-b px-5 pt-4 pb-3'>
                   <div className='text-[15px] font-semibold'>
                     {selected
-                      ? t('Review detail') + ' #' + selected.id
+                      ? `${t('Review detail')  } #${  selected.id}`
                       : t('Review detail')}
                   </div>
                 </div>

@@ -300,7 +300,7 @@ export async function getAdtyTopupOrder(
   orderNo: string
 ): Promise<ApiResponse<AdtyTopupOrder>> {
   const res = await api.get(
-    '/api/topup/order/' + encodeURIComponent(orderNo),
+    `/api/topup/order/${  encodeURIComponent(orderNo)}`,
     {
       skipErrorHandler: true,
       skipBusinessError: true,

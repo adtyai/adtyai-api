@@ -122,11 +122,11 @@ export function ConfirmBalanceAdjustDialog({
           return
         }
         toast.success(
-          t('Approved') +
-            ' · ' +
-            formatAdjustUsd(res.data.balance_before) +
-            ' → ' +
-            formatAdjustUsd(res.data.balance_after)
+          `${t('Approved') 
+            } · ${ 
+            formatAdjustUsd(res.data.balance_before) 
+            } → ${ 
+            formatAdjustUsd(res.data.balance_after)}`
         )
         onOpenChange(false)
         onDone?.(res.data)

@@ -138,8 +138,8 @@ export function formatSignedQuota(delta: number | null | undefined): string {
   const n = Number(delta)
   if (n === 0) return formatQuota(0)
   const abs = formatQuota(Math.abs(n))
-  if (n > 0) return '+' + abs
-  return '-' + abs.replace(/^-/, '')
+  if (n > 0) return `+${  abs}`
+  return `-${  abs.replace(/^-/, '')}`
 }
 
 /** Local datetime-local value → unix seconds; empty → undefined. */
@@ -190,6 +190,6 @@ export function ledgerNote(
   const key = raw ? ledgerReasonLabelKey(raw) : null
   const reason = key && translate ? translate(key) : raw
   const ref = (entry.ref_id || '').trim()
-  if (reason && ref) return reason + ' · ' + ref
+  if (reason && ref) return `${reason  } · ${  ref}`
   return reason || ref || '—'
 }
