@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useNavigate, useSearch } from '@tanstack/react-router'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { PublicLayout } from '@/components/layout'
@@ -32,27 +32,16 @@ import {
 import { useRankings } from './hooks/use-rankings'
 import type { RankingPeriod } from './types'
 
-const VALID_PERIODS: RankingPeriod[] = ['today', 'week', 'month', 'year']
-
 export function Rankings() {
   const { t } = useTranslation()
-  const search = useSearch({ from: '/rankings/' })
-  const navigate = useNavigate()
-
-  const period: RankingPeriod = VALID_PERIODS.includes(
-    search.period as RankingPeriod
-  )
-    ? (search.period as RankingPeriod)
-    : 'week'
+  // Route /rankings/ is sealed (permanent redirect); period is local only for typecheck/compile.
+  const [period, setPeriod] = useState<RankingPeriod>('week')
 
   const rankingsQuery = useRankings(period)
   const snapshot = rankingsQuery.data?.data
 
   const handlePeriodChange = (next: RankingPeriod) => {
-    navigate({
-      to: '/rankings',
-      search: (prev) => ({ ...prev, period: next }),
-    })
+    setPeriod(next)
   }
 
   return (
