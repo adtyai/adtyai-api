@@ -236,6 +236,17 @@ var ErrInsufficientWalletBalance = errors.New("insufficient wallet balance")
 // DecreaseUserWallet 结算补扣：锁行后先扣赠送再扣实充。
 // 实充不够补齐时整笔失败回滚，绝不把 users.quota 扣成负数（邀请返佣除外，本函数不涉及）。
 func DecreaseUserWallet(id int, quota int) (bonus int, paid int, err error) {
+	return decreaseUserWallet(id, quota, false)
+}
+
+// DecreaseUserWalletAllowDebt 服务已交付后的结算补扣（与官方 new-api DecreaseUserQuota 一致）：
+// 先扣赠送到 0，剩余全部从实充扣，实充允许扣成负数（欠费），绝不整笔免单。
+// 欠费后 users.quota<=0，下一次请求在 NewBillingSession / PreConsume 被 403 拦住。
+func DecreaseUserWalletAllowDebt(id int, quota int) (bonus int, paid int, err error) {
+	return decreaseUserWallet(id, quota, true)
+}
+
+func decreaseUserWallet(id int, quota int, allowDebt bool) (bonus int, paid int, err error) {
 	if quota < 0 {
 		return 0, 0, errors.New("quota cannot be negative")
 	}
@@ -261,8 +272,8 @@ func DecreaseUserWallet(id int, quota int) (bonus int, paid int, err error) {
 			fromBonus = quota
 		}
 		fromPaid := quota - fromBonus
-		if fromPaid > user.Quota {
-			// 整笔失败回滚，不静默扣到 0、不扣负
+		if fromPaid > user.Quota && !allowDebt {
+			// 整笔失败回滚，不静默扣到 0、不扣负（仅用于服务交付前的预留）
 			return ErrInsufficientWalletBalance
 		}
 		if fromBonus > 0 {
@@ -276,13 +287,19 @@ func DecreaseUserWallet(id int, quota int) (bonus int, paid int, err error) {
 			}
 		}
 		if fromPaid > 0 {
-			res := tx.Model(&User{}).Where("id = ? AND quota >= ?", id, fromPaid).
-				Update("quota", gorm.Expr("quota - ?", fromPaid))
+			q := tx.Model(&User{}).Where("id = ?", id)
+			if !allowDebt {
+				q = q.Where("quota >= ?", fromPaid)
+			}
+			res := q.Update("quota", gorm.Expr("quota - ?", fromPaid))
 			if res.Error != nil {
 				return res.Error
 			}
 			if res.RowsAffected != 1 {
 				return errors.New("paid quota changed concurrently")
+			}
+			if allowDebt && fromPaid > user.Quota {
+				common.SysLog(common.LogText("user %d settled into arrears: charged %d, paid balance before %d", id, fromPaid, user.Quota))
 			}
 		}
 		// B-03：同事务记出资拆分

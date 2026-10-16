@@ -72,12 +72,9 @@ func (w *WalletFunding) Settle(delta int) error {
 		return nil
 	}
 	if delta > 0 {
-		// 结算补扣：先赠送后实充；实充不够则整笔失败（映 ErrInsufficientWalletQuota → 403）
-		bonus, paid, err := model.DecreaseUserWallet(w.userId, delta)
+		// 结算补扣（服务已交付）：先赠送后实充，实充不够允许扣成负数（对齐官方），不可免单。
+		bonus, paid, err := model.DecreaseUserWalletAllowDebt(w.userId, delta)
 		if err != nil {
-			if errors.Is(err, model.ErrInsufficientWalletBalance) {
-				return ErrInsufficientWalletQuota
-			}
 			return err
 		}
 		model.ApplyUserQuotaCacheDelta(w.userId, -int64(delta))

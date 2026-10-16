@@ -461,7 +461,7 @@ func postConsumeQuotaWithResult(relayInfo *relaycommon.RelayInfo, quota int, pre
 		// ADTY B-03：记本请求钱包拆分；quota<0 属请求内退回，按本请求拆分反向退（先实充后赠送），不写流水
 		if quota > 0 {
 			var bonus, paid int
-			bonus, paid, err = model.DecreaseUserWallet(relayInfo.UserId, quota)
+			bonus, paid, err = model.DecreaseUserWalletAllowDebt(relayInfo.UserId, quota)
 			if err == nil {
 				model.ApplyUserQuotaCacheDelta(relayInfo.UserId, -int64(quota))
 				relayInfo.WalletBonusConsumed += bonus

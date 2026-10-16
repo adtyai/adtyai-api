@@ -119,7 +119,7 @@ func taskAdjustFunding(task *model.Task, delta int) error {
 	}
 	// ADTY B-03 H-B：补扣记拆分；退款按任务记录的拆分反向退（事后退款写流水，不碰拆分表）。
 	if delta > 0 {
-		bonus, paid, err := model.DecreaseUserWallet(task.UserId, delta)
+		bonus, paid, err := model.DecreaseUserWalletAllowDebt(task.UserId, delta)
 		if err != nil {
 			return err
 		}

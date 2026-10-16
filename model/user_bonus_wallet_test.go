@@ -107,3 +107,28 @@ func TestDecreaseUserWalletDoesNotGoNegative(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), bonus)
 }
+
+// 审查 P0-1：服务交付后的结算补扣不可免单——赠送扣到 0，实充扣成负数（对齐官方）。
+func TestDecreaseUserWalletAllowDebtChargesIntoArrears(t *testing.T) {
+	truncateTables(t)
+	resetBatchUpdateTestState(t)
+	common.RedisEnabled = false
+
+	user := createReserveTestUser(t, 100) // paid=100
+	require.NoError(t, EnsureUserBonusWallet(DB, user.Id))
+	require.NoError(t, IncreaseUserBonusQuota(user.Id, 300, "topup_bonus", "seed", "test", "p0-1"))
+
+	b, p, err := DecreaseUserWalletAllowDebt(user.Id, 675)
+	require.NoError(t, err)
+	assert.Equal(t, 300, b)
+	assert.Equal(t, 375, p)
+	assert.Equal(t, -275, getUserQuotaFromDB(t, user.Id), "paid goes negative (arrears)")
+	bonus, err := GetUserBonusBalance(user.Id)
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), bonus)
+
+	// 欠费后下一次预留必须失败
+	_, _, ok, err := TryReserveUserWallet(user.Id, 1)
+	require.NoError(t, err)
+	assert.False(t, ok)
+}
