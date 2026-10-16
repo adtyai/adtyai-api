@@ -78,6 +78,13 @@ import type {
   WeightPreview,
 } from '../types'
 
+function sameWeights(a: ScoreWeights, b?: ScoreWeights): boolean {
+  if (!b) return false
+  return WEIGHT_DIM_KEYS.every(
+    (k) => (Number(a[k]) || 0) === (Number(b[k]) || 0)
+  )
+}
+
 export function StrategyPage() {
   const { t } = useTranslation()
   const isRoot = useAuthStore(
@@ -95,7 +102,7 @@ export function StrategyPage() {
 
   const [preview, setPreview] = useState<WeightPreview | null>(null)
   const [previewOpen, setPreviewOpen] = useState(false)
-  const [pendingSchemeId, setPendingSchemeId] = useState<string | null>(null)
+  const [, setPendingSchemeId] = useState<string | null>(null)
   const [pendingSchemeName, setPendingSchemeName] = useState<string | null>(
     null
   )
@@ -155,20 +162,32 @@ export function StrategyPage() {
     setPendingRollbackId(null)
     setPendingSchemeId(opts?.schemeId ?? null)
     setPendingSchemeName(opts?.schemeName ?? null)
+    // P1-3: the preview intent must fingerprint-match what PUT /config will
+    // compute server-side (kind, scheme_id=0, scheme_name=new active scheme).
+    const activeScheme = config?.active_weight_scheme || undefined
+    const targetScheme = opts?.schemeName || activeScheme
+    const schemeChanging = Boolean(
+      opts?.schemeName && opts.schemeName !== activeScheme
+    )
+    const weightsChanging = !sameWeights(next, config?.weights)
+    const kind = schemeChanging
+      ? weightsChanging
+        ? 'put_config'
+        : 'activate_scheme'
+      : 'update_weights'
     const result = await previewWeightScheme({
       weights: next,
-      scheme_id: opts?.schemeId,
-      scheme_name: opts?.schemeName,
-      kind: opts?.kind,
+      scheme_name: targetScheme,
+      kind,
     })
     setPreview(result)
     setPreviewOpen(true)
   }
 
   const tokenOk = Boolean(preview?.preview_token)
-  const previewReady = Boolean(
-    tokenOk && preview && preview.items.length > 0
-  )
+  // P2-2: an empty preview (no scores yet) is still applicable.
+  const previewReady = tokenOk
+  const previewEmpty = Boolean(preview && preview.items.length === 0)
 
   const confirmApplyWeights = async () => {
     if (!previewReady || !preview?.preview_token) {
@@ -195,7 +214,11 @@ export function StrategyPage() {
       return
     }
 
-    const schemeName = pendingSchemeName || pendingSchemeId || undefined
+    const schemeName =
+      pendingSchemeName &&
+      pendingSchemeName !== (config?.active_weight_scheme || undefined)
+        ? pendingSchemeName
+        : undefined
     const payload: Parameters<typeof putConfig.mutateAsync>[0] = {
       weights: draftWeights ?? weights,
       preview_token: token,
@@ -672,6 +695,11 @@ export function StrategyPage() {
         disabled={!previewReady}
         handleConfirm={() => void confirmApplyWeights()}
       >
+        {previewReady && previewEmpty ? (
+          <p className='text-muted-foreground mt-3 text-sm'>
+            {t('No scores yet; changes take effect once scoring starts.')}
+          </p>
+        ) : null}
         {preview && preview.items.length > 0 ? (
           <div className='mt-3 max-h-60 overflow-auto'>
             <Table>

@@ -119,10 +119,30 @@ export type PutRoutingConfigBody = Partial<RoutingConfig> & {
   preview_token?: string
 }
 
-/** PUT /config — weight/scheme changes must include preview_token from preview. */
-export async function putRoutingConfig(
+/** Raw backend config (no FE normalization) — used as merge base for PUT. */
+export async function getRawRoutingConfig(): Promise<Record<
+  string,
+  unknown
+> | null> {
+  try {
+    const res = await api.get<ApiEnvelope<Record<string, unknown>>>(
+      `${SMART_ROUTING_API_PREFIX}/config`,
+      softGetConfig
+    )
+    const data = res.data?.data
+    if (res.data?.success && data && typeof data === 'object') {
+      return data
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
+/** Convert a FE patch into backend field names/shapes. */
+export function toBackendConfigPatch(
   patch: PutRoutingConfigBody
-): Promise<ApiEnvelope<RoutingConfig>> {
+): Record<string, unknown> {
   const body: Record<string, unknown> = {}
   for (const [k, v] of Object.entries(patch)) {
     if (v === undefined) continue
@@ -137,11 +157,32 @@ export async function putRoutingConfig(
       }
       continue
     }
-    if (k === 'preview_token') {
-      body.preview_token = v
-      continue
-    }
     body[k] = v
+  }
+  return body
+}
+
+/**
+ * PUT /config — audit P1-3: never send a bare partial body.
+ * The backend decodes the body into a full Config and overwrites it, so a
+ * partial patch silently zeroes every omitted field. We always GET the live
+ * raw config, overlay only the changed fields and send the full object
+ * (also correct once the backend switches to merge semantics).
+ * Weight/scheme changes must include preview_token from preview.
+ */
+export async function putRoutingConfig(
+  patch: PutRoutingConfigBody
+): Promise<ApiEnvelope<RoutingConfig>> {
+  const current = await getRawRoutingConfig()
+  if (!current) {
+    return {
+      success: false,
+      message: 'cannot load current routing config; refusing to overwrite',
+    }
+  }
+  const body: Record<string, unknown> = {
+    ...current,
+    ...toBackendConfigPatch(patch),
   }
   return softMutate<RoutingConfig>('put', '/config', body)
 }
