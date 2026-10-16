@@ -29,6 +29,7 @@ export type MenuVisibilityMap = Record<string, boolean>
 
 const KEY_ALIASES: Record<string, string[]> = {
   keys: ['api-tokens'],
+  'task-plugins': ['plugins'],
 }
 
 export function parseMenuVisibilityMap(raw: unknown): MenuVisibilityMap {
@@ -61,9 +62,26 @@ export function menuKeysForUrl(
 ): string[] {
   const path = url.split(/[?#]/)[0]
   const segments = path.split('/').filter(Boolean)
-  const base = mode === 'nested' ? segments.slice(-1) : segments
   const keys = new Set<string>()
-  for (const seg of base) {
+  if (mode === 'nested') {
+    // /system-settings/operations/alerts (Monitoring) must not share key
+    // `alerts` with /system-settings/alerts (Telegram).
+    if (
+      segments.length >= 2 &&
+      segments[segments.length - 1] === 'alerts' &&
+      segments[segments.length - 2] === 'operations'
+    ) {
+      keys.add('operations-alerts')
+      return [...keys]
+    }
+    const last = segments.slice(-1)
+    for (const seg of last) {
+      keys.add(seg)
+      for (const alias of KEY_ALIASES[seg] ?? []) keys.add(alias)
+    }
+    return [...keys]
+  }
+  for (const seg of segments) {
     keys.add(seg)
     for (const alias of KEY_ALIASES[seg] ?? []) keys.add(alias)
   }

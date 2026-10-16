@@ -16,12 +16,15 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 
-import { BusinessParamsSettings } from '@/features/system-settings/business-params'
-
+// Menu removed; seal deep link → system settings home (same pattern as balance-adjustments).
 export const Route = createFileRoute(
   '/_authenticated/system-settings/business-params/'
 )({
-  component: BusinessParamsSettings,
+  beforeLoad: () => {
+    throw redirect({
+      to: '/system-settings',
+    })
+  },
 })

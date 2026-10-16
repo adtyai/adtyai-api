@@ -43,20 +43,20 @@ export const USER_MENU_KEYS: MenuKeyDef[] = [
 export const ADMIN_MENU_KEYS: MenuKeyDef[] = [
   { key: 'orders', labelKey: 'Topup orders' },
   { key: 'enterprise-pricing', labelKey: 'Enterprise pricing' },
+  // Nested last-seg of /system-settings/alerts only (not operations/alerts — see menuKeysForUrl)
   { key: 'alerts', labelKey: 'Telegram alerts' },
   { key: 'chatwoot', labelKey: 'Chatwoot customer support' },
-  { key: 'bepusdt', labelKey: 'BEpusdt gateway' },
-  { key: 'epay-instances', labelKey: 'Epay instances' },
   { key: 'risk-reviews', labelKey: 'Risk reviews' },
   { key: 'aff-commissions', labelKey: 'Affiliate commissions' },
   { key: 'aff-withdrawals', labelKey: 'Affiliate withdrawals' },
   { key: 'bonus-ledger', labelKey: 'Bonus ledger' },
   { key: 'order-refunds', labelKey: 'Order refunds' },
-  { key: 'groups', labelKey: 'Group display names' },
   { key: 'channels', labelKey: 'Channels' },
   { key: 'models', labelKey: 'Models' },
   { key: 'users', labelKey: 'Users' },
   { key: 'redemption-codes', labelKey: 'Redemption Codes' },
+  { key: 'system-info', labelKey: 'System Info' },
+  { key: 'task-plugins', labelKey: 'Plugins' },
   { key: 'system-settings', labelKey: 'System Settings' },
 ]
 

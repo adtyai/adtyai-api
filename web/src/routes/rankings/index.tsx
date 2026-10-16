@@ -17,38 +17,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { createFileRoute, redirect } from '@tanstack/react-router'
-import z from 'zod'
 
-import { Rankings } from '@/features/rankings'
-import { getModuleAccessForGuard } from '@/lib/nav-modules'
-import { useAuthStore } from '@/stores/auth-store'
-
-const rankingsSearchSchema = z.object({
-  period: z
-    .enum(['today', 'week', 'month', 'year'])
-    .optional()
-    .catch(undefined),
-})
-
+// Rankings entry removed; seal deep link (same as deleted menu / sealed pages).
 export const Route = createFileRoute('/rankings/')({
-  validateSearch: rankingsSearchSchema,
-  beforeLoad: async ({ context, location }) => {
-    const access = await getModuleAccessForGuard(
-      context.queryClient,
-      'rankings'
-    )
-    if (!access.enabled) {
-      throw redirect({ to: '/' })
-    }
-    if (access.requireAuth) {
-      const { auth } = useAuthStore.getState()
-      if (!auth.user) {
-        throw redirect({
-          to: '/sign-in',
-          search: { redirect: location.href },
-        })
-      }
-    }
+  beforeLoad: () => {
+    throw redirect({
+      to: '/',
+    })
   },
-  component: Rankings,
 })

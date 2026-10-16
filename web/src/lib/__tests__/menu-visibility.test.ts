@@ -106,4 +106,29 @@ describe('menu visibility (A39)', () => {
       )
     ).toEqual(['Orders'])
   })
+
+  it('nested alerts: Telegram vs operations Monitoring do not share key', () => {
+    const nested: NavGroup[] = [
+      {
+        title: 's',
+        items: [
+          { title: 'Telegram', url: '/system-settings/alerts' },
+          { title: 'Monitoring', url: '/system-settings/operations/alerts' },
+          { title: 'Chatwoot', url: '/system-settings/chatwoot' },
+        ],
+      },
+    ]
+    const hideTelegram = applyNestedAdminMenuVisibility(nested, { alerts: false })
+    expect(hideTelegram[0].items.map((i) => i.title)).toEqual([
+      'Monitoring',
+      'Chatwoot',
+    ])
+    const hideMonitoring = applyNestedAdminMenuVisibility(nested, {
+      'operations-alerts': false,
+    })
+    expect(hideMonitoring[0].items.map((i) => i.title)).toEqual([
+      'Telegram',
+      'Chatwoot',
+    ])
+  })
 })
