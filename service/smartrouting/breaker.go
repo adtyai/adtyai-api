@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -167,8 +168,12 @@ func ListHalfOpenReady() []HalfOpenInfo {
 	list, at := halfOpenCache, halfOpenCacheAt
 	halfOpenCacheMu.RUnlock()
 	if time.Since(at) > halfOpenCacheMaxAge {
-		// 后台没跑起来（测试/单机启动早期）时兜底同步刷新一次
-		return AdvanceHalfOpen()
+		if !halfOpenLoopRunning.Load() {
+			// 后台循环没跑起来（测试/单机启动早期）时兜底同步刷新一次
+			return AdvanceHalfOpen()
+		}
+		// 审查 R-P2-6：热路径不同步查库，只唤醒后台循环刷新，本次继续读旧快照
+		kickHalfOpenRefresh()
 	}
 	out := make([]HalfOpenInfo, len(list))
 	copy(out, list)
@@ -181,7 +186,16 @@ var (
 	halfOpenCacheAt     time.Time
 	halfOpenCacheMaxAge = 15 * time.Second
 	halfOpenLoopOnce    sync.Once
+	halfOpenLoopRunning atomic.Bool
+	halfOpenKick        = make(chan struct{}, 1)
 )
+
+func kickHalfOpenRefresh() {
+	select {
+	case halfOpenKick <- struct{}{}:
+	default:
+	}
+}
 
 // AdvanceHalfOpen 把冷却到期的 open 推进到 half_2，并刷新内存快照。
 func AdvanceHalfOpen() []HalfOpenInfo {
@@ -207,17 +221,23 @@ func AdvanceHalfOpen() []HalfOpenInfo {
 	return cp
 }
 
-// InvalidateHalfOpenCache 熔断状态变更后让下次读取重新加载。
+// InvalidateHalfOpenCache 熔断状态变更后标脏：后台循环在运行时由它异步刷新（审查 R-P2-6），
+// 否则下次读取时同步重载。
 func InvalidateHalfOpenCache() {
 	halfOpenCacheMu.Lock()
 	halfOpenCacheAt = time.Time{}
 	halfOpenCacheMu.Unlock()
+	if halfOpenLoopRunning.Load() {
+		kickHalfOpenRefresh()
+	}
 }
 
-// StartHalfOpenLoop 后台每 5s 推进一次半开状态（幂等）。
+// StartHalfOpenLoop 后台每 5s（或被标脏时立即）推进一次半开状态（幂等）。
 func StartHalfOpenLoop() {
 	halfOpenLoopOnce.Do(func() {
+		halfOpenLoopRunning.Store(true)
 		go func() {
+			defer halfOpenLoopRunning.Store(false)
 			defer func() {
 				if r := recover(); r != nil {
 					common.SysError(common.LogText("half-open loop panic: %v", r))
@@ -225,7 +245,11 @@ func StartHalfOpenLoop() {
 			}()
 			t := time.NewTicker(5 * time.Second)
 			defer t.Stop()
-			for range t.C {
+			for {
+				select {
+				case <-t.C:
+				case <-halfOpenKick:
+				}
 				if model.DB != nil {
 					AdvanceHalfOpen()
 				}
