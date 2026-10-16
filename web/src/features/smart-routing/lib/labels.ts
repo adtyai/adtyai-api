@@ -17,10 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import {
-  HALF_OPEN_INFLIGHT_MAX,
-  HALF_OPEN_SUCCESS_TARGET,
-} from '../constants'
+import { HALF_OPEN_INFLIGHT_MAX, HALF_OPEN_SUCCESS_TARGET } from '../constants'
 import type { HalfOpenStage } from '../types'
 
 /**

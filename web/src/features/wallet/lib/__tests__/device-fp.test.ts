@@ -18,10 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { beforeEach, describe, expect, it } from 'vitest'
 
-import {
-  ADTY_DEVICE_FP_STORAGE_KEY,
-  getAdtyDeviceFp,
-} from '../device-fp'
+import { ADTY_DEVICE_FP_STORAGE_KEY, getAdtyDeviceFp } from '../device-fp'
 
 describe('getAdtyDeviceFp', () => {
   beforeEach(() => {

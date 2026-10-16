@@ -19,13 +19,14 @@ For commercial licensing, please contact support@quantumnous.com
 import type { TFunction } from 'i18next'
 import { describe, expect, it } from 'vitest'
 
-
 import type { NavItem } from '../../types'
 import { SYSTEM_SETTINGS_VIEW } from '../system-settings.config'
 
 const t = ((key: string) => key) as unknown as TFunction
 
-function flattenLinks(items: NavItem[]): Array<{ url?: string; requiredRole?: number; title: string }> {
+function flattenLinks(
+  items: NavItem[]
+): Array<{ url?: string; requiredRole?: number; title: string }> {
   const out: Array<{ url?: string; requiredRole?: number; title: string }> = []
   for (const item of items) {
     if ('items' in item && item.items) {

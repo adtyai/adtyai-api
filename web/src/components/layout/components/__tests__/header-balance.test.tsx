@@ -29,7 +29,9 @@ const getSelf = vi.fn()
 let walletVisible = true
 
 vi.mock('@/lib/api', () => ({ getSelf: () => getSelf() }))
-vi.mock('@/lib/format', () => ({ formatQuota: (q: number) => `$${q / 500000}` }))
+vi.mock('@/lib/format', () => ({
+  formatQuota: (q: number) => `$${q / 500000}`,
+}))
 vi.mock('@/hooks/use-sidebar-config', () => ({
   useIsSidebarModuleVisible: () => walletVisible,
 }))

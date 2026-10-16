@@ -88,7 +88,7 @@ export function AuthLayout({ children }: AuthLayoutProps) {
     <div className='bg-muted/40 grid min-h-svh lg:grid-cols-[1fr_minmax(28rem,36rem)]'>
       <AuthBrandPanel systemName={systemName} />
 
-      <div className='relative flex flex-col bg-background'>
+      <div className='bg-background relative flex flex-col'>
         {/* Mobile / narrow: compact brand row (desktop brand lives on the left panel) */}
         <Link
           to='/'

@@ -18,10 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { describe, expect, it } from 'vitest'
 
-import {
-  adminActionsForWithdrawStatus,
-  canRetryWithdraw,
-} from '../status'
+import { adminActionsForWithdrawStatus, canRetryWithdraw } from '../status'
 
 describe('aff withdraw status machine UI', () => {
   it('pending 鈫?approve/reject', () => {

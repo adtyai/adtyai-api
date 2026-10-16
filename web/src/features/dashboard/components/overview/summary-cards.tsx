@@ -265,7 +265,7 @@ export function SummaryCards() {
 
       <StaggerContainer className='grid grid-cols-2 gap-3 lg:grid-cols-4'>
         <StaggerItem className='col-span-2 lg:col-span-1'>
-          <div className='from-primary to-violet-600 text-primary-foreground flex h-full flex-col justify-between gap-3 rounded-xl bg-gradient-to-br p-4 shadow-sm'>
+          <div className='from-primary text-primary-foreground flex h-full flex-col justify-between gap-3 rounded-xl bg-gradient-to-br to-violet-600 p-4 shadow-sm'>
             <div className='flex items-start justify-between gap-2'>
               <span className='text-[13px] text-white/80'>
                 {t('Available Balance')}
@@ -288,7 +288,7 @@ export function SummaryCards() {
             <div className='flex flex-wrap gap-2'>
               <Button
                 size='sm'
-                className='bg-white text-primary hover:bg-white/90 h-7 px-3 text-xs font-medium'
+                className='text-primary h-7 bg-white px-3 text-xs font-medium hover:bg-white/90'
                 render={<Link to='/wallet' />}
               >
                 {t('Top up now')}
@@ -308,7 +308,7 @@ export function SummaryCards() {
 
         {items.map((it) => (
           <StaggerItem key={it.key}>
-            <div className='bg-card h-full rounded-xl border border-border/80 p-4 shadow-[0_1px_2px_rgba(16,24,40,.04)]'>
+            <div className='bg-card border-border/80 h-full rounded-xl border p-4 shadow-[0_1px_2px_rgba(16,24,40,.04)]'>
               <StatCard
                 title={it.title}
                 value={it.value}

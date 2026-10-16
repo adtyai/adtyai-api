@@ -113,9 +113,7 @@ export function MenuVisibilitySection() {
       const status = (err as { status?: number })?.status
       const code = (err as { code?: string } | null)?.code
       if (status === 403 || code === 'root_required') {
-        toast.error(
-          t('Root permission is required to manage menu visibility.')
-        )
+        toast.error(t('Root permission is required to manage menu visibility.'))
         return
       }
       toast.error(getServerErrorMessage(err, t('Save failed')))
@@ -138,7 +136,11 @@ export function MenuVisibilitySection() {
     await doPut(body)
   }
 
-  function setSideValue(side: MenuVisibilitySide, key: string, checked: boolean) {
+  function setSideValue(
+    side: MenuVisibilitySide,
+    key: string,
+    checked: boolean
+  ) {
     const setter = side === 'user' ? setUserDraft : setAdminDraft
     setter((prev) => ({
       ...prev,

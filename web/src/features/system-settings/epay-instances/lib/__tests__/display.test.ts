@@ -19,12 +19,12 @@ For commercial licensing, please contact support@quantumnous.com
 
 import { describe, expect, it } from 'vitest'
 
+import type { EpayInstanceView } from '../../types'
 import {
   formatDailyLimit,
   formatSecretFingerprint,
   primaryInstance,
 } from '../display'
-import type { EpayInstanceView } from '../../types'
 
 function row(
   partial: Partial<EpayInstanceView> & Pick<EpayInstanceView, 'id'>

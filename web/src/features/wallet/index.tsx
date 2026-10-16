@@ -25,11 +25,11 @@ import { useStatus } from '@/hooks/use-status'
 import { useSystemConfig } from '@/hooks/use-system-config'
 import { getSelf } from '@/lib/api'
 
+import { AdtyRechargePanel } from './components/adty-recharge-panel'
 import { AffiliateRewardsCard } from './components/affiliate-rewards-card'
 import { CreemConfirmDialog } from './components/dialogs/creem-confirm-dialog'
 import { PaymentConfirmDialog } from './components/dialogs/payment-confirm-dialog'
 import { TransferDialog } from './components/dialogs/transfer-dialog'
-import { AdtyRechargePanel } from './components/adty-recharge-panel'
 import { WalletStatsCard } from './components/wallet-stats-card'
 import { DEFAULT_DISCOUNT_RATE } from './constants'
 import {
@@ -47,11 +47,7 @@ import {
   getMinTopupAmount,
   dispatchSelectedPayment,
 } from './lib'
-import type {
-  UserWalletData,
-  PaymentMethod,
-  CreemProduct,
-} from './types'
+import type { UserWalletData, PaymentMethod, CreemProduct } from './types'
 
 export function Wallet() {
   const { t } = useTranslation()
@@ -207,10 +203,7 @@ export function Wallet() {
             <p className='text-muted-foreground -mt-1 text-[13px]'>
               {t('USD pricing · full amount credited · tier bonus extra')}
             </p>
-            <WalletStatsCard
-              user={user}
-              loading={userLoading}
-            />
+            <WalletStatsCard user={user} loading={userLoading} />
 
             <div className='grid gap-4'>
               <div id='wallet-add-funds' className='scroll-mt-4'>
@@ -277,7 +270,6 @@ export function Wallet() {
         availableQuota={user?.aff_quota ?? 0}
         transferring={transferring}
       />
-
 
       <CreemConfirmDialog
         open={creemDialogOpen}

@@ -60,7 +60,7 @@ export function WalletStatsCard(props: WalletStatsCardProps) {
 
   return (
     <div className='grid gap-3 md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)]'>
-      <div className='from-primary to-violet-600 text-primary-foreground flex flex-col justify-between gap-3 rounded-xl bg-gradient-to-br p-4 shadow-sm sm:p-5'>
+      <div className='from-primary text-primary-foreground flex flex-col justify-between gap-3 rounded-xl bg-gradient-to-br to-violet-600 p-4 shadow-sm sm:p-5'>
         <div className='flex items-center justify-between gap-2'>
           <span className='text-[13px] text-white/80'>
             {t('Available Balance')}
@@ -89,20 +89,22 @@ export function WalletStatsCard(props: WalletStatsCardProps) {
       {sideStats.map((item) => (
         <div
           key={item.label}
-          className='bg-card flex flex-col justify-between gap-2 rounded-xl border border-border/80 p-4 shadow-[0_1px_2px_rgba(16,24,40,.04)] sm:p-5'
+          className='bg-card border-border/80 flex flex-col justify-between gap-2 rounded-xl border p-4 shadow-[0_1px_2px_rgba(16,24,40,.04)] sm:p-5'
         >
           <div className='flex items-center justify-between gap-2'>
             <span className='text-muted-foreground text-[13px]'>
               {item.label}
             </span>
-            <span className='bg-muted text-muted-foreground grid size-8 place-items-center rounded-lg border border-border/60'>
+            <span className='bg-muted text-muted-foreground border-border/60 grid size-8 place-items-center rounded-lg border'>
               <item.icon className='size-4' aria-hidden='true' />
             </span>
           </div>
           <div className='text-foreground text-2xl font-semibold tracking-tight tabular-nums'>
             {item.value}
           </div>
-          <div className='text-muted-foreground text-xs'>{item.description}</div>
+          <div className='text-muted-foreground text-xs'>
+            {item.description}
+          </div>
         </div>
       ))}
     </div>

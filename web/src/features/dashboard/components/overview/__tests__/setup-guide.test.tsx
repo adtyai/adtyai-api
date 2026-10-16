@@ -261,9 +261,7 @@ describe('overview setup guide', () => {
     const user = userEvent.setup()
     await renderOverview()
     await user.click(await screen.findByRole('button', { name: 'Setup guide' }))
-    expect(
-      screen.getByText(/first top-up gets 10% bonus/i)
-    ).toBeVisible()
+    expect(screen.getByText(/first top-up gets 10% bonus/i)).toBeVisible()
     expect(screen.getByText('Go top up')).toBeVisible()
     expect(
       screen.getByRole('heading', { name: 'Three steps to get started' })
@@ -278,9 +276,7 @@ describe('overview setup guide', () => {
     const user = userEvent.setup()
     await renderOverview()
     await user.click(await screen.findByRole('button', { name: 'Setup guide' }))
-    expect(
-      screen.getByText(/first top-up gets 15% bonus/i)
-    ).toBeVisible()
+    expect(screen.getByText(/first top-up gets 15% bonus/i)).toBeVisible()
   })
 
   it('falls back to 10% when first_topup_bonus_rate is missing', async () => {
@@ -288,8 +284,6 @@ describe('overview setup guide', () => {
     const user = userEvent.setup()
     await renderOverview()
     await user.click(await screen.findByRole('button', { name: 'Setup guide' }))
-    expect(
-      screen.getByText(/first top-up gets 10% bonus/i)
-    ).toBeVisible()
+    expect(screen.getByText(/first top-up gets 10% bonus/i)).toBeVisible()
   })
 })

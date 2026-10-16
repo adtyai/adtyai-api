@@ -86,10 +86,7 @@ export function fromBackendWeights(raw: unknown): ScoreWeights {
     ),
     price: num(obj.price, DEFAULT_SCORE_WEIGHTS.price),
     speed: num(obj.speed, DEFAULT_SCORE_WEIGHTS.speed),
-    stability: num(
-      obj.stability ?? obj.stab,
-      DEFAULT_SCORE_WEIGHTS.stability
-    ),
+    stability: num(obj.stability ?? obj.stab, DEFAULT_SCORE_WEIGHTS.stability),
     authenticity: num(
       obj.authenticity ?? obj.auth,
       DEFAULT_SCORE_WEIGHTS.authenticity

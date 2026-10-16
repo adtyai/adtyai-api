@@ -21,8 +21,8 @@ import { createFileRoute } from '@tanstack/react-router'
 
 import { OrdersSettings } from '@/features/system-settings/orders'
 
-export const Route = createFileRoute(
-  '/_authenticated/system-settings/orders/'
-)({
-  component: OrdersSettings,
-})
+export const Route = createFileRoute('/_authenticated/system-settings/orders/')(
+  {
+    component: OrdersSettings,
+  }
+)

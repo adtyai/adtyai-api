@@ -70,7 +70,8 @@ function useSiteOrigin(): string {
   const { status } = useStatus()
   const addr =
     typeof status?.server_address === 'string' ? status.server_address : ''
-  const origin = addr || (typeof window !== 'undefined' ? window.location.origin : '')
+  const origin =
+    addr || (typeof window !== 'undefined' ? window.location.origin : '')
   return origin.replace(/\/+$/, '')
 }
 
@@ -105,7 +106,7 @@ export function AdtyHero(props: { isAuthenticated: boolean }) {
     <section className='relative overflow-hidden'>
       <div className='pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,var(--color-indigo-50),transparent_60%)] dark:opacity-10' />
       <div className='relative mx-auto max-w-6xl px-6 pt-28 pb-16 text-center md:pt-36'>
-        <span className='inline-flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/5 px-3 py-1 text-xs font-medium text-primary'>
+        <span className='border-primary/20 bg-primary/5 text-primary inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium'>
           <Gift className='size-3.5' />
           <BonusText percent={percent} />
         </span>
@@ -120,7 +121,7 @@ export function AdtyHero(props: { isAuthenticated: boolean }) {
         </p>
         <div className='mt-8 flex flex-col justify-center gap-3 sm:flex-row'>
           <Button
-            className='h-11 rounded-xl px-6 text-sm font-medium shadow-lg shadow-primary/20'
+            className='shadow-primary/20 h-11 rounded-xl px-6 text-sm font-medium shadow-lg'
             render={<Link to={primaryTo} />}
           >
             {t('Get API key')}
@@ -169,7 +170,7 @@ export function AdtyVendorWall() {
           {VENDORS.map(({ name, Icon }) => (
             <div
               key={name}
-              className='bg-background border-border flex h-14 items-center justify-center gap-2 rounded-xl border text-sm font-semibold text-foreground/80'
+              className='bg-background border-border text-foreground/80 flex h-14 items-center justify-center gap-2 rounded-xl border text-sm font-semibold'
             >
               <Icon size={20} />
               <span className='hidden sm:inline'>{name}</span>
@@ -227,12 +228,36 @@ export function AdtySteps() {
 export function AdtyFeatures() {
   const { t } = useTranslation()
   const items = [
-    { Icon: Zap, title: t('Fast and stable'), desc: t('Multi-route scheduling with automatic failover') },
-    { Icon: Wallet, title: t('Transparent pricing'), desc: t('Pay as you go; model multipliers are public') },
-    { Icon: Plug, title: t('Fully compatible'), desc: t('OpenAI format; popular clients work out of the box') },
-    { Icon: BarChart3, title: t('Visible usage'), desc: t('Real-time logs and usage trends with clear bills') },
-    { Icon: ShieldCheck, title: t('Secure and controllable'), desc: t('Per-key quota, model and IP restrictions') },
-    { Icon: Users, title: t('Invite rewards'), desc: t('Invite friends and earn commission on their top-ups') },
+    {
+      Icon: Zap,
+      title: t('Fast and stable'),
+      desc: t('Multi-route scheduling with automatic failover'),
+    },
+    {
+      Icon: Wallet,
+      title: t('Transparent pricing'),
+      desc: t('Pay as you go; model multipliers are public'),
+    },
+    {
+      Icon: Plug,
+      title: t('Fully compatible'),
+      desc: t('OpenAI format; popular clients work out of the box'),
+    },
+    {
+      Icon: BarChart3,
+      title: t('Visible usage'),
+      desc: t('Real-time logs and usage trends with clear bills'),
+    },
+    {
+      Icon: ShieldCheck,
+      title: t('Secure and controllable'),
+      desc: t('Per-key quota, model and IP restrictions'),
+    },
+    {
+      Icon: Users,
+      title: t('Invite rewards'),
+      desc: t('Invite friends and earn commission on their top-ups'),
+    },
   ]
   return (
     <section className='bg-muted/40 border-border/60 border-y py-20'>
@@ -277,7 +302,7 @@ export function AdtyBonusBanner(props: { isAuthenticated: boolean }) {
         </div>
         <Button
           variant='secondary'
-          className='h-11 rounded-xl bg-white px-6 font-semibold text-primary hover:bg-white/90'
+          className='text-primary h-11 rounded-xl bg-white px-6 font-semibold hover:bg-white/90'
           render={<Link to={props.isAuthenticated ? '/wallet' : '/sign-up'} />}
         >
           {t('Top up now')}

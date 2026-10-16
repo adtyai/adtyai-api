@@ -52,13 +52,8 @@ export function useCreateGroupMeta() {
 export function usePutGroupMeta() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({
-      code,
-      input,
-    }: {
-      code: string
-      input: GroupMetaPutInput
-    }) => putGroupMeta(code, input),
+    mutationFn: ({ code, input }: { code: string; input: GroupMetaPutInput }) =>
+      putGroupMeta(code, input),
     onSuccess: (data) => {
       if (data.success) {
         void qc.invalidateQueries({ queryKey: GROUPS_QUERY_KEY })

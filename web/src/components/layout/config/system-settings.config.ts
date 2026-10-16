@@ -35,14 +35,15 @@ import { getModelsSectionNavItems } from '@/features/system-settings/models/sect
 import { getOperationsSectionNavItems } from '@/features/system-settings/operations/section-registry.tsx'
 import { getPolicySectionNavItems } from '@/features/system-settings/request-policies/section-registry'
 import { getSecuritySectionNavItems } from '@/features/system-settings/security/section-registry.tsx'
-import { getSiteSectionNavItems } from '@/features/system-settings/site/section-registry.tsx'
-
 import type { SidebarBadges } from '@/features/system-settings/sidebar-badges/types'
+import { getSiteSectionNavItems } from '@/features/system-settings/site/section-registry.tsx'
 
 import type { NavGroup, NavItem, SidebarView } from '../types'
 
 export function pendingBadge(count: number | undefined): string | undefined {
-  if (count === undefined || !Number.isFinite(count) || count <= 0) return undefined
+  if (count === undefined || !Number.isFinite(count) || count <= 0) {
+    return undefined
+  }
   return count > 99 ? '99+' : String(Math.floor(count))
 }
 
@@ -70,7 +71,10 @@ function parseBadgeCount(badge: string | undefined): number {
 function withParentBadges(items: NavItem[]): NavItem[] {
   return items.map((item) => {
     if (!('items' in item) || !item.items?.length) return item
-    const sum = item.items.reduce((acc, sub) => acc + parseBadgeCount(sub.badge), 0)
+    const sum = item.items.reduce(
+      (acc, sub) => acc + parseBadgeCount(sub.badge),
+      0
+    )
     const badge = pendingBadge(sum)
     if (!badge) return item
     return { ...item, badge }

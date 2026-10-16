@@ -116,7 +116,6 @@ export function QuotaSettingsSection({
     <SettingsSection title={t('Quota Settings')}>
       <FormNavigationGuard when={isDirty} />
 
-
       <Form {...form}>
         <SettingsForm onSubmit={handleSubmit}>
           <SettingsPageFormActions

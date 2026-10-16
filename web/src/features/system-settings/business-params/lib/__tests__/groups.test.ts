@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { describe, expect, it } from 'vitest'
 
+import type { BusinessParamRow } from '../../types'
 import {
   BUSINESS_PARAM_GROUPS,
   BUSINESS_PARAM_PAGE_LABELS,
@@ -31,7 +32,6 @@ import {
   parsePutValue,
   settingKeyLabel,
 } from '../groups'
-import type { BusinessParamRow } from '../../types'
 
 function row(
   partial: Partial<BusinessParamRow> & Pick<BusinessParamRow, 'key'>
@@ -90,14 +90,11 @@ describe('business-params groups', () => {
   })
 
   it('parsePutValue coerces number and json', () => {
+    expect(parsePutValue(row({ key: 'Price', type: 'number' }), '7.3')).toBe(
+      7.3
+    )
     expect(
-      parsePutValue(row({ key: 'Price', type: 'number' }), '7.3')
-    ).toBe(7.3)
-    expect(
-      parsePutValue(
-        row({ key: 'TopupBonusTiers', type: 'json' }),
-        '[1,2,3]'
-      )
+      parsePutValue(row({ key: 'TopupBonusTiers', type: 'json' }), '[1,2,3]')
     ).toEqual([1, 2, 3])
   })
 

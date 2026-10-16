@@ -67,9 +67,7 @@ export function CreateGroupDialog({ open, onOpenChange, onCreated }: Props) {
     })
     if (!validated.ok) {
       if (validated.error === 'invalid_code') {
-        toast.error(
-          t('Invalid group code (use a-z, 0-9, _, -; 2–32 chars)')
-        )
+        toast.error(t('Invalid group code (use a-z, 0-9, _, -; 2–32 chars)'))
         return
       }
       if (validated.error === 'invalid_sort') {
@@ -127,7 +125,9 @@ export function CreateGroupDialog({ open, onOpenChange, onCreated }: Props) {
               disabled={create.isPending}
             />
             <p className='text-muted-foreground text-xs'>
-              {t('a-z, 0-9, underscore, hyphen; 2–32 characters. Cannot change later.')}
+              {t(
+                'a-z, 0-9, underscore, hyphen; 2–32 characters. Cannot change later.'
+              )}
             </p>
           </div>
           <div className='space-y-1.5'>

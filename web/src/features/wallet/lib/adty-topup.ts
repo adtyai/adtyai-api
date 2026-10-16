@@ -101,7 +101,10 @@ export function computeAdtyBonusPlan(
   const firstPercent = firstTopupBonusRateToPercent(firstRate)
 
   let tierBonusUSD: number
-  if (typeof tier.bonus_amount === 'number' && Number.isFinite(tier.bonus_amount)) {
+  if (
+    typeof tier.bonus_amount === 'number' &&
+    Number.isFinite(tier.bonus_amount)
+  ) {
     tierBonusUSD = tier.bonus_amount
   } else {
     tierBonusUSD = Math.round(amountUSD * tierRate * 10000) / 10000
@@ -171,7 +174,6 @@ export function formatUsdAmount(amount: number): string {
   })
   return amount < 0 ? `-$${body}` : `$${body}`
 }
-
 
 // ============================================================================
 // USDT cashier helpers

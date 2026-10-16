@@ -57,7 +57,6 @@ export async function updatePasskeyDomains(
   return res.data
 }
 
-
 export async function startLogCleanupTask(targetTimestamp: number) {
   const res = await api.post<SystemTaskResponse<LogCleanupTask>>(
     '/api/system-task/log-cleanup',

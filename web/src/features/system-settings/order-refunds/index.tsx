@@ -17,32 +17,27 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import {
-  orderStatusLabelKey,
-  paymentLabel,
-  refundStatusLabelKey,
-} from '@/features/system-settings/orders/lib/orders'
 import { Info, RefreshCw, Search, Undo2 } from 'lucide-react'
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
-
-import { formatAffUsd } from '@/features/affiliate/lib/quota'
 import { ErrorState } from '@/components/error-state'
 import { SectionPageLayout } from '@/components/layout'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { formatAffUsd } from '@/features/affiliate/lib/quota'
+import {
+  orderStatusLabelKey,
+  paymentLabel,
+  refundStatusLabelKey,
+} from '@/features/system-settings/orders/lib/orders'
 import { formatBillingCurrencyFromUSD } from '@/lib/currency'
 import { cn } from '@/lib/utils'
 
 import { ConfirmRefundDialog } from './components/confirm-refund-dialog'
 import { useTopupOrderLookup } from './hooks/use-order-refund'
-import {
-  canRefundOrder,
-  orderCreditUsd,
-  refundHintUsd,
-} from './lib/refundable'
+import { canRefundOrder, orderCreditUsd, refundHintUsd } from './lib/refundable'
 import type { RefundTopupOrderResult, TopupOrder } from './types'
 
 function refundDisabledHint(
@@ -57,7 +52,6 @@ function refundDisabledHint(
   }
   return t('No refundable amount on this order (hint).')
 }
-
 
 function fmtUsd(n: number): string {
   return formatBillingCurrencyFromUSD(n, {
@@ -89,7 +83,9 @@ function Field({
   return (
     <div className='grid gap-0.5'>
       <div className='text-muted-foreground text-xs'>{label}</div>
-      <div className={cn('text-sm break-all', mono && 'font-mono')}>{value}</div>
+      <div className={cn('text-sm break-all', mono && 'font-mono')}>
+        {value}
+      </div>
     </div>
   )
 }
@@ -106,7 +102,7 @@ function OrderDetailCard({
   const allow = canRefundOrder(order)
 
   return (
-    <div className='rounded-xl border bg-card p-4 shadow-sm'>
+    <div className='bg-card rounded-xl border p-4 shadow-sm'>
       <div className='mb-3 flex flex-wrap items-center gap-2'>
         <h3 className='text-sm font-medium'>{t('Order detail')}</h3>
         <Badge variant='outline' className='text-[11px]'>
@@ -119,7 +115,8 @@ function OrderDetailCard({
             refundBadgeClass(order.refund_status || 'none')
           )}
         >
-          {t('Refund')}: {t(refundStatusLabelKey(order.refund_status || 'none'))}
+          {t('Refund')}:{' '}
+          {t(refundStatusLabelKey(order.refund_status || 'none'))}
         </Badge>
         {allow ? (
           <Button
@@ -137,12 +134,15 @@ function OrderDetailCard({
       <div className='grid gap-3 sm:grid-cols-2 lg:grid-cols-3'>
         <Field label={t('Order No.')} value={order.order_no} mono />
         <Field label={t('User')} value={String(order.user_id)} />
+        <Field label={t('Payment method')} value={paymentLabel(order, t)} />
         <Field
-          label={t('Payment method')}
-          value={paymentLabel(order, t)}
+          label={t('Paid amount')}
+          value={fmtUsd(Number(order.paid_amount_usd) || 0)}
         />
-        <Field label={t('Paid amount')} value={fmtUsd(Number(order.paid_amount_usd) || 0)} />
-        <Field label={t('Credit amount')} value={fmtUsd(orderCreditUsd(order))} />
+        <Field
+          label={t('Credit amount')}
+          value={fmtUsd(orderCreditUsd(order))}
+        />
         <Field
           label={t('Bonus amount')}
           value={fmtUsd(Number(order.bonus_amount_usd) || 0)}
@@ -177,7 +177,7 @@ function ClawbackSummary({ result }: { result: RefundTopupOrderResult }) {
   return (
     <div className='rounded-xl border border-emerald-200 bg-emerald-50/70 p-4 text-sm text-emerald-950 dark:border-emerald-900/40 dark:bg-emerald-950/30 dark:text-emerald-100'>
       <div className='mb-2 font-medium'>{t('Clawback summary')}</div>
-      <div className='grid gap-2 sm:grid-cols-2 lg:grid-cols-3 text-xs'>
+      <div className='grid gap-2 text-xs sm:grid-cols-2 lg:grid-cols-3'>
         <div>
           {t('Paid clawed')}: {formatAffUsd(result.paid_clawed)}
         </div>
@@ -191,7 +191,8 @@ function ClawbackSummary({ result }: { result: RefundTopupOrderResult }) {
           {t('Affiliate clawed')}: {formatAffUsd(result.aff_clawed)}
         </div>
         <div>
-          {t('Refundable before')}: {fmtUsd(Number(result.refundable_before) || 0)}
+          {t('Refundable before')}:{' '}
+          {fmtUsd(Number(result.refundable_before) || 0)}
         </div>
         <div>
           {t('Refund status')}:{' '}
@@ -236,8 +237,7 @@ export function OrderRefundsSettings() {
   const order = query.data ?? null
   const isForbidden =
     (query.error as { status?: number } | null)?.status === 403
-  const isNotFound =
-    (query.error as { status?: number } | null)?.status === 404
+  const isNotFound = (query.error as { status?: number } | null)?.status === 404
 
   function onSearch(e?: FormEvent) {
     e?.preventDefault()

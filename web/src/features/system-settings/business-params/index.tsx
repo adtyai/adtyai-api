@@ -201,7 +201,7 @@ export function BusinessParamsSettings() {
                                 {formatDisplayValue(row, t)}
                               </span>
                             </TableCell>
-                            <TableCell className='max-w-[10rem] whitespace-normal break-all'>
+                            <TableCell className='max-w-[10rem] break-all whitespace-normal'>
                               <span
                                 className='text-muted-foreground text-xs'
                                 data-table-text='secondary'
@@ -315,9 +315,7 @@ function DailyReportHint() {
           )}
         </p>
         <p>
-          {t(
-            'Daily report is sent via the Telegram pending alert channel.'
-          )}{' '}
+          {t('Daily report is sent via the Telegram pending alert channel.')}{' '}
           <Link
             to='/system-settings/alerts'
             className='font-medium underline underline-offset-2'
@@ -327,7 +325,9 @@ function DailyReportHint() {
         </p>
         <div className='flex flex-wrap items-center gap-2 pt-0.5'>
           {alertsQuery.isLoading ? (
-            <span className='text-xs opacity-80'>{t('Loading settings...')}</span>
+            <span className='text-xs opacity-80'>
+              {t('Loading settings...')}
+            </span>
           ) : null}
           {!alertsQuery.isLoading && configured ? (
             <Badge variant='secondary'>
@@ -362,8 +362,7 @@ function HintCard({
           'border-indigo-100 bg-indigo-50/70 text-indigo-950 dark:border-indigo-900/40 dark:bg-indigo-950/30 dark:text-indigo-100',
         tone === 'amber' &&
           'border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-100',
-        tone === 'slate' &&
-          'border-border bg-muted/40 text-foreground'
+        tone === 'slate' && 'border-border bg-muted/40 text-foreground'
       )}
     >
       <Info className='mt-0.5 size-4 shrink-0' />

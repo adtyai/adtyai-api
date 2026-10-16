@@ -17,7 +17,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import type { AlertsConfigView, AlertsFormValues, AlertsPutInput } from '../types'
+import type {
+  AlertsConfigView,
+  AlertsFormValues,
+  AlertsPutInput,
+} from '../types'
 
 export const ALERTS_FORM_DEFAULTS: AlertsFormValues = {
   bot_token: '',
@@ -43,7 +47,8 @@ export function configToForm(view: AlertsConfigView): AlertsFormValues {
     pending_route_enabled: Boolean(view.pending_route_enabled),
     kind_enabled: view.kind_enabled ? { ...view.kind_enabled } : {},
     merge_minutes:
-      typeof view.merge_minutes === 'number' && !Number.isNaN(view.merge_minutes)
+      typeof view.merge_minutes === 'number' &&
+      !Number.isNaN(view.merge_minutes)
         ? view.merge_minutes
         : 10,
   }
@@ -107,16 +112,18 @@ export function buildAlertsPut(
   return Object.keys(body).length === 0 ? null : body
 }
 
-
 /**
  * Pending Telegram channel ready for B13 daily report (no token plaintext).
  * Requires secret_set, non-empty pending_chat_id, and pending route enabled.
  */
 export function isTelegramPendingConfigured(
-  view: Pick<
-    AlertsConfigView,
-    'bot_token' | 'pending_chat_id' | 'pending_route_enabled'
-  > | null | undefined
+  view:
+    | Pick<
+        AlertsConfigView,
+        'bot_token' | 'pending_chat_id' | 'pending_route_enabled'
+      >
+    | null
+    | undefined
 ): boolean {
   if (!view) return false
   return (

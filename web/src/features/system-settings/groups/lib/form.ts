@@ -98,7 +98,9 @@ export function validateCreateInput(input: {
   code: string
   display_name: string
   sort: string
-}): { ok: true; body: GroupMetaCreateInput } | { ok: false; error: CreateValidateError } {
+}):
+  | { ok: true; body: GroupMetaCreateInput }
+  | { ok: false; error: CreateValidateError } {
   const code = input.code.trim()
   if (!isValidGroupCode(code)) {
     return { ok: false, error: 'invalid_code' }

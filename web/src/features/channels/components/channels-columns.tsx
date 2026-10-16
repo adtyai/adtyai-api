@@ -46,6 +46,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { ScoreBadge } from '@/features/smart-routing/components/score-badge'
+import { useSmartRoutingEnabled } from '@/features/smart-routing/hooks/use-routing-config'
 import { toIntlLocale } from '@/i18n/languages'
 import {
   formatCurrencyFromUSD,
@@ -93,8 +95,6 @@ import { TaskPluginChannelBadge } from './channel-type-badge'
 import { useChannels } from './channels-provider'
 import { DataTableRowActions } from './data-table-row-actions'
 import { DataTableTagRowActions } from './data-table-tag-row-actions'
-import { ScoreBadge } from '@/features/smart-routing/components/score-badge'
-import { useSmartRoutingEnabled } from '@/features/smart-routing/hooks/use-routing-config'
 import { BalanceQueryDialog } from './dialogs/balance-query-dialog'
 import {
   CodexUsageDialog,
@@ -1210,8 +1210,9 @@ export function useChannelsColumns(
             return <span className='text-muted-foreground text-xs'>—</span>
           }
           // Backend may attach score later; until then show placeholder link.
-          const score = (row.original as Channel & { smart_score?: number | null })
-            .smart_score
+          const score = (
+            row.original as Channel & { smart_score?: number | null }
+          ).smart_score
           return (
             <ScoreBadge
               score={score ?? null}

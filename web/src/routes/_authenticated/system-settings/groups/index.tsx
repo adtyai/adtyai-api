@@ -19,13 +19,13 @@ For commercial licensing, please contact support@quantumnous.com
 import { createFileRoute, redirect } from '@tanstack/react-router'
 
 // Merged into Billing → Group Pricing. Keep route so old bookmarks do not 404.
-export const Route = createFileRoute(
-  '/_authenticated/system-settings/groups/'
-)({
-  beforeLoad: () => {
-    throw redirect({
-      to: '/system-settings/billing/$section',
-      params: { section: 'group-pricing' },
-    })
-  },
-})
+export const Route = createFileRoute('/_authenticated/system-settings/groups/')(
+  {
+    beforeLoad: () => {
+      throw redirect({
+        to: '/system-settings/billing/$section',
+        params: { section: 'group-pricing' },
+      })
+    },
+  }
+)

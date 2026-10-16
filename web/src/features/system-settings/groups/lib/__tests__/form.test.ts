@@ -78,21 +78,13 @@ describe('buildGroupPut', () => {
 
   it('rejects invalid sort', () => {
     expect(
-      buildGroupPut(
-        'default',
-        { display_name: 'Default', sort: '1.5' },
-        base
-      )
+      buildGroupPut('default', { display_name: 'Default', sort: '1.5' }, base)
     ).toEqual({ error: 'invalid_sort' })
   })
 
   it('returns no_changes when draft matches initial', () => {
     expect(
-      buildGroupPut(
-        'default',
-        { display_name: 'Default', sort: '10' },
-        base
-      )
+      buildGroupPut('default', { display_name: 'Default', sort: '10' }, base)
     ).toEqual({ error: 'no_changes' })
   })
 
@@ -158,7 +150,9 @@ describe('viewToDraft / groupApiErrorToastKey', () => {
   it('maps known API codes', () => {
     expect(groupApiErrorToastKey('invalid_code')).toContain('Invalid group')
     expect(groupApiErrorToastKey('exists')).toContain('already exists')
-    expect(groupApiErrorToastKey('code_immutable')).toContain('cannot be changed')
+    expect(groupApiErrorToastKey('code_immutable')).toContain(
+      'cannot be changed'
+    )
     expect(groupApiErrorToastKey('display_name_required')).toContain('required')
     expect(groupApiErrorToastKey('forbidden')).toContain('Root permission')
     expect(groupApiErrorToastKey('root_required')).toContain('Root permission')

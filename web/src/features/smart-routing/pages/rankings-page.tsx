@@ -111,9 +111,7 @@ export function RankingsPage() {
                   {row.authenticity ?? '—'}
                 </TableCell>
                 <TableCell className='tabular-nums'>
-                  {row.share_pct != null
-                    ? `${row.share_pct.toFixed(1)}%`
-                    : '—'}
+                  {row.share_pct != null ? `${row.share_pct.toFixed(1)}%` : '—'}
                 </TableCell>
                 <TableCell>
                   <HalfOpenBadge stage={row.half_open_stage} />

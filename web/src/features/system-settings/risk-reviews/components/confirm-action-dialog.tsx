@@ -108,8 +108,7 @@ export function ConfirmActionDialog({
           'Reject does not credit the bonus/gift. Paid amount stays settled. Requires a second confirmation.'
         )
 
-  const confirmButtonLabel =
-    action === 'approve' ? t('Approve') : t('Reject')
+  const confirmButtonLabel = action === 'approve' ? t('Approve') : t('Reject')
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

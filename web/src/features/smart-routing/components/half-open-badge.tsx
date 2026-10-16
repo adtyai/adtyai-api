@@ -51,16 +51,18 @@ export function HalfOpenBadge(props: HalfOpenBadgeProps) {
       <Badge
         variant='outline'
         className={cn(
-          stage === 'probe_2' && 'border-sky-500/40 text-sky-700 dark:text-sky-400',
-          stage === 'ramp_10' && 'border-violet-500/40 text-violet-700 dark:text-violet-400',
-          stage === 'full' && 'border-emerald-500/40 text-emerald-700 dark:text-emerald-400',
+          stage === 'probe_2' &&
+            'border-sky-500/40 text-sky-700 dark:text-sky-400',
+          stage === 'ramp_10' &&
+            'border-violet-500/40 text-violet-700 dark:text-violet-400',
+          stage === 'full' &&
+            'border-emerald-500/40 text-emerald-700 dark:text-emerald-400',
           stage === 'open' && 'border-red-500/40 text-red-700 dark:text-red-400'
         )}
       >
         {label}
       </Badge>
-      {props.showInflight &&
-      (stage === 'probe_2' || stage === 'ramp_10') ? (
+      {props.showInflight && (stage === 'probe_2' || stage === 'ramp_10') ? (
         <span className='text-muted-foreground text-xs tabular-nums'>
           {t('In-flight')} {formatInflightHint(props.inflight)}
         </span>

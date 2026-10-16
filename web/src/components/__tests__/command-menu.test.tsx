@@ -168,7 +168,7 @@ test('root search inside system settings omits sidebar-hidden adtyai pages', asy
   for (const entry of entries) {
     expect(entry).not.toMatch(/balance adjust|余额调整/i)
   }
-  expect(entries.some((e) => /enterprise pricing|企业协议价/i.test(e ?? ''))).toBe(
-    true
-  )
+  expect(
+    entries.some((e) => /enterprise pricing|企业协议价/i.test(e ?? ''))
+  ).toBe(true)
 })

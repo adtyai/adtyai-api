@@ -17,7 +17,10 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import { formatBillingCurrencyFromUSD, getCurrencyDisplay } from '@/lib/currency'
+import {
+  formatBillingCurrencyFromUSD,
+  getCurrencyDisplay,
+} from '@/lib/currency'
 
 export function quotaPerUnit(): number {
   const { config } = getCurrencyDisplay()

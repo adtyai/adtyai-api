@@ -28,11 +28,7 @@ import type {
 } from './types'
 
 const okish = (s: number) =>
-  (s >= 200 && s < 300) ||
-  s === 400 ||
-  s === 403 ||
-  s === 404 ||
-  s === 409
+  (s >= 200 && s < 300) || s === 400 || s === 403 || s === 404 || s === 409
 
 export async function listBalanceAdjustments(params: {
   status?: string
@@ -103,4 +99,3 @@ export async function rejectBalanceAdjustment(
   )
   return res.data
 }
-

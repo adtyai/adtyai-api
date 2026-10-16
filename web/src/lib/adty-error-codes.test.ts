@@ -308,7 +308,9 @@ describe('B-07 TopupBonusTiers codes', () => {
         value: 2,
         prev_value: 5,
       })
-    ).toBe('参数 充值档位与赠送阶梯 第 4 档（2）低于上一档（5），各档比例不能递减')
+    ).toBe(
+      '参数 充值档位与赠送阶梯 第 4 档（2）低于上一档（5），各档比例不能递减'
+    )
     expect(err('topup_tiers_not_ascending', { key: 'TopupBonusTiers' })).toBe(
       '参数 充值档位与赠送阶梯 各档比例不能递减'
     )
@@ -391,7 +393,13 @@ describe('B-08 param_rule_violation and /api/option path', () => {
         success: false,
         message: 'value out of range',
         code: 'out_of_range',
-        params: { key: 'TopupBonusTiers', index: 2, value: 120, min: 0, max: 100 },
+        params: {
+          key: 'TopupBonusTiers',
+          index: 2,
+          value: 120,
+          min: 0,
+          max: 100,
+        },
       })
     } catch (e) {
       caught = e

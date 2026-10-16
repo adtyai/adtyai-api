@@ -194,9 +194,9 @@ export function EditParamDialog({
               </p>
             ) : null}
           </div>
-            <div className='text-muted-foreground text-xs font-mono'>
-              {row.value || '—'} → {draft.trim() || '—'}
-            </div>
+          <div className='text-muted-foreground font-mono text-xs'>
+            {row.value || '—'} → {draft.trim() || '—'}
+          </div>
 
           {localError ? (
             <div className='text-destructive border-destructive/30 bg-destructive/5 rounded-lg border px-3 py-2 text-xs'>
@@ -226,7 +226,6 @@ export function EditParamDialog({
     </Dialog>
   )
 }
-
 
 function ParamValueEditor({
   row,

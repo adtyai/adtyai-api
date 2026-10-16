@@ -17,9 +17,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { Link, useLocation } from '@tanstack/react-router'
-import { useTranslation } from 'react-i18next'
 import { ChevronRight } from 'lucide-react'
 import { type ReactNode, useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import { Badge } from '@/components/ui/badge'
 import {
@@ -132,9 +132,7 @@ function NavBadge({
   breakdown?: NavBadgeBreakdownItem[]
 }) {
   const { t } = useTranslation()
-  const badge = (
-    <Badge className='shrink-0 px-1 py-0 text-xs'>{children}</Badge>
-  )
+  const badge = <Badge className='shrink-0 px-1 py-0 text-xs'>{children}</Badge>
   if (!breakdown || breakdown.length === 0) {
     return badge
   }
@@ -159,7 +157,9 @@ function NavBadge({
       </PopoverTrigger>
       <PopoverContent align='start' className='w-56 p-3' side='right'>
         <PopoverHeader>
-          <PopoverTitle className='text-sm'>{t('Alert breakdown')}</PopoverTitle>
+          <PopoverTitle className='text-sm'>
+            {t('Alert breakdown')}
+          </PopoverTitle>
         </PopoverHeader>
         <ul className='mt-2 space-y-1.5 text-sm'>
           {breakdown.map((row) => (

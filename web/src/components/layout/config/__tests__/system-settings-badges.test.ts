@@ -52,8 +52,12 @@ describe('system settings sidebar badges', () => {
   it('omits badge when counts are zero or missing', () => {
     const groups = getSystemSettingsNavGroups(t)
     const items = groups.flatMap((g) => g.items)
-    expect(findByUrl(items, '/system-settings/risk-reviews')?.badge).toBeUndefined()
-    expect(findByUrl(items, '/system-settings/aff-withdrawals')?.badge).toBeUndefined()
+    expect(
+      findByUrl(items, '/system-settings/risk-reviews')?.badge
+    ).toBeUndefined()
+    expect(
+      findByUrl(items, '/system-settings/aff-withdrawals')?.badge
+    ).toBeUndefined()
     expect(findByUrl(items, '/system-settings/orders')?.badge).toBeUndefined()
     expect(findParentByTitle(items, 'Security & Limits')?.badge).toBeUndefined()
     expect(findParentByTitle(items, 'Billing & Payment')?.badge).toBeUndefined()
@@ -67,7 +71,9 @@ describe('system settings sidebar badges', () => {
     })
     const items = groups.flatMap((g) => g.items)
     expect(findByUrl(items, '/system-settings/risk-reviews')?.badge).toBe('3')
-    expect(findByUrl(items, '/system-settings/aff-withdrawals')?.badge).toBe('12')
+    expect(findByUrl(items, '/system-settings/aff-withdrawals')?.badge).toBe(
+      '12'
+    )
     expect(findByUrl(items, '/system-settings/orders')?.badge).toBe('99+')
   })
 
@@ -104,7 +110,9 @@ describe('system settings sidebar badges', () => {
       topup_pending: 50,
     })
     const cappedItems = capped.flatMap((g) => g.items)
-    expect(findParentByTitle(cappedItems, 'Billing & Payment')?.badge).toBe('99+')
+    expect(findParentByTitle(cappedItems, 'Billing & Payment')?.badge).toBe(
+      '99+'
+    )
   })
 
   it('顶层系统设置角标合计 = risk+withdraw+topup', () => {
@@ -130,5 +138,4 @@ describe('system settings sidebar badges', () => {
       })
     ).toBe('99+')
   })
-
 })

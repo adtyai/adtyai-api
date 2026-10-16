@@ -19,8 +19,8 @@ For commercial licensing, please contact support@quantumnous.com
 
 import { describe, expect, it } from 'vitest'
 
-import { formatUsd, sortRiskReviewsForDisplay } from '../sort'
 import type { RiskReview } from '../../types'
+import { formatUsd, sortRiskReviewsForDisplay } from '../sort'
 
 function row(
   partial: Partial<RiskReview> & Pick<RiskReview, 'id' | 'status'>

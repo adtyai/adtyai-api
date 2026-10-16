@@ -20,8 +20,8 @@ import { createFileRoute } from '@tanstack/react-router'
 
 import { AlertsSettings } from '@/features/system-settings/alerts'
 
-export const Route = createFileRoute(
-  '/_authenticated/system-settings/alerts/'
-)({
-  component: AlertsSettings,
-})
+export const Route = createFileRoute('/_authenticated/system-settings/alerts/')(
+  {
+    component: AlertsSettings,
+  }
+)

@@ -36,7 +36,7 @@ export function EmptyHint(props: EmptyHintProps) {
         props.className
       )}
     >
-      <p className='font-medium text-foreground'>
+      <p className='text-foreground font-medium'>
         {props.title ?? t('No data yet')}
       </p>
       <p>

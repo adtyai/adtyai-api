@@ -34,11 +34,7 @@ export const ENTERPRISE_PRICING_KEY = ['admin-enterprise-pricing'] as const
 
 export function useEnterprisePricing(userId: number | undefined, page: number) {
   return useQuery({
-    queryKey: [
-      ...ENTERPRISE_PRICING_KEY,
-      userId || 0,
-      page,
-    ],
+    queryKey: [...ENTERPRISE_PRICING_KEY, userId || 0, page],
     queryFn: () =>
       listEnterprisePricing({
         user_id: userId,

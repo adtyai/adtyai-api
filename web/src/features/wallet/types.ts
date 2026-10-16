@@ -367,6 +367,7 @@ export interface AdtyCreateTopupOrderData {
   usdt?: AdtyUsdtCashier
 }
 
-export type AdtyCreateTopupOrderResponse = ApiResponse<AdtyCreateTopupOrderData> & {
-  code?: string
-}
+export type AdtyCreateTopupOrderResponse =
+  ApiResponse<AdtyCreateTopupOrderData> & {
+    code?: string
+  }

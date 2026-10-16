@@ -49,9 +49,7 @@ export const SMART_ROUTING_SECTION_IDS = SMART_ROUTING_SECTIONS.map(
 
 export const SMART_ROUTING_DEFAULT_SECTION: SmartRoutingSectionId = 'strategy'
 
-export function isSmartRoutingSectionId(
-  s: string
-): s is SmartRoutingSectionId {
+export function isSmartRoutingSectionId(s: string): s is SmartRoutingSectionId {
   return (SMART_ROUTING_SECTION_IDS as readonly string[]).includes(s)
 }
 

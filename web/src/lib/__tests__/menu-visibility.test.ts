@@ -118,7 +118,9 @@ describe('menu visibility (A39)', () => {
         ],
       },
     ]
-    const hideTelegram = applyNestedAdminMenuVisibility(nested, { alerts: false })
+    const hideTelegram = applyNestedAdminMenuVisibility(nested, {
+      alerts: false,
+    })
     expect(hideTelegram[0].items.map((i) => i.title)).toEqual([
       'Monitoring',
       'Chatwoot',

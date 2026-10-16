@@ -66,10 +66,7 @@ export function useCreateBalanceAdjustment() {
 export function useApproveBalanceAdjustment() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (args: {
-      id: number
-      self_approve_reason?: string
-    }) =>
+    mutationFn: (args: { id: number; self_approve_reason?: string }) =>
       approveBalanceAdjustment(args.id, {
         confirm: true,
         self_approve_reason: args.self_approve_reason,

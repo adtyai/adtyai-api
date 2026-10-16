@@ -77,7 +77,9 @@ export const adtyErrorCodeKeys: Record<string, KeyResolver> = {
   },
   // B-08 跨字段规则 {key, rule, other_key}
   param_rule_violation: (p) => {
-    if (p.rule === 'greater_than') return '{{key}} must be greater than {{other_key}}'
+    if (p.rule === 'greater_than') {
+      return '{{key}} must be greater than {{other_key}}'
+    }
     if (p.rule === 'less_than') return '{{key}} must be less than {{other_key}}'
     return has(p, 'other_key')
       ? '{{key}} conflicts with {{other_key}}'

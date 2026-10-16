@@ -26,8 +26,8 @@ import {
   sumSidebarBadges,
 } from '@/components/layout/config/system-settings.config'
 import { resolveSidebarView } from '@/components/layout/lib/sidebar-view-registry'
-import { useSidebarBadges } from '@/features/system-settings/sidebar-badges/hooks/use-sidebar-badges'
 import type { NavGroup, ResolvedSidebarView } from '@/components/layout/types'
+import { useSidebarBadges } from '@/features/system-settings/sidebar-badges/hooks/use-sidebar-badges'
 import {
   applyNestedAdminMenuVisibility,
   applyRootMenuVisibility,
@@ -170,7 +170,14 @@ export function useSidebarView(): ResolvedSidebarView {
           !(group.id === 'admin' && (settingsBadge || routingBadge))
         return unchanged ? group : { ...group, items }
       })
-  }, [configFilteredRoot, userRole, userVisible, adminVisible, sidebarBadges, t])
+  }, [
+    configFilteredRoot,
+    userRole,
+    userVisible,
+    adminVisible,
+    sidebarBadges,
+    t,
+  ])
 
   const view = resolveSidebarView(pathname)
 

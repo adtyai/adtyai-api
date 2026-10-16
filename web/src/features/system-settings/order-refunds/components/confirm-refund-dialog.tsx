@@ -144,8 +144,7 @@ export function ConfirmRefundDialog({
               {t('User')}: {order.user_id}
             </div>
             <div>
-              {t('Status')}:{' '}
-              <span>{t(orderStatusLabelKey(order.status))}</span>
+              {t('Status')}: <span>{t(orderStatusLabelKey(order.status))}</span>
             </div>
             <div>
               {t('Refund status')}:{' '}
@@ -175,7 +174,7 @@ export function ConfirmRefundDialog({
               value={amountStr}
               onChange={(e) => {
                 setAmountStr(e.target.value)
-                        }}
+              }}
               disabled={mut.isPending}
             />
           </div>
@@ -186,13 +185,12 @@ export function ConfirmRefundDialog({
               value={reason}
               onChange={(e) => {
                 setReason(e.target.value)
-                        }}
+              }}
               rows={3}
               disabled={mut.isPending}
               placeholder={t('Refund reason (required)')}
             />
           </div>
-
 
           {localError ? (
             <div className='text-destructive border-destructive/30 bg-destructive/5 rounded-lg border px-3 py-2 text-xs'>

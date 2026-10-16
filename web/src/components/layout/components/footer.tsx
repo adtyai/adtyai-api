@@ -161,8 +161,7 @@ export function Footer(props: FooterProps) {
     demoSiteEnabled,
   } = useSystemConfig()
   const { status } = useStatus()
-  const docsLink =
-    typeof status?.docs_link === 'string' ? status.docs_link : ''
+  const docsLink = typeof status?.docs_link === 'string' ? status.docs_link : ''
 
   const displayLogo = systemLogo || props.logo || '/logo.png'
   const displayName = systemName || props.name || 'ADTY AI'

@@ -54,8 +54,7 @@ export function EnterprisePricingSettings() {
   const rows = list.data?.rows ?? []
   const total = list.data?.total ?? 0
   const pageSize = 50
-  const isForbidden =
-    (list.error as { status?: number } | null)?.status === 403
+  const isForbidden = (list.error as { status?: number } | null)?.status === 403
   const wildcard = t('All (wildcard)')
 
   function applyUserFilter() {

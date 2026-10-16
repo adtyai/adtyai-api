@@ -27,8 +27,14 @@ import {
 } from '../api'
 
 export const ROUTING_CONFIG_QUERY_KEY = ['smart-routing', 'config'] as const
-export const WEIGHT_SCHEMES_QUERY_KEY = ['smart-routing', 'weight-schemes'] as const
-export const WEIGHT_HISTORY_QUERY_KEY = ['smart-routing', 'weight-history'] as const
+export const WEIGHT_SCHEMES_QUERY_KEY = [
+  'smart-routing',
+  'weight-schemes',
+] as const
+export const WEIGHT_HISTORY_QUERY_KEY = [
+  'smart-routing',
+  'weight-history',
+] as const
 
 export function useRoutingConfig() {
   return useQuery({

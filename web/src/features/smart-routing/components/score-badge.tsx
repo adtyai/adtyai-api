@@ -60,8 +60,10 @@ export function ScoreBadge(props: ScoreBadgeProps) {
       variant='outline'
       className={cn(
         'tabular-nums',
-        tone === 'green' && 'border-emerald-500/40 text-emerald-700 dark:text-emerald-400',
-        tone === 'yellow' && 'border-amber-500/40 text-amber-700 dark:text-amber-400',
+        tone === 'green' &&
+          'border-emerald-500/40 text-emerald-700 dark:text-emerald-400',
+        tone === 'yellow' &&
+          'border-amber-500/40 text-amber-700 dark:text-amber-400',
         tone === 'red' && 'border-red-500/40 text-red-700 dark:text-red-400',
         tone === 'muted' && 'text-muted-foreground',
         props.className

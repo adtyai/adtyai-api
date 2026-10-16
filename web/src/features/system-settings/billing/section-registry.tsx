@@ -18,12 +18,12 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { parseCurrencyDisplayType } from '@/lib/currency'
 
+import { BepusdtSection } from '../bepusdt/bepusdt-section'
+import { EpayInstancesSection } from '../epay-instances/epay-instances-section'
 import { CheckinSettingsSection } from '../general/checkin-settings-section'
 import { PricingSection } from '../general/pricing-section'
 import { QuotaSettingsSection } from '../general/quota-settings-section'
-import { BepusdtSection } from '../bepusdt/bepusdt-section'
 import { GroupDisplayNameSection } from '../groups/group-display-name-section'
-import { EpayInstancesSection } from '../epay-instances/epay-instances-section'
 import { PaymentSettingsSection } from '../integrations/payment-settings-section'
 import { RatioSettingsCard } from '../models/ratio-settings-card'
 import type { BillingSettings } from '../types'
@@ -180,7 +180,9 @@ const BILLING_SECTIONS = [
             WaffoPancakeReturnURL: settings.WaffoPancakeReturnURL ?? '',
           }}
           waffoPancakeProvisionedStoreID={settings.WaffoPancakeStoreID ?? ''}
-          waffoPancakeProvisionedProductID={settings.WaffoPancakeProductID ?? ''}
+          waffoPancakeProvisionedProductID={
+            settings.WaffoPancakeProductID ?? ''
+          }
         />
         <EpayInstancesSection />
         <BepusdtSection />

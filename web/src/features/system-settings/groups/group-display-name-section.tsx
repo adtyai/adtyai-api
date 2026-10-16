@@ -41,11 +41,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { SettingsSection } from '../components/settings-section'
 import { CreateGroupDialog } from './components/create-group-dialog'
 import { useGroupMetas, usePutGroupMeta } from './hooks/use-groups'
-import {
-  buildGroupPut,
-  groupApiErrorToastKey,
-  viewToDraft,
-} from './lib/form'
+import { buildGroupPut, groupApiErrorToastKey, viewToDraft } from './lib/form'
 import type { GroupMetaView, GroupRowDraft } from './types'
 
 /**
@@ -72,8 +68,7 @@ export function GroupDisplayNameSection() {
     setDrafts(next)
   }, [list.data])
 
-  const isForbidden =
-    (list.error as { status?: number } | null)?.status === 403
+  const isForbidden = (list.error as { status?: number } | null)?.status === 403
 
   const sortedRows = useMemo(() => {
     const rows = list.data ?? []
@@ -102,8 +97,7 @@ export function GroupDisplayNameSection() {
     if (!draft) return false
     const initial = viewToDraft(row)
     return (
-      draft.display_name !== initial.display_name ||
-      draft.sort !== initial.sort
+      draft.display_name !== initial.display_name || draft.sort !== initial.sort
     )
   }
 
@@ -143,9 +137,7 @@ export function GroupDisplayNameSection() {
           return
         }
         const key = groupApiErrorToastKey(res.code)
-        toast.error(
-          key ? t(key) : getServerErrorMessage(res, t('Save failed'))
-        )
+        toast.error(key ? t(key) : getServerErrorMessage(res, t('Save failed')))
         return
       }
       toast.success(t('Saved'))
@@ -237,7 +229,9 @@ export function GroupDisplayNameSection() {
                       colSpan={5}
                       className='text-muted-foreground h-24 text-center text-sm'
                     >
-                      {t('No groups yet. Create one or wait for in-use codes to appear.')}
+                      {t(
+                        'No groups yet. Create one or wait for in-use codes to appear.'
+                      )}
                     </TableCell>
                   </TableRow>
                 ) : (

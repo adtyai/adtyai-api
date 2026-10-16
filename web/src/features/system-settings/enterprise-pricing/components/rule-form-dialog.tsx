@@ -217,7 +217,7 @@ export function RuleFormDialog({ open, onOpenChange, editing }: Props) {
                 value={userId}
                 onChange={(e) => {
                   setUserId(e.target.value)
-                              }}
+                }}
               />
             </div>
           )}
@@ -231,7 +231,7 @@ export function RuleFormDialog({ open, onOpenChange, editing }: Props) {
               value={groupCode}
               onChange={(e) => {
                 setGroupCode(e.target.value)
-                          }}
+              }}
             />
           </div>
           <div className='grid gap-1.5'>
@@ -243,7 +243,7 @@ export function RuleFormDialog({ open, onOpenChange, editing }: Props) {
               value={modelName}
               onChange={(e) => {
                 setModelName(e.target.value)
-                          }}
+              }}
             />
           </div>
           <div className='grid gap-1.5'>
@@ -257,7 +257,7 @@ export function RuleFormDialog({ open, onOpenChange, editing }: Props) {
               value={discountPct}
               onChange={(e) => {
                 setDiscountPct(e.target.value)
-                          }}
+              }}
             />
             <p className='text-muted-foreground text-[11.5px]'>
               {t('10–100%; submitted as 0.1–1 multiplier after group ratio.')}
@@ -274,7 +274,7 @@ export function RuleFormDialog({ open, onOpenChange, editing }: Props) {
               value={expiresLocal}
               onChange={(e) => {
                 setExpiresLocal(e.target.value)
-                          }}
+              }}
             />
             <p className='text-muted-foreground text-[11.5px]'>
               {t('Leave empty for no expiry. Clear on edit sends "" to API.')}

@@ -17,7 +17,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import { knownKeySet, knownKeysFor } from './keys'
 import type {
   MenuVisibilityMap,
   MenuVisibilityPutInput,
@@ -25,6 +24,7 @@ import type {
   MenuVisibilityView,
   SideDraft,
 } from '../types'
+import { knownKeySet, knownKeysFor } from './keys'
 
 /** Missing key → visible (true). */
 export function menuKeyVisible(

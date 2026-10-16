@@ -45,19 +45,27 @@ function order(partial: Partial<TopupOrder>): TopupOrder {
 
 describe('orderCreditUsd', () => {
   it('prefers credit_amount_usd', () => {
-    expect(orderCreditUsd(order({ credit_amount_usd: 8, paid_amount_usd: 10 }))).toBe(8)
+    expect(
+      orderCreditUsd(order({ credit_amount_usd: 8, paid_amount_usd: 10 }))
+    ).toBe(8)
   })
   it('falls back to paid_amount_usd', () => {
-    expect(orderCreditUsd(order({ credit_amount_usd: 0, paid_amount_usd: 10 }))).toBe(10)
+    expect(
+      orderCreditUsd(order({ credit_amount_usd: 0, paid_amount_usd: 10 }))
+    ).toBe(10)
   })
 })
 
 describe('refundHintUsd', () => {
   it('subtracts refunded_amount', () => {
-    expect(refundHintUsd(order({ credit_amount_usd: 10, refunded_amount: 3 }))).toBe(7)
+    expect(
+      refundHintUsd(order({ credit_amount_usd: 10, refunded_amount: 3 }))
+    ).toBe(7)
   })
   it('never negative', () => {
-    expect(refundHintUsd(order({ credit_amount_usd: 10, refunded_amount: 12 }))).toBe(0)
+    expect(
+      refundHintUsd(order({ credit_amount_usd: 10, refunded_amount: 12 }))
+    ).toBe(0)
   })
 })
 
@@ -65,7 +73,9 @@ describe('canRefundOrder', () => {
   it('requires paid and not full', () => {
     expect(canRefundOrder(order({ status: 'pending' }))).toBe(false)
     expect(canRefundOrder(order({ refund_status: 'full' }))).toBe(false)
-    expect(canRefundOrder(order({ refund_status: 'partial', refunded_amount: 2 }))).toBe(true)
+    expect(
+      canRefundOrder(order({ refund_status: 'partial', refunded_amount: 2 }))
+    ).toBe(true)
     expect(canRefundOrder(order({}))).toBe(true)
   })
 })
