@@ -18,3 +18,16 @@ func FeatureFrozen() gin.HandlerFunc {
 		c.Abort()
 	}
 }
+
+// SubscriptionClosed aborts subscription purchase/management requests.
+// Tables and historical subscriptions stay; only HTTP entrances refuse.
+func SubscriptionClosed() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.JSON(http.StatusForbidden, gin.H{
+			"success": false,
+			"code":    "subscription_disabled",
+			"message": "订阅功能已关闭",
+		})
+		c.Abort()
+	}
+}
