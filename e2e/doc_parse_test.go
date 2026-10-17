@@ -119,6 +119,10 @@ func TestDocumentPluginRunsGenericBatchArtifactChain(t *testing.T) {
 	require.NoError(t, database.First(&task, task.ID).Error)
 	assert.Equal(t, model.TaskStatus(model.TaskStatusSuccess), task.Status)
 
+	prevServerAddress := system_setting.ServerAddress
+	system_setting.ServerAddress = "https://gateway.example"
+	t.Cleanup(func() { system_setting.ServerAddress = prevServerAddress })
+
 	queryRecorder := httptest.NewRecorder()
 	queryContext, _ := gin.CreateTestContext(queryRecorder)
 	queryContext.Set("id", 7)
