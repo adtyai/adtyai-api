@@ -73,6 +73,7 @@ import {
   WaffoSettingsSection,
   type WaffoSettingsValues,
 } from './waffo-settings-section'
+import { BepusdtSection } from '../bepusdt/bepusdt-section'
 
 function isHttpOriginUrl(value: string) {
   const trimmed = value.trim()
@@ -206,6 +207,7 @@ export function PaymentSettingsSection({
   waffoPancakeProvisionedProductID,
 }: PaymentSettingsSectionProps) {
   const { t } = useTranslation()
+  const [paymentTab, setPaymentTab] = React.useState('general')
   const queryClient = useQueryClient()
   const updateOption = useUpdateOption()
   const initialFormValues = React.useMemo<PaymentFormValues>(
@@ -710,28 +712,32 @@ export function PaymentSettingsSection({
 
   return (
     <SettingsSection title={t('Payment Gateway')}>
-      <Form {...form}>
-        <SettingsForm
-          onSubmit={form.handleSubmit(onSubmit)}
-          className='gap-y-8'
-          data-no-autosubmit='true'
-        >
-          <SettingsPageFormActions
-            onSave={form.handleSubmit(onSubmit)}
-            isSaving={updateOption.isPending || isSubmitting}
-            saveLabel='Save all settings'
-          />
-          <Tabs defaultValue='general' className='min-w-0'>
-            <div className='overflow-x-auto pb-1'>
-              <TabsList className='grid min-w-[44rem] grid-cols-6'>
-                <TabsTrigger value='general'>{t('General')}</TabsTrigger>
-                <TabsTrigger value='epay'>Epay</TabsTrigger>
-                <TabsTrigger value='stripe'>{t('Stripe')}</TabsTrigger>
-                <TabsTrigger value='creem'>Creem</TabsTrigger>
-                <TabsTrigger value='waffo-pancake'>Waffo Pancake</TabsTrigger>
-                <TabsTrigger value='waffo'>Waffo</TabsTrigger>
-              </TabsList>
-            </div>
+      <Tabs value={paymentTab} onValueChange={setPaymentTab} className='min-w-0'>
+        <div className='overflow-x-auto pb-1'>
+          <TabsList className='grid min-w-[52rem] grid-cols-7'>
+            <TabsTrigger value='general'>{t('General')}</TabsTrigger>
+            <TabsTrigger value='epay'>Epay</TabsTrigger>
+            <TabsTrigger value='bepusdt'>{t('BEpusdt gateway')}</TabsTrigger>
+            <TabsTrigger value='stripe'>{t('Stripe')}</TabsTrigger>
+            <TabsTrigger value='creem'>Creem</TabsTrigger>
+            <TabsTrigger value='waffo-pancake'>Waffo Pancake</TabsTrigger>
+            <TabsTrigger value='waffo'>Waffo</TabsTrigger>
+          </TabsList>
+        </div>
+
+        <Form {...form}>
+          <SettingsForm
+            onSubmit={form.handleSubmit(onSubmit)}
+            className={
+              paymentTab === 'bepusdt' ? 'hidden' : 'gap-y-8'
+            }
+            data-no-autosubmit='true'
+          >
+            <SettingsPageFormActions
+              onSave={form.handleSubmit(onSubmit)}
+              isSaving={updateOption.isPending || isSubmitting}
+              saveLabel='Save all settings'
+            />
 
             <TabsContent value='general' className={paymentTabContentClassName}>
               <div className='space-y-4'>
@@ -1472,9 +1478,13 @@ export function PaymentSettingsSection({
                 onPayMethodsChange={setWaffoPayMethods}
               />
             </TabsContent>
-          </Tabs>
-        </SettingsForm>
-      </Form>
+          </SettingsForm>
+        </Form>
+
+        <TabsContent value='bepusdt' className={paymentTabContentClassName}>
+          <BepusdtSection embedded />
+        </TabsContent>
+      </Tabs>
     </SettingsSection>
   )
 }

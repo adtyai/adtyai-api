@@ -18,7 +18,6 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { parseCurrencyDisplayType } from '@/lib/currency'
 
-import { BepusdtSection } from '../bepusdt/bepusdt-section'
 import { EpayInstancesSection } from '../epay-instances/epay-instances-section'
 import { CheckinSettingsSection } from '../general/checkin-settings-section'
 import { PricingSection } from '../general/pricing-section'
@@ -185,7 +184,6 @@ const BILLING_SECTIONS = [
           }
         />
         <EpayInstancesSection />
-        <BepusdtSection />
       </>
     ),
   },

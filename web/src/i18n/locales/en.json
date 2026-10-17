@@ -7586,7 +7586,7 @@
     "Configure BEpusdt (USDT) gateway via system options. API token is write-only; GET only returns secret_set and fingerprint. Saving does not probe connectivity.": "Configure the BEpusdt (USDT) gateway. The API token is write-only; the page only shows whether it is set and a fingerprint. Saving does not test connectivity.",
     "Order timeout and underpay tolerance live on Business parameters (BepusdtOrderTimeoutMinutes / UsdtUnderpayTolerance).": "Order timeout and underpay tolerance are set on the Business parameters page.",
     "Open business parameters": "Open business parameters",
-    "BEpusdt base URL": "BEpusdt base URL",
+    "BEpusdt gateway URL": "BEpusdt gateway URL",
     "Gateway API origin. Trailing slashes are stripped on save.": "Gateway API origin. Trailing slashes are stripped on save.",
     "API token (leave blank unless updating)": "API token (leave blank unless updating)",
     "Leave blank to keep current token": "Leave blank to keep current token",

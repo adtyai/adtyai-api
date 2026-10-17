@@ -7586,7 +7586,7 @@
     "Configure BEpusdt (USDT) gateway via system options. API token is write-only; GET only returns secret_set and fingerprint. Saving does not probe connectivity.": "配置 BEpusdt（USDT）网关。API 令牌只写不回显，页面只显示是否已设置和校验指纹。保存时不会测试连通。",
     "Order timeout and underpay tolerance live on Business parameters (BepusdtOrderTimeoutMinutes / UsdtUnderpayTolerance).": "订单超时与少付容差请到业务参数页设置。",
     "Open business parameters": "打开业务参数",
-    "BEpusdt base URL": "BEpusdt 基址",
+    "BEpusdt gateway URL": "BEpusdt 网关地址",
     "Gateway API origin. Trailing slashes are stripped on save.": "网关 API 根地址。保存时会去掉末尾斜杠。",
     "API token (leave blank unless updating)": "API 令牌（留空则不改）",
     "Leave blank to keep current token": "留空则保留当前令牌",

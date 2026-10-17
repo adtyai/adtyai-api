@@ -78,7 +78,12 @@ type FormValues = z.infer<typeof schema>
  * Embeddable BEpusdt block for Payment Gateway billing section.
  * Same option keys/save path; drops page chrome and long copy.
  */
-export function BepusdtSection() {
+type BepusdtSectionProps = {
+  /** When true, skip SettingsSection chrome (for Payment Gateway tab). */
+  embedded?: boolean
+}
+
+export function BepusdtSection({ embedded = false }: BepusdtSectionProps = {}) {
   const { t } = useTranslation()
   const optionsQuery = useSystemOptions()
   const updateOption = useUpdateOption()
@@ -120,8 +125,7 @@ export function BepusdtSection() {
     })
   }
 
-  return (
-    <SettingsSection title={t('BEpusdt gateway')}>
+  const body = (
       <div className='flex flex-col gap-3'>
         <div className='flex flex-wrap items-center justify-end gap-2'>
           <Button
@@ -172,7 +176,7 @@ export function BepusdtSection() {
                 name='BepusdtBaseURL'
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{t('BEpusdt base URL')}</FormLabel>
+                    <FormLabel>{t('BEpusdt gateway URL')}</FormLabel>
                     <FormControl>
                       <Input
                         placeholder='https://bepusdt.example.com'
@@ -281,6 +285,25 @@ export function BepusdtSection() {
           </Form>
         ) : null}
       </div>
-    </SettingsSection>
+  )
+
+  if (embedded) {
+    return (
+      <div className='space-y-4'>
+        <div>
+          <h3 className='text-lg font-medium'>{t('BEpusdt gateway')}</h3>
+          <p className='text-muted-foreground text-sm'>
+            {t(
+              'Configure BEpusdt (USDT) gateway via system options. API token is write-only; GET only returns secret_set and fingerprint. Saving does not probe connectivity.'
+            )}
+          </p>
+        </div>
+        {body}
+      </div>
+    )
+  }
+
+  return (
+    <SettingsSection title={t('BEpusdt gateway')}>{body}</SettingsSection>
   )
 }
