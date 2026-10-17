@@ -401,6 +401,9 @@ func AdtyRoutingDeleteScheme(c *gin.Context) {
 }
 
 func AdtyRoutingPreviewScheme(c *gin.Context) {
+	if !requireRoutingRoot(c) {
+		return
+	}
 	var req struct {
 		Weights    smartrouting.WeightParts `json:"weights"`
 		Model      string                   `json:"model"`

@@ -103,6 +103,19 @@ func TestRoutingSchemeValidation(t *testing.T) {
 	require.Equal(t, http.StatusConflict, rec.Code, rec.Body.String())
 }
 
+// 全量审查 tip 2400c2d P2-1：preview 与 PUT config 同门，仅 root；admin(role=10) 403。
+func TestRoutingPreviewRequiresRoot(t *testing.T) {
+	setupRoutingConfigTest(t)
+	body := `{"weights":{"conn":40,"price":20,"speed":20,"stab":10,"auth":10},"kind":"put_config"}`
+	rec := adtyCall(AdtyRoutingPreviewScheme, http.MethodPost, "/api/adty/routing/weight-schemes/preview",
+		body, 2, common.RoleAdminUser, nil)
+	require.Equal(t, http.StatusForbidden, rec.Code, rec.Body.String())
+	require.Contains(t, rec.Body.String(), "root only")
+	rec = adtyCall(AdtyRoutingPreviewScheme, http.MethodPost, "/api/adty/routing/weight-schemes/preview",
+		body, 1, common.RoleRootUser, nil)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+}
+
 // 审查 N-P2-5：标签/价格/鉴权标记写操作仅 root，不存在的渠道/记录不再报成功。
 func TestRoutingTagsPricesValidate(t *testing.T) {
 	setupRoutingConfigTest(t)
