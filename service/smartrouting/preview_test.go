@@ -41,3 +41,24 @@ func TestRequirePreviewForConfigChange(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// 审查重审 P2-3：preview_token 绑定 operator_id，PUT 侧必须一致。
+func TestPreviewTokenOperatorBinding(t *testing.T) {
+	intent := PreviewIntent{Kind: "put_config", SchemeName: "balanced_default", Weights: DefaultWeights(), OperatorID: 1}
+	tok, _ := IssuePreviewToken(intent)
+	other := intent
+	other.OperatorID = 2
+	if err := ConsumePreviewToken(tok, other); err != ErrPreviewMismatch {
+		t.Fatalf("want operator mismatch, got %v", err)
+	}
+	tok2, _ := IssuePreviewToken(intent)
+	zero := intent
+	zero.OperatorID = 0
+	if err := ConsumePreviewToken(tok2, zero); err != ErrPreviewMismatch {
+		t.Fatalf("want zero operator rejected, got %v", err)
+	}
+	tok3, _ := IssuePreviewToken(intent)
+	if err := ConsumePreviewToken(tok3, intent); err != nil {
+		t.Fatalf("same operator should pass: %v", err)
+	}
+}

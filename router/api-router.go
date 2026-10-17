@@ -335,7 +335,6 @@ func SetApiRouter(router *gin.Engine) {
 			{
 				adminRoute.GET("/", controller.GetAllUsers)
 				adminRoute.GET("/topup", controller.GetAllTopUps)
-				adminRoute.POST("/topup/complete", controller.AdminCompleteTopUp)
 				adminRoute.GET("/search", controller.SearchUsers)
 				adminRoute.GET("/:id/oauth/bindings", controller.GetUserOAuthBindingsByAdmin)
 				adminRoute.DELETE("/:id/oauth/bindings/:provider_id", controller.UnbindCustomOAuthByAdmin)
@@ -350,6 +349,13 @@ func SetApiRouter(router *gin.Engine) {
 				// Admin 2FA routes
 				adminRoute.GET("/2fa/stats", controller.Admin2FAStats)
 				adminRoute.DELETE("/:id/2fa", controller.AdminDisable2FA)
+			}
+
+			// 审查重审 P0-1：官方遗留补单仅 root（与 /api/admin/orders/:no/complete 对齐）。
+			rootUserRoute := userRoute.Group("/")
+			rootUserRoute.Use(middleware.RootAuth())
+			{
+				rootUserRoute.POST("/topup/complete", controller.AdminCompleteTopUp)
 			}
 		}
 
@@ -624,18 +630,19 @@ func SetApiRouter(router *gin.Engine) {
 }
 
 // registerAdtyPaymentAdminRoutes 订单/易支付实例管理路由。
-// 审查 P0-2 / P1-1：只读开放给管理员；收款账户写操作（新建/修改/设主用/启停）与人工补单仅 root。
+// 审查 P0-2 / P1-1 / 重审 P2-1：只读开放给管理员；收款账户写、人工补单、退款均仅 root。
 func registerAdtyPaymentAdminRoutes(apiRouter *gin.RouterGroup, adminAuth, rootAuth gin.HandlerFunc) {
 	adminOrders := apiRouter.Group("/admin/orders")
 	adminOrders.Use(adminAuth)
 	{
 		adminOrders.GET("", controller.AdminListTopupOrders)
 		adminOrders.GET("/:no", controller.AdminGetTopupOrder)
-		adminOrders.POST("/:no/refund", controller.AdminRefundTopupOrder)
 	}
 	rootOrders := apiRouter.Group("/admin/orders")
 	rootOrders.Use(rootAuth)
 	{
+		// 审查重审 P2-1：动钱均 root（退款与补单对齐）。
+		rootOrders.POST("/:no/refund", controller.AdminRefundTopupOrder)
 		rootOrders.POST("/:no/complete", controller.AdminCompleteAdtyTopup)
 	}
 	adminEpay := apiRouter.Group("/admin/epay-instances")

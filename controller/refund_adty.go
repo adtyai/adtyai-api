@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/gin-gonic/gin"
 )
@@ -18,7 +19,12 @@ type adminRefundReq struct {
 
 // AdminRefundTopupOrder POST /api/admin/orders/:no/refund
 // 敏感操作：必带 amount、reason、request_id；系统只记账。不再要求 confirm。
+// 审查重审 P2-1：动钱均 root（与 complete 对齐）。
 func AdminRefundTopupOrder(c *gin.Context) {
+	if c.GetInt("role") < common.RoleRootUser {
+		adtyFail(c, http.StatusForbidden, "AUTH_INSUFFICIENT_PRIVILEGE", "Unauthorized, insufficient privileges", nil)
+		return
+	}
 	orderNo := strings.TrimSpace(c.Param("no"))
 	if orderNo == "" {
 		adtyFail(c, http.StatusBadRequest, "order_no_required", "order no required", nil)

@@ -88,7 +88,8 @@ func ConsumePreviewToken(token string, intent PreviewIntent) error {
 		}
 		return ErrPreviewInvalid
 	}
-	if ent.Intent.OperatorID != 0 && intent.OperatorID != 0 && ent.Intent.OperatorID != intent.OperatorID {
+	// 审查重审 P2-3：preview_token 必须绑定 operator_id；PUT 校验必须一致（任一方为 0 或不等均拒绝）。
+	if ent.Intent.OperatorID == 0 || intent.OperatorID == 0 || ent.Intent.OperatorID != intent.OperatorID {
 		return ErrPreviewMismatch
 	}
 	if ent.Intent.Fingerprint() != intent.Fingerprint() {

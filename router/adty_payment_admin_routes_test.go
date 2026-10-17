@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// 审查 P0-2 / P1-1：收款账户写操作与人工补单必须挂 root 鉴权；只读保留管理员。
+// 审查 P0-2 / P1-1 / 重审 P2-1：收款账户写、人工补单、退款均 root；只读保留管理员。
 func TestAdtyPaymentAdminRoutesRootGate(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
@@ -23,7 +23,7 @@ func TestAdtyPaymentAdminRoutesRootGate(t *testing.T) {
 	cases := map[string]string{
 		"GET /api/admin/orders":                        "admin",
 		"GET /api/admin/orders/X1":                     "admin",
-		"POST /api/admin/orders/X1/refund":             "admin",
+		"POST /api/admin/orders/X1/refund":             "root",
 		"POST /api/admin/orders/X1/complete":           "root",
 		"GET /api/admin/epay-instances":                "admin",
 		"GET /api/admin/epay-instances/1":              "admin",

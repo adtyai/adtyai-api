@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/gin-gonic/gin"
 )
@@ -178,9 +177,9 @@ func AdminDeleteEnterprisePricing(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "deleted"})
 }
 
-// enterprisePriceSelfAllowed 审查 P2-6：管理员不能给自己设/改协议价；root 不受限。
+// enterprisePriceSelfAllowed 审查重审 P2-4：任何人（含 root）都不能给自己设/改协议价。
 func enterprisePriceSelfAllowed(c *gin.Context, targetUserID int) bool {
-	if targetUserID > 0 && targetUserID == c.GetInt("id") && c.GetInt("role") < common.RoleRootUser {
+	if targetUserID > 0 && targetUserID == c.GetInt("id") {
 		adtyFail(c, http.StatusForbidden, "self_pricing_forbidden", "cannot set enterprise pricing for yourself", nil)
 		return false
 	}

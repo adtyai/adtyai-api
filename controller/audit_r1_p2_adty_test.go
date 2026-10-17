@@ -12,20 +12,31 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// 审查 P2-6：管理员不能给自己建/改企业协议价；root 可以。
+// 审查重审 P2-4：管理员与 root 均不能给自己建/改企业协议价。
 func TestEnterprisePricingSelfForbiddenForAdmin(t *testing.T) {
 	database := adtyTestDB(t)
 	require.NoError(t, database.AutoMigrate(&model.EnterprisePriceRule{}))
 	require.NoError(t, model.EnsureEnterprisePriceSchema(database))
 	bob := model.User{Username: "bob26", Password: "unused-password", Role: common.RoleAdminUser, AffCode: "p26b"}
+	root := model.User{Username: "root26", Password: "unused-password", Role: common.RoleRootUser, AffCode: "p26r"}
+	alice := model.User{Username: "alice26", Password: "unused-password", Role: common.RoleCommonUser, AffCode: "p26a"}
 	require.NoError(t, database.Create(&bob).Error)
+	require.NoError(t, database.Create(&root).Error)
+	require.NoError(t, database.Create(&alice).Error)
 
-	body := `{"user_id":` + strconv.Itoa(bob.Id) + `,"discount":0.1}`
-	rec := adtyCall(AdminCreateEnterprisePricing, http.MethodPost, "/x", body, bob.Id, common.RoleAdminUser, nil)
+	bodySelfBob := `{"user_id":` + strconv.Itoa(bob.Id) + `,"discount":0.1}`
+	rec := adtyCall(AdminCreateEnterprisePricing, http.MethodPost, "/x", bodySelfBob, bob.Id, common.RoleAdminUser, nil)
 	require.Equal(t, http.StatusForbidden, rec.Code, rec.Body.String())
 	require.Contains(t, rec.Body.String(), "self_pricing_forbidden")
 
-	rec = adtyCall(AdminCreateEnterprisePricing, http.MethodPost, "/x", body, 1, common.RoleRootUser, nil)
+	bodySelfRoot := `{"user_id":` + strconv.Itoa(root.Id) + `,"discount":0.1}`
+	rec = adtyCall(AdminCreateEnterprisePricing, http.MethodPost, "/x", bodySelfRoot, root.Id, common.RoleRootUser, nil)
+	require.Equal(t, http.StatusForbidden, rec.Code, rec.Body.String())
+	require.Contains(t, rec.Body.String(), "self_pricing_forbidden")
+
+	// root 仍可为他人创建
+	bodyAlice := `{"user_id":` + strconv.Itoa(alice.Id) + `,"discount":0.1}`
+	rec = adtyCall(AdminCreateEnterprisePricing, http.MethodPost, "/x", bodyAlice, root.Id, common.RoleRootUser, nil)
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	var out struct {
 		Data struct {
@@ -35,7 +46,7 @@ func TestEnterprisePricingSelfForbiddenForAdmin(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
 	rec = adtyCall(AdminUpdateEnterprisePricing, http.MethodPut, "/x", `{"discount":0.1}`, bob.Id, common.RoleAdminUser,
 		gin.Params{{Key: "id", Value: strconv.FormatInt(out.Data.Id, 10)}})
-	require.Equal(t, http.StatusForbidden, rec.Code, rec.Body.String())
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 }
 
 // 审查 P2-8：重复兑换提示「已被使用」。
