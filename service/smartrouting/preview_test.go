@@ -62,3 +62,11 @@ func TestPreviewTokenOperatorBinding(t *testing.T) {
 		t.Fatalf("same operator should pass: %v", err)
 	}
 }
+
+func TestIssuePreviewTokenRejectsZeroOperator(t *testing.T) {
+	intent := PreviewIntent{Kind: "put_config", SchemeName: "balanced_default", Weights: DefaultWeights(), OperatorID: 0}
+	tok, exp := IssuePreviewToken(intent)
+	if tok != "" || !exp.IsZero() {
+		t.Fatalf("zero operator must not issue token, got tok=%q exp=%v", tok, exp)
+	}
+}

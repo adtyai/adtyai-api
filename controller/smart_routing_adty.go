@@ -473,9 +473,14 @@ func AdtyRoutingPreviewScheme(c *gin.Context) {
 			"rw_now": s.RouteWeight, "rw_new": rw,
 		})
 	}
+	opID := operatorID(c)
+	if opID <= 0 {
+		adtyFail(c, http.StatusUnauthorized, "unauthorized", "operator id required for preview_token", nil)
+		return
+	}
 	intent := smartrouting.PreviewIntent{
 		Kind: kind, SchemeID: req.SchemeID, SchemeName: req.SchemeName,
-		Weights: w, OperatorID: operatorID(c),
+		Weights: w, OperatorID: opID,
 	}
 	token, exp := smartrouting.IssuePreviewToken(intent)
 	srOK(c, gin.H{

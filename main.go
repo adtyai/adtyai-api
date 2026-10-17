@@ -351,6 +351,8 @@ func InitResources() error {
 		}
 	}
 	model.InitOptionMap()
+	// 审查全量 P2-1：CustomCallback/ServerAddress 未配或仍指品牌默认域时启动告警，避免 notify_url 静默指错域。
+	service.WarnCallbackAddressMisconfig()
 
 	// 清理旧的磁盘缓存文件
 	common.CleanupOldCacheFiles()

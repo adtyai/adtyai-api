@@ -45,7 +45,7 @@ type previewEntry struct {
 }
 
 var (
-	previewMu sync.Mutex
+	previewMu    sync.Mutex
 	previewStore = map[string]*previewEntry{}
 )
 
@@ -58,7 +58,11 @@ func newPreviewToken() string {
 }
 
 // IssuePreviewToken stores intent and returns an opaque token (TTL 10m, single-use on confirm).
+// OperatorID must be >0 (audit P2-3); otherwise returns empty token so PUT cannot bind a zero operator.
 func IssuePreviewToken(intent PreviewIntent) (token string, expiresAt time.Time) {
+	if intent.OperatorID <= 0 {
+		return "", time.Time{}
+	}
 	previewMu.Lock()
 	defer previewMu.Unlock()
 	// purge expired

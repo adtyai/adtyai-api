@@ -144,3 +144,32 @@ func TestRoutingFrontendFlowsReplay(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, code)
 	require.Equal(t, "preview_required", out["code"])
 }
+
+// 审查全量 P2-3：A 用户 preview 的 token，B 用户 PUT 必须 mismatch（不靠「仅 root」）。
+func TestRoutingPreviewTokenBoundToOperatorHTTP(t *testing.T) {
+	setupRoutingConfigTest(t)
+	w := `{"conn":40,"price":20,"speed":20,"stab":10,"auth":10}`
+	recA := adtyCall(AdtyRoutingPreviewScheme, http.MethodPost, "/api/adty/routing/weight-schemes/preview",
+		`{"weights":`+w+`,"kind":"put_config"}`, 11, common.RoleRootUser, nil)
+	require.Equal(t, http.StatusOK, recA.Code, recA.Body.String())
+	var pv struct {
+		Data struct {
+			PreviewToken string `json:"preview_token"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(recA.Body.Bytes(), &pv))
+	require.NotEmpty(t, pv.Data.PreviewToken)
+
+	// B (uid=22) 用 A 的 token PUT → 须拒绝
+	recB := adtyCall(AdtyRoutingPutConfig, http.MethodPut, "/api/adty/routing/config",
+		`{"weights":`+w+`,"preview_token":"`+pv.Data.PreviewToken+`"}`, 22, common.RoleRootUser, nil)
+	require.Equal(t, http.StatusBadRequest, recB.Code, recB.Body.String())
+	var out map[string]any
+	require.NoError(t, json.Unmarshal(recB.Body.Bytes(), &out))
+	require.Equal(t, "preview_required", out["code"])
+
+	// A 本人再用同一 token 应成功（B 未消耗）
+	recOK := adtyCall(AdtyRoutingPutConfig, http.MethodPut, "/api/adty/routing/config",
+		`{"weights":`+w+`,"preview_token":"`+pv.Data.PreviewToken+`"}`, 11, common.RoleRootUser, nil)
+	require.Equal(t, http.StatusOK, recOK.Code, recOK.Body.String())
+}
