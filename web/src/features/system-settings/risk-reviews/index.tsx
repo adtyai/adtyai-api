@@ -78,7 +78,8 @@ export function RiskReviewsSettings() {
   const selected = detail.data || rows.find((r) => r.id === selectedId) || null
 
   return (
-    <SectionPageLayout>
+    <>
+      <SectionPageLayout>
       <SectionPageLayout.Title>{t('Risk reviews')}</SectionPageLayout.Title>
       <SectionPageLayout.Actions>
         <Select
@@ -375,6 +376,7 @@ export function RiskReviewsSettings() {
           ) : null}
         </div>
       </SectionPageLayout.Content>
+    </SectionPageLayout>
 
       <ConfirmActionDialog
         row={actionRow}
@@ -390,7 +392,7 @@ export function RiskReviewsSettings() {
           if (actionRow) setSelectedId(actionRow.id)
         }}
       />
-    </SectionPageLayout>
+    </>
   )
 }
 

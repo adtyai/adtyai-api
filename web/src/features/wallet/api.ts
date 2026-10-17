@@ -241,13 +241,15 @@ export async function getAllBillingHistory(
 }
 
 /**
- * Complete a pending order (admin only)
+ * Legacy official complete path (POST /api/user/topup/complete) — disabled.
+ * Root manual complete uses POST /api/admin/orders/:no/complete on the orders page.
  */
 export async function completeOrder(
-  request: CompleteOrderRequest,
+  _request: CompleteOrderRequest,
 ): Promise<ApiResponse> {
-  const res = await api.post("/api/user/topup/complete", request);
-  return res.data;
+  throw new Error(
+    "Legacy /api/user/topup/complete is disabled; use POST /api/admin/orders/:no/complete on system-settings/orders (Root)",
+  );
 }
 
 // ============================================================================

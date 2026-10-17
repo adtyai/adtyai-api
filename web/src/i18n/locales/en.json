@@ -8283,6 +8283,8 @@
     "Balance is low: too many concurrent requests. Wait for running requests to finish or top up.": "Balance is low: too many concurrent requests. Wait for running requests to finish or top up.",
     "HMAC secret is not set: user identity verification is disabled. Set the inbox HMAC secret and enable identity validation in Chatwoot.": "HMAC secret is not set: user identity verification is disabled. Set the inbox HMAC secret and enable identity validation in Chatwoot.",
     "Backfill job not found": "Backfill job not found",
-    "Balances updated. Disabled {{count}} channel(s) with no balance: {{names}}": "Balances updated. Disabled {{count}} channel(s) with no balance: {{names}}"
+    "Balances updated. Disabled {{count}} channel(s) with no balance: {{names}}": "Balances updated. Disabled {{count}} channel(s) with no balance: {{names}}",
+    "You cannot set enterprise pricing for yourself": "You cannot set enterprise pricing for yourself",
+    "Manual complete is only available on System settings → Topup orders (Root).": "Manual complete is only available on System settings → Topup orders (Root)."
   }
 }

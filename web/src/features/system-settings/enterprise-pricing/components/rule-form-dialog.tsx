@@ -33,6 +33,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { getServerErrorMessage } from '@/lib/server-error-message'
+import { useAuthStore } from '@/stores/auth-store'
 
 import {
   useCreateEnterprisePricing,
@@ -69,6 +70,7 @@ function fromDatetimeLocal(local: string): string | null {
 
 export function RuleFormDialog({ open, onOpenChange, editing }: Props) {
   const { t } = useTranslation()
+  const currentUserId = useAuthStore((s) => s.auth.user?.id)
   const create = useCreateEnterprisePricing()
   const update = useUpdateEnterprisePricing()
   const [userId, setUserId] = useState('')
@@ -107,6 +109,16 @@ export function RuleFormDialog({ open, onOpenChange, editing }: Props) {
     const uid = Number(userId)
     if (!isEdit && (!Number.isInteger(uid) || uid <= 0)) {
       setLocalError(t('User ID is required'))
+      return
+    }
+    if (
+      !isEdit &&
+      currentUserId != null &&
+      Number(currentUserId) === uid
+    ) {
+      setLocalError(
+        t('You cannot set enterprise pricing for yourself')
+      )
       return
     }
     const pct = Number(discountPct)

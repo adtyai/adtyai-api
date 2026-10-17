@@ -33,7 +33,9 @@ import {
   refundStatusLabelKey,
 } from '@/features/system-settings/orders/lib/orders'
 import { formatBillingCurrencyFromUSD } from '@/lib/currency'
+import { ROLE } from '@/lib/roles'
 import { cn } from '@/lib/utils'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { ConfirmRefundDialog } from './components/confirm-refund-dialog'
 import { useTopupOrderLookup } from './hooks/use-order-refund'
@@ -93,9 +95,11 @@ function Field({
 function OrderDetailCard({
   order,
   onRefund,
+  isRoot,
 }: {
   order: TopupOrder
   onRefund: () => void
+  isRoot: boolean
 }) {
   const { t } = useTranslation()
   const hint = refundHintUsd(order)
@@ -118,7 +122,7 @@ function OrderDetailCard({
           {t('Refund')}:{' '}
           {t(refundStatusLabelKey(order.refund_status || 'none'))}
         </Badge>
-        {allow ? (
+        {allow && isRoot ? (
           <Button
             type='button'
             size='sm'
@@ -128,6 +132,18 @@ function OrderDetailCard({
           >
             <Undo2 className='size-3.5' />
             {t('Refund')}
+          </Button>
+        ) : allow && !isRoot ? (
+          <Button
+            type='button'
+            size='sm'
+            className='ml-auto h-8'
+            variant='destructive'
+            disabled
+            title={t('Root only')}
+          >
+            <Undo2 className='size-3.5' />
+            {t('Root only')}
           </Button>
         ) : null}
       </div>
@@ -166,6 +182,10 @@ function OrderDetailCard({
       {!allow ? (
         <p className='text-muted-foreground mt-3 text-xs'>
           {refundDisabledHint(order, t)}
+        </p>
+      ) : !isRoot ? (
+        <p className='text-muted-foreground mt-3 text-xs'>
+          {t('Root only')}
         </p>
       ) : null}
     </div>
@@ -226,6 +246,7 @@ function ClawbackSummary({ result }: { result: RefundTopupOrderResult }) {
 
 export function OrderRefundsSettings() {
   const { t } = useTranslation()
+  const isRoot = useAuthStore((s) => s.auth.user?.role === ROLE.SUPER_ADMIN)
   const [draft, setDraft] = useState('')
   const [lookupNo, setLookupNo] = useState<string | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -247,8 +268,9 @@ export function OrderRefundsSettings() {
   }
 
   return (
-    <SectionPageLayout>
-      <SectionPageLayout.Title>{t('Order refunds')}</SectionPageLayout.Title>
+    <>
+      <SectionPageLayout>
+        <SectionPageLayout.Title>{t('Order refunds')}</SectionPageLayout.Title>
       <SectionPageLayout.Actions>
         <Button
           type='button'
@@ -325,22 +347,24 @@ export function OrderRefundsSettings() {
             <OrderDetailCard
               order={order}
               onRefund={() => setDialogOpen(true)}
+              isRoot={isRoot}
             />
           ) : null}
 
           {lastResult ? <ClawbackSummary result={lastResult} /> : null}
-
-          <ConfirmRefundDialog
-            order={order}
-            open={dialogOpen}
-            onOpenChange={setDialogOpen}
-            onDone={(result) => {
-              setLastResult(result)
-              void query.refetch()
-            }}
-          />
         </div>
       </SectionPageLayout.Content>
-    </SectionPageLayout>
+      </SectionPageLayout>
+
+      <ConfirmRefundDialog
+        order={order}
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        onDone={(result) => {
+          setLastResult(result)
+          void query.refetch()
+        }}
+      />
+    </>
   )
 }

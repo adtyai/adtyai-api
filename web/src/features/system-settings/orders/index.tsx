@@ -143,7 +143,8 @@ export function OrdersSettings() {
   }
 
   return (
-    <SectionPageLayout>
+    <>
+      <SectionPageLayout>
       <SectionPageLayout.Title>{t('Topup orders')}</SectionPageLayout.Title>
       <SectionPageLayout.Actions>
         <Button
@@ -414,6 +415,7 @@ export function OrdersSettings() {
           ) : null}
         </div>
       </SectionPageLayout.Content>
+    </SectionPageLayout>
 
       <ConfirmCompleteDialog
         order={completeOrder}
@@ -425,7 +427,7 @@ export function OrdersSettings() {
           if (completeOrder) setSelectedNo(completeOrder.order_no)
         }}
       />
-    </SectionPageLayout>
+    </>
   )
 }
 

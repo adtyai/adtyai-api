@@ -7390,6 +7390,8 @@
     "Balance is low: too many concurrent requests. Wait for running requests to finish or top up.": "餘額偏低：並發請求過多。請等待進行中的請求完成，或先儲值。",
     "HMAC secret is not set: user identity verification is disabled. Set the inbox HMAC secret and enable identity validation in Chatwoot.": "未設定 HMAC 金鑰：使用者身分驗證未啟用。請設定收件匣 HMAC 金鑰，並在 Chatwoot 中開啟身分驗證。",
     "Backfill job not found": "找不到該回填任務",
-    "Balances updated. Disabled {{count}} channel(s) with no balance: {{names}}": "餘額已更新，已停用 {{count}} 個餘額不足的渠道：{{names}}"
+    "Balances updated. Disabled {{count}} channel(s) with no balance: {{names}}": "餘額已更新，已停用 {{count}} 個餘額不足的渠道：{{names}}",
+    "You cannot set enterprise pricing for yourself": "不能為自己設定企業協議價",
+    "Manual complete is only available on System settings → Topup orders (Root).": "手動完成訂單請到「系統設定 → 充值訂單」（僅 Root）。"
   }
 }

@@ -27,7 +27,6 @@ import { handleServerError } from '@/lib/handle-server-error'
 import {
   getUserBillingHistory,
   getAllBillingHistory,
-  completeOrder,
   isApiSuccess,
 } from '../api'
 import type { TopupRecord } from '../types'
@@ -55,7 +54,7 @@ export function useBillingHistory(options: UseBillingHistoryOptions = {}) {
   const debouncedKeyword = useDebounce(keyword)
   const requestIdRef = useRef(0)
   const [loading, setLoading] = useState(false)
-  const [completing, setCompleting] = useState(false)
+  const completing = false
 
   /**
    * Fetch billing history
@@ -91,36 +90,16 @@ export function useBillingHistory(options: UseBillingHistoryOptions = {}) {
   }, [debouncedKeyword, isAdmin, page, pageSize])
 
   /**
-   * Complete a pending order (admin only)
+   * Legacy wallet "manual complete" removed — Root uses system-settings/orders.
    */
-  const handleCompleteOrder = useCallback(
-    async (tradeNo: string) => {
-      if (!isAdmin) {
-        toast.error(i18next.t('Admin access required'))
-        return false
-      }
-
-      setCompleting(true)
-      try {
-        const response = await completeOrder({ trade_no: tradeNo })
-        if (isApiSuccess(response)) {
-          toast.success(i18next.t('Order completed successfully'))
-          // Refresh the list
-          await fetchBillingHistory()
-          return true
-        } else {
-          handleServerError(response, i18next.t('Failed to complete order'))
-          return false
-        }
-      } catch (error) {
-        handleServerError(error, i18next.t('Failed to complete order'))
-        return false
-      } finally {
-        setCompleting(false)
-      }
-    },
-    [isAdmin, fetchBillingHistory]
-  )
+  const handleCompleteOrder = useCallback(async (_tradeNo: string) => {
+    toast.error(
+      i18next.t(
+        'Manual complete is only available on System settings → Topup orders (Root).'
+      )
+    )
+    return false
+  }, [])
 
   /**
    * Change page

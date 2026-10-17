@@ -79,7 +79,8 @@ export function BalanceAdjustmentsSettings() {
   const isForbidden = (list.error as { status?: number } | null)?.status === 403
 
   return (
-    <SectionPageLayout>
+    <>
+      <SectionPageLayout>
       <SectionPageLayout.Title>
         {t('Balance adjustments')}
       </SectionPageLayout.Title>
@@ -325,6 +326,7 @@ export function BalanceAdjustmentsSettings() {
           ) : null}
         </div>
       </SectionPageLayout.Content>
+    </SectionPageLayout>
 
       <CreateBalanceAdjustDialog
         open={createOpen}
@@ -344,7 +346,7 @@ export function BalanceAdjustmentsSettings() {
           if (result) setLastApprove(result)
         }}
       />
-    </SectionPageLayout>
+    </>
   )
 }
 

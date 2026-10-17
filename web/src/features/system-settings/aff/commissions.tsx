@@ -62,7 +62,8 @@ export function AffCommissionsSettings() {
   }
 
   return (
-    <SectionPageLayout>
+    <>
+      <SectionPageLayout>
       <SectionPageLayout.Title>
         {t('Affiliate commissions')}
       </SectionPageLayout.Title>
@@ -230,6 +231,7 @@ export function AffCommissionsSettings() {
           ) : null}
         </div>
       </SectionPageLayout.Content>
+    </SectionPageLayout>
 
       <ConfirmAffActionDialog
         target={target}
@@ -238,7 +240,7 @@ export function AffCommissionsSettings() {
           if (!open) setTarget(null)
         }}
       />
-    </SectionPageLayout>
+    </>
   )
 }
 

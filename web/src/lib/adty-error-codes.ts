@@ -42,6 +42,7 @@ export const adtyErrorCodeKeys: Record<string, KeyResolver> = {
   confirm_required: 'Confirmation required',
   root_required: 'Only Root can perform this action',
   self_approve_forbidden: 'You cannot approve a request you submitted',
+  self_pricing_forbidden: 'You cannot set enterprise pricing for yourself',
   role_not_allowed: 'Only the Admin role can be created',
   username_taken: 'Username already exists',
   db_error: 'Failed to create administrator, please try again later',

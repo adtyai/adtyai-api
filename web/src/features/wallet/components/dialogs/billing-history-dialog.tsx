@@ -17,21 +17,10 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { Search, Copy, Check, ChevronLeft, ChevronRight } from 'lucide-react'
-import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Dialog } from '@/components/dialog'
 import { StatusBadge } from '@/components/status-badge'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -72,27 +61,15 @@ export function BillingHistoryDialog({
     pageSize,
     keyword,
     loading,
-    completing,
     isAdmin,
     handlePageChange,
     handlePageSizeChange,
     handleSearch,
-    handleCompleteOrder,
   } = useBillingHistory()
 
-  const [confirmTradeNo, setConfirmTradeNo] = useState<string | null>(null)
   const { copyToClipboard, copiedText } = useCopyToClipboard({ notify: false })
 
   const totalPages = Math.ceil(total / pageSize)
-
-  const handleConfirmComplete = async () => {
-    if (confirmTradeNo) {
-      const success = await handleCompleteOrder(confirmTradeNo)
-      if (success) {
-        setConfirmTradeNo(null)
-      }
-    }
-  }
 
   return (
     <>
@@ -265,19 +242,14 @@ export function BillingHistoryDialog({
                         </div>
                       </div>
 
-                      {/* Admin Actions */}
-                      {isAdmin && record.status === 'pending' && (
-                        <div className='mt-4 flex justify-end'>
-                          <Button
-                            size='sm'
-                            variant='outline'
-                            onClick={() => setConfirmTradeNo(record.trade_no)}
-                            disabled={completing}
-                          >
-                            {t('Complete Order')}
-                          </Button>
-                        </div>
-                      )}
+                      {/* Legacy wallet complete removed — Root uses system-settings/orders */}
+                      {isAdmin && record.status === 'pending' ? (
+                        <p className='text-muted-foreground mt-3 text-right text-xs'>
+                          {t(
+                            'Manual complete is only available on System settings → Topup orders (Root).'
+                          )}
+                        </p>
+                      ) : null}
                     </div>
                   )
                 })}
@@ -322,33 +294,6 @@ export function BillingHistoryDialog({
         </div>
       </Dialog>
 
-      {/* Confirm Complete Order Dialog */}
-      <AlertDialog
-        open={!!confirmTradeNo}
-        onOpenChange={(open) => !open && setConfirmTradeNo(null)}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t('Complete Order')}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t(
-                'Are you sure you want to manually complete this order? The user will be credited with the corresponding quota.'
-              )}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={completing}>
-              {t('Cancel')}
-            </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleConfirmComplete}
-              disabled={completing}
-            >
-              {completing ? t('Processing...') : t('Confirm')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </>
   )
 }

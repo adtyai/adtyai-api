@@ -108,7 +108,8 @@ export function AffWithdrawalsSettings() {
   }
 
   return (
-    <SectionPageLayout>
+    <>
+      <SectionPageLayout>
       <SectionPageLayout.Title>
         {t('Affiliate withdrawals')}
       </SectionPageLayout.Title>
@@ -462,6 +463,7 @@ export function AffWithdrawalsSettings() {
           </section>
         </div>
       </SectionPageLayout.Content>
+    </SectionPageLayout>
 
       <ConfirmAffActionDialog
         target={target}
@@ -470,7 +472,7 @@ export function AffWithdrawalsSettings() {
           if (!open) setTarget(null)
         }}
       />
-    </SectionPageLayout>
+    </>
   )
 }
 
