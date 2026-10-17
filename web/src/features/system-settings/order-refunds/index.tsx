@@ -122,30 +122,31 @@ function OrderDetailCard({
           {t('Refund')}:{' '}
           {t(refundStatusLabelKey(order.refund_status || 'none'))}
         </Badge>
-        {allow && isRoot ? (
-          <Button
-            type='button'
-            size='sm'
-            className='ml-auto h-8'
-            variant='destructive'
-            onClick={onRefund}
-          >
-            <Undo2 className='size-3.5' />
-            {t('Refund')}
-          </Button>
-        ) : allow && !isRoot ? (
-          <Button
-            type='button'
-            size='sm'
-            className='ml-auto h-8'
-            variant='destructive'
-            disabled
-            title={t('Root only')}
-          >
-            <Undo2 className='size-3.5' />
-            {t('Root only')}
-          </Button>
-        ) : null}
+        {allow &&
+          (isRoot ? (
+            <Button
+              type='button'
+              size='sm'
+              className='ml-auto h-8'
+              variant='destructive'
+              onClick={onRefund}
+            >
+              <Undo2 className='size-3.5' />
+              {t('Refund')}
+            </Button>
+          ) : (
+            <Button
+              type='button'
+              size='sm'
+              className='ml-auto h-8'
+              variant='destructive'
+              disabled
+              title={t('Root only')}
+            >
+              <Undo2 className='size-3.5' />
+              {t('Root only')}
+            </Button>
+          ))}
       </div>
       <div className='grid gap-3 sm:grid-cols-2 lg:grid-cols-3'>
         <Field label={t('Order No.')} value={order.order_no} mono />
@@ -179,15 +180,16 @@ function OrderDetailCard({
           }
         />
       </div>
-      {!allow ? (
+      {!allow && (
         <p className='text-muted-foreground mt-3 text-xs'>
           {refundDisabledHint(order, t)}
         </p>
-      ) : !isRoot ? (
+      )}
+      {allow && !isRoot && (
         <p className='text-muted-foreground mt-3 text-xs'>
           {t('Root only')}
         </p>
-      ) : null}
+      )}
     </div>
   )
 }

@@ -72,7 +72,6 @@ export function BillingHistoryDialog({
   const totalPages = Math.ceil(total / pageSize)
 
   return (
-    <>
       <Dialog
         open={open}
         onOpenChange={onOpenChange}
@@ -293,7 +292,5 @@ export function BillingHistoryDialog({
           )}
         </div>
       </Dialog>
-
-    </>
   )
 }
