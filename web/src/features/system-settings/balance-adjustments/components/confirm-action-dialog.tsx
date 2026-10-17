@@ -168,10 +168,10 @@ export function ConfirmBalanceAdjustDialog({
   const body =
     action === 'approve'
       ? t(
-          'Approve executes AdjustQuota in the same transaction (pending→executed). Requires a second confirmation. Self-approve needs a reason when you are the only admin.'
+          'Approve executes AdjustQuota in the same transaction (pending→executed). Takes effect on submit. Self-approve needs a reason when you are the only admin.'
         )
       : t(
-          'Reject leaves balances unchanged (pending→rejected). Requires a second confirmation and a reject reason.'
+          'Reject leaves balances unchanged (pending→rejected). Takes effect on submit. Requires a reject reason.'
         )
 
   return (

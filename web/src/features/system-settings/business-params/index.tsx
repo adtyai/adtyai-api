@@ -106,7 +106,7 @@ export function BusinessParamsSettings() {
         <div className='flex h-full min-h-0 w-full flex-col gap-4'>
           <p className='text-muted-foreground text-sm'>
             {t(
-              'Values are range-checked on save. Money params apply to new orders only. Saves require a second confirmation.'
+              'Values are range-checked on save. Money params apply to new orders only. Saves take effect on submit.'
             )}
             {data?.meta?.excluded?.length ? (
               <>

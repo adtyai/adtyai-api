@@ -214,7 +214,7 @@ export function completeErrorMessage(
   if (status === 403) return 'Insufficient permissions'
   if (status === 404 || code === 'not_found') return 'Order not found'
   if (status === 409) return 'Order status does not allow complete'
-  if (code === 'confirm_required') return 'Second confirmation is required'
+  if (code === 'confirm_required') return 'Confirmation required'
   return fallback
 }
 

@@ -118,7 +118,7 @@ export function RiskReviewsSettings() {
         <div className='flex h-full min-h-0 w-full flex-col gap-4'>
           <p className='text-muted-foreground text-sm'>
             {t(
-              'Manual queue for first-topup extra and other risk hits. Approve credits bonus only; reject leaves paid amount settled without gift. Actions require a second confirmation.'
+              'Manual queue for first-topup extra and other risk hits. Approve credits bonus only; reject leaves paid amount settled without gift. Actions take effect on submit.'
             )}
           </p>
 
@@ -126,7 +126,7 @@ export function RiskReviewsSettings() {
             <Info className='mt-0.5 size-4 shrink-0' />
             <div>
               {t(
-                'Approve: credit pending bonus/gift. Reject: do not credit gift. Both need a second confirmation.'
+                'Approve: credit pending bonus/gift. Reject: do not credit gift. Actions take effect on submit.'
               )}
             </div>
           </div>

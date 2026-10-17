@@ -87,7 +87,7 @@ export function ConfirmDeleteDialog({ row, open, onOpenChange }: Props) {
           <DialogTitle>{t('Delete enterprise pricing rule')}</DialogTitle>
           <DialogDescription>
             {t(
-              'Deletes this agreement-price rule. Requires a second confirmation. Matching falls back to a lower-priority rule or full price.'
+              'Deletes this agreement-price rule. Takes effect on submit. Matching falls back to a lower-priority rule or full price.'
             )}
           </DialogDescription>
         </DialogHeader>

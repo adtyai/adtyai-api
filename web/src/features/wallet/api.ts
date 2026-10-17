@@ -16,9 +16,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { api } from '@/lib/api'
+import { api } from "@/lib/api";
 
-import { getAdtyDeviceFp } from './lib/device-fp'
+import { getAdtyDeviceFp } from "./lib/device-fp";
 import type {
   RedemptionRequest,
   PaymentRequest,
@@ -45,7 +45,7 @@ import type {
   AdtyCreateTopupOrderRequest,
   AdtyCreateTopupOrderResponse,
   AdtyTopupOrder,
-} from './types'
+} from "./types";
 
 // ============================================================================
 // Wallet API Functions
@@ -55,154 +55,151 @@ import type {
  * Check if API response is successful
  */
 export function isApiSuccess(response: ApiResponse): boolean {
-  return response.success === true || response.message === 'success'
+  return response.success === true || response.message === "success";
 }
 
 /**
  * Get topup configuration info
  */
 export async function getTopupInfo(): Promise<TopupInfoResponse> {
-  const res = await api.get('/api/user/topup/info')
-  return res.data
+  const res = await api.get("/api/user/topup/info");
+  return res.data;
 }
 
 /**
  * Redeem a topup code
  */
 export async function redeemTopupCode(
-  request: RedemptionRequest
+  request: RedemptionRequest,
 ): Promise<RedemptionResponse> {
-  const res = await api.post('/api/user/topup', request)
-  return res.data
+  const res = await api.post("/api/user/topup", request);
+  return res.data;
 }
 
 /**
  * Calculate payment amount for regular payment
  */
 export async function calculateAmount(
-  request: AmountRequest
+  request: AmountRequest,
 ): Promise<AmountResponse> {
-  const res = await api.post('/api/user/amount', request, {
+  const res = await api.post("/api/user/amount", request, {
     skipBusinessError: true,
-  } as Record<string, unknown>)
-  return res.data
+  } as Record<string, unknown>);
+  return res.data;
 }
 
 /**
  * Calculate payment amount for Stripe payment
  */
 export async function calculateStripeAmount(
-  request: AmountRequest
+  request: AmountRequest,
 ): Promise<AmountResponse> {
-  const res = await api.post('/api/user/stripe/amount', request, {
+  const res = await api.post("/api/user/stripe/amount", request, {
     skipBusinessError: true,
-  } as Record<string, unknown>)
-  return res.data
+  } as Record<string, unknown>);
+  return res.data;
 }
 
 /**
  * Calculate payment amount for Waffo payment
  */
 export async function calculateWaffoAmount(
-  request: AmountRequest
+  request: AmountRequest,
 ): Promise<AmountResponse> {
-  const res = await api.post('/api/user/waffo/amount', request, {
+  const res = await api.post("/api/user/waffo/amount", request, {
     skipBusinessError: true,
-  } as Record<string, unknown>)
-  return res.data
+  } as Record<string, unknown>);
+  return res.data;
 }
 
 /**
- * Request regular payment
+ * Legacy official top-up path (POST /api/user/pay) — disabled.
+ * Live wallet UI uses createAdtyTopupOrder → POST /api/topup/order only.
  */
 export async function requestPayment(
-  request: PaymentRequest
+  _request: PaymentRequest,
 ): Promise<PaymentResponse> {
-  const res = await api.post('/api/user/pay', request, {
-    skipBusinessError: true,
-  } as Record<string, unknown>)
-  return {
-    ...res.data,
-    url: res.data.url || (res as unknown as { url?: string }).url,
-  }
+  throw new Error(
+    "Legacy /api/user/pay is disabled; use POST /api/topup/order via createAdtyTopupOrder",
+  );
 }
 
 /**
  * Request Stripe payment
  */
 export async function requestStripePayment(
-  request: PaymentRequest
+  request: PaymentRequest,
 ): Promise<StripePaymentResponse> {
-  const res = await api.post('/api/user/stripe/pay', request, {
+  const res = await api.post("/api/user/stripe/pay", request, {
     skipBusinessError: true,
-  } as Record<string, unknown>)
-  return res.data
+  } as Record<string, unknown>);
+  return res.data;
 }
 
 /**
  * Request Creem payment
  */
 export async function requestCreemPayment(
-  request: CreemPaymentRequest
+  request: CreemPaymentRequest,
 ): Promise<CreemPaymentResponse> {
-  const res = await api.post('/api/user/creem/pay', request, {
+  const res = await api.post("/api/user/creem/pay", request, {
     skipBusinessError: true,
-  } as Record<string, unknown>)
-  return res.data
+  } as Record<string, unknown>);
+  return res.data;
 }
 
 /**
  * Request Waffo payment
  */
 export async function requestWaffoPayment(
-  request: WaffoPaymentRequest
+  request: WaffoPaymentRequest,
 ): Promise<WaffoPaymentResponse> {
-  const res = await api.post('/api/user/waffo/pay', request, {
+  const res = await api.post("/api/user/waffo/pay", request, {
     skipBusinessError: true,
-  } as Record<string, unknown>)
-  return res.data
+  } as Record<string, unknown>);
+  return res.data;
 }
 
 /**
  * Calculate payment amount for Waffo Pancake payment
  */
 export async function calculateWaffoPancakeAmount(
-  request: AmountRequest
+  request: AmountRequest,
 ): Promise<AmountResponse> {
-  const res = await api.post('/api/user/waffo-pancake/amount', request, {
+  const res = await api.post("/api/user/waffo-pancake/amount", request, {
     skipBusinessError: true,
-  } as Record<string, unknown>)
-  return res.data
+  } as Record<string, unknown>);
+  return res.data;
 }
 
 /**
  * Request Waffo Pancake payment
  */
 export async function requestWaffoPancakePayment(
-  request: WaffoPancakePaymentRequest
+  request: WaffoPancakePaymentRequest,
 ): Promise<WaffoPancakePaymentResponse> {
-  const res = await api.post('/api/user/waffo-pancake/pay', request, {
+  const res = await api.post("/api/user/waffo-pancake/pay", request, {
     skipBusinessError: true,
-  } as Record<string, unknown>)
-  return res.data
+  } as Record<string, unknown>);
+  return res.data;
 }
 
 /**
  * Get affiliate code
  */
 export async function getAffiliateCode(): Promise<AffiliateCodeResponse> {
-  const res = await api.get('/api/user/aff')
-  return res.data
+  const res = await api.get("/api/user/aff");
+  return res.data;
 }
 
 /**
  * Transfer affiliate quota to balance
  */
 export async function transferAffiliateQuota(
-  request: AffiliateTransferRequest
+  request: AffiliateTransferRequest,
 ): Promise<AffiliateTransferResponse> {
-  const res = await api.post('/api/user/aff_transfer', request)
-  return res.data
+  const res = await api.post("/api/user/aff_transfer", request);
+  return res.data;
 }
 
 /**
@@ -211,17 +208,17 @@ export async function transferAffiliateQuota(
 export async function getUserBillingHistory(
   page: number,
   pageSize: number,
-  keyword?: string
+  keyword?: string,
 ): Promise<ApiResponse<BillingHistoryResponse>> {
   const params = new URLSearchParams({
     p: page.toString(),
     page_size: pageSize.toString(),
-  })
+  });
   if (keyword) {
-    params.append('keyword', keyword)
+    params.append("keyword", keyword);
   }
-  const res = await api.get(`/api/user/topup/self?${params.toString()}`)
-  return res.data
+  const res = await api.get(`/api/user/topup/self?${params.toString()}`);
+  return res.data;
 }
 
 /**
@@ -230,27 +227,27 @@ export async function getUserBillingHistory(
 export async function getAllBillingHistory(
   page: number,
   pageSize: number,
-  keyword?: string
+  keyword?: string,
 ): Promise<ApiResponse<BillingHistoryResponse>> {
   const params = new URLSearchParams({
     p: page.toString(),
     page_size: pageSize.toString(),
-  })
+  });
   if (keyword) {
-    params.append('keyword', keyword)
+    params.append("keyword", keyword);
   }
-  const res = await api.get(`/api/user/topup?${params.toString()}`)
-  return res.data
+  const res = await api.get(`/api/user/topup?${params.toString()}`);
+  return res.data;
 }
 
 /**
  * Complete a pending order (admin only)
  */
 export async function completeOrder(
-  request: CompleteOrderRequest
+  request: CompleteOrderRequest,
 ): Promise<ApiResponse> {
-  const res = await api.post('/api/user/topup/complete', request)
-  return res.data
+  const res = await api.post("/api/user/topup/complete", request);
+  return res.data;
 }
 
 // ============================================================================
@@ -261,46 +258,46 @@ export async function completeOrder(
  * GET /api/topup/tiers — fixed tiers, first_topup_bonus_rate, pay_methods
  */
 export async function getAdtyTopupTiers(): Promise<AdtyTopupTiersResponse> {
-  const res = await api.get('/api/topup/tiers', {
+  const res = await api.get("/api/topup/tiers", {
     skipErrorHandler: true,
-  } as Record<string, unknown>)
-  return res.data
+  } as Record<string, unknown>);
+  return res.data;
 }
 
 /**
  * GET /api/topup/first-recharge — whether current user is first-topup eligible
  */
 export async function getAdtyFirstRecharge(): Promise<AdtyFirstRechargeResponse> {
-  const res = await api.get('/api/topup/first-recharge', {
+  const res = await api.get("/api/topup/first-recharge", {
     skipErrorHandler: true,
-  } as Record<string, unknown>)
-  return res.data
+  } as Record<string, unknown>);
+  return res.data;
 }
 
 /**
  * POST /api/topup/order — only fixed tier amounts; invalid → 400
  */
 export async function createAdtyTopupOrder(
-  request: AdtyCreateTopupOrderRequest
+  request: AdtyCreateTopupOrderRequest,
 ): Promise<AdtyCreateTopupOrderResponse> {
-  const res = await api.post('/api/topup/order', request, {
+  const res = await api.post("/api/topup/order", request, {
     skipBusinessError: true,
     headers: {
-      'X-Device-FP': getAdtyDeviceFp(),
+      "X-Device-FP": getAdtyDeviceFp(),
     },
-  })
-  return res.data
+  });
+  return res.data;
 }
 
 /**
  * GET /api/topup/order/:no — poll order status (pending | paid | failed | need_manual)
  */
 export async function getAdtyTopupOrder(
-  orderNo: string
+  orderNo: string,
 ): Promise<ApiResponse<AdtyTopupOrder>> {
   const res = await api.get(`/api/topup/order/${encodeURIComponent(orderNo)}`, {
     skipErrorHandler: true,
     skipBusinessError: true,
-  } as Record<string, unknown>)
-  return res.data
+  } as Record<string, unknown>);
+  return res.data;
 }

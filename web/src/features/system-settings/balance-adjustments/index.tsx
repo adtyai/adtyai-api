@@ -130,7 +130,7 @@ export function BalanceAdjustmentsSettings() {
         <div className='flex h-full min-h-0 w-full flex-col gap-4'>
           <p className='text-muted-foreground text-sm'>
             {t(
-              'Dual-admin balance adjustment approvals. Create pending requests; approve executes AdjustQuota; reject leaves balances unchanged. All decisions require a second confirmation.'
+              'Dual-admin balance adjustment approvals. Create pending requests; approve executes AdjustQuota; reject leaves balances unchanged. Decisions take effect on submit.'
             )}
           </p>
 

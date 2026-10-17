@@ -193,7 +193,7 @@ export function InstanceFormDialog({ open, onOpenChange, editing }: Props) {
               {editing.status === 'enabled' ? t('Enabled') : t('Disabled')}
               <span className='mt-1 block'>
                 {t(
-                  'Enable or disable only via Enable / Disable on the list (requires a second confirmation). Do not PUT enabled.'
+                  'Enable or disable only via Enable / Disable on the list. Do not PUT enabled.'
                 )}
               </span>
             </div>

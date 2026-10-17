@@ -173,7 +173,7 @@ describe('completeErrorMessage', () => {
       'Order status does not allow complete'
     )
     expect(completeErrorMessage(400, 'confirm_required', 'x')).toBe(
-      'Second confirmation is required'
+      'Confirmation required'
     )
     expect(completeErrorMessage(500, undefined, 'boom')).toBe('boom')
     expect(completeErrorMessage(400, 'trade_no_required', 'x')).toBe(

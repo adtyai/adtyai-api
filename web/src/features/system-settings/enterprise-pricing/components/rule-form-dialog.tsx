@@ -191,7 +191,7 @@ export function RuleFormDialog({ open, onOpenChange, editing }: Props) {
           </DialogTitle>
           <DialogDescription>
             {t(
-              'Empty group/model means wildcard (all). Discount 10%–100% maps to API 0.1–1. Writes require a second confirmation.'
+              'Empty group/model means wildcard (all). Discount 10%–100% maps to API 0.1–1. Writes take effect on submit.'
             )}
           </DialogDescription>
         </DialogHeader>

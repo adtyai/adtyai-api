@@ -130,7 +130,7 @@ export function ConfirmRefundDialog({
           <DialogTitle>{t('Refund order')}</DialogTitle>
           <DialogDescription>
             {t(
-              'Ledger-only refund: does not call the payment channel. Requires a second confirmation and a fresh request id. Click twice to submit.'
+              'Ledger-only refund: does not call the payment channel. Requires a fresh request id. Submit takes effect immediately.'
             )}
           </DialogDescription>
         </DialogHeader>

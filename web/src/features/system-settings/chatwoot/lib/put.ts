@@ -79,7 +79,7 @@ export function buildChatwootPut(
   return Object.keys(body).length === 0 ? null : body
 }
 
-/** True when PUT would change script or set a new HMAC secret (server requires second confirmation). */
+/** True when PUT would change script or set a new HMAC secret (opens ConfirmDialog before save). */
 export function chatwootPutNeedsConfirm(body: ChatwootPutInput): boolean {
   if (body.script !== undefined) return true
   if (body.hmac_secret !== undefined && body.hmac_secret.trim() !== '') {

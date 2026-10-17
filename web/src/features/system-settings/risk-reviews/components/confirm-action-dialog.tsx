@@ -102,10 +102,10 @@ export function ConfirmActionDialog({
   const body =
     action === 'approve'
       ? t(
-          'Approve credits the pending bonus/gift into the bonus wallet. Paid amount is already settled. Requires a second confirmation.'
+          'Approve credits the pending bonus/gift into the bonus wallet. Paid amount is already settled. Takes effect on submit.'
         )
       : t(
-          'Reject does not credit the bonus/gift. Paid amount stays settled. Requires a second confirmation.'
+          'Reject does not credit the bonus/gift. Paid amount stays settled. Takes effect on submit.'
         )
 
   const confirmButtonLabel = action === 'approve' ? t('Approve') : t('Reject')

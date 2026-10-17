@@ -124,7 +124,7 @@ export function EnterprisePricingSettings() {
           <div className='flex h-full min-h-0 w-full flex-col gap-4'>
             <p className='text-muted-foreground text-sm'>
               {t(
-                'Enterprise agreement pricing. Match priority: group+model > model only > group only > all. Applied as group ratio × discount. Create / update / delete require a second confirmation.'
+                'Enterprise agreement pricing. Match priority: group+model > model only > group only > all. Applied as group ratio × discount. Create / update / delete take effect on submit.'
               )}
             </p>
 

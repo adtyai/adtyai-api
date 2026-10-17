@@ -155,7 +155,7 @@ export function ConfirmAffActionDialog({
           <DialogTitle>{titleFor(t, target)}</DialogTitle>
           <DialogDescription>
             {t(
-              'Sensitive action requires a second confirmation. Click twice to submit.'
+              'Please confirm this sensitive action. Submit takes effect immediately.'
             )}
           </DialogDescription>
         </DialogHeader>

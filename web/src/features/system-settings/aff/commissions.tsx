@@ -106,7 +106,7 @@ export function AffCommissionsSettings() {
         <div className='flex h-full min-h-0 w-full flex-col gap-4'>
           <p className='text-muted-foreground text-sm'>
             {t(
-              'Admin commission ledger. Void deducts available quota. Requires a second confirmation.'
+              'Admin commission ledger. Void deducts available quota. Takes effect on submit.'
             )}
           </p>
           <div className='flex gap-2.5 rounded-lg border border-indigo-100 bg-indigo-50/70 px-3.5 py-2.5 text-[13px] leading-5 text-indigo-950 dark:border-indigo-900/40 dark:bg-indigo-950/30 dark:text-indigo-100'>

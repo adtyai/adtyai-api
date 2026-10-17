@@ -60,7 +60,7 @@ export function refundErrorMessage(
 ): string {
   switch (code) {
     case 'confirm_required':
-      return 'Second confirmation is required'
+      return 'Confirmation required'
     case 'request_id_required':
       return 'Request number is required'
     case 'reason_required':

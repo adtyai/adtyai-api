@@ -161,7 +161,7 @@ export function OrdersSettings() {
         <div className='flex h-full min-h-0 w-full flex-col gap-4'>
           <p className='text-muted-foreground text-sm'>
             {t(
-              'Admin list of top-up orders. Filter by status, order number, or user. Detail loads via GET /api/admin/orders/:no. Complete is for pending only and needs a second confirmation.'
+              'Admin list of top-up orders. Filter by status, order number, or user. Detail loads via GET /api/admin/orders/:no. Complete is for pending only and takes effect on submit.'
             )}
           </p>
 

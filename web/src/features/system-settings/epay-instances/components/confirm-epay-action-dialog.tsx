@@ -113,19 +113,19 @@ export function ConfirmEpayActionDialog({
   if (action === 'set-primary') {
     title = t('Set as primary')
     body = t(
-      'Only one primary instance is active. Setting this one clears the previous primary and resets its failure streak. Requires a second confirmation.'
+      'Only one primary instance is active. Setting this one clears the previous primary and resets its failure streak. Takes effect on submit.'
     )
     confirmLabel = t('Set as primary')
   } else if (action === 'enable') {
     title = t('Enable epay instance')
     body = t(
-      'Re-enable this instance so it can accept new orders. Does not set it as primary. Requires a second confirmation.'
+      'Re-enable this instance so it can accept new orders. Does not set it as primary. Takes effect on submit.'
     )
     confirmLabel = t('Enable')
   } else {
     title = t('Disable epay instance')
     body = t(
-      'Disabled instances stop accepting new orders but still handle historical callbacks. If it is primary, it will also be demoted. Requires a second confirmation.'
+      'Disabled instances stop accepting new orders but still handle historical callbacks. If it is primary, it will also be demoted. Takes effect on submit.'
     )
     confirmLabel = t('Disable')
   }

@@ -39,7 +39,7 @@ export const adtyErrorCodeKeys: Record<string, KeyResolver> = {
   bad_request: 'Invalid request',
   internal_error: 'Internal server error, please try again later',
   // Confirmation / permission
-  confirm_required: 'Second confirmation is required',
+  confirm_required: 'Confirmation required',
   root_required: 'Only Root can perform this action',
   self_approve_forbidden: 'You cannot approve a request you submitted',
   role_not_allowed: 'Only the Admin role can be created',

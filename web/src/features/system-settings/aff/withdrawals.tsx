@@ -163,7 +163,7 @@ export function AffWithdrawalsSettings() {
         <div className='flex h-full min-h-0 w-full flex-col gap-4'>
           <p className='text-muted-foreground text-sm'>
             {t(
-              'Withdrawal review state machine. pay_failed can retry; pay_unknown and pay_failed_final cannot. All mutations require a second confirmation.'
+              'Withdrawal review state machine. pay_failed can retry; pay_unknown and pay_failed_final cannot. Mutations take effect on submit.'
             )}
           </p>
 
@@ -203,7 +203,7 @@ export function AffWithdrawalsSettings() {
               <ShieldAlert className='mt-0.5 size-4 shrink-0' />
               <div>
                 {t(
-                  'Approve, reject, mark paid/failed/unknown and retry are sensitive and need second confirmation.'
+                  'Approve, reject, mark paid/failed/unknown and retry are sensitive actions. Submit takes effect immediately.'
                 )}
               </div>
             </div>
@@ -346,7 +346,7 @@ export function AffWithdrawalsSettings() {
                 </div>
                 <div className='text-muted-foreground mt-0.5 text-xs'>
                   {t(
-                    'kind=aff_self_invite — approve/reject via the risk-reviews API (second confirmation required).'
+                    'kind=aff_self_invite — approve/reject via the risk-reviews API.'
                   )}
                 </div>
               </div>
