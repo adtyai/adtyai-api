@@ -9,6 +9,8 @@ import (
 )
 
 // AdminGetMenuVisibility GET /api/admin/menu-visibility (AdminAuth)
+// Read-only compatibility after merge: returns empty user/admin maps once
+// Visible options are cleared to "{}". Prefer SidebarModulesAdmin / 系统设置·侧边栏模块.
 func AdminGetMenuVisibility(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -30,22 +32,13 @@ func requireRoot(c *gin.Context) bool {
 	return true
 }
 
-// AdminPutMenuVisibility PUT /api/admin/menu-visibility (Root only; A39)
-// Body: {"user":{...},"admin":{...}} — either or both sides; wholesale replace per side.
-// Hiding a menu only hides the entry; it does not change route auth.
+// AdminPutMenuVisibility PUT /api/admin/menu-visibility
+// Removed: independent Visible write path is retired. Root still gated first (403),
+// then 410 MENU_VISIBILITY_REMOVED. Write via 系统设置·侧边栏模块 / SidebarModulesAdmin.
 func AdminPutMenuVisibility(c *gin.Context) {
 	if !requireRoot(c) {
 		return
 	}
-	var req model.MenuVisibilityPutInput
-	if err := common.DecodeJson(c.Request.Body, &req); err != nil {
-		rootReject(c, http.StatusBadRequest, "bad_request", "invalid json")
-		return
-	}
-	_, _, err := model.ApplyMenuVisibilityPut(req)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error(), "code": "bad_request"})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"success": true, "data": model.BuildMenuVisibilityView()})
+	rootReject(c, http.StatusGone, "MENU_VISIBILITY_REMOVED",
+		"menu-visibility API removed; use 系统设置·侧边栏模块 (SidebarModulesAdmin)")
 }

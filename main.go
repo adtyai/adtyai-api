@@ -351,6 +351,12 @@ func InitResources() error {
 		}
 	}
 	model.InitOptionMap()
+	// 菜单显隐并进官方 SidebarModulesAdmin（一次迁移；幂等）
+	if common.IsMasterNode {
+		if err := model.MigrateMenuVisibilityIntoSidebarModules(); err != nil {
+			common.SysError(common.LogText("failed to merge menu-visibility into SidebarModulesAdmin: %s", err.Error()))
+		}
+	}
 	// 审查全量 P2-1：CustomCallback/ServerAddress 未配或仍指品牌默认域时启动告警，避免 notify_url 静默指错域。
 	service.WarnCallbackAddressMisconfig()
 

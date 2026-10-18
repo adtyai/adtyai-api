@@ -164,4 +164,5 @@ func ApplyMenuVisibilityPut(in MenuVisibilityPutInput) (oldSnap, newSnap map[str
 func SeedMenuVisibilityOptionsIntoOptionMap() {
 	common.OptionMap[OptSidebarUserVisible] = "{}"
 	common.OptionMap[OptSidebarAdminVisible] = "{}"
+	SeedSidebarModulesMergeOptionIntoOptionMap()
 }
