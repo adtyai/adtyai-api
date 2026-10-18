@@ -68,7 +68,7 @@ Fork de [New API](https://github.com/QuantumNous/new-api) sous AGPL-3.0. Merci a
 | Remboursements & risques | Reprise proportionnelle des cadeaux/affiliation ; file de risque manuelle ; commandes et grands livres admin |
 | Tarifs entreprise | Console : Facturation & paiements → Tarifs entreprise (multiplicateurs de groupe masqués) |
 | Routage intelligent | Menu latéral dédié ; routage par score / canary / schémas de poids ; garde-fou coût `/smart-routing/cost` |
-| Visibilité des menus | Interrupteurs utilisateur/admin ; entrées du fork intégrées aux groupes de barre latérale officiels |
+| Modules de barre latérale | Intégré aux interrupteurs officiels de modules ; store menu-visibility indépendant supprimé |
 | Support | Chat en direct Chatwoot (widget + réglages admin ; script réservé au root ; contact de secours si la sonde échoue) |
 | Paramètres métier | Paramètres d’ops réglables dans la console |
 | Ops UX | Tâches de sauvegarde/rapport sous les groupes de barre latérale officiels |

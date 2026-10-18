@@ -68,7 +68,7 @@ Forked from [New API](https://github.com/QuantumNous/new-api) under AGPL-3.0. Th
 | Refunds & risk | Proportional clawback of gift/affiliate; manual risk queue; admin orders & ledgers |
 | Enterprise rates | Console: Billing & payments → Enterprise rates (hidden group multipliers) |
 | Smart routing | Dedicated sidebar menu; scored routing / canary / weight schemes; cost guardrail at `/smart-routing/cost` |
-| Menu visibility | User/admin toggles; fork entries folded into stock sidebar groups |
+| Sidebar modules | Folded into stock sidebar-module toggles; independent menu-visibility store removed |
 | Support | Chatwoot live chat (widget + admin settings; script root-only; fallback contact if probe fails) |
 | Business params | Tunable ops settings in the console |
 | Ops UX | Backup/report jobs under stock sidebar groups |
