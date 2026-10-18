@@ -28,7 +28,10 @@ import {
 } from '@/features/system-settings/maintenance/config'
 import { useAuthStore } from '@/stores/auth-store'
 
-import { useSidebarConfig } from '../use-sidebar-config'
+import {
+  useIsSidebarModuleVisible,
+  useSidebarConfig,
+} from '../use-sidebar-config'
 import { useSidebarData } from '../use-sidebar-data'
 
 beforeEach(() => {
@@ -178,5 +181,75 @@ describe('audit log sidebar entry', () => {
       .map((item) => item.title)
     expect(titles).not.toContain('Usage Logs')
     expect(titles).toContain('Audit Logs')
+  })
+})
+
+
+describe('expanded admin URL map (menu-visibility merge)', () => {
+  function visibleFor(url: string, admin?: object) {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    client.setQueryData(['status'], {
+      SidebarModulesAdmin: admin ? JSON.stringify(admin) : '',
+    })
+    useAuthStore.getState().auth.setUser({
+      id: 1,
+      username: 'alice',
+      role: 100,
+      permissions: { sidebar_settings: false },
+      sidebar_modules: '',
+    })
+    function Wrapper(props: { children: ReactNode }) {
+      return (
+        <QueryClientProvider client={client}>
+          {props.children}
+        </QueryClientProvider>
+      )
+    }
+    return renderHook(() => useIsSidebarModuleVisible(url), {
+      wrapper: Wrapper,
+    }).result.current
+  }
+
+  it.each([
+    ['/system-settings/orders', 'orders'],
+    ['/system-settings/chatwoot', 'chatwoot'],
+    ['/system-settings/enterprise-pricing', 'enterprise_pricing'],
+    ['/system-settings/alerts', 'alerts'],
+    ['/system-settings/risk-reviews', 'risk_reviews'],
+    ['/system-info', 'system_info'],
+    ['/task-plugins', 'task_plugins'],
+    ['/smart-routing', 'smart_routing'],
+  ] as const)('%s hides when admin.%s=false', (url, moduleKey) => {
+    expect(
+      visibleFor(url, { admin: { enabled: true, [moduleKey]: false } })
+    ).toBe(false)
+    expect(visibleFor(url)).toBe(true)
+  })
+
+  it('orders URL is not gated by admin.setting', () => {
+    expect(
+      visibleFor('/system-settings/orders', {
+        admin: { enabled: true, setting: false, orders: true },
+      })
+    ).toBe(true)
+  })
+
+  it('unmapped operations/alerts stays visible when alerts=false', () => {
+    expect(
+      visibleFor('/system-settings/operations/alerts', {
+        admin: { enabled: true, alerts: false },
+      })
+    ).toBe(true)
+  })
+
+  it('maintenance DEFAULT includes smart_routing and new admin keys', () => {
+    const config = parseSidebarModulesAdmin('')
+    expect(config.admin.smart_routing).toBe(true)
+    expect(config.admin.orders).toBe(true)
+    expect(config.admin.chatwoot).toBe(true)
+    expect(config.admin.system_info).toBe(true)
+    expect(config.admin.task_plugins).toBe(true)
   })
 })

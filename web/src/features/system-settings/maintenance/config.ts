@@ -77,10 +77,22 @@ export const SIDEBAR_MODULES_DEFAULT: SidebarModulesAdminConfig = {
   admin: {
     enabled: true,
     channel: true,
+    smart_routing: true,
     models: true,
     redemption: true,
     user: true,
     setting: true,
+    system_info: true,
+    task_plugins: true,
+    orders: true,
+    enterprise_pricing: true,
+    alerts: true,
+    chatwoot: true,
+    risk_reviews: true,
+    aff_commissions: true,
+    aff_withdrawals: true,
+    bonus_ledger: true,
+    order_refunds: true,
   },
 }
 

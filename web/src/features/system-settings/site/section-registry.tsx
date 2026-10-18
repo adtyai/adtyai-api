@@ -26,7 +26,6 @@ import {
 import { HeaderNavigationSection } from '../maintenance/header-navigation-section'
 import { NoticeSection } from '../maintenance/notice-section'
 import { SidebarModulesSection } from '../maintenance/sidebar-modules-section'
-import { MenuVisibilitySection } from '../menu-visibility/menu-visibility-section'
 import type { SiteSettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
 
@@ -85,13 +84,10 @@ const SITE_SECTIONS = [
       )
       const sidebarSerialized = serializeSidebarModulesAdmin(sidebarConfig)
       return (
-        <>
-          <SidebarModulesSection
-            config={sidebarConfig}
-            initialSerialized={sidebarSerialized}
-          />
-          <MenuVisibilitySection />
-        </>
+        <SidebarModulesSection
+          config={sidebarConfig}
+          initialSerialized={sidebarSerialized}
+        />
       )
     },
   },

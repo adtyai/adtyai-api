@@ -28,17 +28,11 @@ import {
 import { resolveSidebarView } from '@/components/layout/lib/sidebar-view-registry'
 import type { NavGroup, ResolvedSidebarView } from '@/components/layout/types'
 import { useSidebarBadges } from '@/features/system-settings/sidebar-badges/hooks/use-sidebar-badges'
-import {
-  applyNestedAdminMenuVisibility,
-  applyRootMenuVisibility,
-  parseMenuVisibilityMap,
-} from '@/lib/menu-visibility'
 import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
 
 import { useSidebarConfig } from './use-sidebar-config'
 import { useSidebarData } from './use-sidebar-data'
-import { useStatus } from './use-status'
 
 /** Sentinel key used for the root navigation in animation `key=` props */
 const ROOT_VIEW_KEY = '__root'
@@ -52,9 +46,9 @@ const ROOT_VIEW_KEY = '__root'
  *     · admin-only group visibility (role-based);
  *     · `useSidebarConfig` (admin × user `sidebar_modules` overlay).
  *
- * Nested views are intentionally NOT passed through `useSidebarConfig`
- * — those filters target known dashboard URLs only, and gating is
- * already enforced at the route level (`beforeLoad` redirects).
+ * Nested `system-settings` nav is also filtered by `useSidebarConfig`
+ * (independent admin.* modules for orders/chatwoot/…). Other nested
+ * views keep route-level gating only.
  */
 export function useSidebarView(): ResolvedSidebarView {
   const { t } = useTranslation()
@@ -62,30 +56,23 @@ export function useSidebarView(): ResolvedSidebarView {
   const userRole = useAuthStore((s) => s.auth.user?.role)
   const rootSidebarData = useSidebarData()
   const configFilteredRoot = useSidebarConfig(rootSidebarData.navGroups)
-  const { status } = useStatus()
   const sidebarBadges = useSidebarBadges()
-  // A39: status-driven menu visibility (missing key = visible), AND-ed
-  // on top of sidebar_modules. Entry-only; route guards are unchanged.
-  const rawUserVisible = status?.SidebarUserVisible
-  const rawAdminVisible = status?.SidebarAdminVisible
-  const userVisible = useMemo(
-    () => parseMenuVisibilityMap(rawUserVisible),
-    [rawUserVisible]
+
+  // Nested system-settings must share the same modules filter as root so
+  // /system-settings/orders etc. honour independent admin.* toggles.
+  const systemSettingsNavGroups = useMemo(
+    () => getSystemSettingsNavGroups(t, sidebarBadges),
+    [t, sidebarBadges]
   )
-  const adminVisible = useMemo(
-    () => parseMenuVisibilityMap(rawAdminVisible),
-    [rawAdminVisible]
+  const configFilteredSystemSettings = useSidebarConfig(
+    systemSettingsNavGroups
   )
 
   const rootNavGroups = useMemo<NavGroup[]>(() => {
     const role = userRole ?? ROLE.GUEST
     const isAdmin = role >= ROLE.ADMIN
     const settingsBadge = sumSidebarBadges(sidebarBadges)
-    return applyRootMenuVisibility(
-      configFilteredRoot,
-      userVisible,
-      adminVisible
-    )
+    return configFilteredRoot
       .filter((group) => (group.id === 'admin' ? isAdmin : true))
       .map((group) => {
         const filtered = group.items.filter(
@@ -170,14 +157,7 @@ export function useSidebarView(): ResolvedSidebarView {
           !(group.id === 'admin' && (settingsBadge || routingBadge))
         return unchanged ? group : { ...group, items }
       })
-  }, [
-    configFilteredRoot,
-    userRole,
-    userVisible,
-    adminVisible,
-    sidebarBadges,
-    t,
-  ])
+  }, [configFilteredRoot, userRole, sidebarBadges, t])
 
   const view = resolveSidebarView(pathname)
 
@@ -187,10 +167,7 @@ export function useSidebarView(): ResolvedSidebarView {
       view,
       navGroups:
         view.id === 'system-settings'
-          ? applyNestedAdminMenuVisibility(
-              getSystemSettingsNavGroups(t, sidebarBadges),
-              adminVisible
-            )
+          ? configFilteredSystemSettings
           : view.getNavGroups(t),
     }
   }

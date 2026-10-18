@@ -22,16 +22,16 @@ import type { NavGroup, NavItem } from '@/components/layout/types'
 import { useStatus } from '@/hooks/use-status'
 import { useAuthStore } from '@/stores/auth-store'
 
-type SidebarSectionConfig = {
+export type SidebarSectionConfig = {
   enabled: boolean
   [key: string]: boolean
 }
 
-type SidebarModulesAdminConfig = Record<string, SidebarSectionConfig>
+export type SidebarModulesAdminConfig = Record<string, SidebarSectionConfig>
 
 // User-layer config is shape-identical to admin, but may be null
 // to signal "no narrowing" (empty/invalid/legacy users).
-type SidebarModulesUserConfig = SidebarModulesAdminConfig | null
+export type SidebarModulesUserConfig = SidebarModulesAdminConfig | null
 
 /**
  * Default sidebar modules configuration
@@ -65,6 +65,17 @@ const DEFAULT_SIDEBAR_MODULES: SidebarModulesAdminConfig = {
     redemption: true,
     user: true,
     setting: true,
+    system_info: true,
+    task_plugins: true,
+    orders: true,
+    enterprise_pricing: true,
+    alerts: true,
+    chatwoot: true,
+    risk_reviews: true,
+    aff_commissions: true,
+    aff_withdrawals: true,
+    bonus_ledger: true,
+    order_refunds: true,
   },
 }
 
@@ -127,6 +138,29 @@ const URL_TO_CONFIG_MAP: Record<string, { section: string; module: string }> = {
   '/redemption-codes': { section: 'admin', module: 'redemption' },
   '/system-settings': { section: 'admin', module: 'setting' },
   '/system-settings/site': { section: 'admin', module: 'setting' },
+  '/system-info': { section: 'admin', module: 'system_info' },
+  '/task-plugins': { section: 'admin', module: 'task_plugins' },
+  '/system-settings/orders': { section: 'admin', module: 'orders' },
+  '/system-settings/enterprise-pricing': {
+    section: 'admin',
+    module: 'enterprise_pricing',
+  },
+  '/system-settings/alerts': { section: 'admin', module: 'alerts' },
+  '/system-settings/chatwoot': { section: 'admin', module: 'chatwoot' },
+  '/system-settings/risk-reviews': { section: 'admin', module: 'risk_reviews' },
+  '/system-settings/aff-commissions': {
+    section: 'admin',
+    module: 'aff_commissions',
+  },
+  '/system-settings/aff-withdrawals': {
+    section: 'admin',
+    module: 'aff_withdrawals',
+  },
+  '/system-settings/bonus-ledger': { section: 'admin', module: 'bonus_ledger' },
+  '/system-settings/order-refunds': {
+    section: 'admin',
+    module: 'order_refunds',
+  },
 }
 
 /**
@@ -268,6 +302,23 @@ function filterNavItems(
 }
 
 /**
+ * Pure modules filter for root and nested (e.g. system-settings) nav groups.
+ * Same admin × user overlay as useSidebarConfig.
+ */
+export function filterNavGroupsBySidebarModules(
+  groups: NavGroup[],
+  adminConfig: SidebarModulesAdminConfig,
+  userConfig: SidebarModulesUserConfig
+): NavGroup[] {
+  return groups
+    .map((group) => ({
+      ...group,
+      items: filterNavItems(group.items, adminConfig, userConfig),
+    }))
+    .filter((group) => group.items.length > 0)
+}
+
+/**
  * Filter sidebar navigation groups by admin × user sidebar_modules config.
  *
  * Two layers, AND-combined:
@@ -308,13 +359,7 @@ export function useSidebarConfig(navGroups: NavGroup[]): NavGroup[] {
   }, [auth?.user?.permissions?.sidebar_settings, auth?.user?.sidebar_modules])
 
   const filteredNavGroups = useMemo(
-    () =>
-      navGroups
-        .map((group) => ({
-          ...group,
-          items: filterNavItems(group.items, adminConfig, userConfig),
-        }))
-        .filter((group) => group.items.length > 0), // Only show navigation groups with visible items
+    () => filterNavGroupsBySidebarModules(navGroups, adminConfig, userConfig),
     [navGroups, adminConfig, userConfig]
   )
 

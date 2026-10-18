@@ -135,21 +135,24 @@ test('pages hidden in the sidebar settings stay out of search', async () => {
   expect(entries).toContain('Profile')
 })
 
-// adtyai: A39 menu visibility (SidebarUserVisible / SidebarAdminVisible)
-// must narrow search the same way it narrows the sidebar.
-test('A39 user menu visibility hides pages from search', async () => {
-  const entries = await searchEntriesFor(ROLE.USER, '', {
-    SidebarUserVisible: JSON.stringify({ wallet: false }),
-  })
+// Modules-only: command palette shares useSidebarView → SidebarModulesAdmin.
+test('SidebarModulesAdmin personal.topup=false hides wallet from search', async () => {
+  const entries = await searchEntriesFor(
+    ROLE.USER,
+    JSON.stringify({ personal: { enabled: true, topup: false } })
+  )
 
   expect(entries).not.toContain('Wallet')
   expect(entries).toContain('Profile')
 })
 
-test('A39 admin menu visibility hides admin pages from search', async () => {
-  const entries = await searchEntriesFor(ROLE.ADMIN, '', {
-    SidebarAdminVisible: JSON.stringify({ channels: false }),
-  })
+test('SidebarModulesAdmin admin.channel=false hides channels from search', async () => {
+  const entries = await searchEntriesFor(
+    ROLE.ADMIN,
+    JSON.stringify({
+      admin: { enabled: true, channel: false, user: true, models: true },
+    })
+  )
 
   expect(entries).not.toContain('Channels')
   expect(entries).toContain('Users')

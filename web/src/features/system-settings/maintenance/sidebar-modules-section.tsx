@@ -142,6 +142,10 @@ export function SidebarModulesSection({
         title: t('Channels'),
         description: t('Configure upstream providers and routing.'),
       },
+      smart_routing: {
+        title: t('Smart routing'),
+        description: t('Routing strategy, scores, rankings, and cost tools.'),
+      },
       models: {
         title: t('Models'),
         description: t('Manage catalog visibility and pricing.'),
@@ -155,8 +159,54 @@ export function SidebarModulesSection({
         description: t('Administer user accounts and roles.'),
       },
       setting: {
-        title: t('System settings'),
-        description: t('Advanced platform configuration.'),
+        title: t('System settings entry'),
+        description: t(
+          'Root system-settings sidebar entry (not individual settings pages).'
+        ),
+      },
+      system_info: {
+        title: t('System info'),
+        description: t('Runtime and deployment information page.'),
+      },
+      task_plugins: {
+        title: t('Task plugins'),
+        description: t('Task plugin management entry.'),
+      },
+      orders: {
+        title: t('Orders'),
+        description: t('Order list inside system settings (independent of entry).'),
+      },
+      enterprise_pricing: {
+        title: t('Enterprise pricing'),
+        description: t('Enterprise agreement pricing settings page.'),
+      },
+      alerts: {
+        title: t('Telegram alerts'),
+        description: t('Telegram alert settings (not operations monitoring).'),
+      },
+      chatwoot: {
+        title: t('Chatwoot'),
+        description: t('Chatwoot integration settings page.'),
+      },
+      risk_reviews: {
+        title: t('Risk reviews'),
+        description: t('Risk review queue inside system settings.'),
+      },
+      aff_commissions: {
+        title: t('Affiliate commissions'),
+        description: t('Affiliate commission records page.'),
+      },
+      aff_withdrawals: {
+        title: t('Affiliate withdrawals'),
+        description: t('Affiliate withdrawal request page.'),
+      },
+      bonus_ledger: {
+        title: t('Bonus ledger'),
+        description: t('Bonus ledger records page.'),
+      },
+      order_refunds: {
+        title: t('Order refunds'),
+        description: t('Order refund management page.'),
       },
     },
   }
