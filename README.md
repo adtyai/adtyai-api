@@ -62,12 +62,16 @@ Forked from [New API](https://github.com/QuantumNous/new-api) under AGPL-3.0. Th
 
 | Area | What you get |
 | --- | --- |
-| Dual-wallet billing | Bonus balance first, then paid; hourly consume split; daily reconcile |
-| Top-up | Tiers / gifts / first-top-up policies; EPay and BEpusdt (USDT) |
+| Dual-wallet billing | Bonus first, then paid; hourly consume split; daily reconcile |
+| Top-up | Tier gifts only (no first-top-up bonus); EPay and BEpusdt (USDT) |
 | Affiliate | Commission on paid minus refunds; withdraw review; startup backfill for misses |
 | Refunds & risk | Proportional clawback of gift/affiliate; manual risk queue; admin orders & ledgers |
+| Enterprise rates | Console: Billing & payments → Enterprise rates (hidden group multipliers) |
+| Smart routing | Dedicated sidebar menu; scored routing / canary / weight schemes; cost guardrail at `/smart-routing/cost` |
+| Menu visibility | User/admin toggles; fork entries folded into stock sidebar groups |
+| Support | Chatwoot live chat (widget + admin settings; script root-only; fallback contact if probe fails) |
 | Business params | Tunable ops settings in the console |
-| Ops UX | Backup/report related jobs; menu/group labels under stock sidebar groups |
+| Ops UX | Backup/report jobs under stock sidebar groups |
 
 User-facing brand is **ADTY AI**, not New API as the site name.
 

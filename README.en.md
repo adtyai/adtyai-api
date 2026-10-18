@@ -4,7 +4,7 @@
 
 # ADTY AI
 
-**AI gateway based on New API — adtyai**
+**Self-hosted AI gateway (adtyai fork)**
 
 <p align="center">
   <a href="./README.zh_CN.md">简体中文</a> |
@@ -27,315 +27,115 @@
 </p>
 
 <p align="center">
-  <a href="#screenshots">Screenshots</a> •
-  <a href="#capabilities">Capabilities</a> •
+  <a href="#about">About</a> •
+  <a href="#adty-features">ADTY features</a> •
+  <a href="#upstream-features">Upstream features</a> •
   <a href="#quick-start">Quick start</a> •
   <a href="#deployment">Deployment</a> •
-  <a href="#development">Development</a> •
-  <a href="#documentation">Documentation</a>
+  <a href="#license">License</a>
 </p>
 
 </div>
 
 ---
 
-## 📝 Project Description
+<a id="about"></a>
 
-**adtyai** (site name **ADTY AI**) is a self-hosted AI gateway forked from the official [New API](https://github.com/QuantumNous/new-api) project. It keeps upstream capabilities and adds adtyai-specific billing, ops, and branding. Repository: <https://github.com/adtyai/adtyai-api>. Image: `ghcr.io/adtyai/adtyai-api`.
+## About
 
-Use it to share authorized model access across a team, switch providers without configuring every client again, or operate a private multi-model service with a web console. Upstreams include OpenAI, Anthropic, Google Gemini, Azure OpenAI, AWS Bedrock, Vertex AI, DeepSeek, Qwen, and other compatible services.
+**ADTY AI** (repo **adtyai-api**) is a self-hosted AI gateway for relay-site operators. It keeps upstream New API channel, model, and console capabilities, and adds billing, top-up, affiliate, risk review, and ops features for this fork.
+
+- Repo: <https://github.com/adtyai/adtyai-api>
+- Image: `ghcr.io/adtyai/adtyai-api` (e.g. `:main` and dated build tags; multi-arch release follows git tags)
+- Default branch: `main` (change and push only on `main`)
+
+Forked from [New API](https://github.com/QuantumNous/new-api) under AGPL-3.0. Thanks to upstream authors and contributors.
 
 > [!IMPORTANT]
-> - This project is intended solely for lawful and authorized AI API gateway, organization-level authentication, multi-model management, usage analytics, cost accounting, and private deployment scenarios.
-> - Users must lawfully obtain upstream API keys, accounts, model services, and interface permissions, and must comply with upstream terms of service and applicable laws and regulations.
-> - Users should ensure their use complies with upstream terms of service and applicable laws and regulations.
-> - When providing generative AI services to the public, users should comply with applicable regulatory requirements and fulfill all filing, licensing, content safety, real-name verification, log retention, tax, and upstream authorization obligations required by their jurisdiction.
-
-<!-- -->
-
-> [!WARNING]
-> When operating this project as a public generative AI service or API resale service, users should first complete all required filing, licensing, content safety, real-name verification, log retention, tax, payment, and upstream authorization obligations.
+> For lawful, authorized gateway and private deployment only. Operators must obtain upstream keys lawfully and meet local compliance (filings, payments, content safety, etc.).
 
 ---
 
-<a id="screenshots"></a>
+<a id="adty-features"></a>
 
-## Screenshots
+## ADTY features
 
-Accounts, channels, plugin installation states, usage, prices, and costs shown below are simulated data. The marketplace displays the official plugin catalog. Click an image to view it at full size.
-
-| Usage dashboard | Plugin marketplace |
+| Area | What you get |
 | --- | --- |
-| [![Usage dashboard with simulated requests, costs, and performance metrics](assets/screenshots/dashboard.en.jpg)](assets/screenshots/dashboard.en.jpg) | [![Official plugin marketplace with simulated installation status](assets/screenshots/plugin-marketplace.en.jpg)](assets/screenshots/plugin-marketplace.en.jpg) |
-| **Model square** | **Usage logs** |
-| [![Model square with simulated model pricing and availability](assets/screenshots/models.en.jpg)](assets/screenshots/models.en.jpg) | [![Usage logs with simulated tokens, costs, and response times](assets/screenshots/usage-logs.en.jpg)](assets/screenshots/usage-logs.en.jpg) |
+| Dual-wallet billing | Bonus first, then paid; hourly consume split; daily reconcile |
+| Top-up | Tier gifts only (no first-top-up bonus); EPay and BEpusdt (USDT) |
+| Affiliate | Commission on paid minus refunds; withdraw review; startup backfill for misses |
+| Refunds & risk | Proportional clawback of gift/affiliate; manual risk queue; admin orders & ledgers |
+| Enterprise rates | Console: Billing & payments → Enterprise rates (hidden group multipliers) |
+| Smart routing | Dedicated sidebar menu; scored routing / canary / weight schemes; cost guardrail at `/smart-routing/cost` |
+| Menu visibility | User/admin toggles; fork entries folded into stock sidebar groups |
+| Support | Chatwoot live chat (widget + admin settings; script root-only; fallback contact if probe fails) |
+| Business params | Tunable ops settings in the console |
+| Ops UX | Backup/report jobs under stock sidebar groups |
+
+User-facing brand is **ADTY AI**, not New API as the site name.
 
 ---
 
-## 🤝 Trusted Partners
+<a id="upstream-features"></a>
 
-<p align="center">
-  <em>No particular order</em>
-</p>
+## Upstream features (inherited)
 
-<p align="center">
-  <a href="https://www.cherry-ai.com/" target="_blank">
-    <img src="./docs/images/cherry-studio.png" alt="Cherry Studio" height="80" />
-  </a>
-  <a href="https://bda.pku.edu.cn/" target="_blank">
-    <img src="./docs/images/pku.png" alt="Peking University" height="80" />
-  </a>
-  <a href="https://www.aliyun.com/" target="_blank">
-    <img src="./docs/images/aliyun.png" alt="Alibaba Cloud" height="80" />
-  </a>
-  <a href="https://io.net/" target="_blank">
-    <img src="./docs/images/io-net.png" alt="IO.NET" height="80" />
-  </a>
-</p>
+You still get New API capabilities such as multi-provider channels, quotas/subscriptions, usage logs, users/groups/API keys, OAuth/passkeys, async task plugins, and a multi-language console. Protocol entrypoints include OpenAI Chat/Responses, Anthropic Messages, Gemini, and more (see source and upstream docs).
 
 ---
-
-## 🙏 Special Thanks
-
-<p align="center">
-  <a href="https://www.jetbrains.com/?from=new-api" target="_blank">
-    <img src="https://resources.jetbrains.com/storage/products/company/brand/logos/jb_beam.png" alt="JetBrains Logo" width="120" />
-  </a>
-</p>
-
-<p align="center">
-  <strong>Thanks to <a href="https://www.jetbrains.com/?from=new-api">JetBrains</a> for providing free open-source development license for this project</strong>
-</p>
-
----
-
-<a id="capabilities"></a>
-
-## Capabilities
-
-| Area | What you can do |
-| --- | --- |
-| Model access | Use OpenAI Chat Completions, Responses, Anthropic Messages, and Gemini APIs; stream responses and use tools, reasoning, and multimodal inputs where supported |
-| Routing | Configure model mappings, channel priorities and weights, retries, channel affinity, and multiple upstream keys |
-| Usage and costs | Manage quotas, subscriptions, usage logs, cache accounting, and expression-based pricing for different usage tiers |
-| Access control | Manage users, groups, fine-grained permissions, and API key restrictions; use OAuth/OIDC, passkeys, two-factor authentication, and login session management |
-| Asynchronous tasks | Extend image, video, and other task APIs with JavaScript plugins, including task status and output retrieval |
-| Web console | Configure channels and models, inspect usage and audit logs, and try models in the playground; available in English, Simplified Chinese, Traditional Chinese, French, Japanese, Russian, and Vietnamese |
-
-### Protocols and endpoints
-
-| Interface | Common endpoints |
-| --- | --- |
-| OpenAI Chat / Responses | `POST /v1/chat/completions`, `POST /v1/responses` |
-| Anthropic Messages | `POST /v1/messages` |
-| Gemini | `POST /v1beta/models/{model}:generateContent`, `POST /v1beta/models/{model}:streamGenerateContent` |
-| Realtime / Responses WebSocket | `GET /v1/realtime`, `GET /v1/responses` (WebSocket upgrade) |
-| Images / audio | `/v1/images/generations`, `/v1/images/edits`, `/v1/audio/speech`, `/v1/audio/transcriptions`, `/v1/audio/translations` |
-| Embeddings / rerank | `POST /v1/embeddings`, `POST /v1/rerank` |
-| Task plugins | `POST /v1/tasks/{pluginKey}`, `GET /v1/tasks/{taskId}`, plus routes declared by each plugin |
-
-[RelayKit](./relaykit/README.md) provides request, response, and streaming conversion between the four text protocols. Available features depend on the channel, upstream model, and conversion path; protocol-specific tools and fields may not map exactly. WebSocket support also requires a compatible upstream and channel configuration.
-
-This README describes the current source tree. Check the release notes for the version you deploy.
 
 <a id="quick-start"></a>
 
 ## Quick start
 
-### Try locally with Docker
-
-This starts a single instance with SQLite and binds it to localhost:
+### Docker (single node)
 
 ```bash
 mkdir -p data
-docker run --name new-api -d --restart unless-stopped \
+docker run --name adtyai-api -d --restart unless-stopped \
   -p 127.0.0.1:3000:3000 \
   -e TZ=Asia/Shanghai \
   -v "$(pwd)/data:/data" \
-  ghcr.io/adtyai/adtyai-api:latest
+  ghcr.io/adtyai/adtyai-api:main
 ```
 
-Open [http://localhost:3000](http://localhost:3000) and complete the setup wizard to create the administrator account. The `data` directory persists the SQLite database across container replacements.
+Open [http://localhost:3000](http://localhost:3000) and create an admin account. Data lives in the mounted `data` directory.
 
-### Make your first request
+### First API call
 
-1. Add a channel with your upstream API key, available models, and group assignment; run a channel test.
-2. Configure model pricing and ensure the user has quota or a valid subscription.
-3. Create an API key in the console with access to the same group and models.
-4. Set your client's base URL to `http://localhost:3000/v1` for OpenAI-compatible clients and use the **New API-issued key**.
-
-Set `NEW_API_KEY` in your shell to that key. List the models accessible to it:
+1. Configure a channel and pricing; ensure the user has quota.
+2. Create an API key in the console.
+3. Set client Base URL to `http://localhost:3000/v1` and use a key issued by this site.
 
 ```bash
 curl --fail-with-body http://localhost:3000/v1/models \
-  -H "Authorization: Bearer ${NEW_API_KEY}"
+  -H "Authorization: Bearer ${ADTY_API_KEY}"
 ```
 
-Then call Responses, replacing `your-enabled-model` with an enabled model that supports this interface:
-
-```bash
-curl --fail-with-body http://localhost:3000/v1/responses \
-  -H "Authorization: Bearer ${NEW_API_KEY}" \
-  -H "Content-Type: application/json" \
-  -d '{"model":"your-enabled-model","input":"Hello!"}'
-```
+---
 
 <a id="deployment"></a>
 
 ## Deployment
 
-### Docker Compose
-
-The repository's [Compose configuration](./docker-compose.yml) starts **New API + PostgreSQL + Redis** by default. It also contains examples for MySQL and a separate ClickHouse log database.
+Prefer [docker-compose.yml](./docker-compose.yml) (PostgreSQL + Redis by default):
 
 ```bash
 git clone https://github.com/adtyai/adtyai-api.git
-cd new-api
-```
-
-Before starting, edit `docker-compose.yml`: replace the database and Redis example passwords in both the services and connection strings, and set a persistent random `SESSION_SECRET` (generate one with `openssl rand -hex 32`). For an HTTPS console, configure `SESSION_COOKIE_SECURE=true` and `SESSION_COOKIE_TRUSTED_URL` with its exact public HTTPS origin.
-
-```bash
+cd adtyai-api
+# Edit compose: replace sample passwords; set SESSION_SECRET
 docker compose up -d
-docker compose logs -f new-api
 ```
 
-### Storage and configuration
-
-| Component | Options |
-| --- | --- |
-| Main database | SQLite, MySQL ≥ 5.7.8, or PostgreSQL ≥ 9.6 |
-| Separate log database | Configure with `LOG_SQL_DSN`; also supports ClickHouse |
-| Cache | Optional Redis plus in-memory caching; use shared Redis when application nodes need shared rate limits |
-| Container platforms | Linux amd64 / arm64 |
-
-| Variable | Purpose |
-| --- | --- |
-| `SQL_DSN` | Main database connection; unset uses SQLite |
-| `LOG_SQL_DSN` | Optional separate log database connection |
-| `REDIS_CONN_STRING` | Redis connection string |
-| `SESSION_SECRET` | Persistent authentication secret; all nodes must use the same value |
-| `CRYPTO_SECRET` | Defaults to `SESSION_SECRET`; nodes sharing Redis must use the same effective value |
-| `SESSION_COOKIE_SECURE` | Set to `true` for an HTTPS console; enables Secure refresh cookies and strict refresh/logout origin checks |
-| `SESSION_COOKIE_TRUSTED_URL` | Required in Secure mode: comma-separated exact HTTPS origins, without paths or wildcards; leave unset for local HTTP |
-| `TRUSTED_PROXIES` | Trusted reverse-proxy IPs/CIDRs, or `none`; explicitly configure for your network |
-
-See the [environment example](./.env.example), [environment reference](https://docs.newapi.ai/en/docs/installation/config-maintenance/environment-variables), and [authentication and session guide](./docs/authentication.md) for full configuration. Configure container variables in Compose's `environment` or `env_file`; copying `.env.example` alone does not inject variables into the container.
-
-For production, put the console behind HTTPS and configure your reverse proxy for streaming and WebSocket upgrades. Persist and back up the database and mounted data. Multi-node deployments must share the main database and authentication secrets; separate Redis instances or in-memory rate limiters count limits independently per node. The session guide describes propagation behavior for each topology.
-
-Pin an image version from [Releases](https://github.com/QuantumNous/new-api/releases), review its upgrade notes, and back up before upgrading. The `latest` tag follows published builds and can change; migrations and compatibility must be assessed for your existing installation.
-
-<a id="development"></a>
-
-## Development and extensions
-
-The backend uses Go and Gin. The web console uses React 19, TypeScript, Rsbuild, TanStack, and Tailwind CSS 4. Use Bun for frontend dependencies and scripts; see [go.mod](./go.mod) for the Go language baseline and [Dockerfile](./Dockerfile) for the container build toolchain.
-
-Build the frontend before starting the backend, which embeds `web/dist`:
-
-```bash
-# Repository root
-cd web
-bun install --frozen-lockfile
-bun run build
-cd ..
-go run .
-```
-
-In a second terminal, start the frontend development server:
-
-```bash
-cd web
-bun run dev -- --port 5173
-```
-
-Open [http://localhost:5173](http://localhost:5173); the development server proxies API requests to the backend on port 3000. For a containerized development backend, see [docker-compose.dev.yml](./docker-compose.dev.yml) and the `make dev` target in [makefile](./makefile).
-
-| Location | Responsibility |
-| --- | --- |
-| `router/`, `middleware/`, `controller/` | HTTP routes, access checks, and API handlers |
-| `relay/` | Upstream adapters and request routing |
-| `service/`, `model/` | Business logic and persistence |
-| [relaykit/](./relaykit/README.md) | Independently buildable Go module for protocol DTOs and conversions |
-| [plugins/tasks/](./plugins/tasks/) | JavaScript task plugins; see [Task Plugin API v1](./docs/plugin-api/v1.md) for authoring and host boundaries |
-| `web/` | Web console; see [frontend conventions](./web/AGENTS.md) |
-| [electron/](./electron/README.md) | Desktop wrapper and packaging |
-
-Read [AGENTS.md](./AGENTS.md) before contributing. Run checks appropriate to your change, including `make test` for the Go modules and `bun run typecheck`, `bun run lint`, `bun run test`, and `bun run build` in `web/` for frontend changes. Changes to RelayKit must also pass `GOWORK=off go build ./...` from `relaykit/`.
-
-<a id="documentation"></a>
-
-## Documentation and community
-
-| Resource | Link |
-| --- | --- |
-| Official documentation | [Guides](https://docs.newapi.ai/en/docs) · [Installation](https://docs.newapi.ai/en/docs/installation) · [API reference](https://docs.newapi.ai/en/docs/api) |
-| Project exploration | [DeepWiki](https://deepwiki.com/QuantumNous/new-api) |
-| Questions and discussion | [FAQ](https://docs.newapi.ai/en/docs/support/faq) · [Community](https://docs.newapi.ai/en/docs/support/community-interaction) |
-| Bugs and feature requests | [GitHub Issues](https://github.com/QuantumNous/new-api/issues) |
-| Security reports | Follow the [security policy](./.github/SECURITY.md) for private reporting |
-
-For bug reports, include the version, deployment method, reproduction steps, and redacted logs. Documentation, translations, provider integrations, and focused regression tests are all welcome contributions.
+Configure HTTPS, secrets, and backups for production. Image publishing follows GitHub Actions / tags. Preview URLs are published by ops (example fixed preview: `https://newapi.n8-n.top`).
 
 ---
 
-## 🔗 Related Projects
+<a id="license"></a>
 
-### Upstream Projects
+## License
 
-| Project | Description |
-|------|------|
-| [One API](https://github.com/songquanpeng/one-api) | Original project base |
-| [Midjourney-Proxy](https://github.com/novicezk/midjourney-proxy) | Midjourney interface support |
+[AGPL-3.0](./LICENSE). Comply with AGPL when redistributing or offering network service.
 
-### Supporting Tools
-
-| Project | Description |
-|------|------|
-| [new-api-key-tool](https://github.com/Calcium-Ion/new-api-key-tool) | Key quota query tool |
-| [new-api-horizon](https://github.com/Calcium-Ion/new-api-horizon) | New API high-performance optimized version |
-
----
-
-## 📜 License
-
-This project is licensed under the [GNU Affero General Public License v3.0 (AGPLv3)](./LICENSE).
-
-Additional terms under AGPLv3 Section 7 apply. Modified versions must preserve
-the author attribution notice `Frontend design and development by New API
-contributors.` in the appropriate legal notices and in any prominent about,
-legal, footer, or attribution location presented by the user interface.
-
-Modified versions that present a user interface must also preserve a visible
-link to the original project: <https://github.com/QuantumNous/new-api>.
-
-This is an open-source project developed based on [One API](https://github.com/songquanpeng/one-api) (MIT License).
-
-If your organization's policies do not permit the use of AGPLv3-licensed software, or if you wish to avoid the open-source obligations of AGPLv3, please contact us at: [support@quantumnous.com](mailto:support@quantumnous.com)
-
-See [NOTICE](./NOTICE) and [third-party licenses](./THIRD-PARTY-LICENSES.md) for attribution and dependency notices.
-
----
-
-## 🌟 Star History
-
-<div align="center">
-
-[![Star History Chart](https://api.star-history.com/svg?repos=adtyai/adtyai-api&type=Date)](https://star-history.com/#adtyai/adtyai-api&Date)
-
-</div>
-
----
-
-<div align="center">
-
-### 💖 Thank you for using ADTY AI
-
-If this project is helpful, give us a ⭐️ Star.
-
-**[Repository](https://github.com/adtyai/adtyai-api)** • **[Upstream New API](https://github.com/QuantumNous/new-api)**
-
-<sub>Based on [New API](https://github.com/QuantumNous/new-api) by QuantumNous · branded for adtyai</sub>
-
-</div>
+Based on [New API](https://github.com/QuantumNous/new-api). Thanks, upstream.

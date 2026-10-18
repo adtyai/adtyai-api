@@ -4,7 +4,7 @@
 
 # ADTY AI
 
-**New API ベースの AI ゲートウェイ — adtyai**
+**セルフホスト AI ゲートウェイ二開（adtyai）**
 
 <p align="center">
   <a href="./README.zh_CN.md">简体中文</a> |
@@ -27,298 +27,115 @@
 </p>
 
 <p align="center">
-  <a href="#screenshots">スクリーンショット</a> •
-  <a href="#capabilities">機能</a> •
-  <a href="#quick-start">クイックスタート</a> •
-  <a href="#deployment">デプロイ</a> •
-  <a href="#development">開発</a> •
-  <a href="#documentation">ドキュメント</a>
+  <a href="#概要">概要</a> •
+  <a href="#adty機能">ADTY 機能</a> •
+  <a href="#上流機能">上流機能</a> •
+  <a href="#クイックスタート">クイックスタート</a> •
+  <a href="#デプロイ">デプロイ</a> •
+  <a href="#ライセンス">ライセンス</a>
 </p>
 
 </div>
 
 ---
 
-## 📝 プロジェクト概要
+<a id="概要"></a>
 
-**adtyai**（サイト名 **ADTY AI**）は公式 [New API](https://github.com/QuantumNous/new-api) をベースにしたセルフホスト AI ゲートウェイのフォークです。上流機能を維持しつつ、adtyai 向けの課金・運用・ブランディングを追加しています。リポジトリ: <https://github.com/adtyai/adtyai-api>。イメージ: `ghcr.io/adtyai/adtyai-api`。
+## 概要
 
-チームでの認可済みモデル共有、クライアント再設定なしのプロバイダ切替、Web コンソール付きのプライベート多モデル運用などに使えます。
+**ADTY AI**（リポジトリ名 **adtyai-api**）は中継サイト運営向けのセルフホスト AI ゲートウェイです。上流 New API のチャネル・モデル・コンソール機能を維持しつつ、本フォーク向けの課金・チャージ・アフィリエイト・リスク審査・運用機能を追加しています。
+
+- リポジトリ: <https://github.com/adtyai/adtyai-api>
+- イメージ: `ghcr.io/adtyai/adtyai-api`（例: `:main`、日付付きビルドタグ；正式マルチアーキテクチャ公開は git タグに従う）
+- デフォルトブランチ: `main`（変更と push はこのブランチのみ）
+
+[New API](https://github.com/QuantumNous/new-api) を AGPL-3.0 の下でフォーク。上流の作者と貢献者に感謝します。
 
 > [!IMPORTANT]
-> - 本プロジェクトは、合法的に許可された AI API ゲートウェイ、組織レベルの認証、マルチモデル管理、利用量分析、コスト管理、プライベートデプロイのシナリオのみを対象としています。
-> - ユーザーは、上流の API キー、アカウント、モデルサービス、インターフェース権限を合法的に取得し、上流のサービス利用規約および適用される法律法規を遵守する必要があります。
-> - ユーザーは、利用方法が上流のサービス利用規約および適用される法律法規に準拠していることを確認してください。
-> - 生成 AI サービスを公衆に提供する場合、ユーザーは適用される規制要件を遵守し、管轄区域で求められる届出、ライセンス、コンテンツセキュリティ、本人確認、ログ保持、税務、上流認可などのすべての義務を履行してください。
-
-<!-- -->
-
-> [!WARNING]
-> 本プロジェクトを公衆向け生成 AI サービスまたは API 再販サービスとして運営する場合、ユーザーは届出、コンテンツセキュリティ、本人確認、ログ保持、税務、決済、上流認可などの必要なコンプライアンス義務を先に完了してください。
+> 合法・認可されたゲートウェイおよびプライベートデプロイ用途のみ。運営者は上流キーを合法に取得し、届出・決済・コンテンツ安全など現地コンプライアンスを満たす必要があります。
 
 ---
 
-## 🤝 信頼できるパートナー
+<a id="adty機能"></a>
 
-<p align="center">
-  <em>順不同</em>
-</p>
+## ADTY 機能
 
-<p align="center">
-  <a href="https://www.cherry-ai.com/" target="_blank">
-    <img src="./docs/images/cherry-studio.png" alt="Cherry Studio" height="80" />
-  </a><!--
-  --><a href="https://github.com/iOfficeAI/AionUi/" target="_blank">
-    <img src="./docs/images/aionui.png" alt="Aion UI" height="80" />
-  </a><!--
-  --><a href="https://bda.pku.edu.cn/" target="_blank">
-    <img src="./docs/images/pku.png" alt="北京大学" height="80" />
-  </a><!--
-  --><a href="https://www.aliyun.com/" target="_blank">
-    <img src="./docs/images/aliyun.png" alt="Alibaba Cloud" height="80" />
-  </a><!--
-  --><a href="https://io.net/" target="_blank">
-    <img src="./docs/images/io-net.png" alt="IO.NET" height="80" />
-  </a>
-</p>
-
----
-
-## 🙏 特別な感謝
-
-<p align="center">
-  <a href="https://www.jetbrains.com/?from=new-api" target="_blank">
-    <img src="https://resources.jetbrains.com/storage/products/company/brand/logos/jb_beam.png" alt="JetBrains Logo" width="120" />
-  </a>
-</p>
-
-<p align="center">
-  <strong>感謝 <a href="https://www.jetbrains.com/?from=new-api">JetBrains</a> が本プロジェクトに無料のオープンソース開発ライセンスを提供してくれたことに感謝します</strong>
-</p>
-
----
-
-<a id="capabilities"></a>
-
-## 主な機能
-
-| 分野 | できること |
+| 分野 | 内容 |
 | --- | --- |
-| モデル接続 | OpenAI Chat Completions、Responses、Anthropic Messages、Gemini に対応。上流が対応するストリーミング、ツール呼び出し、推論、マルチモーダル入力を利用可能 |
-| ルーティング | モデル名のマッピング、チャネルの優先度と重み、再試行、チャネルアフィニティ、複数キーの管理 |
-| 使用量とコスト | クォータ、サブスクリプション、使用ログ、キャッシュの課金、式による段階的な料金設定 |
-| アクセス制御 | ユーザー、グループ、詳細な権限、API キーの制限。OAuth/OIDC、パスキー、二要素認証、ログインセッション管理 |
-| 非同期タスク | JavaScript プラグインで画像・動画などのタスク API を拡張し、状態の確認と成果物の取得に対応 |
-| Web 管理画面 | チャネルとモデルの設定、使用・監査ログの確認、Playground でのモデル検証。英語、簡体字中国語、繁体字中国語、フランス語、日本語、ロシア語、ベトナム語に対応 |
+| 二重ウォレット課金 | ボーナス残高優先、実チャージ次；時間集計は実出資で按分；日次突合 |
+| チャージ | ティアギフトのみ（初回チャージ加算なし）；易支付と BEpusdt（USDT） |
+| 招待アフィリエイト | 実支払から返金控除後でコミッション；出金審査；漏れは起動時バックフィル可 |
+| 返金とリスク | ギフト/アフィリエイトを比例回収；リスク人手待ち；管理側の注文と台帳 |
+| 企業協議価格 | システム設定 → 課金と決済 → 企業協議価格（グループ非表示倍率） |
+| スマートルーティング | 独立サイドバーメニュー；スコア選路 / カナリア / 重みスキーム；コストガード `/smart-routing/cost` |
+| メニュー表示 | ユーザー/管理の切替；二開入口は公式サイドバーグループへ融合 |
+| サポート | Chatwoot ライブチャット（ウィジェット＋管理設定；スクリプトはルートのみ；プローブ失敗時は予備連絡先） |
+| 業務パラメータ | コンソールで運用パラメータを調整可 |
+| 運用 UX | バックアップ/日報ジョブ（公式サイドバー分類下） |
 
-### プロトコルとエンドポイント
+ユーザー向けブランドは **ADTY AI** であり、サイト名に New API は使いません。
 
-| インターフェース | 主なエンドポイント |
-| --- | --- |
-| OpenAI Chat / Responses | `POST /v1/chat/completions`、`POST /v1/responses` |
-| Anthropic Messages | `POST /v1/messages` |
-| Gemini | `POST /v1beta/models/{model}:generateContent`、`POST /v1beta/models/{model}:streamGenerateContent` |
-| Realtime / Responses WebSocket | `GET /v1/realtime`、`GET /v1/responses`（WebSocket アップグレード） |
-| 画像 / 音声 | `/v1/images/generations`、`/v1/images/edits`、`/v1/audio/speech`、`/v1/audio/transcriptions`、`/v1/audio/translations` |
-| 埋め込み / リランク | `POST /v1/embeddings`、`POST /v1/rerank` |
-| タスクプラグイン | `POST /v1/tasks/{pluginKey}`、`GET /v1/tasks/{taskId}`、各プラグインが宣言するルート |
+---
 
-[RelayKit](./relaykit/README.md) は、上記 4 種類のテキストプロトコル間でリクエスト、レスポンス、ストリームを変換します。利用できる機能はチャネル、上流モデル、変換経路に依存し、固有のツールやフィールドを完全には変換できない場合があります。WebSocket も対応する上流とチャネル設定が必要です。
+<a id="上流機能"></a>
 
-この README は現在のソースコードを説明しています。デプロイするバージョンのリリースノートも確認してください。
+## 上流機能（継承）
 
-<a id="quick-start"></a>
+マルチプロバイダチャネル、クォータ/サブスクリプション、利用ログ、ユーザー/グループ/API キー、OAuth/パスキー、非同期タスクプラグイン、多言語コンソールなど New API 機能を引き続き利用できます。プロトコル入口は OpenAI Chat/Responses、Anthropic Messages、Gemini など（ソースと上流ドキュメント参照）。
+
+---
+
+<a id="クイックスタート"></a>
 
 ## クイックスタート
 
-### Docker でローカル実行
-
-SQLite を使う単一インスタンスを、ローカルホスト限定で起動します。
+### Docker（単一ノード）
 
 ```bash
 mkdir -p data
-docker run --name new-api -d --restart unless-stopped \
+docker run --name adtyai-api -d --restart unless-stopped \
   -p 127.0.0.1:3000:3000 \
   -e TZ=Asia/Shanghai \
   -v "$(pwd)/data:/data" \
-  ghcr.io/adtyai/adtyai-api:latest
+  ghcr.io/adtyai/adtyai-api:main
 ```
 
-[http://localhost:3000](http://localhost:3000) を開き、初期設定ウィザードで管理者アカウントを作成します。SQLite データベースはマウントした `data` ディレクトリに保存され、コンテナを置き換えても残ります。
+[http://localhost:3000](http://localhost:3000) を開き、管理者アカウントを作成します。データはマウントした `data` ディレクトリに保存されます。
 
-### 最初のリクエスト
+### 最初の API 呼び出し
 
-1. 上流の API キー、利用するモデル、グループを設定してチャネルを追加し、チャネルテストを実行します。
-2. モデルの料金を設定し、ユーザーに利用可能なクォータまたは有効なサブスクリプションがあることを確認します。
-3. 管理画面で、同じグループとモデルにアクセスできる API キーを作成します。
-4. OpenAI 互換クライアントでは Base URL を `http://localhost:3000/v1` に設定し、**New API が発行したキー**を使います。
-
-シェルの `NEW_API_KEY` にそのキーを設定し、アクセス可能なモデルを確認します。
+1. チャネルと価格を設定し、ユーザーにクォータがあることを確認。
+2. コンソールで API キーを作成。
+3. クライアントの Base URL を `http://localhost:3000/v1` にし、本サイト発行のキーを使用。
 
 ```bash
 curl --fail-with-body http://localhost:3000/v1/models \
-  -H "Authorization: Bearer ${NEW_API_KEY}"
+  -H "Authorization: Bearer ${ADTY_API_KEY}"
 ```
 
-次に Responses を呼び出します。`your-enabled-model` は、このインターフェースに対応する有効なモデル名に置き換えてください。
+---
 
-```bash
-curl --fail-with-body http://localhost:3000/v1/responses \
-  -H "Authorization: Bearer ${NEW_API_KEY}" \
-  -H "Content-Type: application/json" \
-  -d '{"model":"your-enabled-model","input":"Hello!"}'
-```
+<a id="デプロイ"></a>
 
-<a id="deployment"></a>
+## デプロイ
 
-## デプロイと運用
-
-### Docker Compose
-
-リポジトリの [Compose 設定](./docker-compose.yml) は、既定で **New API + PostgreSQL + Redis** を起動します。MySQL と独立した ClickHouse ログデータベースの設定例も含まれます。
+[docker-compose.yml](./docker-compose.yml) を推奨（デフォルトで PostgreSQL + Redis）：
 
 ```bash
 git clone https://github.com/adtyai/adtyai-api.git
-cd new-api
-```
-
-起動前に `docker-compose.yml` を編集し、データベースと Redis のサービスおよび接続文字列にあるサンプルパスワードを変更します。永続的に使うランダムな `SESSION_SECRET` も設定してください（`openssl rand -hex 32` で生成可能）。HTTPS の管理画面には `SESSION_COOKIE_SECURE=true` を設定し、公開 HTTPS オリジンを `SESSION_COOKIE_TRUSTED_URL` に正確に指定します。
-
-```bash
+cd adtyai-api
+# compose を編集：サンプルパスワードを差し替え、SESSION_SECRET を設定
 docker compose up -d
-docker compose logs -f new-api
 ```
 
-### ストレージと設定
-
-| コンポーネント | 選択肢 |
-| --- | --- |
-| メインデータベース | SQLite、MySQL ≥ 5.7.8、PostgreSQL ≥ 9.6 |
-| 独立したログデータベース | `LOG_SQL_DSN` で設定。ClickHouse にも対応 |
-| キャッシュ | 任意の Redis とメモリキャッシュ。ノード間でレート制限を共有する場合は Redis を共有 |
-| コンテナのプラットフォーム | Linux amd64 / arm64 |
-
-| 環境変数 | 用途 |
-| --- | --- |
-| `SQL_DSN` | メインデータベースへの接続。未設定なら SQLite |
-| `LOG_SQL_DSN` | 任意の独立ログデータベースへの接続 |
-| `REDIS_CONN_STRING` | Redis 接続文字列 |
-| `SESSION_SECRET` | 永続的な認証用シークレット。全ノードで同じ値を使用 |
-| `CRYPTO_SECRET` | 既定は `SESSION_SECRET`。Redis を共有するノードは同じ実効値を使用 |
-| `SESSION_COOKIE_SECURE` | HTTPS の管理画面では `true`。Secure な更新用 Cookie と、更新・ログアウト時の厳格なオリジン検証を有効化 |
-| `SESSION_COOKIE_TRUSTED_URL` | Secure モードでは必須。パスやワイルドカードを含まない正確な HTTPS オリジンをカンマ区切りで指定。ローカル HTTP では未設定にする |
-| `TRUSTED_PROXIES` | 信頼するリバースプロキシの IP/CIDR、または `none`。実際のネットワークに合わせて明示的に設定 |
-
-詳細は[環境変数の例](./.env.example)、[環境変数リファレンス](https://docs.newapi.ai/ja/docs/installation/config-maintenance/environment-variables)、[認証とセッションの説明](./docs/authentication.md)を参照してください。コンテナの変数は Compose の `environment` または `env_file` で渡します。`.env.example` のコピーだけではコンテナに反映されません。
-
-本番環境では HTTPS を使い、リバースプロキシでストリーミングと WebSocket アップグレードを有効にします。データベースとマウントデータを永続化し、バックアップしてください。複数ノードはメインデータベースと認証シークレットを共有します。独立した Redis やメモリ内のレート制限はノードごとに計数します。構成別のセッション伝播については認証の説明を参照してください。
-
-[リリース一覧](https://github.com/QuantumNous/new-api/releases)からイメージのバージョンを固定し、更新内容を読んでバックアップしてからアップグレードしてください。`latest` は公開ビルドに応じて変わります。既存環境の移行と互換性は、利用中のバージョンに応じて確認してください。
-
-<a id="development"></a>
-
-## 開発と拡張
-
-バックエンドは Go と Gin、管理画面は React 19、TypeScript、Rsbuild、TanStack、Tailwind CSS 4 を使用します。フロントエンドの依存関係とスクリプトには Bun を使います。Go 言語の基準バージョンは [go.mod](./go.mod)、コンテナのビルドツールチェーンは [Dockerfile](./Dockerfile) を参照してください。
-
-バックエンドは `web/dist` を埋め込むため、先にフロントエンドをビルドします。
-
-```bash
-# リポジトリのルート
-cd web
-bun install --frozen-lockfile
-bun run build
-cd ..
-go run .
-```
-
-別のターミナルでフロントエンド開発サーバーを起動します。
-
-```bash
-cd web
-bun run dev -- --port 5173
-```
-
-[http://localhost:5173](http://localhost:5173) を開きます。API リクエストはポート 3000 のバックエンドに転送されます。開発用バックエンドをコンテナで動かす場合は [docker-compose.dev.yml](./docker-compose.dev.yml) と [makefile](./makefile) の `make dev` を参照してください。
-
-| 場所 | 役割 |
-| --- | --- |
-| `router/`、`middleware/`、`controller/` | HTTP ルート、アクセス検証、API ハンドラー |
-| `relay/` | 上流アダプターとリクエストのルーティング |
-| `service/`、`model/` | ビジネスロジックと永続化 |
-| [relaykit/](./relaykit/README.md) | プロトコル DTO と変換を提供する、独立してビルド可能な Go モジュール |
-| [plugins/tasks/](./plugins/tasks/) | JavaScript タスクプラグイン。作成方法とホストの境界は [Task Plugin API v1](./docs/plugin-api/v1.md) を参照 |
-| `web/` | Web 管理画面。[フロントエンドの規約](./web/AGENTS.md)を参照 |
-| [electron/](./electron/README.md) | デスクトップアプリのラッパーとパッケージング |
-
-貢献前に [AGENTS.md](./AGENTS.md) を確認してください。変更に応じて、Go モジュールは `make test`、フロントエンドは `web/` で `bun run typecheck`、`bun run lint`、`bun run test`、`bun run build` を実行します。RelayKit を変更した場合は、`relaykit/` で `GOWORK=off go build ./...` も実行してください。
-
-<a id="documentation"></a>
-
-## ドキュメントとコミュニティ
-
-| リソース | リンク |
-| --- | --- |
-| 公式ドキュメント | [ガイド](https://docs.newapi.ai/ja/docs) · [インストール](https://docs.newapi.ai/ja/docs/installation) · [API リファレンス](https://docs.newapi.ai/ja/docs/api) |
-| プロジェクトの解説 | [DeepWiki](https://deepwiki.com/QuantumNous/new-api) |
-| 質問と交流 | [FAQ](https://docs.newapi.ai/ja/docs/support/faq) · [コミュニティ](https://docs.newapi.ai/ja/docs/support/community-interaction) |
-| 不具合と機能提案 | [GitHub Issues](https://github.com/QuantumNous/new-api/issues) |
-| 脆弱性 | [セキュリティポリシー](./.github/SECURITY.md)に従って非公開で報告 |
-
-不具合の報告には、バージョン、デプロイ方法、再現手順、機密情報を除いたログを添えてください。ドキュメント、翻訳、プロバイダー連携、対象を絞った回帰テストへの貢献も歓迎します。
+本番では HTTPS・シークレット・バックアップを自ら設定。イメージ公開は GitHub Actions / タグに従います。プレビュー URL は運用側の公表に従います（固定プレビュー例: `https://newapi.n8-n.top`）。
 
 ---
 
-## 🔗 関連プロジェクト
+<a id="ライセンス"></a>
 
-### 上流プロジェクト
+## ライセンス
 
-| プロジェクト | 説明 |
-|------|------|
-| [One API](https://github.com/songquanpeng/one-api) | オリジナルプロジェクトベース |
-| [Midjourney-Proxy](https://github.com/novicezk/midjourney-proxy) | Midjourneyインターフェースサポート |
+[AGPL-3.0](./LICENSE)。再配布やネットワークサービス提供時は AGPL に従ってください。
 
-### 補助ツール
-
-| プロジェクト | 説明 |
-|------|------|
-| [new-api-key-tool](https://github.com/Calcium-Ion/new-api-key-tool) | キー使用量クォータ照会ツール |
-| [new-api-horizon](https://github.com/Calcium-Ion/new-api-horizon) | New API高性能最適化版 |
-
----
-
-## 📜 ライセンス
-
-このプロジェクトは [GNU Affero General Public License v3.0 (AGPLv3)](./LICENSE) の下でライセンスされています。
-
-AGPLv3 第 7 条に基づく[追加条項](./NOTICE)が適用されます。変更版では、適切な法的表示と、画面上の目立つ概要・法的情報・フッター・著作者表示の箇所に `Frontend design and development by New API contributors.` を残し、元のプロジェクト <https://github.com/QuantumNous/new-api> への可視リンクを保持する必要があります。
-
-本プロジェクトは、[One API](https://github.com/songquanpeng/one-api)（MITライセンス）をベースに開発されたオープンソースプロジェクトです。
-
-お客様の組織のポリシーがAGPLv3ライセンスのソフトウェアの使用を許可していない場合、またはAGPLv3のオープンソース義務を回避したい場合は、こちらまでお問い合わせください：[support@quantumnous.com](mailto:support@quantumnous.com)
-
-著作者と依存関係の表示については [NOTICE](./NOTICE) と[サードパーティライセンス](./THIRD-PARTY-LICENSES.md)を参照してください。
-
----
-
-## 🌟 スター履歴
-
-<div align="center">
-
-[![スター履歴チャート](https://api.star-history.com/svg?repos=adtyai/adtyai-api&type=Date)](https://star-history.com/#adtyai/adtyai-api&Date)
-
-</div>
-
----
-
-<div align="center">
-
-### 💖 ADTY AI をご利用いただきありがとうございます
-
-役に立った場合は ⭐️ Star をお願いします。
-
-**[リポジトリ](https://github.com/adtyai/adtyai-api)** • **[上流 New API](https://github.com/QuantumNous/new-api)**
-
-<sub>[New API](https://github.com/QuantumNous/new-api) by QuantumNous ベース · adtyai ブランド</sub>
-
-</div>
+[New API](https://github.com/QuantumNous/new-api) ベース。上流に感謝。
