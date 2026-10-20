@@ -30,7 +30,7 @@ export function isSafeChatwootBaseUrl(raw: string): boolean {
   if (parsed.username || parsed.password) return false
   if (parsed.protocol === 'https:') return Boolean(parsed.hostname)
   if (parsed.protocol === 'http:') {
-    const host = parsed.hostname.replace(/^\[|\]$/g, '').toLowerCase()
+    const host = parsed.hostname.replaceAll(/^\[|\]$/g, '').toLowerCase()
     return host === 'localhost' || host === '127.0.0.1' || host === '::1'
   }
   return false
