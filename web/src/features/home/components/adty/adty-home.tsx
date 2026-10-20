@@ -34,7 +34,6 @@ import { Link } from '@tanstack/react-router'
 import {
   ArrowRight,
   BarChart3,
-  Gift,
   Plug,
   ShieldCheck,
   Users,
@@ -47,7 +46,6 @@ import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { useStatus } from '@/hooks/use-status'
 
-import { useFirstTopupBonusPercent } from '../../hooks'
 
 type IconComp = ComponentType<{ size?: number }>
 
@@ -90,16 +88,9 @@ function SectionTitle(props: { title: string; sub?: string }) {
   )
 }
 
-function BonusText(props: { percent: number | null }) {
-  const { t } = useTranslation()
-  if (props.percent == null) return <>{t('First top-up bonus')}</>
-  return <>{t('First top-up bonus {{percent}}%', { percent: props.percent })}</>
-}
-
 export function AdtyHero(props: { isAuthenticated: boolean }) {
   const { t } = useTranslation()
   const origin = useSiteOrigin()
-  const percent = useFirstTopupBonusPercent()
   const primaryTo = props.isAuthenticated ? '/keys' : '/sign-up'
 
   return (
@@ -107,8 +98,8 @@ export function AdtyHero(props: { isAuthenticated: boolean }) {
       <div className='pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,var(--color-indigo-50),transparent_60%)] dark:opacity-10' />
       <div className='relative mx-auto max-w-6xl px-6 pt-28 pb-16 text-center md:pt-36'>
         <span className='border-primary/20 bg-primary/5 text-primary inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium'>
-          <Gift className='size-3.5' />
-          <BonusText percent={percent} />
+          <Wallet className='size-3.5' />
+          {t('Pay as you go')}
         </span>
         <h1 className='mt-6 text-4xl font-bold tracking-tight md:text-6xl'>
           {t('One key to access')}
@@ -184,7 +175,6 @@ export function AdtyVendorWall() {
 
 export function AdtySteps() {
   const { t } = useTranslation()
-  const percent = useFirstTopupBonusPercent()
   const steps = [
     {
       title: t('Create an account'),
@@ -192,12 +182,7 @@ export function AdtySteps() {
     },
     {
       title: t('Top up and create a key'),
-      desc:
-        percent == null
-          ? t('Top up in USD; first top-up comes with a bonus')
-          : t('Top up in USD; first top-up gets {{percent}}% bonus', {
-              percent,
-            }),
+      desc: t('USD pricing · full amount credited · tier bonus extra'),
     },
     {
       title: t('Replace the API address'),
@@ -284,20 +269,13 @@ export function AdtyFeatures() {
 
 export function AdtyBonusBanner(props: { isAuthenticated: boolean }) {
   const { t } = useTranslation()
-  const percent = useFirstTopupBonusPercent()
   return (
     <section className='mx-auto max-w-6xl px-6 py-20'>
       <div className='bg-primary text-primary-foreground flex flex-col items-center justify-between gap-6 rounded-3xl p-10 md:flex-row md:p-14'>
         <div className='text-center md:text-left'>
-          <h2 className='text-2xl font-bold md:text-3xl'>
-            <BonusText percent={percent} />
-          </h2>
+          <h2 className='text-2xl font-bold md:text-3xl'>{t('Pay as you go')}</h2>
           <p className='mt-2 text-sm opacity-80 md:text-base'>
-            {percent == null
-              ? t('Get extra credit on your first top-up')
-              : t('Get an extra {{percent}}% credit on your first top-up', {
-                  percent,
-                })}
+            {t('USD pricing · full amount credited · tier bonus extra')}
           </p>
         </div>
         <Button

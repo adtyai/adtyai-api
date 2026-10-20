@@ -18,14 +18,14 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useCallback, useEffect, useState } from 'react'
 
-import { getAdtyFirstRecharge, getAdtyTopupTiers } from '../api'
+import { getAdtyTopupTiers } from '../api'
 import type { AdtyPayMethod, AdtyTopupTier } from '../types'
 
 export function useAdtyTopup() {
   const [tiers, setTiers] = useState<AdtyTopupTier[]>([])
   const [payMethods, setPayMethods] = useState<AdtyPayMethod[]>([])
-  const [firstTopupBonusRate, setFirstTopupBonusRate] = useState(0.1)
-  const [firstEligible, setFirstEligible] = useState(true)
+  const [firstTopupBonusRate, setFirstTopupBonusRate] = useState(0)
+  const [firstEligible, setFirstEligible] = useState(false)
   const [loading, setLoading] = useState(true)
   const [available, setAvailable] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -34,10 +34,7 @@ export function useAdtyTopup() {
     setLoading(true)
     setError(null)
     try {
-      const [tiersRes, firstRes] = await Promise.all([
-        getAdtyTopupTiers(),
-        getAdtyFirstRecharge().catch(() => null),
-      ])
+      const tiersRes = await getAdtyTopupTiers()
 
       if (!tiersRes?.success || !tiersRes.data?.tiers?.length) {
         setAvailable(false)
@@ -50,26 +47,10 @@ export function useAdtyTopup() {
       const data = tiersRes.data
       setTiers(data.tiers)
       setPayMethods(Array.isArray(data.pay_methods) ? data.pay_methods : [])
-      if (
-        typeof data.first_topup_bonus_rate === 'number' &&
-        Number.isFinite(data.first_topup_bonus_rate)
-      ) {
-        setFirstTopupBonusRate(data.first_topup_bonus_rate)
-      }
+      // 首充加送已停，接口字段不再驱动展示或到账。
+      setFirstTopupBonusRate(0)
+      setFirstEligible(false)
       setAvailable(true)
-
-      if (firstRes?.success && firstRes.data) {
-        if (
-          typeof firstRes.data.first_topup_bonus_rate === 'number' &&
-          Number.isFinite(firstRes.data.first_topup_bonus_rate)
-        ) {
-          setFirstTopupBonusRate(firstRes.data.first_topup_bonus_rate)
-        }
-        setFirstEligible(firstRes.data.eligible !== false)
-      } else {
-        // Unauthenticated / endpoint error: keep banner optimistic (show tip)
-        setFirstEligible(true)
-      }
     } catch (err) {
       setAvailable(false)
       setError(err instanceof Error ? err.message : 'tiers fetch failed')

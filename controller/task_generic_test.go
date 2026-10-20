@@ -88,6 +88,45 @@ func TestGetTaskDoesNotProjectArtifacts(t *testing.T) {
 	assert.Equal(t, task.TaskID, response["task_id"])
 	assert.NotContains(t, response, "artifacts")
 	assert.NotContains(t, recorder.Body.String(), "upstream.invalid")
+	assert.Empty(t, response["fail_reason"])
+}
+
+func TestGetTaskStripsLegacyResultURLForEveryStatus(t *testing.T) {
+	cases := []struct {
+		name   string
+		status model.TaskStatus
+		reason string
+		want   string
+	}{
+		{name: "failure https", status: model.TaskStatusFailure, reason: "https://upstream.invalid/video.mp4?signature=secret"},
+		{name: "in progress data", status: model.TaskStatusInProgress, reason: "data:video/mp4;base64,AAAA"},
+		{name: "queued http", status: model.TaskStatusQueued, reason: "http://upstream.invalid/out.mp4"},
+		{name: "failure text", status: model.TaskStatusFailure, reason: "provider rejected the request", want: "provider rejected the request"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			task := setupGenericTaskTest(t)
+			task.Status = tc.status
+			task.FailReason = tc.reason
+			require.NoError(t, model.DB.Save(task).Error)
+
+			recorder := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(recorder)
+			c.Set("id", task.UserId)
+			c.Params = gin.Params{{Key: "key", Value: task.TaskID}}
+			c.Request = httptest.NewRequest(http.MethodGet, "/v1/tasks/"+task.TaskID, nil)
+
+			GetTask(c)
+
+			assert.Equal(t, http.StatusOK, recorder.Code)
+			var response map[string]any
+			require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+			assert.Equal(t, tc.want, response["fail_reason"])
+			assert.NotContains(t, recorder.Body.String(), "upstream.invalid")
+			assert.NotContains(t, recorder.Body.String(), "signature=secret")
+			assert.NotContains(t, recorder.Body.String(), "base64,AAAA")
+		})
+	}
 }
 
 func TestGetTaskArtifactsReturnsEmptyForLegacyTask(t *testing.T) {

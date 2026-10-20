@@ -113,16 +113,25 @@ func (*CreemAdaptor) RequestPay(c *gin.Context, req *CreemPayRequest) {
 	reference := fmt.Sprintf("creem-api-ref-%d-%d-%s", user.Id, time.Now().UnixMilli(), randstr.String(4))
 	referenceId := "ref_" + common.Sha1([]byte(reference))
 
+	expectedAmount, expectedCurrency, err := creemExpectedCharge(selectedProduct.Price, selectedProduct.Currency)
+	if err != nil {
+		logger.LogError(c.Request.Context(), common.LogText("Creem product charge invalid user_id=%d trade_no=%s product_id=%s error=%q", id, referenceId, selectedProduct.ProductId, err.Error()))
+		paymentError(c, common.NewMessage("Product configuration error"))
+		return
+	}
+
 	// 先创建订单记录，使用产品配置的金额和充值额度
 	topUp := &model.TopUp{
-		UserId:          id,
-		Amount:          selectedProduct.Quota, // 充值额度
-		Money:           selectedProduct.Price, // 支付金额
-		TradeNo:         referenceId,
-		PaymentMethod:   model.PaymentMethodCreem,
-		PaymentProvider: model.PaymentProviderCreem,
-		CreateTime:      time.Now().Unix(),
-		Status:          common.TopUpStatusPending,
+		UserId:              id,
+		Amount:              selectedProduct.Quota, // 充值额度
+		Money:               selectedProduct.Price, // 支付金额
+		TradeNo:             referenceId,
+		PaymentMethod:       model.PaymentMethodCreem,
+		PaymentProvider:     model.PaymentProviderCreem,
+		ExpectedPayAmount:   expectedAmount,
+		ExpectedPayCurrency: expectedCurrency,
+		CreateTime:          time.Now().Unix(),
+		Status:              common.TopUpStatusPending,
 	}
 	err = topUp.Insert()
 	if err != nil {
@@ -311,13 +320,30 @@ func handleCheckoutCompleted(c *gin.Context, event *CreemWebhookEvent) {
 	// Try complete subscription order first
 	LockOrder(referenceId)
 	defer UnlockOrder(referenceId)
-	if err := model.CompleteSubscriptionOrder(referenceId, common.GetJsonString(event), model.PaymentProviderCreem, ""); err == nil {
+	if order := model.GetSubscriptionOrderByTradeNo(referenceId); order != nil {
+		if order.Status != common.TopUpStatusSuccess {
+			// Creem 官方文档写明价格是整数分（docs.creem.io：Prices are integers in cents）。
+			// 回调样例 amount_paid 为 1210。不能把 10 同时当成 10 美元。
+			paid, paidOK := minorUnitsToMajor(int64(event.Object.Order.AmountPaid), event.Object.Order.Currency)
+			covers, err := subscriptionOrderChargeCovers(order, event.Object.Order.Currency, paid)
+			if err != nil {
+				logger.LogError(c.Request.Context(), common.LogText("Creem subscription amount check failed trade_no=%s creem_order_id=%s error=%q", referenceId, event.Object.Order.Id, err.Error()))
+				c.AbortWithStatus(http.StatusInternalServerError)
+				return
+			}
+			if !paidOK || !covers {
+				logger.LogError(c.Request.Context(), common.LogText("Creem subscription amount mismatch trade_no=%s creem_order_id=%s amount_paid=%d currency=%s", referenceId, event.Object.Order.Id, event.Object.Order.AmountPaid, event.Object.Order.Currency))
+				c.Status(http.StatusOK)
+				return
+			}
+		}
+		if err := model.CompleteSubscriptionOrder(referenceId, common.GetJsonString(event), model.PaymentProviderCreem, ""); err != nil {
+			logger.LogError(c.Request.Context(), common.LogText("Creem subscription order processing failed trade_no=%s creem_order_id=%s error=%q", referenceId, event.Object.Order.Id, err.Error()))
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
 		logger.LogInfo(c.Request.Context(), common.LogText("Creem subscription order processed trade_no=%s creem_order_id=%s", referenceId, event.Object.Order.Id))
 		c.Status(http.StatusOK)
-		return
-	} else if err != nil && !errors.Is(err, model.ErrSubscriptionOrderNotFound) {
-		logger.LogError(c.Request.Context(), common.LogText("Creem subscription order processing failed trade_no=%s creem_order_id=%s error=%q", referenceId, event.Object.Order.Id, err.Error()))
-		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
 
@@ -341,6 +367,21 @@ func handleCheckoutCompleted(c *gin.Context, event *CreemWebhookEvent) {
 	if topUp.Status != common.TopUpStatusPending {
 		logger.LogInfo(c.Request.Context(), common.LogText("Creem top-up order not pending, ignored trade_no=%s status=%s creem_order_id=%s", referenceId, topUp.Status, event.Object.Order.Id))
 		c.Status(http.StatusOK) // 已处理过的订单，返回成功避免重复处理
+		return
+	}
+
+	// 有快照时少付返回 200，避免网关对永久金额不符无限重试。
+	// 没有快照的在途旧单，实收为正才入账；金额解析不了则 500，让网关重试。
+	paid, paidOK := minorUnitsToMajor(int64(event.Object.Order.AmountPaid), event.Object.Order.Currency)
+	covers := paidOK && topupGatewayChargeCovers(topUp.ExpectedPayAmount, topUp.ExpectedPayCurrency, event.Object.Order.Currency, paid)
+	switch decideTopupPayCallback(topUp.ExpectedPayAmount, topUp.ExpectedPayCurrency, paidOK, paid, covers) {
+	case topupCallbackAckNoCredit:
+		logger.LogError(c.Request.Context(), common.LogText("Creem top-up amount mismatch trade_no=%s creem_order_id=%s amount_paid=%d currency=%s expected=%s expected_currency=%s", referenceId, event.Object.Order.Id, event.Object.Order.AmountPaid, event.Object.Order.Currency, topUp.ExpectedPayAmount, topUp.ExpectedPayCurrency))
+		c.Status(http.StatusOK)
+		return
+	case topupCallbackRetry:
+		logger.LogError(c.Request.Context(), common.LogText("Creem top-up legacy snapshot missing and paid amount unverified trade_no=%s creem_order_id=%s amount_paid=%d currency=%s", referenceId, event.Object.Order.Id, event.Object.Order.AmountPaid, event.Object.Order.Currency))
+		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
 

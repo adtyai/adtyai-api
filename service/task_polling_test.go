@@ -998,6 +998,12 @@ func TestUpdateBatchTasksPollClassification(t *testing.T) {
 			wantStatus:   model.TaskStatusInProgress,
 			wantFailures: 1,
 		},
+		{
+			name:         "success with leftover reason stays success",
+			statusCode:   http.StatusOK,
+			resultStatus: model.TaskStatusSuccess,
+			wantStatus:   model.TaskStatusSuccess,
+		},
 	}
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -1031,6 +1037,11 @@ func TestUpdateBatchTasksPollClassification(t *testing.T) {
 			assert.Equal(t, testCase.wantFailures, persisted.PrivateData.PollFailures)
 			if testCase.wantReason != "" {
 				assert.Equal(t, testCase.wantReason, persisted.FailReason)
+			}
+			if testCase.wantStatus == model.TaskStatusSuccess {
+				assert.Empty(t, persisted.FailReason)
+				assert.Equal(t, "100%", persisted.Progress)
+				assert.Equal(t, preConsumed, persisted.Quota)
 			}
 			if testCase.wantRefund {
 				assert.Equal(t, initialQuota+preConsumed, getUserQuota(t, userID))

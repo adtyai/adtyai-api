@@ -11,6 +11,7 @@ import {
   fetchChatwootConfig,
   fetchChatwootIdentity,
   identityAttrs,
+  isSafeChatwootBaseUrl,
   type ChatwootPublicConfig,
 } from './api'
 
@@ -32,6 +33,10 @@ const SCRIPT_ID = 'chatwoot-sdk'
 
 function loadSdk(cfg: ChatwootPublicConfig): Promise<void> {
   return new Promise((resolve, reject) => {
+    if (!isSafeChatwootBaseUrl(cfg.base_url)) {
+      reject(new Error('unsafe chatwoot base_url'))
+      return
+    }
     if (document.querySelector(`#${SCRIPT_ID}`)) {
       resolve()
       return

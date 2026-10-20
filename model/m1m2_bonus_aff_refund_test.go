@@ -277,3 +277,30 @@ func TestCompensateMissingTopupAffCommissionsSkipsNoInviterStarve(t *testing.T) 
 	require.NoError(t, DB.Model(&AffCommission{}).Where("order_no LIKE ?", "M2-STARVE-F-%").Count(&fullComm).Error)
 	require.Equal(t, int64(0), fullComm)
 }
+
+func TestCompensateMissingTopupAffCommissionsSkipsScanWhenRateZero(t *testing.T) {
+	m1m2Cleanup(t)
+	bpMu.Lock()
+	bpAffTopupCommissionRate = 0
+	bpMu.Unlock()
+
+	inviter := m1m2User(t, 0, 0)
+	invitee := m1m2User(t, 0, inviter.Id)
+	order := m1m2Order(t, invitee.Id, "M2-RATE0-1", 50, 0, RefundStatusNone, 0)
+
+	processed, err := CompensateMissingTopupAffCommissions(100)
+	require.NoError(t, err)
+	require.Equal(t, 0, processed)
+	var n int64
+	require.NoError(t, DB.Model(&AffCommission{}).Where("order_no = ?", order.OrderNo).Count(&n).Error)
+	require.Equal(t, int64(0), n, "rate 0 must not write a permanent skip row")
+
+	bpMu.Lock()
+	bpAffTopupCommissionRate = 0.10
+	bpMu.Unlock()
+	processed, err = CompensateMissingTopupAffCommissions(100)
+	require.NoError(t, err)
+	require.Equal(t, 1, processed)
+	require.NoError(t, DB.Model(&AffCommission{}).Where("order_no = ?", order.OrderNo).Count(&n).Error)
+	require.Equal(t, int64(1), n)
+}

@@ -130,7 +130,9 @@ cd adtyai-api
 docker compose up -d
 ```
 
-正式環境請自行設定 HTTPS、金鑰與備份；推送映像以 GitHub Actions / tag 為準。聯調預覽位址以運維公佈為準（目前固定入口示例：`https://newapi.n8-n.top`）。
+預設服務名和容器名是 `adtyai-api-app`、`adtyai-api-postgres`、`adtyai-api-redis`。PostgreSQL 資料庫名是 `adty-ai`，不要把它當成容器名。
+
+正式環境請自行設定 HTTPS、金鑰與備份；推送映像以 GitHub Actions / tag 為準。聯調預覽位址以運維公佈為準。
 
 ---
 

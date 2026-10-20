@@ -83,7 +83,7 @@
 
 ## 官方能力（继承）
 
-仍可使用上游 New API 能力，例如：多上游渠道与模型映射、额度与订阅、用量日志、用户/分组/API Key、OAuth 与通行密钥、异步任务插件、多语言控制台等。协议入口包括 OpenAI Chat/Responses、Anthropic Messages、Gemini 等（详见源码与上游文档）。
+仍可使用上游 New API 能力，例如：多上游渠道与模型映射、额度、用量日志、用户/分组/API Key、OAuth 与通行密钥、异步任务插件、多语言控制台等。新订阅购买已关闭，历史订阅仍按原偏好结算。充值只走当前充值订单。协议入口包括 OpenAI Chat/Responses、Anthropic Messages、Gemini 等（详见源码与上游文档）。
 
 ---
 
@@ -130,7 +130,9 @@ cd adtyai-api
 docker compose up -d
 ```
 
-生产环境请自行配置 HTTPS、密钥与备份；推送镜像以 GitHub Actions / tag 为准。联调预览地址以运维公布为准（当前固定入口示例：`https://newapi.n8-n.top`）。
+默认服务名和容器名是 `adtyai-api-app`、`adtyai-api-postgres`、`adtyai-api-redis`。PostgreSQL 库名是 `adty-ai`，不要把它当成容器名。
+
+生产环境请自行配置 HTTPS、密钥与备份；推送镜像以 GitHub Actions / tag 为准。联调预览地址以运维公布为准。
 
 ---
 

@@ -5,6 +5,8 @@ import (
 	"context"
 	"database/sql/driver"
 	"encoding/json"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -190,13 +192,64 @@ func (t *Task) GetUpstreamTaskID() string {
 	return t.TaskID
 }
 
-// GetResultURL 获取任务结果 URL（视频地址等）
-// 新数据存在 PrivateData.ResultURL 中；旧数据回退到 FailReason（历史兼容）
+// IsLegacyResultURL reports whether a stored fail reason is an old result URL.
+// Diagnostic text must not be fetched or shown as a media address.
+func IsLegacyResultURL(value string) bool {
+	value = strings.TrimSpace(value)
+	return len(value) >= len("https://") && strings.EqualFold(value[:len("https://")], "https://") ||
+		len(value) >= len("http://") && strings.EqualFold(value[:len("http://")], "http://") ||
+		len(value) >= len("data:") && strings.EqualFold(value[:len("data:")], "data:")
+}
+
+// GetResultURL 获取任务结果 URL（视频地址等）。
+// 新数据存在 PrivateData.ResultURL 中；旧数据只有 http/https/data 才回退 FailReason。
 func (t *Task) GetResultURL() string {
+	if t == nil {
+		return ""
+	}
 	if t.PrivateData.ResultURL != "" {
 		return t.PrivateData.ResultURL
 	}
-	return t.FailReason
+	if IsLegacyResultURL(t.FailReason) {
+		return t.FailReason
+	}
+	return ""
+}
+
+// IsProxyResultURL reports whether rawURL is this task's own content proxy.
+// Host is ignored: the fetch path rejects these paths as a fallback loop.
+func IsProxyResultURL(rawURL, taskID string) bool {
+	parsedURL, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil || parsedURL == nil {
+		return false
+	}
+	path, err := url.PathUnescape(parsedURL.EscapedPath())
+	if err != nil {
+		path = parsedURL.Path
+	}
+	if path == "/v1/videos/"+taskID+"/content" {
+		return true
+	}
+	artifactPrefix := "/v1/tasks/" + taskID + "/artifacts/"
+	return strings.HasPrefix(path, artifactPrefix) && strings.HasSuffix(path, "/content")
+}
+
+// AssignResultURL stores a real upstream or data URL. Empty values and this
+// task's own proxy path are not results; a previously stored proxy path is
+// cleared so a later fetch does not loop. A real URL is never overwritten by
+// an empty or proxy value.
+func (t *Task) AssignResultURL(raw string) {
+	if t == nil {
+		return
+	}
+	raw = strings.TrimSpace(raw)
+	if raw == "" || IsProxyResultURL(raw, t.TaskID) {
+		if IsProxyResultURL(t.PrivateData.ResultURL, t.TaskID) {
+			t.PrivateData.ResultURL = ""
+		}
+		return
+	}
+	t.PrivateData.ResultURL = raw
 }
 
 // GenerateTaskID 生成对外暴露的 task_xxxx 格式 ID

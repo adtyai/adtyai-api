@@ -28,6 +28,7 @@ import { getUserQuotaDates } from '@/features/dashboard/api'
 import { useSummaryCardsConfig } from '@/features/dashboard/hooks/use-dashboard-config'
 import type { QuotaDataItem } from '@/features/dashboard/types'
 import { useStatus } from '@/hooks/use-status'
+import { getSelf } from '@/lib/api'
 import { getCurrencyLabel, isCurrencyDisplayEnabled } from '@/lib/currency'
 import { formatNumber, formatQuota } from '@/lib/format'
 import { requireServerSuccess } from '@/lib/server-error-message'
@@ -141,9 +142,23 @@ export function SummaryCards() {
   const { t } = useTranslation()
   const user = useAuthStore((state) => state.auth.user)
   const { status, loading } = useStatus()
+  const selfBalance = useQuery({
+    queryKey: ['dashboard', 'self-balance'],
+    queryFn: async () => {
+      const res = await getSelf()
+      if (!res?.success) return null
+      return res.data as { quota?: number; bonus_quota?: number }
+    },
+    enabled: Boolean(user),
+    staleTime: 60_000,
+  })
 
   const summaryTimeRange = useMemo(() => computeTimeRange(1), [])
-  const remainQuota = Number(user?.quota ?? 0)
+  const paidQuota = Number(selfBalance.data?.quota ?? user?.quota ?? 0)
+  const bonusQuota = Number(
+    selfBalance.data?.bonus_quota ?? user?.bonus_quota ?? 0
+  )
+  const remainQuota = paidQuota + bonusQuota
   const usedQuota = Number(user?.used_quota ?? 0)
   const requestCount = Number(user?.request_count ?? 0)
 

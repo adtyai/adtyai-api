@@ -18,11 +18,34 @@ export type ChatwootIdentity = {
 
 const soft = { skipBusinessError: true, skipErrorHandler: true } as const
 
+export function isSafeChatwootBaseUrl(raw: string): boolean {
+  const value = raw.trim()
+  if (!value || /[\s\\]/.test(value)) return false
+  let parsed: URL
+  try {
+    parsed = new URL(value)
+  } catch {
+    return false
+  }
+  if (parsed.username || parsed.password) return false
+  if (parsed.protocol === 'https:') return Boolean(parsed.hostname)
+  if (parsed.protocol === 'http:') {
+    const host = parsed.hostname.replace(/^\[|\]$/g, '').toLowerCase()
+    return host === 'localhost' || host === '127.0.0.1' || host === '::1'
+  }
+  return false
+}
+
 export async function fetchChatwootConfig(): Promise<ChatwootPublicConfig | null> {
   try {
     const res = await api.get('/api/chatwoot/config', soft)
     const d = res.data?.data
-    if (res.data?.success && d?.enabled && d.base_url && d.website_token) {
+    if (
+      res.data?.success &&
+      d?.enabled &&
+      isSafeChatwootBaseUrl(d.base_url) &&
+      d.website_token
+    ) {
       return d as ChatwootPublicConfig
     }
     return null

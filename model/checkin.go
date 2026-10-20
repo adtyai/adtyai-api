@@ -1,6 +1,7 @@
 package model
 
 import (
+	"fmt"
 	"math/rand"
 	"time"
 
@@ -99,10 +100,9 @@ func userCheckinWithTransaction(checkin *Checkin, userId int, quotaAwarded int) 
 			return common.NewMessage("Check-in failed, please try again later")
 		}
 
-		// 步骤2: 在事务中增加用户额度
-		if err := tx.Model(&User{}).Where("id = ?", userId).
-			Update("quota", gorm.Expr("quota + ?", quotaAwarded)).Error; err != nil {
-			return common.NewMessage("Check-in failed: quota update error")
+		// 步骤2: 记入赠送余额，不能加到实充。实充会抬高可退金额。
+		if err := creditCheckinBonus(tx, userId, checkin, quotaAwarded); err != nil {
+			return err
 		}
 
 		return nil
@@ -111,11 +111,6 @@ func userCheckinWithTransaction(checkin *Checkin, userId int, quotaAwarded int) 
 	if err != nil {
 		return nil, err
 	}
-
-	// 事务成功后，异步更新缓存
-	go func() {
-		_ = cacheIncrUserQuota(userId, int64(quotaAwarded))
-	}()
 
 	return checkin, nil
 }
@@ -128,15 +123,30 @@ func userCheckinWithoutTransaction(checkin *Checkin, userId int, quotaAwarded in
 		return nil, common.NewMessage("Check-in failed, please try again later")
 	}
 
-	// 步骤2: 增加用户额度
-	// 使用 db=true 强制直接写入数据库，不使用批量更新
-	if err := IncreaseUserQuota(userId, quotaAwarded, true); err != nil {
-		// 如果增加额度失败，需要回滚签到记录
+	// 步骤2: 记入赠送余额。失败则删掉签到行，否则唯一约束会挡住重试。
+	if err := creditCheckinBonus(nil, userId, checkin, quotaAwarded); err != nil {
 		DB.Delete(checkin)
-		return nil, common.NewMessage("Check-in failed: quota update error")
+		return nil, err
 	}
 
 	return checkin, nil
+}
+
+func creditCheckinBonus(tx *gorm.DB, userId int, checkin *Checkin, quotaAwarded int) error {
+	if quotaAwarded <= 0 {
+		return common.NewMessage("Check-in failed: quota update error")
+	}
+	date := ""
+	if checkin != nil {
+		date = checkin.CheckinDate
+	}
+	idem := fmt.Sprintf("checkin:%d:%s", userId, date)
+	_, err := AdjustQuota(tx, userId, "bonus", int64(quotaAwarded),
+		"daily check-in bonus", "checkin", date, idem, 0, "checkin_bonus")
+	if err != nil {
+		return common.NewMessage("Check-in failed: quota update error")
+	}
+	return nil
 }
 
 // GetUserCheckinStats 获取用户签到统计信息

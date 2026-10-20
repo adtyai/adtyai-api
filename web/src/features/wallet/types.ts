@@ -228,13 +228,15 @@ export interface UserWalletData {
   id: number
   /** Username */
   username: string
-  /** Current quota balance */
+  /** Paid quota balance */
   quota: number
+  /** Bonus quota balance. Missing means unknown on old responses. */
+  bonus_quota?: number
   /** Total used quota */
   used_quota: number
   /** Total request count */
   request_count: number
-  /** Affiliate quota (pending rewards) */
+  /** Affiliate quota available to withdraw or transfer */
   aff_quota: number
   /** Total affiliate quota earned (historical) */
   aff_history_quota: number

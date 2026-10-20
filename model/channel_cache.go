@@ -15,7 +15,13 @@ import (
 	"github.com/QuantumNous/new-api/logger"
 	kitdto "github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
+
+	"gorm.io/gorm"
 )
+
+// ErrChannelNotFound means the channel row is confirmed absent. A cache miss or
+// a database error is not this error and must not be treated as deletion.
+var ErrChannelNotFound = errors.New("channel no longer exists")
 
 var group2model2channels map[string]map[string][]int // enabled channel
 var channelsIDM map[int]*Channel                     // all channels include disabled
@@ -24,16 +30,18 @@ var channelsIDM map[int]*Channel                     // all channels include dis
 var channel2advancedCustomConfig map[int]*kitdto.AdvancedCustomConfig
 var channelSyncLock sync.RWMutex
 
-func InitChannelCache() {
+func InitChannelCache() error {
 	if !common.MemoryCacheEnabled {
 		InvalidatePricingCache()
 		rebuildTaskAliasView()
-		return
+		return nil
 	}
 	newChannelId2channel := make(map[int]*Channel)
 	newChannel2advancedCustomConfig := make(map[int]*kitdto.AdvancedCustomConfig)
 	var channels []*Channel
-	DB.Find(&channels)
+	if err := DB.Find(&channels).Error; err != nil {
+		return err
+	}
 	for _, channel := range channels {
 		newChannelId2channel[channel.Id] = channel
 		if channel.Type == constant.ChannelTypeAdvancedCustom {
@@ -43,7 +51,9 @@ func InitChannelCache() {
 		}
 	}
 	var abilities []*Ability
-	DB.Find(&abilities)
+	if err := DB.Find(&abilities).Error; err != nil {
+		return err
+	}
 	groups := make(map[string]bool)
 	for _, ability := range abilities {
 		groups[ability.Group] = true
@@ -104,13 +114,16 @@ func InitChannelCache() {
 	InvalidatePricingCache()
 	rebuildTaskAliasView()
 	common.SysLog(common.LogText("channels synced from database"))
+	return nil
 }
 
 func SyncChannelCache(frequency int) {
 	for {
 		time.Sleep(time.Duration(frequency) * time.Second)
 		common.SysLog(common.LogText("syncing channels from database"))
-		InitChannelCache()
+		if err := InitChannelCache(); err != nil {
+			common.SysError(common.LogText("failed to sync channels from database: %s", err.Error()))
+		}
 	}
 }
 
@@ -252,6 +265,34 @@ func GetRandomSatisfiedChannel(
 	}
 	// return null if no channel is not found
 	return nil, errors.New("channel not found")
+}
+
+// LookupChannel serves a cache hit and, on a miss, confirms the row in the
+// database. Only a confirmed absence is ErrChannelNotFound. Transient database
+// errors are returned unchanged so callers can retry instead of refunding.
+func LookupChannel(id int) (*Channel, error) {
+	if id <= 0 {
+		return nil, fmt.Errorf("channel #%d no longer exists: %w", id, ErrChannelNotFound)
+	}
+	if common.MemoryCacheEnabled {
+		channelSyncLock.RLock()
+		ch, ok := channelsIDM[id]
+		channelSyncLock.RUnlock()
+		if ok && ch != nil {
+			return ch, nil
+		}
+	}
+	ch, err := GetChannelById(id, true)
+	if err == nil {
+		if common.MemoryCacheEnabled {
+			CacheUpdateChannel(ch)
+		}
+		return ch, nil
+	}
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, fmt.Errorf("channel #%d no longer exists: %w", id, ErrChannelNotFound)
+	}
+	return nil, err
 }
 
 func CacheGetChannel(id int) (*Channel, error) {

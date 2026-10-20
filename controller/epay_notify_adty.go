@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -335,12 +336,50 @@ func epayParseMoneyCents(s string) (int64, error) {
 	return int64(math.Round(f * 100)), nil
 }
 
-// epayMoneyEqual 回调金额与订单 PayCNY 是否数值相等（按分比较）。
-func epayMoneyEqual(callbackMoney string, payCNY float64) bool {
+// epayMoneyEqual 回调金额与订单应付金额是否数值相等（按分比较）。
+func epayMoneyEqual(callbackMoney string, expected float64) bool {
 	got, err := epayParseMoneyCents(callbackMoney)
 	if err != nil {
 		return false
 	}
-	want := int64(math.Round(payCNY * 100))
+	want := int64(math.Round(expected * 100))
 	return got == want
+}
+
+func subscriptionEpayMoneyMatches(tradeNo, callbackMoney string) bool {
+	order := model.GetSubscriptionOrderByTradeNo(tradeNo)
+	if order == nil {
+		return false
+	}
+	if expected, ok := expectedSubscriptionEpayMoney(order.ProviderPayload); ok {
+		return epayMoneyEqual(callbackMoney, expected)
+	}
+	// 没有快照的旧单：回调金额必须等于下单时写入的 Money（当时发给网关的数字）。
+	if order.Money <= 0 {
+		return false
+	}
+	return epayMoneyEqual(callbackMoney, order.Money)
+}
+
+func expectedSubscriptionEpayMoney(payload string) (float64, bool) {
+	if strings.TrimSpace(payload) == "" {
+		return 0, false
+	}
+	var snap subscriptionEpayPaySnapshot
+	if err := json.Unmarshal([]byte(payload), &snap); err != nil || snap.ExpectedPayMoney == "" {
+		return 0, false
+	}
+	v, err := strconv.ParseFloat(snap.ExpectedPayMoney, 64)
+	if err != nil || v <= 0 {
+		return 0, false
+	}
+	return v, true
+}
+
+func legacyEpayMoneyMatches(tradeNo, callbackMoney string) bool {
+	topUp := model.GetTopUpByTradeNo(tradeNo)
+	if topUp == nil || topUp.Money <= 0 {
+		return false
+	}
+	return epayMoneyEqual(callbackMoney, topUp.Money)
 }

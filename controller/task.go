@@ -51,7 +51,8 @@ func GetTask(c *gin.Context) {
 		createdAt = task.SubmitTime
 	}
 	failReason := task.FailReason
-	if task.Status == model.TaskStatusSuccess && taskFailReasonIsLegacyResultURL(task.FailReason) {
+	// 旧结果地址可能写在任意状态的 FailReason 里。成功才清空会把失败或进行中任务的签名地址漏给调用方。
+	if taskFailReasonIsLegacyResultURL(failReason) {
 		failReason = ""
 	}
 	c.JSON(http.StatusOK, gin.H{
@@ -513,8 +514,5 @@ func tasksToDto(tasks []*model.Task, fillUser bool, viewerRole int) []*dto.TaskD
 }
 
 func taskFailReasonIsLegacyResultURL(value string) bool {
-	value = strings.TrimSpace(value)
-	return len(value) >= len("https://") && strings.EqualFold(value[:len("https://")], "https://") ||
-		len(value) >= len("http://") && strings.EqualFold(value[:len("http://")], "http://") ||
-		len(value) >= len("data:") && strings.EqualFold(value[:len("data:")], "data:")
+	return model.IsLegacyResultURL(value)
 }

@@ -76,6 +76,18 @@ describe('HeaderBalance', () => {
     expect(screen.getByRole('link').getAttribute('href')).toBe('/wallet')
   })
 
+  it('adds bonus quota to the displayed balance', async () => {
+    useAuthStore
+      .getState()
+      .auth.setUser({ id: 1, username: 'u', role: 1, quota: 500000, bonus_quota: 500000 })
+    getSelf.mockResolvedValue({
+      success: true,
+      data: { quota: 1000000, bonus_quota: 500000 },
+    })
+    renderIt()
+    await waitFor(() => expect(screen.getByText('$3')).toBeTruthy())
+  })
+
   it('hides when the wallet module is hidden', () => {
     walletVisible = false
     useAuthStore.getState().auth.setUser({ id: 1, username: 'u', role: 1 })

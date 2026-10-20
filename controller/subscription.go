@@ -75,6 +75,17 @@ func UpdateSubscriptionPreference(c *gin.Context) {
 		return
 	}
 	pref := common.NormalizeBillingPreference(req.BillingPreference)
+	if pref == "subscription_only" {
+		active, activeErr := model.HasActiveUserSubscription(userId)
+		if activeErr != nil {
+			common.ApiError(c, activeErr)
+			return
+		}
+		if !active {
+			common.ApiErrorMsg(c, "没有有效订阅，不能切换到仅订阅计费")
+			return
+		}
+	}
 
 	user, err := model.GetUserById(userId, true)
 	if err != nil {

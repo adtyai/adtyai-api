@@ -306,16 +306,13 @@ func RefundTopupOrder(orderNo string, amountUSD float64, reason, requestId strin
 				if reduce > comm.CommissionQuota {
 					reduce = comm.CommissionQuota
 				}
-				// 允许 aff_quota 为负
-				if err := tx.Model(&User{}).Where("id = ?", comm.InviterId).
-					Update("aff_quota", gorm.Expr("aff_quota - ?", reduce)).Error; err != nil {
+				// 先收回未打出的提现，再扣可提现。已划进实充且还没被退款追回的部分，只扣实充，不连可提现再扣一次。
+				// 仍不够的记成负的 aff_quota。不拿无关实充顶已提现现金。pay_unknown 不自动取消。
+				afterAff, err := clawAvailableAffCommissionTx(tx, comm.InviterId, reduce, requestId, operatorId, &ledgerIDs)
+				if err != nil {
 					return err
 				}
-				var afterAff int
-				if err := tx.Model(&User{}).Where("id = ?", comm.InviterId).Select("aff_quota").Scan(&afterAff).Error; err != nil {
-					return err
-				}
-				affAfter = int64(afterAff)
+				affAfter = afterAff
 				affClawed = reduce
 				comm.CommissionQuota -= reduce
 				if comm.CommissionQuota < 0 {
@@ -324,12 +321,6 @@ func RefundTopupOrder(orderNo string, amountUSD float64, reason, requestId strin
 				if err := tx.Save(&comm).Error; err != nil {
 					return err
 				}
-				aEntry, err := createLedgerEntryTx(tx, comm.InviterId, "aff", "aff_refund_claw", -reduce, affAfter,
-					"refund claw available commission", "topup_refund", requestId, operatorId)
-				if err != nil {
-					return err
-				}
-				ledgerIDs = append(ledgerIDs, aEntry.Id)
 			}
 		}
 
@@ -472,4 +463,101 @@ func QuotaToDollars(q int64) float64 {
 		return 0
 	}
 	return float64(q) / common.QuotaPerUnit
+}
+
+// unrecoveredTransferredAffQuotaTx 还没被退款追回的划转实充。
+// aff_transfer 是正数，aff_refund_claw_paid 是负数，合计就是还能从实充追回的额度。
+func unrecoveredTransferredAffQuotaTx(tx *gorm.DB, userId int) (int64, error) {
+	var sum int64
+	err := tx.Model(&LedgerEntry{}).
+		Where("user_id = ? AND account = ? AND kind IN ?", userId, "paid", []string{"aff_transfer", "aff_refund_claw_paid"}).
+		Select("COALESCE(SUM(delta), 0)").
+		Scan(&sum).Error
+	if err != nil {
+		return 0, err
+	}
+	if sum < 0 {
+		return 0, nil
+	}
+	return sum, nil
+}
+
+// clawAvailableAffCommissionTx 追回已解冻返佣。调用方必须已经锁住邀请人。
+// 返回扣完后的 aff_quota。aff 流水只记可提现账户的实际变动，划转追回另记实充流水。
+func clawAvailableAffCommissionTx(tx *gorm.DB, inviterId int, reduce int64, requestId string, operatorId int, ledgerIDs *[]int64) (int64, error) {
+	if inviterId <= 0 {
+		return 0, errors.New("invalid inviter")
+	}
+	if reduce <= 0 {
+		var aff int
+		if err := tx.Model(&User{}).Where("id = ?", inviterId).Select("aff_quota").Scan(&aff).Error; err != nil {
+			return 0, err
+		}
+		return int64(aff), nil
+	}
+	if err := reclaimInFlightAffWithdrawalsTx(tx, inviterId, reduce, operatorId, "refund claw reclaimed unpaid withdrawal"); err != nil {
+		return 0, err
+	}
+	var inv User
+	if err := tx.Select("id", "quota", "aff_quota").Where("id = ?", inviterId).First(&inv).Error; err != nil {
+		return 0, err
+	}
+	fromAff := int64(0)
+	if inv.AffQuota > 0 {
+		fromAff = int64(inv.AffQuota)
+		if fromAff > reduce {
+			fromAff = reduce
+		}
+	}
+	short := reduce - fromAff
+	fromPaid := int64(0)
+	if short > 0 {
+		recoverable, err := unrecoveredTransferredAffQuotaTx(tx, inviterId)
+		if err != nil {
+			return 0, err
+		}
+		fromPaid = short
+		if fromPaid > recoverable {
+			fromPaid = recoverable
+		}
+		if fromPaid > int64(inv.Quota) {
+			fromPaid = int64(inv.Quota)
+		}
+		if fromPaid < 0 {
+			fromPaid = 0
+		}
+	}
+	fromNegative := reduce - fromAff - fromPaid
+	affDelta := fromAff + fromNegative
+	if affDelta > 0 {
+		if err := tx.Model(&User{}).Where("id = ?", inviterId).
+			Update("aff_quota", gorm.Expr("aff_quota - ?", affDelta)).Error; err != nil {
+			return 0, err
+		}
+	}
+	var afterAff int
+	if err := tx.Model(&User{}).Where("id = ?", inviterId).Select("aff_quota").Scan(&afterAff).Error; err != nil {
+		return 0, err
+	}
+	if affDelta > 0 {
+		entry, err := createLedgerEntryTx(tx, inviterId, "aff", "aff_refund_claw", -affDelta, int64(afterAff),
+			"refund claw available commission", "topup_refund", requestId, operatorId)
+		if err != nil {
+			return 0, err
+		}
+		if ledgerIDs != nil {
+			*ledgerIDs = append(*ledgerIDs, entry.Id)
+		}
+	}
+	if fromPaid > 0 {
+		adj, err := AdjustQuota(tx, inviterId, "paid", -fromPaid,
+			"refund claw transferred commission", "topup_refund", requestId, "", operatorId, "aff_refund_claw_paid")
+		if err != nil {
+			return 0, err
+		}
+		if ledgerIDs != nil && adj != nil && adj.Entry != nil {
+			*ledgerIDs = append(*ledgerIDs, adj.Entry.Id)
+		}
+	}
+	return int64(afterAff), nil
 }

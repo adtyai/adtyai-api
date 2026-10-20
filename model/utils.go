@@ -94,9 +94,11 @@ func batchUpdate() {
 		for key, value := range store {
 			switch i {
 			case BatchUpdateTypeTokenQuota:
-				err := increaseTokenQuota(key, value)
+				err := applyTokenQuotaBatchDelta(key, value)
 				if err != nil {
+					// 队列已经换走。失败必须放回，否则 Redis 已扣、库未扣，缓存过期后限额会恢复。
 					common.SysLog(common.LogText("failed to batch update token quota: %s", err.Error()))
+					addNewRecord(BatchUpdateTypeTokenQuota, key, value)
 				}
 			case BatchUpdateTypeChannelUsedQuota:
 				updateChannelUsedQuota(key, value)

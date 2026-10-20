@@ -54,6 +54,14 @@ func isUniqueViolation(err error) bool {
 	return strings.Contains(s, "duplicate") || strings.Contains(s, "unique") || strings.Contains(s, "23505")
 }
 
+// isAffCodeUniqueViolation 只重试邀请码冲突。邮箱等其它唯一约束必须原样失败，不能换码再插。
+func isAffCodeUniqueViolation(err error) bool {
+	if !isUniqueViolation(err) {
+		return false
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "aff_code")
+}
+
 // AffCommission 返佣明细；冻结期按生成时快照，改参不影响已有行。
 type AffCommission struct {
 	Id              int64      `json:"id" gorm:"primaryKey;autoIncrement"`
@@ -149,6 +157,33 @@ func AssertNoInviteCycle(userId, newInviterId int) error {
 		cur = u.InviterId
 	}
 	return ErrAffInviteCycle
+}
+
+// ResolveSignupInviter 解析注册邀请码。空码、不存在、成环都不绑邀请人，也不让注册失败。
+// 数据库错误原样返回，避免故障时把真实邀请关系静默丢掉。必须在插入事务外调用。
+func ResolveSignupInviter(affCode string) (int, error) {
+	affCode = strings.TrimSpace(affCode)
+	if affCode == "" {
+		return 0, nil
+	}
+	id, err := GetUserIdByAffCode(affCode)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	if id <= 0 {
+		return 0, nil
+	}
+	if err := AssertNoInviteCycle(0, id); err != nil {
+		if errors.Is(err, ErrAffInviteCycle) {
+			common.SysLog(common.LogText("signup affiliate code dropped: cyclic inviter %d", id))
+			return 0, nil
+		}
+		return 0, err
+	}
+	return id, nil
 }
 
 // BindInviter 设置邀请关系（含防成环）。已有 inviter 时拒绝改绑（最小实现）。
@@ -326,6 +361,7 @@ func ProcessTopupAffCommission(orderNo string) error {
 
 		rate := GetAffTopupCommissionRate()
 		if rate <= 0 {
+			// 不写行。费率日后调高后，补偿任务还能补这笔。
 			return nil
 		}
 		commQuota, err := DollarsToQuota(paidUSD * rate)
@@ -333,7 +369,24 @@ func ProcessTopupAffCommission(orderNo string) error {
 			return err
 		}
 		if commQuota <= 0 {
-			return nil
+			// 正费率下四舍五入为 0 的单若留在扫描队列里，会占满 LIMIT。记一笔 0 元作废行让它退出队列。
+			now := time.Now()
+			row := AffCommission{
+				InviterId:       inviterId,
+				InviteeId:       invitee.Id,
+				OrderNo:         orderNo,
+				Source:          AffCommissionSourceTopup,
+				PaidAmountUSD:   paidUSD,
+				RateSnapshot:    rate,
+				CommissionQuota: 0,
+				FreezeDaysSnap:  GetAffFreezeDays(),
+				Status:          AffCommissionStatusVoided,
+				UnfreezeAt:      now,
+				BlockReason:     "commission rounds to zero",
+				VoidedAt:        &now,
+			}
+			res := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&row)
+			return res.Error
 		}
 		freezeDays := GetAffFreezeDays()
 		if freezeDays < 0 {
@@ -386,6 +439,11 @@ func CompensateMissingTopupAffCommissions(limit int) (int, error) {
 	if limit <= 0 {
 		limit = 500
 	}
+	// 费率为 0 时 Process 不写行。若仍按 LIMIT 扫描，这批空跑单会一直占住名额。
+	// 费率改成正数后下一轮再补历史单，不在费率为 0 时写跳过行。
+	if GetAffTopupCommissionRate() <= 0 {
+		return 0, nil
+	}
 	var orderNos []string
 	err := DB.Raw(`
 SELECT o.order_no
@@ -416,6 +474,77 @@ LIMIT ?
 		var after int64
 		if err := DB.Model(&AffCommission{}).Where("order_no = ?", ono).Count(&after).Error; err != nil {
 			common.SysError(common.LogText("aff commission compensate recount failed order=%s: %s", ono, err.Error()))
+			continue
+		}
+		if after > before {
+			processed++
+		}
+	}
+	return processed, nil
+}
+
+const affMaintenanceRoundCap = 20
+
+// CompensateAllMissingAffCommissions 把单次上限扫完，避免启动只补 500 笔后永久停住。
+func CompensateAllMissingAffCommissions() (int, error) {
+	total := 0
+	for round := 0; round < affMaintenanceRoundCap; round++ {
+		n, err := CompensateMissingTopupAffCommissions(500)
+		if err != nil {
+			return total, err
+		}
+		sub, serr := compensateMissingSubscriptionAffCommissions(500)
+		if serr != nil {
+			return total + n, serr
+		}
+		total += n + sub
+		if n+sub == 0 {
+			return total, nil
+		}
+	}
+	return total, nil
+}
+
+// compensateMissingSubscriptionAffCommissions 补直付成功订阅单的返佣。余额购买不计佣。
+// 费率为 0 时不扫，避免空转；费率改成正数后下一轮再补历史单。
+func compensateMissingSubscriptionAffCommissions(limit int) (int, error) {
+	if limit <= 0 {
+		limit = 500
+	}
+	if GetAffSubscriptionCommissionRate() <= 0 {
+		return 0, nil
+	}
+	var tradeNos []string
+	err := DB.Raw(`
+SELECT o.trade_no
+FROM subscription_orders o
+INNER JOIN users u ON u.id = o.user_id
+WHERE o.status = ?
+  AND u.inviter_id > 0
+  AND COALESCE(o.payment_provider, '') <> ?
+  AND COALESCE(o.payment_method, '') <> ?
+  AND o.money > 0
+  AND NOT EXISTS (SELECT 1 FROM aff_commissions c WHERE c.order_no = o.trade_no)
+ORDER BY o.id ASC
+LIMIT ?
+`, common.TopUpStatusSuccess, PaymentProviderBalance, PaymentMethodBalance, limit).Scan(&tradeNos).Error
+	if err != nil {
+		return 0, err
+	}
+	processed := 0
+	for _, tradeNo := range tradeNos {
+		var before int64
+		if err := DB.Model(&AffCommission{}).Where("order_no = ?", tradeNo).Count(&before).Error; err != nil {
+			common.SysError(common.LogText("subscription aff compensate count failed trade=%s: %s", tradeNo, err.Error()))
+			continue
+		}
+		if err := ProcessSubscriptionAffCommission(tradeNo); err != nil {
+			common.SysError(common.LogText("subscription aff compensate failed trade=%s: %s", tradeNo, err.Error()))
+			continue
+		}
+		var after int64
+		if err := DB.Model(&AffCommission{}).Where("order_no = ?", tradeNo).Count(&after).Error; err != nil {
+			common.SysError(common.LogText("subscription aff compensate recount failed trade=%s: %s", tradeNo, err.Error()))
 			continue
 		}
 		if after > before {
@@ -686,6 +815,116 @@ func ReleaseDueAffCommissions(userId int) (int, error) {
 	return n, nil
 }
 
+// ReleaseAllDueAffCommissions 循环解冻，直到本轮没有到期行或达到轮次上限。
+func ReleaseAllDueAffCommissions() (int, error) {
+	total := 0
+	for round := 0; round < affMaintenanceRoundCap; round++ {
+		n, err := ReleaseDueAffCommissions(0)
+		total += n
+		if err != nil {
+			return total, err
+		}
+		if n == 0 {
+			return total, nil
+		}
+	}
+	return total, nil
+}
+
+func reclaimableAffWithdrawStatuses() []string {
+	return []string{
+		AffWithdrawStatusPending,
+		AffWithdrawStatusApproved,
+		AffWithdrawStatusPayFailed,
+		AffWithdrawStatusPayFailedFinal,
+	}
+}
+
+// reclaimInFlightAffWithdrawalsTx 把尚未打出的提现退回 aff_quota，直到余额覆盖 need。
+// 调用方必须已经按锁序持有该用户行。pay_unknown 可能已经打款，不自动取消。
+// 不要调用 RejectAffWithdrawal：它另开事务。当前拒绝、改状态都是先锁用户再锁提现，和退款同序。
+func reclaimInFlightAffWithdrawalsTx(tx *gorm.DB, userId int, need int64, operatorId int, reason string) error {
+	if tx == nil || userId <= 0 || need <= 0 {
+		return nil
+	}
+	var aff int
+	if err := tx.Model(&User{}).Where("id = ?", userId).Select("aff_quota").Scan(&aff).Error; err != nil {
+		return err
+	}
+	if int64(aff) >= need {
+		return nil
+	}
+	var rows []AffWithdrawal
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("user_id = ? AND status IN ?", userId, reclaimableAffWithdrawStatuses()).
+		Order("id DESC").
+		Find(&rows).Error; err != nil {
+		return err
+	}
+	for i := range rows {
+		if int64(aff) >= need {
+			break
+		}
+		w := rows[i]
+		if w.AmountQuota <= 0 {
+			continue
+		}
+		if err := tx.Model(&User{}).Where("id = ?", userId).
+			Update("aff_quota", gorm.Expr("aff_quota + ?", w.AmountQuota)).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&User{}).Where("id = ?", userId).Select("aff_quota").Scan(&aff).Error; err != nil {
+			return err
+		}
+		if err := writeLedgerEntryTx(tx, userId, "aff", "aff_withdraw_unfreeze", w.AmountQuota, int64(aff),
+			reason, "aff_withdrawal", fmt.Sprintf("%d", w.Id), operatorId); err != nil {
+			return err
+		}
+		now := time.Now()
+		res := tx.Model(&AffWithdrawal{}).Where("id = ? AND status = ?", w.Id, w.Status).Updates(map[string]any{
+			"status":        AffWithdrawStatusRejected,
+			"reject_reason": reason,
+			"operator_id":   operatorId,
+			"resolved_at":   now,
+		})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected != 1 {
+			return errors.New("withdrawal status changed during reclaim")
+		}
+	}
+	return nil
+}
+
+// StartAffMaintenanceLoop 主节点定时解冻到期返佣并补漏。立即跑一轮，之后每分钟一次。
+func StartAffMaintenanceLoop() {
+	if !common.IsMasterNode {
+		return
+	}
+	go func() {
+		runAffMaintenance()
+		ticker := time.NewTicker(time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			runAffMaintenance()
+		}
+	}()
+}
+
+func runAffMaintenance() {
+	if n, err := ReleaseAllDueAffCommissions(); err != nil {
+		common.SysError(common.LogText("aff release loop failed after %d: %s", n, err.Error()))
+	} else if n > 0 {
+		common.SysLog(common.LogText("aff release loop released %d", n))
+	}
+	if n, err := CompensateAllMissingAffCommissions(); err != nil {
+		common.SysError(common.LogText("aff compensate loop failed after %d: %s", n, err.Error()))
+	} else if n > 0 {
+		common.SysLog(common.LogText("aff compensate loop processed %d", n))
+	}
+}
+
 // VoidAffCommission 管理端作废：冲正可提现余额 + 审计由 controller 写。需在外层 confirm。
 // ErrAffCommissionAlreadyWithdrawn 返佣已被提现，可用返佣余额不足以冲正（审查 N-P1-6）。
 var ErrAffCommissionAlreadyWithdrawn = errors.New("aff commission already withdrawn; available aff balance insufficient to reverse")
@@ -727,8 +966,11 @@ func VoidAffCommission(id int64, operatorId int) (*AffCommission, error) {
 			return ErrAffCommissionStatusInvalid
 		}
 		if c.Status == AffCommissionStatusAvailable {
-			// 审查 N-P1-6：已解冻的返佣可能已被提现打款；可用返佣余额不足以冲正时拒绝作废，
-			// 绝不把 aff_quota 扣成负数（否则提现套现后无法追回）。须走线下追回后再处理。
+			// 先收回尚未打出的提现，再判断余额够不够冲正。pay_unknown 不自动取消。
+			// 仍不够则拒绝，不把 aff_quota 扣成负数，也不去扣用户实充。
+			if err := reclaimInFlightAffWithdrawalsTx(tx, c.InviterId, c.CommissionQuota, operatorId, "void reclaimed unpaid withdrawal"); err != nil {
+				return err
+			}
 			res := tx.Model(&User{}).Where("id = ? AND aff_quota >= ?", c.InviterId, c.CommissionQuota).Updates(map[string]any{
 				"aff_quota": gorm.Expr("aff_quota - ?", c.CommissionQuota),
 			})
@@ -1082,6 +1324,17 @@ func RetryAffWithdrawal(id int64, operatorId int) (*AffWithdrawal, error) {
 func transitionAffWithdrawal(id int64, operatorId int, mutate func(*AffWithdrawal) error) (*AffWithdrawal, error) {
 	var out *AffWithdrawal
 	err := DB.Transaction(func(tx *gorm.DB) error {
+		// 锁序与退款回收、拒绝提现一致：先窥探 user_id，锁用户，再锁提现单。
+		var peek AffWithdrawal
+		if err := tx.Select("id", "user_id").Where("id = ?", id).First(&peek).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrAffWithdrawNotFound
+			}
+			return err
+		}
+		if err := lockAffUsersInOrder(tx, []int{peek.UserId}); err != nil {
+			return err
+		}
 		var w AffWithdrawal
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("id = ?", id).First(&w).Error; err != nil {

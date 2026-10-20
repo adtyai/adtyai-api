@@ -12,7 +12,7 @@ func TestVoidAffCommissionRefusesWhenWithdrawn(t *testing.T) {
 	truncateTables(t)
 	resetBatchUpdateTestState(t)
 	common.RedisEnabled = false
-	require.NoError(t, DB.AutoMigrate(&AffCommission{}))
+	require.NoError(t, DB.AutoMigrate(&AffCommission{}, &AffWithdrawal{}))
 	require.NoError(t, EnsureLedgerSchema(DB))
 	u := createReserveTestUser(t, 0)
 	c := AffCommission{InviterId: u.Id, InviteeId: u.Id + 1, OrderNo: "N16-1", Source: "topup", CommissionQuota: 5000000, Status: AffCommissionStatusAvailable}

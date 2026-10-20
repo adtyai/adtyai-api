@@ -21,7 +21,6 @@ import { Zap } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { Skeleton } from '@/components/ui/skeleton'
-import { useFirstTopupBonusPercent } from '@/features/home/hooks/use-first-topup-bonus'
 import { useSystemConfig } from '@/hooks/use-system-config'
 
 type AuthLayoutProps = {
@@ -32,7 +31,6 @@ function AuthBrandPanel({ systemName }: { systemName: string }) {
   const { t } = useTranslation()
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const isRegister = pathname.includes('sign-up')
-  const bonusPercent = useFirstTopupBonusPercent()
 
   const headline = isRegister
     ? t('Invite friends to use AI together')
@@ -63,12 +61,7 @@ function AuthBrandPanel({ systemName }: { systemName: string }) {
           <li>· {t('OpenAI-compatible')}</li>
           <li>· {t('Pay as you go')}</li>
           <li>
-            ·{' '}
-            {bonusPercent == null
-              ? t('First top-up bonus')
-              : t('First top-up bonus {{percent}}%', {
-                  percent: bonusPercent,
-                })}
+            · {t('USD pricing · full amount credited · tier bonus extra')}
           </li>
         </ul>
       </div>

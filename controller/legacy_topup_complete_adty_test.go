@@ -13,7 +13,7 @@ import (
 // 审查重审 P0-1：legacy POST /api/user/topup/complete 仅 root；admin → 403，root 可补单。
 func TestLegacyAdminCompleteTopUpRootOnly(t *testing.T) {
 	database := adtyTestDB(t)
-	require.NoError(t, database.AutoMigrate(&model.TopUp{}, &model.User{}, &model.Log{}))
+	require.NoError(t, database.AutoMigrate(&model.TopUp{}, &model.User{}, &model.Log{}, &model.LedgerEntry{}))
 
 	root := model.User{Username: "legroot", Password: "unused-password", Role: common.RoleRootUser, AffCode: "legr", Quota: 0}
 	alice := model.User{Username: "legalice", Password: "unused-password", Role: common.RoleCommonUser, AffCode: "lega", Quota: 1000}

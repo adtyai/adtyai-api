@@ -576,11 +576,76 @@ func HardDeleteUserById(id int) (int64, error) {
 }
 
 func inviteUser(inviterId int) error {
-	result := DB.Model(&User{}).Where("id = ?", inviterId).Updates(map[string]any{
-		"aff_count":   gorm.Expr("aff_count + ?", 1),
-		"aff_quota":   gorm.Expr("aff_quota + ?", common.QuotaForInviter),
-		"aff_history": gorm.Expr("aff_history + ?", common.QuotaForInviter),
+	if inviterId <= 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return DB.Transaction(func(tx *gorm.DB) error {
+		return inviteUserTx(tx, inviterId)
 	})
+}
+
+func inviteUserTx(tx *gorm.DB, inviterId int) error {
+	if inviterId <= 0 {
+		return gorm.ErrRecordNotFound
+	}
+	bonus := common.QuotaForInviter
+	if err := lockAffUsersInOrder(tx, []int{inviterId}); err != nil {
+		return err
+	}
+	result := tx.Model(&User{}).Where("id = ?", inviterId).Updates(map[string]any{
+		"aff_count":   gorm.Expr("aff_count + ?", 1),
+		"aff_quota":   gorm.Expr("aff_quota + ?", bonus),
+		"aff_history": gorm.Expr("aff_history + ?", bonus),
+	})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	if bonus <= 0 {
+		return nil
+	}
+	var after int
+	if err := tx.Model(&User{}).Where("id = ?", inviterId).Select("aff_quota").Scan(&after).Error; err != nil {
+		return err
+	}
+	return writeLedgerEntryTx(tx, inviterId, "aff", "signup_inviter_bonus", int64(bonus), int64(after),
+		"signup inviter bonus", "signup_invite", strconv.Itoa(inviterId), 0)
+}
+
+// creditSignupInviteeBonus 把被邀请人注册奖励记入赠送，不进可退款的实充。
+func creditSignupInviteeBonus(userId, quota int) error {
+	return creditSignupInviteeBonusTx(nil, userId, quota)
+}
+
+func creditSignupInviteeBonusTx(tx *gorm.DB, userId, quota int) error {
+	if userId <= 0 || quota <= 0 {
+		return nil
+	}
+	_, err := AdjustQuota(tx, userId, "bonus", int64(quota),
+		"invitation code bonus", "signup_invite", strconv.Itoa(userId),
+		fmt.Sprintf("signup_invitee:%d", userId), 0, "signup_invite_bonus")
+	return err
+}
+
+// applySignupInviteRewardsTx credits invite rewards in the caller transaction.
+// A failure rolls the new user back, so the invitee cannot be created short.
+// 锁序：先锁被邀请人的赠送钱包和用户行，再锁邀请人。和转账的用户号升序锁相反，并发时可能死锁后由数据库回滚重试；注册不是热路径，不再另做一套锁框架。
+func applySignupInviteRewardsTx(tx *gorm.DB, userId, inviterId int) error {
+	if inviterId == 0 || userId <= 0 {
+		return nil
+	}
+	compliance := operation_setting.IsPaymentComplianceConfirmed()
+	if compliance && common.QuotaForInvitee > 0 {
+		if err := creditSignupInviteeBonusTx(tx, userId, common.QuotaForInvitee); err != nil {
+			return err
+		}
+	}
+	if compliance && common.QuotaForInviter > 0 {
+		return inviteUserTx(tx, inviterId)
+	}
+	result := tx.Model(&User{}).Where("id = ?", inviterId).Update("aff_count", gorm.Expr("aff_count + ?", 1))
 	if result.Error != nil {
 		return result.Error
 	}
@@ -590,41 +655,59 @@ func inviteUser(inviterId int) error {
 	return nil
 }
 
+func logSignupInviteRewards(userId, inviterId int) {
+	if inviterId == 0 || !operation_setting.IsPaymentComplianceConfirmed() {
+		return
+	}
+	if common.QuotaForInvitee > 0 {
+		RecordLog(userId, LogTypeSystem, common.NewMessage("Invitation code bonus {{quota}}", map[string]any{"quota": logger.FormatQuota(common.QuotaForInvitee)}))
+	}
+	if common.QuotaForInviter > 0 {
+		RecordLog(inviterId, LogTypeSystem, common.NewMessage("Bonus for inviting a user {{quota}}", map[string]any{"quota": logger.FormatQuota(common.QuotaForInviter)}))
+	}
+}
+
 func (user *User) TransferAffQuotaToQuota(quota int) error {
 	// 检查quota是否小于最小额度
 	if float64(quota) < common.QuotaPerUnit {
 		return common.NewMessage("Minimum transfer quota is {{min}}!", map[string]any{"min": logger.FormatQuota(common.QuotaFromFloat(common.QuotaPerUnit))})
 	}
-
-	// 开始数据库事务
-	tx := DB.Begin()
-	if tx.Error != nil {
-		return tx.Error
+	if user == nil || user.Id <= 0 {
+		return errors.New("invalid user")
 	}
-	defer tx.Rollback() // 确保在函数退出时事务能回滚
-
-	// 加锁查询用户以确保数据一致性
-	err := lockForUpdate(tx).First(user, user.Id).Error
-	if err != nil {
-		return err
-	}
-
-	// 再次检查用户的AffQuota是否足够
-	if user.AffQuota < quota {
-		return common.NewMessage("Invitation quota is insufficient!")
-	}
-
-	// 更新用户额度
-	user.AffQuota -= quota
-	user.Quota += quota
-
-	// 保存用户状态
-	if err := tx.Save(user).Error; err != nil {
-		return err
-	}
-
-	// 提交事务
-	return tx.Commit().Error
+	ref := fmt.Sprintf("aff-transfer-%d-%s", user.Id, common.GetRandomString(12))
+	return DB.Transaction(func(tx *gorm.DB) error {
+		// 锁序与其它资金路径一致：赠送钱包，再用户行。不用整行 Save，避免并发丢更新。
+		if err := lockAffUsersInOrder(tx, []int{user.Id}); err != nil {
+			return err
+		}
+		res := tx.Model(&User{}).Where("id = ? AND aff_quota >= ?", user.Id, quota).
+			Update("aff_quota", gorm.Expr("aff_quota - ?", quota))
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected != 1 {
+			return common.NewMessage("Invitation quota is insufficient!")
+		}
+		var afterAff int
+		if err := tx.Model(&User{}).Where("id = ?", user.Id).Select("aff_quota").Scan(&afterAff).Error; err != nil {
+			return err
+		}
+		if err := writeLedgerEntryTx(tx, user.Id, "aff", "aff_transfer", int64(-quota), int64(afterAff),
+			"transfer affiliate quota to paid balance", "aff_transfer", ref, 0); err != nil {
+			return err
+		}
+		adj, err := AdjustQuota(tx, user.Id, "paid", int64(quota),
+			"transfer affiliate quota to paid balance", "aff_transfer", ref, "", 0, "aff_transfer")
+		if err != nil {
+			return err
+		}
+		user.AffQuota = afterAff
+		if adj != nil {
+			user.Quota = int(adj.BalanceAfter)
+		}
+		return nil
+	})
 }
 
 func (user *User) prepareForInsert(tx *gorm.DB) error {
@@ -679,23 +762,20 @@ func ensureEmailAvailableWithTx(tx *gorm.DB, email string, excludeUserID int) er
 }
 
 func (user *User) Insert(inviterId int) error {
+	if user.InviterId == 0 && inviterId > 0 {
+		user.InviterId = inviterId
+	}
+	if inviterId == 0 {
+		inviterId = user.InviterId
+	}
+	// 成环检查必须在事务外。测试库 SQLite 只有 1 个连接，事务里再查全局 DB 会死锁。
+	if user.InviterId > 0 {
+		if err := AssertNoInviteCycle(0, user.InviterId); err != nil {
+			return err
+		}
+	}
 	if err := DB.Transaction(func(tx *gorm.DB) error {
-		return withNormalizedEmailLock(tx, user.Email, func(tx *gorm.DB) error {
-			if err := user.prepareForInsert(tx); err != nil {
-				return err
-			}
-			user.Quota = common.QuotaForNewUser
-			user.AffCode = common.GetRandomString(4)
-
-			// 初始化用户设置，包括默认的边栏配置
-			if user.Setting == "" {
-				defaultSetting := dto.UserSetting{}
-				// 这里暂时不设置SidebarModules，因为需要在用户创建后根据角色设置
-				user.SetSetting(defaultSetting)
-			}
-
-			return tx.Create(user).Error
-		})
+		return user.InsertWithTx(tx, inviterId)
 	}); err != nil {
 		return err
 	}
@@ -723,21 +803,7 @@ func (user *User) finishInsert(inviterId int) {
 	if common.QuotaForNewUser > 0 {
 		RecordLog(user.Id, LogTypeSystem, common.NewMessage("New user sign-up bonus {{quota}}", map[string]any{"quota": logger.FormatQuota(common.QuotaForNewUser)}))
 	}
-	if inviterId != 0 && operation_setting.IsPaymentComplianceConfirmed() {
-		if common.QuotaForInvitee > 0 {
-			_ = IncreaseUserQuota(user.Id, common.QuotaForInvitee, true)
-			RecordLog(user.Id, LogTypeSystem, common.NewMessage("Invitation code bonus {{quota}}", map[string]any{"quota": logger.FormatQuota(common.QuotaForInvitee)}))
-		}
-		if common.QuotaForInviter > 0 {
-			//_ = IncreaseUserQuota(inviterId, common.QuotaForInviter)
-			RecordLog(inviterId, LogTypeSystem, common.NewMessage("Bonus for inviting a user {{quota}}", map[string]any{"quota": logger.FormatQuota(common.QuotaForInviter)}))
-			_ = inviteUser(inviterId)
-		}
-	}
-	// 审查 N-P2-13：邀请人数与是否发邀请奖励无关（官方只在 QuotaForInviter>0 时 +1，二开返佣场景下 aff_count 恒 0）
-	if inviterId != 0 && !(operation_setting.IsPaymentComplianceConfirmed() && common.QuotaForInviter > 0) {
-		_ = DB.Model(&User{}).Where("id = ?", inviterId).Update("aff_count", gorm.Expr("aff_count + ?", 1)).Error
-	}
+	logSignupInviteRewards(user.Id, inviterId)
 }
 
 func (user *User) FinishInsert(inviterId int) {
@@ -745,24 +811,120 @@ func (user *User) FinishInsert(inviterId int) {
 }
 
 // InsertWithTx inserts a new user within an existing transaction.
-// This is used for OAuth registration where user creation and binding need to be atomic.
-// Post-creation tasks (sidebar config, logs, inviter rewards) are handled after the transaction commits.
+// Signup quota and invite rewards are credited here so a failure rolls the user back.
+// Sidebar config and user-facing logs stay in finishInsert, after commit.
 func (user *User) InsertWithTx(tx *gorm.DB, inviterId int) error {
+	if user.InviterId == 0 && inviterId > 0 {
+		user.InviterId = inviterId
+	}
 	return withNormalizedEmailLock(tx, user.Email, func(tx *gorm.DB) error {
 		if err := user.prepareForInsert(tx); err != nil {
 			return err
 		}
-		user.Quota = common.QuotaForNewUser
-		user.AffCode = common.GetRandomString(4)
-
-		// 初始化用户设置
+		user.Quota = 0
+		// 初始化用户设置。密码只在 prepareForInsert 哈希一次，邀请码冲突不能再次哈希。
 		if user.Setting == "" {
 			defaultSetting := dto.UserSetting{}
 			user.SetSetting(defaultSetting)
 		}
-
-		return tx.Create(user).Error
+		if err := createUserWithUniqueAffCode(tx, user); err != nil {
+			return err
+		}
+		if common.QuotaForNewUser > 0 {
+			if _, err := AdjustQuota(tx, user.Id, "paid", int64(common.QuotaForNewUser),
+				"new user sign-up bonus", "signup", strconv.Itoa(user.Id),
+				fmt.Sprintf("signup_new_user:%d", user.Id), 0, "signup_bonus"); err != nil {
+				return err
+			}
+			user.Quota = common.QuotaForNewUser
+		}
+		return applySignupInviteRewardsTx(tx, user.Id, inviterId)
 	})
+}
+
+// createUserWithUniqueAffCode 邀请码冲突时只回滚到保存点再换码。
+// PostgreSQL 唯一冲突会中止当前事务，不能在失败语句后直接重试。
+func createUserWithUniqueAffCode(tx *gorm.DB, user *User) error {
+	preset := strings.TrimSpace(user.AffCode)
+	var last error
+	for attempt := 0; attempt < 8; attempt++ {
+		switch {
+		case attempt == 0 && preset != "":
+			user.AffCode = preset
+		case attempt == 7:
+			user.AffCode = common.GetRandomString(12)
+		default:
+			user.AffCode = common.GetRandomString(4)
+		}
+		user.Id = 0
+		sp := fmt.Sprintf("affcode_%d", attempt)
+		if err := tx.SavePoint(sp).Error; err != nil {
+			return err
+		}
+		err := tx.Create(user).Error
+		if err == nil {
+			return nil
+		}
+		last = err
+		tx.Error = nil
+		if rb := tx.RollbackTo(sp).Error; rb != nil {
+			return fmt.Errorf("rollback affiliate code savepoint: %w", rb)
+		}
+		tx.Error = nil
+		if !isAffCodeUniqueViolation(err) {
+			return err
+		}
+		preset = ""
+	}
+	if last == nil {
+		last = errors.New("failed to assign affiliate code")
+	}
+	return last
+}
+
+// EnsureUserAffCode 给还没有邀请码的用户补一个。条件更新，不整行 Save。
+func EnsureUserAffCode(userId int) (string, error) {
+	if userId <= 0 {
+		return "", errors.New("invalid user id")
+	}
+	var existing string
+	if err := DB.Model(&User{}).Where("id = ?", userId).Select("aff_code").Scan(&existing).Error; err != nil {
+		return "", err
+	}
+	existing = strings.TrimSpace(existing)
+	if existing != "" {
+		return existing, nil
+	}
+	var last error
+	for attempt := 0; attempt < 8; attempt++ {
+		code := common.GetRandomString(4)
+		if attempt == 7 {
+			code = common.GetRandomString(12)
+		}
+		res := DB.Model(&User{}).Where("id = ? AND (aff_code = '' OR aff_code IS NULL)", userId).Update("aff_code", code)
+		if res.Error != nil {
+			if isAffCodeUniqueViolation(res.Error) {
+				last = res.Error
+				continue
+			}
+			return "", res.Error
+		}
+		if res.RowsAffected == 1 {
+			return code, nil
+		}
+		if err := DB.Model(&User{}).Where("id = ?", userId).Select("aff_code").Scan(&existing).Error; err != nil {
+			return "", err
+		}
+		existing = strings.TrimSpace(existing)
+		if existing != "" {
+			return existing, nil
+		}
+		last = errors.New("failed to assign affiliate code")
+	}
+	if last == nil {
+		last = errors.New("failed to assign affiliate code")
+	}
+	return "", last
 }
 
 // FinalizeOAuthUserCreation performs post-transaction tasks for OAuth user creation.
@@ -784,20 +946,7 @@ func (user *User) FinalizeOAuthUserCreation(inviterId int) {
 	if common.QuotaForNewUser > 0 {
 		RecordLog(user.Id, LogTypeSystem, common.NewMessage("New user sign-up bonus {{quota}}", map[string]any{"quota": logger.FormatQuota(common.QuotaForNewUser)}))
 	}
-	if inviterId != 0 && operation_setting.IsPaymentComplianceConfirmed() {
-		if common.QuotaForInvitee > 0 {
-			_ = IncreaseUserQuota(user.Id, common.QuotaForInvitee, true)
-			RecordLog(user.Id, LogTypeSystem, common.NewMessage("Invitation code bonus {{quota}}", map[string]any{"quota": logger.FormatQuota(common.QuotaForInvitee)}))
-		}
-		if common.QuotaForInviter > 0 {
-			RecordLog(inviterId, LogTypeSystem, common.NewMessage("Bonus for inviting a user {{quota}}", map[string]any{"quota": logger.FormatQuota(common.QuotaForInviter)}))
-			_ = inviteUser(inviterId)
-		}
-	}
-	// 审查 N-P2-13：邀请人数与是否发邀请奖励无关（官方只在 QuotaForInviter>0 时 +1，二开返佣场景下 aff_count 恒 0）
-	if inviterId != 0 && !(operation_setting.IsPaymentComplianceConfirmed() && common.QuotaForInviter > 0) {
-		_ = DB.Model(&User{}).Where("id = ?", inviterId).Update("aff_count", gorm.Expr("aff_count + ?", 1)).Error
-	}
+	logSignupInviteRewards(user.Id, inviterId)
 }
 
 func (user *User) Update(updatePassword bool) error {
@@ -1548,4 +1697,3 @@ func RootUserExists() bool {
 	}
 	return true
 }
-

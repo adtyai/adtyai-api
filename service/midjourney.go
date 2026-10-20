@@ -149,6 +149,64 @@ func RefundMidjourneyQuota(ctx context.Context, task *model.Midjourney, reason s
 	return true
 }
 
+// FailUnfinishedMidjourneyTasks claims each unfinished task and refunds its quota.
+// A failed refund reverts the claim so the next poll can retry. Do not bulk-update
+// these rows: that skips the quota lifecycle and strands the pre-charge.
+func FailUnfinishedMidjourneyTasks(ctx context.Context, tasks []*model.Midjourney, reason string) int {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	kept := 0
+	for _, task := range tasks {
+		if claimAndRefundUnfinishedMidjourney(ctx, task, reason) {
+			kept++
+		}
+	}
+	return kept
+}
+
+func claimAndRefundUnfinishedMidjourney(ctx context.Context, task *model.Midjourney, reason string) bool {
+	if task == nil || task.Status == "SUCCESS" || task.Status == "FAILURE" {
+		return false
+	}
+	from := task.Status
+	prevProgress := task.Progress
+	prevReason := task.FailReason
+	prevFinish := task.FinishTime
+	task.Status = "FAILURE"
+	task.Progress = "100%"
+	task.FailReason = reason
+	if task.FinishTime == 0 {
+		task.FinishTime = time.Now().Unix()
+	}
+	won, err := task.UpdateWithStatus(from)
+	if err != nil || !won {
+		return false
+	}
+	if task.Quota == 0 || RefundMidjourneyQuota(ctx, task, reason) {
+		return true
+	}
+	result := model.DB.Model(task).Where("status = ?", "FAILURE").Updates(map[string]any{
+		"status":      from,
+		"progress":    prevProgress,
+		"fail_reason": prevReason,
+		"finish_time": prevFinish,
+	})
+	if result.Error != nil || result.RowsAffected == 0 {
+		errText := "matched no row"
+		if result.Error != nil {
+			errText = result.Error.Error()
+		}
+		common.SysError(common.LogText("midjourney task %s refund failed and status revert failed: %s", task.MjId, errText))
+		return false
+	}
+	task.Status = from
+	task.Progress = prevProgress
+	task.FailReason = prevReason
+	task.FinishTime = prevFinish
+	return false
+}
+
 func GetMjRequestModel(relayMode int, midjRequest *dto.MidjourneyRequest) (string, *dto.MidjourneyResponse, bool) {
 	action := ""
 	if relayMode == relayconstant.RelayModeMidjourneyAction {

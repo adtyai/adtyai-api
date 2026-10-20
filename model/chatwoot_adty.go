@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -73,7 +74,38 @@ func chatwootWarnings(hmacSet bool) []string {
 	if chatwootOption(OptChatwootWebsiteToken) != "" && !hmacSet {
 		out = append(out, "hmac_secret_missing: identity verification disabled; set the inbox HMAC secret and enable identity validation in Chatwoot")
 	}
+	if base := strings.TrimSpace(chatwootOption(OptChatwootBaseUrl)); base != "" && !ChatwootBaseURLAllowed(base) {
+		out = append(out, "base_url_invalid: public widget disabled until base_url is an https URL without credentials")
+	}
 	return out
+}
+
+// ChatwootBaseURLAllowed 只接受无凭据的 https 地址。本机 http 仅用于本地 Chatwoot。
+// 空字符串表示不加载挂件，允许保存。javascript/data/file 和用户信息一律拒绝。
+func ChatwootBaseURLAllowed(raw string) bool {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return true
+	}
+	if strings.ContainsAny(raw, "\r\n\t\\ ") {
+		return false
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u == nil || !u.IsAbs() || u.User != nil {
+		return false
+	}
+	host := strings.ToLower(u.Hostname())
+	if host == "" || strings.Contains(u.Path, "..") || strings.Contains(u.EscapedPath(), "..") {
+		return false
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "https":
+		return true
+	case "http":
+		return host == "localhost" || host == "127.0.0.1" || host == "::1"
+	default:
+		return false
+	}
 }
 
 // ChatwootPutInput is the PUT body (pointers = present). Empty/omitted hmac_secret leaves secret unchanged.
@@ -107,7 +139,11 @@ func ApplyChatwootPut(in ChatwootPutInput) (oldSnap, newSnap map[string]any, err
 		updates[OptChatwootWebsiteToken] = strings.TrimSpace(*in.WebsiteToken)
 	}
 	if in.BaseURL != nil {
-		updates[OptChatwootBaseUrl] = strings.TrimSpace(*in.BaseURL)
+		base := strings.TrimSpace(*in.BaseURL)
+		if !ChatwootBaseURLAllowed(base) {
+			return oldSnap, nil, fmt.Errorf("base_url must be an absolute https URL without credentials")
+		}
+		updates[OptChatwootBaseUrl] = base
 	}
 	if in.HmacSecret != nil {
 		sec := strings.TrimSpace(*in.HmacSecret)
@@ -156,8 +192,11 @@ type ChatwootPublicConfig struct {
 }
 
 func GetChatwootPublicConfig() ChatwootPublicConfig {
-	base := strings.TrimRight(chatwootOption(OptChatwootBaseUrl), "/")
-	tok := chatwootOption(OptChatwootWebsiteToken)
+	base := strings.TrimRight(strings.TrimSpace(chatwootOption(OptChatwootBaseUrl)), "/")
+	if !ChatwootBaseURLAllowed(base) {
+		base = ""
+	}
+	tok := strings.TrimSpace(chatwootOption(OptChatwootWebsiteToken))
 	return ChatwootPublicConfig{
 		Enabled:          base != "" && tok != "",
 		BaseURL:          base,

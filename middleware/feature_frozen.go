@@ -19,6 +19,19 @@ func FeatureFrozen() gin.HandlerFunc {
 	}
 }
 
+// LegacyTopupClosed refuses new orders on the pre-ledger Stripe/Creem/Waffo/epay pay routes.
+// In-flight notify handlers stay registered so an already-paid callback can still credit.
+func LegacyTopupClosed() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.JSON(http.StatusForbidden, gin.H{
+			"success": false,
+			"code":    "legacy_topup_closed",
+			"message": "请使用充值订单接口",
+		})
+		c.Abort()
+	}
+}
+
 // SubscriptionClosed aborts subscription purchase/management requests.
 // Tables and historical subscriptions stay; only HTTP entrances refuse.
 func SubscriptionClosed() gin.HandlerFunc {

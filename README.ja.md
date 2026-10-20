@@ -128,7 +128,9 @@ cd adtyai-api
 docker compose up -d
 ```
 
-本番では HTTPS・シークレット・バックアップを自ら設定。イメージ公開は GitHub Actions / タグに従います。プレビュー URL は運用側の公表に従います（固定プレビュー例: `https://newapi.n8-n.top`）。
+既定のサービス名とコンテナ名は `adtyai-api-app`、`adtyai-api-postgres`、`adtyai-api-redis` です。PostgreSQL のデータベース名は `adty-ai` で、コンテナ名ではありません。
+
+本番では HTTPS・シークレット・バックアップを自ら設定。イメージ公開は GitHub Actions / タグに従います。プレビュー URL は運用側の公表に従います。
 
 ---
 

@@ -3,6 +3,7 @@ package controller
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -46,27 +47,18 @@ func runMidjourneyTaskUpdateOnce(ctx context.Context, report func(processed, tot
 	logger.LogInfo(ctx, common.LogText("unfinished tasks found: %v", len(tasks)))
 	taskChannelM := make(map[int][]string)
 	taskM := make(map[string]*model.Midjourney)
-	nullTaskIds := make([]int, 0)
+	var nullTasks []*model.Midjourney
 	for _, task := range tasks {
 		if task.MjId == "" {
-			// 统计失败的未完成任务
-			nullTaskIds = append(nullTaskIds, task.Id)
+			nullTasks = append(nullTasks, task)
 			continue
 		}
 		taskM[task.MjId] = task
 		taskChannelM[task.ChannelId] = append(taskChannelM[task.ChannelId], task.MjId)
 	}
-	if len(nullTaskIds) > 0 {
-		summary.NullTasksFailed = len(nullTaskIds)
-		err := model.MjBulkUpdateByTaskIds(nullTaskIds, map[string]any{
-			"status":   "FAILURE",
-			"progress": "100%",
-		})
-		if err != nil {
-			logger.LogError(ctx, common.LogText("Fix null mj_id task error: %v", err))
-		} else {
-			logger.LogInfo(ctx, common.LogText("Fix null mj_id task success: %v", nullTaskIds))
-		}
+	if len(nullTasks) > 0 {
+		summary.NullTasksFailed = service.FailUnfinishedMidjourneyTasks(ctx, nullTasks, "Task is missing mj_id")
+		logger.LogInfo(ctx, common.LogText("Fix null mj_id task: claimed %d of %d", summary.NullTasksFailed, len(nullTasks)))
 	}
 	if len(taskChannelM) == 0 {
 		return summary
@@ -87,16 +79,17 @@ func runMidjourneyTaskUpdateOnce(ctx context.Context, report func(processed, tot
 		if len(taskIds) == 0 {
 			continue
 		}
-		midjourneyChannel, err := model.CacheGetChannel(channelId)
+		midjourneyChannel, err := model.LookupChannel(channelId)
 		if err != nil {
 			logger.LogError(ctx, common.LogText("CacheGetChannel: %v", err))
-			err := model.MjBulkUpdate(taskIds, map[string]any{
-				"fail_reason": "Failed to get the channel information. Please contact the administrator",
-				"status":      "FAILURE",
-				"progress":    "100%",
-			})
-			if err != nil {
-				logger.LogInfo(ctx, common.LogText("UpdateMidjourneyTask error: %v", err))
+			if errors.Is(err, model.ErrChannelNotFound) {
+				var missing []*model.Midjourney
+				for _, mjId := range taskIds {
+					if task := taskM[mjId]; task != nil {
+						missing = append(missing, task)
+					}
+				}
+				service.FailUnfinishedMidjourneyTasks(ctx, missing, "Failed to get the channel information. Please contact the administrator")
 			}
 			continue
 		}

@@ -21,7 +21,7 @@ if [[ -z "${SQL_DSN:-}" ]]; then
   _host="${ADTYAI_PG_HOST:-127.0.0.1}"
   _port="${ADTYAI_PG_PORT:-5432}"
   _user="${ADTYAI_PG_USER:-adtyai}"
-  _db="${ADTYAI_PG_DB:-adtyai}"
+  _db="${ADTYAI_PG_DB:-adty-ai}"
   _pass="${ADTYAI_PG_PASSWORD:-${PGPASSWORD:-}}"
   if [[ -z "$_pass" ]]; then
     echo "accept_env: SQL_DSN unset and no ADTYAI_PG_PASSWORD/PGPASSWORD; set SQL_DSN or provide ${_SECRETS}" >&2

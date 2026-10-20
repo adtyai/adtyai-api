@@ -6,29 +6,34 @@
 #   3. Open http://localhost:5173 (Rsbuild dev server, API auto-proxied to :3000)
 #
 # Rebuild backend after Go code changes:
-#   docker compose -f docker-compose.dev.yml up -d --build new-api
+#   docker compose -f docker-compose.dev.yml up -d --build adtyai-api-app
 #
 # Stop:
 #   docker compose -f docker-compose.dev.yml down
 #
 # Reset data:
 #   docker compose -f docker-compose.dev.yml down -v
+#
+# Service names match the production compose so SQL_DSN and Redis hosts stay the same.
+# Container names use a -dev suffix so they do not collide with adtyai-api-app,
+# adtyai-api-postgres, and adtyai-api-redis on the same Docker host.
+# The database name is adty-ai.
 
 services:
-  new-api:
+  adtyai-api-app:
     build:
       context: .
       dockerfile: Dockerfile.dev
-    image: new-api-dev:local
-    container_name: new-api-dev
+    image: adtyai-api-dev:local
+    container_name: adtyai-api-app-dev
     restart: unless-stopped
     ports:
       - "3000:3000"
     volumes:
       - dev_data:/data
     environment:
-      - SQL_DSN=postgresql://root:123456@postgres:5432/new-api
-      - REDIS_CONN_STRING=redis://redis
+      - SQL_DSN=postgresql://root:123456@adtyai-api-postgres:5432/adty-ai
+      - REDIS_CONN_STRING=redis://adtyai-api-redis
       - TZ=Asia/Shanghai
       - BATCH_UPDATE_ENABLED=true
       # Local HTTP dev mode: keep Secure=false and leave TRUSTED_URL unset. This disables the refresh/logout OriginGuard so the :5173 -> :3000 dev proxy works.
@@ -37,34 +42,34 @@ services:
       # - SESSION_COOKIE_SECURE=true
       # - SESSION_COOKIE_TRUSTED_URL=https://example.com,https://admin.example.com
     depends_on:
-      redis:
+      adtyai-api-redis:
         condition: service_started
-      postgres:
+      adtyai-api-postgres:
         condition: service_healthy
     networks:
       - dev-network
 
-  redis:
+  adtyai-api-redis:
     image: redis:7-alpine
-    container_name: new-api-dev-redis
+    container_name: adtyai-api-redis-dev
     restart: unless-stopped
     networks:
       - dev-network
 
-  postgres:
+  adtyai-api-postgres:
     image: postgres:15-alpine
-    container_name: new-api-dev-pg
+    container_name: adtyai-api-postgres-dev
     restart: unless-stopped
     environment:
       POSTGRES_USER: root
       POSTGRES_PASSWORD: 123456
-      POSTGRES_DB: new-api
+      POSTGRES_DB: adty-ai
     volumes:
       - dev_pg_data:/var/lib/postgresql/data
     networks:
       - dev-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U root -d new-api"]
+      test: ["CMD-SHELL", "pg_isready -U root -d adty-ai"]
       interval: 5s
       timeout: 3s
       retries: 5

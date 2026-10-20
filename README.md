@@ -81,7 +81,7 @@ User-facing brand is **ADTY AI**, not New API as the site name.
 
 ## Upstream features (inherited)
 
-You still get New API capabilities such as multi-provider channels, quotas/subscriptions, usage logs, users/groups/API keys, OAuth/passkeys, async task plugins, and a multi-language console. Protocol entrypoints include OpenAI Chat/Responses, Anthropic Messages, Gemini, and more (see source and upstream docs).
+You still get New API capabilities such as multi-provider channels, quotas, usage logs, users/groups/API keys, OAuth/passkeys, async task plugins, and a multi-language console. New subscription purchases are closed; existing subscriptions still settle under the saved preference. Top-ups go through the current top-up order only. Protocol entrypoints include OpenAI Chat/Responses, Anthropic Messages, Gemini, and more (see source and upstream docs).
 
 ---
 
@@ -128,7 +128,9 @@ cd adtyai-api
 docker compose up -d
 ```
 
-Configure HTTPS, secrets, and backups for production. Image publishing follows GitHub Actions / tags. Preview URLs are published by ops (example fixed preview: `https://newapi.n8-n.top`).
+Default service and container names are `adtyai-api-app`, `adtyai-api-postgres`, and `adtyai-api-redis`. The PostgreSQL database name is `adty-ai`; that is not the container name.
+
+Configure HTTPS, secrets, and backups for production. Image publishing follows GitHub Actions / tags. Preview URLs are published by ops.
 
 ---
 

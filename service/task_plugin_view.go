@@ -13,12 +13,16 @@ func BuildTaskPluginView(task *model.Task) (dto.TaskView, error) {
 	if createdAt == 0 {
 		createdAt = task.SubmitTime
 	}
+	failReason := task.FailReason
+	if model.IsLegacyResultURL(failReason) {
+		failReason = ""
+	}
 	view := dto.TaskView{
 		TaskID:     task.TaskID,
 		Platform:   string(task.Platform),
 		Status:     string(task.Status),
 		Progress:   task.Progress,
-		FailReason: task.FailReason,
+		FailReason: failReason,
 		CreatedAt:  createdAt,
 		UpdatedAt:  task.UpdatedAt,
 		FinishedAt: task.FinishTime,

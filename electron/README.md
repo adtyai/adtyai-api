@@ -41,7 +41,7 @@ This will:
 - Use the Rsbuild frontend development server on port 5173
 - Open an Electron window with DevTools enabled
 - Create a system tray icon (menu bar on macOS)
-- Store database in `../data/new-api.db`
+- Store database in `../data/adty-ai.db`
 
 ## Building for Production
 
@@ -74,7 +74,7 @@ const PORT = 3000; // Change to desired port
 ```
 
 ### Database Location
-- **Development**: `../data/new-api.db` (project directory)
+- **Development**: `../data/adty-ai.db` (project directory)
 - **Production**:
   - macOS: `~/Library/Application Support/New API/data/`
   - Windows: `%APPDATA%/New API/data/`

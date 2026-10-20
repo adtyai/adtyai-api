@@ -27,7 +27,6 @@ import {
   Circle,
   Copy,
   FileText,
-  Gift,
   KeyRound,
   ListChecks,
   RadioTower,
@@ -51,7 +50,7 @@ import { IconBadge, type IconBadgeTone } from '@/components/ui/icon-badge'
 import { fetchTokenKey, getApiKeys } from '@/features/keys/api'
 import type { ApiKey } from '@/features/keys/types'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
-import { api, getUserModels } from '@/lib/api'
+import { getUserModels } from '@/lib/api'
 import { handleServerError } from '@/lib/handle-server-error'
 import { MOTION_TRANSITION } from '@/lib/motion'
 import { ROLE } from '@/lib/roles'
@@ -74,23 +73,6 @@ const SETUP_GUIDE_VISIBILITY_STORAGE_KEY =
   'dashboard_overview_setup_guide_expanded'
 const SETUP_GUIDE_SAMPLE_COPIED_STORAGE_KEY =
   'dashboard_overview_setup_guide_sample_copied'
-/**
- * Fallback when /api/topup/tiers is unavailable.
- * Matches backend DefaultFirstTopupBonusRate=0.10.
- * TODO: once business-params API exposes FirstTopupBonusRate on /api/status,
- * prefer that field and keep this as last-resort fallback only.
- */
-const FALLBACK_FIRST_TOPUP_BONUS_PERCENT = 10
-
-/** Convert FirstTopupBonusRate fraction (0.10) or percent (10) to display percent. */
-function firstTopupBonusRateToPercent(rate: unknown): number | null {
-  let n = Number.NaN
-  if (typeof rate === 'number') n = rate
-  else if (typeof rate === 'string') n = Number(rate)
-  if (!Number.isFinite(n) || n < 0) return null
-  const percent = n <= 1 ? n * 100 : n
-  return Math.round(percent * 100) / 100
-}
 
 const SETUP_GUIDE_CODE_PATTERN = [
   'const request = await client.responses.create({',
@@ -587,20 +569,6 @@ export function OverviewDashboard() {
     staleTime: 5 * 60 * 1000,
   })
 
-  // Public tiers endpoint already returns FirstTopupBonusRate (fraction).
-  const firstTopupBonusQuery = useQuery({
-    queryKey: ['dashboard', 'overview', 'first-topup-bonus-rate'],
-    queryFn: async () => {
-      const res = await api.get('/api/topup/tiers', { skipErrorHandler: true })
-      const rate = res?.data?.data?.first_topup_bonus_rate
-      return firstTopupBonusRateToPercent(rate)
-    },
-    staleTime: 5 * 60 * 1000,
-  })
-
-  const firstTopupBonusPercent =
-    firstTopupBonusQuery.data ?? FALLBACK_FIRST_TOPUP_BONUS_PERCENT
-
   const preferredKey = useMemo(
     () => getPreferredKey(apiKeysQuery.data ?? []),
     [apiKeysQuery.data]
@@ -848,27 +816,6 @@ export function OverviewDashboard() {
                             />
                           ))}
                         </ol>
-
-                        <div className='border-warning/30 bg-warning/10 text-warning-foreground flex flex-wrap items-center gap-2 rounded-xl border px-3 py-2.5 text-xs sm:text-[13px]'>
-                          <Gift
-                            className='size-4 shrink-0'
-                            aria-hidden='true'
-                          />
-                          <span className='min-w-0 flex-1'>
-                            {t(
-                              'After three steps: first top-up gets {{percent}}% bonus (not stacked with tier bonus; higher one applies).',
-                              { percent: firstTopupBonusPercent }
-                            )}
-                          </span>
-                          <Button
-                            size='sm'
-                            variant='outline'
-                            className='h-7 shrink-0 px-2.5 text-xs'
-                            render={<Link to='/wallet' />}
-                          >
-                            {t('Go top up')}
-                          </Button>
-                        </div>
                       </div>
 
                       <RequestPreview

@@ -510,10 +510,15 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 	user.Role = common.RoleCommonUser
 	user.Status = common.UserStatusEnabled
 
-	// Handle affiliate code
-	inviterId := 0
-	if affiliateCode != "" {
-		inviterId, _ = model.GetUserIdByAffCode(affiliateCode)
+	// 邀请关系必须写进用户行。空码、无效码、成环不让注册失败；数据库错误不能吞掉。
+	inviterId, err := model.ResolveSignupInviter(affiliateCode)
+	if err != nil {
+		return nil, nil, err
+	}
+	user.InviterId = inviterId
+	if c != nil && c.Request != nil {
+		user.RegisterIp = c.ClientIP()
+		user.RegisterDeviceFp = strings.TrimSpace(c.GetHeader("X-Device-FP"))
 	}
 
 	// Use transaction to ensure user creation and OAuth binding are atomic

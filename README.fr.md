@@ -128,7 +128,9 @@ cd adtyai-api
 docker compose up -d
 ```
 
-Configurez HTTPS, secrets et sauvegardes en production. La publication d’images suit GitHub Actions / tags. Les URL de prévisualisation sont publiées par l’ops (exemple fixe : `https://newapi.n8-n.top`).
+Les noms de service et de conteneur par défaut sont `adtyai-api-app`, `adtyai-api-postgres` et `adtyai-api-redis`. Le nom de la base PostgreSQL est `adty-ai` ; ce n’est pas le nom du conteneur.
+
+Configurez HTTPS, secrets et sauvegardes en production. La publication d’images suit GitHub Actions / tags. Les URL de prévisualisation sont publiées par l’ops.
 
 ---
 

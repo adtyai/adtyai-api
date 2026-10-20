@@ -92,7 +92,7 @@ export const BUSINESS_PARAM_GROUPS: readonly BusinessParamGroup[] = [
 /** Chinese/English descriptions matching A45 说明 column */
 export const BUSINESS_PARAM_DESCRIPTIONS: Record<string, string> = {
   TopupBonusTiers: 'Top-up tiers and bonus ladder',
-  FirstTopupBonusRate: 'First top-up bonus rate (max with tier)',
+  FirstTopupBonusRate: 'First top-up bonus is disabled and is not credited',
   QuotaForNewUser: 'New-user gift quota (into bonus wallet)',
   BalanceLowAlertThreshold: 'User balance low-alert threshold',
   Price: 'Top-up settle FX CNY/USD (official)',

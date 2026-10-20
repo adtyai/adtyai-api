@@ -398,14 +398,36 @@ func IncreaseTokenQuota(tokenId int, key string, quota int) (err error) {
 }
 
 func increaseTokenQuota(id int, quota int) (err error) {
-	err = DB.Model(&Token{}).Where("id = ?", id).Updates(
+	return increaseTokenQuotaTx(DB, id, quota)
+}
+
+// applyTokenQuotaBatchDelta 把批量队列里的有符号差额一次落库。
+// 正数是退还（remain 增加、used 减少），负数是扣费。不能再走只接受正数的 increaseTokenQuota。
+func applyTokenQuotaBatchDelta(id int, delta int) error {
+	if delta == 0 {
+		return nil
+	}
+	return DB.Model(&Token{}).Where("id = ?", id).Updates(map[string]any{
+		"remain_quota":  gorm.Expr("remain_quota + ?", delta),
+		"used_quota":    gorm.Expr("used_quota - ?", delta),
+		"accessed_time": common.GetTimestamp(),
+	}).Error
+}
+
+func increaseTokenQuotaTx(tx *gorm.DB, id int, quota int) error {
+	if quota == 0 {
+		return nil
+	}
+	if quota < 0 {
+		return errors.New("quota cannot be negative")
+	}
+	return tx.Model(&Token{}).Where("id = ?", id).Updates(
 		map[string]any{
 			"remain_quota":  gorm.Expr("remain_quota + ?", quota),
 			"used_quota":    gorm.Expr("used_quota - ?", quota),
 			"accessed_time": common.GetTimestamp(),
 		},
 	).Error
-	return err
 }
 
 func DecreaseTokenQuota(id int, key string, quota int) (err error) {

@@ -167,12 +167,16 @@ func CreateTopupOrder(c *gin.Context) {
 		// 审查 P2-1：用拉起时同一份汇率/金额，不再二次取汇率
 		fx := order.FxRate
 		payCNY := order.PayCNY
+		bonusRateSnapshot := 0.0
+		if order.AmountUSD > 0 {
+			bonusRateSnapshot = order.BonusAmountUSD / float64(order.AmountUSD)
+		}
 		if err := model.DB.Model(order).Updates(map[string]any{
 			"epay_instance_id":    inst.Id,
 			"fx_rate":             fx,
 			"pay_cny":             payCNY,
 			"payment_provider":    "epay",
-			"bonus_rate_snapshot": order.BonusAmountUSD / float64(order.AmountUSD),
+			"bonus_rate_snapshot": bonusRateSnapshot,
 		}).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"success": false,

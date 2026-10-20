@@ -64,6 +64,9 @@ func TestMain(m *testing.M) {
 		&model.LedgerEntry{},
 		&model.AdtyWalletConsumeHourly{},
 		&model.LedgerIdempotency{},
+		&model.BillingRefundJob{},
+		&model.SystemInstance{},
+		&model.SubscriptionPreConsumeRecord{},
 	); err != nil {
 		panic("failed to migrate: " + err.Error())
 	}
@@ -91,6 +94,9 @@ func truncate(t *testing.T) {
 		model.DB.Exec("DELETE FROM user_subscriptions")
 		model.DB.Exec("DELETE FROM system_task_locks")
 		model.DB.Exec("DELETE FROM system_tasks")
+		model.DB.Exec("DELETE FROM billing_refund_jobs")
+		model.DB.Exec("DELETE FROM system_instances")
+		model.DB.Exec("DELETE FROM subscription_pre_consume_records")
 	})
 }
 

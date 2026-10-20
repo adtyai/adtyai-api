@@ -95,6 +95,16 @@ func formatWaffoPancakeAmount(payMoney float64) string {
 	return decimal.NewFromFloat(payMoney).StringFixed(2)
 }
 
+func pancakePendingTopupAction(tradeNo, amount, currency string) topupCallbackAction {
+	topUp := model.GetTopUpByTradeNo(tradeNo)
+	if topUp == nil || topUp.Status != common.TopUpStatusPending {
+		return topupCallbackCredit
+	}
+	paid, paidOK := parseMajorMoney(amount)
+	covers := paidOK && topupGatewayChargeCovers(topUp.ExpectedPayAmount, topUp.ExpectedPayCurrency, currency, paid)
+	return decideTopupPayCallback(topUp.ExpectedPayAmount, topUp.ExpectedPayCurrency, paidOK, paid, covers)
+}
+
 func getWaffoPancakeBuyerEmail(user *model.User) string {
 	if user != nil && strings.TrimSpace(user.Email) != "" {
 		return user.Email
@@ -376,17 +386,25 @@ func RequestWaffoPancakePay(c *gin.Context) {
 		paymentError(c, common.NewMessage("Payment amount is too low"))
 		return
 	}
+	expectedAmount, expectedCurrency, err := pancakeExpectedCharge(payMoney)
+	if err != nil {
+		logger.LogError(c.Request.Context(), common.LogText("Waffo Pancake expected charge failed user_id=%d error=%q", id, err.Error()))
+		paymentError(c, common.NewMessage("Failed to start payment"))
+		return
+	}
 
 	tradeNo := fmt.Sprintf("WAFFO_PANCAKE-%d-%d-%s", id, time.Now().UnixMilli(), randstr.String(6))
 	topUp := &model.TopUp{
-		UserId:          id,
-		Amount:          normalizeWaffoPancakeTopUpAmount(req.Amount),
-		Money:           payMoney,
-		TradeNo:         tradeNo,
-		PaymentMethod:   model.PaymentMethodWaffoPancake,
-		PaymentProvider: model.PaymentProviderWaffoPancake,
-		CreateTime:      time.Now().Unix(),
-		Status:          common.TopUpStatusPending,
+		UserId:              id,
+		Amount:              normalizeWaffoPancakeTopUpAmount(req.Amount),
+		Money:               payMoney,
+		TradeNo:             tradeNo,
+		PaymentMethod:       model.PaymentMethodWaffoPancake,
+		PaymentProvider:     model.PaymentProviderWaffoPancake,
+		ExpectedPayAmount:   expectedAmount,
+		ExpectedPayCurrency: expectedCurrency,
+		CreateTime:          time.Now().Unix(),
+		Status:              common.TopUpStatusPending,
 	}
 	if err := topUp.Insert(); err != nil {
 		logger.LogError(c.Request.Context(), common.LogText("Waffo Pancake failed to create top-up order user_id=%d trade_no=%s amount=%d error=%q", id, tradeNo, req.Amount, err.Error()))
@@ -399,7 +417,7 @@ func RequestWaffoPancakePay(c *gin.Context) {
 		ProductID:     setting.WaffoPancakeProductID,
 		BuyerIdentity: getWaffoPancakeBuyerIdentity(user),
 		PriceSnapshot: &service.WaffoPancakePriceSnapshot{
-			Amount:      formatWaffoPancakeAmount(payMoney),
+			Amount:      expectedAmount,
 			TaxCategory: "saas",
 		},
 		BuyerEmail:              getWaffoPancakeBuyerEmail(user),
@@ -497,6 +515,20 @@ func WaffoPancakeWebhook(c *gin.Context) {
 		}
 		LockOrder(tradeNo)
 		defer UnlockOrder(tradeNo)
+		if order := model.GetSubscriptionOrderByTradeNo(tradeNo); order != nil && order.Status != common.TopUpStatusSuccess {
+			paid, paidOK := parseMajorMoney(event.Data.Amount)
+			covers, err := subscriptionOrderChargeCovers(order, event.Data.Currency, paid)
+			if err != nil {
+				logger.LogError(c.Request.Context(), common.LogText("Waffo Pancake subscription amount check failed trade_no=%s event_id=%s order_id=%s client_ip=%s error=%q", tradeNo, event.ID, event.Data.OrderID, c.ClientIP(), err.Error()))
+				c.String(http.StatusInternalServerError, "retry")
+				return
+			}
+			if !paidOK || !covers {
+				logger.LogError(c.Request.Context(), common.LogText("Waffo Pancake subscription amount mismatch trade_no=%s event_id=%s amount=%s currency=%s client_ip=%s", tradeNo, event.ID, event.Data.Amount, event.Data.Currency, c.ClientIP()))
+				c.String(http.StatusOK, "OK")
+				return
+			}
+		}
 		if err := model.CompleteSubscriptionOrder(tradeNo, string(bodyBytes), model.PaymentProviderWaffoPancake, ""); err != nil {
 			logger.LogError(c.Request.Context(), common.LogText("Waffo Pancake subscription completion failed trade_no=%s event_id=%s order_id=%s client_ip=%s error=%q", tradeNo, event.ID, event.Data.OrderID, c.ClientIP(), err.Error()))
 			c.String(http.StatusInternalServerError, "retry")
@@ -522,6 +554,17 @@ func WaffoPancakeWebhook(c *gin.Context) {
 
 	LockOrder(tradeNo)
 	defer UnlockOrder(tradeNo)
+
+	switch pancakePendingTopupAction(tradeNo, event.Data.Amount, event.Data.Currency) {
+	case topupCallbackAckNoCredit:
+		logger.LogError(c.Request.Context(), common.LogText("Waffo Pancake top-up amount mismatch trade_no=%s event_id=%s amount=%s currency=%s client_ip=%s", tradeNo, event.ID, event.Data.Amount, event.Data.Currency, c.ClientIP()))
+		c.String(http.StatusOK, "OK")
+		return
+	case topupCallbackRetry:
+		logger.LogError(c.Request.Context(), common.LogText("Waffo Pancake top-up legacy snapshot missing and paid amount unverified trade_no=%s event_id=%s amount=%s currency=%s client_ip=%s", tradeNo, event.ID, event.Data.Amount, event.Data.Currency, c.ClientIP()))
+		c.String(http.StatusInternalServerError, "retry")
+		return
+	}
 
 	if err := model.RechargeWaffoPancake(tradeNo); err != nil {
 		logger.LogError(c.Request.Context(), common.LogText("Waffo Pancake top-up processing failed trade_no=%s event_id=%s order_id=%s client_ip=%s error=%q", tradeNo, event.ID, event.Data.OrderID, c.ClientIP(), err.Error()))

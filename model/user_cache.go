@@ -160,8 +160,19 @@ func syncCreditUserQuotaCache(userId int, quota int, operation string) {
 		return
 	}
 	if err := cacheIncrUserQuota(userId, int64(quota)); err != nil {
-		common.SysLog(common.LogText("failed to sync %s credit to user quota cache: %s", operation, err.Error()))
+		noteQuotaCacheSyncFailure(userId, operation, err)
 	}
+}
+
+// noteQuotaCacheSyncFailure drops a stale authoritative hash after a Redis error.
+// A missing hash is not an error: the next read hydrates from the committed balance.
+// Do not invalidate after a successful incr; in-flight pre-deductions live only in that hash.
+func noteQuotaCacheSyncFailure(userId int, operation string, err error) {
+	if err == nil {
+		return
+	}
+	common.SysError(common.LogText("failed to sync %s to user quota cache: %s", operation, err.Error()))
+	_ = invalidateUserCache(userId)
 }
 
 // Helper functions to get individual fields if needed

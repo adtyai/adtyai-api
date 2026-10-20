@@ -42,12 +42,12 @@ var (
 	// Bepusdt / USDT
 	bpBepusdtOrderTimeoutMinutes = 15
 	bpUsdtUnderpayTolerance      = 0.01
-	// Affiliate — TODO(adtyai): Aff* 佣金/提现默认先占位，从老版核实后改。
+	// Affiliate — 缺省不发佣金、不设最低提现。已写入 options 的运营值仍优先，种子只补缺失键。
 	// 老版现见：ReferralDefaultRate=0, ReferralMinWithdrawAmount=0, ReferralWithdrawFee=0, FreezeDays=7
-	bpAffTopupCommissionRate        = 0.10
-	bpAffSubscriptionCommissionRate = 0.10
+	bpAffTopupCommissionRate        = 0.0
+	bpAffSubscriptionCommissionRate = 0.0
 	bpAffFreezeDays                 = 7
-	bpAffMinWithdrawAmount          = 10.0 // TODO(adtyai): 老版 ReferralMinWithdrawAmount=0，占位用 10
+	bpAffMinWithdrawAmount          = 0.0
 	bpAffWithdrawFeeRate            = 0.0
 	bpBalanceAdjustMaxAmount        = 500.0
 	bpSelfApproveAlertAmount        = 500.0
@@ -97,10 +97,10 @@ func BusinessParamCatalog() []BusinessParamDef {
 		{Key: "BepusdtOrderTimeoutMinutes", Type: BPTypeNumber, Default: "15", Min: fptr(5), Max: fptr(120), Snapshot: "order", Page: "A13"},
 		{Key: "UsdtUnderpayTolerance", Type: BPTypeNumber, Default: "0.01", Min: fptr(0), Max: fptr(1), Snapshot: "order", Page: "A13"},
 		{Key: "TopupOrderTimeoutMinutes", Type: BPTypeNumber, Default: "60", Min: fptr(5), Max: fptr(1440), Snapshot: "order", Page: "A33", Notes: "TODO(adtyai): 老版默认待核实，占位 60"},
-		{Key: "AffTopupCommissionRate", Type: BPTypeNumber, Default: "0.10", Min: fptr(0), Max: fptr(0.5), Snapshot: "affiliate", Page: "A23", Notes: "TODO(adtyai): 老版 ReferralDefaultRate=0，占位 0.10"},
-		{Key: "AffSubscriptionCommissionRate", Type: BPTypeNumber, Default: "0.10", Min: fptr(0), Max: fptr(0.5), Snapshot: "affiliate", Page: "A23", Notes: "TODO(adtyai): 老版待核实，占位 0.10"},
+		{Key: "AffTopupCommissionRate", Type: BPTypeNumber, Default: "0", Min: fptr(0), Max: fptr(0.5), Snapshot: "affiliate", Page: "A23", Notes: "缺省 0，不发充值佣金；已有 options 不覆盖"},
+		{Key: "AffSubscriptionCommissionRate", Type: BPTypeNumber, Default: "0", Min: fptr(0), Max: fptr(0.5), Snapshot: "affiliate", Page: "A23", Notes: "缺省 0，不发订阅佣金；已有 options 不覆盖"},
 		{Key: "AffFreezeDays", Type: BPTypeNumber, Default: "7", Min: fptr(0), Max: fptr(90), Snapshot: "affiliate", Page: "A23"},
-		{Key: "AffMinWithdrawAmount", Type: BPTypeNumber, Default: "10", Min: fptr(0), Snapshot: "withdraw", Page: "A23", Notes: "TODO(adtyai): 老版 ReferralMinWithdrawAmount=0，占位 10"},
+		{Key: "AffMinWithdrawAmount", Type: BPTypeNumber, Default: "0", Min: fptr(0), Snapshot: "withdraw", Page: "A23", Notes: "缺省 0；已有 options 不覆盖"},
 		{Key: "AffWithdrawFeeRate", Type: BPTypeNumber, Default: "0", Min: fptr(0), Max: fptr(0.5), Snapshot: "withdraw", Page: "A23", Notes: "TODO(adtyai): 老版 ReferralWithdrawFee=0"},
 		{Key: "BalanceAdjustMaxAmount", Type: BPTypeNumber, Default: "500", Min: fptr(0.0001), Snapshot: "apply", Page: "A22", Notes: ">0"},
 		{Key: "SelfApproveAlertAmount", Type: BPTypeNumber, Default: "500", Min: fptr(0.0001), Page: "A22/A43", Notes: ">0"},

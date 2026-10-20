@@ -463,11 +463,12 @@ func GetAffCode(c *gin.Context) {
 		return
 	}
 	if user.AffCode == "" {
-		user.AffCode = common.GetRandomString(4)
-		if err := user.Update(false); err != nil {
+		code, err := model.EnsureUserAffCode(id)
+		if err != nil {
 			common.ApiError(c, err)
 			return
 		}
+		user.AffCode = code
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -508,6 +509,15 @@ func buildSelfUserData(user *model.User) map[string]any {
 	userSetting := user.GetSetting()
 	permissions := calculateUserPermissions(user.Role)
 	permissions["admin_permissions"] = authz.Capabilities(user.Id, user.Role)
+	bonusQuota := int64(0)
+	if user != nil && user.Id > 0 {
+		bonus, err := model.GetUserBonusBalance(user.Id)
+		if err != nil {
+			common.SysError(common.LogText("failed to read bonus balance for user %d: %s", user.Id, err.Error()))
+		} else {
+			bonusQuota = bonus
+		}
+	}
 	return map[string]any{
 		"id":                user.Id,
 		"username":          user.Username,
@@ -523,6 +533,7 @@ func buildSelfUserData(user *model.User) map[string]any {
 		"telegram_id":       user.TelegramId,
 		"group":             user.Group,
 		"quota":             user.Quota,
+		"bonus_quota":       bonusQuota,
 		"used_quota":        user.UsedQuota,
 		"request_count":     user.RequestCount,
 		"aff_code":          user.AffCode,

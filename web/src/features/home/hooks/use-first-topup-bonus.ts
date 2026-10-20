@@ -16,25 +16,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useQuery } from '@tanstack/react-query'
-
-import { getAdtyTopupTiers } from '@/features/wallet/api'
-import { firstTopupBonusRateToPercent } from '@/features/wallet/lib/adty-topup'
-
 /**
- * adtyai：读取公开接口 /api/topup/tiers 的首充赠送比例（百分比）。
- * 接口失败、未配置或比例为 0 时返回 null，调用方应不写具体数字。
+ * 首充加送已停，计费不会发放。保留导出是为了避免旧调用方再把接口比例渲染成赠送承诺。
  */
 export function useFirstTopupBonusPercent(): number | null {
-  const { data } = useQuery({
-    queryKey: ['adty', 'topup-tiers', 'public'],
-    queryFn: getAdtyTopupTiers,
-    staleTime: 5 * 60 * 1000,
-    retry: false,
-  })
-  const rate = data?.success ? data.data?.first_topup_bonus_rate : undefined
-  if (typeof rate !== 'number' || !Number.isFinite(rate) || rate <= 0) {
-    return null
-  }
-  return firstTopupBonusRateToPercent(rate)
+  return null
 }

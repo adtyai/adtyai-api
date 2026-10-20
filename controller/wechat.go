@@ -85,8 +85,19 @@ func WeChatAuth(c *gin.Context) {
 			user.DisplayName = "WeChat User"
 			user.Role = common.RoleCommonUser
 			user.Status = common.UserStatusEnabled
+			// 邀请关系在插入事务外解析。空码、无效码、成环不让注册失败；数据库错误不能吞掉。
+			inviterId, err := model.ResolveSignupInviter(c.Query("aff"))
+			if err != nil {
+				common.ApiError(c, err)
+				return
+			}
+			user.InviterId = inviterId
+			if c.Request != nil {
+				user.RegisterIp = c.ClientIP()
+				user.RegisterDeviceFp = strings.TrimSpace(c.GetHeader("X-Device-FP"))
+			}
 
-			if err := user.Insert(0); err != nil {
+			if err := user.Insert(inviterId); err != nil {
 				common.ApiError(c, err)
 				return
 			}

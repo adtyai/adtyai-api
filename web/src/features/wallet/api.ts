@@ -125,39 +125,36 @@ export async function requestPayment(
 }
 
 /**
- * Request Stripe payment
+ * Legacy Stripe top-up — closed. Live wallet uses createAdtyTopupOrder.
  */
 export async function requestStripePayment(
-  request: PaymentRequest,
+  _request: PaymentRequest,
 ): Promise<StripePaymentResponse> {
-  const res = await api.post("/api/user/stripe/pay", request, {
-    skipBusinessError: true,
-  } as Record<string, unknown>);
-  return res.data;
+  throw new Error(
+    "Legacy Stripe top-up is closed; use POST /api/topup/order via createAdtyTopupOrder",
+  );
 }
 
 /**
- * Request Creem payment
+ * Legacy Creem top-up — closed. Live wallet uses createAdtyTopupOrder.
  */
 export async function requestCreemPayment(
-  request: CreemPaymentRequest,
+  _request: CreemPaymentRequest,
 ): Promise<CreemPaymentResponse> {
-  const res = await api.post("/api/user/creem/pay", request, {
-    skipBusinessError: true,
-  } as Record<string, unknown>);
-  return res.data;
+  throw new Error(
+    "Legacy Creem top-up is closed; use POST /api/topup/order via createAdtyTopupOrder",
+  );
 }
 
 /**
- * Request Waffo payment
+ * Legacy Waffo top-up — closed. Live wallet uses createAdtyTopupOrder.
  */
 export async function requestWaffoPayment(
-  request: WaffoPaymentRequest,
+  _request: WaffoPaymentRequest,
 ): Promise<WaffoPaymentResponse> {
-  const res = await api.post("/api/user/waffo/pay", request, {
-    skipBusinessError: true,
-  } as Record<string, unknown>);
-  return res.data;
+  throw new Error(
+    "Legacy Waffo top-up is closed; use POST /api/topup/order via createAdtyTopupOrder",
+  );
 }
 
 /**
@@ -173,15 +170,14 @@ export async function calculateWaffoPancakeAmount(
 }
 
 /**
- * Request Waffo Pancake payment
+ * Legacy Waffo Pancake top-up — closed. Live wallet uses createAdtyTopupOrder.
  */
 export async function requestWaffoPancakePayment(
-  request: WaffoPancakePaymentRequest,
+  _request: WaffoPancakePaymentRequest,
 ): Promise<WaffoPancakePaymentResponse> {
-  const res = await api.post("/api/user/waffo-pancake/pay", request, {
-    skipBusinessError: true,
-  } as Record<string, unknown>);
-  return res.data;
+  throw new Error(
+    "Legacy Waffo Pancake top-up is closed; use POST /api/topup/order via createAdtyTopupOrder",
+  );
 }
 
 /**

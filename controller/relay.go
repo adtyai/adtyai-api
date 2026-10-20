@@ -19,7 +19,6 @@ import (
 	pluginruntime "github.com/QuantumNous/new-api/pkg/jsplugin"
 	perfmetrics "github.com/QuantumNous/new-api/pkg/perf_metrics"
 	"github.com/QuantumNous/new-api/relay"
-	"github.com/QuantumNous/new-api/relay/channel/task/taskcommon"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relay/helper"
@@ -681,11 +680,7 @@ func executeTaskSubmissionWith(
 		if immediate.Status == model.TaskStatusFailure {
 			task.FailReason = immediate.Reason
 		}
-		if immediate.Url != "" {
-			task.PrivateData.ResultURL = immediate.Url
-		} else if immediate.Status == model.TaskStatusSuccess {
-			task.PrivateData.ResultURL = taskcommon.BuildProxyURL(task.TaskID)
-		}
+		task.AssignResultURL(immediate.Url)
 	}
 	// A native submit route may declare retainResult: false. It applies only
 	// to immediate terminal results: the client receives the complete response

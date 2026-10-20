@@ -13,6 +13,7 @@ import (
 	"github.com/samber/hot"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // Subscription duration units
@@ -502,7 +503,7 @@ func CreateUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *Subscriptio
 			return nil, common.NewMessage("Purchase limit for this plan has been reached")
 		}
 	}
-	nowUnix := GetDBTimestamp()
+	nowUnix := dbTimestamp(tx)
 	now := time.Unix(nowUnix, 0)
 	endUnix, err := calcPlanEndTime(now, plan)
 	if err != nil {
@@ -771,6 +772,45 @@ func calcSubscriptionBalanceQuota(priceAmount float64) (int, error) {
 	return common.WalletQuotaFromDecimalStrict(quota)
 }
 
+// debitSubscriptionBalanceTx 先扣赠送再扣实充。锁序是赠送钱包，再用户行。
+func debitSubscriptionBalanceTx(tx *gorm.DB, userId int, required int, tradeNo string) (fromBonus int64, fromPaid int64, err error) {
+	if required <= 0 {
+		return 0, 0, nil
+	}
+	if err := EnsureUserBonusWallet(tx, userId); err != nil {
+		return 0, 0, err
+	}
+	var wallet UserBonusWallet
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_id = ?", userId).First(&wallet).Error; err != nil {
+		return 0, 0, err
+	}
+	var user User
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "quota").Where("id = ?", userId).First(&user).Error; err != nil {
+		return 0, 0, err
+	}
+	if int64(wallet.Balance)+int64(user.Quota) < int64(required) {
+		return 0, 0, common.NewMessage("Insufficient balance")
+	}
+	fromBonus = int64(wallet.Balance)
+	if fromBonus > int64(required) {
+		fromBonus = int64(required)
+	}
+	fromPaid = int64(required) - fromBonus
+	if fromBonus > 0 {
+		if _, err := AdjustQuota(tx, userId, "bonus", -fromBonus,
+			"subscription balance purchase", "subscription_order", tradeNo, "", 0, "subscription_balance"); err != nil {
+			return 0, 0, err
+		}
+	}
+	if fromPaid > 0 {
+		if _, err := AdjustQuota(tx, userId, "paid", -fromPaid,
+			"subscription balance purchase", "subscription_order", tradeNo, "", 0, "subscription_balance"); err != nil {
+			return 0, 0, err
+		}
+	}
+	return fromBonus, fromPaid, nil
+}
+
 // PurchaseSubscriptionWithBalance creates a subscription by deducting the user's wallet quota.
 func PurchaseSubscriptionWithBalance(userId int, planId int) error {
 	if userId <= 0 || planId <= 0 {
@@ -801,18 +841,11 @@ func PurchaseSubscriptionWithBalance(userId int, planId int) error {
 			return err
 		}
 
-		var user User
-		if err := lockForUpdate(tx).Where("id = ?", userId).First(&user).Error; err != nil {
+		now := common.GetTimestamp()
+		tradeNo := fmt.Sprintf("SUBBALUSR%dNO%s%d", userId, common.GetRandomString(6), time.Now().UnixNano())
+		fromBonus, fromPaid, err := debitSubscriptionBalanceTx(tx, userId, requiredQuota, tradeNo)
+		if err != nil {
 			return err
-		}
-		if requiredQuota > 0 && user.Quota < requiredQuota {
-			return common.NewMessage("Insufficient balance")
-		}
-		if requiredQuota > 0 {
-			if err := tx.Model(&User{}).Where("id = ?", userId).
-				Update("quota", gorm.Expr("quota - ?", requiredQuota)).Error; err != nil {
-				return err
-			}
 		}
 
 		subscription, err := CreateUserSubscriptionFromPlanTx(tx, userId, plan, PaymentMethodBalance)
@@ -820,8 +853,6 @@ func PurchaseSubscriptionWithBalance(userId int, planId int) error {
 			return err
 		}
 
-		now := common.GetTimestamp()
-		tradeNo := fmt.Sprintf("SUBBALUSR%dNO%s%d", userId, common.GetRandomString(6), time.Now().UnixNano())
 		order := &SubscriptionOrder{
 			UserId:          userId,
 			PlanId:          plan.Id,
@@ -832,7 +863,7 @@ func PurchaseSubscriptionWithBalance(userId int, planId int) error {
 			Status:          common.TopUpStatusSuccess,
 			CreateTime:      now,
 			CompleteTime:    now,
-			ProviderPayload: fmt.Sprintf("charged_quota=%d", requiredQuota),
+			ProviderPayload: fmt.Sprintf("charged_quota=%d bonus=%d paid=%d", requiredQuota, fromBonus, fromPaid),
 		}
 		if err := tx.Create(order).Error; err != nil {
 			return err
@@ -850,11 +881,7 @@ func PurchaseSubscriptionWithBalance(userId int, planId int) error {
 		return err
 	}
 
-	if chargedQuota > 0 {
-		if err := cacheDecrUserQuota(userId, int64(chargedQuota)); err != nil {
-			common.SysLog(common.LogText("failed to decrease user quota cache after subscription balance purchase: %s", err.Error()))
-		}
-	}
+	// AdjustQuota 已失效额度缓存。这里再减一次会在缓存被重建后多扣。
 	if upgradeGroup != "" {
 		refreshSubscriptionUserGroupCache(userId, common.LogText("subscription balance purchase"))
 	}
@@ -1426,24 +1453,29 @@ func RefundSubscriptionPreConsume(requestId string) error {
 		return errors.New("requestId is empty")
 	}
 	return DB.Transaction(func(tx *gorm.DB) error {
-		var record SubscriptionPreConsumeRecord
-		if err := lockForUpdate(tx).
-			Where("request_id = ?", requestId).First(&record).Error; err != nil {
-			return err
-		}
-		if record.Status == "refunded" {
-			return nil
-		}
-		if record.PreConsumed <= 0 {
-			record.Status = "refunded"
-			return tx.Save(&record).Error
-		}
-		if err := PostConsumeUserSubscriptionDelta(record.UserSubscriptionId, -record.PreConsumed); err != nil {
-			return err
-		}
-		record.Status = "refunded"
-		return tx.Save(&record).Error
+		return refundSubscriptionPreConsumeTx(tx, requestId)
 	})
+}
+
+func refundSubscriptionPreConsumeTx(tx *gorm.DB, requestId string) error {
+	if strings.TrimSpace(requestId) == "" {
+		return errors.New("requestId is empty")
+	}
+	var record SubscriptionPreConsumeRecord
+	if err := lockForUpdate(tx).
+		Where("request_id = ?", requestId).First(&record).Error; err != nil {
+		return err
+	}
+	if record.Status == "refunded" {
+		return nil
+	}
+	if record.PreConsumed > 0 {
+		if err := postConsumeUserSubscriptionDeltaTx(tx, record.UserSubscriptionId, -record.PreConsumed); err != nil {
+			return err
+		}
+	}
+	record.Status = "refunded"
+	return tx.Save(&record).Error
 }
 
 // ResetDueSubscriptions resets subscriptions whose next_reset_time has passed.
@@ -1537,17 +1569,27 @@ func PostConsumeUserSubscriptionDelta(userSubscriptionId int, delta int64) error
 		return nil
 	}
 	return DB.Transaction(func(tx *gorm.DB) error {
-		var sub UserSubscription
-		if err := lockForUpdate(tx).
-			Where("id = ?", userSubscriptionId).
-			First(&sub).Error; err != nil {
-			return err
-		}
-		newUsed := max(sub.AmountUsed+delta, 0)
-		if sub.AmountTotal > 0 && newUsed > sub.AmountTotal {
-			return fmt.Errorf("subscription used exceeds total, used=%d total=%d", newUsed, sub.AmountTotal)
-		}
-		sub.AmountUsed = newUsed
-		return tx.Save(&sub).Error
+		return postConsumeUserSubscriptionDeltaTx(tx, userSubscriptionId, delta)
 	})
+}
+
+func postConsumeUserSubscriptionDeltaTx(tx *gorm.DB, userSubscriptionId int, delta int64) error {
+	if userSubscriptionId <= 0 {
+		return errors.New("invalid userSubscriptionId")
+	}
+	if delta == 0 {
+		return nil
+	}
+	var sub UserSubscription
+	if err := lockForUpdate(tx).
+		Where("id = ?", userSubscriptionId).
+		First(&sub).Error; err != nil {
+		return err
+	}
+	newUsed := max(sub.AmountUsed+delta, 0)
+	if sub.AmountTotal > 0 && newUsed > sub.AmountTotal {
+		return fmt.Errorf("subscription used exceeds total, used=%d total=%d", newUsed, sub.AmountTotal)
+	}
+	sub.AmountUsed = newUsed
+	return tx.Save(&sub).Error
 }

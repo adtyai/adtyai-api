@@ -99,9 +99,14 @@ func main() {
 					if fixErr != nil {
 						common.FatalLog(common.LogText("InitChannelCache failed: %s", fixErr.Error()))
 					}
+					if err := model.InitChannelCache(); err != nil {
+						common.FatalLog(common.LogText("InitChannelCache failed: %s", err.Error()))
+					}
 				}
 			}()
-			model.InitChannelCache()
+			if err := model.InitChannelCache(); err != nil {
+				common.FatalLog(common.LogText("InitChannelCache failed: %s", err.Error()))
+			}
 		}()
 
 		go model.SyncChannelCache(common.SyncFrequency)
@@ -122,19 +127,6 @@ func main() {
 	// 数据看板
 	go model.UpdateQuotaData()
 
-	// M2：启动补偿——补回充值入账异步计佣在进程重启时丢失的内存任务（非定时）
-	if common.IsMasterNode {
-		go func() {
-			n, err := model.CompensateMissingTopupAffCommissions(500)
-			if err != nil {
-				common.SysError(common.LogText("aff commission compensate on startup: %s", err.Error()))
-				return
-			}
-			if n > 0 {
-				common.SysLog(common.LogText("aff commission compensate on startup processed=%d", n))
-			}
-		}()
-	}
 
 	if os.Getenv("CHANNEL_UPDATE_FREQUENCY") != "" {
 		frequency, err := strconv.Atoi(os.Getenv("CHANNEL_UPDATE_FREQUENCY"))
@@ -153,6 +145,7 @@ func main() {
 	// Report this process as a system instance so the System Info page can show
 	// all currently alive nodes in multi-instance deployments.
 	service.StartSystemInstanceReporter()
+	service.StartBillingRefundSweeper()
 
 	// Wire task polling adaptor factory (breaks service -> relay import cycle).
 	// Must run before the system task runner starts: the async_task_poll handler
@@ -174,6 +167,7 @@ func main() {
 	service.StartSystemTaskRunner()
 	smartrouting.StartBackgroundLoops()
 	model.StartTopupOrderExpiryLoop() // 审查 N-P2-8
+	model.StartAffMaintenanceLoop()    // 解冻到期返佣并补漏，主节点内立即跑一轮后每分钟一次
 
 	if os.Getenv("BATCH_UPDATE_ENABLED") == "true" {
 		common.BatchUpdateEnabled = true

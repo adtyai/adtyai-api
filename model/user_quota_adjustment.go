@@ -2,6 +2,7 @@ package model
 
 import (
 	"errors"
+	"strconv"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/shopspring/decimal"
@@ -22,7 +23,7 @@ type UserQuotaAdjustment struct {
 	After    int
 }
 
-func AdjustUserQuota(userID, operatorRole int, mode string, value int) (*UserQuotaAdjustment, error) {
+func AdjustUserQuota(userID, operatorRole, operatorID int, mode string, value int) (*UserQuotaAdjustment, error) {
 	if userID <= 0 || (mode != "add" && mode != "subtract" && mode != "override") {
 		return nil, ErrInvalidUserQuotaAdjustment
 	}
@@ -67,6 +68,14 @@ func AdjustUserQuota(userID, operatorRole int, mode string, value int) (*UserQuo
 				return gorm.ErrRecordNotFound
 			}
 		}
+		// 流水写在同一事务里。不走 AdjustQuota：那会清掉用户缓存，把进行中的预扣一并扔掉。
+		delta := int64(after) - int64(user.Quota)
+		if delta != 0 {
+			if err := writeLedgerEntryTx(tx, userID, "paid", "admin_quota_adjust", delta, int64(after),
+				"admin quota "+mode, "user_manage", strconv.Itoa(userID), operatorID); err != nil {
+				return err
+			}
+		}
 		adjustment = UserQuotaAdjustment{UserID: user.Id, Username: user.Username, Before: user.Quota, After: after}
 		return nil
 	})
@@ -79,7 +88,7 @@ func AdjustUserQuota(userID, operatorRole int, mode string, value int) (*UserQuo
 	delta := int64(adjustment.After) - int64(adjustment.Before)
 	if delta != 0 {
 		if err := cacheIncrUserQuota(userID, delta); err != nil {
-			common.SysError(common.LogText("failed to sync manual quota adjustment for user %d: %s", userID, err))
+			noteQuotaCacheSyncFailure(userID, "manual quota adjustment", err)
 		}
 	}
 	return &adjustment, nil

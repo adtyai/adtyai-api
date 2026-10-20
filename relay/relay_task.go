@@ -503,7 +503,7 @@ func videoFetchByIDRespBodyBuilder(c *gin.Context) (respBody []byte, taskResp *d
 				taskResp = service.TaskErrorWrapper(err, "convert_to_openai_video_failed", http.StatusInternalServerError)
 				return
 			}
-			respBody = openAIVideoData
+			respBody = overlayOpenAIVideoResultURL(openAIVideoData, publicTaskResultURL(originTask))
 			return
 		}
 		taskResp = service.TaskErrorWrapperLocal(fmt.Errorf("not_implemented:%s", originTask.Platform), "not_implemented", http.StatusNotImplemented)
@@ -567,14 +567,8 @@ func tryRealtimeFetch(task *model.Task, isOpenAIVideoAPI bool) []byte {
 	if ti.Progress != "" {
 		task.Progress = ti.Progress
 	}
-	if strings.HasPrefix(ti.Url, "data:") {
-		// data: URI — kept in Data, not ResultURL
-	} else if ti.Url != "" {
-		task.PrivateData.ResultURL = ti.Url
-	} else if task.Status == model.TaskStatusSuccess {
-		// No URL from adaptor — construct proxy URL using public task ID
-		task.PrivateData.ResultURL = taskcommon.BuildProxyURL(task.TaskID)
-	}
+	// 原始 data URI 和直链可以保存。空地址和本站代理路径不能写入，否则取回会判成回环。
+	task.AssignResultURL(ti.Url)
 
 	if !snap.Equal(task.Snapshot()) {
 		_, _ = task.UpdateWithStatus(snap.Status)
@@ -593,7 +587,7 @@ func tryRealtimeFetch(task *model.Task, isOpenAIVideoAPI bool) []byte {
 		"metadata": nil,
 		"status":   mapTaskStatusToSimple(task.Status),
 		"task_id":  task.TaskID,
-		"url":      task.GetResultURL(),
+		"url":      publicTaskResultURL(task),
 	}
 	respBody, _ := common.Marshal(dto.TaskResponse[any]{
 		Code: "success",
@@ -641,7 +635,65 @@ func mapTaskStatusToSimple(status model.TaskStatus) string {
 	}
 }
 
+func publicTaskResultURL(task *model.Task) string {
+	if task == nil {
+		return ""
+	}
+	raw := strings.TrimSpace(task.GetResultURL())
+	if strings.HasPrefix(strings.ToLower(raw), "data:") {
+		return taskcommon.BuildProxyURL(task.TaskID)
+	}
+	if raw != "" && !model.IsProxyResultURL(raw, task.TaskID) {
+		return raw
+	}
+	if task.Status == model.TaskStatusSuccess && taskHasPluginContent(task) {
+		return taskcommon.BuildProxyURL(task.TaskID)
+	}
+	return ""
+}
+
+func taskHasPluginContent(task *model.Task) bool {
+	if task == nil || task.PrivateData.Execution == nil || task.PrivateData.Execution.TaskPlugin == nil {
+		return false
+	}
+	return strings.TrimSpace(task.PrivateData.Execution.TaskPlugin.Key) != ""
+}
+
+func overlayOpenAIVideoResultURL(body []byte, publicURL string) []byte {
+	publicURL = strings.TrimSpace(publicURL)
+	if publicURL == "" || len(body) == 0 {
+		return body
+	}
+	var payload map[string]common.RawMessage
+	if err := common.Unmarshal(body, &payload); err != nil || payload == nil {
+		return body
+	}
+	encoded, err := common.Marshal(publicURL)
+	if err != nil {
+		return body
+	}
+	payload["url"] = encoded
+	if metaRaw, ok := payload["metadata"]; ok && len(bytes.TrimSpace(metaRaw)) > 0 && string(bytes.TrimSpace(metaRaw)) != "null" {
+		var meta map[string]common.RawMessage
+		if err := common.Unmarshal(metaRaw, &meta); err == nil && meta != nil {
+			meta["url"] = encoded
+			if next, err := common.Marshal(meta); err == nil {
+				payload["metadata"] = next
+			}
+		}
+	}
+	next, err := common.Marshal(payload)
+	if err != nil {
+		return body
+	}
+	return next
+}
+
 func TaskModel2Dto(task *model.Task) *dto.TaskDto {
+	failReason := task.FailReason
+	if model.IsLegacyResultURL(failReason) {
+		failReason = ""
+	}
 	return &dto.TaskDto{
 		ID:         task.ID,
 		CreatedAt:  task.CreatedAt,
@@ -654,8 +706,8 @@ func TaskModel2Dto(task *model.Task) *dto.TaskDto {
 		Quota:      task.Quota,
 		Action:     constant.NormalizeTaskAction(task.Action),
 		Status:     string(task.Status),
-		FailReason: task.FailReason,
-		ResultURL:  task.GetResultURL(),
+		FailReason: failReason,
+		ResultURL:  publicTaskResultURL(task),
 		SubmitTime: task.SubmitTime,
 		StartTime:  task.StartTime,
 		FinishTime: task.FinishTime,

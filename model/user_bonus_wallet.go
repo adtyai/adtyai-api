@@ -69,57 +69,67 @@ func creditUserWallet(userId int, bonus int, paid int, kind, reason, refType, re
 		return nil
 	}
 	return DB.Transaction(func(tx *gorm.DB) error {
-		if err := EnsureUserBonusWallet(tx, userId); err != nil {
+		return creditUserWalletTx(tx, userId, bonus, paid, kind, reason, refType, refId, writeLedger, extra)
+	})
+}
+
+func creditUserWalletTx(tx *gorm.DB, userId int, bonus int, paid int, kind, reason, refType, refId string, writeLedger bool, extra func(tx *gorm.DB) error) error {
+	if bonus < 0 || paid < 0 {
+		return errors.New("credit amounts cannot be negative")
+	}
+	if bonus == 0 && paid == 0 {
+		return nil
+	}
+	if err := EnsureUserBonusWallet(tx, userId); err != nil {
+		return err
+	}
+	if bonus > 0 {
+		var wallet UserBonusWallet
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("user_id = ?", userId).First(&wallet).Error; err != nil {
 			return err
 		}
-		if bonus > 0 {
-			var wallet UserBonusWallet
-			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-				Where("user_id = ?", userId).First(&wallet).Error; err != nil {
-				return err
-			}
-			if err := tx.Model(&UserBonusWallet{}).Where("user_id = ?", userId).
-				Update("balance", gorm.Expr("balance + ?", bonus)).Error; err != nil {
-				return err
-			}
-			var after int64
-			if err := tx.Model(&UserBonusWallet{}).Where("user_id = ?", userId).Select("balance").Scan(&after).Error; err != nil {
-				return err
-			}
-			if writeLedger {
-				if err := writeLedgerEntryTx(tx, userId, "bonus", kind, int64(bonus), after, reason, refType, refId, 0); err != nil {
-					return err
-				}
-			}
+		if err := tx.Model(&UserBonusWallet{}).Where("user_id = ?", userId).
+			Update("balance", gorm.Expr("balance + ?", bonus)).Error; err != nil {
+			return err
 		}
-		if paid > 0 {
-			var user User
-			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-				Select("id", "quota").Where("id = ?", userId).First(&user).Error; err != nil {
-				return err
-			}
-			if err := increaseUserQuotaTx(tx, userId, paid); err != nil {
-				return err
-			}
-			var after int
-			if err := tx.Model(&User{}).Where("id = ?", userId).Select("quota").Scan(&after).Error; err != nil {
-				return err
-			}
-			if writeLedger {
-				if err := writeLedgerEntryTx(tx, userId, "paid", kind, int64(paid), int64(after), reason, refType, refId, 0); err != nil {
-					return err
-				}
-			}
+		var after int64
+		if err := tx.Model(&UserBonusWallet{}).Where("user_id = ?", userId).Select("balance").Scan(&after).Error; err != nil {
+			return err
 		}
-		if extra != nil {
-			if err := extra(tx); err != nil {
+		if writeLedger {
+			if err := writeLedgerEntryTx(tx, userId, "bonus", kind, int64(bonus), after, reason, refType, refId, 0); err != nil {
 				return err
 			}
 		}
-		// 使缓存失效，下次读取从 DB 水合合计（实充+赠送）
-		_ = invalidateUserCache(userId)
-		return nil
-	})
+	}
+	if paid > 0 {
+		var user User
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Select("id", "quota").Where("id = ?", userId).First(&user).Error; err != nil {
+			return err
+		}
+		if err := increaseUserQuotaTx(tx, userId, paid); err != nil {
+			return err
+		}
+		var after int
+		if err := tx.Model(&User{}).Where("id = ?", userId).Select("quota").Scan(&after).Error; err != nil {
+			return err
+		}
+		if writeLedger {
+			if err := writeLedgerEntryTx(tx, userId, "paid", kind, int64(paid), int64(after), reason, refType, refId, 0); err != nil {
+				return err
+			}
+		}
+	}
+	if extra != nil {
+		if err := extra(tx); err != nil {
+			return err
+		}
+	}
+	// 使缓存失效，下次读取从 DB 水合合计（实充+赠送）
+	_ = invalidateUserCache(userId)
+	return nil
 }
 
 // IncreaseUserBonusQuota 增加赠送余额（充值赠送、兑换码、调额等）。

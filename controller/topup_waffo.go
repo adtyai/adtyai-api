@@ -16,6 +16,7 @@ import (
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/gin-gonic/gin"
+	"github.com/shopspring/decimal"
 	"github.com/thanhpk/randstr"
 	waffo "github.com/waffo-com/waffo-go"
 	"github.com/waffo-com/waffo-go/config"
@@ -220,16 +221,26 @@ func RequestWaffoPay(c *gin.Context) {
 		amount = max(int64(float64(req.Amount)/common.QuotaPerUnit), 1)
 	}
 
+	currency := getWaffoCurrency()
+	expectedAmount, expectedCurrency, err := waffoExpectedCharge(payMoney, currency)
+	if err != nil {
+		logger.LogError(c.Request.Context(), common.LogText("Waffo expected charge failed user_id=%d trade_no=%s error=%q", id, merchantOrderId, err.Error()))
+		paymentError(c, common.NewMessage("Failed to start payment"))
+		return
+	}
+
 	// 创建本地订单
 	topUp := &model.TopUp{
-		UserId:          id,
-		Amount:          amount,
-		Money:           payMoney,
-		TradeNo:         merchantOrderId,
-		PaymentMethod:   model.PaymentMethodWaffo,
-		PaymentProvider: model.PaymentProviderWaffo,
-		CreateTime:      time.Now().Unix(),
-		Status:          common.TopUpStatusPending,
+		UserId:              id,
+		Amount:              amount,
+		Money:               payMoney,
+		TradeNo:             merchantOrderId,
+		PaymentMethod:       model.PaymentMethodWaffo,
+		PaymentProvider:     model.PaymentProviderWaffo,
+		ExpectedPayAmount:   expectedAmount,
+		ExpectedPayCurrency: expectedCurrency,
+		CreateTime:          time.Now().Unix(),
+		Status:              common.TopUpStatusPending,
 	}
 	if err := topUp.Insert(); err != nil {
 		logger.LogError(c.Request.Context(), common.LogText("Waffo failed to create top-up order user_id=%d trade_no=%s amount=%d error=%q", id, merchantOrderId, req.Amount, err.Error()))
@@ -256,12 +267,11 @@ func RequestWaffoPay(c *gin.Context) {
 		returnUrl = setting.WaffoReturnUrl
 	}
 
-	currency := getWaffoCurrency()
 	goodsInfo := buildWaffoTopUpGoodsInfo(req.Amount)
 	createParams := &order.CreateOrderParams{
 		PaymentRequestID: paymentRequestId,
 		MerchantOrderID:  merchantOrderId,
-		OrderAmount:      formatWaffoAmount(payMoney, currency),
+		OrderAmount:      expectedAmount,
 		OrderCurrency:    currency,
 		OrderDescription: goodsInfo.GoodsName,
 		OrderRequestedAt: time.Now().UTC().Format("2006-01-02T15:04:05.000Z"),
@@ -411,6 +421,17 @@ func handleWaffoPayment(c *gin.Context, wh *core.WebhookHandler, result *core.Pa
 	LockOrder(merchantOrderId)
 	defer UnlockOrder(merchantOrderId)
 
+	switch waffoPendingTopupAction(result) {
+	case topupCallbackAckNoCredit:
+		logger.LogError(c.Request.Context(), common.LogText("Waffo top-up amount mismatch trade_no=%s order_amount=%s order_currency=%s final_deal_amount=%s user_currency=%s client_ip=%s", merchantOrderId, result.OrderAmount, result.OrderCurrency, result.FinalDealAmount, result.UserCurrency, c.ClientIP()))
+		sendWaffoWebhookResponse(c, wh, true, "")
+		return
+	case topupCallbackRetry:
+		logger.LogError(c.Request.Context(), common.LogText("Waffo top-up legacy snapshot missing and paid amount unverified trade_no=%s order_amount=%s order_currency=%s final_deal_amount=%s user_currency=%s client_ip=%s", merchantOrderId, result.OrderAmount, result.OrderCurrency, result.FinalDealAmount, result.UserCurrency, c.ClientIP()))
+		sendWaffoWebhookResponse(c, wh, false, "amount unverified")
+		return
+	}
+
 	if err := model.RechargeWaffo(merchantOrderId, c.ClientIP()); err != nil {
 		logger.LogError(c.Request.Context(), common.LogText("Waffo top-up processing failed trade_no=%s client_ip=%s error=%q", merchantOrderId, c.ClientIP(), err.Error()))
 		sendWaffoWebhookResponse(c, wh, false, err.Error())
@@ -419,6 +440,30 @@ func handleWaffoPayment(c *gin.Context, wh *core.WebhookHandler, result *core.Pa
 
 	logger.LogInfo(c.Request.Context(), common.LogText("Waffo top-up succeeded trade_no=%s client_ip=%s", merchantOrderId, c.ClientIP()))
 	sendWaffoWebhookResponse(c, wh, true, "")
+}
+
+// waffoPendingTopupAction 决定待支付订单的回调动作。找不到订单仍交给入账函数决定是否重试。
+func waffoPendingTopupAction(result *core.PaymentNotificationResult) topupCallbackAction {
+	if result == nil {
+		return topupCallbackCredit
+	}
+	topUp := model.GetTopUpByTradeNo(result.MerchantOrderID)
+	if topUp == nil || topUp.Status != common.TopUpStatusPending {
+		return topupCallbackCredit
+	}
+	paid, paidOK := positiveCallbackMoney(result.OrderAmount, result.FinalDealAmount)
+	covers := waffoCallbackCovers(topUp.ExpectedPayAmount, topUp.ExpectedPayCurrency, result.OrderAmount, result.OrderCurrency, result.FinalDealAmount, result.UserCurrency)
+	return decideTopupPayCallback(topUp.ExpectedPayAmount, topUp.ExpectedPayCurrency, paidOK, paid, covers)
+}
+
+func positiveCallbackMoney(amounts ...string) (decimal.Decimal, bool) {
+	for _, amount := range amounts {
+		paid, ok := parseMajorMoney(amount)
+		if ok && paid.IsPositive() {
+			return paid, true
+		}
+	}
+	return decimal.Zero, false
 }
 
 // sendWaffoWebhookResponse 发送签名响应

@@ -37,8 +37,6 @@ const storageKey = 'dashboard_overview_setup_guide_expanded'
 const sampleCopiedKey = 'dashboard_overview_setup_guide_sample_copied'
 let client: QueryClient
 let keyLookupError: Error | null
-/** Fraction form matching backend FirstTopupBonusRate; null simulates missing API field → fallback 10%. */
-let mockFirstTopupBonusRate: number | null
 
 beforeEach(() => {
   window.localStorage.clear()
@@ -56,7 +54,6 @@ beforeEach(() => {
     defaultOptions: { queries: { retry: false } },
   })
   keyLookupError = null
-  mockFirstTopupBonusRate = 0.1
   vi.spyOn(api, 'get').mockImplementation(async (url) => {
     switch (url) {
       case '/api/token/?p=1&size=10':
@@ -77,17 +74,6 @@ beforeEach(() => {
               announcements_enabled: false,
               faq_enabled: false,
               uptime_kuma_enabled: false,
-            },
-          },
-        }
-      case '/api/topup/tiers':
-        return {
-          data: {
-            success: true,
-            data: {
-              first_topup_bonus_rate: mockFirstTopupBonusRate,
-              tiers: [],
-              pay_methods: [],
             },
           },
         }
@@ -257,33 +243,17 @@ describe('overview setup guide', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('shows the first top-up tip from FirstTopupBonusRate inside the setup guide', async () => {
+  it('does not promise a first top-up bonus inside the setup guide', async () => {
     const user = userEvent.setup()
     await renderOverview()
     await user.click(await screen.findByRole('button', { name: 'Setup guide' }))
-    expect(screen.getByText(/first top-up gets 10% bonus/i)).toBeVisible()
-    expect(screen.getByText('Go top up')).toBeVisible()
     expect(
       screen.getByRole('heading', { name: 'Three steps to get started' })
     ).toBeVisible()
     expect(screen.getByText('Create API token')).toBeVisible()
     expect(screen.getByText('Copy sample code')).toBeVisible()
     expect(screen.getByText('Send a test request')).toBeVisible()
-  })
-
-  it('formats FirstTopupBonusRate from /api/topup/tiers (e.g. 0.15 → 15%)', async () => {
-    mockFirstTopupBonusRate = 0.15
-    const user = userEvent.setup()
-    await renderOverview()
-    await user.click(await screen.findByRole('button', { name: 'Setup guide' }))
-    expect(screen.getByText(/first top-up gets 15% bonus/i)).toBeVisible()
-  })
-
-  it('falls back to 10% when first_topup_bonus_rate is missing', async () => {
-    mockFirstTopupBonusRate = null
-    const user = userEvent.setup()
-    await renderOverview()
-    await user.click(await screen.findByRole('button', { name: 'Setup guide' }))
-    expect(screen.getByText(/first top-up gets 10% bonus/i)).toBeVisible()
+    expect(screen.queryByText(/first top-up/i)).not.toBeInTheDocument()
+    expect(screen.queryByText('Go top up')).not.toBeInTheDocument()
   })
 })

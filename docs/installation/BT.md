@@ -40,7 +40,7 @@
 2. 搜索并找到 **New-API**
 3. 点击 **安装**
 4. 配置以下基本选项：
-   - **容器名称**：可自定义，默认为 `new-api`
+   - **容器名称**：可自定义，默认为 `adtyai-api-app`
    - **端口映射**：默认为 `3000:3000`
    - **环境变量**：
      - `SESSION_SECRET`：会话密钥（**必填**，多机部署时必须一致）
@@ -50,15 +50,15 @@
 
 ### 方法二：使用 Docker Compose
 
-1. 在宝塔面板中创建网站目录，如 `/www/wwwroot/new-api`
-2. 创建 `docker-compose.yml` 文件：
+1. 在宝塔面板中创建网站目录，如 `/www/wwwroot/adtyai-api`
+2. 创建 `docker-compose.yml` 文件。单容器示例的服务名和容器名用 `adtyai-api-app`。正式环境优先用仓库根目录的 compose，服务名和容器名是 `adtyai-api-app`、`adtyai-api-postgres`、`adtyai-api-redis`：
 
 ```yaml
 version: '3'
 services:
-  new-api:
+  adtyai-api-app:
     image: ghcr.io/adtyai/adtyai-api:latest
-    container_name: new-api
+    container_name: adtyai-api-app
     restart: always
     ports:
       - "3000:3000"
@@ -72,7 +72,7 @@ services:
 1. 在终端中进入目录并启动：
 
 ```bash
-cd /www/wwwroot/new-api
+cd /www/wwwroot/adtyai-api
 docker-compose up -d
 ```
 

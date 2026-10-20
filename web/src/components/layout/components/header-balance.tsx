@@ -43,7 +43,9 @@ export function HeaderBalance() {
     queryKey: ['header-balance', 'self'],
     queryFn: async () => {
       const res = await getSelf()
-      return res?.success ? (res.data as { quota?: number }) : null
+      return res?.success
+        ? (res.data as { quota?: number; bonus_quota?: number })
+        : null
     },
     enabled,
     staleTime: 60_000,
@@ -52,8 +54,9 @@ export function HeaderBalance() {
 
   if (!enabled) return null
 
-  const quota = data?.quota ?? storeUser?.quota ?? 0
-  const balance = formatQuota(quota)
+  const paid = data?.quota ?? storeUser?.quota ?? 0
+  const bonus = data?.bonus_quota ?? storeUser?.bonus_quota ?? 0
+  const balance = formatQuota(paid + bonus)
 
   return (
     <div

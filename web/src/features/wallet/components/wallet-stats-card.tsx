@@ -33,6 +33,8 @@ interface WalletStatsCardProps {
 
 export function WalletStatsCard(props: WalletStatsCardProps) {
   const { t } = useTranslation()
+  const paidQuota = props.user?.quota ?? 0
+  const bonusQuota = props.user?.bonus_quota ?? 0
   if (props.loading) {
     return (
       <div className='grid gap-3 md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)]'>
@@ -70,10 +72,13 @@ export function WalletStatsCard(props: WalletStatsCardProps) {
           </span>
         </div>
         <div className='text-[28px] leading-none font-semibold tracking-tight'>
-          {formatQuota(props.user?.quota ?? 0)}
+          {formatQuota(paidQuota + bonusQuota)}
         </div>
         <div className='flex flex-wrap items-center justify-between gap-2 text-xs text-white/80'>
-          <span>{t('Remaining quota')}</span>
+          <span>
+            {t('Paid balance')} {formatQuota(paidQuota)} · {t('Bonus balance')}{' '}
+            {formatQuota(bonusQuota)}
+          </span>
           <Button
             type='button'
             size='sm'

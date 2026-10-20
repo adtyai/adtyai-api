@@ -383,6 +383,11 @@ func EpayNotify(c *gin.Context) {
 	if verifyInfo.TradeStatus == epay.StatusTradeSuccess {
 		// 进程内锁只是优化；重复/并发回调的正确性由 RechargeEpay 的
 		// 数据库行锁 + 事务内状态校验保证（多实例部署下同样安全）。
+		if !legacyEpayMoneyMatches(verifyInfo.ServiceTradeNo, verifyInfo.Money) {
+			logger.LogWarn(c.Request.Context(), common.LogText("Epay webhook money mismatch trade_no=%s money=%s client_ip=%s", verifyInfo.ServiceTradeNo, verifyInfo.Money, c.ClientIP()))
+			_, _ = c.Writer.Write([]byte("fail"))
+			return
+		}
 		LockOrder(verifyInfo.ServiceTradeNo)
 		defer UnlockOrder(verifyInfo.ServiceTradeNo)
 		alreadyDone, err := model.RechargeEpay(verifyInfo.ServiceTradeNo, verifyInfo.Type, c.ClientIP())

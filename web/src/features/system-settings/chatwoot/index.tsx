@@ -213,7 +213,7 @@ export function ChatwootSettings() {
           <div className="flex h-full min-h-0 w-full flex-col gap-4">
             <p className="text-muted-foreground text-sm">
               {t(
-                "Configure Chatwoot widget script, website token, base URL and HMAC secret. HMAC is write-only; GET only returns secret_set and fingerprint. Backup contact is read-only here.",
+                "Visitors load the Chatwoot SDK from the base URL and website token. The script field is not injected. HMAC is write-only; GET only returns secret_set and fingerprint. Backup contact is read-only here.",
               )}
             </p>
 
@@ -306,7 +306,7 @@ export function ChatwootSettings() {
                         </FormControl>
                         <FormDescription>
                           {t(
-                            "Widget embed script. Changing it requires confirmation.",
+                            "Not injected into the visitor page. Used only as a health-probe URL fallback when base URL is empty. Changing it requires confirmation.",
                           )}
                         </FormDescription>
                         <FormMessage />
@@ -352,7 +352,9 @@ export function ChatwootSettings() {
                             />
                           </FormControl>
                           <FormDescription>
-                            {t("Optional probe / API origin for Chatwoot.")}
+                            {t(
+                              "Visitor widget loads the Chatwoot SDK from this https URL. Empty disables the widget.",
+                            )}
                           </FormDescription>
                           <FormMessage />
                         </FormItem>

@@ -67,6 +67,17 @@ func TestValidateBusinessParam_BackupContact(t *testing.T) {
 	}
 }
 
+func TestAffiliateCatalogDefaultsDoNotPay(t *testing.T) {
+	for _, d := range BusinessParamCatalog() {
+		switch d.Key {
+		case "AffTopupCommissionRate", "AffSubscriptionCommissionRate", "AffMinWithdrawAmount":
+			if d.Default != "0" {
+				t.Fatalf("%s default %s, want 0", d.Key, d.Default)
+			}
+		}
+	}
+}
+
 func TestBusinessParamCatalogCount(t *testing.T) {
 	cat := BusinessParamCatalog()
 	if len(cat) != 31 {

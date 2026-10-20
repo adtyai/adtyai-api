@@ -12,7 +12,7 @@ import (
 
 func l2l3l4Cleanup(t *testing.T) {
 	t.Helper()
-	require.NoError(t, DB.AutoMigrate(&TopupOrder{}, &TopupRefund{}, &AffCommission{}, &LedgerEntry{}, &LedgerIdempotency{}))
+	require.NoError(t, DB.AutoMigrate(&TopupOrder{}, &TopupRefund{}, &AffCommission{}, &AffWithdrawal{}, &LedgerEntry{}, &LedgerIdempotency{}))
 	truncateTables(t)
 	t.Cleanup(func() {
 		DB.Exec("DELETE FROM topup_refunds")
