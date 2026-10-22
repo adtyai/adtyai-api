@@ -17,6 +17,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
+import {
+  parseEnabledUsdtChainsOption,
+  type UsdtChainId,
+} from '@/lib/usdt-chains'
+
 export type SystemOptionLike = {
   key: string
   value: string
@@ -26,8 +31,7 @@ export type BepusdtFormValues = {
   BepusdtBaseURL: string
   BepusdtApiToken: string
   BepusdtLegacyNotifyEnabled: boolean
-  BepusdtTradeType: string
-  BepusdtCurrency: string
+  enabledChains: UsdtChainId[]
 }
 
 export type BepusdtTokenMeta = {
@@ -44,8 +48,7 @@ export const BEPUSDT_DEFAULTS: BepusdtFormValues = {
   BepusdtBaseURL: '',
   BepusdtApiToken: '',
   BepusdtLegacyNotifyEnabled: false,
-  BepusdtTradeType: 'usdt.trc20',
-  BepusdtCurrency: 'USD',
+  enabledChains: parseEnabledUsdtChainsOption(undefined),
 }
 
 function optionMap(
@@ -61,6 +64,10 @@ function optionMap(
 function parseBool(raw: string | undefined, fallback: boolean): boolean {
   if (raw == null || raw === '') return fallback
   return raw === 'true' || raw === '1'
+}
+
+function sameChains(a: UsdtChainId[], b: UsdtChainId[]): boolean {
+  return a.join(',') === b.join(',')
 }
 
 /** Parse GET /api/option/ rows into form defaults + token fingerprint meta. */
@@ -80,12 +87,9 @@ export function parseBepusdtOptions(
         m.get('BepusdtLegacyNotifyEnabled'),
         false
       ),
-      BepusdtTradeType:
-        (m.get('BepusdtTradeType') ?? '').trim() ||
-        BEPUSDT_DEFAULTS.BepusdtTradeType,
-      BepusdtCurrency:
-        (m.get('BepusdtCurrency') ?? '').trim().toUpperCase() ||
-        BEPUSDT_DEFAULTS.BepusdtCurrency,
+      enabledChains: parseEnabledUsdtChainsOption(
+        m.get('BepusdtEnabledChains')
+      ),
     },
     token: {
       secretSet,
@@ -101,12 +105,9 @@ export function sanitizeBepusdtForm(
     BepusdtBaseURL: values.BepusdtBaseURL.trim().replace(/\/+$/, ''),
     BepusdtApiToken: values.BepusdtApiToken.trim(),
     BepusdtLegacyNotifyEnabled: values.BepusdtLegacyNotifyEnabled,
-    BepusdtTradeType:
-      values.BepusdtTradeType.trim().toLowerCase() ||
-      BEPUSDT_DEFAULTS.BepusdtTradeType,
-    BepusdtCurrency:
-      values.BepusdtCurrency.trim().toUpperCase() ||
-      BEPUSDT_DEFAULTS.BepusdtCurrency,
+    enabledChains: parseEnabledUsdtChainsOption(
+      JSON.stringify(values.enabledChains)
+    ),
   }
 }
 
@@ -114,7 +115,7 @@ export type OptionUpdate = { key: string; value: string | boolean }
 
 /**
  * Build per-key PUTs. Empty token is omitted (leave blank = do not overwrite).
- * Only changed keys are included.
+ * Currency is always USD when anything else is saved.
  */
 export function buildBepusdtUpdates(
   next: BepusdtFormValues,
@@ -142,12 +143,15 @@ export function buildBepusdtUpdates(
     })
   }
 
-  if (sanitized.BepusdtTradeType !== base.BepusdtTradeType) {
-    updates.push({ key: 'BepusdtTradeType', value: sanitized.BepusdtTradeType })
+  if (!sameChains(sanitized.enabledChains, base.enabledChains)) {
+    updates.push({
+      key: 'BepusdtEnabledChains',
+      value: JSON.stringify(sanitized.enabledChains),
+    })
   }
 
-  if (sanitized.BepusdtCurrency !== base.BepusdtCurrency) {
-    updates.push({ key: 'BepusdtCurrency', value: sanitized.BepusdtCurrency })
+  if (updates.length > 0) {
+    updates.push({ key: 'BepusdtCurrency', value: 'USD' })
   }
 
   return updates

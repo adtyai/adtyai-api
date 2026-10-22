@@ -270,7 +270,7 @@ func adminManualCompleteTopup(c *gin.Context, orderNo, tradeNo, source string) {
 		c.JSON(http.StatusOK, gin.H{"success": true, "data": order})
 		return
 	}
-	if order.Status != model.TopupOrderStatusPending && order.Status != model.TopupOrderStatusExpired {
+	if order.Status != model.TopupOrderStatusPending && order.Status != model.TopupOrderStatusExpired && order.Status != model.TopupOrderStatusNeedManual {
 		adtyFail(c, http.StatusConflict, "order_status_invalid", model.ErrTopupOrderStatusInvalid.Error(), nil)
 		return
 	}

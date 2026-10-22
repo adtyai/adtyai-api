@@ -5,16 +5,31 @@ import (
 	"math"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting"
 	"github.com/gin-gonic/gin"
 )
 
 type adtyTopupOrderReq struct {
 	Amount        int64  `json:"amount"`         // 美元档位
 	PaymentMethod string `json:"payment_method"` // alipay|wxpay|usdt
+	UsdtChain     string `json:"usdt_chain"`     // trc20|bep20|polygon|xlayer，仅 usdt
+}
+
+// startEpayPurchaseForOrder is replaced in tests. Production uses StartEpayPurchaseForOrder.
+var startEpayPurchaseForOrder = StartEpayPurchaseForOrder
+
+// markCreatedTopupOrderFailed closes a checkout that never got a usable cashier snapshot.
+func markCreatedTopupOrderFailed(order *model.TopupOrder) {
+	if order == nil {
+		return
+	}
+	_ = model.DB.Model(order).Update("status", model.TopupOrderStatusFailed).Error
+	order.Status = model.TopupOrderStatusFailed
 }
 
 // GetTopupTiers GET /api/topup/tiers
@@ -53,6 +68,7 @@ func GetTopupTiers(c *gin.Context) {
 			"tiers":                  tiers,
 			"first_topup_bonus_rate": model.GetFirstTopupBonusRate(),
 			"pay_methods":            payMethods,
+			"usdt_chains":            setting.EnabledUsdtChains(),
 			"fx_rate":                fxSnap.EffectiveRate,
 			"fx_base_rate":           fxSnap.BaseRate,
 			"fx_float":               fxSnap.FloatApplied,
@@ -121,7 +137,26 @@ func CreateTopupOrder(c *gin.Context) {
 			return
 		}
 	}
+	var usdtChain string
 	if method == "usdt" {
+		id, chainErr := setting.RequireEnabledUsdtChain(req.UsdtChain)
+		if chainErr != nil {
+			if errors.Is(chainErr, setting.ErrUsdtChainDisabled) {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"success": false,
+					"message": "该网络未开通",
+					"code":    "usdt_chain_disabled",
+				})
+				return
+			}
+			c.JSON(http.StatusBadRequest, gin.H{
+				"success": false,
+				"message": "请选择 USDT 网络",
+				"code":    "invalid_usdt_chain",
+			})
+			return
+		}
+		usdtChain = id
 		ok, reason := service.IsAdtyUsdtAvailable()
 		if !ok {
 			if reason == "" {
@@ -148,23 +183,34 @@ func CreateTopupOrder(c *gin.Context) {
 		return
 	}
 
-	resp := gin.H{"order": order}
+	now := time.Now().Unix()
+	resp := gin.H{"order": userTopupOrderView(order, now)}
 	if needEpay {
-		payURL, params, inst, err := StartEpayPurchaseForOrder(order, method)
+		payURL, params, inst, err := startEpayPurchaseForOrder(order, method)
 		if err != nil {
 			// 审查 P1-2：拉起失败置 failed，避免永久 pending（与 USDT 分支一致）
-			_ = model.DB.Model(order).Update("status", model.TopupOrderStatusFailed).Error
-			order.Status = model.TopupOrderStatusFailed
+			markCreatedTopupOrderFailed(order)
 			c.JSON(http.StatusServiceUnavailable, gin.H{
 				"success": false,
 				"message": "支付维护中",
 				"code":    "payment_maintenance",
-				"data":    gin.H{"order": order},
+				"data":    gin.H{"order": userTopupOrderView(order, now)},
 			})
 			return
 		}
-		// 回写实例与汇率快照；失败则不得返回 pay_url（审查中优）
-		// 审查 P2-1：用拉起时同一份汇率/金额，不再二次取汇率
+		paramsJSON, mErr := common.Marshal(params)
+		if mErr != nil || strings.TrimSpace(payURL) == "" {
+			// 网关单可能已创建，但本地没有收银台快照，不能继续显示待支付。
+			markCreatedTopupOrderFailed(order)
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"message": "failed to bind payment snapshot",
+				"code":    "epay_snapshot_failed",
+				"data":    gin.H{"order": userTopupOrderView(order, now)},
+			})
+			return
+		}
+		// 回写实例、汇率和收银台；失败则不得返回 pay_url。继续支付只重放这份快照。
 		fx := order.FxRate
 		payCNY := order.PayCNY
 		bonusRateSnapshot := 0.0
@@ -173,39 +219,55 @@ func CreateTopupOrder(c *gin.Context) {
 		}
 		if err := model.DB.Model(order).Updates(map[string]any{
 			"epay_instance_id":    inst.Id,
+			"epay_pay_url":        payURL,
+			"epay_pay_params":     string(paramsJSON),
 			"fx_rate":             fx,
 			"pay_cny":             payCNY,
 			"payment_provider":    "epay",
 			"bonus_rate_snapshot": bonusRateSnapshot,
 		}).Error; err != nil {
+			markCreatedTopupOrderFailed(order)
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"success": false,
 				"message": "failed to bind payment snapshot",
 				"code":    "epay_snapshot_failed",
-				"data":    gin.H{"order": order},
+				"data":    gin.H{"order": userTopupOrderView(order, now)},
 			})
 			return
 		}
 		order.EpayInstanceId = inst.Id
+		order.EpayPayURL = payURL
+		order.EpayPayParams = string(paramsJSON)
 		order.FxRate = fx
 		order.PayCNY = payCNY
 		order.PaymentProvider = "epay"
+		resp["order"] = userTopupOrderView(order, now)
 		resp["pay_url"] = payURL
 		resp["pay_params"] = params
 	}
 	if method == "usdt" {
+		if err := model.SetTopupOrderUsdtChain(order, usdtChain); err != nil {
+			_ = model.DB.Model(order).Update("status", model.TopupOrderStatusFailed).Error
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"message": "failed to bind usdt chain",
+				"code":    "usdt_chain_bind_failed",
+			})
+			return
+		}
 		cashier, err := StartUsdtPurchaseForOrder(order)
 		if err != nil {
 			_ = model.DB.Model(order).Update("status", model.TopupOrderStatusFailed).Error
+			order.Status = model.TopupOrderStatusFailed
 			c.JSON(http.StatusServiceUnavailable, gin.H{
 				"success": false,
 				"message": "支付维护中",
 				"code":    "payment_maintenance",
-				"data":    gin.H{"order": order},
+				"data":    gin.H{"order": userTopupOrderView(order, now)},
 			})
 			return
 		}
-		resp["order"] = order
+		resp["order"] = userTopupOrderView(order, now)
 		resp["usdt"] = cashier
 	}
 
@@ -230,7 +292,7 @@ func GetTopupOrder(c *gin.Context) {
 		adtyFail(c, http.StatusForbidden, "forbidden", "forbidden", nil)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"success": true, "data": order})
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": userTopupOrderView(order, time.Now().Unix())})
 }
 
 // AdminCompleteAdtyTopup POST /api/admin/orders/:no/complete — 最小闭环补单/验收入账（不再要求 confirm）。

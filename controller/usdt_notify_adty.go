@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
@@ -74,6 +73,9 @@ func handleAdtyUsdtNotify(c *gin.Context) {
 	}
 	status := service.AdtyBepusdtCallbackStatus(params)
 	if !service.AdtyIsBepusdtPaidStatus(status) {
+		// Non-paid statuses are display-only. Do not turn a still-payable order into review.
+		logger.LogInfo(c.Request.Context(), common.LogText(
+			"adty usdt notify non-paid status kept for display only order=%s status=%s", orderNo, status))
 		c.String(http.StatusOK, "ok")
 		return
 	}
@@ -90,42 +92,71 @@ func handleAdtyUsdtNotify(c *gin.Context) {
 		return
 	}
 	paidUSDT := service.AdtyBepusdtCallbackPaidUSDT(params)
-	now := time.Now().Unix()
-	if err := model.EvaluateUsdtCallbackCredit(order, paidUSDT, now); err != nil {
-		reason := err.Error()
-		if errors.Is(err, model.ErrUsdtUnderpay) {
-			reason = "underpay"
-		} else if errors.Is(err, model.ErrUsdtOrderExpired) {
-			reason = "timeout"
-		}
+	decision := model.DecideUsdtPaidCallback(order, paidUSDT)
+	switch decision.Action {
+	case model.UsdtPaidCallbackRetry:
 		logger.LogWarn(c.Request.Context(), common.LogText(
-			"adty usdt notify no auto-credit order=%s reason=%s paid=%.6f want=%.6f",
-			orderNo, reason, paidUSDT, order.PayUSDT))
-		_, _ = model.MarkTopupOrderNeedManual(orderNo, reason)
-		// Acknowledge callback so gateway stops retrying; funds need manual补单.
+			"adty usdt notify retry order=%s reason=%s", orderNo, decision.Reason))
+		c.String(http.StatusBadRequest, "fail")
+		return
+	case model.UsdtPaidCallbackIdempotent:
 		c.String(http.StatusOK, "ok")
 		return
-	}
-	tradeID := service.AdtyBepusdtCallbackTradeID(params)
-	if tradeID != "" {
-		if err := model.AttachProviderTradeNo(orderNo, tradeID); err != nil {
-			if errors.Is(err, model.ErrEpayTradeNoDuplicate) {
-				logger.LogWarn(c.Request.Context(), common.LogText(
-					"adty usdt notify trade_id duplicate %s", tradeID))
-				c.String(http.StatusConflict, "fail")
-				return
-			}
+	case model.UsdtPaidCallbackManual:
+		if order.Status == model.TopupOrderStatusNeedManual {
+			c.String(http.StatusOK, "ok")
+			return
+		}
+		marked, markErr := model.MarkTopupOrderNeedManual(orderNo, decision.Reason, paidUSDT)
+		if markErr != nil || marked == nil {
+			logger.LogError(c.Request.Context(), common.LogText(
+				"adty usdt notify mark need_manual failed order=%s reason=%s err=%v", orderNo, decision.Reason, markErr))
 			c.String(http.StatusInternalServerError, "fail")
 			return
 		}
-	}
-	if _, err := model.CompleteTopupOrder(orderNo); err != nil {
-		logger.LogError(c.Request.Context(), common.LogText(
-			"adty usdt notify complete failed order=%s err=%v", orderNo, err))
-		c.String(http.StatusInternalServerError, "fail")
+		logger.LogWarn(c.Request.Context(), common.LogText(
+			"adty usdt notify need_manual order=%s reason=%s amount=%v", orderNo, decision.Reason, paidUSDT))
+		c.String(http.StatusOK, "ok")
 		return
+	case model.UsdtPaidCallbackCredit:
+		tradeID := service.AdtyBepusdtCallbackTradeID(params)
+		if tradeID != "" {
+			if err := model.AttachProviderTradeNo(orderNo, tradeID); err != nil {
+				if errors.Is(err, model.ErrEpayTradeNoDuplicate) {
+					logger.LogWarn(c.Request.Context(), common.LogText(
+						"adty usdt notify trade_id duplicate %s", tradeID))
+					marked, markErr := model.MarkTopupOrderNeedManual(orderNo, "trade_duplicate", paidUSDT)
+					if markErr != nil || marked == nil {
+						logger.LogError(c.Request.Context(), common.LogText(
+							"adty usdt notify mark need_manual failed order=%s reason=trade_duplicate err=%v", orderNo, markErr))
+						c.String(http.StatusInternalServerError, "fail")
+						return
+					}
+					c.String(http.StatusOK, "ok")
+					return
+				}
+				c.String(http.StatusInternalServerError, "fail")
+				return
+			}
+		}
+		if order.PayUSDT > 0 && paidUSDT+1e-9 < order.PayUSDT {
+			logger.LogWarn(c.Request.Context(), common.LogText(
+				"adty usdt notify amount differs from cashier snapshot order=%s pay_usdt=%v actual_amount=%v",
+				orderNo, order.PayUSDT, paidUSDT))
+		}
+		if _, err := model.CompleteTopupOrderFromUsdtCallback(orderNo); err != nil {
+			logger.LogError(c.Request.Context(), common.LogText(
+				"adty usdt notify complete failed order=%s err=%v", orderNo, err))
+			c.String(http.StatusInternalServerError, "fail")
+			return
+		}
+		c.String(http.StatusOK, "ok")
+		return
+	default:
+		logger.LogError(c.Request.Context(), common.LogText(
+			"adty usdt notify unknown decision order=%s action=%s", orderNo, decision.Action))
+		c.String(http.StatusInternalServerError, "fail")
 	}
-	c.String(http.StatusOK, "ok")
 }
 
 // AdtyUsdtNotify GET|POST /api/pay/usdt/notify — 只验签，不靠登录态。

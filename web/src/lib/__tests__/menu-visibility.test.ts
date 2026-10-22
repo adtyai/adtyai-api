@@ -124,6 +124,66 @@ describe('filterNavGroupsBySidebarModules (nested system-settings)', () => {
     expect(titles).toContain('Orders')
     expect(titles).toContain('Chatwoot')
   })
+
+  it('overview follows configUrls and hides when both affiliate modules are off', () => {
+    const groups: NavGroup[] = [
+      {
+        id: 'admin',
+        title: 'admin',
+        items: [
+          {
+            title: 'Affiliate management',
+            items: [
+              {
+                title: 'Affiliate overview',
+                url: '/system-settings/aff-overview',
+                configUrls: [
+                  '/system-settings/aff-commissions',
+                  '/system-settings/aff-withdrawals',
+                ],
+              },
+              {
+                title: 'Affiliate commissions',
+                url: '/system-settings/aff-commissions',
+              },
+              {
+                title: 'Affiliate withdrawals',
+                url: '/system-settings/aff-withdrawals',
+              },
+            ],
+          },
+        ],
+      },
+    ]
+    const hidden: SidebarModulesAdminConfig = {
+      ...defaultAdmin,
+      admin: {
+        ...defaultAdmin.admin,
+        aff_commissions: false,
+        aff_withdrawals: false,
+      },
+    }
+    expect(filterNavGroupsBySidebarModules(groups, hidden, null)).toEqual([])
+
+    const commissionsOnly: SidebarModulesAdminConfig = {
+      ...defaultAdmin,
+      admin: {
+        ...defaultAdmin.admin,
+        aff_commissions: true,
+        aff_withdrawals: false,
+      },
+    }
+    const shown = filterNavGroupsBySidebarModules(groups, commissionsOnly, null)
+    const parent = shown[0]?.items[0]
+    const urls =
+      parent && 'items' in parent && parent.items
+        ? parent.items.map((item) => item.url)
+        : []
+    expect(urls).toEqual([
+      '/system-settings/aff-overview',
+      '/system-settings/aff-commissions',
+    ])
+  })
 })
 
 describe('filterNavGroupsBySidebarModules (root)', () => {

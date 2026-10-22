@@ -46,8 +46,8 @@ import { cn } from '@/lib/utils'
 
 import { useAdminBonusLedger } from './hooks/use-bonus-ledger'
 import {
+  BONUS_LEDGER_KIND_OPTIONS,
   DEFAULT_LEDGER_LIMIT,
-  LEDGER_KIND_OPTIONS,
   datetimeLocalToUnix,
   formatLedgerTime,
   formatSignedQuota,
@@ -151,7 +151,7 @@ export function BonusLedgerSettings() {
               <Select
                 items={[
                   { value: 'all', label: t('All kinds') },
-                  ...LEDGER_KIND_OPTIONS.map((k) => ({
+                  ...BONUS_LEDGER_KIND_OPTIONS.map((k) => ({
                     value: k,
                     label: t(ledgerKindLabelKey(k)),
                   })),
@@ -166,7 +166,7 @@ export function BonusLedgerSettings() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value='all'>{t('All kinds')}</SelectItem>
-                  {LEDGER_KIND_OPTIONS.map((k) => (
+                  {BONUS_LEDGER_KIND_OPTIONS.map((k) => (
                     <SelectItem key={k} value={k}>
                       {t(ledgerKindLabelKey(k))}
                     </SelectItem>

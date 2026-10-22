@@ -21,6 +21,7 @@ import {
   Box,
   Route,
   CreditCard,
+  Gift,
   Layout,
   Settings,
   Shield,
@@ -133,7 +134,7 @@ export function getSystemSettingsNavGroups(
             // 易支付 / BEpusdt 已并入「支付网关」页，不再单独占侧栏项
             // 分组显示名已并入「分组定价」页，不再单独占侧栏项
             // 企业协议价挂在「分组定价」旁（独立页，不换分组，按用户设折扣）
-            // 充值/退款/赠送/返佣业务入口并入支付树，去掉独立顶栏项
+            // 充值/退款/赠送留在支付树。邀请返佣与计费与支付平级，不新增模块开关
             {
               title: t('Topup orders'),
               url: '/system-settings/orders',
@@ -146,6 +147,20 @@ export function getSystemSettingsNavGroups(
             {
               title: t('Bonus ledger'),
               url: '/system-settings/bonus-ledger',
+            },
+          ],
+        },
+        {
+          title: t('Affiliate management'),
+          icon: Gift,
+          items: [
+            {
+              title: t('Affiliate overview'),
+              url: '/system-settings/aff-overview',
+              configUrls: [
+                '/system-settings/aff-commissions',
+                '/system-settings/aff-withdrawals',
+              ],
             },
             {
               title: t('Affiliate commissions'),

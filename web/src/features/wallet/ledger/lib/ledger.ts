@@ -32,7 +32,13 @@ export const LEDGER_KIND_OPTIONS = [
   'topup_refund',
   'topup_refund_bonus_claw',
   'balance_adjust',
-  'redemption',
+  'redemption_bonus',
+  'signup_invite_bonus',
+  'checkin_bonus',
+  'aff_transfer',
+  'aff_refund_void',
+  'aff_refund_claw',
+  'aff_refund_claw_paid',
 ] as const
 
 /** Cap mirrors backend: limit <= 0 or > 100 → 50. */
@@ -113,8 +119,20 @@ export function ledgerKindLabelKey(kind: string): string {
       return 'Ledger kind bonus claw'
     case 'balance_adjust':
       return 'Ledger kind balance adjust'
-    case 'redemption':
+    case 'redemption_bonus':
       return 'Ledger kind redemption'
+    case 'signup_invite_bonus':
+      return 'Ledger kind signup invite bonus'
+    case 'checkin_bonus':
+      return 'Ledger kind checkin bonus'
+    case 'aff_transfer':
+      return 'Ledger kind aff transfer'
+    case 'aff_refund_void':
+      return 'Ledger kind aff refund void'
+    case 'aff_refund_claw':
+      return 'Ledger kind aff refund claw'
+    case 'aff_refund_claw_paid':
+      return 'Ledger kind aff refund claw paid'
     default:
       return kind || 'Unknown'
   }
@@ -167,16 +185,15 @@ const ledgerReasonLabelKeys: Readonly<Record<string, string>> = {
   'adtyai topup paid': 'Top-up payment',
   'adtyai topup bonus': 'Top-up bonus',
   'adtyai redemption bonus': 'Redemption bonus',
+  'invitation code bonus': 'Invitation code bonus',
   'adtyai first topup extra approved': 'First top-up extra bonus (approved)',
   // model/ledger.go 每小时 API 消费汇总
   'hourly api consume rollup': 'Hourly API usage rollup',
   // model/quota_reserve.go 预扣失败退回
   'restore pre-consumed wallet': 'Pre-deducted amount returned',
-  // aff 账户 reason（refund void frozen commission、refund claw available
-  // commission、void aff commission、reject withdraw unfreeze、aff_commission、
-  // aff_unfreeze、aff_withdraw_freeze）不映射：用户钱包流水接口只返回
-  // paid+bonus（controller/wallet_ledger_adty.go），后台赠送流水固定
-  // account=bonus，前端没有展示 aff 账户流水的页面。
+  // 其它 aff 账户 reason（void aff commission、reject withdraw unfreeze、
+  // aff_commission、aff_unfreeze、aff_withdraw_freeze）仍不映射。用户流水默认
+  // 只列 paid+bonus；邀请退款作废/扣回要选对应类型才会查 aff 账户。
 }
 
 export function ledgerReasonLabelKey(reason: string): string | null {
@@ -186,13 +203,18 @@ export function ledgerReasonLabelKey(reason: string): string | null {
 }
 
 export function ledgerNote(
-  entry: Pick<LedgerEntry, 'reason' | 'ref_id' | 'ref_type'>,
+  entry: Pick<LedgerEntry, 'reason' | 'ref_id' | 'ref_type'> &
+    Partial<Pick<LedgerEntry, 'account' | 'delta'>>,
   translate?: (key: string) => string
 ): string {
   const raw = (entry.reason || '').trim()
   const key = raw ? ledgerReasonLabelKey(raw) : null
   const reason = key && translate ? translate(key) : raw
   const ref = (entry.ref_id || '').trim()
-  if (reason && ref) return `${reason} · ${ref}`
-  return reason || ref || '—'
+  let text = reason && ref ? `${reason} · ${ref}` : reason || ref || '—'
+  if ((entry.account || '').toLowerCase() === 'aff') {
+    const amount = formatSignedQuota(entry.delta)
+    text = text === '—' ? amount : `${text} · ${amount}`
+  }
+  return text
 }

@@ -38,6 +38,7 @@ import {
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
+import { USDT_CHAIN_CATALOG, type UsdtChainId } from '@/lib/usdt-chains'
 
 import {
   SettingsForm,
@@ -48,7 +49,6 @@ import { SettingsSection } from '../components/settings-section'
 import { useSystemOptions } from '../hooks/use-system-options'
 import { useUpdateOption } from '../hooks/use-update-option'
 import {
-  BEPUSDT_DEFAULTS,
   buildBepusdtUpdates,
   formatTokenFingerprint,
   parseBepusdtOptions,
@@ -68,8 +68,7 @@ const schema = z.object({
   }, 'Provide a valid HTTP(S) base URL'),
   BepusdtApiToken: z.string(),
   BepusdtLegacyNotifyEnabled: z.boolean(),
-  BepusdtTradeType: z.string().min(1),
-  BepusdtCurrency: z.string().min(1),
+  enabledChains: z.array(z.enum(['trc20', 'bep20', 'polygon', 'xlayer'])),
 })
 
 type FormValues = z.infer<typeof schema>
@@ -126,165 +125,180 @@ export function BepusdtSection({ embedded = false }: BepusdtSectionProps = {}) {
   }
 
   const body = (
-      <div className='flex flex-col gap-3'>
-        <div className='flex flex-wrap items-center justify-end gap-2'>
-          <Button
-            type='button'
-            variant='outline'
-            size='sm'
-            className='h-8'
-            onClick={() => void optionsQuery.refetch()}
-            disabled={optionsQuery.isFetching}
-          >
-            <RefreshCw className='size-3.5' />
-            {t('Refresh')}
-          </Button>
-          <Button
-            type='button'
-            size='sm'
-            className='h-8'
-            disabled={!isDirty || saving}
-            onClick={() => void form.handleSubmit(onSubmit)()}
-          >
-            <Save className='size-3.5' />
-            {saving ? t('Saving...') : t('Save Changes')}
-          </Button>
-        </div>
-
-        {optionsQuery.isLoading ? (
-          <div className='text-muted-foreground flex min-h-24 items-center justify-center text-sm'>
-            {t('Loading settings...')}
-          </div>
-        ) : null}
-
-        {optionsQuery.isError && !optionsQuery.data ? (
-          <ErrorState
-            title={t('Failed to load settings')}
-            onRetry={() => void optionsQuery.refetch()}
-          />
-        ) : null}
-
-        {optionsQuery.data ? (
-          <Form {...form}>
-            <SettingsForm
-              onSubmit={form.handleSubmit(onSubmit)}
-              autoComplete='off'
-              className='bg-card rounded-xl border p-5 shadow-xs'
-            >
-              <FormField
-                control={form.control}
-                name='BepusdtBaseURL'
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('BEpusdt gateway URL')}</FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder='https://bepusdt.example.com'
-                        autoComplete='off'
-                        disabled={saving}
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name='BepusdtApiToken'
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>
-                      {t('API token (leave blank unless updating)')}
-                    </FormLabel>
-                    <div className='mb-2 flex flex-wrap items-center gap-2 text-xs'>
-                      {parsed.token.secretSet ? (
-                        <Badge variant='secondary'>{t('Secret set')}</Badge>
-                      ) : (
-                        <Badge variant='outline'>{t('Secret missing')}</Badge>
-                      )}
-                      <span className='text-muted-foreground font-mono'>
-                        {t('Fingerprint')}:{' '}
-                        {formatTokenFingerprint(parsed.token.fingerprint)}
-                      </span>
-                    </div>
-                    <FormControl>
-                      <Input
-                        type='password'
-                        autoComplete='new-password'
-                        placeholder={t('Leave blank to keep current token')}
-                        disabled={saving}
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name='BepusdtTradeType'
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('Trade type')}</FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder={BEPUSDT_DEFAULTS.BepusdtTradeType}
-                        autoComplete='off'
-                        disabled={saving}
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name='BepusdtCurrency'
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('Currency')}</FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder={BEPUSDT_DEFAULTS.BepusdtCurrency}
-                        autoComplete='off'
-                        disabled={saving}
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name='BepusdtLegacyNotifyEnabled'
-                render={({ field }) => (
-                  <SettingsSwitchItem>
-                    <SettingsSwitchContent>
-                      <FormLabel>
-                        {t('Enable legacy BEpusdt notify path')}
-                      </FormLabel>
-                    </SettingsSwitchContent>
-                    <FormControl>
-                      <Switch
-                        checked={field.value}
-                        onCheckedChange={field.onChange}
-                        disabled={saving}
-                      />
-                    </FormControl>
-                  </SettingsSwitchItem>
-                )}
-              />
-            </SettingsForm>
-          </Form>
-        ) : null}
+    <div className='flex flex-col gap-3'>
+      <div className='flex flex-wrap items-center justify-end gap-2'>
+        <Button
+          type='button'
+          variant='outline'
+          size='sm'
+          className='h-8'
+          onClick={() => void optionsQuery.refetch()}
+          disabled={optionsQuery.isFetching}
+        >
+          <RefreshCw className='size-3.5' />
+          {t('Refresh')}
+        </Button>
+        <Button
+          type='button'
+          size='sm'
+          className='h-8'
+          disabled={!isDirty || saving}
+          onClick={() => void form.handleSubmit(onSubmit)()}
+        >
+          <Save className='size-3.5' />
+          {saving ? t('Saving...') : t('Save Changes')}
+        </Button>
       </div>
+
+      {optionsQuery.isLoading ? (
+        <div className='text-muted-foreground flex min-h-24 items-center justify-center text-sm'>
+          {t('Loading settings...')}
+        </div>
+      ) : null}
+
+      {optionsQuery.isError && !optionsQuery.data ? (
+        <ErrorState
+          title={t('Failed to load settings')}
+          onRetry={() => void optionsQuery.refetch()}
+        />
+      ) : null}
+
+      {optionsQuery.data ? (
+        <Form {...form}>
+          <SettingsForm
+            onSubmit={form.handleSubmit(onSubmit)}
+            autoComplete='off'
+            className='bg-card rounded-xl border p-5 shadow-xs'
+          >
+            <FormField
+              control={form.control}
+              name='BepusdtBaseURL'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('BEpusdt gateway URL')}</FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder='https://bepusdt.example.com'
+                      autoComplete='off'
+                      disabled={saving}
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name='BepusdtApiToken'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>
+                    {t('API token (leave blank unless updating)')}
+                  </FormLabel>
+                  <div className='mb-2 flex flex-wrap items-center gap-2 text-xs'>
+                    {parsed.token.secretSet ? (
+                      <Badge variant='secondary'>{t('Secret set')}</Badge>
+                    ) : (
+                      <Badge variant='outline'>{t('Secret missing')}</Badge>
+                    )}
+                    <span className='text-muted-foreground font-mono'>
+                      {t('Fingerprint')}:{' '}
+                      {formatTokenFingerprint(parsed.token.fingerprint)}
+                    </span>
+                  </div>
+                  <FormControl>
+                    <Input
+                      type='password'
+                      autoComplete='new-password'
+                      placeholder={t('Leave blank to keep current token')}
+                      disabled={saving}
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <div className='space-y-2'>
+              <div>
+                <p className='text-sm font-medium'>
+                  {t('Enabled USDT networks')}
+                </p>
+                <p className='text-muted-foreground text-xs'>
+                  {t(
+                    'Turn on the networks users can pay with. Amounts stay in USD.'
+                  )}
+                </p>
+              </div>
+              {USDT_CHAIN_CATALOG.map((chain) => (
+                <FormField
+                  key={chain.id}
+                  control={form.control}
+                  name='enabledChains'
+                  render={({ field }) => {
+                    const selected = field.value.includes(chain.id)
+                    return (
+                      <SettingsSwitchItem>
+                        <SettingsSwitchContent>
+                          <FormLabel>{chain.label}</FormLabel>
+                          <p className='text-muted-foreground text-xs'>
+                            {chain.network}
+                          </p>
+                        </SettingsSwitchContent>
+                        <FormControl>
+                          <Switch
+                            checked={selected}
+                            disabled={saving}
+                            onCheckedChange={(on) => {
+                              const next = on
+                                ? [...field.value, chain.id]
+                                : field.value.filter((id) => id !== chain.id)
+                              const ordered = USDT_CHAIN_CATALOG.map(
+                                (item) => item.id
+                              ).filter((id) => next.includes(id as UsdtChainId))
+                              field.onChange(ordered)
+                            }}
+                          />
+                        </FormControl>
+                      </SettingsSwitchItem>
+                    )
+                  }}
+                />
+              ))}
+            </div>
+
+            <FormField
+              control={form.control}
+              name='BepusdtLegacyNotifyEnabled'
+              render={({ field }) => (
+                <SettingsSwitchItem>
+                  <SettingsSwitchContent>
+                    <FormLabel>
+                      {t('Enable legacy BEpusdt notify path')}
+                    </FormLabel>
+                    <p className='text-muted-foreground text-xs'>
+                      {t(
+                        'Only for old callbacks. New orders do not use this. Leave it off.'
+                      )}
+                    </p>
+                  </SettingsSwitchContent>
+                  <FormControl>
+                    <Switch
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                      disabled={saving}
+                    />
+                  </FormControl>
+                </SettingsSwitchItem>
+              )}
+            />
+          </SettingsForm>
+        </Form>
+      ) : null}
+    </div>
   )
 
   if (embedded) {
@@ -303,7 +317,5 @@ export function BepusdtSection({ embedded = false }: BepusdtSectionProps = {}) {
     )
   }
 
-  return (
-    <SettingsSection title={t('BEpusdt gateway')}>{body}</SettingsSection>
-  )
+  return <SettingsSection title={t('BEpusdt gateway')}>{body}</SettingsSection>
 }

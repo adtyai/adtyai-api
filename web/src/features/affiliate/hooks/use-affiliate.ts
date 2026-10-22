@@ -22,12 +22,14 @@ import {
   createAffWithdraw,
   getAffSelf,
   listAffCommissionsSelf,
+  listAffInvitees,
   listAffWithdrawalsSelf,
 } from '../api'
 
 export const AFF_SELF_QUERY_KEY = ['aff-self'] as const
 export const AFF_COMMISSIONS_QUERY_KEY = ['aff-commissions-self'] as const
 export const AFF_WITHDRAWALS_QUERY_KEY = ['aff-withdrawals-self'] as const
+export const AFF_INVITEES_QUERY_KEY = ['aff-invitees-self'] as const
 
 export function useAffSelf() {
   return useQuery({
@@ -40,9 +42,15 @@ export function useAffSelf() {
 export function useAffCommissionsSelf(params?: {
   limit?: number
   offset?: number
+  status?: string
 }) {
   return useQuery({
-    queryKey: [...AFF_COMMISSIONS_QUERY_KEY, params?.limit, params?.offset],
+    queryKey: [
+      ...AFF_COMMISSIONS_QUERY_KEY,
+      params?.limit,
+      params?.offset,
+      params?.status || '',
+    ],
     queryFn: () => listAffCommissionsSelf(params),
     staleTime: 15_000,
   })
@@ -55,6 +63,14 @@ export function useAffWithdrawalsSelf(params?: {
   return useQuery({
     queryKey: [...AFF_WITHDRAWALS_QUERY_KEY, params?.limit, params?.offset],
     queryFn: () => listAffWithdrawalsSelf(params),
+    staleTime: 15_000,
+  })
+}
+
+export function useAffInvitees(offset = 0) {
+  return useQuery({
+    queryKey: [...AFF_INVITEES_QUERY_KEY, offset],
+    queryFn: () => listAffInvitees({ limit: 20, offset }),
     staleTime: 15_000,
   })
 }

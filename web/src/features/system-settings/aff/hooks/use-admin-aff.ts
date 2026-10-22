@@ -27,6 +27,7 @@ import {
   adminListAffSelfInviteReviews,
   adminListAffWithdrawals,
   adminRejectRiskReview,
+  adminReopenRiskReview,
   adminVoidAffCommission,
 } from '../api'
 
@@ -34,14 +35,19 @@ export const ADMIN_AFF_COMMISSIONS_KEY = ['admin-aff-commissions'] as const
 export const ADMIN_AFF_WITHDRAWALS_KEY = ['admin-aff-withdrawals'] as const
 export const ADMIN_AFF_SELF_INVITE_KEY = ['admin-aff-self-invite'] as const
 
-export function useAdminAffCommissions(status: string) {
+export function useAdminAffCommissions(
+  status: string,
+  keyword = '',
+  offset = 0
+) {
   return useQuery({
-    queryKey: [...ADMIN_AFF_COMMISSIONS_KEY, status || 'all'],
+    queryKey: [...ADMIN_AFF_COMMISSIONS_KEY, status || 'all', keyword, offset],
     queryFn: () =>
       adminListAffCommissions({
         status: status || undefined,
+        keyword: keyword || undefined,
         limit: 50,
-        offset: 0,
+        offset,
       }),
     staleTime: 15_000,
     retry: (count, err) => {
@@ -63,14 +69,21 @@ export function useVoidAffCommission() {
   })
 }
 
-export function useAdminAffWithdrawals(status: string) {
+export function useAdminAffWithdrawals(params: {
+  status?: string
+  payMethod?: string
+  keyword?: string
+  offset?: number
+}) {
   return useQuery({
-    queryKey: [...ADMIN_AFF_WITHDRAWALS_KEY, status || 'all'],
+    queryKey: [...ADMIN_AFF_WITHDRAWALS_KEY, params],
     queryFn: () =>
       adminListAffWithdrawals({
-        status: status || undefined,
+        status: params.status || undefined,
+        pay_method: params.payMethod || undefined,
+        keyword: params.keyword || undefined,
         limit: 50,
-        offset: 0,
+        offset: params.offset ?? 0,
       }),
     staleTime: 15_000,
     retry: (count, err) => {
@@ -87,7 +100,12 @@ export function useAdminAffWithdrawAction() {
       id: number
       action: AffAdminWithdrawAction
       reason?: string
-    }) => adminAffWithdrawAction(args.id, args.action, { reason: args.reason }),
+      payout_ref?: string
+    }) =>
+      adminAffWithdrawAction(args.id, args.action, {
+        reason: args.reason,
+        payout_ref: args.payout_ref,
+      }),
     onSuccess: (data) => {
       if (data.success) {
         void qc.invalidateQueries({ queryKey: ADMIN_AFF_WITHDRAWALS_KEY })
@@ -96,14 +114,14 @@ export function useAdminAffWithdrawAction() {
   })
 }
 
-export function useAdminAffSelfInviteReviews(status: string) {
+export function useAdminAffSelfInviteReviews(status: string, offset = 0) {
   return useQuery({
-    queryKey: [...ADMIN_AFF_SELF_INVITE_KEY, status || 'all'],
+    queryKey: [...ADMIN_AFF_SELF_INVITE_KEY, status || 'all', offset],
     queryFn: () =>
       adminListAffSelfInviteReviews({
         status: status || undefined,
         limit: 50,
-        offset: 0,
+        offset,
       }),
     staleTime: 15_000,
     retry: (count, err) => {
@@ -129,6 +147,18 @@ export function useRejectSelfInvite() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (id: number) => adminRejectRiskReview(id),
+    onSuccess: (data) => {
+      if (data.success) {
+        void qc.invalidateQueries({ queryKey: ADMIN_AFF_SELF_INVITE_KEY })
+      }
+    },
+  })
+}
+
+export function useReopenSelfInvite() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: number) => adminReopenRiskReview(id),
     onSuccess: (data) => {
       if (data.success) {
         void qc.invalidateQueries({ queryKey: ADMIN_AFF_SELF_INVITE_KEY })

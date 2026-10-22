@@ -19,11 +19,12 @@ For commercial licensing, please contact support@quantumnous.com
 import { useCallback, useEffect, useState } from 'react'
 
 import { getAdtyTopupTiers } from '../api'
-import type { AdtyPayMethod, AdtyTopupTier } from '../types'
+import type { AdtyPayMethod, AdtyTopupTier, AdtyUsdtChain } from '../types'
 
 export function useAdtyTopup() {
   const [tiers, setTiers] = useState<AdtyTopupTier[]>([])
   const [payMethods, setPayMethods] = useState<AdtyPayMethod[]>([])
+  const [usdtChains, setUsdtChains] = useState<AdtyUsdtChain[]>([])
   const [firstTopupBonusRate, setFirstTopupBonusRate] = useState(0)
   const [firstEligible, setFirstEligible] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -40,6 +41,7 @@ export function useAdtyTopup() {
         setAvailable(false)
         setTiers([])
         setPayMethods([])
+        setUsdtChains([])
         setError(tiersRes?.message || 'tiers unavailable')
         return
       }
@@ -47,6 +49,7 @@ export function useAdtyTopup() {
       const data = tiersRes.data
       setTiers(data.tiers)
       setPayMethods(Array.isArray(data.pay_methods) ? data.pay_methods : [])
+      setUsdtChains(Array.isArray(data.usdt_chains) ? data.usdt_chains : [])
       // 首充加送已停，接口字段不再驱动展示或到账。
       setFirstTopupBonusRate(0)
       setFirstEligible(false)
@@ -72,6 +75,7 @@ export function useAdtyTopup() {
   return {
     tiers,
     payMethods,
+    usdtChains,
     firstTopupBonusRate,
     firstEligible,
     loading,

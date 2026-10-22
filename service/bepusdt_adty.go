@@ -74,7 +74,7 @@ type AdtyBepusdtCreateOrderResponse struct {
 	PaymentAddress  string
 	PaymentAmount   string // USDT to pay
 	PaymentCurrency string
-	ExpirationTime  int64 // unix seconds if provided
+	ExpirationTime  int64 // remaining seconds from create-transaction, not a unix timestamp
 	Raw             map[string]interface{}
 }
 
@@ -161,6 +161,9 @@ func ProbeAdtyBepusdt() (ok bool, reason string) {
 func IsAdtyUsdtAvailable() (ok bool, reason string) {
 	if !setting.IsBepusdtConfigured() {
 		return false, "支付维护中"
+	}
+	if len(setting.EnabledUsdtChains()) == 0 {
+		return false, "未开通收款网络"
 	}
 	return ProbeAdtyBepusdt()
 }
@@ -311,10 +314,13 @@ func AdtyBepusdtCallbackTradeID(values map[string]interface{}) string {
 	return adtyBepusdtFirstString(values, "trade_id", "tradeId", "transaction_id", "block_transaction_id", "tx_id")
 }
 
-// AdtyBepusdtCallbackPaidUSDT: prefer actual_amount (USDT), fall back to amount if fiat is USDT.
+// AdtyBepusdtCallbackPaidUSDT prefers actual_amount (USDT). amount/money is used only when fiat is explicitly USDT.
 func AdtyBepusdtCallbackPaidUSDT(values map[string]interface{}) float64 {
 	amountText := adtyBepusdtFirstString(values, "actual_amount", "payment_amount", "paid_usdt")
 	if amountText == "" {
+		if !adtyBepusdtFiatIsUSDT(values) {
+			return -1
+		}
 		amountText = adtyBepusdtFirstString(values, "amount", "money", "paid_amount")
 	}
 	if amountText == "" {
@@ -325,6 +331,11 @@ func AdtyBepusdtCallbackPaidUSDT(values map[string]interface{}) float64 {
 		return -1
 	}
 	return amount
+}
+
+func adtyBepusdtFiatIsUSDT(values map[string]interface{}) bool {
+	fiat := strings.ToLower(strings.TrimSpace(adtyBepusdtFirstString(values, "fiat", "currency", "trade_currency", "fiat_currency")))
+	return fiat == "usdt"
 }
 
 func AdtyIsBepusdtPaidStatus(status string) bool {

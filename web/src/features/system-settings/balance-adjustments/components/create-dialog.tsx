@@ -63,6 +63,7 @@ export function CreateBalanceAdjustDialog({
   const [amountUsd, setAmountUsd] = useState('')
   const [reason, setReason] = useState('')
   const [chatwoot, setChatwoot] = useState('')
+  const [amountConfirm, setAmountConfirm] = useState('')
   const [localError, setLocalError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -72,6 +73,7 @@ export function CreateBalanceAdjustDialog({
       setAmountUsd('')
       setReason('')
       setChatwoot('')
+      setAmountConfirm('')
       setLocalError(null)
       mut.reset()
     }
@@ -94,6 +96,11 @@ export function CreateBalanceAdjustDialog({
     }
     if (!reason.trim()) {
       const msg = t('Reason is required')
+      setLocalError(msg)
+      return
+    }
+    if (Math.abs(usd) >= 100 && Math.abs(Number(amountConfirm) - usd) > 1e-6) {
+      const msg = t('Retype the USD amount to confirm this large change')
       setLocalError(msg)
       return
     }
@@ -135,7 +142,14 @@ export function CreateBalanceAdjustDialog({
           <DialogDescription>
             {t(
               'Creates a pending request only; balance changes after approve. Amount is entered in USD and converted with quotaPerUnit.'
-            )}
+            )}{' '}
+            {account === 'bonus'
+              ? t(
+                  'This request changes bonus balance after another admin approves. Bonus is not withdrawable.'
+                )
+              : t(
+                  'This request changes paid balance after another admin approves. It does not change bonus or invite earnings.'
+                )}
           </DialogDescription>
         </DialogHeader>
         <div className='grid gap-3 text-sm'>
@@ -185,6 +199,21 @@ export function CreateBalanceAdjustDialog({
               disabled={mut.isPending}
             />
           </div>
+          {Math.abs(Number(amountUsd)) >= 100 ? (
+            <div className='grid gap-1.5'>
+              <Label htmlFor='ba-amount-confirm'>
+                {t('Retype the USD amount to confirm this large change')}
+              </Label>
+              <Input
+                id='ba-amount-confirm'
+                type='number'
+                step='0.01'
+                value={amountConfirm}
+                onChange={(e) => setAmountConfirm(e.target.value)}
+                disabled={mut.isPending}
+              />
+            </div>
+          ) : null}
           <div className='grid gap-1.5'>
             <Label htmlFor='ba-reason'>{t('Reason')}</Label>
             <Textarea

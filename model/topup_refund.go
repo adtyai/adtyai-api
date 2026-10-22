@@ -3,6 +3,8 @@ package model
 import (
 	"encoding/json"
 	"errors"
+	"math"
+	"math/big"
 	"strings"
 	"time"
 
@@ -131,10 +133,7 @@ func RefundTopupOrder(orderNo string, amountUSD float64, reason, requestId strin
 		}
 
 		// 5) 可退金额 = min(该单实付 − 已退, 用户当前实充余额)
-		paidUSD := order.CreditAmountUSD
-		if paidUSD <= 0 {
-			paidUSD = order.PaidAmountUSD
-		}
+		paidUSD := topupRefundBaseUSD(&order)
 		alreadyRefunded := order.RefundedAmount
 		if alreadyRefunded < 0 {
 			alreadyRefunded = 0
@@ -186,39 +185,26 @@ func RefundTopupOrder(orderNo string, amountUSD float64, reason, requestId strin
 			return sumErr
 		}
 
-		// 返佣总额用「当前剩余 + 已 claw」还原原始快照（CommissionQuota 会随退款削减）
+		// 返佣总额先还原写入时的净值，再按订单基数抬回。只按当前剩余会少追。
 		affTotalQuota := int64(0)
 		if hasComm && (comm.Status == AffCommissionStatusFrozen ||
 			comm.Status == AffCommissionStatusAvailable) {
-			affTotalQuota = comm.CommissionQuota + prevAff
-			if affTotalQuota < 0 {
-				affTotalQuota = 0
-			}
+			affTotalQuota = affRefundSnapshotQuota(comm.CommissionQuota, prevAff, paidUSD, comm.PaidAmountUSD)
 		}
 
 		isLast := (alreadyRefunded+amountUSD) >= paidUSD-1e-9 || amountUSD >= orderRemainUSD-1e-9
-
-		var bonusWant, affWant int64
-		if paidTotalQuota <= 0 {
-			bonusWant, affWant = 0, 0
-		} else if isLast {
-			bonusWant = bonusTotalQuota - prevBonus
-			if bonusWant < 0 {
-				bonusWant = 0
-			}
-			affWant = affTotalQuota - prevAff
-			if affWant < 0 {
-				affWant = 0
-			}
-		} else {
-			bonusWant = int64(refundQuota) * bonusTotalQuota / paidTotalQuota
-			affWant = int64(refundQuota) * affTotalQuota / paidTotalQuota
-		}
 
 		var wallet UserBonusWallet
 		if err := tx.Where("user_id = ?", order.UserId).First(&wallet).Error; err != nil {
 			return err
 		}
+		commQuota := int64(0)
+		commStatus := ""
+		if hasComm {
+			commQuota = comm.CommissionQuota
+			commStatus = comm.Status
+		}
+		plan := planRefundClaws(int64(refundQuota), paidTotalQuota, bonusTotalQuota, affTotalQuota, prevBonus, prevAff, wallet.Balance, commQuota, isLast, commStatus, hasComm)
 		bonusBefore := wallet.Balance
 		paidBefore := int64(userRow.Quota)
 		affBefore := int64(0)
@@ -245,11 +231,8 @@ func RefundTopupOrder(orderNo string, amountUSD float64, reason, requestId strin
 		ledgerIDs = append(ledgerIDs, paidEntry.Id)
 
 		// 7) 赠送按比例扣回；不够扣到 0，记 shortfall（先算 claw 再调 AdjustQuota，避免不足整单失败）
-		bonusClaw := bonusWant
-		if bonusClaw > wallet.Balance {
-			bonusClaw = wallet.Balance
-		}
-		bonusShort := bonusWant - bonusClaw
+		bonusClaw := plan.BonusClaw
+		bonusShort := plan.BonusShort
 		bonusAfter := wallet.Balance
 		if bonusClaw > 0 {
 			bAdj, err := AdjustQuota(tx, order.UserId, "bonus", -bonusClaw,
@@ -271,14 +254,11 @@ func RefundTopupOrder(orderNo string, amountUSD float64, reason, requestId strin
 		// 8) 返佣扣回：冻结作废；已可提现从邀请人 aff 扣（可为负）
 		affClawed := int64(0)
 		affAfter := affBefore
-		if affWant > 0 && hasComm {
+		if plan.AffWant > 0 && hasComm {
 			switch comm.Status {
 			case AffCommissionStatusFrozen:
 				// 按比例作废：削减 CommissionQuota；归零则 voided
-				reduce := affWant
-				if reduce > comm.CommissionQuota {
-					reduce = comm.CommissionQuota
-				}
+				reduce := plan.AffReduce
 				comm.CommissionQuota -= reduce
 				affClawed = reduce
 				if comm.CommissionQuota <= 0 {
@@ -302,10 +282,7 @@ func RefundTopupOrder(orderNo string, amountUSD float64, reason, requestId strin
 					affAfter = affBefore // 未动余额
 				}
 			case AffCommissionStatusAvailable:
-				reduce := affWant
-				if reduce > comm.CommissionQuota {
-					reduce = comm.CommissionQuota
-				}
+				reduce := plan.AffReduce
 				// 先收回未打出的提现，再扣可提现。已划进实充且还没被退款追回的部分，只扣实充，不连可提现再扣一次。
 				// 仍不够的记成负的 aff_quota。不拿无关实充顶已提现现金。pay_unknown 不自动取消。
 				afterAff, err := clawAvailableAffCommissionTx(tx, comm.InviterId, reduce, requestId, operatorId, &ledgerIDs)
@@ -560,4 +537,265 @@ func clawAvailableAffCommissionTx(tx *gorm.DB, inviterId int, reduce int64, requ
 		}
 	}
 	return int64(afterAff), nil
+}
+
+type refundClawPlan struct {
+	BonusWant  int64
+	AffWant    int64
+	BonusClaw  int64
+	BonusShort int64
+	AffReduce  int64
+	AffAction  string
+}
+
+// topupRefundBaseUSD 与入账一致：先用实付入账额，没有才用支付额。预览必须走同一基数。
+func topupRefundBaseUSD(order *TopupOrder) float64 {
+	if order == nil {
+		return 0
+	}
+	if order.CreditAmountUSD > 0 {
+		return order.CreditAmountUSD
+	}
+	return order.PaidAmountUSD
+}
+
+// affRefundSnapshotQuota 把「当前剩余 + 已追回」抬回整单佣金。
+// 写入时 PaidAmountUSD 小于订单基数，说明当时已经扣过退款，或自邀放行按剩余缩过。
+// 只拿当前剩余当原额，后面的部分退款会少追。基数相同则与旧公式一致。
+func affRefundSnapshotQuota(commQuota, prevAff int64, orderBaseUSD, basisPaidUSD float64) int64 {
+	basis := commQuota + prevAff
+	if basis < 0 {
+		basis = 0
+	}
+	if basis == 0 || basisPaidUSD <= 0 || orderBaseUSD <= basisPaidUSD+1e-6 {
+		return basis
+	}
+	orderMicro := usdToMicro(orderBaseUSD)
+	paidMicro := usdToMicro(basisPaidUSD)
+	if paidMicro <= 0 || orderMicro <= paidMicro {
+		return basis
+	}
+	lifted := mulDivRound(basis, orderMicro, paidMicro)
+	if lifted < basis {
+		return basis
+	}
+	return lifted
+}
+
+func usdToMicro(v float64) int64 {
+	if v <= 0 || math.IsNaN(v) || math.IsInf(v, 0) {
+		return 0
+	}
+	micro := math.Round(v * 1_000_000)
+	if micro >= float64(math.MaxInt64) {
+		return math.MaxInt64
+	}
+	return int64(micro)
+}
+
+func mulDivRound(a, b, c int64) int64 {
+	if a <= 0 || b <= 0 || c <= 0 {
+		return 0
+	}
+	num := new(big.Int).Mul(big.NewInt(a), big.NewInt(b))
+	den := big.NewInt(c)
+	num.Add(num, new(big.Int).Div(new(big.Int).Set(den), big.NewInt(2)))
+	num.Div(num, den)
+	if !num.IsInt64() {
+		return math.MaxInt64
+	}
+	return num.Int64()
+}
+
+// planRefundClaws is the only claw formula. Refund writes and the preview both call it.
+func planRefundClaws(refundQuota, paidTotal, bonusTotal, affTotal, prevBonus, prevAff, walletBalance, commQuota int64, isLast bool, commStatus string, hasComm bool) refundClawPlan {
+	var bonusWant, affWant int64
+	if paidTotal > 0 {
+		if isLast {
+			bonusWant = bonusTotal - prevBonus
+			if bonusWant < 0 {
+				bonusWant = 0
+			}
+			affWant = affTotal - prevAff
+			if affWant < 0 {
+				affWant = 0
+			}
+		} else {
+			bonusWant = refundQuota * bonusTotal / paidTotal
+			affWant = refundQuota * affTotal / paidTotal
+		}
+	}
+	bonusClaw := bonusWant
+	if bonusClaw > walletBalance {
+		bonusClaw = walletBalance
+	}
+	if bonusClaw < 0 {
+		bonusClaw = 0
+	}
+	bonusShort := bonusWant - bonusClaw
+	if bonusShort < 0 {
+		bonusShort = 0
+	}
+	affReduce := int64(0)
+	affAction := "none"
+	if hasComm && affWant > 0 {
+		switch commStatus {
+		case AffCommissionStatusFrozen, AffCommissionStatusAvailable:
+			affReduce = affWant
+			if affReduce > commQuota {
+				affReduce = commQuota
+			}
+			if commStatus == AffCommissionStatusFrozen {
+				affAction = "void"
+			} else {
+				affAction = "claw"
+			}
+		}
+	}
+	return refundClawPlan{
+		BonusWant: bonusWant, AffWant: affWant,
+		BonusClaw: bonusClaw, BonusShort: bonusShort,
+		AffReduce: affReduce, AffAction: affAction,
+	}
+}
+
+// RefundClawPreview is a read-only quote. Submit still settles against the locked balances.
+type RefundClawPreview struct {
+	AmountUSD           float64 `json:"amount_usd"`
+	PaidClawQuota       int64   `json:"paid_claw_quota"`
+	PaidClawUSD         float64 `json:"paid_claw_usd"`
+	BonusClawQuota      int64   `json:"bonus_claw_quota"`
+	BonusClawUSD        float64 `json:"bonus_claw_usd"`
+	BonusShortfallQuota int64   `json:"bonus_shortfall_quota"`
+	BonusShortfallUSD   float64 `json:"bonus_shortfall_usd"`
+	AffClawQuota        int64   `json:"aff_claw_quota"`
+	AffClawUSD          float64 `json:"aff_claw_usd"`
+	AffAction           string  `json:"aff_action"`
+	RefundableUSD       float64 `json:"refundable_usd"`
+}
+
+// RefundPreviewEcho is the preview the operator saw. The refund handler must match it before writing.
+type RefundPreviewEcho struct {
+	AmountUSD         float64 `json:"amount_usd"`
+	PaidClawUSD       float64 `json:"paid_claw_usd"`
+	BonusClawUSD      float64 `json:"bonus_claw_usd"`
+	BonusShortfallUSD float64 `json:"bonus_shortfall_usd"`
+	AffClawUSD        float64 `json:"aff_claw_usd"`
+	AffAction         string  `json:"aff_action"`
+}
+
+func quotaAmountToUSD(q int64) float64 {
+	if common.QuotaPerUnit == 0 {
+		return 0
+	}
+	return float64(q) / common.QuotaPerUnit
+}
+
+// PreviewTopupRefund quotes the same claw numbers RefundTopupOrder would write. It does not write.
+func PreviewTopupRefund(orderNo string, amountUSD float64) (*RefundClawPreview, error) {
+	if strings.TrimSpace(orderNo) == "" {
+		return nil, ErrTopupOrderNotFound
+	}
+	if amountUSD <= 0 {
+		return nil, ErrRefundAmountInvalid
+	}
+	order, err := GetTopupOrderByNo(orderNo)
+	if err != nil {
+		return nil, err
+	}
+	if order.Status != TopupOrderStatusPaid {
+		return nil, ErrTopupOrderStatusInvalid
+	}
+	paidUSD := topupRefundBaseUSD(order)
+	already := order.RefundedAmount
+	orderRemain := paidUSD - already
+	if orderRemain < 0 {
+		orderRemain = 0
+	}
+	if amountUSD > orderRemain+1e-9 {
+		return nil, ErrRefundExceedsAvailable
+	}
+	var user User
+	if err := DB.Select("id", "quota").First(&user, order.UserId).Error; err != nil {
+		return nil, err
+	}
+	var wallet UserBonusWallet
+	if err := DB.Where("user_id = ?", order.UserId).First(&wallet).Error; err != nil {
+		return nil, err
+	}
+	paidBalUSD := quotaAmountToUSD(int64(user.Quota))
+	refundable := orderRemain
+	if paidBalUSD+1e-9 < refundable {
+		refundable = paidBalUSD
+	}
+	if refundable < 0 {
+		refundable = 0
+	}
+	if amountUSD > refundable+1e-9 {
+		return nil, ErrRefundExceedsAvailable
+	}
+	refundQuota, err := DollarsToQuota(amountUSD)
+	if err != nil {
+		return nil, err
+	}
+	paidTotalQuota := order.PaidCreditedQuota
+	if paidTotalQuota <= 0 {
+		if q, qerr := DollarsToQuota(paidUSD); qerr == nil {
+			paidTotalQuota = int64(q)
+		}
+	}
+	bonusTotalQuota := order.BonusCreditedQuota
+	if bonusTotalQuota < 0 {
+		bonusTotalQuota = 0
+	}
+	prevBonus, prevAff, err := sumPriorRefundClawbacks(DB, order.OrderNo)
+	if err != nil {
+		return nil, err
+	}
+	var comm AffCommission
+	hasComm := DB.Where("order_no = ?", order.OrderNo).First(&comm).Error == nil
+	affTotal := int64(0)
+	commQuota := int64(0)
+	commStatus := ""
+	if hasComm && (comm.Status == AffCommissionStatusFrozen || comm.Status == AffCommissionStatusAvailable) {
+		affTotal = affRefundSnapshotQuota(comm.CommissionQuota, prevAff, paidUSD, comm.PaidAmountUSD)
+		commQuota = comm.CommissionQuota
+		commStatus = comm.Status
+	}
+	isLast := (already+amountUSD) >= paidUSD-1e-9 || amountUSD >= orderRemain-1e-9
+	plan := planRefundClaws(int64(refundQuota), paidTotalQuota, bonusTotalQuota, affTotal, prevBonus, prevAff, wallet.Balance, commQuota, isLast, commStatus, hasComm)
+	return &RefundClawPreview{
+		AmountUSD:           amountUSD,
+		PaidClawQuota:       int64(refundQuota),
+		PaidClawUSD:         quotaAmountToUSD(int64(refundQuota)),
+		BonusClawQuota:      plan.BonusClaw,
+		BonusClawUSD:        quotaAmountToUSD(plan.BonusClaw),
+		BonusShortfallQuota: plan.BonusShort,
+		BonusShortfallUSD:   quotaAmountToUSD(plan.BonusShort),
+		AffClawQuota:        plan.AffReduce,
+		AffClawUSD:          quotaAmountToUSD(plan.AffReduce),
+		AffAction:           plan.AffAction,
+		RefundableUSD:       refundable,
+	}, nil
+}
+
+// RefundPreviewMatches reports whether the submitted preview is still the current quote.
+func RefundPreviewMatches(current *RefundClawPreview, echo RefundPreviewEcho) bool {
+	if current == nil {
+		return false
+	}
+	return refundUSDNear(current.AmountUSD, echo.AmountUSD) &&
+		refundUSDNear(current.PaidClawUSD, echo.PaidClawUSD) &&
+		refundUSDNear(current.BonusClawUSD, echo.BonusClawUSD) &&
+		refundUSDNear(current.BonusShortfallUSD, echo.BonusShortfallUSD) &&
+		refundUSDNear(current.AffClawUSD, echo.AffClawUSD) &&
+		current.AffAction == echo.AffAction
+}
+
+func refundUSDNear(a, b float64) bool {
+	d := a - b
+	if d < 0 {
+		d = -d
+	}
+	return d <= 1e-6
 }

@@ -48,6 +48,17 @@ func NormalizeAdjustAccount(account string) (string, error) {
 // kindOpt 可选：非空时作为 ledger kind；空则保持现行为（kind=refType，再空则 balance_adjust）。
 // 锁序：user_bonus_wallets → users（与扣费/退款一致）。
 func AdjustQuota(tx *gorm.DB, userId int, account string, delta int64, reason, refType, refId, idemKey string, operatorId int, kindOpt ...string) (*AdjustQuotaResult, error) {
+	return adjustQuota(tx, userId, account, delta, reason, refType, refId, idemKey, operatorId, true, kindOpt...)
+}
+
+// adjustQuotaKeepUserCache writes the balance without deleting the quota hash.
+// The caller must add the same positive delta after commit. Deleting the hash
+// inside the credit transaction lets a concurrent reader store the pre-commit total.
+func adjustQuotaKeepUserCache(tx *gorm.DB, userId int, account string, delta int64, reason, refType, refId, idemKey string, operatorId int, kindOpt ...string) (*AdjustQuotaResult, error) {
+	return adjustQuota(tx, userId, account, delta, reason, refType, refId, idemKey, operatorId, false, kindOpt...)
+}
+
+func adjustQuota(tx *gorm.DB, userId int, account string, delta int64, reason, refType, refId, idemKey string, operatorId int, invalidateCache bool, kindOpt ...string) (*AdjustQuotaResult, error) {
 	kindOverride := ""
 	if len(kindOpt) > 0 {
 		kindOverride = strings.TrimSpace(kindOpt[0])
@@ -194,7 +205,9 @@ func AdjustQuota(tx *gorm.DB, userId int, account string, delta int64, reason, r
 				return nil, err
 			}
 		}
-		_ = invalidateUserCache(userId)
+		if invalidateCache {
+			_ = invalidateUserCache(userId)
+		}
 		return &AdjustQuotaResult{
 			Entry:         entry,
 			BalanceBefore: before,

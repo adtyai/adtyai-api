@@ -55,6 +55,13 @@ export type TopupOrder = {
   pay_usdt?: number
   usdt_fx_rate?: number
   usdt_expire_at?: number
+  usdt_chain?: string
+  usdt_network?: string
+  usdt_pay_address?: string
+  usdt_payment_amount?: string
+  usdt_callback_amount?: number | null
+  epay_pay_url?: string
+  display_status?: string
   bonus_rate_snapshot?: number
   provider_trade_no?: string
   status: TopupOrderStatus

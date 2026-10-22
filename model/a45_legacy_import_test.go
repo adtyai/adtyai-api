@@ -117,6 +117,26 @@ func TestPlanA45LegacyImport_DryRunNoWrite(t *testing.T) {
 
 func setupA45SQLite(t *testing.T) {
 	t.Helper()
+	prevRedis := common.RedisEnabled
+	prevBatch := common.BatchUpdateEnabled
+	common.OptionMapRWMutex.Lock()
+	var prevOptions map[string]string
+	if common.OptionMap != nil {
+		prevOptions = make(map[string]string, len(common.OptionMap))
+		for k, v := range common.OptionMap {
+			prevOptions[k] = v
+		}
+	}
+	prevOptionsNil := common.OptionMap == nil
+	common.OptionMapRWMutex.Unlock()
+	bpMu.Lock()
+	prevTimeout := bpTopupOrderTimeoutMinutes
+	prevTopupRate := bpAffTopupCommissionRate
+	prevSubRate := bpAffSubscriptionCommissionRate
+	prevMin := bpAffMinWithdrawAmount
+	prevFee := bpAffWithdrawFeeRate
+	prevAlert := bpBalanceLowAlertThreshold
+	bpMu.Unlock()
 	common.RedisEnabled = false
 	common.BatchUpdateEnabled = false
 	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "a45.db")), &gorm.Config{
@@ -150,7 +170,33 @@ func setupA45SQLite(t *testing.T) {
 	t.Cleanup(func() {
 		DB = previousDB
 		LOG_DB = previousLogDB
+		common.RedisEnabled = prevRedis
+		common.BatchUpdateEnabled = prevBatch
+		common.OptionMapRWMutex.Lock()
+		if prevOptionsNil {
+			common.OptionMap = nil
+		} else {
+			common.OptionMap = prevOptions
+		}
+		common.OptionMapRWMutex.Unlock()
+		bpMu.Lock()
+		bpTopupOrderTimeoutMinutes = prevTimeout
+		bpAffTopupCommissionRate = prevTopupRate
+		bpAffSubscriptionCommissionRate = prevSubRate
+		bpAffMinWithdrawAmount = prevMin
+		bpAffWithdrawFeeRate = prevFee
+		bpBalanceLowAlertThreshold = prevAlert
+		bpMu.Unlock()
 	})
+}
+
+func TestSetupA45SQLiteRestoresWithdrawMinimum(t *testing.T) {
+	require.NoError(t, applyBusinessParamRuntime("AffMinWithdrawAmount", "0"))
+	t.Run("setup", func(t *testing.T) {
+		setupA45SQLite(t)
+		require.Equal(t, 5.0, GetAffMinWithdrawAmount())
+	})
+	require.Equal(t, 0.0, GetAffMinWithdrawAmount())
 }
 
 func TestApplyAndRollbackA45Legacy_SQLite(t *testing.T) {

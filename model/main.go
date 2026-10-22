@@ -387,6 +387,7 @@ func migrateDB() error {
 		&EpayInstance{},
 		&AffCommission{},
 		&AffWithdrawal{},
+		&AffPayoutQr{},
 		&TopupRefund{},
 		&BalanceAdjustRequest{},
 		&OpsAlertEvent{},

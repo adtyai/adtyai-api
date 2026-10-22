@@ -61,6 +61,7 @@ import { Route as AuthenticatedUsersIndexRouteImport } from './routes/_authentic
 import { Route as AuthenticatedWalletIndexRouteImport } from './routes/_authenticated/wallet/index'
 import { Route as PricingModelIdIndexRouteImport } from './routes/pricing/$modelId/index'
 import { Route as AuthenticatedSystemSettingsAffCommissionsIndexRouteImport } from './routes/_authenticated/system-settings/aff-commissions/index'
+import { Route as AuthenticatedSystemSettingsAffOverviewIndexRouteImport } from './routes/_authenticated/system-settings/aff-overview/index'
 import { Route as AuthenticatedSystemSettingsAffWithdrawalsIndexRouteImport } from './routes/_authenticated/system-settings/aff-withdrawals/index'
 import { Route as AuthenticatedSystemSettingsAlertsIndexRouteImport } from './routes/_authenticated/system-settings/alerts/index'
 import { Route as AuthenticatedSystemSettingsAuthIndexRouteImport } from './routes/_authenticated/system-settings/auth/index'
@@ -375,6 +376,12 @@ const AuthenticatedSystemSettingsAffCommissionsIndexRoute =
     path: '/aff-commissions/',
     getParentRoute: () => AuthenticatedSystemSettingsRouteRoute,
   } as any)
+const AuthenticatedSystemSettingsAffOverviewIndexRoute =
+  AuthenticatedSystemSettingsAffOverviewIndexRouteImport.update({
+    id: '/aff-overview/',
+    path: '/aff-overview/',
+    getParentRoute: () => AuthenticatedSystemSettingsRouteRoute,
+  } as any)
 const AuthenticatedSystemSettingsAffWithdrawalsIndexRoute =
   AuthenticatedSystemSettingsAffWithdrawalsIndexRouteImport.update({
     id: '/aff-withdrawals/',
@@ -621,6 +628,7 @@ export interface FileRoutesByFullPath {
   '/system-settings/security/$section': typeof AuthenticatedSystemSettingsSecuritySectionRoute
   '/system-settings/site/$section': typeof AuthenticatedSystemSettingsSiteSectionRoute
   '/system-settings/aff-commissions/': typeof AuthenticatedSystemSettingsAffCommissionsIndexRoute
+  '/system-settings/aff-overview/': typeof AuthenticatedSystemSettingsAffOverviewIndexRoute
   '/system-settings/aff-withdrawals/': typeof AuthenticatedSystemSettingsAffWithdrawalsIndexRoute
   '/system-settings/alerts/': typeof AuthenticatedSystemSettingsAlertsIndexRoute
   '/system-settings/auth/': typeof AuthenticatedSystemSettingsAuthIndexRoute
@@ -703,6 +711,7 @@ export interface FileRoutesByTo {
   '/system-settings/security/$section': typeof AuthenticatedSystemSettingsSecuritySectionRoute
   '/system-settings/site/$section': typeof AuthenticatedSystemSettingsSiteSectionRoute
   '/system-settings/aff-commissions': typeof AuthenticatedSystemSettingsAffCommissionsIndexRoute
+  '/system-settings/aff-overview': typeof AuthenticatedSystemSettingsAffOverviewIndexRoute
   '/system-settings/aff-withdrawals': typeof AuthenticatedSystemSettingsAffWithdrawalsIndexRoute
   '/system-settings/alerts': typeof AuthenticatedSystemSettingsAlertsIndexRoute
   '/system-settings/auth': typeof AuthenticatedSystemSettingsAuthIndexRoute
@@ -789,6 +798,7 @@ export interface FileRoutesById {
   '/_authenticated/system-settings/security/$section': typeof AuthenticatedSystemSettingsSecuritySectionRoute
   '/_authenticated/system-settings/site/$section': typeof AuthenticatedSystemSettingsSiteSectionRoute
   '/_authenticated/system-settings/aff-commissions/': typeof AuthenticatedSystemSettingsAffCommissionsIndexRoute
+  '/_authenticated/system-settings/aff-overview/': typeof AuthenticatedSystemSettingsAffOverviewIndexRoute
   '/_authenticated/system-settings/aff-withdrawals/': typeof AuthenticatedSystemSettingsAffWithdrawalsIndexRoute
   '/_authenticated/system-settings/alerts/': typeof AuthenticatedSystemSettingsAlertsIndexRoute
   '/_authenticated/system-settings/auth/': typeof AuthenticatedSystemSettingsAuthIndexRoute
@@ -874,6 +884,7 @@ export interface FileRouteTypes {
     | '/system-settings/security/$section'
     | '/system-settings/site/$section'
     | '/system-settings/aff-commissions/'
+    | '/system-settings/aff-overview/'
     | '/system-settings/aff-withdrawals/'
     | '/system-settings/alerts/'
     | '/system-settings/auth/'
@@ -956,6 +967,7 @@ export interface FileRouteTypes {
     | '/system-settings/security/$section'
     | '/system-settings/site/$section'
     | '/system-settings/aff-commissions'
+    | '/system-settings/aff-overview'
     | '/system-settings/aff-withdrawals'
     | '/system-settings/alerts'
     | '/system-settings/auth'
@@ -1041,6 +1053,7 @@ export interface FileRouteTypes {
     | '/_authenticated/system-settings/security/$section'
     | '/_authenticated/system-settings/site/$section'
     | '/_authenticated/system-settings/aff-commissions/'
+    | '/_authenticated/system-settings/aff-overview/'
     | '/_authenticated/system-settings/aff-withdrawals/'
     | '/_authenticated/system-settings/alerts/'
     | '/_authenticated/system-settings/auth/'
@@ -1451,6 +1464,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSystemSettingsAffCommissionsIndexRouteImport
       parentRoute: typeof AuthenticatedSystemSettingsRouteRoute
     }
+    '/_authenticated/system-settings/aff-overview/': {
+      id: '/_authenticated/system-settings/aff-overview/'
+      path: '/aff-overview'
+      fullPath: '/system-settings/aff-overview/'
+      preLoaderRoute: typeof AuthenticatedSystemSettingsAffOverviewIndexRouteImport
+      parentRoute: typeof AuthenticatedSystemSettingsRouteRoute
+    }
     '/_authenticated/system-settings/aff-withdrawals/': {
       id: '/_authenticated/system-settings/aff-withdrawals/'
       path: '/aff-withdrawals'
@@ -1708,6 +1728,7 @@ interface AuthenticatedSystemSettingsRouteRouteChildren {
   AuthenticatedSystemSettingsSecuritySectionRoute: typeof AuthenticatedSystemSettingsSecuritySectionRoute
   AuthenticatedSystemSettingsSiteSectionRoute: typeof AuthenticatedSystemSettingsSiteSectionRoute
   AuthenticatedSystemSettingsAffCommissionsIndexRoute: typeof AuthenticatedSystemSettingsAffCommissionsIndexRoute
+  AuthenticatedSystemSettingsAffOverviewIndexRoute: typeof AuthenticatedSystemSettingsAffOverviewIndexRoute
   AuthenticatedSystemSettingsAffWithdrawalsIndexRoute: typeof AuthenticatedSystemSettingsAffWithdrawalsIndexRoute
   AuthenticatedSystemSettingsAlertsIndexRoute: typeof AuthenticatedSystemSettingsAlertsIndexRoute
   AuthenticatedSystemSettingsAuthIndexRoute: typeof AuthenticatedSystemSettingsAuthIndexRoute
@@ -1754,6 +1775,8 @@ const AuthenticatedSystemSettingsRouteRouteChildren: AuthenticatedSystemSettings
       AuthenticatedSystemSettingsSiteSectionRoute,
     AuthenticatedSystemSettingsAffCommissionsIndexRoute:
       AuthenticatedSystemSettingsAffCommissionsIndexRoute,
+    AuthenticatedSystemSettingsAffOverviewIndexRoute:
+      AuthenticatedSystemSettingsAffOverviewIndexRoute,
     AuthenticatedSystemSettingsAffWithdrawalsIndexRoute:
       AuthenticatedSystemSettingsAffWithdrawalsIndexRoute,
     AuthenticatedSystemSettingsAlertsIndexRoute:

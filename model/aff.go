@@ -30,20 +30,30 @@ const (
 	AffWithdrawStatusPayFailedFinal = "pay_failed_final" // 自 pay_unknown 核实失败，不可 retry
 	AffWithdrawStatusPayUnknown     = "pay_unknown"
 
+	AffPayMethodUSDT   = "usdt"
+	AffPayMethodAlipay = "alipay"
+	AffPayMethodLegacy = "legacy" // 只用于旧单显示，新申请不接受
+
 	RiskReviewKindAffSelfInvite = "aff_self_invite"
 )
 
 var (
-	ErrAffCommissionNotFound      = errors.New("aff commission not found")
-	ErrAffCommissionStatusInvalid = errors.New("aff commission status invalid")
-	ErrAffWithdrawNotFound        = errors.New("aff withdrawal not found")
-	ErrAffWithdrawStatusInvalid   = errors.New("aff withdrawal status invalid")
-	ErrAffWithdrawIdempotent      = errors.New("aff withdrawal idem_key exists")
-	ErrAffWithdrawInsufficient    = errors.New("aff withdrawable balance insufficient")
-	ErrAffWithdrawBelowMin        = errors.New("aff withdraw below minimum")
-	ErrAffWithdrawRetryForbidden  = errors.New("aff withdraw retry forbidden")
-	ErrAffInviteCycle             = errors.New("invite binding would create a cycle")
-	ErrAffConfirmRequired         = errors.New("confirm=true required")
+	ErrAffCommissionNotFound         = errors.New("aff commission not found")
+	ErrAffCommissionStatusInvalid    = errors.New("aff commission status invalid")
+	ErrAffWithdrawNotFound           = errors.New("aff withdrawal not found")
+	ErrAffWithdrawStatusInvalid      = errors.New("aff withdrawal status invalid")
+	ErrAffWithdrawIdempotent         = errors.New("aff withdrawal idem_key exists")
+	ErrAffWithdrawIdempotentMismatch = errors.New("aff withdrawal idempotent mismatch")
+	ErrAffWithdrawInsufficient       = errors.New("aff withdrawable balance insufficient")
+	ErrAffWithdrawBelowMin           = errors.New("aff withdraw below minimum")
+	ErrAffWithdrawRetryForbidden     = errors.New("aff withdraw retry forbidden")
+	ErrAffWithdrawMethodInvalid      = errors.New("withdraw method invalid")
+	ErrAffAlipayAccountInvalid       = errors.New("alipay account invalid")
+	ErrAffPayoutQrInvalid            = errors.New("payout qr invalid")
+	ErrAffPayoutQrNotFound           = errors.New("payout qr not found")
+	ErrAffPayoutRefInvalid           = errors.New("invalid payout ref")
+	ErrAffInviteCycle                = errors.New("invite binding would create a cycle")
+	ErrAffConfirmRequired            = errors.New("confirm=true required")
 )
 
 func isUniqueViolation(err error) bool {
@@ -95,7 +105,12 @@ type AffWithdrawal struct {
 	MinAmountSnap   float64    `json:"min_amount_snapshot" gorm:"type:decimal(18,6);not null;default:0"`
 	IdemKey         string     `json:"idem_key" gorm:"type:varchar(128);uniqueIndex;not null"`
 	Status          string     `json:"status" gorm:"type:varchar(32);index;not null"`
-	PayAccount      string     `json:"pay_account" gorm:"type:varchar(255)"` // 人工打款备注/账号
+	PayAccount      string     `json:"pay_account" gorm:"type:varchar(255)"`          // 人工打款账号或地址
+	UsdtChain       string     `json:"usdt_chain" gorm:"type:varchar(16);default:''"` // trc20|bep20|polygon|xlayer；支付宝和旧单为空
+	PayMethod       string     `json:"pay_method" gorm:"type:varchar(16);default:''"` // usdt|alipay；旧单为空
+	PayoutRef       string     `json:"payout_ref" gorm:"type:varchar(128);default:''"`
+	PayoutQrId      int64      `json:"payout_qr_id" gorm:"default:0"`
+	PayoutQrSha     string     `json:"-" gorm:"type:varchar(64);default:''"`
 	RejectReason    string     `json:"reject_reason" gorm:"type:varchar(255)"`
 	OperatorId      int        `json:"operator_id" gorm:"default:0"`
 	CreatedAt       time.Time  `json:"created_at" gorm:"autoCreateTime;index"`
@@ -262,6 +277,31 @@ func DetectAffSelfInvite(inviteeId, inviterId int, inviteeDeviceFp, inviteeIP st
 	return false, ""
 }
 
+func affBlockedUnfreezeAt(now time.Time) time.Time {
+	days := GetAffFreezeDays()
+	if days < 0 {
+		days = 0
+	}
+	return now.Add(time.Duration(days) * 24 * time.Hour)
+}
+
+// affSelfInviteFreezeDeadline 自邀放行仍遵守写入时的冻结天数。
+// 以创建时间加冻结天数为准；已存的更晚 UnfreezeAt 不提前。创建时间为空时从现在起算。
+func affSelfInviteFreezeDeadline(comm *AffCommission, now time.Time) time.Time {
+	if comm == nil || comm.FreezeDaysSnap <= 0 {
+		return now
+	}
+	base := comm.CreatedAt
+	if base.IsZero() {
+		base = now
+	}
+	fromCreated := base.Add(time.Duration(comm.FreezeDaysSnap) * 24 * time.Hour)
+	if comm.UnfreezeAt.After(fromCreated) {
+		return comm.UnfreezeAt
+	}
+	return fromCreated
+}
+
 // ProcessTopupAffCommission 充值实付入账后计佣（可同步调；CompleteTopupOrder 异步投递）。
 // 计佣基数 = 实付（CreditAmountUSD，缺省 PaidAmountUSD）− 已退金额；full 退或净值≤0 跳过。
 // 事务内 FOR UPDATE 锁订单行，与退款互斥。赠送不计。失败可重试；同 order_no 幂等。
@@ -346,7 +386,7 @@ func ProcessTopupAffCommission(orderNo string) error {
 				CommissionQuota: int64(commQuota),
 				FreezeDaysSnap:  GetAffFreezeDays(),
 				Status:          AffCommissionStatusBlocked,
-				UnfreezeAt:      time.Now(),
+				UnfreezeAt:      affBlockedUnfreezeAt(time.Now()),
 				BlockReason:     blockReason,
 			}
 			res := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&row)
@@ -628,7 +668,7 @@ func ProcessSubscriptionAffCommission(tradeNo string) error {
 				CommissionQuota: int64(commQuota),
 				FreezeDaysSnap:  GetAffFreezeDays(),
 				Status:          AffCommissionStatusBlocked,
-				UnfreezeAt:      time.Now(),
+				UnfreezeAt:      affBlockedUnfreezeAt(time.Now()),
 				BlockReason:     reason,
 			}
 			res := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&row)
@@ -932,7 +972,7 @@ var ErrAffCommissionAlreadyWithdrawn = errors.New("aff commission already withdr
 func VoidAffCommission(id int64, operatorId int) (*AffCommission, error) {
 	var out *AffCommission
 	err := DB.Transaction(func(tx *gorm.DB) error {
-		// 锁序：先 peek → lock users → 再锁返佣行
+		// 锁序：peek → blocked 时先锁自邀审核 → 用户 → 佣金
 		var peek AffCommission
 		if err := tx.Where("id = ?", id).First(&peek).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -944,8 +984,21 @@ func VoidAffCommission(id int64, operatorId int) (*AffCommission, error) {
 			out = &peek
 			return nil
 		}
-		if peek.Status == AffCommissionStatusBlocked {
-			return ErrAffCommissionStatusInvalid
+		// blocked 先锁自邀审核，再锁用户，最后锁佣金。与放行同序，避免和审批交叉死锁。
+		var review RiskReview
+		reviewFound := false
+		if peek.Status == AffCommissionStatusBlocked && peek.OrderNo != "" {
+			rerr := tx.Where("kind = ? AND order_no = ?", RiskReviewKindAffSelfInvite, peek.OrderNo).
+				Order("id DESC").First(&review).Error
+			if rerr == nil {
+				reviewFound = true
+				if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+					Where("id = ?", review.Id).First(&review).Error; err != nil {
+					return err
+				}
+			} else if !errors.Is(rerr, gorm.ErrRecordNotFound) {
+				return rerr
+			}
 		}
 		if err := lockAffUsersInOrder(tx, []int{peek.InviterId}); err != nil {
 			return err
@@ -963,7 +1016,23 @@ func VoidAffCommission(id int64, operatorId int) (*AffCommission, error) {
 			return nil
 		}
 		if c.Status == AffCommissionStatusBlocked {
-			return ErrAffCommissionStatusInvalid
+			now := time.Now()
+			c.Status = AffCommissionStatusVoided
+			c.VoidedBy = operatorId
+			c.VoidedAt = &now
+			if err := tx.Save(&c).Error; err != nil {
+				return err
+			}
+			if reviewFound && review.Status == RiskReviewStatusPending {
+				review.Status = RiskReviewStatusRejected
+				review.ResolvedBy = operatorId
+				review.ResolvedAt = &now
+				if err := tx.Save(&review).Error; err != nil {
+					return err
+				}
+			}
+			out = &c
+			return nil
 		}
 		if c.Status == AffCommissionStatusAvailable {
 			// 先收回尚未打出的提现，再判断余额够不够冲正。pay_unknown 不自动取消。
@@ -1002,24 +1071,61 @@ func VoidAffCommission(id int64, operatorId int) (*AffCommission, error) {
 	return out, err
 }
 
+// findOwnAffWithdrawalByIdem 只读本人的幂等单。找不到返回 nil, nil。
+// idem_key 全局唯一，不能只按 key 读取：别人的单里有收款地址。
+func findOwnAffWithdrawalByIdem(db *gorm.DB, userId int, idemKey string) (*AffWithdrawal, error) {
+	var row AffWithdrawal
+	err := db.Where("user_id = ? AND idem_key = ?", userId, idemKey).First(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &row, nil
+}
+
+// AffWithdrawCreateInput 是提现申请。余额划转不走这里。
+type AffWithdrawCreateInput struct {
+	AmountQuota int64
+	IdemKey     string
+	PayMethod   string
+	PayAccount  string
+	UsdtChain   string
+	PayoutQrId  int64
+}
+
 // CreateAffWithdrawal 用户申请提现；idem_key 唯一；只动返佣账户。
 // 锁序：user_bonus_wallets → users →（创建提现单）。
-// 持用户锁后重查 idem；Create 撞唯一则整单回滚，再读回已有单（不再扣款）。
-func CreateAffWithdrawal(userId int, amountQuota int64, idemKey, payAccount string) (*AffWithdrawal, error) {
-	if userId <= 0 || amountQuota <= 0 || strings.TrimSpace(idemKey) == "" {
+// 幂等只认本人的 key。金额、方式、账号、链、收款码哈希任一不同返回 mismatch，错误不含收款信息。
+// 别人占用同一 key 时返回错误，不读出对方收款地址。
+// 持用户锁后重查 idem；Create 撞唯一则整单回滚，再按载荷比对本人已有单（不再扣款）。
+func CreateAffWithdrawal(userId int, in AffWithdrawCreateInput) (*AffWithdrawal, error) {
+	if userId <= 0 || in.AmountQuota <= 0 || strings.TrimSpace(in.IdemKey) == "" {
 		return nil, fmt.Errorf("invalid withdraw request")
 	}
-	idemKey = strings.TrimSpace(idemKey)
+	idemKey := strings.TrimSpace(in.IdemKey)
+	if len(idemKey) > 128 {
+		return nil, fmt.Errorf("invalid withdraw request")
+	}
+	// 先按出账方式校验，再冻结。余额划转不进这个函数。
+	method, account, chain, qrSha, err := normalizeAffWithdrawPayout(userId, in)
+	if err != nil {
+		return nil, err
+	}
 	if _, err := ReleaseDueAffCommissions(userId); err != nil {
 		common.SysError(common.LogText("ReleaseDueAffCommissions: %s", err.Error()))
 	}
 
-	// 幂等：已存在同 key 直接返回（无锁快路径）
-	var existing AffWithdrawal
-	if err := DB.Where("idem_key = ?", idemKey).First(&existing).Error; err == nil {
-		return &existing, nil
-	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+	existing, err := findOwnAffWithdrawalByIdem(DB, userId, idemKey)
+	if err != nil {
 		return nil, err
+	}
+	if existing != nil {
+		if !affWithdrawPayloadMatches(existing, in.AmountQuota, method, account, chain, qrSha) {
+			return nil, ErrAffWithdrawIdempotentMismatch
+		}
+		return existing, nil
 	}
 
 	minUSD := GetAffMinWithdrawAmount()
@@ -1027,24 +1133,24 @@ func CreateAffWithdrawal(userId int, amountQuota int64, idemKey, payAccount stri
 	if err != nil {
 		return nil, err
 	}
-	if minQuota > 0 && amountQuota < int64(minQuota) {
+	if minQuota > 0 && in.AmountQuota < int64(minQuota) {
 		return nil, ErrAffWithdrawBelowMin
 	}
 	feeRate := GetAffWithdrawFeeRate()
 	if feeRate < 0 {
 		feeRate = 0
 	}
-	feeQuota := int64(float64(amountQuota) * feeRate)
+	feeQuota := int64(float64(in.AmountQuota) * feeRate)
 	if feeQuota < 0 {
 		feeQuota = 0
 	}
-	if feeQuota >= amountQuota {
-		feeQuota = amountQuota - 1
+	if feeQuota >= in.AmountQuota {
+		feeQuota = in.AmountQuota - 1
 		if feeQuota < 0 {
 			feeQuota = 0
 		}
 	}
-	netQuota := amountQuota - feeQuota
+	netQuota := in.AmountQuota - feeQuota
 
 	var out *AffWithdrawal
 	err = DB.Transaction(func(tx *gorm.DB) error {
@@ -1052,33 +1158,45 @@ func CreateAffWithdrawal(userId int, amountQuota int64, idemKey, payAccount stri
 		if err := lockAffUsersInOrder(tx, []int{userId}); err != nil {
 			return err
 		}
-		var again AffWithdrawal
-		if err := tx.Where("idem_key = ?", idemKey).First(&again).Error; err == nil {
-			out = &again
+		var idemRow AffWithdrawal
+		idemErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("idem_key = ?", idemKey).First(&idemRow).Error
+		if idemErr == nil {
+			if idemRow.UserId != userId {
+				return ErrAffWithdrawIdempotent
+			}
+			if !affWithdrawPayloadMatches(&idemRow, in.AmountQuota, method, account, chain, qrSha) {
+				return ErrAffWithdrawIdempotentMismatch
+			}
+			out = &idemRow
 			return nil
-		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-			return err
+		}
+		if !errors.Is(idemErr, gorm.ErrRecordNotFound) {
+			return idemErr
 		}
 		var u User
 		if err := tx.Select("id", "aff_quota").Where("id = ?", userId).First(&u).Error; err != nil {
 			return err
 		}
-		if int64(u.AffQuota) < amountQuota {
+		if int64(u.AffQuota) < in.AmountQuota {
 			return ErrAffWithdrawInsufficient
 		}
-		if err := debitAffQuotaTx(tx, userId, amountQuota, "aff_withdraw_freeze", idemKey, 0); err != nil {
+		if err := debitAffQuotaTx(tx, userId, in.AmountQuota, "aff_withdraw_freeze", idemKey, 0); err != nil {
 			return err
 		}
 		row := AffWithdrawal{
 			UserId:          userId,
-			AmountQuota:     amountQuota,
+			AmountQuota:     in.AmountQuota,
 			FeeQuota:        feeQuota,
 			NetQuota:        netQuota,
 			FeeRateSnapshot: feeRate,
 			MinAmountSnap:   minUSD,
 			IdemKey:         idemKey,
 			Status:          AffWithdrawStatusPending,
-			PayAccount:      payAccount,
+			PayAccount:      account,
+			UsdtChain:       chain,
+			PayMethod:       method,
+			PayoutQrId:      in.PayoutQrId,
+			PayoutQrSha:     qrSha,
 		}
 		if err := tx.Create(&row).Error; err != nil {
 			// 撞唯一 → 返回错误使整单回滚（含已扣款），禁止 commit 半扣
@@ -1087,14 +1205,31 @@ func CreateAffWithdrawal(userId int, amountQuota int64, idemKey, payAccount stri
 			}
 			return err
 		}
+		if in.PayoutQrId > 0 {
+			res := tx.Model(&AffPayoutQr{}).
+				Where("id = ? AND user_id = ? AND withdrawal_id = 0 AND sha256 = ?", in.PayoutQrId, userId, qrSha).
+				Update("withdrawal_id", row.Id)
+			if res.Error != nil {
+				return res.Error
+			}
+			if res.RowsAffected != 1 {
+				return ErrAffPayoutQrInvalid
+			}
+		}
 		out = &row
 		return nil
 	})
 	if err != nil {
 		if errors.Is(err, ErrAffWithdrawIdempotent) {
-			var got AffWithdrawal
-			if e2 := DB.Where("idem_key = ?", idemKey).First(&got).Error; e2 == nil {
-				return &got, nil
+			own, e2 := findOwnAffWithdrawalByIdem(DB, userId, idemKey)
+			if e2 != nil {
+				return nil, e2
+			}
+			if own != nil {
+				if !affWithdrawPayloadMatches(own, in.AmountQuota, method, account, chain, qrSha) {
+					return nil, ErrAffWithdrawIdempotentMismatch
+				}
+				return own, nil
 			}
 		}
 		return nil, err
@@ -1252,13 +1387,18 @@ func RejectAffWithdrawal(id int64, operatorId int, reason string) (*AffWithdrawa
 	return out, err
 }
 
-func MarkAffWithdrawalPaid(id int64, operatorId int) (*AffWithdrawal, error) {
+func MarkAffWithdrawalPaid(id int64, operatorId int, payoutRef string) (*AffWithdrawal, error) {
+	ref, err := normalizePayoutRef(payoutRef)
+	if err != nil {
+		return nil, err
+	}
 	return transitionAffWithdrawal(id, operatorId, func(w *AffWithdrawal) error {
 		if w.Status != AffWithdrawStatusApproved && w.Status != AffWithdrawStatusPayUnknown {
 			return ErrAffWithdrawStatusInvalid
 		}
 		now := time.Now()
 		w.Status = AffWithdrawStatusPaid
+		w.PayoutRef = ref
 		w.ResolvedAt = &now
 		// 金额已在申请时从 aff_quota 扣出；paid 不再动余额
 		return nil
@@ -1381,5 +1521,6 @@ func GetAffSelfSummary(userId int) (map[string]any, error) {
 		"withdraw_fee_rate": GetAffWithdrawFeeRate(),
 		"freeze_days":       GetAffFreezeDays(),
 		"topup_rate":        GetAffTopupCommissionRate(),
+		"subscription_rate": GetAffSubscriptionCommissionRate(),
 	}, nil
 }

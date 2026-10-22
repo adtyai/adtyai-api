@@ -24,6 +24,18 @@ import {
 
 import type { AdminBonusLedgerParams } from '../types'
 
+/** Kinds that can appear on the bonus account. This page never queries paid or aff. */
+export const BONUS_LEDGER_KIND_OPTIONS = [
+  'topup_tier_bonus',
+  'topup_first_bonus',
+  'api_consume_hourly',
+  'topup_refund_bonus_claw',
+  'balance_adjust',
+  'redemption_bonus',
+  'signup_invite_bonus',
+  'checkin_bonus',
+] as const
+
 export {
   DEFAULT_LEDGER_LIMIT,
   LEDGER_KIND_OPTIONS,

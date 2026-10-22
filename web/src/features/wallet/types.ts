@@ -314,11 +314,20 @@ export interface AdtyPayMethod {
   maintenance_reason?: string
 }
 
+/** Enabled USDT network from GET /api/topup/tiers */
+export interface AdtyUsdtChain {
+  id: string
+  trade_type: string
+  label: string
+  network: string
+}
+
 /** data of GET /api/topup/tiers */
 export interface AdtyTopupTiersData {
   tiers: AdtyTopupTier[]
   first_topup_bonus_rate: number
   pay_methods: AdtyPayMethod[]
+  usdt_chains?: AdtyUsdtChain[]
 }
 
 export type AdtyTopupTiersResponse = ApiResponse<AdtyTopupTiersData>
@@ -335,6 +344,8 @@ export type AdtyFirstRechargeResponse = ApiResponse<AdtyFirstRechargeData>
 export interface AdtyCreateTopupOrderRequest {
   amount: number
   payment_method: string
+  /** trc20 | bep20 | polygon | xlayer. Sent only for USDT. */
+  usdt_chain?: string
 }
 
 /** Minimal order shape returned by create/get (fields used by UI) */
@@ -359,7 +370,54 @@ export interface AdtyUsdtCashier {
   expire_at: number
   usdt_fx_rate: number
   timeout_minutes?: number
+  chain?: string
+  trade_type?: string
+  network?: string
+  chain_label?: string
 }
+
+/** One row from GET /api/topup/orders */
+export interface AdtySelfTopupOrder {
+  order_no: string
+  amount_usd: number
+  paid_amount_usd?: number
+  credit_amount_usd?: number
+  bonus_amount_usd?: number
+  refunded_amount?: number
+  payment_method: string
+  usdt_chain?: string
+  usdt_network?: string
+  status: string
+  display_status: string
+  can_continue: boolean
+  next_action?: string
+  next_action_hint?: string
+  create_time: number
+  complete_time?: number
+  usdt_expire_at?: number
+  usdt_pay_address?: string
+  usdt_payment_url?: string
+  usdt_payment_amount?: string
+  pay_usdt?: number
+  refund_status?: string
+}
+
+export interface AdtySelfTopupOrdersData {
+  items: AdtySelfTopupOrder[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export type AdtySelfTopupOrdersResponse =
+  ApiResponse<AdtySelfTopupOrdersData> & {
+    code?: string
+  }
+
+export type AdtyContinueTopupResponse =
+  ApiResponse<AdtyCreateTopupOrderData> & {
+    code?: string
+  }
 
 /** Successful create-order payload (epay: pay_url; usdt: usdt cashier) */
 export interface AdtyCreateTopupOrderData {

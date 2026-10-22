@@ -19,7 +19,7 @@
     <img src="https://img.shields.io/badge/license-AGPL--3.0-brightgreen" alt="license">
   </a><!--
   --><a href="https://github.com/adtyai/adtyai-api">
-    <img src="https://img.shields.io/badge/version-v1.0.0--adtyai-brightgreen" alt="version">
+    <img src="https://img.shields.io/badge/version-v1.1.0--adtyai-brightgreen" alt="version">
   </a><!--
   --><a href="https://github.com/adtyai/adtyai-api/pkgs/container/adtyai-api">
     <img src="https://img.shields.io/badge/image-ghcr.io%2Fadtyai%2Fadtyai--api-blue" alt="ghcr">
@@ -64,7 +64,7 @@ Forked from [New API](https://github.com/QuantumNous/new-api) under AGPL-3.0. Th
 | --- | --- |
 | Dual-wallet billing | Bonus first, then paid; hourly consume split; daily reconcile |
 | Top-up | Tier gifts only (no first-top-up bonus); EPay and BEpusdt (USDT) |
-| Affiliate | Commission on paid minus refunds; withdraw review; startup backfill for misses |
+| Affiliate | Commission on paid minus refunds; balance transfer, USDT, and Alipay payout; admin overview and self-invite review; startup backfill for misses |
 | Refunds & risk | Proportional clawback of gift/affiliate; manual risk queue; admin orders & ledgers |
 | Enterprise rates | Console: Billing & payments → Enterprise rates (hidden group multipliers) |
 | Smart routing | Dedicated sidebar menu; scored routing / canary / weight schemes; cost guardrail at `/smart-routing/cost` |

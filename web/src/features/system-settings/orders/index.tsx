@@ -56,7 +56,9 @@ import {
   orderStatusLabelKey,
   orderStatusVariant,
   parseUserIdFilter,
+  formatUsdtAmount,
   paymentLabel,
+  pendingReasonLabelKey,
   refundStatusLabelKey,
   refundStatusVariant,
   orderUserDisplay,
@@ -78,6 +80,12 @@ function RefundBadge({ status }: { status: string }) {
   return (
     <Badge variant={refundStatusVariant(s)}>{t(refundStatusLabelKey(s))}</Badge>
   )
+}
+
+function shortCashier(url?: string): string {
+  if (!url) return '—'
+  if (url.length <= 48) return url
+  return `${url.slice(0, 45)}...`
 }
 
 function DetailRow({ label, value }: { label: string; value: ReactNode }) {
@@ -145,277 +153,286 @@ export function OrdersSettings() {
   return (
     <>
       <SectionPageLayout>
-      <SectionPageLayout.Title>{t('Topup orders')}</SectionPageLayout.Title>
-      <SectionPageLayout.Actions>
-        <Button
-          type='button'
-          variant='outline'
-          size='sm'
-          className='h-8'
-          onClick={() => void list.refetch()}
-        >
-          <RefreshCw className='size-3.5' />
-          {t('Refresh')}
-        </Button>
-      </SectionPageLayout.Actions>
-      <SectionPageLayout.Content>
-        <div className='flex h-full min-h-0 w-full flex-col gap-4'>
-          <p className='text-muted-foreground text-sm'>
-            {t(
-              'Admin list of top-up orders. Filter by status, order number, or user. Detail loads via GET /api/admin/orders/:no. Complete is for pending only and takes effect on submit.'
-            )}
-          </p>
+        <SectionPageLayout.Title>{t('Topup orders')}</SectionPageLayout.Title>
+        <SectionPageLayout.Actions>
+          <Button
+            type='button'
+            variant='outline'
+            size='sm'
+            className='h-8'
+            onClick={() => void list.refetch()}
+          >
+            <RefreshCw className='size-3.5' />
+            {t('Refresh')}
+          </Button>
+        </SectionPageLayout.Actions>
+        <SectionPageLayout.Content>
+          <div className='flex h-full min-h-0 w-full flex-col gap-4'>
+            <p className='text-muted-foreground text-sm'>
+              {t(
+                'Admin list of top-up orders. Filter by status, order number, or user. Detail loads via GET /api/admin/orders/:no. Complete is for pending only and takes effect on submit.'
+              )}
+            </p>
 
-          <div className='grid gap-3'>
-            <div className='flex gap-2.5 rounded-lg border border-indigo-100 bg-indigo-50/70 px-3.5 py-2.5 text-[13px] leading-5 text-indigo-950 dark:border-indigo-900/40 dark:bg-indigo-950/30 dark:text-indigo-100'>
-              <Info className='mt-0.5 size-4 shrink-0' />
-              <div>
-                {t(
-                  'Refunds stay on the Order refunds page — use the link in detail. Do not complete paid or failed orders from this UI.'
-                )}
+            <div className='grid gap-3'>
+              <div className='flex gap-2.5 rounded-lg border border-indigo-100 bg-indigo-50/70 px-3.5 py-2.5 text-[13px] leading-5 text-indigo-950 dark:border-indigo-900/40 dark:bg-indigo-950/30 dark:text-indigo-100'>
+                <Info className='mt-0.5 size-4 shrink-0' />
+                <div>
+                  {t(
+                    'Refunds stay on the Order refunds page — use the link in detail. Do not complete paid or failed orders from this UI.'
+                  )}
+                </div>
               </div>
             </div>
-          </div>
 
-          <form className='flex flex-wrap items-end gap-2' onSubmit={onSearch}>
-            <div className='grid gap-1'>
-              <span className='text-muted-foreground text-xs'>
-                {t('Status')}
-              </span>
-              <Select
-                items={[
-                  { value: 'all', label: t('All statuses') },
-                  { value: 'pending', label: t('Pending') },
-                  { value: 'paid', label: t('Paid') },
-                  { value: 'failed', label: t('Failed') },
-                  { value: 'expired', label: t('Expired') },
-                  { value: 'need_manual', label: t('Needs manual review') },
-                ]}
-                value={statusDraft}
-                onValueChange={(v) => {
-                  if (v) setStatusDraft(v)
-                }}
-              >
-                <SelectTrigger className='h-9 w-36 text-sm'>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value='all'>{t('All statuses')}</SelectItem>
-                  <SelectItem value='pending'>{t('Pending')}</SelectItem>
-                  <SelectItem value='paid'>{t('Paid')}</SelectItem>
-                  <SelectItem value='failed'>{t('Failed')}</SelectItem>
-                  <SelectItem value='expired'>{t('Expired')}</SelectItem>
-                  <SelectItem value='need_manual'>
-                    {t('Needs manual review')}
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className='grid gap-1'>
-              <span className='text-muted-foreground text-xs'>
-                {t('Order No.')}
-              </span>
-              <Input
-                value={orderNoDraft}
-                onChange={(e) => setOrderNoDraft(e.target.value)}
-                placeholder={t('Exact order number')}
-                className='h-9 w-56 font-mono text-sm'
+            <form
+              className='flex flex-wrap items-end gap-2'
+              onSubmit={onSearch}
+            >
+              <div className='grid gap-1'>
+                <span className='text-muted-foreground text-xs'>
+                  {t('Status')}
+                </span>
+                <Select
+                  items={[
+                    { value: 'all', label: t('All statuses') },
+                    { value: 'pending', label: t('Pending') },
+                    { value: 'paid', label: t('Paid') },
+                    { value: 'failed', label: t('Failed') },
+                    { value: 'expired', label: t('Expired') },
+                    { value: 'need_manual', label: t('Needs manual review') },
+                  ]}
+                  value={statusDraft}
+                  onValueChange={(v) => {
+                    if (v) setStatusDraft(v)
+                  }}
+                >
+                  <SelectTrigger className='h-9 w-36 text-sm'>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value='all'>{t('All statuses')}</SelectItem>
+                    <SelectItem value='pending'>{t('Pending')}</SelectItem>
+                    <SelectItem value='paid'>{t('Paid')}</SelectItem>
+                    <SelectItem value='failed'>{t('Failed')}</SelectItem>
+                    <SelectItem value='expired'>{t('Expired')}</SelectItem>
+                    <SelectItem value='need_manual'>
+                      {t('Needs manual review')}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className='grid gap-1'>
+                <span className='text-muted-foreground text-xs'>
+                  {t('Order No.')}
+                </span>
+                <Input
+                  value={orderNoDraft}
+                  onChange={(e) => setOrderNoDraft(e.target.value)}
+                  placeholder={t('Exact order number')}
+                  className='h-9 w-56 font-mono text-sm'
+                />
+              </div>
+              <div className='grid gap-1'>
+                <span className='text-muted-foreground text-xs'>
+                  {t('User')}
+                </span>
+                <Input
+                  value={userIdDraft}
+                  onChange={(e) => setUserIdDraft(e.target.value)}
+                  placeholder={t('User ID')}
+                  className='h-9 w-28 font-mono text-sm'
+                  inputMode='numeric'
+                />
+              </div>
+              <Button type='submit' size='sm' className='h-9'>
+                <Search className='size-3.5' />
+                {t('Search')}
+              </Button>
+            </form>
+
+            {isForbidden ? (
+              <ErrorState
+                title={t('Insufficient permissions')}
+                description={t(
+                  'Admin permission is required to view topup orders.'
+                )}
               />
-            </div>
-            <div className='grid gap-1'>
-              <span className='text-muted-foreground text-xs'>{t('User')}</span>
-              <Input
-                value={userIdDraft}
-                onChange={(e) => setUserIdDraft(e.target.value)}
-                placeholder={t('User ID')}
-                className='h-9 w-28 font-mono text-sm'
-                inputMode='numeric'
+            ) : null}
+
+            {list.isLoading ? (
+              <div className='text-muted-foreground flex min-h-40 items-center justify-center text-sm'>
+                {t('Loading...')}
+              </div>
+            ) : null}
+
+            {list.isError && !isForbidden && !list.data ? (
+              <ErrorState
+                title={t('Failed to load orders')}
+                onRetry={() => void list.refetch()}
               />
-            </div>
-            <Button type='submit' size='sm' className='h-9'>
-              <Search className='size-3.5' />
-              {t('Search')}
-            </Button>
-          </form>
+            ) : null}
 
-          {isForbidden ? (
-            <ErrorState
-              title={t('Insufficient permissions')}
-              description={t(
-                'Admin permission is required to view topup orders.'
-              )}
-            />
-          ) : null}
-
-          {list.isLoading ? (
-            <div className='text-muted-foreground flex min-h-40 items-center justify-center text-sm'>
-              {t('Loading...')}
-            </div>
-          ) : null}
-
-          {list.isError && !isForbidden && !list.data ? (
-            <ErrorState
-              title={t('Failed to load orders')}
-              onRetry={() => void list.refetch()}
-            />
-          ) : null}
-
-          {!list.isLoading && list.data && !isForbidden ? (
-            <div className='grid gap-4 lg:grid-cols-[1fr_360px]'>
-              <section className='bg-card overflow-hidden rounded-xl border shadow-xs'>
-                <div className='flex items-center justify-between border-b px-5 pt-4 pb-3'>
-                  <div>
-                    <div className='text-[15px] font-semibold'>
-                      {t('Orders')}
+            {!list.isLoading && list.data && !isForbidden ? (
+              <div className='grid gap-4 lg:grid-cols-[1fr_360px]'>
+                <section className='bg-card overflow-hidden rounded-xl border shadow-xs'>
+                  <div className='flex items-center justify-between border-b px-5 pt-4 pb-3'>
+                    <div>
+                      <div className='text-[15px] font-semibold'>
+                        {t('Orders')}
+                      </div>
+                      <div className='text-muted-foreground mt-0.5 text-xs'>
+                        {total} {t('items')}
+                      </div>
                     </div>
-                    <div className='text-muted-foreground mt-0.5 text-xs'>
-                      {total} {t('items')}
+                    <div className='text-muted-foreground flex items-center gap-2 text-xs'>
+                      <Button
+                        type='button'
+                        variant='ghost'
+                        size='sm'
+                        className='h-7 px-2 text-xs'
+                        disabled={page <= 0}
+                        onClick={() => setPage((p) => Math.max(0, p - 1))}
+                      >
+                        {t('Prev')}
+                      </Button>
+                      <span>
+                        {t('Page')} {page + 1}
+                      </span>
+                      <Button
+                        type='button'
+                        variant='ghost'
+                        size='sm'
+                        className='h-7 px-2 text-xs'
+                        disabled={(page + 1) * DEFAULT_ORDERS_LIMIT >= total}
+                        onClick={() => setPage((p) => p + 1)}
+                      >
+                        {t('Next')}
+                      </Button>
                     </div>
                   </div>
-                  <div className='text-muted-foreground flex items-center gap-2 text-xs'>
-                    <Button
-                      type='button'
-                      variant='ghost'
-                      size='sm'
-                      className='h-7 px-2 text-xs'
-                      disabled={page <= 0}
-                      onClick={() => setPage((p) => Math.max(0, p - 1))}
-                    >
-                      {t('Prev')}
-                    </Button>
-                    <span>
-                      {t('Page')} {page + 1}
-                    </span>
-                    <Button
-                      type='button'
-                      variant='ghost'
-                      size='sm'
-                      className='h-7 px-2 text-xs'
-                      disabled={(page + 1) * DEFAULT_ORDERS_LIMIT >= total}
-                      onClick={() => setPage((p) => p + 1)}
-                    >
-                      {t('Next')}
-                    </Button>
-                  </div>
-                </div>
-                <Table>
-                  <TableHeader>
-                    <TableRow className='bg-muted/40 hover:bg-muted/40'>
-                      <TableHead>{t('Order No.')}</TableHead>
-                      <TableHead>{t('User')}</TableHead>
-                      <TableHead>{t('Status')}</TableHead>
-                      <TableHead>{t('Refund')}</TableHead>
-                      <TableHead>{t('Paid amount')}</TableHead>
-                      <TableHead>{t('Payment method')}</TableHead>
-                      <TableHead>{t('Created at')}</TableHead>
-                      <TableHead className='w-[1%]' />
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {rows.length === 0 ? (
-                      <TableRow>
-                        <TableCell
-                          colSpan={8}
-                          className='text-muted-foreground h-24 text-center text-sm'
-                        >
-                          {t('No orders')}
-                        </TableCell>
+                  <Table>
+                    <TableHeader>
+                      <TableRow className='bg-muted/40 hover:bg-muted/40'>
+                        <TableHead>{t('Order No.')}</TableHead>
+                        <TableHead>{t('User')}</TableHead>
+                        <TableHead>{t('Status')}</TableHead>
+                        <TableHead>{t('Refund')}</TableHead>
+                        <TableHead>{t('Paid amount')}</TableHead>
+                        <TableHead>{t('Payment method')}</TableHead>
+                        <TableHead>{t('Created at')}</TableHead>
+                        <TableHead className='w-[1%]' />
                       </TableRow>
-                    ) : (
-                      rows.map((row) => (
-                        <TableRow
-                          key={row.order_no}
-                          className={cn(
-                            'cursor-pointer',
-                            selectedNo === row.order_no && 'bg-muted/50'
-                          )}
-                          onClick={() => setSelectedNo(row.order_no)}
-                        >
-                          <TableCell>
-                            <span className='font-mono text-[11.5px]'>
-                              {row.order_no}
-                            </span>
-                          </TableCell>
-                          <TableCell>
-                            <button
-                              type='button'
-                              title={`ID ${row.user_id}`}
-                              className='text-primary hover:underline'
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                filterByUser(row.user_id)
-                              }}
-                            >
-                              {orderUserDisplay(row)}
-                            </button>
-                          </TableCell>
-                          <TableCell>
-                            <StatusBadge status={row.status} />
-                          </TableCell>
-                          <TableCell>
-                            <RefundBadge status={row.refund_status || 'none'} />
-                          </TableCell>
-                          <TableCell className='font-semibold'>
-                            {formatUsd(row.paid_amount_usd)}
-                          </TableCell>
-                          <TableCell>
-                            <span className='text-muted-foreground text-xs'>
-                              {paymentLabel(row, t)}
-                            </span>
-                          </TableCell>
-                          <TableCell>
-                            <span className='text-muted-foreground text-xs'>
-                              {formatUnixTime(row.create_time)}
-                            </span>
-                          </TableCell>
-                          <TableCell>
-                            {isRoot && canCompleteOrder(row) ? (
-                              <Button
-                                type='button'
-                                variant='outline'
-                                size='sm'
-                                className='h-7 px-2.5 text-xs'
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  setSelectedNo(row.order_no)
-                                  setCompleteOrder(row)
-                                }}
-                              >
-                                {t('Complete')}
-                              </Button>
-                            ) : (
-                              <span className='text-muted-foreground text-xs'>
-                                -
-                              </span>
-                            )}
+                    </TableHeader>
+                    <TableBody>
+                      {rows.length === 0 ? (
+                        <TableRow>
+                          <TableCell
+                            colSpan={8}
+                            className='text-muted-foreground h-24 text-center text-sm'
+                          >
+                            {t('No orders')}
                           </TableCell>
                         </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-              </section>
+                      ) : (
+                        rows.map((row) => (
+                          <TableRow
+                            key={row.order_no}
+                            className={cn(
+                              'cursor-pointer',
+                              selectedNo === row.order_no && 'bg-muted/50'
+                            )}
+                            onClick={() => setSelectedNo(row.order_no)}
+                          >
+                            <TableCell>
+                              <span className='font-mono text-[11.5px]'>
+                                {row.order_no}
+                              </span>
+                            </TableCell>
+                            <TableCell>
+                              <button
+                                type='button'
+                                title={`ID ${row.user_id}`}
+                                className='text-primary hover:underline'
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  filterByUser(row.user_id)
+                                }}
+                              >
+                                {orderUserDisplay(row)}
+                              </button>
+                            </TableCell>
+                            <TableCell>
+                              <StatusBadge
+                                status={row.display_status || row.status}
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <RefundBadge
+                                status={row.refund_status || 'none'}
+                              />
+                            </TableCell>
+                            <TableCell className='font-semibold'>
+                              {formatUsd(row.paid_amount_usd)}
+                            </TableCell>
+                            <TableCell>
+                              <span className='text-muted-foreground text-xs'>
+                                {paymentLabel(row, t)}
+                              </span>
+                            </TableCell>
+                            <TableCell>
+                              <span className='text-muted-foreground text-xs'>
+                                {formatUnixTime(row.create_time)}
+                              </span>
+                            </TableCell>
+                            <TableCell>
+                              {isRoot && canCompleteOrder(row) ? (
+                                <Button
+                                  type='button'
+                                  variant='outline'
+                                  size='sm'
+                                  className='h-7 px-2.5 text-xs'
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    setSelectedNo(row.order_no)
+                                    setCompleteOrder(row)
+                                  }}
+                                >
+                                  {t('Complete')}
+                                </Button>
+                              ) : (
+                                <span className='text-muted-foreground text-xs'>
+                                  -
+                                </span>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </section>
 
-              <section className='bg-card overflow-hidden rounded-xl border shadow-xs'>
-                <div className='border-b px-5 pt-4 pb-3'>
-                  <div className='text-[15px] font-semibold'>
-                    {t('Order detail')}
+                <section className='bg-card overflow-hidden rounded-xl border shadow-xs'>
+                  <div className='border-b px-5 pt-4 pb-3'>
+                    <div className='text-[15px] font-semibold'>
+                      {t('Order detail')}
+                    </div>
                   </div>
-                </div>
-                <div className='space-y-3 p-5 text-sm'>
-                  <OrderDetailBody
-                    selectedNo={selectedNo}
-                    selected={selected}
-                    detail={detail}
-                    onComplete={(o) => setCompleteOrder(o)}
-                  />
-                </div>
-              </section>
-            </div>
-          ) : null}
-        </div>
-      </SectionPageLayout.Content>
-    </SectionPageLayout>
+                  <div className='space-y-3 p-5 text-sm'>
+                    <OrderDetailBody
+                      selectedNo={selectedNo}
+                      selected={selected}
+                      detail={detail}
+                      onComplete={(o) => setCompleteOrder(o)}
+                    />
+                  </div>
+                </section>
+              </div>
+            ) : null}
+          </div>
+        </SectionPageLayout.Content>
+      </SectionPageLayout>
 
       <ConfirmCompleteDialog
         order={completeOrder}
@@ -503,8 +520,56 @@ function OrderDetailBody({
         value={formatUsd(selected.refunded_amount)}
       />
       <DetailRow
+        label={t('Display status')}
+        value={
+          <StatusBadge status={selected.display_status || selected.status} />
+        }
+      />
+      <DetailRow
         label={t('Payment method')}
         value={paymentLabel(selected, t)}
+      />
+      <DetailRow
+        label={t('USDT network')}
+        value={selected.usdt_network || selected.usdt_chain || '—'}
+      />
+      <DetailRow
+        label={t('Pay address')}
+        value={selected.usdt_pay_address || '—'}
+      />
+      <DetailRow
+        label={t('Payable USDT')}
+        value={selected.usdt_payment_amount || selected.pay_usdt || '—'}
+      />
+      {(selected.payment_method || '').toLowerCase() === 'usdt' ||
+      selected.usdt_callback_amount != null ? (
+        <DetailRow
+          label={t('Received USDT')}
+          value={formatUsdtAmount(selected.usdt_callback_amount)}
+        />
+      ) : null}
+      <DetailRow
+        label={t('Expires at')}
+        value={formatUnixTime(selected.usdt_expire_at)}
+      />
+      <DetailRow
+        label={t('Pending reason')}
+        value={
+          pendingReasonLabelKey(selected.pending_reason)
+            ? t(pendingReasonLabelKey(selected.pending_reason))
+            : '—'
+        }
+      />
+      {selected.pending_reason === 'underpay' ? (
+        <p className='text-muted-foreground text-xs'>
+          {t(
+            'Complete credits the order amount, not the received USDT.'
+          )}
+        </p>
+      ) : null}
+      <DetailRow
+        label={t('Saved cashier')}
+        value={shortCashier(selected.epay_pay_url)}
       />
       <DetailRow
         label={t('Provider trade no')}

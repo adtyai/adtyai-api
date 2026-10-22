@@ -471,7 +471,9 @@ export function CheckinCalendarCard({
                 <div className='bg-muted/30 text-muted-foreground rounded-lg border p-3 text-xs'>
                   <ul className='list-disc space-y-1 pl-5'>
                     <li>
-                      {t('Check in daily to receive random quota rewards')}
+                      {t(
+                        'Check-in rewards are bonus balance. They can be used for API calls, cannot be withdrawn, and do not earn affiliate commission.'
+                      )}
                     </li>
                     <li>
                       {t('Rewards will be added directly to your balance')}

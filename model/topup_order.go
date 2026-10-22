@@ -41,35 +41,49 @@ type TopupOrder struct {
 	PaymentMethod         string  `json:"payment_method" gorm:"type:varchar(50)"`
 	PaymentProvider       string  `json:"payment_provider" gorm:"type:varchar(50);default:''"`
 	EpayInstanceId        int64   `json:"epay_instance_id" gorm:"index;default:0"`
+	EpayPayURL            string  `json:"epay_pay_url,omitempty" gorm:"type:varchar(512);default:''"`
+	EpayPayParams         string  `json:"-" gorm:"type:text"`
 	FxRate                float64 `json:"fx_rate" gorm:"type:decimal(18,6);default:0"`
 	PayCNY                float64 `json:"pay_cny" gorm:"type:decimal(18,6);default:0"`
 	PayUSDT               float64 `json:"pay_usdt" gorm:"type:decimal(18,8);default:0"`
 	UsdtFxRate            float64 `json:"usdt_fx_rate" gorm:"type:decimal(18,8);default:0"`
 	UsdtExpireAt          int64   `json:"usdt_expire_at" gorm:"default:0"`
-	BonusRateSnapshot     float64 `json:"bonus_rate_snapshot" gorm:"type:decimal(10,6);default:0"`
-	ProviderTradeNo       string  `json:"provider_trade_no" gorm:"type:varchar(128);index"` // UNIQUE partial: EnsureTopupOrderIndexes
-	Status                string  `json:"status" gorm:"type:varchar(32);index;not null;default:'pending'"`
-	PaidCreditedQuota     int64   `json:"paid_credited_quota" gorm:"type:bigint;default:0"`
-	BonusCreditedQuota    int64   `json:"bonus_credited_quota" gorm:"type:bigint;default:0"`
-	RefundStatus          string  `json:"refund_status" gorm:"type:varchar(16);not null;default:'none'"` // none|partial|full
-	RefundedAmount        float64 `json:"refunded_amount" gorm:"type:decimal(18,6);not null;default:0"`  // 累计已退美元
-	CreateTime            int64   `json:"create_time" gorm:"index"`
-	CompleteTime          int64   `json:"complete_time"`
+	UsdtChain             string  `json:"usdt_chain" gorm:"type:varchar(32);default:''"`
+	UsdtPayAddress        string  `json:"usdt_pay_address" gorm:"type:varchar(128);default:''"`
+	UsdtPaymentURL        string  `json:"usdt_payment_url" gorm:"type:varchar(512);default:''"`
+	UsdtPaymentAmount     string  `json:"usdt_payment_amount" gorm:"type:varchar(64);default:''"`
+	// UsdtCallbackAmount is the verified callback paid USDT when review starts. Nil means the callback had no usable amount. Credit still uses the order amount.
+	UsdtCallbackAmount *float64 `json:"usdt_callback_amount,omitempty" gorm:"type:decimal(18,8)"`
+	BonusRateSnapshot  float64  `json:"bonus_rate_snapshot" gorm:"type:decimal(10,6);default:0"`
+	ProviderTradeNo    string   `json:"provider_trade_no" gorm:"type:varchar(128);index"` // UNIQUE partial: EnsureTopupOrderIndexes
+	Status             string   `json:"status" gorm:"type:varchar(32);index;not null;default:'pending'"`
+	PaidCreditedQuota  int64    `json:"paid_credited_quota" gorm:"type:bigint;default:0"`
+	BonusCreditedQuota int64    `json:"bonus_credited_quota" gorm:"type:bigint;default:0"`
+	RefundStatus       string   `json:"refund_status" gorm:"type:varchar(16);not null;default:'none'"` // none|partial|full
+	RefundedAmount     float64  `json:"refunded_amount" gorm:"type:decimal(18,6);not null;default:0"`  // 累计已退美元
+	CreateTime         int64    `json:"create_time" gorm:"index"`
+	CompleteTime       int64    `json:"complete_time"`
 }
 
 func (TopupOrder) TableName() string { return "topup_orders" }
 
 var (
-	ErrTopupOrderNotFound      = errors.New("topup order not found")
-	ErrTopupOrderStatusInvalid = errors.New("topup order status invalid")
-	ErrRefundConfirmRequired   = errors.New("confirm=true required")
-	ErrRefundRequestIdRequired = errors.New("request_id required")
-	ErrRefundAmountInvalid     = errors.New("refund amount invalid")
-	ErrRefundReasonRequired    = errors.New("reason required")
-	ErrRefundExceedsAvailable  = errors.New("refund exceeds available")
-	ErrRefundIdempotent        = errors.New("refund request_id exists")
-	ErrRefundOrderNotPaid      = errors.New("topup order not paid")
+	ErrTopupOrderNotFound          = errors.New("topup order not found")
+	ErrTopupOrderStatusInvalid     = errors.New("topup order status invalid")
+	ErrRefundConfirmRequired       = errors.New("confirm=true required")
+	ErrRefundRequestIdRequired     = errors.New("request_id required")
+	ErrRefundAmountInvalid         = errors.New("refund amount invalid")
+	ErrRefundReasonRequired        = errors.New("reason required")
+	ErrRefundExceedsAvailable      = errors.New("refund exceeds available")
+	ErrRefundIdempotent            = errors.New("refund request_id exists")
+	ErrRefundOrderNotPaid          = errors.New("topup order not paid")
+	ErrRefundPreviewRequired       = errors.New("refund preview required")
+	ErrRefundPreviewStale          = errors.New("refund preview stale")
+	ErrRefundAmountConfirmRequired = errors.New("refund amount confirm required")
 )
+
+// RefundLargeAmountUSD is the threshold that requires the operator to retype the amount.
+const RefundLargeAmountUSD = 100
 
 // RefundExceedsAvailableError carries available/amount for console params (no numbers in message).
 type RefundExceedsAvailableError struct {
@@ -147,11 +161,21 @@ const TopupOrderProviderPlaceholder = "adtyai"
 
 // CompleteTopupOrder 支付回调等系统路径入账（operator_id=0 表示系统）。
 func CompleteTopupOrder(orderNo string) (*TopupOrder, error) {
-	return CompleteTopupOrderBy(orderNo, 0)
+	return completeTopupOrder(orderNo, 0, true)
 }
 
 // CompleteTopupOrderBy 入账；operatorID>0 为人工补单的操作人，写入 ledger_entries.operator_id。
 func CompleteTopupOrderBy(orderNo string, operatorID int) (*TopupOrder, error) {
+	return completeTopupOrder(orderNo, operatorID, true)
+}
+
+// CompleteTopupOrderFromUsdtCallback credits pending or expired orders only.
+// An order already in need_manual is a ledger conflict and must not be auto-credited.
+func CompleteTopupOrderFromUsdtCallback(orderNo string) (*TopupOrder, error) {
+	return completeTopupOrder(orderNo, 0, false)
+}
+
+func completeTopupOrder(orderNo string, operatorID int, allowNeedManual bool) (*TopupOrder, error) {
 	if orderNo == "" {
 		return nil, ErrTopupOrderNotFound
 	}
@@ -170,8 +194,12 @@ func CompleteTopupOrderBy(orderNo string, operatorID int) (*TopupOrder, error) {
 			out = &order
 			return nil // 幂等
 		}
-		// 审查 N-P2-8：超时置 expired 后，已验签的迟到支付仍须入账，不能吞掉真实付款
-		if order.Status != TopupOrderStatusPending && order.Status != TopupOrderStatusExpired {
+		// 审查 N-P2-8：超时置 expired 后，已验签的迟到支付仍须入账。
+		// need_manual 只允许管理员补单；USDT 回调传 allowNeedManual=false。
+		if order.Status == TopupOrderStatusNeedManual && !allowNeedManual {
+			return ErrTopupOrderStatusInvalid
+		}
+		if order.Status != TopupOrderStatusPending && order.Status != TopupOrderStatusExpired && order.Status != TopupOrderStatusNeedManual {
 			return ErrTopupOrderStatusInvalid
 		}
 
@@ -189,12 +217,12 @@ func CompleteTopupOrderBy(orderNo string, operatorID int) (*TopupOrder, error) {
 		}
 		_ = pendingQuota // 首充多送已停；历史 PendingExtraUSD 亦不入队
 
-		// 入账经 AdjustQuota（A4/A13）：不直接写 users.quota / bonus；锁序由 AdjustQuota 保证（bonus→users）。
-		// 订单行已 FOR UPDATE；同事务内 AdjustQuota 再锁 wallet/users 不致死锁。
+		// 入账经 adjustQuotaKeepUserCache：不直接写 users.quota / bonus，也不在事务里删额度缓存。
+		// 锁序仍由 adjustQuota 保证（bonus→users）。订单行已 FOR UPDATE，同事务再锁 wallet/users 不致死锁。
 
-		// 实充
+		// 实充。不在事务里删额度缓存；提交后按实付+赠送增量补进已有哈希。
 		if paidQuota > 0 {
-			if _, err := AdjustQuota(tx, order.UserId, "paid", int64(paidQuota),
+			if _, err := adjustQuotaKeepUserCache(tx, order.UserId, "paid", int64(paidQuota),
 				"adtyai topup paid", "topup_order", order.OrderNo,
 				"topup_paid:"+order.OrderNo, operatorID, "topup_paid"); err != nil {
 				return err
@@ -203,7 +231,7 @@ func CompleteTopupOrderBy(orderNo string, operatorID int) (*TopupOrder, error) {
 
 		// 立刻赠送：仅档位（首充取高已停）；ledger kind 统一 topup_tier_bonus
 		if bonusQuota > 0 {
-			if _, err := AdjustQuota(tx, order.UserId, "bonus", int64(bonusQuota),
+			if _, err := adjustQuotaKeepUserCache(tx, order.UserId, "bonus", int64(bonusQuota),
 				"adtyai topup bonus", "topup_order", order.OrderNo,
 				"topup_bonus:"+order.OrderNo, operatorID, "topup_tier_bonus"); err != nil {
 				return err
@@ -224,11 +252,13 @@ func CompleteTopupOrderBy(orderNo string, operatorID int) (*TopupOrder, error) {
 		}
 		out = &order
 		newlyPaid = true
-		_ = invalidateUserCache(order.UserId)
 		return nil
 	})
 	if err != nil {
 		return nil, err
+	}
+	if newlyPaid && out != nil {
+		syncTopupOrderCreditCache(out.UserId, out.PaidCreditedQuota, out.BonusCreditedQuota)
 	}
 	// A7: async aff commission after commit; failures do not block credit
 	if newlyPaid && out != nil && out.OrderNo != "" {
@@ -246,6 +276,26 @@ func CompleteTopupOrderBy(orderNo string, operatorID int) (*TopupOrder, error) {
 	return out, nil
 }
 
+// syncTopupOrderCreditCache adds the committed paid and bonus quota to an existing
+// user hash. A missing hash is left alone so the next read hydrates the committed row.
+// Do not delete the hash after a successful increment; in-flight pre-deductions live only there.
+func syncTopupOrderCreditCache(userId int, paidQuota, bonusQuota int64) {
+	if userId <= 0 {
+		return
+	}
+	total := paidQuota + bonusQuota
+	if total <= 0 {
+		return
+	}
+	maxInt := int64(^uint(0) >> 1)
+	if total > maxInt {
+		common.SysError(common.LogText("adty topup credit cache overflow user_id=%d quota=%d", userId, total))
+		_ = invalidateUserCache(userId)
+		return
+	}
+	syncCreditUserQuotaCache(userId, int(total), common.LogText("adty topup order"))
+}
+
 // AdminTopupOrderListFilter GET /api/admin/orders 筛选条件。
 type AdminTopupOrderListFilter struct {
 	Status          string
@@ -257,6 +307,7 @@ type AdminTopupOrderListFilter struct {
 	CreateTimeTo    int64  // inclusive unix；0 = 不限
 	Limit           int
 	Offset          int
+	Now             int64 // unix 秒；0 表示 time.Now()。测试可冻结。
 }
 
 // ListAdminTopupOrders 管理端订单列表：分页 + 常用筛选；按 id DESC。
@@ -271,7 +322,7 @@ func ListAdminTopupOrders(f AdminTopupOrderListFilter) ([]TopupOrder, int64, err
 	}
 	q := DB.Model(&TopupOrder{})
 	if f.Status != "" {
-		q = q.Where("status = ?", f.Status)
+		q = applyAdminTopupStatusFilter(q, f.Status, adminTopupListNow(f.Now))
 	}
 	if f.UserId > 0 {
 		q = q.Where("user_id = ?", f.UserId)
@@ -338,4 +389,31 @@ func GetUsernamesByIds(ids []int) (map[int]string, error) {
 		out[r.Id] = r.Username
 	}
 	return out, nil
+}
+
+func adminTopupListNow(now int64) int64 {
+	if now > 0 {
+		return now
+	}
+	return time.Now().Unix()
+}
+
+// expired 含原始 expired，以及仍 pending、但付款窗口已过的 USDT。
+// pending 排除这些展示过期单，避免同一单同时出现在两个筛选项。
+// BEpusdt 行不改写成 expired，迟到转账仍可进核对。
+func applyAdminTopupStatusFilter(q *gorm.DB, status string, now int64) *gorm.DB {
+	switch status {
+	case TopupOrderStatusExpired:
+		return q.Where(
+			"status = ? OR (status = ? AND LOWER(payment_method) = ? AND usdt_expire_at > 0 AND usdt_expire_at <= ?)",
+			TopupOrderStatusExpired, TopupOrderStatusPending, "usdt", now,
+		)
+	case TopupOrderStatusPending:
+		return q.Where(
+			"status = ? AND NOT (LOWER(payment_method) = ? AND usdt_expire_at > 0 AND usdt_expire_at <= ?)",
+			TopupOrderStatusPending, "usdt", now,
+		)
+	default:
+		return q.Where("status = ?", status)
+	}
 }

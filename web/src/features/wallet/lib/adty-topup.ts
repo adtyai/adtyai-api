@@ -24,6 +24,22 @@ import type {
   AdtyUsdtCashier,
 } from '../types'
 
+/** Backend payment_method (alipay | wxpay | usdt) → i18n key; unknown stays raw. */
+export function paymentMethodLabelKey(method: string | null | undefined): string {
+  switch ((method || '').trim()) {
+    case 'alipay':
+      return 'Alipay'
+    case 'wxpay':
+      return 'WeChat Pay'
+    case 'usdt':
+      return 'USDT'
+    case '':
+      return ''
+    default:
+      return (method || '').trim()
+  }
+}
+
 function toFiniteNumber(rate: unknown): number | null {
   if (typeof rate === 'number') {
     return Number.isFinite(rate) ? rate : null
@@ -246,4 +262,28 @@ export function formatCountdown(totalSeconds: number): string {
 
 export function isTerminalTopupStatus(status: string | undefined): boolean {
   return status === 'paid' || status === 'failed' || status === 'need_manual'
+}
+
+/** User-facing next step. The server hint wins; display status is the fallback. */
+export function topupNextActionText(order: {
+  next_action?: string
+  next_action_hint?: string
+  display_status?: string
+}): string {
+  const hint = order.next_action_hint || ''
+  const action = order.next_action || ''
+  const display = order.display_status || ''
+  if (hint === 'window_ended' || display === 'expired') {
+    return 'Payment window ended. Create a new top-up. If you already transferred, contact support with this order number. Do not send more to the old address.'
+  }
+  if (hint === 'exception_review' || action === 'contact_support' || display === 'review') {
+    return 'Exceptional order. Contact support with this order number. Do not send more funds to the old address.'
+  }
+  if (hint === 'failed_retry' || display === 'failed') {
+    return 'This payment failed. Create a new top-up.'
+  }
+  if (action === 'view_credit' || display === 'paid') {
+    return 'Paid amount and bonus are listed above. Bonus is spendable, deducted first, and not withdrawable.'
+  }
+  return ''
 }

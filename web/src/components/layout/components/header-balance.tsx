@@ -56,18 +56,23 @@ export function HeaderBalance() {
 
   const paid = data?.quota ?? storeUser?.quota ?? 0
   const bonus = data?.bonus_quota ?? storeUser?.bonus_quota ?? 0
-  const balance = formatQuota(paid + bonus)
 
   return (
     <div
       className='flex items-center gap-1.5'
       data-testid='header-balance'
       aria-label={t('Account balance')}
+      title={`${t('Bonus balance')} ${formatQuota(bonus)} · ${t('Paid balance')} ${formatQuota(paid)}`}
     >
       <span className='text-muted-foreground hidden text-sm whitespace-nowrap sm:inline'>
-        {t('Balance')}{' '}
+        {t('Bonus balance')}{' '}
         <span className='text-foreground font-semibold tabular-nums'>
-          {balance}
+          {formatQuota(bonus)}
+        </span>
+        <span className='mx-1'>·</span>
+        {t('Paid balance')}{' '}
+        <span className='text-foreground font-semibold tabular-nums'>
+          {formatQuota(paid)}
         </span>
       </span>
       <Button

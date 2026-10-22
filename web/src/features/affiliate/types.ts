@@ -44,12 +44,15 @@ export type AffSelfSummary = {
   withdraw_fee_rate: number
   freeze_days: number
   topup_rate: number
+  subscription_rate?: number
 }
 
 export type AffCommission = {
   id: number
   inviter_id: number
   invitee_id: number
+  inviter_name?: string
+  invitee_name?: string
   order_no: string
   source: string
   paid_amount_usd: number
@@ -68,6 +71,7 @@ export type AffCommission = {
 export type AffWithdrawal = {
   id: number
   user_id: number
+  username?: string
   amount_quota: number
   fee_quota: number
   net_quota: number
@@ -75,7 +79,11 @@ export type AffWithdrawal = {
   min_amount_snapshot: number
   idem_key: string
   status: AffWithdrawStatus
+  pay_method?: string
   pay_account: string
+  usdt_chain?: string
+  payout_ref?: string
+  payout_qr_id?: number
   reject_reason?: string
   operator_id?: number
   created_at: string
@@ -89,6 +97,7 @@ export type AffListResponse<T> = {
   code?: string
   data?: T[]
   total?: number
+  counts?: Record<string, number>
 }
 
 export type AffOneResponse<T> = {

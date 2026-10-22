@@ -76,16 +76,41 @@ describe('HeaderBalance', () => {
     expect(screen.getByRole('link').getAttribute('href')).toBe('/wallet')
   })
 
-  it('adds bonus quota to the displayed balance', async () => {
+  it('shows bonus and paid balance separately', async () => {
     useAuthStore
       .getState()
-      .auth.setUser({ id: 1, username: 'u', role: 1, quota: 500000, bonus_quota: 500000 })
+      .auth.setUser({
+        id: 1,
+        username: 'u',
+        role: 1,
+        quota: 500000,
+        bonus_quota: 500000,
+      })
     getSelf.mockResolvedValue({
       success: true,
       data: { quota: 1000000, bonus_quota: 500000 },
     })
     renderIt()
-    await waitFor(() => expect(screen.getByText('$3')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('$2')).toBeTruthy())
+    expect(screen.getByText('$1')).toBeTruthy()
+    expect(screen.queryByText('$3')).toBeNull()
+  })
+
+  it('keeps the stored bonus when self omits bonus_quota', async () => {
+    useAuthStore.getState().auth.setUser({
+      id: 1,
+      username: 'u',
+      role: 1,
+      quota: 500000,
+      bonus_quota: 500000,
+    })
+    getSelf.mockResolvedValue({
+      success: true,
+      data: { quota: 1000000 },
+    })
+    renderIt()
+    await waitFor(() => expect(screen.getByText('$2')).toBeTruthy())
+    expect(screen.getByText('$1')).toBeTruthy()
   })
 
   it('hides when the wallet module is hidden', () => {

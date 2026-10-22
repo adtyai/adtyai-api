@@ -24,7 +24,9 @@ import { toast } from 'sonner'
 import { Dialog } from '@/components/dialog'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
+import { fetchSupportContact } from '@/features/chatwoot/api'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
+import { usdtChainById } from '@/lib/usdt-chains'
 import { cn } from '@/lib/utils'
 
 import { getAdtyTopupOrder } from '../api'
@@ -45,6 +47,8 @@ export interface AdtyUsdtCashierDialogProps {
   usdt: AdtyUsdtCashier | null
   /** Called when order status becomes paid (refresh balance). */
   onPaid?: () => void
+  /** Called when the server reaches a terminal non-paid status. */
+  onTerminal?: (status: string) => void
 }
 
 export function AdtyUsdtCashierDialog({
@@ -53,9 +57,11 @@ export function AdtyUsdtCashierDialog({
   order,
   usdt,
   onPaid,
+  onTerminal,
 }: AdtyUsdtCashierDialogProps) {
   const { t } = useTranslation()
   const { copyToClipboard } = useCopyToClipboard()
+  const [supportContact, setSupportContact] = useState('')
   const [nowMs, setNowMs] = useState(() => Date.now())
   const [pollStatus, setPollStatus] = useState<string | undefined>(
     order?.status
@@ -72,6 +78,7 @@ export function AdtyUsdtCashierDialog({
       : '')
 
   const amountStr = usdt ? formatUsdtPayAmount(usdt) : ''
+  const network = usdt?.network || usdtChainById(usdt?.chain)?.network || ''
   const expireAt = usdt?.expire_at ?? 0
   const remaining = remainingSecondsUntil(expireAt, nowMs)
   const expired = expireAt > 0 && remaining <= 0
@@ -108,14 +115,13 @@ export function AdtyUsdtCashierDialog({
     ) {
       return
     }
-    if (expired) {
-      setPollStatus((s) => (s === 'pending' || !s ? 'failed' : s))
-      stopPoll()
-      if (!expireToastFiredRef.current) {
-        expireToastFiredRef.current = true
-        toast.error(t('USDT payment failed or expired. Do not transfer again.'))
-      }
-      return
+    if (expired && !expireToastFiredRef.current) {
+      expireToastFiredRef.current = true
+      toast.warning(
+        t(
+          'Payment window ended. If you already transferred, contact support with this order number. Do not send more to the old address.'
+        )
+      )
     }
 
     let cancelled = false
@@ -143,16 +149,20 @@ export function AdtyUsdtCashierDialog({
           stopPoll()
           toast.warning(
             t(
-              'Underpayment or timeout — order needs manual review. Contact support with TxID.'
+              'Exceptional payment. Contact support with this order number. Do not send more funds to the old address.'
             )
           )
+          onTerminal?.(status)
           return
         }
         if (status === 'failed') {
           stopPoll()
           toast.error(
-            t('USDT payment failed or expired. Do not transfer again.')
+            t(
+              'USDT payment failed. Do not transfer again. Create a new top-up.'
+            )
           )
+          onTerminal?.(status)
           return
         }
       } catch {
@@ -175,8 +185,20 @@ export function AdtyUsdtCashierDialog({
     stopPoll,
     onPaid,
     onOpenChange,
+    onTerminal,
     t,
   ])
+
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    void fetchSupportContact().then((support) => {
+      if (!cancelled) setSupportContact(support?.contact || '')
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [open])
 
   const handleCopyAmount = () => {
     if (!amountStr) return
@@ -201,22 +223,33 @@ export function AdtyUsdtCashierDialog({
   const statusLabel = (() => {
     if (pollStatus === 'paid') return t('Paid')
     if (pollStatus === 'need_manual') return t('Needs manual review')
-    if (pollStatus === 'failed' || expired) return t('Expired / failed')
+    if (pollStatus === 'failed') return t('Payment failed')
+    if (expired) return t('Expired')
     return t('Waiting for transfer')
   })()
+  const canPayThisCashier =
+    !expired &&
+    pollStatus !== 'paid' &&
+    pollStatus !== 'failed' &&
+    pollStatus !== 'need_manual'
+
+  let description = t('Transfer the exact USDT amount')
+  if (orderNo) {
+    description = t('Order {{no}} · confirmed on-chain automatically', {
+      no: orderNo,
+    })
+  } else if (network) {
+    description = t('Transfer the exact USDT amount on {{network}} only', {
+      network,
+    })
+  }
 
   return (
     <Dialog
       open={open}
       onOpenChange={onOpenChange}
       title={t('USDT Payment')}
-      description={
-        orderNo
-          ? t('Order {{no}} · confirmed on-chain automatically', {
-              no: orderNo,
-            })
-          : t('Transfer the exact USDT amount on TRON TRC20')
-      }
+      description={description}
       contentClassName='sm:max-w-lg'
       showCloseButton
     >
@@ -226,7 +259,9 @@ export function AdtyUsdtCashierDialog({
         <div className='space-y-4'>
           <div>
             <div className='text-muted-foreground text-[13px]'>
-              {t('Amount due (transfer exact amount)')}
+              {canPayThisCashier
+                ? t('Amount due (transfer exact amount)')
+                : t('Cashier amount')}
             </div>
             <div className='mt-1 flex flex-wrap items-baseline gap-2'>
               <span className='font-mono text-[28px] font-semibold tracking-tight'>
@@ -235,43 +270,67 @@ export function AdtyUsdtCashierDialog({
               <span className='text-muted-foreground text-sm'>
                 {usdt.payment_currency || 'USDT'}
               </span>
-              <Button
-                type='button'
-                variant='outline'
-                size='sm'
-                className='h-7 gap-1.5 px-2.5 text-xs'
-                onClick={handleCopyAmount}
-                disabled={!amountStr}
-              >
-                <Copy className='h-3.5 w-3.5' />
-                {t('Copy')}
-              </Button>
+              {canPayThisCashier ? (
+                <Button
+                  type='button'
+                  variant='outline'
+                  size='sm'
+                  className='h-7 gap-1.5 px-2.5 text-xs'
+                  onClick={handleCopyAmount}
+                  disabled={!amountStr}
+                >
+                  <Copy className='h-3.5 w-3.5' />
+                  {t('Copy')}
+                </Button>
+              ) : null}
             </div>
           </div>
 
-          <div>
-            <div className='text-muted-foreground mb-1 text-[13px]'>
-              {t('Receiving address')}
+          {canPayThisCashier ? (
+            <div>
+              <div className='text-muted-foreground mb-1 text-[13px]'>
+                {t('Receiving address')}
+              </div>
+              <div className='bg-muted/40 flex items-center justify-between gap-2 rounded-lg border px-3 py-2'>
+                <span className='font-mono text-[12.5px] break-all'>
+                  {usdt.payment_address}
+                </span>
+                <Button
+                  type='button'
+                  variant='ghost'
+                  size='sm'
+                  className='h-7 shrink-0 gap-1.5 px-2.5 text-xs'
+                  onClick={handleCopyAddress}
+                >
+                  <Copy className='h-3.5 w-3.5' />
+                  {t('Copy')}
+                </Button>
+              </div>
+              <p className='text-muted-foreground mt-1.5 text-xs'>
+                {network
+                  ? t(
+                      'Network: {{network}} only. A transfer on another network may be lost.',
+                      { network }
+                    )
+                  : t('A transfer on the wrong network may be lost.')}
+              </p>
             </div>
-            <div className='bg-muted/40 flex items-center justify-between gap-2 rounded-lg border px-3 py-2'>
-              <span className='font-mono text-[12.5px] break-all'>
-                {usdt.payment_address}
-              </span>
-              <Button
-                type='button'
-                variant='ghost'
-                size='sm'
-                className='h-7 shrink-0 gap-1.5 px-2.5 text-xs'
-                onClick={handleCopyAddress}
-              >
-                <Copy className='h-3.5 w-3.5' />
-                {t('Copy')}
-              </Button>
-            </div>
-            <p className='text-muted-foreground mt-1.5 text-xs'>
-              {t('Network: TRON (TRC20) only. Wrong network may lose funds.')}
+          ) : (
+            <p className='text-destructive text-xs'>
+              {t(
+                'Do not send more to the old address. Create a new top-up.'
+              )}
             </p>
-          </div>
+          )}
+          {supportContact &&
+          (expired || pollStatus === 'need_manual' || pollStatus === 'failed') ? (
+            <p className='text-xs'>
+              {t('Order {{no}}. Contact support: {{contact}}', {
+                no: orderNo || '—',
+                contact: supportContact,
+              })}
+            </p>
+          ) : null}
 
           <div className='grid grid-cols-1 gap-2 text-[13px] sm:grid-cols-2'>
             <InfoRow
@@ -331,7 +390,7 @@ export function AdtyUsdtCashierDialog({
             </div>
           </div>
 
-          {usdt.payment_url ? (
+          {canPayThisCashier && usdt.payment_url ? (
             <Button
               type='button'
               variant='secondary'
@@ -346,11 +405,11 @@ export function AdtyUsdtCashierDialog({
           <Alert className='border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-100'>
             <AlertTriangle className='h-4 w-4' />
             <AlertTitle className='text-[13px]'>
-              {t('Underpay / overpay')}
+              {t('Confirmed payment')}
             </AlertTitle>
             <AlertDescription className='text-[12.5px] leading-5'>
               {t(
-                'If the amount received is less than due, the order will not credit automatically and needs manual review. Contact support with TxID. Overpay also needs manual check.'
+                'A confirmed payment credits the snapshotted USD and bonus. An unmatched transfer is not moved to manual review automatically. Contact support with the order number and TxID, and do not send more to the old address.'
               )}
             </AlertDescription>
           </Alert>

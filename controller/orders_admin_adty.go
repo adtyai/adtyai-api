@@ -5,9 +5,11 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/setting"
 	"github.com/gin-gonic/gin"
 )
 
@@ -15,7 +17,22 @@ import (
 // 不改 topup_orders 表结构。
 type adminTopupOrderView struct {
 	model.TopupOrder
-	Username string `json:"username"`
+	Username      string `json:"username"`
+	DisplayStatus string `json:"display_status"`
+	UsdtNetwork   string `json:"usdt_network,omitempty"`
+}
+
+func decorateAdminOrder(order model.TopupOrder, username string) adminTopupOrderView {
+	network := ""
+	if spec, ok := setting.LookupUsdtChain(order.UsdtChain); ok {
+		network = spec.Network
+	}
+	return adminTopupOrderView{
+		TopupOrder:    order,
+		Username:      username,
+		DisplayStatus: model.TopupOrderDisplayStatus(&order, time.Now().Unix()),
+		UsdtNetwork:   network,
+	}
 }
 
 // AdminListTopupOrders GET /api/admin/orders
@@ -56,7 +73,7 @@ func AdminListTopupOrders(c *gin.Context) {
 	}
 	out := make([]adminTopupOrderView, 0, len(rows))
 	for _, o := range rows {
-		out = append(out, adminTopupOrderView{TopupOrder: o, Username: names[o.UserId]})
+		out = append(out, decorateAdminOrder(o, names[o.UserId]))
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -83,7 +100,7 @@ func AdminGetTopupOrder(c *gin.Context) {
 		adtyFail(c, status, code, err.Error(), nil)
 		return
 	}
-	view := adminTopupOrderView{TopupOrder: *order}
+	view := decorateAdminOrder(*order, "")
 	if names, err := model.GetUsernamesByIds([]int{order.UserId}); err == nil {
 		view.Username = names[order.UserId]
 	} else {

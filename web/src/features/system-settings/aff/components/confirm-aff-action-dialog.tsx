@@ -33,15 +33,19 @@ import { Input } from '@/components/ui/input'
 import { formatAffUsd } from '@/features/affiliate/lib/quota'
 import {
   commissionStatusLabel,
+  withdrawMethodLabel,
   withdrawStatusLabel,
   type AffAdminWithdrawAction,
 } from '@/features/affiliate/lib/status'
+import { formatBillingCurrencyFromUSD } from '@/lib/currency'
 import { getServerErrorMessage } from '@/lib/server-error-message'
+import { usdtChainById } from '@/lib/usdt-chains'
 
 import {
   useAdminAffWithdrawAction,
   useApproveSelfInvite,
   useRejectSelfInvite,
+  useReopenSelfInvite,
   useVoidAffCommission,
 } from '../hooks/use-admin-aff'
 import type { AffCommission, AffRiskReview, AffWithdrawal } from '../types'
@@ -53,7 +57,11 @@ export type AffConfirmKind =
       row: AffWithdrawal
       action: AffAdminWithdrawAction
     }
-  | { kind: 'self-invite'; row: AffRiskReview; action: 'approve' | 'reject' }
+  | {
+      kind: 'self-invite'
+      row: AffRiskReview
+      action: 'approve' | 'reject' | 'reopen'
+    }
 
 type Props = {
   target: AffConfirmKind | null
@@ -65,9 +73,9 @@ type Props = {
 function titleFor(t: (k: string) => string, target: AffConfirmKind): string {
   if (target.kind === 'void') return t('Void commission')
   if (target.kind === 'self-invite') {
-    return target.action === 'approve'
-      ? t('Approve self-invite review')
-      : t('Reject self-invite review')
+    if (target.action === 'approve') return t('Approve self-invite review')
+    if (target.action === 'reject') return t('Reject self-invite review')
+    return t('Restore self-invite review')
   }
   const map: Record<AffAdminWithdrawAction, string> = {
     approve: t('Approve withdrawal'),
@@ -91,22 +99,27 @@ export function ConfirmAffActionDialog({
   const wdMut = useAdminAffWithdrawAction()
   const approveInvite = useApproveSelfInvite()
   const rejectInvite = useRejectSelfInvite()
+  const reopenInvite = useReopenSelfInvite()
   const [reason, setReason] = useState('')
+  const [payoutRef, setPayoutRef] = useState('')
   const [localError, setLocalError] = useState<string | null>(null)
   const busy =
     voidMut.isPending ||
     wdMut.isPending ||
     approveInvite.isPending ||
-    rejectInvite.isPending
+    rejectInvite.isPending ||
+    reopenInvite.isPending
 
   useEffect(() => {
     if (open) {
       setReason('')
+      setPayoutRef('')
       setLocalError(null)
       voidMut.reset()
       wdMut.reset()
       approveInvite.reset()
       rejectInvite.reset()
+      reopenInvite.reset()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, target])
@@ -116,20 +129,38 @@ export function ConfirmAffActionDialog({
   async function handleConfirm() {
     if (!target) return
     setLocalError(null)
+    if (
+      target.kind === 'withdraw' &&
+      target.action === 'reject' &&
+      !reason.trim()
+    ) {
+      const msg = t(
+        'Reason is required before confirming this withdrawal action'
+      )
+      setLocalError(msg)
+      return
+    }
     try {
       let res: { success: boolean; message?: string; code?: string }
       if (target.kind === 'void') {
         res = await voidMut.mutateAsync(target.row.id)
       } else if (target.kind === 'self-invite') {
-        res =
-          target.action === 'approve'
-            ? await approveInvite.mutateAsync(target.row.id)
-            : await rejectInvite.mutateAsync(target.row.id)
+        if (target.action === 'approve') {
+          res = await approveInvite.mutateAsync(target.row.id)
+        } else if (target.action === 'reject') {
+          res = await rejectInvite.mutateAsync(target.row.id)
+        } else {
+          res = await reopenInvite.mutateAsync(target.row.id)
+        }
       } else {
         res = await wdMut.mutateAsync({
           id: target.row.id,
           action: target.action,
-          reason: target.action === 'reject' ? reason.trim() : undefined,
+          reason: reason.trim() || undefined,
+          payout_ref:
+            target.action === 'mark-paid'
+              ? payoutRef.trim() || undefined
+              : undefined,
         })
       }
       if (!res.success) {
@@ -154,9 +185,13 @@ export function ConfirmAffActionDialog({
         <DialogHeader>
           <DialogTitle>{titleFor(t, target)}</DialogTitle>
           <DialogDescription>
-            {t(
-              'Please confirm this sensitive action. Submit takes effect immediately.'
-            )}
+            {target.kind === 'withdraw'
+              ? t(
+                  'Invite earnings change after this action. Paid balance and bonus balance are not changed here.'
+                )
+              : t(
+                  'Please confirm this sensitive action. Submit takes effect immediately.'
+                )}
           </DialogDescription>
         </DialogHeader>
         <div className='grid gap-2 text-sm'>
@@ -197,6 +232,12 @@ export function ConfirmAffActionDialog({
                 {t('Amount')}: {formatAffUsd(target.row.amount_quota)}
               </div>
               <div className='col-span-2 break-all'>
+                {t('Payout method')}: {t(withdrawMethodLabel(target.row))}
+                {target.row.usdt_chain
+                  ? ` · ${usdtChainById(target.row.usdt_chain)?.label || target.row.usdt_chain}`
+                  : ''}
+              </div>
+              <div className='col-span-2 break-all'>
                 {t('Payout account')}: {target.row.pay_account || '-'}
               </div>
             </div>
@@ -207,16 +248,60 @@ export function ConfirmAffActionDialog({
                 ID: <span className='font-mono'>{target.row.id}</span>
               </div>
               <div>
-                {t('User')}: {target.row.user_id}
+                {t('Order')}:{' '}
+                <span className='font-mono'>{target.row.order_no || '-'}</span>
+              </div>
+              <div>
+                {t('Inviter')}:{' '}
+                {target.row.inviter_name || target.row.inviter_id || '-'}
+              </div>
+              <div>
+                {t('Invitee')}:{' '}
+                {target.row.invitee_name ||
+                  target.row.invitee_id ||
+                  target.row.user_id ||
+                  '-'}
+              </div>
+              <div>
+                {t('Amount')}:{' '}
+                {formatBillingCurrencyFromUSD(target.row.amount_usd || 0, {
+                  digitsLarge: 2,
+                  digitsSmall: 2,
+                  abbreviate: false,
+                })}
+              </div>
+              <div>
+                {t('Commission')}:{' '}
+                {formatAffUsd(target.row.commission_quota || 0)}
               </div>
               <div className='col-span-2'>{target.row.reason || '-'}</div>
             </div>
           ) : null}
-          {target.kind === 'withdraw' && target.action === 'reject' ? (
+          {target.kind === 'withdraw' && target.action === 'mark-paid' ? (
+            <div className='grid gap-1'>
+              <Input
+                value={payoutRef}
+                onChange={(e) => setPayoutRef(e.target.value)}
+                placeholder={t('Payout reference')}
+              />
+              <div className='text-muted-foreground text-[11px]'>
+                {t(
+                  'Payout reference is optional. Leave it blank if you do not have one.'
+                )}
+              </div>
+            </div>
+          ) : null}
+          {target.kind === 'withdraw' && target.action !== 'mark-paid' ? (
             <Input
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              placeholder={t('Reject reason (optional)')}
+              placeholder={
+                target.action === 'reject'
+                  ? t(
+                      'Reason is required before confirming this withdrawal action'
+                    )
+                  : t('Reason')
+              }
             />
           ) : null}
           {localError ? (

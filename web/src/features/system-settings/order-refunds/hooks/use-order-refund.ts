@@ -46,12 +46,23 @@ export function useAdminRefundTopupOrder() {
       amount: number
       reason: string
       request_id: string
+      amount_confirm?: number
+      preview: {
+        amount_usd: number
+        paid_claw_usd: number
+        bonus_claw_usd: number
+        bonus_shortfall_usd: number
+        aff_claw_usd: number
+        aff_action: string
+      }
     }) =>
       adminRefundTopupOrder(args.orderNo, {
         amount: args.amount,
         reason: args.reason,
         request_id: args.request_id,
         confirm: true,
+        amount_confirm: args.amount_confirm,
+        preview: args.preview,
       }),
     onSuccess: (data, vars) => {
       if (data.success && data.data?.order) {

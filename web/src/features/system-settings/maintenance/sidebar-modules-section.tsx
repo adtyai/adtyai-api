@@ -126,7 +126,9 @@ export function SidebarModulesSection({
     personal: {
       topup: {
         title: t('Wallet'),
-        description: t('Top up balance and view billing history.'),
+        description: t(
+          'Wallet and invite rewards. Turning this off hides both.'
+        ),
       },
       personal: {
         title: t('Profile'),
@@ -174,7 +176,9 @@ export function SidebarModulesSection({
       },
       orders: {
         title: t('Orders'),
-        description: t('Order list inside system settings (independent of entry).'),
+        description: t(
+          'Order list inside system settings (independent of entry).'
+        ),
       },
       enterprise_pricing: {
         title: t('Enterprise pricing'),

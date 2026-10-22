@@ -37,6 +37,7 @@ export async function getAffSelf(): Promise<AffSelfSummary> {
 export async function listAffCommissionsSelf(params?: {
   limit?: number
   offset?: number
+  status?: string
 }): Promise<{ rows: AffCommission[]; total: number }> {
   const res = await api.get<AffListResponse<AffCommission>>(
     '/api/aff/commissions/self',
@@ -44,6 +45,7 @@ export async function listAffCommissionsSelf(params?: {
       params: {
         limit: params?.limit ?? 50,
         offset: params?.offset ?? 0,
+        status: params?.status || undefined,
       },
     }
   )
@@ -54,7 +56,10 @@ export async function listAffCommissionsSelf(params?: {
 export async function createAffWithdraw(input: {
   amount_quota: number
   idem_key: string
+  pay_method: 'usdt' | 'alipay'
   pay_account: string
+  usdt_chain: string
+  payout_qr_id?: number
 }): Promise<AffOneResponse<AffWithdrawal>> {
   const res = await api.post<AffOneResponse<AffWithdrawal>>(
     '/api/aff/withdraw',
@@ -65,6 +70,57 @@ export async function createAffWithdraw(input: {
     }
   )
   return res.data
+}
+
+export async function fetchAffPayoutQrObjectUrl(id: number): Promise<string> {
+  const res = await api.get(`/api/aff/payout-qr/${id}`, {
+    responseType: 'blob',
+    validateStatus: (s) => s === 200 || s === 404,
+  })
+  const contentType = String(res.headers['content-type'] || '')
+  if (res.status !== 200 || !contentType.startsWith('image/')) {
+    throw new Error('invalid payout qr')
+  }
+  return URL.createObjectURL(res.data)
+}
+
+export async function uploadAffPayoutQr(
+  file: File
+): Promise<AffOneResponse<{ id: number; sha256: string }>> {
+  const body = new FormData()
+  body.append('file', file)
+  const res = await api.post<AffOneResponse<{ id: number; sha256: string }>>(
+    '/api/aff/payout-qr',
+    body,
+    {
+      validateStatus: (s) =>
+        (s >= 200 && s < 300) || s === 400 || s === 403 || s === 413,
+    }
+  )
+  return res.data
+}
+
+export type AffInvitee = {
+  user_id: number
+  name: string
+  registered_at: number
+  paid_usd: number
+  commission_quota: number
+  status: string
+}
+
+export async function listAffInvitees(params?: {
+  limit?: number
+  offset?: number
+}): Promise<{ rows: AffInvitee[]; total: number }> {
+  const res = await api.get<AffListResponse<AffInvitee>>('/api/aff/invitees', {
+    params: {
+      limit: params?.limit ?? 20,
+      offset: params?.offset ?? 0,
+    },
+  })
+  const body = requireServerSuccess(res.data)
+  return { rows: body.data ?? [], total: body.total ?? 0 }
 }
 
 export async function listAffWithdrawalsSelf(params?: {

@@ -20,6 +20,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { describe, expect, it } from 'vitest'
 
 import {
+  LEDGER_KIND_OPTIONS,
   buildWalletLedgerSelfQuery,
   clampLedgerLimit,
   clampLedgerOffset,
@@ -107,6 +108,44 @@ describe('ledgerKindLabelKey', () => {
     expect(ledgerKindLabelKey('api_consume_hourly')).toBe(
       'Ledger kind api consume'
     )
+  })
+
+  it('names affiliate refund kinds that can appear in the ledger', () => {
+    expect(LEDGER_KIND_OPTIONS).toEqual(
+      expect.arrayContaining([
+        'aff_refund_void',
+        'aff_refund_claw',
+        'aff_refund_claw_paid',
+      ])
+    )
+    expect(ledgerKindLabelKey('aff_refund_void')).toBe(
+      'Ledger kind aff refund void'
+    )
+    expect(ledgerKindLabelKey('aff_refund_claw')).toBe(
+      'Ledger kind aff refund claw'
+    )
+    expect(ledgerKindLabelKey('aff_refund_claw_paid')).toBe(
+      'Ledger kind aff refund claw paid'
+    )
+  })
+
+  it('filters and labels the kinds the server actually writes', () => {
+    expect(LEDGER_KIND_OPTIONS).toEqual(
+      expect.arrayContaining(['redemption_bonus', 'signup_invite_bonus'])
+    )
+    expect(LEDGER_KIND_OPTIONS).not.toContain('redemption')
+    expect(ledgerKindLabelKey('redemption_bonus')).toBe(
+      'Ledger kind redemption'
+    )
+    expect(ledgerKindLabelKey('signup_invite_bonus')).toBe(
+      'Ledger kind signup invite bonus'
+    )
+    expect(
+      ledgerNote(
+        { reason: 'invitation code bonus', ref_id: '7' },
+        (key) => `T:${key}`
+      )
+    ).toBe('T:Invitation code bonus · 7')
   })
 })
 

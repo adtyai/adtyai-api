@@ -1,10 +1,18 @@
 import { Info, RefreshCw, ShieldAlert } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 
 import { ErrorState } from '@/components/error-state'
 import { SectionPageLayout } from '@/components/layout'
 import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
 import {
   Select,
   SelectContent,
@@ -21,11 +29,16 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { formatAffUsd } from '@/features/affiliate/lib/quota'
+import { formatBillingCurrencyFromUSD } from '@/lib/currency'
 import {
   adminActionsForWithdrawStatus,
+  withdrawMethodLabel,
   withdrawStatusLabel,
   type AffAdminWithdrawAction,
 } from '@/features/affiliate/lib/status'
+import { api } from '@/lib/api'
+import { getServerErrorMessage } from '@/lib/server-error-message'
+import { usdtChainById } from '@/lib/usdt-chains'
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -53,6 +66,7 @@ import {
   ConfirmAffActionDialog,
   type AffConfirmKind,
 } from './components/confirm-aff-action-dialog'
+import { AffUserDetailButton } from './user-detail-dialog'
 import {
   useAdminAffSelfInviteReviews,
   useAdminAffWithdrawals,
@@ -81,27 +95,52 @@ function actionLabel(t: (k: string) => string, action: AffAdminWithdrawAction) {
 export function AffWithdrawalsSettings() {
   const { t } = useTranslation()
   const [status, setStatus] = useState('pending')
+  const [payMethod, setPayMethod] = useState('all')
+  const [keyword, setKeyword] = useState('')
+  const [offset, setOffset] = useState(0)
+  const [qrUrl, setQrUrl] = useState<string | null>(null)
   const [inviteStatus, setInviteStatus] = useState('pending')
-  const list = useAdminAffWithdrawals(status === 'all' ? '' : status)
+  const [inviteOffset, setInviteOffset] = useState(0)
+  const pageSize = 50
+  const list = useAdminAffWithdrawals({
+    status: status === 'all' ? '' : status,
+    payMethod: payMethod === 'all' ? '' : payMethod,
+    keyword: keyword.trim(),
+    offset,
+  })
   const invites = useAdminAffSelfInviteReviews(
-    inviteStatus === 'all' ? '' : inviteStatus
+    inviteStatus === 'all' ? '' : inviteStatus,
+    inviteOffset
   )
   const [target, setTarget] = useState<AffConfirmKind | null>(null)
   const isForbidden = (list.error as { status?: number } | null)?.status === 403
   const rows = list.data?.rows ?? []
 
-  const counts = useMemo(() => {
-    const all = list.data?.rows ?? []
-    const pick = (s: string) => all.filter((r) => r.status === s).length
-    return {
-      pending: pick('pending'),
-      approved: pick('approved'),
-      paid: pick('paid'),
-      rejected: pick('rejected'),
-      pay_failed: pick('pay_failed'),
-      pay_unknown: pick('pay_unknown'),
+  const counts = list.data?.counts ?? {}
+
+  useEffect(() => {
+    return () => {
+      if (qrUrl) URL.revokeObjectURL(qrUrl)
     }
-  }, [list.data?.rows])
+  }, [qrUrl])
+
+  async function openQr(id: number) {
+    try {
+      const res = await api.get(`/api/admin/aff/payout-qr/${id}`, {
+        responseType: 'blob',
+        validateStatus: (s) => s === 200 || s === 403 || s === 404,
+      })
+      const contentType = String(res.headers['content-type'] || '')
+      if (res.status !== 200 || !contentType.startsWith('image/')) {
+        toast.error(t('Failed to load payout QR'))
+        return
+      }
+      if (qrUrl) URL.revokeObjectURL(qrUrl)
+      setQrUrl(URL.createObjectURL(res.data))
+    } catch (err) {
+      toast.error(getServerErrorMessage(err, t('Failed to load payout QR')))
+    }
+  }
 
   function openWithdraw(row: AffWithdrawal, action: AffAdminWithdrawAction) {
     setTarget({ kind: 'withdraw', row, action })
@@ -127,7 +166,10 @@ export function AffWithdrawalsSettings() {
           ]}
           value={status}
           onValueChange={(v) => {
-            if (v) setStatus(v)
+            if (v) {
+              setStatus(v)
+              setOffset(0)
+            }
           }}
         >
           <SelectTrigger className='h-8 w-44 text-sm'>
@@ -146,6 +188,42 @@ export function AffWithdrawalsSettings() {
             <SelectItem value='all'>{t('All statuses')}</SelectItem>
           </SelectContent>
         </Select>
+        <Select
+          items={[
+            { value: 'all', label: t('All methods') },
+            { value: 'usdt', label: 'USDT' },
+            { value: 'alipay', label: t('Alipay') },
+            { value: 'legacy', label: t('Legacy payout account') },
+          ]}
+          value={payMethod}
+          onValueChange={(v) => {
+            if (v) {
+              setPayMethod(v)
+              setOffset(0)
+            }
+          }}
+        >
+          <SelectTrigger className='h-8 w-40 text-sm'>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value='all'>{t('All methods')}</SelectItem>
+            <SelectItem value='usdt'>USDT</SelectItem>
+            <SelectItem value='alipay'>{t('Alipay')}</SelectItem>
+            <SelectItem value='legacy'>
+              {t('Legacy payout account')}
+            </SelectItem>
+          </SelectContent>
+        </Select>
+        <Input
+          value={keyword}
+          onChange={(e) => {
+            setKeyword(e.target.value)
+            setOffset(0)
+          }}
+          placeholder={t('Keyword')}
+          className='h-8 w-40 text-sm'
+        />
         <Button
           type='button'
           variant='outline'
@@ -168,22 +246,24 @@ export function AffWithdrawalsSettings() {
             )}
           </p>
 
-          <div className='grid gap-3 sm:grid-cols-3 lg:grid-cols-6'>
+          <div className='grid gap-3 sm:grid-cols-3'>
             {(
               [
-                ['pending', t('Pending'), counts.pending],
-                ['approved', t('Approved'), counts.approved],
-                ['paid', t('Paid'), counts.paid],
-                ['rejected', t('Rejected'), counts.rejected],
-                ['pay_failed', t('Pay failed'), counts.pay_failed],
-                ['pay_unknown', t('Pay unknown'), counts.pay_unknown],
+                ['pending', t('Pending'), counts.pending ?? 0],
+                ['approved', t('Approved'), counts.approved ?? 0],
+                ['failed', t('Failed payouts'), counts.failed ?? 0],
               ] as [string, string, number][]
             ).map(([id, label, n]) => (
               <button
                 key={id}
                 type='button'
                 className='bg-card rounded-xl border p-3 text-left shadow-xs'
-                onClick={() => setStatus(id)}
+                onClick={() => {
+                  if (id !== 'failed') {
+                    setStatus(id)
+                    setOffset(0)
+                  }
+                }}
               >
                 <div className='text-muted-foreground text-[12px]'>{label}</div>
                 <div className='mt-1 text-xl font-semibold'>{n}</div>
@@ -249,6 +329,7 @@ export function AffWithdrawalsSettings() {
                     <TableHead>{t('User')}</TableHead>
                     <TableHead>{t('Amount')}</TableHead>
                     <TableHead>{t('Fee')}</TableHead>
+                    <TableHead>{t('Payout method')}</TableHead>
                     <TableHead>{t('Payout account')}</TableHead>
                     <TableHead>{t('Status')}</TableHead>
                     <TableHead>{t('Note')}</TableHead>
@@ -259,7 +340,7 @@ export function AffWithdrawalsSettings() {
                   {rows.length === 0 ? (
                     <TableRow>
                       <TableCell
-                        colSpan={8}
+                        colSpan={9}
                         className='text-muted-foreground h-24 text-center text-sm'
                       >
                         {t('No withdrawals')}
@@ -273,15 +354,47 @@ export function AffWithdrawalsSettings() {
                           <TableCell>
                             <code className='text-xs'>{row.id}</code>
                           </TableCell>
-                          <TableCell>{row.user_id}</TableCell>
+                          <TableCell>
+                            <div>{row.username || row.user_id}</div>
+                            <div className='text-muted-foreground text-[11px]'>
+                              {row.user_id}
+                            </div>
+                            {row.user_id > 0 ? (
+                              <AffUserDetailButton userId={row.user_id} />
+                            ) : null}
+                          </TableCell>
                           <TableCell className='font-semibold'>
                             {formatAffUsd(row.amount_quota)}
                           </TableCell>
                           <TableCell>{formatAffUsd(row.fee_quota)}</TableCell>
                           <TableCell>
+                            <div>{t(withdrawMethodLabel(row))}</div>
+                            {row.usdt_chain ? (
+                              <div className='text-muted-foreground text-[11px]'>
+                                {usdtChainById(row.usdt_chain)?.label ||
+                                  row.usdt_chain}
+                              </div>
+                            ) : null}
+                            {row.payout_qr_id ? (
+                              <Button
+                                type='button'
+                                variant='link'
+                                className='h-auto px-0 text-xs'
+                                onClick={() => void openQr(row.payout_qr_id || 0)}
+                              >
+                                {t('Payout QR')}
+                              </Button>
+                            ) : null}
+                          </TableCell>
+                          <TableCell>
                             <span className='font-mono text-[12px] break-all'>
                               {row.pay_account || '-'}
                             </span>
+                            {row.payout_ref ? (
+                              <div className='text-muted-foreground text-[11px] break-all'>
+                                {row.payout_ref}
+                              </div>
+                            ) : null}
                           </TableCell>
                           <TableCell>
                             <code className='text-xs'>
@@ -290,7 +403,7 @@ export function AffWithdrawalsSettings() {
                           </TableCell>
                           <TableCell>
                             <span className='text-muted-foreground line-clamp-2 text-xs'>
-                              {row.reject_reason || '-'}
+                              {row.reject_reason || row.payout_ref || '-'}
                             </span>
                           </TableCell>
                           <TableCell>
@@ -336,6 +449,37 @@ export function AffWithdrawalsSettings() {
                   )}
                 </TableBody>
               </Table>
+              <div className='flex items-center justify-between border-t px-5 py-3 text-xs'>
+                <span className='text-muted-foreground'>
+                  {t('Counts ignore the current filter')}
+                </span>
+                {(list.data?.total ?? 0) > pageSize ? (
+                  <div className='flex items-center gap-2'>
+                    <Button
+                      type='button'
+                      variant='outline'
+                      size='sm'
+                      className='h-7'
+                      disabled={offset <= 0}
+                      onClick={() => setOffset(Math.max(0, offset - pageSize))}
+                    >
+                      {t('Previous')}
+                    </Button>
+                    <Button
+                      type='button'
+                      variant='outline'
+                      size='sm'
+                      className='h-7'
+                      disabled={offset + pageSize >= (list.data?.total ?? 0)}
+                      onClick={() => setOffset(offset + pageSize)}
+                    >
+                      {t('Next')}
+                    </Button>
+                  </div>
+                ) : (
+                  <span />
+                )}
+              </div>
             </section>
           ) : null}
 
@@ -360,7 +504,10 @@ export function AffWithdrawalsSettings() {
                 ]}
                 value={inviteStatus}
                 onValueChange={(v) => {
-                  if (v) setInviteStatus(v)
+                  if (v) {
+                    setInviteStatus(v)
+                    setInviteOffset(0)
+                  }
                 }}
               >
                 <SelectTrigger className='h-8 w-36 text-sm'>
@@ -378,7 +525,10 @@ export function AffWithdrawalsSettings() {
               <TableHeader>
                 <TableRow className='bg-muted/40 hover:bg-muted/40'>
                   <TableHead>ID</TableHead>
-                  <TableHead>{t('User')}</TableHead>
+                  <TableHead>{t('Inviter')}</TableHead>
+                  <TableHead>{t('Invitee')}</TableHead>
+                  <TableHead>{t('Order')}</TableHead>
+                  <TableHead>{t('Amount')}</TableHead>
                   <TableHead>{t('Status')}</TableHead>
                   <TableHead>{t('Reason')}</TableHead>
                   <TableHead className='w-[1%]' />
@@ -388,7 +538,7 @@ export function AffWithdrawalsSettings() {
                 {(invites.data?.rows ?? []).length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={5}
+                      colSpan={8}
                       className='text-muted-foreground h-20 text-center text-sm'
                     >
                       {t('No self-invite reviews')}
@@ -400,7 +550,22 @@ export function AffWithdrawalsSettings() {
                       <TableCell>
                         <code className='text-xs'>{row.id}</code>
                       </TableCell>
-                      <TableCell>{row.user_id}</TableCell>
+                      <TableCell>
+                        {row.inviter_name || row.inviter_id || '-'}
+                      </TableCell>
+                      <TableCell>
+                        {row.invitee_name || row.invitee_id || row.user_id}
+                      </TableCell>
+                      <TableCell>
+                        <code className='text-xs'>{row.order_no || '-'}</code>
+                      </TableCell>
+                      <TableCell>
+                        {formatBillingCurrencyFromUSD(row.amount_usd || 0, {
+                          digitsLarge: 2,
+                          digitsSmall: 2,
+                          abbreviate: false,
+                        })}
+                      </TableCell>
                       <TableCell>
                         <code className='text-xs'>
                           {t(riskReviewStatusLabelKey(row.status))}
@@ -449,22 +614,91 @@ export function AffWithdrawalsSettings() {
                               {t('Reject')}
                             </Button>
                           </div>
-                        ) : (
+                        ) : null}
+                        {row.status === 'rejected' ? (
+                          <Button
+                            type='button'
+                            variant='outline'
+                            size='sm'
+                            className='h-7 px-2.5 text-xs'
+                            onClick={() =>
+                              setTarget({
+                                kind: 'self-invite',
+                                row,
+                                action: 'reopen',
+                              })
+                            }
+                          >
+                            {t('Restore self-invite review')}
+                          </Button>
+                        ) : null}
+                        {row.status !== 'pending' &&
+                        row.status !== 'rejected' ? (
                           <span className='text-muted-foreground text-xs'>
                             -
                           </span>
-                        )}
+                        ) : null}
                       </TableCell>
                     </TableRow>
                   ))
                 )}
               </TableBody>
             </Table>
+            {(invites.data?.total ?? 0) > pageSize ? (
+              <div className='flex justify-end gap-2 border-t px-5 py-3'>
+                <Button
+                  type='button'
+                  variant='outline'
+                  size='sm'
+                  className='h-7'
+                  disabled={inviteOffset <= 0}
+                  onClick={() =>
+                    setInviteOffset(Math.max(0, inviteOffset - pageSize))
+                  }
+                >
+                  {t('Previous')}
+                </Button>
+                <Button
+                  type='button'
+                  variant='outline'
+                  size='sm'
+                  className='h-7'
+                  disabled={
+                    inviteOffset + pageSize >= (invites.data?.total ?? 0)
+                  }
+                  onClick={() => setInviteOffset(inviteOffset + pageSize)}
+                >
+                  {t('Next')}
+                </Button>
+              </div>
+            ) : null}
           </section>
         </div>
       </SectionPageLayout.Content>
     </SectionPageLayout>
 
+      <Dialog
+        open={Boolean(qrUrl)}
+        onOpenChange={(open) => {
+          if (!open) {
+            if (qrUrl) URL.revokeObjectURL(qrUrl)
+            setQrUrl(null)
+          }
+        }}
+      >
+        <DialogContent className='sm:max-w-md'>
+          <DialogHeader>
+            <DialogTitle>{t('Payout QR')}</DialogTitle>
+          </DialogHeader>
+          {qrUrl ? (
+            <img
+              src={qrUrl}
+              alt={t('Payout QR')}
+              className='max-h-[420px] w-full object-contain'
+            />
+          ) : null}
+        </DialogContent>
+      </Dialog>
       <ConfirmAffActionDialog
         target={target}
         open={Boolean(target)}

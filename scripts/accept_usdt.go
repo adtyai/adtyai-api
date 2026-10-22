@@ -118,7 +118,7 @@ func main() {
 				"token":           "USDT",
 				"receive_address": "TAcceptMockUsdtAddress111",
 				"payment_url":     "https://pay.example.test/mock",
-				"expiration_time": time.Now().Add(15 * time.Minute).Unix(),
+				"expiration_time": int64(900),
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -205,7 +205,7 @@ func main() {
 	}
 	fmt.Println("(4) fake signature rejected OK")
 
-	// (5) 少付超容差不入账
+	// (5) 少付仍按订单快照入账，不进核对
 	u2 := newUser("under")
 	order2, err := model.CreateTopupOrder(u2.Id, 10, "usdt", "fp-usdt-u-"+common.GetRandomString(8), "10.0.0.2")
 	must(err)
@@ -224,14 +224,15 @@ func main() {
 		panic(fmt.Sprintf("(5) underpay notify want 200 ack got %d", w.Code))
 	}
 	order2, _ = model.GetTopupOrderByNo(order2.OrderNo)
-	if order2.Status != model.TopupOrderStatusNeedManual {
-		panic(fmt.Sprintf("(5) want need_manual got %s", order2.Status))
+	if order2.Status != model.TopupOrderStatusPaid {
+		panic(fmt.Sprintf("(5) want paid got %s", order2.Status))
 	}
 	paid2, _ := model.GetUserPaidQuota(u2.Id)
-	if paid2 != 0 {
-		panic(fmt.Sprintf("(5) underpay must not credit, paid=%d", paid2))
+	wantPaid2, _ := model.DollarsToQuota(10)
+	if paid2 != wantPaid2 {
+		panic(fmt.Sprintf("(5) underpay must credit snapshot, want %d got %d", wantPaid2, paid2))
 	}
-	fmt.Println("(5) underpay beyond tolerance → need_manual, no credit OK")
+	fmt.Println("(5) underpay status 2 credits snapshot OK")
 
 	// (6) 合法回调入账 + 重复幂等
 	good := signParams(fakeToken, map[string]interface{}{
@@ -263,8 +264,7 @@ func main() {
 	}
 	fmt.Println("(6) valid callback credit + idempotent replay OK")
 
-
-	// (8) expired order callback → need_manual, balance unchanged
+	// (8) local window ended, status 2 still credits the snapshot
 	uExp := newUser("exp")
 	orderExp, err := model.CreateTopupOrder(uExp.Id, 10, "usdt", "fp-usdt-e-"+common.GetRandomString(8), "10.0.0.3")
 	must(err)
@@ -288,17 +288,18 @@ func main() {
 		panic(fmt.Sprintf("(8) expired notify want 200 ack got %d body=%s", w.Code, w.Body.String()))
 	}
 	orderExp, _ = model.GetTopupOrderByNo(orderExp.OrderNo)
-	if orderExp.Status != model.TopupOrderStatusNeedManual {
-		panic(fmt.Sprintf("(8) want need_manual got %s", orderExp.Status))
+	if orderExp.Status != model.TopupOrderStatusPaid {
+		panic(fmt.Sprintf("(8) want paid got %s", orderExp.Status))
 	}
-	if orderExp.PendingReason != "timeout" {
-		panic(fmt.Sprintf("(8) want pending_reason=timeout got %q", orderExp.PendingReason))
+	if orderExp.PendingReason == "timeout" {
+		panic("(8) local expiry must not become timeout review")
 	}
 	paidExp, _ := model.GetUserPaidQuota(uExp.Id)
-	if paidExp != 0 {
-		panic(fmt.Sprintf("(8) expired must not credit, paid=%d", paidExp))
+	wantPaidExp, _ := model.DollarsToQuota(10)
+	if paidExp != wantPaidExp {
+		panic(fmt.Sprintf("(8) expired status 2 must credit snapshot, want %d got %d", wantPaidExp, paidExp))
 	}
-	fmt.Println("(8) expired callback → need_manual/timeout, no credit OK")
+	fmt.Println("(8) status 2 after local expiry credits snapshot OK")
 
 	// legacy path closed by default
 	setting.SetBepusdtLegacyNotifyEnabled(false)

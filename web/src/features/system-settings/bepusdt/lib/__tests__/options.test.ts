@@ -25,15 +25,15 @@ import {
   formatTokenFingerprint,
   parseBepusdtOptions,
   sanitizeBepusdtForm,
+  type BepusdtFormValues,
 } from '../options'
 
 describe('parseBepusdtOptions', () => {
-  it('reads five keys and token secret_set/fingerprint', () => {
+  it('reads gateway fields and enabled chains', () => {
     const parsed = parseBepusdtOptions([
       { key: 'BepusdtBaseURL', value: ' https://pay.example.com/ ' },
       { key: 'BepusdtLegacyNotifyEnabled', value: 'true' },
-      { key: 'BepusdtTradeType', value: 'usdt.erc20' },
-      { key: 'BepusdtCurrency', value: 'usd' },
+      { key: 'BepusdtEnabledChains', value: '["xlayer","trc20","erc20"]' },
       { key: 'BepusdtApiToken.secret_set', value: 'true' },
       { key: 'BepusdtApiToken.fingerprint', value: 'hm_abc123' },
     ])
@@ -41,61 +41,71 @@ describe('parseBepusdtOptions', () => {
     expect(parsed.form.BepusdtBaseURL).toBe('https://pay.example.com/')
     expect(parsed.form.BepusdtApiToken).toBe('')
     expect(parsed.form.BepusdtLegacyNotifyEnabled).toBe(true)
-    expect(parsed.form.BepusdtTradeType).toBe('usdt.erc20')
-    expect(parsed.form.BepusdtCurrency).toBe('USD')
+    expect(parsed.form.enabledChains).toEqual(['trc20', 'xlayer'])
     expect(parsed.token.secretSet).toBe(true)
     expect(parsed.token.fingerprint).toBe('hm_abc123')
   })
 
-  it('falls back to defaults when missing', () => {
+  it('falls back to all four chains when the option is missing', () => {
     const parsed = parseBepusdtOptions([])
     expect(parsed.form).toEqual(BEPUSDT_DEFAULTS)
-    expect(parsed.token.secretSet).toBe(false)
-    expect(parsed.token.fingerprint).toBe('')
+    expect(parsed.form.enabledChains).toEqual([
+      'trc20',
+      'bep20',
+      'polygon',
+      'xlayer',
+    ])
+  })
+
+  it('fails closed when stored chains are not JSON', () => {
+    const parsed = parseBepusdtOptions([
+      { key: 'BepusdtEnabledChains', value: 'usdt.trc20' },
+    ])
+    expect(parsed.form.enabledChains).toEqual([])
   })
 })
 
 describe('sanitizeBepusdtForm + buildBepusdtUpdates', () => {
-  it('strips trailing slash and uppercases currency', () => {
+  it('strips trailing slash and keeps catalog chain order', () => {
     expect(
       sanitizeBepusdtForm({
         ...BEPUSDT_DEFAULTS,
         BepusdtBaseURL: 'https://pay.example.com///',
-        BepusdtCurrency: 'usd',
-        BepusdtTradeType: 'USDT.TRC20',
+        enabledChains: ['xlayer', 'trc20'],
       })
     ).toEqual({
       BepusdtBaseURL: 'https://pay.example.com',
       BepusdtApiToken: '',
       BepusdtLegacyNotifyEnabled: false,
-      BepusdtTradeType: 'usdt.trc20',
-      BepusdtCurrency: 'USD',
+      enabledChains: ['trc20', 'xlayer'],
     })
   })
 
-  it('omits empty token and only emits changed keys', () => {
-    const initial = {
+  it('omits empty token and locks currency to USD when chains change', () => {
+    const initial: BepusdtFormValues = {
       ...BEPUSDT_DEFAULTS,
       BepusdtBaseURL: 'https://a.example',
-      BepusdtLegacyNotifyEnabled: false,
+      enabledChains: ['trc20', 'bep20', 'polygon', 'xlayer'],
     }
-    const next = {
+    const next: BepusdtFormValues = {
       ...initial,
       BepusdtBaseURL: 'https://b.example',
       BepusdtApiToken: '   ',
-      BepusdtLegacyNotifyEnabled: true,
+      enabledChains: ['trc20'],
     }
     expect(buildBepusdtUpdates(next, initial)).toEqual([
       { key: 'BepusdtBaseURL', value: 'https://b.example' },
-      { key: 'BepusdtLegacyNotifyEnabled', value: 'true' },
+      { key: 'BepusdtEnabledChains', value: '["trc20"]' },
+      { key: 'BepusdtCurrency', value: 'USD' },
     ])
   })
 
-  it('includes token only when non-empty', () => {
+  it('includes token only when non-empty and still writes USD', () => {
     const initial = { ...BEPUSDT_DEFAULTS }
     const next = { ...initial, BepusdtApiToken: 'new-secret' }
-    expect(buildBepusdtUpdates(next, initial)).toEqual([
+    expect(buildBepusdtUpdates({ ...next }, { ...initial })).toEqual([
       { key: 'BepusdtApiToken', value: 'new-secret' },
+      { key: 'BepusdtCurrency', value: 'USD' },
     ])
   })
 })

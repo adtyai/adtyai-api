@@ -5,6 +5,13 @@ export type ChatwootPublicConfig = {
   base_url: string
   website_token: string
   identity_verification?: boolean
+  backup_contact_type?: string
+  backup_contact?: string
+}
+
+export type SupportContact = {
+  type: string
+  contact: string
 }
 
 export type ChatwootIdentity = {
@@ -34,6 +41,21 @@ export function isSafeChatwootBaseUrl(raw: string): boolean {
     return host === 'localhost' || host === '127.0.0.1' || host === '::1'
   }
   return false
+}
+
+export async function fetchSupportContact(): Promise<SupportContact | null> {
+  try {
+    const res = await api.get('/api/chatwoot/config', soft)
+    const d = res.data?.data
+    const contact = String(d?.backup_contact || '').trim()
+    if (!res.data?.success || !contact) return null
+    return {
+      type: String(d.backup_contact_type || ''),
+      contact,
+    }
+  } catch {
+    return null
+  }
 }
 
 export async function fetchChatwootConfig(): Promise<ChatwootPublicConfig | null> {

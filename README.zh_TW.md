@@ -19,7 +19,7 @@
     <img src="https://img.shields.io/badge/license-AGPL--3.0-brightgreen" alt="license">
   </a><!--
   --><a href="https://github.com/adtyai/adtyai-api">
-    <img src="https://img.shields.io/badge/version-v1.0.0--adtyai-brightgreen" alt="version">
+    <img src="https://img.shields.io/badge/version-v1.1.0--adtyai-brightgreen" alt="version">
   </a><!--
   --><a href="https://github.com/adtyai/adtyai-api/pkgs/container/adtyai-api">
     <img src="https://img.shields.io/badge/image-ghcr.io%2Fadtyai%2Fadtyai--api-blue" alt="ghcr">
@@ -66,7 +66,7 @@
 | --- | --- |
 | 雙錢包計費 | 贈送餘額優先、實充其次；小時彙總按實際出資拆分；日常對帳 |
 | 儲值 | 檔位贈送（無首儲加送）；易支付與 BEpusdt（USDT）收款 |
-| 邀請返佣 | 按實付減已退計佣；提現審核；漏發可啟動補償 |
+| 邀請返佣 | 按實付減已退計佣；餘額劃轉、USDT、支付寶出賬；管理端總覽與自邀審核；漏發可啟動補償 |
 | 退款與風控 | 按比例收回贈送/返佣；風控人工待審；管理端訂單與流水 |
 | 企業協議價 | 系統設定 → 計費與支付 → 企業協議價（分組隱藏倍率） |
 | 智慧路由 | 獨立側欄選單；評分選路 / 半開 / 權重方案；成本護欄入口 `/smart-routing/cost` |

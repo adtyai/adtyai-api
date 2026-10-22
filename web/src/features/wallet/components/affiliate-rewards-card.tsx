@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { Link } from '@tanstack/react-router'
 import { Share2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
@@ -73,7 +74,7 @@ export function AffiliateRewardsCard({
             </h3>
             <p className='text-muted-foreground line-clamp-1 text-xs'>
               {t(
-                'Earn rewards when users join through your referral link. Transfer accumulated rewards to your balance anytime.'
+                'Invite rewards can be transferred into paid balance, or withdrawn after review. Frozen rewards cannot be used yet.'
               )}
             </p>
           </div>
@@ -116,9 +117,17 @@ export function AffiliateRewardsCard({
               className='h-9 shrink-0 px-3'
               size='sm'
             >
-              {t('Transfer to Balance')}
+              {t('Transfer to paid balance')}
             </Button>
           )}
+          <Button
+            variant='outline'
+            className='h-9 shrink-0 px-3'
+            size='sm'
+            render={<Link to='/affiliate/withdraw' />}
+          >
+            {t('Withdraw')}
+          </Button>
         </div>
       </CardContent>
     </Card>

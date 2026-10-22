@@ -121,6 +121,13 @@ func ApproveRiskReview(id int64, operatorId int) (*RiskReview, error) {
 		if rr.Status != RiskReviewStatusPending {
 			return ErrRiskReviewStatusInvalid
 		}
+		if rr.Kind == RiskReviewKindAffSelfInvite {
+			if err := approveAffSelfInviteLocked(tx, &rr, operatorId); err != nil {
+				return err
+			}
+			out = &rr
+			return nil
+		}
 		if rr.Kind != RiskReviewKindFirstTopupExtra {
 			return ErrRiskReviewStatusInvalid
 		}
@@ -263,6 +270,17 @@ func RejectRiskReview(id int64, operatorId int) (*RiskReview, error) {
 		}
 		if rr.Status != RiskReviewStatusPending {
 			return ErrRiskReviewStatusInvalid
+		}
+		if rr.Kind == RiskReviewKindAffSelfInvite {
+			now := time.Now()
+			rr.Status = RiskReviewStatusRejected
+			rr.ResolvedBy = operatorId
+			rr.ResolvedAt = &now
+			if err := tx.Save(&rr).Error; err != nil {
+				return err
+			}
+			out = &rr
+			return nil
 		}
 
 		if rr.OrderNo != "" {

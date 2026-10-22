@@ -30,6 +30,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { getServerErrorMessage } from '@/lib/server-error-message'
@@ -39,7 +40,11 @@ import {
   useApproveBalanceAdjustment,
   useRejectBalanceAdjustment,
 } from '../hooks/use-balance-adjustments'
-import { balanceAdjustErrorMessage, formatAdjustUsd } from '../lib/amount'
+import {
+  adjustQuotaToUsd,
+  balanceAdjustErrorMessage,
+  formatAdjustUsd,
+} from '../lib/amount'
 import type { ApproveBalanceAdjustResult, BalanceAdjustRequest } from '../types'
 
 type Action = 'approve' | 'reject'
@@ -72,6 +77,7 @@ export function ConfirmBalanceAdjustDialog({
   const reject = useRejectBalanceAdjustment()
   const [selfReason, setSelfReason] = useState('')
   const [rejectReason, setRejectReason] = useState('')
+  const [amountConfirm, setAmountConfirm] = useState('')
   const [localError, setLocalError] = useState<string | null>(null)
   const busy = approve.isPending || reject.isPending
 
@@ -82,6 +88,7 @@ export function ConfirmBalanceAdjustDialog({
     if (open) {
       setSelfReason('')
       setRejectReason('')
+      setAmountConfirm('')
       setLocalError(null)
       approve.reset()
       reject.reset()
@@ -102,6 +109,16 @@ export function ConfirmBalanceAdjustDialog({
     }
     if (action === 'reject' && !rejectReason.trim()) {
       const msg = t('Reject reason is required')
+      setLocalError(msg)
+      return
+    }
+    const usd = adjustQuotaToUsd(row.amount)
+    if (
+      action === 'approve' &&
+      Math.abs(usd) >= 100 &&
+      Math.abs(Number(amountConfirm) - usd) > 1e-6
+    ) {
+      const msg = t('Retype the USD amount to confirm this large change')
       setLocalError(msg)
       return
     }
@@ -228,6 +245,30 @@ export function ConfirmBalanceAdjustDialog({
               {row.reason}
             </div>
           </div>
+          <p className='text-muted-foreground text-xs'>
+            {row.account === 'bonus'
+              ? t(
+                  'This request changes bonus balance after another admin approves. Bonus is not withdrawable.'
+                )
+              : t(
+                  'This request changes paid balance after another admin approves. It does not change bonus or invite earnings.'
+                )}
+          </p>
+          {action === 'approve' && Math.abs(adjustQuotaToUsd(row.amount)) >= 100 ? (
+            <div className='grid gap-1.5'>
+              <Label htmlFor='ba-amount-confirm'>
+                {t('Retype the USD amount to confirm this large change')}
+              </Label>
+              <Input
+                id='ba-amount-confirm'
+                type='number'
+                step='0.01'
+                value={amountConfirm}
+                onChange={(e) => setAmountConfirm(e.target.value)}
+                disabled={busy}
+              />
+            </div>
+          ) : null}
 
           {action === 'approve' && isSelf ? (
             <div className='grid gap-1.5'>

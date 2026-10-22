@@ -65,7 +65,7 @@ export function WalletStatsCard(props: WalletStatsCardProps) {
       <div className='from-primary text-primary-foreground flex flex-col justify-between gap-3 rounded-xl bg-gradient-to-br to-violet-600 p-4 shadow-sm sm:p-5'>
         <div className='flex items-center justify-between gap-2'>
           <span className='text-[13px] text-white/80'>
-            {t('Available Balance')}
+            {t('Callable balance')}
           </span>
           <span className='grid size-8 place-items-center rounded-lg bg-white/15'>
             <WalletCards className='size-4' aria-hidden='true' />
@@ -77,7 +77,13 @@ export function WalletStatsCard(props: WalletStatsCardProps) {
         <div className='flex flex-wrap items-center justify-between gap-2 text-xs text-white/80'>
           <span>
             {t('Paid balance')} {formatQuota(paidQuota)} · {t('Bonus balance')}{' '}
-            {formatQuota(bonusQuota)}
+            {formatQuota(bonusQuota)} · {t('Invite earnings')}{' '}
+            {formatQuota(props.user?.aff_quota ?? 0)}
+          </span>
+          <span className='basis-full text-[11px] text-white/70'>
+            {t(
+              'Invite earnings stay separate until transferred to paid balance or a withdrawal is approved.'
+            )}
           </span>
           <Button
             type='button'

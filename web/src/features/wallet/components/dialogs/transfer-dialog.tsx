@@ -86,7 +86,9 @@ export function TransferDialog({
       open={open}
       onOpenChange={onOpenChange}
       title={t('Transfer Rewards')}
-      description={t('Move affiliate rewards to your main balance')}
+      description={t(
+        'Move affiliate rewards into paid balance. After transfer they can be spent on API calls and cannot be withdrawn.'
+      )}
       contentClassName='max-sm:w-[calc(100vw-1.5rem)] sm:max-w-md'
       titleClassName='text-xl font-semibold'
       footerClassName='grid grid-cols-2 gap-2 sm:flex'

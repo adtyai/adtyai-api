@@ -34,6 +34,7 @@ import {
 } from '@/components/ui/tooltip'
 import { getCurrencyDisplay } from '@/lib/currency'
 import { formatQuota } from '@/lib/format'
+import { AffUserDetailButton } from '@/features/system-settings/aff/user-detail-dialog'
 import { useSystemConfigStore } from '@/stores/system-config-store'
 
 import {
@@ -245,7 +246,11 @@ export function useUsersColumns(): ColumnDef<User>[] {
           const inviterId = user.inviter_id || 0
 
           if (affCount === 0 && affHistoryQuota === 0 && inviterId === 0) {
-            return <span className='text-muted-foreground text-sm'>—</span>
+            return user.id > 0 ? (
+              <AffUserDetailButton userId={user.id} />
+            ) : (
+              <span className='text-muted-foreground text-sm'>—</span>
+            )
           }
 
           return (
@@ -267,6 +272,7 @@ export function useUsersColumns(): ColumnDef<User>[] {
                   {t('Inviter ID: {{id}}', { id: inviterId })}
                 </LongText>
               )}
+              {user.id > 0 ? <AffUserDetailButton userId={user.id} /> : null}
             </div>
           )
         },

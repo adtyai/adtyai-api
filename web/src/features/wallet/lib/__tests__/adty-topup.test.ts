@@ -26,8 +26,10 @@ import {
   formatCountdown,
   formatUsdAmount,
   isFixedTierAmount,
+  paymentMethodLabelKey,
   remainingSecondsUntil,
   resolveAdtyCheckoutLaunch,
+  topupNextActionText,
 } from '../adty-topup'
 
 const tiers: AdtyTopupTier[] = [
@@ -35,6 +37,18 @@ const tiers: AdtyTopupTier[] = [
   { amount: 100, bonus_rate: 0.025, bonus_percent: 2.5, bonus_amount: 2.5 },
   { amount: 1000, bonus_rate: 0.04, bonus_percent: 4, bonus_amount: 40 },
 ]
+
+describe('topup next action', () => {
+  it('tells an expired order to create a new top-up instead of waiting for review', () => {
+    expect(
+      topupNextActionText({
+        next_action: 'create_new',
+        next_action_hint: 'window_ended',
+        display_status: 'expired',
+      })
+    ).toContain('Create a new top-up')
+  })
+})
 
 describe('adty-topup helpers', () => {
   it('converts first_topup_bonus_rate fraction and percent', () => {
@@ -127,5 +141,14 @@ describe('USDT checkout helpers', () => {
     expect(resolveAdtyCheckoutLaunch({ order: { order_no: 'TP3' } }).kind).toBe(
       'fail'
     )
+  })
+})
+
+describe('paymentMethodLabelKey', () => {
+  it('maps checkout methods and leaves unknown raw', () => {
+    expect(paymentMethodLabelKey('alipay')).toBe('Alipay')
+    expect(paymentMethodLabelKey('wxpay')).toBe('WeChat Pay')
+    expect(paymentMethodLabelKey('usdt')).toBe('USDT')
+    expect(paymentMethodLabelKey('crypto_x')).toBe('crypto_x')
   })
 })

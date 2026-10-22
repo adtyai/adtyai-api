@@ -33,6 +33,17 @@ export function commissionStatusLabel(status: AffCommissionStatus): string {
   }
 }
 
+export function withdrawMethodLabel(row: {
+  pay_method?: string
+  usdt_chain?: string
+}): string {
+  const method = (row.pay_method || '').trim()
+  if (method === 'usdt') return 'USDT'
+  if (method === 'alipay') return 'Alipay'
+  if ((row.usdt_chain || '').trim()) return 'USDT'
+  return 'Legacy payout account'
+}
+
 export function withdrawStatusLabel(status: AffWithdrawStatus): string {
   switch (status) {
     case 'pending':

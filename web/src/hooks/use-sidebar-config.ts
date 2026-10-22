@@ -236,6 +236,24 @@ function isModuleEnabled(
   return userSection[module] !== false
 }
 
+function isSubItemEnabled(
+  subItem: {
+    url?: string
+    configUrls?: readonly (string | undefined)[]
+  },
+  adminConfig: SidebarModulesAdminConfig,
+  userConfig: SidebarModulesUserConfig
+): boolean {
+  const configured = (subItem.configUrls ?? []).filter(
+    (url): url is string => Boolean(url)
+  )
+  let urls: string[] = []
+  if (configured.length > 0) urls = configured
+  else if (subItem.url) urls = [subItem.url]
+  if (urls.length === 0) return true
+  return urls.some((url) => isModuleEnabled(url, adminConfig, userConfig))
+}
+
 /**
  * Check if a navigation item should be visible
  */
@@ -268,7 +286,7 @@ function isNavItemVisible(
   if ('items' in item && item.items) {
     // If has sub-items, show this collapsible item if at least one sub-item is visible
     return item.items.some((subItem) =>
-      isModuleEnabled(subItem.url as string, adminConfig, userConfig)
+      isSubItemEnabled(subItem, adminConfig, userConfig)
     )
   }
 
@@ -288,7 +306,7 @@ function filterNavItems(
       // If collapsible item, also filter its sub-items
       if ('items' in item && item.items) {
         const filteredSubItems = item.items.filter((subItem) =>
-          isModuleEnabled(subItem.url as string, adminConfig, userConfig)
+          isSubItemEnabled(subItem, adminConfig, userConfig)
         )
 
         return {

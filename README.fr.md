@@ -19,7 +19,7 @@
     <img src="https://img.shields.io/badge/license-AGPL--3.0-brightgreen" alt="license">
   </a><!--
   --><a href="https://github.com/adtyai/adtyai-api">
-    <img src="https://img.shields.io/badge/version-v1.0.0--adtyai-brightgreen" alt="version">
+    <img src="https://img.shields.io/badge/version-v1.1.0--adtyai-brightgreen" alt="version">
   </a><!--
   --><a href="https://github.com/adtyai/adtyai-api/pkgs/container/adtyai-api">
     <img src="https://img.shields.io/badge/image-ghcr.io%2Fadtyai%2Fadtyai--api-blue" alt="ghcr">

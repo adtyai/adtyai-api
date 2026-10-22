@@ -19,7 +19,7 @@
     <img src="https://img.shields.io/badge/license-AGPL--3.0-brightgreen" alt="license">
   </a><!--
   --><a href="https://github.com/adtyai/adtyai-api">
-    <img src="https://img.shields.io/badge/version-v1.0.0--adtyai-brightgreen" alt="version">
+    <img src="https://img.shields.io/badge/version-v1.1.0--adtyai-brightgreen" alt="version">
   </a><!--
   --><a href="https://github.com/adtyai/adtyai-api/pkgs/container/adtyai-api">
     <img src="https://img.shields.io/badge/image-ghcr.io%2Fadtyai%2Fadtyai--api-blue" alt="ghcr">
@@ -66,7 +66,7 @@
 | --- | --- |
 | 双钱包计费 | 赠送余额优先、实充其次；小时汇总按实际出资拆分；日常对账 |
 | 充值 | 档位赠送（无首充加送）；易支付与 BEpusdt（USDT）收款 |
-| 邀请返佣 | 按实付减已退计佣；提现审核；漏发可启动补偿 |
+| 邀请返佣 | 按实付减已退计佣；余额划转、USDT、支付宝出账；管理端总览与自邀审核；漏发可启动补偿 |
 | 退款与风控 | 按比例收回赠送/返佣；风控人工待审；管理端订单与流水 |
 | 企业协议价 | 系统设置 → 计费与支付 → 企业协议价（分组隐藏倍率） |
 | 智能路由 | 独立侧栏菜单；评分选路 / 半开 / 权重方案；成本护栏入口 `/smart-routing/cost` |

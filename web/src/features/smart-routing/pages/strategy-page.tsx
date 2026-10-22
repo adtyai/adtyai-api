@@ -103,6 +103,11 @@ export function StrategyPage() {
     null
   )
   const [pendingEnable, setPendingEnable] = useState<boolean | null>(null)
+  const [pendingSwitch, setPendingSwitch] = useState<{
+    field: string
+    value: boolean
+    label: string
+  } | null>(null)
   const [schemeName, setSchemeName] = useState('')
   const [simulateModel, setSimulateModel] = useState('')
   const [simulateResult, setSimulateResult] = useState<SimulateResult | null>(
@@ -536,11 +541,15 @@ export function StrategyPage() {
                 checked={Boolean(config?.[field])}
                 disabled={!isRoot}
                 onCheckedChange={(v) => {
-                  void putConfig.mutateAsync({ [field]: v }).then((res) => {
-                    if (!res.success) {
-                      toast.error(routingErrorText(t, res, t('Save failed')))
-                    }
-                  })
+                  if (field === 'telegram_alert') {
+                    void putConfig.mutateAsync({ [field]: v }).then((res) => {
+                      if (!res.success) {
+                        toast.error(routingErrorText(t, res, t('Save failed')))
+                      }
+                    })
+                    return
+                  }
+                  setPendingSwitch({ field, value: v, label: labelKey })
                 }}
               />
             </div>
@@ -678,6 +687,30 @@ export function StrategyPage() {
       </Card>
 
       <ConfirmDialog
+        open={pendingSwitch != null}
+        onOpenChange={(open) => {
+          if (!open) setPendingSwitch(null)
+        }}
+        title={t('This switch changes how live requests are routed. Confirm before saving.')}
+        desc={
+          pendingSwitch
+            ? `${t(pendingSwitch.label)}: ${pendingSwitch.value ? t('On') : t('Off')}`
+            : ''
+        }
+        confirmText={t('Confirm')}
+        handleConfirm={() => {
+          if (!pendingSwitch) return
+          const next = pendingSwitch
+          setPendingSwitch(null)
+          void putConfig.mutateAsync({ [next.field]: next.value }).then((res) => {
+            if (!res.success) {
+              toast.error(routingErrorText(t, res, t('Save failed')))
+            }
+          })
+        }}
+      />
+
+      <ConfirmDialog
         open={previewOpen}
         onOpenChange={(open) => {
           setPreviewOpen(open)
@@ -711,7 +744,9 @@ export function StrategyPage() {
         ) : null}
         {previewReady && previewEmpty ? (
           <p className='text-muted-foreground mt-3 text-sm'>
-            {t('No scores yet; changes take effect once scoring starts.')}
+            {t(
+              'No scores yet. An empty preview can still be applied and takes effect once scoring starts.'
+            )}
           </p>
         ) : null}
         {preview && preview.items.length > 0 ? (

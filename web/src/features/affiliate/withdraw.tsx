@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { Link } from '@tanstack/react-router'
 import { Info, RefreshCw } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -26,7 +26,15 @@ import { ErrorState } from '@/components/error-state'
 import { SectionPageLayout } from '@/components/layout'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import {
   Table,
   TableBody,
@@ -36,8 +44,15 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { getServerErrorMessage } from '@/lib/server-error-message'
+import { transferAffiliateQuota } from '@/features/wallet/api'
+import {
+  USDT_CHAIN_CATALOG,
+  usdtChainById,
+  validateUsdtPayoutAddress,
+} from '@/lib/usdt-chains'
 import { cn } from '@/lib/utils'
 
+import { fetchAffPayoutQrObjectUrl, uploadAffPayoutQr } from './api'
 import {
   useAffCommissionsSelf,
   useAffSelf,
@@ -52,7 +67,11 @@ import {
   formatAffUsd,
   newWithdrawIdemKey,
 } from './lib/quota'
-import { commissionStatusLabel, withdrawStatusLabel } from './lib/status'
+import {
+  commissionStatusLabel,
+  withdrawMethodLabel,
+  withdrawStatusLabel,
+} from './lib/status'
 import type { AffCommissionStatus } from './types'
 
 function statusTone(status: string): string {
@@ -79,16 +98,35 @@ function statusTone(status: string): string {
 
 export function AffiliateWithdrawPage() {
   const { t } = useTranslation()
-  const self = useAffSelf()
-  const commissions = useAffCommissionsSelf({ limit: 50, offset: 0 })
-  const withdrawals = useAffWithdrawalsSelf({ limit: 50, offset: 0 })
-  const createWd = useCreateAffWithdraw()
-
   const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [commissionOffset, setCommissionOffset] = useState(0)
+  const [withdrawalOffset, setWithdrawalOffset] = useState(0)
+  const pageSize = 50
+  const self = useAffSelf()
+  const commissions = useAffCommissionsSelf({
+    limit: pageSize,
+    offset: commissionOffset,
+    status: statusFilter === 'all' ? undefined : statusFilter,
+  })
+  const withdrawals = useAffWithdrawalsSelf({
+    limit: pageSize,
+    offset: withdrawalOffset,
+  })
+  const createWd = useCreateAffWithdraw()
   const [amountUsd, setAmountUsd] = useState('')
+  const [method, setMethod] = useState<'balance' | 'usdt' | 'alipay'>('usdt')
   const [payAccount, setPayAccount] = useState('')
+  const [alipayAccount, setAlipayAccount] = useState('')
+  const [payoutQrId, setPayoutQrId] = useState(0)
+  const [payoutQrName, setPayoutQrName] = useState('')
+  const [qrPreview, setQrPreview] = useState<string | null>(null)
+  const [uploadingQr, setUploadingQr] = useState(false)
+  const [usdtChain, setUsdtChain] = useState('')
+  const [confirmedNetwork, setConfirmedNetwork] = useState(false)
   const [localError, setLocalError] = useState<string | null>(null)
   const [idemKey, setIdemKey] = useState(() => newWithdrawIdemKey())
+  const [transferring, setTransferring] = useState(false)
+  const submitLock = useRef(false)
 
   const data = self.data
   const amountNum = Number(amountUsd)
@@ -100,24 +138,47 @@ export function AffiliateWithdrawPage() {
     [amountNum]
   )
   const feePreview = useMemo(() => {
+    if (method === 'balance') {
+      return { feeQuota: 0, netQuota: amountQuota }
+    }
     const rate = data?.withdraw_fee_rate ?? 0
     return estimateWithdrawFeeQuota(amountQuota, rate)
-  }, [amountQuota, data?.withdraw_fee_rate])
+  }, [amountQuota, data?.withdraw_fee_rate, method])
+  let arrivalNote = t(
+    'USDT is paid manually after review. Submitting freezes invite earnings.'
+  )
+  if (method === 'balance') {
+    arrivalNote = t(
+      'Balance transfer arrives immediately in paid balance. No fee and no withdrawal review.'
+    )
+  } else if (method === 'alipay') {
+    arrivalNote = t(
+      'Alipay is paid manually after review. This site does not call Alipay. Submitting freezes invite earnings.'
+    )
+  }
 
-  const filteredCommissions = useMemo(() => {
-    const rows = commissions.data?.rows ?? []
-    if (statusFilter === 'all') return rows
-    return rows.filter((r) => r.status === statusFilter)
-  }, [commissions.data?.rows, statusFilter])
+  const commissionRows = commissions.data?.rows ?? []
+
+  useEffect(() => {
+    return () => {
+      if (qrPreview) URL.revokeObjectURL(qrPreview)
+    }
+  }, [qrPreview])
 
   async function handleSubmit() {
+    if (submitLock.current) return
+    submitLock.current = true
     setLocalError(null)
+    try {
     if (!data) return
     if (!Number.isFinite(amountNum) || amountNum <= 0) {
       setLocalError(t('Enter a valid withdraw amount'))
       return
     }
-    if (amountNum + 1e-9 < Number(data.min_withdraw_usd || 0)) {
+    if (
+      method !== 'balance' &&
+      amountNum + 1e-9 < Number(data.min_withdraw_usd || 0)
+    ) {
       setLocalError(
         `${t('Below minimum withdraw')} ($${Number(
           data.min_withdraw_usd
@@ -129,16 +190,65 @@ export function AffiliateWithdrawPage() {
       setLocalError(t('Insufficient affiliate quota'))
       return
     }
-    const account = payAccount.trim()
-    if (!account) {
-      setLocalError(t('Enter payout account / USDT address'))
+    if (method === 'balance') {
+      setTransferring(true)
+      try {
+        const res = await transferAffiliateQuota({ quota: amountQuota })
+        if (!res.success) {
+          const msg = getServerErrorMessage(res, t('Transfer failed'))
+          setLocalError(msg)
+          toast.error(msg)
+          return
+        }
+        toast.success(t('Transfer successful'))
+        setAmountUsd('')
+        void self.refetch()
+      } catch (err) {
+        const msg = getServerErrorMessage(err, t('Transfer failed'))
+        setLocalError(msg)
+        toast.error(msg)
+      } finally {
+        setTransferring(false)
+      }
       return
+    }
+    let account = ''
+    let chainId = ''
+    if (method === 'usdt') {
+      const chain = usdtChainById(usdtChain)
+      if (!chain) {
+        setLocalError(t('Select a payout network'))
+        return
+      }
+      account = payAccount.trim()
+      if (validateUsdtPayoutAddress(chain.id, account)) {
+        setLocalError(t('USDT address does not match the selected network'))
+        return
+      }
+      if (!confirmedNetwork) {
+        setLocalError(t('Confirm the payout network before submitting'))
+        return
+      }
+      chainId = chain.id
+    } else {
+      account = alipayAccount.trim()
+      if (account.length < 6 || /\s|[/:]/.test(account)) {
+        setLocalError(t('Alipay account'))
+        return
+      }
+      if (payoutQrId <= 0) {
+        setLocalError(t('Upload payout QR'))
+        return
+      }
     }
     try {
       const res = await createWd.mutateAsync({
         amount_quota: amountQuota,
         idem_key: idemKey,
+        pay_method: method,
         pay_account: account,
+        usdt_chain: chainId,
+        payout_qr_id: method === 'alipay' ? payoutQrId : undefined,
       })
       if (!res.success) {
         const msg = getServerErrorMessage(res, t('Withdraw failed'))
@@ -148,6 +258,9 @@ export function AffiliateWithdrawPage() {
       }
       toast.success(t('Withdraw submitted'))
       setAmountUsd('')
+      setPayoutQrId(0)
+      setPayoutQrName('')
+      setQrPreview(null)
       setIdemKey(newWithdrawIdemKey())
       void self.refetch()
       void withdrawals.refetch()
@@ -155,6 +268,44 @@ export function AffiliateWithdrawPage() {
       const msg = getServerErrorMessage(err, t('Withdraw failed'))
       setLocalError(msg)
       toast.error(msg)
+    }
+    } finally {
+      submitLock.current = false
+    }
+  }
+
+  async function handleQrFile(file: File | undefined) {
+    setLocalError(null)
+    if (!file) return
+    if (file.size > 512 * 1024) {
+      setLocalError(t('Upload payout QR'))
+      return
+    }
+    setUploadingQr(true)
+    try {
+      const res = await uploadAffPayoutQr(file)
+      if (!res.success || !res.data?.id) {
+        const msg = getServerErrorMessage(res, t('Upload payout QR'))
+        setLocalError(msg)
+        toast.error(msg)
+        return
+      }
+      setPayoutQrId(res.data.id)
+      setPayoutQrName(file.name)
+      try {
+        setQrPreview(await fetchAffPayoutQrObjectUrl(res.data.id))
+      } catch (previewErr) {
+        setQrPreview(null)
+        toast.error(
+          getServerErrorMessage(previewErr, t('Failed to load payout QR'))
+        )
+      }
+    } catch (err) {
+      const msg = getServerErrorMessage(err, t('Upload payout QR'))
+      setLocalError(msg)
+      toast.error(msg)
+    } finally {
+      setUploadingQr(false)
     }
   }
 
@@ -231,7 +382,10 @@ export function AffiliateWithdrawPage() {
                             ? 'bg-background text-foreground font-medium shadow-sm'
                             : 'text-muted-foreground'
                         )}
-                        onClick={() => setStatusFilter(id)}
+                        onClick={() => {
+                          setStatusFilter(id)
+                          setCommissionOffset(0)
+                        }}
                       >
                         {label}
                       </button>
@@ -262,7 +416,7 @@ export function AffiliateWithdrawPage() {
                       </TableRow>
                     ) : null}
                     {!commissions.isLoading &&
-                      (filteredCommissions.length === 0 ? (
+                      (commissionRows.length === 0 ? (
                         <TableRow>
                           <TableCell
                             colSpan={7}
@@ -272,14 +426,16 @@ export function AffiliateWithdrawPage() {
                           </TableCell>
                         </TableRow>
                       ) : (
-                        filteredCommissions.map((row) => (
+                        commissionRows.map((row) => (
                           <TableRow key={row.id}>
                             <TableCell className='text-xs whitespace-nowrap'>
                               {row.created_at
                                 ? new Date(row.created_at).toLocaleString()
                                 : '-'}
                             </TableCell>
-                            <TableCell>{row.invitee_id}</TableCell>
+                            <TableCell>
+                              {row.invitee_name || row.invitee_id}
+                            </TableCell>
                             <TableCell>
                               <span className='font-mono text-[12px]'>
                                 {row.source} {row.order_no}
@@ -318,6 +474,39 @@ export function AffiliateWithdrawPage() {
                       ))}
                   </TableBody>
                 </Table>
+                {(commissions.data?.total ?? 0) > pageSize ? (
+                  <div className='flex justify-end gap-2 border-t px-5 py-3'>
+                    <Button
+                      type='button'
+                      variant='outline'
+                      size='sm'
+                      className='h-7'
+                      disabled={commissionOffset <= 0}
+                      onClick={() =>
+                        setCommissionOffset(
+                          Math.max(0, commissionOffset - pageSize)
+                        )
+                      }
+                    >
+                      {t('Previous')}
+                    </Button>
+                    <Button
+                      type='button'
+                      variant='outline'
+                      size='sm'
+                      className='h-7'
+                      disabled={
+                        commissionOffset + pageSize >=
+                        (commissions.data?.total ?? 0)
+                      }
+                      onClick={() =>
+                        setCommissionOffset(commissionOffset + pageSize)
+                      }
+                    >
+                      {t('Next')}
+                    </Button>
+                  </div>
+                ) : null}
               </section>
 
               <section className='bg-card overflow-hidden rounded-xl border shadow-xs'>
@@ -332,6 +521,7 @@ export function AffiliateWithdrawPage() {
                       <TableHead>ID</TableHead>
                       <TableHead>{t('Amount')}</TableHead>
                       <TableHead>{t('Fee')}</TableHead>
+                      <TableHead>{t('Payout method')}</TableHead>
                       <TableHead>{t('Payout account')}</TableHead>
                       <TableHead>{t('Status')}</TableHead>
                       <TableHead>{t('Created at')}</TableHead>
@@ -341,7 +531,7 @@ export function AffiliateWithdrawPage() {
                     {(withdrawals.data?.rows ?? []).length === 0 ? (
                       <TableRow>
                         <TableCell
-                          colSpan={6}
+                          colSpan={7}
                           className='text-muted-foreground h-20 text-center text-sm'
                         >
                           {t('No withdrawals')}
@@ -358,9 +548,20 @@ export function AffiliateWithdrawPage() {
                           </TableCell>
                           <TableCell>{formatAffUsd(row.fee_quota)}</TableCell>
                           <TableCell>
+                            {t(withdrawMethodLabel(row))}
+                            {row.usdt_chain
+                              ? ` · ${usdtChainById(row.usdt_chain)?.label || row.usdt_chain}`
+                              : ''}
+                          </TableCell>
+                          <TableCell>
                             <span className='font-mono text-[12px] break-all'>
                               {row.pay_account || '-'}
                             </span>
+                            {row.payout_ref ? (
+                              <div className='text-muted-foreground text-[11px]'>
+                                {row.payout_ref}
+                              </div>
+                            ) : null}
                           </TableCell>
                           <TableCell>
                             <Badge
@@ -383,6 +584,39 @@ export function AffiliateWithdrawPage() {
                     )}
                   </TableBody>
                 </Table>
+                {(withdrawals.data?.total ?? 0) > pageSize ? (
+                  <div className='flex justify-end gap-2 border-t px-5 py-3'>
+                    <Button
+                      type='button'
+                      variant='outline'
+                      size='sm'
+                      className='h-7'
+                      disabled={withdrawalOffset <= 0}
+                      onClick={() =>
+                        setWithdrawalOffset(
+                          Math.max(0, withdrawalOffset - pageSize)
+                        )
+                      }
+                    >
+                      {t('Previous')}
+                    </Button>
+                    <Button
+                      type='button'
+                      variant='outline'
+                      size='sm'
+                      className='h-7'
+                      disabled={
+                        withdrawalOffset + pageSize >=
+                        (withdrawals.data?.total ?? 0)
+                      }
+                      onClick={() =>
+                        setWithdrawalOffset(withdrawalOffset + pageSize)
+                      }
+                    >
+                      {t('Next')}
+                    </Button>
+                  </div>
+                ) : null}
               </section>
             </div>
 
@@ -418,25 +652,163 @@ export function AffiliateWithdrawPage() {
                     placeholder='0.00'
                   />
                   <div className='text-muted-foreground mt-1 text-[11.5px]'>
-                    {t('Minimum withdraw')}: $
-                    {Number(data?.min_withdraw_usd || 0).toFixed(2)}
-                    {' · '}
-                    {t('Withdraw fee rate')}:{' '}
-                    {formatAffRate(data?.withdraw_fee_rate)}
+                    {method === 'balance'
+                      ? t(
+                          'Balance transfer arrives immediately in paid balance. No fee and no withdrawal review.'
+                        )
+                      : `${t('Minimum withdraw')}: $${Number(
+                          data?.min_withdraw_usd || 0
+                        ).toFixed(2)} · ${t('Withdraw fee rate')}: ${
+                          formatAffRate(data?.withdraw_fee_rate)
+                        }`}
                   </div>
                 </div>
 
                 <div>
                   <div className='mb-1.5 text-[13px] font-medium'>
-                    {t('Payout account')}
+                    {t('Payout method')}
+                  </div>
+                  <Select
+                    items={[
+                      { value: 'balance', label: t('Transfer to balance') },
+                      { value: 'usdt', label: 'USDT' },
+                      { value: 'alipay', label: t('Alipay') },
+                    ]}
+                    value={method}
+                    onValueChange={(value) => {
+                      if (
+                        value === 'balance' ||
+                        value === 'usdt' ||
+                        value === 'alipay'
+                      ) {
+                        setMethod(value)
+                        setIdemKey(newWithdrawIdemKey())
+                        setLocalError(null)
+                      }
+                    }}
+                  >
+                    <SelectTrigger className='w-full'>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value='balance'>
+                        {t('Transfer to balance')}
+                      </SelectItem>
+                      <SelectItem value='usdt'>USDT</SelectItem>
+                      <SelectItem value='alipay'>{t('Alipay')}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <div className='text-muted-foreground mt-1 text-[11.5px]'>
+                    {arrivalNote}
+                  </div>
+                </div>
+
+                {method === 'usdt' ? (
+                <>
+                <div>
+                  <div className='mb-1.5 text-[13px] font-medium'>
+                    {t('Payout network')}
+                  </div>
+                  <Select
+                    items={USDT_CHAIN_CATALOG.map((chain) => ({
+                      value: chain.id,
+                      label: chain.label,
+                    }))}
+                    value={usdtChain}
+                    onValueChange={(value) => {
+                      setUsdtChain(value || '')
+                      setConfirmedNetwork(false)
+                    }}
+                  >
+                    <SelectTrigger className='w-full'>
+                      <SelectValue placeholder={t('Select a payout network')} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {USDT_CHAIN_CATALOG.map((chain) => (
+                        <SelectItem key={chain.id} value={chain.id}>
+                          {chain.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <div className='mb-1.5 text-[13px] font-medium'>
+                    {t('USDT address')}
                   </div>
                   <Input
                     value={payAccount}
-                    onChange={(e) => setPayAccount(e.target.value)}
-                    placeholder={t('USDT address / payout account')}
+                    onChange={(e) => {
+                      setPayAccount(e.target.value)
+                      setConfirmedNetwork(false)
+                    }}
+                    placeholder={t('USDT address')}
                     className='font-mono text-[12.5px]'
                   />
                 </div>
+
+                <label className='flex items-start gap-2 text-[12.5px] leading-5'>
+                  <Checkbox
+                    className='mt-0.5'
+                    checked={confirmedNetwork}
+                    onCheckedChange={(value) =>
+                      setConfirmedNetwork(value === true)
+                    }
+                  />
+                  <span>
+                    {t(
+                      'Confirm this address is on {{network}}. A wrong network can lose the payout.',
+                      {
+                        network:
+                          usdtChainById(usdtChain)?.network ||
+                          t('Select a payout network'),
+                      }
+                    )}
+                  </span>
+                </label>
+                </>
+                ) : null}
+
+                {method === 'alipay' ? (
+                  <div className='space-y-3'>
+                    <div>
+                      <div className='mb-1.5 text-[13px] font-medium'>
+                        {t('Alipay account')}
+                      </div>
+                      <Input
+                        value={alipayAccount}
+                        onChange={(e) => setAlipayAccount(e.target.value)}
+                        placeholder={t('Alipay account')}
+                        className='font-mono text-[12.5px]'
+                      />
+                    </div>
+                    <div>
+                      <div className='mb-1.5 text-[13px] font-medium'>
+                        {t('Payout QR')}
+                      </div>
+                      <Input
+                        type='file'
+                        accept='image/png,image/jpeg,image/webp'
+                        onChange={(e) =>
+                          void handleQrFile(e.target.files?.[0])
+                        }
+                      />
+                      <div className='text-muted-foreground mt-1 text-[11.5px]'>
+                        {payoutQrId > 0
+                          ? payoutQrName || String(payoutQrId)
+                          : t('Upload payout QR')}
+                      </div>
+                      {qrPreview ? (
+                        <img
+                          src={qrPreview}
+                          alt={t('Payout QR')}
+                          className='mt-2 h-28 w-28 rounded border object-contain'
+                        />
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
 
                 <div className='space-y-2 text-[13px]'>
                   <div className='flex justify-between gap-3 border-b border-dashed pb-2'>
@@ -470,7 +842,12 @@ export function AffiliateWithdrawPage() {
                 <Button
                   type='button'
                   className='w-full'
-                  disabled={createWd.isPending || !data}
+                  disabled={
+                    createWd.isPending ||
+                    uploadingQr ||
+                    transferring ||
+                    !data
+                  }
                   onClick={() => void handleSubmit()}
                 >
                   {t('Submit withdraw')}

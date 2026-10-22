@@ -449,7 +449,8 @@ func TransferAffQuota(c *gin.Context) {
 		return
 	}
 	if err != nil {
-		common.ApiErrorT(c, "Transfer failed {{error}}", map[string]any{"error": err.Error()})
+		common.SysError(common.LogText("aff transfer failed: %s", err.Error()))
+		common.ApiErrorT(c, "Transfer failed", nil)
 		return
 	}
 	common.ApiSuccessT(c, "Transfer successful", nil)
@@ -510,15 +511,17 @@ func buildSelfUserData(user *model.User) map[string]any {
 	permissions := calculateUserPermissions(user.Role)
 	permissions["admin_permissions"] = authz.Capabilities(user.Id, user.Role)
 	bonusQuota := int64(0)
+	bonusKnown := user == nil || user.Id <= 0
 	if user != nil && user.Id > 0 {
 		bonus, err := model.GetUserBonusBalance(user.Id)
 		if err != nil {
 			common.SysError(common.LogText("failed to read bonus balance for user %d: %s", user.Id, err.Error()))
 		} else {
 			bonusQuota = bonus
+			bonusKnown = true
 		}
 	}
-	return map[string]any{
+	data := map[string]any{
 		"id":                user.Id,
 		"username":          user.Username,
 		"display_name":      user.DisplayName,
@@ -533,7 +536,6 @@ func buildSelfUserData(user *model.User) map[string]any {
 		"telegram_id":       user.TelegramId,
 		"group":             user.Group,
 		"quota":             user.Quota,
-		"bonus_quota":       bonusQuota,
 		"used_quota":        user.UsedQuota,
 		"request_count":     user.RequestCount,
 		"aff_code":          user.AffCode,
@@ -547,6 +549,10 @@ func buildSelfUserData(user *model.User) map[string]any {
 		"sidebar_modules":   userSetting.SidebarModules, // 正确提取sidebar_modules字段
 		"permissions":       permissions,
 	}
+	if bonusKnown {
+		data["bonus_quota"] = bonusQuota
+	}
+	return data
 }
 
 // 计算用户权限的辅助函数

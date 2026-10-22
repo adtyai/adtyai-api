@@ -70,7 +70,11 @@ export function canCompleteOrder(
   order: Pick<TopupOrder, 'status'> | null | undefined
 ): boolean {
   if (!order) return false
-  return order.status === 'pending' || order.status === 'expired'
+  return (
+    order.status === 'pending' ||
+    order.status === 'expired' ||
+    order.status === 'need_manual'
+  )
 }
 
 export function orderStatusLabelKey(status: string): string {
@@ -84,6 +88,7 @@ export function orderStatusLabelKey(status: string): string {
     case 'expired':
       return 'Expired'
     case 'need_manual':
+    case 'review':
       return 'Needs manual review'
     default:
       return status || 'Unknown'
@@ -150,6 +155,27 @@ export function formatUnixTime(
 export function formatUsd(n: number | null | undefined): string {
   if (n == null || Number.isNaN(Number(n))) return '—'
   return `$${Number(n).toFixed(2)}`
+}
+
+/** USDT review reason stored on the order. Unknown reasons stay raw. */
+export function pendingReasonLabelKey(reason: string | null | undefined): string {
+  switch ((reason || '').trim()) {
+    case 'underpay':
+      return 'USDT underpayment'
+    case 'timeout':
+      return 'USDT payment window closed'
+    case '':
+      return ''
+    default:
+      return (reason || '').trim()
+  }
+}
+
+/** Callback paid USDT. Empty / non-finite stays an em dash. */
+export function formatUsdtAmount(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(Number(n))) return '—'
+  const text = Number(n).toFixed(8).replace(/\.?0+$/, '')
+  return text === '' ? '0' : text
 }
 
 /** Backend payment_method (alipay | wxpay | usdt) → i18n key; unknown raw. */

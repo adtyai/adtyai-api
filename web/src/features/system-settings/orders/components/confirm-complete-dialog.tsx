@@ -159,7 +159,9 @@ export function ConfirmCompleteDialog({
               id='complete-trade-no'
               value={tradeNo}
               disabled={busy}
-              placeholder={t('Trade no. from the payment gateway backend')}
+              placeholder={t(
+                'Enter the BEpusdt trade_id from a successful payment. A note or an oral claim is not enough.'
+              )}
               onChange={(e) => setTradeNo(e.target.value)}
             />
           </div>

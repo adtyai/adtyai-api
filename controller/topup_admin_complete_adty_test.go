@@ -78,6 +78,29 @@ func TestAdminCompleteTopupRequiresEvidenceAndRecordsOperator(t *testing.T) {
 	require.Equal(t, http.StatusConflict, rec.Code, rec.Body.String())
 }
 
+// 核对中的 USDT 订单必须能由 root 凭真实交易号补单。回调仍不得自动入账。
+func TestAdminCompleteNeedManualCredits(t *testing.T) {
+	rootID, aliceID := seedCompleteFixture(t)
+	order := model.TopupOrder{
+		OrderNo: "P11-MANUAL", UserId: aliceID, AmountUSD: 10, CreditAmountUSD: 10,
+		PaymentMethod: "usdt", PaymentProvider: "bepusdt", Status: model.TopupOrderStatusNeedManual,
+		RefundStatus: "none", PayUSDT: 10, UsdtPayAddress: "Taddr", PendingReason: "underpay",
+	}
+	require.NoError(t, model.DB.Create(&order).Error)
+
+	rec := adtyCall(AdminCompleteAdtyTopup, http.MethodPost, "/x", `{"trade_no":"GW-MANUAL"}`, rootID, common.RoleRootUser, gin.Params{{Key: "no", Value: "P11-MANUAL"}})
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	var saved model.TopupOrder
+	require.NoError(t, model.DB.Where("order_no = ?", "P11-MANUAL").First(&saved).Error)
+	require.Equal(t, model.TopupOrderStatusPaid, saved.Status)
+	require.Equal(t, "GW-MANUAL", saved.ProviderTradeNo)
+
+	var user model.User
+	require.NoError(t, model.DB.Select("quota").First(&user, aliceID).Error)
+	require.Greater(t, user.Quota, 0)
+}
+
 // 审查 P1-2：下单只接受 alipay/wxpay/usdt。
 func TestCreateTopupOrderRejectsUnknownPaymentMethod(t *testing.T) {
 	_, aliceID := seedCompleteFixture(t)

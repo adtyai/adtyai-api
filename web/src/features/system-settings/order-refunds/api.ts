@@ -56,6 +56,35 @@ export async function getTopupOrderByNo(orderNo: string): Promise<TopupOrder> {
   return res.data.data
 }
 
+export type RefundClawPreview = {
+  amount_usd: number
+  paid_claw_usd: number
+  bonus_claw_usd: number
+  bonus_shortfall_usd: number
+  aff_claw_usd: number
+  aff_action: string
+  refundable_usd: number
+}
+
+export async function previewTopupRefund(
+  orderNo: string,
+  amount: number
+): Promise<RefundClawPreview> {
+  const res = await api.get<{
+    success?: boolean
+    message?: string
+    data?: RefundClawPreview
+  }>(`/api/admin/orders/${encodeURIComponent(orderNo.trim())}/refund-preview`, {
+    params: { amount },
+    validateStatus: okish,
+    skipErrorHandler: true,
+  })
+  if (!res.data?.success || !res.data.data) {
+    throw new Error(res.data?.message || 'refund preview failed')
+  }
+  return res.data.data
+}
+
 export async function adminRefundTopupOrder(
   orderNo: string,
   body: {
@@ -63,6 +92,15 @@ export async function adminRefundTopupOrder(
     reason: string
     request_id: string
     confirm: true
+    amount_confirm?: number
+    preview: {
+      amount_usd: number
+      paid_claw_usd: number
+      bonus_claw_usd: number
+      bonus_shortfall_usd: number
+      aff_claw_usd: number
+      aff_action: string
+    }
   }
 ): Promise<RefundOneResponse> {
   const res = await api.post<RefundOneResponse>(

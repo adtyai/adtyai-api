@@ -20,9 +20,11 @@ import { api } from '@/lib/api'
 import { requireServerSuccess } from '@/lib/server-error-message'
 
 import type {
+  AffAdminUserDetail,
   AffCommission,
   AffListResponse,
   AffOneResponse,
+  AffOverview,
   AffRiskReview,
   AffWithdrawal,
 } from './types'
@@ -37,6 +39,7 @@ function forbidOrOk(status: number) {
 export async function adminListAffCommissions(params: {
   status?: string
   inviter_id?: number
+  keyword?: string
   limit?: number
   offset?: number
 }): Promise<{ rows: AffCommission[]; total: number }> {
@@ -46,6 +49,7 @@ export async function adminListAffCommissions(params: {
       params: {
         status: params.status || undefined,
         inviter_id: params.inviter_id || undefined,
+        keyword: params.keyword || undefined,
         limit: params.limit ?? 50,
         offset: params.offset ?? 0,
       },
@@ -78,14 +82,22 @@ export async function adminVoidAffCommission(
 
 export async function adminListAffWithdrawals(params: {
   status?: string
+  pay_method?: string
+  keyword?: string
   limit?: number
   offset?: number
-}): Promise<{ rows: AffWithdrawal[]; total: number }> {
+}): Promise<{
+  rows: AffWithdrawal[]
+  total: number
+  counts: Record<string, number>
+}> {
   const res = await api.get<AffListResponse<AffWithdrawal>>(
     '/api/admin/aff/withdrawals',
     {
       params: {
         status: params.status || undefined,
+        pay_method: params.pay_method || undefined,
+        keyword: params.keyword || undefined,
         limit: params.limit ?? 50,
         offset: params.offset ?? 0,
       },
@@ -102,7 +114,62 @@ export async function adminListAffWithdrawals(params: {
     throw err
   }
   const body = requireServerSuccess(res.data)
-  return { rows: body.data ?? [], total: body.total ?? 0 }
+  return {
+    rows: body.data ?? [],
+    total: body.total ?? 0,
+    counts: body.counts ?? {},
+  }
+}
+
+export async function adminGetAffOverview(): Promise<AffOverview> {
+  const res = await api.get<AffOneResponse<AffOverview>>(
+    '/api/admin/aff/overview',
+    { validateStatus: forbidOrOk }
+  )
+  if (res.status === 403) {
+    const err = new Error(res.data?.message || 'forbidden', {
+      cause: res.data,
+    }) as Error & { status?: number }
+    err.status = 403
+    throw err
+  }
+  const body = requireServerSuccess(res.data)
+  if (!body.data) throw new Error('empty')
+  return body.data
+}
+
+export async function adminGetAffUserDetail(
+  id: number,
+  offsets?: {
+    invitee_offset?: number
+    commission_offset?: number
+    withdrawal_offset?: number
+    transfer_offset?: number
+  }
+): Promise<AffAdminUserDetail> {
+  const res = await api.get<AffOneResponse<AffAdminUserDetail>>(
+    `/api/admin/aff/users/${id}`,
+    {
+      params: {
+        limit: 20,
+        invitee_offset: offsets?.invitee_offset ?? 0,
+        commission_offset: offsets?.commission_offset ?? 0,
+        withdrawal_offset: offsets?.withdrawal_offset ?? 0,
+        transfer_offset: offsets?.transfer_offset ?? 0,
+      },
+      validateStatus: (s) => forbidOrOk(s) || s === 404,
+    }
+  )
+  if (res.status === 403 || res.status === 404) {
+    const err = new Error(res.data?.message || 'failed', {
+      cause: res.data,
+    }) as Error & { status?: number }
+    err.status = res.status
+    throw err
+  }
+  const body = requireServerSuccess(res.data)
+  if (!body.data) throw new Error('empty')
+  return body.data
 }
 
 export async function adminAffWithdrawAction(
@@ -114,10 +181,15 @@ export async function adminAffWithdrawAction(
     | 'mark-failed'
     | 'mark-unknown'
     | 'retry',
-  extra?: { reason?: string }
+  extra?: { reason?: string; payout_ref?: string }
 ): Promise<AffOneResponse<AffWithdrawal>> {
-  const body: { confirm: true; reason?: string } = { confirm: true }
+  const body: { confirm: true; reason?: string; payout_ref?: string } = {
+    confirm: true,
+  }
   if (action === 'reject' && extra?.reason) body.reason = extra.reason
+  if (action === 'mark-paid' && extra?.payout_ref) {
+    body.payout_ref = extra.payout_ref
+  }
   const res = await api.post<AffOneResponse<AffWithdrawal>>(
     `/api/admin/aff/withdrawals/${id}/${action}`,
     body,
@@ -172,6 +244,17 @@ export async function adminRejectRiskReview(
   const res = await api.post(
     `/api/admin/risk-reviews/${id}/reject`,
     { confirm: true },
+    { validateStatus: okish }
+  )
+  return res.data
+}
+
+export async function adminReopenRiskReview(
+  id: number
+): Promise<{ success: boolean; message?: string; code?: string }> {
+  const res = await api.post(
+    `/api/admin/risk-reviews/${id}/reopen`,
+    {},
     { validateStatus: okish }
   )
   return res.data

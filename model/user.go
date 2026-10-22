@@ -675,6 +675,10 @@ func (user *User) TransferAffQuotaToQuota(quota int) error {
 	if user == nil || user.Id <= 0 {
 		return errors.New("invalid user")
 	}
+	// 与提现申请一样，先解冻已到期佣金，否则划转看不到本分钟还没跑到的可提现额。
+	if _, err := ReleaseDueAffCommissions(user.Id); err != nil {
+		common.SysError(common.LogText("ReleaseDueAffCommissions: %s", err.Error()))
+	}
 	ref := fmt.Sprintf("aff-transfer-%d-%s", user.Id, common.GetRandomString(12))
 	return DB.Transaction(func(tx *gorm.DB) error {
 		// 锁序与其它资金路径一致：赠送钱包，再用户行。不用整行 Save，避免并发丢更新。

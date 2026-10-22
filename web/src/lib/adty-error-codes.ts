@@ -107,6 +107,12 @@ export const adtyErrorCodeKeys: Record<string, KeyResolver> = {
   refund_failed: 'Refund failed, please try again later',
   trade_no_duplicate: 'This transaction number has already been used',
   invalid_tier_amount: 'Amount must be one of the fixed top-up tiers',
+  invalid_usdt_chain: 'Please select a USDT network',
+  usdt_chain_disabled: 'This USDT network is not enabled',
+  withdraw_address_invalid:
+    'USDT address does not match the selected network',
+  order_expired: 'This order has expired. Please create a new top-up.',
+  order_not_payable: 'This order cannot be paid now',
   payment_maintenance: 'Payment is under maintenance, please try again later',
   epay_snapshot_failed: 'Failed to bind the payment snapshot',
   use_disable_endpoint: 'Use the disable action to disable this instance',

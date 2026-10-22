@@ -14,8 +14,9 @@ var (
 	BepusdtApiToken            string
 	BepusdtLegacyNotifyEnabled bool
 	BepusdtTradeType           string = "usdt.trc20"
-	BepusdtCurrency            string = "USD" // order amount is USD tiers
-	BepusdtNotifyCallbackBase  string         // optional override; empty → ServerAddress / callback helper
+	BepusdtCurrency            string = "USD" // order amount is USD tiers; getter ignores other values
+	BepusdtEnabledChains       string = `["trc20","bep20","polygon","xlayer"]`
+	BepusdtNotifyCallbackBase  string // optional override; empty → ServerAddress / callback helper
 )
 
 func GetBepusdtBaseURL() string {
@@ -46,14 +47,10 @@ func GetBepusdtTradeType() string {
 	return t
 }
 
+// GetBepusdtCurrency is always USD. Tiers are dollar amounts, so a stored
+// currency must not change what BEpusdt asks the user to pay.
 func GetBepusdtCurrency() string {
-	bepusdtMu.RLock()
-	defer bepusdtMu.RUnlock()
-	c := strings.ToUpper(strings.TrimSpace(BepusdtCurrency))
-	if c == "" {
-		return "USD"
-	}
-	return c
+	return "USD"
 }
 
 func SetBepusdtBaseURL(v string) {

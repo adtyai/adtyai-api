@@ -87,8 +87,9 @@ describe('system settings sidebar badges', () => {
 
     // Security & Limits：仅风控 52
     expect(findParentByTitle(items, 'Security & Limits')?.badge).toBe('52')
-    // Billing & Payment：提现 12 + 充值 5 = 17
-    expect(findParentByTitle(items, 'Billing & Payment')?.badge).toBe('17')
+    // Billing & Payment：只剩充值待办；提现角标在邀请返佣父菜单
+    expect(findParentByTitle(items, 'Billing & Payment')?.badge).toBe('5')
+    expect(findParentByTitle(items, 'Affiliate management')?.badge).toBe('12')
     // 无子项 badge 的父级不加角标
     expect(findParentByTitle(items, 'Site & Branding')?.badge).toBeUndefined()
     expect(findParentByTitle(items, 'Operations')?.badge).toBeUndefined()
@@ -101,7 +102,8 @@ describe('system settings sidebar badges', () => {
       topup_pending: 20,
     })
     const items = groups.flatMap((g) => g.items)
-    expect(findParentByTitle(items, 'Billing & Payment')?.badge).toBe('70')
+    expect(findParentByTitle(items, 'Billing & Payment')?.badge).toBe('20')
+    expect(findParentByTitle(items, 'Affiliate management')?.badge).toBe('50')
     expect(findParentByTitle(items, 'Security & Limits')?.badge).toBe('40')
 
     const capped = getSystemSettingsNavGroups(t, {
@@ -111,7 +113,10 @@ describe('system settings sidebar badges', () => {
     })
     const cappedItems = capped.flatMap((g) => g.items)
     expect(findParentByTitle(cappedItems, 'Billing & Payment')?.badge).toBe(
-      '99+'
+      '50'
+    )
+    expect(findParentByTitle(cappedItems, 'Affiliate management')?.badge).toBe(
+      '60'
     )
   })
 

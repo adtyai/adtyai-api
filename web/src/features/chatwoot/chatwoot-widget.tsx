@@ -3,13 +3,15 @@
  * user identity (HMAC identifier_hash from the backend). Soft-fail: any error
  * simply leaves the widget unloaded.
  */
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import { useAuthStore } from '@/stores/auth-store'
 
 import {
   fetchChatwootConfig,
   fetchChatwootIdentity,
+  fetchSupportContact,
   identityAttrs,
   isSafeChatwootBaseUrl,
   type ChatwootPublicConfig,
@@ -66,6 +68,19 @@ function loadSdk(cfg: ChatwootPublicConfig): Promise<void> {
 
 export function ChatwootWidget() {
   const userId = useAuthStore((s) => s.auth.user?.id)
+  const { t } = useTranslation()
+  const [fallbackContact, setFallbackContact] = useState('')
+  const [showFallback, setShowFallback] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    void fetchSupportContact().then((support) => {
+      if (!cancelled) setFallbackContact(support?.contact || '')
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -82,7 +97,9 @@ export function ChatwootWidget() {
     const onReady = () => void applyUser()
     void (async () => {
       const cfg = await fetchChatwootConfig()
-      if (!cfg || cancelled) {
+      if (cancelled) return
+      if (!cfg) {
+        setShowFallback(true)
         return
       }
       window.addEventListener('chatwoot:ready', onReady)
@@ -91,8 +108,9 @@ export function ChatwootWidget() {
         if (window.$chatwoot) {
           await applyUser()
         }
+        if (!cancelled) setShowFallback(false)
       } catch {
-        /* soft-fail: widget stays hidden */
+        if (!cancelled) setShowFallback(true)
       }
     })()
     return () => {
@@ -101,5 +119,12 @@ export function ChatwootWidget() {
     }
   }, [userId])
 
-  return null
+  if (!showFallback || !fallbackContact) return null
+  return (
+    <div className='bg-background fixed right-4 bottom-4 z-40 max-w-xs rounded-lg border p-3 text-sm shadow-lg'>
+      {t('Chatwoot is unavailable. Contact support: {{contact}}', {
+        contact: fallbackContact,
+      })}
+    </div>
+  )
 }

@@ -16,11 +16,26 @@ const (
 	PaymentProviderBepusdt     = "bepusdt"
 )
 
+const (
+	UsdtPaidCallbackCredit     = "credit"
+	UsdtPaidCallbackIdempotent = "idempotent"
+	UsdtPaidCallbackManual     = "manual"
+	UsdtPaidCallbackRetry      = "retry"
+	usdtRemainingSecondsMax    = int64(7 * 24 * 3600)
+)
+
 var (
 	ErrUsdtUnderpay       = errors.New("usdt underpay beyond tolerance")
 	ErrUsdtOrderExpired   = errors.New("usdt order expired")
 	ErrUsdtPaymentInvalid = errors.New("usdt payment invalid")
 )
+
+// UsdtPaidCallbackDecision is the merchant action for a verified BEpusdt status-2 callback.
+// Chain matching stays with BEpusdt. ADTY only credits, retries, or hands a ledger conflict to review.
+type UsdtPaidCallbackDecision struct {
+	Action string
+	Reason string
+}
 
 // ApplyUsdtSnapshotToOrder writes locked USDT amount / fx / expiry onto pending order.
 func ApplyUsdtSnapshotToOrder(order *TopupOrder, payUSDT, usdtFx float64, expireAt int64, tradeID string) error {
@@ -46,8 +61,11 @@ func ApplyUsdtSnapshotToOrder(order *TopupOrder, payUSDT, usdtFx float64, expire
 	return nil
 }
 
-// MarkTopupOrderNeedManual sets status need_manual with reason (underpay / timeout); no credit.
-func MarkTopupOrderNeedManual(orderNo, reason string) (*TopupOrder, error) {
+// MarkTopupOrderNeedManual sets status need_manual for a ledger conflict. It does not credit.
+// paidUSDT < 0 means the callback had no usable amount and is not stored.
+// A later callback may fill a missing amount, but does not overwrite the first stored amount or reason.
+// Paid orders are never moved here. Failed or expired rows can be marked so a conflicting success is visible.
+func MarkTopupOrderNeedManual(orderNo, reason string, paidUSDT float64) (*TopupOrder, error) {
 	var out *TopupOrder
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		var order TopupOrder
@@ -63,14 +81,25 @@ func MarkTopupOrderNeedManual(orderNo, reason string) (*TopupOrder, error) {
 			return nil
 		}
 		if order.Status == TopupOrderStatusNeedManual {
+			if order.UsdtCallbackAmount == nil && paidUSDT >= 0 {
+				amount := paidUSDT
+				order.UsdtCallbackAmount = &amount
+				if err := tx.Model(&order).Update("usdt_callback_amount", amount).Error; err != nil {
+					return err
+				}
+			}
 			out = &order
 			return nil
 		}
-		if order.Status != TopupOrderStatusPending {
+		if order.Status != TopupOrderStatusPending && order.Status != TopupOrderStatusFailed && order.Status != TopupOrderStatusExpired {
 			return ErrTopupOrderStatusInvalid
 		}
 		order.Status = TopupOrderStatusNeedManual
 		order.PendingReason = reason
+		if paidUSDT >= 0 {
+			amount := paidUSDT
+			order.UsdtCallbackAmount = &amount
+		}
 		if err := tx.Save(&order).Error; err != nil {
 			return err
 		}
@@ -80,37 +109,52 @@ func MarkTopupOrderNeedManual(orderNo, reason string) (*TopupOrder, error) {
 	return out, err
 }
 
-// EvaluateUsdtCallbackCredit decides whether a verified paid callback may CompleteTopupOrder.
+// UsdtExpireAtFromBepusdtRemaining converts create-transaction expiration_time.
+// BEpusdt returns remaining seconds, not a unix timestamp. A timestamp-shaped or
+// otherwise unusable value falls back to the configured payment window.
+func UsdtExpireAtFromBepusdtRemaining(remainingSeconds int64, now time.Time) int64 {
+	if remainingSeconds > 0 && remainingSeconds <= usdtRemainingSecondsMax {
+		return now.Add(time.Duration(remainingSeconds) * time.Second).Unix()
+	}
+	return DefaultUsdtExpireAt(now)
+}
+
+// DecideUsdtPaidCallback does not compare chain amount or the local clock.
+// Status 2 on a still-open order credits the snapshotted USD. Short pay is audit-only.
+func DecideUsdtPaidCallback(order *TopupOrder, paidUSDT float64) UsdtPaidCallbackDecision {
+	if order == nil {
+		return UsdtPaidCallbackDecision{Action: UsdtPaidCallbackRetry, Reason: "not_found"}
+	}
+	switch order.Status {
+	case TopupOrderStatusPaid:
+		return UsdtPaidCallbackDecision{Action: UsdtPaidCallbackIdempotent}
+	case TopupOrderStatusNeedManual:
+		return UsdtPaidCallbackDecision{Action: UsdtPaidCallbackManual, Reason: "already_manual"}
+	case TopupOrderStatusFailed:
+		return UsdtPaidCallbackDecision{Action: UsdtPaidCallbackManual, Reason: "paid_after_failed"}
+	case TopupOrderStatusPending, TopupOrderStatusExpired:
+		if paidUSDT < 0 {
+			return UsdtPaidCallbackDecision{Action: UsdtPaidCallbackRetry, Reason: "missing_actual_amount"}
+		}
+		return UsdtPaidCallbackDecision{Action: UsdtPaidCallbackCredit}
+	default:
+		return UsdtPaidCallbackDecision{Action: UsdtPaidCallbackManual, Reason: "status_" + order.Status}
+	}
+}
+
+// EvaluateUsdtCallbackCredit reports whether a verified status-2 callback may credit.
+// nowUnix is ignored: the local payment window is display-only.
 func EvaluateUsdtCallbackCredit(order *TopupOrder, paidUSDT float64, nowUnix int64) error {
+	_ = nowUnix
 	if order == nil {
 		return ErrTopupOrderNotFound
 	}
-	if order.Status == TopupOrderStatusPaid {
+	switch DecideUsdtPaidCallback(order, paidUSDT).Action {
+	case UsdtPaidCallbackCredit, UsdtPaidCallbackIdempotent:
 		return nil
-	}
-	// need_manual (underpay/timeout) never auto-credits again; admin补单 only.
-	if order.Status == TopupOrderStatusNeedManual {
+	default:
 		return ErrUsdtPaymentInvalid
 	}
-	if order.Status != TopupOrderStatusPending {
-		return ErrTopupOrderStatusInvalid
-	}
-	if order.UsdtExpireAt > 0 && nowUnix > order.UsdtExpireAt {
-		return ErrUsdtOrderExpired
-	}
-	want := order.PayUSDT
-	if want <= 0 {
-		return ErrUsdtPaymentInvalid
-	}
-	if paidUSDT < 0 {
-		return ErrUsdtPaymentInvalid
-	}
-	tol := GetUsdtUnderpayTolerance()
-	short := want - paidUSDT
-	if short > tol {
-		return ErrUsdtUnderpay
-	}
-	return nil
 }
 
 func ParsePayUSDTString(s string) (float64, error) {

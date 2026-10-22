@@ -6,6 +6,8 @@ DO NOT send optional commentary
 
 This is an AI API gateway/proxy built with Go. It aggregates 40+ upstream AI providers (OpenAI, Claude, Gemini, Azure, AWS Bedrock, etc.) behind a unified API, with user management, billing, rate limiting, and an admin dashboard.
 
+Published version is the single line in `VERSION`, currently `v1.1.0-adtyai`. Invite commission leaves through balance transfer, USDT, or Alipay; the admin console groups overview, commission ledger, and withdrawal review, including self-invite review.
+
 ## Tech Stack
 
 - **Backend**: Go 1.26 for the root module and `tokenkit/`, Go 1.25.1 for `relaykit/` (see each module’s `go.mod`), Gin web framework, GORM v2 ORM

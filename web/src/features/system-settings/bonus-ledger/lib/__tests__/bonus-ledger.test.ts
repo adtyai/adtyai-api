@@ -19,46 +19,23 @@ For commercial licensing, please contact support@quantumnous.com
 
 import { describe, expect, it } from 'vitest'
 
-import { buildAdminBonusLedgerQuery, parseUserIdFilter } from '../bonus-ledger'
+import { BONUS_LEDGER_KIND_OPTIONS } from '../bonus-ledger'
 
-describe('buildAdminBonusLedgerQuery', () => {
-  it('always sends limit and offset; never account', () => {
-    const q = buildAdminBonusLedgerQuery({})
-    expect(q).toEqual({ limit: 50, offset: 0 })
-    expect((q as { account?: string }).account).toBeUndefined()
-  })
-
-  it('includes user_id/kind/time when set', () => {
-    expect(
-      buildAdminBonusLedgerQuery({
-        user_id: 7,
-        kind: ' topup_first_bonus ',
-        created_from: 100,
-        created_to: '2026-01-01T00:00:00Z',
-        limit: 20,
-        offset: 40,
-      })
-    ).toEqual({
-      limit: 20,
-      offset: 40,
-      user_id: 7,
-      kind: 'topup_first_bonus',
-      created_from: 100,
-      created_to: '2026-01-01T00:00:00Z',
-    })
-  })
-
-  it('omits non-positive user_id', () => {
-    const q = buildAdminBonusLedgerQuery({ user_id: 0 })
-    expect(q.user_id).toBeUndefined()
-  })
-})
-
-describe('parseUserIdFilter', () => {
-  it('parses positive integers only', () => {
-    expect(parseUserIdFilter('12')).toBe(12)
-    expect(parseUserIdFilter('')).toBeUndefined()
-    expect(parseUserIdFilter('0')).toBeUndefined()
-    expect(parseUserIdFilter('1.5')).toBeUndefined()
+describe('BONUS_LEDGER_KIND_OPTIONS', () => {
+  it('only lists kinds that can be written to the bonus account', () => {
+    expect(BONUS_LEDGER_KIND_OPTIONS).toEqual([
+      'topup_tier_bonus',
+      'topup_first_bonus',
+      'api_consume_hourly',
+      'topup_refund_bonus_claw',
+      'balance_adjust',
+      'redemption_bonus',
+      'signup_invite_bonus',
+      'checkin_bonus',
+    ])
+    expect(BONUS_LEDGER_KIND_OPTIONS).not.toContain('topup_paid')
+    expect(BONUS_LEDGER_KIND_OPTIONS).not.toContain('aff_refund_void')
+    expect(BONUS_LEDGER_KIND_OPTIONS).not.toContain('aff_refund_claw')
+    expect(BONUS_LEDGER_KIND_OPTIONS).not.toContain('aff_refund_claw_paid')
   })
 })

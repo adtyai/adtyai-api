@@ -76,8 +76,10 @@ func SetApiRouter(router *gin.Engine) {
 			topupAuth.Use(middleware.UserAuth())
 			{
 				topupAuth.GET("/first-recharge", controller.GetFirstRechargeInfo)
+				topupAuth.GET("/orders", controller.ListSelfTopupOrders)
 				topupAuth.POST("/order", middleware.TopupOrderRateLimit(), controller.CreateTopupOrder)
 				topupAuth.GET("/order/:no", controller.GetTopupOrder)
+				topupAuth.POST("/order/:no/continue", middleware.TopupOrderRateLimit(), controller.ContinueTopupOrder)
 			}
 		}
 		registerAdtyPaymentAdminRoutes(apiRouter, middleware.AdminAuth(), middleware.RootAuth())
@@ -88,6 +90,7 @@ func SetApiRouter(router *gin.Engine) {
 			adminRisk.GET("/:id", controller.AdminGetRiskReview)
 			adminRisk.POST("/:id/approve", controller.AdminApproveRiskReview)
 			adminRisk.POST("/:id/reject", controller.AdminRejectRiskReview)
+			adminRisk.POST("/:id/reopen", controller.AdminReopenRiskReview)
 		}
 		// adtyai 易支付回调：不依赖登录态，按 instance_id 取密钥验签
 		apiRouter.GET("/pay/epay/notify/:instance_id", controller.AdtyEpayNotify)
@@ -105,13 +108,19 @@ func SetApiRouter(router *gin.Engine) {
 		{
 			affRoute.GET("/self", controller.GetAffSelf)
 			affRoute.GET("/commissions/self", controller.ListAffCommissionsSelf)
-			affRoute.POST("/withdraw", controller.CreateAffWithdraw)
+			affRoute.GET("/invitees", controller.ListAffInvitees)
+			affRoute.POST("/withdraw", middleware.CriticalRateLimit(), middleware.UserCriticalRateLimit("aff-withdraw"), controller.CreateAffWithdraw)
+			affRoute.POST("/payout-qr", middleware.CriticalRateLimit(), middleware.UserCriticalRateLimit("aff-withdraw"), controller.UploadAffPayoutQr)
+			affRoute.GET("/payout-qr/:id", controller.GetAffPayoutQrSelf)
 			affRoute.GET("/withdrawals", controller.ListAffWithdrawalsSelf)
 			affRoute.GET("/withdrawals/:id", controller.GetAffWithdrawalSelf)
 		}
 		adminAff := apiRouter.Group("/admin/aff")
 		adminAff.Use(middleware.AdminAuth())
 		{
+			adminAff.GET("/overview", controller.AdminAffOverview)
+			adminAff.GET("/users/:id", controller.AdminAffUserDetail)
+			adminAff.GET("/payout-qr/:id", controller.AdminGetAffPayoutQr)
 			adminAff.GET("/commissions", controller.AdminListAffCommissions)
 			adminAff.POST("/commissions/:id/void", controller.AdminVoidAffCommission)
 			adminAff.GET("/withdrawals", controller.AdminListAffWithdrawals)
@@ -643,6 +652,7 @@ func registerAdtyPaymentAdminRoutes(apiRouter *gin.RouterGroup, adminAuth, rootA
 	rootOrders.Use(rootAuth)
 	{
 		// 审查重审 P2-1：动钱均 root（退款与补单对齐）。
+		rootOrders.GET("/:no/refund-preview", controller.AdminPreviewTopupRefund)
 		rootOrders.POST("/:no/refund", controller.AdminRefundTopupOrder)
 		rootOrders.POST("/:no/complete", controller.AdminCompleteAdtyTopup)
 	}

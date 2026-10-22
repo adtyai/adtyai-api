@@ -20,7 +20,7 @@ func AdminListRiskReviews(c *gin.Context) {
 	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
 	rows, total, err := model.ListRiskReviews(status, limit, offset)
 	if err != nil {
-		adtyFail(c, http.StatusOK, "bad_request", err.Error(), nil)
+		adtyFail(c, http.StatusOK, "bad_request", affClientMessage(err), nil)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
@@ -45,7 +45,7 @@ func AdminGetRiskReview(c *gin.Context) {
 			status = http.StatusNotFound
 			code = "not_found"
 		}
-		adtyFail(c, status, code, err.Error(), nil)
+		adtyFail(c, status, code, affClientMessage(err), nil)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": row})
@@ -79,7 +79,7 @@ func AdminApproveRiskReview(c *gin.Context) {
 				params = map[string]any{"order_no": re.OrderNo, "refund_status": re.RefundStatus}
 			}
 		}
-		adtyFail(c, status, code, err.Error(), params)
+		adtyFail(c, status, code, affClientMessage(err), params)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": row})
@@ -105,7 +105,33 @@ func AdminRejectRiskReview(c *gin.Context) {
 			status = http.StatusConflict
 			code = "status_invalid"
 		}
-		adtyFail(c, status, code, err.Error(), nil)
+		adtyFail(c, status, code, affClientMessage(err), nil)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": row})
+}
+
+// AdminReopenRiskReview POST /api/admin/risk-reviews/:id/reopen
+// 只恢复已驳回的自邀审核。不入账。
+func AdminReopenRiskReview(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		adtyFail(c, http.StatusBadRequest, "invalid_id", "invalid id", nil)
+		return
+	}
+	row, err := model.ReopenAffSelfInviteReview(id, c.GetInt("id"))
+	if err != nil {
+		status := http.StatusOK
+		code := "bad_request"
+		switch {
+		case errors.Is(err, model.ErrRiskReviewNotFound):
+			status = http.StatusNotFound
+			code = "not_found"
+		case errors.Is(err, model.ErrRiskReviewStatusInvalid):
+			status = http.StatusConflict
+			code = "status_invalid"
+		}
+		adtyFail(c, status, code, affClientMessage(err), nil)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": row})

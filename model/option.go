@@ -142,6 +142,7 @@ func InitOptionMap() {
 	common.OptionMap["BepusdtLegacyNotifyEnabled"] = "false"
 	common.OptionMap["BepusdtTradeType"] = "usdt.trc20"
 	common.OptionMap["BepusdtCurrency"] = "USD"
+	common.OptionMap["BepusdtEnabledChains"] = `["trc20","bep20","polygon","xlayer"]`
 	SeedAlertsOptionsIntoOptionMap()
 	SeedChatwootOptionsIntoOptionMap()
 	SeedMenuVisibilityOptionsIntoOptionMap()
@@ -266,6 +267,11 @@ func SyncOptions(frequency int) {
 }
 
 func validateOptionValue(key string, value string) error {
+	if key == "BepusdtEnabledChains" {
+		if _, err := setting.NormalizeBepusdtEnabledChainsJSON(value); err != nil {
+			return err
+		}
+	}
 	if key == legacyAccessTokenRetireAtKey {
 		return errLegacyRetireAtReadOnly
 	}
@@ -310,6 +316,13 @@ func UpdateOption(key string, value string) error {
 	if err := validateOptionValue(key, value); err != nil {
 		return err
 	}
+	if key == "BepusdtEnabledChains" {
+		normalized, err := setting.NormalizeBepusdtEnabledChainsJSON(value)
+		if err != nil {
+			return err
+		}
+		value = normalized
+	}
 	value = sanitizeBrandOptionValue(key, value)
 	dbValue, err := encodeOptionValueForDB(key, value)
 	if err != nil {
@@ -351,6 +364,13 @@ func UpdateOptionsBulk(values map[string]string) error {
 	for key, value := range values {
 		if err := validateOptionValue(key, value); err != nil {
 			return err
+		}
+		if key == "BepusdtEnabledChains" {
+			normalized, err := setting.NormalizeBepusdtEnabledChainsJSON(value)
+			if err != nil {
+				return err
+			}
+			values[key] = normalized
 		}
 	}
 	var policySnapshot *RequestPolicySnapshot
@@ -661,6 +681,8 @@ func updateOptionMap(key string, value string) (err error) {
 		setting.SetBepusdtTradeType(value)
 	case "BepusdtCurrency":
 		setting.SetBepusdtCurrency(value)
+	case "BepusdtEnabledChains":
+		setting.SetBepusdtEnabledChains(value)
 	case "AdtyTelegramBotToken":
 		setting.SetAdtyTelegramBotToken(value)
 	case "TelegramUrgentChatId":

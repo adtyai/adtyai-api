@@ -30,7 +30,9 @@ import {
   orderStatusLabelKey,
   orderStatusVariant,
   parseUserIdFilter,
+  formatUsdtAmount,
   paymentLabel,
+  pendingReasonLabelKey,
   refundStatusLabelKey,
 } from '../orders'
 
@@ -83,7 +85,9 @@ describe('canCompleteOrder', () => {
   it('true for pending and expired (late payment)', () => {
     expect(canCompleteOrder({ status: 'pending' })).toBe(true)
     expect(canCompleteOrder({ status: 'expired' })).toBe(true)
+    expect(canCompleteOrder({ status: 'need_manual' })).toBe(true)
     expect(orderStatusLabelKey('expired')).toBe('Expired')
+    expect(orderStatusLabelKey('review')).toBe('Needs manual review')
     expect(canCompleteOrder({ status: 'paid' })).toBe(false)
     expect(canCompleteOrder({ status: 'failed' })).toBe(false)
     expect(canCompleteOrder(null)).toBe(false)
@@ -95,6 +99,7 @@ describe('status badges', () => {
     expect(orderStatusLabelKey('pending')).toBe('Pending')
     expect(orderStatusLabelKey('paid')).toBe('Paid')
     expect(orderStatusLabelKey('failed')).toBe('Failed')
+    expect(orderStatusLabelKey('need_manual')).toBe('Needs manual review')
     expect(orderStatusVariant('paid')).toBe('secondary')
     expect(orderStatusVariant('failed')).toBe('destructive')
     expect(orderStatusVariant('pending')).toBe('outline')
@@ -160,6 +165,20 @@ describe('format helpers', () => {
     ).toBe('USDT / BEpusdt')
     expect(paymentLabel({ payment_method: 'crypto_x' })).toBe('crypto_x')
     expect(paymentLabel({})).toBe('—')
+  })
+
+  it('translates USDT review reasons and leaves unknown raw', () => {
+    expect(pendingReasonLabelKey('underpay')).toBe('USDT underpayment')
+    expect(pendingReasonLabelKey('timeout')).toBe('USDT payment window closed')
+    expect(pendingReasonLabelKey('')).toBe('')
+    expect(pendingReasonLabelKey('other')).toBe('other')
+  })
+
+  it('formats callback USDT and hides a missing amount', () => {
+    expect(formatUsdtAmount(8.5)).toBe('8.5')
+    expect(formatUsdtAmount(0)).toBe('0')
+    expect(formatUsdtAmount(null)).toBe('—')
+    expect(formatUsdtAmount(undefined)).toBe('—')
   })
 })
 

@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { ErrorState } from '@/components/error-state'
 import { SectionPageLayout } from '@/components/layout'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import {
   Select,
   SelectContent,
@@ -48,17 +49,29 @@ import {
 } from './components/confirm-aff-action-dialog'
 import { useAdminAffCommissions } from './hooks/use-admin-aff'
 import type { AffCommission } from './types'
+import { AffUserDetailButton } from './user-detail-dialog'
 
 export function AffCommissionsSettings() {
   const { t } = useTranslation()
   const [status, setStatus] = useState('all')
-  const list = useAdminAffCommissions(status === 'all' ? '' : status)
+  const [keyword, setKeyword] = useState('')
+  const [offset, setOffset] = useState(0)
+  const pageSize = 50
+  const list = useAdminAffCommissions(
+    status === 'all' ? '' : status,
+    keyword.trim(),
+    offset
+  )
   const [target, setTarget] = useState<AffConfirmKind | null>(null)
   const isForbidden = (list.error as { status?: number } | null)?.status === 403
   const rows = list.data?.rows ?? []
 
   function canVoid(row: AffCommission) {
-    return row.status === 'frozen' || row.status === 'available'
+    return (
+      row.status === 'frozen' ||
+      row.status === 'available' ||
+      row.status === 'blocked'
+    )
   }
 
   return (
@@ -78,7 +91,10 @@ export function AffCommissionsSettings() {
           ]}
           value={status}
           onValueChange={(v) => {
-            if (v) setStatus(v)
+            if (v) {
+              setStatus(v)
+              setOffset(0)
+            }
           }}
         >
           <SelectTrigger className='h-8 w-40 text-sm'>
@@ -92,6 +108,15 @@ export function AffCommissionsSettings() {
             <SelectItem value='blocked'>{t('Blocked')}</SelectItem>
           </SelectContent>
         </Select>
+        <Input
+          value={keyword}
+          onChange={(e) => {
+            setKeyword(e.target.value)
+            setOffset(0)
+          }}
+          placeholder={t('Keyword')}
+          className='h-8 w-44 text-sm'
+        />
         <Button
           type='button'
           variant='outline'
@@ -114,7 +139,7 @@ export function AffCommissionsSettings() {
             <Info className='mt-0.5 size-4 shrink-0' />
             <div>
               {t(
-                'Blocked commissions (e.g. self-invite) cannot be voided here. Review self-invite cases on the withdrawals page.'
+                'Blocked commissions can be voided here. That does not debit withdrawable balance.'
               )}
             </div>
           </div>
@@ -181,8 +206,24 @@ export function AffCommissionsSettings() {
                         <TableCell>
                           <code className='text-xs'>{row.id}</code>
                         </TableCell>
-                        <TableCell>{row.inviter_id}</TableCell>
-                        <TableCell>{row.invitee_id}</TableCell>
+                        <TableCell>
+                          <div>{row.inviter_name || row.inviter_id}</div>
+                          <div className='text-muted-foreground text-[11px]'>
+                            {row.inviter_id}
+                          </div>
+                          {row.inviter_id > 0 ? (
+                            <AffUserDetailButton userId={row.inviter_id} />
+                          ) : null}
+                        </TableCell>
+                        <TableCell>
+                          <div>{row.invitee_name || row.invitee_id}</div>
+                          <div className='text-muted-foreground text-[11px]'>
+                            {row.invitee_id}
+                          </div>
+                          {row.invitee_id > 0 ? (
+                            <AffUserDetailButton userId={row.invitee_id} />
+                          ) : null}
+                        </TableCell>
                         <TableCell>
                           <span className='font-mono text-[11.5px]'>
                             {t(commissionSourceLabelKey(row.source))}{' '}
@@ -227,6 +268,30 @@ export function AffCommissionsSettings() {
                   )}
                 </TableBody>
               </Table>
+              {(list.data.total ?? 0) > pageSize ? (
+                <div className='flex justify-end gap-2 border-t px-5 py-3'>
+                  <Button
+                    type='button'
+                    variant='outline'
+                    size='sm'
+                    className='h-7'
+                    disabled={offset <= 0}
+                    onClick={() => setOffset(Math.max(0, offset - pageSize))}
+                  >
+                    {t('Previous')}
+                  </Button>
+                  <Button
+                    type='button'
+                    variant='outline'
+                    size='sm'
+                    className='h-7'
+                    disabled={offset + pageSize >= list.data.total}
+                    onClick={() => setOffset(offset + pageSize)}
+                  >
+                    {t('Next')}
+                  </Button>
+                </div>
+              ) : null}
             </section>
           ) : null}
         </div>

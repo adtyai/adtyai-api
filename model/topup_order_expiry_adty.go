@@ -9,8 +9,8 @@ import (
 // TopupOrderStatusExpired 审查 N-P2-8：超时未支付的订单。网关迟到的已验签回调仍可入账（见 CompleteTopupOrderBy）。
 const TopupOrderStatusExpired = "expired"
 
-// ExpirePendingTopupOrders 把创建超过 TopupOrderTimeoutMinutes 仍 pending 的订单置为 expired。
-// USDT 订单有独立的过期/迟到转人工逻辑（bepusdt_adty.go），这里不处理。
+// ExpirePendingTopupOrders 把创建超过 TopupOrderTimeoutMinutes 仍 pending 的非 USDT 订单置为 expired。
+// USDT 窗口结束只改展示（usdt_expire_at），不改行状态，也不转人工。迟到的已验签状态 2 仍可入账。
 func ExpirePendingTopupOrders(now time.Time) (int64, error) {
 	timeout := GetTopupOrderTimeoutMinutes()
 	if timeout <= 0 {

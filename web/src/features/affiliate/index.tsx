@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { Link } from '@tanstack/react-router'
 import { Copy, Info, RefreshCw, Share2 } from 'lucide-react'
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -27,13 +27,16 @@ import { SectionPageLayout } from '@/components/layout'
 import { Button } from '@/components/ui/button'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 
-import { useAffSelf } from './hooks/use-affiliate'
+import { useAffInvitees, useAffSelf } from './hooks/use-affiliate'
 import { generateAffInviteLink } from './lib/invite-link'
 import { formatAffRate, formatAffUsd } from './lib/quota'
 
 export function AffiliateCenterPage() {
   const { t } = useTranslation()
   const self = useAffSelf()
+  const [inviteOffset, setInviteOffset] = useState(0)
+  const invitePage = 20
+  const invitees = useAffInvitees(inviteOffset)
   const { copyToClipboard } = useCopyToClipboard()
 
   const data = self.data
@@ -88,7 +91,7 @@ export function AffiliateCenterPage() {
 
           {data ? (
             <>
-              <div className='grid gap-3 sm:grid-cols-2 lg:grid-cols-4'>
+              <div className='grid gap-3 sm:grid-cols-2 lg:grid-cols-3'>
                 {(
                   [
                     [t('Invites'), String(data.aff_count ?? 0), null],
@@ -102,6 +105,11 @@ export function AffiliateCenterPage() {
                       t('Top-up commission rate'),
                       formatAffRate(data.topup_rate),
                       `${t('Freeze days')}: ${String(data.freeze_days ?? 0)}`,
+                    ],
+                    [
+                      t('Subscription commission rate'),
+                      formatAffRate(data.subscription_rate),
+                      null,
                     ],
                   ] as [string, string, string | null][]
                 ).map(([label, value, sub]) => (
@@ -196,6 +204,10 @@ export function AffiliateCenterPage() {
                           formatAffRate(data.topup_rate),
                         ],
                         [
+                          t('Subscription commission rate'),
+                          formatAffRate(data.subscription_rate),
+                        ],
+                        [
                           t('Freeze period'),
                           `${String(data.freeze_days ?? 0)} ${t('days')}`,
                         ],
@@ -228,6 +240,73 @@ export function AffiliateCenterPage() {
                   </div>
                 </section>
               </div>
+
+              <section className='bg-card overflow-hidden rounded-xl border shadow-xs'>
+                <div className='border-b px-5 pt-4 pb-3'>
+                  <div className='text-[15px] font-semibold'>
+                    {t('Invitees')} ({invitees.data?.total ?? 0})
+                  </div>
+                  <div className='text-muted-foreground mt-0.5 text-xs'>
+                    {t('Names are masked. Contact details are not shown.')}
+                  </div>
+                </div>
+                <div className='divide-y'>
+                  {(invitees.data?.rows ?? []).length === 0 ? (
+                    <div className='text-muted-foreground px-5 py-6 text-sm'>
+                      {invitees.isLoading
+                        ? t('Loading...')
+                        : t('No invitees')}
+                    </div>
+                  ) : (
+                    invitees.data?.rows.map((row) => (
+                      <div
+                        key={row.user_id}
+                        className='flex items-center justify-between px-5 py-3 text-sm'
+                      >
+                        <span>{row.name || '-'}</span>
+                        <span className='text-muted-foreground text-xs'>
+                          {row.registered_at
+                            ? new Date(
+                                row.registered_at > 1e12
+                                  ? row.registered_at
+                                  : row.registered_at * 1000
+                              ).toLocaleDateString()
+                            : '-'}
+                        </span>
+                      </div>
+                    ))
+                  )}
+                </div>
+                {(invitees.data?.total ?? 0) > invitePage ? (
+                  <div className='flex justify-end gap-2 border-t px-5 py-3'>
+                    <Button
+                      type='button'
+                      variant='outline'
+                      size='sm'
+                      className='h-7'
+                      disabled={inviteOffset <= 0}
+                      onClick={() =>
+                        setInviteOffset(Math.max(0, inviteOffset - invitePage))
+                      }
+                    >
+                      {t('Previous')}
+                    </Button>
+                    <Button
+                      type='button'
+                      variant='outline'
+                      size='sm'
+                      className='h-7'
+                      disabled={
+                        inviteOffset + invitePage >=
+                        (invitees.data?.total ?? 0)
+                      }
+                      onClick={() => setInviteOffset(inviteOffset + invitePage)}
+                    >
+                      {t('Next')}
+                    </Button>
+                  </div>
+                ) : null}
+              </section>
             </>
           ) : null}
         </div>

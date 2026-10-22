@@ -30,7 +30,8 @@ func parseLedgerTimeQuery(raw string) (*time.Time, error) {
 
 // GetWalletLedgerSelf GET /api/wallet/ledger/self
 // Query: account(paid|bonus|quota)、kind、created_from、created_to、limit、offset
-// 仅当前登录用户；默认返回 paid+bonus（含小时汇总行），每行带 account 供前端画两列。
+// 仅当前登录用户。默认返回 paid+bonus。邀请退款作废/扣回记在 aff 账户，
+// 选这两种类型时改查 aff，避免筛选项永远为空。
 func GetWalletLedgerSelf(c *gin.Context) {
 	uid := c.GetInt("id")
 	if uid <= 0 {
@@ -46,10 +47,8 @@ func GetWalletLedgerSelf(c *gin.Context) {
 		})
 		return
 	}
-	accounts := []string{"paid", "bonus"}
-	if acct != "" {
-		accounts = []string{acct}
-	}
+	kind := strings.TrimSpace(c.Query("kind"))
+	accounts := ledgerSelfAccounts(acct, kind)
 
 	from, err := parseLedgerTimeQuery(c.Query("created_from"))
 	if err != nil {
@@ -68,7 +67,7 @@ func GetWalletLedgerSelf(c *gin.Context) {
 	rows, total, err := model.ListLedgerEntries(model.LedgerListFilter{
 		UserId:      uid,
 		Accounts:    accounts,
-		Kind:        strings.TrimSpace(c.Query("kind")),
+		Kind:        kind,
 		CreatedFrom: from,
 		CreatedTo:   to,
 		Limit:       limit,
@@ -83,6 +82,22 @@ func GetWalletLedgerSelf(c *gin.Context) {
 		"data":    rows,
 		"total":   total,
 	})
+}
+
+// ledgerSelfAccounts keeps the default wallet view on paid+bonus.
+// Invite-refund void and claw are written on the affiliate account, so those
+// filters must look there or the named option always returns nothing.
+// aff_refund_claw_paid is a paid-account row and stays in the default view.
+func ledgerSelfAccounts(accountFilter, kind string) []string {
+	switch kind {
+	case "aff_refund_void", "aff_refund_claw":
+		return []string{"aff"}
+	default:
+		if accountFilter != "" {
+			return []string{accountFilter}
+		}
+		return []string{"paid", "bonus"}
+	}
 }
 
 // AdminListBonusLedger GET /api/admin/wallet/bonus-ledger

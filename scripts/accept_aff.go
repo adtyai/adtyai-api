@@ -17,6 +17,16 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+func acceptCreateWithdraw(userId int, amount int64, idem, account, chain string) (*model.AffWithdrawal, error) {
+	return model.CreateAffWithdrawal(userId, model.AffWithdrawCreateInput{
+		AmountQuota: amount,
+		IdemKey:     idem,
+		PayMethod:   model.AffPayMethodUSDT,
+		PayAccount:  account,
+		UsdtChain:   chain,
+	})
+}
+
 func must(err error) {
 	if err != nil {
 		panic(err)
@@ -161,9 +171,9 @@ func main() {
 
 	// (3) 同 idem_key 提现只一单
 	idem := "idem-" + common.GetRandomString(8)
-	w1, err := model.CreateAffWithdrawal(inv3.Id, int64(availQuota)/2, idem, "USDT:Txxx")
+	w1, err := acceptCreateWithdraw(inv3.Id, int64(availQuota)/2, idem, "T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb", "trc20")
 	must(err)
-	w1b, err := model.CreateAffWithdrawal(inv3.Id, int64(availQuota)/2, idem, "USDT:Txxx")
+	w1b, err := acceptCreateWithdraw(inv3.Id, int64(availQuota)/2, idem, "T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb", "trc20")
 	must(err)
 	if w1.Id != w1b.Id {
 		panic(fmt.Sprintf("(3) idem want same id %d vs %d", w1.Id, w1b.Id))
@@ -191,7 +201,7 @@ func main() {
 	// (5) pay_failed 仍冻结；重试回 approved 后再 paid；pay_unknown 拒绝重试；
 	//     pay_unknown→mark-failed→pay_failed_final 不可 retry（堵住绕开）
 	idem2 := "idem2-" + common.GetRandomString(8)
-	w2, err := model.CreateAffWithdrawal(inv3.Id, int64(availQuota)/2, idem2, "alipay:x")
+	w2, err := acceptCreateWithdraw(inv3.Id, int64(availQuota)/2, idem2, "0x1111111111111111111111111111111111111111", "bep20")
 	must(err)
 	mid := 0
 	must(model.DB.Model(&model.User{}).Where("id = ?", inv3.Id).Select("aff_quota").Scan(&mid).Error)
@@ -209,7 +219,7 @@ func main() {
 	if retried.Status != model.AffWithdrawStatusApproved {
 		panic("(5) retry want approved")
 	}
-	paid, err := model.MarkAffWithdrawalPaid(w2.Id, admin.Id)
+	paid, err := model.MarkAffWithdrawalPaid(w2.Id, admin.Id, "")
 	must(err)
 	if paid.Status != model.AffWithdrawStatusPaid {
 		panic("(5) want paid")
@@ -222,7 +232,7 @@ func main() {
 		must(model.DB.Model(&model.User{}).Where("id = ?", inv3.Id).Update("aff_quota", still+int(availQuota)).Error)
 		still = still + int(availQuota)
 	}
-	w3, err := model.CreateAffWithdrawal(inv3.Id, int64(availQuota)/4, idem3, "x")
+	w3, err := acceptCreateWithdraw(inv3.Id, int64(availQuota)/4, idem3, "0x2222222222222222222222222222222222222222", "polygon")
 	must(err)
 	_, err = model.ApproveAffWithdrawal(w3.Id, admin.Id)
 	must(err)
@@ -248,7 +258,7 @@ func main() {
 	// (6) missing confirm → 400（approve / mark-paid / mark-failed / mark-unknown / retry）
 	idem4 := "idem4-" + common.GetRandomString(8)
 	must(model.DB.Model(&model.User{}).Where("id = ?", inv3.Id).Update("aff_quota", int(availQuota)).Error)
-	w4, err := model.CreateAffWithdrawal(inv3.Id, int64(availQuota)/5, idem4, "y")
+	w4, err := acceptCreateWithdraw(inv3.Id, int64(availQuota)/5, idem4, "0x3333333333333333333333333333333333333333", "xlayer")
 	must(err)
 
 	hitConfirm := func(path string) {
@@ -308,7 +318,7 @@ func main() {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			w, e := model.CreateAffWithdrawal(inv3.Id, concAmt, idemConc, "conc")
+			w, e := acceptCreateWithdraw(inv3.Id, concAmt, idemConc, "T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb", "trc20")
 			ch <- concRes{w: w, err: e}
 		}()
 	}

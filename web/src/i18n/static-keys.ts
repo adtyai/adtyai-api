@@ -19,6 +19,10 @@ For commercial licensing, please contact support@quantumnous.com
 // Static translation keys that don't get picked up by the t('...') regex.
 // These cover dynamic labels (e.g. constants, configs) that are passed into t at runtime.
 export const STATIC_I18N_KEYS = [
+  'Payment window ended. Create a new top-up. If you already transferred, contact support with this order number. Do not send more to the old address.',
+  'Exceptional order. Contact support with this order number. Do not send more funds to the old address.',
+  'This payment failed. Create a new top-up.',
+  'Paid amount and bonus are listed above. Bonus is spendable, deducted first, and not withdrawable.',
   'Task usage metadata is unavailable. Pricing details cannot be displayed.',
   'This expression cannot be expanded into a price table. View the original expression below.',
   'This operation is only supported for vLLM or SGLang channels',

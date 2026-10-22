@@ -24,6 +24,7 @@ import { SectionPageLayout } from '@/components/layout'
 import { useStatus } from '@/hooks/use-status'
 import { getSelf } from '@/lib/api'
 
+import { AdtyOrderList } from './components/adty-order-list'
 import { AdtyRechargePanel } from './components/adty-recharge-panel'
 import { AffiliateRewardsCard } from './components/affiliate-rewards-card'
 import { TransferDialog } from './components/dialogs/transfer-dialog'
@@ -35,12 +36,14 @@ export function Wallet() {
   const { t } = useTranslation()
   const [user, setUser] = useState<UserWalletData | null>(null)
   const [userLoading, setUserLoading] = useState(true)
+  const [orderRefresh, setOrderRefresh] = useState(0)
   const [transferDialogOpen, setTransferDialogOpen] = useState(false)
   const [redemptionCode, setRedemptionCode] = useState('')
   const { status } = useStatus()
   const {
     tiers: adtyTiers,
     payMethods: adtyPayMethods,
+    usdtChains: adtyUsdtChains,
     firstTopupBonusRate,
     firstEligible,
     loading: adtyLoading,
@@ -111,6 +114,7 @@ export function Wallet() {
                   <AdtyRechargePanel
                     tiers={adtyTiers}
                     payMethods={adtyPayMethods}
+                    usdtChains={adtyUsdtChains}
                     firstTopupBonusRate={firstTopupBonusRate}
                     firstEligible={firstEligible}
                     loading={adtyLoading}
@@ -124,6 +128,7 @@ export function Wallet() {
                       void fetchUser()
                       void refetchAdtyTopup()
                     }}
+                    onUsdtTerminal={() => setOrderRefresh((n) => n + 1)}
                   />
                 ) : (
                   <ErrorState
@@ -139,6 +144,14 @@ export function Wallet() {
                 )}
               </div>
             </div>
+
+            <AdtyOrderList
+              refreshToken={orderRefresh}
+              onPaid={() => {
+                void fetchUser()
+                void refetchAdtyTopup()
+              }}
+            />
 
             <AffiliateRewardsCard
               user={user}

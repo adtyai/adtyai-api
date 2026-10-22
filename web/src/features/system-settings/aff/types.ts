@@ -16,6 +16,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import type {
+  AffCommission,
+  AffWithdrawal,
+} from '@/features/affiliate/types'
+
 export type {
   AffCommission,
   AffCommissionStatus,
@@ -26,6 +31,50 @@ export type {
 } from '@/features/affiliate/types'
 
 export type { AffAdminWithdrawAction } from '@/features/affiliate/lib/status'
+
+export type AffOverview = {
+  invited_users: number
+  inviters: number
+  commission_frozen: number
+  commission_available: number
+  commission_voided: number
+  commission_blocked: number
+  withdraw_pending_usdt: number
+  withdraw_pending_alipay: number
+  withdraw_pending_legacy: number
+  withdraw_paid_quota: number
+}
+
+export type AffAdminUserDetail = {
+  user_id: number
+  username: string
+  display_name: string
+  inviter_id: number
+  inviter_name: string
+  aff_count: number
+  aff_quota: number
+  aff_history: number
+  invitees: {
+    user_id: number
+    name: string
+    registered_at: number
+    paid_usd: number
+    commission_quota: number
+    status: string
+  }[]
+  invitee_total: number
+  commissions: AffCommission[]
+  commission_total: number
+  withdrawals: AffWithdrawal[]
+  withdrawal_total: number
+  transfers: {
+    id: number
+    delta: number
+    balance_after: number
+    created_at: string
+  }[]
+  transfer_total: number
+}
 
 export type AffRiskReview = {
   id: number
@@ -39,4 +88,10 @@ export type AffRiskReview = {
   resolved_by: number
   created_at: string
   resolved_at?: string | null
+  inviter_id?: number
+  inviter_name?: string
+  invitee_id?: number
+  invitee_name?: string
+  commission_quota?: number
+  commission_status?: string
 }

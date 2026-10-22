@@ -36,6 +36,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { TitledCard } from '@/components/ui/titled-card'
+import { usdtChainById } from '@/lib/usdt-chains'
 import { cn } from '@/lib/utils'
 
 import { createAdtyTopupOrder } from '../api'
@@ -46,7 +47,6 @@ import {
   firstTopupBonusRateToPercent,
   formatUsdAmount,
   isFixedTierAmount,
-  pickDefaultPayMethod,
   resolveAdtyCheckoutLaunch,
 } from '../lib/adty-topup'
 import { formatCurrency } from '../lib/format'
@@ -56,12 +56,14 @@ import type {
   AdtyTopupOrder,
   AdtyTopupTier,
   AdtyUsdtCashier,
+  AdtyUsdtChain,
 } from '../types'
 import { AdtyUsdtCashierDialog } from './adty-usdt-cashier-dialog'
 
 export interface AdtyRechargePanelProps {
   tiers: AdtyTopupTier[]
   payMethods: AdtyPayMethod[]
+  usdtChains?: AdtyUsdtChain[]
   firstTopupBonusRate: number
   firstEligible: boolean
   loading?: boolean
@@ -74,6 +76,8 @@ export interface AdtyRechargePanelProps {
   redemptionEnabled?: boolean
   /** Refresh balance / first-topup after USDT paid */
   onUsdtPaid?: () => void
+  /** Refresh the order list when a payment needs review or fails. */
+  onUsdtTerminal?: () => void
 }
 
 function payMethodLabel(method: AdtyPayMethod, t: (k: string) => string) {
@@ -81,7 +85,7 @@ function payMethodLabel(method: AdtyPayMethod, t: (k: string) => string) {
   if (method.type === 'wxpay' || method.type === 'wechat') {
     return t('WeChat Pay')
   }
-  if (method.type === 'usdt') return t('USDT-TRC20')
+  if (method.type === 'usdt') return t('USDT')
   return method.name || method.type
 }
 
@@ -96,6 +100,7 @@ function payMethodHint(method: AdtyPayMethod, t: (k: string) => string) {
 export function AdtyRechargePanel({
   tiers,
   payMethods,
+  usdtChains = [],
   firstTopupBonusRate,
   loading,
   price = 1,
@@ -105,6 +110,7 @@ export function AdtyRechargePanel({
   redeeming,
   redemptionEnabled = true,
   onUsdtPaid,
+  onUsdtTerminal,
 }: AdtyRechargePanelProps) {
   const { t } = useTranslation()
 
@@ -112,6 +118,7 @@ export function AdtyRechargePanel({
   const [selectedMethod, setSelectedMethod] = useState<AdtyPayMethod | null>(
     null
   )
+  const [selectedChain, setSelectedChain] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [usdtOpen, setUsdtOpen] = useState(false)
   const [usdtCashier, setUsdtCashier] = useState<AdtyUsdtCashier | null>(null)
@@ -133,13 +140,18 @@ export function AdtyRechargePanel({
       return
     }
     setSelectedMethod((prev) => {
-      if (prev) {
-        const fresh = payMethods.find((m) => m.type === prev.type)
-        if (fresh) return fresh
-      }
-      return pickDefaultPayMethod(payMethods) ?? null
+      if (!prev) return null
+      return payMethods.find((m) => m.type === prev.type) ?? null
     })
   }, [payMethods])
+
+  useEffect(() => {
+    setSelectedChain((prev) => {
+      if (prev && usdtChains.some((chain) => chain.id === prev)) return prev
+      if (usdtChains.length === 1) return usdtChains[0].id
+      return ''
+    })
+  }, [usdtChains])
 
   const selectedTier = useMemo(
     () =>
@@ -170,6 +182,20 @@ export function AdtyRechargePanel({
   const unavailableMethods = payMethods.filter((m) => !m.available)
   const anyAvailable = payMethods.some((m) => m.available)
   const methodBlocked = !selectedMethod || !selectedMethod.available
+  const needsNetwork =
+    selectedMethod?.type === 'usdt' && usdtChains.length > 1 && !selectedChain
+  let payButtonLabel = t('Pay now ¥{{amount}}', {
+    amount: formatCurrency(payLocal),
+  })
+  if (!selectedMethod) {
+    payButtonLabel = t('Select a payment method')
+  } else if (!selectedMethod.available || !anyAvailable) {
+    payButtonLabel = t('Payment channel unavailable')
+  } else if (needsNetwork) {
+    payButtonLabel = t('Choose a USDT network before paying.')
+  } else if (selectedMethod.type === 'usdt') {
+    payButtonLabel = t('Pay with USDT')
+  }
 
   const handleSelectMethod = (method: AdtyPayMethod) => {
     if (!method.available) {
@@ -202,12 +228,19 @@ export function AdtyRechargePanel({
       )
       return
     }
+    if (selectedMethod.type === 'usdt' && !selectedChain) {
+      toast.error(t('Please select a USDT network'))
+      return
+    }
 
     setSubmitting(true)
     try {
       const res = await createAdtyTopupOrder({
         amount: selectedAmount,
         payment_method: selectedMethod.type,
+        ...(selectedMethod.type === 'usdt'
+          ? { usdt_chain: selectedChain }
+          : {}),
       })
       if (!res?.success) {
         const code = res?.code
@@ -216,6 +249,10 @@ export function AdtyRechargePanel({
             res?.message ||
               t('Payment channel is under maintenance. Please try again later.')
           )
+          return
+        }
+        if (code === 'invalid_usdt_chain' || code === 'usdt_chain_disabled') {
+          toast.error(res?.message || t('Please select a USDT network'))
           return
         }
         const msg =
@@ -404,6 +441,37 @@ export function AdtyRechargePanel({
                 )
               })}
             </div>
+            {selectedMethod?.type === 'usdt' && usdtChains.length > 0 && (
+              <div className='space-y-2'>
+                <Label className='text-sm'>{t('USDT network')}</Label>
+                <div className='grid grid-cols-2 gap-2'>
+                  {usdtChains.map((chain) => {
+                    const active = selectedChain === chain.id
+                    const known = usdtChainById(chain.id)
+                    return (
+                      <button
+                        key={chain.id}
+                        type='button'
+                        onClick={() => setSelectedChain(chain.id)}
+                        className={cn(
+                          'rounded-lg border px-3 py-2 text-left',
+                          active
+                            ? 'border-primary bg-primary/5'
+                            : 'hover:bg-muted/50'
+                        )}
+                      >
+                        <div className='text-sm font-medium'>
+                          {known?.label || chain.label || chain.id}
+                        </div>
+                        <div className='text-muted-foreground text-[11.5px]'>
+                          {chain.network || known?.network}
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
             {unavailableMethods.length > 0 && (
               <Alert className='border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-100'>
                 <AlertTriangle className='h-4 w-4' />
@@ -478,11 +546,40 @@ export function AdtyRechargePanel({
             }
           />
           <SummaryRow
-            label={t('Pay amount (rate {{rate}})', {
-              rate: Number.isFinite(price) ? Number(price).toFixed(2) : '1.00',
-            })}
-            value={`¥${formatCurrency(payLocal)}`}
+            label={t('Payment Method')}
+            value={
+              selectedMethod
+                ? payMethodLabel(selectedMethod, t)
+                : t('Select a payment method')
+            }
           />
+          {selectedMethod?.type === 'usdt' ? (
+            <SummaryRow
+              label={t('USDT network')}
+              value={
+                usdtChains.find((chain) => chain.id === selectedChain)?.label ||
+                selectedChain ||
+                t('Choose a USDT network before paying.')
+              }
+            />
+          ) : null}
+          {selectedMethod && selectedMethod.type !== 'usdt' ? (
+            <SummaryRow
+              label={t('Pay amount (rate {{rate}})', {
+                rate: Number.isFinite(price)
+                  ? Number(price).toFixed(2)
+                  : '1.00',
+              })}
+              value={`¥${formatCurrency(payLocal)}`}
+            />
+          ) : null}
+          {selectedMethod?.type === 'usdt' ? (
+            <p className='text-muted-foreground text-[11.5px] leading-5'>
+              {t(
+                'Exact transfer amount is shown on the cashier after the order is created.'
+              )}
+            </p>
+          ) : null}
 
           <Button
             className='mt-2 h-11 w-full text-[15px]'
@@ -490,14 +587,13 @@ export function AdtyRechargePanel({
               submitting ||
               selectedAmount == null ||
               methodBlocked ||
-              !anyAvailable
+              !anyAvailable ||
+              needsNetwork
             }
             onClick={() => void handleSubmit()}
           >
             {submitting && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
-            {methodBlocked || !anyAvailable
-              ? t('Payment channel unavailable')
-              : t('Pay now ¥{{amount}}', { amount: formatCurrency(payLocal) })}
+            {payButtonLabel}
           </Button>
           <p className='text-muted-foreground text-[11.5px] leading-5'>
             {t(
@@ -553,6 +649,7 @@ export function AdtyRechargePanel({
         order={usdtOrder}
         usdt={usdtCashier}
         onPaid={onUsdtPaid}
+        onTerminal={() => onUsdtTerminal?.()}
       />
     </div>
   )

@@ -185,10 +185,12 @@ func SeedChatwootOptionsIntoOptionMap() {
 
 // ChatwootPublicConfig 审查 N-P2-10：前端加载挂件所需的公开配置（不含 HMAC 密钥）。
 type ChatwootPublicConfig struct {
-	Enabled          bool   `json:"enabled"`
-	BaseURL          string `json:"base_url"`
-	WebsiteToken     string `json:"website_token"`
-	IdentityVerified bool   `json:"identity_verification"`
+	Enabled           bool   `json:"enabled"`
+	BaseURL           string `json:"base_url"`
+	WebsiteToken      string `json:"website_token"`
+	IdentityVerified  bool   `json:"identity_verification"`
+	BackupContactType string `json:"backup_contact_type"`
+	BackupContact     string `json:"backup_contact"`
 }
 
 func GetChatwootPublicConfig() ChatwootPublicConfig {
@@ -197,11 +199,14 @@ func GetChatwootPublicConfig() ChatwootPublicConfig {
 		base = ""
 	}
 	tok := strings.TrimSpace(chatwootOption(OptChatwootWebsiteToken))
+	typ, contact := GetBackupContact()
 	return ChatwootPublicConfig{
-		Enabled:          base != "" && tok != "",
-		BaseURL:          base,
-		WebsiteToken:     tok,
-		IdentityVerified: chatwootOption(OptChatwootHmacSecret) != "",
+		Enabled:           base != "" && tok != "",
+		BaseURL:           base,
+		WebsiteToken:      tok,
+		IdentityVerified:  chatwootOption(OptChatwootHmacSecret) != "",
+		BackupContactType: typ,
+		BackupContact:     contact,
 	}
 }
 

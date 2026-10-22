@@ -134,10 +134,19 @@ describe('system-settings Root-only nav (A39/A08) and no A30 audit', () => {
         '/system-settings/orders',
         '/system-settings/order-refunds',
         '/system-settings/bonus-ledger',
-        '/system-settings/aff-commissions',
-        '/system-settings/aff-withdrawals',
       ])
     )
+    expect(byParent['Billing & Payment']).not.toContain(
+      '/system-settings/aff-commissions'
+    )
+    expect(byParent['Billing & Payment']).not.toContain(
+      '/system-settings/aff-withdrawals'
+    )
+    expect(byParent['Affiliate management']).toEqual([
+      '/system-settings/aff-overview',
+      '/system-settings/aff-commissions',
+      '/system-settings/aff-withdrawals',
+    ])
     expect(byParent['Security & Limits']).toContain(
       '/system-settings/risk-reviews'
     )
