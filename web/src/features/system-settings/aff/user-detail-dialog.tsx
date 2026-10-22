@@ -113,6 +113,7 @@ export function AffUserDetailButton({ userId }: { userId: number }) {
         type='button'
         variant='link'
         className='h-auto px-0 text-xs'
+        aria-label={t('View affiliate detail')}
         onClick={() => setOpen(true)}
       >
         {t('View')}
