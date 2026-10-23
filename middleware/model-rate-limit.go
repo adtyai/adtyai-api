@@ -169,6 +169,20 @@ func modelRequestSucceeded(c *gin.Context) bool {
 	return c.Writer.Status() < 400 && !status.ResponseFailed()
 }
 
+func modelRateLimitGroup(c *gin.Context) string {
+	group := common.GetContextKeyString(c, constant.ContextKeyTokenGroup)
+	if group == "" || group == "auto" {
+		group = common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
+	}
+	if group == "" || group == "auto" {
+		group = common.GetContextKeyString(c, constant.ContextKeyUserGroup)
+	}
+	if group == "auto" {
+		return ""
+	}
+	return group
+}
+
 // ModelRequestRateLimit 模型请求限流中间件
 func ModelRequestRateLimit() func(c *gin.Context) {
 	return func(c *gin.Context) {
@@ -183,11 +197,8 @@ func ModelRequestRateLimit() func(c *gin.Context) {
 		totalMaxCount := setting.ModelRequestRateLimitCount
 		successMaxCount := setting.ModelRequestRateLimitSuccessCount
 
-		// 获取分组
-		group := common.GetContextKeyString(c, constant.ContextKeyTokenGroup)
-		if group == "" {
-			group = common.GetContextKeyString(c, constant.ContextKeyUserGroup)
-		}
+		// 获取分组。auto 令牌按折叠后的身份分组计数，不能单独命中 auto 桶。
+		group := modelRateLimitGroup(c)
 
 		// 获取分组的限流配置。配置了独立限流的分组按用户和分组单独计数，
 		// 其余分组共用该用户的全局计数

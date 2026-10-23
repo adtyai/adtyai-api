@@ -185,6 +185,10 @@ func UpdateOption(c *gin.Context) {
 		common.ApiErrorStatus(c, http.StatusBadRequest, common.NewMessage("Invalid parameters"))
 		return
 	}
+	if option.Key == "GroupRatio" || option.Key == "UserUsableGroups" {
+		common.ApiErrorT(c, "Billing groups can only be changed through the groups API")
+		return
+	}
 	switch option.Value.(type) {
 	case bool:
 		option.Value = common.Interface2String(option.Value.(bool))

@@ -33,7 +33,6 @@ import {
   Share2,
   Settings,
   ShieldCheck,
-  Ticket,
   User,
   Users,
   Wallet,
@@ -153,20 +152,8 @@ export function useSidebarData(): SidebarData {
                 url: '/smart-routing/strategy',
               },
               {
-                title: t('Channel scores & half-open'),
-                url: '/smart-routing/scores',
-              },
-              {
-                title: t('Rankings by model'),
-                url: '/smart-routing/rankings',
-              },
-              {
-                title: t('Cost guardrails'),
-                url: '/smart-routing/cost',
-              },
-              {
-                title: t('Routing decisions'),
-                url: '/smart-routing/decisions',
+                title: t('Channel usage'),
+                url: '/smart-routing/channels',
               },
             ],
           },
@@ -179,11 +166,6 @@ export function useSidebarData(): SidebarData {
             title: t('Users'),
             url: '/users',
             icon: Users,
-          },
-          {
-            title: t('Redemption Codes'),
-            url: '/redemption-codes',
-            icon: Ticket,
           },
           {
             title: t('System Info'),

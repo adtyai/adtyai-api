@@ -215,7 +215,7 @@ func TestGetUserModelsFiltersByRequestedGroup(t *testing.T) {
 	require.Empty(t, decodeUserModelsResponse(t, vipRecorder))
 }
 
-func TestGetUserModelsExpandsAutoGroupsInConfiguredOrder(t *testing.T) {
+func TestGetUserModelsIgnoresAutoAndSpecialVisibility(t *testing.T) {
 	originalAutoGroups := setting.AutoGroups2JsonString()
 	originalUsableGroups := setting.UserUsableGroups2JSONString()
 	originalSpecialGroups := ratio_setting.GetGroupRatioSetting().GroupSpecialUsableGroup.ReadAll()
@@ -259,10 +259,15 @@ func TestGetUserModelsExpandsAutoGroupsInConfiguredOrder(t *testing.T) {
 
 	GetUserModels(context)
 
-	models := decodeUserModelsResponse(t, recorder)
-	require.Len(t, models, 3)
-	assert.ElementsMatch(t, []string{"zz-vip-model", "zz-shared-model"}, models[:2])
-	assert.Equal(t, "zz-default-model", models[2])
+	require.Empty(t, decodeUserModelsResponse(t, recorder))
+
+	defaultRecorder := httptest.NewRecorder()
+	defaultContext, _ := gin.CreateTestContext(defaultRecorder)
+	defaultContext.Request = httptest.NewRequest(http.MethodGet, "/api/user/models?group=default", nil)
+	defaultContext.Set("id", 1003)
+	GetUserModels(defaultContext)
+	defaultModels := decodeUserModelsResponse(t, defaultRecorder)
+	assert.ElementsMatch(t, []string{"zz-default-model", "zz-shared-model"}, defaultModels)
 }
 
 func TestListModelsIncludesTieredBillingModel(t *testing.T) {
@@ -467,7 +472,16 @@ func TestListModelsTokenLimitUsesResolvedCustomAutoGroups(t *testing.T) {
 
 	ListModels(ctx, constant.ChannelTypeOpenAI)
 	ids := decodeListModelsResponse(t, recorder)
-	require.Equal(t, map[string]struct{}{"zz-vip-allowed": {}}, ids)
+	require.Equal(t, map[string]struct{}{"zz-default-outside-snapshot": {}}, ids)
+
+	identityAuto := httptest.NewRecorder()
+	identityCtx, _ := gin.CreateTestContext(identityAuto)
+	identityCtx.Request = httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	common.SetContextKey(identityCtx, constant.ContextKeyUserGroup, "auto")
+	common.SetContextKey(identityCtx, constant.ContextKeyTokenGroup, "auto")
+	common.SetContextKey(identityCtx, constant.ContextKeyTokenAutoGroups, []string{"vip"})
+	ListModels(identityCtx, constant.ChannelTypeOpenAI)
+	require.Empty(t, decodeListModelsResponse(t, identityAuto))
 
 	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{"default":"Default"}`))
 	emptyRecorder := httptest.NewRecorder()

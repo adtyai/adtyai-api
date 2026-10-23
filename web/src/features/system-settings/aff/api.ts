@@ -22,6 +22,7 @@ import { requireServerSuccess } from '@/lib/server-error-message'
 import type {
   AffAdminUserDetail,
   AffCommission,
+  AffInviterRow,
   AffListResponse,
   AffOneResponse,
   AffOverview,
@@ -119,6 +120,33 @@ export async function adminListAffWithdrawals(params: {
     total: body.total ?? 0,
     counts: body.counts ?? {},
   }
+}
+
+export async function adminListAffInviters(params: {
+  keyword?: string
+  limit?: number
+  offset?: number
+}): Promise<{ rows: AffInviterRow[]; total: number }> {
+  const res = await api.get<AffListResponse<AffInviterRow>>(
+    '/api/admin/aff/inviters',
+    {
+      params: {
+        keyword: params.keyword || undefined,
+        limit: params.limit ?? 20,
+        offset: params.offset ?? 0,
+      },
+      validateStatus: forbidOrOk,
+    }
+  )
+  if (res.status === 403) {
+    const err = new Error(res.data?.message || 'forbidden', {
+      cause: res.data,
+    }) as Error & { status?: number }
+    err.status = 403
+    throw err
+  }
+  const body = requireServerSuccess(res.data)
+  return { rows: body.data ?? [], total: body.total ?? 0 }
 }
 
 export async function adminGetAffOverview(): Promise<AffOverview> {

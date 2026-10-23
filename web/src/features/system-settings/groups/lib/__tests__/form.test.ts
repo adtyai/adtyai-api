@@ -23,7 +23,9 @@ import type { GroupMetaView } from '../../types'
 import {
   GROUP_CODE_RE,
   buildGroupPut,
+  buildGroupTableSave,
   groupApiErrorToastKey,
+  groupRatioDraftValue,
   isValidGroupCode,
   validateCreateInput,
   viewToDraft,
@@ -35,6 +37,79 @@ const base: GroupMetaView = {
   sort: 10,
   has_meta: true,
 }
+
+describe('validateCreateInput', () => {
+  it('rejects auto even though the code shape is valid', () => {
+    expect(
+      validateCreateInput({ code: 'auto', display_name: 'Auto', sort: '0' })
+    ).toEqual({ ok: false, error: 'invalid_code' })
+  })
+})
+
+describe('groupRatioDraftValue', () => {
+  it('rejects an empty ratio instead of treating it as zero', () => {
+    expect(groupRatioDraftValue('')).toBeNull()
+    expect(groupRatioDraftValue('   ')).toBeNull()
+    expect(groupRatioDraftValue('abc')).toBeNull()
+    expect(groupRatioDraftValue('-1')).toBeNull()
+    expect(groupRatioDraftValue('0')).toBe(0)
+    expect(groupRatioDraftValue('1.5')).toBe(1.5)
+  })
+})
+
+describe('buildGroupTableSave', () => {
+  it('does not turn a non-billing code into a ratio row', () => {
+    const saved = buildGroupTableSave({
+      ratio: { vip: 2 },
+      usable: { vip: 'VIP', channelonly: 'Channel' },
+      drafts: {
+        vip: { ratio: '1.5', isPublic: true, displayName: 'VIP' },
+        channelonly: { ratio: '0', isPublic: true, displayName: 'Channel' },
+      },
+      currentDisplayNames: { vip: 'VIP' },
+    })
+    expect(saved).toEqual({
+      ok: true,
+      changed: true,
+      ratio: { vip: 1.5 },
+      usable: { vip: 'VIP' },
+      displayNames: {},
+    })
+  })
+
+  it('refuses the whole save when a billing row has no draft', () => {
+    expect(
+      buildGroupTableSave({
+        ratio: { default: 1, vip: 2 },
+        usable: { default: 'Default' },
+        drafts: {
+          default: { ratio: '1', isPublic: true, displayName: 'Default' },
+        },
+        currentDisplayNames: {},
+      })
+    ).toEqual({ ok: false, error: 'draft_missing' })
+  })
+
+  it('keeps an explicit zero and does not write when nothing changed', () => {
+    expect(
+      buildGroupTableSave({
+        ratio: { vip: 0, auto: 1 },
+        usable: { vip: 'VIP' },
+        drafts: {
+          vip: { ratio: '0', isPublic: false, displayName: 'VIP' },
+          auto: { ratio: '', isPublic: true, displayName: 'Auto' },
+        },
+        currentDisplayNames: { vip: 'VIP' },
+      })
+    ).toEqual({
+      ok: true,
+      changed: true,
+      ratio: { vip: 0, auto: 1 },
+      usable: {},
+      displayNames: {},
+    })
+  })
+})
 
 describe('GROUP_CODE_RE / isValidGroupCode', () => {
   it('accepts a-z0-9_- length 2–32', () => {

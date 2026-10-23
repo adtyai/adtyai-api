@@ -74,6 +74,7 @@ import {
   type WaffoSettingsValues,
 } from './waffo-settings-section'
 import { BepusdtSection } from '../bepusdt/bepusdt-section'
+import { EpayInstancesSection } from '../epay-instances/epay-instances-section'
 
 function isHttpOriginUrl(value: string) {
   const trimmed = value.trim()
@@ -1483,6 +1484,9 @@ export function PaymentSettingsSection({
 
         <TabsContent value='bepusdt' className={paymentTabContentClassName}>
           <BepusdtSection embedded />
+        </TabsContent>
+        <TabsContent value='epay' className={paymentTabContentClassName}>
+          <EpayInstancesSection />
         </TabsContent>
       </Tabs>
     </SettingsSection>

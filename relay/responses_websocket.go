@@ -27,6 +27,7 @@ import (
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/service/smartrouting"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -234,12 +235,31 @@ func (s *responsesWSSession) runRequest(state *responsesWSCallState, message []b
 	}
 }
 
+var noteResponsesWSAttempt = smartrouting.NoteSelectedAttempt
+
 func (s *responsesWSSession) runCall(c *gin.Context, state *responsesWSCallState, create responsesWSCreateRequest) (apiErr *types.NewAPIError) {
 	policy := service.RequestPolicy(c)
 	modelName := create.Request.Model
 	started := time.Now()
 	var info *relaycommon.RelayInfo
 	billingPrepared := false
+	var selectedChannelID int
+	selectedNoted := false
+	upstreamStarted := false
+	noteSelected := func(id int, err *types.NewAPIError) {
+		if id == 0 || selectedNoted {
+			return
+		}
+		selectedNoted = true
+		noteResponsesWSAttempt(c, id, modelName, err, time.Since(started).Milliseconds())
+	}
+	defer smartrouting.ReleaseHalfOpenReservation(c)
+	defer func() {
+		if !upstreamStarted {
+			return
+		}
+		noteSelected(selectedChannelID, apiErr)
+	}()
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			apiErr = types.NewError(fmt.Errorf("responses websocket call panic: %v", recovered), types.ErrorCodeBadResponse, types.ErrOptionWithSkipRetry())
@@ -285,6 +305,8 @@ func (s *responsesWSSession) runCall(c *gin.Context, state *responsesWSCallState
 		if apiErr != nil {
 			return apiErr
 		}
+		upstreamStarted = true
+		selectedChannelID = s.lockedChannelID
 		if err := s.writeTarget(websocket.TextMessage, payload); err != nil {
 			state.closeCode = websocket.CloseInternalServerErr
 			return types.NewError(err, types.ErrorCodeBadResponse, types.ErrOptionWithSkipRetry())
@@ -297,6 +319,8 @@ func (s *responsesWSSession) runCall(c *gin.Context, state *responsesWSCallState
 			if apiErr != nil {
 				return apiErr
 			}
+			selectedChannelID = 0
+			selectedNoted = false
 			service.AppendUsedChannel(c, channel.Id)
 			if info == nil {
 				info = relaycommon.GenRelayInfoResponses(c, &create.Request)
@@ -319,6 +343,8 @@ func (s *responsesWSSession) runCall(c *gin.Context, state *responsesWSCallState
 			if apiErr != nil {
 				return apiErr
 			}
+			upstreamStarted = true
+			selectedChannelID = channel.Id
 			adaptor := GetAdaptor(info.ApiType)
 			adaptor.Init(info)
 			target, dialErr := relaychannel.DoWssRequest(adaptor, c, info, nil)
@@ -330,6 +356,7 @@ func (s *responsesWSSession) runCall(c *gin.Context, state *responsesWSCallState
 				service.RecordPolicyFailure(c, channel.Id, apiErr, decision)
 				service.ProcessChannelError(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, info.ApiKey, channel.GetAutoBan()), apiErr, info)
 				if decision.Action == "retry" {
+					noteSelected(channel.Id, apiErr)
 					continue
 				}
 				return apiErr
@@ -586,11 +613,13 @@ func (s *responsesWSSession) restoreConnectionContext(c *gin.Context, model stri
 	} else {
 		group := common.GetContextKeyString(c, appconstant.ContextKeyUsingGroup)
 		if group == "auto" {
-			if !slices.Contains(service.GetRequestAutoGroups(c, common.GetContextKeyString(c, appconstant.ContextKeyUserGroup)), s.lockedGroup) {
+			group = common.GetContextKeyString(c, appconstant.ContextKeyUserGroup)
+			if group == "auto" {
+				group = ""
+			}
+			if group != s.lockedGroup {
 				return types.NewErrorWithStatusCode(errors.New("the connection group is no longer allowed"), types.ErrorCodeAccessDenied, http.StatusForbidden, types.ErrOptionWithSkipRetry())
 			}
-			group = s.lockedGroup
-			common.SetContextKey(c, appconstant.ContextKeyAutoGroup, group)
 		}
 		if !appmodel.IsChannelEnabledForGroupModel(group, model, s.lockedChannelID) {
 			return types.NewErrorWithStatusCode(errors.New("the connection channel is no longer allowed for this group and model"), types.ErrorCodeAccessDenied, http.StatusForbidden, types.ErrOptionWithSkipRetry())
@@ -934,8 +963,10 @@ func selectResponsesWSChannel(c *gin.Context, modelName string, retryParam *serv
 	}) {
 		constraints.AddFilter(appdto.ChannelFilter{Kind: appdto.FilterResponsesWebSocket})
 	}
+	smartrouting.BindRouteCaps(c, true, 0, 0)
 	channel, _, selectErr := service.SelectChannelForRequest(c, modelName, retryParam)
 	if selectErr != nil {
+		smartrouting.ReleaseHalfOpenReservation(c)
 		message := selectErr.Message
 		if selectErr.MessageID != "" {
 			message = i18n.T(c, selectErr.MessageID, selectErr.Params)
@@ -947,6 +978,7 @@ func selectResponsesWSChannel(c *gin.Context, modelName string, retryParam *serv
 		return nil, types.NewErrorWithStatusCode(errors.New(message), code, selectErr.StatusCode, types.ErrOptionWithSkipRetry())
 	}
 	if err := middleware.SetupContextForSelectedChannel(c, channel, modelName); err != nil {
+		smartrouting.ReleaseHalfOpenReservation(c)
 		return nil, err
 	}
 	return channel, nil

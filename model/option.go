@@ -1,6 +1,7 @@
 package model
 
 import (
+	"errors"
 	"maps"
 	"strconv"
 	"strings"
@@ -299,7 +300,18 @@ func validateOptionValue(key string, value string) error {
 	return nil
 }
 
+// ErrBillingGroupOptionLocked means GroupRatio or UserUsableGroups was sent
+// through the generic option writer. Those two keys belong to the groups API.
+var ErrBillingGroupOptionLocked = errors.New("billing groups can only be changed through the groups API")
+
+func billingGroupOptionLocked(key string) bool {
+	return key == "GroupRatio" || key == "UserUsableGroups"
+}
+
 func UpdateOption(key string, value string) error {
+	if billingGroupOptionLocked(key) {
+		return ErrBillingGroupOptionLocked
+	}
 	if err := RejectOptionSecretPrefix(map[string]string{key: value}); err != nil {
 		return err
 	}
@@ -333,12 +345,16 @@ func UpdateOption(key string, value string) error {
 		Key: key,
 	}
 	// https://gorm.io/docs/update.html#Save-All-Fields
-	DB.FirstOrCreate(&option, Option{Key: key})
+	if err := DB.FirstOrCreate(&option, Option{Key: key}).Error; err != nil {
+		return err
+	}
 	option.Value = dbValue
 	// Save is a combination function.
 	// If save value does not contain primary key, it will execute Create,
 	// otherwise it will execute Update (with all fields).
-	DB.Save(&option)
+	if err := DB.Save(&option).Error; err != nil {
+		return err
+	}
 	// Update OptionMap
 	return updateOptionMap(key, value)
 }
@@ -351,6 +367,11 @@ func UpdateOption(key string, value string) error {
 func UpdateOptionsBulk(values map[string]string) error {
 	if len(values) == 0 {
 		return nil
+	}
+	for key := range values {
+		if billingGroupOptionLocked(key) {
+			return ErrBillingGroupOptionLocked
+		}
 	}
 	if err := RejectOptionSecretPrefix(values); err != nil {
 		return err
@@ -422,6 +443,31 @@ func UpdateOptionsBulk(values map[string]string) error {
 		requestPolicySnapshot.Store(policySnapshot)
 	}
 	return nil
+}
+
+// applyOptionMemory publishes one committed option into process memory.
+// Tests replace it to simulate a transient refresh failure. The recovery path
+// calls updateOptionMap directly so a one-shot failure can still load the row.
+var applyOptionMemory = updateOptionMap
+
+func publishCommittedOption(key, value string) error {
+	if err := applyOptionMemory(key, value); err == nil {
+		return nil
+	} else {
+		common.SysError(common.LogText("option %s committed but memory refresh failed: %s", key, err.Error()))
+		var stored Option
+		if readErr := DB.Where("key = ?", key).First(&stored).Error; readErr != nil {
+			return err
+		}
+		plain, _, decErr := decodeOptionValueFromDB(key, stored.Value)
+		if decErr != nil {
+			return err
+		}
+		if refreshErr := updateOptionMap(key, plain); refreshErr != nil {
+			return err
+		}
+		return nil
+	}
 }
 
 func updateOptionMap(key string, value string) (err error) {

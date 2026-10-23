@@ -17,15 +17,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import { Link } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 
 import { Badge } from '@/components/ui/badge'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 
 import { scoreTone } from '../lib/labels'
@@ -55,7 +49,7 @@ export function ScoreBadge(props: ScoreBadgeProps) {
     label = String(Math.round(props.score))
   }
 
-  const badge = (
+  return (
     <Badge
       variant='outline'
       className={cn(
@@ -73,28 +67,4 @@ export function ScoreBadge(props: ScoreBadgeProps) {
       {props.isNew ? ` · ${t('New channel')}` : null}
     </Badge>
   )
-
-  if (props.linkToDetail && props.channelId != null) {
-    return (
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <Link
-              to='/smart-routing/$section'
-              params={{ section: 'scores' }}
-              search={{ channel: String(props.channelId) }}
-              className='inline-flex'
-            >
-              {badge}
-            </Link>
-          }
-        />
-        <TooltipContent>
-          <p>{t('Open smart routing detail')}</p>
-        </TooltipContent>
-      </Tooltip>
-    )
-  }
-
-  return badge
 }

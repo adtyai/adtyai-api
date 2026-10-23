@@ -259,7 +259,7 @@ func adminManualCompleteTopup(c *gin.Context, orderNo, tradeNo, source string) {
 			adtyFail(c, http.StatusNotFound, "not_found", "order not found", nil)
 			return
 		}
-		adtyFail(c, http.StatusOK, "bad_request", err.Error(), nil)
+		adtyInternalError(c, err)
 		return
 	}
 	if order.UserId == operatorID {
@@ -287,7 +287,7 @@ func adminManualCompleteTopup(c *gin.Context, orderNo, tradeNo, source string) {
 			return
 		}
 	} else if err != nil && !errors.Is(err, model.ErrTopupOrderNotFound) {
-		adtyFail(c, http.StatusOK, "bad_request", err.Error(), nil)
+		adtyInternalError(c, err)
 		return
 	}
 	if err := model.AttachProviderTradeNo(orderNo, tradeNo); err != nil {
@@ -297,21 +297,20 @@ func adminManualCompleteTopup(c *gin.Context, orderNo, tradeNo, source string) {
 			})
 			return
 		}
-		adtyFail(c, http.StatusOK, "bad_request", err.Error(), nil)
+		adtyInternalError(c, err)
 		return
 	}
 	done, err := model.CompleteTopupOrderBy(orderNo, operatorID)
+	if errors.Is(err, model.ErrTopupOrderNotFound) {
+		adtyFail(c, http.StatusNotFound, "not_found", "order not found", nil)
+		return
+	}
+	if errors.Is(err, model.ErrTopupOrderStatusInvalid) {
+		adtyFail(c, http.StatusConflict, "order_status_invalid", "topup order status invalid", nil)
+		return
+	}
 	if err != nil {
-		status := http.StatusOK
-		code := "bad_request"
-		if errors.Is(err, model.ErrTopupOrderNotFound) {
-			status = http.StatusNotFound
-			code = "not_found"
-		} else if errors.Is(err, model.ErrTopupOrderStatusInvalid) {
-			status = http.StatusConflict
-			code = "order_status_invalid"
-		}
-		adtyFail(c, status, code, err.Error(), nil)
+		adtyInternalError(c, err)
 		return
 	}
 	common.SysLog(common.LogText("admin manual complete: operator=%d order=%s user=%d trade_no=%s source=%s", operatorID, orderNo, done.UserId, tradeNo, source))

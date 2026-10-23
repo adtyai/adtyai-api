@@ -1,8 +1,6 @@
 package service
 
 import (
-	"strings"
-
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
@@ -12,33 +10,60 @@ import (
 )
 
 func GetUserUsableGroups(userGroup string) map[string]string {
-	groupsCopy := setting.GetUserUsableGroupsCopy()
-	if userGroup != "" {
-		specialSettings, b := ratio_setting.GetGroupRatioSetting().GroupSpecialUsableGroup.Get(userGroup)
-		if b {
-			// 处理特殊可用分组
-			for specialGroup, desc := range specialSettings {
-				if after, ok := strings.CutPrefix(specialGroup, "-:"); ok {
-					// 移除分组
-					groupToRemove := after
-					delete(groupsCopy, groupToRemove)
-				} else if after, ok := strings.CutPrefix(specialGroup, "+:"); ok {
-					// 添加分组
-					groupToAdd := after
-					groupsCopy[groupToAdd] = desc
-				} else {
-					// 直接添加分组
-					groupsCopy[specialGroup] = desc
-				}
-			}
-		}
-		// 如果userGroup不在UserUsableGroups中，返回UserUsableGroups + userGroup。
-		// 描述是英文源文本，由 web 控制台翻译；管理员配置的描述原样显示。
-		if _, ok := groupsCopy[userGroup]; !ok {
-			groupsCopy[userGroup] = "User group"
+	return GetUserAllowedGroups(0, userGroup)
+}
+
+// GetUserAllowedGroups is the public group map, plus the caller's identity
+// group, plus hidden groups granted to that user. A grant lookup failure does
+// not expose hidden groups.
+func GetUserAllowedGroups(userID int, userGroup string) map[string]string {
+	groups := setting.GetUserUsableGroupsCopy()
+	delete(groups, "auto")
+	for code := range groups {
+		if !ratio_setting.ContainsGroupRatio(code) {
+			delete(groups, code)
 		}
 	}
-	return groupsCopy
+	if userGroup != "" && userGroup != "auto" && ratio_setting.ContainsGroupRatio(userGroup) {
+		if _, ok := groups[userGroup]; !ok {
+			groups[userGroup] = "User group"
+		}
+	}
+	if userID <= 0 {
+		return groups
+	}
+	codes, err := model.ListUserGroupGrantCodes(userID)
+	if err != nil {
+		common.SysError(common.LogText("failed to load hidden group grants for user %d: %s", userID, err.Error()))
+		return groups
+	}
+	for _, code := range codes {
+		if code == "" || code == "auto" || !ratio_setting.ContainsGroupRatio(code) {
+			continue
+		}
+		if _, ok := groups[code]; ok {
+			continue
+		}
+		groups[code] = model.GetGroupDisplayName(code)
+	}
+	return groups
+}
+
+// UserMayUseGroup reports whether this user may select the group. Empty and
+// auto are never selectable. A grant lookup failure keeps hidden groups closed.
+func UserMayUseGroup(userID int, userGroup, groupName string) bool {
+	if groupName == "" || groupName == "auto" {
+		return false
+	}
+	_, ok := GetUserAllowedGroups(userID, userGroup)[groupName]
+	return ok
+}
+
+// IdentityGroupChangeAllowed reports whether an administrator may write this
+// identity group. The current value stays valid so an existing hidden identity
+// can still be edited. A new value must be a public billing group.
+func IdentityGroupChangeAllowed(current, next string) bool {
+	return model.IdentityGroupChangeAllowed(current, next)
 }
 
 func GroupInUserUsableGroups(userGroup, groupName string) bool {
@@ -126,9 +151,5 @@ func GetGroupsEnabledModels(groups []string) []string {
 // userGroup 用户分组
 // group 需要获取倍率的分组
 func GetUserGroupRatio(userGroup, group string) float64 {
-	ratio, ok := ratio_setting.GetGroupGroupRatio(userGroup, group)
-	if ok {
-		return ratio
-	}
 	return ratio_setting.GetGroupRatio(group)
 }

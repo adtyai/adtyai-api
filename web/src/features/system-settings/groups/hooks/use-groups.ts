@@ -44,6 +44,13 @@ export function useCreateGroupMeta() {
     onSuccess: (data) => {
       if (data.success) {
         void qc.invalidateQueries({ queryKey: GROUPS_QUERY_KEY })
+        void qc.invalidateQueries({ queryKey: ['status'] })
+        void qc.invalidateQueries({ queryKey: ['user-groups'] })
+        try {
+          window.localStorage.removeItem('status')
+        } catch {
+          /* Storage may be disabled. */
+        }
       }
     },
   })
@@ -57,6 +64,13 @@ export function usePutGroupMeta() {
     onSuccess: (data) => {
       if (data.success) {
         void qc.invalidateQueries({ queryKey: GROUPS_QUERY_KEY })
+        void qc.invalidateQueries({ queryKey: ['status'] })
+        void qc.invalidateQueries({ queryKey: ['user-groups'] })
+        try {
+          window.localStorage.removeItem('status')
+        } catch {
+          /* Storage may be disabled. */
+        }
       }
     },
   })

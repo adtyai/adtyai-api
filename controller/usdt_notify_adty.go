@@ -164,11 +164,7 @@ func AdtyUsdtNotify(c *gin.Context) {
 	handleAdtyUsdtNotify(c)
 }
 
-// AdtyBepusdtLegacyNotify GET|POST /api/user/bepusdt/notify — 默认关闭；开启时与新路径同一处理。
+// AdtyBepusdtLegacyNotify 不再入账。路由已删除，直接调用也固定 404。
 func AdtyBepusdtLegacyNotify(c *gin.Context) {
-	if !model.IsBepusdtLegacyNotifyEnabled() {
-		c.AbortWithStatus(http.StatusNotFound)
-		return
-	}
-	handleAdtyUsdtNotify(c)
+	c.AbortWithStatus(http.StatusNotFound)
 }

@@ -1,7 +1,6 @@
 package smartrouting
 
 import (
-	"math"
 	"math/rand"
 	"time"
 
@@ -9,285 +8,358 @@ import (
 	"github.com/QuantumNous/new-api/model"
 )
 
-// SmartWeights overlays route_weight on one priority band.
-// Does NOT mutate channels.weight. Injects half-open candidates when allowed (H2).
-func SmartWeights(channels []*model.Channel, modelName, group string) ([]*model.Channel, []int) {
-	cfg := GetConfig()
+// SmartWeights overlays one priority band.
+// off keeps official weights. observe records a shadow pick but still dispatches official weights.
+// active never returns an excluded channel. An empty active band sets Skip so the selector walks down.
+func SmartWeights(channels []*model.Channel, modelName, group string, caps model.RouteCaps) model.SmartWeightResult {
 	n := len(channels)
 	if n == 0 {
-		return channels, nil
+		return model.SmartWeightResult{Skip: true, Decision: model.RouteBandDecision{Reason: "empty"}}
 	}
-	official := make([]int, n)
-	for i, ch := range channels {
-		official[i] = ch.GetWeight()
-	}
-	if !cfg.Enabled {
-		return channels, official
-	}
-	// traffic gray
-	if cfg.ScoreTrafficPct < 100 {
-		if rand.Intn(100) >= cfg.ScoreTrafficPct {
-			return channels, official
+	mode := routingMode()
+	official := officialWeights(channels)
+	officialCands := candViews(channels, official, "official")
+	if mode == "off" {
+		return model.SmartWeightResult{
+			Channels: channels,
+			Weights:  official,
+			Decision: model.RouteBandDecision{Mode: "off", Official: true, Reason: "off", Candidates: officialCands},
 		}
 	}
 
-	// stale check: if no scores updated recently → official
+	cfg := GetConfig()
+	active := filterBand(channels, modelName, group, caps, cfg)
+	if mode == "observe" {
+		would := argmaxID(active.channels, active.weights)
+		return model.SmartWeightResult{
+			Channels: channels,
+			Weights:  official,
+			Excluded: active.excluded,
+			Decision: model.RouteBandDecision{
+				Mode:       "observe",
+				Official:   true,
+				Reason:     "observe",
+				WouldPick:  would,
+				Excluded:   active.excluded,
+				Candidates: officialCands,
+			},
+		}
+	}
+
+	if active.stale {
+		if len(active.channels) == 0 {
+			return model.SmartWeightResult{
+				Skip:     true,
+				HalfOpen: active.half,
+				Excluded: active.excluded,
+				Decision: model.RouteBandDecision{Mode: "active", Reason: "stale_empty", Excluded: active.excluded},
+			}
+		}
+		active.weights = decorateBandWeights(active.channels, active.weights, modelName, caps)
+		return model.SmartWeightResult{
+			Channels: active.channels,
+			Weights:  active.weights,
+			HalfOpen: active.half,
+			Excluded: active.excluded,
+			Decision: model.RouteBandDecision{
+				Mode: "active", Official: true, Reason: "stale",
+				Excluded: active.excluded, Candidates: candViews(active.channels, active.weights, "stale"),
+			},
+		}
+	}
+	if len(active.channels) == 0 {
+		return model.SmartWeightResult{
+			Skip:     true,
+			HalfOpen: active.half,
+			Excluded: active.excluded,
+			Decision: model.RouteBandDecision{Mode: "active", Reason: "skip", Excluded: active.excluded},
+		}
+	}
+	active.weights = decorateBandWeights(active.channels, active.weights, modelName, caps)
+	return model.SmartWeightResult{
+		Channels: active.channels,
+		Weights:  active.weights,
+		HalfOpen: active.half,
+		Excluded: active.excluded,
+		Decision: model.RouteBandDecision{
+			Mode: "active", Reason: "score",
+			Excluded: active.excluded, Candidates: candViews(active.channels, active.weights, ""),
+		},
+	}
+}
+
+type bandFilter struct {
+	channels []*model.Channel
+	weights  []int
+	excluded []model.RouteExclusion
+	half     *model.Channel
+	stale    bool
+}
+
+func filterBand(channels []*model.Channel, modelName, group string, caps model.RouteCaps, cfg Config) bandFilter {
+	var out bandFilter
 	scores := GetAllScores()
-	stale := true
-	cutoff := time.Now().Add(-time.Duration(cfg.ScoreStaleSec) * time.Second)
-	for _, s := range scores {
-		if s != nil && s.UpdatedAt.After(cutoff) {
-			stale = false
-			break
-		}
-	}
-	if stale && len(scores) > 0 {
-		return channels, official
-	}
-
-	type cand struct {
-		ch     *model.Channel
-		rw     int
-		score  float64
-		state  string
-		floor  bool
-		half   bool
-		stage  string
-		locked bool
-		note   string
-	}
-	var normal []cand
-	var floors []cand
-	var excluded []RouteExcluded
-
+	out.stale = scoresStale(scores, cfg)
+	var normal []*model.Channel
+	var normalW []int
+	var floors []*model.Channel
+	var floorW []int
 	for _, ch := range channels {
 		if ch == nil {
 			continue
 		}
-		// tags
-		if model.HasRouteTag(ch.Id, modelName, "excluded") || model.HasRouteTag(ch.Id, modelName, "fake_model") {
-			excluded = append(excluded, RouteExcluded{ID: ch.Id, Why: "excluded"})
+		if why := hardExclude(ch, modelName, caps); why != "" {
+			out.excluded = append(out.excluded, model.RouteExclusion{ID: ch.Id, Why: why})
 			continue
 		}
-		if IsCostGuardExcluded(ch.Id) {
-			excluded = append(excluded, RouteExcluded{ID: ch.Id, Why: "cost_guard"})
-			continue
-		}
-		if InRateLimitCooldown(ch.Id) {
-			excluded = append(excluded, RouteExcluded{ID: ch.Id, Why: "rpm_cooldown"})
-			continue
-		}
-		if RPMExceeded(ch.Id) {
-			excluded = append(excluded, RouteExcluded{ID: ch.Id, Why: "rpm_full"})
-			continue
-		}
-		caps := GetRequestCaps()
-		if why := CapabilityReject(ch.Id, caps.NeedTools, caps.NeedVision, caps.NeedJSON, caps.NeedContext); why != "" {
-			excluded = append(excluded, RouteExcluded{ID: ch.Id, Why: why})
-			continue
-		}
-		// fallback_only deferred
-		fallbackOnly := model.HasRouteTag(ch.Id, modelName, "fallback_only")
-		locked := model.HasRouteTag(ch.Id, modelName, "locked")
-		se := GetScore(ch.Id, modelName)
-		rw := ch.GetWeight()
-		score := 70.0
-		state := "normal"
-		isFloor := false
-		if se != nil {
-			rw = se.RouteWeight
-			score = se.Score
-			state = se.State
-			isFloor = se.Insufficient || se.FloorDecay > 0
-			if se.FloorDecay > 0 && !se.Insufficient {
-				// decaying floor: still mark for floor share fraction
-				isFloor = true
+		if breakerOpen(ch.Id) {
+			out.excluded = append(out.excluded, model.RouteExclusion{ID: ch.Id, Why: "breaker"})
+			if out.half == nil && halfOpenReady(ch.Id) && halfOpenAllowed(ch, modelName, group, caps, cfg) {
+				out.half = ch
 			}
-		}
-		if locked {
-			rw = 100
-			state = "locked"
-			isFloor = false
-		}
-		if fallbackOnly {
-			// keep aside; added only if no other normal
-			floors = append(floors, cand{ch: ch, rw: rw, score: score, state: "fallback_only", note: "fallback_only"})
 			continue
 		}
-		c := cand{ch: ch, rw: rw, score: score, state: state, floor: isFloor, locked: locked}
-		if isFloor && !locked {
-			floors = append(floors, c)
-		} else {
-			normal = append(normal, c)
+		w, note := routeWeight(ch, modelName, out.stale)
+		if model.CachedHasRouteTag(ch.Id, modelName, "fallback_only") {
+			floors = append(floors, ch)
+			floorW = append(floorW, w)
+			_ = note
+			continue
+		}
+		normal = append(normal, ch)
+		normalW = append(normalW, w)
+	}
+	if len(normal) == 0 && len(floors) > 0 {
+		out.channels = floors
+		out.weights = floorW
+		return out
+	}
+	if len(floors) > 0 && len(normal) > 0 {
+		for i, ch := range floors {
+			out.excluded = append(out.excluded, model.RouteExclusion{ID: ch.Id, Why: "fallback_only"})
+			_ = floorW[i]
 		}
 	}
+	out.channels = normal
+	out.weights = normalW
+	if out.half == nil {
+		out.half = halfOpenFromReady(channels, modelName, group, caps, cfg)
+	}
+	return out
+}
 
-	// half-open injection (status=4 cooling done); prefer non-stream when configured (P1-2)
-	halfList := ListHalfOpenReady()
-	var halfCands []cand
-	caps := GetRequestCaps()
-	skipHalfForStream := cfg.HalfOpenPreferNonStream && caps.IsStream
-	for _, h := range halfList {
-		if skipHalfForStream {
+func routeWeight(ch *model.Channel, modelName string, stale bool) (int, string) {
+	official := ch.GetWeight()
+	if official < 1 {
+		official = 1
+	}
+	if stale {
+		return official, "stale"
+	}
+	se := GetScore(ch.Id, modelName)
+	if se == nil || se.Insufficient || se.State == "insufficient" || se.State == "new" {
+		return official, "insufficient"
+	}
+	if se.RouteWeight < 1 {
+		return official, "official"
+	}
+	return se.RouteWeight, se.State
+}
+
+func hardExclude(ch *model.Channel, modelName string, caps model.RouteCaps) string {
+	if ch == nil {
+		return "excluded"
+	}
+	if model.CachedHasRouteTag(ch.Id, modelName, "excluded") || model.CachedHasRouteTag(ch.Id, modelName, "fake_model") {
+		return "excluded"
+	}
+	if model.CachedCostGuardExcluded(ch.Id) {
+		return "cost_guard"
+	}
+	if InRateLimitCooldown(ch.Id, modelName) {
+		return "rpm_cooldown"
+	}
+	if rpmExceededCached(ch.Id) {
+		return "rpm_full"
+	}
+	return capabilityRejectCached(ch.Id, caps)
+}
+
+func halfOpenReady(channelID int) bool {
+	for _, h := range ListHalfOpenReady() {
+		if h.ChannelID == channelID {
+			return true
+		}
+	}
+	return false
+}
+
+func halfOpenStatusAllowed(ch *model.Channel) bool {
+	return ch != nil && (ch.Status == common.ChannelStatusEnabled || ch.Status == common.ChannelStatusScoreBroken)
+}
+
+func channelBandKey(ch *model.Channel, caps model.RouteCaps) (int64, bool) {
+	if ch == nil {
+		return 0, false
+	}
+	if caps.PriorityOf != nil {
+		return caps.PriorityOf(ch.Id)
+	}
+	return ch.GetPriority(), true
+}
+
+func halfOpenAllowed(ch *model.Channel, modelName, group string, caps model.RouteCaps, cfg Config) bool {
+	if !halfOpenStatusAllowed(ch) {
+		return false
+	}
+	// Streaming does not reject a half-open probe. PreferNonStream is not a selection gate.
+	if hardExclude(ch, modelName, caps) != "" {
+		return false
+	}
+	if !channelServesModel(ch, modelName) || !channelInGroup(ch, group) {
+		return false
+	}
+	if HalfOpenInflightFull(ch.Id, cfg.HalfOpenMaxInflight) {
+		return false
+	}
+	return true
+}
+
+func halfOpenBandTarget(band []*model.Channel, caps model.RouteCaps) (int64, bool) {
+	if caps.HasBandPriority {
+		return caps.BandPriority, true
+	}
+	for _, ch := range band {
+		if ch == nil {
 			continue
 		}
+		return ch.GetPriority(), true
+	}
+	return 0, false
+}
+
+func halfOpenFromReady(band []*model.Channel, modelName, group string, caps model.RouteCaps, cfg Config) *model.Channel {
+	want, ok := halfOpenBandTarget(band, caps)
+	if !ok {
+		return nil
+	}
+	for _, h := range ListHalfOpenReady() {
 		if h.Model != "" && h.Model != "*" && h.Model != modelName {
 			continue
 		}
-		ch, err := model.CacheGetChannel(h.ChannelID)
-		if err != nil || ch == nil {
-			ch2, err2 := model.GetChannelById(h.ChannelID, true)
-			if err2 != nil {
-				continue
-			}
-			ch = ch2
-		}
-		// must belong to same priority band as current channels
-		if n > 0 && ch.GetPriority() != channels[0].GetPriority() {
+		ch, ok := model.CacheGetChannelMemory(h.ChannelID)
+		if !ok {
 			continue
 		}
-		if !channelServesModel(ch, modelName) {
+		key, matched := channelBandKey(ch, caps)
+		if !matched || key != want {
 			continue
 		}
-		if !channelInGroup(ch, group) {
+		if ok, _ := model.ChannelSatisfiesFilters(ch, modelName, caps.Filters); !ok {
 			continue
 		}
-		if HalfOpenInflightFull(h.ChannelID, cfg.HalfOpenMaxInflight) {
+		if halfOpenAllowed(ch, modelName, group, caps, cfg) {
+			return ch
+		}
+	}
+	return nil
+}
+
+func rpmExceededCached(channelID int) bool {
+	cap, ok := model.CachedCapability(channelID)
+	if !ok || cap.RPMHint <= 0 {
+		return false
+	}
+	return rpmCount(channelID) >= cap.RPMHint
+}
+
+func capabilityRejectCached(channelID int, caps model.RouteCaps) string {
+	cap, ok := model.CachedCapability(channelID)
+	if !ok {
+		return ""
+	}
+	if caps.NeedTools && cap.SupportsTools != nil && !*cap.SupportsTools {
+		return "capability:tools"
+	}
+	if caps.NeedVision && cap.SupportsVision != nil && !*cap.SupportsVision {
+		return "capability:vision"
+	}
+	if caps.NeedJSON && cap.SupportsJSONSchema != nil && !*cap.SupportsJSONSchema {
+		return "capability:json_schema"
+	}
+	if caps.NeedContext > 0 && cap.MaxContext > 0 && caps.NeedContext > cap.MaxContext {
+		return "capability:max_context"
+	}
+	return ""
+}
+
+func officialWeights(channels []*model.Channel) []int {
+	out := make([]int, len(channels))
+	for i, ch := range channels {
+		if ch != nil {
+			out[i] = ch.GetWeight()
+		}
+	}
+	return out
+}
+
+func candViews(channels []*model.Channel, weights []int, note string) []model.RouteCandView {
+	out := make([]model.RouteCandView, 0, len(channels))
+	for i, ch := range channels {
+		if ch == nil {
 			continue
 		}
-		share := cfg.HalfOpenShareStage[0]
-		if h.Stage == "half_10" {
-			share = cfg.HalfOpenShareStage[1]
+		w := 0
+		if i < len(weights) {
+			w = weights[i]
 		}
-		halfCands = append(halfCands, cand{
-			ch: ch, rw: 1, score: 70, state: "halfopen", half: true, stage: h.Stage,
-			note: "halfopen:" + h.Stage + ":" + common.Interface2String(share),
-		})
+		out = append(out, model.RouteCandView{ID: ch.Id, Weight: w, Note: note})
 	}
+	return out
+}
 
-	// H2: if no normal/degraded/locked, only half-open → skip band (return empty → caller tries next priority)
-	if len(normal) == 0 && len(floors) == 0 && len(halfCands) > 0 {
-		return nil, nil
+func argmaxID(channels []*model.Channel, weights []int) int {
+	bestID := 0
+	best := -1
+	for i, ch := range channels {
+		if ch == nil {
+			continue
+		}
+		w := 0
+		if i < len(weights) {
+			w = weights[i]
+		}
+		if w > best {
+			best = w
+			bestID = ch.Id
+		}
 	}
-	if len(normal) == 0 && len(floors) == 0 && len(halfCands) == 0 {
-		return channels, official
-	}
+	return bestID
+}
 
-	// build weight list
-	var out []*model.Channel
-	var weights []int
+func scoresStale(scores map[string]*ScoreEntry, cfg Config) bool {
+	if len(scores) == 0 || cfg.ScoreStaleSec <= 0 {
+		return false
+	}
+	cutoff := time.Now().Add(-time.Duration(cfg.ScoreStaleSec) * time.Second)
+	for _, s := range scores {
+		if s != nil && s.UpdatedAt.After(cutoff) {
+			return false
+		}
+	}
+	return true
+}
 
-	// compute normal weight sum
-	sumRW := 0
-	for _, c := range normal {
-		if c.rw < 1 {
-			c.rw = 1
-		}
-		sumRW += c.rw
+func routingMode() string {
+	cfg := GetConfig()
+	switch cfg.Mode {
+	case "off", "observe", "active":
+		return cfg.Mode
 	}
-	if sumRW == 0 && len(normal) > 0 {
-		sumRW = len(normal) * 100
-		for i := range normal {
-			normal[i].rw = 100
-		}
+	if cfg.Enabled {
+		return "active"
 	}
-
-	// floor share
-	floorN := 0
-	for _, c := range floors {
-		if c.state != "fallback_only" {
-			floorN++
-		}
-	}
-	floorShareEach := 0.0
-	if floorN > 0 {
-		totalFloor := cfg.FloorShare * float64(floorN)
-		if totalFloor > cfg.FloorTotalMax {
-			floorShareEach = cfg.FloorTotalMax / float64(floorN)
-		} else {
-			floorShareEach = cfg.FloorShare
-		}
-		// decay: FloorDecay remaining cycles → fraction FloorDecay/FloorDecayCycles
-		// applied per-cand below
-	}
-
-	for _, c := range normal {
-		out = append(out, c.ch)
-		weights = append(weights, c.rw)
-	}
-	// redistribute: treat floor as share of total
-	// effective: normal keeps sumRW representing (1 - floorTotal); floor get share
-	floorTotal := floorShareEach * float64(floorN)
-	if floorTotal > 0 && sumRW > 0 {
-		// scale normal to (1-floorTotal)
-		scale := 1.0 - floorTotal
-		if scale < 0.1 {
-			scale = 0.1
-		}
-		for i := range weights {
-			weights[i] = int(math.Max(1, math.Round(float64(weights[i])*scale)))
-		}
-		base := float64(sumRW)
-		for _, c := range floors {
-			if c.state == "fallback_only" {
-				continue
-			}
-			frac := floorShareEach
-			if se := GetScore(c.ch.Id, modelName); se != nil && se.FloorDecay > 0 && cfg.FloorDecayCycles > 0 {
-				frac = floorShareEach * float64(se.FloorDecay) / float64(cfg.FloorDecayCycles)
-			}
-			w := int(math.Max(1, math.Round(base*frac)))
-			out = append(out, c.ch)
-			weights = append(weights, w)
-		}
-	} else {
-		for _, c := range floors {
-			if c.state == "fallback_only" {
-				continue
-			}
-			out = append(out, c.ch)
-			weights = append(weights, int(math.Max(1, float64(c.rw))))
-		}
-	}
-
-	// half-open share relative to normal sum
-	normSum := 0
-	for _, w := range weights {
-		normSum += w
-	}
-	for _, c := range halfCands {
-		share := cfg.HalfOpenShareStage[0]
-		if c.stage == "half_10" {
-			share = cfg.HalfOpenShareStage[1]
-		}
-		w := 1
-		if normSum > 0 {
-			w = int(math.Max(1, math.Round(float64(normSum)*share/(1-share))))
-		}
-		out = append(out, c.ch)
-		weights = append(weights, w)
-	}
-
-	// if only fallback_only left
-	if len(out) == 0 {
-		for _, c := range floors {
-			if c.state == "fallback_only" {
-				out = append(out, c.ch)
-				weights = append(weights, 100)
-			}
-		}
-	}
-
-	// ε-greedy exploration (default off)
-	if cfg.EpsilonGreedyEnabled && len(out) > 1 && rand.Float64() < cfg.Epsilon {
-		// uniform
-		for i := range weights {
-			weights[i] = 100
-		}
-	}
-
-	_ = excluded // reserved for decision log attachment by caller
-	return out, weights
+	return "off"
 }
 
 func channelServesModel(ch *model.Channel, modelName string) bool {
@@ -320,7 +392,6 @@ func splitCSV(s string) []string {
 	for i := 0; i <= len(s); i++ {
 		if i == len(s) || s[i] == ',' {
 			part := s[start:i]
-			// trim spaces
 			for len(part) > 0 && part[0] == ' ' {
 				part = part[1:]
 			}
@@ -362,4 +433,57 @@ func PickWeighted(weights []int) int {
 		}
 	}
 	return len(weights) - 1
+}
+
+func decorateBandWeights(channels []*model.Channel, weights []int, modelName string, caps model.RouteCaps) []int {
+	if len(channels) == 0 || len(weights) != len(channels) {
+		return weights
+	}
+	out := append([]int(nil), weights...)
+	out = applyFloorShare(channels, out, modelName)
+	return out
+}
+
+func applyFloorShare(channels []*model.Channel, weights []int, modelName string) []int {
+	cfg := GetConfig()
+	if cfg.FloorShare <= 0 {
+		return weights
+	}
+	var idx []int
+	for i, ch := range channels {
+		if ch == nil {
+			continue
+		}
+		se := GetScore(ch.Id, modelName)
+		if se != nil && se.FloorDecay > 0 {
+			idx = append(idx, i)
+		}
+	}
+	if len(idx) == 0 {
+		return weights
+	}
+	per := cfg.FloorShare
+	total := per * float64(len(idx))
+	if cfg.FloorTotalMax > 0 && total > cfg.FloorTotalMax {
+		per = cfg.FloorTotalMax / float64(len(idx))
+	}
+	sum := 0
+	for _, w := range weights {
+		if w > 0 {
+			sum += w
+		}
+	}
+	if sum < 1 {
+		sum = 1
+	}
+	minW := int(per * float64(sum))
+	if minW < 1 {
+		minW = 1
+	}
+	for _, i := range idx {
+		if weights[i] < minW {
+			weights[i] = minW
+		}
+	}
+	return weights
 }

@@ -29,7 +29,7 @@ import { AdtyRechargePanel } from './components/adty-recharge-panel'
 import { AffiliateRewardsCard } from './components/affiliate-rewards-card'
 import { TransferDialog } from './components/dialogs/transfer-dialog'
 import { WalletStatsCard } from './components/wallet-stats-card'
-import { useAdtyTopup, useAffiliate, useRedemption } from './hooks'
+import { useAdtyTopup, useAffiliate } from './hooks'
 import type { UserWalletData } from './types'
 
 export function Wallet() {
@@ -38,7 +38,6 @@ export function Wallet() {
   const [userLoading, setUserLoading] = useState(true)
   const [orderRefresh, setOrderRefresh] = useState(0)
   const [transferDialogOpen, setTransferDialogOpen] = useState(false)
-  const [redemptionCode, setRedemptionCode] = useState('')
   const { status } = useStatus()
   const {
     tiers: adtyTiers,
@@ -57,7 +56,6 @@ export function Wallet() {
     transferQuota,
     transferring,
   } = useAffiliate()
-  const { redeeming, redeemCode } = useRedemption()
 
   const fetchUser = useCallback(async () => {
     try {
@@ -77,17 +75,6 @@ export function Wallet() {
   useEffect(() => {
     fetchUser()
   }, [fetchUser])
-
-  const handleRedeem = async () => {
-    if (!redemptionCode) return
-
-    const success = await redeemCode(redemptionCode)
-    if (success) {
-      setRedemptionCode('')
-      await fetchUser()
-      await refetchAdtyTopup()
-    }
-  }
 
   const handleTransfer = async (amount: number) => {
     const success = await transferQuota(amount)
@@ -119,11 +106,6 @@ export function Wallet() {
                     firstEligible={firstEligible}
                     loading={adtyLoading}
                     price={(status?.price as number) || 1}
-                    redemptionCode={redemptionCode}
-                    onRedemptionCodeChange={setRedemptionCode}
-                    onRedeem={handleRedeem}
-                    redeeming={redeeming}
-                    redemptionEnabled
                     onUsdtPaid={() => {
                       void fetchUser()
                       void refetchAdtyTopup()

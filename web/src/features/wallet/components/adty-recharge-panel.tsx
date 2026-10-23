@@ -19,7 +19,6 @@ For commercial licensing, please contact support@quantumnous.com
 import { Link } from '@tanstack/react-router'
 import {
   Check,
-  Gift,
   Loader2,
   Receipt,
   WalletCards,
@@ -31,8 +30,6 @@ import { toast } from 'sonner'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { IconBadge } from '@/components/ui/icon-badge'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { TitledCard } from '@/components/ui/titled-card'
@@ -69,10 +66,10 @@ export interface AdtyRechargePanelProps {
   loading?: boolean
   /** status.price — local currency per 1 USD credit */
   price?: number
-  redemptionCode: string
-  onRedemptionCodeChange: (code: string) => void
-  onRedeem: () => void
-  redeeming: boolean
+  redemptionCode?: string
+  onRedemptionCodeChange?: (code: string) => void
+  onRedeem?: () => void
+  redeeming?: boolean
   redemptionEnabled?: boolean
   /** Refresh balance / first-topup after USDT paid */
   onUsdtPaid?: () => void
@@ -104,11 +101,6 @@ export function AdtyRechargePanel({
   firstTopupBonusRate,
   loading,
   price = 1,
-  redemptionCode,
-  onRedemptionCodeChange,
-  onRedeem,
-  redeeming,
-  redemptionEnabled = true,
   onUsdtPaid,
   onUsdtTerminal,
 }: AdtyRechargePanelProps) {
@@ -601,40 +593,6 @@ export function AdtyRechargePanel({
             )}
           </p>
         </TitledCard>
-
-        {redemptionEnabled ? (
-          <TitledCard
-            title={t('Redemption code')}
-            icon={
-              <IconBadge tone='warning' size='xs'>
-                <Gift />
-              </IconBadge>
-            }
-            disableHoverEffect
-            contentClassName='space-y-2'
-          >
-            <div className='grid grid-cols-[minmax(0,1fr)_auto] gap-2'>
-              <Input
-                value={redemptionCode}
-                onChange={(e) => onRedemptionCodeChange(e.target.value)}
-                placeholder={t('Enter your redemption code')}
-                className='h-9 min-w-0'
-              />
-              <Button
-                onClick={onRedeem}
-                disabled={redeeming}
-                variant='outline'
-                className='h-9 px-4'
-              >
-                {redeeming && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
-                {t('Redeem')}
-              </Button>
-            </div>
-            <p className='text-muted-foreground text-[11.5px]'>
-              {t('Redemption face value is credited as bonus')}
-            </p>
-          </TitledCard>
-        ) : null}
       </div>
 
       <AdtyUsdtCashierDialog

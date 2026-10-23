@@ -11,13 +11,11 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/i18n"
-	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/service/authz"
-	"github.com/QuantumNous/new-api/setting"
 
 	"github.com/QuantumNous/new-api/constant"
 
@@ -218,6 +216,19 @@ func writeLoginResponse(c *gin.Context, user *model.User, bundle *service.AuthBu
 	})
 }
 
+// lookupSignupAffCode is the inviter lookup used by password signup. Tests replace it
+// to inject a database failure without dropping the users table, which the
+// existence check also needs.
+var lookupSignupAffCode = model.GetUserIdByAffCode
+
+// assertSignupInviteCycle checks the inviter chain. Tests replace it to inject
+// a database failure after a non-zero inviter has already been resolved.
+var assertSignupInviteCycle = model.AssertNoInviteCycle
+
+// reloadAuthzPolicy refreshes the process policy snapshot. Tests replace it so
+// a demote can fail after the transaction commits without depending on enforcer state.
+var reloadAuthzPolicy = authz.ReloadPolicy
+
 func Register(c *gin.Context) {
 	if !common.RegisterEnabled {
 		common.ApiErrorT(c, "New user registration has been disabled by administrator")
@@ -275,8 +286,18 @@ func Register(c *gin.Context) {
 		common.ApiErrorT(c, "Username already exists or has been deleted")
 		return
 	}
-	affCode := user.AffCode // this code is the inviter's code, not the user's own code
-	inviterId, _ := model.GetUserIdByAffCode(affCode)
+	affCode := strings.TrimSpace(user.AffCode) // inviter's code, not the user's own code
+	var inviterId int
+	if affCode != "" {
+		id, err := lookupSignupAffCode(affCode)
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			writeUserMutationError(c, err)
+			return
+		}
+		if err == nil {
+			inviterId = id
+		}
+	}
 	cleanUser := model.User{
 		Username:    user.Username,
 		Password:    user.Password,
@@ -290,18 +311,18 @@ func Register(c *gin.Context) {
 	cleanUser.RegisterIp = c.ClientIP()
 	cleanUser.RegisterDeviceFp = c.GetHeader("X-Device-FP")
 	if inviterId != 0 {
-		if err := model.AssertNoInviteCycle(0, inviterId); err != nil {
-			// new user id unknown yet; still reject pathological inviter self-loops in chain
-			common.ApiErrorT(c, "Invalid invitation code")
+		if err := assertSignupInviteCycle(0, inviterId); err != nil {
+			// A real cycle is an invalid code. Any other error is a database failure and must not be labeled as a bad code.
+			if errors.Is(err, model.ErrAffInviteCycle) {
+				common.ApiErrorT(c, "Invalid invitation code")
+				return
+			}
+			writeUserMutationError(c, err)
 			return
 		}
 	}
 	if err := cleanUser.Insert(inviterId); err != nil {
-		if errors.Is(err, model.ErrEmailAlreadyTaken) {
-			common.ApiErrorT(c, "Email address is already in use")
-			return
-		}
-		common.ApiError(c, err)
+		writeUserInsertError(c, err)
 		return
 	}
 
@@ -332,9 +353,6 @@ func Register(c *gin.Context) {
 			ModelLimitsEnabled: false,
 		}
 		token.AllowUserQuotaQuery = true
-		if setting.DefaultUseAutoGroup {
-			token.Group = "auto"
-		}
 		if err := token.Insert(); err != nil {
 			common.ApiErrorT(c, "Failed to create default token")
 			return
@@ -655,20 +673,21 @@ func GetUserModels(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	groups := service.GetUserUsableGroups(user.Group)
+	groups := service.GetUserAllowedGroups(user.Id, user.Group)
 	group := c.Query("group")
 	var groupsToQuery []string
 	switch {
+	case group == "auto":
+		groupsToQuery = []string{}
 	case group == "":
 		for g := range groups {
+			if g == "auto" {
+				continue
+			}
 			groupsToQuery = append(groupsToQuery, g)
 		}
-	case group == "auto":
-		if _, ok := groups[group]; ok {
-			groupsToQuery = service.GetUserAutoGroup(user.Group)
-		}
 	default:
-		if _, ok := groups[group]; ok {
+		if _, ok := groups[group]; ok && group != "auto" {
 			groupsToQuery = []string{group}
 		}
 	}
@@ -677,6 +696,31 @@ func GetUserModels(c *gin.Context) {
 		"message": "",
 		"data":    service.GetGroupsEnabledModels(groupsToQuery),
 	})
+}
+
+func writeUserInsertError(c *gin.Context, err error) {
+	if errors.Is(err, model.ErrEmailAlreadyTaken) {
+		common.ApiErrorT(c, "Email address is already in use")
+		return
+	}
+	if errors.Is(err, model.ErrNoPublicIdentityGroup) {
+		common.ApiErrorT(c, "No public billing group is available for new users")
+		return
+	}
+	writeUserMutationError(c, err)
+}
+
+func writeUserMutationError(c *gin.Context, err error) {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		common.ApiError(c, err)
+		return
+	}
+	var message *common.Message
+	if errors.As(err, &message) {
+		common.ApiError(c, err)
+		return
+	}
+	adtyInternalError(c, err)
 }
 
 func UpdateUser(c *gin.Context) {
@@ -697,7 +741,7 @@ func UpdateUser(c *gin.Context) {
 	}
 	originUser, err := model.GetUserById(updatedUser.Id, false)
 	if err != nil {
-		common.ApiError(c, err)
+		writeUserMutationError(c, err)
 		return
 	}
 	if updatedUser.Role != common.RoleGuestUser && updatedUser.Role != originUser.Role {
@@ -726,6 +770,15 @@ func UpdateUser(c *gin.Context) {
 		auditParams["password_reset"] = updatePassword
 		auditParams["admin_permissions_updated"] = updatedUser.AdminPermissions != nil
 	}
+	updatedUser.Group = strings.TrimSpace(updatedUser.Group)
+	if !service.IdentityGroupChangeAllowed(originUser.Group, updatedUser.Group) {
+		key := "The identity group must be a public billing group"
+		if updatedUser.Group == "auto" {
+			key = "Auto group is no longer available"
+		}
+		common.ApiErrorStatus(c, http.StatusBadRequest, common.NewMessage(key))
+		return
+	}
 	authzTouched := false
 	if err := model.DB.Transaction(func(tx *gorm.DB) error {
 		if err := updatedUser.EditWithTx(tx, updatePassword); err != nil {
@@ -735,23 +788,23 @@ func UpdateUser(c *gin.Context) {
 		authzTouched = touched
 		return err
 	}); err != nil {
-		common.ApiError(c, err)
+		writeUserMutationError(c, err)
 		return
 	}
 	if authzTouched {
 		if err := authz.ReloadPolicy(); err != nil {
-			common.ApiError(c, err)
+			writeUserMutationError(c, err)
 			return
 		}
 	}
 	if updatedUser.AuthVersion > originUser.AuthVersion {
 		if _, err := model.RevokeAllUserSessions(updatedUser.Id, "admin_user_update"); err != nil {
-			common.ApiError(c, err)
+			writeUserMutationError(c, err)
 			return
 		}
 	}
 	if err := model.PublishUserAuthCache(updatedUser.Id); err != nil {
-		common.ApiError(c, err)
+		writeUserMutationError(c, err)
 		return
 	}
 	recordManageAuditFor(c, updatedUser.Id, "user.update", auditParams)
@@ -1075,12 +1128,12 @@ func CreateUser(c *gin.Context) {
 		authzTouched = touched
 		return err
 	}); err != nil {
-		common.ApiError(c, err)
+		writeUserInsertError(c, err)
 		return
 	}
 	if authzTouched {
 		if err := authz.ReloadPolicy(); err != nil {
-			common.ApiError(c, err)
+			writeUserMutationError(c, err)
 			return
 		}
 	}
@@ -1165,7 +1218,7 @@ func ManageUser(c *gin.Context) {
 		}
 		revokedAccessTokens, err := user.Delete()
 		if err != nil {
-			common.ApiError(c, err)
+			writeUserMutationError(c, err)
 			return
 		}
 		// 删除用户后，强制清理 Redis 中所有该用户令牌的缓存，
@@ -1221,24 +1274,24 @@ func ManageUser(c *gin.Context) {
 			}
 			return authz.ClearUserAuthorizationInTx(tx, user.Id)
 		}); err != nil {
-			common.ApiError(c, err)
+			writeUserMutationError(c, err)
 			return
 		}
-		if err := authz.ReloadPolicy(); err != nil {
-			common.ApiError(c, err)
+		if err := reloadAuthzPolicy(); err != nil {
+			writeUserMutationError(c, err)
 			return
 		}
 		if err := model.PublishUserAuthCache(user.Id); err != nil {
-			common.ApiError(c, err)
+			writeUserMutationError(c, err)
 			return
 		}
 		if _, err := model.RevokeAllUserSessions(user.Id, "admin_demote"); err != nil {
-			common.ApiError(c, err)
+			writeUserMutationError(c, err)
 			return
 		}
 	} else {
 		if err := user.Update(false); err != nil {
-			common.ApiError(c, err)
+			writeUserMutationError(c, err)
 			return
 		}
 	}
@@ -1313,36 +1366,7 @@ func getTopUpLock(userID int) *topUpTryLock {
 }
 
 func TopUp(c *gin.Context) {
-	id := c.GetInt("id")
-	lock := getTopUpLock(id)
-	if !lock.TryLock() {
-		common.ApiErrorT(c, "Top-up is processing, please try again later")
-		return
-	}
-	defer lock.Unlock()
-	req := topUpRequest{}
-	err := c.ShouldBindJSON(&req)
-	if err != nil {
-		common.ApiError(c, err)
-		return
-	}
-	quota, err := model.Redeem(req.Key, id)
-	if err != nil {
-		// 不向用户暴露兑换失败的细分原因，避免攻击者根据错误类型判断兑换码状态。
-		// 审查 P2-8 例外：已被使用的码明确提示（不泄露额度/归属，且码已作废无枚举价值）。
-		if errors.Is(err, model.ErrRedemptionUsed) {
-			common.ApiErrorT(c, "This redemption code has already been used")
-		} else {
-			common.ApiErrorT(c, "Redemption failed, please try again later")
-		}
-		logger.LogError(c, common.LogText("failed to redeem key %s for user %d: %s", req.Key, id, err.Error()))
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"message": "",
-		"data":    quota,
-	})
+	common.ApiErrorT(c, "Redemption codes are no longer available")
 }
 
 type UpdateUserSettingRequest struct {

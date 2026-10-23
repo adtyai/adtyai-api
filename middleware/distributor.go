@@ -20,6 +20,7 @@ import (
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/service/smartrouting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
 	"github.com/gin-gonic/gin"
@@ -34,6 +35,7 @@ type ModelRequest struct {
 func Distribute() func(c *gin.Context) {
 	return func(c *gin.Context) {
 		var channel *model.Channel
+		defer smartrouting.ReleaseHalfOpenReservation(c)
 		defer func() {
 			if c.Writer.Status() >= 400 {
 				service.RecordRequestPolicyTermination(c, types.NewErrorWithStatusCode(errors.New("request rejected"), types.ErrorCodeInvalidRequest, c.Writer.Status(), types.ErrOptionWithSkipRetry()))
@@ -80,7 +82,7 @@ func Distribute() func(c *gin.Context) {
 				}
 				// check path is /pg/chat/completions
 				if strings.HasPrefix(c.Request.URL.Path, "/pg/chat/completions") {
-					usingGroup := common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
+					userGroup := common.GetContextKeyString(c, constant.ContextKeyUserGroup)
 					playgroundRequest := &dto.PlayGroundRequest{}
 					err = common.UnmarshalBodyReusable(c, playgroundRequest)
 					if err != nil {
@@ -88,18 +90,30 @@ func Distribute() func(c *gin.Context) {
 						return
 					}
 					if playgroundRequest.Group != "" {
-						if !service.GroupInUserUsableGroups(usingGroup, playgroundRequest.Group) && playgroundRequest.Group != usingGroup {
+						requested := playgroundRequest.Group
+						if requested == "auto" {
+							requested = userGroup
+							if requested == "auto" {
+								requested = ""
+							}
+						}
+						if !service.UserMayUseGroup(c.GetInt("id"), userGroup, requested) {
 							abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgDistributorGroupAccessDenied))
 							return
 						}
-						common.SetContextKey(c, constant.ContextKeyUsingGroup, playgroundRequest.Group)
+						common.SetContextKey(c, constant.ContextKeyUsingGroup, requested)
 					}
 				}
 			}
 		}
 		if pinned || shouldSelectChannel {
 			usingGroup := common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
+			if usingGroup != "" && usingGroup != "auto" && !ratio_setting.ContainsGroupRatio(usingGroup) {
+				abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgAuthTokenGroupDeprecated, map[string]any{"Group": usingGroup}))
+				return
+			}
 			var selectErr *service.ChannelSelectError
+			smartrouting.BindRouteCaps(c, false, 0, 0)
 			channel, _, selectErr = service.SelectChannelForRequest(c, modelRequest.Model, &service.RetryParam{
 				Ctx:         c,
 				ModelName:   modelRequest.Model,

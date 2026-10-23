@@ -144,6 +144,50 @@ func TestModelMemoryRateLimitRejectionsReturnOpenAIError(t *testing.T) {
 
 // A group with its own limit counts each user's requests on its own; groups
 // without one keep sharing the user's global limit.
+func TestModelRateLimitFoldsAutoTokenOntoIdentityGroup(t *testing.T) {
+	require.NoError(t, i18n.Init())
+	previousEnabled, previousMinutes := setting.ModelRequestRateLimitEnabled, setting.ModelRequestRateLimitDurationMinutes
+	previousTotal, previousSuccess := setting.ModelRequestRateLimitCount, setting.ModelRequestRateLimitSuccessCount
+	previousGroups, previousRedisEnabled := setting.ModelRequestRateLimitGroup, common.RedisEnabled
+	t.Cleanup(func() {
+		setting.ModelRequestRateLimitEnabled, setting.ModelRequestRateLimitDurationMinutes = previousEnabled, previousMinutes
+		setting.ModelRequestRateLimitCount, setting.ModelRequestRateLimitSuccessCount = previousTotal, previousSuccess
+		setting.ModelRequestRateLimitGroup, common.RedisEnabled = previousGroups, previousRedisEnabled
+	})
+	setting.ModelRequestRateLimitEnabled = true
+	setting.ModelRequestRateLimitDurationMinutes = 1
+	setting.ModelRequestRateLimitCount = 0
+	setting.ModelRequestRateLimitSuccessCount = 100
+	setting.ModelRequestRateLimitGroup = map[string][2]int{"auto": {0, 1}}
+	common.RedisEnabled = false
+
+	userID := 7200000 + int(modelRateLimitTestUsers.Add(1))
+	router := gin.New()
+	router.GET("/", func(c *gin.Context) {
+		c.Set("id", userID)
+		common.SetContextKey(c, constant.ContextKeyTokenGroup, "auto")
+		common.SetContextKey(c, constant.ContextKeyUsingGroup, "default")
+		common.SetContextKey(c, constant.ContextKeyUserGroup, "default")
+	}, ModelRequestRateLimit(), func(c *gin.Context) {
+		c.Status(http.StatusOK)
+	})
+	assert.Equal(t, http.StatusOK, performRateLimitRequest(router, "/", "127.0.0.1:1000").Code)
+	assert.Equal(t, http.StatusOK, performRateLimitRequest(router, "/", "127.0.0.1:1000").Code)
+
+	autoIdentity := 7200000 + int(modelRateLimitTestUsers.Add(1))
+	autoRouter := gin.New()
+	autoRouter.GET("/", func(c *gin.Context) {
+		c.Set("id", autoIdentity)
+		common.SetContextKey(c, constant.ContextKeyTokenGroup, "auto")
+		common.SetContextKey(c, constant.ContextKeyUsingGroup, "auto")
+		common.SetContextKey(c, constant.ContextKeyUserGroup, "auto")
+	}, ModelRequestRateLimit(), func(c *gin.Context) {
+		c.Status(http.StatusOK)
+	})
+	assert.Equal(t, http.StatusOK, performRateLimitRequest(autoRouter, "/", "127.0.0.1:1000").Code)
+	assert.Equal(t, http.StatusOK, performRateLimitRequest(autoRouter, "/", "127.0.0.1:1000").Code)
+}
+
 func TestModelRateLimitCountsConfiguredGroupsSeparately(t *testing.T) {
 	require.NoError(t, i18n.Init())
 	previousEnabled, previousMinutes := setting.ModelRequestRateLimitEnabled, setting.ModelRequestRateLimitDurationMinutes

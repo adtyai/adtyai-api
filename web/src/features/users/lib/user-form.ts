@@ -29,6 +29,26 @@ import { ROLE } from '@/lib/roles'
 import { DEFAULT_GROUP } from '../constants'
 import type { UserFormData, User } from '../types'
 
+/** Public billing groups, plus the current identity when it is no longer selectable. */
+export function identityGroupChoices(
+  billingGroups: string[],
+  usableGroups: Record<string, unknown>,
+  current: string
+): string[] {
+  const choices: string[] = []
+  const seen = new Set<string>()
+  for (const code of billingGroups) {
+    if (!code || code === 'auto') continue
+    if (!Object.prototype.hasOwnProperty.call(usableGroups, code)) continue
+    choices.push(code)
+    seen.add(code)
+  }
+  if (current && !seen.has(current)) {
+    choices.push(current)
+  }
+  return choices
+}
+
 // ============================================================================
 // Form Schema
 // ============================================================================

@@ -17,13 +17,10 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Download, Upload } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
-import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -33,8 +30,6 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Switch } from '@/components/ui/switch'
 import {
   Table,
   TableBody,
@@ -46,305 +41,98 @@ import {
 import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
 
+import { previewWeightScheme, rollbackToOfficial, simulateRouting } from '../api'
 import {
-  createWeightScheme,
-  exportWeightScheme,
-  importWeightScheme,
-  previewWeightScheme,
-  rollbackToOfficial,
-  rollbackWeightScheme,
-  simulateRouting,
-} from '../api'
-import { EmptyHint } from '../components/empty-hint'
-import {
-  DEFAULT_SCORE_WEIGHTS,
-  WEIGHT_DIM_KEYS,
-  WEIGHT_DIM_LABEL_KEYS,
-} from '../constants'
-import {
-  ROUTING_CONFIG_QUERY_KEY,
   usePutRoutingConfig,
   useRoutingConfig,
-  useWeightHistory,
   useWeightSchemes,
-  WEIGHT_HISTORY_QUERY_KEY,
-  WEIGHT_SCHEMES_QUERY_KEY,
 } from '../hooks/use-routing-config'
 import { routingErrorText } from '../lib/error-text'
-import { previewIntentFor, validWeights } from '../lib/preview-intent'
-import { fromBackendWeights } from '../lib/weight-map'
-import type {
-  ScoreWeights,
-  SimulateResult,
-  WeightHistoryEntry,
-  WeightPreview,
-} from '../types'
+import { previewIntentFor } from '../lib/preview-intent'
+import type { SimulateResult } from '../types'
+
+const MODES = [
+  {
+    id: 'off',
+    label: 'Routing mode: off',
+    hint: 'Off. Selection uses official priority and weight.',
+  },
+  {
+    id: 'observe',
+    label: 'Routing mode: observe',
+    hint: 'Observe. Selection stays official. The log records what smart routing would have picked.',
+  },
+  {
+    id: 'active',
+    label: 'Routing mode: active',
+    hint: 'Active. Smart weights apply only inside the current priority band.',
+  },
+] as const
+
+const PREFERENCES = [
+  { name: 'balanced_default', label: 'Balanced preference' },
+  { name: 'prefer_save', label: 'Save-money preference' },
+  { name: 'prefer_fast', label: 'Faster preference' },
+  { name: 'prefer_stable', label: 'More-stable preference' },
+] as const
 
 export function StrategyPage() {
   const { t } = useTranslation()
   const isRoot = useAuthStore((s) => s.auth.user?.role === ROLE.SUPER_ADMIN)
   const configQuery = useRoutingConfig()
   const schemesQuery = useWeightSchemes()
-  const historyQuery = useWeightHistory()
   const putConfig = usePutRoutingConfig()
-  const qc = useQueryClient()
-
+  const [model, setModel] = useState('')
+  const [preview, setPreview] = useState<SimulateResult | null>(null)
   const config = configQuery.data
-  const [draftWeights, setDraftWeights] = useState<ScoreWeights | null>(null)
-  const weights = draftWeights ?? config?.weights ?? DEFAULT_SCORE_WEIGHTS
+  const ready = Boolean(config) && !configQuery.isError
 
-  const [preview, setPreview] = useState<WeightPreview | null>(null)
-  const [previewOpen, setPreviewOpen] = useState(false)
-  const [, setPendingSchemeId] = useState<string | null>(null)
-  const [pendingSchemeName, setPendingSchemeName] = useState<string | null>(
-    null
-  )
-  const [pendingRollbackId, setPendingRollbackId] = useState<string | null>(
-    null
-  )
-  const [pendingEnable, setPendingEnable] = useState<boolean | null>(null)
-  const [pendingSwitch, setPendingSwitch] = useState<{
-    field: string
-    value: boolean
-    label: string
-  } | null>(null)
-  const [schemeName, setSchemeName] = useState('')
-  const [simulateModel, setSimulateModel] = useState('')
-  const [simulateResult, setSimulateResult] = useState<SimulateResult | null>(
-    null
-  )
-
-  const weightSum = useMemo(
-    () =>
-      WEIGHT_DIM_KEYS.reduce((acc, k) => acc + (Number(weights[k]) || 0), 0),
-    [weights]
-  )
-
-  const saveSchemeMut = useMutation({
-    mutationFn: async () => {
-      if (!validWeights(weights)) {
-        return {
-          success: false,
-          message: t('Weights must be non-negative and sum to more than 0'),
-        }
-      }
-      return createWeightScheme({
-        name: schemeName.trim() || t('Untitled scheme'),
-        weights,
-      })
-    },
-    onSuccess: (res) => {
-      if (!res.success) {
-        toast.error(routingErrorText(t, res, t('Save failed')))
-        return
-      }
-      toast.success(t('Scheme saved'))
-      setSchemeName('')
-      void qc.invalidateQueries({ queryKey: WEIGHT_SCHEMES_QUERY_KEY })
-    },
-  })
-
-  const clearPendingPreview = () => {
-    setPendingSchemeId(null)
-    setPendingSchemeName(null)
-    setPendingRollbackId(null)
-  }
-
-  const applyWeights = async (opts?: {
-    schemeId?: string
-    schemeName?: string
-    nextWeights?: ScoreWeights
-    kind?: string
-  }) => {
-    if (!isRoot) {
-      toast.error(t('Only root can change routing strategy'))
-      return
-    }
-    const next = opts?.nextWeights ?? weights
-    if (!validWeights(next)) {
-      toast.error(t('Weights must be non-negative and sum to more than 0'))
-      return
-    }
-    if (opts?.nextWeights) {
-      setDraftWeights({ ...opts.nextWeights })
-    }
-    setPendingRollbackId(null)
-    setPendingSchemeId(opts?.schemeId ?? null)
-    setPendingSchemeName(opts?.schemeName ?? null)
-    // P1-3: the preview intent must fingerprint-match what PUT /config will
-    // compute server-side (kind, scheme_id=0, scheme_name=new active scheme).
-    const { kind, scheme_name: targetScheme } = previewIntentFor({
-      activeScheme: config?.active_weight_scheme,
-      currentWeights: config?.weights,
-      nextWeights: next,
-      schemeName: opts?.schemeName,
-    })
-    const result = await previewWeightScheme({
-      weights: next,
-      scheme_name: targetScheme,
-      kind,
-    })
-    setPreview(result)
-    setPreviewOpen(true)
-  }
-
-  const tokenOk = Boolean(preview?.preview_token)
-  // P2-2: an empty preview (no scores yet) is still applicable.
-  const previewReady = tokenOk
-  const previewEmpty = Boolean(preview && preview.items.length === 0)
-
-  const confirmApplyWeights = async () => {
-    if (!previewReady || !preview?.preview_token) {
-      toast.error(t('Preview required before apply'))
-      return
-    }
-    const token = preview.preview_token
-
-    if (pendingRollbackId) {
-      const res = await rollbackWeightScheme({
-        snapshot_id: pendingRollbackId,
-        preview_token: token,
-      })
-      setPreviewOpen(false)
-      clearPendingPreview()
-      if (!res.success) {
-        toast.error(routingErrorText(t, res, t('Rollback failed')))
-        return
-      }
-      toast.success(t('Rolled back'))
-      setDraftWeights(null)
-      void qc.invalidateQueries({ queryKey: WEIGHT_HISTORY_QUERY_KEY })
-      void qc.invalidateQueries({ queryKey: ROUTING_CONFIG_QUERY_KEY })
-      return
-    }
-
-    const schemeName =
-      pendingSchemeName &&
-      pendingSchemeName !== (config?.active_weight_scheme || undefined)
-        ? pendingSchemeName
-        : undefined
-    const payload: Parameters<typeof putConfig.mutateAsync>[0] = {
-      weights: draftWeights ?? weights,
-      preview_token: token,
-    }
-    if (schemeName) {
-      payload.active_weight_scheme = schemeName
-    }
-    const switched = Boolean(schemeName)
-    const res = await putConfig.mutateAsync(payload)
-    setPreviewOpen(false)
-    clearPendingPreview()
+  const setMode = async (mode: (typeof MODES)[number]['id']) => {
+    if (!ready || !isRoot || mode === config?.mode) return
+    const res = await putConfig.mutateAsync({ mode })
     if (!res.success) {
       toast.error(routingErrorText(t, res, t('Save failed')))
       return
     }
-    toast.success(switched ? t('Switched scheme') : t('Weights applied'))
-    setDraftWeights(null)
-    void qc.invalidateQueries({ queryKey: WEIGHT_HISTORY_QUERY_KEY })
-    void qc.invalidateQueries({ queryKey: ROUTING_CONFIG_QUERY_KEY })
+    toast.success(t('Saved successfully'))
   }
 
-  const startRollbackPreview = async (h: WeightHistoryEntry) => {
-    if (!isRoot) return
-    let nextWeights = draftWeights ?? weights
-    let schemeName: string | undefined
-    if (h.snapshot) {
-      try {
-        const snap =
-          typeof h.snapshot === 'string'
-            ? (JSON.parse(h.snapshot) as Record<string, unknown>)
-            : h.snapshot
-        if (snap.weights) {
-          nextWeights = fromBackendWeights(snap.weights)
-        }
-        if (typeof snap.active_weight_scheme === 'string') {
-          schemeName = snap.active_weight_scheme
-        }
-      } catch {
-        /* soft-fail: preview with current draft */
-      }
-    }
-    if (h.scheme_name && !schemeName) schemeName = h.scheme_name
-    setDraftWeights({ ...nextWeights })
-    setPendingRollbackId(h.id)
-    setPendingSchemeId(null)
-    setPendingSchemeName(schemeName ?? null)
-    const result = await previewWeightScheme({
-      weights: nextWeights,
-      scheme_name: schemeName,
-      kind: 'put_config',
-    })
-    setPreview(result)
-    setPreviewOpen(true)
-  }
-
-  const toggleEnabled = async (next: boolean) => {
-    if (!isRoot) {
-      toast.error(t('Only root can change routing strategy'))
+  const usePreference = async (name: string) => {
+    if (!ready || !isRoot || !config) return
+    const scheme = (schemesQuery.data ?? []).find((s) => s.name === name)
+    if (!scheme) {
+      toast.error(t('Failed to load'))
       return
     }
-    setPendingEnable(next)
-  }
-
-  const confirmToggle = async () => {
-    if (pendingEnable == null) return
-    const res = await putConfig.mutateAsync({ enabled: pendingEnable })
-    setPendingEnable(null)
+    if (config.active_weight_scheme === name) return
+    const intent = previewIntentFor({
+      activeScheme: config.active_weight_scheme,
+      currentWeights: config.weights,
+      nextWeights: scheme.weights,
+      schemeName: name,
+    })
+    const token = await previewWeightScheme({
+      weights: scheme.weights,
+      scheme_name: intent.scheme_name,
+      kind: intent.kind,
+    })
+    if (!token.preview_token) {
+      toast.error(token.error || t('Save failed'))
+      return
+    }
+    const res = await putConfig.mutateAsync({
+      weights: scheme.weights,
+      active_weight_scheme: name,
+      preview_token: token.preview_token,
+    })
     if (!res.success) {
       toast.error(routingErrorText(t, res, t('Save failed')))
       return
     }
-    toast.success(
-      pendingEnable
-        ? t('Smart routing enabled')
-        : t('Smart routing disabled — using official weights')
-    )
-    void qc.invalidateQueries({ queryKey: ROUTING_CONFIG_QUERY_KEY })
+    toast.success(t('Saved successfully'))
   }
 
-  const runSimulate = async () => {
-    if (!simulateModel.trim()) {
-      toast.error(t('Enter a model name'))
-      return
-    }
-    const result = await simulateRouting({ model: simulateModel.trim() })
-    setSimulateResult(result)
-  }
-
-  const doExport = async (id: string) => {
-    const data = await exportWeightScheme(id)
-    if (!data) {
-      toast.error(t('Export failed or backend unavailable'))
-      return
-    }
-    const blob = new Blob([JSON.stringify(data, null, 2)], {
-      type: 'application/json',
-    })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `routing-scheme-${id}.json`
-    a.click()
-    URL.revokeObjectURL(url)
-  }
-
-  const doImport = async (file: File) => {
-    try {
-      const text = await file.text()
-      const json = JSON.parse(text) as unknown
-      const res = await importWeightScheme(json)
-      if (!res.success) {
-        toast.error(routingErrorText(t, res, t('Import failed')))
-        return
-      }
-      toast.success(t('Scheme imported'))
-      void qc.invalidateQueries({ queryKey: WEIGHT_SCHEMES_QUERY_KEY })
-    } catch {
-      toast.error(t('Invalid JSON file'))
-    }
-  }
-
-  const doRollbackOfficial = async () => {
+  const rollback = async () => {
     if (!isRoot) return
     const res = await rollbackToOfficial()
     if (!res.success) {
@@ -352,36 +140,58 @@ export function StrategyPage() {
       return
     }
     toast.success(t('Rolled back to official channel weights'))
-    void qc.invalidateQueries({ queryKey: ROUTING_CONFIG_QUERY_KEY })
+  }
+
+  const runPreview = async () => {
+    if (!model.trim()) {
+      toast.error(t('Enter a model name'))
+      return
+    }
+    setPreview(await simulateRouting({ model: model.trim() }))
   }
 
   return (
     <div className='flex flex-col gap-4 overflow-auto pb-4'>
       <Card>
         <CardHeader>
-          <CardTitle>{t('Master switch')}</CardTitle>
+          <CardTitle>{t('Routing mode')}</CardTitle>
           <CardDescription>
             {t(
-              'When off, selection uses official NewAPI priority and weight only. No probe traffic is ever sent.'
+              'The page shows the server setting. A failed load does not change it.'
             )}
           </CardDescription>
         </CardHeader>
-        <CardContent className='flex flex-wrap items-center gap-4'>
-          <div className='flex items-center gap-2'>
-            <Switch
-              checked={Boolean(config?.enabled)}
-              onCheckedChange={(v) => void toggleEnabled(v)}
-              disabled={!isRoot || putConfig.isPending}
-            />
-            <span className='text-sm'>
-              {config?.enabled ? t('Enabled') : t('Disabled')}
-            </span>
+        <CardContent className='flex flex-col gap-3'>
+          {configQuery.isError ? (
+            <p className='text-destructive text-sm'>{t('Failed to load')}</p>
+          ) : null}
+          <div className='flex flex-wrap gap-2'>
+            {MODES.map((mode) => (
+              <Button
+                key={mode.id}
+                type='button'
+                size='sm'
+                variant={config?.mode === mode.id ? 'default' : 'outline'}
+                disabled={!ready || !isRoot || putConfig.isPending}
+                onClick={() => void setMode(mode.id)}
+              >
+                {t(mode.label)}
+              </Button>
+            ))}
           </div>
+          <p className='text-muted-foreground text-sm'>
+            {t(
+              MODES.find((mode) => mode.id === config?.mode)?.hint ??
+                'Failed to load'
+            )}
+          </p>
           {isRoot ? (
             <Button
+              type='button'
               variant='outline'
               size='sm'
-              onClick={() => void doRollbackOfficial()}
+              className='w-fit'
+              onClick={() => void rollback()}
             >
               {t('One-click back to official routing')}
             </Button>
@@ -391,175 +201,59 @@ export function StrategyPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>{t('Score weights')}</CardTitle>
+          <CardTitle>{t('Routing preference')}</CardTitle>
           <CardDescription>
             {t(
-              'Factory default Balanced is 30/25/20/15/10. You may save named schemes; do not invent "cheap/stable" product names.'
+              'Choose a named preference. Weights stay fixed in the backend.'
             )}
           </CardDescription>
         </CardHeader>
-        <CardContent className='flex flex-col gap-4'>
-          <div className='grid gap-3 sm:grid-cols-2 lg:grid-cols-5'>
-            {WEIGHT_DIM_KEYS.map((key) => (
-              <div key={key} className='flex flex-col gap-1.5'>
-                <Label htmlFor={`w-${key}`}>
-                  {t(WEIGHT_DIM_LABEL_KEYS[key])}
-                </Label>
-                <Input
-                  id={`w-${key}`}
-                  type='number'
-                  min={0}
-                  max={100}
-                  value={weights[key]}
-                  disabled={!isRoot}
-                  onChange={(e) => {
-                    const n = Number(e.target.value)
-                    setDraftWeights({
-                      ...weights,
-                      [key]: Number.isFinite(n) ? n : 0,
-                    })
-                  }}
-                />
-              </div>
+        <CardContent className='flex flex-col gap-3'>
+          {schemesQuery.isError ? (
+            <p className='text-destructive text-sm'>{t('Failed to load')}</p>
+          ) : null}
+          <div className='flex flex-wrap gap-2'>
+            {PREFERENCES.map((pref) => (
+              <Button
+                key={pref.name}
+                type='button'
+                size='sm'
+                variant={
+                  config?.active_weight_scheme === pref.name
+                    ? 'default'
+                    : 'outline'
+                }
+                disabled={
+                  !ready ||
+                  !isRoot ||
+                  schemesQuery.isError ||
+                  putConfig.isPending
+                }
+                onClick={() => void usePreference(pref.name)}
+              >
+                {t(pref.label)}
+              </Button>
             ))}
           </div>
-          <p className='text-muted-foreground text-xs'>
-            {t('Sum')}: {weightSum}
-            {weightSum !== 100
-              ? ` · ${t('Will be normalized if not 100')}`
-              : null}
-          </p>
-          <div className='flex flex-wrap items-end gap-2'>
-            {isRoot ? (
-              <>
-                <Button
-                  onClick={() => void applyWeights({ kind: 'put_config' })}
-                >
-                  {t('Preview & apply')}
-                </Button>
-                <Input
-                  className='max-w-xs'
-                  placeholder={t('Scheme name')}
-                  value={schemeName}
-                  onChange={(e) => setSchemeName(e.target.value)}
-                />
-                <Button
-                  variant='secondary'
-                  disabled={saveSchemeMut.isPending}
-                  onClick={() => saveSchemeMut.mutate()}
-                >
-                  {t('Save as named scheme')}
-                </Button>
-              </>
-            ) : (
-              <p className='text-muted-foreground text-sm'>
-                {t('Read-only for non-root admins')}
-              </p>
-            )}
-          </div>
-
-          <div className='flex flex-col gap-2'>
-            <Label>{t('Named schemes')}</Label>
-            <div className='flex flex-wrap gap-2'>
-              {(schemesQuery.data ?? []).map((s) => (
-                <div
-                  key={s.id}
-                  className='bg-muted/40 flex items-center gap-2 rounded-md border px-2 py-1 text-sm'
-                >
-                  <button
-                    type='button'
-                    className='hover:underline'
-                    disabled={!isRoot}
-                    onClick={() => {
-                      void applyWeights({
-                        schemeId: s.id,
-                        schemeName: s.name,
-                        nextWeights: { ...s.weights },
-                        kind: 'activate_scheme',
-                      })
-                    }}
-                  >
-                    {s.name}
-                    {s.is_default ? ` (${t('default')})` : ''}
-                  </button>
-                  <Button
-                    size='icon-sm'
-                    variant='ghost'
-                    aria-label={t('Export')}
-                    onClick={() => void doExport(s.id)}
-                  >
-                    <Download className='size-3.5' />
-                  </Button>
-                </div>
-              ))}
-              {isRoot ? (
-                <label className='inline-flex cursor-pointer items-center gap-1 text-sm'>
-                  <Upload className='size-3.5' />
-                  {t('Import JSON')}
-                  <input
-                    type='file'
-                    accept='application/json,.json'
-                    className='hidden'
-                    onChange={(e) => {
-                      const f = e.target.files?.[0]
-                      if (f) void doImport(f)
-                      e.target.value = ''
-                    }}
-                  />
-                </label>
-              ) : null}
-            </div>
-          </div>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle>{t('Optional switches (default off)')}</CardTitle>
-          <CardDescription>
-            {t(
-              'Session sticky, ε-greedy ≈1%, peer breaker, Telegram, region filter.'
-            )}
-          </CardDescription>
+          <CardTitle>{t('Fixed routing rules')}</CardTitle>
         </CardHeader>
-        <CardContent className='grid gap-3 sm:grid-cols-2 lg:grid-cols-3'>
-          {(
-            [
-              ['session_sticky', 'Session sticky'],
-              ['epsilon_greedy', 'ε-greedy exploration'],
-              ['peer_breaker', 'Peer worse breaker'],
-              ['telegram_alert', 'Telegram alerts'],
-              ['region_filter', 'Region / compliance filter'],
-            ] as const
-          ).map(([field, labelKey]) => (
-            <div
-              key={field}
-              className='flex items-center justify-between gap-2 rounded-md border px-3 py-2'
-            >
-              <span className='text-sm'>{t(labelKey)}</span>
-              <Switch
-                checked={Boolean(config?.[field])}
-                disabled={!isRoot}
-                onCheckedChange={(v) => {
-                  if (field === 'telegram_alert') {
-                    void putConfig.mutateAsync({ [field]: v }).then((res) => {
-                      if (!res.success) {
-                        toast.error(routingErrorText(t, res, t('Save failed')))
-                      }
-                    })
-                    return
-                  }
-                  setPendingSwitch({ field, value: v, label: labelKey })
-                }}
-              />
-            </div>
-          ))}
+        <CardContent>
+          <p className='text-muted-foreground text-sm'>
+            {t(
+              'Excluded channels are never selected again, even if that leaves no channel. Smart weights do not cross priority bands, and user billing does not follow the route score.'
+            )}
+          </p>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle>{t('Simulate routing')}</CardTitle>
+          <CardTitle>{t('Model preview')}</CardTitle>
           <CardDescription>
             {t(
               'Pick a model to see current share percentages. Does not send real upstream requests.'
@@ -569,235 +263,64 @@ export function StrategyPage() {
         <CardContent className='flex flex-col gap-3'>
           <div className='flex flex-wrap gap-2'>
             <Input
-              className='max-w-sm'
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
               placeholder={t('Model name')}
-              value={simulateModel}
-              onChange={(e) => setSimulateModel(e.target.value)}
+              className='max-w-sm'
             />
-            <Button variant='secondary' onClick={() => void runSimulate()}>
-              {t('Simulate')}
+            <Button type='button' size='sm' onClick={() => void runPreview()}>
+              {t('Preview')}
             </Button>
           </div>
-          {simulateResult && simulateResult.items.length === 0 ? (
-            <EmptyHint
-              title={t('No candidates')}
-              description={t('No share data returned for this model.')}
-            />
+          {preview?.error ? (
+            <p className='text-destructive text-sm'>{preview.error}</p>
           ) : null}
-          {simulateResult && simulateResult.items.length > 0 ? (
+          {preview && !preview.error ? (
+            <p className='text-muted-foreground text-sm'>
+              {t('Dispatch')} #{preview.picked || '—'}
+              {preview.would_pick
+                ? ` · ${t('Shadow pick')} #${preview.would_pick}`
+                : ''}
+            </p>
+          ) : null}
+          {preview?.half_open ? (
+            <p className='text-muted-foreground text-sm'>
+              {t('Half-open')} #{preview.half_open.channel_id}
+              {preview.half_open.share != null
+                ? ` ${Math.round(preview.half_open.share * 1000) / 10}%`
+                : ''}
+            </p>
+          ) : null}
+          {preview && !preview.error ? (
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>{t('Channel')}</TableHead>
-                  <TableHead>{t('Score')}</TableHead>
                   <TableHead>{t('Share')}</TableHead>
-                  <TableHead>{t('Half-open')}</TableHead>
+                  <TableHead>{t('Weight')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {simulateResult.items.map((item) => (
-                  <TableRow key={item.channel_id}>
-                    <TableCell>
-                      {item.channel_name || `#${item.channel_id}`}
-                    </TableCell>
-                    <TableCell className='tabular-nums'>
-                      {item.score ?? '—'}
-                    </TableCell>
-                    <TableCell className='tabular-nums'>
-                      {(item.share_pct ?? 0).toFixed(1)}%
-                    </TableCell>
-                    <TableCell>{item.half_open ? t('Yes') : t('No')}</TableCell>
+                {preview.items.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={3}>{t('No data yet')}</TableCell>
                   </TableRow>
-                ))}
+                ) : (
+                  preview.items.map((item) => (
+                    <TableRow key={item.channel_id}>
+                      <TableCell>
+                        {item.channel_name || item.channel_id}
+                      </TableCell>
+                      <TableCell>{item.share_pct}</TableCell>
+                      <TableCell>{item.route_weight}</TableCell>
+                    </TableRow>
+                  ))
+                )}
               </TableBody>
             </Table>
           ) : null}
         </CardContent>
       </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>{t('Change history')}</CardTitle>
-          <CardDescription>
-            {t('Weight changes are audited; root can roll back to a snapshot.')}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {(historyQuery.data ?? []).length === 0 ? (
-            <EmptyHint title={t('No history yet')} />
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t('Time')}</TableHead>
-                  <TableHead>{t('By')}</TableHead>
-                  <TableHead>{t('Summary')}</TableHead>
-                  <TableHead />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {(historyQuery.data ?? []).map((h) => (
-                  <TableRow key={h.id}>
-                    <TableCell className='text-xs'>{h.at}</TableCell>
-                    <TableCell>{h.by || '—'}</TableCell>
-                    <TableCell>{h.summary || h.scheme_name || '—'}</TableCell>
-                    <TableCell>
-                      {isRoot ? (
-                        <Button
-                          size='sm'
-                          variant='outline'
-                          onClick={() => {
-                            void startRollbackPreview(h)
-                          }}
-                        >
-                          {t('Rollback')}
-                        </Button>
-                      ) : null}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>{t('Read-only parameters')}</CardTitle>
-        </CardHeader>
-        <CardContent className='text-muted-foreground grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-3'>
-          <div>
-            {t('Hysteresis recover')}: {config?.hysteresis_recover ?? 65}
-          </div>
-          <div>
-            {t('Breaker enter')}: {config?.breaker_enter ?? 40}
-          </div>
-          <div>
-            {t('Floor total')}: ≤{config?.floor_total_pct ?? 30}%
-          </div>
-          <div>
-            {t('Retry budget')}: ≤{config?.retry_budget_pct ?? 20}%
-          </div>
-          <div>
-            {t('Half-open in-flight max')}:{' '}
-            {config?.half_open_inflight_max ?? 2}
-          </div>
-        </CardContent>
-      </Card>
-
-      <ConfirmDialog
-        open={pendingSwitch != null}
-        onOpenChange={(open) => {
-          if (!open) setPendingSwitch(null)
-        }}
-        title={t('This switch changes how live requests are routed. Confirm before saving.')}
-        desc={
-          pendingSwitch
-            ? `${t(pendingSwitch.label)}: ${pendingSwitch.value ? t('On') : t('Off')}`
-            : ''
-        }
-        confirmText={t('Confirm')}
-        handleConfirm={() => {
-          if (!pendingSwitch) return
-          const next = pendingSwitch
-          setPendingSwitch(null)
-          void putConfig.mutateAsync({ [next.field]: next.value }).then((res) => {
-            if (!res.success) {
-              toast.error(routingErrorText(t, res, t('Save failed')))
-            }
-          })
-        }}
-      />
-
-      <ConfirmDialog
-        open={previewOpen}
-        onOpenChange={(open) => {
-          setPreviewOpen(open)
-          if (!open) clearPendingPreview()
-        }}
-        title={
-          pendingRollbackId ? t('Preview rollback') : t('Preview weight change')
-        }
-        desc={
-          previewReady
-            ? t(
-                'Review route weight now → new below, then confirm. Changes take effect next scoring cycle.'
-              )
-            : t(
-                'Backend preview unavailable, empty, or missing preview_token. Confirm is disabled until a valid preview is returned.'
-              )
-        }
-        confirmText={t('Confirm apply')}
-        disabled={!previewReady}
-        handleConfirm={() => void confirmApplyWeights()}
-      >
-        {preview?.error ? (
-          <p className='text-destructive mt-3 text-sm'>
-            {t('Preview failed')}:{' '}
-            {routingErrorText(
-              t,
-              { message: preview.error, code: preview.error_code },
-              preview.error
-            )}
-          </p>
-        ) : null}
-        {previewReady && previewEmpty ? (
-          <p className='text-muted-foreground mt-3 text-sm'>
-            {t(
-              'No scores yet. An empty preview can still be applied and takes effect once scoring starts.'
-            )}
-          </p>
-        ) : null}
-        {preview && preview.items.length > 0 ? (
-          <div className='mt-3 max-h-60 overflow-auto'>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t('Channel')}</TableHead>
-                  <TableHead>{t('RW now')}</TableHead>
-                  <TableHead>{t('RW new')}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {preview.items.map((item) => (
-                  <TableRow key={`${item.channel_id}-${item.model ?? ''}`}>
-                    <TableCell>
-                      {item.channel_name || `#${item.channel_id}`}
-                      {item.model ? ` / ${item.model}` : ''}
-                    </TableCell>
-                    <TableCell className='tabular-nums'>
-                      {Number(item.share_now).toFixed(1)}
-                    </TableCell>
-                    <TableCell className='tabular-nums'>
-                      {Number(item.share_new).toFixed(1)}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        ) : null}
-      </ConfirmDialog>
-
-      <ConfirmDialog
-        open={pendingEnable != null}
-        onOpenChange={(open) => {
-          if (!open) setPendingEnable(null)
-        }}
-        title={
-          pendingEnable
-            ? t('Enable smart routing?')
-            : t('Disable smart routing?')
-        }
-        desc={
-          pendingEnable
-            ? t('Traffic will follow scores within each priority layer.')
-            : t('Selection falls back to official weights immediately.')
-        }
-        confirmText={t('Confirm')}
-        handleConfirm={() => void confirmToggle()}
-      />
     </div>
   )
 }

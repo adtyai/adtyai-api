@@ -114,6 +114,20 @@ func TestCreateTopupOrderRejectsUnknownPaymentMethod(t *testing.T) {
 	require.Zero(t, n)
 }
 
+// 数据库故障不能把 SQL 原文返给管理端。
+func TestAdminEpayManualCompleteHidesDatabaseError(t *testing.T) {
+	database := adtyTestDB(t)
+	require.NoError(t, database.AutoMigrate(&model.TopupOrder{}))
+	require.NoError(t, database.Migrator().DropTable(&model.TopupOrder{}))
+
+	rec := adtyCall(AdminEpayManualComplete, http.MethodPost, "/api/topup/epay/manual-complete", `{"order_no":"P11-EPAY","trade_no":"GW-DB"}`, 1, common.RoleRootUser, nil)
+	body := rec.Body.String()
+	require.Equal(t, http.StatusInternalServerError, rec.Code, body)
+	require.Contains(t, body, "internal_error")
+	require.NotContains(t, body, "no such table")
+	require.NotContains(t, body, "topup_orders")
+}
+
 // adtyTestDB 默认 sqlite；ADTY_TEST_PG=1 且设置 TEST_POSTGRES_DSN（回环）时在 PostgreSQL 隔离库上跑。
 func adtyTestDB(t *testing.T) *gorm.DB {
 	t.Helper()

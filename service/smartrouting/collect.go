@@ -1,25 +1,18 @@
 package smartrouting
 
 import (
-	"context"
-	"fmt"
-	"sync"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/gin-gonic/gin"
 )
 
-var (
-	retryBudgetMu sync.Mutex
-	retryBudget   = map[string]struct{ total, retry int }{} // minute key
-)
-
 // OnAttemptEnd is the relay hook: record sample, cost, breaker, half-open, auth.
 func OnAttemptEnd(c *gin.Context, ev AttemptEvent) {
-	cfg := GetConfig()
-	if !cfg.Enabled {
+	releaseHalfOpenReservation(c, true, ev.Success, ev.Class)
+	if !Collects() {
 		return
 	}
 	if ev.Model == "" && ev.ReqModel != "" {
@@ -27,16 +20,7 @@ func OnAttemptEnd(c *gin.Context, ev AttemptEvent) {
 	}
 	RecordSample(ev)
 	IncRPM(ev.ChannelID)
-
-	// Pair with TryIncHalfOpenInflight at selection (P0-1). Dec even if stage flipped.
-	if IsHalfOpenChannel(ev.ChannelID) {
-		DecHalfOpenInflight(ev.ChannelID)
-		OnHalfOpenResult(ev.ChannelID, ev.Success)
-	} else if halfOpenInflightCount(ev.ChannelID) > 0 {
-		DecHalfOpenInflight(ev.ChannelID)
-	}
-
-	NoteAttemptResult(ev.ChannelID, ev.Success, ev.Class)
+	NoteAttemptResult(ev.ChannelID, ev.Model, ev.Success, ev.Class)
 
 	if !ev.CacheHit {
 		WriteCostLedger(ev)
@@ -46,9 +30,59 @@ func OnAttemptEnd(c *gin.Context, ev AttemptEvent) {
 	}
 }
 
+// ReleaseHalfOpenReservation frees a slot reserved by this request. It does not report a probe result.
+func ReleaseHalfOpenReservation(c *gin.Context) {
+	releaseHalfOpenReservation(c, false, false, ClassOK)
+}
+
+var reportHalfOpenResult = OnHalfOpenResult
+
+func halfOpenProbeResultCounts(success bool, class ErrClass) bool {
+	if success {
+		return true
+	}
+	switch class {
+	case ClassUserError, ClassAuthMismatch, ClassBalance:
+		return false
+	default:
+		return true
+	}
+}
+
+func releaseHalfOpenReservation(c *gin.Context, report, success bool, class ErrClass) {
+	if c == nil {
+		return
+	}
+	id := common.GetContextKeyInt(c, constant.ContextKeyHalfOpenReserved)
+	if id == 0 {
+		return
+	}
+	common.SetContextKey(c, constant.ContextKeyHalfOpenReserved, 0)
+	DecHalfOpenInflight(id)
+	if report && IsHalfOpenChannel(id) && halfOpenProbeResultCounts(success, class) {
+		reportHalfOpenResult(id, success)
+	}
+}
+
+// NoteSelectedAttempt records one attempt only after a channel was selected.
+// SkipRetry errors are user errors so they do not count as a channel failure.
+func NoteSelectedAttempt(c *gin.Context, channelID int, modelName string, err *types.NewAPIError, latencyMs int64) {
+	if c == nil || channelID == 0 {
+		return
+	}
+	class := ClassForRecordedAttempt(err)
+	OnAttemptEnd(c, AttemptEvent{
+		ChannelID: channelID,
+		Model:     modelName,
+		Success:   err == nil,
+		Class:     class,
+		LatencyMs: latencyMs,
+	})
+}
+
 // OnAttemptEndFromError builds event from NewAPIError.
 func OnAttemptEndFromError(c *gin.Context, channelID int, modelName string, userID, tokenID int, requestID string, latencyMs int64, err *types.NewAPIError, pinned bool) {
-	class := Classify(err)
+	class := ClassForRecordedAttempt(err)
 	OnAttemptEnd(c, AttemptEvent{
 		ChannelID: channelID,
 		Model:     modelName,
@@ -67,56 +101,6 @@ func OnAttemptEndSuccess(c *gin.Context, ev AttemptEvent) {
 	ev.Success = true
 	ev.Class = ClassOK
 	OnAttemptEnd(c, ev)
-}
-
-// RetryBudgetAllows returns false when global retry share exceeds budget (Envoy-style).
-func RetryBudgetAllows() bool {
-	cfg := GetConfig()
-	pct := cfg.RetryBudgetPct
-	if pct <= 0 {
-		return true
-	}
-	ctx := context.Background()
-	now, _ := RedisTIME(ctx)
-	key := fmt.Sprintf("sr:retrybudget:%s", minuteFloor(now).Format("200601021504"))
-	retryBudgetMu.Lock()
-	defer retryBudgetMu.Unlock()
-	if common.RedisEnabled && common.RDB != nil {
-		// use hash total/retry
-		pipe := common.RDB.Pipeline()
-		tCmd := pipe.HIncrBy(ctx, key, "total", 1)
-		pipe.Expire(ctx, key, 2*time.Minute)
-		_, _ = pipe.Exec(ctx)
-		total, _ := tCmd.Result()
-		retry, _ := common.RDB.HGet(ctx, key, "retry").Int64()
-		if total > 20 && float64(retry)/float64(total)*100 > float64(pct) {
-			return false
-		}
-		return true
-	}
-	b := retryBudget[key]
-	b.total++
-	retryBudget[key] = b
-	if b.total > 20 && float64(b.retry)/float64(b.total)*100 > float64(pct) {
-		return false
-	}
-	return true
-}
-
-func MarkRetryUsed() {
-	ctx := context.Background()
-	now, _ := RedisTIME(ctx)
-	key := fmt.Sprintf("sr:retrybudget:%s", minuteFloor(now).Format("200601021504"))
-	if common.RedisEnabled && common.RDB != nil {
-		common.RDB.HIncrBy(ctx, key, "retry", 1)
-		common.RDB.Expire(ctx, key, 2*time.Minute)
-		return
-	}
-	retryBudgetMu.Lock()
-	b := retryBudget[key]
-	b.retry++
-	retryBudget[key] = b
-	retryBudgetMu.Unlock()
 }
 
 // WaitRetryAfter sleeps up to min(Retry-After, 2s) for same-channel 429 (总管①).

@@ -2,6 +2,7 @@ package smartrouting
 
 import (
 	"context"
+	"sort"
 	"sync"
 	"time"
 
@@ -19,25 +20,57 @@ func StartBackgroundLoops() {
 	})
 }
 
+var refreshAllScores = RefreshAllScores
+
 func scoreLoop() {
+	scoreLoopUntil(nil)
+}
+
+func scoreLoopUntil(stop <-chan struct{}) {
+	refreshScoresIfCollecting()
 	for {
-		cfg := GetConfig()
-		sec := cfg.ScoreRefreshSec
-		if sec <= 0 {
-			sec = 300
+		if !waitScoreInterval(stop) {
+			return
 		}
-		time.Sleep(time.Duration(sec) * time.Second)
 		LoadConfigFromOptions()
-		if !GetConfig().Enabled {
-			continue
-		}
-		if !acquireScoreLock(sec) {
-			continue
-		}
-		func() {
-			defer releaseScoreLock()
-			RefreshAllScores()
-		}()
+		refreshScoresIfCollecting()
+	}
+}
+
+var acquireScoreLockFn = acquireScoreLock
+var loadPublishedScoresFn = loadPublishedScores
+
+func refreshScoresIfCollecting() bool {
+	if !Collects() {
+		return false
+	}
+	cfg := GetConfig()
+	sec := cfg.ScoreRefreshSec
+	if sec <= 0 {
+		sec = 300
+	}
+	if !acquireScoreLockFn(sec) {
+		loadPublishedScoresFn()
+		reloadBreakerStagesFn()
+		return false
+	}
+	defer releaseScoreLock()
+	refreshAllScores()
+	return true
+}
+
+func waitScoreInterval(stop <-chan struct{}) bool {
+	sec := GetConfig().ScoreRefreshSec
+	if sec <= 0 {
+		sec = 300
+	}
+	timer := time.NewTimer(time.Duration(sec) * time.Second)
+	defer timer.Stop()
+	select {
+	case <-stop:
+		return false
+	case <-timer.C:
+		return true
 	}
 }
 
@@ -57,37 +90,195 @@ func releaseScoreLock() {
 	}
 }
 
-// SimulateSelection returns share preview for admin POST /simulate.
-func SimulateSelection(modelName, group string, channels []*model.Channel) map[string]any {
-	out, weights := SmartWeights(channels, modelName, group)
+// SimulateSelection previews the same priority walk and weight hook used by selection.
+// It does not reserve inflight or half-open slots.
+func SimulateSelection(modelName, group string, channels []*model.Channel, caps model.RouteCaps) map[string]any {
+	bands := map[int64][]*model.Channel{}
+	prios := make([]int64, 0)
+	for _, ch := range channels {
+		if ch == nil {
+			continue
+		}
+		p := ch.GetPriority()
+		if _, ok := bands[p]; !ok {
+			prios = append(prios, p)
+		}
+		bands[p] = append(bands[p], ch)
+	}
+	sort.Slice(prios, func(i, j int) bool { return prios[i] > prios[j] })
+	var used int64
+	var result model.SmartWeightResult
+	found := false
+	for _, p := range prios {
+		result = model.ApplySmartWeights(bands[p], modelName, group, caps)
+		result.Decision.Priority = p
+		if result.Skip || len(result.Channels) == 0 {
+			continue
+		}
+		used = p
+		found = true
+		break
+	}
+	items := make([]map[string]any, 0)
+	if found {
+		shares := smoothedSharePct(result.Weights)
+		for i, ch := range result.Channels {
+			if ch == nil {
+				continue
+			}
+			item := map[string]any{
+				"channel_id":   ch.Id,
+				"channel_name": ch.Name,
+				"name":         ch.Name,
+				"route_weight": 0,
+				"share_pct":    0.0,
+				"share":        0.0,
+				"official_w":   ch.GetWeight(),
+				"priority":     used,
+				"state":        result.Decision.Mode,
+			}
+			if i < len(result.Weights) {
+				item["route_weight"] = result.Weights[i]
+			}
+			if i < len(shares) {
+				item["share_pct"] = shares[i]
+				item["share"] = shares[i] / 100
+			}
+			if se := GetScore(ch.Id, modelName); se != nil {
+				item["score"] = se.Score
+				item["state"] = se.State
+			}
+			items = append(items, item)
+		}
+	}
+	out := map[string]any{
+		"model":      modelName,
+		"group":      group,
+		"priority":   used,
+		"mode":       result.Decision.Mode,
+		"reason":     result.Decision.Reason,
+		"would_pick": result.Decision.WouldPick,
+		"excluded":   result.Excluded,
+		"items":      items,
+		"candidates": items,
+	}
+	return out
+}
+
+// SimulateBands dry-runs the live selector without reserving inflight.
+func SimulateBands(modelName, group string, bands []model.PriorityBand, caps model.RouteCaps) map[string]any {
+	preview := caps
+	preview.DryRun = true
+	ch, decision, err := model.SelectFromPriorityBands(bands, 0, modelName, group, preview)
+	items := make([]map[string]any, 0)
+	used := int64(0)
+	mode := decision.Mode
+	excluded := decision.Excluded
+	would := decision.WouldPick
+	if decision.BandIndex >= 0 && decision.BandIndex < len(bands) {
+		band := bands[decision.BandIndex]
+		used = band.Priority
+		bandCaps := preview
+		bandCaps.BandPriority = band.Priority
+		bandCaps.HasBandPriority = true
+		result := model.ApplySmartWeights(band.Channels, modelName, group, bandCaps)
+		if result.Decision.Mode != "" {
+			mode = result.Decision.Mode
+		}
+		if would == 0 {
+			would = result.Decision.WouldPick
+		}
+		if len(excluded) == 0 {
+			excluded = result.Excluded
+		}
+		shares := smoothedSharePct(result.Weights)
+		for i, itemCh := range result.Channels {
+			if itemCh == nil {
+				continue
+			}
+			item := map[string]any{
+				"channel_id":   itemCh.Id,
+				"channel_name": itemCh.Name,
+				"name":         itemCh.Name,
+				"route_weight": 0,
+				"share_pct":    0.0,
+				"share":        0.0,
+				"official_w":   itemCh.GetWeight(),
+				"priority":     used,
+				"state":        mode,
+			}
+			if i < len(result.Weights) {
+				item["route_weight"] = result.Weights[i]
+			}
+			if i < len(shares) {
+				item["share_pct"] = shares[i]
+				item["share"] = shares[i] / 100
+			}
+			if se := GetScore(itemCh.Id, modelName); se != nil {
+				item["score"] = se.Score
+				item["state"] = se.State
+			}
+			items = append(items, item)
+		}
+	}
+	reason := decision.Reason
+	if ch == nil && reason == "" {
+		reason = "empty"
+	}
+	if err != nil {
+		reason = "error"
+	}
+	picked := 0
+	if ch != nil {
+		picked = ch.Id
+	}
+	out := map[string]any{
+		"model":      modelName,
+		"group":      group,
+		"priority":   used,
+		"mode":       mode,
+		"reason":     reason,
+		"picked":     picked,
+		"would_pick": would,
+		"excluded":   excluded,
+		"items":      items,
+		"candidates": items,
+	}
+	if decision.HalfOpen && ch != nil {
+		out["half_open"] = map[string]any{
+			"channel_id": ch.Id,
+			"priority":   used,
+			"band_index": decision.BandIndex,
+		}
+	}
+	return out
+}
+
+func smoothedSharePct(weights []int) []float64 {
+	n := len(weights)
+	out := make([]float64, n)
+	if n == 0 {
+		return out
+	}
 	sum := 0
 	for _, w := range weights {
-		sum += w
+		if w > 0 {
+			sum += w
+		}
 	}
-	rows := make([]map[string]any, 0, len(out))
-	for i, ch := range out {
-		share := 0.0
-		if sum > 0 {
-			share = float64(weights[i]) / float64(sum)
+	if sum == 0 {
+		each := 100.0 / float64(n)
+		for i := range out {
+			out[i] = each
 		}
-		se := GetScore(ch.Id, modelName)
-		row := map[string]any{
-			"channel_id":   ch.Id,
-			"name":         ch.Name,
-			"route_weight": weights[i],
-			"share":        share,
-			"official_w":   ch.GetWeight(),
-		}
-		if se != nil {
-			row["score"] = se.Score
-			row["state"] = se.State
-		}
-		if IsHalfOpenChannel(ch.Id) {
-			row["halfopen"] = true
-		}
-		rows = append(rows, row)
+		return out
 	}
-	return map[string]any{"model": modelName, "group": group, "candidates": rows}
+	for i, w := range weights {
+		if w > 0 {
+			out[i] = float64(w) / float64(sum) * 100
+		}
+	}
+	return out
 }
 
 // OfficialWeightsOnly for rollback to official.

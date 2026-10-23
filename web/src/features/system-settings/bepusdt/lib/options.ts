@@ -30,7 +30,6 @@ export type SystemOptionLike = {
 export type BepusdtFormValues = {
   BepusdtBaseURL: string
   BepusdtApiToken: string
-  BepusdtLegacyNotifyEnabled: boolean
   enabledChains: UsdtChainId[]
 }
 
@@ -47,7 +46,6 @@ export type BepusdtParsed = {
 export const BEPUSDT_DEFAULTS: BepusdtFormValues = {
   BepusdtBaseURL: '',
   BepusdtApiToken: '',
-  BepusdtLegacyNotifyEnabled: false,
   enabledChains: parseEnabledUsdtChainsOption(undefined),
 }
 
@@ -83,10 +81,6 @@ export function parseBepusdtOptions(
       BepusdtBaseURL: (m.get('BepusdtBaseURL') ?? '').trim(),
       // Token plaintext is never returned; keep input empty.
       BepusdtApiToken: '',
-      BepusdtLegacyNotifyEnabled: parseBool(
-        m.get('BepusdtLegacyNotifyEnabled'),
-        false
-      ),
       enabledChains: parseEnabledUsdtChainsOption(
         m.get('BepusdtEnabledChains')
       ),
@@ -104,7 +98,6 @@ export function sanitizeBepusdtForm(
   return {
     BepusdtBaseURL: values.BepusdtBaseURL.trim().replace(/\/+$/, ''),
     BepusdtApiToken: values.BepusdtApiToken.trim(),
-    BepusdtLegacyNotifyEnabled: values.BepusdtLegacyNotifyEnabled,
     enabledChains: parseEnabledUsdtChainsOption(
       JSON.stringify(values.enabledChains)
     ),
@@ -132,15 +125,6 @@ export function buildBepusdtUpdates(
   // Leave blank unless updating — never PUT empty token.
   if (sanitized.BepusdtApiToken) {
     updates.push({ key: 'BepusdtApiToken', value: sanitized.BepusdtApiToken })
-  }
-
-  if (
-    sanitized.BepusdtLegacyNotifyEnabled !== base.BepusdtLegacyNotifyEnabled
-  ) {
-    updates.push({
-      key: 'BepusdtLegacyNotifyEnabled',
-      value: sanitized.BepusdtLegacyNotifyEnabled ? 'true' : 'false',
-    })
   }
 
   if (!sameChains(sanitized.enabledChains, base.enabledChains)) {

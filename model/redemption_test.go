@@ -134,29 +134,42 @@ func redeemBonusBalance(t *testing.T, userId int) int64 {
 	return w.Balance
 }
 
+func TestRedeemRefusesWithoutCrediting(t *testing.T) {
+	userId, key := setupRedeemFixture(t, 500)
+
+	quota, err := Redeem(key, userId)
+	require.EqualError(t, err, "redemption codes are no longer available")
+	assert.Zero(t, quota)
+	assert.Zero(t, redeemBonusBalance(t, userId))
+
+	var redemption Redemption
+	require.NoError(t, DB.First(&redemption, "name = ?", "redeem-test").Error)
+	assert.Equal(t, common.RedemptionCodeStatusEnabled, redemption.Status)
+	assert.Zero(t, redemption.UsedUserId)
+}
+
 func TestRedeemCreditsQuotaExactlyOnce(t *testing.T) {
 	userId, key := setupRedeemFixture(t, 500)
 
 	quota, err := Redeem(key, userId)
-	require.NoError(t, err)
-	assert.Equal(t, 500, quota)
+	require.ErrorIs(t, err, ErrRedemptionClosed)
+	assert.Zero(t, quota)
 
 	var user User
 	require.NoError(t, DB.First(&user, "id = ?", userId).Error)
 	assert.Equal(t, 0, user.Quota, "paid quota must not change")
-	assert.Equal(t, int64(500), redeemBonusBalance(t, userId))
+	assert.Zero(t, redeemBonusBalance(t, userId))
 
 	var redemption Redemption
 	require.NoError(t, DB.First(&redemption, "name = ?", "redeem-test").Error)
-	assert.Equal(t, common.RedemptionCodeStatusUsed, redemption.Status)
-	assert.Equal(t, userId, redemption.UsedUserId)
+	assert.Equal(t, common.RedemptionCodeStatusEnabled, redemption.Status)
+	assert.Zero(t, redemption.UsedUserId)
 
-	// Redeeming the same code again must fail and must not credit quota.
 	_, err = Redeem(key, userId)
-	require.Error(t, err)
+	require.ErrorIs(t, err, ErrRedemptionClosed)
 	require.NoError(t, DB.First(&user, "id = ?", userId).Error)
 	assert.Equal(t, 0, user.Quota)
-	assert.Equal(t, int64(500), redeemBonusBalance(t, userId))
+	assert.Zero(t, redeemBonusBalance(t, userId))
 }
 
 // adtyai A27：兑换入赠送钱包，付费钱包接近上限不再阻止兑换，且 users.quota 不变。
@@ -165,17 +178,17 @@ func TestRedeemBonusIgnoresPaidWalletCap(t *testing.T) {
 	require.NoError(t, DB.Model(&User{}).Where("id = ?", userId).Update("quota", common.MaxWalletQuota-10).Error)
 
 	quota, err := Redeem(key, userId)
-	require.NoError(t, err)
-	assert.Equal(t, 11, quota)
+	require.ErrorIs(t, err, ErrRedemptionClosed)
+	assert.Zero(t, quota)
 
 	var user User
 	require.NoError(t, DB.First(&user, "id = ?", userId).Error)
 	assert.Equal(t, common.MaxWalletQuota-10, user.Quota)
-	assert.Equal(t, int64(11), redeemBonusBalance(t, userId))
+	assert.Zero(t, redeemBonusBalance(t, userId))
 
 	var redemption Redemption
 	require.NoError(t, DB.First(&redemption, "`key` = ?", key).Error)
-	assert.Equal(t, common.RedemptionCodeStatusUsed, redemption.Status)
+	assert.Equal(t, common.RedemptionCodeStatusEnabled, redemption.Status)
 }
 
 func TestRedemptionQuotaRejectsWalletOverflow(t *testing.T) {
@@ -216,10 +229,10 @@ func TestRedeemConcurrentSingleSuccess(t *testing.T) {
 			successCount++
 		}
 	}
-	assert.Equal(t, 1, successCount, "exactly one concurrent redeem should succeed")
+	assert.Zero(t, successCount, "closed redemption must not credit any concurrent caller")
 
 	var user User
 	require.NoError(t, DB.First(&user, "id = ?", userId).Error)
 	assert.Equal(t, 0, user.Quota, "paid quota must not change")
-	assert.Equal(t, int64(300), redeemBonusBalance(t, userId), "bonus must be credited exactly once")
+	assert.Zero(t, redeemBonusBalance(t, userId), "bonus must stay unchanged")
 }

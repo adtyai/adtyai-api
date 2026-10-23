@@ -31,6 +31,15 @@ export function isValidGroupCode(raw: string): boolean {
   return GROUP_CODE_RE.test(raw.trim())
 }
 
+/** Empty or non-numeric text is rejected. Zero is a real ratio, not a blank. */
+export function groupRatioDraftValue(raw: string): number | null {
+  const text = raw.trim()
+  if (text === '') return null
+  const ratio = Number(text)
+  if (!Number.isFinite(ratio) || ratio < 0) return null
+  return ratio
+}
+
 export function viewToDraft(view: GroupMetaView): GroupRowDraft {
   return {
     display_name: view.display_name ?? view.code,
@@ -102,7 +111,7 @@ export function validateCreateInput(input: {
   | { ok: true; body: GroupMetaCreateInput }
   | { ok: false; error: CreateValidateError } {
   const code = input.code.trim()
-  if (!isValidGroupCode(code)) {
+  if (code === 'auto' || !isValidGroupCode(code)) {
     return { ok: false, error: 'invalid_code' }
   }
   const dn = input.display_name.trim()
@@ -117,6 +126,71 @@ export function validateCreateInput(input: {
   }
   body.sort = sort
   return { ok: true, body }
+}
+
+export type GroupTableDraft = {
+  ratio: string
+  isPublic: boolean
+  displayName: string
+}
+
+export type GroupTableSaveResult =
+  | {
+      ok: true
+      changed: boolean
+      ratio: Record<string, unknown>
+      usable: Record<string, unknown>
+      displayNames: Record<string, string>
+    }
+  | { ok: false; error: 'draft_missing' | 'ratio_required' }
+
+/** Build one billing-table save. Rows come only from existing GroupRatio keys. */
+export function buildGroupTableSave(input: {
+  ratio: Record<string, unknown>
+  usable: Record<string, unknown>
+  drafts: Record<string, GroupTableDraft | undefined>
+  currentDisplayNames: Record<string, string>
+}): GroupTableSaveResult {
+  const nextRatio: Record<string, unknown> = { ...input.ratio }
+  const nextUsable: Record<string, unknown> = {}
+  for (const [code, value] of Object.entries(input.usable)) {
+    if (Object.prototype.hasOwnProperty.call(input.ratio, code)) {
+      nextUsable[code] = value
+    }
+  }
+  const displayNames: Record<string, string> = {}
+  for (const code of Object.keys(input.ratio)) {
+    if (code === 'auto') continue
+    const draft = input.drafts[code]
+    if (!draft) return { ok: false, error: 'draft_missing' }
+    const ratio = groupRatioDraftValue(draft.ratio)
+    if (ratio === null) return { ok: false, error: 'ratio_required' }
+    nextRatio[code] = ratio
+    if (draft.isPublic) {
+      const current = nextUsable[code]
+      nextUsable[code] =
+        typeof current === 'string' && current.trim()
+          ? current
+          : draft.displayName.trim() || code
+    } else {
+      delete nextUsable[code]
+    }
+    const nextName = draft.displayName.trim()
+    const previous = (input.currentDisplayNames[code] ?? '').trim()
+    if (nextName !== '' && nextName !== previous) {
+      displayNames[code] = nextName
+    }
+  }
+  return {
+    ok: true,
+    changed:
+      JSON.stringify(nextRatio) !== JSON.stringify(input.ratio) ||
+      JSON.stringify(nextUsable) !== JSON.stringify(input.usable) ||
+      Object.keys(displayNames).length > 0,
+    ratio: nextRatio,
+    usable: nextUsable,
+    displayNames,
+  }
 }
 
 /** Map API error code to a stable toast key (i18n English source string). */

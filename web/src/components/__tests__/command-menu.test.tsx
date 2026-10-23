@@ -35,7 +35,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { CommandMenu } from '../command-menu'
 import { Search } from '../search'
 
-const adminEntries = ['Channels', 'Models', 'Users', 'Redemption Codes']
+const adminEntries = ['Channels', 'Models', 'Users']
 const superAdminEntries = ['System Info', 'Task Plugins', 'System Settings']
 
 // jsdom lacks the Web Animations API the menu's scroll area waits on.

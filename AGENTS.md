@@ -6,7 +6,7 @@ DO NOT send optional commentary
 
 This is an AI API gateway/proxy built with Go. It aggregates 40+ upstream AI providers (OpenAI, Claude, Gemini, Azure, AWS Bedrock, etc.) behind a unified API, with user management, billing, rate limiting, and an admin dashboard.
 
-Published version is the single line in `VERSION`, currently `v1.1.0-adtyai`. Invite commission leaves through balance transfer, USDT, or Alipay; the admin console groups overview, commission ledger, and withdrawal review, including self-invite review.
+Published version is the single line in `VERSION`, currently `v1.2.0-adtyai`. Invite commission leaves through balance transfer, USDT, or Alipay; the admin console groups overview, inviter directory, commission ledger, and withdrawal review, including self-invite review. Group billing changes only through the groups API as ratio, visibility, and display name; a hidden grant does not change the identity group, and new tokens cannot select auto. Redemption codes no longer credit. USDT notify stays on `/api/pay/usdt/notify`; the old BEpusdt notify path is not registered.
 
 ## Tech Stack
 

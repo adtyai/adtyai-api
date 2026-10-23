@@ -46,8 +46,22 @@ func TestRoutingPutConfigToggleIsPartialAndNeedsNoToken(t *testing.T) {
 	require.Equal(t, http.StatusOK, code, out)
 	after := smartrouting.GetConfig()
 	require.False(t, after.Enabled)
-	after.Enabled = true
-	require.Equal(t, before, after, "only enabled may change")
+	require.Equal(t, "off", after.Mode)
+	after.Enabled = before.Enabled
+	after.Mode = before.Mode
+	require.Equal(t, before, after, "only the routing switch may change")
+}
+
+func TestRoutingPutConfigModeObserveKeepsOtherFields(t *testing.T) {
+	before := setupRoutingConfigTest(t)
+	code, out := routingCall(t, AdtyRoutingPutConfig, `{"mode":"observe"}`)
+	require.Equal(t, http.StatusOK, code, out)
+	after := smartrouting.GetConfig()
+	require.Equal(t, "observe", after.Mode)
+	require.False(t, after.Enabled)
+	after.Mode = before.Mode
+	after.Enabled = before.Enabled
+	require.Equal(t, before, after, "observe must not change other fields")
 }
 
 // 审查 P1-3 B/C：preview {weights} → PUT {weights, preview_token} 成功，enabled 及其他参数保持不变。

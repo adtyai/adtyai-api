@@ -59,9 +59,9 @@ func TestRedeemUsedCodeMessage(t *testing.T) {
 	r := model.Redemption{Key: "p28usedcode000000000000000000000", Status: common.RedemptionCodeStatusUsed, Quota: 10, Name: "x"}
 	require.NoError(t, database.Create(&r).Error)
 	rec := adtyCall(TopUp, http.MethodPost, "/api/user/topup", `{"key":"`+r.Key+`"}`, u.Id, common.RoleCommonUser, nil)
-	require.Contains(t, rec.Body.String(), "This redemption code has already been used", rec.Body.String())
+	require.Contains(t, rec.Body.String(), "Redemption codes are no longer available", rec.Body.String())
 	rec = adtyCall(TopUp, http.MethodPost, "/api/user/topup", `{"key":"doesnotexist"}`, u.Id, common.RoleCommonUser, nil)
-	require.Contains(t, rec.Body.String(), "Redemption failed, please try again later")
+	require.Contains(t, rec.Body.String(), "Redemption codes are no longer available")
 }
 
 // 审查 P2-9：档位赠送金额两位小数，无浮点尾巴。

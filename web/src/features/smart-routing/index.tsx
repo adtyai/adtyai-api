@@ -24,10 +24,7 @@ import { useTranslation } from 'react-i18next'
 import { SectionPageLayout } from '@/components/layout'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
-import { CostPage } from './pages/cost-page'
-import { DecisionsPage } from './pages/decisions-page'
-import { RankingsPage } from './pages/rankings-page'
-import { ScoresPage } from './pages/scores-page'
+import { ChannelsPage } from './pages/channels-page'
 import { StrategyPage } from './pages/strategy-page'
 import {
   getSmartRoutingSectionTitleKey,
@@ -43,7 +40,6 @@ export function SmartRouting() {
   const params = route.useParams()
   const search = route.useSearch()
   const section = params.section as SmartRoutingSectionId
-
   const handleSectionChange = useCallback(
     (next: string) => {
       void navigate({
@@ -55,18 +51,12 @@ export function SmartRouting() {
     [navigate]
   )
 
-  let body: React.ReactNode
-  if (section === 'strategy') {
-    body = <StrategyPage />
-  } else if (section === 'scores') {
-    body = <ScoresPage initialChannelId={search.channel} />
-  } else if (section === 'rankings') {
-    body = <RankingsPage />
-  } else if (section === 'cost') {
-    body = <CostPage />
-  } else {
-    body = <DecisionsPage />
-  }
+  const body =
+    section === 'channels' ? (
+      <ChannelsPage initialChannelId={search.channel} />
+    ) : (
+      <StrategyPage />
+    )
 
   return (
     <SectionPageLayout fixedContent>

@@ -176,14 +176,9 @@ func GetToken(c *gin.Context) {
 }
 
 func GetTokenAutoGroups(c *gin.Context) {
-	userGroup, err := getTokenRequestUserGroup(c)
-	if err != nil {
-		common.ApiError(c, err)
-		return
-	}
 	common.ApiSuccess(c, gin.H{
-		"groups":    service.GetUserAutoGroup(userGroup),
-		"max_count": setting.GetMaxTokenAutoGroups(),
+		"groups":    []string{},
+		"max_count": 0,
 	})
 }
 
@@ -336,14 +331,8 @@ func AddToken(c *gin.Context) {
 	if !tokenGroupAllowed(c, token.Group) {
 		return
 	}
-	if token.Group == "auto" {
-		if !setTokenAutoGroups(c, &token, request.AutoGroups.Groups) {
-			return
-		}
-	} else {
-		token.CrossGroupRetry = false
-		_ = token.SetAutoGroups(nil)
-	}
+	token.CrossGroupRetry = false
+	_ = token.SetAutoGroups(nil)
 	key, err := common.GenerateKey()
 	if err != nil {
 		common.ApiErrorT(c, "Failed to generate token")
@@ -462,7 +451,11 @@ func UpdateToken(c *gin.Context) {
 		if request.AllowUserQuotaQuery != nil {
 			cleanToken.AllowUserQuotaQuery = *request.AllowUserQuotaQuery
 		}
-		if token.Group != cleanToken.Group && !tokenGroupAllowed(c, token.Group) {
+		if token.Group == "auto" && cleanToken.Group != "auto" {
+			common.ApiErrorT(c, "Auto group is no longer available")
+			return
+		}
+		if token.Group != cleanToken.Group && token.Group != "auto" && !tokenGroupAllowed(c, token.Group) {
 			return
 		}
 		cleanToken.Group = token.Group
@@ -582,7 +575,11 @@ func GetTokenKeysBatch(c *gin.Context) {
 
 // tokenGroupAllowed 审查 N-P2-12：令牌分组必须是用户可用分组（或用户自身分组），否则建令牌时就拒绝，而不是到 relay 才拒。
 func tokenGroupAllowed(c *gin.Context, group string) bool {
-	if group == "" || group == "auto" {
+	if group == "auto" {
+		common.ApiErrorT(c, "Auto group is no longer available")
+		return false
+	}
+	if group == "" {
 		return true
 	}
 	userGroup, err := model.GetUserGroup(c.GetInt("id"), false)
@@ -590,7 +587,7 @@ func tokenGroupAllowed(c *gin.Context, group string) bool {
 		common.ApiError(c, err)
 		return false
 	}
-	if group == userGroup || service.GroupInUserUsableGroups(userGroup, group) {
+	if service.UserMayUseGroup(c.GetInt("id"), userGroup, group) {
 		return true
 	}
 	common.ApiErrorT(c, "Group {{group}} is not available to you", map[string]any{"group": group})

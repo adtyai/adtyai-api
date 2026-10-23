@@ -13,6 +13,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/jsplugin"
 	"github.com/QuantumNous/new-api/relaykit/types"
+	"github.com/QuantumNous/new-api/service/smartrouting"
 	"github.com/gin-gonic/gin"
 )
 
@@ -91,29 +92,26 @@ func (p *RetryParam) ResetRetryNextTry() {
 //   - Uses ContextKeyAutoGroupRetryIndex to track the global Retry count when current group started.
 //     使用 ContextKeyAutoGroupRetryIndex 跟踪当前分组开始时的全局重试次数。
 //
-//   - priorityRetry = Retry - startRetryIndex, represents the priority level within current group.
-//     priorityRetry = Retry - startRetryIndex，表示当前分组内的优先级级别。
+//   - priorityRetry is only the cross-group RetryTimes gate. One select call already walks every remaining band.
+//     priorityRetry 只作为跨分组的 RetryTimes 门槛。一次选择已经在选择器内部走完剩余优先级。
 //
-//   - When GetRandomSatisfiedChannel returns nil (priorities exhausted), moves to next group.
-//     当 GetRandomSatisfiedChannel 返回 nil（优先级用完）时，切换到下一个分组。
-//
-// Example flow (2 groups, each with 2 priorities, RetryTimes=3):
-// 示例流程（2个分组，每个有2个优先级，RetryTimes=3）：
-//
-//	Retry=0: GroupA, priority0 (startRetryIndex=0, priorityRetry=0)
-//	         分组A, 优先级0
-//
-//	Retry=1: GroupA, priority1 (startRetryIndex=0, priorityRetry=1)
-//	         分组A, 优先级1
-//
-//	Retry=2: GroupA exhausted → GroupB, priority0 (startRetryIndex=2, priorityRetry=0)
-//	         分组A用完 → 分组B, 优先级0
-//
-//	Retry=3: GroupB, priority1 (startRetryIndex=2, priorityRetry=1)
-//	         分组B, 优先级1
+//   - A nil channel and a nil error means the group is exhausted. A select error, including inflight rejection, is returned.
+//     channel 和 error 都是 nil 才表示分组用完。选择错误（含 inflight 拒绝）必须原样返回。
+func collapseAutoGroup(c *gin.Context, group string) string {
+	if group != "auto" || c == nil {
+		return group
+	}
+	userGroup := common.GetContextKeyString(c, constant.ContextKeyUserGroup)
+	if userGroup == "" || userGroup == "auto" {
+		return ""
+	}
+	return userGroup
+}
+
 func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, error) {
 	var channel *model.Channel
 	var err error
+	param.TokenGroup = collapseAutoGroup(param.Ctx, param.TokenGroup)
 	selectGroup := param.TokenGroup
 	userGroup := common.GetContextKeyString(param.Ctx, constant.ContextKeyUserGroup)
 	filters := GetChannelConstraints(param.Ctx).Filters
@@ -135,72 +133,97 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 			}
 		}
 
-		for i := startGroupIndex; i < len(autoGroups); i++ {
-			autoGroup := autoGroups[i]
-			// Calculate priorityRetry for current group
-			// 计算当前分组的 priorityRetry
-			priorityRetry := param.GetRetry()
-			// If moved to a new group, reset priorityRetry and update startRetryIndex
-			// 如果切换到新分组，重置 priorityRetry 并更新 startRetryIndex
-			if i > startGroupIndex {
-				priorityRetry = 0
-			}
-			logger.LogDebug(param.Ctx, "Auto selecting group: %s, priorityRetry: %d", autoGroup, priorityRetry)
-
-			channel, _ = model.GetRandomSatisfiedChannel(
-				autoGroup,
-				param.ModelName,
-				priorityRetry,
-				filters,
-			)
-			if channel == nil {
-				// Current group has no available channel for this model, try next group
-				// 当前分组没有该模型的可用渠道，尝试下一个分组
-				logger.LogDebug(param.Ctx, "No available channel in group %s for model %s at priorityRetry %d, trying next group", autoGroup, param.ModelName, priorityRetry)
-				// 重置状态以尝试下一个分组
-				common.SetContextKey(param.Ctx, constant.ContextKeyAutoGroupIndex, i+1)
-				common.SetContextKey(param.Ctx, constant.ContextKeyAutoGroupRetryIndex, 0)
-				// Reset retry counter so outer loop can continue for next group
-				// 重置重试计数器，以便外层循环可以为下一个分组继续
-				param.SetRetry(0)
-				continue
-			}
-			common.SetContextKey(param.Ctx, constant.ContextKeyAutoGroup, autoGroup)
-			selectGroup = autoGroup
-			logger.LogDebug(param.Ctx, "Auto selected group: %s", autoGroup)
-
-			// Prepare state for next retry
-			// 为下一次重试准备状态
-			if crossGroupRetry && priorityRetry >= common.RetryTimes {
-				// Current group has exhausted all retries, prepare to switch to next group
-				// This request still uses current group, but next retry will use next group
-				// 当前分组已用完所有重试次数，准备切换到下一个分组
-				// 本次请求仍使用当前分组，但下次重试将使用下一个分组
-				logger.LogDebug(param.Ctx, "Current group %s retries exhausted (priorityRetry=%d >= RetryTimes=%d), preparing switch to next group for next retry", autoGroup, priorityRetry, common.RetryTimes)
-				common.SetContextKey(param.Ctx, constant.ContextKeyAutoGroupIndex, i+1)
-				// Reset retry counter so outer loop can continue for next group
-				// 重置重试计数器，以便外层循环可以为下一个分组继续
-				param.SetRetry(0)
-				param.ResetRetryNextTry()
-			} else {
-				// Stay in current group, save current state
-				// 保持在当前分组，保存当前状态
-				common.SetContextKey(param.Ctx, constant.ContextKeyAutoGroupIndex, i)
-			}
-			break
-		}
-	} else {
-		channel, err = model.GetRandomSatisfiedChannel(
-			param.TokenGroup,
-			param.ModelName,
-			param.GetRetry(),
-			filters,
-		)
-		if err != nil {
-			return nil, param.TokenGroup, err
-		}
+		return selectAutoGroupChannel(param, autoGroups, filters, startGroupIndex, crossGroupRetry)
+	}
+	start := bandStartFor(param.Ctx, param.TokenGroup, param.GetRetry())
+	var decision model.RouteBandDecision
+	channel, decision, err = selectSatisfiedChannel(
+		param.TokenGroup,
+		param.ModelName,
+		start,
+		filters,
+		routeCapsFromContext(param.Ctx),
+	)
+	storeRouteDecision(param.Ctx, decision)
+	if err != nil {
+		return nil, param.TokenGroup, err
 	}
 	return channel, selectGroup, nil
+}
+
+var selectSatisfiedChannel = model.GetRandomSatisfiedChannelRouted
+
+func selectAutoGroupChannel(param *RetryParam, autoGroups []string, filters []dto.ChannelFilter, startGroupIndex int, crossGroupRetry bool) (*model.Channel, string, error) {
+	var channel *model.Channel
+	selectGroup := param.TokenGroup
+	for i := startGroupIndex; i < len(autoGroups); i++ {
+		autoGroup := autoGroups[i]
+		priorityRetry := param.GetRetry()
+		if i > startGroupIndex {
+			priorityRetry = 0
+		}
+		start := bandStartFor(param.Ctx, autoGroup, priorityRetry)
+		logger.LogDebug(param.Ctx, "Auto selecting group: %s, priorityRetry: %d, bandStart: %d", autoGroup, priorityRetry, start)
+		decision := model.RouteBandDecision{}
+		var err error
+		channel, decision, err = selectSatisfiedChannel(
+			autoGroup,
+			param.ModelName,
+			start,
+			filters,
+			routeCapsFromContext(param.Ctx),
+		)
+		storeRouteDecision(param.Ctx, decision)
+		if err != nil {
+			return nil, autoGroup, err
+		}
+		if channel == nil {
+			logger.LogDebug(param.Ctx, "No available channel in group %s for model %s at priorityRetry %d, trying next group", autoGroup, param.ModelName, priorityRetry)
+			common.SetContextKey(param.Ctx, constant.ContextKeyAutoGroupIndex, i+1)
+			common.SetContextKey(param.Ctx, constant.ContextKeyAutoGroupRetryIndex, 0)
+			param.SetRetry(0)
+			continue
+		}
+		common.SetContextKey(param.Ctx, constant.ContextKeyAutoGroup, autoGroup)
+		selectGroup = autoGroup
+		logger.LogDebug(param.Ctx, "Auto selected group: %s", autoGroup)
+
+		// Prepare state for next retry
+		// 为下一次重试准备状态
+		if crossGroupRetry && priorityRetry >= common.RetryTimes {
+			// Current group has exhausted all retries, prepare to switch to next group
+			// This request still uses current group, but next retry will use next group
+			// 当前分组已用完所有重试次数，准备切换到下一个分组
+			// 本次请求仍使用当前分组，但下次重试将使用下一个分组
+			logger.LogDebug(param.Ctx, "Current group %s retries exhausted (priorityRetry=%d >= RetryTimes=%d), preparing switch to next group for next retry", autoGroup, priorityRetry, common.RetryTimes)
+			common.SetContextKey(param.Ctx, constant.ContextKeyAutoGroupIndex, i+1)
+			// Reset retry counter so outer loop can continue for next group
+			// 重置重试计数器，以便外层循环可以为下一个分组继续
+			param.SetRetry(0)
+			param.ResetRetryNextTry()
+		} else {
+			// Stay in current group, save current state
+			// 保持在当前分组，保存当前状态
+			common.SetContextKey(param.Ctx, constant.ContextKeyAutoGroupIndex, i)
+		}
+		break
+	}
+	return channel, selectGroup, nil
+}
+
+func bandStartFor(c *gin.Context, group string, officialRetry int) int {
+	if c == nil {
+		return officialRetry
+	}
+	raw, ok := common.GetContextKey(c, constant.ContextKeyRouteDecision)
+	if !ok {
+		return officialRetry
+	}
+	decision, ok := raw.(model.RouteBandDecision)
+	if !ok {
+		return officialRetry
+	}
+	return model.NextBandStart(decision, group, officialRetry)
 }
 
 func pinnedTaskPluginIdentities(c *gin.Context, expected string) ([]int, []string) {
@@ -303,10 +326,12 @@ func SelectChannelForRequest(c *gin.Context, modelName string, retry *RetryParam
 				FilterKind: kind, Channel: channel,
 			}
 		}
+		storeUnanchoredPick(c, pinWalkGroup(c, retry), channel.Id, "pin")
 		return channel, "", nil
 	}
 
-	usingGroup := retry.TokenGroup
+	usingGroup := collapseAutoGroup(c, retry.TokenGroup)
+	retry.TokenGroup = usingGroup
 	var channel *model.Channel
 	var selectGroup string
 	if retry.GetRetry() == 0 {
@@ -346,6 +371,7 @@ func SelectChannelForRequest(c *gin.Context, modelName string, retry *RetryParam
 		}
 	}
 
+	pickedByAffinity := channel != nil
 	if channel == nil {
 		var err error
 		channel, selectGroup, err = CacheGetRandomSatisfiedChannel(retry)
@@ -373,7 +399,38 @@ func SelectChannelForRequest(c *gin.Context, modelName string, retry *RetryParam
 			FilterKind: kind, Channel: channel, NoAvailableChannel: true,
 		}
 	}
+	if pickedByAffinity {
+		storeUnanchoredPick(c, selectGroup, channel.Id, "affinity")
+	}
 	return channel, selectGroup, nil
+}
+
+func pinWalkGroup(c *gin.Context, retry *RetryParam) string {
+	if c != nil {
+		if group := common.GetContextKeyString(c, constant.ContextKeyUsingGroup); group != "" && group != "auto" {
+			return group
+		}
+	}
+	if retry == nil {
+		return ""
+	}
+	group := collapseAutoGroup(c, retry.TokenGroup)
+	if group == "auto" {
+		return ""
+	}
+	return group
+}
+
+func storeUnanchoredPick(c *gin.Context, group string, channelID int, reason string) {
+	if c == nil || channelID == 0 || group == "" {
+		return
+	}
+	storeRouteDecision(c, model.RouteBandDecision{
+		Picked:    channelID,
+		Group:     group,
+		BandIndex: model.BandIndexNotWalked,
+		Reason:    reason,
+	})
 }
 
 // Origin-task pins report a fixed code so task polling can tell a retired
@@ -389,4 +446,26 @@ func pinnedChannelUnavailable(pin dto.ChannelPin, statusCode int, messageID stri
 // trail, which the retry log and the consume log's admin_info both read.
 func AppendUsedChannel(c *gin.Context, channelID int) {
 	c.Set("use_channel", append(c.GetStringSlice("use_channel"), fmt.Sprintf("%d", channelID)))
+}
+
+func routeCapsFromContext(c *gin.Context) model.RouteCaps {
+	if c == nil {
+		return model.RouteCaps{}
+	}
+	caps, ok := common.GetContextKeyType[model.RouteCaps](c, constant.ContextKeyRouteCaps)
+	if !ok {
+		return model.RouteCaps{}
+	}
+	return caps
+}
+
+func storeRouteDecision(c *gin.Context, decision model.RouteBandDecision) {
+	if c == nil {
+		return
+	}
+	smartrouting.ReleaseHalfOpenReservation(c)
+	common.SetContextKey(c, constant.ContextKeyRouteDecision, decision)
+	if decision.HalfOpen && decision.Picked != 0 {
+		common.SetContextKey(c, constant.ContextKeyHalfOpenReserved, decision.Picked)
+	}
 }

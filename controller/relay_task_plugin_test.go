@@ -438,12 +438,31 @@ func setupTaskSubmissionDatabase(t *testing.T, migrate bool, events *[]string) *
 		models = append(models, &model.Task{})
 	}
 	database, _ := openTaskDialectDatabase(t, models...)
-	require.NoError(t, database.Callback().Create().Before("gorm:create").Register("test:task-submit-order", func(*gorm.DB) {
+	require.NoError(t, database.Callback().Create().Before("gorm:create").Register("test:task-submit-order", func(tx *gorm.DB) {
+		if !taskInsertCallback(tx) {
+			return
+		}
 		*events = append(*events, "insert")
 	}))
 	model.DB = database
 	t.Cleanup(func() { model.DB = previousDB })
 	return database
+}
+
+// taskInsertCallback ignores cost-ledger and other creates. Test databases
+// prefix the task table, so the check uses the model name and the table suffix.
+func taskInsertCallback(tx *gorm.DB) bool {
+	if tx == nil || tx.Statement == nil {
+		return false
+	}
+	if tx.Statement.Schema != nil && tx.Statement.Schema.Name == "Task" {
+		return true
+	}
+	table := tx.Statement.Table
+	if table == "" && tx.Statement.Schema != nil {
+		table = tx.Statement.Schema.Table
+	}
+	return table == "tasks" || strings.HasSuffix(table, "_tasks")
 }
 
 func taskSubmissionTestContext() *gin.Context {

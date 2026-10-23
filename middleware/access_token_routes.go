@@ -311,6 +311,7 @@ var accessTokenRouteRules = map[string]accessTokenRouteRule{
 	// 一律只认浏览器会话（含拒绝旧版 token）；需要开放时再按 scope 单独声明。
 	"DELETE /api/admin/enterprise-pricing/:id":         accessTokenSessionRule,
 	"GET /api/admin/aff/commissions":                   accessTokenSessionRule,
+	"GET /api/admin/aff/inviters":                      accessTokenSessionRule,
 	"GET /api/admin/aff/overview":                      accessTokenSessionRule,
 	"GET /api/admin/aff/payout-qr/:id":                 accessTokenSessionRule,
 	"GET /api/admin/aff/self-invite-reviews":           accessTokenSessionRule,
@@ -324,6 +325,7 @@ var accessTokenRouteRules = map[string]accessTokenRouteRule{
 	"GET /api/admin/epay-instances":                    accessTokenSessionRule,
 	"GET /api/admin/epay-instances/:id":                accessTokenSessionRule,
 	"GET /api/admin/groups":                            accessTokenSessionRule,
+	"GET /api/admin/groups/:code/grants":               accessTokenSessionRule,
 	"GET /api/admin/menu-visibility":                   accessTokenSessionRule,
 	"GET /api/admin/orders":                            accessTokenSessionRule,
 	"GET /api/admin/orders/:no":                        accessTokenSessionRule,
@@ -396,6 +398,7 @@ var accessTokenRouteRules = map[string]accessTokenRouteRule{
 	"POST /api/admin/epay-instances/:id/set-primary":   accessTokenSessionRule,
 	"POST /api/admin/epay/manual-complete":             accessTokenSessionRule,
 	"POST /api/admin/groups":                           accessTokenSessionRule,
+	"POST /api/admin/groups/:code/grants":              accessTokenSessionRule,
 	"POST /api/admin/orders/:no/complete":              accessTokenSessionRule,
 	"POST /api/admin/orders/:no/refund":                accessTokenSessionRule,
 	"POST /api/admin/risk-reviews/:id/approve":         accessTokenSessionRule,
@@ -411,6 +414,8 @@ var accessTokenRouteRules = map[string]accessTokenRouteRule{
 	"PUT /api/admin/chatwoot":                          accessTokenSessionRule,
 	"PUT /api/admin/enterprise-pricing/:id":            accessTokenSessionRule,
 	"PUT /api/admin/epay-instances/:id":                accessTokenSessionRule,
+	"DELETE /api/admin/groups/:code/grants/:user_id":   accessTokenSessionRule,
+	"PUT /api/admin/groups/billing":                    accessTokenSessionRule,
 	"PUT /api/admin/groups/:code":                      accessTokenSessionRule,
 	"PUT /api/admin/menu-visibility":                   accessTokenSessionRule,
 }

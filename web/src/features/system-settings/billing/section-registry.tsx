@@ -18,11 +18,10 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { parseCurrencyDisplayType } from '@/lib/currency'
 
-import { EpayInstancesSection } from '../epay-instances/epay-instances-section'
 import { CheckinSettingsSection } from '../general/checkin-settings-section'
 import { PricingSection } from '../general/pricing-section'
 import { QuotaSettingsSection } from '../general/quota-settings-section'
-import { GroupDisplayNameSection } from '../groups/group-display-name-section'
+import { GroupSimpleSection } from '../groups/group-simple-section'
 import { PaymentSettingsSection } from '../integrations/payment-settings-section'
 import { RatioSettingsCard } from '../models/ratio-settings-card'
 import type { BillingSettings } from '../types'
@@ -117,16 +116,10 @@ const BILLING_SECTIONS = [
     id: 'group-pricing',
     titleKey: 'Group Pricing',
     build: (settings: BillingSettings) => (
-      <>
-        <RatioSettingsCard
-          titleKey='Group Pricing'
-          modelDefaults={getModelDefaults(settings)}
-          groupDefaults={getGroupDefaults(settings)}
-          toolPricesDefault={settings['tool_price_setting.prices']}
-          visibleTabs={['groups']}
-        />
-        <GroupDisplayNameSection />
-      </>
+      <GroupSimpleSection
+        groupRatio={settings.GroupRatio}
+        userUsableGroups={settings.UserUsableGroups}
+      />
     ),
   },
   {
@@ -183,7 +176,6 @@ const BILLING_SECTIONS = [
             settings.WaffoPancakeProductID ?? ''
           }
         />
-        <EpayInstancesSection />
       </>
     ),
   },

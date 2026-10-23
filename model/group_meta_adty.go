@@ -335,3 +335,90 @@ func CreateGroupMeta(db *gorm.DB, in GroupMetaCreateInput) (GroupMetaView, error
 	}
 	return GroupMetaView{Code: row.Code, DisplayName: row.DisplayName, Sort: row.Sort, HasMeta: true}, nil
 }
+
+// CreateGroupWithRatio writes metadata and a default hidden billing ratio in one commit.
+// auto is rejected. Existing metadata without a ratio is repaired instead of reported as exists.
+func CreateGroupWithRatio(db *gorm.DB, in GroupMetaCreateInput) (GroupMetaView, error) {
+	if db == nil {
+		db = DB
+	}
+	code := strings.TrimSpace(in.Code)
+	if code == "auto" {
+		return GroupMetaView{}, ErrGroupMetaInvalidCode
+	}
+	if err := ValidateGroupMetaCode(code); err != nil {
+		return GroupMetaView{}, err
+	}
+	dn := strings.TrimSpace(in.DisplayName)
+	if dn == "" {
+		dn = code
+	}
+	sortV := 0
+	if in.Sort != nil {
+		sortV = *in.Sort
+	}
+	var view GroupMetaView
+	var saved string
+	var seenPlain string
+	var txErr error
+	for attempt := 0; attempt < groupRatioWriteAttempts; attempt++ {
+		saved = ""
+		seenPlain = ""
+		txErr = db.Transaction(func(tx *gorm.DB) error {
+			snap, readErr := readGroupRatioTx(tx)
+			if readErr != nil {
+				return readErr
+			}
+			seenPlain = snap.plain
+			_, hasRatio := snap.ratios[code]
+			var existing GroupMeta
+			findErr := tx.Where("code = ?", code).First(&existing).Error
+			metaExists := findErr == nil
+			if findErr != nil && !errors.Is(findErr, gorm.ErrRecordNotFound) {
+				return findErr
+			}
+			if metaExists && hasRatio {
+				return ErrGroupMetaExists
+			}
+			if !metaExists {
+				row := GroupMeta{Code: code, DisplayName: dn, Sort: sortV}
+				if createErr := tx.Create(&row).Error; createErr != nil {
+					return createErr
+				}
+				view = GroupMetaView{Code: row.Code, DisplayName: row.DisplayName, Sort: row.Sort, HasMeta: true}
+			} else {
+				view = GroupMetaView{Code: existing.Code, DisplayName: existing.DisplayName, Sort: existing.Sort, HasMeta: true}
+			}
+			if hasRatio {
+				return nil
+			}
+			next := copyGroupRatio(snap.ratios)
+			next[code] = 1
+			raw, marshalErr := common.Marshal(next)
+			if marshalErr != nil {
+				return marshalErr
+			}
+			saved = string(raw)
+			if checkErr := ratio_setting.CheckGroupRatio(saved); checkErr != nil {
+				return checkErr
+			}
+			return writeGroupRatioTx(tx, snap, saved)
+		})
+		if txErr == nil || errors.Is(txErr, ErrGroupMetaExists) || !isGroupRatioConflict(txErr) {
+			break
+		}
+	}
+	if txErr != nil {
+		return GroupMetaView{}, txErr
+	}
+	refresh := saved
+	if refresh == "" {
+		refresh = seenPlain
+	}
+	if refresh != "" {
+		if mapErr := publishCommittedOption("GroupRatio", refresh); mapErr != nil {
+			return GroupMetaView{}, mapErr
+		}
+	}
+	return view, nil
+}

@@ -438,6 +438,25 @@ func getUserGroupByIdTx(tx *gorm.DB, userId int) (string, error) {
 	return group, nil
 }
 
+// writeSubscriptionIdentity changes users.group only when the target is a
+// public billing group. A hidden, missing, or auto target keeps the current
+// identity and is not treated as a failed subscription settlement.
+func writeSubscriptionIdentity(tx *gorm.DB, userID int, current, next string) (string, error) {
+	current = strings.TrimSpace(current)
+	next = strings.TrimSpace(next)
+	if next == "" || next == current {
+		return "", nil
+	}
+	if !IdentityGroupChangeAllowed(current, next) {
+		common.SysLog(common.LogText("subscription keeps user %d group %q because %q is not a public billing group", userID, current, next))
+		return "", nil
+	}
+	if err := tx.Model(&User{}).Where("id = ?", userID).Update("group", next).Error; err != nil {
+		return "", err
+	}
+	return next, nil
+}
+
 func downgradeUserGroupForSubscriptionTx(tx *gorm.DB, sub *UserSubscription, now int64) (string, error) {
 	if tx == nil || sub == nil {
 		return "", errors.New("invalid downgrade args")
@@ -475,11 +494,7 @@ func downgradeUserGroupForSubscriptionTx(tx *gorm.DB, sub *UserSubscription, now
 	if target == "" || target == currentGroup {
 		return "", nil
 	}
-	if err := tx.Model(&User{}).Where("id = ?", sub.UserId).
-		Update("group", target).Error; err != nil {
-		return "", err
-	}
-	return target, nil
+	return writeSubscriptionIdentity(tx, sub.UserId, currentGroup, target)
 }
 
 func CreateUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *SubscriptionPlan, source string) (*UserSubscription, error) {
@@ -523,10 +538,12 @@ func CreateUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *Subscriptio
 			return nil, err
 		}
 		if currentGroup != upgradeGroup {
-			prevGroup = currentGroup
-			if err := tx.Model(&User{}).Where("id = ?", userId).
-				Update("group", upgradeGroup).Error; err != nil {
+			written, err := writeSubscriptionIdentity(tx, userId, currentGroup, upgradeGroup)
+			if err != nil {
 				return nil, err
+			}
+			if written != "" {
+				prevGroup = currentGroup
 			}
 		}
 	}
@@ -1266,11 +1283,11 @@ func ExpireDueSubscriptions(limit int) (int, error) {
 			if target == "" || target == currentGroup {
 				return nil
 			}
-			if err := tx.Model(&User{}).Where("id = ?", userId).
-				Update("group", target).Error; err != nil {
+			written, err := writeSubscriptionIdentity(tx, userId, currentGroup, target)
+			if err != nil {
 				return err
 			}
-			cacheGroup = target
+			cacheGroup = written
 			return nil
 		})
 		if err != nil {

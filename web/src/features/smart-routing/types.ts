@@ -36,8 +36,18 @@ export type WeightScheme = {
   is_default?: boolean
 }
 
+export type RouteTagRow = {
+  id: number
+  channel_id: number
+  model: string
+  tag: string
+  note?: string
+}
+
 export type RoutingConfig = {
   enabled: boolean
+  /** Server mode. enabled is true only when mode is active. */
+  mode?: 'off' | 'observe' | 'active'
   /** Backend field: active scheme name (e.g. balanced_default). */
   active_weight_scheme?: string
   /** @deprecated FE alias; prefer active_weight_scheme. */
@@ -64,54 +74,6 @@ export type HalfOpenStage =
   | 'ramp_10'
   | 'full'
   | 'unknown'
-
-export type ChannelScoreRow = {
-  channel_id: number
-  channel_name?: string
-  model?: string
-  score: number | null
-  /** Five dimension scores (aliases: s_conn / s_price / … from backend). */
-  connectivity?: number | null
-  price?: number | null
-  speed?: number | null
-  stability?: number | null
-  authenticity?: number | null
-  s_conn?: number | null
-  s_price?: number | null
-  s_speed?: number | null
-  s_stab?: number | null
-  s_auth?: number | null
-  route_weight?: number | null
-  share_pct?: number | null
-  sample_30m?: number
-  samples?: number
-  status_label?: string
-  half_open_stage?: HalfOpenStage
-  half_open_success?: number
-  half_open_inflight?: number
-  cooldown_remain_sec?: number
-  /** Dual-window detail (5min / 60min); empty until backend ships. */
-  conn_short?: number | null
-  conn_long?: number | null
-  speed_short?: number | null
-  speed_long?: number | null
-  /** Capability filter reason when excluded from candidates. */
-  ability_filter_reason?: string | null
-  /** Soft RPM / in-flight throttle. */
-  rate_limited?: boolean
-  rate_limit_remain_sec?: number | null
-  /** Multiplier × recharge rate estimate (CNY / MTok). */
-  cost_ratio_rate?: number | null
-  /** Last-30-min local estimate (CNY / MTok). */
-  cost_live_30m?: number | null
-  estimate_sample_ratio?: number | null
-  missing_cost?: boolean
-  layer?: 'third_party' | 'official'
-  fake_model?: boolean
-  data_insufficient?: boolean
-  no_data?: boolean
-  is_new?: boolean
-}
 
 export type BreakerStageRow = {
   channel_id: number
@@ -151,24 +113,6 @@ export type ChannelPriceRow = {
   daily_avg_7d?: number | null
 }
 
-export type CostRankingRow = {
-  channel_id: number
-  channel_name?: string
-  revenue_cny?: number
-  cost_cny?: number
-  margin_cny?: number
-  margin_pct?: number
-}
-
-export type CostGuardRow = {
-  channel_id: number
-  channel_name?: string
-  daily_cost_cny?: number
-  daily_avg_7d?: number
-  multiplier?: number
-  excluded?: boolean
-}
-
 export type SimulateResultItem = {
   channel_id: number
   channel_name?: string
@@ -182,6 +126,15 @@ export type SimulateResultItem = {
 export type SimulateResult = {
   model: string
   items: SimulateResultItem[]
+  error?: string
+  picked?: number
+  would_pick?: number
+  half_open?: {
+    channel_id: number
+    priority?: number
+    share?: number
+    band_index?: number
+  }
 }
 
 export type WeightPreviewItem = {
@@ -216,21 +169,6 @@ export type WeightHistoryEntry = {
   scheme_name?: string
   /** Raw snapshot JSON (config) when backend returns it; used for rollback preview. */
   snapshot?: string | Record<string, unknown>
-}
-
-export type DecisionRow = {
-  request_id?: string
-  log_id?: number
-  at?: string
-  model?: string
-  channel_id?: number
-  channel_name?: string
-  pinned?: boolean
-  half_open?: boolean
-  tried?: number[]
-  exclude_reasons?: string[]
-  candidates?: { channel_id: number; route_weight: number }[]
-  score_snapshot_at?: string
 }
 
 export type ApiEnvelope<T> = {

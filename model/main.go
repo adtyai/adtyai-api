@@ -393,6 +393,7 @@ func migrateDB() error {
 		&OpsAlertEvent{},
 		&EnterprisePriceRule{},
 		&GroupMeta{},
+		&UserGroupGrant{},
 	)
 	if err != nil {
 		return err
@@ -418,6 +419,9 @@ func migrateDB() error {
 	}
 	if err := EnsureGroupMetaSchema(DB); err != nil {
 		common.SysError(common.LogText("failed to ensure group_meta: %s", err.Error()))
+	}
+	if err := EnsureUserGroupGrantSchema(DB); err != nil {
+		return fmt.Errorf("ensure user_group_grants: %w", err)
 	}
 	if err := EnsureSmartRoutingSchema(DB); err != nil {
 		common.SysError(common.LogText("failed to ensure smart_routing: %s", err.Error()))

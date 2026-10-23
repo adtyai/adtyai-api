@@ -366,10 +366,11 @@ func ListAffInvitees(inviterId int, limit, offset int, mask bool) ([]AffInviteeR
 		Voided    int
 	}
 	var aggs []agg
+	// 作废行不计入这行实付和佣金。状态仍全部保留，避免被更高优先级盖掉。
 	if err := DB.Model(&AffCommission{}).
 		Select(`invitee_id,
-			COALESCE(SUM(paid_amount_usd),0) as paid,
-			COALESCE(SUM(commission_quota),0) as quota,
+			COALESCE(SUM(CASE WHEN status <> 'voided' THEN paid_amount_usd ELSE 0 END),0) as paid,
+			COALESCE(SUM(CASE WHEN status <> 'voided' THEN commission_quota ELSE 0 END),0) as quota,
 			SUM(CASE WHEN status = 'blocked' THEN 1 ELSE 0 END) as blocked,
 			SUM(CASE WHEN status = 'frozen' THEN 1 ELSE 0 END) as frozen,
 			SUM(CASE WHEN status = 'available' THEN 1 ELSE 0 END) as available,
@@ -397,18 +398,20 @@ func ListAffInvitees(inviterId int, limit, offset int, mask bool) ([]AffInviteeR
 }
 
 func summarizeAffCommissionStatus(blocked, frozen, available, voided int) string {
-	switch {
-	case blocked > 0:
-		return AffCommissionStatusBlocked
-	case frozen > 0:
-		return AffCommissionStatusFrozen
-	case available > 0:
-		return AffCommissionStatusAvailable
-	case voided > 0:
-		return AffCommissionStatusVoided
-	default:
-		return ""
+	parts := make([]string, 0, 4)
+	if blocked > 0 {
+		parts = append(parts, AffCommissionStatusBlocked)
 	}
+	if frozen > 0 {
+		parts = append(parts, AffCommissionStatusFrozen)
+	}
+	if available > 0 {
+		parts = append(parts, AffCommissionStatusAvailable)
+	}
+	if voided > 0 {
+		parts = append(parts, AffCommissionStatusVoided)
+	}
+	return strings.Join(parts, ",")
 }
 
 func loadUserLabels(ids []int) (map[int]User, error) {
@@ -561,12 +564,82 @@ func CountAffWithdrawalBuckets() (AffWithdrawBuckets, error) {
 	return out, nil
 }
 
+type AffInviterRow struct {
+	UserId       int    `json:"user_id"`
+	Username     string `json:"username"`
+	DisplayName  string `json:"display_name"`
+	AffCode      string `json:"aff_code"`
+	InviteeCount int    `json:"invitee_count"`
+	AffQuota     int    `json:"aff_quota"`
+	AffHistory   int    `json:"aff_history"`
+}
+
+func clampInviterPage(limit, offset int) (int, int) {
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	return limit, offset
+}
+
+func ListAffAdminInviters(keyword string, limit, offset int) ([]AffInviterRow, int64, error) {
+	limit, offset = clampInviterPage(limit, offset)
+	var total int64
+	if err := inviterDirectoryQuery(keyword).Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	rows := make([]AffInviterRow, 0)
+	err := inviterDirectoryQuery(keyword).
+		Select(`u.id AS user_id, u.username AS username, u.display_name AS display_name, u.aff_code AS aff_code,
+			(SELECT COUNT(*) FROM users AS invitee WHERE invitee.inviter_id = u.id AND invitee.deleted_at IS NULL) AS invitee_count,
+			u.aff_quota AS aff_quota, u.aff_history AS aff_history`).
+		Order("u.id ASC").
+		Limit(limit).
+		Offset(offset).
+		Scan(&rows).Error
+	if err != nil {
+		return nil, 0, err
+	}
+	return rows, total, nil
+}
+
+func inviterDirectoryQuery(keyword string) *gorm.DB {
+	q := DB.Table("users AS u").Where("u.deleted_at IS NULL").Where(`(
+		EXISTS (SELECT 1 FROM users AS invitee WHERE invitee.inviter_id = u.id AND invitee.deleted_at IS NULL)
+		OR EXISTS (SELECT 1 FROM aff_commissions AS c WHERE c.inviter_id = u.id)
+	)`)
+	keyword = strings.TrimSpace(keyword)
+	if keyword == "" {
+		return q
+	}
+	pattern := "%" + escapeLikePattern(strings.ToLower(keyword)) + "%"
+	textMatch := `(LOWER(COALESCE(u.username, '')) LIKE ? ESCAPE '\' OR LOWER(COALESCE(u.display_name, '')) LIKE ? ESCAPE '\' OR LOWER(COALESCE(u.aff_code, '')) LIKE ? ESCAPE '\')`
+	if id, err := strconv.Atoi(keyword); err == nil && id > 0 && strconv.Itoa(id) == keyword {
+		return q.Where(`(u.id = ? OR `+textMatch+`)`, id, pattern, pattern, pattern)
+	}
+	return q.Where(`(`+textMatch+`)`, pattern, pattern, pattern)
+}
+
+func escapeLikePattern(value string) string {
+	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(value)
+}
+
 func GetAffOverview() (AffOverview, error) {
 	var out AffOverview
-	if err := DB.Model(&User{}).Where("inviter_id > 0").Count(&out.InvitedUsers).Error; err != nil {
+	// Count only invitees whose inviter is still in the directory. A deleted
+	// inviter stays out of the inviter table, so their invitees stay out of this card.
+	if err := DB.Model(&User{}).
+		Where("inviter_id > 0").
+		Where("inviter_id IN (SELECT id FROM users WHERE deleted_at IS NULL)").
+		Count(&out.InvitedUsers).Error; err != nil {
 		return out, err
 	}
-	if err := DB.Raw("SELECT COUNT(DISTINCT inviter_id) FROM aff_commissions").Scan(&out.Inviters).Error; err != nil {
+	if err := inviterDirectoryQuery("").Count(&out.Inviters).Error; err != nil {
 		return out, err
 	}
 	type sumRow struct {
@@ -575,6 +648,7 @@ func GetAffOverview() (AffOverview, error) {
 	}
 	var sums []sumRow
 	if err := DB.Model(&AffCommission{}).
+		Where("inviter_id IN (SELECT id FROM users WHERE deleted_at IS NULL)").
 		Select("status, COALESCE(SUM(commission_quota),0) as total").
 		Group("status").Scan(&sums).Error; err != nil {
 		return out, err
@@ -592,7 +666,10 @@ func GetAffOverview() (AffOverview, error) {
 		}
 	}
 	var pending []AffWithdrawal
-	if err := DB.Select("pay_method", "usdt_chain").Where("status = ?", AffWithdrawStatusPending).Find(&pending).Error; err != nil {
+	if err := DB.Select("pay_method", "usdt_chain").
+		Where("status = ?", AffWithdrawStatusPending).
+		Where("user_id IN (SELECT id FROM users WHERE deleted_at IS NULL)").
+		Find(&pending).Error; err != nil {
 		return out, err
 	}
 	for i := range pending {
@@ -606,6 +683,7 @@ func GetAffOverview() (AffOverview, error) {
 		}
 	}
 	if err := DB.Model(&AffWithdrawal{}).Where("status = ?", AffWithdrawStatusPaid).
+		Where("user_id IN (SELECT id FROM users WHERE deleted_at IS NULL)").
 		Select("COALESCE(SUM(net_quota),0)").Scan(&out.WithdrawPaidQuota).Error; err != nil {
 		return out, err
 	}

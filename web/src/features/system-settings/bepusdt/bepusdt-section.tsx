@@ -67,7 +67,6 @@ const schema = z.object({
     }
   }, 'Provide a valid HTTP(S) base URL'),
   BepusdtApiToken: z.string(),
-  BepusdtLegacyNotifyEnabled: z.boolean(),
   enabledChains: z.array(z.enum(['trc20', 'bep20', 'polygon', 'xlayer'])),
 })
 
@@ -269,32 +268,6 @@ export function BepusdtSection({ embedded = false }: BepusdtSectionProps = {}) {
                 />
               ))}
             </div>
-
-            <FormField
-              control={form.control}
-              name='BepusdtLegacyNotifyEnabled'
-              render={({ field }) => (
-                <SettingsSwitchItem>
-                  <SettingsSwitchContent>
-                    <FormLabel>
-                      {t('Enable legacy BEpusdt notify path')}
-                    </FormLabel>
-                    <p className='text-muted-foreground text-xs'>
-                      {t(
-                        'Only for old callbacks. New orders do not use this. Leave it off.'
-                      )}
-                    </p>
-                  </SettingsSwitchContent>
-                  <FormControl>
-                    <Switch
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                      disabled={saving}
-                    />
-                  </FormControl>
-                </SettingsSwitchItem>
-              )}
-            />
           </SettingsForm>
         </Form>
       ) : null}

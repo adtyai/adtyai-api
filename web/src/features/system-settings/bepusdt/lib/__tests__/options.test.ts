@@ -32,7 +32,6 @@ describe('parseBepusdtOptions', () => {
   it('reads gateway fields and enabled chains', () => {
     const parsed = parseBepusdtOptions([
       { key: 'BepusdtBaseURL', value: ' https://pay.example.com/ ' },
-      { key: 'BepusdtLegacyNotifyEnabled', value: 'true' },
       { key: 'BepusdtEnabledChains', value: '["xlayer","trc20","erc20"]' },
       { key: 'BepusdtApiToken.secret_set', value: 'true' },
       { key: 'BepusdtApiToken.fingerprint', value: 'hm_abc123' },
@@ -40,7 +39,6 @@ describe('parseBepusdtOptions', () => {
 
     expect(parsed.form.BepusdtBaseURL).toBe('https://pay.example.com/')
     expect(parsed.form.BepusdtApiToken).toBe('')
-    expect(parsed.form.BepusdtLegacyNotifyEnabled).toBe(true)
     expect(parsed.form.enabledChains).toEqual(['trc20', 'xlayer'])
     expect(parsed.token.secretSet).toBe(true)
     expect(parsed.token.fingerprint).toBe('hm_abc123')
@@ -76,7 +74,6 @@ describe('sanitizeBepusdtForm + buildBepusdtUpdates', () => {
     ).toEqual({
       BepusdtBaseURL: 'https://pay.example.com',
       BepusdtApiToken: '',
-      BepusdtLegacyNotifyEnabled: false,
       enabledChains: ['trc20', 'xlayer'],
     })
   })

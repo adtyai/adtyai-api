@@ -30,54 +30,56 @@ func DefaultWeights() WeightParts {
 
 // Config is the live smart-routing configuration (options JSON).
 type Config struct {
-	Enabled                 bool    `json:"enabled"`
-	ActiveWeightScheme      string  `json:"active_weight_scheme"`
+	Enabled                 bool        `json:"enabled"`
+	Mode                    string      `json:"mode"` // off | observe | active
+	ActiveWeightScheme      string      `json:"active_weight_scheme"`
 	Weights                 WeightParts `json:"weights"`
-	ScoreRefreshSec         int     `json:"score_refresh_sec"`
-	FlushSec                int     `json:"flush_sec"`
-	ScoreStaleSec           int     `json:"score_stale_sec"`
-	EWMAShortMin            int     `json:"ewma_short_min"`
-	EWMALongMin             int     `json:"ewma_long_min"`
-	EWMAShortWeight         float64 `json:"ewma_short_weight"`
-	MinSamples              int     `json:"min_samples"`
-	FloorShare              float64 `json:"floor_share"`
-	FloorTotalMax           float64 `json:"floor_total_max"`
-	FloorDecayCycles        int     `json:"floor_decay_cycles"`
-	HalfOpenShareStage      []float64 `json:"halfopen_share_stage"`
-	HalfOpenSuccessNeeded   int     `json:"halfopen_success_needed"`
-	HalfOpenStage2Stable    int     `json:"halfopen_stage2_stable_cycles"`
-	HalfOpenMaxInflight     int     `json:"halfopen_max_inflight"`
-	HalfOpenPreferNonStream bool    `json:"halfopen_prefer_nonstream"`
-	EpsilonGreedyEnabled    bool    `json:"epsilon_greedy_enabled"`
-	Epsilon                 float64 `json:"epsilon"`
-	PeerWorseBreakEnabled   bool    `json:"peer_worse_break_enabled"`
-	PeerWorseGap            float64 `json:"peer_worse_gap"`
-	StickySoftEnabled       bool    `json:"sticky_soft_enabled"`
-	TelegramAlertEnabled    bool    `json:"telegram_alert_enabled"`
-	RegionFilterEnabled     bool    `json:"region_filter_enabled"`
-	ScoreTrafficPct         int     `json:"score_traffic_pct"`
-	RetryAfterMaxWaitMs     int     `json:"retry_after_max_wait_ms"`
-	RateLimitCooldownSec    int     `json:"rate_limit_cooldown_sec"`
-	SampleCapPerToken       float64 `json:"sample_cap_per_token"`
-	UserFailMeltCap         float64 `json:"user_fail_melt_cap"`
-	RetryBudgetPct          int     `json:"retry_budget_pct"`
-	DailyCostGuardMult      float64 `json:"daily_cost_guard_mult"`
-	TokenSkewSuspect        float64 `json:"token_skew_suspect"`
-	TokenSkewFail           float64 `json:"token_skew_fail"`
-	EstimateWeight          float64 `json:"estimate_weight"`
-	MinPriceSamples         float64 `json:"min_price_samples"`
-	PriceScoreSkipNonToken  bool    `json:"price_score_skip_non_token"`
-	HistoryBackfillEnabled  bool    `json:"history_backfill_enabled"`
-	BalancePatrolEnabled    bool    `json:"balance_patrol_enabled"`
-	BalanceLowUSD           float64 `json:"balance_low_usd"`
-	CooldownInitialSec       int     `json:"cooldown_initial_sec"`
-	CooldownMaxSec           int     `json:"cooldown_max_sec"`
-	ConsecutiveFailBreak    int     `json:"consecutive_fail_break"`
+	ScoreRefreshSec         int         `json:"score_refresh_sec"`
+	FlushSec                int         `json:"flush_sec"`
+	ScoreStaleSec           int         `json:"score_stale_sec"`
+	EWMAShortMin            int         `json:"ewma_short_min"`
+	EWMALongMin             int         `json:"ewma_long_min"`
+	EWMAShortWeight         float64     `json:"ewma_short_weight"`
+	MinSamples              int         `json:"min_samples"`
+	FloorShare              float64     `json:"floor_share"`
+	FloorTotalMax           float64     `json:"floor_total_max"`
+	FloorDecayCycles        int         `json:"floor_decay_cycles"`
+	HalfOpenShareStage      []float64   `json:"halfopen_share_stage"`
+	HalfOpenSuccessNeeded   int         `json:"halfopen_success_needed"`
+	HalfOpenStage2Stable    int         `json:"halfopen_stage2_stable_cycles"`
+	HalfOpenMaxInflight     int         `json:"halfopen_max_inflight"`
+	HalfOpenPreferNonStream bool        `json:"halfopen_prefer_nonstream"`
+	EpsilonGreedyEnabled    bool        `json:"epsilon_greedy_enabled"`
+	Epsilon                 float64     `json:"epsilon"`
+	PeerWorseBreakEnabled   bool        `json:"peer_worse_break_enabled"`
+	PeerWorseGap            float64     `json:"peer_worse_gap"`
+	StickySoftEnabled       bool        `json:"sticky_soft_enabled"`
+	TelegramAlertEnabled    bool        `json:"telegram_alert_enabled"`
+	RegionFilterEnabled     bool        `json:"region_filter_enabled"`
+	ScoreTrafficPct         int         `json:"score_traffic_pct"`
+	RetryAfterMaxWaitMs     int         `json:"retry_after_max_wait_ms"`
+	RateLimitCooldownSec    int         `json:"rate_limit_cooldown_sec"`
+	SampleCapPerToken       float64     `json:"sample_cap_per_token"`
+	UserFailMeltCap         float64     `json:"user_fail_melt_cap"`
+	RetryBudgetPct          int         `json:"retry_budget_pct"`
+	DailyCostGuardMult      float64     `json:"daily_cost_guard_mult"`
+	TokenSkewSuspect        float64     `json:"token_skew_suspect"`
+	TokenSkewFail           float64     `json:"token_skew_fail"`
+	EstimateWeight          float64     `json:"estimate_weight"`
+	MinPriceSamples         float64     `json:"min_price_samples"`
+	PriceScoreSkipNonToken  bool        `json:"price_score_skip_non_token"`
+	HistoryBackfillEnabled  bool        `json:"history_backfill_enabled"`
+	BalancePatrolEnabled    bool        `json:"balance_patrol_enabled"`
+	BalanceLowUSD           float64     `json:"balance_low_usd"`
+	CooldownInitialSec      int         `json:"cooldown_initial_sec"`
+	CooldownMaxSec          int         `json:"cooldown_max_sec"`
+	ConsecutiveFailBreak    int         `json:"consecutive_fail_break"`
 }
 
 func DefaultConfig() Config {
 	return Config{
 		Enabled:                 true,
+		Mode:                    "active",
 		ActiveWeightScheme:      "balanced_default",
 		Weights:                 DefaultWeights(),
 		ScoreRefreshSec:         300,
@@ -117,15 +119,16 @@ func DefaultConfig() Config {
 		HistoryBackfillEnabled:  false,
 		BalancePatrolEnabled:    true,
 		BalanceLowUSD:           5,
-		CooldownInitialSec:       120,
-		CooldownMaxSec:           3600,
+		CooldownInitialSec:      120,
+		CooldownMaxSec:          3600,
 		ConsecutiveFailBreak:    8,
 	}
 }
 
 var (
-	cfgAtomic atomic.Value // Config
-	cfgMu     sync.Mutex
+	cfgAtomic               atomic.Value // Config
+	cfgMu                   sync.Mutex
+	configLoadedFromOptions atomic.Bool
 )
 
 func init() {
@@ -138,7 +141,14 @@ func GetConfig() Config {
 }
 
 func Enabled() bool {
-	return GetConfig().Enabled
+	return GetConfig().Mode == "active"
+}
+
+// Collects reports whether samples and score refresh should run.
+// observe records without changing dispatch; off does neither.
+func Collects() bool {
+	m := GetConfig().Mode
+	return m == "observe" || m == "active"
 }
 
 func SetConfig(c Config) {
@@ -147,6 +157,16 @@ func SetConfig(c Config) {
 }
 
 func normalizeConfig(c *Config) {
+	switch c.Mode {
+	case "off", "observe", "active":
+	default:
+		if c.Enabled {
+			c.Mode = "active"
+		} else {
+			c.Mode = "off"
+		}
+	}
+	c.Enabled = c.Mode == "active"
 	d := DefaultConfig()
 	if c.ActiveWeightScheme == "" {
 		c.ActiveWeightScheme = d.ActiveWeightScheme
@@ -241,21 +261,58 @@ func normalizeConfig(c *Config) {
 }
 
 // LoadConfigFromOptions reads SmartRouting.Config from OptionMap / DB.
+// A missing key stays at the install default only before the first successful load.
+// Bad JSON before that load uses the active default and must not force off.
+// After a load, bad JSON or a deleted key keeps the last good config.
 func LoadConfigFromOptions() {
 	common.OptionMapRWMutex.RLock()
 	raw, ok := common.OptionMap[OptionKey]
 	common.OptionMapRWMutex.RUnlock()
 	if !ok || raw == "" {
-		SetConfig(DefaultConfig())
+		if !configLoadedFromOptions.Load() {
+			SetConfig(DefaultConfig())
+		} else {
+			common.SysError("smartrouting: config key missing; keeping the last loaded config")
+		}
 		return
 	}
-	c := DefaultConfig()
+	var rawMap map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(raw), &rawMap); err != nil {
+		common.SysError(common.LogText("smartrouting: bad config json: %v", err))
+		keepOrDisableConfig()
+		configLoadedFromOptions.Store(true)
+		return
+	}
+	var c Config
 	if err := json.Unmarshal([]byte(raw), &c); err != nil {
 		common.SysError(common.LogText("smartrouting: bad config json: %v", err))
-		SetConfig(DefaultConfig())
+		keepOrDisableConfig()
+		configLoadedFromOptions.Store(true)
 		return
 	}
+	applyOmittedDefaults(&c, rawMap)
 	SetConfig(c)
+	configLoadedFromOptions.Store(true)
+}
+
+func keepOrDisableConfig() {
+	if configLoadedFromOptions.Load() {
+		return
+	}
+	SetConfig(DefaultConfig())
+}
+
+func applyOmittedDefaults(c *Config, raw map[string]json.RawMessage) {
+	d := DefaultConfig()
+	if _, ok := raw["halfopen_prefer_nonstream"]; !ok {
+		c.HalfOpenPreferNonStream = d.HalfOpenPreferNonStream
+	}
+	if _, ok := raw["price_score_skip_non_token"]; !ok {
+		c.PriceScoreSkipNonToken = d.PriceScoreSkipNonToken
+	}
+	if _, ok := raw["balance_patrol_enabled"]; !ok {
+		c.BalancePatrolEnabled = d.BalancePatrolEnabled
+	}
 }
 
 // SaveConfig persists config to options and memory.
@@ -271,6 +328,7 @@ func SaveConfig(c Config, operatorID int) error {
 		return err
 	}
 	SetConfig(c)
+	configLoadedFromOptions.Store(true)
 	_ = model.SaveWeightSnapshot("config", operatorID, map[string]any{"op": "save_config"}, c)
 	return nil
 }
@@ -278,22 +336,26 @@ func SaveConfig(c Config, operatorID int) error {
 // Init wires hooks and loads config. Safe to call multiple times.
 func Init() {
 	LoadConfigFromOptions()
+	loadBreakerStages()
+	RepairScoreBrokenStatus()
+	model.RefreshRouteState()
 	model.RegisterSmartWeightHook(SmartWeights)
 	model.RegisterOnChannelSelectedHook(OnChannelSelected)
+	model.RegisterOnHalfOpenProbeHook(ReserveHalfOpenProbe)
 	model.RegisterHalfOpenFallbackHook(HalfOpenFallback)
 	model.RegisterOnChannelManuallyEnabledHook(ResetBreakerOnManualEnable)
+	loadPublishedScores()
 	StartHalfOpenLoop()
 	EnsureDefaultSchemeInDB()
 }
 
-// OnChannelSelected reserves half-open in-flight when a half-open channel is picked (P0-1).
+// OnChannelSelected accepts a normal weighted pick. Probe slots are reserved only by ReserveHalfOpenProbe.
 func OnChannelSelected(channelID int) bool {
-	if !Enabled() {
-		return true
-	}
-	if !IsHalfOpenChannel(channelID) {
-		return true
-	}
+	return true
+}
+
+// ReserveHalfOpenProbe takes one probe slot. A full quota rejects the probe instead of a normal pick.
+func ReserveHalfOpenProbe(channelID int) bool {
 	return TryIncHalfOpenInflight(channelID, GetConfig().HalfOpenMaxInflight)
 }
 

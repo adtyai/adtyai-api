@@ -95,16 +95,11 @@ func TestAddTokenEmptyAutoGroupsInheritGlobalAuto(t *testing.T) {
 			AddToken(ctx)
 
 			response := decodeAPIResponse(t, recorder)
-			require.True(t, response.Success, response.Message)
-			var token model.Token
-			require.NoError(t, model.DB.Where("name = ?", request["name"]).First(&token).Error)
-			assert.Empty(t, token.AutoGroups)
-			assert.True(t, token.CrossGroupRetry)
-			payload, err := common.Marshal(buildMaskedTokenResponse(&token))
-			require.NoError(t, err)
-			var responseData map[string]any
-			require.NoError(t, common.Unmarshal(payload, &responseData))
-			assert.Nil(t, responseData["auto_groups"])
+			require.False(t, response.Success)
+			assert.Contains(t, response.Message, "Auto group is no longer available")
+			var count int64
+			require.NoError(t, model.DB.Model(&model.Token{}).Count(&count).Error)
+			assert.Zero(t, count)
 		})
 	}
 }
@@ -117,22 +112,9 @@ func TestAddTokenPersistsOrderedAutoGroupsSnapshot(t *testing.T) {
 
 	ctx, recorder := newTokenAutoGroupsAuthenticatedContext(t, http.MethodPost, "/api/token/", request, user.Id)
 	AddToken(ctx)
-	require.True(t, decodeAPIResponse(t, recorder).Success)
-
-	var token model.Token
-	require.NoError(t, model.DB.Where("name = ?", "ordered-snapshot").First(&token).Error)
-	assert.JSONEq(t, `["vip","default"]`, token.AutoGroups)
-
-	getCtx, getRecorder := newTokenAutoGroupsAuthenticatedContext(t, http.MethodGet, "/api/token/"+stringInt(token.Id), nil, user.Id)
-	getCtx.Params = append(getCtx.Params, gin.Param{Key: "id", Value: stringInt(token.Id)})
-	GetToken(getCtx)
-	getResponse := decodeAPIResponse(t, getRecorder)
-	require.True(t, getResponse.Success)
-	var data struct {
-		AutoGroups []string `json:"auto_groups"`
-	}
-	require.NoError(t, common.Unmarshal(getResponse.Data, &data))
-	assert.Equal(t, []string{"vip", "default"}, data.AutoGroups)
+	response := decodeAPIResponse(t, recorder)
+	require.False(t, response.Success)
+	assert.Contains(t, response.Message, "Auto group is no longer available")
 }
 
 func TestUpdateTokenAutoGroupsTriStateAndNonAutoCleanup(t *testing.T) {
@@ -229,6 +211,6 @@ func TestGetTokenAutoGroupsReturnsFullFilteredGlobalOrderAndLimit(t *testing.T) 
 		MaxCount int      `json:"max_count"`
 	}
 	require.NoError(t, common.Unmarshal(response.Data, &data))
-	assert.Equal(t, []string{"vip", "default"}, data.Groups)
-	assert.Equal(t, 1, data.MaxCount)
+	assert.Empty(t, data.Groups)
+	assert.Equal(t, 0, data.MaxCount)
 }

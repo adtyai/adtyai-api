@@ -33,6 +33,15 @@ export function commissionStatusLabel(status: AffCommissionStatus): string {
   }
 }
 
+export function commissionStatusLabels(status: string): string[] {
+  const parts = status
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean)
+  if (parts.length === 0) return ['-']
+  return parts.map((part) => commissionStatusLabel(part as AffCommissionStatus))
+}
+
 export function withdrawMethodLabel(row: {
   pay_method?: string
   usdt_chain?: string

@@ -104,6 +104,21 @@ func AdminAffOverview(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": data})
 }
 
+// AdminListAffInviters GET /api/admin/aff/inviters
+func AdminListAffInviters(c *gin.Context) {
+	limit, _ := strconv.Atoi(c.Query("limit"))
+	offset, _ := strconv.Atoi(c.Query("offset"))
+	rows, total, err := model.ListAffAdminInviters(c.Query("keyword"), limit, offset)
+	if err != nil {
+		adtyInternalError(c, err)
+		return
+	}
+	if rows == nil {
+		rows = []model.AffInviterRow{}
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": rows, "total": total})
+}
+
 // AdminAffUserDetail GET /api/admin/aff/users/:id
 func AdminAffUserDetail(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))

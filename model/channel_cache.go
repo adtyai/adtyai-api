@@ -3,8 +3,8 @@ package model
 import (
 	"errors"
 	"fmt"
-	"math/rand"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -25,6 +25,12 @@ var ErrChannelNotFound = errors.New("channel no longer exists")
 
 var group2model2channels map[string]map[string][]int // enabled channel
 var channelsIDM map[int]*Channel                     // all channels include disabled
+var abilityPriorityCache map[string]int64            // group|model|channel -> ability priority
+
+func abilityPriorityKey(group, modelName string, channelID int) string {
+	return group + "\x00" + modelName + "\x00" + strconv.Itoa(channelID)
+}
+
 // channel2advancedCustomConfig caches parsed Advanced Custom (type 58) configs so
 // path-aware selection avoids re-parsing JSON per request. Refreshed on full sync.
 var channel2advancedCustomConfig map[int]*kitdto.AdvancedCustomConfig
@@ -53,6 +59,13 @@ func InitChannelCache() error {
 	var abilities []*Ability
 	if err := DB.Find(&abilities).Error; err != nil {
 		return err
+	}
+	newAbilityPriority := make(map[string]int64, len(abilities))
+	for _, ability := range abilities {
+		if ability == nil || ability.Priority == nil {
+			continue
+		}
+		newAbilityPriority[abilityPriorityKey(ability.Group, ability.Model, ability.ChannelId)] = *ability.Priority
 	}
 	groups := make(map[string]bool)
 	for _, ability := range abilities {
@@ -106,6 +119,7 @@ func InitChannelCache() error {
 	}
 	channelsIDM = newChannelId2channel
 	channel2advancedCustomConfig = newChannel2advancedCustomConfig
+	abilityPriorityCache = newAbilityPriority
 	channelSyncLock.Unlock()
 	// Lock ordering: InvalidatePricingCache acquires updatePricingLock, and
 	// GetPricing (holding updatePricingLock) nests channelSyncLock.RLock via
@@ -133,138 +147,211 @@ func GetRandomSatisfiedChannel(
 	retry int,
 	filters []dto.ChannelFilter,
 ) (*Channel, error) {
-	// if memory cache is disabled, get channel directly from database
+	ch, _, err := GetRandomSatisfiedChannelRouted(group, model, retry, filters, RouteCaps{})
+	return ch, err
+}
+
+// GetRandomSatisfiedChannelRouted is the cache path with per-request caps and a decision record.
+func GetRandomSatisfiedChannelRouted(
+	group string,
+	model string,
+	retry int,
+	filters []dto.ChannelFilter,
+	caps RouteCaps,
+) (*Channel, RouteBandDecision, error) {
 	if !common.MemoryCacheEnabled {
-		return GetChannel(group, model, retry, filters)
+		return GetChannelRouted(group, model, retry, filters, caps)
 	}
-
-	channelSyncLock.RLock()
-	defer channelSyncLock.RUnlock()
-
-	// First, try to find channels with the exact model name.
-	channels, _ := filterCandidateIDs(group2model2channels[group][model], model, filters)
-
-	// If no channels found, try to find channels with the normalized model name.
-	if len(channels) == 0 {
-		normalizedModel := ratio_setting.RoutingMatchModelName(model)
-		channels, _ = filterCandidateIDs(group2model2channels[group][normalizedModel], model, filters)
+	caps.Filters = filters
+	ids, channels, missing, err := snapshotSatisfiedChannels(group, model, filters)
+	if err != nil {
+		return nil, RouteBandDecision{Group: group}, err
 	}
-
-	if len(channels) == 0 {
+	if len(ids) == 0 {
 		// 审查 N-P1-2：全部熔断时回退到冷却到期的半开渠道，否则模型永久不可用
 		// 审查 R-P1-1：不再要求 filters 为空，改为对回退渠道做 ChannelSatisfiesFilters 校验
 		if retry == 0 {
-			if ch := halfOpenFallback(model, group, filters); ch != nil {
-				return ch, nil
+			ch, rejected, fbErr := halfOpenFallback(model, group, caps, filters)
+			if fbErr != nil || rejected {
+				return nil, RouteBandDecision{Reason: "inflight_rejected", Group: group}, fbErr
+			}
+			if ch != nil {
+				return ch, RouteBandDecision{Picked: ch.Id, HalfOpen: true, Reason: "halfopen", Group: group, BandIndex: BandIndexNotWalked}, nil
 			}
 		}
-		return nil, nil
+		return nil, RouteBandDecision{Reason: "empty", Group: group}, nil
+	}
+	if missing != 0 {
+		return nil, RouteBandDecision{Group: group}, fmt.Errorf("database consistency error: channel #%d does not exist, please contact the administrator", missing)
 	}
 
+	if caps.PriorityOf == nil {
+		caps.PriorityOf = func(channelID int) (int64, bool) {
+			return cachedAbilityPriority(group, model, channelID)
+		}
+	}
 	// 审查 N-P1-2：智能路由挂钩时单渠道也要走 ApplySmartWeights，才能注入半开渠道
 	if len(channels) == 1 && SmartWeightHook == nil {
-		if channel, ok := channelsIDM[channels[0]]; ok {
-			return channel, nil
+		ch := channels[0]
+		return ch, RouteBandDecision{Picked: ch.Id, Priority: routedPriority(group, model, ch), Official: true, Reason: "single", Group: group}, nil
+	}
+	return SelectFromPriorityBands(groupChannelsByRoutedPriority(group, model, channels), retry, model, group, caps)
+}
+
+func routedPriority(group, modelName string, ch *Channel) int64 {
+	if ch == nil {
+		return 0
+	}
+	if p, ok := cachedAbilityPriority(group, modelName, ch.Id); ok {
+		return p
+	}
+	return ch.GetPriority()
+}
+
+func cachedAbilityPriority(group, modelName string, channelID int) (int64, bool) {
+	channelSyncLock.RLock()
+	defer channelSyncLock.RUnlock()
+	if abilityPriorityCache == nil {
+		return 0, false
+	}
+	p, ok := abilityPriorityCache[abilityPriorityKey(group, modelName, channelID)]
+	return p, ok
+}
+
+func groupChannelsByRoutedPriority(group, modelName string, channels []*Channel) []PriorityBand {
+	prioritySet := map[int64]struct{}{}
+	for _, channel := range channels {
+		if channel == nil {
+			continue
 		}
-		return nil, fmt.Errorf("database consistency error: channel #%d does not exist, please contact the administrator", channels[0])
+		prioritySet[routedPriority(group, modelName, channel)] = struct{}{}
 	}
-
-	uniquePriorities := make(map[int]bool)
-	for _, channelId := range channels {
-		if channel, ok := channelsIDM[channelId]; ok {
-			uniquePriorities[int(channel.GetPriority())] = true
-		} else {
-			return nil, fmt.Errorf("database consistency error: channel #%d does not exist, please contact the administrator", channelId)
-		}
+	priorities := make([]int64, 0, len(prioritySet))
+	for priority := range prioritySet {
+		priorities = append(priorities, priority)
 	}
-	var sortedUniquePriorities []int
-	for priority := range uniquePriorities {
-		sortedUniquePriorities = append(sortedUniquePriorities, priority)
-	}
-	sort.Sort(sort.Reverse(sort.IntSlice(sortedUniquePriorities)))
-
-	if retry >= len(uniquePriorities) {
-		retry = len(uniquePriorities) - 1
-	}
-	targetPriority := int64(sortedUniquePriorities[retry])
-
-	// get the priority for the given retry number
-	var targetChannels []*Channel
-	for _, channelId := range channels {
-		if channel, ok := channelsIDM[channelId]; ok {
-			if channel.GetPriority() == targetPriority {
-				targetChannels = append(targetChannels, channel)
-			}
-		} else {
-			return nil, fmt.Errorf("database consistency error: channel #%d does not exist, please contact the administrator", channelId)
-		}
-	}
-
-	if len(targetChannels) == 0 {
-		return nil, errors.New(fmt.Sprintf("no channel found, group: %s, model: %s, priority: %d", group, model, targetPriority))
-	}
-
-	// adtyai smart routing: overlay route_weight (never writes channels.weight)
-	targetChannels, smartWs := ApplySmartWeights(targetChannels, model, group)
-	if len(targetChannels) == 0 {
-		// H2: only half-open left in this band → skip to next priority via retry
-		return nil, nil
-	}
-	var sumWeight = 0
-	for _, w := range smartWs {
-		sumWeight += w
-	}
-
-	// smoothing factor and adjustment
-	smoothingFactor := 1
-	smoothingAdjustment := 0
-
-	if sumWeight == 0 {
-		// 审查 N-P1-1：全 0 时每个渠道等权 100 均匀随机；不再叠加 smoothingAdjustment
-		// （原写法每个渠道减 200 而区间只有 n*100，导致恒选第一个渠道）。
-		sumWeight = len(targetChannels) * 100
-		for i := range smartWs {
-			smartWs[i] = 100
-		}
-	} else if sumWeight/len(targetChannels) < 10 {
-		// when the average weight is less than 10, set smoothing factor to 100
-		smoothingFactor = 100
-	}
-	_ = sumWeight
-
-	// Find a channel based on its weight; reselect if half-open inflight rejects (P0-1).
-	remaining := make([]int, len(smartWs))
-	copy(remaining, smartWs)
-	for attempt := 0; attempt < len(targetChannels); attempt++ {
-		sum := 0
-		for _, w := range remaining {
-			sum += w
-		}
-		if sum <= 0 {
-			break
-		}
-		total := sum * smoothingFactor
-		if total <= 0 {
-			break
-		}
-		rw := rand.Intn(total)
-		for i, channel := range targetChannels {
-			w := remaining[i]
-			if w <= 0 {
-				continue
-			}
-			rw -= w*smoothingFactor + smoothingAdjustment
-			if rw < 0 {
-				if ConfirmChannelSelected(channel.Id) {
-					return channel, nil
-				}
-				remaining[i] = 0 // half-open full or other reject → try another
-				break
+	sort.Slice(priorities, func(i, j int) bool { return priorities[i] > priorities[j] })
+	bands := make([]PriorityBand, 0, len(priorities))
+	for _, priority := range priorities {
+		var band []*Channel
+		for _, channel := range channels {
+			if channel != nil && routedPriority(group, modelName, channel) == priority {
+				band = append(band, channel)
 			}
 		}
+		if len(band) > 0 {
+			bands = append(bands, PriorityBand{Priority: priority, Channels: band})
+		}
 	}
-	// return null if no channel is not found
-	return nil, errors.New("channel not found")
+	return bands
+}
+
+// BuildRoutedBands returns the same candidate bands the live selector uses.
+// Cache-off reads abilities and does not fall back to channel.models.
+func BuildRoutedBands(group, modelName string, filters []dto.ChannelFilter) ([]PriorityBand, RouteCaps, error) {
+	caps := RouteCaps{Filters: filters}
+	if common.MemoryCacheEnabled {
+		caps.PriorityOf = func(channelID int) (int64, bool) {
+			return cachedAbilityPriority(group, modelName, channelID)
+		}
+		ids, channels, missing, err := snapshotSatisfiedChannels(group, modelName, filters)
+		if err != nil {
+			return nil, caps, err
+		}
+		if missing != 0 {
+			return nil, caps, fmt.Errorf("database consistency error: channel #%d does not exist, please contact the administrator", missing)
+		}
+		if len(ids) == 0 {
+			return nil, caps, nil
+		}
+		return groupChannelsByRoutedPriority(group, modelName, channels), caps, nil
+	}
+	return buildDBRoutedBands(group, modelName, filters, RouteCaps{})
+}
+
+// snapshotSatisfiedChannels copies candidate pointers under the cache lock, then releases it.
+// The returned pointers stay valid because cache rebuild replaces the map instead of mutating objects.
+func snapshotSatisfiedChannels(group, modelName string, filters []dto.ChannelFilter) ([]int, []*Channel, int, error) {
+	channelSyncLock.RLock()
+	defer channelSyncLock.RUnlock()
+	ids, _ := filterCandidateIDs(group2model2channels[group][modelName], modelName, filters)
+	if len(ids) == 0 {
+		normalized := ratio_setting.RoutingMatchModelName(modelName)
+		ids, _ = filterCandidateIDs(group2model2channels[group][normalized], modelName, filters)
+	}
+	channels := make([]*Channel, 0, len(ids))
+	for _, id := range ids {
+		channel, ok := channelsIDM[id]
+		if !ok || channel == nil {
+			return ids, nil, id, nil
+		}
+		channels = append(channels, channel)
+	}
+	return ids, channels, 0, nil
+}
+
+// InstallChannelCacheForTest swaps the memory cache and restores it on cleanup.
+// SetGroupModelChannelsForTest replaces one group/model candidate list without mutating the previous map.
+// SetAbilityPriorityForTest records an ability priority the cache path should use.
+func SetAbilityPriorityForTest(group, modelName string, channelID int, priority int64) {
+	channelSyncLock.Lock()
+	defer channelSyncLock.Unlock()
+	if abilityPriorityCache == nil {
+		abilityPriorityCache = map[string]int64{}
+	}
+	abilityPriorityCache[abilityPriorityKey(group, modelName, channelID)] = priority
+}
+
+func SetGroupModelChannelsForTest(group, modelName string, ids []int) {
+	channelSyncLock.Lock()
+	defer channelSyncLock.Unlock()
+	next := map[string]map[string][]int{}
+	for g, models := range group2model2channels {
+		copied := map[string][]int{}
+		for m, list := range models {
+			copied[m] = append([]int(nil), list...)
+		}
+		next[g] = copied
+	}
+	if next[group] == nil {
+		next[group] = map[string][]int{}
+	}
+	next[group][modelName] = append([]int(nil), ids...)
+	group2model2channels = next
+}
+
+func InstallChannelCacheForTest(channels []*Channel) func() {
+	channelSyncLock.Lock()
+	oldMap := channelsIDM
+	oldGroups := group2model2channels
+	oldEnabled := common.MemoryCacheEnabled
+	oldWeight := SmartWeightHook
+	oldSelected := OnChannelSelectedHook
+	oldProbe := OnHalfOpenProbeHook
+	oldHalf := HalfOpenFallbackHook
+	oldAbility := abilityPriorityCache
+	next := make(map[int]*Channel, len(channels))
+	for _, ch := range channels {
+		if ch != nil {
+			next[ch.Id] = ch
+		}
+	}
+	channelsIDM = next
+	abilityPriorityCache = map[string]int64{}
+	common.MemoryCacheEnabled = true
+	channelSyncLock.Unlock()
+	return func() {
+		channelSyncLock.Lock()
+		channelsIDM = oldMap
+		group2model2channels = oldGroups
+		abilityPriorityCache = oldAbility
+		common.MemoryCacheEnabled = oldEnabled
+		SmartWeightHook = oldWeight
+		OnChannelSelectedHook = oldSelected
+		OnHalfOpenProbeHook = oldProbe
+		HalfOpenFallbackHook = oldHalf
+		channelSyncLock.Unlock()
+	}
 }
 
 // LookupChannel serves a cache hit and, on a miss, confirms the row in the
@@ -293,6 +380,21 @@ func LookupChannel(id int) (*Channel, error) {
 		return nil, fmt.Errorf("channel #%d no longer exists: %w", id, ErrChannelNotFound)
 	}
 	return nil, err
+}
+
+// CacheGetChannelMemory returns a channel only from the in-memory map.
+// A disabled cache or a miss is a miss. It never queries the database.
+func CacheGetChannelMemory(id int) (*Channel, bool) {
+	if !common.MemoryCacheEnabled || id <= 0 {
+		return nil, false
+	}
+	channelSyncLock.RLock()
+	defer channelSyncLock.RUnlock()
+	c, ok := channelsIDM[id]
+	if !ok || c == nil {
+		return nil, false
+	}
+	return c, true
 }
 
 func CacheGetChannel(id int) (*Channel, error) {

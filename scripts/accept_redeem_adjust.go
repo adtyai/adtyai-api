@@ -1,11 +1,11 @@
 //go:build ignore
 
-// A27/A4 验收：兑换码入赠送钱包，经 AdjustQuota + ledger_entries（kind=redemption_bonus），不动实充。
+// 兑换码已下线：Redeem 必须拒绝，且不能改余额、状态或流水。
 package main
 
 import (
+	"errors"
 	"fmt"
-	"strconv"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
@@ -61,46 +61,24 @@ func main() {
 	must(r.Insert())
 	defer model.DB.Delete(&model.Redemption{}, r.Id)
 
-	// (1) 首次兑换成功 → bonus +q，paid 不变
 	got, err := model.Redeem(r.Key, u.Id)
-	must(err)
-	if got != q {
-		panic(fmt.Sprintf("(1) redeem returned %d want %d", got, q))
+	if !errors.Is(err, model.ErrRedemptionClosed) || got != 0 {
+		panic(fmt.Sprintf("redeem want closed got %d %v", got, err))
 	}
 	paid1, _ := model.GetUserPaidQuota(u.Id)
 	bonus1, _ := model.GetUserBonusBalance(u.Id)
-	if paid1 != paid0 || int64(bonus1)-int64(bonus0) != q {
-		panic(fmt.Sprintf("(1) paid %d→%d bonus %d→%d", paid0, paid1, bonus0, bonus1))
+	if paid1 != paid0 || bonus1 != bonus0 {
+		panic(fmt.Sprintf("redeem changed paid %d→%d bonus %d→%d", paid0, paid1, bonus0, bonus1))
 	}
-	fmt.Println("(1) redeem credits bonus, paid unchanged OK")
-
-	// (2) ledger kind redemption_bonus
-	var led []model.LedgerEntry
-	must(model.DB.Where("user_id = ? AND kind = ?", u.Id, "redemption_bonus").Find(&led).Error)
-	if len(led) != 1 || led[0].Account != "bonus" || led[0].Delta != q || led[0].RefId != strconv.Itoa(r.Id) {
-		panic(fmt.Sprintf("(2) ledger unexpected: %+v", led))
-	}
-	fmt.Println("(2) ledger account=bonus kind=redemption_bonus ref_id=id OK")
-
-	// (3) status used
 	var rr model.Redemption
 	must(model.DB.First(&rr, r.Id).Error)
-	if rr.Status != common.RedemptionCodeStatusUsed || rr.UsedUserId != u.Id {
-		panic(fmt.Sprintf("(3) status=%d used_user=%d", rr.Status, rr.UsedUserId))
+	if rr.Status != common.RedemptionCodeStatusEnabled || rr.UsedUserId != 0 {
+		panic(fmt.Sprintf("status=%d used_user=%d", rr.Status, rr.UsedUserId))
 	}
-	fmt.Println("(3) redemption status=used OK")
-
-	// (4) 同码再兑 → ErrRedemptionUsed（审查 P2-8），余额不变
-	if _, err := model.Redeem(r.Key, u.Id); err != model.ErrRedemptionUsed {
-		panic(fmt.Sprintf("(4) second redeem want ErrRedemptionUsed got %v", err))
-	}
-	paid2, _ := model.GetUserPaidQuota(u.Id)
-	bonus2, _ := model.GetUserBonusBalance(u.Id)
 	var n int64
-	model.DB.Model(&model.LedgerEntry{}).Where("user_id = ? AND kind = ?", u.Id, "redemption_bonus").Count(&n)
-	if paid2 != paid1 || bonus2 != bonus1 || n != 1 {
-		panic("(4) second redeem changed balance/ledger")
+	must(model.DB.Model(&model.LedgerEntry{}).Where("user_id = ? AND kind = ?", u.Id, "redemption_bonus").Count(&n).Error)
+	if n != 0 {
+		panic(fmt.Sprintf("redemption ledger rows=%d", n))
 	}
-	fmt.Println("(4) second redeem fails, balances unchanged OK")
-	fmt.Println("ACCEPT redeem_adjust PASS")
+	fmt.Println("ACCEPT redeem closed PASS")
 }

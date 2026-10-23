@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/setting"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/glebarez/sqlite"
 	"github.com/go-redis/redis/v8"
 	"github.com/stretchr/testify/assert"
@@ -17,9 +19,22 @@ import (
 	"gorm.io/gorm"
 )
 
+func registerPublicBillingGroup(t *testing.T, code string) {
+	t.Helper()
+	originalRatio := ratio_setting.GroupRatio2JSONString()
+	originalUsable := setting.UserUsableGroups2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(originalRatio))
+		require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(originalUsable))
+	})
+	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"default":1,"`+code+`":1}`))
+	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{"default":"Default","`+code+`":"`+code+`"}`))
+}
+
 func TestSubscriptionGroupTransitionsPreserveAuthVersionAndSessions(t *testing.T) {
 	truncateTables(t)
 	useUserCacheMiniRedis(t)
+	registerPublicBillingGroup(t, "pro")
 	now := time.Now().Unix()
 	user := User{
 		Username:    "subscription-auth-user",
@@ -97,6 +112,7 @@ func TestSubscriptionGroupCacheRefreshFailureDoesNotChangeCommittedResult(t *tes
 	sqlDB, err := db.DB()
 	require.NoError(t, err)
 	sqlDB.SetMaxOpenConns(4)
+	registerPublicBillingGroup(t, "pro")
 	t.Cleanup(func() {
 		DB, LOG_DB = previousDB, previousLogDB
 		common.SetDatabaseTypes(previousMainDatabaseType, previousLogDatabaseType)

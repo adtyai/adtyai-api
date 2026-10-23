@@ -40,7 +40,7 @@ import { groupApiErrorToastKey, validateCreateInput } from '../lib/form'
 type Props = {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onCreated?: () => void
+  onCreated?: (code: string) => void
 }
 
 export function CreateGroupDialog({ open, onOpenChange, onCreated }: Props) {
@@ -87,7 +87,7 @@ export function CreateGroupDialog({ open, onOpenChange, onCreated }: Props) {
       }
       toast.success(t('Saved'))
       onOpenChange(false)
-      onCreated?.()
+      onCreated?.(validated.body.code)
     } catch (err) {
       const status = (err as { status?: number })?.status
       if (status === 403) {

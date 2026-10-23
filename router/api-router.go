@@ -96,11 +96,9 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.GET("/pay/epay/notify/:instance_id", controller.AdtyEpayNotify)
 		apiRouter.POST("/pay/epay/notify/:instance_id", anonymousRequestBodyLimit, controller.AdtyEpayNotify)
 
-		// adtyai USDT / BEpusdt：新路径只验签；老路径默认关闭
+		// adtyai USDT / BEpusdt：只保留验签回调。老路径不再注册。
 		apiRouter.GET("/pay/usdt/notify", controller.AdtyUsdtNotify)
 		apiRouter.POST("/pay/usdt/notify", anonymousRequestBodyLimit, controller.AdtyUsdtNotify)
-		apiRouter.GET("/user/bepusdt/notify", controller.AdtyBepusdtLegacyNotify)
-		apiRouter.POST("/user/bepusdt/notify", anonymousRequestBodyLimit, controller.AdtyBepusdtLegacyNotify)
 
 		// adtyai A7 返佣 / 提现
 		affRoute := apiRouter.Group("/aff")
@@ -119,6 +117,7 @@ func SetApiRouter(router *gin.Engine) {
 		adminAff.Use(middleware.AdminAuth())
 		{
 			adminAff.GET("/overview", controller.AdminAffOverview)
+			adminAff.GET("/inviters", controller.AdminListAffInviters)
 			adminAff.GET("/users/:id", controller.AdminAffUserDetail)
 			adminAff.GET("/payout-qr/:id", controller.AdminGetAffPayoutQr)
 			adminAff.GET("/commissions", controller.AdminListAffCommissions)
@@ -190,7 +189,11 @@ func SetApiRouter(router *gin.Engine) {
 		{
 			adminGroups.GET("", controller.AdminGetGroups)
 			adminGroups.POST("", controller.AdminPostGroup)
+			adminGroups.PUT("/billing", controller.AdminSaveGroupBilling)
 			adminGroups.PUT("/:code", controller.AdminPutGroup)
+			adminGroups.GET("/:code/grants", controller.AdminListGroupGrants)
+			adminGroups.POST("/:code/grants", controller.AdminGrantGroup)
+			adminGroups.DELETE("/:code/grants/:user_id", controller.AdminRevokeGroupGrant)
 		}
 
 		// 总裁：停暴露「运营总览」「服务状态」「每日对账」——日报任务仍跑，不再注册管理端路由。
@@ -209,9 +212,7 @@ func SetApiRouter(router *gin.Engine) {
 		{
 			adtyRouting.GET("/config", controller.AdtyRoutingGetConfig)
 			adtyRouting.PUT("/config", controller.AdtyRoutingPutConfig)
-			adtyRouting.GET("/scores", controller.AdtyRoutingGetScores)
-			adtyRouting.GET("/scores/:channel_id", controller.AdtyRoutingGetScoreDetail)
-			adtyRouting.GET("/rankings", controller.AdtyRoutingGetRankings)
+			// scores, rankings, cost, and decision lists are not daily admin entries.
 			adtyRouting.GET("/health/:channel_id", controller.AdtyRoutingGetHealth)
 			adtyRouting.GET("/weight-schemes", controller.AdtyRoutingListSchemes)
 			adtyRouting.POST("/weight-schemes", controller.AdtyRoutingCreateScheme)
@@ -231,17 +232,10 @@ func SetApiRouter(router *gin.Engine) {
 			adtyRouting.GET("/breaker/stages", controller.AdtyRoutingBreakerStages)
 			adtyRouting.GET("/prices", controller.AdtyRoutingGetPrices)
 			adtyRouting.PUT("/prices", controller.AdtyRoutingPutPrices)
-			adtyRouting.GET("/cost/summary", controller.AdtyRoutingCostSummary)
-			adtyRouting.GET("/cost/rankings", controller.AdtyRoutingCostRankings)
-			adtyRouting.GET("/cost/live", controller.AdtyRoutingCostLive)
-			adtyRouting.GET("/cost/guards", controller.AdtyRoutingCostGuards)
-			adtyRouting.POST("/cost/backfill", controller.AdtyRoutingCostBackfill)
-			adtyRouting.GET("/cost/backfill", controller.AdtyRoutingCostBackfillStatus)
 			adtyRouting.POST("/balance/refresh", controller.AdtyRoutingBalanceRefresh)
 			adtyRouting.GET("/auth-flags", controller.AdtyRoutingAuthFlags)
 			adtyRouting.PUT("/auth-flags/:id/mark", controller.AdtyRoutingMarkAuthFlag)
 			adtyRouting.GET("/decision", controller.AdtyRoutingDecision)
-			adtyRouting.GET("/decisions", controller.AdtyRoutingDecisions)
 			adtyRouting.POST("/weights/rollback", controller.AdtyRoutingWeightsRollback)
 		}
 
@@ -505,7 +499,7 @@ func SetApiRouter(router *gin.Engine) {
 		}
 
 		redemptionRoute := apiRouter.Group("/redemption")
-		redemptionRoute.Use(middleware.AdminAuth())
+		redemptionRoute.Use(middleware.AdminAuth(), controller.RejectClosedRedemption)
 		{
 			redemptionRoute.GET("/", controller.GetAllRedemptions)
 			redemptionRoute.GET("/search", controller.SearchRedemptions)

@@ -23,20 +23,8 @@ export const SMART_ROUTING_SECTIONS = [
     titleKey: 'Routing strategy',
   },
   {
-    id: 'scores',
-    titleKey: 'Channel scores & half-open',
-  },
-  {
-    id: 'rankings',
-    titleKey: 'Rankings by model',
-  },
-  {
-    id: 'cost',
-    titleKey: 'Cost guardrails',
-  },
-  {
-    id: 'decisions',
-    titleKey: 'Routing decisions',
+    id: 'channels',
+    titleKey: 'Channel usage',
   },
 ] as const
 

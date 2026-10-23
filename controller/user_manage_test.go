@@ -200,6 +200,33 @@ func TestManageUserDemoteAdvancesAuthVersionAndRevokesSessionsOnce(t *testing.T)
 	assert.Equal(t, 1, sessionUpdateCount)
 }
 
+func TestManageUserDemoteHidesPolicyReloadError(t *testing.T) {
+	db := setupManageUserTestDB(t)
+	user := model.User{
+		Username: "managed-demote-hide", Password: "password", Role: common.RoleAdminUser,
+		Status: common.UserStatusEnabled, Group: "default", AuthVersion: 1,
+	}
+	require.NoError(t, db.Create(&user).Error)
+	previous := reloadAuthzPolicy
+	t.Cleanup(func() { reloadAuthzPolicy = previous })
+	reloadAuthzPolicy = func() error {
+		return errors.New("authz enforcer is not initialized")
+	}
+
+	identity, proof := manageUserProof(t, db, service.VerificationOperation{Scope: service.VerificationScopeAdminUserManage, Context: []byte(fmt.Sprintf(`{"user_id":%d,"action":"demote"}`, user.Id))})
+	recorder := performVerifiedManageUserRequest(t, fmt.Sprintf(`{"id":%d,"action":"demote"}`, user.Id), identity, proof)
+	body := recorder.Body.String()
+	require.Equal(t, http.StatusInternalServerError, recorder.Code, body)
+	require.Contains(t, body, `"code":"internal_error"`)
+	lower := strings.ToLower(body)
+	require.NotContains(t, lower, "enforcer")
+	require.NotContains(t, lower, "sql")
+
+	var updated model.User
+	require.NoError(t, db.First(&updated, user.Id).Error)
+	require.Equal(t, common.RoleCommonUser, updated.Role)
+}
+
 func TestManageUserDeleteReturnsImmediatelyAndUnknownActionFails(t *testing.T) {
 	db := setupManageUserTestDB(t)
 	deleted := model.User{

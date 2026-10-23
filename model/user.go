@@ -825,6 +825,9 @@ func (user *User) InsertWithTx(tx *gorm.DB, inviterId int) error {
 		if err := user.prepareForInsert(tx); err != nil {
 			return err
 		}
+		if err := assignPublicIdentityForInsert(user); err != nil {
+			return err
+		}
 		user.Quota = 0
 		// 初始化用户设置。密码只在 prepareForInsert 哈希一次，邀请码冲突不能再次哈希。
 		if user.Setting == "" {
@@ -1293,8 +1296,7 @@ func (user *User) FillUserByWeChatId() error {
 	if user.WeChatId == "" {
 		return common.NewMessage("WeChat ID is empty!")
 	}
-	DB.Where(User{WeChatId: user.WeChatId}).First(user)
-	return nil
+	return DB.Where(User{WeChatId: user.WeChatId}).First(user).Error
 }
 
 func (user *User) FillUserByTelegramId() error {

@@ -32,6 +32,16 @@ export type {
 
 export type { AffAdminWithdrawAction } from '@/features/affiliate/lib/status'
 
+export type AffInviterRow = {
+  user_id: number
+  username: string
+  display_name: string
+  aff_code: string
+  invitee_count: number
+  aff_quota: number
+  aff_history: number
+}
+
 export type AffOverview = {
   invited_users: number
   inviters: number

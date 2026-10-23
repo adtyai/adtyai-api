@@ -17,12 +17,6 @@ var defaultGroupRatio = map[string]float64{
 
 var groupRatioMap = types.NewRWMap[string, float64]()
 
-var defaultGroupGroupRatio = map[string]map[string]float64{
-	"vip": {
-		"edit_this": 0.9,
-	},
-}
-
 var groupGroupRatioMap = types.NewRWMap[string, map[string]float64]()
 
 var defaultGroupSpecialUsableGroup = map[string]map[string]string{}
@@ -40,7 +34,6 @@ func init() {
 	groupSpecialUsableGroup.AddAll(defaultGroupSpecialUsableGroup)
 
 	groupRatioMap.AddAll(defaultGroupRatio)
-	groupGroupRatioMap.AddAll(defaultGroupGroupRatio)
 
 	groupRatioSetting = GroupRatioSetting{
 		GroupSpecialUsableGroup: groupSpecialUsableGroup,
@@ -86,15 +79,8 @@ func GetGroupRatio(name string) float64 {
 }
 
 func GetGroupGroupRatio(userGroup, usingGroup string) (float64, bool) {
-	gp, ok := groupGroupRatioMap.Get(userGroup)
-	if !ok {
-		return -1, false
-	}
-	ratio, ok := gp[usingGroup]
-	if !ok {
-		return -1, false
-	}
-	return ratio, true
+	// Special per-user-group ratios no longer affect billing. The stored map is kept for rollback.
+	return -1, false
 }
 
 func GroupGroupRatio2JSONString() string {

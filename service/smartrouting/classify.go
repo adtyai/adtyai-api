@@ -13,12 +13,23 @@ const (
 	ClassOK           ErrClass = "ok"
 	ClassBanned       ErrClass = "banned"        // 401/403 → immediate break
 	ClassRateLimit    ErrClass = "rate_limit"    // 429 → 0.5 fail, no single-shot break
-	ClassServer       ErrClass = "server"         // 5xx / timeout / empty / stream cut
-	ClassBalance      ErrClass = "balance"        // insufficient quota
-	ClassUserError    ErrClass = "user_error"     // 400 / moderation / client cancel — not channel fail
+	ClassServer       ErrClass = "server"        // 5xx / timeout / empty / stream cut
+	ClassBalance      ErrClass = "balance"       // insufficient quota
+	ClassUserError    ErrClass = "user_error"    // 400 / moderation / client cancel — not channel fail
 	ClassAuthMismatch ErrClass = "auth_mismatch" // fake model — not connectivity fail
 	ClassUnknown      ErrClass = "unknown"
 )
+
+// ClassForRecordedAttempt is the class written into breaker samples.
+// SkipRetry covers local construction failures. NewError defaults those to 500,
+// so status alone would count a request that never left the process as a channel failure.
+func ClassForRecordedAttempt(err *types.NewAPIError) ErrClass {
+	class := Classify(err)
+	if err != nil && types.IsSkipRetryError(err) {
+		return ClassUserError
+	}
+	return class
+}
 
 // Classify maps a relay error to ErrClass.
 func Classify(err *types.NewAPIError) ErrClass {

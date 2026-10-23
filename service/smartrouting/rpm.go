@@ -23,24 +23,25 @@ func IncRPM(channelID int) {
 	}
 }
 
-func RPMExceeded(channelID int) bool {
-	var cap model.ChannelCapability
-	if err := model.DB.First(&cap, "channel_id = ?", channelID).Error; err != nil {
-		return false
-	}
-	if cap.RPMHint <= 0 {
-		return false
-	}
+func rpmCount(channelID int) int {
 	ctx := context.Background()
 	now, _ := RedisTIME(ctx)
 	if common.RedisEnabled && common.RDB != nil {
 		n, err := common.RDB.Get(ctx, rpmKey(channelID, minuteFloor(now))).Int()
 		if err != nil {
-			return false
+			return 0
 		}
-		return n >= cap.RPMHint
+		return n
 	}
-	return false
+	return 0
+}
+
+func RPMExceeded(channelID int) bool {
+	cap, ok := model.CachedCapability(channelID)
+	if !ok || cap.RPMHint <= 0 {
+		return false
+	}
+	return rpmCount(channelID) >= cap.RPMHint
 }
 
 func IsCostGuardExcluded(channelID int) bool {

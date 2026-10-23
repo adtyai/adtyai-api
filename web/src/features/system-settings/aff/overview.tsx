@@ -19,20 +19,33 @@ For commercial licensing, please contact support@quantumnous.com
 import { Link } from '@tanstack/react-router'
 import { RefreshCw } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { ErrorState } from '@/components/error-state'
 import { SectionPageLayout } from '@/components/layout'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { formatAffUsd } from '@/features/affiliate/lib/quota'
 
-import { adminGetAffOverview } from './api'
+import { adminGetAffOverview, adminListAffInviters } from './api'
+import { AffUserDetailButton } from './user-detail-dialog'
 
 export function AffOverviewSettings() {
   const { t } = useTranslation()
+  const [keyword, setKeyword] = useState('')
+  const [submitted, setSubmitted] = useState('')
+  const [offset, setOffset] = useState(0)
+  const limit = 20
   const overview = useQuery({
     queryKey: ['admin-aff-overview'],
     queryFn: adminGetAffOverview,
+    staleTime: 15_000,
+  })
+  const inviters = useQuery({
+    queryKey: ['admin-aff-inviters', submitted, offset],
+    queryFn: () =>
+      adminListAffInviters({ keyword: submitted, limit, offset }),
     staleTime: 15_000,
   })
   const data = overview.data
@@ -79,7 +92,10 @@ export function AffOverviewSettings() {
           variant='outline'
           size='sm'
           className='h-8'
-          onClick={() => void overview.refetch()}
+          onClick={() => {
+            void overview.refetch()
+            void inviters.refetch()
+          }}
         >
           <RefreshCw className='size-3.5' />
           {t('Refresh')}
@@ -128,6 +144,93 @@ export function AffOverviewSettings() {
               ))}
             </div>
           ) : null}
+          <div className='space-y-3'>
+            <div className='flex gap-2'>
+              <Input
+                value={keyword}
+                placeholder={t('Search inviters')}
+                onChange={(event) => setKeyword(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key !== 'Enter') return
+                  setOffset(0)
+                  setSubmitted(keyword.trim())
+                }}
+              />
+              <Button
+                type='button'
+                variant='outline'
+                onClick={() => {
+                  setOffset(0)
+                  setSubmitted(keyword.trim())
+                }}
+              >
+                {t('Search')}
+              </Button>
+            </div>
+            {inviters.isError ? (
+              <ErrorState
+                title={t('Failed to load inviters')}
+                onRetry={() => void inviters.refetch()}
+              />
+            ) : (
+              <div className='overflow-x-auto rounded-md border'>
+                <table className='w-full text-sm'>
+                  <thead className='bg-muted/40 text-left'>
+                    <tr>
+                      <th className='px-3 py-2 font-medium'>{t('Inviter')}</th>
+                      <th className='px-3 py-2 font-medium'>{t('Invite code')}</th>
+                      <th className='px-3 py-2 font-medium'>{t('Invitees')}</th>
+                      <th className='px-3 py-2 font-medium'>{t('Available to withdraw')}</th>
+                      <th className='px-3 py-2 font-medium'>{t('Total earned')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(inviters.data?.rows ?? []).length === 0 ? (
+                      <tr>
+                        <td className='text-muted-foreground px-3 py-4' colSpan={5}>
+                          {inviters.isLoading ? t('Loading...') : t('No inviters')}
+                        </td>
+                      </tr>
+                    ) : (
+                      inviters.data?.rows.map((row) => (
+                        <tr key={row.user_id} className='border-t'>
+                          <td className='px-3 py-2'>
+                            <AffUserDetailButton userId={row.user_id}>
+                              {row.display_name || row.username || row.user_id}
+                            </AffUserDetailButton>
+                          </td>
+                          <td className='px-3 py-2 font-mono'>{row.aff_code || '-'}</td>
+                          <td className='px-3 py-2'>{row.invitee_count}</td>
+                          <td className='px-3 py-2'>{formatAffUsd(row.aff_quota)}</td>
+                          <td className='px-3 py-2'>{formatAffUsd(row.aff_history)}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <div className='flex gap-2'>
+              <Button
+                type='button'
+                variant='outline'
+                size='sm'
+                disabled={offset === 0}
+                onClick={() => setOffset((current) => Math.max(0, current - limit))}
+              >
+                {t('Previous')}
+              </Button>
+              <Button
+                type='button'
+                variant='outline'
+                size='sm'
+                disabled={offset + limit >= (inviters.data?.total ?? 0)}
+                onClick={() => setOffset((current) => current + limit)}
+              >
+                {t('Next')}
+              </Button>
+            </div>
+          </div>
         </div>
       </SectionPageLayout.Content>
     </SectionPageLayout>

@@ -27,6 +27,7 @@ import (
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/config"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/alicebob/miniredis/v2"
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
@@ -167,6 +168,15 @@ func TestResponsesWSRequestRunnerRefreshesBillingContextAndCleansBody(t *testing
 	require.NoError(t, model.DB.Model(user).Updates(map[string]any{
 		"group": "updated", "setting": `{"billing_preference":"wallet_only"}`,
 	}).Error)
+	originalRatio := ratio_setting.GroupRatio2JSONString()
+	updatedRatio := ratio_setting.GetGroupRatioCopy()
+	updatedRatio["updated"] = 1
+	updatedRatioJSON, err := common.Marshal(updatedRatio)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(originalRatio))
+	})
+	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(string(updatedRatioJSON)))
 	request = httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{"input":"second"}`))
 	require.Nil(t, runner(request, "ws-second", func(c *gin.Context) *types.NewAPIError {
 		assert.Equal(t, 2, c.GetInt("token_quota"))

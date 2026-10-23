@@ -110,131 +110,130 @@ func GetChannel(
 	retry int,
 	filters []dto.ChannelFilter,
 ) (*Channel, error) {
-	var abilities []Ability
-	err := DB.Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, model, true).Order("priority DESC, weight DESC").Find(&abilities).Error
-	if err != nil {
-		return nil, err
-	}
-	abilities = filterAbilitiesByConstraints(abilities, model, filters)
-	if len(abilities) > 0 {
-		priorities := make([]int64, 0)
-		seen := make(map[int64]bool)
-		for _, ability := range abilities {
-			priority := int64(0)
-			if ability.Priority != nil {
-				priority = *ability.Priority
-			}
-			if !seen[priority] {
-				seen[priority] = true
-				priorities = append(priorities, priority)
-			}
-		}
-		sort.Slice(priorities, func(i, j int) bool { return priorities[i] > priorities[j] })
-		if retry >= len(priorities) {
-			retry = len(priorities) - 1
-		}
-		targetPriority := priorities[retry]
-		abilities = lo.Filter(abilities, func(ability Ability, _ int) bool {
-			return ability.Priority == nil && targetPriority == 0 || ability.Priority != nil && *ability.Priority == targetPriority
-		})
-	}
-	channel := Channel{}
-	if len(abilities) > 0 {
-		// Load channels and apply smart routing weights when enabled (adtyai).
-		ids := make([]int, 0, len(abilities))
-		for _, a := range abilities {
-			ids = append(ids, a.ChannelId)
-		}
-		var chans []*Channel
-		_ = DB.Where("id IN ?", ids).Find(&chans).Error
-		byID := map[int]*Channel{}
-		for _, ch := range chans {
-			byID[ch.Id] = ch
-		}
-		ordered := make([]*Channel, 0, len(abilities))
-		officialW := make([]int, 0, len(abilities))
-		for _, a := range abilities {
-			ch := byID[a.ChannelId]
-			if ch == nil {
-				continue
-			}
-			ordered = append(ordered, ch)
-			officialW = append(officialW, int(a.Weight)+10)
-		}
-		picked := ordered
-		weights := officialW
-		if SmartWeightHook != nil && len(ordered) > 0 {
-			picked, weights = ApplySmartWeights(ordered, model, group)
-		}
-		if len(picked) == 0 {
-			return nil, nil
-		}
-		weightSum := 0
-		for _, w := range weights {
-			weightSum += w
-		}
-		if weightSum <= 0 {
-			weightSum = len(weights) * 100
-			for i := range weights {
-				weights[i] = 100
-			}
-		}
-		remaining := make([]int, len(weights))
-		copy(remaining, weights)
-		for attempt := 0; attempt < len(picked); attempt++ {
-			sum := 0
-			for _, w := range remaining {
-				sum += w
-			}
-			if sum <= 0 {
-				break
-			}
-			weight := common.GetRandomInt(sum)
-			for i, ch := range picked {
-				if remaining[i] <= 0 {
-					continue
-				}
-				weight -= remaining[i]
-				if weight < 0 {
-					if ConfirmChannelSelected(ch.Id) {
-						channel.Id = ch.Id
-					} else {
-						remaining[i] = 0
-					}
-					break
-				}
-			}
-			if channel.Id != 0 {
-				break
-			}
-		}
-		if channel.Id == 0 && len(picked) > 0 {
-			for _, ch := range picked {
-				if ConfirmChannelSelected(ch.Id) {
-					channel.Id = ch.Id
-					break
-				}
-			}
-		}
-		if channel.Id == 0 {
-			return nil, nil
-		}
-	} else {
-		// 审查 N-P1-2：无可用渠道时回退到冷却到期的半开渠道
-		// 审查 R-P1-1：不再要求 filters 为空，改为对回退渠道做 ChannelSatisfiesFilters 校验
-		if retry == 0 {
-			if ch := halfOpenFallback(model, group, filters); ch != nil {
-				return ch, nil
-			}
-		}
-		return nil, nil
-	}
-	err = DB.First(&channel, "id = ?", channel.Id).Error
-	return &channel, err
+	ch, _, err := GetChannelRouted(group, model, retry, filters, RouteCaps{})
+	return ch, err
 }
 
-// filterAbilitiesByConstraints applies the same ChannelSatisfiesFilters
-// predicate used by the memory-cache path. A failed channel lookup fails
+func buildDBRoutedBands(group, modelName string, filters []dto.ChannelFilter, caps RouteCaps) ([]PriorityBand, RouteCaps, error) {
+	caps.Filters = filters
+	if caps.PriorityOf == nil {
+		caps.PriorityOf = func(channelID int) (int64, bool) {
+			return abilityPriorityForChannel(group, modelName, channelID)
+		}
+	}
+	if DB == nil {
+		return nil, caps, errors.New("database is not configured")
+	}
+	var abilities []Ability
+	err := DB.Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, modelName, true).Order("priority DESC, weight DESC").Find(&abilities).Error
+	if err != nil {
+		return nil, caps, err
+	}
+	abilities = filterAbilitiesByConstraints(abilities, modelName, filters)
+	if len(abilities) == 0 {
+		return nil, caps, nil
+	}
+	priorities := make([]int64, 0)
+	seen := make(map[int64]bool)
+	for _, ability := range abilities {
+		priority := int64(0)
+		if ability.Priority != nil {
+			priority = *ability.Priority
+		}
+		if !seen[priority] {
+			seen[priority] = true
+			priorities = append(priorities, priority)
+		}
+	}
+	sort.Slice(priorities, func(i, j int) bool { return priorities[i] > priorities[j] })
+	ids := make([]int, 0, len(abilities))
+	for _, a := range abilities {
+		ids = append(ids, a.ChannelId)
+	}
+	var chans []*Channel
+	if err := DB.Where("id IN ?", ids).Find(&chans).Error; err != nil {
+		return nil, caps, err
+	}
+	byID := map[int]*Channel{}
+	for _, ch := range chans {
+		byID[ch.Id] = ch
+	}
+	bands := make([]PriorityBand, 0, len(priorities))
+	for _, p := range priorities {
+		var band []*Channel
+		for _, a := range abilities {
+			ap := int64(0)
+			if a.Priority != nil {
+				ap = *a.Priority
+			}
+			if ap != p {
+				continue
+			}
+			if ch := byID[a.ChannelId]; ch != nil {
+				band = append(band, ch)
+			}
+		}
+		if len(band) > 0 {
+			bands = append(bands, PriorityBand{Priority: p, Channels: band})
+		}
+	}
+	return bands, caps, nil
+}
+
+// GetChannelRouted is the database path sharing SelectFromPriorityBands with the cache path.
+func GetChannelRouted(
+	group string,
+	modelName string,
+	retry int,
+	filters []dto.ChannelFilter,
+	caps RouteCaps,
+) (*Channel, RouteBandDecision, error) {
+	bands, caps, err := buildDBRoutedBands(group, modelName, filters, caps)
+	if err != nil {
+		return nil, RouteBandDecision{Group: group}, err
+	}
+	if len(bands) == 0 {
+		if retry == 0 {
+			ch, rejected, fbErr := halfOpenFallback(modelName, group, caps, filters)
+			if fbErr != nil || rejected {
+				return nil, RouteBandDecision{Reason: "inflight_rejected", Group: group}, fbErr
+			}
+			if ch != nil {
+				return ch, RouteBandDecision{Picked: ch.Id, HalfOpen: true, Reason: "halfopen", Group: group, BandIndex: BandIndexNotWalked}, nil
+			}
+		}
+		return nil, RouteBandDecision{Reason: "empty", Group: group}, nil
+	}
+	ch, decision, err := SelectFromPriorityBands(bands, retry, modelName, group, caps)
+	if err != nil || ch == nil {
+		return ch, decision, err
+	}
+	var full Channel
+	if err := DB.First(&full, "id = ?", ch.Id).Error; err != nil {
+		return nil, decision, err
+	}
+	return &full, decision, nil
+}
+
+// abilityPriorityForChannel reads the ability band key, including disabled rows.
+// A miss returns false so a half-open probe is skipped instead of using channel.priority.
+func abilityPriorityForChannel(group, modelName string, channelID int) (int64, bool) {
+	if DB == nil || group == "" || modelName == "" || channelID <= 0 {
+		return 0, false
+	}
+	var ability Ability
+	err := DB.Where(commonGroupCol+" = ? and model = ? and channel_id = ?", group, modelName, channelID).
+		Order("priority desc").
+		First(&ability).Error
+	if err != nil {
+		return 0, false
+	}
+	if ability.Priority == nil {
+		return 0, true
+	}
+	return *ability.Priority, true
+}
+
 // closed when a task-plugin identity is required and fails open otherwise.
 func filterAbilitiesByConstraints(abilities []Ability, modelName string, filters []dto.ChannelFilter) []Ability {
 	if len(abilities) == 0 {

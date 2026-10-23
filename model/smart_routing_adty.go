@@ -2,6 +2,7 @@ package model
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -13,29 +14,29 @@ import (
 
 // ChannelRouteWeight stores per channel×model route_weight; never writes channels.weight.
 type ChannelRouteWeight struct {
-	ChannelID  int       `json:"channel_id" gorm:"primaryKey"`
-	Model      string    `json:"model" gorm:"primaryKey;type:text;size:191"`
-	RouteWeight int      `json:"route_weight" gorm:"not null;default:100"`
-	Score      float64   `json:"score" gorm:"not null;default:70"`
-	State      string    `json:"state" gorm:"type:text;size:32;default:'normal'"` // normal|degraded|broken|halfopen|new|floor
-	UpdatedAt  time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+	ChannelID   int       `json:"channel_id" gorm:"primaryKey"`
+	Model       string    `json:"model" gorm:"primaryKey;type:text;size:191"`
+	RouteWeight int       `json:"route_weight" gorm:"not null;default:100"`
+	Score       float64   `json:"score" gorm:"not null;default:70"`
+	State       string    `json:"state" gorm:"type:text;size:32;default:'normal'"` // normal|degraded|broken|halfopen|new|floor
+	UpdatedAt   time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (ChannelRouteWeight) TableName() string { return "channel_route_weights" }
 
 // ChannelScoreSnapshot latest score breakdown per channel×model.
 type ChannelScoreSnapshot struct {
-	ChannelID  int       `json:"channel_id" gorm:"primaryKey"`
-	Model      string    `json:"model" gorm:"primaryKey;type:text;size:191"`
-	Score      float64   `json:"score"`
-	SConn      float64   `json:"s_conn"`
-	SPrice     float64   `json:"s_price"`
-	SSpeed     float64   `json:"s_speed"`
-	SStab      float64   `json:"s_stab"`
-	SAuth      float64   `json:"s_auth"`
-	Samples    int       `json:"samples"`
-	Insufficient bool    `json:"insufficient"`
-	UpdatedAt  time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+	ChannelID    int       `json:"channel_id" gorm:"primaryKey"`
+	Model        string    `json:"model" gorm:"primaryKey;type:text;size:191"`
+	Score        float64   `json:"score"`
+	SConn        float64   `json:"s_conn"`
+	SPrice       float64   `json:"s_price"`
+	SSpeed       float64   `json:"s_speed"`
+	SStab        float64   `json:"s_stab"`
+	SAuth        float64   `json:"s_auth"`
+	Samples      int       `json:"samples"`
+	Insufficient bool      `json:"insufficient"`
+	UpdatedAt    time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (ChannelScoreSnapshot) TableName() string { return "channel_score_snapshots" }
@@ -55,33 +56,33 @@ func (ChannelRouteTag) TableName() string { return "channel_route_tags" }
 
 // ChannelCapability hand-filled capability metadata.
 type ChannelCapability struct {
-	ChannelID           int       `json:"channel_id" gorm:"primaryKey"`
-	SupportsTools       *bool     `json:"supports_tools"`
-	SupportsVision      *bool     `json:"supports_vision"`
-	SupportsJSONSchema  *bool     `json:"supports_json_schema"`
-	MaxContext          int       `json:"max_context"`
-	RPMHint             int       `json:"rpm_hint"`
-	MaxInflight         int       `json:"max_inflight"`
-	Region              string    `json:"region" gorm:"type:text;size:64"`
-	DataPolicy          string    `json:"data_policy" gorm:"type:text;size:64"`
-	UpdatedAt           time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+	ChannelID          int       `json:"channel_id" gorm:"primaryKey"`
+	SupportsTools      *bool     `json:"supports_tools"`
+	SupportsVision     *bool     `json:"supports_vision"`
+	SupportsJSONSchema *bool     `json:"supports_json_schema"`
+	MaxContext         int       `json:"max_context"`
+	RPMHint            int       `json:"rpm_hint"`
+	MaxInflight        int       `json:"max_inflight"`
+	Region             string    `json:"region" gorm:"type:text;size:64"`
+	DataPolicy         string    `json:"data_policy" gorm:"type:text;size:64"`
+	UpdatedAt          time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (ChannelCapability) TableName() string { return "channel_capabilities" }
 
 // ChannelCostPrice cost entry: default ratio mode (recharge rate + channel ratio).
 type ChannelCostPrice struct {
-	ChannelID               int       `json:"channel_id" gorm:"primaryKey"`
-	Model                   string    `json:"model" gorm:"primaryKey;type:text;size:191"`
-	PriceMode               string    `json:"price_mode" gorm:"type:text;size:16;default:'ratio'"` // ratio|absolute
-	RechargeCreditsPerCNY   float64   `json:"recharge_credits_per_cny"`
-	ChannelRatio            float64   `json:"channel_ratio"` // 0 => use channel model ratio
-	ModelRefUSDPerMTok      float64   `json:"model_ref_usd_per_mtok"`
-	InPriceUSD              float64   `json:"in_price_usd"`
-	OutPriceUSD             float64   `json:"out_price_usd"`
-	PriceCurrency           string    `json:"price_currency" gorm:"type:text;size:8;default:'USD'"`
-	UpdatedAt               time.Time `json:"updated_at" gorm:"autoUpdateTime"`
-	UpdatedBy               int       `json:"updated_by"`
+	ChannelID             int       `json:"channel_id" gorm:"primaryKey"`
+	Model                 string    `json:"model" gorm:"primaryKey;type:text;size:191"`
+	PriceMode             string    `json:"price_mode" gorm:"type:text;size:16;default:'ratio'"` // ratio|absolute
+	RechargeCreditsPerCNY float64   `json:"recharge_credits_per_cny"`
+	ChannelRatio          float64   `json:"channel_ratio"` // 0 => use channel model ratio
+	ModelRefUSDPerMTok    float64   `json:"model_ref_usd_per_mtok"`
+	InPriceUSD            float64   `json:"in_price_usd"`
+	OutPriceUSD           float64   `json:"out_price_usd"`
+	PriceCurrency         string    `json:"price_currency" gorm:"type:text;size:8;default:'USD'"`
+	UpdatedAt             time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+	UpdatedBy             int       `json:"updated_by"`
 }
 
 func (ChannelCostPrice) TableName() string { return "channel_cost_prices" }
@@ -108,11 +109,11 @@ func (ChannelCostLedger) TableName() string { return "channel_cost_ledger" }
 
 // ChannelCostGuard day cost guardrail state.
 type ChannelCostGuard struct {
-	ChannelID   int       `json:"channel_id" gorm:"primaryKey"`
-	Day         string    `json:"day" gorm:"primaryKey;type:text;size:10"` // YYYY-MM-DD
-	CostCNY     float64   `json:"cost_cny"`
-	Excluded    bool      `json:"excluded"`
-	UpdatedAt   time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+	ChannelID int       `json:"channel_id" gorm:"primaryKey"`
+	Day       string    `json:"day" gorm:"primaryKey;type:text;size:10"` // YYYY-MM-DD
+	CostCNY   float64   `json:"cost_cny"`
+	Excluded  bool      `json:"excluded"`
+	UpdatedAt time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (ChannelCostGuard) TableName() string { return "channel_cost_guards" }
@@ -133,17 +134,17 @@ func (ChannelBreakerEvent) TableName() string { return "channel_breaker_events" 
 
 // ChannelAuthFlag passive authenticity flag.
 type ChannelAuthFlag struct {
-	ID           int64     `json:"id" gorm:"primaryKey;autoIncrement"`
-	ChannelID    int       `json:"channel_id" gorm:"index;not null"`
-	Model        string    `json:"model" gorm:"type:text;size:191;index"`
-	ReqModel     string    `json:"req_model" gorm:"type:text"`
-	RespModel    string    `json:"resp_model" gorm:"type:text"`
-	TokLocal     int       `json:"tok_local"`
-	TokUpstream  int       `json:"tok_upstream"`
-	DevPct       float64   `json:"dev_pct"`
-	Verdict      string    `json:"verdict" gorm:"type:text;size:16"` // suspect|fail
-	FalsePositive bool     `json:"false_positive"`
-	CreatedAt    time.Time `json:"created_at" gorm:"autoCreateTime;index"`
+	ID            int64     `json:"id" gorm:"primaryKey;autoIncrement"`
+	ChannelID     int       `json:"channel_id" gorm:"index;not null"`
+	Model         string    `json:"model" gorm:"type:text;size:191;index"`
+	ReqModel      string    `json:"req_model" gorm:"type:text"`
+	RespModel     string    `json:"resp_model" gorm:"type:text"`
+	TokLocal      int       `json:"tok_local"`
+	TokUpstream   int       `json:"tok_upstream"`
+	DevPct        float64   `json:"dev_pct"`
+	Verdict       string    `json:"verdict" gorm:"type:text;size:16"` // suspect|fail
+	FalsePositive bool      `json:"false_positive"`
+	CreatedAt     time.Time `json:"created_at" gorm:"autoCreateTime;index"`
 }
 
 func (ChannelAuthFlag) TableName() string { return "channel_auth_flags" }
@@ -190,15 +191,15 @@ func (ReconcileDaily) TableName() string { return "reconcile_daily" }
 
 // ChannelBreakerState persisted breaker/half-open state (channel-level).
 type ChannelBreakerState struct {
-	ChannelID       int       `json:"channel_id" gorm:"primaryKey"`
-	Stage           string    `json:"stage" gorm:"type:text;size:32;default:'closed'"` // closed|open|half_2|half_10|full
-	CooldownUntil   time.Time `json:"cooldown_until"`
-	CooldownSec     int       `json:"cooldown_sec" gorm:"default:120"`
-	LowScoreStreak  int       `json:"low_score_streak"`
-	HalfOpenOK      int       `json:"half_open_ok"`
-	Stage2Since     time.Time `json:"stage2_since"`
-	Reason          string    `json:"reason" gorm:"type:text"`
-	UpdatedAt       time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+	ChannelID      int       `json:"channel_id" gorm:"primaryKey"`
+	Stage          string    `json:"stage" gorm:"type:text;size:32;default:'closed'"` // closed|open|half_2|half_10|full
+	CooldownUntil  time.Time `json:"cooldown_until"`
+	CooldownSec    int       `json:"cooldown_sec" gorm:"default:120"`
+	LowScoreStreak int       `json:"low_score_streak"`
+	HalfOpenOK     int       `json:"half_open_ok"`
+	Stage2Since    time.Time `json:"stage2_since"`
+	Reason         string    `json:"reason" gorm:"type:text"`
+	UpdatedAt      time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (ChannelBreakerState) TableName() string { return "channel_breaker_states" }
@@ -242,19 +243,51 @@ func SeedDefaultWeightScheme(db *gorm.DB) error {
 	if err := db.Model(&RoutingWeightScheme{}).Where("name = ?", "balanced_default").Count(&n).Error; err != nil {
 		return err
 	}
-	if n > 0 {
-		return nil
+	if n == 0 {
+		row := RoutingWeightScheme{
+			Name:      "balanced_default",
+			Weights:   DefaultWeightJSON,
+			Note:      "default balanced 30/25/20/15/10",
+			CreatedBy: 0,
+		}
+		if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&row).Error; err != nil {
+			return err
+		}
 	}
-	row := RoutingWeightScheme{
-		Name:      "balanced_default",
-		Weights:   DefaultWeightJSON,
-		Note:      "default balanced 30/25/20/15/10",
-		CreatedBy: 0,
+	return SeedPreferenceSchemes(db)
+}
+
+// SeedPreferenceSchemes inserts missing preference rows. Existing rows, including
+// an admin-edited balanced_default, are left alone.
+func SeedPreferenceSchemes(db *gorm.DB) error {
+	if db == nil {
+		db = DB
 	}
-	return db.Clauses(clause.OnConflict{DoNothing: true}).Create(&row).Error
+	presets := []RoutingWeightScheme{
+		{Name: "prefer_save", Weights: `{"conn":15,"price":50,"speed":10,"stab":15,"auth":10}`, Note: "省钱"},
+		{Name: "prefer_fast", Weights: `{"conn":20,"price":10,"speed":45,"stab":15,"auth":10}`, Note: "更快"},
+		{Name: "prefer_stable", Weights: `{"conn":25,"price":10,"speed":10,"stab":40,"auth":15}`, Note: "更稳"},
+	}
+	for _, row := range presets {
+		var n int64
+		if err := db.Model(&RoutingWeightScheme{}).Where("name = ?", row.Name).Count(&n).Error; err != nil {
+			return err
+		}
+		if n > 0 {
+			continue
+		}
+		row.CreatedBy = 0
+		if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&row).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func UpsertRouteWeight(channelID int, modelName string, rw int, score float64, state string) error {
+	if DB == nil {
+		return errors.New("database is not configured")
+	}
 	row := ChannelRouteWeight{
 		ChannelID:   channelID,
 		Model:       modelName,
@@ -270,11 +303,29 @@ func UpsertRouteWeight(channelID int, modelName string, rw int, score float64, s
 }
 
 func UpsertScoreSnapshot(s ChannelScoreSnapshot) error {
+	if DB == nil {
+		return errors.New("database is not configured")
+	}
 	s.UpdatedAt = time.Now()
 	return DB.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "channel_id"}, {Name: "model"}},
 		DoUpdates: clause.AssignmentColumns([]string{"score", "s_conn", "s_price", "s_speed", "s_stab", "s_auth", "samples", "insufficient", "updated_at"}),
 	}).Create(&s).Error
+}
+
+// AddChannelDayCost atomically adds delta to today's cost row. It does not set excluded.
+func AddChannelDayCost(channelID int, day string, delta float64) error {
+	if DB == nil || channelID == 0 || day == "" || delta == 0 {
+		return nil
+	}
+	row := ChannelCostGuard{ChannelID: channelID, Day: day, CostCNY: delta, UpdatedAt: time.Now()}
+	return DB.Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "channel_id"}, {Name: "day"}},
+		DoUpdates: clause.Assignments(map[string]any{
+			"cost_cny":   gorm.Expr("channel_cost_guards.cost_cny + ?", delta),
+			"updated_at": time.Now(),
+		}),
+	}).Create(&row).Error
 }
 
 func ListRouteTags(channelID int) ([]ChannelRouteTag, error) {
@@ -320,8 +371,15 @@ func SaveWeightSnapshot(kind string, operatorID int, diff, snapshot any) error {
 }
 
 func CountScoreBrokenChannels() int64 {
+	return countOpenBreakerStages()
+}
+
+func countOpenBreakerStages() int64 {
+	if DB == nil {
+		return 0
+	}
 	var n int64
-	_ = DB.Model(&Channel{}).Where("status = ?", 4).Count(&n)
+	_ = DB.Model(&ChannelBreakerState{}).Where("stage <> ? AND stage <> ?", "closed", "").Count(&n)
 	return n
 }
 

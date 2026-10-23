@@ -5,7 +5,6 @@ import (
 	"strconv"
 
 	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/logger"
 
 	"gorm.io/gorm"
 )
@@ -136,69 +135,11 @@ func GetRedemptionById(id int) (*Redemption, error) {
 // ErrRedemptionUsed 兑换码已被使用（审查 P2-8：向用户给出明确提示）。
 var ErrRedemptionUsed = errors.New("redemption code already used")
 
-func Redeem(key string, userId int) (quota int, err error) {
-	if key == "" {
-		return 0, errors.New("redemption code not provided")
-	}
-	if userId == 0 {
-		return 0, errors.New("invalid user id")
-	}
-	redemption := &Redemption{}
+// ErrRedemptionClosed 兑换码已下线，不再入账。
+var ErrRedemptionClosed = errors.New("redemption codes are no longer available")
 
-	keyCol := "`key`"
-	if common.UsingMainDatabase(common.DatabaseTypePostgreSQL) {
-		keyCol = `"key"`
-	}
-	common.RandomSleep()
-	err = DB.Transaction(func(tx *gorm.DB) error {
-		err := lockForUpdate(tx).Where(keyCol+" = ?", key).First(redemption).Error
-		if err != nil {
-			return errors.New("invalid redemption code")
-		}
-		if redemption.Status == common.RedemptionCodeStatusUsed {
-			return ErrRedemptionUsed
-		}
-		if redemption.Status != common.RedemptionCodeStatusEnabled {
-			return errors.New("redemption code disabled")
-		}
-		if redemption.ExpiredTime != 0 && redemption.ExpiredTime < common.GetTimestamp() {
-			return errors.New("redemption code expired")
-		}
-		// Compare-and-swap on status: only the transaction that flips
-		// enabled -> used may credit quota, so a concurrent redeem of the
-		// same code loses here even without a row lock (e.g. on SQLite).
-		result := tx.Model(&Redemption{}).
-			Where("id = ? AND status = ?", redemption.Id, common.RedemptionCodeStatusEnabled).
-			Updates(map[string]any{
-				"redeemed_time": common.GetTimestamp(),
-				"status":        common.RedemptionCodeStatusUsed,
-				"used_user_id":  userId,
-			})
-		if result.Error != nil {
-			return result.Error
-		}
-		if result.RowsAffected == 0 {
-			return ErrRedemptionUsed
-		}
-		// A27/A4：兑换码入赠送钱包，经 AdjustQuota 写余额+流水，不直接写 users.quota。
-		if _, err := AdjustQuota(tx, userId, "bonus", int64(redemption.Quota),
-			"adtyai redemption bonus", "redemption", strconv.Itoa(redemption.Id),
-			"redeem:"+strconv.Itoa(redemption.Id), 0, "redemption_bonus"); err != nil {
-			return err
-		}
-		_ = invalidateUserCache(userId)
-		return nil
-	})
-	if err != nil {
-		common.SysError(common.LogText("redemption failed: %s", err.Error()))
-		if errors.Is(err, ErrRedemptionUsed) {
-			return 0, ErrRedemptionUsed
-		}
-		return 0, ErrRedeemFailed
-	}
-	// bonus 不在 users.quota 缓存内，不做 quota 缓存增量（与 CompleteTopupOrder bonus 路径一致）。
-	RecordLog(userId, LogTypeTopup, common.NewMessage("Topped up {{quota}} with a redemption code, code ID {{id}}", map[string]any{"quota": logger.FormatQuota(redemption.Quota), "id": redemption.Id}))
-	return redemption.Quota, nil
+func Redeem(key string, userId int) (int, error) {
+	return 0, ErrRedemptionClosed
 }
 
 func (redemption *Redemption) Insert() error {

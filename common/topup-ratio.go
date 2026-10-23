@@ -30,12 +30,6 @@ func UpdateTopupGroupRatioByJSONString(jsonStr string) error {
 }
 
 func GetTopupGroupRatio(name string) float64 {
-	topupGroupRatioMutex.RLock()
-	defer topupGroupRatioMutex.RUnlock()
-	ratio, ok := topupGroupRatio[name]
-	if !ok {
-		SysError(LogText("topup group ratio not found: %s", name))
-		return 1
-	}
-	return ratio
+	// Top-up group ratios no longer affect payment amounts. Stored values are kept for rollback.
+	return 1
 }

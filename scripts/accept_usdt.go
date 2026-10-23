@@ -301,13 +301,11 @@ func main() {
 	}
 	fmt.Println("(8) status 2 after local expiry credits snapshot OK")
 
-	// legacy path closed by default
-	setting.SetBepusdtLegacyNotifyEnabled(false)
 	w = postNotify(controller.AdtyBepusdtLegacyNotify, good)
 	if w.Code != http.StatusNotFound {
-		panic(fmt.Sprintf("legacy disabled want 404 got %d", w.Code))
+		panic(fmt.Sprintf("legacy path want 404 got %d", w.Code))
 	}
-	fmt.Println("legacy notify disabled → 404 OK")
+	fmt.Println("legacy notify always 404 OK")
 
 	fmt.Println("ALL USDT ACCEPTANCE PASSED")
 }

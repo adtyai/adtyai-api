@@ -35,6 +35,8 @@ const STATUS_RELATED_KEYS = new Set([
   'log_setting.user_export_enabled',
   'log_setting.max_range_days',
   'QuotaPerUnit',
+  'GroupRatio',
+  'UserUsableGroups',
   'USDExchangeRate',
   'DisplayInCurrencyEnabled',
   'DisplayTokenStatEnabled',

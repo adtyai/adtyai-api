@@ -32,15 +32,16 @@ func TestDistributeAllBrokenFallsBackToHalfOpen(t *testing.T) {
 	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{"default":"Default"}`))
 	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"default":1}`))
 	prevMem := common.MemoryCacheEnabled
-	prevW, prevS, prevF := model.SmartWeightHook, model.OnChannelSelectedHook, model.HalfOpenFallbackHook
+	prevW, prevS, prevProbe, prevF := model.SmartWeightHook, model.OnChannelSelectedHook, model.OnHalfOpenProbeHook, model.HalfOpenFallbackHook
 	t.Cleanup(func() {
 		_ = setting.UpdateUserUsableGroupsByJSONString(prevGroups)
 		_ = ratio_setting.UpdateGroupRatioByJSONString(string(prevRatios))
 		common.MemoryCacheEnabled = prevMem
-		model.SmartWeightHook, model.OnChannelSelectedHook, model.HalfOpenFallbackHook = prevW, prevS, prevF
+		model.SmartWeightHook, model.OnChannelSelectedHook, model.OnHalfOpenProbeHook, model.HalfOpenFallbackHook = prevW, prevS, prevProbe, prevF
 	})
 	model.RegisterSmartWeightHook(smartrouting.SmartWeights)
 	model.RegisterOnChannelSelectedHook(smartrouting.OnChannelSelected)
+	model.RegisterOnHalfOpenProbeHook(smartrouting.ReserveHalfOpenProbe)
 	model.RegisterHalfOpenFallbackHook(smartrouting.HalfOpenFallback)
 
 	auto := 1
@@ -51,9 +52,12 @@ func TestDistributeAllBrokenFallsBackToHalfOpen(t *testing.T) {
 		require.NoError(t, ch.AddAbilities(model.DB))
 		smartrouting.TripImmediate(id, "test_trip")
 	}
-	var broken int64
-	require.NoError(t, model.DB.Model(&model.Channel{}).Where("id IN ? AND status = ?", ids, common.ChannelStatusScoreBroken).Count(&broken).Error)
-	require.EqualValues(t, len(ids), broken, "all channels must be score-broken")
+	var stillEnabled int64
+	require.NoError(t, model.DB.Model(&model.Channel{}).Where("id IN ? AND status = ?", ids, common.ChannelStatusEnabled).Count(&stillEnabled).Error)
+	require.EqualValues(t, len(ids), stillEnabled, "breaker must not write channel status")
+	var open int64
+	require.NoError(t, model.DB.Model(&model.ChannelBreakerState{}).Where("channel_id IN ? AND stage = ?", ids, "open").Count(&open).Error)
+	require.EqualValues(t, len(ids), open, "breaker stage must be open")
 	require.NoError(t, model.DB.Model(&model.ChannelBreakerState{}).Where("channel_id IN ?", ids).Update("cooldown_until", time.Now().Add(-time.Second)).Error)
 	require.Len(t, smartrouting.AdvanceHalfOpen(), len(ids))
 

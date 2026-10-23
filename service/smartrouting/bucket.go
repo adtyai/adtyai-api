@@ -43,8 +43,7 @@ func bucketKeyLocal(channelID int, modelName string, minute time.Time) string {
 
 // RecordSample writes into Redis minute bucket (or local fallback).
 func RecordSample(ev AttemptEvent) {
-	cfg := GetConfig()
-	if !cfg.Enabled {
+	if !Collects() {
 		return
 	}
 	if ev.CacheHit {

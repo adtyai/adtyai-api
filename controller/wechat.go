@@ -71,12 +71,12 @@ func WeChatAuth(c *gin.Context) {
 	}
 	if model.IsWeChatIdAlreadyTaken(wechatId) {
 		err := user.FillUserByWeChatId()
-		if err != nil {
-			common.ApiError(c, err)
+		if errors.Is(err, gorm.ErrRecordNotFound) || (err == nil && user.Id == 0) {
+			common.ApiErrorT(c, "User has been deleted")
 			return
 		}
-		if user.Id == 0 {
-			common.ApiErrorT(c, "User has been deleted")
+		if err != nil {
+			writeUserMutationError(c, err)
 			return
 		}
 	} else {
@@ -88,7 +88,7 @@ func WeChatAuth(c *gin.Context) {
 			// 邀请关系在插入事务外解析。空码、无效码、成环不让注册失败；数据库错误不能吞掉。
 			inviterId, err := model.ResolveSignupInviter(c.Query("aff"))
 			if err != nil {
-				common.ApiError(c, err)
+				writeUserMutationError(c, err)
 				return
 			}
 			user.InviterId = inviterId
@@ -98,7 +98,7 @@ func WeChatAuth(c *gin.Context) {
 			}
 
 			if err := user.Insert(inviterId); err != nil {
-				common.ApiError(c, err)
+				writeUserInsertError(c, err)
 				return
 			}
 		} else {

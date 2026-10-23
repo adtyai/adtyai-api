@@ -54,3 +54,23 @@ export type GroupRowDraft = {
   display_name: string
   sort: string
 }
+
+export type GroupGrantView = {
+  user_id: number
+  username: string
+  display_name: string
+  created_at: number
+}
+
+export type GroupGrantListResponse = {
+  success: boolean
+  message?: string
+  code?: string
+  data?: GroupGrantView[]
+}
+
+export type GroupGrantWriteResponse = {
+  success: boolean
+  message?: string
+  code?: string
+}

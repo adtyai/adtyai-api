@@ -1217,7 +1217,6 @@ export function useChannelsColumns(
             <ScoreBadge
               score={score ?? null}
               channelId={row.original.id}
-              linkToDetail
               noData={score == null}
             />
           )

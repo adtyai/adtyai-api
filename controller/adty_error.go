@@ -1,6 +1,10 @@
 package controller
 
 import (
+	"net/http"
+
+	"github.com/QuantumNous/new-api/common"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -12,6 +16,13 @@ import (
 // (invalid_id / invalid_parameters / not_found / forbidden / unauthorized /
 // bad_request, plus business codes). Keep message as English (or existing CN)
 // fallback; dynamic numbers belong in params (snake_case), not the message.
+func adtyInternalError(c *gin.Context, err error) {
+	if err != nil {
+		common.SysError(common.LogText("admin request failed: %s", err.Error()))
+	}
+	adtyFail(c, http.StatusInternalServerError, "internal_error", "internal error", nil)
+}
+
 func adtyFail(c *gin.Context, status int, code, message string, params map[string]any) {
 	body := gin.H{
 		"success": false,

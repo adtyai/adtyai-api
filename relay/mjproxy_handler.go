@@ -27,7 +27,14 @@ import (
 )
 
 func RelayMidjourneyImage(c *gin.Context) {
-	taskId := c.Param("id")
+	taskId := strings.TrimSpace(c.Param("id"))
+	// 浏览器 img 不能带 Authorization。用查询参数能力令牌，校验失败前不查库、不访问上游。
+	if !service.VerifyMidjourneyImageAccess(taskId, c.Query(service.TaskArtifactAccessQueryParameter)) {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "midjourney_image_not_found",
+		})
+		return
+	}
 	midjourneyTask := model.GetByOnlyMJId(taskId)
 	if midjourneyTask == nil {
 		c.JSON(400, gin.H{
@@ -62,8 +69,9 @@ func RelayMidjourneyImage(c *gin.Context) {
 		validateErr = common.ValidateURLWithFetchSetting(midjourneyTask.ImageUrl, fetchSetting.EnableSSRFProtection, fetchSetting.AllowPrivateIp, fetchSetting.DomainFilterMode, fetchSetting.IpFilterMode, fetchSetting.DomainList, fetchSetting.IpList, fetchSetting.AllowedPorts, fetchSetting.ApplyIPFilterForDomain)
 	}
 	if validateErr != nil {
+		logger.LogWarn(c, common.LogText("midjourney image fetch blocked for %s: %s", taskId, validateErr.Error()))
 		c.JSON(http.StatusForbidden, gin.H{
-			"error": fmt.Sprintf("request blocked: %v", validateErr),
+			"error": "request_blocked",
 		})
 		return
 	}
@@ -76,9 +84,10 @@ func RelayMidjourneyImage(c *gin.Context) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		responseBody, _ := io.ReadAll(resp.Body)
-		c.JSON(resp.StatusCode, gin.H{
-			"error": string(responseBody),
+		_, _ = io.Copy(io.Discard, resp.Body)
+		logger.LogWarn(c, common.LogText("midjourney image upstream status %d for %s", resp.StatusCode, taskId))
+		c.JSON(http.StatusBadGateway, gin.H{
+			"error": "upstream_image_unavailable",
 		})
 		return
 	}
@@ -151,10 +160,7 @@ func coverMidjourneyTaskDto(c *gin.Context, originTask *model.Midjourney) (midjo
 	midjourneyTask.FinishTime = originTask.FinishTime
 	midjourneyTask.ImageUrl = ""
 	if originTask.ImageUrl != "" && setting.MjForwardUrlEnabled {
-		midjourneyTask.ImageUrl = system_setting.ServerAddress + "/mj/image/" + originTask.MjId
-		if originTask.Status != "SUCCESS" {
-			midjourneyTask.ImageUrl += "?rand=" + strconv.FormatInt(time.Now().UnixNano(), 10)
-		}
+		midjourneyTask.ImageUrl = service.MidjourneyForwardImageURL(system_setting.ServerAddress, originTask.MjId, originTask.Status != "SUCCESS")
 	} else {
 		midjourneyTask.ImageUrl = originTask.ImageUrl
 	}

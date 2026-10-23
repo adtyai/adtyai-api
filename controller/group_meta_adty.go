@@ -14,7 +14,7 @@ import (
 func AdminGetGroups(c *gin.Context) {
 	views, err := model.ListGroupMetaViews(model.DB)
 	if err != nil {
-		adtyFail(c, http.StatusInternalServerError, "internal_error", err.Error(), nil)
+		adtyInternalError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": views})
@@ -34,17 +34,7 @@ func AdminPutGroup(c *gin.Context) {
 	}
 	_, newSnap, err := model.UpdateGroupMetaDisplay(model.DB, pathCode, req)
 	if err != nil {
-		status := http.StatusBadRequest
-		code := "bad_request"
-		switch {
-		case errors.Is(err, model.ErrGroupMetaCodeImmutable):
-			code = "code_immutable"
-		case errors.Is(err, model.ErrGroupMetaInvalidCode):
-			code = "invalid_code"
-		case errors.Is(err, model.ErrGroupMetaDisplayName):
-			code = "display_name_required"
-		}
-		c.JSON(status, gin.H{"success": false, "message": err.Error(), "code": code})
+		writeGroupMetaWriteError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": newSnap})
@@ -60,18 +50,57 @@ func AdminPostGroup(c *gin.Context) {
 		rootReject(c, http.StatusBadRequest, "bad_request", "invalid json")
 		return
 	}
-	view, err := model.CreateGroupMeta(model.DB, req)
+	view, err := model.CreateGroupWithRatio(model.DB, req)
 	if err != nil {
-		status := http.StatusBadRequest
-		code := "bad_request"
-		switch {
-		case errors.Is(err, model.ErrGroupMetaInvalidCode):
-			code = "invalid_code"
-		case errors.Is(err, model.ErrGroupMetaExists):
-			code = "exists"
-		}
-		c.JSON(status, gin.H{"success": false, "message": err.Error(), "code": code})
+		writeGroupMetaWriteError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": view})
+}
+
+// AdminSaveGroupBilling PUT /api/admin/groups/billing (Root)
+// Writes ratio, visibility, and display names together. Does not add billing codes.
+func AdminSaveGroupBilling(c *gin.Context) {
+	if !requireRoot(c) {
+		return
+	}
+	var req struct {
+		GroupRatio       map[string]float64 `json:"group_ratio"`
+		UserUsableGroups map[string]string  `json:"user_usable_groups"`
+		DisplayNames     map[string]string  `json:"display_names"`
+	}
+	if err := common.DecodeJson(c.Request.Body, &req); err != nil {
+		adtyFail(c, http.StatusBadRequest, "invalid_parameters", "Invalid parameters", nil)
+		return
+	}
+	err := model.SaveGroupBillingTable(req.GroupRatio, req.UserUsableGroups, req.DisplayNames)
+	if err == nil {
+		c.JSON(http.StatusOK, gin.H{"success": true, "message": ""})
+		return
+	}
+	switch {
+	case errors.Is(err, model.ErrGroupBillingExtraCode), errors.Is(err, model.ErrGroupBillingKeySet), errors.Is(err, model.ErrGroupBillingUsable):
+		adtyFail(c, http.StatusBadRequest, "invalid_code", "Invalid parameters", nil)
+	case errors.Is(err, model.ErrGroupBillingRatio):
+		adtyFail(c, http.StatusBadRequest, "invalid_ratio", "Ratio must be a number", nil)
+	case errors.Is(err, model.ErrGroupMetaDisplayName), errors.Is(err, model.ErrGroupMetaInvalidCode):
+		adtyFail(c, http.StatusBadRequest, "invalid_parameters", "Invalid parameters", nil)
+	default:
+		adtyInternalError(c, err)
+	}
+}
+
+func writeGroupMetaWriteError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, model.ErrGroupMetaCodeImmutable):
+		rootReject(c, http.StatusBadRequest, "code_immutable", "Group code cannot be changed")
+	case errors.Is(err, model.ErrGroupMetaInvalidCode):
+		rootReject(c, http.StatusBadRequest, "invalid_code", "Invalid parameters")
+	case errors.Is(err, model.ErrGroupMetaDisplayName):
+		rootReject(c, http.StatusBadRequest, "display_name_required", "Display name is required")
+	case errors.Is(err, model.ErrGroupMetaExists):
+		rootReject(c, http.StatusBadRequest, "exists", "Group already exists")
+	default:
+		adtyInternalError(c, err)
+	}
 }

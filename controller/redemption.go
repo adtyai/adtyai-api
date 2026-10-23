@@ -12,6 +12,11 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+func RejectClosedRedemption(c *gin.Context) {
+	common.ApiErrorT(c, "Redemption codes are no longer available")
+	c.Abort()
+}
+
 func GetAllRedemptions(c *gin.Context) {
 	pageInfo := common.GetPageQuery(c)
 	redemptions, total, err := model.GetAllRedemptions(pageInfo.GetStartIdx(), pageInfo.GetPageSize())

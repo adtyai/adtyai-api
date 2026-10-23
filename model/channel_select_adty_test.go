@@ -11,7 +11,7 @@ func withChannelCache(t *testing.T, chans []*Channel, group, modelName string) {
 	t.Helper()
 	prevIDM, prevG := channelsIDM, group2model2channels
 	prevMem := common.MemoryCacheEnabled
-	prevHook, prevSel, prevFb := SmartWeightHook, OnChannelSelectedHook, HalfOpenFallbackHook
+	prevHook, prevSel, prevProbe, prevFb := SmartWeightHook, OnChannelSelectedHook, OnHalfOpenProbeHook, HalfOpenFallbackHook
 	common.MemoryCacheEnabled = true
 	channelsIDM = map[int]*Channel{}
 	ids := []int{}
@@ -20,11 +20,11 @@ func withChannelCache(t *testing.T, chans []*Channel, group, modelName string) {
 		ids = append(ids, c.Id)
 	}
 	group2model2channels = map[string]map[string][]int{group: {modelName: ids}}
-	SmartWeightHook, OnChannelSelectedHook, HalfOpenFallbackHook = nil, nil, nil
+	SmartWeightHook, OnChannelSelectedHook, OnHalfOpenProbeHook, HalfOpenFallbackHook = nil, nil, nil, nil
 	t.Cleanup(func() {
 		channelsIDM, group2model2channels = prevIDM, prevG
 		common.MemoryCacheEnabled = prevMem
-		SmartWeightHook, OnChannelSelectedHook, HalfOpenFallbackHook = prevHook, prevSel, prevFb
+		SmartWeightHook, OnChannelSelectedHook, OnHalfOpenProbeHook, HalfOpenFallbackHook = prevHook, prevSel, prevProbe, prevFb
 	})
 }
 
@@ -50,16 +50,49 @@ func TestRandomChannelZeroWeightsUniform(t *testing.T) {
 }
 
 // 审查 N-P1-2：候选为空（全部熔断）时回退到半开渠道；单渠道时也经过智能路由挂钩。
+func TestEmptyCandidateHalfOpenDoesNotSkipHighestBand(t *testing.T) {
+	probe := &Channel{Id: 7, Weight: bandWeight(1)}
+	withChannelCache(t, nil, "g", "m")
+	HalfOpenFallbackHook = func(modelName, group string, caps RouteCaps, accept func(*Channel) bool) *Channel {
+		return probe
+	}
+	channel, decision, err := GetRandomSatisfiedChannelRouted("g", "m", 0, nil, RouteCaps{})
+	if err != nil || channel == nil || channel.Id != 7 {
+		t.Fatalf("channel=%v err=%v", channel, err)
+	}
+	if decision.BandIndex >= 0 || decision.Picked != 7 || decision.Group != "g" || !decision.HalfOpen {
+		t.Fatalf("empty-candidate probe must not be recorded as band 0, decision=%+v", decision)
+	}
+	if start := NextBandStart(decision, "g", 1); start != 1 {
+		t.Fatalf("next walk starts at %d, want the official retry 1", start)
+	}
+}
+
+func TestHalfOpenConfirmFailureIsNotGroupExhaustion(t *testing.T) {
+	withChannelCache(t, nil, "g", "m")
+	HalfOpenFallbackHook = func(modelName, group string, caps RouteCaps, accept func(*Channel) bool) *Channel {
+		return &Channel{Id: 7}
+	}
+	OnChannelSelectedHook = func(channelID int) bool { return false }
+	channel, decision, err := GetRandomSatisfiedChannelRouted("g", "m", 0, nil, RouteCaps{})
+	if channel != nil || err != nil {
+		t.Fatalf("confirm failure must be empty so auto-group can switch, channel=%v err=%v", channel, err)
+	}
+	if decision.Reason != "inflight_rejected" || decision.Picked != 0 || decision.Group != "g" {
+		t.Fatalf("decision=%+v", decision)
+	}
+}
+
 func TestRandomChannelHalfOpenFallback(t *testing.T) {
 	withChannelCache(t, nil, "default", "m")
 	half := &Channel{Id: 9, Status: common.ChannelStatusScoreBroken}
-	HalfOpenFallbackHook = func(modelName, group string, accept func(*Channel) bool) *Channel { return half }
+	HalfOpenFallbackHook = func(modelName, group string, caps RouteCaps, accept func(*Channel) bool) *Channel { return half }
 	ch, err := GetRandomSatisfiedChannel("default", "m", 0, nil)
 	require.NoError(t, err)
 	require.NotNil(t, ch)
 	require.Equal(t, 9, ch.Id)
 
-	// inflight 被拒时不返回
+	// inflight 被拒时该分组没有可派发渠道，调用方按空结果换组。
 	OnChannelSelectedHook = func(int) bool { return false }
 	ch, err = GetRandomSatisfiedChannel("default", "m", 0, nil)
 	require.NoError(t, err)
@@ -72,9 +105,9 @@ func TestRandomChannelSingleCandidateGoesThroughSmartHook(t *testing.T) {
 	withChannelCache(t, []*Channel{healthy}, "default", "m")
 	half := &Channel{Id: 3, Weight: &one, Status: common.ChannelStatusScoreBroken}
 	called := false
-	SmartWeightHook = func(chs []*Channel, m, g string) ([]*Channel, []int) {
+	SmartWeightHook = func(chs []*Channel, m, g string, caps RouteCaps) SmartWeightResult {
 		called = true
-		return []*Channel{chs[0], half}, []int{0, 1} // 只给半开权重，验证注入生效
+		return SmartWeightResult{Channels: []*Channel{chs[0], half}, Weights: []int{0, 1}}
 	}
 	ch, err := GetRandomSatisfiedChannel("default", "m", 0, nil)
 	require.NoError(t, err)

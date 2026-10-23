@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
@@ -28,8 +28,10 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { formatAffUsd } from '@/features/affiliate/lib/quota'
+import { formatBillingCurrencyFromUSD } from '@/lib/currency'
 import {
   commissionStatusLabel,
+  commissionStatusLabels,
   withdrawMethodLabel,
   withdrawStatusLabel,
 } from '@/features/affiliate/lib/status'
@@ -79,7 +81,13 @@ function DetailPager({
   )
 }
 
-export function AffUserDetailButton({ userId }: { userId: number }) {
+export function AffUserDetailButton({
+  userId,
+  children,
+}: {
+  userId: number
+  children?: ReactNode
+}) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [inviteeOffset, setInviteeOffset] = useState(0)
@@ -116,7 +124,7 @@ export function AffUserDetailButton({ userId }: { userId: number }) {
         aria-label={t('View affiliate detail')}
         onClick={() => setOpen(true)}
       >
-        {t('View')}
+        {children ?? t('View')}
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className='max-h-[80vh] overflow-y-auto sm:max-w-2xl'>
@@ -165,7 +173,21 @@ export function AffUserDetailButton({ userId }: { userId: number }) {
                     >
                       <span>{row.name || row.user_id}</span>
                       <span className='text-muted-foreground'>
+                        {row.registered_at
+                          ? new Date(row.registered_at * 1000).toLocaleDateString()
+                          : '-'}
+                        {' · '}
+                        {formatBillingCurrencyFromUSD(row.paid_usd, {
+                          digitsLarge: 2,
+                          digitsSmall: 2,
+                          abbreviate: false,
+                        })}
+                        {' · '}
                         {formatAffUsd(row.commission_quota)}
+                        {' · '}
+                        {commissionStatusLabels(row.status)
+                          .map((label) => t(label))
+                          .join(' / ')}
                       </span>
                     </div>
                   ))

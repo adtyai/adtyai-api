@@ -259,7 +259,9 @@ export function SidebarModulesSection({
               description: t('Custom sidebar section'),
             }
             const modules = Object.entries(sectionConfig).filter(
-              ([moduleKey]) => moduleKey !== 'enabled'
+              ([moduleKey]) =>
+                moduleKey !== 'enabled' &&
+                !(sectionKey === 'admin' && moduleKey === 'redemption')
             )
 
             return (

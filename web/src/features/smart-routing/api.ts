@@ -19,11 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 
 import { api } from '@/lib/api'
 
-import {
-  DEFAULT_ROUTING_CONFIG,
-  DEFAULT_SCORE_WEIGHTS,
-  SMART_ROUTING_API_PREFIX,
-} from './constants'
+import { DEFAULT_SCORE_WEIGHTS, SMART_ROUTING_API_PREFIX } from './constants'
 import {
   fromBackendWeights,
   resolveSchemePreviewArgs,
@@ -34,10 +30,7 @@ import type {
   BreakerEvent,
   BreakerStageRow,
   ChannelPriceRow,
-  ChannelScoreRow,
-  CostGuardRow,
-  CostRankingRow,
-  DecisionRow,
+  RouteTagRow,
   RoutingConfig,
   ScoreWeights,
   SimulateResult,
@@ -124,10 +117,29 @@ export function envelopeFromError<T>(err: unknown): ApiEnvelope<T> {
 }
 
 export async function getRoutingConfig(): Promise<RoutingConfig> {
-  const data = await softGet<Record<string, unknown>>('/config', {
-    ...DEFAULT_ROUTING_CONFIG,
-    weights: { ...DEFAULT_SCORE_WEIGHTS },
-  } as unknown as Record<string, unknown>)
+  const res = await api.get<ApiEnvelope<Record<string, unknown>>>(
+    `${SMART_ROUTING_API_PREFIX}/config`,
+    softGetConfig
+  )
+  const data = res.data?.data
+  if (!res.data?.success || data == null || typeof data !== 'object') {
+    throw new Error(
+      typeof res.data?.message === 'string' && res.data.message
+        ? res.data.message
+        : 'Failed to load'
+    )
+  }
+  const mode =
+    data.mode === 'off' || data.mode === 'observe' || data.mode === 'active'
+      ? data.mode
+      : data.enabled === true
+        ? 'active'
+        : data.enabled === false
+          ? 'off'
+          : undefined
+  if (!mode) {
+    throw new Error('Failed to load')
+  }
   const scheme =
     (typeof data.active_weight_scheme === 'string' &&
       data.active_weight_scheme) ||
@@ -136,8 +148,8 @@ export async function getRoutingConfig(): Promise<RoutingConfig> {
     undefined
   const weights = fromBackendWeights(data.weights)
   return {
-    ...DEFAULT_ROUTING_CONFIG,
-    ...(data as Partial<RoutingConfig>),
+    enabled: mode === 'active',
+    mode,
     active_weight_scheme: scheme,
     active_weight_scheme_id: scheme,
     weights: { ...DEFAULT_SCORE_WEIGHTS, ...weights },
@@ -209,18 +221,20 @@ function normalizeScheme(raw: unknown): WeightScheme | null {
 }
 
 export async function getWeightSchemes(): Promise<WeightScheme[]> {
-  const data = await softGet<unknown[]>('/weight-schemes', [])
-  if (!Array.isArray(data) || data.length === 0) {
-    return [
-      {
-        id: 'balanced_default',
-        name: 'balanced_default',
-        weights: { ...DEFAULT_SCORE_WEIGHTS },
-        is_default: true,
-      },
-    ]
+  const res = await api.get<ApiEnvelope<unknown[]>>(
+    `${SMART_ROUTING_API_PREFIX}/weight-schemes`,
+    softGetConfig
+  )
+  if (!res.data?.success || !Array.isArray(res.data.data)) {
+    throw new Error(
+      typeof res.data?.message === 'string' && res.data.message
+        ? res.data.message
+        : 'Failed to load'
+    )
   }
-  return data.map(normalizeScheme).filter((s): s is WeightScheme => s != null)
+  return res.data.data
+    .map(normalizeScheme)
+    .filter((s): s is WeightScheme => s != null)
 }
 
 export async function createWeightScheme(body: {
@@ -438,28 +452,21 @@ export async function simulateRouting(body: {
 }): Promise<SimulateResult> {
   try {
     const res = await softMutate<SimulateResult>('post', '/simulate', body)
+    if (!res.success) {
+      return {
+        model: body.model,
+        items: [],
+        error: res.message || 'Failed to load',
+      }
+    }
     return res.data ?? { model: body.model, items: [] }
-  } catch {
-    return { model: body.model, items: [] }
+  } catch (err) {
+    return {
+      model: body.model,
+      items: [],
+      error: envelopeFromError(err).message,
+    }
   }
-}
-
-export async function getScores(params?: {
-  model?: string
-}): Promise<ChannelScoreRow[]> {
-  return softGet<ChannelScoreRow[]>('/scores', [], params)
-}
-
-export async function getScoreDetail(
-  channelId: number
-): Promise<ChannelScoreRow | null> {
-  return softGet<ChannelScoreRow | null>(`/scores/${channelId}`, null)
-}
-
-export async function getRankings(params?: {
-  model?: string
-}): Promise<ChannelScoreRow[]> {
-  return softGet<ChannelScoreRow[]>('/rankings', [], params)
 }
 
 export async function getBreakerStages(): Promise<BreakerStageRow[]> {
@@ -480,47 +487,53 @@ export async function putPrice(
   return softMutate<ChannelPriceRow>('put', '/prices', body)
 }
 
-export async function getCostRankings(): Promise<CostRankingRow[]> {
-  return softGet<CostRankingRow[]>('/cost/rankings', [])
-}
-
-export async function getCostGuards(): Promise<CostGuardRow[]> {
-  return softGet<CostGuardRow[]>('/cost/guards', [])
-}
-
-export async function getCostSummary(): Promise<Record<string, unknown>> {
-  return softGet<Record<string, unknown>>('/cost/summary', {})
-}
-
-export async function getDecisions(params?: {
-  request_id?: string
-  log_id?: string
-  page?: number
-}): Promise<DecisionRow[]> {
-  if (params?.request_id || params?.log_id) {
-    const one = await softGet<DecisionRow | null>(
-      '/decision',
-      null,
-      params as Record<string, string | number | undefined>
+export async function listRouteTags(
+  channelId?: number
+): Promise<RouteTagRow[]> {
+  const res = await api.get<ApiEnvelope<RouteTagRow[]>>(
+    `${SMART_ROUTING_API_PREFIX}/tags`,
+    {
+      ...softGetConfig,
+      params: channelId ? { channel_id: channelId } : undefined,
+    }
+  )
+  if (!res.data?.success || !Array.isArray(res.data.data)) {
+    throw new Error(
+      typeof res.data?.message === 'string' && res.data.message
+        ? res.data.message
+        : 'Failed to load'
     )
-    return one ? [one] : []
   }
-  return softGet<DecisionRow[]>('/decisions', [], params)
+  return res.data.data
+}
+
+export async function createRouteTag(body: {
+  channel_id: number
+  model?: string
+  tag: 'excluded' | 'fallback_only'
+  note?: string
+}): Promise<ApiEnvelope<RouteTagRow>> {
+  return softMutate('post', '/tags', body)
+}
+
+export async function deleteRouteTag(
+  id: number
+): Promise<ApiEnvelope<unknown>> {
+  try {
+    const res = await api.delete<ApiEnvelope<unknown>>(
+      `${SMART_ROUTING_API_PREFIX}/tags`,
+      { ...softGetConfig, params: { id } }
+    )
+    return res.data ?? { success: false, message: 'empty response' }
+  } catch (err) {
+    return envelopeFromError(err)
+  }
 }
 
 export async function clearFakeModel(
   channelId: number
 ): Promise<ApiEnvelope<unknown>> {
   return softMutate('post', '/tags/fake_model/clear', {
-    channel_id: channelId,
-  })
-}
-
-/** Soft-fail clear of a daily cost guard exclusion (root). */
-export async function clearCostGuard(
-  channelId: number
-): Promise<ApiEnvelope<unknown>> {
-  return softMutate('post', '/cost/guards/clear', {
     channel_id: channelId,
   })
 }
@@ -553,43 +566,4 @@ export async function refreshChannelBalance(
     }
   }
   return res
-}
-
-export type CostBackfillJob = {
-  /** Decimal UnixNano as a string; never parse to number (loses precision). */
-  job_id: string
-  status: 'running' | 'done' | 'failed'
-  scanned?: number
-  inserted?: number
-  error?: string
-  from?: number | string
-  to?: number | string
-  started_at?: number | string
-  finished_at?: number | string
-}
-
-/** POST /cost/backfill — 202 {job_id,status:"running"}; 409 backfill_running. */
-export async function startCostBackfill(): Promise<
-  ApiEnvelope<CostBackfillJob>
-> {
-  return softMutate<CostBackfillJob>('post', '/cost/backfill', {})
-}
-
-/**
- * GET /cost/backfill[?job_id=] — latest job (or null). With a job id the
- * backend answers 404 job_not_found when it is not the latest job; that
- * envelope is returned so the caller can say so.
- */
-export async function getCostBackfillStatus(
-  jobId?: string
-): Promise<ApiEnvelope<CostBackfillJob | null>> {
-  try {
-    const res = await api.get<ApiEnvelope<CostBackfillJob | null>>(
-      `${SMART_ROUTING_API_PREFIX}/cost/backfill`,
-      { ...softGetConfig, params: jobId ? { job_id: jobId } : undefined }
-    )
-    return res.data ?? { success: false, message: 'empty response' }
-  } catch (err) {
-    return envelopeFromError<CostBackfillJob | null>(err)
-  }
 }

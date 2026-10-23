@@ -1880,3 +1880,29 @@ func TestReturnRelayWalletSplitExcessGoesToBonus(t *testing.T) {
 	assert.Zero(t, info.WalletBonusConsumed)
 	assert.Zero(t, info.WalletPaidConsumed)
 }
+
+// 分组从倍率表删除后，不能把缺失键当成 1 倍重算。保留预扣。
+func TestRecalculateTaskQuotaByTokensKeepsPreConsumedWhenGroupMissing(t *testing.T) {
+	previousGroup := ratio_setting.GroupRatio2JSONString()
+	previousModel := ratio_setting.ModelRatio2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(previousGroup))
+		require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(previousModel))
+	})
+	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"default":1}`))
+	require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(`{"token-settle-model":2}`))
+	ratio, ok, _ := ratio_setting.GetModelRatio("token-settle-model")
+	require.True(t, ok)
+	require.Equal(t, 2.0, ratio)
+	require.False(t, ratio_setting.ContainsGroupRatio("orphan"))
+
+	task := makeTask(1, 1, 400, 0, BillingSourceWallet, 0)
+	task.Group = "orphan"
+	task.Properties.OriginModelName = "token-settle-model"
+	task.PrivateData.BillingContext.OriginModelName = "token-settle-model"
+	task.PrivateData.BillingContext.GroupRatio = 2
+
+	settled := RecalculateTaskQuotaByTokens(context.Background(), task, 100)
+	require.False(t, settled)
+	require.Equal(t, 400, task.Quota)
+}

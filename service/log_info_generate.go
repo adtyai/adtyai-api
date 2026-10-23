@@ -91,6 +91,9 @@ func AppendRelayLogAdminInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo,
 	}
 
 	AppendChannelAffinityAdminInfo(ctx, other)
+	if decision, ok := common.GetContextKeyType[model.RouteBandDecision](ctx, constant.ContextKeyRouteDecision); ok && decision.Mode != "off" && decision.Reason != "off" {
+		AppendRouteDecisionInfo(other, decision)
+	}
 	if events := RequestPolicy(ctx).Events(); len(events) > 0 {
 		other.SetAdmin("request_policy", events)
 	}

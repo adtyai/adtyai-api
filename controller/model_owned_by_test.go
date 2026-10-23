@@ -108,10 +108,10 @@ func TestGetModelListGroupsUsesFilteredTokenAutoGroupsSnapshot(t *testing.T) {
 
 	groups, err := getModelListGroups(ctx)
 	require.NoError(t, err)
-	require.Equal(t, []string{"vip"}, groups.ownerGroups)
+	require.Equal(t, []string{"default"}, groups.ownerGroups)
 
+	common.SetContextKey(ctx, constant.ContextKeyUserGroup, "auto")
 	common.SetContextKey(ctx, constant.ContextKeyTokenAutoGroups, []string{"vip"})
-	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{"default":"Default"}`))
 	groups, err = getModelListGroups(ctx)
 	require.NoError(t, err)
 	require.Empty(t, groups.ownerGroups)

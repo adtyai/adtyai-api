@@ -1,13 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const post = vi.fn()
-const get = vi.fn()
 vi.mock('@/lib/api', () => ({
-  api: { get, put: vi.fn(), post, delete: vi.fn() },
+  api: { get: vi.fn(), put: vi.fn(), post, delete: vi.fn() },
 }))
 
-const { refreshChannelBalance, startCostBackfill, getCostBackfillStatus } =
-  await import('../api')
+const { refreshChannelBalance } = await import('../api')
 const { routingErrorText } = await import('../lib/error-text')
 const { ledgerKindLabelKey } =
   await import('@/features/wallet/ledger/lib/ledger')
@@ -23,7 +21,6 @@ const t = ((k: string) => k) as never
 describe('backend r2 contract (frontend r4)', () => {
   beforeEach(() => {
     post.mockReset()
-    get.mockReset()
   })
 
   it('balance refresh: unsupported is a 200 status', async () => {
@@ -43,41 +40,6 @@ describe('backend r2 contract (frontend r4)', () => {
     )
     const r = await refreshChannelBalance(3)
     expect(r.data?.status).toBe('failed')
-  })
-
-  it('backfill: 202 job_id, 409 backfill_running, GET status', async () => {
-    post.mockResolvedValueOnce({
-      status: 202,
-      data: {
-        success: true,
-        data: { job_id: '1760640000123456789', status: 'running' },
-      },
-    })
-    expect((await startCostBackfill()).data?.job_id).toBe('1760640000123456789')
-    post.mockRejectedValueOnce(
-      httpErr(409, { success: false, code: 'backfill_running', message: 'x' })
-    )
-    expect((await startCostBackfill()).code).toBe('backfill_running')
-    get.mockResolvedValueOnce({
-      data: {
-        success: true,
-        data: { job_id: '1760640000123456789', status: 'done', inserted: 3 },
-      },
-    })
-    const done = await getCostBackfillStatus('1760640000123456789')
-    expect(done.data?.status).toBe('done')
-    // job_id goes out as the exact string, not a rounded number.
-    expect(get.mock.calls[0][1].params).toEqual({
-      job_id: '1760640000123456789',
-    })
-    get.mockRejectedValueOnce(
-      httpErr(404, { success: false, code: 'job_not_found', message: 'x' })
-    )
-    const missing = await getCostBackfillStatus('1')
-    expect(missing.code).toBe('job_not_found')
-    expect(routingErrorText(t, missing, 'fb')).toContain(
-      'Backfill job not found'
-    )
   })
 
   it('maps the 4 new PUT /config codes and 429', () => {

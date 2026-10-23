@@ -78,6 +78,7 @@ import { accountPasswordSchema } from '@/lib/password-policy'
 import { ROLE } from '@/lib/roles'
 import { AuthOperationError } from '@/lib/secure-verification'
 import { requireServerSuccess } from '@/lib/server-error-message'
+import { useSystemOptions } from '@/features/system-settings/hooks/use-system-options'
 import { useAuthStore } from '@/stores/auth-store'
 
 import {
@@ -95,9 +96,24 @@ import {
   transformFormDataToPayload,
   transformUserToFormDefaults,
 } from '../lib'
+import { identityGroupChoices } from '../lib/user-form'
 import type { User } from '../types'
 import { UserQuotaDialog } from './user-quota-dialog'
 import { useUsers } from './users-provider'
+
+function usableGroupMap(
+  options: Array<{ key: string; value: string }> | undefined
+): Record<string, unknown> {
+  const raw = options?.find((item) => item.key === 'UserUsableGroups')?.value
+  if (!raw) return {}
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+    return parsed as Record<string, unknown>
+  } catch {
+    return {}
+  }
+}
 
 type UsersMutateDrawerProps = {
   open: boolean
@@ -128,6 +144,7 @@ export function UsersMutateDrawer({
   })
 
   const groups = groupsData?.data || []
+  const { data: systemOptions } = useSystemOptions()
 
   // Permission catalog is owned by the backend; fetched once and reused.
   const { data: permissionCatalog = EMPTY_PERMISSION_CATALOG } = useQuery({
@@ -140,6 +157,11 @@ export function UsersMutateDrawer({
     resolver: zodResolver(userFormSchema),
     defaultValues: USER_FORM_DEFAULT_VALUES,
   })
+  const groupChoices = identityGroupChoices(
+    groups,
+    usableGroupMap(systemOptions?.data),
+    form.watch('group') || ''
+  )
 
   // Load existing data when updating
   useEffect(() => {
@@ -423,7 +445,7 @@ export function UsersMutateDrawer({
                         <FormLabel>{t('Group')}</FormLabel>
                         <FormControl>
                           <Combobox
-                            options={groups.map((group) => ({
+                            options={groupChoices.map((group) => ({
                               value: group,
                               label: group,
                             }))}

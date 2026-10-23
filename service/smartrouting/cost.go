@@ -9,7 +9,7 @@ import (
 
 // WriteCostLedger records one attempt cost line (§4.7).
 func WriteCostLedger(ev AttemptEvent) {
-	if ev.CacheHit {
+	if ev.CacheHit || model.DB == nil {
 		return
 	}
 	cfg := GetConfig()
@@ -82,33 +82,28 @@ func estimateCost(channelID int, modelName string, prompt, completion int) (usd,
 }
 
 func bumpDayCost(channelID int, costCNY float64, cfg Config) {
-	if costCNY <= 0 {
+	if costCNY <= 0 || model.DB == nil {
 		return
 	}
 	day := time.Now().Format("2006-01-02")
+	if err := model.AddChannelDayCost(channelID, day, costCNY); err != nil {
+		return
+	}
 	var g model.ChannelCostGuard
-	err := model.DB.Where("channel_id = ? AND day = ?", channelID, day).First(&g).Error
-	if err != nil {
-		g = model.ChannelCostGuard{ChannelID: channelID, Day: day, CostCNY: costCNY}
-		_ = model.DB.Create(&g).Error
-	} else {
-		g.CostCNY += costCNY
-		_ = model.DB.Save(&g).Error
+	if err := model.DB.Where("channel_id = ? AND day = ?", channelID, day).First(&g).Error; err != nil {
+		return
 	}
-	// guard: > 7d avg * mult
+	if g.Excluded {
+		return
+	}
 	avg := avgDailyCost7d(channelID, day)
-	if avg > 0 && g.CostCNY > avg*cfg.DailyCostGuardMult {
-		g.Excluded = true
-		_ = model.DB.Save(&g).Error
-		if !model.HasRouteTag(channelID, "*", "excluded") {
-			_ = model.DB.Create(&model.ChannelRouteTag{
-				ChannelID: channelID,
-				Model:     "*",
-				Tag:       "excluded",
-				Note:      "cost_guard",
-			}).Error
-		}
+	if avg <= 0 || g.CostCNY <= avg*cfg.DailyCostGuardMult {
+		return
 	}
+	if err := model.DB.Model(&model.ChannelCostGuard{}).Where("channel_id = ? AND day = ? AND excluded = ?", channelID, day, false).Update("excluded", true).Error; err != nil {
+		return
+	}
+	model.RefreshRouteState()
 }
 
 func avgDailyCost7d(channelID int, today string) float64 {
@@ -123,31 +118,4 @@ func avgDailyCost7d(channelID int, today string) float64 {
 		sum += r.CostCNY
 	}
 	return sum / float64(len(rows))
-}
-
-// CostRankingsByMargin root-only profit ranking.
-func CostRankingsByMargin(from, to time.Time) ([]map[string]any, error) {
-	type agg struct {
-		ChannelID int
-		CostCNY   float64
-	}
-	var rows []agg
-	err := model.DB.Model(&model.ChannelCostLedger{}).
-		Select("channel_id, SUM(cost_cny) as cost_cny").
-		Where("created_at >= ? AND created_at < ? AND attempt_failed = ?", from, to, false).
-		Group("channel_id").
-		Order("cost_cny desc").
-		Scan(&rows).Error
-	if err != nil {
-		return nil, err
-	}
-	out := make([]map[string]any, 0, len(rows))
-	for _, r := range rows {
-		out = append(out, map[string]any{
-			"channel_id": r.ChannelID,
-			"cost_cny":   r.CostCNY,
-			// user_charge / margin filled when joining logs; cost side here
-		})
-	}
-	return out, nil
 }

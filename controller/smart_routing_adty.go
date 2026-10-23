@@ -112,6 +112,18 @@ func AdtyRoutingPutConfig(c *gin.Context) {
 		}
 	}
 	// 审查 R-P2-1：与方案 CRUD 同一套规则（各项 >=0，总和 >0）
+	if _, hasMode := patch["mode"]; !hasMode {
+		if raw, ok := patch["enabled"]; ok {
+			var en bool
+			if err := json.Unmarshal(raw, &en); err == nil {
+				if en {
+					neu.Mode = "active"
+				} else {
+					neu.Mode = "off"
+				}
+			}
+		}
+	}
 	if err := smartrouting.ValidateWeights(neu.Weights); err != nil {
 		adtyFail(c, http.StatusBadRequest, "invalid_weights", err.Error(), nil)
 		return
@@ -163,63 +175,6 @@ func mergeRoutingConfig(cur smartrouting.Config, patch map[string]json.RawMessag
 		return neu, err
 	}
 	return neu, nil
-}
-
-// GET /api/adty/routing/scores
-func AdtyRoutingGetScores(c *gin.Context) {
-	modelName := c.Query("model")
-	all := smartrouting.GetAllScores()
-	rows := make([]map[string]any, 0)
-	for _, s := range all {
-		if s == nil {
-			continue
-		}
-		if modelName != "" && s.Model != modelName {
-			continue
-		}
-		rows = append(rows, map[string]any{
-			"channel_id": s.ChannelID, "model": s.Model, "score": s.Score,
-			"coef": float64(s.RouteWeight) / 100.0, "state": s.State,
-			"samples": s.Samples, "updated_at": s.UpdatedAt,
-			"s_conn": s.SConn, "s_price": s.SPrice, "s_speed": s.SSpeed,
-			"s_stab": s.SStab, "s_auth": s.SAuth, "route_weight": s.RouteWeight,
-		})
-	}
-	srOK(c, rows)
-}
-
-// GET /api/adty/routing/scores/:channel_id
-func AdtyRoutingGetScoreDetail(c *gin.Context) {
-	id, _ := strconv.Atoi(c.Param("channel_id"))
-	modelName := c.Query("model")
-	all := smartrouting.GetAllScores()
-	rows := make([]map[string]any, 0)
-	for _, s := range all {
-		if s == nil || s.ChannelID != id {
-			continue
-		}
-		if modelName != "" && s.Model != modelName {
-			continue
-		}
-		rows = append(rows, map[string]any{
-			"channel_id": s.ChannelID, "model": s.Model, "score": s.Score,
-			"s_conn": s.SConn, "s_price": s.SPrice, "s_speed": s.SSpeed,
-			"s_stab": s.SStab, "s_auth": s.SAuth, "samples": s.Samples,
-			"state": s.State, "route_weight": s.RouteWeight, "updated_at": s.UpdatedAt,
-		})
-	}
-	srOK(c, rows)
-}
-
-// GET /api/adty/routing/rankings
-func AdtyRoutingGetRankings(c *gin.Context) {
-	modelName := c.Query("model")
-	if modelName == "" {
-		adtyFail(c, http.StatusBadRequest, "bad_request", "model required", nil)
-		return
-	}
-	c.Request.URL.RawQuery = "model=" + modelName
-	AdtyRoutingGetScores(c)
 }
 
 // GET /api/adty/routing/health/:channel_id — snapshots as coarse series
@@ -559,6 +514,7 @@ func AdtyRoutingSchemeRollback(c *gin.Context) {
 		// 应急路径：有意不要求 preview/二次确认（总裁口径），只补审计（终审 P2-2）
 		before := smartrouting.GetConfig()
 		cfg := smartrouting.GetConfig()
+		cfg.Mode = "off"
 		cfg.Enabled = false
 		if err := smartrouting.SaveConfig(cfg, operatorID(c)); err != nil {
 			adtyFail(c, http.StatusInternalServerError, "save_failed", err.Error(), nil)
@@ -626,8 +582,9 @@ func recordRoutingRollbackAudit(c *gin.Context, to string, snapshotID int64, bef
 
 func AdtyRoutingSimulate(c *gin.Context) {
 	var req struct {
-		Model string `json:"model"`
-		Group string `json:"group"`
+		Model string          `json:"model"`
+		Group string          `json:"group"`
+		Caps  model.RouteCaps `json:"caps"`
 	}
 	if err := common.DecodeJson(c.Request.Body, &req); err != nil || req.Model == "" {
 		adtyFail(c, http.StatusBadRequest, "bad_request", "model required", nil)
@@ -636,28 +593,17 @@ func AdtyRoutingSimulate(c *gin.Context) {
 	if req.Group == "" {
 		req.Group = "default"
 	}
-	var channels []*model.Channel
-	_ = model.DB.Where("status = ?", common.ChannelStatusEnabled).Find(&channels).Error
-	filtered := make([]*model.Channel, 0)
-	for _, ch := range channels {
-		okM, okG := false, false
-		for _, m := range ch.GetModels() {
-			if m == req.Model {
-				okM = true
-				break
-			}
-		}
-		for _, g := range splitGroup(ch.Group) {
-			if g == req.Group {
-				okG = true
-				break
-			}
-		}
-		if okM && okG {
-			filtered = append(filtered, ch)
-		}
+	bands, caps, err := model.BuildRoutedBands(req.Group, req.Model, req.Caps.Filters)
+	if err != nil {
+		adtyFail(c, http.StatusInternalServerError, "simulate_failed", err.Error(), nil)
+		return
 	}
-	srOK(c, smartrouting.SimulateSelection(req.Model, req.Group, filtered))
+	caps.IsStream = req.Caps.IsStream
+	caps.NeedTools = req.Caps.NeedTools
+	caps.NeedVision = req.Caps.NeedVision
+	caps.NeedJSON = req.Caps.NeedJSON
+	caps.NeedContext = req.Caps.NeedContext
+	srOK(c, smartrouting.SimulateBands(req.Model, req.Group, bands, caps))
 }
 
 func splitGroup(s string) []string {
@@ -678,6 +624,10 @@ func splitGroup(s string) []string {
 		cur += string(s[i])
 	}
 	return out
+}
+
+func dailyRouteTagAllowed(tag string) bool {
+	return tag == "excluded" || tag == "fallback_only"
 }
 
 // tags
@@ -703,13 +653,11 @@ func AdtyRoutingCreateTag(c *gin.Context) {
 	if req.Model == "" {
 		req.Model = "*"
 	}
-	if !routingChannelExists(c, req.ChannelID) {
+	if !dailyRouteTagAllowed(req.Tag) {
+		adtyFail(c, http.StatusBadRequest, "invalid_tag", "tag must be excluded or fallback_only", nil)
 		return
 	}
-	switch req.Tag {
-	case "excluded", "fake_model", "fallback_only", "locked":
-	default:
-		adtyFail(c, http.StatusBadRequest, "invalid_tag", "tag must be excluded, fake_model, fallback_only or locked", nil)
+	if !routingChannelExists(c, req.ChannelID) {
 		return
 	}
 	req.ID = 0
@@ -719,6 +667,7 @@ func AdtyRoutingCreateTag(c *gin.Context) {
 		return
 	}
 	_ = model.SaveWeightSnapshot("tag", operatorID(c), map[string]any{"op": "create_tag"}, req)
+	model.RefreshRouteState()
 	srOK(c, req)
 }
 
@@ -740,6 +689,7 @@ func AdtyRoutingDeleteTag(c *gin.Context) {
 		adtyFail(c, http.StatusNotFound, "not_found", "tag not found", nil)
 		return
 	}
+	model.RefreshRouteState()
 	srOK(c, gin.H{"deleted": id})
 }
 
@@ -764,6 +714,7 @@ func AdtyRoutingClearFakeModel(c *gin.Context) {
 		adtyFail(c, http.StatusInternalServerError, "delete_failed", res.Error.Error(), nil)
 		return
 	}
+	model.RefreshRouteState()
 	srOK(c, gin.H{"cleared": true, "deleted": res.RowsAffected})
 }
 
@@ -833,116 +784,6 @@ func AdtyRoutingPutPrices(c *gin.Context) {
 	}
 	_ = model.SaveWeightSnapshot("price", operatorID(c), map[string]any{"op": "put_prices", "n": len(rows)}, rows)
 	srOK(c, rows)
-}
-
-func AdtyRoutingCostSummary(c *gin.Context) {
-	if c.GetInt("role") < common.RoleRootUser {
-		adtyFail(c, http.StatusForbidden, "forbidden", "root only", nil)
-		return
-	}
-	from := c.Query("from")
-	to := c.Query("to")
-	type agg struct {
-		ChannelID int
-		CostCNY   float64
-		Requests  int64
-	}
-	var rows []agg
-	q := model.DB.Model(&model.ChannelCostLedger{}).
-		Select("channel_id, SUM(cost_cny) as cost_cny, COUNT(*) as requests").
-		Where("attempt_failed = ?", false)
-	if from != "" {
-		q = q.Where("created_at >= ?", from)
-	}
-	if to != "" {
-		q = q.Where("created_at < ?", to)
-	}
-	_ = q.Group("channel_id").Scan(&rows).Error
-	srOK(c, rows)
-}
-
-func AdtyRoutingCostRankings(c *gin.Context) {
-	if c.GetInt("role") < common.RoleRootUser {
-		adtyFail(c, http.StatusForbidden, "forbidden", "root only", nil)
-		return
-	}
-	from := time.Now().Add(-24 * time.Hour)
-	to := time.Now()
-	rows, err := smartrouting.CostRankingsByMargin(from, to)
-	if err != nil {
-		adtyFail(c, http.StatusBadRequest, "bad_request", err.Error(), nil)
-		return
-	}
-	srOK(c, rows)
-}
-
-func AdtyRoutingCostLive(c *gin.Context) {
-	cid, _ := strconv.Atoi(c.Query("channel_id"))
-	m := c.Query("model")
-	unit := smartrouting.LiveUnitCNY(cid, m, smartrouting.GetConfig())
-	if unit <= 0 {
-		unit = smartrouting.ConfiguredUnitCNY(cid, m)
-	}
-	srOK(c, gin.H{"channel_id": cid, "model": m, "unit_cny_per_mtok": unit})
-}
-
-func AdtyRoutingCostGuards(c *gin.Context) {
-	day := time.Now().Format("2006-01-02")
-	var rows []model.ChannelCostGuard
-	_ = model.DB.Where("day = ?", day).Find(&rows).Error
-	srOK(c, rows)
-}
-
-// AdtyRoutingCostBackfill POST /api/adty/routing/cost/backfill（root）
-// 审查 N-P1-5：真实从本地消费日志回填成本流水。body: {"from":unix,"to":unix,"limit":n}，默认最近 24h。
-func AdtyRoutingCostBackfill(c *gin.Context) {
-	if !requireRoutingRoot(c) {
-		return
-	}
-	cfg := smartrouting.GetConfig()
-	if !cfg.HistoryBackfillEnabled {
-		adtyFail(c, http.StatusBadRequest, "backfill_disabled", "history_backfill_enabled=false", nil)
-		return
-	}
-	var req struct {
-		From  int64 `json:"from"`
-		To    int64 `json:"to"`
-		Limit int   `json:"limit"`
-	}
-	_ = c.ShouldBindJSON(&req)
-	to := time.Now()
-	if req.To > 0 {
-		to = time.Unix(req.To, 0)
-	}
-	from := to.Add(-24 * time.Hour)
-	if req.From > 0 {
-		from = time.Unix(req.From, 0)
-	}
-	if !to.After(from) {
-		adtyFail(c, http.StatusBadRequest, "backfill_failed", "to must be after from", nil)
-		return
-	}
-	// 审查 R-P2-7：后台执行，立即返回 job；进度用 GET /api/adty/routing/cost/backfill 查询
-	job, started := smartrouting.StartBackfillJob(from, to, req.Limit)
-	if !started {
-		adtyFail(c, http.StatusConflict, "backfill_running", "a backfill job is already running", map[string]any{"job_id": job.ID})
-		return
-	}
-	c.JSON(http.StatusAccepted, gin.H{"success": true, "data": job})
-}
-
-// AdtyRoutingCostBackfillStatus GET /api/adty/routing/cost/backfill（root）：最近一次回填任务状态。
-func AdtyRoutingCostBackfillStatus(c *gin.Context) {
-	if !requireRoutingRoot(c) {
-		return
-	}
-	job := smartrouting.GetBackfillJob()
-	// 审查 R3-P2-1：可选 ?job_id=<字符串>，与最近任务不符时 404
-	if id := c.Query("job_id"); id != "" && (job == nil || job.ID != id) {
-		adtyFail(c, http.StatusNotFound, "job_not_found", "backfill job not found", nil)
-		return
-	}
-	srOK(c, job)
 }
 
 var routingBalanceRefreshRunning atomic.Bool
@@ -1043,16 +884,6 @@ func AdtyRoutingDecision(c *gin.Context) {
 		return
 	}
 	srOK(c, gin.H{"log_id": log.Id, "request_id": log.RequestId, "other": log.Other})
-}
-
-func AdtyRoutingDecisions(c *gin.Context) {
-	var rows []model.Log
-	_ = model.LOG_DB.Order("id desc").Limit(50).Find(&rows).Error
-	out := make([]map[string]any, 0, len(rows))
-	for _, r := range rows {
-		out = append(out, map[string]any{"log_id": r.Id, "request_id": r.RequestId, "other": r.Other})
-	}
-	srOK(c, out)
 }
 
 // POST /weights/rollback alias

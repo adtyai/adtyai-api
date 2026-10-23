@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
@@ -106,26 +105,7 @@ func PreWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usag
 	audioOutTokens := usage.OutputTokenDetails.AudioTokens
 	groupRatio := ratio_setting.GetGroupRatio(relayInfo.UsingGroup)
 	modelRatio, _, _ := ratio_setting.GetModelRatio(modelName)
-
-	autoGroup, exists := common.GetContextKey(ctx, constant.ContextKeyAutoGroup)
-	if exists {
-		groupRatio = ratio_setting.GetGroupRatio(autoGroup.(string))
-		logger.LogDebug(ctx, "final group ratio: %f", groupRatio)
-		relayInfo.UsingGroup = autoGroup.(string)
-	}
-
-	actualGroupRatio := groupRatio
-	userGroupRatio, ok := ratio_setting.GetGroupGroupRatio(relayInfo.UserGroup, relayInfo.UsingGroup)
-	if ok {
-		actualGroupRatio = userGroupRatio
-	}
-	// A8：结算沿用预扣快照折扣；若 auto 刚切组则按最终分组重匹配。
-	if exists {
-		rid, d := model.MatchEnterprisePriceRule(relayInfo.UserId, relayInfo.UsingGroup, modelName)
-		relayInfo.EnterpriseRuleId = rid
-		relayInfo.EnterpriseDiscount = d
-	}
-	actualGroupRatio = model.EffectiveGroupRatio(actualGroupRatio, relayInfo.GetEnterpriseDiscount())
+	actualGroupRatio := model.EffectiveGroupRatio(groupRatio, relayInfo.GetEnterpriseDiscount())
 
 	quotaInfo := QuotaInfo{
 		InputDetails: TokenDetails{

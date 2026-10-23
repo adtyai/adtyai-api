@@ -21,6 +21,8 @@ import { api } from '@/lib/api'
 import { requireServerSuccess } from '@/lib/server-error-message'
 
 import type {
+  GroupGrantListResponse,
+  GroupGrantWriteResponse,
   GroupMetaCreateInput,
   GroupMetaListResponse,
   GroupMetaOneResponse,
@@ -64,6 +66,52 @@ export async function putGroupMeta(
   const res = await api.put<GroupMetaOneResponse>(
     `/api/admin/groups/${encodeURIComponent(code)}`,
     input,
+    { validateStatus: okish }
+  )
+  return res.data
+}
+
+export async function listGroupGrants(
+  code: string
+): Promise<GroupGrantListResponse> {
+  const res = await api.get<GroupGrantListResponse>(
+    `/api/admin/groups/${encodeURIComponent(code)}/grants`,
+    { validateStatus: okish }
+  )
+  return res.data
+}
+
+export async function grantHiddenGroup(
+  code: string,
+  userId: number
+): Promise<GroupGrantWriteResponse> {
+  const res = await api.post<GroupGrantWriteResponse>(
+    `/api/admin/groups/${encodeURIComponent(code)}/grants`,
+    { user_id: userId },
+    { validateStatus: okish }
+  )
+  return res.data
+}
+
+export async function saveGroupBilling(input: {
+  group_ratio: Record<string, unknown>
+  user_usable_groups: Record<string, unknown>
+  display_names: Record<string, string>
+}): Promise<{ success: boolean; message?: string }> {
+  const res = await api.put<{ success: boolean; message?: string }>(
+    '/api/admin/groups/billing',
+    input,
+    { validateStatus: (s) => okish(s) || s === 500 }
+  )
+  return res.data
+}
+
+export async function revokeHiddenGroup(
+  code: string,
+  userId: number
+): Promise<GroupGrantWriteResponse> {
+  const res = await api.delete<GroupGrantWriteResponse>(
+    `/api/admin/groups/${encodeURIComponent(code)}/grants/${userId}`,
     { validateStatus: okish }
   )
   return res.data

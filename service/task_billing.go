@@ -428,15 +428,12 @@ func RecalculateTaskQuotaByTokens(ctx context.Context, task *model.Task, totalTo
 		return false
 	}
 
-	groupRatio := ratio_setting.GetGroupRatio(group)
-	userGroupRatio, hasUserGroupRatio := ratio_setting.GetGroupGroupRatio(group, group)
-
-	var finalGroupRatio float64
-	if hasUserGroupRatio {
-		finalGroupRatio = userGroupRatio
-	} else {
-		finalGroupRatio = groupRatio
+	// 倍率表没有该分组时，GetGroupRatio 会回退成 1。不能把缺失键当成 1 倍重算。
+	if !ratio_setting.ContainsGroupRatio(group) {
+		logger.LogWarn(ctx, common.LogText("task %s keeps the pre-consumed quota because group %q is not in the ratio table", task.TaskID, group))
+		return false
 	}
+	finalGroupRatio := ratio_setting.GetGroupRatio(group)
 
 	// 计算 OtherRatios 乘积（视频折扣、时长等）
 	otherMultiplier := 1.0

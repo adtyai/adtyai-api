@@ -72,10 +72,8 @@ var accessTokenExemptRoutes = []string{
 	"GET /api/pay/usdt/notify",
 	"GET /api/topup/tiers",
 	"GET /api/chatwoot/config",
-	"GET /api/user/bepusdt/notify",
 	"POST /api/pay/epay/notify/:instance_id",
 	"POST /api/pay/usdt/notify",
-	"POST /api/user/bepusdt/notify",
 
 	// API key authentication (TokenAuthReadOnly).
 	"GET /api/usage/token/",

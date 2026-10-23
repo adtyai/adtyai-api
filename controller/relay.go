@@ -162,12 +162,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		relayInfo.PerformanceBusinessRejection = false
 		relayInfo.PerformanceOutputTokens = 0
 		relayInfo.RetryIndex = retryParam.GetRetry()
-		smartrouting.SetRequestCaps(smartrouting.RequestCaps{
-			IsStream:   relayInfo.IsStream,
-			NeedTools:  len(relayInfo.RealtimeTools) > 0,
-			NeedVision: false,
-			NeedJSON:   false,
-		})
+		smartrouting.BindRouteCaps(c, relayInfo.IsStream, len(relayInfo.RealtimeTools), relayInfo.GetEstimatePromptTokens())
 		channel, channelErr := getChannel(c, relayInfo, retryParam)
 		if channelErr != nil {
 			logger.LogError(c, channelErr.Error())
@@ -207,7 +202,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			service.MarkRequestPolicySuccess(c, relayInfo.StreamStatus)
 			relayInfo.LastError = nil
 			// adtyai smart routing: collect success sample
-			smartrouting.OnAttemptEndSuccess(c, smartrouting.AttemptEvent{
+			ev := smartrouting.AttemptEvent{
 				ChannelID: channel.Id,
 				Model:     relayInfo.OriginModelName,
 				UserID:    relayInfo.UserId,
@@ -215,7 +210,10 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 				RequestID: requestId,
 				ReqModel:  relayInfo.OriginModelName,
 				Pinned:    c.GetBool("smart_routing_pinned"),
-			})
+				IsStream:  relayInfo.IsStream,
+			}
+			fillAttemptTiming(relayInfo, &ev)
+			smartrouting.OnAttemptEndSuccess(c, ev)
 			return
 		}
 
@@ -223,22 +221,23 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		relayInfo.LastError = newAPIError
 
 		// adtyai smart routing: collect failure sample (before retry decision)
-		smartrouting.OnAttemptEndFromError(c, channel.Id, relayInfo.OriginModelName, relayInfo.UserId, relayInfo.TokenId, requestId, 0, newAPIError, c.GetBool("smart_routing_pinned"))
+		errEv := smartrouting.AttemptEvent{
+			ChannelID: channel.Id,
+			Model:     relayInfo.OriginModelName,
+			UserID:    relayInfo.UserId,
+			TokenID:   relayInfo.TokenId,
+			RequestID: requestId,
+			Success:   false,
+			Class:     smartrouting.ClassForRecordedAttempt(newAPIError),
+			Pinned:    c.GetBool("smart_routing_pinned"),
+			IsStream:  relayInfo.IsStream,
+		}
+		fillAttemptTiming(relayInfo, &errEv)
+		smartrouting.OnAttemptEnd(c, errEv)
 
 		decision := service.DecideRelayRetry(c, newAPIError, common.RetryTimes-retryParam.GetRetry())
 		service.RecordPolicyFailure(c, channel.Id, newAPIError, decision)
 		processChannelError(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError, relayInfo)
-
-		if decision.Action == "retry" {
-			// P1-4: 429 same-channel short wait before next attempt
-			if smartrouting.Classify(newAPIError) == smartrouting.ClassRateLimit {
-				smartrouting.WaitRetryAfter(2)
-			}
-			if !smartrouting.RetryBudgetAllows() {
-				break
-			}
-			smartrouting.MarkRetryUsed()
-		}
 
 		if decision.Action != "retry" {
 			break
@@ -292,6 +291,7 @@ var upgrader = websocket.Upgrader{
 }
 
 func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service.RetryParam) (*model.Channel, *types.NewAPIError) {
+	smartrouting.BindRouteCaps(c, info.IsStream, len(info.RealtimeTools), info.GetEstimatePromptTokens())
 	if info.ChannelMeta == nil {
 		autoBan := c.GetBool("auto_ban")
 		autoBanInt := 1
@@ -320,6 +320,7 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 	service.RequestPolicy(c).BeginAttempt(channel, selectGroup)
 	newAPIError := middleware.SetupContextForSelectedChannel(c, channel, info.OriginModelName)
 	if newAPIError != nil {
+		smartrouting.ReleaseHalfOpenReservation(c)
 		return nil, newAPIError
 	}
 	return channel, nil
@@ -359,6 +360,21 @@ func RelayMidjourney(c *gin.Context) {
 		mjErr = relay.RelaySwapFace(c, relayInfo)
 	default:
 		mjErr = relay.RelayMidjourneySubmit(c, relayInfo)
+	}
+	switch relayInfo.RelayMode {
+	case relayconstant.RelayModeMidjourneyNotify, relayconstant.RelayModeMidjourneyTaskFetch, relayconstant.RelayModeMidjourneyTaskFetchByCondition:
+	default:
+		if channelID := c.GetInt("channel_id"); channelID != 0 {
+			var noteErr *types.NewAPIError
+			if mjErr != nil {
+				status := http.StatusBadGateway
+				if mjErr.Code == 30 {
+					status = http.StatusTooManyRequests
+				}
+				noteErr = types.NewErrorWithStatusCode(errors.New(mjErr.Description), types.ErrorCodeBadResponseStatusCode, status)
+			}
+			smartrouting.NoteSelectedAttempt(c, channelID, relayInfo.OriginModelName, noteErr, attemptLatencyMs(relayInfo))
+		}
 	}
 	//err = relayMidjourneySubmit(c, relayMode)
 	log.Println(mjErr)
@@ -548,6 +564,7 @@ func executeTaskSubmissionWith(
 			if retryParam.GetRetry() > 0 {
 				if setupErr := middleware.SetupContextForSelectedChannel(c, channel, relayInfo.OriginModelName); setupErr != nil {
 					taskErr = service.TaskErrorWrapperLocal(setupErr.Err, "setup_locked_channel_failed", http.StatusInternalServerError)
+					smartrouting.NoteSelectedAttempt(c, channel.Id, relayInfo.OriginModelName, setupErr, attemptLatencyMs(relayInfo))
 					break
 				}
 			}
@@ -571,6 +588,7 @@ func executeTaskSubmissionWith(
 			} else {
 				taskErr = service.TaskErrorWrapperLocal(bodyErr, "read_request_body_failed", http.StatusBadRequest)
 			}
+			smartrouting.NoteSelectedAttempt(c, channel.Id, relayInfo.OriginModelName, types.NewError(bodyErr, types.ErrorCodeReadRequestBodyFailed, types.ErrOptionWithSkipRetry()), attemptLatencyMs(relayInfo))
 			break
 		}
 		c.Request.Body = io.NopCloser(bodyStorage)
@@ -580,14 +598,17 @@ func executeTaskSubmissionWith(
 		if requestErr := c.Request.Context().Err(); requestErr != nil {
 			diagnostics.cancelled("after_submit", retryParam.GetRetry()+1)
 			taskErr = service.TaskErrorWrapperLocal(requestErr, "request_cancelled", http.StatusRequestTimeout)
+			smartrouting.NoteSelectedAttempt(c, channel.Id, relayInfo.OriginModelName, types.NewError(requestErr, types.ErrorCodeBadResponse, types.ErrOptionWithSkipRetry()), attemptLatencyMs(relayInfo))
 			break
 		}
 		if taskErr == nil {
 			diagnostics.attemptSucceeded(retryParam.GetRetry()+1, result)
+			smartrouting.NoteSelectedAttempt(c, channel.Id, relayInfo.OriginModelName, nil, attemptLatencyMs(relayInfo))
 			break
 		}
 
 		taskAPIError := taskSubmissionAPIError(taskErr)
+		smartrouting.NoteSelectedAttempt(c, channel.Id, relayInfo.OriginModelName, taskAPIError, attemptLatencyMs(relayInfo))
 		relayInfo.LastError = taskAPIError
 		decision := decideTaskRetry(c, taskErr, common.RetryTimes-retryParam.GetRetry())
 		service.RecordPolicyFailure(c, channel.Id, taskAPIError, decision)
@@ -808,7 +829,38 @@ func respondTaskSubmissionError(c *gin.Context, taskErr *taskdto.TaskError) {
 	respondTaskError(c, taskErr)
 }
 
+func attemptLatencyMs(info *relaycommon.RelayInfo) int64 {
+	if info == nil || info.StartTime.IsZero() {
+		return 0
+	}
+	ms := time.Since(info.StartTime).Milliseconds()
+	if ms < 0 {
+		return 0
+	}
+	return ms
+}
+
 // respondTaskError 统一输出 Task 错误响应（含 429 限流提示改写）
+func fillAttemptTiming(info *relaycommon.RelayInfo, ev *smartrouting.AttemptEvent) {
+	if info == nil || ev == nil {
+		return
+	}
+	if !info.StartTime.IsZero() {
+		ev.LatencyMs = time.Since(info.StartTime).Milliseconds()
+	}
+	if info.FirstResponseTime.After(info.StartTime) {
+		ev.TTFTMs = info.FirstResponseTime.Sub(info.StartTime).Milliseconds()
+	}
+	if n := info.GetEstimatePromptTokens(); n > 0 {
+		ev.PromptTokens = n
+		ev.LocalPromptTokens = n
+		if ev.UsageSource == "" {
+			ev.UsageSource = "estimate"
+		}
+	}
+	ev.IsStream = info.IsStream
+}
+
 func respondTaskError(c *gin.Context, taskErr *taskdto.TaskError) {
 	if taskErr.StatusCode == http.StatusTooManyRequests {
 		taskErr.Message = i18n.T(c, i18n.MsgRelayGroupUpstreamSaturated)

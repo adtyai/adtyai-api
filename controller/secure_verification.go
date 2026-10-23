@@ -47,6 +47,8 @@ func writeSecurityOperationError(c *gin.Context, err error) {
 		code, message = "EMAIL_ADDRESS_REJECTED", err.Error()
 	case errors.Is(err, model.ErrEmailAlreadyTaken):
 		code, message = "EMAIL_ALREADY_TAKEN", "This email address is already in use."
+	case errors.Is(err, model.ErrNoPublicIdentityGroup):
+		code, message = "NO_PUBLIC_IDENTITY_GROUP", "No public billing group is available for new users"
 	case errors.Is(err, service.ErrEmailBindingDelivery):
 		code, message = "EMAIL_BINDING_DELIVERY_FAILED", err.Error()
 	case errors.Is(err, model.ErrEmailBindingCodeInvalid):

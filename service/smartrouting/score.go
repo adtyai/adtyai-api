@@ -44,6 +44,66 @@ func storeScores(m map[string]*ScoreEntry) {
 	scoreMap.Store(m)
 }
 
+func mergePublishedScores(snaps []model.ChannelScoreSnapshot, weights []model.ChannelRouteWeight) map[string]*ScoreEntry {
+	if len(snaps) == 0 {
+		return nil
+	}
+	weightsByKey := make(map[string]model.ChannelRouteWeight, len(weights))
+	for _, w := range weights {
+		weightsByKey[scoreKey(w.ChannelID, w.Model)] = w
+	}
+	next := make(map[string]*ScoreEntry, len(snaps))
+	for _, s := range snaps {
+		w := weightsByKey[scoreKey(s.ChannelID, s.Model)]
+		state := w.State
+		if state == "" {
+			state = "normal"
+		}
+		next[scoreKey(s.ChannelID, s.Model)] = &ScoreEntry{
+			ChannelID:    s.ChannelID,
+			Model:        s.Model,
+			Score:        s.Score,
+			SConn:        s.SConn,
+			SPrice:       s.SPrice,
+			SSpeed:       s.SSpeed,
+			SStab:        s.SStab,
+			SAuth:        s.SAuth,
+			RouteWeight:  w.RouteWeight,
+			State:        state,
+			Samples:      s.Samples,
+			Insufficient: s.Insufficient,
+			UpdatedAt:    s.UpdatedAt,
+		}
+	}
+	return next
+}
+
+func applyPublishedScores(snaps []model.ChannelScoreSnapshot, weights []model.ChannelRouteWeight) map[string]*ScoreEntry {
+	if len(snaps) == 0 {
+		return GetAllScores()
+	}
+	merged := mergePublishedScores(snaps, weights)
+	storeScores(merged)
+	return merged
+}
+
+func loadPublishedScores() {
+	if model.DB == nil {
+		return
+	}
+	var snaps []model.ChannelScoreSnapshot
+	if err := model.DB.Find(&snaps).Error; err != nil {
+		common.SysError(common.LogText("load published scores: %v", err))
+		return
+	}
+	var weights []model.ChannelRouteWeight
+	if err := model.DB.Find(&weights).Error; err != nil {
+		common.SysError(common.LogText("load published weights: %v", err))
+		return
+	}
+	applyPublishedScores(snaps, weights)
+}
+
 // ComputeConnScore dual-window EWMA connectivity 0-100.
 func ComputeConnScore(channelID int, modelName string, cfg Config) (score float64, samples int, insufficient bool) {
 	shortOK, shortFail, _, _, tokS, _, ufailS := ReadWindow(channelID, modelName, cfg.EWMAShortMin)
@@ -56,7 +116,7 @@ func ComputeConnScore(channelID int, modelName string, cfg Config) (score float6
 	longTot := longOK + longFail
 	samples = int(longTot)
 	if longTot < float64(cfg.MinSamples) {
-		return 70, samples, true
+		return 0, samples, true
 	}
 	var shortRate, longRate float64
 	if shortTot >= 5 {
@@ -70,12 +130,49 @@ func ComputeConnScore(channelID int, modelName string, cfg Config) (score float6
 	return 100 * rate, samples, false
 }
 
-// ComputeSpeedScore dual-window EWMA on successful latency only (P1-6); 70 if insufficient.
+// ComputeStabScore is success-rate consistency across the short and long windows.
+// Either window below five samples is unknown, so the dimension is omitted.
+func ComputeStabScore(channelID int, modelName string, cfg Config) (float64, bool) {
+	shortMin, longMin := cfg.EWMAShortMin, cfg.EWMALongMin
+	if shortMin <= 0 {
+		shortMin = 5
+	}
+	if longMin <= 0 {
+		longMin = 60
+	}
+	shortOK, shortFail, _, _, tokS, _, ufailS := ReadWindow(channelID, modelName, shortMin)
+	longOK, longFail, _, _, tokL, _, ufailL := ReadWindow(channelID, modelName, longMin)
+	shortOK, shortFail, _ = ApplySampleCap(shortOK, shortFail, tokS, cfg.SampleCapPerToken)
+	longOK, longFail, _ = ApplySampleCap(longOK, longFail, tokL, cfg.SampleCapPerToken)
+	shortFail = ApplyUserFailMeltCap(shortFail, ufailS, cfg.UserFailMeltCap)
+	longFail = ApplyUserFailMeltCap(longFail, ufailL, cfg.UserFailMeltCap)
+	shortTot := shortOK + shortFail
+	longTot := longOK + longFail
+	if shortTot < 5 || longTot < 5 {
+		return 0, false
+	}
+	shortRate := shortOK / shortTot
+	longRate := longOK / longTot
+	diff := shortRate - longRate
+	if diff < 0 {
+		diff = -diff
+	}
+	score := 100 * (1 - diff)
+	if score < 0 {
+		return 0, true
+	}
+	if score > 100 {
+		return 100, true
+	}
+	return score, true
+}
+
+// ComputeSpeedScore dual-window EWMA on successful latency only (P1-6); 0 if insufficient.
 func ComputeSpeedScore(channelID int, modelName string, cfg Config, peerP50 map[string]float64) float64 {
 	_, _, latSumS, latNS, _, _, _ := ReadWindow(channelID, modelName, cfg.EWMAShortMin)
 	_, _, latSumL, latNL, _, _, _ := ReadWindow(channelID, modelName, cfg.EWMALongMin)
 	if latNL < 5 {
-		return 70
+		return 0
 	}
 	longAvg := latSumL / float64(latNL)
 	shortAvg := longAvg
@@ -106,14 +203,14 @@ func clamp(v, lo, hi float64) float64 {
 // Non-token modalities skip price dimension when PriceScoreSkipNonToken (P1-5).
 func ComputePriceScore(channelID int, modelName string, cfg Config, minUnit float64) (score float64, unit float64) {
 	if cfg.PriceScoreSkipNonToken && IsNonTokenPricedModel(modelName, channelID) {
-		return 50, 0
+		return 0, 0
 	}
 	unit = LiveUnitCNY(channelID, modelName, cfg)
 	if unit <= 0 {
 		unit = ConfiguredUnitCNY(channelID, modelName)
 	}
 	if unit <= 0 {
-		return 50, 0
+		return 0, 0
 	}
 	if minUnit <= 0 {
 		minUnit = unit
@@ -214,16 +311,13 @@ func IsNonTokenPricedModel(modelName string, channelID int) bool {
 			return true
 		}
 	}
-	if channelID <= 0 || model.DB == nil {
+	if channelID <= 0 {
 		return false
 	}
-	ch, err := model.CacheGetChannel(channelID)
-	if err != nil || ch == nil {
-		ch2, err2 := model.GetChannelById(channelID, true)
-		if err2 != nil || ch2 == nil {
-			return false
-		}
-		ch = ch2
+	// Score refresh must not load a channel from the database. A cache miss stays token-priced.
+	ch, ok := model.CacheGetChannelMemory(channelID)
+	if !ok || ch == nil {
+		return false
 	}
 	switch ch.Type {
 	case constant.ChannelTypeMidjourney, constant.ChannelTypeMidjourneyPlus, constant.ChannelTypeSunoAPI:
@@ -235,7 +329,7 @@ func IsNonTokenPricedModel(modelName string, channelID int) bool {
 // RouteWeightFromScore score→route_weight; 70→100, quadratic.
 func RouteWeightFromScore(score float64, state string) int {
 	if score <= 0 {
-		score = 70
+		return 1
 	}
 	rw := int(math.Round(100 * math.Pow(score/70, 2)))
 	if rw < 1 {
@@ -250,16 +344,49 @@ func RouteWeightFromScore(score float64, state string) int {
 	return rw
 }
 
+// weightedKnown averages only dimensions that were actually measured.
+// Unknown price is omitted, so a missing price cannot win a cheap ranking.
+func weightedKnown(w WeightParts, conn, price float64, priceKnown bool, speed float64, speedKnown bool, stab float64, stabKnown bool, auth float64, authKnown bool) float64 {
+	type part struct {
+		w  float64
+		s  float64
+		ok bool
+	}
+	parts := []part{
+		{w.Conn, conn, true},
+		{w.Price, price, priceKnown},
+		{w.Speed, speed, speedKnown},
+		{w.Stab, stab, stabKnown},
+		{w.Auth, auth, authKnown},
+	}
+	var sumW, sum float64
+	for _, p := range parts {
+		if !p.ok || p.w <= 0 {
+			continue
+		}
+		sumW += p.w
+		sum += p.w * p.s
+	}
+	if sumW <= 0 {
+		return 0
+	}
+	return sum / sumW
+}
+
 // RefreshAllScores recomputes scores for known channel×model pairs from abilities/weights table.
 func RefreshAllScores() {
 	cfg := GetConfig()
-	if !cfg.Enabled {
+	if !Collects() {
 		return
 	}
+	model.RefreshRouteState()
 	scoreMu.Lock()
 	defer scoreMu.Unlock()
 
-	type pair struct{ ChannelID int; Model string }
+	type pair struct {
+		ChannelID int
+		Model     string
+	}
 	var pairs []pair
 	// from existing route weights + enabled channels' models
 	_ = model.DB.Model(&model.ChannelRouteWeight{}).Select("channel_id, model").Find(&pairs).Error
@@ -312,31 +439,52 @@ func RefreshAllScores() {
 
 	next := map[string]*ScoreEntry{}
 	prev, _ := scoreMap.Load().(map[string]*ScoreEntry)
+	chWeight := map[int]int{}
+	for _, ch := range channels {
+		w := ch.GetWeight()
+		if w < 1 {
+			w = 1
+		}
+		chWeight[ch.Id] = w
+	}
 
 	for _, p := range pairs {
 		sConn, samples, insuff := ComputeConnScore(p.ChannelID, p.Model, cfg)
 		sSpeed := ComputeSpeedScore(p.ChannelID, p.Model, cfg, peerP50)
-		sPrice, _ := ComputePriceScore(p.ChannelID, p.Model, cfg, units[p.Model])
-		sStab := 80.0 // simplified: outage tracking via breaker events would refine
-		sAuth := 80.0
-		if model.HasRouteTag(p.ChannelID, p.Model, "fake_model") {
+		sPrice, unit := ComputePriceScore(p.ChannelID, p.Model, cfg, units[p.Model])
+		priceKnown := unit > 0 && sPrice > 0
+		speedKnown := sSpeed > 0
+		sStab, stabKnown := ComputeStabScore(p.ChannelID, p.Model, cfg)
+		var sAuth float64
+		authKnown := false
+		if model.CachedHasRouteTag(p.ChannelID, p.Model, "fake_model") {
 			sAuth = 0
+			authKnown = true
 		}
 		w := cfg.Weights
-		sumW := w.Sum()
-		score := (w.Conn*sConn + w.Price*sPrice + w.Speed*sSpeed + w.Stab*sStab + w.Auth*sAuth) / sumW
 		state := "normal"
-		if insuff {
-			state = "new"
-			score = 70
-		} else if score < 40 {
-			state = "degraded" // breaker may elevate to broken
-		} else if score < 60 {
-			state = "degraded"
+		official := chWeight[p.ChannelID]
+		if official < 1 {
+			official = 1
 		}
-		rw := RouteWeightFromScore(score, state)
-		if state == "new" {
-			rw = 100 // floor applied later in SmartWeights
+		var score float64
+		var rw int
+		if insuff {
+			state = "insufficient"
+			rw = official
+			sConn, sPrice, sSpeed, sStab, sAuth = 0, 0, 0, 0, 0
+			priceKnown = false
+			speedKnown = false
+			stabKnown = false
+		} else {
+			score = weightedKnown(w, sConn, sPrice, priceKnown, sSpeed, speedKnown, sStab, stabKnown, sAuth, authKnown)
+			if score < 60 {
+				state = "degraded"
+			}
+			rw = RouteWeightFromScore(score, state)
+			if rw < 1 {
+				rw = 1
+			}
 		}
 		floorDecay := 0
 		if old := prev[scoreKey(p.ChannelID, p.Model)]; old != nil {
