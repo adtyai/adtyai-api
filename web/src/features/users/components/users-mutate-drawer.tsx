@@ -104,7 +104,8 @@ import { useUsers } from './users-provider'
 function usableGroupMap(
   options: Array<{ key: string; value: string }> | undefined
 ): Record<string, unknown> {
-  const raw = options?.find((item) => item.key === 'UserUsableGroups')?.value
+  if (!Array.isArray(options)) return {}
+  const raw = options.find((item) => item.key === 'UserUsableGroups')?.value
   if (!raw) return {}
   try {
     const parsed = JSON.parse(raw) as unknown

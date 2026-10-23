@@ -74,6 +74,20 @@ function renderPermissions(viewerRole: number, allowed?: boolean) {
     if (url === '/api/group/') {
       return { data: { success: true, data: ['default'] } }
     }
+    if (url === '/api/option/') {
+      return {
+        data: {
+          success: true,
+          message: '',
+          data: [
+            {
+              key: 'UserUsableGroups',
+              value: JSON.stringify({ default: 'Default' }),
+            },
+          ],
+        },
+      }
+    }
     if (url === '/api/verify/methods') {
       return {
         data: {
