@@ -46,10 +46,16 @@ func TestDistributeAllBrokenFallsBackToHalfOpen(t *testing.T) {
 
 	auto := 1
 	ids := []int{41, 42}
+	channels := make([]*model.Channel, 0, len(ids))
 	for _, id := range ids {
-		ch := model.Channel{Id: id, Name: fmt.Sprintf("c%d", id), Type: 1, Key: "k", Status: common.ChannelStatusEnabled, Models: "fb-model", Group: "default", AutoBan: &auto}
-		require.NoError(t, model.DB.Create(&ch).Error)
+		ch := &model.Channel{Id: id, Name: fmt.Sprintf("c%d", id), Type: 1, Key: "k", Status: common.ChannelStatusEnabled, Models: "fb-model", Group: "default", AutoBan: &auto}
+		require.NoError(t, model.DB.Create(ch).Error)
 		require.NoError(t, ch.AddAbilities(model.DB))
+		channels = append(channels, ch)
+	}
+	// TripImmediate only reads the memory cache. A cache miss must not query the database.
+	t.Cleanup(model.InstallChannelCacheForTest(channels))
+	for _, id := range ids {
 		smartrouting.TripImmediate(id, "test_trip")
 	}
 	var stillEnabled int64

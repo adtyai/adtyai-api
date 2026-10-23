@@ -116,6 +116,21 @@ export function envelopeFromError<T>(err: unknown): ApiEnvelope<T> {
   return { success: false, message }
 }
 
+function routingModeFromPayload(
+  data: Record<string, unknown>
+): RoutingConfig['mode'] | undefined {
+  if (data.mode === 'off' || data.mode === 'observe' || data.mode === 'active') {
+    return data.mode
+  }
+  if (data.enabled === true) {
+    return 'active'
+  }
+  if (data.enabled === false) {
+    return 'off'
+  }
+  return undefined
+}
+
 export async function getRoutingConfig(): Promise<RoutingConfig> {
   const res = await api.get<ApiEnvelope<Record<string, unknown>>>(
     `${SMART_ROUTING_API_PREFIX}/config`,
@@ -129,14 +144,7 @@ export async function getRoutingConfig(): Promise<RoutingConfig> {
         : 'Failed to load'
     )
   }
-  const mode =
-    data.mode === 'off' || data.mode === 'observe' || data.mode === 'active'
-      ? data.mode
-      : data.enabled === true
-        ? 'active'
-        : data.enabled === false
-          ? 'off'
-          : undefined
+  const mode = routingModeFromPayload(data)
   if (!mode) {
     throw new Error('Failed to load')
   }

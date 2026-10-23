@@ -90,6 +90,43 @@ function grantErrorKey(code?: string) {
   }
 }
 
+function renderGrantList(
+  failed: boolean,
+  items: GroupGrantView[],
+  busy: boolean,
+  t: (key: string) => string,
+  revoke: (row: GroupGrantView) => Promise<void>
+) {
+  if (failed) {
+    return <p className='text-destructive text-sm'>{t('Failed to load')}</p>
+  }
+  if (items.length === 0) {
+    return <p className='text-muted-foreground text-sm'>{t('No grants')}</p>
+  }
+  return (
+    <ul className='divide-y rounded-md border'>
+      {items.map((row) => (
+        <li
+          key={row.user_id}
+          className='flex items-center justify-between gap-3 px-3 py-2 text-sm'
+        >
+          <span>
+            {row.display_name || row.username} ({row.user_id})
+          </span>
+          <Button
+            type='button'
+            variant='outline'
+            disabled={busy}
+            onClick={() => void revoke(row)}
+          >
+            {t('Revoke')}
+          </Button>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
 function GroupGrantDialog({
   code,
   open,
@@ -117,6 +154,7 @@ function GroupGrantDialog({
   }, [open])
 
   const items = grants.data?.data ?? []
+  const grantList = renderGrantList(grants.isError || grants.data?.success === false, items, busy, t, revoke)
 
   async function grant() {
     const id = Number(userId)
@@ -176,32 +214,7 @@ function GroupGrantDialog({
             </Button>
           </div>
           {error ? <p className='text-destructive text-sm'>{error}</p> : null}
-          {grants.isError || grants.data?.success === false ? (
-            <p className='text-destructive text-sm'>{t('Failed to load')}</p>
-          ) : items.length === 0 ? (
-            <p className='text-muted-foreground text-sm'>{t('No grants')}</p>
-          ) : (
-            <ul className='divide-y rounded-md border'>
-              {items.map((row) => (
-                <li
-                  key={row.user_id}
-                  className='flex items-center justify-between gap-3 px-3 py-2 text-sm'
-                >
-                  <span>
-                    {row.display_name || row.username} ({row.user_id})
-                  </span>
-                  <Button
-                    type='button'
-                    variant='outline'
-                    disabled={busy}
-                    onClick={() => void revoke(row)}
-                  >
-                    {t('Revoke')}
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          )}
+          {grantList}
         </div>
         <DialogFooter>
           <Button type='button' variant='outline' onClick={() => onOpenChange(false)}>

@@ -126,7 +126,6 @@ const BILLING_SECTIONS = [
     id: 'payment',
     titleKey: 'Payment Gateway',
     build: (settings: BillingSettings) => (
-      <>
         <PaymentSettingsSection
           defaultValues={{
             PayAddress: settings.PayAddress,
@@ -176,7 +175,6 @@ const BILLING_SECTIONS = [
             settings.WaffoPancakeProductID ?? ''
           }
         />
-      </>
     ),
   },
   {

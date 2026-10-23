@@ -17,6 +17,8 @@ func TestBreakerHalfOpenLifecycle(t *testing.T) {
 	auto := 1
 	ch := model.Channel{Id: 31, Name: "c31", Key: "k", Status: common.ChannelStatusEnabled, Models: "m", Group: "default", AutoBan: &auto}
 	require.NoError(t, model.DB.Create(&ch).Error)
+	// TripImmediate only reads the memory cache. A cache miss must not query the database.
+	t.Cleanup(model.InstallChannelCacheForTest([]*model.Channel{&ch}))
 
 	smartrouting.TripImmediate(ch.Id, "test_trip")
 	var ev model.ChannelBreakerEvent
