@@ -1,0 +1,285 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --font-sans: var(--font-ui-sans);
+  --font-public-sans: 'Public Sans Variable', 'Public Sans', sans-serif;
+  /* Editorial serif token — the body face used by the `serif` font axis
+   * and by presets that opt in (currently Anthropic). Lora carries only
+   * Latin glyphs, so the stack walks through CJK serifs (Noto / Source Han
+   * / Songti / SimSun) before the generic `serif` fallback. Without these
+   * explicit CJK fonts the browser's generic-serif pick on Windows is
+   * non-deterministic at small sizes and often appears sans-like. */
+  --font-serif:
+    'Lora Variable', 'Lora', 'Source Serif Pro', 'Source Serif 4',
+    'Noto Serif SC', 'Noto Serif TC', 'Noto Serif JP', 'Noto Serif KR',
+    'Source Han Serif SC', 'Source Han Serif TC', 'Source Han Serif',
+    'Songti SC', 'STSong', 'STSongti-SC-Regular', 'PingFang SC', 'SimSun',
+    'NSimSun', '宋体', 'FangSong', '仿宋', 'KaiTi', '楷体', Georgia,
+    'Times New Roman', Cambria, 'Liberation Serif', serif;
+  --font-inter:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu',
+    'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+  --font-manrope:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu',
+    'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-neutral: var(--neutral);
+  --color-neutral-foreground: var(--neutral-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-overview-accent-1: var(--overview-accent-1);
+  --color-overview-accent-2: var(--overview-accent-2);
+  --color-overview-accent-3: var(--overview-accent-3);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-canvas: var(--canvas);
+  --color-success-soft: var(--success-soft);
+  --color-warning-soft: var(--warning-soft);
+  --color-destructive-soft: var(--destructive-soft);
+  --color-info-soft: var(--info-soft);
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  /* ADTY: 1.5x so cards are 12px while buttons and inputs stay 8px. */
+  --radius-xl: calc(var(--radius) * 1.5);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+  /* ADTY white theme (design draft section 6). rounded-lg = 8px buttons and
+   * inputs, rounded-xl = 12px cards. */
+  --radius: 0.5rem;
+  --app-header-height: 3rem;
+  /* Static build-channel fallback consumed when JS hasn't booted yet. */
+  --app-rev: '2k6e8r7p';
+  /* Auto uses self-hosted Inter with CJK system fallbacks, including before
+   * JS applies the saved preference. Explicit Sans selects Public Sans in
+   * theme-presets.css. */
+  --font-ui-sans:
+    'Inter Variable', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  --font-body: var(--font-ui-sans);
+  --font-mono: 'JetBrains Mono Variable', Consolas, monospace;
+  --background: #ffffff;
+  --foreground: #0a0a0a;
+  --card: #ffffff;
+  --card-foreground: #0a0a0a;
+  --popover: #ffffff;
+  --popover-foreground: #0a0a0a;
+  /* Console content area behind the white cards. */
+  --canvas: #fafafa;
+  --primary: #0a0a0a;
+  --primary-foreground: #ffffff;
+  --secondary: #f5f5f5;
+  --secondary-foreground: #0a0a0a;
+  --muted: #f5f5f5;
+  --muted-foreground: #737373;
+  --accent: #f5f5f5;
+  --accent-foreground: #0a0a0a;
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+  --destructive-soft: #fef2f2;
+  --success: #16a34a;
+  --success-foreground: #ffffff;
+  --success-soft: #f0fdf4;
+  --warning: #b45309;
+  --warning-foreground: #ffffff;
+  --warning-soft: #fffbeb;
+  --info: #1d4ed8;
+  --info-foreground: #ffffff;
+  --info-soft: #eff6ff;
+  --neutral: #a3a3a3;
+  --neutral-foreground: #0a0a0a;
+  --border: #e5e5e5;
+  --input: #e5e5e5;
+  --ring: #a3a3a3;
+  --chart-1: #0a0a0a;
+  --chart-2: #525252;
+  --chart-3: #a3a3a3;
+  --chart-4: #d4d4d4;
+  --chart-5: #e5e5e5;
+  --overview-accent-1: #525252;
+  --overview-accent-2: #737373;
+  --overview-accent-3: #a3a3a3;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #0a0a0a;
+  --sidebar-primary: #0a0a0a;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #f5f5f5;
+  --sidebar-accent-foreground: #0a0a0a;
+  --sidebar-border: #e5e5e5;
+  --sidebar-ring: #a3a3a3;
+  --skeleton-base: #f5f5f5;
+  --skeleton-highlight: #fafafa;
+  --table-row: var(--background);
+  --table-header: color-mix(
+    in oklch,
+    var(--foreground) 1.5%,
+    var(--background)
+  );
+  --table-header-hover: color-mix(
+    in oklch,
+    var(--foreground) 3%,
+    var(--background)
+  );
+  /* Disabled rows: kept subtle so they read as "quiet", not as a colored
+     alert state. */
+  --table-disabled: color-mix(
+    in oklch,
+    var(--foreground) 3%,
+    var(--background)
+  );
+  --table-disabled-hover: color-mix(
+    in oklch,
+    var(--foreground) 4.5%,
+    var(--background)
+  );
+  --table-disabled-border: color-mix(
+    in oklch,
+    var(--foreground) 16%,
+    var(--background)
+  );
+}
+
+/* ADTY task 9.2: on Japanese pages, Japanese fonts come before the Chinese
+ * ones so kanji use Japanese glyph forms. <html lang> follows the interface
+ * language (i18n/adty-document-lang.ts). The explicit Sans choice
+ * (theme-presets.css) keeps its own font. */
+:root:lang(ja):not([data-theme-font='sans']) {
+  --font-ui-sans:
+    'Inter Variable', 'Hiragino Sans', 'Hiragino Kaku Gothic ProN',
+    'Yu Gothic UI', Meiryo, 'Noto Sans JP', system-ui, sans-serif;
+}
+
+.dark {
+  /* Native controls follow the theme; Dark Reader also reads this to detect
+     the built-in dark theme. */
+  color-scheme: dark;
+  /* ADTY white theme, dark variant (design draft section 6). */
+  --background: #0a0a0a;
+  --foreground: #fafafa;
+  --card: #141414;
+  --card-foreground: #fafafa;
+  --popover: #141414;
+  --popover-foreground: #fafafa;
+  --canvas: #0a0a0a;
+  --primary: #fafafa;
+  --primary-foreground: #0a0a0a;
+  --secondary: #1f1f1f;
+  --secondary-foreground: #fafafa;
+  --muted: #1f1f1f;
+  --muted-foreground: #a3a3a3;
+  --accent: #1f1f1f;
+  --accent-foreground: #fafafa;
+  --destructive: #f87171;
+  --destructive-foreground: #0a0a0a;
+  --destructive-soft: color-mix(in srgb, var(--destructive) 15%, transparent);
+  --success: #4ade80;
+  --success-foreground: #0a0a0a;
+  --success-soft: color-mix(in srgb, var(--success) 15%, transparent);
+  --warning: #fbbf24;
+  --warning-foreground: #0a0a0a;
+  --warning-soft: color-mix(in srgb, var(--warning) 15%, transparent);
+  --info: #60a5fa;
+  --info-foreground: #0a0a0a;
+  --info-soft: color-mix(in srgb, var(--info) 15%, transparent);
+  --neutral: #737373;
+  --neutral-foreground: #fafafa;
+  --border: #262626;
+  --input: #262626;
+  --ring: #525252;
+  --chart-1: #e5e5e5;
+  --chart-2: #d4d4d4;
+  --chart-3: #a3a3a3;
+  --chart-4: #525252;
+  --chart-5: #0a0a0a;
+  --overview-accent-1: #a3a3a3;
+  --overview-accent-2: #737373;
+  --overview-accent-3: #525252;
+  --sidebar: #0a0a0a;
+  --sidebar-foreground: #fafafa;
+  --sidebar-primary: #fafafa;
+  --sidebar-primary-foreground: #0a0a0a;
+  --sidebar-accent: #1f1f1f;
+  --sidebar-accent-foreground: #fafafa;
+  --sidebar-border: #262626;
+  --sidebar-ring: #525252;
+  --skeleton-base: #1f1f1f;
+  --skeleton-highlight: #262626;
+  --table-row: var(--background);
+  --table-header: color-mix(in oklch, var(--foreground) 6%, var(--background));
+  --table-header-hover: color-mix(
+    in oklch,
+    var(--foreground) 9%,
+    var(--background)
+  );
+  --table-disabled: color-mix(
+    in oklch,
+    var(--foreground) 7%,
+    var(--background)
+  );
+  --table-disabled-hover: color-mix(
+    in oklch,
+    var(--foreground) 9.5%,
+    var(--background)
+  );
+  --table-disabled-border: color-mix(
+    in oklch,
+    var(--foreground) 24%,
+    var(--background)
+  );
+}

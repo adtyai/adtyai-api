@@ -1,0 +1,60 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+import { createFileRoute, redirect } from '@tanstack/react-router'
+
+import { SiteAdmin } from '@/features/adty-site-admin'
+import {
+  canOpenSiteAdminSection,
+  isSiteAdminSection,
+  SITE_ADMIN_DEFAULT_SECTION,
+  SITE_ADMIN_SECTIONS,
+} from '@/features/adty-site-admin/sections'
+import { useAuthStore } from '@/stores/auth-store'
+
+export const Route = createFileRoute('/_authenticated/site-admin/$section')({
+  beforeLoad: ({ params }) => {
+    const user = useAuthStore.getState().auth.user
+    if (!isSiteAdminSection(params.section)) {
+      throw redirect({
+        to: '/site-admin/$section',
+        params: { section: SITE_ADMIN_DEFAULT_SECTION },
+      })
+    }
+    const section = SITE_ADMIN_SECTIONS.find(
+      (item) => item.id === params.section
+    )
+    if (!section || !canOpenSiteAdminSection(user, section)) {
+      throw redirect({ to: '/403' })
+    }
+  },
+  component: SiteAdminPage,
+})
+
+function SiteAdminPage() {
+  const params = Route.useParams()
+  return (
+    <SiteAdmin
+      section={
+        isSiteAdminSection(params.section)
+          ? params.section
+          : SITE_ADMIN_DEFAULT_SECTION
+      }
+    />
+  )
+}

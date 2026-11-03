@@ -1,0 +1,74 @@
+# 删除清单：整个删掉的上游文件和目录。删掉的功能另记在 deleted-features.md（约定 B）。
+# 合并上游的脚本（任务 1.7）和前端守卫测试（任务 1.6）读这个文件。
+# 格式：
+# - 每行一个路径，从仓库根目录写起，开头不加 /。
+# - 目录以 / 结尾，按前缀匹配，目录下的所有文件都算。
+# - 文件写全路径，按整条路径匹配。
+# - 以 # 开头的行和空行都忽略。
+
+# 订阅（任务 1.2，后端）
+controller/subscription.go
+controller/subscription_payment_creem.go
+controller/subscription_payment_epay.go
+controller/subscription_payment_stripe.go
+controller/subscription_payment_waffo_pancake.go
+model/subscription.go
+model/subscription_auth_test.go
+model/subscription_reset_test.go
+service/subscription_reset_task.go
+
+# 订阅（任务 1.3，前端）
+web/src/features/subscriptions/
+web/src/routes/_authenticated/subscriptions/
+web/src/features/wallet/components/subscription-plans-card.tsx
+web/src/features/usage-logs/lib/billing-source.ts
+web/src/features/usage-logs/lib/__tests__/billing-source.test.ts
+web/src/features/usage-logs/components/__tests__/billing-source-visibility.test.tsx
+
+# 兑换码（任务 1.4，后端）
+controller/redemption.go
+controller/redemption_batch_test.go
+model/redemption.go
+model/redemption_test.go
+
+# 兑换码（任务 1.4，前端）
+web/src/features/redemption-codes/
+web/src/routes/_authenticated/redemption-codes/
+web/src/features/wallet/hooks/use-redemption.ts
+
+# 上游邀请奖励（任务 1.5，前端；后端没有整个删掉的文件）
+web/src/features/wallet/components/affiliate-rewards-card.tsx
+web/src/features/wallet/components/dialogs/transfer-dialog.tsx
+web/src/features/wallet/hooks/use-affiliate.ts
+web/src/features/wallet/lib/affiliate.ts
+web/src/features/auth/lib/storage.ts
+
+# 上游钱包充值卡和支付流程（任务 3.4，换成 features/wallet/adty/）
+web/src/features/wallet/api.ts
+web/src/features/wallet/components/creem-products-section.tsx
+web/src/features/wallet/components/dialogs/billing-history-dialog.tsx
+web/src/features/wallet/components/dialogs/creem-confirm-dialog.tsx
+web/src/features/wallet/components/dialogs/payment-confirm-dialog.tsx
+web/src/features/wallet/components/recharge-form-card.tsx
+web/src/features/wallet/hooks/
+web/src/features/wallet/lib/billing.ts
+web/src/features/wallet/lib/index.ts
+web/src/features/wallet/lib/ui.tsx
+web/src/features/wallet/lib/__tests__/payment-icons.test.tsx
+web/src/features/wallet/__tests__/copy.test.tsx
+
+# 上游充值折扣编辑器（任务 4.3，换成加赠编辑器 adty-bonus-rates-editor.tsx）
+web/src/features/system-settings/integrations/amount-discount-dialog.tsx
+web/src/features/system-settings/integrations/amount-discount-visual-editor.tsx
+
+# 上游默认首页（任务 8.3，换成 features/adty-home/ 的落地页）
+web/src/features/home/components/
+web/src/features/home/constants.ts
+web/src/features/home/lib/
+
+# 上游的发布工作流（用户决定删除，只留 adty-ghcr.yml 和 ci.yml）
+.github/workflows/docker-build.yml
+.github/workflows/docker-image-branch.yml
+.github/workflows/electron-build.yml
+.github/workflows/release.yml
+.github/workflows/sync-release-to-gitcode.yml

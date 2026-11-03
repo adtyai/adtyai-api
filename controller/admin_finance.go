@@ -1,0 +1,206 @@
+package controller
+
+import (
+	"strconv"
+	"strings"
+
+	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/model"
+	"github.com/gin-gonic/gin"
+	"github.com/shopspring/decimal"
+	"gorm.io/gorm"
+)
+
+// 充值对账（任务 3.5）：从旧项目改写，只看 top_ups LEFT JOIN adty_topup_orders，金额一律美元，
+// 去掉了订阅订单的 UNION、人民币折算和 Creem/Stripe 的特判。
+
+type rechargeAuditOrder struct {
+	Id              int             `json:"id"`
+	UserId          int             `json:"user_id"`
+	Username        string          `json:"username"`
+	TradeNo         string          `json:"trade_no"`
+	PaymentMethod   string          `json:"payment_method"`
+	PaymentProvider string          `json:"payment_provider"`
+	Status          string          `json:"status"`
+	CreateTime      int64           `json:"create_time"`
+	CompleteTime    int64           `json:"complete_time"`
+	Amount          int64           `json:"amount"`
+	Money           float64         `json:"money"`
+	HasExt          bool            `json:"has_ext"`
+	FaceUSD         decimal.Decimal `json:"face_usd"`
+	BonusUSD        decimal.Decimal `json:"bonus_usd"`
+	CreditQuota     int64           `json:"credit_quota"`
+	PayAmount       decimal.Decimal `json:"pay_amount"`
+	PayCurrency     string          `json:"pay_currency"`
+	PaidAmount      decimal.Decimal `json:"paid_amount"`
+	PaidCurrency    string          `json:"paid_currency"`
+	PaidTxHash      string          `json:"paid_tx_hash"`
+	PaidSource      string          `json:"paid_source"`
+	ChannelId       int             `json:"channel_id"`
+	ChannelName     string          `json:"channel_name"`
+	Anomaly         string          `json:"anomaly"`
+}
+
+var rechargeAuditStatuses = []string{
+	common.TopUpStatusPending, common.TopUpStatusSuccess, common.TopUpStatusExpired,
+	common.TopUpStatusFailed, model.TopUpStatusCanceled, model.TopUpStatusRefunded,
+}
+
+// rechargeAuditQuery 建对账查询，筛选条件都来自查询参数。
+func rechargeAuditQuery(c *gin.Context) (*gorm.DB, bool) {
+	query := model.DB.Table("top_ups AS t").
+		Joins("LEFT JOIN adty_topup_orders a ON a.trade_no = t.trade_no").
+		Joins("LEFT JOIN users u ON u.id = t.user_id")
+	if keyword := strings.TrimSpace(c.Query("keyword")); keyword != "" {
+		like := "%" + keyword + "%"
+		query = query.Where("(t.trade_no LIKE ? OR u.username LIKE ? OR a.paid_tx_hash LIKE ? OR a.gateway_trade_id LIKE ?)", like, like, like, like)
+	}
+	if status := strings.TrimSpace(c.Query("status")); status != "" && status != "all" {
+		valid := false
+		for _, allowed := range rechargeAuditStatuses {
+			if allowed == status {
+				valid = true
+			}
+		}
+		if !valid {
+			common.ApiErrorT(c, "Invalid parameters")
+			return nil, false
+		}
+		query = query.Where("t.status = ?", status)
+	}
+	if provider := strings.TrimSpace(c.Query("provider")); provider != "" {
+		query = query.Where("t.payment_provider = ?", provider)
+	}
+	if method := strings.TrimSpace(c.Query("method")); method != "" {
+		query = query.Where("t.payment_method = ?", method)
+	}
+	if raw := strings.TrimSpace(c.Query("channel_id")); raw != "" {
+		id, err := strconv.Atoi(raw)
+		if err != nil {
+			common.ApiErrorT(c, "Invalid parameters")
+			return nil, false
+		}
+		query = query.Where("a.channel_id = ?", id)
+	}
+	if raw := strings.TrimSpace(c.Query("user_id")); raw != "" {
+		id, err := strconv.Atoi(raw)
+		if err != nil {
+			common.ApiErrorT(c, "Invalid parameters")
+			return nil, false
+		}
+		query = query.Where("t.user_id = ?", id)
+	}
+	if start, err := strconv.ParseInt(c.Query("start_timestamp"), 10, 64); err == nil && start > 0 {
+		query = query.Where("t.create_time >= ?", start)
+	}
+	if end, err := strconv.ParseInt(c.Query("end_timestamp"), 10, 64); err == nil && end > 0 {
+		query = query.Where("t.create_time <= ?", end)
+	}
+	return query, true
+}
+
+const rechargeAuditSelect = `t.id, t.user_id, COALESCE(u.username, '') AS username, t.trade_no, t.payment_method, t.payment_provider,
+	t.status, t.create_time, t.complete_time, t.amount, t.money,
+	(a.id IS NOT NULL) AS has_ext,
+	COALESCE(a.face_usd, 0) AS face_usd, COALESCE(a.bonus_usd, 0) AS bonus_usd, COALESCE(a.credit_quota, 0) AS credit_quota,
+	COALESCE(a.pay_amount, 0) AS pay_amount, COALESCE(a.pay_currency, '') AS pay_currency,
+	COALESCE(a.paid_amount, 0) AS paid_amount, COALESCE(a.paid_currency, '') AS paid_currency,
+	COALESCE(a.paid_tx_hash, '') AS paid_tx_hash, COALESCE(a.paid_source, '') AS paid_source,
+	COALESCE(a.channel_id, 0) AS channel_id`
+
+// GetRechargeAudit 分页列出充值订单，带面额、加赠、应付、实付和异常标记。
+func GetRechargeAudit(c *gin.Context) {
+	query, ok := rechargeAuditQuery(c)
+	if !ok {
+		return
+	}
+	pageInfo := common.GetPageQuery(c)
+	var total int64
+	if err := query.Session(&gorm.Session{}).Count(&total).Error; err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	var orders []rechargeAuditOrder
+	if err := query.Select(rechargeAuditSelect).Order("t.create_time DESC, t.id DESC").
+		Limit(pageInfo.GetPageSize()).Offset(pageInfo.GetStartIdx()).Scan(&orders).Error; err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	channelNames := adtyEpayChannelNames()
+	for i := range orders {
+		orders[i].Anomaly = rechargeAuditAnomaly(orders[i])
+		orders[i].ChannelName = channelNames[orders[i].ChannelId]
+	}
+	pageInfo.SetTotal(int(total))
+	pageInfo.SetItems(orders)
+	common.ApiSuccess(c, pageInfo)
+}
+
+// adtyEpayChannelNames 由 P5 换成通道表的名字；没有通道时是空表。
+var adtyEpayChannelNames = func() map[int]string { return map[int]string{} }
+
+// rechargeAuditAnomaly 标出两类异常：成功订单缺扩展记录，实付和应付对不上。
+func rechargeAuditAnomaly(order rechargeAuditOrder) string {
+	ours := model.IsAdtyPaymentProvider(order.PaymentProvider)
+	if !ours {
+		return ""
+	}
+	if !order.HasExt {
+		return "missing_ext"
+	}
+	if order.Status != common.TopUpStatusSuccess && order.Status != model.TopUpStatusRefunded {
+		return ""
+	}
+	if order.PaidSource == model.AdtyPaymentSourceManual {
+		return ""
+	}
+	if order.PaymentProvider == model.PaymentProviderAdtyEpay && !order.PaidAmount.Round(2).Equal(order.PayAmount.Round(2)) {
+		return "paid_mismatch"
+	}
+	if order.PaymentProvider == model.PaymentProviderAdtyBEpusdt && order.PaidAmount.LessThan(order.PayAmount) {
+		return "paid_mismatch"
+	}
+	return ""
+}
+
+type rechargeAuditSummaryRow struct {
+	Status   string          `json:"status"`
+	Provider string          `json:"provider"`
+	Count    int64           `json:"count"`
+	FaceUSD  decimal.Decimal `json:"face_usd"`
+	BonusUSD decimal.Decimal `json:"bonus_usd"`
+}
+
+// GetRechargeAuditSummary 按状态和支付商汇总，金额都是美元。
+func GetRechargeAuditSummary(c *gin.Context) {
+	query, ok := rechargeAuditQuery(c)
+	if !ok {
+		return
+	}
+	var rows []rechargeAuditSummaryRow
+	if err := query.Select(`t.status AS status, t.payment_provider AS provider, COUNT(*) AS count,
+		COALESCE(SUM(COALESCE(a.face_usd, t.amount)), 0) AS face_usd, COALESCE(SUM(COALESCE(a.bonus_usd, 0)), 0) AS bonus_usd`).
+		Group("t.status, t.payment_provider").Scan(&rows).Error; err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	credited := decimal.Zero
+	bonus := decimal.Zero
+	var orders int64
+	for _, row := range rows {
+		orders += row.Count
+		if row.Status == common.TopUpStatusSuccess {
+			credited = credited.Add(row.FaceUSD)
+			bonus = bonus.Add(row.BonusUSD)
+		}
+	}
+	common.ApiSuccess(c, gin.H{
+		"rows":            rows,
+		"orders":          orders,
+		"credited_usd":    credited,
+		"bonus_usd":       bonus,
+		"currency":        "USD",
+		"status_options":  rechargeAuditStatuses,
+		"provider_option": []string{model.PaymentProviderAdtyBEpusdt, model.PaymentProviderAdtyEpay},
+	})
+}

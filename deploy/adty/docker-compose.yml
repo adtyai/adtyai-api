@@ -1,0 +1,99 @@
+# ADTY AI 生产环境 compose 文件（任务 10.1），部署步骤见 docs/adty/deploy.md。
+#
+# 把本文件和 .env.example 放到服务器的 /opt/adtyai，cp .env.example .env 后填好密钥。
+# 镜像标签取 .env 里的 ADTY_IMAGE（ghcr.io/adtyai/adtyai-api:sha-xxxxxxx），升级和回滚只改这一项。
+# PostgreSQL 和 Redis 不发布端口；adtyai-api 只绑 127.0.0.1:3000，由本机的 Nginx 转发。
+# Docker 发布的端口不受 ufw 控制，不要再加别的 ports。
+
+name: adtyai
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "5"
+
+services:
+  adtyai-api:
+    image: ${ADTY_IMAGE:?set ADTY_IMAGE in .env, e.g. ghcr.io/adtyai/adtyai-api:sha-xxxxxxx}
+    container_name: adtyai-api
+    restart: always
+    command: --log-dir /app/logs
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      # /data 是镜像的工作目录（Dockerfile 的 WORKDIR）；返佣收款码和打款凭证存在 /data/uploads 下
+      - ./data:/data
+      - ./logs:/app/logs
+    environment:
+      SQL_DSN: postgresql://adtyai:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/adtyai?sslmode=disable
+      REDIS_CONN_STRING: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}@redis:6379/0
+      # 两个密钥都要固定：换了会让登录会话、推广 cookie 签名和任务产物的签名全部失效
+      SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET in .env}
+      CRYPTO_SECRET: ${CRYPTO_SECRET:?set CRYPTO_SECRET in .env}
+      # 这两项必须同时设（common/session_cookie.go）
+      SESSION_COOKIE_SECURE: "true"
+      SESSION_COOKIE_TRUSTED_URL: ${SESSION_COOKIE_TRUSTED_URL:-https://adtyai.com}
+      ERROR_LOG_ENABLED: "true"
+      BATCH_UPDATE_ENABLED: "true"
+      NODE_NAME: ${NODE_NAME:-adtyai-node-1}
+      TZ: ${TZ:-Asia/Shanghai}
+      # Nginx 的请求经下面这个网络的网关进入容器，只信任它
+      TRUSTED_PROXIES: 172.30.0.1
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:3000/api/status | grep -o '\"success\":\\s*true' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging: *default-logging
+
+  postgres:
+    image: postgres:16
+    container_name: adtyai-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: adtyai
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: adtyai
+      TZ: ${TZ:-Asia/Shanghai}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U adtyai -d adtyai"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging: *default-logging
+
+  redis:
+    image: redis:7
+    container_name: adtyai-redis
+    restart: always
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}", "--appendonly", "yes"]
+    environment:
+      REDISCLI_AUTH: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging: *default-logging
+
+volumes:
+  pg_data:
+  redis_data:
+
+networks:
+  default:
+    ipam:
+      config:
+        # 固定子网，重建网络后网关地址（TRUSTED_PROXIES）不变
+        - subnet: 172.30.0.0/24
+          gateway: 172.30.0.1

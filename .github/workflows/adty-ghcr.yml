@@ -1,0 +1,217 @@
+# adtyai-api：每次 push 跑测试并构建镜像，main、merge/* 分支和 v* 标签推送到 GHCR（实施方案任务 0.4、1.7）。
+# PR 的测试由上游 ci.yml 负责，这里只构建镜像；手动运行也只构建。
+name: ADTY test and GHCR image
+
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# merge/* 分支和 PR 按 ref 分组，只留最新的一次运行。main 和标签按提交分组，每次运行都跑完：
+# 同一组里排队的运行会被后来的顶掉（cancel-in-progress 关掉也一样），按 ref 分组的话连推几次 main，
+# 中间的提交就没有 sha-<7 位> 镜像，生产回滚换回上一个 sha 标签时拉不到
+concurrency:
+  group: ${{ github.workflow }}-${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')) && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  test:
+    name: Backend and frontend tests
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    # 上游 ci.yml 的后端 15 分钟、前端 10 分钟，这里合成一个作业
+    timeout-minutes: 25
+    env:
+      GOWORK: 'off'
+      # 一次性测试库密码，只给 CI 用，不是生产密码。
+      ADTY_TEST_PG_DSN: 'host=127.0.0.1 port=5432 user=postgres password=adty_ci_test dbname=adty_test sslmode=disable'
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: adty_ci_test
+          POSTGRES_DB: adty_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d adty_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      # 同 ci.yml，去掉了 repository（push 事件里它是空的）
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            relaykit/go.sum
+            tokenkit/go.sum
+
+      - name: Create frontend embed placeholder
+        run: |
+          mkdir -p web/dist
+          touch web/dist/index.html
+
+      - name: Vet root module
+        run: go vet ./...
+
+      - name: Vet relaykit independently
+        working-directory: relaykit
+        run: go vet ./...
+
+      - name: Vet tokenkit independently
+        working-directory: tokenkit
+        run: go vet ./...
+
+      - name: Build root module
+        run: go build ./...
+
+      - name: Build relaykit independently
+        working-directory: relaykit
+        run: go build ./...
+
+      - name: Build tokenkit independently
+        working-directory: tokenkit
+        run: go build ./...
+
+      - name: Test root, relaykit, and tokenkit modules
+        run: make test
+
+      # 前端同 ci.yml，另加 lint 和 copyright:check 的基线比较（和 scripts/adty/check.sh 一样，
+      # 见 docs/adty/baseline.md）。ratchet.mjs 和 copyright:check 用 node 跑，版本同 web/.node-version
+      - name: Set up Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version-file: web/.node-version
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: '1.4.4'
+
+      - name: Install frontend dependencies
+        working-directory: web
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck frontend
+        working-directory: web
+        run: bun check -b
+
+      - name: Lint frontend against baseline
+        run: node scripts/adty/ratchet.mjs lint
+
+      - name: Test frontend
+        working-directory: web
+        run: bun run test
+
+      # 任务 9.2：我们加的前端语言键 7 种语言都要有、而且不等于英文
+      - name: Check our frontend translations
+        working-directory: web
+        run: node scripts/adty/i18n-check.mjs
+
+      - name: Check copyright headers against baseline
+        run: node scripts/adty/ratchet.mjs copyright
+
+  image:
+    name: Build image, push on main, merge/* and v* tags
+    needs: test
+    # 只写 needs 的话 test 被跳过时 image 也会被跳过；PR 和手动运行没有 test，也要构建
+    if: ${{ !cancelled() && (needs.test.result == 'success' || (github.event_name != 'push' && needs.test.result == 'skipped')) }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      # 只有 push 事件、并且是 main、merge/* 分支或 v* 标签时才登录 ghcr.io 并推送，其他情况只构建。
+      # merge/* 的镜像给测试环境做合并上游后的客户端回归（docs/adty/upstream-merge.md 第 7 步）
+      PUSH_IMAGE: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/merge/') || startsWith(github.ref, 'refs/tags/v')) }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      # Dockerfile 把 VERSION 交给前端构建，并写进二进制的 common.Version
+      - name: Write VERSION
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          short_sha=${GITHUB_SHA::7}
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            version="pr-${PR_NUMBER}-${short_sha}"
+          elif [ "$GITHUB_REF_TYPE" = tag ]; then
+            version=$GITHUB_REF_NAME
+          elif [ "$GITHUB_REF_NAME" = main ]; then
+            version="main-${short_sha}"
+          else
+            version="${GITHUB_REF_NAME}-${short_sha}"
+          fi
+          printf '%s\n' "$version" > VERSION
+          echo "VERSION: $version"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Log in to GHCR
+        if: env.PUSH_IMAGE == 'true'
+        uses: docker/login-action@c99871dec2022cc055c062a10cc1a1310835ceb4 # v4.3.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # main 的运行按提交分组，可能同时跑。先推的提交如果后跑完，打 main 标签会把 :main 改回旧镜像，
+      # 所以只有这个提交还是 origin/main 的最新提交时才打 main 标签；sha 标签照常打
+      - name: Check main is still at this commit
+        id: main_tip
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tip=$(gh api "repos/${GITHUB_REPOSITORY}/commits/main" --jq .sha)
+          if [ "$tip" = "$GITHUB_SHA" ]; then
+            echo "latest=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "latest=false" >> "$GITHUB_OUTPUT"
+            echo "main is now at $tip; skip the main tag for $GITHUB_SHA"
+          fi
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ghcr.io/${{ github.repository }}
+          flavor: latest=false
+          # sha 标签只给 main，避免标签构建覆盖同名 sha 镜像。
+          # merge/* 分支只打 merge-<名字>：分支名里的 / 会被换成 -，所以不用另加前缀
+          tags: |
+            type=raw,value=main,enable=${{ github.ref == 'refs/heads/main' && steps.main_tip.outputs.latest == 'true' }}
+            type=sha,prefix=sha-,format=short,enable=${{ github.ref == 'refs/heads/main' }}
+            type=ref,event=branch,enable=${{ startsWith(github.ref, 'refs/heads/merge/') }}
+            type=ref,event=tag
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+
+      # 必须写 context: .：默认的 Git 上下文会忽略上面写入的 VERSION，镜像里的版本号会是空的
+      - name: Build image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          platforms: linux/amd64
+          push: ${{ env.PUSH_IMAGE == 'true' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

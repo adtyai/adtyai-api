@@ -1,0 +1,212 @@
+package service
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"strings"
+	"time"
+
+	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/model"
+	"github.com/shopspring/decimal"
+)
+
+// 易支付的 API 下单、页面跳转、查单和探活（任务 5.2、5.3）。各家程序有差异，返回字段要容错。
+
+// AdtyEpayCreateRequest 是一笔易支付下单。
+type AdtyEpayCreateRequest struct {
+	TradeNo, Name, ClientIP, Device string
+	MoneyCNY                        decimal.Decimal
+	NotifyURL, ReturnURL            string // ReturnURL 不带 query
+}
+
+// AdtyEpayCreateResult 是网关返回的支付信息。Mode 是 qrcode、payurl、urlscheme 或 submit。
+type AdtyEpayCreateResult struct{ Mode, QRCode, PayURL, URLScheme, GatewayTradeNo string }
+
+// AdtyEpayQueryResult 是查单结果。查单返回没有签名，只对 https 网关当真。
+type AdtyEpayQueryResult struct {
+	Paid           bool
+	MoneyCNY       decimal.Decimal
+	TypeCode       string
+	GatewayTradeNo string
+}
+
+var adtyEpayHTTPClient = func() *http.Client {
+	if client := GetHttpClient(); client != nil {
+		return client
+	}
+	return http.DefaultClient
+}
+
+func adtyEpayEndpoint(channel *model.AdtyEpayChannel, path string) string {
+	base := strings.TrimRight(strings.TrimSpace(channel.GatewayURL), "/")
+	for _, suffix := range []string{"/submit.php", "/mapi.php", "/api.php"} {
+		base = strings.TrimSuffix(base, suffix)
+	}
+	return base + path
+}
+
+// adtyEpayOrderParams 是 mapi.php 和 submit.php 共用的参数，签名用原值。
+func adtyEpayOrderParams(channel *model.AdtyEpayChannel, method *model.AdtyEpayChannelMethod, req AdtyEpayCreateRequest) map[string]string {
+	typeCode := method.TypeCode
+	if typeCode == "" {
+		typeCode = method.Method
+	}
+	return map[string]string{
+		"pid":          channel.MerchantId,
+		"type":         typeCode,
+		"out_trade_no": req.TradeNo,
+		"notify_url":   req.NotifyURL,
+		"name":         req.Name,
+		"money":        req.MoneyCNY.StringFixed(2),
+	}
+}
+
+// CreateAdtyEpayOrder 下单。API 模式 POST mapi.php；页面跳转模式只生成签名后的 submit.php 链接。
+func CreateAdtyEpayOrder(ctx context.Context, channel *model.AdtyEpayChannel, method *model.AdtyEpayChannelMethod, req AdtyEpayCreateRequest) (*AdtyEpayCreateResult, error) {
+	params := adtyEpayOrderParams(channel, method, req)
+	if channel.OrderMode == model.AdtyEpayOrderModeSubmit {
+		params["return_url"] = req.ReturnURL
+		sign, err := EpaySign(params, channel.MerchantKey)
+		if err != nil {
+			return nil, err
+		}
+		values := url.Values{}
+		for key, value := range params {
+			values.Set(key, value)
+		}
+		values.Set("sign", sign)
+		values.Set("sign_type", "MD5")
+		return &AdtyEpayCreateResult{Mode: "submit", PayURL: adtyEpayEndpoint(channel, "/submit.php") + "?" + values.Encode()}, nil
+	}
+	params["clientip"] = req.ClientIP
+	params["device"] = req.Device
+	sign, err := EpaySign(params, channel.MerchantKey)
+	if err != nil {
+		return nil, err
+	}
+	form := url.Values{}
+	for key, value := range params {
+		form.Set(key, value)
+	}
+	form.Set("sign", sign)
+	form.Set("sign_type", "MD5")
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, adtyEpayEndpoint(channel, "/mapi.php"), strings.NewReader(form.Encode()))
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := adtyEpayHTTPClient().Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return nil, err
+	}
+	var parsed struct {
+		Code      json.RawMessage `json:"code"`
+		Msg       string          `json:"msg"`
+		TradeNo   string          `json:"trade_no"`
+		PayURL    string          `json:"payurl"`
+		QRCode    string          `json:"qrcode"`
+		URLScheme string          `json:"urlscheme"`
+	}
+	if err := common.Unmarshal(raw, &parsed); err != nil {
+		return nil, fmt.Errorf("epay mapi returned non-JSON (http %d)", resp.StatusCode)
+	}
+	code := strings.Trim(strings.TrimSpace(string(parsed.Code)), `"`)
+	if code != "1" {
+		return nil, fmt.Errorf("epay mapi code %s: %s", code, parsed.Msg)
+	}
+	result := &AdtyEpayCreateResult{GatewayTradeNo: parsed.TradeNo, QRCode: parsed.QRCode, PayURL: parsed.PayURL, URLScheme: parsed.URLScheme}
+	switch {
+	case parsed.QRCode != "":
+		result.Mode = "qrcode"
+	case parsed.PayURL != "":
+		result.Mode = "payurl"
+	case parsed.URLScheme != "":
+		result.Mode = "urlscheme"
+	default:
+		return nil, fmt.Errorf("epay mapi returned no payment link")
+	}
+	return result, nil
+}
+
+// QueryAdtyEpayOrder 按我们的订单号查单（api.php?act=order）。status、code 兼容数字和字符串。
+func QueryAdtyEpayOrder(ctx context.Context, channel *model.AdtyEpayChannel, outTradeNo string) (*AdtyEpayQueryResult, error) {
+	values := url.Values{}
+	values.Set("act", "order")
+	values.Set("pid", channel.MerchantId)
+	values.Set("key", channel.MerchantKey)
+	values.Set("out_trade_no", outTradeNo)
+	raw, err := adtyEpayGet(ctx, adtyEpayEndpoint(channel, "/api.php")+"?"+values.Encode())
+	if err != nil {
+		return nil, err
+	}
+	var parsed struct {
+		Code    json.RawMessage `json:"code"`
+		Status  json.RawMessage `json:"status"`
+		Money   json.RawMessage `json:"money"`
+		Type    string          `json:"type"`
+		TradeNo string          `json:"trade_no"`
+	}
+	if err := common.Unmarshal(raw, &parsed); err != nil {
+		return nil, fmt.Errorf("epay query returned non-JSON")
+	}
+	result := &AdtyEpayQueryResult{TypeCode: parsed.Type, GatewayTradeNo: parsed.TradeNo}
+	result.Paid = strings.Trim(strings.TrimSpace(string(parsed.Status)), `"`) == "1"
+	if money := strings.Trim(strings.TrimSpace(string(parsed.Money)), `"`); money != "" {
+		if value, err := decimal.NewFromString(money); err == nil {
+			result.MoneyCNY = value
+		}
+	}
+	return result, nil
+}
+
+// ProbeAdtyEpayChannel 探活：按 ProbeMode 调 act=query、act=balance，或查一个不存在的订单。
+// HTTP 200 并且返回 JSON 就算通（查不到订单的 code=-1 也算网关正常）。
+func ProbeAdtyEpayChannel(ctx context.Context, channel *model.AdtyEpayChannel) error {
+	values := url.Values{}
+	values.Set("pid", channel.MerchantId)
+	values.Set("key", channel.MerchantKey)
+	switch channel.ProbeMode {
+	case "query":
+		values.Set("act", "query")
+	case "balance":
+		values.Set("act", "balance")
+	default:
+		values.Set("act", "order")
+		values.Set("out_trade_no", "PROBE"+fmt.Sprint(time.Now().Unix()))
+	}
+	raw, err := adtyEpayGet(ctx, adtyEpayEndpoint(channel, "/api.php")+"?"+values.Encode())
+	if err != nil {
+		return err
+	}
+	var parsed map[string]any
+	if err := common.Unmarshal(raw, &parsed); err != nil {
+		return fmt.Errorf("epay probe returned non-JSON")
+	}
+	return nil
+}
+
+func adtyEpayGet(ctx context.Context, target string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := adtyEpayHTTPClient().Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("epay http %d", resp.StatusCode)
+	}
+	return io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+}

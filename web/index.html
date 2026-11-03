@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="google" content="notranslate" />
+
+    <!-- Primary Meta Tags. ADTY task 9.3: the Go server replaces the block
+         between adty-head markers on the home pages; every other page keeps
+         it, noindex included. -->
+    <!--adty-head-->
+    <title>ADTY AI</title>
+    <meta
+      name="description"
+      content="One API key for Claude, GPT, Gemini and more. Pay as you go from $1, with USDT and Alipay."
+    />
+    <meta name="robots" content="noindex" />
+    <!--/adty-head-->
+    <meta name="title" content="ADTY AI" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon-32x32.png" sizes="32x32" type="image/png" />
+    <link rel="icon" href="/favicon-16x16.png" sizes="16x16" type="image/png" />
+    <link rel="apple-touch-icon" href="/adty-apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <link rel="mask-icon" href="/safari-pinned-tab.svg" color="#0A0A0A" />
+    <meta name="msapplication-TileImage" content="/mstile-150x150.png" />
+    <meta name="msapplication-TileColor" content="#0A0A0A" />
+
+    <meta name="theme-color" content="#fff" />
+    <!-- Resolve the theme before first paint so the page never flashes light
+         and one-shot detectors (e.g. Dark Reader) see the real theme.
+         Keep in sync with ThemeProvider and THEME_STORAGE_KEYS.mode. -->
+    <script>
+      ;(function () {
+        var theme = 'system'
+        try {
+          theme = localStorage.getItem('adtyai:theme:v1:mode') || 'system'
+        } catch (e) {}
+        if (theme !== 'dark' && theme !== 'light') {
+          theme = window.matchMedia('(prefers-color-scheme: dark)').matches
+            ? 'dark'
+            : 'light'
+        }
+        document.documentElement.classList.add(theme)
+      })()
+    </script>
+    <!--umami-->
+    <!--Google Analytics-->
+  </head>
+
+  <body>
+    <div id="root" translate="no" class="notranslate"></div>
+  </body>
+</html>

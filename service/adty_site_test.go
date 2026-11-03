@@ -1,0 +1,461 @@
+package service
+
+import (
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/setting/adty_setting"
+	"github.com/shopspring/decimal"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
+)
+
+// 分站（P11）。和钱有关的设置没有内置值（约定 I），测试里设好：d 0.8、下限 0.5、k 上限 3、加赠额外 2 点、试用 $5/$20。
+func prepareSiteDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	db := prepareReferralDB(t)
+	savedReseller := *adty_setting.GetResellerSetting()
+	savedLegal := *adty_setting.GetLegalSetting()
+	t.Cleanup(func() {
+		*adty_setting.GetResellerSetting() = savedReseller
+		*adty_setting.GetLegalSetting() = savedLegal
+		InvalidateAdtySiteCache()
+	})
+	cfg := adty_setting.GetResellerSetting()
+	*cfg = adty_setting.DefaultResellerSetting()
+	cfg.Enabled = true
+	cfg.RootDomains = []string{"sites.example.com"}
+	cfg.CostFactor, cfg.MinCostFactor, cfg.MaxMarkup = new(0.8), new(0.5), new(3.0)
+	cfg.MaxSiteBonusExtra, cfg.TrialGrantMaxUSD, cfg.TrialGrantDailyUSD = new(2.0), new(5.0), new(20.0)
+	cfg.InviteCodeEnabled = true
+	adty_setting.GetLegalSetting().SiteAgreementVersion = 3
+	InvalidateAdtySiteCache()
+	return db
+}
+
+func dec(value string) *decimal.Decimal {
+	d := decimal.RequireFromString(value)
+	return &d
+}
+
+func openActiveSite(t *testing.T, db *gorm.DB, prefix string) (*model.User, *model.AdtySite) {
+	t.Helper()
+	owner := referralUser(t, db, prefix+"-owner")
+	site, err := OpenAdtySite(owner.Id, prefix, model.AdtySiteOpenedByAdmin, AdtySitePreset{})
+	require.NoError(t, err)
+	return owner, site
+}
+
+func siteCustomer(t *testing.T, db *gorm.DB, site *model.AdtySite, name string) *model.User {
+	t.Helper()
+	user := referralUser(t, db, name)
+	require.NoError(t, model.AdtySetUserSiteTx(db, user.Id, site.Id))
+	require.NoError(t, db.Create(&model.AdtySiteCustomer{UserId: user.Id, SiteId: site.Id, JoinedAt: time.Now().Unix()}).Error)
+	user.SiteId = site.Id
+	return user
+}
+
+func TestAdtyResellerSettingDefaults(t *testing.T) {
+	cfg := adty_setting.DefaultResellerSetting()
+	assert.False(t, cfg.Enabled)
+	assert.Nil(t, cfg.CostFactor, "no built-in cost factor")
+	assert.Nil(t, cfg.MinCostFactor)
+	assert.Nil(t, cfg.MaxMarkup)
+	assert.Nil(t, cfg.MaxSiteBonusExtra)
+	assert.Nil(t, cfg.TrialGrantMaxUSD)
+	assert.Nil(t, cfg.TrialGrantDailyUSD)
+	assert.Equal(t, adty_setting.ResellerUnknownHostMain, cfg.UnknownHostMode)
+	assert.Equal(t, 24, cfg.MarkupIncreaseDelayHours)
+	assert.Equal(t, 4, cfg.SettleHour)
+	assert.Equal(t, 7, cfg.FreezeDays)
+	assert.Equal(t, 7, cfg.CloseNoticeDays)
+	assert.True(t, cfg.SiteLoginOnly)
+	assert.True(t, cfg.SelfUseCheckEnabled)
+	assert.True(t, cfg.MigrationCheckEnabled)
+	assert.False(t, cfg.CustomDomainEnabled)
+	assert.False(t, cfg.SenderDomainEnabled)
+	assert.False(t, cfg.InviteCodeEnabled)
+	assert.Equal(t, 30, cfg.FingerprintWindowDays)
+	assert.Equal(t, 20, cfg.CustomerLookupPerHour)
+	assert.Equal(t, 2, cfg.MaxCustomDomainsPerSite)
+	assert.Equal(t, 3, cfg.CustomDomainCreatesPerHour)
+	assert.Contains(t, cfg.ReservedSubdomains, "www")
+	assert.Equal(t, "masked", cfg.Visibility["customer_email"])
+}
+
+func TestOpenSiteRequiresSettings(t *testing.T) {
+	db := prepareSiteDB(t)
+	owner := referralUser(t, db, "needs-settings")
+	adty_setting.GetResellerSetting().CostFactor = nil
+	_, err := OpenAdtySite(owner.Id, "needs", model.AdtySiteOpenedByAdmin, AdtySitePreset{})
+	assert.ErrorIs(t, err, ErrAdtySiteDisabled)
+
+	cases := []struct {
+		name    string
+		mutate  func(s *adty_setting.ResellerSetting)
+		resend  bool
+		wantErr bool
+	}{
+		{"enabled without money settings", func(s *adty_setting.ResellerSetting) { s.MaxMarkup = nil }, false, true},
+		{"enabled without root domain", func(s *adty_setting.ResellerSetting) { s.RootDomains = nil }, false, true},
+		{"cost factor above 1", func(s *adty_setting.ResellerSetting) { s.CostFactor = new(1.2) }, false, true},
+		{"cost factor below minimum", func(s *adty_setting.ResellerSetting) { s.CostFactor = new(0.4) }, false, true},
+		{"markup limit below 1", func(s *adty_setting.ResellerSetting) { s.MaxMarkup = new(0.9) }, false, true},
+		{"custom domains without Cloudflare", func(s *adty_setting.ResellerSetting) { s.CustomDomainEnabled = true }, false, true},
+		{"custom domains with Cloudflare", func(s *adty_setting.ResellerSetting) {
+			s.CustomDomainEnabled, s.CloudflareApiToken, s.CloudflareZoneId, s.CnameTarget = true, "tok", "zone", "customers.sites.example.com"
+		}, false, false},
+		{"sender domains without Resend key", func(s *adty_setting.ResellerSetting) { s.SenderDomainEnabled = true }, false, true},
+		{"sender domains with Resend key", func(s *adty_setting.ResellerSetting) { s.SenderDomainEnabled = true }, true, false},
+		{"complete", func(s *adty_setting.ResellerSetting) {}, false, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := adty_setting.DefaultResellerSetting()
+			s.Enabled, s.RootDomains = true, []string{"sites.example.com"}
+			s.CostFactor, s.MinCostFactor, s.MaxMarkup = new(0.8), new(0.5), new(3.0)
+			s.MaxSiteBonusExtra, s.TrialGrantMaxUSD, s.TrialGrantDailyUSD = new(0.0), new(0.0), new(0.0)
+			tc.mutate(&s)
+			err := adty_setting.ValidateResellerSetting(&s, tc.resend)
+			if tc.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestSubdomainRules(t *testing.T) {
+	db := prepareSiteDB(t)
+	_, _ = openActiveSite(t, db, "taken")
+	for _, tc := range []struct {
+		subdomain string
+		want      error
+	}{
+		{"www", ErrAdtySiteSubdomainUsed},
+		{"API", ErrAdtySiteSubdomainUsed},
+		{"taken", ErrAdtySiteSubdomainUsed},
+		{"-dash", ErrAdtySiteSubdomainBad},
+		{"dash-", ErrAdtySiteSubdomainBad},
+		{"under_score", ErrAdtySiteSubdomainBad},
+		{"dot.ted", ErrAdtySiteSubdomainBad},
+		{"", ErrAdtySiteSubdomainBad},
+		{"a234567890123456789012345678901234567890123456789012345678901234", ErrAdtySiteSubdomainBad},
+		{"  Good-Name1 ", nil},
+	} {
+		owner := referralUser(t, db, "sub-"+time.Now().Format("150405.000000000"))
+		site, err := OpenAdtySite(owner.Id, tc.subdomain, model.AdtySiteOpenedByAdmin, AdtySitePreset{})
+		if tc.want != nil {
+			assert.ErrorIs(t, err, tc.want, tc.subdomain)
+			continue
+		}
+		require.NoError(t, err, tc.subdomain)
+		assert.Equal(t, "good-name1", site.Subdomain)
+	}
+}
+
+func TestOpenSiteByApplyThenApprove(t *testing.T) {
+	db := prepareSiteDB(t)
+	owner := referralUser(t, db, "applicant")
+	_, err := ApplyAdtySite(owner.Id, "applied", "tg @me", "2", "")
+	assert.ErrorIs(t, err, ErrAdtySiteAgreement, "an old agreement version is rejected")
+
+	site, err := ApplyAdtySite(owner.Id, "applied", "tg @me", "3", "")
+	require.NoError(t, err)
+	assert.Equal(t, model.AdtySiteStatusPending, site.Status)
+	assert.Equal(t, model.AdtySiteOpenedByApply, site.OpenedBy)
+	assert.Equal(t, "3", site.AgreementVer)
+	assert.Positive(t, site.AgreementAt)
+	_, err = ApplyAdtySite(owner.Id, "second", "", "3", "")
+	assert.ErrorIs(t, err, ErrAdtySiteAlreadyOwner, "a pending application counts as a site")
+
+	approved, err := ReviewAdtySiteApplication(site.Id, 1, true, dec("0.7"), dec("2"), "ok")
+	require.NoError(t, err)
+	assert.Equal(t, model.AdtySiteStatusActive, approved.Status)
+	assert.True(t, approved.CostFactor.Equal(decimal.RequireFromString("0.7")))
+	assert.True(t, approved.MaxMarkup.Equal(decimal.NewFromInt(2)))
+	_, err = ReviewAdtySiteApplication(site.Id, 1, true, nil, nil, "")
+	assert.ErrorIs(t, err, ErrAdtySiteStatus)
+
+	other := referralUser(t, db, "rejected-applicant")
+	rejected, err := ApplyAdtySite(other.Id, "rejected", "", "3", "")
+	require.NoError(t, err)
+	rejected, err = ReviewAdtySiteApplication(rejected.Id, 1, false, nil, nil, "no")
+	require.NoError(t, err)
+	assert.Equal(t, model.AdtySiteStatusClosed, rejected.Status)
+	_, err = ApplyAdtySite(other.Id, "rejected-again", "", "3", "")
+	assert.NoError(t, err, "a rejected applicant can apply again")
+}
+
+func TestOpenSiteByAdmin(t *testing.T) {
+	db := prepareSiteDB(t)
+	owner := referralUser(t, db, "admin-opened")
+	_, err := OpenAdtySite(owner.Id, "low", model.AdtySiteOpenedByAdmin, AdtySitePreset{CostFactor: dec("0.4")})
+	assert.Error(t, err, "below min_cost_factor")
+	_, err = OpenAdtySite(owner.Id, "high", model.AdtySiteOpenedByAdmin, AdtySitePreset{MaxMarkup: dec("5")})
+	assert.Error(t, err, "above max_markup")
+
+	site, err := OpenAdtySite(owner.Id, "admin-site", model.AdtySiteOpenedByAdmin, AdtySitePreset{CostFactor: dec("0.6"), OperatorId: 9})
+	require.NoError(t, err)
+	assert.Equal(t, model.AdtySiteStatusActive, site.Status)
+	assert.Equal(t, "sites.example.com", site.RootDomain)
+	var audits []model.AdtySiteAudit
+	require.NoError(t, db.Where("site_id = ?", site.Id).Find(&audits).Error)
+	require.Len(t, audits, 1)
+	assert.Equal(t, "open", audits[0].Action)
+	assert.Equal(t, 9, audits[0].OperatorId)
+	assert.Equal(t, site.Id, AdtySiteById(site.Id).Id, "the cache sees the new site")
+}
+
+func TestOpenSiteByInviteCodeAppliesPreset(t *testing.T) {
+	db := prepareSiteDB(t)
+	code := &model.AdtySiteInviteCode{MaxUses: 2, CostFactor: dec("0.65"), MaxMarkup: dec("2.5")}
+	require.NoError(t, SaveAdtySiteInviteCode(code))
+	require.Len(t, code.Code, 12)
+
+	owner := referralUser(t, db, "invited")
+	site, err := ApplyAdtySite(owner.Id, "invited", "", "3", " "+code.Code+" ")
+	require.NoError(t, err)
+	assert.Equal(t, model.AdtySiteStatusActive, site.Status)
+	assert.Equal(t, model.AdtySiteOpenedByInvite, site.OpenedBy)
+	assert.True(t, site.CostFactor.Equal(decimal.RequireFromString("0.65")))
+	assert.True(t, site.MaxMarkup.Equal(decimal.RequireFromString("2.5")))
+	var stored model.AdtySiteInviteCode
+	require.NoError(t, db.First(&stored, code.Id).Error)
+	assert.Equal(t, 1, stored.UsedCount)
+
+	_, err = ApplyAdtySite(referralUser(t, db, "bad-code").Id, "bad-code", "", "3", "NOPE")
+	assert.ErrorIs(t, err, ErrAdtySiteInviteInvalid)
+	expired := &model.AdtySiteInviteCode{ExpireAt: time.Now().Unix() - 10}
+	require.NoError(t, SaveAdtySiteInviteCode(expired))
+	_, err = ApplyAdtySite(referralUser(t, db, "expired-code").Id, "expired-code", "", "3", expired.Code)
+	assert.ErrorIs(t, err, ErrAdtySiteInviteInvalid)
+
+	adty_setting.GetResellerSetting().InviteCodeEnabled = false
+	_, err = ApplyAdtySite(referralUser(t, db, "codes-off").Id, "codes-off", "", "3", code.Code)
+	assert.ErrorIs(t, err, ErrAdtySiteInviteOff)
+}
+
+func TestInviteCodeConcurrentUseRespectsMax(t *testing.T) {
+	db := prepareSiteDB(t)
+	code := &model.AdtySiteInviteCode{MaxUses: 3}
+	require.NoError(t, SaveAdtySiteInviteCode(code))
+	owners := make([]*model.User, 10)
+	for i := range owners {
+		owners[i] = referralUser(t, db, "race-"+string(rune('a'+i)))
+	}
+	var opened atomic.Int32
+	var wg sync.WaitGroup
+	for i, owner := range owners {
+		wg.Go(func() {
+			if _, err := ApplyAdtySite(owner.Id, "race-"+string(rune('a'+i)), "", "3", code.Code); err == nil {
+				opened.Add(1)
+			}
+		})
+	}
+	wg.Wait()
+	assert.EqualValues(t, 3, opened.Load())
+	var stored model.AdtySiteInviteCode
+	require.NoError(t, db.First(&stored, code.Id).Error)
+	assert.Equal(t, 3, stored.UsedCount)
+}
+
+func TestSiteCustomerCannotOpenSite(t *testing.T) {
+	db := prepareSiteDB(t)
+	_, site := openActiveSite(t, db, "home")
+	customer := siteCustomer(t, db, site, "home-customer")
+	_, err := OpenAdtySite(customer.Id, "mine", model.AdtySiteOpenedByAdmin, AdtySitePreset{})
+	assert.ErrorIs(t, err, ErrAdtySiteCustomer)
+	_, err = ApplyAdtySite(customer.Id, "mine", "", "3", "")
+	assert.ErrorIs(t, err, ErrAdtySiteCustomer)
+}
+
+func TestOpenSiteCreatesAffiliateStop(t *testing.T) {
+	db := prepareSiteDB(t)
+	owner := referralUser(t, db, "fresh-owner")
+	_, err := OpenAdtySite(owner.Id, "fresh", model.AdtySiteOpenedByAdmin, AdtySitePreset{})
+	require.NoError(t, err)
+	affiliate, err := Referral.EnsureAffiliate(owner.Id)
+	require.NoError(t, err)
+	assert.Positive(t, affiliate.SiteOwnerSince)
+	_, err = Referral.AffiliateByCode(affiliate.InviteCode)
+	assert.ErrorIs(t, err, ErrReferralCodeInvalid)
+}
+
+func TestSiteCustomerCannotBecomeAffiliate(t *testing.T) {
+	db := prepareSiteDB(t)
+	_, site := openActiveSite(t, db, "no-aff")
+	customer := siteCustomer(t, db, site, "no-aff-customer")
+	_, err := Referral.EnsureAffiliate(customer.Id)
+	assert.ErrorIs(t, err, ErrReferralSiteCustomer)
+
+	code, err := newInviteCode()
+	require.NoError(t, err)
+	row := model.ReferralAffiliate{UserId: customer.Id, InviteCode: code, Status: model.ReferralAffiliateStatusApproved, AcquisitionEnabled: true}
+	require.NoError(t, db.Create(&row).Error)
+	_, err = Referral.AffiliateByCode(code)
+	assert.ErrorIs(t, err, ErrReferralCodeInvalid)
+	main := referralUser(t, db, "no-aff-main")
+	require.NoError(t, db.Create(&model.ReferralBinding{InviteeUserId: main.Id, AffiliateId: row.Id}).Error)
+	affiliateID, rate := adtyReferralSnapshot(main.Id)
+	assert.Zero(t, affiliateID)
+	assert.True(t, rate.IsZero())
+}
+
+func TestClosingSiteBlocksWithdrawal(t *testing.T) {
+	db := prepareSiteDB(t)
+	owner, site := openActiveSite(t, db, "close-wd")
+	affiliate, err := Referral.EnsureAffiliate(owner.Id)
+	require.NoError(t, err)
+	require.NoError(t, db.Model(&model.ReferralCommissionAccount{}).Where("affiliate_id = ?", affiliate.Id).Update("available_amount", 40).Error)
+	require.NoError(t, db.Model(&model.AdtySite{}).Where("id = ?", site.Id).Update("status", model.AdtySiteStatusClosing).Error)
+	_, err = Referral.CreateWithdrawal(ReferralWithdrawalCreateInput{UserId: owner.Id, Amount: usd("10"), AccountType: model.ReferralWithdrawToBalance, IdempotencyKey: "close-wd"})
+	assert.Error(t, err)
+	assert.InDelta(t, 40, account(t, db, affiliate.Id).AvailableAmount, 1e-9)
+
+	referralSetting().Enabled = false
+	require.NoError(t, db.Model(&model.AdtySite{}).Where("id = ?", site.Id).Update("status", model.AdtySiteStatusClosed).Error)
+	paid, err := Referral.CreateWithdrawal(ReferralWithdrawalCreateInput{UserId: owner.Id, Amount: usd("10"), AccountType: model.ReferralWithdrawToBalance, IdempotencyKey: "close-wd-off"})
+	require.NoError(t, err)
+	assert.Equal(t, model.ReferralWithdrawalStatusPaid, paid.Status)
+	assert.InDelta(t, 30, account(t, db, affiliate.Id).AvailableAmount, 1e-9)
+
+	_, err = Referral.CreateWithdrawal(ReferralWithdrawalCreateInput{UserId: owner.Id, Amount: usd("25"), AccountType: model.ReferralWithdrawToAlipay,
+		AccountName: "A", QRImageURL: "javascript:alert(1)", IdempotencyKey: "qr", ExpectedCNYRate: decimal.NewFromInt(7)})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "QR")
+}
+
+func TestOpenSiteMarksAffiliate(t *testing.T) {
+	db := prepareSiteDB(t)
+	owner := referralUser(t, db, "affiliate-owner")
+	affiliate, err := Referral.EnsureAffiliate(owner.Id)
+	require.NoError(t, err)
+	require.Zero(t, affiliate.SiteOwnerSince)
+
+	pending, err := ApplyAdtySite(owner.Id, "aff", "", "3", "")
+	require.NoError(t, err)
+	var stored model.ReferralAffiliate
+	require.NoError(t, db.First(&stored, affiliate.Id).Error)
+	assert.Zero(t, stored.SiteOwnerSince, "a pending application does not stop commissions yet")
+
+	_, err = ReviewAdtySiteApplication(pending.Id, 1, true, nil, nil, "")
+	require.NoError(t, err)
+	require.NoError(t, db.First(&stored, affiliate.Id).Error)
+	assert.Positive(t, stored.SiteOwnerSince)
+	_, err = Referral.AffiliateByCode(affiliate.InviteCode)
+	assert.ErrorIs(t, err, ErrReferralCodeInvalid, "the referral link stops counting")
+}
+
+func TestNoCommissionForSiteCustomer(t *testing.T) {
+	db := prepareSiteDB(t)
+	affiliate, invitee := inviterAndInvitee(t, db, "site-cust")
+	_, site := openActiveSite(t, db, "cust-site")
+	require.NoError(t, model.AdtySetUserSiteTx(db, invitee.Id, site.Id))
+	affiliateID, rate := adtyReferralSnapshot(invitee.Id)
+	assert.Zero(t, affiliateID)
+	assert.True(t, rate.IsZero())
+
+	require.NoError(t, model.AdtySetUserSiteTx(db, invitee.Id, 0))
+	affiliateID, _ = adtyReferralSnapshot(invitee.Id)
+	assert.Equal(t, affiliate.Id, affiliateID, "main-site customers still earn commission")
+}
+
+func TestCloseSiteMovesCustomersToMain(t *testing.T) {
+	db := prepareSiteDB(t)
+	owner, site := openActiveSite(t, db, "closing")
+	customer := siteCustomer(t, db, site, "closing-customer")
+	require.NoError(t, db.Create(&model.AdtySitePrice{SiteId: site.Id, Markup: decimal.RequireFromString("1.5"), Version: 1}).Error)
+
+	_, err := RequestAdtySiteClose(owner.Id, "retiring")
+	require.NoError(t, err)
+	before := time.Now().Unix()
+	scheduled, err := ScheduleAdtySiteClose(site.Id, 1, AdtySiteClosePlan{Reason: "owner asked"})
+	require.NoError(t, err)
+	assert.Equal(t, model.AdtySiteStatusClosing, scheduled.Status)
+	assert.GreaterOrEqual(t, scheduled.CloseExecuteAt, before+7*86400, "customers get close_notice_days of notice")
+
+	var stored model.User
+	require.NoError(t, RunAdtySiteCloseOnce(time.Now().Unix()))
+	require.NoError(t, db.First(&stored, customer.Id).Error)
+	assert.Equal(t, site.Id, stored.SiteId, "nothing moves before the notice period ends")
+
+	require.NoError(t, RunAdtySiteCloseOnce(scheduled.CloseExecuteAt))
+	require.NoError(t, db.First(&stored, customer.Id).Error)
+	assert.Zero(t, stored.SiteId)
+	var rows int64
+	require.NoError(t, db.Model(&model.AdtySiteCustomer{}).Where("user_id = ?", customer.Id).Count(&rows).Error)
+	assert.Zero(t, rows)
+	closed, err := GetAdtySite(site.Id)
+	require.NoError(t, err)
+	assert.Equal(t, model.AdtySiteStatusClosed, closed.Status)
+	assert.Equal(t, "closing", closed.Subdomain, "the subdomain stays reserved for redirects")
+
+	_, err = OpenAdtySite(owner.Id, "reopened", model.AdtySiteOpenedByAdmin, AdtySitePreset{})
+	assert.NoError(t, err, "a former owner may open a new site")
+}
+
+func TestCloseSiteTransferKeepsPriceNotHigher(t *testing.T) {
+	db := prepareSiteDB(t)
+	_, from := openActiveSite(t, db, "from")
+	_, to := openActiveSite(t, db, "to")
+	cheap := siteCustomer(t, db, from, "cheap-customer")
+	special := siteCustomer(t, db, from, "special-customer")
+	require.NoError(t, db.Create(&[]model.AdtySitePrice{
+		{SiteId: from.Id, Markup: decimal.RequireFromString("1.2"), Version: 1},
+		{SiteId: from.Id, UserId: special.Id, Markup: decimal.RequireFromString("2.5"), Version: 1},
+		{SiteId: to.Id, Markup: decimal.RequireFromString("2"), Version: 1},
+		{SiteId: to.Id, Group: "vip", Markup: decimal.RequireFromString("1.1"), Version: 1},
+	}).Error)
+
+	_, err := ScheduleAdtySiteClose(from.Id, 1, AdtySiteClosePlan{TransferTo: from.Id})
+	assert.ErrorIs(t, err, ErrAdtySiteTransfer)
+	_, err = ScheduleAdtySiteClose(from.Id, 1, AdtySiteClosePlan{TransferTo: to.Id, Immediate: true})
+	require.NoError(t, err)
+
+	var stored model.User
+	require.NoError(t, db.First(&stored, cheap.Id).Error)
+	assert.Equal(t, to.Id, stored.SiteId)
+	var prices []model.AdtySitePrice
+	require.NoError(t, db.Where("site_id = ?", to.Id).Find(&prices).Error)
+	for _, tc := range []struct {
+		user  int
+		group string
+		want  string
+	}{
+		{cheap.Id, "default", "1.2"}, // new default 2 > old 1.2: keep 1.2
+		{cheap.Id, "vip", "1.1"},     // new vip 1.1 < old 1.2: the new site's lower price applies
+		{special.Id, "default", "2"}, // new 2 < old 2.5
+		{special.Id, "vip", "1.1"},
+	} {
+		got := ResolveAdtySiteMarkup(prices, tc.user, tc.group)
+		assert.True(t, got.Equal(decimal.RequireFromString(tc.want)), "user %d group %s: got %s want %s", tc.user, tc.group, got, tc.want)
+	}
+	var customer model.AdtySiteCustomer
+	require.NoError(t, db.First(&customer, cheap.Id).Error)
+	assert.Equal(t, to.Id, customer.SiteId)
+}
+
+func TestForcedCloseClawsBackEarnings(t *testing.T) {
+	db := prepareSiteDB(t)
+	_, site := openActiveSite(t, db, "forced")
+	var clawed []int
+	saved := AdtySiteClawBackTx
+	AdtySiteClawBackTx = func(tx *gorm.DB, s *model.AdtySite, _ int) error {
+		clawed = append(clawed, s.Id)
+		return nil
+	}
+	t.Cleanup(func() { AdtySiteClawBackTx = saved })
+	_, err := ScheduleAdtySiteClose(site.Id, 1, AdtySiteClosePlan{ClawBack: true, Immediate: true, Reason: "abuse"})
+	require.NoError(t, err)
+	assert.Equal(t, []int{site.Id}, clawed)
+	closed, err := GetAdtySite(site.Id)
+	require.NoError(t, err)
+	assert.Equal(t, model.AdtySiteStatusClosed, closed.Status)
+	assert.True(t, closed.CloseClawBack)
+}
