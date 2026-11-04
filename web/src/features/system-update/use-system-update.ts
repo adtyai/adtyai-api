@@ -67,11 +67,10 @@ export function getUpdateErrorMessage(
 
 export const systemUpdateQueryOptions = queryOptions({
   queryKey: SYSTEM_UPDATE_QUERY_KEY,
-  queryFn: async ({ signal, client }): Promise<SystemUpdateSnapshot> => {
-    // Refresh the running server version too, so an open tab notices upgrades.
-    void client
-      .fetchQuery({ ...statusQueryOptions, meta: { errorToast: false } })
-      .catch(() => undefined)
+  queryFn: async ({ signal }): Promise<SystemUpdateSnapshot> => {
+    // Compare the release against the status the shell already loaded.
+    // Do not refetch it here: that request redraws the admin shell on the
+    // update check's own timer.
     let snapshot: SystemUpdateSnapshot
     try {
       const release = await fetchLatestSystemRelease(signal)

@@ -64,6 +64,10 @@ export type DataTableViewProps<TData> = {
   splitHeader?: boolean
   splitHeaderScrollClassName?: string
   bodyContainerClassName?: string
+  bodyContainerProps?: Omit<
+    React.ComponentProps<'div'>,
+    'className' | 'children'
+  >
   containerClassName?: string
   containerProps?: Omit<React.ComponentProps<'div'>, 'className' | 'children'>
   tableContainerClassName?: string

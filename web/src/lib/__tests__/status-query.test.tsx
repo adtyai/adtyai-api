@@ -262,4 +262,21 @@ describe('module guard status freshness', () => {
       })
     }
   )
+
+  test('does not rewrite the status snapshot when the payload is unchanged', async () => {
+    const payload = { system_name: 'same' }
+    window.localStorage.setItem(
+      'status',
+      JSON.stringify(payload)
+    )
+    let writes = 0
+    const original = window.localStorage.setItem.bind(window.localStorage)
+    window.localStorage.setItem = (key, value) => {
+      if (key === 'status') writes += 1
+      original(key, value)
+    }
+    stubStatusEndpoint('same')
+    await ensureStatus(createQueryClient())
+    expect(writes).toBe(0)
+  })
 })

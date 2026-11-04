@@ -41,6 +41,7 @@ import {
   Megaphone,
   Store,
 } from 'lucide-react'
+import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import type { SidebarData } from '@/components/layout/types'
@@ -64,7 +65,7 @@ export function useSidebarData(): SidebarData {
     (state) => state.auth.user?.adty_site_owner === true
   )
 
-  return {
+  return useMemo(() => ({
     navGroups: [
       {
         id: 'general',
@@ -233,5 +234,5 @@ export function useSidebarData(): SidebarData {
         ],
       },
     ],
-  }
+  }), [t, referralBadge, isSiteOwner])
 }

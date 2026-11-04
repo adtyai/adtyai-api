@@ -38,6 +38,7 @@ This is an AI API gateway/proxy built with Go. It aggregates 40+ upstream AI pro
 - Library: `i18next` + `react-i18next` + `i18next-browser-languagedetector`
 - Languages: en (base), zh (fallback), zh-TW, fr, ru, ja, vi
 - Translation files: `web/src/i18n/locales/{lang}.json` — flat JSON, keys are English source strings
+- Load one interface language at a time. `whenInterfaceLanguageReady()` loads the stored or browser language before the first paint; `changeLanguage` loads that pack before switching and writes `i18nextLng`. Do not import all seven locale files into the first bundle.
 - Usage: `useTranslation()` hook, call `t('English key')` in components
 - CLI tools: `bun run i18n:sync` (from `web/`)
 

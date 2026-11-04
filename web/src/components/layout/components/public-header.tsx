@@ -350,30 +350,19 @@ export function PublicHeader(props: PublicHeaderProps) {
         </div>
       </header>
 
-      {/* Mobile full-screen overlay */}
-      <div
-        className={cn(
-          'bg-background/98 fixed inset-0 z-40 backdrop-blur-2xl transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] lg:pointer-events-none lg:hidden',
-          mobileOpen
-            ? 'pointer-events-auto opacity-100'
-            : 'pointer-events-none opacity-0'
-        )}
-      >
+      {/* Mobile menu. Absent unless open, so a closed menu cannot cover
+          the page or keep a full-screen blur on the main thread. */}
+      {mobileOpen && (
+      <div className='bg-background/98 fixed inset-0 z-40 lg:hidden'>
         <div className='flex h-full flex-col justify-between px-8 pt-20 pb-10'>
           <nav className='flex flex-col gap-1'>
-            {links.map((link, i) => {
+            {links.map((link) => {
               const isActive = pathname === link.href
               const linkClassName = cn(
-                'flex items-center gap-3 py-3 text-base font-medium tracking-tight transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)]',
-                mobileOpen
-                  ? 'translate-y-0 opacity-100'
-                  : 'translate-y-4 opacity-0',
+                'flex items-center gap-3 py-3 text-base font-medium tracking-tight',
                 isActive ? 'text-foreground' : 'text-muted-foreground',
                 link.disabled && 'pointer-events-none opacity-50'
               )
-              const transitionStyle = {
-                transitionDelay: mobileOpen ? `${100 + i * 50}ms` : '0ms',
-              }
               if (link.external) {
                 return (
                   <a
@@ -385,7 +374,6 @@ export function PublicHeader(props: PublicHeaderProps) {
                     tabIndex={link.disabled ? -1 : undefined}
                     onClick={(event) => handleNavLinkClick(event, link, true)}
                     className={linkClassName}
-                    style={transitionStyle}
                   >
                     {t(link.title)}
                   </a>
@@ -398,7 +386,6 @@ export function PublicHeader(props: PublicHeaderProps) {
                   disabled={link.disabled}
                   onClick={(event) => handleNavLinkClick(event, link, true)}
                   className={linkClassName}
-                  style={transitionStyle}
                 >
                   {t(link.title)}
                 </Link>
@@ -406,15 +393,7 @@ export function PublicHeader(props: PublicHeaderProps) {
             })}
           </nav>
 
-          <div
-            className={cn(
-              'flex flex-col gap-3 transition-all duration-500',
-              mobileOpen
-                ? 'translate-y-0 opacity-100'
-                : 'translate-y-4 opacity-0'
-            )}
-            style={{ transitionDelay: mobileOpen ? '250ms' : '0ms' }}
-          >
+          <div className='flex flex-col gap-3'>
             {showAuthButtons && (
               <Link
                 to={isAuthenticated ? '/dashboard' : '/sign-in'}
@@ -427,6 +406,7 @@ export function PublicHeader(props: PublicHeaderProps) {
           </div>
         </div>
       </div>
+      )}
 
       <Dialog
         open={!!authPromptTarget}

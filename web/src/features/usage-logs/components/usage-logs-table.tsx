@@ -18,8 +18,9 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
 import { getRouteApi } from '@tanstack/react-router'
-import type { ColumnDef } from '@tanstack/react-table'
-import { useCallback } from 'react'
+import type { ColumnDef, Row } from '@tanstack/react-table'
+import { useVirtualizer } from '@tanstack/react-virtual'
+import { useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import {
@@ -38,6 +39,7 @@ import {
   LOG_TYPE_ENUM,
 } from '../constants'
 import { useColumnsByCategory } from '../lib/columns'
+import { visibleRowRange } from '../lib/visible-rows'
 import { parseLogOther } from '../lib/format'
 import { fetchLogsByCategory } from '../lib/utils'
 import type { LogCategory } from '../types'
@@ -101,7 +103,7 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
   } = useTableUrlState({
     search: route.useSearch(),
     navigate: route.useNavigate(),
-    pagination: { defaultPage: 1, defaultPageSize: isMobile ? 20 : 100 },
+    pagination: { defaultPage: 1, defaultPageSize: 20 },
     globalFilter: { enabled: false },
     columnFilters: [
       {
@@ -191,6 +193,38 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
   })
 
   const isCommon = logCategory === 'common'
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const rowHeight = isCommon ? 52 : 64
+  const reservedHeight = 520
+  const rowVirtualizer = useVirtualizer({
+    count: table.getRowModel().rows.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => rowHeight,
+    overscan: 6,
+    initialRect: { width: 0, height: reservedHeight },
+    measureElement: (element) => element.getBoundingClientRect().height,
+  })
+  const viewportHeight = scrollRef.current?.clientHeight ?? 0
+  const measured = rowVirtualizer.getVirtualItems()
+  const fallback = visibleRowRange(
+    table.getRowModel().rows.length,
+    rowHeight,
+    viewportHeight,
+    reservedHeight
+  )
+  const virtualRows =
+    measured.length > 0
+      ? measured
+      : Array.from({ length: fallback.end - fallback.start }, (_, index) => ({
+          index: fallback.start + index,
+          start: (fallback.start + index) * rowHeight,
+          end: (fallback.start + index + 1) * rowHeight,
+          key: fallback.start + index,
+        }))
+  const paddingTop = virtualRows[0]?.start ?? 0
+  const paddingBottom =
+    Math.max(rowVirtualizer.getTotalSize(), table.getRowModel().rows.length * rowHeight) -
+    (virtualRows.at(-1)?.end ?? 0)
 
   return (
     <DataTablePage
@@ -222,6 +256,18 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
           <TaskLogsFilterBar table={table} logCategory={logCategory} />
         )
       }
+      bodyContainerClassName='max-h-[calc(100svh-16rem)]'
+      bodyContainerProps={{
+        ref: scrollRef,
+        style: {
+          '--log-pad-top': `${paddingTop}px`,
+          '--log-pad-bottom': `${paddingBottom}px`,
+        } as React.CSSProperties,
+      }}
+      rows={virtualRows
+        .map((item) => table.getRowModel().rows[item.index])
+        .filter((row): row is Row<Record<string, unknown>> => row != null)}
+      tableBodyClassName='[border-spacing:0] before:table-row before:h-[var(--log-pad-top)] after:table-row after:h-[var(--log-pad-bottom)]'
       renderRow={(row) => {
         const logType = (row.original as Record<string, unknown>).type as
           | number
@@ -241,6 +287,8 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
           <DataTableRow
             key={row.id}
             row={row}
+            data-index={row.index}
+            measureRef={rowVirtualizer.measureElement}
             className={cn('transition-colors', tintClass)}
             getColumnClassName={getColumnClassName}
             cellRenderColumns={table.options.columns}

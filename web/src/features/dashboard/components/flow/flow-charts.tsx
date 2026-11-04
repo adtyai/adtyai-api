@@ -474,22 +474,14 @@ export function FlowCharts(props: FlowChartsProps) {
     [chartTitle, flowData.flow, t, textColor]
   )
   const chartTheme = resolvedTheme === 'dark' ? 'dark' : 'light'
-  const chartKey = [
-    metric,
-    topNodeLimit,
-    overflowMode,
-    flowRole,
-    activeFlowNode ? flowNodeFilterKey(activeFlowNode) : '',
-    activeFlowLink
-      ? `${activeFlowLink.source}\u0000${activeFlowLink.target}`
-      : '',
-    selectedNodes.map(flowNodeFilterKey).join(','),
-    selectedUsers.join(','),
-    visibleStages.join(','),
-    maskSensitive ? 'masked' : 'plain',
-    flowRows?.length ?? 0,
-    resolvedTheme,
-  ].join('-')
+  const chartSpec = useMemo(
+    () => ({
+      ...flowSpec,
+      theme: chartTheme,
+      background: 'transparent',
+    }),
+    [chartTheme, flowSpec]
+  )
   const displayState = flowDisplayState({
     isLoading,
     isError,
@@ -500,14 +492,14 @@ export function FlowCharts(props: FlowChartsProps) {
     flowError instanceof Error
       ? flowError.message
       : t('Please try again later.')
+  useEffect(() => {
+    // Filters change the spec without remounting the chart. Push the new
+    // spec into the existing instance instead of destroying it.
+    chartInstanceRef.current?.updateSpec(chartSpec)
+  }, [chartSpec])
   let chartContent = (
     <VChart
-      key={`flow-${chartKey}`}
-      spec={{
-        ...flowSpec,
-        theme: chartTheme,
-        background: 'transparent',
-      }}
+      spec={chartSpec}
       option={VCHART_OPTION}
       onReady={(instance: IVChart) => {
         chartInstanceRef.current = instance

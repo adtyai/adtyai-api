@@ -46,7 +46,10 @@ export function BalanceChip() {
       const response = requireServerSuccess(await getSelf())
       return Number(response.data?.quota ?? 0)
     },
-    refetchOnWindowFocus: true,
+    // Payment settlement already invalidates this key. Do not refetch on
+    // every tab focus: that redraws the header while the admin is working.
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
     meta: { errorToast: false },
   })
 

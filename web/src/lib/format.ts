@@ -29,6 +29,25 @@ import {
 // Number Formatting
 // ============================================================================
 
+const integerFormats = new Map<string, Intl.NumberFormat>()
+
+function integerFormat(locales?: Intl.LocalesArgument): Intl.NumberFormat {
+  const key = String(locales ?? '')
+  const cached = integerFormats.get(key)
+  if (cached) return cached
+  const format = new Intl.NumberFormat(locales, { maximumFractionDigits: 0 })
+  integerFormats.set(key, format)
+  return format
+}
+
+export function formatInteger(
+  value: number | null | undefined,
+  locales?: Intl.LocalesArgument
+): string {
+  if (value == null || Number.isNaN(value)) return '-'
+  return integerFormat(locales).format(value)
+}
+
 export function formatNumber(
   value: number | null | undefined,
   locales?: Intl.LocalesArgument

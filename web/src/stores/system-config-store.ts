@@ -56,6 +56,24 @@ export const DEFAULT_CURRENCY_CONFIG: CurrencyConfig = {
   customCurrencyExchangeRate: 1,
 }
 
+function sameSystemConfig(current: SystemConfig, next: SystemConfig): boolean {
+  return (
+    current.systemName === next.systemName &&
+    current.logo === next.logo &&
+    current.footerHtml === next.footerHtml &&
+    current.demoSiteEnabled === next.demoSiteEnabled &&
+    current.displayTokenStatEnabled === next.displayTokenStatEnabled &&
+    current.currency.displayInCurrency === next.currency.displayInCurrency &&
+    current.currency.quotaDisplayType === next.currency.quotaDisplayType &&
+    current.currency.quotaPerUnit === next.currency.quotaPerUnit &&
+    current.currency.usdExchangeRate === next.currency.usdExchangeRate &&
+    current.currency.customCurrencySymbol ===
+      next.currency.customCurrencySymbol &&
+    current.currency.customCurrencyExchangeRate ===
+      next.currency.customCurrencyExchangeRate
+  )
+}
+
 interface SystemConfigState {
   config: SystemConfig
   loading: boolean
@@ -80,16 +98,21 @@ export const useSystemConfigStore = create<SystemConfigState>()(
       loading: true,
       loadedLogoUrl: DEFAULT_LOGO,
       setConfig: (newConfig) =>
-        set((state) => ({
-          config: {
+        set((state) => {
+          const currency = {
+            ...state.config.currency,
+            ...newConfig.currency,
+          }
+          const next = {
             ...state.config,
             ...newConfig,
-            currency: {
-              ...state.config.currency,
-              ...(newConfig.currency ?? {}),
-            },
-          },
-        })),
+            currency,
+          }
+          // A status refresh builds a new object even when nothing changed.
+          // Keep the previous one so the header and sidebar do not redraw.
+          if (sameSystemConfig(state.config, next)) return state
+          return { config: next }
+        }),
       setLoadedLogoUrl: (url) => set({ loadedLogoUrl: url }),
       setLoading: (loading) => set({ loading }),
     }),

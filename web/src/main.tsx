@@ -26,6 +26,7 @@ import { applyFaviconToDom } from '@/lib/dom-utils'
 import '@/lib/dayjs'
 import { initializeFrontendCache } from '@/lib/frontend-cache'
 import { createAppQueryClient } from '@/lib/query-client'
+import { whenInterfaceLanguageReady } from '@/i18n/config'
 import { readCachedStatus, statusQueryOptions } from '@/lib/status-query'
 
 import { DirectionProvider } from './context/direction-provider'
@@ -104,6 +105,7 @@ if (!rootElement) {
 })()
 if (!rootElement.innerHTML) {
   const root = ReactDOM.createRoot(rootElement)
+  void whenInterfaceLanguageReady().then(() => {
   root.render(
     <StrictMode>
       <QueryClientProvider client={queryClient}>
@@ -117,4 +119,5 @@ if (!rootElement.innerHTML) {
       </QueryClientProvider>
     </StrictMode>
   )
+  })
 }

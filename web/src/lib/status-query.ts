@@ -117,9 +117,11 @@ export function readCachedStatus(): StatusData | null {
 /** Persist the latest status so the next cold start can render before fetching. */
 function writeCachedStatus(status: StatusData | null): void {
   try {
-    if (typeof window !== 'undefined' && status) {
-      window.localStorage.setItem(STATUS_STORAGE_KEY, JSON.stringify(status))
-    }
+    if (typeof window === 'undefined' || !status) return
+    const next = JSON.stringify(status)
+    // A refresh that returns the same payload must not rewrite storage.
+    if (window.localStorage.getItem(STATUS_STORAGE_KEY) === next) return
+    window.localStorage.setItem(STATUS_STORAGE_KEY, next)
   } catch {
     /* Storage can be unavailable in private mode. */
   }

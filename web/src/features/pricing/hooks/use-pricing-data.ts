@@ -23,6 +23,36 @@ import { useStatus } from '@/hooks/use-status'
 import { requireServerSuccess } from '@/lib/server-error-message'
 
 import { getPricing } from '../api'
+import type { PricingData, PricingModel } from '../types'
+
+let pricedModels: PricingModel[] = []
+let pricedFrom: PricingData | undefined
+
+export function modelsFromPricing(data: PricingData | undefined): PricingModel[] {
+  if (!data?.data) return []
+  if (
+    pricedFrom?.data === data.data &&
+    pricedFrom.vendors === data.vendors &&
+    pricedFrom.group_ratio === data.group_ratio
+  ) {
+    return pricedModels
+  }
+  const groupRatio = data.group_ratio
+  const vendors = new Map(data.vendors?.map((vendor) => [vendor.id, vendor]))
+  pricedModels = data.data.map((model) => {
+    const vendor = model.vendor_id ? vendors.get(model.vendor_id) : undefined
+    return {
+      ...model,
+      key: model.model_name,
+      vendor_name: vendor?.name,
+      vendor_icon: vendor?.icon,
+      vendor_description: vendor?.description,
+      group_ratio: groupRatio,
+    }
+  })
+  pricedFrom = data
+  return pricedModels
+}
 
 export function usePricingData(enabled = true) {
   const { status } = useStatus()
@@ -44,25 +74,7 @@ export function usePricingData(enabled = true) {
     [status?.usd_exchange_rate, priceRate]
   )
 
-  const models = useMemo(() => {
-    if (!data?.data || !data?.vendors) return []
-
-    const vendorMap = new Map(data.vendors.map((v) => [v.id, v]))
-
-    return data.data.map((model) => {
-      const vendor = model.vendor_id
-        ? vendorMap.get(model.vendor_id)
-        : undefined
-      return {
-        ...model,
-        key: model.model_name,
-        vendor_name: vendor?.name,
-        vendor_icon: vendor?.icon,
-        vendor_description: vendor?.description,
-        group_ratio: data.group_ratio,
-      }
-    })
-  }, [data])
+  const models = useMemo(() => modelsFromPricing(data), [data])
 
   return {
     models,

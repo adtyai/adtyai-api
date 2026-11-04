@@ -31,7 +31,10 @@ export function useAdminReferralBadge(): string | undefined {
     queryKey: adminReferralKeys.badges,
     queryFn: getReferralBadges,
     enabled: allowed,
-    refetchInterval: 60_000,
+    // A badge is not worth redrawing the sidebar every minute, and a
+    // hidden tab should not keep asking.
+    refetchInterval: 5 * 60_000,
+    refetchIntervalInBackground: false,
     meta: { errorToast: false },
   })
   const total = query.data?.total ?? 0

@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import type { ColumnDef } from '@tanstack/react-table'
 import { GitBranch, Sparkles, KeyRound } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { GroupBadge } from '@/components/group-badge'
@@ -35,7 +35,6 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import { usePricingData } from '@/features/pricing/hooks/use-pricing-data'
 import {
   normalizeTierLabel,
   parseTaskTiersFromExpr,
@@ -44,12 +43,17 @@ import {
   formatTaskUsageUnitPrice,
   getTaskUsagePriceUnitLabelKey,
 } from '@/features/pricing/lib/dynamic-price'
+import { usePricingData } from '@/features/pricing/hooks/use-pricing-data'
 import { pluginUsageSchema } from '@/features/pricing/lib/plugin-pricing'
 import { taskUsageUnitLabel } from '@/features/pricing/lib/task-price-display'
 import type { BillingUsageSchema } from '@/features/pricing/types'
 import { getUserAvatarFallback, getUserAvatarStyle } from '@/lib/avatar'
 import { formatBillingCurrencyFromUSD } from '@/lib/currency'
-import { formatLogQuota, formatTimestampToDate } from '@/lib/format'
+import {
+  formatInteger,
+  formatLogQuota,
+  formatTimestampToDate,
+} from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { useSystemConfigStore } from '@/stores/system-config-store'
 
@@ -357,6 +361,16 @@ export function useCommonLogsColumns(
 ): ColumnDef<UsageLog>[] {
   const { t } = useTranslation()
   const currency = useSystemConfigStore((state) => state.config.currency)
+  // The price list is shared, but a refresh must not rebuild every column.
+  // Cells read the latest list through a ref.
+  const pricingData = usePricingData()
+  const modelsByName = useMemo(() => {
+    const byName = new Map<string, (typeof pricingData.models)[number]>()
+    for (const model of pricingData.models) byName.set(model.model_name, model)
+    return byName
+  }, [pricingData.models])
+  const modelsByNameRef = useRef(modelsByName)
+  modelsByNameRef.current = modelsByName
   return useMemo(() => {
     const columns: ColumnDef<UsageLog>[] = [
       {
@@ -752,19 +766,18 @@ export function useCommonLogsColumns(
           return (
             <div className='flex flex-col gap-0.5'>
               <span className='font-mono text-xs font-medium tabular-nums'>
-                {promptTokens.toLocaleString()} /{' '}
-                {completionTokens.toLocaleString()}
+                {formatInteger(promptTokens)} / {formatInteger(completionTokens)}
               </span>
               {(cacheReadTokens > 0 || cacheWriteTokens > 0) && (
                 <div className='flex items-center gap-1 text-[11px]'>
                   {cacheReadTokens > 0 && (
                     <span className='text-muted-foreground/60'>
-                      {t('Cache')}↓ {cacheReadTokens.toLocaleString()}
+                      {t('Cache')}↓ {formatInteger(cacheReadTokens)}
                     </span>
                   )}
                   {cacheWriteTokens > 0 && (
                     <span className='text-muted-foreground/60'>
-                      ↑ {cacheWriteTokens.toLocaleString()}
+                      ↑ {formatInteger(cacheWriteTokens)}
                     </span>
                   )}
                 </div>
@@ -816,15 +829,8 @@ export function useCommonLogsColumns(
           const log = row.original
           const other = parseLogOther(log.other)
 
-          const pricingData = usePricingData(
-            log.type === 2 &&
-              other?.is_task === true &&
-              other.billing_mode === 'tiered_expr'
-          )
           const usageSchema = pluginUsageSchema(
-            pricingData.models.find(
-              (model) => model.model_name === log.model_name
-            ),
+            modelsByNameRef.current.get(log.model_name),
             other?.admin_info?.task_plugin?.key
           )
           const segments = buildDetailSegments(

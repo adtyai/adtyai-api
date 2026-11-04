@@ -35,7 +35,8 @@ type DataTableRowProps<TData> = {
   className?: string
   getColumnClassName?: DataTableColumnClassName
   cellRenderColumns?: TanstackTable<TData>['options']['columns']
-} & Omit<React.ComponentProps<typeof TableRow>, 'children'>
+  measureRef?: (element: HTMLTableRowElement | null) => void
+} & Omit<React.ComponentProps<typeof TableRow>, 'children' | 'ref'>
 
 type DataTableRowInnerProps<TData> = DataTableRowProps<TData> & {
   isSelected: boolean
@@ -54,6 +55,7 @@ function DataTableRowInner<TData>({
   getColumnClassName,
   cellRenderColumns,
   visibleColumnIds,
+  measureRef,
   ...rowProps
 }: DataTableRowInnerProps<TData>) {
   // Destructured only to keep them out of `rowProps` (not valid DOM attrs)
@@ -66,6 +68,7 @@ function DataTableRowInner<TData>({
       data-sortable-id={row.id}
       data-state={isSelected ? 'selected' : undefined}
       className={className}
+      ref={measureRef}
       {...rowProps}
     >
       {row.getVisibleCells().map((cell) => {
@@ -105,7 +108,8 @@ const MemoizedDataTableRow = React.memo(DataTableRowInner, (prev, next) => {
     prev.isSelected === next.isSelected &&
     prev.visibleColumnIds === next.visibleColumnIds &&
     prev.getColumnClassName === next.getColumnClassName &&
-    prev.cellRenderColumns === next.cellRenderColumns
+    prev.cellRenderColumns === next.cellRenderColumns &&
+    prev.measureRef === next.measureRef
   )
 }) as typeof DataTableRowInner
 

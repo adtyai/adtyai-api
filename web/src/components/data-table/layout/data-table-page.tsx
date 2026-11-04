@@ -176,6 +176,15 @@ export type DataTablePageProps<TData> = {
     helpers: DataTableRenderRowHelpers
   ) => React.ReactNode
 
+  /** Rows to render instead of the full model, for a virtualized table. */
+  rows?: Row<TData>[]
+  bodyContainerClassName?: string
+  bodyContainerProps?: Omit<
+    React.ComponentProps<'div'>,
+    'className' | 'children'
+  >
+  containerProps?: Omit<React.ComponentProps<'div'>, 'className' | 'children'>
+
   /**
    * Desktop column className resolver. Use for semantic alignment/spacing only;
    * fixed-column behavior should be configured with `pinnedColumns`.
@@ -533,6 +542,7 @@ function renderDesktop<TData>(
     <DataTableView
       table={props.table}
       isLoading={props.isLoading}
+      rows={props.rows}
       emptyTitle={props.emptyTitle}
       emptyDescription={props.emptyDescription}
       emptyIcon={props.emptyIcon}
@@ -548,6 +558,9 @@ function renderDesktop<TData>(
       )}
       getColumnClassName={props.getColumnClassName}
       pinnedColumns={props.pinnedColumns}
+      bodyContainerClassName={props.bodyContainerClassName}
+      bodyContainerProps={props.bodyContainerProps}
+      containerProps={props.containerProps}
       containerClassName={cn(
         fixedHeight && 'min-h-0 flex-1',
         'transition-opacity duration-150',

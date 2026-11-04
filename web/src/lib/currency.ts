@@ -297,6 +297,20 @@ function adjustForMinimum(
   return value
 }
 
+const numberFormats = new Map<string, Intl.NumberFormat>()
+
+function cachedNumberFormat(
+  locale: string | undefined,
+  options: Intl.NumberFormatOptions
+): Intl.NumberFormat {
+  const key = `${locale ?? ''}:${JSON.stringify(options)}`
+  const cached = numberFormats.get(key)
+  if (cached) return cached
+  const format = new Intl.NumberFormat(locale, options)
+  numberFormats.set(key, format)
+  return format
+}
+
 function formatCurrencyValue(
   value: number,
   options: ResolvedCurrencyFormatOptions,
@@ -304,7 +318,7 @@ function formatCurrencyValue(
 ): string {
   if (meta.kind === 'tokens') {
     if (options.compact) {
-      return new Intl.NumberFormat(options.locale, {
+      return cachedNumberFormat(options.locale, {
         notation: 'compact',
         maximumFractionDigits: 1,
       }).format(value)
@@ -326,14 +340,14 @@ function formatCurrencyValue(
 
   if (meta.kind === 'currency') {
     if (!options.showSymbol) {
-      return new Intl.NumberFormat(options.locale, {
+      return cachedNumberFormat(options.locale, {
         notation: options.compact ? 'compact' : 'standard',
         minimumFractionDigits: 0,
         maximumFractionDigits: options.compact ? 1 : digits,
       }).format(adjustedValue)
     }
 
-    const formatted = new Intl.NumberFormat(options.locale, {
+    const formatted = cachedNumberFormat(options.locale, {
       style: 'currency',
       currency: meta.currencyCode,
       currencyDisplay: 'narrowSymbol',
@@ -344,7 +358,7 @@ function formatCurrencyValue(
     return formatted
   }
 
-  const decimal = new Intl.NumberFormat(options.locale, {
+  const decimal = cachedNumberFormat(options.locale, {
     notation: options.compact ? 'compact' : 'standard',
     minimumFractionDigits: 0,
     maximumFractionDigits: options.compact ? 1 : digits,
@@ -417,7 +431,7 @@ export function formatCurrencyFromUSD(
   if (meta.kind === 'tokens') {
     const tokens = amountUSD * config.quotaPerUnit
     if (merged.compact) {
-      return new Intl.NumberFormat(merged.locale, {
+      return cachedNumberFormat(merged.locale, {
         notation: 'compact',
         maximumFractionDigits: 1,
       }).format(tokens)

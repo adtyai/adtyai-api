@@ -144,6 +144,7 @@ function SplitHeaderTableView<TData>({
           props.splitHeaderScrollClassName,
           props.bodyContainerClassName
         )}
+        {...props.bodyContainerProps}
       >
         <Table
           withContainer={false}
