@@ -300,10 +300,10 @@ function adjustForMinimum(
 const numberFormats = new Map<string, Intl.NumberFormat>()
 
 function cachedNumberFormat(
-  locale: string | undefined,
+  locale: Intl.LocalesArgument | undefined,
   options: Intl.NumberFormatOptions
 ): Intl.NumberFormat {
-  const key = `${locale ?? ''}:${JSON.stringify(options)}`
+  const key = `${JSON.stringify(locale ?? '')}:${JSON.stringify(options)}`
   const cached = numberFormats.get(key)
   if (cached) return cached
   const format = new Intl.NumberFormat(locale, options)

@@ -31,8 +31,8 @@ import {
 
 const integerFormats = new Map<string, Intl.NumberFormat>()
 
-function integerFormat(locales?: Intl.LocalesArgument): Intl.NumberFormat {
-  const key = String(locales ?? '')
+function integerFormat(locales?: string): Intl.NumberFormat {
+  const key = locales ?? ''
   const cached = integerFormats.get(key)
   if (cached) return cached
   const format = new Intl.NumberFormat(locales, { maximumFractionDigits: 0 })
@@ -42,7 +42,7 @@ function integerFormat(locales?: Intl.LocalesArgument): Intl.NumberFormat {
 
 export function formatInteger(
   value: number | null | undefined,
-  locales?: Intl.LocalesArgument
+  locales?: string
 ): string {
   if (value == null || Number.isNaN(value)) return '-'
   return integerFormat(locales).format(value)

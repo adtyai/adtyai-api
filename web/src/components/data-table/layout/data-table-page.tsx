@@ -178,6 +178,7 @@ export type DataTablePageProps<TData> = {
 
   /** Rows to render instead of the full model, for a virtualized table. */
   rows?: Row<TData>[]
+  tableBodyClassName?: string
   bodyContainerClassName?: string
   bodyContainerProps?: Omit<
     React.ComponentProps<'div'>,
@@ -550,6 +551,7 @@ function renderDesktop<TData>(
       skeletonKeyPrefix={props.skeletonKeyPrefix}
       renderRow={props.renderRow}
       applyHeaderSize={props.applyHeaderSize}
+      tableBodyClassName={props.tableBodyClassName}
       splitHeader={fixedHeight}
       tableContainerClassName={fixedHeight ? 'h-full min-h-0' : undefined}
       tableHeaderClassName={cn(

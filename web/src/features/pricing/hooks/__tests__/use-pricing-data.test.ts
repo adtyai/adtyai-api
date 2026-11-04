@@ -3,6 +3,7 @@ import { renderHook, waitFor } from '@testing-library/react'
 import { createElement, type ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type { PricingData } from '../../types'
 import { modelsFromPricing, usePricingData } from '../use-pricing-data'
 
 vi.mock('@/hooks/use-status', () => ({
@@ -27,7 +28,7 @@ const pricing = {
   usable_group: {},
   supported_endpoint: {},
   auto_groups: [],
-}
+} satisfies PricingData
 
 vi.mock('../../api', () => ({
   getPricing: () => Promise.resolve(pricing),
@@ -63,11 +64,7 @@ describe('usePricingData', () => {
   })
 
   it('does not write display fields onto the pricing response', async () => {
-    const before = {
-      ...pricing.data[0],
-      group_ratio: pricing.data[0].group_ratio,
-      vendor_name: pricing.data[0].vendor_name,
-    }
+    const before = { ...pricing.data[0] }
     const hook = renderHook(() => usePricingData(), { wrapper })
     await waitFor(() =>
       expect(hook.result.current.models[0]?.vendor_name).toBe('OpenAI')

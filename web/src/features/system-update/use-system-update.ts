@@ -30,7 +30,6 @@ import { useTranslation } from 'react-i18next'
 import { useStatus } from '@/hooks/use-status'
 import { handleServerError } from '@/lib/handle-server-error'
 import { ROLE } from '@/lib/roles'
-import { statusQueryOptions } from '@/lib/status-query'
 import { useAuthStore } from '@/stores/auth-store'
 
 import {

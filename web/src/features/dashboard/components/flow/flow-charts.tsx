@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
 import { VChart } from '@visactor/react-vchart'
-import type { EventParamsDefinition, IVChart } from '@visactor/vchart'
+import type { EventParamsDefinition, ISpec, IVChart } from '@visactor/vchart'
 import {
   Activity,
   ChevronRight,
@@ -495,7 +495,7 @@ export function FlowCharts(props: FlowChartsProps) {
   useEffect(() => {
     // Filters change the spec without remounting the chart. Push the new
     // spec into the existing instance instead of destroying it.
-    chartInstanceRef.current?.updateSpec(chartSpec)
+    void chartInstanceRef.current?.updateSpec(chartSpec as ISpec)
   }, [chartSpec])
   let chartContent = (
     <VChart
