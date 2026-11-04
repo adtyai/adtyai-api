@@ -30,6 +30,7 @@ import { useTranslation } from 'react-i18next'
 import { useStatus } from '@/hooks/use-status'
 import { handleServerError } from '@/lib/handle-server-error'
 import { ROLE } from '@/lib/roles'
+import { statusQueryOptions } from '@/lib/status-query'
 import { useAuthStore } from '@/stores/auth-store'
 
 import {
@@ -66,10 +67,13 @@ export function getUpdateErrorMessage(
 
 export const systemUpdateQueryOptions = queryOptions({
   queryKey: SYSTEM_UPDATE_QUERY_KEY,
-  queryFn: async ({ signal }): Promise<SystemUpdateSnapshot> => {
-    // Compare the release against the status the shell already loaded.
-    // Do not refetch it here: that request redraws the admin shell on the
-    // update check's own timer.
+  queryFn: async ({ signal, client }): Promise<SystemUpdateSnapshot> => {
+    // Refresh the running version so an installed update clears the notice.
+    // An unchanged status keeps the previous config object, so the shell
+    // does not redraw when only the version is already current.
+    void client
+      .fetchQuery({ ...statusQueryOptions, meta: { errorToast: false } })
+      .catch(() => undefined)
     let snapshot: SystemUpdateSnapshot
     try {
       const release = await fetchLatestSystemRelease(signal)
