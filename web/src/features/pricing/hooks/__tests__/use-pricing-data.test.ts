@@ -75,6 +75,15 @@ describe('usePricingData', () => {
     expect(hook.result.current.models[0].group_ratio).toBe(pricing.group_ratio)
   })
 
+  it('returns no models when the pricing payload is not a model list', () => {
+    expect(
+      modelsFromPricing({
+        ...pricing,
+        data: { items: [] } as unknown as PricingData['data'],
+      })
+    ).toEqual([])
+  })
+
   it('rebuilds when the group ratio changes but the model list does not', () => {
     const first = modelsFromPricing(pricing)
     const changed = {

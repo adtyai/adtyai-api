@@ -29,7 +29,7 @@ let pricedModels: PricingModel[] = []
 let pricedFrom: PricingData | undefined
 
 export function modelsFromPricing(data: PricingData | undefined): PricingModel[] {
-  if (!data?.data) return []
+  if (!Array.isArray(data?.data)) return []
   if (
     pricedFrom?.data === data.data &&
     pricedFrom.vendors === data.vendors &&
