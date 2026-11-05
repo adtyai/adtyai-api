@@ -71,6 +71,14 @@ describe('auth layout', () => {
     ).toBeTruthy()
   })
 
+  it('offers a language switch on the sign-in layout', async () => {
+    await renderLayout()
+
+    expect(
+      await screen.findByRole('button', { name: 'Change language' })
+    ).toBeInTheDocument()
+  })
+
   it('hides the brand panel on small screens so the form keeps one column', async () => {
     await renderLayout()
 

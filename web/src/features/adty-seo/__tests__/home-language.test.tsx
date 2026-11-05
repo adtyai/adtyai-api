@@ -181,6 +181,16 @@ describe('home language URLs', () => {
     expect(window.localStorage.getItem(HOME_LANG_STORAGE_KEY)).toBeNull()
   })
 
+  it('keeps the query when the home language changes', async () => {
+    const router = renderAt('/?utm=keep')
+    await screen.findByText('home en')
+
+    act(() => languageSwitch?.('ko'))
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/ko'))
+    expect(router.state.location.searchStr).toBe('?utm=keep')
+  })
+
   it('moves to the new language URL when the language changes on the home page', async () => {
     const router = renderAt('/')
     await screen.findByText('home en')

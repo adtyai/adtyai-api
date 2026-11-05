@@ -310,8 +310,10 @@ export function PublicHeader(props: PublicHeaderProps) {
               )}
             </div>
 
-            {/* Mobile: compact actions + hamburger */}
+            {/* Mobile: compact actions + hamburger. The desktop cluster
+                above is hidden below lg, so the language switch has to live here too. */}
             <div className='flex shrink-0 items-center gap-2 lg:hidden'>
+              {showLanguageSwitcher && <LanguageSwitcher />}
               {showThemeSwitch && <ThemeSwitch />}
               {showAuthButtons && !loading && isAuthenticated && (
                 <ProfileDropdown />

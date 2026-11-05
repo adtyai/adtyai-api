@@ -16,12 +16,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useNavigate } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 
 export function MaintenanceError() {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   return (
     <div className='h-svh'>
       <div className='m-auto flex h-full w-full flex-col items-center justify-center gap-2'>
@@ -34,7 +36,9 @@ export function MaintenanceError() {
           {t("We'll be back online shortly.")}
         </p>
         <div className='mt-6 flex gap-4'>
-          <Button variant='outline'>{t('Learn more')}</Button>
+          <Button variant='outline' onClick={() => navigate({ to: '/status' })}>
+            {t('Learn more')}
+          </Button>
         </div>
       </div>
     </div>

@@ -20,6 +20,7 @@ import { Link } from '@tanstack/react-router'
 import { Check } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
+import { LanguageSwitcher } from '@/components/language-switcher'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useSystemConfig } from '@/hooks/use-system-config'
 
@@ -60,6 +61,9 @@ export function AuthLayout({ children }: AuthLayoutProps) {
           <h1 className='text-xl font-medium'>{systemName}</h1>
         )}
       </Link>
+      <div className='absolute top-4 right-4 z-10 sm:top-8 sm:right-8'>
+        <LanguageSwitcher />
+      </div>
       <aside
         aria-label={t('About this site')}
         className='bg-muted/40 hidden flex-col justify-center border-r px-12 py-24 lg:flex xl:px-20'
