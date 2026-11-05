@@ -96,8 +96,12 @@ func adtyHandleCustomDomain(c *gin.Context, host string) {
 		c.Next()
 		return
 	}
-	if adtyIsAPIPath(path) {
+	if adtyCustomDomainAccountAPI(path) {
 		c.AbortWithStatus(http.StatusForbidden)
+		return
+	}
+	if adtyIsAPIPath(path) {
+		c.Next()
 		return
 	}
 	if site != nil {
@@ -134,6 +138,20 @@ func AdtyRequireCurrentSiteTerms() gin.HandlerFunc {
 		}
 		c.Next()
 	}
+}
+
+func adtyCustomDomainAccountAPI(path string) bool {
+	prefixes := []string{
+		"/api/user", "/api/token", "/api/log", "/api/data", "/api/option",
+		"/api/channel", "/api/verification", "/api/reset_password", "/api/oauth",
+		"/api/adty/topup", "/api/adty/admin", "/api/adty/site/",
+	}
+	for _, prefix := range prefixes {
+		if path == strings.TrimSuffix(prefix, "/") || strings.HasPrefix(path, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func adtyCustomDomainPublicAPI(path string) bool {
