@@ -106,6 +106,29 @@ func TestRaisingSiteCostFactorWaitsAndLoweringAppliesNow(t *testing.T) {
 	assert.Nil(t, stored.PendingCostFactor)
 }
 
+func TestGlobalCostFactorIncreaseIsHeld(t *testing.T) {
+	previous := adty_setting.DefaultResellerSetting()
+	current := 0.8
+	previous.CostFactor = &current
+	previous.MarkupIncreaseDelayHours = 24
+	next := previous
+	raised := 0.9
+	next.CostFactor = &raised
+	now := int64(1_700_000_000)
+	require.True(t, adty_setting.HoldGlobalCostFactorIncrease(&next, &previous, now))
+	require.NotNil(t, next.CostFactor)
+	assert.InDelta(t, 0.8, *next.CostFactor, 0.0001)
+	require.NotNil(t, next.PendingCostFactor)
+	assert.InDelta(t, 0.9, *next.PendingCostFactor, 0.0001)
+	assert.Equal(t, now+24*3600, next.PendingCostFactorAt)
+
+	lower := 0.7
+	next.CostFactor = &lower
+	assert.False(t, adty_setting.HoldGlobalCostFactorIncrease(&next, &previous, now))
+	assert.InDelta(t, 0.7, *next.CostFactor, 0.0001)
+	assert.Nil(t, next.PendingCostFactor)
+}
+
 func TestAdtyResellerSettingDefaults(t *testing.T) {
 	cfg := adty_setting.DefaultResellerSetting()
 	assert.False(t, cfg.Enabled)

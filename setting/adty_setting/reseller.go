@@ -20,13 +20,15 @@ type ResellerSetting struct {
 	ReservedSubdomains []string `json:"reserved_subdomains"`
 	UnknownHostMode    string   `json:"unknown_host_mode"` // main | reject
 
-	CostFactor         *float64           `json:"cost_factor"`     // 全局拿货系数 d，0 < d ≤ 1
-	MinCostFactor      *float64           `json:"min_cost_factor"` // d 的下限
-	CostFactorTiers    []ResellerCostTier `json:"cost_factor_tiers"`
-	MaxMarkup          *float64           `json:"max_markup"`           // k 的上限，1 ≤ k ≤ 100
-	MaxSiteBonusExtra  *float64           `json:"max_site_bonus_extra"` // 分站加赠比主站同档最多多几个百分点
-	TrialGrantMaxUSD   *float64           `json:"trial_grant_max_usd"`
-	TrialGrantDailyUSD *float64           `json:"trial_grant_daily_usd"`
+	CostFactor          *float64           `json:"cost_factor"` // 全局拿货系数 d，0 < d ≤ 1
+	PendingCostFactor   *float64           `json:"pending_cost_factor"`
+	PendingCostFactorAt int64              `json:"pending_cost_factor_at"`
+	MinCostFactor       *float64           `json:"min_cost_factor"` // d 的下限
+	CostFactorTiers     []ResellerCostTier `json:"cost_factor_tiers"`
+	MaxMarkup           *float64           `json:"max_markup"`           // k 的上限，1 ≤ k ≤ 100
+	MaxSiteBonusExtra   *float64           `json:"max_site_bonus_extra"` // 分站加赠比主站同档最多多几个百分点
+	TrialGrantMaxUSD    *float64           `json:"trial_grant_max_usd"`
+	TrialGrantDailyUSD  *float64           `json:"trial_grant_daily_usd"`
 
 	MarkupIncreaseDelayHours int  `json:"markup_increase_delay_hours"`
 	SettleHour               int  `json:"settle_hour"`
@@ -138,6 +140,30 @@ func (s *ResellerSetting) Ready() bool {
 	return s.Enabled && s.ResellerMoneyConfigured() && len(s.RootDomains) > 0
 }
 
+// HoldGlobalCostFactorIncrease keeps the current global d when the requested
+// value is higher, and records the higher value to take effect after the
+// markup-increase delay. A lower or equal value applies immediately.
+func HoldGlobalCostFactorIncrease(next, previous *ResellerSetting, now int64) bool {
+	if next == nil || previous == nil || next.CostFactor == nil || previous.CostFactor == nil {
+		return false
+	}
+	if *next.CostFactor <= *previous.CostFactor {
+		next.PendingCostFactor = nil
+		next.PendingCostFactorAt = 0
+		return false
+	}
+	pending := *next.CostFactor
+	next.PendingCostFactor = &pending
+	delay := next.MarkupIncreaseDelayHours
+	if delay < 1 {
+		delay = 24
+	}
+	next.PendingCostFactorAt = now + int64(delay)*3600
+	kept := *previous.CostFactor
+	next.CostFactor = &kept
+	return true
+}
+
 // CloudflareConfigured 说明自定义域名要的三项都填了。
 func (s *ResellerSetting) CloudflareConfigured() bool {
 	return strings.TrimSpace(s.CloudflareApiToken) != "" && strings.TrimSpace(s.CloudflareZoneId) != "" && strings.TrimSpace(s.CnameTarget) != ""
@@ -171,6 +197,9 @@ func ValidateResellerSetting(s *ResellerSetting, resendConfigured bool) error {
 		return common.NewMessage("The cost factor must be greater than 0 and at most 1")
 	}
 	if s.MinCostFactor != nil && !validFraction(s.MinCostFactor) {
+		return common.NewMessage("The cost factor must be greater than 0 and at most 1")
+	}
+	if s.PendingCostFactor != nil && !validFraction(s.PendingCostFactor) {
 		return common.NewMessage("The cost factor must be greater than 0 and at most 1")
 	}
 	if s.CostFactor != nil && s.MinCostFactor != nil && *s.CostFactor < *s.MinCostFactor {

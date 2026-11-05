@@ -13,6 +13,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting/adty_setting"
+	"github.com/QuantumNous/new-api/setting/config"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -558,6 +559,31 @@ func ApplyDueAdtySiteCostFactors(now int64) (int64, error) {
 		InvalidateAdtySiteCache()
 	}
 	return applied, nil
+}
+
+// ApplyDueGlobalCostFactor writes a scheduled higher global d once it is due.
+func ApplyDueGlobalCostFactor(now int64) error {
+	cfg := adty_setting.GetResellerSetting()
+	if cfg.PendingCostFactor == nil || cfg.PendingCostFactorAt <= 0 || cfg.PendingCostFactorAt > now {
+		return nil
+	}
+	factor := *cfg.PendingCostFactor
+	cfg.CostFactor = &factor
+	cfg.PendingCostFactor = nil
+	cfg.PendingCostFactorAt = 0
+	mapped, err := config.ConfigToMap(cfg)
+	if err != nil {
+		return err
+	}
+	options := map[string]string{}
+	for _, key := range []string{"cost_factor", "pending_cost_factor", "pending_cost_factor_at"} {
+		options[adty_setting.ResellerSettingModule+"."+key] = mapped[key]
+	}
+	if err := model.UpdateOptionsBulk(options); err != nil {
+		return err
+	}
+	InvalidateAdtySiteCache()
+	return nil
 }
 
 // AdtyOnSiteCostFactorChanged 在管理员改了单站 d 之后调用（11.9 的站内信和邮件通知挂在这里）。

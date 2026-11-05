@@ -580,6 +580,9 @@ func startAdtySiteMarkupTask() {
 			if _, err := ApplyDueAdtySiteCostFactors(time.Now().Unix()); err != nil {
 				common.SysError(common.LogText("apply site cost factors: %s", err.Error()))
 			}
+			if err := ApplyDueGlobalCostFactor(time.Now().Unix()); err != nil {
+				common.SysError(common.LogText("apply global cost factor: %s", err.Error()))
+			}
 		}
 	}()
 }

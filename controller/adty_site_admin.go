@@ -697,6 +697,11 @@ func UpdateAdtyResellerSettings(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	if adty_setting.HoldGlobalCostFactorIncrease(&next, &current, time.Now().Unix()) {
+		values["pending_cost_factor"] = ""
+		values["pending_cost_factor_at"] = ""
+		values["cost_factor"] = ""
+	}
 	if len(values) > 0 {
 		normalized, _ := config.ConfigToMap(&next)
 		options := make(map[string]string, len(values))
