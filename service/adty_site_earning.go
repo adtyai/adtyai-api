@@ -144,7 +144,7 @@ func adtyAppendTaskSiteAdminInfo(bc *model.TaskBillingContext, other *model.LogO
 
 // adtyRecordTaskBillingEarning 是 RecordTaskBillingLog 的钩子：任务差额结算（consume）记 usage，
 // 退款和差额为负（refund）按快照的 k、d 记负收益。
-// 例外：MJ 任务（service/midjourney.go）没有 BillingContext，日志里没有快照；这时按客户当前的 k、d 计。
+// MJ 退款把提交时写入任务的 k、d 放进 admin_info。没有这份快照的旧任务才回退到当前倍率。
 func adtyRecordTaskBillingEarning(params *model.RecordTaskBillingLogParams) {
 	if params == nil || params.Quota <= 0 {
 		return
@@ -200,14 +200,17 @@ func adtyBonusUSDForSite(ext *model.AdtyTopupOrder) decimal.Decimal {
 
 // adtySiteBonusWithinCap：一笔分站充值的加赠合计（站点档位加赠 + 站长优惠加赠）不超过
 // 面额 ×（主站同档比例 + max_site_bonus_extra）÷ 100。max_site_bonus_extra 没设按 0。
-func adtySiteBonusWithinCap(face int64, totalBonus decimal.Decimal) bool {
+func adtySiteBonusCapAmount(face int64) decimal.Decimal {
 	extra := decimal.Zero
 	if value := resellerSetting().MaxSiteBonusExtra; value != nil {
 		extra = decimal.NewFromFloat(*value)
 	}
 	mainRate, _ := AdtyBonusFor(face)
-	limit := decimal.NewFromInt(face).Mul(mainRate.Add(extra)).Div(decimal.NewFromInt(100)).Round(8)
-	return !totalBonus.GreaterThan(limit)
+	return decimal.NewFromInt(face).Mul(mainRate.Add(extra)).Div(decimal.NewFromInt(100)).Round(8)
+}
+
+func adtySiteBonusWithinCap(face int64, totalBonus decimal.Decimal) bool {
+	return !totalBonus.GreaterThan(adtySiteBonusCapAmount(face))
 }
 
 // adtySiteBonusAfterCreditTx：分站客户充值入账时，加赠按面值从站长收益里扣（记一笔负数，执行层决定 26）。

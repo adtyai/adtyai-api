@@ -435,6 +435,9 @@ func adtySendSiteMail(site *model.AdtySite, user *model.User, subjectKey, bodyKe
 	if user == nil || strings.TrimSpace(user.Email) == "" {
 		return
 	}
+	if AdtySendSiteEmailAsync == nil {
+		return
+	}
 	lang := user.GetSetting().Language
 	subject := i18n.Translate(lang, subjectKey, args)
 	body := "<p>" + html.EscapeString(i18n.Translate(lang, bodyKey, args)) + "</p>"
@@ -515,6 +518,30 @@ func adtyNotifySiteMarkupIncrease(site *model.AdtySite, userId int, raised []mod
 	for _, user := range users {
 		copied := user
 		adtySendSiteMail(site, &copied, i18n.MsgAdtySiteMarkupSubject, i18n.MsgAdtySiteMarkupBody, args)
+	}
+}
+
+// NotifySiteOwnersGlobalCostFactorPending tells every open site's owner that a higher global d is scheduled.
+// The controller assigns this after holding the increase. Tests replace it.
+var NotifySiteOwnersGlobalCostFactorPending = func(factor decimal.Decimal, at int64) {
+	notifySiteOwnersGlobalCostFactorPending(factor, at)
+}
+
+func notifySiteOwnersGlobalCostFactorPending(factor decimal.Decimal, at int64) {
+	if !factor.IsPositive() || model.DB == nil {
+		return
+	}
+	var sites []model.AdtySite
+	err := model.DB.Where("status IN ?", []string{model.AdtySiteStatusActive, model.AdtySiteStatusPaused, model.AdtySiteStatusClosing}).Find(&sites).Error
+	if err != nil {
+		common.SysError(common.LogText("list sites for global cost factor notice: %s", err.Error()))
+		return
+	}
+	for i := range sites {
+		site := sites[i]
+		site.PendingCostFactor = &factor
+		site.PendingCostFactorAt = at
+		adtyNotifySiteCostFactorPending(&site)
 	}
 }
 

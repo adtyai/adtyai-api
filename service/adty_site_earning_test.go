@@ -87,6 +87,21 @@ func siteTask(t *testing.T, db *gorm.DB, user *model.User, site *model.AdtySite,
 	return task
 }
 
+func TestMidjourneyRefundUsesSubmitSnapshot(t *testing.T) {
+	db := prepareSiteDB(t)
+	require.NoError(t, db.AutoMigrate(&model.Midjourney{}, &model.Channel{}))
+	_, site := openActiveSite(t, db, "mj-refund")
+	customer := siteCustomer(t, db, site, "mj-refund-customer")
+	sitePrice(t, db, site.Id, 0, "", "3")
+	task := &model.Midjourney{
+		UserId: customer.Id, MjId: "mj-snap", Action: "IMAGINE", Status: "FAILURE",
+		Quota: int(perUnit("125")), BillingSiteId: site.Id, BillingSiteMarkup: 1.25, BillingSiteCostFactor: 0.8,
+	}
+	require.NoError(t, db.Create(task).Error)
+	require.True(t, RefundMidjourneyQuota(context.Background(), task, "upstream failed"))
+	assert.True(t, earningTotals(t, db, site.Id)[model.AdtySiteEarningRefund].Equal(usd("-45")), "refund keeps the submit snapshot, not the current k of 3")
+}
+
 func TestTaskRefundReversesEarningWithSnapshot(t *testing.T) {
 	db := prepareSiteDB(t)
 	require.NoError(t, db.AutoMigrate(&model.Task{}, &model.Token{}, &model.Channel{}))
@@ -330,6 +345,12 @@ func TestSiteBonusCappedByMainPlusExtra(t *testing.T) {
 	quote, err = AdtyQuoteFor("default", 200, AdtyMethodUSDTTRC20, AdtyPromoInput{})
 	require.NoError(t, err)
 	assert.True(t, quote.BonusRate.Equal(usd("2.5")))
+
+	require.NoError(t, SaveAdtySiteBonusRates(site.Id, map[int]float64{100: 4.5}))
+	setAdtyBonusRates(t, map[int]float64{100: 1})
+	capped, err := AdtyQuoteForSite(AdtySiteById(site.Id), "default", 100, AdtyMethodUSDTTRC20, AdtyPromoInput{})
+	require.NoError(t, err)
+	assert.True(t, capped.BonusUSD.Equal(usd("3")), "order time recap uses the current main tier plus extra, not the saved 4.5")
 }
 
 func TestTrialGrantLimitsAndLedger(t *testing.T) {

@@ -613,6 +613,11 @@ func UpdateAdtyResellerSettings(c *gin.Context) {
 		delete(body, "clear_secrets")
 	}
 	current := *adty_setting.GetResellerSetting()
+	var previousCostFactor *float64
+	if current.CostFactor != nil {
+		copied := *current.CostFactor
+		previousCostFactor = &copied
+	}
 	known, err := config.ConfigToMap(&current)
 	if err != nil {
 		common.ApiError(c, err)
@@ -697,10 +702,15 @@ func UpdateAdtyResellerSettings(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	if adty_setting.HoldGlobalCostFactorIncrease(&next, &current, time.Now().Unix()) {
+	previous := current
+	previous.CostFactor = previousCostFactor
+	if adty_setting.HoldGlobalCostFactorIncrease(&next, &previous, time.Now().Unix()) {
 		values["pending_cost_factor"] = ""
 		values["pending_cost_factor_at"] = ""
 		values["cost_factor"] = ""
+		if next.PendingCostFactor != nil {
+			service.NotifySiteOwnersGlobalCostFactorPending(decimal.NewFromFloat(*next.PendingCostFactor), next.PendingCostFactorAt)
+		}
 	}
 	if len(values) > 0 {
 		normalized, _ := config.ConfigToMap(&next)

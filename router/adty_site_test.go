@@ -87,6 +87,19 @@ func TestResellerSettingsSaveRules(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, "0.8", stored)
 
+	var pendingFactors []float64
+	previousNotify := service.NotifySiteOwnersGlobalCostFactorPending
+	service.NotifySiteOwnersGlobalCostFactorPending = func(factor decimal.Decimal, _ int64) {
+		value, _ := factor.Float64()
+		pendingFactors = append(pendingFactors, value)
+	}
+	t.Cleanup(func() { service.NotifySiteOwnersGlobalCostFactorPending = previousNotify })
+	raised := put(`{"cost_factor":0.9}`)
+	require.True(t, raised.Success, raised.Message)
+	require.NotEmpty(t, pendingFactors, "a higher global d is delayed and site owners are notified")
+	assert.InDelta(t, 0.9, pendingFactors[0], 0.000001)
+	assert.EqualValues(t, 0.8, *cfg.CostFactor)
+
 	generic := adtyJSON(t, f.engine, http.MethodPut, "/api/option/", `{"key":"adty_reseller_setting.enabled","value":"false"}`, f.root)
 	assert.Contains(t, generic.Body.String(), `"success":false`, "the generic option API cannot bypass the checks")
 	assert.True(t, cfg.Enabled)

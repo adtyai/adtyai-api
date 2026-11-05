@@ -24,8 +24,11 @@ type Midjourney struct {
 	Buttons     string `json:"buttons"`
 	Properties  string `json:"properties"`
 
-	TokenId          int `json:"-" gorm:"default:0"`
-	BillingChannelId int `json:"-" gorm:"default:0"`
+	TokenId               int     `json:"-" gorm:"default:0"`
+	BillingChannelId      int     `json:"-" gorm:"default:0"`
+	BillingSiteId         int     `json:"-" gorm:"default:0"`
+	BillingSiteMarkup     float64 `json:"-" gorm:"default:0"`
+	BillingSiteCostFactor float64 `json:"-" gorm:"default:0"`
 }
 
 // TaskQueryParams 用于包含所有搜索条件的结构体，可以根据需求添加更多字段
@@ -174,7 +177,7 @@ func (midjourney *Midjourney) Update() error {
 
 func (midjourney *Midjourney) UpdateBillingState() error {
 	return DB.Model(midjourney).
-		Select("quota", "token_id", "billing_channel_id").
+		Select("quota", "token_id", "billing_channel_id", "billing_site_id", "billing_site_markup", "billing_site_cost_factor").
 		Updates(midjourney).Error
 }
 

@@ -83,6 +83,7 @@ func SettleMidjourneyTaskBilling(relayInfo *relaycommon.RelayInfo, task *model.M
 	if result.TokenApplied {
 		task.TokenId = relayInfo.TokenId
 	}
+	stampMidjourneySiteBilling(relayInfo, task)
 	// 二开（余额下限）：任务 quota 是退款的依据，记实扣，失败退款不会退出平台没收到的钱。
 	task.Quota -= result.Shortfall
 	if updateErr := task.UpdateBillingState(); updateErr != nil {
@@ -114,6 +115,29 @@ func FailMidjourneyTasksWithoutChannel(ctx context.Context, tasks []*model.Midjo
 	}
 }
 
+// stampMidjourneySiteBilling stores the submit-time site k and d so a later refund
+// does not use a markup the owner changed after the task was billed.
+func stampMidjourneySiteBilling(relayInfo *relaycommon.RelayInfo, task *model.Midjourney) {
+	if relayInfo == nil || task == nil {
+		return
+	}
+	site := AdtyBillingSiteForUser(task.UserId)
+	if site == nil {
+		return
+	}
+	cost, ok := AdtySiteCostFactor(site)
+	if !ok {
+		return
+	}
+	group := relayInfo.UsingGroup
+	if group == "" {
+		group = relayInfo.UserGroup
+	}
+	task.BillingSiteId = site.Id
+	task.BillingSiteCostFactor = cost.InexactFloat64()
+	task.BillingSiteMarkup = adtyMarkupFloat(AdtySiteMarkup(task.UserId, group), task.UserId, group)
+}
+
 // RefundMidjourneyQuota reverses every accounting element recorded for a billed legacy task.
 func RefundMidjourneyQuota(ctx context.Context, task *model.Midjourney, reason string) bool {
 	quota := task.Quota
@@ -141,6 +165,11 @@ func RefundMidjourneyQuota(ctx context.Context, task *model.Midjourney, reason s
 	other := model.NewLogOther()
 	other.SetPublic("task_id", task.MjId)
 	other.SetPublic("reason", reason)
+	if task.BillingSiteId > 0 && task.BillingSiteMarkup >= 1 && task.BillingSiteCostFactor > 0 {
+		other.SetAdmin("site_id", task.BillingSiteId)
+		other.SetAdmin("site_markup", task.BillingSiteMarkup)
+		other.SetAdmin("site_cost_factor", task.BillingSiteCostFactor)
+	}
 	model.RecordTaskBillingLog(model.RecordTaskBillingLogParams{
 		UserId:    task.UserId,
 		LogType:   model.LogTypeRefund,

@@ -117,6 +117,13 @@ func AdtyQuoteForSite(site *model.AdtySite, userGroup string, face int64, method
 	rate, bonus := AdtyBonusFor(face)
 	if site != nil {
 		rate, bonus = adtyBonusFromRates(AdtySiteBonusRates(site), face)
+		cap := adtySiteBonusCapAmount(face)
+		if bonus.GreaterThan(cap) {
+			bonus = cap
+			if face > 0 {
+				rate = bonus.Mul(decimal.NewFromInt(100)).Div(decimal.NewFromInt(face)).Round(8)
+			}
+		}
 	}
 	faceUSD := decimal.NewFromInt(face)
 	promoCode, promoBonus, err := adtyPromoBonusFor(promo, faceUSD)
