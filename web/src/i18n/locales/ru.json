@@ -4,6 +4,7 @@
     "1000": "1000",
     "10000": "10000",
     "Deletes usage logs older than 90 days. Top-up, refund, and adjustment records stay.": "Удаляет журналы использования старше 90 дней. Записи пополнений, возвратов и корректировок сохраняются.",
+    "Marketing settings can only be changed on the marketing settings page": "Настройки маркетинга можно менять только на странице маркетинга.",
     "_copy": "_копировать",
     "，": ", ",
     ", and": ", и",

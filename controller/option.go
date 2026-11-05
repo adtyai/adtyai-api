@@ -226,6 +226,10 @@ func UpdateOption(c *gin.Context) {
 			common.ApiErrorT(c, "Marketing secrets can only be changed on the marketing secrets page")
 			return
 		}
+		if strings.HasPrefix(option.Key, adty_setting.MarketingKeyPrefix) {
+			common.ApiErrorT(c, "Marketing settings can only be changed on the marketing settings page")
+			return
+		}
 	}
 	if option.Key == "TaskPublicAddress" && option.Value.(string) != "" {
 		if err := service.ValidateTaskArtifactBaseURL(option.Value.(string)); err != nil {

@@ -4,6 +4,7 @@
     "1000": "1000",
     "10000": "10000",
     "Deletes usage logs older than 90 days. Top-up, refund, and adjustment records stay.": "只删除超过 90 天的使用日志。充值、退款和调额记录会保留。",
+    "Marketing settings can only be changed on the marketing settings page": "营销设置只能在营销设置页修改。",
     "_copy": "_复制",
     "，": "，",
     ", and": "，和",

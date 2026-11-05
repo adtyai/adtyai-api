@@ -94,6 +94,9 @@ func TestResellerSettingsSaveRules(t *testing.T) {
 	assert.Contains(t, money.Body.String(), "Referral money settings can only be changed on the referral settings page")
 	secret := adtyJSON(t, f.engine, http.MethodPut, "/api/option/", `{"key":"adty_marketing_setting.webhook_secret","value":"whsec_bypass"}`, f.root)
 	assert.Contains(t, secret.Body.String(), "Marketing secrets can only be changed on the marketing secrets page")
+	enabled := adtyJSON(t, f.engine, http.MethodPut, "/api/option/", `{"key":"adty_marketing_setting.enabled","value":"true"}`, f.root)
+	assert.Contains(t, enabled.Body.String(), `"success":false`)
+	assert.False(t, adty_setting.GetMarketingSetting().Enabled)
 }
 
 func TestAdminSiteCustomersMaskEmailWithoutUserRead(t *testing.T) {

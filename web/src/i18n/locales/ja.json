@@ -4,6 +4,7 @@
     "1000": "1000",
     "10000": "10000",
     "Deletes usage logs older than 90 days. Top-up, refund, and adjustment records stay.": "90日より古い利用ログだけを削除します。チャージ、返金、残高調整の記録は残します。",
+    "Marketing settings can only be changed on the marketing settings page": "マーケティング設定はマーケティング設定ページでのみ変更できます。",
     "_copy": "_copy",
     "，": "、",
     ", and": "、および",

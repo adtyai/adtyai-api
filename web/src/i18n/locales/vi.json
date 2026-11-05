@@ -4,6 +4,7 @@
     "1000": "1000",
     "10000": "10000",
     "Deletes usage logs older than 90 days. Top-up, refund, and adjustment records stay.": "Chỉ xóa nhật ký sử dụng cũ hơn 90 ngày. Bản ghi nạp tiền, hoàn tiền và điều chỉnh số dư được giữ lại.",
+    "Marketing settings can only be changed on the marketing settings page": "Cài đặt tiếp thị chỉ có thể đổi trên trang cài đặt tiếp thị.",
     "_copy": "_bản sao",
     "，": ", ",
     ", and": ", và",

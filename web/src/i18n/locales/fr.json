@@ -4,6 +4,7 @@
     "1000": "1000",
     "10000": "10000",
     "Deletes usage logs older than 90 days. Top-up, refund, and adjustment records stay.": "Supprime les journaux d’usage de plus de 90 jours. Les recharges, remboursements et ajustements restent.",
+    "Marketing settings can only be changed on the marketing settings page": "Les paramètres marketing ne peuvent être modifiés que sur la page marketing.",
     "_copy": "_copie",
     "，": ", ",
     ", and": ", et",
