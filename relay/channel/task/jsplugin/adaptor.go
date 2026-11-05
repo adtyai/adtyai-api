@@ -529,7 +529,8 @@ func (a *TaskAdaptor) ParseResponse(c *gin.Context, resp *http.Response, info *r
 	}
 	if err != nil {
 		failure := service.TaskErrorWrapper(err, "read_response_body_failed", http.StatusBadGateway, common.UpstreamAddresses(c)...)
-		failure.NoRetry = streaming
+		// The upstream already answered. Retrying would submit the paid work again.
+		failure.NoRetry = true
 		return nil, failure
 	}
 	headers := make(map[string][]string, len(resp.Header))
@@ -543,7 +544,9 @@ func (a *TaskAdaptor) ParseResponse(c *gin.Context, resp *http.Response, info *r
 			resp.StatusCode,
 			time.Since(started).Milliseconds(),
 		)
-		return nil, service.TaskErrorWrapper(err, "plugin_submit_response_failed", http.StatusBadGateway, common.UpstreamAddresses(c)...)
+		failure := service.TaskErrorWrapper(err, "plugin_submit_response_failed", http.StatusBadGateway, common.UpstreamAddresses(c)...)
+		failure.NoRetry = true
+		return nil, failure
 	}
 	if object, ok := value.(map[string]any); ok {
 		if _, forbidden := object["clientResponse"]; forbidden {
