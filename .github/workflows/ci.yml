@@ -117,3 +117,11 @@ jobs:
 
       - name: i18n check
         run: node scripts/adty/i18n-check.mjs
+
+      - name: Lint against baseline
+        working-directory: .
+        run: node scripts/adty/ratchet.mjs lint
+
+      - name: Copyright headers against baseline
+        working-directory: .
+        run: node scripts/adty/ratchet.mjs copyright

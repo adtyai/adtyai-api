@@ -156,7 +156,7 @@ func adtyCustomDomainAccountAPI(path string) bool {
 
 func adtyCustomDomainPublicAPI(path string) bool {
 	switch path {
-	case "/api/status", "/api/uptime/status", "/api/ratio_config", "/api/adty/groups/display", "/api/adty/site":
+	case "/api/status", "/api/ready", "/api/uptime/status", "/api/ratio_config", "/api/adty/groups/display", "/api/adty/site":
 		return true
 	}
 	return strings.HasPrefix(path, "/api/adty/legal/") || strings.HasPrefix(path, "/api/adty/pricing")

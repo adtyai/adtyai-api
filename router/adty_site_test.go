@@ -91,12 +91,15 @@ func TestResellerSettingsSaveRules(t *testing.T) {
 	assert.Contains(t, generic.Body.String(), `"success":false`, "the generic option API cannot bypass the checks")
 	assert.True(t, cfg.Enabled)
 	money := adtyJSON(t, f.engine, http.MethodPut, "/api/option/", `{"key":"adty_referral_setting.default_rate","value":"99"}`, f.root)
-	assert.Contains(t, money.Body.String(), "Referral money settings can only be changed on the referral settings page")
+	assert.Contains(t, money.Body.String(), "Referral settings can only be changed on the referral settings page")
 	secret := adtyJSON(t, f.engine, http.MethodPut, "/api/option/", `{"key":"adty_marketing_setting.webhook_secret","value":"whsec_bypass"}`, f.root)
 	assert.Contains(t, secret.Body.String(), "Marketing secrets can only be changed on the marketing secrets page")
 	enabled := adtyJSON(t, f.engine, http.MethodPut, "/api/option/", `{"key":"adty_marketing_setting.enabled","value":"true"}`, f.root)
 	assert.Contains(t, enabled.Body.String(), `"success":false`)
 	assert.False(t, adty_setting.GetMarketingSetting().Enabled)
+	referral := adtyJSON(t, f.engine, http.MethodPut, "/api/option/", `{"key":"adty_referral_setting.enabled","value":"true"}`, f.root)
+	assert.Contains(t, referral.Body.String(), `"success":false`)
+	assert.False(t, adty_setting.GetReferralSetting().Enabled, "the generic option API cannot turn referral on without the default rate")
 }
 
 func TestAdminSiteCustomersMaskEmailWithoutUserRead(t *testing.T) {

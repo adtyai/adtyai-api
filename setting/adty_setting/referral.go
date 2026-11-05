@@ -23,6 +23,7 @@ type ReferralSetting struct {
 
 // 推广设置在 options 表里的键。
 const (
+	ReferralKeyPrefix                   = "adty_referral_setting."
 	ReferralKeyWithdrawCNYRate          = "adty_referral_setting.withdraw_cny_rate"
 	ReferralKeyWithdrawCNYRateUpdatedAt = "adty_referral_setting.withdraw_cny_rate_updated_at"
 )

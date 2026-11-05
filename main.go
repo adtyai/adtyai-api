@@ -164,7 +164,7 @@ func main() {
 
 	if os.Getenv("ENABLE_PPROF") == "true" {
 		gopool.Go(func() {
-			log.Println(http.ListenAndServe("0.0.0.0:8005", nil))
+			log.Println(http.ListenAndServe(pprofListenAddr(), nil))
 		})
 		go common.Monitor()
 		common.SysLog(common.LogText("pprof enabled"))
@@ -192,6 +192,7 @@ func main() {
 	}))
 	// This will cause SSE not to work!!!
 	//server.Use(gzip.Gzip(gzip.DefaultCompression))
+	server.Use(middleware.SecurityHeaders())
 	server.Use(middleware.RequestId())
 	server.Use(middleware.I18n())
 	server.Use(middleware.AdtySiteContext()) // 二开：按 Host 识别分站（任务 11.2）
@@ -243,6 +244,12 @@ func main() {
 	// 批量额度还在内存队列里时，退出前写进数据库。
 	model.FlushBatchUpdates()
 	common.SysLog(common.LogText("server exited"))
+}
+
+// pprofListenAddr keeps the profiling server off every interface. Production
+// compose does not publish this port; loopback is the remaining boundary.
+func pprofListenAddr() string {
+	return "127.0.0.1:8005"
 }
 
 func InjectUmamiAnalytics() {

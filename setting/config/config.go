@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"reflect"
 	"strconv"
 	"strings"
@@ -201,75 +202,80 @@ func updateConfigFromMap(config any, configMap map[string]string) error {
 			continue
 		}
 
-		switch field.Kind() {
-		case reflect.String:
-			field.SetString(strValue)
-		case reflect.Bool:
-			boolValue, err := strconv.ParseBool(strValue)
-			if err != nil {
-				continue
-			}
-			field.SetBool(boolValue)
-		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-			intValue, err := strconv.ParseInt(strValue, 10, 64)
-			if err != nil {
-				// 兼容 float 格式的字符串（如 "2.000000"）
-				floatValue, fErr := strconv.ParseFloat(strValue, 64)
-				if fErr != nil {
-					continue
-				}
-				intValue = int64(floatValue)
-			}
-			field.SetInt(intValue)
-		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-			uintValue, err := strconv.ParseUint(strValue, 10, 64)
-			if err != nil {
-				// 兼容 float 格式的字符串
-				floatValue, fErr := strconv.ParseFloat(strValue, 64)
-				if fErr != nil || floatValue < 0 {
-					continue
-				}
-				uintValue = uint64(floatValue)
-			}
-			field.SetUint(uintValue)
-		case reflect.Float32, reflect.Float64:
-			floatValue, err := strconv.ParseFloat(strValue, 64)
-			if err != nil {
-				continue
-			}
-			field.SetFloat(floatValue)
-		case reflect.Pointer:
-			// 处理指针类型
-			if strValue == "null" {
-				field.Set(reflect.Zero(field.Type()))
-			} else {
-				// 如果指针是 nil，需要先初始化
-				if field.IsNil() {
-					field.Set(reflect.New(field.Type().Elem()))
-				}
-				// 反序列化到指针指向的值
-				err := json.Unmarshal([]byte(strValue), field.Interface())
-				if err != nil {
-					return fmt.Errorf("invalid %s: %w", key, err)
-				}
-			}
-		case reflect.Map:
-			// json.Unmarshal merges into existing maps (keeps old keys that are
-			// absent from the new JSON). Allocate a fresh map so removed keys
-			// are properly cleared.
-			fresh := reflect.New(field.Type())
-			if err := json.Unmarshal([]byte(strValue), fresh.Interface()); err != nil {
-				return fmt.Errorf("invalid %s: %w", key, err)
-			}
-			field.Set(fresh.Elem())
-		case reflect.Slice, reflect.Struct:
-			err := json.Unmarshal([]byte(strValue), field.Addr().Interface())
-			if err != nil {
-				return fmt.Errorf("invalid %s: %w", key, err)
-			}
+		if err := assignConfigField(field, key, strValue); err != nil {
+			return err
 		}
 	}
 
+	return nil
+}
+
+func assignConfigField(field reflect.Value, key, strValue string) error {
+	if !field.CanSet() {
+		return nil
+	}
+	switch field.Kind() {
+	case reflect.String:
+		field.SetString(strValue)
+	case reflect.Bool:
+		boolValue, err := strconv.ParseBool(strValue)
+		if err != nil {
+			return fmt.Errorf("invalid %s: %w", key, err)
+		}
+		field.SetBool(boolValue)
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		intValue, err := strconv.ParseInt(strValue, 10, 64)
+		if err != nil {
+			floatValue, fErr := strconv.ParseFloat(strValue, 64)
+			if fErr != nil || math.IsNaN(floatValue) || math.IsInf(floatValue, 0) {
+				return fmt.Errorf("invalid %s: %w", key, err)
+			}
+			intValue = int64(floatValue)
+		}
+		field.SetInt(intValue)
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		uintValue, err := strconv.ParseUint(strValue, 10, 64)
+		if err != nil {
+			floatValue, fErr := strconv.ParseFloat(strValue, 64)
+			if fErr != nil || floatValue < 0 || math.IsNaN(floatValue) || math.IsInf(floatValue, 0) {
+				if fErr != nil {
+					err = fErr
+				}
+				return fmt.Errorf("invalid %s: %w", key, err)
+			}
+			uintValue = uint64(floatValue)
+		}
+		field.SetUint(uintValue)
+	case reflect.Float32, reflect.Float64:
+		floatValue, err := strconv.ParseFloat(strValue, 64)
+		if err != nil || math.IsNaN(floatValue) || math.IsInf(floatValue, 0) {
+			if err == nil {
+				err = fmt.Errorf("not a finite number")
+			}
+			return fmt.Errorf("invalid %s: %w", key, err)
+		}
+		field.SetFloat(floatValue)
+	case reflect.Pointer:
+		if strValue == "null" {
+			field.Set(reflect.Zero(field.Type()))
+			return nil
+		}
+		target := reflect.New(field.Type().Elem())
+		if err := json.Unmarshal([]byte(strValue), target.Interface()); err != nil {
+			return fmt.Errorf("invalid %s: %w", key, err)
+		}
+		field.Set(target)
+	case reflect.Map:
+		fresh := reflect.New(field.Type())
+		if err := json.Unmarshal([]byte(strValue), fresh.Interface()); err != nil {
+			return fmt.Errorf("invalid %s: %w", key, err)
+		}
+		field.Set(fresh.Elem())
+	case reflect.Slice, reflect.Struct:
+		if err := json.Unmarshal([]byte(strValue), field.Addr().Interface()); err != nil {
+			return fmt.Errorf("invalid %s: %w", key, err)
+		}
+	}
 	return nil
 }
 
@@ -281,6 +287,36 @@ func ConfigToMap(config any) (map[string]string, error) {
 // UpdateConfigFromMap 从map更新配置对象（导出函数）
 func UpdateConfigFromMap(config any, configMap map[string]string) error {
 	return updateConfigFromMap(config, configMap)
+}
+
+// ValidateConfigValue reports whether one field can be assigned without
+// changing the live config. Illegal scalars must not be stored as success.
+func ValidateConfigValue(config any, key, value string) error {
+	val := reflect.ValueOf(config)
+	if val.Kind() != reflect.Pointer || val.IsNil() {
+		return nil
+	}
+	val = val.Elem()
+	if val.Kind() != reflect.Struct {
+		return nil
+	}
+	typ := val.Type()
+	for i := 0; i < val.NumField(); i++ {
+		fieldType := typ.Field(i)
+		if !fieldType.IsExported() {
+			continue
+		}
+		jsonKey := fieldType.Tag.Get("json")
+		if jsonKey == "" || jsonKey == "-" {
+			jsonKey = fieldType.Name
+		}
+		if jsonKey != key {
+			continue
+		}
+		scratch := reflect.New(fieldType.Type).Elem()
+		return assignConfigField(scratch, jsonKey, value)
+	}
+	return nil
 }
 
 // ExportAllConfigs 导出所有已注册的配置为扁平结构

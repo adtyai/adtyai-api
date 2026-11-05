@@ -316,6 +316,14 @@ func validateOptionValue(key string, value string) error {
 			return common.NewMessage("{{key}} must be a JSON object", map[string]any{"key": key})
 		}
 	}
+	parts := strings.SplitN(key, ".", 2)
+	if len(parts) == 2 {
+		if cfg := config.GlobalConfig.Get(parts[0]); cfg != nil {
+			if err := config.ValidateConfigValue(cfg, parts[1], value); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }
 

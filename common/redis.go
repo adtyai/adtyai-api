@@ -53,6 +53,16 @@ func InitRedisClient() (err error) {
 	return err
 }
 
+// PingRedis checks a configured Redis. Readiness uses it when Redis is enabled.
+func PingRedis() error {
+	if !RedisEnabled || RDB == nil {
+		return errors.New("redis is not ready")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	return RDB.Ping(ctx).Err()
+}
+
 func ParseRedisOption() *redis.Options {
 	opt, err := redis.ParseURL(os.Getenv("REDIS_CONN_STRING"))
 	if err != nil {

@@ -15,6 +15,7 @@ const (
 	SystemTaskStatusRunning   SystemTaskStatus = "running"
 	SystemTaskStatusSucceeded SystemTaskStatus = "succeeded"
 	SystemTaskStatusFailed    SystemTaskStatus = "failed"
+	SystemTaskStatusCancelled SystemTaskStatus = "cancelled"
 
 	SystemTaskTypeLogCleanup     = "log_cleanup"
 	SystemTaskTypeChannelTest    = "channel_test"
@@ -26,18 +27,19 @@ const (
 var ErrSystemTaskLockLost = errors.New("system task lock lost")
 
 type SystemTask struct {
-	ID        int64            `json:"id" gorm:"primary_key"`
-	TaskID    string           `json:"task_id" gorm:"type:varchar(64);uniqueIndex"`
-	Type      string           `json:"type" gorm:"type:varchar(64);index"`
-	Status    SystemTaskStatus `json:"status" gorm:"type:varchar(32);index"`
-	ActiveKey *string          `json:"active_key,omitempty" gorm:"type:varchar(64);uniqueIndex"`
-	Payload   string           `json:"payload" gorm:"type:text"`
-	State     string           `json:"state" gorm:"type:text"`
-	Result    string           `json:"result" gorm:"type:text"`
-	Error     string           `json:"error" gorm:"type:text"`
-	LockedBy  string           `json:"locked_by" gorm:"type:varchar(128);index"`
-	CreatedAt int64            `json:"created_at" gorm:"bigint;index"`
-	UpdatedAt int64            `json:"updated_at" gorm:"bigint;index"`
+	ID              int64            `json:"id" gorm:"primary_key"`
+	TaskID          string           `json:"task_id" gorm:"type:varchar(64);uniqueIndex"`
+	Type            string           `json:"type" gorm:"type:varchar(64);index"`
+	Status          SystemTaskStatus `json:"status" gorm:"type:varchar(32);index"`
+	ActiveKey       *string          `json:"active_key,omitempty" gorm:"type:varchar(64);uniqueIndex"`
+	Payload         string           `json:"payload" gorm:"type:text"`
+	State           string           `json:"state" gorm:"type:text"`
+	Result          string           `json:"result" gorm:"type:text"`
+	Error           string           `json:"error" gorm:"type:text"`
+	LockedBy        string           `json:"locked_by" gorm:"type:varchar(128);index"`
+	CancelRequested bool             `json:"cancel_requested"`
+	CreatedAt       int64            `json:"created_at" gorm:"bigint;index"`
+	UpdatedAt       int64            `json:"updated_at" gorm:"bigint;index"`
 }
 
 type SystemTaskLock struct {
@@ -49,18 +51,19 @@ type SystemTaskLock struct {
 }
 
 type SystemTaskResponse struct {
-	ID        int64            `json:"id"`
-	TaskID    string           `json:"task_id"`
-	Type      string           `json:"type"`
-	Status    SystemTaskStatus `json:"status"`
-	ActiveKey *string          `json:"active_key,omitempty"`
-	Payload   any              `json:"payload"`
-	State     any              `json:"state"`
-	Result    any              `json:"result"`
-	Error     string           `json:"error"`
-	LockedBy  string           `json:"locked_by"`
-	CreatedAt int64            `json:"created_at"`
-	UpdatedAt int64            `json:"updated_at"`
+	ID              int64            `json:"id"`
+	TaskID          string           `json:"task_id"`
+	Type            string           `json:"type"`
+	Status          SystemTaskStatus `json:"status"`
+	ActiveKey       *string          `json:"active_key,omitempty"`
+	Payload         any              `json:"payload"`
+	State           any              `json:"state"`
+	Result          any              `json:"result"`
+	Error           string           `json:"error"`
+	LockedBy        string           `json:"locked_by"`
+	CancelRequested bool             `json:"cancel_requested"`
+	CreatedAt       int64            `json:"created_at"`
+	UpdatedAt       int64            `json:"updated_at"`
 }
 
 func (task *SystemTask) BeforeCreate(_ *gorm.DB) error {
@@ -116,6 +119,57 @@ func CreateSystemTask(taskType string, payload any, state any) (*SystemTask, err
 		return nil, err
 	}
 	return task, nil
+}
+
+// RequestSystemTaskCancel stops a pending task immediately and asks a running
+// task to stop before the next delete batch. A finished task is unchanged.
+func RequestSystemTaskCancel(taskID string) (*SystemTask, error) {
+	if taskID == "" {
+		return nil, gorm.ErrRecordNotFound
+	}
+	now := common.GetTimestamp()
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var task SystemTask
+		if err := tx.Where("task_id = ?", taskID).First(&task).Error; err != nil {
+			return err
+		}
+		switch task.Status {
+		case SystemTaskStatusSucceeded, SystemTaskStatusFailed, SystemTaskStatusCancelled:
+			return nil
+		case SystemTaskStatusPending:
+			return tx.Model(&SystemTask{}).
+				Where("task_id = ? AND status = ?", taskID, SystemTaskStatusPending).
+				Updates(map[string]any{
+					"status":           SystemTaskStatusCancelled,
+					"active_key":       nil,
+					"cancel_requested": true,
+					"error":            "cancelled",
+					"updated_at":       now,
+				}).Error
+		case SystemTaskStatusRunning:
+			return tx.Model(&SystemTask{}).
+				Where("task_id = ? AND status = ?", taskID, SystemTaskStatusRunning).
+				Updates(map[string]any{
+					"cancel_requested": true,
+					"updated_at":       now,
+				}).Error
+		default:
+			return gorm.ErrRecordNotFound
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
+	return GetSystemTaskByTaskID(taskID)
+}
+
+func SystemTaskCancelRequested(taskID string) (bool, error) {
+	var task SystemTask
+	err := DB.Select("cancel_requested").Where("task_id = ?", taskID).First(&task).Error
+	if err != nil {
+		return false, err
+	}
+	return task.CancelRequested, nil
 }
 
 func GetSystemTaskByTaskID(taskID string) (*SystemTask, error) {
@@ -178,7 +232,7 @@ func FindEarliestPendingSystemTasks(taskTypes []string) (map[string]*SystemTask,
 type SystemTaskFilter struct {
 	Scope  string           `form:"scope" binding:"omitempty,oneof=active history"`
 	Type   string           `form:"type" binding:"max=64"`
-	Status SystemTaskStatus `form:"status" binding:"omitempty,oneof=pending running succeeded failed"`
+	Status SystemTaskStatus `form:"status" binding:"omitempty,oneof=pending running succeeded failed cancelled"`
 }
 
 func (filter SystemTaskFilter) query() *gorm.DB {
@@ -187,7 +241,7 @@ func (filter SystemTaskFilter) query() *gorm.DB {
 	case "active":
 		query = query.Where("status IN ?", activeSystemTaskStatuses())
 	case "history":
-		query = query.Where("status IN ?", []SystemTaskStatus{SystemTaskStatusSucceeded, SystemTaskStatusFailed})
+		query = query.Where("status IN ?", []SystemTaskStatus{SystemTaskStatusSucceeded, SystemTaskStatusFailed, SystemTaskStatusCancelled})
 	}
 	if filter.Type != "" {
 		query = query.Where("type = ?", filter.Type)
@@ -476,18 +530,19 @@ func (task *SystemTask) DecodeState(v any) error {
 
 func (task *SystemTask) ToResponse() SystemTaskResponse {
 	return SystemTaskResponse{
-		ID:        task.ID,
-		TaskID:    task.TaskID,
-		Type:      task.Type,
-		Status:    task.Status,
-		ActiveKey: task.ActiveKey,
-		Payload:   decodeSystemTaskJSONValue(task.Payload),
-		State:     decodeSystemTaskJSONValue(task.State),
-		Result:    decodeSystemTaskJSONValue(task.Result),
-		Error:     task.Error,
-		LockedBy:  task.LockedBy,
-		CreatedAt: task.CreatedAt,
-		UpdatedAt: task.UpdatedAt,
+		ID:              task.ID,
+		TaskID:          task.TaskID,
+		Type:            task.Type,
+		Status:          task.Status,
+		ActiveKey:       task.ActiveKey,
+		Payload:         decodeSystemTaskJSONValue(task.Payload),
+		State:           decodeSystemTaskJSONValue(task.State),
+		Result:          decodeSystemTaskJSONValue(task.Result),
+		Error:           task.Error,
+		LockedBy:        task.LockedBy,
+		CancelRequested: task.CancelRequested,
+		CreatedAt:       task.CreatedAt,
+		UpdatedAt:       task.UpdatedAt,
 	}
 }
 

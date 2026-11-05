@@ -76,7 +76,12 @@ export type ConfirmPaymentComplianceResponse = {
   }
 }
 
-export type SystemTaskStatus = 'pending' | 'running' | 'succeeded' | 'failed'
+export type SystemTaskStatus =
+  | 'pending'
+  | 'running'
+  | 'succeeded'
+  | 'failed'
+  | 'cancelled'
 
 export type SystemTask<
   TPayload = Record<string, unknown>,
@@ -94,6 +99,7 @@ export type SystemTask<
   error?: string
   locked_by?: string
   locked_until?: number
+  cancel_requested?: boolean
   created_at: number
   updated_at: number
 }

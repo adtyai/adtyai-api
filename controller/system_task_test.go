@@ -44,6 +44,40 @@ func TestLogCleanupRejectsUnboundedTimestamp(t *testing.T) {
 	assert.EqualValues(t, 1, remaining)
 }
 
+func TestCancelSystemTaskStopsPendingCleanup(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	previousDB, previousLogDB := model.DB, model.LOG_DB
+	previousRedis := common.RedisEnabled
+	model.DB, model.LOG_DB = db, db
+	common.RedisEnabled = false
+	t.Cleanup(func() {
+		model.DB, model.LOG_DB = previousDB, previousLogDB
+		common.RedisEnabled = previousRedis
+		require.NoError(t, sqlDB.Close())
+	})
+	require.NoError(t, db.AutoMigrate(&model.SystemTask{}, &model.Log{}))
+	task := &model.SystemTask{TaskID: "cleanup-1", Type: model.SystemTaskTypeLogCleanup, Status: model.SystemTaskStatusPending, ActiveKey: common.GetPointer(model.SystemTaskTypeLogCleanup)}
+	require.NoError(t, db.Create(task).Error)
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/system-task/cleanup-1/cancel", nil)
+	c.Params = gin.Params{{Key: "task_id", Value: "cleanup-1"}}
+	CancelSystemTask(c)
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.Contains(t, recorder.Body.String(), `"status":"cancelled"`)
+
+	missing := httptest.NewRecorder()
+	missingCtx, _ := gin.CreateTestContext(missing)
+	missingCtx.Request = httptest.NewRequest(http.MethodPost, "/api/system-task/missing/cancel", nil)
+	missingCtx.Params = gin.Params{{Key: "task_id", Value: "missing"}}
+	CancelSystemTask(missingCtx)
+	require.Equal(t, http.StatusNotFound, missing.Code)
+}
+
 func TestSystemTaskListFiltersAndPaginationResponse(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)

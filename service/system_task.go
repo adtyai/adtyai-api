@@ -375,6 +375,9 @@ func runLogCleanupTask(ctx context.Context, task *model.SystemTask, runnerID str
 	}
 
 	for {
+		if stop, err := stopLogCleanupIfCancelled(ctx, task, runnerID, state); err != nil || stop {
+			return
+		}
 		remaining, err := model.CountOldLog(ctx, payload.TargetTimestamp)
 		if err != nil {
 			failSystemTask(task, runnerID, err)
@@ -395,6 +398,9 @@ func runLogCleanupTask(ctx context.Context, task *model.SystemTask, runnerID str
 		// rows cannot be removed and we fail instead of busy-looping.
 		progressed := false
 		for state.Remaining > 0 {
+			if stop, err := stopLogCleanupIfCancelled(ctx, task, runnerID, state); err != nil || stop {
+				return
+			}
 			rowsAffected, err := model.DeleteOldLogBatch(ctx, payload.TargetTimestamp, payload.BatchSize)
 			if err != nil {
 				failSystemTask(task, runnerID, err)
@@ -442,6 +448,34 @@ func runLogCleanupTask(ctx context.Context, task *model.SystemTask, runnerID str
 	if err := model.FinishSystemTask(task.TaskID, runnerID, model.SystemTaskStatusSucceeded, result, ""); err != nil {
 		logSystemTaskLockError(ctx, task, err)
 	}
+}
+
+func stopLogCleanupIfCancelled(ctx context.Context, task *model.SystemTask, runnerID string, state LogCleanupState) (bool, error) {
+	if ctx != nil {
+		select {
+		case <-ctx.Done():
+			return true, finishCancelledLogCleanup(task, runnerID, state)
+		default:
+		}
+	}
+	cancelled, err := model.SystemTaskCancelRequested(task.TaskID)
+	if err != nil {
+		failSystemTask(task, runnerID, err)
+		return true, err
+	}
+	if !cancelled {
+		return false, nil
+	}
+	return true, finishCancelledLogCleanup(task, runnerID, state)
+}
+
+func finishCancelledLogCleanup(task *model.SystemTask, runnerID string, state LogCleanupState) error {
+	result := LogCleanupResult{DeletedCount: state.Processed}
+	if err := model.FinishSystemTask(task.TaskID, runnerID, model.SystemTaskStatusCancelled, result, "cancelled"); err != nil {
+		logSystemTaskLockError(context.Background(), task, err)
+		return err
+	}
+	return nil
 }
 
 func syncLogCleanupStateFromRemaining(state *LogCleanupState, remaining int64) {

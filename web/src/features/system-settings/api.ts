@@ -87,6 +87,13 @@ export async function getCurrentLogCleanupTask() {
   return res.data
 }
 
+export async function cancelSystemTask(taskId: string) {
+  const res = await api.post<SystemTaskResponse<LogCleanupTask>>(
+    `/api/system-task/${encodeURIComponent(taskId)}/cancel`
+  )
+  return res.data
+}
+
 export async function getSystemTask(taskId: string) {
   const res = await api.get<SystemTaskResponse<LogCleanupTask>>(
     `/api/system-task/${taskId}`

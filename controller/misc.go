@@ -38,6 +38,31 @@ func TestStatus(c *gin.Context) {
 	return
 }
 
+// GetReady is the process readiness probe. It does not return configuration,
+// database DSNs, or node inventory. A cached status response is not readiness.
+func GetReady(c *gin.Context) {
+	if err := model.PingDBImmediate(); err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"success": false,
+			"message": "not ready",
+		})
+		return
+	}
+	if common.RedisEnabled {
+		if err := common.PingRedis(); err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"success": false,
+				"message": "not ready",
+			})
+			return
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+	})
+}
+
 func GetStatus(c *gin.Context) {
 	// 分站 widget 要在拿配置锁之前查，避免锁里再查站点表。
 	turnstileSiteKey := common.TurnstileSiteKey

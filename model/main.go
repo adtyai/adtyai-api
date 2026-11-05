@@ -148,7 +148,7 @@ func chooseDB(envName string, isLog bool) (*gorm.DB, common.DatabaseType, error)
 			db, err := gorm.Open(clickhouse.Open(normalizeClickHouseDSN(dsn)), newGormConfig(false))
 			return db, common.DatabaseTypeClickHouse, err
 		}
-		if strings.HasPrefix(dsn, "postgres://") || strings.HasPrefix(dsn, "postgresql://") {
+		if IsPostgresDSN(dsn) {
 			// Use PostgreSQL
 			common.SysLog(common.LogText("using PostgreSQL as database"))
 			// 同时关闭 pgx 隐式与 GORM 显式预处理语句:命名 prepared statement 与
@@ -671,6 +671,19 @@ var (
 	lastPingTime time.Time
 	pingMutex    sync.Mutex
 )
+
+// PingDBImmediate checks the database on every call. Readiness probes must
+// not reuse PingDB's 10 second success cache.
+func PingDBImmediate() error {
+	if DB == nil {
+		return fmt.Errorf("database is not ready")
+	}
+	sqlDB, err := DB.DB()
+	if err != nil {
+		return err
+	}
+	return sqlDB.Ping()
+}
 
 func PingDB() error {
 	pingMutex.Lock()

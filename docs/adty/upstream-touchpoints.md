@@ -33,6 +33,18 @@
 | `relay/channel/task/jsplugin/adaptor.go` | JSON 提交已经收到上游响应后，读体失败和 `parseSubmitResponse` 失败都设 `NoRetry` | 解析失败再换渠道会把已经受理的任务再提交一次 | 审查 v3 |
 | `relay/relay_task.go` | 视频查询找不到适配器时不再把渠道编号写进错误信息 | 普通用户的错误响应不能带内部渠道编号 | 审查 v3 |
 | `controller/option.go` | 通用设置接口拒绝 `adty_marketing_setting.*` | 不能绕过营销设置页，在缺发件地址和密钥时打开营销 | 审查 v3 |
+| `controller/option.go` | 通用设置接口拒绝整个 `adty_referral_setting.*` | 不能绕过推广设置页，在没有默认比例时打开返佣 | 审查 v3 |
+| `setting/config/config.go` | 分层配置的非法布尔、整数和浮点不再静默跳过 | 非法配置不能显示成保存成功，也不能只写进数据库 | 审查 v3 |
+| `model/option.go` | `UpdateOption` 在写库前校验分层配置字段 | 解析失败不能先把非法值写入 options 表 | 审查 v3 |
+| `model/main.go` | `chooseDB` 把 PostgreSQL 关键字连接串认成 PostgreSQL；增加 `PingDBImmediate` | CI 和本地关键字 DSN 不能被当成 MySQL；就绪探针不能吃 10 秒缓存 | 审查 v3 |
+| `controller/misc.go` | 增加 `GetReady`，只返回是否就绪 | 健康检查不能把始终成功的 `/api/status` 当成数据库已连通 | 审查 v3 |
+| `router/api-router.go` | 增加 `GET /api/ready` 和 `POST /api/system-task/:task_id/cancel` | 容器探针和日志清理取消要有真实入口 | 审查 v3 |
+| `model/system_task.go` | 增加取消状态和 `RequestSystemTaskCancel` | 待执行的清理立即停止，正在执行的清理在下一批前停止 | 审查 v3 |
+| `controller/system_task.go` | `CancelSystemTask` 写审计并返回取消后的任务 | 清理任务必须能从后台停下来 | 审查 v3 |
+| `service/system_task.go` | `runLogCleanupTask` 在每批删除前检查取消 | 已经开始的清理不能在取消后继续删用量日志 | 审查 v3 |
+| `middleware/cors.go` | 不再同时允许任意 Origin 和凭据 | 跨站浏览器不能被声明为可携带会话 cookie | 审查 v3 |
+| `main.go` | pprof 只监听 127.0.0.1，并给 HTTP 服务加安全响应头 | 分析端口和登录页不能对所有网卡或任意站点开放 | 审查 v3 |
+| `docker-compose.yml` | 示例密码改为必填环境变量，端口只绑 127.0.0.1，数据库镜像改为 PostgreSQL 16 | 根目录 compose 不能用公开示例密码和全网卡端口启动 | 审查 v3 |
 | `controller/system_task.go` | 清理目标落在 90 天保留期内时返回 400 | 未来时间戳不能启动一次删掉近期付款日志的任务 | 审查 v3 |
 | `model/log.go` | `CountOldLog` 和 `DeleteOldLogBatch` 不删除充值、退款和管理员调额日志；关掉消费日志时仍写 `quota_data` | 用量清理不能误删付款记录；关日志不能让真实扣费失去汇总证据 | 审查 v3 |
 | `middleware/adty_user_limit.go` | 计数存储出错时返回 503，不再放行请求 | Redis 故障不能放开按用户的 RPM、TPM 和并发限制 | 审查 v3 |

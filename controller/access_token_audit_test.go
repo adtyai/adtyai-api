@@ -849,19 +849,20 @@ func newAuditTestDatabase(t *testing.T, kind, dsn string) (*gorm.DB, string) {
 		config.DBName = name
 		newDSN = config.FormatDSN()
 		isolated = mysql.Open(newDSN)
-	} else {
+	} else if kind == "clickhouse" {
 		parsed, err := url.Parse(dsn)
 		require.NoError(t, err)
 		require.True(t, net.ParseIP(parsed.Hostname()).IsLoopback(), "database tests only permit loopback instances")
 		parsed.Path = "/" + name
 		newDSN = parsed.String()
-		if kind == "clickhouse" {
-			original = clickhouse.Open(dsn)
-			isolated = clickhouse.Open(newDSN)
-		} else {
-			original = postgres.Open(dsn)
-			isolated = postgres.Open(newDSN)
-		}
+		original = clickhouse.Open(dsn)
+		isolated = clickhouse.Open(newDSN)
+	} else {
+		var err error
+		newDSN, err = model.IsolateLocalPostgresDSN(dsn, name)
+		require.NoError(t, err)
+		original = postgres.Open(dsn)
+		isolated = postgres.Open(newDSN)
 	}
 	admin, err := gorm.Open(original, &gorm.Config{})
 	require.NoError(t, err)

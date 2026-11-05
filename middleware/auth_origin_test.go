@@ -66,6 +66,19 @@ func TestSessionCookieOriginGuard(t *testing.T) {
 	}
 }
 
+func TestCORSDoesNotAllowCredentialedArbitraryOrigin(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	engine.Use(CORS())
+	engine.GET("/v1/models", func(c *gin.Context) { c.Status(http.StatusNoContent) })
+	request := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	request.Header.Set("Origin", "https://evil.example")
+	response := httptest.NewRecorder()
+	engine.ServeHTTP(response, request)
+	assert.NotEqual(t, "true", response.Header().Get("Access-Control-Allow-Credentials"))
+	assert.NotEqual(t, "https://evil.example", response.Header().Get("Access-Control-Allow-Origin"))
+}
+
 func TestSessionCookieOriginGuardDevelopmentCompatibility(t *testing.T) {
 	previousSecure := common.SessionCookieSecure
 	previousTrustedURLs := common.SessionCookieTrustedURLs

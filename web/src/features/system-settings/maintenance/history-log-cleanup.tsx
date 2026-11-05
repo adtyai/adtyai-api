@@ -38,6 +38,7 @@ import { handleServerError } from '@/lib/handle-server-error'
 import { createServerError } from '@/lib/server-error-message'
 
 import {
+  cancelSystemTask,
   getCurrentLogCleanupTask,
   getSystemTask,
   startLogCleanupTask,
@@ -82,6 +83,7 @@ export function HistoryLogCleanup() {
     getDateDaysAgo(logCleanupRetentionDays)
   )
   const [isStartingLogCleanup, setIsStartingLogCleanup] = useState(false)
+  const [isCancellingLogCleanup, setIsCancellingLogCleanup] = useState(false)
   const [logCleanupTask, setLogCleanupTask] = useState<LogCleanupTask | null>(
     null
   )
@@ -171,6 +173,25 @@ export function HistoryLogCleanup() {
     setShowConfirmDialog(true)
   }
 
+  const handleCancelCleanup = async () => {
+    if (!logCleanupTaskId) return
+    setIsCancellingLogCleanup(true)
+    try {
+      const res = await cancelSystemTask(logCleanupTaskId)
+      if (!res.success || !res.data) {
+        throw createServerError(res, t('Failed to clean logs'))
+      }
+      setLogCleanupTask(res.data)
+    } catch (error) {
+      handleServerError(
+        error,
+        error instanceof Error ? error.message : t('Failed to clean logs')
+      )
+    } finally {
+      setIsCancellingLogCleanup(false)
+    }
+  }
+
   const handleCleanLogs = async () => {
     if (!purgeTimestamp) {
       toast.error(t('Select a timestamp before clearing logs.'))
@@ -236,6 +257,16 @@ export function HistoryLogCleanup() {
             ? t('Cleaning...')
             : t('Clean logs')}
         </Button>
+        {logCleanupActive && (
+          <Button
+            type='button'
+            variant='outline'
+            onClick={handleCancelCleanup}
+            disabled={isCancellingLogCleanup || !logCleanupTaskId}
+          >
+            {t('Cancel')}
+          </Button>
+        )}
       </div>
       {logCleanupTask && (
         <div className='rounded-md border p-3'>

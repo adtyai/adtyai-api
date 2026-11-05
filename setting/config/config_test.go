@@ -10,6 +10,20 @@ type testConfigWithMap struct {
 	Name  string            `json:"name"`
 }
 
+func TestUpdateConfigFromMapRejectsInvalidBool(t *testing.T) {
+	type sample struct {
+		Enabled bool `json:"enabled"`
+	}
+	cfg := &sample{Enabled: true}
+	err := UpdateConfigFromMap(cfg, map[string]string{"enabled": "yes"})
+	if err == nil {
+		t.Fatal("invalid bool was accepted")
+	}
+	if !cfg.Enabled {
+		t.Fatal("invalid bool cleared the previous value")
+	}
+}
+
 func TestUpdateConfigFromMap_MapReplacement(t *testing.T) {
 	cfg := &testConfigWithMap{
 		Modes: map[string]string{

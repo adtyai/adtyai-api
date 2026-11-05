@@ -10,6 +10,7 @@ import (
 	"github.com/QuantumNous/new-api/service"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 func CreateLogCleanupSystemTask(c *gin.Context) {
@@ -32,6 +33,28 @@ func CreateLogCleanupSystemTask(c *gin.Context) {
 		return
 	}
 
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data":    task.ToResponse(),
+	})
+}
+
+func CancelSystemTask(c *gin.Context) {
+	task, err := model.RequestSystemTaskCancel(c.Param("task_id"))
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "task not found"})
+			return
+		}
+		common.ApiError(c, err)
+		return
+	}
+	recordManageAudit(c, "system_task.cancel", map[string]any{
+		"task_id": task.TaskID,
+		"type":    task.Type,
+		"status":  task.Status,
+	})
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
