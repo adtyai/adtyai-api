@@ -63,12 +63,25 @@ func AdtyBonusFor(face int64) (rate, bonus decimal.Decimal) {
 	return adtyBonusFromRates(adty_setting.GetTopupSetting().BonusRates, face)
 }
 
-// AdtyTopupDisplayRates 是钱包页要展示的加赠档位。分站客户用站点档位，和报价一致；主站用后台档位。
+// AdtyTopupDisplayRates 是钱包页要展示的加赠档位。分站客户用站点档位，并按当前主站档加额外上限封顶，和报价一致；主站用后台档位。
 func AdtyTopupDisplayRates(site *model.AdtySite) map[int]float64 {
-	if site != nil {
-		return AdtySiteBonusRates(site)
+	if site == nil {
+		return adty_setting.GetTopupSetting().BonusRates
 	}
-	return adty_setting.GetTopupSetting().BonusRates
+	raw := AdtySiteBonusRates(site)
+	capped := make(map[int]float64, len(raw))
+	for tier, rate := range raw {
+		capped[tier] = rate
+		if tier <= 0 {
+			continue
+		}
+		maxRate := adtySiteBonusCapAmount(int64(tier)).Mul(decimal.NewFromInt(100)).Div(decimal.NewFromInt(int64(tier)))
+		if decimal.NewFromFloat(rate).GreaterThan(maxRate) {
+			value, _ := maxRate.Round(8).Float64()
+			capped[tier] = value
+		}
+	}
+	return capped
 }
 
 // AdtyBonusFromRates 按一组档位算加赠比例和金额。
