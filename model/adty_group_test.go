@@ -17,6 +17,10 @@ import (
 	"gorm.io/gorm"
 )
 
+func TestAdtyContentLangsIncludeKorean(t *testing.T) {
+	assert.Contains(t, AdtyContentLangs, "ko")
+}
+
 func TestAdtyTestDBUsesDistinctSchemasAndDropsThem(t *testing.T) {
 	dsn := os.Getenv("ADTY_TEST_PG_DSN")
 	if dsn == "" {
@@ -85,6 +89,15 @@ func TestAdtyCheckPostgreSQL(t *testing.T) {
 			assert.Zero(t, exited)
 		})
 	}
+}
+
+func TestCIWorkflowRunsPostgreSQL(t *testing.T) {
+	data, err := os.ReadFile("../.github/workflows/ci.yml")
+	require.NoError(t, err)
+	text := string(data)
+	require.Contains(t, text, "image: postgres:16")
+	require.Contains(t, text, "ADTY_TEST_PG_DSN")
+	require.Contains(t, text, "postgres:16")
 }
 
 func TestSeedAdtyGroupsOnce(t *testing.T) {
@@ -192,10 +205,11 @@ func TestUpdateAdtyGroupTextKeepsID(t *testing.T) {
 	require.NoError(t, db.First(&stored, "id = ?", created.ID).Error)
 	assert.Equal(t, "旧名", stored.Names["en"])
 
-	updated, err := UpdateAdtyGroupTexts(created.ID, AdtyLangText{"en": "New", "zh-CN": " 新名 ", "xx": "ignored"}, AdtyLangText{})
+	updated, err := UpdateAdtyGroupTexts(created.ID, AdtyLangText{"en": "New", "zh-CN": " 新名 ", "ko": " 한국어 ", "xx": "ignored"}, AdtyLangText{})
 	require.NoError(t, err)
 	assert.Equal(t, created.ID, updated.ID)
 	assert.Equal(t, "新名", updated.Names["zh-CN"])
+	assert.Equal(t, "한국어", updated.Names["ko"])
 	assert.Equal(t, "", updated.Names["fr"])
 	assert.NotContains(t, updated.Names, "xx")
 

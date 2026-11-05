@@ -264,6 +264,7 @@ export function SitesPanel(props: { onOpenSite: (site: AdminSite) => void }) {
                   onSort={onSort}
                 />
               </TableHead>
+              <TableHead>{t('Close requested')}</TableHead>
               <TableHead>{t('Opened')}</TableHead>
               <TableHead className='text-right'>{t('Actions')}</TableHead>
             </TableRow>
@@ -271,7 +272,7 @@ export function SitesPanel(props: { onOpenSite: (site: AdminSite) => void }) {
           <TableBody>
             {rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={12}>
+                <TableCell colSpan={13}>
                   <EmptyState className='min-h-32' title={t('No data')} />
                 </TableCell>
               </TableRow>
@@ -295,6 +296,11 @@ export function SitesPanel(props: { onOpenSite: (site: AdminSite) => void }) {
                   <TableCell>{row.month_earning_usd ?? '0'}</TableCell>
                   <TableCell>
                     {row.growth_pct == null ? '-' : `${row.growth_pct}%`}
+                  </TableCell>
+                  <TableCell>
+                    {row.close_requested_at > 0
+                      ? formatTimestampToDate(row.close_requested_at)
+                      : '-'}
                   </TableCell>
                   <TableCell>{formatTimestampToDate(row.created_at)}</TableCell>
                   <TableCell className='text-right'>

@@ -34,7 +34,7 @@ const seoIndexPage = `<!doctype html>
 </html>
 `
 
-const seoPrerender = `{"en":"<h1>EN hero</h1>","zh-CN":"<h1>中文首屏</h1>","zh-TW":"<h1>繁體首屏</h1>","fr":"<h1>FR</h1>","ja":"<h1>JA</h1>","ru":"<h1>RU</h1>","vi":"<h1>VI</h1>"}`
+const seoPrerender = `{"en":"<h1>EN hero</h1>","zh-CN":"<h1>中文首屏</h1>","zh-TW":"<h1>繁體首屏</h1>","fr":"<h1>FR</h1>","ja":"<h1>JA</h1>","ko":"<h1>한국어 첫 화면</h1>","ru":"<h1>RU</h1>","vi":"<h1>VI</h1>"}`
 
 type seoFixture struct {
 	serverAddress string
@@ -105,6 +105,7 @@ func TestHomePagesSEOHead(t *testing.T) {
 		{"/zh-tw", "zh-Hant", "ADTY AI - one key", "zh_TW"},
 		{"/fr", "fr", "ADTY AI - one key", "fr_FR"},
 		{"/ja", "ja", "ADTY AI - one key", "ja_JP"},
+		{"/ko", "ko", "ADTY AI - one key", "ko_KR"},
 		{"/ru", "ru", "ADTY AI - one key", "ru_RU"},
 		{"/vi", "vi", "ADTY AI - one key", "vi_VN"},
 	}
@@ -126,7 +127,7 @@ func TestHomePagesSEOHead(t *testing.T) {
 			assert.Contains(t, body, `<meta property="og:locale" content="`+tc.locale+`" />`)
 			assert.Contains(t, body, `<meta property="og:image" content="https://adtyai.com/adty-og.png" />`)
 			assert.Contains(t, body, `<meta name="twitter:card" content="summary_large_image" />`)
-			assert.Equal(t, 8, strings.Count(body, `<link rel="alternate" hreflang=`))
+			assert.Equal(t, 9, strings.Count(body, `<link rel="alternate" hreflang=`))
 			assert.Contains(t, body, `<link rel="alternate" hreflang="x-default" href="https://adtyai.com/" />`)
 			assert.Contains(t, body, `<link rel="alternate" hreflang="zh-Hant" href="https://adtyai.com/zh-tw" />`)
 			assert.NotContains(t, body, "noindex")
@@ -142,6 +143,8 @@ func TestHomePagesSEOHead(t *testing.T) {
 	}
 	rec := newSEOFixture().serve(t, "adtyai.com", "/zh-cn")
 	assert.Contains(t, rec.Body.String(), "<h1>中文首屏</h1>")
+	ko := newSEOFixture().serve(t, "adtyai.com", "/ko")
+	assert.Contains(t, ko.Body.String(), "<h1>한국어 첫 화면</h1>")
 }
 
 func TestHomeTitleFallsBackToBrand(t *testing.T) {

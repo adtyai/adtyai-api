@@ -313,7 +313,7 @@ type adtyCampaignInput struct {
 	ScheduledAt int64                       `json:"scheduled_at"`
 }
 
-// apply 校验并写进 campaign：只留 7 种内容语言、去掉空的语言。
+// apply 校验并写进 campaign：只留 8 种内容语言、去掉空的语言。
 func (in *adtyCampaignInput) apply(campaign *model.AdtyMarketingCampaign) bool {
 	name := strings.TrimSpace(in.Name)
 	if name == "" || len([]rune(name)) > 128 || in.ScheduledAt < 0 {

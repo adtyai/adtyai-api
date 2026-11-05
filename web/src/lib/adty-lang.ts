@@ -23,6 +23,7 @@ export const CONTENT_LANGS = [
   'zh-TW',
   'fr',
   'ja',
+  'ko',
   'ru',
   'vi',
 ] as const
@@ -36,6 +37,7 @@ export const CONTENT_LANG_LABELS: Record<ContentLang, string> = {
   'zh-TW': '繁體中文',
   fr: 'Français',
   ja: '日本語',
+  ko: '한국어',
   ru: 'Русский',
   vi: 'Tiếng Việt',
 }

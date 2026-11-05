@@ -14,8 +14,10 @@ import (
 	"unicode/utf8"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting/adty_setting"
+	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 )
 
@@ -410,6 +412,9 @@ func startAdtySenderDomainTask() {
 func init() {
 	adtyMasterTasks = append(adtyMasterTasks, startAdtySenderDomainTask)
 	AdtyMarketingSiteSender = adtyMarketingSenderForSite
+	AdtyOnSiteClosing = adtyNotifySiteClosing
+	AdtyOnSiteMarkupIncrease = adtyNotifySiteMarkupIncrease
+	AdtyOnSiteCostFactorChanged = adtyNotifySiteCostFactor
 	previous := AdtyOnSiteClosed
 	AdtyOnSiteClosed = func(site *model.AdtySite) {
 		if previous != nil {
@@ -417,6 +422,119 @@ func init() {
 		}
 		adtyRemoveSenderDomainOfClosedSite(site)
 	}
+}
+
+func adtyMailWhen(unix int64) string {
+	if unix <= 0 {
+		return ""
+	}
+	return time.Unix(unix, 0).Format("2006-01-02 15:04 MST")
+}
+
+func adtySendSiteMail(site *model.AdtySite, user *model.User, subjectKey, bodyKey string, args map[string]any) {
+	if user == nil || strings.TrimSpace(user.Email) == "" {
+		return
+	}
+	lang := user.GetSetting().Language
+	subject := i18n.Translate(lang, subjectKey, args)
+	body := "<p>" + html.EscapeString(i18n.Translate(lang, bodyKey, args)) + "</p>"
+	AdtySendSiteEmailAsync(site, subject, user.Email, body)
+}
+
+func adtySiteCustomerUsers(siteId int) []model.User {
+	var users []model.User
+	if err := model.DB.Select("id", "email", "setting", "site_id").Where("site_id = ?", siteId).Find(&users).Error; err != nil {
+		common.SysError(common.LogText("load site %d customers for mail: %s", siteId, err.Error()))
+		return nil
+	}
+	return users
+}
+
+// adtyNotifySiteClosing 给这个站的客户发关站邮件。
+func adtyNotifySiteClosing(site *model.AdtySite) {
+	if site == nil {
+		return
+	}
+	link := AdtySiteBaseURL(nil)
+	if site.CloseTransferTo != 0 {
+		if target := AdtySiteById(site.CloseTransferTo); target != nil {
+			link = AdtySiteBaseURL(target)
+		}
+	}
+	args := map[string]any{
+		"SystemName": AdtyBrandFor(site).Name,
+		"When":       adtyMailWhen(site.CloseExecuteAt),
+		"Link":       link,
+	}
+	for _, user := range adtySiteCustomerUsers(site.Id) {
+		copied := user
+		adtySendSiteMail(site, &copied, i18n.MsgAdtySiteClosingSubject, i18n.MsgAdtySiteClosingBody, args)
+	}
+}
+
+func adtyMarkupRaisedDetail(raised []model.AdtySitePrice) (string, int64) {
+	parts := make([]string, 0, len(raised))
+	var at int64
+	for _, row := range raised {
+		group := row.Group
+		if group == "" {
+			group = "all groups"
+		}
+		next := row.PendingMarkup
+		if next.IsZero() && row.Markup.IsPositive() {
+			next = row.Markup
+		}
+		parts = append(parts, group+" → "+next.String())
+		if row.PendingAt > at {
+			at = row.PendingAt
+		}
+	}
+	return strings.Join(parts, "; "), at
+}
+
+// adtyNotifySiteMarkupIncrease 给 k 变高的客户发邮件。
+func adtyNotifySiteMarkupIncrease(site *model.AdtySite, userId int, raised []model.AdtySitePrice) {
+	if site == nil || len(raised) == 0 {
+		return
+	}
+	detail, at := adtyMarkupRaisedDetail(raised)
+	args := map[string]any{
+		"SystemName": AdtyBrandFor(site).Name,
+		"Detail":     detail,
+		"When":       adtyMailWhen(at),
+		"Link":       AdtySiteBaseURL(site),
+	}
+	var users []model.User
+	if userId > 0 {
+		if user, err := model.GetUserById(userId, false); err == nil {
+			users = []model.User{*user}
+		}
+	} else {
+		users = adtySiteCustomerUsers(site.Id)
+	}
+	for _, user := range users {
+		copied := user
+		adtySendSiteMail(site, &copied, i18n.MsgAdtySiteMarkupSubject, i18n.MsgAdtySiteMarkupBody, args)
+	}
+}
+
+// adtyNotifySiteCostFactor 给站长发邮件，说明当前生效的 d。
+func adtyNotifySiteCostFactor(site *model.AdtySite) {
+	if site == nil {
+		return
+	}
+	owner, err := model.GetUserById(site.OwnerUserId, false)
+	if err != nil {
+		common.SysError(common.LogText("load site %d owner for cost factor mail: %s", site.Id, err.Error()))
+		return
+	}
+	factor, ok := AdtySiteCostFactor(site)
+	if !ok {
+		factor = decimal.Zero
+	}
+	adtySendSiteMail(site, owner, i18n.MsgAdtySiteCostNowSubject, i18n.MsgAdtySiteCostNowBody, map[string]any{
+		"Factor": factor.String(),
+	})
 }
 
 // AdtySiteForEmail 是这个邮箱的账号所属的站点（只有邮箱、没有用户 id 的系统邮件用）；查不到返回 nil。

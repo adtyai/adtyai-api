@@ -49,7 +49,7 @@ func lockAdtyGroupConfig(keys ...string) func() {
 }
 
 // AdtyContentLangs 是分组显示名和说明要写全的语言。
-var AdtyContentLangs = []string{"zh-CN", "zh-TW", "en", "fr", "ja", "ru", "vi"}
+var AdtyContentLangs = []string{"zh-CN", "zh-TW", "en", "fr", "ja", "ko", "ru", "vi"}
 
 var (
 	ErrAdtyGroupNotFound     = errors.New("adty group not found")
@@ -366,7 +366,7 @@ func ValidateAdtyGroupTexts(names, descs AdtyLangText) error {
 	return err
 }
 
-// normalizeAdtyGroupTexts 去掉首尾空白，只保留 7 种内容语言；英文名必须有。
+// normalizeAdtyGroupTexts 去掉首尾空白，只保留 8 种内容语言；英文名必须有。
 func normalizeAdtyGroupTexts(names, descs AdtyLangText) (AdtyLangText, AdtyLangText, error) {
 	outNames := make(AdtyLangText, len(AdtyContentLangs))
 	outDescs := make(AdtyLangText, len(AdtyContentLangs))

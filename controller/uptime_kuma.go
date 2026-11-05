@@ -106,9 +106,10 @@ func fetchGroupData(ctx context.Context, client *http.Client, groupConfig map[st
 		}
 
 		for _, m := range pg.MonitorList {
+			// Group names often identify channels. The public page does not
+			// show them, and this unauthenticated response must not either.
 			monitor := Monitor{
-				Name:  m.Name,
-				Group: pg.Name,
+				Name: m.Name,
 			}
 
 			monitorID := strconv.Itoa(m.ID)

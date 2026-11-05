@@ -58,6 +58,7 @@ func TestAdtySitePublicEndpoint(t *testing.T) {
 		"tawk_property_id":      "prop",
 		"tawk_widget_id":        "widget",
 		"refund_policy_enabled": true,
-		"min_topup":             float64(5),
+		"min_topup":               float64(5),
+		"site_agreement_version":  float64(0),
 	}, envelope.Data)
 }

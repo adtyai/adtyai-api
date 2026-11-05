@@ -22,4 +22,13 @@ const (
 	MsgAdtyMarketingUnsubscribePrompt  = "adty.marketing.unsubscribe_prompt"
 	MsgAdtyMarketingUnsubscribeDone    = "adty.marketing.unsubscribe_done"
 	MsgAdtyMarketingUnsubscribeInvalid = "adty.marketing.unsubscribe_invalid"
+
+	MsgAdtySiteClosingSubject     = "adty.site.closing_subject"
+	MsgAdtySiteClosingBody        = "adty.site.closing_body"
+	MsgAdtySiteMarkupSubject      = "adty.site.markup_subject"
+	MsgAdtySiteMarkupBody         = "adty.site.markup_body"
+	MsgAdtySiteCostPendingSubject = "adty.site.cost_pending_subject"
+	MsgAdtySiteCostPendingBody    = "adty.site.cost_pending_body"
+	MsgAdtySiteCostNowSubject     = "adty.site.cost_now_subject"
+	MsgAdtySiteCostNowBody        = "adty.site.cost_now_body"
 )

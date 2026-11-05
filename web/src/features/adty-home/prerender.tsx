@@ -23,6 +23,7 @@ import { I18nextProvider } from 'react-i18next'
 import en from '@/i18n/locales/en.json'
 import fr from '@/i18n/locales/fr.json'
 import ja from '@/i18n/locales/ja.json'
+import ko from '@/i18n/locales/ko.json'
 import ru from '@/i18n/locales/ru.json'
 import vi from '@/i18n/locales/vi.json'
 import zhTW from '@/i18n/locales/zh-TW.json'
@@ -42,7 +43,7 @@ import type { LandingData } from './hooks/use-landing-data'
 const PRERENDER_BASE_URL = '<BASE_URL>'
 
 // Same resources as i18n/config.ts, without its browser language detector.
-const resources = { en, zhCN, fr, ru, ja, vi, zhTW }
+const resources = { en, zhCN, fr, ru, ja, ko, vi, zhTW }
 
 /** No server data at build time: prices and figures render as placeholders. */
 const PRERENDER_DATA: LandingData = {
@@ -84,7 +85,7 @@ export async function renderAdtyHome(lang: ContentLang): Promise<string> {
   )
 }
 
-/** All seven languages, keyed by content language code. */
+/** All eight languages, keyed by content language code. */
 export async function renderAllAdtyHomes(): Promise<Record<string, string>> {
   const pages: Record<string, string> = {}
   for (const lang of HOME_LANGS) {

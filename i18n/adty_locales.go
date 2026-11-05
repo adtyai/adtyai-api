@@ -9,4 +9,5 @@ var adtyLocaleFiles = []string{
 	"locales/adty.ja.yaml",
 	"locales/adty.ru.yaml",
 	"locales/adty.vi.yaml",
+	"locales/adty.ko.yaml",
 }

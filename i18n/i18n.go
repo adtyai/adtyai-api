@@ -24,6 +24,7 @@ const (
 	LangJa      = "ja"
 	LangRu      = "ru"
 	LangVi      = "vi"
+	LangKo      = "ko"
 	DefaultLang = LangEn // Fallback to English if language not supported
 )
 
@@ -46,7 +47,7 @@ func Init() error {
 
 		// Load embedded translation files
 		files := []string{"locales/zh-CN.yaml", "locales/zh-TW.yaml", "locales/en.yaml",
-			"locales/fr.yaml", "locales/ja.yaml", "locales/ru.yaml", "locales/vi.yaml"}
+			"locales/fr.yaml", "locales/ja.yaml", "locales/ko.yaml", "locales/ru.yaml", "locales/vi.yaml"}
 		// 二开的提示放在独立文件里，上游的三个 yaml 不动（执行层决定 13）
 		files = append(files, adtyLocaleFiles...)
 		for _, file := range files {
@@ -215,6 +216,8 @@ func normalizeLang(lang string) string {
 		return LangRu
 	case lang == LangVi || strings.HasPrefix(lang, "vi-"):
 		return LangVi
+	case lang == LangKo || strings.HasPrefix(lang, "ko-"):
+		return LangKo
 	default:
 		return DefaultLang
 	}
@@ -222,7 +225,7 @@ func normalizeLang(lang string) string {
 
 // SupportedLanguages returns a list of supported language codes
 func SupportedLanguages() []string {
-	return []string{LangZhCN, LangZhTW, LangEn, LangFr, LangJa, LangRu, LangVi}
+	return []string{LangZhCN, LangZhTW, LangEn, LangFr, LangJa, LangKo, LangRu, LangVi}
 }
 
 // IsSupported checks if a language code is supported

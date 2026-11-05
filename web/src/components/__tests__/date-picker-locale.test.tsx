@@ -67,6 +67,12 @@ test('uses Chinese calendar locales for zhCN and zhTW in both date pickers', asy
   expect(await openCalendar()).toHaveTextContent('zh-TW')
 })
 
+test('uses the Korean calendar locale', async () => {
+  await setInterfaceLanguage('ko')
+  render(<DatePicker selected={selected} onSelect={() => undefined} />)
+  expect(await openCalendar()).toHaveTextContent('ko')
+})
+
 test('keeps French on the French calendar locale', async () => {
   await setInterfaceLanguage('fr')
   render(<DatePicker selected={selected} onSelect={() => undefined} />)

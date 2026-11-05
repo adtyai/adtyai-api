@@ -54,6 +54,15 @@ function proofHeaders(proof: string) {
   return { headers: { 'X-Security-Proof': proof } }
 }
 
+export async function requestSiteClose(
+  reason: string
+): Promise<{ id: number; close_requested_at: number }> {
+  const res = await api.post<
+    ApiResponse<{ id: number; close_requested_at: number }>
+  >(`${BASE}/close`, { reason })
+  return requireServerSuccess(res.data).data
+}
+
 export async function acceptSiteTerms(version: string): Promise<void> {
   const res = await api.post<ApiResponse<unknown>>(`${BASE}/terms/accept`, {
     version,

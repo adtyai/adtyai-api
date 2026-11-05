@@ -78,6 +78,7 @@ export type OwnerSite = {
   seo_index: boolean
   agreement_version: string
   agreement_at: number
+  close_requested_at?: number
   prices: SitePrice[] | null
   pricing_version: number
   domains: SiteDomain[] | null

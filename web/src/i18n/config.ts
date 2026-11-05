@@ -31,6 +31,7 @@ const localeLoaders = {
   fr: () => import('./locales/fr.json'),
   ru: () => import('./locales/ru.json'),
   ja: () => import('./locales/ja.json'),
+  ko: () => import('./locales/ko.json'),
   vi: () => import('./locales/vi.json'),
   zhTW: () => import('./locales/zh-TW.json'),
 } as const
@@ -46,7 +47,7 @@ function interfaceLanguage(value: string | undefined): InterfaceLanguage {
     : 'en'
 }
 
-/** Load one language pack. The other six stay out of the first page load. */
+/** Load one language pack. The other languages stay out of the first page load. */
 export async function loadInterfaceLanguage(
   value: string | undefined
 ): Promise<void> {
@@ -73,7 +74,7 @@ export function readStoredInterfaceLanguage(): string {
 i18n.use(initReactI18next).init({
   lng: readStoredInterfaceLanguage(),
   fallbackLng: 'en',
-  supportedLngs: ['en', 'zhCN', 'fr', 'ru', 'ja', 'vi', 'zhTW'],
+  supportedLngs: ['en', 'zhCN', 'fr', 'ru', 'ja', 'ko', 'vi', 'zhTW'],
   load: 'currentOnly',
   partialBundledLanguages: true,
   resources: {},

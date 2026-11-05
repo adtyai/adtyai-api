@@ -33,6 +33,7 @@ var adtySEOHomeLangs = []adtySEOHomeLang{
 	{"/zh-tw", "zh-TW", "zh-Hant", "zh_TW"},
 	{"/fr", "fr", "fr", "fr_FR"},
 	{"/ja", "ja", "ja", "ja_JP"},
+	{"/ko", "ko", "ko", "ko_KR"},
 	{"/ru", "ru", "ru", "ru_RU"},
 	{"/vi", "vi", "vi", "vi_VN"},
 }
@@ -65,7 +66,7 @@ func (p *adtyPrerender) load(buildFS fs.FS) map[string]string {
 	return p.pages
 }
 
-// AdtySEOHomePages 处理首页 7 个语言网址的 GET 和 HEAD：把 index.html 里 <!--adty-head-->
+// AdtySEOHomePages 处理首页 8 个语言网址的 GET 和 HEAD：把 index.html 里 <!--adty-head-->
 // 占位区换成这一页的标题、描述、canonical、hreflang 和分享标签，<html lang> 换成这一页的语言，
 // 并在 #root 前插入预渲染的正文（任务 9.3，执行层决定 23）。其余请求原样交给后面的处理。
 // indexPage 用 main.go 注入过统计脚本的那份。

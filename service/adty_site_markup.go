@@ -484,7 +484,7 @@ func adtyTaskRecalcGroupRatio(task *model.Task, group string, groupRatio float64
 
 func init() {
 	model.AdtyOnConsumeLog = adtyOnConsumeLog
-	adtyMasterTasks = append(adtyMasterTasks, startAdtySiteMarkupTask)
+	adtyMasterTasks = append(adtyMasterTasks, startAdtySiteMarkupTask, startAdtySiteCostTierTask)
 }
 
 // adtyOnConsumeLog 在每条消费日志之前调用：记下 k、d（admin_info），再交给 11.5 的收益记账。
@@ -507,6 +507,66 @@ func adtyOnConsumeLog(c *gin.Context, userId int, params *model.RecordConsumeLog
 
 // AdtyRecordConsumeEarning 由 11.5 的收益记账注册。
 var AdtyRecordConsumeEarning func(c *gin.Context, userId int, params *model.RecordConsumeLogParams)
+
+// adtySiteMonthRevenue 是上个月每个站的客户消费额（美元）：usage 和 refund 行的 Revenue 合计，不算作废行。
+func adtySiteMonthRevenue(month string) (map[int]decimal.Decimal, error) {
+	start, err := time.ParseInLocation("2006-01", month, time.Local)
+	if err != nil {
+		return nil, err
+	}
+	var rows []model.AdtySiteEarningDaily
+	err = model.DB.Select("site_id", "revenue").
+		Where("kind IN ? AND status <> ? AND day >= ? AND day < ?",
+			[]string{model.AdtySiteEarningUsage, model.AdtySiteEarningRefund}, model.AdtySiteEarningVoid,
+			start.Format("2006-01-02"), start.AddDate(0, 1, 0).Format("2006-01-02")).
+		Find(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	revenue := map[int]decimal.Decimal{}
+	for _, row := range rows {
+		revenue[row.SiteId] = revenue[row.SiteId].Add(row.Revenue)
+	}
+	return revenue, nil
+}
+
+// RunAdtySiteCostTierAssignment 按上个月已记账消费给还没算过那个月的站分档。没有档位时什么都不写。
+func RunAdtySiteCostTierAssignment(now time.Time) error {
+	if len(resellerSetting().CostFactorTiers) == 0 {
+		return nil
+	}
+	month := now.AddDate(0, -1, 0).Format("2006-01")
+	var pending int64
+	err := model.DB.Model(&model.AdtySite{}).
+		Where("status IN ? AND tier_month <> ?", []string{model.AdtySiteStatusActive, model.AdtySiteStatusPaused, model.AdtySiteStatusClosing}, month).
+		Count(&pending).Error
+	if err != nil || pending == 0 {
+		return err
+	}
+	revenue, err := adtySiteMonthRevenue(month)
+	if err != nil {
+		return err
+	}
+	_, err = AssignAdtySiteCostTiers(month, revenue)
+	return err
+}
+
+// startAdtySiteCostTierTask 在主节点每小时检查一次：上个月还没分档的站，按已记账消费补算。
+func startAdtySiteCostTierTask() {
+	go func() {
+		run := func() {
+			if err := RunAdtySiteCostTierAssignment(time.Now()); err != nil {
+				common.SysError(common.LogText("assign site cost tiers: %s", err.Error()))
+			}
+		}
+		run()
+		ticker := time.NewTicker(time.Hour)
+		defer ticker.Stop()
+		for range ticker.C {
+			run()
+		}
+	}()
+}
 
 // startAdtySiteMarkupTask 在主节点每 5 分钟把到期的涨价改成生效。
 func startAdtySiteMarkupTask() {

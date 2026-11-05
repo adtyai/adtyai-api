@@ -91,7 +91,9 @@ export function SiteOwnerCenter(props: { section: SiteOwnerSectionId }) {
                       ? t(
                           'Your site is paused. Customers can still use it, but prices and bonuses cannot be changed and earnings are not settled.'
                         )
-                      : t('Your site is closing. Customers have been told.')}
+                      : t(
+                          'Your site is closing. Customers will be emailed before it closes.'
+                        )}
                   </AlertDescription>
                 </Alert>
               )}

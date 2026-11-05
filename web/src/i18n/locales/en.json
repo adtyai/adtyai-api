@@ -2847,7 +2847,7 @@
     "footer.columns.related.links.oneApi": "One API",
     "footer.columns.related.title": "Related Projects",
     "footer.defaultCopyright": "All rights reserved.",
-    "footer.new\u0061pi.projectAttributionSuffix": "All rights reserved. Designed and developed by the project contributors.",
+    "footer.newapi.projectAttributionSuffix": "All rights reserved. Designed and developed by the project contributors.",
     "For advanced custom channels this applies only to /v1/responses routes without protocol conversion.": "For advanced custom channels this applies only to /v1/responses routes without protocol conversion.",
     "For channels added after May 10, 2025, no need to remove \".\" from model names during deployment": "For channels added after May 10, 2025, no need to remove \".\" from model names during deployment",
     "For private deployments, format: https://fastgpt.run/api/openapi": "For private deployments, format: https://fastgpt.run/api/openapi",
@@ -8442,6 +8442,14 @@
     "Webhook signing secrets can only be changed on the marketing secrets page": "Webhook signing secrets can only be changed on the marketing secrets page",
     "Marketing secrets can only be changed on the marketing secrets page": "Marketing secrets can only be changed on the marketing secrets page",
     "Referral money settings can only be changed on the referral settings page": "Referral money settings can only be changed on the referral settings page",
-    "This site is not on settlement hold": "This site is not on settlement hold"
+    "This site is not on settlement hold": "This site is not on settlement hold",
+    "Apply for a reseller site": "Apply for a reseller site",
+    "I agree to the reseller site agreement": "I agree to the reseller site agreement",
+    "Site application sent. The platform will review it.": "Site application sent. The platform will review it.",
+    "Site application sent. An invite code opens the site immediately when it is valid.": "Site application sent. An invite code opens the site immediately when it is valid.",
+    "Request to close this site": "Request to close this site",
+    "Close request sent. An administrator will choose where customers go.": "Close request sent. An administrator will choose where customers go.",
+    "Close requested": "Close requested",
+    "Your site is closing. Customers will be emailed before it closes.": "Your site is closing. Customers will be emailed before it closes."
   }
 }

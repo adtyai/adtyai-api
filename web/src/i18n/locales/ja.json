@@ -2847,7 +2847,7 @@
     "footer.columns.related.links.oneApi": "1つのAPI",
     "footer.columns.related.title": "関連プロジェクト",
     "footer.defaultCopyright": "すべての権利を留保します。",
-    "footer.new\u0061pi.projectAttributionSuffix": "すべての権利を留保します。プロジェクトコントリビューターにより設計・開発されています。",
+    "footer.newapi.projectAttributionSuffix": "すべての権利を留保します。プロジェクトコントリビューターにより設計・開発されています。",
     "For advanced custom channels this applies only to /v1/responses routes without protocol conversion.": "高度なカスタムチャネルでは、プロトコル変換を行わない /v1/responses ルートにのみ適用されます。",
     "For channels added after May 10, 2025, no need to remove \".\" from model names during deployment": "2025 年 5 月 10 日以降に追加されたチャネルの場合、デプロイ時にモデル名から「.」を削除する必要はありません",
     "For private deployments, format: https://fastgpt.run/api/openapi": "プライベートデプロイメントの場合、形式: https://fastgpt.run/api/openapi",
@@ -8442,6 +8442,14 @@
     "Webhook signing secrets can only be changed on the marketing secrets page": "Webhook 署名シークレットはマーケティングのシークレットページでのみ変更できます",
     "Marketing secrets can only be changed on the marketing secrets page": "マーケティングのシークレットはマーケティングのシークレットページでのみ変更できます",
     "Referral money settings can only be changed on the referral settings page": "紹介の金額設定は紹介設定ページでのみ変更できます",
-    "This site is not on settlement hold": "このサイトの精算は保留されていません"
+    "This site is not on settlement hold": "このサイトの精算は保留されていません",
+    "Apply for a reseller site": "リセラーサイトを申請する",
+    "I agree to the reseller site agreement": "サイト開設規約に同意します",
+    "Site application sent. The platform will review it.": "申請を送信しました。プラットフォームが審査します。",
+    "Site application sent. An invite code opens the site immediately when it is valid.": "申請を送信しました。有効な招待コードならすぐに開設されます。",
+    "Request to close this site": "このサイトの閉鎖を申請する",
+    "Close request sent. An administrator will choose where customers go.": "申請を送信しました。管理者は顧客の移行先を決めます。",
+    "Close requested": "閉鎖を申請済み",
+    "Your site is closing. Customers will be emailed before it closes.": "サイトは閉鎖手続き中です。閉鎖前に顧客へメールします。"
   }
 }

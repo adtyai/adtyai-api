@@ -27,6 +27,7 @@ const resources = {
   zhTW: { translation: {} },
   fr: { translation: {} },
   ja: { translation: {} },
+  ko: { translation: {} },
   ru: { translation: {} },
   vi: { translation: {} },
 }
@@ -58,6 +59,7 @@ describe('bindDocumentLang', () => {
     ['ru', 'ru'],
     ['vi', 'vi'],
     ['ja', 'ja'],
+    ['ko', 'ko'],
   ])('writes %s as the BCP 47 tag %s after a switch', async (lng, tag) => {
     const instance = await createI18n('en')
     bindDocumentLang(instance)

@@ -24,6 +24,7 @@ import { describe, expect, it } from 'vitest'
 import en from '@/i18n/locales/en.json'
 import fr from '@/i18n/locales/fr.json'
 import ja from '@/i18n/locales/ja.json'
+import ko from '@/i18n/locales/ko.json'
 import ru from '@/i18n/locales/ru.json'
 import vi from '@/i18n/locales/vi.json'
 import zhTW from '@/i18n/locales/zh-TW.json'
@@ -40,16 +41,17 @@ const heroByLang: Record<ContentLang, string> = {
   'zh-TW': zhTW.translation[HERO_TITLE],
   fr: fr.translation[HERO_TITLE],
   ja: ja.translation[HERO_TITLE],
+  ko: ko.translation[HERO_TITLE],
   ru: ru.translation[HERO_TITLE],
   vi: vi.translation[HERO_TITLE],
 }
 
 describe('home page prerender', () => {
-  it('renders all seven languages', async () => {
+  it('renders all eight languages', async () => {
     const pages = await renderAllAdtyHomes()
 
     expect(Object.keys(pages).sort()).toEqual(
-      ['en', 'fr', 'ja', 'ru', 'vi', 'zh-CN', 'zh-TW'].sort()
+      ['en', 'fr', 'ja', 'ko', 'ru', 'vi', 'zh-CN', 'zh-TW'].sort()
     )
   })
 

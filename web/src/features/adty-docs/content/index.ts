@@ -39,6 +39,13 @@ import jaErrorsAndLimits from './ja/errors-and-limits.md?raw'
 import jaFaq from './ja/faq.md?raw'
 import jaOpenaiSdk from './ja/openai-sdk.md?raw'
 import jaQuickstart from './ja/quickstart.md?raw'
+import koCherryStudio from './ko/cherry-studio.md?raw'
+import koClaudeCode from './ko/claude-code.md?raw'
+import koCodexCli from './ko/codex-cli.md?raw'
+import koErrorsAndLimits from './ko/errors-and-limits.md?raw'
+import koFaq from './ko/faq.md?raw'
+import koOpenaiSdk from './ko/openai-sdk.md?raw'
+import koQuickstart from './ko/quickstart.md?raw'
 import ruCherryStudio from './ru/cherry-studio.md?raw'
 import ruClaudeCode from './ru/claude-code.md?raw'
 import ruCodexCli from './ru/codex-cli.md?raw'
@@ -83,7 +90,7 @@ export type DocSlug = (typeof DOC_PAGES)[number]
 
 export const DEFAULT_DOC_SLUG: DocSlug = 'quickstart'
 
-/** Markdown by content language; docs-complete.test.ts checks all seven are complete. */
+/** Markdown by content language; docs-complete.test.ts checks every required language. */
 const DOC_CONTENT: Partial<
   Record<ContentLang, Partial<Record<DocSlug, string>>>
 > = {
@@ -122,6 +129,15 @@ const DOC_CONTENT: Partial<
     'openai-sdk': jaOpenaiSdk,
     'errors-and-limits': jaErrorsAndLimits,
     faq: jaFaq,
+  },
+  ko: {
+    quickstart: koQuickstart,
+    'claude-code': koClaudeCode,
+    'codex-cli': koCodexCli,
+    'cherry-studio': koCherryStudio,
+    'openai-sdk': koOpenaiSdk,
+    'errors-and-limits': koErrorsAndLimits,
+    faq: koFaq,
   },
   ru: {
     quickstart: ruQuickstart,

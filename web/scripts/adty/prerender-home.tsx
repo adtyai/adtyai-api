@@ -20,7 +20,7 @@ For commercial licensing, please contact support@quantumnous.com
 //
 //   bun scripts/adty/prerender-home.tsx     (run by `bun run build` after rsbuild)
 //
-// Renders the landing page in the seven languages and writes
+// Renders the landing page in the eight languages and writes
 // dist/adty-home.json ({"en": "<html>", "zh-CN": "<html>", ...}). The Go
 // server inserts the page's language before #root (router/adty_seo.go).
 import { writeFileSync } from 'node:fs'

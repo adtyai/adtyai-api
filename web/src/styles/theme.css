@@ -205,6 +205,14 @@ For commercial licensing, please contact support@quantumnous.com
     'Yu Gothic UI', Meiryo, 'Noto Sans JP', system-ui, sans-serif;
 }
 
+/* Korean pages use a Hangul stack. Chinese faces in the default stack have
+ * no Hangul, so the page would fall through to a generic face. */
+:root:lang(ko):not([data-theme-font='sans']) {
+  --font-ui-sans:
+    'Inter Variable', 'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR',
+    system-ui, sans-serif;
+}
+
 .dark {
   /* Native controls follow the theme; Dark Reader also reads this to detect
      the built-in dark theme. */

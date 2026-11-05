@@ -35,8 +35,7 @@ func TestAdtyLocalesRenderEveryKey(t *testing.T) {
 	})
 	slices.Sort(declared)
 	require.NotEmpty(t, adtyLocaleFiles)
-	// 7 种语言各一个 adty yaml（任务 9.1）
-	assert.Len(t, adtyLocaleFiles, 7)
+	assert.Len(t, adtyLocaleFiles, 8)
 	for _, file := range adtyLocaleFiles {
 		data, err := localeFS.ReadFile(file)
 		require.NoError(t, err)

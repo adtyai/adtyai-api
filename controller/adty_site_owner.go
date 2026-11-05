@@ -122,6 +122,7 @@ func GetAdtyOwnerSite(c *gin.Context) {
 		"markup_increase_delay_hours": cfg.MarkupIncreaseDelayHours, "custom_domain_enabled": cfg.CustomDomainEnabled,
 		"sender_domain_enabled": cfg.SenderDomainEnabled, "brand": brand, "bonus_rates": service.AdtySiteBonusRates(site),
 		"seo_index": site.SeoIndex, "agreement_version": site.AgreementVer, "agreement_at": site.AgreementAt,
+		"close_requested_at": site.CloseRequestedAt,
 		"prices": prices, "pricing_version": version, "domains": domains, "visibility": service.AdtySiteVisibility(site),
 	})
 }

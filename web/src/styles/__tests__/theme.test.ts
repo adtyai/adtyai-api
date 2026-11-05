@@ -201,6 +201,22 @@ describe('white theme typography', () => {
     expect(families).not.toContain("'microsoft yahei'")
     expect(families.at(-1)).toBe('sans-serif')
   })
+
+  it('puts Korean fonts on Korean pages', () => {
+    const korean = ruleBody(
+      themeCss,
+      ":root:lang(ko):not([data-theme-font='sans'])"
+    ).get('--font-ui-sans')
+    expect(korean).toBeDefined()
+    const families = (korean ?? '').split(',').map((name) => name.trim())
+    expect(families[0]).toBe("'inter variable'")
+    expect(families).toContain("'apple sd gothic neo'")
+    expect(families).toContain("'malgun gothic'")
+    expect(families).toContain("'noto sans kr'")
+    expect(families).not.toContain("'pingfang sc'")
+    expect(families).not.toContain("'microsoft yahei'")
+    expect(families.at(-1)).toBe('sans-serif')
+  })
 })
 
 describe('white theme tables', () => {

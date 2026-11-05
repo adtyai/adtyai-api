@@ -29,6 +29,7 @@ import { formatUsd } from '@/features/wallet/adty/lib/money'
 import { toIntlLocale } from '@/i18n/languages'
 
 import { getReferralProfile, referralQueryKeys } from './api'
+import { SiteApplyCard } from './components/site-apply-card'
 import { PartnerCard } from './components/partner-card'
 import { ReferralLinkCard } from './components/referral-link-card'
 import { ReferralStats } from './components/referral-stats'
@@ -112,6 +113,7 @@ export function Referral() {
               onWithdraw={() => setWithdrawing(true)}
             />
             <PartnerCard affiliate={profile.affiliate} onApplied={refresh} />
+            <SiteApplyCard />
             <Tabs defaultValue='commissions'>
               <TabsList>
                 <TabsTrigger value='commissions'>

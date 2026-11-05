@@ -23,11 +23,13 @@ func TestNormalizeLangNewLanguages(t *testing.T) {
 		{"ru-RU", "ru"},
 		{"vi", "vi"},
 		{"vi-VN", "vi"},
+		{"ko", "ko"},
+		{"ko-KR", "ko"},
 		{"de-DE", LangEn},
 	} {
 		assert.Equal(t, tc.want, normalizeLang(tc.input), tc.input)
 	}
-	assert.ElementsMatch(t, []string{"zh-CN", "zh-TW", "en", "fr", "ja", "ru", "vi"}, SupportedLanguages())
+	assert.ElementsMatch(t, []string{"zh-CN", "zh-TW", "en", "fr", "ja", "ko", "ru", "vi"}, SupportedLanguages())
 }
 
 // 验证码、找回密码、注册提醒、提现结果、通道维护这几封邮件在 7 种语言下都是译文：
@@ -47,7 +49,7 @@ func TestAdtyEmailsAllLanguages(t *testing.T) {
 		MsgAdtyReferralWithdrawRejectedSubject, MsgAdtyReferralWithdrawRejectedBody,
 		MsgAdtyEpayMaintenanceSubject, MsgAdtyEpayMaintenanceBody,
 	}
-	for _, lang := range []string{"zh-CN", "zh-TW", "en", "fr", "ja", "ru", "vi"} {
+	for _, lang := range []string{"zh-CN", "zh-TW", "en", "fr", "ja", "ko", "ru", "vi"} {
 		for _, key := range keys {
 			text := Translate(lang, key, params)
 			assert.NotEqual(t, key, text, "%s %s", lang, key)

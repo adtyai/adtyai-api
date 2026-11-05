@@ -21,6 +21,21 @@ jobs:
     timeout-minutes: 15
     env:
       GOWORK: 'off'
+      ADTY_TEST_PG_DSN: 'host=127.0.0.1 port=5432 user=postgres password=adty_ci_test dbname=adty_test sslmode=disable'
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: adty_ci_test
+          POSTGRES_DB: adty_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d adty_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       - name: Checkout

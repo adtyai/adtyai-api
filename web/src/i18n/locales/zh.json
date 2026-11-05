@@ -2847,7 +2847,7 @@
     "footer.columns.related.links.oneApi": "One API",
     "footer.columns.related.title": "相关项目",
     "footer.defaultCopyright": "版权所有。",
-    "footer.new\u0061pi.projectAttributionSuffix": "版权所有，由项目贡献者设计与开发。",
+    "footer.newapi.projectAttributionSuffix": "版权所有，由项目贡献者设计与开发。",
     "For advanced custom channels this applies only to /v1/responses routes without protocol conversion.": "高级自定义渠道仅对 /v1/responses 且不做协议转换的路由生效。",
     "For channels added after May 10, 2025, no need to remove \".\" from model names during deployment": "对于 2025 年 5 月 10 日之后添加的渠道，在部署时无需从模型名称中移除 \".\"",
     "For private deployments, format: https://fastgpt.run/api/openapi": "对于私有部署，格式为：https://fastgpt.run/api/openapi",
@@ -8442,6 +8442,14 @@
     "Webhook signing secrets can only be changed on the marketing secrets page": "Webhook 签名密钥只能在营销密钥页修改",
     "Marketing secrets can only be changed on the marketing secrets page": "营销密钥只能在营销密钥页修改",
     "Referral money settings can only be changed on the referral settings page": "邀请返佣金额只能在邀请设置页修改",
-    "This site is not on settlement hold": "这个分站没有暂停结算"
+    "This site is not on settlement hold": "这个分站没有暂停结算",
+    "Apply for a reseller site": "申请开设分站",
+    "I agree to the reseller site agreement": "我同意分站开站协议",
+    "Site application sent. The platform will review it.": "开站申请已提交，平台将审核。",
+    "Site application sent. An invite code opens the site immediately when it is valid.": "开站申请已提交。邀请码有效时会立即开站。",
+    "Request to close this site": "申请关闭本站",
+    "Close request sent. An administrator will choose where customers go.": "关站申请已提交。管理员将决定客户去向。",
+    "Close requested": "已申请关站",
+    "Your site is closing. Customers will be emailed before it closes.": "站点正在关闭。关闭前会给客户发邮件。"
   }
 }

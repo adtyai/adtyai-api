@@ -3,7 +3,7 @@ package adty_setting
 import "github.com/QuantumNous/new-api/setting/config"
 
 // LegalSetting 是多语言条款（任务 8.6），键名 adty_legal_setting.<json 标签>。
-// 每个字段都是「内容语言码（en、zh-CN、zh-TW、fr、ja、ru、vi，约定 E）→ Markdown」。
+// 每个字段都是「内容语言码（en、zh-CN、zh-TW、fr、ja、ko、ru、vi，约定 E）→ Markdown」。
 // 上游 legal.user_agreement、legal.privacy_policy 保留作默认文本，/api/status 的两个开关只看上游。
 type LegalSetting struct {
 	UserAgreement map[string]string `json:"user_agreement"`

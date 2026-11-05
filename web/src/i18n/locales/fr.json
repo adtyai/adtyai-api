@@ -2847,7 +2847,7 @@
     "footer.columns.related.links.oneApi": "One API",
     "footer.columns.related.title": "Projets liés",
     "footer.defaultCopyright": "Tous droits réservés.",
-    "footer.new\u0061pi.projectAttributionSuffix": "Tous droits réservés. Conçu et développé par les contributeurs du projet.",
+    "footer.newapi.projectAttributionSuffix": "Tous droits réservés. Conçu et développé par les contributeurs du projet.",
     "For advanced custom channels this applies only to /v1/responses routes without protocol conversion.": "Pour les canaux personnalisés avancés, ceci ne s’applique qu’aux routes /v1/responses sans conversion de protocole.",
     "For channels added after May 10, 2025, no need to remove \".\" from model names during deployment": "Pour les canaux ajoutés après le 10 mai 2025, pas besoin de supprimer \".\" des noms de modèles lors du déploiement",
     "For private deployments, format: https://fastgpt.run/api/openapi": "Pour les déploiements privés, format : https://fastgpt.run/api/openapi",
@@ -8442,6 +8442,14 @@
     "Webhook signing secrets can only be changed on the marketing secrets page": "Les secrets de signature webhook ne peuvent être modifiés que sur la page des secrets marketing",
     "Marketing secrets can only be changed on the marketing secrets page": "Les secrets marketing ne peuvent être modifiés que sur la page des secrets marketing",
     "Referral money settings can only be changed on the referral settings page": "Les montants de parrainage ne peuvent être modifiés que sur la page des paramètres de parrainage",
-    "This site is not on settlement hold": "Ce site n'est pas en attente de règlement"
+    "This site is not on settlement hold": "Ce site n'est pas en attente de règlement",
+    "Apply for a reseller site": "Demander un site revendeur",
+    "I agree to the reseller site agreement": "J'accepte l'accord d'ouverture du site",
+    "Site application sent. The platform will review it.": "Demande envoyée. La plateforme va l'examiner.",
+    "Site application sent. An invite code opens the site immediately when it is valid.": "Demande envoyée. Un code d'invitation valide ouvre le site tout de suite.",
+    "Request to close this site": "Demander la fermeture de ce site",
+    "Close request sent. An administrator will choose where customers go.": "Demande envoyée. Un administrateur choisira où vont les clients.",
+    "Close requested": "Fermeture demandée",
+    "Your site is closing. Customers will be emailed before it closes.": "Votre site ferme. Les clients recevront un e-mail avant la fermeture."
   }
 }

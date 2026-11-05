@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting/adty_setting"
 	"github.com/QuantumNous/new-api/setting/system_setting"
@@ -330,6 +331,24 @@ func TestReplaceSenderDomainIgnoresMissingOldDomain(t *testing.T) {
 	require.NoError(t, db.Where("site_id = ?", site.Id).First(&stored).Error)
 	assert.Equal(t, replaced.ResendDomainId, stored.ResendDomainId)
 	assert.Equal(t, model.AdtySenderDomainPending, stored.Status)
+}
+
+func TestClosingHookEmailsCustomers(t *testing.T) {
+	db, _ := prepareMailDB(t)
+	require.NoError(t, i18n.Init())
+	_, site := openActiveSite(t, db, "closemail")
+	customer := siteCustomer(t, db, site, "closemail-customer")
+	var sent []string
+	previous := AdtySendSiteEmailAsync
+	AdtySendSiteEmailAsync = func(_ *model.AdtySite, subject, to, _ string) {
+		sent = append(sent, to+":"+subject)
+	}
+	t.Cleanup(func() { AdtySendSiteEmailAsync = previous })
+	site.CloseExecuteAt = 1_700_000_000
+	require.NotNil(t, AdtyOnSiteClosing)
+	AdtyOnSiteClosing(site)
+	require.NotEmpty(t, sent)
+	assert.Contains(t, sent[0], customer.Email)
 }
 
 func TestClosedSiteDeletesSenderDomain(t *testing.T) {

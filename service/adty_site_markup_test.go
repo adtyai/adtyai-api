@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 	"time"
 
@@ -307,6 +308,35 @@ func TestMonthlyTierAssignment(t *testing.T) {
 	assert.Equal(t, "2026-10", stored.TierMonth)
 	d, _ := AdtySiteCostFactor(stored)
 	assert.True(t, d.Equal(decimal.RequireFromString("0.75")))
+}
+
+func TestScheduledCostTierUsesLastMonthRevenue(t *testing.T) {
+	db := prepareSiteDB(t)
+	_, site := openActiveSite(t, db, "tier-job")
+	cfg := adty_setting.GetResellerSetting()
+	cfg.CostFactorTiers = []adty_setting.ResellerCostTier{{MinMonthlyUSD: 100, CostFactor: 0.72}}
+	t.Cleanup(func() { cfg.CostFactorTiers = nil })
+	month := time.Now().AddDate(0, -1, 0).Format("2006-01")
+	require.NoError(t, db.Create(&model.AdtySiteEarningDaily{
+		SiteId: site.Id, UserId: 1, Day: month + "-15", Kind: model.AdtySiteEarningUsage,
+		Revenue: decimal.NewFromInt(200), Status: model.AdtySiteEarningPending,
+	}).Error)
+
+	require.NoError(t, RunAdtySiteCostTierAssignment(time.Now()))
+	stored, err := GetAdtySite(site.Id)
+	require.NoError(t, err)
+	require.NotNil(t, stored.TierCostFactor)
+	assert.True(t, stored.TierCostFactor.Equal(decimal.RequireFromString("0.72")))
+	assert.Equal(t, month, stored.TierMonth)
+
+	want := reflect.ValueOf(startAdtySiteCostTierTask).Pointer()
+	scheduled := false
+	for _, task := range adtyMasterTasks {
+		if reflect.ValueOf(task).Pointer() == want {
+			scheduled = true
+		}
+	}
+	assert.True(t, scheduled, "the monthly tier job must be started with the other master tasks")
 }
 
 func savePricing(t *testing.T, siteId, userId int, def string, groups map[string]string, version int64, now int64) (*AdtySitePricingResult, error) {

@@ -40,7 +40,7 @@ func TestLanguageFromUserSetting(t *testing.T) {
 		{"fr", "fr"},
 		{"ja", "ja"},
 		{"de", LangEn},
-		{"ko", LangEn},
+		{"ko", LangKo},
 	} {
 		c, _ := gin.CreateTestContext(httptest.NewRecorder())
 		c.Request = httptest.NewRequest("GET", "/v1/chat/completions", nil)

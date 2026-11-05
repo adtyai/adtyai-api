@@ -38,6 +38,7 @@ import {
   addDomain,
   addSenderDomain,
   getSenderDomain,
+  requestSiteClose,
   removeDomain,
   removeSenderDomain,
   saveOwnerSite,
@@ -468,6 +469,56 @@ function SenderDomainCard(props: { site: OwnerSite }) {
   )
 }
 
+function CloseRequestCard(props: { site: OwnerSite }) {
+  const { t } = useTranslation()
+  const queryClient = useQueryClient()
+  const [reason, setReason] = useState('')
+  const requested = (props.site.close_requested_at ?? 0) > 0
+  const request = useMutation({
+    mutationFn: () => requestSiteClose(reason.trim()),
+    onSuccess: () => {
+      toast.success(
+        t(
+          'Close request sent. An administrator will choose where customers go.'
+        )
+      )
+      setReason('')
+      void queryClient.invalidateQueries({ queryKey: siteOwnerKeys.site })
+    },
+    onError: (error) => handleServerError(error),
+  })
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{t('Request to close this site')}</CardTitle>
+      </CardHeader>
+      <CardContent className='flex flex-col gap-3'>
+        {requested ? (
+          <p className='text-muted-foreground text-sm'>
+            {t('Close requested')}
+          </p>
+        ) : (
+          <>
+            <Label htmlFor='close-reason'>{t('Reason')}</Label>
+            <Textarea
+              id='close-reason'
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+            />
+            <Button
+              variant='destructive'
+              disabled={reason.trim() === '' || request.isPending}
+              onClick={() => request.mutate()}
+            >
+              {t('Request to close this site')}
+            </Button>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
 /** Site settings: brand, custom domains, sender domain and SEO (task 11.6). */
 export function SiteSettingsPanel(props: { site: OwnerSite }) {
   return (
@@ -476,6 +527,7 @@ export function SiteSettingsPanel(props: { site: OwnerSite }) {
       <DomainsCard site={props.site} />
       <SenderDomainCard site={props.site} />
       <SearchCard site={props.site} />
+      <CloseRequestCard site={props.site} />
     </div>
   )
 }

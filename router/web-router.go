@@ -34,7 +34,7 @@ func SetWebRouter(router *gin.Engine, assets WebAssets, pluginDispatcher gin.Han
 		middleware.AccessTokenAudit(),
 		middleware.GlobalWebRateLimit(frontendFS),
 		middleware.Cache(),
-		// adty 任务 9.3：首页 7 个语言网址写入标题、描述和预渲染正文
+		// adty 任务 9.3：首页 8 个语言网址写入标题、描述和预渲染正文
 		AdtySEOHomePages(assets.IndexPage, assets.BuildFS),
 		middleware.ServeFrontendFiles(frontendFS),
 		func(c *gin.Context) {

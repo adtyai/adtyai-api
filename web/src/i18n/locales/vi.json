@@ -2847,7 +2847,7 @@
     "footer.columns.related.links.oneApi": "One API",
     "footer.columns.related.title": "Các Dự Án Liên Quan",
     "footer.defaultCopyright": "Bản quyền được bảo lưu.",
-    "footer.new\u0061pi.projectAttributionSuffix": "Bản quyền được bảo lưu. Được thiết kế và phát triển bởi các cộng tác viên dự án.",
+    "footer.newapi.projectAttributionSuffix": "Bản quyền được bảo lưu. Được thiết kế và phát triển bởi các cộng tác viên dự án.",
     "For advanced custom channels this applies only to /v1/responses routes without protocol conversion.": "Với kênh tùy chỉnh nâng cao, thiết lập này chỉ áp dụng cho các route /v1/responses không chuyển đổi giao thức.",
     "For channels added after May 10, 2025, no need to remove \".\" from model names during deployment": "Đối với các kênh được thêm sau ngày 10 tháng 5 năm 2025, không cần loại bỏ \".\" khỏi tên mô hình trong quá trình triển khai",
     "For private deployments, format: https://fastgpt.run/api/openapi": "Đối với các triển khai riêng tư, định dạng: https://fastgpt.run/api/openapi",
@@ -8442,6 +8442,14 @@
     "Webhook signing secrets can only be changed on the marketing secrets page": "Khóa ký webhook chỉ đổi được ở trang khóa tiếp thị",
     "Marketing secrets can only be changed on the marketing secrets page": "Khóa tiếp thị chỉ đổi được ở trang khóa tiếp thị",
     "Referral money settings can only be changed on the referral settings page": "Số tiền giới thiệu chỉ đổi được ở trang cài đặt giới thiệu",
-    "This site is not on settlement hold": "Trang này không bị tạm giữ đối soát"
+    "This site is not on settlement hold": "Trang này không bị tạm giữ đối soát",
+    "Apply for a reseller site": "Đăng ký mở trang đại lý",
+    "I agree to the reseller site agreement": "Tôi đồng ý với thỏa thuận mở trang",
+    "Site application sent. The platform will review it.": "Đã gửi đơn. Nền tảng sẽ xem xét.",
+    "Site application sent. An invite code opens the site immediately when it is valid.": "Đã gửi đơn. Mã mời hợp lệ sẽ mở trang ngay.",
+    "Request to close this site": "Yêu cầu đóng trang này",
+    "Close request sent. An administrator will choose where customers go.": "Đã gửi yêu cầu. Quản trị viên sẽ chọn nơi khách hàng chuyển đến.",
+    "Close requested": "Đã yêu cầu đóng",
+    "Your site is closing. Customers will be emailed before it closes.": "Trang đang đóng. Khách hàng sẽ nhận email trước khi đóng."
   }
 }

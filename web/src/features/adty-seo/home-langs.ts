@@ -27,13 +27,14 @@ export type HomeLang = {
   contentLang: ContentLang
 }
 
-/** `/` is English; the other six languages have their own home URL. */
+/** `/` is English; the other languages have their own home URL. */
 export const HOME_LANGS: readonly HomeLang[] = [
   { segment: '', interfaceLang: 'en', contentLang: 'en' },
   { segment: 'zh-cn', interfaceLang: 'zhCN', contentLang: 'zh-CN' },
   { segment: 'zh-tw', interfaceLang: 'zhTW', contentLang: 'zh-TW' },
   { segment: 'fr', interfaceLang: 'fr', contentLang: 'fr' },
   { segment: 'ja', interfaceLang: 'ja', contentLang: 'ja' },
+  { segment: 'ko', interfaceLang: 'ko', contentLang: 'ko' },
   { segment: 'ru', interfaceLang: 'ru', contentLang: 'ru' },
   { segment: 'vi', interfaceLang: 'vi', contentLang: 'vi' },
 ]
@@ -60,7 +61,7 @@ export function homePathFor(interfaceLang: string | null | undefined): string {
   return lang && lang.segment ? `/${lang.segment}` : '/'
 }
 
-/** True for `/` and the six language home paths (trailing slash allowed). */
+/** True for `/` and the other language home paths (trailing slash allowed). */
 export function isHomePath(pathname: string): boolean {
   const trimmed = pathname.replace(/\/+$/, '')
   if (trimmed === '') return true

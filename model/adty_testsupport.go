@@ -18,6 +18,11 @@ import (
 // ErrAdtyTestDSNUnset 表示当前进程没有测试库连接串。调用方应跳过，检查脚本不能靠这个跳过。
 var ErrAdtyTestDSNUnset = errors.New("ADTY_TEST_PG_DSN is unset")
 
+// InitColumnNamesForTests sets the quoted key/group column names for the
+// database type already selected by the test. Service tests that read tokens
+// by key need this because their sqlite TestMain does not open the main DB.
+func InitColumnNamesForTests() { initCol() }
+
 var adtyTestSchemaPattern = regexp.MustCompile(`^adty_t_[0-9a-f]{16}$`)
 
 // AdtyTestDatabase 是一个只给测试用的独立 schema。Close 会换回原来的连接并删掉 schema。

@@ -31,7 +31,7 @@ import { resolve } from 'node:path'
 
 const webDir = resolve(import.meta.dirname, '../..')
 const localesDir = resolve(webDir, 'src/i18n/locales')
-const LOCALES = ['en', 'zh', 'zh-TW', 'fr', 'ja', 'ru', 'vi']
+const LOCALES = ['en', 'zh', 'zh-TW', 'fr', 'ja', 'ko', 'ru', 'vi']
 
 // Copied from BRAND_AND_LITERAL_KEYS in scripts/sync-i18n.mjs, which is not
 // exported; importing that file would run its main() and rewrite every

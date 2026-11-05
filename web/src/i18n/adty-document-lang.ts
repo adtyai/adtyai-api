@@ -22,7 +22,7 @@ import { toIntlLocale } from './languages'
 
 /**
  * Keeps `<html lang>` on the interface language (adty task 9.2), so screen
- * readers, hyphenation and the `:lang(ja)` font stack follow a switch. The
+ * readers, hyphenation and the `:lang(ja)` / `:lang(ko)` font stacks follow a switch. The
  * interface codes zhCN / zhTW become the BCP 47 tags zh-CN / zh-TW.
  */
 export function bindDocumentLang(instance: I18n): void {
