@@ -9,6 +9,7 @@ adty.email.registered_body: "누군가 {{.SystemName}}에서 이 주소로 가�
 adty.limit.rpm: "이 계정은 이번 분에 요청이 너무 많습니다. 잠시 후 다시 시도하세요."
 adty.limit.tpm: "이 계정은 이번 분 토큰 한도에 도달했습니다. 잠시 후 다시 시도하세요."
 adty.limit.concurrency: "이 계정에서 동시에 실행 중인 요청이 너무 많습니다. 하나가 끝난 뒤 다시 시도하세요."
+adty.limit.unavailable: "요청 제한을 일시적으로 확인할 수 없습니다. 잠시 후 다시 시도하세요."
 adty.marketing.unsubscribe: "이 메일 수신 거부"
 adty.marketing.unsubscribe_prompt: "제품 소식과 혜택 메일을 그만 받으시겠습니까? 인증 코드와 충전 영수증 같은 계정 메일은 계속 발송됩니다."
 adty.marketing.unsubscribe_done: "제품 소식과 혜택 메일 수신이 거부되었습니다."

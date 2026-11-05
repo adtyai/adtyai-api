@@ -54,18 +54,16 @@ const getDateHoursAgo = (hours: number) => {
 
 const getDateDaysAgo = (days: number) => getDateHoursAgo(days * HOURS_IN_DAY)
 
+const logCleanupRetentionDays = 90
+
 const quickSelectOptions = [
   {
-    label: '24 hours ago',
-    getValue: () => getDateHoursAgo(24),
+    label: '90 days',
+    getValue: () => getDateDaysAgo(logCleanupRetentionDays),
   },
   {
-    label: '7 days ago',
-    getValue: () => getDateDaysAgo(7),
-  },
-  {
-    label: '30 days ago',
-    getValue: () => getDateDaysAgo(30),
+    label: '180 days',
+    getValue: () => getDateDaysAgo(180),
   },
 ]
 
@@ -81,7 +79,7 @@ export function HistoryLogCleanup() {
   const { t } = useTranslation()
   const titleId = useId()
   const [purgeDate, setPurgeDate] = useState<Date | undefined>(() =>
-    getDateDaysAgo(30)
+    getDateDaysAgo(logCleanupRetentionDays)
   )
   const [isStartingLogCleanup, setIsStartingLogCleanup] = useState(false)
   const [logCleanupTask, setLogCleanupTask] = useState<LogCleanupTask | null>(
@@ -211,7 +209,9 @@ export function HistoryLogCleanup() {
           {t('Clean history logs')}
         </h4>
         <p className='text-muted-foreground mt-1 text-xs'>
-          {t('Remove all log entries created before the selected timestamp.')}
+          {t(
+            'Deletes usage logs older than 90 days. Top-up, refund, and adjustment records stay.'
+          )}
         </p>
       </div>
       <DateTimePicker value={purgeDate} onChange={setPurgeDate} />

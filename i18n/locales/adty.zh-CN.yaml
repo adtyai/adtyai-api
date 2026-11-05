@@ -9,6 +9,7 @@ adty.email.registered_body: "有人用这个邮箱在 {{.SystemName}} 申请注�
 adty.limit.rpm: "这个账号本分钟的请求数已达上限，请稍后再试。"
 adty.limit.tpm: "这个账号本分钟的 token 用量已达上限，请稍后再试。"
 adty.limit.concurrency: "这个账号同时进行的请求太多，请等前面的请求结束后再试。"
+adty.limit.unavailable: "请求限制暂时不可用，请稍后再试。"
 adty.marketing.unsubscribe: "退订此类邮件"
 adty.marketing.unsubscribe_prompt: "不再接收产品更新和优惠邮件？验证码、充值到账等账户邮件不受影响。"
 adty.marketing.unsubscribe_done: "已退订产品更新和优惠邮件。"

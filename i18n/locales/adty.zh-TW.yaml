@@ -9,6 +9,7 @@ adty.email.registered_body: "有人用這個信箱在 {{.SystemName}} 申請註�
 adty.limit.rpm: "這個帳號本分鐘的請求數已達上限，請稍後再試。"
 adty.limit.tpm: "這個帳號本分鐘的 token 用量已達上限，請稍後再試。"
 adty.limit.concurrency: "這個帳號同時進行的請求太多，請等前面的請求結束後再試。"
+adty.limit.unavailable: "請求限制暫時無法使用，請稍後再試。"
 adty.marketing.unsubscribe: "取消訂閱此類郵件"
 adty.marketing.unsubscribe_prompt: "不再接收產品更新和優惠郵件？驗證碼、儲值到帳等帳戶郵件不受影響。"
 adty.marketing.unsubscribe_done: "已取消訂閱產品更新和優惠郵件。"

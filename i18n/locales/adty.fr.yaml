@@ -9,6 +9,7 @@ adty.email.registered_body: "Quelqu'un a demandé un code d'inscription pour cet
 adty.limit.rpm: "Trop de requêtes pour ce compte au cours de cette minute. Réessayez dans un instant."
 adty.limit.tpm: "La limite de tokens de cette minute est atteinte pour ce compte. Réessayez dans un instant."
 adty.limit.concurrency: "Trop de requêtes sont en cours en même temps pour ce compte. Attendez qu'une d'elles se termine, puis réessayez."
+adty.limit.unavailable: "Les limites de requêtes sont temporairement indisponibles. Réessayez dans un instant."
 adty.marketing.unsubscribe: "Se désabonner de ces e-mails"
 adty.marketing.unsubscribe_prompt: "Ne plus recevoir les nouveautés et les offres par e-mail ? Les e-mails liés au compte, comme les codes de vérification et les reçus de recharge, ne sont pas concernés."
 adty.marketing.unsubscribe_done: "Vous ne recevrez plus les nouveautés et les offres."

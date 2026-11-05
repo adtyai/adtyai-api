@@ -61,6 +61,28 @@ func (f *limitFixture) do(method, path string) *httptest.ResponseRecorder {
 	return recorder
 }
 
+type limitErrorStore struct{}
+
+func (limitErrorStore) IncrRPM(int, int64) (int64, error) {
+	return 0, assert.AnError
+}
+func (limitErrorStore) TPM(int, int64) (int64, error)  { return 0, assert.AnError }
+func (limitErrorStore) AddTPM(int, int64, int64) error { return assert.AnError }
+func (limitErrorStore) Acquire(int, string, int, time.Time, time.Duration) (bool, error) {
+	return false, assert.AnError
+}
+func (limitErrorStore) Release(int, string) error { return assert.AnError }
+
+func TestAdtyLimitStoreErrorDoesNotOpenTheRequest(t *testing.T) {
+	f := newLimitFixture(t, adty_setting.LimitSetting{Enabled: true, DefaultRPM: 10, DefaultTPM: 10, DefaultConcurrency: 2})
+	SetAdtyLimitStoreForTest(t, limitErrorStore{}, func() time.Time { return f.now })
+	resp := f.do(http.MethodPost, "/v1/chat/completions")
+	assert.Equal(t, http.StatusServiceUnavailable, resp.Code)
+	assert.Contains(t, resp.Body.String(), "rate_limit_unavailable")
+	mj := f.do(http.MethodPost, "/mj/submit/imagine")
+	assert.Equal(t, http.StatusServiceUnavailable, mj.Code)
+}
+
 func TestAdtyLimitDisabledPassesAll(t *testing.T) {
 	f := newLimitFixture(t, adty_setting.LimitSetting{Enabled: false, DefaultRPM: 1})
 	for range 5 {

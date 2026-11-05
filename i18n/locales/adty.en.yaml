@@ -9,6 +9,7 @@ adty.email.registered_body: "Someone asked for a sign-up code for this address o
 adty.limit.rpm: "Too many requests this minute for this account. Try again shortly."
 adty.limit.tpm: "Token limit for this minute reached for this account. Try again shortly."
 adty.limit.concurrency: "Too many requests are running at once for this account. Wait for one to finish and try again."
+adty.limit.unavailable: "Request limits are temporarily unavailable. Try again shortly."
 adty.marketing.unsubscribe: "Unsubscribe from these emails"
 adty.marketing.unsubscribe_prompt: "Stop receiving product updates and offers by email? Account emails such as verification codes and top-up receipts are not affected."
 adty.marketing.unsubscribe_done: "You have been unsubscribed from product updates and offers."

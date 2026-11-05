@@ -165,9 +165,24 @@ func StartSystemTaskRunner() {
 	})
 }
 
+// LogCleanupRetention is the minimum age of a usage log that cleanup may remove.
+// Launch operations clean logs older than 90 days; newer rows stay.
+const LogCleanupRetention = 90 * 24 * time.Hour
+
+// ErrLogCleanupRetention is returned when a cleanup target would delete logs
+// inside the retention window, including a future timestamp.
+var ErrLogCleanupRetention = errors.New("log cleanup must keep at least 90 days of logs")
+
+func logCleanupLatestTarget(now time.Time) int64 {
+	return now.Add(-LogCleanupRetention).Unix()
+}
+
 func StartLogCleanupTask(targetTimestamp int64) (*model.SystemTask, error) {
 	if targetTimestamp <= 0 {
 		return nil, errors.New("target timestamp is required")
+	}
+	if targetTimestamp > logCleanupLatestTarget(time.Now()) {
+		return nil, ErrLogCleanupRetention
 	}
 
 	activeTask, err := model.GetActiveSystemTask(model.SystemTaskTypeLogCleanup)
@@ -343,6 +358,10 @@ func runLogCleanupTask(ctx context.Context, task *model.SystemTask, runnerID str
 	}
 	if payload.TargetTimestamp <= 0 {
 		failSystemTask(task, runnerID, errors.New("target timestamp is required"))
+		return
+	}
+	if payload.TargetTimestamp > logCleanupLatestTarget(time.Now()) {
+		failSystemTask(task, runnerID, ErrLogCleanupRetention)
 		return
 	}
 	if payload.BatchSize <= 0 {

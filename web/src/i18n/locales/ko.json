@@ -3,6 +3,7 @@
     "360": "360",
     "1000": "1000",
     "10000": "10000",
+    "Deletes usage logs older than 90 days. Top-up, refund, and adjustment records stay.": "90일이 지난 사용 로그만 삭제합니다. 충전, 환불, 잔액 조정 기록은 남깁니다.",
     "Update plan info": "플랜 정보 업데이트",
     "Throughput short": "TPS",
     "Scan the QR code to follow the official account and reply with “验证码” to receive your verification code.": "QR 코드를 스캔해 공식 계정을 팔로우하고 “验证码” 메시지를 보내면 인증 코드를 받을 수 있어요.",

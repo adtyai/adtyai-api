@@ -32,6 +32,10 @@
 | `relay/mjproxy_handler_test.go` | 图片代理用例带上签名；另加未签名和过期签名不得取图 | 证明修复前未签名请求能拿到图，修复后不能 | 审查 v3 |
 | `relay/channel/task/jsplugin/adaptor.go` | JSON 提交已经收到上游响应后，读体失败和 `parseSubmitResponse` 失败都设 `NoRetry` | 解析失败再换渠道会把已经受理的任务再提交一次 | 审查 v3 |
 | `relay/relay_task.go` | 视频查询找不到适配器时不再把渠道编号写进错误信息 | 普通用户的错误响应不能带内部渠道编号 | 审查 v3 |
+| `controller/system_task.go` | 清理目标落在 90 天保留期内时返回 400 | 未来时间戳不能启动一次删掉近期付款日志的任务 | 审查 v3 |
+| `model/log.go` | `CountOldLog` 和 `DeleteOldLogBatch` 不删除充值、退款和管理员调额日志 | 用量清理不能误删付款和追账记录 | 审查 v3 |
+| `middleware/adty_user_limit.go` | 计数存储出错时返回 503，不再放行请求 | Redis 故障不能放开按用户的 RPM、TPM 和并发限制 | 审查 v3 |
+| `i18n/keys_adty.go` | 增加 `adty.limit.unavailable` | 限流存储不可用时给调用方一条可翻译的受控错误 | 审查 v3 |
 | `service/security_verification.go` | 增加 `VerificationScopeAPIKeyRead`，并把它列入无上下文的二次验证范围 | 密钥查看使用独立的二次验证范围 | 审查 v3 |
 | `service/access_token_scope.go` | `api_key.read` 对应访问令牌范围 `api_key:reveal` | 没有该范围的访问令牌不能取得查看密钥的验证 | 审查 v3 |
 | --- | --- | --- | --- |

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
@@ -14,6 +15,34 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
+
+func TestLogCleanupRejectsUnboundedTimestamp(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	previousDB, previousLogDB := model.DB, model.LOG_DB
+	model.DB, model.LOG_DB = db, db
+	t.Cleanup(func() {
+		model.DB, model.LOG_DB = previousDB, previousLogDB
+		require.NoError(t, sqlDB.Close())
+	})
+	require.NoError(t, db.AutoMigrate(&model.SystemTask{}, &model.Log{}))
+	require.NoError(t, db.Create(&model.Log{
+		UserId: 1, CreatedAt: time.Now().Unix(), Type: model.LogTypeTopup, Content: "paid-order",
+	}).Error)
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/system-task/log-cleanup?target_timestamp=9999999999", nil)
+	CreateLogCleanupSystemTask(c)
+
+	require.NotEqual(t, http.StatusOK, recorder.Code)
+	assert.Contains(t, recorder.Body.String(), "90")
+	var remaining int64
+	require.NoError(t, db.Model(&model.Log{}).Where("content = ?", "paid-order").Count(&remaining).Error)
+	assert.EqualValues(t, 1, remaining)
+}
 
 func TestSystemTaskListFiltersAndPaginationResponse(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})

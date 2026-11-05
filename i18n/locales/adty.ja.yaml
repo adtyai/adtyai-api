@@ -9,6 +9,7 @@ adty.email.registered_body: "{{.SystemName}} で、このメールアドレス�
 adty.limit.rpm: "このアカウントの今分のリクエスト数が上限に達しました。しばらくしてから再度お試しください。"
 adty.limit.tpm: "このアカウントの今分のトークン使用量が上限に達しました。しばらくしてから再度お試しください。"
 adty.limit.concurrency: "このアカウントで同時に実行中のリクエストが多すぎます。実行中のリクエストが終わってから再度お試しください。"
+adty.limit.unavailable: "リクエスト制限を一時的に確認できません。しばらくしてから再度お試しください。"
 adty.marketing.unsubscribe: "これらのメールの配信を停止する"
 adty.marketing.unsubscribe_prompt: "製品の最新情報やお得な情報のメールの受信を停止しますか？確認コードやチャージ完了などのアカウント関連メールには影響しません。"
 adty.marketing.unsubscribe_done: "製品の最新情報やお得な情報のメール配信を停止しました。"

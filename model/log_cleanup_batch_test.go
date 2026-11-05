@@ -5,8 +5,37 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/glebarez/sqlite"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
+
+func TestDeleteOldLogBatchKeepsPaymentAndAdjustRecords(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	previousDB, previousLogDB := DB, LOG_DB
+	DB, LOG_DB = db, db
+	t.Cleanup(func() {
+		DB, LOG_DB = previousDB, previousLogDB
+		require.NoError(t, sqlDB.Close())
+	})
+	require.NoError(t, db.AutoMigrate(&Log{}))
+	for _, logType := range []int{LogTypeTopup, LogTypeRefund, LogTypeManage, LogTypeConsume} {
+		require.NoError(t, db.Create(&Log{UserId: 1, CreatedAt: 10, Type: logType, Content: "old"}).Error)
+	}
+
+	deleted, err := DeleteOldLogBatch(context.Background(), 9_999_999_999, 100)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), deleted)
+
+	var kept []Log
+	require.NoError(t, db.Order("type").Find(&kept).Error)
+	require.Len(t, kept, 3)
+	assert.Equal(t, []int{LogTypeTopup, LogTypeManage, LogTypeRefund}, []int{kept[0].Type, kept[1].Type, kept[2].Type})
+}
 
 func TestDeleteOldLogBatchDeletesOnlyTheRequestedPostgreSQLBatch(t *testing.T) {
 	opened, err := OpenAdtyTestDatabase()

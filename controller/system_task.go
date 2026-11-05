@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -23,6 +24,10 @@ func CreateLogCleanupSystemTask(c *gin.Context) {
 
 	task, err := service.StartLogCleanupTask(targetTimestamp)
 	if err != nil {
+		if errors.Is(err, service.ErrLogCleanupRetention) {
+			common.ApiErrorStatus(c, http.StatusBadRequest, err)
+			return
+		}
 		common.ApiError(c, err)
 		return
 	}

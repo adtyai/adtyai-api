@@ -3,6 +3,7 @@
     "360": "360",
     "1000": "1000",
     "10000": "10000",
+    "Deletes usage logs older than 90 days. Top-up, refund, and adjustment records stay.": "只刪除超過 90 天的使用日誌。充值、退款和調額記錄會保留。",
     "_copy": "_複製",
     "，": "，",
     ", and": "，和",

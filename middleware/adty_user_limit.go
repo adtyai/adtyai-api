@@ -93,9 +93,14 @@ func AdtyUserLimit(midjourney ...bool) gin.HandlerFunc {
 		}
 		release, reason, err := adtylimit.Check(adtyStore(), userID, adtyEffectiveLimits(userID), member, now)
 		if err != nil {
-			// 计数出错时放行，不因为 Redis 抖动挡住所有请求。
+			// A counter outage must not open the RPM/TPM/concurrency gate.
 			common.SysError(common.LogText("adty user limit check failed user=%d: %s", userID, err.Error()))
-			c.Next()
+			message := i18n.T(c, i18n.MsgAdtyLimitUnavailable)
+			if isMJ {
+				abortWithMidjourneyMessage(c, http.StatusServiceUnavailable, http.StatusServiceUnavailable, message)
+				return
+			}
+			abortWithOpenAiMessage(c, http.StatusServiceUnavailable, message, "rate_limit_unavailable")
 			return
 		}
 		if reason != adtylimit.ReasonNone {

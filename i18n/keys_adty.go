@@ -17,6 +17,7 @@ const (
 	MsgAdtyLimitRPM         = "adty.limit.rpm"
 	MsgAdtyLimitTPM         = "adty.limit.tpm"
 	MsgAdtyLimitConcurrency = "adty.limit.concurrency"
+	MsgAdtyLimitUnavailable = "adty.limit.unavailable"
 
 	MsgAdtyMarketingUnsubscribe        = "adty.marketing.unsubscribe"
 	MsgAdtyMarketingUnsubscribePrompt  = "adty.marketing.unsubscribe_prompt"

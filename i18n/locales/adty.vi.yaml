@@ -9,6 +9,7 @@ adty.email.registered_body: "Có người đã yêu cầu mã đăng ký cho đ�
 adty.limit.rpm: "Tài khoản này đã gửi quá nhiều yêu cầu trong phút này. Vui lòng thử lại sau ít phút."
 adty.limit.tpm: "Tài khoản này đã đạt giới hạn token trong phút này. Vui lòng thử lại sau ít phút."
 adty.limit.concurrency: "Tài khoản này có quá nhiều yêu cầu đang chạy cùng lúc. Vui lòng đợi một yêu cầu hoàn tất rồi thử lại."
+adty.limit.unavailable: "Giới hạn yêu cầu tạm thời không dùng được. Vui lòng thử lại sau ít phút."
 adty.marketing.unsubscribe: "Hủy đăng ký nhận các email này"
 adty.marketing.unsubscribe_prompt: "Ngừng nhận email về cập nhật sản phẩm và ưu đãi? Các email tài khoản như mã xác minh và biên nhận nạp tiền vẫn được gửi."
 adty.marketing.unsubscribe_done: "Bạn đã hủy đăng ký nhận cập nhật sản phẩm và ưu đãi."
