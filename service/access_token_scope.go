@@ -232,6 +232,7 @@ var accessTokenVerificationScopes = map[string]string{
 	VerificationScopeAccountUnbind:         "account_security:write",
 	VerificationScopeAccountDelete:         "account_security:write",
 	VerificationScopeAccessTokenGenerate:   "",
+	VerificationScopeAPIKeyRead:            "api_key:reveal",
 	VerificationScopeAccessTokenUpdate:     "",
 	VerificationScopeAccessTokenRevoke:     "",
 	VerificationScopeLogin:                 "",

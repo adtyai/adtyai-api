@@ -196,6 +196,30 @@ func TestCustomDomainAndUnknownHostRejectVerificationAndReset(t *testing.T) {
 	}
 }
 
+func TestCustomDomainRedirectsConsoleAndRejectsAccountAPI(t *testing.T) {
+	f := newSiteFixture(t)
+	saved := service.AdtyLoadCustomDomains
+	service.AdtyLoadCustomDomains = func() (map[string]int, error) {
+		return map[string]int{"api.customer-brand.com": f.site.Id}, nil
+	}
+	t.Cleanup(func() {
+		service.AdtyLoadCustomDomains = saved
+		service.InvalidateAdtySiteCache()
+	})
+	service.InvalidateAdtySiteCache()
+
+	page := f.do(t, http.MethodGet, "api.customer-brand.com", "/sign-in", "")
+	assert.Equal(t, http.StatusFound, page.Code)
+	assert.Equal(t, "https://shop.sites.example.com/sign-in", page.Header().Get("Location"))
+	wallet := f.do(t, http.MethodGet, "api.customer-brand.com", "/wallet", "")
+	assert.Equal(t, http.StatusFound, wallet.Code)
+	assert.Contains(t, wallet.Header().Get("Location"), "https://shop.sites.example.com/wallet")
+
+	assert.Equal(t, http.StatusForbidden, f.do(t, http.MethodGet, "api.customer-brand.com", "/api/user/self", "").Code)
+	assert.Equal(t, http.StatusOK, f.do(t, http.MethodGet, "api.customer-brand.com", "/", "").Code)
+	assert.NotEqual(t, http.StatusForbidden, f.do(t, http.MethodGet, "shop.sites.example.com", "/api/user/self", "").Code)
+}
+
 func TestCustomDomainRejectsOAuth(t *testing.T) {
 	f := newSiteFixture(t)
 	saved := service.AdtyLoadCustomDomains

@@ -137,6 +137,16 @@ func AdtyIsMainHost(host string) bool {
 
 // AdtySiteForHost 按主机名查站点：先查已 active 的自定义域名，再按「子域名.根域名」查。
 // 没有对应站点返回 nil。站点状态由调用方判断（pending 的站点还没开，调用方当作查不到）。
+// AdtyIsCustomDomainHost reports an active custom hostname, not a platform subdomain.
+func AdtyIsCustomDomainHost(host string) bool {
+	host = AdtyNormalizeHost(host)
+	if host == "" {
+		return false
+	}
+	_, ok := loadAdtySiteSnapshot().byCustom[host]
+	return ok
+}
+
 func AdtySiteForHost(host string) *model.AdtySite {
 	host = AdtyNormalizeHost(host)
 	if host == "" {
@@ -230,6 +240,9 @@ func adtySiteBrandNameAndLogo(site *model.AdtySite) (string, string) {
 // Turnstile 继续用全局 site key，不在这里查 widget。
 // GetStatus 持有 OptionMap 的读锁，这里只读请求上下文和进程内站点，不查库，也不再拿这把锁。
 func AdtyOverrideStatus(c *gin.Context, data map[string]any) {
+	// Check-in rewards are not a product. Hide the calendar even if an old
+	// option row still says the feature is on.
+	data["checkin_enabled"] = false
 	site := AdtySiteForRequest(c)
 	if site == nil {
 		return

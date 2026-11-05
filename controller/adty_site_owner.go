@@ -123,7 +123,7 @@ func GetAdtyOwnerSite(c *gin.Context) {
 		"sender_domain_enabled": cfg.SenderDomainEnabled, "brand": brand, "bonus_rates": service.AdtySiteBonusRates(site),
 		"seo_index": site.SeoIndex, "agreement_version": site.AgreementVer, "agreement_at": site.AgreementAt,
 		"close_requested_at": site.CloseRequestedAt,
-		"prices": prices, "pricing_version": version, "domains": domains, "visibility": service.AdtySiteVisibility(site),
+		"prices":             prices, "pricing_version": version, "domains": domains, "visibility": service.AdtySiteVisibility(site),
 	})
 }
 
@@ -515,7 +515,7 @@ func GetAdtyOwnerExport(c *gin.Context) {
 			if i, ok := byUser[user.Id]; ok {
 				revenue, earning = sums[i].Revenue, sums[i].Earning
 			}
-			fmt.Fprintf(&b, "%d,%s,%s,%d,%s,%s\n", user.Id, adtyCSVField(user.Username), adtyCSVField(service.AdtyMaskEmail(user.Email)), user.CreatedAt,
+			fmt.Fprintf(&b, "%d,%s,%s,%d,%s,%s\n", user.Id, adtyCSVField(user.Username), adtyCSVField(service.AdtyOwnerVisibleEmail(user.Email, service.AdtySiteVisibility(site))), user.CreatedAt,
 				revenue.StringFixed(2), earning.StringFixed(2))
 		}
 	default:

@@ -97,9 +97,17 @@ func AdtyMaskEmail(email string) string {
 	return head + "***@" + domain
 }
 
-// adtyOwnerEmail 给站长看的邮箱一律打码。可见范围没有「完整邮箱」这一项（11.7）。
-func adtyOwnerEmail(email string) string {
+// adtyOwnerEmail follows customer_email: full only when that visibility is explicitly full.
+// AdtyOwnerVisibleEmail is the email a site owner may see under the current visibility map.
+func AdtyOwnerVisibleEmail(email string, visibility map[string]string) string {
+	if visibility["customer_email"] == "full" {
+		return email
+	}
 	return AdtyMaskEmail(email)
+}
+
+func adtyOwnerEmail(email string, visibility map[string]string) string {
+	return AdtyOwnerVisibleEmail(email, visibility)
 }
 
 // AdtyOwnerCustomer 是站长看到的一个客户：没有 IP、设备、第三方登录、手机号、风控依据。
@@ -119,7 +127,7 @@ type AdtyOwnerCustomer struct {
 
 func adtyOwnerCustomerView(visibility map[string]string, user model.User, customer model.AdtySiteCustomer) (AdtyOwnerCustomer, error) {
 	view := AdtyOwnerCustomer{
-		Id: user.Id, Username: user.Username, Email: adtyOwnerEmail(user.Email), Status: user.Status,
+		Id: user.Id, Username: user.Username, Email: adtyOwnerEmail(user.Email, visibility), Status: user.Status,
 		Group: user.Group, CreatedAt: user.CreatedAt, RiskFlag: customer.RiskFlag, Reviewed: customer.Reviewed,
 	}
 	if adtyVisible(visibility, "customer_balance") {
@@ -417,8 +425,16 @@ func ListAdtyOwnerCustomerTokens(site *model.AdtySite, userId int) ([]AdtyOwnerT
 	if _, err := GetAdtyOwnerCustomer(site, userId); err != nil {
 		return nil, err
 	}
+	joined, err := adtyOwnerJoinedAt(userId)
+	if err != nil {
+		return nil, err
+	}
 	var tokens []model.Token
-	if err := model.DB.Select("id", "name", "status", "accessed_time", "created_time").Where("user_id = ?", userId).Order("id").Find(&tokens).Error; err != nil {
+	query := model.DB.Select("id", "name", "status", "accessed_time", "created_time").Where("user_id = ?", userId)
+	if joined > 0 {
+		query = query.Where("created_time = 0 OR created_time >= ?", joined)
+	}
+	if err := query.Order("id").Find(&tokens).Error; err != nil {
 		return nil, err
 	}
 	items := make([]AdtyOwnerToken, 0, len(tokens))

@@ -56,3 +56,34 @@ func TestAdtyLimitMountedOnResponses(t *testing.T) {
 		assert.Equal(t, http.StatusTooManyRequests, recorder.Code, "%s: %s", path, recorder.Body.String())
 	}
 }
+
+// Playground uses a dashboard session, not an API key, and still spends the
+// same per-user RPM budget. A used-up user must be rejected before a channel
+// is chosen.
+func TestAdtyLimitMountedOnPlayground(t *testing.T) {
+	f := newAdtyGuardFixture(t)
+	require.NoError(t, i18n.Init())
+	setting := adty_setting.GetLimitSetting()
+	saved := *setting
+	*setting = adty_setting.LimitSetting{Enabled: true, DefaultRPM: 1}
+	t.Cleanup(func() { *setting = saved })
+	store := adtylimit.NewMemoryStore()
+	now := time.Unix(1_700_000_040, 0)
+	middleware.SetAdtyLimitStoreForTest(t, store, func() time.Time { return now })
+
+	engine := gin.New()
+	SetRelayRouter(engine)
+
+	session := adtySessionToken(t, f.db, "pg-limited", common.RoleCommonUser)
+	var user model.User
+	require.NoError(t, f.db.Where("username = ?", "pg-limited").First(&user).Error)
+	_, _ = store.IncrRPM(user.Id, adtylimit.MinuteOf(now))
+
+	req := httptest.NewRequest(http.MethodPost, "/pg/chat/completions", strings.NewReader(`{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}]}`))
+	req.Header.Set("Authorization", "Bearer "+session)
+	req.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	engine.ServeHTTP(recorder, req)
+	assert.Equal(t, http.StatusTooManyRequests, recorder.Code, recorder.Body.String())
+	assert.NotEmpty(t, recorder.Header().Get("Retry-After"))
+}

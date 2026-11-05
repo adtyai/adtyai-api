@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -81,6 +82,19 @@ func setupManageUserTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
+var manageQuotaKeySeq atomic.Int64
+
+func ensureManageQuotaIdempotency(body string) string {
+	if !strings.Contains(body, `"action":"add_quota"`) || strings.Contains(body, "idempotency_key") {
+		return body
+	}
+	trimmed := strings.TrimSpace(body)
+	if !strings.HasSuffix(trimmed, "}") {
+		return body
+	}
+	return trimmed[:len(trimmed)-1] + fmt.Sprintf(`,"idempotency_key":"manage-test-%d"}`, manageQuotaKeySeq.Add(1))
+}
+
 func performManageUserRequest(t *testing.T, body string) *httptest.ResponseRecorder {
 	t.Helper()
 	return performVerifiedManageUserRequest(t, body, service.AuthIdentity{UserID: 9999}, "")
@@ -90,6 +104,7 @@ func performManageUserRequest(t *testing.T, body string) *httptest.ResponseRecor
 // a dashboard login session, carrying the step-up proof status or role changes need.
 func performVerifiedManageUserRequest(t *testing.T, body string, identity service.AuthIdentity, proof string) *httptest.ResponseRecorder {
 	t.Helper()
+	body = ensureManageQuotaIdempotency(body)
 	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
@@ -537,7 +552,7 @@ func TestManageUserQuotaTargetsAndWalletBounds(t *testing.T) {
 			}
 			recorder := httptest.NewRecorder()
 			c, _ := gin.CreateTestContext(recorder)
-			c.Request = httptest.NewRequest(http.MethodPost, "/api/user/manage", strings.NewReader(fmt.Sprintf(`{"id":%d,"action":"add_quota","reason":"test","mode":%q,"value":%d}`, tc.targetID, tc.mode, tc.value)))
+			c.Request = httptest.NewRequest(http.MethodPost, "/api/user/manage", strings.NewReader(fmt.Sprintf(`{"id":%d,"action":"add_quota","reason":"test","mode":%q,"value":%d,"idempotency_key":"bound-%s"}`, tc.targetID, tc.mode, tc.value, tc.name)))
 			role := tc.operatorRole
 			if role == 0 {
 				role = common.RoleRootUser
@@ -580,7 +595,7 @@ func TestManageUserQuotaMiddlewareKeepsOneOperationPerRequest(t *testing.T) {
 		body, action string
 		success      bool
 	}{
-		{`{"id":9999,"action":"add_quota","reason":"test","mode":"add","value":100}`, "user.quota_add", true},
+		{`{"id":9999,"action":"add_quota","reason":"test","mode":"add","value":100,"idempotency_key":"mw-1"}`, "user.quota_add", true},
 		{`{"id":9999,"action":"add_quota","reason":"test","mode":"subtract","value":0}`, "user.quota_subtract", false},
 		{`{"id":9999,"action":"add_quota","reason":"test","mode":"invalid","value":1}`, "generic", false},
 		{`{"id":`, "generic", false},

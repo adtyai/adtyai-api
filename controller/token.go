@@ -10,6 +10,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
@@ -214,6 +215,9 @@ func GetTokenAutoGroups(c *gin.Context) {
 }
 
 func GetTokenKey(c *gin.Context) {
+	if middleware.RequireSecurityProof(c, service.VerificationOperation{Scope: service.VerificationScopeAPIKeyRead}) == nil {
+		return
+	}
 	id, err := strconv.Atoi(c.Param("id"))
 	userId := c.GetInt("id")
 	if err != nil {
@@ -589,6 +593,9 @@ func DeleteTokenBatch(c *gin.Context) {
 }
 
 func GetTokenKeysBatch(c *gin.Context) {
+	if middleware.RequireSecurityProof(c, service.VerificationOperation{Scope: service.VerificationScopeAPIKeyRead}) == nil {
+		return
+	}
 	tokenBatch := TokenBatch{}
 	if err := c.ShouldBindJSON(&tokenBatch); err != nil {
 		common.ApiErrorT(c, "Invalid parameters")

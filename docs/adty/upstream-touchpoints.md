@@ -12,6 +12,9 @@
 - 任务：实施方案里的任务号。
 
 | 上游文件 | 改了什么 | 为什么 | 任务 |
+| `router/api-router.go` | 上游单通道易支付下单和回调、Stripe/Creem/Waffo 下单和回调、签到、旧管理员补单改成 `middleware.AdtyClosedFeature`，在登录中间件之前拒绝 | 这些入口能绕过统一订单、加赠、佣金和余额流水入账；规范明确不做签到和未配置的卡支付 | 审查 v3 |
+| `router/relay-router.go` | `/pg` 在 `Distribute` 之前挂 `AdtyUserLimit` | 演练场是可用的文本入口，必须和 `/v1` 共用按用户的 RPM/TPM/并发限制 | 审查 v3 |
+| `controller/topup.go` | `GetTopUpInfo` 不再返回上游易支付、Stripe、Creem、Waffo 的开关和支付方式 | 钱包不能展示已经关掉的充值入口 | 审查 v3 |
 | --- | --- | --- | --- |
 | `common/str.go` | 删 `NormalizeBillingPreference` | 删订阅后没有调用方（原来只有 `NewBillingSession` 用它规范扣费偏好） | 1.2 |
 | `controller/access_token_audit_test.go` | `TestAuditRoleSnapshotSurvivesActorChanges`、`TestSecurityAndOperationEventsUseAuditTable` 删 `recordSubscriptionResetUserLogs` 的调用，审计条数 4→3、10→9、10→9 | 这个函数随 `controller/subscription.go` 删了；每次调用写一条审计 | 1.2 |

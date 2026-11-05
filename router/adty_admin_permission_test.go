@@ -137,7 +137,7 @@ func TestFinancePresetCanAdjustQuota(t *testing.T) {
 	target := model.User{Username: "guard-target", Password: "hashed-password", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: "default", AuthVersion: 1}
 	require.NoError(t, f.db.Create(&target).Error)
 
-	adjust := adtyJSON(t, f.engine, http.MethodPost, "/api/user/manage", fmt.Sprintf(`{"id":%d,"action":"add_quota","mode":"add","value":500,"reason":"test"}`, target.Id), f.token)
+	adjust := adtyJSON(t, f.engine, http.MethodPost, "/api/user/manage", fmt.Sprintf(`{"id":%d,"action":"add_quota","mode":"add","value":500,"reason":"test","idempotency_key":"finance-1"}`, target.Id), f.token)
 	require.Equal(t, http.StatusOK, adjust.Code, adjust.Body.String())
 	assert.Contains(t, adjust.Body.String(), `"success":true`)
 	var stored model.User

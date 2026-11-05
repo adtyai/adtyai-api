@@ -302,6 +302,7 @@ func registerAdtyResellerRoutes(apiRouter *gin.RouterGroup) {
 		{http.MethodPut, "/sites/:id/status", authz.AdtySiteAdjust, controller.SetAdtyAdminSiteStatus},
 		{http.MethodPost, "/sites/:id/settlement/resume", authz.AdtySiteAdjust, controller.ResumeAdtySiteSettlement},
 		{http.MethodDelete, "/sites/:id/sender-domain", authz.AdtySiteAdjust, controller.DisableAdtyAdminSiteSenderDomain},
+		{http.MethodDelete, "/sites/domains/:id", authz.AdtySiteAdjust, controller.DisableAdtyAdminSiteDomain},
 		{http.MethodDelete, "/sites/:id/notice", authz.AdtySiteAdjust, controller.ClearAdtyAdminSiteNotice},
 		{http.MethodGet, "/reseller/usage", authz.AdtySiteRead, controller.GetAdtyResellerUsage},
 		{http.MethodGet, "/reseller/invite-codes", authz.AdtySiteSettings, controller.GetAdtySiteInviteCodes},
@@ -326,6 +327,7 @@ func SetAdtyWebRoutes(router *gin.Engine) {
 	router.GET("/pay/result", controller.AdtyPayResult) // 不带签名的一律跳主站钱包
 	router.GET("/pay/result/:token", controller.AdtyPayResult)
 	router.GET("/robots.txt", AdtyRobotsTxt())
+	router.GET("/sitemap.xml", AdtySitemap())
 	// 站长上传的 Logo（任务 11.3）：公开读取，文件名是随机的。
 	router.GET("/uploads/site-assets/:name", controller.GetAdtySiteAsset)
 }

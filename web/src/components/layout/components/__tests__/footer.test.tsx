@@ -27,6 +27,7 @@ import { render, screen, within } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { afterEach, describe, expect, it } from 'vitest'
 
+import { adtySiteQueryKey } from '@/features/adty-site/api'
 import { STATUS_QUERY_KEY } from '@/lib/status-query'
 import { useSystemConfigStore } from '@/stores/system-config-store'
 
@@ -50,12 +51,14 @@ afterEach(() => {
 
 async function renderPage(
   ui: ReactNode,
-  status: Record<string, unknown> = {}
+  status: Record<string, unknown> = {},
+  site: Record<string, unknown> = {}
 ): Promise<void> {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Infinity } },
   })
   client.setQueryData(STATUS_QUERY_KEY, status)
+  client.setQueryData(adtySiteQueryKey, site)
   client.setQueryData(['notice'], { success: true, data: '' })
   const router = createRouter({
     routeTree: createRootRoute({ component: () => ui }),
@@ -114,6 +117,20 @@ describe('footer', () => {
     expect(
       within(footer).queryByRole('link', { name: 'Privacy Policy' })
     ).toBeNull()
+  })
+
+  it('lists the refund policy when that site setting is on', async () => {
+    await renderPage(
+      <Footer />,
+      { user_agreement_enabled: true },
+      { refund_policy_enabled: true }
+    )
+
+    expect(
+      within(screen.getByRole('contentinfo')).getByRole('link', {
+        name: 'Refund Policy',
+      })
+    ).toHaveAttribute('href', '/refund-policy')
   })
 
   it('leaves legal links out when no legal document is switched on', async () => {

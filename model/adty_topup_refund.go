@@ -103,6 +103,14 @@ func cacheRefundUserQuota(userID int, credit, checkinQuota int64) (charged, befo
 	values, err := run()
 	if err == nil && len(values) == 2 && values[0] == int64(-1) {
 		if _, hydrateErr := GetUserCache(userID); hydrateErr == nil {
+			// A cache miss is filled from the database row, which lags the
+			// batch-update queue. Apply that unflushed delta before the refund
+			// script reads the hash, or a refund uses a stale higher balance.
+			if common.BatchUpdateEnabled {
+				if delta := pendingBatchDelta(BatchUpdateTypeUserQuota, userID); delta != 0 {
+					_ = common.RDB.HIncrBy(context.Background(), getUserCacheKey(userID), "Quota", int64(delta)).Err()
+				}
+			}
 			values, err = run()
 		}
 	}
@@ -234,6 +242,8 @@ func RefundAdtyTopUp(tradeNo, reason string, operatorID int, idemKey string, exp
 		if common.RedisEnabled {
 			if charged, live, ok := cacheRefundUserQuota(topUp.UserId, ext.CreditQuota, checkinQuota); ok {
 				before, cacheCharged = live, charged
+			} else if common.BatchUpdateEnabled {
+				before = int64(saturatingAddInt(int(before), pendingBatchDelta(BatchUpdateTypeUserQuota, topUp.UserId)))
 			}
 		}
 		deducted, bonus, refundQuota, refundAmount := adtyRefundFigures(ext, before, checkinQuota)

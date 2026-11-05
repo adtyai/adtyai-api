@@ -20,6 +20,7 @@ import { Link } from '@tanstack/react-router'
 import { Fragment } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { useAdtySite } from '@/features/adty-site/api'
 import { useStatus } from '@/hooks/use-status'
 import { useSystemConfig } from '@/hooks/use-system-config'
 import { ADTY_BRAND_NAME } from '@/lib/adty-brand'
@@ -81,6 +82,7 @@ function FooterLinkItem(props: { link: FooterLink }) {
 function LegalLinks(props: { leadingSeparator?: boolean }) {
   const { t } = useTranslation()
   const { status } = useStatus()
+  const refundPolicyEnabled = useAdtySite().data?.refund_policy_enabled === true
   const items: { key: string; label: string; href: string }[] = []
   if (status?.user_agreement_enabled) {
     items.push({
@@ -94,6 +96,13 @@ function LegalLinks(props: { leadingSeparator?: boolean }) {
       key: 'privacy-policy',
       label: t('Privacy Policy'),
       href: '/privacy-policy',
+    })
+  }
+  if (refundPolicyEnabled) {
+    items.push({
+      key: 'refund-policy',
+      label: t('Refund Policy'),
+      href: '/refund-policy',
     })
   }
   if (items.length === 0) {

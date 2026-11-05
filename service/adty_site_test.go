@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting/adty_setting"
 	"github.com/shopspring/decimal"
@@ -57,6 +58,52 @@ func siteCustomer(t *testing.T, db *gorm.DB, site *model.AdtySite, name string) 
 	require.NoError(t, db.Create(&model.AdtySiteCustomer{UserId: user.Id, SiteId: site.Id, JoinedAt: time.Now().Unix()}).Error)
 	user.SiteId = site.Id
 	return user
+}
+
+func TestRaisingSiteCostFactorWaitsAndLoweringAppliesNow(t *testing.T) {
+	db := prepareSiteDB(t)
+	require.NoError(t, i18n.Init())
+	var sent []string
+	oldSend := AdtySendSiteEmailAsync
+	AdtySendSiteEmailAsync = func(_ *model.AdtySite, _, _, content string) {
+		sent = append(sent, content)
+	}
+	t.Cleanup(func() { AdtySendSiteEmailAsync = oldSend })
+	_, site := openActiveSite(t, db, "d-delay")
+	current, ok := AdtySiteCostFactor(site)
+	require.True(t, ok)
+	require.True(t, current.Equal(decimal.RequireFromString("0.8")))
+
+	raised, err := AdjustAdtySite(site.Id, 1, AdtySiteAdjust{CostFactor: dec("0.9"), Reason: "raise"})
+	require.NoError(t, err)
+	assert.Nil(t, raised.CostFactor, "a higher d must not apply immediately")
+	require.NotNil(t, raised.PendingCostFactor)
+	assert.True(t, raised.PendingCostFactor.Equal(decimal.RequireFromString("0.9")))
+	assert.Positive(t, raised.PendingCostFactorAt)
+	require.NotEmpty(t, sent)
+	assert.Contains(t, sent[0], "0.9")
+	still, ok := AdtySiteCostFactor(raised)
+	require.True(t, ok)
+	assert.True(t, still.Equal(decimal.RequireFromString("0.8")))
+
+	lowered, err := AdjustAdtySite(site.Id, 1, AdtySiteAdjust{CostFactor: dec("0.6"), Reason: "lower"})
+	require.NoError(t, err)
+	require.NotNil(t, lowered.CostFactor)
+	assert.True(t, lowered.CostFactor.Equal(decimal.RequireFromString("0.6")))
+	assert.Nil(t, lowered.PendingCostFactor)
+	assert.Zero(t, lowered.PendingCostFactorAt)
+
+	again, err := AdjustAdtySite(site.Id, 1, AdtySiteAdjust{CostFactor: dec("0.7"), Reason: "raise-again"})
+	require.NoError(t, err)
+	require.NotNil(t, again.PendingCostFactor)
+	applied, err := ApplyDueAdtySiteCostFactors(again.PendingCostFactorAt)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), applied)
+	stored, err := GetAdtySite(site.Id)
+	require.NoError(t, err)
+	require.NotNil(t, stored.CostFactor)
+	assert.True(t, stored.CostFactor.Equal(decimal.RequireFromString("0.7")))
+	assert.Nil(t, stored.PendingCostFactor)
 }
 
 func TestAdtyResellerSettingDefaults(t *testing.T) {

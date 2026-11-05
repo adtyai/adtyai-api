@@ -518,6 +518,22 @@ func adtyNotifySiteMarkupIncrease(site *model.AdtySite, userId int, raised []mod
 	}
 }
 
+// adtyNotifySiteCostFactorPending 在提高 d 写入待生效时通知站长，不把新系数当成已经生效。
+func adtyNotifySiteCostFactorPending(site *model.AdtySite) {
+	if site == nil || site.PendingCostFactor == nil {
+		return
+	}
+	owner, err := model.GetUserById(site.OwnerUserId, false)
+	if err != nil {
+		common.SysError(common.LogText("load site %d owner for pending cost factor mail: %s", site.Id, err.Error()))
+		return
+	}
+	adtySendSiteMail(site, owner, i18n.MsgAdtySiteCostPendingSubject, i18n.MsgAdtySiteCostPendingBody, map[string]any{
+		"Factor": site.PendingCostFactor.String(),
+		"When":   adtyMailWhen(site.PendingCostFactorAt),
+	})
+}
+
 // adtyNotifySiteCostFactor 给站长发邮件，说明当前生效的 d。
 func adtyNotifySiteCostFactor(site *model.AdtySite) {
 	if site == nil {

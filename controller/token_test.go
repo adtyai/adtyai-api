@@ -564,16 +564,11 @@ func TestGetTokenKeyRequiresOwnershipAndReturnsFullKey(t *testing.T) {
 	GetTokenKey(authorizedCtx)
 
 	authorizedResponse := decodeAPIResponse(t, authorizedRecorder)
-	if !authorizedResponse.Success {
-		t.Fatalf("expected authorized key fetch to succeed, got message: %s", authorizedResponse.Message)
+	if authorizedResponse.Success {
+		t.Fatalf("expected key reveal to require step-up, got success")
 	}
-
-	var keyData tokenKeyResponse
-	if err := common.Unmarshal(authorizedResponse.Data, &keyData); err != nil {
-		t.Fatalf("failed to decode token key response: %v", err)
-	}
-	if keyData.Key != token.GetFullKey() {
-		t.Fatalf("expected full key %q, got %q", token.GetFullKey(), keyData.Key)
+	if strings.Contains(authorizedRecorder.Body.String(), token.Key) {
+		t.Fatalf("key reveal without step-up leaked raw token key: %s", authorizedRecorder.Body.String())
 	}
 
 	unauthorizedCtx, unauthorizedRecorder := newAuthenticatedContext(t, http.MethodPost, "/api/token/"+strconv.Itoa(token.Id)+"/key", nil, 2)

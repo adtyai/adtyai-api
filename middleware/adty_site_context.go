@@ -53,6 +53,10 @@ func AdtySiteContext() gin.HandlerFunc {
 			c.Next()
 			return
 		}
+		if service.AdtyIsCustomDomainHost(host) {
+			adtyHandleCustomDomain(c, host)
+			return
+		}
 		if adtyIsSessionAPI(c.Request.URL.Path) {
 			if status := service.AdtyRejectSessionAPIStatus(host); status != 0 {
 				c.AbortWithStatus(status)
@@ -80,4 +84,87 @@ func AdtySiteContext() gin.HandlerFunc {
 		}
 		c.Next()
 	}
+}
+
+func adtyHandleCustomDomain(c *gin.Context, host string) {
+	site := service.AdtySiteForHost(host)
+	if site != nil {
+		c.Set(service.AdtySiteContextKey, site)
+	}
+	path := c.Request.URL.Path
+	if adtyIsRelayPath(path) || adtyCustomDomainPublicPage(path) || adtyCustomDomainPublicAPI(path) {
+		c.Next()
+		return
+	}
+	if adtyIsAPIPath(path) {
+		c.AbortWithStatus(http.StatusForbidden)
+		return
+	}
+	if site != nil {
+		if target := service.AdtySiteBaseURL(site); target != "" {
+			c.Redirect(http.StatusFound, target+c.Request.URL.RequestURI())
+			c.Abort()
+			return
+		}
+	}
+	c.AbortWithStatus(http.StatusForbidden)
+}
+
+// AdtyRequireCurrentSiteTerms blocks account and relay use until a site customer
+// accepts the current terms. Logout, self, and the accept endpoint stay open.
+func AdtyRequireCurrentSiteTerms() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		path := c.Request.URL.Path
+		if path == "/api/user/self" || path == "/api/user/auth/logout" || path == "/api/adty/site/terms/accept" || path == "/api/status" {
+			c.Next()
+			return
+		}
+		userID := c.GetInt("id")
+		if userID <= 0 {
+			c.Next()
+			return
+		}
+		required, _ := service.AdtySiteTermsStatus(userID)
+		if required {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+				"success": false,
+				"message": "Accept the current site customer terms first",
+			})
+			return
+		}
+		c.Next()
+	}
+}
+
+func adtyCustomDomainPublicAPI(path string) bool {
+	switch path {
+	case "/api/status", "/api/uptime/status", "/api/ratio_config", "/api/adty/groups/display", "/api/adty/site":
+		return true
+	}
+	return strings.HasPrefix(path, "/api/adty/legal/") || strings.HasPrefix(path, "/api/adty/pricing")
+}
+
+func adtyIsRelayPath(path string) bool {
+	return strings.HasPrefix(path, "/v1/") || path == "/v1" ||
+		strings.HasPrefix(path, "/v1beta/") || path == "/v1beta" ||
+		strings.HasPrefix(path, "/mj/") || strings.HasPrefix(path, "/pg/")
+}
+
+func adtyCustomDomainPublicPage(path string) bool {
+	if path != "/" {
+		path = strings.TrimSuffix(path, "/")
+	}
+	switch path {
+	case "/", "/pricing", "/docs", "/about", "/rankings", "/status",
+		"/user-agreement", "/privacy-policy", "/refund-policy",
+		"/zh-cn", "/zh-tw", "/fr", "/ja", "/ko", "/ru", "/vi",
+		"/robots.txt", "/sitemap.xml", "/favicon.ico":
+		return true
+	}
+	if strings.HasPrefix(path, "/pricing/") || strings.HasPrefix(path, "/docs/") ||
+		strings.HasPrefix(path, "/.well-known/") || strings.HasPrefix(path, "/uploads/") {
+		return true
+	}
+	base := path[strings.LastIndex(path, "/")+1:]
+	return strings.Contains(base, ".")
 }

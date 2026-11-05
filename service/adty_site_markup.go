@@ -577,6 +577,9 @@ func startAdtySiteMarkupTask() {
 			if _, err := ApplyDueAdtySiteMarkups(time.Now().Unix()); err != nil {
 				common.SysError(common.LogText("apply site markups: %s", err.Error()))
 			}
+			if _, err := ApplyDueAdtySiteCostFactors(time.Now().Unix()); err != nil {
+				common.SysError(common.LogText("apply site cost factors: %s", err.Error()))
+			}
 		}
 	}()
 }

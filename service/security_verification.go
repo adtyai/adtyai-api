@@ -30,6 +30,7 @@ const (
 	VerificationScopeTwoFABackupCodes    = "2fa.backup_codes.regenerate"
 	VerificationScopeLogin               = "auth.login"
 	VerificationScopeAccessTokenGenerate = "access_token.generate"
+	VerificationScopeAPIKeyRead          = "api_key.read"
 	VerificationScopeAccessTokenRevoke   = "access_token.revoke"
 	VerificationScopeAccessTokenUpdate   = "access_token.update"
 	VerificationScopeAccountBind         = "account.binding.bind"
@@ -262,7 +263,8 @@ func BindVerificationOperation(operation VerificationOperation) (VerificationBin
 		normalized = context
 	case VerificationScopePasskeyRegister, VerificationScopePasskeyDelete, VerificationScopeTwoFASetup,
 		VerificationScopeTwoFADisable, VerificationScopeTwoFABackupCodes,
-		VerificationScopePasswordSet, VerificationScopePasswordChange, VerificationScopeAccountDelete:
+		VerificationScopePasswordSet, VerificationScopePasswordChange, VerificationScopeAccountDelete,
+		VerificationScopeAPIKeyRead:
 		if len(fields) != 0 {
 			return VerificationBinding{}, ErrVerificationContextInvalid
 		}
@@ -335,6 +337,7 @@ func securityVerificationPolicy(scope string, state model.UserVerificationState)
 		}
 	case VerificationScopePasskeyRegister, VerificationScopeTwoFASetup,
 		VerificationScopeAccessTokenGenerate, VerificationScopeAccessTokenUpdate, VerificationScopeAccessTokenRevoke,
+		VerificationScopeAPIKeyRead,
 		VerificationScopeAccountBind, VerificationScopeAccountUnbind,
 		VerificationScopePasswordSet, VerificationScopePasswordChange, VerificationScopeAccountDelete,
 		VerificationScopeAdminUserCreate, VerificationScopeAdminUserUpdate, VerificationScopeAdminUserDelete,

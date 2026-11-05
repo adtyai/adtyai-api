@@ -310,8 +310,8 @@ func TestExportMasksEmail(t *testing.T) {
 	resp := f.call(t, http.MethodGet, "/api/adty/site/export?kind=customers", "", "")
 	require.Equal(t, http.StatusOK, resp.Code)
 	body := resp.Body.String()
-	assert.Contains(t, body, `"a***@gmail.com"`, "exports are masked even when full email is visible")
-	assert.NotContains(t, body, "alice@gmail.com")
+	assert.Contains(t, body, "alice@gmail.com", "full visibility includes the email in export")
+	assert.NotContains(t, body, `"a***@gmail.com"`)
 	assert.Contains(t, body, `"'=cmd|calc"`, "cells starting with = are neutralised")
 	assert.Contains(t, f.call(t, http.MethodGet, "/api/adty/site/export?kind=earnings", "", "").Body.String(), "day,user_id,kind")
 	assert.Contains(t, f.call(t, http.MethodGet, "/api/adty/site/export?kind=logs", "", "").Body.String(), `"success":false`, "only three exports")
@@ -324,11 +324,10 @@ func TestOwnerViewMasksEmailWhenVisibilityIsFull(t *testing.T) {
 	service.InvalidateAdtySiteCache()
 
 	list := f.call(t, http.MethodGet, "/api/adty/site/customers", "", "").Body.String()
-	assert.Contains(t, list, `"d***@gmail.com"`)
-	assert.NotContains(t, list, "dave@gmail.com")
+	assert.Contains(t, list, "dave@gmail.com")
+	assert.NotContains(t, list, `"d***@gmail.com"`)
 	lookup := f.call(t, http.MethodGet, "/api/adty/site/customers/lookup?q=dave@gmail.com", "", "").Body.String()
-	assert.Contains(t, lookup, `"d***@gmail.com"`)
-	assert.NotContains(t, lookup, "dave@gmail.com")
+	assert.Contains(t, lookup, "dave@gmail.com")
 }
 
 func TestOwnerViewMasksEmailByDefault(t *testing.T) {
@@ -351,8 +350,8 @@ func TestOwnerViewRespectsSiteOverride(t *testing.T) {
 		Update("visibility", `{"customer_email":"full","customer_balance":"on","request_logs":"off"}`).Error)
 	service.InvalidateAdtySiteCache()
 	body = f.call(t, http.MethodGet, "/api/adty/site/customers", "", "").Body.String()
-	assert.Contains(t, body, `"d***@example.com"`)
-	assert.NotContains(t, body, "dave@example.com")
+	assert.Contains(t, body, "dave@example.com")
+	assert.NotContains(t, body, `"d***@example.com"`)
 	assert.Contains(t, body, `"balance":1000000`)
 	logs := f.call(t, http.MethodGet, fmt.Sprintf("/api/adty/site/customers/%d/logs", customer.Id), "", "")
 	assert.Equal(t, http.StatusForbidden, logs.Code, "request logs switched off for this site")

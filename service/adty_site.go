@@ -471,11 +471,29 @@ func AdjustAdtySite(siteId, adminId int, adjust AdtySiteAdjust) (*model.AdtySite
 		}
 		old := map[string]any{"cost_factor": site.CostFactor, "max_markup": site.MaxMarkup, "visibility": site.Visibility}
 		updates := map[string]any{}
+		var pendingNotice *decimal.Decimal
+		var pendingAt int64
 		switch {
 		case adjust.ClearCostFactor:
 			updates["cost_factor"] = nil
+			updates["pending_cost_factor"] = gorm.Expr("NULL")
+			updates["pending_cost_factor_at"] = 0
 		case adjust.CostFactor != nil:
-			updates["cost_factor"] = *adjust.CostFactor
+			current, hasCurrent := AdtySiteCostFactor(&site)
+			if hasCurrent && adjust.CostFactor.GreaterThan(current) {
+				delay := resellerSetting().MarkupIncreaseDelayHours
+				if delay < 1 {
+					delay = 24
+				}
+				pendingAt = time.Now().Unix() + int64(delay)*3600
+				updates["pending_cost_factor"] = *adjust.CostFactor
+				updates["pending_cost_factor_at"] = pendingAt
+				pendingNotice = adjust.CostFactor
+			} else {
+				updates["cost_factor"] = *adjust.CostFactor
+				updates["pending_cost_factor"] = gorm.Expr("NULL")
+				updates["pending_cost_factor_at"] = 0
+			}
 		}
 		switch {
 		case adjust.ClearMaxMarkup:
@@ -493,6 +511,10 @@ func AdjustAdtySite(siteId, adminId int, adjust AdtySiteAdjust) (*model.AdtySite
 		if err := tx.Model(&model.AdtySite{}).Where("id = ?", site.Id).Updates(updates).Error; err != nil {
 			return err
 		}
+		if pendingNotice != nil {
+			site.PendingCostFactor = pendingNotice
+			site.PendingCostFactorAt = pendingAt
+		}
 		return recordSiteAuditTx(tx, site.Id, "adjust", adminId, old, updates, adjust.Reason)
 	})
 	if err != nil {
@@ -503,7 +525,39 @@ func AdjustAdtySite(siteId, adminId int, adjust AdtySiteAdjust) (*model.AdtySite
 	if err == nil && costChanged && AdtyOnSiteCostFactorChanged != nil {
 		AdtyOnSiteCostFactorChanged(updated)
 	}
+	if err == nil && updated != nil && updated.PendingCostFactor != nil && updated.PendingCostFactorAt > 0 {
+		adtyNotifySiteCostFactorPending(updated)
+	}
 	return updated, err
+}
+
+// ApplyDueAdtySiteCostFactors writes pending higher cost factors whose time has
+// arrived. A later decrease clears the pending columns, so a due row is still
+// an increase that was announced in advance.
+func ApplyDueAdtySiteCostFactors(now int64) (int64, error) {
+	var due []model.AdtySite
+	if err := model.DB.Where("pending_cost_factor_at > 0 AND pending_cost_factor_at <= ?", now).Find(&due).Error; err != nil {
+		return 0, err
+	}
+	var applied int64
+	for _, site := range due {
+		if site.PendingCostFactor == nil {
+			continue
+		}
+		result := model.DB.Model(&model.AdtySite{}).
+			Where("id = ? AND pending_cost_factor_at > 0 AND pending_cost_factor_at <= ?", site.Id, now).
+			Updates(map[string]any{
+				"cost_factor": site.PendingCostFactor, "pending_cost_factor": gorm.Expr("NULL"), "pending_cost_factor_at": 0,
+			})
+		if result.Error != nil {
+			return applied, result.Error
+		}
+		applied += result.RowsAffected
+	}
+	if applied > 0 {
+		InvalidateAdtySiteCache()
+	}
+	return applied, nil
 }
 
 // AdtyOnSiteCostFactorChanged 在管理员改了单站 d 之后调用（11.9 的站内信和邮件通知挂在这里）。

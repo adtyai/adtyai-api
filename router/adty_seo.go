@@ -310,8 +310,52 @@ func AdtyRobotsTxt() gin.HandlerFunc {
 		body := "User-agent: *\nDisallow: /api/\nDisallow: /v1/\nDisallow: /pay/\n"
 		if site := service.AdtySiteForRequest(c); site != nil && !site.SeoIndex {
 			body = "User-agent: *\nDisallow: /\n"
+		} else if base := adtySitemapBase(c); base != "" {
+			body += "Sitemap: " + base + "/sitemap.xml\n"
 		}
 		c.Header("Cache-Control", "no-cache")
 		c.Data(http.StatusOK, "text/plain; charset=utf-8", []byte(body))
 	}
+}
+
+// AdtySitemap lists only the indexable homepage language URLs. Other pages
+// stay noindex and are omitted. A site that is not open for indexing, or a
+// main site without a configured server address, returns an empty urlset.
+func AdtySitemap() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Header("Cache-Control", "no-cache")
+		c.Data(http.StatusOK, "application/xml; charset=utf-8", adtySitemapXML(adtySitemapBase(c)))
+	}
+}
+
+func adtySitemapBase(c *gin.Context) string {
+	if site := service.AdtySiteForRequest(c); site != nil {
+		if !site.SeoIndex {
+			return ""
+		}
+		return strings.TrimRight(service.AdtySiteBaseURL(site), "/")
+	}
+	base := adtySEOBaseURL()
+	if base == nil {
+		return ""
+	}
+	return strings.TrimRight(base.String(), "/")
+}
+
+func adtySitemapXML(base string) []byte {
+	var b strings.Builder
+	b.WriteString(`<?xml version="1.0" encoding="UTF-8"?>` + "\n")
+	b.WriteString(`<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">` + "\n")
+	if base != "" {
+		for _, page := range adtySEOHomeLangs {
+			loc := base + page.path
+			b.WriteString("  <url><loc>" + html.EscapeString(loc) + "</loc>")
+			for _, alt := range adtySEOHomeLangs {
+				b.WriteString(`<xhtml:link rel="alternate" hreflang="` + html.EscapeString(alt.hreflang) + `" href="` + html.EscapeString(base+alt.path) + `"/>`)
+			}
+			b.WriteString("</url>\n")
+		}
+	}
+	b.WriteString("</urlset>\n")
+	return []byte(b.String())
 }

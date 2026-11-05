@@ -60,7 +60,7 @@ func manageUserQuota(c *gin.Context, req ManageRequest) {
 		case errors.Is(err, model.ErrAdtyAdjustReasonTooLong):
 			params["failure_reason"] = "reason_too_long"
 			common.ApiErrorT(c, "The reason must be at most 200 characters")
-		case errors.Is(err, model.ErrAdtyAdjustKeyTooLong):
+		case errors.Is(err, model.ErrAdtyAdjustKeyTooLong), errors.Is(err, model.ErrAdtyAdjustKeyRequired):
 			params["failure_reason"] = "invalid_idempotency_key"
 			common.ApiErrorT(c, "Invalid idempotency key")
 		case errors.Is(err, model.ErrAdtyIdempotencyConflict):

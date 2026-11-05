@@ -318,6 +318,8 @@ func handleOAuthLogin(c *gin.Context, provider oauth.Provider, oauthUser *oauth.
 			common.ApiErrorT(c, "User has been deleted")
 		case *OAuthRegistrationDisabledError:
 			common.ApiErrorT(c, "New user registration has been disabled by administrator")
+		case *OAuthSiteTermsError:
+			common.ApiErrorT(c, "Accept the current site customer terms first")
 		case *OAuthEmailAlreadyTakenError:
 			common.ApiErrorT(c, "Email address is already in use")
 		case *OAuthLegacyBindingNotConfirmedError:
@@ -512,6 +514,9 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 		return nil, nil, &OAuthRegistrationDisabledError{}
 	}
 	user.SiteId = siteId
+	if !service.AdtyRegisterTermsAccepted(c, siteId) {
+		return nil, nil, &OAuthSiteTermsError{}
+	}
 
 	// Use transaction to ensure user creation and OAuth binding are atomic
 	if genericProvider, ok := provider.(*oauth.GenericOAuthProvider); ok {
@@ -583,6 +588,12 @@ type OAuthUserDeletedError struct{}
 
 func (e *OAuthUserDeletedError) Error() string {
 	return "user has been deleted"
+}
+
+type OAuthSiteTermsError struct{}
+
+func (e *OAuthSiteTermsError) Error() string {
+	return "Accept the current site customer terms first"
 }
 
 type OAuthRegistrationDisabledError struct{}

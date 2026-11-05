@@ -72,6 +72,7 @@ func AdtyAfterRegister(c *gin.Context, user *model.User) {
 	if user.SiteId > 0 {
 		ipHash, deviceHash := recordAdtyFingerprint(c, user.Id, "register")
 		AdtyRecordSiteCustomer(user.Id, user.SiteId, ipHash, deviceHash, AdtyAcceptedSiteCustomerTerms(c))
+		adtyRecordRegisterConsent(c, user)
 		if _, err := c.Cookie(AdtyReferralCookie); err == nil {
 			clearAdtyReferralCookie(c)
 		}

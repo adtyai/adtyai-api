@@ -73,6 +73,7 @@ func runAdtyEpayFollowUpQueries(now int64) {
 		method := channel.MethodByTypeCode(result.TypeCode)
 		if method == nil || method.Method != ext.Method {
 			common.SysLog(common.LogText("epay query type mismatch trade_no=%s type=%s", ext.TradeNo, result.TypeCode))
+			adtyQueuePaymentReview(ext.TradeNo, result.GatewayTradeNo, "query type mismatch: "+result.TypeCode)
 			continue
 		}
 		_, err = model.CompleteAdtyTopUp(ext.TradeNo, model.AdtyPaymentFacts{
@@ -86,7 +87,21 @@ func runAdtyEpayFollowUpQueries(now int64) {
 		}, "")
 		if err != nil {
 			common.SysLog(common.LogText("epay follow-up credit failed trade_no=%s: %s", ext.TradeNo, err.Error()))
+			adtyQueuePaymentReview(ext.TradeNo, result.GatewayTradeNo, err.Error())
 		}
+	}
+}
+
+func adtyQueuePaymentReview(tradeNo, sessionID, cause string) {
+	if err := model.RecordPaymentOrphanEvent(&model.PaymentOrphanEvent{
+		Provider:    model.PaymentProviderAdtyEpay,
+		EventType:   "payment_query",
+		ReferenceID: tradeNo,
+		SessionID:   sessionID,
+		Reason:      "payment requires manual review after payment succeeded",
+		Error:       cause,
+	}); err != nil {
+		common.SysError(common.LogText("record payment review failed trade_no=%s: %s", tradeNo, err.Error()))
 	}
 }
 

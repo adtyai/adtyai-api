@@ -190,6 +190,7 @@ func seoEngine(t *testing.T) *gin.Engine {
 	engine := gin.New()
 	engine.Use(middleware.AdtySiteContext())
 	engine.GET("/robots.txt", AdtyRobotsTxt())
+	engine.GET("/sitemap.xml", AdtySitemap())
 	engine.NoRoute(AdtySEOHomePages([]byte(seoIndexPage), fstest.MapFS{"web/dist/adty-home.json": {Data: []byte(seoPrerender)}}), func(c *gin.Context) {
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(seoIndexPage))
 	})
@@ -242,10 +243,43 @@ func TestSiteRobotsTxt(t *testing.T) {
 	body := get(engine, "shop.sites.example.com", "/robots.txt").Body.String()
 	assert.Contains(t, body, "Disallow: /api/")
 	assert.NotContains(t, body, "Disallow: /\n")
+	assert.Contains(t, body, "Sitemap: https://shop.sites.example.com/sitemap.xml")
 
 	mainBody := get(engine, "main.example.com", "/robots.txt").Body.String()
 	assert.Contains(t, mainBody, "Disallow: /api/")
 	assert.Contains(t, mainBody, "Disallow: /v1/")
+	assert.Contains(t, mainBody, "Sitemap: https://main.example.com/sitemap.xml")
+}
+
+func TestSitemapListsEightHomeLanguages(t *testing.T) {
+	f := newBrandFixture(t)
+	engine := seoEngine(t)
+
+	main := get(engine, "main.example.com", "/sitemap.xml")
+	require.Equal(t, http.StatusOK, main.Code)
+	assert.Contains(t, main.Header().Get("Content-Type"), "xml")
+	body := main.Body.String()
+	for _, path := range []string{"/", "/zh-cn", "/zh-tw", "/fr", "/ja", "/ko", "/ru", "/vi"} {
+		want := "https://main.example.com" + path
+		if path == "/" {
+			want = "https://main.example.com/"
+		}
+		assert.Contains(t, body, "<loc>"+want+"</loc>")
+	}
+	assert.Contains(t, body, `hreflang="ko"`)
+	assert.NotContains(t, body, "/wallet")
+	assert.NotContains(t, body, "?ref=")
+
+	closed := get(engine, "shop.sites.example.com", "/sitemap.xml")
+	require.Equal(t, http.StatusOK, closed.Code)
+	assert.NotContains(t, closed.Body.String(), "<loc>")
+
+	require.NoError(t, f.db.Model(&model.AdtySite{}).Where("id = ?", f.site.Id).Update("seo_index", true).Error)
+	service.InvalidateAdtySiteCache()
+	indexed := get(engine, "shop.sites.example.com", "/sitemap.xml").Body.String()
+	assert.Contains(t, indexed, "<loc>https://shop.sites.example.com/</loc>")
+	assert.Contains(t, indexed, "<loc>https://shop.sites.example.com/ko</loc>")
+	assert.NotContains(t, indexed, "main.example.com")
 }
 
 // /api/status 在分站上返回分站 widget 的 site key（任务 11.8 的遗留项）。

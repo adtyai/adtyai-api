@@ -17,6 +17,7 @@ var (
 	ErrAdtyAdjustReasonRequired = errors.New("adjustment reason required")
 	ErrAdtyAdjustReasonTooLong  = errors.New("adjustment reason too long")
 	ErrAdtyAdjustKeyTooLong     = errors.New("idempotency key too long")
+	ErrAdtyAdjustKeyRequired    = errors.New("idempotency key required")
 )
 
 const (
@@ -41,8 +42,8 @@ func AdjustUserQuotaWithLedger(userID, operatorID, operatorRole int, mode string
 	if utf8.RuneCountInString(reason) > adtyAdjustReasonMaxChars {
 		return nil, ErrAdtyAdjustReasonTooLong
 	}
-	if len(idemKey) > adtyAdjustKeyMaxLen {
-		return nil, ErrAdtyAdjustKeyTooLong
+	if idemKey == "" || len(idemKey) > adtyAdjustKeyMaxLen {
+		return nil, ErrAdtyAdjustKeyRequired
 	}
 	if userID <= 0 || (mode != "add" && mode != "subtract" && mode != "override") {
 		return nil, ErrInvalidUserQuotaAdjustment

@@ -131,6 +131,20 @@ func RemoveAdtySiteSenderDomain(c *gin.Context) {
 	common.ApiSuccess(c, nil)
 }
 
+// DisableAdtyAdminSiteDomain 是管理员停用一个自定义域名（分站·调整）。
+func DisableAdtyAdminSiteDomain(c *gin.Context) {
+	id, ok := siteIdParam(c)
+	if !ok {
+		return
+	}
+	if err := service.RemoveAdtySiteDomainByAdmin(c.Request.Context(), id); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	recordManageAudit(c, "adty.site.domain_disable", map[string]any{"domain_id": id})
+	common.ApiSuccess(c, nil)
+}
+
 // DisableAdtyAdminSiteSenderDomain 是管理员停用一个站的发件域名（分站·调整，任务 11.3、11.9）。
 func DisableAdtyAdminSiteSenderDomain(c *gin.Context) {
 	id, ok := siteIdParam(c)

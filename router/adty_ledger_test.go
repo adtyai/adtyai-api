@@ -45,8 +45,11 @@ func TestManualAdjustRequiresReason(t *testing.T) {
 	ok, message = adjustQuota(t, f, user.Id, fmt.Sprintf(`,"reason":%q`, strings.Repeat("长", 201)))
 	assert.False(t, ok, "201 characters")
 	assert.Equal(t, "The reason must be at most 200 characters", message)
-	ok, _ = adjustQuota(t, f, user.Id, fmt.Sprintf(`,"reason":%q`, strings.Repeat("长", 200)))
+	ok, _ = adjustQuota(t, f, user.Id, fmt.Sprintf(`,"reason":%q,"idempotency_key":"reason-200"`, strings.Repeat("长", 200)))
 	assert.True(t, ok, "200 characters, counted as characters not bytes")
+	ok, message = adjustQuota(t, f, user.Id, `,"reason":"missing key"`)
+	assert.False(t, ok)
+	assert.Equal(t, "Invalid idempotency key", message)
 }
 
 func TestManualAdjustIdempotent(t *testing.T) {
@@ -79,7 +82,7 @@ func TestManualAdjustIdempotentKeyMismatch(t *testing.T) {
 func TestManualAdjustWritesLedgerWithBalances(t *testing.T) {
 	f := newAdtyGuardFixture(t)
 	user := ledgerUser(t, f, "adj-ledger")
-	ok, _ := adjustQuota(t, f, user.Id, `,"reason":"goodwill credit"`)
+	ok, _ := adjustQuota(t, f, user.Id, `,"reason":"goodwill credit","idempotency_key":"goodwill-1"`)
 	require.True(t, ok)
 
 	resp := adtyJSON(t, f.engine, http.MethodGet, fmt.Sprintf("/api/adty/admin/users/%d/ledger", user.Id), "", f.root)
@@ -103,7 +106,7 @@ func TestManualAdjustWritesLedgerWithBalances(t *testing.T) {
 func TestManualAdjustReasonNotInUserLog(t *testing.T) {
 	f := newAdtyGuardFixture(t)
 	user := ledgerUser(t, f, "adj-private")
-	ok, _ := adjustQuota(t, f, user.Id, `,"reason":"internal note for staff"`)
+	ok, _ := adjustQuota(t, f, user.Id, `,"reason":"internal note for staff","idempotency_key":"private-1"`)
 	require.True(t, ok)
 	logs, _, err := model.GetUserLogs(user.Id, model.LogFilter{Type: model.LogTypeTopup}, 0, 10)
 	require.NoError(t, err)
