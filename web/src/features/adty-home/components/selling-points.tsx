@@ -20,10 +20,11 @@ import { useTranslation } from 'react-i18next'
 
 import { ADTY_BRAND_NAME } from '@/lib/adty-brand'
 
+import { paymentMethodSentence } from '../lib/payment-methods'
 import { LandingSection } from './landing-section'
 
 /** Four reasons to use the site (design §8.1). */
-export function SellingPoints() {
+export function SellingPoints(props: { paymentMethodIds?: string[] }) {
   const { t } = useTranslation()
   const points = [
     {
@@ -40,7 +41,7 @@ export function SellingPoints() {
     },
     {
       title: t('Easy payment'),
-      body: t('Top up with USDT, Alipay or WeChat Pay. The balance is in USD.'),
+      body: `${paymentMethodSentence(props.paymentMethodIds, t)} ${t('The balance is in USD.')}`,
     },
     {
       title: t('Clear bills'),

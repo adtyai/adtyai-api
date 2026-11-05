@@ -18,8 +18,13 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useTranslation } from 'react-i18next'
 
+import { paymentMethodSentence } from '../lib/payment-methods'
+
 /** Grey band under the hero: payment methods, protocols, support hours. */
-export function PaymentStrip(props: { supportHours: string }) {
+export function PaymentStrip(props: {
+  supportHours: string
+  paymentMethodIds?: string[]
+}) {
   const { t } = useTranslation()
   return (
     <section
@@ -28,7 +33,7 @@ export function PaymentStrip(props: { supportHours: string }) {
       className='bg-muted/50 border-y'
     >
       <ul className='text-muted-foreground mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-x-8 gap-y-2 px-4 py-4 text-xs md:px-6'>
-        <li>{t('Top up with USDT, Alipay or WeChat Pay')}</li>
+        <li>{paymentMethodSentence(props.paymentMethodIds, t)}</li>
         <li>{t('OpenAI, Anthropic and Gemini compatible')}</li>
         {props.supportHours && (
           <li>

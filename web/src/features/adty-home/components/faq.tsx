@@ -25,24 +25,35 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion'
 
+import { paymentMethodLabels } from '../lib/payment-methods'
+
 import { LandingSection } from './landing-section'
 
 /** Common questions. Closed answers stay mounted so the prerendered page has them. */
-export function Faq() {
+export function Faq(props: { paymentMethodIds?: string[] }) {
   const { t } = useTranslation()
+  const methods = paymentMethodLabels(props.paymentMethodIds, t)
+  const methodText =
+    methods == null
+      ? t('the payment methods currently enabled')
+      : methods.length === 0
+        ? t('No payment methods available. Please contact administrator.')
+        : methods.join(', ')
   const items = [
     {
       id: 'difference',
       question: t('How is this different from the official API?'),
       answer: t(
-        'Requests and responses use the official formats. You use one key for every model, pay in USDT, Alipay or WeChat Pay, and most models cost less than the official price. The pricing page lists both prices for each model.'
+        'Requests and responses use the official formats. You use one key for every model, pay with {{methods}}, and most models cost less than the official price. The pricing page lists both prices for each model.',
+        { methods: methodText }
       ),
     },
     {
       id: 'payment',
       question: t('Which payment methods are supported?'),
       answer: t(
-        'USDT, Alipay and WeChat Pay. A top-up is added to your balance in USD and is used up by your requests.'
+        '{{methods}}. A top-up is added to your balance in USD and is used up by your requests.',
+        { methods: methodText }
       ),
     },
     {

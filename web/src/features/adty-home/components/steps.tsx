@@ -18,11 +18,19 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useTranslation } from 'react-i18next'
 
+import { paymentMethodLabels } from '../lib/payment-methods'
 import { LandingSection } from './landing-section'
 
 /** Three steps to the first request. Client guides are the next section. */
-export function Steps() {
+export function Steps(props: { paymentMethodIds?: string[] }) {
   const { t } = useTranslation()
+  const methods = paymentMethodLabels(props.paymentMethodIds, t)
+  const methodText =
+    methods == null
+      ? t('the payment methods currently enabled')
+      : methods.length === 0
+        ? t('No payment methods available. Please contact administrator.')
+        : methods.join(', ')
   const steps = [
     {
       title: t('Create an account'),
@@ -31,7 +39,8 @@ export function Steps() {
     {
       title: t('Top up and create a key'),
       body: t(
-        'Top up with USDT, Alipay or WeChat Pay, then create an API key in the console.'
+        'Top up with {{methods}}, then create an API key in the console.',
+        { methods: methodText }
       ),
     },
     {

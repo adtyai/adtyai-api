@@ -38,11 +38,20 @@ import { cn } from '@/lib/utils'
 
 import { SYSTEM_TASK_TYPE_LABEL } from '../constants'
 
+const STATUS_LABEL: Record<SystemTaskStatus, string> = {
+  pending: 'pending',
+  running: 'running',
+  succeeded: 'succeeded',
+  failed: 'failed',
+  cancelled: 'Cancelled',
+}
+
 const STATUS_VARIANT: Record<SystemTaskStatus, 'secondary' | 'destructive'> = {
   pending: 'secondary',
   running: 'secondary',
   succeeded: 'secondary',
   failed: 'destructive',
+  cancelled: 'secondary',
 }
 
 const STATUS_CLASS_NAME: Record<SystemTaskStatus, string> = {
@@ -53,6 +62,7 @@ const STATUS_CLASS_NAME: Record<SystemTaskStatus, string> = {
   succeeded:
     'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300',
   failed: '',
+  cancelled: 'text-muted-foreground',
 }
 
 const STATUS_DOT_CLASS_NAME: Record<SystemTaskStatus, string> = {
@@ -60,6 +70,7 @@ const STATUS_DOT_CLASS_NAME: Record<SystemTaskStatus, string> = {
   running: 'bg-sky-500',
   succeeded: 'bg-emerald-500',
   failed: 'bg-destructive',
+  cancelled: 'bg-muted-foreground',
 }
 
 const PROGRESS_BAR_CLASS_NAME: Record<SystemTaskStatus, string> = {
@@ -67,6 +78,7 @@ const PROGRESS_BAR_CLASS_NAME: Record<SystemTaskStatus, string> = {
   running: '[&_[data-slot=progress-indicator]]:bg-sky-500',
   succeeded: '[&_[data-slot=progress-indicator]]:bg-emerald-500',
   failed: '[&_[data-slot=progress-indicator]]:bg-destructive',
+  cancelled: '[&_[data-slot=progress-indicator]]:bg-muted-foreground',
 }
 
 const TYPE_DISPLAY_ID: Record<string, string> = {
@@ -135,7 +147,7 @@ export function SystemTasksTable(props: SystemTasksTableProps) {
                     )}
                     aria-hidden='true'
                   />
-                  {t(task.status)}
+                  {t(STATUS_LABEL[task.status])}
                 </Badge>
               </TableCell>
               <TableCell className='py-3 align-middle'>

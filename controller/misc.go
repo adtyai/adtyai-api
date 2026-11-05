@@ -64,6 +64,8 @@ func GetReady(c *gin.Context) {
 }
 
 func GetStatus(c *gin.Context) {
+	// 支付方式可能查通道表，必须在配置锁之外算。
+	paymentMethods := service.AdtyAvailablePaymentMethodIDs()
 	// 分站 widget 要在拿配置锁之前查，避免锁里再查站点表。
 	turnstileSiteKey := common.TurnstileSiteKey
 	if choice := service.AdtyTurnstileFor(service.AdtySiteForRequest(c), c.Request.Host); choice.SiteKey != "" {
@@ -157,6 +159,7 @@ func GetStatus(c *gin.Context) {
 		"log_max_range_days":          operation_setting.GetLogSetting().MaxRangeDays,
 		"quota_remind_enabled":        common.QuotaRemindEnabled,
 		"quota_remind_threshold":      common.QuotaRemindThreshold,
+		"payment_methods":             paymentMethods,
 	}
 
 	// 根据启用状态注入可选内容

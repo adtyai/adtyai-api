@@ -68,6 +68,8 @@ export type LandingData = {
     /** Default commission in percent, null when not set (no number shown). */
     rate: number | null
   }
+  /** Enabled payment method ids. Omitted until status loads; empty means none. */
+  paymentMethodIds?: string[]
 }
 
 /** Everything the landing page shows that comes from the server (adty task 8.3). */
@@ -132,5 +134,13 @@ export function useLandingData(options: {
       open: referralSettings?.enabled === true,
       rate: referralSettings?.enabled ? referralSettings.default_rate : null,
     },
+    paymentMethodIds: paymentMethodIdsFromStatus(status),
   }
+}
+
+function paymentMethodIdsFromStatus(status: unknown): string[] | undefined {
+  if (!status || typeof status !== 'object') return undefined
+  const raw = (status as { payment_methods?: unknown }).payment_methods
+  if (!Array.isArray(raw)) return undefined
+  return raw.filter((item): item is string => typeof item === 'string')
 }

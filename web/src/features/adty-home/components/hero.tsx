@@ -25,6 +25,8 @@ import { formatSavingsPercent } from '@/features/pricing/lib/adty-savings'
 import { toIntlLocale } from '@/i18n/languages'
 import { formatBillingCurrencyFromUSD } from '@/lib/currency'
 import { formatNumber } from '@/lib/format'
+
+import { paymentMethodSentence } from '../lib/payment-methods'
 import { cn } from '@/lib/utils'
 
 import type { LandingPrices } from '../hooks/use-landing-data'
@@ -55,6 +57,7 @@ export function Hero(props: {
   prices: LandingPrices
   /** USD; undefined while loading, null when not set. */
   minTopUp: number | null | undefined
+  paymentMethodIds?: string[]
 }) {
   const { t, i18n } = useTranslation()
   const locale = toIntlLocale(i18n.resolvedLanguage || i18n.language)
@@ -113,8 +116,9 @@ export function Hero(props: {
         </h1>
         <p className='text-muted-foreground max-w-xl text-base text-pretty'>
           {t(
-            'Change one base_url and Claude Code, Codex CLI and the OpenAI SDK keep working. Pay as you go, below official prices. Top up with USDT, Alipay or WeChat Pay.'
-          )}
+            'Change one base_url and Claude Code, Codex CLI and the OpenAI SDK keep working. Pay as you go, below official prices.'
+          )}{' '}
+          {paymentMethodSentence(props.paymentMethodIds, t)}
         </p>
         <div className='flex flex-wrap gap-3'>
           {props.signedIn ? (

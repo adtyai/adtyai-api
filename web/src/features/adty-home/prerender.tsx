@@ -51,6 +51,7 @@ const PRERENDER_DATA: LandingData = {
   minTopUp: undefined,
   supportHours: '',
   affiliate: { open: false, rate: null },
+  paymentMethodIds: undefined,
 }
 
 async function createI18n(interfaceLang: string): Promise<I18n> {

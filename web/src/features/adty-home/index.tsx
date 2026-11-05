@@ -48,17 +48,21 @@ export function LandingSections(props: {
         baseUrl={props.baseUrl}
         prices={props.data.prices}
         minTopUp={props.data.minTopUp}
+        paymentMethodIds={props.data.paymentMethodIds}
       />
-      <PaymentStrip supportHours={props.data.supportHours} />
+      <PaymentStrip
+        supportHours={props.data.supportHours}
+        paymentMethodIds={props.data.paymentMethodIds}
+      />
       <PopularModels prices={props.data.prices} />
-      <Steps />
+      <Steps paymentMethodIds={props.data.paymentMethodIds} />
       <ClientGuides />
-      <SellingPoints />
+      <SellingPoints paymentMethodIds={props.data.paymentMethodIds} />
       <AffiliateBanner
         open={props.data.affiliate.open}
         rate={props.data.affiliate.rate}
       />
-      <Faq />
+      <Faq paymentMethodIds={props.data.paymentMethodIds} />
     </>
   )
 }

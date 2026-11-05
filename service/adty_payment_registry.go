@@ -46,6 +46,22 @@ func RegisterAdtyPaymentProvider(provider AdtyPaymentProvider) {
 	adtyProviders = append(adtyProviders, provider)
 }
 
+// AdtyAvailablePaymentMethodIDs 是当前可以下单的支付方式编号，不含密钥和网关地址。
+func AdtyAvailablePaymentMethodIDs() []string {
+	ids := make([]string, 0)
+	for _, provider := range AdtyPaymentProviders() {
+		if provider.Name() == AdtyProviderEpay && model.DB == nil {
+			continue
+		}
+		for _, method := range provider.Methods() {
+			if method.Available && method.Id != "" {
+				ids = append(ids, method.Id)
+			}
+		}
+	}
+	return ids
+}
+
 // AdtyPaymentProviders 返回登记的支付商。
 func AdtyPaymentProviders() []AdtyPaymentProvider {
 	adtyProvidersMu.RLock()
