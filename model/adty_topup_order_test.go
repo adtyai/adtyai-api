@@ -12,6 +12,19 @@ import (
 	"gorm.io/gorm"
 )
 
+func TestRefundCacheCompensateFailureIsReviewed(t *testing.T) {
+	db := prepareAdtyTopUpDB(t)
+	previous := applyRefundQuotaDelta
+	applyRefundQuotaDelta = func(int, int64) (cacheQuotaResult, error) {
+		return 0, ErrRefundCacheCompensate
+	}
+	t.Cleanup(func() { applyRefundQuotaDelta = previous })
+	compensateRefundCacheOrReview(41, 100)
+	var count int64
+	require.NoError(t, db.Model(&PaymentOrphanEvent{}).Where("event_type = ? AND reference_id = ?", "refund_cache_compensate", "41").Count(&count).Error)
+	assert.EqualValues(t, 1, count)
+}
+
 func prepareAdtyTopUpDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db := adtyTestDB(t)

@@ -2,8 +2,11 @@ package model
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/shopspring/decimal"
@@ -13,6 +16,10 @@ import (
 // AdtyAfterTopUpRefundedTx 在退款事务里调用（P6 按比例作废或扣回佣金，P11 还站长加赠）。
 // 调用时 ext.RefundQuota 已经是这次退的本金额度 P，比例用 ext.RefundRatio()。
 var AdtyAfterTopUpRefundedTx func(tx *gorm.DB, topUp *TopUp, ext *AdtyTopupOrder) error
+
+// applyRefundQuotaDelta restores a cache debit when the refund transaction fails.
+// Tests replace it to prove a failed restore is recorded.
+var applyRefundQuotaDelta = cacheApplyUserQuotaDelta
 
 // AdtyTopUpRefundResult 是一次退款的结果：扣回额度 R、赠金额度 G、退的本金额度 P、应退金额（支付币种）。
 type AdtyTopUpRefundResult struct {
@@ -302,11 +309,7 @@ func RefundAdtyTopUp(tradeNo, reason string, operatorID int, idemKey string, exp
 		return nil
 	})
 	if err != nil {
-		if cacheCharged > 0 {
-			if compensated, compensateErr := cacheApplyUserQuotaDelta(userID, cacheCharged); compensateErr != nil || compensated != cacheQuotaOK {
-				common.SysError(common.LogText("failed to compensate refunded user quota: result=%d error=%v", compensated, compensateErr))
-			}
-		}
+		compensateRefundCacheOrReview(userID, cacheCharged)
 		return nil, err
 	}
 	// 缓存已经在事务里扣过的，不再扣；没走缓存（Redis 关闭或缓存不可用）时同步一下缓存，缺失时什么都不做。
@@ -317,3 +320,43 @@ func RefundAdtyTopUp(tradeNo, reason string, operatorID int, idemKey string, exp
 	}
 	return result, nil
 }
+
+// compensateRefundCacheOrReview puts the cache debit back after a failed refund.
+// If that also fails, it writes a review row so the wallet and Redis do not diverge silently.
+func compensateRefundCacheOrReview(userID int, charged int64) {
+	if userID <= 0 || charged <= 0 {
+		return
+	}
+	compensated, err := applyRefundQuotaDelta(userID, charged)
+	if err == nil && compensated == cacheQuotaOK {
+		return
+	}
+	common.SysError(common.LogText("failed to compensate refunded user quota: result=%d error=%v", compensated, err))
+	if DB == nil {
+		return
+	}
+	cause := ""
+	if err != nil {
+		cause = err.Error()
+	} else {
+		cause = fmt.Sprintf("result=%d", compensated)
+	}
+	event := &PaymentOrphanEvent{
+		Provider:    "wallet",
+		EventID:     fmt.Sprintf("refund-cache-%d-%d", userID, time.Now().UnixNano()),
+		EventType:   "refund_cache_compensate",
+		ReferenceID: strconv.Itoa(userID),
+		Status:      PaymentOrphanStatusPendingReview,
+		Reason:      "refund cache compensate failed",
+		Error:       cause,
+		Payload:     fmt.Sprintf(`{"user_id":%d,"delta":%d}`, userID, charged),
+		CreateTime:  common.GetTimestamp(),
+		UpdateTime:  common.GetTimestamp(),
+	}
+	if createErr := DB.Create(event).Error; createErr != nil {
+		common.SysError(common.LogText("failed to record refund cache divergence for user %d: %s", userID, createErr.Error()))
+	}
+}
+
+// ErrRefundCacheCompensate is returned by tests that force the cache restore to fail.
+var ErrRefundCacheCompensate = errors.New("refund cache compensate failed")
