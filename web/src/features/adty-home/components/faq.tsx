@@ -33,12 +33,12 @@ import { LandingSection } from './landing-section'
 export function Faq(props: { paymentMethodIds?: string[] }) {
   const { t } = useTranslation()
   const methods = paymentMethodLabels(props.paymentMethodIds, t)
-  const methodText =
-    methods == null
-      ? t('the payment methods currently enabled')
-      : methods.length === 0
-        ? t('No payment methods available. Please contact administrator.')
-        : methods.join(', ')
+  let methodText = t('No payment methods available. Please contact administrator.')
+  if (methods == null) {
+    methodText = t('the payment methods currently enabled')
+  } else if (methods.length > 0) {
+    methodText = methods.join(', ')
+  }
   const items = [
     {
       id: 'difference',

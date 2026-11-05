@@ -260,11 +260,14 @@ func assignConfigField(field reflect.Value, key, strValue string) error {
 			field.Set(reflect.Zero(field.Type()))
 			return nil
 		}
-		target := reflect.New(field.Type().Elem())
-		if err := json.Unmarshal([]byte(strValue), target.Interface()); err != nil {
+		// Keep a non-nil pointer. Callers such as group ratio read the original
+		// map variable, not a replacement pointer.
+		if field.IsNil() {
+			field.Set(reflect.New(field.Type().Elem()))
+		}
+		if err := json.Unmarshal([]byte(strValue), field.Interface()); err != nil {
 			return fmt.Errorf("invalid %s: %w", key, err)
 		}
-		field.Set(target)
 	case reflect.Map:
 		fresh := reflect.New(field.Type())
 		if err := json.Unmarshal([]byte(strValue), fresh.Interface()); err != nil {

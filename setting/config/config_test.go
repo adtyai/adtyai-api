@@ -2,12 +2,29 @@ package config
 
 import (
 	"testing"
+
+	"github.com/QuantumNous/new-api/types"
 )
 
 type testConfigWithMap struct {
 	Modes map[string]string `json:"modes"`
 	Exprs map[string]string `json:"exprs"`
 	Name  string            `json:"name"`
+}
+
+func TestUpdateConfigFromMapLoadsGroupRatio(t *testing.T) {
+	type holder struct {
+		GroupRatio *types.RWMap[string, float64] `json:"group_ratio"`
+	}
+	cfg := &holder{GroupRatio: types.NewRWMap[string, float64]()}
+	err := UpdateConfigFromMap(cfg, map[string]string{"group_ratio": `{"default":1.5}`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := cfg.GroupRatio.Get("default")
+	if !ok || got != 1.5 {
+		t.Fatalf("group ratio not loaded: ok=%v got=%v", ok, got)
+	}
 }
 
 func TestUpdateConfigFromMapRejectsInvalidBool(t *testing.T) {
