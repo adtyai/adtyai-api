@@ -37,6 +37,7 @@
 | `setting/config/config.go` | 分层配置的非法布尔、整数和浮点不再静默跳过 | 非法配置不能显示成保存成功，也不能只写进数据库 | 审查 v3 |
 | `model/option.go` | `UpdateOption` 在写库前校验分层配置字段 | 解析失败不能先把非法值写入 options 表 | 审查 v3 |
 | `model/main.go` | `chooseDB` 把 PostgreSQL 关键字连接串认成 PostgreSQL；增加 `PingDBImmediate` | CI 和本地关键字 DSN 不能被当成 MySQL；就绪探针不能吃 10 秒缓存 | 审查 v3 |
+| `model/adty_migrate.go` | `adtyDSNIsPostgreSQL` 改为与 `IsPostgresDSN` 相同 | 启动检查不能把合法的 PostgreSQL 关键字连接串拒绝掉 | 审查 v3 |
 | `controller/misc.go` | 增加 `GetReady`，只返回是否就绪；`GetStatus` 增加当前可用的 `payment_methods` | 健康检查不能把始终成功的 `/api/status` 当成数据库已连通；首页不能写死未开启的支付方式 | 审查 v3 |
 | `router/api-router.go` | 增加 `GET /api/ready` 和 `POST /api/system-task/:task_id/cancel` | 容器探针和日志清理取消要有真实入口 | 审查 v3 |
 | `model/system_task.go` | 增加取消状态和 `RequestSystemTaskCancel` | 待执行的清理立即停止，正在执行的清理在下一批前停止 | 审查 v3 |

@@ -14,9 +14,9 @@ var adtyExit = func(code int) {
 	os.Exit(code)
 }
 
-// adtyDSNIsPostgreSQL 和 chooseDB 用同样的前缀判断。没设 DSN 时上游用 SQLite。
+// adtyDSNIsPostgreSQL 和 chooseDB 用同一个判断。关键字形式也是 PostgreSQL。
 func adtyDSNIsPostgreSQL(dsn string) bool {
-	return strings.HasPrefix(dsn, "postgres://") || strings.HasPrefix(dsn, "postgresql://")
+	return IsPostgresDSN(dsn)
 }
 
 // CheckAdtyPostgreSQL 在连库之前检查 SQL_DSN 和 LOG_SQL_DSN：不是 PostgreSQL 就写明是哪一个并退出。
