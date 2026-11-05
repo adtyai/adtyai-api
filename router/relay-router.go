@@ -64,7 +64,7 @@ func SetRelayRouter(router *gin.Engine) {
 	playgroundRouter := router.Group("/pg")
 	playgroundRouter.Use(middleware.RouteTag("relay"))
 	playgroundRouter.Use(middleware.SystemPerformanceCheck())
-	playgroundRouter.Use(middleware.UserAuth(), middleware.AdtyUserLimit(), middleware.Distribute())
+	playgroundRouter.Use(middleware.UserAuth(), middleware.AdtyRequireCurrentSiteTerms(), middleware.AdtyUserLimit(), middleware.Distribute())
 	{
 		playgroundRouter.POST("/chat/completions", controller.Playground)
 	}
@@ -204,6 +204,7 @@ func SetRelayRouter(router *gin.Engine) {
 	relayGeminiRouter.Use(middleware.RouteTag("relay"))
 	relayGeminiRouter.Use(middleware.SystemPerformanceCheck())
 	relayGeminiRouter.Use(middleware.TokenAuth())
+	relayGeminiRouter.Use(middleware.AdtyRequireCurrentSiteTerms())
 	relayGeminiRouter.Use(middleware.ModelRequestRateLimit())
 	relayGeminiRouter.Use(middleware.AdtyUserLimit()) // 二开：任务 7.4
 	relayGeminiRouter.Use(middleware.Distribute())
@@ -217,7 +218,7 @@ func SetRelayRouter(router *gin.Engine) {
 
 func registerMjRouterGroup(relayMjRouter *gin.RouterGroup) {
 	relayMjRouter.GET("/image/:id", relay.RelayMidjourneyImage)
-	relayMjRouter.Use(middleware.TokenAuth(), middleware.Distribute())
+	relayMjRouter.Use(middleware.TokenAuth(), middleware.AdtyRequireCurrentSiteTerms(), middleware.Distribute())
 	// 二开：提交类路由按用户限制，查询类（fetch、image-seed、list-by-condition）不算（任务 7.4）
 	{
 		relayMjRouter.POST("/submit/action", middleware.AdtyUserLimit(true), controller.RelayMidjourney)

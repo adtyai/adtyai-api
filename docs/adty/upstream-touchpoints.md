@@ -24,7 +24,12 @@
 | `controller/oauth.go` | `findOrCreateOAuthUser` 在分站要求条款且未接受时返回 `OAuthSiteTermsError` | 分站客户注册必须先接受当前条款 | 审查 v3 |
 | `controller/user_quota.go` | 空幂等键和过长幂等键都映射为 `Invalid idempotency key` | 调额不能在没有幂等键时入账 | 审查 v3 |
 | `controller/user_manage_test.go` | 调额请求补上幂等键 | 空幂等键现在会被拒绝，原用例要带上键才能走到原来的分支 | 审查 v3 |
-| `router/relay-router.go` | `relayV1Router` 增加 `AdtyRequireCurrentSiteTerms` | 分站条款未接受时不能继续调用中转 | 审查 v3 |
+| `router/relay-router.go` | `relayV1Router`、`/pg`、`/v1beta` 和 `/mj` 增加 `AdtyRequireCurrentSiteTerms` | 分站条款未接受时不能继续调用中转或演练场 | 审查 v3 |
+| `router/api-router.go` | 令牌、日志、用量、任务和审计的自助路由在登录后增加 `AdtyRequireCurrentSiteTerms` | 条款升级后，未确认的分站客户不能继续管密钥或读自己的用量 | 审查 v3 |
+| `router/adty-router.go` | 钱包充值、USDT 下单和易支付下单在登录后增加 `AdtyRequireCurrentSiteTerms` | 条款升级后，未确认的分站客户不能继续报价或下单 | 审查 v3 |
+| `controller/midjourney.go` | 转发的 Midjourney 图片地址改成带过期签名的 `/mj/image/:id` | 只知道任务编号不能取到别人的图 | 审查 v3 |
+| `relay/mjproxy_handler.go` | `RelayMidjourneyImage` 先验签和过期，再查任务和向上游取图；成功响应加 `Cache-Control: private, no-store` | 猜测任务编号不能取到图像；签名过期后也不能取 | 审查 v3 |
+| `relay/mjproxy_handler_test.go` | 图片代理用例带上签名；另加未签名和过期签名不得取图 | 证明修复前未签名请求能拿到图，修复后不能 | 审查 v3 |
 | `service/security_verification.go` | 增加 `VerificationScopeAPIKeyRead`，并把它列入无上下文的二次验证范围 | 密钥查看使用独立的二次验证范围 | 审查 v3 |
 | `service/access_token_scope.go` | `api_key.read` 对应访问令牌范围 `api_key:reveal` | 没有该范围的访问令牌不能取得查看密钥的验证 | 审查 v3 |
 | --- | --- | --- | --- |

@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strconv"
 	"strings"
 	"testing"
@@ -302,7 +303,7 @@ func TestRelayMidjourneyImageRejectsNonImageBodies(t *testing.T) {
 	htmlRecorder := httptest.NewRecorder()
 	htmlCtx, _ := gin.CreateTestContext(htmlRecorder)
 	htmlCtx.Params = gin.Params{{Key: "id", Value: "mj-html"}}
-	htmlCtx.Request = httptest.NewRequest(http.MethodGet, "/mj/image/mj-html", nil)
+	htmlCtx.Request = signedMidjourneyImageRequest(t, "mj-html")
 	RelayMidjourneyImage(htmlCtx)
 	require.Equal(t, http.StatusUnsupportedMediaType, htmlRecorder.Code)
 	require.NotContains(t, htmlRecorder.Body.String(), "mj-xss")
@@ -311,7 +312,7 @@ func TestRelayMidjourneyImageRejectsNonImageBodies(t *testing.T) {
 	svgRecorder := httptest.NewRecorder()
 	svgCtx, _ := gin.CreateTestContext(svgRecorder)
 	svgCtx.Params = gin.Params{{Key: "id", Value: "mj-svg"}}
-	svgCtx.Request = httptest.NewRequest(http.MethodGet, "/mj/image/mj-svg", nil)
+	svgCtx.Request = signedMidjourneyImageRequest(t, "mj-svg")
 	RelayMidjourneyImage(svgCtx)
 	require.Equal(t, http.StatusUnsupportedMediaType, svgRecorder.Code)
 	require.NotContains(t, svgRecorder.Body.String(), "mj-svg")
@@ -319,7 +320,7 @@ func TestRelayMidjourneyImageRejectsNonImageBodies(t *testing.T) {
 	pngRecorder := httptest.NewRecorder()
 	pngCtx, _ := gin.CreateTestContext(pngRecorder)
 	pngCtx.Params = gin.Params{{Key: "id", Value: "mj-png"}}
-	pngCtx.Request = httptest.NewRequest(http.MethodGet, "/mj/image/mj-png", nil)
+	pngCtx.Request = signedMidjourneyImageRequest(t, "mj-png")
 	RelayMidjourneyImage(pngCtx)
 	require.Equal(t, http.StatusOK, pngRecorder.Code)
 	require.Equal(t, "image/png", pngRecorder.Header().Get("Content-Type"))
@@ -377,7 +378,7 @@ func TestRelayMidjourneyImagePinsProxyTargetAfterDNSCheck(t *testing.T) {
 	okRecorder := httptest.NewRecorder()
 	okCtx, _ := gin.CreateTestContext(okRecorder)
 	okCtx.Params = gin.Params{{Key: "id", Value: "mj-pin"}}
-	okCtx.Request = httptest.NewRequest(http.MethodGet, "/mj/image/mj-pin", nil)
+	okCtx.Request = signedMidjourneyImageRequest(t, "mj-pin")
 	RelayMidjourneyImage(okCtx)
 	require.Equal(t, http.StatusOK, okRecorder.Code, okRecorder.Body.String())
 	require.Equal(t, []byte{0x89, 'P', 'N', 'G'}, okRecorder.Body.Bytes())
@@ -395,11 +396,70 @@ func TestRelayMidjourneyImagePinsProxyTargetAfterDNSCheck(t *testing.T) {
 	blocked := httptest.NewRecorder()
 	blockedCtx, _ := gin.CreateTestContext(blocked)
 	blockedCtx.Params = gin.Params{{Key: "id", Value: "mj-pin"}}
-	blockedCtx.Request = httptest.NewRequest(http.MethodGet, "/mj/image/mj-pin", nil)
+	blockedCtx.Request = signedMidjourneyImageRequest(t, "mj-pin")
 	RelayMidjourneyImage(blockedCtx)
 	require.Equal(t, http.StatusForbidden, blocked.Code, blocked.Body.String())
 	require.Empty(t, seen)
 	require.NotContains(t, blocked.Body.String(), "PNG")
+}
+
+func signedMidjourneyImageRequest(t *testing.T, id string) *http.Request {
+	t.Helper()
+	path, err := service.MidjourneyImagePath(id, time.Now())
+	require.NoError(t, err)
+	return httptest.NewRequest(http.MethodGet, path, nil)
+}
+
+func TestRelayMidjourneyImageRejectsUnsignedRequest(t *testing.T) {
+	previousDB := model.DB
+	previousCache := common.MemoryCacheEnabled
+	database, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, database.AutoMigrate(&model.Midjourney{}))
+	model.DB = database
+	common.MemoryCacheEnabled = false
+	t.Cleanup(func() {
+		model.DB = previousDB
+		common.MemoryCacheEnabled = previousCache
+	})
+	var hits int
+	pngServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write([]byte{0x89, 'P', 'N', 'G'})
+	}))
+	t.Cleanup(pngServer.Close)
+	require.NoError(t, database.Create(&model.Midjourney{MjId: "mj-private", ImageUrl: pngServer.URL, Status: "SUCCESS"}).Error)
+	fetchSetting := system_setting.GetFetchSetting()
+	original := *fetchSetting
+	t.Cleanup(func() { *fetchSetting = original })
+	fetchSetting.EnableSSRFProtection = true
+	fetchSetting.AllowPrivateIp = true
+	fetchSetting.DomainFilterMode = false
+	fetchSetting.IpFilterMode = false
+	fetchSetting.AllowedPorts = []string{strconv.Itoa(portOfTestServer(t, pngServer))}
+	service.InitHttpClient()
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Params = gin.Params{{Key: "id", Value: "mj-private"}}
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/mj/image/mj-private", nil)
+	RelayMidjourneyImage(ctx)
+
+	require.NotEqual(t, http.StatusOK, recorder.Code)
+	require.NotEqual(t, []byte{0x89, 'P', 'N', 'G'}, recorder.Body.Bytes())
+	require.Zero(t, hits)
+
+	expiredAt := time.Now().Add(-time.Minute).Unix()
+	expired, err := service.IssueMidjourneyImageAccess("mj-private", expiredAt)
+	require.NoError(t, err)
+	expiredRecorder := httptest.NewRecorder()
+	expiredCtx, _ := gin.CreateTestContext(expiredRecorder)
+	expiredCtx.Params = gin.Params{{Key: "id", Value: "mj-private"}}
+	expiredCtx.Request = httptest.NewRequest(http.MethodGet, "/mj/image/mj-private?sig="+url.QueryEscape(expired)+"&exp="+strconv.FormatInt(expiredAt, 10), nil)
+	RelayMidjourneyImage(expiredCtx)
+	require.NotEqual(t, http.StatusOK, expiredRecorder.Code)
+	require.Zero(t, hits)
 }
 
 func portOfTestServer(t *testing.T, server *httptest.Server) int {

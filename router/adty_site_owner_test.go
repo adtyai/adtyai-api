@@ -510,6 +510,13 @@ func TestCustomerAcceptsSiteTerms(t *testing.T) {
 	assert.Contains(t, self.Body.String(), `"site_terms_required":true`)
 	assert.Contains(t, self.Body.String(), `"site_terms_version":"`+current+`"`)
 
+	blockedKey := callAs(t, f.engine, token, http.MethodPost, "/api/token/", `{"name":"before-terms","expired_time":-1,"unlimited_quota":true}`)
+	assert.Equal(t, http.StatusForbidden, blockedKey.Code, blockedKey.Body.String())
+	assert.Contains(t, blockedKey.Body.String(), "Accept the current site customer terms first")
+	blockedQuote := callAs(t, f.engine, token, http.MethodPost, "/api/adty/topup/quote", `{"amount":10,"method":"usdt.trc20"}`)
+	assert.Equal(t, http.StatusForbidden, blockedQuote.Code, blockedQuote.Body.String())
+	assert.Contains(t, blockedQuote.Body.String(), "Accept the current site customer terms first")
+
 	wrong := callAs(t, f.engine, token, http.MethodPost, "/api/adty/site/terms/accept", `{"version":"0"}`)
 	assert.Contains(t, wrong.Body.String(), `"success":false`)
 	var row model.AdtySiteCustomer

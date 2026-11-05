@@ -32,6 +32,11 @@ import (
 
 func RelayMidjourneyImage(c *gin.Context) {
 	taskId := c.Param("id")
+	exp, _ := strconv.ParseInt(c.Query("exp"), 10, 64)
+	if !service.VerifyMidjourneyImageAccess(taskId, c.Query("sig"), exp, time.Now().Unix()) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "midjourney_task_not_found"})
+		return
+	}
 	midjourneyTask := model.GetByOnlyMJId(taskId)
 	if midjourneyTask == nil {
 		c.JSON(400, gin.H{
@@ -97,6 +102,7 @@ func RelayMidjourneyImage(c *gin.Context) {
 		return
 	}
 	c.Header("X-Content-Type-Options", "nosniff")
+	c.Header("Cache-Control", "private, no-store")
 	c.Header("Content-Type", contentType)
 	_, err = io.Copy(c.Writer, resp.Body)
 	if err != nil {
@@ -267,7 +273,12 @@ func coverMidjourneyTaskDto(c *gin.Context, originTask *model.Midjourney) (midjo
 	midjourneyTask.FinishTime = originTask.FinishTime
 	midjourneyTask.ImageUrl = ""
 	if originTask.ImageUrl != "" && setting.MjForwardUrlEnabled {
-		midjourneyTask.ImageUrl = system_setting.ServerAddress + "/mj/image/" + originTask.MjId
+		imagePath, err := service.MidjourneyImagePath(originTask.MjId, time.Now())
+		if err != nil {
+			midjourneyTask.ImageUrl = ""
+		} else {
+			midjourneyTask.ImageUrl = strings.TrimRight(system_setting.ServerAddress, "/") + imagePath
+		}
 		if originTask.Status != "SUCCESS" {
 			midjourneyTask.ImageUrl += "?rand=" + strconv.FormatInt(time.Now().UnixNano(), 10)
 		}

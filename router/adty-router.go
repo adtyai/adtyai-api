@@ -53,7 +53,7 @@ func registerAdtyTopUpRoutes(apiRouter *gin.RouterGroup) {
 	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/adty/topup/pending", "scope", "wallet:read")
 	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/adty/topup/self", "scope", "wallet:read")
 
-	topup := apiRouter.Group("/adty/topup", middleware.UserAuth())
+	topup := apiRouter.Group("/adty/topup", middleware.UserAuth(), middleware.AdtyRequireCurrentSiteTerms())
 	topup.GET("/info", controller.GetAdtyTopUpInfo)
 	topup.POST("/quote", middleware.PromoCodeUserRateLimit("CT:promo-quote"), controller.PostAdtyTopUpQuote)
 	topup.GET("/orders/:trade_no", controller.GetAdtyTopUpOrder)
@@ -81,7 +81,7 @@ func registerAdtyFinanceRoutes(apiRouter *gin.RouterGroup) {
 func registerAdtyBEpusdtRoutes(apiRouter *gin.RouterGroup) {
 	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/user/bepusdt/pay", "scope", "wallet:write")
 	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/user/bepusdt/notify", "session", "")
-	apiRouter.POST("/user/bepusdt/pay", middleware.UserAuth(), middleware.UserCriticalRateLimit("CT:pay-bepusdt"), controller.RequestBEpusdtPay)
+	apiRouter.POST("/user/bepusdt/pay", middleware.UserAuth(), middleware.AdtyRequireCurrentSiteTerms(), middleware.UserCriticalRateLimit("CT:pay-bepusdt"), controller.RequestBEpusdtPay)
 	apiRouter.POST("/user/bepusdt/notify", middleware.AnonymousRequestBodyLimit(), controller.BEpusdtTopUpNotify)
 }
 
@@ -90,7 +90,7 @@ func registerAdtyEpayRoutes(apiRouter *gin.RouterGroup) {
 	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/epay/pay", "scope", "wallet:write")
 	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/user/epay/notify/:channelId", "session", "")
 	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/user/epay/notify/:channelId", "session", "")
-	apiRouter.POST("/adty/epay/pay", middleware.UserAuth(), middleware.UserCriticalRateLimit("CT:pay-epay"), controller.RequestAdtyEpayPay)
+	apiRouter.POST("/adty/epay/pay", middleware.UserAuth(), middleware.AdtyRequireCurrentSiteTerms(), middleware.UserCriticalRateLimit("CT:pay-epay"), controller.RequestAdtyEpayPay)
 	apiRouter.GET("/user/epay/notify/:channelId", controller.AdtyEpayNotify)
 	apiRouter.POST("/user/epay/notify/:channelId", middleware.AnonymousRequestBodyLimit(), controller.AdtyEpayNotify)
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -270,6 +271,14 @@ func checkMjTaskNeedUpdate(oldTask *model.Midjourney, newTask dto.MidjourneyDto)
 	return false
 }
 
+func signedMidjourneyImageURL(mjID string) string {
+	path, err := service.MidjourneyImagePath(mjID, time.Now())
+	if err != nil {
+		return ""
+	}
+	return strings.TrimRight(system_setting.ServerAddress, "/") + path
+}
+
 func GetAllMidjourney(c *gin.Context) {
 	pageInfo := common.GetPageQuery(c)
 
@@ -286,7 +295,7 @@ func GetAllMidjourney(c *gin.Context) {
 
 	if setting.MjForwardUrlEnabled {
 		for i, midjourney := range items {
-			midjourney.ImageUrl = system_setting.ServerAddress + "/mj/image/" + midjourney.MjId
+			midjourney.ImageUrl = signedMidjourneyImageURL(midjourney.MjId)
 			items[i] = midjourney
 		}
 	}
@@ -311,7 +320,7 @@ func GetUserMidjourney(c *gin.Context) {
 
 	if setting.MjForwardUrlEnabled {
 		for i, midjourney := range items {
-			midjourney.ImageUrl = system_setting.ServerAddress + "/mj/image/" + midjourney.MjId
+			midjourney.ImageUrl = signedMidjourneyImageURL(midjourney.MjId)
 			items[i] = midjourney
 		}
 	}

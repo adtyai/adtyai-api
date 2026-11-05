@@ -241,6 +241,7 @@ func SetApiRouter(router *gin.Engine) {
 		registerAuthzRoutes(apiRouter)
 		tokenRoute := apiRouter.Group("/token")
 		tokenRoute.Use(middleware.UserAuth())
+		tokenRoute.Use(middleware.AdtyRequireCurrentSiteTerms())
 		tokenRoute.Use(middleware.TokenOperationAudit())
 		{
 			tokenRoute.GET("/", controller.GetAllTokens)
@@ -266,17 +267,17 @@ func SetApiRouter(router *gin.Engine) {
 		}
 
 		handlePermissionRoute(apiRouter.Group("", middleware.DisableCache(), middleware.AdminAuth()), http.MethodGet, "/audit", authz.AuditRead, controller.GetAuditLogs)
-		apiRouter.GET("/audit/self", middleware.DisableCache(), middleware.UserAuth(), controller.GetAuditLogs)
+		apiRouter.GET("/audit/self", middleware.DisableCache(), middleware.UserAuth(), middleware.AdtyRequireCurrentSiteTerms(), controller.GetAuditLogs)
 		logRoute := apiRouter.Group("/log")
 		logRoute.GET("/", middleware.AdminAuth(), controller.GetAllLogs)
 		logRoute.GET("/stat", middleware.AdminAuth(), controller.GetLogsStat)
-		logRoute.GET("/self/stat", middleware.UserAuth(), controller.GetLogsSelfStat)
+		logRoute.GET("/self/stat", middleware.UserAuth(), middleware.AdtyRequireCurrentSiteTerms(), controller.GetLogsSelfStat)
 		logRoute.GET("/channel_affinity_usage_cache", middleware.AdminAuth(), controller.GetChannelAffinityUsageCacheStats)
 		logRoute.GET("/search", middleware.AdminAuth(), controller.SearchAllLogs)
-		logRoute.GET("/self", middleware.UserAuth(), controller.GetUserLogs)
+		logRoute.GET("/self", middleware.UserAuth(), middleware.AdtyRequireCurrentSiteTerms(), controller.GetUserLogs)
 		logRoute.GET("/export", middleware.AdminAuth(), controller.ExportAllLogs)
-		logRoute.GET("/self/export", middleware.UserAuth(), controller.ExportUserLogs)
-		logRoute.GET("/self/search", middleware.UserAuth(), middleware.SearchRateLimit(), controller.SearchUserLogs)
+		logRoute.GET("/self/export", middleware.UserAuth(), middleware.AdtyRequireCurrentSiteTerms(), controller.ExportUserLogs)
+		logRoute.GET("/self/search", middleware.UserAuth(), middleware.AdtyRequireCurrentSiteTerms(), middleware.SearchRateLimit(), controller.SearchUserLogs)
 
 		systemTaskRoute := apiRouter.Group("/system-task")
 		systemTaskRoute.Use(middleware.RootAuth())
@@ -298,9 +299,9 @@ func SetApiRouter(router *gin.Engine) {
 		dataRoute := apiRouter.Group("/data")
 		dataRoute.GET("/", middleware.AdminAuth(), controller.GetAllQuotaDates)
 		dataRoute.GET("/users", middleware.AdminAuth(), controller.GetQuotaDatesByUser)
-		dataRoute.GET("/self", middleware.UserAuth(), controller.GetUserQuotaDates)
+		dataRoute.GET("/self", middleware.UserAuth(), middleware.AdtyRequireCurrentSiteTerms(), controller.GetUserQuotaDates)
 		dataRoute.GET("/flow", middleware.AdminAuth(), controller.GetAllFlowQuotaDates)
-		dataRoute.GET("/flow/self", middleware.UserAuth(), controller.GetUserFlowQuotaDates)
+		dataRoute.GET("/flow/self", middleware.UserAuth(), middleware.AdtyRequireCurrentSiteTerms(), controller.GetUserFlowQuotaDates)
 
 		logRoute.Use(middleware.CORS(), middleware.CriticalRateLimit())
 		{
@@ -322,14 +323,14 @@ func SetApiRouter(router *gin.Engine) {
 		}
 
 		mjRoute := apiRouter.Group("/mj")
-		mjRoute.GET("/self", middleware.UserAuth(), controller.GetUserMidjourney)
+		mjRoute.GET("/self", middleware.UserAuth(), middleware.AdtyRequireCurrentSiteTerms(), controller.GetUserMidjourney)
 		mjRoute.GET("/", middleware.AdminAuth(), controller.GetAllMidjourney)
 
 		taskRoute := apiRouter.Group("/task")
 		{
-			taskRoute.GET("/self", middleware.UserAuth(), controller.GetUserTask)
+			taskRoute.GET("/self", middleware.UserAuth(), middleware.AdtyRequireCurrentSiteTerms(), controller.GetUserTask)
 			taskRoute.GET("", middleware.AdminAuth(), controller.GetAllTask)
-			taskRoute.GET("/:task_id/artifacts", middleware.UserAuth(), controller.GetDashboardTaskArtifacts)
+			taskRoute.GET("/:task_id/artifacts", middleware.UserAuth(), middleware.AdtyRequireCurrentSiteTerms(), controller.GetDashboardTaskArtifacts)
 		}
 
 		vendorRoute := apiRouter.Group("/vendors")
