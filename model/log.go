@@ -335,6 +335,31 @@ type RecordConsumeLogParams struct {
 	Other            *LogOther         `json:"other"`
 }
 
+func recordConsumeQuotaData(userId int, username, modelName string, quota, tokenUsed int, group string, tokenId, channelId int, createdAt int64, other *LogOther) {
+	if !common.DataExportEnabled {
+		return
+	}
+	var cacheReadTokens, cacheCreationTokens int
+	if other != nil {
+		cacheReadTokens, _ = other.public["cache_tokens"].(int)
+		cacheCreationTokens, _ = other.public["cache_write_tokens"].(int)
+	}
+	LogQuotaData(QuotaDataLogParams{
+		UserID:              userId,
+		Username:            username,
+		ModelName:           modelName,
+		Quota:               quota,
+		CreatedAt:           createdAt,
+		TokenUsed:           tokenUsed,
+		CacheReadTokens:     int64(cacheReadTokens),
+		CacheCreationTokens: int64(cacheCreationTokens),
+		UseGroup:            group,
+		TokenID:             tokenId,
+		ChannelID:           channelId,
+		NodeName:            common.NodeName,
+	})
+}
+
 func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams) {
 	// 二开：先累计 TPM，关掉消费日志时也要算（任务 7.4）。渠道测试没有令牌，不算。
 	if AdtyOnConsumeTokens != nil {
@@ -345,6 +370,8 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 		AdtyOnConsumeLog(c, userId, &params)
 	}
 	if !common.LogConsumeEnabled {
+		// The usage row stays off, but the charge still needs dashboard evidence.
+		recordConsumeQuotaData(userId, c.GetString("username"), params.ModelName, params.Quota, params.PromptTokens+params.CompletionTokens, params.Group, params.TokenId, params.ChannelId, common.GetTimestamp(), params.Other)
 		return
 	}
 	logger.LogInfo(c, common.LogText("record consume log: userId=%d, params=%s", userId, common.GetJsonString(params)))
@@ -436,6 +463,8 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 		AdtyOnTaskBillingLog(&params)
 	}
 	if params.LogType == LogTypeConsume && !common.LogConsumeEnabled {
+		username, _ := GetUsernameById(params.UserId, false)
+		recordConsumeQuotaData(params.UserId, username, params.ModelName, params.Quota, 0, params.Group, params.TokenId, params.ChannelId, common.GetTimestamp(), params.Other)
 		return
 	}
 	username, _ := GetUsernameById(params.UserId, false)

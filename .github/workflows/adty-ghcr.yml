@@ -30,6 +30,8 @@ jobs:
       GOWORK: 'off'
       # 一次性测试库密码，只给 CI 用，不是生产密码。
       ADTY_TEST_PG_DSN: 'host=127.0.0.1 port=5432 user=postgres password=adty_ci_test dbname=adty_test sslmode=disable'
+      TEST_POSTGRES_DSN: 'host=127.0.0.1 port=5432 user=postgres password=adty_ci_test dbname=adty_test sslmode=disable'
+      AUDIT_POSTGRES_DSN: 'host=127.0.0.1 port=5432 user=postgres password=adty_ci_test dbname=adty_test sslmode=disable'
     services:
       postgres:
         image: postgres:16

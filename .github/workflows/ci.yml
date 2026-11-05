@@ -22,6 +22,8 @@ jobs:
     env:
       GOWORK: 'off'
       ADTY_TEST_PG_DSN: 'host=127.0.0.1 port=5432 user=postgres password=adty_ci_test dbname=adty_test sslmode=disable'
+      TEST_POSTGRES_DSN: 'host=127.0.0.1 port=5432 user=postgres password=adty_ci_test dbname=adty_test sslmode=disable'
+      AUDIT_POSTGRES_DSN: 'host=127.0.0.1 port=5432 user=postgres password=adty_ci_test dbname=adty_test sslmode=disable'
     services:
       postgres:
         image: postgres:16
@@ -112,3 +114,6 @@ jobs:
 
       - name: Test
         run: bun run test
+
+      - name: i18n check
+        run: node scripts/adty/i18n-check.mjs
