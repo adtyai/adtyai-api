@@ -101,7 +101,7 @@ export function Hero(props: {
     <section
       id='hero'
       aria-labelledby='hero-title'
-      className='mx-auto grid max-w-6xl items-center gap-12 px-4 pt-28 pb-16 md:px-6 lg:grid-cols-[1.1fr_1fr] lg:pt-32 lg:pb-20'
+      className='mx-auto grid min-w-0 max-w-6xl items-center gap-12 px-4 pt-28 pb-16 md:px-6 lg:grid-cols-[1.1fr_1fr] lg:pt-32 lg:pb-20'
     >
       <div className='space-y-6'>
         <p className='text-muted-foreground inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs'>
@@ -149,7 +149,7 @@ export function Hero(props: {
         )}
       </div>
 
-      <div className={cn('relative', ready?.best && 'pb-24')}>
+      <div className={cn('relative min-w-0', ready?.best && 'pb-24')}>
         <CodeCard baseUrl={props.baseUrl} />
         <div className='absolute right-2 bottom-0 sm:right-6'>
           <PriceCompareCard row={ready?.best ?? null} />

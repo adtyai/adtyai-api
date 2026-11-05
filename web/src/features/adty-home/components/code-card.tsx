@@ -61,8 +61,8 @@ export function CodeCard(props: { baseUrl: string }) {
         value={client}
         onValueChange={(value) => setClient(value as ClientSnippetId)}
       >
-        <div className='flex items-center justify-between gap-2 border-b px-3 py-2'>
-          <TabsList className='h-8 max-w-full overflow-x-auto p-0.5'>
+        <div className='flex min-w-0 items-center gap-2 border-b px-3 py-2'>
+          <TabsList className='h-8 min-w-0 w-auto flex-1 overflow-x-auto p-0.5'>
             {LANDING_CLIENTS.map((id) => (
               <TabsTrigger key={id} value={id} className='h-7 px-2.5 text-xs'>
                 {CLIENT_SNIPPET_LABELS[id]}
