@@ -15,6 +15,18 @@
 | `router/api-router.go` | 上游单通道易支付下单和回调、Stripe/Creem/Waffo 下单和回调、签到、旧管理员补单改成 `middleware.AdtyClosedFeature`，在登录中间件之前拒绝 | 这些入口能绕过统一订单、加赠、佣金和余额流水入账；规范明确不做签到和未配置的卡支付 | 审查 v3 |
 | `router/relay-router.go` | `/pg` 在 `Distribute` 之前挂 `AdtyUserLimit` | 演练场是可用的文本入口，必须和 `/v1` 共用按用户的 RPM/TPM/并发限制 | 审查 v3 |
 | `controller/topup.go` | `GetTopUpInfo` 不再返回上游易支付、Stripe、Creem、Waffo 的开关和支付方式 | 钱包不能展示已经关掉的充值入口 | 审查 v3 |
+| `controller/topup_creem.go` | `verifyCreemSignature`、`CreemWebhook`、下单请求和上游响应日志不再写入签名、请求体、卡号、邮箱、姓名和结账链接 | 支付回调和上游响应会把密钥和持卡人数据写进日志 | 审查 v3 |
+| `controller/topup_stripe.go` | `StripeWebhook` 收到回调的日志不再写入签名和请求体 | 支付回调日志不能保留签名或报文体 | 审查 v3 |
+| `controller/topup_waffo.go` | `WaffoWebhook` 收到回调、验签失败和解析失败的日志不再写入签名和请求体；下单被拒不再写完整响应 | 支付回调和上游响应会把密钥和持卡人数据写进日志 | 审查 v3 |
+| `controller/topup_waffo_pancake.go` | `WaffoPancakeWebhook` 收到回调和验签失败的日志不再写入签名和请求体 | 支付回调日志不能保留签名或报文体 | 审查 v3 |
+| `controller/token.go` | `GetTokenKey`、`GetTokenKeysBatch` 在返回明文密钥前要求 `api_key.read` 二次验证 | 会话或访问令牌不能在没有二次验证时读出 API 密钥 | 审查 v3 |
+| `controller/token_test.go` | 密钥查看用例改为期望 403；PAT 改用带 `api_key:reveal` 的访问令牌；批量查看密钥在二次验证拒绝时不保存无界 ID 列表 | 跟上二次验证，并证明响应和审计都不含明文密钥 | 审查 v3 |
+| `controller/oauth.go` | `findOrCreateOAuthUser` 在分站要求条款且未接受时返回 `OAuthSiteTermsError` | 分站客户注册必须先接受当前条款 | 审查 v3 |
+| `controller/user_quota.go` | 空幂等键和过长幂等键都映射为 `Invalid idempotency key` | 调额不能在没有幂等键时入账 | 审查 v3 |
+| `controller/user_manage_test.go` | 调额请求补上幂等键 | 空幂等键现在会被拒绝，原用例要带上键才能走到原来的分支 | 审查 v3 |
+| `router/relay-router.go` | `relayV1Router` 增加 `AdtyRequireCurrentSiteTerms` | 分站条款未接受时不能继续调用中转 | 审查 v3 |
+| `service/security_verification.go` | 增加 `VerificationScopeAPIKeyRead`，并把它列入无上下文的二次验证范围 | 密钥查看使用独立的二次验证范围 | 审查 v3 |
+| `service/access_token_scope.go` | `api_key.read` 对应访问令牌范围 `api_key:reveal` | 没有该范围的访问令牌不能取得查看密钥的验证 | 审查 v3 |
 | --- | --- | --- | --- |
 | `common/str.go` | 删 `NormalizeBillingPreference` | 删订阅后没有调用方（原来只有 `NewBillingSession` 用它规范扣费偏好） | 1.2 |
 | `controller/access_token_audit_test.go` | `TestAuditRoleSnapshotSurvivesActorChanges`、`TestSecurityAndOperationEventsUseAuditTable` 删 `recordSubscriptionResetUserLogs` 的调用，审计条数 4→3、10→9、10→9 | 这个函数随 `controller/subscription.go` 删了；每次调用写一条审计 | 1.2 |

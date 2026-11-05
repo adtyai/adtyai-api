@@ -731,7 +731,7 @@ func TestAPITokenAuditDatabaseMatrix(t *testing.T) {
 				db, _ := newAuditTestDatabase(t, database.name, dsn)
 				model.DB = db
 				common.SetDatabaseTypes(database.typ, database.typ)
-				require.NoError(t, db.AutoMigrate(&model.User{}, &model.UserSession{}, &model.Token{}))
+				require.NoError(t, db.AutoMigrate(&model.User{}, &model.UserSession{}, &model.Token{}, &model.UserAccessToken{}))
 				// Initialize production column quoting as well as the existing audit table.
 				require.NoError(t, model.InitLogDB())
 				if separateLog {
@@ -759,9 +759,9 @@ func TestAPITokenAuditDatabaseMatrix(t *testing.T) {
 
 func verifyAPITokenAudit(t *testing.T) {
 	t.Helper()
-	pat := "api-token-audit-pat-secret"
-	user := &model.User{Username: "token-owner", Password: "placeholder", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: "default", AuthVersion: 1, AccessToken: &pat}
+	user := &model.User{Username: "token-owner", Password: "placeholder", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: "default", AuthVersion: 1}
 	require.NoError(t, model.DB.Create(user).Error)
+	pat, _ := createScopedAccessToken(t, user.Id, 0, "api_key:reveal")
 	other := &model.User{Username: "other-owner", Password: "placeholder", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: "default", AuthVersion: 1}
 	require.NoError(t, model.DB.Create(other).Error)
 	session := &model.UserSession{SID: "token-audit-session", UserID: user.Id, Version: 1, UserAuthVersion: 1, Status: model.UserSessionStatusActive, RefreshHash: "placeholder", LoginMethod: "password", LastActiveAt: time.Now().Unix(), ExpiresAt: time.Now().Add(time.Hour).Unix()}
@@ -793,6 +793,7 @@ func verifyAPITokenAudit(t *testing.T) {
 		success                          bool
 		params                           string
 		initialStatus                    int
+		wantStatus                       int
 		failWrite, rateLimit, usePAT     bool
 	}{
 		{name: "create", method: "POST", path: "/", body: `{"name":"created","expired_time":-1,"unlimited_quota":true}`, action: "token.create", success: true},
@@ -813,15 +814,15 @@ func verifyAPITokenAudit(t *testing.T) {
 		{name: "delete", method: "DELETE", path: "/$id", action: "token.delete", success: true, params: `{"id":$id,"name":"owned"}`},
 		{name: "foreign delete", method: "DELETE", path: "/$other", action: "token.delete", params: `{"id":$other}`},
 		{name: "missing delete", method: "DELETE", path: "/999999", action: "token.delete", params: `{"id":999999}`},
-		{name: "key view", method: "POST", path: "/$id/key", action: "token.key_view", success: true, params: `{"id":$id,"name":"owned"}`},
-		{name: "PAT key view", method: "POST", path: "/$id/key", action: "token.key_view", success: true, params: `{"id":$id,"name":"owned"}`, usePAT: true},
-		{name: "foreign key view", method: "POST", path: "/$other/key", action: "token.key_view", params: `{"id":$other}`},
+		{name: "key view", method: "POST", path: "/$id/key", action: "token.key_view", params: `{"id":$id}`, wantStatus: http.StatusForbidden},
+		{name: "PAT key view", method: "POST", path: "/$id/key", action: "token.key_view", params: `{"id":$id}`, wantStatus: http.StatusForbidden, usePAT: true},
+		{name: "foreign key view", method: "POST", path: "/$other/key", action: "token.key_view", params: `{"id":$other}`, wantStatus: http.StatusForbidden},
 		{name: "rate limited key view", method: "POST", path: "/$id/key", action: "token.key_view", params: `{"id":$id}`, rateLimit: true},
 		{name: "batch delete partial and duplicate", method: "POST", path: "/batch", body: `{"ids":[$id,$id,$other,999999]}`, action: "token.delete_batch", success: true, params: `{"requested_ids":[$id,$id,$other,999999],"total":4,"count":1}`},
 		{name: "empty batch delete", method: "POST", path: "/batch", body: `{"ids":[]}`, action: "token.delete_batch", params: `{"requested_ids":[],"total":0}`},
-		{name: "batch keys partial and duplicate", method: "POST", path: "/batch/keys", body: `{"ids":[$id,$id,$other,999999]}`, action: "token.key_view_batch", success: true, params: `{"requested_ids":[$id,$id,$other,999999],"total":4,"count":1,"returned_ids":[$id]}`},
-		{name: "batch keys no matches", method: "POST", path: "/batch/keys", body: `{"ids":[$other,999999]}`, action: "token.key_view_batch", success: true, params: `{"requested_ids":[$other,999999],"total":2,"count":0,"returned_ids":[]}`},
-		{name: "empty batch keys", method: "POST", path: "/batch/keys", body: `{"ids":[]}`, action: "token.key_view_batch", params: `{"requested_ids":[],"total":0}`},
+		{name: "batch keys partial and duplicate", method: "POST", path: "/batch/keys", body: `{"ids":[$id,$id,$other,999999]}`, action: "token.key_view_batch", params: `{}`, wantStatus: http.StatusForbidden},
+		{name: "batch keys no matches", method: "POST", path: "/batch/keys", body: `{"ids":[$other,999999]}`, action: "token.key_view_batch", params: `{}`, wantStatus: http.StatusForbidden},
+		{name: "empty batch keys", method: "POST", path: "/batch/keys", body: `{"ids":[]}`, action: "token.key_view_batch", params: `{}`, wantStatus: http.StatusForbidden},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			empty := ""
@@ -888,10 +889,14 @@ func verifyAPITokenAudit(t *testing.T) {
 			assert.Equal(t, tc.action, operation.Action)
 			assert.Equal(t, tc.success, operation.Success)
 			assert.Equal(t, response.Code, operation.Status)
+			wantStatus := tc.wantStatus
 			if tc.rateLimit {
-				assert.Equal(t, 429, response.Code)
-			} else {
-				assert.Equal(t, 200, response.Code)
+				wantStatus = http.StatusTooManyRequests
+			} else if wantStatus == 0 {
+				wantStatus = http.StatusOK
+			}
+			assert.Equal(t, wantStatus, response.Code)
+			if wantStatus == http.StatusOK {
 				assert.Equal(t, tc.success, decodeAPIResponse(t, response).Success)
 			}
 			assert.Equal(t, user.Id, operation.UserId)
@@ -929,8 +934,9 @@ func verifyAPITokenAudit(t *testing.T) {
 			for _, secret := range []string{pat, jwt, owned.Key, foreign.Key, foreign.Name, "raw-body-secret", "raw-storage-error-secret", "private-model-configuration", "203.0.113.57", "Authorization"} {
 				assert.NotContains(t, string(encoded), secret)
 			}
-			if tc.action == "token.key_view" && tc.success {
-				assert.Contains(t, response.Body.String(), owned.GetFullKey())
+			if strings.Contains(tc.action, "key_view") {
+				assert.NotContains(t, response.Body.String(), owned.GetFullKey())
+				assert.NotContains(t, response.Body.String(), foreign.Key)
 			}
 		})
 	}
@@ -959,11 +965,18 @@ func verifyAPITokenAudit(t *testing.T) {
 			encoded, err := common.Marshal(event.Other.Op.Params)
 			require.NoError(t, err)
 			require.NoError(t, common.Unmarshal(encoded, &params))
+			assert.False(t, event.Success)
+			assert.Nil(t, params.Count)
+			if path == "/api/token/batch/keys" {
+				assert.Equal(t, http.StatusForbidden, response.Code)
+				assert.Contains(t, response.Body.String(), "SECURITY_PROOF_REQUIRED")
+				assert.Empty(t, params.IDs, "proof rejection must not store the unbounded id list")
+				assert.NotContains(t, response.Body.String(), "10000")
+				continue
+			}
 			assert.Equal(t, ids[:100], params.IDs)
 			assert.True(t, params.Truncated)
 			assert.Equal(t, 101, params.Total)
-			assert.False(t, event.Success)
-			assert.Nil(t, params.Count)
 		}
 	})
 
