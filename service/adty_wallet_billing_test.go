@@ -589,6 +589,34 @@ func TestRealtimeIncrementalUsageIsNotChargedTwice(t *testing.T) {
 		"settlement must not charge the same realtime usage again")
 }
 
+func TestRealtimeZeroUsageRefundsStreamCharge(t *testing.T) {
+	model.InitColumnNamesForTests()
+	truncate(t)
+	const userID, tokenID = 9402, 9402
+	const tokenKey = "realtime-zero"
+	const opening = 1_000_000
+	seedUser(t, userID, opening)
+	seedToken(t, tokenID, userID, tokenKey, opening)
+	c := adtyWalletRelayContext()
+	info := adtyWalletRelayInfo(userID, tokenID, "sk-"+tokenKey)
+	info.OriginModelName = "gpt-4o-realtime-preview"
+	info.UsingGroup = "default"
+	info.UserGroup = "default"
+	info.StartTime = time.Now()
+
+	require.Nil(t, PreConsumeBilling(c, 1_000, info))
+	usage := &dto.RealtimeUsage{InputTokens: 200, OutputTokens: 100, TotalTokens: 300}
+	usage.InputTokenDetails.TextTokens = 200
+	usage.OutputTokenDetails.TextTokens = 100
+	require.NoError(t, PreWssConsumeQuota(c, info, usage))
+	require.Less(t, getUserQuota(t, userID), opening-1_000)
+
+	// 结束时 total tokens 为 0：上游超时，最终用量按 0 结算，流式已扣的额度要退回。
+	require.NoError(t, SettleBilling(c, info, 0))
+	require.Equal(t, opening, getUserQuota(t, userID),
+		"a zero final usage must refund the realtime charge and the opening hold")
+}
+
 // 8. 有 shortfall 之后退款只退实扣的部分，不把平台没收到的钱退给用户。
 func TestAdtyBalanceFloorRefundAfterShortfall(t *testing.T) {
 	t.Run("task", func(t *testing.T) {

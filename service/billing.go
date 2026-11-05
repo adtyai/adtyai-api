@@ -72,10 +72,8 @@ func unsettledBilling(relayInfo *relaycommon.RelayInfo) bool {
 // 否则回退到旧的 PostConsumeQuota 路径（兼容按次计费等场景）。
 func SettleBilling(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, actualQuota int) error {
 	if relayInfo != nil && relayInfo.RealtimeAlreadyCharged > 0 {
+		// 流式阶段已经从钱包扣过的额度要减掉。最终用量更小（含超时后的 0）时差额为负，结算退回多扣的部分。
 		actualQuota -= relayInfo.RealtimeAlreadyCharged
-		if actualQuota < 0 {
-			actualQuota = 0
-		}
 		relayInfo.RealtimeAlreadyCharged = 0
 	}
 	if relayInfo.Billing != nil {
