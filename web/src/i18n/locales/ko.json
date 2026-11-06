@@ -7497,6 +7497,7 @@
     "Admin area": "관리자 영역",
     "Admin access required": "관리자 권한이 필요합니다",
     "Admin": "관리자",
+    "Adjustment cannot make the balance negative": "조정으로 잔액을 음수로 만들 수 없습니다",
     "Adjustment mode": "조정 방식",
     "Adjusted by the channel adaptor": "채널 어댑터가 조정한 금액",
     "Adjust withdrawable (USD, negative to deduct)": "출금 가능액 조정 (USD, 음수는 차감)",

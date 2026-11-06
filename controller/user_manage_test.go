@@ -363,7 +363,6 @@ func TestManageUserQuotaRecordsTopupAndAudit(t *testing.T) {
 		{"override_down", "override", "user.quota_override", "Overrode user quota from 1000 to 500", 500, 500},
 		{"override_unchanged", "override", "user.quota_override", "Overrode user quota from 1000 to 1000", 1000, 1000},
 		{"override_zero", "override", "user.quota_override", "Overrode user quota from 1000 to 0", 0, 0},
-		{"override_negative", "override", "user.quota_override", "Overrode user quota from 1000 to -1", -1, -1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			db := setupManageUserTestDB(t)
@@ -534,6 +533,8 @@ func TestManageUserQuotaTargetsAndWalletBounds(t *testing.T) {
 		{name: "oversized_add", mode: "add", value: common.MaxWalletQuota + 1, targetID: 1, reason: "quota_limit_exceeded"},
 		{name: "oversized_subtract", mode: "subtract", value: common.MaxWalletQuota + 1, targetID: 1, reason: "quota_limit_exceeded"},
 		{name: "oversized_override", mode: "override", value: -common.MaxWalletQuota - 1, targetID: 1, reason: "quota_limit_exceeded"},
+		{name: "subtract_below_zero", mode: "subtract", before: 1000, value: 1500, targetID: 1, reason: "quota_floor"},
+		{name: "override_negative", mode: "override", before: 1000, value: -1, targetID: 1, reason: "quota_floor"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			db := setupManageUserTestDB(t)

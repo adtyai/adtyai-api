@@ -27,13 +27,13 @@ vi.mock('../../api', () => api)
 
 afterEach(() => vi.clearAllMocks())
 
-function renderDialog() {
+function renderDialog(currentQuota = 0) {
   render(
     <UserQuotaDialog
       open
       onOpenChange={() => {}}
       userId={7}
-      currentQuota={0}
+      currentQuota={currentQuota}
       onSuccess={() => {}}
     />
   )
@@ -65,5 +65,19 @@ describe('UserQuotaDialog reason (adty task 7.2)', () => {
     expect(first.reason).toBe('goodwill')
     expect(first.idempotency_key).toBe(second.idempotency_key)
     expect(first.idempotency_key).not.toBe('')
+  })
+
+  it('does not submit an override or subtract that would write a negative balance', async () => {
+    const user = userEvent.setup()
+    renderDialog(1_000_000)
+    await user.click(screen.getByRole('button', { name: 'Override' }))
+    await user.type(screen.getByPlaceholderText(/Enter amount/), '-1')
+    await user.type(screen.getByLabelText('Reason (admins only)'), 'set negative')
+    expect(screen.getByRole('button', { name: 'Confirm' })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: 'Subtract' }))
+    await user.clear(screen.getByPlaceholderText(/Enter amount/))
+    await user.type(screen.getByPlaceholderText(/Enter amount/), '5')
+    expect(screen.getByRole('button', { name: 'Confirm' })).toBeDisabled()
+    expect(api.adjustUserQuota).not.toHaveBeenCalled()
   })
 })

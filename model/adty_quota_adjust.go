@@ -7,7 +7,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/QuantumNous/new-api/common"
-	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 )
 
@@ -84,16 +83,9 @@ func AdjustUserQuotaWithLedger(userID, operatorID, operatorRole int, mode string
 		if user.Quota > common.MaxWalletQuota || user.Quota < -common.MaxWalletQuota {
 			return ErrWalletQuotaLimitExceeded
 		}
-		quota := decimal.NewFromInt(int64(value))
-		switch mode {
-		case "add":
-			quota = decimal.NewFromInt(int64(user.Quota)).Add(quota)
-		case "subtract":
-			quota = decimal.NewFromInt(int64(user.Quota)).Sub(quota)
-		}
-		after, err := common.WalletQuotaFromDecimalStrict(quota)
+		after, err := quotaAfterManualAdjust(user.Quota, value, mode)
 		if err != nil {
-			return ErrWalletQuotaLimitExceeded
+			return err
 		}
 		if after != user.Quota {
 			updated := tx.Model(&User{}).Where("id = ?", userID).Update("quota", after)

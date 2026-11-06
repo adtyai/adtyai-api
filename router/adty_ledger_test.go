@@ -103,6 +103,36 @@ func TestManualAdjustWritesLedgerWithBalances(t *testing.T) {
 		"needs user read")
 }
 
+func TestManualAdjustFloorRejectsNegativeBalance(t *testing.T) {
+	f := newAdtyGuardFixture(t)
+	user := ledgerUser(t, f, "adj-floor")
+
+	subtract := fmt.Sprintf(`{"id":%d,"action":"add_quota","mode":"subtract","value":1500,"reason":"too much","idempotency_key":"floor-sub"}`, user.Id)
+	subtractResp := adtyJSON(t, f.engine, http.MethodPost, "/api/user/manage", subtract, f.root)
+	require.Equal(t, http.StatusOK, subtractResp.Code)
+	assert.Contains(t, subtractResp.Body.String(), `"success":false`)
+	assert.Contains(t, subtractResp.Body.String(), "Adjustment cannot make the balance negative")
+
+	override := fmt.Sprintf(`{"id":%d,"action":"add_quota","mode":"override","value":-1,"reason":"negative set","idempotency_key":"floor-over"}`, user.Id)
+	overrideResp := adtyJSON(t, f.engine, http.MethodPost, "/api/user/manage", override, f.root)
+	require.Equal(t, http.StatusOK, overrideResp.Code)
+	assert.Contains(t, overrideResp.Body.String(), `"success":false`)
+	assert.Contains(t, overrideResp.Body.String(), "Adjustment cannot make the balance negative")
+
+	var stored model.User
+	require.NoError(t, f.db.First(&stored, user.Id).Error)
+	assert.Equal(t, 1000, stored.Quota)
+	var ledgers int64
+	require.NoError(t, f.db.Model(&model.AdtyBalanceLedger{}).Where("user_id = ?", user.Id).Count(&ledgers).Error)
+	assert.Zero(t, ledgers, "a rejected adjustment does not write a balance row")
+
+	exact := fmt.Sprintf(`{"id":%d,"action":"add_quota","mode":"subtract","value":1000,"reason":"to zero","idempotency_key":"floor-zero"}`, user.Id)
+	exactResp := adtyJSON(t, f.engine, http.MethodPost, "/api/user/manage", exact, f.root)
+	require.Contains(t, exactResp.Body.String(), `"success":true`)
+	require.NoError(t, f.db.First(&stored, user.Id).Error)
+	assert.Equal(t, 0, stored.Quota)
+}
+
 func TestManualAdjustReasonNotInUserLog(t *testing.T) {
 	f := newAdtyGuardFixture(t)
 	user := ledgerUser(t, f, "adj-private")

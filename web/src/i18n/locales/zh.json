@@ -7902,6 +7902,7 @@
     "Admin area": "管理员区域",
     "Admin access required": "需要管理员权限",
     "Admin": "管理员",
+    "Adjustment cannot make the balance negative": "调额不能把余额写成负数",
     "Adjustment mode": "调整方式",
     "Adjusted by the channel adaptor": "渠道适配器计费调整",
     "Adjust user quota": "调整用户额度",

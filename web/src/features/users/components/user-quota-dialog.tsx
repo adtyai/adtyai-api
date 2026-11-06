@@ -61,8 +61,13 @@ export function UserQuotaDialog(props: UserQuotaDialogProps) {
 
   const amountValue = Number.parseFloat(amount) || 0
   const quotaValue = parseQuotaFromDollars(Math.abs(amountValue))
+  const overrideQuota = parseQuotaFromDollars(amountValue)
+  const floorBlocked =
+    (mode === 'override' && overrideQuota < 0) ||
+    (mode === 'subtract' && props.currentQuota - quotaValue < 0)
 
   const getPreviewText = () => {
+    if (floorBlocked) return t('Adjustment cannot make the balance negative')
     const current = props.currentQuota
     const val = quotaValue
     switch (mode) {
@@ -87,7 +92,7 @@ export function UserQuotaDialog(props: UserQuotaDialogProps) {
   }
 
   const handleConfirm = async () => {
-    if (!reasonValid) return
+    if (!reasonValid || floorBlocked) return
     if (!amount && mode !== 'override') return
     if (quotaValue <= 0 && mode !== 'override') return
 
@@ -140,7 +145,10 @@ export function UserQuotaDialog(props: UserQuotaDialogProps) {
           <Button variant='outline' onClick={handleCancel}>
             {t('Cancel')}
           </Button>
-          <Button onClick={handleConfirm} disabled={loading || !reasonValid}>
+          <Button
+            onClick={handleConfirm}
+            disabled={loading || !reasonValid || floorBlocked}
+          >
             {loading ? t('Processing...') : t('Confirm')}
           </Button>
         </>
@@ -182,7 +190,7 @@ export function UserQuotaDialog(props: UserQuotaDialogProps) {
           <Input
             type='number'
             step={tokensOnly ? 1 : 0.000001}
-            min={mode === 'override' ? undefined : 0}
+            min={0}
             placeholder={placeholder}
             value={amount}
             onChange={(e) => setAmount(e.target.value)}

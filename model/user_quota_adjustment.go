@@ -11,6 +11,9 @@ import (
 var (
 	ErrInvalidUserQuotaAdjustment = errors.New("invalid user quota adjustment")
 	ErrUserQuotaPermission        = errors.New("cannot adjust quota for this user role")
+	// ErrAdtyQuotaFloor rejects an admin subtract that would go below 0 and an
+	// override that would write a negative balance.
+	ErrAdtyQuotaFloor = common.NewMessage("Adjustment cannot make the balance negative")
 )
 
 // UserQuotaAdjustment is the immutable database snapshot of a committed manual
@@ -45,16 +48,9 @@ func AdjustUserQuota(userID, operatorRole int, mode string, value int) (*UserQuo
 		if user.Quota > common.MaxWalletQuota || user.Quota < -common.MaxWalletQuota {
 			return ErrWalletQuotaLimitExceeded
 		}
-		quota := decimal.NewFromInt(int64(value))
-		switch mode {
-		case "add":
-			quota = decimal.NewFromInt(int64(user.Quota)).Add(quota)
-		case "subtract":
-			quota = decimal.NewFromInt(int64(user.Quota)).Sub(quota)
-		}
-		after, err := common.WalletQuotaFromDecimalStrict(quota)
+		after, err := quotaAfterManualAdjust(user.Quota, value, mode)
 		if err != nil {
-			return ErrWalletQuotaLimitExceeded
+			return err
 		}
 		// An unchanged override is a successful operation, including on MySQL
 		// configurations that count only changed rows in RowsAffected.
@@ -83,4 +79,27 @@ func AdjustUserQuota(userID, operatorRole int, mode string, value int) (*UserQuo
 		}
 	}
 	return &adjustment, nil
+}
+
+// quotaAfterManualAdjust applies the confirmed admin floor: subtract stops at 0,
+// and override cannot write a negative balance. Add is unchanged.
+func quotaAfterManualAdjust(current, value int, mode string) (int, error) {
+	if mode == "override" && value < 0 {
+		return 0, ErrAdtyQuotaFloor
+	}
+	quota := decimal.NewFromInt(int64(value))
+	switch mode {
+	case "add":
+		quota = decimal.NewFromInt(int64(current)).Add(quota)
+	case "subtract":
+		quota = decimal.NewFromInt(int64(current)).Sub(quota)
+	}
+	after, err := common.WalletQuotaFromDecimalStrict(quota)
+	if err != nil {
+		return 0, ErrWalletQuotaLimitExceeded
+	}
+	if mode == "subtract" && after < 0 {
+		return 0, ErrAdtyQuotaFloor
+	}
+	return after, nil
 }

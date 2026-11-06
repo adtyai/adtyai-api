@@ -7863,6 +7863,7 @@
     "Admin area": "Область администратора",
     "Admin access required": "Требуется доступ администратора",
     "Admin": "Администратор",
+    "Adjustment cannot make the balance negative": "Корректировка не может сделать баланс отрицательным",
     "Adjustment mode": "Способ изменения",
     "Adjusted by the channel adaptor": "Скорректировано адаптером канала",
     "Adjust user quota": "Изменить квоту пользователя",

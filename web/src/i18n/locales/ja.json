@@ -7532,6 +7532,7 @@
     "Admin area": "管理者エリア",
     "Admin access required": "管理者アクセスが必要です",
     "Admin": "管理者",
+    "Adjustment cannot make the balance negative": "調整で残高をマイナスにすることはできません",
     "Adjustment mode": "調整方法",
     "Adjusted by the channel adaptor": "チャネルアダプターによる調整",
     "Adjust user quota": "ユーザーのクォータを調整",

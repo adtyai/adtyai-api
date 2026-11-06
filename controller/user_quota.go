@@ -79,6 +79,9 @@ func manageUserQuota(c *gin.Context, req ManageRequest) {
 		case errors.Is(err, gorm.ErrRecordNotFound):
 			params["failure_reason"] = "target_not_found"
 			common.ApiErrorT(c, "User does not exist")
+		case errors.Is(err, model.ErrAdtyQuotaFloor):
+			params["failure_reason"] = "quota_floor"
+			common.ApiError(c, err)
 		case errors.Is(err, model.ErrWalletQuotaLimitExceeded):
 			params["failure_reason"] = "quota_limit_exceeded"
 			common.ApiError(c, err)
