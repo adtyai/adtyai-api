@@ -76,7 +76,7 @@ type NormalizedSSRFValues = {
   'fetch_setting.ip_filter_mode': boolean
   'fetch_setting.domain_list': string[]
   'fetch_setting.ip_list': string[]
-  'fetch_setting.allowed_ports': number[]
+  'fetch_setting.allowed_ports': string[]
   'fetch_setting.apply_ip_filter_for_domain': boolean
 }
 
@@ -88,7 +88,7 @@ type SSRFSectionProps = {
     'fetch_setting.ip_filter_mode': boolean
     'fetch_setting.domain_list': string[]
     'fetch_setting.ip_list': string[]
-    'fetch_setting.allowed_ports': number[]
+    'fetch_setting.allowed_ports': string[]
     'fetch_setting.apply_ip_filter_for_domain': boolean
   }
 }
@@ -99,11 +99,12 @@ const splitLines = (value: string) =>
     .map((entry) => entry.trim())
     .filter(Boolean)
 
+// The server stores port tokens as strings so ranges such as 8000-9000 survive.
 const parsePorts = (value: string) =>
   value
     .split(',')
-    .map((item) => Number.parseInt(item.trim(), 10))
-    .filter((port) => Number.isFinite(port))
+    .map((item) => item.trim())
+    .filter((item) => item !== '')
 
 const buildFormDefaults = (
   defaults: SSRFSectionProps['defaultValues']
@@ -190,12 +191,18 @@ export function SSRFSection({ defaultValues }: SSRFSectionProps) {
       return
     }
 
-    for (const key of updates) {
-      const value = normalized[key]
-      await updateOption.mutateAsync({
-        key,
-        value: Array.isArray(value) ? JSON.stringify(value) : value,
-      })
+    try {
+      for (const key of updates) {
+        const value = normalized[key]
+        await updateOption.mutateAsync({
+          key,
+          value: Array.isArray(value) ? JSON.stringify(value) : value,
+        })
+      }
+    } catch {
+      // useUpdateOption already shows the server error. A rejected save must
+      // not become an unhandled page error, and must not move the baseline.
+      return
     }
 
     baselineRef.current = normalized
