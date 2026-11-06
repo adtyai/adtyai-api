@@ -30,3 +30,18 @@ func TestAdjustRejectsSubtractHiddenByPendingBatch(t *testing.T) {
 	require.NoError(t, DB.Model(&AdtyBalanceLedger{}).Where("user_id = ?", user.Id).Count(&ledgers).Error)
 	require.Zero(t, ledgers)
 }
+
+func TestAdjustCacheCompensateFailureIsReviewed(t *testing.T) {
+	db := adtyTestDB(t)
+	require.NoError(t, db.AutoMigrate(&PaymentOrphanEvent{}))
+	previous := compensateManualQuotaDelta
+	compensateManualQuotaDelta = func(int, int64) (cacheQuotaResult, error) {
+		return cacheQuotaMiss, ErrAdtyQuotaFloor
+	}
+	t.Cleanup(func() { compensateManualQuotaDelta = previous })
+
+	compensateManualAdjustCache(41, 100)
+	var count int64
+	require.NoError(t, db.Model(&PaymentOrphanEvent{}).Where("event_type = ? AND reference_id = ?", "adjust_cache_compensate", "41").Count(&count).Error)
+	require.EqualValues(t, 1, count)
+}

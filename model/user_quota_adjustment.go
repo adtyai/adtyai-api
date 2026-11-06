@@ -2,6 +2,9 @@ package model
 
 import (
 	"errors"
+	"fmt"
+	"strconv"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/shopspring/decimal"
@@ -113,9 +116,39 @@ func applyManualAdjustCache(userID int, delta int64) (bool, error) {
 	return result == cacheQuotaOK, nil
 }
 
+// compensateManualQuotaDelta restores a cache write when the database transaction
+// rolls back. Tests replace it to force a restore failure.
+var compensateManualQuotaDelta = cacheApplyUserQuotaDelta
+
 func compensateManualAdjustCache(userID int, delta int64) {
-	if _, err := cacheApplyUserQuotaDelta(userID, -delta); err != nil {
+	if _, err := compensateManualQuotaDelta(userID, -delta); err != nil {
 		common.SysError(common.LogText("failed to compensate manual quota cache for user %d: %s", userID, err))
+		recordAdjustCacheDivergence(userID, delta, err)
+	}
+}
+
+func recordAdjustCacheDivergence(userID int, delta int64, cause error) {
+	if DB == nil || userID <= 0 {
+		return
+	}
+	message := ""
+	if cause != nil {
+		message = cause.Error()
+	}
+	event := &PaymentOrphanEvent{
+		Provider:    "wallet",
+		EventID:     fmt.Sprintf("adjust-cache-%d-%d", userID, time.Now().UnixNano()),
+		EventType:   "adjust_cache_compensate",
+		ReferenceID: strconv.Itoa(userID),
+		Status:      PaymentOrphanStatusPendingReview,
+		Reason:      "manual adjust cache compensate failed",
+		Error:       message,
+		Payload:     fmt.Sprintf(`{"user_id":%d,"delta":%d}`, userID, delta),
+		CreateTime:  common.GetTimestamp(),
+		UpdateTime:  common.GetTimestamp(),
+	}
+	if err := DB.Create(event).Error; err != nil {
+		common.SysError(common.LogText("failed to record adjust cache divergence for user %d: %s", userID, err.Error()))
 	}
 }
 
