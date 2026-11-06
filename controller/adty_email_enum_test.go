@@ -83,8 +83,8 @@ func TestVerificationDoesNotSendACodeWhenTheStoreIsDown(t *testing.T) {
 
 	fresh := callEmailHandler(SendEmailVerification, "/api/verification?email="+url.QueryEscape("new@example.com"))
 	reset := callEmailHandler(SendPasswordResetEmail, "/api/reset_password?email="+url.QueryEscape("taken@example.com"))
-	assert.Equal(t, http.StatusServiceUnavailable, fresh.Code)
-	assert.Equal(t, http.StatusServiceUnavailable, reset.Code)
+	assert.Equal(t, http.StatusOK, fresh.Code)
+	assert.Equal(t, http.StatusOK, reset.Code)
 	for _, mail := range sent() {
 		assert.NotEqual(t, "new@example.com", mail.to)
 		assert.NotContains(t, mail.content, "/user/reset")
@@ -98,6 +98,35 @@ func TestVerificationDoesNotSendACodeWhenTheStoreIsDown(t *testing.T) {
 	assert.Equal(t, http.StatusServiceUnavailable, missing.Code)
 	assert.Equal(t, missing.Code, registered.Code)
 	assert.Len(t, sent(), before)
+}
+
+func TestStoreFailureDoesNotRevealWhetherTheEmailExists(t *testing.T) {
+	emailEnumDB(t)
+	sent := captureAdtyMail(t)
+	server := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: server.Addr()})
+	previousEnabled, previousClient := common.RedisEnabled, common.RDB
+	t.Cleanup(func() {
+		common.RedisEnabled, common.RDB = previousEnabled, previousClient
+		_ = client.Close()
+	})
+	common.RedisEnabled = true
+	common.RDB = client
+	server.Close()
+
+	knownReset := callEmailHandler(SendPasswordResetEmail, "/api/reset_password?email="+url.QueryEscape("taken@example.com"))
+	unknownReset := callEmailHandler(SendPasswordResetEmail, "/api/reset_password?email="+url.QueryEscape("missing@example.com"))
+	assert.Equal(t, knownReset.Code, unknownReset.Code)
+	assert.JSONEq(t, knownReset.Body.String(), unknownReset.Body.String())
+
+	fresh := callEmailHandler(SendEmailVerification, "/api/verification?email="+url.QueryEscape("new@example.com"))
+	taken := callEmailHandler(SendEmailVerification, "/api/verification?email="+url.QueryEscape("taken@example.com"))
+	assert.Equal(t, fresh.Code, taken.Code)
+	assert.JSONEq(t, fresh.Body.String(), taken.Body.String())
+	for _, mail := range sent() {
+		assert.NotContains(t, mail.content, "/user/reset")
+		assert.NotContains(t, mail.content, "verification code is")
+	}
 }
 
 func TestVerificationSameResponseForRegisteredEmail(t *testing.T) {

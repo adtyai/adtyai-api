@@ -278,7 +278,8 @@ func SendEmailVerification(c *gin.Context) {
 	}
 	code := common.GenerateVerificationCode(6)
 	if err := common.RegisterVerificationCodeWithKey(email, code, common.EmailVerificationPurpose); err != nil {
-		common.ApiErrorStatus(c, http.StatusServiceUnavailable, common.NewMessage("Please try again later"))
+		// Same empty success as a registered address. A 503 here would show that the address is new.
+		c.JSON(http.StatusOK, gin.H{"success": true, "message": ""})
 		return
 	}
 	// The address may not belong to an account yet, so the mail follows the
@@ -315,29 +316,29 @@ func SendPasswordResetEmail(c *gin.Context) {
 	if user, err := model.GetUniqueUserByEmail(email); err == nil {
 		code := common.GenerateVerificationCode(0)
 		if err := common.RegisterVerificationCodeWithKey(email, code, common.PasswordResetPurpose); err != nil {
-			common.ApiErrorStatus(c, http.StatusServiceUnavailable, common.NewMessage("Please try again later"))
-			return
+			// Do not send a dead link, and do not use a different status from an unknown address.
+		} else {
+			// 二开：链接和站名用用户所属的站点，不读 Host 头（任务 11.3）
+			site := service.AdtySiteForUser(user.Id)
+			link := fmt.Sprintf("%s/user/reset?email=%s&token=%s", service.AdtySiteBaseURL(site), url.QueryEscape(email), url.QueryEscape(code))
+			lang := user.GetSetting().Language
+			if lang == "" {
+				lang = i18n.StatedLang(c)
+			}
+			systemName := map[string]any{"SystemName": service.AdtyBrandFor(site).HTMLName()}
+			linkParams := map[string]any{"Link": link}
+			subject := i18n.Translate(lang, i18n.MsgEmailPasswordResetSubject, systemName)
+			content := fmt.Sprintf("<p>%s</p>"+
+				"<p>%s</p>"+
+				"<p>%s </p>"+
+				"<p>%s</p>",
+				i18n.Translate(lang, i18n.MsgEmailPasswordResetGreeting, systemName),
+				i18n.Translate(lang, i18n.MsgEmailPasswordResetLink, linkParams),
+				i18n.Translate(lang, i18n.MsgEmailPasswordResetLinkFallback, linkParams),
+				i18n.Translate(lang, i18n.MsgEmailPasswordResetValidity, map[string]any{"Minutes": common.VerificationValidMinutes}))
+			// 二开：异步发信，响应时间不暴露邮箱是否存在（任务 7.3）
+			service.AdtySendSiteEmailAsync(site, subject, email, content)
 		}
-		// 二开：链接和站名用用户所属的站点，不读 Host 头（任务 11.3）
-		site := service.AdtySiteForUser(user.Id)
-		link := fmt.Sprintf("%s/user/reset?email=%s&token=%s", service.AdtySiteBaseURL(site), url.QueryEscape(email), url.QueryEscape(code))
-		lang := user.GetSetting().Language
-		if lang == "" {
-			lang = i18n.StatedLang(c)
-		}
-		systemName := map[string]any{"SystemName": service.AdtyBrandFor(site).HTMLName()}
-		linkParams := map[string]any{"Link": link}
-		subject := i18n.Translate(lang, i18n.MsgEmailPasswordResetSubject, systemName)
-		content := fmt.Sprintf("<p>%s</p>"+
-			"<p>%s</p>"+
-			"<p>%s </p>"+
-			"<p>%s</p>",
-			i18n.Translate(lang, i18n.MsgEmailPasswordResetGreeting, systemName),
-			i18n.Translate(lang, i18n.MsgEmailPasswordResetLink, linkParams),
-			i18n.Translate(lang, i18n.MsgEmailPasswordResetLinkFallback, linkParams),
-			i18n.Translate(lang, i18n.MsgEmailPasswordResetValidity, map[string]any{"Minutes": common.VerificationValidMinutes}))
-		// 二开：异步发信，响应时间不暴露邮箱是否存在（任务 7.3）
-		service.AdtySendSiteEmailAsync(site, subject, email, content)
 	} else if err != nil && !errors.Is(err, model.ErrEmailNotFound) {
 		logger.LogWarn(c.Request.Context(), common.LogText("skip password reset email for %s: %s", email, err.Error()))
 	}
