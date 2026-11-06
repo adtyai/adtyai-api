@@ -61,9 +61,10 @@ import {
   setSiteStatus,
   SITE_ADMIN_PAGE_SIZE,
   siteAdminKeys,
+  type AdminSenderDomain,
+  type AdminSiteDomain,
 } from '../api'
 import { siteNotice } from '../lib/sites'
-import type { AdminSenderDomain, AdminSiteDomain } from '../api'
 import type { AdminSite } from '../types'
 import { CloseSiteDialog } from './close-site-dialog'
 import { SiteStatusBadge } from './site-status-badge'

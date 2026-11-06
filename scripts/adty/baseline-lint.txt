@@ -37,7 +37,6 @@ src/components/copy-button.tsx 1
 src/components/data-table/core/column-header.tsx 2
 src/components/data-table/toolbar/faceted-filter.tsx 4
 src/components/data-table/toolbar/view-options.tsx 1
-src/components/layout/components/footer.tsx 2
 src/components/layout/components/nav-link-item.tsx 1
 src/components/layout/components/public-navigation.tsx 2
 src/components/layout/components/top-nav.tsx 1
@@ -77,7 +76,6 @@ src/features/system-settings/utils/json-parser.ts 1
 src/features/usage-logs/components/task-logs-filter-bar.tsx 1
 src/features/users/components/data-table-bulk-actions.tsx 3
 src/features/users/lib/user-actions.ts 1
-src/features/users/lib/user-form.ts 1
 src/hooks/use-table-url-state.ts 1
 src/lib/http-status-code-rules.ts 3
 src/lib/utils.ts 2
