@@ -75,16 +75,19 @@ function renderLobeIconFallback(
   identity?: { role?: string; label?: string }
 ): ReactNode {
   return (
-    <div
-      role={identity?.role}
-      aria-label={identity?.label}
-      width={size}
-      height={size}
-      className='bg-muted text-muted-foreground flex items-center justify-center rounded-full text-xs font-medium'
+    <span
+      className='bg-muted text-muted-foreground inline-flex items-center justify-center rounded-full text-xs font-medium'
       style={{ width: size, height: size }}
     >
       {name.charAt(0).toUpperCase() || '?'}
-    </div>
+      <svg
+        role={identity?.role}
+        aria-label={identity?.label}
+        aria-hidden={identity?.role ? undefined : true}
+        width={size}
+        height={size}
+      />
+    </span>
   )
 }
 
