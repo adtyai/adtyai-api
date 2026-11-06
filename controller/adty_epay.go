@@ -69,6 +69,14 @@ func RequestAdtyEpayPay(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	if err := replaceOtherPendingAdtyOrders(c); err != nil {
+		if errors.Is(err, service.ErrAdtyPaymentDetected) {
+			common.ApiErrorT(c, "A transfer has been detected. Please wait")
+			return
+		}
+		writeAdtyTopUpError(c, err)
+		return
+	}
 	minutes := adty_setting.GetTopupSetting().EpayOrderMinutes
 	if minutes <= 0 {
 		minutes = 10
@@ -94,6 +102,9 @@ func RequestAdtyEpayPay(c *gin.Context) {
 			expireAt:  time.Now().Unix() + int64(minutes*60),
 			channelID: channel.Id,
 		})
+		if errors.Is(err, model.ErrAdtyEpayDailyLimit) {
+			continue
+		}
 		if err != nil {
 			writeAdtyTopUpError(c, err)
 			return
@@ -190,7 +201,7 @@ func AdtyEpayNotify(c *gin.Context) {
 	}
 	payload := common.GetJsonString(params)
 	err = completeAdtyEpayCallback(channel, tradeNo, params, payload, adtyCallerIP(c))
-	if err == nil {
+	if err == nil || errors.Is(err, model.ErrAdtyDuplicatePayment) {
 		c.String(http.StatusOK, "success")
 		return
 	}

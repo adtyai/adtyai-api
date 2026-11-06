@@ -1,5 +1,11 @@
 .github
 .git
+.env
+.env.*
+data
+logs
+*.db
+electron
 *.md
 .vscode
 .gitignore

@@ -252,6 +252,17 @@ func TestSubdomainRules(t *testing.T) {
 	}
 }
 
+func TestApplyRejectsUnpublishedAgreement(t *testing.T) {
+	db := prepareSiteDB(t)
+	legal := adty_setting.GetLegalSetting()
+	previous := legal.SiteAgreementVersion
+	legal.SiteAgreementVersion = 0
+	t.Cleanup(func() { legal.SiteAgreementVersion = previous })
+	owner := referralUser(t, db, "unpublished")
+	_, err := ApplyAdtySite(owner.Id, "zero", "", "0", "")
+	assert.ErrorIs(t, err, ErrAdtySiteAgreement)
+}
+
 func TestOpenSiteByApplyThenApprove(t *testing.T) {
 	db := prepareSiteDB(t)
 	owner := referralUser(t, db, "applicant")

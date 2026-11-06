@@ -260,9 +260,10 @@ func TestBEpusdtCancelCallsGateway(t *testing.T) {
 	require.NoError(t, f.db.Where("trade_no = ?", paid.TradeNo).First(&stored).Error)
 	assert.Equal(t, common.TopUpStatusPending, stored.Status)
 
-	droppedOrder := payBEpusdt(t, f, token)
+	fresh, _ := bepusdtBuyer(t, f, "usdt-cancel-fresh")
+	droppedOrder := payBEpusdt(t, f, fresh)
 	gw.dropCancel = true
-	dropped := adtyJSON(t, f.engine, http.MethodPost, "/api/adty/topup/orders/"+droppedOrder.TradeNo+"/cancel", "", token)
+	dropped := adtyJSON(t, f.engine, http.MethodPost, "/api/adty/topup/orders/"+droppedOrder.TradeNo+"/cancel", "", fresh)
 	assert.Contains(t, dropped.Body.String(), `"success":true`, dropped.Body.String())
 	stored = model.TopUp{}
 	require.NoError(t, f.db.Where("trade_no = ?", droppedOrder.TradeNo).First(&stored).Error)

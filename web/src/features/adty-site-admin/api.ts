@@ -93,6 +93,18 @@ export async function getSiteReports(p: number): Promise<SitePage<SiteReport>> {
   return requireServerSuccess(res.data).data
 }
 
+export async function reviewFlaggedCustomer(
+  userId: number,
+  convertSkipped: boolean
+): Promise<{ user_id: number; reviewed: boolean }> {
+  const res = await api.post<
+    ApiResponse<{ user_id: number; reviewed: boolean }>
+  >(`${BASE}/sites/customers/${userId}/review`, {
+    convert_skipped: convertSkipped,
+  })
+  return requireServerSuccess(res.data).data
+}
+
 export async function handleSiteReport(
   id: number,
   body: { status: 'resolved' | 'dismissed'; note: string }
@@ -104,13 +116,47 @@ export async function handleSiteReport(
   return requireServerSuccess(res.data).data
 }
 
-export async function getSite(
+export type AdminSiteDomain = {
   id: number
-): Promise<{ site: AdminSite; audits: SiteAudit[] }> {
+  hostname: string
+  status: string
+}
+
+export type AdminSenderDomain = {
+  site_id: number
+  domain: string
+  status: string
+}
+
+export async function getSite(id: number): Promise<{
+  site: AdminSite
+  audits: SiteAudit[]
+  domains: AdminSiteDomain[]
+  sender_domains: AdminSenderDomain[]
+}> {
   const res = await api.get<
-    ApiResponse<{ site: AdminSite; audits: SiteAudit[] }>
+    ApiResponse<{
+      site: AdminSite
+      audits: SiteAudit[]
+      domains: AdminSiteDomain[]
+      sender_domains: AdminSenderDomain[]
+    }>
   >(`${BASE}/sites/${id}`)
   return requireServerSuccess(res.data).data
+}
+
+export async function disableSiteDomain(id: number): Promise<void> {
+  const res = await api.delete<ApiResponse<unknown>>(
+    `${BASE}/sites/domains/${id}`
+  )
+  requireServerSuccess(res.data)
+}
+
+export async function disableSiteSenderDomain(siteId: number): Promise<void> {
+  const res = await api.delete<ApiResponse<unknown>>(
+    `${BASE}/sites/${siteId}/sender-domain`
+  )
+  requireServerSuccess(res.data)
 }
 
 export async function getSiteCustomers(

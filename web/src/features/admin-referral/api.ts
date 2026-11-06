@@ -143,6 +143,7 @@ export const updateAffiliate = (
     rate?: number | null
     amount?: string
     reason?: string
+    idempotency_key?: string
   }
 ) => post(`/affiliates/${userId}/update`, body)
 

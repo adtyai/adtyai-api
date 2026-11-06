@@ -21,8 +21,11 @@ var defaultTrustedProxyCIDRs = []string{
 // engine. The returned slice can be reused by the outer and plugin engines.
 func ResolveTrustedProxies(raw string) (trustedProxies []string, usedDefaults bool, err error) {
 	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return append([]string(nil), defaultTrustedProxyCIDRs...), true, nil
+	if raw == "" || strings.EqualFold(raw, "none") {
+		return nil, false, nil
+	}
+	if strings.EqualFold(raw, "private") {
+		return append([]string(nil), defaultTrustedProxyCIDRs...), false, nil
 	}
 	if strings.EqualFold(raw, "none") {
 		return nil, false, nil

@@ -33,11 +33,11 @@ services:
       CRYPTO_SECRET: ${CRYPTO_SECRET:?set CRYPTO_SECRET in .env}
       # 这两项必须同时设（common/session_cookie.go）
       SESSION_COOKIE_SECURE: "true"
-      SESSION_COOKIE_TRUSTED_URL: ${SESSION_COOKIE_TRUSTED_URL:-https://adtyai.com}
+      SESSION_COOKIE_TRUSTED_URL: ${SESSION_COOKIE_TRUSTED_URL:?set SESSION_COOKIE_TRUSTED_URL in .env}
       ERROR_LOG_ENABLED: "true"
       BATCH_UPDATE_ENABLED: "true"
       NODE_NAME: ${NODE_NAME:-adtyai-node-1}
-      TZ: ${TZ:-Asia/Shanghai}
+      TZ: ${TZ:-UTC}
       # Nginx 的请求经下面这个网络的网关进入容器，只信任它
       TRUSTED_PROXIES: 172.30.0.1
     depends_on:
@@ -60,7 +60,7 @@ services:
       POSTGRES_USER: adtyai
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: adtyai
-      TZ: ${TZ:-Asia/Shanghai}
+      TZ: ${TZ:-UTC}
     volumes:
       - pg_data:/var/lib/postgresql/data
     healthcheck:

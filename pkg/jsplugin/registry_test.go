@@ -976,9 +976,9 @@ func TestRegistryNormalizesAllowedHosts(t *testing.T) {
 	}{
 		{name: "hostname lowercased", hosts: `["Upload.Example.com"]`, want: []string{"upload.example.com"}},
 		{name: "host with port accepted", hosts: `["upload.example.com:8443"]`, want: []string{"upload.example.com:8443"}},
-		{name: "bracketed ipv6 with port accepted", hosts: `["[::1]:8080"]`, want: []string{"[::1]:8080"}},
-		{name: "bracketed ipv6 accepted", hosts: `["[::1]"]`, want: []string{"[::1]"}},
-		{name: "bare ipv6 normalized to brackets", hosts: `["::1"]`, want: []string{"[::1]"}},
+		{name: "bracketed ipv6 loopback rejected", hosts: `["[::1]:8080"]`, wantError: "loopback"},
+		{name: "bracketed ipv6 accepted only when public", hosts: `["[2001:db8::1]"]`, want: []string{"[2001:db8::1]"}},
+		{name: "bare ipv6 loopback rejected", hosts: `["::1"]`, wantError: "loopback"},
 		{name: "scheme rejected", hosts: `["https://upload.example.com"]`, wantError: "without schemes"},
 		{name: "path rejected", hosts: `["upload.example.com/v1"]`, wantError: "without schemes"},
 		{name: "credentials rejected", hosts: `["user@upload.example.com"]`, wantError: "without schemes"},

@@ -97,8 +97,12 @@ export function AdtyTopupHistory() {
             {
               id: 'bonus',
               header: t('Bonus'),
-              cell: (row) =>
-                row.ext ? formatUsd(Number(row.ext.bonus_usd), locale) : '-',
+              cell: (row) => {
+                if (!row.ext) return '-'
+                const bonus =
+                  Number(row.ext.bonus_usd) + Number(row.ext.promo_bonus_usd || 0)
+                return formatUsd(bonus, locale)
+              },
             },
             {
               id: 'paid',

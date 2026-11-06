@@ -84,6 +84,7 @@ export function AffiliatePanel(props: {
   const [editing, setEditing] = useState<Editing | null>(null)
   const [rate, setRate] = useState('')
   const [amount, setAmount] = useState('')
+  const [adjustKey, setAdjustKey] = useState(() => crypto.randomUUID())
   const [reason, setReason] = useState('')
   const params = {
     p: page,
@@ -100,6 +101,7 @@ export function AffiliatePanel(props: {
     setRate('')
     setAmount('')
     setReason('')
+    setAdjustKey(crypto.randomUUID())
     void queryClient.invalidateQueries({ queryKey: adminReferralKeys.all })
   }
   const partner = useMutation({
@@ -124,6 +126,7 @@ export function AffiliatePanel(props: {
         rate: input.action === 'rate' ? ownRate : undefined,
         amount: input.action === 'adjust' ? amount : undefined,
         reason,
+        idempotency_key: input.action === 'adjust' ? adjustKey : undefined,
       }),
     onSuccess: done,
     onError: (err) => handleServerError(err),
@@ -326,7 +329,9 @@ export function AffiliatePanel(props: {
                 />
               </div>
               <Button
-                disabled={amount === '' || reason.trim() === ''}
+                disabled={
+                  update.isPending || amount === '' || reason.trim() === ''
+                }
                 onClick={() => act(editing.affiliate, 'adjust')}
               >
                 {t('Apply')}

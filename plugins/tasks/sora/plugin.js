@@ -124,12 +124,18 @@ export function parseSubmitResponse(ctx, resp) {
   return { taskId, taskData: body };
 }
 
+function soraSeconds(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 1 || n > 3600) throw new Error("seconds must be between 1 and 3600");
+  return n;
+}
+
 export function extractUsage(ctx) {
   if (ctx.action === "remix") return {};
   const req = ctx.requestBody || {};
-  let seconds = Number(req.seconds || req.duration || 4);
-  if (!Number.isFinite(seconds) || seconds <= 0) seconds = 4;
-  return { seconds: Math.min(seconds, 3600), size: req.size || "720x1280" };
+  const raw = req.seconds !== undefined && req.seconds !== null && req.seconds !== "" ? req.seconds : req.duration;
+  const seconds = raw === undefined || raw === null || raw === "" ? 4 : soraSeconds(raw);
+  return { seconds: seconds, size: req.size || "720x1280" };
 }
 
 export function extractUsageOnComplete(task, taskResult, body) {
@@ -197,8 +203,8 @@ export const protocols = {
       }
       const requestBody = { model: model, prompt: prompt };
       if (images.length) requestBody.input_reference = images[0];
-      if (Object.prototype.hasOwnProperty.call(req, "seconds")) requestBody.seconds = req.seconds;
-      else if (Object.prototype.hasOwnProperty.call(req, "duration")) requestBody.seconds = req.duration;
+      if (Object.prototype.hasOwnProperty.call(req, "seconds")) requestBody.seconds = soraSeconds(req.seconds);
+      else if (Object.prototype.hasOwnProperty.call(req, "duration")) requestBody.seconds = soraSeconds(req.duration);
       if (Object.prototype.hasOwnProperty.call(req, "size")) requestBody.size = req.size;
       if (Object.prototype.hasOwnProperty.call(req, "metadata")) requestBody.metadata = req.metadata;
       return { kind: "submit", model: model, action: images.length ? "image_to_video" : "text_to_video", requestBody: requestBody };

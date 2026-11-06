@@ -255,7 +255,13 @@ function startServer() {
     }
 
     // 生产模式：启动二进制服务器
-    const env = { ...process.env, PORT: PORT.toString() };
+    const env = { ...process.env, PORT: PORT.toString(), HOST: '127.0.0.1' };
+    // Unpublished wrapper must not inherit a production database or payment secrets.
+    for (const key of Object.keys(env)) {
+      if (/DSN|SECRET|PASSWORD|TOKEN|KEY|REDIS/i.test(key) && key !== 'PATH') {
+        delete env[key];
+      }
+    }
 
     if (!fs.existsSync(dataDir)) {
       fs.mkdirSync(dataDir, { recursive: true });
@@ -399,6 +405,18 @@ function createWindow() {
     },
     title: 'New API',
     icon: path.join(__dirname, 'icon.png')
+  });
+  const allowNavigation = (target) => {
+    try {
+      const parsed = new URL(target);
+      return parsed.hostname === '127.0.0.1' && parsed.port === String(loadPort);
+    } catch {
+      return false;
+    }
+  };
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  mainWindow.webContents.on('will-navigate', (event, target) => {
+    if (!allowNavigation(target)) event.preventDefault();
   });
 
   mainWindow.loadURL(`http://127.0.0.1:${loadPort}`);

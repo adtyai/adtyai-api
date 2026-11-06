@@ -121,7 +121,7 @@ if [ "$run_frontend" -eq 1 ]; then
   node scripts/adty/ratchet.mjs lint
   step "web：bun run test"
   (cd web && bun run test)
-  step "web：我们的语言键 7 种语言齐全（scripts/adty/i18n-check.mjs，任务 9.2）"
+  step "web：我们的语言键 8 种语言齐全（scripts/adty/i18n-check.mjs，含 ko）"
   (cd web && node scripts/adty/i18n-check.mjs)
   step "web：bun run copyright:check（和 scripts/adty/baseline-copyright.txt 比较）"
   node scripts/adty/ratchet.mjs copyright

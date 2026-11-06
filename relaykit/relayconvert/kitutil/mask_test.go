@@ -32,6 +32,12 @@ func TestMaskSensitiveInfoMasksOnlyTheUpstreamAddress(t *testing.T) {
 			want:         `dial failed to ws://***:8080/***/***: dial tcp [***]:8080: connect: connection refused`,
 		},
 		{
+			name:         "channel secrets in an upstream JSON body are masked",
+			upstreamURLs: nil,
+			input:        `{"error":{"message":"Incorrect API key provided: sk-channel-secret"}} Authorization: Bearer sk-live-token-value`,
+			want:         `{"error":{"message":"Incorrect API key provided: ***"}} Authorization: ***`,
+		},
+		{
 			name:         "no upstream address still masks API key values",
 			upstreamURLs: nil,
 			input:        `invalid api_key:AIzaSyAAAaUooTUni8AdaOkSRMda30n_Q4vrV70`,

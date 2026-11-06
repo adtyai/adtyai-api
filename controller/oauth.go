@@ -49,7 +49,9 @@ func GenerateOAuthCode(c *gin.Context) {
 	}
 	request.Provider = strings.TrimSpace(request.Provider)
 	request.Intent = strings.TrimSpace(request.Intent)
-	if oauth.GetProvider(request.Provider) == nil ||
+	refreshCustomOAuthProvider(request.Provider)
+	provider := oauth.GetProvider(request.Provider)
+	if provider == nil || !provider.IsEnabled() ||
 		(request.Intent != model.AuthFlowIntentLogin && request.Intent != model.AuthFlowIntentBind && request.Intent != model.AuthFlowIntentVerify) ||
 		(request.Intent != model.AuthFlowIntentVerify && (request.Scope != "" || len(request.Context) != 0)) {
 		common.ApiErrorT(c, "Invalid parameters")
@@ -137,9 +139,26 @@ func GenerateOAuthCode(c *gin.Context) {
 	})
 }
 
+// refreshCustomOAuthProvider reloads custom providers from the database so a
+// disable on one instance is not ignored by another process's memory copy.
+func refreshCustomOAuthProvider(name string) {
+	if name == "" || (!oauth.IsCustomProvider(name) && !customOAuthRowExists(name)) {
+		return
+	}
+	if err := oauth.ReloadCustomProviders(); err != nil {
+		common.SysError(common.LogText("reload custom oauth providers: %s", err.Error()))
+	}
+}
+
+func customOAuthRowExists(name string) bool {
+	row, err := model.GetCustomOAuthProviderBySlug(name)
+	return err == nil && row != nil
+}
+
 // HandleOAuth handles OAuth callback for all standard OAuth providers
 func HandleOAuth(c *gin.Context) {
 	providerName := c.Param("provider")
+	refreshCustomOAuthProvider(providerName)
 	provider := oauth.GetProvider(providerName)
 	if provider == nil {
 		writeAccountStatusError(c, http.StatusBadRequest, "Unknown OAuth provider")

@@ -45,8 +45,10 @@ func GetSetup(c *gin.Context) {
 }
 
 func PostSetup(c *gin.Context) {
-	// Check if setup is already completed
-	if constant.Setup {
+	// The in-memory flag is per process. Another instance, or a restart that
+	// already wrote the setup row, must not accept another anonymous write.
+	if constant.Setup || model.GetSetup() != nil || model.RootUserExists() {
+		constant.Setup = true
 		common.ApiErrorT(c, "The system is already initialized")
 		return
 	}
@@ -68,9 +70,9 @@ func PostSetup(c *gin.Context) {
 			common.ApiErrorT(c, "Invalid parameters")
 			return
 		}
-		// Validate username length: max 12 characters to align with model.User validation
-		if len(req.Username) > 12 {
-			common.ApiErrorT(c, "Username must be {{max}} characters or fewer", map[string]any{"max": 12})
+		// Same username rule as registration: at most 20 characters, and no @.
+		if len(req.Username) > 20 {
+			common.ApiErrorT(c, "Username must be {{max}} characters or fewer", map[string]any{"max": 20})
 			return
 		}
 		if err := common.Validate.StructPartial(&model.User{Username: req.Username}, "Username"); err != nil {

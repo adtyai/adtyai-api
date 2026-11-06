@@ -2,9 +2,12 @@ package controller
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
 	"errors"
 	"fmt"
 	"math/big"
+	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -129,6 +132,19 @@ func CancelAdtyTopUpOrder(c *gin.Context) {
 	common.ApiSuccess(c, nil)
 }
 
+// FlushAdtyBatchUpdates lets the backup script persist in-memory quota deltas
+// before pg_dump. It is not a user route: the shared token must match.
+func FlushAdtyBatchUpdates(c *gin.Context) {
+	expected := os.Getenv("ADTY_FLUSH_TOKEN")
+	provided := c.GetHeader("X-Adty-Flush-Token")
+	if expected == "" || len(provided) != len(expected) || subtle.ConstantTimeCompare([]byte(provided), []byte(expected)) != 1 {
+		c.AbortWithStatus(http.StatusForbidden)
+		return
+	}
+	model.FlushBatchUpdates()
+	common.ApiSuccess(c, gin.H{"flushed": true})
+}
+
 // GetAdtyTopUpPending 返回本人最新一笔还没过期的 pending 订单，没有时 data 为 null。
 func GetAdtyTopUpPending(c *gin.Context) {
 	view, err := model.GetUserPendingAdtyTopUp(c.GetInt("id"), time.Now().Unix())
@@ -169,6 +185,37 @@ func newAdtyTradeNo(prefix string, userID int) (string, error) {
 		return "", err
 	}
 	return fmt.Sprintf("%s%d%06d%d", prefix, userID, n.Int64(), time.Now().Unix()), nil
+}
+
+// replaceOtherPendingAdtyOrders freezes the user's other payable orders before
+// a new one is created, and asks the gateway to cancel when it can.
+func replaceOtherPendingAdtyOrders(c *gin.Context) error {
+	userID := c.GetInt("id")
+	tradeNos, err := model.ListUserPendingAdtyTradeNos(userID)
+	if err != nil {
+		return err
+	}
+	for _, tradeNo := range tradeNos {
+		_, err := model.ReplaceAdtyTopUpAfterLock(tradeNo, userID, func(locked *model.AdtyTopupOrder) error {
+			provider := service.AdtyPaymentProviderByName(locked.Provider)
+			if provider == nil {
+				return nil
+			}
+			cancelErr := provider.Cancel(locked)
+			if cancelErr == nil || errors.Is(cancelErr, service.ErrAdtyPaymentDetected) {
+				return cancelErr
+			}
+			common.SysLog(common.LogText("replace adty order at provider failed trade_no=%s: %s", locked.TradeNo, cancelErr.Error()))
+			return nil
+		})
+		if errors.Is(err, model.ErrAdtyTopUpNotCancel) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // createAdtyOrder 写 top_ups 和扩展行，带上返佣快照。

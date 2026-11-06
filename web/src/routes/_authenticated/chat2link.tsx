@@ -24,8 +24,10 @@ import { toast } from 'sonner'
 
 import { useActiveChatKey } from '@/features/chat/hooks/use-active-chat-key'
 import { useChatPresets } from '@/features/chat/hooks/use-chat-presets'
+import { chat2LinkOutcome } from '@/features/chat/lib/chat2link'
 import { resolveChatUrl } from '@/features/chat/lib/chat-links'
 import { handleServerError } from '@/lib/handle-server-error'
+import { useStatus } from '@/hooks/use-status'
 
 export const Route = createFileRoute('/_authenticated/chat2link')({
   component: Chat2LinkPage,
@@ -34,7 +36,9 @@ export const Route = createFileRoute('/_authenticated/chat2link')({
 function Chat2LinkPage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
+  const { loading } = useStatus()
   const { chatPresets, serverAddress } = useChatPresets()
+  const outcome = chat2LinkOutcome(chatPresets, loading)
 
   const firstWebPreset = useMemo(
     () => chatPresets.find((p) => p.type === 'web'),
@@ -46,10 +50,13 @@ function Chat2LinkPage() {
   )
 
   useEffect(() => {
+    if (outcome === 'pending') return
+    if (outcome === 'missing') {
+      toast.error(t('No available Web chat links'))
+      navigate({ to: '/dashboard' })
+      return
+    }
     if (!firstWebPreset) {
-      if (chatPresets.length > 0) {
-        toast.error(t('No available Web chat links'))
-      }
       return
     }
 
@@ -81,14 +88,19 @@ function Chat2LinkPage() {
     serverAddress,
     chatPresets.length,
     navigate,
+    outcome,
     t,
   ])
 
   return (
     <div className='flex h-full flex-col items-center justify-center gap-3'>
-      <Loader2 className='text-muted-foreground h-8 w-8 animate-spin' />
+      {outcome !== 'missing' ? (
+        <Loader2 className='text-muted-foreground h-8 w-8 animate-spin' />
+      ) : null}
       <p className='text-muted-foreground text-sm'>
-        {t('Redirecting to chat page...')}
+        {outcome === 'missing'
+          ? t('No available Web chat links')
+          : t('Redirecting to chat page...')}
       </p>
     </div>
   )

@@ -224,10 +224,11 @@ func UpdateReferralAffiliate(c *gin.Context) {
 		return
 	}
 	var body struct {
-		Action string          `json:"action"` // rate | disable | restore | freeze_settlement | restore_settlement | freeze_withdrawal | restore_withdrawal | restore_referral | adjust
-		Rate   *float64        `json:"rate"`
-		Amount decimal.Decimal `json:"amount"`
-		Reason string          `json:"reason"`
+		Action         string          `json:"action"` // rate | disable | restore | freeze_settlement | restore_settlement | freeze_withdrawal | restore_withdrawal | restore_referral | adjust
+		Rate           *float64        `json:"rate"`
+		Amount         decimal.Decimal `json:"amount"`
+		Reason         string          `json:"reason"`
+		IdempotencyKey string          `json:"idempotency_key"`
 	}
 	if err := common.DecodeJson(c.Request.Body, &body); err != nil {
 		common.ApiErrorT(c, "Invalid parameters")
@@ -268,17 +269,25 @@ func UpdateReferralAffiliate(c *gin.Context) {
 			}
 			updates["site_owner_since"] = 0
 		case "adjust":
-			if body.Amount.IsZero() || strings.TrimSpace(body.Reason) == "" {
-				return common.NewMessage("Enter an amount and a reason")
+			key := strings.TrimSpace(body.IdempotencyKey)
+			if body.Amount.IsZero() || strings.TrimSpace(body.Reason) == "" || key == "" || len(key) > 80 || strings.ContainsAny(key, " \t\r\n") {
+				return common.NewMessage("Enter an amount, a reason, and an idempotency key")
 			}
-			var acc model.ReferralCommissionAccount
-			if err := model.AdtyLockForUpdate(tx).Where("affiliate_id = ?", affiliate.Id).First(&acc).Error; err != nil {
+			ref := "admin-adjust:" + strconv.Itoa(adminID) + ":" + key
+			var seen int64
+			if err := tx.Model(&model.ReferralCommissionLedger{}).Where("external_ref_id = ?", ref).Count(&seen).Error; err != nil {
 				return err
 			}
-			if err := service.AdjustAccountTx(tx, &acc, decimal.Zero, body.Amount.Round(2), decimal.Zero, decimal.Zero, model.ReferralCommissionLedger{
-				Type: "admin_adjust", RefType: "admin", RefId: fmt.Sprint(adminID), Remark: strings.TrimSpace(body.Reason), Operator: fmt.Sprint(adminID),
-			}); err != nil {
-				return err
+			if seen == 0 {
+				var acc model.ReferralCommissionAccount
+				if err := model.AdtyLockForUpdate(tx).Where("affiliate_id = ?", affiliate.Id).First(&acc).Error; err != nil {
+					return err
+				}
+				if err := service.AdjustAccountTx(tx, &acc, decimal.Zero, body.Amount.Round(2), decimal.Zero, decimal.Zero, model.ReferralCommissionLedger{
+					Type: "admin_adjust", RefType: "admin", RefId: fmt.Sprint(adminID), ExternalRefId: ref, Remark: strings.TrimSpace(body.Reason), Operator: fmt.Sprint(adminID),
+				}); err != nil {
+					return err
+				}
 			}
 		default:
 			return common.NewMessage("Invalid parameters")

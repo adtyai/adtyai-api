@@ -299,7 +299,12 @@ func enforceAccessTokenRoute(c *gin.Context, lookup *accessTokenLookup, abort bo
 	case declared && rule.kind == accessTokenRuleSession:
 		code, reason, message = "AUTH_SESSION_REQUIRED", "session_required", common.NewMessage(accessTokenSessionRequiredMsg)
 	case lookup.legacy:
-		return true
+		// Legacy plaintext tokens have no scopes. Reads may continue until the
+		// retirement deadline; writes, including balance and role changes, must not.
+		if c.Request.Method == http.MethodGet || c.Request.Method == http.MethodHead {
+			return true
+		}
+		code, reason, message = "AUTH_LEGACY_TOKEN_WRITE", "legacy_token_write", common.NewMessage("Unauthorized, insufficient privileges")
 	case !declared:
 		common.SysError(common.LogText("access token route is not declared: %s", key))
 		code, reason, message = "ACCESS_TOKEN_ROUTE_UNDECLARED", "route_undeclared", common.NewMessage("Unauthorized, insufficient privileges")

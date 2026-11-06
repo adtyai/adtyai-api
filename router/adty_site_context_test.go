@@ -65,8 +65,8 @@ func newSiteFixture(t *testing.T) *siteFixture {
 
 	applicant := model.User{Username: "pending-owner", Password: "x", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: "default", AuthVersion: 1}
 	require.NoError(t, db.Create(&applicant).Error)
-	adty_setting.GetLegalSetting().SiteAgreementVersion = 0
-	pending, err := service.ApplyAdtySite(applicant.Id, "later", "", "0", "")
+	adty_setting.GetLegalSetting().SiteAgreementVersion = 1
+	pending, err := service.ApplyAdtySite(applicant.Id, "later", "", "1", "")
 	require.NoError(t, err)
 	service.InvalidateAdtySiteCache()
 
@@ -110,8 +110,8 @@ func siteOf(t *testing.T, engine *gin.Engine, host string) *model.AdtySite {
 	var captured *model.AdtySite
 	probe := gin.New()
 	probe.Use(middleware.AdtySiteContext())
-	probe.GET("/api/probe", func(c *gin.Context) { captured = service.AdtySiteForRequest(c) })
-	req := httptest.NewRequest(http.MethodGet, "/api/probe", nil)
+	probe.GET("/", func(c *gin.Context) { captured = service.AdtySiteForRequest(c) })
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Host = host
 	probe.ServeHTTP(httptest.NewRecorder(), req)
 	return captured
@@ -216,6 +216,8 @@ func TestCustomDomainRedirectsConsoleAndRejectsAccountAPI(t *testing.T) {
 	assert.Contains(t, wallet.Header().Get("Location"), "https://shop.sites.example.com/wallet")
 
 	assert.Equal(t, http.StatusForbidden, f.do(t, http.MethodGet, "api.customer-brand.com", "/api/user/self", "").Code)
+	assert.Equal(t, http.StatusForbidden, f.do(t, http.MethodPost, "api.customer-brand.com", "/api/adty/epay/pay", `{}`).Code)
+	assert.Equal(t, http.StatusForbidden, f.do(t, http.MethodPut, "api.customer-brand.com", "/api/adty/marketing/self", `{}`).Code)
 	assert.Equal(t, http.StatusOK, f.do(t, http.MethodGet, "api.customer-brand.com", "/", "").Code)
 	assert.NotEqual(t, http.StatusForbidden, f.do(t, http.MethodGet, "shop.sites.example.com", "/api/user/self", "").Code)
 }

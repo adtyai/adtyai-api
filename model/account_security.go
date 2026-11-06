@@ -50,6 +50,9 @@ func ChangeUserPassword(identity AuthSessionIdentity, update *User, firstPasswor
 		if _, err := IncrementUserAuthVersionWithTx(tx, identity.UserID); err != nil {
 			return err
 		}
+		if _, err := DeleteUserAccessTokensWithTx(tx, identity.UserID); err != nil {
+			return err
+		}
 		if err := tx.Model(&User{}).Where("id = ?", identity.UserID).Updates(changes).Error; err != nil {
 			return err
 		}

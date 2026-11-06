@@ -50,6 +50,8 @@ import { useAuthStore } from '@/stores/auth-store'
 import {
   adjustSite,
   clearSiteNotice,
+  disableSiteDomain,
+  disableSiteSenderDomain,
   getSite,
   getSiteCustomers,
   getSiteStats,
@@ -61,6 +63,7 @@ import {
   siteAdminKeys,
 } from '../api'
 import { siteNotice } from '../lib/sites'
+import type { AdminSenderDomain, AdminSiteDomain } from '../api'
 import type { AdminSite } from '../types'
 import { CloseSiteDialog } from './close-site-dialog'
 import { SiteStatusBadge } from './site-status-badge'
@@ -357,6 +360,73 @@ function SiteCustomers(props: { siteId: number }) {
   )
 }
 
+function SiteDomains(props: {
+  siteId: number
+  domains: AdminSiteDomain[]
+  senders: AdminSenderDomain[]
+}) {
+  const { t } = useTranslation()
+  const queryClient = useQueryClient()
+  const user = useAuthStore((state) => state.auth.user)
+  const canAdjust = canAdmin(user, ADTY_PERMISSIONS.SITE_ADJUST)
+  const disableDomain = useMutation({
+    mutationFn: disableSiteDomain,
+    onSuccess: () => {
+      toast.success(t('Saved successfully'))
+      void queryClient.invalidateQueries({ queryKey: siteAdminKeys.all })
+    },
+    onError: (err) => handleServerError(err),
+  })
+  const disableSender = useMutation({
+    mutationFn: () => disableSiteSenderDomain(props.siteId),
+    onSuccess: () => {
+      toast.success(t('Saved successfully'))
+      void queryClient.invalidateQueries({ queryKey: siteAdminKeys.all })
+    },
+    onError: (err) => handleServerError(err),
+  })
+  if (props.domains.length === 0 && props.senders.length === 0) return null
+  return (
+    <section className='flex flex-col gap-2'>
+      <h3 className='text-sm font-medium'>{t('Custom domains')}</h3>
+      {props.domains.map((domain) => (
+        <div key={domain.id} className='flex items-center justify-between gap-2'>
+          <span className='text-sm break-all'>
+            {domain.hostname} · {domain.status}
+          </span>
+          {canAdjust && (
+            <Button
+              variant='outline'
+              size='sm'
+              disabled={disableDomain.isPending}
+              onClick={() => disableDomain.mutate(domain.id)}
+            >
+              {t('Disable')}
+            </Button>
+          )}
+        </div>
+      ))}
+      {props.senders.map((sender) => (
+        <div key={sender.domain} className='flex items-center justify-between gap-2'>
+          <span className='text-sm break-all'>
+            {sender.domain} · {sender.status}
+          </span>
+          {canAdjust && (
+            <Button
+              variant='outline'
+              size='sm'
+              disabled={disableSender.isPending}
+              onClick={() => disableSender.mutate()}
+            >
+              {t('Disable')} {t('Sender domain')}
+            </Button>
+          )}
+        </div>
+      ))}
+    </section>
+  )
+}
+
 /** Details of one site (task 11.9): info, actions, customers and the audit trail. */
 export function SiteDetailSheet(props: {
   siteId: number | null
@@ -436,6 +506,11 @@ export function SiteDetailSheet(props: {
               </dl>
             </section>
             <SiteActions site={site} />
+            <SiteDomains
+              siteId={site.id}
+              domains={query.data?.domains ?? []}
+              senders={query.data?.sender_domains ?? []}
+            />
             <SiteCustomers siteId={site.id} />
             <section className='flex flex-col gap-2'>
               <h3 className='text-sm font-medium'>{t('Audit trail')}</h3>

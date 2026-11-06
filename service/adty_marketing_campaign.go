@@ -27,6 +27,8 @@ var (
 	ErrAdtyCampaignNotEditable = common.NewMessage("This campaign has already been sent")
 	// ErrAdtyCampaignEmpty：没有符合条件的收件人。
 	ErrAdtyCampaignEmpty = common.NewMessage("No recipients match these filters")
+	// ErrAdtyContactNotSendable means the person unsubscribed or was blocked after the audience snapshot.
+	ErrAdtyContactNotSendable = errors.New("marketing contact is not sendable")
 )
 
 // AdtyMarketingSender 是一个站点的营销发件人。
@@ -235,6 +237,9 @@ func sendAdtyCampaignBatches(ctx context.Context, campaign *model.AdtyMarketingC
 		recipients := make([]model.AdtyMarketingCampaignRecipient, 0, len(batch.rows))
 		for _, row := range batch.rows {
 			contactID, err := adtyEnsureResendContact(ctx, row)
+			if errors.Is(err, ErrAdtyContactNotSendable) {
+				continue
+			}
 			if err != nil {
 				return err
 			}
@@ -266,6 +271,13 @@ func sendAdtyCampaignBatches(ctx context.Context, campaign *model.AdtyMarketingC
 
 // adtyEnsureResendContact 返回收件人在 Resend 上的联系人 id；还没同步的先同步这一个人。
 func adtyEnsureResendContact(ctx context.Context, row model.AdtyMarketingAudienceRow) (string, error) {
+	contactNow, err := model.GetAdtyMarketingContact(row.UserId)
+	if err != nil || contactNow == nil {
+		return "", errors.Join(err, errors.New("marketing contact missing"))
+	}
+	if !contactNow.Sendable() {
+		return "", ErrAdtyContactNotSendable
+	}
 	if row.Synced && row.ResendContactId != "" {
 		return row.ResendContactId, nil
 	}
@@ -280,8 +292,8 @@ func adtyEnsureResendContact(ctx context.Context, row model.AdtyMarketingAudienc
 	if err != nil {
 		return "", err
 	}
-	if contact.ResendContactId == "" {
-		return "", errors.New("marketing contact was not synced")
+	if contact.ResendContactId == "" || !contact.Sendable() {
+		return "", ErrAdtyContactNotSendable
 	}
 	return contact.ResendContactId, nil
 }

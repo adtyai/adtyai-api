@@ -172,7 +172,7 @@ function converted(ctx) {
   const req = ctx.requestBody || {};
   const metadata = Object.assign({}, req.metadata || {});
   const params = Object.assign({}, metadata);
-  if (Number(req.duration) > 0) params.durationSeconds = Number(req.duration);
+  if (req.duration !== undefined && req.duration !== null && req.duration !== "") params.durationSeconds = veoSeconds(req.duration);
   if (!params.resolution && req.size) params.resolution = resolutionForSize(req.size);
   if (!params.aspectRatio && req.size) params.aspectRatio = aspectForSize(req.size);
   if (params.resolution) params.resolution = String(params.resolution).toLowerCase();
@@ -263,11 +263,17 @@ export function parseSubmitResponse(ctx, resp) {
   return result;
 }
 
+function veoSeconds(value) {
+  if (value === undefined || value === null || value === "") return 8;
+  const n = Number(value);
+  if (n !== 4 && n !== 6 && n !== 8) throw new Error("seconds must be one of 4, 6, or 8");
+  return n;
+}
+
 export function extractUsage(ctx) {
   const req = ctx.requestBody || {};
   const metadata = req.metadata || {};
-  let seconds = Number(req.duration);
-  if (!Number.isFinite(seconds) || seconds <= 0) seconds = 8;
+  const seconds = veoSeconds(req.duration);
   const resolution = String(metadata.resolution || resolutionForSize(req.size) || "720p").toLowerCase();
   return { seconds: seconds, resolution: resolution };
 }
@@ -352,8 +358,8 @@ export const protocols = {
       if (Object.prototype.hasOwnProperty.call(req, "resolution")) metadata.resolution = req.resolution;
       const requestBody = { model: model, prompt: prompt, metadata: metadata };
       if (images.length) requestBody.images = images;
-      if (Object.prototype.hasOwnProperty.call(req, "seconds")) requestBody.duration = req.seconds;
-      else if (Object.prototype.hasOwnProperty.call(req, "duration")) requestBody.duration = req.duration;
+      const rawSeconds = Object.prototype.hasOwnProperty.call(req, "seconds") ? req.seconds : req.duration;
+      if (rawSeconds !== undefined) requestBody.duration = veoSeconds(rawSeconds);
       if (Object.prototype.hasOwnProperty.call(req, "size")) requestBody.size = req.size;
       return { kind: "submit", model: model, action: images.length ? "image_to_video" : "text_to_video", requestBody: requestBody };
     },

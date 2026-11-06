@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/middleware"
@@ -63,6 +64,17 @@ func newAdtyGuardFixture(t *testing.T) *adtyGuardFixture {
 	require.NoError(t, db.Where("username = ?", "guard-admin").First(&admin).Error)
 	root := adtySessionToken(t, db, "guard-root", common.RoleRootUser)
 	return &adtyGuardFixture{db: db, engine: engine, admin: admin, token: token, root: root}
+}
+
+func createAdtyScopedToken(t *testing.T, userID int, scopes ...string) string {
+	t.Helper()
+	suffix, err := common.GenerateRandomCharsKey(43)
+	require.NoError(t, err)
+	raw := model.AccessTokenPrefix + suffix
+	accessToken := &model.UserAccessToken{Name: "guard pat", TokenHash: model.AccessTokenFingerprint(raw), TokenHint: model.AccessTokenHint(raw)}
+	require.NoError(t, accessToken.SetScopes(scopes))
+	require.NoError(t, model.CreateUserAccessToken(userID, accessToken, service.AccessTokenMaxPerUser))
+	return raw
 }
 
 func (f *adtyGuardFixture) grant(t *testing.T, permissions ...authz.Permission) {
@@ -129,6 +141,29 @@ func TestUnclassifiedAdminScopeIsRootOnly(t *testing.T) {
 	resp := adtyJSON(t, f.engine, http.MethodGet, "/api/deployments/settings", "", f.token)
 	assert.Equal(t, http.StatusForbidden, resp.Code)
 	assert.Equal(t, http.StatusOK, adtyJSON(t, f.engine, http.MethodGet, "/api/user/", "", f.token).Code)
+}
+
+func TestUserWriteAccessTokenCannotAdjustQuotaOrPromote(t *testing.T) {
+	f := newAdtyGuardFixture(t)
+	require.NoError(t, model.EnsureLegacyAccessTokenRetireAt(time.Now().Unix()))
+	f.grant(t, authz.AdtyUserWrite, authz.AdtyUserQuota)
+	target := model.User{Username: "pat-target", Password: "hashed-password", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: "default", AuthVersion: 1}
+	require.NoError(t, f.db.Create(&target).Error)
+	raw := createAdtyScopedToken(t, f.admin.Id, "user:write")
+
+	adjust := adtyJSON(t, f.engine, http.MethodPost, "/api/user/manage", fmt.Sprintf(`{"id":%d,"action":"add_quota","mode":"add","value":500,"reason":"pat","idempotency_key":"pat-quota-1"}`, target.Id), raw)
+	assert.Equal(t, http.StatusForbidden, adjust.Code, adjust.Body.String())
+	promote := adtyJSON(t, f.engine, http.MethodPost, "/api/user/manage", fmt.Sprintf(`{"id":%d,"action":"promote"}`, target.Id), raw)
+	assert.Equal(t, http.StatusForbidden, promote.Code, promote.Body.String())
+
+	var stored model.User
+	require.NoError(t, f.db.First(&stored, target.Id).Error)
+	assert.EqualValues(t, 0, stored.Quota)
+	assert.Equal(t, common.RoleCommonUser, stored.Role)
+
+	quotaToken := createAdtyScopedToken(t, f.admin.Id, service.AccessTokenScopeOf(authz.AdtyUserQuota))
+	allowed := adtyJSON(t, f.engine, http.MethodPost, "/api/user/manage", fmt.Sprintf(`{"id":%d,"action":"add_quota","mode":"add","value":500,"reason":"pat","idempotency_key":"pat-quota-2"}`, target.Id), quotaToken)
+	require.Equal(t, http.StatusOK, allowed.Code, allowed.Body.String())
 }
 
 func TestFinancePresetCanAdjustQuota(t *testing.T) {

@@ -28,6 +28,7 @@ import {
   getFlaggedCustomers,
   getSiteReports,
   handleSiteReport,
+  reviewFlaggedCustomer,
   siteAdminKeys,
 } from '../api'
 
@@ -42,6 +43,14 @@ export function ReviewsPanel() {
   const reports = useQuery({
     queryKey: siteAdminKeys.list('reports', { p: 1 }),
     queryFn: () => getSiteReports(1),
+  })
+  const review = useMutation({
+    mutationFn: (userId: number) => reviewFlaggedCustomer(userId, true),
+    onSuccess: () => {
+      toast.success(t('Review this customer'))
+      void queryClient.invalidateQueries({ queryKey: siteAdminKeys.all })
+    },
+    onError: (error) => handleServerError(error),
   })
   const resolve = useMutation({
     mutationFn: (id: number) =>
@@ -64,8 +73,18 @@ export function ReviewsPanel() {
         ) : (
           <ul>
             {flaggedRows.map((row) => (
-              <li key={`${row.site_id}-${row.user_id}`}>
-                {row.risk_reason || row.risk_flag}
+              <li
+                key={`${row.site_id}-${row.user_id}`}
+                className='flex items-center justify-between gap-2'
+              >
+                <span>{row.risk_reason || row.risk_flag}</span>
+                <Button
+                  size='sm'
+                  onClick={() => review.mutate(row.user_id)}
+                  disabled={row.reviewed || review.isPending}
+                >
+                  {t('Review this customer')}
+                </Button>
               </li>
             ))}
           </ul>

@@ -155,6 +155,11 @@ func sendAdtyTriggerEmail(ctx context.Context, rule adtyTriggerRule, candidate m
 	if err != nil || !claimed {
 		return false, err
 	}
+	contact, contactErr := model.GetAdtyMarketingContact(candidate.UserId)
+	if contactErr != nil || contact == nil || !contact.Sendable() {
+		_ = model.FinishAdtyTriggerSend(rule.name, candidate.UserId, "", false)
+		return false, nil
+	}
 	lang := adtyMarketingLang(candidate.Lang)
 	version := lang
 	if strings.TrimSpace(rule.subjects[lang]) == "" || strings.TrimSpace(rule.bodies[lang]) == "" {

@@ -3,6 +3,7 @@ package router
 import (
 	"fmt"
 	"net/http"
+	"strconv"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
@@ -188,4 +189,33 @@ func TestRestoreReferralClearsSiteOwnerSince(t *testing.T) {
 	var stored model.ReferralAffiliate
 	require.NoError(t, f.db.First(&stored, affiliate.Id).Error)
 	assert.Zero(t, stored.SiteOwnerSince)
+}
+
+func TestAdminReferralAdjustIsIdempotent(t *testing.T) {
+	f := newAdtyGuardFixture(t)
+	f.grant(t, authz.AdtyReferralAdjust)
+	adtySessionToken(t, f.db, "adjust-affiliate", common.RoleCommonUser)
+	var user model.User
+	require.NoError(t, f.db.Where("username = ?", "adjust-affiliate").First(&user).Error)
+	affiliate, err := service.Referral.EnsureAffiliate(user.Id)
+	require.NoError(t, err)
+	var existing int64
+	require.NoError(t, f.db.Model(&model.ReferralCommissionAccount{}).Where("affiliate_id = ?", affiliate.Id).Count(&existing).Error)
+	if existing == 0 {
+		require.NoError(t, f.db.Create(&model.ReferralCommissionAccount{AffiliateId: affiliate.Id, UserId: user.Id}).Error)
+	}
+
+	path := fmt.Sprintf("/api/user/admin/referral/affiliates/%d/update", user.Id)
+	body := `{"action":"adjust","amount":"3.50","reason":"goodwill","idempotency_key":"adj-1"}`
+	first := adtyJSON(t, f.engine, http.MethodPost, path, body, f.token)
+	require.Equal(t, http.StatusOK, first.Code, first.Body.String())
+	second := adtyJSON(t, f.engine, http.MethodPost, path, body, f.token)
+	require.Equal(t, http.StatusOK, second.Code, second.Body.String())
+
+	var account model.ReferralCommissionAccount
+	require.NoError(t, f.db.Where("affiliate_id = ?", affiliate.Id).First(&account).Error)
+	assert.InDelta(t, 3.5, account.AvailableAmount, 0.001, "available=%v", account.AvailableAmount)
+	var ledgers int64
+	require.NoError(t, f.db.Model(&model.ReferralCommissionLedger{}).Where("external_ref_id = ?", "admin-adjust:"+strconv.Itoa(f.admin.Id)+":adj-1").Count(&ledgers).Error)
+	assert.EqualValues(t, 1, ledgers)
 }

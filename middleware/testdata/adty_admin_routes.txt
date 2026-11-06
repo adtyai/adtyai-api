@@ -58,7 +58,6 @@ POST /api/models/delete model:write
 POST /api/models/sync_upstream model:write
 POST /api/prefill_group/ group:write
 POST /api/user/ user:write
-POST /api/user/manage user:write
 POST /api/user/topup/complete billing:write
 POST /api/vendors/ model:write
 POST /api/vendors/operations model:write

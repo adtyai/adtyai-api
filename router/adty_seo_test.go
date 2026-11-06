@@ -224,6 +224,8 @@ func TestNoServerAddressOmitsCanonical(t *testing.T) {
 		assert.NotContains(t, body, `hreflang=`, address)
 		assert.NotContains(t, body, `og:url`, address)
 		assert.NotContains(t, body, `application/ld+json`, address)
+		assert.Contains(t, body, `<meta name="robots" content="noindex" />`, address)
+		assert.Equal(t, "noindex", f.serve(t, "adtyai.com", "/").Header().Get("X-Robots-Tag"), address)
 	}
 }
 

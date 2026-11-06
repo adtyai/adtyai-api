@@ -662,6 +662,20 @@ func (a *TaskAdaptor) FetchTask(baseURL, key string, task *model.Task, proxy str
 	return a.doFetchDescriptor(baseURL, key, proxy, descriptor)
 }
 
+func pluginOutboundClient(baseURL, proxy, requestURL string, setting kitdto.ChannelSettings) (*http.Client, error) {
+	if pluginruntime.RequestUsesChannelBase(requestURL, baseURL) {
+		return service.GetHttpClientWithProxySettings(proxy, setting)
+	}
+	if err := service.ValidateSSRFProtectedFetchURL(requestURL); err != nil {
+		return nil, err
+	}
+	client := service.GetSSRFProtectedHTTPClient()
+	if client == nil {
+		return nil, errors.New("ssrf protected client is not initialized")
+	}
+	return client, nil
+}
+
 // hookFetcher sends a driver hook's utils.fetch requests to the hosts its
 // request descriptors may use, through the channel's proxy like poll requests.
 func (a *TaskAdaptor) hookFetcher(baseURL, proxy string) pluginruntime.Fetcher {
@@ -669,7 +683,7 @@ func (a *TaskAdaptor) hookFetcher(baseURL, proxy string) pluginruntime.Fetcher {
 		if err := pluginruntime.ValidateRequestURL(request.URL, baseURL, a.plugin.Meta.AllowedHosts); err != nil {
 			return pluginruntime.FetchResponse{}, err
 		}
-		client, err := service.GetHttpClientWithProxySettings(proxy, a.channelSetting())
+		client, err := pluginOutboundClient(baseURL, proxy, request.URL, a.channelSetting())
 		if err != nil {
 			return pluginruntime.FetchResponse{}, err
 		}
@@ -740,7 +754,7 @@ func (a *TaskAdaptor) doFetchDescriptor(baseURL, key, proxy string, descriptor r
 	if err := channel.ApplyHeaderOverride(a.headerOverrideInfo(key), nil, req); err != nil {
 		return nil, err
 	}
-	client, err := service.GetHttpClientWithProxySettings(proxy, a.channelSetting())
+	client, err := pluginOutboundClient(baseURL, proxy, descriptor.URL, a.channelSetting())
 	if err != nil {
 		return nil, err
 	}

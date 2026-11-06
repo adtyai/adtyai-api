@@ -334,8 +334,9 @@ func SendPasswordResetEmail(c *gin.Context) {
 }
 
 type PasswordResetRequest struct {
-	Email string `json:"email"`
-	Token string `json:"token"`
+	Email    string `json:"email"`
+	Token    string `json:"token"`
+	Password string `json:"password"`
 }
 
 func ResetPassword(c *gin.Context) {
@@ -350,13 +351,16 @@ func ResetPassword(c *gin.Context) {
 		common.ApiErrorT(c, "Invalid parameters")
 		return
 	}
+	if err := common.Validate.StructPartial(&model.User{Password: req.Password}, "Password"); err != nil {
+		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
 	issued, ok := common.ConsumeVerificationCodeWithKey(req.Email, req.Token, common.PasswordResetPurpose)
 	if !ok {
 		common.ApiErrorT(c, "Password reset link is invalid or has expired")
 		return
 	}
-	password := common.GenerateVerificationCode(12)
-	err = model.ResetUserPasswordByEmail(req.Email, password)
+	err = model.ResetUserPasswordByEmail(req.Email, req.Password)
 	if err != nil {
 		common.RestoreVerificationCodeWithKey(req.Email, req.Token, common.PasswordResetPurpose, issued)
 		if errors.Is(err, model.ErrEmailNotFound) || errors.Is(err, model.ErrEmailAmbiguous) {
@@ -369,7 +373,5 @@ func ResetPassword(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
-		"data":    password,
 	})
-	return
 }

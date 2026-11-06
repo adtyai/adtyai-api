@@ -1313,6 +1313,9 @@ func ResetUserPasswordByEmail(email string, password string) error {
 		if _, err := IncrementUserAuthVersionWithTx(tx, user.Id); err != nil {
 			return err
 		}
+		if _, err := DeleteUserAccessTokensWithTx(tx, user.Id); err != nil {
+			return err
+		}
 		return tx.Model(&User{}).Where("id = ?", user.Id).Update("password", hashedPassword).Error
 	}); err != nil {
 		return err

@@ -24,6 +24,9 @@ func ValidateRequestURL(requestURL, baseURL string, allowedHosts []string) error
 	if requestHost == canonicalHost(base) {
 		return nil
 	}
+	if hostIsPrivateOrMetadata(request.Hostname()) {
+		return fmt.Errorf("plugin request host %q is not allowed", request.Host)
+	}
 	for _, allowed := range allowedHosts {
 		// Parse with the request scheme so "host:443" matches an https request
 		// the same way an explicit default port on the request URL does.
@@ -57,6 +60,33 @@ func ValidateRequestHeaders(headers map[string]string) error {
 		}
 	}
 	return nil
+}
+
+// RequestUsesChannelBase reports whether the URL is the operator-configured
+// channel base. That host may be private; every other plugin host may not.
+func RequestUsesChannelBase(requestURL, baseURL string) bool {
+	request, err := url.Parse(requestURL)
+	base, baseErr := url.Parse(baseURL)
+	if err != nil || baseErr != nil || request.Host == "" || base.Host == "" {
+		return false
+	}
+	return canonicalHost(request) == canonicalHost(base)
+}
+
+func hostIsPrivateOrMetadata(host string) bool {
+	name := strings.ToLower(strings.Trim(host, "[]"))
+	if name == "metadata" || name == "metadata.google.internal" || strings.HasSuffix(name, ".metadata.google.internal") {
+		return true
+	}
+	ip := net.ParseIP(name)
+	if ip == nil {
+		return false
+	}
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
+		return true
+	}
+	v4 := ip.To4()
+	return v4 != nil && v4[0] == 100 && v4[1] >= 64 && v4[1] <= 127
 }
 
 func canonicalHost(value *url.URL) string {

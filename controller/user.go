@@ -75,6 +75,10 @@ func Login(c *gin.Context) {
 		common.ApiErrorT(c, "Invalid parameters")
 		return
 	}
+	if adtyLoginLocked(username) {
+		common.ApiError(c, adtyLoginFailureResponse())
+		return
+	}
 	user := model.User{
 		Username: username,
 		Password: password,
@@ -88,10 +92,12 @@ func Login(c *gin.Context) {
 		case errors.Is(err, model.ErrUserEmptyCredentials):
 			common.ApiErrorT(c, "Invalid parameters")
 		default:
-			common.ApiErrorT(c, "Username or password is incorrect, or user has been banned")
+			adtyRecordLoginFailure(username)
+			common.ApiError(c, adtyLoginFailureResponse())
 		}
 		return
 	}
+	adtyClearLoginFailures(username)
 
 	setupLogin(&user, nil, c)
 }
@@ -692,6 +698,7 @@ func UpdateUser(c *gin.Context) {
 			common.ApiError(c, err)
 			return
 		}
+		authz.NotifyPolicyChanged()
 		recordAdtyPermissionChange(c, permissionChange)
 	}
 	if updatedUser.AuthVersion > originUser.AuthVersion {
@@ -1041,6 +1048,7 @@ func CreateUser(c *gin.Context) {
 			common.ApiError(c, err)
 			return
 		}
+		authz.NotifyPolicyChanged()
 	}
 	cleanUser.FinishInsert(0)
 
@@ -1200,6 +1208,7 @@ func ManageUser(c *gin.Context) {
 			common.ApiError(c, err)
 			return
 		}
+		authz.NotifyPolicyChanged()
 	} else if err := model.DB.Transaction(func(tx *gorm.DB) error {
 		var txErr error
 		changed, txErr = model.ApplyManagedUserAccessTx(tx, &user)

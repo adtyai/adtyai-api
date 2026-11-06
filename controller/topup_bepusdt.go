@@ -47,6 +47,14 @@ func RequestBEpusdtPay(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	if err := replaceOtherPendingAdtyOrders(c); err != nil {
+		if errors.Is(err, service.ErrAdtyPaymentDetected) {
+			common.ApiErrorT(c, "A transfer has been detected. Please wait")
+			return
+		}
+		writeAdtyTopUpError(c, err)
+		return
+	}
 	minutes := adty_setting.GetTopupSetting().USDTOrderMinutes
 	if minutes <= 0 {
 		minutes = 15
@@ -152,7 +160,7 @@ func BEpusdtTopUpNotify(c *gin.Context) {
 		_, err = model.CompleteAdtyTopUp(tradeNo, facts, adtyCallerIP(c))
 		UnlockOrder(tradeNo)
 	}
-	if err == nil {
+	if err == nil || errors.Is(err, model.ErrAdtyDuplicatePayment) {
 		c.String(http.StatusOK, "ok")
 		return
 	}

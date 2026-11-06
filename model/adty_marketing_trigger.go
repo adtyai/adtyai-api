@@ -61,6 +61,7 @@ func AdtyTriggerCandidates(f AdtyTriggerCandidateFilter) ([]AdtyTriggerCandidate
 	query := DB.Table("adty_marketing_contacts").
 		Joins("JOIN users ON users.id = adty_marketing_contacts.user_id AND users.deleted_at IS NULL").
 		Where("users.status = ?", common.UserStatusEnabled).
+		Where("users.site_id = ?", 0).
 		Scopes(AdtyMarketingSendableScope).
 		Where("NOT EXISTS (SELECT 1 FROM adty_marketing_trigger_sends s WHERE s.user_id = users.id AND s.rule = ? AND (s.status = ? OR (s.status = ? AND s.created_at > ?)))",
 			f.Rule, "sent", "sending", f.Now-AdtyTriggerSendingLeaseSeconds)

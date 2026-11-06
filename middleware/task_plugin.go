@@ -1411,7 +1411,7 @@ func sanitizedTaskPluginError(status int, detail string) dto.TaskPluginError {
 		}
 	}
 	if detail != "" && taskErr.HTTPStatus < 500 {
-		taskErr.Message = detail
+		taskErr.Message = common.MaskSensitiveInfo(detail)
 	}
 	return taskErr
 }

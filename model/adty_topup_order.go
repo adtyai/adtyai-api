@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
@@ -18,6 +19,7 @@ const (
 
 	TopUpStatusCanceled = "canceled"
 	TopUpStatusRefunded = "refunded"
+	TopUpStatusReplaced = "replaced"
 
 	AdtyPaymentSourceCallback = "callback"
 	AdtyPaymentSourceQuery    = "query"
@@ -94,6 +96,7 @@ type AdtyPaymentFacts struct {
 var (
 	ErrPaymentAmountMismatch = errors.New("payment amount mismatch")
 	ErrAdtyTopUpNotCancel    = errors.New("adty topup cannot be canceled")
+	ErrAdtyDuplicatePayment  = errors.New("duplicate payment on a completed order")
 )
 
 // AdtyAfterTopUpCreditedTx 在入账事务里调用（P6 注册返佣计佣任务）。只能做不会失败的写，
@@ -112,6 +115,11 @@ func CreateAdtyTopUp(topUp *TopUp, ext *AdtyTopupOrder) error {
 		return ErrPaymentMethodMismatch
 	}
 	return DB.Transaction(func(tx *gorm.DB) error {
+		if ext.Provider == PaymentProviderAdtyEpay && ext.ChannelId > 0 {
+			if err := lockAdtyEpayDailyRoom(tx, ext.ChannelId, ext.Method, ext.PayAmount, time.Now().Unix()); err != nil {
+				return err
+			}
+		}
 		if err := tx.Create(topUp).Error; err != nil {
 			return err
 		}
@@ -168,6 +176,9 @@ func CompleteAdtyTopUpTx(tx *gorm.DB, tradeNo string, facts AdtyPaymentFacts) (a
 	}
 	switch topUp.Status {
 	case common.TopUpStatusSuccess:
+		if adtyPaymentVoucherDiffers(ext, facts) {
+			return false, 0, topUp, ext, ErrAdtyDuplicatePayment
+		}
 		return true, 0, topUp, ext, nil
 	case common.TopUpStatusPending, common.TopUpStatusExpired, common.TopUpStatusFailed, TopUpStatusCanceled:
 	default:
@@ -224,6 +235,32 @@ func CompleteAdtyTopUpTx(tx *gorm.DB, tradeNo string, facts AdtyPaymentFacts) (a
 	return false, credited, topUp, ext, nil
 }
 
+// adtyPaymentVoucherDiffers is true when a completed order is notified again
+// with a different payment voucher. An empty incoming hash is a replay of the
+// same notice, not a second payment.
+func adtyPaymentVoucherDiffers(ext *AdtyTopupOrder, facts AdtyPaymentFacts) bool {
+	incoming := strings.TrimSpace(facts.TxHash)
+	stored := strings.TrimSpace(ext.PaidTxHash)
+	return incoming != "" && stored != "" && !strings.EqualFold(incoming, stored)
+}
+
+func recordDuplicatePaymentReview(tradeNo string, facts AdtyPaymentFacts, cause error) {
+	if DB == nil {
+		return
+	}
+	if err := RecordPaymentOrphanEvent(&PaymentOrphanEvent{
+		Provider:    facts.Provider,
+		EventType:   "duplicate_payment",
+		ReferenceID: tradeNo,
+		SessionID:   strings.TrimSpace(facts.TxHash),
+		Reason:      "a completed order received a different payment voucher",
+		Error:       cause.Error(),
+		Payload:     facts.Payload,
+	}); err != nil {
+		common.SysError(common.LogText("record duplicate payment review failed trade_no=%s: %s", tradeNo, err.Error()))
+	}
+}
+
 // checkAdtyPaymentFacts 核对回调或补查的金额：USDT 要求法币金额等于面额 × 分组充值倍率、
 // 实付不少于应付、收款地址和 trade_id 与下单时一致；易支付要求人民币金额分毫不差。
 func checkAdtyPaymentFacts(ext *AdtyTopupOrder, facts AdtyPaymentFacts) error {
@@ -266,6 +303,10 @@ func CompleteAdtyTopUp(tradeNo string, facts AdtyPaymentFacts, callerIp string) 
 		alreadyDone, credited, topUp, ext, txErr = CompleteAdtyTopUpTx(tx, tradeNo, facts)
 		return txErr
 	})
+	if errors.Is(err, ErrAdtyDuplicatePayment) {
+		recordDuplicatePaymentReview(tradeNo, facts, err)
+		return false, err
+	}
 	if err != nil {
 		return false, err
 	}
@@ -299,6 +340,44 @@ func finishAdtyTopUpCredit(topUp *TopUp, ext *AdtyTopupOrder, credited int, call
 // CancelAdtyTopUp 取消本人的 pending 订单。
 func CancelAdtyTopUp(tradeNo string, userId int) (*AdtyTopupOrder, error) {
 	return CancelAdtyTopUpAfterLock(tradeNo, userId, nil)
+}
+
+// ListUserPendingAdtyTradeNos returns the user's still-payable order numbers.
+func ListUserPendingAdtyTradeNos(userId int) ([]string, error) {
+	var tradeNos []string
+	err := DB.Table("adty_topup_orders AS a").
+		Joins("JOIN top_ups t ON t.trade_no = a.trade_no").
+		Where("a.user_id = ? AND t.status = ?", userId, common.TopUpStatusPending).
+		Order("a.id ASC").
+		Pluck("a.trade_no", &tradeNos).Error
+	return tradeNos, err
+}
+
+// ReplaceAdtyTopUpAfterLock freezes a pending order the user is abandoning by
+// starting another payment. A later success callback is reviewed instead of
+// credited, unlike a user-canceled order that may still settle under PAY-06.
+func ReplaceAdtyTopUpAfterLock(tradeNo string, userId int, confirm func(*AdtyTopupOrder) error) (*AdtyTopupOrder, error) {
+	var ext *AdtyTopupOrder
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		topUp, locked, err := lockAdtyTopUpTx(tx, tradeNo)
+		if err != nil {
+			return err
+		}
+		if topUp.UserId != userId {
+			return ErrTopUpNotFound
+		}
+		if topUp.Status != common.TopUpStatusPending {
+			return ErrAdtyTopUpNotCancel
+		}
+		if confirm != nil {
+			if err := confirm(locked); err != nil {
+				return err
+			}
+		}
+		ext = locked
+		return tx.Model(&TopUp{}).Where("id = ?", topUp.Id).Update("status", TopUpStatusReplaced).Error
+	})
+	return ext, err
 }
 
 // CancelAdtyTopUpAfterLock 先锁住订单。confirm 在锁内调用，用来问支付商。

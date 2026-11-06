@@ -1,6 +1,7 @@
 package common
 
 import (
+	"context"
 	"strings"
 	"sync"
 	"time"
@@ -32,12 +33,28 @@ func GenerateVerificationCode(length int) string {
 	return code[:length]
 }
 
+func verificationRedisKey(purpose, key string) string {
+	return "adty:verify:" + purpose + ":" + key
+}
+
+func verificationStoreShared() bool {
+	return RedisEnabled && RDB != nil
+}
+
 func RegisterVerificationCodeWithKey(key string, code string, purpose string) {
+	issued := time.Now()
+	if verificationStoreShared() {
+		payload := issued.UTC().Format(time.RFC3339Nano) + "\n" + code
+		if err := RDB.Set(context.Background(), verificationRedisKey(purpose, key), payload, time.Duration(VerificationValidMinutes)*time.Minute).Err(); err != nil {
+			SysError(LogText("verification code store failed: %s", err.Error()))
+		}
+		return
+	}
 	verificationMutex.Lock()
 	defer verificationMutex.Unlock()
 	verificationMap[purpose+key] = verificationValue{
 		code: code,
-		time: time.Now(),
+		time: issued,
 	}
 	if len(verificationMap) > verificationMapMaxSize {
 		removeExpiredPairs()
@@ -45,6 +62,10 @@ func RegisterVerificationCodeWithKey(key string, code string, purpose string) {
 }
 
 func VerifyCodeWithKey(key string, code string, purpose string) bool {
+	if verificationStoreShared() {
+		_, ok := consumeSharedVerification(key, code, purpose, false)
+		return ok
+	}
 	verificationMutex.Lock()
 	defer verificationMutex.Unlock()
 	return verificationCodeMatches(key, code, purpose, time.Now())
@@ -53,6 +74,9 @@ func VerifyCodeWithKey(key string, code string, purpose string) bool {
 // ConsumeVerificationCodeWithKey 核对并立刻删掉验证码。同一个码只有一次能成功。
 // 返回的签发时间用于失败时按原有效期放回去。
 func ConsumeVerificationCodeWithKey(key string, code string, purpose string) (time.Time, bool) {
+	if verificationStoreShared() {
+		return consumeSharedVerification(key, code, purpose, true)
+	}
 	verificationMutex.Lock()
 	defer verificationMutex.Unlock()
 	now := time.Now()
@@ -64,9 +88,46 @@ func ConsumeVerificationCodeWithKey(key string, code string, purpose string) (ti
 	return issued, true
 }
 
+func consumeSharedVerification(key, code, purpose string, deleteKey bool) (time.Time, bool) {
+	redisKey := verificationRedisKey(purpose, key)
+	var payload string
+	var err error
+	if deleteKey {
+		payload, err = RDB.GetDel(context.Background(), redisKey).Result()
+	} else {
+		payload, err = RDB.Get(context.Background(), redisKey).Result()
+	}
+	if err != nil || payload == "" {
+		return time.Time{}, false
+	}
+	issuedText, stored, ok := strings.Cut(payload, "\n")
+	if !ok || stored != code {
+		return time.Time{}, false
+	}
+	issued, err := time.Parse(time.RFC3339Nano, issuedText)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return issued, true
+}
+
 // RestoreVerificationCodeWithKey 在消费之后的写入失败时把原码放回去。
 // 期间已经发了新码，或原码已经过期，就不再放回。
 func RestoreVerificationCodeWithKey(key string, code string, purpose string, issued time.Time) {
+	if verificationStoreShared() {
+		if code == "" || issued.IsZero() || int(time.Since(issued).Seconds()) >= VerificationValidMinutes*60 {
+			return
+		}
+		payload := issued.UTC().Format(time.RFC3339Nano) + "\n" + code
+		ttl := time.Duration(VerificationValidMinutes)*time.Minute - time.Since(issued)
+		if ttl <= 0 {
+			return
+		}
+		if err := RDB.SetNX(context.Background(), verificationRedisKey(purpose, key), payload, ttl).Err(); err != nil {
+			SysError(LogText("verification code restore failed: %s", err.Error()))
+		}
+		return
+	}
 	verificationMutex.Lock()
 	defer verificationMutex.Unlock()
 	if code == "" || issued.IsZero() {

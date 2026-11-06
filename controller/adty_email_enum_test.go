@@ -128,7 +128,7 @@ func TestResetLinkSingleUse(t *testing.T) {
 		recorder := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(recorder)
 		c.Request = httptest.NewRequest(http.MethodPost, "/api/user/reset",
-			strings.NewReader(`{"email":"taken@example.com","token":"`+token+`"}`))
+			strings.NewReader(`{"email":"taken@example.com","token":"`+token+`","password":"reset-pass-1"}`))
 		ResetPassword(c)
 		return recorder.Body.String()
 	}
@@ -153,7 +153,6 @@ func TestResetLinkConsumedOnceUnderConcurrency(t *testing.T) {
 	}
 	wg.Wait()
 
-	var password string
 	successes := 0
 	for _, body := range bodies {
 		var parsed struct {
@@ -163,7 +162,8 @@ func TestResetLinkConsumedOnceUnderConcurrency(t *testing.T) {
 		require.NoError(t, common.Unmarshal([]byte(body), &parsed))
 		if parsed.Success {
 			successes++
-			password = parsed.Data
+			assert.Empty(t, parsed.Data, "the new password must not be returned")
+			assert.NotContains(t, body, "reset-pass-1")
 			continue
 		}
 		assert.Contains(t, body, "Password reset link is invalid or has expired")
@@ -171,7 +171,7 @@ func TestResetLinkConsumedOnceUnderConcurrency(t *testing.T) {
 	assert.Equal(t, 1, successes)
 	var user model.User
 	require.NoError(t, model.DB.Where("email = ?", "taken@example.com").First(&user).Error)
-	assert.True(t, common.ValidatePasswordAndHash(password, user.Password), "the returned password is the one stored")
+	assert.True(t, common.ValidatePasswordAndHash("reset-pass-1", user.Password), "the chosen password is the one stored")
 	assert.Contains(t, postPasswordReset("taken@example.com", token), "Password reset link is invalid or has expired")
 }
 
@@ -196,13 +196,10 @@ func TestResetLinkRestoredWhenPasswordWriteFails(t *testing.T) {
 	failWrite = false
 	kept := postPasswordReset("taken@example.com", token)
 	assert.Contains(t, kept, `"success":true`)
-	var parsed struct {
-		Data string `json:"data"`
-	}
-	require.NoError(t, common.Unmarshal([]byte(kept), &parsed))
+	assert.NotContains(t, kept, "reset-pass-1")
 	var user model.User
 	require.NoError(t, model.DB.Where("email = ?", "taken@example.com").First(&user).Error)
-	assert.True(t, common.ValidatePasswordAndHash(parsed.Data, user.Password))
+	assert.True(t, common.ValidatePasswordAndHash("reset-pass-1", user.Password))
 }
 
 func resetTokenFromMail(t *testing.T, mails []sentMail) string {
@@ -216,7 +213,7 @@ func resetTokenFromMail(t *testing.T, mails []sentMail) string {
 func postPasswordReset(email, token string) string {
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
-	body, _ := common.Marshal(map[string]string{"email": email, "token": token})
+	body, _ := common.Marshal(map[string]string{"email": email, "token": token, "password": "reset-pass-1"})
 	c.Request = httptest.NewRequest(http.MethodPost, "/api/user/reset", strings.NewReader(string(body)))
 	ResetPassword(c)
 	return recorder.Body.String()

@@ -331,7 +331,17 @@ func GetAdtyAdminSite(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	common.ApiSuccess(c, gin.H{"site": views[0], "audits": audits})
+	var domains []model.AdtySiteDomain
+	if err := model.DB.Where("site_id = ? AND status <> ?", id, model.AdtySiteDomainRemoved).Order("id DESC").Find(&domains).Error; err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	var senders []model.AdtySiteSenderDomain
+	if err := model.DB.Where("site_id = ? AND status <> ?", id, model.AdtySenderDomainDisabled).Find(&senders).Error; err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"site": views[0], "audits": audits, "domains": domains, "sender_domains": senders})
 }
 
 // GetAdtyAdminSiteCustomers 列出一个分站的客户（分站·查看）。没有用户查看权限时邮箱打码。

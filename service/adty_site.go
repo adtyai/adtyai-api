@@ -243,7 +243,7 @@ func OpenAdtySite(userId int, subdomain, openedBy string, preset AdtySitePreset)
 		return nil, err
 	}
 	currentVer := AdtyCurrentSiteAgreementVersion()
-	if openedBy != model.AdtySiteOpenedByAdmin && strings.TrimSpace(preset.AgreementVer) != currentVer {
+	if openedBy != model.AdtySiteOpenedByAdmin && (adty_setting.GetLegalSetting().SiteAgreementVersion <= 0 || strings.TrimSpace(preset.AgreementVer) != currentVer) {
 		return nil, ErrAdtySiteAgreement
 	}
 	root := preset.ExplicitRoot

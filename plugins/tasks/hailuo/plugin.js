@@ -208,10 +208,21 @@ function resolutionFor(size, model) {
   return defaultResolution(model);
 }
 
-function outboundDuration(req) {
-  const n = Number(req && req.duration);
-  if (Number.isFinite(n) && n > 0) return n;
-  return 6;
+function assertHailuoDuration(model, duration) {
+  if (isH3(model) || duration === undefined) return;
+  const n = Number(duration);
+  if (!isModernHailuo(model)) {
+    if (n !== 6) throw new Error(model + " duration must be 6");
+    return;
+  }
+  if (n !== 6 && n !== 10) throw new Error(model + " duration must be 6 or 10");
+}
+
+function outboundDuration(req, model) {
+  const raw = req && req.duration;
+  if (raw === undefined || raw === null || raw === "") return 6;
+  assertHailuoDuration(model, raw);
+  return Number(raw);
 }
 
 function outboundResolution(req, model) {
@@ -578,7 +589,7 @@ export function buildSubmitRequest(ctx) {
     {
       model: model,
       prompt: req.prompt || undefined,
-      duration: outboundDuration(req),
+      duration: outboundDuration(req, model),
       resolution: outboundResolution(req, model),
     },
     definedFields(metadata, V1_METADATA_FIELDS)
@@ -629,7 +640,7 @@ export function extractUsage(ctx) {
         : 0,
     };
   }
-  return { seconds: outboundDuration(req), resolution: outboundResolution(req, model), input_images: 0, input_video_seconds: 0 };
+  return { seconds: outboundDuration(req, model), resolution: outboundResolution(req, model), input_images: 0, input_video_seconds: 0 };
 }
 
 export function buildQueryRequest(ctx) {
@@ -794,6 +805,9 @@ export const protocols = {
       if (images.length) requestBody.images = images;
       if (Object.prototype.hasOwnProperty.call(req, "seconds")) requestBody.duration = req.seconds;
       else if (Object.prototype.hasOwnProperty.call(req, "duration")) requestBody.duration = req.duration;
+      const comboModel = model;
+      const comboDuration = requestBody.duration === undefined ? undefined : Number(requestBody.duration);
+      validateHailuoCombo(comboModel, comboDuration, outboundResolution(requestBody, comboModel), images.length > 0);
       if (Object.prototype.hasOwnProperty.call(req, "size")) requestBody.size = req.size;
       else if (Object.prototype.hasOwnProperty.call(req, "resolution")) requestBody.size = req.resolution;
       return { kind: "submit", model: model, action: images.length ? "image_to_video" : "text_to_video", requestBody: requestBody };

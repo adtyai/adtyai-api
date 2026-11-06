@@ -316,6 +316,7 @@ func RefundAdtyTopUp(tradeNo, reason string, operatorID int, idemKey string, exp
 	if !replay && cacheCharged == 0 && result.DeductedQuota > 0 {
 		if err := cacheDecrUserQuota(userID, result.DeductedQuota); err != nil {
 			common.SysError(common.LogText("refund cache update failed user_id=%d: %s", userID, err.Error()))
+			recordRefundCacheReview(userID, -result.DeductedQuota, "refund cache update failed", err.Error())
 		}
 	}
 	return result, nil
@@ -323,6 +324,27 @@ func RefundAdtyTopUp(tradeNo, reason string, operatorID int, idemKey string, exp
 
 // compensateRefundCacheOrReview puts the cache debit back after a failed refund.
 // If that also fails, it writes a review row so the wallet and Redis do not diverge silently.
+func recordRefundCacheReview(userID int, delta int64, reason, cause string) {
+	if DB == nil || userID <= 0 {
+		return
+	}
+	event := &PaymentOrphanEvent{
+		Provider:    "wallet",
+		EventID:     fmt.Sprintf("refund-cache-%d-%d", userID, time.Now().UnixNano()),
+		EventType:   "refund_cache_compensate",
+		ReferenceID: strconv.Itoa(userID),
+		Status:      PaymentOrphanStatusPendingReview,
+		Reason:      reason,
+		Error:       cause,
+		Payload:     fmt.Sprintf(`{"user_id":%d,"delta":%d}`, userID, delta),
+		CreateTime:  common.GetTimestamp(),
+		UpdateTime:  common.GetTimestamp(),
+	}
+	if createErr := DB.Create(event).Error; createErr != nil {
+		common.SysError(common.LogText("failed to record refund cache divergence for user %d: %s", userID, createErr.Error()))
+	}
+}
+
 func compensateRefundCacheOrReview(userID int, charged int64) {
 	if userID <= 0 || charged <= 0 {
 		return

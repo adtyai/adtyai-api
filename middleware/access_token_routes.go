@@ -112,12 +112,14 @@ var accessTokenRouteRules = map[string]accessTokenRouteRule{
 	"DELETE /api/user/:id/bindings/:binding_type":      accessTokenScopeRule("user:write"),
 	"GET /api/user/:id":                                accessTokenScopeRule("user:read"),
 	"POST /api/user/":                                  accessTokenScopeRule("user:write"),
-	"POST /api/user/manage":                            accessTokenScopeRule("user:write"),
-	"PUT /api/user/":                                   accessTokenScopeRule("user:write"),
-	"DELETE /api/user/:id":                             accessTokenScopeRule("user:write"),
-	"DELETE /api/user/:id/reset_passkey":               accessTokenScopeRule("user:write"),
-	"GET /api/user/2fa/stats":                          accessTokenScopeRule("user:read"),
-	"DELETE /api/user/:id/2fa":                         accessTokenScopeRule("user:write"),
+	// Action-specific scopes are enforced in ManageUser. user:write alone must
+	// not adjust balances, and a quota scope must still reach that action.
+	"POST /api/user/manage":              accessTokenAnyRule,
+	"PUT /api/user/":                     accessTokenScopeRule("user:write"),
+	"DELETE /api/user/:id":               accessTokenScopeRule("user:write"),
+	"DELETE /api/user/:id/reset_passkey": accessTokenScopeRule("user:write"),
+	"GET /api/user/2fa/stats":            accessTokenScopeRule("user:read"),
+	"DELETE /api/user/:id/2fa":           accessTokenScopeRule("user:write"),
 
 	// router/api-router.go: /api/option
 	"GET /api/option/":                          accessTokenScopeRule("option:read"),

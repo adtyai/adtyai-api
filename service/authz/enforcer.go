@@ -1,6 +1,7 @@
 package authz
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"time"
@@ -81,7 +82,30 @@ func ReloadPolicy() error {
 // snapshot refreshed afterwards. Without this loop other instances in a
 // multi-node deployment would keep serving stale permissions (including not
 // honoring a revoked grant) until restart. Mirrors model.SyncOptions polling.
+// NotifyPolicyChanged asks other nodes to reload. Redis absence keeps the poll.
+func NotifyPolicyChanged() {
+	if !common.RedisEnabled || common.RDB == nil {
+		return
+	}
+	if err := common.RDB.Publish(context.Background(), "adty:authz:reload", "1").Err(); err != nil {
+		common.SysError(common.LogText("failed to publish authz reload: %s", err.Error()))
+	}
+}
+
+func subscribePolicyReload() {
+	if !common.RedisEnabled || common.RDB == nil {
+		return
+	}
+	pubsub := common.RDB.Subscribe(context.Background(), "adty:authz:reload")
+	for range pubsub.Channel() {
+		if err := ReloadPolicy(); err != nil {
+			common.SysError(common.LogText("failed to reload authz policy: %s", err.Error()))
+		}
+	}
+}
+
 func StartPolicySync(frequency int) {
+	go subscribePolicyReload()
 	if frequency <= 0 {
 		return
 	}

@@ -93,6 +93,12 @@ jobs:
       - name: Test root, relaykit, and tokenkit modules
         run: make test
 
+      - name: Test main package deployment constraints
+        run: go test -count=1 -run 'TestPprofListenAddrIsLoopback|TestRootComposeDoesNotPublishExampleSecrets' .
+
+      - name: Run closed-loop checks
+        run: bash scripts/adty/e2e-closed-loop.sh
+
       # 前端同 ci.yml，另加 lint 和 copyright:check 的基线比较（和 scripts/adty/check.sh 一样，
       # 见 docs/adty/baseline.md）。ratchet.mjs 和 copyright:check 用 node 跑，版本同 web/.node-version
       - name: Set up Node

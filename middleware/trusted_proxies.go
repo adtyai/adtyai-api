@@ -14,7 +14,7 @@ func ConfigureTrustedProxies(engine *gin.Engine) error {
 		return err
 	}
 	if usedDefaults {
-		log.Print(common.LogText("WARNING: TRUSTED_PROXIES is unset or blank; trusting loopback, RFC 1918, and IPv6 ULA proxy addresses for compatibility. Set TRUSTED_PROXIES=none to trust no proxies, or configure explicit proxy IPs/CIDRs to replace these defaults."))
+		log.Print(common.LogText("WARNING: TRUSTED_PROXIES used a compatibility default. Set an explicit proxy list."))
 	}
 	return common.ConfigureTrustedProxies(engine, trustedProxies)
 }

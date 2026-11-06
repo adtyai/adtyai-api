@@ -12,7 +12,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
@@ -128,10 +127,7 @@ func (p *GenericOAuthProvider) ExchangeToken(ctx context.Context, code string, c
 	logger.LogDebug(ctx, "[OAuth-Generic-%s] ExchangeToken: token_endpoint=%s, redirect_uri=%s, auth_style=%d",
 		p.config.Slug, p.config.TokenEndpoint, redirectUri, authStyle)
 
-	client := http.Client{
-		Timeout: 20 * time.Second,
-	}
-	res, err := client.Do(req)
+	res, err := doOutbound(ctx, req)
 	if err != nil {
 		logger.LogError(ctx, common.LogText("[OAuth-Generic-%s] ExchangeToken error: %s", p.config.Slug, err.Error()))
 		return nil, NewOAuthErrorWithRaw(common.NewMessage(msgConnectFailed, map[string]any{"provider": p.config.Name}), err.Error())
@@ -208,10 +204,7 @@ func (p *GenericOAuthProvider) GetUserInfo(ctx context.Context, token *OAuthToke
 	req.Header.Set("Authorization", fmt.Sprintf("%s %s", tokenType, token.AccessToken))
 	req.Header.Set("Accept", "application/json")
 
-	client := http.Client{
-		Timeout: 20 * time.Second,
-	}
-	res, err := client.Do(req)
+	res, err := doOutbound(ctx, req)
 	if err != nil {
 		logger.LogError(ctx, common.LogText("[OAuth-Generic-%s] GetUserInfo error: %s", p.config.Slug, err.Error()))
 		return nil, NewOAuthErrorWithRaw(common.NewMessage(msgConnectFailed, map[string]any{"provider": p.config.Name}), err.Error())

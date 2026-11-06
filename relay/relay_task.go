@@ -514,10 +514,10 @@ func videoFetchByIDRespBodyBuilder(c *gin.Context) (respBody []byte, taskResp *d
 		return
 	}
 
-	// 通用 TaskDto 格式
+	// 通用 TaskDto 格式。API 令牌只看公开投影，不带回上游模型名和原始快照。
 	respBody, err = common.Marshal(dto.TaskResponse[any]{
 		Code: "success",
-		Data: TaskModel2Dto(originTask),
+		Data: PublicTaskModel2Dto(originTask),
 	})
 	if err != nil {
 		taskResp = service.TaskErrorWrapper(err, "marshal_response_failed", http.StatusInternalServerError)
@@ -614,7 +614,7 @@ func tryRealtimeFetch(task *model.Task, isOpenAIVideoAPI bool) []byte {
 		"metadata": nil,
 		"status":   mapTaskStatusToSimple(task.Status),
 		"task_id":  task.TaskID,
-		"url":      task.GetResultURL(),
+		"url":      publicTaskResultURL(task),
 	}
 	respBody, _ := common.Marshal(dto.TaskResponse[any]{
 		Code: "success",
@@ -660,6 +660,30 @@ func mapTaskStatusToSimple(status model.TaskStatus) string {
 	default:
 		return "processing"
 	}
+}
+
+// PublicTaskModel2Dto is the API-token view of a task. It keeps the gateway
+// task id and drops upstream model names, raw provider snapshots, and upstream URLs.
+func PublicTaskModel2Dto(task *model.Task) *dto.TaskDto {
+	view := TaskModel2Dto(task)
+	props := task.Properties
+	props.UpstreamModelName = ""
+	view.Properties = props
+	view.Data = nil
+	view.FailReason = common.MaskSensitiveInfo(view.FailReason)
+	view.ResultURL = publicTaskResultURL(task)
+	return view
+}
+
+func publicTaskResultURL(task *model.Task) string {
+	if task == nil || task.Status != model.TaskStatusSuccess {
+		return ""
+	}
+	raw := task.GetResultURL()
+	if raw == "" || strings.Contains(raw, "://") && !strings.Contains(raw, "/v1/videos/") {
+		return taskcommon.BuildProxyURL(task.TaskID)
+	}
+	return raw
 }
 
 func TaskModel2Dto(task *model.Task) *dto.TaskDto {

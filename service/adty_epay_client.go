@@ -56,7 +56,7 @@ func adtyEpayOrderParams(channel *model.AdtyEpayChannel, method *model.AdtyEpayC
 	if typeCode == "" {
 		typeCode = method.Method
 	}
-	return map[string]string{
+	params := map[string]string{
 		"pid":          channel.MerchantId,
 		"type":         typeCode,
 		"out_trade_no": req.TradeNo,
@@ -64,13 +64,16 @@ func adtyEpayOrderParams(channel *model.AdtyEpayChannel, method *model.AdtyEpayC
 		"name":         req.Name,
 		"money":        req.MoneyCNY.StringFixed(2),
 	}
+	if strings.TrimSpace(req.ReturnURL) != "" {
+		params["return_url"] = req.ReturnURL
+	}
+	return params
 }
 
 // CreateAdtyEpayOrder 下单。API 模式 POST mapi.php；页面跳转模式只生成签名后的 submit.php 链接。
 func CreateAdtyEpayOrder(ctx context.Context, channel *model.AdtyEpayChannel, method *model.AdtyEpayChannelMethod, req AdtyEpayCreateRequest) (*AdtyEpayCreateResult, error) {
 	params := adtyEpayOrderParams(channel, method, req)
 	if channel.OrderMode == model.AdtyEpayOrderModeSubmit {
-		params["return_url"] = req.ReturnURL
 		sign, err := EpaySign(params, channel.MerchantKey)
 		if err != nil {
 			return nil, err

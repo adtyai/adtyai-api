@@ -22,7 +22,8 @@ func redisEmailVerificationRateLimiter(c *gin.Context) {
 		EmailVerificationDuration,
 	)
 	if err != nil {
-		memoryEmailVerificationRateLimiter(c)
+		common.ApiErrorStatus(c, http.StatusServiceUnavailable, common.NewMessage("Please try again later"))
+		c.Abort()
 		return
 	}
 	if allowed {

@@ -269,6 +269,10 @@ func PasskeyStatus(c *gin.Context) {
 }
 
 func PasskeyLoginBegin(c *gin.Context) {
+	if service.AdtySiteForRequest(c) != nil {
+		common.ApiErrorT(c, "Passkey authentication is disabled.")
+		return
+	}
 	if !system_setting.PasskeySettingsSnapshot().Enabled {
 		common.ApiErrorT(c, "Passkey authentication is disabled.")
 		return
@@ -318,6 +322,10 @@ func PasskeyLoginBegin(c *gin.Context) {
 }
 
 func PasskeyLoginFinish(c *gin.Context) {
+	if service.AdtySiteForRequest(c) != nil {
+		common.ApiErrorT(c, "Passkey authentication is disabled.")
+		return
+	}
 	if !system_setting.PasskeySettingsSnapshot().Enabled {
 		common.ApiErrorT(c, "Passkey authentication is disabled.")
 		return

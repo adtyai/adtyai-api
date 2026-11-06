@@ -51,7 +51,7 @@ cd /opt/adtyai
 sudo docker compose pull
 sudo docker compose up -d
 sudo docker compose ps          # 三个服务都是 healthy
-curl -s http://127.0.0.1:3000/api/status | head -c 200
+curl -s http://127.0.0.1:3000/api/ready | head -c 200
 sudo docker network inspect adtyai_default --format '{{range .IPAM.Config}}{{.Subnet}} {{.Gateway}}{{end}}'
 ```
 
@@ -111,7 +111,7 @@ robots.txt 由网关按站点返回（任务 11.3）：主站和开了 SEO 的�
 1. 在用户设置里打开「记录 IP」。
 2. 手机关掉 Wi-Fi，用流量访问网站并登录，调一次接口。
 3. `sudo tail /var/log/nginx/access.log` 和后台使用日志里记的应该是手机的 IP，不是 104.16.x.x、172.64.x.x 这类 Cloudflare 的地址，也不是 172.30.0.1。
-4. 伪造测试：`curl -H 'X-Forwarded-For: 1.2.3.4' https://adtyai.com/api/status`，访问日志里记的是你自己的 IP，不是 1.2.3.4。
+4. 伪造测试：对已经决定的主站 Origin 发 `curl -H 'X-Forwarded-For: 1.2.3.4' https://panel.example.com/api/status`，访问日志里记的是你自己的 IP，不是 1.2.3.4。
 5. 绕过 Cloudflare 测试：在别的机器上 `curl -k --max-time 10 https://<源站 IP>/`，应该超时（被 ufw 拦）。
 
 ## 8. 524 超时

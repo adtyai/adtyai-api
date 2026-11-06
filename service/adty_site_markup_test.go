@@ -258,6 +258,25 @@ func TestMarkupNotAppliedTwiceOnTaskRecalc(t *testing.T) {
 	assert.Equal(t, 3000, task.Quota, "1000 tokens × model 2 × snapshot 1.5")
 }
 
+func TestTaskRecalcKeepsFrozenModelRatio(t *testing.T) {
+	db := prepareSiteDB(t)
+	require.NoError(t, db.AutoMigrate(&model.Token{}, &model.Task{}, &model.Channel{}))
+	savedRatios, savedGroups := ratio_setting.ModelRatio2JSONString(), ratio_setting.GroupRatio2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(savedRatios))
+		require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(savedGroups))
+	})
+	require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(`{"frozen-model":10}`))
+	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"default":1}`))
+	user := &model.User{Username: "frozen-ratio", Password: "x", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: "default", Quota: 10_000_000}
+	require.NoError(t, db.Create(user).Error)
+	task := &model.Task{TaskID: "frozen-ratio", UserId: user.Id, Group: "default", Status: model.TaskStatusSuccess, Quota: 1000}
+	task.PrivateData.BillingContext = &model.TaskBillingContext{OriginModelName: "frozen-model", ModelRatio: 2, GroupRatio: 1}
+	require.NoError(t, db.Create(task).Error)
+	require.True(t, RecalculateTaskQuotaByTokens(context.Background(), task, 1000))
+	assert.Equal(t, 2000, task.Quota, "settlement must keep the model ratio frozen at submit time")
+}
+
 func TestCostFactorResolveOrder(t *testing.T) {
 	prepareSiteDB(t)
 	cfg := adty_setting.GetResellerSetting()

@@ -31,7 +31,7 @@ func newClientIPRouter() *gin.Engine {
 
 func TestConfigureTrustedProxiesDefaultsToLoopbackAndPrivateNetworks(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	t.Setenv("TRUSTED_PROXIES", "")
+	t.Setenv("TRUSTED_PROXIES", "private")
 	router := newClientIPRouter()
 	require.NoError(t, ConfigureTrustedProxies(router))
 
@@ -67,7 +67,7 @@ func TestConfigureTrustedProxiesDefaultRejectsPublicPeerHeaders(t *testing.T) {
 
 func TestConfigureTrustedProxiesDefaultStopsAtPublicClientInForwardedChain(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	t.Setenv("TRUSTED_PROXIES", "")
+	t.Setenv("TRUSTED_PROXIES", "private")
 	router := newClientIPRouter()
 	require.NoError(t, ConfigureTrustedProxies(router))
 

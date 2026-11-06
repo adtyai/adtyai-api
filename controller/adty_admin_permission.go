@@ -18,10 +18,38 @@ func denyAdtyAdminAction(c *gin.Context) {
 	common.ApiErrorStatus(c, http.StatusForbidden, common.NewMessage("Unauthorized, insufficient privileges"), gin.H{"code": AdtyPermissionDeniedCode})
 }
 
+// adtyAccessTokenMayManage applies token scopes that the single manage route
+// cannot express. A browser session has no access-token context and is unchanged.
+func adtyAccessTokenMayManage(c *gin.Context, action string) bool {
+	legacy, isToken := c.Get("access_token_legacy")
+	if !isToken {
+		return true
+	}
+	if legacy == true {
+		return false
+	}
+	scopes, _ := c.Get("access_token_scopes")
+	granted, _ := scopes.([]string)
+	switch action {
+	case "add_quota":
+		return slices.Contains(granted, service.AccessTokenScopeOf(authz.AdtyUserQuota))
+	case "promote", "demote":
+		return false
+	case "delete":
+		return slices.Contains(granted, service.AccessTokenScopeOf(authz.AdtyUserDelete))
+	default:
+		return slices.Contains(granted, service.AccessTokenScopeOf(authz.AdtyUserWrite))
+	}
+}
+
 // adtyCheckManageAction 按 ManageUser 的动作细分权限：启用、禁用要用户·编辑，删除要用户·删除，
 // 调余额要用户·调余额；提升、降级沿用上游规则（只有超级管理员，由 canManageTargetRole 等检查）。
 // 被拒时已写好 403。
 func adtyCheckManageAction(c *gin.Context, req ManageRequest) bool {
+	if !adtyAccessTokenMayManage(c, req.Action) {
+		denyAdtyAdminAction(c)
+		return false
+	}
 	userID, role := c.GetInt("id"), c.GetInt("role")
 	var permission authz.Permission
 	switch req.Action {

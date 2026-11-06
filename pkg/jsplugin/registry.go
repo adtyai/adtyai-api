@@ -2007,6 +2007,9 @@ func normalizeAllowedHost(raw string) (string, error) {
 		}
 	}
 	host = strings.ToLower(host)
+	if hostIsPrivateOrMetadata(host) {
+		return "", fmt.Errorf("plugin meta allowedHosts must not list loopback, private, or link-local addresses")
+	}
 	if strings.Contains(host, ":") {
 		if net.ParseIP(host) == nil {
 			return "", fmt.Errorf("plugin meta allowedHosts entries must be host or host:port; IPv6 literals must be bracketed")

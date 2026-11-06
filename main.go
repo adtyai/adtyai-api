@@ -6,6 +6,7 @@ import (
 	"embed"
 	"errors"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -210,8 +211,9 @@ func main() {
 		port = strconv.Itoa(*common.Port)
 	}
 
+	host := os.Getenv("HOST")
 	srv := &http.Server{
-		Addr:    ":" + port,
+		Addr:    net.JoinHostPort(host, port),
 		Handler: server,
 	}
 

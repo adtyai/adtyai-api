@@ -28,6 +28,8 @@ func SecurityHeaders() gin.HandlerFunc {
 		c.Header("X-Frame-Options", "DENY")
 		c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
 		c.Header("Content-Security-Policy", "frame-ancestors 'none'")
+		// Home handlers overwrite this when the page is allowed to be indexed.
+		c.Header("X-Robots-Tag", "noindex")
 		c.Next()
 	}
 }

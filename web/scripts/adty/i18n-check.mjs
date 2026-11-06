@@ -22,7 +22,7 @@ For commercial licensing, please contact support@quantumnous.com
 //
 // "Our keys" are the en.json keys that are not in upstream-en-keys.json (the
 // en.json key list of upstream v1.0.0-rc.47, refreshed on every upstream
-// merge). Each of them must be in all seven locale files with a value that
+// merge). Each of them must be in all eight locale files with a value that
 // differs from English: `bun run i18n:sync` fills missing keys with the
 // English text, so checking for missing keys alone is not enough.
 // Exits with 1 when anything is wrong. Run from the web directory.

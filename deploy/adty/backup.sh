@@ -29,6 +29,14 @@ umask 077
 mkdir -p "$BACKUP_DIR"
 trap 'rm -f "$dump.partial" "$archive.partial"' EXIT
 
+# 批量额度还在内存队列时，转储会丢掉尚未落库的差额。先让 API 刷盘。
+flush_url="${ADTY_FLUSH_URL:-http://127.0.0.1:3000/api/adty/internal/flush-batch}"
+if [ -z "${ADTY_FLUSH_TOKEN:-}" ]; then
+    echo "backup: 没有设 ADTY_FLUSH_TOKEN，不能在批量额度未刷盘时备份" >&2
+    exit 1
+fi
+curl -fsS -X POST -H "X-Adty-Flush-Token: ${ADTY_FLUSH_TOKEN}" "$flush_url" >/dev/null
+
 # 自定义格式，用 pg_restore 恢复。用户名和库名取容器里的 POSTGRES_USER、POSTGRES_DB。
 docker compose -f "$DEPLOY_DIR/docker-compose.yml" exec -T postgres \
     sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --format=custom' >"$dump.partial"

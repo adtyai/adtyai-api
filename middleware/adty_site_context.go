@@ -96,12 +96,10 @@ func adtyHandleCustomDomain(c *gin.Context, host string) {
 		c.Next()
 		return
 	}
-	if adtyCustomDomainAccountAPI(path) {
+	// Custom domains only serve public pages, public status APIs, and relay.
+	// Every other /api path is an account or admin action and is rejected.
+	if adtyIsAPIPath(path) || adtyCustomDomainAccountAPI(path) {
 		c.AbortWithStatus(http.StatusForbidden)
-		return
-	}
-	if adtyIsAPIPath(path) {
-		c.Next()
 		return
 	}
 	if site != nil {

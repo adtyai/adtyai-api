@@ -3,6 +3,7 @@ package model
 import (
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
@@ -84,6 +85,43 @@ func topUpStatus(t *testing.T, db *gorm.DB, tradeNo string) string {
 	return topUp.Status
 }
 
+func TestEpayDailyLimitCountsPendingReservations(t *testing.T) {
+	db := prepareAdtyTopUpDB(t)
+	require.NoError(t, db.AutoMigrate(&AdtyEpayChannel{}, &AdtyEpayChannelMethod{}))
+	channel := &AdtyEpayChannel{Name: "cap", Status: AdtyEpayStatusEnabled, MerchantId: "1", MerchantKey: "k"}
+	require.NoError(t, db.Create(channel).Error)
+	require.NoError(t, db.Create(&AdtyEpayChannelMethod{
+		ChannelId: channel.Id, Method: "alipay", Enabled: true, DailyLimitCNY: decimal.NewFromInt(10),
+	}).Error)
+	user := seedAdtyTopUpUser(t, db, "epay-cap", 0)
+	makeOrder := func(trade string) error {
+		topUp := &TopUp{
+			UserId: user.Id, Amount: 1, Money: 10, TradeNo: trade, PaymentMethod: "alipay",
+			PaymentProvider: PaymentProviderAdtyEpay, CreateTime: time.Now().Unix(), Status: common.TopUpStatusPending,
+		}
+		ext := &AdtyTopupOrder{
+			TradeNo: trade, UserId: user.Id, Provider: PaymentProviderAdtyEpay, Method: "alipay",
+			FaceUSD: decimal.NewFromInt(1), PayAmount: decimal.NewFromInt(10), PayCurrency: "CNY",
+			ChannelId: channel.Id, CreditQuota: 1, ExpireAt: time.Now().Unix() + 600,
+		}
+		return CreateAdtyTopUp(topUp, ext)
+	}
+	require.NoError(t, makeOrder("EPY-cap-1"))
+	require.ErrorIs(t, makeOrder("EPY-cap-2"), ErrAdtyEpayDailyLimit)
+}
+
+func TestReplacedPendingOrderIsNotAutoCredited(t *testing.T) {
+	db := prepareAdtyTopUpDB(t)
+	user := seedAdtyTopUpUser(t, db, "replaced-payer", 0)
+	seedAdtyOrder(t, user.Id, "EPU-replaced", PaymentProviderAdtyBEpusdt, common.TopUpStatusPending)
+	_, err := ReplaceAdtyTopUpAfterLock("EPU-replaced", user.Id, nil)
+	require.NoError(t, err)
+	_, err = CompleteAdtyTopUp("EPU-replaced", usdtFacts("EPU-replaced", "50.01"), "")
+	require.ErrorIs(t, err, ErrTopUpStatusInvalid)
+	assert.Equal(t, 0, userQuota(t, db, user.Id))
+	assert.Equal(t, TopUpStatusReplaced, topUpStatus(t, db, "EPU-replaced"))
+}
+
 func TestCompleteAdtyTopUpCreditsFaceAndBonusOnce(t *testing.T) {
 	db := prepareAdtyTopUpDB(t)
 	user := seedAdtyTopUpUser(t, db, "credit-once", 0)
@@ -98,6 +136,16 @@ func TestCompleteAdtyTopUpCreditsFaceAndBonusOnce(t *testing.T) {
 	done, err = CompleteAdtyTopUp("EPU-once", usdtFacts("EPU-once", "50.01"), "127.0.0.1")
 	require.NoError(t, err)
 	assert.True(t, done)
+
+	other := usdtFacts("EPU-once", "50.01")
+	other.TxHash = "0xother-payment"
+	done, err = CompleteAdtyTopUp("EPU-once", other, "127.0.0.1")
+	require.ErrorIs(t, err, ErrAdtyDuplicatePayment)
+	assert.False(t, done)
+	assert.Equal(t, 51_250_000, userQuota(t, db, user.Id))
+	var reviews int64
+	require.NoError(t, db.Model(&PaymentOrphanEvent{}).Where("event_type = ? AND reference_id = ?", "duplicate_payment", "EPU-once").Count(&reviews).Error)
+	assert.EqualValues(t, 1, reviews)
 	assert.Equal(t, 51_250_000, userQuota(t, db, user.Id))
 
 	ext, err := GetAdtyTopupOrder("EPU-once")

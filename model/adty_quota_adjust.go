@@ -136,6 +136,7 @@ func AdjustUserQuotaWithLedger(userID, operatorID, operatorRole int, mode string
 		if delta := int64(result.After) - int64(result.Before); delta != 0 {
 			if err := cacheIncrUserQuota(userID, delta); err != nil {
 				common.SysError(common.LogText("failed to sync manual quota adjustment for user %d: %s", userID, err))
+				recordAdjustCacheDivergence(userID, delta, err)
 			}
 		}
 	}

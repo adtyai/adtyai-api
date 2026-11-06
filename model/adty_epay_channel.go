@@ -2,11 +2,15 @@ package model
 
 import (
 	"errors"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 )
+
+// ErrAdtyEpayDailyLimit means this order would push the method over its daily cap.
+var ErrAdtyEpayDailyLimit = errors.New("epay daily limit reached")
 
 // 易支付多通道（任务 5.1）。
 
@@ -198,6 +202,37 @@ func UpdateAdtyEpayMethodReturnType(methodID int, returnType string) error {
 // SetAdtyEpayMethodEnabled 打开或关闭一种方式（测试下单发现没开通时关掉）。
 func SetAdtyEpayMethodEnabled(methodID int, enabled bool) error {
 	return DB.Model(&AdtyEpayChannelMethod{}).Where("id = ?", methodID).Update("enabled", enabled).Error
+}
+
+func adtyEpayDayStart(now int64) int64 {
+	t := time.Unix(now, 0)
+	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location()).Unix()
+}
+
+// lockAdtyEpayDailyRoom locks the method row and rejects the order when paid
+// plus still-pending amounts for today, plus this order, exceed the daily cap.
+func lockAdtyEpayDailyRoom(tx *gorm.DB, channelId int, method string, amount decimal.Decimal, now int64) error {
+	var row AdtyEpayChannelMethod
+	if err := AdtyLockForUpdate(tx).Where("channel_id = ? AND method = ?", channelId, method).First(&row).Error; err != nil {
+		return err
+	}
+	if !row.DailyLimitCNY.IsPositive() {
+		return nil
+	}
+	dayStart := adtyEpayDayStart(now)
+	var total decimal.Decimal
+	err := tx.Table("adty_topup_orders AS a").
+		Joins("JOIN top_ups t ON t.trade_no = a.trade_no").
+		Where("a.channel_id = ? AND a.method = ? AND ((t.status = ? AND t.complete_time >= ?) OR (t.status = ? AND t.create_time >= ?))",
+			channelId, method, common.TopUpStatusSuccess, dayStart, common.TopUpStatusPending, dayStart).
+		Select("COALESCE(SUM(a.pay_amount), 0)").Scan(&total).Error
+	if err != nil {
+		return err
+	}
+	if total.Add(amount).GreaterThan(row.DailyLimitCNY) {
+		return ErrAdtyEpayDailyLimit
+	}
+	return nil
 }
 
 // SumAdtyEpayPaidToday 统计一个通道某种方式当天已到账的人民币（每日限额用）。

@@ -22,6 +22,7 @@ var (
 	maskBracketedIPv6Pattern = regexp.MustCompile(`\[([0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*)(%[^\]\s]*)?\]`)
 	// maskApiKeyPattern matches patterns like 'api_key:xxx' or "api_key:xxx" to mask the API key value
 	maskApiKeyPattern = regexp.MustCompile(`(['"]?)api_key:([^\s'"]+)(['"]?)`)
+	maskSecretTokenPattern = regexp.MustCompile(`(?i)\b(?:sk-[A-Za-z0-9_\-]{8,}|Bearer\s+[A-Za-z0-9._\-]{8,})`)
 )
 
 // maskHostTail returns the tail parts of a domain/host that should be preserved.
@@ -101,6 +102,7 @@ func maskURLQuery(rawQuery string) string {
 func MaskSensitiveInfo(str string, upstreamURLs ...string) string {
 	// Mask API keys (e.g., "api_key:AIzaSyAAAaUooTUni8AdaOkSRMda30n_Q4vrV70" -> "api_key:***")
 	str = maskApiKeyPattern.ReplaceAllString(str, "${1}api_key:***${3}")
+	str = maskSecretTokenPattern.ReplaceAllString(str, "***")
 
 	upstreamHosts := make([]string, 0, len(upstreamURLs))
 	for _, upstreamURL := range upstreamURLs {

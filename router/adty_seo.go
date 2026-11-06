@@ -85,7 +85,19 @@ func AdtySEOHomePages(indexPage []byte, buildFS fs.FS) gin.HandlerFunc {
 		// 分站（任务 11.3）：默认 noindex；开了 SeoIndex 才写正式头部，canonical 指向分站自己的地址。
 		// 预渲染的正文是平台的落地页（顶栏写的是平台站名），分站不插正文，只写头部。
 		if site := service.AdtySiteForRequest(c); site != nil {
-			out := adtyRenderHomePage(indexPage, page, adtySiteSEO(site), "")
+			head := adtySiteSEO(site)
+			brand := service.AdtyBrandFor(site)
+			body := "<main><h1>" + html.EscapeString(brand.Name) + "</h1></main>"
+			if strings.TrimSpace(brand.Name) == "" {
+				head.noindex = true
+				body = ""
+			}
+			out := adtyRenderHomePage(indexPage, page, head, body)
+			if head.noindex {
+				c.Header("X-Robots-Tag", "noindex")
+			} else {
+				c.Header("X-Robots-Tag", "index, follow")
+			}
 			c.Header("Cache-Control", "no-cache")
 			c.Data(http.StatusOK, "text/html; charset=utf-8", out)
 			c.Abort()
@@ -106,8 +118,16 @@ func AdtySEOHomePages(indexPage []byte, buildFS fs.FS) gin.HandlerFunc {
 		if !customHome {
 			body = prerender.load(buildFS)[page.contentLang]
 		}
-		noindex := base != nil && !adtySameHost(c.Request.Host, base)
+		// An unset server address must not become an indexable page. The stock
+		// index.html noindex is replaced by this head, so keep noindex until a
+		// real origin is configured and the request host matches it.
+		noindex := base == nil || !adtySameHost(c.Request.Host, base)
 		out := adtyRenderHomePage(indexPage, page, adtyMainSEO(base, noindex), body)
+		if noindex {
+			c.Header("X-Robots-Tag", "noindex")
+		} else {
+			c.Header("X-Robots-Tag", "index, follow")
+		}
 
 		c.Header("Cache-Control", "no-cache")
 		c.Data(http.StatusOK, "text/html; charset=utf-8", out)

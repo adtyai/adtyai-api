@@ -215,6 +215,15 @@ func FetchCustomOAuthDiscovery(c *gin.Context) {
 }
 
 // CreateCustomOAuthProvider creates a new custom OAuth provider
+func validateCustomOAuthEndpoints(authorization, token, userInfo string) error {
+	for _, endpoint := range []string{authorization, token, userInfo} {
+		if err := oauth.ValidateEndpointURL(endpoint); err != nil {
+			return common.NewMessage("OAuth endpoint is not allowed")
+		}
+	}
+	return nil
+}
+
 func CreateCustomOAuthProvider(c *gin.Context) {
 	var req CreateCustomOAuthProviderRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -233,6 +242,10 @@ func CreateCustomOAuthProvider(c *gin.Context) {
 		return
 	}
 	if rejectBuiltinOAuthSlug(c, req.Slug) {
+		return
+	}
+	if err := validateCustomOAuthEndpoints(req.AuthorizationEndpoint, req.TokenEndpoint, req.UserInfoEndpoint); err != nil {
+		common.ApiError(c, err)
 		return
 	}
 
@@ -342,6 +355,23 @@ func UpdateCustomOAuthProvider(c *gin.Context) {
 				return
 			}
 		}
+	}
+
+	authEndpoint := provider.AuthorizationEndpoint
+	tokenEndpoint := provider.TokenEndpoint
+	userInfoEndpoint := provider.UserInfoEndpoint
+	if req.AuthorizationEndpoint != "" {
+		authEndpoint = req.AuthorizationEndpoint
+	}
+	if req.TokenEndpoint != "" {
+		tokenEndpoint = req.TokenEndpoint
+	}
+	if req.UserInfoEndpoint != "" {
+		userInfoEndpoint = req.UserInfoEndpoint
+	}
+	if err := validateCustomOAuthEndpoints(authEndpoint, tokenEndpoint, userInfoEndpoint); err != nil {
+		common.ApiError(c, err)
+		return
 	}
 
 	// Update fields
