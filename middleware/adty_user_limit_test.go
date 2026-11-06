@@ -3,6 +3,7 @@ package middleware
 import (
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -72,6 +73,22 @@ func (limitErrorStore) Acquire(int, string, int, time.Time, time.Duration) (bool
 	return false, assert.AnError
 }
 func (limitErrorStore) Release(int, string) error { return assert.AnError }
+
+func TestUserLimitFailsClosedWhenRedisClientIsMissing(t *testing.T) {
+	f := newLimitFixture(t, adty_setting.LimitSetting{Enabled: true, DefaultRPM: 10, DefaultTPM: 10, DefaultConcurrency: 2})
+	previousEnabled, previousClient := common.RedisEnabled, common.RDB
+	previousStore := adtyLimitStore
+	common.RedisEnabled = true
+	common.RDB = nil
+	adtyLimitStore = nil
+	adtyLimitStoreOnce = sync.Once{}
+	t.Cleanup(func() {
+		common.RedisEnabled, common.RDB = previousEnabled, previousClient
+		adtyLimitStore = previousStore
+		adtyLimitStoreOnce = sync.Once{}
+	})
+	assert.Equal(t, http.StatusServiceUnavailable, f.do(http.MethodPost, "/v1/chat/completions").Code)
+}
 
 func TestAdtyLimitStoreErrorDoesNotOpenTheRequest(t *testing.T) {
 	f := newLimitFixture(t, adty_setting.LimitSetting{Enabled: true, DefaultRPM: 10, DefaultTPM: 10, DefaultConcurrency: 2})

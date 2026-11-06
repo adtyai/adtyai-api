@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"sync"
@@ -26,16 +27,31 @@ var (
 	adtyLimitNow       = time.Now
 )
 
-// adtyStore 开了 Redis 用 Redis，否则用进程内存。
-func adtyStore() adtylimit.Store {
-	adtyLimitStoreOnce.Do(func() {
-		if common.RedisEnabled && common.RDB != nil {
-			adtyLimitStore = adtylimit.NewRedisStore(common.RDB)
-		} else {
-			adtyLimitStore = adtylimit.NewMemoryStore()
+var errAdtyLimitStoreUnavailable = errors.New("user limit store unavailable")
+
+// adtyStore 开了 Redis 就只用 Redis。客户端还没接上时不能退回进程内存，否则多实例各算各的限额。
+func adtyStore() (adtylimit.Store, error) {
+	if adtyLimitStore != nil {
+		return adtyLimitStore, nil
+	}
+	if common.RedisEnabled {
+		if common.RDB == nil {
+			return nil, errAdtyLimitStoreUnavailable
 		}
+		adtyLimitStoreOnce.Do(func() {
+			if common.RDB != nil {
+				adtyLimitStore = adtylimit.NewRedisStore(common.RDB)
+			}
+		})
+		if adtyLimitStore == nil {
+			return nil, errAdtyLimitStoreUnavailable
+		}
+		return adtyLimitStore, nil
+	}
+	adtyLimitStoreOnce.Do(func() {
+		adtyLimitStore = adtylimit.NewMemoryStore()
 	})
-	return adtyLimitStore
+	return adtyLimitStore, nil
 }
 
 func init() {
@@ -43,7 +59,12 @@ func init() {
 		if withoutToken || tokens <= 0 || userId <= 0 || !adty_setting.GetLimitSetting().Enabled {
 			return
 		}
-		if err := adtyStore().AddTPM(userId, adtylimit.MinuteOf(adtyLimitNow()), int64(tokens)); err != nil {
+		store, err := adtyStore()
+		if err != nil {
+			common.SysError(common.LogText("adty tpm count skipped user=%d: %s", userId, err.Error()))
+			return
+		}
+		if err := store.AddTPM(userId, adtylimit.MinuteOf(adtyLimitNow()), int64(tokens)); err != nil {
 			common.SysError(common.LogText("adty tpm count failed user=%d: %s", userId, err.Error()))
 		}
 	}
@@ -51,7 +72,7 @@ func init() {
 
 // SetAdtyLimitStoreForTest 换成给定的计数和时钟，结束时还原。只给测试用。
 func SetAdtyLimitStoreForTest(t interface{ Cleanup(func()) }, store adtylimit.Store, now func() time.Time) {
-	adtyStore()
+	_, _ = adtyStore()
 	oldStore, oldNow := adtyLimitStore, adtyLimitNow
 	adtyLimitStore, adtyLimitNow = store, now
 	t.Cleanup(func() { adtyLimitStore, adtyLimitNow = oldStore, oldNow })
@@ -91,7 +112,18 @@ func AdtyUserLimit(midjourney ...bool) gin.HandlerFunc {
 		if member == "" {
 			member = strconv.FormatInt(now.UnixNano(), 36)
 		}
-		release, reason, err := adtylimit.Check(adtyStore(), userID, adtyEffectiveLimits(userID), member, now)
+		store, err := adtyStore()
+		if err != nil {
+			common.SysError(common.LogText("adty user limit store unavailable user=%d: %s", userID, err.Error()))
+			message := i18n.T(c, i18n.MsgAdtyLimitUnavailable)
+			if isMJ {
+				abortWithMidjourneyMessage(c, http.StatusServiceUnavailable, http.StatusServiceUnavailable, message)
+				return
+			}
+			abortWithOpenAiMessage(c, http.StatusServiceUnavailable, message, "rate_limit_unavailable")
+			return
+		}
+		release, reason, err := adtylimit.Check(store, userID, adtyEffectiveLimits(userID), member, now)
 		if err != nil {
 			// A counter outage must not open the RPM/TPM/concurrency gate.
 			common.SysError(common.LogText("adty user limit check failed user=%d: %s", userID, err.Error()))

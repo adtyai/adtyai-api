@@ -158,12 +158,12 @@ export function ResetPasswordConfirm({
               t('auth.resetPasswordConfirm.retry', {
                 seconds: secondsLeft,
               })}
-            {!newPassword &&
+            {!done &&
               !isActive &&
               t('auth.resetPasswordConfirm.confirm')}
           </Button>
 
-          {!newPassword && (
+          {!done && (
             <Button
               variant='link'
               className='w-full'

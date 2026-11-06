@@ -266,6 +266,10 @@ func SendEmailVerification(c *gin.Context) {
 		return
 	}
 
+	if err := common.VerificationStoreReady(); err != nil {
+		common.ApiErrorStatus(c, http.StatusServiceUnavailable, common.NewMessage("Please try again later"))
+		return
+	}
 	// 二开：已注册的邮箱不发验证码，改发一封提醒，响应和正常情况完全一样（任务 7.3）
 	if model.IsEmailAlreadyTaken(email) {
 		service.AdtySendRegisteredReminder(c, email)
@@ -273,7 +277,10 @@ func SendEmailVerification(c *gin.Context) {
 		return
 	}
 	code := common.GenerateVerificationCode(6)
-	common.RegisterVerificationCodeWithKey(email, code, common.EmailVerificationPurpose)
+	if err := common.RegisterVerificationCodeWithKey(email, code, common.EmailVerificationPurpose); err != nil {
+		common.ApiErrorStatus(c, http.StatusServiceUnavailable, common.NewMessage("Please try again later"))
+		return
+	}
 	// The address may not belong to an account yet, so the mail follows the
 	// request language.
 	// 二开：站名用当前请求的站点（任务 11.3），用户还不存在
@@ -301,9 +308,16 @@ func SendPasswordResetEmail(c *gin.Context) {
 		common.ApiErrorT(c, "Invalid parameters")
 		return
 	}
+	if err := common.VerificationStoreReady(); err != nil {
+		common.ApiErrorStatus(c, http.StatusServiceUnavailable, common.NewMessage("Please try again later"))
+		return
+	}
 	if user, err := model.GetUniqueUserByEmail(email); err == nil {
 		code := common.GenerateVerificationCode(0)
-		common.RegisterVerificationCodeWithKey(email, code, common.PasswordResetPurpose)
+		if err := common.RegisterVerificationCodeWithKey(email, code, common.PasswordResetPurpose); err != nil {
+			common.ApiErrorStatus(c, http.StatusServiceUnavailable, common.NewMessage("Please try again later"))
+			return
+		}
 		// 二开：链接和站名用用户所属的站点，不读 Host 头（任务 11.3）
 		site := service.AdtySiteForUser(user.Id)
 		link := fmt.Sprintf("%s/user/reset?email=%s&token=%s", service.AdtySiteBaseURL(site), url.QueryEscape(email), url.QueryEscape(code))

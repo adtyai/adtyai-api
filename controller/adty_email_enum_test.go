@@ -13,7 +13,9 @@ import (
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/alicebob/miniredis/v2"
 	"github.com/gin-gonic/gin"
+	"github.com/go-redis/redis/v8"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -63,6 +65,39 @@ func callEmailHandler(handler gin.HandlerFunc, path string) *httptest.ResponseRe
 	c.Request = httptest.NewRequest(http.MethodGet, path, nil)
 	handler(c)
 	return recorder
+}
+
+func TestVerificationDoesNotSendACodeWhenTheStoreIsDown(t *testing.T) {
+	emailEnumDB(t)
+	sent := captureAdtyMail(t)
+	server := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: server.Addr()})
+	previousEnabled, previousClient := common.RedisEnabled, common.RDB
+	t.Cleanup(func() {
+		common.RedisEnabled, common.RDB = previousEnabled, previousClient
+		_ = client.Close()
+	})
+	common.RedisEnabled = true
+	common.RDB = client
+	server.Close()
+
+	fresh := callEmailHandler(SendEmailVerification, "/api/verification?email="+url.QueryEscape("new@example.com"))
+	reset := callEmailHandler(SendPasswordResetEmail, "/api/reset_password?email="+url.QueryEscape("taken@example.com"))
+	assert.Equal(t, http.StatusServiceUnavailable, fresh.Code)
+	assert.Equal(t, http.StatusServiceUnavailable, reset.Code)
+	for _, mail := range sent() {
+		assert.NotEqual(t, "new@example.com", mail.to)
+		assert.NotContains(t, mail.content, "/user/reset")
+	}
+	assert.False(t, common.VerifyCodeWithKey("new@example.com", "000000", common.EmailVerificationPurpose))
+
+	common.RDB = nil
+	before := len(sent())
+	missing := callEmailHandler(SendEmailVerification, "/api/verification?email="+url.QueryEscape("new@example.com"))
+	registered := callEmailHandler(SendEmailVerification, "/api/verification?email="+url.QueryEscape("taken@example.com"))
+	assert.Equal(t, http.StatusServiceUnavailable, missing.Code)
+	assert.Equal(t, missing.Code, registered.Code)
+	assert.Len(t, sent(), before)
 }
 
 func TestVerificationSameResponseForRegisteredEmail(t *testing.T) {

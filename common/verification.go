@@ -2,12 +2,16 @@ package common
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
 )
+
+// ErrVerificationStoreUnavailable means a code cannot be stored, so it must not be sent.
+var ErrVerificationStoreUnavailable = errors.New("verification code store unavailable")
 
 type verificationValue struct {
 	code string
@@ -41,14 +45,27 @@ func verificationStoreShared() bool {
 	return RedisEnabled && RDB != nil
 }
 
-func RegisterVerificationCodeWithKey(key string, code string, purpose string) {
+// VerificationStoreReady reports whether a code can be stored. Redis enabled
+// without a client must not fall back to process memory.
+func VerificationStoreReady() error {
+	if RedisEnabled && RDB == nil {
+		return ErrVerificationStoreUnavailable
+	}
+	return nil
+}
+
+func RegisterVerificationCodeWithKey(key string, code string, purpose string) error {
+	if err := VerificationStoreReady(); err != nil {
+		return err
+	}
 	issued := time.Now()
 	if verificationStoreShared() {
 		payload := issued.UTC().Format(time.RFC3339Nano) + "\n" + code
 		if err := RDB.Set(context.Background(), verificationRedisKey(purpose, key), payload, time.Duration(VerificationValidMinutes)*time.Minute).Err(); err != nil {
 			SysError(LogText("verification code store failed: %s", err.Error()))
+			return ErrVerificationStoreUnavailable
 		}
-		return
+		return nil
 	}
 	verificationMutex.Lock()
 	defer verificationMutex.Unlock()
@@ -59,6 +76,7 @@ func RegisterVerificationCodeWithKey(key string, code string, purpose string) {
 	if len(verificationMap) > verificationMapMaxSize {
 		removeExpiredPairs()
 	}
+	return nil
 }
 
 func VerifyCodeWithKey(key string, code string, purpose string) bool {
