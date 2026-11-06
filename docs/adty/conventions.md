@@ -33,11 +33,11 @@
 - AGPL：不删 LICENSE、NOTICE、THIRD-PARTY-LICENSES.md 和上游源文件头（`bun run copyright:check` 会查），不自称官方。公开页脚不放上游署名、源码链接和客服邮箱。
 
 **约定 E：文案和语言**
-- 内容的语言键统一用 `zh-CN`、`zh-TW`、`en`、`fr`、`ja`、`ru`、`vi`。前端 i18next 用的是 `zhCN`、`zhTW`（i18n/config.ts:32-40），用 `web/src/lib/adty-lang.ts` 的 `toContentLang()` 转换，两套不要混用。
+- 内容的语言键统一用 `zh-CN`、`zh-TW`、`en`、`fr`、`ja`、`ko`、`ru`、`vi`。前端 i18next 用的是 `zhCN`、`zhTW`（i18n/config.ts:32-40），用 `web/src/lib/adty-lang.ts` 的 `toContentLang()` 转换，两套不要混用。
 - 控制台接口的提示用 `common.ApiErrorT(c, "英文原文")`，译文放前端语言包，键就是英文原文。新键**先写进 `en.json`**（值同键），再写 `zh.json`。如果只写了 zh.json，`i18n:sync` 会把 zh 选成基准，把中文写进 en.json。
-- 中转接口（/v1）的报错和邮件用 `i18n.T` / `i18n.Translate`，键常量写 `i18n/keys_adty.go`（`MsgAdtyXxx = "adty.xxx"`），译文写 `i18n/locales/adty.<语言>.yaml`（执行层决定 13）。7 种语言一次写齐（任务 9.1 起后端已有 7 种）。
+- 中转接口（/v1）的报错和邮件用 `i18n.T` / `i18n.Translate`，键常量写 `i18n/keys_adty.go`（`MsgAdtyXxx = "adty.xxx"`），译文写 `i18n/locales/adty.<语言>.yaml`（执行层决定 13）。8 种语言一次写齐（任务 9.1 起后端已有 8 种，含 ko）。
 - 改了上游 `t()` 原文的地方，按新文案加新键，旧键留着。
-- 站名写 ADTY AI，7 种语言都不翻译。代码里引用 `common.AdtyBrandName` 和前端的 `ADTY_BRAND_NAME`，不要另写字面量（任务 8.9）。
+- 站名写 ADTY AI，8 种语言都不翻译。代码里引用 `common.AdtyBrandName` 和前端的 `ADTY_BRAND_NAME`，不要另写字面量（任务 8.9）。
 - 对外名字（任务 8.9）：访客、调用 API 的人、上游服务商和浏览器开发者工具能看到的 New API 已经换成 ADTY AI 或 adtyai（后端常量 `common.AdtyBrandName`、`AdtyBrandSlug`、`AdtyBrandURL`）。品牌守卫测试 `common/adty_brand_guard_test.go` 和 `web/src/features/adty-guards/__tests__/brand.test.ts` 会报出合并上游时新带进来的旧写法。**下面这些不改**，守卫的允许名单也只放它们：
   - Go 模块路径和 import 路径（`github.com/QuantumNous/new-api/...`）；
   - 镜像里的二进制文件名 `/new-api`（Dockerfile）；

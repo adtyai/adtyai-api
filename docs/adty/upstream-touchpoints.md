@@ -281,7 +281,7 @@
 | `web/src/features/users/components/users-mutate-drawer.tsx` | 用户抽屉加单个用户的 RPM、TPM、并发 | 任务 7.4 | 7.4 |
 | `controller/relay.go` | 保活的开启条件从「Claude 格式的流式请求」放宽到「除 Realtime 以外的所有流式请求」 | 推理模型首字慢时 Cloudflare 会 524（任务 7.5） | 7.5 |
 | `controller/audit.go`、`web/src/features/usage-logs/lib/format.ts` | 审计模板加 `adty.official_price.update`、`adty.official_price.sync` | 审计正文能显示 | 8.4 |
-| `i18n/i18n.go` | 加 `LangFr`、`LangJa`、`LangRu`、`LangVi`；`Init` 加载 fr、ja、ru、vi 四个 yaml，预建 localizer 改成遍历 `SupportedLanguages()`；`normalizeLang` 认 fr、ja、ru、vi 及带地区的写法；`SupportedLanguages` 加这 4 种 | 后端补齐 7 种语言 | 9.1 |
+| `i18n/i18n.go` | 加 `LangFr`、`LangJa`、`LangKo`、`LangRu`、`LangVi`；`Init` 加载 fr、ja、ko、ru、vi 五个 yaml，预建 localizer 改成遍历 `SupportedLanguages()`；`normalizeLang` 认这些语言及带地区的写法；`SupportedLanguages` 包含这 5 种 | 后端补齐 8 种语言 | 9.1 |
 | `i18n/i18n_test.go` | `TestLanguageFromUserSetting` 的 fr、ja 改为期望 fr、ja，另加 de、ko 回退 en；`TestBackendMessageLanguage` 的无译文语言改用 de-DE | fr、ja 现在有译文 | 9.1 |
 | `i18n/locales/{fr,ja,ru,vi}.yaml` | 新增上游键的 4 种译文；以后合并上游时新键要补进来 | 任务 9.1 | 9.1 |
 | `web/src/styles/theme.css` | 浅色、暗色变量换成黑白取值；新增 `--canvas`、`--*-soft`、`--font-mono` 并映射到 `@theme`；`--radius` 0.5rem，`--radius-xl` 改为 ×1.5；`--font-ui-sans` 改为 Inter 加中文兜底 | 白色主题（设计稿 §6） | 8.1 |
@@ -340,7 +340,7 @@
 | `web/src/i18n/config.ts` | 末尾调 `bindDocumentLang(i18n)` | `<html lang>` 跟随界面语言 | 9.2 |
 | `web/src/styles/theme.css` | `.dark` 前加 `:root:lang(ja):not([data-theme-font='sans'])` 字体栈 | 日文页面汉字用日文字形 | 9.2 |
 | `web/src/i18n/locales/{zh,zh-TW,fr,ru,vi}.json` | 改 7 个已有键的值（Model Square→模型价格/模型價格；fr、ru、vi 补 4 个仍是英文的值） | 设计稿叫法；漏翻检查 | 9.2 |
-| `router/web-router.go` | `ServeFrontendFiles` 前插 `AdtySEOHomePages(assets.IndexPage, assets.BuildFS)` | 首页 7 个语言网址写 SEO 头和预渲染正文 | 9.3 |
+| `router/web-router.go` | `ServeFrontendFiles` 前插 `AdtySEOHomePages(assets.IndexPage, assets.BuildFS)` | 首页 8 个语言网址写 SEO 头和预渲染正文 | 9.3 |
 | `web/index.html` | 标题、描述移进 `<!--adty-head-->…<!--/adty-head-->`，里面默认带 noindex | Go 替换首页头部；其余页面不进搜索 | 9.3 |
 | `web/src/main.tsx` | 系统品牌初始化的 `apply` 开头：`<html>` 带 `data-adty-seo` 时不改标题 | 保留服务端写的首页标题 | 9.3 |
 | `web/src/routes/index.tsx` | 加 beforeLoad（调 `prepareRootHome`） | `/` 按记住的语言或登录用户语言跳转 | 9.3 |

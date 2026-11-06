@@ -94,7 +94,7 @@ BACKUP_REMOTE=backup@backup-host:/srv/backup/adtyai/
 
 网段脚本的行为：从 https://www.cloudflare.com/ips-v4 和 https://www.cloudflare.com/ips-v6 下载（两个文件结尾都没有换行，脚本不会漏掉最后一行），每行都校验是合法的 IPv4 或 IPv6 网段，数量不能太少；然后替换 include 文件并 `nginx -t`，不通过就换回旧文件。下载失败、校验不过、`nginx -t` 不过时都保留旧文件、不 reload、退出码非 0，日志里能看到原因。网段没变时不 reload Nginx，但照样刷新一遍 ufw。
 
-robots.txt 由网关按站点返回（任务 11.3）：主站和开了 SEO 的分站只屏蔽 `/api/`、`/v1/`、`/pay/`，没开 SEO 的分站整站不收录，Nginx 不用另配。sitemap 另外在 Nginx 上配，只放首页的 7 个网址。
+robots.txt 由网关按站点返回（任务 11.3）：主站和开了 SEO 的分站只屏蔽 `/api/`、`/v1/`、`/pay/`，没开 SEO 的分站整站不收录，Nginx 不用另配。sitemap 另外在 Nginx 上配，只放首页的 8 个网址。
 
 ## 6. Cloudflare 面板
 

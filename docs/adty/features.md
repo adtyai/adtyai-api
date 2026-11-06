@@ -1,6 +1,6 @@
 # 功能说明
 
-给运营人员和以后接手的开发看：每个功能做什么、规则、后台在哪里设置或操作、默认开还是关、相关的表和接口、已知的限制。内容按代码写（main，2026-11-01），每节末尾是对应的实施方案任务号；代码和方案不一致的地方单独写出来。
+给运营人员和以后接手的开发看：每个功能做什么、规则、后台在哪里设置或操作、默认开还是关、相关的表和接口、已知的限制。内容按代码写（main，2026-11-07），每节末尾是对应的实施方案任务号；代码和方案不一致的地方单独写出来。
 
 几个通用的说明：
 
@@ -328,7 +328,7 @@ Logo：PNG、JPEG 或不含脚本的 SVG，不超过 200 KB，存在 `/data/uplo
 - 后台没有按钮停用某个站的自定义域名（函数有，没挂路由）和发件域名（接口有，没按钮）；单站的可见范围没有界面。
 - 站长申请关站后，后台看不到申请，站长中心也没有申请关站的按钮。
 - 站点在关站中时，站长中心可能打不开，提示「你没有开着的站」（推断，没有测试覆盖）。
-- 分站客户条款：方案要求在分站注册时勾选并记录版本，`adty_site_customers` 有这两列，但代码从来不写，注册页也没有勾选框。
+- 分站客户条款：版本号大于 0 时，注册必须带查询参数 `site_terms_version` 且等于当前版本，通过后写进 `adty_site_customers` 的条款版本和时间。注册页仍然没有勾选框。
 - 管理员直接开站不检查开站协议；版本号还是 0 时，申请传 `"0"` 就能通过。
 - Turnstile 名额用完时，方案要求提示「请在平台子域名上注册」，没有实现；没登记进 widget 的自定义域名会拿到第一个 widget 的 site key，人机验证很可能过不了（推断）。
 - `customer_usage` 只有累计用量，方案是按客户、模型、天统计。
@@ -339,7 +339,7 @@ Logo：PNG、JPEG 或不含脚本的 SVG，不超过 200 KB，存在 `/data/uplo
 
 **分组**：
 
-- 每个分组有系统生成的固定 ID（`g` 加 4 位随机字符）和 7 种语言的显示名、描述，存在 `adty_groups`。用户、密钥、渠道里存的都是 ID，后台改显示名不影响他们；前台到处只显示显示名，不露 ID。
+- 每个分组有系统生成的固定 ID（`g` 加 4 位随机字符）和 8 种语言的显示名、描述，存在 `adty_groups`。用户、密钥、渠道里存的都是 ID，后台改显示名不影响他们；前台到处只显示显示名，不露 ID。
 - 改法：在后台原来的分组倍率表上编辑显示名（系统设置 → 计费）。上游的 JSON 编辑模式关掉了，保存时校验：出现未知的分组 ID、或者删掉了还在用的分组，都会被拒绝。
 - 迁移和删除：可以把一个分组的用户、密钥、渠道整体迁到另一个分组，迁完才能删（`POST /api/adty/admin/groups/:id/migrate`、`DELETE /api/adty/admin/groups/:id`）。
 - 接口：公开 `GET /api/adty/groups/display`（已删除分组的名字也返回给登录用户）；后台 `GET`、`POST /api/adty/admin/groups`、`PUT /api/adty/admin/groups/:id`，都只有超级管理员。
@@ -380,7 +380,7 @@ Logo：PNG、JPEG 或不含脚本的 SVG，不超过 200 KB，存在 `/data/uplo
 **群发**（营销 → 群发，`/marketing`）：
 
 - 按语言、注册时间、最后活跃、是否充过值、余额区间、分组、所属站点筛选，显示预计人数（只算能发的人）。分站客户默认不含（`include_site_customers_default`）；勾选包含时每个分站单独发一次，用分站站名。
-- 7 种语言各写一版，没写的语言用英文版；变量映射成 Resend 的联系人属性；可以存成模板。
+- 8 种语言各写一版，没写的语言用英文版；变量映射成 Resend 的联系人属性；可以存成模板。
 - 先测试发给自己，可以定时；发送前二次确认人数和语言版本，每次群发写审计。发送时在 Resend 建一个临时分组，再按语言建 broadcast。中途可以取消：定时的回到草稿，排队中的停止剩下没发的。
 - 统计：送达、退信、投诉、退订、打开、点击，来自 webhook 和 broadcast 接口。
 - 发件地址 `from_address`，底部的发件方名称和联系方式 `footer_company`、`footer_address`（CAN-SPAM 要求），打开和点击统计 `open_tracking`、`click_tracking`（默认开，只应在营销子域名上开）。
@@ -411,12 +411,12 @@ Logo：PNG、JPEG 或不含脚本的 SVG，不超过 200 KB，存在 `/data/uplo
 
 **服务状态页**（`/status`，公开）：显示 Uptime Kuma 里各监控的状态和 24 小时可用率，每 60 秒刷新，按当前站点显示站名，不显示 Uptime Kuma 自己的分组名。数据来自上游的「Uptime Kuma」设置（系统设置 → 内容），没配时显示「Service status is not available yet.」。限制：上游的 `GET /api/uptime/status` 不用登录、不看开关，返回里带分组名，「不显示渠道」只在前端做到；后端没有缓存；页脚和导航里没有指向它的链接。任务 11.10。
 
-**多语言**：前端和后端都是 7 种（en、zh-CN、zh-TW、fr、ja、ru、vi）。前端先看用户选过的语言，再看浏览器语言，都没有用英文；后端按用户设置、请求头，最后用环境变量 `DEFAULT_LANGUAGE`。漏翻检查：在 web 目录 `node scripts/adty/i18n-check.mjs`，只查我们加的键（`en.json` 减去 `upstream-en-keys.json`），7 个文件都要有、而且值不能和英文一样（品牌词和法文同形词在白名单里）；CI 和 `scripts/adty/check.sh` 都会跑。后端我们的键在 `i18n/locales/adty.<语言>.yaml`，由 Go 测试检查齐全。任务 9.1、9.2。
+**多语言**：前端和后端都是 8 种（en、zh-CN、zh-TW、fr、ja、ko、ru、vi）。前端先看用户选过的语言，再看浏览器语言，都没有用英文；后端按用户设置、请求头，最后用环境变量 `DEFAULT_LANGUAGE`。漏翻检查：在 web 目录 `node scripts/adty/i18n-check.mjs`，只查我们加的键（`en.json` 减去 `upstream-en-keys.json`），8 个文件都要有、而且值不能和英文一样（品牌词和法文同形词在白名单里）；CI 和 `scripts/adty/check.sh` 都会跑。后端我们的键在 `i18n/locales/adty.<语言>.yaml`，由 Go 测试检查齐全。任务 9.1、9.2。
 
 **首页 SEO**：
 
-- 7 个首页网址：`/`（英文，另有 x-default 指向它）、`/zh-cn`、`/zh-tw`、`/fr`、`/ja`、`/ru`、`/vi`。用户选过语言、或者已登录且界面不是英文时，打开 `/` 跳到对应语言的首页；搜索引擎和第一次来的访客看到英文。
-- Go 返回首页时写进标题、描述、canonical（不带查询参数）、7 条 hreflang、Open Graph、Twitter 卡片，只在 `/` 写 WebSite 结构化数据；正文在构建时预渲染进 `web/dist/adty-home.json`，插在 `#root` 前面。
+- 8 个首页网址：`/`（英文，另有 x-default 指向它）、`/zh-cn`、`/zh-tw`、`/fr`、`/ja`、`/ko`、`/ru`、`/vi`。用户选过语言、或者已登录且界面不是英文时，打开 `/` 跳到对应语言的首页；搜索引擎和第一次来的访客看到英文。
+- Go 返回首页时写进标题、描述、canonical（不带查询参数）、8 条 hreflang、Open Graph、Twitter 卡片，只在 `/` 写 WebSite 结构化数据；正文在构建时预渲染进 `web/dist/adty-home.json`，插在 `#root` 前面。
 - 后台「系统设置 → 站点 → Home Page SEO」：`adty_seo_setting.home_title`、`home_description`（按语言，没填用英文的，英文也没填时标题用 ADTY AI）、`og_image`（默认 `/adty-og.png`）。
 - 其余页面一律 noindex。服务器地址（`ServerAddress`）没设或还是 `http://localhost:3000` 时，不写 canonical、hreflang 和结构化数据；请求的域名和服务器地址不同时首页加 noindex。分站见「站长分站」。
 - 落地页保持白底。区块是首屏、支付方式、热门模型、三步、接入说明、卖点、返佣、常见问题。没有收尾的「今天就发出第一个请求」。接入说明链到 `/docs/claude-code`、`/docs/codex-cli`、`/docs/cherry-studio`、`/docs/openai-sdk`。
@@ -427,13 +427,15 @@ Logo：PNG、JPEG 或不含脚本的 SVG，不超过 200 KB，存在 `/data/uplo
 
 ## 限流、脱敏和其他安全
 
-**按用户限流**：`adty_limit_setting.enabled`（默认关）、`default_rpm`、`default_tpm`、`default_concurrency`（默认 0 表示不限）；单个用户在「用户 → 编辑」里单独设（-1 跟默认、0 不限），存在 `adty_user_limits`。固定 1 分钟窗口；TPM 在写消费日志时累计（关掉消费日志也算）；并发按请求登记，请求结束释放。超限返回 HTTP 429 和 `Retry-After`，错误类型 `adtyai_error`、错误码 `rate_limit_exceeded`。开了 Redis 用 Redis 计数，否则用进程内存；计数出错时放行。后台：系统设置 → 安全 → 用户限流。接口 `GET`、`PUT /api/adty/admin/users/:id/limits`。限制：TPM 是事后累计，同一分钟里同时进来的大请求拦不住；跨分钟边界时短时间内最多约 2 倍上限；同一用户所有令牌共用计数；演练场 `/pg` 没挂。任务 7.4。
+**按用户限流**：`adty_limit_setting.enabled`（默认关）、`default_rpm`、`default_tpm`、`default_concurrency`（默认 0 表示不限）；单个用户在「用户 → 编辑」里单独设（-1 跟默认、0 不限），存在 `adty_user_limits`。固定 1 分钟窗口；TPM 在写消费日志时累计（关掉消费日志也算）；并发按请求登记，请求结束释放。超限返回 HTTP 429 和 `Retry-After`，错误类型 `adtyai_error`、错误码 `rate_limit_exceeded`。开了 Redis 就只用 Redis 计数，不退回进程内存；客户端没接上或计数出错时返回 HTTP 503，错误码 `rate_limit_unavailable`，不放行。没开 Redis 时用进程内存。后台：系统设置 → 安全 → 用户限流。接口 `GET`、`PUT /api/adty/admin/users/:id/limits`。限制：TPM 是事后累计，同一分钟里同时进来的大请求拦不住；跨分钟边界时短时间内最多约 2 倍上限；同一用户所有令牌共用计数；演练场 `/pg` 没挂。任务 7.4。
 
 **客户接口脱敏**：客户自己看到的日志去掉渠道 ID、渠道名、上游请求 ID，`other` 按白名单只留用量和状态（去掉倍率、模型价、上游模型名、`admin_info`）；任务列表不露渠道和上游模型名；任务提交不再返回 `X-New-Api-Other-Ratios` 头。作用于 `GET /api/log/self`、`/api/log/self/export`、`/api/log/token`、`/api/task/self`、`/api/mj/self`、站长看客户请求的接口。管理员的 `/api/log/`、`/api/task` 照常显示渠道。按接口脱敏，不按角色：管理员调 `/api/log/self` 看到的也是脱敏后的。任务 7.1。
 
 **人工调额留痕**：后台「用户 → 编辑 → 调余额」原因必填（最多 200 字），带幂等键；写审计（带原因）、用户自己的日志（不带原因）和余额流水 `adty_balance_ledgers`（带原因，只给后台看，`GET /api/adty/admin/users/:id/ledger`）。非超级管理员不能调同级或更高角色的用户。「减少」不能减到 0 以下，「覆盖」不能写成负数（见「余额下限」）。任务 7.2。
 
-**防邮箱枚举**：邮箱已注册时，发注册验证码不发码、改发一封提醒信（10 分钟最多一封），接口照样返回成功；注册时邮箱已占用返回和「验证码错误」一样的提示；找回密码不管邮箱存不存在都返回成功；三封信都异步发。限制：用户名仍可以被枚举；登录后绑定邮箱、第三方登录仍会提示邮箱已被占用；提醒信的频率限制在进程内存里。任务 7.3。
+**防邮箱枚举**：邮箱已注册时，发注册验证码不发码、改发一封提醒信（10 分钟最多一封），接口照样返回成功；注册时邮箱已占用返回和「验证码错误」一样的提示；找回密码不管邮箱存不存在都返回成功；三封信都异步发。开了 Redis 但客户端没接上时，两个发码接口都返回 HTTP 503，不发信。验证码或重置码写不进共享存储时不发信；已注册邮箱和未知邮箱都返回同一个空成功，不用 503 区分。限制：用户名仍可以被枚举；登录后绑定邮箱、第三方登录仍会提示邮箱已被占用；提醒信的频率限制在进程内存里。任务 7.3。
+
+**登录失败锁定**：同一用户名密码错误累计 8 次后，15 分钟内照常返回用户名或密码错误，不再校验密码。开了 Redis 就用 Redis 共享计数；客户端没接上或读写出错时按已锁定处理，不退回进程内存。没开 Redis 时用进程内存。
 
 **流式保活**：上游的 ping（`general_setting.ping_interval_enabled` 默认关、`ping_interval_seconds` 默认 60，后台在「系统设置 → 模型 → Global Model Configuration」的「Keep-alive Ping」）现在对所有流式格式（Realtime 除外）在请求上游之前就开始发 `: PING`，一直到第一次写出数据，最长 120 分钟，避免推理模型首字超过 125 秒被 Cloudflare 以 524 断开。上线时打开，间隔设 30 秒。限制：原生 Gemini 流式（`/v1beta`）上游本来关掉了 ping，现在首字前也会收到 ping（提前保活不看这个开关，对 Gemini 客户端的影响没有核实）；第一次 ping 发出后状态码固定为 200，之后上游再出错只能在流里返回错误事件。任务 7.5。
 
@@ -441,13 +443,13 @@ Logo：PNG、JPEG 或不含脚本的 SVG，不超过 200 KB，存在 `/data/uplo
 
 **官方价**：主节点启动时同步一次，之后每 24 小时（环境变量 `ADTY_OFFICIAL_PRICE_SYNC_HOURS`）从 models.dev 拉取输入、输出、缓存读、缓存写的每百万 tokens 美元价，存进 `adty_official_prices`；失败保留旧数据。只更新有映射、没开「手动覆盖」的行；没映射的模型按 `adty_official_price_setting.auto_map_providers`（默认 anthropic、openai、google、deepseek、xai、mistral）找完全同名的自动映射。按次价只能手填。价格页和首页显示「省 X%」= 1 − 本站价 ÷ 官方价（按输入价、美元，向下取整到整数百分比，为负显示「—」）。后台「系统设置 → 计费 → Official Prices」（只有超级管理员）：改映射、价格、手动覆盖，立即同步。公开接口 `GET /api/adty/pricing/official`。限制：不开手动覆盖时手填的价格会被下次同步改回；没有删除接口；`auto_map_providers` 没有后台界面。任务 8.4、8.5。
 
-**接入文档**（`/docs`、`/docs/<页>`，公开）：快速开始、Claude Code、Codex CLI、Cherry Studio、OpenAI SDK、错误和限制、常见问题，7 种语言，是仓库里的 Markdown（`web/src/features/adty-docs/content/`），改内容要改代码后重新构建。文中的接入地址取 `adty_site_setting.api_base_url`，没填用服务器地址。限制：分站的文档也显示主站品牌，主站填了 `api_base_url` 时分站文档显示主站的接入地址。任务 8.6。
+**接入文档**（`/docs`、`/docs/<页>`，公开）：快速开始、Claude Code、Codex CLI、Cherry Studio、OpenAI SDK、错误和限制、常见问题，8 种语言，是仓库里的 Markdown（`web/src/features/adty-docs/content/`），改内容要改代码后重新构建。文中的接入地址取 `adty_site_setting.api_base_url`，没填用服务器地址。限制：分站的文档也显示主站品牌，主站填了 `api_base_url` 时分站文档显示主站的接入地址。任务 8.6。
 
-**条款**：用户协议、隐私政策、退款政策三份多语言条款，后台「系统设置 → 内容 → 多语言条款」按语言填，`GET /api/adty/legal/:doc?lang=` 按「本语言 → 英文 → 上游的 `legal.*`」回退；退款政策要在「站点 → ADTY AI Site」打开 `refund_policy_enabled` 才显示。注册和登录页的同意勾选框只看上游的 `legal.user_agreement`、`legal.privacy_policy` 有没有填，所以两边都要填（见上线清单）。开站协议和分站客户条款（`site_agreement`、`site_customer_terms`）也在 `adty_legal_setting` 里。限制：同意只在前端检查，后端不记录同意了哪个版本；开站协议和分站客户条款没有后台编辑界面，只能直接写设置；主站页脚的法律链接没有退款政策（登录注册页的有）。任务 8.6。
+**条款**：用户协议、隐私政策、退款政策三份多语言条款，后台「系统设置 → 内容 → 多语言条款」按语言填，`GET /api/adty/legal/:doc?lang=` 按「本语言 → 英文 → 上游的 `legal.*`」回退；退款政策要在「站点 → ADTY AI Site」打开 `refund_policy_enabled` 才显示。注册和登录页的同意勾选框只看上游的 `legal.user_agreement`、`legal.privacy_policy` 有没有填，所以两边都要填（见上线清单）。主站发布了用户协议或隐私政策后，注册必须带 `agreement_accepted: true`，否则拒绝并不建账号；接受后写一条系统日志，不另记版本号。开站协议和分站客户条款（`site_agreement`、`site_customer_terms`）也在 `adty_legal_setting` 里。限制：登录页的勾选仍然只在前端检查；开站协议和分站客户条款没有后台编辑界面，只能直接写设置；主站页脚的法律链接没有退款政策（登录注册页的有）。任务 8.6。
 
 ## 品牌和 Logo
 
-**站名**：ADTY AI，7 种语言都不翻译；程序对外的技术名字是 adtyai。代码里只在 `common/adty_brand.go`（`AdtyBrandName`、`AdtyBrandSlug`、`AdtyBrandURL`）和 `web/src/lib/adty-brand.ts`（`ADTY_BRAND_NAME` 等）两处写字面量。后台的系统名称默认就是 ADTY AI。
+**站名**：ADTY AI，8 种语言都不翻译；程序对外的技术名字是 adtyai。代码里只在 `common/adty_brand.go`（`AdtyBrandName`、`AdtyBrandSlug`、`AdtyBrandURL`）和 `web/src/lib/adty-brand.ts`（`ADTY_BRAND_NAME` 等）两处写字面量。后台的系统名称默认就是 ADTY AI。
 
 **Logo**：方案 H「层叠网关」。原稿和生成脚本在仓库外的 `C:\Users\Administrator\ai\adtyai-logo`（`source/build.py` 生成全部文件，说明见那里的 README.md）。`web/public` 里的文件：
 
