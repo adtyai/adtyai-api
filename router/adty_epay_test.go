@@ -131,6 +131,24 @@ func TestAdtyEpayPay(t *testing.T) {
 		assert.Equal(t, c.Id, view.Ext.ChannelId)
 	})
 
+	t.Run("fails over when the gateway returns a javascript link", func(t *testing.T) {
+		evil := newFakeEpay(t, func(form url.Values) (int, string, time.Duration) {
+			return 200, `{"code":1,"trade_no":"G` + form.Get("out_trade_no") + `","qrcode":"javascript:alert(1)"}`, 0
+		})
+		good := newFakeEpay(t, epayQR)
+		bad := seedRouterEpayChannel(t, "jsqr", evil.server.URL, model.AdtyEpayOrderModeAPI, 9)
+		next := seedRouterEpayChannel(t, "jsgood", good.server.URL, model.AdtyEpayOrderModeAPI, 5)
+		t.Cleanup(func() {
+			_ = model.SetAdtyEpayChannelStatus(bad.Id, model.AdtyEpayStatusDisabled, "manual")
+			_ = model.SetAdtyEpayChannelStatus(next.Id, model.AdtyEpayStatusDisabled, "manual")
+		})
+		token, _ := bepusdtBuyer(t, f, "epay-js")
+		view := decodeAdtyData[model.AdtyTopUpView](t, epayPay(t, f, token).Body)
+		assert.Equal(t, next.Id, view.Ext.ChannelId)
+		assert.NotContains(t, view.Ext.QRCode, "javascript:")
+		assert.Contains(t, view.Ext.QRCode, "https://qr.example/")
+	})
+
 	t.Run("total deadline", func(t *testing.T) {
 		var ids []int
 		for i := range 4 {

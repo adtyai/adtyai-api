@@ -68,7 +68,7 @@ func RequestBEpusdtPay(c *gin.Context) {
 		AmountUSD:   quote.PayAmount,
 		TradeType:   req.Chain,
 		NotifyURL:   callback + "/api/user/bepusdt/notify",
-		RedirectURL: callback + "/wallet",
+		RedirectURL: service.AdtyPayResultURL(topUp.TradeNo),
 		Name:        common.SystemName,
 		Timeout:     minutes * 60,
 	})

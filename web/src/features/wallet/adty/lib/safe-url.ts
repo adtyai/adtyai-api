@@ -23,6 +23,8 @@ const APP_SCHEMES = new Set(['alipays:', 'alipay:', 'weixin:'])
  * A payment link from a gateway is only opened when it is http(s) or one of
  * the fixed Alipay / WeChat app schemes, so a gateway cannot send javascript:.
  */
+const DANGEROUS_QR_SCHEME = /^(javascript|data|vbscript|file|blob):/i
+
 export function isSafePaymentUrl(value: string | null | undefined): boolean {
   const trimmed = value?.trim() || ''
   if (!trimmed || trimmed.includes('\\')) return false
@@ -36,4 +38,11 @@ export function isSafePaymentUrl(value: string | null | undefined): boolean {
   } catch {
     return false
   }
+}
+
+/** QR payloads may be raw text or a payment scheme. Dangerous schemes are not drawn. */
+export function isDisplayablePaymentQr(value: string | null | undefined): boolean {
+  const trimmed = value?.trim() || ''
+  if (!trimmed || trimmed.includes('\\') || trimmed.startsWith('//')) return false
+  return !DANGEROUS_QR_SCHEME.test(trimmed)
 }

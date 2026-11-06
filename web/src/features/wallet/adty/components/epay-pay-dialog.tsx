@@ -33,7 +33,7 @@ import { formatCountdown, useNowSeconds } from '../lib/countdown'
 import { creditedUsdAmount } from '../lib/money'
 import { detectPayDevice } from '../lib/device'
 import { clearPendingPayment, savePendingPayment } from '../lib/pending-payment'
-import { isSafePaymentUrl } from '../lib/safe-url'
+import { isDisplayablePaymentQr, isSafePaymentUrl } from '../lib/safe-url'
 import type { AdtyOrder, AdtyOrderExt } from '../types'
 
 type EpayPayDialogProps = {
@@ -51,7 +51,7 @@ type EpayPayDialogProps = {
 
 /** QR content for desktop: the gateway QR code, otherwise the payment link. */
 function qrContent(ext: AdtyOrderExt): string {
-  if (ext.qr_code) return ext.qr_code
+  if (isDisplayablePaymentQr(ext.qr_code)) return ext.qr_code
   if (isSafePaymentUrl(ext.pay_url)) return ext.pay_url
   return ''
 }
@@ -189,6 +189,12 @@ export function EpayPayDialog(props: EpayPayDialogProps) {
 
   const appName = props.method === 'wxpay' ? t('WeChat') : t('Alipay')
   const qr = ext ? qrContent(ext) : ''
+  const unsafeLink =
+    blocked ||
+    (device === 'pc' &&
+      status === 'pending' &&
+      qr === '' &&
+      Boolean(ext?.qr_code || ext?.pay_url || ext?.url_scheme))
 
   return (
     <Dialog
@@ -246,7 +252,7 @@ export function EpayPayDialog(props: EpayPayDialogProps) {
           {t('This order has expired. Please create a new one.')}
         </p>
       )}
-      {blocked && (
+      {unsafeLink && (
         <Alert variant='destructive'>
           <AlertDescription>
             {t('The payment link is not safe to open. Try another channel.')}

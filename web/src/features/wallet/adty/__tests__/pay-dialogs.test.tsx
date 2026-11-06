@@ -309,6 +309,28 @@ describe('EpayPayDialog', () => {
     expect(navigate).not.toHaveBeenCalled()
   })
 
+  it('does not render a javascript QR code on desktop', async () => {
+    const evil = epayOrder('EPY7', { qr_code: 'javascript:alert(1)' })
+    pay.payWithEpay.mockResolvedValue(evil)
+    api.getAdtyOrder.mockResolvedValue(evil)
+    render(
+      <EpayPayDialog
+        method='alipay'
+        amount={100}
+        device='pc'
+        onClose={() => {}}
+        onSettled={() => {}}
+      />,
+      { wrapper }
+    )
+    expect(
+      await screen.findByText(
+        'The payment link is not safe to open. Try another channel.'
+      )
+    ).toBeVisible()
+    expect(screen.queryByTestId('epay-qr')).not.toBeInTheDocument()
+  })
+
   it('trying another channel cancels and reorders without that channel', async () => {
     const first = epayOrder('EPY5', { qr_code: 'https://qr/1', channel_id: 3 })
     const second = epayOrder('EPY6', { qr_code: 'https://qr/2', channel_id: 4 })

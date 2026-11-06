@@ -67,6 +67,18 @@ func newBrandFixture(t *testing.T) *siteFixture {
 	return f
 }
 
+func TestResetLinkEscapesPlusInEmail(t *testing.T) {
+	f := newBrandFixture(t)
+	sent := captureSiteMail(t)
+	user := f.user(t, "plus-user", 0)
+	require.NoError(t, f.db.Model(&model.User{}).Where("id = ?", user.Id).Update("email", "a+b@example.com").Error)
+	f.do(t, http.MethodGet, "main.example.com", "/api/reset_password?email="+url.QueryEscape("a+b@example.com"), "")
+	mails := sent()
+	require.Len(t, mails, 1)
+	assert.Contains(t, mails[0].content, "email=a%2Bb%40example.com")
+	assert.NotContains(t, mails[0].content, "email=a+b@")
+}
+
 func TestResetLinkUsesUserSiteNotHost(t *testing.T) {
 	f := newBrandFixture(t)
 	sent := captureSiteMail(t)
@@ -83,11 +95,11 @@ func TestResetLinkUsesUserSiteNotHost(t *testing.T) {
 
 	mails := sent()
 	require.Len(t, mails, 2)
-	assert.Contains(t, mails[0].content, "https://shop.sites.example.com/user/reset?email=c@example.com")
+	assert.Contains(t, mails[0].content, "https://shop.sites.example.com/user/reset?email=c%40example.com")
 	assert.NotContains(t, mails[0].content, "evil.example.net")
 	assert.Contains(t, mails[0].subject, "Shop AI")
 	assert.Equal(t, "Shop AI <noreply@mail.adtyai.com>", mails[0].from)
-	assert.Contains(t, mails[1].content, "https://main.example.com/user/reset?email=m@example.com", "主站用户在分站域名上找回，链接仍是主站")
+	assert.Contains(t, mails[1].content, "https://main.example.com/user/reset?email=m%40example.com", "主站用户在分站域名上找回，链接仍是主站")
 	assert.NotContains(t, mails[1].subject, "Shop AI")
 }
 

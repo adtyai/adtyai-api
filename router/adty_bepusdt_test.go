@@ -25,6 +25,7 @@ type bepusdtGateway struct {
 	dropCancel    bool
 	creates       int
 	cancels       []string
+	lastRedirect  string
 }
 
 // useFakeBEpusdt 配好 BEpusdt 并把网关指向一个假服务。
@@ -52,6 +53,9 @@ func useFakeBEpusdt(t *testing.T) *bepusdtGateway {
 			return
 		}
 		gw.creates++
+		if redirect, ok := body["redirect_url"].(string); ok {
+			gw.lastRedirect = redirect
+		}
 		if gw.createStatus != 200 {
 			_, _ = w.Write([]byte(`{"status_code":400,"message":"no address","data":null}`))
 			return
@@ -104,6 +108,15 @@ func quotaOf(t *testing.T, f *adtyGuardFixture, id int) int {
 	var user model.User
 	require.NoError(t, f.db.First(&user, id).Error)
 	return user.Quota
+}
+
+func TestBEpusdtPayRedirectsThroughSignedResult(t *testing.T) {
+	f := newAdtyGuardFixture(t)
+	gw := useFakeBEpusdt(t)
+	token, _ := bepusdtBuyer(t, f, "usdt-redirect")
+	view := payBEpusdt(t, f, token)
+	assert.Contains(t, gw.lastRedirect, "/pay/result/"+view.TradeNo)
+	assert.NotContains(t, gw.lastRedirect, "/wallet")
 }
 
 func TestBEpusdtPayCreatesOrderWithBonus(t *testing.T) {

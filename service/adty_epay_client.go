@@ -81,7 +81,11 @@ func CreateAdtyEpayOrder(ctx context.Context, channel *model.AdtyEpayChannel, me
 		}
 		values.Set("sign", sign)
 		values.Set("sign_type", "MD5")
-		return &AdtyEpayCreateResult{Mode: "submit", PayURL: adtyEpayEndpoint(channel, "/submit.php") + "?" + values.Encode()}, nil
+		result := &AdtyEpayCreateResult{Mode: "submit", PayURL: adtyEpayEndpoint(channel, "/submit.php") + "?" + values.Encode()}
+		if err := adtyRejectUnsafeEpayLink(result); err != nil {
+			return nil, err
+		}
+		return result, nil
 	}
 	params["clientip"] = req.ClientIP
 	params["device"] = req.Device
@@ -135,7 +139,70 @@ func CreateAdtyEpayOrder(ctx context.Context, channel *model.AdtyEpayChannel, me
 	default:
 		return nil, fmt.Errorf("epay mapi returned no payment link")
 	}
+	if err := adtyRejectUnsafeEpayLink(result); err != nil {
+		return nil, err
+	}
 	return result, nil
+}
+
+// adtyDangerousEpaySchemes 不能进二维码，也不能被浏览器打开。
+var adtyDangerousEpaySchemes = map[string]bool{
+	"javascript": true,
+	"data":       true,
+	"vbscript":   true,
+	"file":       true,
+	"blob":       true,
+}
+
+func adtyEpayScheme(value string) string {
+	parsed, err := url.Parse(strings.TrimSpace(value))
+	if err != nil {
+		return "invalid"
+	}
+	return strings.ToLower(parsed.Scheme)
+}
+
+// adtyEpayOpenedLinkSafe 是会交给浏览器打开的链接：只允许 http(s) 和支付宝、微信的固定 scheme。
+func adtyEpayOpenedLinkSafe(value string) bool {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" || strings.Contains(trimmed, "\\") || strings.HasPrefix(trimmed, "//") {
+		return false
+	}
+	switch adtyEpayScheme(trimmed) {
+	case "http", "https", "alipay", "alipays", "weixin":
+		return true
+	default:
+		return false
+	}
+}
+
+// adtyEpayQRSafe 是画进二维码的内容。没有 scheme 的原文可以画；危险 scheme 不行。
+func adtyEpayQRSafe(value string) bool {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" || strings.Contains(trimmed, "\\") || strings.HasPrefix(trimmed, "//") {
+		return false
+	}
+	scheme := adtyEpayScheme(trimmed)
+	if scheme == "" {
+		return !strings.Contains(trimmed, ":")
+	}
+	return scheme != "invalid" && !adtyDangerousEpaySchemes[scheme]
+}
+
+func adtyRejectUnsafeEpayLink(result *AdtyEpayCreateResult) error {
+	safe := false
+	switch result.Mode {
+	case "qrcode":
+		safe = adtyEpayQRSafe(result.QRCode)
+	case "payurl", "submit":
+		safe = adtyEpayOpenedLinkSafe(result.PayURL)
+	case "urlscheme":
+		safe = adtyEpayOpenedLinkSafe(result.URLScheme)
+	}
+	if !safe {
+		return fmt.Errorf("epay returned an unsafe payment link")
+	}
+	return nil
 }
 
 // QueryAdtyEpayOrder 按我们的订单号查单（api.php?act=order）。status、code 兼容数字和字符串。
