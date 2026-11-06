@@ -164,7 +164,7 @@ Transitive dependencies should be audited before a final external release.
 | web      | development | npm       | `oxlint`                                                | `1.74.0`                             | MIT                     |
 | web      | development | npm       | `vitest`                                                | `4.1.10`                             | MIT                     |
 | electron | development | npm       | `cross-env`                                             | `7.0.3`                              | MIT                     |
-| electron | development | npm       | `electron`                                              | `41.10.6`                            | MIT                     |
+| electron | development | npm       | `electron`                                              | `42.11.18`                           | MIT                     |
 | electron | development | npm       | `electron-builder`                                      | `26.15.3`                            | MIT                     |
 
 ## License Texts
