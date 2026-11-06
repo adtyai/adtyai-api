@@ -57,6 +57,7 @@ func AdjustUserQuotaWithLedger(userID, operatorID, operatorRole int, mode string
 	refID := fmt.Sprintf("%s:%d", mode, value)
 
 	var result AdtyQuotaAdjustResult
+	var cacheApplied bool
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		var user User
 		if err := lockForUpdate(tx).First(&user, userID).Error; err != nil {
@@ -87,13 +88,25 @@ func AdjustUserQuotaWithLedger(userID, operatorID, operatorRole int, mode string
 		if err != nil {
 			return err
 		}
+		delta := int64(after) - int64(user.Quota)
+		applied, err := applyManualAdjustCache(userID, delta)
+		cacheApplied = applied
+		if err != nil {
+			return err
+		}
+		fail := func(cause error) error {
+			if applied {
+				compensateManualAdjustCache(userID, delta)
+			}
+			return cause
+		}
 		if after != user.Quota {
 			updated := tx.Model(&User{}).Where("id = ?", userID).Update("quota", after)
 			if updated.Error != nil {
-				return updated.Error
+				return fail(updated.Error)
 			}
 			if updated.RowsAffected != 1 {
-				return gorm.ErrRecordNotFound
+				return fail(gorm.ErrRecordNotFound)
 			}
 		}
 		entry := &AdtyBalanceLedger{
@@ -106,7 +119,7 @@ func AdjustUserQuotaWithLedger(userID, operatorID, operatorRole int, mode string
 			entry.IdempotencyKey = &idemKey
 		}
 		if err := InsertAdtyLedgerTx(tx, entry); err != nil {
-			return err
+			return fail(err)
 		}
 		result = AdtyQuotaAdjustResult{UserQuotaAdjustment: UserQuotaAdjustment{
 			UserID: user.Id, Username: user.Username, Before: user.Quota, After: after,
@@ -116,9 +129,11 @@ func AdjustUserQuotaWithLedger(userID, operatorID, operatorRole int, mode string
 	if err != nil {
 		return nil, err
 	}
-	if delta := int64(result.After) - int64(result.Before); delta != 0 && !result.Replayed {
-		if err := cacheIncrUserQuota(userID, delta); err != nil {
-			common.SysError(common.LogText("failed to sync manual quota adjustment for user %d: %s", userID, err))
+	if !cacheApplied && !result.Replayed {
+		if delta := int64(result.After) - int64(result.Before); delta != 0 {
+			if err := cacheIncrUserQuota(userID, delta); err != nil {
+				common.SysError(common.LogText("failed to sync manual quota adjustment for user %d: %s", userID, err))
+			}
 		}
 	}
 	return &result, nil

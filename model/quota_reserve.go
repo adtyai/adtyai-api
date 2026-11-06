@@ -38,6 +38,23 @@ end
 redis.call('HINCRBY', KEYS[1], 'Quota', ARGV[1])
 return 1`
 
+// userQuotaDeltaFloorScript applies a manual adjustment delta only when the
+// live cache balance stays at or above zero. A miss returns -1. A floor
+// rejection returns 0 and leaves the hash unchanged.
+const userQuotaDeltaFloorScript = `
+if tonumber(redis.call('HGET', KEYS[1], 'Id') or '0') ~= tonumber(ARGV[2])
+  or tonumber(redis.call('HGET', KEYS[1], 'CacheSchema') or '0') ~= tonumber(ARGV[3])
+  or redis.call('HEXISTS', KEYS[1], 'Quota') == 0 then
+  return -1
+end
+local quota = tonumber(redis.call('HGET', KEYS[1], 'Quota'))
+local delta = tonumber(ARGV[1])
+if quota == nil or quota + delta < 0 then
+  return 0
+end
+redis.call('HINCRBY', KEYS[1], 'Quota', delta)
+return 1`
+
 // userQuotaChargeUpToScript 最多扣到 0：返回实扣额（余额已 ≤ 0 时为 0），
 // 缓存缺失或身份/CacheSchema 不符返回 -1。
 const userQuotaChargeUpToScript = `
@@ -111,6 +128,15 @@ func cacheChargeUserQuotaUpTo(userID int, amount int64) (int, error) {
 
 func cacheApplyUserQuotaDelta(userID int, delta int64) (cacheQuotaResult, error) {
 	result, err := common.RDB.Eval(context.Background(), userQuotaDeltaScript,
+		[]string{getUserCacheKey(userID)}, delta, userID, userCacheSchemaVersion).Int()
+	return quotaResultFromLua(result, err)
+}
+
+func cacheApplyManualQuotaDelta(userID int, delta int64) (cacheQuotaResult, error) {
+	if !common.RedisEnabled || delta == 0 {
+		return cacheQuotaMiss, nil
+	}
+	result, err := common.RDB.Eval(context.Background(), userQuotaDeltaFloorScript,
 		[]string{getUserCacheKey(userID)}, delta, userID, userCacheSchemaVersion).Int()
 	return quotaResultFromLua(result, err)
 }

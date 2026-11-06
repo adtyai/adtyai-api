@@ -697,11 +697,15 @@ func TestManageUserQuotaCacheUsesCommittedIntegerDifference(t *testing.T) {
 		name, mode                               string
 		before, cached, value, after, wantCached int
 		failUpdate, failCache, missingCache      bool
+		rejectNegative                           bool
 	}{
 		{name: "add_preserves_reservations", mode: "add", before: 1000, cached: 900, value: 500, after: 1500, wantCached: 1400},
 		{name: "subtract_preserves_reservations", mode: "subtract", before: 1000, cached: 900, value: 500, after: 500, wantCached: 400},
 		{name: "override_preserves_reservations", mode: "override", before: 1000, cached: 900, value: 2000, after: 2000, wantCached: 1900},
-		{name: "large_odd_difference", mode: "override", before: common.MaxWalletQuota - 1, cached: common.MaxWalletQuota - 1, value: -common.MaxWalletQuota, after: -common.MaxWalletQuota, wantCached: -common.MaxWalletQuota},
+		// A negative override used to be the only delta outside float64's exact
+		// integer range. The wallet floor rejects it, so the cache must stay put.
+		{name: "negative_override_keeps_cache", mode: "override", before: common.MaxWalletQuota - 1, cached: common.MaxWalletQuota - 1, value: -common.MaxWalletQuota, after: common.MaxWalletQuota - 1, wantCached: common.MaxWalletQuota - 1, rejectNegative: true},
+		{name: "subtract_rejects_when_live_cache_would_go_negative", mode: "subtract", before: 1000, cached: 100, value: 500, after: 1000, wantCached: 100, rejectNegative: true},
 		{name: "rollback_does_not_change_cache", mode: "subtract", before: 1000, cached: 900, value: 500, after: 1000, wantCached: 900, failUpdate: true},
 		{name: "cache_error_keeps_committed_change", mode: "add", before: 1000, value: 500, after: 1500, failCache: true},
 		{name: "missing_cache_is_not_partially_created", mode: "add", before: 1000, value: 500, after: 1500, missingCache: true},
@@ -745,7 +749,12 @@ func TestManageUserQuotaCacheUsesCommittedIntegerDifference(t *testing.T) {
 				}))
 			}
 			recorder := performManageUserRequest(t, fmt.Sprintf(`{"id":%d,"action":"add_quota","reason":"test","mode":%q,"value":%d}`, user.Id, tc.mode, tc.value))
-			assert.Contains(t, recorder.Body.String(), fmt.Sprintf(`"success":%t`, !tc.failUpdate))
+			if tc.rejectNegative {
+				assert.Contains(t, recorder.Body.String(), "Adjustment cannot make the balance negative")
+				assert.NotContains(t, recorder.Body.String(), `"success":true`)
+			} else {
+				assert.Contains(t, recorder.Body.String(), fmt.Sprintf(`"success":%t`, !tc.failUpdate))
+			}
 			require.NoError(t, db.First(&user, user.Id).Error)
 			assert.Equal(t, tc.after, user.Quota)
 			if tc.missingCache {

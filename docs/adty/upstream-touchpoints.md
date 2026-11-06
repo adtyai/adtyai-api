@@ -24,6 +24,10 @@
 | `controller/oauth.go` | `findOrCreateOAuthUser` 在分站要求条款且未接受时返回 `OAuthSiteTermsError` | 分站客户注册必须先接受当前条款 | 审查 v3 |
 | `controller/user_quota.go` | 空幂等键和过长幂等键都映射为 `Invalid idempotency key` | 调额不能在没有幂等键时入账 | 审查 v3 |
 | `controller/user_manage_test.go` | 调额请求补上幂等键 | 空幂等键现在会被拒绝，原用例要带上键才能走到原来的分支 | 审查 v3 |
+| `controller/user_manage_test.go` | `large_odd_difference` 改为 `negative_override_keeps_cache`：负覆盖被拒绝，余额和缓存保持原值 | 2026-11-06 选定的调额下限不允许写成负数；原用例期望成功写入 `-MaxWalletQuota`，和这条规则冲突，门禁因此失败 | 审查 v3 |
+| `controller/user_manage_test.go` | 增加 `subtract_rejects_when_live_cache_would_go_negative` | 数据库余额够减、缓存已更低时，减额不能把活余额写成负数 | 审查 v3 |
+| `model/quota_reserve.go` | 增加 `userQuotaDeltaFloorScript` 和 `cacheApplyManualQuotaDelta` | 人工调额写缓存前拒绝会把活余额减成负数的增量 | 审查 v3 |
+| `model/user_quota_adjustment.go` | `AdjustUserQuota` 在写数据库前用活缓存做下限；缓存不可用时仍提交数据库变更 | 批量更新下缓存才是可花余额；缓存故障不能回滚已经决定的调额 | 审查 v3 |
 | `router/relay-router.go` | `relayV1Router`、`/pg`、`/v1beta` 和 `/mj` 增加 `AdtyRequireCurrentSiteTerms` | 分站条款未接受时不能继续调用中转或演练场 | 审查 v3 |
 | `router/api-router.go` | 令牌、日志、用量、任务和审计的自助路由在登录后增加 `AdtyRequireCurrentSiteTerms` | 条款升级后，未确认的分站客户不能继续管密钥或读自己的用量 | 审查 v3 |
 | `router/adty-router.go` | 钱包充值、USDT 下单和易支付下单在登录后增加 `AdtyRequireCurrentSiteTerms` | 条款升级后，未确认的分站客户不能继续报价或下单 | 审查 v3 |

@@ -37,6 +37,7 @@ func AdjustUserQuota(userID, operatorRole int, mode string, value int) (*UserQuo
 	}
 
 	var adjustment UserQuotaAdjustment
+	var cacheApplied bool
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		var user User
 		if err := lockForUpdate(tx).First(&user, userID).Error; err != nil {
@@ -52,15 +53,27 @@ func AdjustUserQuota(userID, operatorRole int, mode string, value int) (*UserQuo
 		if err != nil {
 			return err
 		}
+		delta := int64(after) - int64(user.Quota)
+		applied, err := applyManualAdjustCache(userID, delta)
+		cacheApplied = applied
+		if err != nil {
+			return err
+		}
+		fail := func(cause error) error {
+			if applied {
+				compensateManualAdjustCache(userID, delta)
+			}
+			return cause
+		}
 		// An unchanged override is a successful operation, including on MySQL
 		// configurations that count only changed rows in RowsAffected.
 		if after != user.Quota {
 			result := tx.Model(&User{}).Where("id = ?", userID).Update("quota", after)
 			if result.Error != nil {
-				return result.Error
+				return fail(result.Error)
 			}
 			if result.RowsAffected != 1 {
-				return gorm.ErrRecordNotFound
+				return fail(gorm.ErrRecordNotFound)
 			}
 		}
 		adjustment = UserQuotaAdjustment{UserID: user.Id, Username: user.Username, Before: user.Quota, After: after}
@@ -70,15 +83,37 @@ func AdjustUserQuota(userID, operatorRole int, mode string, value int) (*UserQuo
 		return nil, err
 	}
 
-	// Apply only the committed difference, preserving outstanding reservations.
-	// Both balances are bounded above, so their difference fits in int64.
-	delta := int64(adjustment.After) - int64(adjustment.Before)
-	if delta != 0 {
-		if err := cacheIncrUserQuota(userID, delta); err != nil {
-			common.SysError(common.LogText("failed to sync manual quota adjustment for user %d: %s", userID, err))
+	if !cacheApplied {
+		if delta := int64(adjustment.After) - int64(adjustment.Before); delta != 0 {
+			if err := cacheIncrUserQuota(userID, delta); err != nil {
+				common.SysError(common.LogText("failed to sync manual quota adjustment for user %d: %s", userID, err))
+			}
 		}
 	}
 	return &adjustment, nil
+}
+
+// applyManualAdjustCache moves the live Redis balance by the same delta as the
+// database row. A cache miss is left for the next read to hydrate. A delta
+// that would make the live balance negative is rejected before any write.
+func applyManualAdjustCache(userID int, delta int64) (bool, error) {
+	result, err := cacheApplyManualQuotaDelta(userID, delta)
+	if err != nil {
+		// A dead cache must not roll back a committed wallet change. The
+		// caller still tries the post-commit sync and logs that failure.
+		common.SysError(common.LogText("manual quota cache check failed for user %d: %s", userID, err))
+		return false, nil
+	}
+	if result == cacheQuotaInsufficient {
+		return false, ErrAdtyQuotaFloor
+	}
+	return result == cacheQuotaOK, nil
+}
+
+func compensateManualAdjustCache(userID int, delta int64) {
+	if _, err := cacheApplyUserQuotaDelta(userID, -delta); err != nil {
+		common.SysError(common.LogText("failed to compensate manual quota cache for user %d: %s", userID, err))
+	}
 }
 
 // quotaAfterManualAdjust applies the confirmed admin floor: subtract stops at 0,
