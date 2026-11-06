@@ -224,7 +224,8 @@ func TestRedisFailurePolicies(t *testing.T) {
 	userResponse := performRateLimitRequest(router, "/user", "192.0.2.61:12345")
 	assert.Equal(t, http.StatusInternalServerError, userResponse.Code)
 	assert.Empty(t, userResponse.Body.String())
-	assert.Equal(t, http.StatusNoContent, performRateLimitRequest(router, "/email", "192.0.2.62:12345").Code)
+	emailResponse := performRateLimitRequest(router, "/email", "192.0.2.62:12345")
+	assert.Equal(t, http.StatusServiceUnavailable, emailResponse.Code, "a Redis outage must not widen the verification limit")
 }
 
 func TestGlobalWebRateLimitCountsFrontendFilesInStaticBucket(t *testing.T) {

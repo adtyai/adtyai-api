@@ -29,7 +29,7 @@ services:
     environment:
       - SQL_DSN=postgresql://root:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/new-api
       - REDIS_CONN_STRING=redis://redis
-      - TZ=Asia/Shanghai
+      - TZ=UTC
       - BATCH_UPDATE_ENABLED=true
       # Local HTTP dev mode: keep Secure=false and leave TRUSTED_URL unset. This disables the refresh/logout OriginGuard so the :5173 -> :3000 dev proxy works.
       - SESSION_COOKIE_SECURE=false
@@ -45,7 +45,7 @@ services:
       - dev-network
 
   redis:
-    image: redis:7-alpine
+    image: redis:7.4.4-alpine
     container_name: new-api-dev-redis
     restart: unless-stopped
     networks:

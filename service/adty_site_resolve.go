@@ -323,6 +323,13 @@ func AdtyRegisterSiteId(c *gin.Context) (siteId int, ok bool) {
 	return 0, false
 }
 
+// AdtyMainLegalConsentRequired is true when the main site has published an
+// agreement or privacy policy that registration must accept and record.
+func AdtyMainLegalConsentRequired() bool {
+	legal := system_setting.GetLegalSettings()
+	return strings.TrimSpace(legal.UserAgreement) != "" || strings.TrimSpace(legal.PrivacyPolicy) != ""
+}
+
 // AdtyRegisterTermsAccepted 是分站注册的客户条款检查（11.7）。主站，或条款还没发布
 // （版本号为 0）时直接通过。分站上必须带查询参数 site_terms_version，而且等于当前版本。
 func AdtyRegisterTermsAccepted(c *gin.Context, siteId int) bool {

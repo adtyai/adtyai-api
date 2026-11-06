@@ -1,12 +1,17 @@
 package controller
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/go-redis/redis/v8"
 )
+
+var errLoginLockUnavailable = errors.New("login lock store unavailable")
 
 const adtyLoginFailureLimit = 8
 
@@ -24,10 +29,31 @@ func adtyLoginKey(username string) string {
 	return strings.ToLower(strings.TrimSpace(username))
 }
 
+func adtyLoginRedisKey(username string) string {
+	return "adty:login-fail:" + adtyLoginKey(username)
+}
+
+func adtyLoginUsesRedis() bool {
+	return common.RedisEnabled && common.RDB != nil
+}
+
 func adtyLoginLocked(username string) bool {
 	key := adtyLoginKey(username)
 	if key == "" {
 		return false
+	}
+	if common.RedisEnabled && common.RDB == nil {
+		return true
+	}
+	if adtyLoginUsesRedis() {
+		n, err := common.RDB.Get(context.Background(), adtyLoginRedisKey(username)).Int()
+		if err == redis.Nil {
+			return false
+		}
+		if err != nil {
+			return true
+		}
+		return n >= adtyLoginFailureLimit
 	}
 	adtyLoginFailuresMu.Lock()
 	defer adtyLoginFailuresMu.Unlock()
@@ -39,10 +65,24 @@ func adtyLoginLocked(username string) bool {
 	return entry.count >= adtyLoginFailureLimit
 }
 
-func adtyRecordLoginFailure(username string) {
+func adtyRecordLoginFailure(username string) error {
 	key := adtyLoginKey(username)
 	if key == "" {
-		return
+		return nil
+	}
+	if common.RedisEnabled && common.RDB == nil {
+		return errLoginLockUnavailable
+	}
+	if adtyLoginUsesRedis() {
+		ctx := context.Background()
+		redisKey := adtyLoginRedisKey(username)
+		if err := common.RDB.Incr(ctx, redisKey).Err(); err != nil {
+			return err
+		}
+		if err := common.RDB.Expire(ctx, redisKey, 15*time.Minute).Err(); err != nil {
+			return err
+		}
+		return nil
 	}
 	adtyLoginFailuresMu.Lock()
 	defer adtyLoginFailuresMu.Unlock()
@@ -60,10 +100,14 @@ func adtyRecordLoginFailure(username string) {
 			}
 		}
 	}
+	return nil
 }
 
 func adtyClearLoginFailures(username string) {
 	key := adtyLoginKey(username)
+	if adtyLoginUsesRedis() && key != "" {
+		_ = common.RDB.Del(context.Background(), adtyLoginRedisKey(username)).Err()
+	}
 	adtyLoginFailuresMu.Lock()
 	delete(adtyLoginFailures, key)
 	adtyLoginFailuresMu.Unlock()

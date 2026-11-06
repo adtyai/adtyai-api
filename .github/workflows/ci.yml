@@ -86,7 +86,13 @@ jobs:
         run: make test
 
       - name: Test main package deployment constraints
-        run: go test -count=1 -run 'TestPprofListenAddrIsLoopback|TestRootComposeDoesNotPublishExampleSecrets' .
+        run: go test -count=1 -run 'TestPprofListenAddrIsLoopback|TestRootComposeDoesNotPublishExampleSecrets|TestRunnableEntrypointsDoNotUseFloatingUpstreamImages' .
+
+      - name: Scan Go modules for known vulnerabilities
+        run: |
+          go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+          (cd relaykit && go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...)
+          (cd tokenkit && go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...)
 
   frontend:
     name: Frontend typecheck and test

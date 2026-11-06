@@ -29,7 +29,6 @@ import { createOAuthAuthorization, createOAuthFlow, logout } from '../api'
 import {
   buildGitHubOAuthUrl,
   buildDiscordOAuthUrl,
-  buildOIDCOAuthUrl,
   buildLinuxDOOAuthUrl,
 } from '../lib/oauth'
 import { rememberOAuthLoginRedirect } from '../lib/oauth-callback-mode'
@@ -131,16 +130,22 @@ export function useOAuthLogin(
 
     setIsLoading(true)
     try {
+      const authorization = await createOAuthAuthorization('oidc', 'login')
+      if (!authorization.authorizationUrl) {
+        throw new AuthOperationError('Failed to initialize OAuth')
+      }
+      const parsed = new URL(authorization.authorizationUrl)
+      if (
+        !parsed.searchParams.get('code_challenge') ||
+        parsed.searchParams.get('code_challenge_method') !== 'S256' ||
+        !parsed.searchParams.get('nonce') ||
+        parsed.searchParams.get('code_verifier')
+      ) {
+        throw new AuthOperationError('Failed to initialize OAuth')
+      }
       await resetSession()
-      const state = await createOAuthFlow('oidc', 'login')
-      rememberOAuthLoginRedirect(state, redirectTo)
-
-      const url = buildOIDCOAuthUrl(
-        status.oidc_authorization_endpoint,
-        status.oidc_client_id,
-        state
-      )
-      window.open(url, '_self')
+      rememberOAuthLoginRedirect(authorization.state, redirectTo)
+      window.open(authorization.authorizationUrl, '_self')
     } catch (error) {
       handleServerError(
         AuthOperationError.from(error, t('Failed to start OIDC login'))

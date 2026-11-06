@@ -86,6 +86,38 @@ test.each([true, false])(
   }
 )
 
+test('starts OIDC from the server authorization URL', async () => {
+  vi.spyOn(window, 'localStorage', 'get').mockReturnValue(window.sessionStorage)
+  const authorizationUrl =
+    'https://issuer.example/authorize?code_challenge=server-challenge&code_challenge_method=S256&nonce=server-nonce&state=oidc-state'
+  vi.spyOn(api, 'post').mockImplementation(async (url) => {
+    if (url === '/api/oauth/state') {
+      return {
+        data: {
+          success: true,
+          data: { flow_token: 'oidc-state', authorization_url: authorizationUrl },
+        },
+      }
+    }
+    if (url === '/api/user/auth/logout') return { data: { success: true } }
+    throw new Error(`Unexpected POST ${url}`)
+  })
+  const open = vi.spyOn(window, 'open').mockReturnValue(null)
+  const { result } = renderHook(() =>
+    useOAuthLogin(
+      {
+        oidc_enabled: true,
+        oidc_client_id: 'oidc-client',
+        oidc_authorization_endpoint: 'https://issuer.example/authorize',
+      },
+      '/console/personal'
+    )
+  )
+  await act(() => result.current.handleOIDCLogin())
+  expect(open).toHaveBeenCalledWith(authorizationUrl, '_self')
+  expect(consumeOAuthLoginRedirect('oidc-state')).toBe('/console/personal')
+})
+
 const bundle: AuthBundle = {
   access_token: 'access-token',
   token_type: 'Bearer',

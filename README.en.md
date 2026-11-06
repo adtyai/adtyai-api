@@ -168,18 +168,13 @@ This README describes the current source tree. Check the release notes for the v
 
 ### Try locally with Docker
 
-This starts a single instance with SQLite and binds it to localhost:
+This fork does not run the upstream image or SQLite. Use the repository compose file, which builds the local image and expects PostgreSQL:
 
 ```bash
-mkdir -p data
-docker run --name new-api -d --restart unless-stopped \
-  -p 127.0.0.1:3000:3000 \
-  -e TZ=Asia/Shanghai \
-  -v "$(pwd)/data:/data" \
-  calciumion/new-api:latest
+docker compose up --build
 ```
 
-Open [http://localhost:3000](http://localhost:3000) and complete the setup wizard to create the administrator account. The `data` directory persists the SQLite database across container replacements.
+Set `TZ` and `TRUSTED_PROXIES` for the network you are actually using. Do not copy a production hostname or region in as a silent default. Open [http://127.0.0.1:3000](http://127.0.0.1:3000) and complete the setup wizard. Production deployment is `deploy/adty`, not this quick start.
 
 ### Make your first request
 

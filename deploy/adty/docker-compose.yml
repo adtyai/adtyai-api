@@ -71,7 +71,7 @@ services:
     logging: *default-logging
 
   redis:
-    image: redis:7
+    image: redis:7.4.4-alpine
     container_name: adtyai-redis
     restart: always
     command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}", "--appendonly", "yes"]

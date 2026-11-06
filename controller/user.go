@@ -92,7 +92,9 @@ func Login(c *gin.Context) {
 		case errors.Is(err, model.ErrUserEmptyCredentials):
 			common.ApiErrorT(c, "Invalid parameters")
 		default:
-			adtyRecordLoginFailure(username)
+			if err := adtyRecordLoginFailure(username); err != nil {
+				common.SysLog(common.LogText("login failure lock unavailable: %s", err.Error()))
+			}
 			common.ApiError(c, adtyLoginFailureResponse())
 		}
 		return
@@ -238,10 +240,18 @@ func Register(c *gin.Context) {
 		common.ApiErrorT(c, "Password registration has been disabled by administrator, please use third-party account verification")
 		return
 	}
-	var user model.User
-	err := common.DecodeJson(c.Request.Body, &user)
+	var payload struct {
+		model.User
+		AgreementAccepted bool `json:"agreement_accepted"`
+	}
+	err := common.DecodeJson(c.Request.Body, &payload)
 	if err != nil {
 		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	user := payload.User
+	if service.AdtyMainLegalConsentRequired() && !payload.AgreementAccepted {
+		common.ApiErrorT(c, "Accept the current terms first")
 		return
 	}
 	user.Username = strings.TrimSpace(user.Username)
@@ -324,6 +334,9 @@ func Register(c *gin.Context) {
 	}
 	// 二开：注册即推广员、按推广 cookie 绑定、记指纹（任务 6.2、6.5）
 	service.AdtyAfterRegister(c, &insertedUser)
+	if payload.AgreementAccepted {
+		model.RecordLog(insertedUser.Id, model.LogTypeSystem, common.NewMessage("Accepted the current user agreement and privacy policy"))
+	}
 	// 生成默认令牌
 	if constant.GenerateDefaultToken {
 		key, err := common.GenerateKey()

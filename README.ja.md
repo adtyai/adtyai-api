@@ -149,18 +149,13 @@ New API は、アプリケーション、Agent、チーム向けのセルフホ�
 
 ### Docker でローカル実行
 
-SQLite を使う単一インスタンスを、ローカルホスト限定で起動します。
+このリポジトリは上流イメージも SQLite も使いません。リポジトリの compose ファイルでローカルイメージをビルドし、PostgreSQL を使います。
 
 ```bash
-mkdir -p data
-docker run --name new-api -d --restart unless-stopped \
-  -p 127.0.0.1:3000:3000 \
-  -e TZ=Asia/Shanghai \
-  -v "$(pwd)/data:/data" \
-  calciumion/new-api:latest
+docker compose up --build
 ```
 
-[http://localhost:3000](http://localhost:3000) を開き、初期設定ウィザードで管理者アカウントを作成します。SQLite データベースはマウントした `data` ディレクトリに保存され、コンテナを置き換えても残ります。
+`TZ` と `TRUSTED_PROXIES` は、実際に使うネットワークに合わせて設定します。本番のホスト名や地域のタイムゾーンを、黙って既定値にしないでください。[http://127.0.0.1:3000](http://127.0.0.1:3000) を開いて初期設定を完了します。本番配置は `deploy/adty` です。このクイックスタートではありません。
 
 ### 最初のリクエスト
 

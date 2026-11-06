@@ -347,7 +347,7 @@ func TestAdminUserVerificationPolicy(t *testing.T) {
 		proof := issueSecurityEnrollmentProof(t, identity, service.VerificationOperation{Scope: service.VerificationScopeAdminUserDelete, Context: []byte(fmt.Sprintf(`{"user_id":%d}`, target.Id))}, service.VerificationMethodPassword)
 		response := accessTokenRequest(newAccessTokenTestRouter(), http.MethodDelete, fmt.Sprintf("/api/user/%d", target.Id), "legacy-admin-token", proof, "")
 		assert.Equal(t, http.StatusForbidden, response.Code)
-		assert.Equal(t, "SECURITY_PROOF_INVALID", decodeSecurityEnrollmentResponse(t, response).Code)
+		assert.Equal(t, "AUTH_LEGACY_TOKEN_WRITE", decodeSecurityEnrollmentResponse(t, response).Code)
 		_, err := model.GetUserById(target.Id, false)
 		assert.NoError(t, err)
 	})

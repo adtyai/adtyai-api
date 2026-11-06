@@ -30,6 +30,61 @@ func TestPprofListenAddrIsLoopback(t *testing.T) {
 	}
 }
 
+func TestRunnableEntrypointsDoNotUseFloatingUpstreamImages(t *testing.T) {
+	files := []string{
+		"README.md",
+		"README.en.md",
+		"README.zh_CN.md",
+		"README.zh_TW.md",
+		"README.fr.md",
+		"README.ja.md",
+		"docs/installation/BT.md",
+		"docker-compose.yml",
+		"docker-compose.dev.yml",
+		"deploy/adty/docker-compose.yml",
+		"Dockerfile",
+		"Dockerfile.dev",
+	}
+	forbidden := []string{
+		"calciumion/new-api",
+		":latest",
+		"TZ=Asia/Shanghai",
+		"redis:7-alpine",
+		"image: redis:7\n",
+		"image: redis:7\r",
+	}
+	for _, name := range files {
+		body, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := string(body)
+		for _, needle := range forbidden {
+			if strings.Contains(text, needle) {
+				t.Fatalf("%s still contains %q", name, needle)
+			}
+		}
+	}
+	for _, name := range []string{"Dockerfile", "Dockerfile.dev"} {
+		body, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(body), "@sha256:") {
+			t.Fatalf("%s base image has no digest", name)
+		}
+	}
+	for _, name := range []string{".github/workflows/ci.yml", ".github/workflows/adty-ghcr.yml"} {
+		body, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(body), "govulncheck") {
+			t.Fatalf("%s has no Go vulnerability scan step", name)
+		}
+	}
+}
+
 func TestRootComposeDoesNotPublishExampleSecrets(t *testing.T) {
 	for _, name := range []string{"docker-compose.yml", "docker-compose.dev.yml"} {
 		body, err := os.ReadFile(name)

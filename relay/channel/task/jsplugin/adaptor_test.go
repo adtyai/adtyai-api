@@ -608,17 +608,18 @@ func TestTaskAdaptorHookFetchReachesRequestHostsOnly(t *testing.T) {
 		}
 	}))
 	defer base.Close()
-	source := strings.Replace(mockPlugin, `fetchMode: "per_task",`, `fetchMode: "per_task", allowedHosts: ["`+strings.TrimPrefix(extra.URL, "http://")+`"],`, 1)
-	source = strings.Replace(source, `export function listArtifacts() { return []; }
+	privateHost := strings.TrimPrefix(extra.URL, "http://")
+	_, err := pluginruntime.NewRegistry().Register(strings.Replace(mockPlugin, `fetchMode: "per_task",`, `fetchMode: "per_task", allowedHosts: ["`+privateHost+`"],`, 1), pluginruntime.Options{})
+	require.ErrorContains(t, err, "loopback")
+	source := strings.Replace(mockPlugin, `export function listArtifacts() { return []; }
 export function buildContentRequest() { throw new Error("artifact_not_found"); }`, `export function listArtifacts() { return [{key: "video", type: "video"}]; }
 export function buildContentRequest(ctx) {
   const base = utils.fetch({url: ctx.baseUrl + "/info", headers: {Authorization: "Bearer " + ctx.apiKey}});
-  const extra = utils.fetch({url: "http://" + meta.allowedHosts[0] + "/info"});
   const moved = utils.fetch({url: ctx.baseUrl + "/moved"});
   let denied = "";
   try { utils.fetch({url: "https://other.example/info"}); } catch (e) { denied = e.message; }
   return {url: ctx.baseUrl + "/content", method: "GET", headers: {
-    "X-Base": base.body.from, "X-Extra": extra.body.from, "X-Moved": moved.status + " " + moved.headers.Location, "X-Denied": denied,
+    "X-Base": base.body.from, "X-Moved": moved.status + " " + moved.headers.Location, "X-Denied": denied,
   }};
 }`, 1)
 	source = strings.Replace(source, `render: function(ctx, task) { return {id: task.task_id, status: "completed"}; }`,
@@ -633,7 +634,6 @@ export function buildContentRequest(ctx) {
 	require.NotNil(t, descriptor)
 	assert.Equal(t, map[string]string{
 		"X-Base":   "base",
-		"X-Extra":  "extra",
 		"X-Moved":  "302 " + extra.URL + "/elsewhere",
 		"X-Denied": `utils.fetch to other.example failed: plugin request host "other.example" is not allowed`,
 	}, descriptor.Headers)

@@ -167,6 +167,7 @@ export function SignUpForm({
         email: data.email || undefined,
         verification_code: verificationCode || undefined,
         turnstile: turnstileToken,
+        agreement_accepted: requiresLegalConsent ? true : undefined,
         marketing_consent: marketingConsent,
         lang: i18n.resolvedLanguage || i18n.language,
         site_terms_version: requiresSiteTerms

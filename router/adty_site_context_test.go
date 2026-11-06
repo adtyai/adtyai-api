@@ -304,6 +304,37 @@ func TestRegisterOnSiteSetsSiteId(t *testing.T) {
 	assert.Contains(t, register("shop.sites.example.com", "too-late").Body.String(), `"success":false`, "a closing site takes no new customers")
 }
 
+func TestMainLegalConsentIsRequiredAndRecorded(t *testing.T) {
+	f := newSiteFixture(t)
+	legal := system_setting.GetLegalSettings()
+	oldAgreement, oldPrivacy := legal.UserAgreement, legal.PrivacyPolicy
+	t.Cleanup(func() {
+		legal.UserAgreement, legal.PrivacyPolicy = oldAgreement, oldPrivacy
+	})
+	legal.UserAgreement = "current terms"
+	legal.PrivacyPolicy = "current privacy"
+
+	missing := f.do(t, http.MethodPost, "main.example.com", "/api/user/register", `{"username":"no-legal","password":"correct-horse-1"}`)
+	assert.Contains(t, missing.Body.String(), "Accept the current terms first")
+	var missingUser int64
+	require.NoError(t, f.db.Model(&model.User{}).Where("username = ?", "no-legal").Count(&missingUser).Error)
+	assert.Zero(t, missingUser)
+
+	accepted := f.do(t, http.MethodPost, "main.example.com", "/api/user/register", `{"username":"yes-legal","password":"correct-horse-1","agreement_accepted":true}`)
+	require.Contains(t, accepted.Body.String(), `"success":true`, accepted.Body.String())
+	var user model.User
+	require.NoError(t, f.db.Where("username = ?", "yes-legal").First(&user).Error)
+	var logs []model.Log
+	require.NoError(t, f.db.Where("user_id = ? AND type = ?", user.Id, model.LogTypeSystem).Find(&logs).Error)
+	found := false
+	for _, row := range logs {
+		if strings.Contains(row.Content, "Accepted the current user agreement and privacy policy") {
+			found = true
+		}
+	}
+	assert.True(t, found, "accepting the published terms must leave a system log")
+}
+
 func TestSiteTermsRequiredAtRegister(t *testing.T) {
 	f := newSiteFixture(t)
 	legal := adty_setting.GetLegalSetting()

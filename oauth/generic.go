@@ -32,6 +32,9 @@ const (
 // GenericOAuthProvider implements OAuth for custom/generic OAuth providers
 type GenericOAuthProvider struct {
 	config *model.CustomOAuthProvider
+	// client is nil in production and uses the SSRF-protected outbound client.
+	// Tests set it so a local provider can be exercised without a public host.
+	client *http.Client
 }
 
 type accessPolicy struct {
@@ -71,6 +74,22 @@ var supportedAccessPolicyOps = []string{
 // NewGenericOAuthProvider creates a new generic OAuth provider from config
 func NewGenericOAuthProvider(config *model.CustomOAuthProvider) *GenericOAuthProvider {
 	return &GenericOAuthProvider{config: config}
+}
+
+// WithClient returns the provider after attaching a caller-owned HTTP client.
+// Production leaves it nil so token and userinfo requests stay on the protected client.
+func (p *GenericOAuthProvider) WithClient(client *http.Client) *GenericOAuthProvider {
+	if p != nil {
+		p.client = client
+	}
+	return p
+}
+
+func (p *GenericOAuthProvider) httpDo(ctx context.Context, req *http.Request) (*http.Response, error) {
+	if p != nil && p.client != nil {
+		return p.client.Do(req.WithContext(ctx))
+	}
+	return doOutbound(ctx, req)
 }
 
 func (p *GenericOAuthProvider) GetName() string {
@@ -127,7 +146,7 @@ func (p *GenericOAuthProvider) ExchangeToken(ctx context.Context, code string, c
 	logger.LogDebug(ctx, "[OAuth-Generic-%s] ExchangeToken: token_endpoint=%s, redirect_uri=%s, auth_style=%d",
 		p.config.Slug, p.config.TokenEndpoint, redirectUri, authStyle)
 
-	res, err := doOutbound(ctx, req)
+	res, err := p.httpDo(ctx, req)
 	if err != nil {
 		logger.LogError(ctx, common.LogText("[OAuth-Generic-%s] ExchangeToken error: %s", p.config.Slug, err.Error()))
 		return nil, NewOAuthErrorWithRaw(common.NewMessage(msgConnectFailed, map[string]any{"provider": p.config.Name}), err.Error())
@@ -204,7 +223,7 @@ func (p *GenericOAuthProvider) GetUserInfo(ctx context.Context, token *OAuthToke
 	req.Header.Set("Authorization", fmt.Sprintf("%s %s", tokenType, token.AccessToken))
 	req.Header.Set("Accept", "application/json")
 
-	res, err := doOutbound(ctx, req)
+	res, err := p.httpDo(ctx, req)
 	if err != nil {
 		logger.LogError(ctx, common.LogText("[OAuth-Generic-%s] GetUserInfo error: %s", p.config.Slug, err.Error()))
 		return nil, NewOAuthErrorWithRaw(common.NewMessage(msgConnectFailed, map[string]any{"provider": p.config.Name}), err.Error())

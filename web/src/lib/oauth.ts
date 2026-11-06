@@ -65,14 +65,24 @@ export function buildDiscordOAuthUrl(clientId: string, state: string): string {
 export function buildOIDCOAuthUrl(
   authUrl: string,
   clientId: string,
-  state: string
+  state: string,
+  codeChallenge: string,
+  nonce: string
 ): string {
+  if (!codeChallenge || !nonce) {
+    throw new Error(
+      'OIDC authorization requires a server-issued challenge and nonce.'
+    )
+  }
   const url = new URL(authUrl)
   url.searchParams.set('client_id', clientId)
   url.searchParams.set('redirect_uri', `${window.location.origin}/oauth/oidc`)
   url.searchParams.set('response_type', 'code')
   url.searchParams.set('scope', 'openid profile email')
   url.searchParams.set('state', state)
+  url.searchParams.set('code_challenge', codeChallenge)
+  url.searchParams.set('code_challenge_method', 'S256')
+  url.searchParams.set('nonce', nonce)
   return url.toString()
 }
 
@@ -100,14 +110,7 @@ export function buildOAuthAuthorizationUrl(
       }
       break
     case 'oidc':
-      if (status.oidc_authorization_endpoint && status.oidc_client_id) {
-        return buildOIDCOAuthUrl(
-          status.oidc_authorization_endpoint,
-          status.oidc_client_id,
-          state
-        )
-      }
-      break
+      throw new Error('OIDC authorization must be started by the server.')
     case 'linuxdo':
       if (status.linuxdo_client_id) {
         return buildLinuxDOOAuthUrl(status.linuxdo_client_id, state)

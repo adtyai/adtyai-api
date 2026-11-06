@@ -375,7 +375,7 @@ func TestSecurityLoginAllPrimaryTransportsRequireAdditionalVerification(t *testi
 					oauth.RegisterCustom(slug, oauth.NewGenericOAuthProvider(&model.CustomOAuthProvider{
 						Id: 42, Slug: slug, Name: "Custom login", Enabled: true, ClientId: "client", ClientSecret: "secret", UserIdField: "sub",
 						TokenEndpoint: upstream.URL + "/token", UserInfoEndpoint: upstream.URL + "/userinfo",
-					}))
+					}).WithClient(upstream.Client()))
 					require.NoError(t, model.DB.Create(&model.UserOAuthBinding{UserId: user.Id, ProviderId: 42, ProviderUserId: "bound-custom"}).Error)
 				} else {
 					oauth.Register(slug, &boundLoginOAuthProvider{userID: user.Id})

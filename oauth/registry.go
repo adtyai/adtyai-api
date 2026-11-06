@@ -99,7 +99,13 @@ func IsCustomProvider(name string) bool {
 
 // LoadCustomProviders loads all custom OAuth providers from the database
 func LoadCustomProviders() error {
-	// First, unregister all existing custom providers
+	// Load before forgetting the last good set. A database error must not turn
+	// every custom provider off.
+	customProviders, err := model.GetAllCustomOAuthProviders()
+	if err != nil {
+		common.SysError(common.LogText("Failed to load custom OAuth providers: %s", err.Error()))
+		return err
+	}
 	mu.Lock()
 	for name := range customProviderSlugs {
 		delete(providers, name)
@@ -107,13 +113,6 @@ func LoadCustomProviders() error {
 	customProviderSlugs = make(map[string]bool)
 	customProviderConflicts = make(map[string]bool)
 	mu.Unlock()
-
-	// Load all custom providers from database
-	customProviders, err := model.GetAllCustomOAuthProviders()
-	if err != nil {
-		common.SysError(common.LogText("Failed to load custom OAuth providers: %s", err.Error()))
-		return err
-	}
 
 	// Register each custom provider
 	var conflict error

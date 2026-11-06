@@ -31,6 +31,7 @@ type oauthStateRequest struct {
 type oauthFlowPayload struct {
 	Verification    *service.OAuthVerificationFlow `json:"verification,omitempty"`
 	Telegram        *oauth.TelegramOAuthFlow       `json:"telegram,omitempty"`
+	OIDC            *oauth.OIDCOAuthFlow           `json:"oidc,omitempty"`
 	SessionIdentity *service.AuthIdentity          `json:"session_identity,omitempty"`
 	Authorization   *model.AuthFlowAuthorization   `json:"authorization,omitempty"`
 }
@@ -68,6 +69,14 @@ func GenerateOAuthCode(c *gin.Context) {
 			return
 		}
 		flowPayload.Telegram = telegramFlow
+	}
+	if request.Provider == "oidc" {
+		oidcFlow, err := oauth.NewOIDCOAuthFlow()
+		if err != nil {
+			common.ApiErrorT(c, "Failed to initialize OAuth")
+			return
+		}
+		flowPayload.OIDC = oidcFlow
 	}
 	if request.Intent == model.AuthFlowIntentBind || request.Intent == model.AuthFlowIntentVerify {
 		identity, ok := middleware.GetSessionAuthIdentity(c)
@@ -131,6 +140,14 @@ func GenerateOAuthCode(c *gin.Context) {
 	data := gin.H{"flow_token": state, "expires_at": expiresAt.Unix()}
 	if flowPayload.Telegram != nil {
 		data["authorization_url"] = flowPayload.Telegram.AuthorizationURL(state)
+	}
+	if flowPayload.OIDC != nil {
+		authorizationURL, err := flowPayload.OIDC.AuthorizationURL(state)
+		if err != nil || authorizationURL == "" {
+			common.ApiErrorT(c, "Failed to initialize OAuth")
+			return
+		}
+		data["authorization_url"] = authorizationURL
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -240,6 +257,14 @@ func HandleOAuth(c *gin.Context) {
 			}
 		}
 		c.Set(oauth.TelegramOAuthFlowContextKey, telegramPayload.Telegram)
+	}
+	if providerName == "oidc" {
+		var oidcPayload oauthFlowPayload
+		if err := common.UnmarshalJsonStr(pendingFlow.Payload, &oidcPayload); err != nil || oidcPayload.OIDC == nil {
+			writeSecurityOperationError(c, model.ErrAuthFlowInvalid)
+			return
+		}
+		c.Set(oauth.OIDCOAuthFlowContextKey, oidcPayload.OIDC)
 	}
 	if !provider.IsEnabled() {
 		common.ApiErrorT(c, "{{provider}} login and registration has not been enabled by administrator", providerParams(provider.GetName()))

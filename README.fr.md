@@ -149,18 +149,13 @@ Ce README décrit le code source actuel. Consultez les notes de la version que v
 
 ### Essai local avec Docker
 
-Cette commande démarre une instance SQLite accessible uniquement depuis la machine locale :
+Ce dépôt ne lance pas l'image amont ni SQLite. Utilisez le fichier compose du dépôt, qui construit l'image locale et attend PostgreSQL :
 
 ```bash
-mkdir -p data
-docker run --name new-api -d --restart unless-stopped \
-  -p 127.0.0.1:3000:3000 \
-  -e TZ=Asia/Shanghai \
-  -v "$(pwd)/data:/data" \
-  calciumion/new-api:latest
+docker compose up --build
 ```
 
-Ouvrez [http://localhost:3000](http://localhost:3000) et suivez l'assistant pour créer le compte administrateur. Le répertoire `data` conserve la base SQLite lors du remplacement du conteneur.
+Réglez `TZ` et `TRUSTED_PROXIES` pour le réseau que vous utilisez vraiment. N'inscrivez pas un nom d'hôte de production ni un fuseau régional comme valeur par défaut. Ouvrez [http://127.0.0.1:3000](http://127.0.0.1:3000) et suivez l'assistant. Le déploiement de production est `deploy/adty`, pas ce démarrage rapide.
 
 ### Première requête
 

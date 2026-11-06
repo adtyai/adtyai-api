@@ -44,6 +44,7 @@ export interface RegisterPayload {
   turnstile?: string
   /** adty task 12.1 */
   marketing_consent?: boolean
+  agreement_accepted?: boolean
   lang?: string
   /** adty task 11.7, sent as a query parameter */
   site_terms_version?: string

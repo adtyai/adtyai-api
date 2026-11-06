@@ -1589,7 +1589,7 @@ func TestSecurityEnrollmentCustomOAuthUsesExistingBinding(t *testing.T) {
 		Id: 42, Slug: "enrollment-custom", Name: "Custom provider", Enabled: true,
 		ClientId: "client", ClientSecret: "secret", UserIdField: "sub",
 		TokenEndpoint: upstream.URL + "/token", UserInfoEndpoint: upstream.URL + "/userinfo",
-	})
+	}).WithClient(upstream.Client())
 	oauth.RegisterCustom("enrollment-custom", provider)
 	t.Cleanup(func() { oauth.Unregister("enrollment-custom") })
 	require.NoError(t, model.DB.Create(&model.UserOAuthBinding{UserId: user.Id, ProviderId: 42, ProviderUserId: "custom-user"}).Error)

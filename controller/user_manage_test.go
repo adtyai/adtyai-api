@@ -586,9 +586,9 @@ func TestManageUserQuotaTargetsAndWalletBounds(t *testing.T) {
 
 func TestManageUserQuotaMiddlewareKeepsOneOperationPerRequest(t *testing.T) {
 	db := setupManageUserTestDB(t)
-	pat := "quota-middleware-test-token"
-	operator := model.User{Id: 9999, Username: "root-operator", Role: common.RoleRootUser, Status: common.UserStatusEnabled, AuthVersion: 1, AccessToken: &pat, Quota: 1000}
+	operator := model.User{Id: 9999, Username: "root-operator", Role: common.RoleRootUser, Status: common.UserStatusEnabled, AuthVersion: 1, Quota: 1000}
 	require.NoError(t, db.Create(&operator).Error)
+	_, credential := createAccessTokenTestSession(t, operator.Id, "quota-middleware-session")
 	router := gin.New()
 	router.Use(middleware.RequestId(), middleware.AccessTokenAudit())
 	router.POST("/api/user/manage", middleware.AdminAuth(), ManageUser)
@@ -603,7 +603,7 @@ func TestManageUserQuotaMiddlewareKeepsOneOperationPerRequest(t *testing.T) {
 	} {
 		recorder := httptest.NewRecorder()
 		request := httptest.NewRequest(http.MethodPost, "/api/user/manage", strings.NewReader(tc.body))
-		request.Header.Set("Authorization", "Bearer "+pat)
+		request.Header.Set("Authorization", "Bearer "+credential)
 		request.Header.Set("Content-Type", "application/json")
 		router.ServeHTTP(recorder, request)
 		assert.Equal(t, http.StatusOK, recorder.Code)
@@ -612,7 +612,7 @@ func TestManageUserQuotaMiddlewareKeepsOneOperationPerRequest(t *testing.T) {
 		require.NotEmpty(t, requestID)
 		var audits []model.AuditLog
 		require.NoError(t, model.LOG_DB.Where("request_id = ?", requestID).Find(&audits).Error)
-		require.Len(t, audits, 2, "one operation audit and one PAT request audit")
+		require.Len(t, audits, 1, "one operation audit for the dashboard session")
 		for _, audit := range audits {
 			assert.Equal(t, tc.success, audit.Success)
 			if audit.Category != model.AuditCategoryOperation {

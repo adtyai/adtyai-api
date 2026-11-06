@@ -148,18 +148,13 @@ New API 是面向應用程式、Agent 和團隊的自託管 AI 閘道。將不�
 
 ### 使用 Docker 本機體驗
 
-以下指令使用 SQLite 啟動單一執行個體，僅監聽本機連接埠：
+本倉庫不執行上游映像，也不使用 SQLite。請用倉庫裡的 compose 檔在本機建置，並使用 PostgreSQL：
 
 ```bash
-mkdir -p data
-docker run --name new-api -d --restart unless-stopped \
-  -p 127.0.0.1:3000:3000 \
-  -e TZ=Asia/Shanghai \
-  -v "$(pwd)/data:/data" \
-  calciumion/new-api:latest
+docker compose up --build
 ```
 
-開啟 [http://localhost:3000](http://localhost:3000)，依初始化精靈建立管理員帳號。SQLite 資料庫存放在掛載的 `data` 目錄中，更換容器後仍會保留。
+`TZ` 和 `TRUSTED_PROXIES` 請依你實際使用的網路設定。不要把某個正式主機名稱或地區時區寫進預設啟動方式。開啟 [http://127.0.0.1:3000](http://127.0.0.1:3000)，依初始化精靈建立管理員帳號。正式部署看 `deploy/adty`，不是這段快速開始。
 
 ### 發起第一次請求
 

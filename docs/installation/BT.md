@@ -54,20 +54,22 @@
 2. 创建 `docker-compose.yml` 文件：
 
 ```yaml
-version: '3'
 services:
   new-api:
-    image: calciumion/new-api:latest
+    image: adtyai-api:local
+    build: .
     container_name: new-api
     restart: always
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     volumes:
       - ./data:/data
     environment:
       - SESSION_SECRET=your_session_secret_here  # 请修改为随机字符串
-      - TZ=Asia/Shanghai
+      - TZ=UTC
 ```
+
+正式环境不要用这段示例。生产编排在 `deploy/adty`，镜像由本仓库构建，数据库使用 PostgreSQL。`TZ` 按实际网络设置，不要把某个地区时区写成默认值。
 
 1. 在终端中进入目录并启动：
 
@@ -125,11 +127,8 @@ volumes:
 ### Q4：如何更新版本？
 
 ```bash
-# 拉取最新镜像
-docker pull calciumion/new-api:latest
-
-# 重启容器
-docker-compose down && docker-compose up -d
+# 用当前源码重新构建后重启。不要拉取上游浮动标签。
+docker compose up -d --build
 ```
 
 ***
