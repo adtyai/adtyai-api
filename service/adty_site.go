@@ -561,6 +561,58 @@ func ApplyDueAdtySiteCostFactors(now int64) (int64, error) {
 	return applied, nil
 }
 
+// ApplyDueAdtySiteTierCostFactors writes a scheduled higher performance-tier d.
+func ApplyDueAdtySiteTierCostFactors(now int64) (int64, error) {
+	var due []model.AdtySite
+	if err := model.DB.Where("pending_tier_cost_factor_at > 0 AND pending_tier_cost_factor_at <= ?", now).Find(&due).Error; err != nil {
+		return 0, err
+	}
+	var applied int64
+	for _, site := range due {
+		if site.PendingTierCostFactor == nil {
+			continue
+		}
+		result := model.DB.Model(&model.AdtySite{}).
+			Where("id = ? AND pending_tier_cost_factor_at > 0 AND pending_tier_cost_factor_at <= ?", site.Id, now).
+			Updates(map[string]any{
+				"tier_cost_factor": site.PendingTierCostFactor, "pending_tier_cost_factor": gorm.Expr("NULL"), "pending_tier_cost_factor_at": 0,
+			})
+		if result.Error != nil {
+			return applied, result.Error
+		}
+		applied += result.RowsAffected
+	}
+	if applied > 0 {
+		InvalidateAdtySiteCache()
+	}
+	return applied, nil
+}
+
+// ApplyDueMinCostFactor writes a scheduled higher floor once it is due.
+func ApplyDueMinCostFactor(now int64) error {
+	cfg := adty_setting.GetResellerSetting()
+	if cfg.PendingMinCostFactor == nil || cfg.PendingMinCostFactorAt <= 0 || cfg.PendingMinCostFactorAt > now {
+		return nil
+	}
+	factor := *cfg.PendingMinCostFactor
+	cfg.MinCostFactor = &factor
+	cfg.PendingMinCostFactor = nil
+	cfg.PendingMinCostFactorAt = 0
+	mapped, err := config.ConfigToMap(cfg)
+	if err != nil {
+		return err
+	}
+	options := map[string]string{}
+	for _, key := range []string{"min_cost_factor", "pending_min_cost_factor", "pending_min_cost_factor_at"} {
+		options[adty_setting.ResellerSettingModule+"."+key] = mapped[key]
+	}
+	if err := model.UpdateOptionsBulk(options); err != nil {
+		return err
+	}
+	InvalidateAdtySiteCache()
+	return nil
+}
+
 // ApplyDueGlobalCostFactor writes a scheduled higher global d once it is due.
 func ApplyDueGlobalCostFactor(now int64) error {
 	cfg := adty_setting.GetResellerSetting()

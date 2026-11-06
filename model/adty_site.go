@@ -36,16 +36,19 @@ type AdtySite struct {
 	PendingCostFactorAt int64            `json:"pending_cost_factor_at" gorm:"index"`
 	MaxMarkup           *decimal.Decimal `json:"max_markup" gorm:"type:decimal(10,4)"` // 单站 k 上限；空就用全局
 	TierCostFactor      *decimal.Decimal `json:"tier_cost_factor" gorm:"type:decimal(10,6)"`
-	TierMonth           string           `json:"tier_month" gorm:"type:varchar(7)"`
-	Visibility          string           `json:"visibility" gorm:"type:text"`
-	Brand               string           `json:"brand" gorm:"type:text"`
-	BonusRates          string           `json:"bonus_rates" gorm:"type:text"`
-	SeoIndex            bool             `json:"seo_index"`
-	AgreementVer        string           `json:"agreement_ver" gorm:"type:varchar(32)"`
-	AgreementAt         int64            `json:"agreement_at"`
-	ContactInfo         string           `json:"contact_info" gorm:"type:text"`
-	OpenedBy            string           `json:"opened_by" gorm:"type:varchar(16)"`
-	ReviewNote          string           `json:"review_note" gorm:"type:text"`
+	// 业绩档位算出的更高 d 先记在这里，到点才写入 TierCostFactor。降低立即写入并清空这两列。
+	PendingTierCostFactor   *decimal.Decimal `json:"pending_tier_cost_factor" gorm:"type:decimal(10,6)"`
+	PendingTierCostFactorAt int64            `json:"pending_tier_cost_factor_at" gorm:"index"`
+	TierMonth               string           `json:"tier_month" gorm:"type:varchar(7)"`
+	Visibility              string           `json:"visibility" gorm:"type:text"`
+	Brand                   string           `json:"brand" gorm:"type:text"`
+	BonusRates              string           `json:"bonus_rates" gorm:"type:text"`
+	SeoIndex                bool             `json:"seo_index"`
+	AgreementVer            string           `json:"agreement_ver" gorm:"type:varchar(32)"`
+	AgreementAt             int64            `json:"agreement_at"`
+	ContactInfo             string           `json:"contact_info" gorm:"type:text"`
+	OpenedBy                string           `json:"opened_by" gorm:"type:varchar(16)"`
+	ReviewNote              string           `json:"review_note" gorm:"type:text"`
 	// 关站：站长申请时写 CloseRequestedAt；管理员定下客户去向后状态改 closing，到 CloseExecuteAt 由主节点执行。
 	CloseRequestedAt int64  `json:"close_requested_at"`
 	CloseExecuteAt   int64  `json:"close_execute_at" gorm:"index"`

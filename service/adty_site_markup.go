@@ -443,12 +443,35 @@ func AssignAdtySiteCostTiers(month string, revenue map[int]decimal.Decimal) ([]m
 				picked = &factor
 			}
 		}
-		updates := map[string]any{"tier_month": month, "tier_cost_factor": nil}
-		if picked != nil {
-			updates["tier_cost_factor"] = *picked
+		current, hasCurrent := AdtySiteCostFactor(&site)
+		raise := picked != nil && hasCurrent && picked.GreaterThan(current)
+		updates := map[string]any{"tier_month": month}
+		if raise {
+			delay := resellerSetting().MarkupIncreaseDelayHours
+			if delay < 1 {
+				delay = 24
+			}
+			pendingAt := time.Now().Unix() + int64(delay)*3600
+			updates["pending_tier_cost_factor"] = *picked
+			updates["pending_tier_cost_factor_at"] = pendingAt
+		} else {
+			if picked == nil {
+				updates["tier_cost_factor"] = nil
+			} else {
+				updates["tier_cost_factor"] = *picked
+			}
+			updates["pending_tier_cost_factor"] = gorm.Expr("NULL")
+			updates["pending_tier_cost_factor_at"] = 0
 		}
 		if err := model.DB.Model(&model.AdtySite{}).Where("id = ?", site.Id).Updates(updates).Error; err != nil {
 			return nil, err
+		}
+		if raise {
+			notice := site
+			notice.PendingCostFactor = picked
+			notice.PendingCostFactorAt = updates["pending_tier_cost_factor_at"].(int64)
+			adtyNotifySiteCostFactorPending(&notice)
+			continue
 		}
 		before := site.TierCostFactor
 		if (before == nil) != (picked == nil) || (before != nil && picked != nil && !before.Equal(*picked)) {
@@ -582,6 +605,12 @@ func startAdtySiteMarkupTask() {
 			}
 			if err := ApplyDueGlobalCostFactor(time.Now().Unix()); err != nil {
 				common.SysError(common.LogText("apply global cost factor: %s", err.Error()))
+			}
+			if _, err := ApplyDueAdtySiteTierCostFactors(time.Now().Unix()); err != nil {
+				common.SysError(common.LogText("apply site tier cost factors: %s", err.Error()))
+			}
+			if err := ApplyDueMinCostFactor(time.Now().Unix()); err != nil {
+				common.SysError(common.LogText("apply minimum cost factor: %s", err.Error()))
 			}
 		}
 	}()

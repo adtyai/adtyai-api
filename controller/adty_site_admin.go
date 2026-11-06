@@ -618,6 +618,11 @@ func UpdateAdtyResellerSettings(c *gin.Context) {
 		copied := *current.CostFactor
 		previousCostFactor = &copied
 	}
+	var previousMin *float64
+	if current.MinCostFactor != nil {
+		copied := *current.MinCostFactor
+		previousMin = &copied
+	}
 	known, err := config.ConfigToMap(&current)
 	if err != nil {
 		common.ApiError(c, err)
@@ -697,6 +702,16 @@ func UpdateAdtyResellerSettings(c *gin.Context) {
 	}
 	for i := range next.ReservedSubdomains {
 		next.ReservedSubdomains[i] = strings.ToLower(strings.TrimSpace(next.ReservedSubdomains[i]))
+	}
+	baseline := current
+	baseline.MinCostFactor = previousMin
+	if adty_setting.HoldMinCostFactorIncrease(&next, &baseline, time.Now().Unix()) {
+		values["min_cost_factor"] = ""
+		values["pending_min_cost_factor"] = ""
+		values["pending_min_cost_factor_at"] = ""
+		if next.PendingMinCostFactor != nil {
+			service.NotifySiteOwnersGlobalCostFactorPending(decimal.NewFromFloat(*next.PendingMinCostFactor), next.PendingMinCostFactorAt)
+		}
 	}
 	if err := adty_setting.ValidateResellerSetting(&next, adtyResendConfigured()); err != nil {
 		common.ApiError(c, err)

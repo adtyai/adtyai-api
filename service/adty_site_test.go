@@ -129,6 +129,29 @@ func TestGlobalCostFactorIncreaseIsHeld(t *testing.T) {
 	assert.Nil(t, next.PendingCostFactor)
 }
 
+func TestMinCostFactorIncreaseIsHeld(t *testing.T) {
+	previous := adty_setting.DefaultResellerSetting()
+	current := 0.5
+	previous.MinCostFactor = &current
+	previous.MarkupIncreaseDelayHours = 24
+	next := previous
+	raised := 0.7
+	next.MinCostFactor = &raised
+	now := int64(1_700_000_000)
+	require.True(t, adty_setting.HoldMinCostFactorIncrease(&next, &previous, now))
+	require.NotNil(t, next.MinCostFactor)
+	assert.InDelta(t, 0.5, *next.MinCostFactor, 0.0001)
+	require.NotNil(t, next.PendingMinCostFactor)
+	assert.InDelta(t, 0.7, *next.PendingMinCostFactor, 0.0001)
+	assert.Equal(t, now+24*3600, next.PendingMinCostFactorAt)
+
+	lower := 0.4
+	next.MinCostFactor = &lower
+	assert.False(t, adty_setting.HoldMinCostFactorIncrease(&next, &previous, now))
+	assert.InDelta(t, 0.4, *next.MinCostFactor, 0.0001)
+	assert.Nil(t, next.PendingMinCostFactor)
+}
+
 func TestAdtyResellerSettingDefaults(t *testing.T) {
 	cfg := adty_setting.DefaultResellerSetting()
 	assert.False(t, cfg.Enabled)

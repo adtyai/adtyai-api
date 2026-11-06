@@ -310,6 +310,35 @@ func TestMonthlyTierAssignment(t *testing.T) {
 	assert.True(t, d.Equal(decimal.RequireFromString("0.75")))
 }
 
+func TestHigherTierCostFactorWaits(t *testing.T) {
+	db := prepareSiteDB(t)
+	_, site := openActiveSite(t, db, "tier-raise")
+	cfg := adty_setting.GetResellerSetting()
+	cfg.CostFactorTiers = []adty_setting.ResellerCostTier{{MinMonthlyUSD: 0, CostFactor: 0.9}}
+	t.Cleanup(func() { cfg.CostFactorTiers = nil })
+
+	_, err := AssignAdtySiteCostTiers("2026-10", map[int]decimal.Decimal{site.Id: decimal.NewFromInt(10)})
+	require.NoError(t, err)
+	stored, err := GetAdtySite(site.Id)
+	require.NoError(t, err)
+	current, ok := AdtySiteCostFactor(stored)
+	require.True(t, ok)
+	assert.True(t, current.Equal(decimal.RequireFromString("0.8")), "a higher tier d must not bill immediately, got %s", current)
+	require.NotNil(t, stored.PendingTierCostFactor)
+	assert.True(t, stored.PendingTierCostFactor.Equal(decimal.RequireFromString("0.9")))
+	assert.Greater(t, stored.PendingTierCostFactorAt, time.Now().Unix())
+
+	applied, err := ApplyDueAdtySiteTierCostFactors(stored.PendingTierCostFactorAt)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), applied)
+	stored, err = GetAdtySite(site.Id)
+	require.NoError(t, err)
+	current, ok = AdtySiteCostFactor(stored)
+	require.True(t, ok)
+	assert.True(t, current.Equal(decimal.RequireFromString("0.9")))
+	assert.Nil(t, stored.PendingTierCostFactor)
+}
+
 func TestScheduledCostTierUsesLastMonthRevenue(t *testing.T) {
 	db := prepareSiteDB(t)
 	_, site := openActiveSite(t, db, "tier-job")
