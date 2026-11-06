@@ -71,10 +71,15 @@ const LAZY_ICONS = new Map<
 
 function renderLobeIconFallback(
   name: string,
-  size: number | string
+  size: number | string,
+  identity?: { role?: string; label?: string }
 ): ReactNode {
   return (
     <div
+      role={identity?.role}
+      aria-label={identity?.label}
+      width={size}
+      height={size}
       className='bg-muted text-muted-foreground flex items-center justify-center rounded-full text-xs font-medium'
       style={{ width: size, height: size }}
     >
@@ -202,14 +207,20 @@ export function getLobeIcon(
     props.size = size
   }
 
+  const shownSize =
+    typeof props.size === 'number' || typeof props.size === 'string'
+      ? props.size
+      : size
   return (
     <Suspense
-      fallback={renderLobeIconFallback(
-        baseKey,
-        typeof props.size === 'number' || typeof props.size === 'string'
-          ? props.size
-          : size
-      )}
+      key={cacheKey}
+      fallback={renderLobeIconFallback(baseKey, shownSize, {
+        role: typeof props.role === 'string' ? props.role : undefined,
+        label:
+          typeof props['aria-label'] === 'string'
+            ? props['aria-label']
+            : undefined,
+      })}
     >
       <IconComponent {...props} />
     </Suspense>

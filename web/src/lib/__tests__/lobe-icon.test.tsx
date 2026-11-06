@@ -20,7 +20,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { runInNewContext } from 'node:vm'
 
-import { act, render, screen } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { getLobeIcon, getLobeIconNames } from '../lobe-icon'
@@ -70,10 +70,30 @@ describe('Lobe icons', () => {
       getLobeIcon('Claude.Color.size={32}.role="img".aria-label="Claude icon"')
     )
     expect(screen.getByText('C')).toHaveStyle({ width: '32px', height: '32px' })
-    const icon = await screen.findByRole('img', { name: 'Claude icon' })
-    expect(icon.tagName.toLowerCase()).toBe('svg')
+    await waitFor(() => {
+      expect(
+        screen.getByRole('img', { name: 'Claude icon' }).tagName.toLowerCase()
+      ).toBe('svg')
+    })
+    const icon = screen.getByRole('img', { name: 'Claude icon' })
     expect(icon).toHaveAttribute('width', '32')
     expect(icon).toHaveAttribute('height', '32')
+  })
+
+  it('shows the new icon identity before the next chunk resolves', () => {
+    const { rerender } = render(
+      getLobeIcon('OpenAI.role="img".aria-label="OpenAI icon"', 24)
+    )
+    rerender(
+      getLobeIcon('Gemini.Color.role="img".aria-label="Gemini icon"', 28)
+    )
+    expect(screen.getByRole('img', { name: 'Gemini icon' })).toHaveAttribute(
+      'width',
+      '28'
+    )
+    expect(
+      screen.queryByRole('img', { name: 'OpenAI icon' })
+    ).not.toBeInTheDocument()
   })
 
   it('updates the displayed icon when the name changes', async () => {
@@ -96,18 +116,26 @@ describe('Lobe icons', () => {
 
   it('falls back to the base icon when the requested variant is unavailable', async () => {
     render(getLobeIcon('OpenAI.Unknown.role="img".aria-label="OpenAI icon"'))
-    expect(
-      await screen.findByRole('img', { name: 'OpenAI icon' })
-    ).toBeVisible()
+    await waitFor(() => {
+      expect(
+        screen.getByRole('img', { name: 'OpenAI icon' }).tagName.toLowerCase()
+      ).toBe('svg')
+    })
   })
 
   it.each(['Gemma.Simple', 'LobeHub.Morden'])(
     'loads the %s variant that is not listed in the standard catalog flags',
     async (name) => {
       render(getLobeIcon(`${name}.role="img".aria-label="Special icon"`, 24))
-      expect(
-        await screen.findByRole('img', { name: 'Special icon' })
-      ).toHaveAttribute('height', '24')
+      await waitFor(() => {
+        expect(
+          screen.getByRole('img', { name: 'Special icon' }).tagName.toLowerCase()
+        ).toBe('svg')
+      })
+      expect(screen.getByRole('img', { name: 'Special icon' })).toHaveAttribute(
+        'height',
+        '24'
+      )
     }
   )
 

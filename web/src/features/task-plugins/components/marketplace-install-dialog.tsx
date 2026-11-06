@@ -18,12 +18,11 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, Download } from 'lucide-react'
-import { lazy, Suspense, useState } from 'react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import { Dialog } from '@/components/dialog'
-import { LoadingState } from '@/components/loading-state'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Combobox } from '@/components/ui/combobox'
@@ -49,15 +48,10 @@ import {
 import type { MarketplacePlugin, MarketplaceSource } from '../types'
 import { JavaScriptViewer } from './javascript-viewer'
 import { MarketplaceCapabilities } from './marketplace-capabilities'
+import { PluginChangelogPanel } from './plugin-changelog-panel'
 import { PluginIcon } from './plugin-icon'
 import { PluginIntegrityCheck } from './plugin-integrity-check'
 import { SourceDiff } from './source-diff'
-
-const PluginChangelogPanel = lazy(() =>
-  import('./plugin-changelog-panel').then((module) => ({
-    default: module.PluginChangelogPanel,
-  }))
-)
 
 export type MarketplaceInstallTarget = {
   source: MarketplaceSource
@@ -385,13 +379,11 @@ function MarketplaceInstallContent(
         </TabsContent>
         <TabsContent value='changelog' className='min-w-0 space-y-2'>
           {reviewTab === 'changelog' && (
-            <Suspense fallback={<LoadingState />}>
-              <PluginChangelogPanel
-                indexUrl={target.source.index_url}
-                plugin={target.plugin}
-                version={selectedVersion}
-              />
-            </Suspense>
+            <PluginChangelogPanel
+              indexUrl={target.source.index_url}
+              plugin={target.plugin}
+              version={selectedVersion}
+            />
           )}
         </TabsContent>
         <TabsContent value='source' className='min-w-0 space-y-2'>
