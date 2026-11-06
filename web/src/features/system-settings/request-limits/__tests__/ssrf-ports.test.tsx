@@ -74,9 +74,10 @@ test('saving the loaded SSRF form keeps port ranges as strings', async () => {
   )
 
   await waitFor(() => expect(api.put).toHaveBeenCalled())
-  const payload = vi.mocked(api.put).mock.calls.find((call) =>
-    String(call[1]?.key).includes('allowed_ports')
-  )?.[1]
+  const payload = vi.mocked(api.put).mock.calls.find((call) => {
+    const body = call[1] as { key?: string; value?: string } | undefined
+    return String(body?.key).includes('allowed_ports')
+  })?.[1] as { key?: string; value?: string } | undefined
   expect(JSON.parse(String(payload?.value))).toEqual([
     '80',
     '443',
