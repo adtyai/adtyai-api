@@ -53,6 +53,9 @@ func AdjustUserQuota(userID, operatorRole int, mode string, value int) (*UserQuo
 		if err != nil {
 			return err
 		}
+		if err := rejectIfPendingBatchLeavesNegative(userID, after); err != nil {
+			return err
+		}
 		delta := int64(after) - int64(user.Quota)
 		applied, err := applyManualAdjustCache(userID, delta)
 		cacheApplied = applied
@@ -114,6 +117,19 @@ func compensateManualAdjustCache(userID int, delta int64) {
 	if _, err := cacheApplyUserQuotaDelta(userID, -delta); err != nil {
 		common.SysError(common.LogText("failed to compensate manual quota cache for user %d: %s", userID, err))
 	}
+}
+
+// rejectIfPendingBatchLeavesNegative keeps a queued consumption from driving
+// the wallet negative after this adjustment is flushed. The database row lags
+// that queue, so the row alone is not the live balance.
+func rejectIfPendingBatchLeavesNegative(userID, after int) error {
+	if !common.BatchUpdateEnabled {
+		return nil
+	}
+	if saturatingAddInt(after, pendingBatchDelta(BatchUpdateTypeUserQuota, userID)) < 0 {
+		return ErrAdtyQuotaFloor
+	}
+	return nil
 }
 
 // quotaAfterManualAdjust applies the confirmed admin floor: subtract stops at 0,

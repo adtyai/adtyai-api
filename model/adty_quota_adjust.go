@@ -88,6 +88,9 @@ func AdjustUserQuotaWithLedger(userID, operatorID, operatorRole int, mode string
 		if err != nil {
 			return err
 		}
+		if err := rejectIfPendingBatchLeavesNegative(userID, after); err != nil {
+			return err
+		}
 		delta := int64(after) - int64(user.Quota)
 		applied, err := applyManualAdjustCache(userID, delta)
 		cacheApplied = applied
