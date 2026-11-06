@@ -34,7 +34,7 @@ export function AuthLayout({ children }: AuthLayoutProps) {
   // adty: brand panel on the left, form on the right (task 8.7)
   const highlights = [
     t('Pay as you go, top up from $1'),
-    t('USDT, Alipay and WeChat Pay'),
+    t('Top up with the payment methods currently enabled.'),
     t('Works with Claude Code, Codex and OpenAI SDKs'),
   ]
 

@@ -79,6 +79,17 @@ describe('auth layout', () => {
     ).toBeInTheDocument()
   })
 
+  it('does not name USDT, Alipay or WeChat when those methods are not the enabled list', async () => {
+    await renderLayout()
+
+    expect(
+      await screen.findByRole('complementary', { name: 'About this site' })
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByText('USDT, Alipay and WeChat Pay')
+    ).not.toBeInTheDocument()
+  })
+
   it('hides the brand panel on small screens so the form keeps one column', async () => {
     await renderLayout()
 
