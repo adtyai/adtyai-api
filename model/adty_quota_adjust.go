@@ -58,8 +58,6 @@ func AdjustUserQuotaWithLedger(userID, operatorID, operatorRole int, mode string
 
 	var result AdtyQuotaAdjustResult
 	var cacheApplied bool
-	unlockBatchQueue := lockUserQuotaBatchQueue()
-	defer unlockBatchQueue()
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		var user User
 		if err := lockForUpdate(tx).First(&user, userID).Error; err != nil {

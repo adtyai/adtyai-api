@@ -114,7 +114,7 @@ func cacheRefundUserQuota(userID int, credit, checkinQuota int64) (charged, befo
 			// batch-update queue. Apply that unflushed delta before the refund
 			// script reads the hash, or a refund uses a stale higher balance.
 			if common.BatchUpdateEnabled {
-				if delta := pendingBatchDeltaLocked(BatchUpdateTypeUserQuota, userID); delta != 0 {
+				if delta := userQuotaBatchDelta(userID); delta != 0 {
 					_ = common.RDB.HIncrBy(context.Background(), getUserCacheKey(userID), "Quota", int64(delta)).Err()
 				}
 			}
@@ -173,7 +173,7 @@ func adtyRefundLiveQuota(userID int, dbQuota int64) int64 {
 		return dbQuota
 	}
 	if !cacheHit && common.BatchUpdateEnabled {
-		cached.Quota = saturatingAddInt(cached.Quota, pendingBatchDeltaLocked(BatchUpdateTypeUserQuota, userID))
+		cached.Quota = saturatingAddInt(cached.Quota, userQuotaBatchDelta(userID))
 	}
 	return int64(cached.Quota)
 }
@@ -184,8 +184,6 @@ func PreviewAdtyTopUpRefund(tradeNo string) (*AdtyTopUpRefundResult, error) {
 	var ext *AdtyTopupOrder
 	var balance int64
 	var checkin int64
-	unlockBatchQueue := lockUserQuotaBatchQueue()
-	defer unlockBatchQueue()
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		var err error
 		topUp, ext, err = lockAdtyTopUpTx(tx, tradeNo)
@@ -223,8 +221,6 @@ func RefundAdtyTopUp(tradeNo, reason string, operatorID int, idemKey string, exp
 	var userID int
 	var cacheCharged int64 // 已经在缓存里扣掉的额度；事务失败时要还回缓存
 	replay := false
-	unlockBatchQueue := lockUserQuotaBatchQueue()
-	defer unlockBatchQueue()
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		topUp, ext, err := lockAdtyTopUpTx(tx, tradeNo)
 		if err != nil {
@@ -261,7 +257,7 @@ func RefundAdtyTopUp(tradeNo, reason string, operatorID int, idemKey string, exp
 			if charged, live, ok := cacheRefundUserQuota(topUp.UserId, ext.CreditQuota, checkinQuota); ok {
 				before, cacheCharged = live, charged
 			} else if common.BatchUpdateEnabled {
-				before = int64(saturatingAddInt(int(before), pendingBatchDeltaLocked(BatchUpdateTypeUserQuota, topUp.UserId)))
+				before = int64(saturatingAddInt(int(before), userQuotaBatchDelta(topUp.UserId)))
 			}
 		}
 		deducted, bonus, refundQuota, refundAmount := adtyRefundFigures(ext, before, checkinQuota)

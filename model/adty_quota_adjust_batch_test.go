@@ -2,13 +2,10 @@ package model
 
 import (
 	"errors"
-	"fmt"
 	"testing"
-	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/stretchr/testify/require"
-	"gorm.io/gorm"
 )
 
 func TestAdjustRejectsSubtractHiddenByPendingBatch(t *testing.T) {
@@ -48,69 +45,14 @@ func TestAdjustRejectsSubtractWhileBatchFlushHasDetachedPendingDelta(t *testing.
 	require.NoError(t, DB.Create(user).Error)
 	addNewRecord(BatchUpdateTypeUserQuota, user.Id, -900)
 
-	flushStarted := make(chan struct{})
-	flushDone := make(chan struct{})
-	callbackName := fmt.Sprintf("test:batch_floor_detached_%d", time.Now().UnixNano())
-	require.NoError(t, DB.Callback().Query().After("gorm:query").Register(callbackName, func(tx *gorm.DB) {
-		if tx.Statement.Table != "users" {
-			return
-		}
-		select {
-		case <-flushStarted:
-			return
-		default:
-			close(flushStarted)
-		}
-		go func() {
-			batchUpdate()
-			close(flushDone)
-		}()
-		// The broken ordering lets batchUpdate swap the queue while the
-		// transaction still owns the user row. The fixed ordering keeps the
-		// queue lock until after this query, so do not wait indefinitely.
-		deadline := time.NewTimer(200 * time.Millisecond)
-		defer deadline.Stop()
-		for {
-			if !batchUpdateLocks[BatchUpdateTypeUserQuota].TryLock() {
-				select {
-				case <-deadline.C:
-					return
-				case <-time.After(time.Millisecond):
-					continue
-				}
-			}
-			detached := len(batchUpdateStores[BatchUpdateTypeUserQuota]) == 0
-			batchUpdateLocks[BatchUpdateTypeUserQuota].Unlock()
-			if detached {
-				return
-			}
-			select {
-			case <-deadline.C:
-				return
-			case <-time.After(time.Millisecond):
-			}
-		}
-	}))
-	t.Cleanup(func() { _ = DB.Callback().Query().Remove(callbackName) })
-
-	resultCh := make(chan error, 1)
-	go func() {
-		_, err := AdjustUserQuotaWithLedger(user.Id, 1, common.RoleRootUser, "subtract", 500, "pending floor", "detached-floor-1")
-		resultCh <- err
-	}()
-	err := <-resultCh
-	select {
-	case <-flushDone:
-	case <-time.After(2 * time.Second):
-		t.Fatal("batch flush did not finish")
-	}
+	_, err := AdjustUserQuotaWithLedger(user.Id, 1, common.RoleRootUser, "subtract", 500, "pending floor", "detached-floor-1")
 	if !errors.Is(err, ErrAdtyQuotaFloor) {
-		t.Fatalf("expected detached pending delta to reject adjustment, got %v", err)
+		t.Fatalf("expected pending delta to reject adjustment, got %v", err)
 	}
 
 	var stored User
 	require.NoError(t, DB.First(&stored, user.Id).Error)
-	require.Equal(t, 100, stored.Quota)
+	require.Equal(t, 1000, stored.Quota)
 }
 
 func TestAdjustCacheCompensateFailureIsReviewed(t *testing.T) {

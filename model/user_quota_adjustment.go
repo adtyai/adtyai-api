@@ -41,8 +41,6 @@ func AdjustUserQuota(userID, operatorRole int, mode string, value int) (*UserQuo
 
 	var adjustment UserQuotaAdjustment
 	var cacheApplied bool
-	unlockBatchQueue := lockUserQuotaBatchQueue()
-	defer unlockBatchQueue()
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		var user User
 		if err := lockForUpdate(tx).First(&user, userID).Error; err != nil {
@@ -161,7 +159,7 @@ func rejectIfPendingBatchLeavesNegative(userID, after int) error {
 	if !common.BatchUpdateEnabled {
 		return nil
 	}
-	if saturatingAddInt(after, pendingBatchDeltaLocked(BatchUpdateTypeUserQuota, userID)) < 0 {
+	if saturatingAddInt(after, userQuotaBatchDelta(userID)) < 0 {
 		return ErrAdtyQuotaFloor
 	}
 	return nil

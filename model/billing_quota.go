@@ -24,13 +24,12 @@ func pendingBatchDeltaLocked(kind int, id int) int {
 	return batchUpdateStores[kind][id]
 }
 
-// lockUserQuotaBatchQueue serializes operations that combine the users row
-// with the in-memory user-quota delta. batchUpdate swaps this store before it
-// writes the database, so callers must hold the same lock while reading the
-// row and the pending delta or they can observe a split state.
-func lockUserQuotaBatchQueue() func() {
-	batchUpdateLocks[BatchUpdateTypeUserQuota].Lock()
-	return func() { batchUpdateLocks[BatchUpdateTypeUserQuota].Unlock() }
+// userQuotaBatchDelta reads the unflushed user-quota delta while holding the
+// queue lock. Callers must not hold a database row lock first: batchUpdate
+// takes this same lock and then writes the database, so the opposite order
+// deadlocks. The delta is a point-in-time value for the lower-bound check.
+func userQuotaBatchDelta(id int) int {
+	return pendingBatchDelta(BatchUpdateTypeUserQuota, id)
 }
 
 func saturatingAddInt(base int, delta int) int {
@@ -55,8 +54,6 @@ func TokenQuotaForBilling(token *Token) (remain int, used int) {
 
 // UserQuotaForBilling 返回用户当前剩余和已用。批量更新打开时以数据库加队列差额为准，避免和 Redis 增量加两次。
 func UserQuotaForBilling(id int) (remain int, used int, err error) {
-	unlockBatchQueue := lockUserQuotaBatchQueue()
-	defer unlockBatchQueue()
 	if common.BatchUpdateEnabled {
 		remain, err = GetUserQuota(id, true)
 	} else {
@@ -70,7 +67,7 @@ func UserQuotaForBilling(id int) (remain int, used int, err error) {
 		return 0, 0, err
 	}
 	if common.BatchUpdateEnabled {
-		remain = saturatingAddInt(remain, pendingBatchDeltaLocked(BatchUpdateTypeUserQuota, id))
+		remain = saturatingAddInt(remain, userQuotaBatchDelta(id))
 		used = saturatingAddInt(used, pendingBatchDelta(BatchUpdateTypeUsedQuota, id))
 	}
 	return remain, used, nil
