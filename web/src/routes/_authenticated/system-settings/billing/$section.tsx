@@ -28,11 +28,20 @@ export const Route = createFileRoute(
   '/_authenticated/system-settings/billing/$section'
 )({
   beforeLoad: ({ params }) => {
+    if (params.section === 'epay' || params.section === 'usdt') {
+      throw redirect({
+        to: '/system-settings/billing/$section',
+        params: { section: 'payment' },
+        search: { tab: params.section },
+        replace: true,
+      })
+    }
     const validSections = BILLING_SECTION_IDS as unknown as string[]
     if (!validSections.includes(params.section)) {
       throw redirect({
         to: '/system-settings/billing/$section',
         params: { section: BILLING_DEFAULT_SECTION },
+        replace: true,
       })
     }
   },

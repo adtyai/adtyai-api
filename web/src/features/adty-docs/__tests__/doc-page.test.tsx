@@ -65,7 +65,7 @@ describe('DocPage', () => {
     ).toBeVisible()
   })
 
-  // Task 9.2 added every page in all seven languages (docs-complete.test.ts),
+  // Task 9.2 added every page in all eight languages (docs-complete.test.ts),
   // so the English fallback in getDocMarkdown is no longer reached.
   it('shows the Japanese page when the interface language is ja', async () => {
     await i18next.changeLanguage('ja')

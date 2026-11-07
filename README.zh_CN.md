@@ -201,19 +201,9 @@ curl --fail-with-body http://localhost:3000/v1/responses \
 
 ### Docker Compose
 
-仓库的 [Compose 配置](./docker-compose.yml) 默认启动 **New API + PostgreSQL + Redis**，并提供 MySQL 和独立 ClickHouse 日志库的配置示例。
+ADTY AI 的正式部署使用 [deploy/adty/docker-compose.yml](./deploy/adty/docker-compose.yml)，按 [docs/adty/deploy.md](./docs/adty/deploy.md) 操作。不要部署仓库根目录的 compose 文件：它不是生产镜像、网络和密钥配置。
 
-```bash
-git clone https://github.com/QuantumNous/new-api.git
-cd new-api
-```
-
-启动前编辑 `docker-compose.yml`：同时替换数据库、Redis 服务及对应连接串中的示例密码，并设置固定的随机 `SESSION_SECRET`（可用 `openssl rand -hex 32` 生成）。通过 HTTPS 访问控制台时，设置 `SESSION_COOKIE_SECURE=true`，并在 `SESSION_COOKIE_TRUSTED_URL` 中填写控制台对外的精确 HTTPS Origin。
-
-```bash
-docker compose up -d
-docker compose logs -f new-api
-```
+根目录的 [docker-compose.yml](./docker-compose.yml) 只是本地示例。没有设置 `POSTGRES_PASSWORD` 和 `REDIS_PASSWORD` 时它会拒绝启动，并且只把 API 绑定到 `127.0.0.1:3000`。
 
 ### 存储与配置
 

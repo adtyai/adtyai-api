@@ -494,7 +494,7 @@
     "Share image": "共有用画像",
     "Description ({{language}})": "説明（{{language}}）",
     "Title ({{language}})": "タイトル（{{language}}）",
-    "Written into the source of the seven home page URLs for search engines and link previews. A language left empty uses English; without English the title is the site name and there is no description. Other pages are never indexed.": "トップページの 7 つの言語 URL のソースに書き込まれ、検索エンジンやリンクプレビューが読み取ります。空欄の言語は英語を使い、英語も空欄なら、タイトルはサイト名になり説明は出力されません。ほかのページは検索に登録されません。",
+    "Written into the source of the eight home page URLs for search engines and link previews. A language left empty uses English; without English the title is the site name and there is no description. Other pages are never indexed.": "トップページの 8 つの言語 URL のソースに書き込まれ、検索エンジンやリンクプレビューが読み取ります。空欄の言語は英語を使い、英語も空欄なら、タイトルはサイト名になり説明は出力されません。ほかのページは検索に登録されません。",
     "Home Page SEO": "トップページの SEO",
     "{{count}} characters; {{limit}} or fewer is recommended.": "{{count}} 文字です。{{limit}} 文字以内をおすすめします。",
     "Add this site as a provider. The base URL ends with /v1.": "このサイトをプロバイダとして追加します。Base URL は /v1 で終わります。",

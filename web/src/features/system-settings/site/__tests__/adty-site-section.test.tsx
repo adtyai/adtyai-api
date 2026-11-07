@@ -116,6 +116,28 @@ describe('ADTY AI site settings section', () => {
     })
   })
 
+  it('uses the saved values as the baseline for later saves', async () => {
+    const user = userEvent.setup()
+    renderSection(savedOptions)
+
+    await user.clear(screen.getByLabelText('Support hours'))
+    await user.type(screen.getByLabelText('Support hours'), '24/7')
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+
+    mutateAsync.mockClear()
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+    expect(mutateAsync).not.toHaveBeenCalled()
+
+    await user.clear(screen.getByLabelText('Support email'))
+    await user.type(screen.getByLabelText('Support email'), 'ops@example.com')
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+    expect(mutateAsync).toHaveBeenCalledTimes(1)
+    expect(mutateAsync).toHaveBeenCalledWith({
+      key: 'adty_site_setting.support_email',
+      value: 'ops@example.com',
+    })
+  })
+
   it('does not save an API address that is not an http(s) URL', async () => {
     const user = userEvent.setup()
     renderSection([])

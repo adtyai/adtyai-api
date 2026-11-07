@@ -16,9 +16,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useEffect, useState } from 'react'
+import { Save } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
@@ -72,6 +74,7 @@ function toDrafts(values: AdtyEpaySettingsDefaults) {
 /** Alipay / WeChat ordering rules (adty task 3.6): validity, failover limits, follow-up query, maintenance. */
 export function AdtyEpaySettingsSection(props: {
   defaultValues: AdtyEpaySettingsDefaults
+  inlineActions?: boolean
 }) {
   const { t } = useTranslation()
   const labels: Record<NumberField, string> = {
@@ -84,14 +87,17 @@ export function AdtyEpaySettingsSection(props: {
     probeIntervalMinutes: t('Probe interval (minutes)'),
   }
   const updateOption = useUpdateOption()
-  const saved = props.defaultValues
-  const [drafts, setDrafts] = useState(() => toDrafts(saved))
-  const [probeEnabled, setProbeEnabled] = useState(saved.probeEnabled)
+  const savedRef = useRef(props.defaultValues)
+  const [drafts, setDrafts] = useState(() => toDrafts(props.defaultValues))
+  const [probeEnabled, setProbeEnabled] = useState(
+    props.defaultValues.probeEnabled
+  )
 
-  // Reset when the saved values change (after a save refetches the options).
-  const savedKey = JSON.stringify(saved)
+  // Reset drafts when the server-provided saved values change.
+  const savedKey = JSON.stringify(props.defaultValues)
   useEffect(() => {
     const next: AdtyEpaySettingsDefaults = JSON.parse(savedKey)
+    savedRef.current = next
     setDrafts(toDrafts(next))
     setProbeEnabled(next.probeEnabled)
   }, [savedKey])
@@ -120,6 +126,7 @@ export function AdtyEpaySettingsSection(props: {
 
   const save = async () => {
     if (Object.keys(errors).length > 0) return
+    const saved = savedRef.current
     // The server checks per-channel ≤ total against the stored other value,
     // so save the total first when it grows and last when it shrinks.
     const order: NumberField[] =
@@ -135,6 +142,10 @@ export function AdtyEpaySettingsSection(props: {
           key: OPTION_KEYS[field],
           value: values[field],
         })
+        savedRef.current = {
+          ...savedRef.current,
+          [field]: values[field],
+        }
       }
     }
     if (probeEnabled !== saved.probeEnabled) {
@@ -142,15 +153,33 @@ export function AdtyEpaySettingsSection(props: {
         key: OPTION_KEYS.probeEnabled,
         value: probeEnabled,
       })
+      savedRef.current = {
+        ...savedRef.current,
+        probeEnabled,
+      }
     }
   }
 
   return (
     <SettingsSection title={t('Alipay and WeChat Pay')}>
-      <SettingsPageFormActions
-        onSave={save}
-        isSaving={updateOption.isPending}
-      />
+      {props.inlineActions ? (
+        <div className='mb-4 flex justify-end'>
+          <Button
+            type='button'
+            size='sm'
+            onClick={save}
+            disabled={updateOption.isPending}
+          >
+            <Save data-icon='inline-start' />
+            <span>{t('Save Changes')}</span>
+          </Button>
+        </div>
+      ) : (
+        <SettingsPageFormActions
+          onSave={save}
+          isSaving={updateOption.isPending}
+        />
+      )}
       <div className='grid max-w-2xl gap-5 sm:grid-cols-2'>
         {NUMBER_FIELDS.map((item) => (
           <div key={item.field} className='space-y-2'>

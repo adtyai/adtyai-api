@@ -9,8 +9,8 @@
     "sortPriority": {"type": "integer", "minimum": -2147483648, "maximum": 2147483647, "default": 0},
     "website": {"oneOf": [{"const": ""}, {"type": "string", "format": "uri", "pattern": "^[Hh][Tt][Tt][Pp][Ss]://[^/@?#\\s]+(?:[/?#]|$)"}], "description": "Absolute HTTPS URL with a valid ASCII hostname (use punycode for internationalized domains) and no credentials; validated by the host."},
     "apiVersion": {"const": 1}, "key": {"type": "string"}, "name": {"type": "string"}, "icon": {"type": "string", "maxLength": 128}, "description": {"$ref": "#/$defs/localizedText"}, "version": {"type": "string"},
-    "author": {"type": "object", "required": ["name"], "additionalProperties": false, "properties": {"name": {"type": "string"}, "url": {"type": "string", "format": "uri"}}},
-    "baseUrl": {"type": "string", "format": "uri", "pattern": "^https?://", "maxLength": 191},
+    "author": {"type": "object", "required": ["name"], "additionalProperties": false, "properties": {"name": {"type": "string"}, "url": {"type": "string", "format": "uri", "pattern": "^https?://"}}},
+    "baseUrl": {"type": "string", "format": "uri", "pattern": "^https?://[^/@?#\\s]+(?:/[^?#\\s]*)?$", "maxLength": 191},
     "channelTypes": {"type": "array", "uniqueItems": true, "items": {"type": "integer", "minimum": 1}}, "models": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
     "fetchMode": {"enum": ["per_task", "batch"]}, "allowedHosts": {"type": "array", "uniqueItems": true, "items": {"type": "string"}},
     "upstreams": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/upstreamKind"}, "description": "Upstream kinds the driver addresses. vendor is implied; new_api makes the plugin bindable to type-60 New API channels."},
@@ -21,7 +21,7 @@
     ]}},
     "submitResponseTypes": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["json", "sse"]}},
     "requiredCapabilities": {"type": "array", "uniqueItems": true, "items": {"enum": ["json-clone@1", "submit-sse-delta@1", "json-order@1", "duration-auto@1"]}},
-    "routes": {"type": "array", "items": {"$ref": "#/$defs/route"}}, "usageSchema": {"type": "object", "additionalProperties": {"$ref": "#/$defs/usageField"}}, "usageExamples": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["label", "facts"], "properties": {"label": {"type": "string"}, "facts": {"type": "object"}}}}, "usageProfiles": {"type": "array", "items": {"$ref": "#/$defs/usageProfile"}}, "auth": {}
+    "routes": {"type": "array", "items": {"$ref": "#/$defs/route"}}, "usageSchema": {"type": "object", "additionalProperties": {"$ref": "#/$defs/usageField"}}, "usageExamples": {"type": "array", "maxItems": 16, "items": {"type": "object", "additionalProperties": false, "required": ["label", "facts"], "properties": {"label": {"type": "string", "maxLength": 48}, "facts": {"type": "object"}}}}, "usageProfiles": {"type": "array", "items": {"$ref": "#/$defs/usageProfile"}}, "auth": {}
   },
   "allOf": [{"if": {"required": ["requiredCapabilities"], "properties": {"requiredCapabilities": {"contains": {"const": "submit-sse-delta@1"}}}}, "then": {"required": ["submitResponseTypes"], "properties": {"submitResponseTypes": {"contains": {"const": "sse"}}}}}],
   "$defs": {
@@ -83,13 +83,13 @@
     },
     "localizedText": {
       "oneOf": [
-        {"type": "string", "minLength": 1},
+        {"type": "string", "minLength": 1, "maxLength": 512},
         {
           "type": "object",
           "required": ["en"],
           "maxProperties": 16,
           "propertyNames": {"pattern": "^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,8})*$"},
-          "additionalProperties": {"type": "string", "minLength": 1}
+          "additionalProperties": {"type": "string", "minLength": 1, "maxLength": 512}
         }
       ]
     },

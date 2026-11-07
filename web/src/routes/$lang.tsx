@@ -22,8 +22,8 @@ import { prepareLangHome } from '@/features/adty-seo/home-language'
 import { Home } from '@/features/home'
 
 /**
- * Home page in one of the six non-English languages (adty task 9.3):
- * /zh-cn, /zh-tw, /fr, /ja, /ru, /vi. Any other single segment is a 404.
+ * Home page in one of the seven non-English languages (adty task 9.3):
+ * /zh-cn, /zh-tw, /fr, /ja, /ko, /ru, /vi. Any other single segment is a 404.
  * Static routes such as /pricing and /docs win over this one.
  */
 export const Route = createFileRoute('/$lang')({

@@ -8189,7 +8189,7 @@
     "Setup guides": "Hướng dẫn cài đặt",
     "Set ANTHROPIC_BASE_URL to this site, without /v1, and use your key.": "Đặt ANTHROPIC_BASE_URL thành địa chỉ trang này, không thêm /v1, rồi điền khóa.",
     "Set base_url to this site with /v1. The model can be Claude, GPT or Gemini.": "Đặt base_url thành địa chỉ trang này kèm /v1. Model có thể là Claude, GPT hoặc Gemini.",
-    "Written into the source of the seven home page URLs for search engines and link previews. A language left empty uses English; without English the title is the site name and there is no description. Other pages are never indexed.": "Được ghi vào mã nguồn của bảy URL trang chủ cho công cụ tìm kiếm và bản xem trước liên kết. Ngôn ngữ để trống sẽ dùng tiếng Anh; nếu tiếng Anh cũng trống thì tiêu đề là tên trang và không có mô tả. Các trang khác không bao giờ được lập chỉ mục.",
+    "Written into the source of the eight home page URLs for search engines and link previews. A language left empty uses English; without English the title is the site name and there is no description. Other pages are never indexed.": "Được ghi vào mã nguồn của tám URL trang chủ cho công cụ tìm kiếm và bản xem trước liên kết. Ngôn ngữ để trống sẽ dùng tiếng Anh; nếu tiếng Anh cũng trống thì tiêu đề là tên trang và không có mô tả. Các trang khác không bao giờ được lập chỉ mục.",
     "Title ({{language}})": "Tiêu đề ({{language}})",
     "Share image": "Ảnh chia sẻ",
     "Shown in link previews, 1200 by 630 pixels. A path starting with / is served by this site.": "Hiển thị trong bản xem trước liên kết, 1200 × 630 điểm ảnh. Đường dẫn bắt đầu bằng / do trang này cung cấp.",

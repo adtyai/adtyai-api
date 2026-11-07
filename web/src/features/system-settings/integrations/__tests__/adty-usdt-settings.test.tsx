@@ -114,6 +114,39 @@ describe('BEpusdtSettingsSection', () => {
     })
   })
 
+  it('uses the saved chains as the baseline for later saves', async () => {
+    mutateAsync.mockReset()
+    const user = userEvent.setup()
+    render(<UsdtFixture />)
+    await user.click(screen.getByRole('checkbox', { name: 'Polygon' }))
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+
+    mutateAsync.mockClear()
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+    expect(mutateAsync).not.toHaveBeenCalled()
+  })
+
+  it('uses saved scalar settings as the baseline for later saves', async () => {
+    mutateAsync.mockReset()
+    const user = userEvent.setup()
+    render(<UsdtFixture />)
+    await user.click(
+      screen.getByRole('switch', { name: 'Enable USDT payments' })
+    )
+    await user.clear(screen.getByLabelText('Gateway address'))
+    await user.type(
+      screen.getByLabelText('Gateway address'),
+      'https://new-pay.example'
+    )
+    await user.clear(screen.getByLabelText('Order validity (minutes)'))
+    await user.type(screen.getByLabelText('Order validity (minutes)'), '20')
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+
+    mutateAsync.mockClear()
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+    expect(mutateAsync).not.toHaveBeenCalled()
+  })
+
   it('requires at least one chain', async () => {
     mutateAsync.mockReset()
     const user = userEvent.setup()
@@ -162,6 +195,20 @@ describe('AdtyEpaySettingsSection', () => {
       { key: 'adty_epay_setting.total_timeout_seconds', value: 20 },
       { key: 'adty_epay_setting.channel_timeout_seconds', value: 15 },
     ])
+  })
+
+  it('uses the saved timeouts as the baseline for later saves', async () => {
+    mutateAsync.mockReset()
+    const user = userEvent.setup()
+    render(<EpayFixture />)
+    const channel = screen.getByLabelText('Per-channel timeout (seconds)')
+    await user.clear(channel)
+    await user.type(channel, '15')
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+
+    mutateAsync.mockClear()
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+    expect(mutateAsync).not.toHaveBeenCalled()
   })
 
   it('blocks saving a per-channel timeout above the total', async () => {

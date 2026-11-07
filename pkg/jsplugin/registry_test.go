@@ -2,7 +2,9 @@ package jsplugin
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 
@@ -11,6 +13,34 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestPluginSchemaMatchesHostManifestLimits(t *testing.T) {
+	raw, err := os.ReadFile("../../docs/plugin-api/v1.schema.json")
+	require.NoError(t, err)
+	var schema map[string]any
+	require.NoError(t, json.Unmarshal(raw, &schema))
+	properties := schema["properties"].(map[string]any)
+
+	website := properties["website"].(map[string]any)
+	assert.Contains(t, website["description"], "valid ASCII hostname")
+
+	author := properties["author"].(map[string]any)
+	authorProperties := author["properties"].(map[string]any)
+	assert.Equal(t, "^https?://", authorProperties["url"].(map[string]any)["pattern"])
+
+	baseURL := properties["baseUrl"].(map[string]any)
+	assert.Equal(t, "^https?://[^/@?#\\s]+(?:/[^?#\\s]*)?$", baseURL["pattern"])
+
+	localized := schema["$defs"].(map[string]any)["localizedText"].(map[string]any)
+	localizedBranches := localized["oneOf"].([]any)
+	assert.Equal(t, float64(512), localizedBranches[0].(map[string]any)["maxLength"])
+	assert.Equal(t, float64(512), localizedBranches[1].(map[string]any)["additionalProperties"].(map[string]any)["maxLength"])
+
+	usageExamples := properties["usageExamples"].(map[string]any)
+	assert.Equal(t, float64(16), usageExamples["maxItems"])
+	label := usageExamples["items"].(map[string]any)["properties"].(map[string]any)["label"].(map[string]any)
+	assert.Equal(t, float64(48), label["maxLength"])
+}
 
 func TestRegistryOverrideTakesPrecedenceOverFactory(t *testing.T) {
 	registry := NewRegistry()

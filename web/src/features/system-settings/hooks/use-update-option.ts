@@ -60,7 +60,13 @@ export function useUpdateOption() {
     onSuccess: (data, variables) => {
       if (data.success) {
         // Always refresh system-options
-        queryClient.invalidateQueries({ queryKey: ['system-options'] })
+        // Mark the options stale for the next settings load without refetching
+        // the active settings form. A refetch here replaces local drafts while
+        // a multi-field form is still saving its remaining changes.
+        queryClient.invalidateQueries({
+          queryKey: ['system-options'],
+          refetchType: 'none',
+        })
 
         // If updating frontend-display-related config, also refresh status
         if (STATUS_RELATED_KEYS.has(variables.key)) {

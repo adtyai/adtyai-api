@@ -517,7 +517,7 @@
     "Share image": "分享圖",
     "Description ({{language}})": "描述（{{language}}）",
     "Title ({{language}})": "標題（{{language}}）",
-    "Written into the source of the seven home page URLs for search engines and link previews. A language left empty uses English; without English the title is the site name and there is no description. Other pages are never indexed.": "寫進首頁 7 個語言網址的網頁原始碼，供搜尋引擎和連結預覽讀取。某種語言留空就用英文的；英文也留空時，標題用站名，不寫描述。其餘頁面一律不進搜尋。",
+    "Written into the source of the eight home page URLs for search engines and link previews. A language left empty uses English; without English the title is the site name and there is no description. Other pages are never indexed.": "寫進首頁 8 個語言網址的網頁原始碼，供搜尋引擎和連結預覽讀取。某種語言留空就用英文的；英文也留空時，標題用站名，不寫描述。其餘頁面一律不進搜尋。",
     "Home Page SEO": "首頁 SEO",
     "{{count}} characters; {{limit}} or fewer is recommended.": "{{count}} 個字元，建議不超過 {{limit}} 個。",
     "Set base_url to this site with /v1. The model can be Claude, GPT or Gemini.": "把 base_url 設為本站位址並加上 /v1。模型可以是 Claude、GPT 或 Gemini。",

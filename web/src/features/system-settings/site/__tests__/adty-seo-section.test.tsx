@@ -72,6 +72,12 @@ describe('home page SEO settings section', () => {
     expect(SITE_SECTION_IDS).toContain('adty-seo')
   })
 
+  it('describes all eight home language URLs', () => {
+    renderSection([])
+
+    expect(screen.getByText(/eight home page URLs/)).toBeInTheDocument()
+  })
+
   it('reads back the saved English title, description and share image', () => {
     renderSection(savedOptions)
 
@@ -109,6 +115,31 @@ describe('home page SEO settings section', () => {
       key: 'adty_seo_setting.home_title',
       value:
         '{"en":"ADTY AI - one key","zh-CN":"ADTY AI 一个密钥","fr":"ADTY AI FR"}',
+    })
+  })
+
+  it('uses the saved values as the baseline for later saves', async () => {
+    const user = userEvent.setup()
+    renderSection(savedOptions)
+
+    await user.click(screen.getByRole('tab', { name: /Fran/ }))
+    await user.type(
+      screen.getByRole('textbox', { name: /Title/ }),
+      'ADTY AI FR'
+    )
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+
+    mutateAsync.mockClear()
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+    expect(mutateAsync).not.toHaveBeenCalled()
+
+    await user.clear(screen.getByLabelText('Share image'))
+    await user.type(screen.getByLabelText('Share image'), '/new-og.png')
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+    expect(mutateAsync).toHaveBeenCalledTimes(1)
+    expect(mutateAsync).toHaveBeenCalledWith({
+      key: 'adty_seo_setting.og_image',
+      value: '/new-og.png',
     })
   })
 

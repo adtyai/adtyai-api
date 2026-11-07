@@ -186,19 +186,9 @@ curl --fail-with-body http://localhost:3000/v1/responses \
 
 ### Docker Compose
 
-リポジトリの [Compose 設定](./docker-compose.yml) は、既定で **New API + PostgreSQL + Redis** を起動します。MySQL と独立した ClickHouse ログデータベースの設定例も含まれます。
+ADTY AI の本番配置は [deploy/adty/docker-compose.yml](./deploy/adty/docker-compose.yml) を使います。[docs/adty/deploy.md](./docs/adty/deploy.md) に従ってください。リポジトリルートの compose ファイルは配置しないでください。本番のイメージ、ネットワーク、シークレット設定ではありません。
 
-```bash
-git clone https://github.com/QuantumNous/new-api.git
-cd new-api
-```
-
-起動前に `docker-compose.yml` を編集し、データベースと Redis のサービスおよび接続文字列にあるサンプルパスワードを変更します。永続的に使うランダムな `SESSION_SECRET` も設定してください（`openssl rand -hex 32` で生成可能）。HTTPS の管理画面には `SESSION_COOKIE_SECURE=true` を設定し、公開 HTTPS オリジンを `SESSION_COOKIE_TRUSTED_URL` に正確に指定します。
-
-```bash
-docker compose up -d
-docker compose logs -f new-api
-```
+ルートの [docker-compose.yml](./docker-compose.yml) はローカル用の例です。`POSTGRES_PASSWORD` と `REDIS_PASSWORD` が未設定だと起動を拒否し、API は `127.0.0.1:3000` にのみバインドします。
 
 ### ストレージと設定
 

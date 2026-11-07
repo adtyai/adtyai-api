@@ -76,7 +76,7 @@
     "Yes": "예",
     "years": "년",
     "Year": "연도",
-    "Written into the source of the seven home page URLs for search engines and link previews. A language left empty uses English; without English the title is the site name and there is no description. Other pages are never indexed.": "홈페이지의 7개 언어 URL 소스에 들어가 검색 엔진과 링크 미리보기가 읽습니다. 비운 언어는 영어를 쓰고, 영어도 비우면 제목은 사이트 이름이며 설명은 없습니다. 다른 페이지는 검색에 등록되지 않습니다.",
+    "Written into the source of the eight home page URLs for search engines and link previews. A language left empty uses English; without English the title is the site name and there is no description. Other pages are never indexed.": "홈페이지의 8개 언어 URL 소스에 들어가 검색 엔진과 링크 미리보기가 읽습니다. 비운 언어는 영어를 쓰고, 영어도 비우면 제목은 사이트 이름이며 설명은 없습니다. 다른 페이지는 검색에 등록되지 않습니다.",
     "Write value to the target field": "대상 필드에 값을 써요",
     "Write the English version first": "먼저 영어 버전을 작성하세요",
     "Write the English subject and body first; other languages fall back to it": "먼저 영어 제목과 본문을 작성하세요. 다른 언어가 비어 있으면 이것을 씁니다",

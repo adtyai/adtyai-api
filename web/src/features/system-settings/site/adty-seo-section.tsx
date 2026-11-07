@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Input } from '@/components/ui/input'
@@ -90,37 +90,43 @@ function LengthHint(props: { value: string; limit: number }) {
 
 /**
  * Home page SEO (adty task 9.3): title and description per language and the
- * share image. The server writes them into the seven home page URLs; a
+ * share image. The server writes them into the eight home page URLs; a
  * language left empty uses English, and without English the title is the
  * site name.
  */
 export function AdtySeoSection(props: { defaultValues: AdtySeoDefaults }) {
   const { t } = useTranslation()
   const updateOption = useUpdateOption()
+  const savedRef = useRef(props.defaultValues)
   const [drafts, setDrafts] = useState(() => toDrafts(props.defaultValues))
 
-  // Reset when the saved values change (after a save refetches the options).
+  // Reset drafts when the server-provided saved values change.
   const savedKey = JSON.stringify(props.defaultValues)
   useEffect(() => {
-    setDrafts(toDrafts(JSON.parse(savedKey)))
+    const next: AdtySeoDefaults = JSON.parse(savedKey)
+    savedRef.current = next
+    setDrafts(toDrafts(next))
   }, [savedKey])
 
   const save = async () => {
+    const saved = savedRef.current
     for (const field of ['home_title', 'home_description'] as const) {
       const value = serializeTexts(drafts[field])
-      if (value !== serializeTexts(parseTexts(props.defaultValues[field]))) {
+      if (value !== serializeTexts(parseTexts(saved[field]))) {
         await updateOption.mutateAsync({
           key: `adty_seo_setting.${field}`,
           value,
         })
+        savedRef.current = { ...savedRef.current, [field]: value }
       }
     }
     const image = drafts.og_image.trim()
-    if (image !== props.defaultValues.og_image) {
+    if (image !== saved.og_image) {
       await updateOption.mutateAsync({
         key: 'adty_seo_setting.og_image',
         value: image,
       })
+      savedRef.current = { ...savedRef.current, og_image: image }
     }
   }
 
@@ -138,7 +144,7 @@ export function AdtySeoSection(props: { defaultValues: AdtySeoDefaults }) {
       />
       <p className='text-muted-foreground max-w-3xl text-sm'>
         {t(
-          'Written into the source of the seven home page URLs for search engines and link previews. A language left empty uses English; without English the title is the site name and there is no description. Other pages are never indexed.'
+          'Written into the source of the eight home page URLs for search engines and link previews. A language left empty uses English; without English the title is the site name and there is no description. Other pages are never indexed.'
         )}
       </p>
       <div className='max-w-3xl space-y-4'>

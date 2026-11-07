@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Input } from '@/components/ui/input'
@@ -59,15 +59,18 @@ function toDrafts(values: AdtySiteDefaults): Record<TextField, string> {
 export function AdtySiteSection(props: { defaultValues: AdtySiteDefaults }) {
   const { t } = useTranslation()
   const updateOption = useUpdateOption()
-  const saved = props.defaultValues
-  const [drafts, setDrafts] = useState(() => toDrafts(saved))
-  const [refundPolicy, setRefundPolicy] = useState(saved.refund_policy_enabled)
+  const savedRef = useRef(props.defaultValues)
+  const [drafts, setDrafts] = useState(() => toDrafts(props.defaultValues))
+  const [refundPolicy, setRefundPolicy] = useState(
+    props.defaultValues.refund_policy_enabled
+  )
   const [showErrors, setShowErrors] = useState(false)
 
-  // Reset when the saved values change (after a save refetches the options).
-  const savedKey = JSON.stringify(saved)
+  // Reset drafts when the server-provided saved values change.
+  const savedKey = JSON.stringify(props.defaultValues)
   useEffect(() => {
     const next: AdtySiteDefaults = JSON.parse(savedKey)
+    savedRef.current = next
     setDrafts(toDrafts(next))
     setRefundPolicy(next.refund_policy_enabled)
     setShowErrors(false)
@@ -110,12 +113,17 @@ export function AdtySiteSection(props: { defaultValues: AdtySiteDefaults }) {
       setShowErrors(true)
       return
     }
+    const saved = savedRef.current
     for (const item of TEXT_FIELDS) {
       if (values[item.field] !== saved[item.field]) {
         await updateOption.mutateAsync({
           key: `adty_site_setting.${item.field}`,
           value: values[item.field],
         })
+        savedRef.current = {
+          ...savedRef.current,
+          [item.field]: values[item.field],
+        }
       }
     }
     if (refundPolicy !== saved.refund_policy_enabled) {
@@ -123,6 +131,10 @@ export function AdtySiteSection(props: { defaultValues: AdtySiteDefaults }) {
         key: 'adty_site_setting.refund_policy_enabled',
         value: refundPolicy,
       })
+      savedRef.current = {
+        ...savedRef.current,
+        refund_policy_enabled: refundPolicy,
+      }
     }
   }
 

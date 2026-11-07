@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { CancelledError, QueryClientProvider } from '@tanstack/react-query'
-import { act, renderHook } from '@testing-library/react'
+import { act, renderHook, waitFor } from '@testing-library/react'
 import {
   AxiosError,
   AxiosHeaders,
@@ -30,6 +30,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 
 import { saveModelPricing } from '@/features/model-pricing/api'
 import { useUpdateOption } from '@/features/system-settings/hooks/use-update-option'
+import { useSystemOptions } from '@/features/system-settings/hooks/use-system-options'
 import { handleServerError } from '@/lib/handle-server-error'
 import { api } from '@/lib/http-client'
 import { createAppQueryClient } from '@/lib/query-client'
@@ -440,5 +441,43 @@ it('rejects an unsuccessful setting update so callers cannot proceed as if it sa
   ])
   expect(success).not.toHaveBeenCalled()
   unmount()
+  client.clear()
+})
+
+it('does not refetch active system options during a settings mutation', async () => {
+  const client = createAppQueryClient()
+  const getRequests: string[] = []
+  api.defaults.adapter = async (config) => {
+    if (config.method?.toLowerCase() === 'get') {
+      getRequests.push(config.url ?? '')
+      return {
+        data: { success: true, message: '', data: [{ key: 'SiteName', value: 'Draft' }] },
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      }
+    }
+    return {
+      data: { success: true, message: 'saved' },
+      status: 200,
+      statusText: 'OK',
+      headers: {},
+      config,
+    }
+  }
+  const wrapper = (props: { children: ReactNode }) =>
+    createElement(QueryClientProvider, { client }, props.children)
+  const options = renderHook(() => useSystemOptions(), { wrapper })
+  await waitFor(() => expect(options.result.current.isSuccess).toBe(true))
+  const mutation = renderHook(() => useUpdateOption(), { wrapper })
+
+  await act(async () => {
+    await mutation.result.current.mutateAsync({ key: 'SiteName', value: 'Saved' })
+  })
+
+  expect(getRequests).toHaveLength(1)
+  options.unmount()
+  mutation.unmount()
   client.clear()
 })

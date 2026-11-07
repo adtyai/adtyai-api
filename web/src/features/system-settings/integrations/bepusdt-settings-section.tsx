@@ -16,10 +16,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useEffect, useMemo, useState } from 'react'
+import { Save } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -37,7 +39,7 @@ const BEPUSDT_CHAINS = Object.entries(CHAIN_NAMES).map(([id, label]) => ({
   label,
 }))
 
-type BEpusdtSettingsDefaults = {
+export type BEpusdtSettingsDefaults = {
   enabled: boolean
   baseUrl: string
   tradeTypes: string
@@ -46,6 +48,7 @@ type BEpusdtSettingsDefaults = {
 
 type BEpusdtSettingsSectionProps = {
   defaultValues: BEpusdtSettingsDefaults
+  inlineActions?: boolean
 }
 
 function parseTradeTypes(raw: string): string[] {
@@ -62,6 +65,7 @@ function parseTradeTypes(raw: string): string[] {
 export function BEpusdtSettingsSection(props: BEpusdtSettingsSectionProps) {
   const { t } = useTranslation()
   const updateOption = useUpdateOption()
+  const savedRef = useRef(props.defaultValues)
   const initialChains = useMemo(
     () => parseTradeTypes(props.defaultValues.tradeTypes),
     [props.defaultValues.tradeTypes]
@@ -74,16 +78,24 @@ export function BEpusdtSettingsSection(props: BEpusdtSettingsSectionProps) {
     String(props.defaultValues.orderMinutes)
   )
 
-  // Reset when the saved values change (after a save refetches the options).
+  // Reset drafts when the server-provided saved values change.
   const savedEnabled = props.defaultValues.enabled
   const savedBaseUrl = props.defaultValues.baseUrl
+  const savedTradeTypes = props.defaultValues.tradeTypes
   const savedMinutes = props.defaultValues.orderMinutes
   useEffect(() => {
+    savedRef.current = {
+      ...savedRef.current,
+      enabled: savedEnabled,
+      baseUrl: savedBaseUrl,
+      tradeTypes: savedTradeTypes,
+      orderMinutes: savedMinutes,
+    }
     setEnabled(savedEnabled)
     setBaseUrl(savedBaseUrl)
     setChains(initialChains)
     setMinutes(String(savedMinutes))
-  }, [savedEnabled, savedBaseUrl, savedMinutes, initialChains])
+  }, [savedEnabled, savedBaseUrl, savedTradeTypes, savedMinutes, initialChains])
 
   const minutesValue = Number.parseInt(minutes, 10)
   const chainError = chains.length === 0 ? t('Choose at least one chain') : ''
@@ -94,11 +106,13 @@ export function BEpusdtSettingsSection(props: BEpusdtSettingsSectionProps) {
 
   const save = async () => {
     if (chainError || minutesError) return
+    const saved = savedRef.current
+    const savedChains = parseTradeTypes(saved.tradeTypes)
     const updates: Array<{ key: string; value: string | boolean | number }> = []
-    if (enabled !== savedEnabled) {
+    if (enabled !== saved.enabled) {
       updates.push({ key: 'adty_bepusdt.enabled', value: enabled })
     }
-    if (baseUrl.trim() !== savedBaseUrl) {
+    if (baseUrl.trim() !== saved.baseUrl) {
       updates.push({ key: 'adty_bepusdt.base_url', value: baseUrl.trim() })
     }
     // The secret is write-only: an empty field keeps the stored one.
@@ -106,10 +120,10 @@ export function BEpusdtSettingsSection(props: BEpusdtSettingsSectionProps) {
       updates.push({ key: 'adty_bepusdt.secret', value: secret.trim() })
     }
     const serializedChains = JSON.stringify(chains)
-    if (serializedChains !== JSON.stringify(initialChains)) {
+    if (serializedChains !== JSON.stringify(savedChains)) {
       updates.push({ key: 'adty_bepusdt.trade_types', value: serializedChains })
     }
-    if (minutesValue !== savedMinutes) {
+    if (minutesValue !== saved.orderMinutes) {
       updates.push({
         key: 'adty_topup_setting.usdt_order_minutes',
         value: minutesValue,
@@ -117,16 +131,51 @@ export function BEpusdtSettingsSection(props: BEpusdtSettingsSectionProps) {
     }
     for (const update of updates) {
       await updateOption.mutateAsync(update)
+      if (update.key === 'adty_bepusdt.enabled') {
+        savedRef.current = {
+          ...savedRef.current,
+          enabled: update.value as boolean,
+        }
+      } else if (update.key === 'adty_bepusdt.base_url') {
+        savedRef.current = {
+          ...savedRef.current,
+          baseUrl: update.value as string,
+        }
+      } else if (update.key === 'adty_bepusdt.trade_types') {
+        savedRef.current = {
+          ...savedRef.current,
+          tradeTypes: update.value as string,
+        }
+      } else if (update.key === 'adty_topup_setting.usdt_order_minutes') {
+        savedRef.current = {
+          ...savedRef.current,
+          orderMinutes: update.value as number,
+        }
+      }
     }
     setSecret('')
   }
 
   return (
     <SettingsSection title={t('USDT (BEpusdt)')}>
-      <SettingsPageFormActions
-        onSave={save}
-        isSaving={updateOption.isPending}
-      />
+      {props.inlineActions ? (
+        <div className='mb-4 flex justify-end'>
+          <Button
+            type='button'
+            size='sm'
+            onClick={save}
+            disabled={updateOption.isPending}
+          >
+            <Save data-icon='inline-start' />
+            <span>{t('Save Changes')}</span>
+          </Button>
+        </div>
+      ) : (
+        <SettingsPageFormActions
+          onSave={save}
+          isSaving={updateOption.isPending}
+        />
+      )}
       <div className='flex max-w-2xl flex-col gap-5'>
         <Alert>
           <AlertDescription>

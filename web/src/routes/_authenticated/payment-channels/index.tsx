@@ -23,6 +23,8 @@ export const Route = createFileRoute('/_authenticated/payment-channels/')({
     throw redirect({
       to: '/system-settings/billing/$section',
       params: { section: 'payment' },
+      search: { tab: 'epay' },
+      replace: true,
     })
   },
 })

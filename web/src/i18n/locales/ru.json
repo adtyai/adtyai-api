@@ -514,7 +514,7 @@
     "Share image": "Изображение для превью",
     "Description ({{language}})": "Описание ({{language}})",
     "Title ({{language}})": "Заголовок ({{language}})",
-    "Written into the source of the seven home page URLs for search engines and link previews. A language left empty uses English; without English the title is the site name and there is no description. Other pages are never indexed.": "Записывается в исходный код семи адресов главной страницы для поисковых систем и превью ссылок. Пустой язык использует английский; без английского заголовком будет название сайта, а описания не будет. Остальные страницы никогда не индексируются.",
+    "Written into the source of the eight home page URLs for search engines and link previews. A language left empty uses English; without English the title is the site name and there is no description. Other pages are never indexed.": "Записывается в исходный код восьми адресов главной страницы для поисковых систем и превью ссылок. Пустой язык использует английский; без английского заголовком будет название сайта, а описания не будет. Остальные страницы никогда не индексируются.",
     "Home Page SEO": "SEO главной страницы",
     "{{count}} characters; {{limit}} or fewer is recommended.": "{{count}} символов; рекомендуется не больше {{limit}}.",
     "Set base_url to this site with /v1. The model can be Claude, GPT or Gemini.": "Укажите base_url как адрес этого сайта с /v1. Моделью может быть Claude, GPT или Gemini.",

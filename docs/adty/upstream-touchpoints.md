@@ -419,3 +419,8 @@
 | `web/src/components/layout/components/footer.tsx` | 删掉 `ProjectAttribution`、产品、客服、源码列；法律链接留在版权行 | 公开页不再显示上游署名、源码链接和客服邮箱 | 公开页脚 |
 | `web/src/components/layout/components/public-layout.tsx` | 去掉页脚必须保留源码链接的注释 | 同上 | 公开页脚 |
 | `web/src/features/about/index.tsx` | 空状态只留「未设置关于内容」和图标，去掉上游仓库、作者和许可证链接 | 后台没填关于内容时不再列出上游作者 | 公开页脚 |
+| `web/src/features/system-settings/billing/section-registry.tsx` | USDT、易支付不再单独成计费分区，参数改从支付网关分区传入 | 后台充值设置收到同一个入口；旧地址跳到对应页签 | 本次修改 |
+| `web/src/features/system-settings/hooks/use-update-option.ts` | 保存成功后把 `system-options` 标成过期，但不立刻重新拉取当前设置表单 | 一次保存多个字段时，中途刷新会覆盖还没保存的草稿 | 本次修改 |
+| `model/billing_quota.go` | 用户额度批量队列加锁；读数据库行和未刷库差额时持有同一把锁 | 队列刚刷进数据库时不能把行和差额拆开读 | 本次修改 |
+| `model/user_quota_adjustment.go` | 调额期间持有用户额度批量队列锁，下限按数据库余额加上还没刷库的差额判断 | 不能在队列刚刷库时把活余额调成负数 | 本次修改 |
+| `setting/ratio_setting/group_ratio.go` | JSON 编解码改走 `common` 的编解码包装，不再直接用 `encoding/json` | 根模块的 JSON 编解码必须走统一编解码 | 本次修改 |

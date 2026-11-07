@@ -66,17 +66,16 @@ export function resolveRootHomePath(options: {
   return path === '/' ? null : path
 }
 
-/** beforeLoad of `/`: the redirect target with the original query, or null. */
+/** beforeLoad of `/`: the redirect pathname, or null to keep the root URL. */
 export async function prepareRootHome(
-  signedIn: boolean,
-  searchStr: string
+  signedIn: boolean
 ): Promise<string | null> {
   const target = resolveRootHomePath({
     remembered: readHomeLang(),
     signedIn,
     interfaceLang: i18next.resolvedLanguage || i18next.language,
   })
-  if (target) return target + searchStr
+  if (target) return target
   if (normalizeInterfaceLanguage(i18next.language) !== 'en') {
     await i18next.changeLanguage('en')
   }
@@ -85,7 +84,7 @@ export async function prepareRootHome(
 
 /**
  * beforeLoad of `/$lang`: switches the interface to the URL's language and
- * remembers it. Undefined for a segment that is not one of the six.
+ * remembers it. Undefined for a segment that is not one of the eight.
  */
 export async function prepareLangHome(
   segment: string

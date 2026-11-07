@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useQueryClient } from '@tanstack/react-query'
+import { useLocation, useNavigate } from '@tanstack/react-router'
 import { Code2, Eye, ShieldAlert } from 'lucide-react'
 import * as React from 'react'
 import { useForm, type Resolver } from 'react-hook-form'
@@ -40,6 +41,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { PaymentChannels } from '@/features/adty-payment-channels'
 import { getPaymentErrorTranslation } from '@/features/wallet/lib/payment'
 import { handleServerError } from '@/lib/handle-server-error'
 
@@ -53,7 +55,15 @@ import { SettingsSection } from '../components/settings-section'
 import { useUpdateOption } from '../hooks/use-update-option'
 import { safeNumberFieldProps } from '../utils/numeric-field'
 import { AdtyBonusRatesEditor } from './adty-bonus-rates-editor'
+import {
+  AdtyEpaySettingsSection,
+  type AdtyEpaySettingsDefaults,
+} from './adty-epay-settings-section'
 import { AmountOptionsVisualEditor } from './amount-options-visual-editor'
+import {
+  BEpusdtSettingsSection,
+  type BEpusdtSettingsDefaults,
+} from './bepusdt-settings-section'
 import { CreemProductsVisualEditor } from './creem-products-visual-editor'
 import { PaymentMethodsVisualEditor } from './payment-methods-visual-editor'
 import {
@@ -187,6 +197,8 @@ type PaymentSettingsSectionProps = {
   waffoPancakeDefaultValues: WaffoPancakeSettingsValues
   waffoPancakeProvisionedStoreID?: string
   waffoPancakeProvisionedProductID?: string
+  epayDefaultValues: AdtyEpaySettingsDefaults
+  usdtDefaultValues: BEpusdtSettingsDefaults
 }
 
 function parseWaffoPayMethods(value: string): PayMethod[] {
@@ -204,8 +216,17 @@ export function PaymentSettingsSection({
   waffoPancakeDefaultValues,
   waffoPancakeProvisionedStoreID,
   waffoPancakeProvisionedProductID,
+  epayDefaultValues,
+  usdtDefaultValues,
 }: PaymentSettingsSectionProps) {
   const { t } = useTranslation()
+  const location = useLocation()
+  const navigate = useNavigate({ from: '/system-settings/billing/$section' })
+  const initialTab = React.useMemo(() => {
+    const tab = new URLSearchParams(location.searchStr).get('tab')
+    return tab === 'epay' || tab === 'usdt' ? tab : 'general'
+  }, [location.searchStr])
+  const [activeTab, setActiveTab] = React.useState(initialTab)
   const queryClient = useQueryClient()
   const updateOption = useUpdateOption()
   const initialFormValues = React.useMemo<PaymentFormValues>(
@@ -217,6 +238,9 @@ export function PaymentSettingsSection({
     [defaultValues, waffoDefaultValues, waffoPancakeDefaultValues]
   )
   const initialRef = React.useRef(initialFormValues)
+  const waffoPayMethodsBaselineRef = React.useRef(
+    waffoDefaultValues.WaffoPayMethods
+  )
   const defaultsSignature = React.useMemo(
     () => JSON.stringify(initialFormValues),
     [initialFormValues]
@@ -242,6 +266,11 @@ export function PaymentSettingsSection({
     })
 
   React.useEffect(() => {
+    setActiveTab(initialTab)
+  }, [initialTab])
+
+  React.useEffect(() => {
+    waffoPayMethodsBaselineRef.current = waffoDefaultValues.WaffoPayMethods
     setWaffoPayMethods(parseWaffoPayMethods(waffoDefaultValues.WaffoPayMethods))
   }, [waffoDefaultValues.WaffoPayMethods])
 
@@ -404,7 +433,7 @@ export function PaymentSettingsSection({
       WaffoSandboxApiKey: initialRef.current.WaffoSandboxApiKey.trim(),
       WaffoSandboxPrivateKey: initialRef.current.WaffoSandboxPrivateKey.trim(),
       WaffoPayMethods: JSON.stringify(
-        parseWaffoPayMethods(waffoDefaultValues.WaffoPayMethods)
+        parseWaffoPayMethods(waffoPayMethodsBaselineRef.current)
       ),
       WaffoPancakeMerchantID: initialRef.current.WaffoPancakeMerchantID.trim(),
       WaffoPancakePrivateKey: initialRef.current.WaffoPancakePrivateKey.trim(),
@@ -620,8 +649,44 @@ export function PaymentSettingsSection({
       return
     }
 
+    const sensitiveFields = new Set<string>([
+      'EpayKey',
+      'StripeApiSecret',
+      'StripeWebhookSecret',
+      'CreemApiKey',
+      'CreemWebhookSecret',
+      'WaffoApiKey',
+      'WaffoPrivateKey',
+      'WaffoSandboxApiKey',
+      'WaffoSandboxPrivateKey',
+    ])
+    const savedSensitiveFields = new Set<keyof PaymentFormValues>()
+
     for (const update of updates) {
       await updateOption.mutateAsync(update)
+      let field = update.key
+      if (update.key === 'payment_setting.amount_options') {
+        field = 'AmountOptions'
+      } else if (update.key === 'adty_topup_setting.bonus_rates') {
+        field = 'BonusRates'
+      }
+      if (field in initialRef.current) {
+        initialRef.current[field as keyof PaymentFormValues] =
+          update.value as never
+      }
+      if (update.key === 'WaffoPayMethods') {
+        waffoPayMethodsBaselineRef.current = update.value as string
+      }
+      if (sensitiveFields.has(field)) {
+        savedSensitiveFields.add(field as keyof PaymentFormValues)
+      }
+    }
+
+    for (const field of savedSensitiveFields) {
+      form.setValue(field, '' as never, {
+        shouldDirty: false,
+        shouldValidate: false,
+      })
     }
 
     if (!hasWaffoPancakeChanges) {
@@ -659,7 +724,19 @@ export function PaymentSettingsSection({
         }
         setWaffoPancakeSavedBinding(savedBinding)
         setWaffoPancakeSelection(savedBinding)
-        queryClient.invalidateQueries({ queryKey: ['system-options'] })
+        initialRef.current.WaffoPancakeMerchantID =
+          sanitized.WaffoPancakeMerchantID
+        initialRef.current.WaffoPancakePrivateKey = ''
+        initialRef.current.WaffoPancakeReturnURL =
+          sanitized.WaffoPancakeReturnURL
+        form.setValue('WaffoPancakePrivateKey', '', {
+          shouldDirty: false,
+          shouldValidate: false,
+        })
+        queryClient.invalidateQueries({
+          queryKey: ['system-options'],
+          refetchType: 'none',
+        })
         toast.success(t('Waffo Pancake settings saved'))
         return
       }
@@ -719,11 +796,24 @@ export function PaymentSettingsSection({
             isSaving={updateOption.isPending || isSubmitting}
             saveLabel='Save all settings'
           />
-          <Tabs defaultValue='general' className='min-w-0'>
+          <Tabs
+            value={activeTab}
+            onValueChange={(value) => {
+              setActiveTab(value)
+              void navigate({
+                search: (previous) => ({
+                  ...previous,
+                  tab: value === 'general' ? undefined : value,
+                }),
+              })
+            }}
+            className='min-w-0'
+          >
             <div className='overflow-x-auto pb-1'>
-              <TabsList className='grid min-w-[44rem] grid-cols-6'>
+              <TabsList className='grid min-w-[52rem] grid-cols-7'>
                 <TabsTrigger value='general'>{t('General')}</TabsTrigger>
                 <TabsTrigger value='epay'>Epay</TabsTrigger>
+                <TabsTrigger value='usdt'>USDT</TabsTrigger>
                 <TabsTrigger value='stripe'>{t('Stripe')}</TabsTrigger>
                 <TabsTrigger value='creem'>Creem</TabsTrigger>
                 <TabsTrigger value='waffo-pancake'>Waffo Pancake</TabsTrigger>
@@ -940,7 +1030,22 @@ export function PaymentSettingsSection({
               </div>
             </TabsContent>
 
-            <TabsContent value='epay' className={paymentTabContentClassName}>
+            <TabsContent
+              value='usdt'
+              keepMounted
+              className={paymentTabContentClassName}
+            >
+              <BEpusdtSettingsSection
+                defaultValues={usdtDefaultValues}
+                inlineActions
+              />
+            </TabsContent>
+
+            <TabsContent
+              value='epay'
+              keepMounted
+              className={paymentTabContentClassName}
+            >
               <div className='space-y-4'>
                 <div>
                   <h3 className='text-lg font-medium'>{t('Epay Gateway')}</h3>
@@ -1055,6 +1160,13 @@ export function PaymentSettingsSection({
                       </FormItem>
                     )}
                   />
+                </div>
+                <div className='space-y-8'>
+                  <AdtyEpaySettingsSection
+                    defaultValues={epayDefaultValues}
+                    inlineActions
+                  />
+                  <PaymentChannels />
                 </div>
               </div>
             </TabsContent>

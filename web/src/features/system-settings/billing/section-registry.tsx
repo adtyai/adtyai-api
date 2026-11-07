@@ -21,8 +21,6 @@ import { parseCurrencyDisplayType } from '@/lib/currency'
 import { CheckinSettingsSection } from '../general/checkin-settings-section'
 import { PricingSection } from '../general/pricing-section'
 import { QuotaSettingsSection } from '../general/quota-settings-section'
-import { AdtyEpaySettingsSection } from '../integrations/adty-epay-settings-section'
-import { BEpusdtSettingsSection } from '../integrations/bepusdt-settings-section'
 import { PaymentSettingsSection } from '../integrations/payment-settings-section'
 import { AdtyOfficialPricesSection } from '../models/adty-official-prices-section'
 import { RatioSettingsCard } from '../models/ratio-settings-card'
@@ -130,42 +128,6 @@ const BILLING_SECTIONS = [
     build: () => <AdtyOfficialPricesSection />,
   },
   {
-    id: 'usdt',
-    titleKey: 'USDT (BEpusdt)',
-    build: (settings: BillingSettings) => (
-      <BEpusdtSettingsSection
-        defaultValues={{
-          enabled: settings['adty_bepusdt.enabled'],
-          baseUrl: settings['adty_bepusdt.base_url'],
-          tradeTypes: settings['adty_bepusdt.trade_types'],
-          orderMinutes: settings['adty_topup_setting.usdt_order_minutes'],
-        }}
-      />
-    ),
-  },
-  {
-    id: 'epay',
-    titleKey: 'Alipay and WeChat Pay',
-    build: (settings: BillingSettings) => (
-      <AdtyEpaySettingsSection
-        defaultValues={{
-          orderMinutes: settings['adty_topup_setting.epay_order_minutes'],
-          channelTimeoutSeconds:
-            settings['adty_epay_setting.channel_timeout_seconds'],
-          totalTimeoutSeconds:
-            settings['adty_epay_setting.total_timeout_seconds'],
-          queryAfterSeconds: settings['adty_epay_setting.query_after_seconds'],
-          expiredQuerySeconds:
-            settings['adty_epay_setting.expired_query_seconds'],
-          unpaidThreshold: settings['adty_epay_setting.unpaid_threshold'],
-          probeEnabled: settings['adty_epay_setting.probe_enabled'],
-          probeIntervalMinutes:
-            settings['adty_epay_setting.probe_interval_minutes'],
-        }}
-      />
-    ),
-  },
-  {
     id: 'payment',
     titleKey: 'Payment Gateway',
     build: (settings: BillingSettings) => (
@@ -215,6 +177,26 @@ const BILLING_SECTIONS = [
         }}
         waffoPancakeProvisionedStoreID={settings.WaffoPancakeStoreID ?? ''}
         waffoPancakeProvisionedProductID={settings.WaffoPancakeProductID ?? ''}
+        epayDefaultValues={{
+          orderMinutes: settings['adty_topup_setting.epay_order_minutes'],
+          channelTimeoutSeconds:
+            settings['adty_epay_setting.channel_timeout_seconds'],
+          totalTimeoutSeconds:
+            settings['adty_epay_setting.total_timeout_seconds'],
+          queryAfterSeconds: settings['adty_epay_setting.query_after_seconds'],
+          expiredQuerySeconds:
+            settings['adty_epay_setting.expired_query_seconds'],
+          unpaidThreshold: settings['adty_epay_setting.unpaid_threshold'],
+          probeEnabled: settings['adty_epay_setting.probe_enabled'],
+          probeIntervalMinutes:
+            settings['adty_epay_setting.probe_interval_minutes'],
+        }}
+        usdtDefaultValues={{
+          enabled: settings['adty_bepusdt.enabled'],
+          baseUrl: settings['adty_bepusdt.base_url'],
+          tradeTypes: settings['adty_bepusdt.trade_types'],
+          orderMinutes: settings['adty_topup_setting.usdt_order_minutes'],
+        }}
       />
     ),
   },

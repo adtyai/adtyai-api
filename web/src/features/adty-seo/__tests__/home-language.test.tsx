@@ -43,7 +43,7 @@ vi.mock('@/features/referral/api', () => referralApi)
 // The real routes are typed against the whole route tree; the test mounts
 // their beforeLoad on a small tree of its own.
 type RootHomeBeforeLoad = (context: {
-  location: { searchStr: string }
+  location: { searchStr: string; search: Record<string, unknown> }
 }) => Promise<void>
 type LangHomeBeforeLoad = (context: {
   params: { lang: string }
@@ -103,6 +103,8 @@ function renderAt(url: string) {
   const router = createRouter({
     routeTree: root.addChildren(routes),
     history: createMemoryHistory({ initialEntries: [url] }),
+    defaultPreload: 'intent',
+    defaultPreloadStaleTime: 0,
   })
   render(<RouterProvider router={router} />)
   return router
@@ -139,6 +141,48 @@ describe('home language URLs', () => {
     await screen.findByText('home zhCN')
     expect(router.state.location.pathname).toBe('/zh-cn')
   })
+
+  it.each([null, 100])(
+    'preloads / from the Chinese home without blocking navigation (role: %s)',
+    async (role) => {
+      if (role !== null) {
+        useAuthStore
+          .getState()
+          .auth.setUser({ id: 1, username: 'u', role } as AuthUser)
+      }
+      const router = renderAt('/zh-cn?utm=stay')
+      await screen.findByText('home zhCN')
+
+      // Bound recursion so a regression fails instead of starving timers and
+      // exhausting the test worker's heap. All preloads use the real router.
+      const preloadRoute = router.preloadRoute
+      let preloads = 0
+      vi.spyOn(router, 'preloadRoute').mockImplementation((options) => {
+        if (++preloads > 8) throw new Error('Home preload redirect loop')
+        return preloadRoute(options)
+      })
+
+      await act(async () => {
+        const matches = await router.preloadRoute({
+          to: '/',
+          search: { utm: 'keep', ref: 'abc' },
+        })
+        expect(matches?.at(-1)).toMatchObject({
+          pathname: '/zh-cn',
+          status: 'success',
+          search: { utm: 'keep', ref: 'abc' },
+        })
+      })
+
+      expect(router.state.location.href).toBe('/zh-cn?utm=stay')
+      expect(window.localStorage.getItem(HOME_LANG_STORAGE_KEY)).toBe('zhCN')
+      expect(referralApi.recordReferralClick).not.toHaveBeenCalled()
+
+      act(() => languageSwitch?.('en'))
+      await waitFor(() => expect(router.state.location.href).toBe('/?utm=stay'))
+      expect(await screen.findByText('home en')).toBeInTheDocument()
+    }
+  )
 
   it('keeps ?ref= on the redirect and records the click once', async () => {
     window.localStorage.setItem(HOME_LANG_STORAGE_KEY, 'zhCN')

@@ -27,8 +27,12 @@ export const Route = createFileRoute('/')({
   // user's non-English interface goes to that language's home URL.
   beforeLoad: async ({ location }) => {
     const signedIn = Boolean(useAuthStore.getState().auth.user)
-    const target = await prepareRootHome(signedIn, location.searchStr)
-    if (target) throw redirect({ href: target, replace: true })
+    const target = await prepareRootHome(signedIn)
+    if (target) {
+      // Internal redirects need a route target so intent preloading can follow
+      // the language URL instead of repeatedly preloading `/`.
+      throw redirect({ to: target, search: location.search, replace: true })
+    }
   },
   component: Home,
 })

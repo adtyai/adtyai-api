@@ -186,19 +186,9 @@ curl --fail-with-body http://localhost:3000/v1/responses \
 
 ### Docker Compose
 
-La [configuration Compose](./docker-compose.yml) du dépôt démarre **New API + PostgreSQL + Redis** par défaut. Elle contient aussi des exemples pour MySQL et une base de journaux ClickHouse distincte.
+Le déploiement de production d'ADTY AI utilise [deploy/adty/docker-compose.yml](./deploy/adty/docker-compose.yml). Suivez [docs/adty/deploy.md](./docs/adty/deploy.md). Ne déployez pas le fichier compose à la racine du dépôt : ce n'est ni l'image, ni le réseau, ni la configuration des secrets de production.
 
-```bash
-git clone https://github.com/QuantumNous/new-api.git
-cd new-api
-```
-
-Avant de démarrer, modifiez `docker-compose.yml` : remplacez les mots de passe d'exemple de la base et de Redis dans les services et les chaînes de connexion, puis définissez un `SESSION_SECRET` aléatoire et persistant (générable avec `openssl rand -hex 32`). Pour une console HTTPS, définissez `SESSION_COOKIE_SECURE=true` et renseignez son origine HTTPS publique exacte dans `SESSION_COOKIE_TRUSTED_URL`.
-
-```bash
-docker compose up -d
-docker compose logs -f new-api
-```
+Le [docker-compose.yml](./docker-compose.yml) à la racine n'est qu'un exemple local. Il refuse de démarrer tant que `POSTGRES_PASSWORD` et `REDIS_PASSWORD` ne sont pas définis, et il lie l'API à `127.0.0.1:3000`.
 
 ### Stockage et configuration
 

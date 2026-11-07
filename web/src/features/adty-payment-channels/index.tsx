@@ -18,14 +18,15 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus } from 'lucide-react'
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { StaticDataTable } from '@/components/data-table/static/static-data-table'
 import { EmptyState } from '@/components/empty-state'
-import { SectionPageLayout } from '@/components/layout'
+import { ErrorState } from '@/components/error-state'
+import { SectionPageLayout } from '@/components/layout/components/section-page-layout'
 import { StatusBadge } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -133,130 +134,157 @@ export function PaymentChannels() {
                 {t('Add payment channel')}
               </Button>
             )}
-            <StaticDataTable
-              tableClassName='min-w-[1000px]'
-              tableProps={{ 'aria-label': t('Payment channels') }}
-              data={query.data ?? []}
-              getRowKey={(row) => String(row.id)}
-              emptyContent={
-                <EmptyState
-                  className='min-h-32'
-                  title={t('No payment channels yet')}
-                />
+            {(() => {
+              let content: ReactNode
+              if (query.isLoading) {
+                content = (
+                  <div className='text-muted-foreground flex min-h-32 items-center justify-center text-sm'>
+                    {t('Loading payment channels...')}
+                  </div>
+                )
+              } else if (query.isError) {
+                content = (
+                  <ErrorState
+                    className='min-h-32'
+                    title={t('Failed to load payment channels')}
+                    onRetry={() => void query.refetch()}
+                  />
+                )
+              } else {
+                content = (
+                  <StaticDataTable
+                    tableClassName='min-w-[1000px]'
+                    tableProps={{ 'aria-label': t('Payment channels') }}
+                    data={query.data ?? []}
+                    getRowKey={(row) => String(row.id)}
+                    emptyContent={
+                      <EmptyState
+                        className='min-h-32'
+                        title={t('No payment channels yet')}
+                      />
+                    }
+                    columns={[
+                      {
+                        id: 'name',
+                        header: t('Name'),
+                        cell: (row) => row.name,
+                      },
+                      {
+                        id: 'methods',
+                        header: t('Methods'),
+                        cell: (row) =>
+                          row.methods
+                            .filter((m) => m.enabled)
+                            .map(
+                              (m) =>
+                                `${t(METHOD_LABEL[m.method] ?? m.method)}${m.return_type ? ` (${m.return_type})` : ''}`
+                            )
+                            .join(', ') || '-',
+                      },
+                      {
+                        id: 'priority',
+                        header: t('Priority / weight'),
+                        cell: (row) => `${row.priority} / ${row.weight}`,
+                      },
+                      {
+                        id: 'mode',
+                        header: t('Order mode'),
+                        cell: (row) => row.order_mode,
+                      },
+                      {
+                        id: 'status',
+                        header: t('Status'),
+                        cell: (row) => (
+                          <StatusBadge
+                            label={`${t(row.status)}${row.status_reason ? ` · ${t(row.status_reason)}` : ''}`}
+                            variant={STATUS_VARIANT[row.status]}
+                            copyable={false}
+                          />
+                        ),
+                      },
+                      {
+                        id: 'unpaid',
+                        header: t('Unpaid in a row'),
+                        cell: (row) => row.unpaid_streak,
+                      },
+                      {
+                        id: 'today',
+                        header: t('Today'),
+                        cell: (row) =>
+                          Object.entries(row.today_cny)
+                            .map(
+                              ([method, sum]) =>
+                                `${t(METHOD_LABEL[method] ?? method)} ¥${sum}`
+                            )
+                            .join(' / ') || '-',
+                      },
+                      {
+                        id: 'actions',
+                        header: t('Actions'),
+                        className: 'text-right',
+                        cellClassName: 'text-right',
+                        cell: (row) => (
+                          <div className='flex justify-end gap-1'>
+                            {canOperate && row.order_mode === 'api' && (
+                              <Button
+                                size='sm'
+                                variant='outline'
+                                disabled={test.isPending}
+                                onClick={() => test.mutate(row.id)}
+                              >
+                                {t('Test order')}
+                              </Button>
+                            )}
+                            {canOperate && (
+                              <Button
+                                size='sm'
+                                variant='outline'
+                                disabled={status.isPending}
+                                onClick={() =>
+                                  status.mutate({
+                                    id: row.id,
+                                    status:
+                                      row.status === 'enabled'
+                                        ? 'disabled'
+                                        : 'enabled',
+                                  })
+                                }
+                              >
+                                {row.status === 'enabled'
+                                  ? t('Disable')
+                                  : t('Enable')}
+                              </Button>
+                            )}
+                            {isRoot && (
+                              <>
+                                <Button
+                                  size='sm'
+                                  variant='ghost'
+                                  onClick={() => {
+                                    setEditing(row)
+                                    setDrawerOpen(true)
+                                  }}
+                                >
+                                  {t('Edit')}
+                                </Button>
+                                <Button
+                                  size='sm'
+                                  variant='ghost'
+                                  onClick={() => setDeleting(row)}
+                                >
+                                  {t('Delete')}
+                                </Button>
+                              </>
+                            )}
+                          </div>
+                        ),
+                      },
+                    ]}
+                  />
+                )
               }
-              columns={[
-                { id: 'name', header: t('Name'), cell: (row) => row.name },
-                {
-                  id: 'methods',
-                  header: t('Methods'),
-                  cell: (row) =>
-                    row.methods
-                      .filter((m) => m.enabled)
-                      .map(
-                        (m) =>
-                          `${t(METHOD_LABEL[m.method] ?? m.method)}${m.return_type ? ` (${m.return_type})` : ''}`
-                      )
-                      .join(', ') || '-',
-                },
-                {
-                  id: 'priority',
-                  header: t('Priority / weight'),
-                  cell: (row) => `${row.priority} / ${row.weight}`,
-                },
-                {
-                  id: 'mode',
-                  header: t('Order mode'),
-                  cell: (row) => row.order_mode,
-                },
-                {
-                  id: 'status',
-                  header: t('Status'),
-                  cell: (row) => (
-                    <StatusBadge
-                      label={`${t(row.status)}${row.status_reason ? ` · ${t(row.status_reason)}` : ''}`}
-                      variant={STATUS_VARIANT[row.status]}
-                      copyable={false}
-                    />
-                  ),
-                },
-                {
-                  id: 'unpaid',
-                  header: t('Unpaid in a row'),
-                  cell: (row) => row.unpaid_streak,
-                },
-                {
-                  id: 'today',
-                  header: t('Today'),
-                  cell: (row) =>
-                    Object.entries(row.today_cny)
-                      .map(
-                        ([method, sum]) =>
-                          `${t(METHOD_LABEL[method] ?? method)} ¥${sum}`
-                      )
-                      .join(' / ') || '-',
-                },
-                {
-                  id: 'actions',
-                  header: t('Actions'),
-                  className: 'text-right',
-                  cellClassName: 'text-right',
-                  cell: (row) => (
-                    <div className='flex justify-end gap-1'>
-                      {canOperate && row.order_mode === 'api' && (
-                        <Button
-                          size='sm'
-                          variant='outline'
-                          disabled={test.isPending}
-                          onClick={() => test.mutate(row.id)}
-                        >
-                          {t('Test order')}
-                        </Button>
-                      )}
-                      {canOperate && (
-                        <Button
-                          size='sm'
-                          variant='outline'
-                          onClick={() =>
-                            status.mutate({
-                              id: row.id,
-                              status:
-                                row.status === 'enabled'
-                                  ? 'disabled'
-                                  : 'enabled',
-                            })
-                          }
-                        >
-                          {row.status === 'enabled'
-                            ? t('Disable')
-                            : t('Enable')}
-                        </Button>
-                      )}
-                      {isRoot && (
-                        <>
-                          <Button
-                            size='sm'
-                            variant='ghost'
-                            onClick={() => {
-                              setEditing(row)
-                              setDrawerOpen(true)
-                            }}
-                          >
-                            {t('Edit')}
-                          </Button>
-                          <Button
-                            size='sm'
-                            variant='ghost'
-                            onClick={() => setDeleting(row)}
-                          >
-                            {t('Delete')}
-                          </Button>
-                        </>
-                      )}
-                    </div>
-                  ),
-                },
-              ]}
-            />
+              return content
+            })()}
           </CardContent>
         </Card>
         {isRoot && (

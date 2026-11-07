@@ -35,7 +35,7 @@ import { readHomeLang, rememberHomeLang } from './home-language'
 const HINT_DISMISSED_KEY = 'adtyai:lang-hint-dismissed'
 
 /**
- * The browser's first preferred language when it is one of the six
+ * The browser's first preferred language when it is one of the seven
  * non-English home languages; null when it prefers English or another one.
  */
 function browserHomeLanguage(): string | null {
