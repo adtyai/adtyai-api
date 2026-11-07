@@ -35,7 +35,6 @@ import {
   Users,
   Wallet,
   ReceiptText,
-  CreditCard,
   Gift,
   HandCoins,
   Megaphone,
@@ -205,12 +204,6 @@ export function useSidebarData(): SidebarData {
             url: '/recharge-audit',
             icon: ReceiptText,
             requiredPermission: ADTY_PERMISSIONS.FINANCE_READ,
-          },
-          {
-            title: t('Payment channels'),
-            url: '/payment-channels',
-            icon: CreditCard,
-            requiredPermission: ADTY_PERMISSIONS.PAYMENT_READ,
           },
           {
             title: t('System Info'),

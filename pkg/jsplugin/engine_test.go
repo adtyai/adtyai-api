@@ -987,6 +987,7 @@ func TestValidateRequestURL(t *testing.T) {
 		wantError    string
 	}{
 		{name: "same host", requestURL: "https://api.example.com/v1/task", baseURL: "https://api.example.com/v1"},
+		{name: "https base rejects downgrade", requestURL: "http://api.example.com/v1/task", baseURL: "https://api.example.com/v1", wantError: "HTTPS"},
 		{name: "default port", requestURL: "https://api.example.com:443/v1/task", baseURL: "https://api.example.com"},
 		{name: "approved host", requestURL: "https://upload.example.com/task", baseURL: "https://api.example.com", allowedHosts: []string{"upload.example.com"}},
 		{name: "channel base may be private", requestURL: "http://192.168.1.10:8000/task", baseURL: "http://192.168.1.10:8000"},

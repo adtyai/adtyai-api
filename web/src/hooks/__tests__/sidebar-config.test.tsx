@@ -106,7 +106,6 @@ describe('sidebar groups', () => {
       'Marketing',
       'Reseller sites',
       'Recharge Audit',
-      'Payment channels',
       'System Info',
       'Task Plugins',
       'System Settings',

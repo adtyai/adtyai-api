@@ -154,10 +154,6 @@ export function SidebarModulesSection({
         title: t('Recharge Audit'),
         description: t('Reconcile top-up orders, complete and refund them.'),
       },
-      payment_channels: {
-        title: t('Payment channels'),
-        description: t('Alipay and WeChat Pay channels, failover and health.'),
-      },
       admin_referral: {
         title: t('Referral management'),
         description: t('Affiliates, commissions and withdrawal review.'),

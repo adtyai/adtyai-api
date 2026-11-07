@@ -22,6 +22,9 @@ func ValidateRequestURL(requestURL, baseURL string, allowedHosts []string) error
 	}
 	requestHost := canonicalHost(request)
 	if requestHost == canonicalHost(base) {
+		if strings.EqualFold(base.Scheme, "https") && !strings.EqualFold(request.Scheme, "https") {
+			return fmt.Errorf("plugin request must use HTTPS when the channel base URL uses HTTPS")
+		}
 		return nil
 	}
 	if hostIsPrivateOrMetadata(request.Hostname()) {

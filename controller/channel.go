@@ -1018,7 +1018,7 @@ func modelMappingIsStringObject(raw string) bool {
 		return true
 	}
 	var mapping map[string]string
-	if err := json.Unmarshal([]byte(raw), &mapping); err != nil || mapping == nil {
+	if err := common.Unmarshal([]byte(raw), &mapping); err != nil || mapping == nil {
 		return false
 	}
 	return true
@@ -1225,7 +1225,7 @@ func UpdateChannel(c *gin.Context) {
 				if strings.HasPrefix(strings.TrimSpace(originChannel.Key), "[") {
 					// JSON数组格式
 					var arr []json.RawMessage
-					if err := json.Unmarshal([]byte(strings.TrimSpace(originChannel.Key)), &arr); err == nil {
+					if err := common.Unmarshal([]byte(strings.TrimSpace(originChannel.Key)), &arr); err == nil {
 						existingKeys = make([]string, len(arr))
 						for i, v := range arr {
 							existingKeys[i] = string(v)
@@ -2304,7 +2304,7 @@ func OllamaPullModelStream(c *gin.Context) {
 
 	key, err := ollamaRequestKey(channel)
 	if err != nil {
-		errorData, _ := json.Marshal(gin.H{"error": err.Error()})
+		errorData, _ := common.Marshal(gin.H{"error": err.Error()})
 		fmt.Fprintf(c.Writer, "data: %s\n\n", string(errorData))
 		fmt.Fprintf(c.Writer, "data: [DONE]\n\n")
 		c.Writer.Flush()
@@ -2313,7 +2313,7 @@ func OllamaPullModelStream(c *gin.Context) {
 
 	// 创建进度回调函数
 	progressCallback := func(progress ollama.OllamaPullResponse) {
-		data, _ := json.Marshal(progress)
+		data, _ := common.Marshal(progress)
 		fmt.Fprintf(c.Writer, "data: %s\n\n", string(data))
 		c.Writer.Flush()
 	}
@@ -2322,12 +2322,12 @@ func OllamaPullModelStream(c *gin.Context) {
 	err = ollama.PullOllamaModelStream(c.Request.Context(), baseURL, key, req.ModelName, progressCallback)
 
 	if err != nil {
-		errorData, _ := json.Marshal(gin.H{
+		errorData, _ := common.Marshal(gin.H{
 			"error": err.Error(),
 		})
 		fmt.Fprintf(c.Writer, "data: %s\n\n", string(errorData))
 	} else {
-		successData, _ := json.Marshal(gin.H{
+		successData, _ := common.Marshal(gin.H{
 			"message": fmt.Sprintf("Model %s pulled successfully", req.ModelName),
 		})
 		fmt.Fprintf(c.Writer, "data: %s\n\n", string(successData))

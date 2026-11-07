@@ -80,7 +80,6 @@ export const SIDEBAR_MODULES_DEFAULT: SidebarModulesAdminConfig = {
     models: true,
     user: true,
     recharge_audit: true,
-    payment_channels: true,
     admin_referral: true,
     marketing: true,
     setting: true,

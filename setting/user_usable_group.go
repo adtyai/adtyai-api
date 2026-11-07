@@ -1,7 +1,6 @@
 package setting
 
 import (
-	"encoding/json"
 	"maps"
 	"sync"
 
@@ -29,7 +28,7 @@ func UserUsableGroups2JSONString() string {
 	userUsableGroupsMutex.RLock()
 	defer userUsableGroupsMutex.RUnlock()
 
-	jsonBytes, err := json.Marshal(userUsableGroups)
+	jsonBytes, err := common.Marshal(userUsableGroups)
 	if err != nil {
 		common.SysLog(common.LogText("error marshalling user groups: %s", err.Error()))
 	}
@@ -38,7 +37,7 @@ func UserUsableGroups2JSONString() string {
 
 func UpdateUserUsableGroupsByJSONString(jsonStr string) error {
 	parsed := make(map[string]string)
-	if err := json.Unmarshal([]byte(jsonStr), &parsed); err != nil {
+	if err := common.Unmarshal([]byte(jsonStr), &parsed); err != nil {
 		return err
 	}
 	userUsableGroupsMutex.Lock()
