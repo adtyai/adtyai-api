@@ -53,7 +53,7 @@ func legacyTextEdit(c *gin.Context) bool {
 		Image       json.RawMessage `json:"image"`
 		Images      json.RawMessage `json:"images"`
 	}
-	if err := json.Unmarshal(body, &payload); err != nil {
+	if err := common.Unmarshal(body, &payload); err != nil {
 		return false
 	}
 	if strings.TrimSpace(payload.Instruction) == "" {

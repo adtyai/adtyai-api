@@ -182,7 +182,7 @@ func (p *OIDCProvider) ExchangeToken(ctx context.Context, code string, c *gin.Co
 	logger.LogDebug(ctx, "[OAuth-OIDC] ExchangeToken response status: %d", res.StatusCode)
 
 	var oidcResponse oidcOAuthResponse
-	err = json.NewDecoder(res.Body).Decode(&oidcResponse)
+	err = common.DecodeJson(res.Body, &oidcResponse)
 	if err != nil {
 		logger.LogError(ctx, common.LogText("[OAuth-OIDC] ExchangeToken decode error: %s", err.Error()))
 		return nil, err
@@ -249,7 +249,7 @@ func (p *OIDCProvider) GetUserInfo(ctx context.Context, token *OAuthToken) (*OAu
 	}
 
 	var oidcUser oidcUser
-	err = json.NewDecoder(res.Body).Decode(&oidcUser)
+	err = common.DecodeJson(res.Body, &oidcUser)
 	if err != nil {
 		logger.LogError(ctx, common.LogText("[OAuth-OIDC] GetUserInfo decode error: %s", err.Error()))
 		return nil, err
@@ -354,11 +354,11 @@ func oidcEmailVerified(raw json.RawMessage) bool {
 		return false
 	}
 	var flag bool
-	if err := json.Unmarshal(raw, &flag); err == nil {
+	if err := common.Unmarshal(raw, &flag); err == nil {
 		return flag
 	}
 	var text string
-	if err := json.Unmarshal(raw, &text); err == nil {
+	if err := common.Unmarshal(raw, &text); err == nil {
 		return strings.EqualFold(strings.TrimSpace(text), "true")
 	}
 	return false

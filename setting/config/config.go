@@ -1,7 +1,6 @@
 package config
 
 import (
-	"encoding/json"
 	"fmt"
 	"math"
 	"reflect"
@@ -136,7 +135,7 @@ func configToMap(config any) (map[string]string, error) {
 		case reflect.Pointer:
 			// 处理指针类型：如果非 nil，序列化指向的值
 			if !field.IsNil() {
-				bytes, err := json.Marshal(field.Interface())
+				bytes, err := common.Marshal(field.Interface())
 				if err != nil {
 					return nil, err
 				}
@@ -147,7 +146,7 @@ func configToMap(config any) (map[string]string, error) {
 			}
 		case reflect.Map, reflect.Slice, reflect.Struct:
 			// 复杂类型使用JSON序列化
-			bytes, err := json.Marshal(field.Interface())
+			bytes, err := common.Marshal(field.Interface())
 			if err != nil {
 				return nil, err
 			}
@@ -265,17 +264,17 @@ func assignConfigField(field reflect.Value, key, strValue string) error {
 		if field.IsNil() {
 			field.Set(reflect.New(field.Type().Elem()))
 		}
-		if err := json.Unmarshal([]byte(strValue), field.Interface()); err != nil {
+		if err := common.Unmarshal([]byte(strValue), field.Interface()); err != nil {
 			return fmt.Errorf("invalid %s: %w", key, err)
 		}
 	case reflect.Map:
 		fresh := reflect.New(field.Type())
-		if err := json.Unmarshal([]byte(strValue), fresh.Interface()); err != nil {
+		if err := common.Unmarshal([]byte(strValue), fresh.Interface()); err != nil {
 			return fmt.Errorf("invalid %s: %w", key, err)
 		}
 		field.Set(fresh.Elem())
 	case reflect.Slice, reflect.Struct:
-		if err := json.Unmarshal([]byte(strValue), field.Addr().Interface()); err != nil {
+		if err := common.Unmarshal([]byte(strValue), field.Addr().Interface()); err != nil {
 			return fmt.Errorf("invalid %s: %w", key, err)
 		}
 	}

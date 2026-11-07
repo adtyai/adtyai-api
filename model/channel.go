@@ -331,7 +331,7 @@ func (channel *Channel) GetOtherInfo() map[string]any {
 }
 
 func (channel *Channel) SetOtherInfo(otherInfo map[string]any) {
-	otherInfoBytes, err := json.Marshal(otherInfo)
+	otherInfoBytes, err := common.Marshal(otherInfo)
 	if err != nil {
 		common.SysLog(common.LogText("failed to marshal other info: channel_id=%d, tag=%s, name=%s, error=%v", channel.Id, channel.GetTag(), channel.Name, err))
 		return
