@@ -69,6 +69,8 @@ For commercial licensing, please contact support@quantumnous.com
 
 const PROJECT_COPYRIGHT_BLOCK_PATTERN =
   /^\/\*\r?\nCopyright \(C\) .+? QuantumNous\r?\n[\s\S]*?For commercial licensing, please contact support@quantumnous\.com\r?\n\*\/\r?\n?/
+const COPYRIGHT_CONTENT_PATTERN =
+  /Copyright \(C\) \d{4}-\d{4} QuantumNous[\s\S]*GNU Affero General Public License[\s\S]*support@quantumnous\.com/
 const THIRD_PARTY_COPYRIGHT_PATTERN =
   /^\/\*[\s\S]*?Copyright[\s\S]*?\*\/\r?\n?/i
 
@@ -205,6 +207,12 @@ async function main() {
 
     if (hasThirdPartyCopyright(body)) {
       stats.skippedThirdParty += 1
+      continue
+    }
+
+    // A present AGPL attribution is enough. Exact wrapping is normalized by
+    // `bun run copyright`; a new file must not fail CI over a blank line.
+    if (COPYRIGHT_CONTENT_PATTERN.test(body)) {
       continue
     }
 

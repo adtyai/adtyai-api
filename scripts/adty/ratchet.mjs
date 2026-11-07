@@ -235,8 +235,9 @@ function checkCopyright() {
   }
   if (extra.length > 0) {
     console.error(
-      'copyright：失败。文件开头要是 AGPL 文件头，文件头和代码之间不空行；照别的文件手工加' +
-        '（bun run copyright 会把清单里的上游文件一起改掉）'
+      'copyright：失败。文件开头要有 QuantumNous 的 AGPL 文件头和 support@quantumnous.com；' +
+        '换行和空行不影响检查。要统一成标准格式，在 web 里跑 bun run copyright' +
+        '（它会把清单里的上游文件一起改掉）'
     )
     process.exitCode = 1
   } else {

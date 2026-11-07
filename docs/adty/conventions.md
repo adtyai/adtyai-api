@@ -57,7 +57,7 @@
   - 每个测试建一个随机名字的 schema，连接时用 `search_path` 指向它，测试结束删掉。`go test` 会同时跑多个包，各测试互不干扰。
   - model 和 service 包已经有 TestMain（model/task_cas_test.go:19、service/task_billing_test.go:30），`adtyTestDB` 在单个测试里换库、用完换回，写法参照 service/text_quota_test.go:78-82。换库时调 `common.SetDatabaseTypes(PostgreSQL, PostgreSQL)` 并重跑列名初始化：上游的 `initCol` 未导出（model/main.go:43），在 `model/adty_testsupport.go` 加一个导出包装；恢复时把数据库类型和列名一起还原。
 - 上游自己的测试照旧用它们的内存 SQLite，我们改过的上游代码不能让它们失败（执行层决定 11 的例外）。钉住上游行为的特征测试（任务 1.1）也沿用上游包里现成的测试库。任务 1.6 的 `TestAdtyDeletedSchemaAbsent` 跑的是上游的完整迁移，也用内存 SQLite：删订阅时去掉的 SQLite 专用建表语句只在 SQLite 上执行，换成 PostgreSQL 就查不到它们回来没有；而且 P1 时 `adtyTestDB` 还没有。
-- 前端测试放模块内的 `__tests__/`；新源文件带 AGPL 文件头（`bun run copyright`）。断言文件存在与否用 `node:fs`（`readFileSync`、`existsSync` 加 `import.meta.dirname`，上游 `theme-boot-script.test.ts:19-31` 就是这样写的），不用 `import.meta.glob`（类型检查不认）。
+- 前端测试放模块内的 `__tests__/`；新源文件带 AGPL 文件头（`bun run copyright`）。检查只要求文件头里有 QuantumNous、AGPL 和 `support@quantumnous.com`，空行和换行不影响构建。断言文件存在与否用 `node:fs`（`readFileSync`、`existsSync` 加 `import.meta.dirname`，上游 `theme-boot-script.test.ts:19-31` 就是这样写的），不用 `import.meta.glob`（类型检查不认）。
 - 每个任务结束都跑 `scripts/adty/check.sh`（任务 0.3），不允许新增失败；`docs/adty/baseline.md` 里记录的基线失败不算。
 
 **约定 G：提交**

@@ -237,7 +237,7 @@ src/features/system-settings/request-policies/use-save-policy.ts
 路径相对 `web/`，按路径排序。清单里只有上游文件。建立时内容和上一节列的完全一致：修复轮用脚本核对过，每一项在 `e835b1bf` 里都有，用 `--update` 重新生成的清单和入库的逐字节相同。P1 删掉了其中 3 个有 lint error 的上游文件（`features/redemption-codes/components/redemptions-provider.tsx`、`features/subscriptions/components/subscriptions-provider.tsx`、`features/subscriptions/constants.ts`，各 1 个 error），`--update` 后去掉了这 3 行，所以和上一节的 92 个文件、155 个 error 差 3。上一节和下面「在测试副本里的结果」记的是 rc.47 原样时的数字，不改。
 
 - `node scripts/adty/ratchet.mjs lint`：跑 `bun run lint --format=json`，只数 error，warning 不算。有 error 的文件不在清单里，或者 error 比清单记的多，就失败，并列出这些文件里的全部 error（清单只记个数，分不出哪个是新加的）；其余情况通过。
-- `node scripts/adty/ratchet.mjs copyright`：跑 `bun run copyright:check`，它列出的文件里有不在清单里的，就失败；其余情况通过。
+- `node scripts/adty/ratchet.mjs copyright`：跑 `bun run copyright:check`，它列出的文件里有不在清单里的，就失败；其余情况通过。检查认的是 QuantumNous 的 AGPL 文件头和 `support@quantumnous.com`，换行、空行和文件头后面的空行都不算失败；完全没有这段内容的新文件仍然失败。`bun run copyright` 继续把文件头整理成同一种格式。
 - 清单里的文件问题变少、改好了或者删掉了，照样通过，只提示可以更新清单。
 - 工具没跑起来、输出格式不对、退出码和输出对不上，都算失败，不会悄悄通过。
 - 修复轮验证过：在副本的 `web/src` 里临时放一个新文件，里面有 1 个 lint error、没有 AGPL 文件头，两步都以退出码 1 失败并列出这个文件；删掉以后两步都通过。把清单里某个文件的 error 数改小，或者从版权清单里去掉一个文件，也都会失败。
