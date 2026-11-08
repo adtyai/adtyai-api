@@ -1,10 +1,12 @@
 package model
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"math/big"
 	"strings"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
@@ -12,6 +14,7 @@ import (
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const (
@@ -75,6 +78,20 @@ func RecordAuditLog(c *gin.Context, entry AuditLog) {
 	ctx := context.Background()
 	if c != nil && c.Request != nil {
 		ctx = c.Request.Context()
+	}
+	entry = PrepareAuditLog(c, entry)
+	if entry.Username == "" {
+		entry.Username, _ = GetUsernameById(entry.UserId, false)
+	}
+	if err := writeAuditLog(context.WithoutCancel(ctx), entry, false); err != nil {
+		logger.LogError(ctx, common.LogText("audit log write failed (request_id=%s): %v", entry.RequestId, err))
+	}
+}
+
+// PrepareAuditLog freezes request metadata without querying a second database
+// connection. Transactional producers supply the historical actor's username.
+func PrepareAuditLog(c *gin.Context, entry AuditLog) AuditLog {
+	if c != nil && c.Request != nil {
 		entry.RequestId = c.GetString(common.RequestIdKey)
 		entry.Ip = c.ClientIP()
 		entry.UserAgent = c.Request.UserAgent()
@@ -102,26 +119,26 @@ func RecordAuditLog(c *gin.Context, entry AuditLog) {
 	switch entry.ActorRole {
 	case common.RoleCommonUser, common.RoleAdminUser, common.RoleRootUser:
 	default:
-		logger.LogError(ctx, common.LogText("audit actor role unavailable (request_id=%s, actor_role=%d)", entry.RequestId, entry.ActorRole))
+		logger.LogError(context.Background(), common.LogText("audit actor role unavailable (request_id=%s, actor_role=%d)", entry.RequestId, entry.ActorRole))
 		entry.ActorRole = 0 // Unknown actors remain visible to root only.
-	}
-	if entry.Username == "" {
-		entry.Username, _ = GetUsernameById(entry.UserId, false)
 	}
 	ua := []rune(entry.UserAgent)
 	if len(ua) > 512 {
 		entry.UserAgent = string(ua[:512])
 	}
+	return entry
+}
+
+func writeAuditLog(ctx context.Context, entry AuditLog, idempotent bool) error {
 	if LOG_DB == nil {
-		logger.LogError(ctx, common.LogText("audit log write failed (request_id=%s): log database unavailable", entry.RequestId))
-		return
+		return errors.New("log database unavailable")
 	}
+	entry.Id = 0
 	var row any = &entry
 	if common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
 		encoded, err := common.Marshal(entry.Other)
 		if err != nil {
-			logger.LogError(ctx, common.LogText("audit log write failed (request_id=%s): %v", entry.RequestId, err))
-			return
+			return err
 		}
 		// The ClickHouse GORM insert callback passes structs to the native
 		// driver without resolving their Valuer. Bind this column's JSON
@@ -131,8 +148,80 @@ func RecordAuditLog(c *gin.Context, entry AuditLog) {
 			EncodedOther string `gorm:"column:other;type:json"`
 		}{AuditLog: entry, EncodedOther: string(encoded)}
 	}
-	if err := LOG_DB.Table("audit_logs").Create(row).Error; err != nil {
-		logger.LogError(ctx, common.LogText("audit log write failed (request_id=%s): %v", entry.RequestId, err))
+	query := LOG_DB.WithContext(ctx).Table("audit_logs")
+	if !idempotent || common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
+		// ClickHouse MergeTree has no event_id uniqueness constraint. Replays
+		// keep the identity, but physical deduplication is not guaranteed here.
+		return query.Create(row).Error
+	}
+	if err := query.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "event_id"}}, DoNothing: true}).Create(row).Error; err != nil {
+		return err
+	}
+	var stored AuditLog
+	if err := LOG_DB.WithContext(ctx).Table("audit_logs").Where("event_id = ?", entry.EventId).Take(&stored).Error; err != nil {
+		return err
+	}
+	entry.Id = 0 // GORM populates the sink's generated primary key on insertion.
+	stored.Id = 0
+	want, err := common.Marshal(entry)
+	if err != nil {
+		return err
+	}
+	got, err := common.Marshal(stored)
+	if err != nil {
+		return err
+	}
+	if !auditJSONEqual(want, got) {
+		return errors.New("audit event identity conflict")
+	}
+	return nil
+}
+
+// SQL JSON columns may normalize nested key order, escaping and number syntax.
+// Compare values without round-tripping audit integers through float64.
+func auditJSONEqual(left, right []byte) bool {
+	left, right = bytes.TrimSpace(left), bytes.TrimSpace(right)
+	if bytes.Equal(left, right) {
+		return true
+	}
+	if len(left) == 0 || len(right) == 0 {
+		return false
+	}
+	if (left[0] == '{' || left[0] == '[' || left[0] == '"') && left[0] != right[0] {
+		return false
+	}
+	switch left[0] {
+	case '{':
+		var a, b map[string]common.RawMessage
+		if common.Unmarshal(left, &a) != nil || common.Unmarshal(right, &b) != nil || len(a) != len(b) {
+			return false
+		}
+		for key, value := range a {
+			other, ok := b[key]
+			if !ok || !auditJSONEqual(value, other) {
+				return false
+			}
+		}
+		return true
+	case '[':
+		var a, b []common.RawMessage
+		if common.Unmarshal(left, &a) != nil || common.Unmarshal(right, &b) != nil || len(a) != len(b) {
+			return false
+		}
+		for i := range a {
+			if !auditJSONEqual(a[i], b[i]) {
+				return false
+			}
+		}
+		return true
+	case '"':
+		var a, b string
+		return common.Unmarshal(left, &a) == nil && common.Unmarshal(right, &b) == nil && a == b
+	default:
+		var a, b big.Rat
+		_, aOK := a.SetString(string(left))
+		_, bOK := b.SetString(string(right))
+		return aOK && bOK && a.Cmp(&b) == 0
 	}
 }
 

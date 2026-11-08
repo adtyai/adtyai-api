@@ -244,7 +244,7 @@ export function PublicHeader(props: PublicHeaderProps) {
                 if (link.external) {
                   return (
                     <a
-                      key={`${link.title}:${link.href}`}
+                      key={link.id}
                       href={link.href}
                       title={t(link.title)}
                       target='_blank'
@@ -263,7 +263,7 @@ export function PublicHeader(props: PublicHeaderProps) {
                 }
                 return (
                   <Link
-                    key={`${link.title}:${link.href}`}
+                    key={link.id}
                     to={link.href}
                     title={t(link.title)}
                     disabled={link.disabled}
@@ -368,7 +368,7 @@ export function PublicHeader(props: PublicHeaderProps) {
               if (link.external) {
                 return (
                   <a
-                    key={`${link.title}:${link.href}`}
+                    key={link.id}
                     href={link.href}
                     target='_blank'
                     rel='noopener noreferrer'
@@ -383,7 +383,7 @@ export function PublicHeader(props: PublicHeaderProps) {
               }
               return (
                 <Link
-                  key={`${link.title}:${link.href}`}
+                  key={link.id}
                   to={link.href}
                   disabled={link.disabled}
                   onClick={(event) => handleNavLinkClick(event, link, true)}

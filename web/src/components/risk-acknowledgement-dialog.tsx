@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import {
@@ -34,14 +34,20 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 
-type RequiredTextPart = {
-  type: 'input' | 'static'
+type RiskText = {
+  /** Unique within its collection and retained by the caller across updates. */
+  id: string
   text: string
+}
+
+type RequiredTextPart = RiskText & {
+  type: 'input' | 'static'
   placeholder?: string
 }
 
-type NormalizedRequiredTextPart = RequiredTextPart & {
-  inputIndex?: number
+type Acknowledgement<Value> = {
+  text: string
+  value: Value
 }
 
 type RiskAcknowledgementDialogProps = {
@@ -49,8 +55,8 @@ type RiskAcknowledgementDialogProps = {
   onOpenChange: (open: boolean) => void
   title: string
   description?: React.ReactNode
-  items?: string[]
-  checklist?: string[]
+  items?: RiskText[]
+  checklist?: RiskText[]
   requiredText?: string
   requiredTextParts?: RequiredTextPart[]
   inputPrompt?: string
@@ -65,7 +71,19 @@ type RiskAcknowledgementDialogProps = {
 }
 
 function getRequiredTextRows(text: string) {
-  return Math.max(1, Math.ceil(Array.from(text).length / 42))
+  return Math.max(1, Math.ceil([...text].length / 42))
+}
+
+function retainCurrentAcknowledgements<Value>(
+  previous: Map<string, Acknowledgement<Value>>,
+  requirements: RiskText[]
+) {
+  const currentText = new Map(requirements.map((item) => [item.id, item.text]))
+  const next = new Map(previous)
+  for (const [id, acknowledgement] of previous) {
+    if (currentText.get(id) !== acknowledgement.text) next.delete(id)
+  }
+  return next.size === previous.size ? previous : next
 }
 
 export function RiskAcknowledgementDialog({
@@ -88,93 +106,99 @@ export function RiskAcknowledgementDialog({
   className,
 }: RiskAcknowledgementDialogProps) {
   const { t } = useTranslation()
-  const [checkedItems, setCheckedItems] = useState<boolean[]>([])
-  const [typedText, setTypedText] = useState('')
-  const [typedTextParts, setTypedTextParts] = useState<string[]>([])
+  const dialogId = useId()
+  const [checkedItems, setCheckedItems] = useState<
+    Map<string, Acknowledgement<boolean>>
+  >(() => new Map())
+  const [typedTextResponse, setTypedTextResponse] = useState<
+    Acknowledgement<string>
+  >({ text: requiredText, value: '' })
+  const [typedTextParts, setTypedTextParts] = useState<
+    Map<string, Acknowledgement<string>>
+  >(() => new Map())
 
-  const normalizedRequiredTextParts = useMemo<
-    NormalizedRequiredTextPart[]
-  >(() => {
-    return requiredTextParts.reduce<{
-      parts: NormalizedRequiredTextPart[]
-      inputIndex: number
-    }>(
-      (acc, part) => {
-        if (part.type !== 'input') {
-          return { ...acc, parts: [...acc.parts, part] }
-        }
-        return {
-          parts: [...acc.parts, { ...part, inputIndex: acc.inputIndex }],
-          inputIndex: acc.inputIndex + 1,
-        }
-      },
-      { parts: [], inputIndex: 0 }
-    ).parts
-  }, [requiredTextParts])
-
-  const requiredTextInputCount = useMemo(
-    () =>
-      normalizedRequiredTextParts.filter((part) => part.type === 'input')
-        .length,
-    [normalizedRequiredTextParts]
+  const requiredInputParts = useMemo(
+    () => requiredTextParts.filter((part) => part.type === 'input'),
+    [requiredTextParts]
   )
-  const hasSegmentedRequiredText = requiredTextInputCount > 0
+  const hasSegmentedRequiredText = requiredInputParts.length > 0
   const requiredTextToDisplay = hasSegmentedRequiredText
-    ? normalizedRequiredTextParts.map((part) => part.text).join('')
+    ? requiredTextParts.map((part) => part.text).join('')
     : requiredText
+  const typedText =
+    typedTextResponse.text === requiredText ? typedTextResponse.value : ''
 
   useEffect(() => {
-    if (!open) return
-    const timer = window.setTimeout(() => {
-      setCheckedItems(Array(checklist.length).fill(false))
-      setTypedText('')
-      setTypedTextParts(Array(requiredTextInputCount).fill(''))
-    }, 0)
-    return () => window.clearTimeout(timer)
-  }, [open, checklist.length, requiredTextInputCount])
+    setCheckedItems((previous) =>
+      retainCurrentAcknowledgements(previous, open ? checklist : [])
+    )
+    setTypedTextParts((previous) =>
+      retainCurrentAcknowledgements(previous, open ? requiredInputParts : [])
+    )
+    setTypedTextResponse((previous) =>
+      previous.text === requiredText &&
+      ((open && !hasSegmentedRequiredText) || previous.value === '')
+        ? previous
+        : { text: requiredText, value: '' }
+    )
+  }, [
+    open,
+    checklist,
+    requiredInputParts,
+    requiredText,
+    hasSegmentedRequiredText,
+  ])
 
   const allChecked = useMemo(() => {
-    if (checklist.length === 0) return true
-    return (
-      checkedItems.length === checklist.length &&
-      checkedItems.every((checked) => checked)
-    )
-  }, [checkedItems, checklist.length])
+    return checklist.every((item) => {
+      const acknowledgement = checkedItems.get(item.id)
+      return acknowledgement?.text === item.text && acknowledgement.value
+    })
+  }, [checkedItems, checklist])
 
   const typedMatched = useMemo(() => {
     if (hasSegmentedRequiredText) {
-      return normalizedRequiredTextParts.every((part) => {
-        if (part.type === 'static') return true
-        return typedTextParts[part.inputIndex ?? 0]?.trim() === part.text.trim()
+      return requiredInputParts.every((part) => {
+        const acknowledgement = typedTextParts.get(part.id)
+        return (
+          acknowledgement?.text === part.text &&
+          acknowledgement.value.trim() === part.text.trim()
+        )
       })
     }
     if (!requiredText) return true
     return typedText.trim() === requiredText.trim()
   }, [
     hasSegmentedRequiredText,
-    normalizedRequiredTextParts,
+    requiredInputParts,
     requiredText,
     typedText,
     typedTextParts,
   ])
   const hasTypedRequiredText = hasSegmentedRequiredText
-    ? typedTextParts.some((part) => part.trim() !== '')
+    ? requiredInputParts.some((part) => {
+        const acknowledgement = typedTextParts.get(part.id)
+        return (
+          acknowledgement?.text === part.text &&
+          acknowledgement.value.trim() !== ''
+        )
+      })
     : typedText.length > 0
 
   const canConfirm = allChecked && typedMatched && !isLoading
 
-  const handleChecklistChange = (index: number, checked: boolean) => {
+  const handleChecklistChange = (item: RiskText, checked: boolean) => {
     setCheckedItems((previous) => {
-      const next = [...previous]
-      next[index] = checked
+      const next = new Map(previous)
+      next.set(item.id, { text: item.text, value: checked })
       return next
     })
   }
 
-  const handleTextPartChange = (index: number, value: string) => {
+  const handleTextPartChange = (part: RequiredTextPart, value: string) => {
     setTypedTextParts((previous) => {
-      const next = [...previous]
-      next[index] = value
+      const next = new Map(previous)
+      next.set(part.id, { text: part.text, value })
       return next
     })
   }
@@ -203,22 +227,26 @@ export function RiskAcknowledgementDialog({
           {items.length > 0 ? (
             <ol className='border-border/70 bg-muted/30 text-foreground list-decimal space-y-2 rounded-lg border px-4 py-3 pl-8 text-sm leading-6 sm:px-5 sm:py-4 sm:pl-9'>
               {items.map((item) => (
-                <li key={item}>{item}</li>
+                <li key={item.id}>{item.text}</li>
               ))}
             </ol>
           ) : null}
 
           {checklist.length > 0 ? (
             <div className='border-border/70 bg-muted/30 space-y-3 rounded-lg border p-3 sm:p-4'>
-              {checklist.map((item, index) => {
-                const id = `risk-acknowledgement-${index}`
+              {checklist.map((item) => {
+                const id = `${dialogId}-risk-acknowledgement-${item.id}`
+                const acknowledgement = checkedItems.get(item.id)
                 return (
-                  <div key={item} className='flex items-start gap-3'>
+                  <div key={item.id} className='flex items-start gap-3'>
                     <Checkbox
                       id={id}
-                      checked={checkedItems[index] ?? false}
+                      checked={
+                        acknowledgement?.text === item.text &&
+                        acknowledgement.value
+                      }
                       onCheckedChange={(checked) =>
-                        handleChecklistChange(index, checked === true)
+                        handleChecklistChange(item, checked === true)
                       }
                       className='mt-0.5'
                     />
@@ -226,7 +254,7 @@ export function RiskAcknowledgementDialog({
                       htmlFor={id}
                       className='text-muted-foreground text-sm leading-5 font-normal'
                     >
-                      {item}
+                      {item.text}
                     </Label>
                   </div>
                 )
@@ -244,23 +272,24 @@ export function RiskAcknowledgementDialog({
               </div>
               {hasSegmentedRequiredText ? (
                 <div className='flex flex-col gap-2'>
-                  {normalizedRequiredTextParts.map((part, index) =>
+                  {requiredTextParts.map((part) =>
                     part.type === 'static' ? (
                       <span
-                        key={`static-${index}`}
+                        key={part.id}
                         className='text-muted-foreground bg-background/70 border-border w-fit rounded-md border px-2 py-1.5 font-mono text-sm select-none'
                       >
                         {part.text}
                       </span>
                     ) : (
                       <Textarea
-                        key={`input-${index}`}
-                        value={typedTextParts[part.inputIndex ?? 0] ?? ''}
+                        key={part.id}
+                        value={
+                          typedTextParts.get(part.id)?.text === part.text
+                            ? (typedTextParts.get(part.id)?.value ?? '')
+                            : ''
+                        }
                         onChange={(event) =>
-                          handleTextPartChange(
-                            part.inputIndex ?? 0,
-                            event.target.value
-                          )
+                          handleTextPartChange(part, event.target.value)
                         }
                         placeholder={
                           part.placeholder ??
@@ -269,7 +298,9 @@ export function RiskAcknowledgementDialog({
                           t('Type the confirmation text here')
                         }
                         rows={getRequiredTextRows(part.text)}
-                        autoFocus={open && part.inputIndex === 0}
+                        autoFocus={
+                          open && part.id === requiredInputParts[0]?.id
+                        }
                         wrap='soft'
                         aria-invalid={hasTypedRequiredText && !typedMatched}
                         className='min-h-10 resize-none overflow-hidden font-mono text-sm leading-6'
@@ -280,7 +311,12 @@ export function RiskAcknowledgementDialog({
               ) : (
                 <Textarea
                   value={typedText}
-                  onChange={(event) => setTypedText(event.target.value)}
+                  onChange={(event) =>
+                    setTypedTextResponse({
+                      text: requiredText,
+                      value: event.target.value,
+                    })
+                  }
                   placeholder={
                     inputPlaceholder ?? t('Type the confirmation text here')
                   }

@@ -57,6 +57,7 @@ import {
   ADMIN_PERMISSION_RESOURCES,
   hasPermission,
 } from '@/lib/admin-permissions'
+import { canAdmin } from '@/lib/adty-permissions'
 import { useAuthStore } from '@/stores/auth-store'
 
 import {
@@ -91,10 +92,15 @@ export function ChannelsPrimaryButtons() {
   const [showConsistencyDialog, setShowConsistencyDialog] = useState(false)
   const [isRepairingConsistency, setIsRepairingConsistency] = useState(false)
   const currentUser = useAuthStore((s) => s.auth.user)
-  const canEditSensitive = hasPermission(
+  const canCreate = hasPermission(
     currentUser,
     ADMIN_PERMISSION_RESOURCES.CHANNEL,
-    ADMIN_PERMISSION_ACTIONS.SENSITIVE_WRITE
+    ADMIN_PERMISSION_ACTIONS.CREATE
+  )
+  const canDelete = hasPermission(
+    currentUser,
+    ADMIN_PERMISSION_RESOURCES.CHANNEL,
+    ADMIN_PERMISSION_ACTIONS.DELETE
   )
 
   const handleTagModeToggle = (checked: boolean) => {
@@ -162,18 +168,18 @@ export function ChannelsPrimaryButtons() {
           <TooltipTrigger render={<span className='inline-flex' />}>
             <Button
               onClick={() => {
-                if (!canEditSensitive) return
+                if (!canCreate) return
                 setCurrentRow(null)
                 setOpen('create-channel')
               }}
-              disabled={!canEditSensitive}
+              disabled={!canCreate}
             >
               <Plus className='h-4 w-4' />
               <span className='max-sm:hidden'>{t('Create Channel')}</span>
               <span className='sm:hidden'>{t('Create')}</span>
             </Button>
           </TooltipTrigger>
-          {!canEditSensitive && (
+          {!canCreate && (
             <TooltipContent>
               {t('No permission to perform this action')}
             </TooltipContent>
@@ -273,10 +279,10 @@ export function ChannelsPrimaryButtons() {
             <DropdownMenuItem
               onSelect={(e) => {
                 e.preventDefault()
-                if (!canEditSensitive) return
+                if (!canDelete) return
                 setShowDeleteDialog(true)
               }}
-              disabled={!canEditSensitive}
+              disabled={!canDelete}
               className='text-destructive focus:text-destructive'
             >
               {t('Delete All Disabled')}
@@ -296,8 +302,16 @@ export function ChannelsPrimaryButtons() {
           'This will permanently delete all manually and automatically disabled channels. This action cannot be undone.'
         )}
         destructive
+        disabled={!canDelete}
         handleConfirm={() => {
-          if (!canEditSensitive) return
+          if (
+            !canAdmin(useAuthStore.getState().auth.user, {
+              resource: ADMIN_PERMISSION_RESOURCES.CHANNEL,
+              action: ADMIN_PERMISSION_ACTIONS.DELETE,
+            })
+          ) {
+            return
+          }
           handleDeleteAllDisabled(queryClient, (_count) => {
             // eslint-disable-next-line no-console
             console.log(`Deleted ${_count} channels`)

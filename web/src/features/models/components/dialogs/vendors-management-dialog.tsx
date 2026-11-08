@@ -27,7 +27,9 @@ import { LoadingState } from '@/components/loading-state'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useDebounce } from '@/hooks/use-debounce'
+import { ADTY_PERMISSIONS, canAdmin } from '@/lib/adty-permissions'
 import { createServerError } from '@/lib/server-error-message'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { searchVendors } from '../../api'
 import { vendorsQueryKeys } from '../../lib'
@@ -39,6 +41,9 @@ export function VendorsManagementDialog(props: {
   onOpenChange: (open: boolean) => void
 }) {
   const { t } = useTranslation()
+  const currentUser = useAuthStore((state) => state.auth.user)
+  const canCreate = canAdmin(currentUser, ADTY_PERMISSIONS.MODEL_CREATE)
+  const canWrite = canAdmin(currentUser, ADTY_PERMISSIONS.MODEL_WRITE)
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [editing, setEditing] = useState(false)
@@ -75,6 +80,7 @@ export function VendorsManagementDialog(props: {
               {t('Close')}
             </Button>
             <Button
+              disabled={!canCreate}
               onClick={() => {
                 setVendor(null)
                 setEditing(true)
@@ -123,6 +129,7 @@ export function VendorsManagementDialog(props: {
                     <Button
                       variant='ghost'
                       size='sm'
+                      disabled={!canWrite}
                       onClick={() => {
                         setVendor(item)
                         setEditing(true)

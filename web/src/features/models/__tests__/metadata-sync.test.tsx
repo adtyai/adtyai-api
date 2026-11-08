@@ -19,9 +19,10 @@ For commercial licensing, please contact support@quantumnous.com
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { api } from '@/lib/api'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { SyncWizardDialog } from '../components/dialogs/sync-wizard-dialog'
 import type { MetadataSyncCandidate, MetadataSyncPreview } from '../types'
@@ -61,6 +62,20 @@ const preview: MetadataSyncPreview = {
     },
   ],
 }
+
+beforeEach(() => {
+  useAuthStore.getState().auth.setUser({
+    id: 2,
+    username: 'admin',
+    role: 10,
+    permissions: {
+      admin_permissions: {
+        adty_model: { read: true, create: true, write: true },
+      },
+    },
+  })
+})
+afterEach(() => useAuthStore.getState().auth.reset())
 
 describe('metadata sync preview', () => {
   it('shows additions and field effects and writes only after explicit confirmation', async () => {

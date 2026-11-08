@@ -36,14 +36,14 @@ import {
   StaticDataTable,
   staticDataTableClassNames as tableStyles,
 } from '@/components/data-table'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
+import { Empty, EmptyDescription, EmptyHeader } from '@/components/ui/empty'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useStatus } from '@/hooks/use-status'
 
 import {
-  buildRateLimits,
   buildSupportedParameters,
-  formatRateLimit,
   type SupportedParameter,
 } from '../lib/mock-stats'
 import { replaceModelInPath } from '../lib/model-helpers'
@@ -80,360 +80,140 @@ type SampleContext = {
   modelName: string
   endpointType: string
   endpointPath: string
+  method: string
 }
 
-function buildChatSample(lang: Lang, ctx: SampleContext): string {
-  const url = `${ctx.baseUrl}${ctx.endpointPath}`
-  const isResponses = ctx.endpointType === 'openai-response'
-  const isReasoning = /^o[1-4]|reasoning|thinking|deepseek-r/i.test(
-    ctx.modelName
-  )
-  const userMessage = 'Explain quantum entanglement in one paragraph.'
-
-  const bodyJson = isResponses
-    ? JSON.stringify({ model: ctx.modelName, input: userMessage }, null, 2)
-    : JSON.stringify(
-        {
-          model: ctx.modelName,
-          messages: [{ role: 'user', content: userMessage }],
-          ...(isReasoning ? {} : { temperature: 0.7 }),
-        },
-        null,
-        2
-      )
-
-  const fnCall = isResponses ? 'responses.create' : 'chat.completions.create'
-
-  if (lang === 'curl') {
-    return [
-      `curl ${url} \\`,
-      `  -H "Authorization: Bearer $${ctx.apiKeyEnv}" \\`,
-      `  -H "Content-Type: application/json" \\`,
-      `  -d '${bodyJson.replace(/\n/g, '\n     ')}'`,
-    ].join('\n')
-  }
-
-  if (lang === 'python') {
-    return [
-      'from openai import OpenAI',
-      '',
-      'client = OpenAI(',
-      `    base_url="${ctx.baseUrl}/v1",`,
-      `    api_key="<YOUR_API_KEY>",`,
-      ')',
-      '',
-      isResponses
-        ? `response = client.${fnCall}(\n    model="${ctx.modelName}",\n    input="${userMessage}",\n)\n\nprint(response.output_text)`
-        : `completion = client.${fnCall}(\n    model="${ctx.modelName}",\n    messages=[\n        {"role": "user", "content": "${userMessage}"}\n    ],\n)\n\nprint(completion.choices[0].message.content)`,
-    ].join('\n')
-  }
-
-  if (lang === 'typescript') {
-    return [
-      `import OpenAI from 'openai'`,
-      '',
-      `const client = new OpenAI({`,
-      `  baseURL: '${ctx.baseUrl}/v1',`,
-      `  apiKey: process.env.${ctx.apiKeyEnv},`,
-      `})`,
-      '',
-      isResponses
-        ? `const response = await client.${fnCall}({\n  model: '${ctx.modelName}',\n  input: '${userMessage}',\n})\n\nconsole.log(response.output_text)`
-        : `const completion = await client.${fnCall}({\n  model: '${ctx.modelName}',\n  messages: [{ role: 'user', content: '${userMessage}' }],\n})\n\nconsole.log(completion.choices[0].message.content)`,
-    ].join('\n')
-  }
-
-  return [
-    `const response = await fetch('${url}', {`,
-    `  method: 'POST',`,
-    `  headers: {`,
-    `    Authorization: \`Bearer \${process.env.${ctx.apiKeyEnv}}\`,`,
-    `    'Content-Type': 'application/json',`,
-    `  },`,
-    `  body: JSON.stringify(${bodyJson}),`,
-    `})`,
-    '',
-    `const data = await response.json()`,
-    `console.log(data)`,
-  ].join('\n')
-}
-
-function buildAnthropicSample(lang: Lang, ctx: SampleContext): string {
-  const url = `${ctx.baseUrl}${ctx.endpointPath}`
-  const userMessage = 'Explain quantum entanglement in one paragraph.'
-
-  if (lang === 'curl') {
-    const body = JSON.stringify(
-      {
+function buildSampleBody(ctx: SampleContext): Record<string, unknown> | null {
+  const message = 'Explain quantum entanglement in one paragraph.'
+  switch (ctx.endpointType) {
+    case 'openai':
+      return {
+        model: ctx.modelName,
+        messages: [{ role: 'user', content: message }],
+      }
+    case 'openai-response':
+      return { model: ctx.modelName, input: message }
+    case 'anthropic':
+      return {
         model: ctx.modelName,
         max_tokens: 1024,
-        messages: [{ role: 'user', content: userMessage }],
-      },
-      null,
-      2
-    )
-    return [
-      `curl ${url} \\`,
-      `  -H "x-api-key: $${ctx.apiKeyEnv}" \\`,
-      `  -H "anthropic-version: 2023-06-01" \\`,
-      `  -H "Content-Type: application/json" \\`,
-      `  -d '${body.replace(/\n/g, '\n     ')}'`,
-    ].join('\n')
+        messages: [{ role: 'user', content: message }],
+      }
+    case 'gemini':
+      return { contents: [{ parts: [{ text: message }] }] }
+    case 'embeddings':
+      return {
+        model: ctx.modelName,
+        input: 'The food was delicious and the waiter…',
+      }
+    case 'jina-rerank':
+      return {
+        model: ctx.modelName,
+        query: 'What is the capital of France?',
+        documents: [
+          'Paris is the capital of France.',
+          'Berlin is the capital of Germany.',
+        ],
+      }
+    case 'image-generation':
+      return {
+        model: ctx.modelName,
+        prompt: 'A serene koi pond at sunset, ukiyo-e style.',
+        size: '1024x1024',
+        n: 1,
+      }
+    default:
+      return null
   }
-  if (lang === 'python') {
-    return [
-      'import anthropic',
-      '',
-      'client = anthropic.Anthropic(',
-      `    base_url="${ctx.baseUrl}",`,
-      `    api_key="<YOUR_API_KEY>",`,
-      ')',
-      '',
-      `message = client.messages.create(`,
-      `    model="${ctx.modelName}",`,
-      `    max_tokens=1024,`,
-      `    messages=[{"role": "user", "content": "${userMessage}"}],`,
-      ')',
-      '',
-      'print(message.content[0].text)',
-    ].join('\n')
-  }
-  if (lang === 'typescript') {
-    return [
-      `import Anthropic from '@anthropic-ai/sdk'`,
-      '',
-      `const client = new Anthropic({`,
-      `  baseURL: '${ctx.baseUrl}',`,
-      `  apiKey: process.env.${ctx.apiKeyEnv},`,
-      `})`,
-      '',
-      `const message = await client.messages.create({`,
-      `  model: '${ctx.modelName}',`,
-      `  max_tokens: 1024,`,
-      `  messages: [{ role: 'user', content: '${userMessage}' }],`,
-      `})`,
-      '',
-      `console.log(message.content[0].text)`,
-    ].join('\n')
-  }
-  return [
-    `const response = await fetch('${url}', {`,
-    `  method: 'POST',`,
-    `  headers: {`,
-    `    'x-api-key': process.env.${ctx.apiKeyEnv},`,
-    `    'anthropic-version': '2023-06-01',`,
-    `    'Content-Type': 'application/json',`,
-    `  },`,
-    `  body: JSON.stringify({`,
-    `    model: '${ctx.modelName}',`,
-    `    max_tokens: 1024,`,
-    `    messages: [{ role: 'user', content: '${userMessage}' }],`,
-    `  }),`,
-    `})`,
-    '',
-    `const data = await response.json()`,
-    `console.log(data.content[0].text)`,
-  ].join('\n')
 }
 
-function buildGeminiSample(lang: Lang, ctx: SampleContext): string {
-  const url = `${ctx.baseUrl}${ctx.endpointPath}?key=$${ctx.apiKeyEnv}`
-  const userMessage = 'Explain quantum entanglement in one paragraph.'
-
-  if (lang === 'curl') {
-    const body = JSON.stringify(
-      { contents: [{ parts: [{ text: userMessage }] }] },
-      null,
-      2
-    )
-    return [
-      `curl '${url}' \\`,
-      `  -H 'Content-Type: application/json' \\`,
-      `  -d '${body.replace(/\n/g, '\n     ')}'`,
-    ].join('\n')
-  }
-  if (lang === 'python') {
-    return [
-      'import google.generativeai as genai',
-      '',
-      `genai.configure(api_key="<YOUR_API_KEY>")`,
-      '',
-      `model = genai.GenerativeModel("${ctx.modelName}")`,
-      `response = model.generate_content("${userMessage}")`,
-      '',
-      `print(response.text)`,
-    ].join('\n')
-  }
-  if (lang === 'typescript') {
-    return [
-      `import { GoogleGenerativeAI } from '@google/generative-ai'`,
-      '',
-      `const genAI = new GoogleGenerativeAI(process.env.${ctx.apiKeyEnv}!)`,
-      `const model = genAI.getGenerativeModel({ model: '${ctx.modelName}' })`,
-      '',
-      `const result = await model.generateContent('${userMessage}')`,
-      `console.log(result.response.text())`,
-    ].join('\n')
-  }
-  return [
-    `const response = await fetch('${url}', {`,
-    `  method: 'POST',`,
-    `  headers: { 'Content-Type': 'application/json' },`,
-    `  body: JSON.stringify({`,
-    `    contents: [{ parts: [{ text: '${userMessage}' }] }],`,
-    `  }),`,
-    `})`,
-    '',
-    `const data = await response.json()`,
-    `console.log(data.candidates[0].content.parts[0].text)`,
-  ].join('\n')
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`
 }
 
-function buildEmbeddingSample(lang: Lang, ctx: SampleContext): string {
+function buildSample(lang: Lang, ctx: SampleContext): string | null {
+  const body = buildSampleBody(ctx)
+  if (!body) return null
+
   const url = `${ctx.baseUrl}${ctx.endpointPath}`
-  const text = 'The food was delicious and the waiter…'
+  const bodyJson = JSON.stringify(body, null, 2)
+  let authHeader = 'Authorization'
+  let authPrefix = 'Bearer '
+  if (ctx.endpointType === 'anthropic') {
+    authHeader = 'x-api-key'
+    authPrefix = ''
+  } else if (ctx.endpointType === 'gemini') {
+    authHeader = 'x-goog-api-key'
+    authPrefix = ''
+  }
+  const extraHeaders: Record<string, string> = {}
+  if (ctx.endpointType === 'anthropic') {
+    extraHeaders['anthropic-version'] = '2023-06-01'
+  }
 
   if (lang === 'curl') {
-    const body = JSON.stringify({ model: ctx.modelName, input: text }, null, 2)
     return [
-      `curl ${url} \\`,
-      `  -H "Authorization: Bearer $${ctx.apiKeyEnv}" \\`,
-      `  -H "Content-Type: application/json" \\`,
-      `  -d '${body.replace(/\n/g, '\n     ')}'`,
+      `curl --request ${shellQuote(ctx.method)} ${shellQuote(url)} \\`,
+      '  -H "Content-Type: application/json" \\',
+      `  -H "${authHeader}: ${authPrefix}$${ctx.apiKeyEnv}" \\`,
+      ...Object.entries(extraHeaders).map(
+        ([name, value]) => `  -H ${shellQuote(`${name}: ${value}`)} \\`
+      ),
+      `  --data-raw ${shellQuote(bodyJson)}`,
     ].join('\n')
   }
+
   if (lang === 'python') {
+    const authValue = authPrefix
+      ? `${JSON.stringify(authPrefix)} + api_key`
+      : 'api_key'
     return [
-      'from openai import OpenAI',
+      'import json',
+      'import os',
+      'from urllib.request import Request, urlopen',
       '',
-      `client = OpenAI(base_url="${ctx.baseUrl}/v1", api_key="<YOUR_API_KEY>")`,
+      `api_key = os.environ["${ctx.apiKeyEnv}"]`,
+      `payload = ${bodyJson}`,
       '',
-      'response = client.embeddings.create(',
-      `    model="${ctx.modelName}",`,
-      `    input="${text}",`,
+      'request = Request(',
+      `    ${JSON.stringify(url)},`,
+      '    data=json.dumps(payload).encode("utf-8"),',
+      '    headers={',
+      '        "Content-Type": "application/json",',
+      `        "${authHeader}": ${authValue},`,
+      ...Object.entries(extraHeaders).map(
+        ([name, value]) => `        "${name}": ${JSON.stringify(value)},`
+      ),
+      '    },',
+      `    method=${JSON.stringify(ctx.method)},`,
       ')',
-      '',
-      'print(response.data[0].embedding[:8])',
+      'with urlopen(request) as response:',
+      '    print(json.load(response))',
     ].join('\n')
   }
-  if (lang === 'typescript') {
-    return [
-      `import OpenAI from 'openai'`,
-      '',
-      `const client = new OpenAI({`,
-      `  baseURL: '${ctx.baseUrl}/v1',`,
-      `  apiKey: process.env.${ctx.apiKeyEnv},`,
-      `})`,
-      '',
-      `const response = await client.embeddings.create({`,
-      `  model: '${ctx.modelName}',`,
-      `  input: '${text}',`,
-      `})`,
-      '',
-      `console.log(response.data[0].embedding.slice(0, 8))`,
-    ].join('\n')
-  }
+
+  const authValue = authPrefix ? `\`${authPrefix}\${apiKey}\`` : 'apiKey'
   return [
-    `const response = await fetch('${url}', {`,
-    `  method: 'POST',`,
-    `  headers: {`,
-    `    Authorization: \`Bearer \${process.env.${ctx.apiKeyEnv}}\`,`,
-    `    'Content-Type': 'application/json',`,
-    `  },`,
-    `  body: JSON.stringify({`,
-    `    model: '${ctx.modelName}',`,
-    `    input: '${text}',`,
-    `  }),`,
-    `})`,
+    `const apiKey = process.env.${ctx.apiKeyEnv}`,
+    'if (!apiKey) throw new Error("Set ADTYAI_API_KEY to your API key")',
     '',
-    `const data = await response.json()`,
-    `console.log(data.data[0].embedding.slice(0, 8))`,
-  ].join('\n')
-}
-
-function buildImageSample(lang: Lang, ctx: SampleContext): string {
-  const url = `${ctx.baseUrl}${ctx.endpointPath}`
-  const prompt = 'A serene koi pond at sunset, ukiyo-e style.'
-
-  if (lang === 'curl') {
-    const body = JSON.stringify(
-      { model: ctx.modelName, prompt, size: '1024x1024', n: 1 },
-      null,
-      2
-    )
-    return [
-      `curl ${url} \\`,
-      `  -H "Authorization: Bearer $${ctx.apiKeyEnv}" \\`,
-      `  -H "Content-Type: application/json" \\`,
-      `  -d '${body.replace(/\n/g, '\n     ')}'`,
-    ].join('\n')
-  }
-  if (lang === 'python') {
-    return [
-      'from openai import OpenAI',
-      '',
-      `client = OpenAI(base_url="${ctx.baseUrl}/v1", api_key="<YOUR_API_KEY>")`,
-      '',
-      'response = client.images.generate(',
-      `    model="${ctx.modelName}",`,
-      `    prompt="${prompt}",`,
-      `    size="1024x1024",`,
-      `    n=1,`,
-      ')',
-      '',
-      'print(response.data[0].url)',
-    ].join('\n')
-  }
-  if (lang === 'typescript') {
-    return [
-      `import OpenAI from 'openai'`,
-      '',
-      `const client = new OpenAI({`,
-      `  baseURL: '${ctx.baseUrl}/v1',`,
-      `  apiKey: process.env.${ctx.apiKeyEnv},`,
-      `})`,
-      '',
-      `const response = await client.images.generate({`,
-      `  model: '${ctx.modelName}',`,
-      `  prompt: '${prompt}',`,
-      `  size: '1024x1024',`,
-      `  n: 1,`,
-      `})`,
-      '',
-      `console.log(response.data[0].url)`,
-    ].join('\n')
-  }
-  return [
-    `const response = await fetch('${url}', {`,
-    `  method: 'POST',`,
-    `  headers: {`,
-    `    Authorization: \`Bearer \${process.env.${ctx.apiKeyEnv}}\`,`,
-    `    'Content-Type': 'application/json',`,
-    `  },`,
-    `  body: JSON.stringify({`,
-    `    model: '${ctx.modelName}',`,
-    `    prompt: '${prompt}',`,
-    `    size: '1024x1024',`,
-    `    n: 1,`,
-    `  }),`,
-    `})`,
+    `const response = await fetch(${JSON.stringify(url)}, {`,
+    `  method: ${JSON.stringify(ctx.method)},`,
+    '  headers: {',
+    '    "Content-Type": "application/json",',
+    `    "${authHeader}": ${authValue},`,
+    ...Object.entries(extraHeaders).map(
+      ([name, value]) => `    "${name}": ${JSON.stringify(value)},`
+    ),
+    '  },',
+    `  body: JSON.stringify(${bodyJson}),`,
+    '})',
     '',
-    `const data = await response.json()`,
-    `console.log(data.data[0].url)`,
+    'if (!response.ok) {',
+    '  throw new Error(`HTTP ${response.status}: ${await response.text()}`)',
+    '}',
+    'console.log(await response.json())',
   ].join('\n')
-}
-
-function buildSample(
-  lang: Lang,
-  endpointType: string,
-  ctx: SampleContext
-): string {
-  if (endpointType === 'anthropic') return buildAnthropicSample(lang, ctx)
-  if (endpointType === 'gemini') return buildGeminiSample(lang, ctx)
-  if (endpointType === 'embeddings' || endpointType === 'jina-rerank')
-    return buildEmbeddingSample(lang, ctx)
-  if (endpointType === 'image-generation') return buildImageSample(lang, ctx)
-  return buildChatSample(lang, ctx)
 }
 
 // ---------------------------------------------------------------------------
@@ -487,12 +267,13 @@ function CodeSamplesSection(props: {
     return null
   }
 
-  const code = buildSample(lang, activeEndpoint.type, {
+  const code = buildSample(lang, {
     baseUrl,
     apiKeyEnv: 'ADTYAI_API_KEY',
     modelName: props.model.model_name || '',
     endpointType: activeEndpoint.type,
     endpointPath: activeEndpoint.path,
+    method: activeEndpoint.method,
   })
 
   return (
@@ -532,18 +313,30 @@ function CodeSamplesSection(props: {
       </div>
 
       <div className='mt-3'>
-        <CodeBlock code={code} language={LANG_HIGHLIGHT[lang]}>
-          <CodeBlockCopyButton />
-        </CodeBlock>
+        {code ? (
+          <CodeBlock code={code} language={LANG_HIGHLIGHT[lang]}>
+            <CodeBlockCopyButton />
+          </CodeBlock>
+        ) : (
+          <Empty>
+            <EmptyHeader>
+              <EmptyDescription>
+                {t(
+                  'A request example is not available for this endpoint. Refer to the endpoint documentation.'
+                )}
+              </EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        )}
       </div>
 
-      <p className='text-muted-foreground mt-2 text-xs'>
-        {t('Replace')}{' '}
-        <code className='bg-muted rounded px-1 py-0.5 font-mono text-[11px]'>
-          {'<YOUR_API_KEY>'}
-        </code>{' '}
-        {t('with the API key from your token settings.')}
-      </p>
+      {code && (
+        <p className='text-muted-foreground mt-2 text-xs'>
+          {t(
+            'Set the ADTYAI_API_KEY environment variable to the API key from your token settings.'
+          )}
+        </p>
+      )}
     </section>
   )
 }
@@ -665,57 +458,23 @@ function ParamRangeCell(props: { param: SupportedParameter }) {
 // Rate-limits table
 // ---------------------------------------------------------------------------
 
-function RateLimitsSection(props: { model: PricingModel }) {
+function RateLimitsSection() {
   const { t } = useTranslation()
-  const limits = useMemo(() => buildRateLimits(props.model), [props.model])
-
-  if (limits.length === 0) return null
-
   return (
     <section>
       <SectionTitle icon={Gauge}>{t('Rate limits')}</SectionTitle>
-      <StaticDataTable
-        className={tableStyles.sectionContainer}
-        headerRowClassName={tableStyles.mutedHeaderRow}
-        data={limits}
-        getRowKey={(limit) => limit.group}
-        getRowClassName={() => 'hover:bg-muted/20'}
-        columns={[
-          {
-            id: 'group',
-            header: t('Group'),
-            className: 'h-9',
-            cellClassName: 'py-2 font-mono',
-            cell: (limit) => limit.group,
-          },
-          {
-            id: 'rpm',
-            header: 'RPM',
-            className: 'h-9 text-right',
-            cellClassName: tableStyles.topNumericCell,
-            cell: (limit) => formatRateLimit(limit.rpm),
-          },
-          {
-            id: 'tpm',
-            header: 'TPM',
-            className: 'h-9 text-right',
-            cellClassName: tableStyles.topNumericCell,
-            cell: (limit) => formatRateLimit(limit.tpm),
-          },
-          {
-            id: 'rpd',
-            header: 'RPD',
-            className: 'h-9 text-right',
-            cellClassName: tableStyles.topNumericCell,
-            cell: (limit) => formatRateLimit(limit.rpd),
-          },
-        ]}
-      />
-      <p className='text-muted-foreground mt-2 text-[11px] leading-relaxed'>
-        {t(
-          'RPM = requests per minute, TPM = tokens per minute, RPD = requests per day. Limits apply per token group.'
-        )}
-      </p>
+      <Alert>
+        <AlertDescription>
+          <p>
+            {t('Actual rate limits are not available in the model catalog.')}
+          </p>
+          <p>
+            {t(
+              'Check the limits for your account and API key, or ask your administrator.'
+            )}
+          </p>
+        </AlertDescription>
+      </Alert>
     </section>
   )
 }
@@ -733,15 +492,9 @@ function AuthSection() {
         <ChevronRight className='text-muted-foreground mt-0.5 size-3.5 shrink-0' />
         <div className='space-y-1.5 text-xs leading-relaxed'>
           <p>
-            {t('All requests must include')}{' '}
-            <code className='bg-muted rounded px-1 py-0.5 font-mono text-[11px]'>
-              Authorization: Bearer &lt;TOKEN&gt;
-            </code>{' '}
-            {t('header. Anthropic-formatted endpoints accept the')}{' '}
-            <code className='bg-muted rounded px-1 py-0.5 font-mono text-[11px]'>
-              x-api-key
-            </code>{' '}
-            {t('header instead.')}
+            {t(
+              'Use the authentication header shown in the request example for this endpoint.'
+            )}
           </p>
           <p className='text-muted-foreground'>
             {t(
@@ -767,7 +520,7 @@ export function ModelDetailsApi(props: {
       <CodeSamplesSection model={props.model} endpointMap={props.endpointMap} />
       <AuthSection />
       <SupportedParametersSection model={props.model} />
-      <RateLimitsSection model={props.model} />
+      <RateLimitsSection />
     </div>
   )
 }

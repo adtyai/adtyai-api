@@ -20,9 +20,10 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { AxiosError } from 'axios'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { api, type ApiRequestConfig } from '@/lib/api'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { VendorMutateDialog } from '../components/dialogs/vendor-mutate-dialog'
 import { VendorOperationDialog } from '../components/dialogs/vendor-operation-dialog'
@@ -77,6 +78,20 @@ function conflict() {
     config: { headers: {} },
   } as never)
 }
+
+beforeEach(() => {
+  useAuthStore.getState().auth.setUser({
+    id: 2,
+    username: 'admin',
+    role: 10,
+    permissions: {
+      admin_permissions: {
+        adty_model: { read: true, write: true, delete: true },
+      },
+    },
+  })
+})
+afterEach(() => useAuthStore.getState().auth.reset())
 
 describe('vendor management', () => {
   it('edits only vendor metadata using the saved version and protects unsaved changes', async () => {

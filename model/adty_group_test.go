@@ -13,6 +13,7 @@ import (
 	"github.com/QuantumNous/new-api/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -92,12 +93,42 @@ func TestAdtyCheckPostgreSQL(t *testing.T) {
 }
 
 func TestCIWorkflowRunsPostgreSQL(t *testing.T) {
-	data, err := os.ReadFile("../.github/workflows/ci.yml")
-	require.NoError(t, err)
-	text := string(data)
-	require.Contains(t, text, "image: postgres:16")
-	require.Contains(t, text, "ADTY_TEST_PG_DSN")
-	require.Contains(t, text, "postgres:16")
+	for _, fixture := range []struct {
+		file string
+		jobs []string
+	}{
+		{"ci.yml", []string{"backend", "e2e"}},
+		{"adty-ghcr.yml", []string{"test"}},
+	} {
+		data, err := os.ReadFile("../.github/workflows/" + fixture.file)
+		require.NoError(t, err)
+		var workflow struct {
+			Jobs map[string]struct {
+				Services map[string]struct{ Image string }
+				Env      map[string]string
+			}
+		}
+		require.NoError(t, yaml.Unmarshal(data, &workflow))
+		for _, name := range fixture.jobs {
+			job, ok := workflow.Jobs[name]
+			require.True(t, ok, "%s/%s", fixture.file, name)
+			require.Equal(t, "postgres:17", job.Services["postgres"].Image, "%s/%s", fixture.file, name)
+			require.NotEmpty(t, job.Env["ADTY_TEST_PG_DSN"], "%s/%s", fixture.file, name)
+		}
+	}
+	for _, fixture := range []struct{ file, image string }{
+		{"docker-compose.yml", "postgres:17"},
+		{"docker-compose.dev.yml", "postgres:17-alpine"},
+		{"deploy/adty/docker-compose.yml", "postgres:17"},
+	} {
+		data, err := os.ReadFile("../" + fixture.file)
+		require.NoError(t, err)
+		var compose struct {
+			Services map[string]struct{ Image string }
+		}
+		require.NoError(t, yaml.Unmarshal(data, &compose))
+		require.Equal(t, fixture.image, compose.Services["postgres"].Image, fixture.file)
+	}
 }
 
 func TestSeedAdtyGroupsOnce(t *testing.T) {

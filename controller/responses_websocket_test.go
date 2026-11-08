@@ -416,6 +416,8 @@ func newResponsesWSBillingTest(t *testing.T, expression string, handle func(*web
 	})
 	gateway := httptest.NewServer(engine)
 	fixture.gatewayURL = gateway.URL
+	// LIFO cleanup stops WS and HTTP handlers before draining their async jobs.
+	t.Cleanup(func() { drainControllerTestPool(t) })
 	t.Cleanup(gateway.Close)
 	client, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(gateway.URL, "http")+"/v1/responses", http.Header{"Authorization": []string{"Bearer sk-" + token.Key}})
 	require.NoError(t, err)

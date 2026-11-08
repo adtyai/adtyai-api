@@ -20,7 +20,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { useAuthStore } from '@/stores/auth-store'
 
 import { PromoPanel } from '../components/promo-panel'
 
@@ -40,7 +42,19 @@ function wrap(node: ReactNode) {
   return <QueryClientProvider client={client}>{node}</QueryClientProvider>
 }
 
+afterEach(() => useAuthStore.getState().auth.reset())
+
 beforeEach(() => {
+  useAuthStore.getState().auth.setUser({
+    id: 10,
+    username: 'promo-admin',
+    role: 10,
+    permissions: {
+      admin_permissions: {
+        adty_marketing: { read: true, create: true, write: true },
+      },
+    },
+  })
   vi.clearAllMocks()
   api.getPromoCodes.mockResolvedValue({ items: [], total: 0, page: 1 })
   api.savePromoCode.mockResolvedValue({ id: 1 })
@@ -49,7 +63,7 @@ beforeEach(() => {
 describe('PromoPanel', () => {
   it('creates an upper-case percent code', async () => {
     const user = userEvent.setup()
-    render(wrap(<PromoPanel canWrite />))
+    render(wrap(<PromoPanel canCreate canWrite />))
     await user.click(
       await screen.findByRole('button', { name: 'New promo code' })
     )
@@ -69,7 +83,7 @@ describe('PromoPanel', () => {
 
   it('does not save a code shorter than 8 characters', async () => {
     const user = userEvent.setup()
-    render(wrap(<PromoPanel canWrite />))
+    render(wrap(<PromoPanel canCreate canWrite />))
     await user.click(
       await screen.findByRole('button', { name: 'New promo code' })
     )
@@ -80,7 +94,7 @@ describe('PromoPanel', () => {
   })
 
   it('hides editing without the edit permission', async () => {
-    render(wrap(<PromoPanel canWrite={false} />))
+    render(wrap(<PromoPanel canCreate={false} canWrite={false} />))
     expect(await screen.findByText('No promo codes yet')).toBeInTheDocument()
     expect(
       screen.queryByRole('button', { name: 'New promo code' })

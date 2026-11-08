@@ -28,8 +28,10 @@ import { LoadingState } from '@/components/loading-state'
 import { Button } from '@/components/ui/button'
 import { Combobox } from '@/components/ui/combobox'
 import { Label } from '@/components/ui/label'
+import { ADTY_PERMISSIONS, canAdmin } from '@/lib/adty-permissions'
 import { getLobeIcon } from '@/lib/lobe-icon'
 import { createServerError } from '@/lib/server-error-message'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { getVendors } from '../../api'
 import { vendorsQueryKeys } from '../../lib'
@@ -53,6 +55,12 @@ export function VendorOperationDialog(props: {
     props.selection.target_vendor_id?.toString() ?? ''
   )
   const action = props.selection.action
+  const currentUser = useAuthStore((state) => state.auth.user)
+  const canApply =
+    (action === 'delete' ||
+      canAdmin(currentUser, ADTY_PERMISSIONS.MODEL_WRITE)) &&
+    (action === 'assign' ||
+      canAdmin(currentUser, ADTY_PERMISSIONS.MODEL_DELETE))
   const vendorsQuery = useQuery({
     queryKey: vendorsQueryKeys.list(),
     queryFn: async () => {
@@ -87,14 +95,33 @@ export function VendorOperationDialog(props: {
         : props.selection.vendor_ids,
   }
   const preview = useMutation({
-    mutationFn: () => previewVendorOperation(request),
+    mutationFn: () => {
+      if (
+        !canAdmin(
+          useAuthStore.getState().auth.user,
+          ADTY_PERMISSIONS.MODEL_READ
+        )
+      ) {
+        throw new Error(t('No permission to perform this action'))
+      }
+      return previewVendorOperation(request)
+    },
   })
   const apply = useMutation({
-    mutationFn: () =>
-      applyVendorOperation({
+    mutationFn: () => {
+      const user = useAuthStore.getState().auth.user
+      if (
+        (action !== 'delete' &&
+          !canAdmin(user, ADTY_PERMISSIONS.MODEL_WRITE)) ||
+        (action !== 'assign' && !canAdmin(user, ADTY_PERMISSIONS.MODEL_DELETE))
+      ) {
+        throw new Error(t('No permission to perform this action'))
+      }
+      return applyVendorOperation({
         ...request,
         expected_version: preview.data?.version,
-      }),
+      })
+    },
     onSuccess: async (result) => {
       await invalidateVendorData(client)
       toast.success(
@@ -148,7 +175,7 @@ export function VendorOperationDialog(props: {
           {preview.data && (
             <Button
               variant={action === 'assign' ? 'default' : 'destructive'}
-              disabled={busy || apply.isError}
+              disabled={busy || apply.isError || !canApply}
               onClick={() => apply.mutate()}
             >
               {busy ? t('Applying...') : t('Apply changes')}

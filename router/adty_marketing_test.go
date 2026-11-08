@@ -156,7 +156,7 @@ func TestMarketingTriggersAndUnsubscribeLink(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, resp.Code)
 }
 
-// 优惠码后台：编辑权限才能建；码统一大写、不能重复；百分比不能超过 100（任务 12.4）。
+// 优惠码后台：创建和编辑分别授权；码统一大写、不能重复；百分比不能超过 100。
 func TestPromoCodeAdmin(t *testing.T) {
 	f := newAdtyGuardFixture(t)
 	body := `{"code":"spring-10","kind":"percent","value":"10","min_face_usd":"30","max_uses":100,"per_user_limit":1,"enabled":true}`
@@ -165,6 +165,9 @@ func TestPromoCodeAdmin(t *testing.T) {
 	assert.Equal(t, http.StatusForbidden, resp.Code)
 
 	f.grant(t, authz.AdtyMarketingRead, authz.AdtyMarketingWrite)
+	resp = adtyJSON(t, f.engine, http.MethodPost, "/api/adty/admin/marketing/promo-codes", body, f.token)
+	assert.Equal(t, http.StatusForbidden, resp.Code, "write cannot replace create")
+	f.grant(t, authz.AdtyMarketingRead, authz.AdtyMarketingCreate)
 	resp = adtyJSON(t, f.engine, http.MethodPost, "/api/adty/admin/marketing/promo-codes", body, f.token)
 	require.Equal(t, http.StatusOK, resp.Code)
 	assert.Contains(t, resp.Body.String(), `"code":"SPRING-10"`)
@@ -181,6 +184,7 @@ func TestPromoCodeAdmin(t *testing.T) {
 
 	var code model.AdtyPromoCode
 	require.NoError(t, f.db.Where("code = ?", "SPRING-10").First(&code).Error)
+	f.grant(t, authz.AdtyMarketingRead, authz.AdtyMarketingWrite)
 	resp = adtyJSON(t, f.engine, http.MethodPut, "/api/adty/admin/marketing/promo-codes/"+common.Interface2String(code.Id),
 		`{"code":"OTHER","kind":"fixed","value":"5","enabled":false}`, f.token)
 	require.Equal(t, http.StatusOK, resp.Code)
@@ -341,7 +345,7 @@ func TestPromoDisabledBlocksQuoteAndPay(t *testing.T) {
 	require.Contains(t, epayRejected.Body.String(), "Promo codes are turned off")
 	usdtRejected := adtyJSON(t, f.engine, http.MethodPost, "/api/user/bepusdt/pay", `{"amount":100,"chain":"usdt.trc20","promo_code":"save10pct"}`, token)
 	require.Contains(t, usdtRejected.Body.String(), "Promo codes are turned off")
-	assert.Zero(t, gw.creates)
+	assert.Zero(t, gw.snapshot().creates)
 	var orders int64
 	require.NoError(t, f.db.Model(&model.TopUp{}).Where("user_id = ?", user.Id).Count(&orders).Error)
 	assert.Zero(t, orders)
@@ -365,7 +369,7 @@ func TestPromoDisabledBlocksQuoteAndPay(t *testing.T) {
 	usdtView := decodeAdtyData[model.AdtyTopUpView](t, paid.Body)
 	require.NotNil(t, usdtView.Ext)
 	assert.Equal(t, "10", usdtView.Ext.PromoBonusUSD.String())
-	assert.Equal(t, 1, gw.creates)
+	assert.Equal(t, 1, gw.snapshot().creates)
 
 	epayPaid := adtyJSON(t, f.engine, http.MethodPost, "/api/adty/epay/pay", `{"amount":100,"method":"alipay","device":"pc","promo_code":"SAVE10PCT"}`, token)
 	epayView := decodeAdtyData[model.AdtyTopUpView](t, epayPaid.Body)

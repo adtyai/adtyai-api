@@ -4,7 +4,66 @@ import (
 	"math"
 
 	"github.com/QuantumNous/new-api/common"
+	"gorm.io/gorm"
 )
+
+// checkedQuotaSum rejects overflow instead of changing a durable amount.
+func checkedQuotaSum(base, delta int) (int, error) {
+	if (delta > 0 && base > math.MaxInt-delta) || (delta < 0 && base < math.MinInt-delta) {
+		return 0, ErrWalletQuotaLimitExceeded
+	}
+	return base + delta, nil
+}
+
+func checkedQuotaDifference(base, delta int) (int, error) {
+	if (delta > 0 && base < math.MinInt+delta) || (delta < 0 && base > math.MaxInt+delta) {
+		return 0, ErrWalletQuotaLimitExceeded
+	}
+	return base - delta, nil
+}
+
+func userWalletBalance(raw, pending int) (int, error) {
+	balance, err := checkedQuotaSum(raw, pending)
+	if err != nil || balance > common.MaxWalletQuota {
+		return 0, ErrWalletQuotaLimitExceeded
+	}
+	return balance, nil
+}
+
+// applyUserQuotaDeltaTx requires the caller's user row lock. Positive pending
+// credits may leave the raw row negative; only the logical balance is used for
+// admission. Check-in gifts follow actual consumption before any later credit.
+func applyUserQuotaDeltaTx(tx *gorm.DB, user *User, delta int, pending bool) error {
+	balance, err := userWalletBalance(user.Quota, user.QuotaPending)
+	if err != nil {
+		return err
+	}
+	after, err := userWalletBalance(balance, delta)
+	if err != nil {
+		return err
+	}
+	field, current := "quota", user.Quota
+	if pending {
+		field, current = "quota_pending", user.QuotaPending
+	}
+	updated, err := checkedQuotaSum(current, delta)
+	if err != nil {
+		return err
+	}
+	if delta == 0 {
+		return nil
+	}
+	result := tx.Model(&User{}).Where("id = ?", user.Id).Updates(map[string]any{
+		field: updated, "checkin_quota": max(0, min(user.CheckinQuota, balance, after)),
+	})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
 
 func pendingBatchDelta(kind int, id int) int {
 	if kind < 0 || kind >= len(batchUpdateStores) || id == 0 {
@@ -24,41 +83,59 @@ func pendingBatchDeltaLocked(kind int, id int) int {
 	return batchUpdateStores[kind][id]
 }
 
-// userQuotaBatchDelta reads the unflushed user-quota delta while holding the
-// queue lock. Callers must not hold a database row lock first: batchUpdate
-// takes this same lock and then writes the database, so the opposite order
-// deadlocks. The delta is a point-in-time value for the lower-bound check.
-func userQuotaBatchDelta(id int) int {
-	return pendingBatchDelta(BatchUpdateTypeUserQuota, id)
-}
-
 func saturatingAddInt(base int, delta int) int {
-	sum := int64(base) + int64(delta)
-	if sum > math.MaxInt {
+	if delta > 0 && base > math.MaxInt-delta {
 		return math.MaxInt
 	}
-	if sum < math.MinInt {
+	if delta < 0 && base < math.MinInt-delta {
 		return math.MinInt
 	}
-	return int(sum)
+	return base + delta
 }
 
-// TokenQuotaForBilling 返回令牌当前剩余和已用。批量更新还没刷进库的差额也算进去。
+func tokenQuotaBalance(token *Token) (remain, used int, err error) {
+	remain, err = checkedQuotaSum(token.RemainQuota, token.QuotaPending)
+	if err != nil {
+		return 0, 0, err
+	}
+	used, err = checkedQuotaDifference(token.UsedQuota, token.QuotaPending)
+	return remain, used, err
+}
+
+// projectTokenQuota only changes a returned snapshot. SQL rows retain their
+// pending amount until the locked flush or an explicit limit replacement.
+func projectTokenQuota(token *Token) error {
+	remain, used, err := tokenQuotaBalance(token)
+	if err != nil {
+		return err
+	}
+	token.RemainQuota, token.UsedQuota, token.QuotaPending = remain, used, 0
+	return nil
+}
+
+// TokenQuotaForBilling includes durable deltas, never process-local hints.
 func TokenQuotaForBilling(token *Token) (remain int, used int) {
 	if token == nil {
 		return 0, 0
 	}
-	delta := pendingBatchDelta(BatchUpdateTypeTokenQuota, token.Id)
-	return saturatingAddInt(token.RemainQuota, delta), saturatingAddInt(token.UsedQuota, -delta)
+	remain, used, err := tokenQuotaBalance(token)
+	if err != nil {
+		common.SysError(common.LogText("invalid durable token balance: token=%d", token.Id))
+		return 0, 0
+	}
+	return remain, used
 }
 
-// UserQuotaForBilling 返回用户当前剩余和已用。批量更新打开时以数据库加队列差额为准，避免和 Redis 增量加两次。
+// UserQuotaForBilling returns the durable logical wallet and usage statistics.
 func UserQuotaForBilling(id int) (remain int, used int, err error) {
-	if common.BatchUpdateEnabled {
-		remain, err = GetUserQuota(id, true)
-	} else {
-		remain, err = GetUserQuota(id, false)
+	// Preserve the authentication fence for the billing endpoint while wallet
+	// amounts themselves continue to come from the durable database balance.
+	if common.RedisEnabled {
+		if _, err = GetUserCache(id); err != nil {
+			return 0, 0, err
+		}
 	}
+	remain, err = GetUserQuota(id, false)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -67,7 +144,6 @@ func UserQuotaForBilling(id int) (remain int, used int, err error) {
 		return 0, 0, err
 	}
 	if common.BatchUpdateEnabled {
-		remain = saturatingAddInt(remain, userQuotaBatchDelta(id))
 		used = saturatingAddInt(used, pendingBatchDelta(BatchUpdateTypeUsedQuota, id))
 	}
 	return remain, used, nil

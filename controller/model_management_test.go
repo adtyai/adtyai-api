@@ -12,23 +12,34 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	"github.com/QuantumNous/new-api/pkg/jsplugin"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/service/authz"
 	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/QuantumNous/new-api/setting/config"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
+	"github.com/bytedance/gopkg/util/gopool"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
+
+// Call after request producers stop, before restoring their shared fixtures.
+func drainControllerTestPool(t *testing.T) {
+	t.Helper()
+	require.Eventually(t, func() bool { return gopool.WorkerCount() == 0 }, 5*time.Second, time.Millisecond,
+		"controller background jobs did not stop before fixture cleanup")
+}
 
 func modelManagementDB(t *testing.T, kind, dsn string) *gorm.DB {
 	t.Helper()
@@ -64,7 +75,7 @@ func modelManagementDB(t *testing.T, kind, dsn string) *gorm.DB {
 	require.NoError(t, model.InitDB())
 	database = model.DB
 	model.LOG_DB = database
-	require.NoError(t, database.AutoMigrate(&model.Model{}, &model.Vendor{}, &model.Channel{}, &model.Ability{}, &model.Option{}, &model.User{}, &model.AuditLog{}))
+	require.NoError(t, database.AutoMigrate(&model.Model{}, &model.Vendor{}, &model.Channel{}, &model.Ability{}, &model.Option{}, &model.User{}, &model.AuditLog{}, &model.AuditIntent{}))
 	for _, value := range restoreRatios {
 		require.NoError(t, value.restore("{}"))
 	}
@@ -77,6 +88,7 @@ func modelManagementDB(t *testing.T, kind, dsn string) *gorm.DB {
 	require.NoError(t, database.Raw(query).Scan(&version).Error)
 	t.Logf("database version: %s", version)
 	t.Cleanup(func() {
+		drainControllerTestPool(t)
 		for _, value := range restoreRatios {
 			require.NoError(t, value.restore(value.value))
 		}
@@ -890,7 +902,7 @@ export function parseTaskResult() { return {}; }
 				results := make(chan error, 2)
 				for range 2 {
 					wg.Go(func() {
-						_, err := model.ApplyMetadataSync([]model.MetadataSyncUpdate{update}, nil)
+						_, err := model.ApplyMetadataSync([]model.MetadataSyncUpdate{update}, nil, func(model.MetadataSyncActions) error { return nil })
 						results <- err
 					})
 				}
@@ -1063,6 +1075,258 @@ export function parseTaskResult() { return {}; }
 				modelManagementRequest(t, SyncUpstreamPreview, "GET", "/api/models/sync_upstream/preview?locale=zh", nil, &preview)
 				assert.False(t, preview.Success)
 			})
+		})
+	}
+}
+
+func setupMetadataActionPermissions(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	require.NoError(t, db.AutoMigrate(&model.CasbinRule{}, &model.AuthzRole{}, &model.AuthzActionCatalogState{}))
+	wasMaster, wasEnabled := common.IsMasterNode, service.AdtyAdminPermissionsEnabled()
+	common.IsMasterNode = true
+	restore := middleware.EnableAdtyAdminPermissions()
+	require.NoError(t, authz.Init(db))
+	t.Cleanup(func() {
+		restore()
+		service.SetAdtyAdminPermissionsEnabled(wasEnabled)
+		require.NoError(t, authz.Init(db))
+		common.IsMasterNode = wasMaster
+	})
+}
+
+func TestVendorOperationActionPermissionsDatabaseMatrix(t *testing.T) {
+	for _, dialect := range []struct{ kind, env string }{{"sqlite", ""}, {"postgres", "TEST_POSTGRES_DSN"}} {
+		t.Run(dialect.kind, func(t *testing.T) {
+			if dialect.env != "" && os.Getenv(dialect.env) == "" {
+				t.Skip("set " + dialect.env + " to run this database")
+			}
+			db := modelManagementDB(t, dialect.kind, os.Getenv(dialect.env))
+			setupMetadataActionPermissions(t, db)
+			for i, tc := range []struct {
+				name                                     string
+				action                                   string
+				write, delete, token, tokenDelete, allow bool
+			}{
+				{name: "assign_update_only", action: "assign", write: true, allow: true},
+				{name: "assign_delete_only", action: "assign", delete: true},
+				{name: "merge_update_only", action: "merge", write: true},
+				{name: "merge_delete_only", action: "merge", delete: true},
+				{name: "merge_both", action: "merge", write: true, delete: true, allow: true},
+				{name: "delete_delete_only", action: "delete", delete: true, allow: true},
+				{name: "delete_update_only", action: "delete", write: true},
+				{name: "merge_pat_missing_delete", action: "merge", write: true, delete: true, token: true},
+				{name: "merge_pat_both", action: "merge", write: true, delete: true, token: true, tokenDelete: true, allow: true},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					require.NoError(t, authz.SetUserPermissions(901, authz.PermissionsMap{authz.ResourceAdtyModel: {authz.ActionWrite: tc.write, authz.ActionDelete: tc.delete}}))
+					source := model.Vendor{Name: fmt.Sprintf("Action source %d", i)}
+					target := model.Vendor{Name: fmt.Sprintf("Action target %d", i)}
+					require.NoError(t, source.Insert())
+					require.NoError(t, target.Insert())
+					local := model.Model{ModelName: fmt.Sprintf("action-vendor-%d", i), VendorID: source.Id, SyncOfficial: 1, Status: 1}
+					if tc.action != "delete" {
+						require.NoError(t, local.Insert())
+					}
+					operation := model.VendorOperation{Action: tc.action, VendorIDs: []int{source.Id}, TargetVendorID: target.Id}
+					if tc.action == "assign" {
+						operation.VendorIDs, operation.ModelIDs = nil, []int{local.Id}
+					}
+					preview, err := model.PreviewVendorOperation(operation)
+					require.NoError(t, err)
+					operation.ExpectedVersion = preview.Version
+					response := modelManagementRequest(t, func(c *gin.Context) {
+						c.Set("id", 901)
+						c.Set("role", common.RoleAdminUser)
+						if tc.token {
+							scopes := []string{service.AccessTokenScopeOf(authz.AdtyModelWrite)}
+							if tc.tokenDelete {
+								scopes = append(scopes, service.AccessTokenScopeOf(authz.AdtyModelDelete))
+							}
+							c.Set("access_token_legacy", false)
+							c.Set("access_token_scopes", scopes)
+						}
+						ApplyVendorOperation(c)
+					}, http.MethodPost, "/api/vendors/operations", operation, nil)
+					if !tc.allow {
+						assert.Equal(t, http.StatusForbidden, response.Code, response.Body.String())
+						assert.Contains(t, response.Body.String(), AdtyPermissionDeniedCode)
+						_, err = model.GetVendorByID(source.Id)
+						require.NoError(t, err)
+						if local.Id != 0 {
+							var stored model.Model
+							require.NoError(t, db.First(&stored, local.Id).Error)
+							assert.Equal(t, source.Id, stored.VendorID)
+						}
+						return
+					}
+					assert.Equal(t, http.StatusOK, response.Code, response.Body.String())
+					assert.Contains(t, response.Body.String(), `"success":true`)
+					if local.Id != 0 {
+						var stored model.Model
+						require.NoError(t, db.First(&stored, local.Id).Error)
+						assert.Equal(t, target.Id, stored.VendorID)
+					}
+					if tc.action != "assign" {
+						_, err = model.GetVendorByID(source.Id)
+						assert.ErrorIs(t, err, gorm.ErrRecordNotFound)
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestMetadataSyncActionAuthorizationDatabaseMatrix(t *testing.T) {
+	for _, dialect := range []struct{ kind, env string }{{"sqlite", ""}, {"postgres", "TEST_POSTGRES_DSN"}} {
+		t.Run(dialect.kind, func(t *testing.T) {
+			if dialect.env != "" && os.Getenv(dialect.env) == "" {
+				t.Skip("set " + dialect.env + " to run this database")
+			}
+			db := modelManagementDB(t, dialect.kind, os.Getenv(dialect.env))
+			for i, tc := range []struct {
+				name                         string
+				create, update, vendor, deny bool
+			}{
+				{name: "create", create: true},
+				{name: "update", update: true},
+				{name: "implicit_vendor", update: true, vendor: true},
+				{name: "mixed_denied", create: true, update: true, vendor: true, deny: true},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					local := model.Model{ModelName: fmt.Sprintf("action-existing-%d", i), Description: "Before", SyncOfficial: 1, Status: 1}
+					require.NoError(t, local.Insert())
+					name := fmt.Sprintf("action-created-%d", i)
+					vendorName := fmt.Sprintf("Action implicit vendor %d", i)
+					var updates []model.MetadataSyncUpdate
+					if tc.update {
+						fields := []string{"description"}
+						values := model.MetadataValues{Description: "After", Status: 1}
+						if tc.vendor {
+							fields = append(fields, "vendor")
+							values.Vendor = vendorName
+						}
+						updates = append(updates, model.MetadataSyncUpdate{MetadataSyncSelection: model.MetadataSyncSelection{ModelName: local.ModelName, RecordVersion: model.MetadataRecordVersion(&local, nil, nil), Fields: fields}, Values: values})
+					}
+					if tc.create {
+						updates = append(updates, model.MetadataSyncUpdate{MetadataSyncSelection: model.MetadataSyncSelection{ModelName: name, RecordVersion: model.MetadataRecordVersion(nil, nil, nil), Create: true}, Values: model.MetadataValues{Description: "Created", Status: 1}})
+					}
+					calls := 0
+					denied := errors.New("test action authorization denied")
+					_, err := model.ApplyMetadataSync(updates, map[string]model.Vendor{vendorName: {Name: vendorName, Status: 1}}, func(actions model.MetadataSyncActions) error {
+						calls++
+						assert.Equal(t, model.MetadataSyncActions{Create: tc.create || tc.vendor, Update: tc.update}, actions)
+						if tc.deny {
+							return denied
+						}
+						return nil
+					})
+					assert.Equal(t, 1, calls)
+					var stored model.Model
+					require.NoError(t, db.First(&stored, local.Id).Error)
+					var created, vendors int64
+					require.NoError(t, db.Model(&model.Model{}).Where("model_name = ?", name).Count(&created).Error)
+					require.NoError(t, db.Model(&model.Vendor{}).Where("name = ?", vendorName).Count(&vendors).Error)
+					if tc.deny {
+						assert.ErrorIs(t, err, denied)
+						assert.Equal(t, "Before", stored.Description)
+						assert.Zero(t, stored.VendorID)
+						assert.Zero(t, created)
+						assert.Zero(t, vendors)
+					} else {
+						require.NoError(t, err)
+						if tc.update {
+							assert.Equal(t, "After", stored.Description)
+						}
+						if tc.create {
+							assert.EqualValues(t, 1, created)
+						}
+						if tc.vendor {
+							assert.EqualValues(t, 1, vendors)
+							assert.Positive(t, stored.VendorID)
+						}
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestMetadataSyncControllerActionPermissionsDatabaseMatrix(t *testing.T) {
+	for _, dialect := range []struct{ kind, env string }{{"sqlite", ""}, {"postgres", "TEST_POSTGRES_DSN"}} {
+		t.Run(dialect.kind, func(t *testing.T) {
+			if dialect.env != "" && os.Getenv(dialect.env) == "" {
+				t.Skip("set " + dialect.env + " to run this database")
+			}
+			db := modelManagementDB(t, dialect.kind, os.Getenv(dialect.env))
+			setupMetadataActionPermissions(t, db)
+			local := model.Model{ModelName: "action-http-existing", Description: "Before", SyncOfficial: 1, Status: 1}
+			require.NoError(t, local.Insert())
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var payload any
+				if strings.HasSuffix(r.URL.Path, "vendors.json") {
+					payload = []upstreamVendor{{Name: "Action HTTP vendor", Status: 1}}
+				} else {
+					payload = []upstreamModel{
+						{ModelName: local.ModelName, Description: "After", VendorName: "Action HTTP vendor", Status: 1},
+						{ModelName: "action-http-created", Description: "Created", Status: 1},
+					}
+				}
+				encoded, err := common.Marshal(payload)
+				require.NoError(t, err)
+				_, _ = w.Write(encoded)
+			}))
+			defer upstream.Close()
+			t.Setenv("SYNC_UPSTREAM_BASE", upstream.URL)
+			t.Setenv("SYNC_HTTP_RETRY", "1")
+			var preview struct {
+				Data struct {
+					Source     metadataSyncSource
+					Candidates []metadataSyncCandidate
+				}
+			}
+			response := modelManagementRequest(t, SyncUpstreamPreview, http.MethodGet, "/api/models/sync_upstream/preview?locale=en", nil, &preview)
+			require.Equal(t, http.StatusOK, response.Code)
+			byName := map[string]metadataSyncCandidate{}
+			for _, candidate := range preview.Data.Candidates {
+				byName[candidate.ModelName] = candidate
+			}
+			selections := []model.MetadataSyncSelection{{ModelName: local.ModelName, RecordVersion: byName[local.ModelName].RecordVersion, Fields: []string{"description", "vendor"}}}
+			body := map[string]any{"locale": "en", "source_version": preview.Data.Source.Version, "selections": selections}
+			request := func(scopes []string) *httptest.ResponseRecorder {
+				return modelManagementRequest(t, func(c *gin.Context) {
+					c.Set("id", 902)
+					c.Set("role", common.RoleAdminUser)
+					if scopes != nil {
+						c.Set("access_token_legacy", false)
+						c.Set("access_token_scopes", scopes)
+					}
+					SyncUpstreamModels(c)
+				}, http.MethodPost, "/api/models/sync_upstream", body, nil)
+			}
+			require.NoError(t, authz.SetUserPermissions(902, authz.PermissionsMap{authz.ResourceAdtyModel: {authz.ActionWrite: true, authz.ActionCreate: false}}))
+			response = request(nil)
+			assert.Equal(t, http.StatusForbidden, response.Code, response.Body.String())
+			var stored model.Model
+			require.NoError(t, db.First(&stored, local.Id).Error)
+			assert.Equal(t, "Before", stored.Description)
+			var vendors int64
+			require.NoError(t, db.Model(&model.Vendor{}).Count(&vendors).Error)
+			assert.Zero(t, vendors, "update permission alone cannot create an implicit vendor")
+			require.NoError(t, authz.SetUserPermissions(902, authz.PermissionsMap{authz.ResourceAdtyModel: {authz.ActionCreate: true}}))
+			response = request([]string{service.AccessTokenScopeOf(authz.AdtyModelWrite)})
+			assert.Equal(t, http.StatusForbidden, response.Code, response.Body.String())
+			response = request([]string{service.AccessTokenScopeOf(authz.AdtyModelWrite), service.AccessTokenScopeOf(authz.AdtyModelCreate)})
+			require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+			require.NoError(t, db.First(&stored, local.Id).Error)
+			assert.Equal(t, "After", stored.Description)
+			assert.Positive(t, stored.VendorID)
+			require.NoError(t, authz.SetUserPermissions(902, authz.PermissionsMap{authz.ResourceAdtyModel: {authz.ActionWrite: false}}))
+			body["selections"] = []model.MetadataSyncSelection{{ModelName: "action-http-created", RecordVersion: byName["action-http-created"].RecordVersion, Create: true}}
+			response = request(nil)
+			assert.Equal(t, http.StatusOK, response.Code, response.Body.String())
+			var created model.Model
+			require.NoError(t, db.Where("model_name = ?", "action-http-created").First(&created).Error)
+			assert.Equal(t, "Created", created.Description)
 		})
 	}
 }

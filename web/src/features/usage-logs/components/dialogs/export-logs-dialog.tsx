@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query'
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -18,15 +19,18 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { getRouteApi } from '@tanstack/react-router'
 import { Loader2 } from 'lucide-react'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import { Dialog } from '@/components/dialog'
 import { Button } from '@/components/ui/button'
 import { useStatus } from '@/hooks/use-status'
+import { ADTY_PERMISSIONS, canAdmin } from '@/lib/adty-permissions'
 import dayjs from '@/lib/dayjs'
 import { handleServerError } from '@/lib/handle-server-error'
+import { STATUS_QUERY_KEY, type StatusData } from '@/lib/status-query'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { exportLogs } from '../../api'
 import {
@@ -51,14 +55,26 @@ const DEFAULT_MAX_RANGE_DAYS = 365
 export function ExportLogsDialog() {
   const { t } = useTranslation()
   const searchParams = route.useSearch()
-  const { canManageScope, isAdminView } = useLogsViewScope()
+  const { isAdminView } = useLogsViewScope()
+  const user = useAuthStore((state) => state.auth.user)
+  const canExportAll = canAdmin(user, ADTY_PERMISSIONS.LOG_EXPORT)
   const { status } = useStatus()
+  const queryClient = useQueryClient()
   const [open, setOpen] = useState(false)
   const [range, setRange] = useState<{ start?: Date; end?: Date }>({})
   const [exportedCount, setExportedCount] = useState<number | null>(null)
   const abortRef = useRef<AbortController | null>(null)
+  const exportAllowed = isAdminView
+    ? canExportAll
+    : status?.log_export_enabled !== false
 
-  if (!canManageScope && status?.log_export_enabled === false) return null
+  useEffect(() => {
+    if (!exportAllowed) abortRef.current?.abort()
+    return () => abortRef.current?.abort()
+  }, [exportAllowed, isAdminView])
+
+  if (isAdminView && !canExportAll) return null
+  if (!isAdminView && status?.log_export_enabled === false) return null
 
   const maxDays = status?.log_max_range_days || DEFAULT_MAX_RANGE_DAYS
   const startMs = range.start?.getTime()
@@ -95,6 +111,19 @@ export function ExportLogsDialog() {
   }
 
   const handleExport = async () => {
+    const canDispatch = () =>
+      isAdminView
+        ? canAdmin(
+            useAuthStore.getState().auth.user,
+            ADTY_PERMISSIONS.LOG_EXPORT
+          )
+        : (
+            queryClient.getQueryData<StatusData | null>(STATUS_QUERY_KEY) ??
+            status
+          )?.log_export_enabled !== false
+    if (!exportAllowed || !canDispatch()) {
+      return
+    }
     if (!range.start || !range.end) return
     const controller = new AbortController()
     abortRef.current = controller
@@ -117,12 +146,17 @@ export function ExportLogsDialog() {
         isAdminView,
         {
           signal: controller.signal,
+          beforeRequest: () => {
+            if (!canDispatch()) controller.abort()
+          },
           onLog: (log) => {
             lines.push(toCsvLine(getLogCsvRow(log, isAdminView, t)))
             if (lines.length % 500 === 0) setExportedCount(lines.length - 1)
           },
         }
       )
+      if (!canDispatch()) controller.abort()
+      controller.signal.throwIfAborted()
       downloadCsv(
         `usage-logs-${dayjs(range.start).format('YYYYMMDD')}-${dayjs(range.end).format('YYYYMMDD')}.csv`,
         lines
@@ -130,7 +164,9 @@ export function ExportLogsDialog() {
       toast.success(t('Exported {{count}} logs', { count }))
       setOpen(false)
     } catch (error) {
-      handleServerError(error, t('Failed to export logs'))
+      if (!controller.signal.aborted) {
+        handleServerError(error, t('Failed to export logs'))
+      }
     } finally {
       abortRef.current = null
       setExportedCount(null)

@@ -19,7 +19,6 @@ import (
 )
 
 func callResetCodexUsage(channelID int) *httptest.ResponseRecorder {
-	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
 	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/channel/"+strconv.Itoa(channelID)+"/codex/usage/reset", nil)
@@ -72,6 +71,7 @@ func decodeResetResponse(t *testing.T, recorder *httptest.ResponseRecorder) map[
 
 // 响应丢失和上游 5xx 后再点，沿用已落库的同一枚 redeem_request_id。上游 2xx 之后才换新键。
 func TestResetCodexChannelUsageReusesRedeemRequestID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
 	db := adtyTestDB(t)
 	require.NoError(t, db.AutoMigrate(&model.Channel{}))
 
@@ -137,6 +137,7 @@ func TestResetCodexChannelUsageReusesRedeemRequestID(t *testing.T) {
 
 // 401 后刷新令牌再重试，两次 consume 使用同一枚键；确认成功后键被清掉。
 func TestResetCodexChannelUsageKeepsRedeemIDAcrossTokenRefresh(t *testing.T) {
+	gin.SetMode(gin.TestMode)
 	db := adtyTestDB(t)
 	require.NoError(t, db.AutoMigrate(&model.Channel{}))
 
@@ -183,6 +184,7 @@ func TestResetCodexChannelUsageKeepsRedeemIDAcrossTokenRefresh(t *testing.T) {
 
 // 两次同时重置只能占一枚键，上游收到的 redeem_request_id 相同。
 func TestResetCodexChannelUsageConcurrentClickSharesRedeemID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
 	db := adtyTestDB(t)
 	require.NoError(t, db.AutoMigrate(&model.Channel{}))
 

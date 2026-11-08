@@ -96,16 +96,23 @@ export const getUserLogStats = (
 export async function exportLogs(
   params: GetLogsParams,
   isAdmin: boolean,
-  options: { signal: AbortSignal; onLog: (log: UsageLog) => void }
+  options: {
+    signal: AbortSignal
+    onLog: (log: UsageLog) => void
+    beforeRequest?: () => void
+  }
 ): Promise<number> {
   const queryParams = buildQueryParams(
     params as unknown as Record<string, unknown>
   )
+  const headers = await getFreshAuthHeaders()
+  options.beforeRequest?.()
+  options.signal.throwIfAborted()
   const response = await fetch(
     `${buildApiPath('/api/log', isAdmin)}/export?${queryParams}`,
     {
       credentials: 'include',
-      headers: await getFreshAuthHeaders(),
+      headers,
       signal: options.signal,
     }
   )
@@ -119,7 +126,9 @@ export async function exportLogs(
   let buffer = ''
   let result: { success?: unknown; data?: { count?: number } } | null = null
   for (;;) {
+    options.signal.throwIfAborted()
     const { done, value } = await reader.read()
+    options.signal.throwIfAborted()
     buffer += done ? decoder.decode() : decoder.decode(value, { stream: true })
     const lines = buffer.split('\n')
     buffer = done ? '' : (lines.pop() ?? '')

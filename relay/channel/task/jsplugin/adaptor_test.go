@@ -16,6 +16,7 @@ import (
 	"net/textproto"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -781,9 +782,9 @@ export function parseBatchResult() {return [];}
 			adaptor := New(plugin)
 			var resp *http.Response
 			if tc.batch {
-				resp, err = adaptor.FetchBatchTasks(tc.start, "channel-secret", []*model.Task{task}, "")
+				resp, err = adaptor.FetchBatchTasks(context.Background(), tc.start, "channel-secret", []*model.Task{task}, "")
 			} else {
-				resp, err = adaptor.FetchTask(tc.start, "channel-secret", task, "")
+				resp, err = adaptor.FetchTask(context.Background(), tc.start, "channel-secret", task, "")
 			}
 			if tc.wantError != "" {
 				require.ErrorContains(t, err, tc.wantError)
@@ -858,7 +859,7 @@ export function parseBatchResult() {return [];}
 			http.Redirect(w, r, target.URL+"/final", http.StatusFound)
 		}))
 		defer origin.Close()
-		resp, err := New(defaultPlugin).doFetchDescriptor(origin.URL, "", "", requestDescriptor{
+		resp, err := New(defaultPlugin).doFetchDescriptor(context.Background(), origin.URL, "", "", requestDescriptor{
 			URL:     origin.URL + "/query?key=query-secret",
 			Headers: map[string]string{"X-API-Key": "channel-secret", "x-goog-api-key": "channel-secret", "X-Vendor-Credential": "channel-secret"},
 		})
@@ -934,7 +935,7 @@ func TestTaskAdaptorMapsJSContract(t *testing.T) {
 	assert.Empty(t, recorder.Body.String(), "response parsing must not write before the durable task barrier")
 	assert.Equal(t, map[string]float64{"seconds": 7}, adaptor.AdjustBillingOnSubmit(info, []byte(`{"seconds":7}`)))
 
-	queryResp, err := adaptor.FetchTask(server.URL, "secret", &model.Task{
+	queryResp, err := adaptor.FetchTask(context.Background(), server.URL, "secret", &model.Task{
 		Action:      info.Action,
 		PrivateData: model.TaskPrivateData{UpstreamTaskID: parsed.UpstreamTaskID},
 	}, "")
@@ -942,11 +943,11 @@ func TestTaskAdaptorMapsJSContract(t *testing.T) {
 	queryBody, err := io.ReadAll(queryResp.Body)
 	require.NoError(t, err)
 	require.NoError(t, queryResp.Body.Close())
-	result, err := adaptor.ParseTaskResult(&model.Task{}, queryResp, queryBody)
+	result, err := adaptor.ParseTaskResult(context.Background(), &model.Task{}, queryResp, queryBody)
 	require.NoError(t, err)
 	assert.Equal(t, "SUCCESS", result.Status)
 	assert.Equal(t, "https://cdn.example/video.mp4", result.Url)
-	assert.Zero(t, adaptor.AdjustBillingOnComplete(&model.Task{}, result))
+	assert.Zero(t, adaptor.AdjustBillingOnComplete(context.Background(), &model.Task{}, result))
 	assert.Equal(t, 23, result.TotalTokens)
 
 	rendered, err := adaptor.ConvertToOpenAIVideo(&model.Task{TaskID: "task_public", Status: model.TaskStatusSuccess})
@@ -1029,10 +1030,10 @@ export function parseBatchResult() { return {}; }
 					resp, requestErr = adaptor.DoRequest(c, info, body)
 				case "poll":
 					wantKey, wantPlugin = "task-key", "query"
-					resp, requestErr = adaptor.FetchTask(server.URL, "argument-key", task, "")
+					resp, requestErr = adaptor.FetchTask(context.Background(), server.URL, "argument-key", task, "")
 				case "batch":
 					wantKey, wantPlugin = "batch-key", "batch"
-					resp, requestErr = adaptor.FetchBatchTasks(server.URL, "batch-key", []*model.Task{task}, "")
+					resp, requestErr = adaptor.FetchBatchTasks(context.Background(), server.URL, "batch-key", []*model.Task{task}, "")
 				}
 				if resp != nil {
 					t.Cleanup(func() { _ = resp.Body.Close() })
@@ -1389,7 +1390,7 @@ export function extractUsageOnComplete(task, result, body) { return (body || {})
 			adaptor, _, _ := newRequest(t, map[string]any{})
 			body, marshalErr := common.Marshal(map[string]any{"completionUsage": testCase.usage})
 			require.NoError(t, marshalErr)
-			result, parseErr := adaptor.ParseTaskResult(&model.Task{}, &http.Response{StatusCode: http.StatusOK, Header: make(http.Header)}, body)
+			result, parseErr := adaptor.ParseTaskResult(context.Background(), &model.Task{}, &http.Response{StatusCode: http.StatusOK, Header: make(http.Header)}, body)
 			require.NoError(t, parseErr)
 			assert.Nil(t, result.UsageFacts)
 			assert.Zero(t, result.TotalTokens)
@@ -1400,7 +1401,7 @@ export function extractUsageOnComplete(task, result, body) { return (body || {})
 		adaptor, _, _ := newRequest(t, map[string]any{})
 		body, err := common.Marshal(map[string]any{"completionUsage": map[string]any{"tokens": 500000}})
 		require.NoError(t, err)
-		result, err := adaptor.ParseTaskResult(&model.Task{}, &http.Response{StatusCode: http.StatusOK, Header: make(http.Header)}, body)
+		result, err := adaptor.ParseTaskResult(context.Background(), &model.Task{}, &http.Response{StatusCode: http.StatusOK, Header: make(http.Header)}, body)
 		require.NoError(t, err)
 		assert.EqualValues(t, 500000, result.UsageFacts["tokens"])
 	})
@@ -1439,7 +1440,7 @@ export function extractUsageOnComplete() { return {units: 3.5}; }
 
 		body, err := common.Marshal(map[string]any{})
 		require.NoError(t, err)
-		result, err := adaptor.ParseTaskResult(&model.Task{}, &http.Response{StatusCode: http.StatusOK, Header: make(http.Header)}, body)
+		result, err := adaptor.ParseTaskResult(context.Request.Context(), &model.Task{}, &http.Response{StatusCode: http.StatusOK, Header: make(http.Header)}, body)
 		require.NoError(t, err)
 		assert.Equal(t, 3.5, result.UsageFacts["units"])
 	})
@@ -1448,7 +1449,7 @@ export function extractUsageOnComplete() { return {units: 3.5}; }
 		adaptor, _, _ := newRequest(t, map[string]any{})
 		body, err := common.Marshal(map[string]any{"completionUsage": map[string]any{"upstreamUnits": 5000}})
 		require.NoError(t, err)
-		result, err := adaptor.ParseTaskResult(&model.Task{}, &http.Response{StatusCode: http.StatusOK, Header: make(http.Header)}, body)
+		result, err := adaptor.ParseTaskResult(context.Background(), &model.Task{}, &http.Response{StatusCode: http.StatusOK, Header: make(http.Header)}, body)
 		require.NoError(t, err)
 		assert.Equal(t, 5000, result.TotalTokens)
 		assert.EqualValues(t, 5000, result.UsageFacts["upstreamUnits"])
@@ -1511,7 +1512,7 @@ export function parseTaskResult(ctx, body) { return {status: "SUCCESS", completi
 	require.NoError(t, err)
 	adaptor := New(plugin)
 
-	result, err := adaptor.ParseTaskResult(&model.Task{}, &http.Response{StatusCode: http.StatusOK, Header: make(http.Header)}, []byte(`{"completion":13,"total":17}`))
+	result, err := adaptor.ParseTaskResult(context.Background(), &model.Task{}, &http.Response{StatusCode: http.StatusOK, Header: make(http.Header)}, []byte(`{"completion":13,"total":17}`))
 	require.NoError(t, err)
 	assert.Equal(t, 13, result.CompletionTokens)
 	assert.Equal(t, 17, result.TotalTokens)
@@ -1702,13 +1703,13 @@ func TestTaskAdaptorBatchBridge(t *testing.T) {
 		{PrivateData: model.TaskPrivateData{UpstreamTaskID: "task-a"}},
 		{PrivateData: model.TaskPrivateData{UpstreamTaskID: "task-b"}},
 	}
-	resp, err := adaptor.FetchBatchTasks(server.URL, "secret", tasks, "")
+	resp, err := adaptor.FetchBatchTasks(context.Background(), server.URL, "secret", tasks, "")
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	payload, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
 
-	results, err := adaptor.ParseBatchResult(tasks, resp, payload)
+	results, err := adaptor.ParseBatchResult(context.Background(), tasks, resp, payload)
 	require.NoError(t, err)
 	require.Len(t, results, 2, "entry without taskId must be skipped")
 
@@ -1728,6 +1729,85 @@ func TestTaskAdaptorBatchBridge(t *testing.T) {
 	assert.Equal(t, "IN_PROGRESS", pending.TaskInfo.Status)
 	assert.Equal(t, "40%", pending.TaskInfo.Progress)
 	assert.Empty(t, pending.TaskInfo.Url)
+}
+
+func TestTaskAdaptorBatchRejectsUnknownAndAmbiguousTaskIDs(t *testing.T) {
+	for _, items := range []string{
+		`[{"id":"expected","status":"SUCCESS"},{"id":"foreign","status":"SUCCESS"}]`,
+		`[{"id":"expected","status":"SUCCESS"},{"id":"expected","status":"IN_PROGRESS"}]`,
+	} {
+		plugin, err := pluginruntime.NewRegistry().Register(batchMockPlugin, pluginruntime.Options{})
+		require.NoError(t, err)
+		adaptor := New(plugin)
+		tasks := []*model.Task{{PrivateData: model.TaskPrivateData{UpstreamTaskID: "expected"}}}
+		results, err := adaptor.ParseBatchResult(context.Background(), tasks, &http.Response{StatusCode: http.StatusOK}, []byte(`{"items":`+items+`}`))
+		require.Error(t, err)
+		assert.Nil(t, results)
+	}
+}
+
+func TestTaskAdaptorPollingHooksPropagateCancellationAndReleaseRuntime(t *testing.T) {
+	for _, hook := range []string{"buildQueryRequest", "parseTaskResult", "extractUsageOnComplete"} {
+		t.Run(hook, func(t *testing.T) {
+			service.InitHttpClient()
+			started, upstreamCancelled, release := make(chan struct{}), make(chan struct{}), make(chan struct{})
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				close(started)
+				select {
+				case <-r.Context().Done():
+					close(upstreamCancelled)
+				case <-release:
+				}
+			}))
+			t.Cleanup(server.Close)
+			t.Cleanup(func() { close(release) })
+			source := mockPlugin + `
+export function blockedPollingHook(ctx) { utils.fetch({url: ctx.baseUrl + "/wait"}); return {status:"SUCCESS"}; }
+`
+			// Keep one runtime so a leaked hook would also block the next call.
+			source = strings.Replace(source, "export function "+hook+"(", "function original"+hook+"(", 1)
+			source += "\nexport function " + hook + "(ctx) { return blockedPollingHook(ctx); }\n"
+			plugin, err := pluginruntime.NewRegistry().Register(source, pluginruntime.Options{Concurrency: 1, Timeout: 10 * time.Second})
+			require.NoError(t, err)
+			adaptor := New(plugin)
+			adaptor.Init(&relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{ChannelBaseUrl: server.URL}})
+			task := &model.Task{PrivateData: model.TaskPrivateData{UpstreamTaskID: "1"}}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			done := make(chan struct{})
+			go func() {
+				if hook == "buildQueryRequest" {
+					resp, _ := adaptor.FetchTask(ctx, server.URL, "test", task, "")
+					if resp != nil && resp.Body != nil {
+						resp.Body.Close()
+					}
+				} else {
+					_, _ = adaptor.ParseTaskResult(ctx, task, &http.Response{StatusCode: http.StatusOK}, []byte(`{}`))
+				}
+				close(done)
+			}()
+			select {
+			case <-started:
+			case <-time.After(2 * time.Second):
+				t.Fatal("nested polling fetch did not start")
+			}
+			cancel()
+			select {
+			case <-done:
+			case <-time.After(2 * time.Second):
+				t.Fatal("cancelled polling hook retained its runtime")
+			}
+			select {
+			case <-upstreamCancelled:
+			case <-time.After(2 * time.Second):
+				t.Fatal("nested request was not cancelled")
+			}
+			reuseCtx, releaseRuntime := context.WithTimeout(context.Background(), time.Second)
+			defer releaseRuntime()
+			_, err = plugin.Engine.Call(reuseCtx, "parseSubmitResponse", map[string]any{}, map[string]any{"body": map[string]any{"id": "next"}, "statusCode": 200})
+			require.NoError(t, err)
+		})
+	}
 }
 
 const mappingOrderAdaptorPlugin = `
@@ -1829,7 +1909,7 @@ export function parseTaskResult(){return {status:"SUCCESS"}}
 	}
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			resp, fetchErr := adaptor.FetchTask(server.URL, "secret", testCase.task, "")
+			resp, fetchErr := adaptor.FetchTask(context.Background(), server.URL, "secret", testCase.task, "")
 			require.NoError(t, fetchErr)
 			require.NoError(t, resp.Body.Close())
 			assert.Equal(t, testCase.want, requested)
@@ -1885,7 +1965,7 @@ export function parseTaskResult(ctx, body, response){
 			PluginState:    []byte(`{"req_key":"kept"}`),
 		},
 	}
-	resp, err := adaptor.FetchTask(server.URL, "secret", task, "")
+	resp, err := adaptor.FetchTask(context.Background(), server.URL, "secret", task, "")
 	require.NoError(t, err)
 	require.NoError(t, resp.Body.Close())
 
@@ -1901,7 +1981,7 @@ export function parseTaskResult(ctx, body, response){
 	require.True(t, ok)
 	assert.NotContains(t, keys, "requestBody")
 
-	result, err := adaptor.ParseTaskResult(task, &http.Response{StatusCode: http.StatusTeapot, Header: make(http.Header)}, []byte(`{"ok":true}`))
+	result, err := adaptor.ParseTaskResult(context.Background(), task, &http.Response{StatusCode: http.StatusTeapot, Header: make(http.Header)}, []byte(`{"ok":true}`))
 	require.NoError(t, err)
 	assert.Equal(t, "IN_PROGRESS", result.Status)
 	assert.Equal(t, "418", result.Reason)
@@ -1973,7 +2053,7 @@ export function parseBatchResult(){return [];}
 		{Properties: model.Properties{OriginModelName: "model-a"}, PrivateData: model.TaskPrivateData{UpstreamTaskID: "task-a"}},
 		{Properties: model.Properties{OriginModelName: "model-b"}, PrivateData: model.TaskPrivateData{UpstreamTaskID: "task-b"}},
 	}
-	resp, err := adaptor.FetchBatchTasks(server.URL, "secret", tasks, "")
+	resp, err := adaptor.FetchBatchTasks(context.Background(), server.URL, "secret", tasks, "")
 	require.NoError(t, err)
 	require.NoError(t, resp.Body.Close())
 	assert.Equal(t, []any{"task-a", "task-b"}, captured["ids"])
@@ -2076,7 +2156,7 @@ export function extractUsageOnComplete(ctx,result,body){return body.usage;}
 			task := &model.Task{Properties: model.Properties{OriginModelName: tc.origin, UpstreamModelName: tc.upstream}}
 			body, err := common.Marshal(map[string]any{"usage": map[string]any{"units": tc.units, "mode": tc.mode}})
 			require.NoError(t, err)
-			result, err := adaptor.ParseTaskResult(task, &http.Response{StatusCode: http.StatusOK}, body)
+			result, err := adaptor.ParseTaskResult(context.Background(), task, &http.Response{StatusCode: http.StatusOK}, body)
 			require.NoError(t, err)
 			if tc.accepted {
 				assert.Equal(t, map[string]any{"units": tc.units, "mode": tc.mode}, result.UsageFacts)
@@ -2094,7 +2174,7 @@ export function extractUsageOnComplete(ctx,result,body){return body.usage;}
 		_, _, info := newRequest(t, "public-alias", "image", map[string]any{})
 		adaptor := New(updated)
 		adaptor.Init(info)
-		result, err := adaptor.ParseTaskResult(&model.Task{Properties: model.Properties{UpstreamModelName: "image"}},
+		result, err := adaptor.ParseTaskResult(context.Background(), &model.Task{Properties: model.Properties{UpstreamModelName: "image"}},
 			&http.Response{StatusCode: http.StatusOK}, []byte(`{}`))
 		require.NoError(t, err)
 		cost, _, err := billingexpr.RunExprWithRequest(`tier("legacy", u("legacyRatio") * 2)`,
@@ -2117,7 +2197,7 @@ export function extractUsageOnComplete(ctx,result,body){return body.usage;}
 {"taskId":"invalid-image","status":"SUCCESS","data":{"usage":{"units":129,"mode":"image"}}},
 {"taskId":"endpoint-image","status":"SUCCESS","data":{"usage":{"units":129,"mode":"image"}}}
 ]}`)
-		results, err := adaptor.ParseBatchResult(tasks, &http.Response{StatusCode: http.StatusOK}, body)
+		results, err := adaptor.ParseBatchResult(context.Background(), tasks, &http.Response{StatusCode: http.StatusOK}, body)
 		require.NoError(t, err)
 		require.Len(t, results, 4)
 		assert.Nil(t, results["endpoint-image"].TaskInfo.UsageFacts, "endpoint upstream must keep the origin profile's count ceiling")
@@ -2578,12 +2658,12 @@ func TestTaskAdaptorChainsDoubaoThroughNewAPIUpstream(t *testing.T) {
 		Properties:  model.Properties{OriginModelName: modelName, UpstreamModelName: modelName},
 		PrivateData: model.TaskPrivateData{UpstreamTaskID: parsed.UpstreamTaskID},
 	}
-	queryResp, err := adaptor.FetchTask(gateway.URL, "sk-gateway", task, "")
+	queryResp, err := adaptor.FetchTask(context.Background(), gateway.URL, "sk-gateway", task, "")
 	require.NoError(t, err)
 	queryBody, err := io.ReadAll(queryResp.Body)
 	require.NoError(t, err)
 	require.NoError(t, queryResp.Body.Close())
-	result, err := adaptor.ParseTaskResult(task, queryResp, queryBody)
+	result, err := adaptor.ParseTaskResult(context.Background(), task, queryResp, queryBody)
 	require.NoError(t, err)
 	assert.Equal(t, "SUCCESS", result.Status)
 	assert.Equal(t, "https://cdn.example/v.mp4", result.Url)
@@ -2636,12 +2716,12 @@ func TestTaskAdaptorChainsSunoBatchFetchThroughNewAPIUpstream(t *testing.T) {
 		Properties:  model.Properties{OriginModelName: "suno_music", UpstreamModelName: "suno_music"},
 		PrivateData: model.TaskPrivateData{UpstreamTaskID: parsed.UpstreamTaskID},
 	}
-	batchResp, err := adaptor.FetchBatchTasks(gateway.URL, "sk-gateway", []*model.Task{task}, "")
+	batchResp, err := adaptor.FetchBatchTasks(context.Background(), gateway.URL, "sk-gateway", []*model.Task{task}, "")
 	require.NoError(t, err)
 	batchBody, err := io.ReadAll(batchResp.Body)
 	require.NoError(t, err)
 	require.NoError(t, batchResp.Body.Close())
-	results, err := adaptor.ParseBatchResult([]*model.Task{task}, batchResp, batchBody)
+	results, err := adaptor.ParseBatchResult(context.Background(), []*model.Task{task}, batchResp, batchBody)
 	require.NoError(t, err)
 	require.Contains(t, results, "task_up_public")
 	assert.Equal(t, "SUCCESS", results["task_up_public"].TaskInfo.Status)

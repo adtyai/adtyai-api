@@ -2,6 +2,7 @@ package plugins_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"fmt"
 	"net/http"
@@ -153,7 +154,7 @@ func TestXAIModeratedVideoKeepsItsCharge(t *testing.T) {
 				TaskID: "task_public", Action: "image_to_video", Data: []byte(tc.body),
 				Properties: model.Properties{OriginModelName: videoModel, UpstreamModelName: videoModel},
 			}
-			result, err := adaptor.ParseTaskResult(task, &http.Response{StatusCode: tc.httpStatus, Header: make(http.Header)}, []byte(tc.body))
+			result, err := adaptor.ParseTaskResult(context.Background(), task, &http.Response{StatusCode: tc.httpStatus, Header: make(http.Header)}, []byte(tc.body))
 			require.NoError(t, err)
 			assert.Equal(t, tc.wantStatus, result.Status)
 			assert.Equal(t, tc.wantProgress, result.Progress)
@@ -171,7 +172,7 @@ func TestXAIModeratedVideoKeepsItsCharge(t *testing.T) {
 			nativeBody, err := common.Marshal(native)
 			require.NoError(t, err)
 			assert.NotContains(t, string(nativeBody), "cost_in_usd_ticks")
-			downstream, err := adaptor.ParseTaskResult(task, &http.Response{StatusCode: http.StatusOK, Header: make(http.Header)}, nativeBody)
+			downstream, err := adaptor.ParseTaskResult(context.Background(), task, &http.Response{StatusCode: http.StatusOK, Header: make(http.Header)}, nativeBody)
 			require.NoError(t, err)
 			assert.Equal(t, result.Status, downstream.Status)
 			assert.Equal(t, result.UsageFacts, downstream.UsageFacts)
@@ -462,7 +463,7 @@ func TestXAIEditSettlesOnOutputResolution(t *testing.T) {
 				Properties:  model.Properties{OriginModelName: videoModel, UpstreamModelName: videoModel},
 				PrivateData: model.TaskPrivateData{PluginState: []byte(`{"extension_seconds":6}`)},
 			}
-			result, err := adaptor.ParseTaskResult(task, &http.Response{StatusCode: http.StatusOK, Header: make(http.Header)}, []byte(body))
+			result, err := adaptor.ParseTaskResult(context.Background(), task, &http.Response{StatusCode: http.StatusOK, Header: make(http.Header)}, []byte(body))
 			require.NoError(t, err)
 			assert.Equal(t, "SUCCESS", result.Status)
 			wantFacts := map[string]any{"input_video_seconds": float64(8)}

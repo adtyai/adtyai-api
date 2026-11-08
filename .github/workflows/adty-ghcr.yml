@@ -34,7 +34,7 @@ jobs:
       AUDIT_POSTGRES_DSN: 'host=127.0.0.1 port=5432 user=postgres password=adty_ci_test dbname=adty_test sslmode=disable'
     services:
       postgres:
-        image: postgres:16
+        image: postgres:17
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: adty_ci_test
@@ -121,9 +121,17 @@ jobs:
         working-directory: web
         run: bun install --frozen-lockfile
 
+      - name: Check plugins
+        working-directory: .
+        run: make check-plugins
+
       - name: Typecheck frontend
         working-directory: web
         run: bun check -b
+
+      - name: Build production bundle
+        working-directory: web
+        run: bun run build
 
       - name: Lint frontend against baseline
         run: node scripts/adty/ratchet.mjs lint
@@ -132,7 +140,7 @@ jobs:
         working-directory: web
         run: bun run test
 
-      # 任务 9.2：我们加的前端语言键 7 种语言都要有、而且不等于英文
+      # 任务 9.2：我们加的前端语言键 8 种语言都要有、而且不等于英文
       - name: Check our frontend translations
         working-directory: web
         run: node scripts/adty/i18n-check.mjs

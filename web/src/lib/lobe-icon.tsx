@@ -180,7 +180,14 @@ export function getLobeIcon(
             baseKey,
             typeof props.size === 'number' || typeof props.size === 'string'
               ? props.size
-              : 20
+              : 20,
+            {
+              role: typeof props.role === 'string' ? props.role : undefined,
+              label:
+                typeof props['aria-label'] === 'string'
+                  ? props['aria-label']
+                  : undefined,
+            }
           ),
       }))
     )

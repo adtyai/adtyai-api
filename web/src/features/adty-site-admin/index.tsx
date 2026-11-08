@@ -45,7 +45,7 @@ export function SiteAdmin(props: { section: SiteAdminSectionId }) {
   const user = useAuthStore((state) => state.auth.user)
   const [openSite, setOpenSite] = useState<number | null>(null)
   const canSettings = canAdmin(user, ADTY_PERMISSIONS.SITE_SETTINGS)
-  const canMoneySettings = user?.role === 100
+  const canWriteSecrets = user?.role === 100
   const labels: Record<SiteAdminSectionId, string> = {
     sites: t('Sites'),
     overview: t('Overview'),
@@ -87,11 +87,18 @@ export function SiteAdmin(props: { section: SiteAdminSectionId }) {
             <ReviewsPanel />
           </TabsContent>
           <TabsContent value='invite-codes'>
-            <InviteCodesPanel canWrite={canSettings} />
+            <InviteCodesPanel
+              canCreate={canAdmin(user, ADTY_PERMISSIONS.SITE_SETTINGS_CREATE)}
+              canWrite={canSettings}
+              canDelete={canAdmin(user, ADTY_PERMISSIONS.SITE_SETTINGS_DELETE)}
+            />
           </TabsContent>
           <TabsContent value='settings' className='flex flex-col gap-6'>
-            <UsagePanel />
-            <SettingsPanel canWrite={canMoneySettings} />
+            {canAdmin(user, ADTY_PERMISSIONS.SITE_READ) && <UsagePanel />}
+            <SettingsPanel
+              canWrite={canSettings}
+              canWriteSecrets={canWriteSecrets}
+            />
           </TabsContent>
         </Tabs>
         <SiteDetailSheet

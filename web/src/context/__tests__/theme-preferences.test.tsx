@@ -250,6 +250,16 @@ describe('theme preference persistence', () => {
     }
     expect(localStorage.getItem('stale-ui-cache')).toBeNull()
   })
+
+  it('preserves the selected interface language while clearing stale UI cache', () => {
+    localStorage.setItem('i18nextLng', 'fr')
+    localStorage.setItem('stale-ui-cache', 'old')
+
+    initializeFrontendCache()
+
+    expect(localStorage.getItem('i18nextLng')).toBe('fr')
+    expect(localStorage.getItem('stale-ui-cache')).toBeNull()
+  })
 })
 
 describe('theme font selection', () => {

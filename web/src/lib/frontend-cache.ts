@@ -25,6 +25,7 @@ const FRONTEND_CACHE_VERSION_KEY = 'adtyai:default:cache-version'
 const PRESERVED_LOCAL_STORAGE_KEYS = new Set([
   FRONTEND_CACHE_VERSION_KEY,
   ...Object.values(THEME_STORAGE_KEYS),
+  'i18nextLng',
   'user',
   'uid',
   'oauth:binding:result',

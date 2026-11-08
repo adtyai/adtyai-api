@@ -25,6 +25,7 @@ import {
   RouterProvider,
 } from '@tanstack/react-router'
 import {
+  act,
   cleanup,
   render,
   screen,
@@ -35,12 +36,13 @@ import userEvent from '@testing-library/user-event'
 import { toast } from 'sonner'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
+import * as apiModule from '@/lib/api'
 import { ROLE } from '@/lib/roles'
 import { STATUS_QUERY_KEY } from '@/lib/status-query'
 import { useAuthStore } from '@/stores/auth-store'
 
 import { ExportLogsDialog } from '../dialogs/export-logs-dialog'
-import { UsageLogsProvider } from '../usage-logs-provider'
+import { UsageLogsProvider, useLogsViewScope } from '../usage-logs-provider'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 const createObjectURL = vi.fn((_blob: Blob) => 'blob:logs')
@@ -65,7 +67,9 @@ afterEach(() => {
 })
 
 function renderExport(options: {
+  client?: QueryClient
   role: number
+  actions?: string[]
   status?: Record<string, unknown>
   search: Record<string, string | number>
 }) {
@@ -77,15 +81,26 @@ function renderExport(options: {
         username: 'alice',
         role: options.role,
         // adty: administrators here can view all logs
-        permissions: { admin_permissions: { adty_log: { read: true } } },
+        permissions: {
+          admin_permissions: {
+            adty_log: Object.fromEntries(
+              (options.actions ?? ['read', 'export']).map((action) => [
+                action,
+                true,
+              ])
+            ),
+          },
+        },
       },
       accessToken: 'test-token',
       accessExpiresAt: Math.floor(Date.now() / 1000) + 3600,
     },
   }))
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
-  })
+  const queryClient =
+    options.client ??
+    new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+    })
   queryClient.setQueryData(STATUS_QUERY_KEY, options.status ?? {})
   const root = createRootRoute()
   const auth = createRoute({ getParentRoute: () => root, id: '_authenticated' })
@@ -95,6 +110,7 @@ function renderExport(options: {
     component: () => (
       <UsageLogsProvider>
         <h1>Common Logs</h1>
+        <OwnLogsButton />
         <ExportLogsDialog />
       </UsageLogsProvider>
     ),
@@ -117,6 +133,15 @@ function renderExport(options: {
   return router
 }
 
+function OwnLogsButton() {
+  const { setViewScope } = useLogsViewScope()
+  return (
+    <button type='button' onClick={() => setViewScope('self')}>
+      Only mine
+    </button>
+  )
+}
+
 function mockExportResponse(lines: unknown[]) {
   return vi
     .spyOn(globalThis, 'fetch')
@@ -128,6 +153,73 @@ function mockExportResponse(lines: unknown[]) {
 const recentRange = () => ({
   startTime: Date.now() - DAY_MS,
   endTime: Date.now(),
+})
+
+it.each([false, true])(
+  'blocks an all-log request after Export revocation during header refresh, unmount=%s',
+  async (unmount) => {
+    let release = (_headers: Record<string, string>) => {}
+    const headers = vi
+      .spyOn(apiModule, 'getFreshAuthHeaders')
+      .mockImplementation(
+        () =>
+          new Promise<Record<string, string>>((resolve) => {
+            release = resolve
+          })
+      )
+    const fetchSpy = mockExportResponse([{ success: true, data: { count: 0 } }])
+    renderExport({ role: ROLE.ADMIN, search: recentRange() })
+    await userEvent.click(await screen.findByRole('button', { name: 'Export' }))
+    await userEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'Export' })
+    )
+    await waitFor(() => expect(headers).toHaveBeenCalledTimes(1))
+    act(() => {
+      if (unmount) cleanup()
+      const user = useAuthStore.getState().auth.user
+      if (!user) throw new Error('Log user is missing')
+      useAuthStore.getState().auth.setUser({
+        ...user,
+        permissions: { admin_permissions: { adty_log: { read: true } } },
+      })
+    })
+    await act(async () => {
+      release({ Authorization: 'Bearer synthetic-export' })
+    })
+    expect(fetchSpy).not.toHaveBeenCalled()
+  }
+)
+
+it('blocks own-log export when policy changes during header refresh', async () => {
+  let release = (_headers: Record<string, string>) => {}
+  const headers = vi.spyOn(apiModule, 'getFreshAuthHeaders').mockImplementation(
+    () =>
+      new Promise<Record<string, string>>((resolve) => {
+        release = resolve
+      })
+  )
+  const fetchSpy = mockExportResponse([{ success: true, data: { count: 0 } }])
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+  })
+  renderExport({
+    role: ROLE.USER,
+    client,
+    status: { log_export_enabled: true },
+    search: recentRange(),
+  })
+  await userEvent.click(await screen.findByRole('button', { name: 'Export' }))
+  await userEvent.click(
+    within(screen.getByRole('dialog')).getByRole('button', { name: 'Export' })
+  )
+  await waitFor(() => expect(headers).toHaveBeenCalledTimes(1))
+  act(() =>
+    client.setQueryData(STATUS_QUERY_KEY, { log_export_enabled: false })
+  )
+  await act(async () => {
+    release({ Authorization: 'Bearer synthetic-export' })
+  })
+  expect(fetchSpy).not.toHaveBeenCalled()
 })
 
 it('hides Export from users when the administrator turned user export off', async () => {
@@ -148,6 +240,46 @@ it('keeps Export for administrators when user export is off', async () => {
     search: recentRange(),
   })
 
+  expect(await screen.findByRole('button', { name: 'Export' })).toBeVisible()
+})
+
+it('requires export independently from read in the all-users view', async () => {
+  renderExport({ role: ROLE.ADMIN, actions: ['read'], search: recentRange() })
+  await screen.findByRole('heading', { name: 'Common Logs' })
+  expect(
+    screen.queryByRole('button', { name: 'Export' })
+  ).not.toBeInTheDocument()
+})
+
+it('keeps own-log export available to a read-only admin when user export is enabled', async () => {
+  renderExport({ role: ROLE.ADMIN, actions: ['read'], search: recentRange() })
+  await userEvent.click(
+    await screen.findByRole('button', { name: 'Only mine' })
+  )
+  expect(screen.getByRole('button', { name: 'Export' })).toBeVisible()
+})
+
+it('applies user export policy after an administrator switches to own logs', async () => {
+  renderExport({
+    role: ROLE.ADMIN,
+    status: { log_export_enabled: false },
+    search: recentRange(),
+  })
+  await userEvent.click(
+    await screen.findByRole('button', { name: 'Only mine' })
+  )
+  expect(
+    screen.queryByRole('button', { name: 'Export' })
+  ).not.toBeInTheDocument()
+})
+
+it('allows Root to export all logs without explicit action cells', async () => {
+  renderExport({
+    role: ROLE.SUPER_ADMIN,
+    actions: [],
+    status: { log_export_enabled: false },
+    search: recentRange(),
+  })
   expect(await screen.findByRole('button', { name: 'Export' })).toBeVisible()
 })
 

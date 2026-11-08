@@ -3,7 +3,6 @@ package model
 import (
 	"errors"
 	"fmt"
-	"maps"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -76,46 +75,36 @@ func ValidateTopUpQuotaCapacity(userId int, creditedQuota int) error {
 	}
 
 	var user User
-	if err := DB.Select("quota").Where("id = ?", userId).First(&user).Error; err != nil {
+	if err := DB.Select("quota", "quota_pending").Where("id = ?", userId).First(&user).Error; err != nil {
 		return err
 	}
-	if user.Quota > maxCurrentQuota {
+	balance, err := userWalletBalance(user.Quota, user.QuotaPending)
+	if err != nil || balance > maxCurrentQuota {
 		return ErrTopUpQuotaLimitExceeded
 	}
 	return nil
 }
 
-// creditTopUpQuota atomically enforces the wallet ceiling while adding quota.
-// Keeping the predicate and increment in one UPDATE prevents two
-// concurrent callbacks from both passing a separate read/check.
+// creditTopUpQuota shares the owner lock with reservations, refunds, and flushes.
+// Both the logical balance and the raw field addition must fit before credit.
 func creditTopUpQuota(tx *gorm.DB, userId int, creditedQuota int, updates map[string]any) error {
-	maxCurrentQuota, err := topUpQuotaMaxCurrent(creditedQuota)
-	if err != nil {
+	if _, err := topUpQuotaMaxCurrent(creditedQuota); err != nil {
 		return err
 	}
-
-	updateFields := make(map[string]any, len(updates)+1)
-	maps.Copy(updateFields, updates)
-	updateFields["quota"] = gorm.Expr("quota + ?", creditedQuota)
-
-	result := tx.Model(&User{}).
-		Where("id = ? AND quota <= ?", userId, maxCurrentQuota).
-		Updates(updateFields)
-	if result.Error != nil {
-		return result.Error
-	}
-	if result.RowsAffected == 1 {
-		return nil
-	}
-
-	var count int64
-	if err := tx.Model(&User{}).Where("id = ?", userId).Count(&count).Error; err != nil {
+	var user User
+	if err := lockForUpdate(tx).First(&user, userId).Error; err != nil {
 		return err
 	}
-	if count == 0 {
-		return gorm.ErrRecordNotFound
+	if err := applyUserQuotaDeltaTx(tx, &user, creditedQuota, false); err != nil {
+		if errors.Is(err, ErrWalletQuotaLimitExceeded) {
+			return ErrTopUpQuotaLimitExceeded
+		}
+		return err
 	}
-	return ErrTopUpQuotaLimitExceeded
+	if len(updates) > 0 {
+		return tx.Model(&User{}).Where("id = ?", userId).Updates(updates).Error
+	}
+	return nil
 }
 
 func (topUp *TopUp) Update() error {
@@ -821,11 +810,15 @@ func RefundWaffo(tradeNo string, idemKey string, fullRefund bool, refundAmount s
 			return err
 		}
 		var user User
-		if err := lockForUpdate(tx).Select("id", "quota").First(&user, topUp.UserId).Error; err != nil {
+		if err := lockForUpdate(tx).First(&user, topUp.UserId).Error; err != nil {
 			return err
 		}
-		if int64(user.Quota) < claw {
-			claw = int64(user.Quota)
+		balance, err := userWalletBalance(user.Quota, user.QuotaPending)
+		if err != nil {
+			return err
+		}
+		if int64(balance) < claw {
+			claw = int64(balance)
 		}
 		if claw < 0 {
 			claw = 0
@@ -833,10 +826,7 @@ func RefundWaffo(tradeNo string, idemKey string, fullRefund bool, refundAmount s
 		userId = topUp.UserId
 		clawed = int(claw)
 		if claw > 0 {
-			if err := tx.Model(&User{}).Where("id = ?", user.Id).Update("quota", gorm.Expr("quota - ?", claw)).Error; err != nil {
-				return err
-			}
-			if err := clampCheckinQuotaDB(tx, user.Id); err != nil {
+			if err := applyUserQuotaDeltaTx(tx, &user, -int(claw), false); err != nil {
 				return err
 			}
 		}
@@ -847,7 +837,7 @@ func RefundWaffo(tradeNo string, idemKey string, fullRefund bool, refundAmount s
 			}
 		}
 		key := idemKey
-		before := int64(user.Quota)
+		before := int64(balance)
 		return InsertAdtyLedgerTx(tx, &AdtyBalanceLedger{
 			UserId:         user.Id,
 			DeltaQuota:     -claw,
@@ -864,7 +854,9 @@ func RefundWaffo(tradeNo string, idemKey string, fullRefund bool, refundAmount s
 		return err
 	}
 	if clawed > 0 {
-		_ = cacheDecrUserQuota(userId, int64(clawed))
+		if err := invalidateUserCache(userId); err != nil {
+			common.SysError(common.LogText("failed to invalidate refunded wallet for user %d: %s", userId, err.Error()))
+		}
 	}
 	return nil
 }
@@ -929,15 +921,16 @@ func RefundWaffoPancake(tradeNo string) error {
 				return ErrInvalidTopUpQuota
 			}
 			var user User
-			if err := lockForUpdate(tx).Select("id", "quota").First(&user, topUp.UserId).Error; err != nil {
+			if err := lockForUpdate(tx).First(&user, topUp.UserId).Error; err != nil {
 				return err
 			}
-			clawed = quota
-			if user.Quota < clawed {
-				clawed = user.Quota
+			balance, err := userWalletBalance(user.Quota, user.QuotaPending)
+			if err != nil {
+				return err
 			}
+			clawed = max(0, min(balance, quota))
 			if clawed > 0 {
-				if err := tx.Model(&User{}).Where("id = ?", user.Id).Update("quota", gorm.Expr("quota - ?", clawed)).Error; err != nil {
+				if err := applyUserQuotaDeltaTx(tx, &user, -clawed, false); err != nil {
 					return err
 				}
 			}
@@ -949,7 +942,9 @@ func RefundWaffoPancake(tradeNo string) error {
 		return err
 	}
 	if clawed > 0 {
-		_ = cacheDecrUserQuota(userId, int64(clawed))
+		if err := invalidateUserCache(userId); err != nil {
+			common.SysError(common.LogText("failed to invalidate refunded wallet for user %d: %s", userId, err.Error()))
+		}
 	}
 	return nil
 }

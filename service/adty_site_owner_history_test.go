@@ -10,6 +10,27 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestOwnerCustomerBalancesIncludeDurablePending(t *testing.T) {
+	db := prepareSiteDB(t)
+	_, site := openActiveSite(t, db, "pending-balance")
+	customer := siteCustomer(t, db, site, "pending-customer")
+	for _, tc := range []struct{ raw, pending int }{{100, -80}, {-80, 100}} {
+		require.NoError(t, db.Model(&model.User{}).Where("id = ?", customer.Id).Updates(map[string]any{
+			"quota": tc.raw, "quota_pending": tc.pending,
+		}).Error)
+		view, err := GetAdtyOwnerCustomer(site, customer.Id)
+		require.NoError(t, err)
+		require.NotNil(t, view.Balance)
+		assert.Equal(t, 20, *view.Balance)
+		views, total, err := ListAdtyOwnerCustomers(site, 0, 10)
+		require.NoError(t, err)
+		require.EqualValues(t, 1, total)
+		require.Len(t, views, 1)
+		require.NotNil(t, views[0].Balance)
+		assert.Equal(t, 20, *views[0].Balance)
+	}
+}
+
 func TestOwnerCannotSeeHistoryBeforeTransfer(t *testing.T) {
 	db := prepareSiteDB(t)
 	_, oldSite := openActiveSite(t, db, "old-vis")

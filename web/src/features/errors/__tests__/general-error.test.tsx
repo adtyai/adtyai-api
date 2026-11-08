@@ -32,8 +32,10 @@ import {
   screen,
   waitFor,
 } from '@testing-library/react'
-import type { ReactElement } from 'react'
+import { Suspense, type ReactElement } from 'react'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
+
+import { lazyRouteComponent as recoveredLazyRouteComponent } from '@/lib/route-lazy-component'
 
 import { GeneralError } from '../general-error'
 
@@ -81,11 +83,14 @@ beforeEach(() => {
 
 afterEach(() => {
   siteApi.get.mockReset()
-  sessionStorage.clear()
   vi.unstubAllGlobals()
+  sessionStorage.clear()
 })
 
-function createTestRouter(error: Error | { response: { status: number } }) {
+function createTestRouter(
+  error?: Error | { response: { status: number } },
+  useRecoveredLazy = false
+) {
   const root = createRootRoute({
     component: Outlet,
     errorComponent: GeneralError,
@@ -95,10 +100,16 @@ function createTestRouter(error: Error | { response: { status: number } }) {
     path: '/',
     component: () => <p>Current page</p>,
   })
+  const importRoute = () =>
+    error
+      ? Promise.reject(error)
+      : Promise.resolve({ default: () => <p>Recovered route</p> })
   const broken = createRoute({
     getParentRoute: () => root,
     path: '/wallet',
-    component: lazyRouteComponent(() => Promise.reject(error)),
+    component: useRecoveredLazy
+      ? recoveredLazyRouteComponent(importRoute)
+      : lazyRouteComponent(importRoute),
   })
   return createRouter({
     routeTree: root.addChildren([home, broken]),
@@ -133,6 +144,142 @@ test.each([
     expect(await screen.findByText(/Oops! Something went wrong/)).toBeVisible()
     expect(screen.queryByText('500')).not.toBeInTheDocument()
     expect(reload).toHaveBeenCalledTimes(1)
+  }
+)
+
+test.each([
+  new TypeError(
+    'Failed to fetch dynamically imported module: https://example.com/42.js'
+  ),
+  new TypeError(
+    'error loading dynamically imported module: https://example.com/42.js'
+  ),
+  new TypeError('Importing a module script failed.'),
+])(
+  'a native project route import reloads once, then shows its error: $message',
+  async (error) => {
+    const router = createTestRouter(error, true)
+    const view = render(<RouterProvider router={router} />)
+    await screen.findByText('Current page')
+    await act(() => router.navigate({ to: '/wallet' }))
+    await waitFor(() => expect(reload).toHaveBeenCalledTimes(1))
+    view.unmount()
+
+    const afterReload = createTestRouter(error, true)
+    render(<RouterProvider router={afterReload} />)
+    await screen.findByText('Current page')
+    await act(() => afterReload.navigate({ to: '/wallet' }))
+    expect(await screen.findByText(/Oops! Something went wrong/)).toBeVisible()
+    expect(reload).toHaveBeenCalledTimes(1)
+  }
+)
+
+test('failed native intent preloads leave the current screen and recovery marker untouched until navigation', async () => {
+  const error = new TypeError(
+    'Failed to fetch dynamically imported module: https://example.com/preload.js'
+  )
+  const router = createTestRouter(error, true)
+  render(<RouterProvider router={router} />)
+  await screen.findByText('Current page')
+
+  await act(() => router.preloadRoute({ to: '/wallet' }))
+  await act(() => router.preloadRoute({ to: '/wallet' }))
+
+  expect(screen.getByText('Current page')).toBeVisible()
+  expect(reload).not.toHaveBeenCalled()
+  expect(
+    sessionStorage.getItem(`tanstack_router_reload:${error.message}`)
+  ).toBeNull()
+
+  await act(() => router.navigate({ to: '/wallet' }))
+  await waitFor(() => expect(reload).toHaveBeenCalledTimes(1))
+})
+
+test('the project route helper preserves named exports after repeated preload', async () => {
+  const importer = vi.fn(async () => ({
+    Screen: () => <p>Named route ready</p>,
+  }))
+  const Screen = recoveredLazyRouteComponent(importer, 'Screen')
+
+  await Promise.all([Screen.preload?.(), Screen.preload?.()])
+  render(
+    <Suspense fallback={<p>Pending</p>}>
+      <Screen />
+    </Suspense>
+  )
+
+  expect(await screen.findByText('Named route ready')).toBeVisible()
+  expect(importer).toHaveBeenCalledTimes(1)
+  expect(reload).not.toHaveBeenCalled()
+})
+
+test.each(['getter', 'getItem', 'setItem'] as const)(
+  'a native route failure with blocked recovery storage %s shows the error without reloading',
+  async (operation) => {
+    const blocked = () => {
+      throw new DOMException('Recovery storage is blocked', 'SecurityError')
+    }
+    vi.stubGlobal('sessionStorage', {
+      getItem: operation === 'getItem' ? blocked : () => null,
+      setItem: operation === 'setItem' ? blocked : () => undefined,
+    })
+    if (operation === 'getter') {
+      Object.defineProperty(globalThis, 'sessionStorage', {
+        configurable: true,
+        get: blocked,
+      })
+    }
+    const error = new TypeError(
+      'Failed to fetch dynamically imported module: https://example.com/blocked.js'
+    )
+    const router = createTestRouter(error, true)
+    render(<RouterProvider router={router} />)
+    await screen.findByText('Current page')
+
+    await act(() => router.navigate({ to: '/wallet' }))
+
+    expect(await screen.findByText(/Oops! Something went wrong/)).toBeVisible()
+    expect(reload).not.toHaveBeenCalled()
+  }
+)
+
+test('a native module load failure recovers when the route loads after the guarded reload', async () => {
+  const error = new TypeError(
+    'Failed to fetch dynamically imported module: https://example.com/45.js'
+  )
+  const router = createTestRouter(error, true)
+  const view = render(<RouterProvider router={router} />)
+  await screen.findByText('Current page')
+  await act(() => router.navigate({ to: '/wallet' }))
+  await waitFor(() => expect(reload).toHaveBeenCalledTimes(1))
+  view.unmount()
+
+  const recovered = createTestRouter(undefined, true)
+  render(<RouterProvider router={recovered} />)
+  await screen.findByText('Current page')
+  await act(() => recovered.navigate({ to: '/wallet' }))
+  expect(await screen.findByText('Recovered route')).toBeVisible()
+  expect(reload).toHaveBeenCalledTimes(1)
+})
+
+test.each([
+  new TypeError('Cannot read properties of undefined'),
+  new TypeError(
+    'Business operation: Failed to fetch dynamically imported module'
+  ),
+  new TypeError('Failed to fetch dynamically imported module: user profile'),
+  new Error(
+    'Failed to fetch dynamically imported module: https://example.com/not-a-chunk'
+  ),
+])(
+  'a business error does not trigger module recovery: $message',
+  async (error) => {
+    const router = createTestRouter(error, true)
+    render(<RouterProvider router={router} />)
+    await screen.findByText('Current page')
+    await act(() => router.navigate({ to: '/wallet' }))
+    expect(await screen.findByText(/Oops! Something went wrong/)).toBeVisible()
+    expect(reload).not.toHaveBeenCalled()
   }
 )
 

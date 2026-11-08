@@ -70,7 +70,7 @@ func setupManageUserTestDB(t *testing.T) *gorm.DB {
 			}
 		}
 	})
-	require.NoError(t, db.AutoMigrate(&model.User{}, &model.UserSession{}, &model.CasbinRule{}, &model.AuthzRole{}, &model.AuthFlow{}, &model.TwoFA{}, &model.TwoFABackupCode{}, &model.PasskeyCredential{}, &model.Token{}, &model.UserAccessToken{}, &model.AdtyBalanceLedger{}, &model.ExternalIdentityClaim{}, &model.UserOAuthBinding{})) // adty: ledger for task 7.2
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.UserSession{}, &model.CasbinRule{}, &model.AuthzRole{}, &model.AuthFlow{}, &model.TwoFA{}, &model.TwoFABackupCode{}, &model.PasskeyCredential{}, &model.Token{}, &model.UserAccessToken{}, &model.AdtyBalanceLedger{}, &model.ExternalIdentityClaim{}, &model.UserOAuthBinding{}, &model.AuditIntent{})) // adty: ledger for task 7.2
 	require.NoError(t, logDB.AutoMigrate(&model.Log{}, &model.AuditLog{}))
 	versionQuery := "SELECT version()"
 	if dialect == "sqlite" {
@@ -529,7 +529,7 @@ func TestManageUserQuotaTargetsAndWalletBounds(t *testing.T) {
 		{name: "higher_role", mode: "override", value: 1, targetID: 1, targetRole: common.RoleRootUser, operatorRole: common.RoleAdminUser, reason: "permission_denied"},
 		{name: "read_error", mode: "add", value: 1, targetID: 1, failRead: true, reason: "database_error"},
 		{name: "add_overflow", mode: "add", before: common.MaxWalletQuota, value: 1, targetID: 1, reason: "quota_limit_exceeded"},
-		{name: "subtract_underflow", mode: "subtract", before: -common.MaxWalletQuota, value: 1, targetID: 1, reason: "quota_limit_exceeded"},
+		{name: "subtract_underflow", mode: "subtract", before: -common.MaxWalletQuota, value: 1, targetID: 1, reason: "quota_floor"},
 		{name: "oversized_add", mode: "add", value: common.MaxWalletQuota + 1, targetID: 1, reason: "quota_limit_exceeded"},
 		{name: "oversized_subtract", mode: "subtract", value: common.MaxWalletQuota + 1, targetID: 1, reason: "quota_limit_exceeded"},
 		{name: "oversized_override", mode: "override", value: -common.MaxWalletQuota - 1, targetID: 1, reason: "quota_limit_exceeded"},
@@ -692,7 +692,7 @@ func TestManageUserQuotaConcurrentSnapshots(t *testing.T) {
 	assert.Equal(t, balance, user.Quota)
 }
 
-func TestManageUserQuotaCacheUsesCommittedIntegerDifference(t *testing.T) {
+func TestManageUserQuotaPreservesDurableReservations(t *testing.T) {
 	for _, tc := range []struct {
 		name, mode                               string
 		before, cached, value, after, wantCached int
@@ -705,7 +705,7 @@ func TestManageUserQuotaCacheUsesCommittedIntegerDifference(t *testing.T) {
 		// A negative override used to be the only delta outside float64's exact
 		// integer range. The wallet floor rejects it, so the cache must stay put.
 		{name: "negative_override_keeps_cache", mode: "override", before: common.MaxWalletQuota - 1, cached: common.MaxWalletQuota - 1, value: -common.MaxWalletQuota, after: common.MaxWalletQuota - 1, wantCached: common.MaxWalletQuota - 1, rejectNegative: true},
-		{name: "subtract_rejects_when_live_cache_would_go_negative", mode: "subtract", before: 1000, cached: 100, value: 500, after: 1000, wantCached: 100, rejectNegative: true},
+		{name: "subtract_rejects_when_live_balance_would_go_negative", mode: "subtract", before: 1000, cached: 100, value: 500, after: 1000, wantCached: 100, rejectNegative: true},
 		{name: "rollback_does_not_change_cache", mode: "subtract", before: 1000, cached: 900, value: 500, after: 1000, wantCached: 900, failUpdate: true},
 		{name: "cache_error_keeps_committed_change", mode: "add", before: 1000, value: 500, after: 1500, failCache: true},
 		{name: "missing_cache_is_not_partially_created", mode: "add", before: 1000, value: 500, after: 1500, missingCache: true},
@@ -717,6 +717,9 @@ func TestManageUserQuotaCacheUsesCommittedIntegerDifference(t *testing.T) {
 			oldRDB := common.RDB
 			common.RDB = redis.NewClient(&redis.Options{Addr: server.Addr(), MaxRetries: -1})
 			common.RedisEnabled = true
+			previousBatch := common.BatchUpdateEnabled
+			common.BatchUpdateEnabled = true
+			t.Cleanup(func() { common.BatchUpdateEnabled = previousBatch })
 			t.Cleanup(func() { _ = common.RDB.Close(); common.RDB = oldRDB })
 			user := model.User{Username: "cached-quota", Quota: tc.before, AuthVersion: 1}
 			require.NoError(t, db.Create(&user).Error)
@@ -734,7 +737,11 @@ func TestManageUserQuotaCacheUsesCommittedIntegerDifference(t *testing.T) {
 				}
 			}
 			require.NotEmpty(t, quotaKey)
-			server.HSet(quotaKey, "Quota", strconv.Itoa(tc.cached))
+			if tc.cached > 0 && tc.cached < tc.before {
+				require.NoError(t, model.DecreaseUserQuota(user.Id, tc.before-tc.cached, false))
+			}
+			// A stale Redis projection cannot erase the durable reservation.
+			server.HSet(quotaKey, "Quota", strconv.Itoa(tc.before))
 			if tc.missingCache {
 				server.Del(quotaKey)
 			}
@@ -757,6 +764,11 @@ func TestManageUserQuotaCacheUsesCommittedIntegerDifference(t *testing.T) {
 			}
 			require.NoError(t, db.First(&user, user.Id).Error)
 			assert.Equal(t, tc.after, user.Quota)
+			live, err := model.GetUserQuota(user.Id, false)
+			require.NoError(t, err)
+			if !tc.failCache && !tc.missingCache {
+				assert.Equal(t, tc.wantCached, live)
+			}
 			if tc.missingCache {
 				// Log username lookup may hydrate the whole user after commit.
 				if server.Exists(quotaKey) {
@@ -765,7 +777,9 @@ func TestManageUserQuotaCacheUsesCommittedIntegerDifference(t *testing.T) {
 					assert.Equal(t, strconv.Itoa(tc.after), server.HGet(quotaKey, "Quota"))
 				}
 			} else if !tc.failCache {
-				assert.Equal(t, strconv.Itoa(tc.wantCached), server.HGet(quotaKey, "Quota"))
+				current, err := model.GetUserCache(user.Id)
+				require.NoError(t, err)
+				assert.Equal(t, tc.wantCached, current.Quota)
 			}
 		})
 	}

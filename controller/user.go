@@ -16,6 +16,7 @@ import (
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/service/authz"
 	"github.com/QuantumNous/new-api/setting"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 
 	"github.com/QuantumNous/new-api/constant"
 
@@ -361,7 +362,7 @@ func Register(c *gin.Context) {
 		if setting.DefaultUseAutoGroup {
 			token.Group = "auto"
 		}
-		if err := token.Insert(); err != nil {
+		if err := token.InsertWithLimit(operation_setting.GetMaxUserTokens()); err != nil && !errors.Is(err, model.ErrTokenLimit) {
 			common.ApiErrorT(c, "Failed to create default token")
 			return
 		}
@@ -374,6 +375,19 @@ func Register(c *gin.Context) {
 	return
 }
 
+type adminUserResponse struct {
+	*model.User
+	LiveQuota int `json:"live_quota"`
+}
+
+func buildAdminUserResponses(users []*model.User) []adminUserResponse {
+	items := make([]adminUserResponse, len(users))
+	for i, user := range users {
+		items[i] = adminUserResponse{User: user, LiveQuota: user.ToBaseUser().Quota}
+	}
+	return items
+}
+
 func GetAllUsers(c *gin.Context) {
 	pageInfo := common.GetPageQuery(c)
 	sortOptions := model.NewUserSortOptions(c.Query("sort_by"), c.Query("sort_order"))
@@ -384,7 +398,7 @@ func GetAllUsers(c *gin.Context) {
 	}
 
 	pageInfo.SetTotal(int(total))
-	pageInfo.SetItems(users)
+	pageInfo.SetItems(buildAdminUserResponses(users))
 
 	common.ApiSuccess(c, pageInfo)
 	return
@@ -414,7 +428,7 @@ func SearchUsers(c *gin.Context) {
 	}
 
 	pageInfo.SetTotal(int(total))
-	pageInfo.SetItems(users)
+	pageInfo.SetItems(buildAdminUserResponses(users))
 	common.ApiSuccess(c, pageInfo)
 	return
 }
@@ -451,7 +465,7 @@ func GetUser(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
-		"data":    user,
+		"data":    adminUserResponse{User: user, LiveQuota: user.ToBaseUser().Quota},
 	})
 	return
 }
@@ -502,7 +516,7 @@ func buildSelfUserData(user *model.User) map[string]any {
 		"wechat_id":           user.WeChatId,
 		"telegram_id":         user.TelegramId,
 		"group":               user.Group,
-		"quota":               user.Quota,
+		"quota":               user.ToBaseUser().Quota,
 		"used_quota":          user.UsedQuota,
 		"request_count":       user.RequestCount,
 		"linux_do_id":         user.LinuxDOId,
@@ -690,31 +704,65 @@ func UpdateUser(c *gin.Context) {
 		auditParams["admin_permissions_updated"] = updatedUser.AdminPermissions != nil
 	}
 	authzTouched := false
-	// 二开：事务前读一次权限，ReloadPolicy 之后再读，记下差异（任务 2.6）
-	var permissionChange *adtyPermissionChange
-	if updatedUser.AdminPermissions != nil {
-		permissionChange = startAdtyPermissionChange(updatedUser.Id, originUser.Role)
-	}
+	auditEvents := make([]model.AuditLog, 0, 2)
+	previousAuthVersion := originUser.AuthVersion
 	if err := model.DB.Transaction(func(tx *gorm.DB) error {
+		var current model.User
+		if err := model.AdtyLockForUpdate(tx).First(&current, updatedUser.Id).Error; err != nil {
+			return err
+		}
+		if !canManageTargetRole(myRole, current.Role) {
+			return common.NewMessage("No permission to update users of same or higher permission level")
+		}
+		if current.Group != updatedUser.Group {
+			if err := adtyAuthorizeAdminActions(c, authz.AdtyUserGroup); err != nil {
+				return err
+			}
+		}
+		previousAuthVersion = current.AuthVersion
+		auditParams["username"], auditParams["target_role"] = current.Username, current.Role
+		auditEvents = append(auditEvents, prepareManageAudit(c, updatedUser.Id, "user.update", auditParams))
 		if err := updatedUser.EditWithTx(tx, updatePassword); err != nil {
 			return err
 		}
-		touched, err := updateAdminPermissionsForUserInTx(c, tx, updatedUser.Id, originUser.Role, updatedUser.AdminPermissions)
+		var before authz.PermissionsMap
+		if updatedUser.AdminPermissions != nil && current.Role >= common.RoleAdminUser {
+			var err error
+			before, err = authz.CapabilitiesInTx(tx, updatedUser.Id, current.Role)
+			if err != nil {
+				return err
+			}
+		}
+		touched, err := updateAdminPermissionsForUserInTx(c, tx, updatedUser.Id, current.Role, updatedUser.AdminPermissions)
 		authzTouched = touched
-		return err
+		if err != nil {
+			return err
+		}
+		if before != nil {
+			event, err := appendAdtyPermissionAuditTx(c, tx, updatedUser.Id, current.Role, before, updatedUser.AdminPermissions)
+			if err != nil {
+				return err
+			}
+			auditEvents = append(auditEvents, event)
+		}
+		return model.AppendAuditIntentTx(tx, auditEvents[0])
 	}); err != nil {
+		if errors.Is(err, errAdtyAdminActionDenied) {
+			denyAdtyAdminAction(c)
+			return
+		}
 		common.ApiError(c, err)
 		return
 	}
+	deliverCommittedAudits(c, auditEvents)
 	if authzTouched {
 		if err := authz.ReloadPolicy(); err != nil {
 			common.ApiError(c, err)
 			return
 		}
 		authz.NotifyPolicyChanged()
-		recordAdtyPermissionChange(c, permissionChange)
 	}
-	if updatedUser.AuthVersion > originUser.AuthVersion {
+	if updatedUser.AuthVersion > previousAuthVersion {
 		if _, err := model.RevokeAllUserSessions(updatedUser.Id, "admin_user_update"); err != nil {
 			common.ApiError(c, err)
 			return
@@ -724,7 +772,6 @@ func UpdateUser(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	recordManageAuditFor(c, updatedUser.Id, "user.update", auditParams)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",

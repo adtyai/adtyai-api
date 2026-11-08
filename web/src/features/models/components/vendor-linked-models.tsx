@@ -30,7 +30,9 @@ import {
 import { ErrorState } from '@/components/error-state'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
+import { ADTY_PERMISSIONS, canAdmin } from '@/lib/adty-permissions'
 import { createServerError } from '@/lib/server-error-message'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { searchModels } from '../api'
 import { getNameRuleConfig } from '../constants'
@@ -48,6 +50,8 @@ export function VendorLinkedModels({
   onNavigate: (navigate: () => void) => void
 }) {
   const { t } = useTranslation()
+  const currentUser = useAuthStore((state) => state.auth.user)
+  const canWrite = canAdmin(currentUser, ADTY_PERMISSIONS.MODEL_WRITE)
   const navigate = useNavigate()
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 10 })
   const [keyword, setKeyword] = useState('')
@@ -192,6 +196,7 @@ export function VendorLinkedModels({
         <Button
           size='sm'
           variant='outline'
+          disabled={!canWrite}
           onClick={() =>
             setOperation({ action: 'assign', model_ids: selectedIds })
           }
@@ -201,6 +206,7 @@ export function VendorLinkedModels({
         <Button
           size='sm'
           variant='outline'
+          disabled={!canWrite}
           onClick={() =>
             setOperation({
               action: 'assign',

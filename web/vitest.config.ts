@@ -35,12 +35,10 @@ export default defineConfig({
       deps: { inline: [/@lobehub\//, /antd-style/] },
     },
     setupFiles: ['./src/test-setup.ts'],
-    // Several heavy jsdom suites (channel-configuration, visual-billing-editor)
-    // legitimately take >5s per test on contended CI runners; the vitest
-    // default of 5000ms fails whichever of them crosses the line first. The
-    // heaviest test measures ~3.2s uncontended, so 20s keeps headroom for the
-    // ~4x slowdown observed on shared runners.
-    testTimeout: 20000,
+    // Several heavy jsdom suites and the production route-compiler bootstrap
+    // test legitimately run alongside many workers. On contended CI runners,
+    // the 20s budget can expire while the test is still making progress.
+    testTimeout: 60000,
     clearMocks: true,
     restoreMocks: true,
     include: [

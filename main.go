@@ -244,7 +244,9 @@ func main() {
 		model.SaveQuotaDataCache()
 	}
 	// 批量额度还在内存队列里时，退出前写进数据库。
-	model.FlushBatchUpdates()
+	if err := model.FlushBatchUpdates(); err != nil {
+		common.SysError(common.LogText("batch flush failed during shutdown: %s", err.Error()))
+	}
 	common.SysLog(common.LogText("server exited"))
 }
 

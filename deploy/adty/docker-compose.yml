@@ -36,6 +36,7 @@ services:
       SESSION_COOKIE_TRUSTED_URL: ${SESSION_COOKIE_TRUSTED_URL:?set SESSION_COOKIE_TRUSTED_URL in .env}
       ERROR_LOG_ENABLED: "true"
       BATCH_UPDATE_ENABLED: "true"
+      ADTY_FLUSH_TOKEN: ${ADTY_FLUSH_TOKEN:?set ADTY_FLUSH_TOKEN in .env}
       NODE_NAME: ${NODE_NAME:-adtyai-node-1}
       TZ: ${TZ:-UTC}
       # Nginx 的请求经下面这个网络的网关进入容器，只信任它
@@ -53,7 +54,7 @@ services:
     logging: *default-logging
 
   postgres:
-    image: postgres:16
+    image: postgres:17
     container_name: adtyai-postgres
     restart: always
     environment:

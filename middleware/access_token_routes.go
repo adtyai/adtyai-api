@@ -280,6 +280,56 @@ var (
 	permissionRouteRules   = map[string]accessTokenRouteRule{}
 )
 
+// Static upstream routes have no later RequirePermission guard. In ADTY mode
+// both their token scope and the admin guard use the independent action.
+var adtyAccessTokenActionRoutes = map[string]string{
+	"GET /api/user/":                                   "adty_user:read",
+	"GET /api/user/search":                             "adty_user:read",
+	"GET /api/user/:id":                                "adty_user:read",
+	"GET /api/user/:id/oauth/bindings":                 "adty_user:read",
+	"GET /api/user/2fa/stats":                          "adty_user:read",
+	"GET /api/authz/catalog":                           "adty_user:read",
+	"PUT /api/user/":                                   "adty_user:write",
+	"DELETE /api/user/:id/oauth/bindings/:provider_id": "adty_user:write",
+	"DELETE /api/user/:id/bindings/:binding_type":      "adty_user:write",
+	"DELETE /api/user/:id/reset_passkey":               "adty_user:write",
+	"DELETE /api/user/:id/2fa":                         "adty_user:write",
+	"GET /api/models/":                                 "adty_model:read",
+	"GET /api/models/search":                           "adty_model:read",
+	"GET /api/models/:id":                              "adty_model:read",
+	"GET /api/models/missing":                          "adty_model:read",
+	"GET /api/models/sync_upstream/preview":            "adty_model:read",
+	"GET /api/vendors/":                                "adty_model:read",
+	"GET /api/vendors/search":                          "adty_model:read",
+	"GET /api/vendors/:id":                             "adty_model:read",
+	"POST /api/vendors/operations/preview":             "adty_model:read",
+	"PUT /api/models/":                                 "adty_model:write",
+	"PUT /api/vendors/":                                "adty_model:write",
+	"GET /api/prefill_group/":                          "adty_model:read",
+	"PUT /api/prefill_group/":                          "adty_model:write",
+	"GET /api/status/test":                             "adty_log:read",
+	"GET /api/log/":                                    "adty_log:read",
+	"GET /api/log/stat":                                "adty_log:read",
+	"GET /api/log/channel_affinity_usage_cache":        "adty_log:read",
+	"GET /api/log/search":                              "adty_log:read",
+	"GET /api/data/":                                   "adty_log:read",
+	"GET /api/data/users":                              "adty_log:read",
+	"GET /api/data/flow":                               "adty_log:read",
+	"GET /api/mj/":                                     "adty_log:read",
+	"GET /api/task":                                    "adty_log:read",
+	"GET /api/user/topup":                              "adty_finance:read",
+	"POST /api/user/":                                  "adty_user:create",
+	"DELETE /api/user/:id":                             "adty_user:delete",
+	"GET /api/log/export":                              "adty_log:export",
+	"POST /api/models/":                                "adty_model:create",
+	"POST /api/vendors/":                               "adty_model:create",
+	"POST /api/prefill_group/":                         "adty_model:create",
+	"DELETE /api/models/:id":                           "adty_model:delete",
+	"POST /api/models/delete":                          "adty_model:delete",
+	"DELETE /api/vendors/:id":                          "adty_model:delete",
+	"DELETE /api/prefill_group/:id":                    "adty_model:delete",
+}
+
 // DeclareAccessTokenPermissionRoute records that the Casbin permission guarding
 // a route is also the token scope it requires. It runs while routes are
 // registered and panics on conflicting declarations.
@@ -300,6 +350,14 @@ func DeclareAccessTokenPermissionRoute(method, fullPath string, permission authz
 // AccessTokenRouteRule returns the rule for "METHOD /full/path".
 func AccessTokenRouteRule(key string) (accessTokenRouteRule, bool) {
 	if rule, ok := accessTokenRouteRules[key]; ok {
+		if service.AdtyAdminPermissionsEnabled() {
+			if key == "POST /api/models/sync_upstream" || key == "POST /api/vendors/operations" {
+				return accessTokenAnyRule, true
+			}
+			if scope := adtyAccessTokenActionRoutes[key]; scope != "" {
+				return accessTokenScopeRule(scope), true
+			}
+		}
 		return rule, true
 	}
 	permissionRouteRulesMu.RLock()

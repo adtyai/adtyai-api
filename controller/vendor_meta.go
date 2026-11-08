@@ -7,6 +7,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service/authz"
 
 	"github.com/gin-gonic/gin"
 )
@@ -126,6 +127,19 @@ func ApplyVendorOperation(c *gin.Context) {
 	var request model.VendorOperation
 	if err := common.DecodeJson(c.Request.Body, &request); err != nil {
 		vendorAPIError(c, err)
+		return
+	}
+	var permissions []authz.Permission
+	switch request.Action {
+	case "assign":
+		permissions = []authz.Permission{authz.AdtyModelWrite}
+	case "merge":
+		permissions = []authz.Permission{authz.AdtyModelWrite, authz.AdtyModelDelete}
+	case "delete":
+		permissions = []authz.Permission{authz.AdtyModelDelete}
+	}
+	if err := adtyAuthorizeAdminActions(c, permissions...); err != nil {
+		denyAdtyAdminAction(c)
 		return
 	}
 	result, err := model.ApplyVendorOperation(request)

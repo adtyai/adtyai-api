@@ -2,6 +2,7 @@ package plugins_test
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"maps"
@@ -683,7 +684,7 @@ func TestAlibabaWanCompletionFactsAndArtifacts(t *testing.T) {
 				"usage":  tc.usage,
 			})
 			require.NoError(t, err)
-			result, err := adaptor.ParseTaskResult(task, &http.Response{StatusCode: http.StatusOK, Header: make(http.Header)}, encoded)
+			result, err := adaptor.ParseTaskResult(context.Background(), task, &http.Response{StatusCode: http.StatusOK, Header: make(http.Header)}, encoded)
 			require.NoError(t, err)
 			assert.Equal(t, "SUCCESS", result.Status)
 			assert.Equal(t, "https://cdn.example/result.mp4", result.Url)
@@ -850,7 +851,7 @@ func TestAlibabaImageResults(t *testing.T) {
 			task.SetData(body)
 			adaptor := taskplugin.New(plugin)
 			adaptor.Init(&relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{}})
-			result, err := adaptor.ParseTaskResult(task, &http.Response{StatusCode: http.StatusOK}, encoded)
+			result, err := adaptor.ParseTaskResult(context.Background(), task, &http.Response{StatusCode: http.StatusOK}, encoded)
 			require.NoError(t, err)
 			assert.Equal(t, "SUCCESS", result.Status)
 			assert.Equal(t, first, result.Url)
@@ -935,7 +936,7 @@ func TestAlibabaImageResults(t *testing.T) {
 		for _, count := range []any{-1, 0, 1.5, 1e30, "2"} {
 			encoded, err := common.Marshal(map[string]any{"output": map[string]any{"task_status": "SUCCEEDED", "choices": []any{map[string]any{"message": map[string]any{"content": []any{map[string]any{"image": first}}}}}}, "usage": map[string]any{"image_count": count}})
 			require.NoError(t, err)
-			result, err := adaptor.ParseTaskResult(task, &http.Response{StatusCode: http.StatusOK}, encoded)
+			result, err := adaptor.ParseTaskResult(context.Background(), task, &http.Response{StatusCode: http.StatusOK}, encoded)
 			require.NoError(t, err)
 			assert.Equal(t, "SUCCESS", result.Status)
 			assert.Nil(t, result.UsageFacts, "invalid count %v must not replace the reservation", count)
@@ -947,7 +948,7 @@ func TestAlibabaImageResults(t *testing.T) {
 		encoded, err := common.Marshal(body)
 		require.NoError(t, err)
 		adaptor := taskplugin.New(plugin)
-		result, err := adaptor.ParseTaskResult(&model.Task{Properties: model.Properties{UpstreamModelName: "wan2.6-image"}}, &http.Response{StatusCode: http.StatusOK}, encoded)
+		result, err := adaptor.ParseTaskResult(context.Background(), &model.Task{Properties: model.Properties{UpstreamModelName: "wan2.6-image"}}, &http.Response{StatusCode: http.StatusOK}, encoded)
 		require.NoError(t, err)
 		assert.Equal(t, "SUCCESS", result.Status)
 		assert.Equal(t, map[string]any{"image_count": float64(0)}, result.UsageFacts)

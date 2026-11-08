@@ -349,6 +349,7 @@ func migrateDB() error {
 		&ExternalIdentityClaim{},
 		&PasskeyCredential{},
 		&Option{},
+		&AuditIntent{},
 		&LoginEncryptionKey{},
 		&Ability{},
 		&Log{},
@@ -372,6 +373,7 @@ func migrateDB() error {
 		&SystemTaskLock{},
 		&CasbinRule{},
 		&AuthzRole{},
+		&AuthzActionCatalogState{},
 		&UserAccessToken{},
 	)
 	if err != nil {

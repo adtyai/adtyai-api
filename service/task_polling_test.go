@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -41,7 +42,7 @@ type batchPollingAdaptor struct {
 }
 
 func (a *batchPollingAdaptor) FetchMode() string { return "batch" }
-func (a *batchPollingAdaptor) FetchBatchTasks(_ string, _ string, tasks []*model.Task, _ string) (*http.Response, error) {
+func (a *batchPollingAdaptor) FetchBatchTasks(_ context.Context, _ string, _ string, tasks []*model.Task, _ string) (*http.Response, error) {
 	a.batchCalls++
 	a.batchIDs = a.batchIDs[:0]
 	for _, task := range tasks {
@@ -49,7 +50,7 @@ func (a *batchPollingAdaptor) FetchBatchTasks(_ string, _ string, tasks []*model
 	}
 	return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader([]byte(`{}`)))}, nil
 }
-func (a *batchPollingAdaptor) ParseBatchResult(_ []*model.Task, _ *http.Response, _ []byte) (map[string]*BatchTaskResult, error) {
+func (a *batchPollingAdaptor) ParseBatchResult(_ context.Context, _ []*model.Task, _ *http.Response, _ []byte) (map[string]*BatchTaskResult, error) {
 	if a.results != nil {
 		return a.results, nil
 	}
@@ -74,7 +75,7 @@ func (a *taskPollingFetchAdaptor) initChannelMeta() *relaycommon.ChannelMeta {
 	return a.initInfo.ChannelMeta
 }
 
-func (a *taskPollingFetchAdaptor) FetchTask(_ string, _ string, task *model.Task, _ string) (*http.Response, error) {
+func (a *taskPollingFetchAdaptor) FetchTask(_ context.Context, _ string, _ string, task *model.Task, _ string) (*http.Response, error) {
 	taskID := ""
 	if task != nil {
 		taskID = task.GetUpstreamTaskID()
@@ -116,11 +117,11 @@ func (a *taskPollingFetchAdaptor) FetchTask(_ string, _ string, task *model.Task
 	}, nil
 }
 
-func (a *taskPollingFetchAdaptor) ParseTaskResult(*model.Task, *http.Response, []byte) (*relaycommon.TaskInfo, error) {
+func (a *taskPollingFetchAdaptor) ParseTaskResult(context.Context, *model.Task, *http.Response, []byte) (*relaycommon.TaskInfo, error) {
 	return &relaycommon.TaskInfo{Status: model.TaskStatusInProgress}, nil
 }
 
-func (a *taskPollingFetchAdaptor) AdjustBillingOnComplete(_ *model.Task, _ *relaycommon.TaskInfo) int {
+func (a *taskPollingFetchAdaptor) AdjustBillingOnComplete(_ context.Context, _ *model.Task, _ *relaycommon.TaskInfo) int {
 	return 0
 }
 
@@ -547,10 +548,11 @@ func TestUpdateVideoTasksSlowChannelDoesNotBlockOtherChannels(t *testing.T) {
 	slowTask := seedPollingTask(t, slowChannelID, "task_public_slow", "upstream_slow_1")
 	fastFirst := seedPollingTask(t, fastChannelID, "task_public_fast_1", "upstream_fast_parallel_1")
 	fastSecond := seedPollingTask(t, fastChannelID, "task_public_fast_2", "upstream_fast_parallel_2")
+	slowID, fastFirstID, fastSecondID := slowTask.GetUpstreamTaskID(), fastFirst.GetUpstreamTaskID(), fastSecond.GetUpstreamTaskID()
 
 	adaptor := &taskPollingFetchAdaptor{
 		fetched:      make(chan string, 4),
-		blockTaskID:  slowTask.GetUpstreamTaskID(),
+		blockTaskID:  slowID,
 		blockStarted: make(chan struct{}),
 		releaseBlock: make(chan struct{}),
 	}
@@ -566,20 +568,30 @@ func TestUpdateVideoTasksSlowChannelDoesNotBlockOtherChannels(t *testing.T) {
 	t.Cleanup(func() { GetTaskAdaptorFunc = previousFactory })
 
 	errCh := make(chan error, 1)
+	done := make(chan struct{})
 	gopool.Go(func() {
+		defer close(done)
 		errCh <- UpdateVideoTasks(context.Background(), constant.TaskPlatform("kling"), map[int][]string{
 			slowChannelID: {
-				slowTask.GetUpstreamTaskID(),
+				slowID,
 			},
 			fastChannelID: {
-				fastFirst.GetUpstreamTaskID(),
-				fastSecond.GetUpstreamTaskID(),
+				fastFirstID,
+				fastSecondID,
 			},
 		}, map[string]*model.Task{
-			slowTask.GetUpstreamTaskID():   slowTask,
-			fastFirst.GetUpstreamTaskID():  fastFirst,
-			fastSecond.GetUpstreamTaskID(): fastSecond,
+			slowID:       slowTask,
+			fastFirstID:  fastFirst,
+			fastSecondID: fastSecond,
 		})
+	})
+	t.Cleanup(func() {
+		releaseBlockedTask()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Error("video polling must stop before restoring the adaptor fixture")
+		}
 	})
 
 	select {
@@ -591,16 +603,16 @@ func TestUpdateVideoTasksSlowChannelDoesNotBlockOtherChannels(t *testing.T) {
 	require.Eventually(t, func() bool {
 		fetchedTaskIDs := adaptor.fetchedTaskIDs()
 		return len(fetchedTaskIDs) == 2 &&
-			fetchedTaskIDs[0] == fastFirst.GetUpstreamTaskID() &&
-			fetchedTaskIDs[1] == fastSecond.GetUpstreamTaskID()
+			fetchedTaskIDs[0] == fastFirstID &&
+			fetchedTaskIDs[1] == fastSecondID
 	}, 500*time.Millisecond, 10*time.Millisecond)
 
 	releaseBlockedTask()
 	require.NoError(t, <-errCh)
 	assert.ElementsMatch(t, []string{
-		slowTask.GetUpstreamTaskID(),
-		fastFirst.GetUpstreamTaskID(),
-		fastSecond.GetUpstreamTaskID(),
+		slowID,
+		fastFirstID,
+		fastSecondID,
 	}, adaptor.fetchedTaskIDs())
 }
 
@@ -815,10 +827,47 @@ type scriptedPollingAdaptor struct {
 	fetchErr   error
 	parse      *relaycommon.TaskInfo
 	parseErr   error
+	onFetch    func()
+	onParse    func()
+	reader     io.ReadCloser
+	onComplete func(context.Context)
+}
+
+type pollingTestBody struct {
+	io.Reader
+	onRead func()
+	closed bool
+}
+
+func (b *pollingTestBody) Read(p []byte) (int, error) {
+	if b.onRead != nil {
+		b.onRead()
+		return 0, context.Canceled
+	}
+	return b.Reader.Read(p)
+}
+
+func (b *pollingTestBody) Close() error { b.closed = true; return nil }
+
+func TestReadTaskPollBodyEnforcesResponseBoundary(t *testing.T) {
+	for _, extra := range []int{0, 1} {
+		body := &pollingTestBody{Reader: strings.NewReader(strings.Repeat("x", (8<<20)+extra))}
+		data, err := ReadTaskPollBody(&http.Response{Body: body})
+		if extra == 0 {
+			require.NoError(t, err)
+			assert.Len(t, data, 8<<20)
+		} else {
+			require.Error(t, err)
+			assert.Nil(t, data)
+		}
+	}
 }
 
 func (a *scriptedPollingAdaptor) Init(*relaycommon.RelayInfo) {}
-func (a *scriptedPollingAdaptor) FetchTask(string, string, *model.Task, string) (*http.Response, error) {
+func (a *scriptedPollingAdaptor) FetchTask(context.Context, string, string, *model.Task, string) (*http.Response, error) {
+	if a.onFetch != nil {
+		a.onFetch()
+	}
 	if a.fetchErr != nil {
 		return nil, a.fetchErr
 	}
@@ -830,9 +879,16 @@ func (a *scriptedPollingAdaptor) FetchTask(string, string, *model.Task, string) 
 	if body == nil {
 		body = []byte(`{}`)
 	}
-	return &http.Response{StatusCode: code, Body: io.NopCloser(bytes.NewReader(body))}, nil
+	reader := a.reader
+	if reader == nil {
+		reader = io.NopCloser(bytes.NewReader(body))
+	}
+	return &http.Response{StatusCode: code, Body: reader}, nil
 }
-func (a *scriptedPollingAdaptor) ParseTaskResult(*model.Task, *http.Response, []byte) (*relaycommon.TaskInfo, error) {
+func (a *scriptedPollingAdaptor) ParseTaskResult(context.Context, *model.Task, *http.Response, []byte) (*relaycommon.TaskInfo, error) {
+	if a.onParse != nil {
+		a.onParse()
+	}
 	if a.parseErr != nil {
 		return nil, a.parseErr
 	}
@@ -841,8 +897,218 @@ func (a *scriptedPollingAdaptor) ParseTaskResult(*model.Task, *http.Response, []
 	}
 	return &relaycommon.TaskInfo{Status: model.TaskStatusInProgress}, nil
 }
-func (a *scriptedPollingAdaptor) AdjustBillingOnComplete(*model.Task, *relaycommon.TaskInfo) int {
+
+func TestRunTaskPollingOnceScopesUpstreamIDsToChannel(t *testing.T) {
+	previousLimit, previousTimeout := constant.TaskQueryLimit, constant.TaskTimeoutMinutes
+	constant.TaskQueryLimit, constant.TaskTimeoutMinutes = 10, 0
+	t.Cleanup(func() { constant.TaskQueryLimit, constant.TaskTimeoutMinutes = previousLimit, previousTimeout })
+	for _, test := range []struct{ batch, samePublicID bool }{
+		{false, false}, {true, false}, {false, true}, {true, true},
+	} {
+		t.Run(fmt.Sprintf("batch=%t/same_public_id=%t", test.batch, test.samePublicID), func(t *testing.T) {
+			truncate(t)
+			seedTaskPollingChannel(t, 701, true)
+			seedTaskPollingChannel(t, 702, true)
+			first := seedPollingTask(t, 701, "public-first", "1")
+			secondPublicID := "public-second"
+			if test.samePublicID {
+				secondPublicID = first.TaskID
+			}
+			second := seedPollingTask(t, 702, secondPublicID, "1")
+			previous := GetTaskAdaptorFunc
+			GetTaskAdaptorFunc = func(constant.TaskPlatform) TaskPollingAdaptor {
+				if test.batch {
+					return &scriptedBatchPollingAdaptor{results: map[string]*BatchTaskResult{
+						"1": {TaskInfo: relaycommon.TaskInfo{Status: model.TaskStatusInProgress, Progress: "70%"}},
+					}}
+				}
+				return &scriptedPollingAdaptor{parse: &relaycommon.TaskInfo{Status: model.TaskStatusInProgress, Progress: "70%"}}
+			}
+			t.Cleanup(func() { GetTaskAdaptorFunc = previous })
+			RunTaskPollingOnce(context.Background(), nil)
+			for _, task := range []*model.Task{first, second} {
+				var stored model.Task
+				require.NoError(t, model.DB.First(&stored, task.ID).Error)
+				assert.Equal(t, "70%", stored.Progress, "channel %d must update its own row", task.ChannelId)
+				assert.Equal(t, task.ChannelId, stored.ChannelId)
+			}
+		})
+	}
+}
+
+func TestUpdateBatchTasksRejectsUnsubmittedResultsBeforeUpdates(t *testing.T) {
+	for _, test := range []struct {
+		name           string
+		results        map[string]*BatchTaskResult
+		ambiguousInput bool
+	}{
+		{name: "unknown result", results: map[string]*BatchTaskResult{
+			"expected": {TaskInfo: relaycommon.TaskInfo{Status: model.TaskStatusSuccess}},
+			"foreign":  {TaskInfo: relaycommon.TaskInfo{Status: model.TaskStatusSuccess}},
+		}},
+		{name: "conflicting result identity", results: map[string]*BatchTaskResult{
+			"expected": {TaskInfo: relaycommon.TaskInfo{TaskID: "foreign", Status: model.TaskStatusSuccess}},
+		}},
+		{name: "empty result", results: map[string]*BatchTaskResult{"expected": nil}},
+		{name: "ambiguous input", ambiguousInput: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			truncate(t)
+			seedTaskPollingChannel(t, 703, true)
+			task := seedPollingTask(t, 703, "public-batch", "expected")
+			ids, tasks := []string{"expected"}, map[string]*model.Task{"expected": task}
+			if test.ambiguousInput {
+				second := seedPollingTask(t, 703, "second-public", "expected")
+				ids, tasks["second"] = append(ids, "second"), second
+			}
+			adaptor := &scriptedBatchPollingAdaptor{results: test.results}
+			require.Error(t, updateBatchTasks(context.Background(), adaptor, 703, ids, tasks))
+			var stored model.Task
+			require.NoError(t, model.DB.First(&stored, task.ID).Error)
+			assert.EqualValues(t, model.TaskStatusInProgress, stored.Status)
+		})
+	}
+}
+
+func TestUpdateVideoSingleTaskCancellationDoesNotPersistPollFailure(t *testing.T) {
+	previousMaxFailures := constant.TaskPollMaxFailures
+	constant.TaskPollMaxFailures = 3
+	t.Cleanup(func() { constant.TaskPollMaxFailures = previousMaxFailures })
+	for _, phase := range []string{"fetch", "parse", "body", "batch fetch", "batch parse", "batch body"} {
+		t.Run(phase, func(t *testing.T) {
+			truncate(t)
+			seedTaskPollingChannel(t, 704, true)
+			task := seedPollingTask(t, 704, "public-cancel", "cancel")
+			seedUser(t, 1, 100)
+			task.Quota = 123
+			task.PrivateData.PollFailures = 2
+			require.NoError(t, model.DB.Save(task).Error)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			adaptor := &scriptedPollingAdaptor{parse: &relaycommon.TaskInfo{Status: model.TaskStatusSuccess}}
+			body := &pollingTestBody{Reader: strings.NewReader(`{}`)}
+			adaptor.reader = body
+			if strings.Contains(phase, "fetch") {
+				adaptor.onFetch = cancel
+				adaptor.fetchErr = context.Canceled
+			} else if strings.Contains(phase, "body") {
+				body.onRead = cancel
+			} else {
+				adaptor.onParse = cancel
+			}
+			ch, err := model.GetChannelById(704, true)
+			require.NoError(t, err)
+			if strings.HasPrefix(phase, "batch") {
+				batch := &scriptedBatchPollingAdaptor{scriptedPollingAdaptor: *adaptor, results: map[string]*BatchTaskResult{"cancel": {TaskInfo: relaycommon.TaskInfo{Status: model.TaskStatusSuccess}}}}
+				err = updateBatchTasks(ctx, batch, 704, []string{"cancel"}, map[string]*model.Task{"cancel": task})
+			} else {
+				err = updateVideoSingleTask(ctx, adaptor, ch, "cancel", map[string]*model.Task{"cancel": task})
+			}
+			require.ErrorIs(t, err, context.Canceled)
+			var stored model.Task
+			require.NoError(t, model.DB.First(&stored, task.ID).Error)
+			assert.EqualValues(t, model.TaskStatusInProgress, stored.Status)
+			assert.Equal(t, 2, stored.PrivateData.PollFailures)
+			assert.Empty(t, stored.FinishTime)
+			assert.Equal(t, 123, stored.Quota)
+			assert.Equal(t, 100, getUserQuota(t, 1))
+			if !strings.Contains(phase, "fetch") {
+				assert.True(t, body.closed)
+			}
+		})
+	}
+}
+
+func TestUpdateVideoSingleTaskRejectsOversizedResponseBeforeParsing(t *testing.T) {
+	truncate(t)
+	seedTaskPollingChannel(t, 705, true)
+	task := seedPollingTask(t, 705, "public-large", "large")
+	parsed := false
+	adaptor := &scriptedPollingAdaptor{
+		body:    []byte(strings.Repeat(" ", (8<<20)+1)),
+		onParse: func() { parsed = true },
+		parse:   &relaycommon.TaskInfo{Status: model.TaskStatusSuccess},
+	}
+	ch, err := model.GetChannelById(705, true)
+	require.NoError(t, err)
+	_ = updateVideoSingleTask(context.Background(), adaptor, ch, "large", map[string]*model.Task{"large": task})
+	assert.False(t, parsed)
+	var stored model.Task
+	require.NoError(t, model.DB.First(&stored, task.ID).Error)
+	assert.EqualValues(t, model.TaskStatusInProgress, stored.Status)
+}
+
+func TestUpdateVideoSingleTaskRejectsForeignResultIdentity(t *testing.T) {
+	for _, gateway := range []bool{false, true} {
+		for _, returnedID := range []string{"", "expected", "foreign"} {
+			t.Run(fmt.Sprintf("gateway=%t/id=%s", gateway, returnedID), func(t *testing.T) {
+				truncate(t)
+				seedTaskPollingChannel(t, 707, true)
+				seedUser(t, 1, 100)
+				task := seedPollingTask(t, 707, "public-identity", "expected")
+				task.Quota = 123
+				task.PrivateData.PollFailures = 2
+				task.SetData(map[string]any{"before": true})
+				require.NoError(t, model.DB.Save(task).Error)
+				originalData := append([]byte(nil), task.Data...)
+				adaptor := &scriptedPollingAdaptor{parse: &relaycommon.TaskInfo{TaskID: returnedID, Status: model.TaskStatusSuccess}}
+				if gateway {
+					body, err := common.Marshal(taskdto.TaskResponse[model.Task]{Code: taskdto.TaskSuccessCode, Data: model.Task{TaskID: returnedID, Status: model.TaskStatusSuccess}})
+					require.NoError(t, err)
+					adaptor.body = body
+				}
+				ch, err := model.GetChannelById(707, true)
+				require.NoError(t, err)
+				err = updateVideoSingleTask(context.Background(), adaptor, ch, "expected", map[string]*model.Task{"expected": task})
+				var stored model.Task
+				require.NoError(t, model.DB.First(&stored, task.ID).Error)
+				if returnedID == "foreign" {
+					require.Error(t, err)
+					assert.EqualValues(t, model.TaskStatusInProgress, stored.Status)
+					assert.Equal(t, 2, stored.PrivateData.PollFailures)
+					assert.Zero(t, stored.FinishTime)
+					assert.JSONEq(t, string(originalData), string(stored.Data))
+				} else {
+					require.NoError(t, err)
+					assert.EqualValues(t, model.TaskStatusSuccess, stored.Status)
+				}
+				assert.Equal(t, 123, stored.Quota)
+				assert.Equal(t, 100, getUserQuota(t, 1))
+			})
+		}
+	}
+}
+func (a *scriptedPollingAdaptor) AdjustBillingOnComplete(ctx context.Context, _ *model.Task, _ *relaycommon.TaskInfo) int {
+	if a.onComplete != nil {
+		a.onComplete(ctx)
+	}
 	return 0
+}
+
+func TestUpdateVideoSingleTaskFinishesCommittedTerminalAfterCallerCancellation(t *testing.T) {
+	truncate(t)
+	seedTaskPollingChannel(t, 706, true)
+	seedUser(t, 1, 100)
+	task := seedPollingTask(t, 706, "public-committed", "committed")
+	task.Quota = 123
+	require.NoError(t, model.DB.Save(task).Error)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var completionErr error
+	adaptor := &scriptedPollingAdaptor{
+		parse:      &relaycommon.TaskInfo{Status: model.TaskStatusFailure, Reason: "provider rejected"},
+		onComplete: func(ownerCtx context.Context) { cancel(); completionErr = ownerCtx.Err() },
+	}
+	ch, err := model.GetChannelById(706, true)
+	require.NoError(t, err)
+	require.NoError(t, updateVideoSingleTask(ctx, adaptor, ch, "committed", map[string]*model.Task{"committed": task}))
+	require.ErrorIs(t, ctx.Err(), context.Canceled)
+	require.NoError(t, completionErr)
+	var stored model.Task
+	require.NoError(t, model.DB.First(&stored, task.ID).Error)
+	assert.EqualValues(t, model.TaskStatusFailure, stored.Status)
+	assert.Zero(t, stored.Quota)
+	assert.Equal(t, 223, getUserQuota(t, 1))
 }
 
 type scriptedBatchPollingAdaptor struct {
@@ -851,10 +1117,13 @@ type scriptedBatchPollingAdaptor struct {
 }
 
 func (a *scriptedBatchPollingAdaptor) FetchMode() string { return "batch" }
-func (a *scriptedBatchPollingAdaptor) FetchBatchTasks(string, string, []*model.Task, string) (*http.Response, error) {
-	return a.FetchTask("", "", nil, "")
+func (a *scriptedBatchPollingAdaptor) FetchBatchTasks(context.Context, string, string, []*model.Task, string) (*http.Response, error) {
+	return a.FetchTask(context.Background(), "", "", nil, "")
 }
-func (a *scriptedBatchPollingAdaptor) ParseBatchResult([]*model.Task, *http.Response, []byte) (map[string]*BatchTaskResult, error) {
+func (a *scriptedBatchPollingAdaptor) ParseBatchResult(context.Context, []*model.Task, *http.Response, []byte) (map[string]*BatchTaskResult, error) {
+	if a.onParse != nil {
+		a.onParse()
+	}
 	if a.parseErr != nil {
 		return nil, a.parseErr
 	}

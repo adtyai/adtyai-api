@@ -21,18 +21,18 @@ func AdtyLockForUpdate(tx *gorm.DB) *gorm.DB {
 // AdtyCreditUserQuotaTx 在调用方的事务里给用户加额度，返回加之前的额度（写余额流水用）。
 // 提交后调用方要调 AdtySyncCreditUserQuotaCache。
 func AdtyCreditUserQuotaTx(tx *gorm.DB, userId int, quota int64) (before int64, err error) {
-	if quota <= 0 {
+	if quota <= 0 || quota > int64(common.MaxWalletQuota) {
 		return 0, errors.New("credit quota must be positive")
 	}
-	before, err = lockUserQuotaTx(tx, userId)
+	var user User
+	if err := lockForUpdate(tx).First(&user, userId).Error; err != nil {
+		return 0, err
+	}
+	balance, err := userWalletBalance(user.Quota, user.QuotaPending)
 	if err != nil {
 		return 0, err
 	}
-	if before+quota > int64(common.MaxWalletQuota) {
-		return 0, ErrWalletQuotaLimitExceeded
-	}
-	err = tx.Model(&User{}).Where("id = ?", userId).Update("quota", gorm.Expr("quota + ?", quota)).Error
-	return before, err
+	return int64(balance), applyUserQuotaDeltaTx(tx, &user, int(quota), false)
 }
 
 // AdtySyncCreditUserQuotaCache 在加额度的事务提交后同步缓存。
@@ -40,7 +40,7 @@ func AdtySyncCreditUserQuotaCache(userId int, quota int64, operation string) {
 	if quota <= 0 {
 		return
 	}
-	if err := cacheIncrUserQuota(userId, quota); err != nil {
+	if err := invalidateUserCache(userId); err != nil {
 		common.SysError(common.LogText("failed to sync %s credit to user quota cache: %s", operation, err.Error()))
 		recordWalletCacheReview(userId, quota, operation, err)
 		return

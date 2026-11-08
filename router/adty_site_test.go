@@ -77,6 +77,13 @@ func TestResellerSettingsSaveRules(t *testing.T) {
 	assert.Equal(t, true, on.Data["cloudflare_token_configured"])
 	assert.True(t, put(`{"cloudflare_apiToken":""}`).Success)
 	assert.Equal(t, "cf-secret", cfg.CloudflareApiToken, "an empty secret means unchanged")
+	assert.True(t, put(`{"turnstile_widgets":[{"id":"w1","site_key":"site-key-1"},{"id":"w2","site_key":"site-key-2"}],"turnstile_widget_secret":{"w1":"widget-secret-1","w2":"widget-secret-2"}}`).Success)
+	assert.True(t, put(`{"turnstile_widget_secret":{"w1":"replacement-secret"}}`).Success)
+	assert.Equal(t, map[string]string{"w1": "replacement-secret", "w2": "widget-secret-2"}, cfg.TurnstileWidgetSecret, "Root can replace one widget secret without changing another")
+	cleared := put(`{"custom_domain_enabled":false,"clear_secrets":["cloudflare_apiToken","turnstile_widget_secret"]}`)
+	assert.True(t, cleared.Success, cleared.Message)
+	assert.Empty(t, cfg.CloudflareApiToken)
+	assert.Empty(t, cfg.TurnstileWidgetSecret)
 
 	assert.False(t, put(`{"sender_domain_enabled":true}`).Success, "Resend API key is not set")
 	common.OptionMap["ResendApiKey"] = "re_test"
@@ -157,12 +164,16 @@ func TestSiteAdminPermissions(t *testing.T) {
 	assert.Equal(t, http.StatusForbidden, adtyJSON(t, f.engine, http.MethodPost, "/api/adty/admin/sites", create, f.token).Code)
 
 	f.grant(t, authz.AdtySiteRead, authz.AdtySiteAdjust)
+	assert.Equal(t, http.StatusForbidden, adtyJSON(t, f.engine, http.MethodPost, "/api/adty/admin/sites", create, f.token).Code, "adjust cannot replace create")
+	f.grant(t, authz.AdtySiteRead, authz.AdtySiteCreate)
 	resp := adtyJSON(t, f.engine, http.MethodPost, "/api/adty/admin/sites", create, f.token)
 	require.Contains(t, resp.Body.String(), `"success":true`, resp.Body.String())
 	var envelope apiEnvelope
 	require.NoError(t, common.Unmarshal(resp.Body.Bytes(), &envelope))
 	siteID := int(envelope.Data["id"].(float64))
 	adjust := fmt.Sprintf("/api/adty/admin/sites/%d", siteID)
+	assert.Equal(t, http.StatusForbidden, adtyJSON(t, f.engine, http.MethodPut, adjust, `{"cost_factor":"0.7"}`, f.token).Code, "create cannot replace adjust")
+	f.grant(t, authz.AdtySiteRead, authz.AdtySiteAdjust)
 	low := adtyJSON(t, f.engine, http.MethodPut, adjust, `{"cost_factor":"0.4"}`, f.token)
 	assert.Contains(t, low.Body.String(), "The cost factor cannot be below the minimum cost factor")
 	ok := adtyJSON(t, f.engine, http.MethodPut, adjust, `{"cost_factor":"0.7","reason":"volume"}`, f.token)
@@ -176,9 +187,171 @@ func TestSiteAdminPermissions(t *testing.T) {
 
 	f.grant(t, authz.AdtySiteSettings)
 	settings := adtyJSON(t, f.engine, http.MethodPut, "/api/adty/admin/reseller/settings", `{"enabled":false}`, f.token)
-	assert.Equal(t, http.StatusForbidden, settings.Code, "reseller money settings stay root-only after the site-settings grant")
+	assert.Equal(t, http.StatusOK, settings.Code, settings.Body.String())
+	assert.Contains(t, settings.Body.String(), `"success":true`)
 	code := adtyJSON(t, f.engine, http.MethodPost, "/api/adty/admin/reseller/invite-codes", `{"max_uses":2,"cost_factor":"0.6"}`, f.token)
+	assert.Equal(t, http.StatusForbidden, code.Code, "settings write cannot replace invite creation")
+	f.grant(t, authz.AdtySiteSettingsCreate)
+	code = adtyJSON(t, f.engine, http.MethodPost, "/api/adty/admin/reseller/invite-codes", `{"max_uses":2,"cost_factor":"0.6"}`, f.token)
 	assert.Contains(t, code.Body.String(), `"used_count":0`, code.Body.String())
+}
+
+func TestResellerSettingsDelegation(t *testing.T) {
+	f := newAdtyGuardFixture(t)
+	cfg := withResellerSetting(t)
+	cfg.Enabled, cfg.RootDomains = true, []string{"sites.example.com"}
+	cfg.CostFactor, cfg.MinCostFactor, cfg.MaxMarkup = new(0.8), new(0.5), new(3.0)
+	cfg.MaxSiteBonusExtra, cfg.TrialGrantMaxUSD, cfg.TrialGrantDailyUSD = new(0.0), new(0.0), new(0.0)
+	cfg.CloudflareApiToken = "fixture-cf-token"
+	cfg.TurnstileWidgets = []adty_setting.ResellerTurnstileWidget{{Id: "w1", SiteKey: "fixture-site-key"}}
+	cfg.TurnstileWidgetSecret = map[string]string{"w1": "fixture-widget-secret"}
+	path := "/api/adty/admin/reseller/settings"
+	regular := adtySessionToken(t, f.db, "settings-user", common.RoleCommonUser)
+	ownerToken := adtySessionToken(t, f.db, "settings-owner", common.RoleCommonUser)
+	var owner model.User
+	require.NoError(t, f.db.Where("username = ?", "settings-owner").First(&owner).Error)
+	_, err := service.OpenAdtySite(owner.Id, "settings-owner", model.AdtySiteOpenedByAdmin, service.AdtySitePreset{})
+	require.NoError(t, err)
+
+	t.Run("six_identities", func(t *testing.T) {
+		for _, tc := range []struct {
+			name        string
+			token       string
+			permissions []authz.Permission
+			status      int
+		}{
+			{name: "anonymous", status: http.StatusUnauthorized},
+			{name: "regular_user", token: regular, status: http.StatusForbidden},
+			{name: "site_owner", token: ownerToken, status: http.StatusForbidden},
+			{name: "read_only_admin", token: f.token, permissions: []authz.Permission{authz.AdtySiteRead}, status: http.StatusForbidden},
+			{name: "admin_without_module_grant", token: f.token, status: http.StatusForbidden},
+			{name: "root", token: f.root, status: http.StatusOK},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				f.grant(t, tc.permissions...)
+				for _, method := range []string{http.MethodGet, http.MethodPut} {
+					resp := adtyJSON(t, f.engine, method, path, `{"freeze_days":8}`, tc.token)
+					assert.Equal(t, tc.status, resp.Code, method+" "+resp.Body.String())
+					if tc.status == http.StatusOK {
+						assert.Contains(t, resp.Body.String(), `"success":true`)
+						assert.NotContains(t, resp.Body.String(), "fixture-cf-token")
+						assert.NotContains(t, resp.Body.String(), "fixture-widget-secret")
+					}
+				}
+			})
+		}
+	})
+
+	t.Run("granted_admin_and_revocation", func(t *testing.T) {
+		f.grant(t, authz.AdtySiteSettingsRead, authz.AdtySiteSettings)
+		view := adtyJSON(t, f.engine, http.MethodGet, path, "", f.token)
+		assert.Equal(t, http.StatusOK, view.Code, view.Body.String())
+		assert.Contains(t, view.Body.String(), `"cloudflare_token_configured":true`)
+		assert.NotContains(t, view.Body.String(), "fixture-cf-token")
+		assert.NotContains(t, view.Body.String(), "fixture-widget-secret")
+		save := adtyJSON(t, f.engine, http.MethodPut, path, `{"freeze_days":9}`, f.token)
+		assert.Equal(t, http.StatusOK, save.Code, save.Body.String())
+		assert.Contains(t, save.Body.String(), `"success":true`)
+		assert.Equal(t, 9, cfg.FreezeDays)
+		stored, ok, err := model.ReadOptionFromDB("adty_reseller_setting.freeze_days")
+		require.NoError(t, err)
+		assert.True(t, ok)
+		assert.Equal(t, "9", stored)
+		assert.Equal(t, "fixture-cf-token", cfg.CloudflareApiToken)
+		assert.Equal(t, map[string]string{"w1": "fixture-widget-secret"}, cfg.TurnstileWidgetSecret)
+		f.grant(t)
+		for _, method := range []string{http.MethodGet, http.MethodPut} {
+			resp := adtyJSON(t, f.engine, method, path, `{"freeze_days":10}`, f.token)
+			assert.Equal(t, http.StatusForbidden, resp.Code, method+" "+resp.Body.String())
+		}
+		assert.Equal(t, 9, cfg.FreezeDays)
+	})
+
+	t.Run("secret_keys_reject_the_whole_request", func(t *testing.T) {
+		f.grant(t, authz.AdtySiteSettings)
+		before, err := common.Marshal(cfg)
+		require.NoError(t, err)
+		var optionsBefore []model.Option
+		require.NoError(t, f.db.Order("key").Find(&optionsBefore).Error)
+		originalSecrets := cfg.TurnstileWidgetSecret
+		notifications := 0
+		previousNotify := service.NotifySiteOwnersGlobalCostFactorPending
+		service.NotifySiteOwnersGlobalCostFactorPending = func(decimal.Decimal, int64) { notifications++ }
+		t.Cleanup(func() { service.NotifySiteOwnersGlobalCostFactorPending = previousNotify })
+		for _, tc := range []struct{ name, secret string }{
+			{"token", `"cloudflare_apiToken":"replacement"`},
+			{"token_empty", `"cloudflare_apiToken":""`},
+			{"token_null", `"cloudflare_apiToken":null`},
+			{"widget", `"turnstile_widget_secret":{"w1":"replacement","w2":"new"}`},
+			{"widget_empty", `"turnstile_widget_secret":{}`},
+			{"widget_null", `"turnstile_widget_secret":null`},
+			{"clear_token", `"clear_secrets":["cloudflare_apiToken"]`},
+			{"clear_widgets", `"clear_secrets":["turnstile_widget_secret"]`},
+			{"clear_empty", `"clear_secrets":[]`},
+			{"clear_null", `"clear_secrets":null`},
+			{"mixed_secret_and_clear", `"cloudflare_apiToken":"replacement","clear_secrets":["turnstile_widget_secret"]`},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				body := `{"freeze_days":99,"cost_factor":0.9,"min_cost_factor":0.6,` + tc.secret + `}`
+				resp := adtyJSON(t, f.engine, http.MethodPut, path, body, f.token)
+				assert.Equal(t, http.StatusForbidden, resp.Code, resp.Body.String())
+				after, err := common.Marshal(cfg)
+				require.NoError(t, err)
+				assert.JSONEq(t, string(before), string(after), "rejected requests leave all current settings unchanged")
+				assert.Equal(t, map[string]string{"w1": "fixture-widget-secret"}, originalSecrets, "the original secret map must not be changed through a shallow copy")
+				var optionsAfter []model.Option
+				require.NoError(t, f.db.Order("key").Find(&optionsAfter).Error)
+				assert.Equal(t, optionsBefore, optionsAfter, "ordinary and secret fields must not be saved from a rejected mixed request")
+				assert.Zero(t, notifications, "secret authorization must happen before price-change notifications")
+			})
+		}
+	})
+
+	t.Run("pat_scope_and_live_grant", func(t *testing.T) {
+		require.NoError(t, model.EnsureLegacyAccessTokenRetireAt(time.Now().Unix()))
+		f.grant(t, authz.AdtySiteSettingsRead, authz.AdtySiteSettings)
+		settingsPAT := createAdtyScopedToken(t, f.admin.Id, service.AccessTokenScopeOf(authz.AdtySiteSettingsRead), service.AccessTokenScopeOf(authz.AdtySiteSettings))
+		wrongScope := createAdtyScopedToken(t, f.admin.Id, service.AccessTokenScopeOf(authz.AdtySiteRead))
+		adminOptionPAT := createAdtyScopedToken(t, f.admin.Id, "option:read", "option:write")
+		var root model.User
+		require.NoError(t, f.db.Where("username = ?", "guard-root").First(&root).Error)
+		rootReadPAT := createAdtyScopedToken(t, root.Id, "option:read")
+		rootWritePAT := createAdtyScopedToken(t, root.Id, "option:write")
+		assert.Equal(t, http.StatusForbidden, adtyJSON(t, f.engine, http.MethodGet, path, "", rootReadPAT).Code, "new tokens cannot borrow the historical option alias")
+		assert.Equal(t, http.StatusForbidden, adtyJSON(t, f.engine, http.MethodPut, path, `{"freeze_days":11}`, rootWritePAT).Code)
+		require.NoError(t, f.db.Model(&model.UserAccessToken{}).Where("token_hash IN ?", []string{model.AccessTokenFingerprint(rootReadPAT), model.AccessTokenFingerprint(rootWritePAT)}).Update("scope_version", 0).Error)
+		for _, tc := range []struct {
+			name, token, method string
+			status              int
+		}{
+			{"admin_get", settingsPAT, http.MethodGet, http.StatusOK},
+			{"admin_put", settingsPAT, http.MethodPut, http.StatusOK},
+			{"wrong_scope_get", wrongScope, http.MethodGet, http.StatusForbidden},
+			{"wrong_scope_put", wrongScope, http.MethodPut, http.StatusForbidden},
+			{"admin_option_get", adminOptionPAT, http.MethodGet, http.StatusForbidden},
+			{"admin_option_put", adminOptionPAT, http.MethodPut, http.StatusForbidden},
+			{"root_old_read", rootReadPAT, http.MethodGet, http.StatusOK},
+			{"root_old_write", rootWritePAT, http.MethodPut, http.StatusOK},
+			{"root_old_read_cannot_write", rootReadPAT, http.MethodPut, http.StatusForbidden},
+			{"root_old_write_cannot_read", rootWritePAT, http.MethodGet, http.StatusForbidden},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				resp := adtyJSON(t, f.engine, tc.method, path, `{"freeze_days":11}`, tc.token)
+				assert.Equal(t, tc.status, resp.Code, resp.Body.String())
+				if tc.status == http.StatusOK {
+					assert.Contains(t, resp.Body.String(), `"success":true`)
+				}
+			})
+		}
+		assert.Equal(t, http.StatusForbidden, adtyJSON(t, f.engine, http.MethodGet, "/api/adty/admin/reseller/invite-codes", "", rootReadPAT).Code)
+		assert.Equal(t, http.StatusForbidden, adtyJSON(t, f.engine, http.MethodPost, "/api/adty/admin/reseller/invite-codes", `{"max_uses":1}`, rootWritePAT).Code)
+		assert.Equal(t, http.StatusNotFound, adtyJSON(t, f.engine, http.MethodPost, path, `{}`, settingsPAT).Code)
+		assert.Equal(t, http.StatusForbidden, adtyJSON(t, f.engine, http.MethodGet, "/api/option/", "", settingsPAT).Code)
+		f.grant(t)
+		for _, method := range []string{http.MethodGet, http.MethodPut} {
+			assert.Equal(t, http.StatusForbidden, adtyJSON(t, f.engine, method, path, `{"freeze_days":12}`, settingsPAT).Code)
+		}
+	})
 }
 
 // 分站管理的经营数据、排序、风控复核和举报（任务 11.9 后端）。
@@ -302,6 +475,8 @@ func TestSiteNoticeTakedown(t *testing.T) {
 	assert.Equal(t, http.StatusForbidden, adtyJSON(t, f.engine, http.MethodDelete, path, "", f.token).Code)
 
 	f.grant(t, authz.AdtySiteRead, authz.AdtySiteAdjust)
+	assert.Equal(t, http.StatusForbidden, adtyJSON(t, f.engine, http.MethodDelete, path, `{"reason":"spam"}`, f.token).Code, "adjust cannot replace delete")
+	f.grant(t, authz.AdtySiteRead, authz.AdtySiteDelete)
 	resp := adtyJSON(t, f.engine, http.MethodDelete, path, `{"reason":"spam"}`, f.token)
 	require.Contains(t, resp.Body.String(), `"cleared":true`, resp.Body.String())
 	stored, err := service.GetAdtySite(site.Id)

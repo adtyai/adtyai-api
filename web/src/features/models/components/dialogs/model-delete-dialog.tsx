@@ -29,7 +29,14 @@ import {
   useCanEditModelPricing,
   invalidateModelPricing,
 } from '@/features/model-pricing/api'
+import {
+  ADMIN_PERMISSION_ACTIONS,
+  ADMIN_PERMISSION_RESOURCES,
+} from '@/lib/admin-permissions'
+import { ADTY_PERMISSIONS, canAdmin } from '@/lib/adty-permissions'
+import { ROLE } from '@/lib/roles'
 import { createServerError, getServerMessage } from '@/lib/server-error-message'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { deleteModel, deleteModels } from '../../api'
 import type { Model } from '../../types'
@@ -46,6 +53,12 @@ export function ModelDeleteDialog(props: ModelDeleteDialogProps) {
   const checkboxId = useId()
   const pricingCheckboxId = useId()
   const canEditPricing = useCanEditModelPricing()
+  const currentUser = useAuthStore((state) => state.auth.user)
+  const canDelete = canAdmin(currentUser, ADTY_PERMISSIONS.MODEL_DELETE)
+  const canWriteChannels = canAdmin(currentUser, {
+    resource: ADMIN_PERMISSION_RESOURCES.CHANNEL,
+    action: ADMIN_PERMISSION_ACTIONS.WRITE,
+  })
   const supportsChannelRemoval = props.models.every(
     (model) => model.name_rule === 0
   )
@@ -54,6 +67,19 @@ export function ModelDeleteDialog(props: ModelDeleteDialogProps) {
   const client = useQueryClient()
   const mutation = useMutation({
     mutationFn: async () => {
+      const user = useAuthStore.getState().auth.user
+      if (
+        !canAdmin(user, ADTY_PERMISSIONS.MODEL_DELETE) ||
+        (removeFromChannels &&
+          supportsChannelRemoval &&
+          !canAdmin(user, {
+            resource: ADMIN_PERMISSION_RESOURCES.CHANNEL,
+            action: ADMIN_PERMISSION_ACTIONS.WRITE,
+          })) ||
+        (removePricing && user?.role !== ROLE.SUPER_ADMIN)
+      ) {
+        throw new Error(t('No permission to perform this action'))
+      }
       const ids = props.models.map((model) => model.id)
       const response =
         ids.length === 1
@@ -106,7 +132,12 @@ export function ModelDeleteDialog(props: ModelDeleteDialogProps) {
       desc={description}
       confirmText={t('Delete')}
       destructive
-      disabled={!props.models.length}
+      disabled={
+        !props.models.length ||
+        !canDelete ||
+        (removeFromChannels && supportsChannelRemoval && !canWriteChannels) ||
+        (removePricing && !canEditPricing)
+      }
       isLoading={mutation.isPending}
       handleConfirm={() => mutation.mutate()}
     >
@@ -116,7 +147,9 @@ export function ModelDeleteDialog(props: ModelDeleteDialogProps) {
             id={checkboxId}
             className='mt-0.5'
             checked={removeFromChannels && supportsChannelRemoval}
-            disabled={mutation.isPending || !supportsChannelRemoval}
+            disabled={
+              mutation.isPending || !supportsChannelRemoval || !canWriteChannels
+            }
             onCheckedChange={(checked) =>
               setRemoveFromChannels(checked === true)
             }

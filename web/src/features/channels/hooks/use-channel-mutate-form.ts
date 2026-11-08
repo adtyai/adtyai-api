@@ -23,8 +23,8 @@ import { toast } from 'sonner'
 import {
   ADMIN_PERMISSION_ACTIONS,
   ADMIN_PERMISSION_RESOURCES,
-  hasPermission,
 } from '@/lib/admin-permissions'
+import { canAdmin } from '@/lib/adty-permissions'
 import { handleServerError } from '@/lib/handle-server-error'
 import { createServerError } from '@/lib/server-error-message'
 import { useAuthStore } from '@/stores/auth-store'
@@ -59,15 +59,30 @@ const SENSITIVE_UPDATE_FIELDS = [
 
 export function useChannelMutateForm(props: UseChannelMutateFormParams) {
   const { t } = useTranslation()
-  const currentUser = useAuthStore((s) => s.auth.user)
-  const canEditSensitive = hasPermission(
-    currentUser,
-    ADMIN_PERMISSION_RESOURCES.CHANNEL,
-    ADMIN_PERMISSION_ACTIONS.SENSITIVE_WRITE
-  )
 
   return useMutation({
-    mutationFn: async (data: ChannelFormValues): Promise<string> => {
+    mutationFn: async (input: {
+      data: ChannelFormValues
+      requiresSensitiveWrite: boolean
+    }): Promise<string> => {
+      const currentUser = useAuthStore.getState().auth.user
+      const canEditSensitive = canAdmin(currentUser, {
+        resource: ADMIN_PERMISSION_RESOURCES.CHANNEL,
+        action: ADMIN_PERMISSION_ACTIONS.SENSITIVE_WRITE,
+      })
+      if (
+        !canAdmin(currentUser, {
+          resource: ADMIN_PERMISSION_RESOURCES.CHANNEL,
+          action: props.isEditing
+            ? ADMIN_PERMISSION_ACTIONS.WRITE
+            : ADMIN_PERMISSION_ACTIONS.CREATE,
+        }) ||
+        (props.isEditing && !props.currentRow) ||
+        (props.isEditing && input.requiresSensitiveWrite && !canEditSensitive)
+      ) {
+        throw new Error(t('No permission to perform this action'))
+      }
+      const data = input.data
       if (props.isEditing && props.currentRow) {
         const payload = transformFormDataToUpdatePayload(
           data,

@@ -21,6 +21,7 @@ import (
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
 	"github.com/alicebob/miniredis/v2"
+	"github.com/bytedance/gopkg/util/gopool"
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
 	"github.com/stretchr/testify/assert"
@@ -186,6 +187,7 @@ const (
 // 让旧规则的信任旁路对任何正余额都生效：余额下限规则下钱包不再走信任旁路。
 func prepareFloorDB(t *testing.T) *gorm.DB {
 	t.Helper()
+	workerBaseline := gopool.WorkerCount()
 	db := prepareSiteDB(t)
 	require.NoError(t, db.AutoMigrate(&model.Token{}, &model.Channel{}, &model.Task{}, &model.Midjourney{}))
 	quotaSetting := operation_setting.GetQuotaSetting()
@@ -198,17 +200,28 @@ func prepareFloorDB(t *testing.T) *gorm.DB {
 	quotaSetting.TrustQuotaUSD = 1e-6 // 0.5 额度
 	common.BatchUpdateEnabled, common.LogConsumeEnabled = false, true
 	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"default":1}`))
+	t.Cleanup(func() {
+		// Notifications own one permanent worker; drain wallet/cache work before
+		// restoring the shared settings or dropping the test database.
+		cleanupOnce.Do(startCleanupTask)
+		minimumWorkers := max(workerBaseline, 1)
+		require.Eventually(t, func() bool { return gopool.WorkerCount() <= minimumWorkers }, 5*time.Second, time.Millisecond)
+	})
 	return db
 }
 
 // useFloorMiniRedis 打开 Redis（miniredis），余额以缓存为准。
 func useFloorMiniRedis(t *testing.T) {
 	t.Helper()
+	workerBaseline := gopool.WorkerCount()
 	server := miniredis.RunT(t)
 	oldEnabled, oldRDB, oldSync := common.RedisEnabled, common.RDB, common.SyncFrequency
 	common.RDB = redis.NewClient(&redis.Options{Addr: server.Addr(), MaxRetries: -1})
 	common.RedisEnabled, common.SyncFrequency = true, 60
 	t.Cleanup(func() {
+		cleanupOnce.Do(startCleanupTask)
+		minimumWorkers := max(workerBaseline, 1)
+		require.Eventually(t, func() bool { return gopool.WorkerCount() <= minimumWorkers }, 5*time.Second, time.Millisecond)
 		_ = common.RDB.Close()
 		common.RedisEnabled, common.RDB, common.SyncFrequency = oldEnabled, oldRDB, oldSync
 	})
@@ -404,6 +417,88 @@ func TestAdtyBalanceFloorConcurrentPreConsume(t *testing.T) {
 
 // 4. 结算实际 > 余额：余额 0，shortfall 正确，日志 admin_info 有 shortfall_quota，
 // 分站客户的站长收益按实扣算。
+func TestAdtyBalanceFloorTokenFailureStillLogsActualCharge(t *testing.T) {
+	for _, protocol := range []string{"text", "audio", "realtime"} {
+		t.Run(protocol, func(t *testing.T) {
+			db := prepareFloorDB(t)
+			site := floorSite(t, db, "toksf"+protocol)
+			user, token := floorCustomer(t, db, site, "toksf"+protocol, 10_000)
+			ctx, info, quota := floorRelay(t, user, token)
+			require.Equal(t, 25_000, quota)
+			if protocol != "text" {
+				info.PriceData.UsePrice = false
+				info.PriceData.ModelRatio = 1_000
+			}
+			require.Nil(t, PreConsumeBilling(ctx, 4_000, info))
+			// The wallet can settle, but the token has disappeared before its
+			// separate adjustment. The committed wallet charge is still 10,000.
+			require.NoError(t, db.Unscoped().Delete(token).Error)
+			switch protocol {
+			case "text":
+				require.NoError(t, PostTextConsumeQuota(ctx, info, floorUsage(), nil))
+			case "audio":
+				usage := floorUsage()
+				usage.PromptTokensDetails.TextTokens = 10
+				usage.CompletionTokenDetails.TextTokens = 10
+				require.NoError(t, PostAudioConsumeQuota(ctx, info, usage, nil))
+			case "realtime":
+				PostWssConsumeQuota(ctx, info, info.OriginModelName, &dto.RealtimeUsage{
+					InputTokens: 10, OutputTokens: 10, TotalTokens: 20,
+					InputTokenDetails:  dto.InputTokenDetails{TextTokens: 10},
+					OutputTokenDetails: dto.OutputTokenDetails{TextTokens: 10},
+				}, nil)
+			}
+			assert.Equal(t, 0, floorBalance(t, user.Id))
+			assert.Equal(t, 15_000, info.BillingShortfall)
+			assert.False(t, info.Billing.NeedsRefund(), "a token error cannot undo committed funding")
+			log, adminInfo := floorLastAdminInfo(t, db, user.Id, model.LogTypeConsume)
+			assert.Equal(t, 25_000, log.Quota)
+			assert.EqualValues(t, 15_000, adminInfo["shortfall_quota"])
+			var rows []model.AdtySiteEarningDaily
+			require.NoError(t, db.Where("site_id = ? AND user_id = ?", site.Id, user.Id).Find(&rows).Error)
+			require.Len(t, rows, 1)
+			assert.EqualValues(t, 10_000, rows[0].Quota, "owner revenue must exclude uncollected credit")
+		})
+	}
+}
+
+func TestAdtyFixedAudioPriceIsCharged(t *testing.T) {
+	for _, protocol := range []string{"audio", "realtime"} {
+		for _, tc := range []struct {
+			name       string
+			price      float64
+			groupRatio float64
+			want       int
+		}{
+			{name: "paid", price: 0.04, groupRatio: 1.25, want: 25_000},
+			{name: "free model", price: 0, groupRatio: 1.25, want: 0},
+			{name: "free group", price: 0.04, groupRatio: 0, want: 0},
+			{name: "free model and group", price: 0, groupRatio: 0, want: 0},
+		} {
+			t.Run(protocol+"/"+tc.name, func(t *testing.T) {
+				db := prepareFloorDB(t)
+				user, token := floorCustomer(t, db, nil, "fixedaudio", 100_000)
+				ctx, info, _ := floorRelay(t, user, token)
+				info.PriceData.ModelPrice = tc.price
+				info.PriceData.GroupRatioInfo.GroupRatio = tc.groupRatio
+				require.Nil(t, PreConsumeBilling(ctx, 4_000, info))
+				if protocol == "audio" {
+					require.NoError(t, PostAudioConsumeQuota(ctx, info, floorUsage(), nil))
+				} else {
+					PostWssConsumeQuota(ctx, info, info.OriginModelName, &dto.RealtimeUsage{
+						InputTokens: 10, OutputTokens: 10, TotalTokens: 20,
+					}, nil)
+				}
+				assert.Equal(t, 100_000-tc.want, floorBalance(t, user.Id))
+				assert.Equal(t, tc.want, getTokenUsedQuota(t, token.Id))
+				var log model.Log
+				require.NoError(t, model.LOG_DB.Where("user_id = ? AND type = ?", user.Id, model.LogTypeConsume).Take(&log).Error)
+				assert.Equal(t, tc.want, log.Quota)
+			})
+		}
+	}
+}
+
 func TestAdtyBalanceFloorSettleShortfall(t *testing.T) {
 	db := prepareFloorDB(t)
 	site := floorSite(t, db, "floorshort")
@@ -589,32 +684,42 @@ func TestRealtimeIncrementalUsageIsNotChargedTwice(t *testing.T) {
 		"settlement must not charge the same realtime usage again")
 }
 
-func TestRealtimeZeroUsageRefundsStreamCharge(t *testing.T) {
-	model.InitColumnNamesForTests()
-	truncate(t)
-	const userID, tokenID = 9402, 9402
-	const tokenKey = "realtime-zero"
-	const opening = 1_000_000
-	seedUser(t, userID, opening)
-	seedToken(t, tokenID, userID, tokenKey, opening)
-	c := adtyWalletRelayContext()
-	info := adtyWalletRelayInfo(userID, tokenID, "sk-"+tokenKey)
-	info.OriginModelName = "gpt-4o-realtime-preview"
-	info.UsingGroup = "default"
-	info.UserGroup = "default"
-	info.StartTime = time.Now()
+func TestRealtimeFinalUsageRefundsStreamCharge(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		finalQuota int
+	}{
+		{"zero final usage", 0},
+		{"lower final usage", 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			model.InitColumnNamesForTests()
+			truncate(t)
+			const userID, tokenID = 9402, 9402
+			const tokenKey = "realtime-refund"
+			const opening = 1_000_000
+			seedUser(t, userID, opening)
+			seedToken(t, tokenID, userID, tokenKey, opening)
+			c := adtyWalletRelayContext()
+			info := adtyWalletRelayInfo(userID, tokenID, "sk-"+tokenKey)
+			info.OriginModelName = "gpt-4o-realtime-preview"
+			info.UsingGroup = "default"
+			info.UserGroup = "default"
+			info.StartTime = time.Now()
 
-	require.Nil(t, PreConsumeBilling(c, 1_000, info))
-	usage := &dto.RealtimeUsage{InputTokens: 200, OutputTokens: 100, TotalTokens: 300}
-	usage.InputTokenDetails.TextTokens = 200
-	usage.OutputTokenDetails.TextTokens = 100
-	require.NoError(t, PreWssConsumeQuota(c, info, usage))
-	require.Less(t, getUserQuota(t, userID), opening-1_000)
+			require.Nil(t, PreConsumeBilling(c, 1_000, info))
+			usage := &dto.RealtimeUsage{InputTokens: 200, OutputTokens: 100, TotalTokens: 300}
+			usage.InputTokenDetails.TextTokens = 200
+			usage.OutputTokenDetails.TextTokens = 100
+			require.NoError(t, PreWssConsumeQuota(c, info, usage))
+			require.Less(t, getUserQuota(t, userID), opening-1_000-tc.finalQuota)
 
-	// 结束时 total tokens 为 0：上游超时，最终用量按 0 结算，流式已扣的额度要退回。
-	require.NoError(t, SettleBilling(c, info, 0))
-	require.Equal(t, opening, getUserQuota(t, userID),
-		"a zero final usage must refund the realtime charge and the opening hold")
+			require.NoError(t, SettleBilling(c, info, tc.finalQuota))
+			require.Equal(t, opening-tc.finalQuota, getUserQuota(t, userID),
+				"settlement must refund the unused stream charge and opening hold")
+			require.Equal(t, tc.finalQuota, getTokenUsedQuota(t, tokenID))
+		})
+	}
 }
 
 // 8. 有 shortfall 之后退款只退实扣的部分，不把平台没收到的钱退给用户。

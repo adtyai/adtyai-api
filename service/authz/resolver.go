@@ -1,13 +1,21 @@
 package authz
 
-import "slices"
+import (
+	"slices"
 
-import "github.com/casbin/casbin/v2"
+	"github.com/casbin/casbin/v2"
+	casbinmodel "github.com/casbin/casbin/v2/model"
+	"gorm.io/gorm"
+)
 
 // Can reports whether the subject may perform the permission. A superuser role
 // short-circuits to allow. Otherwise a per-user override wins, then the union of
 // the subject's role baselines applies.
 func Can(userID int, systemRole int, permission Permission) bool {
+	return canWithEnforcer(currentEnforcer(), userID, systemRole, permission)
+}
+
+func canWithEnforcer(e *casbin.SyncedEnforcer, userID int, systemRole int, permission Permission) bool {
 	roles := resolveSubjectRoles(userID, systemRole)
 	if len(roles) == 0 {
 		return false
@@ -19,7 +27,6 @@ func Can(userID int, systemRole int, permission Permission) bool {
 		return false
 	}
 
-	e := currentEnforcer()
 	if e == nil {
 		return false
 	}
@@ -32,6 +39,28 @@ func Can(userID int, systemRole int, permission Permission) bool {
 		}
 	}
 	return false
+}
+
+// CapabilitiesInTx reads the transaction's persisted policy, including its own
+// writes, without reloading or publishing the process-wide authorization state.
+func CapabilitiesInTx(tx *gorm.DB, userID, systemRole int) (PermissionsMap, error) {
+	m, err := casbinmodel.NewModelFromString(modelText)
+	if err != nil {
+		return nil, err
+	}
+	e, err := casbin.NewSyncedEnforcer(m, newGormAdapter(tx))
+	if err != nil {
+		return nil, err
+	}
+	result := make(PermissionsMap, len(registry))
+	for _, resource := range registry {
+		actions := make(map[string]bool, len(resource.Actions))
+		for _, action := range resource.Actions {
+			actions[action.Action] = canWithEnforcer(e, userID, systemRole, Permission{Resource: resource.Resource, Action: action.Action})
+		}
+		result[resource.Resource] = actions
+	}
+	return result, nil
 }
 
 // Capabilities returns the full resource/action matrix the subject is allowed.

@@ -308,7 +308,7 @@ func enforceAccessTokenRoute(c *gin.Context, lookup *accessTokenLookup, abort bo
 	case !declared:
 		common.SysError(common.LogText("access token route is not declared: %s", key))
 		code, reason, message = "ACCESS_TOKEN_ROUTE_UNDECLARED", "route_undeclared", common.NewMessage("Unauthorized, insufficient privileges")
-	case rule.kind == accessTokenRuleAny, service.AccessTokenScopeGranted(lookup.token.GetScopes(), rule.scope):
+	case rule.kind == accessTokenRuleAny, service.AccessTokenScopeAllowsRoute(lookup.token.GetScopes(), lookup.token.ScopeVersion, lookup.user.Role, c.Request.Method, c.FullPath(), rule.scope):
 		return true
 	default:
 		code, reason, message = "ACCESS_TOKEN_SCOPE_DENIED", "scope_denied", common.NewMessage("The access token lacks the required permission: {{scope}}", map[string]any{"scope": rule.scope})
@@ -336,6 +336,7 @@ func setAccessTokenContext(c *gin.Context, lookup *accessTokenLookup) {
 		return
 	}
 	c.Set("access_token_id", lookup.token.Id)
+	c.Set("access_token_scope_version", lookup.token.ScopeVersion)
 	c.Set("access_token_scopes", lookup.token.GetScopes())
 	c.Set(accessTokenIdentityContextKey, service.AuthIdentity{
 		UserID:          lookup.user.Id,

@@ -1,12 +1,14 @@
 package relay
 
 import (
+	"context"
 	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -76,7 +78,7 @@ func TestRealtimeFetchAppliesChannelHeaderOverrides(t *testing.T) {
 		},
 	}
 
-	tryRealtimeFetch(task, true)
+	tryRealtimeFetch(context.Background(), task, true)
 
 	require.Len(t, requests, 1)
 	request := <-requests
@@ -85,53 +87,136 @@ func TestRealtimeFetchAppliesChannelHeaderOverrides(t *testing.T) {
 	assert.Equal(t, "saved-key", request.Header.Get("X-Goog-Api-Key"))
 }
 
+func TestRealtimeFetchBoundsAndCancelsSlowResponses(t *testing.T) {
+	for _, phase := range []string{"headers", "body", "total timeout"} {
+		t.Run(phase, func(t *testing.T) {
+			database := setupRelayChannelDB(t)
+			require.NoError(t, database.AutoMigrate(&model.Task{}))
+			oldTimeout, oldHeaderTimeout := common.RelayTimeout, common.RelayResponseHeaderTimeout
+			common.RelayTimeout, common.RelayResponseHeaderTimeout = 0, 0
+			service.InitHttpClient()
+			t.Cleanup(func() {
+				common.RelayTimeout, common.RelayResponseHeaderTimeout = oldTimeout, oldHeaderTimeout
+				service.InitHttpClient()
+			})
+			started, upstreamCancelled, release := make(chan struct{}), make(chan struct{}), make(chan struct{})
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if phase != "headers" {
+					_, _ = w.Write([]byte(`{"done":`))
+					w.(http.Flusher).Flush()
+				}
+				close(started)
+				select {
+				case <-r.Context().Done():
+					close(upstreamCancelled)
+				case <-release:
+				}
+			}))
+			t.Cleanup(server.Close)
+			t.Cleanup(func() { close(release) })
+			channel := &model.Channel{Name: "cancel-poll", Type: constant.ChannelTypeGemini, Key: "test", BaseURL: &server.URL}
+			require.NoError(t, database.Create(channel).Error)
+			task := &model.Task{TaskID: "cancel-poll", ChannelId: channel.Id, Status: model.TaskStatusInProgress, Progress: "30%", Quota: 123,
+				PrivateData: model.TaskPrivateData{UpstreamTaskID: base64.RawURLEncoding.EncodeToString([]byte("operations/1")), PollFailures: 2}}
+			require.NoError(t, database.Create(task).Error)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			done := make(chan []byte, 1)
+			go func() { done <- tryRealtimeFetch(ctx, task, true) }()
+			select {
+			case <-started:
+			case <-time.After(5 * time.Second):
+				t.Fatal("upstream query was not started")
+			}
+			if phase != "total timeout" {
+				cancel()
+			}
+			wait := 2 * time.Second
+			if phase == "total timeout" {
+				wait = 35 * time.Second
+			}
+			select {
+			case body := <-done:
+				assert.Empty(t, body)
+			case <-time.After(wait):
+				t.Fatal("poll did not release the slow upstream request")
+			}
+			select {
+			case <-upstreamCancelled:
+			case <-time.After(2 * time.Second):
+				t.Fatal("upstream request context was not cancelled")
+			}
+			var stored model.Task
+			require.NoError(t, database.First(&stored, task.ID).Error)
+			assert.EqualValues(t, model.TaskStatusInProgress, stored.Status)
+			assert.Equal(t, 2, stored.PrivateData.PollFailures)
+			assert.Equal(t, 123, stored.Quota)
+			assert.Zero(t, stored.FinishTime)
+		})
+	}
+}
+
 func TestRealtimeFetchRefundsTaskItFindsFailed(t *testing.T) {
-	database := setupRelayChannelDB(t)
-	require.NoError(t, database.AutoMigrate(&model.Task{}, &model.User{}, &model.Log{}))
-	previousLogDB := model.LOG_DB
-	previousFactory := service.GetTaskAdaptorFunc
-	previousRedis := common.RedisEnabled
-	model.LOG_DB = database
-	common.RedisEnabled = false
-	service.GetTaskAdaptorFunc = func(platform constant.TaskPlatform) service.TaskPollingAdaptor {
-		if adaptor := GetTaskAdaptor(platform); adaptor != nil {
-			return adaptor
-		}
-		return nil
-	}
-	t.Cleanup(func() {
-		model.LOG_DB = previousLogDB
-		service.GetTaskAdaptorFunc = previousFactory
-		common.RedisEnabled = previousRedis
-	})
-	service.InitHttpClient()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"name":"operations/task-1","done":true,"error":{"code":3,"message":"blocked by safety"}}`))
-	}))
-	t.Cleanup(server.Close)
-	channel := &model.Channel{Name: "realtime-refund", Type: constant.ChannelTypeGemini, Key: "channel-key", BaseURL: &server.URL}
-	require.NoError(t, database.Create(channel).Error)
-	require.NoError(t, database.Create(&model.User{Id: 7, Username: "realtime-owner", Quota: 100}).Error)
-	task := &model.Task{
-		TaskID: "public-task", Platform: constant.TaskPlatform(strconv.Itoa(constant.ChannelTypeGemini)),
-		UserId: 7, ChannelId: channel.Id, Quota: 1000,
-		Status: model.TaskStatusInProgress, Progress: "50%",
-		PrivateData: model.TaskPrivateData{
-			Key: "channel-key", UpstreamTaskID: base64.RawURLEncoding.EncodeToString([]byte("operations/task-1")),
-		},
-	}
-	require.NoError(t, database.Create(task).Error)
+	for _, cancelAfterTerminal := range []bool{false, true} {
+		t.Run(strconv.FormatBool(cancelAfterTerminal), func(t *testing.T) {
+			database := setupRelayChannelDB(t)
+			require.NoError(t, database.AutoMigrate(&model.Task{}, &model.User{}, &model.Log{}))
+			previousLogDB := model.LOG_DB
+			previousFactory := service.GetTaskAdaptorFunc
+			previousRedis := common.RedisEnabled
+			model.LOG_DB = database
+			common.RedisEnabled = false
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			service.GetTaskAdaptorFunc = func(platform constant.TaskPlatform) service.TaskPollingAdaptor {
+				// This factory is entered only after realtime parsing found a terminal
+				// result. A disconnect here must not discard the resulting refund.
+				if cancelAfterTerminal {
+					cancel()
+				}
+				if adaptor := GetTaskAdaptor(platform); adaptor != nil {
+					return adaptor
+				}
+				return nil
+			}
+			t.Cleanup(func() {
+				model.LOG_DB = previousLogDB
+				service.GetTaskAdaptorFunc = previousFactory
+				common.RedisEnabled = previousRedis
+			})
+			service.InitHttpClient()
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, _ = w.Write([]byte(`{"name":"operations/task-1","done":true,"error":{"code":3,"message":"blocked by safety"}}`))
+			}))
+			t.Cleanup(server.Close)
+			channel := &model.Channel{Name: "realtime-refund", Type: constant.ChannelTypeGemini, Key: "channel-key", BaseURL: &server.URL}
+			require.NoError(t, database.Create(channel).Error)
+			require.NoError(t, database.Create(&model.User{Id: 7, Username: "realtime-owner", Quota: 100}).Error)
+			task := &model.Task{
+				TaskID: "public-task", Platform: constant.TaskPlatform(strconv.Itoa(constant.ChannelTypeGemini)),
+				UserId: 7, ChannelId: channel.Id, Quota: 1000,
+				Status: model.TaskStatusInProgress, Progress: "50%",
+				PrivateData: model.TaskPrivateData{
+					Key: "channel-key", UpstreamTaskID: base64.RawURLEncoding.EncodeToString([]byte("operations/task-1")),
+				},
+			}
+			require.NoError(t, database.Create(task).Error)
 
-	tryRealtimeFetch(task, true)
+			tryRealtimeFetch(ctx, task, true)
+			if cancelAfterTerminal {
+				assert.ErrorIs(t, ctx.Err(), context.Canceled)
+			}
 
-	var stored model.Task
-	require.NoError(t, database.First(&stored, task.ID).Error)
-	assert.Equal(t, model.TaskStatus(model.TaskStatusFailure), stored.Status)
-	assert.Equal(t, "blocked by safety", stored.FailReason)
-	assert.Zero(t, stored.Quota, "the failed task is refunded")
-	var user model.User
-	require.NoError(t, database.First(&user, 7).Error)
-	assert.Equal(t, 1100, user.Quota)
+			var stored model.Task
+			require.NoError(t, database.First(&stored, task.ID).Error)
+			assert.Equal(t, model.TaskStatus(model.TaskStatusFailure), stored.Status)
+			assert.Equal(t, "blocked by safety", stored.FailReason)
+			assert.Zero(t, stored.Quota, "the failed task is refunded")
+			var user model.User
+			require.NoError(t, database.First(&user, 7).Error)
+			assert.Equal(t, 1100, user.Quota)
+		})
+	}
 }
 
 func TestApplyChannelPinPreservesOriginTasksAndRetryMode(t *testing.T) {

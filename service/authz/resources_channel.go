@@ -8,6 +8,7 @@ const (
 	ActionWrite          = "write"
 	ActionSensitiveWrite = "sensitive_write"
 	ActionSecretView     = "secret_view"
+	ActionCreate         = "create"
 )
 
 var (
@@ -16,6 +17,8 @@ var (
 	ChannelWrite          = Permission{Resource: ResourceChannel, Action: ActionWrite}
 	ChannelSensitiveWrite = Permission{Resource: ResourceChannel, Action: ActionSensitiveWrite}
 	ChannelSecretView     = Permission{Resource: ResourceChannel, Action: ActionSecretView}
+	ChannelCreate         = Permission{Resource: ResourceChannel, Action: ActionCreate}
+	ChannelDelete         = Permission{Resource: ResourceChannel, Action: ActionDelete}
 )
 
 func init() {
@@ -42,9 +45,19 @@ func init() {
 				DefaultRoles:   []string{BuiltInRoleAdmin},
 			},
 			{
+				Action:         ActionCreate,
+				LabelKey:       "Create channels",
+				DescriptionKey: "Create channels and copy existing channels.",
+			},
+			{
 				Action:         ActionSensitiveWrite,
 				LabelKey:       "Edit sensitive channel settings",
-				DescriptionKey: "Create channels or edit keys, base URLs, and overrides.",
+				DescriptionKey: "Edit channel keys, base URLs, and overrides.",
+			},
+			{
+				Action:         ActionDelete,
+				LabelKey:       "Delete channels",
+				DescriptionKey: "Delete individual channels, selected channels, or disabled channels.",
 			},
 			{
 				Action:         ActionSecretView,

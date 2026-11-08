@@ -13,17 +13,59 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestRefundCacheCompensateFailureIsReviewed(t *testing.T) {
-	db := prepareAdtyTopUpDB(t)
-	previous := applyRefundQuotaDelta
-	applyRefundQuotaDelta = func(int, int64) (cacheQuotaResult, error) {
-		return 0, ErrRefundCacheCompensate
+func TestRefundKeepsDurableWalletAndLedgerAtomicOnFailure(t *testing.T) {
+	for _, databaseFailure := range []bool{true, false} {
+		t.Run(map[bool]string{true: "database rollback", false: "metadata cache outage"}[databaseFailure], func(t *testing.T) {
+			db := prepareAdtyTopUpDB(t)
+			server := useUserCacheMiniRedis(t)
+			resetBatchUpdateTestState(t)
+			common.BatchUpdateEnabled = true
+			user := seedAdtyTopUpUser(t, db, "refund-atomic", 55000000)
+			seedCreditedOrder(t, db, user.Id, "RF-atomic", PaymentProviderAdtyBEpusdt, "100", "10", "0", "100")
+			require.NoError(t, DecreaseUserQuota(user.Id, 15000000, false))
+			_, err := GetUserCache(user.Id)
+			require.NoError(t, err)
+			if databaseFailure {
+				const callback = "audit_refund_ledger_failure"
+				require.NoError(t, db.Callback().Create().Before("gorm:create").Register(callback, func(tx *gorm.DB) {
+					if tx.Statement.Table == "adty_balance_ledgers" {
+						tx.AddError(gorm.ErrInvalidTransaction)
+					}
+				}))
+				t.Cleanup(func() { _ = db.Callback().Create().Remove(callback) })
+			} else {
+				server.SetError("READONLY")
+			}
+			_, err = RefundAdtyTopUp("RF-atomic", "synthetic refund", 1, "atomic-refund", 35000000)
+			var stored User
+			require.NoError(t, db.First(&stored, user.Id).Error)
+			require.Equal(t, -15000000, stored.QuotaPending)
+			var count int64
+			require.NoError(t, db.Model(&AdtyBalanceLedger{}).Where("user_id = ?", user.Id).Count(&count).Error)
+			if databaseFailure {
+				require.ErrorIs(t, err, gorm.ErrInvalidTransaction)
+				require.Equal(t, 55000000, stored.Quota)
+				require.Equal(t, common.TopUpStatusSuccess, topUpStatus(t, db, "RF-atomic"))
+				require.Zero(t, count)
+			} else {
+				require.NoError(t, err, "metadata failures cannot undo a committed refund")
+				require.Equal(t, 15000000, stored.Quota)
+				require.Equal(t, TopUpStatusRefunded, topUpStatus(t, db, "RF-atomic"))
+				require.EqualValues(t, 1, count)
+				again, err := RefundAdtyTopUp("RF-atomic", "synthetic refund", 1, "atomic-refund", 35000000)
+				require.NoError(t, err)
+				require.EqualValues(t, 40000000, again.DeductedQuota)
+			}
+			server.SetError("")
+			current, err := GetUserCache(user.Id)
+			require.NoError(t, err)
+			if databaseFailure {
+				require.Equal(t, 40000000, current.Quota)
+			} else {
+				require.Zero(t, current.Quota)
+			}
+		})
 	}
-	t.Cleanup(func() { applyRefundQuotaDelta = previous })
-	compensateRefundCacheOrReview(41, 100)
-	var count int64
-	require.NoError(t, db.Model(&PaymentOrphanEvent{}).Where("event_type = ? AND reference_id = ?", "refund_cache_compensate", "41").Count(&count).Error)
-	assert.EqualValues(t, 1, count)
 }
 
 func prepareAdtyTopUpDB(t *testing.T) *gorm.DB {
@@ -33,7 +75,7 @@ func prepareAdtyTopUpDB(t *testing.T) *gorm.DB {
 	common.RedisEnabled = false
 	common.QuotaPerUnit = 500000
 	t.Cleanup(func() { common.RedisEnabled, common.QuotaPerUnit = oldRedis, oldPerUnit })
-	require.NoError(t, db.AutoMigrate(&User{}, &TopUp{}, &Log{}))
+	require.NoError(t, db.AutoMigrate(&User{}, &Token{}, &TopUp{}, &Log{}))
 	require.NoError(t, MigrateAdtyTables())
 	return db
 }

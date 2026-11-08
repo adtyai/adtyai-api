@@ -57,7 +57,6 @@ func AdjustUserQuotaWithLedger(userID, operatorID, operatorRole int, mode string
 	refID := fmt.Sprintf("%s:%d", mode, value)
 
 	var result AdtyQuotaAdjustResult
-	var cacheApplied bool
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		var user User
 		if err := lockForUpdate(tx).First(&user, userID).Error; err != nil {
@@ -81,36 +80,28 @@ func AdjustUserQuotaWithLedger(userID, operatorID, operatorRole int, mode string
 			}
 			return nil
 		}
-		if user.Quota > common.MaxWalletQuota || user.Quota < -common.MaxWalletQuota {
-			return ErrWalletQuotaLimitExceeded
-		}
 		after, err := quotaAfterManualAdjust(user.Quota, value, mode)
 		if err != nil {
 			return err
 		}
-		if err := rejectIfPendingBatchLeavesNegative(userID, after); err != nil {
-			return err
-		}
-		delta := int64(after) - int64(user.Quota)
-		applied, err := applyManualAdjustCache(userID, delta)
-		cacheApplied = applied
+		liveAfter, err := userWalletBalance(after, user.QuotaPending)
 		if err != nil {
 			return err
 		}
-		fail := func(cause error) error {
-			if applied {
-				compensateManualAdjustCache(userID, delta)
-			}
-			return cause
+		if mode != "add" && liveAfter < 0 {
+			return ErrAdtyQuotaFloor
 		}
 		if after != user.Quota {
 			updated := tx.Model(&User{}).Where("id = ?", userID).Update("quota", after)
 			if updated.Error != nil {
-				return fail(updated.Error)
+				return updated.Error
 			}
 			if updated.RowsAffected != 1 {
-				return fail(gorm.ErrRecordNotFound)
+				return gorm.ErrRecordNotFound
 			}
+		}
+		if err := clampCheckinQuotaDB(tx, userID); err != nil {
+			return err
 		}
 		entry := &AdtyBalanceLedger{
 			UserId: userID, DeltaQuota: int64(after) - int64(user.Quota),
@@ -122,7 +113,7 @@ func AdjustUserQuotaWithLedger(userID, operatorID, operatorRole int, mode string
 			entry.IdempotencyKey = &idemKey
 		}
 		if err := InsertAdtyLedgerTx(tx, entry); err != nil {
-			return fail(err)
+			return err
 		}
 		result = AdtyQuotaAdjustResult{UserQuotaAdjustment: UserQuotaAdjustment{
 			UserID: user.Id, Username: user.Username, Before: user.Quota, After: after,
@@ -132,12 +123,9 @@ func AdjustUserQuotaWithLedger(userID, operatorID, operatorRole int, mode string
 	if err != nil {
 		return nil, err
 	}
-	if !cacheApplied && !result.Replayed {
-		if delta := int64(result.After) - int64(result.Before); delta != 0 {
-			if err := cacheIncrUserQuota(userID, delta); err != nil {
-				common.SysError(common.LogText("failed to sync manual quota adjustment for user %d: %s", userID, err))
-				recordAdjustCacheDivergence(userID, delta, err)
-			}
+	if !result.Replayed {
+		if err := invalidateUserCache(userID); err != nil {
+			common.SysError(common.LogText("failed to invalidate manual quota projection for user %d: %s", userID, err))
 		}
 	}
 	return &result, nil

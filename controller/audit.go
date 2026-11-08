@@ -1,10 +1,13 @@
 package controller
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -183,6 +186,33 @@ func recordManageAuditFor(c *gin.Context, targetUserId int, action string, param
 	}
 	model.RecordOperationAuditLog(operatorUserId, c.GetInt("role"), auditContentEN(action, params), c.ClientIP(), action, params, auditOperatorInfo(c), nil, c)
 	markAuditLogged(c)
+}
+
+// prepareManageAudit freezes safe metadata before entering the business
+// transaction. No request body, credentials, configuration value or live-user
+// lookup is needed when the event is eventually delivered.
+func prepareManageAudit(c *gin.Context, targetUserID int, action string, params map[string]any) model.AuditLog {
+	if params == nil {
+		params = map[string]any{}
+	}
+	if targetUserID > 0 && targetUserID != c.GetInt("id") {
+		params["target_user_id"] = targetUserID
+	}
+	return model.PrepareAuditLog(c, model.AuditLog{
+		UserId: c.GetInt("id"), Username: c.GetString("username"), ActorRole: c.GetInt("role"),
+		Category: model.AuditCategoryOperation, Action: action, Content: auditContentEN(action, params),
+		Status: http.StatusOK, Success: true,
+		Other: model.AuditOther{Op: &model.AuditOperation{Action: action, Params: params}, AdminInfo: auditOperatorInfo(c)},
+	})
+}
+
+func deliverCommittedAudits(c *gin.Context, events []model.AuditLog) {
+	markAuditLogged(c)
+	for _, event := range events {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		_ = model.DeliverAuditIntent(ctx, event.EventId)
+		cancel()
+	}
 }
 
 // recordUserSecurityAudit 记录普通用户自己的安全敏感操作（如 passkey 绑定/解绑）。

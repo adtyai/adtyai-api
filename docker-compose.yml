@@ -80,7 +80,7 @@ services:
       - new-api-network
 
   postgres:
-    image: postgres:16
+    image: postgres:17
     container_name: postgres
     restart: always
     environment:

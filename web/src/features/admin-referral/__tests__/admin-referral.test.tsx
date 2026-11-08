@@ -17,7 +17,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, renderHook, screen, waitFor } from '@testing-library/react'
+import {
+  act,
+  fireEvent,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+} from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -29,6 +36,7 @@ import type { ReferralSettings } from '../api'
 import { SettingsPanel } from '../components/settings-panel'
 import { WithdrawalPanel } from '../components/withdrawal-panel'
 import { useAdminReferralBadge } from '../hooks/use-admin-referral-badge'
+import { AdminReferral } from '../index'
 import { buildSettingsUpdate, toDrafts } from '../lib/settings'
 
 const api = vi.hoisted(() => ({
@@ -36,6 +44,7 @@ const api = vi.hoisted(() => ({
   reviewWithdrawal: vi.fn(),
   payWithdrawal: vi.fn(),
   getReferralBadges: vi.fn(),
+  getReferralOverview: vi.fn(),
   getReferralSettings: vi.fn(),
   saveReferralSettings: vi.fn(),
 }))
@@ -106,6 +115,21 @@ function wrapper(props: { children: ReactNode }) {
 }
 
 beforeEach(() => {
+  api.getReferralSettings.mockResolvedValue(settings)
+  api.getReferralOverview.mockResolvedValue({
+    affiliates: 0,
+    bindings: 0,
+    pending: '0',
+    available: '0',
+    frozen: '0',
+    withdrawn: '0',
+  })
+  api.getReferralBadges.mockResolvedValue({
+    partners: 0,
+    pending_withdrawals: 0,
+    approved_withdrawals: 0,
+    total: 0,
+  })
   api.getAdminWithdrawals.mockResolvedValue({
     page: 1,
     page_size: 20,
@@ -165,6 +189,9 @@ describe('WithdrawalPanel', () => {
 })
 
 describe('SettingsPanel', () => {
+  beforeEach(() => {
+    asAdmin({ settings_read: true, settings: true })
+  })
   it('shows the new update time after saving the CNY rate', async () => {
     api.getReferralSettings.mockResolvedValue(settings)
     api.saveReferralSettings.mockResolvedValue({
@@ -173,7 +200,7 @@ describe('SettingsPanel', () => {
       withdraw_cny_rate_updated_at: 1_700_000_500,
     })
     const user = userEvent.setup()
-    render(<SettingsPanel />, { wrapper })
+    render(<SettingsPanel canWrite />, { wrapper })
     const input = await screen.findByLabelText(
       'CNY withdrawal rate (1 USD = ? CNY)'
     )
@@ -190,10 +217,129 @@ describe('SettingsPanel', () => {
 
   it('keeps the switch off until a default rate is entered', async () => {
     api.getReferralSettings.mockResolvedValue(settings)
-    render(<SettingsPanel />, { wrapper })
+    render(<SettingsPanel canWrite />, { wrapper })
     expect(
       await screen.findByRole('switch', { name: 'Referral program' })
     ).toHaveAttribute('aria-disabled', 'true')
+  })
+})
+
+describe('referral settings action permissions', () => {
+  it('opens settings with settings_read while every mutation control is read-only', async () => {
+    asAdmin({ read: true, settings_read: true })
+    render(<AdminReferral />, { wrapper })
+    await userEvent.click(screen.getByRole('tab', { name: 'Settings' }))
+    expect(await screen.findByLabelText('Freeze period (days)')).toBeDisabled()
+    for (const field of screen.getAllByRole('spinbutton')) {
+      expect(field).toBeDisabled()
+    }
+    expect(
+      screen.getByRole('switch', { name: 'Referral program' })
+    ).toHaveAttribute('aria-disabled', 'true')
+    expect(screen.getByRole('button', { name: 'Save Changes' })).toBeDisabled()
+    expect(api.getReferralSettings).toHaveBeenCalledTimes(1)
+    expect(api.saveReferralSettings).not.toHaveBeenCalled()
+  })
+
+  it('does not let settings write substitute for settings_read', () => {
+    asAdmin({ read: true, settings: true })
+    render(<AdminReferral />, { wrapper })
+    expect(
+      screen.queryByRole('tab', { name: 'Settings' })
+    ).not.toBeInTheDocument()
+    expect(api.getReferralSettings).not.toHaveBeenCalled()
+  })
+
+  it('saves ordinary settings with both read and write grants', async () => {
+    asAdmin({ read: true, settings_read: true, settings: true })
+    api.saveReferralSettings.mockResolvedValue({ ...settings, freeze_days: 11 })
+    render(<AdminReferral />, { wrapper })
+    await userEvent.click(screen.getByRole('tab', { name: 'Settings' }))
+    const field = await screen.findByLabelText('Freeze period (days)')
+    expect(field).toBeEnabled()
+    await userEvent.clear(field)
+    await userEvent.type(field, '11')
+    await userEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
+    await waitFor(() =>
+      expect(api.saveReferralSettings).toHaveBeenCalledWith({ freeze_days: 11 })
+    )
+  })
+
+  it('keeps Root settings readable and writable', async () => {
+    useAuthStore.getState().auth.setUser({ id: 1, username: 'root', role: 100 })
+    render(<AdminReferral />, { wrapper })
+    await userEvent.click(screen.getByRole('tab', { name: 'Settings' }))
+    expect(await screen.findByLabelText('Freeze period (days)')).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Save Changes' })).toBeEnabled()
+  })
+
+  it('rejects direct settings form submission without write', async () => {
+    render(<SettingsPanel canWrite={false} />, { wrapper })
+    const field = await screen.findByLabelText('Freeze period (days)')
+    const form = field.closest('form')
+    if (!form) throw new Error('Referral settings form is missing')
+    fireEvent.submit(form)
+    await act(async () => {})
+    expect(api.saveReferralSettings).not.toHaveBeenCalled()
+  })
+
+  it('rejects a dirty settings form after write permission is revoked', async () => {
+    asAdmin({ read: true, settings_read: true, settings: true })
+    render(<AdminReferral />, { wrapper })
+    await userEvent.click(screen.getByRole('tab', { name: 'Settings' }))
+    const field = await screen.findByLabelText('Freeze period (days)')
+    await userEvent.clear(field)
+    await userEvent.type(field, '11')
+    act(() => asAdmin({ read: true, settings_read: true }))
+    expect(field).toBeDisabled()
+    const form = field.closest('form')
+    if (!form) throw new Error('Referral settings form is missing')
+    fireEvent.submit(form)
+    await act(async () => {})
+    expect(api.saveReferralSettings).not.toHaveBeenCalled()
+  })
+})
+
+describe('queued referral settings authority', () => {
+  it('rejects queued settings writes after read and write revocation unmounts the panel', async () => {
+    asAdmin({ read: true, settings_read: true, settings: true })
+    let resume = () => {}
+    const gate = new Promise<void>((resolve) => {
+      resume = resolve
+    })
+    const entered = vi.fn()
+    const client = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: {
+          onMutate: async () => {
+            entered()
+            await gate
+          },
+        },
+      },
+    })
+    render(
+      <QueryClientProvider client={client}>
+        <AdminReferral />
+      </QueryClientProvider>
+    )
+    await userEvent.click(screen.getByRole('tab', { name: 'Settings' }))
+    const field = await screen.findByLabelText('Freeze period (days)')
+    fireEvent.change(field, { target: { value: '41' } })
+    const form = field.closest('form')
+    if (!form) throw new Error('Referral settings form is missing')
+    fireEvent.submit(form)
+    await waitFor(() => expect(entered).toHaveBeenCalledTimes(1))
+    act(() => asAdmin({ read: true }))
+    expect(
+      screen.queryByLabelText('Freeze period (days)')
+    ).not.toBeInTheDocument()
+    await act(async () => {
+      resume()
+    })
+    await waitFor(() => expect(client.isMutating()).toBe(0))
+    expect(api.saveReferralSettings).not.toHaveBeenCalled()
   })
 })
 

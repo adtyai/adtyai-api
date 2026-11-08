@@ -1,6 +1,7 @@
 package plugins_test
 
 import (
+	"context"
 	"maps"
 	"net/http"
 	"net/http/httptest"
@@ -552,7 +553,7 @@ func TestHailuoH3CompletionUsageFacts(t *testing.T) {
 
 	t.Run("polling adaptor carries actual facts into task settlement", func(t *testing.T) {
 		adaptor := taskplugin.New(plugin)
-		result, err := adaptor.ParseTaskResult(&model.Task{}, &http.Response{StatusCode: http.StatusOK, Header: make(http.Header)}, []byte(
+		result, err := adaptor.ParseTaskResult(context.Background(), &model.Task{}, &http.Response{StatusCode: http.StatusOK, Header: make(http.Header)}, []byte(
 			`{"task":{"id":"1","status":"succeeded","resolution":"2K","usage":{"output_seconds":5,"input_seconds":7.5,"input_image_count":6}}}`,
 		))
 		require.NoError(t, err)

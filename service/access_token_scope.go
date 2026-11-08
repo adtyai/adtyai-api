@@ -124,6 +124,11 @@ func AccessTokenCatalog(userID, role int) []AccessTokenCatalogGroup {
 		if role < resource.minRole {
 			continue
 		}
+		if AdtyAdminPermissionsEnabled() {
+			if slices.Contains([]string{"user", "billing", "model", "log", "group"}, resource.Resource) || resource.Resource == "deployment" && role < common.RoleRootUser {
+				continue
+			}
+		}
 		resource.Actions = slices.Clone(resource.Actions)
 		resources[resource.group] = append(resources[resource.group], resource)
 	}
@@ -209,6 +214,107 @@ func AccessTokenScopeGranted(scopes []string, scope string) bool {
 	return scope != "" && slices.Contains(scopes, scope)
 }
 
+// AccessTokenScopeAllowsRoute applies old catalog aliases only to the original
+// HTTP route and action. Callers must also check the user's live permission.
+func AccessTokenScopeAllowsRoute(scopes []string, scopeVersion, role int, method, fullPath, requiredScope string) bool {
+	if scopeVersion != 0 && scopeVersion != model.AccessTokenScopeVersion {
+		return false
+	}
+	key := method + " " + fullPath
+	if AdtyAdminPermissionsEnabled() && key == "GET /api/group/" && requiredScope == "group:read" {
+		return scopeVersion == 0 && AccessTokenScopeGranted(scopes, "group:read") ||
+			AccessTokenScopeGranted(scopes, "adty_user:read") || AccessTokenScopeGranted(scopes, "adty_log:read") ||
+			AccessTokenScopeGranted(scopes, "adty_model:read") || AccessTokenScopeGranted(scopes, "channel:read")
+	}
+	if AccessTokenScopeGranted(scopes, requiredScope) {
+		return true
+	}
+	if scopeVersion != 0 {
+		return false
+	}
+	if AccessTokenScopeGranted(scopes, accessTokenLegacyActionScopes[key][requiredScope]) {
+		return true
+	}
+	if role < common.RoleRootUser {
+		return false
+	}
+	switch key {
+	case "GET /api/adty/admin/reseller/settings":
+		return requiredScope == AccessTokenScopeOf(authz.AdtySiteSettingsRead) && AccessTokenScopeGranted(scopes, "option:read")
+	case "PUT /api/adty/admin/reseller/settings":
+		return requiredScope == AccessTokenScopeOf(authz.AdtySiteSettings) && AccessTokenScopeGranted(scopes, "option:write")
+	}
+	return false
+}
+
+var accessTokenLegacyActionScopes = map[string]map[string]string{
+	"GET /api/user/":                                   {"adty_user:read": "user:read"},
+	"GET /api/user/search":                             {"adty_user:read": "user:read"},
+	"GET /api/user/:id":                                {"adty_user:read": "user:read"},
+	"GET /api/user/:id/oauth/bindings":                 {"adty_user:read": "user:read"},
+	"GET /api/user/2fa/stats":                          {"adty_user:read": "user:read"},
+	"GET /api/authz/catalog":                           {"adty_user:read": "user:read"},
+	"PUT /api/user/":                                   {"adty_user:write": "user:write", "adty_user:group": "user:write"},
+	"DELETE /api/user/:id/oauth/bindings/:provider_id": {"adty_user:write": "user:write"},
+	"DELETE /api/user/:id/bindings/:binding_type":      {"adty_user:write": "user:write"},
+	"DELETE /api/user/:id/reset_passkey":               {"adty_user:write": "user:write"},
+	"DELETE /api/user/:id/2fa":                         {"adty_user:write": "user:write"},
+	"GET /api/models/":                                 {"adty_model:read": "model:read"},
+	"GET /api/models/search":                           {"adty_model:read": "model:read"},
+	"GET /api/models/:id":                              {"adty_model:read": "model:read"},
+	"GET /api/models/missing":                          {"adty_model:read": "model:read"},
+	"GET /api/models/sync_upstream/preview":            {"adty_model:read": "model:read"},
+	"GET /api/vendors/":                                {"adty_model:read": "model:read"},
+	"GET /api/vendors/search":                          {"adty_model:read": "model:read"},
+	"GET /api/vendors/:id":                             {"adty_model:read": "model:read"},
+	"POST /api/vendors/operations/preview":             {"adty_model:read": "model:read"},
+	"PUT /api/models/":                                 {"adty_model:write": "model:write"},
+	"PUT /api/vendors/":                                {"adty_model:write": "model:write"},
+	"GET /api/prefill_group/":                          {"adty_model:read": "group:read"},
+	"PUT /api/prefill_group/":                          {"adty_model:write": "group:write"},
+	"GET /api/status/test":                             {"adty_log:read": "log:read"},
+	"GET /api/log/":                                    {"adty_log:read": "log:read"},
+	"GET /api/log/stat":                                {"adty_log:read": "log:read"},
+	"GET /api/log/channel_affinity_usage_cache":        {"adty_log:read": "log:read"},
+	"GET /api/log/search":                              {"adty_log:read": "log:read"},
+	"GET /api/data/":                                   {"adty_log:read": "log:read"},
+	"GET /api/data/users":                              {"adty_log:read": "log:read"},
+	"GET /api/data/flow":                               {"adty_log:read": "log:read"},
+	"GET /api/mj/":                                     {"adty_log:read": "log:read"},
+	"GET /api/task":                                    {"adty_log:read": "log:read"},
+	"GET /api/user/topup":                              {"adty_finance:read": "billing:read"},
+	"GET /api/group/":                                  {"adty_user:read": "group:read", "adty_log:read": "group:read", "adty_model:read": "group:read", "channel:read": "group:read"},
+	"POST /api/models/sync_upstream":                   {"adty_model:create": "model:write", "adty_model:write": "model:write"},
+	"POST /api/vendors/operations":                     {"adty_model:write": "model:write", "adty_model:delete": "model:write"},
+	"POST /api/user/":                                  {"adty_user:create": "user:write"},
+	"DELETE /api/user/:id":                             {"adty_user:delete": "user:write"},
+	"GET /api/log/export":                              {"adty_log:export": "log:read"},
+	"POST /api/models/":                                {"adty_model:create": "model:write"},
+	"POST /api/vendors/":                               {"adty_model:create": "model:write"},
+	"POST /api/prefill_group/":                         {"adty_model:create": "group:write"},
+	"DELETE /api/models/:id":                           {"adty_model:delete": "model:write", "channel:write": "model:write"},
+	"POST /api/models/delete":                          {"adty_model:delete": "model:write", "channel:write": "model:write"},
+	"DELETE /api/vendors/:id":                          {"adty_model:delete": "model:write"},
+	"DELETE /api/prefill_group/:id":                    {"adty_model:delete": "group:write"},
+	"POST /api/channel/":                               {"channel:create": "channel:sensitive_write"},
+	"POST /api/channel/copy/:id":                       {"channel:create": "channel:sensitive_write"},
+	"DELETE /api/channel/disabled":                     {"channel:delete": "channel:sensitive_write"},
+	"DELETE /api/channel/:id":                          {"channel:delete": "channel:sensitive_write"},
+	"POST /api/channel/batch":                          {"channel:delete": "channel:sensitive_write"},
+	"POST /api/adty/admin/marketing/campaigns":         {"adty_marketing:create": "adty_marketing:write"},
+	"POST /api/adty/admin/marketing/promo-codes":       {"adty_marketing:create": "adty_marketing:write"},
+	"DELETE /api/adty/admin/marketing/campaigns/:id":   {"adty_marketing:delete": "adty_marketing:write"},
+	"POST /api/adty/admin/sites":                       {"adty_site:create": "adty_site:adjust"},
+	"DELETE /api/adty/admin/sites/:id/sender-domain":   {"adty_site:delete": "adty_site:adjust"},
+	"DELETE /api/adty/admin/sites/domains/:id":         {"adty_site:delete": "adty_site:adjust"},
+	"DELETE /api/adty/admin/sites/:id/notice":          {"adty_site:delete": "adty_site:adjust"},
+	"GET /api/adty/admin/reseller/settings":            {"adty_site:settings_read": "adty_site:settings"},
+	"GET /api/adty/admin/reseller/invite-codes":        {"adty_site:settings_read": "adty_site:settings"},
+	"POST /api/adty/admin/reseller/invite-codes":       {"adty_site:settings_create": "adty_site:settings"},
+	"DELETE /api/adty/admin/reseller/invite-codes/:id": {"adty_site:settings_delete": "adty_site:settings"},
+	"GET /api/user/admin/referral/settings":            {"adty_referral:settings_read": "adty_referral:settings"},
+}
+
 // accessTokenVerificationScopes maps every verification scope to the token
 // scope a PAT needs to obtain its proof. An empty value means PATs can never
 // obtain it; scopes missing from this table are denied too.
@@ -238,9 +344,24 @@ var accessTokenVerificationScopes = map[string]string{
 	VerificationScopeLogin:                 "",
 }
 
+var adminUserVerificationPermissions = map[string]authz.Permission{
+	VerificationScopeAdminUserCreate:       authz.AdtyUserCreate,
+	VerificationScopeAdminUserDelete:       authz.AdtyUserDelete,
+	VerificationScopeAdminUserUpdate:       authz.AdtyUserWrite,
+	VerificationScopeAdminUserManage:       authz.AdtyUserWrite,
+	VerificationScopeAdminUserPasskeyReset: authz.AdtyUserWrite,
+	VerificationScopeAdminUserTwoFADisable: authz.AdtyUserWrite,
+	VerificationScopeAdminUserBindingClear: authz.AdtyUserWrite,
+}
+
 // AccessTokenVerificationScope returns the token scope a PAT needs for a
 // verification scope and whether the scope is listed at all.
 func AccessTokenVerificationScope(verificationScope string) (scope string, listed bool) {
+	if AdtyAdminPermissionsEnabled() {
+		if permission, ok := adminUserVerificationPermissions[verificationScope]; ok {
+			return AccessTokenScopeOf(permission), true
+		}
+	}
 	scope, listed = accessTokenVerificationScopes[verificationScope]
 	return scope, listed
 }
@@ -264,6 +385,11 @@ func requireAccessTokenVerificationScope(identity AuthIdentity, verificationScop
 		return err
 	}
 	if !AccessTokenScopeGranted(token.GetScopes(), required) {
+		// Only an existing grant may retain the original admin proof scope.
+		// The final mutation still rechecks its own route and action.
+		if _, adminScope := adminUserVerificationPermissions[verificationScope]; AdtyAdminPermissionsEnabled() && adminScope && token.ScopeVersion == 0 && AccessTokenScopeGranted(token.GetScopes(), "user:write") {
+			return nil
+		}
 		return ErrVerificationForbidden
 	}
 	return nil

@@ -38,9 +38,11 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { useTableUrlState } from '@/hooks/use-table-url-state'
+import { ADTY_PERMISSIONS, canAdmin } from '@/lib/adty-permissions'
 import { formatTimestampToDate } from '@/lib/format'
 import { getLobeIcon } from '@/lib/lobe-icon'
 import { createServerError } from '@/lib/server-error-message'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { searchVendors } from '../api'
 import { vendorsQueryKeys } from '../lib'
@@ -52,6 +54,9 @@ import { useModels } from './models-provider'
 const route = getRouteApi('/_authenticated/models/$section')
 
 export function VendorsTable() {
+  const currentUser = useAuthStore((state) => state.auth.user)
+  const canWrite = canAdmin(currentUser, ADTY_PERMISSIONS.MODEL_WRITE)
+  const canDelete = canAdmin(currentUser, ADTY_PERMISSIONS.MODEL_DELETE)
   const { t } = useTranslation()
   const navigate = useNavigate()
   const { setCurrentVendor, setOpen } = useModels()
@@ -199,6 +204,7 @@ export function VendorsTable() {
           </DropdownMenuTrigger>
           <DropdownMenuContent align='end'>
             <DropdownMenuItem
+              disabled={!canWrite}
               onClick={() => {
                 setCurrentVendor(row.original)
                 setOpen('update-vendor')
@@ -208,6 +214,7 @@ export function VendorsTable() {
             </DropdownMenuItem>
             <DropdownMenuItem
               variant='destructive'
+              disabled={!canDelete}
               onClick={() =>
                 setOperation({
                   action: 'delete',
@@ -280,6 +287,7 @@ export function VendorsTable() {
             <Button
               variant='outline'
               size='sm'
+              disabled={!canWrite || !canDelete}
               onClick={() =>
                 setOperation({ action: 'merge', vendor_ids: selectedIds })
               }
@@ -289,6 +297,7 @@ export function VendorsTable() {
             <Button
               variant='destructive'
               size='sm'
+              disabled={!canDelete}
               onClick={() =>
                 setOperation({ action: 'delete', vendor_ids: selectedIds })
               }

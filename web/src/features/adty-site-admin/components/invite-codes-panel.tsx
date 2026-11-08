@@ -30,8 +30,10 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { PageSwitcher } from '@/features/referral/components/page-switcher'
+import { ADTY_PERMISSIONS, canAdmin } from '@/lib/adty-permissions'
 import { formatTimestampToDate } from '@/lib/format'
 import { handleServerError } from '@/lib/handle-server-error'
+import { useAuthStore } from '@/stores/auth-store'
 
 import {
   deleteInviteCode,
@@ -73,13 +75,19 @@ function toDraft(code: InviteCode): Draft {
 }
 
 /** Site opening invite codes (task 11.1): a valid code opens the site with its preset d and k. */
-export function InviteCodesPanel(props: { canWrite: boolean }) {
+export function InviteCodesPanel(props: {
+  canCreate: boolean
+  canWrite: boolean
+  canDelete: boolean
+}) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [page, setPage] = useState(1)
   const [editing, setEditing] = useState<InviteCode | 'new' | null>(null)
   const [deleting, setDeleting] = useState<InviteCode | null>(null)
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT)
+  const canSave =
+    editing === 'new' ? props.canCreate : editing !== null && props.canWrite
   const query = useQuery({
     queryKey: siteAdminKeys.list('invite-codes', { page }),
     queryFn: () => getInviteCodes(page),
@@ -91,8 +99,15 @@ export function InviteCodesPanel(props: { canWrite: boolean }) {
     void queryClient.invalidateQueries({ queryKey: siteAdminKeys.all })
   }
   const save = useMutation({
-    mutationFn: () =>
-      saveInviteCode(
+    mutationFn: () => {
+      const action =
+        editing === 'new'
+          ? ADTY_PERMISSIONS.SITE_SETTINGS_CREATE
+          : ADTY_PERMISSIONS.SITE_SETTINGS
+      if (!canSave || !canAdmin(useAuthStore.getState().auth.user, action)) {
+        throw new Error(t('No permission to perform this action'))
+      }
+      return saveInviteCode(
         editing === 'new' || editing === null ? null : editing.id,
         {
           code: editing === 'new' ? draft.code.trim() || undefined : undefined,
@@ -104,12 +119,24 @@ export function InviteCodesPanel(props: { canWrite: boolean }) {
           max_markup: draft.max_markup.trim() || undefined,
           note: draft.note.trim(),
         }
-      ),
+      )
+    },
     onSuccess: done,
     onError: (err) => handleServerError(err),
   })
   const remove = useMutation({
-    mutationFn: (id: number) => deleteInviteCode(id),
+    mutationFn: (id: number) => {
+      if (
+        !props.canDelete ||
+        !canAdmin(
+          useAuthStore.getState().auth.user,
+          ADTY_PERMISSIONS.SITE_SETTINGS_DELETE
+        )
+      ) {
+        throw new Error(t('No permission to perform this action'))
+      }
+      return deleteInviteCode(id)
+    },
     onSuccess: done,
     onError: (err) => handleServerError(err),
   })
@@ -118,7 +145,7 @@ export function InviteCodesPanel(props: { canWrite: boolean }) {
 
   return (
     <div className='flex flex-col gap-3'>
-      {props.canWrite && (
+      {props.canCreate && (
         <div>
           <Button
             onClick={() => {
@@ -171,25 +198,29 @@ export function InviteCodesPanel(props: { canWrite: boolean }) {
             className: 'text-right',
             cellClassName: 'text-right',
             cell: (row) =>
-              props.canWrite ? (
+              props.canWrite || props.canDelete ? (
                 <div className='flex justify-end gap-1'>
-                  <Button
-                    size='sm'
-                    variant='outline'
-                    onClick={() => {
-                      setDraft(toDraft(row))
-                      setEditing(row)
-                    }}
-                  >
-                    {t('Edit')}
-                  </Button>
-                  <Button
-                    size='sm'
-                    variant='outline'
-                    onClick={() => setDeleting(row)}
-                  >
-                    {t('Delete')}
-                  </Button>
+                  {props.canWrite && (
+                    <Button
+                      size='sm'
+                      variant='outline'
+                      onClick={() => {
+                        setDraft(toDraft(row))
+                        setEditing(row)
+                      }}
+                    >
+                      {t('Edit')}
+                    </Button>
+                  )}
+                  {props.canDelete && (
+                    <Button
+                      size='sm'
+                      variant='outline'
+                      onClick={() => setDeleting(row)}
+                    >
+                      {t('Delete')}
+                    </Button>
+                  )}
                 </div>
               ) : null,
           },
@@ -210,7 +241,10 @@ export function InviteCodesPanel(props: { canWrite: boolean }) {
             <Button variant='outline' onClick={() => setEditing(null)}>
               {t('Cancel')}
             </Button>
-            <Button disabled={save.isPending} onClick={() => save.mutate()}>
+            <Button
+              disabled={!canSave || save.isPending}
+              onClick={() => canSave && save.mutate()}
+            >
               {t('Save')}
             </Button>
           </>
@@ -222,7 +256,7 @@ export function InviteCodesPanel(props: { canWrite: boolean }) {
             <Input
               id='invite-code'
               value={draft.code}
-              disabled={editing !== 'new'}
+              disabled={!canSave || editing !== 'new'}
               placeholder={t('Leave empty to generate')}
               onChange={(event) => set('code', event.target.value)}
             />
@@ -233,6 +267,7 @@ export function InviteCodesPanel(props: { canWrite: boolean }) {
             </Label>
             <Input
               id='invite-max-uses'
+              disabled={!canSave}
               type='number'
               min={0}
               value={draft.max_uses}
@@ -245,6 +280,7 @@ export function InviteCodesPanel(props: { canWrite: boolean }) {
             </Label>
             <Input
               id='invite-expire'
+              disabled={!canSave}
               type='date'
               value={draft.expire_date}
               onChange={(event) => set('expire_date', event.target.value)}
@@ -256,6 +292,7 @@ export function InviteCodesPanel(props: { canWrite: boolean }) {
             </Label>
             <Input
               id='invite-cost-factor'
+              disabled={!canSave}
               value={draft.cost_factor}
               placeholder={t('Global')}
               onChange={(event) => set('cost_factor', event.target.value)}
@@ -267,6 +304,7 @@ export function InviteCodesPanel(props: { canWrite: boolean }) {
             </Label>
             <Input
               id='invite-max-markup'
+              disabled={!canSave}
               value={draft.max_markup}
               placeholder={t('Global')}
               onChange={(event) => set('max_markup', event.target.value)}
@@ -276,6 +314,7 @@ export function InviteCodesPanel(props: { canWrite: boolean }) {
             <Label htmlFor='invite-note'>{t('Note')}</Label>
             <Input
               id='invite-note'
+              disabled={!canSave}
               value={draft.note}
               onChange={(event) => set('note', event.target.value)}
             />
@@ -290,7 +329,10 @@ export function InviteCodesPanel(props: { canWrite: boolean }) {
         destructive
         confirmText={t('Delete')}
         isLoading={remove.isPending}
-        handleConfirm={() => deleting && remove.mutate(deleting.id)}
+        disabled={!props.canDelete}
+        handleConfirm={() =>
+          props.canDelete && deleting && remove.mutate(deleting.id)
+        }
       />
     </div>
   )

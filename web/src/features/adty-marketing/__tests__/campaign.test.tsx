@@ -20,7 +20,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { useAuthStore } from '@/stores/auth-store'
 
 import type { MarketingAudience } from '../api'
 import { CampaignEditor } from '../components/campaign-editor'
@@ -55,6 +57,7 @@ function renderEditor(onClose = vi.fn()) {
       <CampaignEditor
         campaignId={null}
         initial={initial}
+        canCreate
         canWrite
         canSend
         onClose={onClose}
@@ -65,6 +68,22 @@ function renderEditor(onClose = vi.fn()) {
 }
 
 beforeEach(() => {
+  useAuthStore.getState().auth.setUser({
+    id: 10,
+    username: 'campaign-admin',
+    role: 10,
+    permissions: {
+      admin_permissions: {
+        adty_marketing: {
+          read: true,
+          create: true,
+          write: true,
+          delete: true,
+          send: true,
+        },
+      },
+    },
+  })
   vi.clearAllMocks()
   api.estimateAudience.mockImplementation(
     async (audience: MarketingAudience) => ({
@@ -80,6 +99,8 @@ beforeEach(() => {
   })
   api.sendCampaign.mockResolvedValue({ total: 5, versions: {}, sites: 1 })
 })
+
+afterEach(() => useAuthStore.getState().auth.reset())
 
 describe('CampaignEditor', () => {
   it('updates the estimated recipients when the filters change', async () => {
@@ -135,6 +156,7 @@ describe('CampaignEditor', () => {
             name: 'x',
             subjects: { fr: 'Salut' },
           }}
+          canCreate
           canWrite
           canSend
           onClose={vi.fn()}

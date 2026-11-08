@@ -37,8 +37,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import {
+  ADTY_PERMISSIONS,
+  canAdmin,
+  type AdtyPermission,
+} from '@/lib/adty-permissions'
 import { handleServerError } from '@/lib/handle-server-error'
 import { createServerError } from '@/lib/server-error-message'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { previewUpstreamDiff, syncUpstream } from '../../api'
 import { getSyncLocaleOptions } from '../../constants'
@@ -79,12 +85,42 @@ function isMetadataSyncable(item: MetadataSyncCandidate) {
   return item.kind === 'create' || item.kind === 'update'
 }
 
+function metadataSyncPermissions(
+  selections: MetadataSyncSelection[],
+  candidates: MetadataSyncCandidate[]
+): AdtyPermission[] {
+  const permissions: AdtyPermission[] = []
+  if (
+    selections.some(
+      (selection) =>
+        selection.create ||
+        (selection.fields.includes('vendor') &&
+          Boolean(
+            candidates.find(
+              (candidate) => candidate.model_name === selection.model_name
+            )?.vendor_to_create
+          ))
+    )
+  ) {
+    permissions.push(ADTY_PERMISSIONS.MODEL_CREATE)
+  }
+  if (
+    selections.some(
+      (selection) => !selection.create && selection.fields.length > 0
+    )
+  ) {
+    permissions.push(ADTY_PERMISSIONS.MODEL_WRITE)
+  }
+  return permissions
+}
+
 export function SyncWizardDialog(props: {
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
+  const currentUser = useAuthStore((state) => state.auth.user)
   const [locale, setLocale] = useState<SyncLocale>('zh')
   const [preview, setPreview] = useState<MetadataSyncPreview | null>(null)
   const [scope, setScope] = useState('site')
@@ -103,6 +139,14 @@ export function SyncWizardDialog(props: {
       setPage(0)
     },
     mutationFn: async () => {
+      if (
+        !canAdmin(
+          useAuthStore.getState().auth.user,
+          ADTY_PERMISSIONS.MODEL_READ
+        )
+      ) {
+        throw new Error(t('No permission to perform this action'))
+      }
       const response = await previewUpstreamDiff({ locale })
       if (!response.success || !response.data) {
         throw createServerError(response, t('Failed to preview metadata'))
@@ -118,6 +162,14 @@ export function SyncWizardDialog(props: {
   const apply = useMutation({
     mutationFn: async (selections: MetadataSyncSelection[]) => {
       if (!preview) throw new Error(t('Preview metadata first'))
+      const user = useAuthStore.getState().auth.user
+      if (
+        !metadataSyncPermissions(selections, preview.candidates).every(
+          (permission) => canAdmin(user, permission)
+        )
+      ) {
+        throw new Error(t('No permission to perform this action'))
+      }
       const response = await syncUpstream({
         locale: preview.source.locale,
         source_version: preview.source.version,
@@ -367,7 +419,14 @@ export function SyncWizardDialog(props: {
           )}
           {step === 2 && (
             <Button
-              disabled={busy || updates.length === 0}
+              disabled={
+                busy ||
+                updates.length === 0 ||
+                !metadataSyncPermissions(
+                  updates,
+                  preview?.candidates ?? []
+                ).every((permission) => canAdmin(currentUser, permission))
+              }
               onClick={() => apply.mutate(updates)}
             >
               {busy

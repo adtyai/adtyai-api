@@ -1,6 +1,7 @@
 package model
 
 import (
+	"errors"
 	"maps"
 	"math"
 	"strconv"
@@ -333,6 +334,30 @@ func requirePositiveOptionFloat(key, value string) error {
 		return common.NewMessage("{{key}} must be a positive number", map[string]any{"key": key})
 	}
 	return nil
+}
+
+// UpdateOptionWithAudit atomically persists an ordinary option and its safe
+// audit snapshot. Specialized policy, Passkey and pricing writers retain their
+// own transaction/locking contracts and must be integrated separately.
+func UpdateOptionWithAudit(key, value string, event AuditLog) error {
+	if IsRequestPolicyOption(key) || IsPasskeyDomainOption(key) || IsModelPricingOption(key) {
+		return errors.New("specialized option requires its own audited transaction")
+	}
+	unlock := lockAdtyGroupConfig(key)
+	defer unlock()
+	if err := validateOptionValue(key, value); err != nil {
+		return err
+	}
+	values := map[string]string{key: value}
+	if err := DB.Transaction(func(tx *gorm.DB) error {
+		if err := SaveOptionsTx(tx, values); err != nil {
+			return err
+		}
+		return AppendAuditIntentTx(tx, event)
+	}); err != nil {
+		return err
+	}
+	return ApplyOptionValues(values)
 }
 
 func UpdateOption(key string, value string) error {

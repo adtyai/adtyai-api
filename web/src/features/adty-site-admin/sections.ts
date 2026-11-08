@@ -28,12 +28,11 @@ export const SITE_ADMIN_SECTIONS = [
   { id: 'sites', permission: ADTY_PERMISSIONS.SITE_READ },
   { id: 'overview', permission: ADTY_PERMISSIONS.SITE_READ },
   { id: 'reviews', permission: ADTY_PERMISSIONS.SITE_REVIEW },
-  { id: 'invite-codes', permission: ADTY_PERMISSIONS.SITE_SETTINGS },
-  { id: 'settings', permission: ADTY_PERMISSIONS.SITE_SETTINGS, rootOnly: true },
+  { id: 'invite-codes', permission: ADTY_PERMISSIONS.SITE_SETTINGS_READ },
+  { id: 'settings', permission: ADTY_PERMISSIONS.SITE_SETTINGS_READ },
 ] as const satisfies ReadonlyArray<{
   id: string
   permission: AdtyPermission
-  rootOnly?: boolean
 }>
 
 export type SiteAdminSectionId = (typeof SITE_ADMIN_SECTIONS)[number]['id']
@@ -44,13 +43,10 @@ export function isSiteAdminSection(value: string): value is SiteAdminSectionId {
   return SITE_ADMIN_SECTIONS.some((section) => section.id === value)
 }
 
-/** Reseller money settings stay on the root account even if site settings were delegated. */
+/** Each section follows its explicitly granted reseller permission. */
 export function canOpenSiteAdminSection(
   user: AuthUser | null | undefined,
   section: (typeof SITE_ADMIN_SECTIONS)[number]
 ): boolean {
-  if ('rootOnly' in section && section.rootOnly && user?.role !== 100) {
-    return false
-  }
   return canAdmin(user, section.permission)
 }

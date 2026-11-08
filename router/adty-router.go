@@ -158,7 +158,7 @@ func registerAdtyReferralRoutes(apiRouter *gin.RouterGroup) {
 		{http.MethodPost, "/affiliates/:user_id/update", authz.AdtyReferralAdjust, controller.UpdateReferralAffiliate},
 		{http.MethodPost, "/commission-jobs/retry", authz.AdtyReferralAdjust, controller.RetryReferralCommissionJob},
 		{http.MethodPost, "/settlements/run", authz.AdtyReferralAdjust, controller.RunReferralSettlement},
-		{http.MethodGet, "/settings", authz.AdtyReferralSettings, controller.GetReferralSettings},
+		{http.MethodGet, "/settings", authz.AdtyReferralSettingsRead, controller.GetReferralSettings},
 		{http.MethodPut, "/settings", authz.AdtyReferralSettings, controller.UpdateReferralSettings},
 	} {
 		handlePermissionRoute(admin, route.method, route.path, route.permission, route.handler)
@@ -219,9 +219,9 @@ func registerAdtyMarketingRoutes(apiRouter *gin.RouterGroup) {
 	handlePermissionRoute(admin, http.MethodGet, "/campaigns/:id", authz.AdtyMarketingRead, controller.GetAdtyCampaign)
 	handlePermissionRoute(admin, http.MethodGet, "/campaigns/:id/plan", authz.AdtyMarketingRead, controller.GetAdtyCampaignPlan)
 	handlePermissionRoute(admin, http.MethodPost, "/audience/estimate", authz.AdtyMarketingRead, controller.PostAdtyAudienceEstimate)
-	handlePermissionRoute(admin, http.MethodPost, "/campaigns", authz.AdtyMarketingWrite, controller.PostAdtyCampaign)
+	handlePermissionRoute(admin, http.MethodPost, "/campaigns", authz.AdtyMarketingCreate, controller.PostAdtyCampaign)
 	handlePermissionRoute(admin, http.MethodPut, "/campaigns/:id", authz.AdtyMarketingWrite, controller.PutAdtyCampaign)
-	handlePermissionRoute(admin, http.MethodDelete, "/campaigns/:id", authz.AdtyMarketingWrite, controller.DeleteAdtyCampaign)
+	handlePermissionRoute(admin, http.MethodDelete, "/campaigns/:id", authz.AdtyMarketingDelete, controller.DeleteAdtyCampaign)
 	handlePermissionRoute(admin, http.MethodPost, "/campaigns/:id/test", authz.AdtyMarketingSend, middleware.CriticalRateLimit(), controller.PostAdtyCampaignTest)
 	handlePermissionRoute(admin, http.MethodPost, "/campaigns/:id/send", authz.AdtyMarketingSend, controller.PostAdtySendCampaign)
 	handlePermissionRoute(admin, http.MethodPost, "/campaigns/:id/cancel", authz.AdtyMarketingSend, controller.PostAdtyCancelCampaign)
@@ -232,7 +232,7 @@ func registerAdtyMarketingRoutes(apiRouter *gin.RouterGroup) {
 	handlePermissionRoute(admin, http.MethodGet, "/sources", authz.AdtyMarketingRead, controller.GetAdtySignupSourceStats)
 	// 优惠码（任务 12.4），平台出资
 	handlePermissionRoute(admin, http.MethodGet, "/promo-codes", authz.AdtyMarketingRead, controller.GetAdtyPromoCodes)
-	handlePermissionRoute(admin, http.MethodPost, "/promo-codes", authz.AdtyMarketingWrite, controller.PostAdtyPromoCode)
+	handlePermissionRoute(admin, http.MethodPost, "/promo-codes", authz.AdtyMarketingCreate, controller.PostAdtyPromoCode)
 	handlePermissionRoute(admin, http.MethodPut, "/promo-codes/:id", authz.AdtyMarketingWrite, controller.PutAdtyPromoCode)
 }
 
@@ -297,29 +297,25 @@ func registerAdtyResellerRoutes(apiRouter *gin.RouterGroup) {
 		{http.MethodGet, "/sites/:id/stats", authz.AdtySiteRead, controller.GetAdtyAdminSiteStats},
 		{http.MethodGet, "/sites/:id", authz.AdtySiteRead, controller.GetAdtyAdminSite},
 		{http.MethodGet, "/sites/:id/customers", authz.AdtySiteRead, controller.GetAdtyAdminSiteCustomers},
-		{http.MethodPost, "/sites", authz.AdtySiteAdjust, controller.CreateAdtyAdminSite},
+		{http.MethodPost, "/sites", authz.AdtySiteCreate, controller.CreateAdtyAdminSite},
 		{http.MethodPost, "/sites/:id/review", authz.AdtySiteReview, controller.ReviewAdtyAdminSite},
 		{http.MethodPost, "/sites/customers/:id/review", authz.AdtySiteReview, controller.ReviewAdtySiteCustomer},
 		{http.MethodPut, "/sites/:id", authz.AdtySiteAdjust, controller.AdjustAdtyAdminSite},
 		{http.MethodPut, "/sites/:id/status", authz.AdtySiteAdjust, controller.SetAdtyAdminSiteStatus},
 		{http.MethodPost, "/sites/:id/settlement/resume", authz.AdtySiteAdjust, controller.ResumeAdtySiteSettlement},
-		{http.MethodDelete, "/sites/:id/sender-domain", authz.AdtySiteAdjust, controller.DisableAdtyAdminSiteSenderDomain},
-		{http.MethodDelete, "/sites/domains/:id", authz.AdtySiteAdjust, controller.DisableAdtyAdminSiteDomain},
-		{http.MethodDelete, "/sites/:id/notice", authz.AdtySiteAdjust, controller.ClearAdtyAdminSiteNotice},
+		{http.MethodDelete, "/sites/:id/sender-domain", authz.AdtySiteDelete, controller.DisableAdtyAdminSiteSenderDomain},
+		{http.MethodDelete, "/sites/domains/:id", authz.AdtySiteDelete, controller.DisableAdtyAdminSiteDomain},
+		{http.MethodDelete, "/sites/:id/notice", authz.AdtySiteDelete, controller.ClearAdtyAdminSiteNotice},
 		{http.MethodGet, "/reseller/usage", authz.AdtySiteRead, controller.GetAdtyResellerUsage},
-		{http.MethodGet, "/reseller/invite-codes", authz.AdtySiteSettings, controller.GetAdtySiteInviteCodes},
-		{http.MethodPost, "/reseller/invite-codes", authz.AdtySiteSettings, controller.CreateAdtySiteInviteCode},
+		{http.MethodGet, "/reseller/settings", authz.AdtySiteSettingsRead, controller.GetAdtyResellerSettings},
+		{http.MethodPut, "/reseller/settings", authz.AdtySiteSettings, controller.UpdateAdtyResellerSettings},
+		{http.MethodGet, "/reseller/invite-codes", authz.AdtySiteSettingsRead, controller.GetAdtySiteInviteCodes},
+		{http.MethodPost, "/reseller/invite-codes", authz.AdtySiteSettingsCreate, controller.CreateAdtySiteInviteCode},
 		{http.MethodPut, "/reseller/invite-codes/:id", authz.AdtySiteSettings, controller.UpdateAdtySiteInviteCode},
-		{http.MethodDelete, "/reseller/invite-codes/:id", authz.AdtySiteSettings, controller.DeleteAdtySiteInviteCode},
+		{http.MethodDelete, "/reseller/invite-codes/:id", authz.AdtySiteSettingsDelete, controller.DeleteAdtySiteInviteCode},
 	} {
 		handlePermissionRoute(admin, route.method, route.path, route.permission, route.handler)
 	}
-	// 分站资金参数和 Cloudflare 令牌只给超级管理员（任务 11.9）。
-	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/adty/admin/reseller/settings", "scope", "option:read")
-	middleware.DeclareAdtyAccessTokenRoute("PUT", "/api/adty/admin/reseller/settings", "scope", "option:write")
-	root := apiRouter.Group("/adty/admin/reseller", middleware.AdminAuth(), middleware.RootAuth())
-	root.GET("/settings", controller.GetAdtyResellerSettings)
-	root.PUT("/settings", controller.UpdateAdtyResellerSettings)
 }
 
 // SetAdtyWebRoutes 挂 /api 以外的二开页面（任务 11.3）：易支付付完跳回的 /pay/result/:token、按站点返回的 /robots.txt

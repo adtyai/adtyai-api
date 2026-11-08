@@ -132,8 +132,8 @@ func CancelAdtyTopUpOrder(c *gin.Context) {
 	common.ApiSuccess(c, nil)
 }
 
-// FlushAdtyBatchUpdates lets the backup script persist in-memory quota deltas
-// before pg_dump. It is not a user route: the shared token must match.
+// FlushAdtyBatchUpdates folds durable quota deltas and local statistics before
+// pg_dump. It is not a user route: the shared token must match.
 func FlushAdtyBatchUpdates(c *gin.Context) {
 	expected := os.Getenv("ADTY_FLUSH_TOKEN")
 	provided := c.GetHeader("X-Adty-Flush-Token")
@@ -141,7 +141,11 @@ func FlushAdtyBatchUpdates(c *gin.Context) {
 		c.AbortWithStatus(http.StatusForbidden)
 		return
 	}
-	model.FlushBatchUpdates()
+	if err := model.FlushBatchUpdates(); err != nil {
+		common.SysError(common.LogText("batch flush failed: %s", err.Error()))
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "Batch flush failed"})
+		return
+	}
 	common.ApiSuccess(c, gin.H{"flushed": true})
 }
 

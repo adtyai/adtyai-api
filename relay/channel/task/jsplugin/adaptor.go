@@ -232,11 +232,13 @@ func (a *TaskAdaptor) AdjustBillingOnSubmit(info *relaycommon.RelayInfo, taskDat
 	return ratios
 }
 
-func (a *TaskAdaptor) AdjustBillingOnComplete(task *model.Task, result *relaycommon.TaskInfo) int {
-	if !a.hasHook(context.Background(), "extractUsageOnComplete") {
+func (a *TaskAdaptor) AdjustBillingOnComplete(ctx context.Context, task *model.Task, result *relaycommon.TaskInfo) int {
+	_, baseURL, proxy := a.queryCredentials()
+	ctx = pluginruntime.WithFetcher(ctx, a.hookFetcher(baseURL, proxy))
+	if !a.hasHook(ctx, "extractUsageOnComplete") {
 		return 0
 	}
-	value, err := a.plugin.Engine.Call(context.Background(), "extractUsageOnComplete", jsonValue(task), jsonValue(result))
+	value, err := a.plugin.Engine.Call(ctx, "extractUsageOnComplete", jsonValue(task), jsonValue(result))
 	if err != nil {
 		return 0
 	}
@@ -627,7 +629,7 @@ func (a *TaskAdaptor) GetModelList() []string { return append([]string(nil), a.p
 func (a *TaskAdaptor) GetChannelName() string { return a.plugin.Meta.Name }
 func (a *TaskAdaptor) FetchMode() string      { return a.plugin.Meta.FetchMode }
 
-func (a *TaskAdaptor) FetchBatchTasks(baseURL, key string, tasks []*model.Task, proxy string) (*http.Response, error) {
+func (a *TaskAdaptor) FetchBatchTasks(pollCtx context.Context, baseURL, key string, tasks []*model.Task, proxy string) (*http.Response, error) {
 	taskContexts := make([]map[string]any, 0, len(tasks))
 	for _, task := range tasks {
 		taskCtx, err := a.queryContext(task, key, baseURL, proxy)
@@ -640,14 +642,14 @@ func (a *TaskAdaptor) FetchBatchTasks(baseURL, key string, tasks []*model.Task, 
 	if err != nil {
 		return nil, err
 	}
-	descriptor, err := a.requestDescriptor(pluginruntime.WithFetcher(context.Background(), a.hookFetcher(baseURL, proxy)), "buildBatchQueryRequest", ctx, taskContexts)
+	descriptor, err := a.requestDescriptor(pluginruntime.WithFetcher(pollCtx, a.hookFetcher(baseURL, proxy)), "buildBatchQueryRequest", ctx, taskContexts)
 	if err != nil {
 		return nil, err
 	}
-	return a.doFetchDescriptor(baseURL, key, proxy, descriptor)
+	return a.doFetchDescriptor(pollCtx, baseURL, key, proxy, descriptor)
 }
 
-func (a *TaskAdaptor) FetchTask(baseURL, key string, task *model.Task, proxy string) (*http.Response, error) {
+func (a *TaskAdaptor) FetchTask(pollCtx context.Context, baseURL, key string, task *model.Task, proxy string) (*http.Response, error) {
 	if task != nil && task.PrivateData.Key != "" {
 		key = task.PrivateData.Key
 	}
@@ -655,11 +657,11 @@ func (a *TaskAdaptor) FetchTask(baseURL, key string, task *model.Task, proxy str
 	if err != nil {
 		return nil, err
 	}
-	descriptor, err := a.requestDescriptor(pluginruntime.WithFetcher(context.Background(), a.hookFetcher(baseURL, proxy)), "buildQueryRequest", ctx)
+	descriptor, err := a.requestDescriptor(pluginruntime.WithFetcher(pollCtx, a.hookFetcher(baseURL, proxy)), "buildQueryRequest", ctx)
 	if err != nil {
 		return nil, err
 	}
-	return a.doFetchDescriptor(baseURL, key, proxy, descriptor)
+	return a.doFetchDescriptor(pollCtx, baseURL, key, proxy, descriptor)
 }
 
 func pluginOutboundClient(baseURL, proxy, requestURL string, setting kitdto.ChannelSettings) (*http.Client, error) {
@@ -722,7 +724,7 @@ func (a *TaskAdaptor) hookFetcher(baseURL, proxy string) pluginruntime.Fetcher {
 	}
 }
 
-func (a *TaskAdaptor) doFetchDescriptor(baseURL, key, proxy string, descriptor requestDescriptor) (*http.Response, error) {
+func (a *TaskAdaptor) doFetchDescriptor(pollCtx context.Context, baseURL, key, proxy string, descriptor requestDescriptor) (*http.Response, error) {
 	if err := pluginruntime.ValidateRequestURL(descriptor.URL, baseURL, a.plugin.Meta.AllowedHosts); err != nil {
 		return nil, err
 	}
@@ -744,7 +746,7 @@ func (a *TaskAdaptor) doFetchDescriptor(baseURL, key, proxy string, descriptor r
 	if method == "" {
 		method = http.MethodGet
 	}
-	req, err := http.NewRequest(method, descriptor.URL, requestBody)
+	req, err := http.NewRequestWithContext(pollCtx, method, descriptor.URL, requestBody)
 	if err != nil {
 		return nil, err
 	}
@@ -823,7 +825,7 @@ func (a *TaskAdaptor) doFetchDescriptor(baseURL, key, proxy string, descriptor r
 	resp, err := queryClient.Do(req)
 	if err != nil {
 		logger.LogDebug(
-			context.Background(),
+			pollCtx,
 			"task_plugin subsystem=adaptor event=query_request_failed plugin=%q method=%q reason=transport_error elapsed_ms=%d",
 			a.plugin.Meta.Key,
 			method,
@@ -837,7 +839,7 @@ func (a *TaskAdaptor) doFetchDescriptor(baseURL, key, proxy string, descriptor r
 		return nil, err
 	}
 	logger.LogDebug(
-		context.Background(),
+		pollCtx,
 		"task_plugin subsystem=adaptor event=query_response_received plugin=%q method=%q status=%d elapsed_ms=%d",
 		a.plugin.Meta.Key,
 		method,
@@ -847,7 +849,18 @@ func (a *TaskAdaptor) doFetchDescriptor(baseURL, key, proxy string, descriptor r
 	return resp, nil
 }
 
-func (a *TaskAdaptor) ParseBatchResult(tasks []*model.Task, resp *http.Response, body []byte) (map[string]*service.BatchTaskResult, error) {
+func (a *TaskAdaptor) ParseBatchResult(pollCtx context.Context, tasks []*model.Task, resp *http.Response, body []byte) (map[string]*service.BatchTaskResult, error) {
+	expected := make(map[string]struct{}, len(tasks))
+	for _, task := range tasks {
+		if task == nil {
+			return nil, fmt.Errorf("nil task in polling batch")
+		}
+		id := task.GetUpstreamTaskID()
+		if _, exists := expected[id]; id == "" || exists {
+			return nil, fmt.Errorf("ambiguous task id in polling batch")
+		}
+		expected[id] = struct{}{}
+	}
 	started := time.Now()
 	input := any(string(body))
 	var decoded any
@@ -880,18 +893,34 @@ func (a *TaskAdaptor) ParseBatchResult(tasks []*model.Task, resp *http.Response,
 		Data       any    `json:"data"`
 		State      any    `json:"state"`
 	}
-	if err = a.plugin.Engine.CallInto(pluginruntime.WithFetcher(context.Background(), a.hookFetcher(baseURL, proxy)), &parsed, "parseBatchResult", ctx, input, hookHTTPResponse(resp)); err != nil {
+	if err = a.plugin.Engine.CallInto(pluginruntime.WithFetcher(pollCtx, a.hookFetcher(baseURL, proxy)), &parsed, "parseBatchResult", ctx, input, hookHTTPResponse(resp)); err != nil {
 		reason := "hook_failed"
 		var invalid *pluginruntime.ResultError
 		if errors.As(err, &invalid) {
 			reason = "invalid_result"
 		}
-		logger.LogDebug(context.Background(), "task_plugin subsystem=adaptor event=parse_batch_failed plugin=%q reason=%s body_bytes=%d elapsed_ms=%d", a.plugin.Meta.Key, reason, len(body), time.Since(started).Milliseconds())
+		logger.LogDebug(pollCtx, "task_plugin subsystem=adaptor event=parse_batch_failed plugin=%q reason=%s body_bytes=%d elapsed_ms=%d", a.plugin.Meta.Key, reason, len(body), time.Since(started).Milliseconds())
 		return nil, err
 	}
-	results := make(map[string]*service.BatchTaskResult, len(parsed))
-	hasCompletionUsage := a.hasHook(context.Background(), "extractUsageOnComplete")
+	seen := make(map[string]struct{}, len(parsed))
 	for _, item := range parsed {
+		if strings.TrimSpace(item.TaskID) == "" {
+			continue
+		}
+		if _, ok := expected[item.TaskID]; !ok {
+			return nil, fmt.Errorf("unknown task id in batch response")
+		}
+		if _, exists := seen[item.TaskID]; exists {
+			return nil, fmt.Errorf("duplicate task id in batch response")
+		}
+		seen[item.TaskID] = struct{}{}
+	}
+	results := make(map[string]*service.BatchTaskResult, len(parsed))
+	hasCompletionUsage := a.hasHook(pollCtx, "extractUsageOnComplete")
+	for _, item := range parsed {
+		if pollCtx.Err() != nil {
+			return nil, pollCtx.Err()
+		}
 		if strings.TrimSpace(item.TaskID) == "" {
 			continue
 		}
@@ -899,7 +928,7 @@ func (a *TaskAdaptor) ParseBatchResult(tasks []*model.Task, resp *http.Response,
 		if item.State != nil {
 			pluginState, marshalErr := common.Marshal(item.State)
 			if marshalErr != nil || len(pluginState) > maxTaskPluginPersistedJSONBytes {
-				logger.LogWarn(context.Background(), common.LogText("task plugin %s rejected invalid or oversized poll state", a.plugin.Meta.Key))
+				logger.LogWarn(pollCtx, common.LogText("task plugin %s rejected invalid or oversized poll state", a.plugin.Meta.Key))
 			} else {
 				info.PluginState = pluginState
 			}
@@ -916,7 +945,7 @@ func (a *TaskAdaptor) ParseBatchResult(tasks []*model.Task, resp *http.Response,
 					break
 				}
 			}
-			facts, hookErr := a.plugin.Engine.Call(context.Background(), "extractUsageOnComplete", itemCtx, jsonValue(&info), usageBody)
+			facts, hookErr := a.plugin.Engine.Call(pluginruntime.WithFetcher(pollCtx, a.hookFetcher(baseURL, proxy)), "extractUsageOnComplete", itemCtx, jsonValue(&info), usageBody)
 			if hookErr == nil {
 				upstreamModel, _ := itemCtx["upstreamModel"].(string)
 				originModel, _ := itemCtx["model"].(string)
@@ -926,7 +955,7 @@ func (a *TaskAdaptor) ParseBatchResult(tasks []*model.Task, resp *http.Response,
 		results[item.TaskID] = &service.BatchTaskResult{TaskInfo: info, Action: item.Action, SubmitTime: item.SubmitTime, StartTime: item.StartTime, FinishTime: item.FinishTime, Data: item.Data}
 	}
 	logger.LogDebug(
-		context.Background(),
+		pollCtx,
 		"task_plugin subsystem=adaptor event=parse_batch_complete plugin=%q body_bytes=%d results=%d completion_usage_hook=%t elapsed_ms=%d",
 		a.plugin.Meta.Key,
 		len(body),
@@ -934,10 +963,13 @@ func (a *TaskAdaptor) ParseBatchResult(tasks []*model.Task, resp *http.Response,
 		hasCompletionUsage,
 		time.Since(started).Milliseconds(),
 	)
+	if pollCtx.Err() != nil {
+		return nil, pollCtx.Err()
+	}
 	return results, nil
 }
 
-func (a *TaskAdaptor) ParseTaskResult(task *model.Task, resp *http.Response, body []byte) (*relaycommon.TaskInfo, error) {
+func (a *TaskAdaptor) ParseTaskResult(pollCtx context.Context, task *model.Task, resp *http.Response, body []byte) (*relaycommon.TaskInfo, error) {
 	started := time.Now()
 	input := any(string(body))
 	var decoded any
@@ -952,14 +984,14 @@ func (a *TaskAdaptor) ParseTaskResult(task *model.Task, resp *http.Response, bod
 	if err != nil {
 		return nil, err
 	}
-	value, err := a.plugin.Engine.Call(pluginruntime.WithFetcher(context.Background(), a.hookFetcher(baseURL, proxy)), "parseTaskResult", ctx, input, hookHTTPResponse(resp))
+	value, err := a.plugin.Engine.Call(pluginruntime.WithFetcher(pollCtx, a.hookFetcher(baseURL, proxy)), "parseTaskResult", ctx, input, hookHTTPResponse(resp))
 	if err != nil {
-		logger.LogDebug(context.Background(), "task_plugin subsystem=adaptor event=parse_task_failed plugin=%q reason=hook_failed body_bytes=%d elapsed_ms=%d", a.plugin.Meta.Key, len(body), time.Since(started).Milliseconds())
+		logger.LogDebug(pollCtx, "task_plugin subsystem=adaptor event=parse_task_failed plugin=%q reason=hook_failed body_bytes=%d elapsed_ms=%d", a.plugin.Meta.Key, len(body), time.Since(started).Milliseconds())
 		return nil, err
 	}
 	var parsed taskResult
 	if err = convert(value, &parsed); err != nil {
-		logger.LogDebug(context.Background(), "task_plugin subsystem=adaptor event=parse_task_failed plugin=%q reason=invalid_result body_bytes=%d elapsed_ms=%d", a.plugin.Meta.Key, len(body), time.Since(started).Milliseconds())
+		logger.LogDebug(pollCtx, "task_plugin subsystem=adaptor event=parse_task_failed plugin=%q reason=invalid_result body_bytes=%d elapsed_ms=%d", a.plugin.Meta.Key, len(body), time.Since(started).Milliseconds())
 		return nil, err
 	}
 	result := &relaycommon.TaskInfo{
@@ -975,15 +1007,15 @@ func (a *TaskAdaptor) ParseTaskResult(task *model.Task, resp *http.Response, bod
 	}
 	if pluginState, present := encodeReturnedPluginState(value); present {
 		if len(pluginState) > maxTaskPluginPersistedJSONBytes {
-			logger.LogWarn(context.Background(), common.LogText("task plugin %s rejected oversized poll state (%d bytes)", a.plugin.Meta.Key, len(pluginState)))
+			logger.LogWarn(pollCtx, common.LogText("task plugin %s rejected oversized poll state (%d bytes)", a.plugin.Meta.Key, len(pluginState)))
 		} else {
 			result.PluginState = pluginState
 		}
 	}
 	// The raw polling response only exists at this boundary. Capture upstream
 	// units here so the host settlement path can consume them from TaskInfo.
-	if a.hasHook(context.Background(), "extractUsageOnComplete") {
-		facts, hookErr := a.plugin.Engine.Call(context.Background(), "extractUsageOnComplete", ctx, jsonValue(result), input)
+	if a.hasHook(pollCtx, "extractUsageOnComplete") {
+		facts, hookErr := a.plugin.Engine.Call(pluginruntime.WithFetcher(pollCtx, a.hookFetcher(baseURL, proxy)), "extractUsageOnComplete", ctx, jsonValue(result), input)
 		if hookErr == nil {
 			upstreamModel, _ := ctx["upstreamModel"].(string)
 			originModel, _ := ctx["model"].(string)
@@ -992,13 +1024,16 @@ func (a *TaskAdaptor) ParseTaskResult(task *model.Task, resp *http.Response, bod
 	}
 	taskStatus := model.TaskStatus(result.Status)
 	logger.LogDebug(
-		context.Background(),
+		pollCtx,
 		"task_plugin subsystem=adaptor event=parse_task_complete plugin=%q terminal=%t body_bytes=%d elapsed_ms=%d",
 		a.plugin.Meta.Key,
 		taskStatus == model.TaskStatusSuccess || taskStatus == model.TaskStatusFailure,
 		len(body),
 		time.Since(started).Milliseconds(),
 	)
+	if pollCtx.Err() != nil {
+		return nil, pollCtx.Err()
+	}
 	return result, nil
 }
 

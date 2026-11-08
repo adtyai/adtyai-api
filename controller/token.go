@@ -2,6 +2,7 @@ package controller
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -354,15 +355,6 @@ func AddToken(c *gin.Context) {
 	}
 	// 检查用户令牌数量是否已达上限
 	maxTokens := operation_setting.GetMaxUserTokens()
-	count, err := model.CountUserTokens(c.GetInt("id"))
-	if err != nil {
-		common.ApiError(c, err)
-		return
-	}
-	if int(count) >= maxTokens {
-		common.ApiErrorT(c, "Maximum number of tokens reached ({{max}})", map[string]any{"max": maxTokens})
-		return
-	}
 	if token.Group == "auto" {
 		if !setTokenAutoGroups(c, &token, request.AutoGroups.Groups) {
 			return
@@ -394,8 +386,12 @@ func AddToken(c *gin.Context) {
 		AutoGroups:         token.AutoGroups,
 	}
 	cleanToken.AllowUserQuotaQuery = request.AllowUserQuotaQuery == nil || *request.AllowUserQuotaQuery
-	err = cleanToken.Insert()
+	err = cleanToken.InsertWithLimit(maxTokens)
 	if err != nil {
+		if errors.Is(err, model.ErrTokenLimit) {
+			common.ApiErrorT(c, "Maximum number of tokens reached ({{max}})", map[string]any{"max": maxTokens})
+			return
+		}
 		common.ApiError(c, err)
 		return
 	}
@@ -514,12 +510,6 @@ func UpdateToken(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	if !replaceRemainQuota {
-		var remain int
-		if readErr := model.DB.Model(&model.Token{}).Where("id = ?", cleanToken.Id).Pluck("remain_quota", &remain).Error; readErr == nil {
-			cleanToken.RemainQuota = remain
-		}
-	}
 	params["name"] = cleanToken.Name
 	if statusOnly != "" {
 		params["from"], params["to"] = previous.Status, cleanToken.Status
@@ -531,7 +521,7 @@ func UpdateToken(c *gin.Context) {
 		}{
 			{"name", previous.Name != cleanToken.Name},
 			{"expired_time", previous.ExpiredTime != cleanToken.ExpiredTime},
-			{"remain_quota", previous.RemainQuota != cleanToken.RemainQuota},
+			{"remain_quota", replaceRemainQuota},
 			{"unlimited_quota", previous.UnlimitedQuota != cleanToken.UnlimitedQuota},
 			{"model_limits_enabled", previous.ModelLimitsEnabled != cleanToken.ModelLimitsEnabled},
 			{"model_limits", previous.ModelLimits != cleanToken.ModelLimits},
@@ -549,6 +539,13 @@ func UpdateToken(c *gin.Context) {
 		params["changed_fields"] = changedFields
 	}
 	common.SetContextKey(c, constant.ContextKeyTokenAuditSucceeded, true)
+	// Read a fresh logical snapshot for the response without attributing any
+	// concurrent consumption to the metadata edit in changed_fields above.
+	if latest, readErr := model.GetTokenByIds(cleanToken.Id, userId); readErr == nil {
+		cleanToken = latest
+	} else {
+		common.SysError(common.LogText("failed to read committed token projection: token=%d error=%s", cleanToken.Id, readErr.Error()))
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",

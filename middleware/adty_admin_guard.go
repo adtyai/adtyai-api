@@ -71,13 +71,28 @@ func adtyAdminRouteAllowed(c *gin.Context, minRole int) bool {
 func adtyAdminRouteCan(c *gin.Context, userID, role int, key string) bool {
 	can := func(permissions ...authz.Permission) bool {
 		for _, permission := range permissions {
-			if authz.Can(userID, role, permission) {
+			if !authz.Can(userID, role, permission) {
+				continue
+			}
+			legacy, isToken := c.Get("access_token_legacy")
+			if !isToken || legacy == true {
+				return true
+			}
+			scopes, _ := c.Get("access_token_scopes")
+			granted, _ := scopes.([]string)
+			if service.AccessTokenScopeAllowsRoute(granted, c.GetInt("access_token_scope_version"), role, c.Request.Method, c.FullPath(), service.AccessTokenScopeOf(permission)) {
 				return true
 			}
 		}
 		return false
 	}
 	switch key {
+	case "GET /api/group/":
+		return can(authz.AdtyUserRead, authz.AdtyLogRead, authz.AdtyModelRead, authz.ChannelRead)
+	case "POST /api/models/sync_upstream":
+		return can(authz.AdtyModelCreate, authz.AdtyModelWrite)
+	case "POST /api/vendors/operations":
+		return can(authz.AdtyModelWrite, authz.AdtyModelDelete)
 	case "POST /api/user/manage":
 		// 动作由 controller 里的 AdtyCheckManageAction 细分。
 		return can(authz.AdtyUserWrite, authz.AdtyUserQuota, authz.AdtyUserDelete)
@@ -85,24 +100,24 @@ func adtyAdminRouteCan(c *gin.Context, userID, role int, key string) bool {
 		return can(authz.AdtyUserDelete)
 	case "DELETE /api/models/:id":
 		if adtyRemoveFromChannels(c.Query("remove_from_channels")) {
-			return can(authz.AdtyModelWrite) && can(authz.ChannelWrite)
+			return can(authz.AdtyModelDelete) && can(authz.ChannelWrite)
 		}
-		return can(authz.AdtyModelWrite)
+		return can(authz.AdtyModelDelete)
 	case "POST /api/models/delete":
 		if adtyBatchRemovesFromChannels(c) {
-			return can(authz.AdtyModelWrite) && can(authz.ChannelWrite)
+			return can(authz.AdtyModelDelete) && can(authz.ChannelWrite)
 		}
-		return can(authz.AdtyModelWrite)
+		return can(authz.AdtyModelDelete)
 	}
 	rule, ok := AccessTokenRouteRule(key)
 	if !ok || rule.Kind() != "scope" {
 		return false
 	}
 	scope := rule.Scope()
-	// 用 Casbin 权限注册的接口（渠道、审计、二开接口）交给后面的 RequirePermission。
+	// Static routes can also name Casbin actions without a later guard.
 	for _, permission := range authz.AllPermissions() {
 		if service.AccessTokenScopeOf(permission) == scope {
-			return true
+			return can(permission)
 		}
 	}
 	permissions, ok := adtyScopePermissions[scope]

@@ -33,6 +33,7 @@ func init() {
 
 func InitBatchUpdater() {
 	gopool.Go(func() {
+		batchUpdate()
 		for {
 			time.Sleep(time.Duration(common.BatchUpdateInterval) * time.Second)
 			batchUpdate()
@@ -41,8 +42,8 @@ func InitBatchUpdater() {
 }
 
 // FlushBatchUpdates 在进程退出前把队列里的额度差额写进数据库。
-func FlushBatchUpdates() {
-	batchUpdate()
+func FlushBatchUpdates() error {
+	return batchUpdate()
 }
 
 func addNewRecord(type_ int, id int, value int) {
@@ -66,7 +67,8 @@ func addNewRecord(type_ int, id int, value int) {
 	batchUpdateStores[type_][id] = sum
 }
 
-func batchUpdate() {
+func batchUpdate() error {
+	var failures []error
 	// check if there's any data to update
 	hasData := false
 	for i := range BatchUpdateTypeCount {
@@ -78,9 +80,51 @@ func batchUpdate() {
 		}
 		batchUpdateLocks[i].Unlock()
 	}
+	// Durable deltas survive an empty local queue and process restarts. Page by
+	// primary key: OFFSET would skip rows as concurrent flushes clear pending.
+	var pendingUsers []int
+	lastID := 0
+	for {
+		var page []User
+		if err := DB.Unscoped().Select("id").Where("id > ? AND quota_pending <> 0", lastID).Order("id").Limit(256).Find(&page).Error; err != nil {
+			common.SysError(common.LogText("failed to scan durable wallet deltas: %s", err.Error()))
+			failures = append(failures, err)
+			break
+		}
+		for _, user := range page {
+			pendingUsers = append(pendingUsers, user.Id)
+		}
+		if len(page) < 256 {
+			break
+		}
+		lastID = page[len(page)-1].Id
+	}
+	if len(pendingUsers) > 0 {
+		hasData = true
+	}
+	var pendingTokens []int
+	lastID = 0
+	for {
+		var page []Token
+		if err := DB.Unscoped().Select("id").Where("id > ? AND quota_pending <> 0", lastID).Order("id").Limit(256).Find(&page).Error; err != nil {
+			common.SysError(common.LogText("failed to scan durable token deltas: %s", err.Error()))
+			failures = append(failures, err)
+			break
+		}
+		for _, token := range page {
+			pendingTokens = append(pendingTokens, token.Id)
+		}
+		if len(page) < 256 {
+			break
+		}
+		lastID = page[len(page)-1].Id
+	}
+	if len(pendingTokens) > 0 {
+		hasData = true
+	}
 
 	if !hasData {
-		return
+		return errors.Join(failures...)
 	}
 
 	common.SysLog(common.LogText("batch update started"))
@@ -91,6 +135,9 @@ func batchUpdate() {
 		batchUpdateStores[i] = make(map[int]int)
 		batchUpdateLocks[i].Unlock()
 	}
+	for _, id := range pendingTokens {
+		stores[BatchUpdateTypeTokenQuota][id] = 0
+	}
 
 	for i, store := range stores {
 		if i == BatchUpdateTypeUserQuota || i == BatchUpdateTypeUsedQuota || i == BatchUpdateTypeRequestCount {
@@ -99,13 +146,15 @@ func batchUpdate() {
 		for key, value := range store {
 			switch i {
 			case BatchUpdateTypeTokenQuota:
-				err := increaseTokenQuota(key, value)
+				err := flushTokenQuota(key)
 				if err != nil {
 					common.SysLog(common.LogText("failed to batch update token quota: %s", err.Error()))
-					addNewRecord(BatchUpdateTypeTokenQuota, key, value)
+					failures = append(failures, err)
+					addNewRecord(BatchUpdateTypeTokenQuota, key, 0)
 				}
 			case BatchUpdateTypeChannelUsedQuota:
 				if err := updateChannelUsedQuota(key, value); err != nil {
+					failures = append(failures, err)
 					addNewRecord(BatchUpdateTypeChannelUsedQuota, key, value)
 				}
 			}
@@ -120,6 +169,9 @@ func batchUpdate() {
 	for key := range userQuotaStore {
 		userIDs[key] = struct{}{}
 	}
+	for _, id := range pendingUsers {
+		userIDs[id] = struct{}{}
+	}
 	for key := range usedQuotaStore {
 		userIDs[key] = struct{}{}
 	}
@@ -127,10 +179,10 @@ func batchUpdate() {
 		userIDs[key] = struct{}{}
 	}
 	for key := range userIDs {
-		if err := updateUserQuotaUsedQuotaAndRequestCount(key, userQuotaStore[key], usedQuotaStore[key], requestCountStore[key]); err != nil {
-			if value := userQuotaStore[key]; value != 0 {
-				addNewRecord(BatchUpdateTypeUserQuota, key, value)
-			}
+		if err := updateUserQuotaUsedQuotaAndRequestCount(key, usedQuotaStore[key], requestCountStore[key]); err != nil {
+			common.SysError(common.LogText("failed to flush durable wallet for user %d: %s", key, err.Error()))
+			failures = append(failures, err)
+			addNewRecord(BatchUpdateTypeUserQuota, key, 0)
 			if value := usedQuotaStore[key]; value != 0 {
 				addNewRecord(BatchUpdateTypeUsedQuota, key, value)
 			}
@@ -140,6 +192,7 @@ func batchUpdate() {
 		}
 	}
 	common.SysLog(common.LogText("batch update finished"))
+	return errors.Join(failures...)
 }
 
 func RecordExist(err error) (bool, error) {

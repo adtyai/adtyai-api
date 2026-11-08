@@ -182,7 +182,7 @@ func (fixture *oidcOAuthFixture) start(t *testing.T) (string, string) {
 	t.Helper()
 	body, err := common.Marshal(oauthStateRequest{Provider: "oidc", Intent: "login"})
 	require.NoError(t, err)
-	response := securityEnrollmentRequest("POST", "/api/oauth/state", string(body), "", service.AuthIdentity{}, GenerateOAuthCode)
+	response := securityEnrollmentRequest("POST", "/api/oauth/state", string(body), "", service.AuthIdentity{}, withOAuthTestBrowser(GenerateOAuthCode))
 	var envelope securityEnrollmentResponse
 	require.NoError(t, common.Unmarshal(response.Body.Bytes(), &envelope))
 	require.True(t, envelope.Success, response.Body.String())
@@ -209,7 +209,7 @@ func oidcCallback(state, code string) *httptest.ResponseRecorder {
 	path := "/api/oauth/oidc?" + url.Values{"state": {state}, "code": {code}}.Encode()
 	return securityEnrollmentRequest("GET", path, "", "", service.AuthIdentity{}, func(c *gin.Context) {
 		c.Params = gin.Params{{Key: "provider", Value: "oidc"}}
-		HandleOAuth(c)
+		withOAuthTestBrowser(HandleOAuth)(c)
 	})
 }
 

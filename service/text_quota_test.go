@@ -868,8 +868,9 @@ func TestCalculateTextQuotaSummaryBillsOpenAICacheWriteTokens(t *testing.T) {
 // count in the consume log, with ratio and expression pricing alike.
 func TestPostTextConsumeQuotaBillsOpenAI12hCacheWrites(t *testing.T) {
 	truncate(t)
-	const userID, channelID = 63, 63
+	const userID, channelID, tokenID = 63, 63, 63
 	seedUser(t, userID, 1_000_000)
+	seedToken(t, tokenID, userID, "cache-write-12h-token", 1_000_000)
 	seedChannel(t, channelID)
 	gin.SetMode(gin.TestMode)
 	// The OpenAI prompt caching guide example at gpt-6-astra prices: $10 input,
@@ -878,7 +879,7 @@ func TestPostTextConsumeQuotaBillsOpenAI12hCacheWrites(t *testing.T) {
 		CachedTokens: 4000, CacheWriteTokens: 7000,
 		CacheWriteTokensDetails: &dto.CacheWriteTokenDetails{TTL30mTokens: 3000, TTL12hTokens: 4000},
 	}}
-	for _, tc := range []struct {
+	for index, tc := range []struct {
 		name     string
 		price    hosttypes.PriceData
 		expr     string
@@ -893,6 +894,8 @@ func TestPostTextConsumeQuotaBillsOpenAI12hCacheWrites(t *testing.T) {
 			tc.price.GroupRatioInfo = hosttypes.GroupRatioInfo{GroupRatio: 1}
 			info := &relaycommon.RelayInfo{
 				UserId:          userID,
+				TokenId:         tokenID,
+				TokenKey:        "cache-write-12h-token",
 				OriginModelName: "gpt-6-astra",
 				UsingGroup:      "default",
 				StartTime:       time.Now(),
@@ -916,6 +919,11 @@ func TestPostTextConsumeQuotaBillsOpenAI12hCacheWrites(t *testing.T) {
 			assert.Equal(t, float64(7000), other["cache_write_tokens"])
 			assert.Equal(t, float64(4000), other["cache_creation_tokens_12h"])
 			assert.Equal(t, tc.ratio12h, other["cache_creation_ratio_12h"])
+			require.Equal(t, 1_000_000-75750*(index+1), getUserQuota(t, userID))
+			var token model.Token
+			require.NoError(t, model.DB.First(&token, tokenID).Error)
+			assert.Equal(t, 1_000_000-75750*(index+1), token.RemainQuota)
+			assert.Equal(t, 75750*(index+1), token.UsedQuota)
 		})
 	}
 }

@@ -30,7 +30,9 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { ADTY_PERMISSIONS, canAdmin } from '@/lib/adty-permissions'
 import { copyToClipboard } from '@/lib/copy-to-clipboard'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { handleBatchEnableModels, handleBatchDisableModels } from '../lib'
 import type { Model } from '../types'
@@ -47,6 +49,9 @@ export function DataTableBulkActions<TData>({
 }: DataTableBulkActionsProps<TData>) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
+  const currentUser = useAuthStore((state) => state.auth.user)
+  const canWrite = canAdmin(currentUser, ADTY_PERMISSIONS.MODEL_WRITE)
+  const canDelete = canAdmin(currentUser, ADTY_PERMISSIONS.MODEL_DELETE)
   const [vendorOperation, setVendorOperation] =
     useState<VendorOperation | null>(null)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
@@ -73,10 +78,20 @@ export function DataTableBulkActions<TData>({
   }
 
   const handleEnableAll = () => {
+    if (
+      !canAdmin(useAuthStore.getState().auth.user, ADTY_PERMISSIONS.MODEL_WRITE)
+    ) {
+      return
+    }
     handleBatchEnableModels(selectedIds, queryClient, handleClearSelection)
   }
 
   const handleDisableAll = () => {
+    if (
+      !canAdmin(useAuthStore.getState().auth.user, ADTY_PERMISSIONS.MODEL_WRITE)
+    ) {
+      return
+    }
     handleBatchDisableModels(selectedIds, queryClient, handleClearSelection)
   }
 
@@ -124,7 +139,7 @@ export function DataTableBulkActions<TData>({
           variant='outline'
           size='icon'
           className='size-8'
-          disabled={hasMissingMetadata}
+          disabled={hasMissingMetadata || !canWrite}
           title={t(
             hasMissingMetadata
               ? 'Add metadata to all selected models first.'
@@ -141,7 +156,7 @@ export function DataTableBulkActions<TData>({
           variant='outline'
           size='icon'
           className='size-8'
-          disabled={hasMissingMetadata}
+          disabled={hasMissingMetadata || !canWrite}
           title={t(
             hasMissingMetadata
               ? 'Add metadata to all selected models first.'
@@ -164,7 +179,7 @@ export function DataTableBulkActions<TData>({
               <Button
                 variant='outline'
                 size='icon'
-                disabled={hasMissingMetadata}
+                disabled={hasMissingMetadata || !canWrite}
                 onClick={handleEnableAll}
                 className='size-8'
                 aria-label={t('Show selected models in model square')}
@@ -194,7 +209,7 @@ export function DataTableBulkActions<TData>({
               <Button
                 variant='outline'
                 size='icon'
-                disabled={hasMissingMetadata}
+                disabled={hasMissingMetadata || !canWrite}
                 onClick={handleDisableAll}
                 className='size-8'
                 aria-label={t('Hide selected models from model square')}
@@ -245,7 +260,7 @@ export function DataTableBulkActions<TData>({
               <Button
                 variant='destructive'
                 size='icon'
-                disabled={hasMissingMetadata}
+                disabled={hasMissingMetadata || !canDelete}
                 onClick={() => setShowDeleteConfirm(true)}
                 className='size-8'
                 aria-label={t('Delete selected models')}

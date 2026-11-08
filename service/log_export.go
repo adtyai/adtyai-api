@@ -48,7 +48,10 @@ func AcquireLogExportLock(parent context.Context, userId int) (ctx context.Conte
 
 	key := fmt.Sprintf("log_export:%d", userId)
 	owner := common.GetRandomString(16)
-	acquired, err := common.RDB.SetNX(context.Background(), key, owner, logExportLockTTL).Result()
+	// A lease keeps its acquisition-time client and duration for its whole
+	// lifetime, including renewal after the caller's configuration changes.
+	client, ttl := common.RDB, logExportLockTTL
+	acquired, err := client.SetNX(context.Background(), key, owner, ttl).Result()
 	if err != nil || !acquired {
 		cancel()
 		return nil, nil, false, err
@@ -58,14 +61,14 @@ func AcquireLogExportLock(parent context.Context, userId int) (ctx context.Conte
 	var stopOnce sync.Once
 	stopRenew := func() { stopOnce.Do(func() { close(stop) }) }
 	go func() {
-		ticker := time.NewTicker(logExportLockTTL / 3)
+		ticker := time.NewTicker(ttl / 3)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-stop:
 				return
 			case <-ticker.C:
-				renewed, evalErr := common.RDB.Eval(context.Background(), logExportLockRenewScript, []string{key}, owner, logExportLockTTL.Milliseconds()).Int64()
+				renewed, evalErr := client.Eval(context.Background(), logExportLockRenewScript, []string{key}, owner, ttl.Milliseconds()).Int64()
 				if evalErr != nil || renewed != 1 {
 					cancel()
 					return
@@ -76,6 +79,6 @@ func AcquireLogExportLock(parent context.Context, userId int) (ctx context.Conte
 	return ctx, func() {
 		stopRenew()
 		cancel()
-		common.RDB.Eval(context.Background(), logExportLockReleaseScript, []string{key}, owner)
+		client.Eval(context.Background(), logExportLockReleaseScript, []string{key}, owner)
 	}, true, nil
 }

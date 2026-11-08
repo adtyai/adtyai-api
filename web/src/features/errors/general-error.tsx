@@ -55,10 +55,17 @@ export function GeneralError({
   const { history } = useRouter()
   const supportEmail = useSupportEmail()
   useEffect(() => {
+    const isNativeModuleLoadError =
+      error instanceof TypeError &&
+      (/^(Failed to fetch dynamically imported module|error loading dynamically imported module): https?:\/\/\S+$/.test(
+        error.message
+      ) ||
+        error.message === 'Importing a module script failed.')
     if (
       !(error instanceof Error) ||
       (error.name !== 'ChunkLoadError' &&
-        !/^Loading (CSS )?chunk .+ failed\./.test(error.message))
+        !/^Loading (CSS )?chunk .+ failed\./.test(error.message) &&
+        !isNativeModuleLoadError)
     ) {
       return
     }

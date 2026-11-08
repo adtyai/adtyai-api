@@ -17,7 +17,20 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import {
+  createMemoryHistory,
+  createRootRoute,
+  createRouter,
+  RouterProvider,
+} from '@tanstack/react-router'
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -31,6 +44,8 @@ import { SettingsPanel } from '../components/settings-panel'
 import { SiteDetailSheet } from '../components/site-detail-sheet'
 import { SitesPanel } from '../components/sites-panel'
 import { UsagePanel } from '../components/usage-panel'
+import { SiteAdmin } from '../index'
+import { canOpenSiteAdminSection, SITE_ADMIN_SECTIONS } from '../sections'
 import type { AdminSite, ResellerSettings } from '../types'
 
 const api = vi.hoisted(() => ({
@@ -48,6 +63,11 @@ const api = vi.hoisted(() => ({
   getSiteCustomers: vi.fn(),
   clearSiteNotice: vi.fn(),
   getResellerUsage: vi.fn(),
+  getInviteCodes: vi.fn(),
+  saveInviteCode: vi.fn(),
+  deleteInviteCode: vi.fn(),
+  disableSiteDomain: vi.fn(),
+  disableSiteSenderDomain: vi.fn(),
 }))
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
@@ -132,11 +152,61 @@ function asRoot() {
   useAuthStore.getState().auth.setUser({ id: 1, username: 'root', role: 100 })
 }
 
-function renderWith(ui: ReactNode) {
-  const client = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
+function asSiteAdmin(actions: string[]) {
+  useAuthStore.getState().auth.setUser({
+    id: 2,
+    username: 'site-operator',
+    role: 10,
+    permissions: {
+      admin_permissions: {
+        adty_site: Object.fromEntries(actions.map((action) => [action, true])),
+      },
+    },
   })
+}
+
+function renderWith(ui: ReactNode, queryClient?: QueryClient) {
+  const client =
+    queryClient ??
+    new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
   return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>)
+}
+
+function pausedMutationClient() {
+  let resume = () => {}
+  const gate = new Promise<void>((resolve) => {
+    resume = resolve
+  })
+  const entered = vi.fn()
+  const client = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: {
+        onMutate: async () => {
+          entered()
+          await gate
+        },
+      },
+    },
+  })
+  return { client, entered, resume: () => resume() }
+}
+
+async function renderSiteSettingsPage(
+  section: 'settings' | 'invite-codes' = 'settings',
+  client?: QueryClient
+) {
+  vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined)
+  const router = createRouter({
+    routeTree: createRootRoute({
+      component: () => <SiteAdmin section={section} />,
+    }),
+    history: createMemoryHistory({ initialEntries: ['/site-admin/settings'] }),
+  })
+  await router.load()
+  return renderWith(<RouterProvider router={router} />, client)
 }
 
 function siteNames(): string[] {
@@ -197,10 +267,7 @@ describe('site list', () => {
     expect(api.getSites).toHaveBeenCalledWith(
       expect.objectContaining({ sort: 'revenue', order: 'desc', p: 1 })
     )
-    expect(siteNames()).toEqual([
-      'beta.sites.example',
-      'alpha.sites.example',
-    ])
+    expect(siteNames()).toEqual(['beta.sites.example', 'alpha.sites.example'])
     expect(screen.getByRole('cell', { name: '100' })).toBeInTheDocument()
     expect(screen.getByRole('cell', { name: '12.5%' })).toBeInTheDocument()
   })
@@ -239,6 +306,33 @@ describe('site list', () => {
       expect(api.createSite).toHaveBeenCalledWith({
         user_id: 15,
         subdomain: 'shop',
+      })
+    )
+  })
+
+  it('does not offer site creation to an adjust-only admin', async () => {
+    asSiteAdmin(['read', 'adjust'])
+    renderWith(<SitesPanel onOpenSite={() => undefined} />)
+    await screen.findByRole('table', { name: 'Reseller sites' })
+    expect(
+      screen.queryByRole('form', { name: 'Open a reseller site' })
+    ).not.toBeInTheDocument()
+    expect(api.createSite).not.toHaveBeenCalled()
+  })
+
+  it('allows site creation with create and no adjust grant', async () => {
+    asSiteAdmin(['read', 'create'])
+    renderWith(<SitesPanel onOpenSite={() => undefined} />)
+    const form = screen.getByRole('form', { name: 'Open a reseller site' })
+    await userEvent.type(within(form).getByLabelText('User ID'), '21')
+    await userEvent.type(within(form).getByLabelText('Domain'), 'new-site')
+    await userEvent.click(
+      within(form).getByRole('button', { name: 'Open a reseller site' })
+    )
+    await waitFor(() =>
+      expect(api.createSite).toHaveBeenCalledWith({
+        user_id: 21,
+        subdomain: 'new-site',
       })
     )
   })
@@ -406,8 +500,114 @@ describe('reseller settings', () => {
     api.getResellerSettings.mockResolvedValue(settings)
   })
 
+  it('opens settings for an explicitly granted admin and denies other ordinary identities', () => {
+    const section = SITE_ADMIN_SECTIONS.find((item) => item.id === 'settings')
+    if (!section) throw new Error('Settings section is missing')
+    const user = { id: 2, username: 'delegated', role: 10 }
+    expect(canOpenSiteAdminSection(null, section)).toBe(false)
+    expect(canOpenSiteAdminSection({ ...user, role: 1 }, section)).toBe(false)
+    expect(
+      canOpenSiteAdminSection(
+        { ...user, role: 1, adty_site_owner: true },
+        section
+      )
+    ).toBe(false)
+    expect(canOpenSiteAdminSection(user, section)).toBe(false)
+    expect(
+      canOpenSiteAdminSection(
+        {
+          ...user,
+          permissions: { admin_permissions: { adty_site: { read: true } } },
+        },
+        section
+      )
+    ).toBe(false)
+    expect(
+      canOpenSiteAdminSection(
+        {
+          ...user,
+          permissions: { admin_permissions: { adty_site: { settings: true } } },
+        },
+        section
+      )
+    ).toBe(false)
+    expect(
+      canOpenSiteAdminSection(
+        {
+          ...user,
+          permissions: {
+            admin_permissions: { adty_site: { settings_read: true } },
+          },
+        },
+        section
+      )
+    ).toBe(true)
+    expect(canOpenSiteAdminSection({ ...user, role: 100 }, section)).toBe(true)
+  })
+
+  it('lets a settings-only admin edit ordinary fields without requesting site-read usage', async () => {
+    useAuthStore.getState().auth.setUser({
+      id: 2,
+      username: 'settings-only',
+      role: 10,
+      permissions: {
+        admin_permissions: {
+          adty_site: { settings_read: true, settings: true },
+        },
+      },
+    })
+    api.getResellerUsage.mockRejectedValue(new Error('Forbidden'))
+    await renderSiteSettingsPage()
+
+    expect(await screen.findByLabelText('Freeze days')).toBeEnabled()
+    expect(screen.getByLabelText('Cloudflare API token')).toBeDisabled()
+    expect(screen.getByRole('tab', { name: 'Settings' })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    )
+    expect(api.getResellerUsage).not.toHaveBeenCalled()
+  })
+
+  it('opens a read-only settings page with settings_read and no write grant', async () => {
+    asSiteAdmin(['settings_read'])
+    await renderSiteSettingsPage()
+    expect(await screen.findByLabelText('Freeze days')).toBeDisabled()
+    expect(screen.getByRole('tab', { name: 'Settings' })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    )
+    expect(api.getResellerUsage).not.toHaveBeenCalled()
+    expect(api.saveResellerSettings).not.toHaveBeenCalled()
+  })
+
+  it('rejects direct form submission by a read-only settings admin', async () => {
+    asSiteAdmin(['settings_read'])
+    await renderSiteSettingsPage()
+    const field = await screen.findByLabelText('Freeze days')
+    const form = field.closest('form')
+    if (!form) throw new Error('Settings form is missing')
+    fireEvent.submit(form)
+    await act(async () => {})
+    expect(api.saveResellerSettings).not.toHaveBeenCalled()
+  })
+
+  it('rejects settings submission after write is revoked with a dirty form', async () => {
+    asSiteAdmin(['settings_read', 'settings'])
+    await renderSiteSettingsPage()
+    const field = await screen.findByLabelText('Freeze days')
+    await userEvent.clear(field)
+    await userEvent.type(field, '11')
+    act(() => asSiteAdmin(['settings_read']))
+    expect(field).toBeDisabled()
+    const form = field.closest('form')
+    if (!form) throw new Error('Settings form is missing')
+    fireEvent.submit(form)
+    await act(async () => {})
+    expect(api.saveResellerSettings).not.toHaveBeenCalled()
+  })
+
   it('disables custom domains until Cloudflare is configured and says why', async () => {
-    renderWith(<SettingsPanel canWrite />)
+    renderWith(<SettingsPanel canWrite canWriteSecrets />)
 
     const custom = await screen.findByRole('switch', { name: 'Custom domains' })
     expect(custom).toHaveAttribute('aria-disabled', 'true')
@@ -420,7 +620,7 @@ describe('reseller settings', () => {
 
   it('enables custom domains once the token, zone ID and CNAME target are typed', async () => {
     const user = userEvent.setup()
-    renderWith(<SettingsPanel canWrite />)
+    renderWith(<SettingsPanel canWrite canWriteSecrets />)
     await screen.findByRole('switch', { name: 'Custom domains' })
 
     await user.type(screen.getByLabelText('Cloudflare API token'), 'cf-token')
@@ -436,7 +636,7 @@ describe('reseller settings', () => {
   })
 
   it('disables sender domains while the Resend API key is missing', async () => {
-    renderWith(<SettingsPanel canWrite />)
+    renderWith(<SettingsPanel canWrite canWriteSecrets />)
 
     expect(
       await screen.findByRole('switch', { name: 'Site owner sender domains' })
@@ -449,7 +649,7 @@ describe('reseller settings', () => {
   })
 
   it('disables the master switch while money settings are unset', async () => {
-    renderWith(<SettingsPanel canWrite />)
+    renderWith(<SettingsPanel canWrite canWriteSecrets />)
 
     expect(
       await screen.findByRole('switch', { name: 'Reseller sites' })
@@ -463,7 +663,7 @@ describe('reseller settings', () => {
       cloudflare_token_configured: true,
       turnstile_secret_configured: { w1: true },
     })
-    renderWith(<SettingsPanel canWrite />)
+    renderWith(<SettingsPanel canWrite canWriteSecrets />)
 
     const token = await screen.findByLabelText('Cloudflare API token')
     expect(token).toHaveValue('')
@@ -478,7 +678,7 @@ describe('reseller settings', () => {
   it('sends only a typed secret and the changed keys', async () => {
     const user = userEvent.setup()
     api.saveResellerSettings.mockResolvedValue(settings)
-    renderWith(<SettingsPanel canWrite />)
+    renderWith(<SettingsPanel canWrite canWriteSecrets />)
     await screen.findByLabelText('Cloudflare API token')
 
     await user.type(screen.getByLabelText('Secret of widget 1'), 'sec-1')
@@ -493,6 +693,115 @@ describe('reseller settings', () => {
       })
     )
   })
+
+  it('keeps ordinary fields editable and excludes secret drafts and clears after secret permission is lost', async () => {
+    const user = userEvent.setup()
+    api.getResellerSettings.mockResolvedValue({
+      ...settings,
+      cloudflare_token_configured: true,
+      turnstile_secret_configured: { w1: true },
+    })
+    api.saveResellerSettings.mockResolvedValue(settings)
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    const view = render(
+      <QueryClientProvider client={client}>
+        <SettingsPanel canWrite canWriteSecrets />
+      </QueryClientProvider>
+    )
+    const widgetSecret = await screen.findByLabelText('Secret of widget 1')
+    await user.type(widgetSecret, 'stale-root-secret')
+    await user.click(
+      screen.getByRole('checkbox', { name: 'Remove the saved token' })
+    )
+    await user.clear(screen.getByLabelText('Freeze days'))
+    await user.type(screen.getByLabelText('Freeze days'), '10')
+
+    view.rerender(
+      <QueryClientProvider client={client}>
+        <SettingsPanel canWrite canWriteSecrets={false} />
+      </QueryClientProvider>
+    )
+
+    expect(screen.getByLabelText('Cloudflare API token')).toBeDisabled()
+    expect(widgetSecret).toBeDisabled()
+    expect(
+      screen.getByRole('checkbox', { name: 'Remove the saved token' })
+    ).toHaveAttribute('aria-disabled', 'true')
+    expect(screen.getByLabelText('Freeze days')).toBeEnabled()
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() =>
+      expect(api.saveResellerSettings).toHaveBeenCalledWith({ freeze_days: 10 })
+    )
+  })
+
+  it.each(['replace', 'clear'] as const)(
+    'strips queued %s secrets when Root is downgraded before dispatch',
+    async (mode) => {
+      api.getResellerSettings.mockResolvedValue({
+        ...settings,
+        cloudflare_token_configured: true,
+        turnstile_secret_configured: { w1: true },
+      })
+      api.getResellerUsage.mockResolvedValue({
+        sender: {
+          in_use: 0,
+          verified: 0,
+          failed: 0,
+          disabled: 0,
+          quota_full_at: 0,
+        },
+        widgets: [],
+        widget_slots_left: 10,
+        widget_slots_low: false,
+        unassigned_domains: 0,
+      })
+      api.saveResellerSettings.mockResolvedValue(settings)
+      let resume = () => {}
+      const gate = new Promise<void>((resolve) => {
+        resume = resolve
+      })
+      const entered = vi.fn()
+      const client = new QueryClient({
+        defaultOptions: {
+          queries: { retry: false },
+          mutations: {
+            onMutate: async () => {
+              entered()
+              await gate
+            },
+          },
+        },
+      })
+      await renderSiteSettingsPage('settings', client)
+      const token = await screen.findByLabelText('Cloudflare API token')
+      if (mode === 'replace') {
+        fireEvent.change(token, { target: { value: 'queued-root-token' } })
+      } else {
+        await userEvent.click(
+          screen.getByRole('checkbox', { name: 'Remove the saved token' })
+        )
+      }
+      fireEvent.change(screen.getByLabelText('Secret of widget 1'), {
+        target: { value: 'queued-widget-secret' },
+      })
+      const field = screen.getByLabelText('Freeze days')
+      fireEvent.change(field, { target: { value: '23' } })
+      const form = field.closest('form')
+      if (!form) throw new Error('Settings form is missing')
+      fireEvent.submit(form)
+      await waitFor(() => expect(entered).toHaveBeenCalledTimes(1))
+      expect(api.saveResellerSettings).not.toHaveBeenCalled()
+      act(() => asSiteAdmin(['settings_read', 'settings']))
+      await act(async () => {
+        resume()
+      })
+      await waitFor(() => expect(client.isMutating()).toBe(0))
+      expect(api.saveResellerSettings).toHaveBeenCalledWith({ freeze_days: 23 })
+    }
+  )
 })
 
 describe('SiteDetailSheet notice takedown', () => {
@@ -500,8 +809,17 @@ describe('SiteDetailSheet notice takedown', () => {
     brand: JSON.stringify({ name: 'Alpha', notice: 'Visit evil.example' }),
   })
 
-  function openSheet(target: AdminSite) {
-    api.getSite.mockResolvedValue({ site: target, audits: [] })
+  function openSheet(target: AdminSite, withDomains = false) {
+    api.getSite.mockResolvedValue({
+      site: target,
+      audits: [],
+      domains: withDomains
+        ? [{ id: 9, hostname: 'custom.example', status: 'active' }]
+        : [],
+      sender_domains: withDomains
+        ? [{ site_id: target.id, domain: 'mail.example', status: 'active' }]
+        : [],
+    })
     api.getSiteCustomers.mockResolvedValue({
       page: 1,
       page_size: 20,
@@ -509,6 +827,8 @@ describe('SiteDetailSheet notice takedown', () => {
       items: [],
     })
     api.clearSiteNotice.mockResolvedValue({ site_id: target.id, cleared: true })
+    api.disableSiteDomain.mockResolvedValue(undefined)
+    api.disableSiteSenderDomain.mockResolvedValue(undefined)
     api.getSiteStats.mockResolvedValue({
       stats: {
         from: '2026-11-01',
@@ -551,7 +871,7 @@ describe('SiteDetailSheet notice takedown', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('hides the takedown from admins without the adjust permission', async () => {
+  it('hides the takedown from admins without the delete permission', async () => {
     useAuthStore.getState().auth.setUser({
       id: 2,
       username: 'viewer',
@@ -564,6 +884,311 @@ describe('SiteDetailSheet notice takedown', () => {
       screen.queryByRole('button', { name: 'Take down notice' })
     ).not.toBeInTheDocument()
   })
+
+  it('does not let adjust substitute for notice deletion', async () => {
+    asSiteAdmin(['read', 'adjust'])
+    openSheet(withNotice)
+    await screen.findByText('Visit evil.example')
+    expect(
+      screen.queryByRole('button', { name: 'Take down notice' })
+    ).not.toBeInTheDocument()
+  })
+
+  it('allows notice deletion with delete and no adjust grant', async () => {
+    asSiteAdmin(['read', 'delete'])
+    openSheet(withNotice)
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Take down notice' })
+    )
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Continue' })
+    )
+    await waitFor(() => expect(api.clearSiteNotice).toHaveBeenCalledWith(1, ''))
+  })
+
+  it('cannot delete a notice after the grant is revoked in the confirmation', async () => {
+    asSiteAdmin(['read', 'delete'])
+    openSheet(withNotice)
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Take down notice' })
+    )
+    act(() => asSiteAdmin(['read']))
+    const confirm = screen.queryByRole('button', { name: 'Continue' })
+    if (confirm) await userEvent.click(confirm)
+    expect(api.clearSiteNotice).not.toHaveBeenCalled()
+  })
+
+  it('does not let adjust disable custom and sender domains', async () => {
+    asSiteAdmin(['read', 'adjust'])
+    openSheet(withNotice, true)
+    await screen.findByText('custom.example · active')
+    expect(
+      screen.queryByRole('button', { name: 'Disable' })
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Disable Sender domain' })
+    ).not.toBeInTheDocument()
+  })
+
+  it('uses delete for custom and sender domain deletion without adjust', async () => {
+    asSiteAdmin(['read', 'delete'])
+    openSheet(withNotice, true)
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Disable' })
+    )
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Disable Sender domain' })
+    )
+    await waitFor(() => expect(api.disableSiteDomain).toHaveBeenCalledWith(9))
+    expect(api.disableSiteSenderDomain).toHaveBeenCalledWith(1)
+  })
+})
+
+describe('invite code actions', () => {
+  beforeEach(() => {
+    api.getInviteCodes.mockResolvedValue({
+      page: 1,
+      page_size: 20,
+      total: 1,
+      items: [
+        {
+          id: 7,
+          code: 'INVITE-7',
+          max_uses: 1,
+          used_count: 0,
+          expire_at: 0,
+          cost_factor: null,
+          max_markup: null,
+          note: '',
+          created_at: 1_700_000_000,
+        },
+      ],
+    })
+    api.saveInviteCode.mockResolvedValue({ id: 8, code: 'INVITE-8' })
+    api.deleteInviteCode.mockResolvedValue(undefined)
+  })
+
+  it.each(['settings_read', 'settings', 'settings_delete'])(
+    'does not offer create for %s',
+    async (action) => {
+      asSiteAdmin(['settings_read', action])
+      await renderSiteSettingsPage('invite-codes')
+      await screen.findByText('INVITE-7')
+      expect(
+        screen.queryByRole('button', { name: 'New invite code' })
+      ).not.toBeInTheDocument()
+    }
+  )
+
+  it('creates an invite code without the edit or delete action', async () => {
+    asSiteAdmin(['settings_read', 'settings_create'])
+    await renderSiteSettingsPage('invite-codes')
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'New invite code' })
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() =>
+      expect(api.saveInviteCode).toHaveBeenCalledWith(
+        null,
+        expect.objectContaining({ max_uses: 1 })
+      )
+    )
+    expect(
+      screen.queryByRole('button', { name: 'Edit' })
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Delete' })
+    ).not.toBeInTheDocument()
+  })
+
+  it('offers editing without borrowing delete or create', async () => {
+    asSiteAdmin(['settings_read', 'settings'])
+    await renderSiteSettingsPage('invite-codes')
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() =>
+      expect(api.saveInviteCode).toHaveBeenCalledWith(
+        7,
+        expect.objectContaining({ max_uses: 1 })
+      )
+    )
+    expect(
+      screen.queryByRole('button', { name: 'Delete' })
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'New invite code' })
+    ).not.toBeInTheDocument()
+  })
+
+  it('deletes without the edit or create action', async () => {
+    asSiteAdmin(['settings_read', 'settings_delete'])
+    await renderSiteSettingsPage('invite-codes')
+    await userEvent.click(await screen.findByRole('button', { name: 'Delete' }))
+    await userEvent.click(
+      within(
+        screen.getByRole('alertdialog', { name: 'Delete invite code' })
+      ).getByRole('button', { name: 'Delete' })
+    )
+    await waitFor(() => expect(api.deleteInviteCode).toHaveBeenCalledWith(7))
+    expect(
+      screen.queryByRole('button', { name: 'Edit' })
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'New invite code' })
+    ).not.toBeInTheDocument()
+  })
+
+  it('blocks deletion after permission is revoked in an open confirmation', async () => {
+    asSiteAdmin(['settings_read', 'settings_delete'])
+    await renderSiteSettingsPage('invite-codes')
+    await userEvent.click(await screen.findByRole('button', { name: 'Delete' }))
+    act(() => asSiteAdmin(['settings_read']))
+    const dialog = screen.queryByRole('alertdialog', {
+      name: 'Delete invite code',
+    })
+    if (dialog) {
+      await userEvent.click(
+        within(dialog).getByRole('button', { name: 'Delete' })
+      )
+    }
+    expect(api.deleteInviteCode).not.toHaveBeenCalled()
+  })
+
+  it('blocks create after permission is revoked in an open editor', async () => {
+    asSiteAdmin(['settings_read', 'settings_create'])
+    await renderSiteSettingsPage('invite-codes')
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'New invite code' })
+    )
+    act(() => asSiteAdmin(['settings_read']))
+    const save = screen.queryByRole('button', { name: 'Save' })
+    if (save) await userEvent.click(save)
+    expect(api.saveInviteCode).not.toHaveBeenCalled()
+  })
+})
+
+describe('queued Site settings and invite authority', () => {
+  beforeEach(() => {
+    api.getResellerSettings.mockResolvedValue(settings)
+    api.saveResellerSettings.mockResolvedValue(settings)
+    api.getResellerUsage.mockResolvedValue({
+      sender: {
+        in_use: 0,
+        verified: 0,
+        failed: 0,
+        disabled: 0,
+        quota_full_at: 0,
+      },
+      widgets: [],
+      widget_slots_left: 10,
+      widget_slots_low: false,
+      unassigned_domains: 0,
+    })
+    api.getInviteCodes.mockResolvedValue({
+      page: 1,
+      page_size: 20,
+      total: 1,
+      items: [
+        {
+          id: 7,
+          code: 'INVITE-7',
+          max_uses: 1,
+          used_count: 0,
+          expire_at: 0,
+          cost_factor: null,
+          max_markup: null,
+          note: '',
+          created_at: 1_700_000_000,
+        },
+      ],
+    })
+    api.saveInviteCode.mockResolvedValue({ id: 8, code: 'INVITE-8' })
+    api.deleteInviteCode.mockResolvedValue(undefined)
+  })
+
+  it('rejects a queued settings write after revocation and unmount', async () => {
+    asSiteAdmin(['settings_read', 'settings'])
+    const paused = pausedMutationClient()
+    const view = await renderSiteSettingsPage('settings', paused.client)
+    const field = await screen.findByLabelText('Freeze days')
+    fireEvent.change(field, { target: { value: '19' } })
+    const form = field.closest('form')
+    if (!form) throw new Error('Settings form is missing')
+    fireEvent.submit(form)
+    await waitFor(() => expect(paused.entered).toHaveBeenCalledTimes(1))
+    act(() => {
+      asSiteAdmin(['settings_read'])
+      view.unmount()
+    })
+    await act(async () => {
+      paused.resume()
+    })
+    await waitFor(() => expect(paused.client.isMutating()).toBe(0))
+    expect(api.saveResellerSettings).not.toHaveBeenCalled()
+  })
+
+  it('strips queued Root secrets after a downgrade and unmount in the same update', async () => {
+    const paused = pausedMutationClient()
+    const view = await renderSiteSettingsPage('settings', paused.client)
+    fireEvent.change(await screen.findByLabelText('Cloudflare API token'), {
+      target: { value: 'queued-token' },
+    })
+    fireEvent.change(screen.getByLabelText('Secret of widget 1'), {
+      target: { value: 'queued-widget' },
+    })
+    const field = screen.getByLabelText('Freeze days')
+    fireEvent.change(field, { target: { value: '29' } })
+    const form = field.closest('form')
+    if (!form) throw new Error('Settings form is missing')
+    fireEvent.submit(form)
+    await waitFor(() => expect(paused.entered).toHaveBeenCalledTimes(1))
+    act(() => {
+      asSiteAdmin(['settings_read', 'settings'])
+      view.unmount()
+    })
+    await act(async () => {
+      paused.resume()
+    })
+    await waitFor(() => expect(paused.client.isMutating()).toBe(0))
+    expect(api.saveResellerSettings).toHaveBeenCalledWith({ freeze_days: 29 })
+  })
+
+  it.each(['create', 'write', 'delete'] as const)(
+    'rejects queued invite %s after revocation and unmount',
+    async (action) => {
+      const grant = action === 'write' ? 'settings' : `settings_${action}`
+      asSiteAdmin(['settings_read', grant])
+      const paused = pausedMutationClient()
+      const view = await renderSiteSettingsPage('invite-codes', paused.client)
+      await screen.findByText('INVITE-7')
+      if (action === 'delete') {
+        await userEvent.click(screen.getByRole('button', { name: 'Delete' }))
+        await userEvent.click(
+          within(
+            screen.getByRole('alertdialog', { name: 'Delete invite code' })
+          ).getByRole('button', { name: 'Delete' })
+        )
+      } else {
+        await userEvent.click(
+          screen.getByRole('button', {
+            name: action === 'create' ? 'New invite code' : 'Edit',
+          })
+        )
+        await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+      }
+      await waitFor(() => expect(paused.entered).toHaveBeenCalledTimes(1))
+      act(() => {
+        asSiteAdmin(['settings_read'])
+        view.unmount()
+      })
+      await act(async () => {
+        paused.resume()
+      })
+      await waitFor(() => expect(paused.client.isMutating()).toBe(0))
+      expect(api.saveInviteCode).not.toHaveBeenCalled()
+      expect(api.deleteInviteCode).not.toHaveBeenCalled()
+    }
+  )
 })
 
 describe('UsagePanel', () => {
@@ -584,14 +1209,16 @@ describe('UsagePanel', () => {
     unassigned_domains: 0,
   }
 
-  it('lists each widget as used / limit and warns when fewer than five slots are left', async () => {
+  it('keeps usage and secret controls available on the Root settings page', async () => {
     api.getResellerUsage.mockResolvedValue(usage)
-    renderWith(<UsagePanel />)
+    api.getResellerSettings.mockResolvedValue(settings)
+    await renderSiteSettingsPage()
     const table = await screen.findByRole('table', {
       name: 'Turnstile widgets',
     })
     expect(within(table).getByText('10 / 10')).toBeInTheDocument()
     expect(within(table).getByText('7 / 10')).toBeInTheDocument()
+    expect(screen.getByLabelText('Cloudflare API token')).toBeEnabled()
     expect(
       screen.getByText(/Only 3 Turnstile domain slots are left/)
     ).toBeInTheDocument()

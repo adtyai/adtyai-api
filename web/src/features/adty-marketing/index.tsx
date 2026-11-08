@@ -35,7 +35,9 @@ import { TriggersPanel } from './components/triggers-panel'
 export function AdtyMarketing() {
   const { t } = useTranslation()
   const user = useAuthStore((state) => state.auth.user)
+  const canCreate = canAdmin(user, ADTY_PERMISSIONS.MARKETING_CREATE)
   const canWrite = canAdmin(user, ADTY_PERMISSIONS.MARKETING_WRITE)
+  const canDelete = canAdmin(user, ADTY_PERMISSIONS.MARKETING_DELETE)
   const canSend = canAdmin(user, ADTY_PERMISSIONS.MARKETING_SEND)
   const settings = useQuery({
     queryKey: marketingKeys.settings,
@@ -59,7 +61,9 @@ export function AdtyMarketing() {
           <TabsContent value='campaigns'>
             <CampaignPanel
               templates={false}
+              canCreate={canCreate}
               canWrite={canWrite}
+              canDelete={canDelete}
               canSend={canSend}
               includeSitesDefault={includeSites}
             />
@@ -67,7 +71,9 @@ export function AdtyMarketing() {
           <TabsContent value='templates'>
             <CampaignPanel
               templates
+              canCreate={canCreate}
               canWrite={canWrite}
+              canDelete={canDelete}
               canSend={canSend}
               includeSitesDefault={includeSites}
             />
@@ -76,7 +82,7 @@ export function AdtyMarketing() {
             <TriggersPanel canWrite={canWrite} />
           </TabsContent>
           <TabsContent value='promo'>
-            <PromoPanel canWrite={canWrite} />
+            <PromoPanel canCreate={canCreate} canWrite={canWrite} />
           </TabsContent>
           <TabsContent value='sources'>
             <SourcesPanel />

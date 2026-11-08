@@ -51,6 +51,10 @@ export function AdminReferral() {
   const canPayout = canAdmin(user, ADTY_PERMISSIONS.REFERRAL_PAYOUT)
   const canAdjust = canAdmin(user, ADTY_PERMISSIONS.REFERRAL_ADJUST)
   const canSettings = canAdmin(user, ADTY_PERMISSIONS.REFERRAL_SETTINGS)
+  const canReadSettings = canAdmin(
+    user,
+    ADTY_PERMISSIONS.REFERRAL_SETTINGS_READ
+  )
   const overview = useQuery({
     queryKey: adminReferralKeys.overview,
     queryFn: getReferralOverview,
@@ -127,7 +131,7 @@ export function AdminReferral() {
                   {pendingPartners > 0 && ` (${pendingPartners})`}
                 </TabsTrigger>
                 <TabsTrigger value='affiliates'>{t('Affiliates')}</TabsTrigger>
-                {canSettings && (
+                {canReadSettings && (
                   <TabsTrigger value='settings'>{t('Settings')}</TabsTrigger>
                 )}
               </TabsList>
@@ -155,9 +159,9 @@ export function AdminReferral() {
             <TabsContent value='affiliates'>
               <AffiliatePanel canReview={canReview} canAdjust={canAdjust} />
             </TabsContent>
-            {canSettings && (
+            {canReadSettings && (
               <TabsContent value='settings'>
-                <SettingsPanel />
+                <SettingsPanel canWrite={canSettings} />
               </TabsContent>
             )}
           </Tabs>

@@ -10,6 +10,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/bytedance/gopkg/util/gopool"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -18,10 +19,16 @@ import (
 
 func prepareSignupSourceDB(t *testing.T) *gorm.DB {
 	t.Helper()
+	cleanupOnce.Do(startCleanupTask)
+	workerBaseline := gopool.WorkerCount()
 	db := adtyTestDB(t)
 	oldRedis := common.RedisEnabled
 	common.RedisEnabled = false
-	t.Cleanup(func() { common.RedisEnabled = oldRedis })
+	t.Cleanup(func() {
+		require.Eventually(t, func() bool { return gopool.WorkerCount() <= workerBaseline }, 5*time.Second, time.Millisecond,
+			"background quota jobs did not stop before restoring signup fixture globals")
+		common.RedisEnabled = oldRedis
+	})
 	require.NoError(t, db.AutoMigrate(&model.User{}, &model.TopUp{}, &model.Log{}, &model.Option{}))
 	require.NoError(t, model.MigrateAdtyTables())
 	return db

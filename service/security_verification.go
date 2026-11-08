@@ -403,6 +403,9 @@ func GetVerificationRequirements(identity AuthIdentity, scope string) (*Verifica
 	if strings.HasPrefix(scope, verificationScopeAdminUserPrefix) && state.Role < common.RoleAdminUser {
 		return nil, ErrVerificationForbidden
 	}
+	if permission, ok := adminUserVerificationPermissions[scope]; ok && !AdtyAdminRoleCan(identity.UserID, state.Role, permission) {
+		return nil, ErrVerificationForbidden
+	}
 	if err := requireAccessTokenVerificationScope(identity, scope); err != nil {
 		return nil, err
 	}

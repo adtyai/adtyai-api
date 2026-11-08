@@ -53,8 +53,12 @@ func (options UserSortOptions) Apply(query *gorm.DB) *gorm.DB {
 	if !ok {
 		columnName = "id"
 	}
+	column := clause.Column{Name: columnName}
+	if columnName == "quota" {
+		column = clause.Column{Name: "quota + quota_pending", Raw: true}
+	}
 	q := query.Order(clause.OrderByColumn{
-		Column: clause.Column{Name: columnName},
+		Column: column,
 		Desc:   options.SortOrder != "asc",
 	})
 	if columnName != "id" {
@@ -94,6 +98,7 @@ type User struct {
 	AccessToken          *string `json:"-" gorm:"type:char(32);column:access_token;uniqueIndex"` // Deprecated: 旧版面板访问令牌，仅在升级后的过渡期内使用；删除 users.access_token 列时一并移除。
 	AccessTokenCreatedAt *int64  `json:"-" gorm:"type:bigint;column:access_token_created_at"`    // Deprecated: 旧版面板访问令牌，仅在升级后的过渡期内使用；删除 users.access_token 列时一并移除。
 	Quota                int     `json:"quota" gorm:"type:int;default:0"`
+	QuotaPending         int     `json:"-" gorm:"type:bigint;not null;default:0;column:quota_pending"`
 	UsedQuota            int     `json:"used_quota" gorm:"type:int;default:0;column:used_quota"` // used quota
 	// CheckinQuota 是还在钱包里的签到赠送。花掉的钱先算本金，所以只有余额掉到它下面才减少。退款不能把它当成本金。
 	CheckinQuota     int                        `json:"-" gorm:"type:int;default:0;column:checkin_quota"`
@@ -112,10 +117,15 @@ type User struct {
 }
 
 func (user *User) ToBaseUser() *UserBase {
+	quota, err := userWalletBalance(user.Quota, user.QuotaPending)
+	if err != nil {
+		common.SysError(common.LogText("invalid durable wallet balance: user=%d", user.Id))
+		quota = 0
+	}
 	cache := &UserBase{
 		Id:          user.Id,
 		Group:       user.Group,
-		Quota:       user.Quota,
+		Quota:       quota,
 		Status:      user.Status,
 		Role:        user.Role,
 		Username:    user.Username,
@@ -545,7 +555,7 @@ func GetSelfUserById(id int) (*User, error) {
 	err := DB.Model(&User{}).Select([]string{
 		"id", "username", "display_name", "role", "status", "email",
 		"github_id", "discord_id", "oidc_id", "wechat_id", "telegram_id",
-		"group", "quota", "used_quota", "request_count", "linux_do_id", "setting",
+		"group", "quota", "quota_pending", "used_quota", "request_count", "linux_do_id", "setting",
 		"stripe_customer", "auth_version",
 		"CASE WHEN password <> '' THEN 1 ELSE 0 END AS has_password",
 	}).First(&profile, "id = ?", id).Error
@@ -764,6 +774,8 @@ func (user *User) UpdateWithTx(tx *gorm.DB, updatePassword bool) error {
 	if err = tx.Model(&current).Omit(
 		"access_token",
 		"quota",
+		"quota_pending",
+		"checkin_quota",
 		"used_quota",
 		"request_count",
 		"auth_version",
@@ -1297,34 +1309,86 @@ func IsTelegramIdAlreadyTaken(telegramId string) bool {
 	return DB.Unscoped().Where("telegram_id = ?", telegramId).Find(&User{}).RowsAffected == 1
 }
 
+type PasswordResetCommitState uint8
+
+const (
+	PasswordResetNotCommitted PasswordResetCommitState = iota
+	PasswordResetCommitted
+	PasswordResetCommitUnknown
+)
+
+// PasswordResetOutcome contains only trusted context for audit/notification.
+// A failed COMMIT acknowledgement must not be treated as a confirmed rollback.
+type PasswordResetOutcome struct {
+	State    PasswordResetCommitState
+	UserID   int
+	Role     int
+	Email    string
+	Language string
+}
+
 func ResetUserPasswordByEmail(email string, password string) error {
+	_, err := ResetUserPasswordByEmailWithOutcome(email, password)
+	return err
+}
+
+func ResetUserPasswordByEmailWithOutcome(email string, password string) (PasswordResetOutcome, error) {
+	outcome := PasswordResetOutcome{}
 	if email == "" || password == "" {
-		return common.NewMessage("Email or password is empty!")
+		return outcome, common.NewMessage("Email or password is empty!")
 	}
 	user, err := GetUniqueUserByEmail(email)
 	if err != nil {
-		return err
+		return outcome, err
 	}
+	outcome.UserID, outcome.Role = user.Id, user.Role
+	outcome.Email, outcome.Language = user.Email, user.GetSetting().Language
 	hashedPassword, err := common.HashAccountPassword(password)
 	if err != nil {
-		return err
+		return outcome, err
 	}
-	if err = DB.Transaction(func(tx *gorm.DB) error {
+	readyToCommit := false
+	err = DB.Transaction(func(tx *gorm.DB) error {
+		var current User
+		if err := lockForUpdate(tx).First(&current, user.Id).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrEmailNotFound
+			}
+			return err
+		}
+		if NormalizeEmail(current.Email) != NormalizeEmail(email) {
+			return ErrEmailNotFound
+		}
+		outcome.UserID, outcome.Role = current.Id, current.Role
+		outcome.Email, outcome.Language = current.Email, current.GetSetting().Language
 		if _, err := IncrementUserAuthVersionWithTx(tx, user.Id); err != nil {
 			return err
 		}
 		if _, err := DeleteUserAccessTokensWithTx(tx, user.Id); err != nil {
 			return err
 		}
-		return tx.Model(&User{}).Where("id = ?", user.Id).Update("password", hashedPassword).Error
-	}); err != nil {
-		return err
+		updated := tx.Model(&User{}).Where("id = ?", user.Id).Update("password", hashedPassword)
+		if updated.Error != nil {
+			return updated.Error
+		}
+		if updated.RowsAffected != 1 {
+			return ErrEmailNotFound
+		}
+		readyToCommit = true
+		return nil
+	})
+	if err != nil {
+		if readyToCommit {
+			outcome.State = PasswordResetCommitUnknown
+		}
+		return outcome, err
 	}
+	outcome.State = PasswordResetCommitted
 	if err := PublishUserAuthCache(user.Id); err != nil {
-		return err
+		return outcome, err
 	}
 	_, err = RevokeAllUserSessions(user.Id, "password_reset")
-	return err
+	return outcome, err
 }
 
 func IsAdmin(userId int) bool {
@@ -1363,10 +1427,15 @@ func ValidateAccessToken(token string) (*User, error) {
 	return user, nil
 }
 
-// GetUserQuota gets quota from Redis first, falls back to DB if needed
+// GetUserQuota returns the raw row for fromDB callers and the durable logical
+// balance otherwise. Redis metadata is never an authority for wallet amounts.
 func GetUserQuota(id int, fromDB bool) (quota int, err error) {
-	if !fromDB && common.RedisEnabled {
-		return getUserQuotaCache(id)
+	if !fromDB {
+		var user User
+		if err := DB.Select("quota", "quota_pending").First(&user, id).Error; err != nil {
+			return 0, err
+		}
+		return userWalletBalance(user.Quota, user.QuotaPending)
 	}
 	err = DB.Model(&User{}).Where("id = ?", id).Select("quota").Find(&quota).Error
 	if err != nil {
@@ -1460,19 +1529,13 @@ func IncreaseUserQuota(id int, quota int, db bool) (err error) {
 		return err
 	}
 	if !db && common.BatchUpdateEnabled {
-		addNewRecord(BatchUpdateTypeUserQuota, id, quota)
-		gopool.Go(func() {
-			if err := cacheIncrUserQuota(id, int64(quota)); err != nil {
-				common.SysLog(common.LogText("failed to increase user quota: %s", err.Error()))
-			}
-		})
-		return nil
+		return persistUserQuotaDelta(id, quota)
 	}
 	if err := increaseUserQuota(id, quota); err != nil {
 		return err
 	}
 	gopool.Go(func() {
-		if err := cacheIncrUserQuota(id, int64(quota)); err != nil {
+		if err := invalidateUserCache(id); err != nil {
 			common.SysLog(common.LogText("failed to increase user quota: %s", err.Error()))
 		}
 	})
@@ -1480,48 +1543,39 @@ func IncreaseUserQuota(id int, quota int, db bool) (err error) {
 }
 
 func increaseUserQuota(id int, quota int) (err error) {
-	result := DB.Model(&User{}).
-		Where("id = ? AND quota <= ?", id, common.MaxWalletQuota-quota).
-		Update("quota", gorm.Expr("quota + ?", quota))
-	if result.Error != nil {
-		return result.Error
-	}
-	if result.RowsAffected == 1 {
-		return nil
-	}
-	var count int64
-	if err := DB.Model(&User{}).Where("id = ?", id).Count(&count).Error; err != nil {
-		return err
-	}
-	if count == 0 {
-		return gorm.ErrRecordNotFound
-	}
-	return ErrWalletQuotaLimitExceeded
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var user User
+		if err := lockForUpdate(tx).First(&user, id).Error; err != nil {
+			return err
+		}
+		return applyUserQuotaDeltaTx(tx, &user, quota, false)
+	})
 }
 
 func DecreaseUserQuota(id int, quota int, db bool) (err error) {
 	if quota < 0 {
 		return errors.New("quota cannot be negative")
 	}
-	gopool.Go(func() {
-		err := cacheDecrUserQuota(id, int64(quota))
-		if err != nil {
-			common.SysLog(common.LogText("failed to decrease user quota: %s", err.Error()))
-		}
-	})
 	if !db && common.BatchUpdateEnabled {
-		addNewRecord(BatchUpdateTypeUserQuota, id, -quota)
-		return nil
+		return persistUserQuotaDelta(id, -quota)
 	}
-	return decreaseUserQuota(id, quota)
+	if err := decreaseUserQuota(id, quota); err != nil {
+		return err
+	}
+	if err := invalidateUserCache(id); err != nil {
+		common.SysLog(common.LogText("failed to decrease user quota: %s", err.Error()))
+	}
+	return nil
 }
 
 func decreaseUserQuota(id int, quota int) (err error) {
-	err = DB.Model(&User{}).Where("id = ?", id).Update("quota", gorm.Expr("quota - ?", quota)).Error
-	if err != nil {
-		return err
-	}
-	return clampCheckinQuotaDB(DB, id)
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var user User
+		if err := lockForUpdate(tx).First(&user, id).Error; err != nil {
+			return err
+		}
+		return applyUserQuotaDeltaTx(tx, &user, -quota, false)
+	})
 }
 
 // clampCheckinQuotaDB 把签到赠送收到不超过当前余额。余额先扣本金，扣进赠送后签到额度跟着降。
@@ -1529,8 +1583,10 @@ func clampCheckinQuotaDB(db *gorm.DB, userID int) error {
 	if db == nil || userID <= 0 {
 		return nil
 	}
-	return db.Model(&User{}).Where("id = ? AND checkin_quota > quota", userID).
-		Update("checkin_quota", gorm.Expr("quota")).Error
+	return db.Model(&User{}).Where("id = ?", userID).Update("checkin_quota", gorm.Expr(`CASE
+		WHEN checkin_quota < 0 OR quota + quota_pending < 0 THEN 0
+		WHEN checkin_quota > quota + quota_pending THEN quota + quota_pending
+		ELSE checkin_quota END`)).Error
 }
 
 func DeltaUpdateUserQuota(id int, delta int) (err error) {
@@ -1593,26 +1649,26 @@ func updateUserUsedQuotaAndRequestCount(id int, quota int, count int) {
 	//}
 }
 
-func updateUserQuotaUsedQuotaAndRequestCount(id int, quota int, usedQuota int, requestCount int) error {
-	if quota == 0 && usedQuota == 0 && requestCount == 0 {
-		return nil
-	}
-
-	err := DB.Model(&User{}).Where("id = ?", id).Updates(
-		map[string]any{
-			"quota":         gorm.Expr("quota + ?", quota),
+func updateUserQuotaUsedQuotaAndRequestCount(id int, usedQuota int, requestCount int) error {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var user User
+		if err := lockForUpdate(tx.Unscoped()).First(&user, id).Error; err != nil {
+			return err
+		}
+		quota, err := userWalletBalance(user.Quota, user.QuotaPending)
+		if err != nil {
+			return err
+		}
+		if user.QuotaPending == 0 && usedQuota == 0 && requestCount == 0 {
+			return nil
+		}
+		return tx.Unscoped().Model(&User{}).Where("id = ?", id).Updates(map[string]any{
+			"quota": quota, "quota_pending": 0,
+			"checkin_quota": max(0, min(user.CheckinQuota, quota)),
 			"used_quota":    gorm.Expr("used_quota + ?", usedQuota),
 			"request_count": gorm.Expr("request_count + ?", requestCount),
-		},
-	).Error
-	if err != nil {
-		common.SysLog(common.LogText("failed to batch update user quota, used quota and request count: %s", err.Error()))
-		return err
-	}
-	if err := clampCheckinQuotaDB(DB, id); err != nil {
-		common.SysLog(common.LogText("failed to clamp check-in quota for user %d: %s", id, err.Error()))
-	}
-	return nil
+		}).Error
+	})
 }
 
 // GetUsernameById gets username from Redis first, falls back to DB if needed

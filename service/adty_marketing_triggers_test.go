@@ -162,7 +162,9 @@ func TestLowBalanceDedupWithUpstreamNotice(t *testing.T) {
 	db, fake := prepareTriggers(t)
 	now := time.Now()
 	low := marketingUser(t, db, "trg-low", true)
-	require.NoError(t, db.Model(&model.User{}).Where("id = ?", low.Id).Update("quota", 250000).Error) // $0.50
+	require.NoError(t, db.Model(&model.User{}).Where("id = ?", low.Id).Updates(map[string]any{
+		"quota": 2000000, "quota_pending": -1750000,
+	}).Error) // logical $0.50 after an unflushed spend
 	triggerTopUp(t, db, low.Id, "trg-l1")
 	consumeLog(t, db, low.Id, now.Add(-time.Hour))
 	rich := marketingUser(t, db, "trg-rich", true)

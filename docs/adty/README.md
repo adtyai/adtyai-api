@@ -15,7 +15,7 @@ adtyai-api 是 [QuantumNous/new-api](https://github.com/QuantumNous/new-api) 的
 - **后台分权**：普通管理员默认没有任何后台权限，由超级管理员逐项开启、随时可以关；系统设置、易支付通道的新增和密钥、管理员任免只有超级管理员能做。
 - **站长分站（P11）**：用户可以开分站，客户付「主站价 × 站长倍率 k」，平台收「主站价 × 拿货系数 d」，站长赚差价，收益按消费记账、冻结后可以提现。每个分站有平台子域名，可以接自定义域名（Cloudflare for SaaS）和站长自己的发件域名（Resend）。主站后台能看各站明细、复核风控、关站和转移客户。
 - **营销（P12）**：营销邮件的同意和退订、群发（Resend Broadcasts）、三条自动触发邮件、充值优惠码（平台出资或站长出资）、注册来源统计。
-- **数据库**：只支持 PostgreSQL 16，缓存用 Redis 7。上游支持 SQLite、MySQL 的代码保留不动，但启动时主库或日志库不是 PostgreSQL 就直接退出。
+- **数据库**：部署目标为 PostgreSQL 17，缓存用 Redis。保留上游 SQLite 单测和 SQLite、MySQL、PostgreSQL 的兼容代码；ADTY 启动时主库或日志库不是 PostgreSQL 就直接退出。已有 PostgreSQL 16 数据目录须独立迁移，不能直接换镜像启动，见 [deploy.md](deploy.md)。
 - **名字、Logo 和语言**：访客、调用 API 的人、上游服务商和浏览器开发者工具能看到的 New API，都换成 ADTY AI 或 adtyai；站名 ADTY AI 在 8 种语言（zh-CN、zh-TW、en、fr、ja、ko、ru、vi）里都不翻译。Logo 换成「层叠网关」一套（`web/public` 下的图标、manifest、分享图），原稿和生成脚本在仓库外的 `adtyai-logo` 目录（`source/build.py`）。前端和后端的提示都有 8 种语言，CI 检查漏翻。Go 模块路径不改；LICENSE、NOTICE、THIRD-PARTY-LICENSES.md、上游源文件头和页脚的上游署名都保留（AGPL）。
 - **首页**：`/` 固定是英文，另外 7 种语言用 `/zh-cn`、`/ko` 这类网址；首页的标题、描述和正文写进网页源码，其余页面一律 noindex。
 - **其他**：白色主题；按用户限 RPM、TPM、并发，开了 Redis 但计数不可用时拒绝而不放行；客户能看到的日志和任务不露渠道和倍率；人工调额留痕，且不能把余额调成负数；防邮箱枚举，验证码写不进共享存储时不发信；密码连续错误 8 次后锁定 15 分钟；主站发布了协议或隐私政策后，注册必须接受并留下系统日志；所有流式格式在等首字时都能发保活；分组有固定 ID 和多语言显示名；官方价每天从 models.dev 同步，价格页显示节省比例；接入文档、推广计划、多语言条款和退款政策；网页客服 tawk.to；公开的服务状态页。
@@ -24,10 +24,10 @@ adtyai-api 是 [QuantumNous/new-api](https://github.com/QuantumNous/new-api) 的
 
 仓库根目录的 AGENTS.md 是上游写给 AI 代理的规范，我们不改它，方便合并上游。下面四点以本 fork 的约定为准：
 
-1. **数据库**：AGENTS.md 要求所有数据库代码同时支持 SQLite、MySQL 和 PostgreSQL，并在三种库上实测。本 fork 只支持 PostgreSQL 16（执行层决定 11）：我们写的、要用数据库的测试只连 PostgreSQL；上游自己的测试照旧在 SQLite 上跑，所以被上游测试走到的代码（建表、挂在上游流程里的钩子）要用 GORM 的通用写法，SQLite 下也能跑。不为 MySQL 做兼容，也不在 MySQL 上测。
+1. **数据库**：ADTY 的部署和资金验收目标为真实 PostgreSQL 17；通过连接实例的 `server_version_num` 确认主版本。我们写的、要用数据库的测试连 PostgreSQL；上游自己的 SQLite 单测照旧保留，公共建表、迁移和业务代码继续保留 SQLite、MySQL、PostgreSQL 的兼容分支。本轮不要求 MySQL 生产环境验收，不代表可以删除或破坏 MySQL 兼容代码。
 2. **对外的名字**：AGENTS.md 规定 New API 和 QuantumNous 的名称、标识「任何情况下不得修改」。本 fork 按执行层决定 21 和任务 8.9，把访客、调用方、上游服务商和浏览器能看到的名字换成了 ADTY AI 或 adtyai（cookie 名、错误类型、本地存储键、网页标题、Logo 等，改了哪些、哪些不改见 conventions.md 和任务 8.9）。LICENSE、NOTICE、THIRD-PARTY-LICENSES.md、源码版权头、页脚的上游署名、Go 模块路径 `github.com/QuantumNous/new-api` 都照旧保留。
 3. **docs/adty/ 下的文档**：AGENTS.md 说没有用户明确要求时不要在 `docs/` 下新建文件。`docs/adty/` 下的文档都是按实施方案（约定 A：工程文档放 `docs/adty/`）或用户的要求建的，以后改功能时要同步更新这里的文档。
-4. **后端语言**：AGENTS.md 写后端只有 en、zh-CN、zh-TW 三种。本 fork 的后端已经有 8 种（任务 9.1，后补 ko）：上游的键另加了 fr、ja、ko、ru、vi 五个 yaml，我们自己的键在 `i18n/locales/adty.<语言>.yaml`，8 种语言一次写齐。
+4. **后端语言**：后端有 8 种（任务 9.1，后补 ko）：en、zh-CN、zh-TW、fr、ja、ko、ru、vi。上游键和我们自己的 `i18n/locales/adty.<语言>.yaml` 都须一次写齐，根目录 AGENTS.md 的语言清单已同步。
 
 ## 各个文档的用途
 

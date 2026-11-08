@@ -59,7 +59,7 @@ func TestCampaignAudienceExcludesUnsubscribed(t *testing.T) {
 
 	// 余额、充值、分组筛选。
 	rich := marketingUser(t, db, "cmp-rich", true)
-	require.NoError(t, db.Model(&model.User{}).Where("id = ?", rich.Id).Updates(map[string]any{"quota": 100 * 500000, "group": "vip"}).Error)
+	require.NoError(t, db.Model(&model.User{}).Where("id = ?", rich.Id).Updates(map[string]any{"quota": 10 * 500000, "quota_pending": 90 * 500000, "group": "vip"}).Error)
 	require.NoError(t, db.Create(&model.TopUp{UserId: rich.Id, TradeNo: "cmp-t1", Status: common.TopUpStatusSuccess}).Error)
 	paid := true
 	assert.Equal(t, []int{rich.Id}, audienceUserIDs(t, model.AdtyMarketingAudience{ToppedUp: &paid}))

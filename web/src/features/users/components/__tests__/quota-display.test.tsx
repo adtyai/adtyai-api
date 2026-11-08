@@ -52,8 +52,13 @@ import {
   useSystemConfigStore,
 } from '@/stores/system-config-store'
 
-import type { User } from '../../types'
+import {
+  transformFormDataToPayload,
+  transformUserToFormDefaults,
+} from '../../lib/user-form'
+import { userSchema, type User } from '../../types'
 import { useUsersColumns } from '../users-columns'
+import { UsersMutateDrawer } from '../users-mutate-drawer'
 import { UsersProvider } from '../users-provider'
 import { UsersTable } from '../users-table'
 
@@ -65,7 +70,7 @@ await i18n.init({
   initAsync: false,
 })
 
-function QuotaTable(props: { remaining: number; used: number }) {
+function QuotaTable(props: { remaining: number; live?: number; used: number }) {
   const columns = useUsersColumns().filter((column) =>
     ['quota', 'used_quota'].includes(
       column.id ?? ('accessorKey' in column ? String(column.accessorKey) : '')
@@ -81,6 +86,7 @@ function QuotaTable(props: { remaining: number; used: number }) {
         role: 1,
         status: 1,
         quota: props.remaining,
+        live_quota: props.live,
         used_quota: props.used,
         request_count: 0,
         group: 'default',
@@ -175,6 +181,32 @@ it('shows balance above secondary usage text and opens quota details on click', 
   expect(trigger).toHaveFocus()
 })
 
+it.each([
+  { raw: 1_000_000, live: 0, amount: '0' },
+  { raw: -500_000, live: 500_000, amount: '1' },
+])(
+  'shows the live balance $live instead of raw $raw in the table and quota details',
+  async ({ raw, live, amount }) => {
+    render(
+      <I18nextProvider i18n={i18n}>
+        <QuotaTable remaining={raw} live={live} used={500_000} />
+      </I18nextProvider>
+    )
+
+    const trigger = screen.getByRole('button', {
+      name: `Available Balance ${amount}; Used amount 1`,
+    })
+    await userEvent.click(trigger)
+    const detail = await screen.findByRole('dialog', { name: 'Quota ($)' })
+    expect(
+      within(detail).getByText('Available Balance').parentElement
+    ).toHaveTextContent(amount)
+    expect(
+      within(detail).queryByText(raw < 0 ? '-1' : '2')
+    ).not.toBeInTheDocument()
+  }
+)
+
 it.each([0, 500000])(
   'shows usage for a zero balance only when used quota is nonzero (used=%s)',
   async (used) => {
@@ -254,7 +286,7 @@ function UsersPage() {
   )
 }
 
-async function renderUsersList() {
+async function renderUsersList(liveQuota?: number) {
   useAuthStore.getState().auth.setUser({ id: 1, username: 'admin', role: 100 })
   const usersResponse = {
     data: {
@@ -268,6 +300,7 @@ async function renderUsersList() {
             role: 1,
             status: 1,
             quota: 1900,
+            live_quota: liveQuota,
             used_quota: 1100,
             request_count: 0,
             created_at: Math.floor(Date.now() / 1000) - 86400,
@@ -358,6 +391,296 @@ it('shows balance above usage on mobile cards in Chinese', async () => {
     await i18n.changeLanguage('en')
   }
 })
+
+it('shows the live balance in mobile cards and their quota details', async () => {
+  const originalMatchMedia = window.matchMedia
+  vi.spyOn(window, 'matchMedia').mockImplementation((query) => ({
+    ...originalMatchMedia(query),
+    matches: query.includes('max-width'),
+  }))
+
+  await renderUsersList(900)
+
+  expect(screen.queryByRole('table')).not.toBeInTheDocument()
+  expect(screen.queryByText('0.0038')).not.toBeInTheDocument()
+  await userEvent.click(
+    screen.getByRole('button', {
+      name: 'Available Balance 0.0018; Used amount 0.0022',
+    })
+  )
+  const detail = await screen.findByRole('dialog', { name: 'Quota ($)' })
+  expect(within(detail).getByText('0.0018')).toBeInTheDocument()
+  expect(within(detail).getByText('0.0022')).toBeInTheDocument()
+})
+
+const balanceUser = {
+  id: 7,
+  username: 'balance-user',
+  display_name: 'Balance User',
+  role: 1,
+  status: 1,
+  quota: 1_000_000,
+  used_quota: 0,
+  request_count: 0,
+  group: 'default',
+}
+
+function renderBalanceDrawer(currentRow: User) {
+  useAuthStore.getState().auth.setUser({ id: 1, username: 'admin', role: 100 })
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  clients.push(client)
+  render(
+    <I18nextProvider i18n={i18n}>
+      <QueryClientProvider client={client}>
+        <UsersProvider>
+          <UsersMutateDrawer
+            open
+            onOpenChange={() => undefined}
+            currentRow={currentRow}
+          />
+        </UsersProvider>
+      </QueryClientProvider>
+    </I18nextProvider>
+  )
+}
+
+it.each([
+  { live: undefined, display: 2 },
+  { live: 0, display: 0 },
+  { live: 500_000, display: 1 },
+  { live: -500_000, display: -1 },
+])(
+  'shows live quota $live in form defaults while regular edits submit neither balance',
+  ({ live, display }) => {
+    const user = userSchema.parse({ ...balanceUser, live_quota: live })
+
+    expect(user).toMatchObject({ quota: 1_000_000, live_quota: live })
+    const defaults = transformUserToFormDefaults(user)
+    expect(defaults.quota_dollars).toBe(display)
+    for (const userId of [undefined, user.id]) {
+      const payload = transformFormDataToPayload(defaults, userId)
+      expect(payload).not.toHaveProperty('quota')
+      expect(payload).not.toHaveProperty('live_quota')
+    }
+  }
+)
+
+it('uses the latest fetched raw balance for override previews before and after a quota refresh', async () => {
+  const user = userEvent.setup()
+  useAuthStore.getState().auth.setUser({ id: 1, username: 'admin', role: 100 })
+  let detailUser = {
+    ...balanceUser,
+    quota: 5_000_000,
+    live_quota: 4_000_000,
+  }
+  vi.spyOn(api, 'get').mockImplementation(async (url) => {
+    if (url === '/api/group/') {
+      return { data: { success: true, data: ['default'] } }
+    }
+    if (url === '/api/authz/catalog') {
+      return {
+        data: { success: true, data: { resources: [], roles: [] } },
+      }
+    }
+    return { data: { success: true, data: detailUser } }
+  })
+  const post = vi.spyOn(api, 'post').mockImplementation(async () => {
+    detailUser = { ...detailUser, quota: 2_000_000, live_quota: 1_000_000 }
+    return { data: { success: true } }
+  })
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  clients.push(client)
+  render(
+    <I18nextProvider i18n={i18n}>
+      <QueryClientProvider client={client}>
+        <UsersProvider>
+          <UsersMutateDrawer
+            open
+            onOpenChange={() => undefined}
+            currentRow={{ ...balanceUser, quota: 8_000_000 }}
+          />
+        </UsersProvider>
+      </QueryClientProvider>
+    </I18nextProvider>
+  )
+
+  expect(await screen.findByDisplayValue('8.000000')).toHaveAttribute(
+    'readonly'
+  )
+  await user.click(screen.getByRole('button', { name: 'Adjust Quota' }))
+  let dialog = await screen.findByRole('dialog', { name: 'Adjust Quota' })
+  await user.click(within(dialog).getByRole('button', { name: 'Override' }))
+  await user.type(within(dialog).getByPlaceholderText(/Enter amount/), '4')
+  expect(within(dialog).getByText('Current quota: $8 → $2')).toBeVisible()
+  await user.type(
+    within(dialog).getByLabelText('Reason (admins only)'),
+    'reconcile'
+  )
+  await user.click(within(dialog).getByRole('button', { name: 'Confirm' }))
+  await waitFor(() =>
+    expect(post).toHaveBeenCalledWith(
+      '/api/user/manage',
+      expect.objectContaining({
+        id: 7,
+        mode: 'override',
+        value: 2_000_000,
+      })
+    )
+  )
+  await screen.findByDisplayValue('2.000000')
+  await user.click(screen.getByRole('button', { name: 'Adjust Quota' }))
+  dialog = await screen.findByRole('dialog', { name: 'Adjust Quota' })
+  await user.click(within(dialog).getByRole('button', { name: 'Override' }))
+  await user.type(within(dialog).getByPlaceholderText(/Enter amount/), '2')
+  expect(within(dialog).getByText('Current quota: $2 → $0')).toBeVisible()
+})
+
+it('saves ordinary user edits with a negative live balance without submitting either balance', async () => {
+  const user = userEvent.setup()
+  const target = { ...balanceUser, quota: 0, live_quota: -500_000 }
+  vi.spyOn(api, 'get').mockImplementation(async (url) => {
+    if (url === '/api/group/') {
+      return { data: { success: true, data: ['default'] } }
+    }
+    if (url === '/api/authz/catalog') {
+      return {
+        data: { success: true, data: { resources: [], roles: [] } },
+      }
+    }
+    return { data: { success: true, data: target } }
+  })
+  const put = vi.spyOn(api, 'put').mockResolvedValue({
+    data: { success: true },
+  })
+  renderBalanceDrawer(target)
+
+  expect(await screen.findByDisplayValue('-1.000000')).toHaveAttribute(
+    'readonly'
+  )
+  const displayName = screen.getByDisplayValue('Balance User')
+  await user.clear(displayName)
+  await user.type(displayName, 'Renamed User')
+  await user.click(screen.getByRole('button', { name: 'Save changes' }))
+
+  await waitFor(() =>
+    expect(put).toHaveBeenCalledWith(
+      '/api/user/',
+      expect.objectContaining({
+        id: 7,
+        display_name: 'Renamed User',
+      }),
+      {}
+    )
+  )
+  expect(put.mock.calls[0][1]).not.toHaveProperty('quota')
+  expect(put.mock.calls[0][1]).not.toHaveProperty('live_quota')
+})
+
+it.each([
+  {
+    currency: 'USD',
+    raw: 9_007_199_254_740_991,
+    live: 9_007_199_254_740_991,
+    blocked: false,
+    ending: '→ $0',
+  },
+  {
+    currency: 'CNY',
+    raw: 9_007_199_254_740_991,
+    live: 9_007_199_254_740_991,
+    blocked: false,
+    ending: '→ ¥0',
+  },
+  {
+    currency: 'USD',
+    raw: 9_007_199_254_740_991,
+    live: undefined,
+    blocked: false,
+    ending: '→ $0',
+  },
+  { currency: 'USD', raw: 1_000_000, live: 0, blocked: true, ending: '' },
+  {
+    currency: 'USD',
+    raw: 9_007_199_254_740_990,
+    live: 9_007_199_254_740_989,
+    blocked: true,
+    ending: '',
+  },
+  {
+    currency: 'CNY',
+    raw: 9_007_199_254_740_990,
+    live: 9_007_199_254_740_989,
+    blocked: true,
+    ending: '',
+  },
+] as const)(
+  'keeps an exact $currency override boundary for fetched raw $raw and live $live',
+  async ({ currency, raw, live, blocked, ending }) => {
+    const user = userEvent.setup()
+    useSystemConfigStore.getState().setConfig({
+      currency: {
+        ...DEFAULT_CURRENCY_CONFIG,
+        quotaDisplayType: currency,
+        usdExchangeRate: 7,
+      },
+    })
+    const target = { ...balanceUser, quota: raw, live_quota: live }
+    vi.spyOn(api, 'get').mockImplementation(async (url) => {
+      if (url === '/api/group/') {
+        return { data: { success: true, data: ['default'] } }
+      }
+      if (url === '/api/authz/catalog') {
+        return {
+          data: { success: true, data: { resources: [], roles: [] } },
+        }
+      }
+      return { data: { success: true, data: target } }
+    })
+    const post = vi.spyOn(api, 'post').mockResolvedValue({
+      data: { success: true },
+    })
+    renderBalanceDrawer({ ...balanceUser, quota: 0 })
+    await screen.findByDisplayValue('Balance User')
+    await user.click(screen.getByRole('button', { name: 'Adjust Quota' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Adjust Quota' })
+    await user.click(within(dialog).getByRole('button', { name: 'Override' }))
+    const amount = within(dialog).getByPlaceholderText(/Enter amount/)
+    await user.type(amount, '0')
+    await user.type(
+      within(dialog).getByLabelText('Reason (admins only)'),
+      'reconcile'
+    )
+
+    const confirm = within(dialog).getByRole('button', { name: 'Confirm' })
+    if (blocked) {
+      expect(confirm).toBeDisabled()
+      expect(
+        within(dialog).getByText('Adjustment cannot make the balance negative')
+      ).toBeVisible()
+      await user.click(amount)
+      await user.keyboard('{Enter}')
+      expect(post).not.toHaveBeenCalled()
+    } else {
+      expect(
+        within(dialog).getByText(
+          (text) => text.startsWith('Current quota:') && text.endsWith(ending)
+        )
+      ).toBeVisible()
+      expect(confirm).toBeEnabled()
+      await user.click(confirm)
+      await waitFor(() =>
+        expect(post).toHaveBeenCalledWith(
+          '/api/user/manage',
+          expect.objectContaining({ mode: 'override', value: 0 })
+        )
+      )
+    }
+  }
+)
 
 it('combines creation and last login into one column with full dates visible directly', async () => {
   vi.spyOn(Date, 'now').mockReturnValue(Date.UTC(2026, 8, 8, 12))

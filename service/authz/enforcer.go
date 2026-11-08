@@ -40,6 +40,15 @@ func Init(db *gorm.DB) error {
 			return err
 		}
 	}
+	if isKnownResource(ResourceAdtyUser) {
+		if common.IsMasterNode {
+			if err := MigrateAdtyActionCatalog(db); err != nil {
+				return err
+			}
+		} else if err := RequireAdtyActionCatalogVersion(db); err != nil {
+			return err
+		}
+	}
 
 	m, err := casbinmodel.NewModelFromString(modelText)
 	if err != nil {

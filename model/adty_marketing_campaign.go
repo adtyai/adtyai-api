@@ -161,10 +161,10 @@ func AdtyMarketingAudienceQuery(a AdtyMarketingAudience) *gorm.DB {
 		query = query.Where(paid, common.TopUpStatusSuccess)
 	}
 	if quota, ok := adtyMarketingUSDToQuota(a.BalanceMinUSD); ok {
-		query = query.Where("users.quota >= ?", quota)
+		query = query.Where("users.quota + users.quota_pending >= ?", quota)
 	}
 	if quota, ok := adtyMarketingUSDToQuota(a.BalanceMaxUSD); ok {
-		query = query.Where("users.quota < ?", quota)
+		query = query.Where("users.quota + users.quota_pending < ?", quota)
 	}
 	if len(a.Groups) > 0 {
 		query = query.Where("users."+commonGroupCol+" IN ?", a.Groups)

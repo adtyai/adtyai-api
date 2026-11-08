@@ -49,7 +49,7 @@
 | `service/system_task.go` | `runLogCleanupTask` 在每批删除前检查取消 | 已经开始的清理不能在取消后继续删用量日志 | 审查 v3 |
 | `middleware/cors.go` | 不再同时允许任意 Origin 和凭据 | 跨站浏览器不能被声明为可携带会话 cookie | 审查 v3 |
 | `main.go` | pprof 只监听 127.0.0.1，并给 HTTP 服务加安全响应头 | 分析端口和登录页不能对所有网卡或任意站点开放 | 审查 v3 |
-| `docker-compose.yml` | 示例密码改为必填环境变量，端口只绑 127.0.0.1，数据库镜像改为 PostgreSQL 16 | 根目录 compose 不能用公开示例密码和全网卡端口启动 | 审查 v3 |
+| `docker-compose.yml` | 示例密码改为必填环境变量，端口只绑 127.0.0.1，数据库镜像改为 PostgreSQL 17 | 根目录 compose 不能用公开示例密码和全网卡端口启动；已有 16 数据目录须独立迁移 | 审查 v3 / v4 |
 | `controller/system_task.go` | 清理目标落在 90 天保留期内时返回 400 | 未来时间戳不能启动一次删掉近期付款日志的任务 | 审查 v3 |
 | `model/log.go` | `CountOldLog` 和 `DeleteOldLogBatch` 不删除充值、退款和管理员调额日志；关掉消费日志时仍写 `quota_data` | 用量清理不能误删付款记录；关日志不能让真实扣费失去汇总证据 | 审查 v3 |
 | `middleware/adty_user_limit.go` | 计数存储出错时返回 503，不再放行请求 | Redis 故障不能放开按用户的 RPM、TPM 和并发限制 | 审查 v3 |
@@ -128,7 +128,7 @@
 | `web/src/i18n/static-keys.ts` | 访问令牌资源描述换成上面的新原文 | 和后端保持一致 | 1.2、1.5 |
 | `web/src/i18n/static-keys.ts` | 删「Subscription constants」「Subscription plans」「Subscription management」「User subscription management」四段 | 订阅页面删了；`STATIC_I18N_KEYS` 没有读取方，语言包里的键不动 | 1.3 |
 | `controller/option.go` | `UpdateOption` 拒绝 `QuotaForInviter`、`QuotaForInvitee`、`TopUpLink`、`WaffoSubscriptionReturnUrl` | 这些配置项随功能删了，不让它们再写进 options 表、下次同步又载入 | 1.2、1.4、1.5 |
-| `web/src/i18n/locales/{en,zh,zh-TW,fr,ja,ru,vi}.json` | 加 4 个访问令牌资源描述的新键和 1.3–1.5 新键在 zh-TW、fr、ja、ru、vi 的译文，旧键保留 | 改了原文就加新键（约定 E），7 种语言都要有 | 1.2–1.5 |
+| `web/src/i18n/locales/{en,zh,zh-TW,fr,ja,ko,ru,vi}.json` | 加访问令牌与独立动作权限的描述和译文，旧键保留，韩语同步补齐 | 改了原文就加新键（约定 E），8 种语言都要有 | 1.2–1.5 / 审查 v4 |
 | `web/src/components/__tests__/command-menu.test.tsx` | `adminEntries` 删 `Redemption Codes` | 侧边栏的兑换码菜单删了 | 1.4 |
 | `web/src/features/system-settings/billing/index.tsx` | `defaultBillingSettings` 删 `TopUpLink` | 购买链接随兑换码删除（执行层决定 20） | 1.4 |
 | `web/src/features/system-settings/billing/section-registry.tsx` | 额度设置的 `defaultValues` 删 `TopUpLink` | 同上 | 1.4 |

@@ -17,6 +17,27 @@ import (
 	"gorm.io/gorm/schema"
 )
 
+func TestAuditPayloadIdentityComparison(t *testing.T) {
+	for _, test := range []struct {
+		name, left, right string
+		equal             bool
+	}{
+		{"nested object order", `{"patch":{"b":false,"a":{"y":2,"x":1}}}`, `{"patch": {"a":{"x":1,"y":2},"b":false}}`, true},
+		{"escaped text", `{"name":"\u754c"}`, `{"name":"界"}`, true},
+		{"exact numeric normalization", `{"n":1e3}`, `{"n":1000.0}`, true},
+		{"wide integers remain distinct", `{"n":9007199254740993}`, `{"n":9007199254740992}`, false},
+		{"array order matters", `[1,2]`, `[2,1]`, false},
+		{"text and number differ", `"1"`, `1`, false},
+		{"missing key differs", `{"a":null}`, `{}`, false},
+		{"null and empty object differ", `null`, `{}`, false},
+		{"empty object and null differ", `{}`, `null`, false},
+		{"empty array and null differ", `[]`, `null`, false},
+		{"empty text and null differ", `""`, `null`, false},
+	} {
+		t.Run(test.name, func(t *testing.T) { assert.Equal(t, test.equal, auditJSONEqual([]byte(test.left), []byte(test.right))) })
+	}
+}
+
 // TestAuditLogSortIndexDatabaseMatrix verifies audit ordering and index migrations across supported databases.
 func TestAuditLogSortIndexDatabaseMatrix(t *testing.T) {
 	for _, dialect := range []string{"sqlite", "mysql", "postgres"} {

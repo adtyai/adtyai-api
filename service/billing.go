@@ -99,10 +99,11 @@ func SettleBilling(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, actualQuo
 		}
 
 		shortfallBefore := relayInfo.BillingShortfall
-		if err := relayInfo.Billing.Settle(actualQuota); err != nil {
+		err := relayInfo.Billing.Settle(actualQuota)
+		adtyNoteBillingShortfall(ctx, relayInfo, shortfallBefore)
+		if err != nil {
 			return err
 		}
-		adtyNoteBillingShortfall(ctx, relayInfo, shortfallBefore) // 二开：余额下限
 
 		// 发送额度通知
 		if actualQuota != 0 {

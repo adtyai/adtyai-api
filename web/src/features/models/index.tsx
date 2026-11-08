@@ -25,7 +25,9 @@ import { useTranslation } from 'react-i18next'
 import { SectionPageLayout } from '@/components/layout'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { ADTY_PERMISSIONS, canAdmin } from '@/lib/adty-permissions'
 import { requireServerSuccess } from '@/lib/server-error-message'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { listDeployments } from './api'
 import { DeploymentAccessGuard } from './components/deployment-access-guard'
@@ -63,6 +65,8 @@ const SECTION_META: Record<
 
 function ModelsContent() {
   const { t } = useTranslation()
+  const currentUser = useAuthStore((state) => state.auth.user)
+  const canCreate = canAdmin(currentUser, ADTY_PERMISSIONS.MODEL_CREATE)
   const navigate = useNavigate({ from: '/models/$section' })
   const { tabCategory, setTabCategory, setOpen, setCurrentVendor } = useModels()
   const params = route.useParams()
@@ -98,7 +102,9 @@ function ModelsContent() {
     actions = (
       <Button
         size='sm'
+        disabled={!canCreate}
         onClick={() => {
+          if (!canCreate) return
           setCurrentVendor(null)
           setOpen('create-vendor')
         }}

@@ -89,7 +89,7 @@ func adtyRecordRegisterConsent(c *gin.Context, user *model.User) {
 
 // adtyMarketingProperties 是同步到 Resend 联系人上的属性。余额按美元、保留 2 位。
 func adtyMarketingProperties(user *model.User) map[string]any {
-	balance := decimal.NewFromInt(int64(user.Quota)).Div(decimal.NewFromFloat(common.QuotaPerUnit))
+	balance := decimal.NewFromInt(int64(user.ToBaseUser().Quota)).Div(decimal.NewFromFloat(common.QuotaPerUnit))
 	return map[string]any{
 		AdtyResendPropertyUsername: user.Username,
 		AdtyResendPropertyBalance:  "$" + balance.StringFixed(2),

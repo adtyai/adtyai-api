@@ -413,6 +413,16 @@ export function ChannelMutateDrawer({
   const queryClient = useQueryClient()
   const { setOpen } = useChannels()
   const currentUser = useAuthStore((s) => s.auth.user)
+  const canCreate = hasPermission(
+    currentUser,
+    ADMIN_PERMISSION_RESOURCES.CHANNEL,
+    ADMIN_PERMISSION_ACTIONS.CREATE
+  )
+  const canWrite = hasPermission(
+    currentUser,
+    ADMIN_PERMISSION_RESOURCES.CHANNEL,
+    ADMIN_PERMISSION_ACTIONS.WRITE
+  )
   const canEditSensitive = hasPermission(
     currentUser,
     ADMIN_PERMISSION_RESOURCES.CHANNEL,
@@ -470,7 +480,10 @@ export function ChannelMutateDrawer({
     setDrawerSide(requestedSide)
   }
   const channelId = currentRow?.id ?? null
-  const sensitiveLocked = isEditing && !canEditSensitive
+  const sensitiveLocked = isEditing && (!canWrite || !canEditSensitive)
+  const canConfigureProvider = isEditing
+    ? canWrite && canEditSensitive
+    : canCreate
   const [providerTarget, setProviderTarget] =
     useState<ChannelProviderTarget | null>(null)
   const [choosingProvider, setChoosingProvider] = useState(true)
@@ -799,7 +812,7 @@ export function ChannelMutateDrawer({
 
   const selectProvider = useCallback(
     (target: ChannelProviderTarget) => {
-      if (!canEditSensitive) return
+      if (!canConfigureProvider) return
       if (
         (target.kind === 'builtin' &&
           providerTarget?.kind === 'builtin' &&
@@ -862,7 +875,7 @@ export function ChannelMutateDrawer({
     },
     [
       canBindTaskPlugin,
-      canEditSensitive,
+      canConfigureProvider,
       providerTarget,
       isEditing,
       form,
@@ -1609,7 +1622,7 @@ export function ChannelMutateDrawer({
   const onSubmit = useCallback(
     async (data: ChannelFormValues) => {
       if (isEditing && !channelData?.data) return
-      if (!isEditing && (!providerTarget || !canEditSensitive)) return
+      if (isEditing ? !canWrite : !providerTarget || !canCreate) return
       // Validate key is required when creating
       if (!isEditing && !data.key?.trim()) {
         form.setError('key', {
@@ -1621,19 +1634,17 @@ export function ChannelMutateDrawer({
         return
       }
 
-      if (sensitiveLocked) {
-        const dirtyFields = form.formState.dirtyFields as Partial<
-          Record<keyof ChannelFormValues, unknown>
-        >
-        const hasSensitiveChanges = SENSITIVE_FORM_FIELDS.some((field) =>
-          Boolean(dirtyFields[field])
+      const dirtyFields = form.formState.dirtyFields as Partial<
+        Record<keyof ChannelFormValues, unknown>
+      >
+      const hasSensitiveChanges =
+        isEditing &&
+        SENSITIVE_FORM_FIELDS.some((field) => Boolean(dirtyFields[field]))
+      if (sensitiveLocked && hasSensitiveChanges) {
+        toast.error(
+          t('You do not have permission to edit sensitive channel settings.')
         )
-        if (hasSensitiveChanges) {
-          toast.error(
-            t('You do not have permission to edit sensitive channel settings.')
-          )
-          return
-        }
+        return
       }
 
       // Validate status_code_mapping entries
@@ -1723,7 +1734,10 @@ export function ChannelMutateDrawer({
       }
 
       try {
-        await channelMutation.mutateAsync(data)
+        await channelMutation.mutateAsync({
+          data,
+          requiresSensitiveWrite: hasSensitiveChanges,
+        })
       } catch {
         // The mutation reports the server error; keep the draft open for correction.
       }
@@ -1731,7 +1745,8 @@ export function ChannelMutateDrawer({
     [
       isEditing,
       providerTarget,
-      canEditSensitive,
+      canCreate,
+      canWrite,
       sensitiveLocked,
       channelData,
       form,
@@ -3141,7 +3156,7 @@ export function ChannelMutateDrawer({
                             'Select the task plugins installed on the upstream gateway'
                           )}
                           maxVisibleChips={8}
-                          disabled={!canEditSensitive}
+                          disabled={!canConfigureProvider}
                         />
                       </FormControl>
                       <FormDescription>
@@ -4849,7 +4864,7 @@ export function ChannelMutateDrawer({
                       disabled={
                         isSubmitting ||
                         (!showProviderPicker &&
-                          (!canEditSensitive ||
+                          (!canConfigureProvider ||
                             (isEditing && !channelData?.data)))
                       }
                       onClick={() => setChoosingProvider(!showProviderPicker)}
@@ -4946,7 +4961,7 @@ export function ChannelMutateDrawer({
               canBindPlugin={canBindTaskPlugin}
               loading={taskPluginOptionsQuery.isLoading}
               failed={taskPluginOptionsQuery.isError}
-              disabled={isSubmitting || !canEditSensitive}
+              disabled={isSubmitting || !canConfigureProvider}
               onRetry={() => {
                 void taskPluginOptionsQuery.refetch()
               }}
@@ -5035,7 +5050,7 @@ export function ChannelMutateDrawer({
                 type='submit'
                 disabled={
                   isSubmitting ||
-                  (!isEditing && !canEditSensitive) ||
+                  (isEditing ? !canWrite : !canCreate) ||
                   (isEditing && !channelData?.data)
                 }
               >

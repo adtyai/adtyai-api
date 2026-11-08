@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
@@ -19,6 +20,7 @@ import (
 const bepusdtTestSecret = "bepusdt-test-secret"
 
 type bepusdtGateway struct {
+	mu            sync.Mutex
 	createStatus  int
 	cancelStatus  int
 	cancelMessage string
@@ -26,6 +28,22 @@ type bepusdtGateway struct {
 	creates       int
 	cancels       []string
 	lastRedirect  string
+}
+
+type bepusdtGatewaySnapshot struct {
+	creates      int
+	cancels      []string
+	lastRedirect string
+}
+
+func (gw *bepusdtGateway) snapshot() bepusdtGatewaySnapshot {
+	gw.mu.Lock()
+	defer gw.mu.Unlock()
+	return bepusdtGatewaySnapshot{
+		creates:      gw.creates,
+		cancels:      append([]string(nil), gw.cancels...),
+		lastRedirect: gw.lastRedirect,
+	}
 }
 
 // useFakeBEpusdt 配好 BEpusdt 并把网关指向一个假服务。
@@ -36,6 +54,8 @@ func useFakeBEpusdt(t *testing.T) *bepusdtGateway {
 		raw, _ := io.ReadAll(r.Body)
 		body := map[string]any{}
 		_ = common.Unmarshal(raw, &body)
+		gw.mu.Lock()
+		defer gw.mu.Unlock()
 		if strings.HasSuffix(r.URL.Path, "/cancel-transaction") {
 			gw.cancels = append(gw.cancels, body["trade_id"].(string))
 			if gw.dropCancel {
@@ -115,8 +135,9 @@ func TestBEpusdtPayRedirectsThroughSignedResult(t *testing.T) {
 	gw := useFakeBEpusdt(t)
 	token, _ := bepusdtBuyer(t, f, "usdt-redirect")
 	view := payBEpusdt(t, f, token)
-	assert.Contains(t, gw.lastRedirect, "/pay/result/"+view.TradeNo)
-	assert.NotContains(t, gw.lastRedirect, "/wallet")
+	snapshot := gw.snapshot()
+	assert.Contains(t, snapshot.lastRedirect, "/pay/result/"+view.TradeNo)
+	assert.NotContains(t, snapshot.lastRedirect, "/wallet")
 }
 
 func TestBEpusdtPayCreatesOrderWithBonus(t *testing.T) {
@@ -141,7 +162,9 @@ func TestBEpusdtPayHandlesGatewayFailure(t *testing.T) {
 	f := newAdtyGuardFixture(t)
 	gw := useFakeBEpusdt(t)
 	token, userID := bepusdtBuyer(t, f, "usdt-fail")
+	gw.mu.Lock()
 	gw.createStatus = 400
+	gw.mu.Unlock()
 	failed := adtyJSON(t, f.engine, http.MethodPost, "/api/user/bepusdt/pay", `{"amount":100,"chain":"usdt.trc20"}`, token)
 	assert.Contains(t, failed.Body.String(), `"success":false`)
 	var topUp model.TopUp
@@ -244,8 +267,10 @@ func TestBEpusdtCancelCallsGateway(t *testing.T) {
 	token, _ := bepusdtBuyer(t, f, "usdt-cancel")
 	view := payBEpusdt(t, f, token)
 
+	gw.mu.Lock()
 	gw.cancelStatus = 400
 	gw.cancelMessage = "order already canceled"
+	gw.mu.Unlock()
 	closed := adtyJSON(t, f.engine, http.MethodPost, "/api/adty/topup/orders/"+view.TradeNo+"/cancel", "", token)
 	assert.Contains(t, closed.Body.String(), `"success":true`, closed.Body.String())
 	var stored model.TopUp
@@ -253,7 +278,9 @@ func TestBEpusdtCancelCallsGateway(t *testing.T) {
 	assert.Equal(t, model.TopUpStatusCanceled, stored.Status)
 
 	paid := payBEpusdt(t, f, token)
+	gw.mu.Lock()
 	gw.cancelMessage = "transfer detected"
+	gw.mu.Unlock()
 	failed := adtyJSON(t, f.engine, http.MethodPost, "/api/adty/topup/orders/"+paid.TradeNo+"/cancel", "", token)
 	assert.Contains(t, failed.Body.String(), "A transfer has been detected")
 	stored = model.TopUp{}
@@ -262,11 +289,13 @@ func TestBEpusdtCancelCallsGateway(t *testing.T) {
 
 	fresh, _ := bepusdtBuyer(t, f, "usdt-cancel-fresh")
 	droppedOrder := payBEpusdt(t, f, fresh)
+	gw.mu.Lock()
 	gw.dropCancel = true
+	gw.mu.Unlock()
 	dropped := adtyJSON(t, f.engine, http.MethodPost, "/api/adty/topup/orders/"+droppedOrder.TradeNo+"/cancel", "", fresh)
 	assert.Contains(t, dropped.Body.String(), `"success":true`, dropped.Body.String())
 	stored = model.TopUp{}
 	require.NoError(t, f.db.Where("trade_no = ?", droppedOrder.TradeNo).First(&stored).Error)
 	assert.Equal(t, model.TopUpStatusCanceled, stored.Status)
-	assert.Equal(t, []string{"tid-" + view.TradeNo, "tid-" + paid.TradeNo, "tid-" + droppedOrder.TradeNo}, gw.cancels)
+	assert.Equal(t, []string{"tid-" + view.TradeNo, "tid-" + paid.TradeNo, "tid-" + droppedOrder.TradeNo}, gw.snapshot().cancels)
 }

@@ -89,6 +89,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { handleServerError } from '@/lib/handle-server-error'
 import { cn } from '@/lib/utils'
 
 // ============================================================================
@@ -173,40 +174,60 @@ export function PromptInputProvider({
   const [attachements, setAttachements] = useState<
     (FileUIPart & { id: string })[]
   >([])
+  const attachmentUrlsRef = useRef(new Set<string>())
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const openRef = useRef<() => void>(() => {})
 
   const add = useCallback((files: File[] | FileList) => {
-    const incoming = Array.from(files)
+    const incoming = [...files]
     if (incoming.length === 0) return
 
-    setAttachements((prev) =>
-      prev.concat(
-        incoming.map((file) => ({
+    setAttachements((prev) => [
+      ...prev,
+      ...incoming.map((file) => {
+        const url = URL.createObjectURL(file)
+        attachmentUrlsRef.current.add(url)
+        return {
           id: nanoid(),
           type: 'file' as const,
-          url: URL.createObjectURL(file),
+          url,
           mediaType: file.type,
           filename: file.name,
-        }))
-      )
-    )
+        }
+      }),
+    ])
   }, [])
 
   const remove = useCallback((id: string) => {
     setAttachements((prev) => {
       const found = prev.find((f) => f.id === id)
-      if (found?.url) URL.revokeObjectURL(found.url)
+      if (found?.url) {
+        URL.revokeObjectURL(found.url)
+        attachmentUrlsRef.current.delete(found.url)
+      }
       return prev.filter((f) => f.id !== id)
     })
   }, [])
 
   const clear = useCallback(() => {
     setAttachements((prev) => {
-      for (const f of prev) if (f.url) URL.revokeObjectURL(f.url)
+      for (const f of prev) {
+        if (f.url) {
+          URL.revokeObjectURL(f.url)
+          attachmentUrlsRef.current.delete(f.url)
+        }
+      }
       return []
     })
   }, [])
+
+  useEffect(
+    () => () => {
+      for (const url of attachmentUrlsRef.current) URL.revokeObjectURL(url)
+      attachmentUrlsRef.current.clear()
+    },
+    []
+  )
 
   const openFileDialog = useCallback(() => {
     openRef.current?.()
@@ -488,6 +509,11 @@ export const PromptInput = ({
   // ----- Local attachments (only used when no provider)
   const [items, setItems] = useState<(FileUIPart & { id: string })[]>([])
   const files = usingProvider ? controller.attachments.files : items
+  const filesRef = useRef(files)
+
+  useEffect(() => {
+    filesRef.current = files
+  }, [files])
 
   const openFileDialogLocal = useCallback(() => {
     inputRef.current?.click()
@@ -507,9 +533,9 @@ export const PromptInput = ({
     [accept]
   )
 
-  const addLocal = useCallback(
+  const add = useCallback(
     (fileList: File[] | FileList) => {
-      const incoming = Array.from(fileList)
+      const incoming = [...fileList]
       const accepted = incoming.filter((f) => matchesAccept(f))
       if (incoming.length && accepted.length === 0) {
         onError?.({
@@ -529,21 +555,39 @@ export const PromptInput = ({
         return
       }
 
+      const currentCount = usingProvider
+        ? controller.attachments.files.length
+        : items.length
+      const capacity =
+        typeof maxFiles === 'number'
+          ? Math.max(0, maxFiles - currentCount)
+          : undefined
+      const capped =
+        typeof capacity === 'number' ? sized.slice(0, capacity) : sized
+      if (typeof capacity === 'number' && sized.length > capacity) {
+        onError?.({
+          code: 'max_files',
+          message: t('Too many files. Some were not added.'),
+        })
+      }
+      if (capped.length === 0) return
+
+      if (usingProvider) {
+        controller.attachments.add(capped)
+        return
+      }
+
       setItems((prev) => {
-        const capacity =
+        const remaining =
           typeof maxFiles === 'number'
             ? Math.max(0, maxFiles - prev.length)
             : undefined
-        const capped =
-          typeof capacity === 'number' ? sized.slice(0, capacity) : sized
-        if (typeof capacity === 'number' && sized.length > capacity) {
-          onError?.({
-            code: 'max_files',
-            message: t('Too many files. Some were not added.'),
-          })
-        }
+        const localCapped =
+          typeof remaining === 'number'
+            ? capped.slice(0, remaining)
+            : capped
         const next: (FileUIPart & { id: string })[] = []
-        for (const file of capped) {
+        for (const file of localCapped) {
           next.push({
             id: nanoid(),
             type: 'file',
@@ -552,18 +596,10 @@ export const PromptInput = ({
             filename: file.name,
           })
         }
-        return prev.concat(next)
+        return [...prev, ...next]
       })
     },
-    [matchesAccept, maxFiles, maxFileSize, onError, t]
-  )
-
-  const add = useMemo(
-    () =>
-      controller
-        ? (files: File[] | FileList) => controller.attachments.add(files)
-        : addLocal,
-    [controller, addLocal]
+    [controller, items.length, matchesAccept, maxFiles, maxFileSize, onError, t, usingProvider]
   )
 
   const remove = useMemo(
@@ -654,6 +690,9 @@ export const PromptInput = ({
       }
     }
     const onDrop = (e: DragEvent) => {
+      if (e.target instanceof Node && formRef.current?.contains(e.target)) {
+        return
+      }
       if (e.dataTransfer?.types?.includes('Files')) {
         e.preventDefault()
       }
@@ -672,12 +711,12 @@ export const PromptInput = ({
   useEffect(
     () => () => {
       if (!usingProvider) {
-        for (const f of files) {
+        for (const f of filesRef.current) {
           if (f.url) URL.revokeObjectURL(f.url)
         }
       }
     },
-    [usingProvider, files]
+    [usingProvider]
   )
 
   const handleChange: ChangeEventHandler<HTMLInputElement> = (event) => {
@@ -691,8 +730,16 @@ export const PromptInput = ({
     const blob = await response.blob()
     return new Promise((resolve, reject) => {
       const reader = new FileReader()
-      reader.onloadend = () => resolve(reader.result as string)
-      reader.onerror = reject
+      reader.addEventListener(
+        'loadend',
+        () => resolve(reader.result as string),
+        {
+          once: true,
+        }
+      )
+      reader.addEventListener('error', () => reject(reader.error), {
+        once: true,
+      })
       reader.readAsDataURL(blob)
     })
   }
@@ -709,7 +756,7 @@ export const PromptInput = ({
     [files, add, remove, clear, openFileDialog]
   )
 
-  const handleSubmit: FormEventHandler<HTMLFormElement> = (event) => {
+  const handleSubmit: FormEventHandler<HTMLFormElement> = async (event) => {
     event.preventDefault()
 
     const form = event.currentTarget
@@ -726,50 +773,32 @@ export const PromptInput = ({
       form.reset()
     }
 
-    // Convert blob URLs to data URLs asynchronously
-    Promise.all(
-      files.map(async ({ id, ...item }) => {
-        if (item.url && item.url.startsWith('blob:')) {
-          return {
-            ...item,
-            url: await convertBlobUrlToDataUrl(item.url),
+    try {
+      const convertedFiles = await Promise.all(
+        files.map(async ({ id, ...item }) => {
+          if (item.url && item.url.startsWith('blob:')) {
+            return {
+              ...item,
+              url: await convertBlobUrlToDataUrl(item.url),
+            }
           }
-        }
-        return item
-      })
-    ).then((convertedFiles: FileUIPart[]) => {
-      try {
-        const result = onSubmit({ text, files: convertedFiles }, event)
-
-        // Handle both sync and async onSubmit
-        if (result instanceof Promise) {
-          result
-            .then(() => {
-              clear()
-              if (usingProvider) {
-                controller.textInput.clear()
-              }
-            })
-            .catch(() => {
-              // Don't clear on error - user may want to retry
-            })
-        } else {
-          // Sync function completed without throwing, clear attachments
-          clear()
-          if (usingProvider) {
-            controller.textInput.clear()
-          }
-        }
-      } catch (_error) {
-        // Don't clear on error - user may want to retry
+          return item
+        })
+      )
+      await onSubmit({ text, files: convertedFiles }, event)
+      clear()
+      if (usingProvider) {
+        controller.textInput.clear()
       }
-    })
+    } catch (error) {
+      // Keep attachments and provider text available for retry.
+      handleServerError(error)
+    }
   }
 
   // Render with or without local provider
   const inner = (
     <>
-      <span aria-hidden='true' className='hidden' ref={anchorRef} />
       <input
         accept={accept}
         aria-label={t('Upload files')}
@@ -785,6 +814,7 @@ export const PromptInput = ({
         onSubmit={handleSubmit}
         {...props}
       >
+        <span aria-hidden='true' className='hidden' ref={anchorRef} />
         <InputGroup className={groupClassName}>{children}</InputGroup>
       </form>
     </>
@@ -841,10 +871,7 @@ export const PromptInputTextarea = ({
       attachments.files.length > 0
     ) {
       e.preventDefault()
-      const lastAttachment =
-        attachments.files.length > 0
-          ? attachments.files[attachments.files.length - 1]
-          : undefined
+      const lastAttachment = attachments.files.at(-1)
       if (lastAttachment) {
         attachments.remove(lastAttachment.id)
       }
@@ -889,7 +916,10 @@ export const PromptInputTextarea = ({
 
   return (
     <InputGroupTextarea
-      className={cn('field-sizing-content max-h-48 min-h-16 break-all', className)}
+      className={cn(
+        'field-sizing-content max-h-48 min-h-16 break-all',
+        className
+      )}
       name='message'
       onCompositionEnd={() => setIsComposing(false)}
       onCompositionStart={() => setIsComposing(true)}
@@ -1050,6 +1080,7 @@ interface SpeechRecognition extends EventTarget {
   lang: string
   start(): void
   stop(): void
+  abort(): void
   onstart: ((this: SpeechRecognition, ev: Event) => void) | null
   onend: ((this: SpeechRecognition, ev: Event) => void) | null
   onresult:
@@ -1061,6 +1092,7 @@ interface SpeechRecognition extends EventTarget {
 }
 
 interface SpeechRecognitionEvent extends Event {
+  resultIndex: number
   results: SpeechRecognitionResultList
 }
 
@@ -1113,83 +1145,117 @@ export const PromptInputSpeechButton = ({
   const [isListening, setIsListening] = useState(false)
   const [recognition, setRecognition] = useState<SpeechRecognition | null>(null)
   const recognitionRef = useRef<SpeechRecognition | null>(null)
+  const sessionRef = useRef<'idle' | 'starting' | 'listening' | 'stopping'>(
+    'idle'
+  )
+  const transcriptionRef = useRef({ textareaRef, onTranscriptionChange })
 
   useEffect(() => {
-    if (
-      typeof window !== 'undefined' &&
-      ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)
-    ) {
-      const SpeechRecognition =
-        window.SpeechRecognition || window.webkitSpeechRecognition
-      const speechRecognition = new SpeechRecognition()
-
-      speechRecognition.continuous = true
-      speechRecognition.interimResults = true
-      speechRecognition.lang = 'en-US'
-
-      speechRecognition.onstart = () => {
-        setIsListening(true)
-      }
-
-      speechRecognition.onend = () => {
-        setIsListening(false)
-      }
-
-      speechRecognition.onresult = (event) => {
-        let finalTranscript = ''
-
-        const results = Array.from(event.results)
-
-        for (const result of results) {
-          if (result.isFinal) {
-            finalTranscript += result[0]?.transcript ?? ''
-          }
-        }
-
-        if (finalTranscript && textareaRef?.current) {
-          const textarea = textareaRef.current
-          const currentValue = textarea.value
-          const newValue =
-            currentValue + (currentValue ? ' ' : '') + finalTranscript
-
-          textarea.value = newValue
-          textarea.dispatchEvent(new Event('input', { bubbles: true }))
-          onTranscriptionChange?.(newValue)
-        }
-      }
-
-      speechRecognition.onerror = (event) => {
-        // eslint-disable-next-line no-console
-        console.error('Speech recognition error:', event.error)
-        setIsListening(false)
-      }
-
-      recognitionRef.current = speechRecognition
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setRecognition(speechRecognition)
-    }
-
-    return () => {
-      if (recognitionRef.current) {
-        recognitionRef.current.stop()
-      }
-    }
+    transcriptionRef.current = { textareaRef, onTranscriptionChange }
   }, [textareaRef, onTranscriptionChange])
 
-  const toggleListening = useCallback(() => {
-    if (!recognition) {
-      return
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const SpeechRecognition =
+      window.SpeechRecognition || window.webkitSpeechRecognition
+    if (typeof SpeechRecognition !== 'function') return
+    const speechRecognition = new SpeechRecognition()
+
+    speechRecognition.continuous = true
+    speechRecognition.interimResults = true
+    speechRecognition.lang = 'en-US'
+
+    const onStart = () => {
+      if (sessionRef.current === 'starting') {
+        sessionRef.current = 'listening'
+        setIsListening(true)
+      }
+    }
+    const onEnd = () => {
+      sessionRef.current = 'idle'
+      setIsListening(false)
+    }
+    const onResult = (event: Event) => {
+      if (sessionRef.current === 'idle') return
+      const speechEvent = event as SpeechRecognitionEvent
+      let finalTranscript = ''
+      for (
+        let index = speechEvent.resultIndex;
+        index < speechEvent.results.length;
+        index++
+      ) {
+        const result = speechEvent.results[index]
+        if (result.isFinal) {
+          finalTranscript += result[0]?.transcript ?? ''
+        }
+      }
+      const textarea = transcriptionRef.current.textareaRef?.current
+      if (finalTranscript && textarea) {
+        const currentValue = textarea.value
+        const newValue =
+          currentValue + (currentValue ? ' ' : '') + finalTranscript
+        const valueSetter = Object.getOwnPropertyDescriptor(
+          HTMLTextAreaElement.prototype,
+          'value'
+        )?.set
+        if (valueSetter) {
+          valueSetter.call(textarea, newValue)
+        } else {
+          textarea.value = newValue
+        }
+        textarea.dispatchEvent(new Event('input', { bubbles: true }))
+        transcriptionRef.current.onTranscriptionChange?.(newValue)
+      }
+    }
+    const onError = (event: Event) => {
+      // eslint-disable-next-line no-console
+      console.error(
+        'Speech recognition error:',
+        (event as SpeechRecognitionErrorEvent).error
+      )
+      sessionRef.current = 'idle'
+      setIsListening(false)
     }
 
-    if (isListening) {
-      recognition.stop()
-    } else {
-      recognition.start()
+    speechRecognition.addEventListener('start', onStart)
+    speechRecognition.addEventListener('end', onEnd)
+    speechRecognition.addEventListener('result', onResult)
+    speechRecognition.addEventListener('error', onError)
+    recognitionRef.current = speechRecognition
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setRecognition(speechRecognition)
+    return () => {
+      speechRecognition.removeEventListener('start', onStart)
+      speechRecognition.removeEventListener('end', onEnd)
+      speechRecognition.removeEventListener('result', onResult)
+      speechRecognition.removeEventListener('error', onError)
+      recognitionRef.current = null
+      sessionRef.current = 'idle'
+      speechRecognition.abort()
     }
-  }, [recognition, isListening])
+  }, [])
+
+  const toggleListening = useCallback(() => {
+    const currentRecognition = recognitionRef.current
+    if (!currentRecognition || sessionRef.current === 'stopping') return
+    try {
+      if (sessionRef.current === 'idle') {
+        sessionRef.current = 'starting'
+        currentRecognition.start()
+      } else {
+        sessionRef.current = 'stopping'
+        currentRecognition.stop()
+      }
+    } catch (error) {
+      sessionRef.current = 'idle'
+      setIsListening(false)
+      handleServerError(error)
+    }
+  }, [])
 
   return (
     <PromptInputButton
+      aria-pressed={isListening}
       className={cn(
         'relative transition-all duration-200',
         isListening && 'bg-accent text-accent-foreground animate-pulse',

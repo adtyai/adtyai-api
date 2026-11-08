@@ -424,7 +424,16 @@ func UpdateOption(c *gin.Context) {
 		common.ApiSuccess(c, change)
 		return
 	}
-	err = model.UpdateOption(option.Key, option.Value.(string))
+	// Specialized writers keep their validation, lock and transaction boundary.
+	// Ordinary settings persist the key-only audit intent with the option row.
+	durableAudit := !model.IsRequestPolicyOption(option.Key) && !model.IsModelPricingOption(option.Key)
+	var auditEvent model.AuditLog
+	if durableAudit {
+		auditEvent = prepareManageAudit(c, c.GetInt("id"), "option.update", map[string]any{"key": option.Key})
+		err = model.UpdateOptionWithAudit(option.Key, option.Value.(string), auditEvent)
+	} else {
+		err = model.UpdateOption(option.Key, option.Value.(string))
+	}
 	if err != nil {
 		if errors.Is(err, system_setting.ErrPasskeyRPIDInvalid) {
 			writeSecurityOperationError(c, err)
@@ -434,9 +443,11 @@ func UpdateOption(c *gin.Context) {
 		return
 	}
 	// 出于安全考虑只记录被修改的配置项名称，不记录配置值（可能含密钥等敏感信息）。
-	recordManageAudit(c, "option.update", map[string]any{
-		"key": option.Key,
-	})
+	if durableAudit {
+		deliverCommittedAudits(c, []model.AuditLog{auditEvent})
+	} else {
+		recordManageAudit(c, "option.update", map[string]any{"key": option.Key})
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",

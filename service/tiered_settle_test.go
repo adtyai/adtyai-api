@@ -63,6 +63,24 @@ func makeRelayInfo(expr string, groupRatio float64, estPrompt, estCompletion int
 // Existing tests (preserved)
 // ---------------------------------------------------------------------------
 
+func TestTryTieredSettleRetainsReservationForInvalidRuntimeCost(t *testing.T) {
+	for _, expression := range []string{
+		`c == 777 ? -1000000.0 : p`,
+		`c == 777 ? (c-c)/(c-c) : p`,
+		`c == 777 ? c/(c-c) : p`,
+	} {
+		t.Run(expression, func(t *testing.T) {
+			info := makeRelayInfo(expression, 1, 100, 0)
+			require.Equal(t, 50, info.FinalPreConsumedQuota)
+
+			ok, quota, result := TryTieredSettle(info, billingexpr.TokenParams{P: 100, C: 777, Len: 100})
+			assert.True(t, ok)
+			assert.Equal(t, 50, quota, "invalid actual cost must retain the reservation")
+			assert.Nil(t, result, "an invalid evaluation is not an actual price result")
+		})
+	}
+}
+
 func TestTryTieredSettleUsesFrozenRequestInput(t *testing.T) {
 	exprStr := `param("service_tier") == "fast" ? tier("fast", p * 2) : tier("normal", p)`
 	relayInfo := &relaycommon.RelayInfo{

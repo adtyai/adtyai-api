@@ -85,6 +85,7 @@ function SiteActions(props: { site: AdminSite }) {
   const user = useAuthStore((state) => state.auth.user)
   const canReview = canAdmin(user, ADTY_PERMISSIONS.SITE_REVIEW)
   const canAdjust = canAdmin(user, ADTY_PERMISSIONS.SITE_ADJUST)
+  const canDelete = canAdmin(user, ADTY_PERMISSIONS.SITE_DELETE)
   const site = props.site
   const [costFactor, setCostFactor] = useState(site.cost_factor ?? '')
   const [maxMarkup, setMaxMarkup] = useState(site.max_markup ?? '')
@@ -143,8 +144,17 @@ function SiteActions(props: { site: AdminSite }) {
     onError: (err) => handleServerError(err),
   })
   const takedown = useMutation({
-
-    mutationFn: () => clearSiteNotice(site.id, reason.trim()),
+    mutationFn: () => {
+      if (
+        !canAdmin(
+          useAuthStore.getState().auth.user,
+          ADTY_PERMISSIONS.SITE_DELETE
+        )
+      ) {
+        throw new Error(t('No permission to perform this action'))
+      }
+      return clearSiteNotice(site.id, reason.trim())
+    },
     onSuccess: () => {
       setTakingDown(false)
       done()
@@ -160,7 +170,7 @@ function SiteActions(props: { site: AdminSite }) {
     takedown.isPending
   const editable = site.status !== 'closed' && site.status !== 'closing'
 
-  if (!canReview && !canAdjust) return null
+  if (!canReview && !canAdjust && !canDelete) return null
   return (
     <section className='flex flex-col gap-3 rounded-lg border p-3'>
       <h3 className='text-sm font-medium'>{t('Manage')}</h3>
@@ -171,7 +181,7 @@ function SiteActions(props: { site: AdminSite }) {
             id='site-cost-factor'
             value={costFactor}
             placeholder={t('Global')}
-            disabled={!editable || busy}
+            disabled={(!canReview && !canAdjust) || !editable || busy}
             onChange={(event) => setCostFactor(event.target.value)}
           />
         </div>
@@ -181,7 +191,7 @@ function SiteActions(props: { site: AdminSite }) {
             id='site-max-markup'
             value={maxMarkup}
             placeholder={t('Global')}
-            disabled={!editable || busy}
+            disabled={(!canReview && !canAdjust) || !editable || busy}
             onChange={(event) => setMaxMarkup(event.target.value)}
           />
         </div>
@@ -258,7 +268,7 @@ function SiteActions(props: { site: AdminSite }) {
             })}
           </p>
         )}
-        {canAdjust && notice && (
+        {canDelete && notice && (
           <Button
             variant='outline'
             disabled={busy}
@@ -296,7 +306,8 @@ function SiteActions(props: { site: AdminSite }) {
         )}
         destructive
         isLoading={takedown.isPending}
-        handleConfirm={() => takedown.mutate()}
+        disabled={!canDelete}
+        handleConfirm={() => canDelete && takedown.mutate()}
       />
       {closing && (
         <CloseSiteDialog
@@ -369,9 +380,19 @@ function SiteDomains(props: {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const user = useAuthStore((state) => state.auth.user)
-  const canAdjust = canAdmin(user, ADTY_PERMISSIONS.SITE_ADJUST)
+  const canDelete = canAdmin(user, ADTY_PERMISSIONS.SITE_DELETE)
   const disableDomain = useMutation({
-    mutationFn: disableSiteDomain,
+    mutationFn: (id: number) => {
+      if (
+        !canAdmin(
+          useAuthStore.getState().auth.user,
+          ADTY_PERMISSIONS.SITE_DELETE
+        )
+      ) {
+        throw new Error(t('No permission to perform this action'))
+      }
+      return disableSiteDomain(id)
+    },
     onSuccess: () => {
       toast.success(t('Saved successfully'))
       void queryClient.invalidateQueries({ queryKey: siteAdminKeys.all })
@@ -379,7 +400,17 @@ function SiteDomains(props: {
     onError: (err) => handleServerError(err),
   })
   const disableSender = useMutation({
-    mutationFn: () => disableSiteSenderDomain(props.siteId),
+    mutationFn: () => {
+      if (
+        !canAdmin(
+          useAuthStore.getState().auth.user,
+          ADTY_PERMISSIONS.SITE_DELETE
+        )
+      ) {
+        throw new Error(t('No permission to perform this action'))
+      }
+      return disableSiteSenderDomain(props.siteId)
+    },
     onSuccess: () => {
       toast.success(t('Saved successfully'))
       void queryClient.invalidateQueries({ queryKey: siteAdminKeys.all })
@@ -391,11 +422,14 @@ function SiteDomains(props: {
     <section className='flex flex-col gap-2'>
       <h3 className='text-sm font-medium'>{t('Custom domains')}</h3>
       {props.domains.map((domain) => (
-        <div key={domain.id} className='flex items-center justify-between gap-2'>
+        <div
+          key={domain.id}
+          className='flex items-center justify-between gap-2'
+        >
           <span className='text-sm break-all'>
             {domain.hostname} · {domain.status}
           </span>
-          {canAdjust && (
+          {canDelete && (
             <Button
               variant='outline'
               size='sm'
@@ -408,11 +442,14 @@ function SiteDomains(props: {
         </div>
       ))}
       {props.senders.map((sender) => (
-        <div key={sender.domain} className='flex items-center justify-between gap-2'>
+        <div
+          key={sender.domain}
+          className='flex items-center justify-between gap-2'
+        >
           <span className='text-sm break-all'>
             {sender.domain} · {sender.status}
           </span>
-          {canAdjust && (
+          {canDelete && (
             <Button
               variant='outline'
               size='sm'
@@ -498,7 +535,10 @@ export function SiteDetailSheet(props: {
               <h3 className='text-sm font-medium'>{t('Business data')}</h3>
               <dl className='grid gap-3 sm:grid-cols-4'>
                 <Info label={t('Revenue')} value={totals?.revenue_usd ?? '0'} />
-                <Info label={t('Earnings')} value={totals?.earning_usd ?? '0'} />
+                <Info
+                  label={t('Earnings')}
+                  value={totals?.earning_usd ?? '0'}
+                />
                 <Info label={t('Top-up')} value={totals?.topup_usd ?? '0'} />
                 <Info
                   label={t('Withdrawn')}

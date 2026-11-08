@@ -20,7 +20,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { api } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth-store'
@@ -61,6 +61,20 @@ function mount(batch = false) {
   )
   return { onSuccess, invalidate }
 }
+beforeEach(() => {
+  useAuthStore.getState().auth.setUser({
+    id: 2,
+    username: 'admin',
+    role: 10,
+    permissions: {
+      admin_permissions: {
+        adty_model: { read: true, delete: true },
+        channel: { read: true, write: true },
+      },
+    },
+  })
+})
+
 afterEach(() => {
   cleanup()
   useAuthStore.getState().auth.reset()

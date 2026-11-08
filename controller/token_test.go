@@ -13,13 +13,17 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
@@ -33,6 +37,67 @@ type tokenAPIResponse struct {
 	Success bool            `json:"success"`
 	Message string          `json:"message"`
 	Data    json.RawMessage `json:"data"`
+}
+
+func TestAddTokenConcurrentRequestsRespectOwnerLimit(t *testing.T) {
+	db := setupTokenControllerTestDB(t)
+	require.NoError(t, db.AutoMigrate(&model.User{}))
+	user := model.User{Id: 71, Username: "token-limit-owner", Password: "password", Group: "default", Status: common.UserStatusEnabled}
+	require.NoError(t, db.Create(&user).Error)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	sqlDB.SetMaxOpenConns(1)
+	previous := operation_setting.GetTokenSetting().MaxUserTokens
+	operation_setting.GetTokenSetting().MaxUserTokens = 1
+	t.Cleanup(func() { operation_setting.GetTokenSetting().MaxUserTokens = previous })
+
+	// Release both old, non-transactional counts together. A count inside the
+	// owner's locked transaction must not wait here: its peer cannot enter yet.
+	var counts atomic.Int32
+	var requestsActive atomic.Bool
+	requestsActive.Store(true)
+	counted := make(chan struct{})
+	require.NoError(t, db.Callback().Query().After("gorm:query").Register("test:token-limit-count", func(tx *gorm.DB) {
+		if !requestsActive.Load() || tx.Statement.Table != "tokens" || !strings.Contains(strings.ToLower(tx.Statement.SQL.String()), "count(") || tx.Statement.ConnPool != sqlDB {
+			return
+		}
+		if counts.Add(1) == 2 {
+			close(counted)
+		}
+		select {
+		case <-counted:
+		case <-t.Context().Done():
+		}
+	}))
+	t.Cleanup(func() { require.NoError(t, db.Callback().Query().Remove("test:token-limit-count")) })
+
+	contexts := make([]*gin.Context, 2)
+	recorders := make([]*httptest.ResponseRecorder, 2)
+	for i := range contexts {
+		contexts[i], recorders[i] = newAuthenticatedContext(t, http.MethodPost, "/api/token/", map[string]any{
+			"name": fmt.Sprintf("limited-%d", i), "expired_time": -1, "unlimited_quota": true, "group": "auto",
+		}, user.Id)
+		common.SetContextKey(contexts[i], constant.ContextKeyUserGroup, "default")
+	}
+	var wg sync.WaitGroup
+	for _, ctx := range contexts {
+		wg.Go(func() { AddToken(ctx) })
+	}
+	wg.Wait()
+	requestsActive.Store(false)
+	succeeded := 0
+	for _, recorder := range recorders {
+		response := decodeAPIResponse(t, recorder)
+		if response.Success {
+			succeeded++
+		} else {
+			assert.Contains(t, response.Message, "Maximum number of tokens reached")
+		}
+	}
+	assert.Equal(t, 1, succeeded)
+	var stored int64
+	require.NoError(t, db.Model(&model.Token{}).Where("user_id = ?", user.Id).Count(&stored).Error)
+	assert.EqualValues(t, 1, stored)
 }
 
 type tokenPageResponse struct {
@@ -555,6 +620,31 @@ func TestUpdateTokenMasksKeyInResponse(t *testing.T) {
 	}
 }
 
+func TestUpdateTokenReturnsDurableQuotaWithoutAuditingConsumptionAsAnEdit(t *testing.T) {
+	db := setupTokenControllerTestDB(t)
+	token := seedToken(t, db, 1, "durable-token", "durable-quota-token-key")
+	previousBatch := common.BatchUpdateEnabled
+	common.BatchUpdateEnabled = true
+	t.Cleanup(func() { common.BatchUpdateEnabled = previousBatch })
+	require.NoError(t, model.DecreaseTokenQuota(token.Id, token.Key, 80))
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPut, "/api/token/", map[string]any{
+		"id": token.Id, "name": "renamed", "expired_time": -1, "unlimited_quota": true,
+		"group": "default", "allow_ips": "",
+	}, token.UserId)
+	UpdateToken(ctx)
+	response := decodeAPIResponse(t, recorder)
+	require.True(t, response.Success, response.Message)
+	var returned model.Token
+	require.NoError(t, common.Unmarshal(response.Data, &returned))
+	assert.Equal(t, 20, returned.RemainQuota)
+	assert.Equal(t, 80, returned.UsedQuota)
+	assert.Equal(t, []string{"name"}, tokenAuditParams(ctx)["changed_fields"])
+	var raw model.Token
+	require.NoError(t, db.First(&raw, token.Id).Error)
+	assert.Equal(t, 100, raw.RemainQuota)
+	assert.Equal(t, -80, raw.QuotaPending, "metadata edits must not flush or erase a durable charge")
+}
+
 func TestGetTokenKeyRequiresOwnershipAndReturnsFullKey(t *testing.T) {
 	db := setupTokenControllerTestDB(t)
 	token := seedToken(t, db, 1, "owned-token", "owner1234token5678")
@@ -608,6 +698,8 @@ func TestTokenAllowUserQuotaQueryOnCreateAndUpdate(t *testing.T) {
 			}
 			var recorder *httptest.ResponseRecorder
 			if tc.stored == nil {
+				require.NoError(t, db.AutoMigrate(&model.User{}))
+				require.NoError(t, db.Create(&model.User{Id: 1, Username: "quota-query-owner", Password: "password", Group: "default", Status: common.UserStatusEnabled}).Error)
 				var ctx *gin.Context
 				ctx, recorder = newAuthenticatedContext(t, http.MethodPost, tc.target, body, 1)
 				AddToken(ctx)

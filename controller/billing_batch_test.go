@@ -12,6 +12,27 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestFlushBatchFailureIsNotReportedAsSuccess(t *testing.T) {
+	db := adtyTestDB(t)
+	require.NoError(t, db.AutoMigrate(&model.User{}))
+	user := &model.User{Username: "flush-failure", Password: "x", Quota: 100, QuotaPending: -10}
+	require.NoError(t, db.Create(user).Error)
+	require.NoError(t, db.Exec("ALTER TABLE users RENAME TO users_hidden").Error)
+	t.Cleanup(func() { require.NoError(t, db.Exec("ALTER TABLE users_hidden RENAME TO users").Error) })
+	t.Setenv("ADTY_FLUSH_TOKEN", "synthetic-flush-token")
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/adty/batch/flush", nil)
+	ctx.Request.Header.Set("X-Adty-Flush-Token", "synthetic-flush-token")
+	FlushAdtyBatchUpdates(ctx)
+	require.Equal(t, http.StatusInternalServerError, recorder.Code)
+	var response struct {
+		Success bool `json:"success"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	require.False(t, response.Success)
+}
+
 func callBilling(handler func(*gin.Context), keys map[string]int) *httptest.ResponseRecorder {
 	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()

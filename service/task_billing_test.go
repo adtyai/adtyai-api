@@ -1299,13 +1299,13 @@ type mockAdaptor struct {
 }
 
 func (m *mockAdaptor) Init(_ *relaycommon.RelayInfo) {}
-func (m *mockAdaptor) FetchTask(string, string, *model.Task, string) (*http.Response, error) {
+func (m *mockAdaptor) FetchTask(context.Context, string, string, *model.Task, string) (*http.Response, error) {
 	return nil, nil
 }
-func (m *mockAdaptor) ParseTaskResult(*model.Task, *http.Response, []byte) (*relaycommon.TaskInfo, error) {
+func (m *mockAdaptor) ParseTaskResult(context.Context, *model.Task, *http.Response, []byte) (*relaycommon.TaskInfo, error) {
 	return nil, nil
 }
-func (m *mockAdaptor) AdjustBillingOnComplete(_ *model.Task, _ *relaycommon.TaskInfo) int {
+func (m *mockAdaptor) AdjustBillingOnComplete(_ context.Context, _ *model.Task, _ *relaycommon.TaskInfo) int {
 	return m.adjustReturn
 }
 

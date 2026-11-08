@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -13,11 +14,13 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/singleflight"
 )
 
 const (
 	requestTimeout   = 30 * time.Second
 	httpTimeout      = 10 * time.Second
+	uptimeCacheTTL   = 15 * time.Second
 	uptimeKeySuffix  = "_24"
 	apiStatusPath    = "/api/status-page/"
 	apiHeartbeatPath = "/api/status-page/heartbeat/"
@@ -33,6 +36,25 @@ type Monitor struct {
 type UptimeGroupResult struct {
 	CategoryName string    `json:"categoryName"`
 	Monitors     []Monitor `json:"monitors"`
+}
+
+type uptimeKumaStatusCache struct {
+	sync.Mutex
+	configuration string
+	expiresAt     time.Time
+	results       []UptimeGroupResult
+	refresh       singleflight.Group
+}
+
+var publicUptimeStatusCache uptimeKumaStatusCache
+
+func (cache *uptimeKumaStatusCache) get(configuration string) ([]UptimeGroupResult, bool) {
+	cache.Lock()
+	defer cache.Unlock()
+	if cache.configuration != configuration || !time.Now().Before(cache.expiresAt) {
+		return nil, false
+	}
+	return cache.results, true
 }
 
 func getAndDecode(ctx context.Context, client *http.Client, url string, dest any) error {
@@ -130,26 +152,53 @@ func fetchGroupData(ctx context.Context, client *http.Client, groupConfig map[st
 }
 
 func GetUptimeKumaStatus(c *gin.Context) {
+	settings := console_setting.GetConsoleSetting()
+	if !settings.UptimeKumaEnabled {
+		c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": []UptimeGroupResult{}})
+		return
+	}
+	configuration := settings.UptimeKumaGroups
 	groups := console_setting.GetUptimeKumaGroups()
 	if len(groups) == 0 {
 		c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": []UptimeGroupResult{}})
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(c.Request.Context(), requestTimeout)
-	defer cancel()
-
-	client := &http.Client{Timeout: httpTimeout}
-	results := make([]UptimeGroupResult, len(groups))
-
-	g, gCtx := errgroup.WithContext(ctx)
-	for i, group := range groups {
-		g.Go(func() error {
-			results[i] = fetchGroupData(gCtx, client, group)
-			return nil
-		})
+	if results, ok := publicUptimeStatusCache.get(configuration); ok {
+		c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": results})
+		return
 	}
 
-	g.Wait()
-	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": results})
+	refresh := publicUptimeStatusCache.refresh.DoChan(configuration, func() (any, error) {
+		if results, ok := publicUptimeStatusCache.get(configuration); ok {
+			return results, nil
+		}
+		// A disconnected visitor must not cancel work shared by other callers.
+		// The independent deadline still bounds every refresh, including failures.
+		ctx, cancel := context.WithTimeout(context.Background(), requestTimeout)
+		defer cancel()
+		client := &http.Client{Timeout: httpTimeout}
+		results := make([]UptimeGroupResult, len(groups))
+		g, gCtx := errgroup.WithContext(ctx)
+		g.SetLimit(4)
+		for i, group := range groups {
+			g.Go(func() error {
+				results[i] = fetchGroupData(gCtx, client, group)
+				return nil
+			})
+		}
+		_ = g.Wait()
+		publicUptimeStatusCache.Lock()
+		publicUptimeStatusCache.configuration = configuration
+		publicUptimeStatusCache.results = results
+		publicUptimeStatusCache.expiresAt = time.Now().Add(uptimeCacheTTL)
+		publicUptimeStatusCache.Unlock()
+		return results, nil
+	})
+	select {
+	case <-c.Request.Context().Done():
+		return
+	case result := <-refresh:
+		c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": result.Val.([]UptimeGroupResult)})
+	}
 }

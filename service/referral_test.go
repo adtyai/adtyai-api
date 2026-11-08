@@ -12,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting/adty_setting"
+	"github.com/bytedance/gopkg/util/gopool"
 	"github.com/gin-gonic/gin"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
@@ -22,15 +23,23 @@ import (
 func prepareReferralDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db := adtyTestDB(t)
+	// Notification cleanup owns a permanent pool worker. Start it before
+	// taking the baseline so the first wallet test can drain its transient work.
+	cleanupOnce.Do(startCleanupTask)
+	workerBaseline := gopool.WorkerCount()
 	oldRedis, oldPerUnit, oldSecret := common.RedisEnabled, common.QuotaPerUnit, common.SessionSecret
 	common.RedisEnabled, common.QuotaPerUnit, common.SessionSecret = false, 500000, "referral-test-secret"
 	saved := *adty_setting.GetReferralSetting()
 	oldMap := common.OptionMap
 	common.OptionMap = map[string]string{}
 	t.Cleanup(func() {
-		common.RedisEnabled, common.QuotaPerUnit, common.SessionSecret = oldRedis, oldPerUnit, oldSecret
-		*adty_setting.GetReferralSetting() = saved
-		common.OptionMap = oldMap
+		defer func() {
+			common.RedisEnabled, common.QuotaPerUnit, common.SessionSecret = oldRedis, oldPerUnit, oldSecret
+			*adty_setting.GetReferralSetting() = saved
+			common.OptionMap = oldMap
+		}()
+		require.Eventually(t, func() bool { return gopool.WorkerCount() <= workerBaseline }, 5*time.Second, time.Millisecond,
+			"quota/cache background work must finish before restoring referral test globals")
 	})
 	require.NoError(t, db.AutoMigrate(&model.User{}, &model.TopUp{}, &model.Log{}, &model.Option{}, &model.AuditLog{}))
 	require.NoError(t, model.MigrateAdtyTables())
@@ -534,6 +543,40 @@ func TestWithdrawCNY(t *testing.T) {
 	var stored model.ReferralWithdrawal
 	require.NoError(t, db.First(&stored, w.Id).Error)
 	assert.Equal(t, "710.00", stored.CNYAmount, "later rate changes do not touch submitted withdrawals")
+	again, err := Referral.CreateWithdrawal(input)
+	require.NoError(t, err, "an idempotent replay returns the original rate snapshot")
+	require.Equal(t, w.Id, again.Id)
+}
+
+func TestWithdrawCNYRechecksRateInsideTransaction(t *testing.T) {
+	db := prepareReferralDB(t)
+	affiliate := availableAffiliate(t, db, "cny-race", 500)
+	setCNYRate(t, "7.1")
+	const callback = "audit_change_rate_before_withdrawal_lock"
+	changed := false
+	require.NoError(t, db.Callback().Query().Before("gorm:query").Register(callback, func(tx *gorm.DB) {
+		if changed || tx.Statement.Table != "referral_affiliates" {
+			return
+		}
+		changed = true
+		tx.AddError(Referral.UpdateWithdrawCNYRate("7.3", 1, "", ""))
+	}))
+	t.Cleanup(func() { _ = db.Callback().Query().Remove(callback) })
+
+	_, err := Referral.CreateWithdrawal(ReferralWithdrawalCreateInput{
+		UserId: affiliate.UserId, Amount: decimal.NewFromInt(100), AccountType: model.ReferralWithdrawToAlipay,
+		AccountName: "Synthetic payee", QRImageURL: "/api/referral-assets/synthetic.png",
+		ExpectedCNYRate: decimal.RequireFromString("7.1"), IdempotencyKey: "cny-rate-race",
+	})
+	require.True(t, changed, "the new rate was committed before locking the withdrawal account")
+	var rateChanged *RateChangedError
+	require.ErrorAs(t, err, &rateChanged)
+	require.Equal(t, "7.3", rateChanged.Change.Rate)
+	require.Equal(t, "730.00", rateChanged.Change.CNYAmount)
+	var count int64
+	require.NoError(t, db.Model(&model.ReferralWithdrawal{}).Where("user_id = ?", affiliate.UserId).Count(&count).Error)
+	require.Zero(t, count)
+	require.InDelta(t, 500, account(t, db, affiliate.Id).AvailableAmount, 1e-9)
 }
 
 func TestReferralSettingsSaveKeepsRateUnset(t *testing.T) {
@@ -580,6 +623,9 @@ func TestConcurrentWithdrawalsCannotOverdraw(t *testing.T) {
 // 退款已经锁住佣金时，打款还不能先占住佣金账户，否则两边互相等待。
 func TestPayoutDoesNotDeadlockWithRefundLock(t *testing.T) {
 	db := prepareReferralDB(t)
+	oldEmail := sendReferralWithdrawalEmail
+	sendReferralWithdrawalEmail = func(int, *model.ReferralWithdrawal, bool, string) {}
+	t.Cleanup(func() { sendReferralWithdrawalEmail = oldEmail })
 	minUSD, fee := 1.0, 0.0
 	cfg := adty_setting.GetReferralSetting()
 	cfg.MinWithdrawUSD, cfg.USDTWithdrawFee = &minUSD, &fee

@@ -7,7 +7,6 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
-	"github.com/bytedance/gopkg/util/gopool"
 	"gorm.io/gorm"
 )
 
@@ -21,6 +20,7 @@ type Token struct {
 	AccessedTime       int64          `json:"accessed_time" gorm:"bigint"`
 	ExpiredTime        int64          `json:"expired_time" gorm:"bigint;default:-1"` // -1 means never expired
 	RemainQuota        int            `json:"remain_quota" gorm:"default:0"`
+	QuotaPending       int            `json:"-" gorm:"type:bigint;not null;default:0;column:quota_pending"`
 	UnlimitedQuota     bool           `json:"unlimited_quota"`
 	ModelLimitsEnabled bool           `json:"model_limits_enabled"`
 	ModelLimits        string         `json:"model_limits" gorm:"type:text"`
@@ -32,7 +32,10 @@ type Token struct {
 	DeletedAt          gorm.DeletedAt `gorm:"index"`
 	// 允许用此令牌查询所属用户的额度；新建令牌默认开启，已有令牌升级后保持关闭
 	AllowUserQuotaQuery bool `json:"allow_user_quota_query"`
+	cacheGeneration     string
 }
+
+var ErrTokenLimit = errors.New("maximum number of tokens reached")
 
 func (token *Token) GetAutoGroups() ([]string, error) {
 	if token.AutoGroups == "" {
@@ -109,6 +112,13 @@ func GetAllUserTokens(userId int, startIdx int, num int) ([]*Token, error) {
 	var tokens []*Token
 	var err error
 	err = DB.Where("user_id = ?", userId).Order("id desc").Limit(num).Offset(startIdx).Find(&tokens).Error
+	if err == nil {
+		for _, token := range tokens {
+			if err = projectTokenQuota(token); err != nil {
+				return nil, err
+			}
+		}
+	}
 	return tokens, err
 }
 
@@ -216,6 +226,11 @@ func SearchUserTokens(userId int, keyword string, token string, offset int, limi
 		common.SysError(common.LogText("failed to search tokens: %s", err.Error()))
 		return nil, 0, common.NewMessage("Failed to search tokens")
 	}
+	for _, token := range tokens {
+		if err := projectTokenQuota(token); err != nil {
+			return nil, 0, err
+		}
+	}
 	return tokens, total, nil
 }
 
@@ -266,6 +281,9 @@ func GetTokenByIds(id int, userId int) (*Token, error) {
 	token := Token{Id: id, UserId: userId}
 	var err error = nil
 	err = DB.First(&token, "id = ? and user_id = ?", id, userId).Error
+	if err == nil {
+		err = projectTokenQuota(&token)
+	}
 	return &token, err
 }
 
@@ -276,28 +294,61 @@ func GetTokenById(id int) (*Token, error) {
 	token := Token{Id: id}
 	var err error = nil
 	err = DB.First(&token, "id = ?", id).Error
+	if err == nil {
+		err = projectTokenQuota(&token)
+	}
 	return &token, err
 }
 
 func GetTokenByKey(key string, fromDB bool) (token *Token, err error) {
 	if !fromDB && common.RedisEnabled {
-		// Try Redis first
-		token, err := cacheGetTokenByKey(key)
+		_, err := cacheGetTokenByKey(key)
 		if err == nil {
-			return token, nil
+			// Redis may have recovered an old hash and generation together. Read
+			// every metadata field from committed SQL state even on a cache hit;
+			// failure to verify it must never authorize the cached snapshot.
+			current := &Token{}
+			if err := DB.Where(commonKeyCol+" = ?", key).First(current).Error; err != nil {
+				return nil, err
+			}
+			if err := projectTokenQuota(current); err != nil {
+				return nil, err
+			}
+			return current, nil
 		}
 		// Don't return error - fall through to DB
 	}
 	token = &Token{}
-	if err = DB.Where(commonKeyCol+" = ?", key).First(token).Error; err != nil {
+	if !common.RedisEnabled {
+		err = DB.Where(commonKeyCol+" = ?", key).First(token).Error
+		if err != nil {
+			return nil, err
+		}
+		if err := projectTokenQuota(token); err != nil {
+			return nil, err
+		}
+		return token, nil
+	}
+	// Capture before reading the database. The row lock spans the read and
+	// conditional publication, including when a mutation is awaiting commit.
+	generation, generationErr := tokenCacheGeneration(key)
+	err = DB.Transaction(func(tx *gorm.DB) error {
+		if err := lockForUpdate(tx).Where(commonKeyCol+" = ?", key).First(token).Error; err != nil {
+			return err
+		}
+		if generationErr == nil {
+			token.cacheGeneration = generation
+			if _, cacheErr := cacheInitToken(*token); cacheErr != nil {
+				common.SysLog(common.LogText("failed to init token cache: %s", cacheErr.Error()))
+			}
+		}
+		return nil
+	})
+	if err != nil {
 		return nil, err
 	}
-	if common.RedisEnabled {
-		// 冷缓存时用数据库快照初始化；已存在的哈希只刷新 TTL，
-		// 避免快照覆盖 Redis 中已被原子预扣的余额。初始化失败不影响本次读取。
-		if _, cacheErr := cacheInitToken(*token); cacheErr != nil {
-			common.SysLog(common.LogText("failed to init token cache: %s", cacheErr.Error()))
-		}
+	if err := projectTokenQuota(token); err != nil {
+		return nil, err
 	}
 	return token, nil
 }
@@ -315,6 +366,66 @@ func (token *Token) Insert() error {
 	})
 }
 
+// InsertWithLimit serializes owner-scoped creation across processes. The count
+// includes disabled and expired tokens until they are actually deleted.
+func (token *Token) InsertWithLimit(limit int) error {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		groups, err := token.GetAutoGroups()
+		if err != nil {
+			return err
+		}
+		if err := lockAssignableAdtyGroupsTx(tx, append(groups, token.Group)); err != nil {
+			return err
+		}
+		var owner User
+		if err := lockForUpdate(tx).Select("id").First(&owner, token.UserId).Error; err != nil {
+			return err
+		}
+		var count int64
+		if err := tx.Model(&Token{}).Where("user_id = ?", token.UserId).Count(&count).Error; err != nil {
+			return err
+		}
+		if count >= int64(limit) {
+			return ErrTokenLimit
+		}
+		return tx.Create(token).Error
+	})
+}
+
+// mutateMetadata locks the same row used by cold-cache readers. Invalidation
+// before the write prevents old cache hits; the second generation advance after
+// commit also rejects snapshots retained by callers. Rollback or interruption
+// leaves no pending fence to strand future readers.
+func (token *Token) mutateMetadata(mutate func(*gorm.DB) error, groups ...string) error {
+	key := token.Key
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		if len(groups) > 0 {
+			if err := lockAssignableAdtyGroupsTx(tx, groups); err != nil {
+				return err
+			}
+		}
+		var current Token
+		if err := lockForUpdate(tx).Select("id", commonKeyCol).First(&current, token.Id).Error; err != nil {
+			return err
+		}
+		key = current.Key
+		if err := invalidateTokenCacheForMutation(key); err != nil {
+			return err
+		}
+		return mutate(tx)
+	})
+	if err != nil {
+		return err
+	}
+	// SQL has committed, and authorization checks its metadata even on cache
+	// hits. Do not misreport a committed mutation as rolled back when this extra
+	// invalidation cannot reach Redis.
+	if err := invalidateTokenCacheForMutation(key); err != nil {
+		common.SysLog(common.LogText("failed to invalidate token cache after commit: %s", err.Error()))
+	}
+	return nil
+}
+
 // Update writes the editable token fields except remain_quota. A loaded snapshot
 // must not put an already-spent balance back.
 func (token *Token) Update() error {
@@ -328,41 +439,42 @@ func (token *Token) UpdateReplacingRemainQuota() error {
 }
 
 func (token *Token) update(writeRemainQuota bool) error {
-	// 写库前必须先拆掉缓存。拆不掉就不要提交，否则旧哈希在 TTL 内仍会放行已禁用的令牌。
-	if cacheErr := invalidateTokenCacheForMutation(token.Key); cacheErr != nil {
-		return cacheErr
+	groups, err := token.GetAutoGroups()
+	if err != nil {
+		return err
 	}
 	columns := []string{"name", "status", "expired_time", "unlimited_quota",
 		"model_limits_enabled", "model_limits", "allow_ips", "group", "cross_group_retry", "auto_groups",
 		"allow_user_quota_query"}
-	if writeRemainQuota {
-		columns = append(columns, "remain_quota")
-	}
-	return DB.Transaction(func(tx *gorm.DB) error {
-		groups, err := token.GetAutoGroups()
-		if err != nil {
-			return err
-		}
-		if err := lockAssignableAdtyGroupsTx(tx, append(groups, token.Group)); err != nil {
-			return err
+	return token.mutateMetadata(func(tx *gorm.DB) error {
+		if writeRemainQuota {
+			var current Token
+			if err := tx.First(&current, token.Id).Error; err != nil {
+				return err
+			}
+			_, used, err := tokenQuotaBalance(&current)
+			if err != nil {
+				return err
+			}
+			if err := tx.Model(&Token{}).Where("id = ?", token.Id).Updates(map[string]any{
+				"remain_quota": token.RemainQuota, "used_quota": used, "quota_pending": 0,
+			}).Error; err != nil {
+				return err
+			}
 		}
 		return tx.Model(token).Select(columns).Updates(token).Error
-	})
+	}, append(groups, token.Group)...)
 }
 
 func (token *Token) SelectUpdate() (err error) {
-	if cacheErr := invalidateTokenCacheForMutation(token.Key); cacheErr != nil {
-		return cacheErr
-	}
 	// This can update zero values
-	return DB.Model(token).Select("accessed_time", "status").Updates(token).Error
+	return token.mutateMetadata(func(tx *gorm.DB) error {
+		return tx.Model(token).Select("accessed_time", "status").Updates(token).Error
+	})
 }
 
 func (token *Token) Delete() (err error) {
-	if cacheErr := invalidateTokenCacheForMutation(token.Key); cacheErr != nil {
-		return cacheErr
-	}
-	return DB.Delete(token).Error
+	return token.mutateMetadata(func(tx *gorm.DB) error { return tx.Delete(token).Error })
 }
 
 func (token *Token) IsModelLimitsEnabled() bool {
@@ -408,64 +520,18 @@ func DeleteTokenById(id int, userId int) (err error) {
 	return token.Delete()
 }
 
-func IncreaseTokenQuota(tokenId int, key string, quota int) (err error) {
+func IncreaseTokenQuota(tokenId int, key string, quota int) error {
 	if quota < 0 {
 		return errors.New("quota cannot be negative")
 	}
-	if common.RedisEnabled {
-		gopool.Go(func() {
-			// 守卫式增量：哈希不存在时跳过，由下次读取从数据库水合，
-			// 绝不创建只有配额字段的残缺哈希。
-			if _, err := cacheApplyTokenQuotaDelta(tokenId, key, int64(quota)); err != nil {
-				common.SysLog(common.LogText("failed to increase token quota: %s", err.Error()))
-			}
-		})
-	}
-	if common.BatchUpdateEnabled {
-		addNewRecord(BatchUpdateTypeTokenQuota, tokenId, quota)
-		return nil
-	}
-	return increaseTokenQuota(tokenId, quota)
+	return persistTokenQuotaDelta(tokenId, quota)
 }
 
-func increaseTokenQuota(id int, quota int) (err error) {
-	err = DB.Model(&Token{}).Where("id = ?", id).Updates(
-		map[string]any{
-			"remain_quota":  gorm.Expr("remain_quota + ?", quota),
-			"used_quota":    gorm.Expr("used_quota - ?", quota),
-			"accessed_time": common.GetTimestamp(),
-		},
-	).Error
-	return err
-}
-
-func DecreaseTokenQuota(id int, key string, quota int) (err error) {
+func DecreaseTokenQuota(id int, key string, quota int) error {
 	if quota < 0 {
 		return errors.New("quota cannot be negative")
 	}
-	if common.RedisEnabled {
-		gopool.Go(func() {
-			if _, err := cacheApplyTokenQuotaDelta(id, key, int64(-quota)); err != nil {
-				common.SysLog(common.LogText("failed to decrease token quota: %s", err.Error()))
-			}
-		})
-	}
-	if common.BatchUpdateEnabled {
-		addNewRecord(BatchUpdateTypeTokenQuota, id, -quota)
-		return nil
-	}
-	return decreaseTokenQuota(id, quota)
-}
-
-func decreaseTokenQuota(id int, quota int) (err error) {
-	err = DB.Model(&Token{}).Where("id = ?", id).Updates(
-		map[string]any{
-			"remain_quota":  gorm.Expr("remain_quota - ?", quota),
-			"used_quota":    gorm.Expr("used_quota + ?", quota),
-			"accessed_time": common.GetTimestamp(),
-		},
-	).Error
-	return err
+	return persistTokenQuotaDelta(id, -quota)
 }
 
 // CountUserTokens returns total number of tokens for the given user, used for pagination
@@ -484,7 +550,7 @@ func BatchDeleteTokens(ids []int, userId int) (int, error) {
 	tx := DB.Begin()
 
 	var tokens []Token
-	if err := tx.Where("user_id = ? AND id IN (?)", userId, ids).Find(&tokens).Error; err != nil {
+	if err := lockForUpdate(tx).Where("user_id = ? AND id IN (?)", userId, ids).Order("id").Find(&tokens).Error; err != nil {
 		tx.Rollback()
 		return 0, err
 	}
@@ -500,6 +566,9 @@ func BatchDeleteTokens(ids []int, userId int) (int, error) {
 
 	if err := tx.Commit().Error; err != nil {
 		return 0, err
+	}
+	if err := invalidateTokensCache(tokens); err != nil {
+		common.SysLog(common.LogText("failed to invalidate token cache after commit: %s", err.Error()))
 	}
 
 	return len(tokens), nil

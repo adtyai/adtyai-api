@@ -367,21 +367,21 @@ type terminalSettlementPollingAdaptor struct {
 
 func (a *terminalSettlementPollingAdaptor) Init(*relaycommon.RelayInfo) {}
 
-func (a *terminalSettlementPollingAdaptor) FetchTask(string, string, *model.Task, string) (*http.Response, error) {
+func (a *terminalSettlementPollingAdaptor) FetchTask(context.Context, string, string, *model.Task, string) (*http.Response, error) {
 	return &http.Response{
 		StatusCode: http.StatusOK,
 		Body:       io.NopCloser(strings.NewReader(`{}`)),
 	}, nil
 }
 
-func (a *terminalSettlementPollingAdaptor) ParseTaskResult(*model.Task, *http.Response, []byte) (*relaycommon.TaskInfo, error) {
+func (a *terminalSettlementPollingAdaptor) ParseTaskResult(context.Context, *model.Task, *http.Response, []byte) (*relaycommon.TaskInfo, error) {
 	return &relaycommon.TaskInfo{
 		Status:   model.TaskStatusSuccess,
 		Progress: "100%",
 	}, nil
 }
 
-func (a *terminalSettlementPollingAdaptor) AdjustBillingOnComplete(task *model.Task, _ *relaycommon.TaskInfo) int {
+func (a *terminalSettlementPollingAdaptor) AdjustBillingOnComplete(_ context.Context, task *model.Task, _ *relaycommon.TaskInfo) int {
 	close(a.started)
 	<-a.release
 	a.completed = true

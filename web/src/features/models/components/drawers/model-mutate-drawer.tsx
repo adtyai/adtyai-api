@@ -64,11 +64,13 @@ import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { ModelPricingPanel } from '@/features/model-pricing/model-pricing-panel'
+import { ADTY_PERMISSIONS, canAdmin } from '@/lib/adty-permissions'
 import {
   requireServerSuccess,
   createServerError,
   getServerErrorMessage,
 } from '@/lib/server-error-message'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { createModel, updateModel, getModel, getVendors } from '../../api'
 import { getNameRuleOptions, ENDPOINT_TEMPLATES } from '../../constants'
@@ -100,6 +102,11 @@ export function ModelMutateDrawer(props: {
       ? createdModel.model
       : props.currentRow
   const isEditing = Boolean(currentRow?.id)
+  const currentUser = useAuthStore((state) => state.auth.user)
+  const canSave = canAdmin(
+    currentUser,
+    isEditing ? ADTY_PERMISSIONS.MODEL_WRITE : ADTY_PERMISSIONS.MODEL_CREATE
+  )
   const hasModelName = Boolean(currentRow?.model_name)
   const [section, setSection] = useState<string>(
     props.initialSection ?? 'metadata'
@@ -183,6 +190,16 @@ export function ModelMutateDrawer(props: {
     meta: { errorToast: false },
     onMutate: () => form.clearErrors('root.server'),
     mutationFn: async (values: ModelFormValues) => {
+      if (
+        !canAdmin(
+          useAuthStore.getState().auth.user,
+          currentRow?.id
+            ? ADTY_PERMISSIONS.MODEL_WRITE
+            : ADTY_PERMISSIONS.MODEL_CREATE
+        )
+      ) {
+        throw new Error(t('No permission to perform this action'))
+      }
       if (pricingDirty && values.model_name !== currentRow?.model_name) {
         throw new Error(
           t('Save or discard pricing changes before renaming metadata.')
@@ -610,6 +627,7 @@ export function ModelMutateDrawer(props: {
                   form='model-form'
                   type='submit'
                   disabled={
+                    !canSave ||
                     isSubmitting ||
                     modelQuery.isError ||
                     (isEditing && modelQuery.isPending)

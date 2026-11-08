@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"errors"
 	"net/http"
 	"slices"
 
@@ -9,10 +10,41 @@ import (
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/service/authz"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 // AdtyPermissionDeniedCode 标出是二开的后台权限拒绝了请求，和上游的安全验证等 403 区分开。
 const AdtyPermissionDeniedCode = "ADTY_PERMISSION_DENIED"
+
+var errAdtyAdminActionDenied = errors.New("admin action permission denied")
+
+// adtyAuthorizeAdminActions checks every action of a compound operation. Token
+// scopes constrain the live user grant; neither can substitute for the other.
+func adtyAuthorizeAdminActions(c *gin.Context, permissions ...authz.Permission) error {
+	if !service.AdtyAdminPermissionsEnabled() {
+		return nil
+	}
+	for _, permission := range permissions {
+		if !service.AdtyAdminRoleCan(c.GetInt("id"), c.GetInt("role"), permission) {
+			return errAdtyAdminActionDenied
+		}
+	}
+	legacy, isToken := c.Get("access_token_legacy")
+	if !isToken {
+		return nil
+	}
+	if legacy == true {
+		return errAdtyAdminActionDenied
+	}
+	scopes, _ := c.Get("access_token_scopes")
+	granted, _ := scopes.([]string)
+	for _, permission := range permissions {
+		if !service.AccessTokenScopeAllowsRoute(granted, c.GetInt("access_token_scope_version"), c.GetInt("role"), c.Request.Method, c.FullPath(), service.AccessTokenScopeOf(permission)) {
+			return errAdtyAdminActionDenied
+		}
+	}
+	return nil
+}
 
 func denyAdtyAdminAction(c *gin.Context) {
 	common.ApiErrorStatus(c, http.StatusForbidden, common.NewMessage("Unauthorized, insufficient privileges"), gin.H{"code": AdtyPermissionDeniedCode})
@@ -76,7 +108,7 @@ func adtyCheckUserUpdate(c *gin.Context, origin *model.User, updated *model.User
 	if updated.Group == origin.Group {
 		return true
 	}
-	if !service.AdtyAdminRoleCan(c.GetInt("id"), c.GetInt("role"), authz.AdtyUserGroup) {
+	if err := adtyAuthorizeAdminActions(c, authz.AdtyUserGroup); err != nil {
 		denyAdtyAdminAction(c)
 		return false
 	}
@@ -95,30 +127,17 @@ func adtyCheckUserUpdate(c *gin.Context, origin *model.User, updated *model.User
 	return true
 }
 
-// adtyPermissionChange 记下改权限前后的能力，提交成功后写一条差异审计。
-type adtyPermissionChange struct {
-	userID int
-	role   int
-	before authz.PermissionsMap
-}
-
-func startAdtyPermissionChange(userID, role int) *adtyPermissionChange {
-	if role < common.RoleAdminUser {
-		return nil
+// appendAdtyPermissionAuditTx freezes the actual transaction's policy diff;
+// post-commit reload/cache failures cannot erase a committed permission change.
+func appendAdtyPermissionAuditTx(c *gin.Context, tx *gorm.DB, userID, role int, before authz.PermissionsMap, patch map[string]map[string]bool) (model.AuditLog, error) {
+	after, err := authz.CapabilitiesInTx(tx, userID, role)
+	if err != nil {
+		return model.AuditLog{}, err
 	}
-	return &adtyPermissionChange{userID: userID, role: role, before: authz.Capabilities(userID, role)}
-}
-
-// recordAdtyPermissionChange 在 ReloadPolicy 之后调用，比较前后能力，有变化才写审计。
-func recordAdtyPermissionChange(c *gin.Context, change *adtyPermissionChange) {
-	if change == nil {
-		return
-	}
-	after := authz.Capabilities(change.userID, change.role)
 	var added, removed []string
 	for resource, actions := range after {
 		for action, allowed := range actions {
-			was := change.before[resource][action]
+			was := before[resource][action]
 			key := resource + ":" + action
 			if allowed && !was {
 				added = append(added, key)
@@ -128,14 +147,13 @@ func recordAdtyPermissionChange(c *gin.Context, change *adtyPermissionChange) {
 			}
 		}
 	}
-	if len(added) == 0 && len(removed) == 0 {
-		return
-	}
 	slices.Sort(added)
 	slices.Sort(removed)
-	recordManageAuditFor(c, change.userID, "adty.admin_permissions.update", map[string]any{
-		"id":      change.userID,
+	event := prepareManageAudit(c, userID, "adty.admin_permissions.update", map[string]any{
+		"id":      userID,
 		"added":   added,
 		"removed": removed,
+		"patch":   patch,
 	})
+	return event, model.AppendAuditIntentTx(tx, event)
 }

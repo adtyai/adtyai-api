@@ -52,8 +52,19 @@ func (e *RateChangedError) Error() string { return ErrReferralRateChanged.Error(
 func (e *RateChangedError) Unwrap() error { return ErrReferralRateChanged }
 
 // CurrentWithdrawCNYRate 直接查库读提现汇率：行不存在、解析不了或不大于 0 都算未设置。
-func CurrentWithdrawCNYRate() (decimal.Decimal, int64, error) {
-	raw, ok, err := model.ReadOptionFromDB(adty_setting.ReferralKeyWithdrawCNYRate)
+func CurrentWithdrawCNYRate() (rate decimal.Decimal, updatedAt int64, err error) {
+	err = model.DB.Transaction(func(tx *gorm.DB) error {
+		var readErr error
+		rate, updatedAt, readErr = currentWithdrawCNYRateTx(tx)
+		return readErr
+	})
+	return rate, updatedAt, err
+}
+
+// currentWithdrawCNYRateTx holds the rate row until the withdrawal or settings
+// transaction commits, so an accepted application has one durable rate snapshot.
+func currentWithdrawCNYRateTx(tx *gorm.DB) (decimal.Decimal, int64, error) {
+	raw, ok, err := model.ReadOptionForUpdate(tx, adty_setting.ReferralKeyWithdrawCNYRate)
 	if err != nil {
 		return decimal.Zero, 0, err
 	}
@@ -64,7 +75,10 @@ func CurrentWithdrawCNYRate() (decimal.Decimal, int64, error) {
 	if err != nil || !rate.IsPositive() {
 		return decimal.Zero, 0, ErrReferralRateUnset
 	}
-	updatedRaw, _, _ := model.ReadOptionFromDB(adty_setting.ReferralKeyWithdrawCNYRateUpdatedAt)
+	updatedRaw, _, err := model.ReadOptionForUpdate(tx, adty_setting.ReferralKeyWithdrawCNYRateUpdatedAt)
+	if err != nil {
+		return decimal.Zero, 0, err
+	}
 	updated, _ := decimal.NewFromString(strings.TrimSpace(updatedRaw))
 	return rate, updated.IntPart(), nil
 }
@@ -134,18 +148,8 @@ func (s *ReferralService) CreateWithdrawal(input ReferralWithdrawalCreateInput) 
 		if !validReferralQR(input.QRImageURL) || strings.TrimSpace(input.AccountName) == "" {
 			return nil, common.NewMessage("Upload the payment QR code and enter the payee name")
 		}
-		rate, updatedAt, err := CurrentWithdrawCNYRate()
-		if err != nil {
-			return nil, err
-		}
-		cny := amount.Mul(rate).Round(2)
-		if !rate.Equal(input.ExpectedCNYRate) {
-			return nil, &RateChangedError{Change: ReferralRateChange{Rate: rate.String(), CNYAmount: cny.StringFixed(2), UpdatedAt: updatedAt}}
-		}
 		withdrawal.AccountName = strings.TrimSpace(input.AccountName)
 		withdrawal.QRImageURL = strings.TrimSpace(input.QRImageURL)
-		withdrawal.CNYRate = rate.String()
-		withdrawal.CNYAmount = cny.StringFixed(2)
 	default:
 		return nil, common.NewMessage("Unsupported withdrawal method")
 	}
@@ -180,6 +184,18 @@ func (s *ReferralService) CreateWithdrawal(input ReferralWithdrawalCreateInput) 
 			}
 			result = &existing[0]
 			return nil
+		}
+		if input.AccountType == model.ReferralWithdrawToAlipay || input.AccountType == model.ReferralWithdrawToWechat {
+			rate, updatedAt, err := currentWithdrawCNYRateTx(tx)
+			if err != nil {
+				return err
+			}
+			cny := amount.Mul(rate).Round(2)
+			if !rate.Equal(input.ExpectedCNYRate) {
+				return &RateChangedError{Change: ReferralRateChange{Rate: rate.String(), CNYAmount: cny.StringFixed(2), UpdatedAt: updatedAt}}
+			}
+			withdrawal.CNYRate = rate.String()
+			withdrawal.CNYAmount = cny.StringFixed(2)
 		}
 		var closing int64
 		if err := tx.Model(&model.AdtySite{}).Where("owner_user_id = ? AND status = ?", input.UserId, model.AdtySiteStatusClosing).Count(&closing).Error; err != nil {
@@ -595,11 +611,10 @@ func classifyWithdrawCNYRate(raw string) (rate decimal.Decimal, write bool, err 
 
 // persistWithdrawCNYRateTx 在调用方事务里写汇率和审计。和库里相同则什么都不写。
 func (s *ReferralService) persistWithdrawCNYRateTx(tx *gorm.DB, rate decimal.Decimal, adminId int, ip, ua string) (map[string]string, error) {
-	var option model.Option
-	if err := tx.Where("key = ?", adty_setting.ReferralKeyWithdrawCNYRate).Limit(1).Find(&option).Error; err != nil {
+	old, _, err := model.ReadOptionForUpdate(tx, adty_setting.ReferralKeyWithdrawCNYRate)
+	if err != nil {
 		return nil, err
 	}
-	old := option.Value
 	if oldRate, parseErr := decimal.NewFromString(strings.TrimSpace(old)); parseErr == nil && oldRate.Equal(rate) {
 		return nil, nil
 	}

@@ -53,7 +53,7 @@
 - 先写测试并确认失败，再实现并确认通过，然后提交。
 - 后端用 testify 的 require/assert。
 - （v2.5）我们写的、要用数据库的测试一律连 PostgreSQL，统一用各包的 `adtyTestDB(t)`（文件 `adty_testhelper_test.go`，任务 2.1 起）：
-  - 连接串读环境变量 `ADTY_TEST_PG_DSN`，没设就 `t.Skip` 并说明原因。从任务 2.1 起，check.sh 跑后端时要求它有值，CI 的 test 作业起 postgres:16 并设好它，所以门禁里这些测试不会被跳过。
+  - 连接串读环境变量 `ADTY_TEST_PG_DSN`，没设就 `t.Skip` 并说明原因。从任务 2.1 起，check.sh 跑后端时要求它有值，CI 的 test 作业起 postgres:17 并设好它，所以门禁里这些测试不会被跳过。验收还须读取连接实例的 `server_version_num`，确认 `170000 <= 值 < 180000`，不能只凭 DSN 或镜像名判断。
   - 每个测试建一个随机名字的 schema，连接时用 `search_path` 指向它，测试结束删掉。`go test` 会同时跑多个包，各测试互不干扰。
   - model 和 service 包已经有 TestMain（model/task_cas_test.go:19、service/task_billing_test.go:30），`adtyTestDB` 在单个测试里换库、用完换回，写法参照 service/text_quota_test.go:78-82。换库时调 `common.SetDatabaseTypes(PostgreSQL, PostgreSQL)` 并重跑列名初始化：上游的 `initCol` 未导出（model/main.go:43），在 `model/adty_testsupport.go` 加一个导出包装；恢复时把数据库类型和列名一起还原。
 - 上游自己的测试照旧用它们的内存 SQLite，我们改过的上游代码不能让它们失败（执行层决定 11 的例外）。钉住上游行为的特征测试（任务 1.1）也沿用上游包里现成的测试库。任务 1.6 的 `TestAdtyDeletedSchemaAbsent` 跑的是上游的完整迁移，也用内存 SQLite：删订阅时去掉的 SQLite 专用建表语句只在 SQLite 上执行，换成 PostgreSQL 就查不到它们回来没有；而且 P1 时 `adtyTestDB` 还没有。
@@ -77,7 +77,7 @@
 - 网络（实测）：proxy.golang.org 和 sum.golang.org 连不上，Go 改用 goproxy.cn；校验和数据库也经它代理，GOSUMDB 不用改。github.com、npm 仓库、bun.sh、nodejs.org、Debian 源都能连。
 - 下载慢或失败时走代理：Windows 上的代理是 127.0.0.1:10808（HTTP、SOCKS 都行），用 `bash ~/adtyai/bin/with-proxy.sh <命令>` 重跑。实测这个代理只监听 Windows 的 127.0.0.1，而 WSL 现在是 NAT 网络模式，WSL 里的 127.0.0.1 指 WSL 自己，所以 WSL 暂时用不了它。要用的话二选一：在代理软件里打开「允许局域网连接」，脚本会改走 Windows 主机在 WSL 网络里的地址；或者把 WSL 改成镜像网络模式（`%USERPROFILE%\.wslconfig` 里写 `[wsl2]` 和 `networkingMode=mirrored`，再 `wsl --shutdown`）。两种都改你机器上的设置，由你来定。
 - WSL 实例在没有 wsl.exe 连着时会自动停；/tmp 是内存盘，停一次就清空。中间结果和日志放 `~/.cache/`，不放 /tmp。
-- 不用 sudo：工具都装在用户目录。测试用的 PostgreSQL 是自己的实例：用系统里 PostgreSQL 17 的程序在 `~/adtyai/pg` 建立，只监听 Unix socket（端口 54329）；wrun.sh 运行前会确认它已启动，并设好 `ADTY_TEST_PG_DSN`。CI 和生产用 16，这些测试用到的事务、行锁和 `ON CONFLICT` 在两个版本里行为一样。Redis 相关测试用 miniredis。系统自带的 PostgreSQL、Redis 服务不用。
+- 测试使用自己的隔离 PostgreSQL 17 实例和独立数据库或 schema，配置 `ADTY_TEST_PG_DSN`；连接后读取 `server_version_num`，必须在 170000 到 179999 之间。目标 CI 和生产配置也使用 17。保留上游 SQLite/miniredis 单测，但资金集成验证必须用真实 PostgreSQL 17 和真实 Redis，并覆盖进程重启、缓存丢失、并发和故障恢复。系统自带的正式 PostgreSQL、Redis 服务和生产数据卷不用于测试；16 → 17 迁移只在合成数据的独立新目录演练。
 - Docker 没装：镜像在 GitHub Actions 里构建；做 10.1 时如果要在本地试跑 compose 再装（要 sudo）。
 - 检查脚本 `bash scripts/adty/check.sh`（在副本里跑）：`--backend` 跑三个 Go 模块（根模块、relaykit、tokenkit）的 go vet、go build、go test；`--frontend` 跑 typecheck、lint、test、copyright:check；不带参数两个都跑。脚本开头 `set -euo pipefail`，任何一步失败就停。
 - 单测：后端 `GOWORK=off go test ./model -run TestXxx -count=1`；前端在 `web` 目录 `bun run test -- <文件名>`；都写进任务脚本，经 wrun.sh 在副本里跑。

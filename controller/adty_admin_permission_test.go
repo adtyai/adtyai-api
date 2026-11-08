@@ -26,8 +26,8 @@ func setupAdtyPermissionAudit(t *testing.T) (*gorm.DB, model.User) {
 	common.RedisEnabled = false
 	common.SessionSecret = "adty-permission-audit-secret"
 	t.Cleanup(func() { common.RedisEnabled, common.SessionSecret = oldRedis, oldSecret })
-	require.NoError(t, db.AutoMigrate(&model.User{}, &model.UserSession{}, &model.AuthFlow{}, &model.AuditLog{}, &model.Log{},
-		&model.CasbinRule{}, &model.AuthzRole{}, &model.UserAccessToken{}, &model.TwoFA{}, &model.PasskeyCredential{}))
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.UserSession{}, &model.AuthFlow{}, &model.AuditLog{}, &model.AuditIntent{}, &model.Log{},
+		&model.CasbinRule{}, &model.AuthzRole{}, &model.AuthzActionCatalogState{}, &model.UserAccessToken{}, &model.TwoFA{}, &model.PasskeyCredential{}))
 	require.NoError(t, model.MigrateAdtyTables())
 	require.NoError(t, model.SeedAdtyGroups())
 	wasMaster := common.IsMasterNode

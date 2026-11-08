@@ -38,6 +38,7 @@ interface UserQuotaDialogProps {
   onOpenChange: (open: boolean) => void
   userId: number
   currentQuota: number
+  currentLiveQuota?: number
   onSuccess: () => void
 }
 
@@ -62,13 +63,16 @@ export function UserQuotaDialog(props: UserQuotaDialogProps) {
   const amountValue = Number.parseFloat(amount) || 0
   const quotaValue = parseQuotaFromDollars(Math.abs(amountValue))
   const overrideQuota = parseQuotaFromDollars(amountValue)
+  const currentLiveQuota = props.currentLiveQuota ?? props.currentQuota
+  const overrideLiveQuota =
+    overrideQuota + (currentLiveQuota - props.currentQuota)
   const floorBlocked =
-    (mode === 'override' && overrideQuota < 0) ||
-    (mode === 'subtract' && props.currentQuota - quotaValue < 0)
+    (mode === 'override' && (overrideQuota < 0 || overrideLiveQuota < 0)) ||
+    (mode === 'subtract' && currentLiveQuota - quotaValue < 0)
 
   const getPreviewText = () => {
     if (floorBlocked) return t('Adjustment cannot make the balance negative')
-    const current = props.currentQuota
+    const current = currentLiveQuota
     const val = quotaValue
     switch (mode) {
       case 'add':
@@ -76,8 +80,7 @@ export function UserQuotaDialog(props: UserQuotaDialogProps) {
       case 'subtract':
         return `${t('Current quota')}: ${formatQuota(current)}  -${formatQuota(val)} = ${formatQuota(current - val)}`
       case 'override': {
-        const overrideQuota = parseQuotaFromDollars(amountValue)
-        return `${t('Current quota')}: ${formatQuota(current)} → ${formatQuota(overrideQuota)}`
+        return `${t('Current quota')}: ${formatQuota(current)} → ${formatQuota(overrideLiveQuota)}`
       }
       default:
         return ''

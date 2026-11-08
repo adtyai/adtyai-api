@@ -113,8 +113,12 @@ fi
 if [ "$run_frontend" -eq 1 ]; then
   step "web：bun install --frozen-lockfile"
   (cd web && bun install --frozen-lockfile)
+  step "plugins：lint 和格式检查"
+  make check-plugins
   step "web：bun run typecheck"
   (cd web && bun run typecheck)
+  step "web build"
+  (cd web && bun run build)
   # 上游原样就有 lint error 和不合要求的文件头（docs/adty/baseline.md）。这两步由 ratchet.mjs 跑，
   # 只拦 scripts/adty/baseline-lint.txt、baseline-copyright.txt 以外的新问题
   step "web：bun run lint（和 scripts/adty/baseline-lint.txt 比较）"

@@ -70,7 +70,7 @@ func AdtyTriggerCandidates(f AdtyTriggerCandidateFilter) ([]AdtyTriggerCandidate
 		query = query.Where(consumed, LogTypeConsume).Where("NOT "+paid, common.TopUpStatusSuccess).
 			Where("users.created_at <= ?", f.RegisteredBefore)
 	case AdtyTriggerLowBalance:
-		query = query.Where(paid, common.TopUpStatusSuccess).Where("users.quota < ?", f.BalanceBelowQuota)
+		query = query.Where(paid, common.TopUpStatusSuccess).Where("users.quota + users.quota_pending < ?", f.BalanceBelowQuota)
 	case AdtyTriggerWinback:
 		query = query.Where(paid, common.TopUpStatusSuccess).Where(consumed, LogTypeConsume).
 			Where("NOT EXISTS (SELECT 1 FROM logs WHERE logs.user_id = users.id AND logs.type = ? AND logs.created_at >= ?)", LogTypeConsume, f.IdleSince)
@@ -78,7 +78,7 @@ func AdtyTriggerCandidates(f AdtyTriggerCandidateFilter) ([]AdtyTriggerCandidate
 		return nil, nil
 	}
 	var rows []AdtyTriggerCandidate
-	err := query.Select("users.id AS user_id, users.username, adty_marketing_contacts.email, adty_marketing_contacts.lang, users.site_id, users.quota, users.setting").
+	err := query.Select("users.id AS user_id, users.username, adty_marketing_contacts.email, adty_marketing_contacts.lang, users.site_id, users.quota + users.quota_pending AS quota, users.setting").
 		Order("users.id").Limit(f.Limit).Scan(&rows).Error
 	return rows, err
 }

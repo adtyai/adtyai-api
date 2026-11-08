@@ -28,7 +28,9 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { Textarea } from '@/components/ui/textarea'
+import { ADTY_PERMISSIONS, canAdmin } from '@/lib/adty-permissions'
 import { handleServerError } from '@/lib/handle-server-error'
+import { useAuthStore } from '@/stores/auth-store'
 
 import {
   getResellerSettings,
@@ -60,7 +62,10 @@ import { SecretField, SwitchRow, TextField } from './setting-fields'
  * sender domains stay off until Cloudflare and Resend are filled in. The
  * server checks the same rules; this only explains them up front.
  */
-export function SettingsPanel(props: { canWrite: boolean }) {
+export function SettingsPanel(props: {
+  canWrite: boolean
+  canWriteSecrets: boolean
+}) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const query = useQuery({
@@ -75,7 +80,19 @@ export function SettingsPanel(props: { canWrite: boolean }) {
   }, [saved])
 
   const save = useMutation({
-    mutationFn: (body: ResellerSettingsUpdate) => saveResellerSettings(body),
+    mutationFn: (body: ResellerSettingsUpdate) => {
+      const user = useAuthStore.getState().auth.user
+      if (!props.canWrite || !canAdmin(user, ADTY_PERMISSIONS.SITE_SETTINGS)) {
+        throw new Error(t('No permission to perform this action'))
+      }
+      const permitted = { ...body }
+      if (!props.canWriteSecrets || user?.role !== 100) {
+        delete permitted.cloudflare_apiToken
+        delete permitted.turnstile_widget_secret
+        delete permitted.clear_secrets
+      }
+      return saveResellerSettings(permitted)
+    },
     onSuccess: (next) => {
       queryClient.setQueryData(siteAdminKeys.settings, next)
       toast.success(t('Saved successfully'))
@@ -86,6 +103,7 @@ export function SettingsPanel(props: { canWrite: boolean }) {
   if (!saved || !drafts) return <LoadingState />
 
   const disabled = !props.canWrite || save.isPending
+  const secretsDisabled = disabled || !props.canWriteSecrets
   const set = <K extends keyof ResellerDrafts>(
     key: K,
     value: ResellerDrafts[K]
@@ -141,6 +159,7 @@ export function SettingsPanel(props: { canWrite: boolean }) {
       className='flex max-w-3xl flex-col gap-6'
       onSubmit={(event) => {
         event.preventDefault()
+        if (disabled) return
         save.mutate(buildResellerUpdate(saved, drafts))
       }}
     >
@@ -297,7 +316,7 @@ export function SettingsPanel(props: { canWrite: boolean }) {
           configured={
             saved.cloudflare_token_configured && !drafts.clear_cloudflare_token
           }
-          disabled={disabled}
+          disabled={secretsDisabled}
           onChange={(value) => set('cloudflare_token', value)}
         />
         <TextField
@@ -334,7 +353,7 @@ export function SettingsPanel(props: { canWrite: boolean }) {
             <Checkbox
               id='reseller-clear-token'
               checked={drafts.clear_cloudflare_token}
-              disabled={disabled}
+              disabled={secretsDisabled}
               onCheckedChange={(value) =>
                 set('clear_cloudflare_token', value === true)
               }
@@ -383,7 +402,7 @@ export function SettingsPanel(props: { canWrite: boolean }) {
                 configured={
                   saved.turnstile_secret_configured?.[widget.id] === true
                 }
-                disabled={disabled}
+                disabled={secretsDisabled}
                 onChange={(value) =>
                   set(
                     'widgets',

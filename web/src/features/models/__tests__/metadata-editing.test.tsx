@@ -28,7 +28,7 @@ import {
 } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { AxiosError } from 'axios'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { pricingOptions } from '@/features/model-pricing/pricing'
 import { api } from '@/lib/api'
@@ -53,6 +53,17 @@ const model = {
   created_time: 1,
   updated_time: 1,
 }
+
+beforeEach(() => {
+  useAuthStore.getState().auth.setUser({
+    id: 2,
+    username: 'admin',
+    role: 10,
+    permissions: {
+      admin_permissions: { adty_model: { read: true, write: true } },
+    },
+  })
+})
 
 afterEach(() => {
   cleanup()
@@ -302,9 +313,14 @@ describe('metadata editing', () => {
   ])(
     'shows the server reason for a $name and preserves the draft for retry',
     async ({ response }) => {
-      useAuthStore
-        .getState()
-        .auth.setUser({ id: 2, username: 'admin', role: 10 })
+      useAuthStore.getState().auth.setUser({
+        id: 2,
+        username: 'admin',
+        role: 10,
+        permissions: {
+          admin_permissions: { adty_model: { read: true, create: true } },
+        },
+      })
       vi.spyOn(api, 'get').mockResolvedValue({
         data: { success: true, data: { items: [] } },
       })
@@ -459,7 +475,14 @@ describe('metadata editing', () => {
   )
 
   it('allows an administrator to save metadata without loading or changing system pricing', async () => {
-    useAuthStore.getState().auth.setUser({ id: 2, username: 'admin', role: 10 })
+    useAuthStore.getState().auth.setUser({
+      id: 2,
+      username: 'admin',
+      role: 10,
+      permissions: {
+        admin_permissions: { adty_model: { read: true, write: true } },
+      },
+    })
     const get = vi.spyOn(api, 'get').mockImplementation(async (url) => {
       if (url === '/api/models/7') {
         return { data: { success: true, data: model } }

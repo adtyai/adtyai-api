@@ -52,9 +52,11 @@ import {
   EmptyTitle,
 } from '@/components/ui/empty'
 import { useIsMobile } from '@/hooks/use-mobile'
+import { ADTY_PERMISSIONS, canAdmin } from '@/lib/adty-permissions'
 import { handleServerError } from '@/lib/handle-server-error'
 import { requireServerSuccess } from '@/lib/server-error-message'
 import { cn } from '@/lib/utils'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { deletePrefillGroup, getPrefillGroups } from '../../api'
 import { prefillGroupsQueryKeys } from '../../lib'
@@ -80,6 +82,10 @@ export function PrefillGroupManagementDialog({
 }: PrefillGroupManagementDialogProps) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
+  const currentUser = useAuthStore((state) => state.auth.user)
+  const canCreate = canAdmin(currentUser, ADTY_PERMISSIONS.MODEL_CREATE)
+  const canWrite = canAdmin(currentUser, ADTY_PERMISSIONS.MODEL_WRITE)
+  const canDelete = canAdmin(currentUser, ADTY_PERMISSIONS.MODEL_DELETE)
   const isMobile = useIsMobile()
   const [deleteState, setDeleteState] = useState<{
     open: boolean
@@ -136,11 +142,20 @@ export function PrefillGroupManagementDialog({
   }, [open])
 
   const handleDeleteClick = (group: PrefillGroup) => {
+    if (!canDelete) return
     setDeleteState({ open: true, group })
   }
 
   const handleDeleteConfirm = async () => {
-    if (!deleteState.group) return
+    if (
+      !deleteState.group ||
+      !canAdmin(
+        useAuthStore.getState().auth.user,
+        ADTY_PERMISSIONS.MODEL_DELETE
+      )
+    ) {
+      return
+    }
     setIsDeleting(true)
     try {
       const response = await deletePrefillGroup(deleteState.group.id)
@@ -222,6 +237,7 @@ export function PrefillGroupManagementDialog({
                   size='icon'
                   variant='outline'
                   onClick={() => onEditGroup(group)}
+                  disabled={!canWrite}
                 >
                   <Pencil className='h-4 w-4' />
                   <span className='sr-only'>{t('Edit group')}</span>
@@ -231,6 +247,7 @@ export function PrefillGroupManagementDialog({
                   variant='ghost'
                   className='text-destructive hover:text-destructive'
                   onClick={() => handleDeleteClick(group)}
+                  disabled={!canDelete}
                 >
                   <Trash2 className='h-4 w-4' />
                   <span className='sr-only'>{t('Delete group')}</span>
@@ -374,6 +391,8 @@ export function PrefillGroupManagementDialog({
                 menuLabel={t('Open menu')}
                 onEdit={() => onEditGroup(group)}
                 onDelete={() => handleDeleteClick(group)}
+                editDisabled={!canWrite}
+                deleteDisabled={!canDelete}
               />
             ),
           },
@@ -410,7 +429,7 @@ export function PrefillGroupManagementDialog({
       >
         <div className='bg-muted/30 flex flex-wrap items-center justify-between gap-3 rounded-md border p-2 text-sm'>
           <div className='flex flex-wrap items-center gap-2'>
-            <Button size='sm' onClick={onCreateGroup}>
+            <Button size='sm' onClick={onCreateGroup} disabled={!canCreate}>
               <Plus className='mr-2 h-4 w-4' />
               {t('New Group')}
             </Button>
@@ -465,6 +484,7 @@ export function PrefillGroupManagementDialog({
         destructive
         confirmText={isDeleting ? t('Deleting...') : t('Delete')}
         isLoading={isDeleting}
+        disabled={!canDelete}
         handleConfirm={handleDeleteConfirm}
       />
     </>

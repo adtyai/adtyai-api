@@ -63,7 +63,9 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { Textarea } from '@/components/ui/textarea'
+import { ADTY_PERMISSIONS, canAdmin } from '@/lib/adty-permissions'
 import { handleServerError } from '@/lib/handle-server-error'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { createPrefillGroup, updatePrefillGroup } from '../../api'
 import { ENDPOINT_TEMPLATES } from '../../constants'
@@ -96,6 +98,11 @@ export function PrefillGroupFormDrawer({
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const isEdit = Boolean(currentGroup?.id)
+  const currentUser = useAuthStore((state) => state.auth.user)
+  const canSave = canAdmin(
+    currentUser,
+    isEdit ? ADTY_PERMISSIONS.MODEL_WRITE : ADTY_PERMISSIONS.MODEL_CREATE
+  )
   const [isSaving, setIsSaving] = useState(false)
 
   const form = useForm<PrefillGroupFormValues>({
@@ -143,6 +150,17 @@ export function PrefillGroupFormDrawer({
   }
 
   const handleSubmit = async (values: PrefillGroupFormValues) => {
+    if (
+      !canAdmin(
+        useAuthStore.getState().auth.user,
+        isEdit && currentGroup
+          ? ADTY_PERMISSIONS.MODEL_WRITE
+          : ADTY_PERMISSIONS.MODEL_CREATE
+      )
+    ) {
+      toast.error(t('No permission to perform this action'))
+      return
+    }
     setIsSaving(true)
     let items: string | string[] = []
     if (values.type === 'endpoint') {
@@ -396,7 +414,11 @@ export function PrefillGroupFormDrawer({
           >
             {t('Cancel')}
           </SheetClose>
-          <Button type='submit' form='prefill-group-form' disabled={isSaving}>
+          <Button
+            type='submit'
+            form='prefill-group-form'
+            disabled={isSaving || !canSave}
+          >
             {isSaving && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
             {isSaving && t('Saving...')}
             {!isSaving && isEdit && t('Save changes')}

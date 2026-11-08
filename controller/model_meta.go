@@ -9,6 +9,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service/authz"
 
 	"github.com/gin-gonic/gin"
 )
@@ -234,6 +235,14 @@ func DeleteModelMeta(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "Model pricing is managed by a super administrator."})
 		return
 	}
+	permissions := []authz.Permission{authz.AdtyModelDelete}
+	if removeFromChannels {
+		permissions = append(permissions, authz.ChannelWrite)
+	}
+	if err := adtyAuthorizeAdminActions(c, permissions...); err != nil {
+		denyAdtyAdminAction(c)
+		return
+	}
 	result, err := model.DeleteModelMetadata([]int{id}, removeFromChannels, removePricing)
 	if err != nil {
 		common.ApiError(c, err)
@@ -255,6 +264,14 @@ func BatchDeleteModelMeta(c *gin.Context) {
 	}
 	if request.RemovePricing && c.GetInt("role") != common.RoleRootUser {
 		c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "Model pricing is managed by a super administrator."})
+		return
+	}
+	permissions := []authz.Permission{authz.AdtyModelDelete}
+	if request.RemoveFromChannels {
+		permissions = append(permissions, authz.ChannelWrite)
+	}
+	if err := adtyAuthorizeAdminActions(c, permissions...); err != nil {
+		denyAdtyAdminAction(c)
 		return
 	}
 	result, err := model.DeleteModelMetadata(request.ModelIDs, request.RemoveFromChannels, request.RemovePricing)

@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 	"strconv"
-	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/go-redis/redis/v8"
 )
 
 func getTokenCacheKey(key string) string {
@@ -17,6 +17,18 @@ func getTokenCacheFenceKey(key string) string {
 	return fmt.Sprintf("token:fence:%s", common.GenerateHMAC(key))
 }
 
+func getTokenCacheGenerationKey(key string) string {
+	return fmt.Sprintf("token:generation:%s", common.GenerateHMAC(key))
+}
+
+func tokenCacheGeneration(key string) (string, error) {
+	generation, err := common.RDB.Get(context.Background(), getTokenCacheGenerationKey(key)).Result()
+	if err == redis.Nil {
+		return "", nil
+	}
+	return generation, err
+}
+
 func tokenCacheTTLSeconds() int {
 	ttl := common.RedisKeyCacheSeconds()
 	if ttl <= 0 {
@@ -25,34 +37,37 @@ func tokenCacheTTLSeconds() int {
 	return ttl
 }
 
-// tokenCacheFenceSeconds must outlive a token mutation's database write plus
-// any in-flight reader's DB-read-to-cache-init gap. The fence is not deleted
-// after commit; it expires naturally so a reader holding a pre-mutation
-// snapshot cannot publish it right after the mutation cleared the cache.
-// While the fence exists readers simply serve the database without caching.
+// Legacy fence keys remain recognized, but this protocol requires stopping
+// writes, draining old work, and switching every node together. Mixed-version
+// rolling upgrades are not supported. New mutations do not use a timed fence.
 const tokenCacheFenceSeconds = 10
 
 // invalidateTokenCacheForMutation is called before a token metadata mutation
-// writes to the database: it raises the fence and drops the cached hash so no
-// reader can act on (or re-publish) the pre-mutation state.
+// writes to the database, while holding the token row lock. Advancing the
+// generation and removing the hash is atomic. With a continuous Redis history,
+// delayed snapshots cannot publish after a mutation, regardless of the pause.
+// Restored Redis data still requires the SQL authorization check.
 func invalidateTokenCacheForMutation(key string) error {
 	if !common.RedisEnabled || key == "" {
 		return nil
 	}
 	ctx := context.Background()
-	err := common.RDB.Set(ctx, getTokenCacheFenceKey(key), 1, time.Duration(tokenCacheFenceSeconds)*time.Second).Err()
-	if err != nil {
-		return err
-	}
-	return common.RDB.Del(ctx, getTokenCacheKey(key)).Err()
+	const script = `
+redis.call('INCR', KEYS[2])
+redis.call('DEL', KEYS[1])
+return 1`
+	return common.RDB.Eval(ctx, script, []string{getTokenCacheKey(key), getTokenCacheGenerationKey(key)}).Err()
 }
 
-// cacheInitToken publishes a database snapshot only when no mutation fence is
-// active and the hash is cold. An existing hash only gets its TTL refreshed:
-// its RemainQuota may already be ahead of this snapshot because atomic
-// pre-consume decrements Redis first, so a snapshot must never overwrite any
-// field of a live hash.
-// 返回值：0=被 fence 拦截，1=完成初始化，2=哈希已存在，仅刷新 TTL。
+// cacheInitToken publishes only if the generation captured before the database
+// read is still current and no legacy fence is active. The reader holds the
+// token row lock through publication, so it cannot read uncommitted metadata
+// under a mutation's new generation. An existing hash only gets its TTL refreshed.
+// Amount fields are a compatibility projection; every reader uses SQL balances.
+// Redis generations only guard in-flight publication. GetTokenByKey verifies
+// authorization against SQL even on hits because Redis recovery can restore an
+// old hash and its generation together.
+// 返回值：0=快照已失效或被旧 fence 拦截，1=完成初始化，2=哈希已存在，仅刷新 TTL。
 func cacheInitToken(token Token) (int, error) {
 	if !common.RedisEnabled {
 		return 0, nil
@@ -63,6 +78,9 @@ func cacheInitToken(token Token) (int, error) {
 	}
 	const script = `
 if redis.call('EXISTS', KEYS[2]) == 1 then
+  return 0
+end
+if (redis.call('GET', KEYS[3]) or '') ~= ARGV[19] then
   return 0
 end
 if redis.call('EXISTS', KEYS[1]) == 1 then
@@ -80,7 +98,7 @@ redis.call('EXPIRE', KEYS[1], ARGV[18])
 return 1`
 
 	return common.RDB.Eval(context.Background(), script, []string{
-		getTokenCacheKey(token.Key), getTokenCacheFenceKey(token.Key),
+		getTokenCacheKey(token.Key), getTokenCacheFenceKey(token.Key), getTokenCacheGenerationKey(token.Key),
 	},
 		token.Id, token.UserId, token.Status, token.Name,
 		token.CreatedTime, token.AccessedTime, token.ExpiredTime,
@@ -89,10 +107,12 @@ return 1`
 		token.AutoGroups, token.RemainQuota, token.UsedQuota,
 		strconv.FormatBool(token.AllowUserQuotaQuery),
 		tokenCacheTTLSeconds(),
+		token.cacheGeneration,
 	).Int()
 }
 
-// cacheGetTokenByKey 从缓存读取 token；不完整的哈希（如仅有配额字段）会被拒绝。
+// cacheGetTokenByKey 只读取缓存快照；授权调用方必须经 GetTokenByKey 核对数据库。
+// 不完整的哈希（如仅有配额字段）会被拒绝。
 // 变更隔离标记还在时不返回哈希，避免删除失败后继续使用变更前的状态。
 func cacheGetTokenByKey(key string) (*Token, error) {
 	if !common.RedisEnabled {

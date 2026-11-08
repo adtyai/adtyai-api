@@ -269,6 +269,7 @@ func TryTieredSettle(relayInfo *relaycommon.RelayInfo, params billingexpr.TokenP
 		if quota <= 0 {
 			quota = snap.EstimatedQuotaAfterGroup
 		}
+		common.SysError(common.LogText("tiered billing evaluation failed: request_id=%q model=%q expr_hash=%q; retaining quota=%d", relayInfo.RequestId, snap.ModelName, snap.ExprHash, quota))
 		return true, quota, nil
 	}
 

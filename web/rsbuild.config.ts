@@ -1,12 +1,57 @@
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import type { ImportDeclaration } from '@babel/types'
 import { defineConfig, loadEnv } from '@rsbuild/core'
 import { pluginReact } from '@rsbuild/plugin-react'
 import { pluginTailwindcss } from '@rsbuild/plugin-tailwindcss'
+import type { CodeSplitCompilerPlugin } from '@tanstack/router-plugin'
 import { tanstackRouter } from '@tanstack/router-plugin/rspack'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
+
+export const routeLazyRecoveryCompilerPlugin: CodeSplitCompilerPlugin = {
+  name: 'route-lazy-recovery',
+  onSplitRouteProperty(ctx) {
+    if (ctx.splitNodeMeta.splitStrategy !== 'lazyRouteComponent') return
+    for (const statement of ctx.programPath.get('body')) {
+      if (
+        !statement.isImportDeclaration() ||
+        statement.node.source.value !== '@tanstack/react-router'
+      ) {
+        continue
+      }
+
+      const declaration = statement.node as ImportDeclaration
+      const lazySpecifiers = declaration.specifiers.filter(
+        (specifier) =>
+          specifier.type === 'ImportSpecifier' &&
+          specifier.local.name === ctx.lazyRouteComponentIdent &&
+          specifier.imported.type === 'Identifier' &&
+          specifier.imported.name === 'lazyRouteComponent'
+      )
+      if (lazySpecifiers.length === 0) continue
+
+      const otherSpecifiers = declaration.specifiers.filter(
+        (specifier) => !lazySpecifiers.includes(specifier)
+      )
+      ctx.programPath.unshiftContainer('body', {
+        ...declaration,
+        specifiers: lazySpecifiers,
+        source: {
+          ...declaration.source,
+          value: '@/lib/route-lazy-component',
+          extra: undefined,
+        },
+      })
+      if (otherSpecifiers.length > 0) {
+        declaration.specifiers = otherSpecifiers
+      } else {
+        statement.remove()
+      }
+    }
+  },
+}
 
 export default defineConfig(({ envMode }) => {
   const env = loadEnv({ mode: envMode, prefixes: ['VITE_'] })
@@ -102,6 +147,9 @@ export default defineConfig(({ envMode }) => {
             // Dev: avoid per-route async chunks (reduces white flash on navigation + faster HMR feedback).
             // Prod: keep route-based code splitting.
             autoCodeSplitting: isProd,
+            codeSplittingOptions: isProd
+              ? { compilerPlugins: [routeLazyRecoveryCompilerPlugin] }
+              : undefined,
           }),
         ],
       },

@@ -489,7 +489,7 @@ func videoFetchByIDRespBodyBuilder(c *gin.Context) (respBody []byte, taskResp *d
 	isOpenAIVideoAPI := strings.HasPrefix(c.Request.RequestURI, "/v1/videos/")
 
 	// Gemini/Vertex 支持实时查询：用户 fetch 时直接从上游拉取最新状态
-	if realtimeResp := tryRealtimeFetch(originTask, isOpenAIVideoAPI); len(realtimeResp) > 0 {
+	if realtimeResp := tryRealtimeFetch(c.Request.Context(), originTask, isOpenAIVideoAPI); len(realtimeResp) > 0 {
 		respBody = realtimeResp
 		return
 	}
@@ -528,7 +528,12 @@ func videoFetchByIDRespBodyBuilder(c *gin.Context) (respBody []byte, taskResp *d
 // tryRealtimeFetch 尝试从上游实时拉取 Gemini/Vertex 任务状态。
 // 仅当渠道类型为 Gemini 或 Vertex 时触发；其他渠道或出错时返回 nil。
 // 当非 OpenAI Video API 时，还会构建自定义格式的响应体。
-func tryRealtimeFetch(task *model.Task, isOpenAIVideoAPI bool) []byte {
+func tryRealtimeFetch(ctx context.Context, task *model.Task, isOpenAIVideoAPI bool) []byte {
+	ctx, cancel := service.TaskPollContext(ctx)
+	defer cancel()
+	if ctx.Err() != nil {
+		return nil
+	}
 	channelModel, err := model.GetChannelById(task.ChannelId, true)
 	if err != nil {
 		return nil
@@ -555,17 +560,19 @@ func tryRealtimeFetch(task *model.Task, isOpenAIVideoAPI bool) []byte {
 		HeadersOverride: channelModel.GetHeaderOverride(),
 	}})
 
-	resp, err := adaptor.FetchTask(baseURL, channelModel.Key, task, proxy)
-	if err != nil || resp == nil {
+	resp, err := adaptor.FetchTask(ctx, baseURL, channelModel.Key, task, proxy)
+	if resp != nil && resp.Body != nil {
+		defer resp.Body.Close()
+	}
+	if err != nil || resp == nil || resp.Body == nil {
 		return nil
 	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
+	body, err := service.ReadTaskPollBody(resp)
 	if err != nil {
 		return nil
 	}
 
-	ti, err := adaptor.ParseTaskResult(task, resp, body)
+	ti, err := adaptor.ParseTaskResult(ctx, task, resp, body)
 	if err != nil || ti == nil {
 		return nil
 	}
@@ -576,10 +583,16 @@ func tryRealtimeFetch(task *model.Task, isOpenAIVideoAPI bool) []byte {
 	if finished && snap.Status != model.TaskStatusSuccess && snap.Status != model.TaskStatusFailure {
 		// Finishing a task settles or refunds it. Let the poller record the
 		// final status, as it does for every other task, so that happens once.
+		// A terminal result already received must survive a client disconnect.
+		settlementCtx, settlementCancel := service.TaskPollContext(context.WithoutCancel(ctx))
+		defer settlementCancel()
 		upstreamID := task.GetUpstreamTaskID()
-		_ = service.UpdateVideoTasks(context.Background(), task.Platform,
+		_ = service.UpdateVideoTasks(settlementCtx, task.Platform,
 			map[int][]string{task.ChannelId: {upstreamID}}, map[string]*model.Task{upstreamID: task})
 	} else {
+		if ctx.Err() != nil {
+			return nil
+		}
 		// 将上游最新状态更新到 task
 		if ti.Status != "" {
 			task.Status = status

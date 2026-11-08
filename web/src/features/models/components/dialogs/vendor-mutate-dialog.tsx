@@ -53,8 +53,10 @@ import {
 } from '@/components/ui/sheet'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
+import { ADTY_PERMISSIONS, canAdmin } from '@/lib/adty-permissions'
 import { formatTimestampToDate } from '@/lib/format'
 import { createServerError } from '@/lib/server-error-message'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { createVendor, getVendor, updateVendor } from '../../api'
 import { vendorsQueryKeys } from '../../lib'
@@ -74,6 +76,11 @@ export function VendorMutateDialog(props: {
   const { t } = useTranslation()
   const client = useQueryClient()
   const id = props.currentVendor?.id
+  const currentUser = useAuthStore((state) => state.auth.user)
+  const canSave = canAdmin(
+    currentUser,
+    id ? ADTY_PERMISSIONS.MODEL_WRITE : ADTY_PERMISSIONS.MODEL_CREATE
+  )
   const [section, setSection] = useState('details')
   const [confirmClose, setConfirmClose] = useState(false)
   const loadedKey = useRef('')
@@ -113,6 +120,14 @@ export function VendorMutateDialog(props: {
   }, [props.open, id, query.data, form])
   const save = useMutation({
     mutationFn: async (values: VendorFormValues) => {
+      if (
+        !canAdmin(
+          useAuthStore.getState().auth.user,
+          id ? ADTY_PERMISSIONS.MODEL_WRITE : ADTY_PERMISSIONS.MODEL_CREATE
+        )
+      ) {
+        throw new Error(t('No permission to perform this action'))
+      }
       const response = id
         ? await updateVendor({ ...values, id })
         : await createVendor(values)
@@ -283,6 +298,7 @@ export function VendorMutateDialog(props: {
                   type='submit'
                   form='vendor-mutate-form'
                   disabled={
+                    !canSave ||
                     save.isPending ||
                     Boolean(id && (query.isPending || query.isError))
                   }

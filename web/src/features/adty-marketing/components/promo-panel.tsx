@@ -33,8 +33,10 @@ import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { PageSwitcher } from '@/features/referral/components/page-switcher'
 import { formatUsd } from '@/features/wallet/adty/lib/money'
 import { toIntlLocale } from '@/i18n/languages'
+import { ADTY_PERMISSIONS, canAdmin } from '@/lib/adty-permissions'
 import { formatNumber, formatTimestamp } from '@/lib/format'
 import { handleServerError } from '@/lib/handle-server-error'
+import { useAuthStore } from '@/stores/auth-store'
 
 import {
   getPromoCodes,
@@ -78,7 +80,7 @@ function toInput(code: PromoCode): PromoCodeInput {
 }
 
 /** Platform-funded promo codes (adty task 12.4); they add bonus credit to a paid top-up. */
-export function PromoPanel(props: { canWrite: boolean }) {
+export function PromoPanel(props: { canCreate: boolean; canWrite: boolean }) {
   const { t, i18n } = useTranslation()
   const locale = toIntlLocale(i18n.resolvedLanguage || i18n.language)
   const queryClient = useQueryClient()
@@ -92,8 +94,21 @@ export function PromoPanel(props: { canWrite: boolean }) {
     queryFn: () => getPromoCodes(page),
   })
   const save = useMutation({
-    mutationFn: () =>
-      savePromoCode(editing?.id ?? null, editing?.input ?? EMPTY),
+    mutationFn: () => {
+      if (
+        !editing ||
+        !(editing.id === null ? props.canCreate : props.canWrite) ||
+        !canAdmin(
+          useAuthStore.getState().auth.user,
+          editing.id === null
+            ? ADTY_PERMISSIONS.MARKETING_CREATE
+            : ADTY_PERMISSIONS.MARKETING_WRITE
+        )
+      ) {
+        throw new Error(t('No permission to perform this action'))
+      }
+      return savePromoCode(editing.id, editing.input)
+    },
     onSuccess: () => {
       toast.success(t('Saved successfully'))
       setEditing(null)
@@ -106,6 +121,8 @@ export function PromoPanel(props: { canWrite: boolean }) {
       prev ? { ...prev, input: { ...prev.input, ...patch } } : prev
     )
   const input = editing?.input
+  const canSave =
+    editing !== null && (editing.id === null ? props.canCreate : props.canWrite)
 
   return (
     <div className='flex flex-col gap-3'>
@@ -114,7 +131,7 @@ export function PromoPanel(props: { canWrite: boolean }) {
           'Promo codes add bonus credit to a paid top-up; the price stays the same. Uses are counted when the payment is credited. Codes funded by sub-site owners are not available yet.'
         )}
       </p>
-      {props.canWrite && (
+      {props.canCreate && (
         <div>
           <Button
             size='sm'
@@ -202,6 +219,7 @@ export function PromoPanel(props: { canWrite: boolean }) {
           <Button
             disabled={
               save.isPending ||
+              !canSave ||
               !input?.value ||
               (editing?.id == null && (input?.code.trim().length ?? 0) < 8)
             }

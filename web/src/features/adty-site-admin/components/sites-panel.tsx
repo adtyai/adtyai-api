@@ -41,7 +41,12 @@ import { formatNumber, formatTimestampToDate } from '@/lib/format'
 import { handleServerError } from '@/lib/handle-server-error'
 import { useAuthStore } from '@/stores/auth-store'
 
-import { createSite, getSites, SITE_ADMIN_PAGE_SIZE, siteAdminKeys } from '../api'
+import {
+  createSite,
+  getSites,
+  SITE_ADMIN_PAGE_SIZE,
+  siteAdminKeys,
+} from '../api'
 import {
   DEFAULT_SITE_SORT,
   nextSiteSort,
@@ -105,9 +110,9 @@ export function SitesPanel(props: { onOpenSite: (site: AdminSite) => void }) {
   const [sort, setSort] = useState<SiteSort>(DEFAULT_SITE_SORT)
   const [ownerId, setOwnerId] = useState('')
   const [subdomain, setSubdomain] = useState('')
-  const canAdjust = canAdmin(
+  const canCreate = canAdmin(
     useAuthStore((state) => state.auth.user),
-    ADTY_PERMISSIONS.SITE_ADJUST
+    ADTY_PERMISSIONS.SITE_CREATE
   )
   const queryClient = useQueryClient()
   const params = {
@@ -123,11 +128,20 @@ export function SitesPanel(props: { onOpenSite: (site: AdminSite) => void }) {
   })
   const rows = query.data?.items ?? []
   const openSite = useMutation({
-    mutationFn: () =>
-      createSite({
+    mutationFn: () => {
+      if (
+        !canAdmin(
+          useAuthStore.getState().auth.user,
+          ADTY_PERMISSIONS.SITE_CREATE
+        )
+      ) {
+        throw new Error(t('No permission to perform this action'))
+      }
+      return createSite({
         user_id: Number(ownerId),
         subdomain: subdomain.trim(),
-      }),
+      })
+    },
     onSuccess: () => {
       setOwnerId('')
       setSubdomain('')
@@ -182,12 +196,13 @@ export function SitesPanel(props: { onOpenSite: (site: AdminSite) => void }) {
         />
         <Button type='submit'>{t('Search')}</Button>
       </form>
-      {canAdjust && (
+      {canCreate && (
         <form
           className='flex flex-wrap items-end gap-2'
           aria-label={t('Open a reseller site')}
           onSubmit={(event) => {
             event.preventDefault()
+            if (!canCreate) return
             openSite.mutate()
           }}
         >

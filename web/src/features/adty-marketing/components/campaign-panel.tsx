@@ -29,8 +29,10 @@ import { StatusBadge } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
 import { PageSwitcher } from '@/features/referral/components/page-switcher'
 import { toIntlLocale } from '@/i18n/languages'
+import { ADTY_PERMISSIONS, canAdmin } from '@/lib/adty-permissions'
 import { formatNumber, formatTimestamp } from '@/lib/format'
 import { handleServerError } from '@/lib/handle-server-error'
+import { useAuthStore } from '@/stores/auth-store'
 
 import {
   cancelCampaign,
@@ -51,7 +53,9 @@ import { CampaignEditor } from './campaign-editor'
 
 type CampaignPanelProps = {
   templates: boolean
+  canCreate: boolean
   canWrite: boolean
+  canDelete: boolean
   canSend: boolean
   includeSitesDefault: boolean
 }
@@ -80,7 +84,18 @@ export function CampaignPanel(props: CampaignPanelProps) {
   const refresh = () =>
     queryClient.invalidateQueries({ queryKey: marketingKeys.all })
   const remove = useMutation({
-    mutationFn: (id: number) => deleteCampaign(id),
+    mutationFn: (id: number) => {
+      if (
+        !props.canDelete ||
+        !canAdmin(
+          useAuthStore.getState().auth.user,
+          ADTY_PERMISSIONS.MARKETING_DELETE
+        )
+      ) {
+        throw new Error(t('No permission to perform this action'))
+      }
+      return deleteCampaign(id)
+    },
     onSuccess: () => {
       toast.success(t('Deleted'))
       void refresh()
@@ -88,7 +103,18 @@ export function CampaignPanel(props: CampaignPanelProps) {
     onError: (err) => handleServerError(err),
   })
   const cancel = useMutation({
-    mutationFn: (id: number) => cancelCampaign(id),
+    mutationFn: (id: number) => {
+      if (
+        !props.canSend ||
+        !canAdmin(
+          useAuthStore.getState().auth.user,
+          ADTY_PERMISSIONS.MARKETING_SEND
+        )
+      ) {
+        throw new Error(t('No permission to perform this action'))
+      }
+      return cancelCampaign(id)
+    },
     onSuccess: () => {
       toast.success(t('Campaign canceled'))
       setCanceling(null)
@@ -102,6 +128,7 @@ export function CampaignPanel(props: CampaignPanelProps) {
       <CampaignEditor
         campaignId={editing.id}
         initial={editing.input}
+        canCreate={props.canCreate}
         canWrite={props.canWrite}
         canSend={props.canSend}
         onClose={() => setEditing(null)}
@@ -116,7 +143,7 @@ export function CampaignPanel(props: CampaignPanelProps) {
 
   return (
     <div className='flex flex-col gap-3'>
-      {props.canWrite && (
+      {props.canCreate && (
         <div>
           <Button
             size='sm'
@@ -193,7 +220,7 @@ export function CampaignPanel(props: CampaignPanelProps) {
                     {t('Statistics')}
                   </Button>
                 )}
-                {props.templates && props.canWrite && (
+                {props.templates && props.canCreate && (
                   <Button
                     size='sm'
                     variant='outline'
@@ -213,7 +240,7 @@ export function CampaignPanel(props: CampaignPanelProps) {
                     {t('Use template')}
                   </Button>
                 )}
-                {row.status === 'draft' && props.canWrite && (
+                {row.status === 'draft' && props.canDelete && (
                   <Button
                     size='sm'
                     variant='ghost'
@@ -279,8 +306,11 @@ export function CampaignPanel(props: CampaignPanelProps) {
           'Resend stops the scheduled emails that have not gone out yet.'
         )}
         destructive
+        disabled={!props.canSend || canceling === null}
         isLoading={cancel.isPending}
-        handleConfirm={() => canceling && cancel.mutate(canceling.id)}
+        handleConfirm={() => {
+          if (canceling && props.canSend) cancel.mutate(canceling.id)
+        }}
       />
     </div>
   )

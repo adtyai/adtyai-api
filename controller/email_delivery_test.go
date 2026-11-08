@@ -153,6 +153,9 @@ func TestEmailOptionsNeverReturnResendCredentials(t *testing.T) {
 }
 
 func TestEmailProviderOptionRejectsInvalidValues(t *testing.T) {
+	previousDB := model.DB
+	model.DB = nil
+	t.Cleanup(func() { model.DB = previousDB })
 	for _, provider := range []string{"", "both", "SMTP", "smtp,resend"} {
 		t.Run(provider, func(t *testing.T) {
 			configureEmailDelivery(t, map[string]string{"EmailProvider": "smtp"})
@@ -170,6 +173,9 @@ func TestEmailProviderOptionRejectsInvalidValues(t *testing.T) {
 }
 
 func TestEmailProviderCannotActivateIncompleteResend(t *testing.T) {
+	previousDB := model.DB
+	model.DB = nil
+	t.Cleanup(func() { model.DB = previousDB })
 	for name, settings := range map[string]map[string]string{
 		"missing key":    {"ResendFrom": "sender@example.com"},
 		"missing sender": {"ResendApiKey": "test-key"},
@@ -194,7 +200,7 @@ func TestEmailProviderCannotActivateIncompleteResend(t *testing.T) {
 func TestResendSettingsChangesKeepActiveDeliveryWorking(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&model.Option{}))
+	require.NoError(t, db.AutoMigrate(&model.Option{}, &model.AuditIntent{}))
 	previousDB, previousRedis := model.DB, common.RedisEnabled
 	model.DB, common.RedisEnabled = db, false
 	t.Cleanup(func() { model.DB, common.RedisEnabled = previousDB, previousRedis })
@@ -234,6 +240,9 @@ func TestResendSettingsChangesKeepActiveDeliveryWorking(t *testing.T) {
 }
 
 func TestEmailKeyStatusIsDerivedAndReadOnly(t *testing.T) {
+	previousDB := model.DB
+	model.DB = nil
+	t.Cleanup(func() { model.DB = previousDB })
 	configureEmailDelivery(t, map[string]string{"EmailProvider": "smtp", "ResendKeyConfigured": "true"})
 	response := httptest.NewRecorder()
 	context, _ := gin.CreateTestContext(response)

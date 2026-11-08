@@ -2,15 +2,108 @@ package model
 
 import (
 	"math"
+	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
+
+func TestWalletReservationsSQLiteMultipleConnections(t *testing.T) {
+	for _, subject := range []string{"user", "token"} {
+		t.Run(subject, func(t *testing.T) {
+			previousDB, previousLogDB := DB, LOG_DB
+			previousMain, previousLog := common.MainDatabaseType(), common.LogDatabaseType()
+			common.SetDatabaseTypes(common.DatabaseTypeSQLite, common.DatabaseTypeSQLite)
+			initCol()
+			dsn := filepath.Join(t.TempDir(), "wallet.db") + "?_pragma=busy_timeout(30000)&_pragma=journal_mode(WAL)&_txlock=immediate"
+			db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
+			require.NoError(t, err)
+			DB, LOG_DB = db, db
+			sqlDB, err := db.DB()
+			require.NoError(t, err)
+			sqlDB.SetMaxOpenConns(4)
+			t.Cleanup(func() {
+				_ = sqlDB.Close()
+				DB, LOG_DB = previousDB, previousLogDB
+				common.SetDatabaseTypes(previousMain, previousLog)
+				initCol()
+			})
+			resetBatchUpdateTestState(t)
+			useUserCacheMiniRedis(t)
+			common.BatchUpdateEnabled = true
+			require.NoError(t, db.AutoMigrate(&User{}, &Token{}))
+			user := createReserveTestUser(t, 100)
+			token := createReserveTestToken(t, 100)
+			table := "users"
+			if subject == "token" {
+				table = "tokens"
+			}
+			firstAtWrite, proceed := make(chan struct{}), make(chan struct{})
+			var first atomic.Bool
+			var release sync.Once
+			t.Cleanup(func() { release.Do(func() { close(proceed) }) })
+			callback := "test:sqlite-wallet-write"
+			require.NoError(t, db.Callback().Update().Before("gorm:update").Register(callback, func(tx *gorm.DB) {
+				if tx.Statement.Table == table && first.CompareAndSwap(false, true) {
+					close(firstAtWrite)
+					select {
+					case <-proceed:
+					case <-t.Context().Done():
+					}
+				}
+			}))
+			t.Cleanup(func() { require.NoError(t, db.Callback().Update().Remove(callback)) })
+			start := make(chan struct{})
+			accepted, errorsByRequest := make([]bool, 2), make([]error, 2)
+			var wg sync.WaitGroup
+			for i := range accepted {
+				wg.Go(func() {
+					<-start
+					if subject == "user" {
+						accepted[i], errorsByRequest[i] = TryReserveUserQuota(user.Id, 80)
+					} else {
+						accepted[i], errorsByRequest[i] = TryReserveTokenQuota(token.Id, token.Key, 80, false)
+					}
+				})
+			}
+			close(start)
+			select {
+			case <-firstAtWrite:
+			case <-time.After(5 * time.Second):
+				t.Fatal("the first wallet writer did not reach its locked update")
+			}
+			waiting := assert.Eventually(t, func() bool { return sqlDB.Stats().InUse >= 2 }, 5*time.Second, 10*time.Millisecond,
+				"competing reservations must use separate SQLite connections")
+			release.Do(func() { close(proceed) })
+			wg.Wait()
+			require.True(t, waiting)
+			for _, err := range errorsByRequest {
+				require.NoError(t, err)
+			}
+			require.NotEqual(t, accepted[0], accepted[1], "only one request may spend the same 100-unit balance")
+			require.NoError(t, FlushBatchUpdates())
+			require.NoError(t, FlushBatchUpdates())
+			if subject == "user" {
+				require.Equal(t, 20, getUserQuotaFromDB(t, user.Id))
+			} else {
+				current := getTokenFromDB(t, token.Id)
+				require.Equal(t, 20, current.RemainQuota)
+				require.Equal(t, 80, current.UsedQuota)
+				require.Zero(t, current.QuotaPending)
+			}
+			var version string
+			require.NoError(t, db.Raw("SELECT sqlite_version()").Scan(&version).Error)
+			t.Logf("SQLite %s, WAL/immediate, pool=%d; competing reservations serialized", version, sqlDB.Stats().MaxOpenConnections)
+		})
+	}
+}
 
 func createReserveTestUser(t *testing.T, quota int) User {
 	t.Helper()
@@ -136,6 +229,218 @@ func TestRedisBatchReserveNeverFallsBackToStaleDatabaseBalance(t *testing.T) {
 	reloadedToken := getTokenFromDB(t, token.Id)
 	assert.Equal(t, 2, reloadedToken.RemainQuota)
 	assert.Equal(t, 7, reloadedToken.UsedQuota)
+}
+
+func TestBatchReservationSurvivesCacheAndLocalQueueLoss(t *testing.T) {
+	for _, failure := range []string{"cache deleted", "cache expired", "redis unavailable"} {
+		t.Run(failure, func(t *testing.T) {
+			truncateTables(t)
+			resetBatchUpdateTestState(t)
+			server := useUserCacheMiniRedis(t)
+			common.BatchUpdateEnabled = true
+			user := createReserveTestUser(t, 100)
+
+			reserved, err := TryReserveUserQuota(user.Id, 80)
+			require.NoError(t, err)
+			require.True(t, reserved)
+			require.Equal(t, 100, getUserQuotaFromDB(t, user.Id), "the batch is not flushed yet")
+
+			// Another process, or a restart, cannot see this process's queue.
+			batchUpdateLocks[BatchUpdateTypeUserQuota].Lock()
+			batchUpdateStores[BatchUpdateTypeUserQuota] = make(map[int]int)
+			batchUpdateLocks[BatchUpdateTypeUserQuota].Unlock()
+			switch failure {
+			case "cache deleted":
+				server.Del(getUserCacheKey(user.Id))
+			case "cache expired":
+				server.FastForward(time.Hour)
+			case "redis unavailable":
+				server.Close()
+			}
+
+			reserved, err = TryReserveUserQuota(user.Id, 80)
+			require.NoError(t, err)
+			require.False(t, reserved, "an unflushed reservation must remain authoritative without Redis or the local queue")
+			charged, err := ChargeUserQuotaUpTo(user.Id, 80)
+			require.NoError(t, err)
+			require.Equal(t, 20, charged, "only the unreserved balance remains spendable")
+
+			FlushBatchUpdates()
+			require.Equal(t, 0, getUserQuotaFromDB(t, user.Id), "flushing must recover all durable deltas without the old queue")
+		})
+	}
+}
+
+func TestBatchConsumptionImmediatelyReducesGiftProtection(t *testing.T) {
+	truncateTables(t)
+	resetBatchUpdateTestState(t)
+	useUserCacheMiniRedis(t)
+	common.BatchUpdateEnabled = true
+	user := createReserveTestUser(t, 100)
+	require.NoError(t, DB.Model(&User{}).Where("id = ?", user.Id).Update("checkin_quota", 50).Error)
+	reserved, err := TryReserveUserQuota(user.Id, 80)
+	require.NoError(t, err)
+	require.True(t, reserved)
+	require.NoError(t, DB.First(&user, user.Id).Error)
+	require.Equal(t, 20, user.CheckinQuota, "spent gifts cannot remain protected until a later credit or flush")
+}
+
+func TestTokenBatchReservationSurvivesCacheAndLocalQueueLoss(t *testing.T) {
+	for _, failure := range []string{"deleted", "expired", "unavailable", "restored stale amount"} {
+		t.Run(failure, func(t *testing.T) {
+			truncateTables(t)
+			resetBatchUpdateTestState(t)
+			server := useUserCacheMiniRedis(t)
+			common.BatchUpdateEnabled = true
+			token := createReserveTestToken(t, 100)
+			reserved, err := TryReserveTokenQuota(token.Id, token.Key, 80, false)
+			require.NoError(t, err)
+			require.True(t, reserved)
+			require.Equal(t, 100, getTokenFromDB(t, token.Id).RemainQuota)
+			batchUpdateLocks[BatchUpdateTypeTokenQuota].Lock()
+			batchUpdateStores[BatchUpdateTypeTokenQuota] = make(map[int]int)
+			batchUpdateLocks[BatchUpdateTypeTokenQuota].Unlock()
+			switch failure {
+			case "deleted":
+				server.Del(getTokenCacheKey(token.Key))
+			case "expired":
+				server.FastForward(time.Duration(tokenCacheTTLSeconds()+1) * time.Second)
+			case "unavailable":
+				require.NoError(t, common.RDB.Close())
+			case "restored stale amount":
+				require.NoError(t, common.RDB.HSet(t.Context(), getTokenCacheKey(token.Key), "RemainQuota", 100, "UsedQuota", 0).Err())
+			}
+			reserved, err = TryReserveTokenQuota(token.Id, token.Key, 80, false)
+			require.NoError(t, err)
+			require.False(t, reserved, "a lost cache or queue cannot restore spent token quota")
+			current, err := GetTokenByKey(token.Key, false)
+			require.NoError(t, err)
+			require.Equal(t, 20, current.RemainQuota)
+			require.Equal(t, 80, current.UsedQuota)
+			reserved, err = TryReserveTokenQuota(token.Id, token.Key, 20, false)
+			require.NoError(t, err)
+			require.True(t, reserved)
+			FlushBatchUpdates()
+			stored := getTokenFromDB(t, token.Id)
+			require.Zero(t, stored.RemainQuota)
+			require.Equal(t, 100, stored.UsedQuota)
+			FlushBatchUpdates()
+			require.Equal(t, 100, getTokenFromDB(t, token.Id).UsedQuota)
+		})
+	}
+}
+
+func TestTokenMetadataMutationDoesNotRestorePendingSpend(t *testing.T) {
+	truncateTables(t)
+	resetBatchUpdateTestState(t)
+	useUserCacheMiniRedis(t)
+	common.BatchUpdateEnabled = true
+	token := createReserveTestToken(t, 100)
+	reserved, err := TryReserveTokenQuota(token.Id, token.Key, 80, false)
+	require.NoError(t, err)
+	require.True(t, reserved)
+	token.Name = "renamed while pending"
+	require.NoError(t, token.Update())
+	reserved, err = TryReserveTokenQuota(token.Id, token.Key, 80, false)
+	require.NoError(t, err)
+	require.False(t, reserved)
+}
+
+func TestReplacingTokenLimitCommitsPendingUsageOnce(t *testing.T) {
+	truncateTables(t)
+	resetBatchUpdateTestState(t)
+	useUserCacheMiniRedis(t)
+	common.BatchUpdateEnabled = true
+	token := createReserveTestToken(t, 100)
+	reserved, err := TryReserveTokenQuota(token.Id, token.Key, 80, false)
+	require.NoError(t, err)
+	require.True(t, reserved)
+	current, err := GetTokenByIds(token.Id, token.UserId)
+	require.NoError(t, err)
+	current.RemainQuota = 50
+	require.NoError(t, current.UpdateReplacingRemainQuota())
+	FlushBatchUpdates()
+	stored := getTokenFromDB(t, token.Id)
+	require.Equal(t, 50, stored.RemainQuota, "the old pending spend cannot reduce a replacement limit twice")
+	require.Equal(t, 80, stored.UsedQuota)
+	require.NoError(t, IncreaseTokenQuota(token.Id, token.Key, 20))
+	current, err = GetTokenByKey(token.Key, false)
+	require.NoError(t, err)
+	require.Equal(t, 70, current.RemainQuota)
+	require.Equal(t, 60, current.UsedQuota)
+	FlushBatchUpdates()
+	stored = getTokenFromDB(t, token.Id)
+	require.Equal(t, 70, stored.RemainQuota)
+	require.Equal(t, 60, stored.UsedQuota)
+}
+
+func TestDurableQuotaMigrationAndRestartRecovery(t *testing.T) {
+	db := adtyTestDB(t)
+	require.NoError(t, db.AutoMigrate(&User{}, &Token{}))
+	resetBatchUpdateTestState(t)
+	useUserCacheMiniRedis(t)
+	common.BatchUpdateEnabled = true
+	user := createReserveTestUser(t, 100)
+	token := createReserveTestToken(t, 100)
+	// A representative prior-version schema has every existing field but no
+	// durable pending columns. Upgrading it must preserve rows and set zero.
+	require.NoError(t, db.Migrator().DropColumn(&User{}, "QuotaPending"))
+	require.NoError(t, db.Migrator().DropColumn(&Token{}, "QuotaPending"))
+	for range 2 {
+		require.NoError(t, db.AutoMigrate(&User{}, &Token{}))
+	}
+	var unchanged User
+	require.NoError(t, db.First(&unchanged, user.Id).Error)
+	require.Equal(t, 100, unchanged.Quota)
+	require.Zero(t, unchanged.QuotaPending)
+	storedToken := getTokenFromDB(t, token.Id)
+	require.Equal(t, 100, storedToken.RemainQuota)
+	require.Zero(t, storedToken.QuotaPending)
+	require.NoError(t, DecreaseUserQuota(user.Id, 80, false))
+	require.NoError(t, DecreaseTokenQuota(token.Id, token.Key, 70))
+	// Repeated migration cannot clear amounts already committed by a new node.
+	require.NoError(t, db.AutoMigrate(&User{}, &Token{}))
+	require.NoError(t, db.First(&unchanged, user.Id).Error)
+	require.Equal(t, -80, unchanged.QuotaPending)
+	storedToken = getTokenFromDB(t, token.Id)
+	require.Equal(t, -70, storedToken.QuotaPending)
+	// Account/token soft deletion does not erase a committed delta. Simulate a
+	// restart with no process-local hints, then flush the soft-deleted rows.
+	require.NoError(t, db.Delete(&user).Error)
+	require.NoError(t, db.Delete(&token).Error)
+	for _, kind := range []int{BatchUpdateTypeUserQuota, BatchUpdateTypeTokenQuota} {
+		batchUpdateLocks[kind].Lock()
+		batchUpdateStores[kind] = make(map[int]int)
+		batchUpdateLocks[kind].Unlock()
+	}
+	require.NoError(t, FlushBatchUpdates())
+	require.NoError(t, db.Unscoped().First(&unchanged, user.Id).Error)
+	require.Equal(t, 20, unchanged.Quota)
+	require.Zero(t, unchanged.QuotaPending)
+	require.NoError(t, db.Unscoped().First(&storedToken, token.Id).Error)
+	require.Equal(t, 30, storedToken.RemainQuota)
+	require.Equal(t, 70, storedToken.UsedQuota)
+	require.Zero(t, storedToken.QuotaPending)
+	require.NoError(t, FlushBatchUpdates())
+}
+
+func TestBatchCreditRetainsNegativeRawRowUntilFlush(t *testing.T) {
+	truncateTables(t)
+	resetBatchUpdateTestState(t)
+	useUserCacheMiniRedis(t)
+	common.BatchUpdateEnabled = true
+	user := createReserveTestUser(t, 0)
+
+	require.NoError(t, IncreaseUserQuota(user.Id, 100, false))
+	require.NoError(t, DecreaseUserQuota(user.Id, 80, true))
+	require.Equal(t, -80, getUserQuotaFromDB(t, user.Id), "a direct debit may precede an unflushed credit")
+
+	charged, err := ChargeUserQuotaUpTo(user.Id, 50)
+	require.NoError(t, err)
+	require.Equal(t, 20, charged, "the logical balance includes the durable positive credit")
+	require.Equal(t, -80, getUserQuotaFromDB(t, user.Id), "do not clamp the raw row or prematurely flush the credit")
+	FlushBatchUpdates()
+	require.Equal(t, 0, getUserQuotaFromDB(t, user.Id))
 }
 
 func TestBatchUpdateAccumulatesTwoMaximumRequestCharges(t *testing.T) {
@@ -340,15 +645,13 @@ func TestTokenCacheInitPreservesLiveQuotaAndFenceBlocksStaleSnapshot(t *testing.
 	require.NoError(t, err)
 	stale := *loaded
 
-	result, err := cacheApplyTokenQuotaDelta(token.Id, token.Key, -70)
-	require.NoError(t, err)
-	require.Equal(t, cacheQuotaOK, result)
+	require.NoError(t, DecreaseTokenQuota(token.Id, token.Key, 70))
 
-	// 已存在的哈希只刷新 TTL：数据库快照不得覆盖已被原子预扣的余额。
+	// A stale cache snapshot cannot replace the durable amount used by readers.
 	code, err := cacheInitToken(stale)
 	require.NoError(t, err)
 	assert.Equal(t, 2, code)
-	cached, err := cacheGetTokenByKey(token.Key)
+	cached, err := GetTokenByKey(token.Key, false)
 	require.NoError(t, err)
 	assert.Equal(t, 30, cached.RemainQuota)
 
@@ -360,12 +663,12 @@ func TestTokenCacheInitPreservesLiveQuotaAndFenceBlocksStaleSnapshot(t *testing.
 	_, err = cacheGetTokenByKey(token.Key)
 	assert.Error(t, err)
 
-	// fence 过期后可重新从数据库水合。
+	// Metadata hydration still uses the committed amount.
 	server.FastForward(time.Duration(tokenCacheFenceSeconds+1) * time.Second)
 	fresh, err := GetTokenByKey(token.Key, false)
 	require.NoError(t, err)
-	assert.Equal(t, 100, fresh.RemainQuota)
-	cached, err = cacheGetTokenByKey(token.Key)
+	assert.Equal(t, 30, fresh.RemainQuota)
+	cached, err = GetTokenByKey(token.Key, false)
 	require.NoError(t, err)
-	assert.Equal(t, 100, cached.RemainQuota)
+	assert.Equal(t, 30, cached.RemainQuota)
 }

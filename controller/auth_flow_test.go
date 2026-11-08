@@ -381,10 +381,9 @@ func TestSecurityLoginAllPrimaryTransportsRequireAdditionalVerification(t *testi
 					oauth.Register(slug, &boundLoginOAuthProvider{userID: user.Id})
 				}
 				t.Cleanup(func() { oauth.Unregister(slug) })
-				token, _, err := model.CreateAuthFlow(model.AuthFlowCreate{Purpose: model.AuthFlowPurposeOAuth, Provider: slug, Intent: model.AuthFlowIntentLogin, Payload: `{}`, ExpiresAt: time.Now().Add(time.Minute)})
-				require.NoError(t, err)
+				token := startOAuthLoginTestFlow(t, slug)
 				router := gin.New()
-				router.GET("/api/oauth/:provider", HandleOAuth)
+				router.GET("/api/oauth/:provider", withOAuthTestBrowser(HandleOAuth))
 				response = httptest.NewRecorder()
 				router.ServeHTTP(response, httptest.NewRequest("GET", "/api/oauth/"+slug+"?state="+token+"&code=provider-code", nil))
 			}
@@ -673,6 +672,31 @@ func setupAuthFlowControllerTest(t *testing.T) *authFlowTestOAuthProvider {
 	return provider
 }
 
+// These fixtures model one browser; adversarial cookie tests use raw requests.
+func withOAuthTestBrowser(handler gin.HandlerFunc) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Request.AddCookie(&http.Cookie{Name: "adtyai_oauth_login", Value: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"})
+		handler(c)
+	}
+}
+
+func startOAuthLoginTestFlow(t *testing.T, provider string) string {
+	t.Helper()
+	body, err := common.Marshal(oauthStateRequest{Provider: provider, Intent: model.AuthFlowIntentLogin})
+	require.NoError(t, err)
+	response := securityEnrollmentRequest(http.MethodPost, "/api/oauth/state", string(body), "", service.AuthIdentity{}, withOAuthTestBrowser(GenerateOAuthCode))
+	var result struct {
+		Success bool `json:"success"`
+		Data    struct {
+			FlowToken string `json:"flow_token"`
+		} `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(response.Body.Bytes(), &result))
+	require.True(t, result.Success, response.Body.String())
+	require.NotEmpty(t, result.Data.FlowToken)
+	return result.Data.FlowToken
+}
+
 func TestGenerateOAuthCodeBindsFlowToAuthenticatedSession(t *testing.T) {
 	_, identity := setupSecurityEnrollmentTest(t)
 	oauth.Register("auth-flow-test", &authFlowTestOAuthProvider{})
@@ -693,6 +717,85 @@ func TestGenerateOAuthCodeBindsFlowToAuthenticatedSession(t *testing.T) {
 	assert.Equal(t, identity.SessionID, flow.SessionId)
 }
 
+func TestGenerateOAuthLoginBindsBrowserAndReusesCookie(t *testing.T) {
+	setupAuthFlowControllerTest(t)
+	previousSecure := common.SessionCookieSecure
+	common.SessionCookieSecure = true
+	t.Cleanup(func() { common.SessionCookieSecure = previousSecure })
+	var browserCookie *http.Cookie
+	var firstState string
+	for range 2 {
+		response := securityEnrollmentRequest(http.MethodPost, "/api/oauth/state", `{"provider":"auth-flow-test","intent":"login"}`, "", service.AuthIdentity{}, func(c *gin.Context) {
+			if browserCookie != nil {
+				c.Request.AddCookie(browserCookie)
+			}
+			GenerateOAuthCode(c)
+		})
+		var result struct {
+			Success bool `json:"success"`
+			Data    struct {
+				FlowToken string `json:"flow_token"`
+			} `json:"data"`
+		}
+		require.NoError(t, common.Unmarshal(response.Body.Bytes(), &result))
+		require.True(t, result.Success, response.Body.String())
+		cookies := response.Result().Cookies()
+		require.Len(t, cookies, 1, "anonymous OAuth needs a browser binding cookie")
+		cookie := cookies[0]
+		assert.Equal(t, "adtyai_oauth_login", cookie.Name)
+		assert.Equal(t, "/api/oauth", cookie.Path)
+		assert.Empty(t, cookie.Domain)
+		assert.True(t, cookie.HttpOnly)
+		assert.True(t, cookie.Secure)
+		assert.Equal(t, http.SameSiteLaxMode, cookie.SameSite)
+		assert.Equal(t, 600, cookie.MaxAge)
+		decoded, err := base64.RawURLEncoding.DecodeString(cookie.Value)
+		require.NoError(t, err)
+		assert.Len(t, decoded, 32)
+		if browserCookie != nil {
+			assert.Equal(t, browserCookie.Value, cookie.Value, "parallel login tabs must share the browser binding")
+			assert.NotEqual(t, firstState, result.Data.FlowToken)
+		}
+		browserCookie, firstState = cookie, result.Data.FlowToken
+		flow, err := model.GetAuthFlow(result.Data.FlowToken, model.AuthFlowMatch{Purpose: model.AuthFlowPurposeOAuth})
+		require.NoError(t, err)
+		var payload map[string]any
+		require.NoError(t, common.UnmarshalJsonStr(flow.Payload, &payload))
+		assert.Equal(t, common.GenerateHMACWithKey([]byte("oauth-login-browser-v1:"+common.SessionSecret), cookie.Value), payload["browser_binding_hash"])
+		assert.NotContains(t, flow.Payload, cookie.Value)
+		assert.NotContains(t, response.Body.String(), cookie.Value)
+		assert.Empty(t, flow.SessionId, "browser binding must not impersonate an authenticated session")
+	}
+}
+
+func TestOAuthLoginRejectsUnboundBrowsersBeforeProviderCalls(t *testing.T) {
+	provider := setupAuthFlowControllerTest(t)
+	const browserToken = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+	hash := common.GenerateHMACWithKey([]byte("oauth-login-browser-v1:"+common.SessionSecret), browserToken)
+	for _, test := range []struct{ name, cookie, payload string }{
+		{"missing cookie", "", `{"browser_binding_hash":"` + hash + `"}`},
+		{"different browser", "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB", `{"browser_binding_hash":"` + hash + `"}`},
+		{"legacy unbound flow", browserToken, `{}`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			state, _, err := model.CreateAuthFlow(model.AuthFlowCreate{Purpose: model.AuthFlowPurposeOAuth, Provider: "auth-flow-test", Intent: model.AuthFlowIntentLogin, Payload: test.payload, ExpiresAt: time.Now().Add(time.Minute)})
+			require.NoError(t, err)
+			response := securityEnrollmentRequest(http.MethodGet, "/api/oauth/auth-flow-test?state="+state+"&code=attacker-code", "", "", service.AuthIdentity{}, func(c *gin.Context) {
+				if test.cookie != "" {
+					c.Request.AddCookie(&http.Cookie{Name: "adtyai_oauth_login", Value: test.cookie})
+				}
+				c.Params = gin.Params{{Key: "provider", Value: "auth-flow-test"}}
+				HandleOAuth(c)
+			})
+			assert.Equal(t, http.StatusForbidden, response.Code)
+			_, err = model.GetAuthFlow(state, model.AuthFlowMatch{Purpose: model.AuthFlowPurposeOAuth})
+			assert.NoError(t, err, "a foreign callback cannot consume the browser's flow")
+			assert.Zero(t, provider.exchangeCalls)
+			assert.Zero(t, provider.userInfoCalls)
+		})
+	}
+}
+
 func TestOAuthLoginConsumesFlowOnlyAfterProviderIdentity(t *testing.T) {
 	provider := setupAuthFlowControllerTest(t)
 
@@ -708,14 +811,10 @@ func TestOAuthLoginConsumesFlowOnlyAfterProviderIdentity(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			provider.exchangeErr = test.exchangeErr
 			provider.userInfoErr = test.userInfoErr
-			token, _, err := model.CreateAuthFlow(model.AuthFlowCreate{
-				Purpose: model.AuthFlowPurposeOAuth, Provider: "auth-flow-test", Intent: model.AuthFlowIntentLogin,
-				Payload: `{}`, ExpiresAt: time.Now().Add(time.Minute),
-			})
-			require.NoError(t, err)
+			token := startOAuthLoginTestFlow(t, "auth-flow-test")
 
 			router := gin.New()
-			router.GET("/api/oauth/:provider", HandleOAuth)
+			router.GET("/api/oauth/:provider", withOAuthTestBrowser(HandleOAuth))
 			request := httptest.NewRequest(http.MethodGet, "/api/oauth/auth-flow-test?state="+token+"&code=test", nil)
 			response := httptest.NewRecorder()
 			router.ServeHTTP(response, request)
@@ -734,26 +833,18 @@ func TestOAuthLoginConsumesFlowAfterProviderIdentityAndOnProviderError(t *testin
 
 	provider.exchangeErr = nil
 	provider.userInfoErr = nil
-	successToken, _, err := model.CreateAuthFlow(model.AuthFlowCreate{
-		Purpose: model.AuthFlowPurposeOAuth, Provider: "auth-flow-test", Intent: model.AuthFlowIntentLogin,
-		Payload: `{invalid`, ExpiresAt: time.Now().Add(time.Minute),
-	})
-	require.NoError(t, err)
+	successToken := startOAuthLoginTestFlow(t, "auth-flow-test")
 	router := gin.New()
-	router.GET("/api/oauth/:provider", HandleOAuth)
+	router.GET("/api/oauth/:provider", withOAuthTestBrowser(HandleOAuth))
 	request := httptest.NewRequest(http.MethodGet, "/api/oauth/auth-flow-test?state="+successToken+"&code=test", nil)
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, request)
-	_, err = model.GetAuthFlow(successToken, model.AuthFlowMatch{Purpose: model.AuthFlowPurposeOAuth})
+	_, err := model.GetAuthFlow(successToken, model.AuthFlowMatch{Purpose: model.AuthFlowPurposeOAuth})
 	assert.ErrorIs(t, err, model.ErrAuthFlowConsumed)
 	assert.Equal(t, 1, provider.exchangeCalls)
 	assert.Equal(t, 1, provider.userInfoCalls)
 
-	providerErrorToken, _, err := model.CreateAuthFlow(model.AuthFlowCreate{
-		Purpose: model.AuthFlowPurposeOAuth, Provider: "auth-flow-test", Intent: model.AuthFlowIntentLogin,
-		Payload: `{}`, ExpiresAt: time.Now().Add(time.Minute),
-	})
-	require.NoError(t, err)
+	providerErrorToken := startOAuthLoginTestFlow(t, "auth-flow-test")
 	request = httptest.NewRequest(http.MethodGet, "/api/oauth/auth-flow-test?state="+providerErrorToken+"&error=access_denied", nil)
 	response = httptest.NewRecorder()
 	router.ServeHTTP(response, request)
@@ -829,10 +920,9 @@ func legacyGitHubOAuthLogin(t *testing.T, provider *legacyGitHubOAuthProvider) *
 	const slug = "github-legacy-login-test"
 	oauth.Register(slug, provider)
 	t.Cleanup(func() { oauth.Unregister(slug) })
-	token, _, err := model.CreateAuthFlow(model.AuthFlowCreate{Purpose: model.AuthFlowPurposeOAuth, Provider: slug, Intent: model.AuthFlowIntentLogin, Payload: `{}`, ExpiresAt: time.Now().Add(time.Minute)})
-	require.NoError(t, err)
+	token := startOAuthLoginTestFlow(t, slug)
 	router := gin.New()
-	router.GET("/api/oauth/:provider", HandleOAuth)
+	router.GET("/api/oauth/:provider", withOAuthTestBrowser(HandleOAuth))
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/oauth/"+slug+"?state="+token+"&code=provider-code", nil))
 	return response

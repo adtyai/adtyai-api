@@ -27,7 +27,7 @@ import (
 // enableAdtyAdminGuard 打开后台权限检查并在主节点模式下重新 Init，结束时恢复上游状态。
 func enableAdtyAdminGuard(t *testing.T, db *gorm.DB) {
 	t.Helper()
-	require.NoError(t, db.AutoMigrate(&model.CasbinRule{}, &model.AuthzRole{}))
+	require.NoError(t, db.AutoMigrate(&model.CasbinRule{}, &model.AuthzRole{}, &model.AuthzActionCatalogState{}))
 	wasMaster := common.IsMasterNode
 	common.IsMasterNode = true
 	restore := middleware.EnableAdtyAdminPermissions()
@@ -52,7 +52,7 @@ func newAdtyGuardFixture(t *testing.T) *adtyGuardFixture {
 	disableAdtyRedis(t)
 	db := adtyTestDB(t)
 	require.NoError(t, db.AutoMigrate(&model.User{}, &model.UserSession{}, &model.Token{}, &model.Channel{}, &model.Ability{},
-		&model.AuditLog{}, &model.Log{}, &model.Option{}, &model.TopUp{}, &model.UserAccessToken{}))
+		&model.AuditLog{}, &model.AuditIntent{}, &model.Log{}, &model.Option{}, &model.TopUp{}, &model.UserAccessToken{}))
 	require.NoError(t, model.MigrateAdtyTables())
 	require.NoError(t, model.SeedAdtyGroups())
 	enableAdtyAdminGuard(t, db)
@@ -240,7 +240,10 @@ func TestUpdateUserGroupNeedsGroupPermission(t *testing.T) {
 
 func TestRemoveFromChannelsNeedsChannelWrite(t *testing.T) {
 	f := newAdtyGuardFixture(t)
-	f.grant(t, authz.AdtyModelRead, authz.AdtyModelWrite)
+	f.grant(t, authz.AdtyModelRead, authz.AdtyModelWrite, authz.ChannelWrite)
+	assert.Equal(t, http.StatusForbidden, adtyJSON(t, f.engine, http.MethodDelete, "/api/models/1", "", f.token).Code, "model write cannot replace model delete")
+	assert.Equal(t, http.StatusForbidden, adtyJSON(t, f.engine, http.MethodPost, "/api/models/delete", `{"ids":[1],"remove_from_channels":false}`, f.token).Code, "batch deletion requires model delete")
+	f.grant(t, authz.AdtyModelRead, authz.AdtyModelDelete)
 	assert.Equal(t, http.StatusForbidden, adtyJSON(t, f.engine, http.MethodDelete, "/api/models/1?remove_from_channels=true", "", f.token).Code)
 	assert.Equal(t, http.StatusForbidden, adtyJSON(t, f.engine, http.MethodPost, "/api/models/delete", `{"ids":[1],"remove_from_channels":true}`, f.token).Code)
 	plain := httptest.NewRequest(http.MethodPost, "/api/models/delete", strings.NewReader(`{"model_ids":[1],"remove_from_channels":true}`))
@@ -252,7 +255,7 @@ func TestRemoveFromChannelsNeedsChannelWrite(t *testing.T) {
 	assert.NotEqual(t, http.StatusForbidden, adtyJSON(t, f.engine, http.MethodDelete, "/api/models/1", "", f.token).Code)
 	assert.NotEqual(t, http.StatusForbidden, adtyJSON(t, f.engine, http.MethodPost, "/api/models/delete", `{"ids":[1],"remove_from_channels":false}`, f.token).Code)
 
-	f.grant(t, authz.AdtyModelRead, authz.AdtyModelWrite, authz.ChannelWrite)
+	f.grant(t, authz.AdtyModelRead, authz.AdtyModelDelete, authz.ChannelWrite)
 	assert.NotEqual(t, http.StatusForbidden, adtyJSON(t, f.engine, http.MethodDelete, "/api/models/1?remove_from_channels=true", "", f.token).Code)
 }
 
@@ -268,13 +271,18 @@ func TestAdminCannotEditPermissions(t *testing.T) {
 }
 
 func TestEveryUpstreamAdminScopeClassified(t *testing.T) {
+	wasEnabled := service.AdtyAdminPermissionsEnabled()
+	service.SetAdtyAdminPermissionsEnabled(false)
+	catalog := service.AccessTokenCatalog(1, common.RoleRootUser)
+	service.SetAdtyAdminPermissionsEnabled(wasEnabled)
 	restore := middleware.EnableAdtyAdminPermissions()
 	t.Cleanup(restore)
 	casbin := map[string]bool{}
 	for _, resource := range authz.Catalog() {
 		casbin[resource.Resource] = true
 	}
-	for _, group := range service.AccessTokenCatalog(1, common.RoleRootUser) {
+	checked := 0
+	for _, group := range catalog {
 		if group.Group != service.AccessTokenGroupAdmin {
 			continue
 		}
@@ -283,6 +291,7 @@ func TestEveryUpstreamAdminScopeClassified(t *testing.T) {
 				continue
 			}
 			for _, action := range resource.Actions {
+				checked++
 				scope := resource.Resource + ":" + action.Action
 				classified := middleware.AdtyAdminScopeClassified(scope)
 				rootOnly := slices.Contains(middleware.AdtyRootOnlyAdminScopes, scope)
@@ -290,11 +299,16 @@ func TestEveryUpstreamAdminScopeClassified(t *testing.T) {
 			}
 		}
 	}
+	assert.GreaterOrEqual(t, checked, 11, "the upstream admin catalog must not disappear when the ADTY grant catalog hides legacy scopes")
 }
 
 func TestAdminRouteInventory(t *testing.T) {
+	wasEnabled := service.AdtyAdminPermissionsEnabled()
+	service.SetAdtyAdminPermissionsEnabled(false)
+	t.Cleanup(func() { service.SetAdtyAdminPermissionsEnabled(wasEnabled) })
 	gin.SetMode(gin.TestMode)
-	SetApiRouter(gin.New())
+	engine := gin.New()
+	SetApiRouter(engine)
 	var routes []string
 	for _, key := range middleware.AccessTokenRouteRuleKeys() {
 		rule, _ := middleware.AccessTokenRouteRule(key)
@@ -313,6 +327,39 @@ func TestAdminRouteInventory(t *testing.T) {
 		}
 	}
 	assert.Equal(t, listed, routes, "upstream added or removed admin routes; classify them in middleware/adty_admin_guard.go and update middleware/testdata/adty_admin_routes.txt")
+
+	restore := middleware.EnableAdtyAdminPermissions()
+	t.Cleanup(restore)
+	currentScopes := map[string]bool{}
+	for _, resource := range authz.Catalog() {
+		for _, action := range resource.Actions {
+			currentScopes[resource.Resource+":"+action.Action] = true
+		}
+	}
+	for _, route := range listed {
+		fields := strings.Fields(route)
+		require.Len(t, fields, 3)
+		key := fields[0] + " " + fields[1]
+		rule, exists := middleware.AccessTokenRouteRule(key)
+		require.True(t, exists, key)
+		if key == "POST /api/user/topup/complete" {
+			closed := httptest.NewRecorder()
+			engine.ServeHTTP(closed, httptest.NewRequest(http.MethodPost, "/api/user/topup/complete", nil))
+			assert.Equal(t, http.StatusForbidden, closed.Code, "the retired upstream completion route must remain closed")
+			continue
+		}
+		if key == "GET /api/group/" {
+			assert.Equal(t, "scope", rule.Kind(), key)
+			assert.Equal(t, "group:read", rule.Scope(), "the group entry delegates to the same live/PAT permission intersection")
+			continue
+		}
+		if key == "POST /api/models/sync_upstream" || key == "POST /api/vendors/operations" {
+			assert.Equal(t, "any", rule.Kind(), key+" must defer compound actions to the live guard and handler")
+			continue
+		}
+		assert.Equal(t, "scope", rule.Kind(), key)
+		assert.True(t, currentScopes[rule.Scope()] || slices.Contains(middleware.AdtyRootOnlyAdminScopes, rule.Scope()), key+" must use a current action or an explicit Root-only scope")
+	}
 }
 
 func TestMainEnablesAdtyAdminPermissions(t *testing.T) {

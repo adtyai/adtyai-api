@@ -61,7 +61,7 @@ type TaskAdaptor interface {
 	// Called by the polling loop after ParseTaskResult.
 	// Return a positive value to trigger delta settlement (supplement / refund).
 	// Return 0 to keep the pre-charged amount unchanged.
-	AdjustBillingOnComplete(task *model.Task, taskResult *relaycommon.TaskInfo) int
+	AdjustBillingOnComplete(ctx context.Context, task *model.Task, taskResult *relaycommon.TaskInfo) int
 
 	// ── Request / Response ───────────────────────────────────────────
 
@@ -77,8 +77,8 @@ type TaskAdaptor interface {
 
 	// ── Polling ──────────────────────────────────────────────────────
 
-	FetchTask(baseUrl, key string, task *model.Task, proxy string) (*http.Response, error)
-	ParseTaskResult(task *model.Task, resp *http.Response, respBody []byte) (*relaycommon.TaskInfo, error)
+	FetchTask(ctx context.Context, baseUrl, key string, task *model.Task, proxy string) (*http.Response, error)
+	ParseTaskResult(ctx context.Context, task *model.Task, resp *http.Response, respBody []byte) (*relaycommon.TaskInfo, error)
 }
 
 // TaskSubmitResponse is the transport-independent result of parsing an

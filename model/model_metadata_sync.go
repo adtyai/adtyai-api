@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 
@@ -65,6 +66,13 @@ type MetadataSyncResult struct {
 	CreatedModels  []string                `json:"created_models"`
 	UpdatedModels  []MetadataSyncSelection `json:"updated_models"`
 	CreatedVendors []string                `json:"created_vendors"`
+}
+
+// MetadataSyncActions includes implicit vendor creation as well as the selected
+// model changes. It is derived from locked state immediately before mutation.
+type MetadataSyncActions struct {
+	Create bool
+	Update bool
 }
 
 func MetadataRecordVersion(local *Model, localVendor, upstreamVendor *Vendor) string {
@@ -151,7 +159,10 @@ func ValidateModelEndpoints(raw string) error {
 	return nil
 }
 
-func ApplyMetadataSync(updates []MetadataSyncUpdate, upstreamVendors map[string]Vendor) (*MetadataSyncResult, error) {
+func ApplyMetadataSync(updates []MetadataSyncUpdate, upstreamVendors map[string]Vendor, authorize func(MetadataSyncActions) error) (*MetadataSyncResult, error) {
+	if authorize == nil {
+		return nil, errors.New("metadata sync authorization is required")
+	}
 	if len(updates) == 0 {
 		return nil, errors.New("select metadata changes before applying")
 	}
@@ -191,6 +202,7 @@ func ApplyMetadataSync(updates []MetadataSyncUpdate, upstreamVendors map[string]
 			vendorByID[vendor.Id] = vendor
 		}
 		// Verify the entire selection before any write, including shared vendors.
+		actions := MetadataSyncActions{}
 		for _, update := range updates {
 			local := locals[update.ModelName]
 			if local != nil && local.SyncOfficial == 0 {
@@ -206,6 +218,20 @@ func ApplyMetadataSync(updates []MetadataSyncUpdate, upstreamVendors map[string]
 			if update.Create && local != nil || !update.Create && local == nil {
 				return ErrMetadataSyncConflict
 			}
+			if update.Create {
+				actions.Create = true
+			} else {
+				actions.Update = true
+			}
+			if update.Values.Vendor != "" && (update.Create || slices.Contains(update.Fields, "vendor")) && FindMetadataVendor(vendors, update.Values.Vendor) == nil {
+				if _, ok := upstreamVendors[update.Values.Vendor]; !ok {
+					return fmt.Errorf("upstream vendor not found: %s", update.Values.Vendor)
+				}
+				actions.Create = true
+			}
+		}
+		if err := authorize(actions); err != nil {
+			return err
 		}
 		for _, update := range updates {
 			fields := make(map[string]any)

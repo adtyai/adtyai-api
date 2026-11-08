@@ -26,8 +26,10 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import { ADTY_PERMISSIONS, canAdmin } from '@/lib/adty-permissions'
 import { formatTimestamp } from '@/lib/format'
 import { handleServerError } from '@/lib/handle-server-error'
+import { useAuthStore } from '@/stores/auth-store'
 
 import {
   adminReferralKeys,
@@ -45,7 +47,7 @@ import {
   type RuleKey,
 } from '../lib/settings'
 
-export function SettingsPanel() {
+export function SettingsPanel(props: { canWrite: boolean }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const query = useQuery({
@@ -63,7 +65,18 @@ export function SettingsPanel() {
   }, [saved])
 
   const save = useMutation({
-    mutationFn: (body: ReferralSettingsUpdate) => saveReferralSettings(body),
+    mutationFn: (body: ReferralSettingsUpdate) => {
+      if (
+        !props.canWrite ||
+        !canAdmin(
+          useAuthStore.getState().auth.user,
+          ADTY_PERMISSIONS.REFERRAL_SETTINGS
+        )
+      ) {
+        throw new Error(t('No permission to perform this action'))
+      }
+      return saveReferralSettings(body)
+    },
     onSuccess: (next) => {
       queryClient.setQueryData(adminReferralKeys.settings, next)
       toast.success(t('Saved successfully'))
@@ -72,6 +85,7 @@ export function SettingsPanel() {
   })
 
   if (!saved || !drafts) return <LoadingState />
+  const disabled = !props.canWrite || save.isPending
 
   const labels: Record<MoneyKey | RuleKey, string> = {
     default_rate: t('Default commission rate (%)'),
@@ -95,6 +109,7 @@ export function SettingsPanel() {
       className='flex max-w-3xl flex-col gap-6'
       onSubmit={(event) => {
         event.preventDefault()
+        if (disabled) return
         save.mutate(buildSettingsUpdate(saved, drafts, enabled))
       }}
     >
@@ -110,7 +125,7 @@ export function SettingsPanel() {
         <Switch
           id='referral-enabled'
           checked={enabled}
-          disabled={rateMissing && !enabled}
+          disabled={disabled || (rateMissing && !enabled)}
           onCheckedChange={setEnabled}
         />
       </div>
@@ -123,6 +138,7 @@ export function SettingsPanel() {
             <Label htmlFor={`referral-${key}`}>{labels[key]}</Label>
             <Input
               id={`referral-${key}`}
+              disabled={disabled}
               type='number'
               min={0}
               step='0.01'
@@ -142,6 +158,7 @@ export function SettingsPanel() {
         </Label>
         <Input
           id='referral-cny-rate'
+          disabled={disabled}
           className='w-40'
           type='number'
           min={0}
@@ -165,6 +182,7 @@ export function SettingsPanel() {
             <Label htmlFor={`referral-${key}`}>{labels[key]}</Label>
             <Input
               id={`referral-${key}`}
+              disabled={disabled}
               type='number'
               min={0}
               step={1}
@@ -175,7 +193,7 @@ export function SettingsPanel() {
         ))}
       </fieldset>
       <div>
-        <Button type='submit' disabled={save.isPending}>
+        <Button type='submit' disabled={disabled}>
           {t('Save Changes')}
         </Button>
       </div>

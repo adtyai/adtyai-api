@@ -32,6 +32,15 @@ func (f *settleFailFunding) Refund() error { return f.inner.Refund() }
 
 // 结算差额写库失败时不能记成功消费。预扣还在，退款后余额和令牌回到预扣前。
 func TestPostTextConsumeQuotaSettleFailureRefundsPrecharge(t *testing.T) {
+	testPostConsumeQuotaSettleFailureRefundsPrecharge(t, false)
+}
+
+func TestPostWssConsumeQuotaSettleFailureRefundsPrecharge(t *testing.T) {
+	testPostConsumeQuotaSettleFailureRefundsPrecharge(t, true)
+}
+
+func testPostConsumeQuotaSettleFailureRefundsPrecharge(t *testing.T, realtime bool) {
+	t.Helper()
 	opened, err := model.OpenAdtyTestDatabase()
 	if errors.Is(err, model.ErrAdtyTestDSNUnset) {
 		t.Skip("ADTY_TEST_PG_DSN 未设置，需要 PostgreSQL 才能跑这个测试")
@@ -67,6 +76,7 @@ func TestPostTextConsumeQuotaSettleFailureRefundsPrecharge(t *testing.T) {
 	ctx, _ := gin.CreateTestContext(recorder)
 	ctx.Request = httptest.NewRequest("POST", "/v1/responses", nil)
 	info := &relaycommon.RelayInfo{
+		ChannelMeta:     &relaycommon.ChannelMeta{},
 		UserId:          user.Id,
 		TokenId:         token.Id,
 		TokenKey:        token.Key,
@@ -91,10 +101,17 @@ func TestPostTextConsumeQuotaSettleFailureRefundsPrecharge(t *testing.T) {
 	session := info.Billing.(*BillingSession)
 	session.funding = &settleFailFunding{inner: session.funding}
 
-	consumeErr := PostTextConsumeQuota(ctx, info, &dto.Usage{
-		PromptTokens: 10, CompletionTokens: 10, TotalTokens: 20,
-	}, nil)
-	require.Error(t, consumeErr)
+	if realtime {
+		consumeErr := PostWssConsumeQuota(ctx, info, info.OriginModelName, &dto.RealtimeUsage{
+			InputTokens: 10, OutputTokens: 10, TotalTokens: 20,
+		}, nil)
+		require.Error(t, consumeErr)
+	} else {
+		consumeErr := PostTextConsumeQuota(ctx, info, &dto.Usage{
+			PromptTokens: 10, CompletionTokens: 10, TotalTokens: 20,
+		}, nil)
+		require.Error(t, consumeErr)
+	}
 	require.True(t, info.Billing.NeedsRefund())
 
 	quota, quotaErr = model.GetUserQuota(user.Id, true)

@@ -276,7 +276,7 @@ export function MobileDrawer({
                   <AnimatePresence>
                     {mobileLinksList.map((link) => (
                       <motion.div
-                        key={link.href}
+                        key={link.id}
                         className='border-border border-b p-2.5 last:border-b-0'
                         variants={MOBILE_DRAWER_ANIMATION.menuItem as Variants}
                       >

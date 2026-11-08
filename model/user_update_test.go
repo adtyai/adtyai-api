@@ -9,6 +9,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 
+	"github.com/bytedance/gopkg/util/gopool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -79,6 +80,31 @@ func TestUserUpdateDoesNotOverwriteConcurrentAccountingOrTokenChanges(t *testing
 	assert.Equal(t, 420, got.UsedQuota)
 	assert.Equal(t, 4, got.RequestCount)
 	assert.Equal(t, "rotated-token", got.GetAccessToken())
+}
+
+func TestUserMetadataUpdatePreservesDurablePendingAndSpentGift(t *testing.T) {
+	setupUserUpdateTestState(t)
+	resetBatchUpdateTestState(t)
+	common.BatchUpdateEnabled = true
+	user := createReserveTestUser(t, 100)
+	require.NoError(t, DB.Model(&User{}).Where("id = ?", user.Id).Update("checkin_quota", 50).Error)
+	require.NoError(t, DecreaseUserQuota(user.Id, 20, false))
+	stale, err := GetUserById(user.Id, true)
+	require.NoError(t, err)
+	require.NoError(t, DecreaseUserQuota(user.Id, 60, false))
+	require.NoError(t, IncreaseUserQuota(user.Id, 100, true))
+	require.Eventually(t, func() bool { return gopool.WorkerCount() == 0 }, 5*time.Second, time.Millisecond,
+		"quota cache invalidation did not finish before fixture cleanup")
+	stale.DisplayName = "updated profile"
+	require.NoError(t, stale.Update(false))
+	var current User
+	require.NoError(t, DB.First(&current, user.Id).Error)
+	require.Equal(t, 200, current.Quota)
+	assert.Equal(t, -80, current.QuotaPending, "metadata cannot restore an older pending amount")
+	assert.Equal(t, 20, current.CheckinQuota, "metadata cannot revive a spent gift after a later credit")
+	logical, err := GetUserQuota(user.Id, false)
+	require.NoError(t, err)
+	require.Equal(t, 120, logical)
 }
 
 func TestUsageAccountingSupportsSignedDirectAndBatchDeltas(t *testing.T) {

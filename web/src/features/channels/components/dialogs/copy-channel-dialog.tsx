@@ -26,6 +26,13 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  ADMIN_PERMISSION_ACTIONS,
+  ADMIN_PERMISSION_RESOURCES,
+  hasPermission,
+} from '@/lib/admin-permissions'
+import { canAdmin } from '@/lib/adty-permissions'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { handleCopyChannel } from '../../lib'
 import { useChannels } from '../channels-provider'
@@ -45,10 +52,24 @@ export function CopyChannelDialog({
   const [suffix, setSuffix] = useState('_copy')
   const [resetBalance, setResetBalance] = useState(true)
   const [isCopying, setIsCopying] = useState(false)
+  const currentUser = useAuthStore((state) => state.auth.user)
+  const canCreate = hasPermission(
+    currentUser,
+    ADMIN_PERMISSION_RESOURCES.CHANNEL,
+    ADMIN_PERMISSION_ACTIONS.CREATE
+  )
 
   if (!currentRow) return null
 
   const handleCopy = async () => {
+    if (
+      !canAdmin(useAuthStore.getState().auth.user, {
+        resource: ADMIN_PERMISSION_RESOURCES.CHANNEL,
+        action: ADMIN_PERMISSION_ACTIONS.CREATE,
+      })
+    ) {
+      return
+    }
     setIsCopying(true)
 
     await handleCopyChannel(
@@ -90,7 +111,7 @@ export function CopyChannelDialog({
           >
             {t('Cancel')}
           </Button>
-          <Button onClick={handleCopy} disabled={isCopying}>
+          <Button onClick={handleCopy} disabled={isCopying || !canCreate}>
             {isCopying && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
             {isCopying ? t('Copying...') : t('Copy Channel')}
           </Button>

@@ -1,6 +1,9 @@
 package controller
 
 import (
+	"crypto/hmac"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -19,7 +22,10 @@ import (
 	"gorm.io/gorm"
 )
 
-const oauthAuthFlowTTL = 10 * time.Minute
+const (
+	oauthAuthFlowTTL     = 10 * time.Minute
+	oauthLoginCookieName = "adtyai_oauth_login"
+)
 
 type oauthStateRequest struct {
 	Provider string          `json:"provider"`
@@ -29,11 +35,12 @@ type oauthStateRequest struct {
 }
 
 type oauthFlowPayload struct {
-	Verification    *service.OAuthVerificationFlow `json:"verification,omitempty"`
-	Telegram        *oauth.TelegramOAuthFlow       `json:"telegram,omitempty"`
-	OIDC            *oauth.OIDCOAuthFlow           `json:"oidc,omitempty"`
-	SessionIdentity *service.AuthIdentity          `json:"session_identity,omitempty"`
-	Authorization   *model.AuthFlowAuthorization   `json:"authorization,omitempty"`
+	BrowserBindingHash string                         `json:"browser_binding_hash,omitempty"`
+	Verification       *service.OAuthVerificationFlow `json:"verification,omitempty"`
+	Telegram           *oauth.TelegramOAuthFlow       `json:"telegram,omitempty"`
+	OIDC               *oauth.OIDCOAuthFlow           `json:"oidc,omitempty"`
+	SessionIdentity    *service.AuthIdentity          `json:"session_identity,omitempty"`
+	Authorization      *model.AuthFlowAuthorization   `json:"authorization,omitempty"`
 }
 
 // providerParams returns the params of messages that name the OAuth provider.
@@ -61,6 +68,20 @@ func GenerateOAuthCode(c *gin.Context) {
 	userID := 0
 	sessionID := ""
 	flowPayload := oauthFlowPayload{}
+	browserToken := ""
+	if request.Intent == model.AuthFlowIntentLogin {
+		browserToken, _ = c.Cookie(oauthLoginCookieName)
+		decoded, err := base64.RawURLEncoding.DecodeString(browserToken)
+		if err != nil || len(decoded) != model.AuthFlowTokenBytes {
+			random := make([]byte, model.AuthFlowTokenBytes)
+			if _, err := rand.Read(random); err != nil {
+				writeSecurityOperationError(c, err)
+				return
+			}
+			browserToken = base64.RawURLEncoding.EncodeToString(random)
+		}
+		flowPayload.BrowserBindingHash = oauthLoginBrowserHash(browserToken)
+	}
 	bindingStarted := false
 	if request.Provider == "telegram" {
 		telegramFlow, err := oauth.NewTelegramOAuthFlow()
@@ -149,11 +170,24 @@ func GenerateOAuthCode(c *gin.Context) {
 		}
 		data["authorization_url"] = authorizationURL
 	}
+	if browserToken != "" {
+		// Reuse this host-only token across concurrent login tabs. Only its HMAC
+		// is kept in the immutable flow payload; a state alone cannot log in.
+		http.SetCookie(c.Writer, &http.Cookie{
+			Name: oauthLoginCookieName, Value: browserToken, Path: "/api/oauth",
+			MaxAge: int(oauthAuthFlowTTL.Seconds()), Expires: expiresAt,
+			HttpOnly: true, Secure: common.SessionCookieSecure, SameSite: http.SameSiteLaxMode,
+		})
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
 		"data":    data,
 	})
+}
+
+func oauthLoginBrowserHash(token string) string {
+	return common.GenerateHMACWithKey([]byte("oauth-login-browser-v1:"+common.SessionSecret), token)
 }
 
 // refreshCustomOAuthProvider reloads custom providers from the database so a
@@ -229,7 +263,16 @@ func HandleOAuth(c *gin.Context) {
 				return
 			}
 		}
-	} else if pendingFlow.Intent != model.AuthFlowIntentLogin {
+	} else if pendingFlow.Intent == model.AuthFlowIntentLogin {
+		var payload oauthFlowPayload
+		browserToken, cookieErr := c.Cookie(oauthLoginCookieName)
+		if cookieErr != nil || browserToken == "" ||
+			common.UnmarshalJsonStr(pendingFlow.Payload, &payload) != nil || payload.BrowserBindingHash == "" ||
+			!hmac.Equal([]byte(payload.BrowserBindingHash), []byte(oauthLoginBrowserHash(browserToken))) {
+			writeAccountStatusError(c, http.StatusForbidden, "State parameter is empty or mismatched")
+			return
+		}
+	} else {
 		common.ApiErrorT(c, "Invalid parameters")
 		return
 	}

@@ -462,9 +462,12 @@ func MigrateAdtyGroup(fromID, toID string) (AdtyGroupRefs, error) {
 		}
 
 		var tokens []Token
-		if err := lockForUpdate(tx.Unscoped()).Select("id", "user_id", commonGroupCol, "auto_groups").
+		if err := lockForUpdate(tx.Unscoped()).Select("id", "user_id", commonKeyCol, commonGroupCol, "auto_groups").
 			Where(`(`+commonGroupCol+` = ? OR (auto_groups <> '' AND jsonb_exists(auto_groups::jsonb, ?)))`, fromID, fromID).
 			Order("id").Find(&tokens).Error; err != nil {
+			return err
+		}
+		if err := invalidateTokensCache(tokens); err != nil {
 			return err
 		}
 		for _, token := range tokens {

@@ -48,9 +48,7 @@ func HasCheckedInToday(userId int) (bool, error) {
 	return count > 0, err
 }
 
-// UserCheckin 执行用户签到
-// MySQL 和 PostgreSQL 使用事务保证原子性
-// SQLite 不支持嵌套事务，使用顺序操作 + 手动回滚
+// UserCheckin atomically records the check-in and credits the shared wallet.
 func UserCheckin(userId int) (*Checkin, error) {
 	setting := operation_setting.GetCheckinSetting()
 	if !setting.Enabled {
@@ -80,18 +78,15 @@ func UserCheckin(userId int) (*Checkin, error) {
 		CreatedAt:    time.Now().Unix(),
 	}
 
-	// 根据数据库类型选择不同的策略
-	if common.UsingMainDatabase(common.DatabaseTypeSQLite) {
-		// SQLite 不支持嵌套事务，使用顺序操作 + 手动回滚
-		return userCheckinWithoutTransaction(checkin, userId, quotaAwarded)
-	}
-
-	// MySQL 和 PostgreSQL 支持事务，使用事务保证原子性
 	return userCheckinWithTransaction(checkin, userId, quotaAwarded)
 }
 
-// userCheckinWithTransaction 使用事务执行签到（适用于 MySQL 和 PostgreSQL）
+// All supported databases use one transaction; SQLite's production DSN starts
+// an immediate write transaction instead of emitting FOR UPDATE.
 func userCheckinWithTransaction(checkin *Checkin, userId int, quotaAwarded int) (*Checkin, error) {
+	if quotaAwarded <= 0 || quotaAwarded > common.MaxWalletQuota {
+		return nil, common.NewMessage("Check-in failed: quota update error")
+	}
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		// 步骤1: 创建签到记录
 		// 数据库有唯一约束 (user_id, checkin_date)，可以防止并发重复签到
@@ -99,43 +94,27 @@ func userCheckinWithTransaction(checkin *Checkin, userId int, quotaAwarded int) 
 			return common.NewMessage("Check-in failed, please try again later")
 		}
 
-		// 步骤2: 在事务中增加用户额度，并记下还没花掉的签到赠送。
-		if err := tx.Model(&User{}).Where("id = ?", userId).Updates(map[string]any{
-			"quota":         gorm.Expr("quota + ?", quotaAwarded),
-			"checkin_quota": gorm.Expr("checkin_quota + ?", quotaAwarded),
-		}).Error; err != nil {
+		var user User
+		if err := lockForUpdate(tx).First(&user, userId).Error; err != nil {
+			return err
+		}
+		before, err := userWalletBalance(user.Quota, user.QuotaPending)
+		if err != nil {
+			return err
+		}
+		if err := applyUserQuotaDeltaTx(tx, &user, quotaAwarded, false); err != nil {
 			return common.NewMessage("Check-in failed: quota update error")
 		}
-
-		return nil
+		// Previously spent gifts stay spent. If an existing wallet is in debt,
+		// only the part of this award remaining after that debt is protected.
+		gift := max(0, min(max(0, min(user.CheckinQuota, before))+quotaAwarded, before+quotaAwarded))
+		return tx.Model(&User{}).Where("id = ?", userId).Update("checkin_quota", gift).Error
 	})
 
 	if err != nil {
 		return nil, err
 	}
 
-	// 扣费以缓存余额为准。必须在返回前补进缓存，否则这笔签到奖励在缓存过期前不能花。
-	syncCreditUserQuotaCache(userId, quotaAwarded, common.LogText("checkin"))
-
-	return checkin, nil
-}
-
-// userCheckinWithoutTransaction 不使用事务执行签到（适用于 SQLite）
-func userCheckinWithoutTransaction(checkin *Checkin, userId int, quotaAwarded int) (*Checkin, error) {
-	// 步骤1: 创建签到记录
-	// 数据库有唯一约束 (user_id, checkin_date)，可以防止并发重复签到
-	if err := DB.Create(checkin).Error; err != nil {
-		return nil, common.NewMessage("Check-in failed, please try again later")
-	}
-
-	// 步骤2: 增加用户额度和还没花掉的签到赠送。db=true 的路径不走批量更新。
-	if err := DB.Model(&User{}).Where("id = ?", userId).Updates(map[string]any{
-		"quota":         gorm.Expr("quota + ?", quotaAwarded),
-		"checkin_quota": gorm.Expr("checkin_quota + ?", quotaAwarded),
-	}).Error; err != nil {
-		DB.Delete(checkin)
-		return nil, common.NewMessage("Check-in failed: quota update error")
-	}
 	syncCreditUserQuotaCache(userId, quotaAwarded, common.LogText("checkin"))
 
 	return checkin, nil

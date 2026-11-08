@@ -17,6 +17,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service/authz"
 
 	"github.com/gin-gonic/gin"
 )
@@ -438,8 +439,21 @@ func SyncUpstreamModels(c *gin.Context) {
 		}
 		updates = append(updates, model.MetadataSyncUpdate{MetadataSyncSelection: selection, Values: values})
 	}
-	result, err := model.ApplyMetadataSync(updates, vendors)
+	result, err := model.ApplyMetadataSync(updates, vendors, func(actions model.MetadataSyncActions) error {
+		var permissions []authz.Permission
+		if actions.Create {
+			permissions = append(permissions, authz.AdtyModelCreate)
+		}
+		if actions.Update {
+			permissions = append(permissions, authz.AdtyModelWrite)
+		}
+		return adtyAuthorizeAdminActions(c, permissions...)
+	})
 	if err != nil {
+		if errors.Is(err, errAdtyAdminActionDenied) {
+			denyAdtyAdminAction(c)
+			return
+		}
 		status := http.StatusBadRequest
 		if errors.Is(err, model.ErrMetadataSyncConflict) {
 			status = http.StatusConflict

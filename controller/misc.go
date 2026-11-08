@@ -374,12 +374,28 @@ func ResetPassword(c *gin.Context) {
 		common.ApiErrorT(c, "Password reset link is invalid or has expired")
 		return
 	}
-	err = model.ResetUserPasswordByEmail(req.Email, req.Password)
+	outcome, err := model.ResetUserPasswordByEmailWithOutcome(req.Email, req.Password)
+	if outcome.UserID > 0 {
+		committed, notificationFailed := outcome.State == model.PasswordResetCommitted, false
+		if committed {
+			lang := outcome.Language
+			if lang == "" {
+				lang = i18n.StatedLang(c)
+			}
+			notificationFailed = service.NotifyAccountSecurityChange(lang, outcome.Email, i18n.MsgSecurityEventPasswordUpdated) != nil
+		}
+		c.Set("role", outcome.Role)
+		defer recordUserSecurityAudit(c, outcome.UserID, "user.password_change", map[string]any{
+			"password_reset": true, "success": committed, "notification_failed": notificationFailed,
+		})
+	}
 	if err != nil {
-		common.RestoreVerificationCodeWithKey(req.Email, req.Token, common.PasswordResetPurpose, issued)
 		if errors.Is(err, model.ErrEmailNotFound) || errors.Is(err, model.ErrEmailAmbiguous) {
 			common.ApiErrorT(c, "Password reset link is invalid or has expired")
 			return
+		}
+		if outcome.State == model.PasswordResetNotCommitted {
+			common.RestoreVerificationCodeWithKey(req.Email, req.Token, common.PasswordResetPurpose, issued)
 		}
 		common.ApiError(c, err)
 		return

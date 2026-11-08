@@ -358,7 +358,7 @@ func GetAdtyAdminSiteCustomers(c *gin.Context) {
 		return
 	}
 	var users []model.User
-	if err := query.Select("id", "username", "email", "quota", "used_quota", "status", "group", "created_at").
+	if err := query.Select("id", "username", "email", "quota", "quota_pending", "used_quota", "status", "group", "created_at").
 		Order("id DESC").Limit(pageInfo.GetPageSize()).Offset(pageInfo.GetStartIdx()).Find(&users).Error; err != nil {
 		common.ApiError(c, err)
 		return
@@ -387,7 +387,7 @@ func GetAdtyAdminSiteCustomers(c *gin.Context) {
 			email = user.Email
 		}
 		items = append(items, gin.H{
-			"id": user.Id, "username": user.Username, "email": email, "quota": user.Quota, "used_quota": user.UsedQuota,
+			"id": user.Id, "username": user.Username, "email": email, "quota": user.ToBaseUser().Quota, "used_quota": user.UsedQuota,
 			"status": user.Status, "group": user.Group, "created_at": user.CreatedAt,
 			"risk_flag": risk.RiskFlag, "risk_reason": risk.RiskReason, "reviewed": risk.Reviewed, "joined_at": risk.JoinedAt,
 		})
@@ -613,6 +613,14 @@ func UpdateAdtyResellerSettings(c *gin.Context) {
 	if err := common.DecodeJson(c.Request.Body, &body); err != nil {
 		common.ApiErrorT(c, "Invalid parameters")
 		return
+	}
+	if c.GetInt("role") < common.RoleRootUser {
+		for _, key := range []string{adty_setting.ResellerKeyCloudflareTok, adty_setting.ResellerKeyWidgetSecret, "clear_secrets"} {
+			if _, present := body[key]; present {
+				denyAdtyAdminAction(c)
+				return
+			}
+		}
 	}
 	var clearSecrets []string
 	if raw, ok := body["clear_secrets"]; ok {

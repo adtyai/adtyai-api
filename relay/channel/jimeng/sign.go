@@ -5,7 +5,6 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -20,29 +19,10 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// SignRequestForJimeng 对即梦 API 请求进行签名，支持 http.Request 或 header+url+body 方式
-//func SignRequestForJimeng(req *http.Request, accessKey, secretKey string) error {
-//	var bodyBytes []byte
-//	var err error
-//
-//	if req.Body != nil {
-//		bodyBytes, err = io.ReadAll(req.Body)
-//		if err != nil {
-//			return fmt.Errorf("read request body failed: %w", err)
-//		}
-//		_ = req.Body.Close()
-//		req.Body = io.NopCloser(bytes.NewBuffer(bodyBytes)) // rewind
-//	} else {
-//		bodyBytes = []byte{}
-//	}
-//
-//	return signJimengHeaders(&req.Header, req.Method, req.URL, bodyBytes, accessKey, secretKey)
-//}
-
 const HexPayloadHashKey = "HexPayloadHash"
 
 func SetPayloadHash(c *gin.Context, req any) error {
-	body, err := json.Marshal(req)
+	body, err := common.Marshal(req)
 	if err != nil {
 		return err
 	}
@@ -51,9 +31,6 @@ func SetPayloadHash(c *gin.Context, req any) error {
 	hexPayloadHash := hex.EncodeToString(payloadHash[:])
 	c.Set(HexPayloadHashKey, hexPayloadHash)
 	return nil
-}
-func getPayloadHash(c *gin.Context) string {
-	return c.GetString(HexPayloadHashKey)
 }
 
 func Sign(c *gin.Context, req *http.Request, apiKey string) error {

@@ -131,7 +131,7 @@ func adtyOwnerCustomerView(visibility map[string]string, user model.User, custom
 		Group: user.Group, CreatedAt: user.CreatedAt, RiskFlag: customer.RiskFlag, Reviewed: customer.Reviewed,
 	}
 	if adtyVisible(visibility, "customer_balance") {
-		balance := user.Quota
+		balance := user.ToBaseUser().Quota
 		view.Balance = &balance
 	}
 	if adtyVisible(visibility, "customer_usage") {
@@ -177,7 +177,7 @@ func adtyUsageSinceJoin(userId int, joinedAt int64, fallback int) (int, error) {
 	return int(used), nil
 }
 
-var adtyOwnerCustomerColumns = []string{"id", "username", "email", "status", "group", "created_at", "quota", "used_quota"}
+var adtyOwnerCustomerColumns = []string{"id", "username", "email", "status", "group", "created_at", "quota", "quota_pending", "used_quota"}
 
 func adtySiteCustomerRows(userIds []int) (map[int]model.AdtySiteCustomer, error) {
 	rows := map[int]model.AdtySiteCustomer{}

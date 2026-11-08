@@ -16,8 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { type LinkProps } from '@tanstack/react-router'
-import { type TFunction } from 'i18next'
+import type { LinkProps } from '@tanstack/react-router'
+import type { TFunction } from 'i18next'
 
 /**
  * Base navigation item type
@@ -96,6 +96,8 @@ export type SidebarData = {
  * Top navigation link type
  */
 export type TopNavLink = {
+  /** Stable business identity; custom links must retain their persisted ID. */
+  id: string
   title: string
   href: string
   isActive?: boolean

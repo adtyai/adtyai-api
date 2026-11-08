@@ -615,7 +615,9 @@ test('without plugin binding permission only built-in providers are offered', ()
         username: 'admin',
         role: ROLE.ADMIN,
         permissions: {
-          admin_permissions: { channel: { sensitive_write: true } },
+          admin_permissions: {
+            channel: { create: true, sensitive_write: true },
+          },
         },
       },
     },

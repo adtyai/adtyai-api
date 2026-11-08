@@ -121,11 +121,20 @@ export function UsersMutateDrawer({
   const isUpdate = !!currentRow
   const { triggerRefresh, requestVerification } = useUsers()
   const currentUser = useAuthStore((s) => s.auth.user)
+  const canSubmit = canAdmin(
+    currentUser,
+    isUpdate ? ADTY_PERMISSIONS.USER_WRITE : ADTY_PERMISSIONS.USER_CREATE
+  )
   // adty: the group needs "change user groups"; balances need "adjust balances"
   const canChangeGroup = canAdmin(currentUser, ADTY_PERMISSIONS.USER_GROUP)
   const canAdjustQuota = canAdmin(currentUser, ADTY_PERMISSIONS.USER_QUOTA)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [quotaDialogOpen, setQuotaDialogOpen] = useState(false)
+  // Adjustments use exact quota units, separate from the form display.
+  const [currentQuotaRaw, setCurrentQuotaRaw] = useState(currentRow?.quota ?? 0)
+  const [currentLiveQuota, setCurrentLiveQuota] = useState(
+    currentRow?.live_quota ?? currentRow?.quota ?? 0
+  )
   const [ledgerOpen, setLedgerOpen] = useState(false)
   // Matrix as loaded from the server; an unchanged matrix is not resubmitted so
   // routine edits of an administrator do not require step-up verification.
@@ -160,6 +169,8 @@ export function UsersMutateDrawer({
         .then((result) => {
           if (result.success && result.data) {
             loadedPermissions.current = result.data.admin_permissions
+            setCurrentQuotaRaw(result.data.quota)
+            setCurrentLiveQuota(result.data.live_quota ?? result.data.quota)
             form.reset(transformUserToFormDefaults(result.data))
           } else {
             handleServerError(result, t('Failed to load'))
@@ -176,12 +187,15 @@ export function UsersMutateDrawer({
   const currencyLabel = getCurrencyLabel()
   const tokensOnly = currencyMeta.kind === 'tokens'
 
-  const currentQuotaRaw = form.watch('quota_dollars') || 0
   const selectedRole = form.watch('role')
   const canEditAdminPermissions = currentUser?.role === ROLE.SUPER_ADMIN
   const targetIsAdmin = (selectedRole ?? currentRow?.role ?? 0) >= ROLE.ADMIN
 
   const onSubmit = async (data: UserFormValues) => {
+    const action = isUpdate
+      ? ADTY_PERMISSIONS.USER_WRITE
+      : ADTY_PERMISSIONS.USER_CREATE
+    if (!canAdmin(useAuthStore.getState().auth.user, action)) return
     if (!isUpdate || data.password) {
       if (!accountPasswordSchema.safeParse(data.password ?? '').success) {
         form.setError('password', {
@@ -241,6 +255,7 @@ export function UsersMutateDrawer({
         if (!proof) return
         proofToken = proof.proof_token
       }
+      if (!canAdmin(useAuthStore.getState().auth.user, action)) return
       const result = isUpdate
         ? await updateUser(
             payload as typeof payload & { id: number },
@@ -275,6 +290,8 @@ export function UsersMutateDrawer({
       const result = requireServerSuccess(await getUser(currentRow.id))
       if (result.success && result.data) {
         loadedPermissions.current = result.data.admin_permissions
+        setCurrentQuotaRaw(result.data.quota)
+        setCurrentLiveQuota(result.data.live_quota ?? result.data.quota)
         form.reset(transformUserToFormDefaults(result.data))
       }
       triggerRefresh()
@@ -620,7 +637,11 @@ export function UsersMutateDrawer({
             <SheetClose render={<Button variant='outline' />}>
               {t('Close')}
             </SheetClose>
-            <Button form='user-form' type='submit' disabled={isSubmitting}>
+            <Button
+              form='user-form'
+              type='submit'
+              disabled={isSubmitting || !canSubmit}
+            >
               {isSubmitting ? t('Saving...') : t('Save changes')}
             </Button>
           </SheetFooter>
@@ -633,7 +654,8 @@ export function UsersMutateDrawer({
           open={quotaDialogOpen}
           onOpenChange={setQuotaDialogOpen}
           userId={currentRow.id}
-          currentQuota={parseQuotaFromDollars(currentQuotaRaw || 0)}
+          currentQuota={currentQuotaRaw}
+          currentLiveQuota={currentLiveQuota}
           onSuccess={refreshUserData}
         />
       )}

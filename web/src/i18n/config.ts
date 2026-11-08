@@ -42,9 +42,7 @@ function interfaceLanguage(value: string | undefined): InterfaceLanguage {
   const normalized = normalizeInterfaceLanguage(
     convertDetectedLanguage(value ?? '')
   )
-  return normalized in localeLoaders
-    ? (normalized as InterfaceLanguage)
-    : 'en'
+  return normalized in localeLoaders ? (normalized as InterfaceLanguage) : 'en'
 }
 
 /** Load one language pack. The other languages stay out of the first page load. */
@@ -66,9 +64,13 @@ export async function loadInterfaceLanguage(
 
 export function readStoredInterfaceLanguage(): string {
   if (typeof window === 'undefined') return 'en'
-  return interfaceLanguage(
-    window.localStorage.getItem('i18nextLng') ?? window.navigator.language
-  )
+  let storedLanguage: string | null = null
+  try {
+    storedLanguage = window.localStorage.getItem('i18nextLng')
+  } catch {
+    // A blocked Storage getter or read must not prevent the first render.
+  }
+  return interfaceLanguage(storedLanguage ?? window.navigator.language)
 }
 
 i18n.use(initReactI18next).init({

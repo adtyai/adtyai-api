@@ -29,6 +29,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { useCanEditModelPricing } from '@/features/model-pricing/api'
+import { ADTY_PERMISSIONS, canAdmin } from '@/lib/adty-permissions'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { useModels } from './models-provider'
 
@@ -36,8 +38,11 @@ export function ModelsPrimaryButtons() {
   const { t } = useTranslation()
   const { setOpen, setCurrentRow } = useModels()
   const canPrice = useCanEditModelPricing()
+  const currentUser = useAuthStore((state) => state.auth.user)
+  const canCreate = canAdmin(currentUser, ADTY_PERMISSIONS.MODEL_CREATE)
 
   const handleCreateModel = () => {
+    if (!canCreate) return
     setCurrentRow(null)
     setOpen('create-model')
   }
@@ -69,7 +74,7 @@ export function ModelsPrimaryButtons() {
         </Button>
       )}
       {/* Create Model */}
-      <Button onClick={handleCreateModel} size='sm'>
+      <Button onClick={handleCreateModel} size='sm' disabled={!canCreate}>
         <Plus className='h-4 w-4' />
         {t('Add Model')}
       </Button>

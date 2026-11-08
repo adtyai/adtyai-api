@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -31,8 +31,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { toIntlLocale } from '@/i18n/languages'
 import { CONTENT_LANG_LABELS, CONTENT_LANGS } from '@/lib/adty-lang'
+import { ADTY_PERMISSIONS, canAdmin } from '@/lib/adty-permissions'
 import { formatNumber } from '@/lib/format'
 import { handleServerError } from '@/lib/handle-server-error'
+import { useAuthStore } from '@/stores/auth-store'
 
 import {
   getCampaignPlan,
@@ -49,6 +51,7 @@ import { AudienceFilters } from './audience-filters'
 type CampaignEditorProps = {
   campaignId: number | null
   initial: CampaignInput
+  canCreate: boolean
   canWrite: boolean
   canSend: boolean
   onClose: () => void
@@ -64,13 +67,43 @@ export function CampaignEditor(props: CampaignEditorProps) {
   const [testTo, setTestTo] = useState('')
   const [testLang, setTestLang] = useState('en')
   const [plan, setPlan] = useState<CampaignPlan | null>(null)
-  const readOnly = !props.canWrite
+  const permissions = useRef(props)
+  useEffect(() => {
+    permissions.current = props
+  }, [props])
+  const canSave = id === null ? props.canCreate : props.canWrite
+  const readOnly = !canSave
   const englishReady = hasVersion(draft.subjects, draft.bodies, 'en')
 
+  const requireSavePermission = () => {
+    const allowed =
+      id === null ? permissions.current.canCreate : permissions.current.canWrite
+    const action =
+      id === null
+        ? ADTY_PERMISSIONS.MARKETING_CREATE
+        : ADTY_PERMISSIONS.MARKETING_WRITE
+    if (!allowed || !canAdmin(useAuthStore.getState().auth.user, action)) {
+      throw new Error(t('No permission to perform this action'))
+    }
+  }
+  const requireSendPermission = () => {
+    if (
+      !permissions.current.canSend ||
+      !canAdmin(
+        useAuthStore.getState().auth.user,
+        ADTY_PERMISSIONS.MARKETING_SEND
+      )
+    ) {
+      throw new Error(t('No permission to perform this action'))
+    }
+  }
   const refresh = () =>
     queryClient.invalidateQueries({ queryKey: marketingKeys.all })
   const save = useMutation({
-    mutationFn: () => saveCampaign(id, draft),
+    mutationFn: () => {
+      requireSavePermission()
+      return saveCampaign(id, draft)
+    },
     onSuccess: (saved) => {
       setId(saved.id)
       toast.success(t('Saved successfully'))
@@ -80,8 +113,11 @@ export function CampaignEditor(props: CampaignEditorProps) {
   })
   const test = useMutation({
     mutationFn: async () => {
+      requireSendPermission()
+      requireSavePermission()
       const saved = await saveCampaign(id, draft)
       setId(saved.id)
+      requireSendPermission()
       await sendCampaignTest(saved.id, { to: testTo.trim(), lang: testLang })
     },
     onSuccess: () => toast.success(t('Test email sent')),
@@ -89,15 +125,24 @@ export function CampaignEditor(props: CampaignEditorProps) {
   })
   const prepare = useMutation({
     mutationFn: async () => {
+      requireSendPermission()
+      requireSavePermission()
       const saved = await saveCampaign(id, draft)
       setId(saved.id)
+      requireSendPermission()
       return getCampaignPlan(saved.id)
     },
     onSuccess: setPlan,
     onError: (err) => handleServerError(err),
   })
   const send = useMutation({
-    mutationFn: () => sendCampaign(id ?? 0, plan?.total ?? 0),
+    mutationFn: () => {
+      requireSendPermission()
+      if (id === null || !plan || plan.total <= 0) {
+        throw new Error(t('No permission to perform this action'))
+      }
+      return sendCampaign(id, plan.total)
+    },
     onSuccess: () => {
       toast.success(
         draft.scheduled_at > 0 ? t('Campaign scheduled') : t('Campaign sent')
@@ -224,7 +269,7 @@ export function CampaignEditor(props: CampaignEditorProps) {
       )}
 
       <div className='flex flex-wrap items-center gap-2'>
-        {props.canWrite && (
+        {canSave && (
           <Button
             variant='outline'
             disabled={save.isPending || !draft.name.trim()}
@@ -238,7 +283,7 @@ export function CampaignEditor(props: CampaignEditorProps) {
         </Button>
       </div>
 
-      {props.canSend && props.canWrite && !draft.is_template && (
+      {props.canSend && canSave && !draft.is_template && (
         <div className='flex flex-col gap-3 rounded-lg border p-4'>
           <div className='flex flex-wrap items-end gap-2'>
             <div className='space-y-2'>
@@ -311,7 +356,7 @@ export function CampaignEditor(props: CampaignEditorProps) {
           </div>
         }
         confirmText={t('Send')}
-        disabled={!plan || plan.total === 0}
+        disabled={!props.canSend || !plan || plan.total === 0}
         isLoading={send.isPending}
         handleConfirm={() => send.mutate()}
       />

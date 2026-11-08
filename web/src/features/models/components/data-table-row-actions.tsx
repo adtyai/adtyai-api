@@ -29,6 +29,8 @@ import {
   DropdownMenuShortcut,
 } from '@/components/ui/dropdown-menu'
 import { useCanEditModelPricing } from '@/features/model-pricing/api'
+import { ADTY_PERMISSIONS, canAdmin } from '@/lib/adty-permissions'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { handleToggleModelStatus, isModelEnabled } from '../lib'
 import type { Model } from '../types'
@@ -43,6 +45,13 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
   const { t } = useTranslation()
   const canPrice = useCanEditModelPricing()
   const model = row.original
+  const currentUser = useAuthStore((state) => state.auth.user)
+  const canWrite = canAdmin(currentUser, ADTY_PERMISSIONS.MODEL_WRITE)
+  const canEdit = canAdmin(
+    currentUser,
+    model.id > 0 ? ADTY_PERMISSIONS.MODEL_WRITE : ADTY_PERMISSIONS.MODEL_CREATE
+  )
+  const canDelete = canAdmin(currentUser, ADTY_PERMISSIONS.MODEL_DELETE)
   const { setOpen, setCurrentRow } = useModels()
   const queryClient = useQueryClient()
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
@@ -50,11 +59,17 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
   const isEnabled = isModelEnabled(model)
 
   const handleEdit = () => {
+    if (!canEdit) return
     setCurrentRow(model)
     setOpen('update-model')
   }
 
   const handleToggleStatus = () => {
+    if (
+      !canAdmin(useAuthStore.getState().auth.user, ADTY_PERMISSIONS.MODEL_WRITE)
+    ) {
+      return
+    }
     handleToggleModelStatus(model.id, model.status, queryClient)
   }
 
@@ -68,6 +83,7 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
         variant='ghost'
         size='sm'
         onClick={handleEdit}
+        disabled={!canEdit}
         title={model.id > 0 ? t('Edit') : t('Add metadata')}
       >
         <span className='truncate'>
@@ -90,15 +106,17 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
 
       {model.id > 0 && (
         <DataTableRowActionMenu ariaLabel={t('Open menu')}>
-          <DropdownMenuItem onClick={handleToggleStatus}>
+          <DropdownMenuItem onClick={handleToggleStatus} disabled={!canWrite}>
             {toggleLabel}
             <DropdownMenuShortcut>
               {isEnabled ? <EyeOff size={16} /> : <Eye size={16} />}
             </DropdownMenuShortcut>
           </DropdownMenuItem>
           <DropdownMenuItem
+            disabled={!canDelete}
             onSelect={(e) => {
               e.preventDefault()
+              if (!canDelete) return
               setDeleteConfirmOpen(true)
             }}
             className='text-destructive focus:text-destructive'

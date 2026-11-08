@@ -14,51 +14,67 @@ const (
 	ResourceAdtyMarketing = "adty_marketing"
 	ResourceAdtySite      = "adty_site"
 
-	ActionGroup        = "group"
-	ActionQuota        = "quota"
-	ActionDelete       = "delete"
-	ActionManualCredit = "manual_credit"
-	ActionRefund       = "refund"
-	ActionReview       = "review"
-	ActionPayout       = "payout"
-	ActionAdjust       = "adjust"
-	ActionSettings     = "settings"
-	ActionSend         = "send"
+	ActionGroup          = "group"
+	ActionQuota          = "quota"
+	ActionDelete         = "delete"
+	ActionManualCredit   = "manual_credit"
+	ActionRefund         = "refund"
+	ActionReview         = "review"
+	ActionPayout         = "payout"
+	ActionAdjust         = "adjust"
+	ActionSettings       = "settings"
+	ActionSend           = "send"
+	ActionExport         = "export"
+	ActionSettingsRead   = "settings_read"
+	ActionSettingsCreate = "settings_create"
+	ActionSettingsDelete = "settings_delete"
 )
 
 var (
 	AdtyUserRead   = Permission{Resource: ResourceAdtyUser, Action: ActionRead}
+	AdtyUserCreate = Permission{Resource: ResourceAdtyUser, Action: ActionCreate}
 	AdtyUserWrite  = Permission{Resource: ResourceAdtyUser, Action: ActionWrite}
 	AdtyUserGroup  = Permission{Resource: ResourceAdtyUser, Action: ActionGroup}
 	AdtyUserQuota  = Permission{Resource: ResourceAdtyUser, Action: ActionQuota}
 	AdtyUserDelete = Permission{Resource: ResourceAdtyUser, Action: ActionDelete}
 
-	AdtyLogRead = Permission{Resource: ResourceAdtyLog, Action: ActionRead}
+	AdtyLogRead   = Permission{Resource: ResourceAdtyLog, Action: ActionRead}
+	AdtyLogExport = Permission{Resource: ResourceAdtyLog, Action: ActionExport}
 
-	AdtyModelRead  = Permission{Resource: ResourceAdtyModel, Action: ActionRead}
-	AdtyModelWrite = Permission{Resource: ResourceAdtyModel, Action: ActionWrite}
+	AdtyModelRead   = Permission{Resource: ResourceAdtyModel, Action: ActionRead}
+	AdtyModelWrite  = Permission{Resource: ResourceAdtyModel, Action: ActionWrite}
+	AdtyModelCreate = Permission{Resource: ResourceAdtyModel, Action: ActionCreate}
+	AdtyModelDelete = Permission{Resource: ResourceAdtyModel, Action: ActionDelete}
 
 	AdtyFinanceRead         = Permission{Resource: ResourceAdtyFinance, Action: ActionRead}
 	AdtyFinanceManualCredit = Permission{Resource: ResourceAdtyFinance, Action: ActionManualCredit}
 	AdtyFinanceRefund       = Permission{Resource: ResourceAdtyFinance, Action: ActionRefund}
 
-	AdtyReferralRead     = Permission{Resource: ResourceAdtyReferral, Action: ActionRead}
-	AdtyReferralReview   = Permission{Resource: ResourceAdtyReferral, Action: ActionReview}
-	AdtyReferralPayout   = Permission{Resource: ResourceAdtyReferral, Action: ActionPayout}
-	AdtyReferralAdjust   = Permission{Resource: ResourceAdtyReferral, Action: ActionAdjust}
-	AdtyReferralSettings = Permission{Resource: ResourceAdtyReferral, Action: ActionSettings}
+	AdtyReferralRead         = Permission{Resource: ResourceAdtyReferral, Action: ActionRead}
+	AdtyReferralReview       = Permission{Resource: ResourceAdtyReferral, Action: ActionReview}
+	AdtyReferralPayout       = Permission{Resource: ResourceAdtyReferral, Action: ActionPayout}
+	AdtyReferralAdjust       = Permission{Resource: ResourceAdtyReferral, Action: ActionAdjust}
+	AdtyReferralSettings     = Permission{Resource: ResourceAdtyReferral, Action: ActionSettings}
+	AdtyReferralSettingsRead = Permission{Resource: ResourceAdtyReferral, Action: ActionSettingsRead}
 
 	AdtyPaymentRead    = Permission{Resource: ResourceAdtyPayment, Action: ActionRead}
 	AdtyPaymentOperate = Permission{Resource: ResourceAdtyPayment, Action: ActionOperate}
 
-	AdtyMarketingRead  = Permission{Resource: ResourceAdtyMarketing, Action: ActionRead}
-	AdtyMarketingWrite = Permission{Resource: ResourceAdtyMarketing, Action: ActionWrite}
-	AdtyMarketingSend  = Permission{Resource: ResourceAdtyMarketing, Action: ActionSend}
+	AdtyMarketingRead   = Permission{Resource: ResourceAdtyMarketing, Action: ActionRead}
+	AdtyMarketingWrite  = Permission{Resource: ResourceAdtyMarketing, Action: ActionWrite}
+	AdtyMarketingSend   = Permission{Resource: ResourceAdtyMarketing, Action: ActionSend}
+	AdtyMarketingCreate = Permission{Resource: ResourceAdtyMarketing, Action: ActionCreate}
+	AdtyMarketingDelete = Permission{Resource: ResourceAdtyMarketing, Action: ActionDelete}
 
-	AdtySiteRead     = Permission{Resource: ResourceAdtySite, Action: ActionRead}
-	AdtySiteReview   = Permission{Resource: ResourceAdtySite, Action: ActionReview}
-	AdtySiteAdjust   = Permission{Resource: ResourceAdtySite, Action: ActionAdjust}
-	AdtySiteSettings = Permission{Resource: ResourceAdtySite, Action: ActionSettings}
+	AdtySiteRead           = Permission{Resource: ResourceAdtySite, Action: ActionRead}
+	AdtySiteReview         = Permission{Resource: ResourceAdtySite, Action: ActionReview}
+	AdtySiteAdjust         = Permission{Resource: ResourceAdtySite, Action: ActionAdjust}
+	AdtySiteSettings       = Permission{Resource: ResourceAdtySite, Action: ActionSettings}
+	AdtySiteCreate         = Permission{Resource: ResourceAdtySite, Action: ActionCreate}
+	AdtySiteDelete         = Permission{Resource: ResourceAdtySite, Action: ActionDelete}
+	AdtySiteSettingsRead   = Permission{Resource: ResourceAdtySite, Action: ActionSettingsRead}
+	AdtySiteSettingsCreate = Permission{Resource: ResourceAdtySite, Action: ActionSettingsCreate}
+	AdtySiteSettingsDelete = Permission{Resource: ResourceAdtySite, Action: ActionSettingsDelete}
 )
 
 var adtyResources = []ResourceDefinition{
@@ -67,7 +83,8 @@ var adtyResources = []ResourceDefinition{
 		LabelKey: "Users",
 		Actions: []ActionDefinition{
 			{Action: ActionRead, LabelKey: "View users", DescriptionKey: "View user lists, details and balance history."},
-			{Action: ActionWrite, LabelKey: "Edit users", DescriptionKey: "Edit profiles, enable or disable, create users, reset 2FA and Passkeys, unbind sign-in methods and change passwords."},
+			{Action: ActionCreate, LabelKey: "Create users", DescriptionKey: "Create user accounts. Administrator appointments remain Root-only."},
+			{Action: ActionWrite, LabelKey: "Edit users", DescriptionKey: "Edit profiles, enable or disable, reset 2FA and Passkeys, unbind sign-in methods and change passwords."},
 			{Action: ActionGroup, LabelKey: "Change user groups", DescriptionKey: "Move users to another group. The group decides the price."},
 			{Action: ActionQuota, LabelKey: "Adjust balances", DescriptionKey: "Add to or deduct from user balances."},
 			{Action: ActionDelete, LabelKey: "Delete users", DescriptionKey: "Delete user accounts."},
@@ -78,6 +95,7 @@ var adtyResources = []ResourceDefinition{
 		LabelKey: "Logs and statistics",
 		Actions: []ActionDefinition{
 			{Action: ActionRead, LabelKey: "View all logs", DescriptionKey: "View every user's logs, tasks and site-wide statistics."},
+			{Action: ActionExport, LabelKey: "Export all logs", DescriptionKey: "Export every user's usage logs."},
 		},
 	},
 	{
@@ -85,7 +103,9 @@ var adtyResources = []ResourceDefinition{
 		LabelKey: "Models",
 		Actions: []ActionDefinition{
 			{Action: ActionRead, LabelKey: "View models", DescriptionKey: "View models, vendors and prefill groups."},
+			{Action: ActionCreate, LabelKey: "Create model metadata", DescriptionKey: "Create models, vendors and prefill groups, including new records imported from upstream."},
 			{Action: ActionWrite, LabelKey: "Edit models", DescriptionKey: "Edit models, vendors and prefill groups."},
+			{Action: ActionDelete, LabelKey: "Delete model metadata", DescriptionKey: "Delete models, vendors and prefill groups. Merging vendors also requires editing models."},
 		},
 	},
 	{
@@ -106,6 +126,7 @@ var adtyResources = []ResourceDefinition{
 			{Action: ActionPayout, LabelKey: "Mark payouts", DescriptionKey: "Mark withdrawals as paid and upload proof."},
 			{Action: ActionAdjust, LabelKey: "Adjust referrals", DescriptionKey: "Adjust commissions, freeze settlement, set rates and disable affiliates."},
 			{Action: ActionSettings, LabelKey: "Referral settings", DescriptionKey: "Change referral settings, including the withdrawal exchange rate."},
+			{Action: ActionSettingsRead, LabelKey: "View referral settings", DescriptionKey: "View referral configuration without changing it."},
 		},
 	},
 	{
@@ -121,7 +142,9 @@ var adtyResources = []ResourceDefinition{
 		LabelKey: "Marketing",
 		Actions: []ActionDefinition{
 			{Action: ActionRead, LabelKey: "View marketing", DescriptionKey: "View marketing settings, campaigns, statistics, promo codes and sign-up sources."},
-			{Action: ActionWrite, LabelKey: "Edit marketing", DescriptionKey: "Change marketing settings, write campaigns and templates, set automated emails and promo codes."},
+			{Action: ActionCreate, LabelKey: "Create marketing records", DescriptionKey: "Create campaigns, templates and promo codes."},
+			{Action: ActionWrite, LabelKey: "Edit marketing", DescriptionKey: "Change marketing settings, update campaigns and templates, automated emails and promo codes."},
+			{Action: ActionDelete, LabelKey: "Delete marketing records", DescriptionKey: "Delete campaigns and templates."},
 			{Action: ActionSend, LabelKey: "Send campaigns", DescriptionKey: "Send, schedule and cancel marketing campaigns."},
 		},
 	},
@@ -130,9 +153,14 @@ var adtyResources = []ResourceDefinition{
 		LabelKey: "Reseller sites",
 		Actions: []ActionDefinition{
 			{Action: ActionRead, LabelKey: "View reseller sites", DescriptionKey: "View reseller sites, their customers and statistics."},
-			{Action: ActionReview, LabelKey: "Review reseller sites", DescriptionKey: "Open sites, approve or reject applications, review flagged customers and reports."},
+			{Action: ActionCreate, LabelKey: "Create reseller sites", DescriptionKey: "Open reseller sites manually."},
+			{Action: ActionReview, LabelKey: "Review reseller sites", DescriptionKey: "Approve or reject applications, review flagged customers and reports."},
 			{Action: ActionAdjust, LabelKey: "Adjust reseller sites", DescriptionKey: "Change a site's cost factor, markup limit and visibility, pause, resume or close sites."},
-			{Action: ActionSettings, LabelKey: "Reseller settings", DescriptionKey: "Change reseller settings and manage site invite codes."},
+			{Action: ActionDelete, LabelKey: "Delete reseller site records", DescriptionKey: "Remove site domains, sender domains and notices."},
+			{Action: ActionSettingsRead, LabelKey: "View reseller settings", DescriptionKey: "View reseller configuration and site invite codes without changing them."},
+			{Action: ActionSettings, LabelKey: "Reseller settings", DescriptionKey: "Change reseller settings and update site invite codes. Secrets remain Root-only."},
+			{Action: ActionSettingsCreate, LabelKey: "Create site invite codes", DescriptionKey: "Create reseller site invite codes."},
+			{Action: ActionSettingsDelete, LabelKey: "Delete site invite codes", DescriptionKey: "Delete reseller site invite codes."},
 		},
 	},
 }

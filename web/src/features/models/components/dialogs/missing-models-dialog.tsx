@@ -35,7 +35,9 @@ import {
 } from '@/components/ui/empty'
 import { Input } from '@/components/ui/input'
 import { useIsMobile } from '@/hooks/use-mobile'
+import { ADTY_PERMISSIONS, canAdmin } from '@/lib/adty-permissions'
 import { createServerError } from '@/lib/server-error-message'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { getMissingModels } from '../../api'
 import { DEFAULT_PAGE_SIZE } from '../../constants'
@@ -53,6 +55,8 @@ export function MissingModelsDialog({
   onOpenChange,
 }: MissingModelsDialogProps) {
   const { t } = useTranslation()
+  const currentUser = useAuthStore((state) => state.auth.user)
+  const canCreate = canAdmin(currentUser, ADTY_PERMISSIONS.MODEL_CREATE)
   const { setOpen, setCurrentRow } = useModels()
   const isMobile = useIsMobile()
   const [searchTerm, setSearchTerm] = useState('')
@@ -74,6 +78,7 @@ export function MissingModelsDialog({
   const pageSize = DEFAULT_PAGE_SIZE
 
   const handleConfigureModel = (modelName: string) => {
+    if (!canCreate) return
     setCurrentRow({ model_name: modelName } as unknown as Model)
     setOpen('create-model')
   }
@@ -205,6 +210,7 @@ export function MissingModelsDialog({
                       size='sm'
                       className='flex-shrink-0 gap-1'
                       onClick={() => handleConfigureModel(modelName)}
+                      disabled={!canCreate}
                     >
                       <Plus className='h-4 w-4' />
                       Configure

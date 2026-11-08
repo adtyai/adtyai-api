@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useQueryClient } from '@tanstack/react-query'
-import { type Table } from '@tanstack/react-table'
+import type { Table } from '@tanstack/react-table'
 import { Power, PowerOff, Tag, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -37,6 +37,7 @@ import {
   ADMIN_PERMISSION_RESOURCES,
   hasPermission,
 } from '@/lib/admin-permissions'
+import { canAdmin } from '@/lib/adty-permissions'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -61,10 +62,10 @@ export function DataTableBulkActions<TData>({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [tagValue, setTagValue] = useState('')
   const currentUser = useAuthStore((s) => s.auth.user)
-  const canEditSensitive = hasPermission(
+  const canDelete = hasPermission(
     currentUser,
     ADMIN_PERMISSION_RESOURCES.CHANNEL,
-    ADMIN_PERMISSION_ACTIONS.SENSITIVE_WRITE
+    ADMIN_PERMISSION_ACTIONS.DELETE
   )
 
   const selectedRows = table.getFilteredSelectedRowModel().rows
@@ -91,7 +92,14 @@ export function DataTableBulkActions<TData>({
   }
 
   const handleDeleteAll = () => {
-    if (!canEditSensitive) return
+    if (
+      !canAdmin(useAuthStore.getState().auth.user, {
+        resource: ADMIN_PERMISSION_RESOURCES.CHANNEL,
+        action: ADMIN_PERMISSION_ACTIONS.DELETE,
+      })
+    ) {
+      return
+    }
     handleBatchDelete(selectedIds, queryClient, () => {
       setShowDeleteConfirm(false)
       handleClearSelection()
@@ -181,17 +189,17 @@ export function DataTableBulkActions<TData>({
                 variant='destructive'
                 size='icon'
                 onClick={() => {
-                  if (!canEditSensitive) return
+                  if (!canDelete) return
                   setShowDeleteConfirm(true)
                 }}
-                aria-disabled={!canEditSensitive}
+                aria-disabled={!canDelete}
                 className={cn(
                   'size-8',
-                  !canEditSensitive && 'cursor-not-allowed opacity-50'
+                  !canDelete && 'cursor-not-allowed opacity-50'
                 )}
                 aria-label={t('Delete selected channels')}
                 title={
-                  canEditSensitive
+                  canDelete
                     ? t('Delete selected channels')
                     : t('No permission to perform this action')
                 }
@@ -203,7 +211,7 @@ export function DataTableBulkActions<TData>({
           </TooltipTrigger>
           <TooltipContent>
             <p>
-              {canEditSensitive
+              {canDelete
                 ? t('Delete selected channels')
                 : t('No permission to perform this action')}
             </p>
@@ -277,7 +285,7 @@ export function DataTableBulkActions<TData>({
             <Button
               variant='destructive'
               onClick={handleDeleteAll}
-              disabled={!canEditSensitive}
+              disabled={!canDelete}
             >
               {t('Delete')}
             </Button>

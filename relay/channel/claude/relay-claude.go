@@ -21,10 +21,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func stopReasonClaude2OpenAI(reason string) string {
-	return relayconvert.StopReasonClaudeToOpenAI(reason)
-}
-
 func maybeMarkClaudeRefusal(c *gin.Context, info *relaycommon.RelayInfo, stopReason string) {
 	if c == nil {
 		return

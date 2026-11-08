@@ -74,13 +74,17 @@ describe('Lobe icons', () => {
       expect(
         screen.getByRole('img', { name: 'Claude icon' }).tagName.toLowerCase()
       ).toBe('svg')
+      expect(
+        screen.getByRole('img', { name: 'Claude icon' })
+      ).not.toBeEmptyDOMElement()
     })
     const icon = screen.getByRole('img', { name: 'Claude icon' })
     expect(icon).toHaveAttribute('width', '32')
     expect(icon).toHaveAttribute('height', '32')
+    expect(icon.querySelector('path')).toHaveAttribute('fill', '#D97757')
   })
 
-  it('shows the new icon identity before the next chunk resolves', () => {
+  it('shows the new icon identity before the next chunk resolves', async () => {
     const { rerender } = render(
       getLobeIcon('OpenAI.role="img".aria-label="OpenAI icon"', 24)
     )
@@ -94,6 +98,11 @@ describe('Lobe icons', () => {
     expect(
       screen.queryByRole('img', { name: 'OpenAI icon' })
     ).not.toBeInTheDocument()
+    await waitFor(() => {
+      expect(
+        screen.getByRole('img', { name: 'Gemini icon' })
+      ).not.toBeEmptyDOMElement()
+    })
   })
 
   it('updates the displayed icon when the name changes', async () => {
@@ -103,12 +112,22 @@ describe('Lobe icons', () => {
     expect(
       await screen.findByRole('img', { name: 'OpenAI icon' })
     ).toHaveAttribute('width', '24')
+    await waitFor(() => {
+      expect(
+        screen.getByRole('img', { name: 'OpenAI icon' })
+      ).not.toBeEmptyDOMElement()
+    })
     rerender(
       getLobeIcon('Gemini.Color.role="img".aria-label="Gemini icon"', 28)
     )
     expect(
       await screen.findByRole('img', { name: 'Gemini icon' })
     ).toHaveAttribute('width', '28')
+    await waitFor(() => {
+      expect(
+        screen.getByRole('img', { name: 'Gemini icon' })
+      ).not.toBeEmptyDOMElement()
+    })
     expect(
       screen.queryByRole('img', { name: 'OpenAI icon' })
     ).not.toBeInTheDocument()
@@ -120,6 +139,9 @@ describe('Lobe icons', () => {
       expect(
         screen.getByRole('img', { name: 'OpenAI icon' }).tagName.toLowerCase()
       ).toBe('svg')
+      expect(
+        screen.getByRole('img', { name: 'OpenAI icon' })
+      ).not.toBeEmptyDOMElement()
     })
   })
 
@@ -129,8 +151,13 @@ describe('Lobe icons', () => {
       render(getLobeIcon(`${name}.role="img".aria-label="Special icon"`, 24))
       await waitFor(() => {
         expect(
-          screen.getByRole('img', { name: 'Special icon' }).tagName.toLowerCase()
+          screen
+            .getByRole('img', { name: 'Special icon' })
+            .tagName.toLowerCase()
         ).toBe('svg')
+        expect(
+          screen.getByRole('img', { name: 'Special icon' })
+        ).not.toBeEmptyDOMElement()
       })
       expect(screen.getByRole('img', { name: 'Special icon' })).toHaveAttribute(
         'height',
@@ -147,6 +174,20 @@ describe('Lobe icons', () => {
     expect(screen.getByText('M')).toHaveStyle({ width: '18px', height: '18px' })
     rerender(getLobeIcon('Mistral.Color', 36))
     expect(screen.getByText('M')).toHaveStyle({ width: '36px', height: '36px' })
+  })
+
+  it('preserves the requested accessible identity when an icon chunk fails', async () => {
+    render(
+      getLobeIcon('Mistral.Color.role="img".aria-label="Mistral icon"', 26)
+    )
+    await act(async () => {
+      await vi.dynamicImportSettled()
+    })
+    expect(screen.getByRole('img', { name: 'Mistral icon' })).toHaveAttribute(
+      'width',
+      '26'
+    )
+    expect(screen.getByText('M')).toHaveStyle({ width: '26px', height: '26px' })
   })
 
   it('keeps placeholders for missing names and preserves custom icons', () => {

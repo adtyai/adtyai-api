@@ -57,6 +57,7 @@ import {
   ADMIN_PERMISSION_RESOURCES,
   hasPermission,
 } from '@/lib/admin-permissions'
+import { canAdmin } from '@/lib/adty-permissions'
 import { useAuthStore } from '@/stores/auth-store'
 
 import { MODEL_FETCHABLE_TYPES } from '../constants'
@@ -89,10 +90,15 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
 
   const isEnabled = isChannelEnabled(channel)
   const isMultiKey = isMultiKeyChannel(channel)
-  const canEditSensitive = hasPermission(
+  const canCreate = hasPermission(
     currentUser,
     ADMIN_PERMISSION_RESOURCES.CHANNEL,
-    ADMIN_PERMISSION_ACTIONS.SENSITIVE_WRITE
+    ADMIN_PERMISSION_ACTIONS.CREATE
+  )
+  const canDelete = hasPermission(
+    currentUser,
+    ADMIN_PERMISSION_RESOURCES.CHANNEL,
+    ADMIN_PERMISSION_ACTIONS.DELETE
   )
 
   const handleEdit = () => {
@@ -322,15 +328,15 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
 
           {/* Copy Channel */}
           <DropdownMenuItem
-            disabled={!canEditSensitive}
-            onClick={canEditSensitive ? handleCopy : undefined}
+            disabled={!canCreate}
+            onClick={canCreate ? handleCopy : undefined}
           >
             {t('Copy Channel')}
             <DropdownMenuShortcut>
               <Copy size={16} />
             </DropdownMenuShortcut>
           </DropdownMenuItem>
-          {!canEditSensitive && (
+          {!canCreate && (
             <DropdownMenuItem disabled className='text-xs normal-case'>
               {t('No permission to perform this action')}
             </DropdownMenuItem>
@@ -350,10 +356,10 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
 
           {/* Delete */}
           <DropdownMenuItem
-            disabled={!canEditSensitive}
+            disabled={!canDelete}
             onSelect={(e) => {
               e.preventDefault()
-              if (!canEditSensitive) return
+              if (!canDelete) return
               setDeleteConfirmOpen(true)
             }}
             className='text-destructive focus:text-destructive'
@@ -376,8 +382,16 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
         )}
         confirmText={t('Delete')}
         destructive
+        disabled={!canDelete}
         handleConfirm={() => {
-          if (!canEditSensitive) return
+          if (
+            !canAdmin(useAuthStore.getState().auth.user, {
+              resource: ADMIN_PERMISSION_RESOURCES.CHANNEL,
+              action: ADMIN_PERMISSION_ACTIONS.DELETE,
+            })
+          ) {
+            return
+          }
           handleDeleteChannel(channel.id, queryClient)
           setDeleteConfirmOpen(false)
         }}

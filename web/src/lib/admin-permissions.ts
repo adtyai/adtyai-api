@@ -31,6 +31,8 @@ export const ADMIN_PERMISSION_RESOURCES = {
 
 export const ADMIN_PERMISSION_ACTIONS = {
   READ: 'read',
+  CREATE: 'create',
+  DELETE: 'delete',
   OPERATE: 'operate',
   WRITE: 'write',
   SENSITIVE_WRITE: 'sensitive_write',

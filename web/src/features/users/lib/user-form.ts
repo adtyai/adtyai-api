@@ -39,7 +39,8 @@ export const userFormSchema = z.object({
   display_name: z.string().optional(),
   password: z.string().optional(),
   role: z.number().optional(),
-  quota_dollars: z.number().min(0).optional(),
+  // Read-only live balance; excluded from create and update payloads.
+  quota_dollars: z.number().optional(),
   group: z.string().optional(),
   remark: z.string().optional(),
   admin_permissions: z
@@ -119,7 +120,7 @@ export function transformUserToFormDefaults(user: User): UserFormValues {
     display_name: user.display_name,
     password: '',
     role: user.role,
-    quota_dollars: quotaUnitsToDollars(user.quota),
+    quota_dollars: quotaUnitsToDollars(user.live_quota ?? user.quota),
     group: user.group || DEFAULT_GROUP,
     remark: user.remark || '',
     admin_permissions: user.admin_permissions ?? {},

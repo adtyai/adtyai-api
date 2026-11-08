@@ -84,11 +84,15 @@ func lockUserQuotaTx(tx *gorm.DB, userId int) (int64, error) {
 // lockUserQuotaForRefundTx 锁用户行，返回余额和还在钱包里的签到赠送。
 func lockUserQuotaForRefundTx(tx *gorm.DB, userId int) (balance, checkin int64, err error) {
 	var users []User
-	if err := lockForUpdate(tx).Select("id", "quota", "checkin_quota").Where("id = ?", userId).Limit(1).Find(&users).Error; err != nil {
+	if err := lockForUpdate(tx).Select("id", "quota", "quota_pending", "checkin_quota").Where("id = ?", userId).Limit(1).Find(&users).Error; err != nil {
 		return 0, 0, err
 	}
 	if len(users) == 0 {
 		return 0, 0, gorm.ErrRecordNotFound
 	}
-	return int64(users[0].Quota), int64(users[0].CheckinQuota), nil
+	balanceInt, err := userWalletBalance(users[0].Quota, users[0].QuotaPending)
+	if err != nil {
+		return 0, 0, err
+	}
+	return int64(balanceInt), int64(max(0, min(users[0].CheckinQuota, balanceInt))), nil
 }
