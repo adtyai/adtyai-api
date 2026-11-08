@@ -110,12 +110,14 @@ func fetchGroupData(ctx context.Context, client *http.Client, groupConfig map[st
 		UptimeList map[string]float64 `json:"uptimeList"`
 	}
 
-	g, gCtx := errgroup.WithContext(ctx)
+	// The status and heartbeat endpoints are independent; one failure must not
+	// cancel the other request after it has already been dispatched.
+	var g errgroup.Group
 	g.Go(func() error {
-		return getAndDecode(gCtx, client, baseURL+apiStatusPath+slug, &statusData)
+		return getAndDecode(ctx, client, baseURL+apiStatusPath+slug, &statusData)
 	})
 	g.Go(func() error {
-		return getAndDecode(gCtx, client, baseURL+apiHeartbeatPath+slug, &heartbeatData)
+		return getAndDecode(ctx, client, baseURL+apiHeartbeatPath+slug, &heartbeatData)
 	})
 
 	if g.Wait() != nil {
