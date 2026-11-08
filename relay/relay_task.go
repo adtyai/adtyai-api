@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -24,6 +25,7 @@ import (
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/billing_setting"
+	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 )
@@ -693,10 +695,26 @@ func publicTaskResultURL(task *model.Task) string {
 		return ""
 	}
 	raw := task.GetResultURL()
-	if raw == "" || strings.Contains(raw, "://") && !strings.Contains(raw, "/v1/videos/") {
+	if !isGatewayVideoResultURL(raw, task.TaskID) {
 		return taskcommon.BuildProxyURL(task.TaskID)
 	}
 	return raw
+}
+
+func isGatewayVideoResultURL(raw, taskID string) bool {
+	if raw == "" || taskID == "" {
+		return false
+	}
+	result, err := url.Parse(raw)
+	if err != nil || !result.IsAbs() || result.Host == "" || result.User != nil || result.RawQuery != "" || result.Fragment != "" || result.Opaque != "" {
+		return false
+	}
+	server, err := url.Parse(system_setting.ServerAddress)
+	if err != nil || !server.IsAbs() || server.Host == "" || server.User != nil || server.Path != "" || server.RawQuery != "" || server.Fragment != "" || server.Opaque != "" {
+		return false
+	}
+	expectedPath := "/v1/videos/" + taskID + "/content"
+	return strings.EqualFold(result.Scheme, server.Scheme) && strings.EqualFold(result.Host, server.Host) && result.Path == expectedPath
 }
 
 func TaskModel2Dto(task *model.Task) *dto.TaskDto {

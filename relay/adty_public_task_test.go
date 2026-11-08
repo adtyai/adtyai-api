@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -20,4 +21,26 @@ func TestPublicTaskModelHidesUpstreamSnapshot(t *testing.T) {
 	assert.NotContains(t, view.FailReason, "sk-channel-secret")
 	assert.NotContains(t, view.ResultURL, "upstream.example")
 	assert.Contains(t, view.ResultURL, "task_public")
+}
+
+func TestPublicTaskModelDoesNotExposeForeignVideoURLs(t *testing.T) {
+	previousAddress := system_setting.ServerAddress
+	system_setting.ServerAddress = "https://gateway.example"
+	t.Cleanup(func() { system_setting.ServerAddress = previousAddress })
+
+	for _, resultURL := range []string{
+		"https://attacker.example/v1/videos/task_public/content?signature=secret",
+		"//attacker.example/v1/videos/task_public/content?signature=secret",
+	} {
+		task := &model.Task{TaskID: "task_public", Status: model.TaskStatusSuccess}
+		task.PrivateData.ResultURL = resultURL
+
+		view := PublicTaskModel2Dto(task)
+
+		assert.Equal(t, "https://gateway.example/v1/videos/task_public/content", view.ResultURL)
+	}
+
+	task := &model.Task{TaskID: "task_public", Status: model.TaskStatusSuccess}
+	task.PrivateData.ResultURL = "https://gateway.example/v1/videos/task_public/content"
+	assert.Equal(t, task.PrivateData.ResultURL, PublicTaskModel2Dto(task).ResultURL)
 }
