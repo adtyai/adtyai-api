@@ -12,6 +12,32 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestRegistryKeepsHistoricalDriverWithoutDefaultModels(t *testing.T) {
+	registry := NewRegistry()
+	plugin, err := CompilePlugin(routingTestPluginSource(
+		"retired-defaults", 55, `[]`,
+		`routes: [{method: "GET", path: "/retired/tasks/:task_id", type: "query", render: "status"}],
+		protocols: ["openai_video"],`,
+		`export function listArtifacts() {return [];}
+		export function buildContentRequest() {return {};}
+		export const native = {status: function(ctx, task) {return task;}};
+		export const protocols = {openai_video: {
+			decodeRequest: function(ctx) {return {kind: "submit", model: ctx.model, requestBody: ctx.body.value};},
+			render: function(ctx, task) {return task;}
+		}};`,
+	), Options{})
+	require.NoError(t, err)
+	require.NoError(t, registry.ReplaceOverrides([]*LoadedPlugin{plugin}))
+	generation := registry.Generation()
+	_, ok := generation.GetByChannelType(55)
+	assert.True(t, ok)
+	_, ok = generation.LookupDeclaredRoute("GET", "/retired/tasks/:id")
+	assert.True(t, ok)
+	_, ok = generation.GetByModel("sora-2")
+	assert.False(t, ok)
+	assert.Empty(t, generation.LookupEndpointCandidates("POST", "/v1/videos", "sora-2"))
+}
+
 func TestRegistryIndexesNativeRoutesAndProtocolsInOneGeneration(t *testing.T) {
 	registry := NewRegistry()
 	plugin, err := CompilePlugin(routingTestPluginSource(

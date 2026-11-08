@@ -367,20 +367,8 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycom
 }
 
 func (a *Adaptor) GetModelList() []string {
-	var modelList []string
-	for i, s := range ModelList {
-		modelList = append(modelList, s)
-		ModelList[i] = s
-	}
-	for i, s := range claude.ModelList {
-		modelList = append(modelList, s)
-		claude.ModelList[i] = s
-	}
-	for i, s := range gemini.ModelList {
-		modelList = append(modelList, s)
-		gemini.ModelList[i] = s
-	}
-	return modelList
+	// Vertex and the direct vendor APIs have independent model lifecycles.
+	return append([]string(nil), ModelList...)
 }
 
 func (a *Adaptor) GetChannelName() string {

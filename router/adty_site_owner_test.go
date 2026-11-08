@@ -148,6 +148,120 @@ func TestOwnerCannotSeeOtherSiteCustomer(t *testing.T) {
 	assert.Contains(t, report.Body.String(), `"success":false`, "cannot report another site's customer")
 }
 
+func TestOwnerWalletReadAPIsStayWithinSite(t *testing.T) {
+	f := newOwnerFixture(t)
+	for _, credit := range []struct {
+		siteID int
+		kind   string
+		amount int64
+		key    string
+	}{
+		{f.site.Id, model.AdtySiteWalletOperating, 12, "mine-operating-credit"},
+		{f.site.Id, model.AdtySiteWalletEarnings, 5, "mine-earning-credit"},
+		{f.site.Id, model.AdtySiteWalletOperating, -2, "mine-operating-debit"},
+		{f.other.Id, model.AdtySiteWalletOperating, 91, "other-private-credit"},
+	} {
+		_, err := service.ApplyAdtySiteWalletChange(credit.siteID, credit.kind, decimal.NewFromInt(credit.amount), service.AdtySiteWalletChange{
+			Type: "test", Reason: credit.key, IdempotencyKey: "private-idem-" + credit.key,
+		})
+		require.NoError(t, err)
+	}
+	response := f.call(t, http.MethodGet, fmt.Sprintf("/api/adty/site/wallets?site_id=%d", f.other.Id), "", "")
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	wallets := decodeAdtyData[[]model.AdtySiteWallet](t, response.Body)
+	require.Len(t, wallets, 3)
+	balances := map[string]string{}
+	for _, wallet := range wallets {
+		assert.Equal(t, f.site.Id, wallet.SiteId)
+		balances[wallet.Kind] = wallet.Balance.String()
+	}
+	assert.Equal(t, map[string]string{"operating": "10", "earnings": "5", "margin": "0"}, balances)
+
+	path := fmt.Sprintf("/api/adty/site/wallet-ledgers?kind=operating&site_id=%d&page_size=1", f.other.Id)
+	for page, want := range []string{"mine-operating-debit", "mine-operating-credit"} {
+		response := f.call(t, http.MethodGet, fmt.Sprintf("%s&p=%d", path, page+1), "", "")
+		require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+		body := decodeAdtyData[struct {
+			Total int64                        `json:"total"`
+			Items []model.AdtySiteWalletLedger `json:"items"`
+		}](t, response.Body)
+		assert.EqualValues(t, 2, body.Total)
+		require.Len(t, body.Items, 1)
+		assert.Equal(t, f.site.Id, body.Items[0].SiteId)
+		assert.Equal(t, want, body.Items[0].Reason)
+		assert.NotContains(t, response.Body.String(), "private-idem-")
+		assert.NotContains(t, response.Body.String(), "other-private-credit")
+	}
+	invalid := f.call(t, http.MethodGet, "/api/adty/site/wallet-ledgers?kind=unknown", "", "")
+	assert.Equal(t, http.StatusBadRequest, invalid.Code)
+	plain := adtySessionToken(t, f.db, "wallet-not-owner", common.RoleCommonUser)
+	for _, path := range []string{"/api/adty/site/wallets", "/api/adty/site/wallet-ledgers"} {
+		assert.Equal(t, http.StatusForbidden, adtyJSON(t, f.engine, http.MethodGet, path, "", plain).Code)
+	}
+	require.NoError(t, f.db.Model(&model.AdtySite{}).Where("id = ?", f.site.Id).Update("agreement_ver", "outdated").Error)
+	assert.Equal(t, http.StatusForbidden, f.call(t, http.MethodGet, "/api/adty/site/wallets", "", "").Code)
+}
+
+func TestRootWalletReadAPIsRequireRootAndReadScope(t *testing.T) {
+	f := newAdtyGuardFixture(t)
+	site := model.AdtySite{OwnerUserId: f.admin.Id, Subdomain: "root-wallet", Status: model.AdtySiteStatusClosed}
+	require.NoError(t, f.db.Create(&site).Error)
+	var root model.User
+	require.NoError(t, f.db.Where("username = ?", "guard-root").First(&root).Error)
+	rootRead := createAdtyScopedToken(t, root.Id, "option:read")
+	rootWrite := createAdtyScopedToken(t, root.Id, "option:write")
+	for _, suffix := range []string{"wallets", "wallet-ledgers"} {
+		path := fmt.Sprintf("/api/adty/admin/sites/%d/%s", site.Id, suffix)
+		assert.Equal(t, http.StatusForbidden, adtyJSON(t, f.engine, http.MethodGet, path, "", f.token).Code)
+		for _, token := range []string{f.root, rootRead} {
+			response := adtyJSON(t, f.engine, http.MethodGet, path, "", token)
+			require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+			assert.Contains(t, response.Body.String(), `"success":true`)
+		}
+		assert.Equal(t, http.StatusForbidden, adtyJSON(t, f.engine, http.MethodGet, path, "", rootWrite).Code)
+		missing := adtyJSON(t, f.engine, http.MethodGet, fmt.Sprintf("/api/adty/admin/sites/999999/%s", suffix), "", f.root)
+		assert.Equal(t, http.StatusNotFound, missing.Code)
+	}
+	var count int64
+	require.NoError(t, f.db.Model(&model.AdtySiteWallet{}).Where("site_id = ?", site.Id).Count(&count).Error)
+	assert.Zero(t, count, "reading a legacy site must not create balances or history")
+	ownerRead := createAdtyScopedToken(t, f.admin.Id, "wallet:read")
+	ownerWrite := createAdtyScopedToken(t, f.admin.Id, "wallet:write")
+	require.NoError(t, f.db.Model(&model.AdtySite{}).Where("id = ?", site.Id).Updates(map[string]any{
+		"status": model.AdtySiteStatusActive, "agreement_ver": service.AdtyCurrentSiteAgreementVersion(),
+	}).Error)
+	assert.Equal(t, http.StatusOK, adtyJSON(t, f.engine, http.MethodGet, "/api/adty/site/wallets", "", ownerRead).Code)
+	assert.Equal(t, http.StatusForbidden, adtyJSON(t, f.engine, http.MethodGet, "/api/adty/site/wallets", "", ownerWrite).Code)
+}
+
+func TestRootTierConfigurationIsDynamicAndValidated(t *testing.T) {
+	f := newAdtyGuardFixture(t)
+	const path = "/api/adty/admin/reseller/tiers"
+	const valid = `{"tiers":[{"code":"configurable","name":"Configurable","cost_factor":"0.7","deposit_usd":"20","enabled":true}]}`
+	assert.Equal(t, http.StatusForbidden, adtyJSON(t, f.engine, http.MethodPut, path, valid, f.token).Code)
+	response := adtyJSON(t, f.engine, http.MethodPut, path, valid, f.root)
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	tiers := decodeAdtyData[[]model.AdtySiteTier](t, response.Body)
+	require.Len(t, tiers, 1)
+	assert.Equal(t, "configurable", tiers[0].Code)
+	require.NotNil(t, tiers[0].CostFactor)
+	assert.Equal(t, "0.7", tiers[0].CostFactor.String())
+	for _, invalid := range []string{
+		`{}`,
+		`{"tiers":[{"code":"configurable","name":"Configurable","cost_factor":"0.0000001"}]}`,
+		`{"tiers":[{"code":"configurable","name":"Configurable","deposit_usd":"-1"}]}`,
+	} {
+		response := adtyJSON(t, f.engine, http.MethodPut, path, invalid, f.root)
+		assert.Contains(t, response.Body.String(), `"success":false`)
+	}
+	response = adtyJSON(t, f.engine, http.MethodGet, path, "", f.root)
+	tiers = decodeAdtyData[[]model.AdtySiteTier](t, response.Body)
+	require.Len(t, tiers, 1)
+	assert.True(t, tiers[0].Enabled)
+	assert.Equal(t, "20", tiers[0].DepositUSD.String())
+	assert.Equal(t, "0.7", tiers[0].CostFactor.String(), "invalid updates must not partially change a tier")
+}
+
 func TestSensitiveOwnerActionsRequireVerify(t *testing.T) {
 	f := newOwnerFixture(t)
 	customer := f.customer(t, f.site, "verify-customer", "v@example.com")
@@ -535,6 +649,18 @@ func TestCustomerAcceptsSiteTerms(t *testing.T) {
 }
 
 func TestDeleteCustomDomainRequiresCurrentAgreement(t *testing.T) {
+	cloudflareCalls := 0
+	cloudflare := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cloudflareCalls++
+		require.Equal(t, http.MethodGet, r.Method)
+		require.Equal(t, "api.stale-agreement.example", r.URL.Query().Get("hostname"))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"result":[]}`))
+	}))
+	defer cloudflare.Close()
+	oldCloudflare := service.AdtyCloudflare
+	service.AdtyCloudflare = &service.AdtyCloudflareClient{BaseURL: cloudflare.URL, HTTP: cloudflare.Client(), Token: func() string { return "synthetic-token" }}
+	t.Cleanup(func() { service.AdtyCloudflare = oldCloudflare })
 	legal := adty_setting.GetLegalSetting()
 	oldVersion := legal.SiteAgreementVersion
 	legal.SiteAgreementVersion = oldVersion + 3
@@ -552,6 +678,7 @@ func TestDeleteCustomDomainRequiresCurrentAgreement(t *testing.T) {
 	var stored model.AdtySiteDomain
 	require.NoError(t, f.db.First(&stored, domain.Id).Error)
 	assert.Equal(t, model.AdtySiteDomainPending, stored.Status)
+	require.Zero(t, cloudflareCalls, "an unaccepted agreement must prevent external domain operations")
 
 	current := service.AdtyCurrentSiteAgreementVersion()
 	accepted := f.call(t, http.MethodPost, "/api/adty/site/terms/accept", `{"version":"`+current+`"}`, "")
@@ -560,4 +687,5 @@ func TestDeleteCustomDomainRequiresCurrentAgreement(t *testing.T) {
 	require.Contains(t, deleted.Body.String(), `"success":true`, deleted.Body.String())
 	require.NoError(t, f.db.First(&stored, domain.Id).Error)
 	assert.Equal(t, model.AdtySiteDomainRemoved, stored.Status)
+	require.Equal(t, 1, cloudflareCalls, "removal checks for an owned orphan before marking the domain removed")
 }

@@ -26,6 +26,7 @@ import { ConfirmDialog } from '@/components/confirm-dialog'
 import { StaticDataTable } from '@/components/data-table/static/static-data-table'
 import { Dialog } from '@/components/dialog'
 import { EmptyState } from '@/components/empty-state'
+import { ErrorState } from '@/components/error-state'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -143,8 +144,13 @@ export function InviteCodesPanel(props: {
   const set = (key: keyof Draft, value: string) =>
     setDraft((prev) => ({ ...prev, [key]: value }))
 
+  if (query.isError && !query.data) {
+    return <ErrorState onRetry={() => void query.refetch()} />
+  }
+
   return (
     <div className='flex flex-col gap-3'>
+      {query.isError && <ErrorState onRetry={() => void query.refetch()} />}
       {props.canCreate && (
         <div>
           <Button

@@ -1,7 +1,6 @@
 package xai
 
-var ModelList = []string{
-	// language models
+var ModelList = []string{ // language models
 	"grok-4-1-fast-reasoning",
 	"grok-4-1-fast-non-reasoning",
 	"grok-code-fast-1",
@@ -27,6 +26,16 @@ var ModelList = []string{
 	"grok-2-image-1212",
 	// video generation model
 	"grok-imagine-video",
+	// Current provider catalogue; account and regional access still apply.
+	"grok-4.20-0309-non-reasoning",
+	"grok-4.20-0309-reasoning",
+	"grok-4.20-multi-agent-0309",
+	"grok-4.3",
+	"grok-4.5",
+	"grok-4.6",
+	"grok-4.7",
+	"grok-build-0.1",
+	"grok-imagine-image-2.0",
 }
 
 var ChannelName = "xai"

@@ -111,7 +111,14 @@ func consumeSharedVerification(key, code, purpose string, deleteKey bool) (time.
 	var payload string
 	var err error
 	if deleteKey {
-		payload, err = RDB.GetDel(context.Background(), redisKey).Result()
+		const consume = `
+local payload = redis.call('GET', KEYS[1])
+if not payload then return '' end
+local separator = string.find(payload, '\n', 1, true)
+if not separator or string.sub(payload, separator + 1) ~= ARGV[1] then return '' end
+redis.call('DEL', KEYS[1])
+return payload`
+		payload, err = RDB.Eval(context.Background(), consume, []string{redisKey}, code).Text()
 	} else {
 		payload, err = RDB.Get(context.Background(), redisKey).Result()
 	}

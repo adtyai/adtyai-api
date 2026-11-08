@@ -86,6 +86,25 @@ func TestPendingUserAuthFenceRejectsStaleCacheWrite(t *testing.T) {
 	assert.False(t, server.Exists(getUserCacheKey(userID)))
 }
 
+func TestUserCachePreservesSiteMembership(t *testing.T) {
+	server := useUserCacheMiniRedis(t)
+	const userID = 4299
+	require.NoError(t, writeUserCache(&UserBase{Id: userID, SiteId: 17, AuthVersion: 1}, true))
+	cached, err := cacheGetUserBase(userID)
+	require.NoError(t, err)
+	assert.Equal(t, 17, cached.SiteId)
+	// Cached rows created before the membership field was written must reload.
+	server.HDel(getUserCacheKey(userID), "SiteId")
+	server.HSet(getUserCacheKey(userID), "CacheSchema", "3")
+	_, err = cacheGetUserBase(userID)
+	assert.Error(t, err)
+	// A transfer to the platform must also overwrite the old nonzero value.
+	require.NoError(t, writeUserCache(&UserBase{Id: userID, SiteId: 0, AuthVersion: 1}, true))
+	cached, err = cacheGetUserBase(userID)
+	require.NoError(t, err)
+	assert.Zero(t, cached.SiteId)
+}
+
 func TestUserAuthFieldUpdateRejectsVersionMismatch(t *testing.T) {
 	useUserCacheMiniRedis(t)
 	const userID = 4202

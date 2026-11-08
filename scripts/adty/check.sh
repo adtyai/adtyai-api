@@ -119,6 +119,10 @@ if [ "$run_frontend" -eq 1 ]; then
   (cd web && bun run typecheck)
   step "web build"
   (cd web && bun run build)
+  step "web install Chromium for browser smoke"
+  (cd web && bun x playwright install chromium)
+  step "web production browser smoke"
+  (cd web && bun run browser:smoke)
   # 上游原样就有 lint error 和不合要求的文件头（docs/adty/baseline.md）。这两步由 ratchet.mjs 跑，
   # 只拦 scripts/adty/baseline-lint.txt、baseline-copyright.txt 以外的新问题
   step "web：bun run lint（和 scripts/adty/baseline-lint.txt 比较）"
@@ -129,6 +133,11 @@ if [ "$run_frontend" -eq 1 ]; then
   (cd web && node scripts/adty/i18n-check.mjs)
   step "web：bun run copyright:check（和 scripts/adty/baseline-copyright.txt 比较）"
   node scripts/adty/ratchet.mjs copyright
+fi
+
+if [ "$run_backend" -eq 1 ] && [ "$run_frontend" -eq 1 ]; then
+  step "生产浏览器：隔离 PostgreSQL 17、Redis、真实钱包和权限"
+  bash scripts/adty/browser-business.sh
 fi
 
 step "检查全部通过"

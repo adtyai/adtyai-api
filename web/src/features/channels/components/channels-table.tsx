@@ -38,6 +38,7 @@ import {
   useDataTable,
   useDataTableViewMode,
 } from '@/components/data-table'
+import { ErrorState } from '@/components/error-state'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -235,7 +236,7 @@ export function ChannelsTable() {
 
   // Fetch channels data
   // eslint-disable-next-line @tanstack/query/exhaustive-deps
-  const { data, isLoading, isFetching, refetch } = useQuery({
+  const { data, isLoading, isFetching, isError, refetch } = useQuery({
     queryKey: channelsQueryKeys.list({
       keyword: globalFilter,
       model: modelFilter,
@@ -502,8 +503,11 @@ export function ChannelsTable() {
     })),
   ]
 
+  if (isError && !data) return <ErrorState onRetry={() => void refetch()} />
+
   return (
     <ChannelPriorityContext.Provider value={dragControls}>
+      {isError && <ErrorState onRetry={() => void refetch()} />}
       {priorityActionContainer &&
         createPortal(
           <ChannelPriorityModeToggle

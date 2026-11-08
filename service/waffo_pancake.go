@@ -28,6 +28,7 @@ type WaffoPancakeCreateSessionParams struct {
 	BuyerEmail              string
 	ExpiresInSeconds        *int
 	OrderMerchantExternalID string
+	Metadata                map[string]string
 }
 
 // WaffoPancakeCheckoutSession is the response of CreateWaffoPancakeCheckoutSession.
@@ -56,14 +57,18 @@ type WaffoPancakeWebhookEvent struct {
 
 type WaffoPancakeWebhookData struct {
 	// OrderID = Pancake ORD_* (logs); OrderMerchantExternalID = our trade_no (lookup).
-	OrderID                       string
-	OrderMerchantExternalID       string
-	BuyerEmail                    string
-	Currency                      string
-	Amount                        string
-	TaxAmount                     string
-	ProductName                   string
-	MerchantProvidedBuyerIdentity string
+	OrderID                        string
+	OrderMerchantExternalID        string
+	BuyerEmail                     string
+	Currency                       string
+	Amount                         string
+	TaxAmount                      string
+	Subtotal                       *string
+	Total                          *string
+	ProductName                    string
+	MerchantProvidedBuyerIdentity  string
+	OrderMetadata                  map[string]string
+	RefundTicketMerchantExternalID string
 }
 
 // NormalizedEventType returns the event type or empty string for a nil event.
@@ -123,6 +128,7 @@ func CreateWaffoPancakeCheckoutSession(ctx context.Context, params *WaffoPancake
 			BuyerEmail:              optionalString(params.BuyerEmail),
 			ExpiresInSeconds:        params.ExpiresInSeconds,
 			OrderMerchantExternalID: optionalString(params.OrderMerchantExternalID),
+			Metadata:                params.Metadata,
 		},
 		BuyerIdentity: params.BuyerIdentity,
 	}
@@ -166,12 +172,26 @@ func WaffoPancakeBuyerIdentityFromUserID(userID int) string {
 
 // VerifyConfiguredWaffoPancakeWebhook verifies the signature header. The SDK
 // picks the matching test / prod public key from the payload's `mode` field.
-func VerifyConfiguredWaffoPancakeWebhook(payload string, signatureHeader string) (*WaffoPancakeWebhookEvent, error) {
-	evt, err := pancake.VerifyWebhookTyped[pancake.WebhookEventData](payload, signatureHeader, nil)
+func VerifyConfiguredWaffoPancakeWebhook(payload string, signatureHeader string, publicKeys ...pancake.WebhookPublicKeys) (*WaffoPancakeWebhookEvent, error) {
+	var options *pancake.VerifyWebhookOptions
+	if len(publicKeys) > 0 {
+		options = &pancake.VerifyWebhookOptions{PublicKeys: &publicKeys[0]}
+	}
+	evt, err := pancake.VerifyWebhookTyped[pancake.WebhookEventData](payload, signatureHeader, options)
 	if err != nil {
 		return nil, err
 	}
-	if storeID := strings.TrimSpace(setting.WaffoPancakeStoreID); storeID == "" || evt.StoreID != storeID {
+	storeID := strings.TrimSpace(setting.WaffoPancakeStoreID)
+	if evt.Data.OrderMerchantExternalID != nil {
+		ext, lookupErr := model.GetAdtyTopupOrder(*evt.Data.OrderMerchantExternalID)
+		if lookupErr != nil {
+			return nil, lookupErr
+		}
+		if ext != nil && ext.Provider == model.PaymentProviderWaffoPancake && ext.ProviderMerchantId != "" {
+			storeID = ext.ProviderMerchantId
+		}
+	}
+	if storeID == "" || evt.StoreID != storeID {
 		return nil, fmt.Errorf("Waffo Pancake webhook store mismatch")
 	}
 	identity := ""
@@ -182,6 +202,10 @@ func VerifyConfiguredWaffoPancakeWebhook(payload string, signatureHeader string)
 	if evt.Data.OrderMerchantExternalID != nil {
 		externalID = *evt.Data.OrderMerchantExternalID
 	}
+	refundID := ""
+	if evt.Data.RefundTicketMerchantExternalID != nil {
+		refundID = *evt.Data.RefundTicketMerchantExternalID
+	}
 	return &WaffoPancakeWebhookEvent{
 		ID:        evt.ID,
 		Timestamp: evt.Timestamp,
@@ -190,14 +214,18 @@ func VerifyConfiguredWaffoPancakeWebhook(payload string, signatureHeader string)
 		StoreID:   evt.StoreID,
 		Mode:      string(evt.Mode),
 		Data: WaffoPancakeWebhookData{
-			OrderID:                       evt.Data.OrderID,
-			OrderMerchantExternalID:       externalID,
-			BuyerEmail:                    evt.Data.BuyerEmail,
-			Currency:                      evt.Data.Currency,
-			Amount:                        evt.Data.Amount,
-			TaxAmount:                     evt.Data.TaxAmount,
-			ProductName:                   evt.Data.ProductName,
-			MerchantProvidedBuyerIdentity: identity,
+			OrderID:                        evt.Data.OrderID,
+			OrderMerchantExternalID:        externalID,
+			BuyerEmail:                     evt.Data.BuyerEmail,
+			Currency:                       evt.Data.Currency,
+			Amount:                         evt.Data.Amount,
+			TaxAmount:                      evt.Data.TaxAmount,
+			Subtotal:                       evt.Data.Subtotal,
+			Total:                          evt.Data.Total,
+			ProductName:                    evt.Data.ProductName,
+			MerchantProvidedBuyerIdentity:  identity,
+			OrderMetadata:                  evt.Data.OrderMetadata,
+			RefundTicketMerchantExternalID: refundID,
 		},
 	}, nil
 }
@@ -333,18 +361,26 @@ func CreateWaffoPancakePrimaryPair(ctx context.Context, merchantID, privateKey, 
 // at the end of the configuration flow via model.UpdateOptionsBulk (single
 // DB transaction). A blank privateKey is treated as "keep current"
 // (Stripe-style API-secret UX) and is omitted from the bulk payload.
-func SaveWaffoPancakeConfig(ctx context.Context, merchantID, privateKey, returnURL, storeID, productID string) error {
+func SaveWaffoPancakeConfig(ctx context.Context, merchantID, privateKey, returnURL, storeID, productID string, environments ...string) error {
 	merchantID = strings.TrimSpace(merchantID)
 	storeID = strings.TrimSpace(storeID)
 	productID = strings.TrimSpace(productID)
 	if merchantID == "" || storeID == "" || productID == "" {
 		return fmt.Errorf("merchant id, store id, and product id are required to save")
 	}
+	environment := setting.WaffoPancakeEnvironment
+	if len(environments) > 0 && environments[0] != "" {
+		environment = environments[0]
+	}
+	if environment != "test" && environment != "prod" {
+		return fmt.Errorf("invalid Waffo Pancake environment")
+	}
 	values := map[string]string{
-		"WaffoPancakeMerchantID": merchantID,
-		"WaffoPancakeReturnURL":  strings.TrimSpace(returnURL),
-		"WaffoPancakeStoreID":    storeID,
-		"WaffoPancakeProductID":  productID,
+		"WaffoPancakeMerchantID":  merchantID,
+		"WaffoPancakeReturnURL":   strings.TrimSpace(returnURL),
+		"WaffoPancakeStoreID":     storeID,
+		"WaffoPancakeProductID":   productID,
+		"WaffoPancakeEnvironment": environment,
 	}
 	if pk := strings.TrimSpace(privateKey); pk != "" {
 		values["WaffoPancakePrivateKey"] = pk

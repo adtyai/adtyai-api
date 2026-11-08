@@ -78,6 +78,47 @@ export type PaymentOrphanEvent = {
   create_time: number
   resolution_note: string
   can_credit: boolean
+  review?: PaymentOrphanReview
+}
+
+export type PaymentOrphanReviewStatus =
+  | 'pending_review'
+  | 'refunded'
+  | 'never_credited'
+  | 'dismissed'
+
+export type PaymentOrphanDismissalReason =
+  | 'not_this_order'
+  | 'reversal_canceled'
+
+export type PaymentOrphanReview = {
+  id: number
+  status: PaymentOrphanReviewStatus
+  note: string
+  proof: string
+  dismissal_reason?: PaymentOrphanDismissalReason
+  trade_no: string
+  external_amount: string
+  external_currency: string
+  refund_ledger_id: number
+  deducted_quota: number
+  refund_quota: number
+  refund_amount: string
+  paid_amount: string
+  paid_currency: string
+  exposure_amount: string
+  created_at: number
+  operator_id: number
+}
+
+export type PaymentOrphanReviewRequest = {
+  status: PaymentOrphanReviewStatus
+  trade_no: string
+  external_amount: string
+  external_currency: string
+  proof: string
+  note: string
+  dismissal_reason?: PaymentOrphanDismissalReason
 }
 
 export type RechargeAuditFilters = {
@@ -134,14 +175,13 @@ export async function creditPaymentOrphan(id: number, note: string) {
 
 export async function resolvePaymentOrphan(
   id: number,
-  status: 'refunded' | 'dismissed',
-  note: string
+  review: PaymentOrphanReviewRequest
 ) {
-  const res = await api.post<ApiResponse<null>>(
+  const res = await api.post<ApiResponse<PaymentOrphanReview>>(
     `/api/user/admin/finance/payment-orphans/${id}/resolve`,
-    { status, note }
+    review
   )
-  requireServerSuccess(res.data)
+  return requireServerSuccess(res.data).data
 }
 
 export async function completeTopupManually(

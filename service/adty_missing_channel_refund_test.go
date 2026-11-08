@@ -19,7 +19,7 @@ func TestFailTasksWithoutChannelRefundsPrecharge(t *testing.T) {
 	t.Cleanup(func() {
 		require.NoError(t, opened.Close())
 	})
-	require.NoError(t, opened.DB.AutoMigrate(&model.User{}, &model.Token{}, &model.Channel{}, &model.Task{}, &model.Log{}, &model.Midjourney{}))
+	require.NoError(t, opened.DB.AutoMigrate(&model.User{}, &model.Token{}, &model.Channel{}, &model.Task{}, &model.Log{}, &model.Midjourney{}, &model.BillingOperation{}, &model.BillingOperationMovement{}, &model.AdtySiteEarningEvent{}))
 
 	const userID, tokenID, channelID = 71, 71, 71
 	const startQuota, charged, tokenRemain = 10000, 3000, 5000
@@ -50,7 +50,7 @@ func TestFailTasksWithoutChannelRefundsPrecharge(t *testing.T) {
 
 	mjUser := &model.User{Username: "mjmiss", Password: "x", Group: "default", Status: common.UserStatusEnabled, Role: common.RoleCommonUser, Quota: startQuota - charged}
 	require.NoError(t, model.DB.Create(mjUser).Error)
-	mj := &model.Midjourney{UserId: mjUser.Id, MjId: "", Action: "IMAGINE", Status: "SUBMITTED", Progress: "0%", ChannelId: channelID, Quota: charged, TokenId: tokenID}
+	mj := &model.Midjourney{UserId: mjUser.Id, MjId: "", Action: "IMAGINE", Status: "SUBMITTED", Progress: "0%", ChannelId: channelID, Quota: charged}
 	require.NoError(t, model.DB.Create(mj).Error)
 	FailMidjourneyTasksWithoutChannel(context.Background(), []*model.Midjourney{mj}, "mj_id is empty")
 	require.Equal(t, startQuota, getUserQuota(t, mjUser.Id))

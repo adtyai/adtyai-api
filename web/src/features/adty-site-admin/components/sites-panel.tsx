@@ -23,6 +23,7 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import { EmptyState } from '@/components/empty-state'
+import { ErrorState } from '@/components/error-state'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
@@ -162,8 +163,13 @@ export function SitesPanel(props: { onOpenSite: (site: AdminSite) => void }) {
     closed: t('Closed'),
   }
 
+  if (query.isError && !query.data) {
+    return <ErrorState onRetry={() => void query.refetch()} />
+  }
+
   return (
     <div className='flex flex-col gap-3'>
+      {query.isError && <ErrorState onRetry={() => void query.refetch()} />}
       <form
         className='flex flex-wrap gap-2'
         onSubmit={(event) => {

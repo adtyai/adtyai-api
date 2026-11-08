@@ -23,6 +23,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { useDraftNavigation } from '@/features/system-settings/hooks/use-draft-navigation'
 import { formatTimestamp } from '@/lib/format'
 
 import { savePricing } from '../api'
@@ -50,6 +51,14 @@ export function PricingPanel(props: { site: OwnerSite }) {
     )
     setRemoved([])
   }, [props.site.prices])
+  const savedMarkups = siteMarkups(props.site.prices)
+  useDraftNavigation(
+    defaultMarkup !== savedMarkups.defaultMarkup ||
+      removed.length > 0 ||
+      JSON.stringify(
+        Object.fromEntries(rows.map((row) => [row.group, row.markup]))
+      ) !== JSON.stringify(savedMarkups.groups)
+  )
   const pending = pendingIncreases(props.site.prices)
   const save = useVerifiedOwnerMutation<void>({
     action: 'pricing',

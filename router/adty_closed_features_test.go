@@ -20,20 +20,6 @@ func TestClosedFeatureRoutesRejectBeforeCredit(t *testing.T) {
 		path   string
 		body   string
 	}{
-		{http.MethodPost, "/api/user/pay", `{"amount":10,"payment_method":"alipay"}`},
-		{http.MethodPost, "/api/user/stripe/pay", `{"amount":10}`},
-		{http.MethodPost, "/api/user/stripe/amount", `{"amount":10}`},
-		{http.MethodPost, "/api/user/creem/pay", `{"product_id":"prod"}`},
-		{http.MethodPost, "/api/user/waffo/pay", `{"amount":10}`},
-		{http.MethodPost, "/api/user/waffo/amount", `{"amount":10}`},
-		{http.MethodPost, "/api/user/waffo-pancake/pay", `{"amount":10}`},
-		{http.MethodPost, "/api/user/waffo-pancake/amount", `{"amount":10}`},
-		{http.MethodPost, "/api/user/epay/notify", "out_trade_no=x&trade_status=TRADE_SUCCESS"},
-		{http.MethodGet, "/api/user/epay/notify?out_trade_no=x&trade_status=TRADE_SUCCESS", ""},
-		{http.MethodPost, "/api/stripe/webhook", `{"type":"checkout.session.completed"}`},
-		{http.MethodPost, "/api/creem/webhook", `{"eventType":"checkout.completed"}`},
-		{http.MethodPost, "/api/waffo/webhook", `{}`},
-		{http.MethodPost, "/api/waffo-pancake/webhook/sandbox", `{}`},
 		{http.MethodPost, "/api/user/checkin", `{}`},
 		{http.MethodGet, "/api/user/checkin", ""},
 		{http.MethodPost, "/api/user/topup/complete", `{"trade_no":"OLD-1"}`},
@@ -55,6 +41,19 @@ func TestClosedFeatureRoutesRejectBeforeCredit(t *testing.T) {
 	require.True(t, registered["POST /api/user/epay/notify/:channelId"])
 	require.True(t, registered["GET /api/user/epay/notify/:channelId"])
 	require.True(t, registered["DELETE /api/adty/admin/sites/domains/:id"])
+}
+
+func TestRestoredPaymentRoutesRequireAuthentication(t *testing.T) {
+	engine := newAccessTokenScopeTestEngine(t)
+	for _, path := range []string{"/api/user/pay", "/api/user/stripe/pay", "/api/user/stripe/amount", "/api/user/creem/pay", "/api/user/waffo/pay", "/api/user/waffo/amount", "/api/user/waffo-pancake/pay", "/api/user/waffo-pancake/amount"} {
+		t.Run(path, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			engine.ServeHTTP(rec, req)
+			require.Equal(t, http.StatusUnauthorized, rec.Code, rec.Body.String())
+		})
+	}
 }
 
 func TestAdminCustomDomainDisableRouteIsMounted(t *testing.T) {

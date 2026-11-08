@@ -23,6 +23,7 @@ import { useTranslation } from 'react-i18next'
 
 import { StaticDataTable } from '@/components/data-table/static/static-data-table'
 import { EmptyState } from '@/components/empty-state'
+import { ErrorState } from '@/components/error-state'
 import { StatusBadge } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
@@ -109,8 +110,13 @@ export function EarningsPanel() {
     </span>
   )
 
+  if (query.isError && !query.data) {
+    return <ErrorState onRetry={() => void query.refetch()} />
+  }
+
   return (
     <div className='flex flex-col gap-4'>
+      {query.isError && <ErrorState onRetry={() => void query.refetch()} />}
       <OwnerStatGrid
         label={t('Balances')}
         items={[

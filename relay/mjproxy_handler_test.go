@@ -39,7 +39,7 @@ func TestMidjourneyCode21DoesNotChargeOrDuplicate(t *testing.T) {
 	t.Cleanup(func() {
 		require.NoError(t, opened.Close())
 	})
-	require.NoError(t, opened.DB.AutoMigrate(&model.User{}, &model.Token{}, &model.Midjourney{}, &model.Log{}))
+	require.NoError(t, opened.DB.AutoMigrate(&model.User{}, &model.Token{}, &model.Midjourney{}, &model.Log{}, &model.BillingOperation{}, &model.BillingOperationMovement{}, &model.AdtySiteEarningEvent{}))
 
 	oldRedis := common.RedisEnabled
 	oldBatch := common.BatchUpdateEnabled
@@ -163,7 +163,7 @@ func TestSimpleChangeUsesContentWhenTaskIdIsAbsent(t *testing.T) {
 	t.Cleanup(func() {
 		require.NoError(t, opened.Close())
 	})
-	require.NoError(t, opened.DB.AutoMigrate(&model.User{}, &model.Token{}, &model.Channel{}, &model.Midjourney{}, &model.Log{}))
+	require.NoError(t, opened.DB.AutoMigrate(&model.User{}, &model.Token{}, &model.Channel{}, &model.Midjourney{}, &model.Log{}, &model.BillingOperation{}, &model.BillingOperationMovement{}, &model.AdtySiteEarningEvent{}))
 
 	oldRedis := common.RedisEnabled
 	oldBatch := common.BatchUpdateEnabled

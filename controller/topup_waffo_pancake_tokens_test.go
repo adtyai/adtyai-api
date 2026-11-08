@@ -19,6 +19,7 @@ func TestWaffoPancakeTokenAmountIsNotTruncated(t *testing.T) {
 	confirmPaymentComplianceForTest(t)
 	db := adtyTestDB(t)
 	require.NoError(t, db.AutoMigrate(&model.User{}, &model.TopUp{}))
+	require.NoError(t, model.MigrateAdtyTables())
 	user := &model.User{Username: "pancake-tokens", Password: "x", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: "default", Quota: 0}
 	require.NoError(t, db.Create(user).Error)
 

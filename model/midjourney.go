@@ -29,6 +29,10 @@ type Midjourney struct {
 	BillingSiteId         int     `json:"-" gorm:"default:0"`
 	BillingSiteMarkup     float64 `json:"-" gorm:"default:0"`
 	BillingSiteCostFactor float64 `json:"-" gorm:"default:0"`
+	BillingChargePending  bool    `json:"-" gorm:"index;not null;default:false"`
+	BillingPending        bool    `json:"-" gorm:"index;not null;default:false"`
+	BillingOperationKey   string  `json:"-" gorm:"type:varchar(191)"`
+	BillingTokenQuota     int     `json:"-"`
 }
 
 // TaskQueryParams 用于包含所有搜索条件的结构体，可以根据需求添加更多字段
@@ -100,7 +104,7 @@ func GetAllUnFinishTasks() []*Midjourney {
 	var tasks []*Midjourney
 	var err error
 	// get all tasks progress is not 100%
-	err = DB.Where("progress != ?", "100%").Find(&tasks).Error
+	err = DB.Where("progress != ? AND billing_charge_pending = ?", "100%", false).Find(&tasks).Error
 	if err != nil {
 		return nil
 	}
@@ -194,6 +198,9 @@ func (midjourney *Midjourney) GetBillingChannelId() int {
 // UpdateWithStatus performs a conditional UPDATE guarded by fromStatus (CAS).
 // Uses Model().Select("*").Updates() to avoid GORM Save()'s INSERT fallback.
 func (midjourney *Midjourney) UpdateWithStatus(fromStatus string) (bool, error) {
+	if midjourney.Status != fromStatus && (midjourney.Status == "FAILURE" || midjourney.Progress == "100%") && (midjourney.Quota > 0 || midjourney.BillingTokenQuota > 0) {
+		midjourney.BillingPending = true
+	}
 	result := DB.Model(midjourney).Where("status = ?", fromStatus).Select("*").Updates(midjourney)
 	if result.Error != nil {
 		return false, result.Error

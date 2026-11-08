@@ -160,7 +160,7 @@ func TestRealtimeFetchRefundsTaskItFindsFailed(t *testing.T) {
 	for _, cancelAfterTerminal := range []bool{false, true} {
 		t.Run(strconv.FormatBool(cancelAfterTerminal), func(t *testing.T) {
 			database := setupRelayChannelDB(t)
-			require.NoError(t, database.AutoMigrate(&model.Task{}, &model.User{}, &model.Log{}))
+			require.NoError(t, database.AutoMigrate(&model.Task{}, &model.User{}, &model.Log{}, &model.BillingOperation{}, &model.BillingOperationMovement{}, &model.AdtySiteEarningEvent{}))
 			previousLogDB := model.LOG_DB
 			previousFactory := service.GetTaskAdaptorFunc
 			previousRedis := common.RedisEnabled

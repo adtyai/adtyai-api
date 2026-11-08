@@ -147,14 +147,25 @@ func PreWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usag
 		return fmt.Errorf("token quota is not enough, token remain quota: %s, need quota: %s", logger.FormatQuota(token.RemainQuota), logger.FormatQuota(quota))
 	}
 
+	if relayInfo.Billing == nil && quota > 0 {
+		if apiErr := PreConsumeBilling(ctx, 0, relayInfo); apiErr != nil {
+			return apiErr
+		}
+	}
 	shortfallBefore := relayInfo.BillingShortfall
-	result, err := postConsumeQuotaWithResult(relayInfo, quota, 0, false)
+	result, err := postConsumeQuotaWithResult(relayInfo, quota, 0, false, ctx)
 	adtyNoteBillingShortfall(ctx, relayInfo, shortfallBefore) // 二开：余额下限，差额记到本会话下一条消费日志
 	if err != nil {
 		return err
 	}
 	charged := quota - result.Shortfall
-	if charged > 0 {
+	if session, ok := relayInfo.Billing.(*BillingSession); ok && session.operationKey != "" {
+		session.mu.Lock()
+		relayInfo.RealtimeAlreadyCharged += max(0, charged)
+		relayInfo.RealtimeTokenAlreadyCharged += result.TokenCharged
+		session.realtimeShortfall += result.Shortfall
+		session.mu.Unlock()
+	} else if charged > 0 {
 		relayInfo.RealtimeAlreadyCharged += charged
 	}
 	logger.LogInfo(ctx, common.LogText("realtime streaming consume quota success, quota: %d", quota))
@@ -447,45 +458,49 @@ func PreConsumeTokenQuota(relayInfo *relaycommon.RelayInfo, quota int) error {
 type postConsumeQuotaResult struct {
 	FundingApplied bool
 	TokenApplied   bool
+	TokenCharged   int
 	// Shortfall 二开（余额下限）：扣费最多扣到 0，没扣到的部分由平台承担。
 	Shortfall int
 }
 
-func PostConsumeQuota(relayInfo *relaycommon.RelayInfo, quota int, preConsumedQuota int, sendEmail bool) error {
-	_, err := postConsumeQuotaWithResult(relayInfo, quota, preConsumedQuota, sendEmail)
+func PostConsumeQuota(relayInfo *relaycommon.RelayInfo, quota int, preConsumedQuota int, sendEmail bool, contexts ...*gin.Context) error {
+	_, err := postConsumeQuotaWithResult(relayInfo, quota, preConsumedQuota, sendEmail, contexts...)
 	return err
 }
 
-func postConsumeQuotaWithResult(relayInfo *relaycommon.RelayInfo, quota int, preConsumedQuota int, sendEmail bool) (result postConsumeQuotaResult, err error) {
-
-	// 1) Consume from wallet quota
-	if quota > 0 {
-		// 二开（余额下限）：最多扣到 0，不透支；差额累计到 RelayInfo.BillingShortfall。
-		var charged int
-		charged, err = model.ChargeUserQuotaUpTo(relayInfo.UserId, quota)
-		if err == nil && charged < quota {
-			result.Shortfall = quota - charged
-			relayInfo.BillingShortfall += result.Shortfall
-		}
-	} else {
-		err = model.IncreaseUserQuota(relayInfo.UserId, -quota, false)
+func postConsumeQuotaWithResult(relayInfo *relaycommon.RelayInfo, quota int, preConsumedQuota int, sendEmail bool, contexts ...*gin.Context) (result postConsumeQuotaResult, err error) {
+	if relayInfo == nil {
+		return result, model.ErrBillingOperationConflict
 	}
-	if err != nil {
+	if relayInfo.RequestId == "" {
+		relayInfo.RequestId = common.NewRequestId()
+	}
+	key := fmt.Sprintf("direct:%s:%d", relayInfo.RequestId, relayInfo.BillingDirectSequence)
+	spec := model.BillingOperation{OperationKey: key, UserId: relayInfo.UserId, TokenId: relayInfo.TokenId, TokenUnlimited: relayInfo.TokenUnlimited,
+		EarningRootKey: "request:" + relayInfo.RequestId}
+	if relayInfo.IsPlayground {
+		spec.TokenId = 0
+	}
+	if len(contexts) > 0 && contexts[0] != nil {
+		c := contexts[0]
+		if k, d, ok := AdtySiteMarkupFromContext(c); ok {
+			spec.SiteId, spec.SiteMarkup, spec.SiteCostFactor = c.GetInt(AdtySiteIdContextKey), k, d
+		}
+		c.Set(adtyDurableBillingContextKey, true)
+		c.Set(adtyBillingOperationContextKey, key)
+	}
+	if err = model.QueueDirectBillingDelta(spec, quota); err != nil {
 		return result, err
 	}
-	result.FundingApplied = true
-
-	if !relayInfo.IsPlayground {
-		if quota > 0 {
-			err = model.DecreaseTokenQuota(relayInfo.TokenId, relayInfo.TokenKey, quota)
-		} else {
-			err = model.IncreaseTokenQuota(relayInfo.TokenId, relayInfo.TokenKey, -quota)
-		}
-		if err != nil {
-			return result, err
-		}
-		result.TokenApplied = true
+	op, _, applyErr := model.ApplyBillingSettlement(key)
+	if applyErr != nil {
+		return result, applyErr
 	}
+	relayInfo.BillingDirectSequence++
+	result.FundingApplied, result.TokenApplied, result.Shortfall = true, spec.TokenId > 0, op.Shortfall
+	result.TokenCharged = op.TokenAppliedQuota
+	relayInfo.BillingShortfall += op.Shortfall
+	projectBillingEarnings(key)
 
 	if sendEmail {
 		if (quota + preConsumedQuota) != 0 {

@@ -38,7 +38,7 @@ func CheckAdtyPostgreSQL() {
 
 // MigrateAdtyTables 建二开的表。只由主节点的 migrateDB 调用；上游测试在 SQLite 上也会走到这里，只用 AutoMigrate。
 func MigrateAdtyTables() error {
-	if err := DB.AutoMigrate(&AdtyGroup{}, &AdtyTopupOrder{}, &PaymentOrphanEvent{}, &AdtyBalanceLedger{}, &AdtyEpayChannel{}, &AdtyEpayChannelMethod{}, &AdtyUserFingerprint{}, &AdtyUserLimit{}, &AdtyOfficialPrice{}); err != nil {
+	if err := DB.AutoMigrate(&AdtyGroup{}, &AdtyTopupOrder{}, &PaymentOrphanEvent{}, &PaymentOrphanReview{}, &AdtyBalanceLedger{}, &BillingOperation{}, &BillingOperationMovement{}, &AdtySiteEarningEvent{}, &AdtyEpayChannel{}, &AdtyEpayChannelMethod{}, &AdtyUserFingerprint{}, &AdtyUserLimit{}, &AdtyOfficialPrice{}); err != nil {
 		return err
 	}
 	if err := migrateAdtyMarketingTables(); err != nil {

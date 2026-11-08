@@ -12,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	commonRelay "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	"gorm.io/gorm"
 )
 
 type TaskStatus string
@@ -67,8 +68,10 @@ type Task struct {
 	Properties Properties            `json:"properties" gorm:"type:json"`
 	Username   string                `json:"username,omitempty" gorm:"-"`
 	// 禁止返回给用户，内部可能包含key等隐私信息
-	PrivateData TaskPrivateData `json:"-" gorm:"column:private_data;type:json"`
-	Data        json.RawMessage `json:"data" gorm:"type:json"`
+	PrivateData           TaskPrivateData `json:"-" gorm:"column:private_data;type:json"`
+	Data                  json.RawMessage `json:"data" gorm:"type:json"`
+	BillingPending        bool            `json:"-" gorm:"index;not null;default:false"`
+	BillingInitialPending bool            `json:"-" gorm:"index;not null;default:false"`
 }
 
 func (t *Task) SetData(data any) {
@@ -116,10 +119,13 @@ type TaskPrivateData struct {
 	// other private task state so public task DTOs cannot expose it by accident.
 	Execution *TaskExecutionSnapshot `json:"execution,omitempty"`
 	// 计费上下文：用于异步退款/差额结算（轮询阶段读取）
-	BillingSource  string              `json:"billing_source,omitempty"`  // "wallet"
-	TokenId        int                 `json:"token_id,omitempty"`        // 令牌 ID，用于令牌额度退款
-	NodeName       string              `json:"node_name,omitempty"`       // 发起任务的节点名，轮询结算阶段据此归属日志而非最后查询节点
-	BillingContext *TaskBillingContext `json:"billing_context,omitempty"` // 计费参数快照（用于轮询阶段重新计算）
+	BillingSource       string                `json:"billing_source,omitempty"`  // "wallet"
+	TokenId             int                   `json:"token_id,omitempty"`        // 令牌 ID，用于令牌额度退款
+	NodeName            string                `json:"node_name,omitempty"`       // 发起任务的节点名，轮询结算阶段据此归属日志而非最后查询节点
+	BillingContext      *TaskBillingContext   `json:"billing_context,omitempty"` // 计费参数快照（用于轮询阶段重新计算）
+	BillingOperationKey string                `json:"billing_operation_key,omitempty"`
+	TokenConsumedQuota  *int                  `json:"token_consumed_quota,omitempty"`
+	CompletionBilling   *commonRelay.TaskInfo `json:"completion_billing,omitempty"`
 	// ResponsesBackground records that the openai_responses create request
 	// asked for background:true. Every task is durable and survives client
 	// disconnect regardless; this only echoes the protocol-level request
@@ -215,7 +221,7 @@ func (p *TaskPrivateData) Scan(val any) error {
 func (p TaskPrivateData) Value() (driver.Value, error) {
 	if p.Key == "" && p.UpstreamTaskID == "" && p.ResultURL == "" &&
 		p.Execution == nil && p.BillingSource == "" &&
-		p.TokenId == 0 && p.NodeName == "" && p.BillingContext == nil &&
+		p.TokenId == 0 && p.NodeName == "" && p.BillingContext == nil && p.BillingOperationKey == "" && p.TokenConsumedQuota == nil && p.CompletionBilling == nil &&
 		!p.ResponsesBackground && len(p.PluginState) == 0 && p.PollFailures == 0 &&
 		!p.ResultDiscarded {
 		return nil, nil
@@ -369,6 +375,7 @@ func TaskGetAllTasks(startIdx int, num int, queryParams SyncTaskQueryParams) []*
 func GetTimedOutUnfinishedTasks(cutoffUnix int64, limit int) []*Task {
 	var tasks []*Task
 	err := DB.Where("progress != ?", "100%").
+		Where("billing_initial_pending = ?", false).
 		Where("status NOT IN ?", []string{TaskStatusFailure, TaskStatusSuccess}).
 		Where("submit_time < ?", cutoffUnix).
 		Order("submit_time").
@@ -384,7 +391,7 @@ func GetAllUnFinishSyncTasks(limit int) []*Task {
 	var tasks []*Task
 	var err error
 	// get all tasks progress is not 100%
-	err = DB.Where("progress != ?", "100%").Where("status != ?", TaskStatusFailure).Where("status != ?", TaskStatusSuccess).Limit(limit).Order("id").Find(&tasks).Error
+	err = DB.Where("progress != ? AND billing_initial_pending = ?", "100%", false).Where("status != ?", TaskStatusFailure).Where("status != ?", TaskStatusSuccess).Limit(limit).Order("id").Find(&tasks).Error
 	if err != nil {
 		return nil
 	}
@@ -487,11 +494,28 @@ func (Task *Task) Insert() error {
 // (for example "data" when the submit route discards the upstream snapshot)
 // while the in-memory task keeps its values for presentation.
 func (Task *Task) InsertWithContext(ctx context.Context, omitColumns ...string) error {
-	tx := DB.WithContext(ctx)
-	if len(omitColumns) > 0 {
-		tx = tx.Omit(omitColumns...)
-	}
-	return tx.Create(Task).Error
+	return DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		Task.BillingInitialPending = Task.PrivateData.BillingOperationKey != ""
+		insert := tx
+		if len(omitColumns) > 0 {
+			insert = insert.Omit(omitColumns...)
+		}
+		if err := insert.Create(Task).Error; err != nil {
+			return err
+		}
+		if !Task.BillingInitialPending {
+			return nil
+		}
+		result := tx.Model(&BillingOperation{}).Where("operation_key = ? AND user_id = ? AND state = ?", Task.PrivateData.BillingOperationKey, Task.UserId, BillingReserved).
+			Updates(map[string]any{"reference_id": Task.ID, "actual_quota": Task.Quota, "state": BillingSettlePending})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return ErrBillingOperationConflict
+		}
+		return nil
+	})
 }
 
 type taskSnapshot struct {
@@ -552,6 +576,14 @@ func (t *Task) UpdateQuota() error {
 // falls back to INSERT ON CONFLICT when the WHERE-guarded UPDATE matches
 // zero rows, which silently bypasses the CAS guard.
 func (t *Task) UpdateWithStatus(fromStatus TaskStatus) (bool, error) {
+	terminal := t.Status == TaskStatusSuccess || t.Status == TaskStatusFailure
+	hasBilling := t.Quota > 0 || t.PrivateData.BillingOperationKey != "" || t.PrivateData.BillingContext != nil || t.PrivateData.TokenConsumedQuota != nil && *t.PrivateData.TokenConsumedQuota > 0
+	if fromStatus != t.Status && terminal && hasBilling {
+		t.BillingPending = true
+		if t.PrivateData.CompletionBilling == nil && t.Status == TaskStatusFailure {
+			t.PrivateData.CompletionBilling = commonRelay.FailTaskInfo(t.FailReason)
+		}
+	}
 	result := DB.Model(t).Where("status = ?", fromStatus).Select("*").Updates(t)
 	if result.Error != nil {
 		return false, result.Error

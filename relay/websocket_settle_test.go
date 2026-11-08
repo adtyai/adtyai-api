@@ -1,6 +1,7 @@
 package relay
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -24,7 +25,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestWssHelperSettlementFailureReachesRefundPolicy(t *testing.T) {
+func TestWssHelperSettlementFailureRemainsPendingUntilRecovery(t *testing.T) {
 	opened, err := model.OpenAdtyTestDatabase()
 	if errors.Is(err, model.ErrAdtyTestDSNUnset) {
 		t.Skip("ADTY_TEST_PG_DSN is unset")
@@ -34,7 +35,7 @@ func TestWssHelperSettlementFailureReachesRefundPolicy(t *testing.T) {
 	oldRedis, oldBatch := common.RedisEnabled, common.BatchUpdateEnabled
 	common.RedisEnabled, common.BatchUpdateEnabled = false, false
 	t.Cleanup(func() { common.RedisEnabled, common.BatchUpdateEnabled = oldRedis, oldBatch })
-	require.NoError(t, opened.DB.AutoMigrate(&model.User{}, &model.Token{}, &model.Log{}, &model.Channel{}))
+	require.NoError(t, opened.DB.AutoMigrate(&model.User{}, &model.Token{}, &model.Log{}, &model.Channel{}, &model.Task{}, &model.Midjourney{}, &model.BillingOperation{}, &model.BillingOperationMovement{}, &model.AdtySiteEarningEvent{}))
 	user := model.User{Username: "ws-settle-failure", Password: "x", Group: "default", Quota: 1_000_000,
 		Status: common.UserStatusEnabled, Role: common.RoleCommonUser}
 	require.NoError(t, opened.DB.Create(&user).Error)
@@ -107,12 +108,20 @@ func TestWssHelperSettlementFailureReachesRefundPolicy(t *testing.T) {
 	assert.Equal(t, types.ErrorCodeUpdateDataError, result.err.GetErrorCode())
 	assert.True(t, types.IsSkipRetryError(result.err))
 	assert.EqualValues(t, 1, upstreamConnections.Load())
-	require.True(t, info.Billing.NeedsRefund())
+	require.False(t, info.Billing.NeedsRefund(), "the durable settlement decision must exclude a competing full refund")
 	var logs int64
 	require.NoError(t, opened.DB.Model(&model.Log{}).Count(&logs).Error)
 	assert.Zero(t, logs)
 	require.NoError(t, opened.DB.Exec("ALTER TABLE users DROP CONSTRAINT ws_settle_fault").Error)
 	require.NotNil(t, RefundFailedRequestBilling(result.ctx, info, result.err))
+	var pending model.BillingOperation
+	require.NoError(t, opened.DB.Where("user_id = ?", user.Id).First(&pending).Error)
+	require.Equal(t, model.BillingSettlePending, pending.State)
+	var reserved model.User
+	require.NoError(t, opened.DB.First(&reserved, user.Id).Error)
+	require.Equal(t, 990_000, reserved.Quota, "the failure policy must leave the durable intent in control")
+	require.NoError(t, service.RecoverBillingOperations(context.Background(), 100))
+	require.NoError(t, service.RecoverBillingOperations(context.Background(), 100))
 	require.EventuallyWithT(t, func(collect *assert.CollectT) {
 		var storedUser model.User
 		var storedToken model.Token

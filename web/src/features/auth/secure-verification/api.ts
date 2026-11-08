@@ -326,7 +326,12 @@ async function verifyOAuth(
         state: authorization.state,
         url:
           authorization.authorizationUrl ??
-          buildOAuthAuthorizationUrl(provider, authorization.state, status),
+          buildOAuthAuthorizationUrl(
+            provider,
+            authorization.state,
+            status,
+            authorization.redirectUri
+          ),
       }
     },
   })

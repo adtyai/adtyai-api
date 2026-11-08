@@ -247,6 +247,10 @@ export type ContentSettings = {
   'adty_legal_setting.user_agreement': string
   'adty_legal_setting.privacy_policy': string
   'adty_legal_setting.refund_policy': string
+  'adty_legal_setting.site_agreement': string
+  'adty_legal_setting.site_customer_terms': string
+  'adty_legal_setting.site_agreement_version': number
+  'adty_legal_setting.site_customer_terms_version': number
 }
 
 export type ModelSettings = {
@@ -382,6 +386,7 @@ export type BillingSettings = {
   WaffoPancakeMerchantID: string
   WaffoPancakePrivateKey: string
   WaffoPancakeReturnURL: string
+  WaffoPancakeEnvironment: 'test' | 'prod'
   // Bound by the operator through the catalog flow in the admin Pancake
   // section (saved via /api/option/waffo-pancake/save).
   WaffoPancakeStoreID: string

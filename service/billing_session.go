@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math"
@@ -27,24 +28,52 @@ import (
 // BillingSession 封装单次请求的预扣费/结算/退款生命周期。
 // 实现 relaycommon.BillingSettler 接口。
 type BillingSession struct {
-	relayInfo        *relaycommon.RelayInfo
-	funding          FundingSource
-	preConsumedQuota int    // 实际预扣额度（信任用户可能为 0）
-	tokenConsumed    int    // 令牌额度实际扣减量
-	trusted          bool   // 是否命中信任额度旁路
-	fundingSettled   bool   // funding.Settle 已成功，资金来源已提交
-	settled          bool   // Settle 全部完成（资金 + 令牌）
-	refunded         bool   // Refund 已调用
-	lang             string // 请求声明的语言，为空表示未声明
-	mu               sync.Mutex
+	relayInfo         *relaycommon.RelayInfo
+	funding           FundingSource
+	preConsumedQuota  int    // 实际预扣额度（信任用户可能为 0）
+	tokenConsumed     int    // 令牌额度实际扣减量
+	trusted           bool   // 是否命中信任额度旁路
+	fundingSettled    bool   // funding.Settle 已成功，资金来源已提交
+	settled           bool   // Settle 全部完成（资金 + 令牌）
+	refunded          bool   // Refund 已调用
+	lang              string // 请求声明的语言，为空表示未声明
+	mu                sync.Mutex
+	operationKey      string
+	requestContext    *gin.Context
+	realtimeShortfall int
 }
 
-// Settle 根据实际消耗额度进行结算。
-// 资金来源和令牌额度分两步提交：若资金来源已提交但令牌调整失败，
-// 会标记 fundingSettled 防止 Refund 对已提交的资金来源执行退款。
+// Settle 根据实际消耗额度提交持久化结算决定，再原子调整钱包与令牌。
+// 旧的非持久化会话保留原有的分步资金来源接口。
 func (s *BillingSession) Settle(actualQuota int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.operationKey != "" {
+		if actualQuota < 0 {
+			return model.ErrBillingOperationConflict
+		}
+		if s.settled {
+			return nil
+		}
+		if err := model.QueueBillingSettlement(s.operationKey, actualQuota, false, s.relayInfo.RealtimeAlreadyCharged, s.relayInfo.RealtimeTokenAlreadyCharged); err != nil {
+			return err
+		}
+		// The durable intent owns this reservation from here, including if an
+		// apply fails. A failure handler must not issue a competing full refund.
+		s.fundingSettled = true
+		activeBillingReservations.Delete(s.operationKey)
+		row, _, err := model.ApplyBillingSettlement(s.operationKey)
+		if err != nil {
+			return err
+		}
+		s.relayInfo.BillingShortfall = max(0, s.relayInfo.BillingShortfall-s.realtimeShortfall) + row.Shortfall
+		s.settled = true
+		if s.requestContext != nil {
+			s.requestContext.Set(adtyBillingOperationContextKey, s.operationKey)
+		}
+		projectBillingEarnings(s.operationKey)
+		return nil
+	}
 	if s.settled {
 		return nil
 	}
@@ -83,9 +112,25 @@ func (s *BillingSession) Settle(actualQuota int) error {
 	return tokenErr
 }
 
-// Refund 退还所有预扣费，幂等安全，异步执行。
+// Refund 持久化退款决定并幂等退还所有预扣费；失败由恢复任务继续处理。
 func (s *BillingSession) Refund(c *gin.Context) {
 	s.mu.Lock()
+	if s.operationKey != "" {
+		defer s.mu.Unlock()
+		if s.settled || s.refunded || s.fundingSettled {
+			return
+		}
+		if err := model.QueueBillingSettlement(s.operationKey, 0, true); err != nil {
+			common.SysError(common.LogText("queue billing refund failed: %s", err.Error()))
+			return
+		}
+		s.refunded = true
+		activeBillingReservations.Delete(s.operationKey)
+		if _, _, err := model.ApplyBillingSettlement(s.operationKey); err != nil {
+			common.SysError(common.LogText("billing refund remains pending: %s", err.Error()))
+		}
+		return
+	}
 	if s.settled || s.refunded || !s.needsRefundLocked() {
 		s.mu.Unlock()
 		return
@@ -155,6 +200,18 @@ func (s *BillingSession) ReserveBeforeSubmit(targetQuota int) error {
 func (s *BillingSession) reserve(targetQuota int, requireAvailableQuota bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.operationKey != "" {
+		if s.settled || s.refunded || s.fundingSettled {
+			return model.ErrBillingOperationConflict
+		}
+		row, err := model.ReserveBillingOperation(s.durableSpec(), targetQuota)
+		if err != nil {
+			return err
+		}
+		s.preConsumedQuota, s.tokenConsumed = row.ReservedQuota, row.TokenReservedQuota
+		s.syncRelayInfo()
+		return nil
+	}
 
 	if s.relayInfo != nil {
 		_, imageRequest := s.relayInfo.Request.(*dto.ImageRequest)
@@ -193,6 +250,28 @@ func (s *BillingSession) reserve(targetQuota int, requireAvailableQuota bool) er
 // preConsume 执行预扣费：信任检查 -> 令牌预扣 -> 资金来源预扣。
 // 任一步骤失败时原子回滚已完成的步骤。
 func (s *BillingSession) preConsume(c *gin.Context, quota int) *types.NewAPIError {
+	if s.operationKey != "" {
+		row, err := model.ReserveBillingOperation(s.durableSpec(), quota)
+		if err != nil {
+			code, status := types.ErrorCodeUpdateDataError, http.StatusInternalServerError
+			if errors.Is(err, model.ErrBillingWalletInsufficient) {
+				code, status = types.ErrorCodeInsufficientUserQuota, http.StatusForbidden
+			}
+			if errors.Is(err, model.ErrBillingTokenInsufficient) {
+				code, status = types.ErrorCodePreConsumeTokenQuotaFailed, http.StatusForbidden
+			}
+			return types.NewErrorWithStatusCode(err, code, status, types.ErrOptionWithSkipRetry())
+		}
+		s.preConsumedQuota, s.tokenConsumed = row.ReservedQuota, row.TokenReservedQuota
+		s.syncRelayInfo()
+		c.Set(adtyDurableBillingContextKey, true)
+		c.Set(adtyBillingOperationContextKey, s.operationKey)
+		activeBillingReservations.Store(s.operationKey, struct{}{})
+		if c.Request != nil {
+			context.AfterFunc(c.Request.Context(), func() { activeBillingReservations.Delete(s.operationKey) })
+		}
+		return nil
+	}
 	effectiveQuota := quota
 
 	// ---- 信任额度旁路 ----
@@ -354,10 +433,15 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 		}
 		relayInfo.UserQuota = userQuota
 
+		if relayInfo.RequestId == "" {
+			relayInfo.RequestId = common.NewRequestId()
+		}
 		session := &BillingSession{
-			relayInfo: relayInfo,
-			funding:   &WalletFunding{userId: relayInfo.UserId},
-			lang:      i18n.StatedLang(c),
+			relayInfo:      relayInfo,
+			funding:        &WalletFunding{userId: relayInfo.UserId},
+			lang:           i18n.StatedLang(c),
+			operationKey:   "request:" + relayInfo.RequestId,
+			requestContext: c,
 		}
 		if apiErr := session.preConsume(c, preConsumedQuota); apiErr != nil {
 			return nil, apiErr
@@ -366,4 +450,15 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 	}
 
 	return tryWallet()
+}
+
+func (s *BillingSession) durableSpec() model.BillingOperation {
+	row := model.BillingOperation{OperationKey: s.operationKey, UserId: s.relayInfo.UserId, TokenId: s.relayInfo.TokenId, TokenUnlimited: s.relayInfo.TokenUnlimited, LeaseOwner: billingProcessLeaseOwner}
+	if s.relayInfo.IsPlayground {
+		row.TokenId = 0
+	}
+	if k, d, ok := AdtySiteMarkupFromContext(s.requestContext); ok {
+		row.SiteId, row.SiteMarkup, row.SiteCostFactor = s.requestContext.GetInt(AdtySiteIdContextKey), k, d
+	}
+	return row
 }

@@ -23,6 +23,8 @@ import { toast } from 'sonner'
 
 import { StaticDataTable } from '@/components/data-table/static/static-data-table'
 import { EmptyState } from '@/components/empty-state'
+import { ErrorState } from '@/components/error-state'
+import { LoadingState } from '@/components/loading-state'
 import { StatusBadge } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -38,8 +40,9 @@ import { handleServerError } from '@/lib/handle-server-error'
 import {
   creditPaymentOrphan,
   getPaymentOrphans,
-  resolvePaymentOrphan,
+  type PaymentOrphanEvent,
 } from '../api'
+import { PaymentOrphanReviewDialog } from './payment-orphan-review-dialog'
 
 type PaymentOrphanPanelProps = {
   canCredit: boolean
@@ -50,6 +53,9 @@ export function PaymentOrphanPanel(props: PaymentOrphanPanelProps) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [status, setStatus] = useState('pending_review')
+  const [reviewEvent, setReviewEvent] = useState<PaymentOrphanEvent | null>(
+    null
+  )
   const query = useQuery({
     queryKey: ['recharge-audit', 'orphans', status],
     queryFn: () => getPaymentOrphans(status, 1),
@@ -64,123 +70,136 @@ export function PaymentOrphanPanel(props: PaymentOrphanPanelProps) {
     },
     onError: (error) => handleServerError(error),
   })
-  const resolve = useMutation({
-    mutationFn: (args: { id: number; status: 'refunded' | 'dismissed' }) =>
-      resolvePaymentOrphan(args.id, args.status, ''),
-    onSuccess: () => void refresh(),
-    onError: (error) => handleServerError(error),
-  })
-
   return (
-    <Card>
-      <CardHeader className='flex flex-row flex-wrap items-start justify-between gap-3'>
-        <div>
-          <CardTitle>{t('Payments needing review')}</CardTitle>
-          <CardDescription>
-            {t(
-              'Callbacks that could not credit an order. Amount mismatches must be completed manually.'
-            )}
-          </CardDescription>
-        </div>
-        <div className='flex gap-1'>
-          {['pending_review', 'all'].map((value) => (
-            <Button
-              key={value}
-              size='sm'
-              variant={status === value ? 'default' : 'outline'}
-              onClick={() => setStatus(value)}
-            >
-              {value === 'all' ? t('All') : t('Pending review')}
-            </Button>
-          ))}
-        </div>
-      </CardHeader>
-      <CardContent>
-        <StaticDataTable
-          tableClassName='min-w-[760px]'
-          tableProps={{ 'aria-label': t('Payments needing review') }}
-          data={query.data?.items ?? []}
-          getRowKey={(row) => String(row.id)}
-          emptyContent={
-            <EmptyState className='min-h-24' title={t('Nothing to review')} />
-          }
-          columns={[
-            {
-              id: 'time',
-              header: t('Time'),
-              cell: (row) => formatTimestamp(row.create_time),
-            },
-            {
-              id: 'provider',
-              header: t('Provider'),
-              cell: (row) => row.provider,
-            },
-            {
-              id: 'order',
-              header: t('Order number'),
-              cell: (row) => (
-                <code className='font-mono text-xs'>{row.reference_id}</code>
-              ),
-            },
-            {
-              id: 'reason',
-              header: t('Reason'),
-              cell: (row) => (
-                <span className='text-muted-foreground text-xs'>
-                  {row.error || row.reason}
-                </span>
-              ),
-            },
-            {
-              id: 'status',
-              header: t('Status'),
-              cell: (row) => (
-                <StatusBadge
-                  label={row.status}
-                  variant='neutral'
-                  copyable={false}
-                />
-              ),
-            },
-            {
-              id: 'actions',
-              header: t('Actions'),
-              className: 'text-right',
-              cellClassName: 'text-right',
-              cell: (row) =>
-                props.canCredit && row.status === 'pending_review' ? (
-                  <div className='flex justify-end gap-1'>
-                    <Button
-                      size='sm'
-                      disabled={!row.can_credit || credit.isPending}
-                      onClick={() => credit.mutate(row.id)}
-                    >
-                      {t('Credit')}
-                    </Button>
-                    <Button
-                      size='sm'
-                      variant='outline'
-                      onClick={() =>
-                        resolve.mutate({ id: row.id, status: 'refunded' })
-                      }
-                    >
-                      {t('Refunded offline')}
-                    </Button>
-                    <Button
-                      size='sm'
-                      variant='ghost'
-                      onClick={() =>
-                        resolve.mutate({ id: row.id, status: 'dismissed' })
-                      }
-                    >
-                      {t('Dismiss')}
-                    </Button>
-                  </div>
-                ) : null,
-            },
-          ]}
+    <>
+      <Card>
+        <CardHeader className='flex flex-row flex-wrap items-start justify-between gap-3'>
+          <div>
+            <CardTitle>{t('Payments needing review')}</CardTitle>
+            <CardDescription>
+              {t(
+                'Callbacks that could not credit an order. Amount mismatches must be completed manually.'
+              )}
+            </CardDescription>
+          </div>
+          <div className='flex gap-1'>
+            {['pending_review', 'all'].map((value) => (
+              <Button
+                key={value}
+                size='sm'
+                variant={status === value ? 'default' : 'outline'}
+                onClick={() => setStatus(value)}
+              >
+                {value === 'all' ? t('All') : t('Pending review')}
+              </Button>
+            ))}
+          </div>
+        </CardHeader>
+        <CardContent>
+          {query.isError && <ErrorState onRetry={() => void query.refetch()} />}
+          {query.isPending ? (
+            <LoadingState />
+          ) : (
+            query.data && (
+              <StaticDataTable
+                tableClassName='min-w-[760px]'
+                tableProps={{ 'aria-label': t('Payments needing review') }}
+                data={query.data?.items ?? []}
+                getRowKey={(row) => String(row.id)}
+                emptyContent={
+                  <EmptyState
+                    className='min-h-24'
+                    title={t('Nothing to review')}
+                  />
+                }
+                columns={[
+                  {
+                    id: 'time',
+                    header: t('Time'),
+                    cell: (row) => formatTimestamp(row.create_time),
+                  },
+                  {
+                    id: 'provider',
+                    header: t('Provider'),
+                    cell: (row) => row.provider,
+                  },
+                  {
+                    id: 'order',
+                    header: t('Order number'),
+                    cell: (row) => (
+                      <code className='font-mono text-xs'>
+                        {row.reference_id}
+                      </code>
+                    ),
+                  },
+                  {
+                    id: 'reason',
+                    header: t('Reason'),
+                    cell: (row) => (
+                      <span className='text-muted-foreground text-xs'>
+                        {row.error || row.reason}
+                      </span>
+                    ),
+                  },
+                  {
+                    id: 'status',
+                    header: t('Status'),
+                    cell: (row) => (
+                      <StatusBadge
+                        label={row.status}
+                        variant='neutral'
+                        copyable={false}
+                      />
+                    ),
+                  },
+                  {
+                    id: 'actions',
+                    header: t('Actions'),
+                    className: 'text-right',
+                    cellClassName: 'text-right',
+                    cell: (row) =>
+                      (props.canCredit && row.status === 'pending_review') ||
+                      row.review ? (
+                        <div className='flex justify-end gap-1'>
+                          {props.canCredit &&
+                            row.status === 'pending_review' && (
+                              <Button
+                                size='sm'
+                                disabled={!row.can_credit || credit.isPending}
+                                onClick={() => credit.mutate(row.id)}
+                              >
+                                {t('Credit')}
+                              </Button>
+                            )}
+                          <Button
+                            size='sm'
+                            variant='outline'
+                            onClick={() => setReviewEvent(row)}
+                          >
+                            {t(
+                              props.canCredit && row.status === 'pending_review'
+                                ? 'Review'
+                                : 'View review'
+                            )}
+                          </Button>
+                        </div>
+                      ) : null,
+                  },
+                ]}
+              />
+            )
+          )}
+        </CardContent>
+      </Card>
+      {reviewEvent && (
+        <PaymentOrphanReviewDialog
+          key={reviewEvent.id}
+          event={reviewEvent}
+          canReview={props.canCredit}
+          onClose={() => setReviewEvent(null)}
+          onDone={() => void refresh()}
         />
-      </CardContent>
-    </Card>
+      )}
+    </>
   )
 }

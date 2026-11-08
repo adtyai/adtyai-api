@@ -1,11 +1,8 @@
 package deepseek
 
-import "github.com/QuantumNous/new-api/constant"
-
 var ModelList = []string{
-	"deepseek-flash", "deepseek-flash-none", "deepseek-flash-low", "deepseek-flash-max",
-	"deepseek-v4-pro", "deepseek-v4-pro-none", "deepseek-v4-pro-low", "deepseek-v4-pro-max",
-	constant.DeepSeekSearchModel, constant.DeepSeekFetchModel,
+	"deepseek-flash",
+	"deepseek-v4-pro",
 }
 
 var ChannelName = "deepseek"

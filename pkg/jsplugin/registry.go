@@ -878,7 +878,7 @@ func cloneMeta(meta Meta) Meta {
 	meta.SubmitResponseTypes = slices.Clone(meta.SubmitResponseTypes)
 	meta.RequiredCapabilities = slices.Clone(meta.RequiredCapabilities)
 	meta.ChannelTypes = append([]int(nil), meta.ChannelTypes...)
-	meta.Models = append([]string(nil), meta.Models...)
+	meta.Models = append([]string{}, meta.Models...)
 	meta.AllowedHosts = append([]string(nil), meta.AllowedHosts...)
 	meta.Upstreams = slices.Clone(meta.Upstreams)
 	meta.Routes = append([]Route(nil), meta.Routes...)
@@ -1110,6 +1110,9 @@ func decodeMeta(value any) (Meta, error) {
 	if err != nil {
 		return Meta{}, err
 	}
+	if _, present := object["models"]; !present {
+		return Meta{}, fmt.Errorf("plugin meta models is required; use an empty array for a driver without default models")
+	}
 	meta.Models, err = strictStringSlice(object, "models")
 	if err != nil {
 		return Meta{}, err
@@ -1302,9 +1305,6 @@ func normalizeV1Meta(meta *Meta) error {
 	}
 	if meta.FetchMode != "per_task" && meta.FetchMode != "batch" {
 		return fmt.Errorf("plugin meta fetchMode must be per_task or batch")
-	}
-	if len(meta.Models) == 0 {
-		return fmt.Errorf("plugin meta models must contain at least one model")
 	}
 	seenChannelTypes := make(map[int]struct{}, len(meta.ChannelTypes))
 	for _, channelType := range meta.ChannelTypes {

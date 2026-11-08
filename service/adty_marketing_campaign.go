@@ -334,7 +334,7 @@ func CancelAdtyCampaign(ctx context.Context, campaignID int) error {
 	if err := model.DB.First(&campaign, campaignID).Error; err != nil {
 		return err
 	}
-	if campaign.Status != model.AdtyCampaignStatusScheduled && campaign.Status != model.AdtyCampaignStatusSent {
+	if campaign.Status != model.AdtyCampaignStatusScheduled && campaign.Status != model.AdtyCampaignStatusSent && campaign.Status != model.AdtyCampaignStatusFailed {
 		return common.NewMessage("Only scheduled or sending campaigns can be canceled")
 	}
 	var sends []model.AdtyMarketingCampaignSend

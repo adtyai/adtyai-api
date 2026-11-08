@@ -25,6 +25,7 @@ import { ConfirmDialog } from '@/components/confirm-dialog'
 import { StaticDataTable } from '@/components/data-table/static/static-data-table'
 import { Dialog } from '@/components/dialog'
 import { EmptyState } from '@/components/empty-state'
+import { ErrorState } from '@/components/error-state'
 import { StatusBadge } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
 import { PageSwitcher } from '@/features/referral/components/page-switcher'
@@ -140,9 +141,13 @@ export function CampaignPanel(props: CampaignPanelProps) {
     ...emptyCampaign(props.includeSitesDefault),
     is_template: props.templates,
   })
+  if (query.isError && !query.data) {
+    return <ErrorState onRetry={() => void query.refetch()} />
+  }
 
   return (
     <div className='flex flex-col gap-3'>
+      {query.isError && <ErrorState onRetry={() => void query.refetch()} />}
       {props.canCreate && (
         <div>
           <Button
@@ -250,15 +255,16 @@ export function CampaignPanel(props: CampaignPanelProps) {
                     {t('Delete')}
                   </Button>
                 )}
-                {row.status === 'scheduled' && props.canSend && (
-                  <Button
-                    size='sm'
-                    variant='ghost'
-                    onClick={() => setCanceling(row)}
-                  >
-                    {t('Cancel')}
-                  </Button>
-                )}
+                {['scheduled', 'sending', 'failed'].includes(row.status) &&
+                  props.canSend && (
+                    <Button
+                      size='sm'
+                      variant='ghost'
+                      onClick={() => setCanceling(row)}
+                    >
+                      {t('Cancel')}
+                    </Button>
+                  )}
               </div>
             ),
           },
@@ -275,6 +281,7 @@ export function CampaignPanel(props: CampaignPanelProps) {
         onOpenChange={(open) => !open && setStatsId(null)}
         title={stats.data?.campaign.name ?? t('Statistics')}
       >
+        {stats.isError && <ErrorState onRetry={() => void stats.refetch()} />}
         {stats.data && (
           <dl className='grid grid-cols-2 gap-3 text-sm sm:grid-cols-4'>
             {(

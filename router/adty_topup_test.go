@@ -187,6 +187,28 @@ func TestFinanceActionsRequirePermissions(t *testing.T) {
 	assert.Contains(t, summary.Body.String(), `"currency":"USD"`)
 }
 
+func TestPaymentOrphanReviewRequiresWritePermissionAndEvidence(t *testing.T) {
+	f := newAdtyGuardFixture(t)
+	event := &model.PaymentOrphanEvent{Provider: model.PaymentProviderStripe, ReferenceID: "review-router-order", EventID: "reversal:router-review", EventType: "dispute.open"}
+	require.NoError(t, model.RecordPaymentOrphanEvent(event))
+	path := fmt.Sprintf("/api/user/admin/finance/payment-orphans/%d/resolve", event.ID)
+	body := `{"status":"pending_review","trade_no":"review-router-order","external_amount":"0","external_currency":"USD","proof":"provider-dispute-open","note":"not an actual completed reversal"}`
+	f.grant(t, authz.AdtyFinanceRead)
+	denied := adtyJSON(t, f.engine, http.MethodPost, path, body, f.token)
+	require.Equal(t, http.StatusForbidden, denied.Code)
+	f.grant(t, authz.AdtyFinanceRead, authz.AdtyFinanceManualCredit)
+	missingProof := adtyJSON(t, f.engine, http.MethodPost, path, `{"status":"refunded","note":"clicked refunded"}`, f.token)
+	require.Contains(t, missingProof.Body.String(), `"success":false`)
+	result := adtyJSON(t, f.engine, http.MethodPost, path, body, f.token)
+	require.Contains(t, result.Body.String(), `"success":true`, result.Body.String())
+	require.Contains(t, result.Body.String(), `"external_amount":"0"`)
+	listed := adtyJSON(t, f.engine, http.MethodGet, "/api/user/admin/finance/payment-orphans?status=pending_review", "", f.token)
+	require.Contains(t, listed.Body.String(), `"proof":"provider-dispute-open"`)
+	var reviews int64
+	require.NoError(t, f.db.Model(&model.PaymentOrphanReview{}).Count(&reviews).Error)
+	require.EqualValues(t, 1, reviews)
+}
+
 func TestOrphanCreditRunsBonusAndHooks(t *testing.T) {
 	f := newAdtyGuardFixture(t)
 	f.grant(t, authz.AdtyFinanceRead, authz.AdtyFinanceManualCredit)

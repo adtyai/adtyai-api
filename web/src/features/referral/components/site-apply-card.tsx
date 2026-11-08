@@ -21,11 +21,18 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
+import { ErrorState } from '@/components/error-state'
+import { LoadingState } from '@/components/loading-state'
+import { RichContent } from '@/components/rich-content'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { getLegalDocument } from '@/features/legal/api'
+import { toContentLang } from '@/lib/adty-lang'
 import { api } from '@/lib/api'
+import { isHttpUrl } from '@/lib/content-format'
 import { handleServerError } from '@/lib/handle-server-error'
 import { requireServerSuccess } from '@/lib/server-error-message'
 
@@ -36,28 +43,46 @@ type SiteConfig = {
 
 /** Apply to open a reseller site: POST /api/adty/site/apply. */
 export function SiteApplyCard() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const lang = toContentLang(i18n.resolvedLanguage || i18n.language)
   const config = useQuery({
     queryKey: ['adty-site-public'],
     queryFn: async () => {
       const res = await api.get<SiteConfig>('/api/adty/site')
-      return res.data
+      return requireServerSuccess(res.data)
     },
   })
+  const document = useQuery({
+    queryKey: ['legal', 'site-agreement', lang],
+    queryFn: async () =>
+      requireServerSuccess(await getLegalDocument('site-agreement', lang)),
+    staleTime: 10 * 60 * 1000,
+  })
+  const text = document.data?.data?.trim() ?? ''
+  const version = config.data?.data?.site_agreement_version
+  const agreementReady =
+    config.isSuccess &&
+    document.isSuccess &&
+    text !== '' &&
+    typeof version === 'number' &&
+    Number.isSafeInteger(version) &&
+    version > 0
   const [subdomain, setSubdomain] = useState('')
   const [contact, setContact] = useState('')
   const [invite, setInvite] = useState('')
   const [agreed, setAgreed] = useState(false)
   const apply = useMutation({
     mutationFn: async () => {
-      const version = String(config.data?.data?.site_agreement_version ?? 0)
+      if (!agreementReady || !agreed) {
+        throw new Error(t('Accept the current site agreement first'))
+      }
       const res = await api.post<{ success: boolean; message?: string }>(
         '/api/adty/site/apply',
         {
           subdomain: subdomain.trim(),
           contact_info: contact.trim(),
           invite_code: invite.trim(),
-          agree_version: version,
+          agree_version: String(version),
         }
       )
       return requireServerSuccess(res.data)
@@ -102,16 +127,50 @@ export function SiteApplyCard() {
           value={invite}
           onChange={(event) => setInvite(event.target.value)}
         />
-        <label className='flex items-center gap-2 text-sm'>
-          <input
-            type='checkbox'
+        <section aria-label={t('Site agreement')} className='space-y-3'>
+          {(config.isLoading || document.isLoading) && <LoadingState />}
+          {(config.isError || document.isError) && (
+            <ErrorState
+              onRetry={() => {
+                void config.refetch()
+                void document.refetch()
+              }}
+            />
+          )}
+          {document.isSuccess && text === '' && (
+            <p>{t('The site agreement has not been published yet')}</p>
+          )}
+          {text !== '' &&
+            (isHttpUrl(text) ? (
+              <Button
+                variant='outline'
+                render={
+                  <a href={text} target='_blank' rel='noopener noreferrer' />
+                }
+              >
+                {t('View document')}
+              </Button>
+            ) : (
+              <RichContent content={text} />
+            ))}
+        </section>
+        <div className='flex items-center gap-2 text-sm'>
+          <Checkbox
+            id='site-apply-agreed'
             checked={agreed}
-            onChange={(event) => setAgreed(event.target.checked)}
+            onCheckedChange={setAgreed}
           />
-          {t('I agree to the reseller site agreement')}
-        </label>
+          <Label htmlFor='site-apply-agreed'>
+            {t('I agree to the reseller site agreement')}
+          </Label>
+        </div>
         <Button
-          disabled={!agreed || subdomain.trim() === '' || apply.isPending}
+          disabled={
+            !agreementReady ||
+            !agreed ||
+            subdomain.trim() === '' ||
+            apply.isPending
+          }
           onClick={() => apply.mutate()}
         >
           {t('Apply for a reseller site')}

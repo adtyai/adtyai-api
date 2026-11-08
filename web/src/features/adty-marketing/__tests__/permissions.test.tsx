@@ -325,6 +325,73 @@ describe.each([
 })
 
 describe('campaign authorization at request boundaries', () => {
+  it('preserves an edited campaign when switching to another tab and back', async () => {
+    const user = await renderMarketing({ create: true, write: true })
+    await user.click(screen.getByRole('button', { name: 'New campaign' }))
+    await user.type(
+      screen.getByLabelText('Name (only admins see it)'),
+      'Unsaved campaign'
+    )
+    await user.click(screen.getByRole('tab', { name: 'Templates' }))
+    await user.click(screen.getByRole('tab', { name: 'Campaigns' }))
+
+    expect(screen.getByLabelText('Name (only admins see it)')).toHaveValue(
+      'Unsaved campaign'
+    )
+  })
+
+  it('confirms before discarding an edited campaign through Back', async () => {
+    const user = await renderMarketing({ create: true })
+    await user.click(screen.getByRole('button', { name: 'New campaign' }))
+    await user.type(
+      screen.getByLabelText('Name (only admins see it)'),
+      'Unsaved campaign'
+    )
+    await user.click(screen.getByRole('button', { name: 'Back' }))
+    await user.click(await screen.findByRole('button', { name: 'Stay' }))
+    expect(screen.getByLabelText('Name (only admins see it)')).toHaveValue(
+      'Unsaved campaign'
+    )
+    await user.click(screen.getByRole('button', { name: 'Back' }))
+    await user.click(await screen.findByRole('button', { name: 'Leave' }))
+
+    expect(
+      screen.getByRole('button', { name: 'New campaign' })
+    ).toBeInTheDocument()
+  })
+
+  it('offers cancellation for a failed campaign and confirms before dispatch', async () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+    })
+    const user = await renderMarketing({ send: true }, 'Campaigns', client)
+    act(() =>
+      client.setQueryData(
+        marketingKeys.campaigns({ p: 1, is_template: false }),
+        {
+          items: [
+            { ...scheduled, status: 'failed', name: 'Interrupted campaign' },
+          ],
+          total: 1,
+          page: 1,
+        }
+      )
+    )
+    const row = within(
+      await screen.findByRole('row', { name: /Interrupted campaign/ })
+    )
+    await user.click(row.getByRole('button', { name: 'Cancel' }))
+    expect(requests).toEqual([])
+    const dialog = await screen.findByRole('alertdialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }))
+
+    await waitFor(() =>
+      expect(requests).toEqual([
+        { method: 'POST', url: `${base}/campaigns/43/cancel`, body: {} },
+      ])
+    )
+  })
+
   it('uses a template to create a new campaign with Create but no Write', async () => {
     const user = await renderMarketing({ create: true }, 'Templates')
     await user.click(screen.getByRole('button', { name: 'Use template' }))

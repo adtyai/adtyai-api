@@ -180,9 +180,62 @@ const paymentSchema = z.object({
   WaffoPancakeMerchantID: z.string(),
   WaffoPancakePrivateKey: z.string(),
   WaffoPancakeReturnURL: z.string(),
+  WaffoPancakeEnvironment: z.enum(['test', 'prod']),
 })
 
 type PaymentFormValues = z.infer<typeof paymentSchema>
+const providerSchemas = {
+  general: paymentSchema.pick({
+    Price: true,
+    MinTopUp: true,
+    PayMethods: true,
+    AmountOptions: true,
+    BonusRates: true,
+  }),
+  epay: paymentSchema.pick({
+    PayAddress: true,
+    EpayId: true,
+    EpayKey: true,
+    CustomCallbackAddress: true,
+  }),
+  stripe: paymentSchema.pick({
+    StripeApiSecret: true,
+    StripeWebhookSecret: true,
+    StripePriceId: true,
+    StripeUnitPrice: true,
+    StripeMinTopUp: true,
+    StripePromotionCodesEnabled: true,
+  }),
+  creem: paymentSchema.pick({
+    CreemApiKey: true,
+    CreemWebhookSecret: true,
+    CreemTestMode: true,
+    CreemProducts: true,
+  }),
+  waffo: paymentSchema.pick({
+    WaffoEnabled: true,
+    WaffoApiKey: true,
+    WaffoPrivateKey: true,
+    WaffoPublicCert: true,
+    WaffoSandboxPublicCert: true,
+    WaffoSandboxApiKey: true,
+    WaffoSandboxPrivateKey: true,
+    WaffoSandbox: true,
+    WaffoMerchantId: true,
+    WaffoCurrency: true,
+    WaffoUnitPrice: true,
+    WaffoMinTopUp: true,
+    WaffoNotifyUrl: true,
+    WaffoReturnUrl: true,
+  }),
+  'waffo-pancake': paymentSchema.pick({
+    WaffoPancakeMerchantID: true,
+    WaffoPancakePrivateKey: true,
+    WaffoPancakeReturnURL: true,
+    WaffoPancakeEnvironment: true,
+  }),
+}
+type PaymentTab = keyof typeof providerSchemas | 'usdt'
 type WaffoFormFieldValues = Omit<WaffoSettingsValues, 'WaffoPayMethods'>
 type PaymentBaseFormValues = Omit<
   PaymentFormValues,
@@ -224,7 +277,9 @@ export function PaymentSettingsSection({
   const navigate = useNavigate({ from: '/system-settings/billing/$section' })
   const initialTab = React.useMemo(() => {
     const tab = new URLSearchParams(location.searchStr).get('tab')
-    return tab === 'epay' || tab === 'usdt' ? tab : 'general'
+    return tab && (Object.hasOwn(providerSchemas, tab) || tab === 'usdt')
+      ? (tab as PaymentTab)
+      : 'general'
   }, [location.searchStr])
   const [activeTab, setActiveTab] = React.useState(initialTab)
   const queryClient = useQueryClient()
@@ -264,14 +319,20 @@ export function PaymentSettingsSection({
       storeID: waffoPancakeProvisionedStoreID ?? '',
       productID: waffoPancakeProvisionedProductID ?? '',
     })
+  const previousPancakeBindingRef = React.useRef(waffoPancakeSavedBinding)
 
   React.useEffect(() => {
     setActiveTab(initialTab)
   }, [initialTab])
 
   React.useEffect(() => {
+    const previous = parseWaffoPayMethods(waffoPayMethodsBaselineRef.current)
     waffoPayMethodsBaselineRef.current = waffoDefaultValues.WaffoPayMethods
-    setWaffoPayMethods(parseWaffoPayMethods(waffoDefaultValues.WaffoPayMethods))
+    setWaffoPayMethods((current) =>
+      JSON.stringify(current) === JSON.stringify(previous)
+        ? parseWaffoPayMethods(waffoDefaultValues.WaffoPayMethods)
+        : current
+    )
   }, [waffoDefaultValues.WaffoPayMethods])
 
   React.useEffect(() => {
@@ -279,12 +340,23 @@ export function PaymentSettingsSection({
       storeID: waffoPancakeProvisionedStoreID ?? '',
       productID: waffoPancakeProvisionedProductID ?? '',
     }
-    setWaffoPancakeSelection(nextBinding)
+    const previous = previousPancakeBindingRef.current
+    previousPancakeBindingRef.current = nextBinding
+    setWaffoPancakeSelection((current) =>
+      current.storeID === previous.storeID &&
+      current.productID === previous.productID
+        ? nextBinding
+        : current
+    )
     setWaffoPancakeSavedBinding(nextBinding)
   }, [waffoPancakeProvisionedProductID, waffoPancakeProvisionedStoreID])
 
   const form = useForm<PaymentFormValues>({
-    resolver: zodResolver(paymentSchema) as Resolver<PaymentFormValues>,
+    resolver: zodResolver(
+      providerSchemas[
+        activeTab === 'usdt' ? 'general' : activeTab
+      ].passthrough()
+    ) as unknown as Resolver<PaymentFormValues>,
     mode: 'onChange', // Enable real-time validation
     defaultValues: {
       ...initialFormValues,
@@ -343,13 +415,16 @@ export function PaymentSettingsSection({
   React.useEffect(() => {
     const parsedDefaults = JSON.parse(defaultsSignature) as PaymentFormValues
     initialRef.current = parsedDefaults
-    form.reset({
-      ...parsedDefaults,
-      PayMethods: formatJsonForEditor(parsedDefaults.PayMethods),
-      AmountOptions: formatJsonForEditor(parsedDefaults.AmountOptions),
-      BonusRates: formatJsonForEditor(parsedDefaults.BonusRates),
-      CreemProducts: formatJsonForEditor(parsedDefaults.CreemProducts),
-    })
+    form.reset(
+      {
+        ...parsedDefaults,
+        PayMethods: formatJsonForEditor(parsedDefaults.PayMethods),
+        AmountOptions: formatJsonForEditor(parsedDefaults.AmountOptions),
+        BonusRates: formatJsonForEditor(parsedDefaults.BonusRates),
+        CreemProducts: formatJsonForEditor(parsedDefaults.CreemProducts),
+      },
+      { keepDirtyValues: true }
+    )
   }, [defaultsSignature, form])
 
   const onSubmit = async (values: PaymentFormValues) => {
@@ -393,6 +468,7 @@ export function PaymentSettingsSection({
       WaffoPancakeReturnURL: removeTrailingSlash(
         values.WaffoPancakeReturnURL.trim()
       ),
+      WaffoPancakeEnvironment: values.WaffoPancakeEnvironment,
     }
 
     const initial = {
@@ -440,6 +516,7 @@ export function PaymentSettingsSection({
       WaffoPancakeReturnURL: removeTrailingSlash(
         initialRef.current.WaffoPancakeReturnURL.trim()
       ),
+      WaffoPancakeEnvironment: initialRef.current.WaffoPancakeEnvironment,
     }
 
     const updates: Array<{ key: string; value: string | number | boolean }> = []
@@ -638,13 +715,28 @@ export function PaymentSettingsSection({
     }
 
     const hasWaffoPancakeChanges =
-      sanitized.WaffoPancakeMerchantID !== initial.WaffoPancakeMerchantID ||
-      sanitized.WaffoPancakePrivateKey.length > 0 ||
-      sanitized.WaffoPancakeReturnURL !== initial.WaffoPancakeReturnURL ||
-      waffoPancakeSelection.storeID !== waffoPancakeSavedBinding.storeID ||
-      waffoPancakeSelection.productID !== waffoPancakeSavedBinding.productID
+      activeTab === 'waffo-pancake' &&
+      (sanitized.WaffoPancakeMerchantID !== initial.WaffoPancakeMerchantID ||
+        sanitized.WaffoPancakePrivateKey.length > 0 ||
+        sanitized.WaffoPancakeReturnURL !== initial.WaffoPancakeReturnURL ||
+        sanitized.WaffoPancakeEnvironment !== initial.WaffoPancakeEnvironment ||
+        waffoPancakeSelection.storeID !== waffoPancakeSavedBinding.storeID ||
+        waffoPancakeSelection.productID !== waffoPancakeSavedBinding.productID)
 
-    if (updates.length === 0 && !hasWaffoPancakeChanges) {
+    const fields =
+      providerSchemas[activeTab === 'usdt' ? 'general' : activeTab].shape
+    const providerUpdates = updates.filter((update) => {
+      if (
+        update.key === 'payment_setting.amount_options' ||
+        update.key === 'adty_topup_setting.bonus_rates'
+      ) {
+        return activeTab === 'general'
+      }
+      if (update.key === 'WaffoPayMethods') return activeTab === 'waffo'
+      return update.key in fields
+    })
+
+    if (providerUpdates.length === 0 && !hasWaffoPancakeChanges) {
       toast.info(t('No changes to save'))
       return
     }
@@ -662,7 +754,7 @@ export function PaymentSettingsSection({
     ])
     const savedSensitiveFields = new Set<keyof PaymentFormValues>()
 
-    for (const update of updates) {
+    for (const update of providerUpdates) {
       await updateOption.mutateAsync(update)
       let field = update.key
       if (update.key === 'payment_setting.amount_options') {
@@ -710,6 +802,7 @@ export function PaymentSettingsSection({
         returnURL: sanitized.WaffoPancakeReturnURL,
         storeID: waffoPancakeSelection.storeID,
         productID: waffoPancakeSelection.productID,
+        environment: sanitized.WaffoPancakeEnvironment,
       })
 
       if (
@@ -729,6 +822,8 @@ export function PaymentSettingsSection({
         initialRef.current.WaffoPancakePrivateKey = ''
         initialRef.current.WaffoPancakeReturnURL =
           sanitized.WaffoPancakeReturnURL
+        initialRef.current.WaffoPancakeEnvironment =
+          sanitized.WaffoPancakeEnvironment
         form.setValue('WaffoPancakePrivateKey', '', {
           shouldDirty: false,
           shouldValidate: false,
@@ -781,6 +876,7 @@ export function PaymentSettingsSection({
     WaffoPancakeMerchantID: currentFormValues.WaffoPancakeMerchantID,
     WaffoPancakePrivateKey: currentFormValues.WaffoPancakePrivateKey,
     WaffoPancakeReturnURL: currentFormValues.WaffoPancakeReturnURL,
+    WaffoPancakeEnvironment: currentFormValues.WaffoPancakeEnvironment,
   }
 
   return (
@@ -791,15 +887,16 @@ export function PaymentSettingsSection({
           className='gap-y-8'
           data-no-autosubmit='true'
         >
-          <SettingsPageFormActions
-            onSave={form.handleSubmit(onSubmit)}
-            isSaving={updateOption.isPending || isSubmitting}
-            saveLabel='Save all settings'
-          />
+          {activeTab !== 'usdt' && (
+            <SettingsPageFormActions
+              onSave={form.handleSubmit(onSubmit)}
+              isSaving={updateOption.isPending || isSubmitting}
+            />
+          )}
           <Tabs
             value={activeTab}
             onValueChange={(value) => {
-              setActiveTab(value)
+              setActiveTab(value as PaymentTab)
               void navigate({
                 search: (previous) => ({
                   ...previous,

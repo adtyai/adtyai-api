@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -18,6 +19,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/oauth"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -28,10 +30,11 @@ const (
 )
 
 type oauthStateRequest struct {
-	Provider string          `json:"provider"`
-	Intent   string          `json:"intent"`
-	Scope    string          `json:"scope,omitempty"`
-	Context  json.RawMessage `json:"context,omitempty"`
+	Provider         string          `json:"provider"`
+	Intent           string          `json:"intent"`
+	Scope            string          `json:"scope,omitempty"`
+	Context          json.RawMessage `json:"context,omitempty"`
+	SiteTermsVersion string          `json:"site_terms_version,omitempty"`
 }
 
 type oauthFlowPayload struct {
@@ -41,6 +44,9 @@ type oauthFlowPayload struct {
 	OIDC               *oauth.OIDCOAuthFlow           `json:"oidc,omitempty"`
 	SessionIdentity    *service.AuthIdentity          `json:"session_identity,omitempty"`
 	Authorization      *model.AuthFlowAuthorization   `json:"authorization,omitempty"`
+	SiteID             int                            `json:"site_id,omitempty"`
+	SiteOrigin         string                         `json:"site_origin,omitempty"`
+	SiteTermsVersion   string                         `json:"site_terms_version,omitempty"`
 }
 
 // providerParams returns the params of messages that name the OAuth provider.
@@ -68,6 +74,35 @@ func GenerateOAuthCode(c *gin.Context) {
 	userID := 0
 	sessionID := ""
 	flowPayload := oauthFlowPayload{}
+	// Bind only a known platform site, never a caller-supplied return URL or a
+	// custom domain that is not an account API entry point.
+	site := service.AdtySiteForRequest(c)
+	if site == nil {
+		site = service.AdtySiteForHost(c.Request.Host)
+	}
+	if site != nil {
+		var current model.AdtySite
+		if model.DB.First(&current, site.Id).Error != nil || !service.AdtySiteServesCustomers(&current) ||
+			!oauthRequestMatchesOrigin(c, service.AdtySiteBaseURL(&current)) {
+			writeAccountStatusError(c, http.StatusForbidden, "Invalid parameters")
+			return
+		}
+		flowPayload.SiteID, flowPayload.SiteOrigin = current.Id, service.AdtySiteBaseURL(&current)
+	} else {
+		if service.AdtyRejectSessionAPIStatus(c.Request.Host) != 0 {
+			writeAccountStatusError(c, http.StatusForbidden, "Invalid parameters")
+			return
+		}
+		flowPayload.SiteOrigin = service.AdtySiteBaseURL(nil)
+	}
+	request.SiteTermsVersion = strings.TrimSpace(request.SiteTermsVersion)
+	if request.Intent == model.AuthFlowIntentLogin && flowPayload.SiteID > 0 {
+		if request.SiteTermsVersion != "" && request.SiteTermsVersion != service.AdtyCurrentSiteCustomerTermsVersion() {
+			common.ApiErrorT(c, "Accept the current site customer terms first")
+			return
+		}
+		flowPayload.SiteTermsVersion = request.SiteTermsVersion
+	}
 	browserToken := ""
 	if request.Intent == model.AuthFlowIntentLogin {
 		browserToken, _ = c.Cookie(oauthLoginCookieName)
@@ -158,7 +193,8 @@ func GenerateOAuthCode(c *gin.Context) {
 		return
 	}
 	bindingStarted = request.Intent == model.AuthFlowIntentBind
-	data := gin.H{"flow_token": state, "expires_at": expiresAt.Unix()}
+	data := gin.H{"flow_token": state, "expires_at": expiresAt.Unix(),
+		"redirect_uri": strings.TrimRight(system_setting.ServerAddress, "/") + "/oauth/" + url.PathEscape(request.Provider)}
 	if flowPayload.Telegram != nil {
 		data["authorization_url"] = flowPayload.Telegram.AuthorizationURL(state)
 	}
@@ -188,6 +224,48 @@ func GenerateOAuthCode(c *gin.Context) {
 
 func oauthLoginBrowserHash(token string) string {
 	return common.GenerateHMACWithKey([]byte("oauth-login-browser-v1:"+common.SessionSecret), token)
+}
+
+func oauthRequestMatchesOrigin(c *gin.Context, origin string) bool {
+	parsed, err := url.Parse(origin)
+	return err == nil && parsed.Host != "" && strings.EqualFold(c.Request.Host, parsed.Host)
+}
+
+// Return provider callbacks to the platform origin that owns the host-only
+// browser cookie. This happens before session checks, code exchange or flow
+// consumption; only the original origin may finish the authentication.
+func prepareOAuthCallbackSite(c *gin.Context, payload *oauthFlowPayload, providerName, state string) bool {
+	if payload.SiteID <= 0 {
+		if service.AdtySiteForRequest(c) != nil || service.AdtySiteForHost(c.Request.Host) != nil || service.AdtyRejectSessionAPIStatus(c.Request.Host) != 0 {
+			writeAccountStatusError(c, http.StatusForbidden, "State parameter is empty or mismatched")
+			return false
+		}
+		return true
+	}
+	var site model.AdtySite
+	if model.DB.First(&site, payload.SiteID).Error != nil || !service.AdtySiteServesCustomers(&site) ||
+		payload.SiteOrigin != service.AdtySiteBaseURL(&site) {
+		writeAccountStatusError(c, http.StatusForbidden, "State parameter is empty or mismatched")
+		return false
+	}
+	if oauthRequestMatchesOrigin(c, payload.SiteOrigin) {
+		c.Set(service.AdtySiteContextKey, &site)
+		return true
+	}
+	if !oauthRequestMatchesOrigin(c, strings.TrimRight(system_setting.ServerAddress, "/")) {
+		writeAccountStatusError(c, http.StatusForbidden, "State parameter is empty or mismatched")
+		return false
+	}
+	query := url.Values{"state": {state}}
+	for _, name := range []string{"code", "error", "error_description"} {
+		if value := c.Query(name); value != "" {
+			query.Set(name, value)
+		}
+	}
+	c.Header("Cache-Control", "no-store")
+	c.Header("Referrer-Policy", "no-referrer")
+	common.ApiSuccess(c, gin.H{"oauth_handoff_url": payload.SiteOrigin + "/oauth/" + url.PathEscape(providerName) + "?" + query.Encode()})
+	return false
 }
 
 // refreshCustomOAuthProvider reloads custom providers from the database so a
@@ -226,6 +304,16 @@ func HandleOAuth(c *gin.Context) {
 		writeAccountStatusError(c, http.StatusForbidden, "State parameter is empty or mismatched")
 		return
 	}
+	var flowPayload oauthFlowPayload
+	if common.UnmarshalJsonStr(pendingFlow.Payload, &flowPayload) != nil {
+		writeSecurityOperationError(c, model.ErrAuthFlowInvalid)
+		return
+	}
+	if !prepareOAuthCallbackSite(c, &flowPayload, providerName, state) {
+		return
+	}
+	// The callback query cannot grant or replace consent recorded at flow start.
+	c.Set(service.AdtyOAuthSiteTermsContextKey, flowPayload.SiteTermsVersion)
 
 	consumeMatch := model.AuthFlowMatch{
 		Purpose:  model.AuthFlowPurposeOAuth,

@@ -16,6 +16,18 @@ func TestAlibabaWan3(t *testing.T) {
 	registry := jsplugin.NewRegistry()
 	plugin, err := registry.RegisterFactory(source, jsplugin.Options{Key: "alibaba"})
 	require.NoError(t, err)
+	for _, model := range []string{"wan2.1-t2i-plus", "wan2.1-t2i-turbo"} {
+		t.Run(model, func(t *testing.T) {
+			_, found := registry.Generation().LookupEndpoint("POST", "/v1/images/generations", model)
+			require.True(t, found)
+			body, facts, url := submitAlibabaRequest(t, plugin, model, map[string]any{"model": model, "prompt": "a cat"})
+			assert.Equal(t, model, body["model"])
+			assert.Equal(t, "https://dashscope.aliyuncs.com/api/v1/services/aigc/text2image/image-synthesis", url)
+			// The legacy API defaults n to four; reserve the actual outgoing count.
+			assert.Equal(t, float64(4), body["parameters"].(map[string]any)["n"])
+			assert.Equal(t, float64(4), facts["image_count"])
+		})
+	}
 
 	roundTrip := func(t *testing.T, value any) map[string]any {
 		encoded, marshalErr := common.Marshal(value)
@@ -145,5 +157,76 @@ func TestAlibabaWan3(t *testing.T) {
 		})
 		require.NoError(t, callErr)
 		assert.Equal(t, map[string]any{"seconds": float64(5), "resolution": "1080P"}, roundTrip(t, value))
+	})
+}
+
+func TestAlibabaAdditionalVideoModels(t *testing.T) {
+	source, err := builtinplugins.Source("alibaba")
+	require.NoError(t, err)
+	registry := jsplugin.NewRegistry()
+	plugin, err := registry.RegisterFactory(source, jsplugin.Options{Key: "alibaba"})
+	require.NoError(t, err)
+	for _, tc := range []struct {
+		model      string
+		input      map[string]any
+		parameters map[string]any
+		service    string
+		seconds    float64
+	}{
+		{"happyhorse-1.0-t2v", map[string]any{"prompt": "a horse"}, map[string]any{"ratio": "21:9", "duration": 3}, "video-generation", 3},
+		{"happyhorse-1.1-t2v", map[string]any{"prompt": "a horse"}, map[string]any{"resolution": "480P", "duration": 15}, "video-generation", 15},
+		{"happyhorse-1.0-i2v", map[string]any{"media": []any{map[string]any{"type": "first_frame", "url": "https://cdn.example/a.png"}}}, nil, "video-generation", 5},
+		{"happyhorse-1.1-i2v", map[string]any{"media": []any{map[string]any{"type": "first_frame", "url": "https://cdn.example/a.png"}}}, nil, "video-generation", 5},
+		{"happyhorse-1.0-r2v", map[string]any{"prompt": "[Image 1] runs", "media": []any{map[string]any{"type": "reference_image", "url": "https://cdn.example/a.png"}}}, nil, "video-generation", 5},
+		{"happyhorse-1.1-r2v", map[string]any{"prompt": "[Image 1] runs", "media": []any{map[string]any{"type": "reference_image", "url": "https://cdn.example/a.png"}}}, nil, "video-generation", 5},
+		{"happyhorse-1.0-video-edit", map[string]any{"prompt": "change the coat", "media": []any{map[string]any{"type": "video", "url": "https://cdn.example/a.mp4"}}}, nil, "video-generation", 120},
+		{"wan2.7-videoedit", map[string]any{"media": []any{map[string]any{"type": "video", "url": "https://cdn.example/a.mp4"}}}, map[string]any{"duration": 0, "audio_setting": "origin"}, "video-generation", 20},
+		{"wan2.7-r2v-2026-06-12", map[string]any{"prompt": "Video 1 runs", "media": []any{map[string]any{"type": "reference_video", "url": "https://cdn.example/a.mp4"}}}, nil, "video-generation", 35},
+		{"wan2.6-r2v", map[string]any{"prompt": "character1 runs", "reference_urls": []any{"https://cdn.example/a.mp4"}}, nil, "video-generation", 35},
+		{"wan2.6-r2v-flash", map[string]any{"prompt": "character1 runs", "reference_urls": []any{"https://cdn.example/a.mp4"}}, nil, "video-generation", 35},
+		{"wan2.2-animate-move", map[string]any{"image_url": "https://cdn.example/a.png", "video_url": "https://cdn.example/a.mp4", "watermark": false}, map[string]any{"mode": "wan-pro", "check_image": false}, "image2video", 30},
+		{"wan2.2-animate-mix", map[string]any{"image_url": "https://cdn.example/a.png", "video_url": "https://cdn.example/a.mp4"}, map[string]any{"mode": "wan-std"}, "image2video", 30},
+		{"wan2.1-vace-plus", map[string]any{"prompt": "a cat", "function": "image_reference", "ref_images_url": []any{"https://cdn.example/a.png"}}, nil, "video-generation", 5},
+		{"wan2.1-kf2v-plus", map[string]any{"first_frame_url": "https://cdn.example/a.png", "last_frame_url": "https://cdn.example/b.png"}, nil, "image2video", 5},
+		{"wan2.1-t2v-plus", map[string]any{"prompt": "a cat"}, nil, "video-generation", 5},
+		{"wan2.1-t2v-turbo", map[string]any{"prompt": "a cat"}, nil, "video-generation", 5},
+		{"wan2.1-i2v-plus", map[string]any{"img_url": "https://cdn.example/a.png"}, nil, "video-generation", 5},
+		{"wan2.1-i2v-turbo", map[string]any{"img_url": "https://cdn.example/a.png"}, nil, "video-generation", 5},
+	} {
+		t.Run(tc.model, func(t *testing.T) {
+			binding, found := registry.Generation().LookupEndpoint("POST", "/v1/videos", tc.model)
+			require.True(t, found)
+			assert.Same(t, plugin, binding.Plugin)
+			body, facts, url := submitAlibabaRequest(t, plugin, tc.model, map[string]any{"model": tc.model, "metadata": map[string]any{"input": tc.input, "parameters": tc.parameters}})
+			assert.Equal(t, tc.model, body["model"])
+			assert.Equal(t, "https://dashscope.aliyuncs.com/api/v1/services/aigc/"+tc.service+"/video-synthesis", url)
+			for key, value := range tc.input {
+				assert.Equal(t, value, body["input"].(map[string]any)[key], key)
+			}
+			for key, value := range tc.parameters {
+				assert.EqualValues(t, value, body["parameters"].(map[string]any)[key], key)
+			}
+			assert.Equal(t, tc.seconds, facts["seconds"])
+		})
+	}
+	t.Run("animation settles mode and upstream video duration", func(t *testing.T) {
+		value, callErr := plugin.Engine.Call(t.Context(), "extractUsageOnComplete", map[string]any{"model": "wan2.2-animate-move"}, map[string]any{}, map[string]any{"usage": map[string]any{"video_duration": 5.2, "video_ratio": "pro"}})
+		require.NoError(t, callErr)
+		assert.Equal(t, map[string]any{"seconds": 5.2, "mode": "wan-pro"}, alibabaObject(t, value))
+	})
+	t.Run("specialized inputs reject invalid billable parameters", func(t *testing.T) {
+		for _, tc := range []struct {
+			model             string
+			input, parameters map[string]any
+			want              string
+		}{
+			{"happyhorse-1.1-t2v", map[string]any{"prompt": "a horse"}, map[string]any{"duration": 2}, "between 3 and 15"},
+			{"happyhorse-1.1-r2v", map[string]any{"prompt": "a horse"}, nil, "reference_image"},
+			{"wan2.7-videoedit", map[string]any{"media": []any{map[string]any{"type": "video", "url": "https://cdn.example/a.mp4"}}}, map[string]any{"duration": 11}, "between 2 and 10"},
+			{"wan2.2-animate-mix", map[string]any{"image_url": "https://cdn.example/a.png", "video_url": "https://cdn.example/a.mp4"}, map[string]any{"mode": "unknown"}, "mode"},
+		} {
+			_, callErr := plugin.Engine.Call(t.Context(), "buildSubmitRequest", map[string]any{"model": tc.model, "upstreamModel": tc.model, "baseUrl": "https://dashscope.aliyuncs.com", "apiKey": "k", "requestBody": map[string]any{"model": tc.model, "metadata": map[string]any{"input": tc.input, "parameters": tc.parameters}}})
+			require.ErrorContains(t, callErr, tc.want)
+		}
 	})
 }

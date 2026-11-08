@@ -36,7 +36,8 @@ func TestStripeQuoteChargeAndCreditUseOneAmount(t *testing.T) {
 		common.RedisEnabled = previousRedis
 	})
 	db := adtyTestDB(t)
-	require.NoError(t, db.AutoMigrate(&model.User{}, &model.TopUp{}))
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.TopUp{}, &model.AdtyTopupOrder{}, &model.AdtyBalanceLedger{}, &model.AdtyUserFingerprint{}))
+	require.NoError(t, model.MigrateAdtyTables())
 	user := &model.User{
 		Username: "stripe-quote",
 		Password: "x",
@@ -88,7 +89,7 @@ func TestStripeQuoteChargeAndCreditUseOneAmount(t *testing.T) {
 		require.NotNil(t, params.LineItems[0].PriceData)
 		require.Equal(t, int64(1), *params.LineItems[0].Quantity)
 		unitAmount = *params.LineItems[0].PriceData.UnitAmount
-		return &stripe.CheckoutSession{URL: "https://pay.example/stripe-f066"}, nil
+		return &stripe.CheckoutSession{ID: "cs_1600", URL: "https://pay.example/stripe-f066"}, nil
 	}
 	paid := callStripe(t, RequestStripePay, user.Id, `{"amount":2,"payment_method":"stripe"}`)
 	require.Contains(t, paid.Body.String(), "https://pay.example/stripe-f066")
@@ -99,6 +100,12 @@ func TestStripeQuoteChargeAndCreditUseOneAmount(t *testing.T) {
 	require.Equal(t, int64(2), order.Amount)
 	require.True(t, decimal.NewFromFloat(order.Money).Equal(decimal.NewFromInt(16)))
 	require.Equal(t, common.TopUpStatusPending, order.Status)
+	frozen, err := model.GetAdtyTopupOrder(order.TradeNo)
+	require.NoError(t, err)
+	require.NotNil(t, frozen, "hosted checkout must persist the same settlement snapshot as other payment providers")
+	require.True(t, frozen.FaceUSD.Equal(decimal.NewFromInt(2)))
+	require.EqualValues(t, 1_000_000, frozen.CreditQuota)
+	require.Equal(t, "USD", frozen.PayCurrency)
 
 	mismatch := postStripeCheckoutWebhook(t, order.TradeNo, 1599)
 	require.Equal(t, http.StatusInternalServerError, mismatch.Code)
@@ -116,13 +123,14 @@ func TestStripeQuoteChargeAndCreditUseOneAmount(t *testing.T) {
 	require.Contains(t, again.Body.String(), "https://pay.example/stripe-f066")
 	var manual model.TopUp
 	require.NoError(t, db.Where("user_id = ? AND status = ?", user.Id, common.TopUpStatusPending).First(&manual).Error)
-	require.NoError(t, model.ManualCompleteTopUp(manual.TradeNo, "127.0.0.1"))
+	_, err = model.CompleteAdtyTopUp(manual.TradeNo, model.AdtyPaymentFacts{Provider: model.PaymentProviderStripe, Source: model.AdtyPaymentSourceManual}, "127.0.0.1")
+	require.NoError(t, err)
 	require.Equal(t, 2000000, reloadUserQuota(t, db, user.Id))
 }
 
 func postStripeCheckoutWebhook(t *testing.T, tradeNo string, amountTotal int) *httptest.ResponseRecorder {
 	t.Helper()
-	payload := []byte(fmt.Sprintf(`{"id":"evt_%s_%d","object":"event","type":"checkout.session.completed","data":{"object":{"id":"cs_%d","object":"checkout.session","client_reference_id":"%s","customer":"cus_f066","status":"complete","payment_status":"paid","amount_total":%d,"currency":"usd"}}}`, tradeNo, amountTotal, amountTotal, tradeNo, amountTotal))
+	payload := []byte(fmt.Sprintf(`{"id":"evt_%s_%d","object":"event","type":"checkout.session.completed","data":{"object":{"id":"cs_%d","object":"checkout.session","client_reference_id":"%s","customer":"cus_f066","status":"complete","payment_status":"paid","amount_total":%d,"currency":"usd","metadata":{"adty_product":"wallet_topup"}}}}`, tradeNo, amountTotal, amountTotal, tradeNo, amountTotal))
 	signed := webhook.GenerateTestSignedPayload(&webhook.UnsignedPayload{Payload: payload, Secret: setting.StripeWebhookSecret})
 	req := httptest.NewRequest(http.MethodPost, "/api/stripe/webhook", io.NopCloser(bytes.NewReader(signed.Payload)))
 	req.Header.Set("Stripe-Signature", signed.Header)

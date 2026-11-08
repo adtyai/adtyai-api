@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -33,14 +35,16 @@ type fakeCloudflare struct {
 	// rateLimitOnce 为真时下一个请求返回 429 和 Retry-After: 2
 	rateLimitOnce bool
 	// widgets：sitekey → domains；PUT 的响应带 secret
-	widgets  map[string][]string
-	puts     []string // 每次 PUT 的 sitekey
-	deletes  []string
-	requests []string
+	widgets       map[string][]string
+	puts          []string // 每次 PUT 的 sitekey
+	deletes       []string
+	requests      []string
+	beforeRequest func(*http.Request)
 }
 
 type fakeHostname struct {
 	hostname, status, sslStatus string
+	metadata                    map[string]string
 }
 
 func newFakeCloudflare(t *testing.T) (*fakeCloudflare, *httptest.Server) {
@@ -56,7 +60,9 @@ func (f *fakeCloudflare) writeResult(w http.ResponseWriter, result string) {
 }
 
 func (f *fakeCloudflare) hostnameJSON(id string, h *fakeHostname) string {
+	metadata, _ := common.Marshal(h.metadata)
 	return `{"id":"` + id + `","hostname":"` + h.hostname + `","status":"` + h.status + `",` +
+		`"custom_metadata":` + string(metadata) + `,` +
 		`"ownership_verification":{"name":"_cf-custom-hostname.` + h.hostname + `","type":"txt","value":"own-` + id + `"},` +
 		`"ssl":{"id":"ssl-` + id + `","method":"http","type":"dv","status":"` + h.sslStatus + `",` +
 		`"validation_records":[{"txt_name":"_acme-challenge.` + h.hostname + `","txt_value":"acme-` + id + `","status":"pending"}]},` +
@@ -64,6 +70,9 @@ func (f *fakeCloudflare) hostnameJSON(id string, h *fakeHostname) string {
 }
 
 func (f *fakeCloudflare) serve(w http.ResponseWriter, r *http.Request) {
+	if f.beforeRequest != nil {
+		f.beforeRequest(r)
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.requests = append(f.requests, r.Method+" "+r.URL.Path)
@@ -81,7 +90,8 @@ func (f *fakeCloudflare) serve(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.Method == http.MethodPost && r.URL.Path == zone:
 		var req struct {
-			Hostname string `json:"hostname"`
+			Hostname string            `json:"hostname"`
+			Metadata map[string]string `json:"custom_metadata"`
 			SSL      struct {
 				Method string `json:"method"`
 				Type   string `json:"type"`
@@ -97,7 +107,7 @@ func (f *fakeCloudflare) serve(w http.ResponseWriter, r *http.Request) {
 		}
 		f.nextId++
 		id := "cf-" + string(rune('0'+f.nextId))
-		f.hostnames[id] = &fakeHostname{hostname: req.Hostname, status: "pending", sslStatus: "initializing"}
+		f.hostnames[id] = &fakeHostname{hostname: req.Hostname, status: "pending", sslStatus: "initializing", metadata: req.Metadata}
 		// POST 的响应不一定带验证记录（官方文档），这里故意不带，逼着代码隔一会儿再 GET。
 		f.writeResult(w, `{"id":"`+id+`","hostname":"`+req.Hostname+`","status":"pending","ssl":{"status":"initializing"}}`)
 	case r.Method == http.MethodGet && r.URL.Path == zone:
@@ -243,6 +253,301 @@ func TestCustomDomainRejectsApexAndOwnDomains(t *testing.T) {
 	domain, err := AddAdtySiteDomain(context.Background(), owner.Id, "API.Example.ORG")
 	require.NoError(t, err)
 	assert.Equal(t, "api.example.org", domain.Hostname)
+}
+
+func TestDomainCheckerDoesNotRestoreRemovedOrReassignedDomain(t *testing.T) {
+	for _, reassigned := range []bool{false, true} {
+		t.Run(fmt.Sprint(reassigned), func(t *testing.T) {
+			db, fake := prepareDomainDB(t)
+			owner, _ := openActiveSite(t, db, "stale-check")
+			domain, err := AddAdtySiteDomain(context.Background(), owner.Id, "api.stale.example")
+			require.NoError(t, err)
+			fake.setStatus(domain.CFHostnameId, "active", "active")
+			updates := map[string]any{"status": model.AdtySiteDomainRemoved, "turnstile_widget": ""}
+			if reassigned {
+				updates["status"], updates["ownership_token"], updates["cf_hostname_id"] = model.AdtySiteDomainPending, "new-owner-token", "new-cf-id"
+			}
+			require.NoError(t, db.Model(&model.AdtySiteDomain{}).Where("id = ?", domain.Id).Updates(updates).Error)
+			_, err = adtyCheckDomainSnapshot(context.Background(), domain, time.Now())
+			require.NoError(t, err)
+			var saved model.AdtySiteDomain
+			require.NoError(t, db.First(&saved, domain.Id).Error)
+			if reassigned {
+				assert.Equal(t, model.AdtySiteDomainPending, saved.Status)
+				assert.Equal(t, "new-cf-id", saved.CFHostnameId)
+			} else {
+				assert.Equal(t, model.AdtySiteDomainRemoved, saved.Status)
+			}
+			assert.Empty(t, saved.TurnstileWidget)
+			assert.Empty(t, fake.puts, "a stale checker must not register the hostname in Turnstile")
+		})
+	}
+}
+
+// The request barrier is outside the fake's mutex so another lifecycle
+// operation can finish its own external calls while this request is paused.
+func domainRequestBarrier(t *testing.T, fake *fakeCloudflare, match func(*http.Request) bool) (<-chan struct{}, func()) {
+	t.Helper()
+	entered, release := make(chan struct{}), make(chan struct{})
+	var once, releaseOnce sync.Once
+	fake.beforeRequest = func(request *http.Request) {
+		if match(request) {
+			once.Do(func() { close(entered); <-release })
+		}
+	}
+	unblock := func() { releaseOnce.Do(func() { close(release) }) }
+	t.Cleanup(unblock)
+	return entered, unblock
+}
+
+func awaitDomainOperation(t *testing.T, result <-chan error) {
+	t.Helper()
+	select {
+	case err := <-result:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("domain lifecycle operation did not finish")
+	}
+}
+
+func finishConcurrentDomainOperation(t *testing.T, result <-chan error, release func()) {
+	t.Helper()
+	// Old code finishes while the first request is blocked; the coordinated
+	// implementation waits for its database lock. Always release the barrier.
+	select {
+	case err := <-result:
+		require.NoError(t, err)
+		release()
+	case <-time.After(150 * time.Millisecond):
+		release()
+		awaitDomainOperation(t, result)
+	}
+}
+
+func TestDomainRemovalWaitsForInFlightWidgetAssignment(t *testing.T) {
+	db, fake := prepareDomainDB(t)
+	owner, _ := openActiveSite(t, db, "widget-race")
+	domain, err := AddAdtySiteDomain(context.Background(), owner.Id, "api.widget-race.example")
+	require.NoError(t, err)
+	fake.setStatus(domain.CFHostnameId, "active", "active")
+	entered, release := domainRequestBarrier(t, fake, func(request *http.Request) bool {
+		return request.Method == http.MethodGet && strings.Contains(request.URL.Path, "/widgets/")
+	})
+	check := make(chan error, 1)
+	go func() { check <- RunAdtySiteDomainCheckOnce(context.Background(), time.Now()) }()
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("widget GET not reached")
+	}
+	removed := make(chan error, 1)
+	go func() { removed <- RemoveAdtySiteDomain(context.Background(), owner.Id, domain.Id) }()
+	finishConcurrentDomainOperation(t, removed, release)
+	awaitDomainOperation(t, check)
+	var saved model.AdtySiteDomain
+	require.NoError(t, db.First(&saved, domain.Id).Error)
+	assert.Equal(t, model.AdtySiteDomainRemoved, saved.Status)
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	for _, hosts := range fake.widgets {
+		assert.NotContains(t, hosts, domain.Hostname)
+	}
+	assert.Empty(t, fake.hostnames)
+}
+
+func TestDomainRemovalWaitsForInFlightHostnameAttachment(t *testing.T) {
+	db, fake := prepareDomainDB(t)
+	owner, site := openActiveSite(t, db, "attach-race")
+	domain := &model.AdtySiteDomain{SiteId: site.Id, Hostname: "api.attach-race.example", OwnershipToken: "original-token", Status: model.AdtySiteDomainPending, CreatedAt: time.Now().Unix()}
+	require.NoError(t, db.Create(domain).Error)
+	entered, release := make(chan struct{}), make(chan struct{})
+	var once, releaseOnce sync.Once
+	unblock := func() { releaseOnce.Do(func() { close(release) }) }
+	t.Cleanup(unblock)
+	adtyLookupOwnershipTXT = func(context.Context, string) ([]string, error) {
+		once.Do(func() { close(entered); <-release })
+		return []string{domain.OwnershipToken}, nil
+	}
+	check := make(chan error, 1)
+	go func() { check <- RunAdtySiteDomainCheckOnce(context.Background(), time.Now()) }()
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("ownership lookup not reached")
+	}
+	removed := make(chan error, 1)
+	go func() { removed <- RemoveAdtySiteDomain(context.Background(), owner.Id, domain.Id) }()
+	finishConcurrentDomainOperation(t, removed, unblock)
+	awaitDomainOperation(t, check)
+	var saved model.AdtySiteDomain
+	require.NoError(t, db.First(&saved, domain.Id).Error)
+	assert.Equal(t, model.AdtySiteDomainRemoved, saved.Status)
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	assert.Empty(t, fake.hostnames, "attachment after removal must not orphan a Cloudflare hostname")
+}
+
+func TestDomainTimeoutCannotDeleteConcurrentlyActivatedHostname(t *testing.T) {
+	db, fake := prepareDomainDB(t)
+	owner, _ := openActiveSite(t, db, "timeout-race")
+	domain, err := AddAdtySiteDomain(context.Background(), owner.Id, "api.timeout-race.example")
+	require.NoError(t, err)
+	entered, release := domainRequestBarrier(t, fake, func(request *http.Request) bool {
+		return request.Method == http.MethodDelete && strings.Contains(request.URL.Path, "/custom_hostnames/")
+	})
+	timedOut := make(chan error, 1)
+	go func() { timedOut <- RunAdtySiteDomainCheckOnce(context.Background(), time.Now().Add(73*time.Hour)) }()
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("hostname DELETE not reached")
+	}
+	fake.setStatus(domain.CFHostnameId, "active", "active")
+	activated := make(chan error, 1)
+	go func() { activated <- RunAdtySiteDomainCheckOnce(context.Background(), time.Now()) }()
+	finishConcurrentDomainOperation(t, activated, release)
+	awaitDomainOperation(t, timedOut)
+	var saved model.AdtySiteDomain
+	require.NoError(t, db.First(&saved, domain.Id).Error)
+	assert.Equal(t, model.AdtySiteDomainFailed, saved.Status)
+	assert.Empty(t, saved.CFHostnameId)
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	assert.Empty(t, fake.hostnames)
+	for _, hosts := range fake.widgets {
+		assert.NotContains(t, hosts, domain.Hostname)
+	}
+}
+
+func TestStaleDomainRemovalDoesNotTouchReassignedOwner(t *testing.T) {
+	db, fake := prepareDomainDB(t)
+	first, _ := openActiveSite(t, db, "first-owner")
+	second, secondSite := openActiveSite(t, db, "second-owner")
+	original, err := AddAdtySiteDomain(context.Background(), first.Id, "api.reassigned.example")
+	require.NoError(t, err)
+	stale := *original
+	require.NoError(t, RemoveAdtySiteDomain(context.Background(), first.Id, original.Id))
+	reassigned, err := AddAdtySiteDomain(context.Background(), second.Id, original.Hostname)
+	require.NoError(t, err)
+	require.NotEqual(t, stale.OwnershipToken, reassigned.OwnershipToken)
+	require.NoError(t, removeAdtySiteDomain(context.Background(), &stale))
+	var saved model.AdtySiteDomain
+	require.NoError(t, db.First(&saved, reassigned.Id).Error)
+	assert.Equal(t, secondSite.Id, saved.SiteId)
+	assert.Equal(t, reassigned.CFHostnameId, saved.CFHostnameId)
+	assert.Equal(t, model.AdtySiteDomainPending, saved.Status)
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	assert.Contains(t, fake.hostnames, reassigned.CFHostnameId)
+	assert.Equal(t, []string{original.CFHostnameId}, fake.deletes)
+}
+
+func TestSharedWidgetUpdateCannotRestoreAnotherRemovedDomain(t *testing.T) {
+	db, fake := prepareDomainDB(t)
+	owner, _ := openActiveSite(t, db, "shared-widget")
+	first, err := AddAdtySiteDomain(context.Background(), owner.Id, "api.first-shared.example")
+	require.NoError(t, err)
+	fake.setStatus(first.CFHostnameId, "active", "active")
+	require.NoError(t, RunAdtySiteDomainCheckOnce(context.Background(), time.Now()))
+	second, err := AddAdtySiteDomain(context.Background(), owner.Id, "api.second-shared.example")
+	require.NoError(t, err)
+	fake.setStatus(second.CFHostnameId, "active", "active")
+	entered, release := domainRequestBarrier(t, fake, func(request *http.Request) bool {
+		if request.Method != http.MethodPut || !strings.Contains(request.URL.Path, "/widgets/") {
+			return false
+		}
+		body, err := io.ReadAll(request.Body)
+		require.NoError(t, err)
+		request.Body = io.NopCloser(strings.NewReader(string(body)))
+		return strings.Contains(string(body), second.Hostname)
+	})
+	check := make(chan error, 1)
+	go func() { check <- RunAdtySiteDomainCheckOnce(context.Background(), time.Now()) }()
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("second domain's widget PUT not reached")
+	}
+	removed := make(chan error, 1)
+	go func() { removed <- RemoveAdtySiteDomain(context.Background(), owner.Id, first.Id) }()
+	finishConcurrentDomainOperation(t, removed, release)
+	awaitDomainOperation(t, check)
+	var savedFirst, savedSecond model.AdtySiteDomain
+	require.NoError(t, db.First(&savedFirst, first.Id).Error)
+	require.NoError(t, db.First(&savedSecond, second.Id).Error)
+	assert.Equal(t, model.AdtySiteDomainRemoved, savedFirst.Status)
+	assert.Equal(t, model.AdtySiteDomainActive, savedSecond.Status)
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	assert.NotContains(t, fake.widgets[savedSecond.TurnstileWidget], first.Hostname)
+	assert.Contains(t, fake.widgets[savedSecond.TurnstileWidget], second.Hostname)
+}
+
+func failNextDomainResourceUpdate(t *testing.T, db *gorm.DB, field string) {
+	t.Helper()
+	callback := "test:fail-domain-resource-write"
+	var once sync.Once
+	require.NoError(t, db.Callback().Update().Before("gorm:update").Register(callback, func(tx *gorm.DB) {
+		values, ok := tx.Statement.Dest.(map[string]any)
+		if tx.Statement.Table != "adty_site_domains" || !ok || values[field] == nil || values[field] == "" {
+			return
+		}
+		once.Do(func() { tx.AddError(errors.New("injected domain resource write failure")) })
+	}))
+	t.Cleanup(func() { _ = db.Callback().Update().Remove(callback) })
+}
+
+func TestDomainRemovalRecoversCreatedHostnameAfterDatabaseRollback(t *testing.T) {
+	db, fake := prepareDomainDB(t)
+	owner, site := openActiveSite(t, db, "recover-created")
+	domain := &model.AdtySiteDomain{SiteId: site.Id, Hostname: "api.recover-created.example", OwnershipToken: "recover-generation", Status: model.AdtySiteDomainPending, CreatedAt: time.Now().Unix()}
+	require.NoError(t, db.Create(domain).Error)
+	failNextDomainResourceUpdate(t, db, "cf_hostname_id")
+	require.ErrorContains(t, RunAdtySiteDomainCheckOnce(context.Background(), time.Now()), "injected domain resource write failure")
+	var rolledBack model.AdtySiteDomain
+	require.NoError(t, db.First(&rolledBack, domain.Id).Error)
+	require.Empty(t, rolledBack.CFHostnameId)
+	require.NoError(t, RemoveAdtySiteDomain(context.Background(), owner.Id, domain.Id))
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	assert.Empty(t, fake.hostnames, "same-generation created hostname must be recoverable after rollback")
+}
+
+func TestDomainRemovalDoesNotDeleteUnrecordedReusedHostname(t *testing.T) {
+	db, fake := prepareDomainDB(t)
+	owner, site := openActiveSite(t, db, "recover-reused")
+	domain := &model.AdtySiteDomain{SiteId: site.Id, Hostname: "api.recover-reused.example", OwnershipToken: "new-generation", Status: model.AdtySiteDomainPending, CreatedAt: time.Now().Unix()}
+	require.NoError(t, db.Create(domain).Error)
+	fake.createDuplicate = true
+	fake.hostnames["existing-other-generation"] = &fakeHostname{hostname: domain.Hostname, status: "pending", sslStatus: "initializing", metadata: map[string]string{"site_id": "another-site"}}
+	fake.widgets["w-platform"] = append(fake.widgets["w-platform"], domain.Hostname)
+	failNextDomainResourceUpdate(t, db, "cf_hostname_id")
+	require.ErrorContains(t, RunAdtySiteDomainCheckOnce(context.Background(), time.Now()), "injected domain resource write failure")
+	require.NoError(t, RemoveAdtySiteDomain(context.Background(), owner.Id, domain.Id))
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	assert.Contains(t, fake.hostnames, "existing-other-generation", "an unrecorded find/reuse is not proof that this generation created the resource")
+	assert.Empty(t, fake.deletes)
+	assert.Contains(t, fake.widgets["w-platform"], domain.Hostname, "unproven ownership must not remove an existing widget authorization")
+}
+
+func TestDomainRemovalRecoversWidgetAssignmentAfterDatabaseRollback(t *testing.T) {
+	db, fake := prepareDomainDB(t)
+	owner, _ := openActiveSite(t, db, "recover-widget")
+	domain, err := AddAdtySiteDomain(context.Background(), owner.Id, "api.recover-widget.example")
+	require.NoError(t, err)
+	fake.setStatus(domain.CFHostnameId, "active", "active")
+	failNextDomainResourceUpdate(t, db, "turnstile_widget")
+	require.ErrorContains(t, RunAdtySiteDomainCheckOnce(context.Background(), time.Now()), "injected domain resource write failure")
+	var rolledBack model.AdtySiteDomain
+	require.NoError(t, db.First(&rolledBack, domain.Id).Error)
+	require.Empty(t, rolledBack.TurnstileWidget)
+	require.NoError(t, RemoveAdtySiteDomain(context.Background(), owner.Id, domain.Id))
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	for _, hosts := range fake.widgets {
+		assert.NotContains(t, hosts, domain.Hostname)
+	}
 }
 
 func TestCustomDomainRequiresOwnershipTxt(t *testing.T) {

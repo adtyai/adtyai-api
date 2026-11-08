@@ -27,18 +27,20 @@ func TestVertexAIResponsesProtocol(t *testing.T) {
 		}
 	})
 
-	t.Run("shares models with Gemini without losing either provider", func(t *testing.T) {
+	t.Run("keeps Vertex models active after Gemini defaults retire", func(t *testing.T) {
 		candidates := jsplugin.DefaultRegistry.Generation().LookupEndpointCandidates("POST", "/v1/responses", "veo-3.0-generate-001")
-		require.Len(t, candidates, 2)
-		assert.Equal(t, "google", candidates[0].Plugin.Meta.Key)
-		assert.Equal(t, "vertex-ai", candidates[1].Plugin.Meta.Key)
+		require.Len(t, candidates, 1)
+		assert.Equal(t, "vertex-ai", candidates[0].Plugin.Meta.Key)
+		legacy, found := jsplugin.DefaultRegistry.Generation().Get("google")
+		require.True(t, found)
+		assert.Empty(t, legacy.Meta.Models)
 
 		request := map[string]any{"model": "veo-3.0-generate-001", "body": map[string]any{"kind": "json", "value": map[string]any{
 			"model": "veo-3.0-generate-001", "input": "waves", "seconds": 8, "size": "1280x720",
 		}}}
-		first, callErr := candidates[0].Plugin.Engine.CallPath(t.Context(), "protocols", []string{"openai_responses", "decodeRequest"}, request)
+		first, callErr := legacy.Engine.CallPath(t.Context(), "protocols", []string{"openai_responses", "decodeRequest"}, request)
 		require.NoError(t, callErr)
-		second, callErr := candidates[1].Plugin.Engine.CallPath(t.Context(), "protocols", []string{"openai_responses", "decodeRequest"}, request)
+		second, callErr := candidates[0].Plugin.Engine.CallPath(t.Context(), "protocols", []string{"openai_responses", "decodeRequest"}, request)
 		require.NoError(t, callErr)
 		assert.Equal(t, decodePluginValue(t, first), decodePluginValue(t, second))
 	})

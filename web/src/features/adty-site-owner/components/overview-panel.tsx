@@ -21,6 +21,7 @@ import { useTranslation } from 'react-i18next'
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from 'recharts'
 
 import { EmptyState } from '@/components/empty-state'
+import { ErrorState } from '@/components/error-state'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import {
   ChartContainer,
@@ -61,9 +62,17 @@ export function OverviewPanel() {
     revenue: Number(day.revenue_usd),
     earning: Number(day.earning_usd),
   }))
+  const retry = () => {
+    void stats.refetch()
+    void earnings.refetch()
+  }
+  if ((stats.isError && !stats.data) || (earnings.isError && !earnings.data)) {
+    return <ErrorState onRetry={retry} />
+  }
 
   return (
     <div className='flex flex-col gap-4'>
+      {(stats.isError || earnings.isError) && <ErrorState onRetry={retry} />}
       <OwnerStatGrid
         label={t('Earnings')}
         items={[

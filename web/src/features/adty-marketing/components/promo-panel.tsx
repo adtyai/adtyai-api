@@ -24,6 +24,7 @@ import { toast } from 'sonner'
 import { StaticDataTable } from '@/components/data-table/static/static-data-table'
 import { Dialog } from '@/components/dialog'
 import { EmptyState } from '@/components/empty-state'
+import { ErrorState } from '@/components/error-state'
 import { StatusBadge } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -31,6 +32,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { PageSwitcher } from '@/features/referral/components/page-switcher'
+import { DraftDiscardDialog } from '@/features/system-settings/components/draft-discard-dialog'
+import { useDraftNavigation } from '@/features/system-settings/hooks/use-draft-navigation'
 import { formatUsd } from '@/features/wallet/adty/lib/money'
 import { toIntlLocale } from '@/i18n/languages'
 import { ADTY_PERMISSIONS, canAdmin } from '@/lib/adty-permissions'
@@ -88,7 +91,13 @@ export function PromoPanel(props: { canCreate: boolean; canWrite: boolean }) {
   const [editing, setEditing] = useState<{
     id: number | null
     input: PromoCodeInput
+    initialInput: PromoCodeInput
   } | null>(null)
+  const [discarding, setDiscarding] = useState(false)
+  const dirty =
+    !!editing &&
+    JSON.stringify(editing.input) !== JSON.stringify(editing.initialInput)
+  useDraftNavigation(dirty)
   const query = useQuery({
     queryKey: marketingKeys.promoCodes(page),
     queryFn: () => getPromoCodes(page),
@@ -124,8 +133,13 @@ export function PromoPanel(props: { canCreate: boolean; canWrite: boolean }) {
   const canSave =
     editing !== null && (editing.id === null ? props.canCreate : props.canWrite)
 
+  if (query.isError && !query.data) {
+    return <ErrorState onRetry={() => void query.refetch()} />
+  }
+
   return (
     <div className='flex flex-col gap-3'>
+      {query.isError && <ErrorState onRetry={() => void query.refetch()} />}
       <p className='text-muted-foreground text-sm'>
         {t(
           'Promo codes add bonus credit to a paid top-up; the price stays the same. Uses are counted when the payment is credited. Codes funded by sub-site owners are not available yet.'
@@ -135,7 +149,9 @@ export function PromoPanel(props: { canCreate: boolean; canWrite: boolean }) {
         <div>
           <Button
             size='sm'
-            onClick={() => setEditing({ id: null, input: EMPTY })}
+            onClick={() =>
+              setEditing({ id: null, input: EMPTY, initialInput: EMPTY })
+            }
           >
             {t('New promo code')}
           </Button>
@@ -196,7 +212,11 @@ export function PromoPanel(props: { canCreate: boolean; canWrite: boolean }) {
                   size='sm'
                   variant='outline'
                   onClick={() =>
-                    setEditing({ id: row.id, input: toInput(row) })
+                    setEditing({
+                      id: row.id,
+                      input: toInput(row),
+                      initialInput: toInput(row),
+                    })
                   }
                 >
                   {t('Edit')}
@@ -213,7 +233,12 @@ export function PromoPanel(props: { canCreate: boolean; canWrite: boolean }) {
       />
       <Dialog
         open={editing !== null}
-        onOpenChange={(open) => !open && setEditing(null)}
+        onOpenChange={(open) => {
+          if (!open) {
+            if (dirty) setDiscarding(true)
+            else setEditing(null)
+          }
+        }}
         title={editing?.id ? t('Edit promo code') : t('New promo code')}
         footer={
           <Button
@@ -382,6 +407,11 @@ export function PromoPanel(props: { canCreate: boolean; canWrite: boolean }) {
           </div>
         )}
       </Dialog>
+      <DraftDiscardDialog
+        open={discarding}
+        onOpenChange={setDiscarding}
+        onDiscard={() => setEditing(null)}
+      />
     </div>
   )
 }

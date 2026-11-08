@@ -28,6 +28,7 @@ import {
   DataTablePage,
   useDataTable,
 } from '@/components/data-table'
+import { ErrorState } from '@/components/error-state'
 import { useGroupDisplay } from '@/features/adty-groups/hooks/use-group-display'
 import { useMediaQuery } from '@/hooks'
 import { useTableUrlState } from '@/hooks/use-table-url-state'
@@ -132,7 +133,7 @@ export function UsersTable() {
   }
 
   // Fetch data with React Query
-  const { data, isLoading, isFetching } = useQuery({
+  const { data, isLoading, isFetching, isError, refetch } = useQuery({
     queryKey: [
       'users',
       pagination.pageIndex + 1,
@@ -216,12 +217,15 @@ export function UsersTable() {
     ensurePageInRange,
   })
 
+  if (isError && !data) return <ErrorState onRetry={() => void refetch()} />
+
   return (
     <DataTablePage
       table={table}
       columns={columns}
       isLoading={isLoading}
       isFetching={isFetching}
+      afterTable={isError && <ErrorState onRetry={() => void refetch()} />}
       emptyTitle={t('No Users Found')}
       emptyDescription={t(
         'No users available. Try adjusting your search or filters.'

@@ -92,6 +92,34 @@ func TestConvertOpenAIRequestFiltersThinkingBudgetByUpstreamModel(t *testing.T) 
 	}
 }
 
+func TestQwenVLTextRerankRejectsUnestimatedMediaDocuments(t *testing.T) {
+	for _, tc := range []struct {
+		model     string
+		documents []any
+		wantError bool
+	}{
+		{"qwen3-vl-rerank", []any{"a cat", "a dog"}, false},
+		{"qwen3-vl-rerank", []any{map[string]any{"image": "https://example.com/cat.png"}}, true},
+		{"qwen3-vl-rerank", []any{map[string]any{"video": "https://example.com/cat.mp4"}}, true},
+		{"qwen3-rerank", []any{map[string]any{"text": "a cat"}}, false},
+	} {
+		request := dto.RerankRequest{Model: tc.model, Query: "a cat", Documents: tc.documents}
+		converted, err := (&Adaptor{}).ConvertRerankRequest(nil, constant.RelayModeRerank, request)
+		if tc.wantError {
+			var apiErr *types.NewAPIError
+			require.ErrorAs(t, err, &apiErr)
+			assert.Equal(t, http.StatusBadRequest, apiErr.StatusCode)
+			assert.True(t, types.IsSkipRetryError(apiErr))
+			continue
+		}
+		require.NoError(t, err)
+		got, ok := converted.(*AliRerankRequest)
+		require.True(t, ok)
+		assert.Equal(t, tc.documents, got.Input.Documents)
+		assert.Equal(t, "a cat", got.Input.Query)
+	}
+}
+
 func TestConvertOpenAIRequestPreservesExplicitZeroForMappedQwenModel(t *testing.T) {
 	const (
 		clientModel   = "customer-model"

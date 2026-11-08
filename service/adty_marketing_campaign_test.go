@@ -215,6 +215,36 @@ func TestCampaignScheduleAndCancel(t *testing.T) {
 	assert.Equal(t, model.AdtyCampaignStatusCanceled, saved.Status)
 }
 
+func TestFailedCampaignCanCancelPreviouslyScheduledBatches(t *testing.T) {
+	db, fake := prepareMarketingDB(t)
+	marketingUser(t, db, "partial-en", true)
+	other := marketingUser(t, db, "partial-fr", true)
+	setUserLang(t, db, other.Id, "fr")
+	campaign := marketingCampaign(t, model.AdtyLangText{"en": "Later", "fr": "Plus tard"}, model.AdtyLangText{"en": "<p>Hi</p>", "fr": "<p>Salut</p>"}, model.AdtyMarketingAudience{})
+	now := time.Now()
+	require.NoError(t, db.Model(campaign).Update("scheduled_at", now.Add(time.Hour).Unix()).Error)
+	broadcasts := 0
+	fake.fail = func(request *http.Request) (int, string) {
+		if request.Method == http.MethodPost && request.URL.Path == "/broadcasts" {
+			broadcasts++
+			if broadcasts == 2 {
+				return http.StatusBadRequest, `{"message":"rejected"}`
+			}
+		}
+		return 0, ""
+	}
+	require.Error(t, SendAdtyCampaign(context.Background(), campaign.Id, 1, now))
+	var saved model.AdtyMarketingCampaign
+	require.NoError(t, db.First(&saved, campaign.Id).Error)
+	require.Equal(t, model.AdtyCampaignStatusFailed, saved.Status)
+	require.NoError(t, CancelAdtyCampaign(context.Background(), campaign.Id))
+	cancels := fake.callsMatching(http.MethodPost, "/broadcasts/")
+	require.Len(t, cancels, 1)
+	assert.True(t, strings.HasSuffix(cancels[0].Path, "/cancel"))
+	require.NoError(t, db.First(&saved, campaign.Id).Error)
+	assert.Equal(t, model.AdtyCampaignStatusCanceled, saved.Status)
+}
+
 func TestCampaignStatsFromWebhooks(t *testing.T) {
 	db, _ := prepareMarketingDB(t)
 	user := marketingUser(t, db, "cmp-stats", true)

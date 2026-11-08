@@ -1,7 +1,6 @@
 package baidu_v2
 
-var ModelList = []string{
-	"ernie-4.0-8k-latest",
+var ModelList = []string{"ernie-4.0-8k-latest",
 	"ernie-4.0-8k-preview",
 	"ernie-4.0-8k",
 	"ernie-4.0-turbo-8k-latest",
@@ -24,6 +23,24 @@ var ModelList = []string{
 	"deepseek-r1",
 	"deepseek-r1-distill-qwen-32b",
 	"deepseek-r1-distill-qwen-14b",
+	// Current provider catalogue; account and regional access still apply.
+	"deepseek-v3.2",
+	"deepseek-v4-flash",
+	"deepseek-v4-flash-0731",
+	"deepseek-v4-pro",
+	"deepseek-v4-pro-0813",
+	"ernie-4.5-turbo-128k",
+	"ernie-4.5-turbo-32k",
+	"ernie-4.5-turbo-vl",
+	"ernie-4.5-turbo-vl-32k",
+	"ernie-5.0",
+	"ernie-5.1",
+	"glm-5",
+	"glm-5.1",
+	"glm-5.2",
+	"glm-5.2-fast",
+	"kimi-k2.6",
+	"mimo-v2.5",
 }
 
 var ChannelName = "volcengine"

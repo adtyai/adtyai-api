@@ -62,12 +62,12 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.GET("/oauth/:provider", middleware.CriticalRateLimit(), middleware.DisableCache(), middleware.TryUserAuth(), controller.HandleOAuth)
 		apiRouter.GET("/ratio_config", middleware.CriticalRateLimit(), controller.GetRatioConfig)
 
-		apiRouter.POST("/stripe/webhook", middleware.AdtyClosedFeature)
-		apiRouter.POST("/creem/webhook", middleware.AdtyClosedFeature)
-		apiRouter.POST("/waffo/webhook", middleware.AdtyClosedFeature)
+		apiRouter.POST("/stripe/webhook", anonymousRequestBodyLimit, controller.StripeWebhook)
+		apiRouter.POST("/creem/webhook", anonymousRequestBodyLimit, controller.CreemWebhook)
+		apiRouter.POST("/waffo/webhook", anonymousRequestBodyLimit, controller.WaffoWebhook)
 		// :env separates test vs prod URLs so the operator can register each
 		// in Pancake's matching webhook slot; handler enforces env match.
-		apiRouter.POST("/waffo-pancake/webhook/:env", middleware.AdtyClosedFeature)
+		apiRouter.POST("/waffo-pancake/webhook/:env", anonymousRequestBodyLimit, controller.WaffoPancakeWebhook)
 
 		// Universal secure verification routes
 		apiRouter.GET("/verify/methods", middleware.UserAuth(), middleware.DisableCache(), controller.GetVerificationMethods)
@@ -87,18 +87,10 @@ func SetApiRouter(router *gin.Engine) {
 			userRoute.POST("/passkey/login/begin", middleware.CriticalRateLimit(), middleware.DisableCache(), anonymousRequestBodyLimit, controller.PasskeyLoginBegin)
 			userRoute.POST("/passkey/login/finish", middleware.CriticalRateLimit(), middleware.DisableCache(), anonymousRequestBodyLimit, controller.PasskeyLoginFinish)
 			//userRoute.POST("/tokenlog", middleware.CriticalRateLimit(), controller.TokenLog)
-			userRoute.POST("/epay/notify", middleware.AdtyClosedFeature)
-			userRoute.GET("/epay/notify", middleware.AdtyClosedFeature)
+			userRoute.POST("/epay/notify", anonymousRequestBodyLimit, controller.EpayNotify)
+			userRoute.GET("/epay/notify", controller.EpayNotify)
 			// Excluded money entries stay registered so a merge cannot silently
 			// restore the old handlers, and they reject before authentication.
-			userRoute.POST("/pay", middleware.AdtyClosedFeature)
-			userRoute.POST("/stripe/pay", middleware.AdtyClosedFeature)
-			userRoute.POST("/stripe/amount", middleware.AdtyClosedFeature)
-			userRoute.POST("/creem/pay", middleware.AdtyClosedFeature)
-			userRoute.POST("/waffo/amount", middleware.AdtyClosedFeature)
-			userRoute.POST("/waffo/pay", middleware.AdtyClosedFeature)
-			userRoute.POST("/waffo-pancake/amount", middleware.AdtyClosedFeature)
-			userRoute.POST("/waffo-pancake/pay", middleware.AdtyClosedFeature)
 			userRoute.GET("/checkin", middleware.AdtyClosedFeature)
 			userRoute.POST("/checkin", middleware.AdtyClosedFeature)
 			userRoute.POST("/topup/complete", middleware.AdtyClosedFeature)
@@ -107,6 +99,14 @@ func SetApiRouter(router *gin.Engine) {
 			selfRoute := userRoute.Group("/")
 			selfRoute.Use(middleware.DisableCache(), middleware.UserAuth(), middleware.AdtyRequireCurrentSiteTerms())
 			{
+				selfRoute.POST("/pay", middleware.UserCriticalRateLimit("CT:pay-epay"), controller.RequestAdtyEpayPay)
+				selfRoute.POST("/stripe/pay", middleware.UserCriticalRateLimit("CT:pay-hosted"), controller.RequestStripePay)
+				selfRoute.POST("/stripe/amount", controller.RequestStripeAmount)
+				selfRoute.POST("/creem/pay", middleware.UserCriticalRateLimit("CT:pay-hosted"), controller.RequestCreemPay)
+				selfRoute.POST("/waffo/amount", controller.RequestWaffoAmount)
+				selfRoute.POST("/waffo/pay", middleware.UserCriticalRateLimit("CT:pay-hosted"), controller.RequestWaffoPay)
+				selfRoute.POST("/waffo-pancake/amount", controller.RequestWaffoPancakeAmount)
+				selfRoute.POST("/waffo-pancake/pay", middleware.UserCriticalRateLimit("CT:pay-hosted"), controller.RequestWaffoPancakePay)
 				selfRoute.GET("/sessions", middleware.DisableCache(), controller.GetLoginSessions)
 				selfRoute.DELETE("/sessions/:sid", middleware.DisableCache(), controller.DeleteLoginSession)
 				selfRoute.POST("/sessions/revoke-others", middleware.DisableCache(), controller.RevokeOtherLoginSessions)

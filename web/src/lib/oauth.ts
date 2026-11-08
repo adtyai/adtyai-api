@@ -39,19 +39,32 @@ export function indexCustomOAuthBindings(
 /**
  * Build GitHub OAuth URL
  */
-export function buildGitHubOAuthUrl(clientId: string, state: string): string {
-  return `https://github.com/login/oauth/authorize?client_id=${clientId}&state=${state}&scope=user:email`
+export function buildGitHubOAuthUrl(
+  clientId: string,
+  state: string,
+  redirectUri?: string
+): string {
+  const url = new URL('https://github.com/login/oauth/authorize')
+  url.searchParams.set('client_id', clientId)
+  url.searchParams.set('state', state)
+  url.searchParams.set('scope', 'user:email')
+  if (redirectUri) url.searchParams.set('redirect_uri', redirectUri)
+  return url.toString()
 }
 
 /**
  * Build Discord OAuth URL
  */
-export function buildDiscordOAuthUrl(clientId: string, state: string): string {
+export function buildDiscordOAuthUrl(
+  clientId: string,
+  state: string,
+  redirectUri?: string
+): string {
   const url = new URL('https://discord.com/oauth2/authorize')
   url.searchParams.set('client_id', clientId)
   url.searchParams.set(
     'redirect_uri',
-    `${window.location.origin}/oauth/discord`
+    redirectUri ?? `${window.location.origin}/oauth/discord`
   )
   url.searchParams.set('response_type', 'code')
   url.searchParams.set('scope', 'identify+openid')
@@ -89,31 +102,49 @@ export function buildOIDCOAuthUrl(
 /**
  * Build LinuxDO OAuth URL
  */
-export function buildLinuxDOOAuthUrl(clientId: string, state: string): string {
-  return `https://connect.linux.do/oauth2/authorize?response_type=code&client_id=${clientId}&state=${state}`
+export function buildLinuxDOOAuthUrl(
+  clientId: string,
+  state: string,
+  redirectUri?: string
+): string {
+  const url = new URL('https://connect.linux.do/oauth2/authorize')
+  url.searchParams.set('response_type', 'code')
+  url.searchParams.set('client_id', clientId)
+  url.searchParams.set('state', state)
+  if (redirectUri) url.searchParams.set('redirect_uri', redirectUri)
+  return url.toString()
 }
 
 export function buildOAuthAuthorizationUrl(
   provider: string,
   state: string,
-  status: SystemStatus
+  status: SystemStatus,
+  redirectUri?: string
 ): string {
   switch (provider) {
     case 'github':
       if (status.github_client_id) {
-        return buildGitHubOAuthUrl(status.github_client_id, state)
+        return buildGitHubOAuthUrl(status.github_client_id, state, redirectUri)
       }
       break
     case 'discord':
       if (status.discord_client_id) {
-        return buildDiscordOAuthUrl(status.discord_client_id, state)
+        return buildDiscordOAuthUrl(
+          status.discord_client_id,
+          state,
+          redirectUri
+        )
       }
       break
     case 'oidc':
       throw new Error('OIDC authorization must be started by the server.')
     case 'linuxdo':
       if (status.linuxdo_client_id) {
-        return buildLinuxDOOAuthUrl(status.linuxdo_client_id, state)
+        return buildLinuxDOOAuthUrl(
+          status.linuxdo_client_id,
+          state,
+          redirectUri
+        )
       }
       break
     default: {
@@ -125,7 +156,7 @@ export function buildOAuthAuthorizationUrl(
         url.searchParams.set('client_id', custom.client_id)
         url.searchParams.set(
           'redirect_uri',
-          `${window.location.origin}/oauth/${provider}`
+          redirectUri ?? `${window.location.origin}/oauth/${provider}`
         )
         url.searchParams.set('response_type', 'code')
         url.searchParams.set('state', state)

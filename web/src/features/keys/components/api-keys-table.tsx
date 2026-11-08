@@ -30,6 +30,7 @@ import {
   useDebouncedColumnFilter,
   useDataTable,
 } from '@/components/data-table'
+import { ErrorState } from '@/components/error-state'
 import { StatusBadge } from '@/components/status-badge'
 import {
   Empty,
@@ -261,7 +262,7 @@ export function ApiKeysTable() {
 
   // Fetch data with React Query
   // eslint-disable-next-line @tanstack/query/exhaustive-deps
-  const { data, isLoading, isFetching } = useQuery({
+  const { data, isLoading, isFetching, isError, refetch } = useQuery({
     queryKey: [
       'keys',
       pagination.pageIndex + 1,
@@ -338,12 +339,15 @@ export function ApiKeysTable() {
     }
   }, [columnVisibility, table])
 
+  if (isError && !data) return <ErrorState onRetry={() => void refetch()} />
+
   return (
     <DataTablePage
       table={table}
       columns={columns}
       isLoading={isLoading}
       isFetching={isFetching}
+      afterTable={isError && <ErrorState onRetry={() => void refetch()} />}
       emptyTitle={t('No API Keys Found')}
       emptyDescription={t(
         'No API keys available. Create your first API key to get started.'

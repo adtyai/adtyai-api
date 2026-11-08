@@ -40,7 +40,7 @@ import { cn } from '@/lib/utils'
 import { quoteAdtyTopup } from '../api'
 import { bonusRateFor, bonusUsdFor } from '../lib/bonus'
 import { methodLabel } from '../lib/methods'
-import { formatUsd } from '../lib/money'
+import { formatPaymentAmount, formatUsd } from '../lib/money'
 import type { AdtyMethod, AdtyTopupInfo } from '../types'
 
 type AdtyRechargeCardProps = {
@@ -66,12 +66,16 @@ export function AdtyRechargeCard(props: AdtyRechargeCardProps) {
   const [promoInput, setPromoInput] = useState('')
   const promoCode = useDebounce(promoInput.trim(), 400)
 
-  const amount =
-    selectedTier ??
-    (customAmount === '' ? 0 : Number.parseInt(customAmount, 10))
-  const validAmount = Number.isFinite(amount) && amount >= minTopup
   const methods = props.info?.methods ?? []
   const method = methods.find((item) => item.id === methodId) ?? null
+  const fixedAmount = method?.face_usd
+  const amount =
+    fixedAmount ??
+    selectedTier ??
+    (customAmount === '' ? 0 : Number(customAmount))
+  const validAmount =
+    Number.isFinite(amount) &&
+    (fixedAmount !== undefined ? amount > 0 : amount >= minTopup)
 
   const quoteQuery = useQuery({
     queryKey: ['adty-topup', 'quote', amount, methodId, promoCode],
@@ -87,6 +91,10 @@ export function AdtyRechargeCard(props: AdtyRechargeCardProps) {
           quoteQuery.error,
           t('This promo code is not valid')
         )
+      : ''
+  const quoteError =
+    quoteQuery.isError && !promoError
+      ? getServerErrorMessage(quoteQuery.error, t('Failed to load data'))
       : ''
   const promoBonus = Number(quote?.promo_bonus_usd ?? 0)
 
@@ -118,6 +126,19 @@ export function AdtyRechargeCard(props: AdtyRechargeCardProps) {
   } else if (validAmount) {
     creditText = formatUsd(amount, locale)
   }
+  let payText = quote
+    ? formatPaymentAmount(quote.pay_amount, quote.pay_currency, locale)
+    : ''
+  if (quote?.pay_currency === 'USDT') {
+    payText = t('{{amount}} USDT (1 USDT = 1 USD)', {
+      amount: quote.pay_amount,
+    })
+  } else if (quote?.pay_currency === 'CNY') {
+    payText = t('¥{{amount}} (1 USD = {{rate}} CNY)', {
+      amount: Number(quote.pay_amount).toFixed(2),
+      rate: Number(quote.price_cny_per_usd).toFixed(2),
+    })
+  }
 
   return (
     <Card>
@@ -141,7 +162,10 @@ export function AdtyRechargeCard(props: AdtyRechargeCardProps) {
               <Button
                 key={tier.amount}
                 variant='outline'
-                aria-pressed={selectedTier === tier.amount}
+                aria-pressed={
+                  fixedAmount === undefined && selectedTier === tier.amount
+                }
+                disabled={fixedAmount !== undefined}
                 className={cn(
                   'flex h-auto min-h-16 flex-col items-start gap-1 px-3 py-2.5 text-left whitespace-normal',
                   selectedTier === tier.amount
@@ -173,10 +197,11 @@ export function AdtyRechargeCard(props: AdtyRechargeCardProps) {
             <Input
               id='adty-custom-amount'
               type='number'
-              inputMode='numeric'
+              inputMode='decimal'
               min={minTopup}
-              step={1}
-              value={customAmount}
+              step='0.01'
+              value={fixedAmount ?? customAmount}
+              disabled={fixedAmount !== undefined}
               placeholder={t('At least ${{amount}}', { amount: minTopup })}
               onChange={(event) => {
                 setCustomAmount(event.target.value)
@@ -213,7 +238,7 @@ export function AdtyRechargeCard(props: AdtyRechargeCardProps) {
                 onClick={() => setMethodId(item.id)}
               >
                 <span className='text-sm font-medium'>
-                  {t(methodLabel(item.id))}
+                  {item.label || t(methodLabel(item.id))}
                 </span>
                 {!item.available && (
                   <span className='text-muted-foreground text-xs'>
@@ -265,14 +290,7 @@ export function AdtyRechargeCard(props: AdtyRechargeCardProps) {
                 {t('You pay')}
               </span>
               <span className='font-medium' data-testid='adty-pay'>
-                {quote.pay_currency === 'USDT'
-                  ? t('{{amount}} USDT (1 USDT = 1 USD)', {
-                      amount: quote.pay_amount,
-                    })
-                  : t('¥{{amount}} (1 USD = {{rate}} CNY)', {
-                      amount: Number(quote.pay_amount).toFixed(2),
-                      rate: Number(quote.price_cny_per_usd).toFixed(2),
-                    })}
+                {payText}
               </span>
             </div>
           )}
@@ -283,6 +301,11 @@ export function AdtyRechargeCard(props: AdtyRechargeCardProps) {
               )}
             </p>
           )}
+          {quoteError && (
+            <p className='text-destructive text-sm' role='alert'>
+              {quoteError}
+            </p>
+          )}
           <Button
             className='mt-2 sm:self-end'
             disabled={
@@ -291,6 +314,7 @@ export function AdtyRechargeCard(props: AdtyRechargeCardProps) {
               !quoteAvailable ||
               props.paying ||
               quoteQuery.isFetching ||
+              quoteQuery.isError ||
               promoInput.trim() !== promoCode
             }
             onClick={() => method && props.onPay(amount, method, promoCode)}

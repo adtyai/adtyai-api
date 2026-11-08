@@ -21,11 +21,13 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
+import { ErrorState } from '@/components/error-state'
 import { LoadingState } from '@/components/loading-state'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import { useDraftNavigation } from '@/features/system-settings/hooks/use-draft-navigation'
 import { ADTY_PERMISSIONS, canAdmin } from '@/lib/adty-permissions'
 import { formatTimestamp } from '@/lib/format'
 import { handleServerError } from '@/lib/handle-server-error'
@@ -84,6 +86,13 @@ export function SettingsPanel(props: { canWrite: boolean }) {
     onError: (err) => handleServerError(err),
   })
 
+  useDraftNavigation(
+    !!saved &&
+      !!drafts &&
+      (enabled !== saved.enabled ||
+        JSON.stringify(drafts) !== JSON.stringify(toDrafts(saved)))
+  )
+  if (query.isError) return <ErrorState onRetry={() => void query.refetch()} />
   if (!saved || !drafts) return <LoadingState />
   const disabled = !props.canWrite || save.isPending
 

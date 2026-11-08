@@ -10,7 +10,7 @@ export const meta = {
   version: "1.1.1",
   author: { name: "QuantumNous" },
   channelTypes: [50],
-  models: ["kling-v1", "kling-v1-6", "kling-v2-master"],
+  models: ["kling-v1", "kling-v1-6", "kling-v1-5", "kling-v2-master", "kling-v2-1", "kling-v2-1-master", "kling-v2-5-turbo", "kling-v2-6", "kling-video-o1", "kling-v3", "kling-v3-omni"],
   fetchMode: "per_task",
   upstreams: ["vendor", "new_api"],
   usageSchema: {

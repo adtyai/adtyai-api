@@ -11,6 +11,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/gin-gonic/gin"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
@@ -94,12 +95,209 @@ func TestMidjourneyRefundUsesSubmitSnapshot(t *testing.T) {
 	customer := siteCustomer(t, db, site, "mj-refund-customer")
 	sitePrice(t, db, site.Id, 0, "", "3")
 	task := &model.Midjourney{
-		UserId: customer.Id, MjId: "mj-snap", Action: "IMAGINE", Status: "FAILURE",
+		UserId: customer.Id, MjId: "mj-snap", Action: "IMAGINE", Status: "FAILURE", SubmitTime: time.Now().Unix(),
 		Quota: int(perUnit("125")), BillingSiteId: site.Id, BillingSiteMarkup: 1.25, BillingSiteCostFactor: 0.8,
 	}
 	require.NoError(t, db.Create(task).Error)
+	// This historical fixture has no request operation. The original site's
+	// explicit conversion audit establishes that its charge was payable.
+	require.NoError(t, ReviewAdtySiteCustomer(customer.Id, 1, true))
 	require.True(t, RefundMidjourneyQuota(context.Background(), task, "upstream failed"))
 	assert.True(t, earningTotals(t, db, site.Id)[model.AdtySiteEarningRefund].Equal(usd("-45")), "refund keeps the submit snapshot, not the current k of 3")
+}
+
+func TestMidjourneyStampPreservesFrozenRequestSnapshot(t *testing.T) {
+	db := prepareSiteDB(t)
+	_, site := openActiveSite(t, db, "mj-freeze-window")
+	customer := siteCustomer(t, db, site, "mj-freeze-window-customer")
+	sitePrice(t, db, site.Id, 0, "", "3")
+	task := &model.Midjourney{UserId: customer.Id, BillingSiteId: site.Id, BillingSiteMarkup: 1.25, BillingSiteCostFactor: 0.8}
+	stampMidjourneySiteBilling(nil, task)
+	// The stamp must not consult the site's current price even when RelayInfo
+	// is available after a long upstream request.
+	stampMidjourneySiteBilling(adtyWalletRelayInfo(customer.Id, 0, ""), task)
+	assert.Equal(t, 1.25, task.BillingSiteMarkup)
+	assert.Equal(t, 0.8, task.BillingSiteCostFactor)
+}
+
+func TestRiskCustomerRefundReconcilesNetEarning(t *testing.T) {
+	db := prepareSiteDB(t)
+	_, site := openActiveSite(t, db, "risk-refund-net")
+	customer := siteCustomer(t, db, site, "risk-refund-net-customer")
+	require.NoError(t, db.Model(&model.AdtySiteCustomer{}).Where("user_id = ?", customer.Id).
+		Updates(map[string]any{"risk_flag": "self_use", "reviewed": false}).Error)
+	sitePrice(t, db, site.Id, 0, "", "1.25")
+	consumeOnSite(t, customer, perUnit("125"))
+	other := model.NewLogOther()
+	other.SetAdmin("site_id", site.Id)
+	other.SetAdmin("site_markup", 1.25)
+	other.SetAdmin("site_cost_factor", 0.8)
+	model.RecordTaskBillingLog(model.RecordTaskBillingLogParams{UserId: customer.Id, LogType: model.LogTypeRefund, Quota: int(perUnit("125")), Other: other})
+	mismatch, reason, err := adtyUsageReconcileMismatch(db, site.Id, time.Now().AddDate(0, 0, 1).Format("2006-01-02"))
+	require.NoError(t, err)
+	assert.False(t, mismatch, reason)
+}
+
+func TestDurableTaskRefundKeepsOriginalRiskDispositionAfterReview(t *testing.T) {
+	for _, convert := range []bool{false, true} {
+		for _, partial := range []bool{false, true} {
+			t.Run(fmt.Sprintf("convert_%t_partial_%t", convert, partial), func(t *testing.T) {
+				db := prepareSiteDB(t)
+				require.NoError(t, db.AutoMigrate(&model.Task{}, &model.Token{}, &model.Channel{}, &model.Midjourney{}))
+				owner, site := openActiveSite(t, db, "risk-refund-review")
+				customer := siteCustomer(t, db, site, "risk-refund-review-customer")
+				require.NoError(t, db.Model(customer).Update("quota", perUnit("400")).Error)
+				require.NoError(t, db.Model(&model.AdtySiteCustomer{}).Where("user_id = ?", customer.Id).
+					Updates(map[string]any{"risk_flag": "self_use", "reviewed": false}).Error)
+				sitePrice(t, db, site.Id, 0, "", "1.25")
+				chargeTask := func(amount string) *model.Task {
+					c := adtyWalletRelayContext()
+					AdtyApplySiteMarkup(c, customer.Id, "default", 1)
+					info := adtyWalletRelayInfo(customer.Id, 0, "")
+					info.IsPlayground = true
+					quota := int(perUnit(amount))
+					require.Nil(t, PreConsumeBilling(c, quota, info))
+					task := &model.Task{TaskID: model.GenerateTaskID(), UserId: customer.Id, Group: "default", Quota: quota, Status: model.TaskStatusInProgress}
+					task.PrivateData.BillingContext = &model.TaskBillingContext{SiteId: site.Id, SiteMarkup: 1.25, SiteCostFactor: 0.8}
+					AttachTaskBillingReservation(info, task)
+					require.NoError(t, task.Insert())
+					require.NoError(t, info.Billing.Settle(quota))
+					return task
+				}
+				oldTask := chargeTask("125")
+				require.True(t, earningTotals(t, db, site.Id)[model.AdtySiteEarningSkipped].Equal(usd("45")))
+				require.NoError(t, ReviewAdtySiteCustomer(customer.Id, 1, convert))
+				chargeTask("50") // A new request after review earns independently.
+				remainingEarning := decimal.Zero
+				if partial {
+					RecalculateTaskQuota(context.Background(), oldTask, int(perUnit("100")), common.NewMessage("partial refund"))
+					remainingEarning = usd("36")
+				} else {
+					require.True(t, RefundTaskQuota(context.Background(), oldTask, "upstream failed"))
+				}
+				require.NoError(t, RecoverBillingOperations(context.Background(), 100))
+				require.NoError(t, RecoverBillingOperations(context.Background(), 100))
+				_, err := RunAdtySiteSettlementOnce(time.Now().AddDate(0, 0, 30))
+				require.NoError(t, err)
+				affiliate, err := Referral.EnsureAffiliate(owner.Id)
+				require.NoError(t, err)
+				want := usd("18")
+				if convert {
+					want = want.Add(remainingEarning)
+				}
+				assert.InDelta(t, want.InexactFloat64(), account(t, db, affiliate.Id).AvailableAmount, 1e-9,
+					"refunds must reverse the original task's earning disposition, without consuming a later task's earnings")
+				if !convert {
+					assert.True(t, earningTotals(t, db, site.Id)[model.AdtySiteEarningSkipped].Equal(remainingEarning))
+				}
+				var original model.AdtySiteEarningEvent
+				require.NoError(t, db.Where("operation_key = ?", oldTask.PrivateData.BillingOperationKey).First(&original).Error)
+				assert.Equal(t, "self_use", original.RiskFlag, "review preserves the original skipped-earning audit")
+				assert.Equal(t, convert, original.RiskReleased)
+			})
+		}
+	}
+}
+
+func TestReviewConvertsZeroNetSkippedEarning(t *testing.T) {
+	db := prepareSiteDB(t)
+	_, site := openActiveSite(t, db, "review-zero-net")
+	customer := siteCustomer(t, db, site, "review-zero-net-customer")
+	require.NoError(t, db.Model(&model.AdtySiteCustomer{}).Where("user_id = ?", customer.Id).
+		Updates(map[string]any{"risk_flag": "self_use", "reviewed": false}).Error)
+	AdtySiteEarningHook(site.Id, customer.Id, perUnit("125"), 1.25, 0.8, model.AdtySiteEarningUsage)
+	AdtySiteEarningHook(site.Id, customer.Id, perUnit("125"), 1.25, 0.8, model.AdtySiteEarningRefund)
+	require.NoError(t, ReviewAdtySiteCustomer(customer.Id, 1, true))
+	assert.True(t, earningTotals(t, db, site.Id)[model.AdtySiteEarningUsage].IsZero())
+}
+
+func TestRealtimeRefundKeepsRiskDispositionWithoutInitialEarningEvent(t *testing.T) {
+	for _, convert := range []bool{false, true} {
+		t.Run(fmt.Sprintf("convert_%t", convert), func(t *testing.T) {
+			db := prepareSiteDB(t)
+			require.NoError(t, db.AutoMigrate(&model.Task{}, &model.Token{}, &model.Channel{}, &model.Midjourney{}))
+			owner, site := openActiveSite(t, db, "risk-realtime-refund")
+			customer := siteCustomer(t, db, site, "risk-realtime-refund-customer")
+			require.NoError(t, db.Model(customer).Update("quota", perUnit("400")).Error)
+			require.NoError(t, db.Model(&model.AdtySiteCustomer{}).Where("user_id = ?", customer.Id).
+				Updates(map[string]any{"risk_flag": "self_use", "reviewed": false}).Error)
+			sitePrice(t, db, site.Id, 0, "", "1.25")
+			seedToken(t, 9993, customer.Id, "risk-realtime", int(perUnit("400")))
+			c := adtyWalletRelayContext()
+			AdtyApplySiteMarkup(c, customer.Id, "default", 1)
+			info := adtyWalletRelayInfo(customer.Id, 9993, "sk-risk-realtime")
+			info.OriginModelName, info.UsingGroup, info.UserGroup = "gpt-4o-realtime-preview", "default", "default"
+			require.Nil(t, PreConsumeBilling(c, 0, info))
+			usage := &dto.RealtimeUsage{InputTokens: 200, OutputTokens: 100, TotalTokens: 300}
+			usage.InputTokenDetails.TextTokens, usage.OutputTokenDetails.TextTokens = 200, 100
+			require.NoError(t, PreWssConsumeQuota(c, info, usage))
+			require.Positive(t, info.RealtimeAlreadyCharged)
+			var rootEvents int64
+			require.NoError(t, db.Model(&model.AdtySiteEarningEvent{}).Where("operation_key = ?", "request:"+info.RequestId).Count(&rootEvents).Error)
+			require.Zero(t, rootEvents, "the zero opening reserve has no earning event to inherit from")
+			require.NoError(t, ReviewAdtySiteCustomer(customer.Id, 1, convert))
+			fresh := adtyWalletRelayContext()
+			AdtyApplySiteMarkup(fresh, customer.Id, "default", 1)
+			newInfo := adtyWalletRelayInfo(customer.Id, 0, "")
+			newInfo.IsPlayground = true
+			require.Nil(t, PreConsumeBilling(fresh, int(perUnit("50")), newInfo))
+			require.NoError(t, newInfo.Billing.Settle(int(perUnit("50"))))
+			require.NoError(t, SettleBilling(c, info, 0))
+			require.NoError(t, RecoverBillingOperations(context.Background(), 100))
+			_, err := RunAdtySiteSettlementOnce(time.Now().AddDate(0, 0, 30))
+			require.NoError(t, err)
+			affiliate, err := Referral.EnsureAffiliate(owner.Id)
+			require.NoError(t, err)
+			assert.InDelta(t, 18, account(t, db, affiliate.Id).AvailableAmount, 1e-9)
+			var original model.AdtySiteEarningEvent
+			require.NoError(t, db.Where("operation_key = ?", "request:"+info.RequestId).First(&original).Error)
+			assert.Equal(t, "self_use", original.RiskFlag)
+			assert.Equal(t, convert, original.RiskReleased)
+		})
+	}
+}
+
+func TestDurableEarningProjectionRecoversWithoutConsumeLogs(t *testing.T) {
+	db := prepareSiteDB(t)
+	require.NoError(t, db.AutoMigrate(&model.Token{}, &model.Channel{}, &model.Task{}, &model.Midjourney{}))
+	_, site := openActiveSite(t, db, "durable-earning")
+	customer := siteCustomer(t, db, site, "durable-earning-customer")
+	sitePrice(t, db, site.Id, 0, "", "1.25")
+	require.NoError(t, db.Model(customer).Update("quota", perUnit("200")).Error)
+	c := adtyWalletRelayContext()
+	AdtyApplySiteMarkup(c, customer.Id, "default", 1)
+	info := adtyWalletRelayInfo(customer.Id, 0, "")
+	info.IsPlayground = true
+	require.Nil(t, PreConsumeBilling(c, int(perUnit("125")), info))
+	failProjection := true
+	require.NoError(t, db.Callback().Update().Before("gorm:update").Register("test:earning-projection-failure", func(tx *gorm.DB) {
+		if failProjection && tx.Statement.Table == "adty_site_earning_daily" {
+			tx.AddError(fmt.Errorf("forced daily projection failure"))
+		}
+	}))
+	t.Cleanup(func() { db.Callback().Update().Remove("test:earning-projection-failure") })
+	saved := common.LogConsumeEnabled
+	common.LogConsumeEnabled = false
+	t.Cleanup(func() { common.LogConsumeEnabled = saved })
+	require.NoError(t, info.Billing.Settle(int(perUnit("125"))))
+	assert.EqualValues(t, perUnit("75"), getUserQuota(t, customer.Id))
+	var events []model.AdtySiteEarningEvent
+	require.NoError(t, db.Where("site_id = ?", site.Id).Find(&events).Error)
+	require.Len(t, events, 1)
+	assert.False(t, events[0].Projected)
+	var dailyRows int64
+	require.NoError(t, db.Model(&model.AdtySiteEarningDaily{}).Where("site_id = ?", site.Id).Count(&dailyRows).Error)
+	assert.Zero(t, dailyRows, "a failed projection must roll back the seed row as well as the aggregate")
+	failProjection = false
+	require.NoError(t, RecoverBillingOperations(context.Background(), 100))
+	require.NoError(t, RecoverBillingOperations(context.Background(), 100))
+	assert.True(t, earningTotals(t, db, site.Id)[model.AdtySiteEarningUsage].Equal(usd("45")))
+	mismatch, reason, err := adtyUsageReconcileMismatch(db, site.Id, time.Now().AddDate(0, 0, 1).Format("2006-01-02"))
+	require.NoError(t, err)
+	assert.False(t, mismatch, reason)
+	var logs int64
+	require.NoError(t, db.Model(&model.Log{}).Where("user_id = ?", customer.Id).Count(&logs).Error)
+	assert.Zero(t, logs)
 }
 
 func TestTaskRefundReversesEarningWithSnapshot(t *testing.T) {
@@ -109,6 +307,7 @@ func TestTaskRefundReversesEarningWithSnapshot(t *testing.T) {
 	customer := siteCustomer(t, db, site, "task-refund-customer")
 	sitePrice(t, db, site.Id, 0, "", "3")
 	task := siteTask(t, db, customer, site, int(perUnit("125")), 1.25, 0.8)
+	require.NoError(t, ReviewAdtySiteCustomer(customer.Id, 1, true))
 	require.True(t, RefundTaskQuota(context.Background(), task, "upstream failed"))
 	// 快照 k 1.25、d 0.8，不按现在的 k 3：退 $125 → 站长 −$45。
 	assert.True(t, earningTotals(t, db, site.Id)[model.AdtySiteEarningRefund].Equal(usd("-45")))
@@ -120,6 +319,7 @@ func TestNegativeTaskDeltaReversesEarning(t *testing.T) {
 	_, site := openActiveSite(t, db, "task-delta")
 	customer := siteCustomer(t, db, site, "task-delta-customer")
 	task := siteTask(t, db, customer, site, int(perUnit("125")), 1.25, 0.8)
+	require.NoError(t, ReviewAdtySiteCustomer(customer.Id, 1, true))
 	RecalculateTaskQuota(context.Background(), task, int(perUnit("100")), common.NewMessage("adjusted"))
 	assert.True(t, earningTotals(t, db, site.Id)[model.AdtySiteEarningRefund].Equal(usd("-9")), "$25 back × 0.36 = $9")
 	RecalculateTaskQuota(context.Background(), task, int(perUnit("112.5")), common.NewMessage("adjusted"))

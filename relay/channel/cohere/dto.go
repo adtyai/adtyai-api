@@ -58,3 +58,26 @@ type CohereTokens struct {
 	InputTokens  int `json:"input_tokens"`
 	OutputTokens int `json:"output_tokens"`
 }
+
+type CohereEmbeddingRequest struct {
+	Model           string   `json:"model"`
+	Texts           []string `json:"texts"`
+	InputType       string   `json:"input_type"`
+	EmbeddingTypes  []string `json:"embedding_types"`
+	OutputDimension *int     `json:"output_dimension,omitempty"`
+}
+
+type CohereEmbeddingResponse struct {
+	Embeddings struct {
+		Float  [][]*float64 `json:"float"`
+		Base64 []string     `json:"base64"`
+	} `json:"embeddings"`
+	Meta struct {
+		BilledUnits struct {
+			InputTokens *float64 `json:"input_tokens"`
+		} `json:"billed_units"`
+		Tokens struct {
+			InputTokens *float64 `json:"input_tokens"`
+		} `json:"tokens"`
+	} `json:"meta"`
+}

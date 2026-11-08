@@ -23,6 +23,7 @@ import { toast } from 'sonner'
 
 import { StaticDataTable } from '@/components/data-table/static/static-data-table'
 import { EmptyState } from '@/components/empty-state'
+import { ErrorState } from '@/components/error-state'
 import { StatusBadge } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -74,9 +75,13 @@ export function CustomersPanel() {
   })
   const balanceCell = (customer: OwnerCustomer) =>
     customer.balance === undefined ? '—' : formatQuota(customer.balance)
+  if (list.isError && !list.data) {
+    return <ErrorState onRetry={() => void list.refetch()} />
+  }
 
   return (
     <div className='flex flex-col gap-4'>
+      {list.isError && <ErrorState onRetry={() => void list.refetch()} />}
       <form
         className='flex flex-wrap items-end gap-2'
         onSubmit={(event) => {

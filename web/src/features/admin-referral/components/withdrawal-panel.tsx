@@ -25,6 +25,7 @@ import { CopyButton } from '@/components/copy-button'
 import { StaticDataTable } from '@/components/data-table/static/static-data-table'
 import { Dialog } from '@/components/dialog'
 import { EmptyState } from '@/components/empty-state'
+import { ErrorState } from '@/components/error-state'
 import { StatusBadge } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -148,8 +149,13 @@ export function WithdrawalPanel(props: {
     onError: (err) => handleServerError(err),
   })
 
+  if (query.isError && !query.data) {
+    return <ErrorState onRetry={() => void query.refetch()} />
+  }
+
   return (
     <div className='flex flex-col gap-3'>
+      {query.isError && <ErrorState onRetry={() => void query.refetch()} />}
       <NativeSelect
         className='w-48'
         aria-label={t('Status')}

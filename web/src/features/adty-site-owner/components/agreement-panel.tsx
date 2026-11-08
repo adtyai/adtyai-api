@@ -20,11 +20,13 @@ import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 
 import { EmptyState } from '@/components/empty-state'
+import { ErrorState } from '@/components/error-state'
 import { RichContent } from '@/components/rich-content'
 import { Skeleton } from '@/components/ui/skeleton'
 import { getLegalDocument } from '@/features/legal/api'
 import { toContentLang } from '@/lib/adty-lang'
 import { formatTimestamp } from '@/lib/format'
+import { requireServerSuccess } from '@/lib/server-error-message'
 
 import type { OwnerSite } from '../types'
 
@@ -34,7 +36,8 @@ export function AgreementPanel(props: { site: OwnerSite }) {
   const lang = toContentLang(i18n.resolvedLanguage || i18n.language)
   const query = useQuery({
     queryKey: ['legal', 'site-agreement', lang],
-    queryFn: () => getLegalDocument('site-agreement', lang),
+    queryFn: async () =>
+      requireServerSuccess(await getLegalDocument('site-agreement', lang)),
     staleTime: 10 * 60 * 1000,
   })
   const text = query.data?.data?.trim() ?? ''
@@ -50,7 +53,8 @@ export function AgreementPanel(props: { site: OwnerSite }) {
           : t('This site was opened by the platform.')}
       </p>
       {query.isLoading && <Skeleton className='h-40 w-full' />}
-      {!query.isLoading && !text && (
+      {query.isError && <ErrorState onRetry={() => void query.refetch()} />}
+      {query.isSuccess && !text && (
         <EmptyState
           className='min-h-32'
           title={t('The site agreement has not been published yet')}

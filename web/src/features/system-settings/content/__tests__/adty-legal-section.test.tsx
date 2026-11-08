@@ -33,6 +33,10 @@ const saved: AdtyLegalDefaults = {
   user_agreement: '{"en":"English terms","zh-CN":"中文协议"}',
   privacy_policy: '{}',
   refund_policy: '{"en":"Old refund"}',
+  site_agreement: '{}',
+  site_customer_terms: '{}',
+  site_agreement_version: 0,
+  site_customer_terms_version: 0,
 }
 
 function Fixture() {

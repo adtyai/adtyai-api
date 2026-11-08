@@ -9,6 +9,7 @@ import (
 )
 
 const (
+	AdtyLedgerTypeTopUp              = "topup"
 	AdtyLedgerTypeRefund             = "refund"
 	AdtyLedgerTypeManualAdjust       = "manual_adjust"
 	AdtyLedgerTypeCommissionTransfer = "commission_transfer"
@@ -17,7 +18,7 @@ const (
 
 var ErrAdtyIdempotencyConflict = errors.New("idempotency key reused for a different operation")
 
-// AdtyBalanceLedger 是余额流水：退款、人工调额、佣金转余额（任务 3.5、7.2、6.4）。
+// AdtyBalanceLedger 是余额流水：充值、退款、人工调额、佣金转余额。
 // Reason 只给后台看，不写进用户自己的日志。
 type AdtyBalanceLedger struct {
 	Id             int64   `json:"id"`

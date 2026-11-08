@@ -8,6 +8,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func runOriginGuardRequest(t *testing.T, origin, referer string) *httptest.ResponseRecorder {
@@ -145,4 +146,36 @@ func TestSessionCookieOriginGuardDoesNotTrustForwardedProtoFromClient(t *testing
 	router.ServeHTTP(response, request)
 
 	assert.Equal(t, http.StatusForbidden, response.Code)
+}
+
+func TestSessionCookieOriginGuardTrustedTLSProxy(t *testing.T) {
+	previousSecure, previousURLs := common.SessionCookieSecure, common.SessionCookieTrustedURLs
+	common.SessionCookieSecure, common.SessionCookieTrustedURLs = true, nil
+	t.Cleanup(func() { common.SessionCookieSecure, common.SessionCookieTrustedURLs = previousSecure, previousURLs })
+	for _, test := range []struct {
+		name, remote string
+		forwarded    []string
+		want         int
+	}{
+		{"trusted TLS proxy", "172.30.0.1:1234", []string{"https"}, http.StatusNoContent},
+		{"untrusted client", "198.51.100.2:1234", []string{"https"}, http.StatusForbidden},
+		{"spoofed client IP", "198.51.100.2:1234", []string{"https"}, http.StatusForbidden},
+		{"ambiguous proto", "172.30.0.1:1234", []string{"https,http"}, http.StatusForbidden},
+		{"duplicate proto", "172.30.0.1:1234", []string{"https", "https"}, http.StatusForbidden},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			router := gin.New()
+			require.NoError(t, common.ConfigureTrustedProxies(router, []string{"172.30.0.1"}))
+			t.Cleanup(func() { require.NoError(t, common.ConfigureTrustedProxies(gin.New(), nil)) })
+			router.POST("/api/user/auth/refresh", SessionCookieOriginGuard(), func(c *gin.Context) { c.Status(http.StatusNoContent) })
+			request := httptest.NewRequest(http.MethodPost, "http://shop.example.com/api/user/auth/refresh", nil)
+			request.RemoteAddr = test.remote
+			request.Header.Set("Origin", "https://shop.example.com")
+			request.Header.Set("X-Forwarded-For", "172.30.0.1")
+			request.Header["X-Forwarded-Proto"] = test.forwarded
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, request)
+			assert.Equal(t, test.want, response.Code)
+		})
+	}
 }

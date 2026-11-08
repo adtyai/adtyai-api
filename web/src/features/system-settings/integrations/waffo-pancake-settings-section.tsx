@@ -25,6 +25,7 @@ import { Button } from '@/components/ui/button'
 import { Combobox } from '@/components/ui/combobox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { Textarea } from '@/components/ui/textarea'
 import { getPaymentErrorTranslation } from '@/features/wallet/lib/payment'
 import { handleServerError } from '@/lib/handle-server-error'
@@ -42,6 +43,7 @@ export type WaffoPancakeSettingsValues = {
   WaffoPancakeMerchantID: string
   WaffoPancakePrivateKey: string
   WaffoPancakeReturnURL: string
+  WaffoPancakeEnvironment: 'test' | 'prod'
 }
 
 export interface WaffoPancakeBinding {
@@ -423,6 +425,28 @@ export function WaffoPancakeSettingsSection({
         </div>
 
         <div className='grid gap-1.5'>
+          <Label htmlFor='pancake-environment'>{t('Environment')}</Label>
+          <NativeSelect
+            id='pancake-environment'
+            value={values.WaffoPancakeEnvironment}
+            onChange={(event) =>
+              onValueChange(
+                'WaffoPancakeEnvironment',
+                event.target.value as 'test' | 'prod'
+              )
+            }
+          >
+            <NativeSelectOption value='prod'>
+              {t('Production')}
+            </NativeSelectOption>
+            <NativeSelectOption value='test'>{t('Test')}</NativeSelectOption>
+          </NativeSelect>
+          <p className='text-muted-foreground text-xs'>
+            {t('Choose the environment that matches your merchant API key.')}
+          </p>
+        </div>
+
+        <div className='grid gap-1.5'>
           <Label>{t('Merchant ID')}</Label>
           <Input
             placeholder='MER_xxx'
@@ -446,11 +470,6 @@ export function WaffoPancakeSettingsSection({
             }
             className='font-mono text-xs'
           />
-          <p className='text-muted-foreground text-xs'>
-            {t(
-              'The environment (test vs production) is decided by the key you paste here — use the Test key while integrating, then swap to the Production key when going live.'
-            )}
-          </p>
         </div>
 
         {/*

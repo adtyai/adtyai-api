@@ -135,7 +135,8 @@ type RelayInfo struct {
 	// RealtimeAlreadyCharged is quota already taken from the wallet for
 	// realtime usage chunks. Settlement subtracts it once so the same usage
 	// is not charged again on top of the opening pre-consume.
-	RealtimeAlreadyCharged int
+	RealtimeAlreadyCharged      int
+	RealtimeTokenAlreadyCharged int
 	// ForcePreConsume 为 true 时禁用 BillingSession 的信任额度旁路，
 	// 强制预扣全额。用于异步任务（视频/音乐生成等），因为请求返回后任务仍在运行，
 	// 必须在提交前锁定全额。
@@ -148,6 +149,7 @@ type RelayInfo struct {
 	BillingSource string
 	// RequestId is used for idempotent pre-consume/refund
 	RequestId                 string
+	BillingDirectSequence     uint64
 	IsClaudeBetaQuery         bool // /v1/messages?beta=true
 	IsChannelTest             bool // channel test request
 	RetryIndex                int

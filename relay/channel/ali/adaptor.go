@@ -170,6 +170,13 @@ func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInf
 }
 
 func (a *Adaptor) ConvertRerankRequest(c *gin.Context, relayMode int, request dto.RerankRequest) (any, error) {
+	if request.Model == "qwen3-vl-rerank" {
+		for _, document := range request.Documents {
+			if _, ok := document.(string); !ok {
+				return nil, types.NewErrorWithStatusCode(errors.New("qwen3-vl-rerank currently supports text documents only; multimodal document token estimation is not supported"), types.ErrorCodeInvalidRequest, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
+			}
+		}
+	}
 	return ConvertRerankRequest(request), nil
 }
 

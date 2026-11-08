@@ -22,6 +22,7 @@ import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { useDraftNavigation } from '@/features/system-settings/hooks/use-draft-navigation'
 
 import { saveBonusRates } from '../api'
 import { useVerifiedOwnerMutation } from '../hooks/use-verified-owner-mutation'
@@ -41,6 +42,13 @@ export function BonusPanel(props: { site: OwnerSite }) {
         .sort((a, b) => Number(a.tier) - Number(b.tier))
     )
   }, [props.site.bonus_rates])
+  const savedRows = Object.entries(props.site.bonus_rates ?? {})
+    .map(([tier, rate]) => ({ tier, rate: String(rate) }))
+    .sort((a, b) => Number(a.tier) - Number(b.tier))
+  useDraftNavigation(
+    JSON.stringify(rows.map(({ tier, rate }) => ({ tier, rate }))) !==
+      JSON.stringify(savedRows)
+  )
   const save = useVerifiedOwnerMutation<void>({
     action: 'bonus',
     target: () => props.site.id,

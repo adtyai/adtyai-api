@@ -157,10 +157,16 @@ func TestBuiltInResponsesDecodersEchoChannelMappedAlias(t *testing.T) {
 			registry := jsplugin.NewRegistry()
 			plugin, registerErr := registry.RegisterFactory(source, jsplugin.Options{Key: key})
 			require.NoError(t, registerErr)
-			require.NotEmpty(t, plugin.Meta.Models)
-
 			alias := "alias-under-test"
-			upstreamModel := plugin.Meta.Models[0]
+			var upstreamModel string
+			if len(plugin.Meta.Models) > 0 {
+				upstreamModel = plugin.Meta.Models[0]
+			} else {
+				// Retirement removes defaults without removing the driver for
+				// administrator-mapped aliases or tasks already persisted.
+				upstreamModel = map[string]string{"google": "veo-3.1-fast-generate-preview", "sora": "sora-2-pro"}[key]
+				require.NotEmpty(t, upstreamModel)
+			}
 			body := map[string]any{"model": alias, "input": "a cat walking on the beach"}
 			if override, ok := bodyOverrides[key]; ok {
 				body = override

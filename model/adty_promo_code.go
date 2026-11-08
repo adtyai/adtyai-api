@@ -134,16 +134,49 @@ func AdtyPromoUserIsNew(tx *gorm.DB, userId int) (bool, error) {
 	if len(others) == 0 {
 		return true, nil
 	}
-	var count int64
-	err = tx.Model(&TopUp{}).Where("user_id IN ? AND status = ?", others, common.TopUpStatusSuccess).Limit(1).Count(&count).Error
-	return count == 0, err
+	var paidRows []TopUp
+	err = lockForUpdate(tx).Select("id").Where("user_id IN ? AND status = ?", others, common.TopUpStatusSuccess).Limit(1).Find(&paidRows).Error
+	return len(paidRows) == 0, err
+}
+
+// LockAdtyPromoEligibilityTx serializes first-paid eligibility across codes and
+// accounts sharing a fingerprint. Every successful top-up, including one with
+// no promo, takes this fence before publishing its paid status. Lock users in a
+// common order before locking a promo code; the predicate is rechecked below.
+func LockAdtyPromoEligibilityTx(tx *gorm.DB, userId int) error {
+	var prints []AdtyUserFingerprint
+	if err := tx.Where("user_id = ?", userId).Find(&prints).Error; err != nil {
+		return err
+	}
+	ips, devices := []string{}, []string{}
+	for _, row := range prints {
+		if row.IpHash != "" {
+			ips = append(ips, row.IpHash)
+		}
+		if row.DeviceHash != "" {
+			devices = append(devices, row.DeviceHash)
+		}
+	}
+	ids := []int{userId}
+	if len(ips)+len(devices) > 0 {
+		var related []int
+		if err := tx.Model(&AdtyUserFingerprint{}).Where("ip_hash IN ? OR device_hash IN ?", ips, devices).
+			Distinct("user_id").Pluck("user_id", &related).Error; err != nil {
+			return err
+		}
+		ids = append(ids, related...)
+	}
+	var users []User
+	return lockForUpdate(tx).Select("id").Where("id IN ?", ids).Order("id").Find(&users).Error
 }
 
 // AdtyUserHasPaidTopUp：用户有没有成功的充值（「只限新用户」用）。
 func AdtyUserHasPaidTopUp(tx *gorm.DB, userId int) (bool, error) {
-	var count int64
-	err := tx.Model(&TopUp{}).Where("user_id = ? AND status = ?", userId, common.TopUpStatusSuccess).Limit(1).Count(&count).Error
-	return count > 0, err
+	// A locking read observes the latest committed payment on MySQL as well as
+	// PostgreSQL, even if an earlier fingerprint read established a snapshot.
+	var rows []TopUp
+	err := lockForUpdate(tx).Select("id").Where("user_id = ? AND status = ?", userId, common.TopUpStatusSuccess).Limit(1).Find(&rows).Error
+	return len(rows) > 0, err
 }
 
 // ErrAdtyPromoUnavailable：入账时码已经不能用了（次数用完、每人次数到了、停用）。

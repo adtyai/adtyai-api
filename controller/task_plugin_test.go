@@ -1108,9 +1108,9 @@ func TestUploadTaskPluginRejectsMetaViolatingV1Schema(t *testing.T) {
 			expectedError: "plugin meta fetchMode must be per_task or batch",
 		},
 		{
-			name:          "empty model list",
-			meta:          `{apiVersion: 1, key: "bad-plugin", name: "Bad", version: "1.0.0", author: {name: "Test"}, models: [], fetchMode: "per_task"}`,
-			expectedError: "plugin meta models must contain at least one model",
+			name:          "missing model list",
+			meta:          `{apiVersion: 1, key: "bad-plugin", name: "Bad", version: "1.0.0", author: {name: "Test"}, fetchMode: "per_task"}`,
+			expectedError: "plugin meta models is required",
 		},
 	}
 	for _, testCase := range cases {
@@ -1137,6 +1137,35 @@ export function parseTaskResult() { return {}; }
 			assert.Zero(t, count)
 		})
 	}
+}
+
+func TestUploadTaskPluginAllowsEmptyDefaultModelCatalogue(t *testing.T) {
+	setupTaskPluginControllerTest(t)
+	cleanupTaskPluginControllerRuntime(t, "retired-driver")
+	source := strings.Replace(taskPluginControllerTestSource("retired-driver", "1.0.0"), `models: ["doc-1"]`, `models: []`, 1)
+	body, err := common.Marshal(map[string]any{"source": source})
+	require.NoError(t, err)
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(http.MethodPost, "/api/plugin/task", bytes.NewReader(body))
+	context.Request.Header.Set("Content-Type", "application/json")
+
+	UploadTaskPlugin(context)
+
+	var response struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Meta struct {
+				Models []string `json:"models"`
+			} `json:"meta"`
+		} `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	require.True(t, response.Success, recorder.Body.String())
+	require.NotNil(t, response.Data.Meta.Models)
+	assert.Empty(t, response.Data.Meta.Models)
+	_, err = model.GetTaskPluginVersion("retired-driver", "1.0.0")
+	require.NoError(t, err)
 }
 
 func TestDeletePureFactoryPluginIsRejected(t *testing.T) {

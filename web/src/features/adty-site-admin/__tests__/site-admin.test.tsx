@@ -20,6 +20,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
   createMemoryHistory,
   createRootRoute,
+  createRoute,
   createRouter,
   RouterProvider,
 } from '@tanstack/react-router'
@@ -498,6 +499,67 @@ describe('close site dialog', () => {
 describe('reseller settings', () => {
   beforeEach(() => {
     api.getResellerSettings.mockResolvedValue(settings)
+  })
+
+  it('shows a recoverable error when settings fail instead of an endless loading state', async () => {
+    api.getResellerSettings.mockRejectedValueOnce(
+      new Error('Synthetic settings failure')
+    )
+    renderWith(<SettingsPanel canWrite canWriteSecrets />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Retry' }))
+    expect(
+      await screen.findByLabelText('Root domains (one per line)')
+    ).toBeInTheDocument()
+  })
+
+  it('keeps an edited setting when the admin cancels tab navigation and discards it only after confirmation', async () => {
+    vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined)
+    api.getResellerUsage.mockResolvedValue({
+      sender: { in_use: 0, verified: 0, failed: 0, quota_full_at: 0 },
+      widgets: [],
+      widget_slots_left: 10,
+      unassigned_domains: 0,
+    })
+    api.getSites.mockResolvedValue({
+      page: 1,
+      page_size: 20,
+      total: 0,
+      items: [],
+    })
+    const root = createRootRoute()
+    const route = createRoute({
+      getParentRoute: () => root,
+      path: '/site-admin/$section',
+      component: () => (
+        <SiteAdmin
+          section={(route.useParams() as { section: 'settings' }).section}
+        />
+      ),
+    })
+    const router = createRouter({
+      routeTree: root.addChildren([route]),
+      history: createMemoryHistory({
+        initialEntries: ['/site-admin/settings'],
+      }),
+    })
+    renderWith(<RouterProvider router={router} />)
+    const domains = await screen.findByLabelText('Root domains (one per line)')
+    await userEvent.clear(domains)
+    await userEvent.type(domains, 'draft.example')
+    await userEvent.click(screen.getByRole('tab', { name: 'Sites' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Stay' }))
+    expect(domains).toHaveValue('draft.example')
+    await userEvent.click(screen.getByRole('tab', { name: 'Sites' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Leave' }))
+    await waitFor(() =>
+      expect(screen.getByRole('tab', { name: 'Sites' })).toHaveAttribute(
+        'aria-selected',
+        'true'
+      )
+    )
+    expect(
+      screen.queryByLabelText('Root domains (one per line)')
+    ).not.toBeInTheDocument()
   })
 
   it('opens settings for an explicitly granted admin and denies other ordinary identities', () => {

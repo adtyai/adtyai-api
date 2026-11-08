@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/QuantumNous/new-api/relay/channel"
@@ -96,6 +97,9 @@ func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
 	if info.ChannelOtherSettings.AwsApiType == dto.AwsApiTypeMantle {
 		return mantleRequestURL(info)
 	}
+	if slices.Contains(mantleModelList, info.UpstreamModelName) {
+		return "", fmt.Errorf("model %q requires AWS Mantle Messages API", info.UpstreamModelName)
+	}
 	if info.ChannelOtherSettings.AwsKeyType == dto.AwsKeyTypeApiKey {
 		awsModelId := getAwsModelID(info.UpstreamModelName)
 		a.ClientMode = ClientModeApiKey
@@ -157,6 +161,9 @@ func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommo
 }
 
 func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, requestBody io.Reader) (any, error) {
+	if info.ChannelOtherSettings.AwsApiType != dto.AwsApiTypeMantle && slices.Contains(mantleModelList, info.UpstreamModelName) {
+		return nil, fmt.Errorf("model %q requires AWS Mantle Messages API", info.UpstreamModelName)
+	}
 	switch info.ChannelOtherSettings.AwsApiType {
 	case dto.AwsApiTypeMantle:
 		req, err := a.newMantleRequest(c, info, requestBody)
@@ -202,6 +209,7 @@ func (a *Adaptor) GetModelList() (models []string) {
 	for n := range awsModelIDMap {
 		models = append(models, n)
 	}
+	models = append(models, mantleModelList...)
 
 	return
 }

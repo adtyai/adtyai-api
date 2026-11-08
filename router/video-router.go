@@ -14,6 +14,7 @@ func SetVideoRouter(router *gin.Engine) {
 	videoSharedRouter.Use(middleware.SystemPerformanceCheck())
 	videoSharedRouter.POST(
 		"/video/generations",
+		middleware.AdtyRequireCurrentSiteTerms(),
 		middleware.PinTaskPluginEndpoint(),
 		middleware.TaskPluginEndpointOnly(middleware.ModelRequestRateLimit()),
 		middleware.AdtyUserLimit(), // 二开：任务 7.4
@@ -31,6 +32,7 @@ func SetVideoRouter(router *gin.Engine) {
 		videoV1Router.GET("/video/generations/:task_id", middleware.Distribute(), controller.RelayTaskFetch)
 		videoV1Router.POST(
 			"/videos/:video_id/remix",
+			middleware.AdtyRequireCurrentSiteTerms(),
 			middleware.SystemPerformanceCheck(),
 			middleware.PinTaskPluginEndpoint(),
 			middleware.TaskPluginEndpointOnly(middleware.ModelRequestRateLimit()),

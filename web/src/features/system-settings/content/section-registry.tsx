@@ -126,6 +126,13 @@ const CONTENT_SECTIONS = [
           user_agreement: settings['adty_legal_setting.user_agreement'],
           privacy_policy: settings['adty_legal_setting.privacy_policy'],
           refund_policy: settings['adty_legal_setting.refund_policy'],
+          site_agreement: settings['adty_legal_setting.site_agreement'],
+          site_customer_terms:
+            settings['adty_legal_setting.site_customer_terms'],
+          site_agreement_version:
+            settings['adty_legal_setting.site_agreement_version'],
+          site_customer_terms_version:
+            settings['adty_legal_setting.site_customer_terms_version'],
         }}
       />
     ),

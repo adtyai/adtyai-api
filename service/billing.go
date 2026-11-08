@@ -65,19 +65,40 @@ func unsettledBilling(relayInfo *relaycommon.RelayInfo) bool {
 	if relayInfo == nil || relayInfo.Billing == nil {
 		return true
 	}
+	if session, ok := relayInfo.Billing.(*BillingSession); ok && session.operationKey != "" {
+		session.mu.Lock()
+		defer session.mu.Unlock()
+		// A pending durable decision must be reported as a settlement failure,
+		// while NeedsRefund separately prevents a competing refund decision.
+		return !session.settled
+	}
 	return relayInfo.Billing.NeedsRefund()
 }
 
 // SettleBilling 执行计费结算。如果 RelayInfo 上有 BillingSession 则通过 session 结算，
 // 否则回退到旧的 PostConsumeQuota 路径（兼容按次计费等场景）。
 func SettleBilling(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, actualQuota int) error {
-	if relayInfo != nil && relayInfo.RealtimeAlreadyCharged > 0 {
+	if actualQuota < 0 {
+		return fmt.Errorf("actual quota cannot be negative: %d", actualQuota)
+	}
+	session, durable := relayInfo.Billing.(*BillingSession)
+	durable = durable && session.operationKey != ""
+	if !durable && relayInfo.RealtimeAlreadyCharged > 0 {
 		// 流式阶段已经从钱包扣过的额度要减掉。最终用量更小（含超时后的 0）时差额为负，结算退回多扣的部分。
 		actualQuota -= relayInfo.RealtimeAlreadyCharged
 		relayInfo.RealtimeAlreadyCharged = 0
+		if actualQuota < 0 {
+			if _, err := postConsumeQuotaWithResult(relayInfo, actualQuota, 0, false, ctx); err != nil {
+				return err
+			}
+			actualQuota = 0
+		}
 	}
 	if relayInfo.Billing != nil {
 		preConsumed := relayInfo.Billing.GetPreConsumedQuota()
+		if durable {
+			preConsumed += relayInfo.RealtimeAlreadyCharged
+		}
 		delta := actualQuota - preConsumed
 
 		if delta > 0 {
@@ -116,7 +137,7 @@ func SettleBilling(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, actualQuo
 	quotaDelta := actualQuota - relayInfo.FinalPreConsumedQuota
 	if quotaDelta != 0 {
 		shortfallBefore := relayInfo.BillingShortfall
-		err := PostConsumeQuota(relayInfo, quotaDelta, relayInfo.FinalPreConsumedQuota, true)
+		_, err := postConsumeQuotaWithResult(relayInfo, quotaDelta, relayInfo.FinalPreConsumedQuota, true, ctx)
 		adtyNoteBillingShortfall(ctx, relayInfo, shortfallBefore) // 二开：余额下限
 		return err
 	}

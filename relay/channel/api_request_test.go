@@ -2,27 +2,99 @@ package channel
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestNewTaskAPIRequestInheritsClientCancellation(t *testing.T) {
+type stubAPIRequestAdaptor struct {
+	Adaptor
+	baseURL string
+}
+
+func (a *stubAPIRequestAdaptor) GetRequestURL(*relaycommon.RelayInfo) (string, error) {
+	return a.baseURL, nil
+}
+
+func (*stubAPIRequestAdaptor) SetupRequestHeader(*gin.Context, *http.Header, *relaycommon.RelayInfo) error {
+	return nil
+}
+
+func TestNewClientAPIRequestInheritsClientCancellation(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
 	requestContext, cancel := context.WithCancel(context.Background())
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil).WithContext(requestContext)
 
-	upstream, err := newTaskAPIRequest(c, "https://provider.example/tasks", nil)
+	upstream, err := newClientAPIRequest(c, "https://provider.example/tasks", nil)
 	require.NoError(t, err)
 	cancel()
 
 	require.ErrorIs(t, upstream.Context().Err(), context.Canceled)
+}
+
+func TestHTTPRelayRequestsInheritClientCancellation(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service.InitHttpClient()
+
+	requests := []struct {
+		name string
+		do   func(Adaptor, *gin.Context, *relaycommon.RelayInfo, io.Reader) (*http.Response, error)
+	}{
+		{name: "json", do: DoApiRequest},
+		{name: "form", do: DoFormRequest},
+	}
+	for _, test := range requests {
+		t.Run(test.name, func(t *testing.T) {
+			started := make(chan struct{})
+			releaseHandler := make(chan struct{})
+			server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+				close(started)
+				<-releaseHandler
+			}))
+			defer server.Close()
+			defer close(releaseHandler)
+
+			requestContext, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			ginContext, _ := gin.CreateTestContext(httptest.NewRecorder())
+			ginContext.Request = httptest.NewRequest(http.MethodPost, "/relay", strings.NewReader(`{"model":"m"}`)).WithContext(requestContext)
+			ginContext.Request.Header.Set("Content-Type", "application/json")
+			info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{ChannelBaseUrl: server.URL}}
+			adaptor := &stubAPIRequestAdaptor{baseURL: server.URL}
+			requestFinished := make(chan error, 1)
+			go func() {
+				response, err := test.do(adaptor, ginContext, info, strings.NewReader(`{"model":"m"}`))
+				if response != nil {
+					_ = response.Body.Close()
+				}
+				requestFinished <- err
+			}()
+
+			select {
+			case <-started:
+			case <-time.After(3 * time.Second):
+				t.Fatal("upstream request did not start")
+			}
+			cancel()
+
+			select {
+			case err := <-requestFinished:
+				require.Error(t, err)
+			case <-time.After(3 * time.Second):
+				t.Fatal("upstream call did not return after client cancellation")
+			}
+		})
+	}
 }
 
 func TestProcessHeaderOverride_ChannelTestSkipsPassthroughRules(t *testing.T) {

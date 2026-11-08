@@ -31,6 +31,21 @@ var awsModelIDMap = map[string]string{
 	"nova-sonic-v1:0":   "amazon.nova-sonic-v1:0",
 }
 
+// These native model IDs are served by Mantle Messages, not InvokeModel.
+// Availability of restricted models still depends on the upstream account.
+var mantleModelList = []string{
+	"anthropic.claude-fable-5",
+	"anthropic.claude-fable-5-1",
+	"anthropic.claude-haiku-4-5",
+	"anthropic.claude-haiku-5-5",
+	"anthropic.claude-mythos-5",
+	"anthropic.claude-mythos-5-1",
+	"anthropic.claude-opus-5",
+	"anthropic.claude-opus-5-5",
+	"anthropic.claude-sonnet-5",
+	"anthropic.claude-sonnet-5-5",
+}
+
 var awsModelCanCrossRegionMap = map[string]map[string]bool{
 	"anthropic.claude-3-sonnet-20240229-v1:0": {
 		"us": true,

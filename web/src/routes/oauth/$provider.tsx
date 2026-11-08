@@ -44,6 +44,7 @@ import {
   consumeOAuthLoginRedirect,
   resolveOAuthCallbackMode,
 } from '@/features/auth/lib/oauth-callback-mode'
+import { handoffOAuthLogin } from '@/features/auth/lib/oauth-handoff'
 import type { LoginResponse } from '@/features/auth/types'
 import { api } from '@/lib/api'
 import { handleServerError } from '@/lib/handle-server-error'
@@ -228,6 +229,7 @@ function OAuthCallback() {
         if (!active) return
         if (response.data?.success) {
           completedLogin.current = loginKey
+          if (handoffOAuthLogin(response.data.data, provider)) return
           if (
             await handleLoginResult(
               response.data.data,

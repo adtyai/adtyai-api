@@ -1,15 +1,26 @@
 // Protocol capabilities, not prices. Keep defaults and validation shared by
 // native requests, compatibility protocols, and submission billing facts.
 const WAN_MODELS = {
+  "happyhorse-1.0-t2v": { kind: "happy_t2v", resolutions: ["720P", "1080P"], defaultResolution: "1080P", minDuration: 3, maxDuration: 15 },
+  "happyhorse-1.0-i2v": { kind: "happy_image", resolutions: ["720P", "1080P"], defaultResolution: "1080P", minDuration: 3, maxDuration: 15 },
+  "happyhorse-1.0-r2v": { kind: "happy_reference", resolutions: ["720P", "1080P"], defaultResolution: "1080P", minDuration: 3, maxDuration: 15 },
+  "happyhorse-1.0-video-edit": { kind: "happy_edit", resolutions: ["720P", "1080P"], defaultResolution: "1080P" },
+  "happyhorse-1.1-t2v": { kind: "happy_t2v", resolutions: ["480P", "720P", "1080P"], defaultResolution: "1080P", minDuration: 3, maxDuration: 15 },
+  "happyhorse-1.1-i2v": { kind: "happy_image", resolutions: ["480P", "720P", "1080P"], defaultResolution: "1080P", minDuration: 3, maxDuration: 15 },
+  "happyhorse-1.1-r2v": { kind: "happy_reference", resolutions: ["480P", "720P", "1080P"], defaultResolution: "1080P", minDuration: 3, maxDuration: 15 },
   "wan3.0-video": { kind: "all", resolutions: ["480P", "720P", "1080P"], defaultResolution: "1080P", maxDuration: 30 },
   "wan3.0-video-prime": { kind: "all", resolutions: ["480P", "720P", "1080P"], defaultResolution: "1080P", maxDuration: 30 },
   "wan2.7-t2v": { kind: "t2v", resolutions: ["720P", "1080P"], defaultResolution: "1080P", maxDuration: 15 },
   "wan2.7-i2v": { kind: "media", resolutions: ["720P", "1080P"], defaultResolution: "1080P", maxDuration: 15 },
+  "wan2.7-r2v": { kind: "reference", resolutions: ["720P", "1080P"], defaultResolution: "1080P", maxDuration: 15 },
+  "wan2.7-videoedit": { kind: "edit", resolutions: ["720P", "1080P"], defaultResolution: "1080P", maxDuration: 10 },
   "wan2.6-t2v": { kind: "size", resolutions: ["720P", "1080P"], defaultResolution: "1080P", maxDuration: 15 },
   "wan2.6-t2v-us": { kind: "size", resolutions: ["720P", "1080P"], defaultResolution: "1080P", durations: [5, 10, 15] },
   "wan2.6-i2v": { kind: "image", resolutions: ["720P", "1080P"], defaultResolution: "1080P", maxDuration: 15 },
   "wan2.6-i2v-flash": { kind: "image", resolutions: ["720P", "1080P"], defaultResolution: "1080P", maxDuration: 15 },
   "wan2.6-i2v-us": { kind: "image", resolutions: ["720P", "1080P"], defaultResolution: "1080P", durations: [5, 10, 15] },
+  "wan2.6-r2v": { kind: "legacy_reference", resolutions: ["720P", "1080P"], defaultResolution: "1080P", maxDuration: 10 },
+  "wan2.6-r2v-flash": { kind: "legacy_reference", resolutions: ["720P", "1080P"], defaultResolution: "1080P", maxDuration: 10 },
   "wan2.5-t2v-preview": { kind: "size", resolutions: ["480P", "720P", "1080P"], defaultResolution: "1080P", durations: [5, 10] },
   "wan2.5-i2v-preview": { kind: "image", resolutions: ["480P", "720P", "1080P"], defaultResolution: "1080P", durations: [5, 10] },
   "wan2.2-t2v-plus": { kind: "size", resolutions: ["480P", "1080P"], defaultResolution: "1080P", durations: [5] },
@@ -17,6 +28,10 @@ const WAN_MODELS = {
   "wan2.2-i2v-plus": { kind: "image", resolutions: ["480P", "1080P"], defaultResolution: "1080P", durations: [5] },
   "wan2.2-kf2v-flash": { kind: "frames", resolutions: ["480P", "720P", "1080P"], defaultResolution: "720P", durations: [5] },
   "wan2.2-s2v": { kind: "speech", resolutions: ["480P", "720P"], defaultResolution: "480P" },
+  "wan2.2-animate-move": { kind: "animate", resolutions: ["720P"], defaultResolution: "720P" },
+  "wan2.2-animate-mix": { kind: "animate", resolutions: ["720P"], defaultResolution: "720P" },
+  "wan2.1-kf2v-plus": { kind: "frames", resolutions: ["720P"], defaultResolution: "720P", durations: [5] },
+  "wan2.1-vace-plus": { kind: "vace", resolutions: ["720P"], defaultResolution: "720P", durations: [5] },
   "wanx2.1-t2v-plus": { kind: "size", resolutions: ["720P"], defaultResolution: "720P", durations: [5] },
   "wanx2.1-t2v-turbo": { kind: "size", resolutions: ["480P", "720P"], defaultResolution: "720P", durations: [5] },
   "wanx2.1-i2v-plus": { kind: "image", resolutions: ["720P"], defaultResolution: "720P", durations: [5] },
@@ -51,6 +66,8 @@ const IMAGE_MODELS = {
   "wan2.2-t2i-plus": "legacy",
   "wanx2.1-t2i-turbo": "legacy",
   "wanx2.1-t2i-plus": "legacy",
+  "wan2.1-t2i-turbo": "legacy",
+  "wan2.1-t2i-plus": "legacy",
   "wanx2.0-t2i-turbo": "legacy",
   "wan2.5-i2i-preview": "legacy_edit",
   "wanx2.1-imageedit": "legacy_imageedit",
@@ -190,22 +207,36 @@ function wanVideoUsageSchema(resolutions, audio) {
   return schema;
 }
 
-const WAN_AUDIO_VIDEO_MODELS = ["wan2.6-i2v-flash"];
+const WAN_AUDIO_VIDEO_MODELS = ["wan2.6-i2v-flash", "wan2.6-r2v-flash"];
 // Dated snapshots share the undated model's capabilities through modelKey.
-const WAN_VIDEO_SNAPSHOTS = ["wan2.7-t2v-2026-04-25", "wan2.7-t2v-2026-06-12", "wan2.7-i2v-2026-04-25"];
+const WAN_VIDEO_SNAPSHOTS = ["wan2.7-t2v-2026-04-25", "wan2.7-t2v-2026-06-12", "wan2.7-i2v-2026-04-25", "wan2.7-r2v-2026-06-12"];
+const WAN_VIDEO_ALIASES = ["wan2.1-t2v-plus", "wan2.1-t2v-turbo", "wan2.1-i2v-plus", "wan2.1-i2v-turbo"];
+const WAN_VIDEO_MODELS = Object.keys(WAN_MODELS)
+  .filter((model) => model !== "wan2.7-r2v")
+  .concat(WAN_VIDEO_SNAPSHOTS, WAN_VIDEO_ALIASES);
 const WAN_VIDEO_RESOLUTIONS = ["480P", "720P", "1080P"];
 
 // One usage profile per distinct resolution set and audio option.
 function wanVideoUsageProfiles() {
   const profiles = [];
-  for (const model of Object.keys(WAN_MODELS).concat(WAN_VIDEO_SNAPSHOTS)) {
+  for (const model of WAN_VIDEO_MODELS) {
     const key = modelKey(model);
     const resolutions = WAN_MODELS[key].resolutions;
     const audio = WAN_AUDIO_VIDEO_MODELS.includes(key);
-    const shape = resolutions.join("/") + (audio ? "+audio" : "");
+    const animate = WAN_MODELS[key].kind === "animate";
+    const shape = animate ? "animate" : resolutions.join("/") + (audio ? "+audio" : "");
     let profile = profiles.find((entry) => entry.shape === shape);
     if (!profile) {
-      profile = { shape: shape, models: [], schema: wanVideoUsageSchema(resolutions, audio) };
+      const schema = wanVideoUsageSchema(resolutions, audio);
+      if (animate) {
+        delete schema.resolution;
+        schema.mode = {
+          enum: ["wan-std", "wan-pro"],
+          enumLabels: { "wan-std": { en: "Standard", zh: "标准" }, "wan-pro": { en: "Professional", zh: "专业" } },
+          description: { en: "Animation service mode", zh: "角色动画服务模式" },
+        };
+      }
+      profile = { shape: shape, models: [], schema: schema };
       profiles.push(profile);
     }
     profile.models.push(model);
@@ -219,14 +250,21 @@ export const meta = {
   name: "Alibaba Bailian",
   icon: "Bailian.Color",
   description: {
-    en: "Alibaba Cloud Bailian image and video generation (Wan, Qwen-Image, Z-Image)",
-    zh: "阿里云百炼图片与视频生成（万相、千问图像、Z-Image）",
+    en: "Alibaba Cloud Bailian image and video generation (Wan, HappyHorse, Qwen-Image, Z-Image)",
+    zh: "阿里云百炼图片与视频生成（万相、HappyHorse、千问图像、Z-Image）",
   },
-  version: "1.4.2",
+  version: "1.5.0",
   author: { name: "QuantumNous" },
   channelTypes: [17],
   // Literal metadata also supports the dashboard's static script preview.
   models: [
+    "happyhorse-1.0-t2v",
+    "happyhorse-1.0-i2v",
+    "happyhorse-1.0-r2v",
+    "happyhorse-1.0-video-edit",
+    "happyhorse-1.1-t2v",
+    "happyhorse-1.1-i2v",
+    "happyhorse-1.1-r2v",
     "wan3.0-video",
     "wan3.0-video-prime",
     "wan2.7-t2v",
@@ -234,11 +272,15 @@ export const meta = {
     "wan2.7-t2v-2026-06-12",
     "wan2.7-i2v",
     "wan2.7-i2v-2026-04-25",
+    "wan2.7-r2v-2026-06-12",
+    "wan2.7-videoedit",
     "wan2.6-t2v",
     "wan2.6-t2v-us",
     "wan2.6-i2v",
     "wan2.6-i2v-flash",
     "wan2.6-i2v-us",
+    "wan2.6-r2v",
+    "wan2.6-r2v-flash",
     "wan2.5-t2v-preview",
     "wan2.5-i2v-preview",
     "wan2.2-t2v-plus",
@@ -246,6 +288,14 @@ export const meta = {
     "wan2.2-i2v-plus",
     "wan2.2-kf2v-flash",
     "wan2.2-s2v",
+    "wan2.2-animate-move",
+    "wan2.2-animate-mix",
+    "wan2.1-kf2v-plus",
+    "wan2.1-vace-plus",
+    "wan2.1-t2v-plus",
+    "wan2.1-t2v-turbo",
+    "wan2.1-i2v-plus",
+    "wan2.1-i2v-turbo",
     "wanx2.1-t2v-plus",
     "wanx2.1-t2v-turbo",
     "wanx2.1-i2v-plus",
@@ -259,6 +309,8 @@ export const meta = {
     "wan2.2-t2i-plus",
     "wanx2.1-t2i-turbo",
     "wanx2.1-t2i-plus",
+    "wan2.1-t2i-turbo",
+    "wan2.1-t2i-plus",
     "wanx2.0-t2i-turbo",
     "wan2.5-i2i-preview",
     "wanx2.1-imageedit",
@@ -313,7 +365,16 @@ export const meta = {
       method: "POST",
       path: "/ali/api/v1/services/aigc/text2image/image-synthesis",
       type: "submit",
-      models: ["wan2.5-t2i-preview", "wan2.2-t2i-flash", "wan2.2-t2i-plus", "wanx2.1-t2i-turbo", "wanx2.1-t2i-plus", "wanx2.0-t2i-turbo"],
+      models: [
+        "wan2.5-t2i-preview",
+        "wan2.2-t2i-flash",
+        "wan2.2-t2i-plus",
+        "wanx2.1-t2i-turbo",
+        "wanx2.1-t2i-plus",
+        "wan2.1-t2i-turbo",
+        "wan2.1-t2i-plus",
+        "wanx2.0-t2i-turbo",
+      ],
       decode: "createImageTask",
       render: "taskCreated",
     },
@@ -331,7 +392,7 @@ export const meta = {
   ],
   protocols: [
     { name: "openai_responses", supports: ["stream", "sync", "background"] },
-    { name: "openai_video", models: Object.keys(WAN_MODELS).concat(["wan2.7-t2v-2026-04-25", "wan2.7-t2v-2026-06-12", "wan2.7-i2v-2026-04-25"]) },
+    { name: "openai_video", models: WAN_VIDEO_MODELS },
     { name: "openai_image", models: Object.keys(IMAGE_MODELS).concat(IMAGE_MODEL_SNAPSHOTS) },
   ],
 };
@@ -380,9 +441,9 @@ const MODERN_SIZES = {
 };
 
 function modelKey(model) {
-  return String(model || "")
-    .replace(/-\d{4}-\d{2}-\d{2}$/, "")
-    .replace(/^wan2\.1-/, "wanx2.1-");
+  const key = String(model || "").replace(/-\d{4}-\d{2}-\d{2}$/, "");
+  const legacy = key.replace(/^wan2\.1-/, "wanx2.1-");
+  return Object.prototype.hasOwnProperty.call(WAN_MODELS, legacy) || Object.prototype.hasOwnProperty.call(IMAGE_MODELS, legacy) ? legacy : key;
 }
 
 function modelProfile(model) {
@@ -753,22 +814,187 @@ function videoSize(value) {
 function videoAction(req) {
   const input = objectValue((req.metadata || {}).input, "metadata.input");
   for (const source of [req, input]) {
+    if (trimmed(source.video_url) || (source.media || []).some((media) => media && media.type === "video")) return "video_to_video";
     if (
       firstImage(source) ||
       trimmed(source.img_url) ||
       trimmed(source.image_url) ||
       trimmed(source.first_frame_url) ||
-      (Array.isArray(source.media) && source.media.length)
+      (Array.isArray(source.media) && source.media.length) ||
+      (Array.isArray(source.reference_urls) && source.reference_urls.length) ||
+      (Array.isArray(source.reference_video_urls) && source.reference_video_urls.length) ||
+      (Array.isArray(source.ref_images_url) && source.ref_images_url.length)
     )
       return "image_to_video";
   }
   return "text_to_video";
 }
 
+// These APIs use distinct input contracts despite sharing the asynchronous
+// task envelope. References: happyhorse-{text,image,reference}-to-video-api-reference,
+// happyhorse-video-edit-api-reference, wan-video-to-video-api-reference,
+// legacy-wan-reference-to-video-api-reference, wan-video-editing-api-reference,
+// wan-animate-{move,mix}-api and legacy-wanx-vace-api-reference on help.aliyun.com.
+function convertSpecialVideo(ctx, profile) {
+  const req = ctx.requestBody || {};
+  const model = ctx.upstreamModel || req.model;
+  const metadata = objectValue(req.metadata, "metadata");
+  if (metadata.model !== undefined && metadata.model !== model) throw new Error("can't change model with metadata");
+  const input = {};
+  for (const key of [
+    "prompt",
+    "negative_prompt",
+    "media",
+    "image_url",
+    "video_url",
+    "function",
+    "ref_images_url",
+    "reference_urls",
+    "reference_video_urls",
+    "first_frame_url",
+    "last_frame_url",
+    "mask_image_url",
+    "mask_video_url",
+  ]) {
+    if (req[key] !== undefined) input[key] = req[key];
+  }
+  Object.assign(input, objectValue(metadata.input, "metadata.input"));
+  const parameters = {};
+  for (const key of ["resolution", "ratio", "prompt_extend", "watermark", "audio", "seed", "shot_type", "audio_setting", "mode", "check_image"]) {
+    if (req[key] !== undefined) parameters[key] = req[key];
+  }
+  const nativeParameters = objectValue(metadata.parameters, "metadata.parameters");
+  Object.assign(parameters, nativeParameters);
+  for (const key of ["prompt_extend", "watermark", "audio", "check_image"]) {
+    if (parameters[key] != null && typeof parameters[key] !== "boolean") throw new Error(key + " must be a boolean");
+  }
+  if (parameters.seed != null && (!Number.isInteger(parameters.seed) || parameters.seed < 0 || parameters.seed > 2147483647))
+    throw new Error("seed must be an integer between 0 and 2147483647");
+  const sizeValue = nativeParameters.size ?? req.size;
+  const size = sizeValue == null || sizeValue === "" ? {} : videoSize(sizeValue);
+  const resolution = normalizeResolution(parameters.resolution ?? size.resolution ?? profile.defaultResolution);
+  if (!profile.resolutions.includes(resolution)) throw new Error(model + " resolution must be one of " + profile.resolutions.join(", "));
+  const rawDuration = nativeParameters.duration ?? (req.auto_duration === true ? -1 : (req.duration ?? req.seconds));
+  if (rawDuration != null && ((typeof rawDuration !== "number" && typeof rawDuration !== "string") || String(rawDuration).trim() === ""))
+    throw new Error("duration must be a number");
+  const duration = rawDuration == null ? 5 : Number(rawDuration);
+  const kind = profile.kind;
+  if (kind === "animate" || kind === "happy_edit") {
+    if (rawDuration != null) throw new Error(model + " output duration follows the input video; duration is not supported");
+    delete parameters.duration;
+  } else if (kind === "vace") {
+    if (duration !== 5) throw new Error(model + " duration must be 5");
+    parameters.duration = 5;
+  } else if (kind === "edit" && duration === 0) {
+    parameters.duration = 0;
+  } else {
+    const min = profile.minDuration || 2;
+    if (!Number.isInteger(duration) || duration < min || duration > profile.maxDuration)
+      throw new Error(model + " duration must be an integer between " + min + " and " + profile.maxDuration);
+    if (kind !== "edit" || rawDuration != null) parameters.duration = duration;
+  }
+  const ratio = parameters.ratio ?? size.ratio ?? "16:9";
+  const ratios = ["16:9", "9:16", "1:1", "4:3", "3:4"];
+  if (kind.startsWith("happy_")) ratios.push("4:5", "5:4", "9:21", "21:9");
+  if (!ratios.includes(ratio)) throw new Error(model + " ratio must be one of " + ratios.join(", "));
+  parameters.resolution = resolution;
+  delete parameters.size;
+  if (kind === "animate") {
+    input.image_url = trimmed(input.image_url) || firstImage(req);
+    if (!input.image_url || !trimmed(input.video_url)) throw new Error(model + " requires image_url and video_url");
+    if (!["wan-std", "wan-pro"].includes(parameters.mode)) throw new Error("mode must be wan-std or wan-pro");
+    if (parameters.watermark !== undefined && input.watermark === undefined) input.watermark = parameters.watermark;
+    if (input.watermark != null && typeof input.watermark !== "boolean") throw new Error("watermark must be a boolean");
+    delete parameters.watermark;
+    delete parameters.resolution;
+    delete parameters.ratio;
+    return { model: model, input: input, parameters: parameters };
+  }
+  if (kind === "vace") {
+    const functions = ["image_reference", "video_repainting", "video_edit", "video_extension", "video_outpainting"];
+    if (!functions.includes(input.function)) throw new Error("input.function must be a supported VACE operation");
+    if (!trimmed(input.prompt)) throw new Error("input.prompt is required");
+    if (input.function === "image_reference" && input.ref_images_url === undefined)
+      input.ref_images_url = req.images || (firstImage(req) ? [firstImage(req)] : []);
+    if (
+      input.ref_images_url !== undefined &&
+      (!Array.isArray(input.ref_images_url) ||
+        !input.ref_images_url.length ||
+        input.ref_images_url.length > (input.function === "image_reference" ? 3 : 1) ||
+        input.ref_images_url.some((url) => !trimmed(url)))
+    )
+      throw new Error("invalid input.ref_images_url");
+    if (input.function === "image_reference" && !input.ref_images_url.length) throw new Error("input.ref_images_url is required");
+    if (!["image_reference", "video_extension"].includes(input.function) && !trimmed(input.video_url)) throw new Error("input.video_url is required");
+    if (input.function === "video_extension" && !trimmed(input.video_url) && !trimmed(input.first_frame_url))
+      throw new Error("video_extension requires video_url or first_frame_url");
+    if (input.function === "video_repainting" && !["posebodyface", "posebody", "depth", "scribble"].includes(parameters.control_condition))
+      throw new Error("video_repainting requires a supported control_condition");
+    if (input.function === "image_reference") parameters.size = LEGACY_SIZES[resolution][ratio];
+    else if (input.function === "video_repainting" || input.function === "video_edit") delete parameters.duration;
+    delete parameters.resolution;
+    delete parameters.ratio;
+    return { model: model, input: input, parameters: parameters };
+  }
+  if (kind === "legacy_reference") {
+    if (!trimmed(input.prompt)) throw new Error("input.prompt is required");
+    const references = input.reference_urls ?? input.reference_video_urls ?? req.images;
+    const max = input.reference_urls === undefined && input.reference_video_urls !== undefined ? 3 : 5;
+    if (!Array.isArray(references) || !references.length || references.length > max || references.some((url) => !trimmed(url)))
+      throw new Error("input.reference_urls must contain between 1 and " + max + " URLs");
+    if (input.reference_video_urls === undefined) input.reference_urls = references;
+    parameters.size = LEGACY_SIZES[resolution][ratio];
+    delete parameters.resolution;
+    delete parameters.ratio;
+    return { model: model, input: input, parameters: parameters };
+  }
+  if (input.media !== undefined && !Array.isArray(input.media)) throw new Error("input.media must be an array");
+  if (!input.media || !input.media.length) {
+    const images = req.images || (firstImage(req) ? [firstImage(req)] : []);
+    input.media = images.map((url) => ({ type: kind === "happy_image" ? "first_frame" : "reference_image", url: url }));
+    if (trimmed(input.video_url)) input.media.unshift({ type: "video", url: input.video_url });
+    delete input.video_url;
+  }
+  const counts = {};
+  const limits =
+    kind === "happy_image"
+      ? { first_frame: 1 }
+      : kind === "happy_reference"
+        ? { reference_image: 9 }
+        : kind === "reference"
+          ? { reference_image: 5, reference_video: 5, first_frame: 1 }
+          : kind === "edit"
+            ? { video: 1, reference_image: 4 }
+            : kind === "happy_edit"
+              ? { video: 1, reference_image: 5 }
+              : {};
+  for (const media of input.media) {
+    if (!media || !Object.prototype.hasOwnProperty.call(limits, media.type) || !trimmed(media.url)) throw new Error("invalid input.media type or url");
+    counts[media.type] = (counts[media.type] || 0) + 1;
+    if (counts[media.type] > limits[media.type]) throw new Error("too many input.media entries for " + media.type);
+  }
+  if (kind === "happy_image" && counts.first_frame !== 1) throw new Error("input.media requires one first_frame");
+  if (kind === "happy_reference" && !counts.reference_image) throw new Error("input.media requires reference_image");
+  if (kind === "reference") {
+    const references = (counts.reference_image || 0) + (counts.reference_video || 0);
+    if (references < 1 || references > 5) throw new Error("input.media requires between 1 and 5 references");
+    if (counts.reference_video && duration > 10) throw new Error(model + " duration with reference video must be between 2 and 10");
+  }
+  if ((kind === "edit" || kind === "happy_edit") && counts.video !== 1) throw new Error("input.media requires one video");
+  if (["happy_t2v", "happy_reference", "happy_edit", "reference"].includes(kind) && !trimmed(input.prompt)) throw new Error("input.prompt is required");
+  if (["happy_t2v", "happy_reference", "reference"].includes(kind)) parameters.ratio = ratio;
+  else if (kind !== "edit" || parameters.ratio === undefined) delete parameters.ratio;
+  if (parameters.audio_setting != null && !["auto", "origin"].includes(parameters.audio_setting)) throw new Error("audio_setting must be auto or origin");
+  if (!input.media.length) delete input.media;
+  return { model: model, input: input, parameters: parameters };
+}
+
 function convert(ctx) {
   const req = ctx.requestBody;
   const upstreamModel = ctx.upstreamModel || req.model;
   const profile = modelProfile(upstreamModel);
+  if (["happy_t2v", "happy_image", "happy_reference", "happy_edit", "reference", "edit", "legacy_reference", "animate", "vace"].includes(profile.kind))
+    return convertSpecialVideo(ctx, profile);
   const metadata = objectValue(req.metadata, "metadata");
   if (metadata.model !== undefined && metadata.model !== upstreamModel) throw new Error("can't change model with metadata");
   const input = {};
@@ -993,7 +1219,7 @@ export function buildSubmitRequest(ctx) {
   }
   const body = convert(ctx);
   const kind = modelProfile(body.model).kind;
-  const service = kind === "frames" || kind === "speech" ? "image2video" : "video-generation";
+  const service = kind === "frames" || kind === "speech" || kind === "animate" ? "image2video" : "video-generation";
   return {
     url: apiRoot(ctx) + "/api/v1/services/aigc/" + service + "/video-synthesis",
     method: "POST",
@@ -1091,13 +1317,24 @@ export function extractUsage(ctx) {
   let seconds = body.parameters.duration;
   if (kind === "speech") seconds = 20;
   else if (kind === "all" && (hasVideo || seconds === -1)) seconds = 30;
+  // Input-controlled lengths are not inferred from URL names or client
+  // duration claims. Reserve the documented upper bound and settle from usage.
+  else if (kind === "animate") seconds = 30;
+  else if (kind === "happy_edit") seconds = 120; // At most 60s input plus its edited output.
+  else if (kind === "edit") seconds = 20; // At most 10s input plus 10s output.
+  else if (kind === "vace") seconds = 5;
+  else if (kind === "reference") seconds += body.input.media.filter((media) => media.type === "reference_video").length * 30;
+  else if (kind === "legacy_reference") seconds += Math.min((body.input.reference_urls || body.input.reference_video_urls).length, 3) * 30;
   if (ctx.usagePurpose === "billing_ratios") {
     const ratios = { seconds: seconds };
     const resolution = resolutionRatio(body);
     if (resolution && resolution.value !== undefined) ratios[resolution.key] = resolution.value;
     return ratios;
   }
-  const resolution = body.parameters.size ? videoSize(body.parameters.size).resolution : body.parameters.resolution;
+  if (kind === "animate") return { seconds: seconds, mode: body.parameters.mode };
+  const resolution = body.parameters.size
+    ? videoSize(body.parameters.size).resolution
+    : body.parameters.resolution || modelProfile(body.model).defaultResolution;
   const facts = { seconds: seconds, resolution: resolution };
   if (WAN_AUDIO_VIDEO_MODELS.includes(modelKey(body.model))) facts.audio = body.parameters.audio !== false;
   return facts;
@@ -1131,12 +1368,16 @@ export function extractUsageOnComplete(task, taskResult, body) {
       else facts.seconds = inputSeconds + outputSeconds;
     }
   } else {
-    const seconds = usage.duration ?? usage.output_video_duration ?? output.duration ?? output.duration_seconds;
+    const seconds = usage.duration ?? usage.output_video_duration ?? usage.video_duration ?? output.duration ?? output.duration_seconds;
     if (seconds != null) facts.seconds = seconds;
   }
   const resolution = usage.SR ?? output.resolution;
   if (resolution != null) facts.resolution = normalizeResolution(resolution);
   if (WAN_AUDIO_VIDEO_MODELS.includes(model) && typeof usage.audio === "boolean") facts.audio = usage.audio;
+  if (WAN_MODELS[model] && WAN_MODELS[model].kind === "animate") {
+    const mode = { standard: "wan-std", pro: "wan-pro" }[usage.video_ratio];
+    if (mode) facts.mode = mode;
+  }
   return facts;
 }
 
@@ -1310,6 +1551,14 @@ export const protocols = {
         "audio_url",
         "template",
         "media",
+        "video_url",
+        "reference_urls",
+        "reference_video_urls",
+        "ref_images_url",
+        "function",
+        "mode",
+        "check_image",
+        "audio_setting",
       ]) {
         if (Object.prototype.hasOwnProperty.call(req, key)) requestBody[key] = req[key];
       }

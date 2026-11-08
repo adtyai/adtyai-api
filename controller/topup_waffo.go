@@ -17,19 +17,28 @@ import (
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/gin-gonic/gin"
+	"github.com/shopspring/decimal"
 	"github.com/thanhpk/randstr"
 	waffo "github.com/waffo-com/waffo-go"
 	"github.com/waffo-com/waffo-go/config"
 	"github.com/waffo-com/waffo-go/core"
+	waffonet "github.com/waffo-com/waffo-go/net"
 	"github.com/waffo-com/waffo-go/types/order"
 )
 
+// A custom SDK transport can replace the external HTTP boundary in contract tests.
+var waffoHTTPTransport waffonet.HttpTransport
+
 func getWaffoSDK() (*waffo.Waffo, error) {
+	return getWaffoSDKForEnvironment(setting.WaffoSandbox)
+}
+
+func getWaffoSDKForEnvironment(sandbox bool) (*waffo.Waffo, error) {
 	env := config.Sandbox
 	apiKey := setting.WaffoSandboxApiKey
 	privateKey := setting.WaffoSandboxPrivateKey
 	publicKey := setting.WaffoSandboxPublicCert
-	if !setting.WaffoSandbox {
+	if !sandbox {
 		env = config.Production
 		apiKey = setting.WaffoApiKey
 		privateKey = setting.WaffoPrivateKey
@@ -40,6 +49,9 @@ func getWaffoSDK() (*waffo.Waffo, error) {
 		PrivateKey(privateKey).
 		WaffoPublicKey(publicKey).
 		Environment(env)
+	if waffoHTTPTransport != nil {
+		builder = builder.CustomTransport(waffoHTTPTransport)
+	}
 	if setting.WaffoMerchantId != "" {
 		builder = builder.MerchantID(setting.WaffoMerchantId)
 	}
@@ -133,6 +145,7 @@ type WaffoPayRequest struct {
 	PayMethodIndex *int   `json:"pay_method_index"` // 服务端支付方式列表的索引，nil 表示由 Waffo 自动选择
 	PayMethodType  string `json:"pay_method_type"`  // Deprecated: 兼容旧前端，优先使用 pay_method_index
 	PayMethodName  string `json:"pay_method_name"`  // Deprecated: 兼容旧前端，优先使用 pay_method_index
+	PromoCode      string `json:"promo_code,omitempty"`
 }
 
 func RequestWaffoAmount(c *gin.Context) {
@@ -264,7 +277,7 @@ func RequestWaffoPay(c *gin.Context) {
 		CreateTime:      time.Now().Unix(),
 		Status:          common.TopUpStatusPending,
 	}
-	if err := topUp.Insert(); err != nil {
+	if err := createAdtyHostedOrder(c, topUp, decimal.NewFromInt(units).Mul(decimal.NewFromFloat(common.QuotaPerUnit)), getWaffoCurrency(), "", hostedPaymentEnvironment(setting.WaffoSandbox), req.PromoCode); err != nil {
 		logger.LogError(c.Request.Context(), common.LogText("Waffo failed to create top-up order user_id=%d trade_no=%s amount=%d error=%q", id, merchantOrderId, req.Amount, err.Error()))
 		paymentError(c, common.NewMessage("Failed to create order"))
 		return
@@ -339,6 +352,10 @@ func RequestWaffoPay(c *gin.Context) {
 	if paymentUrl == "" {
 		paymentUrl = orderData.OrderAction
 	}
+	if err := model.UpdateAdtyTopupOrderFields(merchantOrderId, map[string]any{"pay_url": paymentUrl, "gateway_trade_id": orderData.AcquiringOrderID}); err != nil {
+		paymentError(c, common.NewMessage("Failed to create order"))
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "success",
@@ -372,7 +389,34 @@ func WaffoWebhook(c *gin.Context) {
 		return
 	}
 
-	sdk, err := getWaffoSDK()
+	// Unverified order references select a frozen verification environment;
+	// they are not payment facts until the matching signature is verified.
+	var hint struct {
+		Result struct {
+			MerchantOrderID      string `json:"merchantOrderId"`
+			OrigPaymentRequestID string `json:"origPaymentRequestId"`
+		} `json:"result"`
+	}
+	if common.Unmarshal(bodyBytes, &hint) != nil {
+		c.AbortWithStatus(http.StatusBadRequest)
+		return
+	}
+	tradeHint := hint.Result.MerchantOrderID
+	if tradeHint == "" {
+		tradeHint = hint.Result.OrigPaymentRequestID
+	}
+	sandbox := setting.WaffoSandbox
+	if tradeHint != "" {
+		ext, lookupErr := model.GetAdtyTopupOrder(tradeHint)
+		if lookupErr != nil {
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
+		if ext != nil && ext.Provider == model.PaymentProviderWaffo && ext.ProviderEnvironment != "" {
+			sandbox = ext.ProviderEnvironment == "test"
+		}
+	}
+	sdk, err := getWaffoSDKForEnvironment(sandbox)
 	if err != nil {
 		logger.LogError(c.Request.Context(), common.LogText("Waffo webhook SDK initialization failed path=%q client_ip=%s error=%q", c.Request.RequestURI, c.ClientIP(), err.Error()))
 		c.AbortWithStatus(http.StatusInternalServerError)
@@ -407,7 +451,8 @@ func WaffoWebhook(c *gin.Context) {
 			return
 		}
 		logger.LogInfo(c.Request.Context(), common.LogText("Waffo webhook verified and parsed event_type=%s merchant_order_id=%s order_status=%s client_ip=%s", event.EventType, payload.Result.MerchantOrderID, payload.Result.OrderStatus, c.ClientIP()))
-		handleWaffoPayment(c, wh, &payload.Result.PaymentNotificationResult)
+		c.Set("waffo_verified_payload", bodyStr)
+		handleWaffoPayment(c, wh, &payload.Result.PaymentNotificationResult, hostedPaymentEnvironment(sandbox))
 	case core.EventRefund:
 		var notification core.RefundNotification
 		if err := common.Unmarshal(bodyBytes, &notification); err != nil {
@@ -423,7 +468,7 @@ func WaffoWebhook(c *gin.Context) {
 }
 
 // handleWaffoPayment 处理支付完成通知
-func handleWaffoPayment(c *gin.Context, wh *core.WebhookHandler, result *core.PaymentNotificationResult) {
+func handleWaffoPayment(c *gin.Context, wh *core.WebhookHandler, result *core.PaymentNotificationResult, environment string) {
 	if result.OrderStatus != core.OrderStatusPaySuccess {
 		logger.LogInfo(c.Request.Context(), common.LogText("Waffo order not successful, top-up skipped trade_no=%s order_status=%s client_ip=%s", result.MerchantOrderID, result.OrderStatus, c.ClientIP()))
 		// 只有关单是终态。支付中、待授权还可能变成成功，不能先标失败并让对方停止重试。
@@ -437,7 +482,32 @@ func handleWaffoPayment(c *gin.Context, wh *core.WebhookHandler, result *core.Pa
 	LockOrder(merchantOrderId)
 	defer UnlockOrder(merchantOrderId)
 
-	if err := model.RechargeWaffo(merchantOrderId, c.ClientIP()); err != nil {
+	ext, err := model.GetAdtyTopupOrder(merchantOrderId)
+	if err != nil {
+		sendWaffoWebhookResponse(c, wh, false, "database error")
+		return
+	}
+	if ext != nil {
+		merchantID, _ := result.MerchantInfo["merchantId"].(string)
+		amount, parseErr := decimal.NewFromString(result.OrderAmount)
+		if parseErr != nil {
+			sendWaffoWebhookResponse(c, wh, false, "invalid amount")
+			return
+		}
+		_, err = model.CompleteAdtyTopUp(merchantOrderId, model.AdtyPaymentFacts{
+			Provider: model.PaymentProviderWaffo, Method: model.PaymentMethodWaffo, PaidAmount: amount, PaidCurrency: result.OrderCurrency,
+			GatewayTradeId: result.AcquiringOrderID, TxHash: result.AcquiringOrderID, Environment: environment, MerchantId: merchantID,
+			Source: model.AdtyPaymentSourceCallback, Payload: c.GetString("waffo_verified_payload"),
+		}, c.ClientIP())
+	} else {
+		err = model.RechargeWaffo(merchantOrderId, c.ClientIP())
+	}
+	if err != nil {
+		if errors.Is(err, model.ErrPaymentOrphanNotCredit) {
+			recordAdtyPaymentReview(model.PaymentProviderWaffo, merchantOrderId, result.AcquiringOrderID, c.GetString("waffo_verified_payload"), err)
+			sendWaffoWebhookResponse(c, wh, true, "queued for review")
+			return
+		}
 		logger.LogError(c.Request.Context(), common.LogText("Waffo top-up processing failed trade_no=%s client_ip=%s error=%q", merchantOrderId, c.ClientIP(), err.Error()))
 		sendWaffoWebhookResponse(c, wh, false, err.Error())
 		return
@@ -476,6 +546,19 @@ func handleWaffoRefund(c *gin.Context, wh *core.WebhookHandler, result *core.Ref
 	}
 	LockOrder(tradeNo)
 	defer UnlockOrder(tradeNo)
+	ext, lookupErr := model.GetAdtyTopupOrder(tradeNo)
+	if lookupErr != nil {
+		sendWaffoWebhookResponse(c, wh, false, "database error")
+		return
+	}
+	if ext != nil {
+		if err := recordHostedReversal(model.PaymentProviderWaffo, "refund.succeeded", refundID, tradeNo, result.AcquiringRefundOrderID, payload); err != nil {
+			sendWaffoWebhookResponse(c, wh, false, "database error")
+			return
+		}
+		sendWaffoWebhookResponse(c, wh, true, "")
+		return
+	}
 	err := model.RefundWaffo(tradeNo, waffoRefundIdempotencyKey(refundID), result.RefundStatus == core.RefundStatusFullyRefunded, result.RefundAmount)
 	if err != nil {
 		logger.LogError(c.Request.Context(), common.LogText("Waffo refund failed trade_no=%s refund_request_id=%s client_ip=%s error=%q", tradeNo, refundID, c.ClientIP(), err.Error()))

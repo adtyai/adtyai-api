@@ -23,6 +23,7 @@ import { toast } from 'sonner'
 
 import { StaticDataTable } from '@/components/data-table/static/static-data-table'
 import { EmptyState } from '@/components/empty-state'
+import { ErrorState } from '@/components/error-state'
 import { StatusBadge } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
 import { formatUsd } from '@/features/wallet/adty/lib/money'
@@ -55,8 +56,13 @@ export function CommissionTable() {
     queryKey: referralQueryKeys.commissions(page),
     queryFn: () => getReferralCommissions(page),
   })
+  if (query.isError && !query.data) {
+    return <ErrorState onRetry={() => void query.refetch()} />
+  }
+
   return (
     <div className='flex flex-col gap-3'>
+      {query.isError && <ErrorState onRetry={() => void query.refetch()} />}
       <StaticDataTable
         tableProps={{ 'aria-label': t('Commission details') }}
         data={query.data?.items ?? []}
@@ -135,9 +141,13 @@ export function WithdrawalTable(props: { cancelWindowMinutes: number }) {
     },
     onError: (err) => handleServerError(err),
   })
+  if (query.isError && !query.data) {
+    return <ErrorState onRetry={() => void query.refetch()} />
+  }
   const now = Date.now() / 1000
   return (
     <div className='flex flex-col gap-3'>
+      {query.isError && <ErrorState onRetry={() => void query.refetch()} />}
       <StaticDataTable
         tableClassName='min-w-[860px]'
         tableProps={{ 'aria-label': t('Withdrawal records') }}

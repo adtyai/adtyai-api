@@ -127,18 +127,56 @@ func AdtyQuoteForSite(site *model.AdtySite, userGroup string, face int64, method
 	if face < int64(operation_setting.MinTopUp) || face <= 0 {
 		return nil, common.NewMessage("Top-up amount cannot be less than {{amount}}", map[string]any{"amount": operation_setting.MinTopUp})
 	}
-	rate, bonus := AdtyBonusFor(face)
+	quote, err := adtyQuotaQuoteForSite(site, userGroup, decimal.NewFromInt(face), promo)
+	if err != nil {
+		return nil, err
+	}
+	if IsAdtyUSDTMethod(method) {
+		quote.PayCurrency = AdtyCurrencyUSDT
+		quote.PayAmount = quote.FaceUSD.Mul(quote.TopupGroupRatio).Round(8)
+		return quote, nil
+	}
+	price := decimal.NewFromFloat(operation_setting.Price)
+	if !price.IsPositive() {
+		return nil, common.NewMessage("The top-up price is not configured")
+	}
+	quote.PayCurrency = AdtyCurrencyCNY
+	quote.PriceCNYPerUSD = price
+	quote.PayAmount = quote.FaceUSD.Mul(price).Mul(quote.TopupGroupRatio).Round(2)
+	return quote, nil
+}
+
+// AdtyHostedQuoteForSite freezes the purchased quota independently of the
+// provider's currency, product price, discounts, and payment amount.
+func AdtyHostedQuoteForSite(site *model.AdtySite, userGroup string, baseQuota, payAmount decimal.Decimal, currency string, promo AdtyPromoInput) (*AdtyQuote, error) {
+	if !operation_setting.IsPaymentComplianceConfirmed() {
+		return nil, common.NewMessage("Payment features are locked until the root administrator confirms the compliance terms.")
+	}
+	if !baseQuota.IsPositive() || !payAmount.IsPositive() || common.QuotaPerUnit <= 0 || strings.TrimSpace(currency) == "" {
+		return nil, model.ErrInvalidTopUpQuota
+	}
+	if _, err := common.WalletQuotaFromDecimalStrict(baseQuota); err != nil {
+		return nil, err
+	}
+	quote, err := adtyQuotaQuoteForSite(site, userGroup, baseQuota.Div(decimal.NewFromFloat(common.QuotaPerUnit)), promo)
+	if err != nil {
+		return nil, err
+	}
+	quote.PayAmount, quote.PayCurrency = payAmount, strings.ToUpper(strings.TrimSpace(currency))
+	return quote, nil
+}
+
+func adtyQuotaQuoteForSite(site *model.AdtySite, userGroup string, faceUSD decimal.Decimal, promo AdtyPromoInput) (*AdtyQuote, error) {
+	face := faceUSD.IntPart()
+	rate, _ := AdtyBonusFor(face)
 	if site != nil {
-		rate, bonus = adtyBonusFromRates(AdtySiteBonusRates(site), face)
-		cap := adtySiteBonusCapAmount(face)
-		if bonus.GreaterThan(cap) {
-			bonus = cap
-			if face > 0 {
-				rate = bonus.Mul(decimal.NewFromInt(100)).Div(decimal.NewFromInt(face)).Round(8)
-			}
+		rate, _ = adtyBonusFromRates(AdtySiteBonusRates(site), face)
+		if face > 0 {
+			capRate := adtySiteBonusCapAmount(face).Mul(decimal.NewFromInt(100)).Div(decimal.NewFromInt(face))
+			rate = decimal.Min(rate, capRate)
 		}
 	}
-	faceUSD := decimal.NewFromInt(face)
+	bonus := faceUSD.Mul(rate).Div(decimal.NewFromInt(100)).Round(8)
 	promoCode, promoBonus, err := adtyPromoBonusFor(promo, faceUSD)
 	if err != nil {
 		return nil, err
@@ -148,7 +186,11 @@ func AdtyQuoteForSite(site *model.AdtySite, userGroup string, face int64, method
 		if site == nil || site.Id != promoCode.SiteId {
 			return nil, ErrAdtyPromoInvalid
 		}
-		if !adtySiteBonusWithinCap(face, bonus.Add(promoBonus)) {
+		cap := decimal.Zero
+		if face > 0 {
+			cap = adtySiteBonusCapAmount(face).Mul(faceUSD).Div(decimal.NewFromInt(face))
+		}
+		if bonus.Add(promoBonus).GreaterThan(cap) {
 			return nil, ErrAdtySitePromoOverCap
 		}
 	}
@@ -171,17 +213,5 @@ func AdtyQuoteForSite(site *model.AdtySite, userGroup string, face int64, method
 	if promoCode != nil {
 		quote.PromoCodeId, quote.PromoFunder = promoCode.Id, promoCode.Funder
 	}
-	if IsAdtyUSDTMethod(method) {
-		quote.PayCurrency = AdtyCurrencyUSDT
-		quote.PayAmount = faceUSD.Mul(groupRatio).Round(8)
-		return quote, nil
-	}
-	price := decimal.NewFromFloat(operation_setting.Price)
-	if !price.IsPositive() {
-		return nil, common.NewMessage("The top-up price is not configured")
-	}
-	quote.PayCurrency = AdtyCurrencyCNY
-	quote.PriceCNYPerUSD = price
-	quote.PayAmount = faceUSD.Mul(price).Mul(groupRatio).Round(2)
 	return quote, nil
 }

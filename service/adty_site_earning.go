@@ -21,7 +21,7 @@ import (
 //   平台收入   = q × d ÷ k ÷ QuotaPerUnit
 //   站长收益   = q × (k − d) ÷ k ÷ QuotaPerUnit
 // 三项都用 decimal 算；站长收益用「客户付 − 平台收」得出，两项相加正好等于客户付的钱。
-// 记账只用 OnConflict DoUpdate 累加进当天那一行，钩子失败只记日志，不影响请求。
+// 记账只累加当天仍待结算的槽位，钩子失败只记日志，不影响请求。
 
 // adtySiteEarningDayFn 是记账用的日期（服务器时区），测试可以替换。
 var adtySiteEarningDayFn = func() string { return time.Now().Format("2006-01-02") }
@@ -48,36 +48,52 @@ type adtySiteEarningEntry struct {
 // upsertAdtySiteEarningTx 把一笔收益累加进当天、同类型、还没结算的那一行。
 // 已经结算或作废的行不再改：这时记进下一个槽位（Day 加 "+n"），结算按状态而不是按日期取行。
 func upsertAdtySiteEarningTx(tx *gorm.DB, day string, entry adtySiteEarningEntry) error {
-	now := time.Now().Unix()
-	slot := day
-	for attempt := range 8 {
-		if attempt > 0 {
-			slot = fmt.Sprintf("%s+%d", day, attempt)
+	return tx.Transaction(func(tx *gorm.DB) error {
+		now := time.Now().Unix()
+		for attempt := range 8 {
+			slot := day
+			if attempt > 0 {
+				slot = fmt.Sprintf("%s+%d", day, attempt)
+			}
+			row := model.AdtySiteEarningDaily{
+				SiteId: entry.SiteId, UserId: entry.UserId, Day: slot, Kind: entry.Kind, Reason: entry.Reason,
+				Revenue: decimal.Zero, Platform: decimal.Zero, Earning: decimal.Zero,
+				Status: model.AdtySiteEarningPending, UpdatedAt: now,
+			}
+			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&row).Error; err != nil {
+				return err
+			}
+			// MySQL's ON DUPLICATE KEY UPDATE ignores OnConflict.Where. A
+			// conditional UPDATE keeps settled rows immutable on every engine.
+			result := tx.Model(&model.AdtySiteEarningDaily{}).
+				Where("site_id = ? AND user_id = ? AND day = ? AND kind = ? AND status = ?", entry.SiteId, entry.UserId, slot, entry.Kind, model.AdtySiteEarningPending).
+				Updates(map[string]any{
+					"quota":      gorm.Expr("quota + ?", entry.Quota),
+					"revenue":    gorm.Expr("revenue + ?", entry.Revenue),
+					"platform":   gorm.Expr("platform + ?", entry.Platform),
+					"earning":    gorm.Expr("earning + ?", entry.Earning),
+					"updated_at": now,
+				})
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected > 0 {
+				return nil
+			}
+			// MySQL reports changed rows by default. Adding an exact zero entry
+			// to a new zero slot may match it without changing any column.
+			var pending int64
+			if err := tx.Model(&model.AdtySiteEarningDaily{}).
+				Where("site_id = ? AND user_id = ? AND day = ? AND kind = ? AND status = ?", entry.SiteId, entry.UserId, slot, entry.Kind, model.AdtySiteEarningPending).
+				Count(&pending).Error; err != nil {
+				return err
+			}
+			if pending > 0 {
+				return nil
+			}
 		}
-		row := model.AdtySiteEarningDaily{
-			SiteId: entry.SiteId, UserId: entry.UserId, Day: slot, Kind: entry.Kind, Reason: entry.Reason,
-			Quota: entry.Quota, Revenue: entry.Revenue, Platform: entry.Platform, Earning: entry.Earning,
-			Status: model.AdtySiteEarningPending, UpdatedAt: now,
-		}
-		result := tx.Clauses(clause.OnConflict{
-			Columns: []clause.Column{{Name: "site_id"}, {Name: "user_id"}, {Name: "day"}, {Name: "kind"}},
-			DoUpdates: clause.Assignments(map[string]any{
-				"quota":      gorm.Expr("adty_site_earning_daily.quota + ?", entry.Quota),
-				"revenue":    gorm.Expr("adty_site_earning_daily.revenue + ?", entry.Revenue),
-				"platform":   gorm.Expr("adty_site_earning_daily.platform + ?", entry.Platform),
-				"earning":    gorm.Expr("adty_site_earning_daily.earning + ?", entry.Earning),
-				"updated_at": now,
-			}),
-			Where: clause.Where{Exprs: []clause.Expression{clause.Eq{Column: clause.Column{Table: "adty_site_earning_daily", Name: "status"}, Value: model.AdtySiteEarningPending}}},
-		}).Create(&row)
-		if result.Error != nil {
-			return result.Error
-		}
-		if result.RowsAffected > 0 {
-			return nil
-		}
-	}
-	return errors.New("no open earning slot for today")
+		return errors.New("no open earning slot for today")
+	})
 }
 
 // adtySiteCustomerRisk 取客户的风控状态：有标记并且没复核过时，收益记进 skipped。
@@ -119,6 +135,9 @@ func AdtySiteEarningHook(siteId, userId int, quota int64, k, d float64, kind str
 // adtyRecordConsumeEarning 是 RecordConsumeLog 的钩子：从 gin 上下文取 11.4 写进去的 k、d。
 // 渠道测试（controller/channel-test.go）不经过 HandleGroupRatio 的乘 k，上下文里没有 k，所以不记。
 func adtyRecordConsumeEarning(c *gin.Context, userId int, params *model.RecordConsumeLogParams) {
+	if c.GetBool(adtyDurableBillingContextKey) {
+		return
+	}
 	k, d, ok := AdtySiteMarkupFromContext(c)
 	if !ok {
 		return
@@ -159,6 +178,9 @@ func adtyRecordTaskBillingEarning(params *model.RecordTaskBillingLogParams) {
 	}
 	snapshot := params.Other.Snapshot()
 	adminInfo, _ := snapshot["admin_info"].(map[string]any)
+	if adminInfo["billing_operation_key"] != nil {
+		return
+	}
 	k, _ := adminInfo["site_markup"].(float64)
 	d, _ := adminInfo["site_cost_factor"].(float64)
 	siteId, _ := adminInfo["site_id"].(int)
@@ -462,8 +484,36 @@ func ReviewAdtySiteCustomer(userId, adminId int, convertSkipped bool) error {
 			return err
 		}
 		if convertSkipped {
+			if err := tx.Model(&model.AdtySiteCustomer{}).Where("user_id = ?", userId).Update("earning_risk_released", true).Error; err != nil {
+				return err
+			}
+			var events []model.AdtySiteEarningEvent
+			if err := model.AdtyLockForUpdate(tx).Where("user_id = ? AND site_id = ? AND risk_flag <> ? AND (risk_released = ? OR risk_released IS NULL) AND (review_status = ? OR review_status IS NULL)",
+				userId, customer.SiteId, "", false, "").Find(&events).Error; err != nil {
+				return err
+			}
+			for _, event := range events {
+				if event.Projected {
+					revenue, platform, earning := AdtySiteEarningSplit(int64(event.Quota), decimal.NewFromFloat(event.Markup), decimal.NewFromFloat(event.CostFactor))
+					kind := model.AdtySiteEarningUsage
+					if event.Quota < 0 {
+						kind = model.AdtySiteEarningRefund
+					}
+					if err := upsertAdtySiteEarningTx(tx, event.Day+"+op", adtySiteEarningEntry{SiteId: event.SiteId, UserId: userId,
+						Kind: kind, Quota: int64(event.Quota), Revenue: revenue, Platform: platform, Earning: earning}); err != nil {
+						return err
+					}
+					if err := upsertAdtySiteEarningTx(tx, event.Day+"+op", adtySiteEarningEntry{SiteId: event.SiteId, UserId: userId,
+						Kind: model.AdtySiteEarningSkipped, Reason: event.RiskFlag, Quota: -int64(event.Quota), Revenue: revenue.Neg(), Platform: platform.Neg(), Earning: earning.Neg()}); err != nil {
+						return err
+					}
+				}
+				if err := tx.Model(&event).Update("risk_released", true).Error; err != nil {
+					return err
+				}
+			}
 			var rows []model.AdtySiteEarningDaily
-			if err := tx.Where("user_id = ? AND site_id = ? AND kind = ? AND status = ?", userId, customer.SiteId,
+			if err := tx.Where("user_id = ? AND site_id = ? AND kind = ? AND status = ? AND day NOT LIKE '%+op%'", userId, customer.SiteId,
 				model.AdtySiteEarningSkipped, model.AdtySiteEarningPending).Find(&rows).Error; err != nil {
 				return err
 			}

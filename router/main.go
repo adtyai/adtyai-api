@@ -19,8 +19,8 @@ func SetRouter(router *gin.Engine, assets WebAssets) {
 	SetTaskPluginProtocolRouter(router)
 	SetVideoRouter(router)
 	SetTaskRouter(router)
-	pluginDispatcher := SetPluginRouter(router)
 	SetAdtyWebRoutes(router) // 二开：支付跳回和按站点的 robots.txt（任务 11.3）
+	pluginDispatcher := SetPluginRouter(router)
 	frontendBaseUrl := os.Getenv("FRONTEND_BASE_URL")
 	if common.IsMasterNode && frontendBaseUrl != "" {
 		frontendBaseUrl = ""

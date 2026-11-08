@@ -40,6 +40,10 @@ type AdtySite struct {
 	PendingTierCostFactor   *decimal.Decimal `json:"pending_tier_cost_factor" gorm:"type:decimal(10,6)"`
 	PendingTierCostFactorAt int64            `json:"pending_tier_cost_factor_at" gorm:"index"`
 	TierMonth               string           `json:"tier_month" gorm:"type:varchar(7)"`
+	TierCode                string           `json:"tier_code" gorm:"type:varchar(32);index"`
+	TierMode                string           `json:"tier_mode" gorm:"type:varchar(16)"`
+	TierUpdatedAt           int64            `json:"tier_updated_at"`
+	TierMaxMarkup           *decimal.Decimal `json:"tier_max_markup" gorm:"type:decimal(10,4)"`
 	Visibility              string           `json:"visibility" gorm:"type:text"`
 	Brand                   string           `json:"brand" gorm:"type:text"`
 	BonusRates              string           `json:"bonus_rates" gorm:"type:text"`
@@ -99,14 +103,15 @@ func (AdtySiteAudit) TableName() string { return "adty_site_audits" }
 // AdtySiteCustomer 是分站客户，和 users.site_id 同步写（11.2 注册、11.1 关站转移）。
 // 风控标记和复核在 11.5，条款勾选在 11.7。
 type AdtySiteCustomer struct {
-	UserId       int    `json:"user_id" gorm:"primaryKey;autoIncrement:false"`
-	SiteId       int    `json:"site_id" gorm:"index"`
-	RiskFlag     string `json:"risk_flag" gorm:"type:varchar(16)"` // 空 | self_use | migration
-	RiskReason   string `json:"-" gorm:"type:text"`                // 只给后台看
-	Reviewed     bool   `json:"reviewed"`
-	TermsVersion string `json:"terms_version" gorm:"type:varchar(32)"`
-	TermsAt      int64  `json:"terms_at"`
-	JoinedAt     int64  `json:"joined_at"`
+	UserId              int    `json:"user_id" gorm:"primaryKey;autoIncrement:false"`
+	SiteId              int    `json:"site_id" gorm:"index"`
+	RiskFlag            string `json:"risk_flag" gorm:"type:varchar(16)"` // 空 | self_use | migration
+	RiskReason          string `json:"-" gorm:"type:text"`                // 只给后台看
+	Reviewed            bool   `json:"reviewed"`
+	EarningRiskReleased bool   `json:"-"` // only an explicit review converting skipped earnings releases old charges
+	TermsVersion        string `json:"terms_version" gorm:"type:varchar(32)"`
+	TermsAt             int64  `json:"terms_at"`
+	JoinedAt            int64  `json:"joined_at"`
 }
 
 func (AdtySiteCustomer) TableName() string { return "adty_site_customers" }
@@ -216,7 +221,8 @@ func (AdtySiteLookup) TableName() string { return "adty_site_lookups" }
 // AdtySiteTables 是分站的表，迁移和测试共用。
 func AdtySiteTables() []any {
 	return []any{&AdtySite{}, &AdtySiteInviteCode{}, &AdtySiteAudit{}, &AdtySiteCustomer{}, &AdtySitePrice{}, &AdtySiteDomain{},
-		&AdtySiteEarningDaily{}, &AdtySiteTrialGrant{}, &AdtySiteReport{}, &AdtySiteLookup{}, &AdtySiteSenderDomain{}}
+		&AdtySiteEarningDaily{}, &AdtySiteTrialGrant{}, &AdtySiteReport{}, &AdtySiteLookup{}, &AdtySiteSenderDomain{},
+		&AdtySiteTier{}, &AdtySiteWallet{}, &AdtySiteWalletLedger{}}
 }
 
 // AdtySetUsersSiteTx 把 fromSite 的客户全部改到 toSite（0 是主站），返回改了哪些用户。

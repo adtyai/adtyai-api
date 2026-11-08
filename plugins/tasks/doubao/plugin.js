@@ -15,6 +15,21 @@ const VIDEO_MODELS = {
   "doubao-seedance-2-0-mini-260615": { resolutions: ["480p", "720p"], maxDuration: 15, videoInput: true },
   "doubao-seedance-2-5-260628": { resolutions: ["480p", "720p", "1080p"], maxDuration: 30, videoInput: true },
 };
+// Ark 3D tasks share the task endpoint with Seedance, but their inputs,
+// result files and usage have a separate contract. Official references:
+// docs.volcengine.com/docs/ark/{create,shumei-create,shadoweye-create}-3d-generation-task-api
+const THREE_D_MODELS = {
+  "doubao-seed3d-2-0-260328": { family: "seed3d", maxImages: 1, tokens: { standard: 30000 } },
+  "hitem3d-2-0-251223": {
+    family: "hitem3d",
+    maxImages: 4,
+    tokens: { standard_geometry: 72500, standard_textured: 126875, high_geometry: 108750, high_textured: 163125 },
+  },
+  "hyper3d-gen2-260112": { family: "hyper3d", maxImages: 5, tokens: { standard: 30000 } },
+};
+const THREE_D_USAGE_SCHEMA = {
+  tokens: { type: "number", unit: "token", description: { en: "3D generation token unit price", zh: "3D 生成 Token 单价" } },
+};
 // Every Ark resolution tier; an endpoint ID reached through channel mapping
 // without a declared profile keeps them all and the longest Seedance duration.
 const SEEDANCE_RESOLUTIONS = ["480p", "720p", "1080p", "4k"];
@@ -300,20 +315,25 @@ export const meta = {
   name: "Doubao",
   icon: "Doubao.Color",
   description: {
-    en: "Volcengine Doubao Seedance video generation and Seedream image generation",
-    zh: "火山引擎豆包 Seedance 视频生成与 Seedream 图片生成",
+    en: "Volcengine Doubao Seedance video, Seedream image and 3D generation",
+    zh: "火山引擎豆包 Seedance 视频、Seedream 图片与 3D 生成",
   },
-  version: "1.3.0",
+  version: "1.4.0",
   author: { name: "QuantumNous" },
   channelTypes: [54, 45], // VolcEngine-type channels serve Ark video models with the same wire format
-  models: Object.keys(VIDEO_MODELS).concat(Object.keys(IMAGE_MODELS)),
+  models: Object.keys(VIDEO_MODELS).concat(Object.keys(IMAGE_MODELS), Object.keys(THREE_D_MODELS)),
   fetchMode: "per_task",
   upstreams: ["vendor", "new_api"],
   requiredCapabilities: ["duration-auto@1"],
   usageSchema: seedanceUsageSchema(DEFAULT_VIDEO_PROFILE),
   usageExamples: seedanceUsageExamples(DEFAULT_VIDEO_PROFILE),
   usageProfiles: capabilityUsageProfiles(VIDEO_MODELS, seedanceUsageSchema, seedanceUsageExamples).concat(
-    capabilityUsageProfiles(IMAGE_MODELS, seedreamUsageSchema, seedreamUsageExamples)
+    capabilityUsageProfiles(IMAGE_MODELS, seedreamUsageSchema, seedreamUsageExamples),
+    Object.keys(THREE_D_MODELS).map((model) => ({
+      models: [model],
+      schema: THREE_D_USAGE_SCHEMA,
+      examples: Object.keys(THREE_D_MODELS[model].tokens).map((quality) => ({ label: quality, facts: { tokens: THREE_D_MODELS[model].tokens[quality] } })),
+    }))
   ),
   routes: [
     { method: "POST", path: "/doubao/api/v3/contents/generations/tasks", type: "submit", decode: "createTask", render: "taskCreated" },
@@ -343,6 +363,182 @@ function objectValue(value, name) {
   if (value === undefined || value === null) return {};
   if (typeof value !== "object" || Array.isArray(value)) throw new Error(name + " must be an object");
   return value;
+}
+
+function threeDProfile(ctx) {
+  for (const model of [ctx && ctx.upstreamModel, ctx && ctx.model, ctx && ctx.requestBody && ctx.requestBody.model].map(trimmed)) {
+    if (Object.prototype.hasOwnProperty.call(THREE_D_MODELS, model)) return THREE_D_MODELS[model];
+  }
+  return null;
+}
+
+// Text commands are weakly validated upstream: invalid values fall back to
+// defaults. Validate the exact flags before reservation so ignored/duplicate
+// commands cannot select a more expensive mode than the one reserved.
+function threeDCommands(text, family) {
+  const flags = {};
+  const pattern = /(?:^|\s)--([A-Za-z_][A-Za-z0-9_]*)\s+(\[[^\]]*\]|\S+)/g;
+  let match;
+  let end = 0;
+  let prompt = "";
+  while ((match = pattern.exec(text)) !== null) {
+    const gap = text.slice(end, match.index).trim();
+    if (gap && (end || family !== "hyper3d")) throw new Error("3D text must use documented model commands");
+    if (!end) prompt = gap;
+    const key = match[1] === "ff" ? "fileformat" : match[1] === "sl" ? "subdivisionlevel" : match[1];
+    if (Object.prototype.hasOwnProperty.call(flags, key)) throw new Error("duplicate 3D command: " + key);
+    flags[key] = match[2];
+    end = pattern.lastIndex;
+  }
+  const trailing = text.slice(end).trim();
+  if (end && trailing) throw new Error("invalid 3D command value");
+  if (!end) prompt = trailing;
+  if (family !== "hyper3d" && prompt) throw new Error("3D text must use documented model commands");
+  if (family === "hyper3d" && (prompt.length > 400 || prompt.split("").some((character) => character.charCodeAt(0) > 127)))
+    throw new Error("Hyper3D prompt must be English and at most 400 characters");
+  const allowed =
+    family === "seed3d"
+      ? ["subdivisionlevel", "fileformat"]
+      : family === "hitem3d"
+        ? ["resolution", "face", "fileformat", "request_type", "multi_images_bit"]
+        : [
+            "material",
+            "mesh_mode",
+            "quality_override",
+            "addons",
+            "use_original_alpha",
+            "bbox_condition",
+            "TAPose",
+            "subdivisionlevel",
+            "fileformat",
+            "hd_texture",
+          ];
+  for (const key of Object.keys(flags)) if (!allowed.includes(key)) throw new Error("unsupported 3D command: " + key);
+  if (flags.subdivisionlevel != null && !["high", "medium", "low"].includes(flags.subdivisionlevel)) throw new Error("invalid subdivisionlevel");
+  if (flags.fileformat != null) {
+    const formats =
+      family === "seed3d" ? ["glb", "obj", "usd", "usdz"] : family === "hitem3d" ? ["1", "2", "3", "4", "5"] : ["glb", "obj", "usdz", "fbx", "stl"];
+    if (!formats.includes(flags.fileformat)) throw new Error("invalid fileformat");
+  }
+  if (family === "hitem3d") {
+    if (flags.resolution != null && !["1536", "1536pro"].includes(flags.resolution)) throw new Error("resolution must be 1536 or 1536pro");
+    if (flags.request_type != null && !["1", "3"].includes(flags.request_type)) throw new Error("request_type must be 1 or 3");
+    if (flags.face != null && (!/^\d+$/.test(flags.face) || Number(flags.face) < 100000 || Number(flags.face) > 2000000))
+      throw new Error("face must be between 100000 and 2000000");
+    if (flags.multi_images_bit != null && !/^[01]{4}$/.test(flags.multi_images_bit)) throw new Error("multi_images_bit must contain four binary digits");
+  }
+  if (family === "hyper3d") {
+    if (flags.material != null && !["PBR", "Shaded", "All", "None"].includes(flags.material)) throw new Error("invalid material");
+    if (flags.mesh_mode != null && !["Raw", "Quad"].includes(flags.mesh_mode)) throw new Error("mesh_mode must be Raw or Quad");
+    if (flags.addons != null && flags.addons !== "HighPack") throw new Error("addons must be HighPack");
+    for (const key of ["use_original_alpha", "TAPose", "hd_texture"])
+      if (flags[key] != null && !["true", "false"].includes(flags[key])) throw new Error(key + " must be true or false");
+    if (flags.quality_override != null) {
+      const raw = flags.mesh_mode === "Raw";
+      const value = Number(flags.quality_override);
+      if (!Number.isFinite(value) || value < (raw ? 500 : 1000) || value > (raw ? 1000000 : 200000))
+        throw new Error("quality_override is outside the mesh_mode range");
+    }
+    if (flags.bbox_condition != null) {
+      let box;
+      try {
+        box = JSON.parse(flags.bbox_condition);
+      } catch (e) {
+        throw new Error("bbox_condition must be an integer array");
+      }
+      if (!Array.isArray(box) || box.length !== 3 || box.some((value) => !Number.isSafeInteger(value) || value <= 0))
+        throw new Error("bbox_condition must contain three positive integers");
+    }
+  }
+  return flags;
+}
+
+function convert3D(ctx) {
+  const req = ctx.requestBody || {};
+  const metadata = objectValue(req.metadata, "metadata");
+  const profile = threeDProfile(ctx);
+  if (!profile) throw new Error("unsupported 3D model");
+  for (const key of [
+    "duration",
+    "seconds",
+    "resolution",
+    "frames",
+    "generate_audio",
+    "draft",
+    "ratio",
+    "quality",
+    "sample",
+    "enable_texture",
+    "pbr",
+    "mesh_mode",
+    "poly_count",
+    "polygon_count",
+    "prompt_strength",
+    "pose",
+  ]) {
+    if (req[key] !== undefined || metadata[key] !== undefined) throw new Error(key + " is not a supported top-level 3D field; use documented text commands");
+  }
+  const body = { model: ctx.upstreamModel || req.model || ctx.model };
+  const keys =
+    profile.family === "seed3d"
+      ? ["content", "file_format", "subdivision_level"]
+      : profile.family === "hitem3d"
+        ? ["content", "callback_url"]
+        : ["content", "seed", "callback_url"];
+  for (const key of keys) {
+    if (req[key] !== undefined) body[key] = req[key];
+    if (metadata[key] !== undefined) body[key] = metadata[key];
+  }
+  if (
+    profile.family !== "seed3d" &&
+    (req.file_format !== undefined || metadata.file_format !== undefined || req.subdivision_level !== undefined || metadata.subdivision_level !== undefined)
+  )
+    throw new Error("file format and subdivision level must use documented text commands for this 3D model");
+  const content = Array.isArray(body.content) ? body.content.slice() : [];
+  if (body.content !== undefined && !Array.isArray(body.content)) throw new Error("content must be an array");
+  if (!content.length) {
+    if (trimmed(req.prompt)) content.push({ type: "text", text: req.prompt });
+    for (const url of req.images || []) content.push({ type: "image_url", image_url: { url: url } });
+  }
+  let images = 0;
+  let text = "";
+  let textCount = 0;
+  body.content = content.map((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) throw new Error("invalid 3D content");
+    if (item.type === "text") {
+      if (typeof item.text !== "string" || !item.text.trim() || ++textCount > 1) throw new Error("3D content accepts one non-empty text command");
+      text = item.text;
+      return { type: "text", text: text };
+    }
+    if (item.type !== "image_url" || !item.image_url || typeof item.image_url.url !== "string") throw new Error("3D content requires image_url");
+    const url = trimmed(item.image_url.url);
+    const dataURL = profile.family !== "hitem3d" && /^data:image\/[a-z0-9.+-]+;base64,/.test(url);
+    if (!/^https?:\/\//.test(url) && !dataURL) throw new Error("unsupported 3D image URL");
+    images++;
+    return { type: "image_url", image_url: { url: url } };
+  });
+  if (images > profile.maxImages || (profile.family === "hyper3d" ? !images && !text : !images)) throw new Error("unsupported 3D image count");
+  const flags = threeDCommands(text, profile.family);
+  if (profile.family === "seed3d") {
+    if (body.file_format != null && !["glb", "obj", "usd", "usdz"].includes(body.file_format)) throw new Error("invalid file_format");
+    if (body.subdivision_level != null && !["high", "medium", "low"].includes(body.subdivision_level)) throw new Error("invalid subdivision_level");
+    if (
+      (flags.fileformat && body.file_format && flags.fileformat !== body.file_format) ||
+      (flags.subdivisionlevel && body.subdivision_level && flags.subdivisionlevel !== body.subdivision_level)
+    )
+      throw new Error("conflicting 3D options");
+  }
+  if (profile.family === "hyper3d" && body.seed != null && (!Number.isInteger(body.seed) || body.seed < 0 || body.seed > 65535))
+    throw new Error("seed must be between 0 and 65535");
+  if (flags.multi_images_bit != null && flags.multi_images_bit.split("1").length - 1 !== images)
+    throw new Error("multi_images_bit does not match the image count");
+  // Exact fixed output tokens from Ark's model-pricing#59e650ae, not prices.
+  // Hitem's final command flags select one of four documented token quantities.
+  const mode =
+    profile.family === "hitem3d"
+      ? (flags.resolution === "1536pro" ? "high" : "standard") + (flags.request_type === "1" ? "_geometry" : "_textured")
+      : "standard";
+  return { body: body, action: images ? "image_to_3d" : "text_to_3d", tokens: profile.tokens[mode] };
 }
 
 function draftTaskIds(content) {
@@ -713,6 +909,11 @@ function responsesVideoText(ctx) {
 
 function responsesOutputText(ctx, task) {
   const data = artifactData(task);
+  if (threeDProfile(ctx) || trimmed((data.content || {}).file_url)) {
+    const artifact = (ctx.artifacts || {}).model;
+    if (!artifact || !trimmed(artifact.url)) throw new Error("3D model artifact is unavailable");
+    return "[Download 3D model](<" + artifact.url + ">)";
+  }
   if (!imageTask(ctx) && !Array.isArray(data.data)) return responsesVideoText(ctx);
   const parts = [];
   imageURLEntries(data).forEach(function (_, index) {
@@ -752,6 +953,10 @@ export const native = {
     };
     const seconds = Number(body.duration);
     if (Number.isFinite(seconds) && seconds > 0) requestBody.seconds = seconds;
+    if (threeDProfile({ model: model })) {
+      const converted = convert3D({ model: model, requestBody: requestBody });
+      return { kind: "submit", model: model, action: converted.action, requestBody: requestBody };
+    }
     const intent = { kind: "submit", model: model, action: hasReference ? "image_to_video" : "text_to_video", requestBody: requestBody };
     const originTaskIds = draftTaskIds(content);
     if (originTaskIds.length) intent.originTaskIds = originTaskIds;
@@ -799,6 +1004,16 @@ export function buildSubmitRequest(ctx) {
       body: converted.body,
       action: converted.action,
       rewriteModel: converted.body.model,
+    };
+  }
+  if (threeDProfile(ctx)) {
+    const converted = convert3D(ctx);
+    return {
+      url: apiRoot(ctx) + "/api/v3/contents/generations/tasks",
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json", Authorization: "Bearer " + ctx.apiKey },
+      body: converted.body,
+      action: converted.action,
     };
   }
   const req = ctx.requestBody;
@@ -854,6 +1069,10 @@ export function extractUsage(ctx) {
     if (ctx.usagePurpose === "billing_ratios") return { image_count: facts.images_up_to_1_5k + facts.images_above_1_5k };
     return facts;
   }
+  if (threeDProfile(ctx)) {
+    const converted = convert3D(ctx);
+    return ctx.usagePurpose === "billing_ratios" ? {} : { tokens: converted.tokens };
+  }
   const req = ctx.requestBody || {};
   const metadata = req.metadata || {};
   if (ctx.usagePurpose === "billing_ratios") {
@@ -902,7 +1121,9 @@ export function parseTaskResult(ctx, body) {
   if (body.status === "pending" || body.status === "queued") return { status: "QUEUED", progress: "10%" };
   if (body.status === "processing" || body.status === "running") return { status: "IN_PROGRESS", progress: "50%" };
   if (body.status === "succeeded") {
-    const result = { status: "SUCCESS", progress: "100%", url: body.content && body.content.video_url ? body.content.video_url : "" };
+    const content = body.content || {};
+    if (threeDProfile(ctx) && !trimmed(content.file_url)) return { status: "FAILURE", reason: "3D generation succeeded without a model file" };
+    const result = { status: "SUCCESS", progress: "100%", url: trimmed(content.file_url) || trimmed(content.video_url) };
     const usage = body.usage || {};
     const completionTokens = Number(usage.completion_tokens || 0);
     const totalTokens = Number(usage.total_tokens || 0);
@@ -936,6 +1157,7 @@ export function listArtifacts(task) {
   }
   const content = data.content || {};
   const artifacts = [];
+  if (trimmed(content.file_url)) artifacts.push({ key: "model", type: "file" });
   if (trimmed(content.video_url)) artifacts.push({ key: "video", type: "video" });
   if (trimmed(content.last_frame_url)) artifacts.push({ key: "last_frame", type: "image", mimeType: "image/png" });
   return artifacts;
@@ -952,7 +1174,7 @@ export function buildContentRequest(ctx) {
     url = index >= 0 ? trimmed(entries[index].url) : "";
   } else {
     const content = data.content || {};
-    const urls = { video: content.video_url, last_frame: content.last_frame_url };
+    const urls = { model: content.file_url, video: content.video_url, last_frame: content.last_frame_url };
     url = trimmed(urls[ctx.artifactKey]);
   }
   if (!url) throw new Error("artifact_not_found");
@@ -964,6 +1186,10 @@ export function extractUsageOnComplete(task, taskResult, body) {
   if (!body || body.status !== "succeeded") return {};
   const facts = {};
   const usage = body.usage || {};
+  if (threeDProfile(task) || trimmed((body.content || {}).file_url)) {
+    const tokens = usage.completion_tokens ?? usage.total_tokens;
+    return tokens == null ? {} : { tokens: tokens };
+  }
   let tokens = Number(usage.completion_tokens);
   if (!Number.isFinite(tokens) || tokens <= 0) tokens = Number(usage.total_tokens);
   if (Number.isFinite(tokens) && tokens > 0) facts.tokens = tokens;
@@ -984,6 +1210,41 @@ export const protocols = {
       if (req.input !== undefined && typeof req.input !== "string" && !Array.isArray(req.input)) throw new Error("input must be a string or array");
       if (req.images !== undefined && !Array.isArray(req.images)) throw new Error("images must be an array");
       const input = responsesInput(req);
+      if (threeDProfile({ upstreamModel: ctx.upstreamModel, model: model })) {
+        const metadata = Object.assign({}, objectValue(req.metadata, "metadata"));
+        const requestBody = { model: model, prompt: input.prompt || trimmed(req.prompt), metadata: metadata };
+        const images = [];
+        for (const image of [].concat(req.image || [], req.input_reference || [], req.images || [], input.images)) {
+          if (trimmed(image) && !images.includes(trimmed(image))) images.push(trimmed(image));
+        }
+        if (images.length) requestBody.images = images;
+        for (const key of [
+          "content",
+          "quality",
+          "file_format",
+          "subdivision_level",
+          "enable_texture",
+          "pbr",
+          "sample",
+          "prompt_strength",
+          "mesh_mode",
+          "poly_count",
+          "polygon_count",
+          "seed",
+          "pose",
+          "callback_url",
+          "duration",
+          "seconds",
+          "resolution",
+          "frames",
+          "generate_audio",
+          "ratio",
+        ]) {
+          if (Object.prototype.hasOwnProperty.call(req, key)) metadata[key] = req[key];
+        }
+        const converted = convert3D({ upstreamModel: ctx.upstreamModel, model: model, requestBody: requestBody });
+        return { kind: "submit", model: model, action: converted.action, requestBody: requestBody };
+      }
       if (imageTask({ upstreamModel: ctx.upstreamModel, model: model })) {
         const prompt = input.prompt || trimmed(req.prompt);
         const listed = Array.isArray(req.image) ? req.image : req.image === undefined ? [] : [req.image];

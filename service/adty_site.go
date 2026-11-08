@@ -308,6 +308,9 @@ func OpenAdtySite(userId int, subdomain, openedBy string, preset AdtySitePreset)
 		if err := tx.Create(site).Error; err != nil {
 			return err
 		}
+		if err := ensureAdtySiteWalletsTx(tx, site.Id); err != nil {
+			return err
+		}
 		if status == model.AdtySiteStatusActive {
 			if err := markAffiliateSiteOwnerTx(tx, userId, now); err != nil {
 				return err
@@ -564,7 +567,8 @@ func ApplyDueAdtySiteCostFactors(now int64) (int64, error) {
 // ApplyDueAdtySiteTierCostFactors writes a scheduled higher performance-tier d.
 func ApplyDueAdtySiteTierCostFactors(now int64) (int64, error) {
 	var due []model.AdtySite
-	if err := model.DB.Where("pending_tier_cost_factor_at > 0 AND pending_tier_cost_factor_at <= ?", now).Find(&due).Error; err != nil {
+	if err := model.DB.Where("pending_tier_cost_factor_at > 0 AND pending_tier_cost_factor_at <= ?", now).
+		Where("(tier_mode = ? OR tier_mode IS NULL) AND (tier_code = ? OR tier_code IS NULL)", "", "").Find(&due).Error; err != nil {
 		return 0, err
 	}
 	var applied int64
@@ -574,6 +578,7 @@ func ApplyDueAdtySiteTierCostFactors(now int64) (int64, error) {
 		}
 		result := model.DB.Model(&model.AdtySite{}).
 			Where("id = ? AND pending_tier_cost_factor_at > 0 AND pending_tier_cost_factor_at <= ?", site.Id, now).
+			Where("(tier_mode = ? OR tier_mode IS NULL) AND (tier_code = ? OR tier_code IS NULL)", "", "").
 			Updates(map[string]any{
 				"tier_cost_factor": site.PendingTierCostFactor, "pending_tier_cost_factor": gorm.Expr("NULL"), "pending_tier_cost_factor_at": 0,
 			})
@@ -821,7 +826,7 @@ func ExecuteAdtySiteClose(siteId int, now int64) error {
 			}
 		default:
 			if err := tx.Model(&model.AdtySiteCustomer{}).Where("user_id IN ?", moved).Updates(map[string]any{
-				"site_id": target, "risk_flag": "", "risk_reason": "", "reviewed": false, "joined_at": now,
+				"site_id": target, "risk_flag": "", "risk_reason": "", "reviewed": false, "earning_risk_released": false, "joined_at": now,
 			}).Error; err != nil {
 				return err
 			}

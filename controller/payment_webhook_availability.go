@@ -25,7 +25,7 @@ func isStripeWebhookConfigured() bool {
 }
 
 func isStripeWebhookEnabled() bool {
-	return isStripeTopUpEnabled()
+	return isStripeWebhookConfigured()
 }
 
 func isCreemTopUpEnabled() bool {
@@ -43,7 +43,7 @@ func isCreemWebhookConfigured() bool {
 }
 
 func isCreemWebhookEnabled() bool {
-	return isCreemTopUpEnabled() && isCreemWebhookConfigured()
+	return isCreemWebhookConfigured()
 }
 
 func isWaffoTopUpEnabled() bool {
@@ -54,11 +54,15 @@ func isWaffoTopUpEnabled() bool {
 		return false
 	}
 
-	return isWaffoWebhookConfigured()
+	return isWaffoEnvironmentConfigured(setting.WaffoSandbox)
 }
 
 func isWaffoWebhookConfigured() bool {
-	if setting.WaffoSandbox {
+	return isWaffoEnvironmentConfigured(true) || isWaffoEnvironmentConfigured(false)
+}
+
+func isWaffoEnvironmentConfigured(sandbox bool) bool {
+	if sandbox {
 		return strings.TrimSpace(setting.WaffoSandboxApiKey) != "" &&
 			strings.TrimSpace(setting.WaffoSandboxPrivateKey) != "" &&
 			strings.TrimSpace(setting.WaffoSandboxPublicCert) != ""
@@ -70,7 +74,7 @@ func isWaffoWebhookConfigured() bool {
 }
 
 func isWaffoWebhookEnabled() bool {
-	return isWaffoTopUpEnabled()
+	return isWaffoWebhookConfigured()
 }
 
 func isWaffoPancakeTopUpEnabled() bool {
@@ -81,15 +85,16 @@ func isWaffoPancakeTopUpEnabled() bool {
 	// the SDK; mode (test/prod) is read from each event.
 	return strings.TrimSpace(setting.WaffoPancakeMerchantID) != "" &&
 		strings.TrimSpace(setting.WaffoPancakePrivateKey) != "" &&
-		strings.TrimSpace(setting.WaffoPancakeProductID) != ""
+		strings.TrimSpace(setting.WaffoPancakeProductID) != "" &&
+		(setting.WaffoPancakeEnvironment == "test" || setting.WaffoPancakeEnvironment == "prod")
 }
 
 func isWaffoPancakeWebhookConfigured() bool {
-	return isWaffoPancakeTopUpEnabled()
+	return true // Verification uses the SDK's test/prod public keys; each order binds its store.
 }
 
 func isWaffoPancakeWebhookEnabled() bool {
-	return isWaffoPancakeTopUpEnabled()
+	return isWaffoPancakeWebhookConfigured()
 }
 
 func isEpayTopUpEnabled() bool {
@@ -106,5 +111,5 @@ func isEpayWebhookConfigured() bool {
 }
 
 func isEpayWebhookEnabled() bool {
-	return isEpayTopUpEnabled()
+	return isEpayWebhookConfigured()
 }

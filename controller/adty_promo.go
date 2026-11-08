@@ -250,7 +250,7 @@ func PutAdtySitePromoCode(c *gin.Context) {
 	common.ApiSuccess(c, code)
 }
 
-// DeleteAdtySitePromoCode 站长删本站的码。已经下单还没付款的订单照样按快照入账、扣站长收益。
+// DeleteAdtySitePromoCode 站长删本站的码。未付订单仍可入账本金和档位加赠，核销时移除已删除码的优惠加赠。
 func DeleteAdtySitePromoCode(c *gin.Context) {
 	site, ok := adtyPromoOwnerSite(c)
 	if !ok {

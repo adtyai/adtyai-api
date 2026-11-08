@@ -12,7 +12,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// 我们自己的支付商（约定 C）。上游的入账入口都不认它们。
+// Supported providers share frozen order facts and the ADTY settlement ledger.
 const (
 	PaymentProviderAdtyBEpusdt = "bepusdt"
 	PaymentProviderAdtyEpay    = "adty_epay"
@@ -28,7 +28,11 @@ const (
 
 // IsAdtyPaymentProvider 说明这是不是二开的支付商。
 func IsAdtyPaymentProvider(provider string) bool {
-	return provider == PaymentProviderAdtyBEpusdt || provider == PaymentProviderAdtyEpay
+	switch provider {
+	case PaymentProviderAdtyBEpusdt, PaymentProviderAdtyEpay, PaymentProviderStripe, PaymentProviderCreem, PaymentProviderWaffo, PaymentProviderWaffoPancake:
+		return true
+	}
+	return false
 }
 
 // AdtyTopupOrder 是订单事实（任务 3.2），按 trade_no 对应上游的 top_ups，上游表不加字段。
@@ -70,6 +74,9 @@ type AdtyTopupOrder struct {
 	RefundQuota         int64           `json:"refund_quota" gorm:"not null;default:0"`                     // 退款时退的本金额度 P（赠金不退）
 	RefundAmount        decimal.Decimal `json:"refund_amount" gorm:"type:decimal(20,8);not null;default:0"` // 退款时应退的金额，支付币种，线下退
 	ProviderPayload     string          `json:"-" gorm:"type:text"`
+	ProviderProductId   string          `json:"-" gorm:"type:varchar(255)"`
+	ProviderMerchantId  string          `json:"-" gorm:"type:varchar(255)"`
+	ProviderEnvironment string          `json:"-" gorm:"type:varchar(16)"`
 	CreatedAt           int64           `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt           int64           `json:"updated_at" gorm:"autoUpdateTime"`
 	// RefundDeductedQuota、RefundBonusQuota 是这次退款扣回的 R 和订单赠金 G，只在退款钩子里用，不入库。
@@ -85,12 +92,16 @@ func (AdtyTopupOrder) TableName() string {
 type AdtyPaymentFacts struct {
 	Provider, Method string
 	PaidAmount       decimal.Decimal // USDT 数量或人民币金额
+	PurchaseAmount   decimal.Decimal // Signed provider item subtotal before tax/discount; zero means exact payment only.
 	FiatAmount       decimal.Decimal // BEpusdt 回调里的法币金额；易支付不用
 	PaidCurrency     string
 	PayAddress       string // BEpusdt 回调里的 token
 	GatewayTradeId   string
 	TxHash, Payload  string
 	Source           string // callback | query | manual
+	ProductId        string
+	MerchantId       string
+	Environment      string
 }
 
 var (
@@ -185,6 +196,13 @@ func CompleteAdtyTopUpTx(tx *gorm.DB, tradeNo string, facts AdtyPaymentFacts) (a
 		return false, 0, nil, nil, ErrTopUpStatusInvalid
 	}
 	if facts.Source != AdtyPaymentSourceManual {
+		var reversals int64
+		if err := tx.Model(&PaymentOrphanEvent{}).Where("provider = ? AND reference_id = ? AND status <> ? AND (event_id LIKE ? OR status IN ?)", ext.Provider, tradeNo, PaymentOrphanStatusDismissed, "reversal:%", []string{PaymentOrphanStatusNeverCredited, PaymentOrphanStatusRefunded}).Count(&reversals).Error; err != nil {
+			return false, 0, nil, nil, err
+		}
+		if reversals > 0 {
+			return false, 0, nil, nil, ErrPaymentOrphanNotCredit
+		}
 		if err := checkAdtyPaymentFacts(ext, facts); err != nil {
 			return false, 0, nil, nil, err
 		}
@@ -193,6 +211,9 @@ func CompleteAdtyTopUpTx(tx *gorm.DB, tradeNo string, facts AdtyPaymentFacts) (a
 		return false, 0, nil, nil, ErrInvalidTopUpQuota
 	}
 	now := common.GetTimestamp()
+	if err := LockAdtyPromoEligibilityTx(tx, ext.UserId); err != nil {
+		return false, 0, nil, nil, err
+	}
 	if ext.PromoCodeId > 0 {
 		if err := adtyRedeemPromoOrDropTx(tx, ext, now); err != nil {
 			return false, 0, nil, nil, err
@@ -224,7 +245,22 @@ func CompleteAdtyTopUpTx(tx *gorm.DB, tradeNo string, facts AdtyPaymentFacts) (a
 	ext.PaidTxHash = strings.TrimSpace(facts.TxHash)
 	ext.PaidSource = facts.Source
 	// 不在事务里调 ValidateTopUpQuotaCapacity：它读全局 DB，看不到事务里的改动。
+	var user User
+	if err := lockForUpdate(tx).First(&user, topUp.UserId).Error; err != nil {
+		return false, 0, nil, nil, err
+	}
+	before, err := userWalletBalance(user.Quota, user.QuotaPending)
+	if err != nil {
+		return false, 0, nil, nil, err
+	}
 	if err := creditTopUpQuota(tx, topUp.UserId, credited, nil); err != nil {
+		return false, 0, nil, nil, err
+	}
+	key := "topup:" + common.Sha1([]byte(tradeNo))
+	if err := InsertAdtyLedgerTx(tx, &AdtyBalanceLedger{
+		UserId: topUp.UserId, DeltaQuota: int64(credited), BalanceBefore: int64(before), BalanceAfter: int64(before) + int64(credited),
+		Type: AdtyLedgerTypeTopUp, RefType: "topup", RefId: tradeNo, IdempotencyKey: &key,
+	}); err != nil {
 		return false, 0, nil, nil, err
 	}
 	if AdtyAfterTopUpCreditedTx != nil {
@@ -286,6 +322,20 @@ func checkAdtyPaymentFacts(ext *AdtyTopupOrder, facts AdtyPaymentFacts) error {
 	case PaymentProviderAdtyEpay:
 		if !facts.PaidAmount.Round(2).Equal(ext.PayAmount.Round(2)) {
 			return fmt.Errorf("%w: paid %s != %s", ErrPaymentAmountMismatch, facts.PaidAmount, ext.PayAmount)
+		}
+	case PaymentProviderStripe, PaymentProviderCreem, PaymentProviderWaffo, PaymentProviderWaffoPancake:
+		amountMatches := facts.PaidAmount.Equal(ext.PayAmount)
+		if (ext.Provider == PaymentProviderStripe || ext.Provider == PaymentProviderCreem || ext.Provider == PaymentProviderWaffoPancake) && facts.PurchaseAmount.IsPositive() {
+			amountMatches = facts.PurchaseAmount.Equal(ext.PayAmount) && facts.PaidAmount.IsPositive()
+		}
+		if !amountMatches || !facts.PaidAmount.IsPositive() || !strings.EqualFold(strings.TrimSpace(facts.PaidCurrency), ext.PayCurrency) {
+			return fmt.Errorf("%w: amount or currency", ErrPaymentAmountMismatch)
+		}
+		if facts.Method != ext.Method || (ext.GatewayTradeId != "" && facts.GatewayTradeId != ext.GatewayTradeId) ||
+			(ext.ProviderProductId != "" && facts.ProductId != ext.ProviderProductId) ||
+			(ext.ProviderMerchantId != "" && facts.MerchantId != ext.ProviderMerchantId) ||
+			(ext.ProviderEnvironment != "" && facts.Environment != ext.ProviderEnvironment) {
+			return fmt.Errorf("%w: payment identity", ErrPaymentAmountMismatch)
 		}
 	default:
 		return ErrPaymentMethodMismatch
@@ -476,7 +526,9 @@ func GetUserPendingAdtyTopUp(userId int, now int64) (*AdtyTopUpView, error) {
 
 // ListUserAdtyTopUps 分页列出本人的二开订单。
 func ListUserAdtyTopUps(userId int, pageInfo *common.PageInfo) ([]AdtyTopUpView, int64, error) {
-	query := DB.Model(&TopUp{}).Where("user_id = ? AND payment_provider IN ?", userId, []string{PaymentProviderAdtyBEpusdt, PaymentProviderAdtyEpay})
+	query := DB.Model(&TopUp{}).Where("user_id = ? AND payment_provider IN ?", userId, []string{
+		PaymentProviderAdtyBEpusdt, PaymentProviderAdtyEpay, PaymentProviderStripe, PaymentProviderCreem, PaymentProviderWaffo, PaymentProviderWaffoPancake,
+	})
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err

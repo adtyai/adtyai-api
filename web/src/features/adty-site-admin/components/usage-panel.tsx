@@ -21,6 +21,7 @@ import { useTranslation } from 'react-i18next'
 
 import { StaticDataTable } from '@/components/data-table/static/static-data-table'
 import { EmptyState } from '@/components/empty-state'
+import { ErrorState } from '@/components/error-state'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { toIntlLocale } from '@/i18n/languages'
@@ -37,10 +38,14 @@ export function UsagePanel() {
     queryFn: getResellerUsage,
   })
   const usage = query.data
+  if (query.isError && !usage) {
+    return <ErrorState onRetry={() => void query.refetch()} />
+  }
   if (!usage) return null
 
   return (
     <div className='grid max-w-3xl gap-4 sm:grid-cols-2'>
+      {query.isError && <ErrorState onRetry={() => void query.refetch()} />}
       <Card>
         <CardHeader>
           <CardTitle>{t('Sender domains (Resend)')}</CardTitle>

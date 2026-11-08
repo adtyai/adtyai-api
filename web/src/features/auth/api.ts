@@ -174,8 +174,9 @@ export async function createOAuthAuthorization(
   intent: 'login' | 'bind' | 'verify',
   operation?: VerificationOperation,
   signal?: AbortSignal,
-  proofToken?: string
-): Promise<{ state: string; authorizationUrl?: string }> {
+  proofToken?: string,
+  siteTermsVersion?: string
+): Promise<{ state: string; authorizationUrl?: string; redirectUri?: string }> {
   const res = await api.post(
     '/api/oauth/state',
     {
@@ -183,6 +184,9 @@ export async function createOAuthAuthorization(
       intent,
       scope: operation?.scope,
       ...(operation?.context ? { context: operation.context } : {}),
+      ...(intent === 'login' && siteTermsVersion
+        ? { site_terms_version: siteTermsVersion }
+        : {}),
     },
     {
       skipAuthRefresh: intent === 'login',
@@ -199,6 +203,7 @@ export async function createOAuthAuthorization(
       return {
         state: res.data.data.flow_token,
         authorizationUrl: res.data.data.authorization_url,
+        redirectUri: res.data.data.redirect_uri,
       }
     }
   }
@@ -221,8 +226,16 @@ export async function createOAuthFlow(
 }
 
 // WeChat login by authorization code
-export async function wechatLoginByCode(code: string): Promise<ApiResponse> {
-  const res = await api.get('/api/oauth/wechat', { params: { code } })
+export async function wechatLoginByCode(
+  code: string,
+  siteTermsVersion?: string
+): Promise<ApiResponse> {
+  const res = await api.get('/api/oauth/wechat', {
+    params: {
+      code,
+      ...(siteTermsVersion ? { site_terms_version: siteTermsVersion } : {}),
+    },
+  })
   return res.data
 }
 

@@ -85,7 +85,7 @@ func CreditPaymentOrphan(c *gin.Context) {
 	var credited int
 	var alreadyDone bool
 	err = model.DB.Transaction(func(tx *gorm.DB) error {
-		orphan, err := model.LockPaymentOrphanTx(tx, id)
+		orphan, _, _, err := model.LockPaymentOrphanOrderTx(tx, id)
 		if err != nil {
 			return err
 		}
@@ -120,27 +120,25 @@ func CreditPaymentOrphan(c *gin.Context) {
 	common.ApiSuccess(c, nil)
 }
 
-// ResolvePaymentOrphan 把 orphan 标成已退款或已忽略（线下处理完以后）。
+// ResolvePaymentOrphan records verified external facts and an audited disposition.
 func ResolvePaymentOrphan(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		common.ApiErrorT(c, "Invalid parameters")
 		return
 	}
-	var body struct {
-		Status string `json:"status"`
-		Note   string `json:"note"`
-	}
+	var body model.PaymentOrphanReviewRequest
 	if err := common.DecodeJson(c.Request.Body, &body); err != nil {
 		common.ApiErrorT(c, "Invalid parameters")
 		return
 	}
-	if err := model.MarkPaymentOrphanResolved(id, body.Status, c.GetInt("id"), body.Note); err != nil {
+	review, err := model.ResolvePaymentOrphanReview(id, c.GetInt("id"), body)
+	if err != nil {
 		writeAdtyFinanceError(c, err)
 		return
 	}
-	recordManageAudit(c, "adty.payment_orphan.resolve", map[string]any{"id": id, "status": body.Status, "note": strings.TrimSpace(body.Note)})
-	common.ApiSuccess(c, nil)
+	recordManageAudit(c, "adty.payment_orphan.resolve", map[string]any{"id": id, "review_id": review.ID, "status": review.Status})
+	common.ApiSuccess(c, review)
 }
 
 // ManualCompleteAdtyTopUp 手动补单：管理员在支付商后台核实到账后操作，必须填凭证和备注。

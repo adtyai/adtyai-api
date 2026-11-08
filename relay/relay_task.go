@@ -685,7 +685,11 @@ func PublicTaskModel2Dto(task *model.Task) *dto.TaskDto {
 	props.UpstreamModelName = ""
 	view.Properties = props
 	view.Data = nil
-	view.FailReason = common.MaskSensitiveInfo(view.FailReason)
+	if task.Status == model.TaskStatusSuccess {
+		view.FailReason = ""
+	} else {
+		view.FailReason = common.MaskSensitiveInfo(view.FailReason)
+	}
 	view.ResultURL = publicTaskResultURL(task)
 	return view
 }

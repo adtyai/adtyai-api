@@ -386,6 +386,7 @@ func RelaySwapFace(c *gin.Context, info *relaycommon.RelayInfo) *dto.MidjourneyR
 		midjourneyTask,
 		priceData.Quota,
 		mjResp.StatusCode == http.StatusOK && midjResponse.Code == 1,
+		c,
 	)
 	if billingErr != nil {
 		common.SysLog(common.LogText("error consuming Midjourney quota: %s", billingErr.Error()))
@@ -794,6 +795,7 @@ func RelayMidjourneySubmit(c *gin.Context, relayInfo *relaycommon.RelayInfo) *dt
 			midjourneyTask,
 			priceData.Quota,
 			consumeQuota && midjResponseWithStatus.StatusCode == http.StatusOK,
+			c,
 		)
 		if billingErr != nil {
 			common.SysLog(common.LogText("error consuming Midjourney quota: %s", billingErr.Error()))

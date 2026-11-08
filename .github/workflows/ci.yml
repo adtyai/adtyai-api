@@ -21,9 +21,9 @@ jobs:
     timeout-minutes: 15
     env:
       GOWORK: 'off'
-      ADTY_TEST_PG_DSN: 'host=127.0.0.1 port=5432 user=postgres password=adty_ci_test dbname=adty_test sslmode=disable'
-      TEST_POSTGRES_DSN: 'host=127.0.0.1 port=5432 user=postgres password=adty_ci_test dbname=adty_test sslmode=disable'
-      AUDIT_POSTGRES_DSN: 'host=127.0.0.1 port=5432 user=postgres password=adty_ci_test dbname=adty_test sslmode=disable'
+      ADTY_TEST_PG_DSN: 'host=127.0.0.1 port=5432 user=postgres password=adty_ci_test dbname=adty_test sslmode=disable client_encoding=UTF8'
+      TEST_POSTGRES_DSN: 'host=127.0.0.1 port=5432 user=postgres password=adty_ci_test dbname=adty_test sslmode=disable client_encoding=UTF8'
+      AUDIT_POSTGRES_DSN: 'host=127.0.0.1 port=5432 user=postgres password=adty_ci_test dbname=adty_test sslmode=disable client_encoding=UTF8'
     services:
       postgres:
         image: postgres:17
@@ -128,6 +128,12 @@ jobs:
       - name: Build production bundle
         run: bun run build
 
+      - name: Install Chromium for browser smoke
+        run: bun x playwright install --with-deps chromium
+
+      - name: Run production browser smoke
+        run: bun run browser:smoke
+
       - name: Test
         run: bun run test
 
@@ -143,13 +149,13 @@ jobs:
         run: node scripts/adty/ratchet.mjs copyright
 
   e2e:
-    name: Closed-loop payment and permission checks
+    name: Closed-loop payment, browser, and permission checks
     if: github.event.action != 'closed' || github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
       GOWORK: 'off'
-      ADTY_TEST_PG_DSN: 'host=127.0.0.1 port=5432 user=postgres password=adty_ci_test dbname=adty_test sslmode=disable'
+      ADTY_TEST_PG_DSN: 'host=127.0.0.1 port=5432 user=postgres password=adty_ci_test dbname=adty_test sslmode=disable client_encoding=UTF8'
     services:
       postgres:
         image: postgres:17
@@ -180,3 +186,22 @@ jobs:
             tokenkit/go.sum
       - name: Run closed-loop checks
         run: bash scripts/adty/e2e-closed-loop.sh
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: '1.4.4'
+      - name: Set up Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '20'
+      - name: Install browser gate services
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes postgresql-client redis-server
+      - name: Install browser dependencies
+        working-directory: web
+        run: |
+          bun install --frozen-lockfile
+          bun x playwright install --with-deps chromium
+      - name: Run production wallet browser checks
+        run: bash scripts/adty/browser-business.sh

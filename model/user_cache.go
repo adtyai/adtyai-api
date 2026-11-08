@@ -11,7 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-const userCacheSchemaVersion = 3 // 二开：3 加了 SiteId（P11），旧缓存失效
+const userCacheSchemaVersion = 4 // Invalidate schema 3 hashes that omitted SiteId.
 
 type UserBase struct {
 	Id          int    `json:"id"`

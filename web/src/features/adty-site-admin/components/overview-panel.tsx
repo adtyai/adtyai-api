@@ -20,6 +20,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 
 import { EmptyState } from '@/components/empty-state'
+import { ErrorState } from '@/components/error-state'
 import { LoadingState } from '@/components/loading-state'
 
 import { getSitesOverview, siteAdminKeys } from '../api'
@@ -41,12 +42,16 @@ export function OverviewPanel() {
     queryFn: getSitesOverview,
   })
   if (query.isLoading) return <LoadingState />
+  if (query.isError && !query.data) {
+    return <ErrorState onRetry={() => void query.refetch()} />
+  }
   const data = query.data
   if (!data) {
     return <EmptyState className='min-h-48' title={t('No data')} />
   }
   return (
     <div className='flex flex-col gap-4'>
+      {query.isError && <ErrorState onRetry={() => void query.refetch()} />}
       <div className='grid gap-3 sm:grid-cols-3'>
         <Stat label={t('Revenue')} value={data.site_revenue_usd} />
         <Stat label={t('Earnings')} value={data.site_earning_usd} />

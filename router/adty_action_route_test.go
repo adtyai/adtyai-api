@@ -36,6 +36,8 @@ func TestAdtyActionRoutesRequireIndependentScopes(t *testing.T) {
 		{"DELETE /api/adty/admin/sites/domains/:id", "adty_site:delete"},
 		{"DELETE /api/adty/admin/sites/:id/notice", "adty_site:delete"},
 		{"GET /api/adty/admin/reseller/settings", "adty_site:settings_read"},
+		{"GET /api/adty/admin/reseller/tiers", "option:read"},
+		{"PUT /api/adty/admin/reseller/tiers", "option:write"},
 		{"GET /api/adty/admin/reseller/invite-codes", "adty_site:settings_read"},
 		{"POST /api/adty/admin/reseller/invite-codes", "adty_site:settings_create"},
 		{"DELETE /api/adty/admin/reseller/invite-codes/:id", "adty_site:settings_delete"},

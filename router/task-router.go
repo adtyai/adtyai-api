@@ -13,7 +13,7 @@ import (
 // on submit routes and the task id on read routes.
 func SetTaskRouter(router *gin.Engine) {
 	taskSubmitRouter := router.Group("/v1/tasks")
-	taskSubmitRouter.Use(middleware.RouteTag("relay"), middleware.TokenAuth())
+	taskSubmitRouter.Use(middleware.RouteTag("relay"), middleware.TokenAuth(), middleware.AdtyRequireCurrentSiteTerms())
 	{
 		taskSubmitRouter.POST("/:key", middleware.AdtyUserLimit(), middleware.PrepareTaskPluginSubmit(), middleware.Distribute(), controller.RelayTask) // 二开：任务 7.4
 	}

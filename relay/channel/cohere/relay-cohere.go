@@ -1,7 +1,10 @@
 package cohere
 
 import (
+	"encoding/base64"
+	"errors"
 	"io"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -249,4 +252,57 @@ func cohereRerankHandler(c *gin.Context, resp *http.Response, info *relaycommon.
 	c.Writer.WriteHeader(resp.StatusCode)
 	_, err = c.Writer.Write(jsonResponse)
 	return &usage, nil
+}
+
+func cohereEmbeddingHandler(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (*dto.Usage, *types.NewAPIError) {
+	defer service.CloseResponseBodyGracefully(resp)
+	var response CohereEmbeddingResponse
+	if err := common.DecodeJson(resp.Body, &response); err != nil {
+		return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
+	}
+	data := make([]map[string]any, 0, len(response.Embeddings.Float)+len(response.Embeddings.Base64))
+	for index, embedding := range response.Embeddings.Float {
+		if len(embedding) == 0 {
+			return nil, types.NewError(errors.New("Cohere response contains an empty embedding"), types.ErrorCodeBadResponseBody)
+		}
+		values := make([]float64, len(embedding))
+		for i, value := range embedding {
+			if value == nil || math.IsNaN(*value) || math.IsInf(*value, 0) {
+				return nil, types.NewError(errors.New("Cohere response contains an invalid embedding value"), types.ErrorCodeBadResponseBody)
+			}
+			values[i] = *value
+		}
+		data = append(data, map[string]any{"object": "embedding", "index": index, "embedding": values})
+	}
+	for index, embedding := range response.Embeddings.Base64 {
+		decoded, err := base64.StdEncoding.DecodeString(embedding)
+		if err != nil || len(decoded) == 0 {
+			return nil, types.NewError(errors.New("Cohere response contains an invalid base64 embedding"), types.ErrorCodeBadResponseBody)
+		}
+		data = append(data, map[string]any{"object": "embedding", "index": index, "embedding": embedding})
+	}
+	if len(data) == 0 {
+		return nil, types.NewError(errors.New("Cohere response contains no embeddings"), types.ErrorCodeBadResponseBody)
+	}
+	for _, reported := range []*float64{response.Meta.BilledUnits.InputTokens, response.Meta.Tokens.InputTokens} {
+		if reported != nil && (math.IsNaN(*reported) || math.IsInf(*reported, 0) || *reported < 0 || *reported > common.MaxQuota || math.Trunc(*reported) != *reported) {
+			return nil, types.NewError(errors.New("Cohere response contains an invalid input token count"), types.ErrorCodeBadResponseBody)
+		}
+	}
+	inputTokens := info.GetEstimatePromptTokens()
+	if response.Meta.BilledUnits.InputTokens != nil {
+		inputTokens = common.QuotaFromFloat(*response.Meta.BilledUnits.InputTokens)
+	} else if response.Meta.Tokens.InputTokens != nil {
+		inputTokens = common.QuotaFromFloat(*response.Meta.Tokens.InputTokens)
+	}
+	if inputTokens < 0 || inputTokens > common.MaxQuota {
+		return nil, types.NewError(errors.New("Cohere embedding token estimate is out of range"), types.ErrorCodeBadResponseBody)
+	}
+	usage := &dto.Usage{PromptTokens: inputTokens, TotalTokens: inputTokens}
+	jsonResponse, err := common.Marshal(map[string]any{"object": "list", "model": info.UpstreamModelName, "data": data, "usage": usage})
+	if err != nil {
+		return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
+	}
+	c.Data(resp.StatusCode, "application/json", jsonResponse)
+	return usage, nil
 }

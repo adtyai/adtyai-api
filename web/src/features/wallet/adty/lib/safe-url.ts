@@ -41,8 +41,29 @@ export function isSafePaymentUrl(value: string | null | undefined): boolean {
 }
 
 /** QR payloads may be raw text or a payment scheme. Dangerous schemes are not drawn. */
-export function isDisplayablePaymentQr(value: string | null | undefined): boolean {
+export function isDisplayablePaymentQr(
+  value: string | null | undefined
+): boolean {
   const trimmed = value?.trim() || ''
-  if (!trimmed || trimmed.includes('\\') || trimmed.startsWith('//')) return false
+  if (!trimmed || trimmed.includes('\\') || trimmed.startsWith('//')) {
+    return false
+  }
   return !DANGEROUS_QR_SCHEME.test(trimmed)
+}
+
+/** Hosted checkouts use ordinary web links and never app schemes or credentials. */
+export function isSafeHostedPaymentUrl(
+  value: string | null | undefined
+): boolean {
+  if (!value || value.includes('\\')) return false
+  try {
+    const url = new URL(value)
+    return (
+      (url.protocol === 'https:' || url.protocol === 'http:') &&
+      !url.username &&
+      !url.password
+    )
+  } catch {
+    return false
+  }
 }

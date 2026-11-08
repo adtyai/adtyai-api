@@ -157,6 +157,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
     env:
       # 只有 push 事件、并且是 main、merge/* 分支或 v* 标签时才登录 ghcr.io 并推送，其他情况只构建。
       # merge/* 的镜像给测试环境做合并上游后的客户端回归（docs/adty/upstream-merge.md 第 7 步）
@@ -195,22 +197,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # main 的运行按提交分组，可能同时跑。先推的提交如果后跑完，打 main 标签会把 :main 改回旧镜像，
-      # 所以只有这个提交还是 origin/main 的最新提交时才打 main 标签；sha 标签照常打
-      - name: Check main is still at this commit
-        id: main_tip
-        if: github.ref == 'refs/heads/main'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          tip=$(gh api "repos/${GITHUB_REPOSITORY}/commits/main" --jq .sha)
-          if [ "$tip" = "$GITHUB_SHA" ]; then
-            echo "latest=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "latest=false" >> "$GITHUB_OUTPUT"
-            echo "main is now at $tip; skip the main tag for $GITHUB_SHA"
-          fi
-
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
@@ -220,7 +206,6 @@ jobs:
           # sha 标签只给 main，避免标签构建覆盖同名 sha 镜像。
           # merge/* 分支只打 merge-<名字>：分支名里的 / 会被换成 -，所以不用另加前缀
           tags: |
-            type=raw,value=main,enable=${{ github.ref == 'refs/heads/main' && steps.main_tip.outputs.latest == 'true' }}
             type=sha,prefix=sha-,format=short,enable=${{ github.ref == 'refs/heads/main' }}
             type=ref,event=branch,enable=${{ startsWith(github.ref, 'refs/heads/merge/') }}
             type=ref,event=tag
@@ -228,6 +213,7 @@ jobs:
 
       # 必须写 context: .：默认的 Git 上下文会忽略上面写入的 VERSION，镜像里的版本号会是空的
       - name: Build image
+        id: build
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
@@ -237,3 +223,33 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  promote-main:
+    name: Promote the current main image
+    needs: image
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    concurrency:
+      group: adty-ghcr-promote-main-${{ github.repository }}
+      cancel-in-progress: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.sha }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      - name: Log in to GHCR
+        uses: docker/login-action@c99871dec2022cc055c062a10cc1a1310835ceb4 # v4.3.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Promote immutable digest after checking main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE_DIGEST: ${{ needs.image.outputs.digest }}
+        run: bash scripts/adty/promote-main-image.sh "$IMAGE_DIGEST"

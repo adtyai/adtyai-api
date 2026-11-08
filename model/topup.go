@@ -471,7 +471,15 @@ func ManualCompleteTopUp(tradeNo string, callerIp string) error {
 			return common.NewMessage("Top-up order does not exist")
 		}
 		// 二开：我们的订单只能走充值对账入账（面额加赠、返佣、流水），任务 3.2
-		if IsAdtyPaymentProvider(topUp.PaymentProvider) {
+		adtyOrder := topUp.PaymentProvider == PaymentProviderAdtyBEpusdt || topUp.PaymentProvider == PaymentProviderAdtyEpay
+		if !adtyOrder && IsAdtyPaymentProvider(topUp.PaymentProvider) {
+			var count int64
+			if err := tx.Model(&AdtyTopupOrder{}).Where("trade_no = ?", tradeNo).Count(&count).Error; err != nil {
+				return err
+			}
+			adtyOrder = count > 0
+		}
+		if adtyOrder {
 			return common.NewMessage("Use Recharge Audit to complete this order")
 		}
 

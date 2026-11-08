@@ -67,7 +67,7 @@ func TestPaymentWebhookLogsOmitSignatureAndBody(t *testing.T) {
 	pancake := postPaymentWebhook(WaffoPancakeWebhook, "/api/waffo-pancake/webhook/test", "X-Waffo-Signature", signature, body)
 	assert.Equal(t, http.StatusForbidden, disabled.Code)
 	assert.Equal(t, http.StatusForbidden, waffo.Code)
-	assert.Equal(t, http.StatusForbidden, pancake.Code)
+	assert.Equal(t, http.StatusNotFound, pancake.Code, "this direct handler fixture has no routed env parameter")
 
 	confirmPaymentComplianceForTest(t)
 	setting.CreemApiKey = "creem_api_key"

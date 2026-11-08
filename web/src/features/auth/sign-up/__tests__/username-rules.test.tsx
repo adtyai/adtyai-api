@@ -72,6 +72,55 @@ async function submitWithUsername(username: string) {
 }
 
 describe('sign-up username rules', () => {
+  it('blocks OAuth until site terms are checked and sends that version when starting', async () => {
+    vi.spyOn(api, 'get').mockImplementation(async (url) => {
+      if (url === '/api/status') {
+        return {
+          data: {
+            success: true,
+            data: {
+              site_customer_terms_version: 4,
+              discord_oauth: true,
+              discord_client_id: 'discord-client',
+            },
+          },
+        }
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    const post = vi.spyOn(api, 'post').mockImplementation(async (url) => {
+      if (url === '/api/user/auth/logout') return { data: { success: true } }
+      return {
+        data: {
+          success: true,
+          data: {
+            flow_token: 'checked-terms',
+            redirect_uri: 'https://platform.example/oauth/discord',
+          },
+        },
+      }
+    })
+    vi.spyOn(window, 'open').mockReturnValue(null)
+    await renderSignUp()
+    const button = await screen.findByRole('button', {
+      name: /Continue with Discord/,
+    })
+    expect(button).toBeDisabled()
+    const user = userEvent.setup()
+    await user.click(
+      screen.getByRole('checkbox', {
+        name: 'I agree to the site customer terms',
+      })
+    )
+    await user.click(button)
+
+    expect(post).toHaveBeenCalledWith(
+      '/api/oauth/state',
+      expect.objectContaining({ site_terms_version: '4' }),
+      expect.anything()
+    )
+  })
+
   it('rejects a username containing @ without sending the request', async () => {
     const post = vi.spyOn(api, 'post')
     await renderSignUp()
@@ -135,7 +184,9 @@ describe('sign-up username rules', () => {
         name: 'I agree to the site customer terms',
       })
     ).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Create account' })).toBeDisabled()
+    expect(
+      screen.getByRole('button', { name: 'Create account' })
+    ).toBeDisabled()
 
     const user = userEvent.setup()
     await user.type(await screen.findByLabelText('Username'), 'sitecustomer')

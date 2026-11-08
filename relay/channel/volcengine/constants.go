@@ -1,7 +1,6 @@
 package volcengine
 
-var ModelList = []string{
-	"Doubao-pro-128k",
+var ModelList = []string{"Doubao-pro-128k",
 	"Doubao-pro-32k",
 	"Doubao-pro-4k",
 	"Doubao-lite-128k",
@@ -14,6 +13,26 @@ var ModelList = []string{
 	"seedance-1-0-pro-250528",
 	"doubao-seed-1-6-thinking-250715",
 	"seed-1-6-thinking-250715",
+	// Current provider catalogue; account and regional access still apply.
+	"deepseek-v4-1-flash-260910",
+	"deepseek-v4-1-flash-261017",
+	"deepseek-v4-1-flash-economy-261017",
+	"deepseek-v4-flash-ga-260731",
+	"deepseek-v4-pro-ga-260813",
+	"doubao-seed-2-0-lite-260428",
+	"doubao-seed-2-0-mini-260428",
+	"doubao-seed-2-1-lite-260915",
+	"doubao-seed-2-1-pro-260628",
+	"doubao-seed-2-1-pro-260915",
+	"doubao-seed-2-1-turbo-260628",
+	"doubao-seed-character-251128",
+	"doubao-seed-character-260628",
+	"doubao-seed-evolving",
+	"doubao-seed-translation-250915",
+	"glm-5-2-260617",
+	"glm-5-3-flash-260828",
+	"kimi-k3-1-pro-261024",
+	"doubao-embedding-vision-251215",
 }
 
 var ChannelName = "volcengine"

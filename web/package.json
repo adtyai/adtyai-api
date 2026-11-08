@@ -14,6 +14,7 @@
     "format:plugins": "cd ../plugins && oxfmt -c .oxfmtrc.json --write .",
     "format:plugins:check": "cd ../plugins && oxfmt -c .oxfmtrc.json --check .",
     "preview": "rsbuild preview",
+    "browser:smoke": "node scripts/adty/browser-smoke.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "format:check": "node scripts/format-with-protected-headers.mjs --check",
@@ -106,6 +107,7 @@
     "knip": "^6.24.0",
     "oxfmt": "^0.72.0",
     "oxlint": "^1.72.0",
+    "playwright": "^1.65.0",
     "vitest": "^5.0.4"
   },
   "overrides": {

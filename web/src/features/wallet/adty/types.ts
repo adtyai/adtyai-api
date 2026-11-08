@@ -16,12 +16,15 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-export type AdtyMethodKind = 'usdt' | 'epay'
+export type AdtyMethodKind = 'usdt' | 'epay' | 'hosted'
 
 export type AdtyMethod = {
   id: string
   kind: AdtyMethodKind
   available: boolean
+  label?: string
+  /** Fixed product face value in USD. */
+  face_usd?: number
 }
 
 export type AdtyTier = { amount: number; rate: number }
@@ -93,7 +96,7 @@ export type AdtyQuote = {
   bonus_usd: string
   credit_quota: number
   pay_amount: string
-  pay_currency: 'USDT' | 'CNY'
+  pay_currency: string
   price_cny_per_usd: string
   topup_group_ratio: string
   /** adty task 12.4: extra credit from a promo code, already in credit_quota */

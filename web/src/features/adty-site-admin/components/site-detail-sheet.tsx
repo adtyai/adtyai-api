@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -28,6 +28,7 @@ import {
   sideDrawerHeaderClassName,
 } from '@/components/drawer-layout'
 import { EmptyState } from '@/components/empty-state'
+import { ErrorState } from '@/components/error-state'
 import { LoadingState } from '@/components/loading-state'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -41,6 +42,8 @@ import {
 } from '@/components/ui/sheet'
 import { Textarea } from '@/components/ui/textarea'
 import { PageSwitcher } from '@/features/referral/components/page-switcher'
+import { DraftDiscardDialog } from '@/features/system-settings/components/draft-discard-dialog'
+import { useDraftNavigation } from '@/features/system-settings/hooks/use-draft-navigation'
 import { ADTY_PERMISSIONS, canAdmin } from '@/lib/adty-permissions'
 import { formatQuotaWithCurrency } from '@/lib/currency'
 import { formatTimestampToDate } from '@/lib/format'
@@ -64,10 +67,17 @@ import {
   type AdminSenderDomain,
   type AdminSiteDomain,
 } from '../api'
+import { VISIBILITY_KEYS } from '../lib/settings'
+import {
+  readSiteVisibility,
+  serializeSiteVisibility,
+  validSiteVisibility,
+} from '../lib/site-visibility'
 import { siteNotice } from '../lib/sites'
 import type { AdminSite } from '../types'
 import { CloseSiteDialog } from './close-site-dialog'
 import { SiteStatusBadge } from './site-status-badge'
+import { SiteVisibilityEditor } from './site-visibility-editor'
 
 function Info(props: { label: string; value: string }) {
   return (
@@ -79,7 +89,10 @@ function Info(props: { label: string; value: string }) {
 }
 
 /** Review, adjust and status actions of one site, by permission. */
-function SiteActions(props: { site: AdminSite }) {
+function SiteActions(props: {
+  site: AdminSite
+  onDirtyChange: (dirty: boolean) => void
+}) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const user = useAuthStore((state) => state.auth.user)
@@ -89,7 +102,56 @@ function SiteActions(props: { site: AdminSite }) {
   const site = props.site
   const [costFactor, setCostFactor] = useState(site.cost_factor ?? '')
   const [maxMarkup, setMaxMarkup] = useState(site.max_markup ?? '')
+  const [visibility, setVisibility] = useState(() =>
+    readSiteVisibility(site.visibility)
+  )
   const [reason, setReason] = useState('')
+  const previousSite = useRef(site)
+  useEffect(() => {
+    const previous = previousSite.current
+    setCostFactor((current) =>
+      current === (previous.cost_factor ?? '')
+        ? (site.cost_factor ?? '')
+        : current
+    )
+    setMaxMarkup((current) =>
+      current === (previous.max_markup ?? '')
+        ? (site.max_markup ?? '')
+        : current
+    )
+    const previousVisibility = readSiteVisibility(previous.visibility)
+    const nextVisibility = readSiteVisibility(site.visibility)
+    setVisibility((current) => {
+      const merged = { ...current }
+      for (const key of VISIBILITY_KEYS) {
+        if (current[key] === previousVisibility[key]) {
+          merged[key] = nextVisibility[key]
+        }
+      }
+      return merged
+    })
+    previousSite.current = site
+  }, [site])
+  const savedVisibility = readSiteVisibility(site.visibility)
+  const visibilityValid = validSiteVisibility(site.visibility)
+  const visibilityChanged = VISIBILITY_KEYS.some(
+    (key) => visibility[key] !== savedVisibility[key]
+  )
+  const adjustmentDirty =
+    costFactor.trim() !== (site.cost_factor ?? '') ||
+    maxMarkup.trim() !== (site.max_markup ?? '') ||
+    visibilityChanged
+  const dirty =
+    costFactor !== (site.cost_factor ?? '') ||
+    maxMarkup !== (site.max_markup ?? '') ||
+    reason !== '' ||
+    visibilityChanged
+  const { onDirtyChange } = props
+  useDraftNavigation(dirty)
+  useEffect(() => {
+    onDirtyChange(dirty)
+    return () => onDirtyChange(false)
+  }, [dirty, onDirtyChange])
   const [closing, setClosing] = useState(false)
   const [takingDown, setTakingDown] = useState(false)
   const targets = useQuery({
@@ -115,21 +177,40 @@ function SiteActions(props: { site: AdminSite }) {
   })
   const adjust = useMutation({
     mutationFn: () => {
+      if (
+        !canAdmin(
+          useAuthStore.getState().auth.user,
+          ADTY_PERMISSIONS.SITE_ADJUST
+        )
+      ) {
+        throw new Error(t('No permission to perform this action'))
+      }
+      const body: Parameters<typeof adjustSite>[1] = { reason: reason.trim() }
       const clear: Array<'cost_factor' | 'max_markup'> = []
-      if (costFactor.trim() === '' && site.cost_factor !== null) {
-        clear.push('cost_factor')
+      if (costFactor.trim() !== (site.cost_factor ?? '')) {
+        if (costFactor.trim() === '') clear.push('cost_factor')
+        else body.cost_factor = costFactor.trim()
       }
-      if (maxMarkup.trim() === '' && site.max_markup !== null) {
-        clear.push('max_markup')
+      if (maxMarkup.trim() !== (site.max_markup ?? '')) {
+        if (maxMarkup.trim() === '') clear.push('max_markup')
+        else body.max_markup = maxMarkup.trim()
       }
-      return adjustSite(site.id, {
-        cost_factor: costFactor.trim() || undefined,
-        max_markup: maxMarkup.trim() || undefined,
-        clear: clear.length > 0 ? clear : undefined,
-        reason: reason.trim(),
-      })
+      if (clear.length > 0) body.clear = clear
+      if (visibilityChanged) {
+        body.visibility = serializeSiteVisibility(visibility)
+      }
+      return adjustSite(site.id, body)
     },
-    onSuccess: done,
+    onSuccess: (updated) => {
+      setCostFactor(updated.cost_factor ?? '')
+      setMaxMarkup(updated.max_markup ?? '')
+      setVisibility(readSiteVisibility(updated.visibility))
+      queryClient.setQueryData<Awaited<ReturnType<typeof getSite>>>(
+        siteAdminKeys.site(site.id),
+        (cached) => (cached ? { ...cached, site: updated } : cached)
+      )
+      done()
+    },
     onError: (err) => handleServerError(err),
   })
   const status = useMutation({
@@ -201,11 +282,30 @@ function SiteActions(props: { site: AdminSite }) {
           'Leave empty to use the global value. The owner is notified when d changes.'
         )}
       </p>
+      <SiteVisibilityEditor
+        value={visibility}
+        onChange={setVisibility}
+        disabled={
+          !canAdjust ||
+          !editable ||
+          site.status === 'pending' ||
+          busy ||
+          !visibilityValid
+        }
+      />
+      {!visibilityValid && (
+        <p role='alert' className='text-destructive text-sm'>
+          {t(
+            'Saved site visibility settings are invalid. Reload or repair the saved settings before editing this site.'
+          )}
+        </p>
+      )}
       <div className='space-y-1'>
         <Label htmlFor='site-reason'>{t('Reason')}</Label>
         <Textarea
           id='site-reason'
           rows={2}
+          disabled={busy}
           value={reason}
           onChange={(event) => setReason(event.target.value)}
         />
@@ -228,10 +328,15 @@ function SiteActions(props: { site: AdminSite }) {
         {canAdjust && editable && site.status !== 'pending' && (
           <Button
             variant='outline'
-            disabled={busy}
+            disabled={
+              busy ||
+              !adjustmentDirty ||
+              reason.trim() === '' ||
+              !visibilityValid
+            }
             onClick={() => adjust.mutate()}
           >
-            {t('Save d and k')}
+            {t('Save site settings')}
           </Button>
         )}
         {canAdjust && site.status === 'active' && (
@@ -309,7 +414,11 @@ function SiteActions(props: { site: AdminSite }) {
         disabled={!canDelete}
         handleConfirm={() => canDelete && takedown.mutate()}
       />
-      {closing && (
+      {closing && targets.isError && (
+        <ErrorState onRetry={() => void targets.refetch()} />
+      )}
+      {closing && targets.isPending && <LoadingState />}
+      {closing && targets.isSuccess && (
         <CloseSiteDialog
           site={site}
           transferTargets={targets.data?.items ?? []}
@@ -333,9 +442,13 @@ function SiteCustomers(props: { siteId: number }) {
     if (flag === 'migration') return t('Possible main site migration')
     return '-'
   }
+  if (query.isError && !query.data) {
+    return <ErrorState onRetry={() => void query.refetch()} />
+  }
   return (
     <section className='flex flex-col gap-2'>
       <h3 className='text-sm font-medium'>{t('Customers')}</h3>
+      {query.isError && <ErrorState onRetry={() => void query.refetch()} />}
       <StaticDataTable
         tableClassName='min-w-[640px]'
         tableProps={{ 'aria-label': t('Customers') }}
@@ -471,6 +584,8 @@ export function SiteDetailSheet(props: {
   onOpenChange: (open: boolean) => void
 }) {
   const { t } = useTranslation()
+  const [dirty, setDirty] = useState(false)
+  const [discarding, setDiscarding] = useState(false)
   const query = useQuery({
     queryKey: siteAdminKeys.site(props.siteId ?? 0),
     queryFn: () => getSite(props.siteId ?? 0),
@@ -485,7 +600,13 @@ export function SiteDetailSheet(props: {
   const totals = statsQuery.data?.stats.total
 
   return (
-    <Sheet open={props.siteId !== null} onOpenChange={props.onOpenChange}>
+    <Sheet
+      open={props.siteId !== null}
+      onOpenChange={(open) => {
+        if (!open && dirty) setDiscarding(true)
+        else props.onOpenChange(open)
+      }}
+    >
       <SheetContent className={sideDrawerContentClassName('sm:max-w-3xl')}>
         <SheetHeader className={sideDrawerHeaderClassName()}>
           <SheetTitle>{site?.host ?? t('Site')}</SheetTitle>
@@ -493,114 +614,133 @@ export function SiteDetailSheet(props: {
             {site ? <SiteStatusBadge status={site.status} /> : null}
           </SheetDescription>
         </SheetHeader>
-        {!site ? (
-          <LoadingState />
-        ) : (
-          <div className='flex flex-col gap-5 overflow-y-auto p-4'>
-            <dl className='grid gap-3 sm:grid-cols-3'>
-              <Info
-                label={t('Owner')}
-                value={site.owner_username || `#${site.owner_user_id}`}
-              />
-              <Info
-                label={t('Opened')}
-                value={formatTimestampToDate(site.created_at)}
-              />
-              <Info label={t('Customers')} value={String(site.customers)} />
-              <Info
-                label={t('Cost factor')}
-                value={site.cost_factor ?? t('Global')}
-              />
-              <Info
-                label={t('Tier cost factor')}
-                value={
-                  site.tier_cost_factor
-                    ? `${site.tier_cost_factor} (${site.tier_month})`
-                    : '-'
-                }
-              />
-              <Info
-                label={t('Markup limit')}
-                value={site.max_markup ?? t('Global')}
-              />
-              <Info label={t('Owner contact')} value={site.contact_info} />
-              {site.close_execute_at > 0 && (
+        {query.isError && <ErrorState onRetry={() => void query.refetch()} />}
+        {!query.isError &&
+          (!site ? (
+            <LoadingState />
+          ) : (
+            <div className='flex flex-col gap-5 overflow-y-auto p-4'>
+              <dl className='grid gap-3 sm:grid-cols-3'>
                 <Info
-                  label={t('Closes on')}
-                  value={formatTimestampToDate(site.close_execute_at)}
+                  label={t('Owner')}
+                  value={site.owner_username || `#${site.owner_user_id}`}
                 />
-              )}
-            </dl>
-            <section className='flex flex-col gap-2'>
-              <h3 className='text-sm font-medium'>{t('Business data')}</h3>
-              <dl className='grid gap-3 sm:grid-cols-4'>
-                <Info label={t('Revenue')} value={totals?.revenue_usd ?? '0'} />
                 <Info
-                  label={t('Earnings')}
-                  value={totals?.earning_usd ?? '0'}
+                  label={t('Opened')}
+                  value={formatTimestampToDate(site.created_at)}
                 />
-                <Info label={t('Top-up')} value={totals?.topup_usd ?? '0'} />
+                <Info label={t('Customers')} value={String(site.customers)} />
                 <Info
-                  label={t('Withdrawn')}
-                  value={statsQuery.data?.withdrawn_usd ?? '-'}
+                  label={t('Cost factor')}
+                  value={site.cost_factor ?? t('Global')}
                 />
+                <Info
+                  label={t('Tier cost factor')}
+                  value={
+                    site.tier_cost_factor
+                      ? `${site.tier_cost_factor} (${site.tier_month})`
+                      : '-'
+                  }
+                />
+                <Info
+                  label={t('Markup limit')}
+                  value={site.max_markup ?? t('Global')}
+                />
+                <Info label={t('Owner contact')} value={site.contact_info} />
+                {site.close_execute_at > 0 && (
+                  <Info
+                    label={t('Closes on')}
+                    value={formatTimestampToDate(site.close_execute_at)}
+                  />
+                )}
               </dl>
-            </section>
-            <SiteActions site={site} />
-            <SiteDomains
-              siteId={site.id}
-              domains={query.data?.domains ?? []}
-              senders={query.data?.sender_domains ?? []}
-            />
-            <SiteCustomers siteId={site.id} />
-            <section className='flex flex-col gap-2'>
-              <h3 className='text-sm font-medium'>{t('Audit trail')}</h3>
-              <StaticDataTable
-                tableClassName='min-w-[600px]'
-                tableProps={{ 'aria-label': t('Audit trail') }}
-                data={query.data?.audits ?? []}
-                getRowKey={(row) => String(row.id)}
-                emptyContent={
-                  <EmptyState className='min-h-24' title={t('No data')} />
-                }
-                columns={[
-                  {
-                    id: 'time',
-                    header: t('Time'),
-                    cell: (row) => formatTimestampToDate(row.created_at),
-                  },
-                  {
-                    id: 'action',
-                    header: t('Action'),
-                    cell: (row) => (
-                      <span className='font-mono text-xs'>{row.action}</span>
-                    ),
-                  },
-                  {
-                    id: 'operator',
-                    header: t('Operator'),
-                    cell: (row) => `#${row.operator_id}`,
-                  },
-                  {
-                    id: 'change',
-                    header: t('Change'),
-                    cell: (row) => (
-                      <span className='font-mono text-xs break-all'>
-                        {row.old_value || '-'} → {row.new_value || '-'}
-                      </span>
-                    ),
-                  },
-                  {
-                    id: 'reason',
-                    header: t('Reason'),
-                    cell: (row) => row.reason || '-',
-                  },
-                ]}
+              <section className='flex flex-col gap-2'>
+                <h3 className='text-sm font-medium'>{t('Business data')}</h3>
+                {statsQuery.isError && (
+                  <ErrorState onRetry={() => void statsQuery.refetch()} />
+                )}
+                {statsQuery.isPending && <LoadingState />}
+                {statsQuery.data && (
+                  <dl className='grid gap-3 sm:grid-cols-4'>
+                    <Info
+                      label={t('Revenue')}
+                      value={totals?.revenue_usd ?? '0'}
+                    />
+                    <Info
+                      label={t('Earnings')}
+                      value={totals?.earning_usd ?? '0'}
+                    />
+                    <Info
+                      label={t('Top-up')}
+                      value={totals?.topup_usd ?? '0'}
+                    />
+                    <Info
+                      label={t('Withdrawn')}
+                      value={statsQuery.data?.withdrawn_usd ?? '-'}
+                    />
+                  </dl>
+                )}
+              </section>
+              <SiteActions key={site.id} site={site} onDirtyChange={setDirty} />
+              <SiteDomains
+                siteId={site.id}
+                domains={query.data?.domains ?? []}
+                senders={query.data?.sender_domains ?? []}
               />
-            </section>
-          </div>
-        )}
+              <SiteCustomers siteId={site.id} />
+              <section className='flex flex-col gap-2'>
+                <h3 className='text-sm font-medium'>{t('Audit trail')}</h3>
+                <StaticDataTable
+                  tableClassName='min-w-[600px]'
+                  tableProps={{ 'aria-label': t('Audit trail') }}
+                  data={query.data?.audits ?? []}
+                  getRowKey={(row) => String(row.id)}
+                  emptyContent={
+                    <EmptyState className='min-h-24' title={t('No data')} />
+                  }
+                  columns={[
+                    {
+                      id: 'time',
+                      header: t('Time'),
+                      cell: (row) => formatTimestampToDate(row.created_at),
+                    },
+                    {
+                      id: 'action',
+                      header: t('Action'),
+                      cell: (row) => (
+                        <span className='font-mono text-xs'>{row.action}</span>
+                      ),
+                    },
+                    {
+                      id: 'operator',
+                      header: t('Operator'),
+                      cell: (row) => `#${row.operator_id}`,
+                    },
+                    {
+                      id: 'change',
+                      header: t('Change'),
+                      cell: (row) => (
+                        <span className='font-mono text-xs break-all'>
+                          {row.old_value || '-'} → {row.new_value || '-'}
+                        </span>
+                      ),
+                    },
+                    {
+                      id: 'reason',
+                      header: t('Reason'),
+                      cell: (row) => row.reason || '-',
+                    },
+                  ]}
+                />
+              </section>
+            </div>
+          ))}
       </SheetContent>
+      <DraftDiscardDialog
+        open={discarding}
+        onOpenChange={setDiscarding}
+        onDiscard={() => props.onOpenChange(false)}
+      />
     </Sheet>
   )
 }

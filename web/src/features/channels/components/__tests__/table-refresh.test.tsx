@@ -85,7 +85,10 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-async function renderChannelsPage(searchGate: () => Promise<void>) {
+async function renderChannelsPage(
+  searchGate: () => Promise<void>,
+  waitForData = true
+) {
   const get = vi.spyOn(api, 'get').mockImplementation(async (url) => {
     if (url === '/api/channel/search') {
       await searchGate()
@@ -127,7 +130,9 @@ async function renderChannelsPage(searchGate: () => Promise<void>) {
       </QueryClientProvider>
     </I18nextProvider>
   )
-  expect((await screen.findAllByText('prod')).length).toBeGreaterThan(0)
+  if (waitForData) {
+    expect((await screen.findAllByText('prod')).length).toBeGreaterThan(0)
+  }
   return get
 }
 
@@ -152,4 +157,17 @@ it('refetches the channel list with the current filters and marks Refresh busy w
   expect(refresh).toHaveAttribute('aria-busy', 'true')
   release()
   await waitFor(() => expect(refresh).toHaveAttribute('aria-busy', 'false'))
+})
+
+it('shows a retryable error instead of an empty channel list after GET fails', async () => {
+  let failed = true
+  await renderChannelsPage(async () => {
+    if (failed) throw new Error('offline')
+  }, false)
+  const retry = await screen.findByRole('button', { name: 'Retry' })
+  expect(screen.queryByText('No Channels Found')).not.toBeInTheDocument()
+  failed = false
+  await userEvent.setup().click(retry)
+
+  expect((await screen.findAllByText('prod')).length).toBeGreaterThan(0)
 })

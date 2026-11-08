@@ -29,6 +29,7 @@ import { Label } from '@/components/ui/label'
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
+import { useDraftNavigation } from '@/features/system-settings/hooks/use-draft-navigation'
 import { toIntlLocale } from '@/i18n/languages'
 import { CONTENT_LANG_LABELS, CONTENT_LANGS } from '@/lib/adty-lang'
 import { ADTY_PERMISSIONS, canAdmin } from '@/lib/adty-permissions'
@@ -64,6 +65,12 @@ export function CampaignEditor(props: CampaignEditorProps) {
   const queryClient = useQueryClient()
   const [id, setId] = useState(props.campaignId)
   const [draft, setDraft] = useState(props.initial)
+  const [savedDraft, setSavedDraft] = useState(() =>
+    JSON.stringify(props.initial)
+  )
+  const [confirmClose, setConfirmClose] = useState(false)
+  const dirty = JSON.stringify(draft) !== savedDraft
+  useDraftNavigation(dirty)
   const [testTo, setTestTo] = useState('')
   const [testLang, setTestLang] = useState('en')
   const [plan, setPlan] = useState<CampaignPlan | null>(null)
@@ -99,13 +106,17 @@ export function CampaignEditor(props: CampaignEditorProps) {
   }
   const refresh = () =>
     queryClient.invalidateQueries({ queryKey: marketingKeys.all })
+  const saveDraft = async () => {
+    requireSavePermission()
+    const input = draft
+    const saved = await saveCampaign(id, input)
+    setId(saved.id)
+    setSavedDraft(JSON.stringify(input))
+    return saved
+  }
   const save = useMutation({
-    mutationFn: () => {
-      requireSavePermission()
-      return saveCampaign(id, draft)
-    },
-    onSuccess: (saved) => {
-      setId(saved.id)
+    mutationFn: saveDraft,
+    onSuccess: () => {
       toast.success(t('Saved successfully'))
       void refresh()
     },
@@ -114,9 +125,7 @@ export function CampaignEditor(props: CampaignEditorProps) {
   const test = useMutation({
     mutationFn: async () => {
       requireSendPermission()
-      requireSavePermission()
-      const saved = await saveCampaign(id, draft)
-      setId(saved.id)
+      const saved = await saveDraft()
       requireSendPermission()
       await sendCampaignTest(saved.id, { to: testTo.trim(), lang: testLang })
     },
@@ -126,9 +135,7 @@ export function CampaignEditor(props: CampaignEditorProps) {
   const prepare = useMutation({
     mutationFn: async () => {
       requireSendPermission()
-      requireSavePermission()
-      const saved = await saveCampaign(id, draft)
-      setId(saved.id)
+      const saved = await saveDraft()
       requireSendPermission()
       return getCampaignPlan(saved.id)
     },
@@ -278,7 +285,10 @@ export function CampaignEditor(props: CampaignEditorProps) {
             {draft.is_template ? t('Save template') : t('Save draft')}
           </Button>
         )}
-        <Button variant='ghost' onClick={props.onClose}>
+        <Button
+          variant='ghost'
+          onClick={() => (dirty ? setConfirmClose(true) : props.onClose())}
+        >
           {t('Back')}
         </Button>
       </div>
@@ -331,6 +341,16 @@ export function CampaignEditor(props: CampaignEditorProps) {
         </div>
       )}
 
+      <ConfirmDialog
+        open={confirmClose}
+        onOpenChange={setConfirmClose}
+        title={t('Unsaved changes')}
+        desc={t('You have unsaved changes. Are you sure you want to leave?')}
+        confirmText={t('Leave')}
+        cancelBtnText={t('Stay')}
+        destructive
+        handleConfirm={props.onClose}
+      />
       <ConfirmDialog
         open={plan !== null}
         onOpenChange={(open) => !open && setPlan(null)}

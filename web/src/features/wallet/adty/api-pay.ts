@@ -54,3 +54,32 @@ export async function payWithEpay(
   })
   return requireServerSuccess(res.data).data
 }
+
+/** Hosted gateways keep their native checkout response contract. */
+export async function payWithHosted(
+  amount: number,
+  method: string,
+  promoCode = ''
+): Promise<{ tradeNo: string; payUrl: string }> {
+  const res = await api.post<{
+    message: string
+    data?: {
+      order_id?: string
+      pay_link?: string
+      checkout_url?: string
+      payment_url?: string
+    }
+  }>('/api/adty/topup/hosted/pay', { amount, method, promo_code: promoCode })
+  const body = res.data
+  if (body.message !== 'success' || !body.data?.order_id) {
+    throw new Error(body.message || 'Failed to create order')
+  }
+  return {
+    tradeNo: body.data.order_id,
+    payUrl:
+      body.data.pay_link ||
+      body.data.checkout_url ||
+      body.data.payment_url ||
+      '',
+  }
+}

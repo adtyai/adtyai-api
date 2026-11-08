@@ -38,6 +38,7 @@ func TestWaffoRefundNotificationClawsBackQuota(t *testing.T) {
 
 	db := adtyTestDB(t)
 	require.NoError(t, db.AutoMigrate(&model.User{}, &model.TopUp{}, &model.AdtyBalanceLedger{}))
+	require.NoError(t, model.MigrateAdtyTables())
 	previousUnit := common.QuotaPerUnit
 	common.QuotaPerUnit = 500000
 	t.Cleanup(func() { common.QuotaPerUnit = previousUnit })

@@ -460,6 +460,9 @@ func updateBatchTasks(ctx context.Context, adaptor BatchTaskPollingAdaptor, chan
 
 		isDone := task.Status == model.TaskStatusSuccess || task.Status == model.TaskStatusFailure
 		terminalTransition := isDone && snap.Status != task.Status
+		if terminalTransition {
+			task.PrivateData.CompletionBilling = &responseItem.TaskInfo
+		}
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
@@ -577,6 +580,9 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 	if task == nil || task.ChannelId != ch.Id {
 		logger.LogError(ctx, common.LogText("Task %s not found in taskM", taskId))
 		return fmt.Errorf("task %s not found", taskId)
+	}
+	if task.BillingInitialPending {
+		return nil
 	}
 	key := ch.Key
 
@@ -721,6 +727,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 		return pollCtx.Err()
 	}
 	if isDone && snap.Status != task.Status {
+		task.PrivateData.CompletionBilling = taskResult
 		won, err := task.UpdateWithStatus(snap.Status)
 		if err != nil {
 			logger.LogError(ctx, common.LogText("UpdateWithStatus failed for task %s: %s", task.TaskID, err.Error()))
@@ -753,8 +760,12 @@ func finalizeTerminalTask(ctx context.Context, adaptor TaskPollingAdaptor, task 
 	defer cancel()
 	perfmetrics.RecordTaskResult(task, taskResult)
 	billingSettled := settleTaskBillingOnComplete(ctx, adaptor, task, taskResult)
-	if task.Status == model.TaskStatusFailure && !billingSettled && task.Quota != 0 {
-		RefundTaskQuota(ctx, task, task.FailReason)
+	if !billingSettled {
+		if task.Status == model.TaskStatusFailure {
+			RefundTaskQuota(ctx, task, task.FailReason)
+		} else {
+			RecalculateTaskQuota(ctx, task, task.Quota, common.NewMessage("Kept the reserved task charge"))
+		}
 	}
 }
 
@@ -806,6 +817,7 @@ func settleTaskBillingOnComplete(ctx context.Context, adaptor TaskPollingAdaptor
 		result, usageFacts, err := EvaluateTaskCompletionUsage(bc.TieredSnapshot, taskResult.UsageFacts)
 		if err != nil {
 			logger.LogWarn(ctx, common.LogText("task %s expression settlement failed, keeping the pre-consumed quota: %v", task.TaskID, err))
+			RecalculateTaskQuota(ctx, task, task.Quota, common.NewMessage("Kept the reserved task charge after expression failure"))
 			return true
 		}
 		if result.Clamp != nil {

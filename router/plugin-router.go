@@ -121,6 +121,7 @@ func productionPluginRouteHandlers(generation *jsplugin.RoutingGeneration, bindi
 		middleware.ModelRequestRateLimit(),
 		middleware.AdtyUserLimit(), // 二开：任务 7.4
 		middleware.PrepareTaskPluginRoute(),
+		middleware.AdtyRequireCurrentSiteTerms(),
 		middleware.Distribute(),
 		controller.RelayTask,
 	}

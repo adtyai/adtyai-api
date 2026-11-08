@@ -25,7 +25,7 @@ import { handleServerError } from '@/lib/handle-server-error'
 import { AuthOperationError } from '@/lib/secure-verification'
 import { createServerError } from '@/lib/server-error-message'
 
-import { createOAuthAuthorization, createOAuthFlow, logout } from '../api'
+import { createOAuthAuthorization, logout } from '../api'
 import {
   buildGitHubOAuthUrl,
   buildDiscordOAuthUrl,
@@ -39,7 +39,8 @@ import type { SystemStatus, CustomOAuthProviderInfo } from '../types'
  */
 export function useOAuthLogin(
   status: SystemStatus | null,
-  redirectTo?: string
+  redirectTo?: string,
+  siteTermsVersion?: string
 ) {
   const { t } = useTranslation()
   const [isLoading, setIsLoading] = useState(false)
@@ -65,6 +66,16 @@ export function useOAuthLogin(
     clearAuthentication()
   }
 
+  const startAuthorization = (provider: string) =>
+    createOAuthAuthorization(
+      provider,
+      'login',
+      undefined,
+      undefined,
+      undefined,
+      siteTermsVersion
+    )
+
   const handleGitHubLogin = async () => {
     if (!status?.github_client_id) return
     if (githubButtonDisabled) return
@@ -87,10 +98,15 @@ export function useOAuthLogin(
 
     try {
       await resetSession()
-      const state = await createOAuthFlow('github', 'login')
+      const authorization = await startAuthorization('github')
+      const state = authorization.state
       rememberOAuthLoginRedirect(state, redirectTo)
 
-      const url = buildGitHubOAuthUrl(status.github_client_id, state)
+      const url = buildGitHubOAuthUrl(
+        status.github_client_id,
+        state,
+        authorization.redirectUri
+      )
       window.open(url, '_self')
     } catch (error) {
       handleServerError(
@@ -111,10 +127,15 @@ export function useOAuthLogin(
     setIsLoading(true)
     try {
       await resetSession()
-      const state = await createOAuthFlow('discord', 'login')
+      const authorization = await startAuthorization('discord')
+      const state = authorization.state
       rememberOAuthLoginRedirect(state, redirectTo)
 
-      const url = buildDiscordOAuthUrl(status.discord_client_id, state)
+      const url = buildDiscordOAuthUrl(
+        status.discord_client_id,
+        state,
+        authorization.redirectUri
+      )
       window.open(url, '_self')
     } catch (error) {
       handleServerError(
@@ -130,7 +151,7 @@ export function useOAuthLogin(
 
     setIsLoading(true)
     try {
-      const authorization = await createOAuthAuthorization('oidc', 'login')
+      const authorization = await startAuthorization('oidc')
       if (!authorization.authorizationUrl) {
         throw new AuthOperationError('Failed to initialize OAuth')
       }
@@ -161,10 +182,15 @@ export function useOAuthLogin(
     setIsLoading(true)
     try {
       await resetSession()
-      const state = await createOAuthFlow('linuxdo', 'login')
+      const authorization = await startAuthorization('linuxdo')
+      const state = authorization.state
       rememberOAuthLoginRedirect(state, redirectTo)
 
-      const url = buildLinuxDOOAuthUrl(status.linuxdo_client_id, state)
+      const url = buildLinuxDOOAuthUrl(
+        status.linuxdo_client_id,
+        state,
+        authorization.redirectUri
+      )
       window.open(url, '_self')
     } catch (error) {
       handleServerError(
@@ -186,7 +212,7 @@ export function useOAuthLogin(
     }
     setIsLoading(true)
     try {
-      const authorization = await createOAuthAuthorization('telegram', 'login')
+      const authorization = await startAuthorization('telegram')
       if (!authorization.authorizationUrl) {
         throw new AuthOperationError('Failed to initialize OAuth')
       }
@@ -206,10 +232,14 @@ export function useOAuthLogin(
     setIsLoading(true)
     try {
       await resetSession()
-      const state = await createOAuthFlow(provider.slug, 'login')
+      const authorization = await startAuthorization(provider.slug)
+      const state = authorization.state
       rememberOAuthLoginRedirect(state, redirectTo)
 
-      const redirectUri = `${window.location.origin}/oauth/${provider.slug}`
+      const redirectUri = authorization.redirectUri
+      if (!redirectUri) {
+        throw new AuthOperationError('Failed to initialize OAuth')
+      }
       const url = new URL(provider.authorization_endpoint)
       url.searchParams.set('client_id', provider.client_id)
       url.searchParams.set('redirect_uri', redirectUri)

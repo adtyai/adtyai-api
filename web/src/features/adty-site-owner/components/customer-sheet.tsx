@@ -24,6 +24,8 @@ import { toast } from 'sonner'
 import { StaticDataTable } from '@/components/data-table/static/static-data-table'
 import { sideDrawerContentClassName } from '@/components/drawer-layout'
 import { EmptyState } from '@/components/empty-state'
+import { ErrorState } from '@/components/error-state'
+import { LoadingState } from '@/components/loading-state'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -36,6 +38,8 @@ import {
 } from '@/components/ui/sheet'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
+import { DraftDiscardDialog } from '@/features/system-settings/components/draft-discard-dialog'
+import { useDraftNavigation } from '@/features/system-settings/hooks/use-draft-navigation'
 import { formatUsd } from '@/features/wallet/adty/lib/money'
 import { toIntlLocale } from '@/i18n/languages'
 import { formatQuota, formatTimestamp } from '@/lib/format'
@@ -64,6 +68,9 @@ export function CustomerSheet(props: {
   const [trialAmount, setTrialAmount] = useState('')
   const [markup, setMarkup] = useState('')
   const [reason, setReason] = useState('')
+  const [discarding, setDiscarding] = useState(false)
+  const dirty = trialAmount !== '' || markup !== '' || reason !== ''
+  useDraftNavigation(dirty)
   const detail = useQuery({
     queryKey: siteOwnerKeys.list('customer', { id }),
     queryFn: () => getOwnerCustomer(id),
@@ -114,12 +121,20 @@ export function CustomerSheet(props: {
   const ownMarkup = detail.data?.prices?.find((row) => row.group === '')?.markup
 
   return (
-    <Sheet open={props.customerId !== null} onOpenChange={props.onOpenChange}>
+    <Sheet
+      open={props.customerId !== null}
+      onOpenChange={(open) => {
+        if (!open && dirty) setDiscarding(true)
+        else props.onOpenChange(open)
+      }}
+    >
       <SheetContent className={sideDrawerContentClassName('sm:max-w-2xl')}>
         <SheetHeader>
           <SheetTitle>{customer?.username ?? t('Customer')}</SheetTitle>
           <SheetDescription>{customer?.email}</SheetDescription>
         </SheetHeader>
+        {detail.isError && <ErrorState onRetry={() => void detail.refetch()} />}
+        {detail.isPending && <LoadingState />}
         {customer && (
           <div className='flex flex-col gap-4 px-4 pb-6'>
             <dl className='grid grid-cols-2 gap-2 text-sm'>
@@ -150,9 +165,9 @@ export function CustomerSheet(props: {
               </TabsList>
               <TabsContent value='logs'>
                 {logs.isError ? (
-                  <EmptyState
+                  <ErrorState
                     className='min-h-24'
-                    title={t('The platform does not show this information')}
+                    onRetry={() => void logs.refetch()}
                   />
                 ) : (
                   <StaticDataTable
@@ -193,9 +208,9 @@ export function CustomerSheet(props: {
               </TabsContent>
               <TabsContent value='topups'>
                 {topups.isError ? (
-                  <EmptyState
+                  <ErrorState
                     className='min-h-24'
-                    title={t('The platform does not show this information')}
+                    onRetry={() => void topups.refetch()}
                   />
                 ) : (
                   <StaticDataTable
@@ -347,6 +362,16 @@ export function CustomerSheet(props: {
           </div>
         )}
       </SheetContent>
+      <DraftDiscardDialog
+        open={discarding}
+        onOpenChange={setDiscarding}
+        onDiscard={() => {
+          setTrialAmount('')
+          setMarkup('')
+          setReason('')
+          props.onOpenChange(false)
+        }}
+      />
     </Sheet>
   )
 }

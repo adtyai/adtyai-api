@@ -27,17 +27,16 @@ func GetTopUpInfo(c *gin.Context) {
 	complianceConfirmed := operation_setting.IsPaymentComplianceConfirmed()
 
 	data := gin.H{
-		// 二开：上游单通道易支付、Stripe、Creem、Waffo 不作为充值方式展示。
-		"enable_online_topup":              false,
-		"enable_stripe_topup":              false,
-		"enable_creem_topup":               false,
-		"enable_waffo_topup":               false,
-		"enable_waffo_pancake_topup":       false,
+		"enable_online_topup":              isEpayTopUpEnabled(),
+		"enable_stripe_topup":              isStripeTopUpEnabled(),
+		"enable_creem_topup":               isCreemTopUpEnabled() && isCreemWebhookConfigured(),
+		"enable_waffo_topup":               isWaffoTopUpEnabled(),
+		"enable_waffo_pancake_topup":       isWaffoPancakeTopUpEnabled(),
 		"payment_compliance_confirmed":     complianceConfirmed,
 		"payment_compliance_terms_version": operation_setting.CurrentComplianceTermsVersion,
-		"waffo_pay_methods":                nil,
-		"creem_products":                   nil,
-		"pay_methods":                      []map[string]string{},
+		"waffo_pay_methods":                setting.GetWaffoPayMethods(),
+		"creem_products":                   setting.CreemProducts,
+		"pay_methods":                      operation_setting.PayMethods,
 		"min_topup":                        operation_setting.MinTopUp,
 		"stripe_min_topup":                 getStripeMinTopup(),
 		"waffo_min_topup":                  setting.WaffoMinTopUp,

@@ -82,7 +82,7 @@ func TestRegistrySnapshotSeparatesLayersWithoutExposingEntries(t *testing.T) {
 }
 
 func TestRegistryRejectsPluginKeyLongerThanTaskPlatformColumn(t *testing.T) {
-	source := `export const meta = {apiVersion: 1, key: "1234567890123456789012345678901", name: "Long", version: "1", author: {name: "Test"}};`
+	source := `export const meta = {apiVersion: 1, key: "1234567890123456789012345678901", name: "Long", version: "1.0.0", author: {name: "Test"}, models: [], fetchMode: "per_task"};`
 	_, err := NewRegistry().Register(source, Options{})
 	require.ErrorContains(t, err, "must not exceed 30 characters")
 }

@@ -563,6 +563,19 @@ func TestMantleRequestPreservesNativeFieldsAndSignsFinalPayload(t *testing.T) {
 }
 
 func TestMantleEndpointAndCredentialValidation(t *testing.T) {
+	t.Run("new native IDs require Mantle", func(t *testing.T) {
+		info := newMantleTestInfo()
+		info.UpstreamModelName = "anthropic.claude-sonnet-5-5"
+		info.ChannelOtherSettings.AwsApiType = dto.AwsApiTypeInvokeModel
+		_, err := (&Adaptor{}).GetRequestURL(info)
+		require.ErrorContains(t, err, "Mantle")
+		_, err = (&Adaptor{}).DoRequest(newAwsTestContext(httptest.NewRecorder(), context.Background()), info, strings.NewReader(`{}`))
+		require.ErrorContains(t, err, "Mantle")
+		info.ChannelOtherSettings.AwsApiType = dto.AwsApiTypeMantle
+		endpoint, err := (&Adaptor{}).GetRequestURL(info)
+		require.NoError(t, err)
+		assert.Contains(t, endpoint, "/anthropic/v1/messages")
+	})
 	for _, test := range []struct {
 		name, key, base, want string
 		invalid               bool

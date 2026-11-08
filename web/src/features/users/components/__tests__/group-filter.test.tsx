@@ -54,11 +54,15 @@ afterEach(() => {
   useAuthStore.getState().auth.reset()
 })
 
-async function renderUsers(initialEntry = '/users/') {
+async function renderUsers(
+  initialEntry = '/users/',
+  loadGate?: () => Promise<void>
+) {
   const get = vi.spyOn(api, 'get').mockImplementation(async (url) => {
     if (url === '/api/group/') {
       return { data: { success: true, data: ['default', 'premium'] } }
     }
+    await loadGate?.()
     return {
       data: {
         success: true,
@@ -109,7 +113,7 @@ async function renderUsers(initialEntry = '/users/') {
       <RouterProvider router={router} />
     </QueryClientProvider>
   )
-  await screen.findByText('premium-user')
+  if (!loadGate) await screen.findByText('premium-user')
   return { get, router }
 }
 
@@ -145,6 +149,19 @@ it('searches only the selected user group and lists all users again after the fi
     })
   )
   expect(router.state.location.search).not.toHaveProperty('group')
+})
+
+it('shows a retryable error instead of an empty user list after GET fails', async () => {
+  let failed = true
+  await renderUsers('/users/', async () => {
+    if (failed) throw new Error('offline')
+  })
+  const retry = await screen.findByRole('button', { name: 'Retry' })
+  expect(screen.queryByText('No Users Found')).not.toBeInTheDocument()
+  failed = false
+  await userEvent.setup().click(retry)
+
+  expect(await screen.findByText('premium-user')).toBeInTheDocument()
 })
 
 it('restores the user group filter from the page URL on load', async () => {

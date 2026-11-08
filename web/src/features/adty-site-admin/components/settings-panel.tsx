@@ -22,12 +22,14 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
+import { ErrorState } from '@/components/error-state'
 import { LoadingState } from '@/components/loading-state'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { Textarea } from '@/components/ui/textarea'
+import { useDraftNavigation } from '@/features/system-settings/hooks/use-draft-navigation'
 import { ADTY_PERMISSIONS, canAdmin } from '@/lib/adty-permissions'
 import { handleServerError } from '@/lib/handle-server-error'
 import { useAuthStore } from '@/stores/auth-store'
@@ -100,6 +102,12 @@ export function SettingsPanel(props: {
     onError: (err) => handleServerError(err),
   })
 
+  useDraftNavigation(
+    !!saved &&
+      !!drafts &&
+      JSON.stringify(drafts) !== JSON.stringify(toResellerDrafts(saved))
+  )
+  if (query.isError) return <ErrorState onRetry={() => void query.refetch()} />
   if (!saved || !drafts) return <LoadingState />
 
   const disabled = !props.canWrite || save.isPending

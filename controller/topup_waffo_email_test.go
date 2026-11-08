@@ -16,8 +16,10 @@ import (
 )
 
 func TestWaffoPayUsesAccountEmail(t *testing.T) {
+	confirmPaymentComplianceForTest(t)
 	db := adtyTestDB(t)
 	require.NoError(t, db.AutoMigrate(&model.User{}, &model.TopUp{}))
+	require.NoError(t, model.MigrateAdtyTables())
 	empty := &model.User{Username: "waffo-no-mail", Password: "x", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: "default", Email: "  "}
 	buyer := &model.User{Username: "waffo-buyer", Password: "x", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: "default", Email: "Buyer@Example.com"}
 	require.NoError(t, db.Create(empty).Error)

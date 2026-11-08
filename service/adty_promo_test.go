@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -294,6 +295,62 @@ func TestPromoNewUserConcurrentReuse(t *testing.T) {
 	require.NoError(t, db.Model(&model.AdtyPromoRedemption{}).Where("code_id = ?", code.Id).Count(&redemptions).Error)
 	assert.EqualValues(t, 1, redemptions)
 	assert.EqualValues(t, 6_050_000+5_050_000, userQuota(t, db, user.Id))
+}
+
+func TestPromoFirstPaidEligibilityAcrossDifferentCodes(t *testing.T) {
+	for _, sharedFingerprint := range []bool{false, true} {
+		t.Run(fmt.Sprintf("shared_fingerprint_%t", sharedFingerprint), func(t *testing.T) {
+			db := preparePromoDB(t)
+			first := promoUser(t, db, "promo-cross-first")
+			second := first
+			if sharedFingerprint {
+				second = promoUser(t, db, "promo-cross-second")
+				for _, user := range []*model.User{first, second} {
+					require.NoError(t, db.Create(&model.AdtyUserFingerprint{UserId: user.Id, IpHash: "cross-code-shared-ip", Kind: "login"}).Error)
+				}
+			}
+			for i, user := range []*model.User{first, second} {
+				code := fmt.Sprintf("CROSS%d", i)
+				promoCode(t, db, model.AdtyPromoCode{Code: code, Kind: model.AdtyPromoKindFixed, Value: decimal.NewFromInt(2), NewUsersOnly: true})
+				_, err := promoOrder(t, user, fmt.Sprintf("PROMO-CROSS-%d", i), 10, code)
+				require.NoError(t, err)
+			}
+			// Keep the two eligibility reads overlapping when there is no shared
+			// serialization fence. A correct fence makes the first reader time out
+			// here, commit, and only then lets the second reader observe its payment.
+			arrived := make(chan struct{})
+			var mu sync.Mutex
+			reads := 0
+			require.NoError(t, db.Callback().Query().After("gorm:query").Register("test:cross-code-first-paid", func(tx *gorm.DB) {
+				if tx.Statement.Table != "top_ups" || !strings.Contains(strings.ToLower(tx.Statement.SQL.String()), "count(") {
+					return
+				}
+				mu.Lock()
+				reads++
+				if reads == 2 {
+					close(arrived)
+				}
+				mu.Unlock()
+				select {
+				case <-arrived:
+				case <-time.After(250 * time.Millisecond):
+				}
+			}))
+			t.Cleanup(func() { db.Callback().Query().Remove("test:cross-code-first-paid") })
+			var wg sync.WaitGroup
+			errs := make([]error, 2)
+			for i := range 2 {
+				wg.Go(func() { errs[i] = payPromoOrder(t, fmt.Sprintf("PROMO-CROSS-%d", i), 10) })
+			}
+			wg.Wait()
+			for _, err := range errs {
+				require.NoError(t, err)
+			}
+			var count int64
+			require.NoError(t, db.Model(&model.AdtyPromoRedemption{}).Count(&count).Error)
+			assert.EqualValues(t, 1, count, "different codes share the same first-paid eligibility")
+		})
+	}
 }
 
 func TestPromoRefundClawsBack(t *testing.T) {

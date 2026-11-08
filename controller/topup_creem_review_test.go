@@ -31,6 +31,7 @@ func TestCreemQuotaLimitEntersManualReview(t *testing.T) {
 
 	db := adtyTestDB(t)
 	require.NoError(t, db.AutoMigrate(&model.User{}, &model.TopUp{}, &model.PaymentOrphanEvent{}))
+	require.NoError(t, model.MigrateAdtyTables())
 
 	previousKey := setting.CreemApiKey
 	previousProducts := setting.CreemProducts
@@ -128,6 +129,7 @@ func TestCreemCallbackDoesNotClaimTakenEmail(t *testing.T) {
 	})
 	db := adtyTestDB(t)
 	require.NoError(t, db.AutoMigrate(&model.User{}, &model.TopUp{}))
+	require.NoError(t, model.MigrateAdtyTables())
 	previousKey := setting.CreemApiKey
 	previousProducts := setting.CreemProducts
 	previousSecret := setting.CreemWebhookSecret

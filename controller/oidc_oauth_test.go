@@ -4,7 +4,6 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"math/big"
 	"net/http"
@@ -225,7 +224,7 @@ func TestOIDCLoginVerifiesPKCENonceAndEmail(t *testing.T) {
 			ID int `json:"id"`
 		} `json:"user"`
 	}
-	require.NoError(t, json.Unmarshal(body.Data, &login))
+	require.NoError(t, common.Unmarshal(body.Data, &login))
 	assert.Equal(t, fixture.user.Id, login.User.ID)
 
 	replay := oidcCallback(state, code)

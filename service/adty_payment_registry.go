@@ -16,6 +16,8 @@ type AdtyMethodInfo struct {
 	Id        string `json:"id"`   // usdt.trc20 | alipay …
 	Kind      string `json:"kind"` // usdt | epay
 	Available bool   `json:"available"`
+	Label     string `json:"label,omitempty"`
+	FaceUSD   string `json:"face_usd,omitempty"`
 }
 
 // AdtyPaymentProvider 是一个支付商（P4 的 BEpusdt、P5 的易支付）。

@@ -24,6 +24,7 @@ import { ConfirmDialog } from '@/components/confirm-dialog'
 import { StaticDataTable } from '@/components/data-table/static/static-data-table'
 import { Dialog } from '@/components/dialog'
 import { EmptyState } from '@/components/empty-state'
+import { ErrorState } from '@/components/error-state'
 import { StatusBadge } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -35,6 +36,8 @@ import {
   unixToDateInput,
 } from '@/features/adty-marketing/lib/campaign'
 import { PageSwitcher } from '@/features/referral/components/page-switcher'
+import { DraftDiscardDialog } from '@/features/system-settings/components/draft-discard-dialog'
+import { useDraftNavigation } from '@/features/system-settings/hooks/use-draft-navigation'
 import { toIntlLocale } from '@/i18n/languages'
 import { formatNumber, formatTimestamp } from '@/lib/format'
 
@@ -88,7 +91,13 @@ export function PromoCodesPanel() {
   const [editing, setEditing] = useState<{
     id: number | null
     input: PromoCodeInput
+    initialInput: PromoCodeInput
   } | null>(null)
+  const [discarding, setDiscarding] = useState(false)
+  const dirty =
+    !!editing &&
+    JSON.stringify(editing.input) !== JSON.stringify(editing.initialInput)
+  useDraftNavigation(dirty)
   const [deleting, setDeleting] = useState<PromoCode | null>(null)
   const query = useQuery({
     queryKey: siteOwnerKeys.list('promo-codes', { p: page }),
@@ -116,8 +125,13 @@ export function PromoCodesPanel() {
       prev ? { ...prev, input: { ...prev.input, ...patch } } : prev
     )
 
+  if (query.isError && !query.data) {
+    return <ErrorState onRetry={() => void query.refetch()} />
+  }
+
   return (
     <div className='flex flex-col gap-3'>
+      {query.isError && <ErrorState onRetry={() => void query.refetch()} />}
       <p className='text-muted-foreground text-sm'>
         {t(
           'Promo codes add bonus credit to a paid top-up on your site. The bonus is taken from your earnings.'
@@ -126,7 +140,9 @@ export function PromoCodesPanel() {
       <div>
         <Button
           size='sm'
-          onClick={() => setEditing({ id: null, input: EMPTY })}
+          onClick={() =>
+            setEditing({ id: null, input: EMPTY, initialInput: EMPTY })
+          }
         >
           {t('New promo code')}
         </Button>
@@ -183,7 +199,11 @@ export function PromoCodesPanel() {
                   size='sm'
                   variant='outline'
                   onClick={() =>
-                    setEditing({ id: row.id, input: toInput(row) })
+                    setEditing({
+                      id: row.id,
+                      input: toInput(row),
+                      initialInput: toInput(row),
+                    })
                   }
                 >
                   {t('Edit')}
@@ -208,7 +228,12 @@ export function PromoCodesPanel() {
       />
       <Dialog
         open={editing !== null}
-        onOpenChange={(open) => !open && setEditing(null)}
+        onOpenChange={(open) => {
+          if (!open) {
+            if (dirty) setDiscarding(true)
+            else setEditing(null)
+          }
+        }}
         title={editing?.id ? t('Edit promo code') : t('New promo code')}
         footer={
           <Button
@@ -326,6 +351,11 @@ export function PromoCodesPanel() {
           </div>
         )}
       </Dialog>
+      <DraftDiscardDialog
+        open={discarding}
+        onOpenChange={setDiscarding}
+        onDiscard={() => setEditing(null)}
+      />
       <ConfirmDialog
         open={deleting !== null}
         onOpenChange={(open) => !open && setDeleting(null)}

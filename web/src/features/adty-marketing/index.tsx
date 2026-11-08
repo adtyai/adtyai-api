@@ -17,10 +17,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { SectionPageLayout } from '@/components/layout'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { DraftNavigationProvider } from '@/features/system-settings/components/draft-navigation-provider'
 import { ADTY_PERMISSIONS, canAdmin } from '@/lib/adty-permissions'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -44,54 +46,74 @@ export function AdtyMarketing() {
     queryFn: getMarketingSettings,
   })
   const includeSites = settings.data?.include_site_customers_default === true
+  const [visitedTabs, setVisitedTabs] = useState(() => new Set(['campaigns']))
 
   return (
-    <SectionPageLayout>
-      <SectionPageLayout.Title>{t('Marketing')}</SectionPageLayout.Title>
-      <SectionPageLayout.Content>
-        <Tabs defaultValue='campaigns'>
-          <TabsList>
-            <TabsTrigger value='campaigns'>{t('Campaigns')}</TabsTrigger>
-            <TabsTrigger value='templates'>{t('Templates')}</TabsTrigger>
-            <TabsTrigger value='triggers'>{t('Automated emails')}</TabsTrigger>
-            <TabsTrigger value='promo'>{t('Promo codes')}</TabsTrigger>
-            <TabsTrigger value='sources'>{t('Sign-up sources')}</TabsTrigger>
-            <TabsTrigger value='settings'>{t('Settings')}</TabsTrigger>
-          </TabsList>
-          <TabsContent value='campaigns'>
-            <CampaignPanel
-              templates={false}
-              canCreate={canCreate}
-              canWrite={canWrite}
-              canDelete={canDelete}
-              canSend={canSend}
-              includeSitesDefault={includeSites}
-            />
-          </TabsContent>
-          <TabsContent value='templates'>
-            <CampaignPanel
-              templates
-              canCreate={canCreate}
-              canWrite={canWrite}
-              canDelete={canDelete}
-              canSend={canSend}
-              includeSitesDefault={includeSites}
-            />
-          </TabsContent>
-          <TabsContent value='triggers'>
-            <TriggersPanel canWrite={canWrite} />
-          </TabsContent>
-          <TabsContent value='promo'>
-            <PromoPanel canCreate={canCreate} canWrite={canWrite} />
-          </TabsContent>
-          <TabsContent value='sources'>
-            <SourcesPanel />
-          </TabsContent>
-          <TabsContent value='settings'>
-            <SettingsPanel canWrite={canWrite} />
-          </TabsContent>
-        </Tabs>
-      </SectionPageLayout.Content>
-    </SectionPageLayout>
+    <DraftNavigationProvider>
+      <SectionPageLayout>
+        <SectionPageLayout.Title>{t('Marketing')}</SectionPageLayout.Title>
+        <SectionPageLayout.Content>
+          <Tabs
+            defaultValue='campaigns'
+            onValueChange={(value) =>
+              setVisitedTabs((previous) => new Set(previous).add(String(value)))
+            }
+          >
+            <TabsList>
+              <TabsTrigger value='campaigns'>{t('Campaigns')}</TabsTrigger>
+              <TabsTrigger value='templates'>{t('Templates')}</TabsTrigger>
+              <TabsTrigger value='triggers'>
+                {t('Automated emails')}
+              </TabsTrigger>
+              <TabsTrigger value='promo'>{t('Promo codes')}</TabsTrigger>
+              <TabsTrigger value='sources'>{t('Sign-up sources')}</TabsTrigger>
+              <TabsTrigger value='settings'>{t('Settings')}</TabsTrigger>
+            </TabsList>
+            <TabsContent value='campaigns' keepMounted>
+              {visitedTabs.has('campaigns') && (
+                <CampaignPanel
+                  templates={false}
+                  canCreate={canCreate}
+                  canWrite={canWrite}
+                  canDelete={canDelete}
+                  canSend={canSend}
+                  includeSitesDefault={includeSites}
+                />
+              )}
+            </TabsContent>
+            <TabsContent value='templates' keepMounted>
+              {visitedTabs.has('templates') && (
+                <CampaignPanel
+                  templates
+                  canCreate={canCreate}
+                  canWrite={canWrite}
+                  canDelete={canDelete}
+                  canSend={canSend}
+                  includeSitesDefault={includeSites}
+                />
+              )}
+            </TabsContent>
+            <TabsContent value='triggers' keepMounted>
+              {visitedTabs.has('triggers') && (
+                <TriggersPanel canWrite={canWrite} />
+              )}
+            </TabsContent>
+            <TabsContent value='promo' keepMounted>
+              {visitedTabs.has('promo') && (
+                <PromoPanel canCreate={canCreate} canWrite={canWrite} />
+              )}
+            </TabsContent>
+            <TabsContent value='sources'>
+              <SourcesPanel />
+            </TabsContent>
+            <TabsContent value='settings' keepMounted>
+              {visitedTabs.has('settings') && (
+                <SettingsPanel canWrite={canWrite} />
+              )}
+            </TabsContent>
+          </Tabs>
+        </SectionPageLayout.Content>
+      </SectionPageLayout>
+    </DraftNavigationProvider>
   )
 }

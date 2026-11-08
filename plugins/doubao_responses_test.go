@@ -28,6 +28,88 @@ const (
 	doubaoBaseURL    = "https://ark.cn-beijing.volces.com"
 )
 
+func TestDoubao3DGeneration(t *testing.T) {
+	registry, plugin := newDoubaoPlugin(t)
+	for _, tc := range []struct {
+		model, commands, metadataCommands string
+		tokens                            float64
+	}{
+		{"doubao-seed3d-2-0-260328", "--subdivisionlevel medium --fileformat obj", "", 30000},
+		{"hitem3d-2-0-251223", "", "", 126875},
+		{"hitem3d-2-0-251223", "--resolution 1536 --request_type 1", "", 72500},
+		{"hitem3d-2-0-251223", "--ff 2 --resolution 1536 --request_type 3", "", 126875},
+		{"hitem3d-2-0-251223", "--resolution 1536pro --request_type 1", "", 108750},
+		{"hitem3d-2-0-251223", "--ff 2 --resolution 1536pro --face 2000000 --request_type 3", "", 163125},
+		{"hitem3d-2-0-251223", "--resolution 1536 --request_type 1", "--resolution 1536pro --request_type 3", 163125},
+		{"hyper3d-gen2-260112", "A robot --mesh_mode Raw --hd_texture true --material PBR --addons HighPack --quality_override 1000000 --use_original_alpha false --bbox_condition [100,100,100] --TAPose false", "", 30000},
+	} {
+		t.Run(tc.model, func(t *testing.T) {
+			_, found := registry.Generation().LookupEndpoint("POST", "/v1/responses", tc.model)
+			require.True(t, found)
+			_, found = registry.Generation().LookupEndpoint("POST", "/v1/videos", tc.model)
+			assert.False(t, found)
+			image := map[string]any{"type": "image_url", "image_url": map[string]any{"url": "https://cdn.example/front.png"}}
+			content := []any{image}
+			if tc.commands != "" {
+				content = []any{map[string]any{"type": "text", "text": tc.commands}, image}
+			}
+			value, err := plugin.Engine.CallPath(t.Context(), "native", []string{"createTask"}, map[string]any{"body": map[string]any{"kind": "json", "value": map[string]any{"model": tc.model, "content": content}}})
+			require.NoError(t, err)
+			intent := alibabaObject(t, value)
+			assert.Equal(t, "image_to_3d", intent["action"])
+			requestBody := intent["requestBody"].(map[string]any)
+			wantContent := content
+			if tc.metadataCommands != "" {
+				requestBody["content"] = content
+				wantContent = []any{map[string]any{"type": "text", "text": tc.metadataCommands}, image}
+				requestBody["metadata"].(map[string]any)["content"] = wantContent
+			}
+			ctx := map[string]any{"model": tc.model, "upstreamModel": tc.model, "baseUrl": doubaoBaseURL, "apiKey": "k", "requestBody": requestBody}
+			value, err = plugin.Engine.Call(t.Context(), "buildSubmitRequest", ctx)
+			require.NoError(t, err)
+			descriptor := alibabaObject(t, value)
+			assert.Equal(t, doubaoBaseURL+"/api/v3/contents/generations/tasks", descriptor["url"])
+			body := descriptor["body"].(map[string]any)
+			assert.Equal(t, wantContent, body["content"])
+			assert.NotContains(t, body, "quality")
+			assert.NotContains(t, body, "sample")
+			assert.NotContains(t, body, "duration")
+			assert.NotContains(t, body, "resolution")
+			value, err = plugin.Engine.Call(t.Context(), "extractUsage", ctx)
+			require.NoError(t, err)
+			assert.Equal(t, map[string]any{"tokens": tc.tokens}, alibabaObject(t, value))
+		})
+	}
+	t.Run("3D results expose model files and settle actual tokens", func(t *testing.T) {
+		body := map[string]any{"status": "succeeded", "content": map[string]any{"file_url": "https://cdn.example/model.glb"}, "usage": map[string]any{"completion_tokens": 30000, "total_tokens": 30000}}
+		task := map[string]any{"status": "SUCCESS", "model": "doubao-seed3d-2-0-260328", "data": body}
+		value, err := plugin.Engine.Call(t.Context(), "parseTaskResult", task, body)
+		require.NoError(t, err)
+		assert.Equal(t, "https://cdn.example/model.glb", alibabaObject(t, value)["url"])
+		value, err = plugin.Engine.Call(t.Context(), "listArtifacts", task)
+		require.NoError(t, err)
+		encoded, err := common.Marshal(value)
+		require.NoError(t, err)
+		var artifacts []map[string]any
+		require.NoError(t, common.Unmarshal(encoded, &artifacts))
+		require.Len(t, artifacts, 1)
+		assert.Equal(t, "file", artifacts[0]["type"])
+		value, err = plugin.Engine.Call(t.Context(), "extractUsageOnComplete", task, map[string]any{}, body)
+		require.NoError(t, err)
+		assert.Equal(t, map[string]any{"tokens": float64(30000)}, alibabaObject(t, value))
+		value, err = plugin.Engine.CallPath(t.Context(), "protocols", []string{"openai_responses", "renderFinal"}, map[string]any{"model": "doubao-seed3d-2-0-260328", "artifacts": map[string]any{"model": map[string]any{"url": "https://gateway.example/model"}}}, task)
+		require.NoError(t, err)
+		assert.Contains(t, fmt.Sprint(value), "https://gateway.example/model")
+	})
+	t.Run("3D validation rejects video parameters and unsupported quality", func(t *testing.T) {
+		for _, metadata := range []map[string]any{{"duration": 5}, {"quality": "ultra"}} {
+			metadata["content"] = []any{map[string]any{"type": "image_url", "image_url": map[string]any{"url": "https://cdn.example/front.png"}}}
+			_, err := plugin.Engine.Call(t.Context(), "buildSubmitRequest", map[string]any{"model": "doubao-seed3d-2-0-260328", "requestBody": map[string]any{"model": "doubao-seed3d-2-0-260328", "metadata": metadata}})
+			require.Error(t, err)
+		}
+	})
+}
+
 func TestDoubaoResponsesProtocol(t *testing.T) {
 	testVideoResponsesProtocol(t, videoResponsesTestCase{
 		pluginKey: "doubao",

@@ -18,13 +18,15 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TFunction } from 'i18next'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { CopyButton } from '@/components/copy-button'
 import { StaticDataTable } from '@/components/data-table/static/static-data-table'
+import { ErrorState } from '@/components/error-state'
+import { LoadingState } from '@/components/loading-state'
 import { StatusBadge } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -32,6 +34,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
+import { useDraftNavigation } from '@/features/system-settings/hooks/use-draft-navigation'
 import { handleServerError } from '@/lib/handle-server-error'
 
 import {
@@ -73,7 +76,17 @@ function BrandCard(props: { site: OwnerSite }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [brand, setBrand] = useState<SiteBrand>(props.site.brand)
-  useEffect(() => setBrand(props.site.brand), [props.site.brand])
+  const previousServerBrand = useRef(props.site.brand)
+  useDraftNavigation(JSON.stringify(brand) !== JSON.stringify(props.site.brand))
+  useEffect(() => {
+    const previous = previousServerBrand.current
+    previousServerBrand.current = props.site.brand
+    setBrand((draft) =>
+      JSON.stringify(draft) === JSON.stringify(previous)
+        ? props.site.brand
+        : draft
+    )
+  }, [props.site.brand])
   const upload = useMutation({
     mutationFn: (file: File) => uploadLogo(file),
     onSuccess: (url) => setBrand((prev) => ({ ...prev, logo_url: url })),
@@ -174,6 +187,7 @@ function DomainsCard(props: { site: OwnerSite }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [hostname, setHostname] = useState('')
+  useDraftNavigation(hostname !== '')
   const [deleting, setDeleting] = useState<SiteDomain | null>(null)
   const add = useMutation({
     mutationFn: () => addDomain(hostname.trim()),
@@ -325,6 +339,7 @@ function SenderDomainCard(props: { site: OwnerSite }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [domain, setDomain] = useState('')
+  useDraftNavigation(domain !== '')
   const [deleting, setDeleting] = useState(false)
   const query = useQuery({
     queryKey: siteOwnerKeys.list('sender-domain', {}),
@@ -357,11 +372,18 @@ function SenderDomainCard(props: { site: OwnerSite }) {
         <CardTitle>{t('Sender domain')}</CardTitle>
       </CardHeader>
       <CardContent className='grid gap-3'>
-        {!props.site.sender_domain_enabled ? (
+        {!props.site.sender_domain_enabled && (
           <p className='text-muted-foreground text-sm'>
             {t('Not available yet')}
           </p>
-        ) : (
+        )}
+        {props.site.sender_domain_enabled && query.isError && (
+          <ErrorState onRetry={() => void query.refetch()} />
+        )}
+        {props.site.sender_domain_enabled && query.isPending && (
+          <LoadingState />
+        )}
+        {props.site.sender_domain_enabled && query.isSuccess && (
           <>
             <p className='text-muted-foreground text-sm'>
               {t(
@@ -473,6 +495,7 @@ function CloseRequestCard(props: { site: OwnerSite }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [reason, setReason] = useState('')
+  useDraftNavigation(reason !== '')
   const requested = (props.site.close_requested_at ?? 0) > 0
   const request = useMutation({
     mutationFn: () => requestSiteClose(reason.trim()),

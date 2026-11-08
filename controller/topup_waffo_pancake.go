@@ -20,7 +20,8 @@ import (
 )
 
 type WaffoPancakePayRequest struct {
-	Amount int64 `json:"amount"`
+	Amount    int64  `json:"amount"`
+	PromoCode string `json:"promo_code,omitempty"`
 }
 
 func RequestWaffoPancakeAmount(c *gin.Context) {
@@ -115,11 +116,12 @@ func getWaffoPancakeBuyerEmail(user *model.User) string {
 // resolveWaffoPancakeAdminCreds). Only SaveWaffoPancake writes to OptionMap.
 
 type saveWaffoPancakeRequest struct {
-	MerchantID string `json:"merchant_id"`
-	PrivateKey string `json:"private_key"`
-	ReturnURL  string `json:"return_url"`
-	StoreID    string `json:"store_id"`
-	ProductID  string `json:"product_id"`
+	MerchantID  string `json:"merchant_id"`
+	PrivateKey  string `json:"private_key"`
+	ReturnURL   string `json:"return_url"`
+	StoreID     string `json:"store_id"`
+	ProductID   string `json:"product_id"`
+	Environment string `json:"environment"`
 }
 
 type createWaffoPancakePairRequest struct {
@@ -143,6 +145,7 @@ func SaveWaffoPancake(c *gin.Context) {
 		req.ReturnURL,
 		req.StoreID,
 		req.ProductID,
+		req.Environment,
 	); err != nil {
 		logger.LogError(c.Request.Context(), common.LogText(
 			"Waffo Pancake failed to save config store_id=%q product_id=%q error=%q",
@@ -315,7 +318,7 @@ func RequestWaffoPancakePay(c *gin.Context) {
 		CreateTime:      time.Now().Unix(),
 		Status:          common.TopUpStatusPending,
 	}
-	if err := topUp.Insert(); err != nil {
+	if err := createAdtyHostedOrder(c, topUp, decimal.NewFromInt(units).Mul(decimal.NewFromFloat(common.QuotaPerUnit)), "USD", setting.WaffoPancakeProductID, setting.WaffoPancakeEnvironment, req.PromoCode); err != nil {
 		logger.LogError(c.Request.Context(), common.LogText("Waffo Pancake failed to create top-up order user_id=%d trade_no=%s amount=%d error=%q", id, tradeNo, req.Amount, err.Error()))
 		paymentError(c, common.NewMessage("Failed to create order"))
 		return
@@ -332,12 +335,17 @@ func RequestWaffoPancakePay(c *gin.Context) {
 		BuyerEmail:              getWaffoPancakeBuyerEmail(user),
 		ExpiresInSeconds:        &expiresInSeconds,
 		OrderMerchantExternalID: tradeNo,
+		Metadata:                map[string]string{"adty_product": setting.WaffoPancakeProductID},
 	})
 	if err != nil {
 		logger.LogError(c.Request.Context(), common.LogText("Waffo Pancake failed to create checkout session user_id=%d trade_no=%s error=%q", id, tradeNo, err.Error()))
 		topUp.Status = common.TopUpStatusFailed
 		_ = topUp.Update()
 		paymentError(c, common.NewMessage("Failed to start payment"))
+		return
+	}
+	if err := model.UpdateAdtyTopupOrderFields(tradeNo, map[string]any{"pay_url": session.CheckoutURL, "gateway_trade_id": session.OrderID}); err != nil {
+		paymentError(c, common.NewMessage("Failed to create order"))
 		return
 	}
 	logger.LogInfo(c.Request.Context(), common.LogText("Waffo Pancake top-up order created user_id=%d trade_no=%s session_id=%s amount=%d money=%.2f", id, tradeNo, session.SessionID, req.Amount, payMoney))
@@ -355,7 +363,9 @@ func RequestWaffoPancakePay(c *gin.Context) {
 	})
 }
 
-var verifyWaffoPancakeWebhook = service.VerifyConfiguredWaffoPancakeWebhook
+var verifyWaffoPancakeWebhook = func(payload, signature string) (*service.WaffoPancakeWebhookEvent, error) {
+	return service.VerifyConfiguredWaffoPancakeWebhook(payload, signature)
+}
 
 func WaffoPancakeWebhook(c *gin.Context) {
 	if !isWaffoPancakeWebhookEnabled() {
@@ -432,7 +442,27 @@ func WaffoPancakeWebhook(c *gin.Context) {
 	LockOrder(tradeNo)
 	defer UnlockOrder(tradeNo)
 
+	ext, lookupErr := model.GetAdtyTopupOrder(tradeNo)
+	if lookupErr != nil {
+		c.String(http.StatusInternalServerError, "retry")
+		return
+	}
 	if eventType == "refund.succeeded" {
+		if ext != nil {
+			refundID := event.Data.RefundTicketMerchantExternalID
+			if refundID == "" {
+				refundID = event.EventID
+			}
+			if refundID == "" {
+				refundID = event.ID
+			}
+			if err := recordHostedReversal(model.PaymentProviderWaffoPancake, eventType, refundID, tradeNo, event.Data.OrderID, string(bodyBytes)); err != nil {
+				c.String(http.StatusInternalServerError, "retry")
+				return
+			}
+			c.String(http.StatusOK, "OK")
+			return
+		}
 		if err := model.RefundWaffoPancake(tradeNo); err != nil {
 			logger.LogError(c.Request.Context(), common.LogText("Waffo Pancake refund failed trade_no=%s event_id=%s client_ip=%s error=%q", tradeNo, event.ID, c.ClientIP(), err.Error()))
 			c.String(http.StatusInternalServerError, "retry")
@@ -442,7 +472,56 @@ func WaffoPancakeWebhook(c *gin.Context) {
 		return
 	}
 
-	if err := model.RechargeWaffoPancake(tradeNo); err != nil {
+	if ext != nil {
+		amount, parseErr := decimal.NewFromString(event.Data.Amount)
+		purchase := decimal.Zero
+		tax := decimal.Zero
+		if strings.TrimSpace(event.Data.TaxAmount) != "" {
+			var taxErr error
+			tax, taxErr = decimal.NewFromString(event.Data.TaxAmount)
+			if taxErr != nil {
+				parseErr = taxErr
+			}
+		}
+		if event.Data.Subtotal != nil || event.Data.Total != nil {
+			if event.Data.Subtotal == nil || event.Data.Total == nil {
+				parseErr = model.ErrPaymentAmountMismatch
+			} else {
+				var subtotalErr, totalErr error
+				purchase, subtotalErr = decimal.NewFromString(*event.Data.Subtotal)
+				amount, totalErr = decimal.NewFromString(*event.Data.Total)
+				if subtotalErr != nil || totalErr != nil || !purchase.IsPositive() || !amount.IsPositive() || !purchase.Add(tax).Equal(amount) {
+					parseErr = model.ErrPaymentAmountMismatch
+				}
+			}
+		} else if !tax.IsZero() {
+			// The SDK does not define whether legacy amount includes tax.
+			// Authenticated GraphQL recovery supplies explicit subtotal/total.
+			parseErr = model.ErrPaymentAmountMismatch
+		}
+		if tax.IsNegative() {
+			parseErr = model.ErrPaymentAmountMismatch
+		}
+		if parseErr != nil {
+			recordAdtyPaymentReview(model.PaymentProviderWaffoPancake, tradeNo, event.Data.OrderID, string(bodyBytes), model.ErrPaymentAmountMismatch)
+			c.String(http.StatusBadRequest, "invalid amount")
+			return
+		}
+		_, err = model.CompleteAdtyTopUp(tradeNo, model.AdtyPaymentFacts{
+			Provider: model.PaymentProviderWaffoPancake, Method: model.PaymentMethodWaffoPancake,
+			PaidAmount: amount, PurchaseAmount: purchase, PaidCurrency: event.Data.Currency, GatewayTradeId: event.Data.OrderID, TxHash: event.Data.OrderID,
+			Environment: event.Mode, Source: model.AdtyPaymentSourceCallback, Payload: string(bodyBytes),
+			ProductId: event.Data.OrderMetadata["adty_product"], MerchantId: event.StoreID,
+		}, c.ClientIP())
+	} else {
+		err = model.RechargeWaffoPancake(tradeNo)
+	}
+	if err != nil {
+		if errors.Is(err, model.ErrPaymentOrphanNotCredit) {
+			recordAdtyPaymentReview(model.PaymentProviderWaffoPancake, tradeNo, event.Data.OrderID, string(bodyBytes), err)
+			c.String(http.StatusOK, "OK")
+			return
+		}
 		logger.LogError(c.Request.Context(), common.LogText("Waffo Pancake top-up processing failed trade_no=%s event_id=%s order_id=%s client_ip=%s error=%q", tradeNo, event.ID, event.Data.OrderID, c.ClientIP(), err.Error()))
 		c.String(http.StatusInternalServerError, "retry")
 		return

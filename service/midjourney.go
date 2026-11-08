@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -31,13 +30,15 @@ func CovertMjpActionToModelName(mjAction string) string {
 }
 
 // PrepareMidjourneyTaskBilling sets the durable refund marker before the task is inserted.
-func PrepareMidjourneyTaskBilling(relayInfo *relaycommon.RelayInfo, task *model.Midjourney, quota int, shouldBill bool) (bool, error) {
+func PrepareMidjourneyTaskBilling(relayInfo *relaycommon.RelayInfo, task *model.Midjourney, quota int, shouldBill bool, contexts ...*gin.Context) (bool, error) {
 	if task == nil {
 		return false, errors.New("Midjourney task is nil")
 	}
 	task.Quota = 0
 	task.TokenId = 0
 	task.BillingChannelId = 0
+	task.BillingChargePending, task.BillingPending = false, false
+	task.BillingOperationKey, task.BillingTokenQuota = "", 0
 	if !shouldBill {
 		return false, nil
 	}
@@ -49,6 +50,19 @@ func PrepareMidjourneyTaskBilling(relayInfo *relaycommon.RelayInfo, task *model.
 	}
 
 	task.Quota = quota
+	task.BillingChargePending = true
+	task.BillingOperationKey = "mj:" + common.NewRequestId()
+	if !relayInfo.IsPlayground {
+		task.TokenId = relayInfo.TokenId
+	}
+	if len(contexts) > 0 && contexts[0] != nil {
+		contexts[0].Set(adtyDurableBillingContextKey, true)
+		contexts[0].Set(adtyBillingOperationContextKey, task.BillingOperationKey)
+		if k, d, ok := AdtySiteMarkupFromContext(contexts[0]); ok {
+			task.BillingSiteId = contexts[0].GetInt(AdtySiteIdContextKey)
+			task.BillingSiteMarkup, task.BillingSiteCostFactor = k, d
+		}
+	}
 	task.BillingChannelId = task.ChannelId
 	if relayInfo.ChannelMeta != nil && relayInfo.ChannelId > 0 {
 		task.BillingChannelId = relayInfo.ChannelId
@@ -68,28 +82,22 @@ func SettleMidjourneyTaskBilling(relayInfo *relaycommon.RelayInfo, task *model.M
 		return false, errors.New("Midjourney task must be persisted before billing")
 	}
 
-	result, billingErr := postConsumeQuotaWithResult(relayInfo, task.Quota, 0, true)
-	if !result.FundingApplied {
-		task.Quota = 0
-		task.TokenId = 0
-		task.BillingChannelId = 0
-		if updateErr := task.UpdateBillingState(); updateErr != nil {
-			return false, errors.Join(billingErr, fmt.Errorf("clear Midjourney billing state: %w", updateErr))
-		}
-		return false, billingErr
-	}
+	return settleDurableMidjourney(task)
+}
 
-	task.TokenId = 0
-	if result.TokenApplied {
-		task.TokenId = relayInfo.TokenId
+func settleDurableMidjourney(task *model.Midjourney) (bool, error) {
+	key, err := model.QueueMidjourneyBillingOperation(task, false)
+	if err != nil {
+		return false, err
 	}
-	stampMidjourneySiteBilling(relayInfo, task)
-	// 二开（余额下限）：任务 quota 是退款的依据，记实扣，失败退款不会退出平台没收到的钱。
-	task.Quota -= result.Shortfall
-	if updateErr := task.UpdateBillingState(); updateErr != nil {
-		return true, errors.Join(billingErr, fmt.Errorf("update Midjourney billing state: %w", updateErr))
+	op, _, err := model.ApplyBillingSettlement(key)
+	if err != nil {
+		return false, err
 	}
-	return true, billingErr
+	task.Quota, task.BillingTokenQuota = op.AppliedQuota, op.TokenAppliedQuota
+	task.BillingChargePending, task.BillingPending = false, false
+	projectBillingEarnings(key)
+	return op.State == model.BillingSettled, nil
 }
 
 // FailMidjourneyTasksWithoutChannel 在渠道消失或没有 mj_id 时把任务收成失败并退预扣。
@@ -118,51 +126,32 @@ func FailMidjourneyTasksWithoutChannel(ctx context.Context, tasks []*model.Midjo
 // stampMidjourneySiteBilling stores the submit-time site k and d so a later refund
 // does not use a markup the owner changed after the task was billed.
 func stampMidjourneySiteBilling(relayInfo *relaycommon.RelayInfo, task *model.Midjourney) {
-	if relayInfo == nil || task == nil {
-		return
-	}
-	site := AdtyBillingSiteForUser(task.UserId)
-	if site == nil {
-		return
-	}
-	cost, ok := AdtySiteCostFactor(site)
-	if !ok {
-		return
-	}
-	group := relayInfo.UsingGroup
-	if group == "" {
-		group = relayInfo.UserGroup
-	}
-	task.BillingSiteId = site.Id
-	task.BillingSiteCostFactor = cost.InexactFloat64()
-	task.BillingSiteMarkup = adtyMarkupFloat(AdtySiteMarkup(task.UserId, group), task.UserId, group)
+	// PrepareMidjourneyTaskBilling copies the original request context before
+	// insertion. Never replace that snapshot with mutable site/user settings.
 }
 
 // RefundMidjourneyQuota reverses every accounting element recorded for a billed legacy task.
 func RefundMidjourneyQuota(ctx context.Context, task *model.Midjourney, reason string) bool {
-	quota := task.Quota
-	if quota == 0 {
-		return true
+	key, err := model.QueueMidjourneyBillingOperation(task, true)
+	if err != nil {
+		return false
 	}
-
-	if err := model.IncreaseUserQuota(task.UserId, quota, false); err != nil {
+	op, applied, err := model.ApplyBillingSettlement(key)
+	if err != nil {
 		logger.LogWarn(ctx, common.LogText("failed to refund Midjourney user quota, task %s: %s", task.MjId, err.Error()))
 		return false
 	}
-
-	if task.TokenId > 0 {
-		tokenKey := resolveTokenKey(ctx, task.TokenId, task.MjId)
-		if tokenKey != "" {
-			if err := model.IncreaseTokenQuota(task.TokenId, tokenKey, quota); err != nil {
-				logger.LogWarn(ctx, common.LogText("failed to refund Midjourney token quota, task %s: %s", task.MjId, err.Error()))
-			}
-		}
+	task.Quota, task.BillingTokenQuota = op.AppliedQuota, op.TokenAppliedQuota
+	task.BillingChargePending, task.BillingPending = false, false
+	projectBillingEarnings(key)
+	if !applied || op.ReservedQuota == 0 {
+		return true
 	}
+	quota := op.ReservedQuota
 
 	billingChannelId := task.GetBillingChannelId()
-	model.UpdateUserUsedQuota(task.UserId, -quota)
-	model.UpdateChannelUsedQuota(billingChannelId, -quota)
 	other := model.NewLogOther()
+	other.SetAdmin("billing_operation_key", key)
 	other.SetPublic("task_id", task.MjId)
 	other.SetPublic("reason", reason)
 	if task.BillingSiteId > 0 && task.BillingSiteMarkup >= 1 && task.BillingSiteCostFactor > 0 {
@@ -180,10 +169,6 @@ func RefundMidjourneyQuota(ctx context.Context, task *model.Midjourney, reason s
 		Other:     other,
 	})
 
-	task.Quota = 0
-	if err := task.UpdateBillingState(); err != nil {
-		logger.LogError(ctx, common.LogText("Midjourney refund succeeded but clearing the quota failed, task %s: %s", task.MjId, err.Error()))
-	}
 	return true
 }
 

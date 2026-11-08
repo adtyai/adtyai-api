@@ -50,6 +50,7 @@ func SetAdtyRouter(apiRouter *gin.RouterGroup) {
 func registerAdtyTopUpRoutes(apiRouter *gin.RouterGroup) {
 	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/adty/topup/info", "scope", "wallet:read")
 	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/topup/quote", "scope", "wallet:read")
+	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/topup/hosted/pay", "scope", "wallet:write")
 	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/adty/topup/orders/:trade_no", "scope", "wallet:read")
 	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/topup/orders/:trade_no/cancel", "scope", "wallet:write")
 	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/adty/topup/pending", "scope", "wallet:read")
@@ -58,6 +59,7 @@ func registerAdtyTopUpRoutes(apiRouter *gin.RouterGroup) {
 	topup := apiRouter.Group("/adty/topup", middleware.UserAuth(), middleware.AdtyRequireCurrentSiteTerms())
 	topup.GET("/info", controller.GetAdtyTopUpInfo)
 	topup.POST("/quote", middleware.PromoCodeUserRateLimit("CT:promo-quote"), controller.PostAdtyTopUpQuote)
+	topup.POST("/hosted/pay", middleware.UserCriticalRateLimit("CT:pay-hosted"), controller.PostAdtyHostedPayment)
 	topup.GET("/orders/:trade_no", controller.GetAdtyTopUpOrder)
 	topup.POST("/orders/:trade_no/cancel", middleware.CriticalRateLimit(), controller.CancelAdtyTopUpOrder)
 	topup.GET("/pending", controller.GetAdtyTopUpPending)
@@ -72,6 +74,8 @@ func registerAdtyFinanceRoutes(apiRouter *gin.RouterGroup) {
 	handlePermissionRoute(finance, http.MethodGet, "/payment-orphans", authz.AdtyFinanceRead, controller.GetPaymentOrphans)
 	handlePermissionRoute(finance, http.MethodPost, "/payment-orphans/:id/credit", authz.AdtyFinanceManualCredit, controller.CreditPaymentOrphan)
 	handlePermissionRoute(finance, http.MethodPost, "/payment-orphans/:id/resolve", authz.AdtyFinanceManualCredit, controller.ResolvePaymentOrphan)
+	handlePermissionRoute(finance, http.MethodGet, "/site-earning-reviews", authz.AdtyFinanceRead, controller.GetAdtySiteEarningReviews)
+	handlePermissionRoute(finance, http.MethodPost, "/site-earning-reviews/resolve", authz.AdtyFinanceManualCredit, controller.ReviewAdtySiteEarning)
 
 	topup := apiRouter.Group("/adty/admin/topup", middleware.AdminAuth())
 	handlePermissionRoute(topup, http.MethodPost, "/:trade_no/complete", authz.AdtyFinanceManualCredit, controller.ManualCompleteAdtyTopUp)
@@ -264,6 +268,8 @@ func registerAdtyResellerRoutes(apiRouter *gin.RouterGroup) {
 		{http.MethodPut, "/self", "wallet:write", []gin.HandlerFunc{controller.PutAdtyOwnerSite}},
 		{http.MethodGet, "/stats", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerStats}},
 		{http.MethodGet, "/earnings", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerEarnings}},
+		{http.MethodGet, "/wallets", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerWallets}},
+		{http.MethodGet, "/wallet-ledgers", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerWalletLedger}},
 		{http.MethodGet, "/customers", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerCustomers}},
 		{http.MethodGet, "/customers/lookup", "wallet:read", []gin.HandlerFunc{controller.LookupAdtyOwnerCustomer}},
 		{http.MethodGet, "/customers/:id", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerCustomer}},
@@ -281,6 +287,17 @@ func registerAdtyResellerRoutes(apiRouter *gin.RouterGroup) {
 		middleware.DeclareAdtyAccessTokenRoute(route.method, "/api/adty/site"+route.path, "scope", route.scope)
 		owner.Handle(route.method, route.path, route.handlers...)
 	}
+
+	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/adty/admin/reseller/tiers", "scope", "option:read")
+	middleware.DeclareAdtyAccessTokenRoute("PUT", "/api/adty/admin/reseller/tiers", "scope", "option:write")
+	root := apiRouter.Group("/adty/admin/reseller", middleware.RootAuth())
+	root.GET("/tiers", controller.GetAdtySiteTiers)
+	root.PUT("/tiers", controller.PutAdtySiteTiers)
+	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/adty/admin/sites/:id/wallets", "scope", "option:read")
+	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/adty/admin/sites/:id/wallet-ledgers", "scope", "option:read")
+	rootWallets := apiRouter.Group("/adty/admin/sites", middleware.RootAuth())
+	rootWallets.GET("/:id/wallets", controller.GetAdtyAdminSiteWallets)
+	rootWallets.GET("/:id/wallet-ledgers", controller.GetAdtyAdminSiteWalletLedger)
 
 	admin := apiRouter.Group("/adty/admin", middleware.AdminAuth())
 	for _, route := range []struct {

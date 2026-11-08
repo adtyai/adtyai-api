@@ -116,6 +116,7 @@ func bepusdtPermanentError(err error) bool {
 		errors.Is(err, model.ErrTopUpNotFound) ||
 		errors.Is(err, model.ErrPaymentMethodMismatch) ||
 		errors.Is(err, model.ErrTopUpStatusInvalid) ||
+		errors.Is(err, model.ErrPaymentOrphanNotCredit) ||
 		errors.Is(err, model.ErrTopUpQuotaLimitExceeded) ||
 		errors.Is(err, model.ErrInvalidTopUpQuota)
 }

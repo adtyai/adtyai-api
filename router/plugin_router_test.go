@@ -361,6 +361,25 @@ func TestPluginStaticRouteConflictsAreExcluded(t *testing.T) {
 	}
 }
 
+func TestSetRouterIncludesAdtyWebRoutesInPluginConflictSnapshot(t *testing.T) {
+	previousRegistry := jsplugin.DefaultRegistry
+	registry := jsplugin.NewRegistry()
+	jsplugin.DefaultRegistry = registry
+	t.Cleanup(func() { jsplugin.DefaultRegistry = previousRegistry })
+	t.Setenv("FRONTEND_BASE_URL", "")
+	t.Setenv("TRUSTED_PROXIES", "")
+
+	engine := gin.New()
+	SetRouter(engine, WebAssets{})
+
+	plugin := compileRouterPlugin(t, "adty-web-route-conflict", "1.0.0", `[
+		{method: "POST", path: "/pay/result/:token", type: "submit"}
+	]`)
+	require.NoError(t, registry.ReplaceOverrides([]*jsplugin.LoadedPlugin{plugin}))
+
+	assert.Contains(t, registry.RoutingErrors()[plugin.Meta.Key], "intersects static route")
+}
+
 func TestStaticConflictingUpdateRetainsIncumbentAndPublishesHealthyPeer(t *testing.T) {
 	outer := newOuterPluginTestEngine()
 	outer.GET("/core/:id", func(c *gin.Context) { c.String(http.StatusOK, "static") })

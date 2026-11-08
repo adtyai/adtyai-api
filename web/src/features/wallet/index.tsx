@@ -20,6 +20,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { ErrorState } from '@/components/error-state'
 import { SectionPageLayout } from '@/components/layout'
 import { getSelf } from '@/lib/api'
 
@@ -29,7 +30,7 @@ import { AdtyPendingBanner } from './adty/components/adty-pending-banner'
 import { AdtyRechargeCard } from './adty/components/adty-recharge-card'
 import { AdtyTopupHistory } from './adty/components/adty-topup-history'
 import type { ActivePayment } from './adty/lib/active-payment'
-import type { AdtyMethod, AdtyOrder } from './adty/types'
+import type { AdtyMethod, AdtyMethodKind, AdtyOrder } from './adty/types'
 import { WalletStatsCard } from './components/wallet-stats-card'
 import type { UserWalletData } from './types'
 
@@ -81,11 +82,13 @@ export function Wallet(props: WalletProps) {
   }
 
   const handleResume = (order: AdtyOrder) => {
-    const kind = order.payment_provider === 'bepusdt' ? 'usdt' : 'epay'
+    let kind: AdtyMethodKind = 'hosted'
+    if (order.payment_provider === 'bepusdt') kind = 'usdt'
+    else if (order.payment_provider === 'adty_epay') kind = 'epay'
     setActivePayment({
       kind,
       method: order.payment_method,
-      amount: order.amount,
+      amount: Number(order.ext?.face_usd ?? order.amount),
       tradeNo: order.trade_no,
     })
   }
@@ -109,12 +112,17 @@ export function Wallet(props: WalletProps) {
               onResume={handleResume}
             />
             <div id='wallet-add-funds' className='scroll-mt-4'>
-              <AdtyRechargeCard
-                info={infoQuery.data}
-                loading={infoQuery.isLoading}
-                paying={activePayment !== null}
-                onPay={handlePay}
-              />
+              {infoQuery.isError && (
+                <ErrorState onRetry={() => void infoQuery.refetch()} />
+              )}
+              {(!infoQuery.isError || infoQuery.data) && (
+                <AdtyRechargeCard
+                  info={infoQuery.data}
+                  loading={infoQuery.isLoading}
+                  paying={activePayment !== null}
+                  onPay={handlePay}
+                />
+              )}
             </div>
             <AdtyTopupHistory />
           </div>

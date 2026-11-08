@@ -303,10 +303,15 @@ function KeysPage() {
   )
 }
 
-async function renderKeysPage(status = 1, overrides: Partial<ApiKey> = {}) {
+async function renderKeysPage(
+  status = 1,
+  overrides: Partial<ApiKey> = {},
+  loadGate?: () => Promise<void>
+) {
   let currentKey = { ...key, status, ...overrides }
   vi.mocked(api.get).mockImplementation(async (url) => {
     if (url.startsWith('/api/token/')) {
+      await loadGate?.()
       return {
         data: { success: true, data: { items: [currentKey], total: 1 } },
       }
@@ -345,9 +350,22 @@ async function renderKeysPage(status = 1, overrides: Partial<ApiKey> = {}) {
       </QueryClientProvider>
     </I18nextProvider>
   )
-  await screen.findByText(currentKey.name)
+  if (!loadGate) await screen.findByText(currentKey.name)
   return { post, put }
 }
+
+it('shows a retryable error instead of an empty API key list after GET fails', async () => {
+  let failed = true
+  await renderKeysPage(1, {}, async () => {
+    if (failed) throw new Error('offline')
+  })
+  const retry = await screen.findByRole('button', { name: 'Retry' })
+  expect(screen.queryByText('No API Keys Found')).not.toBeInTheDocument()
+  failed = false
+  await userEvent.setup().click(retry)
+
+  expect(await screen.findByText('production')).toBeInTheDocument()
+})
 
 it('combines creation and last use while keeping expiry, models and IP restrictions separate', async () => {
   await renderKeysPage()

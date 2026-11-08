@@ -43,6 +43,7 @@ type StripePayRequest struct {
 	// CancelURL is the optional custom URL to redirect when payment is canceled.
 	// If empty, defaults to the server's console topup page.
 	CancelURL string `json:"cancel_url,omitempty"`
+	PromoCode string `json:"promo_code,omitempty"`
 }
 
 type StripeAdaptor struct {
@@ -124,13 +125,6 @@ func (*StripeAdaptor) RequestPay(c *gin.Context, req *StripePayRequest) {
 	reference := fmt.Sprintf("new-api-ref-%d-%d-%s", user.Id, time.Now().UnixMilli(), randstr.String(4))
 	referenceId := "ref_" + common.Sha1([]byte(reference))
 
-	payLink, err := genStripeLink(referenceId, user.StripeCustomer, user.Email, pay.Money, req.SuccessURL, req.CancelURL)
-	if err != nil {
-		logger.LogError(c.Request.Context(), common.LogText("Stripe failed to create Checkout Session user_id=%d trade_no=%s amount=%d error=%q", id, referenceId, req.Amount, err.Error()))
-		paymentError(c, common.NewMessage("Failed to start payment"))
-		return
-	}
-
 	topUp := &model.TopUp{
 		UserId:          id,
 		Amount:          pay.Quantity,
@@ -141,9 +135,19 @@ func (*StripeAdaptor) RequestPay(c *gin.Context, req *StripePayRequest) {
 		CreateTime:      time.Now().Unix(),
 		Status:          common.TopUpStatusPending,
 	}
-	err = topUp.Insert()
+	err = createAdtyHostedOrder(c, topUp, stripeCreditedQuota(pay.Quantity), "USD", "wallet_topup", stripePaymentEnvironment(setting.StripeApiSecret), req.PromoCode)
 	if err != nil {
 		logger.LogError(c.Request.Context(), common.LogText("Stripe failed to create top-up order user_id=%d trade_no=%s amount=%d error=%q", id, referenceId, req.Amount, err.Error()))
+		paymentError(c, common.NewMessage("Failed to create order"))
+		return
+	}
+	checkout, err := genStripeCheckout(referenceId, user.StripeCustomer, user.Email, pay.Money, req.SuccessURL, req.CancelURL)
+	if err != nil {
+		_ = model.UpdatePendingTopUpStatus(referenceId, model.PaymentProviderStripe, common.TopUpStatusFailed)
+		paymentError(c, common.NewMessage("Failed to start payment"))
+		return
+	}
+	if err := model.UpdateAdtyTopupOrderFields(referenceId, map[string]any{"gateway_trade_id": checkout.ID, "pay_url": checkout.URL}); err != nil {
 		paymentError(c, common.NewMessage("Failed to create order"))
 		return
 	}
@@ -151,7 +155,8 @@ func (*StripeAdaptor) RequestPay(c *gin.Context, req *StripePayRequest) {
 	c.JSON(http.StatusOK, gin.H{
 		"message": "success",
 		"data": gin.H{
-			"pay_link": payLink,
+			"pay_link": checkout.URL,
+			"order_id": referenceId,
 		},
 	})
 }
@@ -215,6 +220,14 @@ func StripeWebhook(c *gin.Context) {
 		handleErr = sessionAsyncPaymentSucceeded(ctx, event, callerIp)
 	case stripe.EventTypeCheckoutSessionAsyncPaymentFailed:
 		sessionAsyncPaymentFailed(ctx, event, callerIp)
+	case stripe.EventTypeChargeRefunded, stripe.EventTypeChargeDisputeCreated, stripe.EventTypeChargeDisputeClosed, stripe.EventTypeChargeDisputeFundsWithdrawn, stripe.EventTypeChargeDisputeFundsReinstated:
+		resourceID := event.GetObjectValue("id")
+		if event.Type == stripe.EventTypeChargeRefunded {
+			// A charge can receive several partial refunds. Resending the same
+			// cumulative refund is idempotent; a later refund needs a new review.
+			resourceID += ":" + event.GetObjectValue("amount_refunded")
+		}
+		handleErr = recordHostedReversal(model.PaymentProviderStripe, string(event.Type), resourceID, event.GetObjectValue("metadata", "adty_trade_no"), event.GetObjectValue("payment_intent"), string(payload))
 	default:
 		logger.LogInfo(ctx, common.LogText("Stripe webhook ignored event event_type=%s client_ip=%s", string(event.Type), callerIp))
 	}
@@ -236,6 +249,9 @@ func sessionCompleted(ctx context.Context, event stripe.Event, callerIp string) 
 
 	paymentStatus := event.GetObjectValue("payment_status")
 	if paymentStatus != "paid" {
+		if paymentStatus == "no_payment_required" {
+			recordAdtyPaymentReview(model.PaymentProviderStripe, referenceId, event.GetObjectValue("id"), string(event.Data.Raw), model.ErrPaymentAmountMismatch)
+		}
 		logger.LogInfo(ctx, common.LogText("Stripe Checkout payment not completed, waiting for async result trade_no=%s payment_status=%s client_ip=%s", referenceId, paymentStatus, callerIp))
 		return nil
 	}
@@ -307,12 +323,46 @@ func fulfillOrder(ctx context.Context, event stripe.Event, referenceId string, c
 		return fmt.Errorf("stripe top-up order not found")
 	}
 	paidCents, paidOK := stripeAmountTotalCents(event)
-	if !paidOK || paidCents != stripeMoneyCents(topUp.Money) {
+	purchaseAmount := decimal.Zero
+	if raw := event.GetObjectValue("amount_subtotal"); raw != "" {
+		subtotal, parseErr := strconv.ParseInt(raw, 10, 64)
+		discount, discountErr := stripeCheckoutDetailCents(event, "amount_discount")
+		tax, taxErr := stripeCheckoutDetailCents(event, "amount_tax")
+		shipping, shippingErr := stripeCheckoutDetailCents(event, "amount_shipping")
+		total := decimal.NewFromInt(subtotal).Sub(decimal.NewFromInt(discount)).Add(decimal.NewFromInt(tax)).Add(decimal.NewFromInt(shipping))
+		paidOK = paidOK && parseErr == nil && discountErr == nil && taxErr == nil && shippingErr == nil && subtotal > 0 && discount <= subtotal && subtotal == stripeMoneyCents(topUp.Money) && total.Equal(decimal.NewFromInt(paidCents))
+		purchaseAmount = decimal.NewFromInt(subtotal).Div(decimal.NewFromInt(100))
+	} else {
+		paidOK = paidOK && paidCents == stripeMoneyCents(topUp.Money)
+	}
+	if !paidOK || paidCents <= 0 {
 		logger.LogError(ctx, common.LogText("Stripe paid amount does not match the quote trade_no=%s paid_cents=%d expected_cents=%d client_ip=%s", referenceId, paidCents, stripeMoneyCents(topUp.Money), callerIp))
 		return fmt.Errorf("stripe paid amount mismatch")
 	}
-	err := model.Recharge(referenceId, customerId, callerIp)
+	ext, err := model.GetAdtyTopupOrder(referenceId)
 	if err != nil {
+		return err
+	}
+	if ext != nil {
+		_, err = model.CompleteAdtyTopUp(referenceId, model.AdtyPaymentFacts{
+			Provider: model.PaymentProviderStripe, Method: model.PaymentMethodStripe,
+			PaidAmount: decimal.NewFromInt(paidCents).Div(decimal.NewFromInt(100)), PaidCurrency: event.GetObjectValue("currency"),
+			PurchaseAmount: purchaseAmount,
+			GatewayTradeId: event.GetObjectValue("id"), TxHash: event.GetObjectValue("payment_intent"),
+			ProductId: event.GetObjectValue("metadata", "adty_product"), Environment: hostedPaymentEnvironment(!event.Livemode),
+			Source: model.AdtyPaymentSourceCallback,
+		}, callerIp)
+	} else {
+		if !strings.EqualFold(event.GetObjectValue("currency"), "USD") {
+			return model.ErrPaymentAmountMismatch
+		}
+		err = model.Recharge(referenceId, customerId, callerIp)
+	}
+	if err != nil {
+		if errors.Is(err, model.ErrPaymentOrphanNotCredit) {
+			recordAdtyPaymentReview(model.PaymentProviderStripe, referenceId, event.GetObjectValue("id"), string(event.Data.Raw), err)
+			return nil
+		}
 		logger.LogError(ctx, common.LogText("Stripe top-up processing failed trade_no=%s event_type=%s client_ip=%s error=%q", referenceId, string(event.Type), callerIp, err.Error()))
 		return err
 	}
@@ -365,8 +415,16 @@ func sessionExpired(ctx context.Context, event stripe.Event) {
 //
 // Returns the checkout session URL or an error if the session creation fails.
 func genStripeLink(referenceId string, customerId string, email string, payMoney decimal.Decimal, successURL string, cancelURL string) (string, error) {
+	checkout, err := genStripeCheckout(referenceId, customerId, email, payMoney, successURL, cancelURL)
+	if err != nil {
+		return "", err
+	}
+	return checkout.URL, nil
+}
+
+func genStripeCheckout(referenceId string, customerId string, email string, payMoney decimal.Decimal, successURL string, cancelURL string) (*stripe.CheckoutSession, error) {
 	if !strings.HasPrefix(setting.StripeApiSecret, "sk_") && !strings.HasPrefix(setting.StripeApiSecret, "rk_") {
-		return "", errors.New("invalid Stripe API key")
+		return nil, errors.New("invalid Stripe API key")
 	}
 
 	stripe.Key = setting.StripeApiSecret
@@ -381,7 +439,7 @@ func genStripeLink(referenceId string, customerId string, email string, payMoney
 
 	cents := payMoney.Round(2).Mul(decimal.NewFromInt(100)).IntPart()
 	if cents <= 0 {
-		return "", errors.New("stripe payment amount is too small")
+		return nil, errors.New("stripe payment amount is too small")
 	}
 	params := &stripe.CheckoutSessionParams{
 		ClientReferenceID: stripe.String(referenceId),
@@ -401,6 +459,10 @@ func genStripeLink(referenceId string, customerId string, email string, payMoney
 		},
 		Mode: stripe.String(string(stripe.CheckoutSessionModePayment)),
 	}
+	params.AddMetadata("adty_product", "wallet_topup")
+	params.AddMetadata("adty_trade_no", referenceId)
+	params.AllowPromotionCodes = stripe.Bool(setting.StripePromotionCodesEnabled)
+	params.PaymentIntentData = &stripe.CheckoutSessionPaymentIntentDataParams{Metadata: map[string]string{"adty_trade_no": referenceId, "adty_product": "wallet_topup"}}
 
 	if "" == customerId {
 		if "" != email {
@@ -414,10 +476,10 @@ func genStripeLink(referenceId string, customerId string, email string, payMoney
 
 	result, err := stripeNewCheckoutSession(params)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	return result.URL, nil
+	return result, nil
 }
 
 // stripeQuote 是一次 Stripe 充值的报价。应付金额、Checkout 实扣和订单 money 都用 Money；入账额度是 Quantity 乘额度单位，不再乘分组倍率或单价。
@@ -460,18 +522,23 @@ func stripeAmountTotalCents(event stripe.Event) (int64, bool) {
 	if raw == "" {
 		return 0, false
 	}
-	if strings.Contains(raw, ".") {
-		parsed, err := decimal.NewFromString(raw)
-		if err != nil {
-			return 0, false
-		}
-		return parsed.Round(0).IntPart(), true
-	}
 	parsed, err := strconv.ParseInt(raw, 10, 64)
 	if err != nil {
 		return 0, false
 	}
 	return parsed, true
+}
+
+func stripeCheckoutDetailCents(event stripe.Event, key string) (int64, error) {
+	raw := event.GetObjectValue("total_details", key)
+	if raw == "" {
+		return 0, nil
+	}
+	value, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || value < 0 {
+		return 0, model.ErrPaymentAmountMismatch
+	}
+	return value, nil
 }
 
 func stripeAmountScale() int64 {

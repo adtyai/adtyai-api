@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"reflect"
 	"sync"
 	"sync/atomic"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
@@ -70,6 +72,225 @@ func TestAdtyWalletPreConsumeSettle(t *testing.T) {
 	require.NoError(t, SettleBilling(c, info, 7_500))
 	require.Equal(t, 992_500, getUserQuota(t, userID), "user quota after settle")
 	require.Equal(t, 7_500, getTokenUsedQuota(t, tokenID), "token used quota after settle")
+}
+
+func TestDurableBillingSettlementDoesNotPartiallyCommitWallet(t *testing.T) {
+	truncate(t)
+	const userID, tokenID = 9981, 9981
+	seedUser(t, userID, 1000)
+	seedToken(t, tokenID, userID, "sk-durable-settlement", 1000)
+	c := adtyWalletRelayContext()
+	info := adtyWalletRelayInfo(userID, tokenID, "sk-durable-settlement")
+	require.Nil(t, PreConsumeBilling(c, 100, info))
+	require.NoError(t, model.DB.Exec(`CREATE TRIGGER fail_durable_settlement_token BEFORE UPDATE ON tokens
+		WHEN OLD.id = 9981 BEGIN SELECT RAISE(ABORT, 'forced token write failure'); END`).Error)
+	t.Cleanup(func() { model.DB.Exec("DROP TRIGGER IF EXISTS fail_durable_settlement_token") })
+	require.Error(t, info.Billing.Settle(150))
+	assert.Equal(t, 900, getUserQuota(t, userID), "wallet adjustment must roll back with the token adjustment")
+	assert.Equal(t, 900, getTokenRemainQuota(t, tokenID))
+}
+
+func TestDurableTaskRefundDoesNotCreditBeforeMarkerCommit(t *testing.T) {
+	truncate(t)
+	task := adtyWalletTask(t, 9982, 9982, 9982)
+	require.NoError(t, model.DB.Exec(`CREATE TRIGGER fail_durable_task_marker BEFORE UPDATE ON tasks
+		WHEN NEW.quota = 0 BEGIN SELECT RAISE(ABORT, 'forced marker write failure'); END`).Error)
+	t.Cleanup(func() { model.DB.Exec("DROP TRIGGER IF EXISTS fail_durable_task_marker") })
+	assert.False(t, RefundTaskQuota(context.Background(), task, "failed upstream"))
+	assert.Equal(t, 990_000, getUserQuota(t, task.UserId), "failed marker commit must not credit the wallet")
+	assert.Equal(t, 90_000, getTokenRemainQuota(t, task.PrivateData.TokenId))
+}
+
+func TestDurableTaskRefundRejectsStaleReplay(t *testing.T) {
+	truncate(t)
+	task := adtyWalletTask(t, 9983, 9983, 9983)
+	stale := *task
+	require.True(t, RefundTaskQuota(context.Background(), task, "failed upstream"))
+	require.True(t, RefundTaskQuota(context.Background(), &stale, "retry after restart"))
+	assert.Equal(t, 1_000_000, getUserQuota(t, task.UserId), "the same persisted task may only be refunded once")
+	assert.Equal(t, 100_000, getTokenRemainQuota(t, task.PrivateData.TokenId))
+}
+
+func TestDurableTaskRefundCancelsStaleAdjustment(t *testing.T) {
+	for _, queuedBeforeRefund := range []bool{true, false} {
+		t.Run(fmt.Sprintf("queued_before_refund_%t", queuedBeforeRefund), func(t *testing.T) {
+			truncate(t)
+			task := adtyWalletTask(t, 9991, 9991, 9991)
+			stale := *task
+			var key string
+			var err error
+			if queuedBeforeRefund {
+				key, err = model.QueueTaskBillingOperation(&stale, 15_000, false)
+				require.NoError(t, err)
+			}
+			require.True(t, RefundTaskQuota(context.Background(), task, "failed upstream"))
+			if !queuedBeforeRefund {
+				key, err = model.QueueTaskBillingOperation(&stale, 15_000, false)
+				require.NoError(t, err)
+			}
+			require.NoError(t, RecoverBillingOperations(context.Background(), 100))
+			require.NoError(t, RecoverBillingOperations(context.Background(), 100))
+			assert.Equal(t, 1_000_000, getUserQuota(t, task.UserId), "a stale completion must not recharge a refunded task")
+			assert.Equal(t, 100_000, getTokenRemainQuota(t, task.PrivateData.TokenId))
+			assert.Zero(t, getTaskQuota(t, task.ID))
+			op, err := model.GetBillingOperation(key)
+			require.NoError(t, err)
+			assert.Equal(t, model.BillingCanceled, op.State, "recovery must not keep retrying the obsolete adjustment")
+		})
+	}
+}
+
+func TestDurableFallbackChargeDoesNotPartiallyCommitWallet(t *testing.T) {
+	truncate(t)
+	seedUser(t, 9984, 1000)
+	seedToken(t, 9984, 9984, "sk-durable-fallback", 1000)
+	require.NoError(t, model.DB.Exec(`CREATE TRIGGER fail_durable_fallback_token BEFORE UPDATE ON tokens
+		WHEN OLD.id = 9984 BEGIN SELECT RAISE(ABORT, 'forced token write failure'); END`).Error)
+	t.Cleanup(func() { model.DB.Exec("DROP TRIGGER IF EXISTS fail_durable_fallback_token") })
+	_, err := postConsumeQuotaWithResult(adtyWalletRelayInfo(9984, 9984, "sk-durable-fallback"), 100, 0, false)
+	require.Error(t, err)
+	assert.Equal(t, 1000, getUserQuota(t, 9984))
+}
+
+func TestDurableRecoveryRefundsAbandonedReservation(t *testing.T) {
+	truncate(t)
+	seedUser(t, 9985, 1000)
+	seedToken(t, 9985, 9985, "sk-durable-abandoned", 1000)
+	info := adtyWalletRelayInfo(9985, 9985, "sk-durable-abandoned")
+	require.Nil(t, PreConsumeBilling(adtyWalletRelayContext(), 100, info))
+	require.NoError(t, model.DB.Model(&model.BillingOperation{}).Where("user_id = ?", 9985).
+		UpdateColumn("updated_at", time.Now().Add(-10*time.Minute).Unix()).Error)
+	require.NoError(t, RecoverBillingOperations(context.Background(), 100))
+	assert.Equal(t, 1000, getUserQuota(t, 9985), "a process that disappears before finalization must not strand its reservation")
+	assert.Equal(t, 1000, getTokenRemainQuota(t, 9985))
+}
+
+func TestDurableTerminalTaskRecoveryAfterCAS(t *testing.T) {
+	truncate(t)
+	task := adtyWalletTask(t, 9986, 9986, 9986)
+	old := task.Status
+	task.Status = model.TaskStatusFailure
+	task.Progress = "100%"
+	won, err := task.UpdateWithStatus(old)
+	require.NoError(t, err)
+	require.True(t, won)
+	// No finalizer runs: recovery must find the already-terminal row.
+	require.NoError(t, RecoverBillingOperations(context.Background(), 100))
+	require.NoError(t, RecoverBillingOperations(context.Background(), 100))
+	assert.Equal(t, 1_000_000, getUserQuota(t, task.UserId))
+	assert.Equal(t, 100_000, getTokenRemainQuota(t, task.PrivateData.TokenId))
+	assert.Zero(t, getTaskQuota(t, task.ID))
+}
+
+func TestDurableInitialTaskBindingSurvivesBeforeSettle(t *testing.T) {
+	truncate(t)
+	seedUser(t, 9987, 1000)
+	seedToken(t, 9987, 9987, "sk-durable-insert", 1000)
+	info := adtyWalletRelayInfo(9987, 9987, "sk-durable-insert")
+	require.Nil(t, PreConsumeBilling(adtyWalletRelayContext(), 100, info))
+	task := makeTask(9987, 0, 60, 9987, BillingSourceWallet, 0)
+	AttachTaskBillingReservation(info, task)
+	require.NoError(t, task.Insert())
+	require.True(t, task.BillingInitialPending)
+	require.NoError(t, RecoverBillingOperations(context.Background(), 100))
+	require.NoError(t, RecoverBillingOperations(context.Background(), 100))
+	assert.Equal(t, 940, getUserQuota(t, 9987))
+	assert.Equal(t, 940, getTokenRemainQuota(t, 9987))
+	assert.Equal(t, 60, getTaskQuota(t, task.ID))
+}
+
+func TestDurableZeroReservationTaskCompletionRecoversAfterCAS(t *testing.T) {
+	truncate(t)
+	seedUser(t, 9992, 1000)
+	seedToken(t, 9992, 9992, "sk-durable-zero-estimate", 1000)
+	info := adtyWalletRelayInfo(9992, 9992, "sk-durable-zero-estimate")
+	require.Nil(t, PreConsumeBilling(adtyWalletRelayContext(), 0, info))
+	task := makeTask(9992, 0, 0, 9992, BillingSourceWallet, 0)
+	AttachTaskBillingReservation(info, task)
+	require.NoError(t, task.Insert())
+	require.NoError(t, info.Billing.Settle(0))
+	require.NoError(t, model.DB.First(task, task.ID).Error)
+	old := task.Status
+	task.Status, task.Progress = model.TaskStatusSuccess, "100%"
+	task.PrivateData.CompletionBilling = &relaycommon.TaskInfo{Status: model.TaskStatusSuccess}
+	won, err := task.UpdateWithStatus(old)
+	require.NoError(t, err)
+	require.True(t, won)
+	previous := GetTaskAdaptorFunc
+	GetTaskAdaptorFunc = func(constant.TaskPlatform) TaskPollingAdaptor { return &mockAdaptor{adjustReturn: 20} }
+	t.Cleanup(func() { GetTaskAdaptorFunc = previous })
+	// The worker disappears after publishing SUCCESS, before its finalizer.
+	require.NoError(t, RecoverBillingOperations(context.Background(), 100))
+	require.NoError(t, RecoverBillingOperations(context.Background(), 100))
+	assert.Equal(t, 980, getUserQuota(t, 9992))
+	assert.Equal(t, 980, getTokenRemainQuota(t, 9992))
+	assert.Equal(t, 20, getTaskQuota(t, task.ID))
+}
+
+func TestDurableBillingPostgresRealRedisPending(t *testing.T) {
+	address := os.Getenv("ADTY_TEST_REDIS_ADDR")
+	if address == "" {
+		t.Skip("ADTY_TEST_REDIS_ADDR is not configured")
+	}
+	db := prepareFloorDB(t)
+	user, token := floorCustomer(t, db, nil, "durable-real-redis", 1000)
+	c, info, _ := floorRelay(t, user, token)
+	previousEnabled, previousBatch, previousRDB := common.RedisEnabled, common.BatchUpdateEnabled, common.RDB
+	client := redis.NewClient(&redis.Options{Addr: address})
+	require.NoError(t, client.Ping(context.Background()).Err())
+	common.RedisEnabled, common.BatchUpdateEnabled, common.RDB = true, true, client
+	t.Cleanup(func() {
+		common.RedisEnabled, common.BatchUpdateEnabled, common.RDB = previousEnabled, previousBatch, previousRDB
+		client.Close()
+	})
+	require.Nil(t, PreConsumeBilling(c, 100, info))
+	require.NoError(t, info.Billing.Settle(50))
+	require.NoError(t, RecoverBillingOperations(context.Background(), 100))
+	var stored model.User
+	require.NoError(t, db.First(&stored, user.Id).Error)
+	assert.Equal(t, 1000, stored.Quota, "durable pending is retained without requiring a flush")
+	assert.Equal(t, -50, stored.QuotaPending)
+	assert.Equal(t, 950, stored.Quota+stored.QuotaPending)
+	var storedToken model.Token
+	require.NoError(t, db.First(&storedToken, token.Id).Error)
+	assert.Equal(t, token.RemainQuota-50, storedToken.RemainQuota+storedToken.QuotaPending)
+}
+
+func TestDurableBillingMovementsRecomputeEveryAppliedStage(t *testing.T) {
+	truncate(t)
+	seedUser(t, 9988, 1000)
+	seedToken(t, 9988, 9988, "sk-durable-movements", 1000)
+	info := adtyWalletRelayInfo(9988, 9988, "sk-durable-movements")
+	require.Nil(t, PreConsumeBilling(adtyWalletRelayContext(), 100, info))
+	require.NoError(t, info.Billing.ReserveBeforeSubmit(150))
+	require.NoError(t, info.Billing.Settle(80))
+	var summary struct {
+		Count       int64
+		WalletDelta int
+		TokenDelta  int
+	}
+	require.NoError(t, model.DB.Table("billing_operation_movements").
+		Select("COUNT(*) AS count, SUM(wallet_delta) AS wallet_delta, SUM(token_delta) AS token_delta").Where("user_id = ?", 9988).Scan(&summary).Error)
+	assert.EqualValues(t, 3, summary.Count, "each reservation increase and final application retains its own durable movement")
+	assert.Equal(t, -80, summary.WalletDelta)
+	assert.Equal(t, -80, summary.TokenDelta)
+	assert.Equal(t, 1000+summary.WalletDelta, getUserQuota(t, 9988))
+}
+
+func TestDurableSchemaUpgradeKeepsLegacyTasksPollable(t *testing.T) {
+	db := prepareFloorDB(t)
+	legacy := makeTask(1, 0, 100, 0, BillingSourceWallet, 0)
+	legacy.Progress = "0%"
+	require.NoError(t, db.Create(legacy).Error)
+	require.NoError(t, db.Migrator().DropColumn(&model.Task{}, "billing_pending"))
+	require.NoError(t, db.Migrator().DropColumn(&model.Task{}, "billing_initial_pending"))
+	for range 2 {
+		require.NoError(t, db.AutoMigrate(&model.Task{}, &model.Midjourney{}, &model.BillingOperation{}, &model.AdtySiteEarningEvent{}))
+	}
+	rows := model.GetAllUnFinishSyncTasks(100)
+	require.Len(t, rows, 1, "upgraded historical rows must receive false rather than NULL pending flags")
+	assert.Equal(t, legacy.ID, rows[0].ID)
+	assert.Equal(t, 100, rows[0].Quota)
 }
 
 func TestAdtyWalletRefund(t *testing.T) {
@@ -718,6 +939,45 @@ func TestRealtimeFinalUsageRefundsStreamCharge(t *testing.T) {
 			require.Equal(t, opening-tc.finalQuota, getUserQuota(t, userID),
 				"settlement must refund the unused stream charge and opening hold")
 			require.Equal(t, tc.finalQuota, getTokenUsedQuota(t, tokenID))
+		})
+	}
+}
+
+func TestRealtimeFinalUsageAfterConcurrentWalletShortfall(t *testing.T) {
+	for _, finalQuota := range []int{0, 1, 30_000} {
+		t.Run(fmt.Sprintf("final_%d", finalQuota), func(t *testing.T) {
+			model.InitColumnNamesForTests()
+			truncate(t)
+			const userID, tokenID = 9403, 9403
+			const tokenKey = "realtime-concurrent-shortfall"
+			seedUser(t, userID, 50_000)
+			seedToken(t, tokenID, userID, tokenKey, 100_000)
+			c := adtyWalletRelayContext()
+			info := adtyWalletRelayInfo(userID, tokenID, "sk-"+tokenKey)
+			info.OriginModelName, info.UsingGroup, info.UserGroup = "gpt-4o-realtime-preview", "default", "default"
+			require.Nil(t, PreConsumeBilling(c, 1_000, info))
+			// Another request spends the wallet after the streaming balance check
+			// and before this chunk commits its durable charge.
+			callback := "test:spend_before_realtime_charge"
+			require.NoError(t, model.DB.Callback().Create().Before("gorm:create").Register(callback, func(tx *gorm.DB) {
+				op, ok := tx.Statement.Dest.(*model.BillingOperation)
+				if !ok || op.Kind != "direct" || op.UserId != userID {
+					return
+				}
+				tx.AddError(tx.Session(&gorm.Session{NewDB: true}).Model(&model.User{}).Where("id = ?", userID).UpdateColumn("quota", 500).Error)
+			}))
+			t.Cleanup(func() { model.DB.Callback().Create().Remove(callback) })
+			usage := &dto.RealtimeUsage{InputTokens: 200, OutputTokens: 100, TotalTokens: 300}
+			usage.InputTokenDetails.TextTokens, usage.OutputTokenDetails.TextTokens = 200, 100
+			require.NoError(t, PreWssConsumeQuota(c, info, usage))
+			require.NoError(t, model.DB.Callback().Create().Remove(callback))
+			require.Equal(t, 0, getUserQuota(t, userID))
+			require.Positive(t, info.BillingShortfall)
+			require.NoError(t, SettleBilling(c, info, finalQuota))
+			require.NoError(t, SettleBilling(c, info, finalQuota))
+			assert.Equal(t, max(0, 1_500-finalQuota), getUserQuota(t, userID), "only the opening hold and actually paid chunk may be refunded")
+			assert.Equal(t, finalQuota, getTokenUsedQuota(t, tokenID), "token settlement must use the independently charged token amount")
+			assert.Equal(t, max(0, finalQuota-1_500), info.BillingShortfall)
 		})
 	}
 }

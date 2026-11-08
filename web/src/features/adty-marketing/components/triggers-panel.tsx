@@ -21,6 +21,7 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
+import { ErrorState } from '@/components/error-state'
 import { LoadingState } from '@/components/loading-state'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -28,6 +29,7 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
+import { useDraftNavigation } from '@/features/system-settings/hooks/use-draft-navigation'
 import { CONTENT_LANG_LABELS, CONTENT_LANGS } from '@/lib/adty-lang'
 import { handleServerError } from '@/lib/handle-server-error'
 
@@ -63,6 +65,12 @@ export function TriggersPanel(props: { canWrite: boolean }) {
     },
     onError: (err) => handleServerError(err),
   })
+  useDraftNavigation(
+    !!drafts &&
+      !!query.data &&
+      JSON.stringify(drafts) !== JSON.stringify(query.data)
+  )
+  if (query.isError) return <ErrorState onRetry={() => void query.refetch()} />
   if (!drafts) return <LoadingState />
 
   const info: Record<

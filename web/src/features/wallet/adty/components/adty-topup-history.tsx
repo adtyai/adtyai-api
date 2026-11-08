@@ -22,6 +22,7 @@ import { useTranslation } from 'react-i18next'
 
 import { StaticDataTable } from '@/components/data-table/static/static-data-table'
 import { EmptyState } from '@/components/empty-state'
+import { ErrorState } from '@/components/error-state'
 import { StatusBadge } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -57,6 +58,10 @@ export function AdtyTopupHistory() {
   const total = query.data?.total ?? 0
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
+  if (query.isError && !query.data) {
+    return <ErrorState onRetry={() => void query.refetch()} />
+  }
+
   return (
     <Card id='wallet-history' className='scroll-mt-4'>
       <CardHeader>
@@ -66,6 +71,7 @@ export function AdtyTopupHistory() {
         </CardDescription>
       </CardHeader>
       <CardContent className='flex flex-col gap-3'>
+        {query.isError && <ErrorState onRetry={() => void query.refetch()} />}
         <StaticDataTable
           tableClassName='min-w-[720px]'
           tableProps={{ 'aria-label': t('Top-up history') }}
@@ -100,7 +106,8 @@ export function AdtyTopupHistory() {
               cell: (row) => {
                 if (!row.ext) return '-'
                 const bonus =
-                  Number(row.ext.bonus_usd) + Number(row.ext.promo_bonus_usd || 0)
+                  Number(row.ext.bonus_usd) +
+                  Number(row.ext.promo_bonus_usd || 0)
                 return formatUsd(bonus, locale)
               },
             },

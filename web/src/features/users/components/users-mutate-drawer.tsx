@@ -163,10 +163,12 @@ export function UsersMutateDrawer({
 
   // Load existing data when updating
   useEffect(() => {
+    let cancelled = false
     if (open && isUpdate && currentRow) {
       // For update, fetch fresh data
       getUser(currentRow.id)
         .then((result) => {
+          if (cancelled) return
           if (result.success && result.data) {
             loadedPermissions.current = result.data.admin_permissions
             setCurrentQuotaRaw(result.data.quota)
@@ -176,10 +178,15 @@ export function UsersMutateDrawer({
             handleServerError(result, t('Failed to load'))
           }
         })
-        .catch((error) => handleServerError(error, t('Failed to load')))
+        .catch((error) => {
+          if (!cancelled) handleServerError(error, t('Failed to load'))
+        })
     } else if (open && !isUpdate) {
       // For create, reset to defaults
       form.reset(USER_FORM_DEFAULT_VALUES)
+    }
+    return () => {
+      cancelled = true
     }
   }, [open, isUpdate, currentRow, form, t])
 

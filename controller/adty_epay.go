@@ -42,6 +42,7 @@ func adtyEpayTimeouts() (perChannel, total time.Duration) {
 type adtyEpayPayRequest struct {
 	Amount            int64  `json:"amount"`
 	Method            string `json:"method"`
+	PaymentMethod     string `json:"payment_method"`
 	Device            string `json:"device"`
 	ExcludeChannelIds []int  `json:"exclude_channel_ids"`
 	PromoCode         string `json:"promo_code"` // 任务 12.4
@@ -53,7 +54,14 @@ func RequestAdtyEpayPay(c *gin.Context) {
 		return
 	}
 	var req adtyEpayPayRequest
-	if err := common.DecodeJson(c.Request.Body, &req); err != nil || !service.IsAdtyEpayMethod(req.Method) {
+	if err := common.DecodeJson(c.Request.Body, &req); err != nil {
+		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	if req.Method == "" {
+		req.Method = req.PaymentMethod
+	}
+	if !service.IsAdtyEpayMethod(req.Method) {
 		common.ApiErrorT(c, "Invalid parameters")
 		return
 	}

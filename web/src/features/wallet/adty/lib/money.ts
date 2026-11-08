@@ -33,3 +33,19 @@ export function creditedUsdAmount(ext: {
 export function formatUsd(value: number, locale: string | undefined): string {
   return `$${new Intl.NumberFormat(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value)}`
 }
+
+export function formatPaymentAmount(
+  amount: string,
+  currency: string,
+  locale: string | undefined
+): string {
+  if (currency === 'USDT') return `${amount} USDT`
+  try {
+    return new Intl.NumberFormat(locale, {
+      style: 'currency',
+      currency,
+    }).format(Number(amount))
+  } catch {
+    return `${amount} ${currency}`
+  }
+}

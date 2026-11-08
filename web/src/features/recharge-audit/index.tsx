@@ -22,7 +22,9 @@ import { useTranslation } from 'react-i18next'
 
 import { StaticDataTable } from '@/components/data-table/static/static-data-table'
 import { EmptyState } from '@/components/empty-state'
+import { ErrorState } from '@/components/error-state'
 import { SectionPageLayout } from '@/components/layout'
+import { LoadingState } from '@/components/loading-state'
 import { StatusBadge } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -96,37 +98,43 @@ export function RechargeAudit() {
       <SectionPageLayout.Title>{t('Recharge Audit')}</SectionPageLayout.Title>
       <SectionPageLayout.Content>
         <div className='flex flex-col gap-4'>
-          <div className='grid gap-3 sm:grid-cols-3'>
-            {[
-              {
-                label: t('Orders'),
-                value: String(summaryQuery.data?.orders ?? 0),
-              },
-              {
-                label: t('Credited face value'),
-                value: formatUsd(
-                  Number(summaryQuery.data?.credited_usd ?? 0),
-                  locale
-                ),
-              },
-              {
-                label: t('Bonus given'),
-                value: formatUsd(
-                  Number(summaryQuery.data?.bonus_usd ?? 0),
-                  locale
-                ),
-              },
-            ].map((item) => (
-              <Card key={item.label}>
-                <CardContent className='flex flex-col gap-1 py-4'>
-                  <span className='text-muted-foreground text-xs'>
-                    {item.label}
-                  </span>
-                  <span className='text-xl font-semibold'>{item.value}</span>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+          {summaryQuery.isError && (
+            <ErrorState onRetry={() => void summaryQuery.refetch()} />
+          )}
+          {summaryQuery.isPending && <LoadingState />}
+          {summaryQuery.data && (
+            <div className='grid gap-3 sm:grid-cols-3'>
+              {[
+                {
+                  label: t('Orders'),
+                  value: String(summaryQuery.data?.orders ?? 0),
+                },
+                {
+                  label: t('Credited face value'),
+                  value: formatUsd(
+                    Number(summaryQuery.data?.credited_usd ?? 0),
+                    locale
+                  ),
+                },
+                {
+                  label: t('Bonus given'),
+                  value: formatUsd(
+                    Number(summaryQuery.data?.bonus_usd ?? 0),
+                    locale
+                  ),
+                },
+              ].map((item) => (
+                <Card key={item.label}>
+                  <CardContent className='flex flex-col gap-1 py-4'>
+                    <span className='text-muted-foreground text-xs'>
+                      {item.label}
+                    </span>
+                    <span className='text-xl font-semibold'>{item.value}</span>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
 
           <Card>
             <CardContent className='flex flex-col gap-3 py-4'>
@@ -184,153 +192,165 @@ export function RechargeAudit() {
                 <Button type='submit'>{t('Search')}</Button>
               </form>
 
-              <StaticDataTable
-                tableClassName='min-w-[1100px]'
-                tableProps={{ 'aria-label': t('Recharge Audit') }}
-                data={ordersQuery.data?.items ?? []}
-                getRowKey={(row) => row.trade_no}
-                emptyContent={
-                  <EmptyState className='min-h-32' title={t('No orders')} />
-                }
-                columns={[
-                  {
-                    id: 'time',
-                    header: t('Time'),
-                    cell: (row) => formatTimestamp(row.create_time),
-                  },
-                  {
-                    id: 'user',
-                    header: t('User'),
-                    cell: (row) => `${row.username || '-'} (#${row.user_id})`,
-                  },
-                  {
-                    id: 'method',
-                    header: t('Payment method'),
-                    cell: (row) => (
-                      <div className='flex flex-col'>
-                        <span>{t(methodLabel(row.payment_method))}</span>
-                        {row.channel_name && (
-                          <span className='text-muted-foreground text-xs'>
-                            {row.channel_name}
-                          </span>
-                        )}
-                      </div>
-                    ),
-                  },
-                  {
-                    id: 'face',
-                    header: t('Amount'),
-                    cell: (row) =>
-                      formatUsd(
-                        Number(row.has_ext ? row.face_usd : row.amount),
-                        locale
-                      ),
-                  },
-                  {
-                    id: 'bonus',
-                    header: t('Bonus'),
-                    cell: (row) => formatUsd(Number(row.bonus_usd), locale),
-                  },
-                  {
-                    id: 'pay',
-                    header: t('Payable / paid'),
-                    cell: (row) => (
-                      <div className='flex flex-col text-xs'>
-                        <span>
-                          {row.has_ext
-                            ? `${row.pay_amount} ${row.pay_currency}`
-                            : row.money}
-                        </span>
-                        {Number(row.paid_amount) > 0 && (
-                          <span className='text-muted-foreground'>
-                            {row.paid_amount} {row.paid_currency}
-                          </span>
-                        )}
-                        {row.paid_tx_hash && (
-                          <code className='text-muted-foreground truncate font-mono'>
-                            {row.paid_tx_hash}
-                          </code>
-                        )}
-                      </div>
-                    ),
-                  },
-                  {
-                    id: 'status',
-                    header: t('Status'),
-                    cell: (row) => (
-                      <div className='flex flex-col items-start gap-1'>
-                        <StatusBadge
-                          label={t(
-                            ORDER_STATUS_LABELS[
-                              row.status as AdtyOrderStatus
-                            ] ?? row.status
-                          )}
-                          variant={
-                            ORDER_STATUS_VARIANTS[
-                              row.status as AdtyOrderStatus
-                            ] ?? 'neutral'
-                          }
-                          copyable={false}
-                        />
-                        {row.anomaly && (
-                          <StatusBadge
-                            label={
-                              row.anomaly === 'missing_ext'
-                                ? t('Missing order details')
-                                : t('Paid amount differs')
-                            }
-                            variant='danger'
-                            copyable={false}
-                          />
-                        )}
-                      </div>
-                    ),
-                  },
-                  {
-                    id: 'trade_no',
-                    header: t('Order number'),
-                    cell: (row) => (
-                      <code className='font-mono text-xs'>{row.trade_no}</code>
-                    ),
-                  },
-                  {
-                    id: 'actions',
-                    header: t('Actions'),
-                    className: 'text-right',
-                    cellClassName: 'text-right',
-                    cell: (row) => {
-                      const ours =
-                        row.payment_provider === 'bepusdt' ||
-                        row.payment_provider === 'adty_epay'
-                      if (!ours) return null
-                      return (
-                        <div className='flex justify-end gap-1'>
-                          {canComplete &&
-                            row.status !== 'success' &&
-                            row.status !== 'refunded' && (
-                              <Button
-                                size='sm'
-                                variant='outline'
-                                onClick={() => setCompleting(row)}
-                              >
-                                {t('Complete')}
-                              </Button>
+              {ordersQuery.isError && (
+                <ErrorState onRetry={() => void ordersQuery.refetch()} />
+              )}
+              {ordersQuery.isPending ? (
+                <LoadingState />
+              ) : (
+                ordersQuery.data && (
+                  <StaticDataTable
+                    tableClassName='min-w-[1100px]'
+                    tableProps={{ 'aria-label': t('Recharge Audit') }}
+                    data={ordersQuery.data?.items ?? []}
+                    getRowKey={(row) => row.trade_no}
+                    emptyContent={
+                      <EmptyState className='min-h-32' title={t('No orders')} />
+                    }
+                    columns={[
+                      {
+                        id: 'time',
+                        header: t('Time'),
+                        cell: (row) => formatTimestamp(row.create_time),
+                      },
+                      {
+                        id: 'user',
+                        header: t('User'),
+                        cell: (row) =>
+                          `${row.username || '-'} (#${row.user_id})`,
+                      },
+                      {
+                        id: 'method',
+                        header: t('Payment method'),
+                        cell: (row) => (
+                          <div className='flex flex-col'>
+                            <span>{t(methodLabel(row.payment_method))}</span>
+                            {row.channel_name && (
+                              <span className='text-muted-foreground text-xs'>
+                                {row.channel_name}
+                              </span>
                             )}
-                          {canRefund && row.status === 'success' && (
-                            <Button
-                              size='sm'
-                              variant='outline'
-                              onClick={() => setRefunding(row)}
-                            >
-                              {t('Refund')}
-                            </Button>
-                          )}
-                        </div>
-                      )
-                    },
-                  },
-                ]}
-              />
+                          </div>
+                        ),
+                      },
+                      {
+                        id: 'face',
+                        header: t('Amount'),
+                        cell: (row) =>
+                          formatUsd(
+                            Number(row.has_ext ? row.face_usd : row.amount),
+                            locale
+                          ),
+                      },
+                      {
+                        id: 'bonus',
+                        header: t('Bonus'),
+                        cell: (row) => formatUsd(Number(row.bonus_usd), locale),
+                      },
+                      {
+                        id: 'pay',
+                        header: t('Payable / paid'),
+                        cell: (row) => (
+                          <div className='flex flex-col text-xs'>
+                            <span>
+                              {row.has_ext
+                                ? `${row.pay_amount} ${row.pay_currency}`
+                                : row.money}
+                            </span>
+                            {Number(row.paid_amount) > 0 && (
+                              <span className='text-muted-foreground'>
+                                {row.paid_amount} {row.paid_currency}
+                              </span>
+                            )}
+                            {row.paid_tx_hash && (
+                              <code className='text-muted-foreground truncate font-mono'>
+                                {row.paid_tx_hash}
+                              </code>
+                            )}
+                          </div>
+                        ),
+                      },
+                      {
+                        id: 'status',
+                        header: t('Status'),
+                        cell: (row) => (
+                          <div className='flex flex-col items-start gap-1'>
+                            <StatusBadge
+                              label={t(
+                                ORDER_STATUS_LABELS[
+                                  row.status as AdtyOrderStatus
+                                ] ?? row.status
+                              )}
+                              variant={
+                                ORDER_STATUS_VARIANTS[
+                                  row.status as AdtyOrderStatus
+                                ] ?? 'neutral'
+                              }
+                              copyable={false}
+                            />
+                            {row.anomaly && (
+                              <StatusBadge
+                                label={
+                                  row.anomaly === 'missing_ext'
+                                    ? t('Missing order details')
+                                    : t('Paid amount differs')
+                                }
+                                variant='danger'
+                                copyable={false}
+                              />
+                            )}
+                          </div>
+                        ),
+                      },
+                      {
+                        id: 'trade_no',
+                        header: t('Order number'),
+                        cell: (row) => (
+                          <code className='font-mono text-xs'>
+                            {row.trade_no}
+                          </code>
+                        ),
+                      },
+                      {
+                        id: 'actions',
+                        header: t('Actions'),
+                        className: 'text-right',
+                        cellClassName: 'text-right',
+                        cell: (row) => {
+                          const ours =
+                            row.payment_provider === 'bepusdt' ||
+                            row.payment_provider === 'adty_epay'
+                          if (!ours) return null
+                          return (
+                            <div className='flex justify-end gap-1'>
+                              {canComplete &&
+                                row.status !== 'success' &&
+                                row.status !== 'refunded' && (
+                                  <Button
+                                    size='sm'
+                                    variant='outline'
+                                    onClick={() => setCompleting(row)}
+                                  >
+                                    {t('Complete')}
+                                  </Button>
+                                )}
+                              {canRefund && row.status === 'success' && (
+                                <Button
+                                  size='sm'
+                                  variant='outline'
+                                  onClick={() => setRefunding(row)}
+                                >
+                                  {t('Refund')}
+                                </Button>
+                              )}
+                            </div>
+                          )
+                        },
+                      },
+                    ]}
+                  />
+                )
+              )}
               {pages > 1 && (
                 <div className='flex items-center justify-end gap-2'>
                   <Button

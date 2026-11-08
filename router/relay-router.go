@@ -72,6 +72,7 @@ func SetRelayRouter(router *gin.Engine) {
 	relayV1Router.Use(middleware.RouteTag("relay"))
 	relayV1Router.Use(middleware.SystemPerformanceCheck())
 	relayV1Router.Use(middleware.TokenAuth())
+	relayV1Router.Use(middleware.AdtyRequireCurrentSiteTerms())
 	{
 		// Responses WebSocket route. Channel selection happens after the first
 		// response.create event; each event runs the ordinary request limiter.
@@ -79,7 +80,6 @@ func SetRelayRouter(router *gin.Engine) {
 	}
 	relayV1Router.Use(middleware.ModelRequestRateLimit())
 	relayV1Router.Use(middleware.AdtyUserLimit()) // 二开：按用户限制（任务 7.4）
-	relayV1Router.Use(middleware.AdtyRequireCurrentSiteTerms())
 	{
 		// WebSocket 路由（统一到 Relay）
 		wsRouter := relayV1Router.Group("")

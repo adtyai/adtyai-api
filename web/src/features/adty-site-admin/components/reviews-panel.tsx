@@ -21,6 +21,7 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import { EmptyState } from '@/components/empty-state'
+import { ErrorState } from '@/components/error-state'
 import { Button } from '@/components/ui/button'
 import { handleServerError } from '@/lib/handle-server-error'
 
@@ -63,9 +64,20 @@ export function ReviewsPanel() {
   })
   const flaggedRows = flagged.data?.items ?? []
   const reportRows = reports.data?.items ?? []
+  const retry = () => {
+    void flagged.refetch()
+    void reports.refetch()
+  }
+  if (
+    (flagged.isError && !flagged.data) ||
+    (reports.isError && !reports.data)
+  ) {
+    return <ErrorState onRetry={retry} />
+  }
 
   return (
     <div className='flex flex-col gap-6'>
+      {(flagged.isError || reports.isError) && <ErrorState onRetry={retry} />}
       <section className='flex flex-col gap-2'>
         <h3 className='text-sm font-medium'>{t('Risk')}</h3>
         {flaggedRows.length === 0 ? (
@@ -97,7 +109,10 @@ export function ReviewsPanel() {
         ) : (
           <ul className='flex flex-col gap-2'>
             {reportRows.map((row) => (
-              <li key={row.id} className='flex items-center justify-between gap-2'>
+              <li
+                key={row.id}
+                className='flex items-center justify-between gap-2'
+              >
                 <span>{row.reason}</span>
                 <Button
                   size='sm'

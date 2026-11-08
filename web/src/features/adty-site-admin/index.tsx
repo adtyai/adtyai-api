@@ -22,6 +22,7 @@ import { useTranslation } from 'react-i18next'
 
 import { SectionPageLayout } from '@/components/layout'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { DraftNavigationProvider } from '@/features/system-settings/components/draft-navigation-provider'
 import { ADTY_PERMISSIONS, canAdmin } from '@/lib/adty-permissions'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -58,54 +59,62 @@ export function SiteAdmin(props: { section: SiteAdminSectionId }) {
   )
 
   return (
-    <SectionPageLayout>
-      <SectionPageLayout.Title>{t('Reseller sites')}</SectionPageLayout.Title>
-      <SectionPageLayout.Content>
-        <Tabs
-          value={props.section}
-          onValueChange={(value) =>
-            void navigate({
-              to: '/site-admin/$section',
-              params: { section: value as SiteAdminSectionId },
-            })
-          }
-        >
-          <TabsList>
-            {visible.map((section) => (
-              <TabsTrigger key={section.id} value={section.id}>
-                {labels[section.id]}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-          <TabsContent value='sites'>
-            <SitesPanel onOpenSite={(site) => setOpenSite(site.id)} />
-          </TabsContent>
-          <TabsContent value='overview'>
-            <OverviewPanel />
-          </TabsContent>
-          <TabsContent value='reviews'>
-            <ReviewsPanel />
-          </TabsContent>
-          <TabsContent value='invite-codes'>
-            <InviteCodesPanel
-              canCreate={canAdmin(user, ADTY_PERMISSIONS.SITE_SETTINGS_CREATE)}
-              canWrite={canSettings}
-              canDelete={canAdmin(user, ADTY_PERMISSIONS.SITE_SETTINGS_DELETE)}
-            />
-          </TabsContent>
-          <TabsContent value='settings' className='flex flex-col gap-6'>
-            {canAdmin(user, ADTY_PERMISSIONS.SITE_READ) && <UsagePanel />}
-            <SettingsPanel
-              canWrite={canSettings}
-              canWriteSecrets={canWriteSecrets}
-            />
-          </TabsContent>
-        </Tabs>
-        <SiteDetailSheet
-          siteId={openSite}
-          onOpenChange={(open) => !open && setOpenSite(null)}
-        />
-      </SectionPageLayout.Content>
-    </SectionPageLayout>
+    <DraftNavigationProvider>
+      <SectionPageLayout>
+        <SectionPageLayout.Title>{t('Reseller sites')}</SectionPageLayout.Title>
+        <SectionPageLayout.Content>
+          <Tabs
+            value={props.section}
+            onValueChange={(value) =>
+              void navigate({
+                to: '/site-admin/$section',
+                params: { section: value as SiteAdminSectionId },
+              })
+            }
+          >
+            <TabsList>
+              {visible.map((section) => (
+                <TabsTrigger key={section.id} value={section.id}>
+                  {labels[section.id]}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+            <TabsContent value='sites'>
+              <SitesPanel onOpenSite={(site) => setOpenSite(site.id)} />
+            </TabsContent>
+            <TabsContent value='overview'>
+              <OverviewPanel />
+            </TabsContent>
+            <TabsContent value='reviews'>
+              <ReviewsPanel />
+            </TabsContent>
+            <TabsContent value='invite-codes'>
+              <InviteCodesPanel
+                canCreate={canAdmin(
+                  user,
+                  ADTY_PERMISSIONS.SITE_SETTINGS_CREATE
+                )}
+                canWrite={canSettings}
+                canDelete={canAdmin(
+                  user,
+                  ADTY_PERMISSIONS.SITE_SETTINGS_DELETE
+                )}
+              />
+            </TabsContent>
+            <TabsContent value='settings' className='flex flex-col gap-6'>
+              {canAdmin(user, ADTY_PERMISSIONS.SITE_READ) && <UsagePanel />}
+              <SettingsPanel
+                canWrite={canSettings}
+                canWriteSecrets={canWriteSecrets}
+              />
+            </TabsContent>
+          </Tabs>
+          <SiteDetailSheet
+            siteId={openSite}
+            onOpenChange={(open) => !open && setOpenSite(null)}
+          />
+        </SectionPageLayout.Content>
+      </SectionPageLayout>
+    </DraftNavigationProvider>
   )
 }

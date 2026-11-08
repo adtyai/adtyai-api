@@ -59,9 +59,9 @@ func requestBrowserOrigin(request *http.Request) (string, bool) {
 }
 
 func isAllowedSessionOrigin(request *http.Request, origin string) bool {
-	requestScheme := "http"
-	if request.TLS != nil {
-		requestScheme = "https"
+	requestScheme, ok := common.RequestScheme(request)
+	if !ok {
+		return false
 	}
 	requestOrigin, err := common.NormalizeOrigin(requestScheme + "://" + request.Host)
 	if err == nil && subtle.ConstantTimeCompare([]byte(origin), []byte(requestOrigin)) == 1 {

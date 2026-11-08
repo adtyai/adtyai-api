@@ -28,6 +28,7 @@ import {
   DataTableRow,
   useDataTable,
 } from '@/components/data-table'
+import { ErrorState } from '@/components/error-state'
 import { useMediaQuery } from '@/hooks'
 import { useTableUrlState } from '@/hooks/use-table-url-state'
 import { createServerError } from '@/lib/server-error-message'
@@ -39,9 +40,9 @@ import {
   LOG_TYPE_ENUM,
 } from '../constants'
 import { useColumnsByCategory } from '../lib/columns'
-import { visibleRowRange } from '../lib/visible-rows'
 import { parseLogOther } from '../lib/format'
 import { fetchLogsByCategory } from '../lib/utils'
+import { visibleRowRange } from '../lib/visible-rows'
 import type { LogCategory } from '../types'
 import { CommonLogsFilterBar } from './common-logs-filter-bar'
 import { TaskLogsFilterBar } from './task-logs-filter-bar'
@@ -132,7 +133,7 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
     ],
   })
 
-  const { data, isLoading, isFetching } = useQuery({
+  const { data, isLoading, isFetching, isError, refetch } = useQuery({
     queryKey: [
       'logs',
       logCategory,
@@ -223,8 +224,12 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
         }))
   const paddingTop = virtualRows[0]?.start ?? 0
   const paddingBottom =
-    Math.max(rowVirtualizer.getTotalSize(), table.getRowModel().rows.length * rowHeight) -
-    (virtualRows.at(-1)?.end ?? 0)
+    Math.max(
+      rowVirtualizer.getTotalSize(),
+      table.getRowModel().rows.length * rowHeight
+    ) - (virtualRows.at(-1)?.end ?? 0)
+
+  if (isError && !data) return <ErrorState onRetry={() => void refetch()} />
 
   return (
     <DataTablePage
@@ -233,6 +238,7 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
       columns={columns as ColumnDef<Record<string, unknown>>[]}
       isLoading={isLoadingData}
       isFetching={isFetching}
+      afterTable={isError && <ErrorState onRetry={() => void refetch()} />}
       emptyTitle={t('No Logs Found')}
       emptyDescription={t(
         'No usage logs available. Logs will appear here once API calls are made.'

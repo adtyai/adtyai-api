@@ -82,6 +82,9 @@ func PostAdtyTopUpQuote(c *gin.Context) {
 		return
 	}
 	quote, err := service.AdtyQuoteForSite(service.AdtyBillingSiteForUser(c.GetInt("id")), c.GetString("group"), req.Amount, req.Method, adtyPromoInput(c, req.PromoCode))
+	if provider := service.AdtyPaymentProviderForMethod(req.Method); provider != nil && provider.Name() != service.AdtyProviderBEpusdt && provider.Name() != service.AdtyProviderEpay {
+		quote, err = adtyHostedQuote(c, req)
+	}
 	if err != nil {
 		common.ApiError(c, err)
 		return

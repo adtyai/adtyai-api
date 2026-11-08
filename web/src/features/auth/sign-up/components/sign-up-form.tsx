@@ -60,7 +60,9 @@ export function SignUpForm({
   const { t, i18n } = useTranslation()
   const [isLoading, setIsLoading] = useState(false)
   const [marketingConsent, setMarketingConsent] = useState(false) // adty task 12.1
-  const [agreedToSiteTerms, setAgreedToSiteTerms] = useState(false) // adty task 11.7
+  const [acceptedSiteTermsVersion, setAcceptedSiteTermsVersion] = useState<
+    number | null
+  >(null)
   const [verificationCode, setVerificationCode] = useState('')
   const [agreedToLegal, setAgreedToLegal] = useState(false)
   const [wechatCode, setWeChatCode] = useState('')
@@ -106,6 +108,11 @@ export function SignUpForm({
   const siteTermsVersion = Number(status?.site_customer_terms_version ?? 0)
   const requiresSiteTerms =
     Number.isInteger(siteTermsVersion) && siteTermsVersion > 0
+  const agreedToSiteTerms = acceptedSiteTermsVersion === siteTermsVersion
+  const acceptedSiteTerms =
+    requiresSiteTerms && agreedToSiteTerms
+      ? String(siteTermsVersion)
+      : undefined
   const oauthRegisterEnabled =
     status?.oauth_register_enabled ??
     status?.data?.oauth_register_enabled ??
@@ -202,6 +209,7 @@ export function SignUpForm({
       toast.error(legalConsentErrorMessage)
       return
     }
+    if (requiresSiteTerms && !agreedToSiteTerms) return
 
     setIsWeChatDialogOpen(true)
   }
@@ -215,6 +223,7 @@ export function SignUpForm({
   }
 
   async function handleWeChatLogin() {
+    if (requiresSiteTerms && !agreedToSiteTerms) return
     if (!wechatCode.trim()) {
       toast.error(t('Please enter the verification code'))
       return
@@ -222,7 +231,7 @@ export function SignUpForm({
 
     setIsWeChatSubmitting(true)
     try {
-      const res = await wechatLoginByCode(wechatCode)
+      const res = await wechatLoginByCode(wechatCode, acceptedSiteTerms)
       if (res?.success) {
         handleWeChatDialogChange(false)
         if (await handleLoginResult(res.data)) {
@@ -378,7 +387,11 @@ export function SignUpForm({
             <Checkbox
               id='site-customer-terms'
               checked={agreedToSiteTerms}
-              onCheckedChange={(value) => setAgreedToSiteTerms(value === true)}
+              onCheckedChange={(value) =>
+                setAcceptedSiteTermsVersion(
+                  value === true ? siteTermsVersion : null
+                )
+              }
               className='mt-0.5'
             />
             <Label
@@ -413,7 +426,12 @@ export function SignUpForm({
         {oauthRegisterEnabled && (
           <OAuthProviders
             status={status}
-            disabled={isLoading || (requiresLegalConsent && !agreedToLegal)}
+            disabled={
+              isLoading ||
+              (requiresLegalConsent && !agreedToLegal) ||
+              (requiresSiteTerms && !agreedToSiteTerms)
+            }
+            siteTermsVersion={acceptedSiteTerms}
             onWeChatLogin={hasWeChatLogin ? handleOpenWeChatDialog : undefined}
             isWeChatLoading={isWeChatSubmitting}
             className='pt-2'
@@ -449,7 +467,8 @@ export function SignUpForm({
                 disabled={
                   isWeChatSubmitting ||
                   !wechatCode.trim() ||
-                  (requiresLegalConsent && !agreedToLegal)
+                  (requiresLegalConsent && !agreedToLegal) ||
+                  (requiresSiteTerms && !agreedToSiteTerms)
                 }
                 className='gap-2'
               >

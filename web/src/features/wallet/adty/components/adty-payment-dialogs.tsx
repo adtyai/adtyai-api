@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import type { ActivePayment } from '../lib/active-payment'
 import { EpayPayDialog } from './epay-pay-dialog'
+import { HostedPayDialog } from './hosted-pay-dialog'
 import { UsdtPayDialog } from './usdt-pay-dialog'
 
 type AdtyPaymentDialogsProps = {
@@ -30,6 +31,19 @@ type AdtyPaymentDialogsProps = {
 export function AdtyPaymentDialogs(props: AdtyPaymentDialogsProps) {
   const payment = props.payment
   if (!payment) return null
+  if (payment.kind === 'hosted') {
+    return (
+      <HostedPayDialog
+        key={payment.tradeNo ?? `${payment.method}-${payment.amount}`}
+        method={payment.method}
+        amount={payment.amount}
+        promoCode={payment.promoCode}
+        tradeNo={payment.tradeNo}
+        onClose={props.onClose}
+        onSettled={props.onSettled}
+      />
+    )
+  }
   if (payment.kind === 'usdt') {
     return (
       <UsdtPayDialog

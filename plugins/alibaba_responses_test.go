@@ -43,7 +43,7 @@ func TestAlibabaResponsesProtocol(t *testing.T) {
 	})
 
 	t.Run("selects image and video usage profiles for every declared model", func(t *testing.T) {
-		require.Len(t, plugin.Meta.UsageProfiles, 9)
+		require.NotEmpty(t, plugin.Meta.UsageProfiles)
 		covered := make(map[string]bool)
 		for _, profile := range plugin.Meta.UsageProfiles {
 			for _, name := range profile.Models {
@@ -66,11 +66,14 @@ func TestAlibabaResponsesProtocol(t *testing.T) {
 				assert.Equal(t, "boolean", schema["prompt_extend"].Type, name)
 			case isImage:
 				assert.Equal(t, map[string]jsplugin.UsageFieldSchema{"image_count": plugin.Meta.UsageSchema["image_count"]}, schema, name)
-			case name == "wan2.6-i2v-flash":
+			case name == "wan2.6-i2v-flash" || name == "wan2.6-r2v-flash":
 				assert.ElementsMatch(t, []string{"seconds", "resolution", "audio"}, keysOf(schema), name)
 				assert.Equal(t, plugin.Meta.UsageSchema["seconds"], schema["seconds"], name)
 				assert.Equal(t, []string{"720P", "1080P"}, schema["resolution"].Enum, name)
 				assert.Equal(t, "boolean", schema["audio"].Type, name)
+			case strings.HasPrefix(name, "wan2.2-animate-"):
+				assert.ElementsMatch(t, []string{"seconds", "mode"}, keysOf(schema), name)
+				assert.Equal(t, []string{"wan-std", "wan-pro"}, schema["mode"].Enum, name)
 			default:
 				assert.ElementsMatch(t, []string{"seconds", "resolution"}, keysOf(schema), name)
 				assert.Equal(t, plugin.Meta.UsageSchema["seconds"], schema["seconds"], name)

@@ -50,6 +50,7 @@ func verifyCreemSignature(payload string, signature string, secret string) bool 
 type CreemPayRequest struct {
 	ProductId     string `json:"product_id"`
 	PaymentMethod string `json:"payment_method"`
+	PromoCode     string `json:"promo_code,omitempty"`
 }
 
 type CreemProduct struct {
@@ -68,7 +69,7 @@ func (*CreemAdaptor) RequestPay(c *gin.Context, req *CreemPayRequest) {
 		paymentError(c, common.NewMessage("Unsupported payment channel"))
 		return
 	}
-	if !isCreemWebhookEnabled() {
+	if !isCreemTopUpEnabled() || !isCreemWebhookConfigured() {
 		paymentError(c, common.NewMessage("Creem payment is not available"))
 		return
 	}
@@ -127,7 +128,7 @@ func (*CreemAdaptor) RequestPay(c *gin.Context, req *CreemPayRequest) {
 		CreateTime:      time.Now().Unix(),
 		Status:          common.TopUpStatusPending,
 	}
-	err = topUp.Insert()
+	err = createAdtyHostedOrder(c, topUp, decimal.NewFromInt(selectedProduct.Quota), selectedProduct.Currency, selectedProduct.ProductId, hostedPaymentEnvironment(setting.CreemTestMode), req.PromoCode)
 	if err != nil {
 		logger.LogError(c.Request.Context(), common.LogText("Creem failed to create top-up order user_id=%d trade_no=%s product_id=%s error=%q", id, referenceId, selectedProduct.ProductId, err.Error()))
 		paymentError(c, common.NewMessage("Failed to create order"))
@@ -135,10 +136,15 @@ func (*CreemAdaptor) RequestPay(c *gin.Context, req *CreemPayRequest) {
 	}
 
 	// 创建支付链接，传入用户邮箱
-	checkoutUrl, err := genCreemLink(c.Request.Context(), referenceId, selectedProduct, user.Email, user.Username)
+	checkout, err := genCreemCheckout(c.Request.Context(), referenceId, selectedProduct, user.Email, user.Username)
 	if err != nil {
 		logger.LogError(c.Request.Context(), common.LogText("Creem failed to create payment link user_id=%d trade_no=%s product_id=%s error=%q", id, referenceId, selectedProduct.ProductId, err.Error()))
+		_ = model.UpdatePendingTopUpStatus(referenceId, model.PaymentProviderCreem, common.TopUpStatusFailed)
 		paymentError(c, common.NewMessage("Failed to start payment"))
+		return
+	}
+	if err := model.UpdateAdtyTopupOrderFields(referenceId, map[string]any{"pay_url": checkout.CheckoutUrl, "gateway_trade_id": checkout.Id}); err != nil {
+		paymentError(c, common.NewMessage("Failed to create order"))
 		return
 	}
 
@@ -147,7 +153,7 @@ func (*CreemAdaptor) RequestPay(c *gin.Context, req *CreemPayRequest) {
 	c.JSON(http.StatusOK, gin.H{
 		"message": "success",
 		"data": gin.H{
-			"checkout_url": checkoutUrl,
+			"checkout_url": checkout.CheckoutUrl,
 			"order_id":     referenceId,
 		},
 	})
@@ -186,23 +192,27 @@ type CreemWebhookEvent struct {
 		Id        string `json:"id"`
 		Object    string `json:"object"`
 		RequestId string `json:"request_id"`
-		Order     struct {
-			Object      string `json:"object"`
-			Id          string `json:"id"`
-			Customer    string `json:"customer"`
-			Product     string `json:"product"`
-			Amount      int    `json:"amount"`
-			Currency    string `json:"currency"`
-			SubTotal    int    `json:"sub_total"`
-			TaxAmount   int    `json:"tax_amount"`
-			AmountDue   int    `json:"amount_due"`
-			AmountPaid  int    `json:"amount_paid"`
-			Status      string `json:"status"`
-			Type        string `json:"type"`
-			Transaction string `json:"transaction"`
-			CreatedAt   string `json:"created_at"`
-			UpdatedAt   string `json:"updated_at"`
-			Mode        string `json:"mode"`
+		Checkout  struct {
+			RequestId string `json:"request_id"`
+		} `json:"checkout"`
+		Order struct {
+			Object         string `json:"object"`
+			Id             string `json:"id"`
+			Customer       string `json:"customer"`
+			Product        string `json:"product"`
+			Amount         int    `json:"amount"`
+			Currency       string `json:"currency"`
+			SubTotal       int    `json:"sub_total"`
+			TaxAmount      int    `json:"tax_amount"`
+			AmountDue      int    `json:"amount_due"`
+			AmountPaid     int    `json:"amount_paid"`
+			DiscountAmount int    `json:"discount_amount"`
+			Status         string `json:"status"`
+			Type           string `json:"type"`
+			Transaction    string `json:"transaction"`
+			CreatedAt      string `json:"created_at"`
+			UpdatedAt      string `json:"updated_at"`
+			Mode           string `json:"mode"`
 		} `json:"order"`
 		Product struct {
 			Id                string  `json:"id"`
@@ -288,6 +298,12 @@ func CreemWebhook(c *gin.Context) {
 	switch webhookEvent.EventType {
 	case "checkout.completed":
 		handleCheckoutCompleted(c, &webhookEvent, string(bodyBytes))
+	case "refund.created", "dispute.created":
+		if err := recordHostedReversal(model.PaymentProviderCreem, webhookEvent.EventType, webhookEvent.Object.Id, webhookEvent.Object.Checkout.RequestId, webhookEvent.Object.Order.Id, string(bodyBytes)); err != nil {
+			c.Status(http.StatusInternalServerError)
+			return
+		}
+		c.Status(http.StatusOK)
 	default:
 		logger.LogInfo(c.Request.Context(), common.LogText("Creem webhook ignored event event_type=%s event_id=%s", webhookEvent.EventType, webhookEvent.Id))
 		c.Status(http.StatusOK)
@@ -330,6 +346,43 @@ func handleCheckoutCompleted(c *gin.Context, event *CreemWebhookEvent, payload s
 		c.AbortWithStatus(http.StatusBadRequest)
 		return
 	}
+	ext, err := model.GetAdtyTopupOrder(referenceId)
+	if err != nil {
+		c.Status(http.StatusInternalServerError)
+		return
+	}
+	if ext != nil {
+		product := event.Object.Order.Product
+		if product == "" {
+			product = event.Object.Product.Id
+		}
+		order := event.Object.Order
+		if order.AmountPaid <= 0 || order.Amount <= 0 || order.Amount != order.SubTotal || order.DiscountAmount < 0 || order.DiscountAmount > order.SubTotal ||
+			order.TaxAmount < 0 || int64(order.SubTotal)-int64(order.DiscountAmount)+int64(order.TaxAmount) != int64(order.AmountPaid) ||
+			(event.Object.Units != 0 && event.Object.Units != 1) || order.Mode != ext.ProviderEnvironment || event.Object.Mode != ext.ProviderEnvironment {
+			recordAdtyPaymentReview(model.PaymentProviderCreem, referenceId, order.Id, payload, model.ErrPaymentAmountMismatch)
+			c.Status(http.StatusOK)
+			return
+		}
+		_, err := model.CompleteAdtyTopUp(referenceId, model.AdtyPaymentFacts{
+			Provider: model.PaymentProviderCreem, Method: model.PaymentMethodCreem,
+			PaidAmount: decimal.NewFromInt(int64(event.Object.Order.AmountPaid)).Div(decimal.NewFromInt(100)), PaidCurrency: event.Object.Order.Currency,
+			PurchaseAmount: decimal.NewFromInt(int64(order.Amount)).Div(decimal.NewFromInt(100)),
+			ProductId:      product, Environment: event.Object.Mode, GatewayTradeId: event.Object.Id, TxHash: event.Object.Order.Id,
+			Source: model.AdtyPaymentSourceCallback, Payload: payload,
+		}, c.ClientIP())
+		if err != nil {
+			if bepusdtPermanentError(err) {
+				recordAdtyPaymentReview(model.PaymentProviderCreem, referenceId, event.Object.Order.Id, payload, err)
+				c.Status(http.StatusOK)
+			} else {
+				c.Status(http.StatusInternalServerError)
+			}
+			return
+		}
+		c.Status(http.StatusOK)
+		return
+	}
 
 	if topUp.Status != common.TopUpStatusPending {
 		logger.LogInfo(c.Request.Context(), common.LogText("Creem top-up order not pending, ignored trade_no=%s status=%s creem_order_id=%s", referenceId, topUp.Status, event.Object.Order.Id))
@@ -349,7 +402,7 @@ func handleCheckoutCompleted(c *gin.Context, event *CreemWebhookEvent, payload s
 		logger.LogWarn(c.Request.Context(), common.LogText("Creem callback customer name is empty trade_no=%s creem_order_id=%s", referenceId, event.Object.Order.Id))
 	}
 
-	err := model.RechargeCreem(referenceId, customerEmail, customerName, c.ClientIP())
+	err = model.RechargeCreem(referenceId, customerEmail, customerName, c.ClientIP())
 	if err != nil {
 		logger.LogError(c.Request.Context(), common.LogText("Creem top-up processing failed trade_no=%s creem_order_id=%s client_ip=%s error=%q", referenceId, event.Object.Order.Id, c.ClientIP(), err.Error()))
 		if bepusdtPermanentError(err) {
@@ -379,9 +432,9 @@ type CreemCheckoutResponse struct {
 	Id          string `json:"id"`
 }
 
-func genCreemLink(ctx context.Context, referenceId string, product *CreemProduct, email string, username string) (string, error) {
+func genCreemCheckout(ctx context.Context, referenceId string, product *CreemProduct, email string, username string) (*CreemCheckoutResponse, error) {
 	if setting.CreemApiKey == "" {
-		return "", errors.New("Creem API key is not configured")
+		return nil, errors.New("Creem API key is not configured")
 	}
 
 	// 根据测试模式选择 API 端点
@@ -411,13 +464,13 @@ func genCreemLink(ctx context.Context, referenceId string, product *CreemProduct
 	// 序列化请求数据
 	jsonData, err := common.Marshal(requestData)
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal request data: %v", err)
+		return nil, fmt.Errorf("failed to marshal request data: %v", err)
 	}
 
 	// 创建 HTTP 请求
 	req, err := http.NewRequest("POST", apiUrl, bytes.NewBuffer(jsonData))
 	if err != nil {
-		return "", fmt.Errorf("failed to create HTTP request: %v", err)
+		return nil, fmt.Errorf("failed to create HTTP request: %v", err)
 	}
 
 	// 设置请求头
@@ -432,33 +485,33 @@ func genCreemLink(ctx context.Context, referenceId string, product *CreemProduct
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("failed to send HTTP request: %v", err)
+		return nil, fmt.Errorf("failed to send HTTP request: %v", err)
 	}
 	defer resp.Body.Close()
 
 	// 读取响应
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", fmt.Errorf("failed to read response: %v", err)
+		return nil, fmt.Errorf("failed to read response: %v", err)
 	}
 
 	logger.LogInfo(ctx, common.LogText("Creem API response received trade_no=%s status_code=%d", referenceId, resp.StatusCode))
 
 	// 检查响应状态
 	if resp.StatusCode/100 != 2 {
-		return "", fmt.Errorf("Creem API http status %d ", resp.StatusCode)
+		return nil, fmt.Errorf("Creem API http status %d ", resp.StatusCode)
 	}
 	// 解析响应
 	var checkoutResp CreemCheckoutResponse
 	err = common.Unmarshal(body, &checkoutResp)
 	if err != nil {
-		return "", fmt.Errorf("failed to parse response: %v", err)
+		return nil, fmt.Errorf("failed to parse response: %v", err)
 	}
 
-	if checkoutResp.CheckoutUrl == "" {
-		return "", fmt.Errorf("Creem API resp no checkout url ")
+	if checkoutResp.CheckoutUrl == "" || checkoutResp.Id == "" {
+		return nil, fmt.Errorf("Creem API response missing checkout identity")
 	}
 
 	logger.LogInfo(ctx, common.LogText("Creem payment link created trade_no=%s response_id=%s", referenceId, checkoutResp.Id))
-	return checkoutResp.CheckoutUrl, nil
+	return &checkoutResp, nil
 }

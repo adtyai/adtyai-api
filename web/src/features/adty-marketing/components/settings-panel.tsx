@@ -21,11 +21,13 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
+import { ErrorState } from '@/components/error-state'
 import { LoadingState } from '@/components/loading-state'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import { useDraftNavigation } from '@/features/system-settings/hooks/use-draft-navigation'
 import { handleServerError } from '@/lib/handle-server-error'
 import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
@@ -87,6 +89,12 @@ export function SettingsPanel(props: SettingsPanelProps) {
     onError: (err) => handleServerError(err),
   })
 
+  useDraftNavigation(
+    !!saved &&
+      !!drafts &&
+      JSON.stringify(drafts) !== JSON.stringify(toMarketingDrafts(saved))
+  )
+  if (query.isError) return <ErrorState onRetry={() => void query.refetch()} />
   if (!saved || !drafts) return <LoadingState />
 
   const labels: Record<string, string> = {
@@ -183,9 +191,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
           />
           {!root && (
             <p className='text-muted-foreground text-xs'>
-              {t(
-                'Only a super admin can change the webhook signing secret'
-              )}
+              {t('Only a super admin can change the webhook signing secret')}
             </p>
           )}
           {root && props.canWrite && (

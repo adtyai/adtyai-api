@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"net/http/httptest"
 	"testing"
@@ -12,30 +13,17 @@ import (
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
-// settleFailFunding 让钱包差额更新失败，退款仍走原来的预扣。
-type settleFailFunding struct {
-	inner FundingSource
-}
-
-func (f *settleFailFunding) Source() string { return f.inner.Source() }
-func (f *settleFailFunding) PreConsume(amount int) error {
-	return f.inner.PreConsume(amount)
-}
-func (f *settleFailFunding) Settle(delta int) (int, error) {
-	return 0, errors.New("quota update failed")
-}
-func (f *settleFailFunding) Refund() error { return f.inner.Refund() }
-
-// 结算差额写库失败时不能记成功消费。预扣还在，退款后余额和令牌回到预扣前。
-func TestPostTextConsumeQuotaSettleFailureRefundsPrecharge(t *testing.T) {
+// A persisted settlement decision owns the reservation after a write failure.
+// Recovery applies it once; an error handler cannot race it with a full refund.
+func TestPostTextConsumeQuotaSettleFailureRecoversDurableDecision(t *testing.T) {
 	testPostConsumeQuotaSettleFailureRefundsPrecharge(t, false)
 }
 
-func TestPostWssConsumeQuotaSettleFailureRefundsPrecharge(t *testing.T) {
+func TestPostWssConsumeQuotaSettleFailureRecoversDurableDecision(t *testing.T) {
 	testPostConsumeQuotaSettleFailureRefundsPrecharge(t, true)
 }
 
@@ -49,7 +37,7 @@ func testPostConsumeQuotaSettleFailureRefundsPrecharge(t *testing.T, realtime bo
 	t.Cleanup(func() {
 		require.NoError(t, opened.Close())
 	})
-	require.NoError(t, opened.DB.AutoMigrate(&model.User{}, &model.Token{}, &model.Log{}, &model.Channel{}))
+	require.NoError(t, opened.DB.AutoMigrate(&model.User{}, &model.Token{}, &model.Log{}, &model.Channel{}, &model.Task{}, &model.Midjourney{}, &model.BillingOperation{}, &model.BillingOperationMovement{}, &model.AdtySiteEarningEvent{}))
 
 	const startQuota = 1000000
 	const preConsumed = 10000
@@ -99,7 +87,13 @@ func testPostConsumeQuotaSettleFailureRefundsPrecharge(t *testing.T, realtime bo
 	require.Equal(t, startQuota-preConsumed, quota)
 
 	session := info.Billing.(*BillingSession)
-	session.funding = &settleFailFunding{inner: session.funding}
+	fail := true
+	require.NoError(t, model.DB.Callback().Update().Before("gorm:update").Register("test:durable-settlement-failure", func(tx *gorm.DB) {
+		if fail && tx.Statement.Table == "users" {
+			tx.AddError(errors.New("forced wallet write failure"))
+		}
+	}))
+	t.Cleanup(func() { model.DB.Callback().Update().Remove("test:durable-settlement-failure") })
 
 	if realtime {
 		consumeErr := PostWssConsumeQuota(ctx, info, info.OriginModelName, &dto.RealtimeUsage{
@@ -112,7 +106,7 @@ func testPostConsumeQuotaSettleFailureRefundsPrecharge(t *testing.T, realtime bo
 		}, nil)
 		require.Error(t, consumeErr)
 	}
-	require.True(t, info.Billing.NeedsRefund())
+	require.False(t, info.Billing.NeedsRefund())
 
 	quota, quotaErr = model.GetUserQuota(user.Id, true)
 	require.NoError(t, quotaErr)
@@ -125,13 +119,16 @@ func testPostConsumeQuotaSettleFailureRefundsPrecharge(t *testing.T, realtime bo
 	require.Zero(t, logs)
 
 	info.Billing.Refund(ctx)
-	require.EventuallyWithT(t, func(collect *assert.CollectT) {
-		after, err := model.GetUserQuota(user.Id, true)
-		assert.NoError(collect, err)
-		assert.Equal(collect, startQuota, after)
-		stored, err := model.GetTokenById(token.Id)
-		assert.NoError(collect, err)
-		assert.Equal(collect, startQuota, stored.RemainQuota)
-		assert.Zero(collect, stored.UsedQuota)
-	}, 5*time.Second, 10*time.Millisecond)
+	fail = false
+	require.NoError(t, RecoverBillingOperations(context.Background(), 100))
+	op, err := model.GetBillingOperation(session.operationKey)
+	require.NoError(t, err)
+	require.Equal(t, model.BillingSettled, op.State)
+	require.NoError(t, RecoverBillingOperations(context.Background(), 100))
+	after, err := model.GetUserQuota(user.Id, true)
+	require.NoError(t, err)
+	require.Equal(t, startQuota-op.AppliedQuota, after)
+	stored, err := model.GetTokenById(token.Id)
+	require.NoError(t, err)
+	require.Equal(t, startQuota-op.TokenAppliedQuota, stored.RemainQuota)
 }

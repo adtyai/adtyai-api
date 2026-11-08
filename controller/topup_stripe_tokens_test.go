@@ -32,6 +32,7 @@ func TestStripeTokenDisplayLimitsMatchCheckoutQuantity(t *testing.T) {
 	confirmPaymentComplianceForTest(t)
 	db := adtyTestDB(t)
 	require.NoError(t, db.AutoMigrate(&model.User{}, &model.TopUp{}))
+	require.NoError(t, model.MigrateAdtyTables())
 	user := &model.User{Username: "stripe-tokens", Password: "x", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: "default"}
 	require.NoError(t, db.Create(user).Error)
 

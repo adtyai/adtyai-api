@@ -102,7 +102,7 @@ func AdtySiteCostFactor(site *model.AdtySite) (decimal.Decimal, bool) {
 	switch {
 	case site != nil && site.CostFactor != nil:
 		d = *site.CostFactor
-	case site != nil && site.TierCostFactor != nil && len(cfg.CostFactorTiers) > 0:
+	case site != nil && site.TierCostFactor != nil && (len(cfg.CostFactorTiers) > 0 || site.TierCode != ""):
 		d = *site.TierCostFactor
 	case cfg.CostFactor != nil:
 		d = decimal.NewFromFloat(*cfg.CostFactor)
@@ -207,6 +207,13 @@ func adtySiteMaxMarkup(site *model.AdtySite) (decimal.Decimal, bool) {
 	set := false
 	if site != nil && site.MaxMarkup != nil {
 		limit = *site.MaxMarkup
+		set = true
+	}
+	if site != nil && site.TierMaxMarkup != nil {
+		tierLimit := *site.TierMaxMarkup
+		if !set || tierLimit.LessThan(limit) {
+			limit = tierLimit
+		}
 		set = true
 	}
 	if cfg.MaxMarkup != nil {
@@ -427,7 +434,8 @@ func AssignAdtySiteCostTiers(month string, revenue map[int]decimal.Decimal) ([]m
 		return nil, nil
 	}
 	var sites []model.AdtySite
-	if err := model.DB.Where("status IN ?", []string{model.AdtySiteStatusActive, model.AdtySiteStatusPaused, model.AdtySiteStatusClosing}).Find(&sites).Error; err != nil {
+	if err := model.DB.Where("status IN ?", []string{model.AdtySiteStatusActive, model.AdtySiteStatusPaused, model.AdtySiteStatusClosing}).
+		Where("(tier_mode = ? OR tier_mode IS NULL) AND (tier_code = ? OR tier_code IS NULL)", "", "").Find(&sites).Error; err != nil {
 		return nil, err
 	}
 	var changed []model.AdtySite
@@ -463,7 +471,8 @@ func AssignAdtySiteCostTiers(month string, revenue map[int]decimal.Decimal) ([]m
 			updates["pending_tier_cost_factor"] = gorm.Expr("NULL")
 			updates["pending_tier_cost_factor_at"] = 0
 		}
-		if err := model.DB.Model(&model.AdtySite{}).Where("id = ?", site.Id).Updates(updates).Error; err != nil {
+		if err := model.DB.Model(&model.AdtySite{}).Where("id = ?", site.Id).
+			Where("(tier_mode = ? OR tier_mode IS NULL) AND (tier_code = ? OR tier_code IS NULL)", "", "").Updates(updates).Error; err != nil {
 			return nil, err
 		}
 		if raise {
@@ -523,6 +532,12 @@ func adtyOnConsumeLog(c *gin.Context, userId int, params *model.RecordConsumeLog
 		AdtyAppendSiteMarkupAdminInfo(c, params.Other)
 	}
 	adtyTakeBillingShortfall(c, params) // 余额下限：结算没扣到的差额记 admin_info
+	if c.GetBool(adtyDurableBillingContextKey) {
+		if params.Other == nil {
+			params.Other = model.NewLogOther()
+		}
+		params.Other.SetAdmin("billing_operation_key", c.GetString(adtyBillingOperationContextKey))
+	}
 	if AdtyRecordConsumeEarning != nil {
 		AdtyRecordConsumeEarning(c, userId, params)
 	}

@@ -229,3 +229,41 @@ func TestOverrideRejectsUnrepresentableAuditDelta(t *testing.T) {
 		require.Equal(t, math.MinInt, getUserQuotaFromDB(t, user.Id))
 	}
 }
+
+func TestAdminAdjustmentNonnegativeBoundaryWithPendingBalance(t *testing.T) {
+	db := adtyTestDB(t)
+	require.NoError(t, db.AutoMigrate(&User{}, &AdtyBalanceLedger{}))
+	resetBatchUpdateTestState(t)
+	for _, withLedger := range []bool{false, true} {
+		for _, tc := range []struct {
+			name, mode                string
+			raw, pending, value, want int
+			rejected                  bool
+		}{
+			{name: "subtract exactly live balance", mode: "subtract", raw: 100, pending: -80, value: 20, want: 0},
+			{name: "subtract exceeds live balance", mode: "subtract", raw: 100, pending: -80, value: 21, rejected: true},
+			{name: "override zero", mode: "override", raw: 100, value: 0, want: 0},
+			{name: "negative override with positive pending", mode: "override", raw: 100, pending: 80, value: -1, rejected: true},
+		} {
+			t.Run(fmt.Sprintf("ledger=%t/%s", withLedger, tc.name), func(t *testing.T) {
+				user := createReserveTestUser(t, tc.raw)
+				require.NoError(t, db.Model(user).Update("quota_pending", tc.pending).Error)
+				var err error
+				if withLedger {
+					_, err = AdjustUserQuotaWithLedger(user.Id, 1, common.RoleRootUser, tc.mode, tc.value, "admin floor boundary", fmt.Sprintf("boundary-%d", user.Id))
+				} else {
+					_, err = AdjustUserQuota(user.Id, common.RoleRootUser, tc.mode, tc.value)
+				}
+				if tc.rejected {
+					require.ErrorIs(t, err, ErrAdtyQuotaFloor)
+					require.Equal(t, tc.raw, getUserQuotaFromDB(t, user.Id))
+				} else {
+					require.NoError(t, err)
+					balance, readErr := GetUserQuota(user.Id, false)
+					require.NoError(t, readErr)
+					require.Equal(t, tc.want, balance)
+				}
+			})
+		}
+	}
+}

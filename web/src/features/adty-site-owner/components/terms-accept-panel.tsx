@@ -20,12 +20,14 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
+import { ErrorState } from '@/components/error-state'
 import { RichContent } from '@/components/rich-content'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { getLegalDocument } from '@/features/legal/api'
 import { toContentLang } from '@/lib/adty-lang'
 import { handleServerError } from '@/lib/handle-server-error'
+import { requireServerSuccess } from '@/lib/server-error-message'
 import { useAuthStore } from '@/stores/auth-store'
 
 import { acceptSiteTerms } from '../api'
@@ -36,7 +38,8 @@ export function TermsAcceptPanel(props: { version: string }) {
   const lang = toContentLang(i18n.resolvedLanguage || i18n.language)
   const document = useQuery({
     queryKey: ['legal', 'site-agreement', lang],
-    queryFn: () => getLegalDocument('site-agreement', lang),
+    queryFn: async () =>
+      requireServerSuccess(await getLegalDocument('site-agreement', lang)),
     staleTime: 10 * 60 * 1000,
   })
   const accept = useMutation({
@@ -57,13 +60,19 @@ export function TermsAcceptPanel(props: { version: string }) {
 
   return (
     <div className='flex max-w-3xl flex-col gap-4'>
-      <p className='text-sm'>
-        {t('Accept the current site agreement first')}
-      </p>
+      <p className='text-sm'>{t('Accept the current site agreement first')}</p>
       {document.isLoading && <Skeleton className='h-40 w-full' />}
+      {document.isError && (
+        <ErrorState onRetry={() => void document.refetch()} />
+      )}
       {text !== '' && <RichContent content={text} />}
       <Button
-        disabled={props.version.trim() === '' || accept.isPending}
+        disabled={
+          props.version.trim() === '' ||
+          accept.isPending ||
+          !document.isSuccess ||
+          text === ''
+        }
         onClick={() => accept.mutate()}
       >
         {t('Accept site agreement')}

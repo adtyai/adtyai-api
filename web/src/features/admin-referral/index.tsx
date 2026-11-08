@@ -17,13 +17,17 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
+import { ErrorState } from '@/components/error-state'
 import { SectionPageLayout } from '@/components/layout'
+import { LoadingState } from '@/components/loading-state'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { DraftNavigationProvider } from '@/features/system-settings/components/draft-navigation-provider'
 import { formatUsd } from '@/features/wallet/adty/lib/money'
 import { toIntlLocale } from '@/i18n/languages'
 import { ADTY_PERMISSIONS, canAdmin } from '@/lib/adty-permissions'
@@ -44,6 +48,7 @@ import { WithdrawalPanel } from './components/withdrawal-panel'
 /** Referral admin (adty task 6.7): overview, pending reviews, affiliates, withdrawals, settings. */
 export function AdminReferral() {
   const { t, i18n } = useTranslation()
+  const [settingsVisited, setSettingsVisited] = useState(false)
   const locale = toIntlLocale(i18n.resolvedLanguage || i18n.language)
   const queryClient = useQueryClient()
   const user = useAuthStore((state) => state.auth.user)
@@ -78,95 +83,115 @@ export function AdminReferral() {
     (badges.data?.approved_withdrawals ?? 0)
 
   return (
-    <SectionPageLayout>
-      <SectionPageLayout.Title>{t('Referral admin')}</SectionPageLayout.Title>
-      <SectionPageLayout.Content>
-        <div className='flex flex-col gap-4'>
-          <div className='grid grid-cols-2 gap-3 lg:grid-cols-6'>
-            {[
-              {
-                label: t('Affiliates'),
-                value: formatNumber(data?.affiliates ?? 0, locale),
-              },
-              {
-                label: t('Referred users'),
-                value: formatNumber(data?.bindings ?? 0, locale),
-              },
-              {
-                label: t('Settling'),
-                value: formatUsd(Number(data?.pending ?? 0), locale),
-              },
-              {
-                label: t('Withdrawable'),
-                value: formatUsd(Number(data?.available ?? 0), locale),
-              },
-              {
-                label: t('Withdrawing'),
-                value: formatUsd(Number(data?.frozen ?? 0), locale),
-              },
-              {
-                label: t('Withdrawn'),
-                value: formatUsd(Number(data?.withdrawn ?? 0), locale),
-              },
-            ].map((item) => (
-              <Card key={item.label}>
-                <CardContent className='flex flex-col gap-1 py-4'>
-                  <span className='text-muted-foreground text-xs'>
-                    {item.label}
-                  </span>
-                  <span className='text-xl font-semibold'>{item.value}</span>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-          <Tabs defaultValue='withdrawals'>
-            <div className='flex flex-wrap items-center justify-between gap-2'>
-              <TabsList>
-                <TabsTrigger value='withdrawals'>
-                  {t('Withdrawals')}
-                  {pendingWithdrawals > 0 && ` (${pendingWithdrawals})`}
-                </TabsTrigger>
-                <TabsTrigger value='partners'>
-                  {t('Partner applications')}
-                  {pendingPartners > 0 && ` (${pendingPartners})`}
-                </TabsTrigger>
-                <TabsTrigger value='affiliates'>{t('Affiliates')}</TabsTrigger>
-                {canReadSettings && (
-                  <TabsTrigger value='settings'>{t('Settings')}</TabsTrigger>
-                )}
-              </TabsList>
-              {canAdjust && (
-                <Button
-                  size='sm'
-                  variant='outline'
-                  disabled={settle.isPending}
-                  onClick={() => settle.mutate()}
-                >
-                  {t('Run settlement now')}
-                </Button>
-              )}
-            </div>
-            <TabsContent value='withdrawals'>
-              <WithdrawalPanel canReview={canReview} canPayout={canPayout} />
-            </TabsContent>
-            <TabsContent value='partners'>
-              <AffiliatePanel
-                canReview={canReview}
-                canAdjust={false}
-                partnerOnly
-              />
-            </TabsContent>
-            <TabsContent value='affiliates'>
-              <AffiliatePanel canReview={canReview} canAdjust={canAdjust} />
-            </TabsContent>
-            {canReadSettings && (
-              <TabsContent value='settings'>
-                <SettingsPanel canWrite={canSettings} />
-              </TabsContent>
+    <DraftNavigationProvider>
+      <SectionPageLayout>
+        <SectionPageLayout.Title>{t('Referral admin')}</SectionPageLayout.Title>
+        <SectionPageLayout.Content>
+          <div className='flex flex-col gap-4'>
+            {overview.isError && (
+              <ErrorState onRetry={() => void overview.refetch()} />
             )}
-          </Tabs>
-        </div>
-      </SectionPageLayout.Content>
-    </SectionPageLayout>
+            {badges.isError && (
+              <ErrorState onRetry={() => void badges.refetch()} />
+            )}
+            {overview.isPending && <LoadingState />}
+            {data && (
+              <div className='grid grid-cols-2 gap-3 lg:grid-cols-6'>
+                {[
+                  {
+                    label: t('Affiliates'),
+                    value: formatNumber(data?.affiliates ?? 0, locale),
+                  },
+                  {
+                    label: t('Referred users'),
+                    value: formatNumber(data?.bindings ?? 0, locale),
+                  },
+                  {
+                    label: t('Settling'),
+                    value: formatUsd(Number(data?.pending ?? 0), locale),
+                  },
+                  {
+                    label: t('Withdrawable'),
+                    value: formatUsd(Number(data?.available ?? 0), locale),
+                  },
+                  {
+                    label: t('Withdrawing'),
+                    value: formatUsd(Number(data?.frozen ?? 0), locale),
+                  },
+                  {
+                    label: t('Withdrawn'),
+                    value: formatUsd(Number(data?.withdrawn ?? 0), locale),
+                  },
+                ].map((item) => (
+                  <Card key={item.label}>
+                    <CardContent className='flex flex-col gap-1 py-4'>
+                      <span className='text-muted-foreground text-xs'>
+                        {item.label}
+                      </span>
+                      <span className='text-xl font-semibold'>
+                        {item.value}
+                      </span>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+            <Tabs
+              defaultValue='withdrawals'
+              onValueChange={(value) => {
+                if (value === 'settings') setSettingsVisited(true)
+              }}
+            >
+              <div className='flex flex-wrap items-center justify-between gap-2'>
+                <TabsList>
+                  <TabsTrigger value='withdrawals'>
+                    {t('Withdrawals')}
+                    {pendingWithdrawals > 0 && ` (${pendingWithdrawals})`}
+                  </TabsTrigger>
+                  <TabsTrigger value='partners'>
+                    {t('Partner applications')}
+                    {pendingPartners > 0 && ` (${pendingPartners})`}
+                  </TabsTrigger>
+                  <TabsTrigger value='affiliates'>
+                    {t('Affiliates')}
+                  </TabsTrigger>
+                  {canReadSettings && (
+                    <TabsTrigger value='settings'>{t('Settings')}</TabsTrigger>
+                  )}
+                </TabsList>
+                {canAdjust && (
+                  <Button
+                    size='sm'
+                    variant='outline'
+                    disabled={settle.isPending}
+                    onClick={() => settle.mutate()}
+                  >
+                    {t('Run settlement now')}
+                  </Button>
+                )}
+              </div>
+              <TabsContent value='withdrawals'>
+                <WithdrawalPanel canReview={canReview} canPayout={canPayout} />
+              </TabsContent>
+              <TabsContent value='partners'>
+                <AffiliatePanel
+                  canReview={canReview}
+                  canAdjust={false}
+                  partnerOnly
+                />
+              </TabsContent>
+              <TabsContent value='affiliates'>
+                <AffiliatePanel canReview={canReview} canAdjust={canAdjust} />
+              </TabsContent>
+              {canReadSettings && (
+                <TabsContent value='settings' keepMounted>
+                  {settingsVisited && <SettingsPanel canWrite={canSettings} />}
+                </TabsContent>
+              )}
+            </Tabs>
+          </div>
+        </SectionPageLayout.Content>
+      </SectionPageLayout>
+    </DraftNavigationProvider>
   )
 }

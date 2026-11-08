@@ -1,7 +1,10 @@
 package service
 
 import (
+	"context"
+	"crypto/sha256"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -31,6 +34,15 @@ func adtyEarningDayOf(day string) string {
 
 // RunAdtySiteSettlementOnce 结算到期的站长收益，返回结算了几个站。
 func RunAdtySiteSettlementOnce(now time.Time) (int, error) {
+	var events []model.AdtySiteEarningEvent
+	if err := model.DB.Where("projected = ? AND (review_status <> ? OR review_status IS NULL)", false, model.AdtyEarningNeedsReview).Order("created_at").Limit(1000).Find(&events).Error; err != nil {
+		return 0, err
+	}
+	for _, event := range events {
+		if err := projectAdtySiteEarningEvent(context.Background(), event.OperationKey); err != nil {
+			return 0, err
+		}
+	}
 	cutoff := adtySettleCutoffDay(now)
 	var siteIds []int
 	if err := model.DB.Model(&model.AdtySiteEarningDaily{}).Distinct("site_id").
@@ -79,7 +91,17 @@ func settleAdtySite(siteId int, cutoff string, now int64) (bool, error) {
 		if err := model.AdtyLockForUpdate(tx).Where("id = ?", siteId).First(&site).Error; err != nil {
 			return err
 		}
-		holdPositive := site.Status == model.AdtySiteStatusPaused || site.Status == model.AdtySiteStatusPending || strings.TrimSpace(site.SettleHoldReason) != ""
+		var unresolved int64
+		if err := tx.Model(&model.AdtySiteEarningEvent{}).Where("site_id = ? AND (review_status = ? OR projected = ?)", siteId, model.AdtyEarningNeedsReview, false).Count(&unresolved).Error; err != nil {
+			return err
+		}
+		if unresolved == 0 && site.SettleHoldReason == model.AdtyEarningReviewHoldReason {
+			if err := tx.Model(&site).Update("settle_hold_reason", "").Error; err != nil {
+				return err
+			}
+			site.SettleHoldReason = ""
+		}
+		holdPositive := site.Status == model.AdtySiteStatusPaused || site.Status == model.AdtySiteStatusPending || strings.TrimSpace(site.SettleHoldReason) != "" || unresolved > 0
 		if !holdPositive {
 			mismatch, reason, err := adtyUsageReconcileMismatch(tx, site.Id, cutoff)
 			if err != nil {
@@ -120,6 +142,18 @@ func settleAdtySite(siteId int, cutoff string, now int64) (bool, error) {
 		if err != nil {
 			return err
 		}
+		if !total.IsZero() {
+			// A later callback/review may produce another batch on the same
+			// cutoff. Its rows, rather than its date or amount, identify it.
+			slices.Sort(ids)
+			batchKey := fmt.Sprintf("site-earnings:%d:%x", site.Id, sha256.Sum256([]byte(fmt.Sprint(ids))))
+			if _, err := applyAdtySiteWalletChangeTx(tx, site.Id, model.AdtySiteWalletEarnings, total, AdtySiteWalletChange{
+				Type: "site_earning_settlement", RefType: "site_earning", RefID: cutoff,
+				Reason: fmt.Sprintf("site earnings up to %s", cutoff), IdempotencyKey: batchKey, AllowOverdraft: true,
+			}); err != nil {
+				return err
+			}
+		}
 		if err := AdjustAccountTx(tx, account, decimal.Zero, total, decimal.Zero, decimal.Zero, model.ReferralCommissionLedger{
 			Type: "site_earning", RefType: "site", RefId: fmt.Sprint(site.Id),
 			ExternalRefId: fmt.Sprintf("site-earning:%d:%s:%d", site.Id, cutoff, now), Remark: fmt.Sprintf("site earnings up to %s", cutoff),
@@ -140,6 +174,30 @@ func settleAdtySite(siteId int, cutoff string, now int64) (bool, error) {
 // adtyUsageReconcileMismatch 用到期日之前的消费日志重算 usage 收益。没有带 site_id 的日志时不暂停
 // （消费日志关掉时收益仍可能记上）。日志和已记账的 usage 对不上才暂停正收益。
 func adtyUsageReconcileMismatch(tx *gorm.DB, siteId int, cutoff string) (bool, string, error) {
+	var events []model.AdtySiteEarningEvent
+	if err := tx.Where("site_id = ? AND day <= ?", siteId, cutoff).Find(&events).Error; err != nil {
+		return false, "", err
+	}
+	if len(events) > 0 {
+		expected := decimal.Zero
+		for _, event := range events {
+			if event.ReviewStatus == model.AdtyEarningNeedsReview {
+				continue
+			}
+			_, _, earning := AdtySiteEarningSplit(int64(event.Quota), decimal.NewFromFloat(event.Markup), decimal.NewFromFloat(event.CostFactor))
+			expected = expected.Add(earning)
+		}
+		var recorded struct{ Total decimal.Decimal }
+		if err := tx.Model(&model.AdtySiteEarningDaily{}).Select("COALESCE(SUM(earning),0) AS total").
+			Where("site_id = ? AND day LIKE ? AND day <= ? AND kind IN ? AND status IN ?", siteId, "%+op%", cutoff+"+~",
+				[]string{model.AdtySiteEarningUsage, model.AdtySiteEarningRefund, model.AdtySiteEarningSkipped},
+				[]string{model.AdtySiteEarningPending, model.AdtySiteEarningAvailable}).Scan(&recorded).Error; err != nil {
+			return false, "", err
+		}
+		if !expected.Round(8).Equal(recorded.Total.Round(8)) {
+			return true, fmt.Sprintf("usage earnings %s do not match durable events %s", recorded.Total.StringFixed(8), expected.StringFixed(8)), nil
+		}
+	}
 	if model.LOG_DB == nil {
 		return false, "", nil
 	}
@@ -149,7 +207,7 @@ func adtyUsageReconcileMismatch(tx *gorm.DB, siteId int, cutoff string) (bool, s
 	}
 	end = end.AddDate(0, 0, 1)
 	var logs []model.Log
-	if err := model.LOG_DB.Where("type = ? AND created_at < ? AND other LIKE ?", model.LogTypeConsume, end.Unix(), `%"site_id"%`).Find(&logs).Error; err != nil {
+	if err := model.LOG_DB.Where("type IN ? AND created_at < ? AND other LIKE ?", []int{model.LogTypeConsume, model.LogTypeRefund}, end.Unix(), `%"site_id"%`).Find(&logs).Error; err != nil {
 		return false, "", err
 	}
 	logTotal := decimal.Zero
@@ -167,8 +225,8 @@ func adtyUsageReconcileMismatch(tx *gorm.DB, siteId int, cutoff string) (bool, s
 	}
 	var recorded struct{ Total decimal.Decimal }
 	if err := tx.Model(&model.AdtySiteEarningDaily{}).Select("COALESCE(SUM(earning),0) AS total").
-		Where("site_id = ? AND kind IN ? AND status IN ? AND day <= ?",
-			siteId, []string{model.AdtySiteEarningUsage, model.AdtySiteEarningSkipped},
+		Where("site_id = ? AND kind IN ? AND status IN ? AND day <= ? AND day NOT LIKE '%+op%'",
+			siteId, []string{model.AdtySiteEarningUsage, model.AdtySiteEarningRefund, model.AdtySiteEarningSkipped},
 			[]string{model.AdtySiteEarningPending, model.AdtySiteEarningAvailable}, cutoff+"+~").
 		Scan(&recorded).Error; err != nil {
 		return false, "", err
@@ -187,6 +245,9 @@ func adtyLogUsageEarning(row model.Log, siteId int) (decimal.Decimal, bool) {
 		return decimal.Zero, false
 	}
 	info, _ := parsed["admin_info"].(map[string]any)
+	if info["billing_operation_key"] != nil {
+		return decimal.Zero, false
+	}
 	if adtyAnyInt(info["site_id"]) != siteId {
 		return decimal.Zero, false
 	}
@@ -199,6 +260,9 @@ func adtyLogUsageEarning(row model.Log, siteId int) (decimal.Decimal, bool) {
 		return decimal.Zero, true
 	}
 	_, _, earning := AdtySiteEarningSplit(charged, decimal.NewFromFloat(k), decimal.NewFromFloat(d))
+	if row.Type == model.LogTypeRefund {
+		earning = earning.Neg()
+	}
 	return earning, true
 }
 

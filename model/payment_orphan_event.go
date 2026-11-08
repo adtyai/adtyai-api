@@ -18,6 +18,7 @@ const (
 	PaymentOrphanStatusCredited      = "credited"
 	PaymentOrphanStatusRefunded      = "refunded"
 	PaymentOrphanStatusDismissed     = "dismissed"
+	PaymentOrphanStatusNeverCredited = "never_credited"
 )
 
 var (
@@ -28,23 +29,25 @@ var (
 
 // PaymentOrphanEvent 是对不上订单、或入账失败的支付回调，等管理员处理。
 type PaymentOrphanEvent struct {
-	ID             int64  `json:"id"`
-	Provider       string `json:"provider" gorm:"type:varchar(32);not null;index:idx_adty_orphan_provider_reference,priority:1"`
-	EventID        string `json:"event_id" gorm:"type:varchar(128);not null;uniqueIndex"`
-	EventType      string `json:"event_type" gorm:"type:varchar(128);not null;index"`
-	ReferenceID    string `json:"reference_id" gorm:"type:varchar(255);index:idx_adty_orphan_provider_reference,priority:2"`
-	SessionID      string `json:"session_id" gorm:"type:varchar(128);index"`
-	Status         string `json:"status" gorm:"type:varchar(32);not null;index"`
-	Reason         string `json:"reason" gorm:"type:varchar(512)"`
-	Error          string `json:"error" gorm:"type:text"`
-	Payload        string `json:"-" gorm:"type:text"`
-	CreateTime     int64  `json:"create_time" gorm:"index"`
-	UpdateTime     int64  `json:"update_time"`
-	ResolvedBy     int    `json:"resolved_by" gorm:"index"`
-	ResolvedAt     int64  `json:"resolved_at" gorm:"index"`
-	Resolution     string `json:"resolution" gorm:"type:varchar(32)"`
-	ResolutionNote string `json:"resolution_note" gorm:"type:text"`
-	CanCredit      bool   `json:"can_credit" gorm:"-"`
+	ID             int64                `json:"id"`
+	Provider       string               `json:"provider" gorm:"type:varchar(32);not null;index:idx_adty_orphan_provider_reference,priority:1"`
+	EventID        string               `json:"event_id" gorm:"type:varchar(128);not null;uniqueIndex"`
+	EventType      string               `json:"event_type" gorm:"type:varchar(128);not null;index"`
+	ReferenceID    string               `json:"reference_id" gorm:"type:varchar(255);index:idx_adty_orphan_provider_reference,priority:2"`
+	SessionID      string               `json:"session_id" gorm:"type:varchar(128);index"`
+	Status         string               `json:"status" gorm:"type:varchar(32);not null;index"`
+	Reason         string               `json:"reason" gorm:"type:varchar(512)"`
+	Error          string               `json:"error" gorm:"type:text"`
+	Payload        string               `json:"-" gorm:"type:text"`
+	CreateTime     int64                `json:"create_time" gorm:"index"`
+	UpdateTime     int64                `json:"update_time"`
+	ResolvedBy     int                  `json:"resolved_by" gorm:"index"`
+	ResolvedAt     int64                `json:"resolved_at" gorm:"index"`
+	Resolution     string               `json:"resolution" gorm:"type:varchar(32)"`
+	ResolutionNote string               `json:"resolution_note" gorm:"type:text"`
+	ReviewID       int64                `json:"review_id"`
+	Review         *PaymentOrphanReview `json:"review,omitempty" gorm:"-"`
+	CanCredit      bool                 `json:"can_credit" gorm:"-"`
 }
 
 func (PaymentOrphanEvent) TableName() string {
@@ -70,12 +73,48 @@ func RecordPaymentOrphanEvent(event *PaymentOrphanEvent) error {
 		event.CreateTime = now
 	}
 	event.UpdateTime = now
-	return DB.Clauses(clause.OnConflict{
-		Columns: []clause.Column{{Name: "event_id"}},
-		DoUpdates: clause.AssignmentColumns([]string{
-			"provider", "event_type", "reference_id", "session_id", "reason", "error", "payload", "update_time",
-		}),
-	}).Create(event).Error
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var observed []PaymentOrphanEvent
+		if err := tx.Where("event_id = ?", event.EventID).Limit(1).Find(&observed).Error; err != nil {
+			return err
+		}
+		reference := event.ReferenceID
+		if len(observed) > 0 && observed[0].ReferenceID != "" {
+			reference = observed[0].ReferenceID
+		}
+		if reference != "" {
+			var orders []TopUp
+			if err := lockForUpdate(tx).Where("trade_no = ?", reference).Limit(1).Find(&orders).Error; err != nil {
+				return err
+			}
+		}
+		// DO NOTHING keeps concurrent first deliveries out of PostgreSQL's
+		// aborted-transaction path. Re-read under the event lock before updates.
+		if err := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "event_id"}}, DoNothing: true}).Create(event).Error; err != nil {
+			return err
+		}
+		var stored PaymentOrphanEvent
+		if err := lockForUpdate(tx).Where("event_id = ?", event.EventID).First(&stored).Error; err != nil {
+			return err
+		}
+		if stored.Provider != event.Provider || stored.EventType != event.EventType || (stored.ReferenceID != "" && event.ReferenceID != "" && stored.ReferenceID != event.ReferenceID) || (stored.SessionID != "" && event.SessionID != "" && stored.SessionID != event.SessionID) {
+			return ErrAdtyIdempotencyConflict
+		}
+		fields := map[string]any{"update_time": now}
+		if stored.ReviewID == 0 && stored.Status == PaymentOrphanStatusPendingReview {
+			fields["reason"], fields["error"], fields["payload"] = event.Reason, event.Error, event.Payload
+			if stored.ReferenceID == "" && event.ReferenceID != "" {
+				fields["reference_id"] = event.ReferenceID
+			}
+			if stored.SessionID == "" && event.SessionID != "" {
+				fields["session_id"] = event.SessionID
+			}
+		} else if (stored.ReferenceID == "" && event.ReferenceID != "") || (stored.SessionID == "" && event.SessionID != "") {
+			return ErrAdtyIdempotencyConflict
+		}
+		event.ID = stored.ID
+		return tx.Model(&PaymentOrphanEvent{}).Where("id = ?", stored.ID).Updates(fields).Error
+	})
 }
 
 // ListPaymentOrphanEvents 分页列出事件，status 为空或 all 时不过滤。
@@ -89,6 +128,28 @@ func ListPaymentOrphanEvents(status string, pageInfo *common.PageInfo) (events [
 		return nil, 0, err
 	}
 	err = query.Order("id desc").Limit(pageInfo.GetPageSize()).Offset(pageInfo.GetStartIdx()).Find(&events).Error
+	if err != nil {
+		return nil, 0, err
+	}
+	var reviewIDs []int64
+	for _, event := range events {
+		if event.ReviewID > 0 {
+			reviewIDs = append(reviewIDs, event.ReviewID)
+		}
+	}
+	if len(reviewIDs) > 0 {
+		var reviews []*PaymentOrphanReview
+		if err := DB.Where("id IN ?", reviewIDs).Find(&reviews).Error; err != nil {
+			return nil, 0, err
+		}
+		byID := make(map[int64]*PaymentOrphanReview, len(reviews))
+		for _, review := range reviews {
+			byID[review.ID] = review
+		}
+		for _, event := range events {
+			event.Review = byID[event.ReviewID]
+		}
+	}
 	for _, event := range events {
 		event.CanCredit = CanCreditPaymentOrphanEvent(event)
 	}
@@ -101,7 +162,14 @@ func CanCreditPaymentOrphanEvent(orphan *PaymentOrphanEvent) bool {
 	if orphan == nil || orphan.Status != PaymentOrphanStatusPendingReview || strings.TrimSpace(orphan.ReferenceID) == "" {
 		return false
 	}
-	if !IsAdtyPaymentProvider(strings.TrimSpace(orphan.Provider)) {
+	eventType := strings.ToLower(strings.TrimSpace(orphan.EventType))
+	if strings.HasPrefix(eventType, "refund") || strings.HasPrefix(eventType, "dispute") || strings.HasPrefix(eventType, "charge.refund") || strings.HasPrefix(eventType, "charge.dispute") {
+		return false
+	}
+	// Hosted events have provider-specific nested signed facts. Their recovery
+	// uses provider redelivery or the explicit audited manual-completion form.
+	// Only these two legacy adapters support direct payload replay here.
+	if orphan.Provider != PaymentProviderAdtyBEpusdt && orphan.Provider != PaymentProviderAdtyEpay {
 		return false
 	}
 	errorText := strings.ToLower(orphan.Error)
@@ -135,6 +203,30 @@ func LockPaymentOrphanTx(tx *gorm.DB, id int64) (*PaymentOrphanEvent, error) {
 	return &rows[0], nil
 }
 
+// LockPaymentOrphanOrderTx keeps every operator path in the payment lock order:
+// order, extension, event. An event with no local order can still be reviewed.
+func LockPaymentOrphanOrderTx(tx *gorm.DB, id int64) (*PaymentOrphanEvent, *TopUp, *AdtyTopupOrder, error) {
+	var observed PaymentOrphanEvent
+	if err := tx.First(&observed, id).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil, nil, ErrPaymentOrphanNotFound
+		}
+		return nil, nil, nil, err
+	}
+	topUp, ext, err := lockAdtyTopUpTx(tx, observed.ReferenceID)
+	if err != nil && err != ErrTopUpNotFound {
+		return nil, nil, nil, err
+	}
+	orphan, err := LockPaymentOrphanTx(tx, id)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if orphan.ReferenceID != observed.ReferenceID || orphan.Provider != observed.Provider {
+		return nil, nil, nil, ErrAdtyIdempotencyConflict
+	}
+	return orphan, topUp, ext, nil
+}
+
 // MarkPaymentOrphanCreditedTx 在补入账的同一个事务里把事件标成已入账。
 func MarkPaymentOrphanCreditedTx(tx *gorm.DB, orphan *PaymentOrphanEvent, resolvedBy int, note string) error {
 	now := common.GetTimestamp()
@@ -148,29 +240,11 @@ func MarkPaymentOrphanCreditedTx(tx *gorm.DB, orphan *PaymentOrphanEvent, resolv
 	}).Error
 }
 
-// MarkPaymentOrphanResolved 把事件标成已退款或已忽略（线下处理完以后）。
+// MarkPaymentOrphanResolved retains the old entry point, but an unproved status
+// change can no longer close a financial review.
 func MarkPaymentOrphanResolved(id int64, status string, resolvedBy int, note string) error {
-	if status != PaymentOrphanStatusRefunded && status != PaymentOrphanStatusDismissed {
-		return ErrPaymentOrphanNotCredit
-	}
-	return DB.Transaction(func(tx *gorm.DB) error {
-		orphan, err := LockPaymentOrphanTx(tx, id)
-		if err != nil {
-			return err
-		}
-		if orphan.Status != PaymentOrphanStatusPendingReview {
-			return nil
-		}
-		now := common.GetTimestamp()
-		return tx.Model(&PaymentOrphanEvent{}).Where("id = ?", orphan.ID).Updates(map[string]any{
-			"status":          status,
-			"resolved_by":     resolvedBy,
-			"resolved_at":     now,
-			"resolution":      status,
-			"resolution_note": strings.TrimSpace(note),
-			"update_time":     now,
-		}).Error
-	})
+	_, err := ResolvePaymentOrphanReview(id, resolvedBy, PaymentOrphanReviewRequest{Status: status, Note: note})
+	return err
 }
 
 // PaymentOrphanPayloadString 从回调参数里取一个值，数字按十进制原样转成字符串。

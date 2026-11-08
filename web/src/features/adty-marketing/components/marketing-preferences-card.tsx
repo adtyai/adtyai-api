@@ -21,6 +21,7 @@ import { Mail } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
+import { ErrorState } from '@/components/error-state'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { TitledCard } from '@/components/ui/titled-card'
@@ -52,6 +53,7 @@ export function MarketingPreferencesCard() {
     onError: (err) => handleServerError(err),
   })
   const data = query.data
+  if (query.isError) return <ErrorState onRetry={() => void query.refetch()} />
   if (!data?.enabled) return null
 
   return (

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -153,9 +154,10 @@ func (c *AdtyCloudflareClient) do(ctx context.Context, method, path string, body
 
 // adtyCustomHostname 是自定义主机名接口的 result，只取用得到的字段。
 type adtyCustomHostname struct {
-	Id                    string `json:"id"`
-	Hostname              string `json:"hostname"`
-	Status                string `json:"status"`
+	Id                    string            `json:"id"`
+	Hostname              string            `json:"hostname"`
+	Status                string            `json:"status"`
+	Metadata              map[string]string `json:"custom_metadata"`
 	OwnershipVerification struct {
 		Name  string `json:"name"`
 		Type  string `json:"type"`
@@ -171,12 +173,16 @@ type adtyCustomHostname struct {
 	VerificationErrors []string `json:"verification_errors"`
 }
 
-func (c *AdtyCloudflareClient) createCustomHostname(ctx context.Context, zone, hostname string, siteId int) (*adtyCustomHostname, error) {
+func adtyCustomHostnameGeneration(domain *model.AdtySiteDomain) string {
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(fmt.Sprintf("%d:%d:%s:%s", domain.Id, domain.SiteId, domain.Hostname, domain.OwnershipToken))))
+}
+
+func (c *AdtyCloudflareClient) createCustomHostname(ctx context.Context, zone string, domain *model.AdtySiteDomain) (*adtyCustomHostname, error) {
 	var out adtyCustomHostname
 	body := map[string]any{
-		"hostname":        hostname,
+		"hostname":        domain.Hostname,
 		"ssl":             map[string]string{"method": "http", "type": "dv"},
-		"custom_metadata": map[string]string{"site_id": strconv.Itoa(siteId)},
+		"custom_metadata": map[string]string{"site_id": strconv.Itoa(domain.SiteId), "adty_domain_id": strconv.Itoa(domain.Id), "adty_generation": adtyCustomHostnameGeneration(domain)},
 	}
 	err := c.do(ctx, http.MethodPost, "/zones/"+url.PathEscape(zone)+"/custom_hostnames", body, &out)
 	return &out, err
@@ -297,11 +303,11 @@ func adtyCustomDomainIsApex(host string) bool {
 
 // adtyCustomDomainAllowCreate 检查这个站还能不能再新建一个自定义域名。
 // reusingCountedRow 为真时，这一行已经是本站的 pending、active 或 failed，不占新名额；每小时新建数两种都算。
-func adtyCustomDomainAllowCreate(siteId int, reusingCountedRow bool, now int64) error {
+func adtyCustomDomainAllowCreate(tx *gorm.DB, siteId int, reusingCountedRow bool, now int64) error {
 	cfg := resellerSetting()
 	if !reusingCountedRow {
 		var counted int64
-		err := model.DB.Model(&model.AdtySiteDomain{}).
+		err := tx.Model(&model.AdtySiteDomain{}).
 			Where("site_id = ? AND status IN ?", siteId, []string{
 				model.AdtySiteDomainPending, model.AdtySiteDomainActive, model.AdtySiteDomainFailed,
 			}).Count(&counted).Error
@@ -313,7 +319,7 @@ func adtyCustomDomainAllowCreate(siteId int, reusingCountedRow bool, now int64) 
 		}
 	}
 	var recent int64
-	err := model.DB.Model(&model.AdtySiteDomain{}).
+	err := tx.Model(&model.AdtySiteDomain{}).
 		Where("site_id = ? AND created_at >= ?", siteId, now-3600).Count(&recent).Error
 	if err != nil {
 		return err
@@ -364,44 +370,51 @@ func AddAdtySiteDomain(ctx context.Context, ownerUserId int, rawHost string) (*m
 	if err != nil {
 		return nil, err
 	}
-	var existing model.AdtySiteDomain
-	found := model.DB.Where("hostname = ?", host).Limit(1).Find(&existing).RowsAffected > 0
-	if found && existing.SiteId != site.Id && existing.Status != model.AdtySiteDomainRemoved {
-		return nil, ErrAdtyCustomDomainTaken
-	}
-	if found && existing.SiteId == site.Id && (existing.Status == model.AdtySiteDomainPending || existing.Status == model.AdtySiteDomainActive) {
-		if existing.CFHostnameId != "" || existing.Status == model.AdtySiteDomainActive {
-			return &existing, nil
+	var domain model.AdtySiteDomain
+	err = model.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var existing model.AdtySiteDomain
+		result := tx.Where("hostname = ?", host).Limit(1).Find(&existing)
+		if result.Error != nil {
+			return result.Error
 		}
-		if err := adtyAttachCustomHostname(ctx, &existing); err != nil {
-			return nil, err
+		found := result.RowsAffected > 0
+		if found {
+			// Re-read after taking the same lock used by checker and removal.
+			if err := adtyLockDomainRow(tx, existing.Id, &existing); err != nil {
+				return err
+			}
 		}
-		return &existing, nil
-	}
-	now := time.Now().Unix()
-	reusingCounted := found && existing.SiteId == site.Id && existing.Status != model.AdtySiteDomainRemoved
-	if err := adtyCustomDomainAllowCreate(site.Id, reusingCounted, now); err != nil {
-		return nil, err
-	}
-	token, err := adtyNewOwnershipToken()
-	if err != nil {
-		return nil, err
-	}
-	domain := model.AdtySiteDomain{
-		SiteId: site.Id, Hostname: host, OwnershipToken: token, Status: model.AdtySiteDomainPending,
-		VerifyRecords: adtyOwnershipRecords(host, token, strings.TrimSpace(cfg.CnameTarget)),
-		LastCheckedAt: now, CreatedAt: now,
-	}
-	if found {
+		if found && existing.SiteId != site.Id && existing.Status != model.AdtySiteDomainRemoved {
+			return ErrAdtyCustomDomainTaken
+		}
+		if found && existing.SiteId == site.Id && (existing.Status == model.AdtySiteDomainPending || existing.Status == model.AdtySiteDomainActive) {
+			domain = existing
+			return nil
+		}
+		now := time.Now().Unix()
+		reusingCounted := found && existing.SiteId == site.Id && existing.Status != model.AdtySiteDomainRemoved
+		if err := adtyCustomDomainAllowCreate(tx, site.Id, reusingCounted, now); err != nil {
+			return err
+		}
+		token, err := adtyNewOwnershipToken()
+		if err != nil {
+			return err
+		}
+		domain = model.AdtySiteDomain{
+			SiteId: site.Id, Hostname: host, OwnershipToken: token, Status: model.AdtySiteDomainPending,
+			VerifyRecords: adtyOwnershipRecords(host, token, strings.TrimSpace(cfg.CnameTarget)),
+			LastCheckedAt: now, CreatedAt: now,
+		}
+		if !found {
+			return tx.Create(&domain).Error
+		}
 		domain.Id = existing.Id
-		err = model.DB.Model(&model.AdtySiteDomain{}).Where("id = ?", existing.Id).Updates(map[string]any{
+		return tx.Model(&model.AdtySiteDomain{}).Where("id = ?", existing.Id).Updates(map[string]any{
 			"site_id": site.Id, "ownership_token": token, "cf_hostname_id": "", "status": model.AdtySiteDomainPending,
 			"ssl_status": "", "verify_records": domain.VerifyRecords, "turnstile_widget": "",
 			"last_error": "", "last_checked_at": now, "created_at": now,
 		}).Error
-	} else {
-		err = model.DB.Create(&domain).Error
-	}
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -453,13 +466,56 @@ func adtyOwnershipTXTMatches(ctx context.Context, host, token string) (bool, err
 }
 
 // adtyAttachCustomHostname 在归属 TXT 对上以后才向 Cloudflare 建主机名。
+func adtyDomainSnapshotQuery(tx *gorm.DB, domain *model.AdtySiteDomain) *gorm.DB {
+	return tx.Model(&model.AdtySiteDomain{}).Where(
+		"id = ? AND site_id = ? AND hostname = ? AND status = ? AND ownership_token = ? AND cf_hostname_id = ?",
+		domain.Id, domain.SiteId, domain.Hostname, domain.Status, domain.OwnershipToken, domain.CFHostnameId)
+}
+
+// The write acquires a database row lock on PostgreSQL/MySQL and a writer lock
+// on SQLite before reading. All lifecycle entry points hold this transaction
+// across their external requests, so another node cannot remove/reassign an
+// in-flight attachment, widget update or timeout cleanup.
+func adtyLockDomainRow(tx *gorm.DB, id int, current *model.AdtySiteDomain) error {
+	if err := tx.Model(&model.AdtySiteDomain{}).Where("id = ?", id).UpdateColumn("id", gorm.Expr("id")).Error; err != nil {
+		return err
+	}
+	return model.AdtyLockForUpdate(tx).First(current, id).Error
+}
+
+func adtyWithDomainLifecycle(ctx context.Context, snapshot *model.AdtySiteDomain, action func(*gorm.DB, *model.AdtySiteDomain) error) error {
+	return model.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var current model.AdtySiteDomain
+		if err := adtyLockDomainRow(tx, snapshot.Id, &current); err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+		if current.SiteId != snapshot.SiteId || current.Hostname != snapshot.Hostname || current.OwnershipToken != snapshot.OwnershipToken {
+			return nil
+		}
+		if err := action(tx, &current); err != nil {
+			return err
+		}
+		*snapshot = current
+		return nil
+	})
+}
+
 func adtyAttachCustomHostname(ctx context.Context, domain *model.AdtySiteDomain) error {
-	if domain.CFHostnameId != "" || domain.OwnershipToken == "" {
+	return adtyWithDomainLifecycle(ctx, domain, func(tx *gorm.DB, current *model.AdtySiteDomain) error {
+		return adtyAttachCustomHostnameLocked(ctx, tx, current)
+	})
+}
+
+func adtyAttachCustomHostnameLocked(ctx context.Context, tx *gorm.DB, domain *model.AdtySiteDomain) error {
+	if domain.Status != model.AdtySiteDomainPending || domain.CFHostnameId != "" || domain.OwnershipToken == "" {
 		return nil
 	}
 	matched, err := adtyOwnershipTXTMatches(ctx, domain.Hostname, domain.OwnershipToken)
 	if err != nil {
-		_ = model.DB.Model(&model.AdtySiteDomain{}).Where("id = ?", domain.Id).Update("last_error", "ownership lookup failed").Error
+		_ = adtyDomainSnapshotQuery(tx, domain).Update("last_error", "ownership lookup failed").Error
 		return nil
 	}
 	if !matched {
@@ -467,7 +523,7 @@ func adtyAttachCustomHostname(ctx context.Context, domain *model.AdtySiteDomain)
 	}
 	cfg := resellerSetting()
 	zone := strings.TrimSpace(cfg.CloudflareZoneId)
-	created, err := AdtyCloudflare.createCustomHostname(ctx, zone, domain.Hostname, domain.SiteId)
+	created, err := AdtyCloudflare.createCustomHostname(ctx, zone, domain)
 	var apiErr *AdtyCloudflareError
 	if errors.As(err, &apiErr) && apiErr.Code == adtyCloudflareDuplicateCode {
 		created, err = AdtyCloudflare.findCustomHostname(ctx, zone, domain.Hostname)
@@ -487,14 +543,16 @@ func adtyAttachCustomHostname(ctx context.Context, domain *model.AdtySiteDomain)
 		detail = created
 	}
 	now := time.Now().Unix()
-	domain.CFHostnameId = created.Id
-	domain.SSLStatus = detail.SSL.Status
-	domain.VerifyRecords = verifyRecordsFor(domain.Hostname, strings.TrimSpace(cfg.CnameTarget), detail)
-	domain.LastCheckedAt = now
-	return model.DB.Model(&model.AdtySiteDomain{}).Where("id = ?", domain.Id).Updates(map[string]any{
-		"cf_hostname_id": domain.CFHostnameId, "ssl_status": domain.SSLStatus,
-		"verify_records": domain.VerifyRecords, "last_error": "", "last_checked_at": now,
-	}).Error
+	records := verifyRecordsFor(domain.Hostname, strings.TrimSpace(cfg.CnameTarget), detail)
+	result := adtyDomainSnapshotQuery(tx, domain).Updates(map[string]any{
+		"cf_hostname_id": created.Id, "ssl_status": detail.SSL.Status,
+		"verify_records": records, "last_error": "", "last_checked_at": now,
+	})
+	if result.Error == nil && result.RowsAffected > 0 {
+		domain.CFHostnameId, domain.SSLStatus = created.Id, detail.SSL.Status
+		domain.VerifyRecords, domain.LastCheckedAt = records, now
+	}
+	return result.Error
 }
 
 // RemoveAdtySiteDomain 是站长删除自己站上的域名。
@@ -521,25 +579,52 @@ func RemoveAdtySiteDomainByAdmin(ctx context.Context, domainId int) error {
 
 // removeAdtySiteDomain 从 Turnstile widget 和 Cloudflare 删掉，行改成 removed。
 func removeAdtySiteDomain(ctx context.Context, domain *model.AdtySiteDomain) error {
+	err := adtyWithDomainLifecycle(ctx, domain, func(tx *gorm.DB, current *model.AdtySiteDomain) error {
+		return removeAdtySiteDomainLocked(ctx, tx, current)
+	})
+	if err == nil {
+		InvalidateAdtySiteCache()
+	}
+	return err
+}
+
+func removeAdtySiteDomainLocked(ctx context.Context, tx *gorm.DB, domain *model.AdtySiteDomain) error {
 	if domain.Status == model.AdtySiteDomainRemoved {
 		return nil
 	}
-	if domain.TurnstileWidget != "" {
-		if err := adtyTurnstileRemoveDomain(ctx, domain.TurnstileWidget, domain.Hostname); err != nil {
+	zone := strings.TrimSpace(resellerSetting().CloudflareZoneId)
+	hostnameID := domain.CFHostnameId
+	if hostnameID == "" {
+		// A remote create may have succeeded before the database transaction
+		// rolled back. Only our exact generation marker proves it is ours;
+		// an unrecorded duplicate/find result is never deleted speculatively.
+		candidate, err := AdtyCloudflare.findCustomHostname(ctx, zone, domain.Hostname)
+		if err != nil {
+			return adtyCloudflareUserError(err)
+		}
+		if candidate != nil && candidate.Metadata["site_id"] == strconv.Itoa(domain.SiteId) &&
+			candidate.Metadata["adty_domain_id"] == strconv.Itoa(domain.Id) && candidate.Metadata["adty_generation"] == adtyCustomHostnameGeneration(domain) {
+			hostnameID = candidate.Id
+		}
+	}
+	// Scan configured widgets too: a successful remote PUT may not have been
+	// recorded before rollback. The domain generation remains locked here.
+	if hostnameID != "" || domain.TurnstileWidget != "" {
+		if err := adtyTurnstileRemoveDomain(ctx, tx, domain.TurnstileWidget, domain.Hostname); err != nil {
 			return adtyCloudflareUserError(err)
 		}
 	}
-	if domain.CFHostnameId != "" {
-		if err := AdtyCloudflare.deleteCustomHostname(ctx, strings.TrimSpace(resellerSetting().CloudflareZoneId), domain.CFHostnameId); err != nil {
+	if hostnameID != "" {
+		if err := AdtyCloudflare.deleteCustomHostname(ctx, zone, hostnameID); err != nil {
 			return adtyCloudflareUserError(err)
 		}
 	}
-	if err := model.DB.Model(&model.AdtySiteDomain{}).Where("id = ?", domain.Id).Updates(map[string]any{
+	if err := adtyDomainSnapshotQuery(tx, domain).Updates(map[string]any{
 		"status": model.AdtySiteDomainRemoved, "turnstile_widget": "", "last_checked_at": time.Now().Unix(),
 	}).Error; err != nil {
 		return err
 	}
-	InvalidateAdtySiteCache()
+	domain.Status, domain.TurnstileWidget = model.AdtySiteDomainRemoved, ""
 	return nil
 }
 
@@ -559,17 +644,36 @@ func adtyRemoveDomainsOfClosedSite(site *model.AdtySite) {
 }
 
 // adtyMarkCustomDomainFailed 把超时的域名标成 failed。Cloudflare 上还有主机名时先删掉；删不掉就保持 pending，下次再试。
-func adtyMarkCustomDomainFailed(ctx context.Context, zone string, domain *model.AdtySiteDomain, updates map[string]any) error {
+func adtyMarkCustomDomainFailed(ctx context.Context, tx *gorm.DB, zone string, domain *model.AdtySiteDomain, updates map[string]any) error {
 	if domain.CFHostnameId != "" {
 		if err := AdtyCloudflare.deleteCustomHostname(ctx, zone, domain.CFHostnameId); err != nil {
 			common.SysError(common.LogText("delete timed out custom hostname for domain %d failed", domain.Id))
 			updates["last_error"] = "cloudflare delete failed"
-			return model.DB.Model(&model.AdtySiteDomain{}).Where("id = ?", domain.Id).Updates(updates).Error
+			return adtyDomainSnapshotQuery(tx, domain).Updates(updates).Error
 		}
 		updates["cf_hostname_id"] = ""
 	}
 	updates["status"] = model.AdtySiteDomainFailed
-	return model.DB.Model(&model.AdtySiteDomain{}).Where("id = ?", domain.Id).Updates(updates).Error
+	return adtyDomainSnapshotQuery(tx, domain).Updates(updates).Error
+}
+
+func adtyAssignCheckedDomainTurnstile(ctx context.Context, tx *gorm.DB, domain *model.AdtySiteDomain) error {
+	if domain.Status != model.AdtySiteDomainActive || domain.TurnstileWidget != "" {
+		return nil
+	}
+	widget, err := adtyTurnstileAssign(ctx, tx, domain.Hostname)
+	if err != nil {
+		common.SysError(common.LogText("turnstile assign for domain %d failed", domain.Id))
+		return nil
+	}
+	if widget == "" {
+		return nil
+	}
+	if err := adtyDomainSnapshotQuery(tx, domain).Where("turnstile_widget = ?", "").Update("turnstile_widget", widget).Error; err != nil {
+		return err
+	}
+	domain.TurnstileWidget = widget
+	return nil
 }
 
 // RunAdtySiteDomainCheckOnce 查一遍 pending 的域名：status 和 ssl.status 都 active 才改成 active 并登记
@@ -579,7 +683,6 @@ func RunAdtySiteDomainCheckOnce(ctx context.Context, now time.Time) error {
 	if !cfg.CloudflareConfigured() {
 		return nil
 	}
-	zone := strings.TrimSpace(cfg.CloudflareZoneId)
 	var domains []model.AdtySiteDomain
 	if err := model.DB.Where("status = ? OR (status = ? AND turnstile_widget = ?)",
 		model.AdtySiteDomainPending, model.AdtySiteDomainActive, "").Find(&domains).Error; err != nil {
@@ -587,29 +690,38 @@ func RunAdtySiteDomainCheckOnce(ctx context.Context, now time.Time) error {
 	}
 	changed := false
 	for i := range domains {
-		domain := &domains[i]
+		activated, err := adtyCheckDomainSnapshot(ctx, &domains[i], now)
+		if err != nil {
+			return err
+		}
+		changed = changed || activated
+	}
+	if changed {
+		InvalidateAdtySiteCache()
+	}
+	return nil
+}
+
+func adtyCheckDomainSnapshot(ctx context.Context, snapshot *model.AdtySiteDomain, now time.Time) (changed bool, err error) {
+	err = adtyWithDomainLifecycle(ctx, snapshot, func(tx *gorm.DB, domain *model.AdtySiteDomain) error {
+		cfg := resellerSetting()
+		zone := strings.TrimSpace(cfg.CloudflareZoneId)
 		if domain.Status == model.AdtySiteDomainActive {
-			if widget, err := adtyTurnstileAssign(ctx, domain.Hostname); err == nil && widget != "" {
-				model.DB.Model(&model.AdtySiteDomain{}).Where("id = ?", domain.Id).Update("turnstile_widget", widget)
-			}
-			continue
+			return adtyAssignCheckedDomainTurnstile(ctx, tx, domain)
+		}
+		if domain.Status != model.AdtySiteDomainPending {
+			return nil
 		}
 		if domain.CFHostnameId == "" {
-			if err := adtyAttachCustomHostname(ctx, domain); err != nil {
+			if err := adtyAttachCustomHostnameLocked(ctx, tx, domain); err != nil {
 				return err
 			}
 			if domain.CFHostnameId == "" {
 				updates := map[string]any{"last_checked_at": now.Unix()}
 				if now.Sub(time.Unix(domain.CreatedAt, 0)) > adtyCustomDomainTimeout {
-					if err := adtyMarkCustomDomainFailed(ctx, zone, domain, updates); err != nil {
-						return err
-					}
-					continue
+					return adtyMarkCustomDomainFailed(ctx, tx, zone, domain, updates)
 				}
-				if err := model.DB.Model(&model.AdtySiteDomain{}).Where("id = ?", domain.Id).Updates(updates).Error; err != nil {
-					return err
-				}
-				continue
+				return adtyDomainSnapshotQuery(tx, domain).Updates(updates).Error
 			}
 		}
 		updates := map[string]any{"last_checked_at": now.Unix()}
@@ -623,12 +735,6 @@ func RunAdtySiteDomainCheckOnce(ctx context.Context, now time.Time) error {
 			}
 		case detail.Status == "active" && detail.SSL.Status == "active":
 			updates["status"], updates["ssl_status"], updates["last_error"] = model.AdtySiteDomainActive, detail.SSL.Status, ""
-			changed = true
-			widget, err := adtyTurnstileAssign(ctx, domain.Hostname)
-			if err != nil {
-				common.SysError(common.LogText("turnstile assign for domain %d failed", domain.Id))
-			}
-			updates["turnstile_widget"] = widget
 		default:
 			updates["ssl_status"] = detail.SSL.Status
 			updates["verify_records"] = verifyRecordsFor(domain.Hostname, strings.TrimSpace(cfg.CnameTarget), detail)
@@ -637,19 +743,22 @@ func RunAdtySiteDomainCheckOnce(ctx context.Context, now time.Time) error {
 			}
 		}
 		if updates["status"] == nil && now.Sub(time.Unix(domain.CreatedAt, 0)) > adtyCustomDomainTimeout {
-			if err := adtyMarkCustomDomainFailed(ctx, zone, domain, updates); err != nil {
+			return adtyMarkCustomDomainFailed(ctx, tx, zone, domain, updates)
+		}
+		result := adtyDomainSnapshotQuery(tx, domain).Updates(updates)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected > 0 && updates["status"] == model.AdtySiteDomainActive {
+			changed = true
+			domain.Status = model.AdtySiteDomainActive
+			if err := adtyAssignCheckedDomainTurnstile(ctx, tx, domain); err != nil {
 				return err
 			}
-			continue
 		}
-		if err := model.DB.Model(&model.AdtySiteDomain{}).Where("id = ?", domain.Id).Updates(updates).Error; err != nil {
-			return err
-		}
-	}
-	if changed {
-		InvalidateAdtySiteCache()
-	}
-	return nil
+		return nil
+	})
+	return changed, err
 }
 
 // adtyLoadActiveCustomDomains 是站点识别用的「active 的自定义域名 → 站点 id」（AdtyLoadCustomDomains）。
