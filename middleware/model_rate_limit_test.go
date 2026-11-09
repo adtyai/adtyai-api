@@ -45,6 +45,53 @@ func TestModelRedisRateLimitUsesUTCRegardlessOfLocalTimezone(t *testing.T) {
 
 var modelRateLimitTestUsers atomic.Int64
 
+func TestModelRateLimitMissingRedisClientFailsClosed(t *testing.T) {
+	previousRedis, previousClient := common.RedisEnabled, common.RDB
+	previousEnabled, previousMinutes := setting.ModelRequestRateLimitEnabled, setting.ModelRequestRateLimitDurationMinutes
+	previousTotal, previousSuccess := setting.ModelRequestRateLimitCount, setting.ModelRequestRateLimitSuccessCount
+	previousGroups := setting.ModelRequestRateLimitGroup
+	t.Cleanup(func() {
+		common.RedisEnabled, common.RDB = previousRedis, previousClient
+		setting.ModelRequestRateLimitEnabled, setting.ModelRequestRateLimitDurationMinutes = previousEnabled, previousMinutes
+		setting.ModelRequestRateLimitCount, setting.ModelRequestRateLimitSuccessCount = previousTotal, previousSuccess
+		setting.ModelRequestRateLimitGroup = previousGroups
+	})
+	common.RedisEnabled, common.RDB = true, nil
+	setting.ModelRequestRateLimitDurationMinutes = 1
+	setting.ModelRequestRateLimitGroup = nil
+	for _, tc := range []struct {
+		name           string
+		enabled        bool
+		total, success int
+		want           int
+	}{
+		{"success limit", true, 0, 1, http.StatusInternalServerError},
+		{"total limit", true, 1, 0, http.StatusInternalServerError},
+		{"both limits", true, 1, 1, http.StatusInternalServerError},
+		{"no limits", true, 0, 0, http.StatusNoContent},
+		{"disabled", false, 1, 1, http.StatusNoContent},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			setting.ModelRequestRateLimitEnabled = tc.enabled
+			setting.ModelRequestRateLimitCount, setting.ModelRequestRateLimitSuccessCount = tc.total, tc.success
+			called := false
+			router := gin.New()
+			router.GET("/", ModelRequestRateLimit(), func(c *gin.Context) {
+				called = true
+				c.Status(http.StatusNoContent)
+			})
+			assert.NotPanics(t, func() {
+				response := performRateLimitRequest(router, "/", "127.0.0.1:1000")
+				assert.Equal(t, tc.want, response.Code)
+				assert.Equal(t, tc.want == http.StatusNoContent, called, "missing shared rate-limit storage cannot admit a limited request")
+				if tc.want == http.StatusInternalServerError {
+					assert.Contains(t, response.Body.String(), "rate_limit_check_failed")
+				}
+			})
+		})
+	}
+}
+
 func TestModelRateLimitStreamFailuresDoNotConsumeSuccessLimit(t *testing.T) {
 	require.NoError(t, i18n.Init())
 	for _, backend := range []string{"memory", "redis"} {

@@ -426,3 +426,4 @@
 | `setting/ratio_setting/group_ratio.go` | JSON 编解码改走 `common` 的编解码包装，不再直接用 `encoding/json` | 根模块的 JSON 编解码必须走统一编解码 | 本次修改 |
 | `middleware/auth.go` | `TokenAuth` 和 `TokenAuthReadOnly` 验证用户后核对实际 Host 与 Key 用户的站点归属 | 主站、各分站和未知 Host 之间不能跨站使用 API Key，包含只读接口；错误使用八种后端语言 | 全平台验收 B/P |
 | `controller/responses_websocket.go` | 每条 `response.create` 重新鉴权时固定使用已认证握手的实际 Host | 内部合成请求不能改变站点身份，分站长连接继续按本站身份鉴权 | 全平台验收 B/P |
+| `middleware/model-rate-limit.go`、`middleware/model_rate_limit_test.go` | Redis 启用但客户端为空且存在次数限制时拒绝请求，保留未限流/关闭限流的正常请求；补真实中间件五项回归 | 防止成功次数及总次数检查空指针，依赖异常不能放行受限请求 | 全平台验收 R/S |

@@ -83,6 +83,10 @@ func redisRateLimitHandler(subject string, duration int64, totalMaxCount, succes
 	return func(c *gin.Context) {
 		ctx := context.Background()
 		rdb := common.RDB
+		if rdb == nil && (totalMaxCount > 0 || successMaxCount > 0) {
+			abortWithOpenAiMessage(c, http.StatusInternalServerError, "rate_limit_check_failed")
+			return
+		}
 
 		// 1. 检查成功请求数限制
 		successKey := fmt.Sprintf("rateLimit:%s:%s", ModelRequestRateLimitSuccessCountMark, subject)
