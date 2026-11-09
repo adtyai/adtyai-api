@@ -11,6 +11,13 @@
 - 提交：删除所在的提交。登记和删除在同一个提交里，那时还没有 SHA，先写提交标题。
 - 保留名单和理由：看起来相关、但有意留下的东西，以及为什么留。
 
+## 站长自助申请分站
+
+- 删除 `web/src/features/referral/components/site-apply-card.tsx` 及推广页引用，推广页不再显示申请表单。
+- 保留 `POST /api/adty/site/apply` 的拒绝处理，所有请求均返回403，不再创建站点或使用邀请码。
+- 保留历史申请数据、Root审批和内部开站服务，用于历史兼容及Root创建；用户不能通过旧入口自行开站。
+- 提交：`chore(delete): remove reseller self-service application UI`。
+
 ## 订阅
 
 ### 文件

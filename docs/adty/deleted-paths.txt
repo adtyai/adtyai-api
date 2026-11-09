@@ -72,3 +72,6 @@ web/src/features/home/lib/
 .github/workflows/electron-build.yml
 .github/workflows/release.yml
 .github/workflows/sync-release-to-gitcode.yml
+
+# 站长自助申请分站（最新产品范围）
+web/src/features/referral/components/site-apply-card.tsx

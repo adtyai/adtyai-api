@@ -17,65 +17,71 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 
 import { api } from '@/lib/api'
 
-import { SiteApplyCard } from '../components/site-apply-card'
+import { Referral } from '..'
 
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
 })
 
-it('keeps application disabled while the agreement fails and enables it only after readable terms and version load', async () => {
-  let loaded = false
+it('shows the referral account without offering self-service site creation', async () => {
   vi.spyOn(api, 'get').mockImplementation(async (url) => {
+    if (url === '/api/user/referral/profile') {
+      return {
+        data: {
+          success: true,
+          data: {
+            affiliate: {
+              invite_code: 'referral-code',
+              status: 'approved',
+              partner_status: '',
+              withdrawal_enabled: true,
+            },
+            account: {
+              pending_amount: 0,
+              available_amount: 0,
+              frozen_amount: 0,
+              withdrawn_amount: 0,
+            },
+            rate: '10',
+            freeze_days: 7,
+            min_withdraw_usd: null,
+            usdt_withdraw_fee: null,
+            cancel_window_minutes: 30,
+            cny_rate: '',
+            cny_rate_updated_at: 0,
+            enabled: true,
+            site_owner: false,
+            funnel: { clicks: 0, signups: 0, paying: 0, earned: '0' },
+          },
+        },
+      }
+    }
     if (url === '/api/adty/site') {
       return { data: { success: true, data: { site_agreement_version: 4 } } }
     }
-    if (!loaded) throw new Error('Synthetic terms failure')
-    return {
-      data: {
-        success: true,
-        data: '## Synthetic reseller terms\nRead before applying.',
-      },
+    if (String(url).startsWith('/api/adty/legal/')) {
+      return { data: { success: true, data: 'Current reseller terms' } }
     }
+    return { data: { success: true, data: { items: [], total: 0 } } }
   })
-  const post = vi
-    .spyOn(api, 'post')
-    .mockResolvedValue({ data: { success: true } })
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
   render(
     <QueryClientProvider client={client}>
-      <SiteApplyCard />
+      <Referral />
     </QueryClientProvider>
   )
-  await userEvent.type(screen.getByLabelText('Subdomain'), 'synthetic-shop')
-  await userEvent.click(screen.getByRole('checkbox'))
-  const apply = screen.getByRole('button', {
-    name: 'Apply for a reseller site',
-  })
-  expect(apply).toBeDisabled()
-  loaded = true
-  await userEvent.click(await screen.findByRole('button', { name: 'Retry' }))
+  expect(await screen.findByText('Your referral link')).toBeInTheDocument()
   expect(
-    await screen.findByRole('heading', { name: 'Synthetic reseller terms' })
-  ).toBeInTheDocument()
-  expect(apply).toBeEnabled()
-  await userEvent.click(apply)
-  await waitFor(() =>
-    expect(post).toHaveBeenCalledWith(
-      '/api/adty/site/apply',
-      expect.objectContaining({
-        subdomain: 'synthetic-shop',
-        agree_version: '4',
-      })
-    )
-  )
+    screen.queryByRole('button', { name: 'Apply for a reseller site' })
+  ).not.toBeInTheDocument()
+  expect(screen.queryByLabelText('Subdomain')).not.toBeInTheDocument()
   client.clear()
 })
