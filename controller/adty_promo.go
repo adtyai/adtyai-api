@@ -53,7 +53,7 @@ func (in *adtyPromoCodeInput) apply(code *model.AdtyPromoCode) bool {
 	return true
 }
 
-// GetAdtyPromoCodes 列出优惠码（营销·查看）。
+// GetAdtyPromoCodes 列出优惠码（支付·查看）。
 func GetAdtyPromoCodes(c *gin.Context) {
 	query := model.DB.Model(&model.AdtyPromoCode{})
 	if keyword := model.NormalizeAdtyPromoCode(c.Query("keyword")); keyword != "" {
@@ -63,7 +63,7 @@ func GetAdtyPromoCodes(c *gin.Context) {
 	referralPage(c, query, &items)
 }
 
-// PostAdtyPromoCode 新建平台出资的优惠码（营销·编辑）。
+// PostAdtyPromoCode 新建平台出资的优惠码（Root）。
 func PostAdtyPromoCode(c *gin.Context) {
 	var in adtyPromoCodeInput
 	code := model.AdtyPromoCode{CreatedBy: c.GetInt("id")}
@@ -88,7 +88,7 @@ func PostAdtyPromoCode(c *gin.Context) {
 	common.ApiSuccess(c, code)
 }
 
-// PutAdtyPromoCode 改优惠码（营销·编辑）。码本身和已用次数不改。
+// PutAdtyPromoCode 改优惠码（Root）。码本身和已用次数不改。
 func PutAdtyPromoCode(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {

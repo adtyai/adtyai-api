@@ -43,7 +43,6 @@ export interface RegisterPayload {
   verification_code?: string
   turnstile?: string
   /** adty task 12.1 */
-  marketing_consent?: boolean
   agreement_accepted?: boolean
   lang?: string
   /** adty task 11.7, sent as a query parameter */

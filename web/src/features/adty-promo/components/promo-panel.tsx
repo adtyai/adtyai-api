@@ -36,19 +36,19 @@ import { DraftDiscardDialog } from '@/features/system-settings/components/draft-
 import { useDraftNavigation } from '@/features/system-settings/hooks/use-draft-navigation'
 import { formatUsd } from '@/features/wallet/adty/lib/money'
 import { toIntlLocale } from '@/i18n/languages'
-import { ADTY_PERMISSIONS, canAdmin } from '@/lib/adty-permissions'
 import { formatNumber, formatTimestamp } from '@/lib/format'
 import { handleServerError } from '@/lib/handle-server-error'
+import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
 
 import {
   getPromoCodes,
-  marketingKeys,
+  promoKeys,
   savePromoCode,
   type PromoCode,
   type PromoCodeInput,
 } from '../api'
-import { dateInputToUnix, unixToDateInput } from '../lib/campaign'
+import { dateInputToUnix, unixToDateInput } from '../lib/dates'
 
 const EMPTY: PromoCodeInput = {
   code: '',
@@ -99,7 +99,7 @@ export function PromoPanel(props: { canCreate: boolean; canWrite: boolean }) {
     JSON.stringify(editing.input) !== JSON.stringify(editing.initialInput)
   useDraftNavigation(dirty)
   const query = useQuery({
-    queryKey: marketingKeys.promoCodes(page),
+    queryKey: promoKeys.promoCodes(page),
     queryFn: () => getPromoCodes(page),
   })
   const save = useMutation({
@@ -107,12 +107,7 @@ export function PromoPanel(props: { canCreate: boolean; canWrite: boolean }) {
       if (
         !editing ||
         !(editing.id === null ? props.canCreate : props.canWrite) ||
-        !canAdmin(
-          useAuthStore.getState().auth.user,
-          editing.id === null
-            ? ADTY_PERMISSIONS.MARKETING_CREATE
-            : ADTY_PERMISSIONS.MARKETING_WRITE
-        )
+        (useAuthStore.getState().auth.user?.role ?? 0) < ROLE.SUPER_ADMIN
       ) {
         throw new Error(t('No permission to perform this action'))
       }
@@ -121,7 +116,7 @@ export function PromoPanel(props: { canCreate: boolean; canWrite: boolean }) {
     onSuccess: () => {
       toast.success(t('Saved successfully'))
       setEditing(null)
-      void queryClient.invalidateQueries({ queryKey: marketingKeys.all })
+      void queryClient.invalidateQueries({ queryKey: promoKeys.all })
     },
     onError: (err) => handleServerError(err),
   })
@@ -140,11 +135,7 @@ export function PromoPanel(props: { canCreate: boolean; canWrite: boolean }) {
   return (
     <div className='flex flex-col gap-3'>
       {query.isError && <ErrorState onRetry={() => void query.refetch()} />}
-      <p className='text-muted-foreground text-sm'>
-        {t(
-          'Promo codes add bonus credit to a paid top-up; the price stays the same. Uses are counted when the payment is credited. Codes funded by sub-site owners are not available yet.'
-        )}
-      </p>
+      <p className='text-muted-foreground text-sm'>{t('Promo codes')}</p>
       {props.canCreate && (
         <div>
           <Button

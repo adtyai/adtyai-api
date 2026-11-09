@@ -21,6 +21,7 @@ import { parseCurrencyDisplayType } from '@/lib/currency'
 import { CheckinSettingsSection } from '../general/checkin-settings-section'
 import { PricingSection } from '../general/pricing-section'
 import { QuotaSettingsSection } from '../general/quota-settings-section'
+import { AdtyPromoSettingsSection } from '../integrations/adty-promo-settings-section'
 import { PaymentSettingsSection } from '../integrations/payment-settings-section'
 import { AdtyOfficialPricesSection } from '../models/adty-official-prices-section'
 import { RatioSettingsCard } from '../models/ratio-settings-card'
@@ -212,6 +213,17 @@ const BILLING_SECTIONS = [
           minQuota: settings['checkin_setting.min_quota'],
           maxQuota: settings['checkin_setting.max_quota'],
         }}
+      />
+    ),
+  },
+  {
+    id: 'promo-codes',
+    titleKey: 'Promo codes',
+    build: (settings: BillingSettings) => (
+      <AdtyPromoSettingsSection
+        defaultEnabled={
+          settings['adty_marketing_setting.promo_enabled'] ?? false
+        }
       />
     ),
   },

@@ -126,6 +126,8 @@ let channelID,
   originalCallback,
   originalServerAddress,
   originalChats,
+  originalPromoEnabled,
+  originalNotice,
   authHeaders,
   page
 async function api(method, path, data) {
@@ -180,6 +182,10 @@ try {
   originalServerAddress =
     options.find((o) => o.key === 'ServerAddress')?.value ?? ''
   originalChats = options.find((o) => o.key === 'Chats')?.value ?? '[]'
+  originalPromoEnabled =
+    options.find((o) => o.key === 'adty_marketing_setting.promo_enabled')
+      ?.value ?? 'false'
+  originalNotice = options.find((o) => o.key === 'Notice')?.value ?? ''
   await api('put', '/api/option/', {
     key: 'Chats',
     value: JSON.stringify([{ 'Local browser chat': `${base}/about` }]),
@@ -199,6 +205,10 @@ try {
       0
     )
     assert.equal(await chatMenu.getAttribute('aria-expanded'), 'false')
+    assert.equal(
+      await page.getByRole('link', { name: 'Marketing', exact: true }).count(),
+      0
+    )
     const mutations = []
     const trackMutation = (request) => {
       if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method())) {
@@ -257,6 +267,82 @@ try {
   }
   console.log(
     'PASS retired Playground page 404, legacy bookmark dashboard fallback, absent menu/shortcuts and anonymous/session API 404'
+  )
+  await page.goto(base + '/marketing')
+  await page.getByRole('heading', { name: '404', exact: true }).waitFor()
+  for (const headers of [{}, authHeaders]) {
+    for (const path of [
+      '/api/adty/marketing/self',
+      '/api/adty/admin/marketing/settings',
+      '/api/adty/admin/marketing/campaigns',
+      '/api/adty/admin/marketing/promo-codes',
+    ]) {
+      const retired = await fetch(base + path, { headers })
+      assert.equal(retired.status, 404, path)
+      assert.ok(
+        retired.headers.get('content-type')?.includes('application/json')
+      )
+    }
+  }
+  await page.goto(base + '/system-settings/billing/promo-codes')
+  const promoToggle = page.getByRole('switch', {
+    name: 'Allow users to enter promo codes',
+  })
+  await promoToggle.waitFor()
+  const wasEnabled = (await promoToggle.getAttribute('aria-checked')) === 'true'
+  await promoToggle.click()
+  const flagSaved = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'PUT' &&
+      new URL(response.url()).pathname === '/api/option/'
+  )
+  await page.getByRole('button', { name: 'Save Changes', exact: true }).click()
+  assert.equal((await (await flagSaved).json()).success, true)
+  await page.reload()
+  await promoToggle.waitFor()
+  assert.equal(
+    await promoToggle.getAttribute('aria-checked'),
+    String(!wasEnabled)
+  )
+  await page
+    .getByRole('button', { name: 'New promo code', exact: true })
+    .click()
+  const promoDialog = page.getByRole('dialog', {
+    name: 'New promo code',
+    exact: true,
+  })
+  await promoDialog.getByLabel('Code', { exact: true }).fill('BROWSER10')
+  await promoDialog.getByLabel('Bonus %', { exact: true }).fill('10')
+  await promoDialog.getByRole('button', { name: 'Save', exact: true }).click()
+  await promoDialog.waitFor({ state: 'hidden' })
+  const promoRow = page.getByRole('row').filter({ hasText: 'BROWSER10' })
+  await promoRow.getByRole('button', { name: 'Edit', exact: true }).click()
+  const editPromo = page.getByRole('dialog', {
+    name: 'Edit promo code',
+    exact: true,
+  })
+  await editPromo
+    .getByLabel('Note', { exact: true })
+    .fill('Persisted browser promo edit')
+  await editPromo.getByRole('button', { name: 'Save', exact: true }).click()
+  await editPromo.waitFor({ state: 'hidden' })
+  const promoList = await api('get', '/api/adty/admin/promo-codes')
+  assert.equal(
+    promoList.items.find((code) => code.code === 'BROWSER10')?.note,
+    'Persisted browser promo edit'
+  )
+  await api('put', '/api/option/', {
+    key: 'Notice',
+    value: 'Local system announcement remains available',
+  })
+  const noticeResponse = await fetch(base + '/api/notice')
+  assert.equal(noticeResponse.status, 200)
+  assert.equal(
+    (await noticeResponse.json()).data,
+    'Local system announcement remains available'
+  )
+  console.log(
+    'PASS retired Marketing menu/page/API 404, billing promo flag save/reload, promo create/edit and preserved system announcement'
   )
   await page.goto(`${base}/wallet`)
   await page.getByLabel('Custom amount (USD)', { exact: true }).waitFor()
@@ -721,6 +807,18 @@ try {
   }
   process.exitCode = 1
 } finally {
+  for (const [key, value] of [
+    ['adty_marketing_setting.promo_enabled', originalPromoEnabled],
+    ['Notice', originalNotice],
+  ]) {
+    if (value !== undefined && authHeaders) {
+      try {
+        await api('put', '/api/option/', { key, value })
+      } catch (e) {
+        console.error('cleanup option', key, String(e))
+      }
+    }
+  }
   if (originalChats !== undefined && authHeaders) {
     try {
       await api('put', '/api/option/', { key: 'Chats', value: originalChats })

@@ -16,16 +16,17 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useQuery } from '@tanstack/react-query'
+/** yyyy-mm-dd in local time → unix seconds at local midnight; '' → 0. */
+export function dateInputToUnix(value: string): number {
+  if (!value) return 0
+  const [year, month, day] = value.split('-').map(Number)
+  if (!year || !month || !day) return 0
+  return Math.floor(new Date(year, month - 1, day).getTime() / 1000)
+}
 
-import { getMarketingConsentDefault, marketingKeys } from '../api'
-
-/** Public query for the sign-up page; failures hide the checkbox silently. */
-export function useMarketingConsentDefault() {
-  return useQuery({
-    queryKey: marketingKeys.consentDefault,
-    queryFn: getMarketingConsentDefault,
-    staleTime: 5 * 60 * 1000,
-    meta: { errorToast: false },
-  })
+export function unixToDateInput(value: number | undefined): string {
+  if (!value) return ''
+  const date = new Date(value * 1000)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
 }

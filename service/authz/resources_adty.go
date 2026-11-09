@@ -10,9 +10,7 @@ const (
 	ResourceAdtyFinance  = "adty_finance"
 	ResourceAdtyReferral = "adty_referral"
 	ResourceAdtyPayment  = "adty_payment"
-	// ResourceAdtyMarketing 是营销（P12）：查看、编辑（设置、草稿、优惠码）、发送群发。
-	ResourceAdtyMarketing = "adty_marketing"
-	ResourceAdtySite      = "adty_site"
+	ResourceAdtySite     = "adty_site"
 
 	ActionGroup          = "group"
 	ActionQuota          = "quota"
@@ -59,12 +57,6 @@ var (
 
 	AdtyPaymentRead    = Permission{Resource: ResourceAdtyPayment, Action: ActionRead}
 	AdtyPaymentOperate = Permission{Resource: ResourceAdtyPayment, Action: ActionOperate}
-
-	AdtyMarketingRead   = Permission{Resource: ResourceAdtyMarketing, Action: ActionRead}
-	AdtyMarketingWrite  = Permission{Resource: ResourceAdtyMarketing, Action: ActionWrite}
-	AdtyMarketingSend   = Permission{Resource: ResourceAdtyMarketing, Action: ActionSend}
-	AdtyMarketingCreate = Permission{Resource: ResourceAdtyMarketing, Action: ActionCreate}
-	AdtyMarketingDelete = Permission{Resource: ResourceAdtyMarketing, Action: ActionDelete}
 
 	AdtySiteRead           = Permission{Resource: ResourceAdtySite, Action: ActionRead}
 	AdtySiteReview         = Permission{Resource: ResourceAdtySite, Action: ActionReview}
@@ -137,17 +129,7 @@ var adtyResources = []ResourceDefinition{
 			{Action: ActionOperate, LabelKey: "Operate payment channels", DescriptionKey: "Enable, disable and test payment channels."},
 		},
 	},
-	{
-		Resource: ResourceAdtyMarketing,
-		LabelKey: "Marketing",
-		Actions: []ActionDefinition{
-			{Action: ActionRead, LabelKey: "View marketing", DescriptionKey: "View marketing settings, campaigns, statistics, promo codes and sign-up sources."},
-			{Action: ActionCreate, LabelKey: "Create marketing records", DescriptionKey: "Create campaigns, templates and promo codes."},
-			{Action: ActionWrite, LabelKey: "Edit marketing", DescriptionKey: "Change marketing settings, update campaigns and templates, automated emails and promo codes."},
-			{Action: ActionDelete, LabelKey: "Delete marketing records", DescriptionKey: "Delete campaigns and templates."},
-			{Action: ActionSend, LabelKey: "Send campaigns", DescriptionKey: "Send, schedule and cancel marketing campaigns."},
-		},
-	},
+
 	{
 		Resource: ResourceAdtySite,
 		LabelKey: "Reseller sites",

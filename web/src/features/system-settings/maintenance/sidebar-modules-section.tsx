@@ -154,12 +154,6 @@ export function SidebarModulesSection({
         title: t('Referral management'),
         description: t('Affiliates, commissions and withdrawal review.'),
       },
-      marketing: {
-        title: t('Marketing'),
-        description: t(
-          'Campaign emails, automated emails, promo codes and sign-up sources.'
-        ),
-      },
       setting: {
         title: t('System settings'),
         description: t('Advanced platform configuration.'),

@@ -11,7 +11,7 @@
 - **主节点**：定时任务（结算、补查、同步、关站执行等）只在主节点跑。
 - **菜单折叠**：有子项的父菜单默认折叠，当前路由不会自动展开；点击文字、箭头或键盘操作切换，子项继续标记当前页。复用现有 Sidebar/Collapsible；真实组件回归覆盖通用菜单，生产浏览器覆盖桌面与移动对话预设及无业务写请求。
 
-目录：充值和加赠 · USDT 和易支付多通道 · 充值退款 · 余额下限 · 推广返佣 · 站长分站 · 分组和后台权限 · 营销 · 网页客服、状态页、多语言、首页 SEO · 限流、脱敏和其他安全 · 官方价、接入文档、条款 · 品牌和 Logo。
+目录：充值和加赠 · USDT 和易支付多通道 · 充值退款 · 余额下限 · 推广返佣 · 站长分站 · 分组和后台权限 · 营销模块删除与优惠码保留 · 网页客服、状态页、多语言、首页 SEO · 限流、脱敏和其他安全 · 官方价、接入文档、条款 · 品牌和 Logo。
 
 ## 充值和加赠
 
@@ -30,7 +30,7 @@
   - 支付宝、微信应付 = 面额 × 人民币单价 `Price`（默认 7.3）× 分组充值倍率（2 位）。
   - 优惠码只多送额度，应付不变。返佣只按面额算，不含任何加赠。
 - **优惠码**：类型是按比例（0 < 值 ≤ 100）或固定金额（0 < 值 ≤ $100000）；码由 3–32 位大写字母、数字、`_`、`-` 组成，不分大小写。报价时校验：启用、适用站点和用户所属站点一致、在有效期内、面额达到最低面额、总次数和每人次数没用完、「只限新用户」时这个人从没充值成功过。次数在入账事务里用条件更新扣，每笔订单只核销一次；订单过期或取消不占次数。入账时码已经不能用了（停用、用完、删掉），照常入账面额和档位加赠，只去掉优惠加赠（钱已经收到了，不拒绝入账）。
-  - **平台出资**：后台「营销 → 优惠码」建，可以指定适用站点；不记站长收益。
+  - **平台出资**：Root 在「系统设置 → 计费 → 优惠码」建，可以指定适用站点；不记站长收益。
   - **站长出资**：站长在站长中心建，只给本站客户用；站点档位加赠 + 优惠加赠不能超过 面额 ×（主站同档比例 + `adty_reseller_setting.max_site_bonus_extra`）÷ 100；入账时站长出的部分从站长收益里扣（见「站长分站」）。
 - **分站客户**：按站点自己的档位（`adty_sites.bonus_rates`）算，不会回落到主站档位。
 
@@ -44,7 +44,7 @@
 **后台**：
 
 - 系统设置 → 计费 → 支付（只有超级管理员）：人民币单价 `Price`、最低充值 `MinTopUp`、金额按钮、加赠档位、回调地址 `CustomCallbackAddress`。
-- 营销 → 优惠码（`/marketing`）：平台出资的码。
+- 系统设置 → 计费 → 优惠码（`/system-settings/billing/promo-codes`，Root）：平台出资的码。
 - 站长中心 → 加赠、优惠码（`/site-owner/bonus`、`/site-owner/promo-codes`）：站点档位和站长出资的码。
 
 **默认**：没有档位，不送加赠。2026-11-01 起不再需要「支付合规确认」，支付默认就能用（见 deleted-features.md）。
@@ -53,7 +53,7 @@
 
 - 表：`top_ups`（上游的充值记录，`Amount` 记美元面额、`Money` 记应付）、`adty_topup_orders`（面额、加赠、入账额度、优惠、站点、返佣快照）、`adty_promo_codes`、`adty_promo_redemptions`。
 - 用户：`GET /api/adty/topup/info`、`POST /api/adty/topup/quote`、`GET /api/adty/topup/orders/:trade_no`、`POST /api/adty/topup/orders/:trade_no/cancel`、`GET /api/adty/topup/pending`、`GET /api/adty/topup/self`。
-- 平台优惠码：`GET`、`POST /api/adty/admin/marketing/promo-codes`，`PUT /api/adty/admin/marketing/promo-codes/:id`。站长优惠码：`GET`、`POST /api/adty/site/promo-codes`，`PUT`、`DELETE /api/adty/site/promo-codes/:id`（写操作要重新验证身份）。
+- 平台优惠码：`GET`、`POST /api/adty/admin/promo-codes`，`PUT /api/adty/admin/promo-codes/:id`。站长优惠码：`GET`、`POST /api/adty/site/promo-codes`，`PUT`、`DELETE /api/adty/site/promo-codes/:id`（写操作要重新验证身份）。
 
 **限制**：
 
@@ -295,7 +295,7 @@ Logo：PNG、JPEG 或不含脚本的 SVG，不超过 200 KB，存在 `/data/uplo
 ### 发件域名
 
 - 要先打开 `sender_domain_enabled`（默认关），并在「系统设置 → 邮件」填好上游的 `ResendApiKey`。
-- **流程**：站长在站点设置里填域名 → 后端在 Resend 建域名，把要加的 DNS 记录给站长看 → 主节点每 10 分钟查一次，验证通过就启用。启用后，这个站客户的系统邮件用「站名 <noreply@站长域名>」发；没验证或停用时用平台发信地址、显示分站站名。营销邮件一律用平台营销地址，只换显示名。
+- **流程**：站长在站点设置里填域名 → 后端在 Resend 建域名，把要加的 DNS 记录给站长看 → 主节点每 10 分钟查一次，验证通过就启用。启用后，这个站客户的系统邮件用「站名 <noreply@站长域名>」发；没验证或停用时用平台发信地址、显示分站站名。营销发送任务已删除。
 - Resend 套餐有域名数上限，满了提示「No sender domain slots are left」。关站时自动删除。
 - 表：`adty_site_sender_domains`。接口：`GET`、`POST`、`DELETE /api/adty/site/sender-domain`（删除要重新验证）；管理员停用 `DELETE /api/adty/admin/sites/:id/sender-domain`。
 
@@ -333,7 +333,7 @@ Logo：PNG、JPEG 或不含脚本的 SVG，不超过 200 KB，存在 `/data/uplo
 - Linux副本中 `bash scripts/adty/check.sh --backend` 和 `--frontend` 均退出0；前端295文件、3341项测试通过，1194个ADTY语言键八语检查通过。生产浏览器门禁 `bash scripts/adty/browser-business.sh` 在隔离PostgreSQL 17与Redis上通过，覆盖真实页面下单、续付、验签、入账、回调幂等、取消、审核记录、可见性保存及权限；仅外部支付网关使用mock。
 - 直接开站已与佣金转余额统一为先锁推广员、再锁用户的顺序；开站失败回滚站长标记和新账户。MySQL 开站事务使用 READ COMMITTED，资格检查包含等待用户锁之前已提交的待审核站点；并发推广页创建记录仍补齐站长标记，重开保留首次时间且阻止并行恢复返佣清零。真实三库回归、历史审批锁等待和本轮完整后端门禁通过；原 PostgreSQL 死锁、MySQL 双站及并发漏标记均先观察失败后修复。
 - 以上是本轮局部证据，整体仍为“代码级验收未通过”。团队、通知、员工权限及完整三钱包收支等最新总方案缺口尚未闭环。外部DNS、Cloudflare、SSL及支付供应商仍待实际联调。
-- 关站前客户通知、涨价前客户通知、改 d 后站长通知已接入站点系统邮件；营销邮件继续固定使用平台发件地址。发送结果及失败可重试状态按邮件任务记录。
+- 关站前客户通知、涨价前客户通知、改 d 后站长通知已接入站点系统邮件；营销发送任务已删除。发送结果及失败可重试状态按邮件任务记录。
 - 每月业绩档位任务已注册，按上月业绩计算 `tier_cost_factor`，未达到档位时恢复默认规则。
 - 总览、风控复核和举报、经营数据均已接入实际接口；站点列表显示本月充值、营业额和收益，排序由后端执行。
 - 站点明细提供自定义域名、发件域名停用操作。域名生命周期使用数据库锁，并在恢复外部创建操作时核验站点、域名和 generation 所有权。
@@ -378,7 +378,6 @@ Logo：PNG、JPEG 或不含脚本的 SVG，不超过 200 KB，存在 `/data/uplo
 | 充值财务 | 查看订单和充值对账、手动补单、退款 |
 | 推广返佣 | 查看、审核（合作伙伴申请、提现）、标记已打款、调整（佣金、冻结结算、比例、停用推广员）、设置（含提现汇率） |
 | 支付通道 | 查看状态、操作（启停、测试） |
-| 营销 | 查看（设置、群发、统计、优惠码、注册来源）、编辑（设置、草稿、模板、自动邮件、优惠码）、发送（群发、定时、取消） |
 | 分站 | 查看（站点、客户、统计）、审核（开站、复核风控客户、处理举报）、调整（d、k 上限、可见范围、暂停、恢复、关站）、设置（分站设置、开站邀请码） |
 
   上游原有的「渠道管理」「审计日志」「任务插件」三个区域照旧。
@@ -387,42 +386,15 @@ Logo：PNG、JPEG 或不含脚本的 SVG，不超过 200 KB，存在 `/data/uplo
 
 任务 2.6、2.7。
 
-## 营销
+## 营销模块删除与优惠码保留
 
-**同意和退订**：
+按最新产品范围，独立营销中心、营销群发和自动邮件、注册营销同意、个人营销偏好、注册来源采集及统计已删除。`/marketing` 无页面，旧 `/api/adty/marketing` 与 `/api/adty/admin/marketing` 命名空间返回 JSON 404；插件及外置前端不能接管这些入口。旧营销权限不再列入权限目录。
 
-- 注册页有「接收产品更新和优惠信息」勾选框。是不是欧盟按 Cloudflare 的 `CF-IPCountry` 头判断（Nginx 要透传），国家列表是 `adty_marketing_setting.eu_countries`（默认欧盟、EEA、英国、瑞士）；拿不到国家（空、XX、T1）当欧盟处理。欧盟一律默认不勾，其他地区按 `consent_default_non_eu`（默认不勾）。同意的时间、IP 哈希、语言、文案版本（`consent_version`）都存下来。
-- 用户在个人设置里随时能改（`/api/adty/marketing/self`）；退订后重新勾选会解除退订。退信和投诉的标记永不解除。退订不影响系统邮件（验证码、找回密码、充值到账、额度提醒）。
-- 只有同意、没退订、没退信、没投诉的人同步到 Resend 的联系人。Resend 的 webhook（`POST /api/adty/marketing/resend-webhook`）按 Svix 签名验签（密钥 `adty_marketing_setting.webhook_secret`），收到退订、退信、投诉就本地标记，以后不再发。
-- 群发邮件带 Resend 的一键退订链接；自动邮件逐封发，用我们自己的签名退订链接（`/api/adty/marketing/unsubscribe`，GET 显示确认页、POST 退订），并带 `List-Unsubscribe` 和一键退订头。
+付费充值优惠码保留，平台配置位于「系统设置 → 计费 → 优惠码」（`/system-settings/billing/promo-codes`）。该页面沿用系统设置的 Root 权限；独立接口 `/api/adty/admin/promo-codes` 允许支付查看权限列出，创建和修改仅限 Root，访问令牌还需 `option:write`。支付查看权限不会开放 Root 系统设置页面或配置接口。历史开关 `adty_marketing_setting.promo_enabled` 保留原值；其他旧营销配置不注册，也不再存在同步、群发或触发任务。优惠码仅用于付费充值的额外加赠，报价、付款和核销约束沿用原链路；站长优惠码仍在站长中心。历史优惠码审计事件标识保留，便于查询连续记录。
 
-**群发**（营销 → 群发，`/marketing`）：
+新库不再创建营销联系人、群发、发送、收件人、webhook、触发记录和注册来源七张表。升级不删除或改写这些旧表及历史行；优惠码与核销表继续迁移。真实 SQLite 3.50.4、MySQL 8.4.13、PostgreSQL 17.11 已覆盖本次迁移入口的新建、升级及两次迁移，保留历史数据和唯一约束。全量 MySQL 启动另有既存 OAuth 部分索引语法缺陷待修，不能据此声称全量三库启动通过。
 
-- 按语言、注册时间、最后活跃、是否充过值、余额区间、分组、所属站点筛选，显示预计人数（只算能发的人）。分站客户默认不含（`include_site_customers_default`）；勾选包含时每个分站单独发一次，用分站站名。
-- 8 种语言各写一版，没写的语言用英文版；变量映射成 Resend 的联系人属性；可以存成模板。
-- 先测试发给自己，可以定时；发送前二次确认人数和语言版本，每次群发写审计。发送时在 Resend 建一个临时分组，再按语言建 broadcast。中途可以取消：定时的回到草稿，排队中的停止剩下没发的。
-- 统计：送达、退信、投诉、退订、打开、点击，来自 webhook 和 broadcast 接口。
-- 发件地址 `from_address`，底部的发件方名称和联系方式 `footer_company`、`footer_address`（CAN-SPAM 要求），打开和点击统计 `open_tracking`、`click_tracking`（默认开，只应在营销子域名上开）。
-
-**自动邮件**（营销 → 自动邮件），每条单独开关，默认都关；只发给同意营销的人，同一用户同一规则只发一次，每条规则每小时最多发 `trigger_batch_size`（默认 200）封：
-
-| 规则 | 初始值 | 条件 |
-|---|---|---|
-| 调用过但没充值 | 注册满 3 天 | 有消费、从没充值成功 |
-| 余额快用完 | 余额低于 $1 | 付费用户；上游的额度不足提醒开着、这个人没关、阈值不低于营销阈值时，营销这封不发 |
-| 付费用户召回 | 30 天没调用 | 充过值、最近 N 天没有调用 |
-
-**优惠码**：见「充值和加赠」。
-
-**注册来源统计**：首次访问时把 UTM 参数、落地页和来源域名写进 cookie `adty_src`（30 天），注册时记下（加上推广人、所属站点），存在 `adty_signup_sources`；后台「营销 → 来源统计」按来源统计注册数、付费数、充值额、消费额。隐私政策要写明会记录来源。
-
-**默认**：营销总开关 `adty_marketing_setting.enabled` 默认关；发件地址、底部发件方名称和联系方式、webhook 签名密钥、Resend API Key（复用「系统设置 → 邮件」的 `ResendApiKey`）都填了才能打开，没填的项旁边显示「未配置」。
-
-**表和接口**：`adty_marketing_contacts`、`adty_marketing_campaigns`、`adty_marketing_campaign_sends`、`adty_marketing_campaign_recipients`、`adty_marketing_webhook_events`、`adty_marketing_trigger_sends`、`adty_promo_codes`、`adty_promo_redemptions`、`adty_signup_sources`。后台接口都在 `/api/adty/admin/marketing/` 下：`settings`、`campaigns`（及 `/:id`、`/:id/plan`、`/:id/test`、`/:id/send`、`/:id/cancel`）、`audience/estimate`、`triggers`、`sources`、`promo-codes`。
-
-**限制**：所有 Resend 调用只在假服务器上测过；自定义联系人属性的模板写法 `{{{contact.<键>}}}` 是照官方内置字段的格式类推的，上线前实测。
-
-任务 12.1–12.5。
+系统通知、公告、验证码、找回密码、充值到账、额度提醒、站点经营通知及发件域名管理保留。外部 Resend 与正式支付供应商仍需独立联调验收。
 
 ## 网页客服、状态页、多语言、首页 SEO
 
@@ -495,6 +467,6 @@ Logo：PNG、JPEG 或不含脚本的 SVG，不超过 200 KB，存在 `/data/uplo
 - 后台「系统设置 → 站点 → 系统信息」填了 Logo 以后，前端会把所有标签图标换成这一个 Logo，`favicon.svg` 的深浅色和 16/32 PNG 就不再生效（读代码得出，没在浏览器实测）。想保留整套标签图标，Logo 可以留空。
 - 控制台顶栏左上角的 Logo 盖住了「Home」导航（换 Logo 之前就有），记在上线清单里，代码审查时修。
 - 公开页脚没有产品、客服、源码列，也不显示上游署名。客服邮箱不写在页脚；错误页反馈按钮仍读 `adty_site_setting.support_email`。
-- 系统邮件和营销邮件的模板还没有图片页眉；要加时用 `adtyai-logo/email/logo-email-header.png`（见上线清单）。
+- 系统邮件模板还没有图片页眉；要加时用 `adtyai-logo/email/logo-email-header.png`（见上线清单）。
 
 任务 8.1、8.2、8.9；新 Logo 2026-11-01（提交 b87c3bff8）。公开页脚和首页接入说明 2026-11-02。

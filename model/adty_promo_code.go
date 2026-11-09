@@ -58,10 +58,6 @@ type AdtyPromoRedemption struct {
 
 func (AdtyPromoRedemption) TableName() string { return "adty_promo_redemptions" }
 
-func init() {
-	adtyMarketingTables = append(adtyMarketingTables, &AdtyPromoCode{}, &AdtyPromoRedemption{})
-}
-
 // NormalizeAdtyPromoCode 去掉空格、转大写。
 func NormalizeAdtyPromoCode(code string) string {
 	return strings.ToUpper(strings.TrimSpace(code))

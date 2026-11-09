@@ -316,3 +316,9 @@ P6 移植旧项目前端时，不要把 `?aff=` 和 `features/auth/lib/storage.t
 - 保留：确认接口 `POST /api/option/payment_compliance`（`ConfirmPaymentCompliance`）、设置项 `payment_setting.compliance_*`、`/api/adty/topup/info` 返回的 `compliance_confirmed`（现在恒为 true）、钱包类型里的这个字段、语言包里的旧键（约定 E）。它们都不再起作用。
 - 测试：`router/adty_topup_test.go`、`service/adty_topup_quote_test.go` 和前端 `adty-recharge-card.test.tsx` 原来测「没确认时拒绝」，改成测「不确认也能充值」；`router/adty_bepusdt_test.go` 的 `TestBEpusdtPayRequiresComplianceAndHandlesGatewayFailure` 改名为 `TestBEpusdtPayHandlesGatewayFailure`，删掉验证锁本身的前半段（「不确认也能下单」已由 `TestAdtyWalletTopUpAPIs` 覆盖）。上游的 `controller/payment_webhook_availability_test.go` 只是在准备阶段设成已确认，没断言锁，不用改。
 - 提交：`chore(delete): drop the payment compliance confirmation`
+
+## 独立营销中心（最新产品范围）
+
+删除营销 UI、权限、注册同意和来源采集、个人偏好、联系人同步、群发和自动营销任务及旧接口；路径见 deleted-paths.txt。旧 API 在插件分发和外置前端重定向前返回 JSON 404。
+
+保留付费充值优惠码与站长优惠码，平台组件迁入计费设置，API 为 `/api/adty/admin/promo-codes`，Root 写、支付查看权限读；历史 promo_enabled 布尔键保留。系统公告、系统邮件、站点经营通知和发件域名任务保留。新库不创建七张营销专属表，升级不删旧表或历史行；语言包旧键、历史优惠码审计事件名及模型排行榜 marketing 分类保留。

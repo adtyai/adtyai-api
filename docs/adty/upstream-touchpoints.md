@@ -433,3 +433,26 @@
 | `model/user.go`、`controller/user.go`、`web/src/hooks/{use-sidebar-data.ts,use-sidebar-config.ts}`、`web/src/features/{profile/components/sidebar-modules-card.tsx,system-settings/maintenance/config.ts,system-settings/maintenance/sidebar-modules-section.tsx}` | 移除 Playground 菜单和默认开关，管理员旧配置不再呈现该开关 | 历史设置不能重新暴露退役入口 | 全平台验收 A |
 | `web/src/features/dashboard/components/overview/overview-dashboard.tsx`、`web/src/lib/legacy-route.ts`、`web/src/routeTree.gen.ts` | 首次请求快捷入口指向已有 API 文档；旧书签回仪表盘；构建重新生成路由树 | 清除页面、路由及旧链接残留 | 全平台验收 A |
 | `web/src/features/dashboard/components/overview/{overview-dashboard.tsx,__tests__/setup-guide.test.tsx}` | 文档入口使用八语已存在的 `Documentation` 键并补可见文案回归 | 避免未登记的英文键在其他语言界面直接显示 | 全平台验收 A/Q |
+
+| `controller/option.go` | 拒绝退休营销配置，保留充值优惠码布尔键 | 最新产品范围排除独立营销，保留充值与系统通知 | 营销删除 |
+| `router/main.go` | 在插件分发前拒绝退休营销 API | 插件不能恢复已删除的接口 | 营销删除 |
+| `router/web-router.go` | 内部和外置前端模式统一返回退休路径 JSON 404 | 旧 API 不能回退 HTML 或重定向 | 营销删除 |
+| `router/plugin_router_test.go` | 覆盖插件和外置前端的营销精确及子路径 | 验证删除后的路由边界 | 营销删除 |
+| `service/access_token_scope.go` | 删除退休营销资源的令牌规则 | 旧权限不能授权新资金写入 | 营销删除 |
+| `service/authz/action_migration.go` | 删除营销动作迁移登记 | 权限目录不再包含营销功能 | 营销删除 |
+| `service/authz/resources_adty.go` | 删除营销权限资源 | 权限目录不再包含营销功能 | 营销删除 |
+| `service/authz/authz_test.go` | 用保留资源验证 scoped 旧策略迁移 | 保留通用权限迁移回归 | 营销删除 |
+| `web/src/features/auth/api.ts` | 注册请求不再携带营销同意及来源 | 不再采集营销数据 | 营销删除 |
+| `web/src/features/auth/types.ts` | 删除营销同意请求字段 | 与注册请求实现一致 | 营销删除 |
+| `web/src/features/auth/sign-up/components/sign-up-form.tsx` | 删除营销同意控件 | 不再采集营销数据 | 营销删除 |
+| `web/src/routes/__root.tsx` | 删除注册来源捕获 | 不再采集营销数据 | 营销删除 |
+| `web/src/features/profile/index.tsx` | 移除个人营销偏好卡 | 最新产品范围排除独立营销，保留充值与系统通知 | 营销删除 |
+| `web/src/features/system-settings/billing/index.tsx` | 挂载优惠码计费分区 | 在既有 Root 系统设置保留充值配置 | 营销删除 |
+| `web/src/features/system-settings/billing/section-registry.tsx` | 登记优惠码分区和原开关值 | 在既有 Root 系统设置保留充值配置 | 营销删除 |
+| `web/src/features/system-settings/types.ts` | 登记优惠码分区类型 | 在既有 Root 系统设置保留充值配置 | 营销删除 |
+| `web/src/features/system-settings/maintenance/config.ts` | 删除默认营销模块 | 不再显示退休功能 | 营销删除 |
+| `web/src/features/system-settings/maintenance/sidebar-modules-section.tsx` | 删除营销模块设置项 | 历史开关不能恢复菜单 | 营销删除 |
+| `web/src/hooks/use-sidebar-config.ts` | 忽略历史营销侧栏开关 | 历史开关不能恢复菜单 | 营销删除 |
+| `web/src/hooks/use-sidebar-data.ts` | 删除营销菜单及图标 | 不再显示退休功能 | 营销删除 |
+| `web/src/hooks/__tests__/sidebar-config.test.tsx` | 更新默认侧栏断言 | 保留真实菜单配置回归 | 营销删除 |
+| `web/src/routeTree.gen.ts` | 实际生产构建移除营销路由树 | 最新产品范围排除独立营销，保留充值与系统通知 | 营销删除 |

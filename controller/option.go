@@ -222,13 +222,8 @@ func UpdateOption(c *gin.Context) {
 			common.ApiErrorT(c, "Referral settings can only be changed on the referral settings page")
 			return
 		}
-		switch option.Key {
-		case adty_setting.MarketingKeyWebhookSecret:
-			common.ApiErrorT(c, "Marketing secrets can only be changed on the marketing secrets page")
-			return
-		}
-		if strings.HasPrefix(option.Key, adty_setting.MarketingKeyPrefix) {
-			common.ApiErrorT(c, "Marketing settings can only be changed on the marketing settings page")
+		if strings.HasPrefix(option.Key, "adty_marketing_setting.") && option.Key != adty_setting.PromoEnabledOptionKey {
+			common.ApiErrorT(c, "Invalid parameters")
 			return
 		}
 	}

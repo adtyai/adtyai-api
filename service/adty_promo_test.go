@@ -18,7 +18,7 @@ import (
 
 func enablePromoCodes(t *testing.T) {
 	t.Helper()
-	cfg := adty_setting.GetMarketingSetting()
+	cfg := adty_setting.GetPromoSetting()
 	saved := cfg.PromoEnabled
 	cfg.PromoEnabled = true
 	t.Cleanup(func() { cfg.PromoEnabled = saved })
@@ -91,7 +91,7 @@ func userQuota(t *testing.T, db *gorm.DB, userId int) int64 {
 
 func TestPromoOffRejectsCodeOnQuote(t *testing.T) {
 	db := preparePromoDB(t)
-	adty_setting.GetMarketingSetting().PromoEnabled = false
+	adty_setting.GetPromoSetting().PromoEnabled = false
 	user := promoUser(t, db, "promo-off")
 	promoCode(t, db, model.AdtyPromoCode{Code: "OFF10PCT", Kind: model.AdtyPromoKindPercent, Value: decimal.NewFromInt(10)})
 

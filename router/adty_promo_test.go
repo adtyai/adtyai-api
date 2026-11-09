@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/service/authz"
@@ -15,168 +14,45 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// 营销设置：必填项没填时总开关打不开；保存后立即生效；webhook 密钥不回传（任务 12.1、约定 I）。
-func TestMarketingSettingsRequireFieldsToEnable(t *testing.T) {
+func TestRetiredMarketingEndpointsReturnNotFound(t *testing.T) {
 	f := newAdtyGuardFixture(t)
-	cfg := adty_setting.GetMarketingSetting()
-	saved := *cfg
-	common.OptionMapRWMutex.Lock()
-	oldMap := common.OptionMap
-	common.OptionMap = map[string]string{}
-	common.OptionMapRWMutex.Unlock()
-	t.Cleanup(func() {
-		*cfg = saved
-		common.OptionMapRWMutex.Lock()
-		common.OptionMap = oldMap
-		common.OptionMapRWMutex.Unlock()
-	})
-	cfg.Enabled, cfg.FromAddress, cfg.FooterCompany, cfg.FooterAddress, cfg.WebhookSecret = false, "", "", "", ""
-
-	type view struct {
-		Enabled                 bool     `json:"enabled"`
-		FromAddress             string   `json:"from_address"`
-		WebhookSecretConfigured bool     `json:"webhook_secret_configured"`
-		WebhookSecret           *string  `json:"webhook_secret"`
-		Missing                 []string `json:"missing"`
+	for _, request := range []struct{ method, path string }{
+		{http.MethodGet, "/api/adty/marketing/consent-default"},
+		{http.MethodGet, "/api/adty/marketing/self"},
+		{http.MethodGet, "/api/adty/marketing/unsubscribe"},
+		{http.MethodPost, "/api/adty/marketing/resend-webhook"},
+		{http.MethodGet, "/api/adty/admin/marketing/settings"},
+		{http.MethodGet, "/api/adty/admin/marketing/campaigns"},
+		{http.MethodGet, "/api/adty/admin/marketing/triggers"},
+		{http.MethodGet, "/api/adty/admin/marketing/sources"},
+		{http.MethodGet, "/api/adty/admin/marketing/promo-codes"},
+	} {
+		response := adtyJSON(t, f.engine, request.method, request.path, `{}`, f.root)
+		assert.Equal(t, http.StatusNotFound, response.Code, "%s %s", request.method, request.path)
 	}
-	call := func(method, body, token string) (bool, string, view) {
-		t.Helper()
-		resp := adtyJSON(t, f.engine, method, "/api/adty/admin/marketing/settings", body, token)
-		require.Equal(t, http.StatusOK, resp.Code, resp.Body.String())
-		var envelope struct {
-			Success bool   `json:"success"`
-			Message string `json:"message"`
-			Data    view   `json:"data"`
-		}
-		require.NoError(t, common.Unmarshal(resp.Body.Bytes(), &envelope))
-		return envelope.Success, envelope.Message, envelope.Data
-	}
-
-	resp := adtyJSON(t, f.engine, http.MethodGet, "/api/adty/admin/marketing/settings", "", f.token)
-	assert.Equal(t, http.StatusForbidden, resp.Code, "admins need marketing permissions")
-	f.grant(t, authz.AdtyMarketingRead)
-	ok, _, got := call(http.MethodGet, "", f.token)
-	require.True(t, ok)
-	assert.ElementsMatch(t, []string{"from_address", "footer_company", "footer_address", "webhook_secret", "resend_api_key"}, got.Missing)
-	resp = adtyJSON(t, f.engine, http.MethodPut, "/api/adty/admin/marketing/settings", `{"enabled":true}`, f.token)
-	assert.Equal(t, http.StatusForbidden, resp.Code, "read permission cannot save")
-
-	f.grant(t, authz.AdtyMarketingRead, authz.AdtyMarketingWrite)
-	ok, message, _ := call(http.MethodPut, `{"enabled":true}`, f.token)
-	assert.False(t, ok)
-	assert.Equal(t, "Fill in the sender address, footer, webhook signing secret and Resend API key before turning marketing emails on", message)
-	assert.False(t, cfg.Enabled)
-
-	ok, message, _ = call(http.MethodPut, `{"webhook_secret":"not-a-secret"}`, f.token)
-	assert.False(t, ok)
-	assert.Equal(t, "Webhook signing secrets can only be changed on the marketing secrets page", message)
-	secretByEditor := adtyJSON(t, f.engine, http.MethodPut, "/api/adty/admin/marketing/secrets", `{"webhook_secret":"whsec_plJ3nmyCDGBKInavdOK15jsl"}`, f.token)
-	assert.Equal(t, http.StatusForbidden, secretByEditor.Code, "a marketing editor cannot change the signing secret")
-
-	secret := adtyJSON(t, f.engine, http.MethodPut, "/api/adty/admin/marketing/secrets", `{"webhook_secret":"whsec_plJ3nmyCDGBKInavdOK15jsl","resend_api_key":"re_live"}`, f.root)
-	require.Contains(t, secret.Body.String(), `"success":true`, secret.Body.String())
-	assert.Equal(t, "whsec_plJ3nmyCDGBKInavdOK15jsl", cfg.WebhookSecret)
-	ok, _, got = call(http.MethodPut, `{"enabled":true,"from_address":"ADTY AI <news@news.example.com>","footer_company":"ADTY Ltd","footer_address":"1 Example Road"}`, f.token)
-	require.True(t, ok)
-	assert.True(t, cfg.Enabled, "saved settings apply at once")
-	assert.Equal(t, "ADTY AI <news@news.example.com>", cfg.FromAddress)
-	assert.True(t, got.WebhookSecretConfigured)
-	assert.Nil(t, got.WebhookSecret, "the secret is never sent back")
-	assert.Empty(t, got.Missing)
-
-	ok, _, _ = call(http.MethodPut, `{"footer_address":""}`, f.token)
-	assert.False(t, ok, "a required field cannot be cleared while marketing is on")
-	ok, message, _ = call(http.MethodPut, `{"enabled":false,"clear_webhook_secret":true}`, f.token)
-	assert.False(t, ok)
-	assert.Equal(t, "Webhook signing secrets can only be changed on the marketing secrets page", message)
-	ok, _, _ = call(http.MethodPut, `{"enabled":false}`, f.token)
-	require.True(t, ok)
-	assert.False(t, cfg.Enabled)
-	assert.Equal(t, "whsec_plJ3nmyCDGBKInavdOK15jsl", cfg.WebhookSecret, "settings cannot clear the signing secret")
 }
 
-func TestMarketingWebhookRejectsUnsigned(t *testing.T) {
-	f := newAdtyGuardFixture(t)
-	cfg := adty_setting.GetMarketingSetting()
-	saved := *cfg
-	t.Cleanup(func() { *cfg = saved })
-	cfg.WebhookSecret = "whsec_plJ3nmyCDGBKInavdOK15jsl"
-	resp := adtyJSON(t, f.engine, http.MethodPost, "/api/adty/marketing/resend-webhook", `{"type":"email.complained","data":{"to":["a@b.c"]}}`, "")
-	assert.Equal(t, http.StatusUnauthorized, resp.Code)
-}
-
-// 自动邮件规则：英文模板没写不能打开；退订链接 GET 不改状态，POST 才退订（任务 12.3）。
-func TestMarketingTriggersAndUnsubscribeLink(t *testing.T) {
-	require.NoError(t, i18n.Init())
-	oldSecret := common.SessionSecret
-	if oldSecret == "" {
-		common.SessionSecret = "router-marketing-secret"
-	}
-	t.Cleanup(func() { common.SessionSecret = oldSecret })
-	f := newAdtyGuardFixture(t)
-	cfg := adty_setting.GetMarketingSetting()
-	saved := *cfg
-	common.OptionMapRWMutex.Lock()
-	oldMap := common.OptionMap
-	common.OptionMap = map[string]string{}
-	common.OptionMapRWMutex.Unlock()
-	t.Cleanup(func() {
-		*cfg = saved
-		common.OptionMapRWMutex.Lock()
-		common.OptionMap = oldMap
-		common.OptionMapRWMutex.Unlock()
-	})
-	f.grant(t, authz.AdtyMarketingRead, authz.AdtyMarketingWrite)
-	resp := adtyJSON(t, f.engine, http.MethodPut, "/api/adty/admin/marketing/triggers", `{"unpaid":{"enabled":true,"days":3,"subjects":{},"bodies":{}}}`, f.token)
-	require.Equal(t, http.StatusOK, resp.Code)
-	assert.Contains(t, resp.Body.String(), "Write the English subject and body before turning this email on")
-	assert.False(t, cfg.TriggerUnpaidEnabled)
-
-	resp = adtyJSON(t, f.engine, http.MethodPut, "/api/adty/admin/marketing/triggers", `{"unpaid":{"enabled":true,"days":5,"subjects":{"en":"Hi"},"bodies":{"en":"<p>x</p>"}}}`, f.token)
-	require.Equal(t, http.StatusOK, resp.Code)
-	assert.Contains(t, resp.Body.String(), `"success":true`)
-	assert.True(t, cfg.TriggerUnpaidEnabled, "saved settings apply at once")
-	assert.Equal(t, 5, cfg.TriggerUnpaidDays)
-	assert.Equal(t, "Hi", cfg.TriggerUnpaidSubjects["en"])
-
-	_, err := model.SaveAdtyMarketingConsent(model.AdtyMarketingConsentInput{UserId: f.admin.Id, Email: "guard-admin@example.com", Consent: true})
-	require.NoError(t, err)
-	token := service.AdtyMarketingUnsubscribeToken(f.admin.Id)
-	resp = adtyJSON(t, f.engine, http.MethodGet, "/api/adty/marketing/unsubscribe?token="+token, "", "")
-	require.Equal(t, http.StatusOK, resp.Code)
-	contact, err := model.GetAdtyMarketingContact(f.admin.Id)
-	require.NoError(t, err)
-	assert.False(t, contact.Unsubscribed, "opening the link does not unsubscribe")
-	resp = adtyJSON(t, f.engine, http.MethodPost, "/api/adty/marketing/unsubscribe?token="+token, "List-Unsubscribe=One-Click", "")
-	require.Equal(t, http.StatusOK, resp.Code)
-	contact, err = model.GetAdtyMarketingContact(f.admin.Id)
-	require.NoError(t, err)
-	assert.True(t, contact.Unsubscribed)
-	resp = adtyJSON(t, f.engine, http.MethodPost, "/api/adty/marketing/unsubscribe?token=1.bad", "", "")
-	assert.Equal(t, http.StatusBadRequest, resp.Code)
-}
-
-// 优惠码后台：创建和编辑分别授权；码统一大写、不能重复；百分比不能超过 100。
+// 优惠码后台：Root创建和编辑；码统一大写、不能重复；百分比不能超过 100。
 func TestPromoCodeAdmin(t *testing.T) {
 	f := newAdtyGuardFixture(t)
 	body := `{"code":"spring-10","kind":"percent","value":"10","min_face_usd":"30","max_uses":100,"per_user_limit":1,"enabled":true}`
-	f.grant(t, authz.AdtyMarketingRead)
-	resp := adtyJSON(t, f.engine, http.MethodPost, "/api/adty/admin/marketing/promo-codes", body, f.token)
+	f.grant(t, authz.AdtyPaymentRead)
+	resp := adtyJSON(t, f.engine, http.MethodPost, "/api/adty/admin/promo-codes", body, f.token)
 	assert.Equal(t, http.StatusForbidden, resp.Code)
 
-	f.grant(t, authz.AdtyMarketingRead, authz.AdtyMarketingWrite)
-	resp = adtyJSON(t, f.engine, http.MethodPost, "/api/adty/admin/marketing/promo-codes", body, f.token)
+	f.grant(t, authz.AdtyPaymentRead, authz.AdtyPaymentOperate)
+	resp = adtyJSON(t, f.engine, http.MethodPost, "/api/adty/admin/promo-codes", body, f.token)
 	assert.Equal(t, http.StatusForbidden, resp.Code, "write cannot replace create")
-	f.grant(t, authz.AdtyMarketingRead, authz.AdtyMarketingCreate)
-	resp = adtyJSON(t, f.engine, http.MethodPost, "/api/adty/admin/marketing/promo-codes", body, f.token)
+	// Only Root can create or edit paid top-up promotions.
+	resp = adtyJSON(t, f.engine, http.MethodPost, "/api/adty/admin/promo-codes", body, f.root)
 	require.Equal(t, http.StatusOK, resp.Code)
 	assert.Contains(t, resp.Body.String(), `"code":"SPRING-10"`)
 	assert.Contains(t, resp.Body.String(), `"funder":"platform"`)
-	resp = adtyJSON(t, f.engine, http.MethodPost, "/api/adty/admin/marketing/promo-codes", body, f.token)
+	resp = adtyJSON(t, f.engine, http.MethodPost, "/api/adty/admin/promo-codes", body, f.root)
 	assert.Contains(t, resp.Body.String(), "This promo code already exists")
-	resp = adtyJSON(t, f.engine, http.MethodPost, "/api/adty/admin/marketing/promo-codes", `{"code":"BIG","kind":"percent","value":"101"}`, f.token)
+	resp = adtyJSON(t, f.engine, http.MethodPost, "/api/adty/admin/promo-codes", `{"code":"BIG","kind":"percent","value":"101"}`, f.root)
 	assert.Contains(t, resp.Body.String(), `"success":false`)
-	resp = adtyJSON(t, f.engine, http.MethodPost, "/api/adty/admin/marketing/promo-codes", `{"code":"SHORT1","kind":"percent","value":"10","enabled":true}`, f.token)
+	resp = adtyJSON(t, f.engine, http.MethodPost, "/api/adty/admin/promo-codes", `{"code":"SHORT1","kind":"percent","value":"10","enabled":true}`, f.root)
 	assert.Contains(t, resp.Body.String(), `"success":false`, "codes shorter than 8 characters are rejected")
 	var shortCount int64
 	require.NoError(t, f.db.Model(&model.AdtyPromoCode{}).Where("code = ?", "SHORT1").Count(&shortCount).Error)
@@ -184,9 +60,9 @@ func TestPromoCodeAdmin(t *testing.T) {
 
 	var code model.AdtyPromoCode
 	require.NoError(t, f.db.Where("code = ?", "SPRING-10").First(&code).Error)
-	f.grant(t, authz.AdtyMarketingRead, authz.AdtyMarketingWrite)
-	resp = adtyJSON(t, f.engine, http.MethodPut, "/api/adty/admin/marketing/promo-codes/"+common.Interface2String(code.Id),
-		`{"code":"OTHER","kind":"fixed","value":"5","enabled":false}`, f.token)
+	f.grant(t, authz.AdtyPaymentRead, authz.AdtyPaymentOperate)
+	resp = adtyJSON(t, f.engine, http.MethodPut, "/api/adty/admin/promo-codes/"+common.Interface2String(code.Id),
+		`{"code":"OTHER","kind":"fixed","value":"5","enabled":false}`, f.root)
 	require.Equal(t, http.StatusOK, resp.Code)
 	require.NoError(t, f.db.First(&code, code.Id).Error)
 	assert.Equal(t, "SPRING-10", code.Code, "the code itself never changes")
@@ -292,7 +168,7 @@ func TestPromoQuoteRateLimited(t *testing.T) {
 
 // 优惠码总开关默认关闭。关着时报价、易支付下单和 USDT 下单都不接受码；打开后同一条链路才计入优惠加赠。
 func TestPromoDisabledBlocksQuoteAndPay(t *testing.T) {
-	cfg := adty_setting.GetMarketingSetting()
+	cfg := adty_setting.GetPromoSetting()
 	savedPromo := cfg.PromoEnabled
 	cfg.PromoEnabled = false
 	common.OptionMapRWMutex.Lock()
@@ -323,9 +199,9 @@ func TestPromoDisabledBlocksQuoteAndPay(t *testing.T) {
 	var user model.User
 	require.NoError(t, f.db.Where("username = ?", "promo-switch-user").First(&user).Error)
 
-	f.grant(t, authz.AdtyMarketingRead)
-	settings := adtyJSON(t, f.engine, http.MethodGet, "/api/adty/admin/marketing/settings", "", f.token)
-	require.Contains(t, settings.Body.String(), `"promo_enabled":false`)
+	f.grant(t, authz.AdtyPaymentRead)
+	settings := adtyJSON(t, f.engine, http.MethodGet, "/api/adty/admin/promo-codes", "", f.token)
+	require.Equal(t, http.StatusOK, settings.Code)
 
 	quoteWithCode := `{"amount":100,"method":"usdt.trc20","promo_code":"SAVE10PCT"}`
 	rejected := adtyJSON(t, f.engine, http.MethodPost, "/api/adty/topup/quote", quoteWithCode, token)
@@ -350,9 +226,11 @@ func TestPromoDisabledBlocksQuoteAndPay(t *testing.T) {
 	require.NoError(t, f.db.Model(&model.TopUp{}).Where("user_id = ?", user.Id).Count(&orders).Error)
 	assert.Zero(t, orders)
 
-	f.grant(t, authz.AdtyMarketingRead, authz.AdtyMarketingWrite)
-	turnedOn := adtyJSON(t, f.engine, http.MethodPut, "/api/adty/admin/marketing/settings", `{"promo_enabled":true}`, f.token)
-	require.Contains(t, turnedOn.Body.String(), `"promo_enabled":true`)
+	f.grant(t, authz.AdtyPaymentRead, authz.AdtyPaymentOperate)
+	turnedOn := adtyJSON(t, f.engine, http.MethodPut, "/api/option/", `{"key":"adty_marketing_setting.promo_enabled","value":"true"}`, f.token)
+	require.Equal(t, http.StatusForbidden, turnedOn.Code)
+	turnedOn = adtyJSON(t, f.engine, http.MethodPut, "/api/option/", `{"key":"adty_marketing_setting.promo_enabled","value":"true"}`, f.root)
+	require.Contains(t, turnedOn.Body.String(), `"success":true`)
 	require.True(t, cfg.PromoEnabled)
 
 	accepted := adtyJSON(t, f.engine, http.MethodPost, "/api/adty/topup/quote", quoteWithCode, token)
@@ -377,9 +255,10 @@ func TestPromoDisabledBlocksQuoteAndPay(t *testing.T) {
 	assert.Equal(t, "10", epayView.Ext.PromoBonusUSD.String())
 	assert.Equal(t, channel.Id, epayView.Ext.ChannelId)
 
-	f.grant(t, authz.AdtyMarketingRead, authz.AdtyMarketingWrite)
-	turnedOff := adtyJSON(t, f.engine, http.MethodPut, "/api/adty/admin/marketing/settings", `{"promo_enabled":false}`, f.token)
-	require.Contains(t, turnedOff.Body.String(), `"promo_enabled":false`)
+	f.grant(t, authz.AdtyPaymentRead, authz.AdtyPaymentOperate)
+	turnedOff := adtyJSON(t, f.engine, http.MethodPut, "/api/option/", `{"key":"adty_marketing_setting.promo_enabled","value":"false"}`, f.root)
+	require.Contains(t, turnedOff.Body.String(), `"success":true`)
+	require.False(t, cfg.PromoEnabled)
 	again := adtyJSON(t, f.engine, http.MethodPost, "/api/adty/topup/quote", quoteWithCode, token)
 	require.Contains(t, again.Body.String(), "Promo codes are turned off")
 }

@@ -258,16 +258,13 @@ export async function telegramLogin(
 
 // User registration
 export async function register(payload: RegisterPayload): Promise<ApiResponse> {
-  const { marketing_consent, lang, site_terms_version, ...body } = payload
-  // adty task 12.1: marketing consent and page language travel in the query,
+  const { lang, site_terms_version, ...body } = payload
+  // Page language and accepted site terms travel in the query,
   // because the upstream handler decodes the body straight into model.User.
   // Site customer terms (11.7) use the same query.
   const res = await api.post(`/api/user/register`, body, {
     params: {
       turnstile: payload.turnstile ?? '',
-      ...(marketing_consent !== undefined && {
-        marketing_consent: String(marketing_consent),
-      }),
       ...(lang && { lang }),
       ...(site_terms_version && { site_terms_version }),
     },

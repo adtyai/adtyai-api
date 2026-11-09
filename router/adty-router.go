@@ -35,7 +35,7 @@ func SetAdtyRouter(apiRouter *gin.RouterGroup) {
 	registerAdtyOfficialPriceRoutes(apiRouter)
 	registerAdtySiteRoutes(apiRouter)
 	registerAdtyLegalRoutes(apiRouter)
-	registerAdtyMarketingRoutes(apiRouter)
+	registerAdtyPromoRoutes(apiRouter)
 	registerAdtyResellerRoutes(apiRouter)
 
 	// 余额流水（任务 7.2）
@@ -196,48 +196,20 @@ func registerAdtyLegalRoutes(apiRouter *gin.RouterGroup) {
 	apiRouter.GET("/adty/legal/:doc", controller.GetAdtyLegal)
 }
 
-// registerAdtyMarketingRoutes 挂营销（P12）。webhook 是匿名回调，登记 session；后台按营销权限注册。
-func registerAdtyMarketingRoutes(apiRouter *gin.RouterGroup) {
-	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/adty/marketing/consent-default", "any", "")
-	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/marketing/resend-webhook", "session", "")
-	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/adty/marketing/unsubscribe", "session", "")
-	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/marketing/unsubscribe", "session", "")
-	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/adty/marketing/self", "scope", "profile:read")
-	middleware.DeclareAdtyAccessTokenRoute("PUT", "/api/adty/marketing/self", "scope", "profile:write")
-	apiRouter.GET("/adty/marketing/consent-default", controller.GetAdtyMarketingConsentDefault)
-	apiRouter.POST("/adty/marketing/resend-webhook", controller.PostAdtyResendWebhook)
-	// 自动邮件的退订链接（任务 12.3）：GET 显示确认页，POST 退订（含 RFC 8058 一键退订）
-	apiRouter.GET("/adty/marketing/unsubscribe", middleware.CriticalRateLimit(), controller.GetAdtyMarketingUnsubscribe)
-	apiRouter.POST("/adty/marketing/unsubscribe", middleware.CriticalRateLimit(), middleware.AnonymousRequestBodyLimit(), controller.PostAdtyMarketingUnsubscribe)
-	self := apiRouter.Group("/adty/marketing/self", middleware.UserAuth())
-	self.GET("", controller.GetAdtyMarketingSelf)
-	self.PUT("", controller.PutAdtyMarketingSelf)
-
-	admin := apiRouter.Group("/adty/admin/marketing", middleware.AdminAuth())
-	handlePermissionRoute(admin, http.MethodGet, "/settings", authz.AdtyMarketingRead, controller.GetAdtyMarketingSettings)
-	handlePermissionRoute(admin, http.MethodPut, "/settings", authz.AdtyMarketingWrite, controller.PutAdtyMarketingSettings)
-	middleware.DeclareAdtyAccessTokenRoute("PUT", "/api/adty/admin/marketing/secrets", "scope", "option:write")
-	apiRouter.PUT("/adty/admin/marketing/secrets", middleware.AdminAuth(), middleware.RootAuth(), controller.PutAdtyMarketingSecrets)
-	// 群发（任务 12.2）
-	handlePermissionRoute(admin, http.MethodGet, "/campaigns", authz.AdtyMarketingRead, controller.GetAdtyCampaigns)
-	handlePermissionRoute(admin, http.MethodGet, "/campaigns/:id", authz.AdtyMarketingRead, controller.GetAdtyCampaign)
-	handlePermissionRoute(admin, http.MethodGet, "/campaigns/:id/plan", authz.AdtyMarketingRead, controller.GetAdtyCampaignPlan)
-	handlePermissionRoute(admin, http.MethodPost, "/audience/estimate", authz.AdtyMarketingRead, controller.PostAdtyAudienceEstimate)
-	handlePermissionRoute(admin, http.MethodPost, "/campaigns", authz.AdtyMarketingCreate, controller.PostAdtyCampaign)
-	handlePermissionRoute(admin, http.MethodPut, "/campaigns/:id", authz.AdtyMarketingWrite, controller.PutAdtyCampaign)
-	handlePermissionRoute(admin, http.MethodDelete, "/campaigns/:id", authz.AdtyMarketingDelete, controller.DeleteAdtyCampaign)
-	handlePermissionRoute(admin, http.MethodPost, "/campaigns/:id/test", authz.AdtyMarketingSend, middleware.CriticalRateLimit(), controller.PostAdtyCampaignTest)
-	handlePermissionRoute(admin, http.MethodPost, "/campaigns/:id/send", authz.AdtyMarketingSend, controller.PostAdtySendCampaign)
-	handlePermissionRoute(admin, http.MethodPost, "/campaigns/:id/cancel", authz.AdtyMarketingSend, controller.PostAdtyCancelCampaign)
-	// 自动触发邮件（任务 12.3）
-	handlePermissionRoute(admin, http.MethodGet, "/triggers", authz.AdtyMarketingRead, controller.GetAdtyMarketingTriggers)
-	handlePermissionRoute(admin, http.MethodPut, "/triggers", authz.AdtyMarketingWrite, controller.PutAdtyMarketingTriggers)
-	// 注册来源统计（任务 12.5）
-	handlePermissionRoute(admin, http.MethodGet, "/sources", authz.AdtyMarketingRead, controller.GetAdtySignupSourceStats)
-	// 优惠码（任务 12.4），平台出资
-	handlePermissionRoute(admin, http.MethodGet, "/promo-codes", authz.AdtyMarketingRead, controller.GetAdtyPromoCodes)
-	handlePermissionRoute(admin, http.MethodPost, "/promo-codes", authz.AdtyMarketingCreate, controller.PostAdtyPromoCode)
-	handlePermissionRoute(admin, http.MethodPut, "/promo-codes/:id", authz.AdtyMarketingWrite, controller.PutAdtyPromoCode)
+// registerAdtyPromoRoutes keeps paid top-up promo codes separate from retired marketing.
+func registerAdtyPromoRoutes(apiRouter *gin.RouterGroup) {
+	admin := apiRouter.Group("/adty/admin/promo-codes", middleware.AdminAuth())
+	handlePermissionRoute(admin, http.MethodGet, "", authz.AdtyPaymentRead, controller.GetAdtyPromoCodes)
+	for _, route := range []struct {
+		method, path string
+		handler      gin.HandlerFunc
+	}{
+		{http.MethodPost, "", controller.PostAdtyPromoCode},
+		{http.MethodPut, "/:id", controller.PutAdtyPromoCode},
+	} {
+		middleware.DeclareAdtyAccessTokenRoute(route.method, "/api/adty/admin/promo-codes"+route.path, "scope", "option:write")
+		admin.Handle(route.method, route.path, middleware.RootAuth(), route.handler)
+	}
 }
 
 // registerAdtyResellerRoutes 挂站长分站（P11）。后台接口按「分站」权限注册（任务 11.9）；

@@ -48,10 +48,10 @@ beforeEach(() => {
   useAuthStore.getState().auth.setUser({
     id: 10,
     username: 'promo-admin',
-    role: 10,
+    role: 100,
     permissions: {
       admin_permissions: {
-        adty_marketing: { read: true, create: true, write: true },
+        adty_payment: { read: true, create: true, write: true },
       },
     },
   })

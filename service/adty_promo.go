@@ -77,7 +77,7 @@ func adtyPromoBonusFor(in AdtyPromoInput, faceUSD decimal.Decimal) (*model.AdtyP
 	if strings.TrimSpace(in.Code) == "" {
 		return nil, decimal.Zero, nil
 	}
-	if !adty_setting.GetMarketingSetting().PromoEnabled {
+	if !adty_setting.GetPromoSetting().PromoEnabled {
 		return nil, decimal.Zero, ErrAdtyPromoDisabled
 	}
 	code, err := model.GetAdtyPromoCodeByCode(in.Code)

@@ -80,7 +80,6 @@ export const SIDEBAR_MODULES_DEFAULT: SidebarModulesAdminConfig = {
     user: true,
     recharge_audit: true,
     admin_referral: true,
-    marketing: true,
     setting: true,
   },
 }
@@ -208,6 +207,7 @@ export function parseSidebarModulesAdmin(
         ([moduleKey, moduleValue]) => {
           if (moduleKey === 'enabled') return
           if (sectionKey === 'chat' && moduleKey === 'playground') return
+          if (sectionKey === 'admin' && moduleKey === 'marketing') return
           sectionConfig[moduleKey] = toBoolean(
             moduleValue,
             defaultSection[moduleKey] ?? true

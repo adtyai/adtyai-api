@@ -65,12 +65,14 @@ describe('deleted features stay deleted', () => {
     expect(routeTree).not.toContain('/_authenticated/subscriptions/')
     expect(routeTree).not.toContain('/_authenticated/redemption-codes/')
     expect(routeTree).not.toContain('/_authenticated/playground/')
+    expect(routeTree).not.toContain('/_authenticated/marketing/')
   })
 
   it('keeps the deleted modules out of the admin sidebar defaults', () => {
     expect(SIDEBAR_MODULES_DEFAULT.admin).not.toHaveProperty('subscription')
     expect(SIDEBAR_MODULES_DEFAULT.admin).not.toHaveProperty('redemption')
     expect(SIDEBAR_MODULES_DEFAULT.chat).not.toHaveProperty('playground')
+    expect(SIDEBAR_MODULES_DEFAULT.admin).not.toHaveProperty('marketing')
   })
 
   it('drops the retired Playground switch when loading legacy sidebar settings', () => {
@@ -81,6 +83,15 @@ describe('deleted features stay deleted', () => {
     )
 
     expect(config.chat).toEqual({ enabled: false, chat: false })
+  })
+
+  it('drops the retired marketing switch when loading legacy sidebar settings', () => {
+    const config = parseSidebarModulesAdmin(
+      JSON.stringify({ admin: { enabled: true, marketing: true, users: true } })
+    )
+
+    expect(config.admin).not.toHaveProperty('marketing')
+    expect(config.admin.users).toBe(true)
   })
 
   it('keeps the deleted pages out of the sidebar menu', () => {
@@ -105,7 +116,8 @@ describe('deleted features stay deleted', () => {
         (url) =>
           url.includes('/subscriptions') ||
           url.includes('/redemption-codes') ||
-          url.includes('/playground')
+          url.includes('/playground') ||
+          url.includes('/marketing')
       )
     ).toEqual([])
   })

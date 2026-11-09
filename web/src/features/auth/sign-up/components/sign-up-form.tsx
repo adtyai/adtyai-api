@@ -39,7 +39,6 @@ import {
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { MarketingConsentCheckbox } from '@/features/adty-marketing/components/marketing-consent-checkbox'
 import { register, wechatLoginByCode } from '@/features/auth/api'
 import { LegalConsent } from '@/features/auth/components/legal-consent'
 import { OAuthProviders } from '@/features/auth/components/oauth-providers'
@@ -59,7 +58,6 @@ export function SignUpForm({
 }: React.HTMLAttributes<HTMLFormElement>) {
   const { t, i18n } = useTranslation()
   const [isLoading, setIsLoading] = useState(false)
-  const [marketingConsent, setMarketingConsent] = useState(false) // adty task 12.1
   const [acceptedSiteTermsVersion, setAcceptedSiteTermsVersion] = useState<
     number | null
   >(null)
@@ -175,7 +173,6 @@ export function SignUpForm({
         verification_code: verificationCode || undefined,
         turnstile: turnstileToken,
         agreement_accepted: requiresLegalConsent ? true : undefined,
-        marketing_consent: marketingConsent,
         lang: i18n.resolvedLanguage || i18n.language,
         site_terms_version: requiresSiteTerms
           ? String(siteTermsVersion)
@@ -402,11 +399,6 @@ export function SignUpForm({
             </Label>
           </div>
         )}
-
-        <MarketingConsentCheckbox
-          checked={marketingConsent}
-          onCheckedChange={setMarketingConsent}
-        />
 
         {/* Submit Button */}
         <Button

@@ -25,6 +25,7 @@ import {
 } from './section-registry.tsx'
 
 const defaultBillingSettings: BillingSettings = {
+  'adty_marketing_setting.promo_enabled': false,
   QuotaForNewUser: 0,
   'quota_setting.enable_free_model_pre_consume': true,
   'quota_setting.trust_quota_usd': 10,

@@ -103,7 +103,6 @@ describe('sidebar groups', () => {
       'Models',
       'Users',
       'Referral admin',
-      'Marketing',
       'Reseller sites',
       'Recharge Audit',
       'System Info',

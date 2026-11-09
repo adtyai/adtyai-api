@@ -72,7 +72,6 @@ func AdtyAfterRegister(c *gin.Context, user *model.User) {
 	if user.SiteId > 0 {
 		ipHash, deviceHash := recordAdtyFingerprint(c, user.Id, "register")
 		AdtyRecordSiteCustomer(user.Id, user.SiteId, ipHash, deviceHash, AdtyAcceptedSiteCustomerTerms(c))
-		adtyRecordRegisterConsent(c, user)
 		if _, err := c.Cookie(AdtyReferralCookie); err == nil {
 			clearAdtyReferralCookie(c)
 		}
@@ -82,9 +81,6 @@ func AdtyAfterRegister(c *gin.Context, user *model.User) {
 		common.SysError(common.LogText("ensure affiliate failed user=%d: %s", user.Id, err.Error()))
 	}
 	ipHash, deviceHash := recordAdtyFingerprint(c, user.Id, "register")
-	adtyRecordRegisterConsent(c, user) // 营销同意（任务 12.1）
-	// 注册来源（任务 12.5）放在推广绑定之后写，才能记下推广人。
-	defer recordAdtySignupSource(c, user, time.Now())
 	raw, err := c.Cookie(AdtyReferralCookie)
 	if err != nil || raw == "" || !Referral.IsEnabled() {
 		return

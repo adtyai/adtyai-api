@@ -65,7 +65,6 @@ const DEFAULT_SIDEBAR_MODULES: SidebarModulesAdminConfig = {
     user: true,
     recharge_audit: true,
     admin_referral: true,
-    marketing: true,
     setting: true,
   },
 }
@@ -121,7 +120,6 @@ const URL_TO_CONFIG_MAP: Record<string, { section: string; module: string }> = {
   '/users': { section: 'admin', module: 'user' },
   '/recharge-audit': { section: 'admin', module: 'recharge_audit' },
   '/admin-referral': { section: 'admin', module: 'admin_referral' },
-  '/marketing': { section: 'admin', module: 'marketing' },
   '/system-settings': { section: 'admin', module: 'setting' },
   '/system-settings/site': { section: 'admin', module: 'setting' },
 }

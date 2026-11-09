@@ -387,9 +387,11 @@ func TestRetiredPlaygroundPathBeatsPluginDispatcher(t *testing.T) {
 		c.Abort()
 	})
 
-	recorder := performPluginRequest(outer, http.MethodPost, "/pg/chat/completions")
-	assert.Equal(t, http.StatusNotFound, recorder.Code)
-	assert.Contains(t, recorder.Body.String(), "Invalid URL")
+	for _, path := range []string{"/pg/chat/completions", "/api/adty/marketing/self", "/api/adty/admin/marketing/campaigns"} {
+		recorder := performPluginRequest(outer, http.MethodPost, path)
+		assert.Equal(t, http.StatusNotFound, recorder.Code, path)
+		assert.Contains(t, recorder.Body.String(), "Invalid URL", path)
+	}
 }
 
 func TestPlaygroundNamespaceRemainsReservedForPlugins(t *testing.T) {
@@ -412,10 +414,12 @@ func TestExternalFrontendRejectsRetiredPlaygroundPath(t *testing.T) {
 
 	engine := gin.New()
 	SetRouter(engine, WebAssets{})
-	recorder := performPluginRequest(engine, http.MethodPost, "/pg/chat/completions")
-	assert.Equal(t, http.StatusNotFound, recorder.Code)
-	assert.Contains(t, recorder.Body.String(), "Invalid URL")
-	assert.Empty(t, recorder.Header().Get("Location"))
+	for _, path := range []string{"/pg/chat/completions", "/api/adty/marketing/self", "/api/adty/admin/marketing/campaigns"} {
+		recorder := performPluginRequest(engine, http.MethodPost, path)
+		assert.Equal(t, http.StatusNotFound, recorder.Code, path)
+		assert.Contains(t, recorder.Body.String(), "Invalid URL", path)
+		assert.Empty(t, recorder.Header().Get("Location"), path)
+	}
 }
 
 func TestStaticConflictingUpdateRetainsIncumbentAndPublishesHealthyPeer(t *testing.T) {

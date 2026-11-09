@@ -31,7 +31,7 @@ func SetRouter(router *gin.Engine, assets WebAssets) {
 	} else {
 		frontendBaseUrl = strings.TrimSuffix(frontendBaseUrl, "/")
 		router.NoRoute(
-			rejectRetiredPlaygroundPath,
+			rejectRetiredFeaturePath,
 			pluginDispatcher,
 			middleware.RouteTag("web"),
 			middleware.AccessTokenAudit(),

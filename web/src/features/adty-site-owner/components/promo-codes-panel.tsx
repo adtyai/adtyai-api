@@ -30,11 +30,11 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import type { PromoCode, PromoCodeInput } from '@/features/adty-marketing/api'
+import type { PromoCode, PromoCodeInput } from '@/features/adty-promo/api'
 import {
   dateInputToUnix,
   unixToDateInput,
-} from '@/features/adty-marketing/lib/campaign'
+} from '@/features/adty-promo/lib/dates'
 import { PageSwitcher } from '@/features/referral/components/page-switcher'
 import { DraftDiscardDialog } from '@/features/system-settings/components/draft-discard-dialog'
 import { useDraftNavigation } from '@/features/system-settings/hooks/use-draft-navigation'

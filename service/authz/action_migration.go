@@ -29,7 +29,6 @@ func MigrateAdtyActionCatalog(db *gorm.DB) error {
 			AdtyUserWrite:         {AdtyUserCreate},
 			AdtyModelWrite:        {AdtyModelCreate, AdtyModelDelete},
 			AdtyLogRead:           {AdtyLogExport},
-			AdtyMarketingWrite:    {AdtyMarketingCreate, AdtyMarketingDelete},
 			ChannelSensitiveWrite: {ChannelCreate, ChannelDelete},
 			AdtySiteAdjust:        {AdtySiteCreate, AdtySiteDelete},
 			AdtySiteSettings:      {AdtySiteSettingsRead, AdtySiteSettingsCreate, AdtySiteSettingsDelete},

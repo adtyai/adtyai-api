@@ -298,6 +298,7 @@ export type ModelSettings = {
 }
 
 export type BillingSettings = {
+  'adty_marketing_setting.promo_enabled'?: boolean
   QuotaForNewUser: number
   'quota_setting.enable_free_model_pre_consume': boolean
   'quota_setting.trust_quota_usd': number

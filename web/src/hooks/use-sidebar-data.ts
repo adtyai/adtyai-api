@@ -36,7 +36,6 @@ import {
   ReceiptText,
   Gift,
   HandCoins,
-  Megaphone,
   Store,
 } from 'lucide-react'
 import { useMemo } from 'react'
@@ -63,163 +62,160 @@ export function useSidebarData(): SidebarData {
     (state) => state.auth.user?.adty_site_owner === true
   )
 
-  return useMemo(() => ({
-    navGroups: [
-      {
-        id: 'general',
-        title: t('Console'),
-        items: [
-          {
-            title: t('Overview'),
-            url: '/dashboard/overview',
-            icon: Activity,
-          },
-          {
-            title: t('Dashboard'),
-            url: '/dashboard/models',
-            icon: LayoutDashboard,
-          },
-          {
-            title: t('API Keys'),
-            url: '/keys',
-            icon: Key,
-          },
-          {
-            title: t('Usage Logs'),
-            url: '/usage-logs/common',
-            icon: FileText,
-          },
-          {
-            title: t('Audit Logs'),
-            url: '/usage-logs/audit',
-            icon: ClipboardList,
-          },
-          {
-            title: t('Task Logs'),
-            url: '/usage-logs/task',
-            activeUrls: ['/usage-logs/drawing'],
-            configUrls: ['/usage-logs/drawing', '/usage-logs/task'],
-            icon: ListTodo,
-          },
-        ],
-      },
-      {
-        id: 'chat',
-        title: t('Chat'),
-        items: [
-          {
-            title: t('Chat'),
-            icon: MessageSquare,
-            type: 'chat-presets',
-          },
-        ],
-      },
-      {
-        id: 'personal',
-        title: t('Account'),
-        items: [
-          {
-            title: t('Wallet'),
-            url: '/wallet',
-            icon: Wallet,
-          },
-          {
-            title: t('Referral'),
-            url: '/referral',
-            icon: Gift,
-          },
-          // adty task 11.6: only site owners see the owner center.
-          ...(isSiteOwner
-            ? [
-                {
-                  title: t('Site owner center'),
-                  url: '/site-owner/overview',
-                  activeUrls: ['/site-owner'],
-                  icon: Store,
-                },
-              ]
-            : []),
-          {
-            title: t('Profile'),
-            url: '/profile',
-            icon: User,
-          },
-          {
-            title: t('Security & Access'),
-            url: '/security',
-            icon: ShieldCheck,
-          },
-        ],
-      },
-      {
-        id: 'admin',
-        title: t('Administration'),
-        items: [
-          {
-            title: t('Channels'),
-            url: '/channels',
-            icon: Radio,
-            requiredPermission: ADTY_PERMISSIONS.CHANNEL_READ,
-          },
-          {
-            title: t('Models'),
-            url: '/models/metadata',
-            icon: Box,
-            requiredPermission: ADTY_PERMISSIONS.MODEL_READ,
-          },
-          {
-            title: t('Users'),
-            url: '/users',
-            icon: Users,
-            requiredPermission: ADTY_PERMISSIONS.USER_READ,
-          },
-          {
-            title: t('Referral admin'),
-            url: '/admin-referral',
-            icon: HandCoins,
-            badge: referralBadge,
-            requiredPermission: ADTY_PERMISSIONS.REFERRAL_READ,
-          },
-          {
-            title: t('Marketing'),
-            url: '/marketing',
-            icon: Megaphone,
-            requiredPermission: ADTY_PERMISSIONS.MARKETING_READ,
-          },
-          {
-            title: t('Reseller sites'),
-            url: '/site-admin/sites',
-            activeUrls: ['/site-admin'],
-            icon: Store,
-            requiredPermission: ADTY_PERMISSIONS.SITE_READ,
-          },
-          {
-            title: t('Recharge Audit'),
-            url: '/recharge-audit',
-            icon: ReceiptText,
-            requiredPermission: ADTY_PERMISSIONS.FINANCE_READ,
-          },
-          {
-            title: t('System Info'),
-            url: '/system-info',
-            icon: ServerCog,
-            requiredRole: ROLE.SUPER_ADMIN,
-          },
-          {
-            title: t('Task Plugins'),
-            url: '/task-plugins',
-            icon: PlugZap,
-            requiredRole: ROLE.SUPER_ADMIN,
-          },
-          {
-            title: t('System Settings'),
-            url: '/system-settings/site',
-            activeUrls: ['/system-settings'],
-            icon: Settings,
-            requiredRole: ROLE.SUPER_ADMIN,
-          },
-        ],
-      },
-    ],
-  }), [t, referralBadge, isSiteOwner])
+  return useMemo(
+    () => ({
+      navGroups: [
+        {
+          id: 'general',
+          title: t('Console'),
+          items: [
+            {
+              title: t('Overview'),
+              url: '/dashboard/overview',
+              icon: Activity,
+            },
+            {
+              title: t('Dashboard'),
+              url: '/dashboard/models',
+              icon: LayoutDashboard,
+            },
+            {
+              title: t('API Keys'),
+              url: '/keys',
+              icon: Key,
+            },
+            {
+              title: t('Usage Logs'),
+              url: '/usage-logs/common',
+              icon: FileText,
+            },
+            {
+              title: t('Audit Logs'),
+              url: '/usage-logs/audit',
+              icon: ClipboardList,
+            },
+            {
+              title: t('Task Logs'),
+              url: '/usage-logs/task',
+              activeUrls: ['/usage-logs/drawing'],
+              configUrls: ['/usage-logs/drawing', '/usage-logs/task'],
+              icon: ListTodo,
+            },
+          ],
+        },
+        {
+          id: 'chat',
+          title: t('Chat'),
+          items: [
+            {
+              title: t('Chat'),
+              icon: MessageSquare,
+              type: 'chat-presets',
+            },
+          ],
+        },
+        {
+          id: 'personal',
+          title: t('Account'),
+          items: [
+            {
+              title: t('Wallet'),
+              url: '/wallet',
+              icon: Wallet,
+            },
+            {
+              title: t('Referral'),
+              url: '/referral',
+              icon: Gift,
+            },
+            // adty task 11.6: only site owners see the owner center.
+            ...(isSiteOwner
+              ? [
+                  {
+                    title: t('Site owner center'),
+                    url: '/site-owner/overview',
+                    activeUrls: ['/site-owner'],
+                    icon: Store,
+                  },
+                ]
+              : []),
+            {
+              title: t('Profile'),
+              url: '/profile',
+              icon: User,
+            },
+            {
+              title: t('Security & Access'),
+              url: '/security',
+              icon: ShieldCheck,
+            },
+          ],
+        },
+        {
+          id: 'admin',
+          title: t('Administration'),
+          items: [
+            {
+              title: t('Channels'),
+              url: '/channels',
+              icon: Radio,
+              requiredPermission: ADTY_PERMISSIONS.CHANNEL_READ,
+            },
+            {
+              title: t('Models'),
+              url: '/models/metadata',
+              icon: Box,
+              requiredPermission: ADTY_PERMISSIONS.MODEL_READ,
+            },
+            {
+              title: t('Users'),
+              url: '/users',
+              icon: Users,
+              requiredPermission: ADTY_PERMISSIONS.USER_READ,
+            },
+            {
+              title: t('Referral admin'),
+              url: '/admin-referral',
+              icon: HandCoins,
+              badge: referralBadge,
+              requiredPermission: ADTY_PERMISSIONS.REFERRAL_READ,
+            },
+            {
+              title: t('Reseller sites'),
+              url: '/site-admin/sites',
+              activeUrls: ['/site-admin'],
+              icon: Store,
+              requiredPermission: ADTY_PERMISSIONS.SITE_READ,
+            },
+            {
+              title: t('Recharge Audit'),
+              url: '/recharge-audit',
+              icon: ReceiptText,
+              requiredPermission: ADTY_PERMISSIONS.FINANCE_READ,
+            },
+            {
+              title: t('System Info'),
+              url: '/system-info',
+              icon: ServerCog,
+              requiredRole: ROLE.SUPER_ADMIN,
+            },
+            {
+              title: t('Task Plugins'),
+              url: '/task-plugins',
+              icon: PlugZap,
+              requiredRole: ROLE.SUPER_ADMIN,
+            },
+            {
+              title: t('System Settings'),
+              url: '/system-settings/site',
+              activeUrls: ['/system-settings'],
+              icon: Settings,
+              requiredRole: ROLE.SUPER_ADMIN,
+            },
+          ],
+        },
+      ],
+    }),
+    [t, referralBadge, isSiteOwner]
+  )
 }

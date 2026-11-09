@@ -375,26 +375,6 @@ func adtyRemoveSenderDomainOfClosedSite(site *model.AdtySite) {
 	}
 }
 
-// adtyMarketingSenderForSite 是营销邮件的发件人（替换 adty_marketing_campaign.go 的挂点）：
-// 营销邮件和系统邮件用不同的子域名，地址一律用平台营销地址；分站开了站长发件并验证通过时，显示名换成分站站名。
-func adtyMarketingSenderForSite(siteID int) AdtyMarketingSender {
-	platform := AdtyMarketingSender{From: marketingSetting().FromAddress, SiteName: common.SystemName}
-	site := AdtySiteById(siteID)
-	if site == nil || !resellerSetting().SenderDomainEnabled {
-		return platform
-	}
-	var row model.AdtySiteSenderDomain
-	if model.DB.Where("site_id = ? AND status = ?", site.Id, model.AdtySenderDomainVerified).Limit(1).Find(&row).RowsAffected == 0 {
-		return platform
-	}
-	parsed, err := mail.ParseAddress(strings.TrimSpace(platform.From))
-	if err != nil {
-		return platform
-	}
-	name := AdtyBrandFor(site).Name
-	return AdtyMarketingSender{From: adtyFormatSender(name, parsed.Address), SiteName: name}
-}
-
 func startAdtySenderDomainTask() {
 	go func() {
 		ticker := time.NewTicker(10 * time.Minute)
@@ -411,7 +391,6 @@ func startAdtySenderDomainTask() {
 
 func init() {
 	adtyMasterTasks = append(adtyMasterTasks, startAdtySenderDomainTask)
-	AdtyMarketingSiteSender = adtyMarketingSenderForSite
 	AdtyOnSiteClosing = adtyNotifySiteClosing
 	AdtyOnSiteMarkupIncrease = adtyNotifySiteMarkupIncrease
 	AdtyOnSiteCostFactorChanged = adtyNotifySiteCostFactor

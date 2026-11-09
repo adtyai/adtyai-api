@@ -21,7 +21,6 @@ import {
   CardStaggerContainer,
   CardStaggerItem,
 } from '@/components/page-transition'
-import { MarketingPreferencesCard } from '@/features/adty-marketing/components/marketing-preferences-card'
 import { useStatus } from '@/hooks/use-status'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -69,7 +68,6 @@ export function Profile() {
                   profile={profile}
                   onProfileUpdate={refreshProfile}
                 />
-                <MarketingPreferencesCard />
               </div>
 
               <div className='space-y-4 sm:space-y-6 xl:sticky xl:top-6'>

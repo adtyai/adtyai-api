@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import type { PromoCode, PromoCodeInput } from '@/features/adty-marketing/api'
+import type { PromoCode, PromoCodeInput } from '@/features/adty-promo/api'
 import { api } from '@/lib/api'
 import { requireServerSuccess } from '@/lib/server-error-message'
 

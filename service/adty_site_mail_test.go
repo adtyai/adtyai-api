@@ -212,25 +212,6 @@ func TestSenderDomainRejectsOwnAndInvalidDomains(t *testing.T) {
 	}
 }
 
-func TestMarketingSenderUsesSiteNameOnlyWhenSenderVerified(t *testing.T) {
-	db, fake := prepareMailDB(t)
-	adty_setting.GetMarketingSetting().FromAddress = "ADTY AI <news@news.adtyai.com>"
-	owner, site := openActiveSite(t, db, "newsy")
-	setSiteBrand(t, db, site, `{"name":"News AI"}`)
-
-	// 没开站长发件：平台营销地址和平台站名
-	assert.Equal(t, AdtyMarketingSender{From: "ADTY AI <news@news.adtyai.com>", SiteName: common.SystemName}, AdtyMarketingSiteSender(site.Id))
-
-	_, err := AddAdtySiteSenderDomain(context.Background(), owner.Id, "mail.newsy.org")
-	require.NoError(t, err)
-	fake.set("dom-mail.newsy.org", "verified")
-	require.NoError(t, RunAdtySenderDomainCheckOnce(context.Background(), time.Now()))
-
-	// 站长发件验证通过：显示名换成分站站名，地址仍是营销子域名（站长的域名只用于系统邮件）
-	assert.Equal(t, AdtyMarketingSender{From: "News AI <news@news.adtyai.com>", SiteName: "News AI"}, AdtyMarketingSiteSender(site.Id))
-	assert.Equal(t, AdtyMarketingSender{From: "ADTY AI <news@news.adtyai.com>", SiteName: common.SystemName}, AdtyMarketingSiteSender(0))
-}
-
 func TestBrandFieldsLengthAndPlainText(t *testing.T) {
 	ok := AdtySiteBrandInput{Name: "Shop AI", Tagline: "Fast", Notice: "Hello", SupportContact: "t.me/shop", LogoURL: "/uploads/site-assets/1.png"}
 	brand, err := NormalizeAdtySiteBrand(ok)

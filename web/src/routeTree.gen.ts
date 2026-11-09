@@ -48,7 +48,6 @@ import { Route as AuthenticatedDashboardIndexRouteImport } from './routes/_authe
 import { Route as AuthenticatedDashboardSectionRouteImport } from './routes/_authenticated/dashboard/$section'
 import { Route as AuthenticatedErrorsErrorRouteImport } from './routes/_authenticated/errors/$error'
 import { Route as AuthenticatedKeysIndexRouteImport } from './routes/_authenticated/keys/index'
-import { Route as AuthenticatedMarketingIndexRouteImport } from './routes/_authenticated/marketing/index'
 import { Route as AuthenticatedModelsIndexRouteImport } from './routes/_authenticated/models/index'
 import { Route as AuthenticatedModelsSectionRouteImport } from './routes/_authenticated/models/$section'
 import { Route as AuthenticatedPaymentChannelsIndexRouteImport } from './routes/_authenticated/payment-channels/index'
@@ -285,12 +284,6 @@ const AuthenticatedKeysIndexRoute = AuthenticatedKeysIndexRouteImport.update({
   path: '/keys/',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
-const AuthenticatedMarketingIndexRoute =
-  AuthenticatedMarketingIndexRouteImport.update({
-    id: '/marketing/',
-    path: '/marketing/',
-    getParentRoute: () => AuthenticatedRouteRoute,
-  } as any)
 const AuthenticatedModelsIndexRoute =
   AuthenticatedModelsIndexRouteImport.update({
     id: '/models/',
@@ -549,7 +542,6 @@ export interface FileRoutesByFullPath {
   '/channels/': typeof AuthenticatedChannelsIndexRoute
   '/dashboard/': typeof AuthenticatedDashboardIndexRoute
   '/keys/': typeof AuthenticatedKeysIndexRoute
-  '/marketing/': typeof AuthenticatedMarketingIndexRoute
   '/models/': typeof AuthenticatedModelsIndexRoute
   '/payment-channels/': typeof AuthenticatedPaymentChannelsIndexRoute
   '/profile/': typeof AuthenticatedProfileIndexRoute
@@ -624,7 +616,6 @@ export interface FileRoutesByTo {
   '/channels': typeof AuthenticatedChannelsIndexRoute
   '/dashboard': typeof AuthenticatedDashboardIndexRoute
   '/keys': typeof AuthenticatedKeysIndexRoute
-  '/marketing': typeof AuthenticatedMarketingIndexRoute
   '/models': typeof AuthenticatedModelsIndexRoute
   '/payment-channels': typeof AuthenticatedPaymentChannelsIndexRoute
   '/profile': typeof AuthenticatedProfileIndexRoute
@@ -703,7 +694,6 @@ export interface FileRoutesById {
   '/_authenticated/channels/': typeof AuthenticatedChannelsIndexRoute
   '/_authenticated/dashboard/': typeof AuthenticatedDashboardIndexRoute
   '/_authenticated/keys/': typeof AuthenticatedKeysIndexRoute
-  '/_authenticated/marketing/': typeof AuthenticatedMarketingIndexRoute
   '/_authenticated/models/': typeof AuthenticatedModelsIndexRoute
   '/_authenticated/payment-channels/': typeof AuthenticatedPaymentChannelsIndexRoute
   '/_authenticated/profile/': typeof AuthenticatedProfileIndexRoute
@@ -781,7 +771,6 @@ export interface FileRouteTypes {
     | '/channels/'
     | '/dashboard/'
     | '/keys/'
-    | '/marketing/'
     | '/models/'
     | '/payment-channels/'
     | '/profile/'
@@ -856,7 +845,6 @@ export interface FileRouteTypes {
     | '/channels'
     | '/dashboard'
     | '/keys'
-    | '/marketing'
     | '/models'
     | '/payment-channels'
     | '/profile'
@@ -934,7 +922,6 @@ export interface FileRouteTypes {
     | '/_authenticated/channels/'
     | '/_authenticated/dashboard/'
     | '/_authenticated/keys/'
-    | '/_authenticated/marketing/'
     | '/_authenticated/models/'
     | '/_authenticated/payment-channels/'
     | '/_authenticated/profile/'
@@ -1267,13 +1254,6 @@ declare module '@tanstack/react-router' {
       path: '/keys'
       fullPath: '/keys/'
       preLoaderRoute: typeof AuthenticatedKeysIndexRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/marketing/': {
-      id: '/_authenticated/marketing/'
-      path: '/marketing'
-      fullPath: '/marketing/'
-      preLoaderRoute: typeof AuthenticatedMarketingIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/models/': {
@@ -1635,7 +1615,6 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedChannelsIndexRoute: typeof AuthenticatedChannelsIndexRoute
   AuthenticatedDashboardIndexRoute: typeof AuthenticatedDashboardIndexRoute
   AuthenticatedKeysIndexRoute: typeof AuthenticatedKeysIndexRoute
-  AuthenticatedMarketingIndexRoute: typeof AuthenticatedMarketingIndexRoute
   AuthenticatedModelsIndexRoute: typeof AuthenticatedModelsIndexRoute
   AuthenticatedPaymentChannelsIndexRoute: typeof AuthenticatedPaymentChannelsIndexRoute
   AuthenticatedProfileIndexRoute: typeof AuthenticatedProfileIndexRoute
@@ -1667,7 +1646,6 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedChannelsIndexRoute: AuthenticatedChannelsIndexRoute,
   AuthenticatedDashboardIndexRoute: AuthenticatedDashboardIndexRoute,
   AuthenticatedKeysIndexRoute: AuthenticatedKeysIndexRoute,
-  AuthenticatedMarketingIndexRoute: AuthenticatedMarketingIndexRoute,
   AuthenticatedModelsIndexRoute: AuthenticatedModelsIndexRoute,
   AuthenticatedPaymentChannelsIndexRoute:
     AuthenticatedPaymentChannelsIndexRoute,

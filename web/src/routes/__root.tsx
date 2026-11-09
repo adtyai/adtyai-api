@@ -31,7 +31,6 @@ import { NavigationProgress } from '@/components/navigation-progress'
 import { Toaster } from '@/components/ui/sonner'
 import { ThemeCustomizationProvider } from '@/context/theme-customization-provider'
 import { GroupDisplaySync } from '@/features/adty-groups/components/group-display-sync'
-import { useSignupSourceCapture } from '@/features/adty-marketing/lib/signup-source'
 import { useAdtyPrerenderCleanup } from '@/features/adty-seo/prerender-cleanup'
 import { TawkWidget } from '@/features/adty-support/tawk-widget'
 import { GeneralError } from '@/features/errors/general-error'
@@ -59,7 +58,6 @@ function RootComponent() {
   // adty task 9.3: drop the prerendered home page on any other page
   useAdtyPrerenderCleanup()
   // adty task 12.5: first-visit UTM, landing page and referrer for sign-up stats
-  useSignupSourceCapture()
 
   useEffect(
     () =>
