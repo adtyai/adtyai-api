@@ -1,3 +1,4 @@
+adty.api_key.site_mismatch: "This API key cannot be used on this site."
 adty.epay.maintenance_subject: "Payment channel {{.Name}} is in maintenance"
 adty.epay.maintenance_body: "Payment channel {{.Name}} had {{.Count}} unpaid orders in a row and was moved to maintenance. Check the channel, then enable it again in Payment channels."
 adty.referral.withdraw_paid_subject: "Your withdrawal of ${{.Amount}} has been paid"

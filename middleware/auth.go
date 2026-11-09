@@ -527,6 +527,11 @@ func TokenAuthReadOnly() func(c *gin.Context) {
 			c.Abort()
 			return
 		}
+		if status := service.AdtyAPIKeyHostStatus(userCache.SiteId, c.Request.Host); status != 0 {
+			common.ApiErrorStatus(c, status, errors.New(i18n.T(c, i18n.MsgAdtyAPIKeySiteMismatch)))
+			c.Abort()
+			return
+		}
 
 		c.Set("id", token.UserId)
 		c.Set("token_id", token.Id)
@@ -624,6 +629,10 @@ func TokenAuth() func(c *gin.Context) {
 		userEnabled := userCache.Status == common.UserStatusEnabled
 		if !userEnabled {
 			abortWithOpenAiMessage(c, http.StatusForbidden, common.TranslateMessage(c, i18n.MsgAuthUserBanned))
+			return
+		}
+		if status := service.AdtyAPIKeyHostStatus(userCache.SiteId, c.Request.Host); status != 0 {
+			abortWithOpenAiMessage(c, status, i18n.T(c, i18n.MsgAdtyAPIKeySiteMismatch), types.ErrorCodeAccessDenied)
 			return
 		}
 

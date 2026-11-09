@@ -24,6 +24,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
@@ -729,6 +730,9 @@ func TestTokenAllowUserQuotaQueryOnCreateAndUpdate(t *testing.T) {
 }
 
 func TestGetTokenUsageFollowsTheUserQuotaSwitchAndIPWhitelist(t *testing.T) {
+	previousAddress := system_setting.ServerAddress
+	system_setting.ServerAddress = "http://example.com"
+	t.Cleanup(func() { system_setting.ServerAddress = previousAddress })
 	for _, tc := range []struct {
 		name          string
 		allow         bool

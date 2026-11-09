@@ -1,3 +1,4 @@
+adty.api_key.site_mismatch: "この API キーはこのサイトでは使用できません。"
 adty.epay.maintenance_subject: "決済チャネル {{.Name}} がメンテナンス中になりました"
 adty.epay.maintenance_body: "決済チャネル {{.Name}} で未払いの注文が {{.Count}} 件続いたため、メンテナンス中に切り替えました。チャネルを確認し、問題がなければ「決済チャネル」で再度有効にしてください。"
 adty.referral.withdraw_paid_subject: "${{.Amount}} の出金が支払われました"

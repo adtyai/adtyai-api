@@ -1,3 +1,4 @@
+adty.api_key.site_mismatch: "此 API 金鑰無法用於目前站點。"
 adty.epay.maintenance_subject: "支付通道 {{.Name}} 已轉為維護中"
 adty.epay.maintenance_body: "支付通道 {{.Name}} 連續 {{.Count}} 筆訂單未付款，已自動轉為維護中。請檢查通道，確認沒問題後到「支付通道」重新啟用。"
 adty.referral.withdraw_paid_subject: "你提現的 ${{.Amount}} 已打款"

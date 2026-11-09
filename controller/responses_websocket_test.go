@@ -27,6 +27,7 @@ import (
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/config"
+	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/alicebob/miniredis/v2"
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
@@ -41,6 +42,9 @@ var responsesWSTestUserSequence atomic.Int64
 func setupResponsesWSRequestTest(t *testing.T) (*model.User, *model.Token) {
 	t.Helper()
 	require.NoError(t, i18n.Init())
+	previousAddress := system_setting.ServerAddress
+	system_setting.ServerAddress = "http://example.com"
+	t.Cleanup(func() { system_setting.ServerAddress = previousAddress })
 	previousDB := model.DB
 	previousLogDB := model.LOG_DB
 	previousType := common.MainDatabaseType()
@@ -106,7 +110,7 @@ func setupResponsesWSRequestTest(t *testing.T) (*model.User, *model.Token) {
 	return user, token
 }
 
-func newResponsesWSTestRunner(t *testing.T, token *model.Token) (relay.ResponsesWSRequestRunner, *http.Request) {
+func newResponsesWSTestRunner(t *testing.T, token *model.Token, siteHost ...string) (relay.ResponsesWSRequestRunner, *http.Request) {
 	t.Helper()
 	var runner relay.ResponsesWSRequestRunner
 	engine := gin.New()
@@ -115,6 +119,9 @@ func newResponsesWSTestRunner(t *testing.T, token *model.Token) (relay.Responses
 		runner = newResponsesWSRequestRunner(c)
 	})
 	request := httptest.NewRequest(http.MethodGet, "/v1/responses", nil)
+	if len(siteHost) > 0 {
+		request.Host = siteHost[0]
+	}
 	request.RemoteAddr = "127.0.0.1:12345"
 	request.Header.Set("Authorization", "Bearer sk-"+token.Key)
 	request.Header.Set("X-Forwarded-For", "203.0.113.8")
@@ -142,9 +149,12 @@ func TestResponsesWSRequestRunnerRefreshesBillingContextAndCleansBody(t *testing
 	// A later upstream header mutation must not replace the client's credential.
 	handshake.Header.Set("Authorization", "Bearer upstream-secret")
 	handshake.Header.Set("X-Forwarded-For", "198.51.100.99")
+	handshake.Host = "mutated-handshake.invalid"
 	var storage common.BodyStorage
 	request := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{"input":"first"}`))
+	request.Host = "synthetic-request.invalid"
 	require.Nil(t, runner(request, "ws-first", func(c *gin.Context) *types.NewAPIError {
+		assert.Equal(t, "example.com", c.Request.Host, "every event keeps the authenticated handshake host")
 		assert.Equal(t, user.Id, c.GetInt("id"))
 		assert.Equal(t, 100, c.GetInt("token_quota"))
 		assert.Equal(t, "203.0.113.8", c.ClientIP())
@@ -419,6 +429,7 @@ func newResponsesWSBillingTest(t *testing.T, expression string, handle func(*web
 		Relay(c, types.RelayFormatOpenAIResponses)
 	})
 	gateway := httptest.NewServer(engine)
+	system_setting.ServerAddress = gateway.URL
 	fixture.gatewayURL = gateway.URL
 	// LIFO cleanup stops WS and HTTP handlers before draining their async jobs.
 	t.Cleanup(func() { drainControllerTestPool(t) })

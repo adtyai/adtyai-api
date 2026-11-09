@@ -424,3 +424,5 @@
 | `model/billing_quota.go` | 读未刷库的用户额度差额时持有队列锁，读完即放，不包住数据库事务 | 队列刚刷进数据库时不能把行和差额拆开读；锁序反过来会和批量刷新死锁 | 本次修改 |
 | `model/user_quota_adjustment.go` | 调额下限按数据库余额加上还没刷库的差额判断，队列锁不包住事务 | 不能在队列刚刷库时把活余额调成负数，也不能卡住并发调额 | 本次修改 |
 | `setting/ratio_setting/group_ratio.go` | JSON 编解码改走 `common` 的编解码包装，不再直接用 `encoding/json` | 根模块的 JSON 编解码必须走统一编解码 | 本次修改 |
+| `middleware/auth.go` | `TokenAuth` 和 `TokenAuthReadOnly` 验证用户后核对实际 Host 与 Key 用户的站点归属 | 主站、各分站和未知 Host 之间不能跨站使用 API Key，包含只读接口；错误使用八种后端语言 | 全平台验收 B/P |
+| `controller/responses_websocket.go` | 每条 `response.create` 重新鉴权时固定使用已认证握手的实际 Host | 内部合成请求不能改变站点身份，分站长连接继续按本站身份鉴权 | 全平台验收 B/P |

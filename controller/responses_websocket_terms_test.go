@@ -8,6 +8,7 @@ import (
 
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relaykit/types"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/adty_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -15,6 +16,14 @@ import (
 
 func TestResponsesWSRechecksSiteTermsOnEveryCreate(t *testing.T) {
 	user, token := setupResponsesWSRequestTest(t)
+	reseller := adty_setting.GetResellerSetting()
+	previousReseller := *reseller
+	reseller.Enabled, reseller.RootDomains = true, []string{"example.test"}
+	service.InvalidateAdtySiteCache()
+	t.Cleanup(func() {
+		*reseller = previousReseller
+		service.InvalidateAdtySiteCache()
+	})
 	require.NoError(t, model.DB.AutoMigrate(&model.AdtySite{}, &model.AdtySiteCustomer{}))
 	site := model.AdtySite{OwnerUserId: user.Id + 100, Subdomain: "ws-terms", RootDomain: "example.test", Status: model.AdtySiteStatusActive}
 	require.NoError(t, model.DB.Create(&site).Error)
@@ -25,7 +34,7 @@ func TestResponsesWSRechecksSiteTermsOnEveryCreate(t *testing.T) {
 	previous := legal.SiteCustomerTermsVersion
 	legal.SiteCustomerTermsVersion = 7
 	t.Cleanup(func() { legal.SiteCustomerTermsVersion = previous })
-	runner, _ := newResponsesWSTestRunner(t, token)
+	runner, _ := newResponsesWSTestRunner(t, token, "ws-terms.example.test")
 	called := false
 	handle := func(*gin.Context) *types.NewAPIError { called = true; return nil }
 	request := func() *http.Request {

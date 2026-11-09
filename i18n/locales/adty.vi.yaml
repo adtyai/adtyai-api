@@ -1,3 +1,4 @@
+adty.api_key.site_mismatch: "Khóa API này không thể dùng trên trang này."
 adty.epay.maintenance_subject: "Kênh thanh toán {{.Name}} đã chuyển sang bảo trì"
 adty.epay.maintenance_body: "Kênh thanh toán {{.Name}} có {{.Count}} đơn hàng liên tiếp chưa thanh toán nên đã được chuyển sang bảo trì. Hãy kiểm tra kênh, sau đó bật lại trong Kênh thanh toán."
 adty.referral.withdraw_paid_subject: "Khoản rút ${{.Amount}} của bạn đã được chi trả"

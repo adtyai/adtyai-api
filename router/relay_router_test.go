@@ -10,6 +10,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -17,6 +18,9 @@ import (
 
 func TestListModelsSupportsOpenAIAndGeminiAuthentication(t *testing.T) {
 	setupRelayRouterTestDB(t)
+	oldAddress := system_setting.ServerAddress
+	system_setting.ServerAddress = "https://main.example.com"
+	t.Cleanup(func() { system_setting.ServerAddress = oldAddress })
 
 	user := model.User{
 		Username: "models-user",
@@ -67,6 +71,7 @@ func TestListModelsSupportsOpenAIAndGeminiAuthentication(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			recorder := httptest.NewRecorder()
 			request := httptest.NewRequest(http.MethodGet, test.path, nil)
+			request.Host = "main.example.com"
 			if test.headerName != "" {
 				value := "modelstestkey"
 				if test.headerName == "Authorization" {

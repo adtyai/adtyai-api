@@ -15,11 +15,15 @@ import (
 	"github.com/QuantumNous/new-api/pkg/adtylimit"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/adty_setting"
+	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
 
 func TestVideoRemixUsesUserLimitBeforeSubmission(t *testing.T) {
+	oldAddress := system_setting.ServerAddress
+	system_setting.ServerAddress = "https://main.example.com"
+	t.Cleanup(func() { system_setting.ServerAddress = oldAddress })
 	require.NoError(t, i18n.Init())
 	opened, err := model.OpenAdtyTestDatabase()
 	if errors.Is(err, model.ErrAdtyTestDSNUnset) {
@@ -74,6 +78,7 @@ func TestVideoRemixUsesUserLimitBeforeSubmission(t *testing.T) {
 	remix := func() *httptest.ResponseRecorder {
 		recorder := httptest.NewRecorder()
 		request := httptest.NewRequest(http.MethodPost, "/v1/videos/video_1/remix", strings.NewReader(`{}`))
+		request.Host = "main.example.com"
 		request.Header.Set("Content-Type", "application/json")
 		request.Header.Set("Authorization", "Bearer sk-remixkey")
 		engine.ServeHTTP(recorder, request)
@@ -88,6 +93,7 @@ func TestVideoRemixUsesUserLimitBeforeSubmission(t *testing.T) {
 	for range 3 {
 		recorder := httptest.NewRecorder()
 		request := httptest.NewRequest(http.MethodGet, "/v1/video/generations/task_1", nil)
+		request.Host = "main.example.com"
 		request.Header.Set("Authorization", "Bearer sk-remixkey")
 		engine.ServeHTTP(recorder, request)
 		require.NotEqual(t, http.StatusTooManyRequests, recorder.Code, recorder.Body.String())

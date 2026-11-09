@@ -52,6 +52,7 @@ func TestRelaySubmitSurfacesRequireCurrentSiteTerms(t *testing.T) {
 	} {
 		t.Run(route.method+route.path, func(t *testing.T) {
 			request := httptest.NewRequest(route.method, route.path, strings.NewReader(`{"model":"terms-test","input":"test"}`))
+			request.Host = f.site.Subdomain + "." + f.site.RootDomain
 			request.Header.Set("Authorization", "Bearer sk-"+token.Key)
 			request.Header.Set("Content-Type", "application/json")
 			response := httptest.NewRecorder()

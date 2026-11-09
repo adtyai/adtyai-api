@@ -135,6 +135,29 @@ func AdtyIsMainHost(host string) bool {
 	return host == hostOfURL(system_setting.ServerAddress) || host == hostOfURL(adty_setting.GetSiteSetting().APIBaseURL)
 }
 
+// AdtyAPIKeyHostStatus checks the key owner's site against the trusted request
+// Host. It resolves the host itself so every token-authenticated route is covered,
+// including routes mounted without the site-context middleware.
+func AdtyAPIKeyHostStatus(siteID int, host string) int {
+	if AdtyIsMainHost(host) {
+		if siteID == 0 {
+			return 0
+		}
+		return http.StatusForbidden
+	}
+	if !resellerSetting().Enabled {
+		return http.StatusNotFound
+	}
+	site := AdtySiteForHost(host)
+	if site == nil {
+		return http.StatusNotFound
+	}
+	if !AdtySiteServesCustomers(site) || site.Id != siteID {
+		return http.StatusForbidden
+	}
+	return 0
+}
+
 // AdtySiteForHost 按主机名查站点：先查已 active 的自定义域名，再按「子域名.根域名」查。
 // 没有对应站点返回 nil。站点状态由调用方判断（pending 的站点还没开，调用方当作查不到）。
 // AdtyIsCustomDomainHost reports an active custom hostname, not a platform subdomain.

@@ -10,6 +10,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
@@ -36,6 +37,7 @@ type siteFixture struct {
 
 func newSiteFixture(t *testing.T) *siteFixture {
 	t.Helper()
+	require.NoError(t, i18n.Init())
 	disableAdtyRedis(t)
 	db := adtyTestDB(t)
 	require.NoError(t, db.AutoMigrate(&model.User{}, &model.UserSession{}, &model.Token{}, &model.AuthFlow{}, &model.TwoFA{},
@@ -254,13 +256,90 @@ func TestCustomDomainRejectsOAuth(t *testing.T) {
 func TestUnknownHostModes(t *testing.T) {
 	f := newSiteFixture(t)
 	cfg := adty_setting.GetResellerSetting()
-	assert.Equal(t, "index", f.do(t, http.MethodGet, "stranger.example.net", "/pricing", "").Body.String(), "main mode serves the main site")
+	assert.Equal(t, http.StatusNotFound, f.do(t, http.MethodGet, "stranger.example.net", "/pricing", "").Code,
+		"an unrecognized host cannot be routed to the main site")
 
 	cfg.UnknownHostMode = adty_setting.ResellerUnknownHostReject
 	assert.Equal(t, http.StatusNotFound, f.do(t, http.MethodGet, "stranger.example.net", "/pricing", "").Code)
-	assert.Equal(t, http.StatusOK, f.do(t, http.MethodGet, "stranger.example.net", "/api/status", "").Code, "API calls are not limited by host")
+	assert.Equal(t, http.StatusNotFound, f.do(t, http.MethodGet, "stranger.example.net", "/api/status", "").Code,
+		"unknown-host APIs cannot silently run in the main-site scope")
 	assert.Equal(t, "index", f.do(t, http.MethodGet, "main.example.com", "/pricing", "").Body.String(), "the main host is never rejected")
 	assert.Equal(t, "index", f.do(t, http.MethodGet, "shop.sites.example.com", "/pricing", "").Body.String())
+}
+
+func TestAPIKeyMustMatchRequestSite(t *testing.T) {
+	f := newSiteFixture(t)
+	mainUser := f.user(t, "main-api-key-user", 0)
+	siteUser := f.user(t, "site-api-key-user", f.site.Id)
+	mainKey := "mainSiteKey"
+	siteKey := "siteSiteKey"
+	for _, token := range []*model.Token{
+		{UserId: mainUser.Id, Key: mainKey, Status: common.TokenStatusEnabled, ExpiredTime: -1, UnlimitedQuota: true},
+		{UserId: siteUser.Id, Key: siteKey, Status: common.TokenStatusEnabled, ExpiredTime: -1, UnlimitedQuota: true},
+	} {
+		require.NoError(t, f.db.Create(token).Error)
+	}
+	request := func(host, key string) *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+		req.Host = host
+		req.Header.Set("Authorization", "Bearer "+key)
+		response := httptest.NewRecorder()
+		f.engine.ServeHTTP(response, req)
+		return response
+	}
+
+	assert.Equal(t, http.StatusOK, request("shop.sites.example.com", siteKey).Code)
+	assert.Equal(t, http.StatusForbidden, request("main.example.com", siteKey).Code)
+	assert.Equal(t, http.StatusOK, request("main.example.com", mainKey).Code)
+	assert.Equal(t, http.StatusForbidden, request("shop.sites.example.com", mainKey).Code)
+	assert.Equal(t, http.StatusNotFound, request("stranger.example.net", mainKey).Code)
+}
+
+func TestAPIKeyReadOnlyAndCrossSiteHostIsolation(t *testing.T) {
+	f := newSiteFixture(t)
+	otherOwner := f.user(t, "other-api-owner", 0)
+	other, err := service.OpenAdtySite(otherOwner.Id, "other-api-site", model.AdtySiteOpenedByAdmin, service.AdtySitePreset{})
+	require.NoError(t, err)
+	customer := f.user(t, "read-only-key-user", f.site.Id)
+	key := "readonlySiteKey"
+	require.NoError(t, f.db.Create(&model.Token{UserId: customer.Id, Key: key, Status: common.TokenStatusEnabled, ExpiredTime: -1, UnlimitedQuota: true}).Error)
+	for _, path := range []string{"/api/usage/token/", "/api/log/token", "/v1/models"} {
+		for _, tc := range []struct {
+			host   string
+			status int
+		}{
+			{service.AdtySiteDisplayHost(f.site), http.StatusOK},
+			{service.AdtySiteDisplayHost(other), http.StatusForbidden},
+			{"main.example.com", http.StatusForbidden},
+			{"stranger.example.net", http.StatusNotFound},
+		} {
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			req.Host = tc.host
+			req.Header.Set("Authorization", "Bearer "+key)
+			req.Header.Set("X-Forwarded-Host", service.AdtySiteDisplayHost(f.site))
+			response := httptest.NewRecorder()
+			f.engine.ServeHTTP(response, req)
+			assert.Equal(t, tc.status, response.Code, path+" on "+tc.host+": "+response.Body.String())
+		}
+	}
+}
+
+func TestUnknownHostRejectedWhenResellerDisabled(t *testing.T) {
+	f := newSiteFixture(t)
+	adty_setting.GetResellerSetting().Enabled = false
+	mainUser := f.user(t, "disabled-main-key", 0)
+	require.NoError(t, f.db.Create(&model.Token{UserId: mainUser.Id, Key: "disabledResellerKey", Status: common.TokenStatusEnabled, ExpiredTime: -1, UnlimitedQuota: true}).Error)
+	for _, path := range []string{"/pricing", "/api/status", "/v1/models"} {
+		for _, host := range []string{"stranger.example.net", "shop.sites.example.com"} {
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			req.Host = host
+			req.Header.Set("Authorization", "Bearer disabledResellerKey")
+			response := httptest.NewRecorder()
+			f.engine.ServeHTTP(response, req)
+			assert.Equal(t, http.StatusNotFound, response.Code, path+" on "+host)
+		}
+	}
 }
 
 func TestClosedSubdomainRedirects(t *testing.T) {
@@ -268,7 +347,7 @@ func TestClosedSubdomainRedirects(t *testing.T) {
 	resp := f.do(t, http.MethodGet, "gone.sites.example.com", "/wallet?x=1", "")
 	assert.Equal(t, http.StatusFound, resp.Code)
 	assert.Equal(t, "https://shop.sites.example.com/wallet?x=1", resp.Header().Get("Location"), "customers moved to the shop site")
-	assert.Equal(t, http.StatusOK, f.do(t, http.MethodGet, "gone.sites.example.com", "/api/status", "").Code, "API requests are not redirected")
+	assert.Equal(t, http.StatusForbidden, f.do(t, http.MethodGet, "gone.sites.example.com", "/api/status", "").Code, "closed sites cannot run API requests as the main site")
 
 	require.NoError(t, f.db.Model(&model.AdtySite{}).Where("id = ?", f.closed.Id).Update("close_transfer_to", 0).Error)
 	service.InvalidateAdtySiteCache()
@@ -427,17 +506,33 @@ func TestSiteCustomerLoginOnlyOnOwnSite(t *testing.T) {
 	assert.True(t, ok, "the switch turns the restriction off")
 }
 
-func TestApiTokenNotLimitedBySite(t *testing.T) {
+func TestAPIKeySiteBindingIgnoresForwardedHostAndAllowsOwnCustomDomain(t *testing.T) {
 	f := newSiteFixture(t)
 	customer := f.user(t, "token-customer", f.site.Id)
 	require.NoError(t, f.db.Create(&model.Token{UserId: customer.Id, Key: "sitetokenkey", Status: common.TokenStatusEnabled, ExpiredTime: -1, UnlimitedQuota: true}).Error)
-	for _, host := range []string{"main.example.com", "shop.sites.example.com", "stranger.example.net"} {
+	saved := service.AdtyLoadCustomDomains
+	service.AdtyLoadCustomDomains = func() (map[string]int, error) {
+		return map[string]int{"api.customer-brand.com": f.site.Id}, nil
+	}
+	t.Cleanup(func() { service.AdtyLoadCustomDomains = saved; service.InvalidateAdtySiteCache() })
+	service.InvalidateAdtySiteCache()
+	for _, tc := range []struct {
+		host   string
+		status int
+	}{
+		{"main.example.com", http.StatusForbidden},
+		{"shop.sites.example.com", http.StatusOK},
+		{"api.customer-brand.com", http.StatusOK},
+		{"stranger.example.net", http.StatusNotFound},
+		{"gone.sites.example.com", http.StatusForbidden},
+	} {
 		req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
-		req.Host = host
+		req.Host = tc.host
+		req.Header.Set("X-Forwarded-Host", "shop.sites.example.com")
 		req.Header.Set("Authorization", "Bearer sk-sitetokenkey")
 		recorder := httptest.NewRecorder()
 		f.engine.ServeHTTP(recorder, req)
-		assert.Equal(t, http.StatusOK, recorder.Code, host+": "+recorder.Body.String())
+		assert.Equal(t, tc.status, recorder.Code, tc.host+": "+recorder.Body.String())
 	}
 }
 

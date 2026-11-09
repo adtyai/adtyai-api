@@ -10,7 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// adtyAPIPathPrefixes 是接口请求的前缀：这些请求在任何 Host 上都照常处理（API 调用不限域名，执行层决定 29）。
+// adtyAPIPathPrefixes identifies API requests for closed-site and custom-domain handling.
 var adtyAPIPathPrefixes = []string{"/api/", "/v1/", "/v1beta/", "/mj/", "/pg/"}
 
 func adtyIsSessionAPI(path string) bool {
@@ -37,20 +37,20 @@ func adtyIsAPIPath(path string) bool {
 }
 
 // AdtySiteContext 按请求的 Host 识别当前分站（任务 11.2），放进 c.Set("adty_site", site)；主站或查不到时不放。
-// 只认站点表（带缓存），不信任 X-Forwarded-Host 之类的头（执行层决定 28）。分站功能没打开时什么都不做。
+// 只认站点表（带缓存），不信任 X-Forwarded-Host 之类的头（执行层决定 28）。分站关闭时仅主站 Host 可用。
 //   - active、paused、closing 的站照常识别；pending 的站还没开，当作查不到。
-//   - closed 的站：页面请求 302 到客户的新归属（转回主站就跳主站），接口请求照常处理。
-//   - 查不到的 Host：unknown_host_mode=reject 时页面请求返回 404，其余当成主站。
+//   - closed 的站：页面请求 302 到客户的新归属，接口请求拒绝。
+//   - 查不到的 Host：所有请求返回 404，不回退到主站。
 func AdtySiteContext() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		cfg := adty_setting.GetResellerSetting()
-		if !cfg.Enabled {
+		host := service.AdtyNormalizeHost(c.Request.Host)
+		if service.AdtyIsMainHost(host) {
 			c.Next()
 			return
 		}
-		host := service.AdtyNormalizeHost(c.Request.Host)
-		if host == "" || service.AdtyIsMainHost(host) {
-			c.Next()
+		if !cfg.Enabled {
+			c.AbortWithStatus(http.StatusNotFound)
 			return
 		}
 		if service.AdtyIsCustomDomainHost(host) {
@@ -76,11 +76,11 @@ func AdtySiteContext() gin.HandlerFunc {
 				c.Abort()
 				return
 			}
+			c.AbortWithStatus(http.StatusForbidden)
+			return
 		default:
-			if cfg.UnknownHostMode == adty_setting.ResellerUnknownHostReject && !api {
-				c.AbortWithStatus(http.StatusNotFound)
-				return
-			}
+			c.AbortWithStatus(http.StatusNotFound)
+			return
 		}
 		c.Next()
 	}

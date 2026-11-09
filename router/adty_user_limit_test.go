@@ -13,6 +13,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/adtylimit"
 	"github.com/QuantumNous/new-api/setting/adty_setting"
+	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -22,6 +23,9 @@ import (
 // MJ 组的 Distribute 挂在组上、先于提交路由上的限流，要有渠道才走得到，MJ 的格式在 middleware 包里测。
 func TestAdtyLimitMountedOnResponses(t *testing.T) {
 	f := newAdtyGuardFixture(t)
+	oldAddress := system_setting.ServerAddress
+	system_setting.ServerAddress = "https://main.example.com"
+	t.Cleanup(func() { system_setting.ServerAddress = oldAddress })
 	require.NoError(t, i18n.Init())
 	setting := adty_setting.GetLimitSetting()
 	saved := *setting
@@ -49,6 +53,7 @@ func TestAdtyLimitMountedOnResponses(t *testing.T) {
 
 	for _, path := range []string{"/v1/chat/completions", "/v1/responses", "/v1/images/generations", "/v1beta/models/gemini-pro:generateContent"} {
 		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"model":"gpt-4o","prompt":"a cat"}`))
+		req.Host = "main.example.com"
 		req.Header.Set("Authorization", "Bearer "+key)
 		req.Header.Set("Content-Type", "application/json")
 		recorder := httptest.NewRecorder()
