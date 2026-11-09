@@ -298,6 +298,10 @@ func registerAdtyResellerRoutes(apiRouter *gin.RouterGroup) {
 	rootWallets := apiRouter.Group("/adty/admin/sites", middleware.RootAuth())
 	rootWallets.GET("/:id/wallets", controller.GetAdtyAdminSiteWallets)
 	rootWallets.GET("/:id/wallet-ledgers", controller.GetAdtyAdminSiteWalletLedger)
+	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/admin/sites", "scope", "option:write")
+	rootWallets.POST("", controller.CreateAdtyAdminSite)
+	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/admin/sites/:id/review", "scope", "option:write")
+	rootWallets.POST("/:id/review", controller.ReviewAdtyAdminSite)
 
 	admin := apiRouter.Group("/adty/admin", middleware.AdminAuth())
 	for _, route := range []struct {
@@ -314,8 +318,6 @@ func registerAdtyResellerRoutes(apiRouter *gin.RouterGroup) {
 		{http.MethodGet, "/sites/:id/stats", authz.AdtySiteRead, controller.GetAdtyAdminSiteStats},
 		{http.MethodGet, "/sites/:id", authz.AdtySiteRead, controller.GetAdtyAdminSite},
 		{http.MethodGet, "/sites/:id/customers", authz.AdtySiteRead, controller.GetAdtyAdminSiteCustomers},
-		{http.MethodPost, "/sites", authz.AdtySiteCreate, controller.CreateAdtyAdminSite},
-		{http.MethodPost, "/sites/:id/review", authz.AdtySiteReview, controller.ReviewAdtyAdminSite},
 		{http.MethodPost, "/sites/customers/:id/review", authz.AdtySiteReview, controller.ReviewAdtySiteCustomer},
 		{http.MethodPut, "/sites/:id", authz.AdtySiteAdjust, controller.AdjustAdtyAdminSite},
 		{http.MethodPut, "/sites/:id/status", authz.AdtySiteAdjust, controller.SetAdtyAdminSiteStatus},

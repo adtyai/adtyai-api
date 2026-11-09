@@ -3,6 +3,7 @@ package router
 import (
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -136,6 +137,64 @@ func TestAdminSiteCustomersMaskEmailWithoutUserRead(t *testing.T) {
 	assert.Contains(t, full.Body.String(), "alice@example.com")
 }
 
+func TestSelfServiceSiteApplicationIsDisabled(t *testing.T) {
+	f := newSiteFixture(t)
+	token := adtySessionToken(t, f.db, "self-service-site-applicant", common.RoleCommonUser)
+	req := httptest.NewRequest(http.MethodPost, "/api/adty/site/apply", strings.NewReader(`{"subdomain":"self-created"}`))
+	req.Host = "main.example.com"
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	response := httptest.NewRecorder()
+	f.engine.ServeHTTP(response, req)
+
+	assert.Equal(t, http.StatusForbidden, response.Code)
+	var sites int64
+	require.NoError(t, f.db.Model(&model.AdtySite{}).Where("subdomain = ?", "self-created").Count(&sites).Error)
+	assert.Zero(t, sites)
+}
+
+func TestOnlyRootCanCreateAdtySite(t *testing.T) {
+	f := newAdtyGuardFixture(t)
+	cfg := withResellerSetting(t)
+	cfg.Enabled, cfg.RootDomains = true, []string{"sites.example.com"}
+	cfg.CostFactor, cfg.MinCostFactor, cfg.MaxMarkup = new(0.8), new(0.5), new(3.0)
+	cfg.MaxSiteBonusExtra, cfg.TrialGrantMaxUSD, cfg.TrialGrantDailyUSD = new(0.0), new(0.0), new(0.0)
+	owner := model.User{Username: "root-designated-owner", Password: "x", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: "default", AuthVersion: 1}
+	require.NoError(t, f.db.Create(&owner).Error)
+	body := fmt.Sprintf(`{"user_id":%d,"subdomain":"root-only-site"}`, owner.Id)
+
+	f.grant(t, authz.AdtySiteCreate)
+	denied := adtyJSON(t, f.engine, http.MethodPost, "/api/adty/admin/sites", body, f.token)
+	assert.Equal(t, http.StatusForbidden, denied.Code, "an explicit admin grant cannot make site creation non-Root")
+
+	created := adtyJSON(t, f.engine, http.MethodPost, "/api/adty/admin/sites", body, f.root)
+	require.Equal(t, http.StatusOK, created.Code, created.Body.String())
+	var site model.AdtySite
+	require.NoError(t, f.db.Where("owner_user_id = ?", owner.Id).First(&site).Error)
+	assert.Equal(t, "root-only-site", site.Subdomain)
+}
+
+func TestOnlyRootCanActivateLegacySiteApplication(t *testing.T) {
+	f := newAdtyGuardFixture(t)
+	cfg := withResellerSetting(t)
+	cfg.Enabled, cfg.RootDomains = true, []string{"sites.example.com"}
+	cfg.CostFactor, cfg.MinCostFactor, cfg.MaxMarkup = new(0.8), new(0.5), new(3.0)
+	cfg.MaxSiteBonusExtra, cfg.TrialGrantMaxUSD, cfg.TrialGrantDailyUSD = new(0.0), new(0.0), new(0.0)
+	owner := model.User{Username: "legacy-applicant", Password: "x", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: "default", AuthVersion: 1}
+	require.NoError(t, f.db.Create(&owner).Error)
+	pending, err := service.OpenAdtySite(owner.Id, "legacy-pending", model.AdtySiteOpenedByAdmin, service.AdtySitePreset{InitialStatus: model.AdtySiteStatusPending})
+	require.NoError(t, err)
+	path := fmt.Sprintf("/api/adty/admin/sites/%d/review", pending.Id)
+	f.grant(t, authz.AdtySiteReview)
+	denied := adtyJSON(t, f.engine, http.MethodPost, path, `{"approve":true}`, f.token)
+	assert.Equal(t, http.StatusForbidden, denied.Code)
+	var unchanged model.AdtySite
+	require.NoError(t, f.db.First(&unchanged, pending.Id).Error)
+	assert.Equal(t, model.AdtySiteStatusPending, unchanged.Status)
+	approved := adtyJSON(t, f.engine, http.MethodPost, path, `{"approve":true}`, f.root)
+	require.Contains(t, approved.Body.String(), `"success":true`, approved.Body.String())
+}
+
 func TestSiteAdminPermissions(t *testing.T) {
 	f := newAdtyGuardFixture(t)
 	cfg := withResellerSetting(t)
@@ -167,6 +226,8 @@ func TestSiteAdminPermissions(t *testing.T) {
 	assert.Equal(t, http.StatusForbidden, adtyJSON(t, f.engine, http.MethodPost, "/api/adty/admin/sites", create, f.token).Code, "adjust cannot replace create")
 	f.grant(t, authz.AdtySiteRead, authz.AdtySiteCreate)
 	resp := adtyJSON(t, f.engine, http.MethodPost, "/api/adty/admin/sites", create, f.token)
+	require.Equal(t, http.StatusForbidden, resp.Code, "site creation is Root-only regardless of delegated grants")
+	resp = adtyJSON(t, f.engine, http.MethodPost, "/api/adty/admin/sites", create, f.root)
 	require.Contains(t, resp.Body.String(), `"success":true`, resp.Body.String())
 	var envelope apiEnvelope
 	require.NoError(t, common.Unmarshal(resp.Body.Bytes(), &envelope))

@@ -48,6 +48,7 @@ import { ADTY_PERMISSIONS, canAdmin } from '@/lib/adty-permissions'
 import { formatQuotaWithCurrency } from '@/lib/currency'
 import { formatTimestampToDate } from '@/lib/format'
 import { handleServerError } from '@/lib/handle-server-error'
+import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
 
 import {
@@ -96,7 +97,7 @@ function SiteActions(props: {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const user = useAuthStore((state) => state.auth.user)
-  const canReview = canAdmin(user, ADTY_PERMISSIONS.SITE_REVIEW)
+  const canReview = user?.role === ROLE.SUPER_ADMIN
   const canAdjust = canAdmin(user, ADTY_PERMISSIONS.SITE_ADJUST)
   const canDelete = canAdmin(user, ADTY_PERMISSIONS.SITE_DELETE)
   const site = props.site
@@ -165,13 +166,17 @@ function SiteActions(props: {
     void queryClient.invalidateQueries({ queryKey: siteAdminKeys.all })
   }
   const review = useMutation({
-    mutationFn: (approve: boolean) =>
-      reviewSite(site.id, {
+    mutationFn: (approve: boolean) => {
+      if (useAuthStore.getState().auth.user?.role !== ROLE.SUPER_ADMIN) {
+        throw new Error(t('No permission to perform this action'))
+      }
+      return reviewSite(site.id, {
         approve,
         cost_factor: costFactor.trim() || undefined,
         max_markup: maxMarkup.trim() || undefined,
         note: reason.trim(),
-      }),
+      })
+    },
     onSuccess: done,
     onError: (err) => handleServerError(err),
   })
@@ -251,7 +256,20 @@ function SiteActions(props: {
     takedown.isPending
   const editable = site.status !== 'closed' && site.status !== 'closing'
 
-  if (!canReview && !canAdjust && !canDelete) return null
+  const visibilityEditor = (
+    <SiteVisibilityEditor
+      value={visibility}
+      onChange={setVisibility}
+      disabled={
+        !canAdjust ||
+        !editable ||
+        site.status === 'pending' ||
+        busy ||
+        !visibilityValid
+      }
+    />
+  )
+  if (!canReview && !canAdjust && !canDelete) return visibilityEditor
   return (
     <section className='flex flex-col gap-3 rounded-lg border p-3'>
       <h3 className='text-sm font-medium'>{t('Manage')}</h3>
@@ -282,17 +300,7 @@ function SiteActions(props: {
           'Leave empty to use the global value. The owner is notified when d changes.'
         )}
       </p>
-      <SiteVisibilityEditor
-        value={visibility}
-        onChange={setVisibility}
-        disabled={
-          !canAdjust ||
-          !editable ||
-          site.status === 'pending' ||
-          busy ||
-          !visibilityValid
-        }
-      />
+      {visibilityEditor}
       {!visibilityValid && (
         <p role='alert' className='text-destructive text-sm'>
           {t(

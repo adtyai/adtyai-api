@@ -321,21 +321,14 @@ describe('site list', () => {
     expect(api.createSite).not.toHaveBeenCalled()
   })
 
-  it('allows site creation with create and no adjust grant', async () => {
+  it('does not offer site creation to an admin even with the create grant', async () => {
     asSiteAdmin(['read', 'create'])
     renderWith(<SitesPanel onOpenSite={() => undefined} />)
-    const form = screen.getByRole('form', { name: 'Open a reseller site' })
-    await userEvent.type(within(form).getByLabelText('User ID'), '21')
-    await userEvent.type(within(form).getByLabelText('Domain'), 'new-site')
-    await userEvent.click(
-      within(form).getByRole('button', { name: 'Open a reseller site' })
-    )
-    await waitFor(() =>
-      expect(api.createSite).toHaveBeenCalledWith({
-        user_id: 21,
-        subdomain: 'new-site',
-      })
-    )
+    await screen.findByRole('table', { name: 'Reseller sites' })
+    expect(
+      screen.queryByRole('form', { name: 'Open a reseller site' })
+    ).not.toBeInTheDocument()
+    expect(api.createSite).not.toHaveBeenCalled()
   })
 })
 

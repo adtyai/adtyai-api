@@ -37,9 +37,9 @@ import {
 } from '@/components/ui/table'
 import { PageSwitcher } from '@/features/referral/components/page-switcher'
 import { toIntlLocale } from '@/i18n/languages'
-import { ADTY_PERMISSIONS, canAdmin } from '@/lib/adty-permissions'
 import { formatNumber, formatTimestampToDate } from '@/lib/format'
 import { handleServerError } from '@/lib/handle-server-error'
+import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
 
 import {
@@ -111,10 +111,8 @@ export function SitesPanel(props: { onOpenSite: (site: AdminSite) => void }) {
   const [sort, setSort] = useState<SiteSort>(DEFAULT_SITE_SORT)
   const [ownerId, setOwnerId] = useState('')
   const [subdomain, setSubdomain] = useState('')
-  const canCreate = canAdmin(
-    useAuthStore((state) => state.auth.user),
-    ADTY_PERMISSIONS.SITE_CREATE
-  )
+  const canCreate =
+    useAuthStore((state) => state.auth.user?.role) === ROLE.SUPER_ADMIN
   const queryClient = useQueryClient()
   const params = {
     p: page,
@@ -130,12 +128,7 @@ export function SitesPanel(props: { onOpenSite: (site: AdminSite) => void }) {
   const rows = query.data?.items ?? []
   const openSite = useMutation({
     mutationFn: () => {
-      if (
-        !canAdmin(
-          useAuthStore.getState().auth.user,
-          ADTY_PERMISSIONS.SITE_CREATE
-        )
-      ) {
+      if (useAuthStore.getState().auth.user?.role !== ROLE.SUPER_ADMIN) {
         throw new Error(t('No permission to perform this action'))
       }
       return createSite({

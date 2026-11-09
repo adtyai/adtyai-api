@@ -11,25 +11,10 @@ import (
 // 站长侧的分站接口（P11）。站长中心的其余接口在 11.6。
 // 方案里写的 controller/adty_site.go 已经是主站站点配置接口，分站的站长侧接口放这个文件。
 
-// ApplyAdtySite 申请开站：POST /api/adty/site/apply {subdomain, contact_info, agree_version, invite_code?}。
-// 带有效邀请码时直接开成 active，否则等管理员审核。
+// ApplyAdtySite rejects the retired self-service application endpoint.
+// Root creates sites by selecting an existing main-site user in the admin API.
 func ApplyAdtySite(c *gin.Context) {
-	var body struct {
-		Subdomain    string `json:"subdomain"`
-		ContactInfo  string `json:"contact_info"`
-		AgreeVersion string `json:"agree_version"`
-		InviteCode   string `json:"invite_code"`
-	}
-	if err := common.DecodeJson(c.Request.Body, &body); err != nil {
-		common.ApiErrorT(c, "Invalid parameters")
-		return
-	}
-	site, err := service.ApplyAdtySite(c.GetInt("id"), body.Subdomain, body.ContactInfo, body.AgreeVersion, body.InviteCode)
-	if err != nil {
-		common.ApiError(c, err)
-		return
-	}
-	common.ApiSuccess(c, gin.H{"id": site.Id, "status": site.Status, "subdomain": site.Subdomain, "host": service.AdtySiteDisplayHost(site)})
+	c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"success": false, "message": "Unauthorized, insufficient privileges"})
 }
 
 // RequestAdtySiteClose 站长申请关站：POST /api/adty/site/close {reason}。客户去向由管理员定。
