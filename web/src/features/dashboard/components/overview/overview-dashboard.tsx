@@ -525,7 +525,7 @@ export function OverviewDashboard() {
       },
       {
         title: t('Send a request'),
-        description: t('API Documentation'),
+        description: t('Documentation'),
         to: '/docs',
         icon: TerminalSquare,
         completed: requestCount > 0,

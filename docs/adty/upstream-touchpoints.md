@@ -432,3 +432,4 @@
 | `router/main.go`、`pkg/jsplugin/routing.go` | 外置前端模式也在插件分发前拒绝 `/pg`；插件路由保留 `/pg` 命名空间，不能重新接管退役接口 | 防止部署模式或插件重新暴露旧接口 | 全平台验收 A/S |
 | `model/user.go`、`controller/user.go`、`web/src/hooks/{use-sidebar-data.ts,use-sidebar-config.ts}`、`web/src/features/{profile/components/sidebar-modules-card.tsx,system-settings/maintenance/config.ts,system-settings/maintenance/sidebar-modules-section.tsx}` | 移除 Playground 菜单和默认开关，管理员旧配置不再呈现该开关 | 历史设置不能重新暴露退役入口 | 全平台验收 A |
 | `web/src/features/dashboard/components/overview/overview-dashboard.tsx`、`web/src/lib/legacy-route.ts`、`web/src/routeTree.gen.ts` | 首次请求快捷入口指向已有 API 文档；旧书签回仪表盘；构建重新生成路由树 | 清除页面、路由及旧链接残留 | 全平台验收 A |
+| `web/src/features/dashboard/components/overview/{overview-dashboard.tsx,__tests__/setup-guide.test.tsx}` | 文档入口使用八语已存在的 `Documentation` 键并补可见文案回归 | 避免未登记的英文键在其他语言界面直接显示 | 全平台验收 A/Q |

@@ -157,6 +157,7 @@ describe('overview setup guide', () => {
     expect(
       screen.getByRole('link', { name: /Send a request/ })
     ).toHaveAttribute('href', '/docs')
+    expect(screen.getByText('Documentation', { exact: true })).toBeVisible()
     expect(document.querySelector('a[href="/playground"]')).toBeNull()
 
     await user.keyboard(' ')
