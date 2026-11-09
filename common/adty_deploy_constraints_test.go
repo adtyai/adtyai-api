@@ -218,8 +218,10 @@ func TestBackupFlushAuthorizationDoesNotLeakOrFallbackExplicitTokens(t *testing.
 printf '%s\n' "$@" >> "$GOV_ARGV"
 case "$*" in
   *adtyai-api*)
-    echo read >> "$GOV_ACTIONS"
-    [ "$GOV_CONTAINER_FAILURE" = 0 ] || exit 55
+    if [[ "$*" == *ADTY_FLUSH_TOKEN* ]]; then
+      echo read >> "$GOV_ACTIONS"
+      [ "$GOV_CONTAINER_FAILURE" = 0 ] || exit 55
+    fi
     while [ "$1" != adtyai-api ]; do shift; done
     shift
     if [ "$GOV_CONTAINER_MISSING" = 1 ]; then unset ADTY_FLUSH_TOKEN; else export ADTY_FLUSH_TOKEN="$GOV_CONTAINER_TOKEN"; fi
@@ -247,7 +249,7 @@ exit 99
 					env = append(env, value)
 				}
 			}
-			env = append(env, "PATH="+filepath.Join(root, "bin")+":"+os.Getenv("PATH"), "DEPLOY_DIR="+root, "BACKUP_DIR="+filepath.Join(root, "backups"), "ADTY_FLUSH_URL="+server.URL, "REAL_CURL="+realCurl, "GOV_ARGV="+argv, "GOV_ACTIONS="+actions, "GOV_CONTAINER_TOKEN="+fixture.container, "GOV_CONTAINER_MISSING=0", "GOV_CONTAINER_FAILURE=0")
+			env = append(env, "PATH="+filepath.Join(root, "bin")+":"+os.Getenv("PATH"), "DEPLOY_DIR="+root, "BACKUP_DIR="+filepath.Join(root, "backups"), "ADTY_FLUSH_URL="+server.URL, "REAL_CURL="+realCurl, "GOV_ARGV="+argv, "GOV_ACTIONS="+actions, "GOV_CONTAINER_TOKEN="+fixture.container, "GOV_CONTAINER_MISSING=0", "GOV_CONTAINER_FAILURE=0", "SQL_DSN=postgresql://localhost/synthetic", "LOG_SQL_DSN=")
 			if fixture.hostSet {
 				env = append(env, "ADTY_FLUSH_TOKEN="+fixture.host)
 			}

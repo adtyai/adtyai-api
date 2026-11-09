@@ -27,6 +27,7 @@ services:
       - ./logs:/app/logs
     environment:
       SQL_DSN: postgresql://adtyai:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/adtyai?sslmode=disable
+      LOG_SQL_DSN: ${LOG_SQL_DSN:-}
       REDIS_CONN_STRING: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}@redis:6379/0
       # 两个密钥都要固定：换了会让登录会话、推广 cookie 签名和任务产物的签名全部失效
       SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET in .env}

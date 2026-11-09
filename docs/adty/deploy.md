@@ -15,7 +15,7 @@
 
 ## 1. 准备服务器
 
-- 系统用 Debian 12 或 Ubuntu 24.04。装 Docker Engine 和 Compose 插件（按 Docker 官方文档装 `docker-ce`、`docker-compose-plugin`），再装 `nginx`（1.19.4 以上，`ssl_reject_handshake` 要用）、`ufw`、`curl`、`rsync`。
+- 系统用 Debian 12 或 Ubuntu 24.04。装 Docker Engine 和 Compose 插件（按 Docker 官方文档装 `docker-ce`、`docker-compose-plugin`），再装 `nginx`（1.19.4 以上，`ssl_reject_handshake` 要用）、`ufw`、`curl`、`rsync`、`python3`、`libpq5`（后两项供备份解析 PostgreSQL 连接串）。
 - 云服务商的安全组只开 22 和 443。80 不用开：Cloudflare 那边打开「始终使用 HTTPS」，回源只走 443。
 - 部署目录是 `/opt/adtyai`，把仓库里 `deploy/adty/` 下的文件都放进去：
 
@@ -31,6 +31,7 @@ sudo cp .env.example .env && sudo chmod 600 .env
 - 密码和密钥用 `openssl rand -hex 32` 生成。十六进制只有 0-9a-f，放进 `SQL_DSN`、`REDIS_CONN_STRING` 网址里不用转义。
 - `SESSION_SECRET`、`CRYPTO_SECRET` 分开设，设了就不要再改：换了会让所有登录会话、推广 cookie 签名、防刷指纹和任务产物的签名失效。不设 `CRYPTO_SECRET` 时它等于 `SESSION_SECRET`，以后想换 `SESSION_SECRET` 就会连带出问题，所以一开始就分开。
 - `.env` 另存一份到密码管理器。备份脚本不备份 `.env`，恢复时要用它。
+- `LOG_SQL_DSN` 可选，留空时日志使用主库；设置时必须是 PostgreSQL 17，且 API 容器和用于备份的 postgres 客户端容器均能访问它。备份按 API 容器实际的 `SQL_DSN` 和 `LOG_SQL_DSN` 导出，不假设连接是 compose 默认库。
 - compose 里固定写好的：`SESSION_COOKIE_SECURE=true`（和 `SESSION_COOKIE_TRUSTED_URL` 必须同时设，否则启动失败）、`ERROR_LOG_ENABLED=true`（默认关，不开就不记错误日志）、`BATCH_UPDATE_ENABLED=true`、`TRUSTED_PROXIES=172.30.0.1`。
 
 ## 3. 选镜像标签，从 GHCR 拉取
@@ -123,7 +124,11 @@ robots.txt 由网关按站点返回（任务 11.3）：主站和开了 SEO 的�
 
 ## 9. 备份和恢复
 
-`backup.sh` 每天做三件事：`pg_dump --format=custom` 导出数据库并用 `pg_restore --list` 检查文件完整；把 `/opt/adtyai/data`（返佣收款码、打款凭证等上传文件）打包；删掉本机 `/var/backups/adtyai` 里超过 14 天的备份；用 rsync 同步到 `BACKUP_REMOTE`。
+`backup.sh` 从运行中的 API 读取数据库连接，用 PostgreSQL 17 的 `pg_dump --format=custom` 导出主库；配置了不同的 `LOG_SQL_DSN` 时，同一时间戳另存 `adtyai-logdb-<时间>.dump`。日志连接为空或与主库连接完全相同时只导出一次；同一库的等价但不同写法会安全地多导出一份。每份归档经 `pg_restore --list` 校验，再打包 `/opt/adtyai/data`（返佣收款码、打款凭证等上传文件）。全部成功才发布文件、清理本机超过 14 天的三类归档并同步到 `BACKUP_REMOTE`；任何导出或校验失败都不发布和复制不完整文件组，也不清理旧备份。
+
+数据库密码经 libpq 分离，只通过 stdin 和容器内 `PGPASSWORD` 传递，避免进入命令参数或日志。宿主机必须有 `python3` 和 `libpq5`。应用 pgx 的 `search_path` 等服务器参数会转成 PostgreSQL `options`，已有 `options` 保留；仅忽略 pgx 的语句/描述缓存容量和查询执行模式，这些不适用于 `pg_dump`。`database` 别名和 `servicefile` 会转换为 libpq 的对应配置。客户端证书、service 文件使用已有只读挂载路径；脚本拒绝含 `sslpassword`、`krbspn` 或显式协议版本限制（`min_protocol_version`/`max_protocol_version`）的连接，不静默降低认证或协议要求。脚本不会保存 `.env`、数据库角色或 TLS 证书，这些须独立安全保管。
+
+各库的在线转储分别是一致快照，不能据此认定跨库及上传文件处于同一业务时刻。需要精确恢复点时，先阻断新业务写入、支付回调和后台任务并排空在途请求，保持 API 存活供刷盘和读取配置；备份成功后再停止 API。多节点须逐节点排空及刷盘。日常在线备份仍应配合数据库持续归档和明确的恢复点目标。
 
 - `BACKUP_REMOTE` 是另一台机器的 rsync 目标。服务器上 root 的 SSH 公钥要先加到那台机器的备份账号里。没设时本机备份照做，但退出码非 0，日志里会提示。
 - 同步不带 `--delete`：本机的备份被删或被改坏时，那边的旧备份还在。那台机器自己定期清理旧文件。
@@ -134,11 +139,24 @@ robots.txt 由网关按站点返回（任务 11.3）：主站和开了 SEO 的�
 ```bash
 cd /opt/adtyai
 sudo docker compose stop adtyai-api
-sudo docker compose exec -T postgres sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists --no-owner' \
+sudo docker compose exec -T postgres sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists --no-owner --exit-on-error' \
   </var/backups/adtyai/adtyai-db-<时间>.dump
+# 配置了独立日志库时，必须在启动 API 前恢复同时间戳的日志归档，见下文。
 sudo tar -xzf /var/backups/adtyai/adtyai-data-<时间>.tar.gz -C /opt/adtyai   # 解出 /opt/adtyai/data
-sudo docker compose start adtyai-api
 ```
+
+上述主库命令用于 compose 默认主库。自定义主库或独立日志库须连接各自的新建空库，不能把两份 dump 恢复到同一个库，也不能把下面命令直接用于已有业务表的库。保留原库，另建空库恢复及核对，再在停写状态下切换连接。使用版本 17 的客户端，在 root 专属、权限 600 的 `/root/adty-restore.pg_service.conf` 配置 `[adty-main]` 和 `[adty-log]` 的目标 host、port、dbname、user、password、sslmode；该文件不进入仓库或日志。确认两个目标均为空后分别执行：
+
+```bash
+sudo env PGSERVICEFILE=/root/adty-restore.pg_service.conf \
+  /usr/lib/postgresql/17/bin/pg_restore --dbname=service=adty-main --no-owner --exit-on-error \
+  </var/backups/adtyai/adtyai-db-<时间>.dump
+sudo env PGSERVICEFILE=/root/adty-restore.pg_service.conf \
+  /usr/lib/postgresql/17/bin/pg_restore --dbname=service=adty-log --no-owner --exit-on-error \
+  </var/backups/adtyai/adtyai-logdb-<时间>.dump
+```
+
+恢复完成后核对用户活余额（quota 加 quota_pending）、订单、账本、消费日志、审计事件及上传文件，再执行 `sudo docker compose start adtyai-api` 启动全部 API 节点。Redis 只保留兼容投影，恢复时应失效本应用相关缓存，不能清空共享 Redis。
 
 在新机器上恢复时，先放好 `.env`（同样的 `SESSION_SECRET`、`CRYPTO_SECRET`、`POSTGRES_PASSWORD`），`docker compose up -d postgres redis` 起好数据库，再按上面的步骤恢复。
 

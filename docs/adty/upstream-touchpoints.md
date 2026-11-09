@@ -483,3 +483,4 @@
 | `web/src/lib/legacy-route.test.ts` | 验证退休部署书签回退 | 最新产品范围排除模型部署管理 | R-03 |
 | `web/src/lib/legacy-route.ts` | 旧部署页面和设置回退保留的模型页 | 最新产品范围排除模型部署管理 | R-03 |
 | `web/src/routes/_authenticated/models/$section.tsx` | 移除部署专用搜索参数和访问分支 | 最新产品范围排除模型部署管理 | R-03 |
+| `.github/workflows/ci.yml` | 为真实备份脚本边界测试安装 python3/libpq5 | PostgreSQL 官方连接解析及密码保护不可跳过 | R-04 |

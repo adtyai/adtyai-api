@@ -60,6 +60,11 @@ jobs:
           mkdir -p web/dist
           touch web/dist/index.html
 
+      - name: Install backup script test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes python3 libpq5
+
       - name: Vet root module
         run: go vet ./...
 
