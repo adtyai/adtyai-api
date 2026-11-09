@@ -62,6 +62,10 @@ New API 是面向应用、Agent 和团队的自托管 AI 网关。将不同厂�
 
 你可以用它为团队分配已授权的模型资源，在切换上游时减少客户端改动，或搭建自己的多模型服务。支持接入 OpenAI、Anthropic、Google Gemini、Azure OpenAI、AWS Bedrock、Vertex AI、DeepSeek、通义千问及其他兼容服务。
 
+本 ADTY AI 分支增加了 Root 分站管理与站长交接、版本化支付场景、分站员工授权、通知已读回执和财务订单追溯。当前实现及剩余限制见 [ADTY 工程文档](./docs/adty/README.md)。
+
+镜像版本由 Git 分支和提交生成：`main` 使用 `main-<短 SHA>`，标签构建使用标签名。[构建工作流](./.github/workflows/adty-ghcr.yml) 将同一版本写入 `VERSION`，供前后端使用。
+
 > [!IMPORTANT]
 > - 本项目仅面向合法授权的 AI API 网关、组织内部鉴权、多模型管理、用量统计、成本核算和私有化部署场景。
 > - 使用者必须合法取得上游 API Key、账号、模型服务或接口权限，并遵守上游服务条款及适用法律法规。

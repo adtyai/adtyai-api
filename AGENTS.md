@@ -24,6 +24,14 @@ This is an AI API gateway/proxy built with Go. It aggregates 40+ upstream AI pro
 - JavaScript task plugins live in `plugins/tasks/`, run through `pkg/jsplugin/`, and integrate with host task polling and settlement.
 - `web/` is the React frontend (see `web/AGENTS.md`); `electron/` is the desktop wrapper.
 
+## ADTY Fork Conventions
+
+- The ADTY-specific behavior and remaining limits are documented in `docs/adty/README.md` and `docs/adty/features.md`. Keep these descriptions aligned with the implementation.
+- Creating a formal site, closing or transferring it, and handing it to another owner require Root. Owner handovers compare both the expected owner and ownership version, revoke affected sessions and staff grants, and require the new owner to accept the agreement.
+- Financial ownership is frozen with the original business operation. Tasks, late payments, refunds, settlements, and clawbacks must preserve that ownership across handovers; do not derive historical ownership from the site's current owner.
+- Payment scenes use versioned Root configuration and server-side validation in every checkout path. Existing orders retain their frozen facts. Site staff use their separate workspace and explicit server-side permissions.
+- `.github/workflows/adty-ghcr.yml` writes `VERSION` at build time: `main-<short SHA>` for `main`, the tag name for tag builds, and the ref plus short SHA for other branches. The checked-in empty `VERSION` is a build placeholder; the web and Electron package versions are independent package metadata.
+
 ## Internationalization (i18n)
 
 ### Backend (`i18n/`)

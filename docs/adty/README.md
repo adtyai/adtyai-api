@@ -4,27 +4,29 @@ adtyai-api 是 [QuantumNous/new-api](https://github.com/QuantumNous/new-api) 的
 
 ## 这个 fork 改了什么
 
-实施方案 P0–P12 都已经做完（2026-11-01），只有任务 11.0（用真实的 Cloudflare、Resend 账号实测）留到上线前。每个功能的规则、后台入口和算例见 [features.md](features.md)。
+最初实施方案 P0–P12 已于 2026-11-01 完成阶段交付，后续全平台规格仍有未闭环项，真实 Cloudflare、Resend 账号联调仍留到上线前。下列说明已同步到 2026-11-10 的实现；每个功能的规则、后台入口、算例和当前限制见 [features.md](features.md)。
 
-- **删掉的功能**：上游的订阅、兑换码（连同它的「购买链接」设置 TopUpLink）、上游邀请奖励，前后端整条删掉，删除单独提交。删了什么记在 deleted-features.md；整个删掉的文件和目录另记在 deleted-paths.txt，合并上游的脚本（任务 1.7）和守卫测试（任务 1.6）读它，防止合并上游时把删掉的东西带回来。
+- **删掉的功能**：上游的订阅、兑换码（连同它的「购买链接」设置 TopUpLink）、上游邀请奖励，以及 Playground、模型部署管理和独立营销中心，前后端整条删掉，删除单独提交。删了什么记在 deleted-features.md；整个删掉的文件和目录另记在 deleted-paths.txt，合并上游的脚本（任务 1.7）和守卫测试（任务 1.6）读它，防止合并上游时把删掉的东西带回来。
 - **上游的发布工作流**：docker-build、docker-image-branch、electron-build、release、sync-release-to-gitcode 五个 workflow 删掉（也在 deleted-paths.txt 里），镜像只由 `.github/workflows/adty-ghcr.yml` 构建，`ci.yml` 保留。本地的 712 个上游标签已经删掉（清单备份在仓库外的 `adtyai-api-upstream-tags-backup.txt`），`upstream` 远程设了 `tagopt --no-tags`，合并脚本把上游标签取到 `refs/upstream-tags/`，见 [upstream-merge.md](upstream-merge.md)。
-- **充值**：USDT 走 BEpusdt（TRC20、BEP20、Polygon、X Layer），支付宝、微信走我们自己的易支付多通道。订单另记在新表 `adty_topup_orders`，只走我们自己的入账：面额、加赠和优惠码加赠一起入账、算佣金、写流水；晚到的成功回调照样入账。加赠档位、最低充值额等和钱有关的参数都在后台设置，没有内置值。上游的单通道易支付、Stripe、Creem、Waffo 后端和设置项保留、不配置，钱包页只显示我们的方式。
+- **充值**：统一接入易支付、BEpusdt、Stripe、Creem、Waffo 和 Waffo Pancake；BEpusdt 支持 TRC20、BEP20、Polygon、X Layer。Root 配置版本化支付场景，按服务、方式、通道、金额、币种、站点及用户身份限制实际下单，钱包只显示当前可用选项。订单记在 `adty_topup_orders`，冻结场景及网关事实，面额、加赠和优惠码加赠按现有规则入账、算佣金、写流水；已冻结订单的可信晚到回调不受后续停用影响。BEpusdt 还支持可信查询和回调丢失恢复。加赠档位、最低充值额等和钱有关的参数都在后台设置，没有内置值。
 - **充值退款**：后台「充值对账」里的一个操作。只退没花掉的本金，赠金收回不退：按用户当前余额扣回这笔订单还剩的额度，余额最多扣到 0；按退掉的本金占本金的比例扣回佣金；分站订单里站长出的加赠只按收回的部分还给站长。真正把钱退给用户在线下做，后台显示应退多少。
 - **余额下限**：不允许透支。每个钱包请求都先预扣，余额不够直接拒绝（403），上游收不到请求；结算时实际费用比预扣多，最多扣到 0，差额由平台承担并记进日志的 `admin_info.shortfall_quota`（只有管理员看得到）。上游原来余额够多时跳过预扣的「信任额度」对钱包不再生效。
 - **推广返佣**：从旧项目移植（表 `referral_*`，接口 `/api/user/referral/*` 等），返佣比例沿用百分数，注册即有推广链接，只按充值面额计佣；订单里存返佣快照；退款时按退掉的本金比例扣回佣金。站长和分站客户不计邀请返佣。
 - **后台分权**：普通管理员默认没有任何后台权限，由超级管理员逐项开启、随时可以关；系统设置、易支付通道的新增和密钥、管理员任免只有超级管理员能做。
-- **站长分站（P11）**：用户可以开分站，客户付「主站价 × 站长倍率 k」，平台收「主站价 × 拿货系数 d」，站长赚差价，收益按消费记账、冻结后可以提现。每个分站有平台子域名，可以接自定义域名（Cloudflare for SaaS）和站长自己的发件域名（Resend）。主站后台能看各站明细、复核风控、关站和转移客户。
-- **营销（P12）**：营销邮件的同意和退订、群发（Resend Broadcasts）、三条自动触发邮件、充值优惠码（平台出资或站长出资）、注册来源统计。
+- **站长分站（P11）**：正式分站由 Root 创建，旧申请审批、关站迁移和更换站长也仅限 Root。当前计价仍为客户付「主站价 × 站长倍率 k」、平台收「主站价 × 拿货系数 d」，新规格的公式和完整三钱包资金链尚未闭环。每个分站有平台子域名，可以接自定义域名（Cloudflare for SaaS）和站长自己的发件域名（Resend）。交接以原站长和归属版本共同校验，撤销相关旧会话、暂停并清空员工授权，新站长重新接受协议；历史订单、异步任务、退款、结算和追回按原财务归属处理。独立收益账户和提现链仍有待完成项。
+- **营销（P12）范围调整**：独立营销中心、群发及营销自动邮件、营销同意和偏好、注册来源采集及统计已删除。充值优惠码保留，支持平台或站长出资；关站、涨价等业务系统邮件保留。
+- **员工、通知和财务**：分站员工有独立工作区和明确的只读或客户安全操作授权，权限由服务端逐次核对，撤权立即使旧会话失效；客户调额资金规则仍待补齐。通知支持发布、版本化已读回执，指定业务范围及部分角色角标仍未完成。用户可按站点筛选，财务可查看统一订单和冻结详情、追溯关联资金链，并按授权补查或处理退款。
 - **数据库**：部署目标为 PostgreSQL 17，缓存用 Redis。保留上游 SQLite 单测和 SQLite、MySQL、PostgreSQL 的兼容代码；ADTY 启动时主库或日志库不是 PostgreSQL 就直接退出。已有 PostgreSQL 16 数据目录须独立迁移，不能直接换镜像启动，见 [deploy.md](deploy.md)。
+- **版本号**：`.github/workflows/adty-ghcr.yml` 在镜像构建时生成 `VERSION`，前后端共用；`main` 为 `main-<短 SHA>`，标签构建为标签名，其他分支为分支名加短 SHA。仓库内空的 `VERSION` 是构建占位，web 和 Electron 的 `package.json` 版本独立维护；上游 v1.0.0-rc.47 只表示二开起点。
 - **名字、Logo 和语言**：访客、调用 API 的人、上游服务商和浏览器开发者工具能看到的 New API，都换成 ADTY AI 或 adtyai；站名 ADTY AI 在 8 种语言（zh-CN、zh-TW、en、fr、ja、ko、ru、vi）里都不翻译。Logo 换成「层叠网关」一套（`web/public` 下的图标、manifest、分享图），原稿和生成脚本在仓库外的 `adtyai-logo` 目录（`source/build.py`）。前端和后端的提示都有 8 种语言，CI 检查漏翻。Go 模块路径不改；LICENSE、NOTICE、THIRD-PARTY-LICENSES.md、上游源文件头和页脚的上游署名都保留（AGPL）。
 - **首页**：`/` 固定是英文，另外 7 种语言用 `/zh-cn`、`/ko` 这类网址；首页的标题、描述和正文写进网页源码，其余页面一律 noindex。
 - **其他**：白色主题；按用户限 RPM、TPM、并发，开了 Redis 但计数不可用时拒绝而不放行；客户能看到的日志和任务不露渠道和倍率；人工调额留痕，且不能把余额调成负数；防邮箱枚举，验证码写不进共享存储时不发信；密码连续错误 8 次后锁定 15 分钟；主站发布了协议或隐私政策后，注册必须接受并留下系统日志；所有流式格式在等首字时都能发保活；分组有固定 ID 和多语言显示名；官方价每天从 models.dev 同步，价格页显示节省比例；接入文档、推广计划、多语言条款和退款政策；网页客服 tawk.to；公开的服务状态页。
 
 ## 和 AGENTS.md 不一致的地方
 
-仓库根目录的 AGENTS.md 是上游写给 AI 代理的规范，我们不改它，方便合并上游。下面四点以本 fork 的约定为准：
+仓库根目录的 AGENTS.md 保留上游写给 AI 代理的通用规范，并补充本 fork 的交接、资金归属、支付场景和版本约定。下面四点说明本 fork 的具体约定，合并上游时一起核对：
 
-1. **数据库**：ADTY 的部署和资金验收目标为真实 PostgreSQL 17；通过连接实例的 `server_version_num` 确认主版本。我们写的、要用数据库的测试连 PostgreSQL；上游自己的 SQLite 单测照旧保留，公共建表、迁移和业务代码继续保留 SQLite、MySQL、PostgreSQL 的兼容分支。本轮不要求 MySQL 生产环境验收，不代表可以删除或破坏 MySQL 兼容代码。
+1. **数据库**：ADTY 的部署和资金验收目标为真实 PostgreSQL 17；通过连接实例的 `server_version_num` 确认主版本。上游自己的 SQLite 单测照旧保留，公共建表、迁移和业务代码继续保留 SQLite、MySQL、PostgreSQL 的兼容分支。涉及数据库行为的修改，必须在真实 SQLite、MySQL、PostgreSQL 上验证；迁移覆盖新库、历史升级和重复执行，资金集成验证还须使用隔离 PostgreSQL 17 和真实 Redis。
 2. **对外的名字**：AGENTS.md 规定 New API 和 QuantumNous 的名称、标识「任何情况下不得修改」。本 fork 按执行层决定 21 和任务 8.9，把访客、调用方、上游服务商和浏览器能看到的名字换成了 ADTY AI 或 adtyai（cookie 名、错误类型、本地存储键、网页标题、Logo 等，改了哪些、哪些不改见 conventions.md 和任务 8.9）。LICENSE、NOTICE、THIRD-PARTY-LICENSES.md、源码版权头、页脚的上游署名、Go 模块路径 `github.com/QuantumNous/new-api` 都照旧保留。
 3. **docs/adty/ 下的文档**：AGENTS.md 说没有用户明确要求时不要在 `docs/` 下新建文件。`docs/adty/` 下的文档都是按实施方案（约定 A：工程文档放 `docs/adty/`）或用户的要求建的，以后改功能时要同步更新这里的文档。
 4. **后端语言**：后端有 8 种（任务 9.1，后补 ko）：en、zh-CN、zh-TW、fr、ja、ko、ru、vi。上游键和我们自己的 `i18n/locales/adty.<语言>.yaml` 都须一次写齐，根目录 AGENTS.md 的语言清单已同步。
