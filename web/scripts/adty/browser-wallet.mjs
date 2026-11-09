@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
 import { createHash, randomBytes } from 'node:crypto'
 import { createServer } from 'node:http'
 
@@ -139,6 +140,28 @@ async function api(method, path, data) {
   assert.equal(response.status(), 200, `${method} ${path}`)
   assert.equal(body.success, true, JSON.stringify(body))
   return body.data
+}
+function postgresEvidence(query) {
+  try {
+    return execFileSync(
+      'psql',
+      [
+        process.env.ADTY_BROWSER_SQL_DSN,
+        '-XAt',
+        '-v',
+        'ON_ERROR_STOP=1',
+        '-c',
+        query,
+      ],
+      {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      }
+    )
+  } catch {
+    // A child-process error includes its argv, which may contain a DSN password.
+    throw new Error('Isolated PostgreSQL evidence query failed')
+  }
 }
 try {
   browser = await chromium.launch({
@@ -788,6 +811,119 @@ try {
   assert.equal(unauth.status, 401)
   const unauthAdmin = await fetch(`${base}/api/adty/admin/epay/channels`)
   assert.equal(unauthAdmin.status, 401)
+
+  await page.goto(base + '/site-admin/settings')
+  const cloudflareToken = page.getByLabel('Cloudflare API token', {
+    exact: true,
+  })
+  await cloudflareToken.waitFor()
+  const token = `browser-token-${randomBytes(16).toString('hex')}`
+  const widgetSecret = `browser-widget-${randomBytes(16).toString('hex')}`
+  await cloudflareToken.fill(token)
+  await page.getByRole('button', { name: 'Add widget', exact: true }).click()
+  await page
+    .getByLabel('Widget ID of widget 1', { exact: true })
+    .fill('browser-widget')
+  await page
+    .getByLabel('Site key of widget 1', { exact: true })
+    .fill('browser-site-key')
+  await page
+    .getByLabel('Secret of widget 1', { exact: true })
+    .fill(widgetSecret)
+  const secretSaved = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'PUT' &&
+      new URL(response.url()).pathname === '/api/adty/admin/reseller/settings'
+  )
+  await page.getByRole('button', { name: 'Save', exact: true }).click()
+  const secretResult = await (await secretSaved).json()
+  assert.equal(secretResult.success, true)
+  assert.equal(secretResult.data.cloudflare_token_configured, true)
+  assert.equal(
+    secretResult.data.turnstile_secret_configured['browser-widget'],
+    true
+  )
+  for (const secret of [token, widgetSecret]) {
+    assert.ok(!JSON.stringify(secretResult).includes(secret))
+  }
+  assert.ok(process.env.ADTY_BROWSER_SQL_DSN)
+  const secretRowsQuery = `SELECT json_object_agg(key, value) FROM options WHERE key IN ('adty_reseller_setting.cloudflare_apiToken', 'adty_reseller_setting.turnstile_widget_secret')`
+  const durableSecrets = JSON.parse(postgresEvidence(secretRowsQuery))
+  assert.equal(Object.keys(durableSecrets).length, 2)
+  for (const value of Object.values(durableSecrets)) {
+    assert.ok(value.startsWith('adty:secret:v1:'))
+    assert.ok(!value.includes(token) && !value.includes(widgetSecret))
+  }
+  const auditEvidence = postgresEvidence(
+    `SELECT json_agg(row_to_json(a)) FROM audit_logs a WHERE action = 'adty.site.settings' AND success = true`
+  )
+  assert.ok(JSON.parse(auditEvidence).length > 0)
+  assert.ok(auditEvidence.includes('cloudflare_apiToken'))
+  assert.ok(
+    !auditEvidence.includes(token) && !auditEvidence.includes(widgetSecret)
+  )
+  await page.reload()
+  await cloudflareToken.waitFor()
+  assert.equal(await cloudflareToken.inputValue(), '')
+  assert.equal(await cloudflareToken.getAttribute('type'), 'password')
+  assert.equal(
+    await cloudflareToken.getAttribute('placeholder'),
+    'Saved. Enter a new value to replace it'
+  )
+  assert.equal(
+    await page.getByLabel('Secret of widget 1', { exact: true }).inputValue(),
+    ''
+  )
+  const secretView = JSON.stringify(await api('get', '/api/option/'))
+  for (const secret of [
+    token,
+    widgetSecret,
+    ...Object.values(durableSecrets),
+  ]) {
+    assert.ok(!secretView.includes(secret))
+  }
+  await page
+    .getByRole('checkbox', { name: 'Remove the saved token', exact: true })
+    .check()
+  const secretCleared = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'PUT' &&
+      new URL(response.url()).pathname === '/api/adty/admin/reseller/settings'
+  )
+  await page.getByRole('button', { name: 'Save', exact: true }).click()
+  assert.equal(
+    (await (await secretCleared).json()).data.cloudflare_token_configured,
+    false
+  )
+  await api('put', '/api/adty/admin/reseller/settings', {
+    clear_secrets: ['turnstile_widget_secret'],
+  })
+  const clearedRows = JSON.parse(postgresEvidence(secretRowsQuery))
+  assert.equal(clearedRows['adty_reseller_setting.cloudflare_apiToken'], '')
+  assert.notEqual(
+    clearedRows['adty_reseller_setting.turnstile_widget_secret'],
+    durableSecrets['adty_reseller_setting.turnstile_widget_secret']
+  )
+  const clearedView = await api('get', '/api/adty/admin/reseller/settings')
+  assert.equal(clearedView.cloudflare_token_configured, false)
+  assert.deepEqual(clearedView.turnstile_secret_configured, {
+    'browser-widget': false,
+  })
+  await page.reload()
+  await cloudflareToken.waitFor()
+  assert.equal(await cloudflareToken.getAttribute('placeholder'), '')
+  assert.equal(
+    await page
+      .getByLabel('Secret of widget 1', { exact: true })
+      .getAttribute('placeholder'),
+    ''
+  )
+  await api('put', '/api/adty/admin/reseller/settings', {
+    turnstile_widgets: [],
+  })
+  console.log(
+    'PASS native Root token/widget save, encrypted PostgreSQL rows, reload without disclosure, key-only audit and explicit token clear'
+  )
   assert.deepEqual(errors, [])
   console.log(
     'PASS different-user order isolation, user/admin permissions, unauthenticated denial, real audit and zero pageerrors'

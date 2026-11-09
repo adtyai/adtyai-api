@@ -287,6 +287,7 @@ Logo：PNG、JPEG 或不含脚本的 SVG，不超过 200 KB，存在 `/data/uplo
 ### 自定义域名和 Turnstile
 
 - 要先打开 `custom_domain_enabled`（默认关），并填好 `cloudflare_apiToken`（密钥）、`cloudflare_zone_id`、`cname_target`，否则打不开。另有 `cloudflare_account_id`、`fallback_origin`（回源主机名）、`turnstile_widgets`（每个 widget 的 `id`、`site_key`）和 `turnstile_widget_secret`（widget id → secret，密钥）。
+- Cloudflare Token 和 widget secret 在 options 中以 AES-256-GCM 加密；只有部署固定的 `CRYPTO_SECRET` 能解密，数据库备份不包含该 key。历史明文首次读取时在行锁内升级，重复加载保持密文不变。错误 key 或损坏密文会清空本节点此域的运行密钥并记录不含秘密的错误，其余安全设置仍可加载。Root 可替换/清空密钥；空串保存保持旧值，任何角色均不能从接口读到原值或密文。
 - **流程**：站长在站点设置里填子域名（不能是根域名，不能在我们的根域名、主站域名、CNAME 目标、回源主机名下）→ 后端调 Cloudflare 建自定义主机名（HTTP 验证、DV 证书），3 秒后再查一次取验证记录 → 站长中心显示「把这个域名 CNAME 到 `cname_target`」和要加的 TXT 记录 → 主节点每 5 分钟查一次，主机名和证书都是 active 才启用；72 小时还不通标失败，站长重新提交就是重试。
 - **Turnstile**：域名启用后，按 `turnstile_widgets` 的顺序登记进第一个还有空位的 widget（每个 widget 最多 10 个域名）；名额满了域名照常能用，之后每 5 分钟重试登记。`/api/status` 按当前站点返回对应的 site key，校验时用对应的 secret，并核对 Cloudflare 返回的主机名。
 - 表：`adty_site_domains`。接口：`GET`、`POST /api/adty/site/domains`，`DELETE /api/adty/site/domains/:id`（要重新验证）。

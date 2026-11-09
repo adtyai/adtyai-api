@@ -43,6 +43,7 @@ type apiEnvelope struct {
 }
 
 func TestResellerSettingsSaveRules(t *testing.T) {
+	t.Setenv("CRYPTO_SECRET", "synthetic-site-secrets-test-key-32-bytes")
 	f := newAdtyGuardFixture(t)
 	cfg := withResellerSetting(t)
 	put := func(body string) apiEnvelope {
@@ -76,6 +77,26 @@ func TestResellerSettingsSaveRules(t *testing.T) {
 	assert.Equal(t, "cf-secret", cfg.CloudflareApiToken)
 	assert.Equal(t, "", on.Data["cloudflare_apiToken"], "the token is never returned")
 	assert.Equal(t, true, on.Data["cloudflare_token_configured"])
+	var encryptedToken model.Option
+	require.NoError(t, f.db.Where(&model.Option{Key: "adty_reseller_setting.cloudflare_apiToken"}).First(&encryptedToken).Error)
+	assert.NotContains(t, encryptedToken.Value, "cf-secret", "Root settings must persist an encrypted token")
+	assert.True(t, strings.HasPrefix(encryptedToken.Value, "adty:secret:v1:"))
+	view := adtyJSON(t, f.engine, http.MethodGet, "/api/option/", "", f.root)
+	require.Equal(t, http.StatusOK, view.Code)
+	var optionView struct {
+		Success bool `json:"success"`
+	}
+	require.NoError(t, common.Unmarshal(view.Body.Bytes(), &optionView))
+	require.True(t, optionView.Success)
+	assert.NotContains(t, view.Body.String(), "cf-secret")
+	assert.NotContains(t, view.Body.String(), encryptedToken.Value)
+	var auditRows []model.AuditLog
+	require.NoError(t, f.db.Where("action = ? AND success = ?", "adty.site.settings", true).Find(&auditRows).Error)
+	require.NotEmpty(t, auditRows)
+	audits, err := common.Marshal(auditRows)
+	require.NoError(t, err)
+	assert.Contains(t, string(audits), "cloudflare_apiToken", "credential changes must remain auditable")
+	assert.NotContains(t, string(audits), "cf-secret", "credential changes must audit key names only")
 	assert.True(t, put(`{"cloudflare_apiToken":""}`).Success)
 	assert.Equal(t, "cf-secret", cfg.CloudflareApiToken, "an empty secret means unchanged")
 	assert.True(t, put(`{"turnstile_widgets":[{"id":"w1","site_key":"site-key-1"},{"id":"w2","site_key":"site-key-2"}],"turnstile_widget_secret":{"w1":"widget-secret-1","w2":"widget-secret-2"}}`).Success)

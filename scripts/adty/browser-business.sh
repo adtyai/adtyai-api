@@ -123,6 +123,7 @@ if [ "$adty_connected_database" != "$adty_database" ]; then
   echo 'browser-business: derived DSN did not connect to the isolated database' >&2
   exit 1
 fi
+export ADTY_BROWSER_SQL_DSN="$adty_sql_dsn"
 
 adty_reserve_port() {
   python3 - <<'PY'
@@ -168,6 +169,7 @@ export ADTY_BROWSER_USERNAME=browserroot
 export ADTY_BROWSER_PASSWORD
 ADTY_BROWSER_PASSWORD=$(python3 -c 'import secrets; print("LocalGate!" + secrets.token_hex(16))')
 adty_session_secret=$(python3 -c 'import secrets; print(secrets.token_hex(32))')
+adty_crypto_secret=$(python3 -c 'import secrets; print(secrets.token_hex(32))')
 # Start outside the checkout so an operator's .env, database or log files cannot
 # be loaded. The compiled binary embeds the actual production web/dist bundle.
 (
@@ -175,7 +177,7 @@ adty_session_secret=$(python3 -c 'import secrets; print(secrets.token_hex(32))')
   exec env HOST=127.0.0.1 PORT="$adty_api_port" GIN_MODE=release \
     SQL_DSN="$adty_sql_dsn" LOG_SQL_DSN="$adty_sql_dsn" \
     REDIS_CONN_STRING="redis://127.0.0.1:$adty_redis_port/0" \
-    SESSION_SECRET="$adty_session_secret" "$adty_tmpdir/new-api"
+    SESSION_SECRET="$adty_session_secret" CRYPTO_SECRET="$adty_crypto_secret" "$adty_tmpdir/new-api"
 ) >"$adty_tmpdir/backend.log" 2>&1 &
 adty_backend_pid=$!
 export ADTY_BROWSER_BACKEND_PID="$adty_backend_pid"

@@ -484,3 +484,5 @@
 | `web/src/lib/legacy-route.ts` | 旧部署页面和设置回退保留的模型页 | 最新产品范围排除模型部署管理 | R-03 |
 | `web/src/routes/_authenticated/models/$section.tsx` | 移除部署专用搜索参数和访问分支 | 最新产品范围排除模型部署管理 | R-03 |
 | `.github/workflows/ci.yml` | 为真实备份脚本边界测试安装 python3/libpq5 | PostgreSQL 官方连接解析及密码保护不可跳过 | R-04 |
+| `model/option.go` | 配置存储边界加密分站secret；加载失败清空此域凭证并继续其他设置，批量写锁序固定 | Cloudflare Token 加密存储、历史升级及失败关闭 | R-05 |
+| `service/referral_test.go` | 用真实登录指纹落库值尝试解密配置凭据 | 防止业务HMAC输出与凭据加密key重合 | R-05 |

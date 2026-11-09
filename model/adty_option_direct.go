@@ -14,6 +14,16 @@ func ReadOptionForUpdate(tx *gorm.DB, key string) (string, bool, error) {
 }
 
 func readOption(db *gorm.DB, key string, lock bool) (string, bool, error) {
+	if isAdtySecretOption(key) {
+		var value string
+		var exists bool
+		err := db.Transaction(func(tx *gorm.DB) error {
+			var err error
+			value, exists, err = readAdtyOptionSecret(tx, key)
+			return err
+		})
+		return value, exists, err
+	}
 	var options []Option
 	query := db
 	if lock {

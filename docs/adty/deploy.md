@@ -31,6 +31,7 @@ sudo cp .env.example .env && sudo chmod 600 .env
 - 密码和密钥用 `openssl rand -hex 32` 生成。十六进制只有 0-9a-f，放进 `SQL_DSN`、`REDIS_CONN_STRING` 网址里不用转义。
 - `SESSION_SECRET`、`CRYPTO_SECRET` 分开设，设了就不要再改：换了会让所有登录会话、推广 cookie 签名、防刷指纹和任务产物的签名失效。不设 `CRYPTO_SECRET` 时它等于 `SESSION_SECRET`，以后想换 `SESSION_SECRET` 就会连带出问题，所以一开始就分开。
 - `.env` 另存一份到密码管理器。备份脚本不备份 `.env`，恢复时要用它。
+- Cloudflare Token 和 Turnstile widget secret 的数据库加密要求显式设置至少 32 字节的 `CRYPTO_SECRET`（建议上述随机 64 位十六进制），不能使用临时生成或会话默认值。所有节点及恢复环境必须使用同一个 key。历史明文首次载入自动加密；key 错误或密文损坏会停用本节点此域凭证并记录通用错误。恢复原 key 后重载配置，或由 Root 重新录入有效凭证；不得把密文当令牌填回界面。外部令牌泄露时先在 Cloudflare 撤销，再由 Root 保存替代值；不要直接修改 `CRYPTO_SECRET`，它还用于其他签名。旧明文备份仍须按敏感文件保管，不能因新版本加密就公开。
 - `LOG_SQL_DSN` 可选，留空时日志使用主库；设置时必须是 PostgreSQL 17，且 API 容器和用于备份的 postgres 客户端容器均能访问它。备份按 API 容器实际的 `SQL_DSN` 和 `LOG_SQL_DSN` 导出，不假设连接是 compose 默认库。
 - compose 里固定写好的：`SESSION_COOKIE_SECURE=true`（和 `SESSION_COOKIE_TRUSTED_URL` 必须同时设，否则启动失败）、`ERROR_LOG_ENABLED=true`（默认关，不开就不记错误日志）、`BATCH_UPDATE_ENABLED=true`、`TRUSTED_PROXIES=172.30.0.1`。
 

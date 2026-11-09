@@ -4,6 +4,7 @@ import (
 	"errors"
 	"maps"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -27,9 +28,27 @@ type Option struct {
 
 func AllOption() ([]*Option, error) {
 	var options []*Option
-	var err error
-	err = DB.Find(&options).Error
-	return options, err
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Order(commonKeyCol).Find(&options).Error; err != nil {
+			return err
+		}
+		// Deterministic key order keeps legacy upgrades safe across nodes.
+		for _, option := range options {
+			if !isAdtySecretOption(option.Key) {
+				continue
+			}
+			value, _, err := readAdtyOptionSecret(tx, option.Key)
+			if err != nil {
+				return err
+			}
+			option.Value = value
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return options, nil
 }
 
 func InitOptionMap() {
@@ -207,7 +226,15 @@ func loadOptionsFromDatabase() {
 	}()
 	passkeyOptionMutex.Lock()
 	defer passkeyOptionMutex.Unlock()
-	options, _ := AllOption()
+	options, err := AllOption()
+	if err != nil {
+		clearAdtyOptionSecrets()
+		common.SysError("could not load options; verify database access, CRYPTO_SECRET and encrypted site settings")
+		// A broken provider credential must not suppress unrelated security policy.
+		if err := DB.Where(commonKeyCol+" NOT IN ?", adtySecretOptionKeys).Find(&options).Error; err != nil {
+			return
+		}
+	}
 	passkeyOptions := make(map[string]string)
 	for _, option := range options {
 		if IsPasskeyDomainOption(option.Key) {
@@ -381,6 +408,10 @@ func UpdateOption(key string, value string) error {
 		return err
 	}
 	// Save to database first
+	stored, err := encodeAdtyOptionSecret(key, value)
+	if err != nil {
+		return err
+	}
 	option := Option{
 		Key: key,
 	}
@@ -388,7 +419,10 @@ func UpdateOption(key string, value string) error {
 	if err := DB.FirstOrCreate(&option, Option{Key: key}).Error; err != nil {
 		return err
 	}
-	option.Value = value
+	if option.Key != key && (isAdtySecretOption(option.Key) || isAdtySecretOption(key)) {
+		return common.NewMessage("Operation failed")
+	}
+	option.Value = stored
 	// Save is a combination function.
 	// If save value does not contain primary key, it will execute Create,
 	// otherwise it will execute Update (with all fields).
@@ -465,17 +499,28 @@ func SaveOptionsTx(tx *gorm.DB, values map[string]string) error {
 	if len(values) == 0 {
 		return nil
 	}
+	keys := make([]string, 0, len(values))
 	for key, value := range values {
 		if err := validateOptionValue(key, value); err != nil {
 			return err
 		}
+		keys = append(keys, key)
 	}
-	for key, value := range values {
+	slices.Sort(keys)
+	for _, key := range keys {
+		value := values[key]
+		stored, err := encodeAdtyOptionSecret(key, value)
+		if err != nil {
+			return err
+		}
 		option := Option{Key: key}
 		if err := tx.FirstOrCreate(&option, Option{Key: key}).Error; err != nil {
 			return err
 		}
-		option.Value = value
+		if option.Key != key && (isAdtySecretOption(option.Key) || isAdtySecretOption(key)) {
+			return common.NewMessage("Operation failed")
+		}
+		option.Value = stored
 		if err := tx.Save(&option).Error; err != nil {
 			return err
 		}

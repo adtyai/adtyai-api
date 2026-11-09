@@ -2,11 +2,17 @@ package service
 
 import (
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
+	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -106,6 +112,48 @@ func commissionFor(t *testing.T, db *gorm.DB, tradeNo string) model.ReferralComm
 	var c model.ReferralCommission
 	require.NoError(t, db.Where("source_trade_no = ?", tradeNo).First(&c).Error)
 	return c
+}
+
+func TestSiteSecretKeyIsIsolatedFromLoginFingerprint(t *testing.T) {
+	const rootKey = "synthetic-encryption-key-for-local-tests-only"
+	const optionKey = "adty_reseller_setting.cloudflare_apiToken"
+	const derivationLabel = "ADTY AI option encryption v1"
+	t.Setenv("CRYPTO_SECRET", rootKey)
+	db := adtyTestDB(t)
+	require.NoError(t, db.AutoMigrate(&model.Option{}, &model.AdtyUserFingerprint{}))
+	previousKey, previousOptions := common.CryptoSecret, common.OptionMap
+	cfg := adty_setting.GetResellerSetting()
+	previousConfig := *cfg
+	t.Cleanup(func() { common.CryptoSecret, common.OptionMap, *cfg = previousKey, previousOptions, previousConfig })
+	common.CryptoSecret, common.OptionMap = rootKey, map[string]string{}
+	require.NoError(t, model.UpdateOption(optionKey, "synthetic-cloudflare-token"))
+
+	// A normal login records an attacker-controlled, URL-decoded device cookie.
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Request = httptest.NewRequest("POST", "/api/user/login", nil)
+	ctx.Request.Header.Set("Cookie", AdtyDeviceCookie+"="+url.QueryEscape(derivationLabel))
+	AdtyRecordLoginFingerprint(ctx, 1)
+	var fingerprint model.AdtyUserFingerprint
+	require.NoError(t, db.Where("user_id = ? AND kind = ?", 1, "login").First(&fingerprint).Error)
+	require.Equal(t, common.HmacSha256(derivationLabel, rootKey), fingerprint.DeviceHash)
+	knownKey, err := hex.DecodeString(fingerprint.DeviceHash)
+	require.NoError(t, err)
+	block, err := aes.NewCipher(knownKey)
+	require.NoError(t, err)
+	box, err := cipher.NewGCMWithRandomNonce(block)
+	require.NoError(t, err)
+	var option model.Option
+	require.NoError(t, db.Where(&model.Option{Key: optionKey}).First(&option).Error)
+	encoded, ok := strings.CutPrefix(option.Value, "adty:secret:v1:")
+	require.True(t, ok)
+	sealed, err := base64.RawStdEncoding.DecodeString(encoded)
+	require.NoError(t, err)
+	_, err = box.Open(nil, nil, sealed, []byte(optionKey))
+	require.Error(t, err, "a stored device fingerprint must not decrypt protected option values")
+	plain, exists, err := model.ReadOptionFromDB(optionKey)
+	require.NoError(t, err)
+	require.True(t, exists)
+	require.Equal(t, "synthetic-cloudflare-token", plain)
 }
 
 func TestAdtyReferralSettingsDefaults(t *testing.T) {
