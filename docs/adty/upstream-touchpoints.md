@@ -522,3 +522,7 @@
 | `web/src/features/adty-site-owner/`、`web/src/i18n/locales/` | 在既有 BrandCard 复用 Input/Button/图片上传，增加标题、主色、独立图标并失效 status；八语同步 | 无新增通用控件或依赖，保存失败保留草稿 | BRAND-01 |
 | `web/src/lib/dom-utils.ts`、`status-query.ts`、`stores/system-config-store.ts`、`hooks/use-system-config.ts`、`components/theme-switch.tsx`、`main.tsx` | 冷启动、status 更新及主题切换统一应用品牌，独立图标不再被 Logo 预加载覆盖，清空移除颜色覆盖 | 前景按亮度保证对比，保留服务端 SEO 标题 | BRAND-01 |
 | `scripts/adty/browser-business.sh`、`web/scripts/adty/browser-site-brand.mjs` | 独立 PG17/Redis 生产桌面/移动验证真实设置、PNG/WebP 图片、公开 Host 品牌、刷新、他站隔离及清空 | SQL 仅查证，业务操作均走真实页面/API | BRAND-01 |
+| `model/adty_notification.go`、`model/adty_migrate.go`、`service/adty_notification.go` | 增加 user/site/read-version 复合主键回执，组装当前 Host 可见内容并生成 SHA256 版本键 | 幂等保留首次读取时间；仅接受当前仍可见的版本 | N-02 |
+| `controller/adty_notification.go`、`router/adty-router.go`、`router/adty_site_brand_test.go` | 注册通知收件箱 GET 与已读 POST，沿用用户会话及 `profile:read`/`profile:write` PAT scope | 不接受调用者指定账号或站点；真实三库测试新库、升级、重复写入、隔离和授权 | N-02 |
+| `web/src/lib/api.ts`、`web/src/hooks/use-notifications.ts`、`web/src/stores/notification-store.ts`、`web/src/components/notification-popover.tsx` | 登录账号走服务端回执，匿名保持本地回执；账号/Host 进入 query key，窗口重新聚焦及轮询刷新 | 不迁移来源不明的历史匿名回执；读取失败显示重试且不清未读 | N-02 |
+| `web/src/hooks/__tests__/notifications.test.tsx`、`web/scripts/adty/browser-notification-read.mjs` | 覆盖账号切换、独立 QueryClient、内容编辑、保存失败、恢复重试及桌面/移动真实浏览器流程 | 生产 PG17/Redis SQL 核对 A 有 4 条、B 有 0 条，pageerrors=0 | N-02 |

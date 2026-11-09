@@ -37,6 +37,11 @@ func SetAdtyRouter(apiRouter *gin.RouterGroup) {
 	registerAdtyLegalRoutes(apiRouter)
 	registerAdtyPromoRoutes(apiRouter)
 	registerAdtyResellerRoutes(apiRouter)
+	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/adty/notifications", "scope", "profile:read")
+	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/notifications/read", "scope", "profile:write")
+	notifications := apiRouter.Group("/adty/notifications", middleware.UserAuth())
+	notifications.GET("", controller.GetAdtyNotifications)
+	notifications.POST("/read", controller.ReadAdtyNotifications)
 
 	// 余额流水（任务 7.2）
 	users := apiRouter.Group("/adty/admin/users", middleware.AdminAuth())

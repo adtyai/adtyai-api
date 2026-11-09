@@ -16,13 +16,22 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useQuery } from '@tanstack/react-query'
-import { useState, useMemo } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { useStatus } from '@/hooks/use-status'
-import { getNotice } from '@/lib/api'
+import {
+  getNotice,
+  getNotificationInbox,
+  readNotifications,
+  type NotificationInbox,
+} from '@/lib/api'
 import { requireServerSuccess } from '@/lib/server-error-message'
+import { useAuthStore } from '@/stores/auth-store'
 import { useNotificationStore } from '@/stores/notification-store'
+
+const EMPTY_ANNOUNCEMENTS: Record<string, unknown>[] = []
+const EMPTY_READ_KEYS: string[] = []
 
 function hashString(input: string): string {
   let hash = 0
@@ -64,6 +73,8 @@ function getAnnouncementKey(item: Record<string, unknown>): string {
  * Provides unread counts and read status management
  */
 export function useNotifications() {
+  const userID = useAuthStore((state) => state.auth.user?.id ?? 0)
+  const queryClient = useQueryClient()
   const [popoverOpen, setPopoverOpen] = useState(false)
   const [activeTab, setActiveTab] = useState<'notice' | 'announcements'>(
     'notice'
@@ -73,23 +84,59 @@ export function useNotifications() {
   const {
     data: noticeResponse,
     isLoading: noticeLoading,
+    error: noticeError,
     refetch: refetchNotice,
   } = useQuery({
     queryKey: ['notice'],
     queryFn: async () => requireServerSuccess(await getNotice()),
     staleTime: 1000 * 60 * 5, // 5 minutes
+    enabled: userID === 0,
   })
 
   // Fetch Announcements from status
   const { status, loading: statusLoading } = useStatus()
   const announcementsEnabled = status?.announcements_enabled ?? false
-  const announcements = useMemo<Record<string, unknown>[]>(() => {
+  const publicAnnouncements = useMemo<Record<string, unknown>[]>(() => {
     if (!announcementsEnabled) return []
     return ((status?.announcements || []) as Record<string, unknown>[]).slice(
       0,
       20
     )
   }, [announcementsEnabled, status?.announcements])
+
+  const inboxKey = useMemo(
+    () => ['adty-notifications', userID, window.location.host] as const,
+    [userID]
+  )
+  const inbox = useQuery({
+    queryKey: inboxKey,
+    queryFn: getNotificationInbox,
+    enabled: userID > 0,
+    staleTime: 30_000,
+    refetchInterval: 30_000,
+    refetchOnWindowFocus: 'always',
+  })
+  const read = useMutation({
+    mutationFn: (input: { keys: string[]; queryKey: typeof inboxKey }) =>
+      readNotifications(input.keys),
+    onSuccess: (_data, input) => {
+      queryClient.setQueryData<NotificationInbox>(input.queryKey, (previous) =>
+        previous
+          ? {
+              ...previous,
+              read_keys: [...new Set([...previous.read_keys, ...input.keys])],
+            }
+          : previous
+      )
+      void queryClient.invalidateQueries({ queryKey: input.queryKey })
+    },
+  })
+  const markRead = read.mutate
+  const announcements =
+    userID > 0
+      ? (inbox.data?.announcements ?? EMPTY_ANNOUNCEMENTS)
+      : publicAnnouncements
+  const serverReadKeys = inbox.data?.read_keys ?? EMPTY_READ_KEYS
 
   // Notification store
   const {
@@ -100,19 +147,27 @@ export function useNotifications() {
   } = useNotificationStore()
 
   // Extract notice content
-  const noticeContent = noticeResponse?.success
-    ? (noticeResponse.data || '').trim()
-    : ''
+  let noticeContent = ''
+  if (userID > 0) {
+    noticeContent = inbox.data?.notice ?? ''
+  } else if (noticeResponse?.success) {
+    noticeContent = (noticeResponse.data || '').trim()
+  }
 
   // Calculate unread counts
   const unreadCounts = useMemo(() => {
-    const noticeUnread =
-      noticeContent && noticeContent !== lastReadNotice ? 1 : 0
+    const noticeRead =
+      userID > 0
+        ? serverReadKeys.includes(inbox.data?.notice_key ?? '')
+        : noticeContent === lastReadNotice
+    const noticeUnread = noticeContent && !noticeRead ? 1 : 0
 
     const announcementsUnread = announcements.filter(
       (item: Record<string, unknown>) => {
-        const key = getAnnouncementKey(item)
-        return !readAnnouncementKeys.includes(key)
+        if (userID > 0) {
+          return !serverReadKeys.includes(String(item.read_key ?? ''))
+        }
+        return !readAnnouncementKeys.includes(getAnnouncementKey(item))
       }
     ).length
 
@@ -121,7 +176,40 @@ export function useNotifications() {
       announcements: announcementsUnread,
       total: noticeUnread + announcementsUnread,
     }
-  }, [noticeContent, lastReadNotice, announcements, readAnnouncementKeys])
+  }, [
+    noticeContent,
+    lastReadNotice,
+    announcements,
+    readAnnouncementKeys,
+    userID,
+    serverReadKeys,
+    inbox.data?.notice_key,
+  ])
+
+  const markAccountTabRead = useCallback(
+    (tab: 'notice' | 'announcements') => {
+      const keys =
+        tab === 'notice'
+          ? [inbox.data?.notice_key ?? '']
+          : announcements.map((item) => String(item.read_key ?? ''))
+      const unread = keys.filter((key) => key && !serverReadKeys.includes(key))
+      if (unread.length) markRead({ keys: unread, queryKey: inboxKey })
+    },
+    [announcements, inbox.data?.notice_key, inboxKey, markRead, serverReadKeys]
+  )
+
+  useEffect(() => {
+    if (popoverOpen && inbox.isSuccess && !inbox.error && userID > 0) {
+      markAccountTabRead(activeTab)
+    }
+  }, [
+    activeTab,
+    inbox.error,
+    inbox.isSuccess,
+    markAccountTabRead,
+    popoverOpen,
+    userID,
+  ])
 
   const markAnnouncementsAsRead = () => {
     if (announcements.length > 0) {
@@ -137,10 +225,10 @@ export function useNotifications() {
     const nextTab = tab || activeTab
 
     // Mark currently visible content as read when opening the notification center
-    if (noticeContent) {
+    if (userID === 0 && noticeContent) {
       markNoticeRead(noticeContent)
     }
-    if (nextTab === 'announcements') {
+    if (userID === 0 && nextTab === 'announcements') {
       markAnnouncementsAsRead()
     }
 
@@ -161,7 +249,7 @@ export function useNotifications() {
   const handleTabChange = (tab: 'notice' | 'announcements') => {
     setActiveTab(tab)
 
-    if (tab === 'announcements') {
+    if (userID === 0 && tab === 'announcements') {
       markAnnouncementsAsRead()
     }
   }
@@ -170,7 +258,8 @@ export function useNotifications() {
     // Data
     notice: noticeContent,
     announcements,
-    loading: noticeLoading || statusLoading,
+    loading: userID > 0 ? inbox.isLoading : noticeLoading || statusLoading,
+    error: userID > 0 ? inbox.error : noticeError,
 
     // Unread counts
     unreadCount: unreadCounts.total,
@@ -186,6 +275,6 @@ export function useNotifications() {
     // Actions
     openPopover: handleOpenPopover,
     closePopover: () => setPopoverOpen(false),
-    refetchNotice,
+    refetchNotice: userID > 0 ? inbox.refetch : refetchNotice,
   }
 }

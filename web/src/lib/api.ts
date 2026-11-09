@@ -70,6 +70,23 @@ export async function getUserGroups(): Promise<{
 // System APIs
 // ============================================================================
 
+export interface NotificationInbox {
+  notice: string
+  notice_key: string
+  announcements: Record<string, unknown>[]
+  read_keys: string[]
+}
+
+export async function getNotificationInbox(): Promise<NotificationInbox> {
+  const response = await api.get('/api/adty/notifications')
+  return requireServerSuccess(response.data).data as NotificationInbox
+}
+
+export async function readNotifications(keys: string[]): Promise<void> {
+  const response = await api.post('/api/adty/notifications/read', { keys })
+  requireServerSuccess(response.data)
+}
+
 export async function getStatus() {
   const res = await api.get('/api/status')
   return requireServerSuccess(res.data)?.data as Record<string, unknown>

@@ -36,8 +36,8 @@ interface NotificationState {
 }
 
 /**
- * Notification store for tracking read status of Notice and Announcements
- * Persists to localStorage to maintain state across sessions
+ * Anonymous public-page read preferences. Authenticated notifications use
+ * account/site receipts from the server and never inherit this browser history.
  */
 export const useNotificationStore = create<NotificationState>()(
   persist(

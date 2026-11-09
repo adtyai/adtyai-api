@@ -1,6 +1,7 @@
 package router
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -15,6 +16,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/adty_setting"
+	"github.com/QuantumNous/new-api/setting/console_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -24,6 +26,80 @@ import (
 // 主站 main.example.com，分站 shop.sites.example.com（站名 Shop AI），关闭的站 gone 转给 shop。
 
 type capturedMail struct{ from, subject, to, content string }
+
+func TestNotificationInboxReadIsolation(t *testing.T) {
+	f := newSiteFixture(t)
+	setting := console_setting.GetConsoleSetting()
+	previous := *setting
+	t.Cleanup(func() { *setting = previous })
+	setting.AnnouncementsEnabled = true
+	setting.Announcements = `[{"id":11,"content":"Original announcement","type":"default","publishDate":"2026-01-01"}]`
+	common.OptionMapRWMutex.Lock()
+	common.OptionMap["Notice"] = " Account notice "
+	common.OptionMapRWMutex.Unlock()
+	a := adtySessionToken(t, f.db, "notification-a", common.RoleCommonUser)
+	b := adtySessionToken(t, f.db, "notification-b", common.RoleCommonUser)
+	var aUser model.User
+	require.NoError(t, f.db.Where("username = ?", "notification-a").First(&aUser).Error)
+	request := func(method, host, path, token, body string, want int) apiEnvelope {
+		t.Helper()
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		req.Host = host
+		req.Header.Set("Content-Type", "application/json")
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		r := httptest.NewRecorder()
+		f.engine.ServeHTTP(r, req)
+		require.Equal(t, want, r.Code, r.Body.String())
+		var result apiEnvelope
+		if want == http.StatusOK {
+			require.NoError(t, common.Unmarshal(r.Body.Bytes(), &result), r.Body.String())
+		}
+		return result
+	}
+	const main = "main.example.com"
+	const inbox = "/api/adty/notifications"
+	request(http.MethodGet, main, inbox, "", "", http.StatusUnauthorized)
+	first := request(http.MethodGet, main, inbox, a, "", http.StatusOK)
+	require.True(t, first.Success, first.Message)
+	assert.Equal(t, "Account notice", first.Data["notice"])
+	assert.Empty(t, first.Data["read_keys"])
+	noticeKey := first.Data["notice_key"].(string)
+	ann := first.Data["announcements"].([]any)[0].(map[string]any)
+	annKey := ann["read_key"].(string)
+	body := `{"keys":["` + noticeKey + `","` + annKey + `"]}`
+	for range 2 {
+		saved := request(http.MethodPost, main, inbox+"/read", a, body, http.StatusOK)
+		require.True(t, saved.Success, saved.Message)
+	}
+	read := request(http.MethodGet, main, inbox, a, "", http.StatusOK)
+	assert.Len(t, read.Data["read_keys"], 2)
+	other := request(http.MethodGet, main, inbox+"?user_id="+fmt.Sprint(aUser.Id), b, "", http.StatusOK)
+	assert.Empty(t, other.Data["read_keys"], "a query parameter cannot impersonate another account")
+	wrong := createAdtyScopedToken(t, aUser.Id, "wallet:read")
+	request(http.MethodGet, main, inbox, wrong, "", http.StatusForbidden)
+	readOnly := createAdtyScopedToken(t, aUser.Id, "profile:read")
+	assert.True(t, request(http.MethodGet, main, inbox, readOnly, "", http.StatusOK).Success)
+	request(http.MethodPost, main, inbox+"/read", readOnly, body, http.StatusForbidden)
+	write := createAdtyScopedToken(t, aUser.Id, "profile:write")
+	assert.True(t, request(http.MethodPost, main, inbox+"/read", write, body, http.StatusOK).Success)
+	for _, invalid := range []string{`{"keys":["forged"]}`, `{"keys":["` + strings.Repeat("0", 64) + `"]}`, `{"keys":[]}`} {
+		assert.False(t, request(http.MethodPost, main, inbox+"/read", a, invalid, http.StatusOK).Success)
+	}
+	branch := request(http.MethodGet, "shop.sites.example.com", inbox, a, "", http.StatusOK)
+	require.True(t, branch.Success, branch.Message)
+	assert.Empty(t, branch.Data["notice"])
+	assert.Empty(t, branch.Data["announcements"])
+	assert.Empty(t, branch.Data["read_keys"])
+	assert.False(t, request(http.MethodPost, "shop.sites.example.com", inbox+"/read", a, body, http.StatusOK).Success)
+	setting.Announcements = `[{"id":11,"content":"Edited announcement","type":"default","publishDate":"2026-01-01"}]`
+	edited := request(http.MethodGet, main, inbox, a, "", http.StatusOK)
+	assert.Len(t, edited.Data["read_keys"], 1, "the old notice stays read but edited content is unread")
+	newKey := edited.Data["announcements"].([]any)[0].(map[string]any)["read_key"].(string)
+	assert.NotEqual(t, annKey, newKey)
+	assert.False(t, request(http.MethodPost, main, inbox+"/read", a, body, http.StatusOK).Success, "a stale page must not acknowledge a new revision")
+}
 
 // captureSiteMail 把两条异步发信都换成同步记录；from 为空表示主站的全局发件人。
 func captureSiteMail(t *testing.T) func() []capturedMail {

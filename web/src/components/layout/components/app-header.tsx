@@ -143,6 +143,10 @@ export function AppHeader({
               notice={notifications.notice}
               announcements={notifications.announcements}
               loading={notifications.loading}
+              error={notifications.error}
+              onRetry={() => {
+                void notifications.refetchNotice()
+              }}
             />
           )}
           <BalanceChip />
