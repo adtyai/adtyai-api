@@ -33,6 +33,8 @@ type AdtyEpayQueryResult struct {
 	MoneyCNY       decimal.Decimal
 	TypeCode       string
 	GatewayTradeNo string
+	OutTradeNo     string
+	MerchantId     string
 }
 
 var adtyEpayHTTPClient = func() *http.Client {
@@ -215,21 +217,43 @@ func QueryAdtyEpayOrder(ctx context.Context, channel *model.AdtyEpayChannel, out
 	values.Set("pid", channel.MerchantId)
 	values.Set("key", channel.MerchantKey)
 	values.Set("out_trade_no", outTradeNo)
-	raw, err := adtyEpayGet(ctx, adtyEpayEndpoint(channel, "/api.php")+"?"+values.Encode())
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, adtyEpayEndpoint(channel, "/api.php")+"?"+values.Encode(), nil)
+	if err != nil {
+		return nil, err
+	}
+	// Merchant credentials are in the query. Never forward them to a redirect,
+	// including an HTTPS gateway redirecting its order lookup to plain HTTP.
+	client := *adtyEpayHTTPClient()
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	response, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("epay query http %d", response.StatusCode)
+	}
+	raw, err := io.ReadAll(io.LimitReader(response.Body, 1<<20))
 	if err != nil {
 		return nil, err
 	}
 	var parsed struct {
-		Code    json.RawMessage `json:"code"`
-		Status  json.RawMessage `json:"status"`
-		Money   json.RawMessage `json:"money"`
-		Type    string          `json:"type"`
-		TradeNo string          `json:"trade_no"`
+		Code       json.RawMessage `json:"code"`
+		Status     json.RawMessage `json:"status"`
+		Money      json.RawMessage `json:"money"`
+		Type       string          `json:"type"`
+		TradeNo    string          `json:"trade_no"`
+		OutTradeNo string          `json:"out_trade_no"`
+		MerchantId json.RawMessage `json:"pid"`
 	}
 	if err := common.Unmarshal(raw, &parsed); err != nil {
 		return nil, fmt.Errorf("epay query returned non-JSON")
 	}
-	result := &AdtyEpayQueryResult{TypeCode: parsed.Type, GatewayTradeNo: parsed.TradeNo}
+	if strings.Trim(strings.TrimSpace(string(parsed.Code)), `"`) != "1" {
+		return nil, fmt.Errorf("epay order query did not succeed")
+	}
+	result := &AdtyEpayQueryResult{TypeCode: parsed.Type, GatewayTradeNo: parsed.TradeNo, OutTradeNo: parsed.OutTradeNo,
+		MerchantId: strings.Trim(strings.TrimSpace(string(parsed.MerchantId)), `"`)}
 	result.Paid = strings.Trim(strings.TrimSpace(string(parsed.Status)), `"`) == "1"
 	if money := strings.Trim(strings.TrimSpace(string(parsed.Money)), `"`); money != "" {
 		if value, err := decimal.NewFromString(money); err == nil {

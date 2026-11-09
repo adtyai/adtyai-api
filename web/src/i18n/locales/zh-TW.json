@@ -1,5 +1,11 @@
 {
   "translation": {
+    "Query payment": "補查付款",
+    "Query the original payment provider. A confirmed payment is credited using the saved order details.": "向原付款服務商查詢。確認到帳後，將依訂單儲存的資訊入帳。",
+    "No confirmed payment found": "未查到已確認的付款",
+    "This payment provider does not support order queries": "此付款服務商不支援訂單補查",
+    "Payment query failed. Check the provider console or try again.": "付款補查失敗，請核對付款服務商後台或重試。",
+    "Check the payment in the provider console first. The order is credited with its face value and bonus.": "請先在付款服務商後台核實到帳，訂單將依面額和贈金入帳。",
     "Saved site visibility settings are invalid. Reload or repair the saved settings before editing this site.": "已儲存的站點可見範圍設定無效。請重新載入或修復已儲存設定後再編輯此站點。",
     "What this site owner can see": "此站長可查看的資訊",
     "Save site settings": "儲存站點設定",

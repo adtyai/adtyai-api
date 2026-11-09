@@ -1,16 +1,75 @@
 package controller
 
 import (
+	"context"
 	"errors"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 )
+
+// QueryAdtyTopUp may credit a verified payment, so its route requires the same
+// explicit write permission as manual completion. Provider errors may contain
+// credential-bearing URLs and must not reach API responses or audit metadata.
+func QueryAdtyTopUp(c *gin.Context) {
+	tradeNo := c.Param("trade_no")
+	var topUp model.TopUp
+	if err := model.DB.Where("trade_no = ?", tradeNo).First(&topUp).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			err = model.ErrTopUpNotFound
+		}
+		writeAdtyFinanceError(c, err)
+		return
+	}
+	ext, err := model.GetAdtyTopupOrder(tradeNo)
+	if err != nil {
+		writeAdtyFinanceError(c, err)
+		return
+	}
+	if ext == nil || !model.IsAdtyPaymentProvider(topUp.PaymentProvider) || topUp.PaymentProvider != ext.Provider || topUp.PaymentMethod != ext.Method || topUp.UserId != ext.UserId {
+		writeAdtyFinanceError(c, model.ErrPaymentMethodMismatch)
+		return
+	}
+	if _, ok := service.AdtyPaymentProviderByName(ext.Provider).(service.AdtyPaymentOrderQuerier); !ok {
+		common.ApiErrorT(c, "This payment provider does not support order queries")
+		return
+	}
+	switch topUp.Status {
+	case common.TopUpStatusSuccess:
+		// A repeated request observes the committed credit without querying or
+		// applying another payment to an already completed order.
+	case common.TopUpStatusPending, common.TopUpStatusExpired, common.TopUpStatusFailed, model.TopUpStatusCanceled:
+		if err := model.UpdateAdtyTopupOrderFields(tradeNo, map[string]any{"last_query_at": common.GetTimestamp()}); err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 8*time.Second)
+		err := service.RecoverAdtyHostedPayment(ctx, ext)
+		cancel()
+		if err != nil {
+			common.ApiErrorT(c, "Payment query failed. Check the provider console or try again.")
+			return
+		}
+	default:
+		writeAdtyFinanceError(c, model.ErrTopUpStatusInvalid)
+		return
+	}
+	if err := model.DB.Select("status").Where("id = ?", topUp.Id).First(&topUp).Error; err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	recordManageAuditFor(c, topUp.UserId, "adty.topup.query", map[string]any{
+		"trade_no": tradeNo, "provider": ext.Provider, "status": topUp.Status,
+	})
+	common.ApiSuccess(c, gin.H{"status": topUp.Status})
+}
 
 // GetPaymentOrphans 分页列出对不上的支付回调（任务 3.5）。
 func GetPaymentOrphans(c *gin.Context) {

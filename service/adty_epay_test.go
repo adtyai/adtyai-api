@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"math/rand/v2"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/Calcium-Ion/go-epay/epay"
@@ -14,6 +16,90 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
+
+func TestEpayProviderQueryUsesTrustedHTTPSAndOrderBinding(t *testing.T) {
+	db := prepareEpayDB(t)
+	paid, wrongOrder, wrongType, wrongAmount, redirect := false, false, false, false, false
+	requests := 0
+	leaked := 0
+	redirectTarget := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		leaked++
+		_, _ = w.Write([]byte(`{"code":1,"status":0}`))
+	}))
+	t.Cleanup(redirectTarget.Close)
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if redirect {
+			http.Redirect(w, r, redirectTarget.URL+"?"+r.URL.RawQuery, http.StatusFound)
+			return
+		}
+		assert.Equal(t, "/api.php", r.URL.Path)
+		assert.Equal(t, "order", r.URL.Query().Get("act"))
+		assert.Equal(t, "EPY-admin-query", r.URL.Query().Get("out_trade_no"))
+		assert.Equal(t, "query-merchant", r.URL.Query().Get("pid"))
+		assert.Equal(t, "query-secret", r.URL.Query().Get("key"))
+		status, tradeNo, method, amount := 0, "EPY-admin-query", "alipay", "730.00"
+		if paid {
+			status = 1
+		}
+		if wrongOrder {
+			tradeNo = "another-order"
+		}
+		if wrongType {
+			method = "wxpay"
+		}
+		if wrongAmount {
+			amount = "729.99"
+		}
+		body, err := common.Marshal(map[string]any{"code": 1, "status": status, "out_trade_no": tradeNo,
+			"pid": "query-merchant", "trade_no": "gw-query", "type": method, "money": amount})
+		require.NoError(t, err)
+		_, err = w.Write(body)
+		require.NoError(t, err)
+	}))
+	t.Cleanup(server.Close)
+	oldClient := adtyEpayHTTPClient
+	adtyEpayHTTPClient = server.Client
+	t.Cleanup(func() { adtyEpayHTTPClient = oldClient })
+	channel := seedEpayChannel(t, db, model.AdtyEpayChannel{Name: "admin-query", GatewayURL: server.URL,
+		MerchantId: "query-merchant", MerchantKey: "query-secret"}, alipay("qrcode"))
+	seedEpayOrder(t, db, channel.Id, "EPY-admin-query", common.GetTimestamp())
+	require.NoError(t, model.UpdateAdtyTopupOrderFields("EPY-admin-query", map[string]any{"gateway_trade_id": "gw-query"}))
+	ext, err := model.GetAdtyTopupOrder("EPY-admin-query")
+	require.NoError(t, err)
+	_, querySupported := AdtyPaymentProviderByName(model.PaymentProviderAdtyEpay).(AdtyPaymentOrderQuerier)
+	require.True(t, querySupported, "Epay must expose its authenticated query capability")
+	require.NoError(t, RecoverAdtyHostedPayment(t.Context(), ext))
+	assert.Equal(t, common.TopUpStatusPending, topUpStatusOf(t, db, ext.TradeNo))
+	paid = true
+	for _, failure := range []string{"order", "method", "amount", "http"} {
+		wrongOrder, wrongType, wrongAmount = failure == "order", failure == "method", failure == "amount"
+		if failure == "http" {
+			require.NoError(t, db.Model(&model.AdtyEpayChannel{}).Where("id = ?", channel.Id).Update("gateway_url", "http://pay.example.test").Error)
+		}
+		before := requests
+		require.Error(t, RecoverAdtyHostedPayment(t.Context(), ext), failure)
+		assert.Equal(t, common.TopUpStatusPending, topUpStatusOf(t, db, ext.TradeNo), failure)
+		if failure == "http" {
+			assert.Equal(t, before, requests, "unencrypted query must not be sent")
+		}
+	}
+	require.NoError(t, db.Model(&model.AdtyEpayChannel{}).Where("id = ?", channel.Id).Update("gateway_url", server.URL).Error)
+	wrongOrder, wrongType, wrongAmount = false, false, false
+	redirect = true
+	require.Error(t, RecoverAdtyHostedPayment(t.Context(), ext))
+	assert.Zero(t, leaked, "HTTPS query credentials must never be forwarded to a redirect")
+	redirect = false
+	for range 2 {
+		require.NoError(t, RecoverAdtyHostedPayment(t.Context(), ext))
+	}
+	var buyer model.User
+	require.NoError(t, db.First(&buyer, ext.UserId).Error)
+	assert.Equal(t, 50000000, buyer.Quota)
+	var credits int64
+	require.NoError(t, db.Model(&model.AdtyBalanceLedger{}).Where("ref_id = ?", ext.TradeNo).Count(&credits).Error)
+	assert.EqualValues(t, 1, credits)
+}
 
 func TestEpaySignMatchesGoEpay(t *testing.T) {
 	params := map[string]string{"pid": "1001", "type": "alipay", "out_trade_no": "EPY1", "money": "730.00", "name": "Top-up", "notify_url": "https://a/n", "sign_type": "MD5", "empty": ""}

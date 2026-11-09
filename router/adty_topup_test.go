@@ -1,8 +1,10 @@
 package router
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"testing"
 
@@ -10,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/service/authz"
+	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/adty_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/shopspring/decimal"
@@ -17,6 +20,114 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
+
+type financeQueryTransport func(*http.Request) (*http.Response, error)
+
+func (transport financeQueryTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	return transport(request)
+}
+
+func TestFinanceQueryRequiresWritePermissionAndCreditsOnce(t *testing.T) {
+	f := newAdtyGuardFixture(t)
+	buyer := adtySessionToken(t, f.db, "query-buyer", common.RoleCommonUser)
+	var user model.User
+	require.NoError(t, f.db.Where("username = ?", "query-buyer").First(&user).Error)
+	order := model.TopUp{UserId: user.Id, TradeNo: "creem-admin-query", Amount: 2, Money: 2.5,
+		PaymentProvider: model.PaymentProviderCreem, PaymentMethod: model.PaymentMethodCreem, Status: common.TopUpStatusExpired}
+	ext := model.AdtyTopupOrder{TradeNo: order.TradeNo, UserId: user.Id, Provider: order.PaymentProvider, Method: order.PaymentMethod,
+		FaceUSD: decimal.NewFromInt(2), CreditQuota: 1000000, PayAmount: decimal.RequireFromString("2.5"), PayCurrency: "USD",
+		ProviderProductId: "prod_query", ProviderEnvironment: "test", GatewayTradeId: "ch_query"}
+	require.NoError(t, model.CreateAdtyTopUp(&order, &ext))
+	oldKey, oldMode, oldTransport := setting.CreemApiKey, setting.CreemTestMode, http.DefaultTransport
+	setting.CreemApiKey, setting.CreemTestMode = "synthetic-admin-query", true
+	t.Cleanup(func() {
+		setting.CreemApiKey, setting.CreemTestMode, http.DefaultTransport = oldKey, oldMode, oldTransport
+	})
+	queries := 0
+	paid, wrongAmount, gatewayFails := false, false, false
+	http.DefaultTransport = financeQueryTransport(func(req *http.Request) (*http.Response, error) {
+		queries++
+		require.Equal(t, "https://test-api.creem.io/v1/checkouts?checkout_id=ch_query", req.URL.String())
+		require.Equal(t, "synthetic-admin-query", req.Header.Get("x-api-key"))
+		if gatewayFails {
+			return nil, errors.New("query failed with secret query-string-key")
+		}
+		status, amount := "pending", 250
+		if paid {
+			status = "completed"
+		}
+		if wrongAmount {
+			amount = 251
+		}
+		payload, err := common.Marshal(map[string]any{"id": "ch_query", "request_id": order.TradeNo, "status": status, "mode": "test", "units": 1,
+			"order": map[string]any{"id": "ord_query", "status": "paid", "type": "onetime", "mode": "test", "product": "prod_query", "currency": "USD", "amount": amount, "sub_total": amount, "amount_paid": amount}})
+		require.NoError(t, err)
+		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(bytes.NewReader(payload))}, nil
+	})
+	path := "/api/adty/admin/topup/" + order.TradeNo + "/query"
+	f.grant(t, authz.AdtyFinanceRead)
+	readPAT := createAdtyScopedToken(t, f.admin.Id, "adty_finance:read")
+	for _, credential := range []string{f.token, readPAT, buyer, ""} {
+		response := adtyJSON(t, f.engine, http.MethodPost, path, `{}`, credential)
+		assert.Contains(t, []int{http.StatusForbidden, http.StatusUnauthorized}, response.Code)
+	}
+	assert.Zero(t, queries)
+	f.grant(t, authz.AdtyFinanceRead, authz.AdtyFinanceManualCredit)
+	assert.Equal(t, http.StatusForbidden, adtyJSON(t, f.engine, http.MethodPost, path, `{}`, readPAT).Code)
+	writePAT := createAdtyScopedToken(t, f.admin.Id, "adty_finance:manual_credit")
+	for _, scenario := range []struct {
+		name                string
+		paid, wrong, failed bool
+		success             bool
+	}{
+		{"unconfirmed", false, false, false, true}, {"gateway failure", false, false, true, false},
+		{"amount mismatch", true, true, false, false},
+	} {
+		paid, wrongAmount, gatewayFails = scenario.paid, scenario.wrong, scenario.failed
+		response := adtyJSON(t, f.engine, http.MethodPost, path, `{}`, writePAT)
+		var body struct {
+			Success bool
+			Data    struct{ Status string }
+		}
+		require.NoError(t, common.Unmarshal(response.Body.Bytes(), &body))
+		assert.Equal(t, scenario.success, body.Success, scenario.name)
+		assert.NotContains(t, response.Body.String(), "query-string-key")
+		require.NoError(t, f.db.First(&user, user.Id).Error)
+		assert.Zero(t, user.Quota, scenario.name)
+		if scenario.success {
+			assert.Equal(t, common.TopUpStatusExpired, body.Data.Status)
+		}
+	}
+	paid, wrongAmount, gatewayFails = true, false, false
+	for _, credential := range []string{writePAT, f.token, f.root} {
+		response := adtyJSON(t, f.engine, http.MethodPost, path, `{}`, credential)
+		require.Contains(t, response.Body.String(), `"success":true`, response.Body.String())
+		assert.Contains(t, response.Body.String(), `"status":"success"`)
+	}
+	require.NoError(t, f.db.First(&user, user.Id).Error)
+	assert.Equal(t, 1000000, user.Quota)
+	var credits int64
+	require.NoError(t, f.db.Model(&model.AdtyBalanceLedger{}).Where("ref_id = ?", order.TradeNo).Count(&credits).Error)
+	assert.EqualValues(t, 1, credits)
+	var audits []model.AuditLog
+	require.NoError(t, f.db.Where("action = ?", "adty.topup.query").Find(&audits).Error)
+	assert.GreaterOrEqual(t, len(audits), 2)
+	for _, audit := range audits {
+		assert.NotContains(t, fmt.Sprint(audit), "synthetic-admin-query")
+		assert.NotContains(t, fmt.Sprint(audit), "query-string-key")
+	}
+	f.grant(t, authz.AdtyFinanceRead)
+	assert.Equal(t, http.StatusForbidden, adtyJSON(t, f.engine, http.MethodPost, path, `{}`, writePAT).Code)
+	seedRouterOrder(t, f.db, user.Id, "bepusdt-no-query", common.TopUpStatusPending, common.GetTimestamp()+900)
+	unsupported := adtyJSON(t, f.engine, http.MethodPost, "/api/adty/admin/topup/bepusdt-no-query/query", `{}`, f.root)
+	assert.Contains(t, unsupported.Body.String(), `"success":false`)
+	require.NoError(t, f.db.Create(&model.TopUp{UserId: user.Id, TradeNo: "creem-missing-details", PaymentProvider: model.PaymentProviderCreem, PaymentMethod: model.PaymentMethodCreem, Status: common.TopUpStatusPending}).Error)
+	require.NotPanics(t, func() {
+		missing := adtyJSON(t, f.engine, http.MethodPost, "/api/adty/admin/topup/creem-missing-details/query", `{}`, f.root)
+		assert.Equal(t, http.StatusOK, missing.Code)
+		assert.Contains(t, missing.Body.String(), `"success":false`)
+	})
+}
 
 type fakeAdtyProvider struct {
 	name      string

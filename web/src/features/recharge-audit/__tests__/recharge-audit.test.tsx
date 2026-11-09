@@ -72,6 +72,7 @@ const order: RechargeAuditOrder = {
   channel_id: 3,
   channel_name: 'ZPay A',
   anomaly: '',
+  actions: { complete: false, refund: true, query: false },
 }
 
 function renderPage(permissions: Record<string, boolean>) {

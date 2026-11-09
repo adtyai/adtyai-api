@@ -91,6 +91,8 @@
 
 **充值对账**（`/recharge-audit`）：订单列表、汇总、对不上的回调（可以补入账或标已处理）、手动补单（必须填凭证和备注，不核对金额）、退款。
 
+**支付商与财务动作（M-04）**：筛选和订单动作取自后端注册服务能力，包含 BEpusdt、Epay、Stripe、Creem、Waffo、Waffo Pancake。支持的未入账订单可凭证补单，已入账订单可做账务退款，实际退钱仍需线下完成。Epay 与四个 Hosted 服务可通过 `POST /api/adty/admin/topup/:trade_no/query` 主动补查；该操作可能入账，必须具备「财务·手动补单」权限及对应 PAT scope。查询核对保存的订单事实并复用统一入账事务，重复请求不重复入账；未确认付款和查询失败分别显示，失败可以重试。BEpusdt 尚无已验证的主动查询契约，不显示补查按钮。缺扩展记录、替换、已退款等订单不显示不适用的动作。Epay 仅使用 HTTPS 查单，禁止重定向转发商户密钥；接口和审计不暴露原始支付查询错误。
+
 **表和接口**：`adty_topup_orders`、`top_ups`、`adty_epay_channels`、`adty_epay_channel_methods`、`adty_payment_orphan_events`。下单 `POST /api/user/bepusdt/pay`、`POST /api/adty/epay/pay`；回调 `POST /api/user/bepusdt/notify`、`GET`/`POST /api/user/epay/notify/:channelId`；通道 `GET /api/adty/admin/epay/channels`、`POST /api/adty/admin/epay/channels/:id/status`、`POST /api/adty/admin/epay/channels/:id/test`（新增、编辑、删除 `POST /api/adty/admin/epay/channels`、`PUT`/`DELETE /api/adty/admin/epay/channels/:id` 只有超级管理员）；对账 `GET /api/user/admin/finance/recharge-audit`、`GET /api/user/admin/finance/payment-orphans`，补单 `POST /api/adty/admin/topup/:trade_no/complete`；付完跳回 `GET /pay/result/:token`。
 
 **补查边界**：易支付补查发现已付款但方式不符或入账失败，会写入人工审核；易支付订单过期以后不再补查。Stripe、Creem、Waffo、Waffo Pancake 对超过 120 秒且在七天恢复窗口内的待付、失败、过期、取消订单执行认证查询，每单至少间隔 60 秒，每轮最多 20 单；核对冻结的商户、环境、商品、订单、币种和金额后，调用相同入账事务。更早的订单通过支付商重送或有凭证的手动补单处理。存在尚未排除的撤销事件时，查询和成功回调都不能自动补入账。

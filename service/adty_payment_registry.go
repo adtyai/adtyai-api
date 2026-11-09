@@ -29,6 +29,47 @@ type AdtyPaymentProvider interface {
 	Cancel(ext *model.AdtyTopupOrder) error
 }
 
+// AdtyPaymentCapability describes implemented reconciliation operations, not
+// whether a merchant currently accepts new checkouts. Refund is an internal
+// ledger adjustment; returning the payment itself remains an offline action.
+type AdtyPaymentCapability struct {
+	Provider   string `json:"provider"`
+	Label      string `json:"label"`
+	Query      bool   `json:"query"`
+	Complete   bool   `json:"complete"`
+	Refund     bool   `json:"refund"`
+	RefundMode string `json:"refund_mode"`
+}
+
+func AdtyPaymentCapabilities() []AdtyPaymentCapability {
+	capabilities := make([]AdtyPaymentCapability, 0)
+	for _, provider := range AdtyPaymentProviders() {
+		if !model.IsAdtyPaymentProvider(provider.Name()) {
+			continue
+		}
+		label := provider.Name()
+		switch provider.Name() {
+		case model.PaymentProviderAdtyBEpusdt:
+			label = "BEpusdt"
+		case model.PaymentProviderAdtyEpay:
+			label = "Epay channels"
+		case model.PaymentProviderStripe:
+			label = "Stripe"
+		case model.PaymentProviderCreem:
+			label = "Creem"
+		case model.PaymentProviderWaffo:
+			label = "Waffo"
+		case model.PaymentProviderWaffoPancake:
+			label = "Waffo Pancake"
+		}
+		_, query := provider.(AdtyPaymentOrderQuerier)
+		capabilities = append(capabilities, AdtyPaymentCapability{
+			Provider: provider.Name(), Label: label, Query: query, Complete: true, Refund: true, RefundMode: "offline",
+		})
+	}
+	return capabilities
+}
+
 var (
 	adtyProvidersMu sync.RWMutex
 	adtyProviders   []AdtyPaymentProvider

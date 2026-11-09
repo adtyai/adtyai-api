@@ -1,5 +1,11 @@
 {
   "translation": {
+    "Query payment": "Tra cứu thanh toán",
+    "Query the original payment provider. A confirmed payment is credited using the saved order details.": "Tra cứu tại nhà cung cấp thanh toán ban đầu. Khoản thanh toán được xác nhận sẽ được ghi có theo thông tin đơn hàng đã lưu.",
+    "No confirmed payment found": "Không tìm thấy khoản thanh toán đã xác nhận",
+    "This payment provider does not support order queries": "Nhà cung cấp thanh toán này không hỗ trợ tra cứu đơn hàng",
+    "Payment query failed. Check the provider console or try again.": "Tra cứu thanh toán thất bại. Hãy kiểm tra bảng điều khiển của nhà cung cấp hoặc thử lại.",
+    "Check the payment in the provider console first. The order is credited with its face value and bonus.": "Trước tiên, hãy xác minh khoản thanh toán trong bảng điều khiển của nhà cung cấp. Giá trị đơn hàng và tiền thưởng sẽ được ghi có.",
     "Saved site visibility settings are invalid. Reload or repair the saved settings before editing this site.": "Cài đặt phạm vi hiển thị đã lưu không hợp lệ. Hãy tải lại hoặc sửa cài đặt đã lưu trước khi chỉnh sửa trang này.",
     "What this site owner can see": "Thông tin chủ trang này có thể xem",
     "Save site settings": "Lưu cài đặt trang",

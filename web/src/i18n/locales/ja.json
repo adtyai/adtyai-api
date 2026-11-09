@@ -1,5 +1,11 @@
 {
   "translation": {
+    "Query payment": "支払いを照会",
+    "Query the original payment provider. A confirmed payment is credited using the saved order details.": "元の決済サービスに照会します。入金が確認されると、保存された注文情報に基づいて残高に反映されます。",
+    "No confirmed payment found": "確認済みの支払いが見つかりません",
+    "This payment provider does not support order queries": "この決済サービスは注文照会に対応していません",
+    "Payment query failed. Check the provider console or try again.": "支払いの照会に失敗しました。決済サービスの管理画面を確認するか、再試行してください。",
+    "Check the payment in the provider console first. The order is credited with its face value and bonus.": "先に決済サービスの管理画面で入金を確認してください。注文の額面とボーナスが残高に反映されます。",
     "Saved site visibility settings are invalid. Reload or repair the saved settings before editing this site.": "保存済みのサイト表示範囲設定が無効です。再読み込みするか、保存済み設定を修復してから編集してください。",
     "What this site owner can see": "このサイト所有者が閲覧できる情報",
     "Save site settings": "サイト設定を保存",

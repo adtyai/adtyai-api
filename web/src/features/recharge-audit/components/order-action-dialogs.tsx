@@ -21,17 +21,23 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Dialog } from '@/components/dialog'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { ADTY_PERMISSIONS, canAdmin } from '@/lib/adty-permissions'
 import { formatQuota } from '@/lib/format'
 import { handleServerError } from '@/lib/handle-server-error'
+import { getServerErrorMessage } from '@/lib/server-error-message'
+import { useAuthStore } from '@/stores/auth-store'
 
 import {
   completeTopupManually,
   previewTopupRefund,
+  queryTopupPayment,
   refundTopup,
   type RechargeAuditOrder,
   type TopupRefundResult,
@@ -41,6 +47,59 @@ type OrderActionProps = {
   order: RechargeAuditOrder | null
   onOpenChange: (open: boolean) => void
   onDone: () => void
+}
+
+export function QueryPaymentDialog(props: OrderActionProps) {
+  const { t } = useTranslation()
+  const mutation = useMutation({
+    meta: { errorToast: false },
+    mutationFn: () => {
+      if (
+        !props.order?.actions.query ||
+        !canAdmin(
+          useAuthStore.getState().auth.user,
+          ADTY_PERMISSIONS.FINANCE_MANUAL_CREDIT
+        )
+      ) {
+        throw new Error(t('No permission to perform this action'))
+      }
+      return queryTopupPayment(props.order.trade_no)
+    },
+    onSuccess: () => props.onDone(),
+  })
+  const resetQuery = mutation.reset
+  useEffect(() => resetQuery(), [props.order?.trade_no, resetQuery])
+  const completed = mutation.isSuccess && mutation.data.status === 'success'
+  return (
+    <ConfirmDialog
+      open={props.order !== null}
+      onOpenChange={props.onOpenChange}
+      title={t('Query payment')}
+      desc={t(
+        'Query the original payment provider. A confirmed payment is credited using the saved order details.'
+      )}
+      confirmText={t('Query payment')}
+      handleConfirm={() => mutation.mutate()}
+      isLoading={mutation.isPending}
+      disabled={completed}
+    >
+      <code className='text-xs break-all'>{props.order?.trade_no}</code>
+      {mutation.isError && (
+        <Alert variant='destructive'>
+          <AlertDescription>
+            {getServerErrorMessage(mutation.error)}
+          </AlertDescription>
+        </Alert>
+      )}
+      {mutation.isSuccess && (
+        <Alert>
+          <AlertDescription>
+            {completed ? t('Order completed') : t('No confirmed payment found')}
+          </AlertDescription>
+        </Alert>
+      )}
+    </ConfirmDialog>
+  )
 }
 
 /** Manual completion after checking the payment at the provider. */
@@ -73,7 +132,7 @@ export function ManualCompleteDialog(props: OrderActionProps) {
       onOpenChange={props.onOpenChange}
       title={t('Complete order manually')}
       description={t(
-        'Check the payment in the BEpusdt or payment-channel console first. The order is credited with its face value and bonus.'
+        'Check the payment in the provider console first. The order is credited with its face value and bonus.'
       )}
       contentHeight='auto'
       bodyClassName='space-y-4'

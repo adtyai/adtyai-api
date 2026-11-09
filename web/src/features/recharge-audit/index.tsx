@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { StaticDataTable } from '@/components/data-table/static/static-data-table'
@@ -50,6 +50,7 @@ import {
 } from './api'
 import {
   ManualCompleteDialog,
+  QueryPaymentDialog,
   RefundDialog,
 } from './components/order-action-dialogs'
 import { PaymentOrphanPanel } from './components/payment-orphan-panel'
@@ -79,6 +80,16 @@ export function RechargeAudit() {
   })
   const [completing, setCompleting] = useState<RechargeAuditOrder | null>(null)
   const [refunding, setRefunding] = useState<RechargeAuditOrder | null>(null)
+  const [querying, setQuerying] = useState<RechargeAuditOrder | null>(null)
+  useEffect(() => {
+    if (!canComplete) {
+      setCompleting(null)
+      setQuerying(null)
+    }
+    if (!canRefund) {
+      setRefunding(null)
+    }
+  }, [canComplete, canRefund])
 
   const ordersQuery = useQuery({
     queryKey: ['recharge-audit', 'orders', filters],
@@ -186,8 +197,13 @@ export function RechargeAudit() {
                   }
                 >
                   <option value=''>{t('All providers')}</option>
-                  <option value='bepusdt'>BEpusdt</option>
-                  <option value='adty_epay'>{t('Epay channels')}</option>
+                  {(summaryQuery.data?.provider_capabilities ?? []).map(
+                    (provider) => (
+                      <option key={provider.provider} value={provider.provider}>
+                        {t(provider.label)}
+                      </option>
+                    )
+                  )}
                 </NativeSelect>
                 <Button type='submit'>{t('Search')}</Button>
               </form>
@@ -317,24 +333,27 @@ export function RechargeAudit() {
                         className: 'text-right',
                         cellClassName: 'text-right',
                         cell: (row) => {
-                          const ours =
-                            row.payment_provider === 'bepusdt' ||
-                            row.payment_provider === 'adty_epay'
-                          if (!ours) return null
                           return (
                             <div className='flex justify-end gap-1'>
-                              {canComplete &&
-                                row.status !== 'success' &&
-                                row.status !== 'refunded' && (
-                                  <Button
-                                    size='sm'
-                                    variant='outline'
-                                    onClick={() => setCompleting(row)}
-                                  >
-                                    {t('Complete')}
-                                  </Button>
-                                )}
-                              {canRefund && row.status === 'success' && (
+                              {canComplete && row.actions?.query && (
+                                <Button
+                                  size='sm'
+                                  variant='outline'
+                                  onClick={() => setQuerying(row)}
+                                >
+                                  {t('Query payment')}
+                                </Button>
+                              )}
+                              {canComplete && row.actions?.complete && (
+                                <Button
+                                  size='sm'
+                                  variant='outline'
+                                  onClick={() => setCompleting(row)}
+                                >
+                                  {t('Complete')}
+                                </Button>
+                              )}
+                              {canRefund && row.actions?.refund && (
                                 <Button
                                   size='sm'
                                   variant='outline'
@@ -383,16 +402,27 @@ export function RechargeAudit() {
 
           <PaymentOrphanPanel canCredit={canComplete} />
         </div>
-        <ManualCompleteDialog
-          order={completing}
-          onOpenChange={(open) => !open && setCompleting(null)}
-          onDone={refresh}
-        />
-        <RefundDialog
-          order={refunding}
-          onOpenChange={(open) => !open && setRefunding(null)}
-          onDone={refresh}
-        />
+        {canComplete && (
+          <QueryPaymentDialog
+            order={querying}
+            onOpenChange={(open) => !open && setQuerying(null)}
+            onDone={refresh}
+          />
+        )}
+        {canComplete && (
+          <ManualCompleteDialog
+            order={completing}
+            onOpenChange={(open) => !open && setCompleting(null)}
+            onDone={refresh}
+          />
+        )}
+        {canRefund && (
+          <RefundDialog
+            order={refunding}
+            onOpenChange={(open) => !open && setRefunding(null)}
+            onDone={refresh}
+          />
+        )}
       </SectionPageLayout.Content>
     </SectionPageLayout>
   )

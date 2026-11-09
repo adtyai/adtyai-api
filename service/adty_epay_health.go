@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"errors"
+	"net/url"
 	"strings"
 	"time"
 
@@ -250,6 +252,38 @@ func (adtyEpayProvider) AvailableFor(method string, quote *AdtyQuote) bool {
 
 // Cancel 只取消本地订单，易支付没有取消接口。
 func (adtyEpayProvider) Cancel(*model.AdtyTopupOrder) error { return nil }
+
+func (adtyEpayProvider) Query(ctx context.Context, ext *model.AdtyTopupOrder) (*model.AdtyPaymentFacts, error) {
+	if ext == nil || ext.Provider != model.PaymentProviderAdtyEpay {
+		return nil, model.ErrPaymentMethodMismatch
+	}
+	channel, err := model.GetAdtyEpayChannel(ext.ChannelId)
+	if err != nil {
+		return nil, err
+	}
+	endpoint, err := url.Parse(strings.TrimSpace(channel.GatewayURL))
+	if err != nil || endpoint.Scheme != "https" || endpoint.Host == "" || endpoint.User != nil || channel.MerchantId == "" || channel.MerchantKey == "" {
+		return nil, errors.New("authenticated HTTPS Epay query is unavailable")
+	}
+	result, err := QueryAdtyEpayOrder(ctx, channel, ext.TradeNo)
+	if err != nil {
+		return nil, err
+	}
+	if result.OutTradeNo != ext.TradeNo || result.MerchantId != "" && result.MerchantId != channel.MerchantId {
+		return nil, model.ErrPaymentMethodMismatch
+	}
+	if !result.Paid {
+		return nil, nil
+	}
+	method := channel.MethodByTypeCode(result.TypeCode)
+	if method == nil || method.Method != ext.Method || result.GatewayTradeNo == "" || ext.GatewayTradeId != "" && ext.GatewayTradeId != result.GatewayTradeNo {
+		return nil, model.ErrPaymentMethodMismatch
+	}
+	return &model.AdtyPaymentFacts{
+		Provider: ext.Provider, Method: ext.Method, PaidAmount: result.MoneyCNY, PaidCurrency: "CNY",
+		GatewayTradeId: result.GatewayTradeNo, TxHash: result.GatewayTradeNo, Source: model.AdtyPaymentSourceQuery,
+	}, nil
+}
 
 func init() {
 	RegisterAdtyPaymentProvider(adtyEpayProvider{})

@@ -1,5 +1,11 @@
 {
   "translation": {
+    "Query payment": "Vérifier le paiement",
+    "Query the original payment provider. A confirmed payment is credited using the saved order details.": "Interrogez le prestataire de paiement initial. Un paiement confirmé est crédité selon les informations enregistrées de la commande.",
+    "No confirmed payment found": "Aucun paiement confirmé trouvé",
+    "This payment provider does not support order queries": "Ce prestataire de paiement ne permet pas de vérifier les commandes",
+    "Payment query failed. Check the provider console or try again.": "La vérification du paiement a échoué. Consultez la console du prestataire ou réessayez.",
+    "Check the payment in the provider console first. The order is credited with its face value and bonus.": "Vérifiez d’abord le paiement dans la console du prestataire. La commande est créditée de sa valeur nominale et de son bonus.",
     "Saved site visibility settings are invalid. Reload or repair the saved settings before editing this site.": "Les paramètres de visibilité enregistrés sont invalides. Rechargez ou corrigez-les avant de modifier ce site.",
     "What this site owner can see": "Informations visibles par ce propriétaire",
     "Save site settings": "Enregistrer les paramètres du site",

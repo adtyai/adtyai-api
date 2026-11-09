@@ -6,6 +6,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
@@ -15,30 +16,37 @@ import (
 // 去掉了订阅订单的 UNION、人民币折算和 Creem/Stripe 的特判。
 
 type rechargeAuditOrder struct {
-	Id              int             `json:"id"`
-	UserId          int             `json:"user_id"`
-	Username        string          `json:"username"`
-	TradeNo         string          `json:"trade_no"`
-	PaymentMethod   string          `json:"payment_method"`
-	PaymentProvider string          `json:"payment_provider"`
-	Status          string          `json:"status"`
-	CreateTime      int64           `json:"create_time"`
-	CompleteTime    int64           `json:"complete_time"`
-	Amount          int64           `json:"amount"`
-	Money           float64         `json:"money"`
-	HasExt          bool            `json:"has_ext"`
-	FaceUSD         decimal.Decimal `json:"face_usd"`
-	BonusUSD        decimal.Decimal `json:"bonus_usd"`
-	CreditQuota     int64           `json:"credit_quota"`
-	PayAmount       decimal.Decimal `json:"pay_amount"`
-	PayCurrency     string          `json:"pay_currency"`
-	PaidAmount      decimal.Decimal `json:"paid_amount"`
-	PaidCurrency    string          `json:"paid_currency"`
-	PaidTxHash      string          `json:"paid_tx_hash"`
-	PaidSource      string          `json:"paid_source"`
-	ChannelId       int             `json:"channel_id"`
-	ChannelName     string          `json:"channel_name"`
-	Anomaly         string          `json:"anomaly"`
+	Id              int                  `json:"id"`
+	UserId          int                  `json:"user_id"`
+	Username        string               `json:"username"`
+	TradeNo         string               `json:"trade_no"`
+	PaymentMethod   string               `json:"payment_method"`
+	PaymentProvider string               `json:"payment_provider"`
+	Status          string               `json:"status"`
+	CreateTime      int64                `json:"create_time"`
+	CompleteTime    int64                `json:"complete_time"`
+	Amount          int64                `json:"amount"`
+	Money           float64              `json:"money"`
+	HasExt          bool                 `json:"has_ext"`
+	FaceUSD         decimal.Decimal      `json:"face_usd"`
+	BonusUSD        decimal.Decimal      `json:"bonus_usd"`
+	CreditQuota     int64                `json:"credit_quota"`
+	PayAmount       decimal.Decimal      `json:"pay_amount"`
+	PayCurrency     string               `json:"pay_currency"`
+	PaidAmount      decimal.Decimal      `json:"paid_amount"`
+	PaidCurrency    string               `json:"paid_currency"`
+	PaidTxHash      string               `json:"paid_tx_hash"`
+	PaidSource      string               `json:"paid_source"`
+	ChannelId       int                  `json:"channel_id"`
+	ChannelName     string               `json:"channel_name"`
+	Anomaly         string               `json:"anomaly"`
+	Actions         rechargeAuditActions `json:"actions" gorm:"-"`
+}
+
+type rechargeAuditActions struct {
+	Complete bool `json:"complete"`
+	Refund   bool `json:"refund"`
+	Query    bool `json:"query"`
 }
 
 var rechargeAuditStatuses = []string{
@@ -127,9 +135,24 @@ func GetRechargeAudit(c *gin.Context) {
 		return
 	}
 	channelNames := adtyEpayChannelNames()
+	capabilities := make(map[string]service.AdtyPaymentCapability)
+	for _, capability := range service.AdtyPaymentCapabilities() {
+		capabilities[capability.Provider] = capability
+	}
 	for i := range orders {
 		orders[i].Anomaly = rechargeAuditAnomaly(orders[i])
 		orders[i].ChannelName = channelNames[orders[i].ChannelId]
+		capability, supported := capabilities[orders[i].PaymentProvider]
+		if !supported || !orders[i].HasExt {
+			continue
+		}
+		switch orders[i].Status {
+		case common.TopUpStatusPending, common.TopUpStatusExpired, common.TopUpStatusFailed, model.TopUpStatusCanceled:
+			orders[i].Actions.Complete = capability.Complete
+			orders[i].Actions.Query = capability.Query
+		case common.TopUpStatusSuccess:
+			orders[i].Actions.Refund = capability.Refund
+		}
 	}
 	pageInfo.SetTotal(int(total))
 	pageInfo.SetItems(orders)
@@ -194,13 +217,19 @@ func GetRechargeAuditSummary(c *gin.Context) {
 			bonus = bonus.Add(row.BonusUSD)
 		}
 	}
+	capabilities := service.AdtyPaymentCapabilities()
+	providers := make([]string, 0, len(capabilities))
+	for _, capability := range capabilities {
+		providers = append(providers, capability.Provider)
+	}
 	common.ApiSuccess(c, gin.H{
-		"rows":            rows,
-		"orders":          orders,
-		"credited_usd":    credited,
-		"bonus_usd":       bonus,
-		"currency":        "USD",
-		"status_options":  rechargeAuditStatuses,
-		"provider_option": []string{model.PaymentProviderAdtyBEpusdt, model.PaymentProviderAdtyEpay},
+		"rows":                  rows,
+		"orders":                orders,
+		"credited_usd":          credited,
+		"bonus_usd":             bonus,
+		"currency":              "USD",
+		"status_options":        rechargeAuditStatuses,
+		"provider_option":       providers,
+		"provider_capabilities": capabilities,
 	})
 }

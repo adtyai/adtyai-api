@@ -78,6 +78,7 @@ func registerAdtyFinanceRoutes(apiRouter *gin.RouterGroup) {
 	handlePermissionRoute(finance, http.MethodPost, "/site-earning-reviews/resolve", authz.AdtyFinanceManualCredit, controller.ReviewAdtySiteEarning)
 
 	topup := apiRouter.Group("/adty/admin/topup", middleware.AdminAuth())
+	handlePermissionRoute(topup, http.MethodPost, "/:trade_no/query", authz.AdtyFinanceManualCredit, controller.QueryAdtyTopUp)
 	handlePermissionRoute(topup, http.MethodPost, "/:trade_no/complete", authz.AdtyFinanceManualCredit, controller.ManualCompleteAdtyTopUp)
 	handlePermissionRoute(topup, http.MethodGet, "/:trade_no/refund-preview", authz.AdtyFinanceRefund, controller.PreviewAdtyTopUpRefund)
 	handlePermissionRoute(topup, http.MethodPost, "/:trade_no/refund", authz.AdtyFinanceRefund, controller.RefundAdtyTopUp)

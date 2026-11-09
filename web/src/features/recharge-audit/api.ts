@@ -56,6 +56,7 @@ export type RechargeAuditOrder = {
   channel_id: number
   channel_name: string
   anomaly: '' | 'missing_ext' | 'paid_mismatch'
+  actions: { complete: boolean; refund: boolean; query: boolean }
 }
 
 export type RechargeAuditSummary = {
@@ -65,6 +66,14 @@ export type RechargeAuditSummary = {
   currency: 'USD'
   status_options: string[]
   provider_option: string[]
+  provider_capabilities: {
+    provider: string
+    label: string
+    query: boolean
+    complete: boolean
+    refund: boolean
+    refund_mode: 'offline'
+  }[]
 }
 
 export type PaymentOrphanEvent = {
@@ -192,6 +201,13 @@ export async function completeTopupManually(
   const res = await api.post<ApiResponse<{ already_done: boolean }>>(
     `/api/adty/admin/topup/${encodeURIComponent(tradeNo)}/complete`,
     { proof, note }
+  )
+  return requireServerSuccess(res.data).data
+}
+
+export async function queryTopupPayment(tradeNo: string) {
+  const res = await api.post<ApiResponse<{ status: string }>>(
+    `/api/adty/admin/topup/${encodeURIComponent(tradeNo)}/query`
   )
   return requireServerSuccess(res.data).data
 }

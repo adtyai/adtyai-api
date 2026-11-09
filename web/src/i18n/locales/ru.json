@@ -1,5 +1,11 @@
 {
   "translation": {
+    "Query payment": "Проверить платёж",
+    "Query the original payment provider. A confirmed payment is credited using the saved order details.": "Запросите сведения у исходного платёжного провайдера. Подтверждённый платёж будет зачислен по сохранённым данным заказа.",
+    "No confirmed payment found": "Подтверждённый платёж не найден",
+    "This payment provider does not support order queries": "Этот платёжный провайдер не поддерживает проверку заказов",
+    "Payment query failed. Check the provider console or try again.": "Не удалось проверить платёж. Проверьте консоль провайдера или повторите попытку.",
+    "Check the payment in the provider console first. The order is credited with its face value and bonus.": "Сначала проверьте платёж в консоли провайдера. Будут зачислены номинал заказа и бонус.",
     "Saved site visibility settings are invalid. Reload or repair the saved settings before editing this site.": "Сохранённые настройки видимости сайта неверны. Перезагрузите или исправьте их перед редактированием сайта.",
     "What this site owner can see": "Что может видеть владелец сайта",
     "Save site settings": "Сохранить настройки сайта",

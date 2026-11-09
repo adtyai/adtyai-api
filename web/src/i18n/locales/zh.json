@@ -1,5 +1,11 @@
 {
   "translation": {
+    "Query payment": "补查支付",
+    "Query the original payment provider. A confirmed payment is credited using the saved order details.": "向原支付服务商查询。确认到账后，将按订单保存的信息入账。",
+    "No confirmed payment found": "未查到已确认的付款",
+    "This payment provider does not support order queries": "此支付服务商不支持订单补查",
+    "Payment query failed. Check the provider console or try again.": "支付补查失败，请核对支付服务商后台或重试。",
+    "Check the payment in the provider console first. The order is credited with its face value and bonus.": "请先在支付服务商后台核实到账，订单将按面额和赠金入账。",
     "Saved site visibility settings are invalid. Reload or repair the saved settings before editing this site.": "已保存的站点可见范围设置无效。请重新加载或修复已保存设置后再编辑此站点。",
     "What this site owner can see": "此站长可查看的信息",
     "Save site settings": "保存站点设置",

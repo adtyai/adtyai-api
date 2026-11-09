@@ -1,5 +1,11 @@
 {
   "translation": {
+    "Query payment": "Query payment",
+    "Query the original payment provider. A confirmed payment is credited using the saved order details.": "Query the original payment provider. A confirmed payment is credited using the saved order details.",
+    "No confirmed payment found": "No confirmed payment found",
+    "This payment provider does not support order queries": "This payment provider does not support order queries",
+    "Payment query failed. Check the provider console or try again.": "Payment query failed. Check the provider console or try again.",
+    "Check the payment in the provider console first. The order is credited with its face value and bonus.": "Check the payment in the provider console first. The order is credited with its face value and bonus.",
     "Saved site visibility settings are invalid. Reload or repair the saved settings before editing this site.": "Saved site visibility settings are invalid. Reload or repair the saved settings before editing this site.",
     "What this site owner can see": "What this site owner can see",
     "Save site settings": "Save site settings",
