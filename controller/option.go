@@ -77,7 +77,7 @@ func GetOptions(c *gin.Context) {
 	optionValues := make(map[string]string)
 	common.OptionMapRWMutex.Lock()
 	for k, v := range common.OptionMap {
-		if k == "theme.frontend" || k == "billing_setting.billing_mode" || k == "billing_setting.billing_expr" || k == "ResendKeyConfigured" {
+		if strings.HasPrefix(k, "model_deployment.") || k == "theme.frontend" || k == "billing_setting.billing_mode" || k == "billing_setting.billing_expr" || k == "ResendKeyConfigured" {
 			continue
 		}
 		value := common.Interface2String(v)
@@ -209,6 +209,10 @@ func UpdateOption(c *gin.Context) {
 			return
 		}
 	default:
+		if strings.HasPrefix(option.Key, "model_deployment.") {
+			common.ApiErrorT(c, "Invalid parameters")
+			return
+		}
 		// 二开：分站设置只能走分站管理的设置接口，那里会校验金额参数和依赖项（P11）
 		if strings.HasPrefix(option.Key, adty_setting.ResellerSettingModule+".") {
 			common.ApiErrorT(c, "Reseller settings can only be changed on the reseller settings page")

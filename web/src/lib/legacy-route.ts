@@ -21,7 +21,7 @@ const legacyOrigin = 'https://legacy-route.invalid'
 const legacyConsoleRoutes: Record<string, string> = {
   '/console': '/dashboard',
   '/console/models': '/models',
-  '/console/deployment': '/models/deployments',
+  '/console/deployment': '/models/metadata',
   '/console/channel': '/channels',
   '/console/token': '/keys',
   '/console/user': '/users',
@@ -40,7 +40,7 @@ const legacySettingsTabs: Record<string, string> = {
   ratio: '/system-settings/billing/model-pricing',
   ratelimit: '/system-settings/security/rate-limit',
   models: '/system-settings/models/global',
-  'model-deployment': '/system-settings/models/model-deployment',
+  'model-deployment': '/system-settings/models/global',
   performance: '/system-settings/operations/performance',
   system: '/system-settings/site/system-info',
   other: '/system-settings/site/system-info',

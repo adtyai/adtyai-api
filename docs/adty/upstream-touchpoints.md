@@ -460,3 +460,26 @@
 | `web/src/hooks/use-sidebar-data.ts` | 删除营销菜单及图标 | 不再显示退休功能 | 营销删除 |
 | `web/src/hooks/__tests__/sidebar-config.test.tsx` | 更新默认侧栏断言 | 保留真实菜单配置回归 | 营销删除 |
 | `web/src/routeTree.gen.ts` | 实际生产构建移除营销路由树 | 最新产品范围排除独立营销，保留充值与系统通知 | 营销删除 |
+| `controller/option.go` | 隐藏并拒绝退休 model_deployment 配置 | 最新产品范围排除模型部署管理 | R-03 |
+| `middleware/access_token_routes.go` | 删除部署接口令牌规则 | 最新产品范围排除模型部署管理 | R-03 |
+| `middleware/audit.go` | 删除部署写操作审计登记，保留历史显示 | 最新产品范围排除模型部署管理 | R-03 |
+| `middleware/testdata/adty_admin_routes.txt` | 移除退休部署路由快照 | 最新产品范围排除模型部署管理 | R-03 |
+| `router/api-router.go` | 移除全部部署与容器管理路由 | 最新产品范围排除模型部署管理 | R-03 |
+| `router/plugin_router_test.go` | 覆盖部署精确/子路径的插件和外置前端边界 | 最新产品范围排除模型部署管理 | R-03 |
+| `router/web-router.go` | 在插件与外置前端前拒绝退休部署路径 | 最新产品范围排除模型部署管理 | R-03 |
+| `service/access_token_scope.go` | 移除部署令牌资源 | 最新产品范围排除模型部署管理 | R-03 |
+| `service/access_token_action_scope_test.go` | 验证Root不能新授予退休部署权限 | 最新产品范围排除模型部署管理 | R-03 |
+| `web/src/features/channels/components/channels-columns.tsx` | 移除历史io.net来源的部署快捷入口 | 最新产品范围排除模型部署管理 | R-03 |
+| `web/src/features/models/api.ts` | 删除部署API调用，保留模型与厂商操作 | 最新产品范围排除模型部署管理 | R-03 |
+| `web/src/features/models/constants.ts` | 移除部署状态选项 | 最新产品范围排除模型部署管理 | R-03 |
+| `web/src/features/models/index.tsx` | 移除部署分区及创建抽屉 | 最新产品范围排除模型部署管理 | R-03 |
+| `web/src/features/models/lib/query-keys.ts` | 移除部署查询键 | 最新产品范围排除模型部署管理 | R-03 |
+| `web/src/features/models/section-registry.tsx` | 移除部署导航登记 | 最新产品范围排除模型部署管理 | R-03 |
+| `web/src/features/models/types.ts` | 移除部署专用类型 | 最新产品范围排除模型部署管理 | R-03 |
+| `web/src/features/system-settings/models/index.tsx` | 移除io.net配置默认值 | 最新产品范围排除模型部署管理 | R-03 |
+| `web/src/features/system-settings/models/section-registry.tsx` | 移除模型部署设置分区 | 最新产品范围排除模型部署管理 | R-03 |
+| `web/src/features/system-settings/types.ts` | 移除部署配置类型 | 最新产品范围排除模型部署管理 | R-03 |
+| `web/src/hooks/use-sidebar-config.ts` | 移除部署路径映射 | 最新产品范围排除模型部署管理 | R-03 |
+| `web/src/lib/legacy-route.test.ts` | 验证退休部署书签回退 | 最新产品范围排除模型部署管理 | R-03 |
+| `web/src/lib/legacy-route.ts` | 旧部署页面和设置回退保留的模型页 | 最新产品范围排除模型部署管理 | R-03 |
+| `web/src/routes/_authenticated/models/$section.tsx` | 移除部署专用搜索参数和访问分支 | 最新产品范围排除模型部署管理 | R-03 |

@@ -46,7 +46,7 @@ var adtyScopePermissions = map[string][]authz.Permission{
 }
 
 // AdtyRootOnlyAdminScopes 是只给超级管理员的上游后台分类，合并上游时新出现的分类要归到这里或上表。
-var AdtyRootOnlyAdminScopes = []string{"deployment:read", "deployment:write"}
+var AdtyRootOnlyAdminScopes = []string{}
 
 // adtyAdminRouteAllowed 在 authHelper 里、身份写进上下文之后调用，只处理管理员级别的接口。
 // 被拒时已经写好 403 响应。

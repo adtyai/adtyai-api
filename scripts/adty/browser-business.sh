@@ -5,6 +5,19 @@
 # and Playwright Chromium first. ADTY_CHROMIUM_PATH may select system Chromium.
 set -euo pipefail
 
+adty_browser_scenario=${ADTY_BROWSER_SCENARIO:-all}
+case "$adty_browser_scenario" in
+  all)
+    # Cold bookmark checks rotate refresh cookies. Give each complete scenario
+    # its own database and Redis so the default security limits remain active.
+    ADTY_BROWSER_SCENARIO=deployment bash "$0"
+    ADTY_BROWSER_SCENARIO=wallet bash "$0"
+    exit 0
+    ;;
+  deployment | wallet) ;;
+  *) echo 'browser-business: unknown scenario' >&2; exit 2 ;;
+esac
+
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 adty_repo_root=$(pwd -P)
 case "$adty_repo_root" in
@@ -208,5 +221,5 @@ assert result.get('success'), result.get('message')
 print('browser-business: real PostgreSQL runtime and synthetic root initialized')
 PY
 
-(cd web && node scripts/adty/browser-wallet.mjs)
-echo 'browser-business: production wallet and permission checks passed'
+(cd web && node "scripts/adty/browser-$adty_browser_scenario.mjs")
+echo "browser-business: production $adty_browser_scenario checks passed"

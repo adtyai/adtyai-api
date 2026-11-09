@@ -116,7 +116,6 @@ const URL_TO_CONFIG_MAP: Record<string, { section: string; module: string }> = {
   '/channels': { section: 'admin', module: 'channel' },
   '/models': { section: 'admin', module: 'models' },
   '/models/metadata': { section: 'admin', module: 'models' },
-  '/models/deployments': { section: 'admin', module: 'models' },
   '/users': { section: 'admin', module: 'user' },
   '/recharge-audit': { section: 'admin', module: 'recharge_audit' },
   '/admin-referral': { section: 'admin', module: 'admin_referral' },

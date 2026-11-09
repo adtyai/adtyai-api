@@ -1,6 +1,5 @@
 # 后台接口清单（任务 2.6）：令牌规则是 user、billing、log、model、group、deployment 分类的接口。
 # 上游加了或删了这类接口，TestAdminRouteInventory 会失败：先在 middleware/adty_admin_guard.go 归类，再更新这份清单。
-DELETE /api/deployments/:id deployment:write
 DELETE /api/models/:id model:write
 DELETE /api/prefill_group/:id group:write
 DELETE /api/user/:id user:write
@@ -13,17 +12,6 @@ GET /api/authz/catalog user:read
 GET /api/data/ log:read
 GET /api/data/flow log:read
 GET /api/data/users log:read
-GET /api/deployments/ deployment:read
-GET /api/deployments/:id deployment:read
-GET /api/deployments/:id/containers deployment:read
-GET /api/deployments/:id/containers/:container_id deployment:read
-GET /api/deployments/:id/logs deployment:read
-GET /api/deployments/available-replicas deployment:read
-GET /api/deployments/check-name deployment:read
-GET /api/deployments/hardware-types deployment:read
-GET /api/deployments/locations deployment:read
-GET /api/deployments/search deployment:read
-GET /api/deployments/settings deployment:read
 GET /api/group/ group:read
 GET /api/log/ log:read
 GET /api/log/channel_affinity_usage_cache log:read
@@ -48,11 +36,6 @@ GET /api/user/topup billing:read
 GET /api/vendors/ model:read
 GET /api/vendors/:id model:read
 GET /api/vendors/search model:read
-POST /api/deployments/ deployment:write
-POST /api/deployments/:id/extend deployment:write
-POST /api/deployments/price-estimation deployment:read
-POST /api/deployments/settings/test-connection deployment:write
-POST /api/deployments/test-connection deployment:write
 POST /api/models/ model:write
 POST /api/models/delete model:write
 POST /api/models/sync_upstream model:write
@@ -62,8 +45,6 @@ POST /api/user/topup/complete billing:write
 POST /api/vendors/ model:write
 POST /api/vendors/operations model:write
 POST /api/vendors/operations/preview model:read
-PUT /api/deployments/:id deployment:write
-PUT /api/deployments/:id/name deployment:write
 PUT /api/models/ model:write
 PUT /api/prefill_group/ group:write
 PUT /api/user/ user:write

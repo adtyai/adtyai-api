@@ -25,7 +25,6 @@ import {
   MODELS_DEFAULT_SECTION,
 } from '@/features/models/section-registry'
 import { ADTY_PERMISSIONS, canAdmin } from '@/lib/adty-permissions'
-import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
 
 const modelsSearchSchema = z.object({
@@ -43,10 +42,6 @@ const modelsSearchSchema = z.object({
     .optional()
     .catch([]),
   sync: z.array(z.string()).optional().catch([]),
-  dPage: z.number().optional().catch(1),
-  dPageSize: z.number().optional().catch(10),
-  dFilter: z.string().optional().catch(''),
-  dStatus: z.array(z.string()).optional().catch([]),
 })
 
 export const Route = createFileRoute('/_authenticated/models/$section')({
@@ -54,16 +49,6 @@ export const Route = createFileRoute('/_authenticated/models/$section')({
     const { auth } = useAuthStore.getState()
 
     if (!canAdmin(auth.user, ADTY_PERMISSIONS.MODEL_READ)) {
-      throw redirect({
-        to: '/403',
-      })
-    }
-
-    // adty: deployments are root-only (task 2.6 keeps their API root-only)
-    if (
-      params.section === 'deployments' &&
-      auth.user?.role !== ROLE.SUPER_ADMIN
-    ) {
       throw redirect({
         to: '/403',
       })

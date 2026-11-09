@@ -387,7 +387,7 @@ func TestRetiredPlaygroundPathBeatsPluginDispatcher(t *testing.T) {
 		c.Abort()
 	})
 
-	for _, path := range []string{"/pg/chat/completions", "/api/adty/marketing/self", "/api/adty/admin/marketing/campaigns"} {
+	for _, path := range []string{"/pg/chat/completions", "/api/adty/marketing/self", "/api/adty/admin/marketing/campaigns", "/api/deployments", "/api/deployments/settings", "/api/deployments/old/containers"} {
 		recorder := performPluginRequest(outer, http.MethodPost, path)
 		assert.Equal(t, http.StatusNotFound, recorder.Code, path)
 		assert.Contains(t, recorder.Body.String(), "Invalid URL", path)
@@ -414,7 +414,7 @@ func TestExternalFrontendRejectsRetiredPlaygroundPath(t *testing.T) {
 
 	engine := gin.New()
 	SetRouter(engine, WebAssets{})
-	for _, path := range []string{"/pg/chat/completions", "/api/adty/marketing/self", "/api/adty/admin/marketing/campaigns"} {
+	for _, path := range []string{"/pg/chat/completions", "/api/adty/marketing/self", "/api/adty/admin/marketing/campaigns", "/api/deployments", "/api/deployments/settings", "/api/deployments/old/containers"} {
 		recorder := performPluginRequest(engine, http.MethodPost, path)
 		assert.Equal(t, http.StatusNotFound, recorder.Code, path)
 		assert.Contains(t, recorder.Body.String(), "Invalid URL", path)

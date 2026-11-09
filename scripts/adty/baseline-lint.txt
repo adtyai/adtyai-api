@@ -58,9 +58,7 @@ src/features/dashboard/lib/api-info.ts 1
 src/features/dashboard/lib/text.ts 2
 src/features/keys/components/data-table-bulk-actions.tsx 2
 src/features/keys/constants.ts 1
-src/features/models/components/deployment-access-guard.tsx 1
 src/features/models/components/prefill-group-shared.ts 2
-src/features/models/lib/deployments-utils.ts 1
 src/features/pricing/components/model-details-api.tsx 6
 src/features/pricing/components/model-details-apps.tsx 4
 src/features/pricing/constants.ts 1

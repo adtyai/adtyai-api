@@ -50,7 +50,7 @@ func SetWebRouter(router *gin.Engine, assets WebAssets, pluginDispatcher gin.Han
 }
 
 func rejectRetiredFeaturePath(c *gin.Context) {
-	for _, prefix := range []string{"/pg", "/api/adty/marketing", "/api/adty/admin/marketing"} {
+	for _, prefix := range []string{"/pg", "/api/adty/marketing", "/api/adty/admin/marketing", "/api/deployments"} {
 		if c.Request.URL.Path == prefix || strings.HasPrefix(c.Request.URL.Path, prefix+"/") {
 			controller.RelayNotFound(c)
 			c.Abort()

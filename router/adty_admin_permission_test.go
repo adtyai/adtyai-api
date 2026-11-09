@@ -127,20 +127,61 @@ func TestGrantAndRevokeTakeEffectImmediately(t *testing.T) {
 
 func TestRootBypassesGuard(t *testing.T) {
 	f := newAdtyGuardFixture(t)
-	for _, path := range []string{"/api/channel/", "/api/user/", "/api/log/", "/api/deployments/settings"} {
+	for _, path := range []string{"/api/channel/", "/api/user/", "/api/log/", "/api/option/"} {
 		resp := adtyJSON(t, f.engine, http.MethodGet, path, "", f.root)
 		assert.NotEqual(t, http.StatusForbidden, resp.Code, path)
 	}
 }
 
-func TestUnclassifiedAdminScopeIsRootOnly(t *testing.T) {
+func TestRootSystemScopeCannotBeGrantedToAdmin(t *testing.T) {
 	f := newAdtyGuardFixture(t)
 	all := make([]authz.Permission, 0)
 	all = append(all, authz.AllPermissions()...)
 	f.grant(t, all...)
-	resp := adtyJSON(t, f.engine, http.MethodGet, "/api/deployments/settings", "", f.token)
+	resp := adtyJSON(t, f.engine, http.MethodGet, "/api/option/", "", f.token)
 	assert.Equal(t, http.StatusForbidden, resp.Code)
 	assert.Equal(t, http.StatusOK, adtyJSON(t, f.engine, http.MethodGet, "/api/user/", "", f.token).Code)
+}
+
+func TestRetiredDeploymentEndpointsReturnNotFound(t *testing.T) {
+	f := newAdtyGuardFixture(t)
+	common.OptionMapRWMutex.Lock()
+	previousOptions := common.OptionMap
+	common.OptionMap = map[string]string{
+		"model_deployment.ionet.enabled": "true",
+		"model_deployment.ionet.api_key": "historical-deployment-key",
+	}
+	common.OptionMapRWMutex.Unlock()
+	t.Cleanup(func() {
+		common.OptionMapRWMutex.Lock()
+		common.OptionMap = previousOptions
+		common.OptionMapRWMutex.Unlock()
+	})
+	var rootUser model.User
+	require.NoError(t, f.db.Where("username = ?", "guard-root").First(&rootUser).Error)
+	legacyPAT := createAdtyScopedToken(t, rootUser.Id, "deployment:read", "deployment:write")
+	for _, token := range []string{"", f.token, f.root, legacyPAT} {
+		for _, endpoint := range []struct{ method, path string }{
+			{http.MethodGet, "/api/deployments/settings"},
+			{http.MethodGet, "/api/deployments/"},
+			{http.MethodPost, "/api/deployments/"},
+			{http.MethodPut, "/api/deployments/old"},
+			{http.MethodDelete, "/api/deployments/old"},
+			{http.MethodGet, "/api/deployments/old/containers"},
+		} {
+			resp := adtyJSON(t, f.engine, endpoint.method, endpoint.path, `{}`, token)
+			assert.Equal(t, http.StatusNotFound, resp.Code, endpoint.path)
+		}
+	}
+	for _, key := range []string{"model_deployment.ionet.enabled", "model_deployment.ionet.api_key"} {
+		require.NoError(t, f.db.Create(&model.Option{Key: key, Value: "historical"}).Error)
+		resp := adtyJSON(t, f.engine, http.MethodPut, "/api/option/", fmt.Sprintf(`{"key":%q,"value":"true"}`, key), f.root)
+		assert.Contains(t, resp.Body.String(), `"success":false`)
+		var stored model.Option
+		require.NoError(t, f.db.Where("key = ?", key).First(&stored).Error)
+		assert.Equal(t, "historical", stored.Value)
+	}
+	assert.NotContains(t, adtyJSON(t, f.engine, http.MethodGet, "/api/option/", "", f.root).Body.String(), "model_deployment.")
 }
 
 func TestUserWriteAccessTokenCannotAdjustQuotaOrPromote(t *testing.T) {
@@ -281,7 +322,7 @@ func TestEveryUpstreamAdminScopeClassified(t *testing.T) {
 	for _, resource := range authz.Catalog() {
 		casbin[resource.Resource] = true
 	}
-	checked := 0
+	var checkedScopes []string
 	for _, group := range catalog {
 		if group.Group != service.AccessTokenGroupAdmin {
 			continue
@@ -291,15 +332,18 @@ func TestEveryUpstreamAdminScopeClassified(t *testing.T) {
 				continue
 			}
 			for _, action := range resource.Actions {
-				checked++
 				scope := resource.Resource + ":" + action.Action
+				checkedScopes = append(checkedScopes, scope)
 				classified := middleware.AdtyAdminScopeClassified(scope)
 				rootOnly := slices.Contains(middleware.AdtyRootOnlyAdminScopes, scope)
 				assert.True(t, classified || rootOnly, "classify %s in middleware/adty_admin_guard.go", scope)
 			}
 		}
 	}
-	assert.GreaterOrEqual(t, checked, 11, "the upstream admin catalog must not disappear when the ADTY grant catalog hides legacy scopes")
+	assert.Subset(t, checkedScopes, []string{
+		"user:read", "user:write", "billing:read", "billing:write",
+		"model:read", "model:write", "log:read", "group:read", "group:write",
+	}, "the retained upstream admin scopes must not disappear when the ADTY grant catalog hides legacy scopes")
 }
 
 func TestAdminRouteInventory(t *testing.T) {
@@ -314,7 +358,7 @@ func TestAdminRouteInventory(t *testing.T) {
 		rule, _ := middleware.AccessTokenRouteRule(key)
 		category, _, _ := strings.Cut(rule.Scope(), ":")
 		switch category {
-		case "user", "billing", "log", "model", "group", "deployment":
+		case "user", "billing", "log", "model", "group":
 			routes = append(routes, key+" "+rule.Scope())
 		}
 	}

@@ -24,10 +24,12 @@ import { renderHook } from '@testing-library/react'
 import { createElement, type ReactNode } from 'react'
 import { describe, expect, it } from 'vitest'
 
+import { MODELS_SECTION_IDS } from '@/features/models/section-registry'
 import {
   parseSidebarModulesAdmin,
   SIDEBAR_MODULES_DEFAULT,
 } from '@/features/system-settings/maintenance/config'
+import { MODELS_SECTION_IDS as MODEL_SETTING_SECTION_IDS } from '@/features/system-settings/models/section-registry'
 import { useSidebarData } from '@/hooks/use-sidebar-data'
 
 // Subscriptions, redemption codes and upstream invite rewards were deleted in
@@ -41,6 +43,14 @@ function readSource(path: string): string {
 }
 
 describe('deleted features stay deleted', () => {
+  it('retires deployment navigation while retaining model and protocol settings', () => {
+    expect(MODELS_SECTION_IDS).toContain('metadata')
+    expect(MODELS_SECTION_IDS).toContain('vendors')
+    expect(MODELS_SECTION_IDS).not.toContain('deployments')
+    expect(MODEL_SETTING_SECTION_IDS).toContain('global')
+    expect(MODEL_SETTING_SECTION_IDS).toContain('gemini')
+    expect(MODEL_SETTING_SECTION_IDS).not.toContain('model-deployment')
+  })
   // Backend paths too: a restored Go file can still build and pass every Go
   // test, so this is the only place that notices it.
   it('keeps every path in the deletion list absent', () => {

@@ -85,10 +85,6 @@ var accessTokenStaticResources = []AccessTokenResource{
 		accessTokenView("View models and vendors, and preview upstream sync."),
 		accessTokenEdit("Edit models and vendors, and sync them from upstream."),
 	}},
-	{Resource: "deployment", LabelKey: "Deployments", group: AccessTokenGroupAdmin, minRole: common.RoleAdminUser, Actions: []authz.ActionDefinition{
-		accessTokenView("View deployments and price estimates."),
-		accessTokenEdit("Create, edit, and delete deployments, and test connections."),
-	}},
 	{Resource: "log", LabelKey: "Logs", group: AccessTokenGroupAdmin, minRole: common.RoleAdminUser, Actions: []authz.ActionDefinition{
 		accessTokenView("View all users' usage logs, statistics, and tasks."),
 	}},
@@ -125,7 +121,7 @@ func AccessTokenCatalog(userID, role int) []AccessTokenCatalogGroup {
 			continue
 		}
 		if AdtyAdminPermissionsEnabled() {
-			if slices.Contains([]string{"user", "billing", "model", "log", "group"}, resource.Resource) || resource.Resource == "deployment" && role < common.RoleRootUser {
+			if slices.Contains([]string{"user", "billing", "model", "log", "group"}, resource.Resource) {
 				continue
 			}
 		}

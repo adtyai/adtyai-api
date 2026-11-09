@@ -28,6 +28,9 @@ func TestAdtyAccessTokenCatalogOnlyOffersCurrentActions(t *testing.T) {
 		_, err := NormalizeAccessTokenScopes(1, common.RoleRootUser, []string{scope})
 		assert.ErrorIs(t, err, ErrAccessTokenScopeForbidden, scope)
 	}
+	assert.NotContains(t, resources, "deployment")
+	_, err := NormalizeAccessTokenScopes(1, common.RoleRootUser, []string{"deployment:write"})
+	assert.Error(t, err, "a retired resource cannot be newly granted")
 	for _, group := range AccessTokenCatalog(42, common.RoleAdminUser) {
 		for _, resource := range group.Resources {
 			assert.NotEqual(t, "deployment", resource.Resource, "a Root-only capability cannot be newly granted by an administrator")
