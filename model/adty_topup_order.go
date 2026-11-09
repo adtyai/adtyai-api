@@ -1,6 +1,7 @@
 package model
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
@@ -114,6 +115,10 @@ var (
 // PostgreSQL 事务里任何一条语句出错，整个入账事务都会作废（审阅重点 10）。
 var AdtyAfterTopUpCreditedTx func(tx *gorm.DB, topUp *TopUp, ext *AdtyTopupOrder) error
 
+// AdtyBeforeTopUpCreateTx 在订单写入事务内生成需要冻结的业务快照。它在创建订单前执行，
+// 使快照与站点身份变更共享同一行锁，避免在事务外读取后被并发开站插入。
+var AdtyBeforeTopUpCreateTx func(tx *gorm.DB, topUp *TopUp, ext *AdtyTopupOrder) error
+
 // AdtyAfterTopUpCompleted 在入账提交之后调用（P5 用它清零通道的连续未付）。未注册就跳过。
 var AdtyAfterTopUpCompleted func(topUp *TopUp, ext *AdtyTopupOrder)
 
@@ -125,9 +130,22 @@ func CreateAdtyTopUp(topUp *TopUp, ext *AdtyTopupOrder) error {
 	if !IsAdtyPaymentProvider(topUp.PaymentProvider) || topUp.PaymentProvider != ext.Provider {
 		return ErrPaymentMethodMismatch
 	}
+	var options []*sql.TxOptions
+	if common.UsingMainDatabase(common.DatabaseTypeMySQL) {
+		// Identity checks after waiting for user locks must see committed site
+		// openings, even when the daily-cap query ran earlier in this transaction.
+		options = append(options, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	}
 	return DB.Transaction(func(tx *gorm.DB) error {
+		// Acquire the payment-method lock before any consistent read: on MySQL
+		// REPEATABLE READ an earlier snapshot could miss a previous reservation.
 		if ext.Provider == PaymentProviderAdtyEpay && ext.ChannelId > 0 {
 			if err := lockAdtyEpayDailyRoom(tx, ext.ChannelId, ext.Method, ext.PayAmount, time.Now().Unix()); err != nil {
+				return err
+			}
+		}
+		if AdtyBeforeTopUpCreateTx != nil {
+			if err := AdtyBeforeTopUpCreateTx(tx, topUp, ext); err != nil {
 				return err
 			}
 		}
@@ -135,7 +153,7 @@ func CreateAdtyTopUp(topUp *TopUp, ext *AdtyTopupOrder) error {
 			return err
 		}
 		return tx.Create(ext).Error
-	})
+	}, options...)
 }
 
 // GetAdtyTopupOrder 按订单号取扩展行，没有时返回 nil。

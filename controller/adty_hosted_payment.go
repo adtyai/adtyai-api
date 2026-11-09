@@ -50,9 +50,6 @@ func createAdtyHostedOrder(c *gin.Context, topUp *model.TopUp, baseQuota decimal
 	} else if ext.Provider == model.PaymentProviderWaffoPancake {
 		ext.ProviderMerchantId = setting.WaffoPancakeStoreID
 	}
-	if service.AdtyReferralSnapshotHook != nil {
-		ext.ReferralAffiliateId, ext.ReferralRate = service.AdtyReferralSnapshotHook(topUp.UserId)
-	}
 	return model.CreateAdtyTopUp(topUp, ext)
 }
 

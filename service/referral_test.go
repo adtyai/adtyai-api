@@ -5,7 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -14,10 +17,14 @@ import (
 	"github.com/QuantumNous/new-api/setting/adty_setting"
 	"github.com/bytedance/gopkg/util/gopool"
 	"github.com/gin-gonic/gin"
+	"github.com/glebarez/sqlite"
+	mysqldriver "github.com/go-sql-driver/mysql"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 func prepareReferralDB(t *testing.T) *gorm.DB {
@@ -150,6 +157,350 @@ func TestNoCommissionAfterAffiliateOpensSite(t *testing.T) {
 	newcomer := referralUser(t, db, "owner-newcomer")
 	_, err = Referral.BindInvitee(newcomer.Id, affiliate.InviteCode, "")
 	assert.True(t, errors.Is(err, ErrReferralCodeInvalid), "a site owner's link no longer binds new users")
+}
+
+// A referral read before the payment-method lock can freeze a MySQL repeatable-read
+// snapshot that omits the order committed by the previous lock holder.
+func TestReferralEpayDailyLimitDatabaseMatrix(t *testing.T) {
+	for _, dialect := range []string{"sqlite", "mysql", "postgres"} {
+		t.Run(dialect, func(t *testing.T) {
+			db := referralOrderMatrixDB(t, dialect)
+			saved := *adty_setting.GetReferralSetting()
+			t.Cleanup(func() { *adty_setting.GetReferralSetting() = saved })
+			cfg := adty_setting.GetReferralSetting()
+			cfg.Enabled, cfg.DefaultRate = true, new(10.0)
+			require.NoError(t, db.AutoMigrate(&model.User{}, &model.TopUp{}, &model.AdtyTopupOrder{},
+				&model.ReferralAffiliate{}, &model.ReferralBinding{}, &model.AdtyEpayChannelMethod{}))
+			inviter := referralUser(t, db, "cap-inviter")
+			affiliate := &model.ReferralAffiliate{UserId: inviter.Id, Status: model.ReferralAffiliateStatusApproved, InviteCode: "cap-code"}
+			require.NoError(t, db.Create(affiliate).Error)
+			users := []*model.User{referralUser(t, db, "cap-first"), referralUser(t, db, "cap-second")}
+			for _, user := range users {
+				require.NoError(t, db.Create(&model.ReferralBinding{InviteeUserId: user.Id, AffiliateId: affiliate.Id}).Error)
+			}
+			require.NoError(t, db.Create(&model.AdtyEpayChannelMethod{
+				ChannelId: 1, Method: "alipay", Enabled: true, DailyLimitCNY: decimal.NewFromInt(100),
+			}).Error)
+			makeOrder := func(index int) error {
+				trade := fmt.Sprintf("EPY-referral-cap-%d", index)
+				return model.CreateAdtyTopUp(
+					&model.TopUp{UserId: users[index].Id, TradeNo: trade, PaymentMethod: "alipay",
+						PaymentProvider: model.PaymentProviderAdtyEpay, CreateTime: time.Now().Unix(), Status: common.TopUpStatusPending},
+					&model.AdtyTopupOrder{UserId: users[index].Id, TradeNo: trade, Provider: model.PaymentProviderAdtyEpay,
+						ChannelId: 1, Method: "alipay", PayAmount: decimal.NewFromInt(60), PayCurrency: "CNY"},
+				)
+			}
+			results := make(chan error, 2)
+			if dialect == "sqlite" {
+				// BEGIN IMMEDIATE serializes the transactions before either can read.
+				for index := range 2 {
+					go func() { results <- makeOrder(index) }()
+				}
+			} else {
+				firstBeforeInsert, secondBeforeLock, releaseFirst := make(chan struct{}), make(chan struct{}), make(chan struct{})
+				var methodReads atomic.Int32
+				require.NoError(t, db.Callback().Query().Before("gorm:query").Register("referral_cap_method_wait", func(tx *gorm.DB) {
+					if tx.Statement.Table == "adty_epay_channel_methods" && methodReads.Add(1) == 2 {
+						close(secondBeforeLock)
+					}
+				}))
+				require.NoError(t, db.Callback().Create().Before("gorm:create").Register("referral_cap_hold_first", func(tx *gorm.DB) {
+					if order, ok := tx.Statement.Dest.(*model.TopUp); ok && order.UserId == users[0].Id {
+						close(firstBeforeInsert)
+						select {
+						case <-releaseFirst:
+						case <-time.After(10 * time.Second):
+							tx.AddError(errors.New("timed out waiting to release the first order"))
+						}
+					}
+				}))
+				t.Cleanup(func() {
+					assert.NoError(t, db.Callback().Query().Remove("referral_cap_method_wait"))
+					assert.NoError(t, db.Callback().Create().Remove("referral_cap_hold_first"))
+				})
+				go func() { results <- makeOrder(0) }()
+				select {
+				case <-firstBeforeInsert:
+				case <-time.After(10 * time.Second):
+					t.Fatal("first order did not reach its insert")
+				}
+				go func() { results <- makeOrder(1) }()
+				select {
+				case <-secondBeforeLock:
+				case <-time.After(10 * time.Second):
+					t.Fatal("second order did not reach the method lock")
+				}
+				close(releaseFirst)
+			}
+			accepted, rejected := 0, 0
+			for range 2 {
+				select {
+				case err := <-results:
+					if err == nil {
+						accepted++
+					} else {
+						require.ErrorIs(t, err, model.ErrAdtyEpayDailyLimit)
+						rejected++
+					}
+				case <-time.After(15 * time.Second):
+					t.Fatal("order creation did not finish")
+				}
+			}
+			assert.Equal(t, 1, accepted, "two 60 CNY orders cannot fit a 100 CNY daily cap")
+			assert.Equal(t, 1, rejected)
+			var orders []model.AdtyTopupOrder
+			require.NoError(t, db.Find(&orders).Error)
+			require.Len(t, orders, 1)
+			assert.Equal(t, affiliate.Id, orders[0].ReferralAffiliateId)
+			assert.True(t, decimal.NewFromInt(10).Equal(orders[0].ReferralRate))
+			var topUps int64
+			require.NoError(t, db.Model(&model.TopUp{}).Count(&topUps).Error)
+			assert.EqualValues(t, 1, topUps, "a cap rejection must not leave a partial order")
+		})
+	}
+}
+
+func referralOrderMatrixDB(t *testing.T, dialect string) *gorm.DB {
+	t.Helper()
+	if dialect == "postgres" {
+		return adtyTestDB(t)
+	}
+	var driver gorm.Dialector
+	if dialect == "sqlite" {
+		driver = sqlite.Open(filepath.Join(t.TempDir(), "referral.db") + "?_pragma=busy_timeout(10000)&_pragma=journal_mode(WAL)&_txlock=immediate")
+	} else {
+		dsn := os.Getenv("TEST_MYSQL_DSN")
+		if dsn == "" {
+			t.Skip("TEST_MYSQL_DSN is not configured")
+		}
+		cfg, err := mysqldriver.ParseDSN(dsn)
+		require.NoError(t, err)
+		admin, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
+		require.NoError(t, err)
+		adminSQL, err := admin.DB()
+		require.NoError(t, err)
+		t.Cleanup(func() { assert.NoError(t, adminSQL.Close()) })
+		cfg.DBName = fmt.Sprintf("adty_referral_%d", time.Now().UnixNano())
+		require.NoError(t, admin.Exec("CREATE DATABASE ?", clause.Table{Name: cfg.DBName}).Error)
+		t.Cleanup(func() { assert.NoError(t, admin.Exec("DROP DATABASE ?", clause.Table{Name: cfg.DBName}).Error) })
+		driver = mysql.Open(cfg.FormatDSN())
+	}
+	db, err := gorm.Open(driver, &gorm.Config{})
+	require.NoError(t, err)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	sqlDB.SetMaxOpenConns(4)
+	sqlDB.SetMaxIdleConns(4)
+	oldDB, oldLogDB := model.DB, model.LOG_DB
+	oldMain, oldLog := common.MainDatabaseType(), common.LogDatabaseType()
+	model.DB, model.LOG_DB = db, db
+	common.SetDatabaseTypes(common.DatabaseType(dialect), common.DatabaseType(dialect))
+	model.InitColumnNamesForTests()
+	t.Cleanup(func() {
+		assert.NoError(t, sqlDB.Close())
+		model.DB, model.LOG_DB = oldDB, oldLogDB
+		common.SetDatabaseTypes(oldMain, oldLog)
+		model.InitColumnNamesForTests()
+	})
+	versionQuery := "SELECT version()"
+	if dialect == "sqlite" {
+		versionQuery = "SELECT sqlite_version()"
+	}
+	var version string
+	require.NoError(t, db.Raw(versionQuery).Scan(&version).Error)
+	t.Logf("%s version: %s", dialect, version)
+	return db
+}
+
+func TestReferralSnapshotSeesSiteOpeningAfterDailyCapRead(t *testing.T) {
+	for _, dialect := range []string{"sqlite", "mysql", "postgres"} {
+		for _, opening := range []string{"payer", "affiliate"} {
+			t.Run(dialect+"/"+opening, func(t *testing.T) {
+				db := referralOrderMatrixDB(t, dialect)
+				savedReferral, savedReseller := *adty_setting.GetReferralSetting(), *adty_setting.GetResellerSetting()
+				t.Cleanup(func() {
+					*adty_setting.GetReferralSetting(), *adty_setting.GetResellerSetting() = savedReferral, savedReseller
+					InvalidateAdtySiteCache()
+				})
+				cfg := adty_setting.GetReferralSetting()
+				cfg.Enabled, cfg.DefaultRate = true, new(10.0)
+				reseller := adty_setting.GetResellerSetting()
+				*reseller = adty_setting.DefaultResellerSetting()
+				reseller.Enabled, reseller.RootDomains = true, []string{"sites.example.com"}
+				reseller.CostFactor, reseller.MinCostFactor, reseller.MaxMarkup = new(0.8), new(0.5), new(3.0)
+				reseller.MaxSiteBonusExtra, reseller.TrialGrantMaxUSD, reseller.TrialGrantDailyUSD = new(2.0), new(5.0), new(20.0)
+				require.NoError(t, db.AutoMigrate(&model.User{}, &model.TopUp{}, &model.AdtyTopupOrder{},
+					&model.ReferralAffiliate{}, &model.ReferralBinding{}, &model.AdtyEpayChannelMethod{},
+					&model.AdtySite{}, &model.AdtySiteWallet{}, &model.AdtySiteAudit{}))
+				inviter, payer := referralUser(t, db, "opening-inviter"), referralUser(t, db, "opening-payer")
+				affiliate := &model.ReferralAffiliate{UserId: inviter.Id, Status: model.ReferralAffiliateStatusApproved, InviteCode: "opening-inviter"}
+				require.NoError(t, db.Create(affiliate).Error)
+				require.NoError(t, db.Create(&model.ReferralAffiliate{UserId: payer.Id, Status: model.ReferralAffiliateStatusApproved, InviteCode: "opening-payer"}).Error)
+				require.NoError(t, db.Create(&model.ReferralBinding{InviteeUserId: payer.Id, AffiliateId: affiliate.Id}).Error)
+				require.NoError(t, db.Create(&model.AdtyEpayChannelMethod{ChannelId: 1, Method: "alipay", Enabled: true, DailyLimitCNY: decimal.NewFromInt(100)}).Error)
+				owner := payer
+				if opening == "affiliate" {
+					owner = inviter
+				}
+				if dialect == "sqlite" {
+					// SQLite serializes writers at BEGIN IMMEDIATE, so commit opening first.
+					_, err := OpenAdtySite(owner.Id, "opening", model.AdtySiteOpenedByAdmin, AdtySitePreset{})
+					require.NoError(t, err)
+				} else {
+					var opened atomic.Bool
+					require.NoError(t, db.Callback().Query().Before("gorm:query").Register("referral_open_after_cap_read", func(tx *gorm.DB) {
+						if tx.Statement.Table == "users" && opened.CompareAndSwap(false, true) {
+							// This independent transaction commits after the cap SUM but before
+							// the order obtains the user lock. Its marker must be visible.
+							_, err := OpenAdtySite(owner.Id, "opening", model.AdtySiteOpenedByAdmin, AdtySitePreset{})
+							if err != nil {
+								tx.AddError(err)
+							}
+						}
+					}))
+					t.Cleanup(func() { assert.NoError(t, db.Callback().Query().Remove("referral_open_after_cap_read")) })
+				}
+				ext := &model.AdtyTopupOrder{UserId: payer.Id, TradeNo: "EPY-opening", Provider: model.PaymentProviderAdtyEpay,
+					ChannelId: 1, Method: "alipay", PayAmount: decimal.NewFromInt(60), PayCurrency: "CNY"}
+				require.NoError(t, model.CreateAdtyTopUp(&model.TopUp{UserId: payer.Id, TradeNo: ext.TradeNo, PaymentProvider: ext.Provider,
+					PaymentMethod: ext.Method, CreateTime: time.Now().Unix(), Status: common.TopUpStatusPending}, ext))
+				assert.Zero(t, ext.ReferralAffiliateId, "a committed site opening must exclude the new order from referral commission")
+				assert.True(t, ext.ReferralRate.IsZero())
+			})
+		}
+	}
+}
+
+func TestNoCommissionAfterInviteeOpensSite(t *testing.T) {
+	db := prepareSiteDB(t)
+	affiliate, invitee := inviterAndInvitee(t, db, "invitee-owner")
+	paidTopUp(t, invitee, "EPU-invitee-before-site")
+
+	_, err := OpenAdtySite(invitee.Id, "invitee-owner", model.AdtySiteOpenedByAdmin, AdtySitePreset{})
+	require.NoError(t, err)
+	paidTopUp(t, invitee, "EPU-invitee-after-site")
+	_, err = RunReferralSettlementOnce(time.Now().Unix(), 50)
+	require.NoError(t, err)
+
+	assert.InDelta(t, 10.0, commissionFor(t, db, "EPU-invitee-before-site").CommissionAmount, 1e-9,
+		"opening a site preserves the commission snapshot of earlier orders")
+	var jobs, commissions int64
+	require.NoError(t, db.Model(&model.ReferralCommissionJob{}).Where("source_trade_no = ?", "EPU-invitee-after-site").Count(&jobs).Error)
+	require.NoError(t, db.Model(&model.ReferralCommission{}).Where("source_trade_no = ?", "EPU-invitee-after-site").Count(&commissions).Error)
+	assert.Zero(t, jobs, "a site owner's own top-up cannot enqueue a main-site referral commission")
+	assert.Zero(t, commissions)
+	assert.InDelta(t, 10.0, account(t, db, affiliate.Id).PendingAmount, 1e-9)
+	var credited model.User
+	require.NoError(t, db.First(&credited, invitee.Id).Error)
+	assert.Equal(t, 102_500_000, credited.Quota, "both payments still credit the payer's wallet")
+}
+
+func TestReferralOrderCreationRechecksSiteOwnerAndKeepsEarlierSnapshot(t *testing.T) {
+	db := prepareSiteDB(t)
+	affiliate, invitee := inviterAndInvitee(t, db, "order-owner")
+	create := func(tradeNo string) *model.AdtyTopupOrder {
+		t.Helper()
+		ext := &model.AdtyTopupOrder{
+			TradeNo: tradeNo, UserId: invitee.Id, Provider: model.PaymentProviderAdtyBEpusdt, Method: "usdt.trc20",
+			FaceUSD: decimal.NewFromInt(100), PayAmount: decimal.NewFromInt(100), PayCurrency: "USD",
+			CreditQuota: 50_000_000, ReferralAffiliateId: affiliate.Id, ReferralRate: decimal.NewFromInt(10),
+		}
+		require.NoError(t, model.CreateAdtyTopUp(&model.TopUp{
+			UserId: invitee.Id, TradeNo: tradeNo, PaymentProvider: model.PaymentProviderAdtyBEpusdt,
+			PaymentMethod: "usdt.trc20", Status: common.TopUpStatusPending,
+		}, ext))
+		return ext
+	}
+	before := create("owner-order-before")
+	require.Equal(t, affiliate.Id, before.ReferralAffiliateId)
+	_, err := OpenAdtySite(invitee.Id, "order-owner", model.AdtySiteOpenedByAdmin, AdtySitePreset{})
+	require.NoError(t, err)
+	after := create("owner-order-after")
+	assert.Zero(t, after.ReferralAffiliateId, "order insertion must discard a referral snapshot read before the site opened")
+	assert.True(t, after.ReferralRate.IsZero())
+
+	_, err = model.CompleteAdtyTopUp(before.TradeNo, model.AdtyPaymentFacts{
+		Provider: model.PaymentProviderAdtyBEpusdt, Method: "usdt.trc20", PaidAmount: decimal.NewFromInt(100),
+		FiatAmount: decimal.NewFromInt(100), PaidCurrency: "USD",
+		Source: model.AdtyPaymentSourceCallback,
+	}, "")
+	require.NoError(t, err)
+	require.NoError(t, ProcessAdtyTopUpCommission(before.TradeNo))
+	assert.InDelta(t, 10.0, commissionFor(t, db, before.TradeNo).CommissionAmount, 1e-9,
+		"an order created before opening the site keeps its snapshot even when paid afterwards")
+}
+
+func TestReferralSnapshotDatabaseFailureDoesNotCreateOrder(t *testing.T) {
+	db := prepareReferralDB(t)
+	_, invitee := inviterAndInvitee(t, db, "snapshot-failure")
+	failure := errors.New("synthetic referral snapshot read failure")
+	const callback = "referral_snapshot_read_failure"
+	require.NoError(t, db.Callback().Query().Before("gorm:query").Register(callback, func(tx *gorm.DB) {
+		if tx.Statement.Table == "referral_affiliates" {
+			tx.AddError(failure)
+		}
+	}))
+	t.Cleanup(func() { _ = db.Callback().Query().Remove(callback) })
+	err := model.CreateAdtyTopUp(&model.TopUp{
+		UserId: invitee.Id, TradeNo: "snapshot-failure", PaymentProvider: model.PaymentProviderAdtyBEpusdt,
+		Status: common.TopUpStatusPending,
+	}, &model.AdtyTopupOrder{
+		UserId: invitee.Id, TradeNo: "snapshot-failure", Provider: model.PaymentProviderAdtyBEpusdt,
+	})
+	require.ErrorIs(t, err, failure)
+	var orders, snapshots int64
+	require.NoError(t, db.Model(&model.TopUp{}).Where("trade_no = ?", "snapshot-failure").Count(&orders).Error)
+	require.NoError(t, db.Model(&model.AdtyTopupOrder{}).Where("trade_no = ?", "snapshot-failure").Count(&snapshots).Error)
+	assert.Zero(t, orders)
+	assert.Zero(t, snapshots, "a failed lookup must not become a permanent zero-commission snapshot")
+}
+
+func TestLegacySiteApprovalWaitsForReferralIdentityLock(t *testing.T) {
+	db := prepareSiteDB(t)
+	_, payer := inviterAndInvitee(t, db, "legacy-identity")
+	site, err := OpenAdtySite(payer.Id, "legacy-identity", model.AdtySiteOpenedByAdmin, AdtySitePreset{InitialStatus: model.AdtySiteStatusPending})
+	require.NoError(t, err)
+	hold := db.Begin()
+	require.NoError(t, hold.Error)
+	t.Cleanup(func() { _ = hold.Rollback().Error })
+	var locked model.User
+	require.NoError(t, model.AdtyLockForUpdate(hold).Where("id = ?", payer.Id).First(&locked).Error)
+	var holderPID int
+	require.NoError(t, hold.Raw("SELECT pg_backend_pid()").Scan(&holderPID).Error)
+	atUserLock, done := make(chan struct{}, 1), make(chan error, 1)
+	require.NoError(t, db.Callback().Query().Before("gorm:query").Register("legacy_approval_identity_wait", func(tx *gorm.DB) {
+		if tx.Statement.Table == "users" {
+			atUserLock <- struct{}{}
+		}
+	}))
+	t.Cleanup(func() { assert.NoError(t, db.Callback().Query().Remove("legacy_approval_identity_wait")) })
+	go func() {
+		_, err := ReviewAdtySiteApplication(site.Id, 1, true, nil, nil, "approve legacy application")
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+		t.Fatal("site approval completed while an order held the owner's identity lock")
+	case <-atUserLock:
+	case <-time.After(10 * time.Second):
+		t.Fatal("approval did not reach the identity boundary")
+	}
+	require.Eventually(t, func() bool {
+		var waiting int64
+		err := db.Raw("SELECT count(*) FROM pg_stat_activity a WHERE ? = ANY(pg_blocking_pids(a.pid))", holderPID).Scan(&waiting).Error
+		return err == nil && waiting == 1
+	}, 5*time.Second, time.Millisecond, "approval must actually wait for the owner's row lock")
+	require.NoError(t, hold.Commit().Error)
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("approval did not finish after the identity lock was released")
+	}
+	stored, err := GetAdtySite(site.Id)
+	require.NoError(t, err)
+	assert.Equal(t, model.AdtySiteStatusActive, stored.Status)
 }
 
 func TestCommissionOnFaceExcludingBonusAndSnapshot(t *testing.T) {

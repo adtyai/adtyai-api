@@ -406,6 +406,13 @@ func ReviewAdtySiteApplication(siteId, adminId int, approve bool, costFactor, ma
 			if err := markAffiliateSiteOwnerTx(tx, site.OwnerUserId, time.Now().Unix()); err != nil {
 				return err
 			}
+			// Keep the affiliate-before-user order used by commission transfers.
+			// The marker stays uncommitted until this identity lock allows activation
+			// to commit, so an earlier order retains its pre-opening snapshot.
+			var owner model.User
+			if err := model.AdtyLockForUpdate(tx).Select("id").Where("id = ?", site.OwnerUserId).First(&owner).Error; err != nil {
+				return err
+			}
 		} else {
 			// 驳回的申请直接关闭，子域名留着存档。站长可以换个子域名重新申请。
 			updates["status"] = model.AdtySiteStatusClosed

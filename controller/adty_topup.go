@@ -263,9 +263,6 @@ func createAdtyOrder(c *gin.Context, draft adtyOrderDraft) (*model.TopUp, *model
 		PromoBonusUSD:   quote.PromoBonusUSD,
 		PromoFunder:     quote.PromoFunder,
 	}
-	if service.AdtyReferralSnapshotHook != nil {
-		ext.ReferralAffiliateId, ext.ReferralRate = service.AdtyReferralSnapshotHook(userID)
-	}
 	if site := service.AdtyBillingSiteForUser(userID); site != nil {
 		ext.SiteId = site.Id // 分站客户的加赠由站长出（任务 11.5）
 	}

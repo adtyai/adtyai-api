@@ -5,7 +5,6 @@ import (
 	"sync"
 
 	"github.com/QuantumNous/new-api/model"
-	"github.com/shopspring/decimal"
 )
 
 // ErrAdtyPaymentDetected 表示网关明确说这笔订单已经有转账或已支付。本地必须留在待支付，等回调入账。
@@ -92,9 +91,6 @@ func AdtyPaymentProviderForMethod(method string) AdtyPaymentProvider {
 	}
 	return nil
 }
-
-// AdtyReferralSnapshotHook 在下单时调用（P6 注册），返回推广员和当时的比例（百分数）。
-var AdtyReferralSnapshotHook func(userId int) (affiliateId int, rate decimal.Decimal)
 
 // AdtyCanceledHook 在用户取消订单之后调用（P5 按通道计连续未付）。
 var AdtyCanceledHook func(ext *model.AdtyTopupOrder)

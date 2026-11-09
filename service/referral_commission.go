@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -15,41 +16,84 @@ import (
 
 // adtyReferralSnapshot 是下单时的返佣快照：用户有绑定、推广员有效、绑定没有自邀标记、比例已设时，
 // 返回推广员和当时的比例。之后改比例不影响已经下的单。
-// 推广员开了分站（SiteOwnerSince > 0）、或者下单的是分站客户，就不计佣；开站前下的单照常（执行层决定 27）。
-func adtyReferralSnapshot(userId int) (int, decimal.Decimal) {
+// 付款人或推广员开过分站（SiteOwnerSince > 0）、或者下单的是分站客户，就不计佣；开站前下的单照常。
+func adtyReferralSnapshotWithDB(db *gorm.DB, userId int, lockUser bool) (int, decimal.Decimal, error) {
 	if !Referral.IsEnabled() {
-		return 0, decimal.Zero
+		return 0, decimal.Zero, nil
 	}
-	// 分站客户不计 P6 佣金（执行层决定 27）。读库不读缓存：site_id 只在注册和关站转移时变。
-	var owners []model.User
-	if err := model.DB.Select("id", "site_id").Where("id = ?", userId).Limit(1).Find(&owners).Error; err != nil || len(owners) == 0 || owners[0].SiteId > 0 {
-		return 0, decimal.Zero
-	}
+	// Bindings are immutable after registration. Discover both identities before
+	// locking users, then acquire their rows in a stable order shared by orders.
 	var bindings []model.ReferralBinding
-	if err := model.DB.Where("invitee_user_id = ?", userId).Limit(1).Find(&bindings).Error; err != nil || len(bindings) == 0 {
-		return 0, decimal.Zero
+	if err := db.Where("invitee_user_id = ?", userId).Limit(1).Find(&bindings).Error; err != nil {
+		return 0, decimal.Zero, err
+	}
+	if len(bindings) == 0 || bindings[0].RiskFlag == model.ReferralRiskSelfInvite {
+		return 0, decimal.Zero, nil
 	}
 	binding := bindings[0]
-	if binding.RiskFlag == model.ReferralRiskSelfInvite {
-		return 0, decimal.Zero
+	var affiliate model.ReferralAffiliate
+	if err := db.Where("id = ?", binding.AffiliateId).First(&affiliate).Error; err != nil {
+		return 0, decimal.Zero, err
 	}
-	var affiliates []model.ReferralAffiliate
-	if err := model.DB.Where("id = ?", binding.AffiliateId).Limit(1).Find(&affiliates).Error; err != nil || len(affiliates) == 0 {
-		return 0, decimal.Zero
+	if userId == affiliate.UserId {
+		return 0, decimal.Zero, nil
 	}
-	affiliate := affiliates[0]
+	userIDs := []int{userId, affiliate.UserId}
+	slices.Sort(userIDs)
+	for _, id := range userIDs {
+		var user model.User
+		userQuery := db.Select("id", "site_id").Where("id = ?", id)
+		if lockUser {
+			userQuery = model.AdtyLockForUpdate(userQuery)
+		}
+		if err := userQuery.First(&user).Error; err != nil {
+			return 0, decimal.Zero, err
+		}
+		if user.SiteId > 0 {
+			return 0, decimal.Zero, nil
+		}
+	}
+	// 分站客户不计 P6 佣金（执行层决定 27）。读库不读缓存。
+	// 站长仍是主站用户（site_id = 0）；开站时写入的历史标记也不能在关站后恢复计佣。
+	var siteOwners int64
+	if err := db.Model(&model.ReferralAffiliate{}).Where("user_id = ? AND site_owner_since > 0", userId).Count(&siteOwners).Error; err != nil {
+		return 0, decimal.Zero, err
+	}
+	if siteOwners > 0 {
+		return 0, decimal.Zero, nil
+	}
+	// Read again after both user locks: a site opening may have committed while
+	// the order waited. Order creation uses READ COMMITTED on MySQL.
+	if err := db.Where("id = ?", binding.AffiliateId).First(&affiliate).Error; err != nil {
+		return 0, decimal.Zero, err
+	}
 	if affiliate.Status != model.ReferralAffiliateStatusApproved || affiliate.SiteOwnerSince > 0 {
-		return 0, decimal.Zero
-	}
-	var affiliateUsers []model.User
-	if err := model.DB.Select("site_id").Where("id = ?", affiliate.UserId).Limit(1).Find(&affiliateUsers).Error; err != nil || len(affiliateUsers) == 0 || affiliateUsers[0].SiteId > 0 {
-		return 0, decimal.Zero
+		return 0, decimal.Zero, nil
 	}
 	rate, ok := AffiliateRate(&affiliate)
 	if !ok {
+		return 0, decimal.Zero, nil
+	}
+	return affiliate.Id, rate, nil
+}
+
+func adtyReferralSnapshot(userId int) (int, decimal.Decimal) {
+	affiliateID, rate, err := adtyReferralSnapshotWithDB(model.DB, userId, false)
+	if err != nil {
+		common.SysError(common.LogText("referral snapshot failed user=%d: %s", userId, err.Error()))
 		return 0, decimal.Zero
 	}
-	return affiliate.Id, rate
+	return affiliateID, rate
+}
+
+func prepareAdtyReferralSnapshotTx(tx *gorm.DB, topUp *model.TopUp, ext *model.AdtyTopupOrder) error {
+	affiliateID, rate, err := adtyReferralSnapshotWithDB(tx, topUp.UserId, true)
+	if err != nil {
+		return err
+	}
+	ext.ReferralAffiliateId = affiliateID
+	ext.ReferralRate = rate
+	return nil
 }
 
 // adtyReferralAfterCreditTx 在入账的同一个事务里插一条计佣任务。只用 OnConflict DoNothing，
@@ -330,7 +374,7 @@ func clawBackCommissionPartTx(tx *gorm.DB, account *model.ReferralCommissionAcco
 }
 
 func init() {
-	AdtyReferralSnapshotHook = adtyReferralSnapshot
+	model.AdtyBeforeTopUpCreateTx = prepareAdtyReferralSnapshotTx
 	// 入账和退款的事务钩子只有一个，P6 和分站（11.5 的加赠扣减）一起挂上。
 	model.AdtyAfterTopUpCreditedTx = func(tx *gorm.DB, topUp *model.TopUp, ext *model.AdtyTopupOrder) error {
 		if err := adtyReferralAfterCreditTx(tx, topUp, ext); err != nil {
