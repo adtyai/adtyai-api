@@ -513,7 +513,7 @@
 | `router/api-router.go`、`middleware/access_token_routes.go`、`router/adty_admin_permission_test.go` | 新增用户站点选项路由，复用用户读取授权，验证 session/PAT 授予、撤销和错误 scope | ADTY 模式使用 adty_user:read，用户筛选不替代授权 | M-01 |
 | `web/src/features/users/`、`web/src/routes/_authenticated/users/index.tsx` | 保留站点字段，复用 DataTablePage/useTableUrlState 单选筛选及详情 Drawer，显示名称和 ID，过期详情请求不覆盖当前用户 | URL 恢复、切站重置分页、主站 0、清除和加载错误重试 | M-01 |
 | `scripts/adty/browser-business.sh`、`web/scripts/adty/browser-user-sites.mjs` | 独立生产浏览器场景验证桌面/移动列表、筛选、详情和刷新；SQL 仅准备隔离客户归属和品牌 fixture | 验证用户查询链，不冒称品牌保存、客户注册或全平台验收 | M-01 |
-| `service/adty_payment_registry.go`、`controller/admin_finance.go` | 从注册服务输出六支付商能力和各订单适用动作 | 保留缺扩展、终态和权限边界，BEpusdt 不宣称支持主动查询 | M-04 |
+| `service/adty_payment_registry.go`、`controller/admin_finance.go` | 从注册服务输出六支付商能力和各订单适用动作 | 保留缺扩展、终态和权限边界；BEpusdt在FIN-F-02接官方Info查询后通过同一能力注册表提供补查 | M-04、FIN-F-02 |
 | `controller/adty_topup_admin.go`、`router/adty-router.go`、`middleware/audit.go`、`router/adty_topup_test.go` | 新增有写权限和 PAT scope 保护的主动补查，8 秒超时、当前状态回读、安全错误和审计；覆盖失败、金额不符、撤权及重复幂等 | 查询可能入账，不能由财务只读权限调用；缺扩展订单安全拒绝 | M-04 |
 | `service/adty_epay_client.go`、`service/adty_epay_health.go`、`service/adty_epay_test.go`、`controller/admin_finance_test.go` | Epay 实现注册查询能力，HTTPS/订单/商户/方法/网关号绑定，禁止查询重定向；六服务动作和筛选真实三库回归 | 复用统一金额校验及入账，不改变 FIN-F-01 场景或 FIN-G-01 来源资金规则 | M-04 |
 | `web/src/features/recharge-audit/`、`web/src/i18n/locales/` | 后端能力驱动筛选及行操作，复用 ConfirmDialog/Alert 显示补查错误和未支付/成功结果，八语同步 | 撤权立即移除操作弹窗，退款明确线下退钱 | M-04 |
@@ -544,3 +544,4 @@
 | `controller/adty_site_staff.go`、`middleware/adty_site_staff.go`、`auth.go`、`router/adty-router.go`、`controller/user.go` | session-only 员工/管理 API，员工白名单默认拒绝；安全字段投影和迁入时间限制 | 邮箱遮罩，无客户 Key/原始日志；读取审计失败不返回数据，站点/协议/权限与 Host 逐次核验 | O-01 部分 |
 | `web/src/features/adty-site-staff/`、`adty-site-owner/`、认证路由/导航及八语 | 组合既有 Dialog/ConfirmDialog/StaticDataTable/PageSwitcher/Field 与 RHF+Zod；独立员工工作区及按权限关闭记录 | 复用业务封装，无新增通用控件/依赖；未实现客户写权限和未确定资金规则，整项仍未关闭 | O-01 部分 |
 | `scripts/adty/browser-business.sh`、`web/scripts/adty/browser-site-staff.mjs`及既有后端/导航测试 | 独立 PG17/Redis 桌面/移动创建、登录、脱敏、撤权/改密/删除、SQL 审计；三库 fresh/upgrade/重复迁移和 race | 合成账号及资金，验证本批范围，不宣称全平台验收 | O-01 部分 |
+| `service/adty_bepusdt_provider.go`、`adty_hosted_recovery.go`及既有BEpusdt/财务能力测试、浏览器脚本 | 官方Info的HTTPS查询、冻结事实绑定、手动及后台恢复，共用原入账/唯一流水及财务授权 | 官方v03413/BEpusdt的78db081b版本；不跟随重定向，不伪造hash，不绕过网关指纹规则；无原始事实时保留人工对账 | FIN-F-02 |

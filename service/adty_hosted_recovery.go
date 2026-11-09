@@ -164,7 +164,7 @@ func recoverAdtyHostedPayments(now int64) {
 	var orders []model.AdtyTopupOrder
 	err := model.DB.Table("adty_topup_orders AS a").Select("a.*").Joins("JOIN top_ups t ON t.trade_no = a.trade_no").
 		Where("a.provider IN ? AND a.created_at <= ? AND a.created_at >= ? AND a.last_query_at <= ? AND t.status IN ?", []string{
-			model.PaymentProviderStripe, model.PaymentProviderCreem, model.PaymentProviderWaffo, model.PaymentProviderWaffoPancake,
+			model.PaymentProviderStripe, model.PaymentProviderCreem, model.PaymentProviderWaffo, model.PaymentProviderWaffoPancake, model.PaymentProviderAdtyBEpusdt,
 		}, now-120, now-7*24*60*60, now-60, []string{common.TopUpStatusPending, common.TopUpStatusExpired, common.TopUpStatusFailed, model.TopUpStatusCanceled}).
 		Order("a.last_query_at, a.id").Limit(20).Scan(&orders).Error
 	if err != nil {

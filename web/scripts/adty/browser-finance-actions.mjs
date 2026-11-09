@@ -19,6 +19,8 @@ For commercial licensing, please contact support@quantumnous.com
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
+import { mkdir } from 'node:fs/promises'
+import { join } from 'node:path'
 
 import { chromium } from 'playwright'
 
@@ -63,6 +65,8 @@ const browser = await chromium.launch({
     : {}),
 })
 const errors = []
+const artifacts = process.env.ADTY_BROWSER_ARTIFACT_DIR
+if (artifacts) await mkdir(artifacts, { recursive: true })
 try {
   const context = await browser.newContext({
     locale: 'en-US',
@@ -113,7 +117,7 @@ try {
       const method =
         { bepusdt: 'usdt.trc20', adty_epay: 'alipay' }[provider] || provider
       postgres(
-        `INSERT INTO top_ups (user_id, amount, money, trade_no, payment_provider, payment_method, create_time, status) VALUES (${userID}, 2, 2, '${tradeNo}', '${provider}', '${method}', extract(epoch from now())::bigint, 'pending'); INSERT INTO adty_topup_orders (trade_no, user_id, provider, method, face_usd, bonus_usd, credit_quota, pay_amount, pay_currency, provider_environment, created_at) VALUES ('${tradeNo}', ${userID}, '${provider}', '${method}', 2, 0, 1000000, 2, 'USD', 'test', extract(epoch from now())::bigint)`
+        `INSERT INTO top_ups (user_id, amount, money, trade_no, payment_provider, payment_method, create_time, status) VALUES (${userID}, 2, 2, '${tradeNo}', '${provider}', '${method}', extract(epoch from now())::bigint, 'pending'); INSERT INTO adty_topup_orders (trade_no, user_id, site_id, provider, method, face_usd, bonus_usd, credit_quota, pay_amount, pay_currency, provider_environment, created_at) VALUES ('${tradeNo}', ${userID}, 0, '${provider}', '${method}', 2, 0, 1000000, 2, 'USD', 'test', extract(epoch from now())::bigint)`
       )
     }
     await page.setViewportSize({ width, height: 1000 })
@@ -143,9 +147,9 @@ try {
         await row
           .getByRole('button', { name: 'Query payment', exact: true })
           .count(),
-        provider === 'bepusdt' ? 0 : 1
+        1
       )
-      if (provider === 'creem') {
+      if (provider === 'creem' || provider === 'bepusdt') {
         await row
           .getByRole('button', { name: 'Query payment', exact: true })
           .click()
@@ -169,6 +173,13 @@ try {
             { exact: true }
           )
           .waitFor()
+        if (provider === 'bepusdt' && artifacts) {
+          await page.screenshot({
+            path: join(artifacts, `bepusdt-query-${width}.png`),
+            fullPage: true,
+            animations: 'disabled',
+          })
+        }
         assert.equal(
           Number(postgres(`SELECT quota FROM users WHERE id = ${userID}`)),
           initialQuota
@@ -263,7 +274,11 @@ try {
         ),
         '1'
       )
-      await row.getByRole('button').waitFor({ state: 'detached' })
+      for (const action of ['Complete', 'Refund', 'Query payment']) {
+        await row
+          .getByRole('button', { name: action, exact: true })
+          .waitFor({ state: 'detached' })
+      }
       console.log(
         `PASS ${width}px ${provider}: filter, capabilities, manual credit, offline accounting refund, terminal actions`
       )

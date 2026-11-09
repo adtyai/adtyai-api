@@ -34,7 +34,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { RechargeAudit } from '../index'
 
 const providers = [
-  { provider: 'bepusdt', label: 'BEpusdt', query: false },
+  { provider: 'bepusdt', label: 'BEpusdt', query: true },
   { provider: 'adty_epay', label: 'Epay channels', query: true },
   { provider: 'stripe', label: 'Stripe', query: true },
   { provider: 'creem', label: 'Creem', query: true },
@@ -473,7 +473,13 @@ it('offers all six registered providers and sends the selected provider to the A
 it('shows Hosted completion, query and offline refund actions while respecting per-order capabilities', async () => {
   renderAudit()
   await screen.findByText('trade-creem-pending')
-  for (const provider of ['stripe', 'creem', 'waffo', 'waffo_pancake']) {
+  for (const provider of [
+    'bepusdt',
+    'stripe',
+    'creem',
+    'waffo',
+    'waffo_pancake',
+  ]) {
     const pending = within(
       screen.getByRole('row', { name: new RegExp(`trade-${provider}-pending`) })
     )
@@ -493,10 +499,6 @@ it('shows Hosted completion, query and offline refund actions while respecting p
       paid.queryByRole('button', { name: 'Query payment' })
     ).not.toBeInTheDocument()
   }
-  const bep = within(screen.getByRole('row', { name: /trade-bepusdt-pending/ }))
-  expect(
-    bep.queryByRole('button', { name: 'Query payment' })
-  ).not.toBeInTheDocument()
 })
 
 it('hides all write actions from a read-only finance user', async () => {

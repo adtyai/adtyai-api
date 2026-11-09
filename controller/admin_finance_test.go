@@ -72,7 +72,7 @@ func TestRechargeAuditProviderCapabilitiesDatabaseMatrix(t *testing.T) {
 			assert.ElementsMatch(t, providers, summary.Data.Providers)
 			require.Len(t, summary.Data.Capabilities, 6)
 			for _, capability := range summary.Data.Capabilities {
-				assert.Equal(t, capability.Provider != model.PaymentProviderAdtyBEpusdt, capability.Query, capability.Provider)
+				assert.True(t, capability.Query, capability.Provider)
 				assert.True(t, capability.Complete, capability.Provider)
 				assert.True(t, capability.Refund, capability.Provider)
 				assert.Equal(t, "offline", capability.RefundMode, "ledger refunds do not refund the provider automatically")
@@ -107,7 +107,7 @@ func TestRechargeAuditProviderCapabilitiesDatabaseMatrix(t *testing.T) {
 					}
 					assert.Equal(t, order.Status == common.TopUpStatusPending, order.Actions.Complete, fmt.Sprint(order))
 					assert.Equal(t, order.Status == common.TopUpStatusSuccess, order.Actions.Refund, fmt.Sprint(order))
-					assert.Equal(t, order.Status == common.TopUpStatusPending && order.Provider != model.PaymentProviderAdtyBEpusdt, order.Actions.Query, fmt.Sprint(order))
+					assert.Equal(t, order.Status == common.TopUpStatusPending, order.Actions.Query, fmt.Sprint(order))
 				}
 			}
 		})
