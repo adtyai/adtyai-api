@@ -300,9 +300,15 @@ func registerAdtyResellerRoutes(apiRouter *gin.RouterGroup) {
 		{http.MethodGet, "/adty/staff/customers/:id", controller.GetAdtyStaffCustomer},
 		{http.MethodGet, "/adty/staff/customers/:id/topups", controller.GetAdtyStaffCustomerTopUps},
 		{http.MethodGet, "/adty/staff/customers/:id/logs", controller.GetAdtyStaffCustomerLogs},
+		{http.MethodPost, "/adty/staff/customers/:id/password-reset", controller.PostAdtyStaffCustomerPasswordReset},
+		{http.MethodPost, "/adty/staff/customers/:id/disable", controller.PostAdtyStaffCustomerDisable},
 	} {
 		middleware.DeclareAdtyAccessTokenRoute(route.method, "/api"+route.path, "session", "")
-		apiRouter.Handle(route.method, route.path, middleware.UserAuth(), middleware.DisableCache(), route.handler)
+		handlers := []gin.HandlerFunc{middleware.UserAuth(), middleware.DisableCache()}
+		if route.method == http.MethodPost && (route.path == "/adty/staff/customers/:id/password-reset" || route.path == "/adty/staff/customers/:id/disable") {
+			handlers = append(handlers, middleware.UserCriticalRateLimit("CT:staff-customer-security"))
+		}
+		apiRouter.Handle(route.method, route.path, append(handlers, route.handler)...)
 	}
 
 	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/adty/admin/reseller/tiers", "scope", "option:read")

@@ -232,6 +232,8 @@ function StaffActivity() {
     'staff.customer.read': t('View customer list'),
     'staff.topups.read': t('View customer recharges'),
     'staff.usage.read': t('View customer usage'),
+    'staff.customer.password.request': t('Send password reset instructions'),
+    'staff.customer.disable': t('Disable customer'),
   }
   return (
     <section className='flex flex-col gap-3'>

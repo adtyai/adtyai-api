@@ -34,13 +34,23 @@ import { PageSwitcher } from '@/features/referral/components/page-switcher'
 import { formatQuota } from '@/lib/format'
 import { useAuthStore } from '@/stores/auth-store'
 
-import { getStaffCustomers, getStaffSelf, STAFF_PAGE_SIZE } from './api'
+import {
+  getStaffCustomers,
+  getStaffSelf,
+  STAFF_PAGE_SIZE,
+  type StaffCustomerAction,
+} from './api'
+import { StaffCustomerActionDialog } from './customer-actions'
 import { StaffRecordsDialog } from './records-dialog'
 
 export function StaffWorkspace() {
   const { t } = useTranslation()
   const userId = useAuthStore((state) => state.auth.user?.id)
   const [page, setPage] = useState(1)
+  const [customerAction, setCustomerAction] = useState<{
+    customer: OwnerCustomer
+    action: StaffCustomerAction
+  } | null>(null)
   const [records, setRecords] = useState<{
     customer: OwnerCustomer
     kind: 'topups' | 'logs'
@@ -76,6 +86,12 @@ export function StaffWorkspace() {
       header: t('Email'),
       cell: (customer) => customer.email || '—',
     },
+    {
+      id: 'status',
+      header: t('Status'),
+      cell: (customer) =>
+        customer.status === 1 ? t('Enabled') : t('Disabled'),
+    },
   ]
   if (grants.includes('customers.balance')) {
     columns.push({
@@ -97,7 +113,9 @@ export function StaffWorkspace() {
   }
   if (
     grants.includes('customers.topups') ||
-    grants.includes('customers.usage')
+    grants.includes('customers.usage') ||
+    grants.includes('customers.password') ||
+    grants.includes('customers.disable')
   ) {
     columns.push({
       id: 'actions',
@@ -120,6 +138,26 @@ export function StaffWorkspace() {
               onClick={() => setRecords({ customer, kind: 'logs' })}
             >
               {t('Usage records')}
+            </Button>
+          )}
+          {customer.status === 1 && grants.includes('customers.password') && (
+            <Button
+              size='sm'
+              variant='outline'
+              onClick={() =>
+                setCustomerAction({ customer, action: 'password-reset' })
+              }
+            >
+              {t('Send password reset instructions')}
+            </Button>
+          )}
+          {customer.status === 1 && grants.includes('customers.disable') && (
+            <Button
+              size='sm'
+              variant='destructive'
+              onClick={() => setCustomerAction({ customer, action: 'disable' })}
+            >
+              {t('Disable customer')}
             </Button>
           )}
         </div>
@@ -186,6 +224,21 @@ export function StaffWorkspace() {
                   customer={records.customer}
                   kind={records.kind}
                   onClose={() => setRecords(null)}
+                />
+              )}
+            {customerAction &&
+              canList &&
+              grants.includes(
+                customerAction.action === 'password-reset'
+                  ? 'customers.password'
+                  : 'customers.disable'
+              ) && (
+                <StaffCustomerActionDialog
+                  key={`${self.data.staff.version}-${customerAction.customer.id}-${customerAction.action}`}
+                  customer={customerAction.customer}
+                  action={customerAction.action}
+                  userId={userId ?? 0}
+                  onClose={() => setCustomerAction(null)}
                 />
               )}
           </div>

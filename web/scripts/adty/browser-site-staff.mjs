@@ -19,7 +19,9 @@ For commercial licensing, please contact support@quantumnous.com
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
+import { once } from 'node:events'
 import { mkdir } from 'node:fs/promises'
+import { createServer } from 'node:net'
 import { join } from 'node:path'
 
 import { chromium } from 'playwright'
@@ -29,6 +31,9 @@ assert.ok(base && process.env.ADTY_BROWSER_SQL_DSN)
 assert.ok(['127.0.0.1', 'localhost', '[::1]'].includes(new URL(base).hostname))
 const viewportWidth = Number(process.env.ADTY_BROWSER_STAFF_WIDTH)
 assert.ok([1440, 390].includes(viewportWidth))
+const staffCase = process.env.ADTY_BROWSER_STAFF_CASE ?? 'lifecycle'
+assert.ok(['lifecycle', 'customer-security'].includes(staffCase))
+const customerSecurity = staffCase === 'customer-security'
 const browser = await chromium.launch({
   headless: true,
   ...(process.env.ADTY_CHROMIUM_PATH
@@ -36,6 +41,45 @@ const browser = await chromium.launch({
     : {}),
 })
 const errors = []
+// Capture only the external mail transport on loopback; recovery, verification
+// and customer password selection still run through the production backend.
+const mailbox = createServer((socket) => {
+  socket.setEncoding('utf8')
+  socket.write('220 localhost SMTP capture\r\n')
+  let buffer = ''
+  let message = ''
+  let inData = false
+  socket.on('error', () => errors.push('Local SMTP capture failed'))
+  socket.on('data', (chunk) => {
+    buffer += chunk
+    while (buffer.includes('\r\n')) {
+      const end = buffer.indexOf('\r\n')
+      const line = buffer.slice(0, end)
+      buffer = buffer.slice(end + 2)
+      if (inData) {
+        if (line === '.') {
+          inData = false
+          socket.write('250 Accepted\r\n')
+          mailbox.emit('mail', message)
+        } else {
+          message += `${line}\r\n`
+        }
+      } else if (/^(EHLO|HELO) /i.test(line)) {
+        socket.write('250 localhost\r\n')
+      } else if (line === 'DATA') {
+        message = ''
+        inData = true
+        socket.write('354 Send message\r\n')
+      } else if (line === 'QUIT') {
+        socket.end('221 Bye\r\n')
+      } else {
+        socket.write('250 OK\r\n')
+      }
+    }
+  })
+})
+mailbox.listen(0, '127.0.0.1')
+await once(mailbox, 'listening')
 const artifacts = process.env.ADTY_BROWSER_ARTIFACT_DIR
 if (artifacts) await mkdir(artifacts, { recursive: true })
 
@@ -76,7 +120,10 @@ async function session(
   const state = { page, headers: undefined }
   page.on('pageerror', (error) => errors.push(error.message))
   page.on('request', (request) => {
-    if (request.headers().authorization) {
+    if (
+      new URL(request.url()).pathname.startsWith('/api/') &&
+      request.headers().authorization
+    ) {
       state.headers = { authorization: request.headers().authorization }
     }
   })
@@ -155,6 +202,16 @@ try {
     process.env.ADTY_BROWSER_USERNAME,
     process.env.ADTY_BROWSER_PASSWORD
   )
+  for (const [key, value] of Object.entries({
+    EmailProvider: 'smtp',
+    SMTPServer: '127.0.0.1',
+    SMTPPort: String(mailbox.address().port),
+    SMTPFrom: 'capture@example.test',
+    SMTPSSLEnabled: 'false',
+    SMTPStartTLSEnabled: 'false',
+  })) {
+    await success(root, 'PUT', '/api/option/', { key, value })
+  }
   await success(root, 'PUT', '/api/adty/admin/reseller/settings', {
     enabled: true,
     root_domains: ['sites.localhost'],
@@ -291,6 +348,17 @@ try {
         .count(),
       0
     )
+    for (const label of [
+      'Send password reset instructions',
+      'Disable customer',
+    ]) {
+      assert.equal(
+        await employee.page
+          .getByRole('button', { name: label, exact: true })
+          .count(),
+        0
+      )
+    }
     await employee.page.goto(`${staffBase}/wallet`)
     await employee.page
       .getByRole('heading', { name: 'Staff workspace', exact: true })
@@ -331,6 +399,15 @@ try {
       exact: true,
     })
     await edit.getByLabel('Staff role', { exact: true }).selectOption('finance')
+    await edit
+      .getByRole('checkbox', {
+        name: 'Send password reset instructions',
+        exact: true,
+      })
+      .check()
+    await edit
+      .getByRole('checkbox', { name: 'Disable customer', exact: true })
+      .check()
     await edit.getByRole('button', { name: 'Save', exact: true }).click()
     member = await verifiedSave(
       page,
@@ -392,91 +469,281 @@ try {
         assert.ok(!text.includes(secret))
       }
     }
-    const finance = { ...employee, headers: { ...employee.headers } }
-    for (const action of ['Disable', 'Enable']) {
+    await employee.page
+      .getByRole('dialog', { name: 'Recharge records', exact: true })
+      .getByRole('button', { name: 'Close', exact: true })
+      .click()
+    const customerSecrets = []
+    if (customerSecurity) {
+      let customer = await session(buyerName, password, 'Overview', staffBase)
+      await success(customer, 'POST', '/api/token/', {
+        name: 'staff-customer-key',
+        expired_time: -1,
+        unlimited_quota: true,
+      })
+      const customerKey = postgres(
+        `SELECT key FROM tokens WHERE user_id=${buyerID} AND name='staff-customer-key'`
+      )
+      assert.ok(customerKey)
+      assert.equal(
+        (
+          await api(customer, 'GET', '/v1/models', undefined, {
+            authorization: `Bearer sk-${customerKey}`,
+          })
+        ).status,
+        200
+      )
+      const originalHash = postgres(
+        `SELECT password FROM users WHERE id=${buyerID}`
+      )
+      await employee.page
+        .getByRole('button', {
+          name: 'Send password reset instructions',
+          exact: true,
+        })
+        .click()
+      const resetConfirm = employee.page.getByRole('alertdialog', {
+        name: 'Send password reset instructions',
+        exact: true,
+      })
+      assert.equal(
+        await resetConfirm.getByText(buyerName, { exact: true }).count(),
+        1
+      )
+      if (artifacts) {
+        await employee.page.screenshot({
+          path: join(artifacts, `staff-customer-reset-${width}.png`),
+          fullPage: true,
+          animations: 'disabled',
+        })
+      }
+      await resetConfirm
+        .getByRole('button', { name: 'Continue', exact: true })
+        .click()
+      const received = once(mailbox, 'mail', {
+        signal: AbortSignal.timeout(15000),
+      })
+      const [receivedMail] = await Promise.all([
+        received,
+        verifiedSave(
+          employee.page,
+          password,
+          'POST',
+          `/api/adty/staff/customers/${buyerID}/password-reset`
+        ),
+      ])
+      const [mail] = receivedMail
+      assert.ok(mail.includes(`To: private${width}@example.com\r\n`))
+      const resetLink = /href='([^']+\/user\/reset#[^']+)'/.exec(mail)?.[1]
+      assert.ok(resetLink)
+      assert.equal(new URL(resetLink).hostname, `${ownerName}.sites.localhost`)
+      assert.equal(
+        postgres(`SELECT password FROM users WHERE id=${buyerID}`),
+        originalHash
+      )
+      assert.equal((await api(customer, 'GET', '/api/user/self')).status, 200)
+      const newCustomerPassword = `CustomerChosen!${randomBytes(12).toString('hex')}`
+      const resetPage = await browser.newPage({
+        viewport: { width, height: 1000 },
+        locale: 'en-US',
+      })
+      resetPage.on('pageerror', (error) => errors.push(error.message))
+      // Public site URLs use the standard port; this isolated runtime uses an
+      // ephemeral loopback port. Keep the real hostname, path and credential.
+      const localResetURL = new URL(resetLink)
+      localResetURL.port = new URL(base).port
+      await resetPage.goto(localResetURL.href)
+      await resetPage
+        .getByLabel('New password', { exact: true })
+        .fill(newCustomerPassword)
+      const [changed] = await Promise.all([
+        resetPage.waitForResponse(
+          (item) =>
+            new URL(item.url()).pathname === '/api/user/reset' &&
+            item.request().method() === 'POST'
+        ),
+        resetPage
+          .getByRole('button', { name: 'Confirm reset password', exact: true })
+          .click(),
+      ])
+      assert.equal(changed.status(), 200)
+      assert.equal((await changed.json()).success, true)
+      assert.equal((await api(customer, 'GET', '/api/user/self')).status, 401)
+      await customer.page.context().close()
+      await resetPage.context().close()
+      customer = await session(
+        buyerName,
+        newCustomerPassword,
+        'Overview',
+        staffBase
+      )
+      await employee.page
+        .getByRole('button', { name: 'Disable customer', exact: true })
+        .click()
+      const disableConfirm = employee.page.getByRole('alertdialog', {
+        name: 'Disable customer',
+        exact: true,
+      })
+      await disableConfirm
+        .getByRole('button', { name: 'Cancel', exact: true })
+        .click()
+      assert.equal(
+        postgres(`SELECT status FROM users WHERE id=${buyerID}`),
+        '1'
+      )
+      await employee.page
+        .getByRole('button', { name: 'Disable customer', exact: true })
+        .click()
+      await disableConfirm
+        .getByRole('button', { name: 'Continue', exact: true })
+        .click()
+      await verifiedSave(
+        employee.page,
+        password,
+        'POST',
+        `/api/adty/staff/customers/${buyerID}/disable`
+      )
+      await employee.page
+        .getByRole('button', { name: 'Disable customer', exact: true })
+        .waitFor({ state: 'hidden' })
+      assert.equal((await api(customer, 'GET', '/api/user/self')).status, 401)
+      assert.equal(
+        (
+          await api(customer, 'GET', '/v1/models', undefined, {
+            authorization: `Bearer sk-${customerKey}`,
+          })
+        ).status,
+        403
+      )
+      await customer.page.context().close()
+      assert.equal(
+        postgres(
+          `SELECT status || ':' || quota FROM users WHERE id=${buyerID}`
+        ),
+        '2:1000000'
+      )
+      if (artifacts) {
+        await employee.page.screenshot({
+          path: join(artifacts, `staff-customer-disabled-${width}.png`),
+          fullPage: true,
+          animations: 'disabled',
+        })
+      }
+      customerSecrets.push(
+        customerKey,
+        resetLink,
+        newCustomerPassword,
+        originalHash,
+        `private${width}@example.com`
+      )
+    }
+    let newPassword = ''
+    if (!customerSecurity) {
+      const finance = { ...employee, headers: { ...employee.headers } }
+      for (const action of ['Disable', 'Enable']) {
+        await row(page, staffName)
+          .getByRole('button', { name: action, exact: true })
+          .click()
+        await page
+          .getByRole('alertdialog')
+          .getByRole('button', { name: action, exact: true })
+          .click()
+        member = await verifiedSave(
+          page,
+          password,
+          'PUT',
+          `/api/adty/site/staff/${member.id}`
+        )
+        assert.equal(
+          (await api(finance, 'GET', '/api/adty/staff/self')).status,
+          401
+        )
+      }
+      await employee.page.context().close()
+      employee = await session(
+        staffName,
+        password,
+        'Staff workspace',
+        staffBase
+      )
+      newPassword = `ChangedStaff!${randomBytes(12).toString('hex')}`
       await row(page, staffName)
-        .getByRole('button', { name: action, exact: true })
+        .getByRole('button', { name: 'Reset staff password', exact: true })
         .click()
-      await page
-        .getByRole('alertdialog')
-        .getByRole('button', { name: action, exact: true })
-        .click()
+      const reset = page.getByRole('dialog', {
+        name: 'Reset staff password',
+        exact: true,
+      })
+      await reset.getByLabel('Password', { exact: true }).fill(newPassword)
+      await reset.getByRole('button', { name: 'Save', exact: true }).click()
       member = await verifiedSave(
         page,
         password,
         'PUT',
+        `/api/adty/site/staff/${member.id}/password`
+      )
+      assert.equal(
+        (await api(employee, 'GET', '/api/adty/staff/self')).status,
+        401
+      )
+      await employee.page.context().close()
+      employee = await session(
+        staffName,
+        newPassword,
+        'Staff workspace',
+        staffBase
+      )
+      await row(page, staffName)
+        .getByRole('button', { name: 'Delete', exact: true })
+        .click()
+      await page
+        .getByRole('alertdialog')
+        .getByRole('button', { name: 'Delete', exact: true })
+        .click()
+      await verifiedSave(
+        page,
+        password,
+        'DELETE',
         `/api/adty/site/staff/${member.id}`
       )
       assert.equal(
-        (await api(finance, 'GET', '/api/adty/staff/self')).status,
+        (await api(employee, 'GET', '/api/adty/staff/self')).status,
         401
       )
+      await employee.page.context().close()
+      await row(page, staffName).waitFor({ state: 'hidden' })
     }
-    await employee.page.context().close()
-    employee = await session(staffName, password, 'Staff workspace', staffBase)
-    const newPassword = `ChangedStaff!${randomBytes(12).toString('hex')}`
-    await row(page, staffName)
-      .getByRole('button', { name: 'Reset staff password', exact: true })
-      .click()
-    const reset = page.getByRole('dialog', {
-      name: 'Reset staff password',
-      exact: true,
-    })
-    await reset.getByLabel('Password', { exact: true }).fill(newPassword)
-    await reset.getByRole('button', { name: 'Save', exact: true }).click()
-    member = await verifiedSave(
-      page,
-      password,
-      'PUT',
-      `/api/adty/site/staff/${member.id}/password`
-    )
-    assert.equal(
-      (await api(employee, 'GET', '/api/adty/staff/self')).status,
-      401
-    )
-    await employee.page.context().close()
-    employee = await session(
-      staffName,
-      newPassword,
-      'Staff workspace',
-      staffBase
-    )
-    await row(page, staffName)
-      .getByRole('button', { name: 'Delete', exact: true })
-      .click()
-    await page
-      .getByRole('alertdialog')
-      .getByRole('button', { name: 'Delete', exact: true })
-      .click()
-    await verifiedSave(
-      page,
-      password,
-      'DELETE',
-      `/api/adty/site/staff/${member.id}`
-    )
-    assert.equal(
-      (await api(employee, 'GET', '/api/adty/staff/self')).status,
-      401
-    )
-    await employee.page.context().close()
-    await row(page, staffName).waitFor({ state: 'hidden' })
     const audits = await success(
       owner,
       'GET',
       '/api/adty/site/staff/audits?page_size=100'
     )
     assert.ok(audits.items.some((event) => event.action === 'staff.usage.read'))
+    assert.equal(
+      audits.items.filter(
+        (event) => event.action === 'staff.customer.password.request'
+      ).length,
+      customerSecurity ? 1 : 0
+    )
+    assert.equal(
+      audits.items.filter((event) => event.action === 'staff.customer.disable')
+        .length,
+      customerSecurity ? 1 : 0
+    )
+    for (const secret of customerSecrets) {
+      assert.ok(!JSON.stringify(audits).includes(secret))
+    }
     assert.ok(!JSON.stringify(audits).includes(password))
-    assert.ok(!JSON.stringify(audits).includes(newPassword))
+    if (newPassword) assert.ok(!JSON.stringify(audits).includes(newPassword))
     const evidence = JSON.parse(
       postgres(
         `SELECT json_build_object('status', s.status, 'version', s.version, 'auth_version', u.auth_version, 'quota', u.quota, 'staff_site_id', u.staff_site_id) FROM adty_site_staff s JOIN users u ON u.id=s.user_id WHERE s.id=${member.id}`
       )
     )
     assert.deepEqual(evidence, {
-      status: 'deleted',
-      version: 6,
-      auth_version: 6,
+      status: customerSecurity ? 'enabled' : 'deleted',
+      version: customerSecurity ? 2 : 6,
+      auth_version: customerSecurity ? 2 : 6,
       quota: 0,
       staff_site_id: site.id,
     })
@@ -488,11 +755,12 @@ try {
       })
     }
     console.log(
-      `site-staff: ${width}px creation, login, grants, records, privacy, denylist, revocation, reset, delete and SQL passed`
+      `site-staff: ${width}px ${staffCase} creation, login, grants, records, privacy, denylist and SQL passed`
     )
   }
   assert.deepEqual(errors, [])
   console.log('site-staff: pageerrors=0')
 } finally {
   await browser.close()
+  await new Promise((resolve) => mailbox.close(resolve))
 }

@@ -30,10 +30,12 @@ case "$adty_browser_scenario" in
 esac
 
 if [ "$adty_browser_scenario" = site-staff ] && [ -z "${ADTY_BROWSER_STAFF_WIDTH:-}" ]; then
-  # Each viewport runs a full sensitive lifecycle. Isolate their security
-  # rate-limit windows without changing the production limits.
-  ADTY_BROWSER_STAFF_WIDTH=1440 bash "$0"
-  ADTY_BROWSER_STAFF_WIDTH=390 bash "$0"
+  # Each lifecycle and viewport gets its own runtime and security rate-limit
+  # window. Keep the production limits for both sets of sensitive actions.
+  for adty_staff_case in lifecycle customer-security; do
+    ADTY_BROWSER_STAFF_CASE="$adty_staff_case" ADTY_BROWSER_STAFF_WIDTH=1440 bash "$0"
+    ADTY_BROWSER_STAFF_CASE="$adty_staff_case" ADTY_BROWSER_STAFF_WIDTH=390 bash "$0"
+  done
   exit 0
 fi
 

@@ -30,6 +30,9 @@ export type StaffPermission =
   | 'customers.balance'
   | 'customers.topups'
   | 'customers.usage'
+  | 'customers.password'
+  | 'customers.disable'
+export type StaffCustomerAction = 'password-reset' | 'disable'
 export type StaffAccount = {
   id: number
   user_id: number
@@ -145,6 +148,18 @@ export async function getStaffCustomers(
     { params: { p: page, page_size: STAFF_PAGE_SIZE } }
   )
   return requireServerSuccess(response.data).data
+}
+export async function manageStaffCustomer(
+  customerId: number,
+  action: StaffCustomerAction,
+  proof: string
+): Promise<void> {
+  const response = await api.post<Response<null>>(
+    `/api/adty/staff/customers/${customerId}/${action}`,
+    {},
+    { headers: { 'X-Security-Proof': proof } }
+  )
+  requireServerSuccess(response.data)
 }
 export async function getStaffCustomerRecords(
   kind: 'topups',

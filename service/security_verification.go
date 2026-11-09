@@ -273,7 +273,7 @@ func BindVerificationOperation(operation VerificationOperation) (VerificationBin
 		// 二开：站长中心的敏感操作（任务 11.6）
 		context, ok := adtyBindSiteOwnerOperation(operation.Scope, fields, operation.Context)
 		if !ok {
-			if adtyIsSiteOwnerScope(operation.Scope) {
+			if adtyIsSiteVerificationScope(operation.Scope) {
 				return VerificationBinding{}, ErrVerificationContextInvalid
 			}
 			return VerificationBinding{}, ErrProofScope
@@ -361,7 +361,7 @@ func securityVerificationPolicy(scope string, state model.UserVerificationState)
 		}
 	default:
 		// 二开：站长中心的敏感操作和账号安全操作一样，没有 2FA、Passkey 时用密码（任务 11.6）
-		if !adtyIsSiteOwnerScope(scope) {
+		if !adtyIsSiteVerificationScope(scope) {
 			return nil, ErrProofScope
 		}
 		if len(methods) == 0 {
@@ -406,6 +406,17 @@ func GetVerificationRequirements(identity AuthIdentity, scope string) (*Verifica
 	if permission, ok := adminUserVerificationPermissions[scope]; ok && !AdtyAdminRoleCan(identity.UserID, state.Role, permission) {
 		return nil, ErrVerificationForbidden
 	}
+	if scope == VerificationScopeAdtyStaffCustomerManage {
+		if identity.SessionID == "" {
+			return nil, ErrVerificationForbidden
+		}
+		if _, accessToken := model.ParseAccessTokenSessionID(identity.SessionID); accessToken {
+			return nil, ErrVerificationForbidden
+		}
+		if _, _, err := AdtyStaffAccess(identity.UserID, identity.UserAuthVersion, ""); err != nil {
+			return nil, ErrVerificationForbidden
+		}
+	}
 	if err := requireAccessTokenVerificationScope(identity, scope); err != nil {
 		return nil, err
 	}
@@ -423,7 +434,7 @@ func GetVerificationRequirements(identity AuthIdentity, scope string) (*Verifica
 				VerificationScopeAdminUserTwoFADisable, VerificationScopeAdminUserBindingClear:
 				methods[i].Available, methods[i].Reason = false, "Password authentication is disabled."
 			default:
-				if adtyIsSiteOwnerScope(scope) { // 二开：任务 11.6
+				if adtyIsSiteVerificationScope(scope) {
 					methods[i].Available, methods[i].Reason = false, "Password authentication is disabled."
 				}
 			}

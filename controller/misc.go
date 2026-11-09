@@ -313,31 +313,8 @@ func SendPasswordResetEmail(c *gin.Context) {
 		return
 	}
 	if user, err := model.GetUniqueUserByEmail(email); err == nil {
-		code := common.GenerateVerificationCode(0)
-		if err := common.RegisterVerificationCodeWithKey(email, code, common.PasswordResetPurpose); err != nil {
-			// Do not send a dead link, and do not use a different status from an unknown address.
-		} else {
-			// 二开：链接和站名用用户所属的站点，不读 Host 头（任务 11.3）
-			site := service.AdtySiteForUser(user.Id)
-			link := fmt.Sprintf("%s/user/reset#email=%s&token=%s", service.AdtySiteBaseURL(site), url.QueryEscape(email), url.QueryEscape(code))
-			lang := user.GetSetting().Language
-			if lang == "" {
-				lang = i18n.StatedLang(c)
-			}
-			systemName := map[string]any{"SystemName": service.AdtyBrandFor(site).HTMLName()}
-			linkParams := map[string]any{"Link": link}
-			subject := i18n.Translate(lang, i18n.MsgEmailPasswordResetSubject, systemName)
-			content := fmt.Sprintf("<p>%s</p>"+
-				"<p>%s</p>"+
-				"<p>%s </p>"+
-				"<p>%s</p>",
-				i18n.Translate(lang, i18n.MsgEmailPasswordResetGreeting, systemName),
-				i18n.Translate(lang, i18n.MsgEmailPasswordResetLink, linkParams),
-				i18n.Translate(lang, i18n.MsgEmailPasswordResetLinkFallback, linkParams),
-				i18n.Translate(lang, i18n.MsgEmailPasswordResetValidity, map[string]any{"Minutes": common.VerificationValidMinutes}))
-			// 二开：异步发信，响应时间不暴露邮箱是否存在（任务 7.3）
-			service.AdtySendSiteEmailAsync(site, subject, email, content)
-		}
+		// Preserve the same response for unknown addresses and store failures.
+		_ = sendPasswordResetInstructions(c, user)
 	} else if err != nil && !errors.Is(err, model.ErrEmailNotFound) {
 		logger.LogWarn(c.Request.Context(), common.LogText("skip password reset email for %s: %s", email, err.Error()))
 	}
@@ -345,6 +322,37 @@ func SendPasswordResetEmail(c *gin.Context) {
 		"success": true,
 		"message": "",
 	})
+}
+
+// Both self-service and authorized staff requests use the same recovery flow.
+// No caller receives the reset token or chooses the customer's new password.
+func sendPasswordResetInstructions(c *gin.Context, user *model.User) error {
+	email := model.NormalizeEmail(user.Email)
+	current, err := model.GetUniqueUserByEmail(email)
+	if err != nil || current.Id != user.Id || current.Status != common.UserStatusEnabled {
+		return common.NewMessage("Invalid parameters")
+	}
+	code := common.GenerateVerificationCode(0)
+	if err := common.RegisterVerificationCodeWithKey(email, code, common.PasswordResetPurpose); err != nil {
+		return err
+	}
+	// Derive branding and URL from SQL membership, never from the request Host.
+	site := service.AdtySiteForUser(current.Id)
+	link := fmt.Sprintf("%s/user/reset#email=%s&token=%s", service.AdtySiteBaseURL(site), url.QueryEscape(email), url.QueryEscape(code))
+	lang := current.GetSetting().Language
+	if lang == "" {
+		lang = i18n.StatedLang(c)
+	}
+	systemName := map[string]any{"SystemName": service.AdtyBrandFor(site).HTMLName()}
+	linkParams := map[string]any{"Link": link}
+	subject := i18n.Translate(lang, i18n.MsgEmailPasswordResetSubject, systemName)
+	content := fmt.Sprintf("<p>%s</p><p>%s</p><p>%s </p><p>%s</p>",
+		i18n.Translate(lang, i18n.MsgEmailPasswordResetGreeting, systemName),
+		i18n.Translate(lang, i18n.MsgEmailPasswordResetLink, linkParams),
+		i18n.Translate(lang, i18n.MsgEmailPasswordResetLinkFallback, linkParams),
+		i18n.Translate(lang, i18n.MsgEmailPasswordResetValidity, map[string]any{"Minutes": common.VerificationValidMinutes}))
+	service.AdtySendSiteEmailAsync(site, subject, email, content)
+	return nil
 }
 
 type PasswordResetRequest struct {

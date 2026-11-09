@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"encoding/json"
 	"net/http"
 
 	"github.com/QuantumNous/new-api/common"
@@ -166,6 +167,57 @@ func GetAdtyStaffSelf(c *gin.Context) {
 		return
 	}
 	common.ApiSuccess(c, gin.H{"staff": service.AdtyStaffViewOf(*staff), "site_name": service.AdtySiteDisplayHost(site)})
+}
+
+func PostAdtyStaffCustomerPasswordReset(c *gin.Context) {
+	manageAdtyStaffCustomer(c, service.AdtyStaffActionCustomerPasswordReset, "customers.password")
+}
+
+func PostAdtyStaffCustomerDisable(c *gin.Context) {
+	manageAdtyStaffCustomer(c, service.AdtyStaffActionCustomerDisable, "customers.disable")
+}
+
+func manageAdtyStaffCustomer(c *gin.Context, action, permission string) {
+	_, site, ok := adtyStaffRequest(c, permission)
+	if !ok {
+		return
+	}
+	id, ok := adtyPathId(c)
+	if !ok {
+		return
+	}
+	if _, err := service.GetAdtyOwnerCustomer(site, id); err != nil {
+		adtyOwnerHiddenOrError(c, err)
+		return
+	}
+	// There are deliberately no mutable customer fields in this contract.
+	var body map[string]json.RawMessage
+	if common.DecodeJson(http.MaxBytesReader(c.Writer, c.Request.Body, 1024), &body) != nil || len(body) != 0 {
+		common.ApiErrorStatus(c, http.StatusBadRequest, common.NewMessage("Invalid parameters"))
+		return
+	}
+	if action == service.AdtyStaffActionCustomerPasswordReset {
+		if err := common.VerificationStoreReady(); err != nil {
+			common.ApiErrorStatus(c, http.StatusServiceUnavailable, common.NewMessage("Please try again later"))
+			return
+		}
+	}
+	if middleware.RequireSecurityProof(c, service.AdtyStaffCustomerOperation(action, id)) == nil {
+		return
+	}
+	identity, _ := middleware.GetSessionAuthIdentity(c)
+	customer, err := service.ManageAdtyStaffCustomer(identity.UserID, identity.UserAuthVersion, id, action)
+	if err != nil {
+		common.ApiErrorStatus(c, service.AdtyStaffErrorStatus(err), err)
+		return
+	}
+	if action == service.AdtyStaffActionCustomerPasswordReset {
+		if err := sendPasswordResetInstructions(c, customer); err != nil {
+			common.ApiErrorStatus(c, http.StatusServiceUnavailable, common.NewMessage("Please try again later"))
+			return
+		}
+	}
+	common.ApiSuccess(c, nil)
 }
 
 // Record access before sending any customer data; no body, password or keys.

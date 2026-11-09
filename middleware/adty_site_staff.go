@@ -34,6 +34,7 @@ func adtyStaffDashboardAllowed(c *gin.Context, user *model.UserBase, identity se
 	allowed := false
 	switch c.Request.Method + " " + c.FullPath() {
 	case "GET /api/adty/staff/self", "GET /api/adty/staff/customers", "GET /api/adty/staff/customers/:id", "GET /api/adty/staff/customers/:id/topups", "GET /api/adty/staff/customers/:id/logs",
+		"POST /api/adty/staff/customers/:id/password-reset", "POST /api/adty/staff/customers/:id/disable",
 		"GET /api/user/self", "GET /api/verify/methods", "POST /api/verify", "GET /api/user/sessions", "DELETE /api/user/sessions/:sid", "POST /api/user/sessions/revoke-others",
 		"GET /api/adty/notifications", "POST /api/adty/notifications/read":
 		allowed = true

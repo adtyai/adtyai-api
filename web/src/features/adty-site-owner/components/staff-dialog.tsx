@@ -68,6 +68,8 @@ export function StaffDialog(props: {
           'customers.balance',
           'customers.topups',
           'customers.usage',
+          'customers.password',
+          'customers.disable',
         ])
       ),
     })
@@ -122,6 +124,11 @@ export function StaffDialog(props: {
     { value: 'customers.balance', label: t('View customer balances') },
     { value: 'customers.topups', label: t('View customer recharges') },
     { value: 'customers.usage', label: t('View customer usage') },
+    {
+      value: 'customers.password',
+      label: t('Send password reset instructions'),
+    },
+    { value: 'customers.disable', label: t('Disable customer') },
   ]
   let title = t('Edit staff account')
   if (props.mode === 'create') title = t('Create staff account')

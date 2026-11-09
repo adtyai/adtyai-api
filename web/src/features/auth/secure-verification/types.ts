@@ -47,6 +47,7 @@ export type SecurityProofScope =
   | 'admin.user.2fa.disable'
   | 'admin.user.binding.clear'
   | 'site.owner.manage'
+  | 'site.staff.customer.manage'
 
 /** Site owner actions that need step-up (service/adty_site_verification.go). */
 export type SiteOwnerAction =
@@ -107,6 +108,13 @@ export type VerificationOperation =
       context: { action: SiteOwnerAction; target: number }
     }
   | {
+      scope: 'site.staff.customer.manage'
+      context: {
+        action: 'customer.password.reset' | 'customer.disable'
+        target: number
+      }
+    }
+  | {
       scope: Exclude<
         SecurityProofScope,
         | 'channel.key.read'
@@ -117,6 +125,7 @@ export type VerificationOperation =
         | 'access_token.revoke'
         | `admin.user.${string}`
         | 'site.owner.manage'
+        | 'site.staff.customer.manage'
       >
       context?: Record<string, never>
     }

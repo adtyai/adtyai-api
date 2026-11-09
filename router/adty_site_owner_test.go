@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/adty_setting"
+	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
@@ -138,7 +140,7 @@ func TestOwnerStaffLifecycleAndScope(t *testing.T) {
 
 func TestOwnerStaffRejectsForbiddenGrantsAndForeignOwner(t *testing.T) {
 	f := newOwnerFixture(t)
-	for _, grant := range []string{"customers.keys", "wallets.write", "customers.credit", "customers.password", "customers.disable", "site.manage", "*"} {
+	for _, grant := range []string{"customers.keys", "wallets.write", "customers.credit", "site.manage", "*"} {
 		body := fmt.Sprintf(`{"username":"bad-grant","display_name":"Bad","password":"employee-password-42","role":"manager","permissions":[%q]}`, grant)
 		response := f.call(t, http.MethodPost, "/api/adty/site/staff", body, sessionProof(t, f.owner, "staff.create", f.site.Id))
 		assert.Equal(t, http.StatusBadRequest, response.Code, response.Body.String())
@@ -154,6 +156,95 @@ func TestOwnerStaffRejectsForbiddenGrantsAndForeignOwner(t *testing.T) {
 	foreign, err := service.CreateAdtyStaff(otherOwner.Id, f.other.Id, service.AdtyStaffInput{Username: "foreign-staff", DisplayName: "Other", Password: "employee-password-42", Role: "support"})
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusNotFound, f.call(t, http.MethodPut, fmt.Sprintf("/api/adty/site/staff/%d", foreign.Id), `{"expected_version":1}`, "").Code)
+}
+
+func TestOwnerStaffCustomerSecurityActions(t *testing.T) {
+	f := newOwnerFixture(t)
+	previousAddress := system_setting.ServerAddress
+	system_setting.ServerAddress = "https://main.example.com"
+	t.Cleanup(func() { system_setting.ServerAddress = previousAddress })
+	sent := captureSiteMail(t)
+	mine := f.customer(t, f.site, "security-customer", "customer+reset@example.com")
+	other := f.customer(t, f.other, "security-other", "other@example.com")
+	staff, err := service.CreateAdtyStaff(f.owner.Id, f.site.Id, service.AdtyStaffInput{Username: "security-staff", DisplayName: "Support", Password: "employee-password-42", Role: "support"})
+	require.NoError(t, err)
+	login, err := service.CreateLoginSession(staff.UserId, "password", "127.0.0.1", "staff-security")
+	require.NoError(t, err)
+	call := func(path, proof string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`))
+		req.Header.Set("Authorization", "Bearer "+login.AccessToken)
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Security-Proof", proof)
+		response := httptest.NewRecorder()
+		f.engine.ServeHTTP(response, req)
+		return response
+	}
+	path := fmt.Sprintf("/api/adty/staff/customers/%d", mine.Id)
+	for _, action := range []string{"password-reset", "disable"} {
+		assert.Equal(t, http.StatusForbidden, call(path+"/"+action, "").Code, "write access defaults to denied")
+	}
+	input := fmt.Sprintf(`{"display_name":"Support","role":"support","permissions":["customers.read","customers.password","customers.disable"],"status":"enabled","expected_version":%d}`, staff.Version)
+	response := f.call(t, http.MethodPut, fmt.Sprintf("/api/adty/site/staff/%d", staff.Id), input, sessionProof(t, f.owner, "staff.update", staff.Id))
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	login, err = service.CreateLoginSession(staff.UserId, "password", "127.0.0.1", "staff-security")
+	require.NoError(t, err)
+	issue := func(action string, target int) string {
+		binding, err := service.BindVerificationOperation(service.VerificationOperation{Scope: "site.staff.customer.manage", Context: []byte(fmt.Sprintf(`{"action":%q,"target":%d}`, action, target))})
+		require.NoError(t, err)
+		proof, _, err := service.IssueSecurityProof(service.AuthIdentity{UserID: staff.UserId, SessionID: login.Session.SID, UserAuthVersion: 2, SessionVersion: 1}, service.VerificationMethodPassword, binding)
+		require.NoError(t, err)
+		return proof
+	}
+	assert.Equal(t, http.StatusForbidden, call(path+"/password-reset", "").Code)
+	for _, proof := range []string{issue("customer.disable", mine.Id), issue("customer.password.reset", mine.Id+1000)} {
+		assert.Equal(t, http.StatusForbidden, call(path+"/password-reset", proof).Code)
+	}
+	assert.Equal(t, http.StatusNotFound, call(fmt.Sprintf("/api/adty/staff/customers/%d/password-reset", other.Id), "").Code)
+	assert.Equal(t, http.StatusNotFound, call(fmt.Sprintf("/api/adty/staff/customers/%d/disable", staff.UserId), "").Code)
+	for _, action := range []string{"password-reset", "disable"} {
+		assert.Equal(t, http.StatusForbidden, adtyJSON(t, f.engine, http.MethodPost, path+"/"+action, `{}`, createAdtyScopedToken(t, staff.UserId, "wallet:write")).Code)
+	}
+	customerLogin, err := service.CreateLoginSession(mine.Id, "password", "127.0.0.1", "customer-security")
+	require.NoError(t, err)
+	proof := issue("customer.password.reset", mine.Id)
+	response = call(path+"/password-reset", proof)
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	require.Len(t, sent(), 1)
+	mail := sent()[0]
+	assert.Equal(t, mine.Email, mail.to)
+	assert.Contains(t, mail.content, "https://center.sites.example.com/user/reset#email=")
+	assert.NotContains(t, response.Body.String(), mine.Email)
+	assert.NotContains(t, response.Body.String(), "token=")
+	assert.Equal(t, http.StatusForbidden, call(path+"/password-reset", proof).Code)
+	var unchanged model.User
+	require.NoError(t, f.db.First(&unchanged, mine.Id).Error)
+	assert.Equal(t, mine.Password, unchanged.Password, "only the customer chooses a replacement password")
+	assert.Equal(t, mine.AuthVersion, unchanged.AuthVersion, "requesting instructions does not log the customer out")
+	code := regexp.MustCompile(`token=([a-zA-Z0-9_-]+)`).FindStringSubmatch(mail.content)
+	require.Len(t, code, 2)
+	resetBody := fmt.Sprintf(`{"email":%q,"token":%q,"password":"customer-selected-password-42"}`, mine.Email, code[1])
+	reset := adtyJSON(t, f.engine, http.MethodPost, "/api/user/reset", resetBody, "")
+	require.Equal(t, http.StatusOK, reset.Code, reset.Body.String())
+	assert.Contains(t, reset.Body.String(), `"success":true`)
+	assert.Equal(t, http.StatusUnauthorized, adtyJSON(t, f.engine, http.MethodGet, "/api/user/self", "", customerLogin.AccessToken).Code)
+	require.NoError(t, f.db.First(&unchanged, mine.Id).Error)
+	assert.True(t, common.ValidatePasswordAndHash("customer-selected-password-42", unchanged.Password))
+	customerLogin, err = service.CreateLoginSession(mine.Id, "password", "127.0.0.1", "customer-security")
+	require.NoError(t, err)
+	response = call(path+"/disable", issue("customer.disable", mine.Id))
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	assert.Equal(t, http.StatusUnauthorized, adtyJSON(t, f.engine, http.MethodGet, "/api/user/self", "", customerLogin.AccessToken).Code)
+	_, _, err = service.RefreshLoginSession(customerLogin.RefreshToken, customerLogin.Session.SID, "127.0.0.1", "customer-security")
+	assert.Error(t, err)
+	require.NoError(t, f.db.First(&unchanged, mine.Id).Error)
+	assert.Equal(t, common.UserStatusDisabled, unchanged.Status)
+	assert.Equal(t, mine.Quota, unchanged.Quota)
+	audits := f.call(t, http.MethodGet, "/api/adty/site/staff/audits", "", "")
+	assert.Contains(t, audits.Body.String(), "staff.customer.password.request")
+	assert.Contains(t, audits.Body.String(), "staff.customer.disable")
+	for _, secret := range []string{code[1], mine.Email, unchanged.Password, "customer-selected-password-42"} {
+		assert.NotContains(t, audits.Body.String(), secret)
+	}
 }
 
 // sessionFor 给 adtySessionToken 建的用户签一个 proof（和 /api/verify 签的一样，方法是密码）。

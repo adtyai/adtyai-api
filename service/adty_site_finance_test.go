@@ -106,6 +106,110 @@ func TestStaffServiceDatabaseMatrix(t *testing.T) {
 	}
 }
 
+func TestStaffCustomerActionsDatabaseMatrix(t *testing.T) {
+	for _, dialect := range []string{"sqlite", "mysql", "postgres"} {
+		t.Run(dialect, func(t *testing.T) {
+			db := prepareReferralDialectDB(t, dialect)
+			owner := referralUser(t, db, "customer-action-owner")
+			site := model.AdtySite{OwnerUserId: owner.Id, Subdomain: "customer-actions", Status: model.AdtySiteStatusActive, AgreementVer: AdtyCurrentSiteAgreementVersion()}
+			require.NoError(t, db.Create(&site).Error)
+			for _, role := range []string{"support", "finance", "operations", "manager"} {
+				member, err := CreateAdtyStaff(owner.Id, site.Id, AdtyStaffInput{Username: "default-" + role, DisplayName: role, Password: "employee-password-42", Role: role})
+				require.NoError(t, err)
+				for _, grant := range []string{"customers.password", "customers.disable"} {
+					_, _, err := AdtyStaffAccess(member.UserId, 1, grant)
+					assert.ErrorIs(t, err, ErrAdtyStaffDenied, role+" "+grant)
+				}
+			}
+			grants := []string{"customers.read", "customers.password", "customers.disable"}
+			staff, err := CreateAdtyStaff(owner.Id, site.Id, AdtyStaffInput{Username: "action-staff", DisplayName: "Support", Password: "employee-password-42", Role: "support", Permissions: &grants})
+			require.NoError(t, err)
+			customer := referralUser(t, db, "action-customer")
+			require.NoError(t, db.Model(customer).Updates(map[string]any{"site_id": site.Id, "email": "action@example.com", "auth_version": 1}).Error)
+			require.NoError(t, db.Create(&model.AdtySiteCustomer{SiteId: site.Id, UserId: customer.Id, JoinedAt: 1}).Error)
+			for _, action := range []string{"customer.password.reset", "customer.disable"} {
+				_, err := ManageAdtyStaffCustomer(staff.UserId, 1, owner.Id, action)
+				assert.ErrorIs(t, err, gorm.ErrRecordNotFound, "the site owner is never a managed customer")
+			}
+			const callback = "test:staff-customer-audit-rollback"
+			require.NoError(t, db.Callback().Create().Before("gorm:create").Register(callback, func(tx *gorm.DB) {
+				if tx.Statement.Table == "adty_site_audits" {
+					tx.AddError(errors.New("audit unavailable"))
+				}
+			}))
+			_, err = ManageAdtyStaffCustomer(staff.UserId, 1, customer.Id, "customer.disable")
+			require.ErrorContains(t, err, "audit unavailable")
+			require.NoError(t, db.Callback().Create().Remove(callback))
+			var unchanged model.User
+			require.NoError(t, db.First(&unchanged, customer.Id).Error)
+			assert.Equal(t, common.UserStatusEnabled, unchanged.Status)
+			assert.EqualValues(t, 1, unchanged.AuthVersion)
+			for column, value := range map[string]any{"site_id": site.Id + 100, "staff_site_id": site.Id, "role": common.RoleAdminUser} {
+				require.NoError(t, db.Model(customer).Update(column, value).Error)
+				_, err := ManageAdtyStaffCustomer(staff.UserId, 1, customer.Id, "customer.disable")
+				assert.ErrorIs(t, err, gorm.ErrRecordNotFound, column)
+				require.NoError(t, db.Model(customer).Updates(map[string]any{"site_id": site.Id, "staff_site_id": 0, "role": common.RoleCommonUser}).Error)
+			}
+			formerOwner := model.ReferralAffiliate{UserId: customer.Id, InviteCode: "former-owner", SiteOwnerSince: 1}
+			require.NoError(t, db.Create(&formerOwner).Error)
+			_, err = ManageAdtyStaffCustomer(staff.UserId, 1, customer.Id, "customer.disable")
+			assert.ErrorIs(t, err, gorm.ErrRecordNotFound, "historical owners cannot be managed as customers")
+			require.NoError(t, db.Delete(&formerOwner).Error)
+			ownedSite := model.AdtySite{OwnerUserId: customer.Id, Subdomain: "other-owned-site", Status: model.AdtySiteStatusActive}
+			require.NoError(t, db.Create(&ownedSite).Error)
+			_, err = ManageAdtyStaffCustomer(staff.UserId, 1, customer.Id, "customer.disable")
+			assert.ErrorIs(t, err, gorm.ErrRecordNotFound, "current owners are protected even without a historical marker")
+			require.NoError(t, db.Delete(&ownedSite).Error)
+			for _, email := range []string{"", "invalid-email"} {
+				require.NoError(t, db.Model(customer).Update("email", email).Error)
+				_, err = ManageAdtyStaffCustomer(staff.UserId, 1, customer.Id, "customer.password.reset")
+				assert.ErrorIs(t, err, ErrAdtyStaffInput)
+			}
+			require.NoError(t, db.Model(customer).Update("email", "action@example.com").Error)
+			duplicate := referralUser(t, db, "duplicate-email")
+			require.NoError(t, db.Model(duplicate).Update("email", "ACTION@example.com").Error)
+			_, err = ManageAdtyStaffCustomer(staff.UserId, 1, customer.Id, "customer.password.reset")
+			assert.ErrorIs(t, err, ErrAdtyStaffInput, "ambiguous email cannot reset another account")
+			require.NoError(t, db.Model(duplicate).Update("email", "").Error)
+			require.NoError(t, db.Model(&site).Update("status", model.AdtySiteStatusClosing).Error)
+			_, err = ManageAdtyStaffCustomer(staff.UserId, 1, customer.Id, "customer.disable")
+			assert.Error(t, err)
+			require.NoError(t, db.Model(&site).Update("status", model.AdtySiteStatusActive).Error)
+			requested, err := ManageAdtyStaffCustomer(staff.UserId, 1, customer.Id, "customer.password.reset")
+			require.NoError(t, err)
+			assert.Equal(t, "action@example.com", requested.Email)
+			// Serializing with the owner's grant change means a queued action
+			// either commits before revocation or fails with the current grants.
+			var workers sync.WaitGroup
+			var actionErr, revokeErr error
+			workers.Go(func() { _, actionErr = ManageAdtyStaffCustomer(staff.UserId, 1, customer.Id, "customer.disable") })
+			workers.Go(func() {
+				none := []string{"customers.read"}
+				_, revokeErr = MutateAdtyStaff(owner.Id, site.Id, staff.Id, AdtySiteOwnerActionStaffUpdate, AdtyStaffInput{DisplayName: "Revoked", Role: "support", Permissions: &none, Status: "enabled", ExpectedVersion: 1})
+			})
+			workers.Wait()
+			require.NoError(t, revokeErr)
+			if actionErr != nil {
+				assert.ErrorIs(t, actionErr, ErrAdtyStaffDenied)
+			}
+			_, err = ManageAdtyStaffCustomer(staff.UserId, 2, customer.Id, "customer.disable")
+			assert.ErrorIs(t, err, ErrAdtyStaffDenied)
+			var audits []model.AdtySiteAudit
+			require.NoError(t, db.Where("site_id = ? AND action LIKE ?", site.Id, "staff.customer.%").Find(&audits).Error)
+			expected := 1
+			if actionErr == nil {
+				expected++
+			}
+			assert.Len(t, audits, expected)
+			for _, audit := range audits {
+				assert.Equal(t, staff.UserId, audit.OperatorId)
+				assert.NotContains(t, audit.NewValue, "action@example.com")
+				assert.Contains(t, audit.NewValue, fmt.Sprintf(`"customer_id":%d`, customer.Id))
+			}
+		})
+	}
+}
+
 func TestAdtySiteFinanceMigrationPreservesExistingSite(t *testing.T) {
 	for _, dialect := range []string{"sqlite", "postgresql"} {
 		t.Run(dialect, func(t *testing.T) {

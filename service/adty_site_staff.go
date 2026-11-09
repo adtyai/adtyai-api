@@ -18,7 +18,8 @@ var (
 	ErrAdtyStaffConflict = common.NewMessage("The staff account changed. Refresh and try again.")
 )
 
-var adtyStaffPermissions = []string{"customers.read", "customers.balance", "customers.topups", "customers.usage"}
+var adtyStaffReadPermissions = []string{"customers.read", "customers.balance", "customers.topups", "customers.usage"}
+var adtyStaffPermissions = append(slices.Clone(adtyStaffReadPermissions), "customers.password", "customers.disable")
 
 type AdtyStaffInput struct {
 	Username        string    `json:"username"`
@@ -48,7 +49,7 @@ func adtyStaffGrants(role string, custom *[]string) ([]string, error) {
 	case "support":
 		grants = []string{"customers.read"}
 	case "finance", "manager":
-		grants = slices.Clone(adtyStaffPermissions)
+		grants = slices.Clone(adtyStaffReadPermissions)
 	case "operations":
 		grants = []string{"customers.read", "customers.usage"}
 	default:
@@ -244,6 +245,93 @@ func AdtyStaffAccess(userID int, authVersion int64, permission string) (*model.A
 		return nil, nil, ErrAdtyStaffDenied
 	}
 	return &staff, &site, nil
+}
+
+// Customer writes serialize with owner grant changes and site closure. The
+// returned user is internal mail input and must never be serialized to staff.
+func ManageAdtyStaffCustomer(userID int, authVersion int64, customerID int, action string) (*model.User, error) {
+	permission := "customers.disable"
+	if action == AdtyStaffActionCustomerPasswordReset {
+		permission = "customers.password"
+	} else if action != AdtyStaffActionCustomerDisable {
+		return nil, ErrAdtyStaffInput
+	}
+	var membership model.AdtySiteStaff
+	if err := model.DB.Where("user_id = ? AND status = ?", userID, "enabled").First(&membership).Error; err != nil {
+		return nil, ErrAdtyStaffDenied
+	}
+	var customer model.User
+	err := model.DB.Transaction(func(tx *gorm.DB) error {
+		if err := adtyStaffOwnerTx(tx, membership.OwnerUserId, membership.SiteId); err != nil {
+			return err
+		}
+		var site model.AdtySite
+		if err := tx.First(&site, membership.SiteId).Error; err != nil {
+			return err
+		}
+		if site.Status == model.AdtySiteStatusClosing {
+			return ErrAdtyStaffDenied
+		}
+		var staff model.AdtySiteStaff
+		if err := model.AdtyLockForUpdate(tx).Where("id = ? AND owner_user_id = ? AND status = ?", membership.Id, site.OwnerUserId, "enabled").First(&staff).Error; err != nil {
+			return ErrAdtyStaffDenied
+		}
+		var employee model.User
+		if err := model.AdtyLockForUpdate(tx).Select("id", "status", "auth_version", "site_id", "staff_site_id", "role").First(&employee, userID).Error; err != nil {
+			return err
+		}
+		grants := AdtyStaffViewOf(staff).Permissions
+		if employee.AuthVersion != authVersion || employee.Status != common.UserStatusEnabled || employee.Role != common.RoleCommonUser ||
+			employee.SiteId != site.Id || employee.StaffSiteId != site.Id || staff.SiteId != site.Id ||
+			!slices.Contains(grants, "customers.read") || !slices.Contains(grants, permission) {
+			return ErrAdtyStaffDenied
+		}
+		if err := model.AdtyLockForUpdate(tx).Select("id", "username", "email", "setting", "status", "auth_version", "site_id").
+			Where("id = ? AND site_id = ? AND staff_site_id = 0 AND role = ? AND id <> ?", customerID, site.Id, common.RoleCommonUser, site.OwnerUserId).
+			Where("id NOT IN (?)", tx.Model(&model.AdtySite{}).Select("owner_user_id").Where("status <> ?", model.AdtySiteStatusClosed)).
+			Where("id NOT IN (?)", tx.Model(&model.ReferralAffiliate{}).Select("user_id").Where("site_owner_since > 0")).First(&customer).Error; err != nil {
+			return err
+		}
+		var joined model.AdtySiteCustomer
+		if err := model.AdtyLockForUpdate(tx).Where("user_id = ? AND site_id = ?", customerID, site.Id).First(&joined).Error; err != nil {
+			return err
+		}
+		auditAction := "staff.customer.password.request"
+		previousStatus := customer.Status
+		if action == AdtyStaffActionCustomerDisable {
+			auditAction = "staff.customer.disable"
+			if _, err := model.IncrementUserAuthVersionWithTx(tx, customerID); err != nil {
+				return err
+			}
+			if err := tx.Model(&model.User{}).Where("id = ?", customerID).Update("status", common.UserStatusDisabled).Error; err != nil {
+				return err
+			}
+			customer.Status = common.UserStatusDisabled
+		} else {
+			customer.Email = model.NormalizeEmail(customer.Email)
+			if customer.Status != common.UserStatusEnabled || common.Validate.Var(customer.Email, "required,email") != nil {
+				return ErrAdtyStaffInput
+			}
+			var count int64
+			if err := tx.Model(&model.User{}).Where("LOWER(email) = ?", customer.Email).Count(&count).Error; err != nil {
+				return err
+			}
+			if count != 1 {
+				return ErrAdtyStaffInput
+			}
+		}
+		return recordSiteAuditTx(tx, site.Id, auditAction, userID, map[string]any{"status": previousStatus},
+			map[string]any{"staff_id": staff.Id, "customer_id": customerID, "status": customer.Status}, "")
+	})
+	if err != nil {
+		return nil, err
+	}
+	if action == AdtyStaffActionCustomerDisable {
+		if err := model.PublishUserAuthCache(customerID); err != nil {
+			common.SysError("Failed to publish disabled customer auth cache")
+		}
+	}
+	return &customer, nil
 }
 
 // Staff visibility is the intersection of platform visibility and explicit

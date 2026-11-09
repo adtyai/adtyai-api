@@ -13,6 +13,12 @@ import (
 
 // VerificationScopeAdtySiteOwnerManage 是站长敏感操作的验证范围。
 const VerificationScopeAdtySiteOwnerManage = "site.owner.manage"
+const VerificationScopeAdtyStaffCustomerManage = "site.staff.customer.manage"
+
+const (
+	AdtyStaffActionCustomerPasswordReset = "customer.password.reset"
+	AdtyStaffActionCustomerDisable       = "customer.disable"
+)
 
 // 站长敏感操作的种类。
 const (
@@ -41,13 +47,21 @@ func adtyIsSiteOwnerScope(scope string) bool {
 	return scope == VerificationScopeAdtySiteOwnerManage
 }
 
+func adtyIsSiteVerificationScope(scope string) bool {
+	return adtyIsSiteOwnerScope(scope) || scope == VerificationScopeAdtyStaffCustomerManage
+}
+
 // adtyBindSiteOwnerOperation 校验并规范化站长操作的上下文（BindVerificationOperation 调用）。
 func adtyBindSiteOwnerOperation(scope string, fields map[string]json.RawMessage, raw json.RawMessage) (any, bool) {
-	if !adtyIsSiteOwnerScope(scope) {
+	if !adtyIsSiteVerificationScope(scope) {
 		return nil, false
 	}
 	var context AdtySiteOwnerContext
-	if len(fields) != 2 || common.Unmarshal(raw, &context) != nil || !slices.Contains(adtySiteOwnerActions, context.Action) || context.Target < 0 {
+	actions := adtySiteOwnerActions
+	if scope == VerificationScopeAdtyStaffCustomerManage {
+		actions = []string{AdtyStaffActionCustomerPasswordReset, AdtyStaffActionCustomerDisable}
+	}
+	if len(fields) != 2 || common.Unmarshal(raw, &context) != nil || !slices.Contains(actions, context.Action) || context.Target < 0 {
 		return nil, false
 	}
 	if context.Target == 0 && context.Action != AdtySiteOwnerActionPricing && context.Action != AdtySiteOwnerActionPromo {
@@ -62,7 +76,14 @@ func AdtySiteOwnerOperation(action string, target int) VerificationOperation {
 	return VerificationOperation{Scope: VerificationScopeAdtySiteOwnerManage, Context: payload}
 }
 
+func AdtyStaffCustomerOperation(action string, target int) VerificationOperation {
+	payload, _ := common.Marshal(AdtySiteOwnerContext{Action: action, Target: target})
+	return VerificationOperation{Scope: VerificationScopeAdtyStaffCustomerManage, Context: payload}
+}
+
 func init() {
 	// 访问令牌也可以做站长操作，但令牌要有钱包写权限（和站长接口登记的 wallet:write 一致）。
 	accessTokenVerificationScopes[VerificationScopeAdtySiteOwnerManage] = "wallet:write"
+	// Staff customer security actions require a browser session, never a PAT.
+	accessTokenVerificationScopes[VerificationScopeAdtyStaffCustomerManage] = ""
 }
