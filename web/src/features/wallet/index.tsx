@@ -72,12 +72,18 @@ export function Wallet(props: WalletProps) {
     document.querySelector('#wallet-history')?.scrollIntoView()
   }, [props.initialShowHistory])
 
-  const handlePay = (amount: number, method: AdtyMethod, promoCode: string) => {
+  const handlePay = (
+    amount: number,
+    method: AdtyMethod,
+    promoCode: string,
+    paymentScene: string
+  ) => {
     setActivePayment({
       kind: method.kind,
       method: method.id,
       amount,
       promoCode,
+      paymentScene,
     })
   }
 

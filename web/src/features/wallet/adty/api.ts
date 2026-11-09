@@ -37,11 +37,17 @@ export async function getAdtyTopupInfo(): Promise<AdtyTopupInfo> {
 export async function quoteAdtyTopup(
   amount: number,
   method: string,
-  promoCode = ''
+  promoCode = '',
+  paymentScene = 'wallet_topup'
 ): Promise<{ quote: AdtyQuote; available: boolean }> {
   const res = await api.post<
     ApiResponse<{ quote: AdtyQuote; available: boolean }>
-  >('/api/adty/topup/quote', { amount, method, promo_code: promoCode })
+  >('/api/adty/topup/quote', {
+    amount,
+    method,
+    promo_code: promoCode,
+    payment_scene: paymentScene,
+  })
   return requireServerSuccess(res.data).data
 }
 

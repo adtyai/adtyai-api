@@ -24,7 +24,16 @@ export type AdtyMethod = {
   available: boolean
   label?: string
   /** Fixed product face value in USD. */
-  face_usd?: number
+  face_usd?: number | string
+  currency?: string
+}
+
+export type AdtyPaymentScene = {
+  key: string
+  name: string
+  min_usd: string
+  max_usd: string
+  methods: AdtyMethod[]
 }
 
 export type AdtyTier = { amount: number; rate: number }
@@ -39,6 +48,9 @@ export type AdtyOrderStatus =
   | 'refunded'
 
 export type AdtyOrderExt = {
+  payment_scene?: string
+  payment_scene_name?: string
+  payment_scene_version?: number
   trade_no: string
   provider: string
   method: string
@@ -79,6 +91,7 @@ export type AdtyOrder = {
 }
 
 export type AdtyTopupInfo = {
+  scenes?: AdtyPaymentScene[]
   tiers: AdtyTier[]
   bonus_rates: Record<string, number>
   min_topup: number

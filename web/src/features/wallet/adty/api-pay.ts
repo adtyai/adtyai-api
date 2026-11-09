@@ -27,12 +27,14 @@ type ApiResponse<T> = { success: boolean; message?: string; data: T }
 export async function payWithBEpusdt(
   amount: number,
   chain: string,
-  promoCode = ''
+  promoCode = '',
+  paymentScene = 'wallet_topup'
 ): Promise<AdtyOrder> {
   const res = await api.post<ApiResponse<AdtyOrder>>('/api/user/bepusdt/pay', {
     amount,
     chain,
     promo_code: promoCode,
+    payment_scene: paymentScene,
   })
   return requireServerSuccess(res.data).data
 }
@@ -43,7 +45,8 @@ export async function payWithEpay(
   method: string,
   device: 'pc' | 'mobile',
   excludeChannelIds: number[],
-  promoCode = ''
+  promoCode = '',
+  paymentScene = 'wallet_topup'
 ): Promise<AdtyOrder> {
   const res = await api.post<ApiResponse<AdtyOrder>>('/api/adty/epay/pay', {
     amount,
@@ -51,6 +54,7 @@ export async function payWithEpay(
     device,
     exclude_channel_ids: excludeChannelIds,
     promo_code: promoCode,
+    payment_scene: paymentScene,
   })
   return requireServerSuccess(res.data).data
 }
@@ -59,7 +63,8 @@ export async function payWithEpay(
 export async function payWithHosted(
   amount: number,
   method: string,
-  promoCode = ''
+  promoCode = '',
+  paymentScene = 'wallet_topup'
 ): Promise<{ tradeNo: string; payUrl: string }> {
   const res = await api.post<{
     message: string
@@ -69,7 +74,12 @@ export async function payWithHosted(
       checkout_url?: string
       payment_url?: string
     }
-  }>('/api/adty/topup/hosted/pay', { amount, method, promo_code: promoCode })
+  }>('/api/adty/topup/hosted/pay', {
+    amount,
+    method,
+    promo_code: promoCode,
+    payment_scene: paymentScene,
+  })
   const body = res.data
   if (body.message !== 'success' || !body.data?.order_id) {
     throw new Error(body.message || 'Failed to create order')

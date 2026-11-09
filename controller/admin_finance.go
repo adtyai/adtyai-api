@@ -16,34 +16,37 @@ import (
 // 去掉了订阅订单的 UNION、人民币折算和 Creem/Stripe 的特判。
 
 type rechargeAuditOrder struct {
-	Id              int                  `json:"id"`
-	UserId          int                  `json:"user_id"`
-	Username        string               `json:"username"`
-	SiteId          *int                 `json:"site_id"`
-	SiteName        string               `json:"site_name" gorm:"-"`
-	OrderType       string               `json:"order_type" gorm:"-"`
-	TradeNo         string               `json:"trade_no"`
-	PaymentMethod   string               `json:"payment_method"`
-	PaymentProvider string               `json:"payment_provider"`
-	Status          string               `json:"status"`
-	CreateTime      int64                `json:"create_time"`
-	CompleteTime    int64                `json:"complete_time"`
-	Amount          int64                `json:"amount"`
-	Money           float64              `json:"money"`
-	HasExt          bool                 `json:"has_ext"`
-	FaceUSD         decimal.Decimal      `json:"face_usd"`
-	BonusUSD        decimal.Decimal      `json:"bonus_usd"`
-	CreditQuota     int64                `json:"credit_quota"`
-	PayAmount       decimal.Decimal      `json:"pay_amount"`
-	PayCurrency     string               `json:"pay_currency"`
-	PaidAmount      decimal.Decimal      `json:"paid_amount"`
-	PaidCurrency    string               `json:"paid_currency"`
-	PaidTxHash      string               `json:"paid_tx_hash"`
-	PaidSource      string               `json:"paid_source"`
-	ChannelId       int                  `json:"channel_id"`
-	ChannelName     string               `json:"channel_name"`
-	Anomaly         string               `json:"anomaly"`
-	Actions         rechargeAuditActions `json:"actions" gorm:"-"`
+	Id                  int                  `json:"id"`
+	UserId              int                  `json:"user_id"`
+	Username            string               `json:"username"`
+	SiteId              *int                 `json:"site_id"`
+	SiteName            string               `json:"site_name" gorm:"-"`
+	OrderType           string               `json:"order_type" gorm:"-"`
+	TradeNo             string               `json:"trade_no"`
+	PaymentMethod       string               `json:"payment_method"`
+	PaymentProvider     string               `json:"payment_provider"`
+	PaymentScene        string               `json:"payment_scene"`
+	PaymentSceneName    string               `json:"payment_scene_name"`
+	PaymentSceneVersion int64                `json:"payment_scene_version"`
+	Status              string               `json:"status"`
+	CreateTime          int64                `json:"create_time"`
+	CompleteTime        int64                `json:"complete_time"`
+	Amount              int64                `json:"amount"`
+	Money               float64              `json:"money"`
+	HasExt              bool                 `json:"has_ext"`
+	FaceUSD             decimal.Decimal      `json:"face_usd"`
+	BonusUSD            decimal.Decimal      `json:"bonus_usd"`
+	CreditQuota         int64                `json:"credit_quota"`
+	PayAmount           decimal.Decimal      `json:"pay_amount"`
+	PayCurrency         string               `json:"pay_currency"`
+	PaidAmount          decimal.Decimal      `json:"paid_amount"`
+	PaidCurrency        string               `json:"paid_currency"`
+	PaidTxHash          string               `json:"paid_tx_hash"`
+	PaidSource          string               `json:"paid_source"`
+	ChannelId           int                  `json:"channel_id"`
+	ChannelName         string               `json:"channel_name"`
+	Anomaly             string               `json:"anomaly"`
+	Actions             rechargeAuditActions `json:"actions" gorm:"-"`
 }
 
 type rechargeAuditActions struct {
@@ -126,6 +129,7 @@ func rechargeAuditQuery(c *gin.Context, ownerSiteID *int) (*gorm.DB, bool) {
 }
 
 const rechargeAuditSelect = `t.id, t.user_id, COALESCE(u.username, '') AS username, a.site_id, t.trade_no, t.payment_method, t.payment_provider,
+	COALESCE(a.payment_scene, '') AS payment_scene, COALESCE(a.payment_scene_name, '') AS payment_scene_name, COALESCE(a.payment_scene_version, 0) AS payment_scene_version,
 	t.status, t.create_time, t.complete_time, t.amount, t.money,
 	(a.id IS NOT NULL) AS has_ext,
 	COALESCE(a.face_usd, 0) AS face_usd, COALESCE(a.bonus_usd, 0) AS bonus_usd, COALESCE(a.credit_quota, 0) AS credit_quota,

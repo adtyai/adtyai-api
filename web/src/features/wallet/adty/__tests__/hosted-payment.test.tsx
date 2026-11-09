@@ -146,12 +146,13 @@ it('uses a hosted registry label and fractional fixed face value, and renders th
       amount: 2.5,
       method: 'creem:small',
       promo_code: '',
+      payment_scene: 'wallet_topup',
     })
   )
   expect(await screen.findByTestId('adty-pay')).toHaveTextContent('€2.30')
   expect(screen.getByTestId('adty-credit')).toHaveTextContent('$2.50')
   await userEvent.setup().click(screen.getByRole('button', { name: 'Pay now' }))
-  expect(onPay).toHaveBeenCalledWith(2.5, info.methods[0], '')
+  expect(onPay).toHaveBeenCalledWith(2.5, info.methods[0], '', 'wallet_topup')
 })
 
 it('shows a non-promo quote failure and blocks payment', async () => {
@@ -216,6 +217,7 @@ it('creates through the hosted endpoint, polls after returning, and refreshes cr
     amount: 10,
     method: 'stripe',
     promo_code: 'TEN',
+    payment_scene: 'wallet_topup',
   })
   expect(await screen.findByText('€9.00')).toBeVisible()
   status = 'success'

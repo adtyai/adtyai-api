@@ -14,7 +14,7 @@ import (
 
 // Hosted checkouts use their existing provider contracts and a shared durable
 // order snapshot for bonuses, referrals, site funding, audit, and refunds.
-func createAdtyHostedOrder(c *gin.Context, topUp *model.TopUp, baseQuota decimal.Decimal, currency, product, environment, promo string) error {
+func createAdtyHostedOrder(c *gin.Context, topUp *model.TopUp, baseQuota decimal.Decimal, currency, product, environment, promo string, scenes ...string) error {
 	payAmount := decimal.NewFromFloat(topUp.Money)
 	switch topUp.PaymentProvider {
 	case model.PaymentProviderWaffo:
@@ -50,7 +50,11 @@ func createAdtyHostedOrder(c *gin.Context, topUp *model.TopUp, baseQuota decimal
 	} else if ext.Provider == model.PaymentProviderWaffoPancake {
 		ext.ProviderMerchantId = setting.WaffoPancakeStoreID
 	}
-	return model.CreateAdtyTopUp(topUp, ext)
+	scene := ""
+	if len(scenes) > 0 {
+		scene = scenes[0]
+	}
+	return service.CreateAdtyPaymentOrder(topUp, ext, scene)
 }
 
 func hostedPaymentEnvironment(test bool) string {

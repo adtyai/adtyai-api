@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
@@ -22,6 +24,97 @@ import (
 )
 
 type financeQueryTransport func(*http.Request) (*http.Response, error)
+
+func TestPaymentScenesConstrainNativeEpayOrders(t *testing.T) {
+	f := newAdtyGuardFixture(t)
+	confirmRouterCompliance(t)
+	setRouterBonusRates(t)
+	shortEpayTimeouts(t)
+	allowedGateway := newFakeEpay(t, epayQR)
+	forbiddenGateway := newFakeEpay(t, func(url.Values) (int, string, time.Duration) {
+		t.Error("the unapproved channel must never receive an order")
+		return 200, `{}`, 0
+	})
+	allowed := seedRouterEpayChannel(t, "scene-allowed", allowedGateway.server.URL, model.AdtyEpayOrderModeAPI, 1)
+	seedRouterEpayChannel(t, "scene-forbidden", forbiddenGateway.server.URL, model.AdtyEpayOrderModeAPI, 99)
+	buyer, userID := bepusdtBuyer(t, f, "scene-epay-buyer")
+	body := fmt.Sprintf(`{"expected_version":1,"scenes":[{"key":"limited","name":"Limited checkout","business":"wallet_topup","enabled":true,"providers":["adty_epay"],"methods":["alipay"],"channel_ids":[%d],"currencies":["CNY"],"site_scope":"main","site_ids":[],"user_types":["main_customer"],"min_usd":"50","max_usd":"100"}]}`, allowed.Id)
+	saved := adtyJSON(t, f.engine, http.MethodPut, "/api/adty/admin/payment-scenes", body, f.root)
+	require.Equal(t, http.StatusOK, saved.Code, saved.Body.String())
+	for _, input := range []string{
+		`{"amount":100,"method":"alipay"}`,
+		`{"amount":49,"method":"alipay","payment_scene":"limited"}`,
+		`{"amount":101,"method":"alipay","payment_scene":"limited"}`,
+		`{"amount":100,"method":"wxpay","payment_scene":"limited"}`,
+		`{"amount":100,"method":"alipay","payment_scene":"missing"}`,
+	} {
+		response := adtyJSON(t, f.engine, http.MethodPost, "/api/adty/epay/pay", input, buyer)
+		assert.Contains(t, response.Body.String(), `"success":false`, input)
+	}
+	var count int64
+	require.NoError(t, f.db.Model(&model.TopUp{}).Where("user_id = ?", userID).Count(&count).Error)
+	require.Zero(t, count, "denied native requests cannot create orders")
+	valid := `{"amount":100,"method":"alipay","payment_scene":"limited"}`
+	require.NoError(t, f.db.Model(&model.AdtyEpayChannelMethod{}).Where("channel_id = ? AND method = ?", allowed.Id, "alipay").Update("min_cny", 999999).Error)
+	quoted := adtyJSON(t, f.engine, http.MethodPost, "/api/adty/topup/quote", valid, buyer)
+	quotedData := decodeAdtyData[struct {
+		Available bool `json:"available"`
+	}](t, quoted.Body)
+	assert.False(t, quotedData.Available, "a channel outside the scene cannot make a quote available")
+	require.NoError(t, f.db.Model(&model.AdtyEpayChannelMethod{}).Where("channel_id = ? AND method = ?", allowed.Id, "alipay").Update("min_cny", 0).Error)
+	response := adtyJSON(t, f.engine, http.MethodPost, "/api/adty/epay/pay", valid, buyer)
+	view := decodeAdtyData[model.AdtyTopUpView](t, response.Body)
+	require.NotNil(t, view.Ext)
+	assert.Equal(t, allowed.Id, view.Ext.ChannelId)
+	var frozen map[string]any
+	raw, err := common.Marshal(view.Ext)
+	require.NoError(t, err)
+	require.NoError(t, common.Unmarshal(raw, &frozen))
+	assert.Equal(t, "limited", frozen["payment_scene"])
+	assert.EqualValues(t, 2, frozen["payment_scene_version"])
+	assert.NotContains(t, frozen, "payment_scene_snapshot", "policy audience details stay private")
+}
+
+func TestPaymentScenesRequireRootAndVersionedChanges(t *testing.T) {
+	f := newAdtyGuardFixture(t)
+	const path = "/api/adty/admin/payment-scenes"
+	initial := adtyJSON(t, f.engine, http.MethodGet, path, "", f.root)
+	require.Equal(t, http.StatusOK, initial.Code, initial.Body.String())
+	config := decodeAdtyData[struct {
+		Version int64 `json:"version"`
+		Scenes  []struct {
+			Key string `json:"key"`
+		} `json:"scenes"`
+	}](t, initial.Body)
+	require.EqualValues(t, 1, config.Version)
+	require.Len(t, config.Scenes, 1)
+	assert.Equal(t, "wallet_topup", config.Scenes[0].Key)
+	buyer := adtySessionToken(t, f.db, "scene-buyer", common.RoleCommonUser)
+	for _, token := range []string{"", buyer, f.token} {
+		response := adtyJSON(t, f.engine, http.MethodGet, path, "", token)
+		assert.Contains(t, []int{http.StatusForbidden, http.StatusUnauthorized}, response.Code)
+	}
+	var root model.User
+	require.NoError(t, f.db.Where("username = ?", "guard-root").First(&root).Error)
+	readPAT := createAdtyScopedToken(t, root.Id, "option:read")
+	assert.Equal(t, http.StatusOK, adtyJSON(t, f.engine, http.MethodGet, path, "", readPAT).Code)
+	const disabled = `{"expected_version":1,"scenes":[{"key":"wallet_topup","name":"Wallet top-up","business":"wallet_topup","enabled":false,"providers":["bepusdt"],"methods":[],"channel_ids":[],"currencies":["USDT"],"site_scope":"all","site_ids":[],"user_types":[],"min_usd":"1","max_usd":"1000"}]}`
+	assert.Equal(t, http.StatusForbidden, adtyJSON(t, f.engine, http.MethodPut, path, disabled, readPAT).Code)
+	saved := adtyJSON(t, f.engine, http.MethodPut, path, disabled, f.root)
+	require.Equal(t, http.StatusOK, saved.Code, saved.Body.String())
+	assert.Contains(t, saved.Body.String(), `"version":2`)
+	assert.Equal(t, http.StatusConflict, adtyJSON(t, f.engine, http.MethodPut, path, disabled, f.root).Code)
+	info := adtyJSON(t, f.engine, http.MethodGet, "/api/adty/topup/info", "", buyer)
+	data := decodeAdtyData[struct {
+		Scenes  []any `json:"scenes"`
+		Methods []any `json:"methods"`
+	}](t, info.Body)
+	assert.Empty(t, data.Scenes)
+	assert.Empty(t, data.Methods)
+	var audits int64
+	require.NoError(t, f.db.Model(&model.AuditLog{}).Where("action = ?", "adty.payment_scenes.update").Count(&audits).Error)
+	assert.EqualValues(t, 1, audits, "only a committed configuration creates an audit")
+}
 
 func TestVerifiedNonPaidCallbacksRemainTraceable(t *testing.T) {
 	f := newAdtyGuardFixture(t)

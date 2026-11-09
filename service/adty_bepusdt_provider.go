@@ -31,7 +31,7 @@ func (adtyBEpusdtProvider) Methods() []AdtyMethodInfo {
 		if !setting.BEpusdtChainEnabled(method) {
 			continue
 		}
-		out = append(out, AdtyMethodInfo{Id: method, Kind: "usdt", Available: configured})
+		out = append(out, AdtyMethodInfo{Id: method, Kind: "usdt", Currency: "USDT", Available: configured})
 	}
 	return out
 }

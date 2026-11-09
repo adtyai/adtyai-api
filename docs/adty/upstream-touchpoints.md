@@ -545,3 +545,8 @@
 | `web/src/features/adty-site-staff/`、`adty-site-owner/`、认证路由/导航及八语 | 组合既有 Dialog/ConfirmDialog/StaticDataTable/PageSwitcher/Field 与 RHF+Zod；员工安全操作复用 SecureVerificationDialog/hook，撤权关闭弹窗 | 复用业务封装，无新增通用控件/依赖；默认角色不授予写权，取消不写、失败可重试；资金规则待确认，整项仍未关闭 | O-01 部分 |
 | `scripts/adty/browser-business.sh`、`web/scripts/adty/browser-site-staff.mjs`及既有后端/导航测试 | 独立 PG17/Redis 桌面/移动创建、登录、脱敏、撤权/改密/删除及客户安全操作；仅 loopback SMTP 模拟外部投递，真实客户选择密码；三库事务/race | 合成账号及资金，无真实邮件/支付，验证本批范围；既有员工主体 fresh/upgrade/重复迁移证据保留，不宣称全平台验收 | O-01 部分 |
 | `service/adty_bepusdt_provider.go`、`adty_hosted_recovery.go`及既有BEpusdt/财务能力测试、浏览器脚本 | 官方Info的HTTPS查询、冻结事实绑定、手动及后台恢复，共用原入账/唯一流水及财务授权 | 官方v03413/BEpusdt的78db081b版本；不跟随重定向，不伪造hash，不绕过网关指纹规则；无原始事实时保留人工对账 | FIN-F-02 |
+| `model/adty_payment_scene.go`、`adty_migrate.go`、`adty_topup_order.go` | 版本化动态场景、幂等默认配置、订单冻结名称/标识/版本及私有非密钥快照 | 配置→通道→原返佣用户→最终用户锁序，保留现有资金算法及历史订单；真实三库迁移验证 | FIN-F-01 |
+| `service/adty_payment_scene.go`、`adty_epay_pick.go`及六商户创建汇合点 | Root CAS配置和同事务审计，SQL身份/站点/金额/币种/方式检查；易支付报价与降级先筛授权通道 | 原生和统一下单入口共同复核；省略场景不绕过停用，旧单可信回调继续幂等入账 | FIN-F-01 |
+| `controller/adty_payment_scene.go`、`admin_finance.go`、`router/adty-router.go` | Root GET/PUT配置与option:read/write PAT范围、409竞争；订单详情公开最小冻结字段 | 不公开策略快照或密钥；用户与财务原授权边界保留 | FIN-F-01 |
+| `web/src/features/adty-payment-scenes/`、`wallet/adty/`、`recharge-audit/`、支付General页及八语 | 复用Dialog/ConfirmDialog/MultiSelect/Field、RHF+Zod及草稿保护，Root管理、动态场景和冻结信息展示 | 无新通用组件/依赖；取消不写、冲突保留草稿、普通admin不可管理 | FIN-F-01 |
+| `web/scripts/adty/browser-payment-scenes.mjs`、`scripts/adty/browser-business.sh` | 隔离PG17/Redis生产桌面/手机配置→报价→合成订单→停用→签名回调与重放 | Loopback商户HTTP边界，SQL只读取证据，不操作真实资金 | FIN-F-01 |

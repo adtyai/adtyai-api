@@ -40,6 +40,7 @@ func adtyEpayTimeouts() (perChannel, total time.Duration) {
 }
 
 type adtyEpayPayRequest struct {
+	PaymentScene      string `json:"payment_scene"`
 	Amount            int64  `json:"amount"`
 	Method            string `json:"method"`
 	PaymentMethod     string `json:"payment_method"`
@@ -77,6 +78,11 @@ func RequestAdtyEpayPay(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	scene, err := service.AuthorizeAdtyPaymentScene(c.GetInt("id"), req.PaymentScene, model.PaymentProviderAdtyEpay, req.Method, quote)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
 	if err := replaceOtherPendingAdtyOrders(c); err != nil {
 		if errors.Is(err, service.ErrAdtyPaymentDetected) {
 			common.ApiErrorT(c, "A transfer has been detected. Please wait")
@@ -97,18 +103,19 @@ func RequestAdtyEpayPay(c *gin.Context) {
 	deadline := time.Now().Add(totalTimeout)
 	callback := strings.TrimRight(service.GetCallbackAddress(), "/")
 	for attempt := 0; attempt < adtyEpayMaxAttempts && time.Now().Before(deadline); attempt++ {
-		channel, method, err := service.PickAdtyEpayChannel(req.Method, quote.PayAmount, req.Device, exclude, time.Now().Unix())
+		channel, method, err := service.PickAdtyEpayChannel(req.Method, quote.PayAmount, req.Device, exclude, time.Now().Unix(), scene.ChannelIDs)
 		if err != nil {
 			break
 		}
 		exclude[channel.Id] = true
 		topUp, _, err := createAdtyOrder(c, adtyOrderDraft{
-			prefix:    "EPY",
-			provider:  model.PaymentProviderAdtyEpay,
-			method:    req.Method,
-			quote:     quote,
-			expireAt:  time.Now().Unix() + int64(minutes*60),
-			channelID: channel.Id,
+			paymentScene: req.PaymentScene,
+			prefix:       "EPY",
+			provider:     model.PaymentProviderAdtyEpay,
+			method:       req.Method,
+			quote:        quote,
+			expireAt:     time.Now().Unix() + int64(minutes*60),
+			channelID:    channel.Id,
 		})
 		if errors.Is(err, model.ErrAdtyEpayDailyLimit) {
 			continue

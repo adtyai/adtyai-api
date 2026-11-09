@@ -17,6 +17,10 @@ import (
 
 func TestWaffoTokenAmountIsNotTruncated(t *testing.T) {
 	confirmPaymentComplianceForTest(t)
+	sceneTestSetting(t, &setting.WaffoSandbox, true)
+	sceneTestSetting(t, &setting.WaffoSandboxApiKey, "synthetic-token-key")
+	sceneTestSetting(t, &setting.WaffoSandboxPrivateKey, "synthetic-token-private")
+	sceneTestSetting(t, &setting.WaffoSandboxPublicCert, "synthetic-token-public")
 	db := adtyTestDB(t)
 	require.NoError(t, db.AutoMigrate(&model.User{}, &model.TopUp{}))
 	require.NoError(t, model.MigrateAdtyTables())

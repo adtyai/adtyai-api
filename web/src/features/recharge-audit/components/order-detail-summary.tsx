@@ -40,6 +40,12 @@ export function OrderDetailSummary(props: { detail: OrderTrace }) {
           [t('Status'), t(ORDER_TRACE_LABELS[order.status] ?? order.status)],
           [t('Provider'), order.payment_provider],
           [
+            t('Payment scene'),
+            order.payment_scene
+              ? `${order.payment_scene_name || order.payment_scene} (${order.payment_scene}) · v${order.payment_scene_version}`
+              : '-',
+          ],
+          [
             t('Payable / paid'),
             order.has_ext
               ? `${order.pay_amount} ${order.pay_currency} / ${order.paid_amount} ${order.paid_currency}`

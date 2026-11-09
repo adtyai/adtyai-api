@@ -30,6 +30,7 @@ import { useState, type ComponentProps } from 'react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
 import { api } from '@/lib/api'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { SettingsPageProvider } from '../../components/settings-page-context'
 import { PaymentSettingsSection } from '../payment-settings-section'
@@ -189,6 +190,25 @@ beforeEach(() => {
   vi.spyOn(api, 'get').mockResolvedValue({ data: { success: true, data: [] } })
 })
 
+it('exposes dynamic payment scene management on the Root general tab', async () => {
+  useAuthStore
+    .getState()
+    .auth.setUser({ id: 1, username: 'scene-root', role: 100 })
+  vi.mocked(api.get).mockImplementation(async (path) => ({
+    data: {
+      success: true,
+      data:
+        path === '/api/adty/admin/payment-scenes'
+          ? { version: 1, scenes: [] }
+          : [],
+    },
+  }))
+  await mount('general')
+  expect(
+    await screen.findByRole('button', { name: 'New payment scene' })
+  ).toBeVisible()
+})
+
 it('preserves an inactive provider draft when refreshed settings include another provider save', async () => {
   await mount('epay')
   await userEvent.type(
@@ -208,6 +228,7 @@ afterEach(() => {
   cleanup()
   clients.splice(0).forEach((client) => client.clear())
   vi.restoreAllMocks()
+  useAuthStore.getState().auth.reset()
 })
 
 it.each([

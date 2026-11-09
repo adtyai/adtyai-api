@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"math/rand/v2"
+	"slices"
 	"time"
 
 	"github.com/QuantumNous/new-api/model"
@@ -26,7 +27,7 @@ func adtyDayStart(now int64) int64 {
 // PickAdtyEpayChannel 按规则挑通道：只看启用的、支持这种方式的、金额在单笔范围内、
 // 当天加上这笔不超过每日限额的通道 → 取优先级最高的一组 → 电脑上如果这组里有能返回二维码的，
 // 就只在它们里面挑 → 按权重随机。
-func PickAdtyEpayChannel(method string, payCNY decimal.Decimal, device string, exclude map[int]bool, now int64) (*model.AdtyEpayChannel, *model.AdtyEpayChannelMethod, error) {
+func PickAdtyEpayChannel(method string, payCNY decimal.Decimal, device string, exclude map[int]bool, now int64, allowed ...[]int) (*model.AdtyEpayChannel, *model.AdtyEpayChannelMethod, error) {
 	channels, err := model.ListAdtyEpayChannels()
 	if err != nil {
 		return nil, nil, err
@@ -39,6 +40,9 @@ func PickAdtyEpayChannel(method string, payCNY decimal.Decimal, device string, e
 	dayStart := adtyDayStart(now)
 	for i := range channels {
 		channel := &channels[i]
+		if len(allowed) > 0 && len(allowed[0]) > 0 && !slices.Contains(allowed[0], channel.Id) {
+			continue
+		}
 		if channel.Status != model.AdtyEpayStatusEnabled || exclude[channel.Id] {
 			continue
 		}

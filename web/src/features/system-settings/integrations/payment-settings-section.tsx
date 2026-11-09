@@ -42,6 +42,7 @@ import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { PaymentChannels } from '@/features/adty-payment-channels'
+import { PaymentSceneManager } from '@/features/adty-payment-scenes'
 import { getPaymentErrorTranslation } from '@/features/wallet/lib/payment'
 import { handleServerError } from '@/lib/handle-server-error'
 
@@ -920,6 +921,7 @@ export function PaymentSettingsSection({
 
             <TabsContent value='general' className={paymentTabContentClassName}>
               <div className='space-y-4'>
+                <PaymentSceneManager />
                 <div>
                   <h3 className='text-lg font-medium'>
                     {t('General Settings')}

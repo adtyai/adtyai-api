@@ -38,6 +38,7 @@ import { isSafeHostedPaymentUrl } from '../lib/safe-url'
 
 /** Hosted checkout remains recoverable while the gateway runs in another tab. */
 export function HostedPayDialog(props: {
+  paymentScene?: string
   method: string
   amount: number
   promoCode?: string
@@ -60,7 +61,12 @@ export function HostedPayDialog(props: {
   }, [setPaymentDialogOpen])
   const create = useMutation({
     mutationFn: () =>
-      payWithHosted(props.amount, props.method, props.promoCode),
+      payWithHosted(
+        props.amount,
+        props.method,
+        props.promoCode,
+        props.paymentScene
+      ),
     onSuccess: (result) => {
       setTradeNo(result.tradeNo)
       void queryClient.invalidateQueries({ queryKey: adtyTopupQueryKeys.info })

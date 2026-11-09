@@ -31,13 +31,14 @@ import { useAdtyUiStore } from '@/stores/adty-ui-store'
 import { adtyTopupQueryKeys, cancelAdtyOrder, getAdtyOrder } from '../api'
 import { payWithBEpusdt } from '../api-pay'
 import { formatCountdown, useNowSeconds } from '../lib/countdown'
-import { creditedUsdAmount } from '../lib/money'
 import { CHAIN_NAMES } from '../lib/methods'
+import { creditedUsdAmount } from '../lib/money'
 import { clearPendingPayment, savePendingPayment } from '../lib/pending-payment'
 import type { AdtyOrder } from '../types'
 import { ChainIcon } from './chain-icons'
 
 type UsdtPayDialogProps = {
+  paymentScene?: string
   chain: string
   amount: number
   /** adty task 12.4 */
@@ -67,7 +68,12 @@ export function UsdtPayDialog(props: UsdtPayDialogProps) {
 
   const create = useMutation({
     mutationFn: () =>
-      payWithBEpusdt(props.amount, props.chain, props.promoCode ?? ''),
+      payWithBEpusdt(
+        props.amount,
+        props.chain,
+        props.promoCode ?? '',
+        props.paymentScene
+      ),
     onSuccess: (order) => {
       setTradeNo(order.trade_no)
       if (order.ext) {

@@ -19,9 +19,10 @@ import (
 // 从旧项目改写（任务 4.2）：按 USD 下单，站内支付窗显示地址和数量，回调以 POST JSON 为准。
 
 type bepusdtPayRequest struct {
-	Amount    int64  `json:"amount"`
-	Chain     string `json:"chain"`
-	PromoCode string `json:"promo_code"` // 任务 12.4
+	PaymentScene string `json:"payment_scene"`
+	Amount       int64  `json:"amount"`
+	Chain        string `json:"chain"`
+	PromoCode    string `json:"promo_code"` // 任务 12.4
 }
 
 // RequestBEpusdtPay 下单：报价、建单、调网关，把地址、数量、到期时间写回订单返回给前端。
@@ -47,6 +48,10 @@ func RequestBEpusdtPay(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	if _, err := service.AuthorizeAdtyPaymentScene(c.GetInt("id"), req.PaymentScene, model.PaymentProviderAdtyBEpusdt, req.Chain, quote); err != nil {
+		common.ApiError(c, err)
+		return
+	}
 	if err := replaceOtherPendingAdtyOrders(c); err != nil {
 		if errors.Is(err, service.ErrAdtyPaymentDetected) {
 			common.ApiErrorT(c, "A transfer has been detected. Please wait")
@@ -60,11 +65,12 @@ func RequestBEpusdtPay(c *gin.Context) {
 		minutes = 15
 	}
 	topUp, ext, err := createAdtyOrder(c, adtyOrderDraft{
-		prefix:   "EPU",
-		provider: model.PaymentProviderAdtyBEpusdt,
-		method:   req.Chain,
-		quote:    quote,
-		expireAt: time.Now().Unix() + int64(minutes*60),
+		paymentScene: req.PaymentScene,
+		prefix:       "EPU",
+		provider:     model.PaymentProviderAdtyBEpusdt,
+		method:       req.Chain,
+		quote:        quote,
+		expireAt:     time.Now().Unix() + int64(minutes*60),
 	})
 	if err != nil {
 		writeAdtyTopUpError(c, err)

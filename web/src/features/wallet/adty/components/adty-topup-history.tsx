@@ -95,6 +95,14 @@ export function AdtyTopupHistory() {
               cell: (row) => t(methodLabel(row.payment_method)),
             },
             {
+              id: 'scene',
+              header: t('Payment scene'),
+              cell: (row) =>
+                row.ext?.payment_scene
+                  ? `${row.ext.payment_scene_name || row.ext.payment_scene} (${row.ext.payment_scene}) · v${row.ext.payment_scene_version}`
+                  : '-',
+            },
+            {
               id: 'face',
               header: t('Amount'),
               cell: (row) =>

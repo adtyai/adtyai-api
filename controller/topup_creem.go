@@ -48,6 +48,7 @@ func verifyCreemSignature(payload string, signature string, secret string) bool 
 }
 
 type CreemPayRequest struct {
+	PaymentScene  string `json:"payment_scene"`
 	ProductId     string `json:"product_id"`
 	PaymentMethod string `json:"payment_method"`
 	PromoCode     string `json:"promo_code,omitempty"`
@@ -128,7 +129,7 @@ func (*CreemAdaptor) RequestPay(c *gin.Context, req *CreemPayRequest) {
 		CreateTime:      time.Now().Unix(),
 		Status:          common.TopUpStatusPending,
 	}
-	err = createAdtyHostedOrder(c, topUp, decimal.NewFromInt(selectedProduct.Quota), selectedProduct.Currency, selectedProduct.ProductId, hostedPaymentEnvironment(setting.CreemTestMode), req.PromoCode)
+	err = createAdtyHostedOrder(c, topUp, decimal.NewFromInt(selectedProduct.Quota), selectedProduct.Currency, selectedProduct.ProductId, hostedPaymentEnvironment(setting.CreemTestMode), req.PromoCode, req.PaymentScene)
 	if err != nil {
 		logger.LogError(c.Request.Context(), common.LogText("Creem failed to create top-up order user_id=%d trade_no=%s product_id=%s error=%q", id, referenceId, selectedProduct.ProductId, err.Error()))
 		paymentError(c, common.NewMessage("Failed to create order"))

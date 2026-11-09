@@ -42,6 +42,10 @@ func PostAdtyHostedPayment(c *gin.Context) {
 		paymentError(c, common.NewMessage("Unsupported payment channel"))
 		return
 	}
+	if _, err := service.AuthorizeAdtyPaymentScene(c.GetInt("id"), req.PaymentScene, provider.Name(), req.Method, quote); err != nil {
+		paymentError(c, err)
+		return
+	}
 	if operation_setting.GetQuotaDisplayType() == operation_setting.QuotaDisplayTypeTokens && !strings.HasPrefix(req.Method, "creem:") {
 		amount, err := common.WalletQuotaFromDecimalStrict(decimal.NewFromInt(req.Amount).Mul(decimal.NewFromFloat(common.QuotaPerUnit)))
 		if err != nil {
@@ -52,9 +56,9 @@ func PostAdtyHostedPayment(c *gin.Context) {
 	}
 	switch req.Method {
 	case model.PaymentMethodStripe:
-		stripeAdaptor.RequestPay(c, &StripePayRequest{Amount: req.Amount, PaymentMethod: req.Method, PromoCode: req.PromoCode})
+		stripeAdaptor.RequestPay(c, &StripePayRequest{Amount: req.Amount, PaymentMethod: req.Method, PromoCode: req.PromoCode, PaymentScene: req.PaymentScene})
 	case model.PaymentMethodWaffo, model.PaymentMethodWaffoPancake:
-		payload, err := common.Marshal(map[string]any{"amount": req.Amount, "promo_code": req.PromoCode})
+		payload, err := common.Marshal(map[string]any{"amount": req.Amount, "promo_code": req.PromoCode, "payment_scene": req.PaymentScene})
 		if err != nil {
 			paymentError(c, err)
 			return
@@ -67,7 +71,7 @@ func PostAdtyHostedPayment(c *gin.Context) {
 		}
 	default:
 		product, _ := strings.CutPrefix(req.Method, "creem:")
-		creemAdaptor.RequestPay(c, &CreemPayRequest{ProductId: product, PaymentMethod: model.PaymentMethodCreem, PromoCode: req.PromoCode})
+		creemAdaptor.RequestPay(c, &CreemPayRequest{ProductId: product, PaymentMethod: model.PaymentMethodCreem, PromoCode: req.PromoCode, PaymentScene: req.PaymentScene})
 	}
 }
 
@@ -76,11 +80,11 @@ func (p adtyHostedProvider) Name() string { return string(p) }
 func (p adtyHostedProvider) Methods() []service.AdtyMethodInfo {
 	switch p.Name() {
 	case model.PaymentProviderStripe:
-		return []service.AdtyMethodInfo{{Id: p.Name(), Kind: "hosted", Label: "Stripe", Available: isStripeTopUpEnabled()}}
+		return []service.AdtyMethodInfo{{Id: p.Name(), Kind: "hosted", Currency: "USD", Label: "Stripe", Available: isStripeTopUpEnabled()}}
 	case model.PaymentProviderWaffo:
-		return []service.AdtyMethodInfo{{Id: p.Name(), Kind: "hosted", Label: "Waffo", Available: isWaffoTopUpEnabled()}}
+		return []service.AdtyMethodInfo{{Id: p.Name(), Kind: "hosted", Currency: strings.ToUpper(getWaffoCurrency()), Label: "Waffo", Available: isWaffoTopUpEnabled()}}
 	case model.PaymentProviderWaffoPancake:
-		return []service.AdtyMethodInfo{{Id: p.Name(), Kind: "hosted", Label: "Waffo Pancake", Available: isWaffoPancakeTopUpEnabled()}}
+		return []service.AdtyMethodInfo{{Id: p.Name(), Kind: "hosted", Currency: "USD", Label: "Waffo Pancake", Available: isWaffoPancakeTopUpEnabled()}}
 	case model.PaymentProviderCreem:
 		var products []CreemProduct
 		if common.UnmarshalJsonStr(setting.CreemProducts, &products) != nil {
@@ -93,7 +97,8 @@ func (p adtyHostedProvider) Methods() []service.AdtyMethodInfo {
 			}
 			methods = append(methods, service.AdtyMethodInfo{
 				Id: "creem:" + product.ProductId, Kind: "hosted", Label: "Creem · " + product.Name,
-				FaceUSD: decimal.NewFromInt(product.Quota).Div(decimal.NewFromFloat(common.QuotaPerUnit)).String(), Available: isCreemTopUpEnabled() && isCreemWebhookConfigured(),
+				Currency: strings.ToUpper(product.Currency),
+				FaceUSD:  decimal.NewFromInt(product.Quota).Div(decimal.NewFromFloat(common.QuotaPerUnit)).String(), Available: isCreemTopUpEnabled() && isCreemWebhookConfigured(),
 			})
 		}
 		return methods

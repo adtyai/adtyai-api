@@ -40,8 +40,16 @@ func GetAdtyTopUpInfo(c *gin.Context) {
 		bonusRates[fmt.Sprint(tier)] = rate
 	}
 	methods := make([]service.AdtyMethodInfo, 0)
-	for _, provider := range service.AdtyPaymentProviders() {
-		methods = append(methods, provider.Methods()...)
+	scenes, err := service.AdtyPaymentScenesForUser(c.GetInt("id"))
+	if err != nil {
+		writeAdtyTopUpError(c, err)
+		return
+	}
+	for _, scene := range scenes {
+		if scene.Key == "wallet_topup" {
+			methods = scene.Methods
+			break
+		}
 	}
 	var pending *model.AdtyTopUpView
 	if view, err := model.GetUserPendingAdtyTopUp(c.GetInt("id"), time.Now().Unix()); err == nil {
@@ -52,6 +60,7 @@ func GetAdtyTopUpInfo(c *gin.Context) {
 		"bonus_rates":          bonusRates,
 		"min_topup":            operation_setting.MinTopUp,
 		"methods":              methods,
+		"scenes":               scenes,
 		"price_cny_per_usd":    operation_setting.Price,
 		"usdt_order_minutes":   setting.USDTOrderMinutes,
 		"epay_order_minutes":   setting.EpayOrderMinutes,
@@ -61,9 +70,10 @@ func GetAdtyTopUpInfo(c *gin.Context) {
 }
 
 type adtyQuoteRequest struct {
-	Amount    int64  `json:"amount"`
-	Method    string `json:"method"`
-	PromoCode string `json:"promo_code"` // 任务 12.4
+	PaymentScene string `json:"payment_scene"`
+	Amount       int64  `json:"amount"`
+	Method       string `json:"method"`
+	PromoCode    string `json:"promo_code"` // 任务 12.4
 }
 
 // adtyPromoInput 是当前用户带的优惠码（任务 12.4）。
@@ -91,7 +101,17 @@ func PostAdtyTopUpQuote(c *gin.Context) {
 	}
 	available := false
 	if provider := service.AdtyPaymentProviderForMethod(req.Method); provider != nil {
-		available = provider.AvailableFor(req.Method, quote)
+		scene, err := service.AuthorizeAdtyPaymentScene(c.GetInt("id"), req.PaymentScene, provider.Name(), req.Method, quote)
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		if provider.Name() == service.AdtyProviderEpay {
+			_, _, err := service.PickAdtyEpayChannel(req.Method, quote.PayAmount, "desktop", nil, time.Now().Unix(), scene.ChannelIDs)
+			available = err == nil
+		} else {
+			available = provider.AvailableFor(req.Method, quote)
+		}
 	}
 	common.ApiSuccess(c, gin.H{"quote": quote, "available": available})
 }
@@ -177,12 +197,13 @@ func GetAdtyTopUpSelf(c *gin.Context) {
 
 // adtyOrderDraft 是下单时要的数据，P4 和 P5 共用 createAdtyOrder。
 type adtyOrderDraft struct {
-	prefix    string // EPU | EPY
-	provider  string
-	method    string
-	quote     *service.AdtyQuote
-	expireAt  int64
-	channelID int
+	paymentScene string
+	prefix       string // EPU | EPY
+	provider     string
+	method       string
+	quote        *service.AdtyQuote
+	expireAt     int64
+	channelID    int
 }
 
 // newAdtyTradeNo 生成 <前缀><uid><6 位随机><unix>，易支付要求不超过 32 位。
@@ -266,7 +287,7 @@ func createAdtyOrder(c *gin.Context, draft adtyOrderDraft) (*model.TopUp, *model
 	if site := service.AdtyBillingSiteForUser(userID); site != nil {
 		ext.SiteId = site.Id // 分站客户的加赠由站长出（任务 11.5）
 	}
-	if err := model.CreateAdtyTopUp(topUp, ext); err != nil {
+	if err := service.CreateAdtyPaymentOrder(topUp, ext, draft.paymentScene); err != nil {
 		return nil, nil, err
 	}
 	return topUp, ext, nil

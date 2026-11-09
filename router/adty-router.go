@@ -67,6 +67,10 @@ func SetAdtyRouter(apiRouter *gin.RouterGroup) {
 
 // registerAdtyTopUpRoutes 挂钱包的充值接口（任务 3.3），令牌规则照上游钱包接口。
 func registerAdtyTopUpRoutes(apiRouter *gin.RouterGroup) {
+	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/adty/admin/payment-scenes", "scope", "option:read")
+	middleware.DeclareAdtyAccessTokenRoute("PUT", "/api/adty/admin/payment-scenes", "scope", "option:write")
+	apiRouter.GET("/adty/admin/payment-scenes", middleware.RootAuth(), controller.GetAdtyPaymentScenes)
+	apiRouter.PUT("/adty/admin/payment-scenes", middleware.RootAuth(), controller.PutAdtyPaymentScenes)
 	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/adty/topup/info", "scope", "wallet:read")
 	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/topup/quote", "scope", "wallet:read")
 	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/topup/hosted/pay", "scope", "wallet:write")

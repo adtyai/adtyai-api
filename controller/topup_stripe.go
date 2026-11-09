@@ -33,6 +33,7 @@ var stripeNewCheckoutSession = session.New
 
 // StripePayRequest represents a payment request for Stripe checkout.
 type StripePayRequest struct {
+	PaymentScene string `json:"payment_scene"`
 	// Amount is the quantity of units to purchase.
 	Amount int64 `json:"amount"`
 	// PaymentMethod specifies the payment method (e.g., "stripe").
@@ -135,7 +136,7 @@ func (*StripeAdaptor) RequestPay(c *gin.Context, req *StripePayRequest) {
 		CreateTime:      time.Now().Unix(),
 		Status:          common.TopUpStatusPending,
 	}
-	err = createAdtyHostedOrder(c, topUp, stripeCreditedQuota(pay.Quantity), "USD", "wallet_topup", stripePaymentEnvironment(setting.StripeApiSecret), req.PromoCode)
+	err = createAdtyHostedOrder(c, topUp, stripeCreditedQuota(pay.Quantity), "USD", "wallet_topup", stripePaymentEnvironment(setting.StripeApiSecret), req.PromoCode, req.PaymentScene)
 	if err != nil {
 		logger.LogError(c.Request.Context(), common.LogText("Stripe failed to create top-up order user_id=%d trade_no=%s amount=%d error=%q", id, referenceId, req.Amount, err.Error()))
 		paymentError(c, common.NewMessage("Failed to create order"))

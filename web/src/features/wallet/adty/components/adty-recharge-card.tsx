@@ -30,6 +30,7 @@ import {
 } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useDebounce } from '@/hooks/use-debounce'
 import { toIntlLocale } from '@/i18n/languages'
@@ -48,7 +49,12 @@ type AdtyRechargeCardProps = {
   loading: boolean
   paying: boolean
   /** Starts the payment for the chosen amount, method and promo code (P4 / P5 dialogs). */
-  onPay: (amount: number, method: AdtyMethod, promoCode: string) => void
+  onPay: (
+    amount: number,
+    method: AdtyMethod,
+    promoCode: string,
+    paymentScene: string
+  ) => void
 }
 
 export function AdtyRechargeCard(props: AdtyRechargeCardProps) {
@@ -58,7 +64,14 @@ export function AdtyRechargeCard(props: AdtyRechargeCardProps) {
   const rates = props.info?.bonus_rates ?? {}
   // No bonus tiers in the admin means no bonus at all: show plain amounts.
   const hasBonus = Object.values(rates).some((rate) => rate > 0)
-  const minTopup = props.info?.min_topup ?? 1
+  const [sceneKey, setSceneKey] = useState('wallet_topup')
+  const scenes = props.info?.scenes ?? []
+  const scene = scenes.find((item) => item.key === sceneKey) ?? scenes[0]
+  const paymentScene = scene?.key ?? 'wallet_topup'
+  const minTopup = Math.max(
+    props.info?.min_topup ?? 1,
+    Number(scene?.min_usd ?? 0)
+  )
   const [selectedTier, setSelectedTier] = useState<number | null>(null)
   const [customAmount, setCustomAmount] = useState('')
   const [methodId, setMethodId] = useState<string | null>(null)
@@ -66,20 +79,34 @@ export function AdtyRechargeCard(props: AdtyRechargeCardProps) {
   const [promoInput, setPromoInput] = useState('')
   const promoCode = useDebounce(promoInput.trim(), 400)
 
-  const methods = props.info?.methods ?? []
+  const methods =
+    props.info?.scenes === undefined
+      ? (props.info?.methods ?? [])
+      : (scene?.methods ?? [])
   const method = methods.find((item) => item.id === methodId) ?? null
-  const fixedAmount = method?.face_usd
+  const fixedAmount =
+    method?.face_usd === undefined ? undefined : Number(method.face_usd)
   const amount =
     fixedAmount ??
     selectedTier ??
     (customAmount === '' ? 0 : Number(customAmount))
   const validAmount =
     Number.isFinite(amount) &&
-    (fixedAmount !== undefined ? amount > 0 : amount >= minTopup)
+    (fixedAmount !== undefined ? amount > 0 : amount >= minTopup) &&
+    amount >= Number(scene?.min_usd ?? 0) &&
+    (Number(scene?.max_usd ?? 0) <= 0 || amount <= Number(scene?.max_usd))
 
   const quoteQuery = useQuery({
-    queryKey: ['adty-topup', 'quote', amount, methodId, promoCode],
-    queryFn: () => quoteAdtyTopup(amount, methodId ?? '', promoCode),
+    queryKey: [
+      'adty-topup',
+      'quote',
+      paymentScene,
+      amount,
+      methodId,
+      promoCode,
+    ],
+    queryFn: () =>
+      quoteAdtyTopup(amount, methodId ?? '', promoCode, paymentScene),
     enabled: validAmount && method !== null && method.available,
     meta: { errorToast: false },
   })
@@ -153,6 +180,26 @@ export function AdtyRechargeCard(props: AdtyRechargeCardProps) {
         )}
       </CardHeader>
       <CardContent className='flex flex-col gap-6'>
+        {scenes.length > 0 && (
+          <div className='space-y-2'>
+            <Label htmlFor='wallet-payment-scene'>{t('Payment scene')}</Label>
+            <NativeSelect
+              id='wallet-payment-scene'
+              value={paymentScene}
+              disabled={props.paying}
+              onChange={(event) => {
+                setSceneKey(event.target.value)
+                setMethodId(null)
+              }}
+            >
+              {scenes.map((item) => (
+                <NativeSelectOption key={item.key} value={item.key}>
+                  {t(item.name)}
+                </NativeSelectOption>
+              ))}
+            </NativeSelect>
+          </div>
+        )}
         <section className='flex flex-col gap-3'>
           <Label className='text-muted-foreground text-xs font-medium tracking-wider uppercase'>
             {t('Amount')}
@@ -317,7 +364,9 @@ export function AdtyRechargeCard(props: AdtyRechargeCardProps) {
               quoteQuery.isError ||
               promoInput.trim() !== promoCode
             }
-            onClick={() => method && props.onPay(amount, method, promoCode)}
+            onClick={() =>
+              method && props.onPay(amount, method, promoCode, paymentScene)
+            }
           >
             {props.paying ? t('Processing...') : t('Pay now')}
           </Button>

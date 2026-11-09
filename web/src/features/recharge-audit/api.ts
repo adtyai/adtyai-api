@@ -41,6 +41,9 @@ export type RechargeAuditOrder = {
   trade_no: string
   payment_method: string
   payment_provider: string
+  payment_scene?: string
+  payment_scene_name?: string
+  payment_scene_version?: number
   status: string
   create_time: number
   complete_time: number

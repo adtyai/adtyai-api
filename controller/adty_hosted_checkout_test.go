@@ -177,6 +177,7 @@ func TestPancakeHostedTokensCheckoutAndSignedFrozenFacts(t *testing.T) {
 
 func TestWaffoSignedPaymentUsesFrozenEnvironmentMerchantAndAmount(t *testing.T) {
 	confirmPaymentComplianceForTest(t)
+	sceneTestSetting(t, &setting.WaffoEnabled, true)
 	db := adtyTestDB(t)
 	require.NoError(t, db.AutoMigrate(&model.User{}, &model.TopUp{}, &model.Log{}))
 	require.NoError(t, model.MigrateAdtyTables())
@@ -237,6 +238,15 @@ func TestWaffoSignedPaymentUsesFrozenEnvironmentMerchantAndAmount(t *testing.T) 
 
 func TestHostedOrderFreezesTheAmountSentInTheCurrencyMinorUnit(t *testing.T) {
 	confirmPaymentComplianceForTest(t)
+	sceneTestSetting(t, &setting.WaffoEnabled, true)
+	sceneTestSetting(t, &setting.WaffoSandbox, true)
+	sceneTestSetting(t, &setting.WaffoSandboxApiKey, "synthetic-minor-unit-key")
+	sceneTestSetting(t, &setting.WaffoSandboxPrivateKey, "synthetic-minor-unit-private")
+	sceneTestSetting(t, &setting.WaffoSandboxPublicCert, "synthetic-minor-unit-public")
+	sceneTestSetting(t, &setting.WaffoPancakeMerchantID, "synthetic-minor-unit-merchant")
+	sceneTestSetting(t, &setting.WaffoPancakePrivateKey, "synthetic-minor-unit-private")
+	sceneTestSetting(t, &setting.WaffoPancakeProductID, "synthetic-minor-unit-product")
+	sceneTestSetting(t, &setting.WaffoPancakeEnvironment, "test")
 	db := adtyTestDB(t)
 	require.NoError(t, db.AutoMigrate(&model.User{}, &model.TopUp{}, &model.Log{}))
 	require.NoError(t, model.MigrateAdtyTables())
@@ -249,6 +259,7 @@ func TestHostedOrderFreezesTheAmountSentInTheCurrencyMinorUnit(t *testing.T) {
 		{model.PaymentProviderWaffoPancake, "USD", "2.84"},
 	} {
 		t.Run(tc.provider+tc.currency, func(t *testing.T) {
+			sceneTestSetting(t, &setting.WaffoCurrency, tc.currency)
 			user := model.User{Username: tc.provider + tc.currency, Group: "default", Status: common.UserStatusEnabled}
 			require.NoError(t, db.Create(&user).Error)
 			ctx, _ := gin.CreateTestContext(httptest.NewRecorder())

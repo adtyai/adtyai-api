@@ -110,7 +110,12 @@ describe('AdtyRechargeCard', () => {
     const pay = screen.getByRole('button', { name: 'Pay now' })
     await waitFor(() => expect(pay).toBeEnabled())
     await user.click(pay)
-    expect(onPay).toHaveBeenCalledWith(100, info.methods[0], 'TEN')
+    expect(onPay).toHaveBeenCalledWith(
+      100,
+      info.methods[0],
+      'TEN',
+      'wallet_topup'
+    )
   })
 
   it('shows the server reason and blocks payment for an invalid promo code', async () => {
@@ -208,7 +213,7 @@ describe('AdtyRechargeCard', () => {
       )
     )
     await user.click(screen.getByRole('button', { name: 'Pay now' }))
-    expect(onPay).toHaveBeenCalledWith(100, info.methods[2], '')
+    expect(onPay).toHaveBeenCalledWith(100, info.methods[2], '', 'wallet_topup')
   })
 
   it('shows plain amounts without bonus text when no bonus tiers are set', async () => {

@@ -30,13 +30,14 @@ import { useAdtyUiStore } from '@/stores/adty-ui-store'
 import { adtyTopupQueryKeys, cancelAdtyOrder, getAdtyOrder } from '../api'
 import { payWithEpay } from '../api-pay'
 import { formatCountdown, useNowSeconds } from '../lib/countdown'
-import { creditedUsdAmount } from '../lib/money'
 import { detectPayDevice } from '../lib/device'
+import { creditedUsdAmount } from '../lib/money'
 import { clearPendingPayment, savePendingPayment } from '../lib/pending-payment'
 import { isDisplayablePaymentQr, isSafePaymentUrl } from '../lib/safe-url'
 import type { AdtyOrder, AdtyOrderExt } from '../types'
 
 type EpayPayDialogProps = {
+  paymentScene?: string
   method: string
   amount: number
   /** adty task 12.4 */
@@ -89,7 +90,8 @@ export function EpayPayDialog(props: EpayPayDialogProps) {
         props.method,
         device,
         exclude,
-        props.promoCode ?? ''
+        props.promoCode ?? '',
+        props.paymentScene
       ),
     onSuccess: (order) => {
       setTradeNo(order.trade_no)

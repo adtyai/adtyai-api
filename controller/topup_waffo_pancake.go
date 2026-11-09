@@ -20,8 +20,9 @@ import (
 )
 
 type WaffoPancakePayRequest struct {
-	Amount    int64  `json:"amount"`
-	PromoCode string `json:"promo_code,omitempty"`
+	PaymentScene string `json:"payment_scene"`
+	Amount       int64  `json:"amount"`
+	PromoCode    string `json:"promo_code,omitempty"`
 }
 
 func RequestWaffoPancakeAmount(c *gin.Context) {
@@ -318,7 +319,7 @@ func RequestWaffoPancakePay(c *gin.Context) {
 		CreateTime:      time.Now().Unix(),
 		Status:          common.TopUpStatusPending,
 	}
-	if err := createAdtyHostedOrder(c, topUp, decimal.NewFromInt(units).Mul(decimal.NewFromFloat(common.QuotaPerUnit)), "USD", setting.WaffoPancakeProductID, setting.WaffoPancakeEnvironment, req.PromoCode); err != nil {
+	if err := createAdtyHostedOrder(c, topUp, decimal.NewFromInt(units).Mul(decimal.NewFromFloat(common.QuotaPerUnit)), "USD", setting.WaffoPancakeProductID, setting.WaffoPancakeEnvironment, req.PromoCode, req.PaymentScene); err != nil {
 		logger.LogError(c.Request.Context(), common.LogText("Waffo Pancake failed to create top-up order user_id=%d trade_no=%s amount=%d error=%q", id, tradeNo, req.Amount, err.Error()))
 		paymentError(c, common.NewMessage("Failed to create order"))
 		return

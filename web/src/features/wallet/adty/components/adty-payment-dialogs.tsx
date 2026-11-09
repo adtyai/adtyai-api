@@ -36,6 +36,7 @@ export function AdtyPaymentDialogs(props: AdtyPaymentDialogsProps) {
       <HostedPayDialog
         key={payment.tradeNo ?? `${payment.method}-${payment.amount}`}
         method={payment.method}
+        paymentScene={payment.paymentScene}
         amount={payment.amount}
         promoCode={payment.promoCode}
         tradeNo={payment.tradeNo}
@@ -49,6 +50,7 @@ export function AdtyPaymentDialogs(props: AdtyPaymentDialogsProps) {
       <UsdtPayDialog
         key={payment.tradeNo ?? `${payment.method}-${payment.amount}`}
         chain={payment.method}
+        paymentScene={payment.paymentScene}
         amount={payment.amount}
         promoCode={payment.promoCode}
         tradeNo={payment.tradeNo}
@@ -62,6 +64,7 @@ export function AdtyPaymentDialogs(props: AdtyPaymentDialogsProps) {
     <EpayPayDialog
       key={payment.tradeNo ?? `${payment.method}-${payment.amount}`}
       method={payment.method}
+      paymentScene={payment.paymentScene}
       amount={payment.amount}
       promoCode={payment.promoCode}
       tradeNo={payment.tradeNo}

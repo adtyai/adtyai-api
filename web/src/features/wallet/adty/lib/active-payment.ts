@@ -20,6 +20,7 @@ import type { AdtyMethodKind } from '../types'
 
 /** The payment the wallet is running: a new order, or an existing one to resume. */
 export type ActivePayment = {
+  paymentScene?: string
   kind: AdtyMethodKind
   method: string
   amount: number

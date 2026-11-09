@@ -248,7 +248,7 @@ func (adtyEpayProvider) Methods() []AdtyMethodInfo {
 	}
 	out := make([]AdtyMethodInfo, 0, len(AdtyEpayMethods))
 	for _, method := range AdtyEpayMethods {
-		out = append(out, AdtyMethodInfo{Id: method, Kind: "epay", Available: available[method]})
+		out = append(out, AdtyMethodInfo{Id: method, Kind: "epay", Currency: "CNY", Available: available[method]})
 	}
 	return out
 }

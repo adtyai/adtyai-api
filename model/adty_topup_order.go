@@ -38,48 +38,52 @@ func IsAdtyPaymentProvider(provider string) bool {
 
 // AdtyTopupOrder 是订单事实（任务 3.2），按 trade_no 对应上游的 top_ups，上游表不加字段。
 type AdtyTopupOrder struct {
-	Id                  int64           `json:"id"`
-	TradeNo             string          `json:"trade_no" gorm:"uniqueIndex;type:varchar(64);not null"`
-	UserId              int             `json:"user_id" gorm:"index"`
-	Provider            string          `json:"provider" gorm:"type:varchar(32)"`
-	Method              string          `json:"method" gorm:"type:varchar(32)"`
-	FaceUSD             decimal.Decimal `json:"face_usd" gorm:"column:face_usd;type:decimal(20,8);not null;default:0"`
-	BonusRate           decimal.Decimal `json:"bonus_rate" gorm:"type:decimal(20,8);not null;default:0"`
-	BonusUSD            decimal.Decimal `json:"bonus_usd" gorm:"column:bonus_usd;type:decimal(20,8);not null;default:0"`
-	CreditQuota         int64           `json:"credit_quota"`
-	PayAmount           decimal.Decimal `json:"pay_amount" gorm:"type:decimal(20,8);not null;default:0"`
-	PayCurrency         string          `json:"pay_currency" gorm:"type:varchar(16)"`
-	PriceSnapshot       decimal.Decimal `json:"price_snapshot" gorm:"type:decimal(20,8);not null;default:0"`
-	TopupGroupRatio     decimal.Decimal `json:"topup_group_ratio" gorm:"type:decimal(20,8);not null;default:1"`
-	ExpireAt            int64           `json:"expire_at" gorm:"index"`
-	GatewayTradeId      string          `json:"gateway_trade_id" gorm:"type:varchar(128)"`
-	PayAddress          string          `json:"pay_address" gorm:"type:varchar(128)"`
-	PayURL              string          `json:"pay_url" gorm:"column:pay_url;type:text"`
-	QRCode              string          `json:"qr_code" gorm:"column:qr_code;type:text"`
-	URLScheme           string          `json:"url_scheme" gorm:"column:url_scheme;type:text"`
-	ChannelId           int             `json:"channel_id" gorm:"index"`
-	UnpaidCounted       bool            `json:"-"`
-	PaidAmount          decimal.Decimal `json:"paid_amount" gorm:"type:decimal(20,8);not null;default:0"`
-	PaidCurrency        string          `json:"paid_currency" gorm:"type:varchar(16)"`
-	PaidTxHash          string          `json:"paid_tx_hash" gorm:"type:varchar(255)"`
-	PaidSource          string          `json:"paid_source" gorm:"type:varchar(16)"`
-	ReferralAffiliateId int             `json:"-" gorm:"index"`
-	ReferralRate        decimal.Decimal `json:"-" gorm:"type:decimal(10,4);not null;default:0"`
-	PromoCodeId         int             `json:"promo_code_id" gorm:"index;not null;default:0"`                                       // 优惠码（任务 12.4），0 表示没用
-	PromoBonusUSD       decimal.Decimal `json:"promo_bonus_usd" gorm:"column:promo_bonus_usd;type:decimal(20,8);not null;default:0"` // 下单时快照的优惠加赠，已含在 CreditQuota 里
-	PromoFunder         string          `json:"-" gorm:"type:varchar(16);not null;default:''"`                                       // 优惠码出资方快照：platform 或 site_owner
-	SiteId              int             `json:"-" gorm:"index"`                                                                      // 下单时客户所属的分站（P11）；加赠由这个站的站长出
-	LastQueryAt         int64           `json:"-"`
-	RefundedAt          int64           `json:"refunded_at"`
-	RefundReason        string          `json:"-" gorm:"type:text"`
-	RefundQuota         int64           `json:"refund_quota" gorm:"not null;default:0"`                     // 退款时退的本金额度 P（赠金不退）
-	RefundAmount        decimal.Decimal `json:"refund_amount" gorm:"type:decimal(20,8);not null;default:0"` // 退款时应退的金额，支付币种，线下退
-	ProviderPayload     string          `json:"-" gorm:"type:text"`
-	ProviderProductId   string          `json:"-" gorm:"type:varchar(255)"`
-	ProviderMerchantId  string          `json:"-" gorm:"type:varchar(255)"`
-	ProviderEnvironment string          `json:"-" gorm:"type:varchar(16)"`
-	CreatedAt           int64           `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt           int64           `json:"updated_at" gorm:"autoUpdateTime"`
+	Id                   int64           `json:"id"`
+	TradeNo              string          `json:"trade_no" gorm:"uniqueIndex;type:varchar(64);not null"`
+	UserId               int             `json:"user_id" gorm:"index"`
+	Provider             string          `json:"provider" gorm:"type:varchar(32)"`
+	PaymentScene         string          `json:"payment_scene" gorm:"type:varchar(64)"`
+	PaymentSceneName     string          `json:"payment_scene_name" gorm:"type:varchar(480)"`
+	PaymentSceneVersion  int64           `json:"payment_scene_version"`
+	PaymentSceneSnapshot string          `json:"-" gorm:"type:text"`
+	Method               string          `json:"method" gorm:"type:varchar(32)"`
+	FaceUSD              decimal.Decimal `json:"face_usd" gorm:"column:face_usd;type:decimal(20,8);not null;default:0"`
+	BonusRate            decimal.Decimal `json:"bonus_rate" gorm:"type:decimal(20,8);not null;default:0"`
+	BonusUSD             decimal.Decimal `json:"bonus_usd" gorm:"column:bonus_usd;type:decimal(20,8);not null;default:0"`
+	CreditQuota          int64           `json:"credit_quota"`
+	PayAmount            decimal.Decimal `json:"pay_amount" gorm:"type:decimal(20,8);not null;default:0"`
+	PayCurrency          string          `json:"pay_currency" gorm:"type:varchar(16)"`
+	PriceSnapshot        decimal.Decimal `json:"price_snapshot" gorm:"type:decimal(20,8);not null;default:0"`
+	TopupGroupRatio      decimal.Decimal `json:"topup_group_ratio" gorm:"type:decimal(20,8);not null;default:1"`
+	ExpireAt             int64           `json:"expire_at" gorm:"index"`
+	GatewayTradeId       string          `json:"gateway_trade_id" gorm:"type:varchar(128)"`
+	PayAddress           string          `json:"pay_address" gorm:"type:varchar(128)"`
+	PayURL               string          `json:"pay_url" gorm:"column:pay_url;type:text"`
+	QRCode               string          `json:"qr_code" gorm:"column:qr_code;type:text"`
+	URLScheme            string          `json:"url_scheme" gorm:"column:url_scheme;type:text"`
+	ChannelId            int             `json:"channel_id" gorm:"index"`
+	UnpaidCounted        bool            `json:"-"`
+	PaidAmount           decimal.Decimal `json:"paid_amount" gorm:"type:decimal(20,8);not null;default:0"`
+	PaidCurrency         string          `json:"paid_currency" gorm:"type:varchar(16)"`
+	PaidTxHash           string          `json:"paid_tx_hash" gorm:"type:varchar(255)"`
+	PaidSource           string          `json:"paid_source" gorm:"type:varchar(16)"`
+	ReferralAffiliateId  int             `json:"-" gorm:"index"`
+	ReferralRate         decimal.Decimal `json:"-" gorm:"type:decimal(10,4);not null;default:0"`
+	PromoCodeId          int             `json:"promo_code_id" gorm:"index;not null;default:0"`                                       // 优惠码（任务 12.4），0 表示没用
+	PromoBonusUSD        decimal.Decimal `json:"promo_bonus_usd" gorm:"column:promo_bonus_usd;type:decimal(20,8);not null;default:0"` // 下单时快照的优惠加赠，已含在 CreditQuota 里
+	PromoFunder          string          `json:"-" gorm:"type:varchar(16);not null;default:''"`                                       // 优惠码出资方快照：platform 或 site_owner
+	SiteId               int             `json:"-" gorm:"index"`                                                                      // 下单时客户所属的分站（P11）；加赠由这个站的站长出
+	LastQueryAt          int64           `json:"-"`
+	RefundedAt           int64           `json:"refunded_at"`
+	RefundReason         string          `json:"-" gorm:"type:text"`
+	RefundQuota          int64           `json:"refund_quota" gorm:"not null;default:0"`                     // 退款时退的本金额度 P（赠金不退）
+	RefundAmount         decimal.Decimal `json:"refund_amount" gorm:"type:decimal(20,8);not null;default:0"` // 退款时应退的金额，支付币种，线下退
+	ProviderPayload      string          `json:"-" gorm:"type:text"`
+	ProviderProductId    string          `json:"-" gorm:"type:varchar(255)"`
+	ProviderMerchantId   string          `json:"-" gorm:"type:varchar(255)"`
+	ProviderEnvironment  string          `json:"-" gorm:"type:varchar(16)"`
+	CreatedAt            int64           `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt            int64           `json:"updated_at" gorm:"autoUpdateTime"`
 	// RefundDeductedQuota、RefundBonusQuota 是这次退款扣回的 R 和订单赠金 G，只在退款钩子里用，不入库。
 	RefundDeductedQuota int64 `json:"-" gorm:"-"`
 	RefundBonusQuota    int64 `json:"-" gorm:"-"`
@@ -125,6 +129,12 @@ var AdtyAfterTopUpCompleted func(topUp *TopUp, ext *AdtyTopupOrder)
 
 // CreateAdtyTopUp 在一个事务里插 top_ups 和扩展行。
 func CreateAdtyTopUp(topUp *TopUp, ext *AdtyTopupOrder) error {
+	return CreateAdtyTopUpWithPolicy(topUp, ext, nil, nil)
+}
+
+// Prepare runs before channel locks; validate runs after the existing referral
+// identity locks. Callers must preserve configuration → channel → user order.
+func CreateAdtyTopUpWithPolicy(topUp *TopUp, ext *AdtyTopupOrder, prepare, validate func(*gorm.DB) error) error {
 	if topUp == nil || ext == nil || topUp.TradeNo == "" || topUp.TradeNo != ext.TradeNo {
 		return errors.New("invalid adty topup order")
 	}
@@ -138,6 +148,11 @@ func CreateAdtyTopUp(topUp *TopUp, ext *AdtyTopupOrder) error {
 		options = append(options, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 	}
 	return DB.Transaction(func(tx *gorm.DB) error {
+		if prepare != nil {
+			if err := prepare(tx); err != nil {
+				return err
+			}
+		}
 		// Acquire the payment-method lock before any consistent read: on MySQL
 		// REPEATABLE READ an earlier snapshot could miss a previous reservation.
 		if ext.Provider == PaymentProviderAdtyEpay && ext.ChannelId > 0 {
@@ -147,6 +162,11 @@ func CreateAdtyTopUp(topUp *TopUp, ext *AdtyTopupOrder) error {
 		}
 		if AdtyBeforeTopUpCreateTx != nil {
 			if err := AdtyBeforeTopUpCreateTx(tx, topUp, ext); err != nil {
+				return err
+			}
+		}
+		if validate != nil {
+			if err := validate(tx); err != nil {
 				return err
 			}
 		}

@@ -141,6 +141,7 @@ func getWaffoPayMoney(requestAmount int64, units int64, group string) float64 {
 }
 
 type WaffoPayRequest struct {
+	PaymentScene   string `json:"payment_scene"`
 	Amount         int64  `json:"amount"`
 	PayMethodIndex *int   `json:"pay_method_index"` // 服务端支付方式列表的索引，nil 表示由 Waffo 自动选择
 	PayMethodType  string `json:"pay_method_type"`  // Deprecated: 兼容旧前端，优先使用 pay_method_index
@@ -277,7 +278,7 @@ func RequestWaffoPay(c *gin.Context) {
 		CreateTime:      time.Now().Unix(),
 		Status:          common.TopUpStatusPending,
 	}
-	if err := createAdtyHostedOrder(c, topUp, decimal.NewFromInt(units).Mul(decimal.NewFromFloat(common.QuotaPerUnit)), getWaffoCurrency(), "", hostedPaymentEnvironment(setting.WaffoSandbox), req.PromoCode); err != nil {
+	if err := createAdtyHostedOrder(c, topUp, decimal.NewFromInt(units).Mul(decimal.NewFromFloat(common.QuotaPerUnit)), getWaffoCurrency(), "", hostedPaymentEnvironment(setting.WaffoSandbox), req.PromoCode, req.PaymentScene); err != nil {
 		logger.LogError(c.Request.Context(), common.LogText("Waffo failed to create top-up order user_id=%d trade_no=%s amount=%d error=%q", id, merchantOrderId, req.Amount, err.Error()))
 		paymentError(c, common.NewMessage("Failed to create order"))
 		return
