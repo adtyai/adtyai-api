@@ -377,34 +377,96 @@ func Register(c *gin.Context) {
 
 type adminUserResponse struct {
 	*model.User
-	LiveQuota int `json:"live_quota"`
+	LiveQuota int    `json:"live_quota"`
+	SiteName  string `json:"site_name"`
 }
 
-func buildAdminUserResponses(users []*model.User) []adminUserResponse {
+func buildAdminUserResponses(users []*model.User) ([]adminUserResponse, error) {
+	siteIDs := make([]int, len(users))
+	for i, user := range users {
+		siteIDs[i] = user.SiteId
+	}
+	names, err := service.AdtySiteNames(siteIDs)
+	if err != nil {
+		return nil, err
+	}
 	items := make([]adminUserResponse, len(users))
 	for i, user := range users {
-		items[i] = adminUserResponse{User: user, LiveQuota: user.ToBaseUser().Quota}
+		items[i] = adminUserResponse{User: user, LiveQuota: user.ToBaseUser().Quota, SiteName: names[user.SiteId]}
 	}
-	return items
+	return items, nil
+}
+
+// A present site_id must be a nonnegative integer; omission means every visible site.
+func userSiteFilter(c *gin.Context) (*int, error) {
+	value, present := c.GetQueryArray("site_id")
+	if !present {
+		return nil, nil
+	}
+	if len(value) != 1 || value[0] == "" || strings.IndexFunc(value[0], func(r rune) bool { return r < '0' || r > '9' }) >= 0 {
+		return nil, common.NewMessage("Invalid parameters")
+	}
+	siteID, err := strconv.Atoi(value[0])
+	if err != nil {
+		return nil, common.NewMessage("Invalid parameters")
+	}
+	return &siteID, nil
+}
+
+func GetUserSites(c *gin.Context) {
+	siteIDs, err := model.GetUserSiteIDs(visibleUserRoleCeiling(c.GetInt("role")))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	names, err := service.AdtySiteNames(siteIDs)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	type siteChoice struct {
+		SiteID   int    `json:"site_id"`
+		SiteName string `json:"site_name"`
+	}
+	items := make([]siteChoice, len(siteIDs))
+	for i, id := range siteIDs {
+		items[i] = siteChoice{SiteID: id, SiteName: names[id]}
+	}
+	common.ApiSuccess(c, items)
 }
 
 func GetAllUsers(c *gin.Context) {
+	siteID, err := userSiteFilter(c)
+	if err != nil {
+		common.ApiErrorStatus(c, http.StatusBadRequest, err)
+		return
+	}
 	pageInfo := common.GetPageQuery(c)
 	sortOptions := model.NewUserSortOptions(c.Query("sort_by"), c.Query("sort_order"))
-	users, total, err := model.GetAllUsers(pageInfo, visibleUserRoleCeiling(c.GetInt("role")), sortOptions)
+	users, total, err := model.GetAllUsers(pageInfo, visibleUserRoleCeiling(c.GetInt("role")), siteID, sortOptions)
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
 
+	items, err := buildAdminUserResponses(users)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
 	pageInfo.SetTotal(int(total))
-	pageInfo.SetItems(buildAdminUserResponses(users))
+	pageInfo.SetItems(items)
 
 	common.ApiSuccess(c, pageInfo)
 	return
 }
 
 func SearchUsers(c *gin.Context) {
+	siteID, err := userSiteFilter(c)
+	if err != nil {
+		common.ApiErrorStatus(c, http.StatusBadRequest, err)
+		return
+	}
 	keyword := c.Query("keyword")
 	group := c.Query("group")
 	var role *int
@@ -421,14 +483,19 @@ func SearchUsers(c *gin.Context) {
 	}
 	pageInfo := common.GetPageQuery(c)
 	sortOptions := model.NewUserSortOptions(c.Query("sort_by"), c.Query("sort_order"))
-	users, total, err := model.SearchUsers(keyword, group, role, status, pageInfo.GetStartIdx(), pageInfo.GetPageSize(), visibleUserRoleCeiling(c.GetInt("role")), sortOptions)
+	users, total, err := model.SearchUsers(keyword, group, role, status, pageInfo.GetStartIdx(), pageInfo.GetPageSize(), visibleUserRoleCeiling(c.GetInt("role")), siteID, sortOptions)
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
 
+	items, err := buildAdminUserResponses(users)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
 	pageInfo.SetTotal(int(total))
-	pageInfo.SetItems(buildAdminUserResponses(users))
+	pageInfo.SetItems(items)
 	common.ApiSuccess(c, pageInfo)
 	return
 }
@@ -462,10 +529,15 @@ func GetUser(c *gin.Context) {
 		return
 	}
 	user.AdminPermissions = authz.Capabilities(user.Id, user.Role)
+	items, err := buildAdminUserResponses([]*model.User{user})
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
-		"data":    adminUserResponse{User: user, LiveQuota: user.ToBaseUser().Quota},
+		"data":    items[0],
 	})
 	return
 }

@@ -33,6 +33,31 @@ var (
 // AdtyLoadCustomDomains 由 11.8 注册：返回已经 active 的自定义域名（小写主机名 → 站点 id）。
 var AdtyLoadCustomDomains func() (map[string]int, error)
 
+// AdtySiteNames returns display names without exposing the sites' financial or private settings.
+// A missing historical site keeps its ID and an empty name; site 0 is always the main site.
+func AdtySiteNames(siteIDs []int) (map[int]string, error) {
+	names := map[int]string{0: common.SystemName}
+	ids := make([]int, 0, len(siteIDs))
+	seen := map[int]bool{}
+	for _, id := range siteIDs {
+		if id > 0 && !seen[id] {
+			ids = append(ids, id)
+			seen[id] = true
+		}
+	}
+	if len(ids) == 0 {
+		return names, nil
+	}
+	var sites []model.AdtySite
+	if err := model.DB.Select("id", "subdomain", "root_domain", "brand").Where("id IN ?", ids).Find(&sites).Error; err != nil {
+		return nil, err
+	}
+	for i := range sites {
+		names[sites[i].Id] = AdtyBrandFor(&sites[i]).Name
+	}
+	return names, nil
+}
+
 // InvalidateAdtySiteCache 在站点或自定义域名变更后调用，下次读取时重建。定价缓存一起清：
 // 关站转移客户时会同时写定价。
 func InvalidateAdtySiteCache() {

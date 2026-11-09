@@ -37,7 +37,7 @@ import {
   requireServerSuccess,
 } from '@/lib/server-error-message'
 
-import { getGroups, getUsers, searchUsers } from '../api'
+import { getGroups, getUsers, getUserSites, searchUsers } from '../api'
 import {
   USER_STATUS,
   getUserStatusOptions,
@@ -89,6 +89,7 @@ export function UsersTable() {
       { columnId: 'status', searchKey: 'status', type: 'array' },
       { columnId: 'role', searchKey: 'role', type: 'array' },
       { columnId: 'group', searchKey: 'group', type: 'array' },
+      { columnId: 'site_id', searchKey: 'site_id', type: 'array' },
     ],
   })
   const statusFilter =
@@ -108,6 +109,19 @@ export function UsersTable() {
     queryKey: ['groups'],
     queryFn: async () => requireServerSuccess(await getGroups()),
     staleTime: 5 * 60 * 1000,
+  })
+
+  const siteFilter =
+    (columnFilters.find((filter) => filter.id === 'site_id')?.value as
+      | string[]
+      | undefined) ?? []
+  const {
+    data: sitesData,
+    isError: sitesError,
+    refetch: refetchSites,
+  } = useQuery({
+    queryKey: ['user-sites', refreshTrigger],
+    queryFn: async () => requireServerSuccess(await getUserSites()),
   })
 
   const sortParams = useMemo(() => {
@@ -142,6 +156,7 @@ export function UsersTable() {
       statusFilter,
       roleFilter,
       groupFilter,
+      siteFilter,
       sortParams,
       refreshTrigger,
     ],
@@ -154,6 +169,8 @@ export function UsersTable() {
       const params = {
         p: pagination.pageIndex + 1,
         page_size: pagination.pageSize,
+        site_id:
+          siteFilter[0] === undefined ? undefined : Number(siteFilter[0]),
         ...sortParams,
       }
 
@@ -225,7 +242,12 @@ export function UsersTable() {
       columns={columns}
       isLoading={isLoading}
       isFetching={isFetching}
-      afterTable={isError && <ErrorState onRetry={() => void refetch()} />}
+      afterTable={
+        <>
+          {isError && <ErrorState onRetry={() => void refetch()} />}
+          {sitesError && <ErrorState onRetry={() => void refetchSites()} />}
+        </>
+      }
       emptyTitle={t('No Users Found')}
       emptyDescription={t(
         'No users available. Try adjusting your search or filters.'
@@ -236,6 +258,15 @@ export function UsersTable() {
         searchPlaceholder: t('Filter by username, name or email...'),
         searchDebounceMs: 500,
         filters: [
+          {
+            columnId: 'site_id',
+            title: t('Site'),
+            options: (sitesData?.data ?? []).map((site) => ({
+              value: String(site.site_id),
+              label: `${site.site_name || t('Site')} · ${site.site_id}`,
+            })),
+            singleSelect: true,
+          },
           {
             columnId: 'status',
             title: t('Status'),

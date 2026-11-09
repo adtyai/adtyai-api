@@ -62,6 +62,14 @@ async function renderUsers(
     if (url === '/api/group/') {
       return { data: { success: true, data: ['default', 'premium'] } }
     }
+    if (url === '/api/user/sites') {
+      return {
+        data: {
+          success: true,
+          data: [{ site_id: 0, site_name: 'Main Studio' }],
+        },
+      }
+    }
     await loadGate?.()
     return {
       data: {

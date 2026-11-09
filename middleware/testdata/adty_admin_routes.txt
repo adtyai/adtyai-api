@@ -32,6 +32,7 @@ GET /api/user/2fa/stats user:read
 GET /api/user/:id user:read
 GET /api/user/:id/oauth/bindings user:read
 GET /api/user/search user:read
+GET /api/user/sites user:read
 GET /api/user/topup billing:read
 GET /api/vendors/ model:read
 GET /api/vendors/:id model:read

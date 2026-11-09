@@ -47,12 +47,16 @@ it('keeps the newly selected user when the previous user request finishes later'
     used_quota: 0,
     request_count: 0,
     group: 'default',
+    site_id: 7,
+    site_name: 'North Studio',
   })
   const bob = userSchema.parse({
     ...alice,
     id: 8,
     username: 'bob',
     display_name: 'Bob',
+    site_id: 8,
+    site_name: 'South Studio',
   })
   let finishAlice!: (value: unknown) => void
   let finishBob!: (value: unknown) => void
@@ -89,7 +93,12 @@ it('keeps the newly selected user when the previous user request finishes later'
   const view = render(wrapper(alice))
   view.rerender(wrapper(bob))
   await act(async () => {
-    finishBob({ data: { success: true, data: bob } })
+    finishBob({
+      data: {
+        success: true,
+        data: { ...bob, site_id: 9, site_name: 'Current Studio' },
+      },
+    })
   })
   expect(screen.getByLabelText('Username')).toHaveValue('bob')
   await act(async () => {
@@ -97,5 +106,8 @@ it('keeps the newly selected user when the previous user request finishes later'
   })
   expect(screen.getByLabelText('Username')).toHaveValue('bob')
   expect(screen.getByLabelText('Display Name')).toHaveValue('Bob')
+  expect(screen.getByLabelText('Site')).toHaveTextContent('Current Studio')
+  expect(screen.getByLabelText('Site ID')).toHaveTextContent('9')
+  expect(screen.queryByText('North Studio')).not.toBeInTheDocument()
   client.clear()
 })

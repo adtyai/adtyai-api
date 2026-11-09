@@ -136,6 +136,8 @@ export function UsersMutateDrawer({
     currentRow?.live_quota ?? currentRow?.quota ?? 0
   )
   const [ledgerOpen, setLedgerOpen] = useState(false)
+  const [loadedUser, setLoadedUser] = useState<User>()
+  const siteUser = loadedUser?.id === currentRow?.id ? loadedUser : currentRow
   // Matrix as loaded from the server; an unchanged matrix is not resubmitted so
   // routine edits of an administrator do not require step-up verification.
   const loadedPermissions = useRef<AdminPermissionMatrix | undefined>(undefined)
@@ -170,6 +172,7 @@ export function UsersMutateDrawer({
         .then((result) => {
           if (cancelled) return
           if (result.success && result.data) {
+            setLoadedUser(result.data)
             loadedPermissions.current = result.data.admin_permissions
             setCurrentQuotaRaw(result.data.quota)
             setCurrentLiveQuota(result.data.live_quota ?? result.data.quota)
@@ -296,6 +299,7 @@ export function UsersMutateDrawer({
     try {
       const result = requireServerSuccess(await getUser(currentRow.id))
       if (result.success && result.data) {
+        setLoadedUser(result.data)
         loadedPermissions.current = result.data.admin_permissions
         setCurrentQuotaRaw(result.data.quota)
         setCurrentLiveQuota(result.data.live_quota ?? result.data.quota)
@@ -342,6 +346,36 @@ export function UsersMutateDrawer({
                 <h3 className='text-sm font-medium'>
                   {t('Basic Information')}
                 </h3>
+
+                {isUpdate && (
+                  <dl className='grid grid-cols-2 gap-3 text-sm'>
+                    <div className='min-w-0'>
+                      <dt
+                        id='user-site-label'
+                        className='text-muted-foreground'
+                      >
+                        {t('Site')}
+                      </dt>
+                      <dd
+                        aria-labelledby='user-site-label'
+                        className='break-words'
+                      >
+                        {siteUser?.site_name || t('Site')}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt
+                        id='user-site-id-label'
+                        className='text-muted-foreground'
+                      >
+                        {t('Site ID')}
+                      </dt>
+                      <dd aria-labelledby='user-site-id-label'>
+                        {siteUser?.site_id ?? 0}
+                      </dd>
+                    </div>
+                  </dl>
+                )}
 
                 <FormField
                   control={form.control}

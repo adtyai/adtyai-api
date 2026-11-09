@@ -63,11 +63,11 @@ func TestAdminUserListHidesSameOrHigherRole(t *testing.T) {
 	}
 	t.Cleanup(func() {
 		for _, row := range rows {
-			DB.Delete(&User{}, row.Id)
+			require.NoError(t, DB.Unscoped().Delete(&User{}, row.Id).Error)
 		}
 	})
 
-	visible, _, err := SearchUsers("vis-", "", nil, nil, 0, 20, common.RoleAdminUser)
+	visible, _, err := SearchUsers("vis-", "", nil, nil, 0, 20, common.RoleAdminUser, nil)
 	require.NoError(t, err)
 	names := make([]string, 0, len(visible))
 	for _, row := range visible {
@@ -75,7 +75,7 @@ func TestAdminUserListHidesSameOrHigherRole(t *testing.T) {
 	}
 	assert.Equal(t, []string{"vis-common"}, names)
 
-	all, _, err := SearchUsers("vis-", "", nil, nil, 0, 20, 0)
+	all, _, err := SearchUsers("vis-", "", nil, nil, 0, 20, 0, nil)
 	require.NoError(t, err)
 	assert.Len(t, all, 3)
 }

@@ -312,13 +312,20 @@ async function renderUsersList(liveQuota?: number) {
       },
     },
   }
-  const get = vi
-    .spyOn(api, 'get')
-    .mockImplementation(async (url) =>
-      url === '/api/group/'
-        ? { data: { success: true, data: ['default'] } }
-        : usersResponse
-    )
+  const get = vi.spyOn(api, 'get').mockImplementation(async (url) => {
+    if (url === '/api/group/') {
+      return { data: { success: true, data: ['default'] } }
+    }
+    if (url === '/api/user/sites') {
+      return {
+        data: {
+          success: true,
+          data: [{ site_id: 0, site_name: 'Main Studio' }],
+        },
+      }
+    }
+    return usersResponse
+  })
   const root = createRootRoute()
   const auth = createRoute({ getParentRoute: () => root, id: '_authenticated' })
   const users = createRoute({

@@ -36,6 +36,16 @@ const usersSearchSchema = z.object({
     .optional()
     .catch([]),
   group: z.array(z.string()).optional().catch([]),
+  site_id: z
+    .array(
+      z
+        .string()
+        .regex(/^(0|[1-9]\d*)$/)
+        .refine((value) => Number.isSafeInteger(Number(value)))
+    )
+    .max(1)
+    .optional()
+    .catch([]),
 })
 
 export const Route = createFileRoute('/_authenticated/users/')({

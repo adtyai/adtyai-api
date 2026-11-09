@@ -109,7 +109,7 @@ func TestAdtyResourcesHaveNoDefaultRoles(t *testing.T) {
 
 func TestAdminHasNoPermissionByDefault(t *testing.T) {
 	f := newAdtyGuardFixture(t)
-	for _, path := range []string{"/api/channel/", "/api/user/", "/api/log/", "/api/models/"} {
+	for _, path := range []string{"/api/channel/", "/api/user/", "/api/user/sites", "/api/log/", "/api/models/"} {
 		resp := adtyJSON(t, f.engine, http.MethodGet, path, "", f.token)
 		assert.Equal(t, http.StatusForbidden, resp.Code, path)
 	}
@@ -118,11 +118,27 @@ func TestAdminHasNoPermissionByDefault(t *testing.T) {
 
 func TestGrantAndRevokeTakeEffectImmediately(t *testing.T) {
 	f := newAdtyGuardFixture(t)
-	assert.Equal(t, http.StatusForbidden, adtyJSON(t, f.engine, http.MethodGet, "/api/user/", "", f.token).Code)
+	pat := createAdtyScopedToken(t, f.admin.Id, "adty_user:read")
+	for _, path := range []string{"/api/user/", "/api/user/sites"} {
+		for _, credential := range []string{f.token, pat} {
+			assert.Equal(t, http.StatusForbidden, adtyJSON(t, f.engine, http.MethodGet, path, "", credential).Code)
+			f.grant(t, authz.AdtyUserRead)
+			response := adtyJSON(t, f.engine, http.MethodGet, path, "", credential)
+			assert.Equal(t, http.StatusOK, response.Code)
+			assert.Contains(t, response.Body.String(), `"success":true`)
+			f.grant(t)
+			assert.Equal(t, http.StatusForbidden, adtyJSON(t, f.engine, http.MethodGet, path, "", credential).Code)
+		}
+	}
 	f.grant(t, authz.AdtyUserRead)
-	assert.Equal(t, http.StatusOK, adtyJSON(t, f.engine, http.MethodGet, "/api/user/", "", f.token).Code)
-	f.grant(t)
-	assert.Equal(t, http.StatusForbidden, adtyJSON(t, f.engine, http.MethodGet, "/api/user/", "", f.token).Code)
+	wrongScope := createAdtyScopedToken(t, f.admin.Id, "user:read")
+	assert.Equal(t, http.StatusForbidden, adtyJSON(t, f.engine, http.MethodGet, "/api/user/sites", "", wrongScope).Code)
+	ordinary := adtySessionToken(t, f.db, "site-choice-customer", common.RoleCommonUser)
+	assert.Equal(t, http.StatusForbidden, adtyJSON(t, f.engine, http.MethodGet, "/api/user/sites", "", ordinary).Code)
+	assert.Equal(t, http.StatusUnauthorized, adtyJSON(t, f.engine, http.MethodGet, "/api/user/sites", "", "").Code)
+	rootSites := adtyJSON(t, f.engine, http.MethodGet, "/api/user/sites", "", f.root)
+	assert.Equal(t, http.StatusOK, rootSites.Code)
+	assert.Contains(t, rootSites.Body.String(), `"site_id":0`)
 }
 
 func TestRootBypassesGuard(t *testing.T) {

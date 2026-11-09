@@ -506,3 +506,8 @@
 | `web/src/features/profile/`、`web/src/features/system-settings/billing/`、`system-settings/types.ts` | 删除签到卡、设置分区、默认值和专用 API/类型/组件；真实 Profile 对旧启用状态不请求不展示，旧分区回退额度设置 | 后端永久403及历史签到资金保护保留；删除路径同步登记 | UI-CHECKIN-01 |
 | `web/src/hooks/use-notifications.ts`、`__tests__/notifications.test.tsx` | 公告未读计算订阅已读 key 数组；ID 和历史内容 key 的多个挂载消费者即时刷新 | 仅修复响应性，不能代替账号隔离或服务端回执 | N-03 |
 | `web/src/i18n/locales/ko.json` | Pancake 的 Store 使用韩语 스토어 | 与相邻商店文案一致，保留翻译键 | I18N-01 |
+| `model/user.go`、`model/user_pagination_test.go`、`model/pancake_refund_test.go` | 用户列表/搜索的 count 和分页共用站点约束，提供受角色上限约束的站点 ID 集合；修正旧分页 fixture 的软删除残留 | 主站 0 与全部用户语义明确，保留角色和软删除边界 | M-01 |
+| `controller/user.go`、`service/adty_site_resolve.go`、`controller/adty_user_projection_test.go` | 批量投影站点名到列表/搜索/详情；严格校验 site_id；只输出可见站点 ID/名称，三库 HTTP 回归 | 避免 N+1、旧品牌缓存及泄露站点配置 | M-01 |
+| `router/api-router.go`、`middleware/access_token_routes.go`、`router/adty_admin_permission_test.go` | 新增用户站点选项路由，复用用户读取授权，验证 session/PAT 授予、撤销和错误 scope | ADTY 模式使用 adty_user:read，用户筛选不替代授权 | M-01 |
+| `web/src/features/users/`、`web/src/routes/_authenticated/users/index.tsx` | 保留站点字段，复用 DataTablePage/useTableUrlState 单选筛选及详情 Drawer，显示名称和 ID，过期详情请求不覆盖当前用户 | URL 恢复、切站重置分页、主站 0、清除和加载错误重试 | M-01 |
+| `scripts/adty/browser-business.sh`、`web/scripts/adty/browser-user-sites.mjs` | 独立生产浏览器场景验证桌面/移动列表、筛选、详情和刷新；SQL 仅准备隔离客户归属和品牌 fixture | 验证用户查询链，不冒称品牌保存、客户注册或全平台验收 | M-01 |

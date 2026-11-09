@@ -405,7 +405,7 @@ func GetMaxUserId() int {
 	return user.Id
 }
 
-func GetAllUsers(pageInfo *common.PageInfo, belowRole int, sortOptions ...UserSortOptions) (users []*User, total int64, err error) {
+func GetAllUsers(pageInfo *common.PageInfo, belowRole int, siteID *int, sortOptions ...UserSortOptions) (users []*User, total int64, err error) {
 	// Start transaction
 	tx := DB.Begin()
 	if tx.Error != nil {
@@ -418,7 +418,11 @@ func GetAllUsers(pageInfo *common.PageInfo, belowRole int, sortOptions ...UserSo
 	}()
 
 	// Get total count within transaction
-	err = limitVisibleRoles(tx.Unscoped().Model(&User{}), belowRole).Count(&total).Error
+	query := limitVisibleRoles(tx.Unscoped().Model(&User{}), belowRole)
+	if siteID != nil {
+		query = query.Where("site_id = ?", *siteID)
+	}
+	err = query.Count(&total).Error
 	if err != nil {
 		tx.Rollback()
 		return nil, 0, err
@@ -426,7 +430,7 @@ func GetAllUsers(pageInfo *common.PageInfo, belowRole int, sortOptions ...UserSo
 
 	// Get paginated users within same transaction
 	order := resolveUserSortOptions(sortOptions)
-	err = order.Apply(limitVisibleRoles(tx.Unscoped(), belowRole)).Limit(pageInfo.GetPageSize()).Offset(pageInfo.GetStartIdx()).Omit("password", "access_token").Find(&users).Error
+	err = order.Apply(query).Limit(pageInfo.GetPageSize()).Offset(pageInfo.GetStartIdx()).Omit("password", "access_token").Find(&users).Error
 	if err != nil {
 		tx.Rollback()
 		return nil, 0, err
@@ -447,7 +451,14 @@ func limitVisibleRoles(tx *gorm.DB, belowRole int) *gorm.DB {
 	return tx
 }
 
-func SearchUsers(keyword string, group string, role *int, status *int, startIdx int, num int, belowRole int, sortOptions ...UserSortOptions) ([]*User, int64, error) {
+// GetUserSiteIDs uses the same visibility as the management list, including archived users.
+func GetUserSiteIDs(belowRole int) ([]int, error) {
+	siteIDs := []int{}
+	err := limitVisibleRoles(DB.Unscoped().Model(&User{}), belowRole).Distinct("site_id").Order("site_id ASC").Pluck("site_id", &siteIDs).Error
+	return siteIDs, err
+}
+
+func SearchUsers(keyword string, group string, role *int, status *int, startIdx int, num int, belowRole int, siteID *int, sortOptions ...UserSortOptions) ([]*User, int64, error) {
 	var users []*User
 	var total int64
 	var err error
@@ -465,6 +476,9 @@ func SearchUsers(keyword string, group string, role *int, status *int, startIdx 
 
 	// 构建基础查询
 	query := limitVisibleRoles(tx.Unscoped().Model(&User{}), belowRole)
+	if siteID != nil {
+		query = query.Where("site_id = ?", *siteID)
+	}
 
 	// 构建搜索条件
 	likeCondition := "username LIKE ? OR email LIKE ? OR display_name LIKE ?"

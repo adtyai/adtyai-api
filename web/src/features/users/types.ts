@@ -34,6 +34,8 @@ export type UserRole = z.infer<typeof userRoleSchema>
 
 export const userSchema = z.object({
   id: z.number(),
+  site_id: z.number().int().nonnegative().optional(),
+  site_name: z.string().optional(),
   username: z.string(),
   display_name: z.string(),
   password: z.string().optional(),
@@ -85,6 +87,7 @@ export type UserSortBy =
 export type UserSortOrder = 'asc' | 'desc'
 
 export interface GetUsersParams {
+  site_id?: number
   p?: number
   page_size?: number
   sort_by?: UserSortBy
@@ -103,6 +106,7 @@ export interface GetUsersResponse {
 }
 
 export interface SearchUsersParams {
+  site_id?: number
   keyword?: string
   group?: string
   role?: string

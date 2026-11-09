@@ -14,9 +14,10 @@ case "$adty_browser_scenario" in
     ADTY_BROWSER_SCENARIO=wallet bash "$0"
     ADTY_BROWSER_SCENARIO=site-status bash "$0"
     ADTY_BROWSER_SCENARIO=password-reset bash "$0"
+    ADTY_BROWSER_SCENARIO=user-sites bash "$0"
     exit 0
     ;;
-  deployment | wallet | site-status | password-reset) ;;
+  deployment | wallet | site-status | password-reset | user-sites) ;;
   *) echo 'browser-business: unknown scenario' >&2; exit 2 ;;
 esac
 

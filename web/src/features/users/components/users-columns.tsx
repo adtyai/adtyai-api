@@ -140,6 +140,23 @@ export function useUsersColumns(): ColumnDef<User>[] {
         meta: { mobileTitle: true },
       },
       {
+        accessorKey: 'site_id',
+        header: t('Site'),
+        cell: ({ row }) => (
+          <div className='flex min-w-0 flex-col gap-1'>
+            <LongText className='max-w-[180px] text-sm'>
+              {row.original.site_name || t('Site')}
+            </LongText>
+            <span className='text-muted-foreground text-xs'>
+              {t('Site ID')}: {row.original.site_id ?? 0}
+            </span>
+          </div>
+        ),
+        enableSorting: false,
+        size: 200,
+        meta: { mobileOrder: 15 },
+      },
+      {
         accessorKey: 'status',
         header: t('Status'),
         cell: ({ row }) => {

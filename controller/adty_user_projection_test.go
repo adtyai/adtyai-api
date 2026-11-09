@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -20,6 +21,129 @@ import (
 )
 
 // 客户接口不露渠道、倍率和上游信息（任务 7.1）。
+
+func TestAdminUserSiteFiltersDatabaseMatrix(t *testing.T) {
+	for _, dialect := range []struct{ kind, env string }{{"sqlite", ""}, {"mysql", "TEST_MYSQL_DSN"}, {"postgres", "TEST_POSTGRES_DSN"}} {
+		t.Run(dialect.kind, func(t *testing.T) {
+			if dialect.env != "" && os.Getenv(dialect.env) == "" {
+				t.Skip("database DSN not configured")
+			}
+			db := modelManagementDB(t, dialect.kind, os.Getenv(dialect.env))
+			require.NoError(t, db.AutoMigrate(&model.AdtySite{}))
+			require.NoError(t, db.Create(&model.AdtySite{Id: 7, Subdomain: "north", Brand: `{"name":"North Studio","smtp_password":"secret-mail"}`}).Error)
+			require.NoError(t, db.Create(&model.AdtySite{Id: 8, Subdomain: "south"}).Error)
+			users := []model.User{
+				{Username: "site-user-main", Role: common.RoleCommonUser, SiteId: 0, Status: 1},
+				{Username: "site-user-north", Role: common.RoleCommonUser, SiteId: 7, Status: 1},
+				{Username: "site-user-disabled", Role: common.RoleCommonUser, SiteId: 7, Status: 2},
+				{Username: "site-user-south", Role: common.RoleCommonUser, SiteId: 8, Status: 1},
+				{Username: "site-user-admin", Role: common.RoleAdminUser, SiteId: 7, Status: 1},
+				{Username: "site-user-root", Role: common.RoleRootUser, SiteId: 7, Status: 1},
+				{Username: "site-user-deleted", Role: common.RoleCommonUser, SiteId: 7, Status: 1},
+				{Username: "site-user-orphan", Role: common.RoleCommonUser, SiteId: 77, Status: 1},
+			}
+			require.NoError(t, db.Create(&users).Error)
+			require.NoError(t, db.Delete(&users[6]).Error)
+			for _, tc := range []struct {
+				name, path  string
+				handler     gin.HandlerFunc
+				role, total int
+				want        []int
+			}{
+				{"all sites", "/api/user/?sort_by=id&sort_order=asc", GetAllUsers, common.RoleRootUser, 8, []int{0, 1, 2, 3, 4, 5, 6, 7}},
+				{"site page one", "/api/user/?site_id=7&sort_by=id&sort_order=asc&page_size=2", GetAllUsers, common.RoleRootUser, 5, []int{1, 2}},
+				{"site page two", "/api/user/?site_id=7&sort_by=id&sort_order=asc&page_size=2&p=2", GetAllUsers, common.RoleRootUser, 5, []int{4, 5}},
+				{"main site zero", "/api/user/?site_id=0", GetAllUsers, common.RoleRootUser, 1, []int{0}},
+				{"unknown site", "/api/user/?site_id=900", GetAllUsers, common.RoleRootUser, 0, []int{}},
+				{"admin role ceiling", "/api/user/?site_id=7&sort_by=id&sort_order=asc", GetAllUsers, common.RoleAdminUser, 3, []int{1, 2, 6}},
+				{"search site status role", "/api/user/search?site_id=7&keyword=site-user&status=1&role=1&group=default", SearchUsers, common.RoleRootUser, 1, []int{1}},
+				{"search deleted", "/api/user/search?site_id=7&status=-1", SearchUsers, common.RoleRootUser, 1, []int{6}},
+				{"search main site", "/api/user/search?site_id=0&keyword=site-user", SearchUsers, common.RoleRootUser, 1, []int{0}},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					recorder := httptest.NewRecorder()
+					c, _ := gin.CreateTestContext(recorder)
+					c.Request = httptest.NewRequest(http.MethodGet, tc.path, nil)
+					c.Set("role", tc.role)
+					tc.handler(c)
+					var response struct {
+						Success bool `json:"success"`
+						Data    struct {
+							Total int `json:"total"`
+							Items []struct {
+								ID       int    `json:"id"`
+								SiteID   int    `json:"site_id"`
+								SiteName string `json:"site_name"`
+							} `json:"items"`
+						} `json:"data"`
+					}
+					require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+					require.True(t, response.Success, recorder.Body.String())
+					require.Equal(t, tc.total, response.Data.Total)
+					require.Len(t, response.Data.Items, len(tc.want))
+					for i, index := range tc.want {
+						view := response.Data.Items[i]
+						assert.Equal(t, users[index].Id, view.ID)
+						assert.Equal(t, users[index].SiteId, view.SiteID)
+						name := map[int]string{0: common.SystemName, 7: "North Studio", 8: "south", 77: ""}[view.SiteID]
+						assert.Equal(t, name, view.SiteName)
+					}
+					assert.NotContains(t, recorder.Body.String(), "secret-mail")
+				})
+			}
+			for _, siteID := range []string{"-1", "north", "1.5", "999999999999999999999999999999", ""} {
+				for _, handler := range []gin.HandlerFunc{GetAllUsers, SearchUsers} {
+					recorder := httptest.NewRecorder()
+					c, _ := gin.CreateTestContext(recorder)
+					c.Request = httptest.NewRequest(http.MethodGet, "/api/user/?site_id="+siteID, nil)
+					c.Set("role", common.RoleRootUser)
+					handler(c)
+					assert.Equal(t, http.StatusBadRequest, recorder.Code, "invalid site_id %q", siteID)
+					assert.NotContains(t, recorder.Body.String(), "site-user-")
+				}
+			}
+			recorder := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(recorder)
+			c.Request = httptest.NewRequest(http.MethodGet, "/api/user/"+fmt.Sprint(users[1].Id), nil)
+			c.Params = gin.Params{{Key: "id", Value: fmt.Sprint(users[1].Id)}}
+			c.Set("role", common.RoleRootUser)
+			GetUser(c)
+			assert.Contains(t, recorder.Body.String(), `"site_name":"North Studio"`)
+			assert.NotContains(t, recorder.Body.String(), "secret-mail")
+			require.NoError(t, db.Model(&users[5]).Update("site_id", 9).Error)
+			for _, tc := range []struct {
+				role int
+				ids  []int
+			}{
+				{common.RoleRootUser, []int{0, 7, 8, 9, 77}},
+				{common.RoleAdminUser, []int{0, 7, 8, 77}},
+			} {
+				recorder := httptest.NewRecorder()
+				c, _ := gin.CreateTestContext(recorder)
+				c.Request = httptest.NewRequest(http.MethodGet, "/api/user/sites", nil)
+				c.Set("role", tc.role)
+				GetUserSites(c)
+				var response struct {
+					Success bool `json:"success"`
+					Data    []struct {
+						SiteID   int    `json:"site_id"`
+						SiteName string `json:"site_name"`
+					} `json:"data"`
+				}
+				require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+				require.True(t, response.Success, recorder.Body.String())
+				require.Len(t, response.Data, len(tc.ids))
+				for i, id := range tc.ids {
+					assert.Equal(t, id, response.Data[i].SiteID)
+				}
+				assert.Equal(t, "North Studio", response.Data[1].SiteName)
+				assert.NotContains(t, recorder.Body.String(), "brand")
+				assert.NotContains(t, recorder.Body.String(), "secret-mail")
+				assert.NotContains(t, recorder.Body.String(), "quota")
+			}
+		})
+	}
+}
 
 func TestAdminUserBalancesPreserveRawQuotaAndExposeLiveQuota(t *testing.T) {
 	db := adtyTestDB(t)
