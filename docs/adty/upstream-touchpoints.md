@@ -488,3 +488,7 @@
 | `service/referral_test.go` | 用真实登录指纹落库值尝试解密配置凭据 | 防止业务HMAC输出与凭据加密key重合 | R-05 |
 | `relay/channel/openai/relay_realtime.go` | 串行保护共享用量/音频配置，监听请求取消，限制双向帧大小，关闭时有界收敛并等待读协程，失败预扣段只累计一次，兼容缺失 response 的完成事件 | 防止 Realtime 用量丢失/重复累计、panic 及连接资源泄漏 | G-01 |
 | `relay/channel/openai/relay_realtime_test.go` | 用真实双向 WebSocket 覆盖取消、写失败、双向超限、并发精确用量与真实隔离 PostgreSQL 余额不足 | 验证 Realtime 生命周期及失败预扣计量回归 | G-01 |
+| `model/channel_cache.go`、`model/channel_satisfy.go`、`model/ability.go`、`model/pricing.go` | 配置提交后失效快照，失败时从数据库核验路由、状态和高级配置；generation 拒绝旧重载，定时故障保留有效快照 | 防止删除或禁用后继续使用旧渠道 | D-CACHE-01 |
+| `model/channel.go`、`model/adty_group.go`、`model/model_meta.go` | 状态及分组/模型写入使用统一刷新，多 Key 轮询在缓存回退和恢复期间保留游标 | 配置撤销与轮询恢复一致性 | D-CACHE-01 |
+| `controller/channel.go`、`controller/channel_priority.go`、`controller/channel_upstream_update.go`、`controller/task_plugin.go`、`service/codex_credential_refresh.go`、`service/codex_credential_refresh_task.go` | 配置变更统一调用 RefreshChannelCache；批量解绑、模型和凭据分页更新在部分提交后失败也刷新 | 覆盖管理接口及后台写入的缓存生效边界 | D-CACHE-01 |
+| `controller/channel_cache_refresh_test.go`、`model/channel_cache_failure_test.go`、`service/codex_credential_refresh_test.go` | 真实数据库覆盖删除/禁用/改模型、查询失败、旧重载、单 Key 状态、轮询恢复及批量部分提交 | SQLite/MySQL/PostgreSQL 矩阵与 race 回归 | D-CACHE-01 |

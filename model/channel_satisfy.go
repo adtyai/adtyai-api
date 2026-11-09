@@ -16,6 +16,10 @@ func IsChannelEnabledForGroupModel(group string, modelName string, channelID int
 	}
 
 	channelSyncLock.RLock()
+	if channelCacheInvalid {
+		channelSyncLock.RUnlock()
+		return isChannelEnabledForGroupModelDB(group, modelName, channelID)
+	}
 	defer channelSyncLock.RUnlock()
 
 	if group2model2channels == nil {
@@ -45,8 +49,12 @@ func IsChannelEnabledForAnyGroupModel(groups []string, modelName string, channel
 }
 
 func isChannelEnabledForGroupModelDB(group string, modelName string, channelID int) bool {
+	channel, err := GetChannelById(channelID, false)
+	if err != nil || channel.Status != common.ChannelStatusEnabled {
+		return false
+	}
 	var count int64
-	err := DB.Model(&Ability{}).
+	err = DB.Model(&Ability{}).
 		Where(commonGroupCol+" = ? and model = ? and channel_id = ? and enabled = ?", group, modelName, channelID, true).
 		Count(&count).Error
 	if err == nil && count > 0 {

@@ -62,6 +62,17 @@ func runCodexCredentialAutoRefreshOnce() {
 
 	var refreshed int
 	var scanned int
+	defer func() {
+		if refreshed == 0 {
+			return
+		}
+		defer func() {
+			if r := recover(); r != nil {
+				logger.LogWarn(ctx, common.LogText("codex credential auto-refresh: InitChannelCache panic: %v", r))
+			}
+		}()
+		_ = model.RefreshChannelCache()
+	}()
 
 	offset := 0
 	for {
@@ -127,17 +138,6 @@ func runCodexCredentialAutoRefreshOnce() {
 			refreshed++
 			logger.LogInfo(ctx, common.LogText("codex credential auto-refresh: channel_id=%d name=%s refreshed, expires_at=%s", ch.Id, ch.Name, newKey.Expired))
 		}
-	}
-
-	if refreshed > 0 {
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					logger.LogWarn(ctx, common.LogText("codex credential auto-refresh: InitChannelCache panic: %v", r))
-				}
-			}()
-			model.InitChannelCache()
-		}()
 	}
 
 	if common.DebugEnabled {

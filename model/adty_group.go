@@ -550,7 +550,7 @@ func MigrateAdtyGroup(fromID, toID string) (AdtyGroupRefs, error) {
 		}
 	}
 	if moved.Channels > 0 {
-		InitChannelCache()
+		_ = RefreshChannelCache()
 	}
 	return moved, nil
 }

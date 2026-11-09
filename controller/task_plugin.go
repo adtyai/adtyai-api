@@ -518,6 +518,11 @@ func SetTaskPluginStatus(c *gin.Context) {
 	key := c.Param("key")
 	disabledChannels := 0
 	unboundChannels := 0
+	defer func() {
+		if unboundChannels > 0 {
+			_ = model.RefreshChannelCache()
+		}
+	}()
 	if !*request.Enabled {
 		channels, inFlight, usageErr := model.GetTaskPluginUsage(key)
 		if usageErr != nil {
@@ -548,9 +553,6 @@ func SetTaskPluginStatus(c *gin.Context) {
 				if model.UpdateChannelStatus(channel.Id, "", common.ChannelStatusManuallyDisabled, "task plugin disabled") {
 					disabledChannels++
 				}
-			}
-			if unboundChannels > 0 {
-				model.InitChannelCache()
 			}
 		}
 	}

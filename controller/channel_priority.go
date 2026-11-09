@@ -34,7 +34,7 @@ func ReorderChannelPriority(c *gin.Context) {
 		return
 	}
 	if !move.Preview && len(order.Changes) > 0 {
-		model.InitChannelCache()
+		_ = model.RefreshChannelCache()
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": order})
 }

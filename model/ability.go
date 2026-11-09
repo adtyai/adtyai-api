@@ -168,12 +168,15 @@ func GetChannel(
 		return nil, nil
 	}
 	err = DB.First(&channel, "id = ?", channel.Id).Error
+	if err == nil && channel.Status != common.ChannelStatusEnabled {
+		return nil, nil
+	}
 	return &channel, err
 }
 
 // filterAbilitiesByConstraints applies the same ChannelSatisfiesFilters
-// predicate used by the memory-cache path. A failed channel lookup fails
-// closed when a task-plugin identity is required and fails open otherwise.
+// predicate used by the memory-cache path. A failed lookup cannot authorize a
+// channel, including while a revoked cache is falling back to the database.
 func filterAbilitiesByConstraints(abilities []Ability, modelName string, filters []dto.ChannelFilter) []Ability {
 	if len(abilities) == 0 {
 		return nil
@@ -191,10 +194,7 @@ func filterAbilitiesByConstraints(abilities []Ability, modelName string, filters
 
 	var channels []*Channel
 	if err := DB.Where("id IN ?", channelIds).Find(&channels).Error; err != nil {
-		if identityFilterRequiresKey(filters) {
-			return nil
-		}
-		return abilities
+		return nil
 	}
 
 	channelsByID := make(map[int]*Channel, len(channels))
@@ -205,20 +205,14 @@ func filterAbilitiesByConstraints(abilities []Ability, modelName string, filters
 	filtered := make([]Ability, 0, len(abilities))
 	for _, ability := range abilities {
 		channel := channelsByID[ability.ChannelId]
+		if channel == nil || channel.Status != common.ChannelStatusEnabled {
+			continue
+		}
 		if ok, _ := ChannelSatisfiesFilters(channel, modelName, filters); ok {
 			filtered = append(filtered, ability)
 		}
 	}
 	return filtered
-}
-
-func identityFilterRequiresKey(filters []dto.ChannelFilter) bool {
-	for _, filter := range filters {
-		if filter.Kind == dto.FilterTaskPluginIdentity && filter.TaskPluginKey != "" {
-			return true
-		}
-	}
-	return false
 }
 
 func (channel *Channel) AddAbilities(tx *gorm.DB) error {
@@ -380,6 +374,7 @@ func FixAbility() (int, int, error) {
 	if err := DB.Find(&channels).Error; err != nil {
 		return 0, 0, err
 	}
+	defer func() { _ = RefreshChannelCache() }()
 	successCount := 0
 	failCount := 0
 	// 每个渠道在自己的事务里先删再写。失败会留下原来的能力行，不会先把整张表清空。
@@ -397,7 +392,6 @@ func FixAbility() (int, int, error) {
 	if err := deleteAbilitiesForMissingChannels(channels); err != nil {
 		return successCount, failCount, err
 	}
-	InitChannelCache()
 	return successCount, failCount, nil
 }
 

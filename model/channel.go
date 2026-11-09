@@ -262,7 +262,7 @@ func (channel *Channel) GetNextEnabledKey() (string, int, *types.NewAPIError) {
 	case constant.MultiKeyModePolling:
 		// Use channel-specific lock to ensure thread-safe polling
 
-		channelInfo, err := CacheGetChannelInfo(channel.Id)
+		channelInfo, fromCache, err := cacheGetChannelInfo(channel.Id)
 		if err != nil {
 			return "", 0, types.NewError(err, types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
 		}
@@ -270,10 +270,19 @@ func (channel *Channel) GetNextEnabledKey() (string, int, *types.NewAPIError) {
 			if common.DebugEnabled {
 				logger.LogDebug(nil, "channel %d polling index: %d", channel.Id, channel.ChannelInfo.MultiKeyPollingIndex)
 			}
-			if !common.MemoryCacheEnabled {
-				_ = channel.SaveChannelInfo()
-			} else {
-				// CacheUpdateChannel(channel)
+			channelSyncLock.Lock()
+			current, present := channelsIDM[channel.Id]
+			persistCursor := !fromCache || channelCacheInvalid || !present || &current.ChannelInfo != channelInfo
+			if present {
+				current.ChannelInfo.MultiKeyPollingIndex = channel.ChannelInfo.MultiKeyPollingIndex
+			}
+			channelSyncLock.Unlock()
+			if persistCursor {
+				// Persist the fresh status snapshot used for this poll, rather
+				// than overwriting it with the request's earlier channel copy.
+				info := *channelInfo
+				info.MultiKeyPollingIndex = channel.ChannelInfo.MultiKeyPollingIndex
+				_ = (&Channel{Id: channel.Id, ChannelInfo: info}).SaveChannelInfo()
 			}
 		}()
 		// Start from the saved polling index and look for the next enabled key
@@ -285,7 +294,9 @@ func (channel *Channel) GetNextEnabledKey() (string, int, *types.NewAPIError) {
 			idx := (start + i) % len(keys)
 			if getStatus(idx) == common.ChannelStatusEnabled {
 				// update polling index for next call (point to the next position)
+				channelSyncLock.Lock()
 				channel.ChannelInfo.MultiKeyPollingIndex = (idx + 1) % len(keys)
+				channelSyncLock.Unlock()
 				return keys[idx], idx, nil
 			}
 		}
@@ -816,12 +827,18 @@ func UpdateChannelStatus(channelId int, usingKey string, status int, reason stri
 	}
 
 	shouldUpdateAbilities := false
+	refreshNeeded := false
 	defer func() {
 		if shouldUpdateAbilities {
 			err := UpdateAbilityStatus(channelId, status == common.ChannelStatusEnabled)
 			if err != nil {
 				common.SysLog(common.LogText("failed to update ability status: channel_id=%d, error=%v", channelId, err))
 			}
+		}
+		// A periodic reload may have observed the old row after the early
+		// cache update. Invalidate again after both persistence stages.
+		if refreshNeeded {
+			_ = RefreshChannelCache()
 		}
 	}()
 	channel, err := GetChannelById(channelId, true)
@@ -851,6 +868,7 @@ func UpdateChannelStatus(channelId int, usingKey string, status int, reason stri
 			channel.Status = status
 			shouldUpdateAbilities = true
 		}
+		refreshNeeded = true
 		err = channel.saveStatusState()
 		if err != nil {
 			common.SysLog(common.LogText("failed to update channel status: channel_id=%d, status=%d, error=%v", channel.Id, status, err))
@@ -865,6 +883,7 @@ func EnableChannelByTag(tag string) error {
 	if err := DB.Where("tag = ?", tag).Find(&channels).Error; err != nil {
 		return err
 	}
+	defer func() { _ = RefreshChannelCache() }()
 	for _, channel := range channels {
 		keysBlocked := channel.ChannelInfo.IsMultiKey && !hasEnabledMultiKey(channel.GetKeys(), channel.ChannelInfo.MultiKeyStatusList)
 		if channel.Status == common.ChannelStatusEnabled && !keysBlocked {
@@ -893,6 +912,7 @@ func DisableChannelByTag(tag string) error {
 	if err := DB.Where("tag = ?", tag).Find(&channels).Error; err != nil {
 		return err
 	}
+	defer func() { _ = RefreshChannelCache() }()
 	for _, channel := range channels {
 		if channel.ChannelInfo.IsMultiKey && channel.GetOtherInfo()["status_reason"] == ChannelStatusReasonAllKeysDisabled {
 			if !UpdateChannelStatus(channel.Id, "", common.ChannelStatusManuallyDisabled, "manual tag operation") {

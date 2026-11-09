@@ -867,7 +867,7 @@ func AddChannel(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	model.InitChannelCache()
+	_ = model.RefreshChannelCache()
 	createAudit := map[string]any{
 		"name":  addChannelRequest.Channel.Name,
 		"type":  addChannelRequest.Channel.Type,
@@ -901,7 +901,7 @@ func DeleteChannel(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	model.InitChannelCache()
+	_ = model.RefreshChannelCache()
 	if channelLookupFailed {
 		service.ResetProxyClientCache()
 	} else {
@@ -932,7 +932,7 @@ func DeleteDisabledChannel(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	model.InitChannelCache()
+	_ = model.RefreshChannelCache()
 	if rows > 0 {
 		service.ResetProxyClientCache()
 	}
@@ -978,7 +978,7 @@ func DisableTagChannels(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	model.InitChannelCache()
+	_ = model.RefreshChannelCache()
 	recordManageAudit(c, "channel.tag_disable", map[string]any{
 		"tag": channelTag.Tag,
 	})
@@ -1002,7 +1002,7 @@ func EnableTagChannels(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	model.InitChannelCache()
+	_ = model.RefreshChannelCache()
 	recordManageAudit(c, "channel.tag_enable", map[string]any{
 		"tag": channelTag.Tag,
 	})
@@ -1069,7 +1069,7 @@ func EditTagChannels(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	model.InitChannelCache()
+	_ = model.RefreshChannelCache()
 	recordManageAudit(c, "channel.tag_edit", map[string]any{
 		"tag": channelTag.Tag,
 	})
@@ -1097,7 +1097,7 @@ func DeleteChannelBatch(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	model.InitChannelCache()
+	_ = model.RefreshChannelCache()
 	if deletedCount > 0 {
 		service.ResetProxyClientCache()
 	}
@@ -1294,7 +1294,7 @@ func UpdateChannel(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	model.InitChannelCache()
+	_ = model.RefreshChannelCache()
 	if proxyChanged {
 		service.InvalidateProxyClient(originProxy)
 	}
@@ -1347,7 +1347,7 @@ func UpdateChannelStatus(c *gin.Context) {
 	}
 	changed := model.UpdateChannelStatus(id, "", req.Status, "manual operation")
 	if changed {
-		model.InitChannelCache()
+		_ = model.RefreshChannelCache()
 		if req.Status != common.ChannelStatusEnabled {
 			closeActiveChannelWebSockets([]int{id})
 		}
@@ -1381,7 +1381,7 @@ func BatchUpdateChannelStatus(c *gin.Context) {
 		}
 	}
 	if changedCount > 0 {
-		model.InitChannelCache()
+		_ = model.RefreshChannelCache()
 	}
 	if len(disabledIDs) > 0 {
 		closeActiveChannelWebSockets(disabledIDs)
@@ -1569,7 +1569,7 @@ func BatchSetChannelTag(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	model.InitChannelCache()
+	_ = model.RefreshChannelCache()
 	recordManageAudit(c, "channel.tag_batch_set", map[string]any{
 		"count": len(channelBatch.Ids),
 	})
@@ -1680,7 +1680,7 @@ func CopyChannel(c *gin.Context) {
 		common.ApiErrorT(c, "Failed to copy channel. Please try again later")
 		return
 	}
-	model.InitChannelCache()
+	_ = model.RefreshChannelCache()
 	recordManageAudit(c, "channel.copy", map[string]any{
 		"sourceId": id,
 		"id":       clone.Id,
@@ -1906,7 +1906,7 @@ func ManageMultiKeys(c *gin.Context) {
 			common.ApiError(c, err)
 			return
 		}
-		model.InitChannelCache()
+		_ = model.RefreshChannelCache()
 		if shouldCloseWebSocket {
 			closeActiveChannelWebSockets([]int{channel.Id})
 		}
@@ -1944,7 +1944,7 @@ func ManageMultiKeys(c *gin.Context) {
 			return
 		}
 
-		model.InitChannelCache()
+		_ = model.RefreshChannelCache()
 		auditMultiKey()
 		common.ApiSuccessT(c, "Key enabled", nil)
 		return
@@ -1967,7 +1967,7 @@ func ManageMultiKeys(c *gin.Context) {
 			return
 		}
 
-		model.InitChannelCache()
+		_ = model.RefreshChannelCache()
 		auditMultiKey()
 		common.ApiSuccessT(c, "Enabled {{count}} keys", nil, map[string]any{"count": enabledCount})
 		return
@@ -2009,7 +2009,7 @@ func ManageMultiKeys(c *gin.Context) {
 			common.ApiError(c, err)
 			return
 		}
-		model.InitChannelCache()
+		_ = model.RefreshChannelCache()
 		if shouldCloseWebSocket {
 			closeActiveChannelWebSockets([]int{channel.Id})
 		}
@@ -2081,7 +2081,7 @@ func ManageMultiKeys(c *gin.Context) {
 			common.ApiError(c, err)
 			return
 		}
-		model.InitChannelCache()
+		_ = model.RefreshChannelCache()
 		if shouldCloseWebSocket {
 			closeActiveChannelWebSockets([]int{channel.Id})
 		}
@@ -2151,7 +2151,7 @@ func ManageMultiKeys(c *gin.Context) {
 			common.ApiError(c, err)
 			return
 		}
-		model.InitChannelCache()
+		_ = model.RefreshChannelCache()
 		if shouldCloseWebSocket {
 			closeActiveChannelWebSockets([]int{channel.Id})
 		}

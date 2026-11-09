@@ -579,7 +579,7 @@ func refreshChannelRuntimeCache() {
 					common.SysLog(common.LogText("InitChannelCache panic: %v", r))
 				}
 			}()
-			model.InitChannelCache()
+			_ = model.RefreshChannelCache()
 		}()
 	}
 }
@@ -1061,6 +1061,11 @@ func ApplyAllChannelUpstreamModelUpdates(c *gin.Context) {
 	results := make([]applyAllChannelUpstreamModelUpdatesResult, 0)
 	failed := make([]int, 0)
 	refreshNeeded := false
+	defer func() {
+		if refreshNeeded {
+			refreshChannelRuntimeCache()
+		}
+	}()
 	addedModelCount := 0
 	removedModelCount := 0
 
@@ -1119,10 +1124,6 @@ func ApplyAllChannelUpstreamModelUpdates(c *gin.Context) {
 		if len(channels) < channelUpstreamModelUpdateTaskBatchSize {
 			break
 		}
-	}
-
-	if refreshNeeded {
-		refreshChannelRuntimeCache()
 	}
 
 	recordManageAudit(c, "channel.upstream_apply_all", map[string]any{

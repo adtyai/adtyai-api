@@ -23,19 +23,42 @@ var channelsIDM map[int]*Channel                     // all channels include dis
 // path-aware selection avoids re-parsing JSON per request. Refreshed on full sync.
 var channel2advancedCustomConfig map[int]*kitdto.AdvancedCustomConfig
 var channelSyncLock sync.RWMutex
+var channelCacheInvalid bool
+var channelCacheGeneration uint64
 
-func InitChannelCache() {
+// RefreshChannelCache follows a committed configuration change. Until a new
+// snapshot is published, readers use the database instead of revoked routes.
+func RefreshChannelCache() error {
+	channelSyncLock.Lock()
+	channelCacheInvalid = true
+	channelCacheGeneration++
+	channelSyncLock.Unlock()
+	if err := InitChannelCache(); err != nil {
+		// These views must also lose the old configuration when reload fails.
+		InvalidatePricingCache()
+		rebuildTaskAliasView()
+		return err
+	}
+	return nil
+}
+
+// InitChannelCache also serves periodic synchronization: a failed query leaves
+// an otherwise valid snapshot available. It never clears a pending invalidation.
+func InitChannelCache() error {
 	if !common.MemoryCacheEnabled {
 		InvalidatePricingCache()
 		rebuildTaskAliasView()
-		return
+		return nil
 	}
+	channelSyncLock.RLock()
+	generation := channelCacheGeneration
+	channelSyncLock.RUnlock()
 	newChannelId2channel := make(map[int]*Channel)
 	newChannel2advancedCustomConfig := make(map[int]*kitdto.AdvancedCustomConfig)
 	var channels []*Channel
 	if err := DB.Find(&channels).Error; err != nil {
 		common.SysError(common.LogText("failed to sync channels: %s", err.Error()))
-		return
+		return err
 	}
 	for _, channel := range channels {
 		newChannelId2channel[channel.Id] = channel
@@ -48,7 +71,7 @@ func InitChannelCache() {
 	var abilities []*Ability
 	if err := DB.Find(&abilities).Error; err != nil {
 		common.SysError(common.LogText("failed to sync abilities: %s", err.Error()))
-		return
+		return err
 	}
 	groups := make(map[string]bool)
 	for _, ability := range abilities {
@@ -90,6 +113,10 @@ func InitChannelCache() {
 	}
 
 	channelSyncLock.Lock()
+	if generation != channelCacheGeneration {
+		channelSyncLock.Unlock()
+		return errors.New("channel cache changed during reload")
+	}
 	group2model2channels = newGroup2model2channels
 	//channelsIDM = newChannelId2channel
 	for i, channel := range newChannelId2channel {
@@ -107,6 +134,7 @@ func InitChannelCache() {
 	}
 	channelsIDM = newChannelId2channel
 	channel2advancedCustomConfig = newChannel2advancedCustomConfig
+	channelCacheInvalid = false
 	channelSyncLock.Unlock()
 	// Lock ordering: InvalidatePricingCache acquires updatePricingLock, and
 	// GetPricing (holding updatePricingLock) nests channelSyncLock.RLock via
@@ -115,6 +143,7 @@ func InitChannelCache() {
 	InvalidatePricingCache()
 	rebuildTaskAliasView()
 	common.SysLog(common.LogText("channels synced from database"))
+	return nil
 }
 
 func SyncChannelCache(frequency int) {
@@ -146,6 +175,10 @@ func GetRandomSatisfiedChannel(
 	}
 
 	channelSyncLock.RLock()
+	if channelCacheInvalid {
+		channelSyncLock.RUnlock()
+		return GetChannel(group, model, retry, filters)
+	}
 	defer channelSyncLock.RUnlock()
 
 	// First, try to find channels with the exact model name.
@@ -241,6 +274,10 @@ func CacheGetChannel(id int) (*Channel, error) {
 		return GetChannelById(id, true)
 	}
 	channelSyncLock.RLock()
+	if channelCacheInvalid {
+		channelSyncLock.RUnlock()
+		return GetChannelById(id, true)
+	}
 	defer channelSyncLock.RUnlock()
 
 	c, ok := channelsIDM[id]
@@ -251,21 +288,36 @@ func CacheGetChannel(id int) (*Channel, error) {
 }
 
 func CacheGetChannelInfo(id int) (*ChannelInfo, error) {
+	info, _, err := cacheGetChannelInfo(id)
+	return info, err
+}
+
+// The source flag stays with the polling operation even if a reload finishes
+// before its cursor is saved.
+func cacheGetChannelInfo(id int) (*ChannelInfo, bool, error) {
 	if !common.MemoryCacheEnabled {
 		channel, err := GetChannelById(id, true)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
-		return &channel.ChannelInfo, nil
+		return &channel.ChannelInfo, false, nil
 	}
 	channelSyncLock.RLock()
+	if channelCacheInvalid {
+		channelSyncLock.RUnlock()
+		channel, err := GetChannelById(id, true)
+		if err != nil {
+			return nil, false, err
+		}
+		return &channel.ChannelInfo, false, nil
+	}
 	defer channelSyncLock.RUnlock()
 
 	c, ok := channelsIDM[id]
 	if !ok {
-		return nil, fmt.Errorf("channel #%d no longer exists", id)
+		return nil, false, fmt.Errorf("channel #%d no longer exists", id)
 	}
-	return &c.ChannelInfo, nil
+	return &c.ChannelInfo, true, nil
 }
 
 func CacheUpdateChannelStatus(id int, status int) {
@@ -274,6 +326,7 @@ func CacheUpdateChannelStatus(id int, status int) {
 	}
 	channelSyncLock.Lock()
 	defer channelSyncLock.Unlock()
+	channelCacheGeneration++
 	if channel, ok := channelsIDM[id]; ok {
 		channel.Status = status
 	}
@@ -302,6 +355,7 @@ func CacheUpdateChannel(channel *Channel) {
 		channelSyncLock.Unlock()
 		return
 	}
+	channelCacheGeneration++
 
 	if channelsIDM == nil {
 		channelsIDM = make(map[int]*Channel)

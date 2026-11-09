@@ -2,17 +2,57 @@ package service
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
+
+func TestCodexAutoRefreshPublishesCommittedCredentialsAfterPageFailure(t *testing.T) {
+	db := adtyTestDB(t)
+	require.NoError(t, db.AutoMigrate(&model.Channel{}, &model.Ability{}))
+	previousCache := common.MemoryCacheEnabled
+	common.MemoryCacheEnabled = true
+	t.Cleanup(func() {
+		model.InitChannelCache()
+		common.MemoryCacheEnabled = previousCache
+	})
+	channels := make([]model.Channel, codexCredentialRefreshBatchSize)
+	for i := range channels {
+		channels[i] = model.Channel{Name: "codex-page", Type: constant.ChannelTypeCodex, Status: common.ChannelStatusEnabled}
+	}
+	channels[0].Key = `{"access_token":"old-access","refresh_token":"old-refresh","account_id":"acc"}`
+	require.NoError(t, db.Create(&channels).Error)
+	require.NoError(t, model.InitChannelCache())
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"access_token":"new-access","refresh_token":"new-refresh","expires_in":3600}`))
+	}))
+	t.Cleanup(server.Close)
+	t.Cleanup(SetCodexOAuthTokenURLForTest(server.URL))
+	require.NoError(t, db.Callback().Query().Before("gorm:query").Register("cache-fail-codex-page", func(tx *gorm.DB) {
+		if limit, ok := tx.Statement.Clauses["LIMIT"].Expression.(clause.Limit); ok && limit.Offset >= codexCredentialRefreshBatchSize {
+			_ = tx.AddError(errors.New("next credential page unavailable"))
+		}
+	}))
+	t.Cleanup(func() { require.NoError(t, db.Callback().Query().Remove("cache-fail-codex-page")) })
+	runCodexCredentialAutoRefreshOnce()
+	stored, err := model.GetChannelById(channels[0].Id, true)
+	require.NoError(t, err)
+	require.Contains(t, stored.Key, `"access_token":"new-access"`, "token rotation committed before the later query failed")
+	cached, err := model.CacheGetChannel(channels[0].Id)
+	require.NoError(t, err)
+	assert.Contains(t, cached.Key, `"access_token":"new-access"`)
+}
 
 func TestSaveCodexChannelKeyDoesNotOverwrite(t *testing.T) {
 	db := adtyTestDB(t)

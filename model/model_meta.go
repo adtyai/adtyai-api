@@ -414,7 +414,7 @@ func DeleteModelMetadata(ids []int, removeFromChannels, removePricing bool) (Mod
 		return ModelDeleteResult{}, err
 	}
 	if result.UpdatedChannels > 0 {
-		InitChannelCache()
+		_ = RefreshChannelCache()
 	}
 	RefreshPricing()
 	return result, nil
