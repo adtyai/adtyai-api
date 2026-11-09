@@ -1,5 +1,13 @@
 {
   "translation": {
+    "Website title": "Website title",
+    "Favicon": "Favicon",
+    "Theme color": "Theme color",
+    "Remove favicon": "Remove favicon",
+    "PNG, JPEG or WebP, up to 200 KB. Save the brand to use it.": "PNG, JPEG or WebP, up to 200 KB. Save the brand to use it.",
+    "Website title must be at most 80 characters": "Website title must be at most 80 characters",
+    "Favicon must be an uploaded site image": "Favicon must be an uploaded site image",
+    "Theme color must use #RRGGBB": "Theme color must use #RRGGBB",
     "Query payment": "Query payment",
     "Query the original payment provider. A confirmed payment is credited using the saved order details.": "Query the original payment provider. A confirmed payment is credited using the saved order details.",
     "No confirmed payment found": "No confirmed payment found",

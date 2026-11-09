@@ -30,6 +30,9 @@ export type OwnerSiteStatus = 'active' | 'paused' | 'closing'
 export type SiteBrand = {
   name: string
   logo_url: string
+  title?: string
+  favicon_url?: string
+  theme_color?: string
   tagline: string
   notice: string
   support_contact: string

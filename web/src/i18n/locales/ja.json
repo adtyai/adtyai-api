@@ -1,5 +1,13 @@
 {
   "translation": {
+    "Website title": "サイトタイトル",
+    "Favicon": "ファビコン",
+    "Theme color": "テーマカラー",
+    "Remove favicon": "ファビコンを削除",
+    "PNG, JPEG or WebP, up to 200 KB. Save the brand to use it.": "PNG、JPEG、WebP、最大200 KB。ブランドを保存すると反映されます。",
+    "Website title must be at most 80 characters": "サイトタイトルは80文字以内にしてください",
+    "Favicon must be an uploaded site image": "ファビコンにはアップロード済みのサイト画像を使用してください",
+    "Theme color must use #RRGGBB": "テーマカラーは#RRGGBB形式で指定してください",
     "Query payment": "支払いを照会",
     "Query the original payment provider. A confirmed payment is credited using the saved order details.": "元の決済サービスに照会します。入金が確認されると、保存された注文情報に基づいて残高に反映されます。",
     "No confirmed payment found": "確認済みの支払いが見つかりません",

@@ -41,6 +41,9 @@ export interface CurrencyConfig {
 export interface SystemConfig {
   systemName: string
   logo: string
+  siteTitle?: string
+  favicon?: string
+  themeColor?: string
   footerHtml?: string
   demoSiteEnabled?: boolean
   displayTokenStatEnabled?: boolean
@@ -60,6 +63,9 @@ function sameSystemConfig(current: SystemConfig, next: SystemConfig): boolean {
   return (
     current.systemName === next.systemName &&
     current.logo === next.logo &&
+    current.siteTitle === next.siteTitle &&
+    current.favicon === next.favicon &&
+    current.themeColor === next.themeColor &&
     current.footerHtml === next.footerHtml &&
     current.demoSiteEnabled === next.demoSiteEnabled &&
     current.displayTokenStatEnabled === next.displayTokenStatEnabled &&

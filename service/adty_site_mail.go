@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/mail"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 	"unicode"
@@ -29,6 +30,9 @@ import (
 type AdtySiteBrand struct {
 	Name           string `json:"name"`
 	LogoURL        string `json:"logo_url"`
+	Title          string `json:"title"`
+	FaviconURL     string `json:"favicon_url"`
+	ThemeColor     string `json:"theme_color"`
 	Tagline        string `json:"tagline"`
 	Notice         string `json:"notice"`
 	SupportContact string `json:"support_contact"`
@@ -42,6 +46,9 @@ func (b AdtySiteBrand) HTMLName() string { return html.EscapeString(b.Name) }
 type AdtySiteBrandInput struct {
 	Name           string `json:"name"`
 	LogoURL        string `json:"logo_url"`
+	Title          string `json:"title"`
+	FaviconURL     string `json:"favicon_url"`
+	ThemeColor     string `json:"theme_color"`
 	Tagline        string `json:"tagline"`
 	Notice         string `json:"notice"`
 	SupportContact string `json:"support_contact"`
@@ -58,6 +65,8 @@ const (
 )
 
 var ErrAdtySiteBrandInvalid = common.NewMessage("Site name up to 40 characters, tagline up to 80, notice up to 500 and support contact up to 200; the logo must be an uploaded image")
+
+var adtyBrandColor = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
 
 // adtyPlainText 去掉控制字符和首尾空白；HTML 原样保留为文本，前端按纯文本渲染，进邮件时转义。
 func adtyPlainText(value string, keepNewlines bool) string {
@@ -81,6 +90,15 @@ func NormalizeAdtySiteBrand(input AdtySiteBrandInput) (AdtySiteBrandInput, error
 		Notice:         adtyPlainText(input.Notice, true),
 		SupportContact: adtyPlainText(input.SupportContact, false),
 		LogoURL:        strings.TrimSpace(input.LogoURL),
+		Title:          adtyPlainText(input.Title, false),
+		FaviconURL:     strings.TrimSpace(input.FaviconURL),
+		ThemeColor:     strings.TrimSpace(input.ThemeColor),
+	}
+	if utf8.RuneCountInString(out.Title) > 80 {
+		return out, common.NewMessage("Website title must be at most 80 characters")
+	}
+	if out.ThemeColor != "" && !adtyBrandColor.MatchString(out.ThemeColor) {
+		return out, common.NewMessage("Theme color must use #RRGGBB")
 	}
 	if utf8.RuneCountInString(out.Name) > adtyBrandNameMax || utf8.RuneCountInString(out.Tagline) > adtyBrandTaglineMax ||
 		utf8.RuneCountInString(out.Notice) > adtyBrandNoticeMax || utf8.RuneCountInString(out.SupportContact) > adtyBrandSupportMax {
@@ -90,6 +108,12 @@ func NormalizeAdtySiteBrand(input AdtySiteBrandInput) (AdtySiteBrandInput, error
 		name, ok := strings.CutPrefix(out.LogoURL, AdtySiteAssetPrefix)
 		if !ok || name == "" || strings.ContainsAny(name, "/\\?#:") || strings.Contains(name, "..") {
 			return out, ErrAdtySiteBrandInvalid
+		}
+	}
+	if out.FaviconURL != "" {
+		name, ok := strings.CutPrefix(out.FaviconURL, AdtySiteAssetPrefix)
+		if !ok || name == "" || strings.ContainsAny(name, "/\\?#:") || strings.Contains(name, "..") {
+			return out, common.NewMessage("Favicon must be an uploaded site image")
 		}
 	}
 	return out, nil
@@ -110,6 +134,7 @@ func AdtyBrandFor(site *model.AdtySite) AdtySiteBrand {
 	}
 	return AdtySiteBrand{
 		Name: name, LogoURL: strings.TrimSpace(brand.LogoURL), Tagline: brand.Tagline, Notice: brand.Notice,
+		Title: brand.Title, FaviconURL: strings.TrimSpace(brand.FaviconURL), ThemeColor: strings.TrimSpace(brand.ThemeColor),
 		SupportContact: brand.SupportContact, BaseURL: AdtySiteBaseURL(site),
 	}
 }

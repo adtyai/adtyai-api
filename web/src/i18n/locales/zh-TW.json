@@ -1,5 +1,13 @@
 {
   "translation": {
+    "Website title": "網站標題",
+    "Favicon": "網站圖示",
+    "Theme color": "主題顏色",
+    "Remove favicon": "移除網站圖示",
+    "PNG, JPEG or WebP, up to 200 KB. Save the brand to use it.": "支援 PNG、JPEG 或 WebP，最大 200 KB。儲存品牌後生效。",
+    "Website title must be at most 80 characters": "網站標題最多 80 個字元",
+    "Favicon must be an uploaded site image": "網站圖示必須是已上傳的網站圖片",
+    "Theme color must use #RRGGBB": "主題顏色須使用 #RRGGBB 格式",
     "Query payment": "補查付款",
     "Query the original payment provider. A confirmed payment is credited using the saved order details.": "向原付款服務商查詢。確認到帳後，將依訂單儲存的資訊入帳。",
     "No confirmed payment found": "未查到已確認的付款",

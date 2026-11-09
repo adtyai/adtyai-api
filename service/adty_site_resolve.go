@@ -267,22 +267,6 @@ func AdtySiteBaseURL(site *model.AdtySite) string {
 	return scheme + "://" + AdtySiteDisplayHost(site)
 }
 
-// adtySiteBrandName、Logo 从站点的 Brand JSON 里取（字段和字数限制在 11.3）；没填站名时用子域名。
-func adtySiteBrandNameAndLogo(site *model.AdtySite) (string, string) {
-	var brand struct {
-		Name    string `json:"name"`
-		LogoURL string `json:"logo_url"`
-	}
-	if strings.TrimSpace(site.Brand) != "" {
-		_ = common.UnmarshalJsonStr(site.Brand, &brand)
-	}
-	name := strings.TrimSpace(brand.Name)
-	if name == "" {
-		name = site.Subdomain
-	}
-	return name, strings.TrimSpace(brand.LogoURL)
-}
-
 // AdtyOverrideStatus 在 /api/status 末尾调用（controller/misc.go）：当前请求是分站时，换成分站的站名、Logo、
 // 地址，关掉第三方登录和 Passkey，并清掉主站页脚、公告和 Passkey 域名。
 // Turnstile 继续用全局 site key，不在这里查 widget。
@@ -295,9 +279,12 @@ func AdtyOverrideStatus(c *gin.Context, data map[string]any) {
 	if site == nil {
 		return
 	}
-	name, logo := adtySiteBrandNameAndLogo(site)
-	data["system_name"] = name
-	data["logo"] = logo
+	brand := AdtyBrandFor(site)
+	data["system_name"] = brand.Name
+	data["logo"] = brand.LogoURL
+	data["site_title"] = brand.Title
+	data["favicon"] = brand.FaviconURL
+	data["theme_color"] = brand.ThemeColor
 	data["server_address"] = AdtySiteBaseURL(site)
 	data["adty_site"] = map[string]any{"id": site.Id, "status": site.Status, "subdomain": site.Subdomain}
 	if version := adty_setting.GetLegalSetting().SiteCustomerTermsVersion; version > 0 {

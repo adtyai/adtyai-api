@@ -1,5 +1,13 @@
 {
   "translation": {
+    "Website title": "Tiêu đề trang web",
+    "Favicon": "Biểu tượng trang web",
+    "Theme color": "Màu chủ đề",
+    "Remove favicon": "Xóa biểu tượng trang web",
+    "PNG, JPEG or WebP, up to 200 KB. Save the brand to use it.": "PNG, JPEG hoặc WebP, tối đa 200 KB. Lưu thương hiệu để áp dụng.",
+    "Website title must be at most 80 characters": "Tiêu đề trang web không được vượt quá 80 ký tự",
+    "Favicon must be an uploaded site image": "Biểu tượng phải là ảnh trang web đã tải lên",
+    "Theme color must use #RRGGBB": "Màu chủ đề phải dùng định dạng #RRGGBB",
     "Query payment": "Tra cứu thanh toán",
     "Query the original payment provider. A confirmed payment is credited using the saved order details.": "Tra cứu tại nhà cung cấp thanh toán ban đầu. Khoản thanh toán được xác nhận sẽ được ghi có theo thông tin đơn hàng đã lưu.",
     "No confirmed payment found": "Không tìm thấy khoản thanh toán đã xác nhận",

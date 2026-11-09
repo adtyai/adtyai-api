@@ -240,6 +240,13 @@ func TestSiteHomeNoindexUnlessSeoIndex(t *testing.T) {
 	// 主站照旧
 	mainBody := get(engine, "main.example.com", "/").Body.String()
 	assert.Contains(t, mainBody, `<link rel="canonical" href="https://main.example.com/" />`)
+
+	require.NoError(t, f.db.Model(&model.AdtySite{}).Where("id = ?", f.site.Id).Update("brand", `{"name":"Shop AI","tagline":"Fast","title":"<Workspace> & AI"}`).Error)
+	service.InvalidateAdtySiteCache()
+	body = get(engine, "shop.sites.example.com", "/").Body.String()
+	assert.Contains(t, body, "<title>&lt;Workspace&gt; &amp; AI</title>")
+	assert.Contains(t, body, `<meta property="og:site_name" content="Shop AI" />`)
+	assert.NotContains(t, body, "<Workspace>")
 }
 
 func TestSiteRobotsTxt(t *testing.T) {

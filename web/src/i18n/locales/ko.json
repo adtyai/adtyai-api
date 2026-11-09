@@ -1,5 +1,13 @@
 {
   "translation": {
+    "Website title": "사이트 제목",
+    "Favicon": "파비콘",
+    "Theme color": "테마 색상",
+    "Remove favicon": "파비콘 제거",
+    "PNG, JPEG or WebP, up to 200 KB. Save the brand to use it.": "PNG, JPEG 또는 WebP, 최대 200 KB. 적용하려면 브랜드를 저장하세요.",
+    "Website title must be at most 80 characters": "사이트 제목은 80자 이하여야 합니다",
+    "Favicon must be an uploaded site image": "파비콘은 업로드한 사이트 이미지여야 합니다",
+    "Theme color must use #RRGGBB": "테마 색상은 #RRGGBB 형식이어야 합니다",
     "Query payment": "결제 조회",
     "Query the original payment provider. A confirmed payment is credited using the saved order details.": "원래 결제 제공업체에 조회합니다. 결제가 확인되면 저장된 주문 정보에 따라 잔액에 반영됩니다.",
     "No confirmed payment found": "확인된 결제를 찾을 수 없습니다",

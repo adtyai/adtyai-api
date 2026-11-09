@@ -2,6 +2,7 @@ package router
 
 import (
 	"bytes"
+	"encoding/base64"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -17,7 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// 站长 Logo 上传（任务 11.3）：PNG、JPEG、SVG（不能带脚本），最大 200 KB，存 uploads/site-assets。
+// 站长品牌图片上传：PNG、JPEG、WebP，最大 200 KB，存 uploads/site-assets；不接受 SVG。
 
 func TestSiteLogoSVGRules(t *testing.T) {
 	for _, tc := range []struct {
@@ -127,6 +128,19 @@ func TestSiteLogoUpload(t *testing.T) {
 
 	saved := f.call(t, http.MethodPut, "/api/adty/site/self", `{"brand":{"name":"Logo AI","logo_url":"`+envelope.Data.URL+`"}}`, "")
 	assert.Contains(t, saved.Body.String(), envelope.Data.URL, "the uploaded address can be saved as the brand logo")
+
+	webp, err := base64.StdEncoding.DecodeString("UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA")
+	require.NoError(t, err)
+	resp = uploadLogo(t, f, "favicon.webp", webp)
+	require.NoError(t, common.Unmarshal(resp.Body.Bytes(), &envelope))
+	require.True(t, envelope.Success, resp.Body.String())
+	require.True(t, strings.HasSuffix(envelope.Data.URL, ".webp"))
+	served = httptest.NewRecorder()
+	engine.ServeHTTP(served, httptest.NewRequest(http.MethodGet, envelope.Data.URL, nil))
+	assert.Equal(t, http.StatusOK, served.Code, "an uploaded WebP must be readable")
+	assert.Equal(t, "image/webp", served.Header().Get("Content-Type"))
+	assert.Equal(t, "nosniff", served.Header().Get("X-Content-Type-Options"))
+	assert.Equal(t, webp, served.Body.Bytes())
 
 	for _, path := range []string{"/uploads/site-assets/../../etc/passwd", "/uploads/site-assets/site-1-nothere.png", "/uploads/site-assets/x.html"} {
 		miss := httptest.NewRecorder()

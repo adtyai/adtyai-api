@@ -271,7 +271,7 @@ export async function removeDomain(id: number, proof: string): Promise<void> {
   requireServerSuccess(res.data)
 }
 
-/** Uploads a logo (PNG, JPEG or SVG without scripts, up to 200 KB) and returns its address. */
+/** Uploads a brand image (PNG, JPEG or WebP, up to 200 KB) and returns its address. */
 export async function uploadLogo(file: File): Promise<string> {
   const form = new FormData()
   form.append('file', file)

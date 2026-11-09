@@ -31,10 +31,8 @@ import {
 /**
  * Single source of truth for `/api/status`.
  *
- * `/api/status` is entirely global on the backend: every field is read from
- * in-memory option maps under a read lock, with no user context and no auth
- * middleware on the route. That makes it safe to share one cache entry across
- * every consumer — branding, nav module gates, and the setup guard.
+ * `/api/status` includes branding scoped to the current Host. One cache entry
+ * within this origin is shared by branding, nav module gates and setup guards.
  *
  * Anything that needs status must go through `statusQueryOptions` so React
  * Query can dedupe. Calling `getStatus()` directly re-introduces the duplicate
@@ -94,6 +92,12 @@ export function mapStatusDataToConfig(
   return {
     systemName: (data.system_name as string | undefined) || DEFAULT_SYSTEM_NAME,
     logo: (data.logo as string | undefined) || DEFAULT_LOGO,
+    siteTitle: (data.site_title as string | undefined) || '',
+    favicon:
+      (data.favicon as string | undefined) ||
+      (data.logo as string | undefined) ||
+      '/favicon.ico',
+    themeColor: (data.theme_color as string | undefined) || '',
     footerHtml: data.footer_html as string | undefined,
     demoSiteEnabled: data.demo_site_enabled as boolean | undefined,
     displayTokenStatEnabled: data.display_token_stat_enabled as

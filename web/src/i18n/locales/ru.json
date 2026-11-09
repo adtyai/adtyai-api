@@ -1,5 +1,13 @@
 {
   "translation": {
+    "Website title": "Заголовок сайта",
+    "Favicon": "Значок сайта",
+    "Theme color": "Цвет темы",
+    "Remove favicon": "Удалить значок сайта",
+    "PNG, JPEG or WebP, up to 200 KB. Save the brand to use it.": "PNG, JPEG или WebP, до 200 КБ. Сохраните бренд, чтобы применить изображение.",
+    "Website title must be at most 80 characters": "Заголовок сайта не должен превышать 80 символов",
+    "Favicon must be an uploaded site image": "Значок должен быть загруженным изображением сайта",
+    "Theme color must use #RRGGBB": "Цвет темы должен быть в формате #RRGGBB",
     "Query payment": "Проверить платёж",
     "Query the original payment provider. A confirmed payment is credited using the saved order details.": "Запросите сведения у исходного платёжного провайдера. Подтверждённый платёж будет зачислен по сохранённым данным заказа.",
     "No confirmed payment found": "Подтверждённый платёж не найден",

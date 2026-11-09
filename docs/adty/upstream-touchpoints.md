@@ -516,3 +516,9 @@
 | `service/adty_epay_client.go`、`service/adty_epay_health.go`、`service/adty_epay_test.go`、`controller/admin_finance_test.go` | Epay 实现注册查询能力，HTTPS/订单/商户/方法/网关号绑定，禁止查询重定向；六服务动作和筛选真实三库回归 | 复用统一金额校验及入账，不改变 FIN-F-01 场景或 FIN-G-01 来源资金规则 | M-04 |
 | `web/src/features/recharge-audit/`、`web/src/i18n/locales/` | 后端能力驱动筛选及行操作，复用 ConfirmDialog/Alert 显示补查错误和未支付/成功结果，八语同步 | 撤权立即移除操作弹窗，退款明确线下退钱 | M-04 |
 | `scripts/adty/browser-business.sh`、`web/scripts/adty/browser-finance-actions.mjs` | 独立生产浏览器桌面/移动操作六服务，真实补单、退款 API 与数据库流水核对 | SQL 只准备未付款 fixture，无真实商户支付或外部退款；查询成功另由真实业务的外部 HTTP 边界测试验证 | M-04 |
+| `service/adty_site_mail.go`、`adty_site_resolve.go`、`router/adty_seo.go` | 沿用品牌 JSON 增加纯文本标题、独立上传图标及严格六位十六进制主色，公开 status 和 SEO 按当前站点读取 | 兼容旧品牌；清空恢复默认；无 schema 变更，保留默认 HTML 与版权 | BRAND-01 |
+| `service/adty_site_assets.go`、`router/adty_site_logo_test.go` | 读取白名单补 WebP，真实上传后读取并核对内容与 nosniff | 修复上传成功却 404；新上传仍拒绝 SVG，保留历史资源读取 | BRAND-01 |
+| `controller/adty_site_test.go`、`router/adty_site_brand_test.go` | 真实三库保存/回读/status/非法输入与他站保护，验证标题 HTML 转义 | 沿用 owner 授权、缓存失效和 SEO 策略 | BRAND-01 |
+| `web/src/features/adty-site-owner/`、`web/src/i18n/locales/` | 在既有 BrandCard 复用 Input/Button/图片上传，增加标题、主色、独立图标并失效 status；八语同步 | 无新增通用控件或依赖，保存失败保留草稿 | BRAND-01 |
+| `web/src/lib/dom-utils.ts`、`status-query.ts`、`stores/system-config-store.ts`、`hooks/use-system-config.ts`、`components/theme-switch.tsx`、`main.tsx` | 冷启动、status 更新及主题切换统一应用品牌，独立图标不再被 Logo 预加载覆盖，清空移除颜色覆盖 | 前景按亮度保证对比，保留服务端 SEO 标题 | BRAND-01 |
+| `scripts/adty/browser-business.sh`、`web/scripts/adty/browser-site-brand.mjs` | 独立 PG17/Redis 生产桌面/移动验证真实设置、PNG/WebP 图片、公开 Host 品牌、刷新、他站隔离及清空 | SQL 仅查证，业务操作均走真实页面/API | BRAND-01 |

@@ -25,10 +25,14 @@ import { ErrorState } from '@/components/error-state'
 import { whenInterfaceLanguageReady } from '@/i18n/config'
 import { installBuildMetadata } from '@/lib/build-metadata'
 import '@/lib/dayjs'
-import { applyFaviconToDom } from '@/lib/dom-utils'
+import { applySystemBrandingToDom } from '@/lib/dom-utils'
 import { initializeFrontendCache } from '@/lib/frontend-cache'
 import { createAppQueryClient } from '@/lib/query-client'
-import { readCachedStatus, statusQueryOptions } from '@/lib/status-query'
+import {
+  mapStatusDataToConfig,
+  readCachedStatus,
+  statusQueryOptions,
+} from '@/lib/status-query'
 
 import { DirectionProvider } from './context/direction-provider'
 import { FontProvider } from './context/font-provider'
@@ -73,19 +77,9 @@ if (!rootElement) {
 ;(function initSystemBranding() {
   try {
     if (typeof window === 'undefined' || typeof document === 'undefined') return
-    const apply = (name: string) => {
-      // ADTY task 9.3: the server wrote this home page's own title.
-      if (document.documentElement.hasAttribute('data-adty-seo')) return
-      document.title = name
-      const metaTitle = document.querySelector(
-        'meta[name="title"]'
-      ) as HTMLMetaElement | null
-      if (metaTitle) metaTitle.setAttribute('content', name)
-    }
     // Cache-first
     const cached = readCachedStatus()
-    if (cached?.system_name) apply(cached.system_name as string)
-    if (cached?.logo) applyFaviconToDom(cached.logo as string)
+    if (cached) applySystemBrandingToDom(mapStatusDataToConfig(cached))
 
     // Background refresh through the shared cache. This primes ['status']
     // before React mounts, so the root guard and every status consumer reuse
@@ -94,8 +88,7 @@ if (!rootElement) {
     queryClient
       .ensureQueryData(statusQueryOptions)
       .then((s) => {
-        if (s?.system_name) apply(s.system_name as string)
-        if (s?.logo) applyFaviconToDom(s.logo as string)
+        if (s) applySystemBrandingToDom(mapStatusDataToConfig(s))
       })
       .catch(() => {
         /* empty */

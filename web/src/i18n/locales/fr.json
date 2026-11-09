@@ -1,5 +1,13 @@
 {
   "translation": {
+    "Website title": "Titre du site",
+    "Favicon": "Icône du site",
+    "Theme color": "Couleur du thème",
+    "Remove favicon": "Supprimer l’icône du site",
+    "PNG, JPEG or WebP, up to 200 KB. Save the brand to use it.": "PNG, JPEG ou WebP, 200 Ko maximum. Enregistrez la marque pour appliquer l’image.",
+    "Website title must be at most 80 characters": "Le titre du site est limité à 80 caractères",
+    "Favicon must be an uploaded site image": "L’icône doit être une image du site téléversée",
+    "Theme color must use #RRGGBB": "La couleur du thème doit utiliser le format #RRGGBB",
     "Query payment": "Vérifier le paiement",
     "Query the original payment provider. A confirmed payment is credited using the saved order details.": "Interrogez le prestataire de paiement initial. Un paiement confirmé est crédité selon les informations enregistrées de la commande.",
     "No confirmed payment found": "Aucun paiement confirmé trouvé",

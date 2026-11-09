@@ -31,7 +31,7 @@ var (
 var adtySiteAssetDir = func() string { return filepath.Join("uploads", "site-assets") }
 
 // adtySiteAssetName 是存储文件名的格式：site-<站点 id>-<uuid>.<扩展名>。
-var adtySiteAssetName = regexp.MustCompile(`^site-[0-9]+-[0-9a-f]{32}\.(png|jpg|svg)$`)
+var adtySiteAssetName = regexp.MustCompile(`^site-[0-9]+-[0-9a-f]{32}\.(png|jpg|webp|svg)$`)
 
 // SVG 允许的元素：只有静态图形、渐变、裁剪和文字。没有 script、style、foreignObject、use、image、a、动画。
 var adtySvgElements = map[string]bool{

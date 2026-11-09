@@ -233,6 +233,9 @@ func adtySiteSEO(site *model.AdtySite) adtySEOHeadInput {
 	if tagline := strings.TrimSpace(brand.Tagline); tagline != "" {
 		title = brand.Name + " - " + tagline
 	}
+	if customTitle := strings.TrimSpace(brand.Title); customTitle != "" {
+		title = customTitle
+	}
 	input := adtySEOHeadInput{
 		siteName:    brand.Name,
 		title:       func(string) string { return title },

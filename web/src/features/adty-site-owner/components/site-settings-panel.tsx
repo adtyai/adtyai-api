@@ -36,6 +36,7 @@ import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { useDraftNavigation } from '@/features/system-settings/hooks/use-draft-navigation'
 import { handleServerError } from '@/lib/handle-server-error'
+import { STATUS_QUERY_KEY } from '@/lib/status-query'
 
 import {
   addDomain,
@@ -52,11 +53,16 @@ import { useVerifiedOwnerMutation } from '../hooks/use-verified-owner-mutation'
 import { parseSenderRecords } from '../lib/site-owner'
 import type { OwnerSite, SenderDomain, SiteBrand, SiteDomain } from '../types'
 
-const BRAND_LIMITS: Record<Exclude<keyof SiteBrand, 'logo_url'>, number> = {
+const BRAND_LIMITS: Record<
+  Exclude<keyof SiteBrand, 'logo_url' | 'favicon_url'>,
+  number
+> = {
   name: 40,
   tagline: 80,
   notice: 500,
   support_contact: 200,
+  title: 80,
+  theme_color: 7,
 }
 
 function domainVariant(status: SiteDomain['status']) {
@@ -88,8 +94,10 @@ function BrandCard(props: { site: OwnerSite }) {
     )
   }, [props.site.brand])
   const upload = useMutation({
-    mutationFn: (file: File) => uploadLogo(file),
-    onSuccess: (url) => setBrand((prev) => ({ ...prev, logo_url: url })),
+    mutationFn: (input: { key: 'logo_url' | 'favicon_url'; file: File }) =>
+      uploadLogo(input.file),
+    onSuccess: (url, input) =>
+      setBrand((prev) => ({ ...prev, [input.key]: url })),
     onError: (err) => handleServerError(err),
   })
   const save = useMutation({
@@ -97,6 +105,7 @@ function BrandCard(props: { site: OwnerSite }) {
     onSuccess: () => {
       toast.success(t('Saved successfully'))
       void queryClient.invalidateQueries({ queryKey: siteOwnerKeys.all })
+      void queryClient.invalidateQueries({ queryKey: STATUS_QUERY_KEY })
     },
     onError: (err) => handleServerError(err),
   })
@@ -109,7 +118,8 @@ function BrandCard(props: { site: OwnerSite }) {
     const inputProps = {
       id,
       maxLength: BRAND_LIMITS[key],
-      value: brand[key],
+      value: brand[key] ?? '',
+      placeholder: key === 'theme_color' ? '#RRGGBB' : undefined,
       onChange: (event: { target: { value: string } }) =>
         setBrand((prev) => ({ ...prev, [key]: event.target.value })),
     }
@@ -119,13 +129,51 @@ function BrandCard(props: { site: OwnerSite }) {
         {multiline ? <Textarea {...inputProps} /> : <Input {...inputProps} />}
         <p className='text-muted-foreground text-xs'>
           {t('{{count}} / {{max}} characters', {
-            count: [...brand[key]].length,
+            count: [...(brand[key] ?? '')].length,
             max: BRAND_LIMITS[key],
           })}
         </p>
       </div>
     )
   }
+  const imageField = (
+    key: 'logo_url' | 'favicon_url',
+    label: string,
+    removeLabel: string
+  ) => (
+    <div className='space-y-2'>
+      <Label htmlFor={`brand-${key}`}>{label}</Label>
+      <Input
+        id={`brand-${key}`}
+        type='file'
+        accept='image/png,image/jpeg,image/webp'
+        disabled={upload.isPending}
+        onChange={(event) => {
+          const file = event.target.files?.[0]
+          if (file) upload.mutate({ key, file })
+        }}
+      />
+      <p className='text-muted-foreground text-xs'>
+        {t('PNG, JPEG or WebP, up to 200 KB. Save the brand to use it.')}
+      </p>
+      {brand[key] && (
+        <div className='flex items-center gap-3'>
+          <img
+            src={brand[key]}
+            alt={label}
+            className='h-12 w-12 rounded border object-contain'
+          />
+          <Button
+            size='sm'
+            variant='outline'
+            onClick={() => setBrand((prev) => ({ ...prev, [key]: '' }))}
+          >
+            {removeLabel}
+          </Button>
+        </div>
+      )}
+    </div>
+  )
   return (
     <Card>
       <CardHeader>
@@ -133,43 +181,13 @@ function BrandCard(props: { site: OwnerSite }) {
       </CardHeader>
       <CardContent className='grid gap-3'>
         {field('name', t('Site name'))}
+        {field('title', t('Website title'))}
+        {field('theme_color', t('Theme color'))}
         {field('tagline', t('Tagline'))}
         {field('notice', t('Notice'), true)}
         {field('support_contact', t('Support contact'))}
-        <div className='space-y-2'>
-          <Label htmlFor='brand-logo'>{t('Logo')}</Label>
-          <Input
-            id='brand-logo'
-            type='file'
-            accept='image/png,image/jpeg,image/svg+xml'
-            disabled={upload.isPending}
-            onChange={(event) => {
-              const file = event.target.files?.[0]
-              if (file) upload.mutate(file)
-            }}
-          />
-          <p className='text-muted-foreground text-xs'>
-            {t(
-              'PNG, JPEG or SVG without scripts, up to 200 KB. Save the brand to use it.'
-            )}
-          </p>
-          {brand.logo_url && (
-            <div className='flex items-center gap-3'>
-              <img
-                src={brand.logo_url}
-                alt={t('Logo')}
-                className='h-12 w-12 rounded border object-contain'
-              />
-              <Button
-                size='sm'
-                variant='outline'
-                onClick={() => setBrand((prev) => ({ ...prev, logo_url: '' }))}
-              >
-                {t('Remove logo')}
-              </Button>
-            </div>
-          )}
-        </div>
+        {imageField('logo_url', t('Logo'), t('Remove logo'))}
+        {imageField('favicon_url', t('Favicon'), t('Remove favicon'))}
         <p className='text-muted-foreground text-xs'>
           {t('Brand text is shown as plain text.')}
         </p>
