@@ -2,6 +2,7 @@ package service
 
 import (
 	"crypto/rand"
+	"database/sql"
 	"errors"
 	"fmt"
 	"math/big"
@@ -268,7 +269,20 @@ func OpenAdtySite(userId int, subdomain, openedBy string, preset AdtySitePreset)
 	if site.AgreementVer != "" {
 		site.AgreementAt = now
 	}
+	var txOptions []*sql.TxOptions
+	if common.UsingMainDatabase(common.DatabaseTypeMySQL) {
+		// Marker initialization can read before the user lock. Qualifications
+		// checked after waiting must include another opening's committed site.
+		txOptions = append(txOptions, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	}
 	err = model.DB.Transaction(func(tx *gorm.DB) error {
+		// Commission transfers lock the affiliate before the user wallet. Keep
+		// the same order; invalid openings roll this uncommitted marker back.
+		if status == model.AdtySiteStatusActive {
+			if err := markAffiliateSiteOwnerTx(tx, userId, now); err != nil {
+				return err
+			}
+		}
 		var users []model.User
 		if err := model.AdtyLockForUpdate(tx).Select("id", "site_id", "status").Where("id = ?", userId).Limit(1).Find(&users).Error; err != nil {
 			return err
@@ -311,16 +325,11 @@ func OpenAdtySite(userId int, subdomain, openedBy string, preset AdtySitePreset)
 		if err := ensureAdtySiteWalletsTx(tx, site.Id); err != nil {
 			return err
 		}
-		if status == model.AdtySiteStatusActive {
-			if err := markAffiliateSiteOwnerTx(tx, userId, now); err != nil {
-				return err
-			}
-		}
 		return recordSiteAuditTx(tx, site.Id, "open", preset.OperatorId, nil, map[string]any{
 			"opened_by": openedBy, "status": status, "subdomain": label, "cost_factor": site.CostFactor, "max_markup": site.MaxMarkup,
 			"invite_code_id": preset.InviteCodeId,
 		}, "")
-	})
+	}, txOptions...)
 	if err != nil {
 		return nil, err
 	}
@@ -331,22 +340,45 @@ func OpenAdtySite(userId int, subdomain, openedBy string, preset AdtySitePreset)
 // markAffiliateSiteOwnerTx 写 SiteOwnerSince（只在还是 0 时写，关站后重开不覆盖第一次的时间）。
 // 还没有推广员行时补建，避免之后打开推广页建成 SiteOwnerSince 为 0 的行再拿邀请返佣。
 func markAffiliateSiteOwnerTx(tx *gorm.DB, userId int, now int64) error {
-	result := tx.Model(&model.ReferralAffiliate{}).Where("user_id = ? AND site_owner_since = 0", userId).Update("site_owner_since", now)
+	// Match existing owners too: a no-op conditional UPDATE can release their
+	// lock under MySQL READ COMMITTED and allow referral restoration mid-open.
+	result := tx.Model(&model.ReferralAffiliate{}).Where("user_id = ?", userId).
+		Update("site_owner_since", gorm.Expr("CASE WHEN site_owner_since = 0 THEN ? ELSE site_owner_since END", now))
 	if result.Error != nil {
 		return result.Error
 	}
 	if result.RowsAffected > 0 {
 		return nil
 	}
-	var count int64
-	if err := tx.Model(&model.ReferralAffiliate{}).Where("user_id = ?", userId).Count(&count).Error; err != nil {
+	var affiliates []model.ReferralAffiliate
+	if err := model.AdtyLockForUpdate(tx).Where("user_id = ?", userId).Limit(1).Find(&affiliates).Error; err != nil {
 		return err
 	}
-	if count > 0 {
-		return nil
+	if len(affiliates) > 0 {
+		return tx.Model(&model.ReferralAffiliate{}).Where("id = ? AND site_owner_since = 0", affiliates[0].Id).Update("site_owner_since", now).Error
 	}
-	_, err := adtyOwnerAccountTx(tx, userId)
-	return err
+	code, err := newInviteCode()
+	if err != nil {
+		return err
+	}
+	affiliate := model.ReferralAffiliate{
+		UserId: userId, InviteCode: code, Status: model.ReferralAffiliateStatusApproved, SourceType: "site",
+		SettlementEnabled: true, WithdrawalEnabled: true, ApprovedAt: now, SiteOwnerSince: now,
+	}
+	if err := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "user_id"}}, DoNothing: true}).Create(&affiliate).Error; err != nil {
+		return err
+	}
+	// A referral-page request can create the row between our lookup and insert.
+	// Lock the actual row before touching its account, preserving Affiliate→Account.
+	if err := model.AdtyLockForUpdate(tx).Where("user_id = ?", userId).First(&affiliate).Error; err != nil {
+		return err
+	}
+	if err := tx.Model(&model.ReferralAffiliate{}).Where("id = ? AND site_owner_since = 0", affiliate.Id).Update("site_owner_since", now).Error; err != nil {
+		return err
+	}
+	return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&model.ReferralCommissionAccount{
+		AffiliateId: affiliate.Id, UserId: userId, SettlementCurrency: "USD",
+	}).Error
 }
 
 // ApplyAdtySite 是站长申请开站：带有效的邀请码就直接开成 active 并用码上的预设，否则建 pending 等审核。

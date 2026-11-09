@@ -503,6 +503,181 @@ func TestLegacySiteApprovalWaitsForReferralIdentityLock(t *testing.T) {
 	assert.Equal(t, model.AdtySiteStatusActive, stored.Status)
 }
 
+func TestOpeningSiteAndCommissionTransferUseCompatibleLockOrder(t *testing.T) {
+	for _, dialect := range []string{"sqlite", "mysql", "postgres"} {
+		t.Run(dialect, func(t *testing.T) {
+			db := prepareSiteDB(t)
+			if dialect != "postgres" {
+				db = referralOrderMatrixDB(t, dialect)
+				require.NoError(t, db.AutoMigrate(&model.User{}, &model.Log{}, &model.ReferralAffiliate{},
+					&model.ReferralCommissionAccount{}, &model.ReferralCommission{}, &model.ReferralWithdrawal{},
+					&model.ReferralWithdrawalItem{}, &model.ReferralCommissionLedger{}, &model.AdtyBalanceLedger{},
+					&model.AdtySite{}, &model.AdtySiteWallet{}, &model.AdtySiteAudit{}))
+			}
+			openingSiteAndCommissionTransfer(t, db, dialect)
+			disabled := referralUser(t, db, "disabled-opening")
+			require.NoError(t, db.Model(disabled).Update("status", common.UserStatusDisabled).Error)
+			_, err := OpenAdtySite(disabled.Id, "disabled-opening", model.AdtySiteOpenedByAdmin, AdtySitePreset{})
+			require.Error(t, err)
+			var markers, accounts int64
+			require.NoError(t, db.Model(&model.ReferralAffiliate{}).Where("user_id = ?", disabled.Id).Count(&markers).Error)
+			require.NoError(t, db.Model(&model.ReferralCommissionAccount{}).Where("user_id = ?", disabled.Id).Count(&accounts).Error)
+			assert.Zero(t, markers, "rejected openings cannot leave an owner marker or new affiliate")
+			assert.Zero(t, accounts)
+			other := availableAffiliate(t, db, "taken-opening", 50)
+			_, err = OpenAdtySite(other.UserId, "opening-transfer", model.AdtySiteOpenedByAdmin, AdtySitePreset{})
+			require.ErrorIs(t, err, ErrAdtySiteSubdomainUsed)
+			require.NoError(t, db.First(other, other.Id).Error)
+			assert.Zero(t, other.SiteOwnerSince, "a later validation failure rolls back an existing affiliate marker")
+			assert.InDelta(t, 50, account(t, db, other.Id).AvailableAmount, 1e-9)
+			if dialect != "sqlite" {
+				owner := referralUser(t, db, "pending-before-identity")
+				var pendingOpened atomic.Bool
+				require.NoError(t, db.Callback().Query().Before("gorm:query").Register("pending_before_identity", func(tx *gorm.DB) {
+					if tx.Statement.Table == "users" && pendingOpened.CompareAndSwap(false, true) {
+						_, err := OpenAdtySite(owner.Id, "pending-before-identity", model.AdtySiteOpenedByAdmin,
+							AdtySitePreset{InitialStatus: model.AdtySiteStatusPending})
+						if err != nil {
+							tx.AddError(err)
+						}
+					}
+				}))
+				_, err = OpenAdtySite(owner.Id, "active-after-pending", model.AdtySiteOpenedByAdmin, AdtySitePreset{})
+				assert.ErrorIs(t, err, ErrAdtySiteAlreadyOwner, "a pending site committed before the identity lock must prevent a second site")
+				assert.NoError(t, db.Callback().Query().Remove("pending_before_identity"))
+				var sites int64
+				require.NoError(t, db.Model(&model.AdtySite{}).Where("owner_user_id = ?", owner.Id).Count(&sites).Error)
+				assert.EqualValues(t, 1, sites)
+				previousOwner := availableAffiliate(t, db, "reopening-owner", 50)
+				require.NoError(t, db.Model(previousOwner).Update("site_owner_since", 100).Error)
+				var restored atomic.Bool
+				require.NoError(t, db.Callback().Query().Before("gorm:query").Register("restore_during_reopening", func(tx *gorm.DB) {
+					if tx.Statement.Table != "users" || !restored.CompareAndSwap(false, true) {
+						return
+					}
+					err := db.Transaction(func(restore *gorm.DB) error {
+						var affiliate model.ReferralAffiliate
+						if err := restore.Clauses(clause.Locking{Strength: "UPDATE", Options: "NOWAIT"}).
+							Where("user_id = ?", previousOwner.UserId).First(&affiliate).Error; err != nil {
+							return err
+						}
+						var openSites int64
+						if err := restore.Model(&model.AdtySite{}).Where("owner_user_id = ? AND status <> ?", previousOwner.UserId, model.AdtySiteStatusClosed).Count(&openSites).Error; err != nil {
+							return err
+						}
+						if openSites > 0 {
+							return errors.New("site is still open")
+						}
+						return restore.Model(&affiliate).Update("site_owner_since", 0).Error
+					})
+					if dialect == "mysql" {
+						var lockErr *mysqldriver.MySQLError
+						if assert.ErrorAs(t, err, &lockErr) {
+							assert.EqualValues(t, 3572, lockErr.Number)
+						}
+					} else {
+						var lockErr interface{ SQLState() string }
+						if assert.ErrorAs(t, err, &lockErr) {
+							assert.Equal(t, "55P03", lockErr.SQLState())
+						}
+					}
+				}))
+				_, err = OpenAdtySite(previousOwner.UserId, "reopening-owner", model.AdtySiteOpenedByAdmin, AdtySitePreset{})
+				assert.NoError(t, err)
+				assert.NoError(t, db.Callback().Query().Remove("restore_during_reopening"))
+				assert.True(t, restored.Load())
+				require.NoError(t, db.First(previousOwner, previousOwner.Id).Error)
+				assert.EqualValues(t, 100, previousOwner.SiteOwnerSince, "reopening retains the first owner timestamp")
+				for _, stage := range []string{"before", "after"} {
+					owner := referralUser(t, db, "affiliate-during-marker-"+stage)
+					var inserted atomic.Bool
+					callback := func(tx *gorm.DB) {
+						if tx.Statement.Table == "referral_affiliates" && inserted.CompareAndSwap(false, true) {
+							_, err := Referral.EnsureAffiliate(owner.Id)
+							if err != nil {
+								tx.AddError(err)
+							}
+						}
+					}
+					if stage == "before" {
+						require.NoError(t, db.Callback().Query().Before("gorm:query").Register("affiliate_during_marker", callback))
+					} else {
+						require.NoError(t, db.Callback().Query().After("gorm:query").Register("affiliate_during_marker", callback))
+					}
+					_, err := OpenAdtySite(owner.Id, "affiliate-during-marker-"+stage, model.AdtySiteOpenedByAdmin, AdtySitePreset{})
+					assert.NoError(t, err)
+					assert.NoError(t, db.Callback().Query().Remove("affiliate_during_marker"))
+					assert.True(t, inserted.Load(), "the independent referral request must run during marker initialization")
+					var affiliate model.ReferralAffiliate
+					require.NoError(t, db.Where("user_id = ?", owner.Id).First(&affiliate).Error)
+					assert.Positive(t, affiliate.SiteOwnerSince, "a concurrently created affiliate must still be excluded from main-site commissions")
+				}
+			}
+		})
+	}
+}
+
+func openingSiteAndCommissionTransfer(t *testing.T, db *gorm.DB, dialect string) {
+	t.Helper()
+	affiliate := availableAffiliate(t, db, "opening-transfer", 50)
+	affiliateLocked, markerReached := make(chan struct{}), make(chan struct{})
+	var affiliateOnce, markerOnce sync.Once
+	require.NoError(t, db.Callback().Query().After("gorm:query").Register("opening_transfer_affiliate_barrier", func(tx *gorm.DB) {
+		if dialect != "sqlite" && tx.Statement.Table == "referral_affiliates" {
+			affiliateOnce.Do(func() {
+				close(affiliateLocked)
+				select {
+				case <-markerReached:
+				case <-time.After(10 * time.Second):
+					tx.AddError(errors.New("opening did not reach the affiliate marker"))
+				}
+			})
+		}
+	}))
+	require.NoError(t, db.Callback().Update().Before("gorm:update").Register("opening_transfer_marker_barrier", func(tx *gorm.DB) {
+		if tx.Statement.Table == "referral_affiliates" {
+			markerOnce.Do(func() { close(markerReached) })
+		}
+	}))
+	t.Cleanup(func() {
+		assert.NoError(t, db.Callback().Query().Remove("opening_transfer_affiliate_barrier"))
+		assert.NoError(t, db.Callback().Update().Remove("opening_transfer_marker_barrier"))
+	})
+	withdrawDone, openDone := make(chan error, 1), make(chan error, 1)
+	go func() {
+		_, err := Referral.CreateWithdrawal(ReferralWithdrawalCreateInput{UserId: affiliate.UserId, Amount: decimal.NewFromInt(30),
+			AccountType: model.ReferralWithdrawToBalance, IdempotencyKey: "opening-transfer"})
+		withdrawDone <- err
+	}()
+	if dialect != "sqlite" {
+		// SQLite serializes concurrent writers at BEGIN IMMEDIATE, before
+		// a second writer can reach the row-lock barriers.
+		select {
+		case <-affiliateLocked:
+		case <-time.After(10 * time.Second):
+			t.Fatal("withdrawal did not acquire the affiliate lock")
+		}
+	}
+	go func() {
+		_, err := OpenAdtySite(affiliate.UserId, "opening-transfer", model.AdtySiteOpenedByAdmin, AdtySitePreset{})
+		openDone <- err
+	}()
+	for _, result := range []<-chan error{withdrawDone, openDone} {
+		select {
+		case err := <-result:
+			assert.NoError(t, err, "opening and a legitimate commission transfer must both commit without a deadlock victim")
+		case <-time.After(15 * time.Second):
+			t.Fatal("opening and withdrawal did not finish")
+		}
+	}
+	var owner model.User
+	require.NoError(t, db.First(&owner, affiliate.UserId).Error)
+	assert.Equal(t, 15_000_000, owner.Quota)
+	assert.InDelta(t, 20, account(t, db, affiliate.Id).AvailableAmount, 1e-9)
+	require.NoError(t, db.First(affiliate, affiliate.Id).Error)
+	assert.Positive(t, affiliate.SiteOwnerSince)
+}
+
 func TestCommissionOnFaceExcludingBonusAndSnapshot(t *testing.T) {
 	db := prepareReferralDB(t)
 	affiliate, invitee := inviterAndInvitee(t, db, "face")
