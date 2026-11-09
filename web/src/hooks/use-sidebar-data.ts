@@ -61,9 +61,25 @@ export function useSidebarData(): SidebarData {
   const isSiteOwner = useAuthStore(
     (state) => state.auth.user?.adty_site_owner === true
   )
+  const isStaff = useAuthStore(
+    (state) => (state.auth.user?.staff_site_id ?? 0) > 0
+  )
 
-  return useMemo(
-    () => ({
+  return useMemo(() => {
+    if (isStaff) {
+      return {
+        navGroups: [
+          {
+            id: 'personal',
+            title: t('Account'),
+            items: [
+              { title: t('Staff workspace'), url: '/site-staff', icon: Users },
+            ],
+          },
+        ],
+      }
+    }
+    return {
       navGroups: [
         {
           id: 'general',
@@ -215,7 +231,6 @@ export function useSidebarData(): SidebarData {
           ],
         },
       ],
-    }),
-    [t, referralBadge, isSiteOwner]
-  )
+    }
+  }, [t, referralBadge, isSiteOwner, isStaff])
 }

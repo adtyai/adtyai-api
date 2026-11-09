@@ -56,6 +56,10 @@ export type SiteOwnerAction =
   | 'domain.delete'
   | 'promo'
   | 'sender.delete'
+  | 'staff.create'
+  | 'staff.update'
+  | 'staff.password'
+  | 'staff.delete'
 
 /** ManageUser actions that change a user's status or role and need step-up. */
 export type AdminUserManageAction = 'disable' | 'enable' | 'promote' | 'demote'

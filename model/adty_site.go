@@ -222,7 +222,7 @@ func (AdtySiteLookup) TableName() string { return "adty_site_lookups" }
 func AdtySiteTables() []any {
 	return []any{&AdtySite{}, &AdtySiteInviteCode{}, &AdtySiteAudit{}, &AdtySiteCustomer{}, &AdtySitePrice{}, &AdtySiteDomain{},
 		&AdtySiteEarningDaily{}, &AdtySiteTrialGrant{}, &AdtySiteReport{}, &AdtySiteLookup{}, &AdtySiteSenderDomain{},
-		&AdtySiteTier{}, &AdtySiteWallet{}, &AdtySiteWalletLedger{}}
+		&AdtySiteTier{}, &AdtySiteWallet{}, &AdtySiteWalletLedger{}, &AdtySiteStaff{}}
 }
 
 // AdtySetUsersSiteTx 把 fromSite 的客户全部改到 toSite（0 是主站），同事务撤销旧Key。

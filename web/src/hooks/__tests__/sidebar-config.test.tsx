@@ -49,7 +49,8 @@ function sidebarFor(
   admin?: object,
   user?: object,
   canConfigure = true,
-  siteOwner = false
+  siteOwner = false,
+  staff = false
 ) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -64,6 +65,7 @@ function sidebarFor(
     permissions: { sidebar_settings: canConfigure },
     sidebar_modules: user ? JSON.stringify(user) : '',
     adty_site_owner: siteOwner,
+    staff_site_id: staff ? 7 : 0,
   })
   function Wrapper(props: { children: ReactNode }) {
     return (
@@ -82,6 +84,12 @@ function sidebarFor(
 // ADTY task 8.2: group ids stay general/chat/personal/admin (module switches
 // and the admin-only filter key on them); only titles and order change.
 describe('sidebar groups', () => {
+  it('shows only the staff workspace for a dedicated employee account', () => {
+    const { result } = sidebarFor(undefined, undefined, true, false, true)
+    expect(
+      result.current.flatMap((group) => group.items).map((item) => item.title)
+    ).toEqual(['Staff workspace'])
+  })
   it('orders the groups console, chat, account, administration', () => {
     const { result } = sidebarFor()
     expect(result.current.map((group) => [group.id, group.title])).toEqual([

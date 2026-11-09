@@ -31,6 +31,131 @@ type ownerFixture struct {
 	other  *model.AdtySite
 }
 
+func TestOwnerStaffLifecycleAndScope(t *testing.T) {
+	f := newOwnerFixture(t)
+	mine := f.customer(t, f.site, "staff-customer", "private@example.com")
+	theirs := f.customer(t, f.other, "staff-other", "other@example.com")
+	create := `{"username":"employee-1","display_name":"Support One","password":"employee-password-42","role":"support"}`
+	require.Equal(t, http.StatusForbidden, f.call(t, http.MethodPost, "/api/adty/site/staff", create, "").Code)
+	proof := sessionProof(t, f.owner, "staff.create", f.site.Id)
+	response := f.call(t, http.MethodPost, "/api/adty/site/staff", create, proof)
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	staff := decodeAdtyData[struct {
+		Id          int
+		Permissions []string
+		Version     int64
+	}](t, response.Body)
+	require.Positive(t, staff.Id)
+	var employee model.User
+	require.NoError(t, f.db.Where("username = ?", "employee-1").First(&employee).Error)
+	assert.True(t, common.ValidatePasswordAndHash("employee-password-42", employee.Password))
+	assert.NotContains(t, response.Body.String(), "employee-password-42")
+	assert.NotContains(t, response.Body.String(), employee.Password)
+	assert.ElementsMatch(t, []string{"customers.read"}, staff.Permissions)
+	for _, token := range []string{createAdtyScopedToken(t, f.owner.Id, "wallet:read"), createAdtyScopedToken(t, employee.Id, "wallet:read")} {
+		assert.Equal(t, http.StatusForbidden, adtyJSON(t, f.engine, http.MethodGet, "/api/adty/site/staff", "", token).Code)
+		assert.Equal(t, http.StatusForbidden, adtyJSON(t, f.engine, http.MethodGet, "/api/adty/staff/self", "", token).Code)
+	}
+	assert.Contains(t, f.call(t, http.MethodPost, "/api/adty/site/staff", create, proof).Body.String(), "SECURITY_PROOF_CONSUMED")
+	login, err := service.CreateLoginSession(employee.Id, "password", "127.0.0.1", "staff-test")
+	require.NoError(t, err)
+	self := adtyJSON(t, f.engine, http.MethodGet, "/api/user/self", "", login.AccessToken)
+	require.Equal(t, http.StatusOK, self.Code, self.Body.String())
+	assert.Contains(t, self.Body.String(), fmt.Sprintf(`"staff_site_id":%d`, f.site.Id))
+	assert.Contains(t, self.Body.String(), `"adty_site_owner":false`)
+	path := fmt.Sprintf("/api/adty/staff/customers/%d", mine.Id)
+	list := adtyJSON(t, f.engine, http.MethodGet, "/api/adty/staff/customers?site_id="+fmt.Sprint(f.other.Id), "", login.AccessToken)
+	require.Equal(t, http.StatusOK, list.Code, list.Body.String())
+	assert.Contains(t, list.Body.String(), "staff-customer")
+	for _, hidden := range []string{"staff-other", "employee-1", "private@example.com", `"balance"`, `"used_quota"`, `"tokens"`} {
+		assert.NotContains(t, list.Body.String(), hidden)
+	}
+	assert.Equal(t, http.StatusNotFound, adtyJSON(t, f.engine, http.MethodGet, fmt.Sprintf("/api/adty/staff/customers/%d", theirs.Id), "", login.AccessToken).Code)
+	for _, suffix := range []string{"/topups", "/logs"} {
+		assert.Equal(t, http.StatusForbidden, adtyJSON(t, f.engine, http.MethodGet, path+suffix, "", login.AccessToken).Code)
+	}
+	for _, denied := range []string{"/api/adty/site/self", "/api/adty/site/staff", "/api/adty/site/earnings", "/api/adty/site/wallets", "/api/token/", "/api/user/topup/info", "/api/user/referral/profile"} {
+		assert.Equal(t, http.StatusForbidden, adtyJSON(t, f.engine, http.MethodGet, denied, "", login.AccessToken).Code, denied)
+	}
+	staffPath := fmt.Sprintf("/api/adty/site/staff/%d", staff.Id)
+	update := `{"display_name":"Finance One","role":"finance","permissions":["customers.read","customers.balance","customers.topups","customers.usage"],"status":"enabled","expected_version":1}`
+	for _, wrongProof := range []string{sessionProof(t, f.owner, "staff.password", staff.Id), sessionProof(t, f.owner, "staff.update", staff.Id+1)} {
+		assert.Equal(t, http.StatusForbidden, f.call(t, http.MethodPut, staffPath, update, wrongProof).Code)
+	}
+	response = f.call(t, http.MethodPut, staffPath, update, sessionProof(t, f.owner, "staff.update", staff.Id))
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	assert.Equal(t, http.StatusConflict, f.call(t, http.MethodPut, staffPath, update, sessionProof(t, f.owner, "staff.update", staff.Id)).Code)
+	assert.Equal(t, http.StatusUnauthorized, adtyJSON(t, f.engine, http.MethodGet, path, "", login.AccessToken).Code)
+	_, _, err = service.RefreshLoginSession(login.RefreshToken, login.Session.SID, "127.0.0.1", "staff-test")
+	assert.Error(t, err, "old refresh cannot restore revoked permissions")
+	login, err = service.CreateLoginSession(employee.Id, "password", "127.0.0.1", "staff-test")
+	require.NoError(t, err)
+	response = adtyJSON(t, f.engine, http.MethodGet, path, "", login.AccessToken)
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	assert.Contains(t, response.Body.String(), `"balance":1000000`)
+	assert.NotContains(t, response.Body.String(), `"tokens"`)
+	require.NoError(t, f.db.Model(&model.AdtySiteCustomer{}).Where("user_id = ?", mine.Id).Update("joined_at", 1000).Error)
+	for _, createdAt := range []int64{999, 1001} {
+		require.NoError(t, f.db.Create(&model.Log{UserId: mine.Id, CreatedAt: createdAt, Type: model.LogTypeConsume, ModelName: fmt.Sprintf("model-%d", createdAt), Quota: 123, TokenName: "secret-key-name", Content: "secret-request", Ip: "192.0.2.23", Other: `{"key":"sk-secret"}`}).Error)
+		require.NoError(t, f.db.Create(&model.AdtyTopupOrder{UserId: mine.Id, SiteId: f.site.Id, TradeNo: fmt.Sprintf("staff-topup-%d", createdAt), CreatedAt: createdAt, CreditQuota: 456, PaidTxHash: "secret-paid-tx"}).Error)
+	}
+	for _, suffix := range []string{"/topups", "/logs"} {
+		records := adtyJSON(t, f.engine, http.MethodGet, path+suffix, "", login.AccessToken)
+		require.Equal(t, http.StatusOK, records.Code, records.Body.String())
+		assert.Contains(t, records.Body.String(), `"total":1`)
+		assert.Contains(t, records.Body.String(), "1001")
+		for _, secret := range []string{"model-999", "staff-topup-999", "secret-paid-tx", "sk-secret", "secret-request", "192.0.2.23", "secret-key-name", `"content"`, `"other"`, `"token_name"`, `"ip"`} {
+			assert.NotContains(t, records.Body.String(), secret)
+		}
+	}
+	// Disabling and enabling invalidates every old JWT and refresh generation.
+	for i, status := range []string{"disabled", "enabled"} {
+		body := fmt.Sprintf(`{"display_name":"Finance One","role":"finance","status":%q,"expected_version":%d}`, status, i+2)
+		response = f.call(t, http.MethodPut, staffPath, body, sessionProof(t, f.owner, "staff.update", staff.Id))
+		require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+		assert.Equal(t, http.StatusUnauthorized, adtyJSON(t, f.engine, http.MethodGet, path, "", login.AccessToken).Code)
+	}
+	login, err = service.CreateLoginSession(employee.Id, "password", "127.0.0.1", "staff-test")
+	require.NoError(t, err)
+	response = f.call(t, http.MethodPut, staffPath+"/password", `{"password":"replacement-password-42","expected_version":4}`, sessionProof(t, f.owner, "staff.password", staff.Id))
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	assert.Equal(t, http.StatusUnauthorized, adtyJSON(t, f.engine, http.MethodGet, path, "", login.AccessToken).Code)
+	require.NoError(t, f.db.First(&employee, employee.Id).Error)
+	assert.True(t, common.ValidatePasswordAndHash("replacement-password-42", employee.Password))
+	assert.False(t, common.ValidatePasswordAndHash("employee-password-42", employee.Password))
+	response = f.call(t, http.MethodDelete, staffPath, `{"expected_version":5}`, sessionProof(t, f.owner, "staff.delete", staff.Id))
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	_, err = service.CreateLoginSession(employee.Id, "password", "127.0.0.1", "staff-test")
+	assert.Error(t, err)
+	audits := f.call(t, http.MethodGet, "/api/adty/site/staff/audits", "", "")
+	require.Equal(t, http.StatusOK, audits.Code, audits.Body.String())
+	assert.Contains(t, audits.Body.String(), "staff.create")
+	assert.Contains(t, audits.Body.String(), "staff.customers.read")
+	for _, secret := range []string{"employee-password-42", "replacement-password-42", "private@example.com", employee.Password} {
+		assert.NotContains(t, audits.Body.String(), secret)
+	}
+}
+
+func TestOwnerStaffRejectsForbiddenGrantsAndForeignOwner(t *testing.T) {
+	f := newOwnerFixture(t)
+	for _, grant := range []string{"customers.keys", "wallets.write", "customers.credit", "customers.password", "customers.disable", "site.manage", "*"} {
+		body := fmt.Sprintf(`{"username":"bad-grant","display_name":"Bad","password":"employee-password-42","role":"manager","permissions":[%q]}`, grant)
+		response := f.call(t, http.MethodPost, "/api/adty/site/staff", body, sessionProof(t, f.owner, "staff.create", f.site.Id))
+		assert.Equal(t, http.StatusBadRequest, response.Code, response.Body.String())
+	}
+	var count int64
+	require.NoError(t, f.db.Model(&model.User{}).Where("username = ?", "bad-grant").Count(&count).Error)
+	assert.Zero(t, count)
+	plain := adtySessionToken(t, f.db, "not-staff-owner", common.RoleCommonUser)
+	assert.Equal(t, http.StatusForbidden, adtyJSON(t, f.engine, http.MethodGet, "/api/adty/site/staff", "", plain).Code)
+	assert.Equal(t, http.StatusForbidden, adtyJSON(t, f.engine, http.MethodGet, "/api/adty/staff/self", "", plain).Code)
+	var otherOwner model.User
+	require.NoError(t, f.db.First(&otherOwner, f.other.OwnerUserId).Error)
+	foreign, err := service.CreateAdtyStaff(otherOwner.Id, f.other.Id, service.AdtyStaffInput{Username: "foreign-staff", DisplayName: "Other", Password: "employee-password-42", Role: "support"})
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusNotFound, f.call(t, http.MethodPut, fmt.Sprintf("/api/adty/site/staff/%d", foreign.Id), `{"expected_version":1}`, "").Code)
+}
+
 // sessionFor 给 adtySessionToken 建的用户签一个 proof（和 /api/verify 签的一样，方法是密码）。
 func sessionProof(t *testing.T, user model.User, action string, target int) string {
 	t.Helper()

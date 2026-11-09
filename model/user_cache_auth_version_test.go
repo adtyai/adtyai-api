@@ -89,10 +89,17 @@ func TestPendingUserAuthFenceRejectsStaleCacheWrite(t *testing.T) {
 func TestUserCachePreservesSiteMembership(t *testing.T) {
 	server := useUserCacheMiniRedis(t)
 	const userID = 4299
-	require.NoError(t, writeUserCache(&UserBase{Id: userID, SiteId: 17, AuthVersion: 1}, true))
+	require.NoError(t, writeUserCache(&UserBase{Id: userID, SiteId: 17, StaffSiteId: 17, AuthVersion: 1}, true))
 	cached, err := cacheGetUserBase(userID)
 	require.NoError(t, err)
 	assert.Equal(t, 17, cached.SiteId)
+	assert.Equal(t, 17, cached.StaffSiteId)
+	// A partial cache update cannot bless an old schema that lacks staff identity.
+	server.HDel(getUserCacheKey(userID), "StaffSiteId")
+	server.HSet(getUserCacheKey(userID), "CacheSchema", "4")
+	require.NoError(t, updateUserCacheFieldAtVersion(userID, "Group", "updated", 1))
+	_, err = cacheGetUserBase(userID)
+	assert.Error(t, err, "partial updates must not relabel an old authorization schema")
 	// Cached rows created before the membership field was written must reload.
 	server.HDel(getUserCacheKey(userID), "SiteId")
 	server.HSet(getUserCacheKey(userID), "CacheSchema", "3")

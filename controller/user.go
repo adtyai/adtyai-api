@@ -574,6 +574,9 @@ func buildSelfUserData(user *model.User) map[string]any {
 	permissions := calculateUserPermissions(user.Role)
 	permissions["admin_permissions"] = authz.Capabilities(user.Id, user.Role)
 	required, version := service.AdtySiteTermsStatus(user.Id)
+	if user.StaffSiteId > 0 {
+		required, version = false, "" // Staff use the dedicated workspace's site agreement gate.
+	}
 	return map[string]any{
 		"id":                  user.Id,
 		"username":            user.Username,
@@ -597,6 +600,7 @@ func buildSelfUserData(user *model.User) map[string]any {
 		"sidebar_modules":     userSetting.SidebarModules, // 正确提取sidebar_modules字段
 		"permissions":         permissions,
 		"adty_site_owner":     service.AdtyIsSiteOwner(user.Id), // 二开：侧边栏只对站长显示站长中心（任务 11.6）
+		"staff_site_id":       user.StaffSiteId,
 		"site_terms_required": required,
 		"site_terms_version":  version,
 	}

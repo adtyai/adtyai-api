@@ -52,6 +52,8 @@ export interface AuthUser {
   permissions?: UserPermissions
   /** adty: the user owns an active, paused or closing reseller site (task 11.6). */
   adty_site_owner?: boolean
+  /** Dedicated employee identity; never grants owner or administrator authority. */
+  staff_site_id?: number
   /** Set when an owner must accept the current site agreement before the owner center opens. */
   site_terms_required?: boolean
   site_terms_version?: string

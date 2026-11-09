@@ -539,3 +539,8 @@
 | `controller/adty_order_trace.go`、`admin_finance.go`、`router/adty-router.go` | 财务/站长详情及各分区独立分页，只查询明确关联本订单的数据 | 沿用财务读取与站长wallet:read权限；冻结归属、人工凭证及后台原因脱敏，站长无主站佣金；未关联日汇总不伪造归属 | M-03 |
 | `web/src/features/recharge-audit/`、八语及静态键 | 点击订单号打开既有Dialog，组合订单快照、退款结果和StaticDataTable追溯分区 | 复用加载/错误/重试及NativeSelect；账号或权限变化关闭旧详情；明确历史接收记录不完整和线下退款 | M-03 |
 | `web/scripts/adty/browser-order-trace*.mjs`、`browser-unified-orders.mjs`、`scripts/adty/browser-business.sh` | 在原订单验收后追加真实签名通知、重放、人工补单、退款、分页和脱敏流程 | 隔离PG17/Redis及合成密钥；仅准备未付款订单fixture，真实业务API入账/退款，不操作真实商户资金 | M-03 |
+| `model/adty_site_staff.go`、`user.go`、`user_cache.go`、`user_auth_cache.go`、`adty_site.go` | 独立员工成员与永久账号标记；主库三库迁移；缓存 schema 5 完整传播标记，旧 schema 局部更新失效 | 不挪用管理员角色或客户关系；不走注册赠金；禁用/删除不转换为客户 | O-01 部分 |
+| `service/adty_site_staff.go`、`adty_site_owner.go`、`adty_site_verification.go` | 本站站长 CRUD、四种只读权限、逐请求 SQL 授权、事务审计和授权版本递增；客户查询排除员工 | 单次证明绑定动作/目标，版本冲突拒绝；敏感密码写入不输出 SQL；旧 JWT/refresh 不复活 | O-01 部分 |
+| `controller/adty_site_staff.go`、`middleware/adty_site_staff.go`、`auth.go`、`router/adty-router.go`、`controller/user.go` | session-only 员工/管理 API，员工白名单默认拒绝；安全字段投影和迁入时间限制 | 邮箱遮罩，无客户 Key/原始日志；读取审计失败不返回数据，站点/协议/权限与 Host 逐次核验 | O-01 部分 |
+| `web/src/features/adty-site-staff/`、`adty-site-owner/`、认证路由/导航及八语 | 组合既有 Dialog/ConfirmDialog/StaticDataTable/PageSwitcher/Field 与 RHF+Zod；独立员工工作区及按权限关闭记录 | 复用业务封装，无新增通用控件/依赖；未实现客户写权限和未确定资金规则，整项仍未关闭 | O-01 部分 |
+| `scripts/adty/browser-business.sh`、`web/scripts/adty/browser-site-staff.mjs`及既有后端/导航测试 | 独立 PG17/Redis 桌面/移动创建、登录、脱敏、撤权/改密/删除、SQL 审计；三库 fresh/upgrade/重复迁移和 race | 合成账号及资金，验证本批范围，不宣称全平台验收 | O-01 部分 |

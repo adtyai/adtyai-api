@@ -113,6 +113,7 @@ type User struct {
 	LastLoginAt      int64                      `json:"last_login_at" gorm:"default:0;column:last_login_at"`
 	AuthVersion      int64                      `json:"-" gorm:"type:bigint;not null;default:1;column:auth_version"`
 	SiteId           int                        `json:"site_id" gorm:"index;default:0;column:site_id"` // 所属分站（任务 11.1），0 是主站；只由分站服务写
+	StaffSiteId      int                        `json:"staff_site_id" gorm:"index;not null;default:0"` // Dedicated employee identity, written only by the staff service.
 	AdminPermissions map[string]map[string]bool `json:"admin_permissions,omitempty" gorm:"-:all"`
 }
 
@@ -133,6 +134,7 @@ func (user *User) ToBaseUser() *UserBase {
 		Email:       user.Email,
 		AuthVersion: user.AuthVersion,
 		SiteId:      user.SiteId, // 二开：P11
+		StaffSiteId: user.StaffSiteId,
 		CacheSchema: userCacheSchemaVersion,
 	}
 	return cache
@@ -569,7 +571,7 @@ func GetSelfUserById(id int) (*User, error) {
 		"id", "username", "display_name", "role", "status", "email",
 		"github_id", "discord_id", "oidc_id", "wechat_id", "telegram_id",
 		"group", "quota", "quota_pending", "used_quota", "request_count", "linux_do_id", "setting",
-		"stripe_customer", "auth_version",
+		"stripe_customer", "auth_version", "staff_site_id",
 		"CASE WHEN password <> '' THEN 1 ELSE 0 END AS has_password",
 	}).First(&profile, "id = ?", id).Error
 	profile.User.HasPassword = profile.HasPassword

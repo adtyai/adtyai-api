@@ -11,7 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-const userCacheSchemaVersion = 4 // Invalidate schema 3 hashes that omitted SiteId.
+const userCacheSchemaVersion = 5 // Older hashes omitted the dedicated employee identity.
 
 type UserBase struct {
 	Id          int    `json:"id"`
@@ -23,6 +23,7 @@ type UserBase struct {
 	Username    string `json:"username"`
 	Setting     string `json:"setting"`
 	SiteId      int    `json:"site_id"` // 二开：所属分站（P11）
+	StaffSiteId int    `json:"staff_site_id"`
 	AuthVersion int64  `json:"-"`
 	CacheSchema int    `json:"-"`
 }

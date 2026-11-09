@@ -31,6 +31,81 @@ type adtySiteBeforeFinance struct {
 
 func (adtySiteBeforeFinance) TableName() string { return "adty_sites" }
 
+func TestStaffServiceDatabaseMatrix(t *testing.T) {
+	for _, dialect := range []string{"sqlite", "mysql", "postgres"} {
+		t.Run(dialect, func(t *testing.T) {
+			db := prepareReferralDialectDB(t, dialect)
+			owner := referralUser(t, db, "staff-owner")
+			site := model.AdtySite{OwnerUserId: owner.Id, Subdomain: "staff-site", Status: model.AdtySiteStatusActive, AgreementVer: AdtyCurrentSiteAgreementVersion()}
+			require.NoError(t, db.Create(&site).Error)
+			created, err := CreateAdtyStaff(owner.Id, site.Id, AdtyStaffInput{Username: "staff-matrix", DisplayName: "Support", Password: "employee-password-42", Role: "support"})
+			require.NoError(t, err)
+			assert.Equal(t, []string{"customers.read"}, created.Permissions)
+			_, _, err = AdtyStaffAccess(created.UserId, 1, "customers.read")
+			require.NoError(t, err)
+			_, _, err = AdtyStaffAccess(created.UserId, 1, "customers.balance")
+			assert.ErrorIs(t, err, ErrAdtyStaffDenied)
+			var group sync.WaitGroup
+			results := make(chan error, 2)
+			for range 2 {
+				group.Go(func() {
+					_, err := MutateAdtyStaff(owner.Id, site.Id, created.Id, AdtySiteOwnerActionStaffUpdate, AdtyStaffInput{DisplayName: "Finance", Role: "finance", Status: "enabled", ExpectedVersion: 1})
+					results <- err
+				})
+			}
+			group.Wait()
+			close(results)
+			success, conflict := 0, 0
+			for err := range results {
+				if err == nil {
+					success++
+				} else {
+					require.ErrorIs(t, err, ErrAdtyStaffConflict)
+					conflict++
+				}
+			}
+			assert.Equal(t, 1, success)
+			assert.Equal(t, 1, conflict)
+			_, _, err = AdtyStaffAccess(created.UserId, 1, "customers.read")
+			assert.ErrorIs(t, err, ErrAdtyStaffDenied)
+			_, _, err = AdtyStaffAccess(created.UserId, 2, "customers.balance")
+			require.NoError(t, err)
+			none := []string{}
+			_, err = MutateAdtyStaff(owner.Id, site.Id, created.Id, AdtySiteOwnerActionStaffUpdate, AdtyStaffInput{DisplayName: "No access", Role: "finance", Permissions: &none, Status: "enabled", ExpectedVersion: 2})
+			require.NoError(t, err)
+			_, _, err = AdtyStaffAccess(created.UserId, 3, "customers.read")
+			assert.ErrorIs(t, err, ErrAdtyStaffDenied)
+			_, err = MutateAdtyStaff(owner.Id+1000, site.Id, created.Id, AdtySiteOwnerActionStaffDelete, AdtyStaffInput{ExpectedVersion: 3})
+			require.Error(t, err)
+			// Failed audit writes roll back both grants and auth generation.
+			const callback = "test:staff-audit-rollback"
+			require.NoError(t, db.Callback().Create().Before("gorm:create").Register(callback, func(tx *gorm.DB) {
+				if tx.Statement.Table == "adty_site_audits" {
+					tx.AddError(errors.New("audit unavailable"))
+				}
+			}))
+			_, err = MutateAdtyStaff(owner.Id, site.Id, created.Id, AdtySiteOwnerActionStaffDelete, AdtyStaffInput{ExpectedVersion: 3})
+			require.ErrorContains(t, err, "audit unavailable")
+			require.NoError(t, db.Callback().Create().Remove(callback))
+			_, _, err = AdtyStaffAccess(created.UserId, 3, "")
+			require.NoError(t, err)
+			for column, value := range map[string]any{"owner_user_id": owner.Id + 1000, "status": model.AdtySiteStatusClosed, "agreement_ver": "old"} {
+				require.NoError(t, db.Model(&site).Update(column, value).Error)
+				_, _, err = AdtyStaffAccess(created.UserId, 3, "")
+				assert.ErrorIs(t, err, ErrAdtyStaffDenied, column)
+				require.NoError(t, db.Model(&site).Updates(map[string]any{"owner_user_id": owner.Id, "status": model.AdtySiteStatusActive, "agreement_ver": AdtyCurrentSiteAgreementVersion()}).Error)
+			}
+			var user model.User
+			require.NoError(t, db.First(&user, created.UserId).Error)
+			assert.Zero(t, user.Quota, "employee creation never grants money")
+			assert.Equal(t, site.Id, user.StaffSiteId)
+			var audits []model.AdtySiteAudit
+			require.NoError(t, db.Where("site_id = ?", site.Id).Find(&audits).Error)
+			assert.Len(t, audits, 3, "only committed changes create audit events")
+		})
+	}
+}
+
 func TestAdtySiteFinanceMigrationPreservesExistingSite(t *testing.T) {
 	for _, dialect := range []string{"sqlite", "postgresql"} {
 		t.Run(dialect, func(t *testing.T) {

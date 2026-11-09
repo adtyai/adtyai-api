@@ -78,6 +78,9 @@ func authHelper(c *gin.Context, minRole int) {
 		return
 	}
 	setDashboardAuthContext(c, user, identity, useAccessToken)
+	if !adtyStaffDashboardAllowed(c, user, identity) {
+		return
+	}
 	if lookup != nil {
 		setAccessTokenContext(c, lookup)
 	}
@@ -522,7 +525,7 @@ func TokenAuthReadOnly() func(c *gin.Context) {
 			c.Abort()
 			return
 		}
-		if userCache.Status != common.UserStatusEnabled {
+		if userCache.Status != common.UserStatusEnabled || userCache.StaffSiteId != 0 {
 			common.ApiErrorStatus(c, http.StatusForbidden, errors.New(common.TranslateMessage(c, i18n.MsgAuthUserBanned)))
 			c.Abort()
 			return
@@ -626,7 +629,7 @@ func TokenAuth() func(c *gin.Context) {
 				common.TranslateMessage(c, i18n.MsgDatabaseError))
 			return
 		}
-		userEnabled := userCache.Status == common.UserStatusEnabled
+		userEnabled := userCache.Status == common.UserStatusEnabled && userCache.StaffSiteId == 0
 		if !userEnabled {
 			abortWithOpenAiMessage(c, http.StatusForbidden, common.TranslateMessage(c, i18n.MsgAuthUserBanned))
 			return

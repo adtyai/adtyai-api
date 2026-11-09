@@ -49,9 +49,7 @@ export function OwnerVerificationProvider(props: {
         scope: 'site.owner.manage',
         context: { action, target },
         title: t('Confirm it is you'),
-        description: t(
-          'Changing prices, bonuses, trial credit, promo codes or domains needs a fresh verification.'
-        ),
+        description: t('Sensitive site changes require a fresh verification.'),
       })
       return proof?.proof_token ?? null
     },

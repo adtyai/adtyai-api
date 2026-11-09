@@ -75,7 +75,7 @@ end
 redis.call('HSET', KEYS[1],
   'Id', ARGV[2], 'Group', ARGV[3], 'Email', ARGV[4],
   'Status', ARGV[5], 'Role', ARGV[6], 'Username', ARGV[7],
-  'Setting', ARGV[8], 'AuthVersion', ARGV[1], 'CacheSchema', ARGV[9], 'SiteId', ARGV[13])
+  'Setting', ARGV[8], 'AuthVersion', ARGV[1], 'CacheSchema', ARGV[9], 'SiteId', ARGV[13], 'StaffSiteId', ARGV[14])
 if ARGV[10] == '1' and redis.call('HEXISTS', KEYS[1], 'Quota') == 0 then
   redis.call('HSET', KEYS[1], 'Quota', ARGV[11])
 end
@@ -84,7 +84,7 @@ return 1`
 	result, err := common.RDB.Eval(context.Background(), script,
 		[]string{getUserCacheKey(user.Id), getUserAuthFenceKey(user.Id), getUserAuthVersionKey(user.Id)},
 		user.AuthVersion, user.Id, user.Group, user.Email, user.Status, user.Role,
-		user.Username, user.Setting, user.CacheSchema, includeQuotaArg, user.Quota, ttl, user.SiteId,
+		user.Username, user.Setting, user.CacheSchema, includeQuotaArg, user.Quota, ttl, user.SiteId, user.StaffSiteId,
 	).Int()
 	if err != nil {
 		return err
@@ -256,6 +256,10 @@ if pending > 0 and pending <= incoming then
   redis.call('DEL', KEYS[2])
 end
 if redis.call('EXISTS', KEYS[1]) == 0 then
+  return 1
+end
+if redis.call('HGET', KEYS[1], 'CacheSchema') ~= ARGV[4] then
+  redis.call('DEL', KEYS[1])
   return 1
 end
 if current ~= incoming then

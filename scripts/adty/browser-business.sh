@@ -22,11 +22,20 @@ case "$adty_browser_scenario" in
     ADTY_BROWSER_SCENARIO=unified-orders bash "$0"
     ADTY_BROWSER_SCENARIO=order-trace bash "$0"
     ADTY_BROWSER_SCENARIO=withdraw-networks bash "$0"
+    ADTY_BROWSER_SCENARIO=site-staff bash "$0"
     exit 0
     ;;
-  deployment | wallet | site-status | password-reset | user-sites | finance-actions | site-brand | notification-read | notification-publish | unified-orders | order-trace | withdraw-networks) ;;
+  deployment | wallet | site-status | password-reset | user-sites | finance-actions | site-brand | notification-read | notification-publish | unified-orders | order-trace | withdraw-networks | site-staff) ;;
   *) echo 'browser-business: unknown scenario' >&2; exit 2 ;;
 esac
+
+if [ "$adty_browser_scenario" = site-staff ] && [ -z "${ADTY_BROWSER_STAFF_WIDTH:-}" ]; then
+  # Each viewport runs a full sensitive lifecycle. Isolate their security
+  # rate-limit windows without changing the production limits.
+  ADTY_BROWSER_STAFF_WIDTH=1440 bash "$0"
+  ADTY_BROWSER_STAFF_WIDTH=390 bash "$0"
+  exit 0
+fi
 
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 adty_repo_root=$(pwd -P)

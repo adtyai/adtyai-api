@@ -284,6 +284,27 @@ func registerAdtyResellerRoutes(apiRouter *gin.RouterGroup) {
 		owner.Handle(route.method, route.path, route.handlers...)
 	}
 
+	// Employee administration and workspace require live browser sessions.
+	for _, route := range []struct {
+		method, path string
+		handler      gin.HandlerFunc
+	}{
+		{http.MethodGet, "/adty/site/staff", controller.GetAdtyOwnerStaff},
+		{http.MethodGet, "/adty/site/staff/audits", controller.GetAdtyOwnerStaffAudits},
+		{http.MethodPost, "/adty/site/staff", controller.PostAdtyOwnerStaff},
+		{http.MethodPut, "/adty/site/staff/:id", controller.PutAdtyOwnerStaff},
+		{http.MethodPut, "/adty/site/staff/:id/password", controller.PutAdtyOwnerStaffPassword},
+		{http.MethodDelete, "/adty/site/staff/:id", controller.DeleteAdtyOwnerStaff},
+		{http.MethodGet, "/adty/staff/self", controller.GetAdtyStaffSelf},
+		{http.MethodGet, "/adty/staff/customers", controller.GetAdtyStaffCustomers},
+		{http.MethodGet, "/adty/staff/customers/:id", controller.GetAdtyStaffCustomer},
+		{http.MethodGet, "/adty/staff/customers/:id/topups", controller.GetAdtyStaffCustomerTopUps},
+		{http.MethodGet, "/adty/staff/customers/:id/logs", controller.GetAdtyStaffCustomerLogs},
+	} {
+		middleware.DeclareAdtyAccessTokenRoute(route.method, "/api"+route.path, "session", "")
+		apiRouter.Handle(route.method, route.path, middleware.UserAuth(), middleware.DisableCache(), route.handler)
+	}
+
 	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/adty/admin/reseller/tiers", "scope", "option:read")
 	middleware.DeclareAdtyAccessTokenRoute("PUT", "/api/adty/admin/reseller/tiers", "scope", "option:write")
 	root := apiRouter.Group("/adty/admin/reseller", middleware.RootAuth())

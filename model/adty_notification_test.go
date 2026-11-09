@@ -108,3 +108,47 @@ func TestNotificationReadDatabaseMatrix(t *testing.T) {
 		}
 	}
 }
+
+func TestStaffDatabaseMatrix(t *testing.T) {
+	for _, dialect := range []string{"sqlite", "mysql", "postgres"} {
+		for _, upgrade := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/upgrade=%t", dialect, upgrade), func(t *testing.T) {
+				db := isolatedMigrationTestDatabase(t, dialect)
+				if upgrade {
+					require.NoError(t, db.AutoMigrate(&User{}))
+					require.NoError(t, db.Create(&User{Id: 101, Username: "staff-history", Quota: 654321, AuthVersion: 7}).Error)
+					// Exact previous User schema, before the dedicated identity column.
+					require.NoError(t, db.Migrator().DropColumn(&User{}, "staff_site_id"))
+				}
+				for range 2 {
+					require.NoError(t, migrateDB())
+				}
+				require.True(t, db.Migrator().HasTable("adty_site_staff"))
+				if upgrade {
+					var historical User
+					require.NoError(t, db.First(&historical, 101).Error)
+					assert.Equal(t, 654321, historical.Quota)
+					assert.EqualValues(t, 7, historical.AuthVersion)
+					assert.Zero(t, historical.StaffSiteId)
+				}
+				user := User{Username: "dedicated-staff", SiteId: 9, StaffSiteId: 9}
+				require.NoError(t, db.Create(&user).Error)
+				staff := AdtySiteStaff{SiteId: 9, UserId: user.Id, OwnerUserId: 2, Role: "support", Status: "enabled", Permissions: `["customers.read"]`, Version: 1}
+				require.NoError(t, db.Create(&staff).Error)
+				for range 2 {
+					require.NoError(t, migrateDB())
+				}
+				var stored AdtySiteStaff
+				require.NoError(t, db.First(&stored, staff.Id).Error)
+				assert.Equal(t, `["customers.read"]`, stored.Permissions)
+				assert.Equal(t, 2, stored.OwnerUserId)
+				require.NoError(t, db.Model(&stored).Update("status", "deleted").Error)
+				duplicate := staff
+				duplicate.Id, duplicate.SiteId = 0, 99
+				assert.Error(t, db.Create(&duplicate).Error, "deleted staff identity cannot be rebound to another site")
+				require.NoError(t, db.First(&user, user.Id).Error)
+				assert.Equal(t, 9, user.ToBaseUser().StaffSiteId)
+			})
+		}
+	}
+}

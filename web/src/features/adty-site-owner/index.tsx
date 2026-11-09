@@ -39,6 +39,7 @@ import { OwnerVerificationProvider } from './components/owner-verification'
 import { PricingPanel } from './components/pricing-panel'
 import { PromoCodesPanel } from './components/promo-codes-panel'
 import { SiteSettingsPanel } from './components/site-settings-panel'
+import { StaffPanel } from './components/staff-panel'
 import { TermsAcceptPanel } from './components/terms-accept-panel'
 import { SITE_OWNER_SECTIONS, type SiteOwnerSectionId } from './sections'
 
@@ -56,6 +57,7 @@ export function SiteOwnerCenter(props: { section: SiteOwnerSectionId }) {
   const labels: Record<SiteOwnerSectionId, string> = {
     overview: t('Overview'),
     customers: t('Customers'),
+    staff: t('Staff accounts'),
     orders: t('Order management'),
     pricing: t('Pricing'),
     bonus: t('Bonuses'),
@@ -109,7 +111,7 @@ export function SiteOwnerCenter(props: { section: SiteOwnerSectionId }) {
                     })
                   }
                 >
-                  <TabsList className='flex-wrap'>
+                  <TabsList className='flex-wrap gap-1 group-data-horizontal/tabs:h-auto'>
                     {SITE_OWNER_SECTIONS.map((section) => (
                       <TabsTrigger key={section} value={section}>
                         {labels[section]}
@@ -133,6 +135,9 @@ export function SiteOwnerCenter(props: { section: SiteOwnerSectionId }) {
                   </TabsContent>
                   <TabsContent value='promo-codes'>
                     <PromoCodesPanel />
+                  </TabsContent>
+                  <TabsContent value='staff'>
+                    <StaffPanel siteId={site.data.id} />
                   </TabsContent>
                   <TabsContent value='settings'>
                     <SiteSettingsPanel site={site.data} />

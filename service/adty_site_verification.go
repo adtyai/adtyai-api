@@ -16,15 +16,20 @@ const VerificationScopeAdtySiteOwnerManage = "site.owner.manage"
 
 // 站长敏感操作的种类。
 const (
-	AdtySiteOwnerActionPricing = "pricing"       // target：0 是全站定价，否则是客户 id
-	AdtySiteOwnerActionBonus   = "bonus"         // target：站点 id
-	AdtySiteOwnerActionTrial   = "trial"         // target：客户 id
-	AdtySiteOwnerActionDomain  = "domain.delete" // target：自定义域名 id
-	AdtySiteOwnerActionPromo   = "promo"         // target：优惠码 id，新建为 0
-	AdtySiteOwnerActionSender  = "sender.delete" // target：站点 id
+	AdtySiteOwnerActionPricing       = "pricing"       // target：0 是全站定价，否则是客户 id
+	AdtySiteOwnerActionBonus         = "bonus"         // target：站点 id
+	AdtySiteOwnerActionTrial         = "trial"         // target：客户 id
+	AdtySiteOwnerActionDomain        = "domain.delete" // target：自定义域名 id
+	AdtySiteOwnerActionPromo         = "promo"         // target：优惠码 id，新建为 0
+	AdtySiteOwnerActionSender        = "sender.delete" // target：站点 id
+	AdtySiteOwnerActionStaffCreate   = "staff.create"  // target: site ID
+	AdtySiteOwnerActionStaffUpdate   = "staff.update"  // target: membership ID
+	AdtySiteOwnerActionStaffPassword = "staff.password"
+	AdtySiteOwnerActionStaffDelete   = "staff.delete"
 )
 
-var adtySiteOwnerActions = []string{AdtySiteOwnerActionPricing, AdtySiteOwnerActionBonus, AdtySiteOwnerActionTrial, AdtySiteOwnerActionDomain, AdtySiteOwnerActionPromo, AdtySiteOwnerActionSender}
+var adtySiteOwnerActions = []string{AdtySiteOwnerActionPricing, AdtySiteOwnerActionBonus, AdtySiteOwnerActionTrial, AdtySiteOwnerActionDomain, AdtySiteOwnerActionPromo, AdtySiteOwnerActionSender,
+	AdtySiteOwnerActionStaffCreate, AdtySiteOwnerActionStaffUpdate, AdtySiteOwnerActionStaffPassword, AdtySiteOwnerActionStaffDelete}
 
 // AdtySiteOwnerContext 是 proof 绑定的操作：哪种操作、对哪个目标。
 type AdtySiteOwnerContext struct {
