@@ -122,7 +122,12 @@ await new Promise((resolve, reject) => {
 })
 const gateway = `http://127.0.0.1:${mock.address().port}`
 let browser
-let channelID, originalCallback, originalServerAddress, authHeaders, page
+let channelID,
+  originalCallback,
+  originalServerAddress,
+  originalChats,
+  authHeaders,
+  page
 async function api(method, path, data) {
   const response = await page.request[method](base + path, {
     headers: authHeaders,
@@ -174,6 +179,58 @@ try {
     options.find((o) => o.key === 'CustomCallbackAddress')?.value ?? ''
   originalServerAddress =
     options.find((o) => o.key === 'ServerAddress')?.value ?? ''
+  originalChats = options.find((o) => o.key === 'Chats')?.value ?? '[]'
+  await api('put', '/api/option/', {
+    key: 'Chats',
+    value: JSON.stringify([{ 'Local browser chat': `${base}/about` }]),
+  })
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 1000 })
+    await page.goto(`${base}/chat/0`)
+    if (width < 768) {
+      await page
+        .getByRole('button', { name: 'Toggle Sidebar', exact: true })
+        .click()
+    }
+    const chatMenu = page.getByRole('button', { name: 'Chat', exact: true })
+    await chatMenu.waitFor()
+    assert.equal(await chatMenu.getAttribute('aria-expanded'), 'false')
+    const mutations = []
+    const trackMutation = (request) => {
+      if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method())) {
+        mutations.push(new URL(request.url()).pathname)
+      }
+    }
+    page.on('request', trackMutation)
+    await chatMenu.getByText('Chat', { exact: true }).click()
+    assert.equal(await chatMenu.getAttribute('aria-expanded'), 'true')
+    const presetLink = page.getByRole('link', {
+      name: 'Local browser chat',
+      exact: true,
+    })
+    await presetLink.waitFor()
+    assert.equal(await presetLink.getAttribute('data-active'), '')
+    await chatMenu.locator('svg').last().click()
+    assert.equal(await chatMenu.getAttribute('aria-expanded'), 'false')
+    await chatMenu.focus()
+    await page.keyboard.press('Enter')
+    assert.equal(await chatMenu.getAttribute('aria-expanded'), 'true')
+    await page.keyboard.press('Enter')
+    assert.equal(await chatMenu.getAttribute('aria-expanded'), 'false')
+    page.off('request', trackMutation)
+    assert.equal(new URL(page.url()).pathname, '/chat/0')
+    assert.deepEqual(
+      mutations,
+      [],
+      'submenu toggles cannot submit business mutations'
+    )
+  }
+  console.log(
+    'PASS desktop/mobile active submenu defaults folded, label/arrow/keyboard toggles, active link and no business mutations'
+  )
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  await page.goto(`${base}/wallet`)
+  await page.getByLabel('Custom amount (USD)', { exact: true }).waitFor()
   await api('put', '/api/option/', {
     key: 'ServerAddress',
     value: base,
@@ -635,6 +692,13 @@ try {
   }
   process.exitCode = 1
 } finally {
+  if (originalChats !== undefined && authHeaders) {
+    try {
+      await api('put', '/api/option/', { key: 'Chats', value: originalChats })
+    } catch (e) {
+      console.error('cleanup chats', String(e))
+    }
+  }
   if (channelID && authHeaders) {
     try {
       await api('post', `/api/adty/admin/epay/channels/${channelID}/status`, {

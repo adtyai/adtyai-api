@@ -259,7 +259,7 @@ export function ChatPresetsItem({ item }: { item: NavChatPresets }) {
   // Expanded state - render collapsible menu
   return (
     <Collapsible
-      defaultOpen={normalizedHref.startsWith('/chat')}
+      defaultOpen={false}
       className='group/collapsible'
       render={<SidebarMenuItem />}
     >

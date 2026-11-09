@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { Link, useLocation } from '@tanstack/react-router'
 import { ChevronRight } from 'lucide-react'
-import { type ReactNode, useState, useEffect } from 'react'
+import type { ReactNode } from 'react'
 
 import { Badge } from '@/components/ui/badge'
 import {
@@ -154,23 +154,10 @@ function SidebarMenuCollapsible({
   href: string
 }) {
   const { isMobile, setOpenMobile } = useSidebar()
-  // 检查当前路径是否匹配子菜单项
-  const isSubItemActive = checkIsActive(href, item)
-  // 使用受控状态，初始值基于当前路径是否匹配
-  const [isOpen, setIsOpen] = useState(() => isSubItemActive)
-
-  // 当路径变化时，如果匹配子菜单项，自动展开父级菜单
-  useEffect(() => {
-    if (isSubItemActive) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setIsOpen(true)
-    }
-  }, [isSubItemActive])
 
   return (
     <Collapsible
-      open={isOpen}
-      onOpenChange={setIsOpen}
+      defaultOpen={false}
       className='group/collapsible'
       render={<SidebarMenuItem />}
     >
