@@ -503,3 +503,6 @@
 | `scripts/adty/browser-business.sh`、`web/scripts/adty/browser-password-reset.mjs` | 独立 PostgreSQL/Redis/生产 Chromium 验证新旧链接、桌面/移动、提交参数、清 URL 和刷新失效 | 真实后端拒绝合成凭证；不将该浏览器场景宣称为成功重置全链或整体 ASVS 合规 | AUTH-RESET-01 |
 | `web/src/context/__tests__/theme-boot-script.test.ts` | 按 HTML 顺序执行所有无属性 inline classic scripts，保留原 light/dark 断言 | 新重置 bootstrap 在主题脚本之前运行，测试不能再假定主题是第一个脚本 | AUTH-RESET-01 |
 | `web/src/components/ai-elements/code-block.tsx`、`__tests__/code-block-copy.test.tsx` | 复制反馈只保留最新一次计时，卸载清理并忽略已离开页面的异步回执 | 完整测试实际捕获卸载后定时更新；现有 CopyButton/useCopyToClipboard 不提供原 Error 回调契约，保留本组件 API | 本批门禁附带修复 |
+| `web/src/features/profile/`、`web/src/features/system-settings/billing/`、`system-settings/types.ts` | 删除签到卡、设置分区、默认值和专用 API/类型/组件；真实 Profile 对旧启用状态不请求不展示，旧分区回退额度设置 | 后端永久403及历史签到资金保护保留；删除路径同步登记 | UI-CHECKIN-01 |
+| `web/src/hooks/use-notifications.ts`、`__tests__/notifications.test.tsx` | 公告未读计算订阅已读 key 数组；ID 和历史内容 key 的多个挂载消费者即时刷新 | 仅修复响应性，不能代替账号隔离或服务端回执 | N-03 |
+| `web/src/i18n/locales/ko.json` | Pancake 的 Store 使用韩语 스토어 | 与相邻商店文案一致，保留翻译键 | I18N-01 |

@@ -18,12 +18,23 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { describe, expect, it } from 'vitest'
 
-import { BILLING_SECTION_IDS } from '../section-registry'
+import {
+  BILLING_SECTION_IDS,
+  getBillingSectionMeta,
+  type BillingSectionId,
+} from '../section-registry'
 
 describe('billing navigation', () => {
   it('keeps all payment methods under the single Payment Gateway entry', () => {
     expect(BILLING_SECTION_IDS).toContain('payment')
     expect(BILLING_SECTION_IDS).not.toContain('epay')
     expect(BILLING_SECTION_IDS).not.toContain('usdt')
+  })
+
+  it('removes check-in settings and resolves a legacy check-in bookmark to quota settings', () => {
+    expect(BILLING_SECTION_IDS).not.toContain('checkin')
+    expect(getBillingSectionMeta('checkin' as BillingSectionId).id).toBe(
+      'quota'
+    )
   })
 })

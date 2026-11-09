@@ -8414,7 +8414,7 @@
     "Starts with 0x, 42 characters": "0x로 시작하는 42자",
     "STARTTLS": "STARTTLS",
     "Step {{current}} of {{total}}: {{label}}": "{{total}}단계 중 {{current}}단계: {{label}}",
-    "Store": "Store",
+    "Store": "스토어",
     "Stream tokens via Server-Sent Events": "Server-Sent Events로 토큰을 스트리밍해요",
     "Strip {{affix}}": "{{affix}} 제거",
     "Stripe": "Stripe",

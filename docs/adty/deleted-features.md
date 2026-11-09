@@ -1,5 +1,13 @@
 # 删掉的功能
 
+## 签到奖励入口
+
+- 删除个人页签到卡片、专用请求函数和响应类型，以及计费设置中的签到分区、默认值和表单。历史 `/system-settings/billing/checkin` 书签按现有未知分区规则回到额度设置。
+- 删除 `web/src/features/profile/components/checkin-calendar-card.tsx` 和 `web/src/features/system-settings/general/checkin-settings-section.tsx`，不再受历史 `checkin_enabled` 或 `checkin_setting.*` 启用值影响。
+- 保留 `GET/POST /api/user/checkin` 的永久 403、历史签到记录、`checkin_quota` 和退款来源保护；不改写或删除历史资金。
+- 保留语言包旧键与历史数据库选项用于升级兼容；不再提供操作入口。
+- 提交：`fix(ui): remove retired check-in controls and refresh read badges`。
+
 ## Playground（最新全平台方案）
 
 - 删除用户菜单、页面、路由、个人和管理员侧栏开关、仪表盘旧快捷链接，以及仅由该功能使用的前端实现和测试。首次请求快捷入口改用已有 `/docs` 页面。

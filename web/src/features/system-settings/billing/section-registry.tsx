@@ -18,7 +18,6 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { parseCurrencyDisplayType } from '@/lib/currency'
 
-import { CheckinSettingsSection } from '../general/checkin-settings-section'
 import { PricingSection } from '../general/pricing-section'
 import { QuotaSettingsSection } from '../general/quota-settings-section'
 import { AdtyPromoSettingsSection } from '../integrations/adty-promo-settings-section'
@@ -199,19 +198,6 @@ const BILLING_SECTIONS = [
           baseUrl: settings['adty_bepusdt.base_url'],
           tradeTypes: settings['adty_bepusdt.trade_types'],
           orderMinutes: settings['adty_topup_setting.usdt_order_minutes'],
-        }}
-      />
-    ),
-  },
-  {
-    id: 'checkin',
-    titleKey: 'Check-in Rewards',
-    build: (settings: BillingSettings) => (
-      <CheckinSettingsSection
-        defaultValues={{
-          enabled: settings['checkin_setting.enabled'],
-          minQuota: settings['checkin_setting.min_quota'],
-          maxQuota: settings['checkin_setting.max_quota'],
         }}
       />
     ),

@@ -151,3 +151,7 @@ web/src/features/models/lib/deployment-price-summary.tsx
 web/src/features/models/lib/deployment-price.ts
 web/src/features/models/lib/deployments-utils.ts
 web/src/features/system-settings/integrations/ionet-deployment-settings-section.tsx
+
+# 签到奖励前端入口
+web/src/features/profile/components/checkin-calendar-card.tsx
+web/src/features/system-settings/general/checkin-settings-section.tsx
