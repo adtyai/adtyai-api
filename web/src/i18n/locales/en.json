@@ -8593,5 +8593,10 @@
   "Notification type": "Notification type",
   "Related business": "Related business",
   "Select a site": "Select a site",
-  "This notification was changed elsewhere. Reload and try again": "This notification was changed elsewhere. Reload and try again"
+  "This notification was changed elsewhere. Reload and try again": "This notification was changed elsewhere. Reload and try again",
+  "Order management": "Order management",
+  "Order type": "Order type",
+  "Completed at": "Completed at",
+  "Unknown site": "Unknown site",
+  "All order types": "All order types"
 }

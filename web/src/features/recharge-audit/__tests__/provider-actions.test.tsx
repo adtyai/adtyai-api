@@ -47,6 +47,9 @@ const orders = providers.flatMap((provider, index) =>
     id: index * 2 + position,
     user_id: 7,
     username: 'buyer',
+    site_id: 7 as number | null,
+    site_name: 'North Studio',
+    order_type: 'topup',
     trade_no: `trade-${provider.provider}-${status}`,
     payment_provider: provider.provider,
     payment_method: provider.provider,
@@ -61,6 +64,7 @@ const orders = providers.flatMap((provider, index) =>
     paid_currency: 'USD',
     has_ext: true,
     create_time: 1,
+    complete_time: status === 'success' ? 2 : 0,
     actions: {
       complete: status === 'pending',
       refund: status === 'success',
@@ -68,6 +72,8 @@ const orders = providers.flatMap((provider, index) =>
     },
   }))
 )
+orders[0] = { ...orders[0], site_id: 0, site_name: 'Main Studio' }
+orders[1] = { ...orders[1], site_id: null, site_name: '' }
 
 function setPermissions(write: boolean) {
   useAuthStore.getState().auth.setUser({
@@ -82,7 +88,7 @@ function setPermissions(write: boolean) {
   })
 }
 
-function renderAudit(write = true) {
+function renderAudit(write = true, ownerMode = false) {
   setPermissions(write)
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -90,7 +96,7 @@ function renderAudit(write = true) {
   clients.push(client)
   render(
     <QueryClientProvider client={client}>
-      <RechargeAudit />
+      <RechargeAudit ownerMode={ownerMode} />
     </QueryClientProvider>
   )
 }
@@ -98,7 +104,11 @@ function renderAudit(write = true) {
 beforeEach(() => {
   localStorage.clear()
   vi.spyOn(api, 'get').mockImplementation(async (url, config) => {
-    if (url === '/api/user/admin/finance/recharge-audit/summary') {
+    const ownerMode = url.startsWith('/api/adty/site/orders')
+    if (
+      url === '/api/user/admin/finance/recharge-audit/summary' ||
+      url === '/api/adty/site/orders/summary'
+    ) {
       return {
         data: {
           success: true,
@@ -108,6 +118,12 @@ beforeEach(() => {
             bonus_usd: '0',
             currency: 'USD',
             provider_option: providers.map((provider) => provider.provider),
+            site_options: ownerMode
+              ? [{ site_id: 7, site_name: 'North Studio' }]
+              : [
+                  { site_id: 0, site_name: 'Main Studio' },
+                  { site_id: 7, site_name: 'North Studio' },
+                ],
             provider_capabilities: providers.map((provider) => ({
               ...provider,
               complete: true,
@@ -121,16 +137,114 @@ beforeEach(() => {
     if (url === '/api/user/admin/finance/payment-orphans') {
       return { data: { success: true, data: { items: [], total: 0 } } }
     }
-    if (url !== '/api/user/admin/finance/recharge-audit') {
+    if (
+      url !== '/api/user/admin/finance/recharge-audit' &&
+      url !== '/api/adty/site/orders'
+    ) {
       throw new Error(`Unexpected GET ${url}`)
     }
-    const provider = (config?.params as { provider?: string } | undefined)
-      ?.provider
-    const items = provider
-      ? orders.filter((order) => order.payment_provider === provider)
-      : orders
+    const params = config?.params as
+      | { provider?: string; site_id?: number }
+      | undefined
+    const items = orders.filter((order) => {
+      if (ownerMode && order.payment_provider !== 'stripe') {
+        return false
+      }
+      if (params?.provider && order.payment_provider !== params.provider) {
+        return false
+      }
+      return params?.site_id === undefined || order.site_id === params.site_id
+    })
     return { data: { success: true, data: { items, total: items.length } } }
   })
+})
+
+it('shows order site snapshots, explicit unknown ownership, type and completion time', async () => {
+  renderAudit(false)
+  await screen.findByText('trade-bepusdt-pending')
+  expect(
+    screen.getByRole('heading', { name: 'Order management' })
+  ).toBeVisible()
+  const table = within(screen.getByRole('table', { name: 'Order management' }))
+  expect(table.getByRole('columnheader', { name: 'Site' })).toBeVisible()
+  expect(table.getByRole('columnheader', { name: 'Site ID' })).toBeVisible()
+  expect(table.getByRole('columnheader', { name: 'Order type' })).toBeVisible()
+  expect(
+    table.getByRole('columnheader', { name: 'Completed at' })
+  ).toBeVisible()
+  const main = within(
+    screen.getByRole('row', { name: /trade-bepusdt-pending/ })
+  )
+  expect(main.getByText('Main Studio')).toBeVisible()
+  expect(main.getByRole('cell', { name: '0' })).toBeVisible()
+  expect(main.getByText('Top-up')).toBeVisible()
+  const legacy = within(
+    screen.getByRole('row', { name: /trade-bepusdt-success/ })
+  )
+  expect(legacy.getByText('Unknown site')).toBeVisible()
+  expect(screen.getAllByText('North Studio').length).toBeGreaterThan(0)
+})
+
+it('sends the main site zero and order type filters and displays only matching orders', async () => {
+  const user = userEvent.setup()
+  renderAudit(false)
+  await screen.findByText('trade-creem-pending')
+  const site = screen.getByRole('combobox', { name: 'Site' })
+  await user.selectOptions(site, '0')
+  await user.selectOptions(
+    screen.getByRole('combobox', { name: 'Order type' }),
+    'topup'
+  )
+  await waitFor(() =>
+    expect(api.get).toHaveBeenCalledWith(
+      '/api/user/admin/finance/recharge-audit',
+      expect.objectContaining({
+        params: expect.objectContaining({
+          site_id: 0,
+          order_type: 'topup',
+          p: 1,
+        }),
+      })
+    )
+  )
+  expect(await screen.findByText('trade-bepusdt-pending')).toBeVisible()
+  await waitFor(() =>
+    expect(screen.queryByText('trade-creem-pending')).not.toBeInTheDocument()
+  )
+  await user.selectOptions(site, '')
+  expect(await screen.findByText('trade-creem-pending')).toBeVisible()
+})
+
+it('uses site-scoped reads and hides global anomalies and all financial actions in owner mode', async () => {
+  renderAudit(true, true)
+  expect(await screen.findByText('trade-stripe-success')).toBeVisible()
+  await waitFor(() =>
+    expect(api.get).toHaveBeenCalledWith(
+      '/api/adty/site/orders',
+      expect.anything()
+    )
+  )
+  expect(screen.queryByText('trade-creem-pending')).not.toBeInTheDocument()
+  expect(
+    screen.queryByRole('combobox', { name: 'Site' })
+  ).not.toBeInTheDocument()
+  for (const action of ['Complete', 'Query payment', 'Refund']) {
+    expect(
+      screen.queryByRole('button', { name: action })
+    ).not.toBeInTheDocument()
+  }
+  expect(
+    vi
+      .mocked(api.get)
+      .mock.calls.some(
+        ([url]) => url === '/api/user/admin/finance/payment-orphans'
+      )
+  ).toBe(false)
+  expect(
+    vi
+      .mocked(api.get)
+      .mock.calls.some(([url]) => url.startsWith('/api/user/admin/finance/'))
+  ).toBe(false)
 })
 
 afterEach(() => {

@@ -8593,5 +8593,10 @@
   "Notification type": "通知類型",
   "Related business": "關聯業務",
   "Select a site": "請選擇分站",
-  "This notification was changed elsewhere. Reload and try again": "通知已被其他操作修改，請重新整理後再試"
+  "This notification was changed elsewhere. Reload and try again": "通知已被其他操作修改，請重新整理後再試",
+  "Order management": "訂單管理",
+  "Order type": "訂單類型",
+  "Completed at": "完成時間",
+  "Unknown site": "歸屬未知",
+  "All order types": "全部訂單類型"
 }

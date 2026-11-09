@@ -19,6 +19,9 @@ type rechargeAuditOrder struct {
 	Id              int                  `json:"id"`
 	UserId          int                  `json:"user_id"`
 	Username        string               `json:"username"`
+	SiteId          *int                 `json:"site_id"`
+	SiteName        string               `json:"site_name" gorm:"-"`
+	OrderType       string               `json:"order_type" gorm:"-"`
 	TradeNo         string               `json:"trade_no"`
 	PaymentMethod   string               `json:"payment_method"`
 	PaymentProvider string               `json:"payment_provider"`
@@ -55,10 +58,25 @@ var rechargeAuditStatuses = []string{
 }
 
 // rechargeAuditQuery 建对账查询，筛选条件都来自查询参数。
-func rechargeAuditQuery(c *gin.Context) (*gorm.DB, bool) {
+func rechargeAuditQuery(c *gin.Context, ownerSiteID *int) (*gorm.DB, bool) {
 	query := model.DB.Table("top_ups AS t").
 		Joins("LEFT JOIN adty_topup_orders a ON a.trade_no = t.trade_no").
 		Joins("LEFT JOIN users u ON u.id = t.user_id")
+	if ownerSiteID != nil {
+		query = query.Where("a.site_id = ?", *ownerSiteID)
+	}
+	if raw := strings.TrimSpace(c.Query("site_id")); raw != "" {
+		id, err := strconv.Atoi(raw)
+		if err != nil || id < 0 {
+			common.ApiErrorT(c, "Invalid parameters")
+			return nil, false
+		}
+		query = query.Where("a.site_id = ?", id)
+	}
+	if kind := strings.TrimSpace(c.Query("order_type")); kind != "" && kind != "topup" {
+		common.ApiErrorT(c, "Invalid parameters")
+		return nil, false
+	}
 	if keyword := strings.TrimSpace(c.Query("keyword")); keyword != "" {
 		like := "%" + keyword + "%"
 		query = query.Where("(t.trade_no LIKE ? OR u.username LIKE ? OR a.paid_tx_hash LIKE ? OR a.gateway_trade_id LIKE ?)", like, like, like, like)
@@ -107,7 +125,7 @@ func rechargeAuditQuery(c *gin.Context) (*gorm.DB, bool) {
 	return query, true
 }
 
-const rechargeAuditSelect = `t.id, t.user_id, COALESCE(u.username, '') AS username, t.trade_no, t.payment_method, t.payment_provider,
+const rechargeAuditSelect = `t.id, t.user_id, COALESCE(u.username, '') AS username, a.site_id, t.trade_no, t.payment_method, t.payment_provider,
 	t.status, t.create_time, t.complete_time, t.amount, t.money,
 	(a.id IS NOT NULL) AS has_ext,
 	COALESCE(a.face_usd, 0) AS face_usd, COALESCE(a.bonus_usd, 0) AS bonus_usd, COALESCE(a.credit_quota, 0) AS credit_quota,
@@ -118,7 +136,19 @@ const rechargeAuditSelect = `t.id, t.user_id, COALESCE(u.username, '') AS userna
 
 // GetRechargeAudit 分页列出充值订单，带面额、加赠、应付、实付和异常标记。
 func GetRechargeAudit(c *gin.Context) {
-	query, ok := rechargeAuditQuery(c)
+	getRechargeAudit(c, nil)
+}
+
+// GetAdtyOwnerOrders uses the order's frozen site, even after a customer moves.
+func GetAdtyOwnerOrders(c *gin.Context) {
+	site, ok := adtyOwnerSiteOr403(c)
+	if ok {
+		getRechargeAudit(c, &site.Id)
+	}
+}
+
+func getRechargeAudit(c *gin.Context, ownerSiteID *int) {
+	query, ok := rechargeAuditQuery(c, ownerSiteID)
 	if !ok {
 		return
 	}
@@ -134,16 +164,31 @@ func GetRechargeAudit(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	siteIDs := make([]int, 0, len(orders))
+	for _, order := range orders {
+		if order.SiteId != nil {
+			siteIDs = append(siteIDs, *order.SiteId)
+		}
+	}
+	siteNames, err := service.AdtySiteNames(siteIDs)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
 	channelNames := adtyEpayChannelNames()
 	capabilities := make(map[string]service.AdtyPaymentCapability)
 	for _, capability := range service.AdtyPaymentCapabilities() {
 		capabilities[capability.Provider] = capability
 	}
 	for i := range orders {
+		orders[i].OrderType = "topup"
+		if orders[i].SiteId != nil {
+			orders[i].SiteName = siteNames[*orders[i].SiteId]
+		}
 		orders[i].Anomaly = rechargeAuditAnomaly(orders[i])
 		orders[i].ChannelName = channelNames[orders[i].ChannelId]
 		capability, supported := capabilities[orders[i].PaymentProvider]
-		if !supported || !orders[i].HasExt {
+		if ownerSiteID != nil || !supported || !orders[i].HasExt {
 			continue
 		}
 		switch orders[i].Status {
@@ -196,7 +241,18 @@ type rechargeAuditSummaryRow struct {
 
 // GetRechargeAuditSummary 按状态和支付商汇总，金额都是美元。
 func GetRechargeAuditSummary(c *gin.Context) {
-	query, ok := rechargeAuditQuery(c)
+	getRechargeAuditSummary(c, nil)
+}
+
+func GetAdtyOwnerOrderSummary(c *gin.Context) {
+	site, ok := adtyOwnerSiteOr403(c)
+	if ok {
+		getRechargeAuditSummary(c, &site.Id)
+	}
+}
+
+func getRechargeAuditSummary(c *gin.Context, ownerSiteID *int) {
+	query, ok := rechargeAuditQuery(c, ownerSiteID)
 	if !ok {
 		return
 	}
@@ -222,6 +278,29 @@ func GetRechargeAuditSummary(c *gin.Context) {
 	for _, capability := range capabilities {
 		providers = append(providers, capability.Provider)
 	}
+	// Keep choices independent of active filters and within the caller's scope.
+	sitesQuery := model.DB.Table("top_ups AS t").Joins("JOIN adty_topup_orders a ON a.trade_no = t.trade_no")
+	if ownerSiteID != nil {
+		sitesQuery = sitesQuery.Where("a.site_id = ?", *ownerSiteID)
+	}
+	var siteIDs []int
+	if err := sitesQuery.Distinct("a.site_id").Order("a.site_id").Pluck("a.site_id", &siteIDs).Error; err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	siteNames, err := service.AdtySiteNames(siteIDs)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	type siteOption struct {
+		SiteId   int    `json:"site_id"`
+		SiteName string `json:"site_name"`
+	}
+	siteOptions := make([]siteOption, 0, len(siteIDs))
+	for _, id := range siteIDs {
+		siteOptions = append(siteOptions, siteOption{SiteId: id, SiteName: siteNames[id]})
+	}
 	common.ApiSuccess(c, gin.H{
 		"rows":                  rows,
 		"orders":                orders,
@@ -231,5 +310,6 @@ func GetRechargeAuditSummary(c *gin.Context) {
 		"status_options":        rechargeAuditStatuses,
 		"provider_option":       providers,
 		"provider_capabilities": capabilities,
+		"site_options":          siteOptions,
 	})
 }

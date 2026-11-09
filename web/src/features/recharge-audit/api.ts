@@ -35,6 +35,9 @@ export type RechargeAuditOrder = {
   id: number
   user_id: number
   username: string
+  site_id: number | null
+  site_name: string
+  order_type: 'topup'
   trade_no: string
   payment_method: string
   payment_provider: string
@@ -66,6 +69,7 @@ export type RechargeAuditSummary = {
   currency: 'USD'
   status_options: string[]
   provider_option: string[]
+  site_options: { site_id: number; site_name: string }[]
   provider_capabilities: {
     provider: string
     label: string
@@ -135,6 +139,8 @@ export type RechargeAuditFilters = {
   status?: string
   provider?: string
   method?: string
+  site_id?: number
+  order_type?: 'topup'
   page: number
   pageSize: number
 }
@@ -145,22 +151,34 @@ function auditParams(filters: RechargeAuditFilters) {
     status: filters.status || undefined,
     provider: filters.provider || undefined,
     method: filters.method || undefined,
+    site_id: filters.site_id,
+    order_type: filters.order_type || undefined,
     p: filters.page,
     page_size: filters.pageSize,
   }
 }
 
-export async function getRechargeAudit(filters: RechargeAuditFilters) {
+export async function getRechargeAudit(
+  filters: RechargeAuditFilters,
+  ownerMode = false
+) {
   const res = await api.get<ApiResponse<PageResponse<RechargeAuditOrder>>>(
-    '/api/user/admin/finance/recharge-audit',
+    ownerMode
+      ? '/api/adty/site/orders'
+      : '/api/user/admin/finance/recharge-audit',
     { params: auditParams(filters) }
   )
   return requireServerSuccess(res.data).data
 }
 
-export async function getRechargeAuditSummary(filters: RechargeAuditFilters) {
+export async function getRechargeAuditSummary(
+  filters: RechargeAuditFilters,
+  ownerMode = false
+) {
   const res = await api.get<ApiResponse<RechargeAuditSummary>>(
-    '/api/user/admin/finance/recharge-audit/summary',
+    ownerMode
+      ? '/api/adty/site/orders/summary'
+      : '/api/user/admin/finance/recharge-audit/summary',
     { params: auditParams(filters) }
   )
   return requireServerSuccess(res.data).data

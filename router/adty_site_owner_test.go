@@ -148,6 +148,81 @@ func TestOwnerCannotSeeOtherSiteCustomer(t *testing.T) {
 	assert.Contains(t, report.Body.String(), `"success":false`, "cannot report another site's customer")
 }
 
+func TestOwnerOrdersUseFrozenSiteScope(t *testing.T) {
+	f := newOwnerFixture(t)
+	mine := f.customer(t, f.site, "order-mine", "order-mine@example.com")
+	theirs := f.customer(t, f.other, "order-theirs", "order-theirs@example.com")
+	for _, fixture := range []struct {
+		trade         string
+		siteID, buyer int
+		face          int64
+	}{
+		{"order-before-move", f.site.Id, mine.Id, 3}, {"order-other-site", f.other.Id, theirs.Id, 91},
+		{"order-main-site", 0, mine.Id, 13}, {"order-unknown-site", -1, mine.Id, 17},
+	} {
+		require.NoError(t, f.db.Create(&model.TopUp{TradeNo: fixture.trade, UserId: fixture.buyer, Status: common.TopUpStatusSuccess,
+			PaymentProvider: model.PaymentProviderStripe, Amount: fixture.face}).Error)
+		if fixture.siteID >= 0 {
+			require.NoError(t, f.db.Create(&model.AdtyTopupOrder{TradeNo: fixture.trade, UserId: fixture.buyer,
+				SiteId: fixture.siteID, Provider: model.PaymentProviderStripe, FaceUSD: decimal.NewFromInt(fixture.face)}).Error)
+		}
+	}
+	require.NoError(t, f.db.Model(&mine).Update("site_id", f.other.Id).Error)
+	require.NoError(t, f.db.Model(&theirs).Update("site_id", f.site.Id).Error)
+	response := f.call(t, http.MethodGet, "/api/adty/site/orders", "", "")
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	listed := decodeAdtyData[struct {
+		Total int
+		Items []struct {
+			TradeNo string `json:"trade_no"`
+			SiteID  int    `json:"site_id"`
+			Actions struct{ Complete, Refund, Query bool }
+		}
+	}](t, response.Body)
+	require.Equal(t, 1, listed.Total)
+	require.Len(t, listed.Items, 1)
+	assert.Equal(t, "order-before-move", listed.Items[0].TradeNo)
+	assert.Equal(t, f.site.Id, listed.Items[0].SiteID)
+	assert.False(t, listed.Items[0].Actions.Complete)
+	assert.False(t, listed.Items[0].Actions.Refund)
+	assert.False(t, listed.Items[0].Actions.Query)
+	for _, suffix := range []string{"", "/summary"} {
+		path := "/api/adty/site/orders" + suffix
+		read := createAdtyScopedToken(t, f.owner.Id, "wallet:read")
+		write := createAdtyScopedToken(t, f.owner.Id, "wallet:write")
+		allowed := adtyJSON(t, f.engine, http.MethodGet, path, "", read)
+		require.Equal(t, http.StatusOK, allowed.Code, allowed.Body.String())
+		assert.Contains(t, allowed.Body.String(), `"success":true`)
+		assert.NotContains(t, allowed.Body.String(), "order-other-site")
+		assert.Equal(t, http.StatusForbidden, adtyJSON(t, f.engine, http.MethodGet, path, "", write).Code)
+		assert.Equal(t, http.StatusUnauthorized, adtyJSON(t, f.engine, http.MethodGet, path, "", "").Code)
+		assert.Equal(t, http.StatusForbidden, adtyJSON(t, f.engine, http.MethodGet, path, "", adtySessionToken(t, f.db, "order-plain"+suffix, common.RoleCommonUser)).Code)
+		spoofed := f.call(t, http.MethodGet, fmt.Sprintf("%s?site_id=%d", path, f.other.Id), "", "")
+		require.Equal(t, http.StatusOK, spoofed.Code, spoofed.Body.String())
+		assert.Contains(t, spoofed.Body.String(), `"success":true`)
+		assert.NotContains(t, spoofed.Body.String(), "order-other-site")
+		assert.NotContains(t, spoofed.Body.String(), `"91"`)
+	}
+	summaryResponse := f.call(t, http.MethodGet, "/api/adty/site/orders/summary", "", "")
+	summary := decodeAdtyData[struct {
+		Orders      int
+		CreditedUSD string `json:"credited_usd"`
+		Sites       []struct {
+			SiteID int `json:"site_id"`
+		} `json:"site_options"`
+	}](t, summaryResponse.Body)
+	assert.Equal(t, 1, summary.Orders)
+	assert.Equal(t, "3", summary.CreditedUSD)
+	require.Len(t, summary.Sites, 1)
+	assert.Equal(t, f.site.Id, summary.Sites[0].SiteID)
+	for _, status := range []string{model.AdtySiteStatusPaused, model.AdtySiteStatusClosing} {
+		require.NoError(t, f.db.Model(f.site).Update("status", status).Error)
+		assert.Equal(t, http.StatusOK, f.call(t, http.MethodGet, "/api/adty/site/orders", "", "").Code)
+	}
+	require.NoError(t, f.db.Model(f.site).Update("agreement_ver", "old").Error)
+	assert.Equal(t, http.StatusForbidden, f.call(t, http.MethodGet, "/api/adty/site/orders", "", "").Code)
+}
+
 func TestOwnerWalletReadAPIsStayWithinSite(t *testing.T) {
 	f := newOwnerFixture(t)
 	for _, credit := range []struct {

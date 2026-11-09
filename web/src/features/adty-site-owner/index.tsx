@@ -25,6 +25,7 @@ import { SectionPageLayout } from '@/components/layout'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { RechargeAudit } from '@/features/recharge-audit'
 import { DraftNavigationProvider } from '@/features/system-settings/components/draft-navigation-provider'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -55,6 +56,7 @@ export function SiteOwnerCenter(props: { section: SiteOwnerSectionId }) {
   const labels: Record<SiteOwnerSectionId, string> = {
     overview: t('Overview'),
     customers: t('Customers'),
+    orders: t('Order management'),
     pricing: t('Pricing'),
     bonus: t('Bonuses'),
     'promo-codes': t('Promo codes'),
@@ -119,6 +121,9 @@ export function SiteOwnerCenter(props: { section: SiteOwnerSectionId }) {
                   </TabsContent>
                   <TabsContent value='customers'>
                     <CustomersPanel />
+                  </TabsContent>
+                  <TabsContent value='orders'>
+                    <RechargeAudit ownerMode ownerSiteId={site.data.id} />
                   </TabsContent>
                   <TabsContent value='pricing'>
                     <PricingPanel site={site.data} />

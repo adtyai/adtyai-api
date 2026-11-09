@@ -20,6 +20,7 @@ For commercial licensing, please contact support@quantumnous.com
 export const SITE_OWNER_SECTIONS = [
   'overview',
   'customers',
+  'orders',
   'pricing',
   'bonus',
   'promo-codes',

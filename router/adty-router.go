@@ -262,6 +262,8 @@ func registerAdtyResellerRoutes(apiRouter *gin.RouterGroup) {
 		{http.MethodGet, "/earnings", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerEarnings}},
 		{http.MethodGet, "/wallets", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerWallets}},
 		{http.MethodGet, "/wallet-ledgers", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerWalletLedger}},
+		{http.MethodGet, "/orders", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerOrders}},
+		{http.MethodGet, "/orders/summary", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerOrderSummary}},
 		{http.MethodGet, "/customers", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerCustomers}},
 		{http.MethodGet, "/customers/lookup", "wallet:read", []gin.HandlerFunc{controller.LookupAdtyOwnerCustomer}},
 		{http.MethodGet, "/customers/:id", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerCustomer}},

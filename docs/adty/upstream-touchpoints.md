@@ -530,3 +530,6 @@
 | `controller/adty_notification.go`、`router/adty-router.go` | Root 与站长管理 GET/POST/PUT/DELETE，沿用 RootAuth/UserAuth 与明确 PAT scopes；收件按 Host 和 SQL 归属判定 | 不信任调用者传入发布人/发布域/账号/站点覆盖；站长不能修改 Root 或他站发布；冲突 409 | N-01 部分 |
 | `web/src/features/adty-notifications/`、现有公告设置与站长本站设置 | 共用管理表单/列表，复用 Dialog、ConfirmDialog、StaticDataTable、PageSwitcher、Field 与错误/空/加载状态；RHF+Zod 和草稿保护 | 已检索现有封装，无新增通用控件或依赖；普通管理员无 Root 发布入口，失败保留草稿，撤回需确认 | N-01 部分 |
 | `web/src/hooks/use-notifications.ts`、`lib/api.ts`、`components/notification-popover.tsx`、两个 Header | 无限分页收件、批次回执、全量未读角标及发布元数据；维持匿名和账号/Host 隔离 | 仅当前可见页签的已加载内容标读，旧版本/撤回内容不能写新回执；业务收件筛选及员工待办仍待后续 | N-01 部分 |
+| `controller/admin_finance.go`、`router/adty-router.go`及既有测试 | 统一订单投影、冻结站点/类型筛选和站点选项；新增站长订单/汇总只读端点 | 真实三库验证迁站不改历史、主站0、未知null和失效参数；站长及PAT范围强制隔离，未增加资金写入口 | M-02 |
+| `web/src/features/recharge-audit/`、`adty-site-owner/`、`hooks/use-sidebar-data.ts`、八语 | 既有订单组件复用为主后台和本站只读视图，增加站点/ID/类型/完成时间及筛选，菜单改订单管理 | 查询缓存包含账号/模式/站点，站长隐藏财务操作和全局异常面板；复用StaticDataTable/NativeSelect及状态组件，无新通用控件 | M-02 |
+| `scripts/adty/browser-business.sh`、`web/scripts/adty/browser-unified-orders.mjs` | 生产桌面/移动验证全局筛选和站长列表/越权拒绝 | 独立PG17/Redis，SQL仅准备历史订单和已迁站买家fixture，不操作真实资金 | M-02 |

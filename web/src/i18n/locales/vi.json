@@ -8593,5 +8593,10 @@
   "Notification type": "Loại thông báo",
   "Related business": "Nghiệp vụ liên quan",
   "Select a site": "Chọn trang",
-  "This notification was changed elsewhere. Reload and try again": "Thông báo này đã được thay đổi ở nơi khác. Hãy tải lại và thử lại"
+  "This notification was changed elsewhere. Reload and try again": "Thông báo này đã được thay đổi ở nơi khác. Hãy tải lại và thử lại",
+  "Order management": "Quản lý đơn hàng",
+  "Order type": "Loại đơn hàng",
+  "Completed at": "Thời gian hoàn tất",
+  "Unknown site": "Không rõ trang web",
+  "All order types": "Tất cả loại đơn hàng"
 }

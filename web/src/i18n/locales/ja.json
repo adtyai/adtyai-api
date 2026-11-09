@@ -8593,5 +8593,10 @@
   "Notification type": "通知の種類",
   "Related business": "関連業務",
   "Select a site": "サイトを選択",
-  "This notification was changed elsewhere. Reload and try again": "この通知は別の操作で変更されました。再読み込みしてやり直してください"
+  "This notification was changed elsewhere. Reload and try again": "この通知は別の操作で変更されました。再読み込みしてやり直してください",
+  "Order management": "注文管理",
+  "Order type": "注文タイプ",
+  "Completed at": "完了日時",
+  "Unknown site": "不明なサイト",
+  "All order types": "すべての注文タイプ"
 }

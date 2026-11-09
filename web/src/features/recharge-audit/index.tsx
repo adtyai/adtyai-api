@@ -65,14 +65,19 @@ const STATUSES: AdtyOrderStatus[] = [
   'refunded',
 ]
 
-/** Recharge reconciliation: orders, totals in USD, manual completion, refunds. */
-export function RechargeAudit() {
+/** Shared order list; the owner center uses site-scoped read-only endpoints. */
+export function RechargeAudit(props: {
+  ownerMode?: boolean
+  ownerSiteId?: number
+}) {
   const { t, i18n } = useTranslation()
   const locale = toIntlLocale(i18n.resolvedLanguage || i18n.language)
   const queryClient = useQueryClient()
   const user = useAuthStore((state) => state.auth.user)
-  const canComplete = canAdmin(user, ADTY_PERMISSIONS.FINANCE_MANUAL_CREDIT)
-  const canRefund = canAdmin(user, ADTY_PERMISSIONS.FINANCE_REFUND)
+  const canComplete =
+    !props.ownerMode && canAdmin(user, ADTY_PERMISSIONS.FINANCE_MANUAL_CREDIT)
+  const canRefund =
+    !props.ownerMode && canAdmin(user, ADTY_PERMISSIONS.FINANCE_REFUND)
   const [keyword, setKeyword] = useState('')
   const [filters, setFilters] = useState<RechargeAuditFilters>({
     page: 1,
@@ -92,338 +97,425 @@ export function RechargeAudit() {
   }, [canComplete, canRefund])
 
   const ordersQuery = useQuery({
-    queryKey: ['recharge-audit', 'orders', filters],
-    queryFn: () => getRechargeAudit(filters),
+    queryKey: [
+      'recharge-audit',
+      user?.id,
+      props.ownerMode === true,
+      props.ownerSiteId,
+      'orders',
+      filters,
+    ],
+    queryFn: () => getRechargeAudit(filters, props.ownerMode),
   })
   const summaryQuery = useQuery({
-    queryKey: ['recharge-audit', 'summary', { ...filters, page: 1 }],
-    queryFn: () => getRechargeAuditSummary(filters),
+    queryKey: [
+      'recharge-audit',
+      user?.id,
+      props.ownerMode === true,
+      props.ownerSiteId,
+      'summary',
+      { ...filters, page: 1 },
+    ],
+    queryFn: () => getRechargeAuditSummary(filters, props.ownerMode),
   })
   const refresh = () =>
     queryClient.invalidateQueries({ queryKey: ['recharge-audit'] })
   const total = ordersQuery.data?.total ?? 0
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
-  return (
-    <SectionPageLayout>
-      <SectionPageLayout.Title>{t('Recharge Audit')}</SectionPageLayout.Title>
-      <SectionPageLayout.Content>
-        <div className='flex flex-col gap-4'>
-          {summaryQuery.isError && (
-            <ErrorState onRetry={() => void summaryQuery.refetch()} />
-          )}
-          {summaryQuery.isPending && <LoadingState />}
-          {summaryQuery.data && (
-            <div className='grid gap-3 sm:grid-cols-3'>
-              {[
-                {
-                  label: t('Orders'),
-                  value: String(summaryQuery.data?.orders ?? 0),
-                },
-                {
-                  label: t('Credited face value'),
-                  value: formatUsd(
-                    Number(summaryQuery.data?.credited_usd ?? 0),
-                    locale
-                  ),
-                },
-                {
-                  label: t('Bonus given'),
-                  value: formatUsd(
-                    Number(summaryQuery.data?.bonus_usd ?? 0),
-                    locale
-                  ),
-                },
-              ].map((item) => (
-                <Card key={item.label}>
-                  <CardContent className='flex flex-col gap-1 py-4'>
-                    <span className='text-muted-foreground text-xs'>
-                      {item.label}
-                    </span>
-                    <span className='text-xl font-semibold'>{item.value}</span>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          )}
+  const content = (
+    <>
+      <div className='flex flex-col gap-4'>
+        {summaryQuery.isError && (
+          <ErrorState onRetry={() => void summaryQuery.refetch()} />
+        )}
+        {summaryQuery.isPending && <LoadingState />}
+        {summaryQuery.data && (
+          <div className='grid gap-3 sm:grid-cols-3'>
+            {[
+              {
+                label: t('Orders'),
+                value: String(summaryQuery.data?.orders ?? 0),
+              },
+              {
+                label: t('Credited face value'),
+                value: formatUsd(
+                  Number(summaryQuery.data?.credited_usd ?? 0),
+                  locale
+                ),
+              },
+              {
+                label: t('Bonus given'),
+                value: formatUsd(
+                  Number(summaryQuery.data?.bonus_usd ?? 0),
+                  locale
+                ),
+              },
+            ].map((item) => (
+              <Card key={item.label}>
+                <CardContent className='flex flex-col gap-1 py-4'>
+                  <span className='text-muted-foreground text-xs'>
+                    {item.label}
+                  </span>
+                  <span className='text-xl font-semibold'>{item.value}</span>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
 
-          <Card>
-            <CardContent className='flex flex-col gap-3 py-4'>
-              <form
-                className='flex flex-wrap items-end gap-2'
-                onSubmit={(event) => {
-                  event.preventDefault()
-                  setFilters((prev) => ({
-                    ...prev,
-                    keyword: keyword.trim(),
-                    page: 1,
-                  }))
-                }}
-              >
-                <Input
-                  className='w-64'
-                  value={keyword}
-                  onChange={(event) => setKeyword(event.target.value)}
-                  placeholder={t('Order number, username or transaction hash')}
-                  aria-label={t('Search')}
-                />
+        <Card>
+          <CardContent className='flex flex-col gap-3 py-4'>
+            <form
+              className='flex flex-wrap items-end gap-2'
+              onSubmit={(event) => {
+                event.preventDefault()
+                setFilters((prev) => ({
+                  ...prev,
+                  keyword: keyword.trim(),
+                  page: 1,
+                }))
+              }}
+            >
+              <Input
+                className='w-64'
+                value={keyword}
+                onChange={(event) => setKeyword(event.target.value)}
+                placeholder={t('Order number, username or transaction hash')}
+                aria-label={t('Search')}
+              />
+              {!props.ownerMode && (
                 <NativeSelect
-                  aria-label={t('Status')}
-                  value={filters.status ?? ''}
+                  aria-label={t('Site')}
+                  value={
+                    filters.site_id === undefined ? '' : String(filters.site_id)
+                  }
                   onChange={(event) =>
                     setFilters((prev) => ({
                       ...prev,
-                      status: event.target.value,
+                      site_id:
+                        event.target.value === ''
+                          ? undefined
+                          : Number(event.target.value),
                       page: 1,
                     }))
                   }
                 >
-                  <option value=''>{t('All statuses')}</option>
-                  {STATUSES.map((status) => (
-                    <option key={status} value={status}>
-                      {t(ORDER_STATUS_LABELS[status])}
+                  <option value=''>{t('All sites')}</option>
+                  {(summaryQuery.data?.site_options ?? []).map((site) => (
+                    <option key={site.site_id} value={site.site_id}>
+                      {site.site_name || t('Site')} · {site.site_id}
                     </option>
                   ))}
                 </NativeSelect>
-                <NativeSelect
-                  aria-label={t('Provider')}
-                  value={filters.provider ?? ''}
-                  onChange={(event) =>
-                    setFilters((prev) => ({
-                      ...prev,
-                      provider: event.target.value,
-                      page: 1,
-                    }))
-                  }
-                >
-                  <option value=''>{t('All providers')}</option>
-                  {(summaryQuery.data?.provider_capabilities ?? []).map(
-                    (provider) => (
-                      <option key={provider.provider} value={provider.provider}>
-                        {t(provider.label)}
-                      </option>
-                    )
-                  )}
-                </NativeSelect>
-                <Button type='submit'>{t('Search')}</Button>
-              </form>
-
-              {ordersQuery.isError && (
-                <ErrorState onRetry={() => void ordersQuery.refetch()} />
               )}
-              {ordersQuery.isPending ? (
-                <LoadingState />
-              ) : (
-                ordersQuery.data && (
-                  <StaticDataTable
-                    tableClassName='min-w-[1100px]'
-                    tableProps={{ 'aria-label': t('Recharge Audit') }}
-                    data={ordersQuery.data?.items ?? []}
-                    getRowKey={(row) => row.trade_no}
-                    emptyContent={
-                      <EmptyState className='min-h-32' title={t('No orders')} />
-                    }
-                    columns={[
-                      {
-                        id: 'time',
-                        header: t('Time'),
-                        cell: (row) => formatTimestamp(row.create_time),
-                      },
-                      {
-                        id: 'user',
-                        header: t('User'),
-                        cell: (row) =>
-                          `${row.username || '-'} (#${row.user_id})`,
-                      },
-                      {
-                        id: 'method',
-                        header: t('Payment method'),
-                        cell: (row) => (
-                          <div className='flex flex-col'>
-                            <span>{t(methodLabel(row.payment_method))}</span>
-                            {row.channel_name && (
-                              <span className='text-muted-foreground text-xs'>
-                                {row.channel_name}
-                              </span>
-                            )}
-                          </div>
-                        ),
-                      },
-                      {
-                        id: 'face',
-                        header: t('Amount'),
-                        cell: (row) =>
-                          formatUsd(
-                            Number(row.has_ext ? row.face_usd : row.amount),
-                            locale
-                          ),
-                      },
-                      {
-                        id: 'bonus',
-                        header: t('Bonus'),
-                        cell: (row) => formatUsd(Number(row.bonus_usd), locale),
-                      },
-                      {
-                        id: 'pay',
-                        header: t('Payable / paid'),
-                        cell: (row) => (
-                          <div className='flex flex-col text-xs'>
-                            <span>
-                              {row.has_ext
-                                ? `${row.pay_amount} ${row.pay_currency}`
-                                : row.money}
+              <NativeSelect
+                aria-label={t('Order type')}
+                value={filters.order_type ?? ''}
+                onChange={(event) =>
+                  setFilters((prev) => ({
+                    ...prev,
+                    order_type:
+                      event.target.value === 'topup' ? 'topup' : undefined,
+                    page: 1,
+                  }))
+                }
+              >
+                <option value=''>{t('All order types')}</option>
+                <option value='topup'>{t('Top-up')}</option>
+              </NativeSelect>
+              <NativeSelect
+                aria-label={t('Status')}
+                value={filters.status ?? ''}
+                onChange={(event) =>
+                  setFilters((prev) => ({
+                    ...prev,
+                    status: event.target.value,
+                    page: 1,
+                  }))
+                }
+              >
+                <option value=''>{t('All statuses')}</option>
+                {STATUSES.map((status) => (
+                  <option key={status} value={status}>
+                    {t(ORDER_STATUS_LABELS[status])}
+                  </option>
+                ))}
+              </NativeSelect>
+              <NativeSelect
+                aria-label={t('Provider')}
+                value={filters.provider ?? ''}
+                onChange={(event) =>
+                  setFilters((prev) => ({
+                    ...prev,
+                    provider: event.target.value,
+                    page: 1,
+                  }))
+                }
+              >
+                <option value=''>{t('All providers')}</option>
+                {(summaryQuery.data?.provider_capabilities ?? []).map(
+                  (provider) => (
+                    <option key={provider.provider} value={provider.provider}>
+                      {t(provider.label)}
+                    </option>
+                  )
+                )}
+              </NativeSelect>
+              <Button type='submit'>{t('Search')}</Button>
+            </form>
+
+            {ordersQuery.isError && (
+              <ErrorState onRetry={() => void ordersQuery.refetch()} />
+            )}
+            {ordersQuery.isPending ? (
+              <LoadingState />
+            ) : (
+              ordersQuery.data && (
+                <StaticDataTable
+                  tableClassName='min-w-[1400px]'
+                  tableProps={{ 'aria-label': t('Order management') }}
+                  data={ordersQuery.data?.items ?? []}
+                  getRowKey={(row) => row.trade_no}
+                  emptyContent={
+                    <EmptyState className='min-h-32' title={t('No orders')} />
+                  }
+                  columns={[
+                    {
+                      id: 'time',
+                      header: t('Time'),
+                      cell: (row) => formatTimestamp(row.create_time),
+                    },
+                    {
+                      id: 'user',
+                      header: t('User'),
+                      cell: (row) => `${row.username || '-'} (#${row.user_id})`,
+                    },
+                    {
+                      id: 'site',
+                      header: t('Site'),
+                      cell: (row) =>
+                        row.site_id == null
+                          ? t('Unknown site')
+                          : row.site_name || t('Site'),
+                    },
+                    {
+                      id: 'site_id',
+                      header: t('Site ID'),
+                      cell: (row) => row.site_id ?? '-',
+                    },
+                    {
+                      id: 'order_type',
+                      header: t('Order type'),
+                      cell: () => t('Top-up'),
+                    },
+                    {
+                      id: 'complete_time',
+                      header: t('Completed at'),
+                      cell: (row) =>
+                        row.complete_time > 0
+                          ? formatTimestamp(row.complete_time)
+                          : '-',
+                    },
+                    {
+                      id: 'method',
+                      header: t('Payment method'),
+                      cell: (row) => (
+                        <div className='flex flex-col'>
+                          <span>{t(methodLabel(row.payment_method))}</span>
+                          {row.channel_name && (
+                            <span className='text-muted-foreground text-xs'>
+                              {row.channel_name}
                             </span>
-                            {Number(row.paid_amount) > 0 && (
-                              <span className='text-muted-foreground'>
-                                {row.paid_amount} {row.paid_currency}
-                              </span>
-                            )}
-                            {row.paid_tx_hash && (
-                              <code className='text-muted-foreground truncate font-mono'>
-                                {row.paid_tx_hash}
-                              </code>
-                            )}
-                          </div>
+                          )}
+                        </div>
+                      ),
+                    },
+                    {
+                      id: 'face',
+                      header: t('Amount'),
+                      cell: (row) =>
+                        formatUsd(
+                          Number(row.has_ext ? row.face_usd : row.amount),
+                          locale
                         ),
-                      },
-                      {
-                        id: 'status',
-                        header: t('Status'),
-                        cell: (row) => (
-                          <div className='flex flex-col items-start gap-1'>
+                    },
+                    {
+                      id: 'bonus',
+                      header: t('Bonus'),
+                      cell: (row) => formatUsd(Number(row.bonus_usd), locale),
+                    },
+                    {
+                      id: 'pay',
+                      header: t('Payable / paid'),
+                      cell: (row) => (
+                        <div className='flex flex-col text-xs'>
+                          <span>
+                            {row.has_ext
+                              ? `${row.pay_amount} ${row.pay_currency}`
+                              : row.money}
+                          </span>
+                          {Number(row.paid_amount) > 0 && (
+                            <span className='text-muted-foreground'>
+                              {row.paid_amount} {row.paid_currency}
+                            </span>
+                          )}
+                          {row.paid_tx_hash && (
+                            <code className='text-muted-foreground truncate font-mono'>
+                              {row.paid_tx_hash}
+                            </code>
+                          )}
+                        </div>
+                      ),
+                    },
+                    {
+                      id: 'status',
+                      header: t('Status'),
+                      cell: (row) => (
+                        <div className='flex flex-col items-start gap-1'>
+                          <StatusBadge
+                            label={t(
+                              ORDER_STATUS_LABELS[
+                                row.status as AdtyOrderStatus
+                              ] ?? row.status
+                            )}
+                            variant={
+                              ORDER_STATUS_VARIANTS[
+                                row.status as AdtyOrderStatus
+                              ] ?? 'neutral'
+                            }
+                            copyable={false}
+                          />
+                          {row.anomaly && (
                             <StatusBadge
-                              label={t(
-                                ORDER_STATUS_LABELS[
-                                  row.status as AdtyOrderStatus
-                                ] ?? row.status
-                              )}
-                              variant={
-                                ORDER_STATUS_VARIANTS[
-                                  row.status as AdtyOrderStatus
-                                ] ?? 'neutral'
+                              label={
+                                row.anomaly === 'missing_ext'
+                                  ? t('Missing order details')
+                                  : t('Paid amount differs')
                               }
+                              variant='danger'
                               copyable={false}
                             />
-                            {row.anomaly && (
-                              <StatusBadge
-                                label={
-                                  row.anomaly === 'missing_ext'
-                                    ? t('Missing order details')
-                                    : t('Paid amount differs')
-                                }
-                                variant='danger'
-                                copyable={false}
-                              />
-                            )}
-                          </div>
-                        ),
-                      },
-                      {
-                        id: 'trade_no',
-                        header: t('Order number'),
-                        cell: (row) => (
-                          <code className='font-mono text-xs'>
-                            {row.trade_no}
-                          </code>
-                        ),
-                      },
-                      {
-                        id: 'actions',
-                        header: t('Actions'),
-                        className: 'text-right',
-                        cellClassName: 'text-right',
-                        cell: (row) => {
-                          return (
-                            <div className='flex justify-end gap-1'>
-                              {canComplete && row.actions?.query && (
-                                <Button
-                                  size='sm'
-                                  variant='outline'
-                                  onClick={() => setQuerying(row)}
-                                >
-                                  {t('Query payment')}
-                                </Button>
-                              )}
-                              {canComplete && row.actions?.complete && (
-                                <Button
-                                  size='sm'
-                                  variant='outline'
-                                  onClick={() => setCompleting(row)}
-                                >
-                                  {t('Complete')}
-                                </Button>
-                              )}
-                              {canRefund && row.actions?.refund && (
-                                <Button
-                                  size='sm'
-                                  variant='outline'
-                                  onClick={() => setRefunding(row)}
-                                >
-                                  {t('Refund')}
-                                </Button>
-                              )}
-                            </div>
-                          )
-                        },
-                      },
-                    ]}
-                  />
-                )
-              )}
-              {pages > 1 && (
-                <div className='flex items-center justify-end gap-2'>
-                  <Button
-                    variant='outline'
-                    size='sm'
-                    disabled={filters.page <= 1}
-                    onClick={() =>
-                      setFilters((prev) => ({ ...prev, page: prev.page - 1 }))
-                    }
-                  >
-                    {t('Previous')}
-                  </Button>
-                  <span className='text-muted-foreground text-sm'>
-                    {filters.page} / {pages}
-                  </span>
-                  <Button
-                    variant='outline'
-                    size='sm'
-                    disabled={filters.page >= pages}
-                    onClick={() =>
-                      setFilters((prev) => ({ ...prev, page: prev.page + 1 }))
-                    }
-                  >
-                    {t('Next')}
-                  </Button>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+                          )}
+                        </div>
+                      ),
+                    },
+                    {
+                      id: 'trade_no',
+                      header: t('Order number'),
+                      cell: (row) => (
+                        <code className='font-mono text-xs'>
+                          {row.trade_no}
+                        </code>
+                      ),
+                    },
+                    ...(!props.ownerMode
+                      ? [
+                          {
+                            id: 'actions',
+                            header: t('Actions'),
+                            className: 'text-right',
+                            cellClassName: 'text-right',
+                            cell: (row: RechargeAuditOrder) => {
+                              return (
+                                <div className='flex justify-end gap-1'>
+                                  {canComplete && row.actions?.query && (
+                                    <Button
+                                      size='sm'
+                                      variant='outline'
+                                      onClick={() => setQuerying(row)}
+                                    >
+                                      {t('Query payment')}
+                                    </Button>
+                                  )}
+                                  {canComplete && row.actions?.complete && (
+                                    <Button
+                                      size='sm'
+                                      variant='outline'
+                                      onClick={() => setCompleting(row)}
+                                    >
+                                      {t('Complete')}
+                                    </Button>
+                                  )}
+                                  {canRefund && row.actions?.refund && (
+                                    <Button
+                                      size='sm'
+                                      variant='outline'
+                                      onClick={() => setRefunding(row)}
+                                    >
+                                      {t('Refund')}
+                                    </Button>
+                                  )}
+                                </div>
+                              )
+                            },
+                          },
+                        ]
+                      : []),
+                  ]}
+                />
+              )
+            )}
+            {pages > 1 && (
+              <div className='flex items-center justify-end gap-2'>
+                <Button
+                  variant='outline'
+                  size='sm'
+                  disabled={filters.page <= 1}
+                  onClick={() =>
+                    setFilters((prev) => ({ ...prev, page: prev.page - 1 }))
+                  }
+                >
+                  {t('Previous')}
+                </Button>
+                <span className='text-muted-foreground text-sm'>
+                  {filters.page} / {pages}
+                </span>
+                <Button
+                  variant='outline'
+                  size='sm'
+                  disabled={filters.page >= pages}
+                  onClick={() =>
+                    setFilters((prev) => ({ ...prev, page: prev.page + 1 }))
+                  }
+                >
+                  {t('Next')}
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
-          <PaymentOrphanPanel canCredit={canComplete} />
-        </div>
-        {canComplete && (
-          <QueryPaymentDialog
-            order={querying}
-            onOpenChange={(open) => !open && setQuerying(null)}
-            onDone={refresh}
-          />
-        )}
-        {canComplete && (
-          <ManualCompleteDialog
-            order={completing}
-            onOpenChange={(open) => !open && setCompleting(null)}
-            onDone={refresh}
-          />
-        )}
-        {canRefund && (
-          <RefundDialog
-            order={refunding}
-            onOpenChange={(open) => !open && setRefunding(null)}
-            onDone={refresh}
-          />
-        )}
-      </SectionPageLayout.Content>
+        {!props.ownerMode && <PaymentOrphanPanel canCredit={canComplete} />}
+      </div>
+      {canComplete && (
+        <QueryPaymentDialog
+          order={querying}
+          onOpenChange={(open) => !open && setQuerying(null)}
+          onDone={refresh}
+        />
+      )}
+      {canComplete && (
+        <ManualCompleteDialog
+          order={completing}
+          onOpenChange={(open) => !open && setCompleting(null)}
+          onDone={refresh}
+        />
+      )}
+      {canRefund && (
+        <RefundDialog
+          order={refunding}
+          onOpenChange={(open) => !open && setRefunding(null)}
+          onDone={refresh}
+        />
+      )}
+    </>
+  )
+  if (props.ownerMode) return content
+  return (
+    <SectionPageLayout>
+      <SectionPageLayout.Title>{t('Order management')}</SectionPageLayout.Title>
+      <SectionPageLayout.Content>{content}</SectionPageLayout.Content>
     </SectionPageLayout>
   )
 }

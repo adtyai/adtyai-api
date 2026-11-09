@@ -8593,5 +8593,10 @@
   "Notification type": "Тип уведомления",
   "Related business": "Связанная операция",
   "Select a site": "Выберите сайт",
-  "This notification was changed elsewhere. Reload and try again": "Это уведомление уже изменено. Обновите страницу и повторите попытку"
+  "This notification was changed elsewhere. Reload and try again": "Это уведомление уже изменено. Обновите страницу и повторите попытку",
+  "Order management": "Управление заказами",
+  "Order type": "Тип заказа",
+  "Completed at": "Время завершения",
+  "Unknown site": "Сайт неизвестен",
+  "All order types": "Все типы заказов"
 }

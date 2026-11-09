@@ -104,7 +104,7 @@ describe('sidebar groups', () => {
       'Users',
       'Referral admin',
       'Reseller sites',
-      'Recharge Audit',
+      'Order management',
       'System Info',
       'Task Plugins',
       'System Settings',

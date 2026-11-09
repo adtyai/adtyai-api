@@ -188,7 +188,7 @@ export function useSidebarData(): SidebarData {
               requiredPermission: ADTY_PERMISSIONS.SITE_READ,
             },
             {
-              title: t('Recharge Audit'),
+              title: t('Order management'),
               url: '/recharge-audit',
               icon: ReceiptText,
               requiredPermission: ADTY_PERMISSIONS.FINANCE_READ,

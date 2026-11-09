@@ -8612,5 +8612,10 @@
   "Notification type": "알림 유형",
   "Related business": "관련 업무",
   "Select a site": "사이트 선택",
-  "This notification was changed elsewhere. Reload and try again": "다른 곳에서 알림이 변경되었습니다. 새로고침 후 다시 시도하세요"
+  "This notification was changed elsewhere. Reload and try again": "다른 곳에서 알림이 변경되었습니다. 새로고침 후 다시 시도하세요",
+  "Order management": "주문 관리",
+  "Order type": "주문 유형",
+  "Completed at": "완료 시간",
+  "Unknown site": "알 수 없는 사이트",
+  "All order types": "모든 주문 유형"
 }
