@@ -97,6 +97,7 @@ function SiteActions(props: {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const user = useAuthStore((state) => state.auth.user)
+  const canClose = user?.role === ROLE.SUPER_ADMIN
   const canReview = user?.role === ROLE.SUPER_ADMIN
   const canAdjust = canAdmin(user, ADTY_PERMISSIONS.SITE_ADJUST)
   const canDelete = canAdmin(user, ADTY_PERMISSIONS.SITE_DELETE)
@@ -158,7 +159,7 @@ function SiteActions(props: {
   const targets = useQuery({
     queryKey: siteAdminKeys.list('transfer-targets', {}),
     queryFn: () => getSites({ p: 1, status: 'active', page_size: 100 }),
-    enabled: closing,
+    enabled: closing && canClose,
   })
   const done = () => {
     toast.success(t('Saved successfully'))
@@ -390,7 +391,7 @@ function SiteActions(props: {
             {t('Take down notice')}
           </Button>
         )}
-        {canAdjust && editable && (
+        {canClose && editable && (
           <Button
             variant='destructive'
             disabled={busy}
@@ -422,11 +423,11 @@ function SiteActions(props: {
         disabled={!canDelete}
         handleConfirm={() => canDelete && takedown.mutate()}
       />
-      {closing && targets.isError && (
+      {canClose && closing && targets.isError && (
         <ErrorState onRetry={() => void targets.refetch()} />
       )}
-      {closing && targets.isPending && <LoadingState />}
-      {closing && targets.isSuccess && (
+      {canClose && closing && targets.isPending && <LoadingState />}
+      {canClose && closing && targets.isSuccess && (
         <CloseSiteDialog
           site={site}
           transferTargets={targets.data?.items ?? []}

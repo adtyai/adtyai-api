@@ -492,3 +492,6 @@
 | `model/channel.go`、`model/adty_group.go`、`model/model_meta.go` | 状态及分组/模型写入使用统一刷新，多 Key 轮询在缓存回退和恢复期间保留游标 | 配置撤销与轮询恢复一致性 | D-CACHE-01 |
 | `controller/channel.go`、`controller/channel_priority.go`、`controller/channel_upstream_update.go`、`controller/task_plugin.go`、`service/codex_credential_refresh.go`、`service/codex_credential_refresh_task.go` | 配置变更统一调用 RefreshChannelCache；批量解绑、模型和凭据分页更新在部分提交后失败也刷新 | 覆盖管理接口及后台写入的缓存生效边界 | D-CACHE-01 |
 | `controller/channel_cache_refresh_test.go`、`model/channel_cache_failure_test.go`、`service/codex_credential_refresh_test.go` | 真实数据库覆盖删除/禁用/改模型、查询失败、旧重载、单 Key 状态、轮询恢复及批量部分提交 | SQLite/MySQL/PostgreSQL 矩阵与 race 回归 | D-CACHE-01 |
+| `controller/adty_site_admin.go`、`router/adty_site_test.go` | closed 动作在关站服务调用前要求 Root；真实 PG 会话/PAT 验证即时/定时及主站/分站目标，保留委派暂停和恢复 | 防止普通管理员通过分站调整权限迁移客户 | FIN-I-05 |
+| `web/src/features/adty-site-admin/components/site-detail-sheet.tsx`、`close-site-dialog.tsx` 及现有 `__tests__/site-admin.test.tsx` | 仅 Root 展示关站入口，身份变化时移除弹窗并在排队提交前重新检查 | 前后端权限一致，保留现有 Dialog/Button 组件 | FIN-I-05 |
+| `scripts/adty/browser-business.sh`、`web/scripts/adty/browser-site-status.mjs` | 新增独立 PostgreSQL/Redis 生产浏览器场景，验证桌面/移动委派管理、直接请求拒绝及 Root 页面关站与审计 | 避免长钱包场景耗尽默认验证限流，不放宽生产限制 | FIN-I-05 |

@@ -12,9 +12,10 @@ case "$adty_browser_scenario" in
     # its own database and Redis so the default security limits remain active.
     ADTY_BROWSER_SCENARIO=deployment bash "$0"
     ADTY_BROWSER_SCENARIO=wallet bash "$0"
+    ADTY_BROWSER_SCENARIO=site-status bash "$0"
     exit 0
     ;;
-  deployment | wallet) ;;
+  deployment | wallet | site-status) ;;
   *) echo 'browser-business: unknown scenario' >&2; exit 2 ;;
 esac
 

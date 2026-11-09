@@ -414,6 +414,51 @@ describe('close site dialog', () => {
     site({ id: 5, host: 'other.sites.example', status: 'active' }),
   ]
 
+  it('removes the close confirmation when Root is downgraded with a destination selected', async () => {
+    renderWith(
+      <CloseSiteDialog
+        site={site({ id: 1 })}
+        transferTargets={others}
+        open
+        onOpenChange={() => undefined}
+      />
+    )
+    await userEvent.click(
+      screen.getByRole('radio', { name: 'Move to the main site' })
+    )
+    expect(screen.getByRole('button', { name: 'Close site' })).toBeEnabled()
+    act(() => asSiteAdmin(['read', 'adjust']))
+    expect(
+      screen.queryByRole('button', { name: 'Close site' })
+    ).not.toBeInTheDocument()
+    expect(api.setSiteStatus).not.toHaveBeenCalled()
+  })
+
+  it('rejects a queued closure after Root downgrade and unmount', async () => {
+    const paused = pausedMutationClient()
+    const view = renderWith(
+      <CloseSiteDialog
+        site={site({ id: 1 })}
+        transferTargets={others}
+        open
+        onOpenChange={() => undefined}
+      />,
+      paused.client
+    )
+    await userEvent.click(
+      screen.getByRole('radio', { name: 'Move to the main site' })
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'Close site' }))
+    await waitFor(() => expect(paused.entered).toHaveBeenCalledTimes(1))
+    act(() => {
+      asSiteAdmin(['read', 'adjust'])
+      view.unmount()
+    })
+    await act(async () => paused.resume())
+    await waitFor(() => expect(paused.client.isMutating()).toBe(0))
+    expect(api.setSiteStatus).not.toHaveBeenCalled()
+  })
+
   it('cannot be confirmed until a customer destination is chosen', async () => {
     const user = userEvent.setup()
     renderWith(
@@ -947,6 +992,40 @@ describe('SiteDetailSheet notice takedown', () => {
     expect(
       screen.queryByRole('button', { name: 'Take down notice' })
     ).not.toBeInTheDocument()
+  })
+
+  it('hides closure from a delegated admin while preserving pause and resume', async () => {
+    asSiteAdmin(['read', 'adjust'])
+    openSheet(site({}))
+    const pause = await screen.findByRole('button', { name: 'Pause' })
+    expect(
+      screen.queryByRole('button', { name: 'Close site' })
+    ).not.toBeInTheDocument()
+    api.getSite.mockResolvedValue({
+      site: site({ status: 'paused' }),
+      audits: [],
+      domains: [],
+      sender_domains: [],
+    })
+    api.setSiteStatus.mockResolvedValue(site({ status: 'paused' }))
+    await userEvent.click(pause)
+    await waitFor(() =>
+      expect(api.setSiteStatus).toHaveBeenCalledWith(1, {
+        status: 'paused',
+        reason: '',
+      })
+    )
+    const resume = await screen.findByRole('button', { name: 'Resume' })
+    expect(
+      screen.queryByRole('button', { name: 'Close site' })
+    ).not.toBeInTheDocument()
+    await userEvent.click(resume)
+    await waitFor(() =>
+      expect(api.setSiteStatus).toHaveBeenCalledWith(1, {
+        status: 'active',
+        reason: '',
+      })
+    )
   })
 
   it('allows notice deletion with delete and no adjust grant', async () => {

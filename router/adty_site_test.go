@@ -215,6 +215,108 @@ func TestOnlyRootCanActivateLegacySiteApplication(t *testing.T) {
 	require.Contains(t, approved.Body.String(), `"success":true`, approved.Body.String())
 }
 
+func TestOnlyRootCanCloseAdtySite(t *testing.T) {
+	for _, destination := range []string{"main", "site"} {
+		for _, immediate := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/immediate=%t", destination, immediate), func(t *testing.T) {
+				f := newAdtyGuardFixture(t)
+				cfg := withResellerSetting(t)
+				cfg.Enabled, cfg.RootDomains = true, []string{"sites.example.com"}
+				cfg.CostFactor, cfg.MinCostFactor, cfg.MaxMarkup = new(0.8), new(0.5), new(3.0)
+				cfg.MaxSiteBonusExtra, cfg.TrialGrantMaxUSD, cfg.TrialGrantDailyUSD = new(0.0), new(0.0), new(0.0)
+				cfg.CloseNoticeDays = 7
+				owner := model.User{Username: "close-owner", Password: "x", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: "default"}
+				require.NoError(t, f.db.Create(&owner).Error)
+				site, err := service.OpenAdtySite(owner.Id, "close-source", model.AdtySiteOpenedByAdmin, service.AdtySitePreset{})
+				require.NoError(t, err)
+				targetID := 0
+				if destination == "site" {
+					targetOwner := model.User{Username: "target-owner", Password: "x", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: "default"}
+					require.NoError(t, f.db.Create(&targetOwner).Error)
+					target, err := service.OpenAdtySite(targetOwner.Id, "close-target", model.AdtySiteOpenedByAdmin, service.AdtySitePreset{})
+					require.NoError(t, err)
+					targetID = target.Id
+				}
+				customer := model.User{Username: "close-customer", Password: "x", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: "default", SiteId: site.Id, Quota: 1000}
+				require.NoError(t, f.db.Create(&customer).Error)
+				require.NoError(t, f.db.Create(&model.AdtySiteCustomer{UserId: customer.Id, SiteId: site.Id}).Error)
+				f.grant(t, authz.AdtySiteRead, authz.AdtySiteAdjust)
+				require.NoError(t, model.EnsureLegacyAccessTokenRetireAt(time.Now().Unix()))
+				adminPAT := createAdtyScopedToken(t, f.admin.Id, service.AccessTokenScopeOf(authz.AdtySiteAdjust))
+				var root model.User
+				require.NoError(t, f.db.Where("username = ?", "guard-root").First(&root).Error)
+				rootReadPAT := createAdtyScopedToken(t, root.Id, service.AccessTokenScopeOf(authz.AdtySiteRead))
+				path := fmt.Sprintf("/api/adty/admin/sites/%d/status", site.Id)
+				body := fmt.Sprintf(`{"status":"closed","transfer_to":%d,"immediate":%t,"role":100,"reason":"retiring"}`, targetID, immediate)
+
+				for _, token := range []string{f.token, adminPAT, rootReadPAT} {
+					denied := adtyJSON(t, f.engine, http.MethodPut, path, body, token)
+					assert.Equal(t, http.StatusForbidden, denied.Code, denied.Body.String())
+					assert.Contains(t, denied.Body.String(), `"success":false`)
+				}
+				var unchanged model.AdtySite
+				require.NoError(t, f.db.First(&unchanged, site.Id).Error)
+				assert.Equal(t, *site, unchanged, "denied closure must not schedule or execute a migration")
+				var stored model.User
+				require.NoError(t, f.db.First(&stored, customer.Id).Error)
+				assert.Equal(t, site.Id, stored.SiteId)
+				assert.Equal(t, 1000, stored.Quota)
+				var membership model.AdtySiteCustomer
+				require.NoError(t, f.db.First(&membership, customer.Id).Error)
+				assert.Equal(t, site.Id, membership.SiteId)
+				var auditCount int64
+				require.NoError(t, f.db.Model(&model.AdtySiteAudit{}).Where("site_id = ? AND action IN ?", site.Id, []string{"close_schedule", "close"}).Count(&auditCount).Error)
+				assert.Zero(t, auditCount)
+				require.NoError(t, f.db.Model(&model.AuditLog{}).Where("action = ? AND success = ?", "adty.site.status", true).Count(&auditCount).Error)
+				assert.Zero(t, auditCount)
+				require.Equal(t, model.AdtySiteStatusActive, unchanged.Status)
+
+				for _, status := range []string{model.AdtySiteStatusPaused, model.AdtySiteStatusActive} {
+					token := f.token
+					if status == model.AdtySiteStatusActive {
+						token = adminPAT
+					}
+					response := adtyJSON(t, f.engine, http.MethodPut, path, fmt.Sprintf(`{"status":%q,"reason":"maintenance"}`, status), token)
+					require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+					require.Contains(t, response.Body.String(), `"success":true`)
+					require.NoError(t, f.db.First(&unchanged, site.Id).Error)
+					assert.Equal(t, status, unchanged.Status)
+				}
+				rootToken := f.root
+				if destination == "site" {
+					rootToken = createAdtyScopedToken(t, root.Id, service.AccessTokenScopeOf(authz.AdtySiteAdjust))
+				}
+				closed := adtyJSON(t, f.engine, http.MethodPut, path, body, rootToken)
+				require.Equal(t, http.StatusOK, closed.Code, closed.Body.String())
+				require.Contains(t, closed.Body.String(), `"success":true`)
+				if !immediate {
+					require.NoError(t, f.db.First(&unchanged, site.Id).Error)
+					assert.Equal(t, model.AdtySiteStatusClosing, unchanged.Status)
+					require.NoError(t, f.db.First(&stored, customer.Id).Error)
+					assert.Equal(t, site.Id, stored.SiteId, "scheduled closure must respect the notice period")
+					require.NoError(t, service.RunAdtySiteCloseOnce(unchanged.CloseExecuteAt))
+				}
+				require.NoError(t, f.db.First(&unchanged, site.Id).Error)
+				assert.Equal(t, model.AdtySiteStatusClosed, unchanged.Status)
+				require.NoError(t, f.db.First(&stored, customer.Id).Error)
+				assert.Equal(t, targetID, stored.SiteId)
+				assert.Equal(t, 1000, stored.Quota)
+				var members []model.AdtySiteCustomer
+				require.NoError(t, f.db.Where("user_id = ?", customer.Id).Find(&members).Error)
+				if targetID == 0 {
+					assert.Empty(t, members)
+				} else {
+					require.Len(t, members, 1)
+					assert.Equal(t, targetID, members[0].SiteId)
+				}
+				var schedule model.AdtySiteAudit
+				require.NoError(t, f.db.Where("site_id = ? AND action = ?", site.Id, "close_schedule").First(&schedule).Error)
+				assert.Equal(t, root.Id, schedule.OperatorId)
+			})
+		}
+	}
+}
+
 func TestSiteAdminPermissions(t *testing.T) {
 	f := newAdtyGuardFixture(t)
 	cfg := withResellerSetting(t)
@@ -259,7 +361,9 @@ func TestSiteAdminPermissions(t *testing.T) {
 	assert.Contains(t, low.Body.String(), "The cost factor cannot be below the minimum cost factor")
 	ok := adtyJSON(t, f.engine, http.MethodPut, adjust, `{"cost_factor":"0.7","reason":"volume"}`, f.token)
 	assert.Contains(t, ok.Body.String(), `"success":true`, ok.Body.String())
-	closeNoTarget := adtyJSON(t, f.engine, http.MethodPut, adjust+"/status", `{"status":"closed"}`, f.token)
+	deniedClose := adtyJSON(t, f.engine, http.MethodPut, adjust+"/status", `{"status":"closed"}`, f.token)
+	assert.Equal(t, http.StatusForbidden, deniedClose.Code, deniedClose.Body.String())
+	closeNoTarget := adtyJSON(t, f.engine, http.MethodPut, adjust+"/status", `{"status":"closed"}`, f.root)
 	assert.Contains(t, closeNoTarget.Body.String(), "Choose where the customers go before closing the site")
 
 	detail := adtyJSON(t, f.engine, http.MethodGet, adjust, "", f.token)

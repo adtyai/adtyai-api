@@ -29,6 +29,8 @@ import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Textarea } from '@/components/ui/textarea'
 import { handleServerError } from '@/lib/handle-server-error'
+import { ROLE } from '@/lib/roles'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { setSiteStatus, siteAdminKeys } from '../api'
 import type { AdminSite } from '../types'
@@ -36,7 +38,7 @@ import type { AdminSite } from '../types'
 type Destination = 'main' | 'site'
 
 /**
- * Close a site (task 11.1, 11.9). The admin must say where the customers
+ * Close a site (task 11.1, 11.9). Root must say where the customers
  * go: back to the main site, or to another active site. The server refuses
  * a close without transfer_to; the button stays disabled until it is set.
  */
@@ -48,6 +50,9 @@ export function CloseSiteDialog(props: {
   onOpenChange: (open: boolean) => void
 }) {
   const { t } = useTranslation()
+  const canClose = useAuthStore(
+    (state) => state.auth.user?.role === ROLE.SUPER_ADMIN
+  )
   const id = useId()
   const queryClient = useQueryClient()
   const [destination, setDestination] = useState<Destination | null>(null)
@@ -64,14 +69,18 @@ export function CloseSiteDialog(props: {
   if (destination === 'site' && targetId !== '') transferTo = Number(targetId)
 
   const close = useMutation({
-    mutationFn: () =>
-      setSiteStatus(props.site.id, {
+    mutationFn: () => {
+      if (useAuthStore.getState().auth.user?.role !== ROLE.SUPER_ADMIN) {
+        throw new Error(t('No permission to perform this action'))
+      }
+      return setSiteStatus(props.site.id, {
         status: 'closed',
         transfer_to: transferTo ?? 0,
         claw_back: clawBack,
         immediate,
         reason: reason.trim(),
-      }),
+      })
+    },
     onSuccess: () => {
       toast.success(t('Site closing scheduled'))
       void queryClient.invalidateQueries({ queryKey: siteAdminKeys.all })
@@ -79,6 +88,8 @@ export function CloseSiteDialog(props: {
     },
     onError: (err) => handleServerError(err),
   })
+
+  if (!canClose) return null
 
   return (
     <Dialog
