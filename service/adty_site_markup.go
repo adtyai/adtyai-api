@@ -24,6 +24,7 @@ const (
 	AdtySiteMarkupContextKey     = "adty_site_markup"
 	AdtySiteCostFactorContextKey = "adty_site_cost_factor"
 	AdtySiteIdContextKey         = "adty_site_id"
+	AdtySiteOwnerContextKey      = "adty_site_owner_user_id"
 )
 
 var (
@@ -139,6 +140,11 @@ func AdtyApplySiteMarkup(c *gin.Context, userId int, group string, groupRatio fl
 	if c != nil {
 		c.Set(AdtySiteMarkupContextKey, k)
 		c.Set(AdtySiteIdContextKey, site.Id)
+		ownerID, err := model.CurrentAdtySiteFinancialOwnerTx(model.DB, site.Id)
+		if err != nil {
+			common.SysError("Request earning owner snapshot unavailable")
+		}
+		c.Set(AdtySiteOwnerContextKey, ownerID)
 		if d, ok := AdtySiteCostFactor(site); ok {
 			c.Set(AdtySiteCostFactorContextKey, d.InexactFloat64())
 		}
@@ -177,6 +183,7 @@ func AdtyAppendSiteMarkupAdminInfo(c *gin.Context, other *model.LogOther) {
 	other.SetAdmin("site_cost_factor", d)
 	if siteId := c.GetInt(AdtySiteIdContextKey); siteId > 0 {
 		other.SetAdmin("site_id", siteId)
+		other.SetAdmin("site_owner_user_id", c.GetInt(AdtySiteOwnerContextKey))
 	}
 }
 
@@ -500,6 +507,7 @@ func AdtyStampTaskSiteBilling(c *gin.Context, bc *model.TaskBillingContext) {
 	}
 	if k, d, ok := AdtySiteMarkupFromContext(c); ok {
 		bc.SiteMarkup, bc.SiteCostFactor, bc.SiteId = k, d, c.GetInt(AdtySiteIdContextKey)
+		bc.SiteOwnerUserId = c.GetInt(AdtySiteOwnerContextKey)
 	}
 }
 

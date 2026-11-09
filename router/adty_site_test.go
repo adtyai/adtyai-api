@@ -194,6 +194,37 @@ func TestOnlyRootCanCreateAdtySite(t *testing.T) {
 	assert.Equal(t, "root-only-site", site.Subdomain)
 }
 
+func TestSiteOwnerHandoverRequiresRootAndPreservesAgreementBoundary(t *testing.T) {
+	f := newAdtyGuardFixture(t)
+	withResellerSetting(t)
+	oldToken := adtySessionToken(t, f.db, "handover-old", common.RoleCommonUser)
+	newToken := adtySessionToken(t, f.db, "handover-new", common.RoleCommonUser)
+	var oldOwner, newOwner, root model.User
+	require.NoError(t, f.db.Where("username = ?", "handover-old").First(&oldOwner).Error)
+	require.NoError(t, f.db.Where("username = ?", "handover-new").First(&newOwner).Error)
+	require.NoError(t, f.db.Where("username = ?", "guard-root").First(&root).Error)
+	site := model.AdtySite{OwnerUserId: oldOwner.Id, Subdomain: "handover", RootDomain: "sites.example.com",
+		Status: model.AdtySiteStatusActive, AgreementVer: service.AdtyCurrentSiteAgreementVersion(), AgreementAt: 10}
+	require.NoError(t, f.db.Create(&site).Error)
+	path := fmt.Sprintf("/api/adty/admin/sites/%d/owner", site.Id)
+	body := fmt.Sprintf(`{"expected_owner_user_id":%d,"expected_ownership_version":0,"new_owner_user_id":%d,"reason":"Owner replacement"}`, oldOwner.Id, newOwner.Id)
+	f.grant(t, authz.AdtySiteAdjust)
+	for _, credential := range []string{f.token, oldToken, newToken, createAdtyScopedToken(t, root.Id, "option:read")} {
+		assert.Equal(t, http.StatusForbidden, adtyJSON(t, f.engine, http.MethodPost, path, body, credential).Code)
+	}
+	response := adtyJSON(t, f.engine, http.MethodPost, path, body, f.root)
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	require.Contains(t, response.Body.String(), `"success":true`, response.Body.String())
+	require.NoError(t, f.db.First(&site, site.Id).Error)
+	assert.Equal(t, newOwner.Id, site.OwnerUserId)
+	assert.Empty(t, site.AgreementVer)
+	assert.Zero(t, site.AgreementAt)
+	assert.Equal(t, http.StatusUnauthorized, adtyJSON(t, f.engine, http.MethodGet, "/api/adty/site/stats", "", oldToken).Code)
+	assert.Equal(t, http.StatusUnauthorized, adtyJSON(t, f.engine, http.MethodGet, "/api/adty/site/stats", "", newToken).Code)
+	conflict := adtyJSON(t, f.engine, http.MethodPost, path, body, createAdtyScopedToken(t, root.Id, "option:write"))
+	assert.Contains(t, conflict.Body.String(), `"success":false`, conflict.Body.String())
+}
+
 func TestOnlyRootCanActivateLegacySiteApplication(t *testing.T) {
 	f := newAdtyGuardFixture(t)
 	cfg := withResellerSetting(t)

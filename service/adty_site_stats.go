@@ -413,8 +413,16 @@ func GetAdtySiteBalances(site *model.AdtySite) (*AdtySiteBalances, error) {
 		Kind  string
 		Total decimal.Decimal
 	}
+	legacyOwnerID, err := model.ResolveAdtySiteFinancialOwnerTx(model.DB, site.Id, 0)
+	if err != nil {
+		return nil, err
+	}
+	ownerIDs := []int{site.OwnerUserId}
+	if legacyOwnerID == site.OwnerUserId {
+		ownerIDs = append(ownerIDs, 0)
+	}
 	if err := model.DB.Model(&model.AdtySiteEarningDaily{}).Select("kind, COALESCE(SUM(earning),0) AS total").
-		Where("site_id = ? AND status = ?", site.Id, model.AdtySiteEarningPending).Group("kind").Scan(&sums).Error; err != nil {
+		Where("site_id = ? AND site_owner_user_id IN ? AND status = ?", site.Id, ownerIDs, model.AdtySiteEarningPending).Group("kind").Scan(&sums).Error; err != nil {
 		return nil, err
 	}
 	for _, sum := range sums {

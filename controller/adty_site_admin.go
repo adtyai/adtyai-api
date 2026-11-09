@@ -207,6 +207,26 @@ func GetAdtyAdminSiteStats(c *gin.Context) {
 	common.ApiSuccess(c, body)
 }
 
+// HandoverAdtyAdminSiteOwner changes ownership through the Root-only handover.
+func HandoverAdtyAdminSiteOwner(c *gin.Context) {
+	id, ok := adtyPathId(c)
+	if !ok {
+		return
+	}
+	var input service.AdtySiteOwnerHandoverInput
+	if err := common.DecodeJson(c.Request.Body, &input); err != nil {
+		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	input.SiteId, input.OperatorId = id, c.GetInt("id")
+	site, err := service.HandoverAdtySiteOwner(input)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, site)
+}
+
 // GetAdtyAdminSitesOverview 是全部分站的汇总，和主站直客对比（分站·查看）：GET /api/adty/admin/sites/overview?from&to。
 func GetAdtyAdminSitesOverview(c *gin.Context) {
 	overview, err := service.GetAdtySitesOverview(c.Query("from"), c.Query("to"))

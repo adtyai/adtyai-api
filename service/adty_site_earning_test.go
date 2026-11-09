@@ -908,15 +908,20 @@ func TestEarningHookConcurrentUpsert(t *testing.T) {
 func TestEarningHookOnSQLite(t *testing.T) {
 	truncate(t)
 	require.NoError(t, model.DB.AutoMigrate(model.AdtySiteTables()...))
+	seedUser(t, 1, 0)
+	require.NoError(t, model.DB.Create(&model.AdtySite{Id: 3, OwnerUserId: 1, Subdomain: "sqlite-earning", Status: model.AdtySiteStatusActive}).Error)
+	require.NoError(t, model.DB.Create(&model.User{Id: 4, Username: "sqlite-customer", SiteId: 3}).Error)
 	t.Cleanup(func() {
 		model.DB.Exec("DELETE FROM adty_site_earning_daily")
 		model.DB.Exec("DELETE FROM adty_site_customers")
+		model.DB.Exec("DELETE FROM adty_sites WHERE id = 3")
 	})
 	for range 2 {
 		AdtySiteEarningHook(3, 4, perUnit("1"), 1.25, 0.8, model.AdtySiteEarningUsage)
 	}
 	var row model.AdtySiteEarningDaily
 	require.NoError(t, model.DB.Where("site_id = 3").First(&row).Error)
+	assert.Equal(t, 1, row.SiteOwnerUserId)
 	assert.EqualValues(t, perUnit("2"), row.Quota)
 	assert.True(t, row.Earning.Equal(usd("0.72")))
 }

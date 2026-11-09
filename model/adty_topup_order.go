@@ -73,6 +73,7 @@ type AdtyTopupOrder struct {
 	PromoBonusUSD        decimal.Decimal `json:"promo_bonus_usd" gorm:"column:promo_bonus_usd;type:decimal(20,8);not null;default:0"` // 下单时快照的优惠加赠，已含在 CreditQuota 里
 	PromoFunder          string          `json:"-" gorm:"type:varchar(16);not null;default:''"`                                       // 优惠码出资方快照：platform 或 site_owner
 	SiteId               int             `json:"-" gorm:"index"`                                                                      // 下单时客户所属的分站（P11）；加赠由这个站的站长出
+	SiteOwnerUserId      int             `json:"-" gorm:"not null;default:0"`
 	LastQueryAt          int64           `json:"-"`
 	RefundedAt           int64           `json:"refunded_at"`
 	RefundReason         string          `json:"-" gorm:"type:text"`
@@ -170,6 +171,11 @@ func CreateAdtyTopUpWithPolicy(topUp *TopUp, ext *AdtyTopupOrder, prepare, valid
 				return err
 			}
 		}
+		owner, err := CurrentAdtySiteFinancialOwnerTx(tx, ext.SiteId)
+		if err != nil {
+			return err
+		}
+		ext.SiteOwnerUserId = owner
 		if err := tx.Create(topUp).Error; err != nil {
 			return err
 		}

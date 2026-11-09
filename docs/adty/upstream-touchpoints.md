@@ -550,3 +550,7 @@
 | `controller/adty_payment_scene.go`、`admin_finance.go`、`router/adty-router.go` | Root GET/PUT配置与option:read/write PAT范围、409竞争；订单详情公开最小冻结字段 | 不公开策略快照或密钥；用户与财务原授权边界保留 | FIN-F-01 |
 | `web/src/features/adty-payment-scenes/`、`wallet/adty/`、`recharge-audit/`、支付General页及八语 | 复用Dialog/ConfirmDialog/MultiSelect/Field、RHF+Zod及草稿保护，Root管理、动态场景和冻结信息展示 | 无新通用组件/依赖；取消不写、冲突保留草稿、普通admin不可管理 | FIN-F-01 |
 | `web/scripts/adty/browser-payment-scenes.mjs`、`scripts/adty/browser-business.sh` | 隔离PG17/Redis生产桌面/手机配置→报价→合成订单→停用→签名回调与重放 | Loopback商户HTTP边界，SQL只读取证据，不操作真实资金 | FIN-F-01 |
+| `model/adty_site_ownership.go`、`adty_site.go`、`adty_migrate.go`及计费/充值/Task/Midjourney模型 | 追加交接版本记录和财务站长快照；日汇总唯一键增加站长，原索引在新约束建立后移除 | 三库fresh/upgrade和重复迁移保留金额；原预扣优先，历史零快照沿首任记录解析 | FIN-I-07 |
+| `service/adty_site_ownership.go`、`adty_site_earning.go`、`adty_site_settlement_task.go`、`adty_site_stats.go`及异步恢复链 | Root事务CAS交接、员工暂停/授权清空、协议重接受、会话版本撤销；结算/退款/强制追回按原归属 | 用户/affiliate锁序与开站一致，审计失败全部回滚；不迁客户、不挪历史余额，独立账户仍待FIN-J-02 | FIN-I-07 |
+| `controller/adty_site_admin.go`、`router/adty-router.go`、`web/src/features/adty-site-admin/`及八语 | Root专用POST、option:write PAT、版本冲突；详情搜索和交接确认、错误草稿及撤权保护 | 复用现有searchUsers、Combobox、Dialog、ConfirmDialog、Field、RHF+Zod和草稿保护；检索未发现适用共享用户选择器，无新增通用控件/依赖 | FIN-I-07 |
+| `web/scripts/adty/browser-site-ownership.mjs`、`scripts/adty/browser-business.sh`及集中后端回归 | 隔离PG17/Redis的1440/390真实UI交接、协议、旧权限、迟到到账/退款重放、分任结算和追回 | SQL仅准备代表性历史订单/待结夹具；真实API处理合成资金，未操作真实商户 | FIN-I-07 |

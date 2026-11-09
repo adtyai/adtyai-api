@@ -60,6 +60,7 @@ func PrepareMidjourneyTaskBilling(relayInfo *relaycommon.RelayInfo, task *model.
 		contexts[0].Set(adtyBillingOperationContextKey, task.BillingOperationKey)
 		if k, d, ok := AdtySiteMarkupFromContext(contexts[0]); ok {
 			task.BillingSiteId = contexts[0].GetInt(AdtySiteIdContextKey)
+			task.BillingSiteOwnerUserId = contexts[0].GetInt(AdtySiteOwnerContextKey)
 			task.BillingSiteMarkup, task.BillingSiteCostFactor = k, d
 		}
 	}
@@ -156,6 +157,7 @@ func RefundMidjourneyQuota(ctx context.Context, task *model.Midjourney, reason s
 	other.SetPublic("reason", reason)
 	if task.BillingSiteId > 0 && task.BillingSiteMarkup >= 1 && task.BillingSiteCostFactor > 0 {
 		other.SetAdmin("site_id", task.BillingSiteId)
+		other.SetAdmin("site_owner_user_id", task.BillingSiteOwnerUserId)
 		other.SetAdmin("site_markup", task.BillingSiteMarkup)
 		other.SetAdmin("site_cost_factor", task.BillingSiteCostFactor)
 	}

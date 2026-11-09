@@ -48,6 +48,7 @@ type BillingOperation struct {
 	Shortfall           int
 	State               string `gorm:"type:varchar(24);index;not null"`
 	SiteId              int
+	SiteOwnerUserId     int `gorm:"not null;default:0"`
 	SiteMarkup          float64
 	SiteCostFactor      float64
 	BillingContext      string `gorm:"type:text"`
@@ -86,6 +87,7 @@ type AdtySiteEarningEvent struct {
 	OperationKey     string  `json:"operation_key" gorm:"type:varchar(191);primaryKey"`
 	RootOperationKey string  `json:"root_operation_key" gorm:"type:varchar(191);index"`
 	SiteId           int     `json:"site_id" gorm:"index;not null"`
+	SiteOwnerUserId  int     `json:"site_owner_user_id" gorm:"not null;default:0"`
 	UserId           int     `json:"user_id" gorm:"index;not null"`
 	Quota            int     `json:"quota"`
 	Markup           float64 `json:"markup"`
@@ -169,6 +171,10 @@ func ReserveBillingOperation(spec BillingOperation, target int) (*BillingOperati
 	var result BillingOperation
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		spec.State, spec.Kind = BillingReserved, "request"
+		spec.SiteOwnerUserId = 0
+		if err := freezeBillingSiteOwnerTx(tx, &spec, true); err != nil {
+			return err
+		}
 		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&spec).Error; err != nil {
 			return err
 		}
@@ -300,7 +306,12 @@ func QueueDirectBillingDelta(spec BillingOperation, delta int) error {
 	} else {
 		spec.ActualQuota = delta
 	}
-	if err := DB.Clauses(clause.OnConflict{DoNothing: true}).Create(&spec).Error; err != nil {
+	if err := DB.Transaction(func(tx *gorm.DB) error {
+		if err := freezeBillingSiteOwnerTx(tx, &spec, true); err != nil {
+			return err
+		}
+		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&spec).Error
+	}); err != nil {
 		return err
 	}
 	existing, err := GetBillingOperation(spec.OperationKey)
@@ -331,13 +342,23 @@ func QueueTaskBillingOperation(task *Task, target int, refund bool) (string, err
 	}
 	if bc := task.PrivateData.BillingContext; bc != nil {
 		row.SiteId, row.SiteMarkup, row.SiteCostFactor = bc.SiteId, bc.SiteMarkup, bc.SiteCostFactor
-		encoded, err := common.Marshal(bc)
-		if err != nil {
-			return "", err
-		}
-		row.BillingContext = string(encoded)
+		row.SiteOwnerUserId = bc.SiteOwnerUserId
 	}
-	err := DB.Clauses(clause.OnConflict{DoNothing: true}).Create(&row).Error
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		if err := freezeBillingSiteOwnerTx(tx, &row, false); err != nil {
+			return err
+		}
+		if bc := task.PrivateData.BillingContext; bc != nil {
+			snapshot := *bc
+			snapshot.SiteOwnerUserId = row.SiteOwnerUserId
+			encoded, err := common.Marshal(snapshot)
+			if err != nil {
+				return err
+			}
+			row.BillingContext = string(encoded)
+		}
+		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&row).Error
+	})
 	return row.OperationKey, err
 }
 
@@ -355,7 +376,13 @@ func QueueMidjourneyBillingOperation(task *Midjourney, refund bool) (string, err
 	row := BillingOperation{OperationKey: key, UserId: task.UserId, TokenId: task.TokenId, Kind: kind, ReferenceId: int64(task.Id),
 		ActualQuota: target, State: state, SiteId: task.BillingSiteId, SiteMarkup: task.BillingSiteMarkup, SiteCostFactor: task.BillingSiteCostFactor,
 		EarningRootKey: task.BillingOperationKey}
-	err := DB.Clauses(clause.OnConflict{DoNothing: true}).Create(&row).Error
+	row.SiteOwnerUserId = task.BillingSiteOwnerUserId
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		if err := freezeBillingSiteOwnerTx(tx, &row, false); err != nil {
+			return err
+		}
+		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&row).Error
+	})
 	return key, err
 }
 
@@ -528,10 +555,13 @@ func ApplyBillingSettlement(key string) (*BillingOperation, bool, error) {
 			}
 		}
 		if row.SiteId > 0 && row.SiteMarkup >= 1 && !math.IsInf(row.SiteMarkup, 0) && row.SiteCostFactor > 0 && row.SiteCostFactor <= 1 && earningQuota != 0 {
+			if err := freezeBillingSiteOwnerTx(tx, &row, false); err != nil {
+				return err
+			}
 			if err := freezeBillingEarningRiskTx(tx, &row); err != nil {
 				return err
 			}
-			event := AdtySiteEarningEvent{OperationKey: row.OperationKey, SiteId: row.SiteId, UserId: row.UserId,
+			event := AdtySiteEarningEvent{OperationKey: row.OperationKey, SiteId: row.SiteId, SiteOwnerUserId: row.SiteOwnerUserId, UserId: row.UserId,
 				Quota: earningQuota, Markup: row.SiteMarkup, CostFactor: row.SiteCostFactor, Day: time.Now().Format("2006-01-02"),
 				RootOperationKey: row.EarningRootKey, RiskFlag: row.EarningRiskFlag, ReviewStatus: row.EarningReviewStatus}
 			var customers []AdtySiteCustomer

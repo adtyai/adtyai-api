@@ -175,9 +175,10 @@ type TaskBillingContext struct {
 	PerCallBilling  bool                         `json:"per_call_billing,omitempty"`  // 按次计费：跳过轮询阶段的差额结算
 	TieredSnapshot  *billingexpr.BillingSnapshot `json:"tiered_snapshot,omitempty"`
 	// 二开：提交时的分站倍率 k 和拿货系数 d（任务 11.4、11.5）。k 已经乘进 GroupRatio；0 表示主站客户。
-	SiteMarkup     float64 `json:"site_markup,omitempty"`
-	SiteCostFactor float64 `json:"site_cost_factor,omitempty"`
-	SiteId         int     `json:"site_id,omitempty"` // 收益记给哪个站（客户之后可能随关站转到别的站）
+	SiteMarkup      float64 `json:"site_markup,omitempty"`
+	SiteCostFactor  float64 `json:"site_cost_factor,omitempty"`
+	SiteId          int     `json:"site_id,omitempty"` // 收益记给哪个站（客户之后可能随关站转到别的站）
+	SiteOwnerUserId int     `json:"site_owner_user_id,omitempty"`
 }
 
 // ResultRetrievable reports whether retrieval surfaces (native query routes,
@@ -495,6 +496,13 @@ func (Task *Task) Insert() error {
 // while the in-memory task keeps its values for presentation.
 func (Task *Task) InsertWithContext(ctx context.Context, omitColumns ...string) error {
 	return DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if bc := Task.PrivateData.BillingContext; bc != nil && bc.SiteId > 0 {
+			owner := BillingOperation{OperationKey: "task-accept", EarningRootKey: Task.PrivateData.BillingOperationKey, UserId: Task.UserId, SiteId: bc.SiteId}
+			if err := freezeBillingSiteOwnerTx(tx, &owner, true); err != nil {
+				return err
+			}
+			bc.SiteOwnerUserId = owner.SiteOwnerUserId
+		}
 		Task.BillingInitialPending = Task.PrivateData.BillingOperationKey != ""
 		insert := tx
 		if len(omitColumns) > 0 {

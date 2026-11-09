@@ -59,7 +59,7 @@ func projectAdtySiteEarningEvent(ctx context.Context, key string) error {
 		}
 		// A separate day slot keeps durable events distinguishable from legacy
 		// log-backed earnings during migration, without changing their kind.
-		if err := upsertAdtySiteEarningTx(tx, event.Day+"+op", adtySiteEarningEntry{SiteId: event.SiteId, UserId: event.UserId,
+		if err := upsertAdtySiteEarningTx(tx, event.Day+"+op", adtySiteEarningEntry{SiteId: event.SiteId, SiteOwnerUserId: event.SiteOwnerUserId, UserId: event.UserId,
 			Kind: kind, Reason: event.RiskFlag, Quota: int64(event.Quota), Revenue: revenue, Platform: platform, Earning: earning}); err != nil {
 			return err
 		}

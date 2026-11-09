@@ -46,6 +46,7 @@ export type SiteStatus = 'pending' | 'active' | 'paused' | 'closing' | 'closed'
 export type AdminSite = {
   id: number
   owner_user_id: number
+  ownership_version?: number
   owner_username: string
   subdomain: string
   root_domain: string
@@ -114,7 +115,12 @@ export type SiteDayStats = {
 }
 
 export type SiteStatsResponse = {
-  stats: { from: string; to: string; total: SiteDayStats; series: SiteDayStats[] }
+  stats: {
+    from: string
+    to: string
+    total: SiteDayStats
+    series: SiteDayStats[]
+  }
   breakdown: unknown
   monthly: unknown
   withdrawn_usd?: string

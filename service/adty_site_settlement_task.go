@@ -120,8 +120,7 @@ func settleAdtySite(siteId int, cutoff string, now int64) (bool, error) {
 			Find(&rows).Error; err != nil {
 			return err
 		}
-		total := decimal.Zero
-		ids := make([]int64, 0, len(rows))
+		eligible := make([]model.AdtySiteEarningDaily, 0, len(rows))
 		for _, row := range rows {
 			negative := row.Earning.IsNegative()
 			// 负数不等冻结期。正数要过了 cutoff 才结。
@@ -132,43 +131,87 @@ func settleAdtySite(siteId int, cutoff string, now int64) (bool, error) {
 			if holdPositive && !negative {
 				continue
 			}
-			total = total.Add(row.Earning)
-			ids = append(ids, row.Id)
+			eligible = append(eligible, row)
 		}
-		if len(ids) == 0 {
-			return nil
-		}
-		account, err := adtyOwnerAccountTx(tx, site.OwnerUserId)
+		groups, err := adtySiteEarningsByOwnerTx(tx, site.Id, eligible)
 		if err != nil {
 			return err
 		}
-		if !total.IsZero() {
-			// A later callback/review may produce another batch on the same
-			// cutoff. Its rows, rather than its date or amount, identify it.
-			slices.Sort(ids)
-			batchKey := fmt.Sprintf("site-earnings:%d:%x", site.Id, sha256.Sum256([]byte(fmt.Sprint(ids))))
-			if _, err := applyAdtySiteWalletChangeTx(tx, site.Id, model.AdtySiteWalletEarnings, total, AdtySiteWalletChange{
-				Type: "site_earning_settlement", RefType: "site_earning", RefID: cutoff,
-				Reason: fmt.Sprintf("site earnings up to %s", cutoff), IdempotencyKey: batchKey, AllowOverdraft: true,
+		for _, group := range groups {
+			account, err := adtyOwnerAccountTx(tx, group.OwnerID)
+			if err != nil {
+				return err
+			}
+			total := decimal.Zero
+			ids := make([]int64, 0, len(group.Rows))
+			for _, row := range group.Rows {
+				total = total.Add(row.Earning)
+				ids = append(ids, row.Id)
+			}
+			if !total.IsZero() {
+				// A later callback/review may produce another batch on the same
+				// cutoff. Its rows, rather than its date or amount, identify it.
+				slices.Sort(ids)
+				batchKey := fmt.Sprintf("site-earnings:%d:%d:%x", site.Id, group.OwnerID, sha256.Sum256([]byte(fmt.Sprint(ids))))
+				if _, err := applyAdtySiteWalletChangeTx(tx, site.Id, model.AdtySiteWalletEarnings, total, AdtySiteWalletChange{
+					Type: "site_earning_settlement", RefType: "site_earning", RefID: cutoff,
+					Reason: fmt.Sprintf("site earnings up to %s", cutoff), IdempotencyKey: batchKey, AllowOverdraft: true,
+				}); err != nil {
+					return err
+				}
+			}
+			if err := AdjustAccountTx(tx, account, decimal.Zero, total, decimal.Zero, decimal.Zero, model.ReferralCommissionLedger{
+				Type: "site_earning", RefType: "site", RefId: fmt.Sprint(site.Id),
+				ExternalRefId: fmt.Sprintf("site-earning:%d:%d:%s:%d", site.Id, group.OwnerID, cutoff, now), Remark: fmt.Sprintf("site earnings up to %s", cutoff),
 			}); err != nil {
 				return err
 			}
+			if err := tx.Model(&model.AdtySiteEarningDaily{}).Where("id IN ?", ids).Updates(map[string]any{
+				"status": model.AdtySiteEarningAvailable, "settled_at": now,
+			}).Error; err != nil {
+				return err
+			}
+			settled = true
 		}
-		if err := AdjustAccountTx(tx, account, decimal.Zero, total, decimal.Zero, decimal.Zero, model.ReferralCommissionLedger{
-			Type: "site_earning", RefType: "site", RefId: fmt.Sprint(site.Id),
-			ExternalRefId: fmt.Sprintf("site-earning:%d:%s:%d", site.Id, cutoff, now), Remark: fmt.Sprintf("site earnings up to %s", cutoff),
-		}); err != nil {
-			return err
-		}
-		if err := tx.Model(&model.AdtySiteEarningDaily{}).Where("id IN ?", ids).Updates(map[string]any{
-			"status": model.AdtySiteEarningAvailable, "settled_at": now,
-		}).Error; err != nil {
-			return err
-		}
-		settled = true
 		return nil
 	})
 	return settled, err
+}
+
+type adtySiteOwnerEarnings struct {
+	OwnerID int
+	Rows    []model.AdtySiteEarningDaily
+}
+
+// Group before taking account locks; every settlement/close uses ascending owner
+// order even when the same former owners have earnings in several sites.
+func adtySiteEarningsByOwnerTx(tx *gorm.DB, siteID int, rows []model.AdtySiteEarningDaily) ([]adtySiteOwnerEarnings, error) {
+	byOwner := map[int][]model.AdtySiteEarningDaily{}
+	legacyOwner := 0
+	for _, row := range rows {
+		ownerID := row.SiteOwnerUserId
+		if ownerID == 0 {
+			if legacyOwner == 0 {
+				var err error
+				legacyOwner, err = model.ResolveAdtySiteFinancialOwnerTx(tx, siteID, 0)
+				if err != nil {
+					return nil, err
+				}
+			}
+			ownerID = legacyOwner
+		}
+		byOwner[ownerID] = append(byOwner[ownerID], row)
+	}
+	ownerIDs := make([]int, 0, len(byOwner))
+	for id := range byOwner {
+		ownerIDs = append(ownerIDs, id)
+	}
+	slices.Sort(ownerIDs)
+	groups := make([]adtySiteOwnerEarnings, 0, len(ownerIDs))
+	for _, id := range ownerIDs {
+		groups = append(groups, adtySiteOwnerEarnings{OwnerID: id, Rows: byOwner[id]})
+	}
+	return groups, nil
 }
 
 // adtyUsageReconcileMismatch 用到期日之前的消费日志重算 usage 收益。没有带 site_id 的日志时不暂停
@@ -356,87 +399,75 @@ func adtyOwnerAccountTx(tx *gorm.DB, ownerUserId int) (*model.ReferralCommission
 // skipped 作废。再从当前可提现扣回已结算收益，不超过已结算合计，也不把账户扣成负数。
 // 试用额度发放时已经扣过，不计入扣回。
 func adtySiteClawBackTx(tx *gorm.DB, site *model.AdtySite, operatorId int) error {
-	account, err := adtyOwnerAccountTx(tx, site.OwnerUserId)
+	var rows []model.AdtySiteEarningDaily
+	if err := model.AdtyLockForUpdate(tx).Where("site_id = ? AND status IN ? AND kind <> ?", site.Id,
+		[]string{model.AdtySiteEarningPending, model.AdtySiteEarningAvailable}, model.AdtySiteEarningTrial).Find(&rows).Error; err != nil {
+		return err
+	}
+	groups, err := adtySiteEarningsByOwnerTx(tx, site.Id, rows)
 	if err != nil {
 		return err
 	}
-	if err := tx.Model(&model.AdtySiteEarningDaily{}).
-		Where("site_id = ? AND status = ? AND earning > 0", site.Id, model.AdtySiteEarningPending).
-		Update("status", model.AdtySiteEarningVoid).Error; err != nil {
-		return err
-	}
-	var negatives []model.AdtySiteEarningDaily
-	if err := model.AdtyLockForUpdate(tx).
-		Where("site_id = ? AND status = ? AND earning < 0 AND kind NOT IN ?",
-			site.Id, model.AdtySiteEarningPending, []string{model.AdtySiteEarningSkipped, model.AdtySiteEarningTrial}).
-		Find(&negatives).Error; err != nil {
-		return err
-	}
-	if len(negatives) > 0 {
-		total := decimal.Zero
-		ids := make([]int64, 0, len(negatives))
-		for _, row := range negatives {
-			total = total.Add(row.Earning)
+	for _, group := range groups {
+		account, err := adtyOwnerAccountTx(tx, group.OwnerID)
+		if err != nil {
+			return err
+		}
+		negative, settled := decimal.Zero, decimal.Zero
+		ids := make([]int64, 0, len(group.Rows))
+		negativeIDs := make([]int64, 0)
+		for _, row := range group.Rows {
 			ids = append(ids, row.Id)
+			if row.Kind == model.AdtySiteEarningSkipped {
+				continue
+			}
+			if row.Status == model.AdtySiteEarningAvailable {
+				settled = settled.Add(row.Earning)
+			}
+			if row.Status == model.AdtySiteEarningPending && row.Earning.IsNegative() {
+				negative = negative.Add(row.Earning)
+				negativeIDs = append(negativeIDs, row.Id)
+			}
 		}
 		now := time.Now().Unix()
-		if err := AdjustAccountTx(tx, account, decimal.Zero, total, decimal.Zero, decimal.Zero, model.ReferralCommissionLedger{
-			Type: "site_earning", RefType: "site", RefId: fmt.Sprint(site.Id),
-			ExternalRefId: fmt.Sprintf("site-earning-close:%d:%d", site.Id, now),
-			Remark:        "negative earnings settled on forced close", Operator: fmt.Sprint(operatorId),
-		}); err != nil {
+		if negative.IsNegative() {
+			if err := AdjustAccountTx(tx, account, decimal.Zero, negative, decimal.Zero, decimal.Zero, model.ReferralCommissionLedger{
+				Type: "site_earning", RefType: "site", RefId: fmt.Sprint(site.Id),
+				ExternalRefId: fmt.Sprintf("site-earning-close:%d:%d:%d", site.Id, group.OwnerID, now),
+				Remark:        "negative earnings settled on forced close", Operator: fmt.Sprint(operatorId),
+			}); err != nil {
+				return err
+			}
+			if err := tx.Model(&model.AdtySiteEarningDaily{}).Where("id IN ?", negativeIDs).Update("settled_at", now).Error; err != nil {
+				return err
+			}
+		}
+		var fresh model.ReferralCommissionAccount
+		if err := tx.First(&fresh, account.Id).Error; err != nil {
 			return err
 		}
-		if err := tx.Model(&model.AdtySiteEarningDaily{}).Where("id IN ?", ids).Updates(map[string]any{
-			"status": model.AdtySiteEarningAvailable, "settled_at": now,
-		}).Error; err != nil {
-			return err
+		claw := decimal.Min(decimal.Max(settled.Add(negative), decimal.Zero), decimal.Max(moneyDec(fresh.AvailableAmount), decimal.Zero))
+		if claw.IsPositive() {
+			debited := tx.Model(&model.ReferralCommissionAccount{}).Where("id = ? AND available_amount >= ?", account.Id, moneyF(claw)).
+				Update("available_amount", gorm.Expr("available_amount - ?", moneyF(claw)))
+			if debited.Error != nil {
+				return debited.Error
+			}
+			if debited.RowsAffected == 0 {
+				return common.NewMessage("Not enough withdrawable commission")
+			}
+			if err := addReferralLedgerTx(tx, &model.ReferralCommissionLedger{AffiliateId: account.AffiliateId, UserId: account.UserId,
+				DeltaAvailable: moneyF(claw.Neg()), Type: "site_earning_clawback", RefType: "site", RefId: fmt.Sprint(site.Id),
+				ExternalRefId: fmt.Sprintf("site-clawback:%d:%d", site.Id, group.OwnerID), Remark: "forced site close", Operator: fmt.Sprint(operatorId),
+			}); err != nil {
+				return err
+			}
 		}
-	}
-	if err := tx.Model(&model.AdtySiteEarningDaily{}).
-		Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteEarningSkipped).
-		Update("status", model.AdtySiteEarningVoid).Error; err != nil {
-		return err
-	}
-	var fresh model.ReferralCommissionAccount
-	if err := tx.Where("id = ?", account.Id).First(&fresh).Error; err != nil {
-		return err
-	}
-	var settled struct{ Total decimal.Decimal }
-	if err := tx.Model(&model.AdtySiteEarningDaily{}).Select("COALESCE(SUM(earning),0) AS total").
-		Where("site_id = ? AND status = ? AND kind <> ?", site.Id, model.AdtySiteEarningAvailable, model.AdtySiteEarningTrial).
-		Scan(&settled).Error; err != nil {
-		return err
-	}
-	claw := settled.Total
-	available := decimal.NewFromFloat(fresh.AvailableAmount)
-	if !claw.IsPositive() || !available.IsPositive() {
-		claw = decimal.Zero
-	} else if available.LessThan(claw) {
-		claw = available
-	}
-	if claw.IsPositive() {
-		debited := tx.Model(&model.ReferralCommissionAccount{}).
-			Where("id = ? AND available_amount >= ?", account.Id, moneyF(claw)).
-			Update("available_amount", gorm.Expr("available_amount - ?", moneyF(claw)))
-		if debited.Error != nil {
-			return debited.Error
-		}
-		if debited.RowsAffected == 0 {
-			return common.NewMessage("Not enough withdrawable commission")
-		}
-		if err := addReferralLedgerTx(tx, &model.ReferralCommissionLedger{
-			AffiliateId: account.AffiliateId, UserId: account.UserId,
-			DeltaAvailable: moneyF(claw.Neg()), Type: "site_earning_clawback",
-			RefType: "site", RefId: fmt.Sprint(site.Id),
-			ExternalRefId: fmt.Sprintf("site-clawback:%d", site.Id), Remark: "forced site close",
-			Operator: fmt.Sprint(operatorId),
-		}); err != nil {
+		if err := tx.Model(&model.AdtySiteEarningDaily{}).Where("id IN ?", ids).Update("status", model.AdtySiteEarningVoid).Error; err != nil {
 			return err
 		}
 	}
-	return tx.Model(&model.AdtySiteEarningDaily{}).Where("site_id = ? AND status = ?", site.Id, model.AdtySiteEarningAvailable).
-		Update("status", model.AdtySiteEarningVoid).Error
+	return nil
 }
 
 func init() {

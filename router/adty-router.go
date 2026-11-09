@@ -329,6 +329,8 @@ func registerAdtyResellerRoutes(apiRouter *gin.RouterGroup) {
 	rootWallets.POST("", controller.CreateAdtyAdminSite)
 	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/admin/sites/:id/review", "scope", "option:write")
 	rootWallets.POST("/:id/review", controller.ReviewAdtyAdminSite)
+	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/admin/sites/:id/owner", "scope", "option:write")
+	rootWallets.POST("/:id/owner", controller.HandoverAdtyAdminSiteOwner)
 
 	admin := apiRouter.Group("/adty/admin", middleware.AdminAuth())
 	for _, route := range []struct {

@@ -33,7 +33,7 @@ func freezeLegacyBillingEarningRiskTx(tx *gorm.DB, row *BillingOperation) error 
 		return err
 	}
 	if len(roots) == 0 {
-		root := BillingOperation{OperationKey: key, UserId: row.UserId, SiteId: row.SiteId,
+		root := BillingOperation{OperationKey: key, UserId: row.UserId, SiteId: row.SiteId, SiteOwnerUserId: row.SiteOwnerUserId,
 			Kind: "earning_root", ReferenceId: row.ReferenceId, State: BillingSettled,
 			EarningRootKey: key, EarningRiskFrozen: true, EarningReviewStatus: AdtyEarningNeedsReview}
 		if len(customers) > 0 && customers[0].SiteId == row.SiteId {

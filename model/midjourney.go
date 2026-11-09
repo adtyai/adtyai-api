@@ -1,5 +1,7 @@
 package model
 
+import "gorm.io/gorm"
+
 type Midjourney struct {
 	Id          int    `json:"id"`
 	Code        int    `json:"code"`
@@ -24,15 +26,16 @@ type Midjourney struct {
 	Buttons     string `json:"buttons"`
 	Properties  string `json:"properties"`
 
-	TokenId               int     `json:"-" gorm:"default:0"`
-	BillingChannelId      int     `json:"-" gorm:"default:0"`
-	BillingSiteId         int     `json:"-" gorm:"default:0"`
-	BillingSiteMarkup     float64 `json:"-" gorm:"default:0"`
-	BillingSiteCostFactor float64 `json:"-" gorm:"default:0"`
-	BillingChargePending  bool    `json:"-" gorm:"index;not null;default:false"`
-	BillingPending        bool    `json:"-" gorm:"index;not null;default:false"`
-	BillingOperationKey   string  `json:"-" gorm:"type:varchar(191)"`
-	BillingTokenQuota     int     `json:"-"`
+	TokenId                int     `json:"-" gorm:"default:0"`
+	BillingChannelId       int     `json:"-" gorm:"default:0"`
+	BillingSiteId          int     `json:"-" gorm:"default:0"`
+	BillingSiteOwnerUserId int     `json:"-" gorm:"not null;default:0"`
+	BillingSiteMarkup      float64 `json:"-" gorm:"default:0"`
+	BillingSiteCostFactor  float64 `json:"-" gorm:"default:0"`
+	BillingChargePending   bool    `json:"-" gorm:"index;not null;default:false"`
+	BillingPending         bool    `json:"-" gorm:"index;not null;default:false"`
+	BillingOperationKey    string  `json:"-" gorm:"type:varchar(191)"`
+	BillingTokenQuota      int     `json:"-"`
 }
 
 // TaskQueryParams 用于包含所有搜索条件的结构体，可以根据需求添加更多字段
@@ -168,9 +171,16 @@ func UpdateProgress(id int, progress string) error {
 }
 
 func (midjourney *Midjourney) Insert() error {
-	var err error
-	err = DB.Create(midjourney).Error
-	return err
+	return DB.Transaction(func(tx *gorm.DB) error {
+		if midjourney.BillingSiteId > 0 {
+			owner, err := CurrentAdtySiteFinancialOwnerTx(tx, midjourney.BillingSiteId)
+			if err != nil {
+				return err
+			}
+			midjourney.BillingSiteOwnerUserId = owner
+		}
+		return tx.Create(midjourney).Error
+	})
 }
 
 func (midjourney *Midjourney) Update() error {
@@ -181,7 +191,7 @@ func (midjourney *Midjourney) Update() error {
 
 func (midjourney *Midjourney) UpdateBillingState() error {
 	return DB.Model(midjourney).
-		Select("quota", "token_id", "billing_channel_id", "billing_site_id", "billing_site_markup", "billing_site_cost_factor").
+		Select("quota", "token_id", "billing_channel_id", "billing_site_id", "billing_site_owner_user_id", "billing_site_markup", "billing_site_cost_factor").
 		Updates(midjourney).Error
 }
 

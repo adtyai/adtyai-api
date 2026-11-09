@@ -58,7 +58,15 @@ func MigrateAdtyTables() error {
 
 // migrateAdtySiteTables 建分站的表（P11）。
 func migrateAdtySiteTables() error {
-	return DB.AutoMigrate(AdtySiteTables()...)
+	// AutoMigrate creates the new owner-aware unique index before we remove
+	// the old constraint. A failed migration therefore never loses uniqueness.
+	if err := DB.AutoMigrate(AdtySiteTables()...); err != nil {
+		return err
+	}
+	if DB.Migrator().HasIndex(&AdtySiteEarningDaily{}, "idx_site_earning") {
+		return DB.Migrator().DropIndex(&AdtySiteEarningDaily{}, "idx_site_earning")
+	}
+	return nil
 }
 
 // migrateAdtyReferralTables 建推广返佣的 12 张表（任务 6.1）。

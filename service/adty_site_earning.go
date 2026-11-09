@@ -37,18 +37,24 @@ func AdtySiteEarningSplit(quota int64, k, d decimal.Decimal) (revenue, platform,
 
 // adtySiteEarningEntry 是一笔要累加的收益。
 type adtySiteEarningEntry struct {
-	SiteId, UserId int
-	Kind, Reason   string
-	Quota          int64
-	Revenue        decimal.Decimal
-	Platform       decimal.Decimal
-	Earning        decimal.Decimal
+	SiteId, UserId  int
+	SiteOwnerUserId int
+	Kind, Reason    string
+	Quota           int64
+	Revenue         decimal.Decimal
+	Platform        decimal.Decimal
+	Earning         decimal.Decimal
 }
 
 // upsertAdtySiteEarningTx 把一笔收益累加进当天、同类型、还没结算的那一行。
 // 已经结算或作废的行不再改：这时记进下一个槽位（Day 加 "+n"），结算按状态而不是按日期取行。
 func upsertAdtySiteEarningTx(tx *gorm.DB, day string, entry adtySiteEarningEntry) error {
 	return tx.Transaction(func(tx *gorm.DB) error {
+		ownerID, err := model.ResolveAdtySiteFinancialOwnerTx(tx, entry.SiteId, entry.SiteOwnerUserId)
+		if err != nil {
+			return err
+		}
+		entry.SiteOwnerUserId = ownerID
 		now := time.Now().Unix()
 		for attempt := range 8 {
 			slot := day
@@ -56,7 +62,7 @@ func upsertAdtySiteEarningTx(tx *gorm.DB, day string, entry adtySiteEarningEntry
 				slot = fmt.Sprintf("%s+%d", day, attempt)
 			}
 			row := model.AdtySiteEarningDaily{
-				SiteId: entry.SiteId, UserId: entry.UserId, Day: slot, Kind: entry.Kind, Reason: entry.Reason,
+				SiteId: entry.SiteId, SiteOwnerUserId: ownerID, UserId: entry.UserId, Day: slot, Kind: entry.Kind, Reason: entry.Reason,
 				Revenue: decimal.Zero, Platform: decimal.Zero, Earning: decimal.Zero,
 				Status: model.AdtySiteEarningPending, UpdatedAt: now,
 			}
@@ -66,7 +72,7 @@ func upsertAdtySiteEarningTx(tx *gorm.DB, day string, entry adtySiteEarningEntry
 			// MySQL's ON DUPLICATE KEY UPDATE ignores OnConflict.Where. A
 			// conditional UPDATE keeps settled rows immutable on every engine.
 			result := tx.Model(&model.AdtySiteEarningDaily{}).
-				Where("site_id = ? AND user_id = ? AND day = ? AND kind = ? AND status = ?", entry.SiteId, entry.UserId, slot, entry.Kind, model.AdtySiteEarningPending).
+				Where("site_id = ? AND site_owner_user_id = ? AND user_id = ? AND day = ? AND kind = ? AND status = ?", entry.SiteId, ownerID, entry.UserId, slot, entry.Kind, model.AdtySiteEarningPending).
 				Updates(map[string]any{
 					"quota":      gorm.Expr("quota + ?", entry.Quota),
 					"revenue":    gorm.Expr("revenue + ?", entry.Revenue),
@@ -84,7 +90,7 @@ func upsertAdtySiteEarningTx(tx *gorm.DB, day string, entry adtySiteEarningEntry
 			// to a new zero slot may match it without changing any column.
 			var pending int64
 			if err := tx.Model(&model.AdtySiteEarningDaily{}).
-				Where("site_id = ? AND user_id = ? AND day = ? AND kind = ? AND status = ?", entry.SiteId, entry.UserId, slot, entry.Kind, model.AdtySiteEarningPending).
+				Where("site_id = ? AND site_owner_user_id = ? AND user_id = ? AND day = ? AND kind = ? AND status = ?", entry.SiteId, ownerID, entry.UserId, slot, entry.Kind, model.AdtySiteEarningPending).
 				Count(&pending).Error; err != nil {
 				return err
 			}
@@ -110,7 +116,7 @@ func adtySiteCustomerRisk(userId int) (flag string) {
 
 // AdtySiteEarningHook 给一笔消费或退款记站长收益：quota 是客户的扣费额度（退款传正数，kind 用 refund），
 // k、d 是扣费当时的快照。客户不是分站客户或没有 k 时直接返回。
-func AdtySiteEarningHook(siteId, userId int, quota int64, k, d float64, kind string) {
+func AdtySiteEarningHook(siteId, userId int, quota int64, k, d float64, kind string, frozenOwnerIDs ...int) {
 	if siteId <= 0 || userId <= 0 || quota == 0 || k < 1 || d <= 0 || d > 1 || math.IsNaN(k) || math.IsInf(k, 0) {
 		return
 	}
@@ -123,7 +129,19 @@ func AdtySiteEarningHook(siteId, userId int, quota int64, k, d float64, kind str
 		// 疑似自用或主站迁移：照常扣费，收益照算，但记进 skipped，不结算（复核后可以改回 usage）。
 		entry.Kind, entry.Reason = model.AdtySiteEarningSkipped, flag
 	}
-	if err := upsertAdtySiteEarningTx(model.DB, adtySiteEarningDayFn(), entry); err != nil {
+	var err error
+	if len(frozenOwnerIDs) > 0 {
+		entry.SiteOwnerUserId = frozenOwnerIDs[0]
+		if entry.SiteOwnerUserId <= 0 {
+			err = errors.New("site financial owner snapshot unavailable")
+		}
+	} else if kind == model.AdtySiteEarningUsage {
+		entry.SiteOwnerUserId, err = model.CurrentAdtySiteFinancialOwnerTx(model.DB, siteId)
+	}
+	if err == nil {
+		err = upsertAdtySiteEarningTx(model.DB, adtySiteEarningDayFn(), entry)
+	}
+	if err != nil {
 		common.SysError(common.LogText("record site earning failed site=%d user=%d: %s", siteId, userId, err.Error()))
 		if incErr := model.DB.Model(&model.AdtySite{}).Where("id = ?", siteId).
 			UpdateColumn("earning_hook_failures", gorm.Expr("earning_hook_failures + 1")).Error; incErr != nil {
@@ -147,7 +165,7 @@ func adtyRecordConsumeEarning(c *gin.Context, userId int, params *model.RecordCo
 	if charged <= 0 {
 		return
 	}
-	AdtySiteEarningHook(c.GetInt(AdtySiteIdContextKey), userId, charged, k, d, model.AdtySiteEarningUsage)
+	AdtySiteEarningHook(c.GetInt(AdtySiteIdContextKey), userId, charged, k, d, model.AdtySiteEarningUsage, c.GetInt(AdtySiteOwnerContextKey))
 }
 
 // adtyAppendTaskSiteAdminInfo 把任务快照里的 k、d、站点写进日志的 admin_info（taskBillingOther 调用），
@@ -159,6 +177,7 @@ func adtyAppendTaskSiteAdminInfo(bc *model.TaskBillingContext, other *model.LogO
 	other.SetAdmin("site_markup", bc.SiteMarkup)
 	other.SetAdmin("site_cost_factor", bc.SiteCostFactor)
 	other.SetAdmin("site_id", bc.SiteId)
+	other.SetAdmin("site_owner_user_id", bc.SiteOwnerUserId)
 }
 
 // adtyRecordTaskBillingEarning 是 RecordTaskBillingLog 的钩子：任务差额结算（consume）记 usage，
@@ -204,7 +223,12 @@ func adtyRecordTaskBillingEarning(params *model.RecordTaskBillingLogParams) {
 	if quota <= 0 {
 		return
 	}
-	AdtySiteEarningHook(siteId, params.UserId, quota, k, d, kind)
+	ownerID, err := model.ResolveAdtySiteFinancialOwnerTx(model.DB, siteId, adtyAnyInt(adminInfo["site_owner_user_id"]))
+	if err != nil {
+		common.SysError("Task earning owner snapshot unavailable")
+		return
+	}
+	AdtySiteEarningHook(siteId, params.UserId, quota, k, d, kind, ownerID)
 }
 
 // adtyBonusUSDForSite 是一笔订单要由站长出的加赠（美元）：站点档位的加赠，加上站长出资优惠码的优惠加赠（12.4）。
@@ -243,7 +267,7 @@ func adtySiteBonusAfterCreditTx(tx *gorm.DB, topUp *model.TopUp, ext *model.Adty
 		return nil
 	}
 	return upsertAdtySiteEarningTx(tx, adtySiteEarningDayFn(), adtySiteEarningEntry{
-		SiteId: ext.SiteId, UserId: topUp.UserId, Kind: model.AdtySiteEarningBonus, Earning: bonus.Neg(),
+		SiteId: ext.SiteId, SiteOwnerUserId: ext.SiteOwnerUserId, UserId: topUp.UserId, Kind: model.AdtySiteEarningBonus, Earning: bonus.Neg(),
 	})
 }
 
@@ -263,7 +287,7 @@ func adtySiteBonusAfterRefundTx(tx *gorm.DB, topUp *model.TopUp, ext *model.Adty
 		return nil
 	}
 	return upsertAdtySiteEarningTx(tx, adtySiteEarningDayFn(), adtySiteEarningEntry{
-		SiteId: ext.SiteId, UserId: topUp.UserId, Kind: model.AdtySiteEarningBonusReversal, Earning: returned,
+		SiteId: ext.SiteId, SiteOwnerUserId: ext.SiteOwnerUserId, UserId: topUp.UserId, Kind: model.AdtySiteEarningBonusReversal, Earning: returned,
 	})
 }
 
@@ -404,7 +428,7 @@ func GrantAdtySiteTrial(siteId, customerId int, amountUSD decimal.Decimal, idemp
 		}); err != nil {
 			return err
 		}
-		grant = model.AdtySiteTrialGrant{SiteId: siteId, UserId: customerId, AmountUSD: amount, Quota: int64(quotaInt), Day: day, IdempotencyKey: key}
+		grant = model.AdtySiteTrialGrant{SiteId: siteId, SiteOwnerUserId: site.OwnerUserId, UserId: customerId, AmountUSD: amount, Quota: int64(quotaInt), Day: day, IdempotencyKey: key}
 		if err := tx.Create(&grant).Error; err != nil {
 			return err
 		}
@@ -422,7 +446,7 @@ func GrantAdtySiteTrial(siteId, customerId int, amountUSD decimal.Decimal, idemp
 		}
 		now := time.Now().Unix()
 		updated := tx.Model(&model.AdtySiteEarningDaily{}).
-			Where("site_id = ? AND user_id = ? AND day = ? AND kind = ? AND status = ?", siteId, customerId, day, model.AdtySiteEarningTrial, model.AdtySiteEarningAvailable).
+			Where("site_id = ? AND site_owner_user_id = ? AND user_id = ? AND day = ? AND kind = ? AND status = ?", siteId, site.OwnerUserId, customerId, day, model.AdtySiteEarningTrial, model.AdtySiteEarningAvailable).
 			Update("earning", gorm.Expr("earning + ?", amount.Neg()))
 		if updated.Error != nil {
 			return updated.Error
@@ -431,7 +455,7 @@ func GrantAdtySiteTrial(siteId, customerId int, amountUSD decimal.Decimal, idemp
 			return nil
 		}
 		return tx.Create(&model.AdtySiteEarningDaily{
-			SiteId: siteId, UserId: customerId, Day: day, Kind: model.AdtySiteEarningTrial,
+			SiteId: siteId, SiteOwnerUserId: site.OwnerUserId, UserId: customerId, Day: day, Kind: model.AdtySiteEarningTrial,
 			Earning: amount.Neg(), Status: model.AdtySiteEarningAvailable, SettledAt: now, UpdatedAt: now,
 		}).Error
 	})
@@ -499,11 +523,11 @@ func ReviewAdtySiteCustomer(userId, adminId int, convertSkipped bool) error {
 					if event.Quota < 0 {
 						kind = model.AdtySiteEarningRefund
 					}
-					if err := upsertAdtySiteEarningTx(tx, event.Day+"+op", adtySiteEarningEntry{SiteId: event.SiteId, UserId: userId,
+					if err := upsertAdtySiteEarningTx(tx, event.Day+"+op", adtySiteEarningEntry{SiteId: event.SiteId, SiteOwnerUserId: event.SiteOwnerUserId, UserId: userId,
 						Kind: kind, Quota: int64(event.Quota), Revenue: revenue, Platform: platform, Earning: earning}); err != nil {
 						return err
 					}
-					if err := upsertAdtySiteEarningTx(tx, event.Day+"+op", adtySiteEarningEntry{SiteId: event.SiteId, UserId: userId,
+					if err := upsertAdtySiteEarningTx(tx, event.Day+"+op", adtySiteEarningEntry{SiteId: event.SiteId, SiteOwnerUserId: event.SiteOwnerUserId, UserId: userId,
 						Kind: model.AdtySiteEarningSkipped, Reason: event.RiskFlag, Quota: -int64(event.Quota), Revenue: revenue.Neg(), Platform: platform.Neg(), Earning: earning.Neg()}); err != nil {
 						return err
 					}
@@ -519,7 +543,7 @@ func ReviewAdtySiteCustomer(userId, adminId int, convertSkipped bool) error {
 			}
 			for _, row := range rows {
 				if err := upsertAdtySiteEarningTx(tx, row.Day, adtySiteEarningEntry{
-					SiteId: row.SiteId, UserId: row.UserId, Kind: model.AdtySiteEarningUsage,
+					SiteId: row.SiteId, SiteOwnerUserId: row.SiteOwnerUserId, UserId: row.UserId, Kind: model.AdtySiteEarningUsage,
 					Quota: row.Quota, Revenue: row.Revenue, Platform: row.Platform, Earning: row.Earning,
 				}); err != nil {
 					return err

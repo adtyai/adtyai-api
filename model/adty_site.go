@@ -25,12 +25,13 @@ const (
 // AdtySite 是一个分站。一个用户同时最多一个没关闭的站：开站事务里先锁用户行再查，不靠唯一索引（关闭的站保留存档）。
 // 子域名全局唯一，关站后保留，用来把老链接跳到客户的新归属。
 type AdtySite struct {
-	Id          int              `json:"id"`
-	OwnerUserId int              `json:"owner_user_id" gorm:"index"`
-	Subdomain   string           `json:"subdomain" gorm:"uniqueIndex;type:varchar(63)"`
-	RootDomain  string           `json:"root_domain" gorm:"type:varchar(253)"`
-	Status      string           `json:"status" gorm:"type:varchar(16);index"`
-	CostFactor  *decimal.Decimal `json:"cost_factor" gorm:"type:decimal(10,6)"` // 单站 d；空就用档位或全局
+	Id               int              `json:"id"`
+	OwnerUserId      int              `json:"owner_user_id" gorm:"index"`
+	OwnershipVersion int64            `json:"ownership_version" gorm:"not null;default:0"`
+	Subdomain        string           `json:"subdomain" gorm:"uniqueIndex;type:varchar(63)"`
+	RootDomain       string           `json:"root_domain" gorm:"type:varchar(253)"`
+	Status           string           `json:"status" gorm:"type:varchar(16);index"`
+	CostFactor       *decimal.Decimal `json:"cost_factor" gorm:"type:decimal(10,6)"` // 单站 d；空就用档位或全局
 	// 平台提高 d 先记在这里，到点才写入 CostFactor。降低立即写 CostFactor 并清空这两列。
 	PendingCostFactor   *decimal.Decimal `json:"pending_cost_factor" gorm:"type:decimal(10,6)"`
 	PendingCostFactorAt int64            `json:"pending_cost_factor_at" gorm:"index"`
@@ -152,33 +153,35 @@ const (
 // 只用 OnConflict DoUpdate 累加，状态在结算时改成 available。结算后同一天、同一类型再有消费，
 // 记进 Day 加 "+n" 的新行（见 service 的记账），不改已经结算的行。
 type AdtySiteEarningDaily struct {
-	Id        int64           `json:"id"`
-	SiteId    int             `json:"site_id" gorm:"uniqueIndex:idx_site_earning"`
-	UserId    int             `json:"user_id" gorm:"uniqueIndex:idx_site_earning"`
-	Day       string          `json:"day" gorm:"uniqueIndex:idx_site_earning;type:varchar(16)"`
-	Kind      string          `json:"kind" gorm:"uniqueIndex:idx_site_earning;type:varchar(16)"`
-	Quota     int64           `json:"quota"`
-	Revenue   decimal.Decimal `json:"revenue" gorm:"type:decimal(20,8);not null;default:0"`
-	Platform  decimal.Decimal `json:"platform" gorm:"type:decimal(20,8);not null;default:0"`
-	Earning   decimal.Decimal `json:"earning" gorm:"type:decimal(20,8);not null;default:0"`
-	Reason    string          `json:"reason" gorm:"type:varchar(16)"` // skipped 行的原因类别：self_use | migration
-	Status    string          `json:"status" gorm:"type:varchar(16);index"`
-	SettledAt int64           `json:"settled_at"`
-	UpdatedAt int64           `json:"updated_at"`
+	Id              int64           `json:"id"`
+	SiteId          int             `json:"site_id" gorm:"uniqueIndex:idx_site_earning_owner"`
+	SiteOwnerUserId int             `json:"site_owner_user_id" gorm:"uniqueIndex:idx_site_earning_owner;not null;default:0"`
+	UserId          int             `json:"user_id" gorm:"uniqueIndex:idx_site_earning_owner"`
+	Day             string          `json:"day" gorm:"uniqueIndex:idx_site_earning_owner;type:varchar(16)"`
+	Kind            string          `json:"kind" gorm:"uniqueIndex:idx_site_earning_owner;type:varchar(16)"`
+	Quota           int64           `json:"quota"`
+	Revenue         decimal.Decimal `json:"revenue" gorm:"type:decimal(20,8);not null;default:0"`
+	Platform        decimal.Decimal `json:"platform" gorm:"type:decimal(20,8);not null;default:0"`
+	Earning         decimal.Decimal `json:"earning" gorm:"type:decimal(20,8);not null;default:0"`
+	Reason          string          `json:"reason" gorm:"type:varchar(16)"` // skipped 行的原因类别：self_use | migration
+	Status          string          `json:"status" gorm:"type:varchar(16);index"`
+	SettledAt       int64           `json:"settled_at"`
+	UpdatedAt       int64           `json:"updated_at"`
 }
 
 func (AdtySiteEarningDaily) TableName() string { return "adty_site_earning_daily" }
 
 // AdtySiteTrialGrant 是站长送给客户的试用额度，按幂等键去重，也用来算每天的总额（11.5）。
 type AdtySiteTrialGrant struct {
-	Id             int64           `json:"id"`
-	SiteId         int             `json:"site_id" gorm:"index"`
-	UserId         int             `json:"user_id" gorm:"index"`
-	AmountUSD      decimal.Decimal `json:"amount_usd" gorm:"type:decimal(20,8);not null;default:0"`
-	Quota          int64           `json:"quota"`
-	Day            string          `json:"day" gorm:"type:varchar(10);index"`
-	IdempotencyKey string          `json:"-" gorm:"uniqueIndex;type:varchar(128)"`
-	CreatedAt      int64           `json:"created_at" gorm:"autoCreateTime"`
+	Id              int64           `json:"id"`
+	SiteId          int             `json:"site_id" gorm:"index"`
+	SiteOwnerUserId int             `json:"site_owner_user_id" gorm:"not null;default:0"`
+	UserId          int             `json:"user_id" gorm:"index"`
+	AmountUSD       decimal.Decimal `json:"amount_usd" gorm:"type:decimal(20,8);not null;default:0"`
+	Quota           int64           `json:"quota"`
+	Day             string          `json:"day" gorm:"type:varchar(10);index"`
+	IdempotencyKey  string          `json:"-" gorm:"uniqueIndex;type:varchar(128)"`
+	CreatedAt       int64           `json:"created_at" gorm:"autoCreateTime"`
 }
 
 func (AdtySiteTrialGrant) TableName() string { return "adty_site_trial_grants" }
@@ -222,7 +225,7 @@ func (AdtySiteLookup) TableName() string { return "adty_site_lookups" }
 func AdtySiteTables() []any {
 	return []any{&AdtySite{}, &AdtySiteInviteCode{}, &AdtySiteAudit{}, &AdtySiteCustomer{}, &AdtySitePrice{}, &AdtySiteDomain{},
 		&AdtySiteEarningDaily{}, &AdtySiteTrialGrant{}, &AdtySiteReport{}, &AdtySiteLookup{}, &AdtySiteSenderDomain{},
-		&AdtySiteTier{}, &AdtySiteWallet{}, &AdtySiteWalletLedger{}, &AdtySiteStaff{}}
+		&AdtySiteTier{}, &AdtySiteWallet{}, &AdtySiteWalletLedger{}, &AdtySiteStaff{}, &AdtySiteOwnership{}}
 }
 
 // AdtySetUsersSiteTx 把 fromSite 的客户全部改到 toSite（0 是主站），同事务撤销旧Key。
