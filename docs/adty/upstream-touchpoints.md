@@ -526,3 +526,7 @@
 | `controller/adty_notification.go`、`router/adty-router.go`、`router/adty_site_brand_test.go` | 注册通知收件箱 GET 与已读 POST，沿用用户会话及 `profile:read`/`profile:write` PAT scope | 不接受调用者指定账号或站点；真实三库测试新库、升级、重复写入、隔离和授权 | N-02 |
 | `web/src/lib/api.ts`、`web/src/hooks/use-notifications.ts`、`web/src/stores/notification-store.ts`、`web/src/components/notification-popover.tsx` | 登录账号走服务端回执，匿名保持本地回执；账号/Host 进入 query key，窗口重新聚焦及轮询刷新 | 不迁移来源不明的历史匿名回执；读取失败显示重试且不清未读 | N-02 |
 | `web/src/hooks/__tests__/notifications.test.tsx`、`web/scripts/adty/browser-notification-read.mjs` | 覆盖账号切换、独立 QueryClient、内容编辑、保存失败、恢复重试及桌面/移动真实浏览器流程 | 生产 PG17/Redis SQL 核对 A 有 4 条、B 有 0 条，pageerrors=0 | N-02 |
+| `model/adty_notification.go`、`adty_migrate.go`、`service/adty_notification.go` | 发布实体和版本键唯一索引；Root 全用户/全部分站/指定单站，站长仅本站发布域；分页及全量未读计数 | 发布人快照、首次发布时间不随编辑变化，条件版本更新防覆盖；撤回保留历史；关联业务仅纯文本说明 | N-01 部分 |
+| `controller/adty_notification.go`、`router/adty-router.go` | Root 与站长管理 GET/POST/PUT/DELETE，沿用 RootAuth/UserAuth 与明确 PAT scopes；收件按 Host 和 SQL 归属判定 | 不信任调用者传入发布人/发布域/账号/站点覆盖；站长不能修改 Root 或他站发布；冲突 409 | N-01 部分 |
+| `web/src/features/adty-notifications/`、现有公告设置与站长本站设置 | 共用管理表单/列表，复用 Dialog、ConfirmDialog、StaticDataTable、PageSwitcher、Field 与错误/空/加载状态；RHF+Zod 和草稿保护 | 已检索现有封装，无新增通用控件或依赖；普通管理员无 Root 发布入口，失败保留草稿，撤回需确认 | N-01 部分 |
+| `web/src/hooks/use-notifications.ts`、`lib/api.ts`、`components/notification-popover.tsx`、两个 Header | 无限分页收件、批次回执、全量未读角标及发布元数据；维持匿名和账号/Host 隔离 | 仅当前可见页签的已加载内容标读，旧版本/撤回内容不能写新回执；业务收件筛选及员工待办仍待后续 | N-01 部分 |

@@ -41,6 +41,10 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import {
+  notificationAudienceLabels,
+  notificationKindLabels,
+} from '@/features/adty-notifications/lib/schema'
 import { getAnnouncementColorClass } from '@/lib/colors'
 import { formatDateTimeObject } from '@/lib/time'
 import { cn } from '@/lib/utils'
@@ -51,6 +55,12 @@ interface AnnouncementItem {
   content?: string
   extra?: string
   publishDate?: string | Date
+  title?: string
+  publisher_name?: string
+  kind?: keyof typeof notificationKindLabels
+  audience?: keyof typeof notificationAudienceLabels
+  target_site_name?: string
+  business?: string
 }
 
 interface NotificationPopoverProps {
@@ -65,6 +75,9 @@ interface NotificationPopoverProps {
   error?: unknown
   onRetry?: () => void
   className?: string
+  hasMore?: boolean
+  loadingMore?: boolean
+  onLoadMore?: () => void
 }
 
 /**
@@ -262,6 +275,21 @@ function AnnouncementsContent({
                 <div className='flex items-start gap-3'>
                   <AnnouncementDot type={item.type} />
                   <div className='flex min-w-0 flex-1 flex-col gap-2'>
+                    {item.title && (
+                      <div className='text-sm font-semibold break-words'>
+                        {item.title}
+                      </div>
+                    )}
+                    {item.kind && item.audience && (
+                      <div className='text-muted-foreground text-xs break-words'>
+                        {t(notificationKindLabels[item.kind])} ·{' '}
+                        {t('Publisher')}: {item.publisher_name} ·{' '}
+                        {t('Recipients')}:{' '}
+                        {item.audience === 'site'
+                          ? item.target_site_name
+                          : t(notificationAudienceLabels[item.audience])}
+                      </div>
+                    )}
                     <div className='text-sm'>
                       <RichContent breaks content={item.content || ''} />
                     </div>
@@ -271,6 +299,11 @@ function AnnouncementsContent({
                         <RichContent breaks content={item.extra} />
                       </div>
                     ) : null}
+                    {item.business && (
+                      <div className='text-muted-foreground text-xs break-words'>
+                        {t('Related business')}: {item.business}
+                      </div>
+                    )}
 
                     {absoluteTime ? (
                       <div className='text-muted-foreground text-xs'>
@@ -305,6 +338,9 @@ export function NotificationPopover({
   error,
   onRetry,
   className,
+  hasMore,
+  loadingMore,
+  onLoadMore,
 }: NotificationPopoverProps) {
   const { t } = useTranslation()
   return (
@@ -370,6 +406,17 @@ export function NotificationPopover({
                 loading={loading}
                 t={t}
               />
+              {hasMore && (
+                <Button
+                  className='mt-2 w-full'
+                  size='sm'
+                  variant='outline'
+                  disabled={loadingMore}
+                  onClick={onLoadMore}
+                >
+                  {t(loadingMore ? 'Loading...' : 'Load more')}
+                </Button>
+              )}
             </TabsContent>
           </Tabs>
         )}

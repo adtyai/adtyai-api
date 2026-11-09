@@ -74,6 +74,60 @@ describe('account notification receipts', () => {
     )
   }
 
+  it('loads the next page without losing the first page or its receipts', async () => {
+    const get = vi
+      .spyOn(api, 'get')
+      .mockImplementation(async (_url, config) => ({
+        data: {
+          success: true,
+          data: {
+            notice: '',
+            notice_key: '',
+            read_keys: [],
+            unread_publications: 22,
+            announcements: [
+              {
+                id: (config?.params as { before_id?: number })?.before_id
+                  ? 'publication:11'
+                  : 'publication:12',
+                title: (config?.params as { before_id?: number })?.before_id
+                  ? 'Older notification'
+                  : 'Newer notification',
+                read_key: (config?.params as { before_id?: number })?.before_id
+                  ? announcementKey
+                  : noticeKey,
+              },
+            ],
+            next_before_id: (config?.params as { before_id?: number })
+              ?.before_id
+              ? 0
+              : 12,
+          },
+        },
+      }))
+    account(101)
+    const mounted = mountAccountNotifications()
+    const panel = renderHook(() => useNotifications(), {
+      wrapper: mounted.wrapper,
+    })
+    await waitFor(() =>
+      expect(panel.result.current.announcements).toHaveLength(1)
+    )
+    expect(panel.result.current.hasMore).toBe(true)
+    expect(panel.result.current.unreadCount).toBe(22)
+    await act(async () => {
+      await panel.result.current.loadMore()
+    })
+    await waitFor(() =>
+      expect(panel.result.current.announcements).toHaveLength(2)
+    )
+    expect(panel.result.current.hasMore).toBe(false)
+    expect(panel.result.current.unreadCount).toBe(22)
+    expect(get).toHaveBeenLastCalledWith('/api/adty/notifications', {
+      params: { before_id: 12 },
+    })
+  })
+
   it('isolates A and B, ignores anonymous receipts, and reads the same account on a fresh device', async () => {
     const readByUser = new Map<number, string[]>()
     vi.spyOn(api, 'get').mockImplementation(async (url) => {

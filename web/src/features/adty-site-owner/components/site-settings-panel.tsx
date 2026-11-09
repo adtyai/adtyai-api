@@ -34,6 +34,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
+import { NotificationManager } from '@/features/adty-notifications/components/notification-manager'
 import { useDraftNavigation } from '@/features/system-settings/hooks/use-draft-navigation'
 import { handleServerError } from '@/lib/handle-server-error'
 import { STATUS_QUERY_KEY } from '@/lib/status-query'
@@ -565,6 +566,7 @@ export function SiteSettingsPanel(props: { site: OwnerSite }) {
   return (
     <div className='grid gap-4'>
       <BrandCard site={props.site} />
+      <NotificationManager mode='owner' siteId={props.site.id} />
       <DomainsCard site={props.site} />
       <SenderDomainCard site={props.site} />
       <SearchCard site={props.site} />

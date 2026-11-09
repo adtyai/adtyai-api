@@ -27,6 +27,144 @@ import (
 
 type capturedMail struct{ from, subject, to, content string }
 
+func TestNotificationPublishingIsolation(t *testing.T) {
+	f := newSiteFixture(t)
+	root := adtySessionToken(t, f.db, "notice-root", common.RoleRootUser)
+	admin := adtySessionToken(t, f.db, "notice-admin", common.RoleAdminUser)
+	owner := adtySessionToken(t, f.db, "notice-owner", common.RoleCommonUser)
+	customer := adtySessionToken(t, f.db, "notice-customer", common.RoleCommonUser)
+	stranger := adtySessionToken(t, f.db, "notice-stranger", common.RoleCommonUser)
+	var ownerUser, rootUser model.User
+	require.NoError(t, f.db.Where("username = ?", "notice-owner").First(&ownerUser).Error)
+	require.NoError(t, f.db.Where("username = ?", "notice-root").First(&rootUser).Error)
+	require.NoError(t, f.db.Model(&model.User{}).Where("username = ?", "notice-customer").Update("site_id", f.site.Id).Error)
+	require.NoError(t, f.db.Model(&model.AdtySite{}).Where("id = ?", f.site.Id).Updates(map[string]any{
+		"owner_user_id": ownerUser.Id, "agreement_ver": service.AdtyCurrentSiteAgreementVersion(),
+	}).Error)
+	service.InvalidateAdtySiteCache()
+	request := func(method, host, path, token, body string, status int) apiEnvelope {
+		t.Helper()
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		req.Host = host
+		req.Header.Set("Content-Type", "application/json")
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		rec := httptest.NewRecorder()
+		f.engine.ServeHTTP(rec, req)
+		require.Equal(t, status, rec.Code, rec.Body.String())
+		var out apiEnvelope
+		if rec.Header().Get("Content-Type") == "application/json; charset=utf-8" {
+			require.NoError(t, common.Unmarshal(rec.Body.Bytes(), &out))
+		}
+		return out
+	}
+	const main, shop = "main.example.com", "shop.sites.example.com"
+	const rootPath, ownerPath, inbox = "/api/adty/admin/notifications", "/api/adty/site/notifications", "/api/adty/notifications"
+	payload := fmt.Sprintf(`{"title":"Scoped maintenance","content":"Only this shop","kind":"maintenance","audience":"site","target_site_id":%d,"publisher_id":9999,"issuer_site_id":9999}`, f.site.Id)
+	request(http.MethodPost, main, rootPath, "", payload, http.StatusUnauthorized)
+	request(http.MethodPost, main, rootPath, admin, payload, http.StatusForbidden)
+	request(http.MethodGet, main, ownerPath, stranger, "", http.StatusForbidden)
+	request(http.MethodPost, main, rootPath, createAdtyScopedToken(t, rootUser.Id, "option:read"), payload, http.StatusForbidden)
+	created := request(http.MethodPost, main, rootPath, createAdtyScopedToken(t, rootUser.Id, "option:write"), payload, http.StatusOK)
+	require.True(t, created.Success, created.Message)
+	id := int(created.Data["id"].(float64))
+	assert.EqualValues(t, rootUser.Id, created.Data["publisher_id"])
+	assert.EqualValues(t, 0, created.Data["issuer_site_id"])
+	assert.Equal(t, "notice-root", created.Data["publisher_name"])
+	for _, ctx := range []struct{ host, token string }{{main, customer}, {main, stranger}, {shop, stranger}} {
+		got := request(http.MethodGet, ctx.host, inbox+"?site_id="+fmt.Sprint(f.site.Id), ctx.token, "", http.StatusOK)
+		assert.NotContains(t, fmt.Sprint(got.Data["announcements"]), "Only this shop")
+	}
+	for _, token := range []string{customer, owner} {
+		got := request(http.MethodGet, shop, inbox, token, "", http.StatusOK)
+		require.True(t, got.Success, got.Message)
+		assert.Contains(t, fmt.Sprint(got.Data["announcements"]), "Only this shop")
+	}
+	assert.NotContains(t, fmt.Sprint(request(http.MethodGet, main, ownerPath, owner, "", http.StatusOK).Data), "Only this shop", "owner cannot manage Root publications")
+	request(http.MethodPut, main, ownerPath+fmt.Sprintf("/%d", id), owner, payload, http.StatusNotFound)
+	for _, invalid := range []string{
+		`{"title":"x","content":"x","kind":"maintenance","audience":"all_users"}`,
+		fmt.Sprintf(`{"title":"x","content":"x","kind":"maintenance","audience":"site","target_site_id":%d}`, f.closed.Id),
+	} {
+		assert.False(t, request(http.MethodPost, main, ownerPath, owner, invalid, http.StatusOK).Success)
+	}
+	mine := request(http.MethodPost, main, ownerPath, owner, fmt.Sprintf(`{"title":"Shop rules","content":"Shop description","kind":"rules","audience":"site","target_site_id":%d}`, f.site.Id), http.StatusOK)
+	require.True(t, mine.Success, mine.Message)
+	assert.EqualValues(t, f.site.Id, mine.Data["issuer_site_id"])
+	assert.EqualValues(t, ownerUser.Id, mine.Data["publisher_id"])
+	got := request(http.MethodGet, shop, inbox, customer, "", http.StatusOK)
+	var key string
+	for _, raw := range got.Data["announcements"].([]any) {
+		item := raw.(map[string]any)
+		if item["title"] == "Scoped maintenance" {
+			key = item["read_key"].(string)
+		}
+	}
+	require.NotEmpty(t, key)
+	assert.True(t, request(http.MethodPost, shop, inbox+"/read", customer, `{"keys":["`+key+`"]}`, http.StatusOK).Success)
+	edit := fmt.Sprintf(`{"revision":1,"title":"Scoped maintenance","content":"Edited shop notice","kind":"maintenance","audience":"site","target_site_id":%d}`, f.site.Id)
+	updated := request(http.MethodPut, main, rootPath+fmt.Sprintf("/%d", id), root, edit, http.StatusOK)
+	require.True(t, updated.Success, updated.Message)
+	assert.EqualValues(t, 2, updated.Data["revision"])
+	assert.Equal(t, created.Data["published_at"], updated.Data["published_at"])
+	request(http.MethodPut, main, rootPath+fmt.Sprintf("/%d", id), root, edit, http.StatusConflict)
+	assert.False(t, request(http.MethodPost, shop, inbox+"/read", customer, `{"keys":["`+key+`"]}`, http.StatusOK).Success)
+	got = request(http.MethodGet, shop, inbox, customer, "", http.StatusOK)
+	assert.Empty(t, got.Data["read_keys"], "editing creates a new unread revision")
+	withdrawn := request(http.MethodDelete, main, rootPath+fmt.Sprintf("/%d", id), root, `{"revision":2}`, http.StatusOK)
+	require.True(t, withdrawn.Success, withdrawn.Message)
+	assert.NotContains(t, fmt.Sprint(request(http.MethodGet, shop, inbox, customer, "", http.StatusOK).Data), "Edited shop notice")
+	assert.Contains(t, fmt.Sprint(request(http.MethodGet, main, rootPath, root, "", http.StatusOK).Data), "withdrawn", "management retains withdrawn history")
+	for _, audience := range []string{"all_users", "all_sites"} {
+		body := fmt.Sprintf(`{"title":"%s","content":"%s message","kind":"system","audience":"%s"}`, audience, audience, audience)
+		require.True(t, request(http.MethodPost, main, rootPath, root, body, http.StatusOK).Success)
+	}
+	mainInbox := fmt.Sprint(request(http.MethodGet, main, inbox, stranger, "", http.StatusOK).Data)
+	assert.Contains(t, mainInbox, "all_users message")
+	assert.NotContains(t, mainInbox, "all_sites message")
+	shopInbox := fmt.Sprint(request(http.MethodGet, shop, inbox, customer, "", http.StatusOK).Data)
+	assert.Contains(t, shopInbox, "all_users message")
+	assert.Contains(t, shopInbox, "all_sites message")
+}
+
+func TestNotificationPublishingPagination(t *testing.T) {
+	f := newSiteFixture(t)
+	setting := console_setting.GetConsoleSetting()
+	previous := *setting
+	t.Cleanup(func() { *setting = previous })
+	setting.AnnouncementsEnabled = false
+	root := adtySessionToken(t, f.db, "notice-pages-root", common.RoleRootUser)
+	request := func(method, path, body string) apiEnvelope {
+		t.Helper()
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		req.Host = "main.example.com"
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+root)
+		rec := httptest.NewRecorder()
+		f.engine.ServeHTTP(rec, req)
+		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+		var out apiEnvelope
+		require.NoError(t, common.Unmarshal(rec.Body.Bytes(), &out))
+		require.True(t, out.Success, out.Message)
+		return out
+	}
+	for i := range 22 {
+		request(http.MethodPost, "/api/adty/admin/notifications", fmt.Sprintf(`{"title":"Update %d","content":"History %d","kind":"platform","audience":"all_users"}`, i, i))
+	}
+	first := request(http.MethodGet, "/api/adty/notifications", "")
+	assert.Len(t, first.Data["announcements"], 20)
+	assert.EqualValues(t, 22, first.Data["unread_publications"], "unread includes publications beyond the first page")
+	cursor := int(first.Data["next_before_id"].(float64))
+	require.Positive(t, cursor)
+	second := request(http.MethodGet, fmt.Sprintf("/api/adty/notifications?before_id=%d", cursor), "")
+	assert.Len(t, second.Data["announcements"], 2)
+	assert.EqualValues(t, 0, second.Data["next_before_id"])
+	older := second.Data["announcements"].([]any)[0].(map[string]any)
+	request(http.MethodPost, "/api/adty/notifications/read", `{"keys":["`+older["read_key"].(string)+`"]}`)
+	assert.EqualValues(t, 21, request(http.MethodGet, "/api/adty/notifications", "").Data["unread_publications"])
+}
+
 func TestNotificationInboxReadIsolation(t *testing.T) {
 	f := newSiteFixture(t)
 	setting := console_setting.GetConsoleSetting()

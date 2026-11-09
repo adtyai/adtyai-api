@@ -42,6 +42,20 @@ func SetAdtyRouter(apiRouter *gin.RouterGroup) {
 	notifications := apiRouter.Group("/adty/notifications", middleware.UserAuth())
 	notifications.GET("", controller.GetAdtyNotifications)
 	notifications.POST("/read", controller.ReadAdtyNotifications)
+	for _, route := range []struct{ method, path, scope string }{
+		{http.MethodGet, "", "read"}, {http.MethodPost, "", "write"},
+		{http.MethodPut, "/:id", "write"}, {http.MethodDelete, "/:id", "write"},
+	} {
+		rootPath, ownerPath := "/adty/admin/notifications"+route.path, "/adty/site/notifications"+route.path
+		middleware.DeclareAdtyAccessTokenRoute(route.method, "/api"+rootPath, "scope", "option:"+route.scope)
+		middleware.DeclareAdtyAccessTokenRoute(route.method, "/api"+ownerPath, "scope", "wallet:"+route.scope)
+		handler := controller.WriteAdtyManagedNotification
+		if route.method == http.MethodGet {
+			handler = controller.GetAdtyManagedNotifications
+		}
+		apiRouter.Handle(route.method, rootPath, middleware.RootAuth(), func(c *gin.Context) { c.Set("notification_root", true) }, handler)
+		apiRouter.Handle(route.method, ownerPath, middleware.UserAuth(), handler)
+	}
 
 	// 余额流水（任务 7.2）
 	users := apiRouter.Group("/adty/admin/users", middleware.AdminAuth())

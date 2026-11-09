@@ -16,7 +16,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type InfiniteData,
+} from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { useStatus } from '@/hooks/use-status'
@@ -108,9 +114,11 @@ export function useNotifications() {
     () => ['adty-notifications', userID, window.location.host] as const,
     [userID]
   )
-  const inbox = useQuery({
+  const inbox = useInfiniteQuery({
     queryKey: inboxKey,
-    queryFn: getNotificationInbox,
+    initialPageParam: 0,
+    queryFn: ({ pageParam }) => getNotificationInbox(pageParam),
+    getNextPageParam: (page) => page.next_before_id || undefined,
     enabled: userID > 0,
     staleTime: 30_000,
     refetchInterval: 30_000,
@@ -120,23 +128,52 @@ export function useNotifications() {
     mutationFn: (input: { keys: string[]; queryKey: typeof inboxKey }) =>
       readNotifications(input.keys),
     onSuccess: (_data, input) => {
-      queryClient.setQueryData<NotificationInbox>(input.queryKey, (previous) =>
-        previous
-          ? {
-              ...previous,
-              read_keys: [...new Set([...previous.read_keys, ...input.keys])],
-            }
-          : previous
+      queryClient.setQueryData<InfiniteData<NotificationInbox>>(
+        input.queryKey,
+        (previous) => {
+          if (!previous) return previous
+          const newlyRead = new Set(
+            previous.pages.flatMap((page) =>
+              page.announcements
+                .filter(
+                  (item) =>
+                    String(item.id).startsWith('publication:') &&
+                    input.keys.includes(String(item.read_key)) &&
+                    !page.read_keys.includes(String(item.read_key))
+                )
+                .map((item) => String(item.read_key))
+            )
+          ).size
+          return {
+            ...previous,
+            pages: previous.pages.map((page) => ({
+              ...page,
+              unread_publications:
+                page.unread_publications === undefined
+                  ? undefined
+                  : Math.max(0, page.unread_publications - newlyRead),
+              read_keys: [...new Set([...page.read_keys, ...input.keys])],
+            })),
+          }
+        }
       )
       void queryClient.invalidateQueries({ queryKey: input.queryKey })
     },
   })
   const markRead = read.mutate
-  const announcements =
-    userID > 0
-      ? (inbox.data?.announcements ?? EMPTY_ANNOUNCEMENTS)
-      : publicAnnouncements
-  const serverReadKeys = inbox.data?.read_keys ?? EMPTY_READ_KEYS
+  const accountAnnouncements = useMemo(
+    () =>
+      inbox.data?.pages.flatMap((page) => page.announcements) ??
+      EMPTY_ANNOUNCEMENTS,
+    [inbox.data]
+  )
+  const announcements = userID > 0 ? accountAnnouncements : publicAnnouncements
+  const serverReadKeys = useMemo(
+    () =>
+      inbox.data?.pages.flatMap((page) => page.read_keys) ?? EMPTY_READ_KEYS,
+    [inbox.data]
+  )
+  const firstPage = inbox.data?.pages[0]
 
   // Notification store
   const {
@@ -149,7 +186,7 @@ export function useNotifications() {
   // Extract notice content
   let noticeContent = ''
   if (userID > 0) {
-    noticeContent = inbox.data?.notice ?? ''
+    noticeContent = firstPage?.notice ?? ''
   } else if (noticeResponse?.success) {
     noticeContent = (noticeResponse.data || '').trim()
   }
@@ -158,18 +195,23 @@ export function useNotifications() {
   const unreadCounts = useMemo(() => {
     const noticeRead =
       userID > 0
-        ? serverReadKeys.includes(inbox.data?.notice_key ?? '')
+        ? serverReadKeys.includes(firstPage?.notice_key ?? '')
         : noticeContent === lastReadNotice
     const noticeUnread = noticeContent && !noticeRead ? 1 : 0
 
-    const announcementsUnread = announcements.filter(
-      (item: Record<string, unknown>) => {
+    const announcementsUnread =
+      announcements.filter((item: Record<string, unknown>) => {
         if (userID > 0) {
+          if (
+            firstPage?.unread_publications !== undefined &&
+            String(item.id).startsWith('publication:')
+          ) {
+            return false
+          }
           return !serverReadKeys.includes(String(item.read_key ?? ''))
         }
         return !readAnnouncementKeys.includes(getAnnouncementKey(item))
-      }
-    ).length
+      }).length + (userID > 0 ? (firstPage?.unread_publications ?? 0) : 0)
 
     return {
       notice: noticeUnread,
@@ -183,19 +225,22 @@ export function useNotifications() {
     readAnnouncementKeys,
     userID,
     serverReadKeys,
-    inbox.data?.notice_key,
+    firstPage?.notice_key,
+    firstPage?.unread_publications,
   ])
 
   const markAccountTabRead = useCallback(
     (tab: 'notice' | 'announcements') => {
       const keys =
         tab === 'notice'
-          ? [inbox.data?.notice_key ?? '']
+          ? [firstPage?.notice_key ?? '']
           : announcements.map((item) => String(item.read_key ?? ''))
       const unread = keys.filter((key) => key && !serverReadKeys.includes(key))
-      if (unread.length) markRead({ keys: unread, queryKey: inboxKey })
+      if (unread.length) {
+        markRead({ keys: unread.slice(0, 41), queryKey: inboxKey })
+      }
     },
-    [announcements, inbox.data?.notice_key, inboxKey, markRead, serverReadKeys]
+    [announcements, firstPage?.notice_key, inboxKey, markRead, serverReadKeys]
   )
 
   useEffect(() => {
@@ -258,6 +303,9 @@ export function useNotifications() {
     // Data
     notice: noticeContent,
     announcements,
+    hasMore: userID > 0 && inbox.hasNextPage,
+    loadingMore: inbox.isFetchingNextPage,
+    loadMore: inbox.fetchNextPage,
     loading: userID > 0 ? inbox.isLoading : noticeLoading || statusLoading,
     error: userID > 0 ? inbox.error : noticeError,
 

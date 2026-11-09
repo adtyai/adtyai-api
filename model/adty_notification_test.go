@@ -18,15 +18,59 @@ func TestNotificationReadDatabaseMatrix(t *testing.T) {
 				if upgrade {
 					require.NoError(t, db.AutoMigrate(&User{}))
 					require.NoError(t, db.Create(&User{Id: 101, Username: "receipt-history", Quota: 123456}).Error)
+					require.NoError(t, db.AutoMigrate(&AdtyNotificationRead{}))
+					require.NoError(t, MarkAdtyNotificationsRead(101, 0, []string{strings.Repeat("c", 64)}, 1000))
 				}
 				for range 2 {
 					require.NoError(t, migrateDB())
 				}
 				require.True(t, db.Migrator().HasTable("adty_notification_reads"))
+				require.True(t, db.Migrator().HasTable("adty_notification_publications"))
+				publication := AdtyNotificationPublication{IssuerSiteId: 7, PublisherId: 101, PublisherName: "original-publisher", Audience: "site", TargetSiteId: 7,
+					TargetSiteName: "shop.example.test", Kind: "rules", Title: "Original rules", Content: "Original content", Status: "published", Revision: 1,
+					ReadKey: strings.Repeat("d", 64), PublishedAt: 100, UpdatedAt: 100, UpdatedBy: 101}
+				require.NoError(t, db.Create(&publication).Error)
+				duplicate := publication
+				duplicate.Id = 0
+				require.Error(t, db.Create(&duplicate).Error, "version keys must be unique across publications")
+				for range 2 {
+					require.NoError(t, migrateDB())
+				}
+				var groupEdits sync.WaitGroup
+				edits := make(chan error, 2)
+				for i := range 2 {
+					candidate := publication
+					candidate.Content, candidate.ReadKey = fmt.Sprintf("Edit %d", i), strings.Repeat(fmt.Sprint(i+1), 64)
+					groupEdits.Go(func() { edits <- UpdateAdtyNotificationPublication(&candidate, 1) })
+				}
+				groupEdits.Wait()
+				close(edits)
+				conflicts, successes := 0, 0
+				for err := range edits {
+					if err == nil {
+						successes++
+					} else {
+						require.ErrorIs(t, err, ErrAdtyNotificationConflict)
+						conflicts++
+					}
+				}
+				assert.Equal(t, 1, successes)
+				assert.Equal(t, 1, conflicts)
+				require.NoError(t, db.First(&publication, publication.Id).Error)
+				assert.Equal(t, "original-publisher", publication.PublisherName)
+				assert.Equal(t, int64(100), publication.PublishedAt)
+				publication.Status = "withdrawn"
+				require.NoError(t, UpdateAdtyNotificationPublication(&publication, 2))
+				publication.Status = "published"
+				require.ErrorIs(t, UpdateAdtyNotificationPublication(&publication, 3), ErrAdtyNotificationConflict, "a withdrawn publication cannot be restored by an editor")
 				if upgrade {
 					var historical User
 					require.NoError(t, db.First(&historical, 101).Error)
 					assert.Equal(t, 123456, historical.Quota)
+					oldKeys, err := GetAdtyNotificationReadKeys(101, 0, []string{strings.Repeat("c", 64)})
+					require.NoError(t, err)
+					assert.Equal(t, []string{strings.Repeat("c", 64)}, oldKeys)
+					require.NoError(t, db.Where("read_key = ?", strings.Repeat("c", 64)).Delete(&AdtyNotificationRead{}).Error)
 				}
 				key := strings.Repeat("a", 64)
 				later := strings.Repeat("b", 64)

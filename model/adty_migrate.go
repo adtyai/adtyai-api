@@ -41,7 +41,7 @@ func MigrateAdtyTables() error {
 	if err := DB.AutoMigrate(&AdtyGroup{}, &AdtyTopupOrder{}, &PaymentOrphanEvent{}, &PaymentOrphanReview{}, &AdtyBalanceLedger{}, &BillingOperation{}, &BillingOperationMovement{}, &AdtySiteEarningEvent{}, &AdtyEpayChannel{}, &AdtyEpayChannelMethod{}, &AdtyUserFingerprint{}, &AdtyUserLimit{}, &AdtyOfficialPrice{}); err != nil {
 		return err
 	}
-	if err := DB.AutoMigrate(&AdtyPromoCode{}, &AdtyPromoRedemption{}, &AdtyNotificationRead{}); err != nil {
+	if err := DB.AutoMigrate(&AdtyPromoCode{}, &AdtyPromoRedemption{}, &AdtyNotificationRead{}, &AdtyNotificationPublication{}); err != nil {
 		return err
 	}
 	if err := migrateAdtyReferralTables(); err != nil {
