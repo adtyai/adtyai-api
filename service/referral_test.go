@@ -54,7 +54,7 @@ func prepareReferralDB(t *testing.T) *gorm.DB {
 		require.Eventually(t, func() bool { return gopool.WorkerCount() <= workerBaseline }, 5*time.Second, time.Millisecond,
 			"quota/cache background work must finish before restoring referral test globals")
 	})
-	require.NoError(t, db.AutoMigrate(&model.User{}, &model.TopUp{}, &model.Log{}, &model.Option{}, &model.AuditLog{}))
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.Token{}, &model.TopUp{}, &model.Log{}, &model.Option{}, &model.AuditLog{}))
 	require.NoError(t, model.MigrateAdtyTables())
 	// 和钱有关的设置没有内置值（约定 I），测试里设好：比例 10%、最低提现 $20、USDT 手续费 2。
 	cfg := adty_setting.GetReferralSetting()

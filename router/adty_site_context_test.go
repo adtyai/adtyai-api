@@ -1,9 +1,11 @@
 package router
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -17,6 +19,7 @@ import (
 	"github.com/QuantumNous/new-api/setting/adty_setting"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/gin-gonic/gin"
+	"github.com/go-redis/redis/v8"
 	"github.com/pquerna/otp/totp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -294,6 +297,109 @@ func TestAPIKeyMustMatchRequestSite(t *testing.T) {
 	assert.Equal(t, http.StatusOK, request("main.example.com", mainKey).Code)
 	assert.Equal(t, http.StatusForbidden, request("shop.sites.example.com", mainKey).Code)
 	assert.Equal(t, http.StatusNotFound, request("stranger.example.net", mainKey).Code)
+}
+
+func TestClosedSiteRevokesMigratedCustomerKeys(t *testing.T) {
+	for _, destination := range []string{"main", "site"} {
+		for _, immediate := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/immediate=%t", destination, immediate), func(t *testing.T) {
+				f := newSiteFixture(t)
+				targetID, targetHost := 0, "main.example.com"
+				if destination == "site" {
+					owner := f.user(t, "migration-target-owner", 0)
+					target, err := service.OpenAdtySite(owner.Id, "migration-target", model.AdtySiteOpenedByAdmin, service.AdtySitePreset{})
+					require.NoError(t, err)
+					targetID, targetHost = target.Id, service.AdtySiteDisplayHost(target)
+				}
+				customer := f.user(t, "migrated-key-customer", f.site.Id)
+				require.NoError(t, f.db.Create(&model.AdtySiteCustomer{UserId: customer.Id, SiteId: f.site.Id}).Error)
+				old := model.Token{UserId: customer.Id, Key: "migrationOldSecret", Name: "old key", Status: common.TokenStatusEnabled, ExpiredTime: -1, UnlimitedQuota: true, UsedQuota: 40, RemainQuota: 60}
+				require.NoError(t, f.db.Create(&old).Error)
+				otherUser := f.user(t, "untouched-key-customer", 0)
+				other := model.Token{UserId: otherUser.Id, Key: "untouchedSecret", Status: common.TokenStatusEnabled, ExpiredTime: -1, UnlimitedQuota: true}
+				require.NoError(t, f.db.Create(&other).Error)
+				fresh := model.Token{UserId: customer.Id, Key: "migrationFreshSecret", Status: common.TokenStatusEnabled, ExpiredTime: -1, UnlimitedQuota: true}
+				history := model.Log{UserId: customer.Id, TokenId: old.Id, TokenName: old.Name, Type: model.LogTypeConsume, Quota: 40}
+				require.NoError(t, f.db.Create(&history).Error)
+				if address := os.Getenv("ADTY_TEST_REDIS_ADDR"); address != "" {
+					previousEnabled, previousClient := common.RedisEnabled, common.RDB
+					client := redis.NewClient(&redis.Options{Addr: address, DB: 8})
+					require.NoError(t, client.Ping(t.Context()).Err())
+					var cacheKeys []string
+					for _, token := range []model.Token{old, other, fresh} {
+						hash := common.GenerateHMAC(token.Key)
+						cacheKeys = append(cacheKeys, "token:"+hash, "token:generation:"+hash)
+					}
+					for _, id := range []int{customer.Id, otherUser.Id} {
+						cacheKeys = append(cacheKeys, fmt.Sprintf("user:%d", id), fmt.Sprintf("auth:user:version:%d", id), fmt.Sprintf("auth:user:fence:%d", id))
+					}
+					t.Cleanup(func() {
+						assert.NoError(t, client.Del(context.Background(), cacheKeys...).Err())
+						common.RedisEnabled, common.RDB = previousEnabled, previousClient
+						assert.NoError(t, client.Close())
+					})
+					// Each PostgreSQL schema starts IDs again; remove only this
+					// fixture's keys so earlier subtests cannot supply user metadata.
+					require.NoError(t, client.Del(t.Context(), cacheKeys...).Err())
+					common.RedisEnabled, common.RDB = true, client
+				}
+				request := func(host, path, key string) *httptest.ResponseRecorder {
+					t.Helper()
+					req := httptest.NewRequest(http.MethodGet, path, nil)
+					req.Host = host
+					req.Header.Set("Authorization", "Bearer "+key)
+					response := httptest.NewRecorder()
+					f.engine.ServeHTTP(response, req)
+					return response
+				}
+				for _, path := range []string{"/v1/models", "/api/usage/token/", "/api/log/token"} {
+					response := request(service.AdtySiteDisplayHost(f.site), path, old.Key)
+					require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+				}
+				staleCache := map[string]string{}
+				if common.RedisEnabled {
+					for _, key := range []string{"token:" + common.GenerateHMAC(old.Key), "token:generation:" + common.GenerateHMAC(old.Key), fmt.Sprintf("user:%d", customer.Id)} {
+						data, err := common.RDB.Dump(t.Context(), key).Result()
+						if err == redis.Nil {
+							continue
+						}
+						require.NoError(t, err)
+						staleCache[key] = data
+					}
+					require.NotEmpty(t, staleCache)
+				}
+				scheduled, err := service.ScheduleAdtySiteClose(f.site.Id, 1, service.AdtySiteClosePlan{TransferTo: targetID, Immediate: immediate})
+				require.NoError(t, err)
+				if !immediate {
+					assert.Equal(t, http.StatusOK, request(service.AdtySiteDisplayHost(f.site), "/v1/models", old.Key).Code)
+					require.NoError(t, service.RunAdtySiteCloseOnce(scheduled.CloseExecuteAt))
+				}
+				for _, path := range []string{"/v1/models", "/api/usage/token/", "/api/log/token"} {
+					response := request(targetHost, path, old.Key)
+					assert.Equal(t, http.StatusUnauthorized, response.Code, path+": "+response.Body.String())
+				}
+				if common.RedisEnabled {
+					for key, data := range staleCache {
+						require.NoError(t, common.RDB.RestoreReplace(t.Context(), key, time.Minute, data).Err())
+					}
+					for _, path := range []string{"/v1/models", "/api/usage/token/", "/api/log/token"} {
+						assert.Equal(t, http.StatusUnauthorized, request(targetHost, path, old.Key).Code, "restored token/user caches must not restore credentials")
+					}
+				}
+				assert.Equal(t, http.StatusOK, request("main.example.com", "/v1/models", other.Key).Code)
+				require.NoError(t, fresh.InsertWithLimit(100))
+				assert.Equal(t, http.StatusOK, request(targetHost, "/v1/models", fresh.Key).Code)
+				var retired model.Token
+				require.NoError(t, f.db.Unscoped().First(&retired, old.Id).Error)
+				assert.True(t, retired.DeletedAt.Valid, "old credentials must not be re-enabled by normal token editing")
+				assert.Equal(t, 40, retired.UsedQuota)
+				assert.Equal(t, 60, retired.RemainQuota)
+				var preserved model.Log
+				require.NoError(t, f.db.First(&preserved, history.Id).Error)
+				assert.Equal(t, history, preserved)
+			})
+		}
+	}
 }
 
 func TestAPIKeyReadOnlyAndCrossSiteHostIsolation(t *testing.T) {

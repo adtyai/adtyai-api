@@ -225,17 +225,45 @@ func AdtySiteTables() []any {
 		&AdtySiteTier{}, &AdtySiteWallet{}, &AdtySiteWalletLedger{}}
 }
 
-// AdtySetUsersSiteTx 把 fromSite 的客户全部改到 toSite（0 是主站），返回改了哪些用户。
+// AdtySetUsersSiteTx 把 fromSite 的客户全部改到 toSite（0 是主站），同事务撤销旧Key。
 // users.site_id 只由分站服务通过这里和 AdtySetUserSiteTx 改（UpdateWithTx 不会改它）。
 func AdtySetUsersSiteTx(tx *gorm.DB, fromSite, toSite int) ([]int, error) {
-	var ids []int
-	if err := tx.Model(&User{}).Where("site_id = ?", fromSite).Pluck("id", &ids).Error; err != nil {
-		return nil, err
-	}
-	if len(ids) == 0 {
+	if fromSite == toSite {
 		return nil, nil
 	}
-	if err := tx.Model(&User{}).Where("site_id = ?", fromSite).Update("site_id", toSite).Error; err != nil {
+	// InsertWithLimit locks the owner too: a token created before this lock is
+	// revoked with the migration; one created afterwards belongs to the new site.
+	var users []User
+	if err := lockForUpdate(tx).Select("id").Where("site_id = ?", fromSite).Order("id").Find(&users).Error; err != nil {
+		return nil, err
+	}
+	if len(users) == 0 {
+		return nil, nil
+	}
+	ids := make([]int, len(users))
+	for i := range users {
+		ids[i] = users[i].Id
+	}
+	var tokens []Token
+	if err := lockForUpdate(tx).Select("id", commonKeyCol).Where("user_id IN ?", ids).Order("id").Find(&tokens).Error; err != nil {
+		return nil, err
+	}
+	if err := invalidateTokensCache(tokens); err != nil {
+		return nil, err
+	}
+	// Soft deletion keeps historical identifiers and quota facts, while normal
+	// token edits cannot reactivate the original secret at the destination.
+	if err := tx.Where("user_id IN ?", ids).Delete(&Token{}).Error; err != nil {
+		return nil, err
+	}
+	// Site membership is part of authorization. Fence old user metadata and
+	// browser sessions before the new membership can commit.
+	for _, id := range ids {
+		if _, err := IncrementUserAuthVersionWithTx(tx, id); err != nil {
+			return nil, err
+		}
+	}
+	if err := tx.Model(&User{}).Where("id IN ?", ids).Update("site_id", toSite).Error; err != nil {
 		return nil, err
 	}
 	return ids, nil
@@ -249,8 +277,14 @@ func AdtySetUserSiteTx(tx *gorm.DB, userId, siteId int) error {
 // AdtyInvalidateUserCaches 在改了 site_id 的事务提交后清这些用户的缓存，下次读取从库里重建。
 func AdtyInvalidateUserCaches(ids []int) {
 	for _, id := range ids {
+		if err := InvalidateUserTokensCache(id); err != nil {
+			common.SysError(common.LogText("invalidate token cache after site migration user=%d: %s", id, err.Error()))
+		}
 		if err := invalidateUserCache(id); err != nil {
 			common.SysError(common.LogText("invalidate user cache failed user=%d: %s", id, err.Error()))
+		}
+		if err := PublishUserAuthCache(id); err != nil {
+			common.SysError(common.LogText("publish user cache after site migration user=%d: %s", id, err.Error()))
 		}
 	}
 }

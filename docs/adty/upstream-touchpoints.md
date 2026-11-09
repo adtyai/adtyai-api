@@ -495,3 +495,5 @@
 | `controller/adty_site_admin.go`、`router/adty_site_test.go` | closed 动作在关站服务调用前要求 Root；真实 PG 会话/PAT 验证即时/定时及主站/分站目标，保留委派暂停和恢复 | 防止普通管理员通过分站调整权限迁移客户 | FIN-I-05 |
 | `web/src/features/adty-site-admin/components/site-detail-sheet.tsx`、`close-site-dialog.tsx` 及现有 `__tests__/site-admin.test.tsx` | 仅 Root 展示关站入口，身份变化时移除弹窗并在排队提交前重新检查 | 前后端权限一致，保留现有 Dialog/Button 组件 | FIN-I-05 |
 | `scripts/adty/browser-business.sh`、`web/scripts/adty/browser-site-status.mjs` | 新增独立 PostgreSQL/Redis 生产浏览器场景，验证桌面/移动委派管理、直接请求拒绝及 Root 页面关站与审计 | 避免长钱包场景耗尽默认验证限流，不放宽生产限制 | FIN-I-05 |
+| `model/adty_site.go`、`model/adty_site_user_test.go` | 迁移按 ID 锁用户和 Token，同事务软撤销旧 Key 并递增认证版本，提交后发布用户版本与清理缓存；真实三库验证回滚及 MySQL/PG 创建先后顺序 | 永久撤销旧秘密，保留历史事实，阻止恢复旧用户 hash 后误用原站点归属；浏览器需重新登录 | FIN-I-06 凭证子步骤 |
+| `router/adty_site_context_test.go`、`service/referral_test.go` | 主站/分站及即时/定时迁移验证模型、只读用量和日志鉴权，真实 Redis 恢复旧 hash/generation；共享关站 fixture 补 Token 表 | 保护新 Key 与其他客户凭证，覆盖真实关站调用路径；资金及在途结清仍未关闭 | FIN-I-06 凭证子步骤 |
