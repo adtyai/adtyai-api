@@ -91,7 +91,7 @@ func TestEpayProviderQueryUsesTrustedHTTPSAndOrderBinding(t *testing.T) {
 	assert.Zero(t, leaked, "HTTPS query credentials must never be forwarded to a redirect")
 	redirect = false
 	for range 2 {
-		require.NoError(t, RecoverAdtyHostedPayment(t.Context(), ext))
+		require.NoError(t, RecoverAdtyHostedPaymentAs(t.Context(), ext, 88))
 	}
 	var buyer model.User
 	require.NoError(t, db.First(&buyer, ext.UserId).Error)
@@ -99,6 +99,23 @@ func TestEpayProviderQueryUsesTrustedHTTPSAndOrderBinding(t *testing.T) {
 	var credits int64
 	require.NoError(t, db.Model(&model.AdtyBalanceLedger{}).Where("ref_id = ?", ext.TradeNo).Count(&credits).Error)
 	assert.EqualValues(t, 1, credits)
+	var history []model.AdtyOrderPaymentEvent
+	require.NoError(t, db.Where("trade_no = ?", ext.TradeNo).Order("id").Find(&history).Error)
+	require.Len(t, history, 8)
+	assert.Equal(t, "unpaid", history[0].Outcome)
+	for i, event := range history[1:6] {
+		expected := "failed"
+		if i == 2 {
+			expected = "rejected"
+		}
+		assert.Equal(t, expected, event.Outcome)
+		assert.True(t, event.PaidAmount.IsZero(), "failed query amounts are not trusted payment facts")
+		assert.Empty(t, event.PaidCurrency)
+	}
+	assert.Equal(t, "credited", history[6].Outcome)
+	assert.Equal(t, "replayed", history[7].Outcome)
+	assert.Equal(t, 88, history[6].OperatorId)
+	assert.Equal(t, 88, history[7].OperatorId)
 }
 
 func TestEpaySignMatchesGoEpay(t *testing.T) {

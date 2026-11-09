@@ -223,6 +223,46 @@ func TestOwnerOrdersUseFrozenSiteScope(t *testing.T) {
 	assert.Equal(t, http.StatusForbidden, f.call(t, http.MethodGet, "/api/adty/site/orders", "", "").Code)
 }
 
+func TestOrderDetailsRespectFrozenSiteAndRedactPrivateEvidence(t *testing.T) {
+	f := newOwnerFixture(t)
+	buyer := f.customer(t, f.site, "trace-buyer", "trace@example.com")
+	for _, order := range []struct {
+		trade  string
+		siteID int
+	}{{"trace-mine", f.site.Id}, {"trace-other", f.other.Id}, {"trace-main", 0}} {
+		require.NoError(t, f.db.Create(&model.TopUp{TradeNo: order.trade, UserId: buyer.Id, PaymentProvider: model.PaymentProviderStripe, Status: common.TopUpStatusSuccess}).Error)
+		require.NoError(t, f.db.Create(&model.AdtyTopupOrder{TradeNo: order.trade, UserId: buyer.Id, SiteId: order.siteID, Provider: model.PaymentProviderStripe,
+			PaidSource: model.AdtyPaymentSourceManual, PaidTxHash: "private-manual-proof", ProviderPayload: "private-provider-payload", RefundReason: "private-refund-reason"}).Error)
+	}
+	require.NoError(t, f.db.Model(&buyer).Update("site_id", f.other.Id).Error)
+	require.NoError(t, f.db.Create(&model.AdtyBalanceLedger{UserId: buyer.Id, Type: "refund", RefType: "topup", RefId: "trace-mine", DeltaQuota: -123, Reason: "private-admin-reason", OperatorId: 41}).Error)
+	require.NoError(t, f.db.Create(&model.AdtyBalanceLedger{UserId: buyer.Id, Type: "manual_adjust", RefType: "adjustment", RefId: "unrelated-adjustment", Reason: "unrelated-private-funds"}).Error)
+	path := "/api/adty/site/orders/trace-mine?section=wallet"
+	response := f.call(t, http.MethodGet, path, "", "")
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	assert.Contains(t, response.Body.String(), `"success":true`)
+	assert.Contains(t, response.Body.String(), `"delta_quota":-123`)
+	for _, secret := range []string{"private-manual-proof", "private-provider-payload", "private-refund-reason", "private-admin-reason", "unrelated-private-funds"} {
+		assert.NotContains(t, response.Body.String(), secret)
+	}
+	assert.NotContains(t, response.Body.String(), "balance_before")
+	assert.NotContains(t, response.Body.String(), "balance_after")
+	assert.NotContains(t, f.call(t, http.MethodGet, "/api/adty/site/orders", "", "").Body.String(), "private-manual-proof")
+	for _, section := range []string{"commissions", "commission_movements"} {
+		assert.Contains(t, f.call(t, http.MethodGet, "/api/adty/site/orders/trace-mine?section="+section, "", "").Body.String(), `"success":false`)
+	}
+	for _, trade := range []string{"trace-other", "trace-main", "missing-order"} {
+		assert.Equal(t, http.StatusNotFound, f.call(t, http.MethodGet, "/api/adty/site/orders/"+trade, "", "").Code)
+	}
+	read := createAdtyScopedToken(t, f.owner.Id, "wallet:read")
+	assert.Equal(t, http.StatusOK, adtyJSON(t, f.engine, http.MethodGet, path, "", read).Code)
+	assert.Equal(t, http.StatusForbidden, adtyJSON(t, f.engine, http.MethodGet, path, "", createAdtyScopedToken(t, f.owner.Id, "wallet:write")).Code)
+	assert.Equal(t, http.StatusUnauthorized, adtyJSON(t, f.engine, http.MethodGet, path, "", "").Code)
+	assert.Equal(t, http.StatusForbidden, adtyJSON(t, f.engine, http.MethodGet, path, "", adtySessionToken(t, f.db, "trace-plain", common.RoleCommonUser)).Code)
+	require.NoError(t, f.db.Model(f.site).Update("agreement_ver", "old").Error)
+	assert.Equal(t, http.StatusForbidden, f.call(t, http.MethodGet, path, "", "").Code)
+}
+
 func TestOwnerWalletReadAPIsStayWithinSite(t *testing.T) {
 	f := newOwnerFixture(t)
 	for _, credit := range []struct {

@@ -181,6 +181,9 @@ func getRechargeAudit(c *gin.Context, ownerSiteID *int) {
 		capabilities[capability.Provider] = capability
 	}
 	for i := range orders {
+		if ownerSiteID != nil && orders[i].PaidSource == model.AdtyPaymentSourceManual {
+			orders[i].PaidTxHash = ""
+		}
 		orders[i].OrderType = "topup"
 		if orders[i].SiteId != nil {
 			orders[i].SiteName = siteNames[*orders[i].SiteId]

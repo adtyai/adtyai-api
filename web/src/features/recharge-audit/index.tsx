@@ -53,6 +53,7 @@ import {
   QueryPaymentDialog,
   RefundDialog,
 } from './components/order-action-dialogs'
+import { OrderDetailDialog } from './components/order-detail-dialog'
 import { PaymentOrphanPanel } from './components/payment-orphan-panel'
 
 const PAGE_SIZE = 20
@@ -74,6 +75,8 @@ export function RechargeAudit(props: {
   const locale = toIntlLocale(i18n.resolvedLanguage || i18n.language)
   const queryClient = useQueryClient()
   const user = useAuthStore((state) => state.auth.user)
+  const canRead =
+    props.ownerMode || canAdmin(user, ADTY_PERMISSIONS.FINANCE_READ)
   const canComplete =
     !props.ownerMode && canAdmin(user, ADTY_PERMISSIONS.FINANCE_MANUAL_CREDIT)
   const canRefund =
@@ -86,6 +89,15 @@ export function RechargeAudit(props: {
   const [completing, setCompleting] = useState<RechargeAuditOrder | null>(null)
   const [refunding, setRefunding] = useState<RechargeAuditOrder | null>(null)
   const [querying, setQuerying] = useState<RechargeAuditOrder | null>(null)
+  const [viewing, setViewing] = useState<{
+    tradeNo: string
+    userId?: number
+    ownerMode?: boolean
+    siteId?: number
+  } | null>(null)
+  useEffect(() => {
+    setViewing(null)
+  }, [user?.id, props.ownerMode, props.ownerSiteId, canRead])
   useEffect(() => {
     if (!canComplete) {
       setCompleting(null)
@@ -404,9 +416,20 @@ export function RechargeAudit(props: {
                       id: 'trade_no',
                       header: t('Order number'),
                       cell: (row) => (
-                        <code className='font-mono text-xs'>
+                        <Button
+                          variant='link'
+                          className='h-auto p-0 font-mono text-xs'
+                          onClick={() =>
+                            setViewing({
+                              tradeNo: row.trade_no,
+                              userId: user?.id,
+                              ownerMode: props.ownerMode,
+                              siteId: props.ownerSiteId,
+                            })
+                          }
+                        >
                           {row.trade_no}
-                        </code>
+                        </Button>
                       ),
                     },
                     ...(!props.ownerMode
@@ -488,6 +511,21 @@ export function RechargeAudit(props: {
 
         {!props.ownerMode && <PaymentOrphanPanel canCredit={canComplete} />}
       </div>
+      {viewing &&
+        user &&
+        viewing.userId === user.id &&
+        viewing.ownerMode === props.ownerMode &&
+        viewing.siteId === props.ownerSiteId &&
+        canRead && (
+          <OrderDetailDialog
+            key={viewing.tradeNo}
+            tradeNo={viewing.tradeNo}
+            userId={user.id}
+            ownerMode={props.ownerMode}
+            ownerSiteId={props.ownerSiteId}
+            onClose={() => setViewing(null)}
+          />
+        )}
       {canComplete && (
         <QueryPaymentDialog
           order={querying}

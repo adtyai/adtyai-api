@@ -160,6 +160,19 @@ func TestPancakeHostedTokensCheckoutAndSignedFrozenFacts(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "2.9", frozen.PaidAmount.String())
 	require.Equal(t, "2", frozen.FaceUSD.String())
+	// One signed refund request is one receipt. Provider retries retain their
+	// own receipt without creating another reconciliation item or wallet change.
+	envelope["eventType"] = "refund.succeeded"
+	data["refundTicketMerchantExternalId"] = "pancake-refund-receipt"
+	for attempt := int64(1); attempt <= 2; attempt++ {
+		require.Equal(t, http.StatusOK, post(path, key, time.Now().UnixMilli()).Code)
+		var receipts, reviews int64
+		require.NoError(t, db.Model(&model.AdtyOrderPaymentEvent{}).Where("trade_no = ? AND outcome = ? AND event_type = ?", order.TradeNo, "received", "refund.succeeded").Count(&receipts).Error)
+		require.Equal(t, attempt, receipts)
+		require.NoError(t, db.Model(&model.PaymentOrphanEvent{}).Where("reference_id = ? AND event_type = ?", order.TradeNo, "refund.succeeded").Count(&reviews).Error)
+		require.EqualValues(t, 1, reviews)
+		require.Equal(t, int(ext.CreditQuota), reloadUserQuota(t, db, user.Id))
+	}
 }
 
 func TestWaffoSignedPaymentUsesFrozenEnvironmentMerchantAndAmount(t *testing.T) {

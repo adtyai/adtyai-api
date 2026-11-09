@@ -101,6 +101,123 @@ function renderAudit(write = true, ownerMode = false) {
   )
 }
 
+function emptyTrace(ownerMode = false) {
+  return {
+    data: {
+      success: true,
+      data: {
+        order: orders.find((item) => item.trade_no === 'trade-stripe-success'),
+        refund: {
+          refunded_at: 0,
+          refund_quota: 0,
+          refund_amount: '0',
+          currency: 'USD',
+        },
+        sections: ownerMode
+          ? ['payments', 'wallet']
+          : ['payments', 'wallet', 'commissions'],
+        section: 'payments',
+        page: 1,
+        page_size: 20,
+        total: 0,
+        items: [],
+        promo_bonus_usd: '0',
+      },
+    },
+  }
+}
+
+function currentGetMock() {
+  const handler = vi.mocked(api.get).getMockImplementation()
+  if (!handler) {
+    throw new Error('Expected the network fixture to be installed')
+  }
+  return handler
+}
+
+it('uses the owner detail endpoint and hides platform commission sections', async () => {
+  const originalGet = currentGetMock()
+  vi.mocked(api.get).mockImplementation(async (url, config) => {
+    if (url === '/api/adty/site/orders/trade-stripe-success') {
+      return emptyTrace(true)
+    }
+    return originalGet(url, config)
+  })
+  renderAudit(false, true)
+  const user = userEvent.setup()
+  await user.click(
+    await screen.findByRole('button', { name: 'trade-stripe-success' })
+  )
+  const dialog = within(
+    await screen.findByRole('dialog', { name: 'Order details' })
+  )
+  expect(await dialog.findByText('No linked records')).toBeVisible()
+  expect(
+    dialog.queryByRole('option', { name: 'Commission records' })
+  ).not.toBeInTheDocument()
+  expect(
+    dialog.queryByRole('option', { name: 'Commission wallet movements' })
+  ).not.toBeInTheDocument()
+})
+
+it('shows a retry after detail loading fails and displays the recovered empty result', async () => {
+  const originalGet = currentGetMock()
+  let failed = true
+  vi.mocked(api.get).mockImplementation(async (url, config) => {
+    if (url === '/api/user/admin/finance/recharge-audit/trade-stripe-success') {
+      if (failed) {
+        return { data: { success: false, message: 'Synthetic detail failure' } }
+      }
+      return emptyTrace()
+    }
+    return originalGet(url, config)
+  })
+  renderAudit(false)
+  const user = userEvent.setup()
+  await user.click(
+    await screen.findByRole('button', { name: 'trade-stripe-success' })
+  )
+  const dialog = within(
+    await screen.findByRole('dialog', { name: 'Order details' })
+  )
+  const retry = await dialog.findByRole('button', { name: 'Retry' })
+  failed = false
+  await user.click(retry)
+  expect(await dialog.findByText('No linked records')).toBeVisible()
+})
+
+it('closes details immediately when the account changes and ignores its late response', async () => {
+  const originalGet = currentGetMock()
+  let finish: ((value: ReturnType<typeof emptyTrace>) => void) | undefined
+  vi.mocked(api.get).mockImplementation(async (url, config) => {
+    if (url === '/api/user/admin/finance/recharge-audit/trade-stripe-success') {
+      return await new Promise<ReturnType<typeof emptyTrace>>((resolve) => {
+        finish = resolve
+      })
+    }
+    return originalGet(url, config)
+  })
+  renderAudit(false)
+  const user = userEvent.setup()
+  await user.click(
+    await screen.findByRole('button', { name: 'trade-stripe-success' })
+  )
+  expect(
+    await screen.findByRole('dialog', { name: 'Order details' })
+  ).toBeVisible()
+  await waitFor(() => expect(finish).toBeTypeOf('function'))
+  act(() =>
+    useAuthStore
+      .getState()
+      .auth.setUser({ id: 3, username: 'other-finance', role: 10 })
+  )
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  await act(async () => finish?.(emptyTrace()))
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  act(() => setPermissions(false))
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+})
+
 beforeEach(() => {
   localStorage.clear()
   vi.spyOn(api, 'get').mockImplementation(async (url, config) => {
@@ -183,6 +300,79 @@ it('shows order site snapshots, explicit unknown ownership, type and completion 
   )
   expect(legacy.getByText('Unknown site')).toBeVisible()
   expect(screen.getAllByText('North Studio').length).toBeGreaterThan(0)
+})
+
+it('opens order details from the order number and paginates the selected trace section', async () => {
+  const originalGet = currentGetMock()
+  vi.mocked(api.get).mockImplementation(async (url, config) => {
+    if (url === '/api/user/admin/finance/recharge-audit/trade-stripe-success') {
+      const params = config?.params as { section: string; p: number }
+      return {
+        data: {
+          success: true,
+          data: {
+            order: orders.find(
+              (item) => item.trade_no === 'trade-stripe-success'
+            ),
+            refund: {
+              refunded_at: 0,
+              refund_quota: 0,
+              refund_amount: '0',
+              currency: 'USD',
+            },
+            section: params.section,
+            sections: [
+              'payments',
+              'wallet',
+              'bonuses',
+              'commissions',
+              'commission_movements',
+              'site_wallet',
+              'exceptions',
+              'reviews',
+            ],
+            page: params.p,
+            page_size: 20,
+            total: params.section === 'wallet' ? 21 : 1,
+            items: [
+              {
+                id: params.p,
+                kind: params.section === 'wallet' ? 'topup' : 'payment',
+                source: 'callback',
+                status: 'credited',
+                amount: '2',
+                currency: 'USD',
+                created_at: 2,
+                reference: `evidence-page-${params.p}`,
+              },
+            ],
+          },
+        },
+      }
+    }
+    return originalGet(url, config)
+  })
+  renderAudit(false)
+  const user = userEvent.setup()
+  await user.click(
+    await screen.findByRole('button', { name: 'trade-stripe-success' })
+  )
+  const dialog = within(
+    await screen.findByRole('dialog', { name: 'Order details' })
+  )
+  expect(await dialog.findByText('evidence-page-1')).toBeVisible()
+  expect(
+    dialog.getByText(
+      'Earlier payment attempts may not have been recorded. The order snapshot is not a complete callback history.'
+    )
+  ).toBeVisible()
+  await user.selectOptions(
+    dialog.getByRole('combobox', { name: 'Trace records' }),
+    'wallet'
+  )
+  await user.click(await dialog.findByRole('button', { name: 'Next' }))
+  expect(await dialog.findByText('evidence-page-2')).toBeVisible()
+  expect(dialog.getByRole('button', { name: 'Next' })).toBeDisabled()
 })
 
 it('sends the main site zero and order type filters and displays only matching orders', async () => {

@@ -22,6 +22,8 @@ import { randomBytes } from 'node:crypto'
 
 import { chromium } from 'playwright'
 
+import { verifyOrderTrace } from './browser-order-trace-checks.mjs'
+
 const base = process.env.ADTY_BROWSER_BASE_URL
 assert.ok(base && process.env.ADTY_BROWSER_SQL_DSN)
 assert.ok(['127.0.0.1', 'localhost', '[::1]'].includes(new URL(base).hostname))
@@ -267,6 +269,20 @@ try {
     console.log(
       `unified-orders: ${width}px global site/type filters, frozen ownership, legacy unknown and owner isolation passed`
     )
+  }
+  if (process.env.ADTY_BROWSER_ORDER_TRACE === '1') {
+    await verifyOrderTrace({
+      root,
+      owner,
+      buyer,
+      north,
+      south,
+      base,
+      success,
+      api,
+      postgres,
+      orderRow,
+    })
   }
   assert.deepEqual(errors, [])
   console.log(

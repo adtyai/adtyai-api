@@ -51,7 +51,7 @@ func QueryAdtyTopUp(c *gin.Context) {
 			return
 		}
 		ctx, cancel := context.WithTimeout(c.Request.Context(), 8*time.Second)
-		err := service.RecoverAdtyHostedPayment(ctx, ext)
+		err := service.RecoverAdtyHostedPaymentAs(ctx, ext, c.GetInt("id"))
 		cancel()
 		if err != nil {
 			common.ApiErrorT(c, "Payment query failed. Check the provider console or try again.")
@@ -162,6 +162,7 @@ func CreditPaymentOrphan(c *gin.Context) {
 		if err != nil {
 			return err
 		}
+		facts.OperatorId = c.GetInt("id")
 		alreadyDone, credited, topUp, ext, err = model.CompleteAdtyTopUpTx(tx, orphan.ReferenceID, facts)
 		if err != nil {
 			return err
@@ -228,11 +229,12 @@ func ManualCompleteAdtyTopUp(c *gin.Context) {
 		return
 	}
 	facts := model.AdtyPaymentFacts{
-		Provider: topUps[0].PaymentProvider,
-		Method:   topUps[0].PaymentMethod,
-		TxHash:   body.Proof,
-		Source:   model.AdtyPaymentSourceManual,
-		Payload:  common.GetJsonString(map[string]any{"proof": body.Proof, "note": body.Note, "operator": c.GetInt("id")}),
+		Provider:   topUps[0].PaymentProvider,
+		Method:     topUps[0].PaymentMethod,
+		TxHash:     body.Proof,
+		Source:     model.AdtyPaymentSourceManual,
+		Payload:    common.GetJsonString(map[string]any{"proof": body.Proof, "note": body.Note, "operator": c.GetInt("id")}),
+		OperatorId: c.GetInt("id"),
 	}
 	var topUp *model.TopUp
 	var ext *model.AdtyTopupOrder

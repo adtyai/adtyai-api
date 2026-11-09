@@ -70,6 +70,13 @@ func runAdtyEpayFollowUpQueries(now int64) {
 		result, err := adtyEpayQuery(ctx, channel, ext.TradeNo)
 		cancel()
 		if err != nil || !result.Paid {
+			outcome := "unpaid"
+			if err != nil {
+				outcome = "failed"
+			}
+			if recordErr := model.RecordAdtyPaymentAttempt(ext.TradeNo, ext.Provider, model.AdtyPaymentSourceQuery, outcome, 0); recordErr != nil {
+				common.SysError("payment attempt history could not be recorded")
+			}
 			continue
 		}
 		method := channel.MethodByTypeCode(result.TypeCode)

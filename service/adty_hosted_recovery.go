@@ -107,6 +107,12 @@ func QueryWaffoPancakePayment(ctx context.Context, ext *model.AdtyTopupOrder) (*
 // RecoverAdtyHostedPayment shares the callback's transaction and immutable
 // credit ledger. A successful retry also closes its pending query review.
 func RecoverAdtyHostedPayment(ctx context.Context, ext *model.AdtyTopupOrder) error {
+	return RecoverAdtyHostedPaymentAs(ctx, ext, 0)
+}
+
+// RecoverAdtyHostedPaymentAs records the authenticated administrator for manual
+// queries; background recovery retains actor zero.
+func RecoverAdtyHostedPaymentAs(ctx context.Context, ext *model.AdtyTopupOrder, operatorID int) error {
 	if ext == nil {
 		return model.ErrTopUpNotFound
 	}
@@ -116,12 +122,16 @@ func RecoverAdtyHostedPayment(ctx context.Context, ext *model.AdtyTopupOrder) er
 	}
 	facts, err := provider.Query(ctx, ext)
 	if err != nil {
+		if recordErr := model.RecordAdtyPaymentAttempt(ext.TradeNo, ext.Provider, model.AdtyPaymentSourceQuery, "failed", operatorID); recordErr != nil {
+			return recordErr
+		}
 		return err
 	}
 	if facts == nil {
-		return nil
+		return model.RecordAdtyPaymentAttempt(ext.TradeNo, ext.Provider, model.AdtyPaymentSourceQuery, "unpaid", operatorID)
 	}
 	facts.Source = model.AdtyPaymentSourceQuery
+	facts.OperatorId = operatorID
 	var topUp *model.TopUp
 	var frozen *model.AdtyTopupOrder
 	var credited int
@@ -137,6 +147,11 @@ func RecoverAdtyHostedPayment(ctx context.Context, ext *model.AdtyTopupOrder) er
 			"resolution_note": "Recovered by authenticated provider query", "resolved_at": common.GetTimestamp(), "update_time": common.GetTimestamp(),
 		}).Error
 	})
+	if err != nil {
+		if recordErr := model.RecordAdtyPaymentAttempt(ext.TradeNo, ext.Provider, model.AdtyPaymentSourceQuery, "rejected", operatorID); recordErr != nil {
+			return recordErr
+		}
+	}
 	if err == nil && !alreadyDone {
 		model.FinishAdtyTopUpCredit(topUp, frozen, credited, "")
 	}

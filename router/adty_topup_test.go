@@ -23,6 +23,33 @@ import (
 
 type financeQueryTransport func(*http.Request) (*http.Response, error)
 
+func TestVerifiedNonPaidCallbacksRemainTraceable(t *testing.T) {
+	f := newAdtyGuardFixture(t)
+	var root model.User
+	require.NoError(t, f.db.Where("username = ?", "guard-root").First(&root).Error)
+	seedRouterOrder(t, f.db, root.Id, "callback-history", common.TopUpStatusPending, common.GetTimestamp()+600)
+	cfg := setting.GetBEpusdtSetting()
+	previousSecret := cfg.Secret
+	cfg.Secret = "synthetic-callback-history-key"
+	t.Cleanup(func() { cfg.Secret = previousSecret })
+	for _, status := range []int{1, 3} {
+		values := map[string]any{"order_id": "callback-history", "status": status}
+		values["signature"] = service.BEpusdtSign(values, cfg.Secret)
+		payload, err := common.Marshal(values)
+		require.NoError(t, err)
+		response := adtyJSON(t, f.engine, http.MethodPost, "/api/user/bepusdt/notify", string(payload), "")
+		require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	}
+	var events []model.AdtyOrderPaymentEvent
+	require.NoError(t, f.db.Where("trade_no = ?", "callback-history").Order("id").Find(&events).Error)
+	require.Len(t, events, 2)
+	assert.Equal(t, "received", events[0].Outcome)
+	assert.Equal(t, "callback", events[0].Source)
+	var buyer model.User
+	require.NoError(t, f.db.First(&buyer, root.Id).Error)
+	assert.Zero(t, buyer.Quota)
+}
+
 func (transport financeQueryTransport) RoundTrip(request *http.Request) (*http.Response, error) {
 	return transport(request)
 }

@@ -469,6 +469,10 @@ func WaffoWebhook(c *gin.Context) {
 
 // handleWaffoPayment 处理支付完成通知
 func handleWaffoPayment(c *gin.Context, wh *core.WebhookHandler, result *core.PaymentNotificationResult, environment string) {
+	if err := model.RecordAdtyVerifiedCallback(result.MerchantOrderID, model.PaymentProviderWaffo, "payment."+string(result.OrderStatus)); err != nil {
+		sendWaffoWebhookResponse(c, wh, false, "database error")
+		return
+	}
 	if result.OrderStatus != core.OrderStatusPaySuccess {
 		logger.LogInfo(c.Request.Context(), common.LogText("Waffo order not successful, top-up skipped trade_no=%s order_status=%s client_ip=%s", result.MerchantOrderID, result.OrderStatus, c.ClientIP()))
 		// 只有关单是终态。支付中、待授权还可能变成成功，不能先标失败并让对方停止重试。

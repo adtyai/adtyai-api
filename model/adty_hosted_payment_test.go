@@ -12,7 +12,7 @@ func TestHostedProvidersSettleTheirFrozenAdtyQuota(t *testing.T) {
 	for _, provider := range []string{PaymentProviderStripe, PaymentProviderCreem, PaymentProviderWaffo, PaymentProviderWaffoPancake} {
 		t.Run(provider, func(t *testing.T) {
 			db := adtyTestDB(t)
-			require.NoError(t, db.AutoMigrate(&User{}, &TopUp{}, &AdtyTopupOrder{}, &AdtyBalanceLedger{}, &AdtyUserFingerprint{}, &PaymentOrphanEvent{}, &Log{}))
+			require.NoError(t, db.AutoMigrate(&User{}, &TopUp{}, &AdtyTopupOrder{}, &AdtyOrderPaymentEvent{}, &AdtyBalanceLedger{}, &AdtyUserFingerprint{}, &PaymentOrphanEvent{}, &Log{}))
 			user := User{Username: "hosted", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Quota: 100, Group: "default"}
 			require.NoError(t, db.Create(&user).Error)
 			topUp := TopUp{UserId: user.Id, TradeNo: "hosted-" + provider, Amount: 10, Money: 9, PaymentProvider: provider, PaymentMethod: provider, Status: common.TopUpStatusPending}

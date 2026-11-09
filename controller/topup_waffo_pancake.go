@@ -441,6 +441,13 @@ func WaffoPancakeWebhook(c *gin.Context) {
 
 	LockOrder(tradeNo)
 	defer UnlockOrder(tradeNo)
+	// Reversals record their receipt after resolving the original order below.
+	if eventType != "refund.succeeded" {
+		if err := model.RecordAdtyVerifiedCallback(tradeNo, model.PaymentProviderWaffoPancake, eventType); err != nil {
+			c.String(http.StatusInternalServerError, "retry")
+			return
+		}
+	}
 
 	ext, lookupErr := model.GetAdtyTopupOrder(tradeNo)
 	if lookupErr != nil {

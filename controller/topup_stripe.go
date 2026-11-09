@@ -211,6 +211,12 @@ func StripeWebhook(c *gin.Context) {
 	callerIp := c.ClientIP()
 	logger.LogInfo(ctx, common.LogText("Stripe webhook signature verified event_type=%s client_ip=%s path=%q", string(event.Type), callerIp, c.Request.RequestURI))
 	var handleErr error
+	if reference := event.GetObjectValue("client_reference_id"); reference != "" {
+		if err := model.RecordAdtyVerifiedCallback(reference, model.PaymentProviderStripe, string(event.Type)); err != nil {
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
+	}
 	switch event.Type {
 	case stripe.EventTypeCheckoutSessionCompleted:
 		handleErr = sessionCompleted(ctx, event, callerIp)

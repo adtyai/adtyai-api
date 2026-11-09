@@ -149,6 +149,26 @@ func TestRootBypassesGuard(t *testing.T) {
 	}
 }
 
+func TestOrderTraceReadPermissionAndRevocation(t *testing.T) {
+	f := newAdtyGuardFixture(t)
+	require.NoError(t, f.db.Create(&model.TopUp{UserId: f.admin.Id, TradeNo: "authorized-detail", PaymentProvider: model.PaymentProviderStripe}).Error)
+	require.NoError(t, f.db.Create(&model.AdtyTopupOrder{UserId: f.admin.Id, TradeNo: "authorized-detail", Provider: model.PaymentProviderStripe}).Error)
+	path := "/api/user/admin/finance/recharge-audit/authorized-detail"
+	pat := createAdtyScopedToken(t, f.admin.Id, "adty_finance:read")
+	for _, credential := range []string{f.token, pat} {
+		assert.Equal(t, http.StatusForbidden, adtyJSON(t, f.engine, http.MethodGet, path, "", credential).Code)
+		f.grant(t, authz.AdtyFinanceRead)
+		response := adtyJSON(t, f.engine, http.MethodGet, path, "", credential)
+		assert.Equal(t, http.StatusOK, response.Code, response.Body.String())
+		assert.Contains(t, response.Body.String(), `"success":true`)
+		f.grant(t)
+		assert.Equal(t, http.StatusForbidden, adtyJSON(t, f.engine, http.MethodGet, path, "", credential).Code)
+	}
+	assert.Equal(t, http.StatusOK, adtyJSON(t, f.engine, http.MethodGet, path, "", f.root).Code)
+	assert.Equal(t, http.StatusUnauthorized, adtyJSON(t, f.engine, http.MethodGet, path, "", "").Code)
+	assert.Equal(t, http.StatusForbidden, adtyJSON(t, f.engine, http.MethodGet, path, "", adtySessionToken(t, f.db, "plain-trace-reader", common.RoleCommonUser)).Code)
+}
+
 func TestRootSystemScopeCannotBeGrantedToAdmin(t *testing.T) {
 	f := newAdtyGuardFixture(t)
 	all := make([]authz.Permission, 0)

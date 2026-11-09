@@ -533,3 +533,7 @@
 | `controller/admin_finance.go`、`router/adty-router.go`及既有测试 | 统一订单投影、冻结站点/类型筛选和站点选项；新增站长订单/汇总只读端点 | 真实三库验证迁站不改历史、主站0、未知null和失效参数；站长及PAT范围强制隔离，未增加资金写入口 | M-02 |
 | `web/src/features/recharge-audit/`、`adty-site-owner/`、`hooks/use-sidebar-data.ts`、八语 | 既有订单组件复用为主后台和本站只读视图，增加站点/ID/类型/完成时间及筛选，菜单改订单管理 | 查询缓存包含账号/模式/站点，站长隐藏财务操作和全局异常面板；复用StaticDataTable/NativeSelect及状态组件，无新通用控件 | M-02 |
 | `scripts/adty/browser-business.sh`、`web/scripts/adty/browser-unified-orders.mjs` | 生产桌面/移动验证全局筛选和站长列表/越权拒绝 | 独立PG17/Redis，SQL仅准备历史订单和已迁站买家fixture，不操作真实资金 | M-02 |
+| `model/adty_order_payment_event.go`、`adty_topup_order.go`、`adty_migrate.go`及六服务回调/查询接线 | 追加安全支付接收和查询结果；成功/重放随入账事务写入，不存载荷、凭据或供应商错误 | 真实三库fresh/upgrade/重复迁移及事务失败回滚；订单归属保持冻结，重放不重复入账 | M-03 |
+| `controller/adty_order_trace.go`、`admin_finance.go`、`router/adty-router.go` | 财务/站长详情及各分区独立分页，只查询明确关联本订单的数据 | 沿用财务读取与站长wallet:read权限；冻结归属、人工凭证及后台原因脱敏，站长无主站佣金；未关联日汇总不伪造归属 | M-03 |
+| `web/src/features/recharge-audit/`、八语及静态键 | 点击订单号打开既有Dialog，组合订单快照、退款结果和StaticDataTable追溯分区 | 复用加载/错误/重试及NativeSelect；账号或权限变化关闭旧详情；明确历史接收记录不完整和线下退款 | M-03 |
+| `web/scripts/adty/browser-order-trace*.mjs`、`browser-unified-orders.mjs`、`scripts/adty/browser-business.sh` | 在原订单验收后追加真实签名通知、重放、人工补单、退款、分页和脱敏流程 | 隔离PG17/Redis及合成密钥；仅准备未付款订单fixture，真实业务API入账/退款，不操作真实商户资金 | M-03 |

@@ -295,6 +295,12 @@ func CreemWebhook(c *gin.Context) {
 	logger.LogInfo(c.Request.Context(), common.LogText("Creem webhook parsed event_type=%s event_id=%s request_id=%s order_id=%s order_status=%s", webhookEvent.EventType, webhookEvent.Id, webhookEvent.Object.RequestId, webhookEvent.Object.Order.Id, webhookEvent.Object.Order.Status))
 
 	// 根据事件类型处理不同的webhook
+	if webhookEvent.Object.RequestId != "" {
+		if err := model.RecordAdtyVerifiedCallback(webhookEvent.Object.RequestId, model.PaymentProviderCreem, webhookEvent.EventType); err != nil {
+			c.Status(http.StatusInternalServerError)
+			return
+		}
+	}
 	switch webhookEvent.EventType {
 	case "checkout.completed":
 		handleCheckoutCompleted(c, &webhookEvent, string(bodyBytes))

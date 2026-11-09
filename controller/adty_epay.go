@@ -197,11 +197,26 @@ func AdtyEpayNotify(c *gin.Context) {
 		c.String(http.StatusOK, "fail")
 		return
 	}
+	tradeNo := params["out_trade_no"]
+	ext, err := model.GetAdtyTopupOrder(tradeNo)
+	if err != nil {
+		c.String(http.StatusOK, "fail")
+		return
+	}
+	if ext != nil && ext.ChannelId == channel.Id {
+		eventType := "payment.unpaid"
+		if params["trade_status"] == "TRADE_SUCCESS" {
+			eventType = "payment.succeeded"
+		}
+		if err := model.RecordAdtyVerifiedCallback(tradeNo, model.PaymentProviderAdtyEpay, eventType); err != nil {
+			c.String(http.StatusOK, "fail")
+			return
+		}
+	}
 	if params["trade_status"] != "TRADE_SUCCESS" {
 		c.String(http.StatusOK, "success")
 		return
 	}
-	tradeNo := params["out_trade_no"]
 	if strings.HasPrefix(tradeNo, "TEST") {
 		common.SysLog(common.LogText("epay test order callback channel=%d trade_no=%s", channelID, tradeNo))
 		c.String(http.StatusOK, "success")

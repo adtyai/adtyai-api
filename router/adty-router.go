@@ -90,6 +90,7 @@ func registerAdtyFinanceRoutes(apiRouter *gin.RouterGroup) {
 	finance := apiRouter.Group("/user/admin/finance", middleware.AdminAuth())
 	handlePermissionRoute(finance, http.MethodGet, "/recharge-audit", authz.AdtyFinanceRead, controller.GetRechargeAudit)
 	handlePermissionRoute(finance, http.MethodGet, "/recharge-audit/summary", authz.AdtyFinanceRead, controller.GetRechargeAuditSummary)
+	handlePermissionRoute(finance, http.MethodGet, "/recharge-audit/:trade_no", authz.AdtyFinanceRead, controller.GetRechargeAuditOrder)
 	handlePermissionRoute(finance, http.MethodGet, "/payment-orphans", authz.AdtyFinanceRead, controller.GetPaymentOrphans)
 	handlePermissionRoute(finance, http.MethodPost, "/payment-orphans/:id/credit", authz.AdtyFinanceManualCredit, controller.CreditPaymentOrphan)
 	handlePermissionRoute(finance, http.MethodPost, "/payment-orphans/:id/resolve", authz.AdtyFinanceManualCredit, controller.ResolvePaymentOrphan)
@@ -264,6 +265,7 @@ func registerAdtyResellerRoutes(apiRouter *gin.RouterGroup) {
 		{http.MethodGet, "/wallet-ledgers", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerWalletLedger}},
 		{http.MethodGet, "/orders", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerOrders}},
 		{http.MethodGet, "/orders/summary", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerOrderSummary}},
+		{http.MethodGet, "/orders/:trade_no", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerOrder}},
 		{http.MethodGet, "/customers", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerCustomers}},
 		{http.MethodGet, "/customers/lookup", "wallet:read", []gin.HandlerFunc{controller.LookupAdtyOwnerCustomer}},
 		{http.MethodGet, "/customers/:id", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerCustomer}},

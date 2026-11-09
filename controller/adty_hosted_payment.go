@@ -81,6 +81,9 @@ func recordHostedReversal(provider, eventType, resourceID, tradeNo, voucher, pay
 			tradeNo = matches[0].TradeNo
 		}
 	}
+	if err := model.RecordAdtyVerifiedCallback(tradeNo, provider, eventType); err != nil {
+		return err
+	}
 	return model.RecordPaymentOrphanEvent(&model.PaymentOrphanEvent{
 		Provider: provider, EventID: "reversal:" + common.Sha1([]byte(provider+"|"+eventType+"|"+resourceID)), EventType: eventType,
 		ReferenceID: tradeNo, SessionID: voucher, Payload: payload,

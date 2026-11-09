@@ -184,6 +184,66 @@ export async function getRechargeAuditSummary(
   return requireServerSuccess(res.data).data
 }
 
+export type OrderTraceSection =
+  | 'payments'
+  | 'wallet'
+  | 'bonuses'
+  | 'commissions'
+  | 'commission_movements'
+  | 'site_wallet'
+  | 'exceptions'
+  | 'reviews'
+
+export type OrderTraceEntry = {
+  id: number
+  kind: string
+  source: string
+  status: string
+  created_at: number
+  reference: string
+  amount?: string
+  currency?: string
+  delta_quota?: number
+  balance_before?: string
+  balance_after?: string
+  pending_delta?: string
+  available_delta?: string
+  frozen_delta?: string
+  withdrawn_delta?: string
+  operator_id?: number
+  note?: string
+}
+
+export type OrderTrace = PageResponse<OrderTraceEntry> & {
+  order: RechargeAuditOrder
+  refund: {
+    refunded_at: number
+    refund_quota: number
+    refund_amount: string
+    currency: string
+    reason?: string
+  }
+  section: OrderTraceSection
+  sections: OrderTraceSection[]
+  promo_bonus_usd: string
+}
+
+export async function getOrderTrace(
+  tradeNo: string,
+  section: OrderTraceSection,
+  page: number,
+  ownerMode = false
+) {
+  const prefix = ownerMode
+    ? '/api/adty/site/orders'
+    : '/api/user/admin/finance/recharge-audit'
+  const res = await api.get<ApiResponse<OrderTrace>>(
+    `${prefix}/${encodeURIComponent(tradeNo)}`,
+    { params: { section, p: page, page_size: 20 } }
+  )
+  return requireServerSuccess(res.data).data
+}
+
 export async function getPaymentOrphans(status: string, page: number) {
   const res = await api.get<ApiResponse<PageResponse<PaymentOrphanEvent>>>(
     '/api/user/admin/finance/payment-orphans',

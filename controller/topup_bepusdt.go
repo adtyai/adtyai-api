@@ -136,6 +136,19 @@ func BEpusdtTopUpNotify(c *gin.Context) {
 	}
 	tradeNo := model.PaymentOrphanPayloadString(values, "order_id")
 	status := model.PaymentOrphanPayloadString(values, "status")
+	eventType := "payment.other"
+	switch status {
+	case "1":
+		eventType = "payment.pending"
+	case "2":
+		eventType = "payment.succeeded"
+	case "3":
+		eventType = "payment.expired"
+	}
+	if err := model.RecordAdtyVerifiedCallback(tradeNo, model.PaymentProviderAdtyBEpusdt, eventType); err != nil {
+		c.String(http.StatusInternalServerError, "fail")
+		return
+	}
 	if status != "2" {
 		// 待支付期间每分钟推一次 status=1，超时推 status=3，都不入账。
 		c.String(http.StatusOK, "ok")

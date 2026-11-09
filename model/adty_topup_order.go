@@ -103,6 +103,7 @@ type AdtyPaymentFacts struct {
 	ProductId        string
 	MerchantId       string
 	Environment      string
+	OperatorId       int // Server-side actor; zero denotes a provider or maintenance task.
 }
 
 var (
@@ -208,7 +209,8 @@ func CompleteAdtyTopUpTx(tx *gorm.DB, tradeNo string, facts AdtyPaymentFacts) (a
 		if adtyPaymentVoucherDiffers(ext, facts) {
 			return false, 0, topUp, ext, ErrAdtyDuplicatePayment
 		}
-		return true, 0, topUp, ext, nil
+		err = appendAdtyPaymentEventTx(tx, ext, facts.Source, "replayed", facts.OperatorId)
+		return true, 0, topUp, ext, err
 	case common.TopUpStatusPending, common.TopUpStatusExpired, common.TopUpStatusFailed, TopUpStatusCanceled:
 	default:
 		return false, 0, nil, nil, ErrTopUpStatusInvalid
@@ -286,7 +288,8 @@ func CompleteAdtyTopUpTx(tx *gorm.DB, tradeNo string, facts AdtyPaymentFacts) (a
 			return false, 0, nil, nil, err
 		}
 	}
-	return false, credited, topUp, ext, nil
+	err = appendAdtyPaymentEventTx(tx, ext, facts.Source, "credited", facts.OperatorId)
+	return false, credited, topUp, ext, err
 }
 
 // adtyPaymentVoucherDiffers is true when a completed order is notified again
@@ -372,10 +375,12 @@ func CompleteAdtyTopUp(tradeNo string, facts AdtyPaymentFacts, callerIp string) 
 		return txErr
 	})
 	if errors.Is(err, ErrAdtyDuplicatePayment) {
+		recordAdtyRejectedPayment(tradeNo, facts)
 		recordDuplicatePaymentReview(tradeNo, facts, err)
 		return false, err
 	}
 	if err != nil {
+		recordAdtyRejectedPayment(tradeNo, facts)
 		return false, err
 	}
 	if alreadyDone {
