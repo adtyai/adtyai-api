@@ -435,6 +435,8 @@ Logo：PNG、JPEG 或不含脚本的 SVG，不超过 200 KB，存在 `/data/uplo
 
 **流式保活**：上游的 ping（`general_setting.ping_interval_enabled` 默认关、`ping_interval_seconds` 默认 60，后台在「系统设置 → 模型 → Global Model Configuration」的「Keep-alive Ping」）现在对所有流式格式（Realtime 除外）在请求上游之前就开始发 `: PING`，一直到第一次写出数据，最长 120 分钟，避免推理模型首字超过 125 秒被 Cloudflare 以 524 断开。上线时打开，间隔设 30 秒。限制：原生 Gemini 流式（`/v1beta`）上游本来关掉了 ping，现在首字前也会收到 ping（提前保活不看这个开关，对 Gemini 客户端的影响没有核实）；第一次 ping 发出后状态码固定为 200，之后上游再出错只能在流里返回错误事件。任务 7.5。
 
+**Realtime 连接与用量**：双向 WebSocket 消息遵守 `MAX_REQUEST_BODY_MB` 上限（未设或非正时为 128 MiB）。客户端输入与上游输出的共享计量、工具和音频配置受同一锁保护；请求取消直接关闭连接并等待两读协程停止后结算。任一方向结束或客户端写失败时，先通知对端关闭，最多收敛 2 秒；写入上限为 30 秒。无 `response` 的 `response.done` 使用本地计量回退；预扣失败也只向最终结算累计一次该段用量。这些连接回归不代表全部协议或全平台资金验收已经通过。
+
 ## 官方价、接入文档、条款
 
 **官方价**：主节点启动时同步一次，之后每 24 小时（环境变量 `ADTY_OFFICIAL_PRICE_SYNC_HOURS`）从 models.dev 拉取输入、输出、缓存读、缓存写的每百万 tokens 美元价，存进 `adty_official_prices`；失败保留旧数据。只更新有映射、没开「手动覆盖」的行；没映射的模型按 `adty_official_price_setting.auto_map_providers`（默认 anthropic、openai、google、deepseek、xai、mistral）找完全同名的自动映射。按次价只能手填。价格页和首页显示「省 X%」= 1 − 本站价 ÷ 官方价（按输入价、美元，向下取整到整数百分比，为负显示「—」）。后台「系统设置 → 计费 → Official Prices」（只有超级管理员）：改映射、价格、手动覆盖，立即同步。公开接口 `GET /api/adty/pricing/official`。限制：不开手动覆盖时手填的价格会被下次同步改回；没有删除接口；`auto_map_providers` 没有后台界面。任务 8.4、8.5。

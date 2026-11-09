@@ -486,3 +486,5 @@
 | `.github/workflows/ci.yml` | 为真实备份脚本边界测试安装 python3/libpq5 | PostgreSQL 官方连接解析及密码保护不可跳过 | R-04 |
 | `model/option.go` | 配置存储边界加密分站secret；加载失败清空此域凭证并继续其他设置，批量写锁序固定 | Cloudflare Token 加密存储、历史升级及失败关闭 | R-05 |
 | `service/referral_test.go` | 用真实登录指纹落库值尝试解密配置凭据 | 防止业务HMAC输出与凭据加密key重合 | R-05 |
+| `relay/channel/openai/relay_realtime.go` | 串行保护共享用量/音频配置，监听请求取消，限制双向帧大小，关闭时有界收敛并等待读协程，失败预扣段只累计一次，兼容缺失 response 的完成事件 | 防止 Realtime 用量丢失/重复累计、panic 及连接资源泄漏 | G-01 |
+| `relay/channel/openai/relay_realtime_test.go` | 用真实双向 WebSocket 覆盖取消、写失败、双向超限、并发精确用量与真实隔离 PostgreSQL 余额不足 | 验证 Realtime 生命周期及失败预扣计量回归 | G-01 |
