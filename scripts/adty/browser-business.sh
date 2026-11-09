@@ -90,14 +90,17 @@ adty_created_database=1
 export ADTY_BROWSER_DATABASE="$adty_database"
 adty_sql_dsn=$(python3 - <<'PY'
 import os
-from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, quote, urlencode, urlsplit
 dsn = os.environ['ADTY_TEST_PG_DSN']
 database = os.environ['ADTY_BROWSER_DATABASE']
 if dsn.startswith(('postgres://', 'postgresql://')):
     url = urlsplit(dsn)
     query = [(key, value) for key, value in parse_qsl(url.query, keep_blank_values=True)
              if key.lower() not in ('dbname', 'database')]
-    print(urlunsplit(url._replace(path='/' + quote(database, safe=''), query=urlencode(query))))
+    derived = url.scheme + '://' + url.netloc + '/' + quote(database, safe='')
+    if query:
+        derived += '?' + urlencode(query)
+    print(derived)
 else:
     print(dsn + ' dbname=' + database)
 PY
@@ -146,7 +149,8 @@ echo 'browser-business: production frontend build and eight-language prerender p
 GOWORK=off go build -o "$adty_tmpdir/new-api" . >"$adty_tmpdir/backend-build.log" 2>&1
 echo 'browser-business: production backend build passed'
 
-export ADTY_BROWSER_BASE_URL="http://127.0.0.1:$adty_api_port"
+# A fresh runtime allows the default ServerAddress host, localhost, before setup.
+export ADTY_BROWSER_BASE_URL="http://localhost:$adty_api_port"
 export ADTY_BROWSER_USERNAME=browserroot
 export ADTY_BROWSER_PASSWORD
 ADTY_BROWSER_PASSWORD=$(python3 -c 'import secrets; print("LocalGate!" + secrets.token_hex(16))')
@@ -167,7 +171,7 @@ python3 - <<'PY'
 import json
 import os
 import time
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 base = os.environ['ADTY_BROWSER_BASE_URL']
@@ -181,6 +185,8 @@ while True:
         assert setup['data']['database_type'] == 'postgres', setup
         assert not setup['data']['status'] and not setup['data']['root_init'], 'Database is not empty'
         break
+    except HTTPError as error:
+        raise RuntimeError(f'Isolated setup endpoint returned HTTP {error.code}') from None
     except (URLError, TimeoutError):
         os.kill(int(os.environ['ADTY_BROWSER_BACKEND_PID']), 0)
         if time.monotonic() >= deadline:
