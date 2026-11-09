@@ -21,6 +21,21 @@ func (d mysqlMigrationDialector) Migrator(db *gorm.DB) gorm.Migrator {
 
 type mysqlSchemaMigrator struct{ mysql.Migrator }
 
+// MySQL 5.7.8 defaults to COMPACT, whose 767-byte index limit rejects
+// existing schemas such as the 512-character Passkey credential identifier.
+// DYNAMIC retains full unique keys with InnoDB large-prefix support.
+func (m mysqlSchemaMigrator) CreateTable(values ...any) error {
+	options := ""
+	if configured, ok := m.DB.Get("gorm:table_options"); ok {
+		options = fmt.Sprint(configured)
+	}
+	if !strings.Contains(strings.ToUpper(options), "ROW_FORMAT") {
+		options = strings.TrimSpace(options + " ROW_FORMAT=DYNAMIC")
+	}
+	m.Migrator.DB = m.DB.Set("gorm:table_options", options)
+	return m.Migrator.CreateTable(values...)
+}
+
 func (m mysqlSchemaMigrator) MigrateColumn(value any, field *schema.Field, column gorm.ColumnType) error {
 	if !field.HasDefaultValue || !strings.EqualFold(column.DatabaseTypeName(), "decimal") {
 		return m.Migrator.MigrateColumn(value, field, column)

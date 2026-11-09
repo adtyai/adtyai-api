@@ -191,7 +191,7 @@ func TestMarketingRemovalDatabaseMatrix(t *testing.T) {
 	for _, dialect := range []string{"sqlite", "mysql", "postgres"} {
 		for _, upgrade := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/upgrade=%v", dialect, upgrade), func(t *testing.T) {
-				db := marketingMigrationDatabase(t, dialect)
+				db := isolatedMigrationTestDatabase(t, dialect)
 				require.NoError(t, db.AutoMigrate(&Option{}))
 				oldPromo := *adty_setting.GetPromoSetting()
 				oldPolicy := requestPolicySnapshot.Load()
@@ -288,7 +288,7 @@ func TestMarketingRemovalDatabaseMatrix(t *testing.T) {
 	}
 }
 
-func marketingMigrationDatabase(t *testing.T, dialect string) *gorm.DB {
+func isolatedMigrationTestDatabase(t *testing.T, dialect string) *gorm.DB {
 	t.Helper()
 	if dialect == "postgres" {
 		if os.Getenv("ADTY_TEST_PG_DSN") == "" {
@@ -320,7 +320,7 @@ func marketingMigrationDatabase(t *testing.T, dialect string) *gorm.DB {
 		cfg.DBName = fmt.Sprintf("codex_adty_mkt_%d", time.Now().UnixNano())
 		require.NoError(t, admin.Exec("CREATE DATABASE ?", clause.Table{Name: cfg.DBName}).Error)
 		t.Cleanup(func() { assert.NoError(t, admin.Exec("DROP DATABASE ?", clause.Table{Name: cfg.DBName}).Error) })
-		driver = mysql.Open(cfg.FormatDSN())
+		driver = mysqlMigrationDialector{mysql.Dialector{Config: &mysql.Config{DSN: cfg.FormatDSN()}}}
 	}
 	db, err := gorm.Open(driver, &gorm.Config{})
 	require.NoError(t, err)

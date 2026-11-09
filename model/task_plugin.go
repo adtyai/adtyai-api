@@ -114,7 +114,7 @@ func lockTaskPluginKey(tx *gorm.DB, key string) error {
 }
 
 // EnsureTaskPluginOneActiveIndex keeps one active override per plugin key.
-// Existing duplicates keep the newest row. The partial index then rejects a
+// Existing duplicates keep the newest row. The conditional index then rejects a
 // second active row instead of letting two publishes both succeed.
 func EnsureTaskPluginOneActiveIndex(db *gorm.DB) error {
 	if db == nil || !db.Migrator().HasTable(&TaskPlugin{}) {
@@ -124,13 +124,13 @@ func EnsureTaskPluginOneActiveIndex(db *gorm.DB) error {
 		UPDATE task_plugins SET active = false
 		WHERE active = true AND id NOT IN (
 			SELECT id FROM (
-				SELECT MAX(id) AS id FROM task_plugins WHERE active = true GROUP BY key
+				SELECT MAX(id) AS id FROM task_plugins WHERE active = true GROUP BY ?
 			) AS keepers
 		)
-	`).Error; err != nil {
+	`, clause.Column{Name: "key"}).Error; err != nil {
 		return fmt.Errorf("collapse duplicate active task plugins: %w", err)
 	}
-	if err := db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS ux_task_plugins_one_active ON task_plugins (key) WHERE active").Error; err != nil {
+	if err := ensureConditionalUniqueIndex(db, "task_plugins", "ux_task_plugins_one_active", "key", "active"); err != nil {
 		return fmt.Errorf("create task plugin active index: %w", err)
 	}
 	return nil

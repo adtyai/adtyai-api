@@ -12,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
+	"github.com/go-sql-driver/mysql"
 	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 )
@@ -400,7 +401,7 @@ func adtyStripGroupPrefix(key string) string {
 	return key
 }
 
-// IsAdtyUniqueViolation reports a unique-index conflict from PostgreSQL or SQLite.
+// IsAdtyUniqueViolation reports a unique-index conflict from a supported database.
 func IsAdtyUniqueViolation(err error) bool {
 	return isAdtyUniqueViolation(err)
 }
@@ -414,6 +415,10 @@ func isAdtyUniqueViolation(err error) bool {
 	}
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		return true
+	}
+	var mysqlErr *mysql.MySQLError
+	if errors.As(err, &mysqlErr) && mysqlErr.Number == 1062 {
 		return true
 	}
 	text := err.Error()

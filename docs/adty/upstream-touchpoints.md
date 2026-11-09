@@ -12,6 +12,10 @@
 - 任务：实施方案里的任务号。
 
 | 上游文件 | 改了什么 | 为什么 | 任务 |
+| `model/user.go` | OAuth 身份与单 Root 索引调用统一条件唯一索引 helper | MySQL 不支持原部分索引语法，不能放弃数据库约束 | R-02 |
+| `model/task_plugin.go` | 活动插件索引调用统一 helper；历史折叠查询引用保留字 key | MySQL 完整启动及单活动版本约束 | R-02 |
+| `model/model_meta.go` | 未删除模型名索引调用统一 helper | 三库保留同名历史和活动名称唯一性 | R-02 |
+| `model/migration_dialector.go` | MySQL CreateTable 默认 DYNAMIC，保留显式行格式和其他表选项 | 最低支持版本 COMPACT 的索引长度限制不能容纳现有 Passkey | R-02 |
 | `router/api-router.go` | 上游单通道易支付下单和回调、Stripe/Creem/Waffo 下单和回调、签到、旧管理员补单改成 `middleware.AdtyClosedFeature`，在登录中间件之前拒绝 | 这些入口能绕过统一订单、加赠、佣金和余额流水入账；规范明确不做签到和未配置的卡支付 | 审查 v3 |
 | `router/relay-router.go` | `/pg` 在 `Distribute` 之前挂 `AdtyUserLimit` | 演练场是可用的文本入口，必须和 `/v1` 共用按用户的 RPM/TPM/并发限制 | 审查 v3 |
 | `controller/topup.go` | `GetTopUpInfo` 不再返回上游易支付、Stripe、Creem、Waffo 的开关和支付方式 | 钱包不能展示已经关掉的充值入口 | 审查 v3 |

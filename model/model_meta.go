@@ -252,7 +252,7 @@ func EnsureLiveModelNameIndex(db *gorm.DB) error {
 	`).Error; err != nil {
 		return err
 	}
-	return db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS uk_models_live_name ON models (model_name) WHERE deleted_at IS NULL").Error
+	return ensureConditionalUniqueIndex(db, "models", "uk_models_live_name", "model_name", "deleted_at IS NULL")
 }
 
 func assertLiveModelNameAvailable(tx *gorm.DB, id int, name string) error {

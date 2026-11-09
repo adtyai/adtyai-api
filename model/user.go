@@ -1235,7 +1235,7 @@ func GetUniqueUserByEmail(email string) (*User, error) {
 }
 
 // AssignBuiltinProviderIDsWithTx writes the built-in provider ids for a user
-// that was just inserted. A partial unique index makes a repeated subject fail
+// that was just inserted. A conditional unique index makes a repeated subject fail
 // inside this statement instead of landing on two users.
 func AssignBuiltinProviderIDsWithTx(tx *gorm.DB, user *User) error {
 	if tx == nil || user == nil || user.Id <= 0 {
@@ -1255,7 +1255,7 @@ func AssignBuiltinProviderIDsWithTx(tx *gorm.DB, user *User) error {
 	return err
 }
 
-// EnsureBuiltinOAuthSubjectIndexes adds partial unique indexes for the built-in
+// EnsureBuiltinOAuthSubjectIndexes adds conditional unique indexes for the built-in
 // OAuth columns. Empty values stay unrestricted. Existing duplicates stop the
 // migration instead of being kept.
 func EnsureBuiltinOAuthSubjectIndexes(db *gorm.DB) error {
@@ -1277,11 +1277,7 @@ func EnsureBuiltinOAuthSubjectIndexes(db *gorm.DB) error {
 		if duplicates > 0 {
 			return fmt.Errorf("duplicate %s bindings must be resolved before the unique index", column)
 		}
-		statement := fmt.Sprintf(
-			"CREATE UNIQUE INDEX IF NOT EXISTS ux_users_%[1]s_subject ON users (%[1]s) WHERE %[1]s <> ''",
-			column,
-		)
-		if err := db.Exec(statement).Error; err != nil {
+		if err := ensureConditionalUniqueIndex(db, "users", "ux_users_"+column+"_subject", column, column+" <> ''"); err != nil {
 			return fmt.Errorf("create builtin oauth subject index %s: %w", column, err)
 		}
 	}
@@ -1733,11 +1729,9 @@ func EnsureOneRootUserIndex(db *gorm.DB) error {
 	if roots > 1 {
 		return nil
 	}
-	// SQLite 不允许部分索引的 WHERE 里出现参数，角色值是常量，直接写进语句。
-	return db.Exec(fmt.Sprintf(
-		"CREATE UNIQUE INDEX IF NOT EXISTS ux_users_one_live_root ON users (role) WHERE role = %d AND deleted_at IS NULL",
-		common.RoleRootUser,
-	)).Error
+	// SQLite 不允许部分索引的 WHERE 里出现参数，角色值是常量。
+	return ensureConditionalUniqueIndex(db, "users", "ux_users_one_live_root", "role",
+		fmt.Sprintf("role = %d AND deleted_at IS NULL", common.RoleRootUser))
 }
 
 // CreateRootUserIfAbsent 在初始化锁里创建根账号。并发初始化只会留下一个。
