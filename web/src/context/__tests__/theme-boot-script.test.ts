@@ -29,10 +29,15 @@ const html = readFileSync(
   resolve(import.meta.dirname, '../../../index.html'),
   'utf8'
 )
-const bootScript = html.match(/<script>([\s\S]*?)<\/script>/)?.[1] ?? ''
+const bootScripts = Array.from(
+  html.matchAll(/<script>([\s\S]*?)<\/script>/g),
+  (match) => match[1]
+)
 
 function runBootScript() {
-  new Function(bootScript)()
+  for (const script of bootScripts) {
+    new Function(script)()
+  }
 }
 
 function mockSystemDarkMode(dark: boolean) {

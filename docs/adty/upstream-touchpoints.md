@@ -497,3 +497,9 @@
 | `scripts/adty/browser-business.sh`、`web/scripts/adty/browser-site-status.mjs` | 新增独立 PostgreSQL/Redis 生产浏览器场景，验证桌面/移动委派管理、直接请求拒绝及 Root 页面关站与审计 | 避免长钱包场景耗尽默认验证限流，不放宽生产限制 | FIN-I-05 |
 | `model/adty_site.go`、`model/adty_site_user_test.go` | 迁移按 ID 锁用户和 Token，同事务软撤销旧 Key 并递增认证版本，提交后发布用户版本与清理缓存；真实三库验证回滚及 MySQL/PG 创建先后顺序 | 永久撤销旧秘密，保留历史事实，阻止恢复旧用户 hash 后误用原站点归属；浏览器需重新登录 | FIN-I-06 凭证子步骤 |
 | `router/adty_site_context_test.go`、`service/referral_test.go` | 主站/分站及即时/定时迁移验证模型、只读用量和日志鉴权，真实 Redis 恢复旧 hash/generation；共享关站 fixture 补 Token 表 | 保护新 Key 与其他客户凭证，覆盖真实关站调用路径；资金及在途结清仍未关闭 | FIN-I-06 凭证子步骤 |
+| `controller/misc.go`、`router/adty_site_brand_test.go` | 按用户所属主站/分站生成 fragment 重置链接，回归含加号邮箱 | 避免新邮件凭证进入首次文档 HTTP 请求 | AUTH-RESET-01 |
+| `web/index.html`、`web/src/routes/(auth)/user/reset.tsx` | 资源加载前捕获新旧链接并清 URL，路由接收临时内存凭证后删除读取器，复用现有重置表单 | 清 URL 后仍能提交；刷新不恢复凭证，不写持久存储 | AUTH-RESET-01 |
+| `middleware/security_headers.go`、`middleware/auth_origin_test.go`、`deploy/adty/nginx.conf` | 重置入口含尾斜杠使用 no-referrer；代理日志去掉旧 query 并遮蔽重置 Referer | 防止同源资源泄露凭证，保留其他入口既有策略；仓外代理与历史日志另验 | AUTH-RESET-01 |
+| `scripts/adty/browser-business.sh`、`web/scripts/adty/browser-password-reset.mjs` | 独立 PostgreSQL/Redis/生产 Chromium 验证新旧链接、桌面/移动、提交参数、清 URL 和刷新失效 | 真实后端拒绝合成凭证；不将该浏览器场景宣称为成功重置全链或整体 ASVS 合规 | AUTH-RESET-01 |
+| `web/src/context/__tests__/theme-boot-script.test.ts` | 按 HTML 顺序执行所有无属性 inline classic scripts，保留原 light/dark 断言 | 新重置 bootstrap 在主题脚本之前运行，测试不能再假定主题是第一个脚本 | AUTH-RESET-01 |
+| `web/src/components/ai-elements/code-block.tsx`、`__tests__/code-block-copy.test.tsx` | 复制反馈只保留最新一次计时，卸载清理并忽略已离开页面的异步回执 | 完整测试实际捕获卸载后定时更新；现有 CopyButton/useCopyToClipboard 不提供原 Error 回调契约，保留本组件 API | 本批门禁附带修复 |

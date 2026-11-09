@@ -319,7 +319,7 @@ func SendPasswordResetEmail(c *gin.Context) {
 		} else {
 			// 二开：链接和站名用用户所属的站点，不读 Host 头（任务 11.3）
 			site := service.AdtySiteForUser(user.Id)
-			link := fmt.Sprintf("%s/user/reset?email=%s&token=%s", service.AdtySiteBaseURL(site), url.QueryEscape(email), url.QueryEscape(code))
+			link := fmt.Sprintf("%s/user/reset#email=%s&token=%s", service.AdtySiteBaseURL(site), url.QueryEscape(email), url.QueryEscape(code))
 			lang := user.GetSetting().Language
 			if lang == "" {
 				lang = i18n.StatedLang(c)

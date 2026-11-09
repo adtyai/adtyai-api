@@ -2,6 +2,34 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!-- Capture reset credentials before assets and analytics see the URL.
+         Only the reset route reads this temporary in-memory value. -->
+    <script>
+      ;(function () {
+        if (!/^\/user\/reset\/?$/.test(window.location.pathname)) return
+        var policy = document.createElement('meta')
+        policy.name = 'referrer'
+        policy.content = 'no-referrer'
+        document.head.appendChild(policy)
+        var fragment = new URLSearchParams(window.location.hash.slice(1))
+        var params =
+          fragment.has('email') || fragment.has('token')
+            ? fragment
+            : new URLSearchParams(window.location.search)
+        var credentials = {
+          email: params.get('email') || undefined,
+          token: params.get('token') || undefined,
+        }
+        window.history.replaceState(
+          window.history.state,
+          '',
+          window.location.pathname
+        )
+        window.__adtyReadPasswordResetLink = function () {
+          return credentials
+        }
+      })()
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="google" content="notranslate" />
 

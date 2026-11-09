@@ -16,7 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { createFileRoute, useSearch } from '@tanstack/react-router'
+import { createFileRoute, useNavigate, useSearch } from '@tanstack/react-router'
+import { useEffect, useState } from 'react'
 
 import {
   ResetPasswordConfirm,
@@ -24,13 +25,36 @@ import {
 } from '@/features/auth/reset-password-confirm'
 
 export const Route = createFileRoute('/(auth)/user/reset')({
+  validateSearch: (
+    search: Record<string, unknown>
+  ): ResetPasswordSearchParams => ({
+    email: typeof search.email === 'string' ? search.email : undefined,
+    token: typeof search.token === 'string' ? search.token : undefined,
+  }),
   component: UserResetPassword,
 })
 
 function UserResetPassword() {
+  const navigate = useNavigate()
   const search = useSearch({
     from: '/(auth)/user/reset',
-  }) as ResetPasswordSearchParams
+  })
+  const browser = window as Window & {
+    __adtyReadPasswordResetLink?: () => ResetPasswordSearchParams
+  }
+  const [credentials, setCredentials] = useState(
+    () => browser.__adtyReadPasswordResetLink?.() ?? search
+  )
+  useEffect(() => {
+    const read = browser.__adtyReadPasswordResetLink
+    delete browser.__adtyReadPasswordResetLink
+    if (read || search.email !== undefined || search.token !== undefined) {
+      setCredentials(read?.() ?? { email: search.email, token: search.token })
+      void navigate({ to: '/user/reset', search: {}, hash: '', replace: true })
+    }
+  }, [browser, navigate, search.email, search.token])
 
-  return <ResetPasswordConfirm email={search?.email} token={search?.token} />
+  return (
+    <ResetPasswordConfirm email={credentials.email} token={credentials.token} />
+  )
 }

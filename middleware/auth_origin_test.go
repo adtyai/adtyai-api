@@ -67,6 +67,29 @@ func TestSessionCookieOriginGuard(t *testing.T) {
 	}
 }
 
+func TestPasswordResetReferrerPolicy(t *testing.T) {
+	for _, test := range []struct {
+		path string
+		want string
+	}{
+		{"/user/reset?email=person%40example.com&token=private-proof", "no-referrer"},
+		{"/user/reset/?email=person%40example.com&token=private-proof", "no-referrer"},
+		{"/user/reset", "no-referrer"},
+		{"/reset", "strict-origin-when-cross-origin"},
+		{"/user/reset-other", "strict-origin-when-cross-origin"},
+		{"/api/status", "strict-origin-when-cross-origin"},
+	} {
+		t.Run(test.path, func(t *testing.T) {
+			engine := gin.New()
+			engine.Use(SecurityHeaders())
+			engine.NoRoute(func(c *gin.Context) { c.Status(http.StatusOK) })
+			response := httptest.NewRecorder()
+			engine.ServeHTTP(response, httptest.NewRequest(http.MethodGet, test.path, nil))
+			assert.Equal(t, test.want, response.Header().Get("Referrer-Policy"))
+		})
+	}
+}
+
 func TestCORSDoesNotAllowCredentialedArbitraryOrigin(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()

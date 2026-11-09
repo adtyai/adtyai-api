@@ -651,6 +651,16 @@ export const CodeBlockCopyButton = ({
   const { t } = useTranslation()
   const [isCopied, setIsCopied] = useState(false)
   const { code } = useContext(CodeBlockContext)
+  const mounted = useRef(true)
+  const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+      if (resetTimer.current !== null) clearTimeout(resetTimer.current)
+    }
+  }, [])
 
   const copyToClipboard = async () => {
     if (typeof window === 'undefined' || !navigator?.clipboard?.writeText) {
@@ -660,11 +670,16 @@ export const CodeBlockCopyButton = ({
 
     try {
       await navigator.clipboard.writeText(code)
+      if (!mounted.current) return
+      if (resetTimer.current !== null) clearTimeout(resetTimer.current)
       setIsCopied(true)
+      resetTimer.current = setTimeout(() => {
+        resetTimer.current = null
+        setIsCopied(false)
+      }, timeout)
       onCopy?.()
-      setTimeout(() => setIsCopied(false), timeout)
     } catch (error) {
-      onError?.(error as Error)
+      if (mounted.current) onError?.(error as Error)
     }
   }
 

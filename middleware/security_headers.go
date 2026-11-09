@@ -27,6 +27,9 @@ func SecurityHeaders() gin.HandlerFunc {
 		c.Header("X-Content-Type-Options", "nosniff")
 		c.Header("X-Frame-Options", "DENY")
 		c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
+		if c.Request.URL.Path == "/user/reset" || c.Request.URL.Path == "/user/reset/" {
+			c.Header("Referrer-Policy", "no-referrer")
+		}
 		c.Header("Content-Security-Policy", "frame-ancestors 'none'")
 		// Home handlers overwrite this when the page is allowed to be indexed.
 		c.Header("X-Robots-Tag", "noindex")
