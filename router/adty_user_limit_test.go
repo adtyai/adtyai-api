@@ -62,10 +62,8 @@ func TestAdtyLimitMountedOnResponses(t *testing.T) {
 	}
 }
 
-// Playground uses a dashboard session, not an API key, and still spends the
-// same per-user RPM budget. A used-up user must be rejected before a channel
-// is chosen.
-func TestAdtyLimitMountedOnPlayground(t *testing.T) {
+// Retiring the console feature must also remove its session-backed relay.
+func TestRetiredPlaygroundEndpointIsNotRegistered(t *testing.T) {
 	f := newAdtyGuardFixture(t)
 	require.NoError(t, i18n.Init())
 	setting := adty_setting.GetLimitSetting()
@@ -78,17 +76,20 @@ func TestAdtyLimitMountedOnPlayground(t *testing.T) {
 
 	engine := gin.New()
 	SetRelayRouter(engine)
+	SetWebRouter(engine, WebAssets{IndexPage: []byte("dashboard")}, func(c *gin.Context) { c.Next() })
 
 	session := adtySessionToken(t, f.db, "pg-limited", common.RoleCommonUser)
 	var user model.User
 	require.NoError(t, f.db.Where("username = ?", "pg-limited").First(&user).Error)
 	_, _ = store.IncrRPM(user.Id, adtylimit.MinuteOf(now))
 
-	req := httptest.NewRequest(http.MethodPost, "/pg/chat/completions", strings.NewReader(`{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}]}`))
-	req.Header.Set("Authorization", "Bearer "+session)
-	req.Header.Set("Content-Type", "application/json")
-	recorder := httptest.NewRecorder()
-	engine.ServeHTTP(recorder, req)
-	assert.Equal(t, http.StatusTooManyRequests, recorder.Code, recorder.Body.String())
-	assert.NotEmpty(t, recorder.Header().Get("Retry-After"))
+	for _, authorization := range []string{"", "Bearer " + session} {
+		req := httptest.NewRequest(http.MethodPost, "/pg/chat/completions", strings.NewReader(`{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}]}`))
+		req.Header.Set("Authorization", authorization)
+		req.Header.Set("Content-Type", "application/json")
+		recorder := httptest.NewRecorder()
+		engine.ServeHTTP(recorder, req)
+		assert.Equal(t, http.StatusNotFound, recorder.Code, recorder.Body.String())
+		assert.Empty(t, recorder.Header().Get("Retry-After"))
+	}
 }

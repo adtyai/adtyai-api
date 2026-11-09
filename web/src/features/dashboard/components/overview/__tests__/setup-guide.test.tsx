@@ -154,6 +154,10 @@ describe('overview setup guide', () => {
     await waitFor(() =>
       expect(screen.getByRole('button', { name: /^API Keys/ })).toBeVisible()
     )
+    expect(
+      screen.getByRole('link', { name: /Send a request/ })
+    ).toHaveAttribute('href', '/docs')
+    expect(document.querySelector('a[href="/playground"]')).toBeNull()
 
     await user.keyboard(' ')
     expect(toggle).toHaveAttribute('aria-expanded', 'false')

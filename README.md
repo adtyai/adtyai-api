@@ -140,7 +140,7 @@ Accounts, channels, plugin installation states, usage, prices, and costs shown b
 | Usage and costs | Manage quotas, subscriptions, usage logs, cache accounting, and expression-based pricing for different usage tiers |
 | Access control | Manage users, groups, fine-grained permissions, and API key restrictions; use OAuth/OIDC, passkeys, two-factor authentication, and login session management |
 | Asynchronous tasks | Extend image, video, and other task APIs with JavaScript plugins, including task status and output retrieval |
-| Web console | Configure channels and models, inspect usage and audit logs, and try models in the playground; available in English, Simplified Chinese, Traditional Chinese, French, Japanese, Russian, and Vietnamese |
+| Web console | Configure channels and models, inspect usage and audit logs; available in English, Simplified Chinese, Traditional Chinese, French, Japanese, Russian, and Vietnamese |
 
 ### Protocols and endpoints
 

@@ -23,6 +23,7 @@ func SetWebRouter(router *gin.Engine, assets WebAssets, pluginDispatcher gin.Han
 	compress := gzip.Gzip(gzip.DefaultCompression)
 
 	router.NoRoute(
+		rejectRetiredPlaygroundPath,
 		pluginDispatcher,
 		middleware.RouteTag("web"),
 		func(c *gin.Context) {
@@ -46,4 +47,11 @@ func SetWebRouter(router *gin.Engine, assets WebAssets, pluginDispatcher gin.Han
 			c.Data(http.StatusOK, "text/html; charset=utf-8", assets.IndexPage)
 		},
 	)
+}
+
+func rejectRetiredPlaygroundPath(c *gin.Context) {
+	if c.Request.URL.Path == "/pg" || strings.HasPrefix(c.Request.URL.Path, "/pg/") {
+		controller.RelayNotFound(c)
+		c.Abort()
+	}
 }

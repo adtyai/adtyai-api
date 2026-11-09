@@ -125,7 +125,7 @@ Utilisez-la pour partager des accès autorisés au sein d'une équipe, changer d
 | Usages et coûts | Quotas, abonnements, journaux d'utilisation, comptabilisation du cache et tarification par paliers fondée sur des expressions |
 | Contrôle d'accès | Utilisateurs, groupes, permissions fines et restrictions des clés API ; OAuth/OIDC, clés d'accès, double authentification et gestion des sessions |
 | Tâches asynchrones | Extensions JavaScript pour les API de tâches d'image, de vidéo et autres, avec suivi d'état et récupération des résultats |
-| Console web | Gestion des canaux et modèles, journaux d'utilisation et d'audit, playground ; interface en anglais, chinois simplifié et traditionnel, français, japonais, russe et vietnamien |
+| Console web | Gestion des canaux et modèles, journaux d'utilisation et d'audit ; interface en anglais, chinois simplifié et traditionnel, français, japonais, russe et vietnamien |
 
 ### Protocoles et points d'accès
 

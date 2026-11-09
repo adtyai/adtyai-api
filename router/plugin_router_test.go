@@ -380,6 +380,44 @@ func TestSetRouterIncludesAdtyWebRoutesInPluginConflictSnapshot(t *testing.T) {
 	assert.Contains(t, registry.RoutingErrors()[plugin.Meta.Key], "intersects static route")
 }
 
+func TestRetiredPlaygroundPathBeatsPluginDispatcher(t *testing.T) {
+	outer := gin.New()
+	SetWebRouter(outer, WebAssets{IndexPage: []byte("dashboard")}, func(c *gin.Context) {
+		c.String(http.StatusOK, "plugin")
+		c.Abort()
+	})
+
+	recorder := performPluginRequest(outer, http.MethodPost, "/pg/chat/completions")
+	assert.Equal(t, http.StatusNotFound, recorder.Code)
+	assert.Contains(t, recorder.Body.String(), "Invalid URL")
+}
+
+func TestPlaygroundNamespaceRemainsReservedForPlugins(t *testing.T) {
+	_, err := jsplugin.CompilePlugin(routerPluginSource("retired-playground", "1.0.0", `[
+		{method: "POST", path: "/pg/chat/completions", type: "dynamic"}
+	]`), jsplugin.Options{Key: "retired-playground", Version: "1.0.0"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "reserved namespace /pg")
+}
+
+func TestExternalFrontendRejectsRetiredPlaygroundPath(t *testing.T) {
+	previousRegistry := jsplugin.DefaultRegistry
+	jsplugin.DefaultRegistry = jsplugin.NewRegistry()
+	t.Cleanup(func() { jsplugin.DefaultRegistry = previousRegistry })
+	previousMaster := common.IsMasterNode
+	common.IsMasterNode = false
+	t.Cleanup(func() { common.IsMasterNode = previousMaster })
+	t.Setenv("FRONTEND_BASE_URL", "https://frontend.example.test")
+	t.Setenv("TRUSTED_PROXIES", "")
+
+	engine := gin.New()
+	SetRouter(engine, WebAssets{})
+	recorder := performPluginRequest(engine, http.MethodPost, "/pg/chat/completions")
+	assert.Equal(t, http.StatusNotFound, recorder.Code)
+	assert.Contains(t, recorder.Body.String(), "Invalid URL")
+	assert.Empty(t, recorder.Header().Get("Location"))
+}
+
 func TestStaticConflictingUpdateRetainsIncumbentAndPublishesHealthyPeer(t *testing.T) {
 	outer := newOuterPluginTestEngine()
 	outer.GET("/core/:id", func(c *gin.Context) { c.String(http.StatusOK, "static") })

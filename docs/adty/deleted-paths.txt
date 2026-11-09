@@ -75,3 +75,9 @@ web/src/features/home/lib/
 
 # 站长自助申请分站（最新产品范围）
 web/src/features/referral/components/site-apply-card.tsx
+
+# Playground（最新产品范围）
+web/src/features/playground/
+web/src/routes/_authenticated/playground/
+controller/playground.go
+relaykit/dto/playground.go

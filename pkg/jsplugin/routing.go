@@ -433,6 +433,7 @@ var reservedRouteNamespaces = []string{
 	"/keys",
 	"/models",
 	"/playground",
+	"/pg",
 	"/profile",
 	"/redemption-codes",
 	"/subscriptions",

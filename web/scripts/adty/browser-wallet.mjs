@@ -194,6 +194,10 @@ try {
     }
     const chatMenu = page.getByRole('button', { name: 'Chat', exact: true })
     await chatMenu.waitFor()
+    assert.equal(
+      await page.getByRole('link', { name: 'Playground', exact: true }).count(),
+      0
+    )
     assert.equal(await chatMenu.getAttribute('aria-expanded'), 'false')
     const mutations = []
     const trackMutation = (request) => {
@@ -229,6 +233,31 @@ try {
     'PASS desktop/mobile active submenu defaults folded, label/arrow/keyboard toggles, active link and no business mutations'
   )
   await page.setViewportSize({ width: 1440, height: 1000 })
+  await page.goto(base + '/playground')
+  await page.getByRole('heading', { name: '404', exact: true }).waitFor()
+  assert.equal(
+    await page.getByRole('link', { name: 'Playground', exact: true }).count(),
+    0
+  )
+  await page.goto(base + '/console/playground')
+  await page.waitForURL('**/dashboard')
+  await page.getByRole('heading', { name: 'Overview', exact: true }).waitFor()
+  assert.equal(await page.locator('a[href="/playground"]').count(), 0)
+  for (const headers of [{}, authHeaders]) {
+    const retired = await fetch(base + '/pg/chat/completions', {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'gpt-4o',
+        messages: [{ role: 'user', content: 'hi' }],
+      }),
+    })
+    assert.equal(retired.status, 404)
+    assert.ok(retired.headers.get('content-type')?.includes('application/json'))
+  }
+  console.log(
+    'PASS retired Playground page 404, legacy bookmark dashboard fallback, absent menu/shortcuts and anonymous/session API 404'
+  )
   await page.goto(`${base}/wallet`)
   await page.getByLabel('Custom amount (USD)', { exact: true }).waitFor()
   await api('put', '/api/option/', {

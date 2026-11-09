@@ -428,3 +428,7 @@
 | `controller/responses_websocket.go` | 每条 `response.create` 重新鉴权时固定使用已认证握手的实际 Host | 内部合成请求不能改变站点身份，分站长连接继续按本站身份鉴权 | 全平台验收 B/P |
 | `middleware/model-rate-limit.go`、`middleware/model_rate_limit_test.go` | Redis 启用但客户端为空且存在次数限制时拒绝请求，保留未限流/关闭限流的正常请求；补真实中间件五项回归 | 防止成功次数及总次数检查空指针，依赖异常不能放行受限请求 | 全平台验收 R/S |
 | `web/src/components/layout/components/{nav-group.tsx,chat-presets-item.tsx}` | 子菜单默认折叠，移除当前路由自动展开；既有 Collapsible 保留用户选择和子项高亮 | 最新菜单规则，减少初始占用空间 | 全平台验收 A |
+| `router/{relay-router.go,web-router.go}`、`middleware/{distributor.go,access_token_routes.go}` | 删除 Playground 会话中转路由、专用分组解析和令牌规则；退役 `/pg` 路径不再回退 HTML 成功页 | 最新产品范围删除 Playground | 全平台验收 A/S |
+| `router/main.go`、`pkg/jsplugin/routing.go` | 外置前端模式也在插件分发前拒绝 `/pg`；插件路由保留 `/pg` 命名空间，不能重新接管退役接口 | 防止部署模式或插件重新暴露旧接口 | 全平台验收 A/S |
+| `model/user.go`、`controller/user.go`、`web/src/hooks/{use-sidebar-data.ts,use-sidebar-config.ts}`、`web/src/features/{profile/components/sidebar-modules-card.tsx,system-settings/maintenance/config.ts,system-settings/maintenance/sidebar-modules-section.tsx}` | 移除 Playground 菜单和默认开关，管理员旧配置不再呈现该开关 | 历史设置不能重新暴露退役入口 | 全平台验收 A |
+| `web/src/features/dashboard/components/overview/overview-dashboard.tsx`、`web/src/lib/legacy-route.ts`、`web/src/routeTree.gen.ts` | 首次请求快捷入口指向已有 API 文档；旧书签回仪表盘；构建重新生成路由树 | 清除页面、路由及旧链接残留 | 全平台验收 A |

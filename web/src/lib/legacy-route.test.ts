@@ -30,7 +30,6 @@ describe('legacy frontend route migration', () => {
       '/console/deployment': '/models/deployments',
       '/console/channel': '/channels',
       '/console/token': '/keys',
-      '/console/playground': '/playground',
       '/console/user': '/users',
       '/console/personal': '/profile',
       '/console/log': '/usage-logs',
@@ -85,6 +84,10 @@ describe('legacy frontend route migration', () => {
     )
     expect(resolveLegacyRoute('/console/subscription')).toBe('/dashboard')
     expect(resolveLegacyRoute('/console/redemption')).toBe('/dashboard')
+    expect(resolveLegacyRoute('/console/playground?model=old#chat')).toBe(
+      '/dashboard?model=old#chat'
+    )
+    expect(resolveLegacyRoute('/playground')).toBe(null)
     expect(resolveLegacyRoute('/dashboard')).toBe(null)
     expect(resolveLegacyRoute('/api/status')).toBe(null)
   })

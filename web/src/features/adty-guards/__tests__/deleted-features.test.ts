@@ -24,7 +24,10 @@ import { renderHook } from '@testing-library/react'
 import { createElement, type ReactNode } from 'react'
 import { describe, expect, it } from 'vitest'
 
-import { SIDEBAR_MODULES_DEFAULT } from '@/features/system-settings/maintenance/config'
+import {
+  parseSidebarModulesAdmin,
+  SIDEBAR_MODULES_DEFAULT,
+} from '@/features/system-settings/maintenance/config'
 import { useSidebarData } from '@/hooks/use-sidebar-data'
 
 // Subscriptions, redemption codes and upstream invite rewards were deleted in
@@ -61,11 +64,23 @@ describe('deleted features stay deleted', () => {
 
     expect(routeTree).not.toContain('/_authenticated/subscriptions/')
     expect(routeTree).not.toContain('/_authenticated/redemption-codes/')
+    expect(routeTree).not.toContain('/_authenticated/playground/')
   })
 
   it('keeps the deleted modules out of the admin sidebar defaults', () => {
     expect(SIDEBAR_MODULES_DEFAULT.admin).not.toHaveProperty('subscription')
     expect(SIDEBAR_MODULES_DEFAULT.admin).not.toHaveProperty('redemption')
+    expect(SIDEBAR_MODULES_DEFAULT.chat).not.toHaveProperty('playground')
+  })
+
+  it('drops the retired Playground switch when loading legacy sidebar settings', () => {
+    const config = parseSidebarModulesAdmin(
+      JSON.stringify({
+        chat: { enabled: false, playground: true, chat: false },
+      })
+    )
+
+    expect(config.chat).toEqual({ enabled: false, chat: false })
   })
 
   it('keeps the deleted pages out of the sidebar menu', () => {
@@ -88,7 +103,9 @@ describe('deleted features stay deleted', () => {
     expect(
       urls.filter(
         (url) =>
-          url.includes('/subscriptions') || url.includes('/redemption-codes')
+          url.includes('/subscriptions') ||
+          url.includes('/redemption-codes') ||
+          url.includes('/playground')
       )
     ).toEqual([])
   })

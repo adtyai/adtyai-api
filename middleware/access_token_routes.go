@@ -270,9 +270,6 @@ var accessTokenRouteRules = map[string]accessTokenRouteRule{
 	"PUT /api/deployments/:id/name":                     accessTokenScopeRule("deployment:write"),
 	"POST /api/deployments/:id/extend":                  accessTokenScopeRule("deployment:write"),
 	"DELETE /api/deployments/:id":                       accessTokenScopeRule("deployment:write"),
-
-	// router/relay-router.go
-	"POST /pg/chat/completions": accessTokenSessionRule,
 }
 
 var (

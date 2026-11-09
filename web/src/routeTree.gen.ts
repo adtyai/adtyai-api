@@ -52,7 +52,6 @@ import { Route as AuthenticatedMarketingIndexRouteImport } from './routes/_authe
 import { Route as AuthenticatedModelsIndexRouteImport } from './routes/_authenticated/models/index'
 import { Route as AuthenticatedModelsSectionRouteImport } from './routes/_authenticated/models/$section'
 import { Route as AuthenticatedPaymentChannelsIndexRouteImport } from './routes/_authenticated/payment-channels/index'
-import { Route as AuthenticatedPlaygroundIndexRouteImport } from './routes/_authenticated/playground/index'
 import { Route as AuthenticatedProfileIndexRouteImport } from './routes/_authenticated/profile/index'
 import { Route as AuthenticatedRechargeAuditIndexRouteImport } from './routes/_authenticated/recharge-audit/index'
 import { Route as AuthenticatedReferralIndexRouteImport } from './routes/_authenticated/referral/index'
@@ -310,12 +309,6 @@ const AuthenticatedPaymentChannelsIndexRoute =
     path: '/payment-channels/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
-const AuthenticatedPlaygroundIndexRoute =
-  AuthenticatedPlaygroundIndexRouteImport.update({
-    id: '/playground/',
-    path: '/playground/',
-    getParentRoute: () => AuthenticatedRouteRoute,
-  } as any)
 const AuthenticatedProfileIndexRoute =
   AuthenticatedProfileIndexRouteImport.update({
     id: '/profile/',
@@ -559,7 +552,6 @@ export interface FileRoutesByFullPath {
   '/marketing/': typeof AuthenticatedMarketingIndexRoute
   '/models/': typeof AuthenticatedModelsIndexRoute
   '/payment-channels/': typeof AuthenticatedPaymentChannelsIndexRoute
-  '/playground/': typeof AuthenticatedPlaygroundIndexRoute
   '/profile/': typeof AuthenticatedProfileIndexRoute
   '/recharge-audit/': typeof AuthenticatedRechargeAuditIndexRoute
   '/referral/': typeof AuthenticatedReferralIndexRoute
@@ -635,7 +627,6 @@ export interface FileRoutesByTo {
   '/marketing': typeof AuthenticatedMarketingIndexRoute
   '/models': typeof AuthenticatedModelsIndexRoute
   '/payment-channels': typeof AuthenticatedPaymentChannelsIndexRoute
-  '/playground': typeof AuthenticatedPlaygroundIndexRoute
   '/profile': typeof AuthenticatedProfileIndexRoute
   '/recharge-audit': typeof AuthenticatedRechargeAuditIndexRoute
   '/referral': typeof AuthenticatedReferralIndexRoute
@@ -715,7 +706,6 @@ export interface FileRoutesById {
   '/_authenticated/marketing/': typeof AuthenticatedMarketingIndexRoute
   '/_authenticated/models/': typeof AuthenticatedModelsIndexRoute
   '/_authenticated/payment-channels/': typeof AuthenticatedPaymentChannelsIndexRoute
-  '/_authenticated/playground/': typeof AuthenticatedPlaygroundIndexRoute
   '/_authenticated/profile/': typeof AuthenticatedProfileIndexRoute
   '/_authenticated/recharge-audit/': typeof AuthenticatedRechargeAuditIndexRoute
   '/_authenticated/referral/': typeof AuthenticatedReferralIndexRoute
@@ -794,7 +784,6 @@ export interface FileRouteTypes {
     | '/marketing/'
     | '/models/'
     | '/payment-channels/'
-    | '/playground/'
     | '/profile/'
     | '/recharge-audit/'
     | '/referral/'
@@ -870,7 +859,6 @@ export interface FileRouteTypes {
     | '/marketing'
     | '/models'
     | '/payment-channels'
-    | '/playground'
     | '/profile'
     | '/recharge-audit'
     | '/referral'
@@ -949,7 +937,6 @@ export interface FileRouteTypes {
     | '/_authenticated/marketing/'
     | '/_authenticated/models/'
     | '/_authenticated/payment-channels/'
-    | '/_authenticated/playground/'
     | '/_authenticated/profile/'
     | '/_authenticated/recharge-audit/'
     | '/_authenticated/referral/'
@@ -1310,13 +1297,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedPaymentChannelsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/_authenticated/playground/': {
-      id: '/_authenticated/playground/'
-      path: '/playground'
-      fullPath: '/playground/'
-      preLoaderRoute: typeof AuthenticatedPlaygroundIndexRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
     '/_authenticated/profile/': {
       id: '/_authenticated/profile/'
       path: '/profile'
@@ -1658,7 +1638,6 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedMarketingIndexRoute: typeof AuthenticatedMarketingIndexRoute
   AuthenticatedModelsIndexRoute: typeof AuthenticatedModelsIndexRoute
   AuthenticatedPaymentChannelsIndexRoute: typeof AuthenticatedPaymentChannelsIndexRoute
-  AuthenticatedPlaygroundIndexRoute: typeof AuthenticatedPlaygroundIndexRoute
   AuthenticatedProfileIndexRoute: typeof AuthenticatedProfileIndexRoute
   AuthenticatedRechargeAuditIndexRoute: typeof AuthenticatedRechargeAuditIndexRoute
   AuthenticatedReferralIndexRoute: typeof AuthenticatedReferralIndexRoute
@@ -1692,7 +1671,6 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedModelsIndexRoute: AuthenticatedModelsIndexRoute,
   AuthenticatedPaymentChannelsIndexRoute:
     AuthenticatedPaymentChannelsIndexRoute,
-  AuthenticatedPlaygroundIndexRoute: AuthenticatedPlaygroundIndexRoute,
   AuthenticatedProfileIndexRoute: AuthenticatedProfileIndexRoute,
   AuthenticatedRechargeAuditIndexRoute: AuthenticatedRechargeAuditIndexRoute,
   AuthenticatedReferralIndexRoute: AuthenticatedReferralIndexRoute,
