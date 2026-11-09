@@ -17,20 +17,28 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 // Same patterns as service/referral_withdraw.go: TRON base58 for TRC20,
-// 0x + 40 hex characters for BEP20 and Polygon.
-export const USDT_NETWORKS = ['TRC20', 'BEP20', 'POLYGON'] as const
+// 0x + 40 hex characters for BEP20, Polygon and X Layer.
+export const USDT_NETWORKS = ['TRC20', 'BEP20', 'POLYGON', 'XLAYER'] as const
 export type UsdtNetwork = (typeof USDT_NETWORKS)[number]
 
 const PATTERNS: Record<UsdtNetwork, RegExp> = {
   TRC20: /^T[1-9A-HJ-NP-Za-km-z]{33}$/,
   BEP20: /^0x[0-9a-fA-F]{40}$/,
   POLYGON: /^0x[0-9a-fA-F]{40}$/,
+  XLAYER: /^0x[0-9a-fA-F]{40}$/,
 }
 
 export const ADDRESS_HINTS: Record<UsdtNetwork, string> = {
   TRC20: 'Starts with T, 34 characters',
   BEP20: 'Starts with 0x, 42 characters',
   POLYGON: 'Starts with 0x, 42 characters',
+  XLAYER: 'Starts with 0x, 42 characters',
+}
+
+export function usdtNetworkLabel(network: string): string {
+  if (network === 'XLAYER') return 'X Layer'
+  if (network === 'POLYGON') return 'Polygon'
+  return network
 }
 
 export function isValidUsdtAddress(

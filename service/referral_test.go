@@ -35,7 +35,12 @@ import (
 
 func prepareReferralDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db := adtyTestDB(t)
+	return prepareReferralDialectDB(t, "postgres")
+}
+
+func prepareReferralDialectDB(t *testing.T, dialect string) *gorm.DB {
+	t.Helper()
+	db := referralOrderMatrixDB(t, dialect)
 	// Notification cleanup owns a permanent pool worker. Start it before
 	// taking the baseline so the first wallet test can drain its transient work.
 	cleanupOnce.Do(startCleanupTask)
@@ -1076,6 +1081,86 @@ func TestWithdrawUSDTRules(t *testing.T) {
 	assert.InDelta(t, 148, w.NetAmount, 1e-9)
 	assert.InDelta(t, 2, w.FeeAmount, 1e-9)
 	assert.InDelta(t, 150, account(t, db, affiliate.Id).FrozenAmount, 1e-9)
+}
+
+func TestWithdrawUSDTNetworkLifecycleDatabaseMatrix(t *testing.T) {
+	const tron = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"
+	const evm = "0x52908400098527886E0F7030069857D2E4169EE7"
+	oldEmail := sendReferralWithdrawalEmail
+	sendReferralWithdrawalEmail = func(int, *model.ReferralWithdrawal, bool, string) {}
+	t.Cleanup(func() { sendReferralWithdrawalEmail = oldEmail })
+	for _, dialect := range []string{"sqlite", "mysql", "postgres"} {
+		t.Run(dialect, func(t *testing.T) {
+			db := prepareReferralDialectDB(t, dialect)
+			other := referralUser(t, db, "network-other")
+			for _, tc := range []struct{ network, address, invalid string }{
+				{"TRC20", tron, evm},
+				{"BEP20", evm, tron},
+				{"POLYGON", evm, tron},
+				{"XLAYER", evm, tron},
+			} {
+				t.Run(tc.network, func(t *testing.T) {
+					affiliate := availableAffiliate(t, db, "network-"+tc.network, 200)
+					input := ReferralWithdrawalCreateInput{
+						UserId: affiliate.UserId, Amount: decimal.NewFromInt(50), AccountType: model.ReferralWithdrawToUSDT,
+						AccountNetwork: " " + strings.ToLower(tc.network) + " ", AccountNo: " " + tc.address + " ", IdempotencyKey: "network-" + tc.network + "-cancel",
+					}
+					invalid := input
+					for _, address := range []string{tc.invalid, "", "0x123", evm[:41] + "G"} {
+						invalid.AccountNo = address
+						_, err := Referral.CreateWithdrawal(invalid)
+						require.Error(t, err, "invalid address %q must not freeze money", address)
+					}
+					invalid.AccountNetwork, invalid.AccountNo = "UNKNOWN", evm
+					_, err := Referral.CreateWithdrawal(invalid)
+					require.Error(t, err)
+					assert.InDelta(t, 200, account(t, db, affiliate.Id).AvailableAmount, 1e-9)
+					assert.Zero(t, account(t, db, affiliate.Id).FrozenAmount)
+					w, err := Referral.CreateWithdrawal(input)
+					require.NoError(t, err)
+					assert.Equal(t, tc.network, w.AccountNetwork)
+					assert.Equal(t, tc.address, w.AccountNo)
+					assert.InDelta(t, 2, w.FeeAmount, 1e-9)
+					assert.InDelta(t, 48, w.NetAmount, 1e-9)
+					replay, err := Referral.CreateWithdrawal(input)
+					require.NoError(t, err)
+					assert.Equal(t, w.Id, replay.Id)
+					assert.InDelta(t, 150, account(t, db, affiliate.Id).AvailableAmount, 1e-9)
+					assert.InDelta(t, 50, account(t, db, affiliate.Id).FrozenAmount, 1e-9)
+					require.Error(t, Referral.CancelWithdrawal(w.Id, other.Id, w.SubmittedAt+1))
+					require.Error(t, Referral.MarkWithdrawalPaid(w.Id, 1, "synthetic-txid", "", "", "", ""))
+					require.NoError(t, Referral.CancelWithdrawal(w.Id, affiliate.UserId, w.SubmittedAt+1))
+					assert.InDelta(t, 200, account(t, db, affiliate.Id).AvailableAmount, 1e-9)
+					assert.Zero(t, account(t, db, affiliate.Id).FrozenAmount)
+					input.IdempotencyKey = "network-" + tc.network + "-reject"
+					w, err = Referral.CreateWithdrawal(input)
+					require.NoError(t, err)
+					require.NoError(t, Referral.ReviewWithdrawal(w.Id, 1, false, "synthetic rejection", "", ""))
+					assert.InDelta(t, 200, account(t, db, affiliate.Id).AvailableAmount, 1e-9)
+					assert.Zero(t, account(t, db, affiliate.Id).FrozenAmount)
+					input.IdempotencyKey = "network-" + tc.network + "-paid"
+					w, err = Referral.CreateWithdrawal(input)
+					require.NoError(t, err)
+					require.NoError(t, Referral.ReviewWithdrawal(w.Id, 1, true, "", "", ""))
+					require.Error(t, Referral.MarkWithdrawalPaid(w.Id, 1, "", "", "", "", ""), "a transaction ID is required")
+					require.NoError(t, Referral.MarkWithdrawalPaid(w.Id, 1, "synthetic-txid-"+tc.network, "", "", "", ""))
+					require.Error(t, Referral.MarkWithdrawalPaid(w.Id, 1, "synthetic-txid-"+tc.network, "", "", "", ""))
+					acc := account(t, db, affiliate.Id)
+					assert.InDelta(t, 150, acc.AvailableAmount, 1e-9)
+					assert.Zero(t, acc.FrozenAmount)
+					assert.InDelta(t, 50, acc.WithdrawnAmount, 1e-9)
+					var saved model.ReferralWithdrawal
+					require.NoError(t, db.First(&saved, w.Id).Error)
+					assert.Equal(t, tc.network, saved.AccountNetwork)
+					assert.Equal(t, tc.address, saved.AccountNo)
+					assert.Equal(t, model.ReferralWithdrawalStatusPaid, saved.Status)
+					var payouts int64
+					require.NoError(t, db.Model(&model.ReferralCommissionLedger{}).Where("withdrawal_id = ? AND type = ?", w.Id, "withdraw_paid").Count(&payouts).Error)
+					assert.EqualValues(t, 1, payouts)
+				})
+			}
+		})
+	}
 }
 
 func setCNYRate(t *testing.T, rate string) {

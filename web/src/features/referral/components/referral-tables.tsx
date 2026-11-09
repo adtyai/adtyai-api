@@ -38,6 +38,7 @@ import {
   REFERRAL_PAGE_SIZE,
   referralQueryKeys,
 } from '../api'
+import { usdtNetworkLabel } from '../lib/address'
 import {
   COMMISSION_STATUS_LABELS,
   COMMISSION_STATUS_VARIANTS,
@@ -118,7 +119,7 @@ export function CommissionTable() {
 /** Where the money goes: chain + address, payee, or balance. */
 function withdrawalTarget(row: ReferralWithdrawal): string {
   if (row.account_type === 'usdt') {
-    return `${row.account_network} ${row.account_no}`
+    return `${usdtNetworkLabel(row.account_network)} ${row.account_no}`
   }
   if (row.account_type === 'balance') return ''
   return row.account_name

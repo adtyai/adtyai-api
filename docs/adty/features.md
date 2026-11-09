@@ -205,7 +205,7 @@
 - **冻结和结算**：入账时插一条计佣任务，主节点每 60 秒（环境变量 `REFERRAL_SETTLEMENT_INTERVAL_SECONDS`）跑一轮：先生成待结算佣金（`冻结到 = 现在 + freeze_days`，默认 7 天），再把到期的转成可提现。佣金最多晚一轮才出现。
 - **提现**（`/referral` 页的提现抽屉）：
   - **转入余额**：随时、免费、免审，立即到账，额度 = 金额 × QuotaPerUnit（向下取整），写余额流水 `commission_transfer`。
-  - **USDT**：先选链（TRC20、BEP20、Polygon）再填地址，按链校验地址；实到 = 金额 − `usdt_withdraw_fee`；要达到 `min_withdraw_usd`；人工审核，打款时填交易哈希。
+  - **USDT**：先选链（TRC20、BEP20、Polygon、X Layer）再填地址，按链校验地址；TRC20使用T开头的34位base58格式，其余三网使用0x开头的40位十六进制地址。X Layer接口及存储代码为`XLAYER`，选择器、二次确认、本人记录及后台审核显示X Layer。实到 = 金额 − `usdt_withdraw_fee`；要达到 `min_withdraw_usd`；人工审核，打款时填交易哈希。格式校验不代表已确认链上地址归属，不会自动发起转账。
   - **支付宝、微信收款码**：上传收款码和收款人姓名，免手续费，要达到 `min_withdraw_usd`；汇率 `withdraw_cny_rate` 由管理员实时改，提交时直接查库，和用户看到的不一样就让用户确认新汇率，一样就锁进提现单；人工审核。
   - 防并发多提：条件更新 `可提现 ≥ 金额`，加幂等键。提交后 `cancel_window_minutes`（默认 30 分钟）内待审核的单可以撤回。驳回要填原因，会解冻并发邮件。
 - **防刷**：被邀请人注册时的 IP 或设备和推广人 `self_invite_window_days`（默认 30 天）内用过的相同，照样绑定但标成自邀、不计佣；同一个推广员 `batch_register_window_hours`（默认 24 小时）内同一个 IP 的绑定达到 `batch_register_threshold`（默认 3）个，停这个推广员的结算。IP 和 UA 只存哈希。

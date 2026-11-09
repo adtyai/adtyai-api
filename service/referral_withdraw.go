@@ -22,7 +22,10 @@ var (
 	ErrReferralRateUnset     = errors.New("withdrawal exchange rate is not set")
 	tronAddressPattern       = regexp.MustCompile(`^T[1-9A-HJ-NP-Za-km-z]{33}$`)
 	evmAddressPattern        = regexp.MustCompile(`^0x[0-9a-fA-F]{40}$`)
-	referralWithdrawNetworks = map[string]*regexp.Regexp{"TRC20": tronAddressPattern, "BEP20": evmAddressPattern, "POLYGON": evmAddressPattern}
+	referralWithdrawNetworks = map[string]*regexp.Regexp{
+		"TRC20": tronAddressPattern, "BEP20": evmAddressPattern,
+		"POLYGON": evmAddressPattern, "XLAYER": evmAddressPattern,
+	}
 )
 
 // ReferralWithdrawalCreateInput 是一笔提现申请。
@@ -30,7 +33,7 @@ type ReferralWithdrawalCreateInput struct {
 	UserId          int
 	Amount          decimal.Decimal
 	AccountType     string // balance | usdt | alipay | wechat
-	AccountNetwork  string // TRC20 | BEP20 | POLYGON（只有 usdt 用）
+	AccountNetwork  string // TRC20 | BEP20 | POLYGON | XLAYER（只有 usdt 用）
 	AccountNo       string // USDT 地址
 	AccountName     string // 收款人姓名（支付宝、微信必填）
 	QRImageURL      string
@@ -83,7 +86,7 @@ func currentWithdrawCNYRateTx(tx *gorm.DB) (decimal.Decimal, int64, error) {
 	return rate, updated.IntPart(), nil
 }
 
-// ValidateUSDTAddress 按链校验地址：TRC20 是 T 开头的 base58；BEP20 和 Polygon 是 0x 开头的 40 位十六进制。
+// ValidateUSDTAddress 按链校验地址：TRC20 是 T 开头的 base58；BEP20、Polygon 和 X Layer 是 0x 开头的 40 位十六进制。
 func ValidateUSDTAddress(network, address string) bool {
 	pattern, ok := referralWithdrawNetworks[strings.ToUpper(network)]
 	return ok && pattern.MatchString(strings.TrimSpace(address))

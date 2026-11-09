@@ -34,6 +34,7 @@ import { NativeSelect } from '@/components/ui/native-select'
 import { Textarea } from '@/components/ui/textarea'
 import { uploadReferralAsset } from '@/features/referral/api'
 import { PageSwitcher } from '@/features/referral/components/page-switcher'
+import { usdtNetworkLabel } from '@/features/referral/lib/address'
 import {
   WITHDRAWAL_STATUS_LABELS,
   WITHDRAWAL_STATUS_VARIANTS,
@@ -60,7 +61,9 @@ function PayeeCell(props: { row: ReferralWithdrawal }) {
   if (row.account_type === 'usdt') {
     return (
       <div className='flex flex-col gap-1'>
-        <span className='font-medium'>{row.account_network}</span>
+        <span className='font-medium'>
+          {usdtNetworkLabel(row.account_network)}
+        </span>
         <div className='flex items-center gap-1'>
           <span className='font-mono text-xs break-all'>{row.account_no}</span>
           <CopyButton

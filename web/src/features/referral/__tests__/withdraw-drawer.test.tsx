@@ -17,24 +17,44 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { WithdrawDrawer } from '../components/withdraw-drawer'
-import type { ReferralProfile } from '../types'
+import type { ReferralProfile, ReferralWithdrawal } from '../types'
 
 const api = vi.hoisted(() => ({
-  createReferralWithdrawal: vi.fn(),
-  uploadReferralAsset: vi.fn(),
+  post: vi.fn(),
 }))
-vi.mock('../api', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../api')>()),
-  ...api,
-}))
+vi.mock('@/lib/api', () => ({ api }))
 
 const TRON = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t'
+const EVM = '0x52908400098527886E0F7030069857D2E4169EE7'
+
+const withdrawal: ReferralWithdrawal = {
+  id: 1,
+  affiliate_id: 1,
+  user_id: 7,
+  amount: 150,
+  fee_amount: 2,
+  net_amount: 148,
+  account_type: 'usdt',
+  account_network: 'XLAYER',
+  account_no: EVM,
+  account_name: '',
+  qr_image_url: '',
+  cny_rate: '',
+  cny_amount: '',
+  admin_note: '',
+  payment_txn_no: '',
+  payment_proof_url: '',
+  status: 'pending',
+  reject_reason: '',
+  submitted_at: 1_700_000_000,
+  paid_at: 0,
+}
 
 function makeProfile(
   overrides: Partial<ReferralProfile> = {}
@@ -98,8 +118,8 @@ function renderDrawer(profile = makeProfile()) {
 }
 
 beforeEach(() => {
-  api.createReferralWithdrawal.mockReset()
-  api.uploadReferralAsset.mockReset()
+  api.post.mockReset()
+  api.post.mockResolvedValue({ data: { success: true, data: withdrawal } })
 })
 
 describe('WithdrawDrawer USDT', () => {
@@ -113,10 +133,6 @@ describe('WithdrawDrawer USDT', () => {
   })
 
   it('shows amount minus the fee in the confirmation before submitting', async () => {
-    api.createReferralWithdrawal.mockResolvedValue({
-      kind: 'ok',
-      withdrawal: { id: 1 },
-    })
     const user = userEvent.setup()
     renderDrawer()
     await user.click(screen.getByRole('button', { name: 'USDT' }))
@@ -125,10 +141,11 @@ describe('WithdrawDrawer USDT', () => {
     await user.type(screen.getByLabelText('USDT address'), TRON)
     await user.click(screen.getByRole('button', { name: 'Submit' }))
     expect(screen.getByTestId('usdt-net')).toHaveTextContent('148.00')
-    expect(api.createReferralWithdrawal).not.toHaveBeenCalled()
+    expect(api.post).not.toHaveBeenCalled()
     await user.click(screen.getByRole('button', { name: 'Confirm' }))
     await waitFor(() =>
-      expect(api.createReferralWithdrawal).toHaveBeenCalledWith(
+      expect(api.post).toHaveBeenCalledWith(
+        '/api/user/referral/withdrawals',
         expect.objectContaining({
           amount: '150.00',
           account_type: 'usdt',
@@ -151,19 +168,79 @@ describe('WithdrawDrawer USDT', () => {
     )
     expect(screen.getByRole('button', { name: 'Submit' })).toBeDisabled()
   })
+
+  it('confirms X Layer and sends its network with the EVM address', async () => {
+    const user = userEvent.setup()
+    renderDrawer()
+    await user.click(screen.getByRole('button', { name: 'USDT' }))
+    await user.type(screen.getByLabelText('Amount (USD)'), '150')
+    await user.selectOptions(screen.getByLabelText('Network'), 'XLAYER')
+    expect(screen.getByRole('option', { name: 'X Layer' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Network')).toHaveValue('XLAYER')
+    await user.type(screen.getByLabelText('USDT address'), EVM)
+    await user.click(screen.getByRole('button', { name: 'Submit' }))
+    const confirmation = screen.getByRole('alertdialog')
+    expect(
+      within(confirmation).getByText('X Layer', { exact: false })
+    ).toHaveTextContent(EVM)
+    expect(within(confirmation).getByTestId('usdt-net')).toHaveTextContent(
+      '148.00'
+    )
+    expect(api.post).not.toHaveBeenCalled()
+    await user.click(
+      within(confirmation).getByRole('button', { name: 'Confirm' })
+    )
+    await waitFor(() =>
+      expect(api.post).toHaveBeenCalledWith(
+        '/api/user/referral/withdrawals',
+        expect.objectContaining({
+          amount: '150.00',
+          account_type: 'usdt',
+          account_network: 'XLAYER',
+          account_no: EVM,
+          idempotency_key: expect.any(String),
+        })
+      )
+    )
+  })
+
+  it('clears the old address when switching to X Layer and rejects a TRON address', async () => {
+    const user = userEvent.setup()
+    renderDrawer()
+    await user.click(screen.getByRole('button', { name: 'USDT' }))
+    await user.type(screen.getByLabelText('Amount (USD)'), '50')
+    await user.selectOptions(screen.getByLabelText('Network'), 'TRC20')
+    await user.type(screen.getByLabelText('USDT address'), TRON)
+    await user.selectOptions(screen.getByLabelText('Network'), 'XLAYER')
+    expect(screen.getByLabelText('USDT address')).toHaveValue('')
+    await user.type(screen.getByLabelText('USDT address'), TRON)
+    expect(screen.getByLabelText('USDT address')).toHaveAttribute(
+      'aria-invalid',
+      'true'
+    )
+    expect(screen.getByRole('button', { name: 'Submit' })).toBeDisabled()
+    expect(api.post).not.toHaveBeenCalled()
+  })
 })
 
 describe('WithdrawDrawer CNY', () => {
   it('resubmits at the new rate after rate_changed is confirmed', async () => {
-    api.uploadReferralAsset.mockResolvedValue('/api/referral-assets/qr.png')
-    api.createReferralWithdrawal
+    api.post
       .mockResolvedValueOnce({
-        kind: 'rate_changed',
-        rate: '7.2',
-        cnyAmount: '720.00',
-        updatedAt: 1_700_000_100,
+        data: { success: true, data: { url: '/api/referral-assets/qr.png' } },
       })
-      .mockResolvedValueOnce({ kind: 'ok', withdrawal: { id: 2 } })
+      .mockResolvedValueOnce({
+        data: {
+          success: false,
+          code: 'rate_changed',
+          data: {
+            rate: '7.2',
+            cny_amount: '720.00',
+            updated_at: 1_700_000_100,
+          },
+        },
+      })
+      .mockResolvedValueOnce({ data: { success: true, data: withdrawal } })
     const user = userEvent.setup()
     renderDrawer()
     await user.click(screen.getByRole('button', { name: 'Alipay' }))
@@ -178,14 +255,16 @@ describe('WithdrawDrawer CNY', () => {
     )
     await user.click(screen.getByRole('button', { name: 'Submit' }))
     expect(await screen.findByTestId('rate-change')).toHaveTextContent('720.00')
-    expect(api.createReferralWithdrawal).toHaveBeenLastCalledWith(
+    expect(api.post).toHaveBeenLastCalledWith(
+      '/api/user/referral/withdrawals',
       expect.objectContaining({ expected_cny_rate: '7.1' })
     )
     await user.click(
       screen.getByRole('button', { name: 'Submit at the new rate' })
     )
     await waitFor(() =>
-      expect(api.createReferralWithdrawal).toHaveBeenLastCalledWith(
+      expect(api.post).toHaveBeenLastCalledWith(
+        '/api/user/referral/withdrawals',
         expect.objectContaining({ expected_cny_rate: '7.2' })
       )
     )

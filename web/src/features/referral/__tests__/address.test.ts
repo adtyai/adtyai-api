@@ -32,6 +32,11 @@ describe('isValidUsdtAddress', () => {
     ['BEP20', TRON, false],
     ['POLYGON', EVM, true],
     ['POLYGON', '0x123', false],
+    ['XLAYER', EVM, true],
+    ['XLAYER', ` ${EVM} `, true],
+    ['XLAYER', TRON, false],
+    ['XLAYER', '0x123', false],
+    ['XLAYER', '0x52908400098527886E0F7030069857D2E4169EEG', false],
   ] as const)('%s %s -> %s', (network, address, expected) => {
     expect(isValidUsdtAddress(network, address)).toBe(expected)
   })

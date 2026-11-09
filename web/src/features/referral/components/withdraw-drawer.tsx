@@ -54,6 +54,7 @@ import {
   isValidUsdtAddress,
   USDT_NETWORKS,
   usdtNetAmount,
+  usdtNetworkLabel,
   type UsdtNetwork,
 } from '../lib/address'
 import {
@@ -106,7 +107,7 @@ export function WithdrawDrawer(props: WithdrawDrawerProps) {
       if (network === '') return t('Choose a network')
       if (!isValidUsdtAddress(network, address)) {
         return t('The address does not match the {{network}} network', {
-          network,
+          network: usdtNetworkLabel(network),
         })
       }
       if (net <= 0) return t('The amount must be larger than the network fee')
@@ -250,7 +251,7 @@ export function WithdrawDrawer(props: WithdrawDrawerProps) {
                   <option value=''>{t('Choose a network')}</option>
                   {USDT_NETWORKS.map((item) => (
                     <option key={item} value={item}>
-                      {item}
+                      {usdtNetworkLabel(item)}
                     </option>
                   ))}
                 </NativeSelect>
@@ -353,7 +354,8 @@ export function WithdrawDrawer(props: WithdrawDrawerProps) {
         desc={
           <div className='space-y-2 text-sm'>
             <p>
-              {network} · <span className='font-mono break-all'>{address}</span>
+              {usdtNetworkLabel(network)} ·{' '}
+              <span className='font-mono break-all'>{address}</span>
             </p>
             <p data-testid='usdt-net'>
               {t('You receive {{net}} USDT', { net: net.toFixed(2) })}

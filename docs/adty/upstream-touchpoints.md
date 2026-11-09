@@ -42,6 +42,8 @@
 | `relay/relay_task.go` | 视频查询找不到适配器时不再把渠道编号写进错误信息 | 普通用户的错误响应不能带内部渠道编号 | 审查 v3 |
 | `controller/option.go` | 通用设置接口拒绝 `adty_marketing_setting.*` | 不能绕过营销设置页，在缺发件地址和密钥时打开营销 | 审查 v3 |
 | `controller/option.go` | 通用设置接口拒绝整个 `adty_referral_setting.*` | 不能绕过推广设置页，在没有默认比例时打开返佣 | 审查 v3 |
+| `service/referral_withdraw.go`、`web/src/features/referral/{lib/address.ts,components/withdraw-drawer.tsx,components/referral-tables.tsx}`、`web/src/features/admin-referral/components/withdrawal-panel.tsx` | USDT白名单补齐`XLAYER`，复用EVM地址校验并统一显示X Layer；保留人工审核/冻结/TxID流程 | 第四网络可选择、确认、提交及核对；不代替FIN-J-02独立站长收益账户 | FIN-J-03 |
+| `service/referral_test.go`、`web/src/features/referral/__tests__/{address.test.ts,withdraw-drawer.test.tsx}`、`scripts/adty/browser-business.sh`、`web/scripts/adty/browser-withdraw-networks.mjs` | 四网络三库生命周期回归、前端网络边界与生产浏览器withdraw-networks场景 | 保护幂等冻结、取消/驳回/批准/标付及桌面/移动网络和收款资料 | FIN-J-03 |
 | `setting/config/config.go` | 分层配置的非法布尔、整数和浮点不再静默跳过 | 非法配置不能显示成保存成功，也不能只写进数据库 | 审查 v3 |
 | `model/option.go` | `UpdateOption` 在写库前校验分层配置字段 | 解析失败不能先把非法值写入 options 表 | 审查 v3 |
 | `model/main.go` | `chooseDB` 把 PostgreSQL 关键字连接串认成 PostgreSQL；增加 `PingDBImmediate` | CI 和本地关键字 DSN 不能被当成 MySQL；就绪探针不能吃 10 秒缓存 | 审查 v3 |
