@@ -210,23 +210,24 @@ func TestBackupFlushAuthorizationDoesNotLeakOrFallbackExplicitTokens(t *testing.
 		{name: "container carriage return", container: secret + "\r", reads: 1},
 	} {
 		t.Run(fixture.name, func(t *testing.T) {
-			root := t.TempDir()
-			require.NoError(t, os.Mkdir(filepath.Join(root, "bin"), 0o700))
+			root := filepath.Join(t.TempDir(), "adtyai-api")
+			require.NoError(t, os.MkdirAll(filepath.Join(root, "bin"), 0o700))
 			require.NoError(t, os.WriteFile(filepath.Join(root, "backup.sh"), script, 0o600))
 			actions, argv := filepath.Join(root, "actions"), filepath.Join(root, "argv")
 			docker := `#!/usr/bin/env bash
 printf '%s\n' "$@" >> "$GOV_ARGV"
-case "$*" in
-  *adtyai-api*)
+[ "$#" -ge 6 ] && [ "$1" = compose ] && [ "$2" = -f ] && [ "$4" = exec ] && [ "$5" = -T ] || exit 99
+service=$6
+shift 6
+case "$service" in
+  adtyai-api)
     if [[ "$*" == *ADTY_FLUSH_TOKEN* ]]; then
       echo read >> "$GOV_ACTIONS"
       [ "$GOV_CONTAINER_FAILURE" = 0 ] || exit 55
     fi
-    while [ "$1" != adtyai-api ]; do shift; done
-    shift
     if [ "$GOV_CONTAINER_MISSING" = 1 ]; then unset ADTY_FLUSH_TOKEN; else export ADTY_FLUSH_TOKEN="$GOV_CONTAINER_TOKEN"; fi
     exec "$@";;
-  *postgres*) echo dump >> "$GOV_ACTIONS"; exit 67;;
+  postgres) echo dump >> "$GOV_ACTIONS"; exit 67;;
 esac
 exit 99
 `
