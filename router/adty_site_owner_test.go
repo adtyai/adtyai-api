@@ -617,10 +617,6 @@ func TestSensitiveOwnerActionsRequireVerify(t *testing.T) {
 		{"bonus", http.MethodPut, "/api/adty/site/self", `{"bonus_rates":{"100":2}}`, service.AdtySiteOwnerActionBonus, f.site.Id},
 		{"trial", http.MethodPost, fmt.Sprintf("/api/adty/site/customers/%d/trial", customer.Id), `{"amount_usd":"1","idempotency_key":"k1"}`, service.AdtySiteOwnerActionTrial, customer.Id},
 		{"domain delete", http.MethodDelete, fmt.Sprintf("/api/adty/site/domains/%d", domain.Id), "", service.AdtySiteOwnerActionDomain, domain.Id},
-		// 优惠码（12.4 站长出资）：新建 target 为 0，修改和删除 target 为码 id。
-		{"promo create", http.MethodPost, "/api/adty/site/promo-codes", `{"code":"verify-new","kind":"percent","value":"1","enabled":true}`, service.AdtySiteOwnerActionPromo, 0},
-		{"promo update", http.MethodPut, fmt.Sprintf("/api/adty/site/promo-codes/%d", promo.Id), `{"kind":"percent","value":"1.5","enabled":false}`, service.AdtySiteOwnerActionPromo, promo.Id},
-		{"promo delete", http.MethodDelete, fmt.Sprintf("/api/adty/site/promo-codes/%d", doomed.Id), "", service.AdtySiteOwnerActionPromo, doomed.Id},
 		// 发件域名（11.3）：一个站最多一个，target 为站点 id。
 		{"sender domain delete", http.MethodDelete, "/api/adty/site/sender-domain", "", service.AdtySiteOwnerActionSender, f.site.Id},
 	}
@@ -643,11 +639,6 @@ func TestSensitiveOwnerActionsRequireVerify(t *testing.T) {
 			resp := f.call(t, tc.method, tc.path, tc.body, proof)
 			assert.NotContains(t, resp.Body.String(), "SECURITY_PROOF", resp.Body.String())
 			replay := f.call(t, tc.method, tc.path, tc.body, proof)
-			if tc.method == http.MethodDelete && strings.HasPrefix(tc.path, "/api/adty/site/promo-codes/") {
-				// 码已经删掉，找不到码在验证之前就返回。
-				assert.Contains(t, replay.Body.String(), "Promo code not found")
-				return
-			}
 			assert.Contains(t, replay.Body.String(), "SECURITY_PROOF_CONSUMED", "a proof works once")
 		})
 	}
@@ -657,18 +648,20 @@ func TestSensitiveOwnerActionsRequireVerify(t *testing.T) {
 	var prices int64
 	require.NoError(t, f.db.Model(&model.AdtySitePrice{}).Where("site_id = ?", f.site.Id).Count(&prices).Error)
 	assert.EqualValues(t, 2, prices)
+	retired := f.call(t, http.MethodPost, "/api/adty/site/promo-codes", `{"code":"verify-new","kind":"percent","value":"1","enabled":true}`, sessionProof(t, f.owner, service.AdtySiteOwnerActionPromo, 0))
+	assert.Contains(t, retired.Body.String(), "Promo codes are not available")
 	var created, dropped int64
 	require.NoError(t, f.db.Model(&model.AdtyPromoCode{}).Where("code = ?", "VERIFY-NEW").Count(&created).Error)
 	require.NoError(t, f.db.Model(&model.AdtyPromoCode{}).Where("id = ?", doomed.Id).Count(&dropped).Error)
-	assert.EqualValues(t, 1, created, "the promo code was created exactly once")
-	assert.Zero(t, dropped)
+	assert.Zero(t, created, "a retired promo write must not create a code")
+	assert.EqualValues(t, 1, dropped, "a retired delete must not remove a historical code")
 	require.NoError(t, f.db.First(&promo, promo.Id).Error)
-	assert.False(t, promo.Enabled)
+	assert.True(t, promo.Enabled)
 	var sender model.AdtySiteSenderDomain
 	require.NoError(t, f.db.First(&sender, "site_id = ?", f.site.Id).Error)
 	assert.Equal(t, model.AdtySenderDomainDisabled, sender.Status)
 	foreign := f.call(t, http.MethodDelete, "/api/adty/site/promo-codes/999999", "", sessionProof(t, f.owner, service.AdtySiteOwnerActionPromo, 999999))
-	assert.Contains(t, foreign.Body.String(), "Promo code not found", "unknown codes fail before the proof is spent")
+	assert.Contains(t, foreign.Body.String(), "Promo codes are not available")
 
 	// 品牌和 SEO 开关不需要二次验证；品牌字段限制字数。
 	assert.Contains(t, f.call(t, http.MethodPut, "/api/adty/site/self", `{"brand":{"name":"Center AI"},"seo_index":true}`, "").Body.String(), `"success":true`)

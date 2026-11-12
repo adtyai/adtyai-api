@@ -175,7 +175,7 @@ func adtyApplyTeamProtocolPrice(c *gin.Context, userId int, groupRatio, marked, 
 		return marked, k
 	}
 	tokenId := common.GetContextKeyInt(c, constant.ContextKeyTokenId)
-	if tokenId <= 0 {
+	if tokenId <= 0 || model.DB == nil || !adtyTeamTableReadyFor(model.DB, &model.AdtyTeamKey{}) {
 		return marked, k
 	}
 	var binding model.AdtyTeamKey

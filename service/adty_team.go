@@ -4,7 +4,9 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"reflect"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -12,6 +14,32 @@ import (
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 )
+
+// adtyTeamTableReady caches a positive schema check per connection pool.
+// A missing team table means no binding can exist, so personal billing continues.
+var adtyTeamTableReady sync.Map
+
+func adtyTeamTableReadyFor(tx *gorm.DB, modelValue any) bool {
+	if tx == nil {
+		return false
+	}
+	sqlDB, err := tx.DB()
+	if err != nil {
+		return false
+	}
+	key := struct {
+		db    any
+		model reflect.Type
+	}{sqlDB, reflect.TypeOf(modelValue)}
+	if ready, ok := adtyTeamTableReady.Load(key); ok {
+		return ready.(bool)
+	}
+	ready := tx.Migrator().HasTable(modelValue)
+	if ready {
+		adtyTeamTableReady.Store(key, true)
+	}
+	return ready
+}
 
 func init() {
 	model.AdtyTeamReserveHook = reserveAdtyTeamQuotaHook
@@ -478,6 +506,9 @@ func BindAdtyTeamKey(userId, tokenId int) error {
 }
 
 func InheritAdtyTeamsOnCloseTx(tx *gorm.DB, siteId int) error {
+	if !adtyTeamTableReadyFor(tx, &model.AdtyTeam{}) {
+		return nil
+	}
 	var teams []model.AdtyTeam
 	if err := tx.Where("site_id = ? AND status = ?", siteId, model.AdtyTeamStatusActive).Find(&teams).Error; err != nil {
 		return err
@@ -495,6 +526,9 @@ func InheritAdtyTeamsOnCloseTx(tx *gorm.DB, siteId int) error {
 
 func reserveAdtyTeamQuotaHook(tx *gorm.DB, tokenId, userId, delta int, ref string) (bool, error) {
 	if tokenId <= 0 || delta <= 0 {
+		return false, nil
+	}
+	if !adtyTeamTableReadyFor(tx, &model.AdtyTeamKey{}) {
 		return false, nil
 	}
 	var key model.AdtyTeamKey
@@ -522,6 +556,9 @@ func reserveAdtyTeamQuotaHook(tx *gorm.DB, tokenId, userId, delta int, ref strin
 }
 
 func closeAdtyTeamForDeletedLeader(tx *gorm.DB, userId int) error {
+	if !adtyTeamTableReadyFor(tx, &model.AdtyTeam{}) {
+		return nil
+	}
 	var team model.AdtyTeam
 	lookup := tx.Where("leader_user_id = ? AND status = ?", userId, model.AdtyTeamStatusActive).Limit(1).Find(&team)
 	if lookup.Error != nil {

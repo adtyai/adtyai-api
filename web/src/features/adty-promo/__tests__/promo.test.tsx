@@ -17,23 +17,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import { render, screen } from '@testing-library/react'
 import type { ReactNode } from 'react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-
-import { useAuthStore } from '@/stores/auth-store'
+import { describe, expect, it } from 'vitest'
 
 import { PromoPanel } from '../components/promo-panel'
-
-const api = vi.hoisted(() => ({
-  getPromoCodes: vi.fn(),
-  savePromoCode: vi.fn(),
-}))
-vi.mock('../api', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../api')>()),
-  ...api,
-}))
 
 function wrap(node: ReactNode) {
   const client = new QueryClient({
@@ -42,60 +30,23 @@ function wrap(node: ReactNode) {
   return <QueryClientProvider client={client}>{node}</QueryClientProvider>
 }
 
-afterEach(() => useAuthStore.getState().auth.reset())
-
-beforeEach(() => {
-  useAuthStore.getState().auth.setUser({
-    id: 10,
-    username: 'promo-admin',
-    role: 100,
-    permissions: {
-      admin_permissions: {
-        adty_payment: { read: true, create: true, write: true },
-      },
-    },
-  })
-  vi.clearAllMocks()
-  api.getPromoCodes.mockResolvedValue({ items: [], total: 0, page: 1 })
-  api.savePromoCode.mockResolvedValue({ id: 1 })
-})
-
 describe('PromoPanel', () => {
-  it('creates an upper-case percent code', async () => {
-    const user = userEvent.setup()
+  it('does not offer a new promo code', async () => {
     render(wrap(<PromoPanel canCreate canWrite />))
-    await user.click(
-      await screen.findByRole('button', { name: 'New promo code' })
-    )
-    await user.type(screen.getByLabelText('Code'), 'spring10')
-    await user.type(screen.getByLabelText('Bonus %'), '10')
-    await user.click(screen.getByRole('button', { name: 'Save' }))
-    await waitFor(() => expect(api.savePromoCode).toHaveBeenCalled())
-    expect(api.savePromoCode).toHaveBeenCalledWith(
-      null,
-      expect.objectContaining({
-        code: 'SPRING10',
-        kind: 'percent',
-        value: '10',
-      })
-    )
+    expect(
+      await screen.findByText('Promo codes are not available')
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'New promo code' })
+    ).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument()
   })
 
-  it('does not save a code shorter than 8 characters', async () => {
-    const user = userEvent.setup()
-    render(wrap(<PromoPanel canCreate canWrite />))
-    await user.click(
-      await screen.findByRole('button', { name: 'New promo code' })
-    )
-    await user.type(screen.getByLabelText('Code'), 'short1')
-    await user.type(screen.getByLabelText('Bonus %'), '10')
-    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
-    expect(api.savePromoCode).not.toHaveBeenCalled()
-  })
-
-  it('hides editing without the edit permission', async () => {
+  it('stays closed when the viewer cannot edit', async () => {
     render(wrap(<PromoPanel canCreate={false} canWrite={false} />))
-    expect(await screen.findByText('No promo codes yet')).toBeInTheDocument()
+    expect(
+      await screen.findByText('Promo codes are not available')
+    ).toBeInTheDocument()
     expect(
       screen.queryByRole('button', { name: 'New promo code' })
     ).not.toBeInTheDocument()
