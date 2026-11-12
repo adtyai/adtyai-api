@@ -95,6 +95,22 @@ func TestAdtyTeamInviteKeyAndCloseKeepSharedBalance(t *testing.T) {
 	assert.EqualValues(t, 300000, team.SharedQuota)
 }
 
+func TestAdtyTeamMineUsesTheSignedInSite(t *testing.T) {
+	db := prepareReferralDialectDB(t, "sqlite")
+	leader := referralUser(t, db, "team-mine-leader")
+	created, err := CreateAdtyTeamForCurrentUser(leader.Id, "Desk", decimal.RequireFromString("0.80"))
+	require.NoError(t, err)
+	assert.Equal(t, 0, created.Team.SiteId)
+	mine, err := GetAdtyTeamMine(leader.Id)
+	require.NoError(t, err)
+	require.NotNil(t, mine)
+	assert.Equal(t, model.AdtyTeamRoleLeader, mine.Role)
+	assert.Equal(t, "Desk", mine.Name)
+	empty, err := GetAdtyTeamMine(0)
+	require.NoError(t, err)
+	assert.Nil(t, empty)
+}
+
 func TestAdtyTeamProtocolPriceUsesBoundKey(t *testing.T) {
 	db := prepareReferralDialectDB(t, "sqlite")
 	require.NoError(t, db.AutoMigrate(&model.Token{}))

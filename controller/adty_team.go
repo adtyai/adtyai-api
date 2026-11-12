@@ -11,7 +11,6 @@ import (
 
 func PostAdtyTeam(c *gin.Context) {
 	var body struct {
-		SiteId   int    `json:"site_id"`
 		Name     string `json:"name"`
 		Discount string `json:"discount"`
 	}
@@ -24,12 +23,21 @@ func PostAdtyTeam(c *gin.Context) {
 		common.ApiErrorT(c, "Invalid parameters")
 		return
 	}
-	created, err := service.CreateAdtyTeam(c.GetInt("id"), body.SiteId, body.Name, discount)
+	created, err := service.CreateAdtyTeamForCurrentUser(c.GetInt("id"), body.Name, discount)
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
 	common.ApiSuccess(c, created)
+}
+
+func GetAdtyTeamMine(c *gin.Context) {
+	mine, err := service.GetAdtyTeamMine(c.GetInt("id"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"team": mine})
 }
 
 func PostAdtyTeamInvite(c *gin.Context) {

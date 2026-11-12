@@ -31,6 +31,43 @@ type AdtyTeamCreated struct {
 	Member model.AdtyTeamMember
 }
 
+type AdtyTeamMine struct {
+	TeamId      int64           `json:"team_id"`
+	Name        string          `json:"name"`
+	SiteId      int             `json:"site_id"`
+	Role        string          `json:"role"`
+	Discount    decimal.Decimal `json:"discount"`
+	SharedQuota int64           `json:"shared_quota"`
+	Status      string          `json:"status"`
+}
+
+func GetAdtyTeamMine(userId int) (*AdtyTeamMine, error) {
+	var membership model.AdtyTeamMember
+	lookup := model.DB.Where("user_id = ? AND status = ?", userId, model.AdtyTeamMemberActive).Limit(1).Find(&membership)
+	if lookup.Error != nil {
+		return nil, lookup.Error
+	}
+	if lookup.RowsAffected == 0 {
+		return nil, nil
+	}
+	var team model.AdtyTeam
+	if err := model.DB.First(&team, membership.TeamId).Error; err != nil {
+		return nil, err
+	}
+	return &AdtyTeamMine{
+		TeamId: team.Id, Name: team.Name, SiteId: team.SiteId, Role: membership.Role,
+		Discount: team.Discount, SharedQuota: team.SharedQuota, Status: team.Status,
+	}, nil
+}
+
+func CreateAdtyTeamForCurrentUser(leaderId int, name string, discount decimal.Decimal) (*AdtyTeamCreated, error) {
+	var user model.User
+	if err := model.DB.Select("id", "site_id").First(&user, leaderId).Error; err != nil {
+		return nil, err
+	}
+	return CreateAdtyTeam(leaderId, user.SiteId, name, discount)
+}
+
 func CreateAdtyTeam(leaderId, siteId int, name string, discount decimal.Decimal) (*AdtyTeamCreated, error) {
 	name = strings.TrimSpace(name)
 	if leaderId <= 0 || siteId < 0 || name == "" || len(name) > 64 || !discount.IsPositive() || discount.GreaterThan(decimal.NewFromInt(1)) {
