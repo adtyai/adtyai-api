@@ -77,72 +77,30 @@ func TestSiteOwnerHandoverAtomicAuthorityDatabaseMatrix(t *testing.T) {
 				require.ErrorIs(t, err, ErrAdtySiteStatus)
 			}
 			require.NoError(t, f.db.Model(&f.site).Update("status", model.AdtySiteStatusPaused).Error)
-			const callback = "test:handover-audit-rollback"
-			require.NoError(t, f.db.Callback().Create().Before("gorm:create").Register(callback, func(tx *gorm.DB) {
-				if tx.Statement.Table == "adty_site_audits" {
-					tx.AddError(errors.New("audit unavailable"))
-				}
-			}))
 			_, err = HandoverAdtySiteOwner(f.input())
-			require.ErrorContains(t, err, "audit unavailable")
-			require.NoError(t, f.db.Callback().Create().Remove(callback))
-			var rolledBack model.AdtySite
-			require.NoError(t, f.db.First(&rolledBack, f.site.Id).Error)
-			assert.Equal(t, f.old.Id, rolledBack.OwnerUserId)
-			assert.Equal(t, AdtyCurrentSiteAgreementVersion(), rolledBack.AgreementVer)
+			require.ErrorIs(t, err, ErrAdtySiteOwnerImmutable)
+			var unchanged model.AdtySite
+			require.NoError(t, f.db.First(&unchanged, f.site.Id).Error)
+			assert.Equal(t, f.old.Id, unchanged.OwnerUserId)
+			assert.EqualValues(t, 0, unchanged.OwnershipVersion)
+			assert.Equal(t, AdtyCurrentSiteAgreementVersion(), unchanged.AgreementVer)
+			assert.EqualValues(t, 123, unchanged.AgreementAt)
 			var changes int64
 			require.NoError(t, f.db.Model(&model.AdtySiteOwnership{}).Count(&changes).Error)
 			assert.Zero(t, changes)
 			_, _, err = AdtyStaffAccess(staff.UserId, 1, "customers.read")
-			require.NoError(t, err, "a failed handover cannot revoke staff")
+			require.NoError(t, err, "a refused handover cannot revoke staff")
+			var member model.AdtySiteStaff
+			require.NoError(t, f.db.First(&member, staff.Id).Error)
+			assert.Equal(t, f.old.Id, member.OwnerUserId)
+			assert.Equal(t, "enabled", member.Status)
 			var nextAffiliate model.ReferralAffiliate
 			require.NoError(t, f.db.Where("user_id = ?", f.next.Id).First(&nextAffiliate).Error)
 			assert.Zero(t, nextAffiliate.SiteOwnerSince)
-
-			site, err := HandoverAdtySiteOwner(f.input())
-			require.NoError(t, err)
-			assert.Equal(t, f.next.Id, site.OwnerUserId)
-			assert.EqualValues(t, 1, site.OwnershipVersion)
-			assert.Empty(t, site.AgreementVer)
-			assert.Zero(t, site.AgreementAt)
-			_, err = AdtyOwnerSite(f.old.Id)
-			require.ErrorIs(t, err, ErrAdtySiteNotOwner)
-			required, _ := AdtySiteTermsStatus(f.next.Id)
-			assert.True(t, required)
-			_, _, err = AdtyStaffAccess(staff.UserId, 1, "customers.read")
-			require.ErrorIs(t, err, ErrAdtyStaffDenied)
-			var member model.AdtySiteStaff
-			require.NoError(t, f.db.First(&member, staff.Id).Error)
-			assert.Equal(t, f.next.Id, member.OwnerUserId)
-			assert.Equal(t, "disabled", member.Status)
-			assert.Equal(t, "[]", member.Permissions)
-			assert.EqualValues(t, 2, member.Version)
-			for _, id := range []int{f.old.Id, f.next.Id, staff.UserId} {
-				var user model.User
-				require.NoError(t, f.db.First(&user, id).Error)
-				assert.EqualValues(t, 2, user.AuthVersion)
-			}
 			var oldAffiliate model.ReferralAffiliate
 			require.NoError(t, f.db.Where("user_id = ?", f.old.Id).First(&oldAffiliate).Error)
 			assert.EqualValues(t, 100, oldAffiliate.SiteOwnerSince)
-			require.NoError(t, f.db.First(&nextAffiliate, nextAffiliate.Id).Error)
-			assert.Positive(t, nextAffiliate.SiteOwnerSince)
-			assert.InDelta(t, 12.34, account(t, f.db, oldAffiliate.Id).AvailableAmount, 0.000001, "handover must never move balances")
-			require.NoError(t, AcceptAdtySiteTerms(f.next.Id, AdtyCurrentSiteAgreementVersion()))
-			grants := []string{"customers.read"}
-			_, err = MutateAdtyStaff(f.next.Id, site.Id, staff.Id, AdtySiteOwnerActionStaffUpdate,
-				AdtyStaffInput{ExpectedVersion: 2, Role: "support", DisplayName: "Support", Permissions: &grants, Status: "enabled"})
-			require.NoError(t, err, "new owner can explicitly reauthorize the suspended employee")
-			_, _, err = AdtyStaffAccess(staff.UserId, 1, "customers.read")
-			require.Error(t, err, "reauthorizing must not revive old staff sessions")
-			_, _, err = AdtyStaffAccess(staff.UserId, 3, "customers.read")
-			require.NoError(t, err)
-			back := f.input()
-			back.ExpectedOwnerUserId, back.NewOwnerUserId, back.ExpectedOwnershipVersion = f.next.Id, f.old.Id, new(int64(1))
-			_, err = HandoverAdtySiteOwner(back)
-			require.NoError(t, err)
-			_, err = HandoverAdtySiteOwner(f.input())
-			require.ErrorIs(t, err, ErrAdtySiteOwnershipConflict, "A -> B -> A cannot make an old Root form current again")
+			assert.InDelta(t, 12.34, account(t, f.db, oldAffiliate.Id).AvailableAmount, 0.000001, "a refused handover must not move balances")
 		})
 	}
 }
@@ -179,18 +137,15 @@ func TestSiteOwnerHandoverSerializesCompetingOwnership(t *testing.T) {
 				close(start)
 				group.Wait()
 				close(results)
-				success := 0
 				for err := range results {
-					if err == nil {
-						success++
-					} else {
-						assert.True(t, errors.Is(err, ErrAdtySiteAlreadyOwner) || errors.Is(err, ErrAdtySiteOwnershipConflict), "%v", err)
+					if race == "opening" && (err == nil || errors.Is(err, ErrAdtySiteAlreadyOwner)) {
+						continue
 					}
+					require.ErrorIs(t, err, ErrAdtySiteOwnerImmutable)
 				}
-				assert.Equal(t, 1, success)
-				var owned int64
-				require.NoError(t, f.db.Model(&model.AdtySite{}).Where("owner_user_id = ? AND status <> ?", f.next.Id, model.AdtySiteStatusClosed).Count(&owned).Error)
-				assert.LessOrEqual(t, owned, int64(1))
+				var current model.AdtySite
+				require.NoError(t, f.db.First(&current, f.site.Id).Error)
+				assert.Equal(t, f.old.Id, current.OwnerUserId)
 			})
 		}
 	}
@@ -218,21 +173,18 @@ func TestSiteOwnershipKeepsDelayedEarningsAndRefundsWithOriginalOwner(t *testing
 			}
 			oldOrder := createOrder("old-owner-order", 2)
 			assert.Equal(t, f.old.Id, oldOrder.SiteOwnerUserId)
-			site, err := HandoverAdtySiteOwner(f.input())
-			require.NoError(t, err)
-			balances, err := GetAdtySiteBalances(site)
-			require.NoError(t, err)
-			assert.True(t, balances.PendingUSD.IsZero(), "old pending earnings are not the new owner's assets")
+			_, err = HandoverAdtySiteOwner(f.input())
+			require.ErrorIs(t, err, ErrAdtySiteOwnerImmutable)
+			var site model.AdtySite
+			require.NoError(t, f.db.First(&site, f.site.Id).Error)
+			assert.Equal(t, f.old.Id, site.OwnerUserId)
 			newOp, err := model.ReserveBillingOperation(model.BillingOperation{OperationKey: "after-handover", UserId: buyer.Id, SiteId: f.site.Id, SiteMarkup: 2, SiteCostFactor: 0.8}, 500000)
 			require.NoError(t, err)
-			assert.Equal(t, f.next.Id, newOp.SiteOwnerUserId)
+			assert.Equal(t, f.old.Id, newOp.SiteOwnerUserId)
 			newOrder := createOrder("new-owner-order", 1)
-			assert.Equal(t, f.next.Id, newOrder.SiteOwnerUserId)
-			third := referralUser(t, f.db, "handover-third")
-			input := f.input()
-			input.ExpectedOwnerUserId, input.NewOwnerUserId, input.ExpectedOwnershipVersion = f.next.Id, third.Id, new(int64(1))
-			site, err = HandoverAdtySiteOwner(input)
-			require.NoError(t, err)
+			assert.Equal(t, f.old.Id, newOrder.SiteOwnerUserId)
+			_, err = HandoverAdtySiteOwner(f.input())
+			require.ErrorIs(t, err, ErrAdtySiteOwnerImmutable)
 			for _, key := range []string{oldOp.OperationKey, newOp.OperationKey} {
 				require.NoError(t, model.QueueBillingSettlement(key, 500000, false))
 				_, _, err = model.ApplyBillingSettlement(key)
@@ -257,17 +209,11 @@ func TestSiteOwnershipKeepsDelayedEarningsAndRefundsWithOriginalOwner(t *testing
 			settled, err := settleAdtySite(site.Id, "2099-01-01", time.Now().Unix())
 			require.NoError(t, err)
 			require.True(t, settled)
-			for _, expected := range []struct {
-				user      int
-				available float64
-			}{{f.old.Id, 3.3}, {f.next.Id, -0.4}, {third.Id, 0}} {
-				var accounts []model.ReferralCommissionAccount
-				require.NoError(t, f.db.Where("user_id = ?", expected.user).Find(&accounts).Error)
-				actual := 0.0
-				if len(accounts) > 0 {
-					actual = accounts[0].AvailableAmount
-				}
-				assert.InDelta(t, expected.available, actual, 0.000001, fmt.Sprint(expected.user))
+			var events []model.AdtySiteEarningEvent
+			require.NoError(t, f.db.Where("site_id = ?", site.Id).Find(&events).Error)
+			require.NotEmpty(t, events)
+			for _, event := range events {
+				assert.Equal(t, f.old.Id, event.SiteOwnerUserId)
 			}
 			// Replaying projection and settlement cannot move money a second time.
 			require.NoError(t, projectAdtySiteEarningEvent(context.Background(), "late-refund"))
@@ -292,7 +238,7 @@ func TestSiteOwnershipTaskInheritsReservationAcrossHandover(t *testing.T) {
 					require.NoError(t, f.db.Model(op).Update("site_owner_user_id", 0).Error)
 				}
 				_, err = HandoverAdtySiteOwner(f.input())
-				require.NoError(t, err)
+				require.ErrorIs(t, err, ErrAdtySiteOwnerImmutable)
 				// A context stamped after reservation cannot replace its owner.
 				task := &model.Task{UserId: buyer.Id, TaskID: "handover-task", Quota: 500000,
 					PrivateData: model.TaskPrivateData{BillingOperationKey: op.OperationKey,
@@ -329,15 +275,15 @@ func TestSiteOwnershipMidjourneyChargeAndRefundKeepAcceptanceOwner(t *testing.T)
 				BillingSiteId: f.site.Id, BillingSiteMarkup: 2, BillingSiteCostFactor: 0.8}
 			require.NoError(t, f.db.Create(legacy).Error)
 			_, err := HandoverAdtySiteOwner(f.input())
-			require.NoError(t, err)
+			require.ErrorIs(t, err, ErrAdtySiteOwnerImmutable)
 			next := &model.Midjourney{UserId: buyer.Id, Quota: 500000, BillingChargePending: true, BillingOperationKey: "mj:after",
 				BillingSiteId: f.site.Id, BillingSiteOwnerUserId: f.old.Id, BillingSiteMarkup: 2, BillingSiteCostFactor: 0.8}
 			require.NoError(t, next.Insert())
-			assert.Equal(t, f.next.Id, next.BillingSiteOwnerUserId, "a new acceptance freezes SQL ownership, not an earlier mutable context")
+			assert.Equal(t, f.old.Id, next.BillingSiteOwnerUserId, "a new acceptance freezes the current SQL owner")
 			for _, input := range []struct {
 				task  *model.Midjourney
 				owner int
-			}{{old, f.old.Id}, {legacy, f.old.Id}, {next, f.next.Id}} {
+			}{{old, f.old.Id}, {legacy, f.old.Id}, {next, f.old.Id}} {
 				key, err := model.QueueMidjourneyBillingOperation(input.task, false)
 				require.NoError(t, err)
 				op, _, err := model.ApplyBillingSettlement(key)
@@ -364,8 +310,9 @@ func TestSiteOwnershipForcedCloseClawsBackEachActualOwner(t *testing.T) {
 	for _, dialect := range []string{"sqlite", "mysql", "postgres"} {
 		t.Run(dialect, func(t *testing.T) {
 			f := newSiteOwnershipFixture(t, dialect)
-			site, err := HandoverAdtySiteOwner(f.input())
-			require.NoError(t, err)
+			_, err := HandoverAdtySiteOwner(f.input())
+			require.ErrorIs(t, err, ErrAdtySiteOwnerImmutable)
+			site := &f.site
 			for _, owner := range []int{f.old.Id, f.next.Id} {
 				require.NoError(t, f.db.Model(&model.ReferralCommissionAccount{}).Where("user_id = ?", owner).Update("available_amount", 100).Error)
 			}

@@ -402,7 +402,7 @@ func TestOwnerOrdersUseFrozenSiteScope(t *testing.T) {
 	assert.False(t, listed.Items[0].Actions.Complete)
 	assert.False(t, listed.Items[0].Actions.Refund)
 	assert.False(t, listed.Items[0].Actions.Query)
-	for _, suffix := range []string{"", "/summary"} {
+	for _, suffix := range []string{""} {
 		path := "/api/adty/site/orders" + suffix
 		read := createAdtyScopedToken(t, f.owner.Id, "wallet:read")
 		write := createAdtyScopedToken(t, f.owner.Id, "wallet:write")
@@ -420,17 +420,10 @@ func TestOwnerOrdersUseFrozenSiteScope(t *testing.T) {
 		assert.NotContains(t, spoofed.Body.String(), `"91"`)
 	}
 	summaryResponse := f.call(t, http.MethodGet, "/api/adty/site/orders/summary", "", "")
-	summary := decodeAdtyData[struct {
-		Orders      int
-		CreditedUSD string `json:"credited_usd"`
-		Sites       []struct {
-			SiteID int `json:"site_id"`
-		} `json:"site_options"`
-	}](t, summaryResponse.Body)
-	assert.Equal(t, 1, summary.Orders)
-	assert.Equal(t, "3", summary.CreditedUSD)
-	require.Len(t, summary.Sites, 1)
-	assert.Equal(t, f.site.Id, summary.Sites[0].SiteID)
+	assert.Equal(t, http.StatusForbidden, summaryResponse.Code)
+	assert.NotContains(t, summaryResponse.Body.String(), "credited_usd")
+	assert.NotContains(t, summaryResponse.Body.String(), "bonus_usd")
+	assert.Contains(t, f.call(t, http.MethodGet, "/api/adty/site/orders", "", "").Body.String(), "order-before-move")
 	for _, status := range []string{model.AdtySiteStatusPaused, model.AdtySiteStatusClosing} {
 		require.NoError(t, f.db.Model(f.site).Update("status", status).Error)
 		assert.Equal(t, http.StatusOK, f.call(t, http.MethodGet, "/api/adty/site/orders", "", "").Code)
@@ -500,23 +493,31 @@ func TestOwnerWalletReadAPIsStayWithinSite(t *testing.T) {
 	response := f.call(t, http.MethodGet, fmt.Sprintf("/api/adty/site/wallets?site_id=%d", f.other.Id), "", "")
 	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
 	wallets := decodeAdtyData[[]model.AdtySiteWallet](t, response.Body)
-	require.Len(t, wallets, 3)
+	require.Len(t, wallets, 2)
 	balances := map[string]string{}
 	for _, wallet := range wallets {
 		assert.Equal(t, f.site.Id, wallet.SiteId)
 		balances[wallet.Kind] = wallet.Balance.String()
 	}
-	assert.Equal(t, map[string]string{"operating": "10", "earnings": "5", "margin": "0"}, balances)
+	assert.Equal(t, map[string]string{"earnings": "5", "margin": "0"}, balances)
+	assert.NotContains(t, response.Body.String(), `"operating"`)
+	var storedOperating int64
+	require.NoError(t, f.db.Model(&model.AdtySiteWallet{}).Where("site_id = ? AND kind = ?", f.site.Id, model.AdtySiteWalletOperating).Count(&storedOperating).Error)
+	assert.EqualValues(t, 1, storedOperating, "hiding the operating wallet must not delete its ledger account")
 
-	path := fmt.Sprintf("/api/adty/site/wallet-ledgers?kind=operating&site_id=%d&page_size=1", f.other.Id)
-	for page, want := range []string{"mine-operating-debit", "mine-operating-credit"} {
+	deniedOperating := f.call(t, http.MethodGet, fmt.Sprintf("/api/adty/site/wallet-ledgers?kind=operating&site_id=%d", f.other.Id), "", "")
+	assert.Equal(t, http.StatusForbidden, deniedOperating.Code)
+	assert.NotContains(t, deniedOperating.Body.String(), "mine-operating-debit")
+
+	path := fmt.Sprintf("/api/adty/site/wallet-ledgers?kind=earnings&site_id=%d&page_size=1", f.other.Id)
+	for page, want := range []string{"mine-earning-credit"} {
 		response := f.call(t, http.MethodGet, fmt.Sprintf("%s&p=%d", path, page+1), "", "")
 		require.Equal(t, http.StatusOK, response.Code, response.Body.String())
 		body := decodeAdtyData[struct {
 			Total int64                        `json:"total"`
 			Items []model.AdtySiteWalletLedger `json:"items"`
 		}](t, response.Body)
-		assert.EqualValues(t, 2, body.Total)
+		assert.EqualValues(t, 1, body.Total)
 		require.Len(t, body.Items, 1)
 		assert.Equal(t, f.site.Id, body.Items[0].SiteId)
 		assert.Equal(t, want, body.Items[0].Reason)

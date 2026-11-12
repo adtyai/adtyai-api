@@ -129,6 +129,7 @@ export function RechargeAudit(props: {
       { ...filters, page: 1 },
     ],
     queryFn: () => getRechargeAuditSummary(filters, props.ownerMode),
+    enabled: props.ownerMode !== true,
   })
   const refresh = () =>
     queryClient.invalidateQueries({ queryKey: ['recharge-audit'] })
@@ -138,11 +139,11 @@ export function RechargeAudit(props: {
   const content = (
     <>
       <div className='flex flex-col gap-4'>
-        {summaryQuery.isError && (
+        {props.ownerMode !== true && summaryQuery.isError && (
           <ErrorState onRetry={() => void summaryQuery.refetch()} />
         )}
-        {summaryQuery.isPending && <LoadingState />}
-        {summaryQuery.data && (
+        {props.ownerMode !== true && summaryQuery.isPending && <LoadingState />}
+        {props.ownerMode !== true && summaryQuery.data && (
           <div className='grid gap-3 sm:grid-cols-3'>
             {[
               {

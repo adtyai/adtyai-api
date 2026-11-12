@@ -252,10 +252,10 @@ func GetRechargeAuditSummary(c *gin.Context) {
 }
 
 func GetAdtyOwnerOrderSummary(c *gin.Context) {
-	site, ok := adtyOwnerSiteOr403(c)
-	if ok {
-		getRechargeAuditSummary(c, &site.Id)
+	if _, ok := adtyOwnerSiteOr403(c); !ok {
+		return
 	}
+	common.ApiErrorStatus(c, http.StatusForbidden, common.NewMessage("Site owners cannot view recharge summaries"))
 }
 
 func getRechargeAuditSummary(c *gin.Context, ownerSiteID *int) {

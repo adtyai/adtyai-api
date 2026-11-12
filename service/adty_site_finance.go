@@ -16,6 +16,7 @@ const (
 )
 
 var (
+	ErrAdtyOperatingWalletHidden         = errors.New("operating wallet hidden from site owner")
 	ErrAdtySiteWalletInvalidKind         = errors.New("invalid site wallet kind")
 	ErrAdtySiteWalletInvalidOperation    = errors.New("invalid site wallet operation")
 	ErrAdtySiteWalletInsufficient        = errors.New("insufficient site wallet funds")
@@ -102,6 +103,19 @@ func ListAdtySiteWallets(siteID int) ([]model.AdtySiteWallet, error) {
 // ListAdtySiteWalletLedger always applies the server-selected site boundary,
 // including to the total count. An empty kind selects all three wallets.
 func ListAdtySiteWalletLedger(siteID int, kind string, offset, limit int) ([]model.AdtySiteWalletLedger, int64, error) {
+	return listAdtySiteWalletLedger(siteID, kind, offset, limit, false)
+}
+
+// ListAdtyOwnerSiteWalletLedger is the site-owner projection. The operating
+// wallet remains in the database and in Root responses.
+func ListAdtyOwnerSiteWalletLedger(siteID int, kind string, offset, limit int) ([]model.AdtySiteWalletLedger, int64, error) {
+	if kind == model.AdtySiteWalletOperating {
+		return nil, 0, ErrAdtyOperatingWalletHidden
+	}
+	return listAdtySiteWalletLedger(siteID, kind, offset, limit, true)
+}
+
+func listAdtySiteWalletLedger(siteID int, kind string, offset, limit int, hideOperating bool) ([]model.AdtySiteWalletLedger, int64, error) {
 	if kind != "" && !validAdtySiteWalletKind(kind) {
 		return nil, 0, ErrAdtySiteWalletInvalidKind
 	}
@@ -114,6 +128,8 @@ func ListAdtySiteWalletLedger(siteID int, kind string, offset, limit int) ([]mod
 	query := model.DB.Model(&model.AdtySiteWalletLedger{}).Where("site_id = ?", siteID)
 	if kind != "" {
 		query = query.Where("wallet_kind = ?", kind)
+	} else if hideOperating {
+		query = query.Where("wallet_kind <> ?", model.AdtySiteWalletOperating)
 	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {

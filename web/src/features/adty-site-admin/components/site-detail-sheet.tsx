@@ -77,7 +77,7 @@ import {
 import { siteNotice } from '../lib/sites'
 import type { AdminSite } from '../types'
 import { CloseSiteDialog } from './close-site-dialog'
-import { SiteOwnerHandoverDialog } from './site-owner-handover-dialog'
+
 import { SiteStatusBadge } from './site-status-badge'
 import { SiteVisibilityEditor } from './site-visibility-editor'
 
@@ -109,8 +109,7 @@ function SiteActions(props: {
     readSiteVisibility(site.visibility)
   )
   const [reason, setReason] = useState('')
-  const [handoverSite, setHandoverSite] = useState<AdminSite | null>(null)
-  const [handoverDirty, setHandoverDirty] = useState(false)
+
   const previousSite = useRef(site)
   useEffect(() => {
     const previous = previousSite.current
@@ -147,7 +146,6 @@ function SiteActions(props: {
     maxMarkup.trim() !== (site.max_markup ?? '') ||
     visibilityChanged
   const dirty =
-    handoverDirty ||
     costFactor !== (site.cost_factor ?? '') ||
     maxMarkup !== (site.max_markup ?? '') ||
     reason !== '' ||
@@ -405,13 +403,9 @@ function SiteActions(props: {
           </Button>
         )}
         {canReview && ['active', 'paused'].includes(site.status) && (
-          <Button
-            variant='outline'
-            disabled={busy}
-            onClick={() => setHandoverSite(site)}
-          >
-            {t('Change site owner')}
-          </Button>
+          <p className='text-muted-foreground text-sm'>
+            {t('Site owners cannot be replaced')}
+          </p>
         )}
       </div>
       {notice && (
@@ -448,14 +442,7 @@ function SiteActions(props: {
           onOpenChange={setClosing}
         />
       )}
-      {canReview && handoverSite && (
-        <SiteOwnerHandoverDialog
-          site={site}
-          snapshot={handoverSite}
-          onClose={() => setHandoverSite(null)}
-          onDirtyChange={setHandoverDirty}
-        />
-      )}
+
     </section>
   )
 }

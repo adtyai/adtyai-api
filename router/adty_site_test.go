@@ -213,16 +213,16 @@ func TestSiteOwnerHandoverRequiresRootAndPreservesAgreementBoundary(t *testing.T
 		assert.Equal(t, http.StatusForbidden, adtyJSON(t, f.engine, http.MethodPost, path, body, credential).Code)
 	}
 	response := adtyJSON(t, f.engine, http.MethodPost, path, body, f.root)
-	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
-	require.Contains(t, response.Body.String(), `"success":true`, response.Body.String())
+	require.Contains(t, response.Body.String(), `"success":false`, response.Body.String())
+	require.Contains(t, response.Body.String(), "Site owners cannot be replaced")
 	require.NoError(t, f.db.First(&site, site.Id).Error)
-	assert.Equal(t, newOwner.Id, site.OwnerUserId)
-	assert.Empty(t, site.AgreementVer)
-	assert.Zero(t, site.AgreementAt)
-	assert.Equal(t, http.StatusUnauthorized, adtyJSON(t, f.engine, http.MethodGet, "/api/adty/site/stats", "", oldToken).Code)
-	assert.Equal(t, http.StatusUnauthorized, adtyJSON(t, f.engine, http.MethodGet, "/api/adty/site/stats", "", newToken).Code)
-	conflict := adtyJSON(t, f.engine, http.MethodPost, path, body, createAdtyScopedToken(t, root.Id, "option:write"))
-	assert.Contains(t, conflict.Body.String(), `"success":false`, conflict.Body.String())
+	assert.Equal(t, oldOwner.Id, site.OwnerUserId)
+	assert.Equal(t, service.AdtyCurrentSiteAgreementVersion(), site.AgreementVer)
+	assert.EqualValues(t, 10, site.AgreementAt)
+	assert.Equal(t, http.StatusOK, adtyJSON(t, f.engine, http.MethodGet, "/api/adty/site/stats", "", oldToken).Code)
+	assert.Equal(t, http.StatusForbidden, adtyJSON(t, f.engine, http.MethodGet, "/api/adty/site/stats", "", newToken).Code)
+	repeated := adtyJSON(t, f.engine, http.MethodPost, path, body, createAdtyScopedToken(t, root.Id, "option:write"))
+	assert.Contains(t, repeated.Body.String(), "Site owners cannot be replaced")
 }
 
 func TestOnlyRootCanActivateLegacySiteApplication(t *testing.T) {

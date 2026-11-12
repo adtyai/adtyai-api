@@ -154,22 +154,6 @@ export async function disableSiteDomain(id: number): Promise<void> {
   requireServerSuccess(res.data)
 }
 
-export async function handoverSiteOwner(
-  id: number,
-  body: {
-    expected_owner_user_id: number
-    expected_ownership_version: number
-    new_owner_user_id: number
-    reason: string
-  }
-): Promise<AdminSite> {
-  const res = await api.post<ApiResponse<AdminSite>>(
-    `${BASE}/sites/${id}/owner`,
-    body
-  )
-  return requireServerSuccess(res.data).data
-}
-
 export async function disableSiteSenderDomain(siteId: number): Promise<void> {
   const res = await api.delete<ApiResponse<unknown>>(
     `${BASE}/sites/${siteId}/sender-domain`
