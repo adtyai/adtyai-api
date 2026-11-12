@@ -557,3 +557,4 @@
 | `AGENTS.md`、`web/AGENTS.md`、根目录各语言 `README*.md` | 同步 Root 站长交接、历史资金归属、支付场景、员工授权及构建版本说明，链接现有工程文档 | 保留原有标题、段落、表格及上游署名；版本由既有工作流生成，不改包版本或发布标签 | 2026-11-10 收尾 |
 | `relay/mjproxy_handler.go` | `pinMidjourneyImageURL` 在 IP 字面量短路前重复执行 URL、私网和端口校验 | 公网图片重定向到回环地址时，原短路不复核，图片代理会读取私网响应 | OBS-ROOT-006 |
 | `model/option.go` | `QuotaPerUnit` 只接受 500000；写入前和加载时都拒绝其他值，内存不改写 | 1 USD = 500000 额度是固定尺度，后台选项不能把它改成其他比例 | OBS-FIN-011 |
+| `service/http_client.go` | 原请求带 `mj-api-secret` 时，跨源重定向直接拒绝 | Go 会转发非标准密钥头；307/308 不能把渠道密钥送到另一个源 | OBS-ROOT-018 |

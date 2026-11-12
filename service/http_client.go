@@ -42,6 +42,9 @@ type proxyURLConfig struct {
 }
 
 func checkRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) > 0 && via[0].Header.Get("mj-api-secret") != "" && !sameHTTPOrigin(via[0].URL, req.URL) {
+		return fmt.Errorf("cross-origin midjourney redirect blocked")
+	}
 	urlStr := req.URL.String()
 	if err := validateURLWithCurrentFetchSetting(urlStr, true); err != nil {
 		return fmt.Errorf("redirect to %s blocked: %v", urlStr, err)
@@ -50,6 +53,13 @@ func checkRedirect(req *http.Request, via []*http.Request) error {
 		return fmt.Errorf("stopped after 10 redirects")
 	}
 	return nil
+}
+
+func sameHTTPOrigin(left, right *url.URL) bool {
+	if left == nil || right == nil {
+		return false
+	}
+	return strings.EqualFold(left.Scheme, right.Scheme) && strings.EqualFold(left.Host, right.Host)
 }
 
 func checkProtectedFetchRedirect(req *http.Request, via []*http.Request) error {
