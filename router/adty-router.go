@@ -79,6 +79,8 @@ func registerAdtyTopUpRoutes(apiRouter *gin.RouterGroup) {
 	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/adty/topup/pending", "scope", "wallet:read")
 	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/adty/topup/self", "scope", "wallet:read")
 	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/vouchers/redeem", "scope", "wallet:write")
+	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/teams", "scope", "wallet:write")
+	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/teams/:id/join", "scope", "wallet:write")
 
 	topup := apiRouter.Group("/adty/topup", middleware.UserAuth(), middleware.AdtyRequireCurrentSiteTerms())
 	topup.GET("/info", controller.GetAdtyTopUpInfo)
@@ -89,6 +91,8 @@ func registerAdtyTopUpRoutes(apiRouter *gin.RouterGroup) {
 	topup.GET("/pending", controller.GetAdtyTopUpPending)
 	topup.GET("/self", controller.GetAdtyTopUpSelf)
 	apiRouter.POST("/adty/vouchers/redeem", middleware.UserAuth(), middleware.UserCriticalRateLimit("CT:voucher-redeem"), controller.PostAdtyVoucherRedeem)
+	apiRouter.POST("/adty/teams", middleware.UserAuth(), controller.PostAdtyTeam)
+	apiRouter.POST("/adty/teams/:id/join", middleware.UserAuth(), controller.PostAdtyTeamJoin)
 }
 
 // registerAdtyFinanceRoutes 挂充值对账、补单和退款（任务 3.5），按后台权限注册。
