@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/gin-gonic/gin"
 	"github.com/shopspring/decimal"
@@ -22,6 +23,8 @@ import (
 // gin 上下文里记下的 k 和 d：同一个请求后面的消费日志都从这里取（11.5 的记账）。
 const (
 	AdtySiteMarkupContextKey     = "adty_site_markup"
+	AdtyTeamDiscountContextKey   = "adty_team_discount"
+	AdtyTeamPriceBlockedKey      = "adty_team_price_blocked"
 	AdtySiteCostFactorContextKey = "adty_site_cost_factor"
 	AdtySiteIdContextKey         = "adty_site_id"
 	AdtySiteOwnerContextKey      = "adty_site_owner_user_id"
@@ -132,6 +135,11 @@ func adtyMarkupFloat(k decimal.Decimal, userId int, group string) float64 {
 // AdtyApplySiteMarkup 在算出分组倍率之后调用：分站客户把 k 乘进去，并把 k、d 写进 gin 上下文。
 // 返回乘过 k 的分组倍率和 k（1 表示没乘）。上游的 HandleGroupRatio、Realtime 预扣都调它。
 func AdtyApplySiteMarkup(c *gin.Context, userId int, group string, groupRatio float64) (float64, float64) {
+	marked, k := adtyApplySiteMarkupOnly(c, userId, group, groupRatio)
+	return adtyApplyTeamProtocolPrice(c, userId, groupRatio, marked, k)
+}
+
+func adtyApplySiteMarkupOnly(c *gin.Context, userId int, group string, groupRatio float64) (float64, float64) {
 	site := AdtyBillingSiteForUser(userId)
 	if site == nil {
 		return groupRatio, 1
@@ -158,6 +166,48 @@ func AdtyApplySiteMarkup(c *gin.Context, userId int, group string, groupRatio fl
 		return groupRatio, 1
 	}
 	return marked, k
+}
+
+// adtyApplyTeamProtocolPrice multiplies the site selling price by the team discount.
+// A subsite result below the supply factor is refused instead of being raised.
+func adtyApplyTeamProtocolPrice(c *gin.Context, userId int, groupRatio, marked, k float64) (float64, float64) {
+	if c == nil || userId <= 0 {
+		return marked, k
+	}
+	tokenId := common.GetContextKeyInt(c, constant.ContextKeyTokenId)
+	if tokenId <= 0 {
+		return marked, k
+	}
+	var binding model.AdtyTeamKey
+	lookup := model.DB.Where("token_id = ? AND user_id = ? AND status = ?", tokenId, userId, model.AdtyTeamMemberActive).Limit(1).Find(&binding)
+	if lookup.Error != nil || lookup.RowsAffected == 0 {
+		return marked, k
+	}
+	var team model.AdtyTeam
+	if err := model.DB.First(&team, binding.TeamId).Error; err != nil || team.Status != model.AdtyTeamStatusActive || !team.Discount.IsPositive() {
+		return marked, k
+	}
+	factor := team.Discount.InexactFloat64()
+	if math.IsNaN(factor) || math.IsInf(factor, 0) || factor <= 0 || factor > 1 {
+		c.Set(AdtyTeamPriceBlockedKey, true)
+		return marked, k
+	}
+	if d := c.GetFloat64(AdtySiteCostFactorContextKey); d > 0 && groupRatio > 0 && marked*factor < groupRatio*d {
+		c.Set(AdtyTeamPriceBlockedKey, true)
+		return marked, k
+	}
+	next := marked * factor
+	if math.IsNaN(next) || math.IsInf(next, 0) || next < 0 {
+		c.Set(AdtyTeamPriceBlockedKey, true)
+		return marked, k
+	}
+	c.Set(AdtyTeamDiscountContextKey, factor)
+	return next, k
+}
+
+// AdtyTeamPriceBlocked reports a team price that would undercut the site supply price.
+func AdtyTeamPriceBlocked(c *gin.Context) bool {
+	return c != nil && c.GetBool(AdtyTeamPriceBlockedKey)
 }
 
 // AdtyApplySiteMarkupHook 是 HandleGroupRatio 调用的入口（relay/helper/price.go），测试可以替换。
@@ -538,6 +588,14 @@ func adtyOnConsumeLog(c *gin.Context, userId int, params *model.RecordConsumeLog
 			params.Other = model.NewLogOther()
 		}
 		AdtyAppendSiteMarkupAdminInfo(c, params.Other)
+	}
+	if c != nil {
+		if discount := c.GetFloat64(AdtyTeamDiscountContextKey); discount > 0 {
+			if params.Other == nil {
+				params.Other = model.NewLogOther()
+			}
+			params.Other.SetAdmin("team_discount", discount)
+		}
 	}
 	adtyTakeBillingShortfall(c, params) // 余额下限：结算没扣到的差额记 admin_info
 	if c.GetBool(adtyDurableBillingContextKey) {

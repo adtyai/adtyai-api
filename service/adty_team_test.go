@@ -1,11 +1,15 @@
 package service
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/gin-gonic/gin"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -89,6 +93,34 @@ func TestAdtyTeamInviteKeyAndCloseKeepSharedBalance(t *testing.T) {
 	require.NoError(t, db.First(&team, created.Team.Id).Error)
 	assert.Equal(t, model.AdtyTeamStatusClosed, team.Status)
 	assert.EqualValues(t, 300000, team.SharedQuota)
+}
+
+func TestAdtyTeamProtocolPriceUsesBoundKey(t *testing.T) {
+	db := prepareReferralDialectDB(t, "sqlite")
+	require.NoError(t, db.AutoMigrate(&model.Token{}))
+	leader := referralUser(t, db, "team-price-leader")
+	member := referralUser(t, db, "team-price-member")
+	created, err := CreateAdtyTeam(leader.Id, 0, "Price", decimal.RequireFromString("0.50"))
+	require.NoError(t, err)
+	token := model.Token{UserId: member.Id, Key: "team-price-key", Status: common.TokenStatusEnabled, ExpiredTime: -1, UnlimitedQuota: true}
+	require.NoError(t, db.Create(&token).Error)
+	require.NoError(t, db.Model(member).Update("site_id", 0).Error)
+	_, err = JoinAdtyTeam(member.Id, created.Team.Id)
+	require.NoError(t, err)
+	require.NoError(t, BindAdtyTeamKey(member.Id, token.Id))
+
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/", nil)
+	common.SetContextKey(ctx, constant.ContextKeyTokenId, token.Id)
+	marked, k := AdtyApplySiteMarkup(ctx, member.Id, "default", 2)
+	assert.Equal(t, 1.0, k)
+	assert.InDelta(t, 1.0, marked, 0.000001)
+	assert.False(t, AdtyTeamPriceBlocked(ctx))
+
+	personal, _ := gin.CreateTestContext(httptest.NewRecorder())
+	personal.Request = httptest.NewRequest(http.MethodPost, "/", nil)
+	unchanged, _ := AdtyApplySiteMarkup(personal, member.Id, "default", 2)
+	assert.InDelta(t, 2.0, unchanged, 0.000001)
 }
 
 func decimalPtr(value string) *decimal.Decimal {

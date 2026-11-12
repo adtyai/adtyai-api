@@ -412,6 +412,9 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 	if relayInfo.UserId <= 0 {
 		return nil, types.NewError(errors.New("invalid userId"), types.ErrorCodeQueryDataError, types.ErrOptionWithSkipRetry())
 	}
+	if AdtyTeamPriceBlocked(c) {
+		return nil, types.NewErrorWithStatusCode(ErrAdtyTeamInvalid, types.ErrorCodeModelPriceError, http.StatusForbidden, types.ErrOptionWithSkipRetry())
+	}
 
 	// 钱包路径需要先检查用户额度
 	tryWallet := func() (*BillingSession, *types.NewAPIError) {

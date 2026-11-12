@@ -558,5 +558,6 @@
 | `relay/mjproxy_handler.go` | `pinMidjourneyImageURL` 在 IP 字面量短路前重复执行 URL、私网和端口校验 | 公网图片重定向到回环地址时，原短路不复核，图片代理会读取私网响应 | OBS-ROOT-006 |
 | `model/option.go` | `QuotaPerUnit` 只接受 500000；写入前和加载时都拒绝其他值，内存不改写 | 1 USD = 500000 额度是固定尺度，后台选项不能把它改成其他比例 | OBS-FIN-011 |
 | `model/billing_operation.go` | 预扣前若令牌绑定团队，改扣团队共享余额并跳过个人钱包 | 团队请求不能改扣成员或负责人个人账户 | A.24.7 |
+| `service/billing_session.go` | 团队协议价低于供货价时拒绝预扣 | 分站团队最终价不能低于供货价 | A.24.7 |
 | `model/user.go` | 删除用户事务里调用团队关闭钩子 | 负责人注销时关闭团队，余额保留 | A.24.7 |
 | `service/http_client.go` | 原请求带 `mj-api-secret` 时，跨源重定向直接拒绝 | Go 会转发非标准密钥头；307/308 不能把渠道密钥送到另一个源 | OBS-ROOT-018 |
