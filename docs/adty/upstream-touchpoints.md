@@ -555,3 +555,4 @@
 | `controller/adty_site_admin.go`、`router/adty-router.go`、`web/src/features/adty-site-admin/`及八语 | Root专用POST、option:write PAT、版本冲突；详情搜索和交接确认、错误草稿及撤权保护 | 复用现有searchUsers、Combobox、Dialog、ConfirmDialog、Field、RHF+Zod和草稿保护；检索未发现适用共享用户选择器，无新增通用控件/依赖 | FIN-I-07 |
 | `web/scripts/adty/browser-site-ownership.mjs`、`scripts/adty/browser-business.sh`及集中后端回归 | 隔离PG17/Redis的1440/390真实UI交接、协议、旧权限、迟到到账/退款重放、分任结算和追回 | SQL仅准备代表性历史订单/待结夹具；真实API处理合成资金，未操作真实商户 | FIN-I-07 |
 | `AGENTS.md`、`web/AGENTS.md`、根目录各语言 `README*.md` | 同步 Root 站长交接、历史资金归属、支付场景、员工授权及构建版本说明，链接现有工程文档 | 保留原有标题、段落、表格及上游署名；版本由既有工作流生成，不改包版本或发布标签 | 2026-11-10 收尾 |
+| `relay/mjproxy_handler.go` | `pinMidjourneyImageURL` 在 IP 字面量短路前重复执行 URL、私网和端口校验 | 公网图片重定向到回环地址时，原短路不复核，图片代理会读取私网响应 | OBS-ROOT-006 |

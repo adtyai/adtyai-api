@@ -410,6 +410,77 @@ func signedMidjourneyImageRequest(t *testing.T, id string) *http.Request {
 	return httptest.NewRequest(http.MethodGet, path, nil)
 }
 
+func TestPinMidjourneyImageURLRejectsPrivateLiteralAndDisallowedPort(t *testing.T) {
+	fetchSetting := system_setting.GetFetchSetting()
+	original := *fetchSetting
+	t.Cleanup(func() { *fetchSetting = original })
+	fetchSetting.EnableSSRFProtection = true
+	fetchSetting.AllowPrivateIp = false
+	fetchSetting.DomainFilterMode = false
+	fetchSetting.IpFilterMode = false
+	fetchSetting.DomainList = nil
+	fetchSetting.IpList = nil
+	fetchSetting.ApplyIPFilterForDomain = false
+	fetchSetting.AllowedPorts = []string{"80", "443"}
+
+	_, _, privateErr := pinMidjourneyImageURL("http://127.0.0.1/secret")
+	require.Error(t, privateErr)
+	_, _, portErr := pinMidjourneyImageURL("http://1.1.1.1:8080/pic")
+	require.Error(t, portErr)
+	pinned, _, err := pinMidjourneyImageURL("http://1.1.1.1/pic")
+	require.NoError(t, err)
+	require.Equal(t, "http://1.1.1.1/pic", pinned)
+}
+
+type midjourneyRoundTripFunc func(*http.Request) (*http.Response, error)
+
+func (fn midjourneyRoundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return fn(req)
+}
+
+func TestFetchMidjourneyImageDoesNotFollowPrivateIPRedirect(t *testing.T) {
+	fetchSetting := system_setting.GetFetchSetting()
+	original := *fetchSetting
+	t.Cleanup(func() { *fetchSetting = original })
+	fetchSetting.EnableSSRFProtection = true
+	fetchSetting.AllowPrivateIp = false
+	fetchSetting.DomainFilterMode = false
+	fetchSetting.IpFilterMode = false
+	fetchSetting.DomainList = nil
+	fetchSetting.IpList = nil
+	fetchSetting.ApplyIPFilterForDomain = false
+	fetchSetting.AllowedPorts = []string{"80", "443"}
+
+	followedPrivate := false
+	client := &http.Client{Transport: midjourneyRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if req.URL.Hostname() == "1.1.1.1" {
+			return &http.Response{
+				StatusCode: http.StatusFound,
+				Header:     http.Header{"Location": []string{"http://127.0.0.1/secret"}},
+				Body:       io.NopCloser(strings.NewReader("")),
+				Request:    req,
+			}, nil
+		}
+		if ip := net.ParseIP(req.URL.Hostname()); ip != nil && ip.IsLoopback() {
+			followedPrivate = true
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"image/png"}},
+				Body:       io.NopCloser(strings.NewReader("private")),
+				Request:    req,
+			}, nil
+		}
+		return nil, fmt.Errorf("unexpected midjourney fetch %s", req.URL)
+	})}
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+	_, err := fetchMidjourneyImage(ctx, client, "http://1.1.1.1/pic", "")
+	require.Error(t, err)
+	require.False(t, followedPrivate)
+	require.Contains(t, err.Error(), "private")
+}
+
 func TestRelayMidjourneyImageRejectsUnsignedRequest(t *testing.T) {
 	previousDB := model.DB
 	previousCache := common.MemoryCacheEnabled

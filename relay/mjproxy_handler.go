@@ -132,6 +132,11 @@ func pinMidjourneyImageURL(raw string) (pinnedURL, serverName string, err error)
 	if host == "" {
 		return "", "", fmt.Errorf("invalid host")
 	}
+	// Redirect targets, including IP literals, must repeat the URL, private-network and port checks.
+	// Returning a literal early let a public image redirect the proxy onto loopback.
+	if err := common.ValidateURLWithFetchSetting(raw, true, fetchSetting.AllowPrivateIp, fetchSetting.DomainFilterMode, fetchSetting.IpFilterMode, fetchSetting.DomainList, fetchSetting.IpList, fetchSetting.AllowedPorts, fetchSetting.ApplyIPFilterForDomain); err != nil {
+		return "", "", err
+	}
 	if net.ParseIP(host) != nil {
 		return raw, "", nil
 	}
