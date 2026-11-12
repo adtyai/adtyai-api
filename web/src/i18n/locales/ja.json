@@ -403,6 +403,7 @@
     "Promo bonus {{amount}}": "プロモボーナス {{amount}}",
     "Promo code (optional)": "プロモコード（任意）",
     "Promo codes are turned off": "プロモコードはオフです",
+    "Promo codes are not available": "プロモコードは利用できません",
     "This promo code is not valid": "このプロモコードは無効です",
     "Campaign emails, automated emails, promo codes and sign-up sources.": "キャンペーン、自動メール、プロモコード、登録元。",
     "Automated emails": "自動メール",

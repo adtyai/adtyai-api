@@ -410,6 +410,7 @@
     "Promo bonus {{amount}}": "优惠赠送 {{amount}}",
     "Promo code (optional)": "优惠码（可选）",
     "Promo codes are turned off": "优惠码已关闭",
+    "Promo codes are not available": "优惠码已停用",
     "This promo code is not valid": "这个优惠码无效",
     "Campaign emails, automated emails, promo codes and sign-up sources.": "群发邮件、自动邮件、优惠码和注册来源。",
     "Automated emails": "自动邮件",

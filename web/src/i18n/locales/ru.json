@@ -413,6 +413,7 @@
     "Promo bonus {{amount}}": "Бонус по промокоду {{amount}}",
     "Promo code (optional)": "Промокод (необязательно)",
     "Promo codes are turned off": "Промокоды выключены",
+    "Promo codes are not available": "Промокоды недоступны",
     "This promo code is not valid": "Этот промокод недействителен",
     "Campaign emails, automated emails, promo codes and sign-up sources.": "Рассылки, автоматические письма, промокоды и источники регистраций.",
     "Automated emails": "Автоматические письма",

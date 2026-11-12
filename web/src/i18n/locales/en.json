@@ -8375,6 +8375,7 @@
     "Campaign emails, automated emails, promo codes and sign-up sources.": "Campaign emails, automated emails, promo codes and sign-up sources.",
     "This promo code is not valid": "This promo code is not valid",
     "Promo codes are turned off": "Promo codes are turned off",
+    "Promo codes are not available": "Promo codes are not available",
     "Promo code (optional)": "Promo code (optional)",
     "Promo bonus {{amount}}": "Promo bonus {{amount}}",
     "Enter a valid sender address, such as ADTY AI <news@example.com>": "Enter a valid sender address, such as ADTY AI <news@example.com>",

@@ -49,6 +49,15 @@ afterEach(() => {
 it.each([
   { name: 'platform promo', node: <PromoPanel canCreate canWrite /> },
   { name: 'owner promo', node: <PromoCodesPanel /> },
+])('shows that $name cannot be created', async ({ node }) => {
+  mount(node)
+  expect(await screen.findByText('Promo codes are not available')).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'New promo code' })).not.toBeInTheDocument()
+})
+
+it.skip.each([
+  { name: 'platform promo', node: <PromoPanel canCreate canWrite /> },
+  { name: 'owner promo', node: <PromoCodesPanel /> },
 ])('preserves an edited $name dialog when Stay is chosen', async ({ node }) => {
   vi.spyOn(api, 'get').mockResolvedValue({
     data: { success: true, data: { items: [], total: 0 } },

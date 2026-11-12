@@ -8474,6 +8474,7 @@
     "Campaign emails, automated emails, promo codes and sign-up sources.": "Campagnes, e-mails automatiques, codes promo et sources d'inscription.",
     "This promo code is not valid": "Ce code promo n'est pas valide",
     "Promo codes are turned off": "Les codes promo sont désactivés",
+    "Promo codes are not available": "Les codes promotionnels ne sont plus disponibles",
     "Promo code (optional)": "Code promo (facultatif)",
     "Promo bonus {{amount}}": "Bonus promo {{amount}}",
     "The webhook signing secret starts with whsec_": "Le secret de signature du webhook commence par whsec_",

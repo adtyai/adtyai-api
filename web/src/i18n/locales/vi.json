@@ -8487,6 +8487,7 @@
     "Write the English version first": "Hãy viết bản tiếng Anh trước",
     "This promo code is not valid": "Mã khuyến mãi này không hợp lệ",
     "Promo codes are turned off": "Mã khuyến mãi đang tắt",
+    "Promo codes are not available": "Mã ưu đãi không còn dùng được",
     "Promo code (optional)": "Mã khuyến mãi (tùy chọn)",
     "The webhook signing secret starts with whsec_": "Khóa ký webhook bắt đầu bằng whsec_",
     "This campaign has already been sent": "Chiến dịch này đã được gửi",

@@ -28,7 +28,6 @@ import { CustomersPanel } from '../components/customers-panel'
 import { EarningsPanel } from '../components/earnings-panel'
 import { OverviewPanel } from '../components/overview-panel'
 import { OwnerVerificationProvider } from '../components/owner-verification'
-import { PromoCodesPanel } from '../components/promo-codes-panel'
 import { SiteSettingsPanel } from '../components/site-settings-panel'
 import type { OwnerSite } from '../types'
 
@@ -101,12 +100,7 @@ it.each([
     data: { items: [], total: 0 },
     ready: 'No customers yet',
   },
-  {
-    name: 'promo codes',
-    node: <PromoCodesPanel />,
-    data: { items: [], total: 0 },
-    ready: 'No promo codes yet',
-  },
+
   {
     name: 'earnings',
     node: <EarningsPanel />,

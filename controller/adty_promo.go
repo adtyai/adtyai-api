@@ -63,62 +63,18 @@ func GetAdtyPromoCodes(c *gin.Context) {
 	referralPage(c, query, &items)
 }
 
+func refuseAdtyPromoWrite(c *gin.Context) {
+	common.ApiError(c, service.ErrAdtyPromoRetired)
+}
+
 // PostAdtyPromoCode 新建平台出资的优惠码（Root）。
 func PostAdtyPromoCode(c *gin.Context) {
-	var in adtyPromoCodeInput
-	code := model.AdtyPromoCode{CreatedBy: c.GetInt("id")}
-	if err := common.DecodeJson(c.Request.Body, &in); err != nil || !in.apply(&code) {
-		common.ApiErrorT(c, "Invalid parameters")
-		return
-	}
-	existing, err := model.GetAdtyPromoCodeByCode(code.Code)
-	if err != nil {
-		common.ApiError(c, err)
-		return
-	}
-	if existing != nil {
-		common.ApiErrorT(c, "This promo code already exists")
-		return
-	}
-	if err := model.DB.Create(&code).Error; err != nil {
-		common.ApiError(c, err)
-		return
-	}
-	recordManageAudit(c, "adty.marketing.promo_create", map[string]any{"id": code.Id, "code": code.Code})
-	common.ApiSuccess(c, code)
+	refuseAdtyPromoWrite(c)
 }
 
 // PutAdtyPromoCode 改优惠码（Root）。码本身和已用次数不改。
 func PutAdtyPromoCode(c *gin.Context) {
-	id, err := strconv.Atoi(c.Param("id"))
-	if err != nil {
-		common.ApiErrorT(c, "Invalid parameters")
-		return
-	}
-	var code model.AdtyPromoCode
-	if err := model.DB.First(&code, id).Error; err != nil {
-		common.ApiErrorT(c, "Invalid parameters")
-		return
-	}
-	var in adtyPromoCodeInput
-	original := code.Code
-	if err := common.DecodeJson(c.Request.Body, &in); err != nil {
-		common.ApiErrorT(c, "Invalid parameters")
-		return
-	}
-	in.Code = original
-	if !in.apply(&code) {
-		common.ApiErrorT(c, "Invalid parameters")
-		return
-	}
-	if err := model.DB.Model(&model.AdtyPromoCode{}).Where("id = ?", code.Id).
-		Select("kind", "value", "min_face_usd", "max_uses", "per_user_limit", "starts_at", "expires_at", "new_users_only", "site_id", "enabled", "note").
-		Updates(&code).Error; err != nil {
-		common.ApiError(c, err)
-		return
-	}
-	recordManageAudit(c, "adty.marketing.promo_update", map[string]any{"id": code.Id, "code": code.Code, "enabled": code.Enabled})
-	common.ApiSuccess(c, code)
+	refuseAdtyPromoWrite(c)
 }
 
 // 站长中心的优惠码（12.4 站长出资）。码固定为本站、出资方是站长，优惠加赠从站长收益里扣。
@@ -184,89 +140,15 @@ func GetAdtySitePromoCodes(c *gin.Context) {
 
 // PostAdtySitePromoCode 站长新建本站的优惠码。
 func PostAdtySitePromoCode(c *gin.Context) {
-	site, ok := adtyPromoOwnerSite(c)
-	if !ok {
-		return
-	}
-	var in adtyPromoCodeInput
-	code := model.AdtyPromoCode{CreatedBy: c.GetInt("id")}
-	if err := common.DecodeJson(c.Request.Body, &in); err != nil {
-		common.ApiErrorT(c, "Invalid parameters")
-		return
-	}
-	if !in.applySiteOwner(c, &code, site) {
-		return
-	}
-	// 二开：二次验证放在校验参数之后、写库之前（任务 11.6）；新建时 target 为 0。
-	if !adtyRequireOwnerProof(c, service.AdtySiteOwnerActionPromo, 0) {
-		return
-	}
-	existing, err := model.GetAdtyPromoCodeByCode(code.Code)
-	if err != nil {
-		common.ApiError(c, err)
-		return
-	}
-	if existing != nil {
-		common.ApiErrorT(c, "This promo code already exists")
-		return
-	}
-	if err := model.DB.Create(&code).Error; err != nil {
-		common.ApiError(c, err)
-		return
-	}
-	recordManageAudit(c, "adty.site.promo_create", map[string]any{"id": code.Id, "site_id": site.Id, "code": code.Code})
-	common.ApiSuccess(c, code)
+	refuseAdtyPromoWrite(c)
 }
 
 // PutAdtySitePromoCode 站长改本站的码；码本身、站点、出资方不改。
 func PutAdtySitePromoCode(c *gin.Context) {
-	site, ok := adtyPromoOwnerSite(c)
-	if !ok {
-		return
-	}
-	code, ok := adtySitePromoByParam(c, site)
-	if !ok {
-		return
-	}
-	var in adtyPromoCodeInput
-	if err := common.DecodeJson(c.Request.Body, &in); err != nil {
-		common.ApiErrorT(c, "Invalid parameters")
-		return
-	}
-	in.Code = code.Code
-	if !in.applySiteOwner(c, code, site) {
-		return
-	}
-	if !adtyRequireOwnerProof(c, service.AdtySiteOwnerActionPromo, code.Id) {
-		return
-	}
-	if err := model.DB.Model(&model.AdtyPromoCode{}).Where("id = ? AND site_id = ?", code.Id, site.Id).
-		Select("kind", "value", "min_face_usd", "max_uses", "per_user_limit", "starts_at", "expires_at", "new_users_only", "enabled", "note").
-		Updates(code).Error; err != nil {
-		common.ApiError(c, err)
-		return
-	}
-	recordManageAudit(c, "adty.site.promo_update", map[string]any{"id": code.Id, "site_id": site.Id, "enabled": code.Enabled})
-	common.ApiSuccess(c, code)
+	refuseAdtyPromoWrite(c)
 }
 
 // DeleteAdtySitePromoCode 站长删本站的码。未付订单仍可入账本金和档位加赠，核销时移除已删除码的优惠加赠。
 func DeleteAdtySitePromoCode(c *gin.Context) {
-	site, ok := adtyPromoOwnerSite(c)
-	if !ok {
-		return
-	}
-	code, ok := adtySitePromoByParam(c, site)
-	if !ok {
-		return
-	}
-	if !adtyRequireOwnerProof(c, service.AdtySiteOwnerActionPromo, code.Id) {
-		return
-	}
-	if err := model.DB.Where("id = ? AND site_id = ?", code.Id, site.Id).Delete(&model.AdtyPromoCode{}).Error; err != nil {
-		common.ApiError(c, err)
-		return
-	}
-	recordManageAudit(c, "adty.site.promo_delete", map[string]any{"id": code.Id, "site_id": site.Id})
-	common.ApiSuccess(c, nil)
+	refuseAdtyPromoWrite(c)
 }

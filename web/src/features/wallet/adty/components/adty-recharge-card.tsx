@@ -32,7 +32,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { Skeleton } from '@/components/ui/skeleton'
-import { useDebounce } from '@/hooks/use-debounce'
+
 import { toIntlLocale } from '@/i18n/languages'
 import { formatNumber } from '@/lib/format'
 import { getServerErrorMessage } from '@/lib/server-error-message'
@@ -75,9 +75,7 @@ export function AdtyRechargeCard(props: AdtyRechargeCardProps) {
   const [selectedTier, setSelectedTier] = useState<number | null>(null)
   const [customAmount, setCustomAmount] = useState('')
   const [methodId, setMethodId] = useState<string | null>(null)
-  // adty task 12.4: the code is checked by the quote; an invalid one blocks payment.
-  const [promoInput, setPromoInput] = useState('')
-  const promoCode = useDebounce(promoInput.trim(), 400)
+  const promoCode = ''
 
   const methods =
     props.info?.scenes === undefined
@@ -297,28 +295,6 @@ export function AdtyRechargeCard(props: AdtyRechargeCardProps) {
           </div>
         </section>
 
-        <section className='flex flex-col gap-1.5 sm:max-w-xs'>
-          <Label htmlFor='adty-promo-code'>{t('Promo code (optional)')}</Label>
-          <Input
-            id='adty-promo-code'
-            value={promoInput}
-            maxLength={32}
-            autoComplete='off'
-            aria-invalid={promoError !== ''}
-            onChange={(event) => setPromoInput(event.target.value)}
-          />
-          {promoError && (
-            <p className='text-destructive text-xs'>{promoError}</p>
-          )}
-          {promoCode !== '' && quote && promoBonus > 0 && (
-            <p className='text-success text-xs' data-testid='adty-promo-bonus'>
-              {t('Promo bonus {{amount}}', {
-                amount: formatUsd(promoBonus, locale),
-              })}
-            </p>
-          )}
-        </section>
-
         <section
           className='bg-muted/40 flex flex-col gap-2 rounded-lg border p-4'
           aria-live='polite'
@@ -361,8 +337,7 @@ export function AdtyRechargeCard(props: AdtyRechargeCardProps) {
               !quoteAvailable ||
               props.paying ||
               quoteQuery.isFetching ||
-              quoteQuery.isError ||
-              promoInput.trim() !== promoCode
+              quoteQuery.isError
             }
             onClick={() =>
               method && props.onPay(amount, method, promoCode, paymentScene)

@@ -71,7 +71,7 @@ describe('bonus tiers', () => {
 })
 
 describe('AdtyRechargeCard', () => {
-  it('adds the promo bonus from the quote and passes the code to the payment', async () => {
+  it('does not offer a promo code and pays without one', async () => {
     api.quoteAdtyTopup.mockImplementation(
       async (_amount: number, _method: string, promo: string) => ({
         available: true,
@@ -102,23 +102,20 @@ describe('AdtyRechargeCard', () => {
     )
     await user.click(screen.getByRole('button', { name: /\$100/ }))
     await user.click(screen.getByRole('button', { name: /TRC20/ }))
-    await user.type(screen.getByLabelText('Promo code (optional)'), 'TEN')
-    expect(await screen.findByTestId('adty-promo-bonus')).toHaveTextContent(
-      '$10.00'
-    )
-    expect(screen.getByTestId('adty-credit')).toHaveTextContent('$112.50')
+    expect(screen.queryByLabelText('Promo code (optional)')).not.toBeInTheDocument()
+    expect(screen.getByTestId('adty-credit')).toHaveTextContent('$102.50')
     const pay = screen.getByRole('button', { name: 'Pay now' })
     await waitFor(() => expect(pay).toBeEnabled())
     await user.click(pay)
     expect(onPay).toHaveBeenCalledWith(
       100,
       info.methods[0],
-      'TEN',
+      '',
       'wallet_topup'
     )
   })
 
-  it('shows the server reason and blocks payment for an invalid promo code', async () => {
+  it('pays a valid amount without a promo field', async () => {
     api.quoteAdtyTopup.mockImplementation(
       async (_amount: number, _method: string, promo: string) => {
         if (promo) throw new Error('This promo code is not valid')
@@ -151,15 +148,10 @@ describe('AdtyRechargeCard', () => {
     )
     await user.click(screen.getByRole('button', { name: /^\$10Bonus/ }))
     await user.click(screen.getByRole('button', { name: /TRC20/ }))
-    await user.type(screen.getByLabelText('Promo code (optional)'), 'NOPE')
-    expect(
-      await screen.findByText('This promo code is not valid')
-    ).toBeInTheDocument()
-    expect(screen.getByLabelText('Promo code (optional)')).toHaveAttribute(
-      'aria-invalid',
-      'true'
+    expect(screen.queryByLabelText('Promo code (optional)')).not.toBeInTheDocument()
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Pay now' })).toBeEnabled()
     )
-    expect(screen.getByRole('button', { name: 'Pay now' })).toBeDisabled()
   })
 
   it('shows a $150 custom amount with a $3.75 bonus from the server rates', async () => {

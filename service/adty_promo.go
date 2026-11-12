@@ -2,7 +2,6 @@ package service
 
 import (
 	"strings"
-	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
@@ -18,6 +17,7 @@ var (
 	ErrAdtyPromoUsed         = common.NewMessage("You have already used this promo code")
 	ErrAdtyPromoNewUsersOnly = common.NewMessage("This promo code is only for your first top-up")
 	ErrAdtyPromoDisabled     = common.NewMessage("Promo codes are turned off")
+	ErrAdtyPromoRetired      = common.NewMessage("Promo codes are not available")
 	// ErrAdtySitePromoOverCap：站长出资的码加上站点该档加赠，超过「主站同档 + max_site_bonus_extra」。
 	ErrAdtySitePromoOverCap = common.NewMessage("This promo code adds more bonus than this site may give")
 )
@@ -69,52 +69,10 @@ func AdtyPromoBonus(code *model.AdtyPromoCode, faceUSD decimal.Decimal) decimal.
 	return code.Value.Round(8)
 }
 
-// adtyPromoBonusFor 校验优惠码并返回码和优惠加赠；没带码时返回 nil、0。
-// 总开关 promo_enabled 关着时，带码的报价和下单都拒绝（任务 12.4）。
-// 校验：存在、启用、在有效期内、适用这个用户的站点、面额达到最低值、每人次数和总次数没用完、
-// 只限新用户时这个人从没充值成功过。次数只在入账时扣，这里只是先挡一下。
-func adtyPromoBonusFor(in AdtyPromoInput, faceUSD decimal.Decimal) (*model.AdtyPromoCode, decimal.Decimal, error) {
+// adtyPromoBonusFor refuses every new promo code. Historical redemption rows stay.
+func adtyPromoBonusFor(in AdtyPromoInput, _ decimal.Decimal) (*model.AdtyPromoCode, decimal.Decimal, error) {
 	if strings.TrimSpace(in.Code) == "" {
 		return nil, decimal.Zero, nil
 	}
-	if !adty_setting.GetPromoSetting().PromoEnabled {
-		return nil, decimal.Zero, ErrAdtyPromoDisabled
-	}
-	code, err := model.GetAdtyPromoCodeByCode(in.Code)
-	if err != nil {
-		return nil, decimal.Zero, err
-	}
-	now := time.Now().Unix()
-	funderOK := code != nil && (code.Funder == model.AdtyPromoFunderPlatform || (code.Funder == model.AdtyPromoFunderSiteOwner && code.SiteId > 0))
-	if code == nil || !funderOK || !code.Enabled || code.SiteId != in.SiteId ||
-		(code.StartsAt > 0 && now < code.StartsAt) || (code.ExpiresAt > 0 && now >= code.ExpiresAt) ||
-		(code.MaxUses > 0 && code.UsedCount >= code.MaxUses) || !code.Value.IsPositive() {
-		return nil, decimal.Zero, ErrAdtyPromoInvalid
-	}
-	if faceUSD.LessThan(code.MinFaceUSD) {
-		return nil, decimal.Zero, common.NewMessage(AdtyPromoMinFaceKey, map[string]any{"amount": code.MinFaceUSD.StringFixed(2)})
-	}
-	limit := code.PerUserLimit
-	if code.NewUsersOnly {
-		limit = 1
-	}
-	if limit > 0 {
-		used, err := model.CountAdtyPromoRedemptions(model.DB, code.Id, in.UserId)
-		if err != nil {
-			return nil, decimal.Zero, err
-		}
-		if used >= int64(limit) {
-			return nil, decimal.Zero, ErrAdtyPromoUsed
-		}
-	}
-	if code.NewUsersOnly {
-		fresh, err := model.AdtyPromoUserIsNew(model.DB, in.UserId)
-		if err != nil {
-			return nil, decimal.Zero, err
-		}
-		if !fresh {
-			return nil, decimal.Zero, ErrAdtyPromoNewUsersOnly
-		}
-	}
-	return code, AdtyPromoBonus(code, faceUSD), nil
+	return nil, decimal.Zero, ErrAdtyPromoRetired
 }

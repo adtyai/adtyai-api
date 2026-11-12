@@ -89,6 +89,16 @@ func userQuota(t *testing.T, db *gorm.DB, userId int) int64 {
 	return quota
 }
 
+func TestPromoCodesAreRetired(t *testing.T) {
+	_, bonus, err := adtyPromoBonusFor(AdtyPromoInput{UserId: 1, Code: "SPRING"}, decimal.NewFromInt(100))
+	require.ErrorIs(t, err, ErrAdtyPromoRetired)
+	assert.True(t, bonus.IsZero())
+	code, bonus, err := adtyPromoBonusFor(AdtyPromoInput{Code: "   "}, decimal.NewFromInt(100))
+	require.NoError(t, err)
+	assert.Nil(t, code)
+	assert.True(t, bonus.IsZero())
+}
+
 func TestPromoOffRejectsCodeOnQuote(t *testing.T) {
 	db := preparePromoDB(t)
 	adty_setting.GetPromoSetting().PromoEnabled = false
@@ -96,9 +106,9 @@ func TestPromoOffRejectsCodeOnQuote(t *testing.T) {
 	promoCode(t, db, model.AdtyPromoCode{Code: "OFF10PCT", Kind: model.AdtyPromoKindPercent, Value: decimal.NewFromInt(10)})
 
 	_, err := AdtyQuoteFor("default", 100, AdtyMethodUSDTTRC20, AdtyPromoInput{UserId: user.Id, Code: "OFF10PCT"})
-	require.ErrorIs(t, err, ErrAdtyPromoDisabled)
+	require.ErrorIs(t, err, ErrAdtyPromoRetired)
 	_, err = AdtyQuoteForSite(nil, "default", 100, AdtyMethodAlipay, AdtyPromoInput{UserId: user.Id, Code: " off10pct "})
-	require.ErrorIs(t, err, ErrAdtyPromoDisabled)
+	require.ErrorIs(t, err, ErrAdtyPromoRetired)
 
 	quote, err := AdtyQuoteFor("default", 100, AdtyMethodUSDTTRC20, AdtyPromoInput{UserId: user.Id, Code: "   "})
 	require.NoError(t, err)
