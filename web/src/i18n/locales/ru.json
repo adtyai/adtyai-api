@@ -3502,6 +3502,7 @@
     "Quota value cannot be negative": "Значение квоты не может быть отрицательным",
     "Quota update failed": "Не удалось обновить квоту",
     "Quota unit is misconfigured": "Единица квоты настроена неверно",
+    "Quota per unit is fixed at 500000": "Квота на единицу зафиксирована на значении 500000",
     "Quota unchanged": "Квота не изменилась",
     "Quota Types": "Типы квот",
     "Quota Settings": "Настройки квоты",

@@ -2770,6 +2770,7 @@
     "Quota value cannot be negative": "할당량 값은 음수일 수 없어요",
     "Quota update failed": "할당량 업데이트에 실패했어요",
     "Quota unit is misconfigured": "할당량 단위가 잘못 설정되었어요",
+    "Quota per unit is fixed at 500000": "단위당 할당량은 500000으로 고정되어 있습니다",
     "Quota unchanged": "할당량이 변경되지 않았어요",
     "Quota Types": "할당량 유형",
     "Quota Settings": "할당량 설정",

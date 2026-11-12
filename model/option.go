@@ -257,6 +257,17 @@ func SyncOptions(frequency int) {
 	}
 }
 
+// fixedQuotaPerUnit is the only legal USD scale. DEC-001 forbids changing it through options.
+const fixedQuotaPerUnit = 500000
+
+func rejectChangedQuotaPerUnit(value string) error {
+	n, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
+	if err != nil || math.IsNaN(n) || math.IsInf(n, 0) || n != fixedQuotaPerUnit {
+		return common.NewMessage("Quota per unit is fixed at 500000")
+	}
+	return nil
+}
+
 func validateOptionValue(key string, value string) error {
 	if key == "WaffoPancakeEnvironment" && value != "test" && value != "prod" {
 		return errors.New("invalid Waffo Pancake environment")
@@ -301,7 +312,9 @@ func validateOptionValue(key string, value string) error {
 		return setting.ValidateMaxTokenAutoGroups(value)
 	}
 	switch key {
-	case "QuotaPerUnit", "Price", "USDExchangeRate":
+	case "QuotaPerUnit":
+		return rejectChangedQuotaPerUnit(value)
+	case "Price", "USDExchangeRate":
 		return requirePositiveOptionFloat(key, value)
 	case "MinTopUp":
 		n, err := strconv.Atoi(strings.TrimSpace(value))
@@ -871,11 +884,10 @@ func updateOptionMap(key string, value string) (err error) {
 	case "ChannelDisableThreshold":
 		common.ChannelDisableThreshold, _ = strconv.ParseFloat(value, 64)
 	case "QuotaPerUnit":
-		n, parseErr := strconv.ParseFloat(value, 64)
-		if parseErr != nil || math.IsNaN(n) || math.IsInf(n, 0) || n <= 0 {
-			return common.NewMessage("{{key}} must be a positive number", map[string]any{"key": key})
+		if err = rejectChangedQuotaPerUnit(value); err != nil {
+			return err
 		}
-		common.QuotaPerUnit = n
+		common.QuotaPerUnit = fixedQuotaPerUnit
 	case "SensitiveWords":
 		setting.SensitiveWordsFromString(value)
 	case "AutomaticDisableKeywords":

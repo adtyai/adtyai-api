@@ -3532,6 +3532,7 @@
     "Quota value cannot be negative": "額度值不能為負數",
     "Quota update failed": "額度更新失敗",
     "Quota unit is misconfigured": "額度單位設定錯誤",
+    "Quota per unit is fixed at 500000": "每單位額度固定為 500000",
     "Quota unchanged": "額度未變更",
     "Quota Types": "配額類型",
     "Quota Settings": "額度設定",

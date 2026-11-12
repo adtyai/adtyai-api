@@ -6094,6 +6094,7 @@
     "Quota saturation protection triggered": "Đã kích hoạt bảo vệ chống tràn hạn ngạch",
     "Quota Settings": "Cài đặt Hạn mức",
     "Quota Types": "Các loại hạn ngạch",
+    "Quota per unit is fixed at 500000": "Hạn mức mỗi đơn vị được cố định ở 500000",
     "Quota unchanged": "Hạn mức không thay đổi",
     "Quota unit is misconfigured": "Đơn vị hạn mức bị cấu hình sai",
     "Quota update failed": "Cập nhật hạn mức thất bại",

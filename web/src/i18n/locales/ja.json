@@ -3341,6 +3341,7 @@
     "Quota value cannot be negative": "クォータ値は負の数にできません",
     "Quota update failed": "クォータの更新に失敗しました",
     "Quota unit is misconfigured": "クォータ単位の設定が正しくありません",
+    "Quota per unit is fixed at 500000": "単位あたりのクォータは 500000 に固定されています",
     "Quota unchanged": "クォータの変更なし",
     "Quota Types": "クォータタイプ",
     "Quota Settings": "クォータ設定",

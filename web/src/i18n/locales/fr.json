@@ -6080,6 +6080,7 @@
     "Quota Per Unit": "Quota par unité",
     "Quota saturation protection triggered": "Protection contre la saturation du quota déclenchée",
     "Quota Settings": "Paramètres de quota",
+    "Quota per unit is fixed at 500000": "Le quota par unité est fixé à 500000",
     "Quota unchanged": "Quota inchangé",
     "Quota unit is misconfigured": "L'unité de quota est mal configurée",
     "Quota update failed": "Échec de la mise à jour du quota",

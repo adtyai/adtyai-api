@@ -28,8 +28,21 @@ func TestQuotaPerUnitRejectsGarbageWithoutZeroing(t *testing.T) {
 	require.NoError(t, DB.Model(&Option{}).Where("key = ?", "QuotaPerUnit").Count(&stored).Error)
 	assert.Zero(t, stored)
 
-	require.NoError(t, UpdateOption("QuotaPerUnit", "250000"))
-	assert.Equal(t, 250000.0, common.QuotaPerUnit)
+	require.Error(t, UpdateOption("QuotaPerUnit", "250000"))
+	assert.Equal(t, 500000.0, common.QuotaPerUnit)
+	require.NoError(t, DB.Model(&Option{}).Where("key = ?", "QuotaPerUnit").Count(&stored).Error)
+	assert.Zero(t, stored)
+}
+
+func TestQuotaPerUnitLoadKeepsFixedScale(t *testing.T) {
+	old := common.QuotaPerUnit
+	common.QuotaPerUnit = 500000
+	t.Cleanup(func() { common.QuotaPerUnit = old })
+
+	require.Error(t, updateOptionMap("QuotaPerUnit", "250000"))
+	assert.Equal(t, 500000.0, common.QuotaPerUnit)
+	require.NoError(t, updateOptionMap("QuotaPerUnit", "500000"))
+	assert.Equal(t, 500000.0, common.QuotaPerUnit)
 }
 
 func TestPriceAndTopupRatioKeepPreviousValue(t *testing.T) {
