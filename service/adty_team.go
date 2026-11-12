@@ -19,11 +19,12 @@ func init() {
 }
 
 var (
-	ErrAdtyTeamInvalid   = common.NewMessage("Invalid parameters")
-	ErrAdtyTeamForbidden = common.NewMessage("No permission to perform this action")
-	ErrAdtyTeamBusy      = common.NewMessage("This account already belongs to a team")
-	ErrAdtyTeamFunds     = common.NewMessage("Insufficient available funds")
-	ErrAdtyTeamClosed    = common.NewMessage("This team is closed")
+	ErrAdtyTeamInvalid     = common.NewMessage("Invalid parameters")
+	ErrAdtyTeamForbidden   = common.NewMessage("No permission to perform this action")
+	ErrAdtyTeamBusy        = common.NewMessage("This account already belongs to a team")
+	ErrAdtyTeamFunds       = common.NewMessage("Insufficient available funds")
+	ErrAdtyTeamClosed      = common.NewMessage("This team is closed")
+	ErrAdtyTeamLeaderFixed = common.NewMessage("The team leader cannot be replaced")
 )
 
 type AdtyTeamCreated struct {
@@ -31,14 +32,30 @@ type AdtyTeamCreated struct {
 	Member model.AdtyTeamMember
 }
 
+type AdtyTeamMemberView struct {
+	UserId   int    `json:"user_id"`
+	Username string `json:"username"`
+	Role     string `json:"role"`
+	Status   string `json:"status"`
+}
+
+type AdtyTeamKeyView struct {
+	TokenId int    `json:"token_id"`
+	Name    string `json:"name"`
+	UserId  int    `json:"user_id"`
+	Status  string `json:"status"`
+}
+
 type AdtyTeamMine struct {
-	TeamId      int64           `json:"team_id"`
-	Name        string          `json:"name"`
-	SiteId      int             `json:"site_id"`
-	Role        string          `json:"role"`
-	Discount    decimal.Decimal `json:"discount"`
-	SharedQuota int64           `json:"shared_quota"`
-	Status      string          `json:"status"`
+	TeamId      int64                `json:"team_id"`
+	Name        string               `json:"name"`
+	SiteId      int                  `json:"site_id"`
+	Role        string               `json:"role"`
+	Discount    decimal.Decimal      `json:"discount"`
+	SharedQuota int64                `json:"shared_quota"`
+	Status      string               `json:"status"`
+	Members     []AdtyTeamMemberView `json:"members"`
+	Keys        []AdtyTeamKeyView    `json:"keys"`
 }
 
 func GetAdtyTeamMine(userId int) (*AdtyTeamMine, error) {
@@ -54,10 +71,151 @@ func GetAdtyTeamMine(userId int) (*AdtyTeamMine, error) {
 	if err := model.DB.First(&team, membership.TeamId).Error; err != nil {
 		return nil, err
 	}
-	return &AdtyTeamMine{
+	page := &AdtyTeamMine{
 		TeamId: team.Id, Name: team.Name, SiteId: team.SiteId, Role: membership.Role,
 		Discount: team.Discount, SharedQuota: team.SharedQuota, Status: team.Status,
-	}, nil
+		Members: []AdtyTeamMemberView{}, Keys: []AdtyTeamKeyView{},
+	}
+	if err := fillAdtyTeamPage(page, membership); err != nil {
+		return nil, err
+	}
+	return page, nil
+}
+
+func fillAdtyTeamPage(page *AdtyTeamMine, membership model.AdtyTeamMember) error {
+	memberQuery := model.DB.Where("team_id = ?", page.TeamId)
+	keyQuery := model.DB.Where("team_id = ?", page.TeamId)
+	if membership.Role != model.AdtyTeamRoleLeader {
+		memberQuery = memberQuery.Where("user_id = ?", membership.UserId)
+		keyQuery = keyQuery.Where("user_id = ?", membership.UserId)
+	}
+	var members []model.AdtyTeamMember
+	if err := memberQuery.Order("id ASC").Find(&members).Error; err != nil {
+		return err
+	}
+	ids := make([]int, 0, len(members))
+	for _, member := range members {
+		ids = append(ids, member.UserId)
+	}
+	names := map[int]string{}
+	if len(ids) > 0 {
+		var users []model.User
+		if err := model.DB.Select("id", "username").Where("id IN ?", ids).Find(&users).Error; err != nil {
+			return err
+		}
+		for _, user := range users {
+			names[user.Id] = user.Username
+		}
+	}
+	for _, member := range members {
+		page.Members = append(page.Members, AdtyTeamMemberView{
+			UserId: member.UserId, Username: names[member.UserId], Role: member.Role, Status: member.Status,
+		})
+	}
+	var keys []model.AdtyTeamKey
+	if err := keyQuery.Order("id ASC").Find(&keys).Error; err != nil {
+		return err
+	}
+	tokenIds := make([]int, 0, len(keys))
+	for _, key := range keys {
+		tokenIds = append(tokenIds, key.TokenId)
+	}
+	tokenNames := map[int]string{}
+	if len(tokenIds) > 0 {
+		var tokens []model.Token
+		if err := model.DB.Select("id", "name").Where("id IN ?", tokenIds).Find(&tokens).Error; err != nil {
+			return err
+		}
+		for _, token := range tokens {
+			tokenNames[token.Id] = token.Name
+		}
+	}
+	for _, key := range keys {
+		page.Keys = append(page.Keys, AdtyTeamKeyView{
+			TokenId: key.TokenId, Name: tokenNames[key.TokenId], UserId: key.UserId, Status: key.Status,
+		})
+	}
+	return nil
+}
+
+// TransferAdtyTeamLeader is refused. Closing a team does not appoint a new leader.
+func TransferAdtyTeamLeader(int, int64, int) error {
+	return ErrAdtyTeamLeaderFixed
+}
+
+func DisableAdtyTeamMember(leaderId int, teamId int64, memberUserId int) error {
+	if memberUserId <= 0 || memberUserId == leaderId {
+		return ErrAdtyTeamLeaderFixed
+	}
+	return model.DB.Transaction(func(tx *gorm.DB) error {
+		team, err := lockActiveTeam(tx, teamId)
+		if err != nil {
+			return err
+		}
+		if team.LeaderUserId != leaderId {
+			return ErrAdtyTeamForbidden
+		}
+		var member model.AdtyTeamMember
+		lookup := tx.Where("team_id = ? AND user_id = ? AND status = ?", team.Id, memberUserId, model.AdtyTeamMemberActive).Limit(1).Find(&member)
+		if lookup.Error != nil {
+			return lookup.Error
+		}
+		if lookup.RowsAffected == 0 || member.Role == model.AdtyTeamRoleLeader {
+			return ErrAdtyTeamForbidden
+		}
+		if err := tx.Model(&member).Update("status", model.AdtyTeamMemberLeft).Error; err != nil {
+			return err
+		}
+		return disableAdtyTeamMemberKeysTx(tx, team.Id, memberUserId)
+	})
+}
+
+func LeaveAdtyTeam(userId int, teamId int64) error {
+	return model.DB.Transaction(func(tx *gorm.DB) error {
+		var team model.AdtyTeam
+		if err := model.AdtyLockForUpdate(tx).First(&team, teamId).Error; err != nil {
+			return err
+		}
+		if team.LeaderUserId == userId {
+			return ErrAdtyTeamLeaderFixed
+		}
+		var member model.AdtyTeamMember
+		lookup := tx.Where("team_id = ? AND user_id = ? AND status = ?", team.Id, userId, model.AdtyTeamMemberActive).Limit(1).Find(&member)
+		if lookup.Error != nil {
+			return lookup.Error
+		}
+		if lookup.RowsAffected == 0 {
+			return ErrAdtyTeamForbidden
+		}
+		if err := tx.Model(&member).Update("status", model.AdtyTeamMemberLeft).Error; err != nil {
+			return err
+		}
+		return disableAdtyTeamMemberKeysTx(tx, team.Id, userId)
+	})
+}
+
+func RevokeAdtyTeamKey(actorId int, teamId int64, tokenId int) error {
+	return model.DB.Transaction(func(tx *gorm.DB) error {
+		var key model.AdtyTeamKey
+		lookup := model.AdtyLockForUpdate(tx).Where("team_id = ? AND token_id = ?", teamId, tokenId).Limit(1).Find(&key)
+		if lookup.Error != nil {
+			return lookup.Error
+		}
+		if lookup.RowsAffected == 0 {
+			return ErrAdtyTeamForbidden
+		}
+		var team model.AdtyTeam
+		if err := tx.First(&team, teamId).Error; err != nil {
+			return err
+		}
+		if actorId != key.UserId && actorId != team.LeaderUserId {
+			return ErrAdtyTeamForbidden
+		}
+		if err := tx.Model(&model.Token{}).Where("id = ?", key.TokenId).Update("status", common.TokenStatusDisabled).Error; err != nil {
+			return err
+		}
+		return tx.Model(&key).Update("status", model.AdtyTeamMemberLeft).Error
+	})
 }
 
 func CreateAdtyTeamForCurrentUser(leaderId int, name string, discount decimal.Decimal) (*AdtyTeamCreated, error) {
@@ -380,6 +538,24 @@ func closeAdtyTeamForDeletedLeader(tx *gorm.DB, userId int) error {
 		return err
 	}
 	return tx.Model(&team).Updates(map[string]any{"status": model.AdtyTeamStatusClosed, "closed_at": time.Now().Unix()}).Error
+}
+
+func disableAdtyTeamMemberKeysTx(tx *gorm.DB, teamId int64, userId int) error {
+	var keys []model.AdtyTeamKey
+	if err := tx.Where("team_id = ? AND user_id = ? AND status = ?", teamId, userId, model.AdtyTeamMemberActive).Find(&keys).Error; err != nil {
+		return err
+	}
+	if len(keys) == 0 {
+		return nil
+	}
+	ids := make([]int, 0, len(keys))
+	for _, key := range keys {
+		ids = append(ids, key.TokenId)
+	}
+	if err := tx.Model(&model.Token{}).Where("id IN ?", ids).Update("status", common.TokenStatusDisabled).Error; err != nil {
+		return err
+	}
+	return tx.Model(&model.AdtyTeamKey{}).Where("team_id = ? AND user_id = ?", teamId, userId).Update("status", model.AdtyTeamMemberLeft).Error
 }
 
 func disableAdtyTeamKeysTx(tx *gorm.DB, teamId int64) error {

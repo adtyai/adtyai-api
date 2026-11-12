@@ -28,6 +28,7 @@ export const SITE_OWNER_SECTIONS = [
   'settings',
   'earnings',
   'vouchers',
+  'notices',
   'agreement',
 ] as const
 

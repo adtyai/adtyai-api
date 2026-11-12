@@ -22,6 +22,7 @@ import {
   ClipboardList,
   FileText,
   Key,
+  LifeBuoy,
   LayoutDashboard,
   ListTodo,
   MessageSquare,
@@ -138,6 +139,11 @@ export function useSidebarData(): SidebarData {
               title: t('Wallet'),
               url: '/wallet',
               icon: Wallet,
+            },
+            {
+              title: t('Tickets'),
+              url: '/profile#tickets',
+              icon: LifeBuoy,
             },
             {
               title: t('Referral'),

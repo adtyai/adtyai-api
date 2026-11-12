@@ -65,7 +65,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { useGroupDisplay } from '@/features/adty-groups/hooks/use-group-display'
 import { RelatedPolicyLink } from '@/features/system-settings/request-policies/related-policy-link'
 import { useStatus } from '@/hooks/use-status'
-import { getUserModels, getUserGroups } from '@/lib/api'
+import { api, getUserModels, getUserGroups } from '@/lib/api'
 import { getCurrencyDisplay, getCurrencyLabel } from '@/lib/currency'
 import { handleServerError } from '@/lib/handle-server-error'
 import {
@@ -164,18 +164,30 @@ export function ApiKeysMutateDrawer({
   })
 
   const models = modelsData?.data || []
-  const groups = useMemo<ApiKeyGroupOption[]>(
-    () =>
-      Object.entries(groupsData?.data || {}).map(([key, info]) => ({
-        value: key,
-        label: groupDisplay.name(key),
-        desc:
-          groupDisplay.desc(key) ||
-          (info.desc ? translateServerText(t, info.desc) : key),
-        ratio: info.ratio,
-      })),
-    [groupsData, t, groupDisplay]
-  )
+  const healthQuery = useQuery({
+    queryKey: ['adty-group-health'],
+    queryFn: async () => {
+      const response = await api.get('/api/adty/groups/health')
+      return response.data as {
+        success?: boolean
+        data?: { groups?: Array<{ group: string; status: string; request_success_rate?: number | null; request_samples?: number; probe_rate?: number | null; probe_samples?: number; scope?: string }> }
+      }
+    },
+    enabled: open,
+    staleTime: 60_000,
+  })
+  const groups = useMemo<ApiKeyGroupOption[]>(() => {
+    const health = new Map((healthQuery.data?.data?.groups ?? []).map((row) => [row.group, row]))
+    return Object.entries(groupsData?.data || {}).map(([key, info]) => ({
+      value: key,
+      label: groupDisplay.name(key),
+      desc:
+        groupDisplay.desc(key) ||
+        (info.desc ? translateServerText(t, info.desc) : key),
+      ratio: info.ratio,
+      health: health.get(key),
+    }))
+  }, [groupsData, t, groupDisplay, healthQuery.data])
   const backendHasAuto = groups.some((g) => g.value === 'auto')
   const availableAutoGroupNames = useMemo(
     () => groups.filter((group) => group.value !== 'auto').map((g) => g.value),

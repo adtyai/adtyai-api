@@ -43,11 +43,21 @@ import {
   GroupRatioBadge,
 } from './auto-group-visuals'
 
+export type GroupHealth = {
+  status: 'no_data' | 'interrupted' | 'ok' | 'degraded' | string
+  request_success_rate?: number | null
+  request_samples?: number
+  probe_rate?: number | null
+  probe_samples?: number
+  scope?: string
+}
+
 export type ApiKeyGroupOption = {
   value: string
   label: string
   desc?: string
   ratio?: number | string
+  health?: GroupHealth
 }
 
 type ApiKeyGroupComboboxProps = {
@@ -56,6 +66,36 @@ type ApiKeyGroupComboboxProps = {
   onValueChange: (value: string) => void
   placeholder?: string
   disabled?: boolean
+}
+
+function GroupHealthLine(props: { health?: GroupHealth }) {
+  const { t } = useTranslation()
+  const health = props.health
+  if (!health || (health.status === 'no_data' && !health.probe_samples && !health.request_samples)) {
+    return (
+      <span className='text-muted-foreground mt-1 flex items-center gap-2 text-xs'>
+        <span className='bg-muted inline-block size-2 rounded-full' />
+        {t('No data')}
+      </span>
+    )
+  }
+  if (health.status === 'interrupted') {
+    return (
+      <span className='text-muted-foreground mt-1 flex items-center gap-2 text-xs'>
+        <span className='bg-muted inline-block size-2 rounded-full' />
+        {t('Monitoring interrupted')}
+      </span>
+    )
+  }
+  const request = health.request_success_rate == null ? t('No data') : `${Math.round(health.request_success_rate * 100)}%`
+  const probe = health.probe_samples ? (health.probe_rate == null ? t('No data') : `${Math.round(health.probe_rate * 100)}%`) : t('No data')
+  return (
+    <span className='text-muted-foreground mt-1 flex items-center gap-2 text-xs tabular-nums'>
+      <span className={health.status === 'degraded' ? 'bg-destructive inline-block size-2 rounded-full' : 'bg-foreground inline-block size-2 rounded-full'} />
+      {t('Request success')} {request} · {health.request_samples} · {t('Probe availability')} {probe}
+      {health.scope === 'site' ? ` · ${t('Site data')}` : ` · ${t('Platform data')}`}
+    </span>
+  )
 }
 
 export function ApiKeyGroupCombobox({
@@ -196,6 +236,7 @@ export function ApiKeyGroupCombobox({
                           {option.desc}
                         </span>
                       )}
+                      <GroupHealthLine health={option.health} />
                     </span>
                     <GroupRatioBadge
                       ratio={option.ratio}

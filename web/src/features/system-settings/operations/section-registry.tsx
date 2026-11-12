@@ -16,6 +16,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { TelegramAdminPanel } from '@/features/adty-telegram/admin-panel'
+import { TranslationAdminPanel } from '@/features/adty-translation/admin-panel'
+
 import { SystemBehaviorSection } from '../general/system-behavior-section'
 import { EmailSettingsSection } from '../integrations/email-settings-section'
 import { MonitoringSettingsSection } from '../integrations/monitoring-settings-section'
@@ -137,6 +140,16 @@ const OPERATIONS_SECTIONS = [
         }}
       />
     ),
+  },
+  {
+    id: 'telegram',
+    titleKey: 'Telegram bots',
+    build: () => <TelegramAdminPanel />,
+  },
+  {
+    id: 'translation',
+    titleKey: 'System translation',
+    build: () => <TranslationAdminPanel />,
   },
   {
     id: 'update-checker',

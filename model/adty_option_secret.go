@@ -133,6 +133,50 @@ func readAdtyOptionSecret(tx *gorm.DB, key string) (string, bool, error) {
 	return row.Value, true, nil
 }
 
+// SealAdtyPurposeSecret encrypts a credential for one named purpose. The purpose is the AEAD data.
+func SealAdtyPurposeSecret(purpose, value string) (string, error) {
+	purpose = strings.TrimSpace(purpose)
+	if purpose == "" || strings.ContainsAny(purpose, "\r\n") {
+		return "", common.NewMessage("Invalid parameters")
+	}
+	if value == "" {
+		return "", nil
+	}
+	if strings.HasPrefix(value, "adty:secret:") {
+		return "", common.NewMessage("Operation failed")
+	}
+	box, err := adtyOptionSecretCipher()
+	if err != nil {
+		return "", err
+	}
+	sealed := box.Seal(nil, nil, []byte(value), []byte("purpose:"+purpose))
+	return adtySecretPrefix + base64.RawStdEncoding.EncodeToString(sealed), nil
+}
+
+// OpenAdtyPurposeSecret decrypts a value sealed for the same purpose.
+func OpenAdtyPurposeSecret(purpose, stored string) (string, error) {
+	if stored == "" {
+		return "", nil
+	}
+	encoded, ok := strings.CutPrefix(stored, adtySecretPrefix)
+	if !ok {
+		return "", common.NewMessage("Operation failed")
+	}
+	box, err := adtyOptionSecretCipher()
+	if err != nil {
+		return "", err
+	}
+	raw, err := base64.RawStdEncoding.DecodeString(encoded)
+	if err != nil {
+		return "", common.NewMessage("Operation failed")
+	}
+	plain, err := box.Open(nil, nil, raw, []byte("purpose:"+strings.TrimSpace(purpose)))
+	if err != nil {
+		return "", common.NewMessage("Operation failed")
+	}
+	return string(plain), nil
+}
+
 func clearAdtyOptionSecrets() {
 	_ = updateOptionMap(adty_setting.ResellerSettingModule+"."+adty_setting.ResellerKeyCloudflareTok, "")
 	_ = updateOptionMap(adty_setting.ResellerSettingModule+"."+adty_setting.ResellerKeyWidgetSecret, "{}")

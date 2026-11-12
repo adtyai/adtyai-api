@@ -63,6 +63,84 @@ func SetAdtyRouter(apiRouter *gin.RouterGroup) {
 	// 按用户的请求限制（任务 7.4）
 	handlePermissionRoute(users, http.MethodGet, "/:id/limits", authz.AdtyUserRead, controller.GetAdtyUserLimits)
 	handlePermissionRoute(users, http.MethodPut, "/:id/limits", authz.AdtyUserWrite, controller.PutAdtyUserLimits)
+	registerAdtyWorkspaceRoutes(apiRouter)
+}
+
+func registerAdtyWorkspaceRoutes(apiRouter *gin.RouterGroup) {
+	for _, route := range []struct{ method, path, scope string }{
+		{http.MethodPost, "/api/adty/teams/:id/close", "wallet:write"},
+		{http.MethodPost, "/api/adty/teams/:id/leave", "wallet:write"},
+		{http.MethodPost, "/api/adty/teams/:id/members/:userId/disable", "wallet:write"},
+		{http.MethodPost, "/api/adty/teams/:id/keys", "wallet:write"},
+		{http.MethodPost, "/api/adty/teams/:id/keys/:tokenId/revoke", "wallet:write"},
+		{http.MethodPost, "/api/adty/teams/:id/transfer", "wallet:write"},
+		{http.MethodGet, "/api/adty/telegram/me", "profile:read"},
+		{http.MethodPost, "/api/adty/telegram/bind/start", "profile:write"},
+		{http.MethodPost, "/api/adty/telegram/bind/confirm", "profile:write"},
+		{http.MethodGet, "/api/adty/site/telegram", "wallet:read"},
+		{http.MethodPost, "/api/adty/site/telegram/bind/start", "wallet:write"},
+		{http.MethodPost, "/api/adty/site/telegram/bind/confirm", "wallet:write"},
+		{http.MethodGet, "/api/adty/admin/telegram/bots", "option:read"},
+		{http.MethodPut, "/api/adty/admin/telegram/bots/:purpose", "option:write"},
+		{http.MethodPost, "/api/adty/admin/telegram/bots/:purpose/test", "option:write"},
+		{http.MethodPost, "/api/adty/telegram/webhook/:purpose/:secret", "session"},
+		{http.MethodGet, "/api/adty/tickets", "profile:read"},
+		{http.MethodPost, "/api/adty/tickets", "profile:write"},
+		{http.MethodGet, "/api/adty/tickets/:id", "profile:read"},
+		{http.MethodPost, "/api/adty/tickets/:id/replies", "profile:write"},
+		{http.MethodPost, "/api/adty/tickets/:id/notes", "profile:write"},
+		{http.MethodPost, "/api/adty/tickets/:id/status", "profile:write"},
+		{http.MethodPost, "/api/adty/tickets/:id/images", "profile:write"},
+		{http.MethodGet, "/api/adty/tickets/:id/images/:imageId", "profile:read"},
+		{http.MethodGet, "/api/adty/admin/translation", "option:read"},
+		{http.MethodPut, "/api/adty/admin/translation", "option:write"},
+		{http.MethodPost, "/api/adty/admin/translation/test", "option:write"},
+		{http.MethodPost, "/api/adty/admin/translation/run", "option:write"},
+		{http.MethodGet, "/api/adty/admin/translation/usage", "option:read"},
+		{http.MethodGet, "/api/adty/groups/health", "api_key:read"},
+		{http.MethodPut, "/api/adty/admin/group-health", "option:write"},
+		{http.MethodPost, "/api/adty/admin/group-health/probe", "option:write"},
+	} {
+		kind := "scope"
+		scope := route.scope
+		if route.scope == "session" {
+			kind, scope = "session", ""
+		}
+		middleware.DeclareAdtyAccessTokenRoute(route.method, route.path, kind, scope)
+	}
+	apiRouter.POST("/adty/teams/:id/close", middleware.UserAuth(), controller.PostAdtyTeamClose)
+	apiRouter.POST("/adty/teams/:id/leave", middleware.UserAuth(), controller.PostAdtyTeamLeave)
+	apiRouter.POST("/adty/teams/:id/members/:userId/disable", middleware.UserAuth(), controller.PostAdtyTeamDisableMember)
+	apiRouter.POST("/adty/teams/:id/keys", middleware.UserAuth(), controller.PostAdtyTeamBindKey)
+	apiRouter.POST("/adty/teams/:id/keys/:tokenId/revoke", middleware.UserAuth(), controller.PostAdtyTeamRevokeKey)
+	apiRouter.POST("/adty/teams/:id/transfer", middleware.UserAuth(), controller.PostAdtyTeamTransfer)
+	apiRouter.GET("/adty/telegram/me", middleware.UserAuth(), controller.GetAdtyTelegramMe)
+	apiRouter.POST("/adty/telegram/bind/start", middleware.UserAuth(), controller.PostAdtyTelegramBindStart)
+	apiRouter.POST("/adty/telegram/bind/confirm", middleware.UserAuth(), controller.PostAdtyTelegramBindConfirm)
+	apiRouter.GET("/adty/site/telegram", middleware.UserAuth(), controller.GetAdtyTelegramMe)
+	apiRouter.POST("/adty/site/telegram/bind/start", middleware.UserAuth(), controller.PostAdtyTelegramBindStart)
+	apiRouter.POST("/adty/site/telegram/bind/confirm", middleware.UserAuth(), controller.PostAdtyTelegramBindConfirm)
+	apiRouter.POST("/adty/telegram/webhook/:purpose/:secret", middleware.CriticalRateLimit(), controller.PostAdtyTelegramWebhook)
+	root := apiRouter.Group("/adty/admin", middleware.RootAuth())
+	root.GET("/telegram/bots", controller.GetAdtyAdminTelegram)
+	root.PUT("/telegram/bots/:purpose", controller.PutAdtyAdminTelegram)
+	root.POST("/telegram/bots/:purpose/test", controller.PostAdtyAdminTelegramTest)
+	root.GET("/translation", controller.GetAdtyTranslation)
+	root.PUT("/translation", controller.PutAdtyTranslation)
+	root.POST("/translation/test", controller.PostAdtyTranslationTest)
+	root.POST("/translation/run", controller.PostAdtyTranslationRun)
+	root.GET("/translation/usage", controller.GetAdtyTranslationUsage)
+	root.PUT("/group-health", controller.PutAdtyGroupHealth)
+	root.POST("/group-health/probe", controller.PostAdtyGroupProbe)
+	apiRouter.GET("/adty/tickets", middleware.UserAuth(), controller.GetAdtyTickets)
+	apiRouter.POST("/adty/tickets", middleware.UserAuth(), controller.PostAdtyTicket)
+	apiRouter.GET("/adty/tickets/:id", middleware.UserAuth(), controller.GetAdtyTicket)
+	apiRouter.POST("/adty/tickets/:id/replies", middleware.UserAuth(), controller.PostAdtyTicketReply)
+	apiRouter.POST("/adty/tickets/:id/notes", middleware.UserAuth(), controller.PostAdtyTicketNote)
+	apiRouter.POST("/adty/tickets/:id/status", middleware.UserAuth(), controller.PostAdtyTicketStatus)
+	apiRouter.POST("/adty/tickets/:id/images", middleware.UserAuth(), controller.PostAdtyTicketImage)
+	apiRouter.GET("/adty/tickets/:id/images/:imageId", middleware.UserAuth(), controller.GetAdtyTicketImage)
+	apiRouter.GET("/adty/groups/health", middleware.UserAuth(), controller.GetAdtyGroupHealth)
 }
 
 // registerAdtyTopUpRoutes 挂钱包的充值接口（任务 3.3），令牌规则照上游钱包接口。

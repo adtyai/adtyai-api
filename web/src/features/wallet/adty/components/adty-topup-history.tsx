@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -145,7 +146,12 @@ export function AdtyTopupHistory() {
               id: 'trade_no',
               header: t('Order number'),
               cell: (row) => (
-                <code className='font-mono text-xs'>{row.trade_no}</code>
+                <span className='flex items-center gap-2'>
+                  <code className='font-mono text-xs'>{row.trade_no}</code>
+                  <Link to='/profile' hash={`ticket-${row.trade_no}`} className='text-muted-foreground text-xs'>
+                    {t('Submit ticket')}
+                  </Link>
+                </span>
               ),
             },
           ]}

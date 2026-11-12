@@ -24,6 +24,9 @@ import {
 import { useStatus } from '@/hooks/use-status'
 import { useAuthStore } from '@/stores/auth-store'
 
+import { TelegramBindCard } from '@/features/adty-telegram/bind-card'
+import { TicketCenter } from '@/features/adty-ticket/ticket-center'
+
 import { LanguagePreferencesCard } from './components/language-preferences-card'
 import { ProfileHeader } from './components/profile-header'
 import { ProfileSettingsCard } from './components/profile-settings-card'
@@ -62,6 +65,8 @@ export function Profile() {
                   profile={profile}
                   onProfileUpdate={refreshProfile}
                 />
+                <TelegramBindCard purpose='user' />
+                <TicketCenter />
               </div>
 
               <div className='space-y-4 sm:space-y-6 xl:sticky xl:top-6'>

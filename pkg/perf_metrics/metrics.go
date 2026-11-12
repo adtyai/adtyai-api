@@ -33,6 +33,9 @@ func Init() {
 	go flushLoop()
 }
 
+// GroupHealthObserver receives one finished relay classification. It must not change routing.
+var GroupHealthObserver func(group, modelName string, userId int, outcome Outcome)
+
 // RecordRelayResult samples one finished relay exactly once, at the request
 // boundary, regardless of how many channel attempts it took.
 func RecordRelayResult(ctx context.Context, info *relaycommon.RelayInfo, apiErr *types.NewAPIError) {
@@ -40,6 +43,9 @@ func RecordRelayResult(ctx context.Context, info *relaycommon.RelayInfo, apiErr 
 		return
 	}
 	outcome := ClassifyRelayOutcome(ctx, info, apiErr)
+	if GroupHealthObserver != nil {
+		GroupHealthObserver(info.UsingGroup, info.OriginModelName, info.UserId, outcome)
+	}
 	if outcome == OutcomeIgnored {
 		return
 	}

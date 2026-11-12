@@ -48,6 +48,7 @@ export type SecurityProofScope =
   | 'admin.user.binding.clear'
   | 'site.owner.manage'
   | 'site.staff.customer.manage'
+  | 'adty.notice.configure'
 
 /** Site owner actions that need step-up (service/adty_site_verification.go). */
 export type SiteOwnerAction =
@@ -115,6 +116,13 @@ export type VerificationOperation =
       }
     }
   | {
+      scope: 'adty.notice.configure'
+      context: {
+        action: 'telegram.save' | 'telegram.test' | 'translation.save' | 'translation.test'
+        target: string
+      }
+    }
+  | {
       scope: Exclude<
         SecurityProofScope,
         | 'channel.key.read'
@@ -126,6 +134,7 @@ export type VerificationOperation =
         | `admin.user.${string}`
         | 'site.owner.manage'
         | 'site.staff.customer.manage'
+        | 'adty.notice.configure'
       >
       context?: Record<string, never>
     }

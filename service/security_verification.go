@@ -270,10 +270,14 @@ func BindVerificationOperation(operation VerificationOperation) (VerificationBin
 		}
 		normalized = struct{}{}
 	default:
+		if notice, ok := adtyBindNoticeOperation(operation.Scope, fields, operation.Context); ok {
+			normalized = notice
+			break
+		}
 		// 二开：站长中心的敏感操作（任务 11.6）
 		context, ok := adtyBindSiteOwnerOperation(operation.Scope, fields, operation.Context)
 		if !ok {
-			if adtyIsSiteVerificationScope(operation.Scope) {
+			if adtyIsSiteVerificationScope(operation.Scope) || adtyIsNoticeVerificationScope(operation.Scope) {
 				return VerificationBinding{}, ErrVerificationContextInvalid
 			}
 			return VerificationBinding{}, ErrProofScope
@@ -361,7 +365,7 @@ func securityVerificationPolicy(scope string, state model.UserVerificationState)
 		}
 	default:
 		// 二开：站长中心的敏感操作和账号安全操作一样，没有 2FA、Passkey 时用密码（任务 11.6）
-		if !adtyIsSiteVerificationScope(scope) {
+		if !adtyIsSiteVerificationScope(scope) && !adtyIsNoticeVerificationScope(scope) {
 			return nil, ErrProofScope
 		}
 		if len(methods) == 0 {
@@ -398,6 +402,9 @@ func GetVerificationRequirements(identity AuthIdentity, scope string) (*Verifica
 		return nil, ErrAuthTokenInvalid
 	}
 	if scope == VerificationScopeChannelKeyRead && state.Role != common.RoleRootUser {
+		return nil, ErrVerificationForbidden
+	}
+	if adtyIsNoticeVerificationScope(scope) && state.Role != common.RoleRootUser {
 		return nil, ErrVerificationForbidden
 	}
 	if strings.HasPrefix(scope, verificationScopeAdminUserPrefix) && state.Role < common.RoleAdminUser {

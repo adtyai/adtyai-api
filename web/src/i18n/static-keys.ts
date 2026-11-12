@@ -24,6 +24,8 @@ export const STATIC_I18N_KEYS = [
   'Received',
   // Safe order trace labels returned by the server.
   'Available',
+  'Telegram bots',
+  'System translation',
   'Balance adjustment',
   'Canceled',
   'Clawed back',

@@ -27,6 +27,20 @@ import { Label } from '@/components/ui/label'
 import { api } from '@/lib/api'
 import { getServerErrorMessage } from '@/lib/server-error-message'
 
+type TeamMember = {
+  user_id: number
+  username: string
+  role: string
+  status: string
+}
+
+type TeamKey = {
+  token_id: number
+  name: string
+  user_id: number
+  status: string
+}
+
 type TeamMine = {
   team_id: number
   name: string
@@ -34,6 +48,8 @@ type TeamMine = {
   discount: string
   shared_quota: number
   status: string
+  members?: TeamMember[]
+  keys?: TeamKey[]
 }
 
 export function TeamPanel() {
@@ -52,6 +68,8 @@ export function TeamPanel() {
   const [discount, setDiscount] = useState('1')
   const [invite, setInvite] = useState('')
   const [issued, setIssued] = useState('')
+  const [tokenId, setTokenId] = useState('')
+  const [confirmClose, setConfirmClose] = useState(false)
   const [error, setError] = useState('')
   const [pending, setPending] = useState(false)
 
@@ -89,6 +107,19 @@ export function TeamPanel() {
         return
       }
       setIssued(body.data.code)
+    } catch (cause) {
+      setError(getServerErrorMessage(cause, t('Failed to save')))
+    } finally {
+      setPending(false)
+    }
+  }
+
+  const run = async (action: () => Promise<void>) => {
+    setPending(true)
+    setError('')
+    try {
+      await action()
+      refresh()
     } catch (cause) {
       setError(getServerErrorMessage(cause, t('Failed to save')))
     } finally {
@@ -149,7 +180,136 @@ export function TeamPanel() {
             <Button type='button' variant='outline' disabled={pending} onClick={() => void issueInvite()}>
               {t('Create invite')}
             </Button>
-            {issued && <p className='text-sm break-all'>{t('Invite code')}: {issued}</p>}
+            {issued && (
+              <p className='text-sm break-all'>
+                {t('Invite code')}: {issued}
+              </p>
+            )}
+            <p className='text-muted-foreground text-sm'>{t('The invite code is shown once')}</p>
+            <div className='flex flex-col gap-2'>
+              <h3 className='text-sm font-medium'>{t('Members')}</h3>
+              {(team.members ?? []).map((member) => (
+                <div key={member.user_id} className='flex items-center justify-between gap-3 text-sm'>
+                  <span className='min-w-0 truncate'>
+                    {member.username || member.user_id} · {member.role === 'leader' ? t('Leader') : t('Member')} · {member.status}
+                  </span>
+                  {member.role !== 'leader' && member.status === 'active' && (
+                    <Button
+                      type='button'
+                      variant='outline'
+                      size='sm'
+                      disabled={pending}
+                      onClick={() =>
+                        void run(async () => {
+                          const response = await api.post(`/api/adty/teams/${team.team_id}/members/${member.user_id}/disable`)
+                          if (!response.data?.success) throw new Error(response.data?.message || 'Failed to save')
+                        })
+                      }
+                    >
+                      {t('Disable member')}
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </div>
+            <div className='flex flex-col gap-2'>
+              <h3 className='text-sm font-medium'>{t('Team keys')}</h3>
+              {(team.keys ?? []).length === 0 && <p className='text-muted-foreground text-sm'>{t('No team keys')}</p>}
+              {(team.keys ?? []).map((key) => (
+                <div key={key.token_id} className='flex items-center justify-between gap-3 text-sm'>
+                  <span className='min-w-0 truncate tabular-nums'>
+                    {key.name || key.token_id} · {key.status}
+                  </span>
+                  {key.status === 'active' && (
+                    <Button
+                      type='button'
+                      variant='outline'
+                      size='sm'
+                      disabled={pending}
+                      onClick={() =>
+                        void run(async () => {
+                          const response = await api.post(`/api/adty/teams/${team.team_id}/keys/${key.token_id}/revoke`)
+                          if (!response.data?.success) throw new Error(response.data?.message || 'Failed to save')
+                        })
+                      }
+                    >
+                      {t('Revoke key')}
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </div>
+            <div className='flex flex-col gap-1'>
+              <Label htmlFor='leader-token'>{t('Token id')}</Label>
+              <Input id='leader-token' value={tokenId} inputMode='numeric' onChange={(event) => setTokenId(event.target.value)} />
+            </div>
+            <Button
+              type='button'
+              variant='outline'
+              disabled={pending || tokenId.trim() === ''}
+              onClick={() =>
+                void run(async () => {
+                  const response = await api.post(`/api/adty/teams/${team.team_id}/keys`, { token_id: Number(tokenId) })
+                  if (!response.data?.success) throw new Error(response.data?.message || 'Failed to save')
+                  setTokenId('')
+                })
+              }
+            >
+              {t('Bind key')}
+            </Button>
+            <Button
+              type='button'
+              variant='outline'
+              disabled={pending}
+              onClick={() => {
+                if (!confirmClose) {
+                  setConfirmClose(true)
+                  return
+                }
+                void run(async () => {
+                  const response = await api.post(`/api/adty/teams/${team.team_id}/close`)
+                  if (!response.data?.success) throw new Error(response.data?.message || 'Failed to save')
+                  setConfirmClose(false)
+                })
+              }}
+            >
+              {confirmClose ? t('Confirm close') : t('Close team')}
+            </Button>
+          </div>
+        )}
+        {team && team.role !== 'leader' && (
+          <div className='flex flex-col gap-2'>
+            <div className='flex flex-col gap-1'>
+              <Label htmlFor='team-token'>{t('Token id')}</Label>
+              <Input id='team-token' value={tokenId} inputMode='numeric' onChange={(event) => setTokenId(event.target.value)} />
+            </div>
+            <Button
+              type='button'
+              variant='outline'
+              disabled={pending || tokenId.trim() === ''}
+              onClick={() =>
+                void run(async () => {
+                  const response = await api.post(`/api/adty/teams/${team.team_id}/keys`, { token_id: Number(tokenId) })
+                  if (!response.data?.success) throw new Error(response.data?.message || 'Failed to save')
+                  setTokenId('')
+                })
+              }
+            >
+              {t('Bind key')}
+            </Button>
+            <Button
+              type='button'
+              variant='outline'
+              disabled={pending}
+              onClick={() =>
+                void run(async () => {
+                  const response = await api.post(`/api/adty/teams/${team.team_id}/leave`)
+                  if (!response.data?.success) throw new Error(response.data?.message || 'Failed to save')
+                })
+              }
+            >
+              {t('Leave team')}
+            </Button>
           </div>
         )}
         {!team && (

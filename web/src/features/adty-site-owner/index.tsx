@@ -41,6 +41,8 @@ import { PromoCodesPanel } from './components/promo-codes-panel'
 import { SiteSettingsPanel } from './components/site-settings-panel'
 import { StaffPanel } from './components/staff-panel'
 import { TermsAcceptPanel } from './components/terms-accept-panel'
+import { TelegramBindCard } from '@/features/adty-telegram/bind-card'
+
 import { VoucherPanel } from './components/voucher-panel'
 import { SITE_OWNER_SECTIONS, type SiteOwnerSectionId } from './sections'
 
@@ -66,6 +68,7 @@ export function SiteOwnerCenter(props: { section: SiteOwnerSectionId }) {
     settings: t('Site settings'),
     earnings: t('Earnings'),
     vouchers: t('Recharge codes'),
+    notices: t('Notices'),
     agreement: t('Site agreement'),
   }
 
@@ -149,6 +152,9 @@ export function SiteOwnerCenter(props: { section: SiteOwnerSectionId }) {
                   </TabsContent>
                   <TabsContent value='vouchers'>
                     <VoucherPanel />
+                  </TabsContent>
+                  <TabsContent value='notices'>
+                    <TelegramBindCard purpose='admin' />
                   </TabsContent>
                   <TabsContent value='agreement'>
                     <AgreementPanel site={site.data} />
