@@ -60,9 +60,9 @@ New API 是面向應用程式、Agent 和團隊的自託管 AI 閘道。將不�
 
 你可以用它為團隊分配已授權的模型資源，在切換上游時減少用戶端改動，或建置自己的多模型服務。支援接入 OpenAI、Anthropic、Google Gemini、Azure OpenAI、AWS Bedrock、Vertex AI、DeepSeek、通義千問及其他相容服務。
 
-本 ADTY AI 分支新增了 Root 分站管理、版本化付款場景、分站員工授權、通知已讀回執及財務訂單追溯。站長不可更換。目前規則與剩餘限制見 [ADTY 工程文件](./docs/adty/README.md)。
+本 ADTY AI 分支新增了 Root 分站管理、版本化付款場景、分站員工授權、通知已讀回執及財務訂單追溯。站長不可更換。正式語言為簡體中文和英文。目前規則與剩餘限制見 [ADTY 工程文件](./docs/adty/README.md)。
 
-映像版本由 Git 分支與提交產生：`main` 使用 `main-<短 SHA>`，標籤建置使用標籤名稱。[建置工作流程](./.github/workflows/adty-ghcr.yml) 將同一版本寫入 `VERSION`，供前後端使用。
+映像版本由 Git 分支與提交產生：`main` 使用 `main-<短 SHA>`，標籤建置使用標籤名稱，其他分支使用 `<分支名>-<短 SHA>`，拉取請求使用 `pr-<編號>-<短 SHA>`。倉庫裡的 `VERSION` 保持為空。[建置工作流程](./.github/workflows/adty-ghcr.yml) 將同一版本寫入 `VERSION`，供前後端使用。
 
 > [!IMPORTANT]
 > - 本專案僅面向合法授權的 AI API 閘道、組織內部鑑權、多模型管理、用量統計、成本核算和私有化部署場景。

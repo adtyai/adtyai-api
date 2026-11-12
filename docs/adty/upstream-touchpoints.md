@@ -562,5 +562,6 @@
 | `model/user.go` | 删除用户事务里调用团队关闭钩子 | 负责人注销时关闭团队，余额保留 | A.24.7 |
 | `service/http_client.go` | 原请求带 `mj-api-secret` 时，跨源重定向直接拒绝 | Go 会转发非标准密钥头；307/308 不能把渠道密钥送到另一个源 | OBS-ROOT-018 |
 | `AGENTS.md`、`web/AGENTS.md`、根目录各语言 `README*.md` | 站长不可更换；正式语言改为简体中文和英文；补上兑换码、团队、通知机器人、工单、翻译和分组健康的开发边界 | 旧交接和八种正式语言句子与已确认规则冲突；保留原标题、上游署名和模块路径 | A.20 / DEC-011 |
+| `AGENTS.md`、`web/AGENTS.md`、根目录各语言 `README*.md`、`docs/adty/README.md` | 版本说明补齐其他分支和拉取请求的生成规则，并写明仓库内 `VERSION` 保持为空 | 与 `adty-ghcr.yml` 的实际写法一致；不改 `package.json` 包版本 | 版本约定 |
 | `pkg/perf_metrics/metrics.go` | `RecordRelayResult` 在分类后调用 `GroupHealthObserver` | 分组健康按最终用户请求统计一次，观察者不能改路由 | A.23 |
 | `service/security_verification.go` | 二次验证增加 `adty.notice.configure`，只允许 Root | Bot Token 和翻译凭据变更要重新验证，证明绑定目标和动作 | A.24.10 |

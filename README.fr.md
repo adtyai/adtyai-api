@@ -61,9 +61,9 @@ New API est une passerelle IA auto-hébergée pour les applications, les agents 
 
 Utilisez-la pour partager des accès autorisés au sein d'une équipe, changer de fournisseur sans reconfigurer chaque client ou exploiter un service privé multi-modèles. Les fournisseurs incluent OpenAI, Anthropic, Google Gemini, Azure OpenAI, AWS Bedrock, Vertex AI, DeepSeek, Qwen et d'autres services compatibles.
 
-Cette branche ADTY AI ajoute la gestion des sites par Root, des scénarios de paiement versionnés, des autorisations pour le personnel des sites, des accusés de lecture des notifications et la traçabilité des commandes financières. Le propriétaire d'un site ne peut pas être remplacé. Consultez la [documentation ADTY](./docs/adty/README.md) pour les règles actuelles et les limites restantes.
+Cette branche ADTY AI ajoute la gestion des sites par Root, des scénarios de paiement versionnés, des autorisations pour le personnel des sites, des accusés de lecture des notifications et la traçabilité des commandes financières. Le propriétaire d'un site ne peut pas être remplacé. Les langues officielles sont le chinois simplifié et l'anglais. Consultez la [documentation ADTY](./docs/adty/README.md) pour les règles actuelles et les limites restantes.
 
-La version des images provient de la référence Git et du commit : `main-<SHA court>` sur `main`, ou le nom du tag pour une compilation de tag. Le [workflow de compilation](./.github/workflows/adty-ghcr.yml) écrit la même version dans `VERSION` pour le frontend et le backend.
+La version des images provient de la référence Git et du commit : `main-<SHA court>` sur `main`, le nom du tag pour une compilation de tag, `<ref>-<SHA court>` sur les autres branches, et `pr-<numéro>-<SHA court>` pour une pull request. Le fichier `VERSION` versionné reste vide. Le [workflow de compilation](./.github/workflows/adty-ghcr.yml) écrit la même version dans `VERSION` pour le frontend et le backend.
 
 > [!IMPORTANT]
 > - Ce projet est exclusivement destiné aux scénarios de passerelle API d'IA légalement autorisés, d'authentification organisationnelle, de gestion multi-modèles, d'analyse d'utilisation, de comptabilisation des coûts et de déploiement privé.

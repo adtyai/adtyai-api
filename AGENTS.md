@@ -38,7 +38,7 @@ This is an AI API gateway/proxy built with Go. It aggregates 40+ upstream AI pro
 - Group health separates 24-hour request success from probe availability. No sample, a new group, or a stopped collector shows no data, not 100% and not green. Customer-side refusals are not upstream failures. Health data must not change a key's group or expose upstream channel secrets.
 - Do not add a public platform status page, a user consumption-analytics product, voucher batches, a configuration-history restore button, a desktop-client release, or any Telegram account, payment, or key operation.
 - Payment scenes use versioned Root configuration and server-side validation in every checkout path. Existing orders retain their frozen facts. Site staff use their separate workspace and explicit server-side permissions.
-- `.github/workflows/adty-ghcr.yml` writes `VERSION` at build time: `main-<short SHA>` for `main`, the tag name for tag builds, and the ref plus short SHA for other branches. The checked-in empty `VERSION` is a build placeholder; the web and Electron package versions are independent package metadata. The Electron tree is not a product release.
+- `.github/workflows/adty-ghcr.yml` writes `VERSION` at build time: `main-<short SHA>` for `main`, the tag name for tag builds, `<ref>-<short SHA>` for other branches, and `pr-<number>-<short SHA>` for pull requests. The checked-in `VERSION` file stays empty; the web and Electron `package.json` versions stay independent package metadata and are not the image version. The Electron tree is not a product release.
 
 ## Internationalization (i18n)
 
@@ -46,7 +46,7 @@ This is an AI API gateway/proxy built with Go. It aggregates 40+ upstream AI pro
 - Library: `nicksnyder/go-i18n/v2`
 - Languages: the formal product languages are `zh-CN` and `en`. The existing packs for zh-TW, fr, ru, ja, ko, and vi stay loaded so the framework is not rewritten, but they are not a formal language promise and must not be offered as supported product languages.
 - Scope: text with no web console in between (errors returned to AI clients, emails, notifications), translated with `i18n.T` / `i18n.Translate`. Fixed templates are bilingual Chinese then English. Dynamic Chinese text uses the system translator; do not send passwords, codes, keys, internal notes, or raw model output.
-- Web console API messages are English source text built with `common.NewMessage` / `common.ApiErrorT` / `common.ApiSuccessT`; the frontend translates them, so add each key to all eight frontend locale files
+- Web console API messages are English source text built with `common.NewMessage` / `common.ApiErrorT` / `common.ApiSuccessT`; the frontend translates them, so add each formal key to `en.json` and `zh.json`. A retained locale file may receive the same key, but that does not make the language formal.
 - Stored log content is `[]*common.Message`; a fail reason written by the gateway is a fixed English sentence that is also a key in the frontend locale files
 - Server log lines are English text passed through `common.LogText`; `DEFAULT_LANGUAGE=zh-CN` prints the Chinese text of the lines that have one in `common/log_text.zh-CN.json`, and is the language of backend messages for a reader who states none
 
