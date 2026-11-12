@@ -26,25 +26,33 @@ This is an AI API gateway/proxy built with Go. It aggregates 40+ upstream AI pro
 
 ## ADTY Fork Conventions
 
-- The ADTY-specific behavior and remaining limits are documented in `docs/adty/README.md` and `docs/adty/features.md`. Keep these descriptions aligned with the implementation.
-- Creating a formal site, closing or transferring it, and handing it to another owner require Root. Owner handovers compare both the expected owner and ownership version, revoke affected sessions and staff grants, and require the new owner to accept the agreement.
-- Financial ownership is frozen with the original business operation. Tasks, late payments, refunds, settlements, and clawbacks must preserve that ownership across handovers; do not derive historical ownership from the site's current owner.
+- The ADTY-specific behavior and remaining limits are documented in `docs/adty/README.md`, `docs/adty/conventions.md`, and `docs/adty/features.md`. Keep these descriptions aligned with the confirmed rules below. Where an older sentence in those files conflicts, follow this section and `docs/adty/conventions.md` section I.
+- `1 USD = 500000` quota. `QuotaPerUnit` accepts only `500000` on save and on load. Do not introduce another scale, and do not mint withdrawable cash from a code, a translation task, a probe, or a health sample.
+- Root creates a site from an existing main-site user and assigns one owner. The owner cannot be replaced. Do not add a handover or owner-transfer write path. Closing a site moves customers and surviving teams to the main site; historical orders, tasks, refunds, and settlements keep the financial owner frozen on the original operation.
+- The operating wallet stays booked, but site-owner pages and the owner recharge summary must not show it. A support role does not grant refund, balance, withdrawal, key, or wallet permissions.
+- There is one recharge-quota voucher. Promo-code quote and write APIs refuse new use. Historical promo rows stay and are not recalculated.
+- A team has one leader. The leader cannot be replaced; deleting or closing the leader closes the team and keeps the shared balance. A bound key spends that shared balance, not the member's personal wallet. Protocol price is the site selling price times the team discount, and a subsite result below the supply factor is refused.
+- Telegram notification uses exactly two bots. Tokens are Root-only, encrypted, and masked. Binding is a one-time website challenge and is not Telegram OAuth, login, password recovery, or step-up. Bots send notices only. Do not add commands, buttons, Mini Apps, or callbacks that read or change accounts, balances, keys, refunds, or withdrawals.
+- Tickets accept images only. Customer APIs must not return internal notes. A linked order or request carries the investigation fields, not a full key, password, or upstream credential.
+- System translation is a platform task for approved dynamic Chinese text. It does not debit a customer, team, or site owner, does not use a customer key, and must not call this relay recursively. A late result cannot overwrite a newer version or a human edit. Failure keeps the Chinese source and states that English is not ready.
+- Group health separates 24-hour request success from probe availability. No sample, a new group, or a stopped collector shows no data, not 100% and not green. Customer-side refusals are not upstream failures. Health data must not change a key's group or expose upstream channel secrets.
+- Do not add a public platform status page, a user consumption-analytics product, voucher batches, a configuration-history restore button, a desktop-client release, or any Telegram account, payment, or key operation.
 - Payment scenes use versioned Root configuration and server-side validation in every checkout path. Existing orders retain their frozen facts. Site staff use their separate workspace and explicit server-side permissions.
-- `.github/workflows/adty-ghcr.yml` writes `VERSION` at build time: `main-<short SHA>` for `main`, the tag name for tag builds, and the ref plus short SHA for other branches. The checked-in empty `VERSION` is a build placeholder; the web and Electron package versions are independent package metadata.
+- `.github/workflows/adty-ghcr.yml` writes `VERSION` at build time: `main-<short SHA>` for `main`, the tag name for tag builds, and the ref plus short SHA for other branches. The checked-in empty `VERSION` is a build placeholder; the web and Electron package versions are independent package metadata. The Electron tree is not a product release.
 
 ## Internationalization (i18n)
 
 ### Backend (`i18n/`)
 - Library: `nicksnyder/go-i18n/v2`
-- Languages: en, zh-CN, zh-TW, fr, ru, ja, ko, vi
-- Scope: text with no web console in between (errors returned to AI clients, emails, notifications), translated with `i18n.T` / `i18n.Translate`
+- Languages: the formal product languages are `zh-CN` and `en`. The existing packs for zh-TW, fr, ru, ja, ko, and vi stay loaded so the framework is not rewritten, but they are not a formal language promise and must not be offered as supported product languages.
+- Scope: text with no web console in between (errors returned to AI clients, emails, notifications), translated with `i18n.T` / `i18n.Translate`. Fixed templates are bilingual Chinese then English. Dynamic Chinese text uses the system translator; do not send passwords, codes, keys, internal notes, or raw model output.
 - Web console API messages are English source text built with `common.NewMessage` / `common.ApiErrorT` / `common.ApiSuccessT`; the frontend translates them, so add each key to all eight frontend locale files
 - Stored log content is `[]*common.Message`; a fail reason written by the gateway is a fixed English sentence that is also a key in the frontend locale files
 - Server log lines are English text passed through `common.LogText`; `DEFAULT_LANGUAGE=zh-CN` prints the Chinese text of the lines that have one in `common/log_text.zh-CN.json`, and is the language of backend messages for a reader who states none
 
 ### Frontend (`web/src/i18n/`)
 - Library: `i18next` + `react-i18next`; interface-language detection is owned by `web/src/i18n/languages.ts`
-- Languages: en (base), zh (fallback), zh-TW, fr, ru, ja, ko, vi
+- Languages: en (base) and zh (fallback) are the formal interface languages. zh-TW, fr, ru, ja, ko, and vi packs remain for compatibility. The formal selector offers simplified Chinese and English only. First visit uses Chinese for a Chinese browser preference and English otherwise.
 - Translation files: `web/src/i18n/locales/{lang}.json` — flat JSON, keys are English source strings
 - Load one interface language at a time. `whenInterfaceLanguageReady()` loads the stored or browser language before the first paint; `changeLanguage` loads that pack before switching and writes `i18nextLng`. Do not import all eight locale files into the first bundle.
 - Usage: `useTranslation()` hook, call `t('English key')` in components

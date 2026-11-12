@@ -61,7 +61,7 @@ New API est une passerelle IA auto-hébergée pour les applications, les agents 
 
 Utilisez-la pour partager des accès autorisés au sein d'une équipe, changer de fournisseur sans reconfigurer chaque client ou exploiter un service privé multi-modèles. Les fournisseurs incluent OpenAI, Anthropic, Google Gemini, Azure OpenAI, AWS Bedrock, Vertex AI, DeepSeek, Qwen et d'autres services compatibles.
 
-Cette branche ADTY AI ajoute la gestion des sites et le transfert de propriétaire par Root, des scénarios de paiement versionnés, des autorisations pour le personnel des sites, des accusés de lecture des notifications et la traçabilité des commandes financières. Consultez la [documentation ADTY](./docs/adty/README.md) pour le fonctionnement actuel et les limites restantes.
+Cette branche ADTY AI ajoute la gestion des sites par Root, des scénarios de paiement versionnés, des autorisations pour le personnel des sites, des accusés de lecture des notifications et la traçabilité des commandes financières. Le propriétaire d'un site ne peut pas être remplacé. Consultez la [documentation ADTY](./docs/adty/README.md) pour les règles actuelles et les limites restantes.
 
 La version des images provient de la référence Git et du commit : `main-<SHA court>` sur `main`, ou le nom du tag pour une compilation de tag. Le [workflow de compilation](./.github/workflows/adty-ghcr.yml) écrit la même version dans `VERSION` pour le frontend et le backend.
 

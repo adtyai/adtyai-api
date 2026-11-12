@@ -15,6 +15,14 @@ description: >-
 
 # Frontend i18n Translation Workflow
 
+## Formal languages
+
+The confirmed product languages are simplified Chinese (`zh` / `zh-CN`) and English (`en`). A new user-facing string is not done until both exist.
+
+`zh-TW`, `fr`, `ja`, `ru`, and `vi` files stay in the tree so the current loader is not rewritten. They are retained packs, not formally supported languages. Do not add them to the language selector or describe them as supported in product copy. When a retained file already participates in the locale set, add the new key there too so a leftover preference does not show a missing key. That does not make the language formal.
+
+`bun run i18n:sync` must not be committed when it reorders or rewrites keys outside the change. Insert only the new keys and keep the surrounding file as it was.
+
 ## Mandatory Preflight
 
 - Read this entire `SKILL.md` before any frontend i18n work, including one-key fixes.
@@ -49,7 +57,7 @@ Do not skip this workflow because the fix is "just one key".
 - Format: flat JSON under `"translation"` key, keys are English source strings
 - Base locale: `en.json` (most keys), fallback: `zh` (Chinese)
 - Sync script: `bun run i18n:sync` (from `web/`)
-- All `t()` calls must have corresponding keys in every locale file
+- Formal `t()` keys must exist in `en.json` and `zh.json`. Retained locale files should receive the same key when they are part of the current loader, without treating those languages as formally supported.
 
 ## Small Fix Path
 
@@ -59,7 +67,7 @@ For a single known missing key (still script-only, no direct JSON edits):
 2. Add the key via `add-missing-keys.mjs`, populating its `newKeys` object for every supported locale: `en`, `zh`, `zh-TW`, `fr`, `ja`, `ru`, `vi`. Even one key goes through the script; do not hand-edit the JSON.
 3. The script preserves the flat `"translation"` object and keeps keys alphabetically sorted automatically.
 4. Run a targeted search for the key in code and locale files.
-5. Run `bun run i18n:sync` to normalize file order. This step is mandatory, not optional.
+5. Run `bun run i18n:sync` only to inspect the report. If it rewrites unrelated keys, restore those files and keep the surgical insert. Do not commit a full locale reorder.
 
 ## Workflow
 
@@ -308,7 +316,7 @@ Delete temporary scripts after completion.
 1. All scripts run from `web/` directory
 2. Use `node scripts/xxx.mjs` (ESM format with top-level await)
 3. Sort keys alphabetically when writing locale files
-4. Always run `bun run i18n:sync` as the final step
+4. Do not commit an `i18n:sync` reorder of unrelated keys. Formal Chinese and English keys are required; retained packs are compatibility only.
 5. Delete temporary scripts after completion
 6. The `{{variable}}` placeholders in keys must be preserved in all translations
 7. NEVER edit `locales/*.json` directly. Any non-script write to a locale file (StrReplace, Write, manual JSON edit) is non-compliant, including single-key fixes.

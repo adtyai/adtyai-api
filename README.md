@@ -62,7 +62,7 @@ New API is a self-hosted AI gateway for applications, agents, and teams. Connect
 
 Use it to share authorized model access across a team, switch providers without configuring every client again, or operate a private multi-model service with a web console. Upstreams include OpenAI, Anthropic, Google Gemini, Azure OpenAI, AWS Bedrock, Vertex AI, DeepSeek, Qwen, and other compatible services.
 
-This ADTY AI fork adds Root-managed sites and owner handovers, versioned payment scenes, scoped site staff, notification read receipts, and finance/order tracing. See the [ADTY engineering docs](./docs/adty/README.md) for current behavior and remaining limits.
+This ADTY AI fork adds Root-managed sites with an immutable owner, versioned payment scenes, scoped site staff, notification read receipts, and finance/order tracing. The site owner cannot be replaced. See the [ADTY engineering docs](./docs/adty/README.md) for current behavior and remaining limits.
 
 Image builds derive their version from the Git ref and commit: `main-<short SHA>` on `main`, or the tag name for tag builds. The [build workflow](./.github/workflows/adty-ghcr.yml) writes `VERSION` for both the frontend and backend.
 

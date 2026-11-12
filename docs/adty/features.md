@@ -5,6 +5,7 @@
 几个通用的说明：
 
 - **额度和美元**：余额沿用上游的额度整数，1 美元 = 500000 额度。这个尺度固定，后台保存 `QuotaPerUnit` 时只接受 500000，已存的其他值加载时不生效。下文的算例都用美元写，括号里是额度。
+- **以约定 I 为准**：站长不可更换。优惠码报价和写入已退役，历史行保留。正式语言只有简体中文和英文。下文若仍写交接、优惠码可用或八种正式语言，那是旧说明，不能当成当前开发规则。当前边界见 [conventions.md](conventions.md) 的约定 I。
 - **后台设置**：我们的设置都存在 options 表里，键是「模块名.键」，例如 `adty_topup_setting.bonus_rates`。和钱有关的参数没有内置默认值，没设之前对应功能不开（约定 I）。
 - **后台权限**：后台接口按「区域·动作」授权，见「分组和后台权限」一节。下文写「需要 财务·退款」之类，指这个权限。
 - **密钥**：存进 options 的密钥，键名以 `Token`、`Key`、`Secret` 等结尾，`GET /api/option/` 不会返回它们；后台只能填新值，不显示旧值。
@@ -378,7 +379,7 @@ BEpusdt 使用官方 `POST /api/v1/pay/info`，只信任与冻结付款链接同
 
 **分组**：
 
-- 每个分组有系统生成的固定 ID（`g` 加 4 位随机字符）和 8 种语言的显示名、描述，存在 `adty_groups`。用户、密钥、渠道里存的都是 ID，后台改显示名不影响他们；前台到处只显示显示名，不露 ID。
+- 每个分组有系统生成的固定 ID（`g` 加 4 位随机字符）。正式显示名和说明只有简体中文和英文，稳定 ID 不翻译。旧的其他语言字段可以留存，但不作为正式语言。用户、密钥、渠道里存的都是 ID，后台改显示名不影响他们；前台到处只显示显示名，不露 ID。
 - 改法：在后台原来的分组倍率表上编辑显示名（系统设置 → 计费）。上游的 JSON 编辑模式关掉了，保存时校验：出现未知的分组 ID、或者删掉了还在用的分组，都会被拒绝。
 - 迁移和删除：可以把一个分组的用户、密钥、渠道整体迁到另一个分组，迁完才能删（`POST /api/adty/admin/groups/:id/migrate`、`DELETE /api/adty/admin/groups/:id`）。
 - 接口：公开 `GET /api/adty/groups/display`（已删除分组的名字也返回给登录用户）；后台 `GET`、`POST /api/adty/admin/groups`、`PUT /api/adty/admin/groups/:id`，都只有超级管理员。
@@ -422,11 +423,11 @@ BEpusdt 使用官方 `POST /api/v1/pay/info`，只信任与冻结付款链接同
 
 ## 网页客服、状态页、多语言、首页 SEO
 
-**网页客服（tawk.to）**：在「系统设置 → 站点 → ADTY AI Site」填 `adty_site_setting.tawk_property_id` 和 `tawk_widget_id`，两个都填了（只能是字母、数字、`_`、`-`）才加载，所有页面都显示，访客是匿名的。打开 USDT 或支付宝、微信支付窗时隐藏，关闭后再显示。默认关。限制：语言跟 tawk.to 后台的设置，不随界面切换；分站没有自己的配置，分站客户也连到主站客服；清空 id 后要刷新页面才消失。任务 8.8。
+**网页客服（tawk.to）**：旧挂件配置仍可能存在，但不是统一客服中心。当前客服入口是站内工单；附件只允许图片。不要把 tawk.to 或 Telegram 登录当成工单或通知绑定。
 
-**服务状态页**（`/status`，公开）：显示 Uptime Kuma 里各监控的状态和 24 小时可用率，每 60 秒刷新，按当前站点显示站名，不显示 Uptime Kuma 自己的分组名。数据来自上游的「Uptime Kuma」设置（系统设置 → 内容），没配时显示「Service status is not available yet.」。限制：上游的 `GET /api/uptime/status` 不用登录、不看开关，返回里带分组名，「不显示渠道」只在前端做到；后端没有缓存；页脚和导航里没有指向它的链接。任务 11.10。
+**服务状态页**：不建设公开平台服务状态页。已有 `/status` 或 Uptime Kuma 页面不得作为正式产品承诺，也不要在导航或文档里引导用户使用。
 
-**多语言**：前端和后端都是 8 种（en、zh-CN、zh-TW、fr、ja、ko、ru、vi）。前端先看用户选过的语言，再看浏览器语言，都没有用英文；后端按用户设置、请求头，最后用环境变量 `DEFAULT_LANGUAGE`。漏翻检查：在 web 目录 `node scripts/adty/i18n-check.mjs`，只查我们加的键（`en.json` 减去 `upstream-en-keys.json`），8 个文件都要有、而且值不能和英文一样（品牌词和法文同形词在白名单里）；CI 和 `scripts/adty/check.sh` 都会跑。后端我们的键在 `i18n/locales/adty.<语言>.yaml`，由 Go 测试检查齐全。任务 9.1、9.2。
+**多语言**：正式语言只有简体中文和英文。浏览器偏好为中文时用简体中文，否则用英文；手动选择优先。`zh-TW`、`fr`、`ja`、`ko`、`ru`、`vi` 的旧资源可以留在仓库里，但不进入正式选择器，也不作为验收语言。固定通知使用中文在前、英文在后的同一条模板。
 
 **首页 SEO**：
 
@@ -470,13 +471,13 @@ Root 和获授用户读取权限的管理员在统一用户列表、搜索及详
 
 **官方价**：主节点启动时同步一次，之后每 24 小时（环境变量 `ADTY_OFFICIAL_PRICE_SYNC_HOURS`）从 models.dev 拉取输入、输出、缓存读、缓存写的每百万 tokens 美元价，存进 `adty_official_prices`；失败保留旧数据。只更新有映射、没开「手动覆盖」的行；没映射的模型按 `adty_official_price_setting.auto_map_providers`（默认 anthropic、openai、google、deepseek、xai、mistral）找完全同名的自动映射。按次价只能手填。价格页和首页显示「省 X%」= 1 − 本站价 ÷ 官方价（按输入价、美元，向下取整到整数百分比，为负显示「—」）。后台「系统设置 → 计费 → Official Prices」（只有超级管理员）：改映射、价格、手动覆盖，立即同步。公开接口 `GET /api/adty/pricing/official`。限制：不开手动覆盖时手填的价格会被下次同步改回；没有删除接口；`auto_map_providers` 没有后台界面。任务 8.4、8.5。
 
-**接入文档**（`/docs`、`/docs/<页>`，公开）：快速开始、Claude Code、Codex CLI、Cherry Studio、OpenAI SDK、错误和限制、常见问题，8 种语言，是仓库里的 Markdown（`web/src/features/adty-docs/content/`），改内容要改代码后重新构建。文中的接入地址取 `adty_site_setting.api_base_url`，没填用服务器地址。限制：分站的文档也显示主站品牌，主站填了 `api_base_url` 时分站文档显示主站的接入地址。任务 8.6。
+**接入文档**（`/docs`、`/docs/<页>`，公开）：快速开始、Claude Code、Codex CLI、Cherry Studio、OpenAI SDK、错误和限制、常见问题。正式维护简体中文和英文，是仓库里的 Markdown（`web/src/features/adty-docs/content/`），改内容要改代码后重新构建。其他语言目录如仍存在，不在前台承诺。文中的接入地址取当前站点配置，没填用服务器地址。示例密钥使用占位符。任务 8.6。
 
-**条款**：后台「系统设置 → 内容 → 多语言条款」可编辑用户协议、隐私政策、退款政策、开站协议和分站客户条款，五份文档都支持八种语言。开站协议和分站客户条款另有非负整数版本号；修改已发布协议后提高版本号，以要求相关用户重新接受。保存仅提交当前文档和对应版本，其他文档的未保存内容继续保留，离开页面时会提示。`GET /api/adty/legal/:doc?lang=` 按「本语言 → 英文 → 上游的 `legal.*`」回退；退款政策由 `refund_policy_enabled` 控制显示。主站发布用户协议或隐私政策后，注册必须带 `agreement_accepted: true`，否则拒绝并不建账号；接受后写系统日志。分站申请核对当前开站协议版本；分站客户使用受保护的接口、任务和长连接时核对当前客户条款版本。任务 8.6、11.1。
+**条款**：后台「系统设置 → 内容 → 多语言条款」可编辑用户协议、隐私政策、退款政策、开站协议和分站客户条款。正式文本是简体中文和英文。旧的其他语言字段可以保留，但不作为正式语言。开站协议和分站客户条款另有非负整数版本号；修改已发布协议后提高版本号，以要求相关用户重新接受。保存仅提交当前文档和对应版本，其他文档的未保存内容继续保留，离开页面时会提示。`GET /api/adty/legal/:doc?lang=` 按「本语言 → 英文 → 上游的 `legal.*`」回退；退款政策由 `refund_policy_enabled` 控制显示。主站发布用户协议或隐私政策后，注册必须带 `agreement_accepted: true`，否则拒绝并不建账号；接受后写系统日志。分站申请核对当前开站协议版本；分站客户使用受保护的接口、任务和长连接时核对当前客户条款版本。任务 8.6、11.1。
 
 ## 品牌和 Logo
 
-**站名**：ADTY AI，8 种语言都不翻译；程序对外的技术名字是 adtyai。代码里只在 `common/adty_brand.go`（`AdtyBrandName`、`AdtyBrandSlug`、`AdtyBrandURL`）和 `web/src/lib/adty-brand.ts`（`ADTY_BRAND_NAME` 等）两处写字面量。后台的系统名称默认就是 ADTY AI。
+**站名**：ADTY AI，正式语言和保留语言包都不翻译；程序对外的技术名字是 adtyai。代码里只在 `common/adty_brand.go`（`AdtyBrandName`、`AdtyBrandSlug`、`AdtyBrandURL`）和 `web/src/lib/adty-brand.ts`（`ADTY_BRAND_NAME` 等）两处写字面量。后台的系统名称默认就是 ADTY AI。
 
 **Logo**：方案 H「层叠网关」。原稿和生成脚本在仓库外的 `C:\Users\Administrator\ai\adtyai-logo`（`source/build.py` 生成全部文件，说明见那里的 README.md）。`web/public` 里的文件：
 

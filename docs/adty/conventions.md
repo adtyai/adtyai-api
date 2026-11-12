@@ -19,7 +19,7 @@
 
 **约定 C：钱**
 - 计算一律用 `github.com/shopspring/decimal`（go.mod 已有），不用 float 直接加减和比较。新表金额列写 `type:decimal(20,8);not null;default:0`；decimal 读到 NULL 会报错，LEFT JOIN 查询要 COALESCE。
-- 余额沿用上游额度整数：1 USD = `QuotaPerUnit`（默认 500000，common/constants.go:22）。入账额度 = (面额 + 加赠) × QuotaPerUnit，先 `.Floor()` 再转成整数。退款只退没花掉的本金：按用户当前余额扣回这笔订单还剩的额度，最多扣到 0，赠金不退，规则和算例见 [features.md](features.md) 的「充值退款」。
+- 余额沿用上游额度整数：1 USD = 500000 额度。`QuotaPerUnit` 只接受 500000；保存其他值必须拒绝，已存的其他值加载时不生效，也不能在内存里改成另一个比例。入账额度 = (面额 + 加赠) × 500000，先 `.Floor()` 再转成整数。退款不能超过原单可退额度，不调用支付商退款 API；已消费部分只有主站明确授权时才能登记，差额和责任留在人工记录。旧「只退未消费本金」的句子若与本节或约定 I 冲突，以约定 I 为准。
 - 余额不能变负：每个钱包请求都要先预扣，余额不够就拒绝；结算补扣最多扣到 0，差额由平台承担（见 features.md 的「余额下限」）。新写的扣费代码要用 `model.ChargeUserQuotaUpTo`，不要用 `model.DecreaseUserQuota`。
 - 显示：美元、人民币保留 2 位；USDT 按网关返回的位数原样显示。
 - 支付商名：`bepusdt`、`adty_epay`。支付方式：`usdt.trc20`、`usdt.bep20`、`usdt.polygon`、`usdt.xlayer`、`alipay`、`wxpay`。
@@ -33,11 +33,14 @@
 - AGPL：不删 LICENSE、NOTICE、THIRD-PARTY-LICENSES.md 和上游源文件头（`bun run copyright:check` 会查），不自称官方。公开页脚不放上游署名、源码链接和客服邮箱。
 
 **约定 E：文案和语言**
-- 内容的语言键统一用 `zh-CN`、`zh-TW`、`en`、`fr`、`ja`、`ko`、`ru`、`vi`。前端 i18next 用的是 `zhCN`、`zhTW`（i18n/config.ts:32-40），用 `web/src/lib/adty-lang.ts` 的 `toContentLang()` 转换，两套不要混用。
-- 控制台接口的提示用 `common.ApiErrorT(c, "英文原文")`，译文放前端语言包，键就是英文原文。新键**先写进 `en.json`**（值同键），再写 `zh.json`。如果只写了 zh.json，`i18n:sync` 会把 zh 选成基准，把中文写进 en.json。
-- 中转接口（/v1）的报错和邮件用 `i18n.T` / `i18n.Translate`，键常量写 `i18n/keys_adty.go`（`MsgAdtyXxx = "adty.xxx"`），译文写 `i18n/locales/adty.<语言>.yaml`（执行层决定 13）。8 种语言一次写齐（任务 9.1 起后端已有 8 种，含 ko）。
+- 正式语言只有简体中文 `zh-CN` 和英文 `en`。用户端、后台、站长和员工工作区、团队页、订单、资金说明、表单、错误、文档、通知和邮件都要覆盖这两种，不能只翻译菜单。语言不改变美元记账、支付币种、站点或价格。
+- 已有的 `zh-TW`、`fr`、`ja`、`ko`、`ru`、`vi` 资源可以留在仓库里，不为了减少语言重写 i18n 框架。它们不是正式开放语言：选择器、首页、文档和验收不得承诺这六种。浏览器偏好是中文时用简体中文，否则用英文；用户手动选择优先。
+- 内容语言键和界面语言码不要混用。前端 i18next 用 `zhCN`、`zhTW`（i18n/config.ts），内容键用 `zh-CN`。需要转换时走现有 `toContentLang()` / `toIntlLocale()`，不要再写一套映射。
+- 控制台接口的提示用 `common.ApiErrorT(c, "英文原文")`，译文放前端语言包，键就是英文原文。新的正式文案必须写入 `en.json` 和 `zh.json`。`i18n:sync` 如果会重排与本次无关的键，不要把那次重排提交进去；只插入本次的键。
+- 固定界面、订单状态、邮件和机器人通知用核对过的中英模板，中文在前、英文在后，不按用户语言拆成两条。获准的动态中文在保存时生成英文。失败时保留中文，并写明英文未就绪。金额、订单号、模型名、URL 和占位符由程序插入，不交给模型改写。
+- 中转接口（/v1）的报错和邮件用 `i18n.T` / `i18n.Translate`，键常量写 `i18n/keys_adty.go`（`MsgAdtyXxx = "adty.xxx"`），正式译文写中文和英文。已有其他语言 yaml 可保留，不因此承诺那些语言。
 - 改了上游 `t()` 原文的地方，按新文案加新键，旧键留着。
-- 站名写 ADTY AI，8 种语言都不翻译。代码里引用 `common.AdtyBrandName` 和前端的 `ADTY_BRAND_NAME`，不要另写字面量（任务 8.9）。
+- 站名写 ADTY AI，正式语言和保留语言包都不翻译。代码里引用 `common.AdtyBrandName` 和前端的 `ADTY_BRAND_NAME`，不要另写字面量（任务 8.9）。
 - 对外名字（任务 8.9）：访客、调用 API 的人、上游服务商和浏览器开发者工具能看到的 New API 已经换成 ADTY AI 或 adtyai（后端常量 `common.AdtyBrandName`、`AdtyBrandSlug`、`AdtyBrandURL`）。品牌守卫测试 `common/adty_brand_guard_test.go` 和 `web/src/features/adty-guards/__tests__/brand.test.ts` 会报出合并上游时新带进来的旧写法。**下面这些不改**，守卫的允许名单也只放它们：
   - Go 模块路径和 import 路径（`github.com/QuantumNous/new-api/...`）；
   - 镜像里的二进制文件名 `/new-api`（Dockerfile）；
@@ -81,3 +84,17 @@
 - Docker 没装：镜像在 GitHub Actions 里构建；做 10.1 时如果要在本地试跑 compose 再装（要 sudo）。
 - 检查脚本 `bash scripts/adty/check.sh`（在副本里跑）：`--backend` 跑三个 Go 模块（根模块、relaykit、tokenkit）的 go vet、go build、go test；`--frontend` 跑 typecheck、lint、test、copyright:check；不带参数两个都跑。脚本开头 `set -euo pipefail`，任何一步失败就停。
 - 单测：后端 `GOWORK=off go test ./model -run TestXxx -count=1`；前端在 `web` 目录 `bun run test -- <文件名>`；都写进任务脚本，经 wrun.sh 在副本里跑。
+
+**约定 I：已确认产品边界**
+
+本节覆盖全平台审查方案里已经确认、且和旧 WhiteRelay 句子冲突的规则。冲突时以本节为准，不得用较宽松的旧句子绕过资金或安全约束。
+
+- 站长不可更换。Root 从主站已有用户指定唯一站长后，转让、交接写接口和前端入口都必须拒绝。关站时客户和仍存续的团队迁入主站；负责人已退出而关闭的团队不复活。历史交接记录只解释旧订单的财务归属，不能作为新的交接入口。
+- 站长界面只显示收益和保证金。经营钱包继续记账，但不出现在站长页面，站长充值汇总接口返回 403。
+- 全平台只有一种充值额度兑换码。优惠码的报价和写入拒绝新使用；历史行保留，不重算。兑换码不是优惠加赠，也不产生渠道赠金或邀请佣金。
+- 团队只有一个负责人，不能转让。负责人退出或注销时关闭团队，共享余额保留，不自动退款或分给成员。绑定的 Key 只扣团队共享余额。团队价 = 站点售价 × 折扣；分站结果低于供货价时拒绝。
+- Telegram 只有两个通知机器人：用户通知、管理通知。Token 仅 Root 配置，加密保存、脱敏展示，变更走二次验证。绑定不复用 Telegram OAuth，也不能登录、找回密码或充当二次验证。机器人不能查询或修改账户、余额、Key、退款或提现。
+- 工单附件只允许图片。客户接口不能返回内部备注。客服身份不授予退款、调额、提现、Key 或钱包权限。
+- 系统翻译是平台任务。不扣客户、团队或站长余额，不用客户 Key，不递归调用本站中转。旧任务晚返回不能覆盖新版本，人工修改不能被普通重试覆盖。
+- 分组 24 小时健康把请求成功率和主动探测可用率分开。无样本、新建分组或采集停止显示暂无数据或监控中断，不能显示 100% 或绿色。客户侧拒绝不是上游故障。健康数据不能自动改 Key 分组，也不能返回上游渠道、地址或凭据。
+- 不建设公开平台服务状态页、用户消费分析报表、兑换码批次、配置一键恢复、桌面客户端发布，以及 Telegram 内充值、登录、Mini App 或 Key 管理。已有相关代码只能隔离或退役，不能当成新需求已完成。
