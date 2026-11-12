@@ -27,6 +27,7 @@ export const SITE_OWNER_SECTIONS = [
   'promo-codes',
   'settings',
   'earnings',
+  'vouchers',
   'agreement',
 ] as const
 

@@ -41,6 +41,7 @@ import { PromoCodesPanel } from './components/promo-codes-panel'
 import { SiteSettingsPanel } from './components/site-settings-panel'
 import { StaffPanel } from './components/staff-panel'
 import { TermsAcceptPanel } from './components/terms-accept-panel'
+import { VoucherPanel } from './components/voucher-panel'
 import { SITE_OWNER_SECTIONS, type SiteOwnerSectionId } from './sections'
 
 /** Site owner center (task 11.6): one page with a tab per section. */
@@ -64,6 +65,7 @@ export function SiteOwnerCenter(props: { section: SiteOwnerSectionId }) {
     'promo-codes': t('Promo codes'),
     settings: t('Site settings'),
     earnings: t('Earnings'),
+    vouchers: t('Recharge codes'),
     agreement: t('Site agreement'),
   }
 
@@ -144,6 +146,9 @@ export function SiteOwnerCenter(props: { section: SiteOwnerSectionId }) {
                   </TabsContent>
                   <TabsContent value='earnings'>
                     <EarningsPanel />
+                  </TabsContent>
+                  <TabsContent value='vouchers'>
+                    <VoucherPanel />
                   </TabsContent>
                   <TabsContent value='agreement'>
                     <AgreementPanel site={site.data} />

@@ -78,6 +78,7 @@ func registerAdtyTopUpRoutes(apiRouter *gin.RouterGroup) {
 	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/topup/orders/:trade_no/cancel", "scope", "wallet:write")
 	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/adty/topup/pending", "scope", "wallet:read")
 	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/adty/topup/self", "scope", "wallet:read")
+	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/vouchers/redeem", "scope", "wallet:write")
 
 	topup := apiRouter.Group("/adty/topup", middleware.UserAuth(), middleware.AdtyRequireCurrentSiteTerms())
 	topup.GET("/info", controller.GetAdtyTopUpInfo)
@@ -87,6 +88,7 @@ func registerAdtyTopUpRoutes(apiRouter *gin.RouterGroup) {
 	topup.POST("/orders/:trade_no/cancel", middleware.CriticalRateLimit(), controller.CancelAdtyTopUpOrder)
 	topup.GET("/pending", controller.GetAdtyTopUpPending)
 	topup.GET("/self", controller.GetAdtyTopUpSelf)
+	apiRouter.POST("/adty/vouchers/redeem", middleware.UserAuth(), middleware.UserCriticalRateLimit("CT:voucher-redeem"), controller.PostAdtyVoucherRedeem)
 }
 
 // registerAdtyFinanceRoutes 挂充值对账、补单和退款（任务 3.5），按后台权限注册。
@@ -265,6 +267,8 @@ func registerAdtyResellerRoutes(apiRouter *gin.RouterGroup) {
 		{http.MethodPut, "/self", "wallet:write", []gin.HandlerFunc{controller.PutAdtyOwnerSite}},
 		{http.MethodGet, "/stats", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerStats}},
 		{http.MethodGet, "/earnings", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerEarnings}},
+		{http.MethodPost, "/vouchers", "wallet:write", []gin.HandlerFunc{controller.PostAdtySiteVoucher}},
+		{http.MethodPost, "/vouchers/:id/cancel", "wallet:write", []gin.HandlerFunc{controller.PostAdtyVoucherCancel}},
 		{http.MethodGet, "/wallets", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerWallets}},
 		{http.MethodGet, "/wallet-ledgers", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerWalletLedger}},
 		{http.MethodGet, "/orders", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerOrders}},
@@ -331,6 +335,11 @@ func registerAdtyResellerRoutes(apiRouter *gin.RouterGroup) {
 	rootWallets.POST("/:id/review", controller.ReviewAdtyAdminSite)
 	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/admin/sites/:id/owner", "scope", "option:write")
 	rootWallets.POST("/:id/owner", controller.HandoverAdtyAdminSiteOwner)
+	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/admin/vouchers", "scope", "option:write")
+	middleware.DeclareAdtyAccessTokenRoute("PUT", "/api/adty/admin/vouchers/limit", "scope", "option:write")
+	rootVouchers := apiRouter.Group("/adty/admin/vouchers", middleware.RootAuth())
+	rootVouchers.POST("", controller.PostAdtyAdminVoucher)
+	rootVouchers.PUT("/limit", controller.PutAdtyVoucherIssuanceLimit)
 
 	admin := apiRouter.Group("/adty/admin", middleware.AdminAuth())
 	for _, route := range []struct {
