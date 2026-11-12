@@ -234,6 +234,57 @@ func RedeemAdtyVoucher(userId int, code string) (*AdtyVoucherRedeemed, error) {
 	return result, nil
 }
 
+func FreezeAdtyVoucher(actorId int, voucherId int64) error {
+	return model.DB.Transaction(func(tx *gorm.DB) error {
+		actor, err := lockAdtyVoucherUser(tx, actorId)
+		if err != nil {
+			return err
+		}
+		var voucher model.AdtyVoucher
+		if err := model.AdtyLockForUpdate(tx).First(&voucher, voucherId).Error; err != nil {
+			return err
+		}
+		if actor.Role != common.RoleRootUser && voucher.IssuerId != actor.Id {
+			return common.NewMessage("No permission to perform this action")
+		}
+		if voucher.Status != model.AdtyVoucherStatusPending {
+			return common.NewMessage("Invalid parameters")
+		}
+		updated := tx.Model(&voucher).Where("id = ? AND status = ?", voucher.Id, model.AdtyVoucherStatusPending).
+			Update("status", model.AdtyVoucherStatusFrozen)
+		if updated.Error != nil {
+			return updated.Error
+		}
+		if updated.RowsAffected != 1 {
+			return common.NewMessage("Invalid parameters")
+		}
+		return nil
+	})
+}
+
+// InheritAdtyVouchersOnCloseTx keeps unredeemed site codes under the original
+// audience after the site closes. It does not release frozen funds or widen use.
+func InheritAdtyVouchersOnCloseTx(tx *gorm.DB, siteId int, movedUserIDs []int) error {
+	if err := tx.Model(&model.AdtyVoucher{}).
+		Where("(target_site_id = ? OR source_site_id = ?) AND status IN ?", siteId, siteId, []string{model.AdtyVoucherStatusPending, model.AdtyVoucherStatusFrozen}).
+		Update("inherited_by_main", true).Error; err != nil {
+		return err
+	}
+	for _, userId := range movedUserIDs {
+		var existing int64
+		if err := tx.Model(&model.AdtyVoucherCloseGrant{}).Where("site_id = ? AND user_id = ?", siteId, userId).Count(&existing).Error; err != nil {
+			return err
+		}
+		if existing > 0 {
+			continue
+		}
+		if err := tx.Create(&model.AdtyVoucherCloseGrant{SiteId: siteId, UserId: userId}).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func CancelAdtyVoucher(actorId int, voucherId int64) error {
 	return model.DB.Transaction(func(tx *gorm.DB) error {
 		actor, err := lockAdtyVoucherUser(tx, actorId)
@@ -459,7 +510,20 @@ func adtyVoucherRedeemAllowed(tx *gorm.DB, user *model.User, voucher *model.Adty
 			return ErrAdtyVoucherWrongAccount
 		}
 	case model.AdtyVoucherPurposeSiteCustomer:
-		if user.SiteId != voucher.TargetSiteId || user.StaffSiteId != 0 {
+		if user.StaffSiteId != 0 {
+			return ErrAdtyVoucherWrongAccount
+		}
+		if voucher.InheritedByMain {
+			var grants int64
+			if err := tx.Model(&model.AdtyVoucherCloseGrant{}).Where("site_id = ? AND user_id = ?", voucher.TargetSiteId, user.Id).Count(&grants).Error; err != nil {
+				return err
+			}
+			if grants == 0 {
+				return ErrAdtyVoucherWrongAccount
+			}
+			return nil
+		}
+		if user.SiteId != voucher.TargetSiteId {
 			return ErrAdtyVoucherWrongAccount
 		}
 	case model.AdtyVoucherPurposeSiteOwner:

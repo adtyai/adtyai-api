@@ -80,6 +80,37 @@ func PostAdtyAdminVoucher(c *gin.Context) {
 	common.ApiSuccess(c, issued)
 }
 
+func PostAdtyVoucherFreeze(c *gin.Context) {
+	id, ok := adtyPathId(c)
+	if !ok {
+		return
+	}
+	if err := service.FreezeAdtyVoucher(c.GetInt("id"), int64(id)); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"id": id, "status": model.AdtyVoucherStatusFrozen})
+}
+
+func PutAdtyVoucherMarginAuthorization(c *gin.Context) {
+	siteId, ok := adtyPathId(c)
+	if !ok {
+		return
+	}
+	var body struct {
+		Allowed bool `json:"allowed"`
+	}
+	if err := common.DecodeJson(c.Request.Body, &body); err != nil {
+		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	if err := service.SetAdtyVoucherMarginAuthorization(c.GetInt("id"), siteId, body.Allowed); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"site_id": siteId, "allowed": body.Allowed})
+}
+
 func PostAdtyVoucherCancel(c *gin.Context) {
 	id, ok := adtyPathId(c)
 	if !ok {

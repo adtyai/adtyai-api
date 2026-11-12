@@ -856,6 +856,9 @@ func ExecuteAdtySiteClose(siteId int, now int64) error {
 		if err != nil {
 			return err
 		}
+		if err := InheritAdtyVouchersOnCloseTx(tx, site.Id, moved); err != nil {
+			return err
+		}
 		// 客户行跟着走：转回主站就删掉；转给别的站就改归属，风控标记按新站重新算（清空）。
 		switch {
 		case len(moved) == 0:
