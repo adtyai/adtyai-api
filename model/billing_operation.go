@@ -205,6 +205,22 @@ func ReserveBillingOperation(spec BillingOperation, target int) (*BillingOperati
 		if err != nil {
 			return err
 		}
+		if balance < delta && (AdtyTeamReserveHook == nil || result.TokenId <= 0) {
+			return ErrBillingWalletInsufficient
+		}
+		if AdtyTeamReserveHook != nil && result.TokenId > 0 {
+			handled, hookErr := AdtyTeamReserveHook(tx, result.TokenId, result.UserId, delta, result.OperationKey)
+			if hookErr != nil {
+				return hookErr
+			}
+			if handled {
+				result.ReservedQuota = target
+				if err := freezeBillingEarningRiskTx(tx, &result); err != nil {
+					return err
+				}
+				return tx.Save(&result).Error
+			}
+		}
 		if balance < delta {
 			return ErrBillingWalletInsufficient
 		}

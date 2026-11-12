@@ -1,6 +1,8 @@
 package controller
 
 import (
+	"time"
+
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
@@ -30,12 +32,28 @@ func PostAdtyTeam(c *gin.Context) {
 	common.ApiSuccess(c, created)
 }
 
-func PostAdtyTeamJoin(c *gin.Context) {
+func PostAdtyTeamInvite(c *gin.Context) {
 	id, ok := adtyPathId(c)
 	if !ok {
 		return
 	}
-	member, err := service.JoinAdtyTeam(c.GetInt("id"), int64(id))
+	code, err := service.CreateAdtyTeamInvite(c.GetInt("id"), int64(id), 24*time.Hour)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"code": code})
+}
+
+func PostAdtyTeamAccept(c *gin.Context) {
+	var body struct {
+		Code string `json:"code"`
+	}
+	if err := common.DecodeJson(c.Request.Body, &body); err != nil {
+		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	member, err := service.AcceptAdtyTeamInvite(c.GetInt("id"), body.Code)
 	if err != nil {
 		common.ApiError(c, err)
 		return

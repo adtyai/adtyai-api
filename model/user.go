@@ -1039,6 +1039,11 @@ func (user *User) delete(identity *AuthSessionIdentity) (int64, error) {
 		if ownsSite {
 			return ErrSiteOwnerCannotDelete
 		}
+		if AdtyBeforeUserDeleteHook != nil {
+			if err := AdtyBeforeUserDeleteHook(tx, user.Id); err != nil {
+				return err
+			}
+		}
 		nextAuthVersion, err = IncrementUserAuthVersionWithTx(tx, user.Id)
 		if err != nil {
 			return err

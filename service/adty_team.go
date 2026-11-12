@@ -1,6 +1,9 @@
 package service
 
 import (
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"strings"
 	"time"
 
@@ -9,6 +12,11 @@ import (
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 )
+
+func init() {
+	model.AdtyTeamReserveHook = reserveAdtyTeamQuotaHook
+	model.AdtyBeforeUserDeleteHook = closeAdtyTeamForDeletedLeader
+}
 
 var (
 	ErrAdtyTeamInvalid   = common.NewMessage("Invalid parameters")
@@ -155,6 +163,9 @@ func CloseAdtyTeam(leaderId int, teamId int64) error {
 			Update("status", model.AdtyTeamMemberLeft).Error; err != nil {
 			return err
 		}
+		if err := disableAdtyTeamKeysTx(tx, team.Id); err != nil {
+			return err
+		}
 		return tx.Model(team).Updates(map[string]any{"status": model.AdtyTeamStatusClosed, "closed_at": time.Now().Unix()}).Error
 	})
 }
@@ -190,6 +201,191 @@ func lockActiveTeam(tx *gorm.DB, teamId int64) (*model.AdtyTeam, error) {
 		return nil, ErrAdtyTeamClosed
 	}
 	return &team, nil
+}
+
+func CreateAdtyTeamInvite(leaderId int, teamId int64, ttl time.Duration) (string, error) {
+	if ttl <= 0 || ttl > 7*24*time.Hour {
+		return "", ErrAdtyTeamInvalid
+	}
+	raw := make([]byte, 16)
+	if _, err := rand.Read(raw); err != nil {
+		return "", err
+	}
+	code := hex.EncodeToString(raw)
+	sum := sha256.Sum256([]byte(code))
+	hash := hex.EncodeToString(sum[:])
+	err := model.DB.Transaction(func(tx *gorm.DB) error {
+		team, err := lockActiveTeam(tx, teamId)
+		if err != nil {
+			return err
+		}
+		if team.LeaderUserId != leaderId {
+			return ErrAdtyTeamForbidden
+		}
+		return tx.Create(&model.AdtyTeamInvite{TeamId: team.Id, CodeHash: hash, ExpiresAt: time.Now().Add(ttl).Unix()}).Error
+	})
+	if err != nil {
+		return "", err
+	}
+	return code, nil
+}
+
+func AcceptAdtyTeamInvite(userId int, code string) (*model.AdtyTeamMember, error) {
+	code = strings.TrimSpace(code)
+	if len(code) < 16 {
+		return nil, ErrAdtyTeamInvalid
+	}
+	sum := sha256.Sum256([]byte(code))
+	hash := hex.EncodeToString(sum[:])
+	var member *model.AdtyTeamMember
+	err := model.DB.Transaction(func(tx *gorm.DB) error {
+		var invite model.AdtyTeamInvite
+		lookup := model.AdtyLockForUpdate(tx).Where("code_hash = ?", hash).Limit(1).Find(&invite)
+		if lookup.Error != nil {
+			return lookup.Error
+		}
+		if lookup.RowsAffected == 0 || invite.UsedAt != 0 || invite.ExpiresAt < time.Now().Unix() {
+			return ErrAdtyTeamInvalid
+		}
+		joined, err := joinAdtyTeamTx(tx, userId, invite.TeamId)
+		if err != nil {
+			return err
+		}
+		if err := tx.Model(&invite).Updates(map[string]any{"used_by": userId, "used_at": time.Now().Unix()}).Error; err != nil {
+			return err
+		}
+		member = joined
+		return nil
+	})
+	return member, err
+}
+
+func BindAdtyTeamKey(userId, tokenId int) error {
+	return model.DB.Transaction(func(tx *gorm.DB) error {
+		var token model.Token
+		if err := model.AdtyLockForUpdate(tx).First(&token, tokenId).Error; err != nil {
+			return err
+		}
+		if token.UserId != userId || token.Status != common.TokenStatusEnabled {
+			return ErrAdtyTeamForbidden
+		}
+		var membership model.AdtyTeamMember
+		lookup := tx.Where("user_id = ? AND status = ?", userId, model.AdtyTeamMemberActive).Limit(1).Find(&membership)
+		if lookup.Error != nil {
+			return lookup.Error
+		}
+		if lookup.RowsAffected == 0 {
+			return ErrAdtyTeamForbidden
+		}
+		row := model.AdtyTeamKey{TokenId: tokenId, TeamId: membership.TeamId, UserId: userId, Status: model.AdtyTeamMemberActive}
+		return tx.Create(&row).Error
+	})
+}
+
+func InheritAdtyTeamsOnCloseTx(tx *gorm.DB, siteId int) error {
+	var teams []model.AdtyTeam
+	if err := tx.Where("site_id = ? AND status = ?", siteId, model.AdtyTeamStatusActive).Find(&teams).Error; err != nil {
+		return err
+	}
+	for _, team := range teams {
+		if err := disableAdtyTeamKeysTx(tx, team.Id); err != nil {
+			return err
+		}
+		if err := tx.Model(&model.AdtyTeam{}).Where("id = ?", team.Id).Update("site_id", 0).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func reserveAdtyTeamQuotaHook(tx *gorm.DB, tokenId, userId, delta int, ref string) (bool, error) {
+	if tokenId <= 0 || delta <= 0 {
+		return false, nil
+	}
+	var key model.AdtyTeamKey
+	lookup := tx.Where("token_id = ? AND status = ?", tokenId, model.AdtyTeamMemberActive).Limit(1).Find(&key)
+	if lookup.Error != nil {
+		return false, lookup.Error
+	}
+	if lookup.RowsAffected == 0 {
+		return false, nil
+	}
+	if key.UserId != userId {
+		return false, ErrAdtyTeamForbidden
+	}
+	var team model.AdtyTeam
+	if err := model.AdtyLockForUpdate(tx).First(&team, key.TeamId).Error; err != nil {
+		return false, err
+	}
+	if team.Status != model.AdtyTeamStatusActive || team.SharedQuota < int64(delta) {
+		return false, model.ErrBillingWalletInsufficient
+	}
+	if err := applyAdtyTeamQuotaTx(tx, &team, -int64(delta), "reserve", ref, userId); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func closeAdtyTeamForDeletedLeader(tx *gorm.DB, userId int) error {
+	var team model.AdtyTeam
+	lookup := tx.Where("leader_user_id = ? AND status = ?", userId, model.AdtyTeamStatusActive).Limit(1).Find(&team)
+	if lookup.Error != nil {
+		return lookup.Error
+	}
+	if lookup.RowsAffected == 0 {
+		return nil
+	}
+	if err := tx.Model(&model.AdtyTeamMember{}).Where("team_id = ? AND status = ?", team.Id, model.AdtyTeamMemberActive).
+		Update("status", model.AdtyTeamMemberLeft).Error; err != nil {
+		return err
+	}
+	if err := disableAdtyTeamKeysTx(tx, team.Id); err != nil {
+		return err
+	}
+	return tx.Model(&team).Updates(map[string]any{"status": model.AdtyTeamStatusClosed, "closed_at": time.Now().Unix()}).Error
+}
+
+func disableAdtyTeamKeysTx(tx *gorm.DB, teamId int64) error {
+	var keys []model.AdtyTeamKey
+	if err := tx.Where("team_id = ? AND status = ?", teamId, model.AdtyTeamMemberActive).Find(&keys).Error; err != nil {
+		return err
+	}
+	if len(keys) == 0 {
+		return nil
+	}
+	ids := make([]int, 0, len(keys))
+	for _, key := range keys {
+		ids = append(ids, key.TokenId)
+	}
+	if err := tx.Model(&model.Token{}).Where("id IN ?", ids).Update("status", common.TokenStatusDisabled).Error; err != nil {
+		return err
+	}
+	return tx.Model(&model.AdtyTeamKey{}).Where("team_id = ?", teamId).Update("status", model.AdtyTeamMemberLeft).Error
+}
+
+func joinAdtyTeamTx(tx *gorm.DB, userId int, teamId int64) (*model.AdtyTeamMember, error) {
+	user, err := lockAdtyTeamUser(tx, userId)
+	if err != nil {
+		return nil, err
+	}
+	var team model.AdtyTeam
+	if err := model.AdtyLockForUpdate(tx).First(&team, teamId).Error; err != nil {
+		return nil, err
+	}
+	if team.Status != model.AdtyTeamStatusActive {
+		return nil, ErrAdtyTeamClosed
+	}
+	if user.SiteId != team.SiteId || user.StaffSiteId != 0 {
+		return nil, ErrAdtyTeamForbidden
+	}
+	if err := rejectActiveTeamMembership(tx, user.Id); err != nil {
+		return nil, err
+	}
+	row := model.AdtyTeamMember{TeamId: team.Id, UserId: user.Id, Role: model.AdtyTeamRoleMember, Status: model.AdtyTeamMemberActive}
+	if err := tx.Create(&row).Error; err != nil {
+		return nil, err
+	}
+	return &row, nil
 }
 
 func applyAdtyTeamQuotaTx(tx *gorm.DB, team *model.AdtyTeam, delta int64, kind, ref string, actor int) error {

@@ -80,7 +80,8 @@ func registerAdtyTopUpRoutes(apiRouter *gin.RouterGroup) {
 	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/adty/topup/self", "scope", "wallet:read")
 	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/vouchers/redeem", "scope", "wallet:write")
 	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/teams", "scope", "wallet:write")
-	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/teams/:id/join", "scope", "wallet:write")
+	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/teams/:id/invites", "scope", "wallet:write")
+	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/teams/accept", "scope", "wallet:write")
 
 	topup := apiRouter.Group("/adty/topup", middleware.UserAuth(), middleware.AdtyRequireCurrentSiteTerms())
 	topup.GET("/info", controller.GetAdtyTopUpInfo)
@@ -92,7 +93,8 @@ func registerAdtyTopUpRoutes(apiRouter *gin.RouterGroup) {
 	topup.GET("/self", controller.GetAdtyTopUpSelf)
 	apiRouter.POST("/adty/vouchers/redeem", middleware.UserAuth(), middleware.UserCriticalRateLimit("CT:voucher-redeem"), controller.PostAdtyVoucherRedeem)
 	apiRouter.POST("/adty/teams", middleware.UserAuth(), controller.PostAdtyTeam)
-	apiRouter.POST("/adty/teams/:id/join", middleware.UserAuth(), controller.PostAdtyTeamJoin)
+	apiRouter.POST("/adty/teams/:id/invites", middleware.UserAuth(), controller.PostAdtyTeamInvite)
+	apiRouter.POST("/adty/teams/accept", middleware.UserAuth(), controller.PostAdtyTeamAccept)
 }
 
 // registerAdtyFinanceRoutes 挂充值对账、补单和退款（任务 3.5），按后台权限注册。

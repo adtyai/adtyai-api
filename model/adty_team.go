@@ -1,6 +1,9 @@
 package model
 
-import "github.com/shopspring/decimal"
+import (
+	"github.com/shopspring/decimal"
+	"gorm.io/gorm"
+)
 
 const (
 	AdtyTeamStatusActive = "active"
@@ -53,3 +56,35 @@ type AdtyTeamLedger struct {
 }
 
 func (AdtyTeamLedger) TableName() string { return "adty_team_ledgers" }
+
+// AdtyTeamInvite is a one-time, expiring join credential. The plaintext is not stored.
+type AdtyTeamInvite struct {
+	Id        int64  `json:"id"`
+	TeamId    int64  `json:"team_id" gorm:"index"`
+	CodeHash  string `json:"-" gorm:"uniqueIndex;type:varchar(64);not null"`
+	ExpiresAt int64  `json:"expires_at" gorm:"index"`
+	UsedBy    int    `json:"used_by"`
+	UsedAt    int64  `json:"used_at"`
+	CreatedAt int64  `json:"created_at" gorm:"autoCreateTime"`
+}
+
+func (AdtyTeamInvite) TableName() string { return "adty_team_invites" }
+
+// AdtyTeamKey binds an API token to the member and team that the server stored.
+type AdtyTeamKey struct {
+	Id        int64  `json:"id"`
+	TokenId   int    `json:"token_id" gorm:"uniqueIndex"`
+	TeamId    int64  `json:"team_id" gorm:"index"`
+	UserId    int    `json:"user_id" gorm:"index"`
+	Status    string `json:"status" gorm:"type:varchar(16);index"`
+	CreatedAt int64  `json:"created_at" gorm:"autoCreateTime"`
+}
+
+func (AdtyTeamKey) TableName() string { return "adty_team_keys" }
+
+// AdtyTeamReserveHook spends a team key from the shared balance inside the billing transaction.
+// handled is false when the token is not a team key.
+var AdtyTeamReserveHook func(tx *gorm.DB, tokenId, userId, delta int, ref string) (handled bool, err error)
+
+// AdtyBeforeUserDeleteHook closes a team when its leader is deleted.
+var AdtyBeforeUserDeleteHook func(tx *gorm.DB, userId int) error
