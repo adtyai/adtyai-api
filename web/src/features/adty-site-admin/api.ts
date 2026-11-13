@@ -340,7 +340,8 @@ export async function adjustSite(
     cost_factor?: string
     max_markup?: string
     visibility?: string
-    clear?: Array<'cost_factor' | 'max_markup'>
+    allowed_groups?: string
+    clear?: Array<'cost_factor' | 'max_markup' | 'allowed_groups'>
     reason: string
   }
 ): Promise<AdminSite> {

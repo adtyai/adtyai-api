@@ -55,6 +55,18 @@ func adtyWalletRelayInfo(userID, tokenID int, tokenKey string) *relaycommon.Rela
 	}
 }
 
+func TestUnusedPrechargeReleaseReturnsTheDifference(t *testing.T) {
+	truncate(t)
+	const userID, tokenID = 9102, 9102
+	seedUser(t, userID, 1_000_000)
+	seedToken(t, tokenID, userID, "sk-adty-precharge-release", 100_000)
+	c := adtyWalletRelayContext()
+	info := adtyWalletRelayInfo(userID, tokenID, "sk-adty-precharge-release")
+	require.Nil(t, PreConsumeBilling(c, 10_000, info))
+	require.NoError(t, SettleBilling(c, info, 6_000))
+	require.Equal(t, 994_000, getUserQuota(t, userID), "unused precharge is released by settlement")
+}
+
 func TestAdtyWalletPreConsumeSettle(t *testing.T) {
 	truncate(t)
 	const userID, tokenID = 9101, 9101

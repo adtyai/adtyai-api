@@ -8814,7 +8814,10 @@
     "Enter the code sent to your email. It can be used once.": "Введите код из письма. Его можно использовать один раз.",
     "Failed to send email": "Не удалось отправить письмо",
     "Request earnings": "Доход по запросу",
-    "Each request shows the model and billing group. Upstream channel names are not shown.": "Каждый запрос показывает модель и группу тарификации. Имя upstream-канала не показывается."
+    "Each request shows the model and billing group. Upstream channel names are not shown.": "Каждый запрос показывает модель и группу тарификации. Имя upstream-канала не показывается.",
+    "Allowed groups": "Разрешенные группы",
+    "Every live billing group": "Все действующие группы",
+    "Leave empty to allow every live billing group. Separate group IDs with commas.": "Оставьте пустым, чтобы разрешить все действующие группы. Идентификаторы разделяйте запятыми."
 },
   "Targeted notifications": "Адресные уведомления",
   "Site announcements": "Объявления сайта",

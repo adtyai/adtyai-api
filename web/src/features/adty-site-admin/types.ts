@@ -58,6 +58,7 @@ export type AdminSite = {
   tier_cost_factor: string | null
   tier_month: string
   visibility: string
+  allowed_groups?: string
   /** Brand JSON written by the owner (name, logo_url, tagline, notice, support_contact). */
   brand: string
   contact_info: string

@@ -15,7 +15,7 @@ const adtyGroupSpecialUsableKey = "group_ratio_setting.group_special_usable_grou
 func IsAdtyGroupOption(key string) bool {
 	switch key {
 	case "GroupRatio", "TopupGroupRatio", "UserUsableGroups", "GroupGroupRatio",
-		"AutoGroups", "ModelRequestRateLimitGroup", adtyGroupSpecialUsableKey:
+		"AutoGroups", "ModelRequestRateLimitGroup", groupModelAllowOption, adtyGroupSpecialUsableKey:
 		return true
 	}
 	return false
@@ -82,7 +82,7 @@ func groupIDsInOption(key, value string) ([]adtyGroupRef, error) {
 		return nil, nil
 	}
 	switch key {
-	case "GroupRatio", "TopupGroupRatio", "UserUsableGroups", "ModelRequestRateLimitGroup":
+	case "GroupRatio", "TopupGroupRatio", "UserUsableGroups", "ModelRequestRateLimitGroup", groupModelAllowOption:
 		object := map[string]any{}
 		if err := common.UnmarshalJsonStr(value, &object); err != nil {
 			return nil, err

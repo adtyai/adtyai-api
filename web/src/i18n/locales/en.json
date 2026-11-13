@@ -8814,7 +8814,10 @@
     "Enter the code sent to your email. It can be used once.": "Enter the code sent to your email. It can be used once.",
     "Failed to send email": "Failed to send email",
     "Request earnings": "Request earnings",
-    "Each request shows the model and billing group. Upstream channel names are not shown.": "Each request shows the model and billing group. Upstream channel names are not shown."
+    "Each request shows the model and billing group. Upstream channel names are not shown.": "Each request shows the model and billing group. Upstream channel names are not shown.",
+    "Allowed groups": "Allowed groups",
+    "Every live billing group": "Every live billing group",
+    "Leave empty to allow every live billing group. Separate group IDs with commas.": "Leave empty to allow every live billing group. Separate group IDs with commas."
 },
   "Targeted notifications": "Targeted notifications",
   "Site announcements": "Site announcements",

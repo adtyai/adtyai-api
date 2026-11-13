@@ -8814,7 +8814,10 @@
     "Enter the code sent to your email. It can be used once.": "輸入發到你郵箱的驗證碼。每個驗證碼只能用一次。",
     "Failed to send email": "郵件傳送失敗",
     "Request earnings": "單次請求收益",
-    "Each request shows the model and billing group. Upstream channel names are not shown.": "每筆請求顯示模型和計費分組，不顯示上游渠道名稱。"
+    "Each request shows the model and billing group. Upstream channel names are not shown.": "每筆請求顯示模型和計費分組，不顯示上游渠道名稱。",
+    "Allowed groups": "授權分組",
+    "Every live billing group": "全部現有計費分組",
+    "Leave empty to allow every live billing group. Separate group IDs with commas.": "留空表示允許全部現有計費分組。多個分組 ID 用逗號分開。"
 },
   "Targeted notifications": "定向通知",
   "Site announcements": "本站公告",

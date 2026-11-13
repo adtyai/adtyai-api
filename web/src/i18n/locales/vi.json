@@ -8814,7 +8814,10 @@
     "Enter the code sent to your email. It can be used once.": "Nhập mã được gửi tới email của bạn. Mỗi mã chỉ dùng một lần.",
     "Failed to send email": "Không gửi được email",
     "Request earnings": "Thu nhập theo yêu cầu",
-    "Each request shows the model and billing group. Upstream channel names are not shown.": "Mỗi yêu cầu hiển thị mô hình và nhóm tính phí. Tên kênh thượng nguồn không được hiển thị."
+    "Each request shows the model and billing group. Upstream channel names are not shown.": "Mỗi yêu cầu hiển thị mô hình và nhóm tính phí. Tên kênh thượng nguồn không được hiển thị.",
+    "Allowed groups": "Nhóm được phép",
+    "Every live billing group": "Mọi nhóm tính phí hiện có",
+    "Leave empty to allow every live billing group. Separate group IDs with commas.": "Để trống để cho phép mọi nhóm tính phí hiện có. Ngăn cách ID nhóm bằng dấu phẩy."
 },
   "Targeted notifications": "Thông báo theo đối tượng",
   "Site announcements": "Thông báo của trang",

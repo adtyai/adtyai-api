@@ -46,6 +46,7 @@ type AdtySite struct {
 	TierUpdatedAt           int64            `json:"tier_updated_at"`
 	TierMaxMarkup           *decimal.Decimal `json:"tier_max_markup" gorm:"type:decimal(10,4)"`
 	Visibility              string           `json:"visibility" gorm:"type:text"`
+	AllowedGroups           string           `json:"allowed_groups" gorm:"type:text"`
 	Brand                   string           `json:"brand" gorm:"type:text"`
 	BonusRates              string           `json:"bonus_rates" gorm:"type:text"`
 	SeoIndex                bool             `json:"seo_index"`

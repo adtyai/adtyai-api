@@ -658,6 +658,10 @@ func TokenAuth() func(c *gin.Context) {
 			}
 			userGroup = tokenGroup
 		}
+		if userCache.SiteId > 0 && !service.SiteGroupAllowed(userCache.SiteId, userGroup) {
+			abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgAuthSiteGroupForbidden, map[string]any{"Group": userGroup}))
+			return
+		}
 		common.SetContextKey(c, constant.ContextKeyUsingGroup, userGroup)
 
 		err = SetupContextForToken(c, token, parts...)

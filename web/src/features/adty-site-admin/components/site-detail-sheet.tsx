@@ -85,6 +85,19 @@ import { SiteFundPanel } from './site-fund-panel'
 import { SiteStatusBadge } from './site-status-badge'
 import { SiteVisibilityEditor } from './site-visibility-editor'
 
+function readAllowedGroups(raw?: string) {
+  if (!raw) return ''
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    if (Array.isArray(parsed)) {
+      return parsed.filter((id) => typeof id === 'string').join(', ')
+    }
+  } catch {
+    return raw
+  }
+  return raw
+}
+
 function Info(props: { label: string; value: string }) {
   return (
     <div className='flex flex-col gap-0.5'>
@@ -113,6 +126,9 @@ function SiteActions(props: {
     readSiteVisibility(site.visibility)
   )
   const [reason, setReason] = useState('')
+  const [allowedGroups, setAllowedGroups] = useState(() =>
+    readAllowedGroups(site.allowed_groups)
+  )
 
   const previousSite = useRef(site)
   useEffect(() => {
@@ -138,6 +154,11 @@ function SiteActions(props: {
       }
       return merged
     })
+    setAllowedGroups((current) =>
+      current === readAllowedGroups(previous.allowed_groups)
+        ? readAllowedGroups(site.allowed_groups)
+        : current
+    )
     previousSite.current = site
   }, [site])
   const savedVisibility = readSiteVisibility(site.visibility)
@@ -148,10 +169,12 @@ function SiteActions(props: {
   const adjustmentDirty =
     costFactor.trim() !== (site.cost_factor ?? '') ||
     maxMarkup.trim() !== (site.max_markup ?? '') ||
+    allowedGroups.trim() !== readAllowedGroups(site.allowed_groups) ||
     visibilityChanged
   const dirty =
     costFactor !== (site.cost_factor ?? '') ||
     maxMarkup !== (site.max_markup ?? '') ||
+    allowedGroups !== readAllowedGroups(site.allowed_groups) ||
     reason !== '' ||
     visibilityChanged
   const { onDirtyChange } = props
@@ -198,7 +221,7 @@ function SiteActions(props: {
         throw new Error(t('No permission to perform this action'))
       }
       const body: Parameters<typeof adjustSite>[1] = { reason: reason.trim() }
-      const clear: Array<'cost_factor' | 'max_markup'> = []
+      const clear: Array<'cost_factor' | 'max_markup' | 'allowed_groups'> = []
       if (costFactor.trim() !== (site.cost_factor ?? '')) {
         if (costFactor.trim() === '') clear.push('cost_factor')
         else body.cost_factor = costFactor.trim()
@@ -207,15 +230,26 @@ function SiteActions(props: {
         if (maxMarkup.trim() === '') clear.push('max_markup')
         else body.max_markup = maxMarkup.trim()
       }
-      if (clear.length > 0) body.clear = clear
       if (visibilityChanged) {
         body.visibility = serializeSiteVisibility(visibility)
       }
+      if (allowedGroups.trim() !== readAllowedGroups(site.allowed_groups)) {
+        if (allowedGroups.trim() === '') clear.push('allowed_groups')
+        else
+          body.allowed_groups = JSON.stringify(
+            allowedGroups
+              .split(',')
+              .map((id) => id.trim())
+              .filter(Boolean)
+          )
+      }
+      if (clear.length > 0) body.clear = clear
       return adjustSite(site.id, body)
     },
     onSuccess: (updated) => {
       setCostFactor(updated.cost_factor ?? '')
       setMaxMarkup(updated.max_markup ?? '')
+      setAllowedGroups(readAllowedGroups(updated.allowed_groups))
       setVisibility(readSiteVisibility(updated.visibility))
       queryClient.setQueryData<Awaited<ReturnType<typeof getSite>>>(
         siteAdminKeys.site(site.id),
@@ -301,6 +335,19 @@ function SiteActions(props: {
             onChange={(event) => setMaxMarkup(event.target.value)}
           />
         </div>
+      </div>
+      <div className='space-y-1'>
+        <Label htmlFor='site-allowed-groups'>{t('Allowed groups')}</Label>
+        <Input
+          id='site-allowed-groups'
+          value={allowedGroups}
+          placeholder={t('Every live billing group')}
+          disabled={(!canReview && !canAdjust) || !editable || busy}
+          onChange={(event) => setAllowedGroups(event.target.value)}
+        />
+        <p className='text-muted-foreground text-xs'>
+          {t('Leave empty to allow every live billing group. Separate group IDs with commas.')}
+        </p>
       </div>
       <p className='text-muted-foreground text-xs'>
         {t(

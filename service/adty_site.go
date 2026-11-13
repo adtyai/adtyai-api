@@ -477,12 +477,14 @@ func GetAdtySite(siteId int) (*model.AdtySite, error) {
 
 // AdtySiteAdjust 是管理员对单站的调整；字段为 nil 表示不改，Clear* 改回「用全局」。
 type AdtySiteAdjust struct {
-	CostFactor      *decimal.Decimal
-	ClearCostFactor bool
-	MaxMarkup       *decimal.Decimal
-	ClearMaxMarkup  bool
-	Visibility      *string
-	Reason          string
+	CostFactor         *decimal.Decimal
+	ClearCostFactor    bool
+	MaxMarkup          *decimal.Decimal
+	ClearMaxMarkup     bool
+	Visibility         *string
+	AllowedGroups      *string
+	ClearAllowedGroups bool
+	Reason             string
 }
 
 // AdjustAdtySite 改单站 d、k 上限、可见范围。改 d 的通知站长由 11.9 的通知接上（AdtyOnSiteCostFactorChanged）。
@@ -546,6 +548,16 @@ func AdjustAdtySite(siteId, adminId int, adjust AdtySiteAdjust) (*model.AdtySite
 		}
 		if adjust.Visibility != nil {
 			updates["visibility"] = strings.TrimSpace(*adjust.Visibility)
+		}
+		switch {
+		case adjust.ClearAllowedGroups:
+			updates["allowed_groups"] = ""
+		case adjust.AllowedGroups != nil:
+			encoded, err := ParseAdtyAllowedGroups(*adjust.AllowedGroups)
+			if err != nil {
+				return err
+			}
+			updates["allowed_groups"] = encoded
 		}
 		if len(updates) == 0 {
 			return nil

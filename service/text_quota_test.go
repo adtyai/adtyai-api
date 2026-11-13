@@ -704,6 +704,15 @@ func TestCalculateTextQuotaSummaryNormalizesOpenAIResponsesBillingUsageDetails(t
 	require.Equal(t, 90, summary.Quota)
 }
 
+func TestRealUsageCollectionPrefersReportedTokens(t *testing.T) {
+	reported := dto.NewOpenAIChatBillingUsage(&dto.Usage{PromptTokens: 11, CompletionTokens: 7})
+	usage := &dto.Usage{PromptTokens: 1, CompletionTokens: 1, BillingUsage: reported}
+	got := effectiveBillingUsage(usage)
+	require.Equal(t, 11, got.PromptTokens)
+	require.Equal(t, 7, got.CompletionTokens)
+	require.Equal(t, usageBillingPathOpenAI, usageBillingPathForLog(false, usage))
+}
+
 func TestUsageBillingPathForLog(t *testing.T) {
 	require.Equal(t, usageBillingPathAnthropic, usageBillingPathForLog(true, &dto.Usage{
 		BillingUsage: dto.NewClaudeMessagesBillingUsage(&dto.ClaudeUsage{InputTokens: 1}),

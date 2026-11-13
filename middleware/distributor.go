@@ -53,6 +53,10 @@ func Distribute() func(c *gin.Context) {
 			abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgDistributorModelShelved))
 			return
 		}
+		if shouldSelectChannel && !service.GroupModelAllowed(common.GetContextKeyString(c, constant.ContextKeyUsingGroup), modelRequest.Model) {
+			abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgDistributorGroupModelForbidden, map[string]any{"Model": modelRequest.Model}))
+			return
+		}
 		_, pinned, _ := constraints.ResolvedPin()
 		if !pinned {
 			// Select a channel for the user

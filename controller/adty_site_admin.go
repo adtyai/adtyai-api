@@ -491,11 +491,12 @@ func AdjustAdtyAdminSite(c *gin.Context) {
 		return
 	}
 	var body struct {
-		CostFactor *string  `json:"cost_factor"`
-		MaxMarkup  *string  `json:"max_markup"`
-		Visibility *string  `json:"visibility"`
-		Clear      []string `json:"clear"`
-		Reason     string   `json:"reason"`
+		CostFactor    *string  `json:"cost_factor"`
+		MaxMarkup     *string  `json:"max_markup"`
+		Visibility    *string  `json:"visibility"`
+		AllowedGroups *string  `json:"allowed_groups"`
+		Clear         []string `json:"clear"`
+		Reason        string   `json:"reason"`
 	}
 	if err := common.DecodeJson(c.Request.Body, &body); err != nil {
 		common.ApiErrorT(c, "Invalid parameters")
@@ -508,7 +509,7 @@ func AdjustAdtyAdminSite(c *gin.Context) {
 		return
 	}
 	for _, key := range body.Clear {
-		if key != "cost_factor" && key != "max_markup" {
+		if key != "cost_factor" && key != "max_markup" && key != "allowed_groups" {
 			common.ApiErrorT(c, "Invalid parameters")
 			return
 		}
@@ -516,7 +517,8 @@ func AdjustAdtyAdminSite(c *gin.Context) {
 	site, err := service.AdjustAdtySite(id, c.GetInt("id"), service.AdtySiteAdjust{
 		CostFactor: costFactor, ClearCostFactor: slices.Contains(body.Clear, "cost_factor"),
 		MaxMarkup: maxMarkup, ClearMaxMarkup: slices.Contains(body.Clear, "max_markup"),
-		Visibility: body.Visibility, Reason: body.Reason,
+		Visibility: body.Visibility, AllowedGroups: body.AllowedGroups,
+		ClearAllowedGroups: slices.Contains(body.Clear, "allowed_groups"), Reason: body.Reason,
 	})
 	if err != nil {
 		common.ApiError(c, err)

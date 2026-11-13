@@ -16,6 +16,7 @@ const (
 	MsgAuthClientIPUnresolved     = "auth.client_ip_unresolved"
 	MsgAuthTokenIPNotAllowed      = "auth.token_ip_not_allowed"
 	MsgAuthTokenGroupForbidden    = "auth.token_group_forbidden"
+	MsgAuthSiteGroupForbidden     = "auth.site_group_forbidden"
 	MsgAuthTokenGroupDeprecated   = "auth.token_group_deprecated"
 	MsgAuthChannelSelectForbidden = "auth.channel_select_forbidden"
 
@@ -28,6 +29,7 @@ const (
 	MsgDistributorTokenNoModelAccess           = "distributor.token_no_model_access"
 	MsgDistributorTokenModelForbidden          = "distributor.token_model_forbidden"
 	MsgDistributorModelShelved                 = "distributor.model_shelved"
+	MsgDistributorGroupModelForbidden          = "distributor.group_model_forbidden"
 	MsgDistributorModelNameRequired            = "distributor.model_name_required"
 	MsgDistributorInvalidPlayground            = "distributor.invalid_playground_request"
 	MsgDistributorGroupAccessDenied            = "distributor.group_access_denied"
