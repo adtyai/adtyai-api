@@ -20,7 +20,7 @@
 **约定 C：钱**
 - 计算一律用 `github.com/shopspring/decimal`（go.mod 已有），不用 float 直接加减和比较。新表金额列写 `type:decimal(20,8);not null;default:0`；decimal 读到 NULL 会报错，LEFT JOIN 查询要 COALESCE。
 - 余额沿用上游额度整数：1 USD = 500000 额度。`QuotaPerUnit` 只接受 500000；保存其他值必须拒绝，已存的其他值加载时不生效，也不能在内存里改成另一个比例。入账额度 = (面额 + 加赠) × 500000，先 `.Floor()` 再转成整数。退款不能超过原单可退额度，不调用支付商退款 API；已消费部分只有主站明确授权时才能登记，差额和责任留在人工记录。旧「只退未消费本金」的句子若与本节或约定 I 冲突，以约定 I 为准。
-- 余额不能变负：每个钱包请求都要先预扣，余额不够就拒绝；结算补扣最多扣到 0，差额由平台承担（见 features.md 的「余额下限」）。新写的扣费代码要用 `model.ChargeUserQuotaUpTo`，不要用 `model.DecreaseUserQuota`。
+- 余额不能变负：每个钱包请求都要先预扣，余额不够就拒绝；结算补扣最多扣到 0，没扣到的差额记入同一账户短差额挂账并暂停新的付费请求（见 features.md 的「余额下限」）。新写的扣费代码要用 `model.ChargeUserQuotaUpTo`，不要用 `model.DecreaseUserQuota`。
 - 显示：美元、人民币保留 2 位；USDT 按网关返回的位数原样显示。
 - 支付商名：`bepusdt`、`adty_epay`。支付方式：`usdt.trc20`、`usdt.bep20`、`usdt.polygon`、`usdt.xlayer`、`alipay`、`wxpay`。
 - 订单状态沿用上游 `top_ups.status` 的 `pending`、`success`、`expired`、`failed`（common/constants.go:275-278），新增 `canceled`、`refunded`。注意表名是 `top_ups`。

@@ -27,7 +27,8 @@ This is an AI API gateway/proxy built with Go. It aggregates 40+ upstream AI pro
 ## ADTY Fork Conventions
 
 - The ADTY-specific behavior and remaining limits are documented in `docs/adty/README.md`, `docs/adty/conventions.md`, and `docs/adty/features.md`. Keep these descriptions aligned with the confirmed rules below. Where an older sentence in those files conflicts, follow this section and `docs/adty/conventions.md` section I.
-- `1 USD = 500000` quota. `QuotaPerUnit` accepts only `500000` on save and on load. Do not introduce another scale, and do not mint withdrawable cash from a code, a translation task, a probe, or a health sample.
+- `1 USD = 500000` quota. `QuotaPerUnit` accepts only `500000` on save and on load. Financial conversion uses `QuotaPerUnitDecimal` and that integer scale. A mutated `QuotaPerUnit` float does not change it. Do not introduce another scale, and do not mint withdrawable cash from a code, a translation task, a probe, or a health sample.
+- New top-up gifts use the payment-method rate snapshot. Amount-tier gift writes are retired. Do not price a new order from `bonus_rates`. A settlement shortfall is recorded on the same account and pauses new paid requests. Do not treat the unpaid difference as absorbed with no hold.
 - Root creates a site from an existing main-site user and assigns one owner. The owner cannot be replaced. Do not add a handover or owner-transfer write path. Closing a site moves customers and surviving teams to the main site; historical orders, tasks, refunds, and settlements keep the financial owner frozen on the original operation.
 - The operating wallet stays booked, but site-owner pages and the owner recharge summary must not show it. A support role does not grant refund, balance, withdrawal, key, or wallet permissions.
 - There is one recharge-quota voucher. Promo-code quote and write APIs refuse new use. Historical promo rows stay and are not recalculated.
