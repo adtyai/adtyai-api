@@ -23,6 +23,12 @@ func TestAdtyGapRoutesRegistered(t *testing.T) {
 		"POST /api/adty/site/wallets/earning-to-margin",
 		"GET /api/adty/notifications/announcements/:key",
 		"GET /api/adty/admin/fund-anomalies",
+		"POST /api/adty/site/withdrawals",
+		"POST /api/adty/site/withdrawals/:id/cancel",
+		"PUT /api/adty/admin/site-withdrawals/rules",
+		"POST /api/adty/admin/site-withdrawals/:id/paying",
+		"POST /api/adty/admin/site-withdrawals/:id/reject",
+		"POST /api/adty/admin/site-withdrawals/:id/paid",
 	} {
 		assert.Truef(t, found[key], "missing route %s", key)
 	}

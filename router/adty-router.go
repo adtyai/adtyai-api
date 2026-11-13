@@ -155,6 +155,14 @@ func registerAdtyTopUpRoutes(apiRouter *gin.RouterGroup) {
 	middleware.DeclareAdtyAccessTokenRoute("PUT", "/api/adty/admin/payment-scenes", "scope", "option:write")
 	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/adty/admin/fund-anomalies", "scope", "option:read")
 	apiRouter.GET("/adty/admin/fund-anomalies", middleware.RootAuth(), controller.GetAdtyFundAnomalies)
+	middleware.DeclareAdtyAccessTokenRoute("PUT", "/api/adty/admin/site-withdrawals/rules", "scope", "option:write")
+	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/admin/site-withdrawals/:id/paying", "scope", "option:write")
+	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/admin/site-withdrawals/:id/reject", "scope", "option:write")
+	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/admin/site-withdrawals/:id/paid", "scope", "option:write")
+	apiRouter.PUT("/adty/admin/site-withdrawals/rules", middleware.RootAuth(), controller.PutAdtySiteWithdrawRules)
+	apiRouter.POST("/adty/admin/site-withdrawals/:id/paying", middleware.RootAuth(), controller.PostAdtySiteWithdrawalPaying)
+	apiRouter.POST("/adty/admin/site-withdrawals/:id/reject", middleware.RootAuth(), controller.PostAdtySiteWithdrawalReject)
+	apiRouter.POST("/adty/admin/site-withdrawals/:id/paid", middleware.RootAuth(), controller.PostAdtySiteWithdrawalPaid)
 	apiRouter.GET("/adty/admin/payment-scenes", middleware.RootAuth(), controller.GetAdtyPaymentScenes)
 	apiRouter.PUT("/adty/admin/payment-scenes", middleware.RootAuth(), controller.PutAdtyPaymentScenes)
 	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/adty/topup/info", "scope", "wallet:read")
@@ -367,6 +375,8 @@ func registerAdtyResellerRoutes(apiRouter *gin.RouterGroup) {
 		{http.MethodPut, "/bonus-methods", "wallet:write", []gin.HandlerFunc{controller.PutAdtySiteMethodBonus}},
 		{http.MethodGet, "/wallets", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerWallets}},
 		{http.MethodPost, "/wallets/earning-to-margin", "wallet:write", []gin.HandlerFunc{controller.PostAdtyEarningToMargin}},
+		{http.MethodPost, "/withdrawals", "wallet:write", []gin.HandlerFunc{controller.PostAdtySiteWithdrawal}},
+		{http.MethodPost, "/withdrawals/:id/cancel", "wallet:write", []gin.HandlerFunc{controller.PostAdtySiteWithdrawalCancel}},
 		{http.MethodGet, "/wallet-ledgers", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerWalletLedger}},
 		{http.MethodGet, "/orders", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerOrders}},
 		{http.MethodGet, "/orders/summary", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerOrderSummary}},
