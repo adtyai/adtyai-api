@@ -182,6 +182,59 @@ export async function cancelSiteWithdrawal(id: number): Promise<void> {
   requireServerSuccess(res.data)
 }
 
+export type SiteInviteCommissionWithdrawal = {
+  id: number
+  user_id: number
+  username?: string
+  amount_usd: string
+  fee_usd: string
+  net_usd: string
+  method: string
+  network: string
+  account_no: string
+  account_name: string
+  qr_image_url: string
+  status: string
+  payout_amount: string
+  payout_currency: string
+  tx_id: string
+  proof_note: string
+  reject_reason: string
+}
+
+export async function getOwnerCommissionWithdrawals(): Promise<
+  SiteInviteCommissionWithdrawal[]
+> {
+  const res = await api.get<
+    ApiResponse<{ items?: SiteInviteCommissionWithdrawal[] }>
+  >(`${BASE}/commission-withdrawals`)
+  return requireServerSuccess(res.data).data.items ?? []
+}
+
+export async function reviewOwnerCommissionWithdrawal(
+  id: number,
+  approve: boolean,
+  reason: string
+): Promise<void> {
+  const res = await api.post<ApiResponse<{ reviewed: boolean }>>(
+    `${BASE}/commission-withdrawals/${id}/review`,
+    { approve, reason }
+  )
+  requireServerSuccess(res.data)
+}
+
+export async function markOwnerCommissionWithdrawalPaid(
+  id: number,
+  txId: string,
+  proof: string
+): Promise<void> {
+  const res = await api.post<ApiResponse<{ paid: boolean }>>(
+    `${BASE}/commission-withdrawals/${id}/paid`,
+    { tx_id: txId, proof }
+  )
+  requireServerSuccess(res.data)
+}
+
 export type OwnerEarningLine = {
   id: number
   model_name: string

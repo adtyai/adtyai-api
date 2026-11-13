@@ -237,6 +237,225 @@ func PostAdtySiteCommissionConvert(c *gin.Context) {
 	common.ApiSuccess(c, gin.H{"converted": true})
 }
 
+func GetAdtySiteInviteWithdrawRules(c *gin.Context) {
+	view, err := service.LoadAdtySiteInviteWithdrawRules()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, view)
+}
+
+func PostAdtySiteInviteWithdrawal(c *gin.Context) {
+	var body struct {
+		AmountUSD       string `json:"amount_usd"`
+		Method          string `json:"method"`
+		Network         string `json:"network"`
+		AccountNo       string `json:"account_no"`
+		AccountName     string `json:"account_name"`
+		QRImageURL      string `json:"qr_image_url"`
+		ExpectedCNYRate string `json:"expected_cny_rate"`
+	}
+	if err := common.DecodeJson(c.Request.Body, &body); err != nil {
+		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	amount, err := decimal.NewFromString(strings.TrimSpace(body.AmountUSD))
+	if err != nil {
+		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	expected := decimal.Zero
+	if strings.TrimSpace(body.ExpectedCNYRate) != "" {
+		expected, err = decimal.NewFromString(strings.TrimSpace(body.ExpectedCNYRate))
+		if err != nil {
+			common.ApiErrorT(c, "Invalid parameters")
+			return
+		}
+	}
+	var user model.User
+	if err := model.DB.Select("site_id").First(&user, c.GetInt("id")).Error; err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	row, err := service.CreateAdtySiteInviteWithdrawal(service.AdtySiteInviteWithdrawalInput{
+		UserID: c.GetInt("id"), SiteID: user.SiteId, Amount: amount, Method: body.Method,
+		Network: body.Network, AccountNo: body.AccountNo, AccountName: body.AccountName,
+		QRImageURL: body.QRImageURL, ExpectedCNYRate: expected,
+		IdempotencyKey: strings.TrimSpace(c.GetHeader("Idempotency-Key")),
+	})
+	if err != nil {
+		var changed *service.RateChangedError
+		if errors.As(err, &changed) {
+			common.ApiErrorStatus(c, http.StatusOK, common.NewMessage("The exchange rate has changed. Confirm the new amount"), gin.H{"code": "rate_changed", "data": changed.Change})
+			return
+		}
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, row)
+}
+
+func GetAdtySiteInviteWithdrawals(c *gin.Context) {
+	rows, err := service.ListAdtySiteInviteWithdrawals(c.GetInt("id"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"items": presentAdtySiteInviteWithdrawals(rows, nil)})
+}
+
+func PostAdtySiteInviteWithdrawalCancel(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	if err := service.CancelAdtySiteInviteWithdrawal(c.GetInt("id"), id, time.Now().Unix()); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"canceled": true})
+}
+
+func GetAdtyOwnerSiteInviteWithdrawals(c *gin.Context) {
+	if _, ok := adtyOwnerSiteOr403(c); !ok {
+		return
+	}
+	rows, err := service.ListAdtyOwnerSiteInviteWithdrawals(c.GetInt("id"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	ids := make([]int, 0, len(rows))
+	seen := map[int]struct{}{}
+	for _, row := range rows {
+		if _, ok := seen[row.UserId]; ok {
+			continue
+		}
+		seen[row.UserId] = struct{}{}
+		ids = append(ids, row.UserId)
+	}
+	names, err := adtyUsernamesByID(ids)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"items": presentAdtySiteInviteWithdrawals(rows, names)})
+}
+
+func PostAdtyOwnerSiteInviteWithdrawalReview(c *gin.Context) {
+	if _, ok := adtyOwnerSiteOr403(c); !ok {
+		return
+	}
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	var body struct {
+		Approve bool   `json:"approve"`
+		Reason  string `json:"reason"`
+	}
+	if err := common.DecodeJson(c.Request.Body, &body); err != nil {
+		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	if err := service.ReviewAdtySiteInviteWithdrawal(c.GetInt("id"), id, body.Approve, body.Reason); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"reviewed": true})
+}
+
+func PostAdtyOwnerSiteInviteWithdrawalPaid(c *gin.Context) {
+	if _, ok := adtyOwnerSiteOr403(c); !ok {
+		return
+	}
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	var body struct {
+		TxID  string `json:"tx_id"`
+		Proof string `json:"proof"`
+	}
+	if err := common.DecodeJson(c.Request.Body, &body); err != nil {
+		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	if err := service.MarkAdtySiteInviteWithdrawalPaid(c.GetInt("id"), id, body.TxID, body.Proof); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"paid": true})
+}
+
+func GetAdtyAdminSiteInviteWithdrawRules(c *gin.Context) {
+	if c.GetInt("role") != common.RoleRootUser {
+		common.ApiErrorStatus(c, http.StatusForbidden, common.NewMessage("No permission to perform this action"))
+		return
+	}
+	GetAdtySiteInviteWithdrawRules(c)
+}
+
+func PutAdtySiteInviteWithdrawRules(c *gin.Context) {
+	if c.GetInt("role") != common.RoleRootUser {
+		common.ApiErrorStatus(c, http.StatusForbidden, common.NewMessage("No permission to perform this action"))
+		return
+	}
+	var body struct {
+		MinUSD  string `json:"min_usd"`
+		FeeUSD  string `json:"fee_usd"`
+		CNYRate string `json:"cny_rate"`
+	}
+	if err := common.DecodeJson(c.Request.Body, &body); err != nil {
+		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	if err := service.SaveAdtySiteInviteWithdrawRules(body.MinUSD, body.FeeUSD, body.CNYRate); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"saved": true})
+}
+
+type adtySiteInviteWithdrawalItem struct {
+	model.AdtySiteInviteWithdrawal
+	Username string `json:"username,omitempty"`
+}
+
+func presentAdtySiteInviteWithdrawals(rows []model.AdtySiteInviteWithdrawal, names map[int]string) []adtySiteInviteWithdrawalItem {
+	now := time.Now()
+	out := make([]adtySiteInviteWithdrawalItem, len(rows))
+	for i, row := range rows {
+		row.QRImageURL = service.ResignReferralAssetURL(row.QRImageURL, now)
+		row.ProofNote = service.ResignReferralAssetURL(row.ProofNote, now)
+		item := adtySiteInviteWithdrawalItem{AdtySiteInviteWithdrawal: row}
+		if names != nil {
+			item.Username = names[row.UserId]
+		}
+		out[i] = item
+	}
+	return out
+}
+
+func adtyUsernamesByID(ids []int) (map[int]string, error) {
+	names := map[int]string{}
+	if len(ids) == 0 {
+		return names, nil
+	}
+	var users []model.User
+	if err := model.DB.Select("id", "username").Where("id IN ?", ids).Find(&users).Error; err != nil {
+		return nil, err
+	}
+	for _, user := range users {
+		names[user.Id] = user.Username
+	}
+	return names, nil
+}
+
 func PutAdtyOwnerSiteReferralEnabled(c *gin.Context) {
 	site, ok := adtyOwnerSiteOr403(c)
 	if !ok {

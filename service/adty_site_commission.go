@@ -178,7 +178,7 @@ func SiteInviteCommissionWithdrawable(row *model.AdtySiteInviteCommission, now t
 	if row == nil || row.Status != model.AdtySiteCommissionAvailable || row.AvailableAt <= 0 || now.Before(time.Unix(row.AvailableAt, 0)) {
 		return false
 	}
-	return row.AmountUSD.Sub(row.ClawedUSD).Sub(row.ConvertedUSD).IsPositive()
+	return siteInviteCommissionFree(row).IsPositive()
 }
 
 // RecordAdtySiteInviteCommissionTx snapshots one site invite commission.
@@ -396,6 +396,12 @@ func adtySiteInviteCommissionAfterRefundTx(tx *gorm.DB, ext *model.AdtyTopupOrde
 	if !thisClaw.IsPositive() {
 		return nil
 	}
+	if err := releaseSiteInviteCommissionFreezeTx(tx, &row, thisClaw); err != nil {
+		return err
+	}
+	if err := tx.First(&row, row.Id).Error; err != nil {
+		return err
+	}
 	target := row.ClawedUSD.Add(thisClaw)
 	withdrawnOutstanding, err := siteCommissionWithdrawnOutstanding(tx, row.Id, row.WithdrawnUSD)
 	if err != nil {
@@ -558,7 +564,7 @@ func ConvertAdtySiteInviteCommission(inviterID int, commissionID int64, amount d
 		if row.InviterId != inviterID || !SiteInviteCommissionWithdrawable(&row, time.Now()) {
 			return common.NewMessage("No permission to perform this action")
 		}
-		remaining := row.AmountUSD.Sub(row.ClawedUSD).Sub(row.ConvertedUSD)
+		remaining := siteInviteCommissionFree(&row)
 		if amount.GreaterThan(remaining) {
 			return common.NewMessage("Invalid parameters")
 		}

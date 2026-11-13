@@ -99,6 +99,11 @@ export function WithdrawalPanel() {
             'This request freezes the site earnings wallet. Referral commission withdrawals stay on the Referral page.'
           )}
         </p>
+        <p className='text-muted-foreground text-sm'>
+          {t(
+            'Customer invite commission withdrawals are reviewed on the Customers tab.'
+          )}
+        </p>
       </div>
       {rules.isError && (
         <p className='text-destructive text-sm'>{t('Could not load withdrawal rules')}</p>

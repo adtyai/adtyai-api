@@ -32,9 +32,11 @@ import { useAuthStore } from '@/stores/auth-store'
 import {
   getAdminSiteCommissionPolicy,
   getAdminSiteInviteBatchPolicy,
+  getAdminSiteInviteWithdrawRules,
   getAdminSiteReferralCap,
   saveAdminSiteCommissionPolicy,
   saveAdminSiteInviteBatchPolicy,
+  saveAdminSiteInviteWithdrawRules,
   saveAdminSiteReferralCap,
   siteAdminKeys,
 } from '../api'
@@ -49,6 +51,9 @@ export function SiteReferralCapPanel() {
   const [observationDays, setObservationDays] = useState('')
   const [batchThreshold, setBatchThreshold] = useState('')
   const [batchWindow, setBatchWindow] = useState('')
+  const [withdrawMin, setWithdrawMin] = useState('')
+  const [withdrawFee, setWithdrawFee] = useState('')
+  const [withdrawRate, setWithdrawRate] = useState('')
   const cap = useQuery({
     queryKey: siteAdminKeys.list('site-referral-cap', {}),
     queryFn: getAdminSiteReferralCap,
@@ -62,6 +67,11 @@ export function SiteReferralCapPanel() {
   const batch = useQuery({
     queryKey: siteAdminKeys.list('site-invite-batch-policy', {}),
     queryFn: getAdminSiteInviteBatchPolicy,
+    enabled: isRoot,
+  })
+  const withdrawRules = useQuery({
+    queryKey: siteAdminKeys.list('site-invite-withdraw-rules', {}),
+    queryFn: getAdminSiteInviteWithdrawRules,
     enabled: isRoot,
   })
   const saveBatch = useMutation({
@@ -80,6 +90,31 @@ export function SiteReferralCapPanel() {
     onSuccess: () => {
       setCoverageCap('')
       setObservationDays('')
+      void client.invalidateQueries({ queryKey: siteAdminKeys.all })
+    },
+    onError: (error) => handleServerError(error),
+  })
+  const saveWithdraw = useMutation({
+    mutationFn: () =>
+      saveAdminSiteInviteWithdrawRules(
+        withdrawMin.trim(),
+        withdrawFee.trim(),
+        withdrawRate.trim()
+      ),
+    onSuccess: () => {
+      setWithdrawMin('')
+      setWithdrawFee('')
+      setWithdrawRate('')
+      void client.invalidateQueries({ queryKey: siteAdminKeys.all })
+    },
+    onError: (error) => handleServerError(error),
+  })
+  const clearWithdraw = useMutation({
+    mutationFn: () => saveAdminSiteInviteWithdrawRules('', '', ''),
+    onSuccess: () => {
+      setWithdrawMin('')
+      setWithdrawFee('')
+      setWithdrawRate('')
       void client.invalidateQueries({ queryKey: siteAdminKeys.all })
     },
     onError: (error) => handleServerError(error),
@@ -165,6 +200,80 @@ export function SiteReferralCapPanel() {
       >
         {t('Save')}
       </Button>
+      <h2 className='text-sm font-medium'>{t('Invite commission withdrawal')}</h2>
+      <p className='text-muted-foreground text-sm'>
+        {t('These rules apply only to site customer invite commission.')}
+      </p>
+      <p className='text-muted-foreground text-sm'>
+        {t('Leave all three empty and save to turn cash withdrawal off.')}
+      </p>
+      {withdrawRules.isError && (
+        <ErrorState onRetry={() => void withdrawRules.refetch()} />
+      )}
+      {withdrawRules.data && !withdrawRules.data.configured && (
+        <p className='text-sm'>{t('Not configured')}</p>
+      )}
+      {withdrawRules.data?.configured && (
+        <p className='text-sm tabular-nums'>
+          {withdrawRules.data.min_usd} / {withdrawRules.data.fee_usd} /{' '}
+          {withdrawRules.data.cny_rate}
+        </p>
+      )}
+      <div className='flex flex-col gap-1'>
+        <Label htmlFor='site-invite-withdraw-min'>{t('Minimum withdrawal (USD)')}</Label>
+        <Input
+          id='site-invite-withdraw-min'
+          value={withdrawMin}
+          inputMode='decimal'
+          autoComplete='off'
+          onChange={(event) => setWithdrawMin(event.target.value)}
+        />
+      </div>
+      <div className='flex flex-col gap-1'>
+        <Label htmlFor='site-invite-withdraw-fee'>{t('USDT fee (USD)')}</Label>
+        <Input
+          id='site-invite-withdraw-fee'
+          value={withdrawFee}
+          inputMode='decimal'
+          autoComplete='off'
+          onChange={(event) => setWithdrawFee(event.target.value)}
+        />
+      </div>
+      <div className='flex flex-col gap-1'>
+        <Label htmlFor='site-invite-withdraw-rate'>
+          {t('CNY withdrawal rate (1 USD = ? CNY)')}
+        </Label>
+        <Input
+          id='site-invite-withdraw-rate'
+          value={withdrawRate}
+          inputMode='decimal'
+          autoComplete='off'
+          onChange={(event) => setWithdrawRate(event.target.value)}
+        />
+      </div>
+      <div className='flex flex-wrap gap-2'>
+        <Button
+          type='button'
+          variant='outline'
+          disabled={
+            saveWithdraw.isPending ||
+            withdrawMin.trim() === '' ||
+            withdrawFee.trim() === '' ||
+            withdrawRate.trim() === ''
+          }
+          onClick={() => saveWithdraw.mutate()}
+        >
+          {t('Save')}
+        </Button>
+        <Button
+          type='button'
+          variant='outline'
+          disabled={clearWithdraw.isPending}
+          onClick={() => clearWithdraw.mutate()}
+        >
+          {t('Turn cash withdrawal off')}
+        </Button>
+      </div>
       <h2 className='text-sm font-medium'>{t('Batch registration review')}</h2>
       <p className='text-muted-foreground text-sm'>
         {t(

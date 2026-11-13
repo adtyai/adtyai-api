@@ -254,6 +254,35 @@ export async function getAdminSiteCommissionPolicy(): Promise<{
   return requireServerSuccess(res.data).data
 }
 
+export async function getAdminSiteInviteWithdrawRules(): Promise<{
+  configured: boolean
+  min_usd?: string
+  fee_usd?: string
+  cny_rate?: string
+}> {
+  const res = await api.get<
+    ApiResponse<{
+      configured: boolean
+      min_usd?: string
+      fee_usd?: string
+      cny_rate?: string
+    }>
+  >(`${BASE}/site-invite-withdraw/rules`)
+  return requireServerSuccess(res.data).data
+}
+
+export async function saveAdminSiteInviteWithdrawRules(
+  minUsd: string,
+  feeUsd: string,
+  cnyRate: string
+): Promise<void> {
+  const res = await api.put<ApiResponse<{ saved: boolean }>>(
+    `${BASE}/site-invite-withdraw/rules`,
+    { min_usd: minUsd, fee_usd: feeUsd, cny_rate: cnyRate }
+  )
+  requireServerSuccess(res.data)
+}
+
 export async function saveAdminSiteCommissionPolicy(
   pendingCoverageCap: string,
   observationDays: string

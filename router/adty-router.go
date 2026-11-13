@@ -181,6 +181,10 @@ func registerAdtyTopUpRoutes(apiRouter *gin.RouterGroup) {
 	apiRouter.PUT("/adty/admin/site-referral/cap", middleware.RootAuth(), controller.PutAdtySiteReferralCap)
 	apiRouter.GET("/adty/admin/site-referral/commission-policy", middleware.RootAuth(), controller.GetAdtySiteCommissionPolicy)
 	apiRouter.PUT("/adty/admin/site-referral/commission-policy", middleware.RootAuth(), controller.PutAdtySiteCommissionPolicy)
+	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/adty/admin/site-invite-withdraw/rules", "scope", "option:read")
+	middleware.DeclareAdtyAccessTokenRoute("PUT", "/api/adty/admin/site-invite-withdraw/rules", "scope", "option:write")
+	apiRouter.GET("/adty/admin/site-invite-withdraw/rules", middleware.RootAuth(), controller.GetAdtyAdminSiteInviteWithdrawRules)
+	apiRouter.PUT("/adty/admin/site-invite-withdraw/rules", middleware.RootAuth(), controller.PutAdtySiteInviteWithdrawRules)
 	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/adty/admin/site-referral/batch-policy", "scope", "option:read")
 	middleware.DeclareAdtyAccessTokenRoute("PUT", "/api/adty/admin/site-referral/batch-policy", "scope", "option:write")
 	apiRouter.GET("/adty/admin/site-referral/batch-policy", middleware.RootAuth(), controller.GetAdtySiteInviteBatchPolicy)
@@ -220,8 +224,16 @@ func registerAdtyTopUpRoutes(apiRouter *gin.RouterGroup) {
 	topup.GET("/self", controller.GetAdtyTopUpSelf)
 	apiRouter.POST("/adty/vouchers/redeem", middleware.UserAuth(), middleware.UserCriticalRateLimit("CT:voucher-redeem"), controller.PostAdtyVoucherRedeem)
 	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/adty/site-commissions", "scope", "wallet:read")
+	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/adty/site-commissions/withdrawals/rules", "scope", "wallet:read")
+	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/adty/site-commissions/withdrawals", "scope", "wallet:read")
+	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/site-commissions/withdrawals", "scope", "wallet:write")
+	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/site-commissions/withdrawals/:id/cancel", "scope", "wallet:write")
 	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/site-commissions/:id/convert", "scope", "wallet:write")
 	apiRouter.GET("/adty/site-commissions", middleware.UserAuth(), controller.GetAdtySiteCommissions)
+	apiRouter.GET("/adty/site-commissions/withdrawals/rules", middleware.UserAuth(), controller.GetAdtySiteInviteWithdrawRules)
+	apiRouter.GET("/adty/site-commissions/withdrawals", middleware.UserAuth(), controller.GetAdtySiteInviteWithdrawals)
+	apiRouter.POST("/adty/site-commissions/withdrawals", middleware.UserAuth(), controller.PostAdtySiteInviteWithdrawal)
+	apiRouter.POST("/adty/site-commissions/withdrawals/:id/cancel", middleware.UserAuth(), controller.PostAdtySiteInviteWithdrawalCancel)
 	apiRouter.POST("/adty/site-commissions/:id/convert", middleware.UserAuth(), controller.PostAdtySiteCommissionConvert)
 	apiRouter.GET("/adty/teams/mine", middleware.UserAuth(), controller.GetAdtyTeamMine)
 	apiRouter.POST("/adty/teams", middleware.UserAuth(), controller.PostAdtyTeam)
@@ -429,6 +441,9 @@ func registerAdtyResellerRoutes(apiRouter *gin.RouterGroup) {
 		{http.MethodGet, "/referral/invites", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerSiteInvites}},
 		{http.MethodPost, "/referral/invites", "wallet:write", []gin.HandlerFunc{controller.PostAdtyOwnerSiteInvite}},
 		{http.MethodPost, "/referral/cover-pending", "wallet:write", []gin.HandlerFunc{controller.PostAdtyOwnerSiteCoverageResume}},
+		{http.MethodGet, "/commission-withdrawals", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerSiteInviteWithdrawals}},
+		{http.MethodPost, "/commission-withdrawals/:id/review", "wallet:write", []gin.HandlerFunc{controller.PostAdtyOwnerSiteInviteWithdrawalReview}},
+		{http.MethodPost, "/commission-withdrawals/:id/paid", "wallet:write", []gin.HandlerFunc{controller.PostAdtyOwnerSiteInviteWithdrawalPaid}},
 		{http.MethodGet, "/customers", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerCustomers}},
 		{http.MethodGet, "/customers/lookup", "wallet:read", []gin.HandlerFunc{controller.LookupAdtyOwnerCustomer}},
 		{http.MethodGet, "/customers/:id", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerCustomer}},

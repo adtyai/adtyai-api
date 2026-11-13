@@ -32,6 +32,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { getOwnerSite, siteOwnerKeys } from './api'
 import { AgreementPanel } from './components/agreement-panel'
 import { BonusPanel } from './components/bonus-panel'
+import { CommissionWithdrawalPanel } from './components/commission-withdrawal-panel'
 import { CustomersPanel } from './components/customers-panel'
 import { SiteReferralPanel } from './components/site-referral-panel'
 import { SiteTeamDiscountPanel } from './components/site-team-discount-panel'
@@ -135,6 +136,7 @@ export function SiteOwnerCenter(props: { section: SiteOwnerSectionId }) {
                     <CustomersPanel />
                     <SiteTeamDiscountPanel />
                     <SiteReferralPanel />
+                    <CommissionWithdrawalPanel />
                   </TabsContent>
                   <TabsContent value='orders'>
                     <RechargeAudit ownerMode ownerSiteId={site.data.id} />

@@ -28,7 +28,9 @@ import { api } from '@/lib/api'
 import { handleServerError } from '@/lib/handle-server-error'
 import { requireServerSuccess } from '@/lib/server-error-message'
 
-type SiteCommission = {
+import { SiteInviteWithdrawPanel } from './site-invite-withdraw-panel'
+
+export type SiteCommission = {
   id: number
   trade_no: string
   status: string
@@ -36,6 +38,9 @@ type SiteCommission = {
   rate: string
   clawed_usd: string
   converted_usd: string
+  withdrawn_usd: string
+  frozen_usd: string
+  available_at: number
 }
 
 type ApiResponse<T> = { success: boolean; data: T }
@@ -82,6 +87,15 @@ export function SiteCommissionPanel(props: { onConverted: () => void }) {
           }}
         />
       ))}
+      {rows.isSuccess && rows.data.length > 0 && (
+        <SiteInviteWithdrawPanel
+          rows={rows.data}
+          onChanged={() => {
+            props.onConverted()
+            void client.invalidateQueries({ queryKey: ['adty-site-commissions'] })
+          }}
+        />
+      )}
     </section>
   )
 }

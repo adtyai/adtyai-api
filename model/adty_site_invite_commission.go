@@ -25,6 +25,7 @@ type AdtySiteInviteCommission struct {
 	RecoveredUSD    decimal.Decimal `json:"recovered_usd" gorm:"type:decimal(20,8);not null;default:0"`
 	ConvertedUSD    decimal.Decimal `json:"converted_usd" gorm:"type:decimal(20,8);not null;default:0"`
 	WithdrawnUSD    decimal.Decimal `json:"withdrawn_usd" gorm:"type:decimal(20,8);not null;default:0"`
+	FrozenUSD       decimal.Decimal `json:"frozen_usd" gorm:"type:decimal(20,8);not null;default:0"`
 	RecoveryUSD     decimal.Decimal `json:"recovery_usd" gorm:"type:decimal(20,8);not null;default:0"`
 	Status          string          `json:"status" gorm:"type:varchar(24);index"`
 	ObservationDays int64           `json:"observation_days"`
