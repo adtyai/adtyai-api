@@ -8,6 +8,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestCollectAdtyFundAnomaliesFlagsMarginOverCap(t *testing.T) {
+	db := prepareSiteDB(t)
+	_, site := openActiveSite(t, db, "fund-anomaly")
+	require.NoError(t, OpenAdtyMarginCycle(site.Id, decimal.RequireFromString("100"), "anomaly-cycle"))
+	require.NoError(t, db.Model(&model.AdtySiteWallet{}).Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteWalletMargin).Update("cycle_used_usd", "91").Error)
+	kinds, err := CollectAdtyFundAnomalies(site.Id)
+	require.NoError(t, err)
+	require.Contains(t, kinds, "margin_anomaly")
+}
+
 func TestMarginDebitStopsAtNinetyPercentOfOpenCycle(t *testing.T) {
 	db := prepareSiteDB(t)
 	_, site := openActiveSite(t, db, "margin-cycle")

@@ -2,8 +2,10 @@ package service
 
 import (
 	"errors"
+	"strconv"
 	"strings"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
@@ -250,6 +252,75 @@ func OpenAdtyMarginCycle(siteID int, tier decimal.Decimal, key string) error {
 		Type: "margin_cycle_open", IdempotencyKey: key, OpenMarginCycle: true, CycleTier: tier,
 	})
 	return err
+}
+
+// CollectAdtyFundAnomalies compares wallet ledgers, open shortfall holds, and the margin cycle cap.
+// It records a new open disposition for each detected kind and does not invent a tolerance.
+func CollectAdtyFundAnomalies(siteID int) ([]string, error) {
+	if siteID <= 0 {
+		return nil, ErrAdtySiteWalletInvalidOperation
+	}
+	var wallets []model.AdtySiteWallet
+	if err := model.DB.Where("site_id = ?", siteID).Find(&wallets).Error; err != nil {
+		return nil, err
+	}
+	balanceGap := int64(0)
+	marginGap := decimal.Zero
+	var operating decimal.Decimal
+	for _, wallet := range wallets {
+		var deltas []decimal.Decimal
+		if err := model.DB.Model(&model.AdtySiteWalletLedger{}).Where("wallet_id = ?", wallet.Id).Pluck("delta", &deltas).Error; err != nil {
+			return nil, err
+		}
+		sum := decimal.Zero
+		for _, delta := range deltas {
+			sum = sum.Add(delta)
+		}
+		if !sum.Equal(wallet.Balance) {
+			balanceGap = 1
+		}
+		if wallet.Kind == model.AdtySiteWalletOperating {
+			operating = wallet.Balance
+		}
+		if wallet.Kind == model.AdtySiteWalletMargin && wallet.CycleTierUSD.IsPositive() {
+			over := wallet.CycleUsedUSD.Sub(AdtyMarginCycleLimit(wallet.CycleTierUSD))
+			if over.IsPositive() {
+				marginGap = over
+			}
+		}
+	}
+	var quota int64
+	if err := model.DB.Model(&model.User{}).Where("site_id = ?", siteID).Select("COALESCE(SUM(quota), 0)").Scan(&quota).Error; err != nil {
+		return nil, err
+	}
+	principal := decimal.NewFromInt(quota).Div(common.QuotaPerUnitDecimal())
+	if !ReconcileOperatingWallet(principal, operating).IsZero() {
+		balanceGap = 1
+	}
+	var userIDs []int
+	if err := model.DB.Model(&model.User{}).Where("site_id = ?", siteID).Pluck("id", &userIDs).Error; err != nil {
+		return nil, err
+	}
+	var holds int64
+	if len(userIDs) > 0 {
+		if err := model.DB.Model(&model.AdtyBillingHold{}).Where("user_id IN ? AND status = ?", userIDs, model.AdtyBillingHoldOpen).Count(&holds).Error; err != nil {
+			return nil, err
+		}
+	}
+	kinds := AdtyFundAnomalies(balanceGap, int(holds), marginGap)
+	ref := strconv.Itoa(siteID)
+	for _, kind := range kinds {
+		var existing int64
+		if err := model.DB.Model(&model.AdtyAnomalyDisposition{}).Where("kind = ? AND ref = ? AND status = ?", kind, ref, "open").Count(&existing).Error; err != nil {
+			return nil, err
+		}
+		if existing == 0 {
+			if err := RecordAdtyAnomalyDisposition(kind, ref, "open", "detected", 0); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return kinds, nil
 }
 
 // TransferAdtyEarningToMargin moves earning cash into margin and opens a new draw cycle.

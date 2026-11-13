@@ -41,7 +41,9 @@ func SetAdtyRouter(apiRouter *gin.RouterGroup) {
 	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/notifications/read", "scope", "profile:write")
 	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/notifications/hide", "scope", "profile:write")
 	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/notifications/todo/complete", "scope", "profile:write")
+	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/adty/notifications/announcements/:key", "scope", "profile:read")
 	notifications := apiRouter.Group("/adty/notifications", middleware.UserAuth())
+	notifications.GET("/announcements/:key", controller.GetAdtyAnnouncement)
 	notifications.GET("", controller.GetAdtyNotifications)
 	notifications.POST("/read", controller.ReadAdtyNotifications)
 	notifications.POST("/hide", controller.PostAdtyNotificationHide)
@@ -151,6 +153,8 @@ func registerAdtyWorkspaceRoutes(apiRouter *gin.RouterGroup) {
 func registerAdtyTopUpRoutes(apiRouter *gin.RouterGroup) {
 	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/adty/admin/payment-scenes", "scope", "option:read")
 	middleware.DeclareAdtyAccessTokenRoute("PUT", "/api/adty/admin/payment-scenes", "scope", "option:write")
+	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/adty/admin/fund-anomalies", "scope", "option:read")
+	apiRouter.GET("/adty/admin/fund-anomalies", middleware.RootAuth(), controller.GetAdtyFundAnomalies)
 	apiRouter.GET("/adty/admin/payment-scenes", middleware.RootAuth(), controller.GetAdtyPaymentScenes)
 	apiRouter.PUT("/adty/admin/payment-scenes", middleware.RootAuth(), controller.PutAdtyPaymentScenes)
 	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/adty/topup/info", "scope", "wallet:read")
@@ -362,6 +366,7 @@ func registerAdtyResellerRoutes(apiRouter *gin.RouterGroup) {
 		{http.MethodPost, "/vouchers/:id/freeze", "wallet:write", []gin.HandlerFunc{controller.PostAdtyVoucherFreeze}},
 		{http.MethodPut, "/bonus-methods", "wallet:write", []gin.HandlerFunc{controller.PutAdtySiteMethodBonus}},
 		{http.MethodGet, "/wallets", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerWallets}},
+		{http.MethodPost, "/wallets/earning-to-margin", "wallet:write", []gin.HandlerFunc{controller.PostAdtyEarningToMargin}},
 		{http.MethodGet, "/wallet-ledgers", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerWalletLedger}},
 		{http.MethodGet, "/orders", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerOrders}},
 		{http.MethodGet, "/orders/summary", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerOrderSummary}},

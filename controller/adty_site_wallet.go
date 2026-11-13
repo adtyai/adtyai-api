@@ -3,12 +3,53 @@ package controller
 import (
 	"errors"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
+	"github.com/shopspring/decimal"
 )
+
+func PostAdtyEarningToMargin(c *gin.Context) {
+	site, ok := adtyOwnerSiteOr403(c)
+	if !ok {
+		return
+	}
+	var body struct {
+		AmountUSD string `json:"amount_usd"`
+	}
+	if err := common.DecodeJson(c.Request.Body, &body); err != nil {
+		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	amount, err := decimal.NewFromString(strings.TrimSpace(body.AmountUSD))
+	if err != nil || !amount.IsPositive() {
+		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	key := strings.TrimSpace(c.GetHeader("Idempotency-Key"))
+	if key == "" {
+		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	var tier model.AdtySiteTier
+	if err := model.DB.Where("code = ? AND enabled = ?", site.TierCode, true).Limit(1).Find(&tier).Error; err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if !tier.DepositUSD.IsPositive() {
+		common.ApiErrorT(c, "Margin tier is not configured")
+		return
+	}
+	if err := service.TransferAdtyEarningToMargin(site.Id, c.GetInt("id"), amount, tier.DepositUSD, "earn-margin:"+key); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"transferred": true})
+}
 
 func GetAdtyOwnerWallets(c *gin.Context) {
 	site, ok := adtyOwnerSiteOr403(c)
@@ -24,6 +65,20 @@ func GetAdtyOwnerWalletLedger(c *gin.Context) {
 		return
 	}
 	adtySiteWalletResponse(c, site.Id, true, true)
+}
+
+func GetAdtyFundAnomalies(c *gin.Context) {
+	siteID, err := strconv.Atoi(c.Query("site_id"))
+	if err != nil || siteID <= 0 {
+		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	kinds, err := service.CollectAdtyFundAnomalies(siteID)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"kinds": kinds})
 }
 
 func GetAdtyAdminSiteWallets(c *gin.Context) {

@@ -31,6 +31,21 @@ func GetAdtyNotifications(c *gin.Context) {
 	common.ApiSuccess(c, inbox)
 }
 
+func GetAdtyAnnouncement(c *gin.Context) {
+	inbox, err := service.GetAdtyNotificationInbox(c.GetInt("id"), service.AdtySiteForRequest(c), 0)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	item, ok := service.AnnouncementDetail(inbox.Announcements, c.Param("key"))
+	if !ok {
+		common.ApiErrorStatus(c, http.StatusNotFound, common.NewMessage("Announcement not found"))
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	common.ApiSuccess(c, item)
+}
+
 func PostAdtyNotificationHide(c *gin.Context) {
 	var body struct {
 		Key string `json:"key"`
