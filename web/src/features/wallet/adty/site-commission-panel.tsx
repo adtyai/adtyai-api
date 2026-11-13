@@ -28,6 +28,12 @@ import { api } from '@/lib/api'
 import { handleServerError } from '@/lib/handle-server-error'
 import { requireServerSuccess } from '@/lib/server-error-message'
 
+import {
+  canConvertCommissionToBalance,
+  officialCommissionStateLabel,
+  officialCommissionStates,
+  type OfficialCommissionStateAmount,
+} from './commission-states'
 import { SiteInviteWithdrawPanel } from './site-invite-withdraw-panel'
 
 export type SiteCommission = {
@@ -38,11 +44,15 @@ export type SiteCommission = {
   rate: string
   clawed_usd: string
   converted_usd: string
+  converted_clawed_usd?: string
   withdrawn_usd: string
   frozen_usd: string
   earnings_hold_usd: string
   margin_hold_usd: string
+  recovered_usd?: string
+  recovery_usd?: string
   available_at: number
+  official_states?: OfficialCommissionStateAmount[]
 }
 
 type ApiResponse<T> = { success: boolean; data: T }
@@ -113,13 +123,38 @@ function CommissionRow(props: { row: SiteCommission; onConverted: () => void }) 
     },
     onError: (error) => handleServerError(error),
   })
+  const states = officialCommissionStates(props.row)
+  const details = [
+    [t('Earnings hold'), props.row.earnings_hold_usd],
+    [t('Margin hold'), props.row.margin_hold_usd],
+    [t('Clawed back'), props.row.clawed_usd],
+    [t('Returned to site wallets'), props.row.recovered_usd],
+    [t('Recovery liability'), props.row.recovery_usd],
+  ].filter(([, amount]) => amount && amount !== '0')
   return (
     <div className='flex flex-col gap-2'>
       <p className='text-sm tabular-nums'>
-        {props.row.trade_no} · {props.row.amount_usd} ·{' '}
-        {commissionStatusLabel(props.row.status, (key) => t(key))}
+        {props.row.trade_no} · {props.row.amount_usd} USD
       </p>
-      {props.row.status === 'available' && (
+      {states.length > 0 && (
+        <ul className='text-sm tabular-nums'>
+          {states.map((item) => (
+            <li key={item.state}>
+              {t(officialCommissionStateLabel(item.state))}: {item.amount_usd} USD
+            </li>
+          ))}
+        </ul>
+      )}
+      {details.length > 0 && (
+        <ul className='text-muted-foreground text-sm tabular-nums'>
+          {details.map(([label, amount]) => (
+            <li key={label}>
+              {label}: {amount} USD
+            </li>
+          ))}
+        </ul>
+      )}
+      {canConvertCommissionToBalance(props.row.status) && (
         <>
           <div className='flex flex-col gap-1'>
             <Label htmlFor={`site-commission-${props.row.id}`}>{t('Amount')}</Label>
@@ -145,10 +180,4 @@ function CommissionRow(props: { row: SiteCommission; onConverted: () => void }) 
   )
 }
 
-function commissionStatusLabel(status: string, t: (key: string) => string) {
-  if (status === 'pending_coverage') return t('Pending coverage')
-  if (status === 'covered') return t('Covered')
-  if (status === 'available') return t('Available')
-  if (status === 'clawed_back') return t('Clawed back')
-  return status
-}
+

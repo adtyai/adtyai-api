@@ -435,20 +435,12 @@ func adtySiteInviteCommissionAfterRefundTx(tx *gorm.DB, ext *model.AdtyTopupOrde
 	if err := tx.First(&row, row.Id).Error; err != nil {
 		return err
 	}
-	withdrawnLive, err := siteCommissionWithdrawnOutstanding(tx, row.Id, row.WithdrawnUSD)
+	withdrawnLive, err := model.SiteInviteCommissionWithdrawnLive(tx, row.Id, row.WithdrawnUSD)
 	if err != nil {
 		return err
 	}
-	hold := row.EarningsHoldUSD.Add(row.MarginHoldUSD)
-	convertedLive := row.ConvertedUSD.Sub(row.ConvertedClawedUSD)
-	if convertedLive.IsNegative() {
-		convertedLive = decimal.Zero
-	}
-	uncovered := row.AmountUSD.Sub(row.ClawedUSD).Sub(hold).Sub(convertedLive).Sub(withdrawnLive)
-	if uncovered.IsNegative() {
-		uncovered = decimal.Zero
-	}
-	parts := splitDecimalByWeights(thisClaw, []decimal.Decimal{hold, convertedLive, withdrawnLive, uncovered})
+	releaseAmt, convertedAmt, withdrawnAmt, pendingAmt, _ := model.SiteInviteCommissionRefundParts(row, withdrawnLive, ext.RefundQuota, ext.FaceQuota())
+	parts := []decimal.Decimal{releaseAmt, convertedAmt, withdrawnAmt, pendingAmt}
 	target := row.ClawedUSD.Add(parts[0]).Add(parts[1]).Add(parts[2]).Add(parts[3])
 	if parts[0].IsPositive() {
 		if err := consumeSiteCommissionHoldTx(tx, &row, parts[0], true, "refund:"+target.String()); err != nil {
@@ -498,38 +490,7 @@ func adtySiteInviteCommissionAfterRefundTx(tx *gorm.DB, ext *model.AdtyTopupOrde
 }
 
 func splitDecimalByWeights(total decimal.Decimal, weights []decimal.Decimal) []decimal.Decimal {
-	out := make([]decimal.Decimal, len(weights))
-	sum := decimal.Zero
-	last := -1
-	for i, weight := range weights {
-		if weight.IsPositive() {
-			sum = sum.Add(weight)
-			last = i
-		}
-	}
-	if !total.IsPositive() || !sum.IsPositive() {
-		return out
-	}
-	if total.GreaterThan(sum) {
-		total = sum
-	}
-	assigned := decimal.Zero
-	for i, weight := range weights {
-		if !weight.IsPositive() {
-			continue
-		}
-		if i == last {
-			out[i] = total.Sub(assigned)
-			break
-		}
-		part := total.Mul(weight).Div(sum).Round(8)
-		if assigned.Add(part).GreaterThan(total) {
-			part = total.Sub(assigned)
-		}
-		out[i] = part
-		assigned = assigned.Add(part)
-	}
-	return out
+	return model.SplitDecimalByWeights(total, weights)
 }
 
 func clawConvertedSiteCommissionTx(tx *gorm.DB, row *model.AdtySiteInviteCommission, amount, clawedAfter decimal.Decimal) (decimal.Decimal, error) {
@@ -567,22 +528,7 @@ func clawConvertedSiteCommissionTx(tx *gorm.DB, row *model.AdtySiteInviteCommiss
 }
 
 func siteCommissionWithdrawnOutstanding(tx *gorm.DB, commissionID int64, withdrawn decimal.Decimal) (decimal.Decimal, error) {
-	if !withdrawn.IsPositive() {
-		return decimal.Zero, nil
-	}
-	var rows []model.AdtyCommissionRecovery
-	if err := tx.Where("commission_id = ? AND kind = ?", commissionID, "withdrawn").Find(&rows).Error; err != nil {
-		return decimal.Zero, err
-	}
-	recorded := decimal.Zero
-	for _, row := range rows {
-		recorded = recorded.Add(row.AmountUSD)
-	}
-	left := withdrawn.Sub(recorded)
-	if left.IsNegative() {
-		return decimal.Zero, nil
-	}
-	return left, nil
+	return model.SiteInviteCommissionWithdrawnLive(tx, commissionID, withdrawn)
 }
 
 // consumeSiteCommissionHoldTx settles a frozen hold. release returns it to the

@@ -21,6 +21,10 @@ import { useTranslation } from 'react-i18next'
 import { toIntlLocale } from '@/i18n/languages'
 import { formatNumber, formatTimestamp } from '@/lib/format'
 
+import {
+  officialCommissionStateLabel,
+} from '@/features/wallet/adty/commission-states'
+
 import type { OrderTrace } from '../api'
 import { ORDER_TRACE_LABELS } from '../trace-labels'
 
@@ -92,26 +96,52 @@ export function OrderDetailSummary(props: { detail: OrderTrace }) {
           {props.detail.refund.reason && (
             <p className='break-words'>{props.detail.refund.reason}</p>
           )}
-          {props.detail.refund.commission_clawed_usd && (
+          {props.detail.refund.commission?.issued_usd && (
             <p className='tabular-nums'>
-              {t('Commission clawback')}: {props.detail.refund.commission_clawed_usd} USD
+              {t('Issued commission')}: {props.detail.refund.commission.issued_usd} USD
             </p>
           )}
-          {props.detail.refund.commission_recovered_usd && (
+          {props.detail.refund.commission?.states?.map((item) => (
+            <p key={item.state} className='tabular-nums'>
+              {t(officialCommissionStateLabel(item.state))}: {item.amount_usd} USD
+            </p>
+          ))}
+          {positiveUsd(
+            props.detail.refund.commission?.recovered_usd,
+            props.detail.refund.commission_recovered_usd
+          ) && (
             <p className='tabular-nums'>
-              {t('Returned to site wallets')}: {props.detail.refund.commission_recovered_usd} USD
+              {t('Returned to site wallets')}:{' '}
+              {positiveUsd(
+                props.detail.refund.commission?.recovered_usd,
+                props.detail.refund.commission_recovered_usd
+              )}{' '}
+              USD
             </p>
           )}
-          {props.detail.refund.commission_withdrawn_usd && (
+          {positiveUsd(props.detail.refund.commission?.converted_clawed_usd) && (
             <p className='tabular-nums'>
-              {t('Withdrawn commission')}: {props.detail.refund.commission_withdrawn_usd} USD
+              {t('Clawback from balance')}:{' '}
+              {props.detail.refund.commission?.converted_clawed_usd} USD
             </p>
           )}
-          {props.detail.refund.commission_recovery_usd && (
+          {positiveUsd(props.detail.refund.commission_recovery_usd) && (
             <p className='tabular-nums'>
               {t('Recovery liability')}: {props.detail.refund.commission_recovery_usd} USD
             </p>
           )}
+          {!props.detail.refund.commission &&
+            positiveUsd(props.detail.refund.commission_clawed_usd) && (
+              <p className='tabular-nums'>
+                {t('Commission clawback')}: {props.detail.refund.commission_clawed_usd} USD
+              </p>
+            )}
+          {!props.detail.refund.commission &&
+            positiveUsd(props.detail.refund.commission_withdrawn_usd) && (
+              <p className='tabular-nums'>
+                {t('Withdrawn commission')}: {props.detail.refund.commission_withdrawn_usd} USD
+              </p>
+            )}
           <p className='text-muted-foreground'>
             {t(
               'This records the wallet refund. Return the payment offline through the original payment provider.'
@@ -122,3 +152,11 @@ export function OrderDetailSummary(props: { detail: OrderTrace }) {
     </>
   )
 }
+
+function positiveUsd(...values: (string | undefined)[]) {
+  for (const value of values) {
+    if (value && value !== '0') return value
+  }
+  return undefined
+}
+

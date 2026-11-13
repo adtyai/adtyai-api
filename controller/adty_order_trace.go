@@ -108,17 +108,20 @@ func getAdtyOrderTrace(c *gin.Context, ownerSiteID *int) {
 		refundCurrency = ext.PayCurrency
 	}
 	refund := gin.H{"refunded_at": ext.RefundedAt, "refund_quota": ext.RefundQuota, "refund_amount": ext.RefundAmount, "currency": refundCurrency}
-	var siteCommission model.AdtySiteInviteCommission
-	if err := model.DB.Where("trade_no = ?", tradeNo).Limit(1).Find(&siteCommission).Error; err != nil {
-		common.ApiError(c, err)
+	preview, previewErr := model.LoadSiteInviteCommissionRefundPreview(model.DB, tradeNo, ext.RefundQuota, ext.FaceQuota())
+	if previewErr != nil {
+		common.ApiError(c, previewErr)
 		return
 	}
-	if siteCommission.Id != 0 && siteCommission.ClawedUSD.IsPositive() {
-		refund["commission_clawed_usd"] = siteCommission.ClawedUSD.String()
-		refund["commission_recovered_usd"] = siteCommission.RecoveredUSD.String()
-	}
-	if siteCommission.Id != 0 && siteCommission.WithdrawnUSD.IsPositive() {
-		refund["commission_withdrawn_usd"] = siteCommission.WithdrawnUSD.String()
+	if preview != nil {
+		refund["commission"] = preview
+		if preview.ClawedUSD != "0" {
+			refund["commission_clawed_usd"] = preview.ClawedUSD
+			refund["commission_recovered_usd"] = preview.RecoveredUSD
+		}
+		if preview.WithdrawnUSD != "0" {
+			refund["commission_withdrawn_usd"] = preview.WithdrawnUSD
+		}
 	}
 	var recoveries []model.AdtyCommissionRecovery
 	if err := model.DB.Where("trade_no = ?", tradeNo).Find(&recoveries).Error; err != nil {

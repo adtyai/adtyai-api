@@ -291,26 +291,11 @@ func PreviewAdtyTopUpRefund(c *gin.Context) {
 			return
 		}
 		result.Facts = facts
-		var commission model.AdtySiteInviteCommission
-		if err := model.DB.Where("trade_no = ?", tradeNo).Limit(1).Find(&commission).Error; err != nil {
-			common.ApiError(c, err)
-			return
-		}
-		if commission.Id != 0 && commission.AmountUSD.IsPositive() {
-			var ext model.AdtyTopupOrder
-			if err := model.DB.Where("trade_no = ?", tradeNo).First(&ext).Error; err != nil {
-				common.ApiError(c, err)
-				return
-			}
-			already := decimal.NewFromInt(ext.RefundQuota).Div(common.QuotaPerUnitDecimal())
-			requestQuota, quotaErr := model.ManualRefundUSDQuota(ext.FaceUSD, already, request)
-			if quotaErr != nil {
-				writeAdtyFinanceError(c, quotaErr)
-				return
-			}
-			result.CommissionIssuedUSD, result.CommissionWithdrawnUSD, result.CommissionClawbackUSD = model.SiteInviteCommissionRefundPreview(
-				commission.AmountUSD, commission.WithdrawnUSD, commission.ClawedUSD, ext.RefundQuota+requestQuota, ext.FaceQuota(),
-			)
+		if facts != nil && facts.Commission != nil {
+			result.Commission = facts.Commission
+			result.CommissionIssuedUSD = facts.Commission.IssuedUSD
+			result.CommissionWithdrawnUSD = facts.Commission.WithdrawnUSD
+			result.CommissionClawbackUSD = facts.Commission.ExpectedClawbackUSD
 		}
 	}
 	common.ApiSuccess(c, result)

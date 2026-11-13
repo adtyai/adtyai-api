@@ -209,7 +209,12 @@ func GetAdtySiteCommissions(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	common.ApiSuccess(c, gin.H{"items": rows})
+	items, err := model.PresentSiteInviteCommissions(model.DB, rows)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"items": items})
 }
 
 func PostAdtySiteCommissionConvert(c *gin.Context) {

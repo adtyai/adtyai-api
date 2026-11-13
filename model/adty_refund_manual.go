@@ -47,29 +47,32 @@ func ManualRefundUSDQuota(faceUSD, alreadyRefundedUSD, requestUSD decimal.Decima
 // AdtyRefundPageFacts is the recorded refund-page check. Amounts come from the
 // order and its fund lots. A blank lot field means that lot was not recorded.
 type AdtyRefundPageFacts struct {
-	TradeNo               string `json:"trade_no"`
-	SiteId                int    `json:"site_id"`
-	UserId                int    `json:"user_id"`
-	FaceUSD               string `json:"face_usd"`
-	PayCurrency           string `json:"pay_currency"`
-	PaidAmount            string `json:"paid_amount"`
-	PaidCurrency          string `json:"paid_currency"`
-	OrderRate             string `json:"order_rate"`
-	PrincipalConsumedUSD  string `json:"principal_consumed_usd,omitempty"`
-	PrincipalRemainingUSD string `json:"principal_remaining_usd,omitempty"`
-	PendingQuota          int64  `json:"pending_quota"`
-	RefundOccupiedQuota   int64  `json:"refund_occupied_quota"`
-	BonusUSD              string `json:"bonus_usd"`
-	BonusUsedQuota        int64  `json:"bonus_used_quota"`
-	BonusRemainingQuota   int64  `json:"bonus_remaining_quota"`
-	CumulativeRefundUSD   string `json:"cumulative_refund_usd"`
-	ForeignReference      string `json:"foreign_reference,omitempty"`
-	RefundProof           string `json:"refund_proof,omitempty"`
+	TradeNo               string                           `json:"trade_no"`
+	SiteId                int                              `json:"site_id"`
+	UserId                int                              `json:"user_id"`
+	FaceUSD               string                           `json:"face_usd"`
+	PayCurrency           string                           `json:"pay_currency"`
+	PaidAmount            string                           `json:"paid_amount"`
+	PaidCurrency          string                           `json:"paid_currency"`
+	OrderRate             string                           `json:"order_rate"`
+	PrincipalConsumedUSD  string                           `json:"principal_consumed_usd,omitempty"`
+	PrincipalRemainingUSD string                           `json:"principal_remaining_usd,omitempty"`
+	PendingQuota          int64                            `json:"pending_quota"`
+	RefundOccupiedQuota   int64                            `json:"refund_occupied_quota"`
+	BonusUSD              string                           `json:"bonus_usd"`
+	BonusUsedQuota        int64                            `json:"bonus_used_quota"`
+	BonusRemainingQuota   int64                            `json:"bonus_remaining_quota"`
+	CumulativeRefundUSD   string                           `json:"cumulative_refund_usd"`
+	ForeignReference      string                           `json:"foreign_reference,omitempty"`
+	RefundProof           string                           `json:"refund_proof,omitempty"`
+	Commission            *AdtySiteCommissionRefundPreview `json:"commission,omitempty"`
 }
 
-// LoadAdtyRefundPageFacts reads the order, its fund lots, and the customer's
-// in-flight precharge. requestUSD, when positive, adds the foreign reference
-// at the stored paid amount. It does not write.
+// LoadAdtyRefundPageFacts reads the order, its fund lots, the customer's
+// in-flight precharge, and the official site-invite commission breakdown.
+// requestUSD, when positive, adds the foreign reference at the stored paid
+// amount and the expected commission split for that incremental refund.
+// It does not write.
 func LoadAdtyRefundPageFacts(tradeNo string, requestUSD decimal.Decimal) (*AdtyRefundPageFacts, error) {
 	tradeNo = strings.TrimSpace(tradeNo)
 	if tradeNo == "" {
@@ -118,6 +121,7 @@ func LoadAdtyRefundPageFacts(tradeNo string, requestUSD decimal.Decimal) (*AdtyR
 		facts.BonusUsedQuota = bonusOriginal - bonusRemaining
 		facts.BonusRemainingQuota = bonusRemaining
 	}
+	previewQuota := ext.RefundQuota
 	if requestUSD.IsPositive() {
 		alreadyUSD := decimal.NewFromInt(ext.RefundQuota).Div(common.QuotaPerUnitDecimal())
 		requestQuota, err := ManualRefundUSDQuota(ext.FaceUSD, alreadyUSD, requestUSD)
@@ -125,7 +129,13 @@ func LoadAdtyRefundPageFacts(tradeNo string, requestUSD decimal.Decimal) (*AdtyR
 			return nil, err
 		}
 		facts.ForeignReference = adtyRefundAmount(&ext, requestQuota, ext.FaceQuota()).String()
+		previewQuota = ext.RefundQuota + requestQuota
 	}
+	commission, err := LoadSiteInviteCommissionRefundPreview(DB, tradeNo, previewQuota, ext.FaceQuota())
+	if err != nil {
+		return nil, err
+	}
+	facts.Commission = commission
 	return facts, nil
 }
 

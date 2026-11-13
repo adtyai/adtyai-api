@@ -832,3 +832,74 @@ func TestSiteInviteCommissionIgnoresTeamTopups(t *testing.T) {
 	require.Zero(t, count)
 	_ = common.QuotaPerUnit
 }
+
+func TestRefundPreviewItemizesSplitCommissionToMatchAfterRefundSplitter(t *testing.T) {
+	db := prepareReferralDialectDB(t, "postgres")
+	site, invitee := seedSiteInvite(t, db, decimal.RequireFromString("0.10"))
+	require.NoError(t, EnsureAdtySiteWallets(site.Id))
+	_, err := ApplyAdtySiteWalletChange(site.Id, model.AdtySiteWalletEarnings, decimal.NewFromInt(4), AdtySiteWalletChange{
+		Type: "earning_settlement", IdempotencyKey: "earn-split-" + strconv.Itoa(site.Id),
+	})
+	require.NoError(t, err)
+	var invite model.AdtySiteInvite
+	require.NoError(t, db.Where("site_id = ? AND invitee_id = ?", site.Id, invitee.Id).First(&invite).Error)
+	require.NoError(t, db.Model(&model.User{}).Where("id = ?", invite.InviterId).Update("quota", 3*500000).Error)
+	trade := "SITE-SPLIT-" + strconv.Itoa(site.Id)
+	row := model.AdtySiteInviteCommission{
+		SiteId: site.Id, InviterId: invite.InviterId, InviteeId: invitee.Id, TradeNo: trade,
+		FaceUSD: decimal.NewFromInt(100), Rate: decimal.RequireFromString("0.10"),
+		AmountUSD: decimal.NewFromInt(10), EarningsHoldUSD: decimal.NewFromInt(4),
+		ConvertedUSD: decimal.NewFromInt(3), WithdrawnUSD: decimal.NewFromInt(2),
+		Status: model.AdtySiteCommissionAvailable,
+	}
+	require.NoError(t, db.Create(&row).Error)
+	require.NoError(t, db.Model(&model.AdtySiteWallet{}).Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteWalletEarnings).
+		Update("frozen_usd", decimal.NewFromInt(4)).Error)
+	ext := siteInviteOrder(site.Id, invitee.Id, trade, decimal.NewFromInt(100))
+	ext.CreditQuota = 100 * 500000
+	ext.RefundQuota = 100 * 500000
+
+	preview, err := model.LoadSiteInviteCommissionRefundPreview(db, trade, ext.RefundQuota, ext.FaceQuota())
+	require.NoError(t, err)
+	require.NotNil(t, preview)
+	require.Equal(t, "4", preview.ExpectedReleaseUSD)
+	require.Equal(t, "3", preview.ExpectedConvertedClawbackUSD)
+	require.Equal(t, "2", preview.ExpectedWithdrawnRecoveryUSD)
+	require.Equal(t, "1", preview.ExpectedPendingCoverageCancelUSD)
+	require.NotEqual(t, preview.ExpectedReleaseUSD, preview.ExpectedConvertedClawbackUSD)
+	require.NotEqual(t, preview.ExpectedConvertedClawbackUSD, preview.ExpectedWithdrawnRecoveryUSD)
+	require.NotEqual(t, preview.ExpectedWithdrawnRecoveryUSD, preview.ExpectedPendingCoverageCancelUSD)
+	require.Equal(t, "inviter", preview.WithdrawnRecoveryLiable)
+	got := map[string]string{}
+	for _, state := range preview.States {
+		got[state.State] = state.AmountUSD
+		require.NotEqual(t, model.AdtySiteCommissionCovered, state.State)
+	}
+	require.Equal(t, "4", got[model.AdtySiteCommissionStateOnHold])
+	require.Equal(t, "1", got[model.AdtySiteCommissionStatePendingCoverage])
+	require.Equal(t, "3", got[model.AdtySiteCommissionStateConverted])
+	require.Equal(t, "2", got[model.AdtySiteCommissionStateWithdrawnReleased])
+
+	views, err := model.PresentSiteInviteCommissions(db, []model.AdtySiteInviteCommission{row})
+	require.NoError(t, err)
+	require.Len(t, views, 1)
+	require.Equal(t, preview.States, views[0].OfficialStates)
+
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return model.AdtyAfterTopUpRefundedTx(tx, &model.TopUp{TradeNo: trade, UserId: invitee.Id}, ext)
+	}))
+	require.NoError(t, db.First(&row, row.Id).Error)
+	require.True(t, row.RecoveredUSD.Equal(decimal.RequireFromString(preview.ExpectedReleaseUSD)))
+	require.True(t, row.ConvertedClawedUSD.Equal(decimal.RequireFromString(preview.ExpectedConvertedClawbackUSD)))
+	require.True(t, row.ClawedUSD.Equal(decimal.RequireFromString(preview.ExpectedClawbackUSD)))
+	var liability model.AdtyCommissionRecovery
+	require.NoError(t, db.Where("commission_id = ? AND kind = ?", row.Id, "withdrawn").First(&liability).Error)
+	require.True(t, liability.AmountUSD.Equal(decimal.RequireFromString(preview.ExpectedWithdrawnRecoveryUSD)))
+	require.Equal(t, "withdrawn", liability.Kind)
+	var inviter model.User
+	require.NoError(t, db.First(&inviter, invite.InviterId).Error)
+	require.Equal(t, 0, inviter.Quota)
+	var earning model.AdtySiteWallet
+	require.NoError(t, db.Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteWalletEarnings).First(&earning).Error)
+	require.True(t, earning.FrozenUSD.IsZero())
+}

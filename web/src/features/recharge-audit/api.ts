@@ -217,6 +217,33 @@ export type OrderTraceEntry = {
   note?: string
 }
 
+export type OfficialCommissionStateAmount = {
+  state: string
+  amount_usd: string
+}
+
+export type CommissionRefundPreview = {
+  issued_usd: string
+  states: OfficialCommissionStateAmount[]
+  amount_usd: string
+  earnings_hold_usd?: string
+  margin_hold_usd?: string
+  frozen_usd?: string
+  converted_usd?: string
+  converted_clawed_usd?: string
+  withdrawn_usd?: string
+  clawed_usd?: string
+  recovered_usd?: string
+  recovery_usd?: string
+  recorded_status?: string
+  expected_release_usd: string
+  expected_converted_clawback_usd: string
+  expected_withdrawn_recovery_usd: string
+  expected_pending_coverage_cancel_usd: string
+  withdrawn_recovery_liable?: string
+  expected_clawback_usd?: string
+}
+
 export type OrderTrace = PageResponse<OrderTraceEntry> & {
   order: RechargeAuditOrder
   refund: {
@@ -225,6 +252,7 @@ export type OrderTrace = PageResponse<OrderTraceEntry> & {
     refund_amount: string
     currency: string
     reason?: string
+    commission?: CommissionRefundPreview
     commission_clawed_usd?: string
     commission_recovered_usd?: string
     commission_withdrawn_usd?: string
@@ -304,6 +332,7 @@ export type TopupRefundResult = {
   refund_quota: number
   refund_amount: string
   currency: string
+  commission?: CommissionRefundPreview
   commission_issued_usd?: string
   commission_withdrawn_usd?: string
   commission_clawback_usd?: string
@@ -329,6 +358,7 @@ export type RefundPageFacts = {
   cumulative_refund_usd: string
   foreign_reference?: string
   refund_proof?: string
+  commission?: CommissionRefundPreview
 }
 
 export async function previewTopupRefund(tradeNo: string, refundUsd?: string) {

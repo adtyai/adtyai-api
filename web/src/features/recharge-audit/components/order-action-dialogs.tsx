@@ -28,6 +28,9 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import {
+  officialCommissionStateLabel,
+} from '@/features/wallet/adty/commission-states'
 import { ADTY_PERMISSIONS, canAdmin } from '@/lib/adty-permissions'
 import { formatQuota } from '@/lib/format'
 import { handleServerError } from '@/lib/handle-server-error'
@@ -400,25 +403,10 @@ export function RefundDialog(props: OrderActionProps) {
         />
       </div>
       {preview.data && (
-        <div className='space-y-1 text-sm'>
-          {preview.data.commission_issued_usd && (
-            <p className='tabular-nums'>
-              {t('Issued commission')}: {preview.data.commission_issued_usd} USD
-            </p>
-          )}
-          {preview.data.commission_withdrawn_usd && (
-            <p className='tabular-nums'>
-              {t('Withdrawn commission')}: {preview.data.commission_withdrawn_usd}{' '}
-              USD
-            </p>
-          )}
-          {preview.data.commission_clawback_usd && (
-            <p className='tabular-nums'>
-              {t('Expected commission clawback')}:{' '}
-              {preview.data.commission_clawback_usd} USD
-            </p>
-          )}
-        </div>
+        <CommissionRefundPreviewDetails
+          preview={preview.data}
+          t={t}
+        />
       )}
       <div className='space-y-2'>
         <Label htmlFor='refund-reason'>{t('Reason (required)')}</Label>
@@ -432,3 +420,54 @@ export function RefundDialog(props: OrderActionProps) {
     </Dialog>
   )
 }
+
+function isPositiveAmount(value?: string) {
+  return !!value && value !== '0'
+}
+
+function CommissionRefundPreviewDetails(props: {
+  preview: TopupRefundResult
+  t: (key: string) => string
+}) {
+  const commission = props.preview.commission ?? props.preview.facts?.commission
+  const t = props.t
+  if (!commission && !props.preview.commission_issued_usd) {
+    return null
+  }
+  const expected = commission
+    ? [
+        [t('Expected release'), commission.expected_release_usd],
+        [t('Expected clawback from balance'), commission.expected_converted_clawback_usd],
+        [t('Expected recovery'), commission.expected_withdrawn_recovery_usd],
+        [
+          t('Expected pending-coverage reduction'),
+          commission.expected_pending_coverage_cancel_usd,
+        ],
+      ]
+    : []
+  return (
+    <div className='space-y-1 text-sm'>
+      {(commission?.issued_usd || props.preview.commission_issued_usd) && (
+        <p className='tabular-nums'>
+          {t('Issued commission')}:{' '}
+          {commission?.issued_usd ?? props.preview.commission_issued_usd} USD
+        </p>
+      )}
+      {commission?.states?.map((item) => (
+        <p key={item.state} className='tabular-nums'>
+          {t(officialCommissionStateLabel(item.state))}: {item.amount_usd} USD
+        </p>
+      ))}
+      {expected.map(([label, amount]) => (
+        <p key={label} className='tabular-nums'>
+          {label}: {amount} USD
+        </p>
+      ))}
+      {commission?.withdrawn_recovery_liable === 'inviter' &&
+        isPositiveAmount(commission.expected_withdrawn_recovery_usd) && (
+          <p>{t('Recovery liable party: inviter')}</p>
+        )}
+    </div>
+  )
+}
+
