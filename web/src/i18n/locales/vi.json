@@ -8829,7 +8829,9 @@
     "Uses the current earnings and authorized margin cycle on the original commission rows.": "Dùng thu nhập hiện có và chu kỳ ký quỹ đã cấp quyền cho các khoản hoa hồng gốc.",
     "Available commission": "Hoa hồng có thể dùng",
     "The amount moves from available commission to your balance.": "Số tiền chuyển từ hoa hồng có thể dùng sang số dư.",
-    "Convert commission to balance": "Chuyển hoa hồng vào số dư"
+    "Convert commission to balance": "Chuyển hoa hồng vào số dư",
+    "Invite commission": "Hoa hồng mời",
+    "New top-ups do not create commission while this is off.": "Khi tắt, lần nạp mới không tạo hoa hồng."
 },
   "Targeted notifications": "Thông báo theo đối tượng",
   "Site announcements": "Thông báo của trang",

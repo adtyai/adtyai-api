@@ -8829,7 +8829,9 @@
     "Uses the current earnings and authorized margin cycle on the original commission rows.": "Utilise les gains actuels et le cycle de marge autorisé sur les commissions d’origine.",
     "Available commission": "Commission disponible",
     "The amount moves from available commission to your balance.": "Le montant passe de la commission disponible a votre solde.",
-    "Convert commission to balance": "Convertir la commission en solde"
+    "Convert commission to balance": "Convertir la commission en solde",
+    "Invite commission": "Commission d’invitation",
+    "New top-ups do not create commission while this is off.": "Lorsqu’il est désactivé, les nouvelles recharges ne créent pas de commission."
 },
   "Targeted notifications": "Notifications ciblées",
   "Site announcements": "Annonces du site",

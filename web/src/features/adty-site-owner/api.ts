@@ -214,6 +214,7 @@ export type SiteReferralView = {
   max_rate?: string
   rate_configured: boolean
   rate?: string
+  enabled?: boolean
 }
 
 export type SiteInvite = {
@@ -254,6 +255,16 @@ export async function saveOwnerSiteTeamDiscount(
 export async function getOwnerSiteReferral(): Promise<SiteReferralView> {
   const res = await api.get<ApiResponse<SiteReferralView>>(`${BASE}/referral`)
   return requireServerSuccess(res.data).data
+}
+
+export async function saveOwnerSiteReferralEnabled(
+  enabled: boolean
+): Promise<void> {
+  const res = await api.put<ApiResponse<{ enabled: boolean }>>(
+    `${BASE}/referral/enabled`,
+    { enabled }
+  )
+  requireServerSuccess(res.data)
 }
 
 export async function saveOwnerSiteReferral(rate: string): Promise<void> {

@@ -204,6 +204,25 @@ func PostAdtySiteCommissionConvert(c *gin.Context) {
 	common.ApiSuccess(c, gin.H{"converted": true})
 }
 
+func PutAdtyOwnerSiteReferralEnabled(c *gin.Context) {
+	site, ok := adtyOwnerSiteOr403(c)
+	if !ok {
+		return
+	}
+	var body struct {
+		Enabled *bool `json:"enabled"`
+	}
+	if err := common.DecodeJson(c.Request.Body, &body); err != nil || body.Enabled == nil {
+		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	if err := service.SetAdtyOwnerSiteReferralEnabled(site.Id, c.GetInt("id"), *body.Enabled); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"enabled": *body.Enabled})
+}
+
 func PostAdtyOwnerSiteCoverageResume(c *gin.Context) {
 	site, ok := adtyOwnerSiteOr403(c)
 	if !ok {

@@ -71,8 +71,9 @@ func (AdtyGlossaryTerm) TableName() string { return "adty_glossary_terms" }
 
 // AdtySiteReferralRate is the one-level invite rate for a site. It is a decimal fraction.
 type AdtySiteReferralRate struct {
-	SiteId int             `json:"site_id" gorm:"primaryKey"`
-	Rate   decimal.Decimal `json:"rate" gorm:"type:decimal(10,6);not null"`
+	SiteId  int             `json:"site_id" gorm:"primaryKey"`
+	Rate    decimal.Decimal `json:"rate" gorm:"type:decimal(10,6);not null"`
+	Enabled bool            `json:"enabled"`
 }
 
 func (AdtySiteReferralRate) TableName() string { return "adty_site_referral_rates" }

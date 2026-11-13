@@ -888,7 +888,7 @@ func SetSiteReferralRate(siteID int, rate decimal.Decimal) error {
 		return common.NewMessage("Invalid parameters")
 	}
 	row := model.AdtySiteReferralRate{SiteId: siteID, Rate: rate}
-	return model.DB.Where(model.AdtySiteReferralRate{SiteId: siteID}).Assign(row).FirstOrCreate(&row).Error
+	return model.DB.Where(model.AdtySiteReferralRate{SiteId: siteID}).Assign(map[string]any{"rate": rate}).FirstOrCreate(&row).Error
 }
 
 // SiteInviteCommissionUSD is face times the site rate. It does not add a payment-method gift.

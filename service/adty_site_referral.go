@@ -20,6 +20,7 @@ type AdtySiteReferralView struct {
 	MaxRate        string `json:"max_rate,omitempty"`
 	RateConfigured bool   `json:"rate_configured"`
 	Rate           string `json:"rate,omitempty"`
+	Enabled        bool   `json:"enabled"`
 }
 
 // SaveAdtySiteReferralCap stores Root's maximum one-level site invite rate.
@@ -116,7 +117,25 @@ func LoadAdtyOwnerSiteReferral(siteID, ownerID int) (AdtySiteReferralView, error
 	}
 	view.RateConfigured = true
 	view.Rate = row.Rate.String()
+	view.Enabled = row.Enabled
 	return view, nil
+}
+
+// SetAdtyOwnerSiteReferralEnabled turns one site's invite commission on or off.
+// It does not change another site and does not invent a rate.
+func SetAdtyOwnerSiteReferralEnabled(siteID, ownerID int, enabled bool) error {
+	if _, err := lockOwnerSite(siteID, ownerID); err != nil {
+		return err
+	}
+	var row model.AdtySiteReferralRate
+	err := model.DB.First(&row, siteID).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return common.NewMessage("Invalid parameters")
+	}
+	if err != nil {
+		return err
+	}
+	return model.DB.Model(&row).Update("enabled", enabled).Error
 }
 
 // BindAdtyOwnerSiteInvite records one direct invite on the owner's site.

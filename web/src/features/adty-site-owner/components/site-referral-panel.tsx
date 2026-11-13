@@ -27,6 +27,7 @@ import { LoadingState } from '@/components/loading-state'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
 import { handleServerError } from '@/lib/handle-server-error'
 
 import {
@@ -35,6 +36,7 @@ import {
   getOwnerSiteReferral,
   resumeOwnerSiteCoverage,
   saveOwnerSiteReferral,
+  saveOwnerSiteReferralEnabled,
   siteOwnerKeys,
 } from '../api'
 
@@ -57,6 +59,13 @@ export function SiteReferralPanel() {
     mutationFn: () => saveOwnerSiteReferral(rate.trim()),
     onSuccess: () => {
       setRate('')
+      void client.invalidateQueries({ queryKey: siteOwnerKeys.all })
+    },
+    onError: (error) => handleServerError(error),
+  })
+  const enable = useMutation({
+    mutationFn: (enabled: boolean) => saveOwnerSiteReferralEnabled(enabled),
+    onSuccess: () => {
       void client.invalidateQueries({ queryKey: siteOwnerKeys.all })
     },
     onError: (error) => handleServerError(error),
@@ -113,6 +122,22 @@ export function SiteReferralPanel() {
             <p className='text-sm tabular-nums'>
               {t('Invite rate')} {rules.data.rate}
             </p>
+          )}
+          {rules.data.rate_configured && (
+            <div className='flex items-center justify-between gap-4'>
+              <div className='flex flex-col gap-1'>
+                <Label htmlFor='site-referral-enabled'>{t('Invite commission')}</Label>
+                <span className='text-muted-foreground text-sm'>
+                  {t('New top-ups do not create commission while this is off.')}
+                </span>
+              </div>
+              <Switch
+                id='site-referral-enabled'
+                checked={rules.data.enabled === true}
+                disabled={enable.isPending}
+                onCheckedChange={(value) => enable.mutate(value)}
+              />
+            </div>
           )}
           <div className='flex flex-col gap-1'>
             <Label htmlFor='site-invite-rate'>{t('Invite rate')}</Label>

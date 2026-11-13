@@ -414,6 +414,7 @@ func registerAdtyResellerRoutes(apiRouter *gin.RouterGroup) {
 		{http.MethodPut, "/teams/:id/discount", "wallet:write", []gin.HandlerFunc{controller.PutAdtyOwnerSiteTeamDiscount}},
 		{http.MethodGet, "/referral", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerSiteReferral}},
 		{http.MethodPut, "/referral", "wallet:write", []gin.HandlerFunc{controller.PutAdtyOwnerSiteReferral}},
+		{http.MethodPut, "/referral/enabled", "wallet:write", []gin.HandlerFunc{controller.PutAdtyOwnerSiteReferralEnabled}},
 		{http.MethodGet, "/referral/invites", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerSiteInvites}},
 		{http.MethodPost, "/referral/invites", "wallet:write", []gin.HandlerFunc{controller.PostAdtyOwnerSiteInvite}},
 		{http.MethodPost, "/referral/cover-pending", "wallet:write", []gin.HandlerFunc{controller.PostAdtyOwnerSiteCoverageResume}},

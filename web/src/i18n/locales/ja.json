@@ -8829,7 +8829,9 @@
     "Uses the current earnings and authorized margin cycle on the original commission rows.": "現在の収益と、認可済みの保証金サイクルで元の手数料記録を処理します。",
     "Available commission": "使える手数料",
     "The amount moves from available commission to your balance.": "金額は使える手数料から残高へ移ります。",
-    "Convert commission to balance": "手数料を残高へ移す"
+    "Convert commission to balance": "手数料を残高へ移す",
+    "Invite commission": "招待手数料",
+    "New top-ups do not create commission while this is off.": "オフの間、新しいチャージは手数料を作りません。"
 },
   "Targeted notifications": "対象を指定した通知",
   "Site announcements": "サイトのお知らせ",

@@ -1,6 +1,8 @@
 package service
 
 import (
+	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -54,18 +56,22 @@ func TestSiteInviteCommissionStaysPendingUntilRootConfiguresCoverage(t *testing.
 	require.Equal(t, 0, user.Quota, "making commission available must not credit personal quota")
 }
 
+var siteInviteSeed int64
+
 func seedSiteInvite(t *testing.T, db *gorm.DB, rate decimal.Decimal) (*model.AdtySite, *model.User) {
 	t.Helper()
-	owner := referralUser(t, db, "comm-owner")
-	inviter := referralUser(t, db, "comm-inviter")
-	invitee := referralUser(t, db, "comm-invitee")
-	site := &model.AdtySite{OwnerUserId: owner.Id, Subdomain: "comm", RootDomain: "sites.example.com", Status: model.AdtySiteStatusActive}
+	suffix := strconv.FormatInt(atomic.AddInt64(&siteInviteSeed, 1), 10)
+	owner := referralUser(t, db, "comm-owner-"+suffix)
+	inviter := referralUser(t, db, "comm-inviter-"+suffix)
+	invitee := referralUser(t, db, "comm-invitee-"+suffix)
+	site := &model.AdtySite{OwnerUserId: owner.Id, Subdomain: "comm-" + suffix, RootDomain: "sites.example.com", Status: model.AdtySiteStatusActive}
 	require.NoError(t, db.Create(site).Error)
 	require.NoError(t, db.Model(inviter).Update("site_id", site.Id).Error)
 	require.NoError(t, db.Model(invitee).Update("site_id", site.Id).Error)
 	require.NoError(t, db.Create(&model.AdtySiteInvite{
 		SiteId: site.Id, InviterId: inviter.Id, InviteeId: invitee.Id, Rate: rate,
 	}).Error)
+	require.NoError(t, db.Create(&model.AdtySiteReferralRate{SiteId: site.Id, Rate: rate, Enabled: true}).Error)
 	return site, invitee
 }
 
@@ -404,6 +410,36 @@ func TestResumeSiteInviteCoverageFundsOriginalRowsInOrder(t *testing.T) {
 	require.True(t, earning.Balance.IsZero())
 	require.NoError(t, db.Model(&model.AdtySiteInviteCommission{}).Count(&count).Error)
 	require.Equal(t, int64(2), count)
+}
+
+func TestSiteReferralOffDoesNotRecordCommissionOnThatSite(t *testing.T) {
+	db := prepareReferralDialectDB(t, "sqlite")
+	site, invitee := seedSiteInvite(t, db, decimal.RequireFromString("0.10"))
+	require.NoError(t, SetAdtyOwnerSiteReferralEnabled(site.Id, site.OwnerUserId, false))
+	ext := siteInviteOrder(site.Id, invitee.Id, "SITE-OFF", decimal.NewFromInt(30))
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return RecordAdtySiteInviteCommissionTx(tx, ext, time.Unix(1, 0))
+	}))
+	var count int64
+	require.NoError(t, db.Model(&model.AdtySiteInviteCommission{}).Count(&count).Error)
+	require.Zero(t, count)
+
+	other, otherInvitee := seedSiteInvite(t, db, decimal.RequireFromString("0.10"))
+	otherOrder := siteInviteOrder(other.Id, otherInvitee.Id, "SITE-ON", decimal.NewFromInt(20))
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return RecordAdtySiteInviteCommissionTx(tx, otherOrder, time.Unix(2, 0))
+	}))
+	var otherRow model.AdtySiteInviteCommission
+	require.NoError(t, db.Where("trade_no = ?", "SITE-ON").First(&otherRow).Error)
+	require.Equal(t, other.Id, otherRow.SiteId)
+
+	require.NoError(t, SetAdtyOwnerSiteReferralEnabled(site.Id, site.OwnerUserId, true))
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return RecordAdtySiteInviteCommissionTx(tx, ext, time.Unix(3, 0))
+	}))
+	var restored model.AdtySiteInviteCommission
+	require.NoError(t, db.Where("trade_no = ?", "SITE-OFF").First(&restored).Error)
+	require.Equal(t, site.Id, restored.SiteId)
 }
 
 func TestSiteInviteCommissionIgnoresTeamTopups(t *testing.T) {

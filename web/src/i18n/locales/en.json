@@ -8829,7 +8829,9 @@
     "Uses the current earnings and authorized margin cycle on the original commission rows.": "Uses the current earnings and authorized margin cycle on the original commission rows.",
     "Available commission": "Available commission",
     "The amount moves from available commission to your balance.": "The amount moves from available commission to your balance.",
-    "Convert commission to balance": "Convert commission to balance"
+    "Convert commission to balance": "Convert commission to balance",
+    "Invite commission": "Invite commission",
+    "New top-ups do not create commission while this is off.": "New top-ups do not create commission while this is off."
 },
   "Targeted notifications": "Targeted notifications",
   "Site announcements": "Site announcements",

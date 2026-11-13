@@ -8789,7 +8789,9 @@
     "Uses the current earnings and authorized margin cycle on the original commission rows.": "현재 수익과 승인된 보증금 주기로 원래 수수료 기록을 처리합니다.",
     "Available commission": "사용 가능 수수료",
     "The amount moves from available commission to your balance.": "금액은 사용 가능 수수료에서 잔액으로 옮겨집니다.",
-    "Convert commission to balance": "수수료를 잔액으로 옮기기"
+    "Convert commission to balance": "수수료를 잔액으로 옮기기",
+    "Invite commission": "초대 수수료",
+    "New top-ups do not create commission while this is off.": "꺼져 있으면 새 충전은 수수료를 만들지 않습니다."
 },
   "Targeted notifications": "대상 지정 알림",
   "Site announcements": "사이트 공지",

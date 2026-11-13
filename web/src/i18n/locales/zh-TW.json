@@ -8829,7 +8829,9 @@
     "Uses the current earnings and authorized margin cycle on the original commission rows.": "按目前收益和已授權的保證金週期處理原來的佣金記錄。",
     "Available commission": "可用佣金",
     "The amount moves from available commission to your balance.": "金額從可用佣金轉入餘額。",
-    "Convert commission to balance": "佣金轉餘額"
+    "Convert commission to balance": "佣金轉餘額",
+    "Invite commission": "邀請返佣",
+    "New top-ups do not create commission while this is off.": "關閉後，新充值不產生佣金。"
 },
   "Targeted notifications": "定向通知",
   "Site announcements": "本站公告",

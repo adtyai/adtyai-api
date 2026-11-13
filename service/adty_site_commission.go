@@ -141,6 +141,14 @@ func RecordAdtySiteInviteCommissionTx(tx *gorm.DB, ext *model.AdtyTopupOrder, no
 	if lookup.RowsAffected == 0 || invite.InviterId == ext.UserId || !invite.Rate.IsPositive() {
 		return nil
 	}
+	var siteRate model.AdtySiteReferralRate
+	rateLookup := tx.Where("site_id = ?", ext.SiteId).Limit(1).Find(&siteRate)
+	if rateLookup.Error != nil {
+		return rateLookup.Error
+	}
+	if rateLookup.RowsAffected == 0 || !siteRate.Enabled {
+		return nil
+	}
 	amount := SiteInviteCommissionUSD(ext.FaceUSD, invite.Rate)
 	if !amount.IsPositive() {
 		return nil
