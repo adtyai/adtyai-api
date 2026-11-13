@@ -314,15 +314,6 @@ func freezeSiteCommissionMarginTx(tx *gorm.DB, siteID int, need decimal.Decimal,
 	if err != nil || !allowedBusiness || !need.IsPositive() {
 		return decimal.Zero, err
 	}
-	key := "commission:" + tradeNo + ":" + model.AdtySiteWalletMargin
-	var existing model.AdtySiteWalletLedger
-	lookup := tx.Where("idempotency_key = ?", key).Limit(1).Find(&existing)
-	if lookup.Error != nil {
-		return decimal.Zero, lookup.Error
-	}
-	if lookup.RowsAffected > 0 {
-		return decimal.Zero, nil
-	}
 	var wallet model.AdtySiteWallet
 	if err := model.AdtyLockForUpdate(tx).Where("site_id = ? AND kind = ?", siteID, model.AdtySiteWalletMargin).First(&wallet).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -334,30 +325,14 @@ func freezeSiteCommissionMarginTx(tx *gorm.DB, siteID int, need decimal.Decimal,
 		TierUSD: wallet.CycleTierUSD, Balance: wallet.Balance, Used: wallet.CycleUsedUSD, Frozen: wallet.FrozenUSD,
 	})
 	take := decimal.Min(need, room)
-	if !take.IsPositive() {
-		return decimal.Zero, nil
-	}
-	if _, err := applyAdtySiteWalletChangeTx(tx, siteID, model.AdtySiteWalletMargin, decimal.Zero, AdtySiteWalletChange{
-		Type: "commission_freeze", RefType: "site_invite", RefID: tradeNo, IdempotencyKey: key, HoldDelta: take,
-	}); err != nil {
-		if errors.Is(err, ErrAdtySiteWalletInsufficient) {
-			return decimal.Zero, nil
-		}
+	already, err := siteCommissionFrozenHoldTx(tx, siteID, model.AdtySiteWalletMargin, tradeNo)
+	if err != nil {
 		return decimal.Zero, err
 	}
-	return take, nil
+	return applySiteCommissionFreezeTx(tx, siteID, model.AdtySiteWalletMargin, tradeNo, take, already)
 }
 
 func freezeSiteCommissionSourceTx(tx *gorm.DB, siteID int, kind string, need decimal.Decimal, tradeNo string) (decimal.Decimal, error) {
-	key := "commission:" + tradeNo + ":" + kind
-	var existing model.AdtySiteWalletLedger
-	lookup := tx.Where("idempotency_key = ?", key).Limit(1).Find(&existing)
-	if lookup.Error != nil {
-		return decimal.Zero, lookup.Error
-	}
-	if lookup.RowsAffected > 0 {
-		return decimal.Zero, nil
-	}
 	var wallet model.AdtySiteWallet
 	if err := model.AdtyLockForUpdate(tx).Where("site_id = ? AND kind = ?", siteID, kind).First(&wallet).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -369,7 +344,51 @@ func freezeSiteCommissionSourceTx(tx *gorm.DB, siteID int, kind string, need dec
 	if take.GreaterThan(need) {
 		take = need
 	}
+	already, err := siteCommissionFrozenHoldTx(tx, siteID, kind, tradeNo)
+	if err != nil {
+		return decimal.Zero, err
+	}
+	return applySiteCommissionFreezeTx(tx, siteID, kind, tradeNo, take, already)
+}
+
+// siteCommissionFrozenHoldTx sums commission_freeze holds already booked for
+// this order and wallet. Resume uses that total so a later increment can
+// take a new idempotency key instead of treating a partial freeze as done.
+func siteCommissionFrozenHoldTx(tx *gorm.DB, siteID int, kind, tradeNo string) (decimal.Decimal, error) {
+	var entries []model.AdtySiteWalletLedger
+	if err := tx.Where("site_id = ? AND wallet_kind = ? AND type = ? AND ref_type = ? AND ref_id = ?",
+		siteID, kind, "commission_freeze", "site_invite", tradeNo).Find(&entries).Error; err != nil {
+		return decimal.Zero, err
+	}
+	held := decimal.Zero
+	for _, entry := range entries {
+		held = held.Add(entry.HoldDelta)
+	}
+	return held, nil
+}
+
+// applySiteCommissionFreezeTx books one freeze increment. The first increment
+// keeps commission:<tradeNo>:<kind> so a completed one-shot freeze stays
+// uniquely keyed. Later increments append the cumulative hold so a partial
+// freeze can be resumed after a top-up. A replay of the same increment is a
+// no-op and must not be added to CoveredUSD again.
+func applySiteCommissionFreezeTx(tx *gorm.DB, siteID int, kind, tradeNo string, take, already decimal.Decimal) (decimal.Decimal, error) {
 	if !take.IsPositive() {
+		return decimal.Zero, nil
+	}
+	key := "commission:" + tradeNo + ":" + kind
+	if already.IsPositive() {
+		key += ":" + already.Add(take).String()
+	}
+	if len(key) > 128 {
+		return decimal.Zero, common.NewMessage("Invalid parameters")
+	}
+	var existing model.AdtySiteWalletLedger
+	lookup := tx.Where("idempotency_key = ?", key).Limit(1).Find(&existing)
+	if lookup.Error != nil {
+		return decimal.Zero, lookup.Error
+	}
+	if lookup.RowsAffected > 0 {
 		return decimal.Zero, nil
 	}
 	if _, err := applyAdtySiteWalletChangeTx(tx, siteID, kind, decimal.Zero, AdtySiteWalletChange{

@@ -623,6 +623,133 @@ func TestResumeSiteInviteCoverageFundsOriginalRowsInOrder(t *testing.T) {
 	require.Equal(t, int64(2), count)
 }
 
+func TestResumeSiteInviteCoverageCompletesPartialFreezeAfterTopUp(t *testing.T) {
+	db := prepareReferralDialectDB(t, "sqlite")
+	site, invitee := seedSiteInvite(t, db, decimal.RequireFromString("0.10"))
+	require.NoError(t, EnsureAdtySiteWallets(site.Id))
+	_, err := ApplyAdtySiteWalletChange(site.Id, model.AdtySiteWalletEarnings, decimal.NewFromInt(1), AdtySiteWalletChange{
+		Type: "earning_settlement", IdempotencyKey: "earn-partial",
+	})
+	require.NoError(t, err)
+	require.NoError(t, SaveAdtySiteCommissionPolicy("10", "7"))
+
+	ext := siteInviteOrder(site.Id, invitee.Id, "SITE-PARTIAL", decimal.NewFromInt(30))
+	var row model.AdtySiteInviteCommission
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		if err := RecordAdtySiteInviteCommissionTx(tx, ext, time.Unix(1_700_000_000, 0)); err != nil {
+			return err
+		}
+		if err := tx.Where("trade_no = ?", "SITE-PARTIAL").First(&row).Error; err != nil {
+			return err
+		}
+		return CoverAdtySiteInviteCommissionTx(tx, row.Id, time.Unix(1_700_000_100, 0))
+	}))
+	require.NoError(t, db.First(&row, row.Id).Error)
+	require.Equal(t, "pending_coverage", row.Status)
+	require.True(t, row.CoveredUSD.Equal(decimal.NewFromInt(1)))
+	require.True(t, row.EarningsHoldUSD.Equal(decimal.NewFromInt(1)))
+	var earning model.AdtySiteWallet
+	require.NoError(t, db.Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteWalletEarnings).First(&earning).Error)
+	require.True(t, earning.Balance.Equal(decimal.NewFromInt(1)))
+	require.True(t, earning.FrozenUSD.Equal(decimal.NewFromInt(1)))
+	var first model.AdtySiteWalletLedger
+	require.NoError(t, db.Where("idempotency_key = ?", "commission:SITE-PARTIAL:earnings").First(&first).Error)
+	require.True(t, first.HoldDelta.Equal(decimal.NewFromInt(1)))
+
+	_, err = ApplyAdtySiteWalletChange(site.Id, model.AdtySiteWalletEarnings, decimal.NewFromInt(2), AdtySiteWalletChange{
+		Type: "earning_settlement", IdempotencyKey: "earn-topup",
+	})
+	require.NoError(t, err)
+
+	require.NoError(t, ResumeAdtySiteInviteCoverage(site.Id, time.Unix(1_700_000_200, 0)))
+	require.NoError(t, db.First(&row, row.Id).Error)
+	require.Equal(t, "covered", row.Status)
+	require.True(t, row.CoveredUSD.Equal(decimal.NewFromInt(3)))
+	require.True(t, row.EarningsHoldUSD.Equal(decimal.NewFromInt(3)))
+	require.Equal(t, int64(1_700_000_200+7*86400), row.AvailableAt)
+	require.NoError(t, db.Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteWalletEarnings).First(&earning).Error)
+	require.True(t, earning.Balance.Equal(decimal.NewFromInt(3)))
+	require.True(t, earning.FrozenUSD.Equal(decimal.NewFromInt(3)))
+	var rest model.AdtySiteWalletLedger
+	require.NoError(t, db.Where("idempotency_key = ?", "commission:SITE-PARTIAL:earnings:3").First(&rest).Error)
+	require.True(t, rest.HoldDelta.Equal(decimal.NewFromInt(2)))
+	var count int64
+	require.NoError(t, db.Model(&model.AdtySiteInviteCommission{}).Count(&count).Error)
+	require.Equal(t, int64(1), count)
+
+	require.NoError(t, ResumeAdtySiteInviteCoverage(site.Id, time.Unix(1_700_000_300, 0)))
+	require.NoError(t, db.First(&row, row.Id).Error)
+	require.Equal(t, "covered", row.Status)
+	require.True(t, row.CoveredUSD.Equal(decimal.NewFromInt(3)))
+	require.NoError(t, db.Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteWalletEarnings).First(&earning).Error)
+	require.True(t, earning.Balance.Equal(decimal.NewFromInt(3)))
+	require.True(t, earning.FrozenUSD.Equal(decimal.NewFromInt(3)))
+	var ledgers int64
+	require.NoError(t, db.Model(&model.AdtySiteWalletLedger{}).
+		Where("type = ? AND ref_id = ?", "commission_freeze", "SITE-PARTIAL").Count(&ledgers).Error)
+	require.Equal(t, int64(2), ledgers)
+}
+
+func TestResumeSiteInviteCoverageCompletesPartialMarginFreezeAfterTopUp(t *testing.T) {
+	db := prepareReferralDialectDB(t, "sqlite")
+	site, invitee := seedSiteInvite(t, db, decimal.RequireFromString("0.10"))
+	require.NoError(t, EnsureAdtySiteWallets(site.Id))
+	_, err := ApplyAdtySiteWalletChange(site.Id, model.AdtySiteWalletEarnings, decimal.NewFromInt(1), AdtySiteWalletChange{
+		Type: "earning_settlement", IdempotencyKey: "earn-margin-partial",
+	})
+	require.NoError(t, err)
+	require.NoError(t, OpenAdtyMarginCycle(site.Id, decimal.NewFromInt(100), "margin-partial-cycle"))
+	require.NoError(t, db.Model(&model.AdtySiteWallet{}).Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteWalletMargin).Update("cycle_used_usd", "89").Error)
+	require.NoError(t, SaveAdtySiteCommissionPolicy("10", "7"))
+	require.NoError(t, AuthorizeAdtySiteCommissionMargin(site.Id, true))
+
+	ext := siteInviteOrder(site.Id, invitee.Id, "SITE-MPART", decimal.NewFromInt(30))
+	var row model.AdtySiteInviteCommission
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		if err := RecordAdtySiteInviteCommissionTx(tx, ext, time.Unix(1_700_000_000, 0)); err != nil {
+			return err
+		}
+		if err := tx.Where("trade_no = ?", "SITE-MPART").First(&row).Error; err != nil {
+			return err
+		}
+		return CoverAdtySiteInviteCommissionTx(tx, row.Id, time.Unix(1_700_000_100, 0))
+	}))
+	require.NoError(t, db.First(&row, row.Id).Error)
+	require.Equal(t, "pending_coverage", row.Status)
+	require.True(t, row.CoveredUSD.Equal(decimal.NewFromInt(2)))
+	require.True(t, row.EarningsHoldUSD.Equal(decimal.NewFromInt(1)))
+	require.True(t, row.MarginHoldUSD.Equal(decimal.NewFromInt(1)))
+	var first model.AdtySiteWalletLedger
+	require.NoError(t, db.Where("idempotency_key = ?", "commission:SITE-MPART:margin").First(&first).Error)
+	require.True(t, first.HoldDelta.Equal(decimal.NewFromInt(1)))
+
+	require.NoError(t, OpenAdtyMarginCycle(site.Id, decimal.NewFromInt(100), "margin-partial-topup"))
+	require.NoError(t, ResumeAdtySiteInviteCoverage(site.Id, time.Unix(1_700_000_200, 0)))
+	require.NoError(t, db.First(&row, row.Id).Error)
+	require.Equal(t, "covered", row.Status)
+	require.True(t, row.CoveredUSD.Equal(decimal.NewFromInt(3)))
+	require.True(t, row.EarningsHoldUSD.Equal(decimal.NewFromInt(1)))
+	require.True(t, row.MarginHoldUSD.Equal(decimal.NewFromInt(2)))
+	var rest model.AdtySiteWalletLedger
+	require.NoError(t, db.Where("idempotency_key = ?", "commission:SITE-MPART:margin:2").First(&rest).Error)
+	require.True(t, rest.HoldDelta.Equal(decimal.NewFromInt(1)))
+	var margin model.AdtySiteWallet
+	require.NoError(t, db.Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteWalletMargin).First(&margin).Error)
+	require.True(t, margin.Balance.Equal(decimal.NewFromInt(200)))
+	require.True(t, margin.FrozenUSD.Equal(decimal.NewFromInt(2)))
+
+	require.NoError(t, ResumeAdtySiteInviteCoverage(site.Id, time.Unix(1_700_000_300, 0)))
+	require.NoError(t, db.First(&row, row.Id).Error)
+	require.Equal(t, "covered", row.Status)
+	require.True(t, row.MarginHoldUSD.Equal(decimal.NewFromInt(2)))
+	require.NoError(t, db.Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteWalletMargin).First(&margin).Error)
+	require.True(t, margin.FrozenUSD.Equal(decimal.NewFromInt(2)))
+	var ledgers int64
+	require.NoError(t, db.Model(&model.AdtySiteWalletLedger{}).
+		Where("type = ? AND ref_id = ? AND wallet_kind = ?", "commission_freeze", "SITE-MPART", model.AdtySiteWalletMargin).Count(&ledgers).Error)
+	require.Equal(t, int64(2), ledgers)
+}
+
 func TestSiteReferralOffDoesNotRecordCommissionOnThatSite(t *testing.T) {
 	db := prepareReferralDialectDB(t, "sqlite")
 	site, invitee := seedSiteInvite(t, db, decimal.RequireFromString("0.10"))
