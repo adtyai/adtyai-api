@@ -276,6 +276,14 @@ func BindVerificationOperation(operation VerificationOperation) (VerificationBin
 		}
 		normalized = struct{}{}
 	default:
+		if adtyIsTopUpVerificationScope(operation.Scope) {
+			context, ok := adtyBindTopUpOperation(operation.Scope, fields, operation.Context)
+			if !ok {
+				return VerificationBinding{}, ErrVerificationContextInvalid
+			}
+			normalized = context
+			break
+		}
 		if notice, ok := adtyBindNoticeOperation(operation.Scope, fields, operation.Context); ok {
 			normalized = notice
 			break
@@ -355,7 +363,8 @@ func securityVerificationPolicy(scope string, state model.UserVerificationState)
 		VerificationScopePasswordSet, VerificationScopePasswordChange, VerificationScopeAccountDelete,
 		VerificationScopeAdminUserCreate, VerificationScopeAdminUserUpdate, VerificationScopeAdminUserDelete,
 		VerificationScopeAdminUserManage, VerificationScopeAdminUserPasskeyReset,
-		VerificationScopeAdminUserTwoFADisable, VerificationScopeAdminUserBindingClear:
+		VerificationScopeAdminUserTwoFADisable, VerificationScopeAdminUserBindingClear,
+		VerificationScopeAdtyTopUpRefund, VerificationScopeAdtyTopUpManualComplete:
 		if scope == VerificationScopeAccountDelete && state.Role == common.RoleRootUser {
 			return nil, ErrVerificationForbidden
 		}
@@ -410,6 +419,9 @@ func GetVerificationRequirements(identity AuthIdentity, scope string) (*Verifica
 	if permission, ok := adminUserVerificationPermissions[scope]; ok && !AdtyAdminRoleCan(identity.UserID, state.Role, permission) {
 		return nil, ErrVerificationForbidden
 	}
+	if adtyTopUpVerificationForbidden(identity, state.Role, scope) {
+		return nil, ErrVerificationForbidden
+	}
 	if scope == VerificationScopeAdtyStaffCustomerManage {
 		if identity.SessionID == "" {
 			return nil, ErrVerificationForbidden
@@ -447,7 +459,8 @@ func GetVerificationRequirements(identity AuthIdentity, scope string) (*Verifica
 			case VerificationScopeAccountBind, VerificationScopeAccountUnbind, VerificationScopePasswordSet, VerificationScopePasswordChange, VerificationScopeAccountDelete,
 				VerificationScopeAdminUserCreate, VerificationScopeAdminUserUpdate, VerificationScopeAdminUserDelete,
 				VerificationScopeAdminUserManage, VerificationScopeAdminUserPasskeyReset,
-				VerificationScopeAdminUserTwoFADisable, VerificationScopeAdminUserBindingClear:
+				VerificationScopeAdminUserTwoFADisable, VerificationScopeAdminUserBindingClear,
+				VerificationScopeAdtyTopUpRefund, VerificationScopeAdtyTopUpManualComplete:
 				methods[i].Available, methods[i].Reason = false, "Password authentication is disabled."
 			default:
 				if adtyIsSiteVerificationScope(scope) {

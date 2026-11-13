@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
@@ -219,6 +220,9 @@ func ManualCompleteAdtyTopUp(c *gin.Context) {
 		return
 	}
 	tradeNo := c.Param("trade_no")
+	if middleware.RequireSecurityProof(c, service.AdtyTopUpManualCompleteOperation(tradeNo, body.Proof, body.Note)) == nil {
+		return
+	}
 	var topUps []model.TopUp
 	if err := model.DB.Where("trade_no = ?", tradeNo).Limit(1).Find(&topUps).Error; err != nil {
 		common.ApiError(c, err)
@@ -325,10 +329,26 @@ func RefundAdtyTopUp(c *gin.Context) {
 		return
 	}
 	tradeNo := c.Param("trade_no")
+	refundUSD := strings.TrimSpace(body.RefundUSD)
+	var refundQuota *int64
+	if refundUSD != "" {
+		if _, parseErr := decimal.NewFromString(refundUSD); parseErr != nil {
+			common.ApiErrorT(c, "Invalid parameters")
+			return
+		}
+	} else if body.RefundQuota != nil {
+		refundQuota = body.RefundQuota
+	} else {
+		common.ApiErrorT(c, "Enter the refund amount in USD")
+		return
+	}
+	if middleware.RequireSecurityProof(c, service.AdtyTopUpRefundOperation(tradeNo, body.Reason, refundUSD, refundQuota)) == nil {
+		return
+	}
 	var result *model.AdtyTopUpRefundResult
 	var err error
-	if strings.TrimSpace(body.RefundUSD) != "" {
-		amount, parseErr := decimal.NewFromString(strings.TrimSpace(body.RefundUSD))
+	if refundUSD != "" {
+		amount, parseErr := decimal.NewFromString(refundUSD)
 		if parseErr != nil {
 			common.ApiErrorT(c, "Invalid parameters")
 			return
@@ -339,11 +359,8 @@ func RefundAdtyTopUp(c *gin.Context) {
 				err = proofErr
 			}
 		}
-	} else if body.RefundQuota != nil {
-		result, err = model.RefundAdtyTopUp(tradeNo, body.Reason, c.GetInt("id"), body.IdempotencyKey, *body.RefundQuota)
 	} else {
-		common.ApiErrorT(c, "Enter the refund amount in USD")
-		return
+		result, err = model.RefundAdtyTopUp(tradeNo, body.Reason, c.GetInt("id"), body.IdempotencyKey, *refundQuota)
 	}
 	if err != nil {
 		writeAdtyFinanceError(c, err)

@@ -52,7 +52,7 @@ func newAdtyGuardFixture(t *testing.T) *adtyGuardFixture {
 	disableAdtyRedis(t)
 	db := adtyTestDB(t)
 	require.NoError(t, db.AutoMigrate(&model.User{}, &model.UserSession{}, &model.Token{}, &model.Channel{}, &model.Ability{},
-		&model.AuditLog{}, &model.AuditIntent{}, &model.Log{}, &model.Option{}, &model.TopUp{}, &model.UserAccessToken{}))
+		&model.AuditLog{}, &model.AuditIntent{}, &model.Log{}, &model.Option{}, &model.TopUp{}, &model.UserAccessToken{}, &model.AuthFlow{}, &model.TwoFA{}, &model.PasskeyCredential{}))
 	require.NoError(t, model.MigrateAdtyTables())
 	require.NoError(t, model.SeedAdtyGroups())
 	enableAdtyAdminGuard(t, db)

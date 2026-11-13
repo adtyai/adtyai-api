@@ -390,6 +390,9 @@ func TestFinanceActionsRequirePermissions(t *testing.T) {
 	missingProof := adtyJSON(t, f.engine, http.MethodPost, "/api/adty/admin/topup/EPU-finance/complete", `{"note":"checked"}`, f.token)
 	assert.Contains(t, missingProof.Body.String(), `"success":false`)
 	complete = adtyJSON(t, f.engine, http.MethodPost, "/api/adty/admin/topup/EPU-finance/complete", `{"proof":"0xabc","note":"checked"}`, f.token)
+	assert.Equal(t, http.StatusForbidden, complete.Code)
+	assert.Contains(t, complete.Body.String(), "SECURITY_PROOF_REQUIRED")
+	complete = adtyJSONWithProof(t, f.engine, http.MethodPost, "/api/adty/admin/topup/EPU-finance/complete", `{"proof":"0xabc","note":"checked"}`, f.token, financeAdminProof(t, f, service.AdtyTopUpManualCompleteOperation("EPU-finance", "0xabc", "checked")))
 	require.Contains(t, complete.Body.String(), `"success":true`, complete.Body.String())
 	var stored model.User
 	require.NoError(t, f.db.First(&stored, user.Id).Error)
@@ -406,6 +409,9 @@ func TestFinanceActionsRequirePermissions(t *testing.T) {
 	require.Contains(t, preview.Body.String(), `"success":true`, preview.Body.String())
 	require.Contains(t, preview.Body.String(), `"refund_quota":50000000`)
 	refund = adtyJSON(t, f.engine, http.MethodPost, "/api/adty/admin/topup/EPU-finance/refund", `{"reason":"duplicate","idempotency_key":"refund-1","refund_usd":"100"}`, f.token)
+	assert.Equal(t, http.StatusForbidden, refund.Code)
+	assert.Contains(t, refund.Body.String(), "SECURITY_PROOF_REQUIRED")
+	refund = adtyJSONWithProof(t, f.engine, http.MethodPost, "/api/adty/admin/topup/EPU-finance/refund", `{"reason":"duplicate","idempotency_key":"refund-1","refund_usd":"100"}`, f.token, financeAdminProof(t, f, service.AdtyTopUpRefundOperation("EPU-finance", "duplicate", "100", nil)))
 	require.Contains(t, refund.Body.String(), `"success":true`, refund.Body.String())
 	assert.Contains(t, refund.Body.String(), `"deducted_quota":51250000`)
 	assert.Contains(t, refund.Body.String(), `"refund_quota":50000000`, "the bonus is not refunded")
@@ -482,4 +488,117 @@ func TestOrphanCreditRunsBonusAndHooks(t *testing.T) {
 	assert.Equal(t, model.PaymentOrphanStatusCredited, orphan.Status)
 	again := adtyJSON(t, f.engine, http.MethodPost, fmt.Sprintf("/api/user/admin/finance/payment-orphans/%d/credit", usdt.ID), `{}`, f.token)
 	assert.Contains(t, again.Body.String(), `"success":false`)
+}
+
+func financeAdminProof(t *testing.T, f *adtyGuardFixture, operation service.VerificationOperation) string {
+	t.Helper()
+	return financeUserProof(t, f.admin, service.VerificationMethodPassword, operation)
+}
+
+func financeUserProof(t *testing.T, user model.User, method string, operation service.VerificationOperation) string {
+	t.Helper()
+	binding, err := service.BindVerificationOperation(operation)
+	require.NoError(t, err)
+	identity := service.AuthIdentity{UserID: user.Id, SessionID: "sid-" + user.Username, UserAuthVersion: user.AuthVersion, SessionVersion: 1}
+	proof, _, err := service.IssueSecurityProof(identity, method, binding)
+	require.NoError(t, err)
+	return proof
+}
+
+func TestFinanceRefundAndCompleteRequireSecurityProof(t *testing.T) {
+	f := newAdtyGuardFixture(t)
+	adtySessionToken(t, f.db, "proof-buyer", common.RoleCommonUser)
+	var buyer model.User
+	require.NoError(t, f.db.Where("username = ?", "proof-buyer").First(&buyer).Error)
+	var root model.User
+	require.NoError(t, f.db.Where("username = ?", "guard-root").First(&root).Error)
+
+	seedRouterOrder(t, f.db, buyer.Id, "EPU-proof-complete", common.TopUpStatusPending, common.GetTimestamp()+900)
+	seedRouterOrder(t, f.db, buyer.Id, "EPU-proof-refund", common.TopUpStatusPending, common.GetTimestamp()+900)
+	seedRouterOrder(t, f.db, buyer.Id, "EPU-proof-other", common.TopUpStatusPending, common.GetTimestamp()+900)
+	seedRouterOrder(t, f.db, buyer.Id, "EPU-proof-root", common.TopUpStatusPending, common.GetTimestamp()+900)
+
+	completePath := "/api/adty/admin/topup/EPU-proof-complete/complete"
+	completeBody := `{"proof":"0xabc","note":"checked"}`
+	completeOp := service.AdtyTopUpManualCompleteOperation("EPU-proof-complete", "0xabc", "checked")
+
+	f.grant(t, authz.AdtyFinanceRead)
+	denied := adtyJSONWithProof(t, f.engine, http.MethodPost, completePath, completeBody, f.token, financeAdminProof(t, f, completeOp))
+	assert.Equal(t, http.StatusForbidden, denied.Code)
+	assert.NotContains(t, denied.Body.String(), "SECURITY_PROOF")
+	var pending model.TopUp
+	require.NoError(t, f.db.Where("trade_no = ?", "EPU-proof-complete").First(&pending).Error)
+	assert.Equal(t, common.TopUpStatusPending, pending.Status)
+
+	f.grant(t, authz.AdtyFinanceRead, authz.AdtyFinanceManualCredit, authz.AdtyFinanceRefund)
+	missing := adtyJSON(t, f.engine, http.MethodPost, completePath, completeBody, f.token)
+	assert.Equal(t, http.StatusForbidden, missing.Code)
+	assert.Contains(t, missing.Body.String(), "SECURITY_PROOF_REQUIRED")
+	require.NoError(t, f.db.Where("trade_no = ?", "EPU-proof-complete").First(&pending).Error)
+	assert.Equal(t, common.TopUpStatusPending, pending.Status)
+
+	wrongOrder := financeAdminProof(t, f, service.AdtyTopUpManualCompleteOperation("EPU-proof-other", "0xabc", "checked"))
+	assert.Contains(t, adtyJSONWithProof(t, f.engine, http.MethodPost, completePath, completeBody, f.token, wrongOrder).Body.String(), "SECURITY_PROOF_CONTEXT_MISMATCH")
+	wrongScope := financeAdminProof(t, f, service.AdtyTopUpRefundOperation("EPU-proof-complete", "checked", "100", nil))
+	assert.Contains(t, adtyJSONWithProof(t, f.engine, http.MethodPost, completePath, completeBody, f.token, wrongScope).Body.String(), "SECURITY_PROOF_SCOPE_MISMATCH")
+	require.NoError(t, f.db.Where("trade_no = ?", "EPU-proof-complete").First(&pending).Error)
+	assert.Equal(t, common.TopUpStatusPending, pending.Status)
+
+	okProof := financeAdminProof(t, f, completeOp)
+	complete := adtyJSONWithProof(t, f.engine, http.MethodPost, completePath, completeBody, f.token, okProof)
+	require.Contains(t, complete.Body.String(), `"success":true`, complete.Body.String())
+	replay := adtyJSONWithProof(t, f.engine, http.MethodPost, completePath, completeBody, f.token, okProof)
+	assert.Contains(t, replay.Body.String(), "SECURITY_PROOF_CONSUMED")
+
+	// Credit a separate order so refund proof tests can mutate a funded wallet once.
+	refundSetup := adtyJSONWithProof(t, f.engine, http.MethodPost, "/api/adty/admin/topup/EPU-proof-refund/complete", completeBody, f.token, financeAdminProof(t, f, service.AdtyTopUpManualCompleteOperation("EPU-proof-refund", "0xabc", "checked")))
+	require.Contains(t, refundSetup.Body.String(), `"success":true`, refundSetup.Body.String())
+	var funded model.User
+	require.NoError(t, f.db.First(&funded, buyer.Id).Error)
+	startQuota := funded.Quota
+	require.Equal(t, 2*51_250_000, startQuota)
+
+	preview := adtyJSON(t, f.engine, http.MethodGet, "/api/adty/admin/topup/EPU-proof-refund/refund-preview", "", f.token)
+	require.Contains(t, preview.Body.String(), `"success":true`, preview.Body.String())
+	require.Contains(t, preview.Body.String(), `"refund_quota":50000000`)
+
+	refundPath := "/api/adty/admin/topup/EPU-proof-refund/refund"
+	refundBody := `{"reason":"duplicate","idempotency_key":"refund-proof-1","refund_usd":"100"}`
+	refundOp := service.AdtyTopUpRefundOperation("EPU-proof-refund", "duplicate", "100", nil)
+	assert.Contains(t, adtyJSON(t, f.engine, http.MethodPost, refundPath, refundBody, f.token).Body.String(), "SECURITY_PROOF_REQUIRED")
+	assert.Contains(t, adtyJSONWithProof(t, f.engine, http.MethodPost, refundPath, refundBody, f.token, financeAdminProof(t, f, service.AdtyTopUpRefundOperation("EPU-proof-other", "duplicate", "100", nil))).Body.String(), "SECURITY_PROOF_CONTEXT_MISMATCH")
+	assert.Contains(t, adtyJSONWithProof(t, f.engine, http.MethodPost, refundPath, refundBody, f.token, financeAdminProof(t, f, service.AdtyTopUpRefundOperation("EPU-proof-refund", "duplicate", "50", nil))).Body.String(), "SECURITY_PROOF_CONTEXT_MISMATCH")
+	assert.Contains(t, adtyJSONWithProof(t, f.engine, http.MethodPost, refundPath, refundBody, f.token, financeAdminProof(t, f, service.AdtyTopUpManualCompleteOperation("EPU-proof-refund", "0xabc", "checked"))).Body.String(), "SECURITY_PROOF_SCOPE_MISMATCH")
+	require.NoError(t, f.db.First(&funded, buyer.Id).Error)
+	assert.Equal(t, startQuota, funded.Quota, "rejected proofs must not refund")
+
+	refundProof := financeAdminProof(t, f, refundOp)
+	refund := adtyJSONWithProof(t, f.engine, http.MethodPost, refundPath, refundBody, f.token, refundProof)
+	require.Contains(t, refund.Body.String(), `"success":true`, refund.Body.String())
+	assert.Contains(t, refund.Body.String(), `"deducted_quota":51250000`)
+	assert.Contains(t, refund.Body.String(), `"refund_quota":50000000`, "the bonus is not refunded")
+	assert.Contains(t, refund.Body.String(), `"refund_amount":"100"`)
+	assert.Contains(t, adtyJSONWithProof(t, f.engine, http.MethodPost, refundPath, refundBody, f.token, refundProof).Body.String(), "SECURITY_PROOF_CONSUMED")
+
+	var before int64
+	require.NoError(t, f.db.Model(&model.AuditLog{}).Where("action = ?", "adty.topup.manual_complete").Count(&before).Error)
+	rootComplete := adtyJSONWithProof(t, f.engine, http.MethodPost, "/api/adty/admin/topup/EPU-proof-root/complete", completeBody, f.root, financeUserProof(t, root, service.VerificationMethodRootExempt, service.AdtyTopUpManualCompleteOperation("EPU-proof-root", "0xabc", "checked")))
+	require.Contains(t, rootComplete.Body.String(), `"success":true`, rootComplete.Body.String())
+	var after int64
+	require.NoError(t, f.db.Model(&model.AuditLog{}).Where("action = ?", "adty.topup.manual_complete").Count(&after).Error)
+	assert.Equal(t, before+1, after)
+	var audit model.AuditLog
+	require.NoError(t, f.db.Where("action = ?", "adty.topup.manual_complete").Order("id desc").First(&audit).Error)
+	assert.Equal(t, root.Id, audit.UserId)
+	assert.Contains(t, audit.Content, "EPU-proof-root")
+	requirements, err := service.GetVerificationRequirements(service.AuthIdentity{UserID: root.Id, SessionID: "sid-" + root.Username, UserAuthVersion: root.AuthVersion, SessionVersion: 1}, service.VerificationScopeAdtyTopUpManualComplete)
+	require.NoError(t, err)
+	require.Len(t, requirements.Methods, 1)
+	assert.Equal(t, service.VerificationMethodRootExempt, requirements.Methods[0].Method)
+
+	f.grant(t, authz.AdtyFinanceRead, authz.AdtyFinanceManualCredit)
+	quota := int64(1)
+	deniedRefund := adtyJSONWithProof(t, f.engine, http.MethodPost, refundPath, `{"reason":"x","idempotency_key":"k-denied","refund_quota":1}`, f.token, financeAdminProof(t, f, service.AdtyTopUpRefundOperation("EPU-proof-refund", "x", "", &quota)))
+	assert.Equal(t, http.StatusForbidden, deniedRefund.Code)
+	assert.NotContains(t, deniedRefund.Body.String(), "SECURITY_PROOF")
 }
