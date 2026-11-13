@@ -262,9 +262,13 @@ func FreezeAdtyVoucher(actorId int, voucherId int64) error {
 	})
 }
 
-// InheritAdtyVouchersOnCloseTx keeps unredeemed site codes under the original
-// audience after the site closes. It does not release frozen funds or widen use.
+// InheritAdtyVouchersOnCloseTx keeps unredeemed customer codes under the original
+// audience after the site closes. Unused site-owner and site-margin codes are
+// revoked and their source holds are released; it does not widen use.
 func InheritAdtyVouchersOnCloseTx(tx *gorm.DB, siteId int, movedUserIDs []int) error {
+	if err := revokeUnusedOwnerAndMarginVouchersOnCloseTx(tx, siteId); err != nil {
+		return err
+	}
 	if err := tx.Model(&model.AdtyVoucher{}).
 		Where("(target_site_id = ? OR source_site_id = ?) AND status IN ?", siteId, siteId, []string{model.AdtyVoucherStatusPending, model.AdtyVoucherStatusFrozen}).
 		Update("inherited_by_main", true).Error; err != nil {
@@ -298,19 +302,38 @@ func CancelAdtyVoucher(actorId int, voucherId int64) error {
 		if actor.Role != common.RoleRootUser && voucher.IssuerId != actor.Id {
 			return common.NewMessage("No permission to perform this action")
 		}
-		if voucher.Status != model.AdtyVoucherStatusPending && voucher.Status != model.AdtyVoucherStatusFrozen {
-			return common.NewMessage("Invalid parameters")
-		}
-		updated := tx.Model(&voucher).Where("id = ? AND status IN ?", voucher.Id, []string{model.AdtyVoucherStatusPending, model.AdtyVoucherStatusFrozen}).
-			Update("status", model.AdtyVoucherStatusCancelled)
-		if updated.Error != nil {
-			return updated.Error
-		}
-		if updated.RowsAffected != 1 {
-			return common.NewMessage("Invalid parameters")
-		}
-		return releaseAdtyVoucherSourceTx(tx, &voucher)
+		return cancelAdtyVoucherTx(tx, &voucher)
 	})
+}
+
+func revokeUnusedOwnerAndMarginVouchersOnCloseTx(tx *gorm.DB, siteId int) error {
+	var vouchers []model.AdtyVoucher
+	if err := model.AdtyLockForUpdate(tx).
+		Where("(target_site_id = ? OR source_site_id = ?) AND purpose IN ? AND status IN ?", siteId, siteId, []string{model.AdtyVoucherPurposeSiteOwner, model.AdtyVoucherPurposeSiteMargin}, []string{model.AdtyVoucherStatusPending, model.AdtyVoucherStatusFrozen}).
+		Find(&vouchers).Error; err != nil {
+		return err
+	}
+	for i := range vouchers {
+		if err := cancelAdtyVoucherTx(tx, &vouchers[i]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func cancelAdtyVoucherTx(tx *gorm.DB, voucher *model.AdtyVoucher) error {
+	if voucher.Status != model.AdtyVoucherStatusPending && voucher.Status != model.AdtyVoucherStatusFrozen {
+		return common.NewMessage("Invalid parameters")
+	}
+	updated := tx.Model(voucher).Where("id = ? AND status IN ?", voucher.Id, []string{model.AdtyVoucherStatusPending, model.AdtyVoucherStatusFrozen}).
+		Update("status", model.AdtyVoucherStatusCancelled)
+	if updated.Error != nil {
+		return updated.Error
+	}
+	if updated.RowsAffected != 1 {
+		return common.NewMessage("Invalid parameters")
+	}
+	return releaseAdtyVoucherSourceTx(tx, voucher)
 }
 
 func SetAdtyVoucherIssuanceLimit(actorId int, limit decimal.Decimal) error {
@@ -518,7 +541,7 @@ func adtyVoucherRedeemAllowed(tx *gorm.DB, user *model.User, voucher *model.Adty
 		if err := tx.First(&site, voucher.TargetSiteId).Error; err != nil {
 			return err
 		}
-		if site.OwnerUserId != user.Id {
+		if site.OwnerUserId != user.Id || site.Status == model.AdtySiteStatusClosed {
 			return ErrAdtyVoucherWrongAccount
 		}
 	case model.AdtyVoucherPurposeSiteCustomer:
@@ -540,6 +563,13 @@ func adtyVoucherRedeemAllowed(tx *gorm.DB, user *model.User, voucher *model.Adty
 		}
 	case model.AdtyVoucherPurposeSiteOwner:
 		if user.Id != voucher.IssuerId {
+			return ErrAdtyVoucherWrongAccount
+		}
+		var site model.AdtySite
+		if err := tx.First(&site, voucher.TargetSiteId).Error; err != nil {
+			return err
+		}
+		if site.Status == model.AdtySiteStatusClosed {
 			return ErrAdtyVoucherWrongAccount
 		}
 	default:
