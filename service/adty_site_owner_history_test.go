@@ -57,7 +57,7 @@ func TestOwnerCannotSeeHistoryBeforeTransfer(t *testing.T) {
 	}).Error)
 	require.NoError(t, db.Create(&model.AdtyTopupOrder{
 		TradeNo: "NEW-VIS-TOP", UserId: customer.Id, SiteId: newSite.Id, Provider: model.PaymentProviderAdtyBEpusdt,
-		Method: "usdt.trc20", FaceUSD: decimal.NewFromInt(3), BonusUSD: decimal.Zero, CreditQuota: 1_500_000,
+		Method: "usdt.trc20", FaceUSD: decimal.NewFromInt(3), BonusRate: decimal.RequireFromString("0.025"), BonusUSD: decimal.Zero, CreditQuota: 1_500_000,
 	}).Error)
 
 	view, err := GetAdtyOwnerCustomer(newSite, customer.Id)
@@ -76,4 +76,5 @@ func TestOwnerCannotSeeHistoryBeforeTransfer(t *testing.T) {
 	assert.EqualValues(t, 1, total)
 	require.Len(t, topups, 1)
 	assert.Equal(t, "NEW-VIS-TOP", topups[0].TradeNo)
+	assert.True(t, topups[0].BonusRate.Equal(decimal.RequireFromString("0.025")))
 }

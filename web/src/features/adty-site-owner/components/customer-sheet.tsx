@@ -235,6 +235,11 @@ export function CustomerSheet(props: {
                         cell: (row) => formatUsd(Number(row.face_usd), locale),
                       },
                       {
+                        id: 'bonus-rate',
+                        header: t('Bonus rate'),
+                        cell: (row) => <span className='tabular-nums'>{row.bonus_rate}</span>,
+                      },
+                      {
                         id: 'bonus',
                         header: t('Bonus'),
                         cell: (row) => formatUsd(Number(row.bonus_usd), locale),

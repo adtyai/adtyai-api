@@ -8803,7 +8803,8 @@
     "Mark reviewing": "Mark reviewing",
     "Team discount": "Team discount",
     "A site team discount cannot go below the site supply price. Shared balance is not changed.": "A site team discount cannot go below the site supply price. Shared balance is not changed.",
-    "Team price is below the site supply price": "Team price is below the site supply price"
+    "Team price is below the site supply price": "Team price is below the site supply price",
+    "Bonus rate": "Bonus rate"
 },
   "Targeted notifications": "Targeted notifications",
   "Site announcements": "Site announcements",

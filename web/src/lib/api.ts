@@ -91,6 +91,15 @@ export async function getNotificationInbox(
   return requireServerSuccess(response.data).data as NotificationInbox
 }
 
+export async function getAnnouncementDetail(
+  key: string
+): Promise<Record<string, unknown>> {
+  const response = await api.get(
+    `/api/adty/notifications/announcements/${encodeURIComponent(key)}`
+  )
+  return requireServerSuccess(response.data).data as Record<string, unknown>
+}
+
 export async function readNotifications(keys: string[]): Promise<void> {
   const response = await api.post('/api/adty/notifications/read', { keys })
   requireServerSuccess(response.data)

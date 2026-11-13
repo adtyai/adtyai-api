@@ -188,6 +188,7 @@ export type OwnerLog = {
 export type OwnerTopUp = {
   trade_no: string
   face_usd: string
+  bonus_rate: string
   bonus_usd: string
   credit_quota: number
   method: string

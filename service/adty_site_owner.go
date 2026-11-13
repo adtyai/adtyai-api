@@ -353,6 +353,7 @@ func ListAdtyOwnerCustomerLogs(site *model.AdtySite, userId, offset, limit int) 
 type AdtyOwnerTopUp struct {
 	TradeNo     string          `json:"trade_no"`
 	FaceUSD     decimal.Decimal `json:"face_usd"`
+	BonusRate   decimal.Decimal `json:"bonus_rate"`
 	BonusUSD    decimal.Decimal `json:"bonus_usd"`
 	CreditQuota int64           `json:"credit_quota"`
 	Method      string          `json:"method"`
@@ -401,7 +402,7 @@ func ListAdtyOwnerCustomerTopUps(site *model.AdtySite, userId, offset, limit int
 	items := make([]AdtyOwnerTopUp, 0, len(orders))
 	for _, order := range orders {
 		items = append(items, AdtyOwnerTopUp{
-			TradeNo: order.TradeNo, FaceUSD: order.FaceUSD, BonusUSD: order.BonusUSD, CreditQuota: order.CreditQuota,
+			TradeNo: order.TradeNo, FaceUSD: order.FaceUSD, BonusRate: order.BonusRate, BonusUSD: order.BonusUSD, CreditQuota: order.CreditQuota,
 			Method: order.Method, Status: statuses[order.TradeNo], CreatedAt: order.CreatedAt,
 		})
 	}

@@ -16,14 +16,22 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useQuery } from '@tanstack/react-query'
 import type { TFunction } from 'i18next'
 import { Bell, Megaphone } from 'lucide-react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { ErrorState } from '@/components/error-state'
 import { RichContent } from '@/components/rich-content'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import {
   Empty,
   EmptyDescription,
@@ -46,6 +54,7 @@ import {
   notificationKindLabels,
 } from '@/features/adty-notifications/lib/schema'
 import { getAnnouncementColorClass } from '@/lib/colors'
+import { getAnnouncementDetail } from '@/lib/api'
 import { formatDateTimeObject } from '@/lib/time'
 import { cn } from '@/lib/utils'
 
@@ -61,6 +70,7 @@ interface AnnouncementItem {
   audience?: keyof typeof notificationAudienceLabels
   target_site_name?: string
   business?: string
+  read_key?: string
 }
 
 interface NotificationPopoverProps {
@@ -150,6 +160,34 @@ function AnnouncementDot({ type }: { type?: string }) {
         getAnnouncementColorClass(type)
       )}
     />
+  )
+}
+
+function AnnouncementDetailButton(props: { readKey: string }) {
+  const { t } = useTranslation()
+  const [open, setOpen] = useState(false)
+  const detail = useQuery({
+    queryKey: ['adty-announcement', props.readKey],
+    queryFn: () => getAnnouncementDetail(props.readKey),
+    enabled: open,
+  })
+  const content = typeof detail.data?.content === 'string' ? detail.data.content : ''
+  return (
+    <>
+      <Button type='button' size='sm' variant='outline' onClick={() => setOpen(true)}>
+        {t('Details')}
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('Details')}</DialogTitle>
+          </DialogHeader>
+          {detail.isPending && <p className='text-sm'>{t('Loading...')}</p>}
+          {detail.isError && <ErrorState onRetry={() => void detail.refetch()} />}
+          {detail.isSuccess && <RichContent breaks content={content} />}
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }
 
@@ -305,6 +343,7 @@ function AnnouncementsContent({
                       </div>
                     )}
 
+                    {item.read_key && <AnnouncementDetailButton readKey={item.read_key} />}
                     {absoluteTime ? (
                       <div className='text-muted-foreground text-xs'>
                         {relativeTime ? `${relativeTime} • ` : null}

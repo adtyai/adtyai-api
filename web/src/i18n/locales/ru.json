@@ -8803,7 +8803,8 @@
     "Mark reviewing": "Отметить на проверке",
     "Team discount": "Скидка команды",
     "A site team discount cannot go below the site supply price. Shared balance is not changed.": "Скидка команды подсайта не может быть ниже цены поставки сайта. Общий баланс не меняется.",
-    "Team price is below the site supply price": "Цена команды ниже цены поставки сайта"
+    "Team price is below the site supply price": "Цена команды ниже цены поставки сайта",
+    "Bonus rate": "Ставка бонуса"
 },
   "Targeted notifications": "Адресные уведомления",
   "Site announcements": "Объявления сайта",

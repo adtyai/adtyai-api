@@ -8803,7 +8803,8 @@
     "Mark reviewing": "確認中にする",
     "Team discount": "チーム割引",
     "A site team discount cannot go below the site supply price. Shared balance is not changed.": "分站のチーム割引はサイト供給価格を下回れません。共有残高は変わりません。",
-    "Team price is below the site supply price": "チーム価格がサイト供給価格を下回っています"
+    "Team price is below the site supply price": "チーム価格がサイト供給価格を下回っています",
+    "Bonus rate": "ボーナス率"
 },
   "Targeted notifications": "対象を指定した通知",
   "Site announcements": "サイトのお知らせ",
