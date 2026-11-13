@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { normalizeInterfaceLanguage } from '@/i18n/languages'
 import type { ContentLang } from '@/lib/adty-lang'
 
 /** One language URL of the home page (adty task 9.3, decision 22). */
@@ -27,10 +28,17 @@ export type HomeLang = {
   contentLang: ContentLang
 }
 
-/** `/` is English; the other languages have their own home URL. */
+/** Official home language URLs: `/` is English; Simplified Chinese is `/zh-cn`. */
 export const HOME_LANGS: readonly HomeLang[] = [
   { segment: '', interfaceLang: 'en', contentLang: 'en' },
   { segment: 'zh-cn', interfaceLang: 'zhCN', contentLang: 'zh-CN' },
+]
+
+/**
+ * Leftover unofficial home paths kept so old links do not 404. They are not
+ * official product languages and must not be linked from official UI (A.20.1).
+ */
+export const LEFTOVER_HOME_LANGS: readonly HomeLang[] = [
   { segment: 'zh-tw', interfaceLang: 'zhTW', contentLang: 'zh-TW' },
   { segment: 'fr', interfaceLang: 'fr', contentLang: 'fr' },
   { segment: 'ja', interfaceLang: 'ja', contentLang: 'ja' },
@@ -39,12 +47,17 @@ export const HOME_LANGS: readonly HomeLang[] = [
   { segment: 'vi', interfaceLang: 'vi', contentLang: 'vi' },
 ]
 
+const REGISTERED_HOME_LANGS: readonly HomeLang[] = [
+  ...HOME_LANGS,
+  ...LEFTOVER_HOME_LANGS,
+]
+
 /** localStorage key of the language picked on the home page. */
 export const HOME_LANG_STORAGE_KEY = 'adtyai:lang'
 
 export function findHomeLangBySegment(segment: string): HomeLang | undefined {
   const lower = segment.toLowerCase()
-  return HOME_LANGS.find(
+  return REGISTERED_HOME_LANGS.find(
     (lang) => lang.segment !== '' && lang.segment === lower
   )
 }
@@ -55,13 +68,21 @@ export function findHomeLangByInterface(
   return HOME_LANGS.find((lang) => lang.interfaceLang === interfaceLang)
 }
 
-/** Path of the home page in an interface language; `/` for English or unknown. */
-export function homePathFor(interfaceLang: string | null | undefined): string {
-  const lang = findHomeLangByInterface(interfaceLang)
-  return lang && lang.segment ? `/${lang.segment}` : '/'
+/** Official home language for any requested or leftover interface code. */
+export function officialHomeLangFor(
+  interfaceLang: string | null | undefined
+): HomeLang {
+  const official = normalizeInterfaceLanguage(interfaceLang)
+  return findHomeLangByInterface(official) ?? HOME_LANGS[0]
 }
 
-/** True for `/` and the other language home paths (trailing slash allowed). */
+/** Path of the official home page in an interface language; `/` for English. */
+export function homePathFor(interfaceLang: string | null | undefined): string {
+  const lang = officialHomeLangFor(interfaceLang)
+  return lang.segment ? `/${lang.segment}` : '/'
+}
+
+/** True for `/`, official language homes, and leftover unofficial home paths. */
 export function isHomePath(pathname: string): boolean {
   const trimmed = pathname.replace(/\/+$/, '')
   if (trimmed === '') return true

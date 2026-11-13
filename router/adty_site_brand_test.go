@@ -446,7 +446,8 @@ func TestSiteHomeNoindexUnlessSeoIndex(t *testing.T) {
 	body = get(engine, "shop.sites.example.com", "/").Body.String()
 	assert.NotContains(t, body, "noindex")
 	assert.Contains(t, body, `<link rel="canonical" href="https://shop.sites.example.com/" />`)
-	assert.Contains(t, body, `<link rel="alternate" hreflang="ja" href="https://shop.sites.example.com/ja" />`)
+	assert.Contains(t, body, `<link rel="alternate" hreflang="zh-Hans" href="https://shop.sites.example.com/zh-cn" />`)
+	assert.NotContains(t, body, `hreflang="ja"`)
 	assert.Contains(t, body, `<meta property="og:site_name" content="Shop AI" />`)
 	assert.NotContains(t, body, "application/ld+json", "WebSite 结构化数据只给主站")
 	assert.NotContains(t, body, "main.example.com")
@@ -484,7 +485,7 @@ func TestSiteRobotsTxt(t *testing.T) {
 	assert.Contains(t, mainBody, "Sitemap: https://main.example.com/sitemap.xml")
 }
 
-func TestSitemapListsEightHomeLanguages(t *testing.T) {
+func TestSitemapListsOfficialHomeLanguages(t *testing.T) {
 	f := newBrandFixture(t)
 	engine := seoEngine(t)
 
@@ -492,14 +493,18 @@ func TestSitemapListsEightHomeLanguages(t *testing.T) {
 	require.Equal(t, http.StatusOK, main.Code)
 	assert.Contains(t, main.Header().Get("Content-Type"), "xml")
 	body := main.Body.String()
-	for _, path := range []string{"/", "/zh-cn", "/zh-tw", "/fr", "/ja", "/ko", "/ru", "/vi"} {
+	for _, path := range []string{"/", "/zh-cn"} {
 		want := "https://main.example.com" + path
 		if path == "/" {
 			want = "https://main.example.com/"
 		}
 		assert.Contains(t, body, "<loc>"+want+"</loc>")
 	}
-	assert.Contains(t, body, `hreflang="ko"`)
+	assert.Contains(t, body, `hreflang="zh-Hans"`)
+	for _, path := range []string{"/zh-tw", "/fr", "/ja", "/ko", "/ru", "/vi"} {
+		assert.NotContains(t, body, "https://main.example.com"+path)
+	}
+	assert.NotContains(t, body, `hreflang="ko"`)
 	assert.NotContains(t, body, "/wallet")
 	assert.NotContains(t, body, "?ref=")
 
@@ -511,7 +516,8 @@ func TestSitemapListsEightHomeLanguages(t *testing.T) {
 	service.InvalidateAdtySiteCache()
 	indexed := get(engine, "shop.sites.example.com", "/sitemap.xml").Body.String()
 	assert.Contains(t, indexed, "<loc>https://shop.sites.example.com/</loc>")
-	assert.Contains(t, indexed, "<loc>https://shop.sites.example.com/ko</loc>")
+	assert.Contains(t, indexed, "<loc>https://shop.sites.example.com/zh-cn</loc>")
+	assert.NotContains(t, indexed, "https://shop.sites.example.com/ko")
 	assert.NotContains(t, indexed, "main.example.com")
 }
 

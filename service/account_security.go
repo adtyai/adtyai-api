@@ -35,7 +35,7 @@ func UnbindAccountOAuth(identity AuthIdentity, providerID int) error {
 // language the user saved, else the one the request stated.
 func AccountMailLanguage(c *gin.Context, userId int) string {
 	if lang := model.GetUserLanguage(userId); lang != "" {
-		return lang
+		return i18n.OfficialLanguage(lang)
 	}
 	return i18n.StatedLang(c)
 }

@@ -18,39 +18,84 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { describe, expect, test } from 'vitest'
 
+import en from './locales/en.json'
+import fr from './locales/fr.json'
+import ja from './locales/ja.json'
+import ko from './locales/ko.json'
+import ru from './locales/ru.json'
+import vi from './locales/vi.json'
+import zhTW from './locales/zh-TW.json'
+import zhCN from './locales/zh.json'
 import {
   convertDetectedLanguage,
+  INTERFACE_LANGUAGE_OPTIONS,
+  LOADABLE_INTERFACE_LANGUAGE_CODES,
   normalizeInterfaceLanguage,
   toIntlLocale,
 } from './languages'
 
-const chineseLanguageCases = [
+const officialChineseCases = [
   ['zhCN', 'zhCN'],
-  ['zhTW', 'zhTW'],
+  ['zhTW', 'zhCN'],
   ['zh', 'zhCN'],
   ['zh-CN', 'zhCN'],
   ['zh-SG', 'zhCN'],
-  ['zh-TW', 'zhTW'],
-  ['zh-HK', 'zhTW'],
-  ['zh-MO', 'zhTW'],
+  ['zh-TW', 'zhCN'],
+  ['zh-HK', 'zhCN'],
+  ['zh-MO', 'zhCN'],
   ['zh-Hans', 'zhCN'],
-  ['zh-Hant', 'zhTW'],
+  ['zh-Hant', 'zhCN'],
   ['zh-Hans-CN', 'zhCN'],
-  ['zh-Hant-TW', 'zhTW'],
+  ['zh-Hant-TW', 'zhCN'],
   ['zh-Hans-TW', 'zhCN'],
   ['zh-Hans-HK', 'zhCN'],
-  ['zh-Hant-CN', 'zhTW'],
+  ['zh-Hant-CN', 'zhCN'],
   ['zh-CN-x-hant', 'zhCN'],
-  ['zh-TW-u-nu-hanidec', 'zhTW'],
-  [' ZH_hAnT_hk ', 'zhTW'],
+  ['zh-TW-u-nu-hanidec', 'zhCN'],
+  [' ZH_hAnT_hk ', 'zhCN'],
   [' ZH_hAnS_cn ', 'zhCN'],
   [' ZHCN ', 'zhCN'],
-  [' ZHTW ', 'zhTW'],
+  [' ZHTW ', 'zhCN'],
 ] as const
 
+describe('INTERFACE_LANGUAGE_OPTIONS', () => {
+  test('offers only official Simplified Chinese and English', () => {
+    expect(INTERFACE_LANGUAGE_OPTIONS.map((lang) => lang.code)).toEqual([
+      'zhCN',
+      'en',
+    ])
+    expect(INTERFACE_LANGUAGE_OPTIONS.map((lang) => lang.code)).not.toEqual(
+      expect.arrayContaining(['fr', 'ru', 'ja', 'ko', 'vi', 'zhTW'])
+    )
+  })
+
+  test('keeps leftover unofficial locale resources on disk', () => {
+    expect([...LOADABLE_INTERFACE_LANGUAGE_CODES]).toEqual(
+      expect.arrayContaining([
+        'zhCN',
+        'en',
+        'fr',
+        'ru',
+        'ja',
+        'ko',
+        'vi',
+        'zhTW',
+      ])
+    )
+    expect(zhCN).toBeTruthy()
+    expect(en).toBeTruthy()
+    expect(fr).toBeTruthy()
+    expect(ru).toBeTruthy()
+    expect(ja).toBeTruthy()
+    expect(ko).toBeTruthy()
+    expect(vi).toBeTruthy()
+    expect(zhTW).toBeTruthy()
+  })
+})
+
 describe('normalizeInterfaceLanguage', () => {
-  test.each(['zhCN', 'en', 'fr', 'ru', 'ja', 'ko', 'vi', 'zhTW'])(
-    'keeps supported interface code %s stable',
+  test.each(['zhCN', 'en'] as const)(
+    'keeps official interface code %s stable',
     (language) => {
       expect(normalizeInterfaceLanguage(language)).toBe(language)
     }
@@ -59,25 +104,30 @@ describe('normalizeInterfaceLanguage', () => {
   test.each([
     ['en-US', 'en'],
     ['en-GB', 'en'],
-    ['fr-FR', 'fr'],
-    ['fr-CA', 'fr'],
-    ['ru-RU', 'ru'],
-    ['ja-JP', 'ja'],
-    ['ko-KR', 'ko'],
-    ['vi-VN', 'vi'],
+    ['fr', 'en'],
+    ['fr-FR', 'en'],
+    ['fr-CA', 'en'],
+    ['ru', 'en'],
+    ['ru-RU', 'en'],
+    ['ja', 'en'],
+    ['ja-JP', 'en'],
+    ['ko', 'en'],
+    ['ko-KR', 'en'],
+    ['vi', 'en'],
+    ['vi-VN', 'en'],
     [' EN_us ', 'en'],
-    [' FR_fr ', 'fr'],
-    [' RU_ru ', 'ru'],
-    [' JA_jp ', 'ja'],
-    [' KO_kr ', 'ko'],
-    [' VI_vn ', 'vi'],
-    ['fr-FR-u-nu-latn', 'fr'],
-  ])('maps supported browser locale %s to %s', (locale, language) => {
+    [' FR_fr ', 'en'],
+    [' RU_ru ', 'en'],
+    [' JA_jp ', 'en'],
+    [' KO_kr ', 'en'],
+    [' VI_vn ', 'en'],
+    ['fr-FR-u-nu-latn', 'en'],
+  ])('maps unofficial or regional locale %s to official %s', (locale, language) => {
     expect(normalizeInterfaceLanguage(locale)).toBe(language)
   })
 
-  test.each(chineseLanguageCases)(
-    'maps Chinese locale %s to %s, preserving script preference',
+  test.each(officialChineseCases)(
+    'maps Chinese locale %s, including unofficial variants, to official %s',
     (locale, language) => {
       expect(normalizeInterfaceLanguage(locale)).toBe(language)
     }
@@ -102,45 +152,41 @@ describe('normalizeInterfaceLanguage', () => {
 })
 
 describe('convertDetectedLanguage', () => {
-  test.each(chineseLanguageCases)(
-    'maps Chinese detection %s to the same interface code %s',
+  test.each(officialChineseCases)(
+    'maps Chinese detection %s to official %s',
     (locale, language) => {
       expect(convertDetectedLanguage(locale)).toBe(language)
     }
   )
 
-  test('maps browser BCP-47 Chinese tags onto interface codes', () => {
-    expect(convertDetectedLanguage('zh-TW')).toBe('zhTW')
-    expect(convertDetectedLanguage('zh-HK')).toBe('zhTW')
-    expect(convertDetectedLanguage('zh-MO')).toBe('zhTW')
-    expect(convertDetectedLanguage('zh-Hant-TW')).toBe('zhTW')
+  test('maps browser BCP-47 Chinese tags onto official Simplified Chinese', () => {
+    expect(convertDetectedLanguage('zh-TW')).toBe('zhCN')
+    expect(convertDetectedLanguage('zh-HK')).toBe('zhCN')
+    expect(convertDetectedLanguage('zh-MO')).toBe('zhCN')
+    expect(convertDetectedLanguage('zh-Hant-TW')).toBe('zhCN')
     expect(convertDetectedLanguage('zh')).toBe('zhCN')
     expect(convertDetectedLanguage('zh-CN')).toBe('zhCN')
     expect(convertDetectedLanguage('zh-Hans')).toBe('zhCN')
   })
 
-  test('keeps already-normalized interface codes stable (localStorage round-trip)', () => {
-    // i18next caches `zhTW`/`zhCN` (the supportedLngs codes) to localStorage,
-    // and the detector runs this converter on the cached value at every page
-    // load — if `zhTW` does not survive the round-trip, a user who picked
-    // Traditional Chinese is flipped to Simplified on the next load and the
-    // cache is overwritten, making the flip permanent.
-    expect(convertDetectedLanguage('zhTW')).toBe('zhTW')
+  test('coerces a leftover stored unofficial code to the official language', () => {
+    expect(convertDetectedLanguage('zhTW')).toBe('zhCN')
     expect(convertDetectedLanguage('zhCN')).toBe('zhCN')
+    expect(convertDetectedLanguage('fr')).toBe('en')
+    expect(convertDetectedLanguage('ja')).toBe('en')
   })
 
-  test('passes non-Chinese values through unchanged', () => {
+  test('maps unofficial and unknown detections to official English', () => {
     expect(convertDetectedLanguage('en')).toBe('en')
-    expect(convertDetectedLanguage('fr-FR')).toBe('fr-FR')
-    expect(convertDetectedLanguage('ja')).toBe('ja')
+    expect(convertDetectedLanguage('fr-FR')).toBe('en')
+    expect(convertDetectedLanguage('ja')).toBe('en')
+    expect(convertDetectedLanguage('es-ES')).toBe('en')
+    expect(convertDetectedLanguage('zhx')).toBe('en')
+    expect(convertDetectedLanguage('zh--TW')).toBe('en')
+    expect(convertDetectedLanguage('fr--FR')).toBe('en')
+    expect(convertDetectedLanguage(' FR_fr ')).toBe('en')
+    expect(convertDetectedLanguage('')).toBe('en')
   })
-
-  test.each(['es-ES', 'zhx', 'zh--TW', 'fr--FR', ' FR_fr ', ''])(
-    'preserves detection %s when it does not identify a supported Chinese locale',
-    (locale) => {
-      expect(convertDetectedLanguage(locale)).toBe(locale)
-    }
-  )
 })
 
 describe('toIntlLocale', () => {

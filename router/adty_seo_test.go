@@ -98,16 +98,10 @@ func (f seoFixture) serve(t *testing.T, host, target string) *httptest.ResponseR
 
 func TestHomePagesSEOHead(t *testing.T) {
 	cases := []struct {
-		path, lang, title, locale string
+		path, lang, title, locale, canonical string
 	}{
-		{"/", "en", "ADTY AI - one key", "en_US"},
-		{"/zh-cn", "zh-Hans", "ADTY AI 一个密钥", "zh_CN"},
-		{"/zh-tw", "zh-Hant", "ADTY AI - one key", "zh_TW"},
-		{"/fr", "fr", "ADTY AI - one key", "fr_FR"},
-		{"/ja", "ja", "ADTY AI - one key", "ja_JP"},
-		{"/ko", "ko", "ADTY AI - one key", "ko_KR"},
-		{"/ru", "ru", "ADTY AI - one key", "ru_RU"},
-		{"/vi", "vi", "ADTY AI - one key", "vi_VN"},
+		{"/", "en", "ADTY AI - one key", "en_US", "/"},
+		{"/zh-cn", "zh-Hans", "ADTY AI 一个密钥", "zh_CN", "/zh-cn"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.path, func(t *testing.T) {
@@ -121,15 +115,19 @@ func TestHomePagesSEOHead(t *testing.T) {
 			assert.Contains(t, body, "<title>"+tc.title+"</title>")
 			// 只有 en 填了描述，其余语言回退 en
 			assert.Contains(t, body, `<meta name="description" content="English description" />`)
-			canonical := "https://adtyai.com" + tc.path
+			canonical := "https://adtyai.com" + tc.canonical
 			assert.Contains(t, body, `<link rel="canonical" href="`+canonical+`" />`)
 			assert.Contains(t, body, `<meta property="og:url" content="`+canonical+`" />`)
 			assert.Contains(t, body, `<meta property="og:locale" content="`+tc.locale+`" />`)
 			assert.Contains(t, body, `<meta property="og:image" content="https://adtyai.com/adty-og.png" />`)
 			assert.Contains(t, body, `<meta name="twitter:card" content="summary_large_image" />`)
-			assert.Equal(t, 9, strings.Count(body, `<link rel="alternate" hreflang=`))
+			assert.Equal(t, 3, strings.Count(body, `<link rel="alternate" hreflang=`))
 			assert.Contains(t, body, `<link rel="alternate" hreflang="x-default" href="https://adtyai.com/" />`)
-			assert.Contains(t, body, `<link rel="alternate" hreflang="zh-Hant" href="https://adtyai.com/zh-tw" />`)
+			assert.Contains(t, body, `<link rel="alternate" hreflang="en" href="https://adtyai.com/" />`)
+			assert.Contains(t, body, `<link rel="alternate" hreflang="zh-Hans" href="https://adtyai.com/zh-cn" />`)
+			assert.NotContains(t, body, `hreflang="zh-Hant"`)
+			assert.NotContains(t, body, `https://adtyai.com/zh-tw`)
+			assert.NotContains(t, body, `https://adtyai.com/fr`)
 			assert.NotContains(t, body, "noindex")
 			assert.NotContains(t, body, "<!--adty-head-->")
 			prerender := strings.Index(body, `<div id="adty-prerender">`)
@@ -143,8 +141,20 @@ func TestHomePagesSEOHead(t *testing.T) {
 	}
 	rec := newSEOFixture().serve(t, "adtyai.com", "/zh-cn")
 	assert.Contains(t, rec.Body.String(), "<h1>中文首屏</h1>")
+
+	// Leftover unofficial paths stay registered but resolve to official languages.
+	tw := newSEOFixture().serve(t, "adtyai.com", "/zh-tw")
+	require.Equal(t, http.StatusOK, tw.Code)
+	assert.Contains(t, tw.Body.String(), `<html lang="zh-Hans" data-adty-seo="1">`)
+	assert.Contains(t, tw.Body.String(), `<link rel="canonical" href="https://adtyai.com/zh-cn" />`)
+	assert.Contains(t, tw.Body.String(), "<h1>中文首屏</h1>")
+	assert.NotContains(t, tw.Body.String(), `hreflang="zh-Hant"`)
 	ko := newSEOFixture().serve(t, "adtyai.com", "/ko")
-	assert.Contains(t, ko.Body.String(), "<h1>한국어 첫 화면</h1>")
+	require.Equal(t, http.StatusOK, ko.Code)
+	assert.Contains(t, ko.Body.String(), `<html lang="en" data-adty-seo="1">`)
+	assert.Contains(t, ko.Body.String(), `<link rel="canonical" href="https://adtyai.com/" />`)
+	assert.Contains(t, ko.Body.String(), "<h1>EN hero</h1>")
+	assert.NotContains(t, ko.Body.String(), "<h1>한국어 첫 화면</h1>")
 }
 
 func TestHomeTitleFallsBackToBrand(t *testing.T) {

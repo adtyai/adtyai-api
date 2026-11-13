@@ -33,7 +33,13 @@ import { Route as LangHomeRoute } from '@/routes/$lang'
 import { Route as RootHomeRoute } from '@/routes/index'
 import { useAuthStore, type AuthUser } from '@/stores/auth-store'
 
-import { HOME_LANG_STORAGE_KEY } from '../home-langs'
+import { INTERFACE_LANGUAGE_OPTIONS } from '@/i18n/languages'
+
+import {
+  HOME_LANGS,
+  HOME_LANG_STORAGE_KEY,
+  LEFTOVER_HOME_LANGS,
+} from '../home-langs'
 import { useAdtyAfterLanguageChange } from '../home-language'
 import { LanguageHint } from '../language-hint'
 
@@ -229,31 +235,67 @@ describe('home language URLs', () => {
     const router = renderAt('/?utm=keep')
     await screen.findByText('home en')
 
-    act(() => languageSwitch?.('ko'))
+    act(() => languageSwitch?.('zhCN'))
 
-    await waitFor(() => expect(router.state.location.pathname).toBe('/ko'))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/zh-cn'))
     expect(router.state.location.searchStr).toBe('?utm=keep')
   })
 
-  it('moves to the new language URL when the language changes on the home page', async () => {
+  it('moves to the official language URL when the language changes on the home page', async () => {
     const router = renderAt('/')
     await screen.findByText('home en')
 
-    act(() => languageSwitch?.('ja'))
+    act(() => languageSwitch?.('zhCN'))
 
-    await waitFor(() => expect(router.state.location.pathname).toBe('/ja'))
-    expect(window.localStorage.getItem(HOME_LANG_STORAGE_KEY)).toBe('ja')
+    await waitFor(() => expect(router.state.location.pathname).toBe('/zh-cn'))
+    expect(window.localStorage.getItem(HOME_LANG_STORAGE_KEY)).toBe('zhCN')
   })
 
   it('keeps the address when the language changes on another page', async () => {
     const router = renderAt('/pricing')
     await screen.findByText('pricing')
 
-    act(() => languageSwitch?.('ja'))
+    act(() => languageSwitch?.('zhCN'))
 
-    await waitFor(() => expect(i18next.language).toBe('ja'))
+    await waitFor(() => expect(i18next.language).toBe('zhCN'))
     expect(router.state.location.pathname).toBe('/pricing')
     expect(window.localStorage.getItem(HOME_LANG_STORAGE_KEY)).toBeNull()
+  })
+
+  it('resolves leftover unofficial homes to the official language and path', async () => {
+    const tw = renderAt('/zh-tw')
+    await screen.findByText('home zhCN')
+    expect(tw.state.location.pathname).toBe('/zh-cn')
+    expect(window.localStorage.getItem(HOME_LANG_STORAGE_KEY)).toBe('zhCN')
+
+    window.localStorage.clear()
+    await i18next.changeLanguage('en')
+    const fr = renderAt('/fr')
+    await screen.findByText('home en')
+    expect(fr.state.location.pathname).toBe('/')
+    expect(window.localStorage.getItem(HOME_LANG_STORAGE_KEY)).toBe('en')
+  })
+})
+
+describe('official home language entry points', () => {
+  it('lists only Simplified Chinese and English as official home languages', () => {
+    expect(HOME_LANGS.map((lang) => lang.interfaceLang)).toEqual(['en', 'zhCN'])
+    expect(HOME_LANGS.map((lang) => lang.segment)).toEqual(['', 'zh-cn'])
+    expect(INTERFACE_LANGUAGE_OPTIONS.map((lang) => lang.code)).toEqual([
+      'zhCN',
+      'en',
+    ])
+    const advertised = [
+      ...HOME_LANGS.map((lang) => lang.segment),
+      ...HOME_LANGS.map((lang) => lang.interfaceLang),
+      ...INTERFACE_LANGUAGE_OPTIONS.map((lang) => lang.code),
+    ]
+    for (const unofficial of ['fr', 'ru', 'ja', 'ko', 'vi', 'zh-tw', 'zhTW', 'zh-TW']) {
+      expect(advertised).not.toContain(unofficial)
+    }
+    expect(LEFTOVER_HOME_LANGS.map((lang) => lang.segment)).toEqual(
+      expect.arrayContaining(['zh-tw', 'fr', 'ja', 'ko', 'ru', 'vi'])
+    )
   })
 })
 
@@ -277,6 +319,23 @@ describe('language hint', () => {
   it('stays hidden once a home language was picked', async () => {
     setBrowserLanguages(['zh-CN'])
     window.localStorage.setItem(HOME_LANG_STORAGE_KEY, 'en')
+    render(<LanguageHint />)
+
+    await act(async () => {})
+    expect(screen.queryByRole('status')).toBeNull()
+  })
+
+  it('suggests official Simplified Chinese for a Traditional Chinese browser', async () => {
+    setBrowserLanguages(['zh-TW', 'en'])
+    render(<LanguageHint />)
+
+    const link = await screen.findByRole('link', { name: /简体中文/ })
+    expect(link).toHaveAttribute('href', '/zh-cn')
+    expect(screen.queryByRole('link', { name: /繁體/ })).toBeNull()
+  })
+
+  it('stays hidden for an unofficial leftover browser language such as French', async () => {
+    setBrowserLanguages(['fr-FR', 'en'])
     render(<LanguageHint />)
 
     await act(async () => {})

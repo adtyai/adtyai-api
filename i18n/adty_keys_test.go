@@ -49,7 +49,7 @@ func TestAdtyLocalesRenderEveryKey(t *testing.T) {
 		assert.Equal(t, declared, keys, file)
 		lang := strings.TrimSuffix(strings.TrimPrefix(file, "locales/adty."), ".yaml")
 		for _, key := range keys {
-			text := Translate(lang, key, map[string]any{"Name": "n", "Count": 1, "Amount": "1", "Txn": "t", "Reason": "r"})
+			text := TranslateLoadable(lang, key, map[string]any{"Name": "n", "Count": 1, "Amount": "1", "Txn": "t", "Reason": "r"})
 			assert.NotEqual(t, key, text, "%s %s", lang, key)
 			assert.NotContains(t, text, "{{", "%s %s", lang, key)
 		}

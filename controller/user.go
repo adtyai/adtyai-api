@@ -957,9 +957,9 @@ func UpdateSelf(c *gin.Context) {
 		// 获取当前用户设置
 		currentSetting := user.GetSetting()
 
-		// 更新language字段
+		// 更新language字段。非正式语言被规范到官方语言，不会再存一份新的非正式取值。
 		if langStr, ok := language.(string); ok {
-			currentSetting.Language = langStr
+			currentSetting.Language = i18n.OfficialPreferenceLanguage(langStr)
 		}
 
 		if err := model.UpdateUserSetting(user.Id, currentSetting); err != nil {

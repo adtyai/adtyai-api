@@ -43,12 +43,13 @@ export function LanguageSwitcher() {
   const adtyAfterLanguageChange = useAdtyAfterLanguageChange()
   const handleChangeLanguage = useCallback(
     async (code: string) => {
-      await i18n.changeLanguage(code)
+      const official = normalizeInterfaceLanguage(code)
+      await i18n.changeLanguage(official)
       // ADTY task 9.3: on a home page, move to that language's home URL
-      adtyAfterLanguageChange(code)
+      adtyAfterLanguageChange(official)
       if (user) {
         try {
-          await api.put('/api/user/self', { language: code })
+          await api.put('/api/user/self', { language: official })
         } catch {
           // Best-effort persistence; don't block the UI on failure
         }

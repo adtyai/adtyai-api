@@ -16,59 +16,62 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+
+/** Official interface languages offered to users (A.20.1): Simplified Chinese and English. */
 export const INTERFACE_LANGUAGE_OPTIONS = [
   { code: 'zhCN', label: '简体中文' },
   { code: 'en', label: 'English' },
-  { code: 'fr', label: 'Français' },
-  { code: 'ru', label: 'Русский' },
-  { code: 'ja', label: '日本語' },
-  { code: 'ko', label: '한국어' },
-  { code: 'vi', label: 'Tiếng Việt' },
-  { code: 'zhTW', label: '繁體中文' },
+] as const
+
+/**
+ * Locale resource codes that may still exist on disk, including leftover
+ * unofficial packs. These are not official product languages and must not be
+ * offered in official selectors (A.20.1).
+ */
+export const LOADABLE_INTERFACE_LANGUAGE_CODES = [
+  'zhCN',
+  'en',
+  'fr',
+  'ru',
+  'ja',
+  'ko',
+  'vi',
+  'zhTW',
 ] as const
 
 export type InterfaceLanguageCode =
   (typeof INTERFACE_LANGUAGE_OPTIONS)[number]['code']
 
-export function normalizeInterfaceLanguage(value?: string | null): string {
+export function normalizeInterfaceLanguage(
+  value?: string | null
+): InterfaceLanguageCode {
   if (!value) return 'en'
 
   const normalized = value.trim().replaceAll('_', '-').toLowerCase()
-  if (normalized === 'zhcn') return 'zhCN'
-  if (normalized === 'zhtw') return 'zhTW'
+  if (normalized === 'zhcn' || normalized === 'zhtw') return 'zhCN'
 
   try {
     const locale = new Intl.Locale(toIntlLocale(normalized) ?? 'en')
     if (locale.language === 'zh') {
-      if (locale.script === 'Hans') return 'zhCN'
-      return locale.script === 'Hant' ||
-        ['TW', 'HK', 'MO'].includes(locale.region ?? '')
-        ? 'zhTW'
-        : 'zhCN'
+      // Official product language is Simplified Chinese. Unofficial Traditional
+      // / Taiwan / HK / MO / Hant variants fall back to zhCN, not zhTW.
+      return 'zhCN'
     }
 
-    return (
-      INTERFACE_LANGUAGE_OPTIONS.find((lang) => lang.code === locale.language)
-        ?.code ?? 'en'
-    )
+    return 'en'
   } catch {
     return 'en'
   }
 }
 
 /**
- * Map a browser-detected locale onto the interface language codes this project
- * uses with i18next (`zhCN` / `zhTW`).
- *
- * Browsers report standard BCP-47 tags (`zh-CN`, `zh-TW`, `zh-Hant`, `zh`, ...),
- * but `supportedLngs`/resources use the non-standard camelCase codes, so without
- * this mapping a Chinese browser would never match and fall back to English.
- * Non-Chinese codes are returned unchanged so i18next's own `supportedLngs`
- * matching still applies (e.g. `fr-FR` -> `fr`, `ja` -> `ja`).
+ * Map a browser-detected or previously stored locale onto an official
+ * interface language (`zhCN` or `en`). Unofficial leftover codes such as
+ * `zhTW` or `fr` are coerced so a leftover cookie or profile value cannot
+ * keep the UI running in an unofficial language.
  */
-export function convertDetectedLanguage(value: string): string {
-  const language = normalizeInterfaceLanguage(value)
-  return language === 'zhCN' || language === 'zhTW' ? language : value
+export function convertDetectedLanguage(value: string): InterfaceLanguageCode {
+  return normalizeInterfaceLanguage(value)
 }
 
 /**

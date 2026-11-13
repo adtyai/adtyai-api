@@ -29,37 +29,35 @@ import ru from '@/i18n/locales/ru.json'
 import vi from '@/i18n/locales/vi.json'
 import zhTW from '@/i18n/locales/zh-TW.json'
 import zhCN from '@/i18n/locales/zh.json'
-import type { ContentLang } from '@/lib/adty-lang'
 
 import { renderAdtyHome, renderAllAdtyHomes } from '../prerender'
 
 const HERO_TITLE = 'Claude, GPT and Gemini with one API key'
 
-const heroByLang: Record<ContentLang, string> = {
+const officialHeroByLang = {
   en: en.translation[HERO_TITLE],
   'zh-CN': zhCN.translation[HERO_TITLE],
-  'zh-TW': zhTW.translation[HERO_TITLE],
-  fr: fr.translation[HERO_TITLE],
-  ja: ja.translation[HERO_TITLE],
-  ko: ko.translation[HERO_TITLE],
-  ru: ru.translation[HERO_TITLE],
-  vi: vi.translation[HERO_TITLE],
-}
+} as const
 
 describe('home page prerender', () => {
-  it('renders all eight languages', async () => {
+  it('renders only the official home languages', async () => {
     const pages = await renderAllAdtyHomes()
 
-    expect(Object.keys(pages).sort()).toEqual(
-      ['en', 'fr', 'ja', 'ko', 'ru', 'vi', 'zh-CN', 'zh-TW'].sort()
-    )
+    expect(Object.keys(pages).sort()).toEqual(['en', 'zh-CN'])
+    // Leftover unofficial locale files remain on disk (A.20.1).
+    expect(fr).toBeTruthy()
+    expect(ja).toBeTruthy()
+    expect(ko).toBeTruthy()
+    expect(ru).toBeTruthy()
+    expect(vi).toBeTruthy()
+    expect(zhTW).toBeTruthy()
   })
 
-  it.each(Object.entries(heroByLang))(
+  it.each(Object.entries(officialHeroByLang))(
     'puts the %s hero title in the page',
     async (lang, title) => {
       expect(title).toBeTruthy()
-      const html = await renderAdtyHome(lang as ContentLang)
+      const html = await renderAdtyHome(lang as 'en' | 'zh-CN')
 
       expect(html).toContain(`<h1 id="hero-title"`)
       // React escapes text; the titles have no characters it would change.

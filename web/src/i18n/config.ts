@@ -39,10 +39,9 @@ const localeLoaders = {
 type InterfaceLanguage = keyof typeof localeLoaders
 
 function interfaceLanguage(value: string | undefined): InterfaceLanguage {
-  const normalized = normalizeInterfaceLanguage(
-    convertDetectedLanguage(value ?? '')
-  )
-  return normalized in localeLoaders ? (normalized as InterfaceLanguage) : 'en'
+  // Official product languages only. Leftover loaders stay for on-disk packs
+  // but are never selected as the running interface language.
+  return normalizeInterfaceLanguage(convertDetectedLanguage(value ?? ''))
 }
 
 /** Load one language pack. The other languages stay out of the first page load. */
@@ -76,7 +75,7 @@ export function readStoredInterfaceLanguage(): string {
 i18n.use(initReactI18next).init({
   lng: readStoredInterfaceLanguage(),
   fallbackLng: 'en',
-  supportedLngs: ['en', 'zhCN', 'fr', 'ru', 'ja', 'ko', 'vi', 'zhTW'],
+  supportedLngs: ['en', 'zhCN'],
   load: 'currentOnly',
   partialBundledLanguages: true,
   resources: {},
@@ -88,18 +87,22 @@ i18n.use(initReactI18next).init({
 })
 
 // Every switch — header, login, profile, home URL — waits for that pack
-// and remembers it. The other six stay unloaded.
+// and remembers the official language only.
 i18n.on('languageChanged', (language) => {
   try {
-    window.localStorage.setItem('i18nextLng', language)
+    window.localStorage.setItem(
+      'i18nextLng',
+      normalizeInterfaceLanguage(language)
+    )
   } catch {
     // Private mode: the choice simply is not remembered.
   }
 })
 const originalChangeLanguage = i18n.changeLanguage.bind(i18n)
 i18n.changeLanguage = async (language, callback) => {
-  await loadInterfaceLanguage(language)
-  return originalChangeLanguage(language, callback)
+  const code = interfaceLanguage(language)
+  await loadInterfaceLanguage(code)
+  return originalChangeLanguage(code, callback)
 }
 export function whenInterfaceLanguageReady(): Promise<unknown> {
   return i18n.changeLanguage(readStoredInterfaceLanguage())

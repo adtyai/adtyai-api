@@ -30,17 +30,17 @@ func TestLanguageFromUserSetting(t *testing.T) {
 		want  string
 	}{
 		{"zhCN", LangZhCN},
-		{"zhTW", LangZhTW},
-		{"zh-HK", LangZhTW},
-		{"zh_TW", LangZhTW},
-		{"zh_HK", LangZhTW},
-		{"zh-Hant-TW", LangZhTW},
+		{"zhTW", LangZhCN},
+		{"zh-HK", LangZhCN},
+		{"zh_TW", LangZhCN},
+		{"zh_HK", LangZhCN},
+		{"zh-Hant-TW", LangZhCN},
 		{"zh", LangZhCN},
 		{"en", LangEn},
-		{"fr", "fr"},
-		{"ja", "ja"},
+		{"fr", LangEn},
+		{"ja", LangEn},
 		{"de", LangEn},
-		{"ko", LangKo},
+		{"ko", LangEn},
 	} {
 		c, _ := gin.CreateTestContext(httptest.NewRecorder())
 		c.Request = httptest.NewRequest("GET", "/v1/chat/completions", nil)
@@ -71,7 +71,7 @@ func TestStatedLangLoadsTheUserOnlyWithoutLoadedSettings(t *testing.T) {
 	dashboard, _ := gin.CreateTestContext(httptest.NewRecorder())
 	dashboard.Request = httptest.NewRequest("GET", "/api/user/self", nil)
 	dashboard.Set("id", 7)
-	assert.Equal(t, LangZhTW, StatedLang(dashboard))
+	assert.Equal(t, LangZhCN, StatedLang(dashboard))
 	assert.Equal(t, 1, loads)
 }
 
@@ -97,7 +97,7 @@ func TestBackendMessageLanguage(t *testing.T) {
 		{"nothing stated with an English default", "en", "", "", english},
 		{"header wins over the default", "zh-CN", "", "en-US,en;q=0.9", english},
 		{"header in a language without a locale", "zh-CN", "", "de-DE", english},
-		{"saved language wins over the header", "", "zhTW", "en-US", "使用者額度不足，剩餘額度：$0.10"},
+		{"saved language wins over the header", "", "zhTW", "en-US", chinese},
 		{"saved language", "zh-CN", "en", "", english},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -137,7 +137,7 @@ func TestLocalesRenderEveryKey(t *testing.T) {
 	slices.Sort(declared)
 
 	keysByLang := make(map[string][]string)
-	for _, lang := range SupportedLanguages() {
+	for _, lang := range LoadableLanguages() {
 		data, err := localeFS.ReadFile("locales/" + lang + ".yaml")
 		require.NoError(t, err)
 		var messages map[string]string
@@ -147,10 +147,10 @@ func TestLocalesRenderEveryKey(t *testing.T) {
 		}
 		slices.Sort(keysByLang[lang])
 	}
-	for _, lang := range SupportedLanguages() {
+	for _, lang := range LoadableLanguages() {
 		assert.Equal(t, declared, keysByLang[lang], lang)
 		for _, key := range keysByLang[lang] {
-			text := Translate(lang, key, map[string]any{})
+			text := TranslateLoadable(lang, key, map[string]any{})
 			assert.NotEqual(t, key, text, "%s %s", lang, key)
 			assert.False(t, strings.Contains(text, "{{"), "%s %s: %s", lang, key, text)
 		}

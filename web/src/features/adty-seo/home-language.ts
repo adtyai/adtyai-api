@@ -23,19 +23,21 @@ import { useCallback } from 'react'
 import { normalizeInterfaceLanguage } from '@/i18n/languages'
 
 import {
-  findHomeLangByInterface,
   findHomeLangBySegment,
   HOME_LANG_STORAGE_KEY,
   homePathFor,
   isHomePath,
+  officialHomeLangFor,
   type HomeLang,
 } from './home-langs'
 
-/** Interface language picked on the home page, or null when never picked. */
+/** Official interface language picked on the home page, or null when never picked. */
 export function readHomeLang(): string | null {
   try {
     const value = window.localStorage.getItem(HOME_LANG_STORAGE_KEY)
-    return findHomeLangByInterface(value) ? value : null
+    if (!value) return null
+    // Leftover unofficial values (zhTW, fr, …) resolve to an official language.
+    return officialHomeLangFor(value).interfaceLang
   } catch {
     return null
   }
@@ -43,7 +45,10 @@ export function readHomeLang(): string | null {
 
 export function rememberHomeLang(interfaceLang: string): void {
   try {
-    window.localStorage.setItem(HOME_LANG_STORAGE_KEY, interfaceLang)
+    window.localStorage.setItem(
+      HOME_LANG_STORAGE_KEY,
+      officialHomeLangFor(interfaceLang).interfaceLang
+    )
   } catch {
     // Private mode: the choice simply is not remembered.
   }
@@ -82,20 +87,32 @@ export async function prepareRootHome(
   return null
 }
 
+export type PreparedLangHome = {
+  lang: HomeLang
+  /** Official path when the requested segment is a leftover unofficial home. */
+  redirectTo?: string
+}
+
 /**
- * beforeLoad of `/$lang`: switches the interface to the URL's language and
- * remembers it. Undefined for a segment that is not one of the eight.
+ * beforeLoad of `/$lang`: switches the interface to the official language for
+ * the URL and remembers it. Leftover unofficial segments stay registered so
+ * old links do not 404, but they resolve to the official language and should
+ * redirect to the official home path. Undefined for an unknown segment.
  */
 export async function prepareLangHome(
   segment: string
-): Promise<HomeLang | undefined> {
-  const lang = findHomeLangBySegment(segment)
-  if (!lang) return undefined
-  if (i18next.language !== lang.interfaceLang) {
-    await i18next.changeLanguage(lang.interfaceLang)
+): Promise<PreparedLangHome | undefined> {
+  const requested = findHomeLangBySegment(segment)
+  if (!requested) return undefined
+  const official = officialHomeLangFor(requested.interfaceLang)
+  if (i18next.language !== official.interfaceLang) {
+    await i18next.changeLanguage(official.interfaceLang)
   }
-  rememberHomeLang(lang.interfaceLang)
-  return lang
+  rememberHomeLang(official.interfaceLang)
+  if (requested.segment !== official.segment) {
+    return { lang: official, redirectTo: homePathFor(official.interfaceLang) }
+  }
+  return { lang: official }
 }
 
 /**

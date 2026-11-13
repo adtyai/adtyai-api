@@ -7,29 +7,52 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// 前端保存的 fr、ja、ru、vi 和浏览器的地区写法都落到后端的 4 种新语言。
-func TestNormalizeLangNewLanguages(t *testing.T) {
+// Unofficial leftover codes and regional variants fall back to official
+// product languages: Chinese variants to zh-CN, everything else to en.
+func TestNormalizeLangOfficialLanguages(t *testing.T) {
 	require.NoError(t, Init())
 	for _, tc := range []struct {
 		input string
 		want  string
 	}{
-		{"fr", "fr"},
-		{"fr-FR", "fr"},
-		{"fr_CA", "fr"},
-		{"ja", "ja"},
-		{"ja-JP", "ja"},
-		{"ru", "ru"},
-		{"ru-RU", "ru"},
-		{"vi", "vi"},
-		{"vi-VN", "vi"},
-		{"ko", "ko"},
-		{"ko-KR", "ko"},
+		{"zhCN", LangZhCN},
+		{"zh-CN", LangZhCN},
+		{"zh", LangZhCN},
+		{"zh-Hans", LangZhCN},
+		{"zhTW", LangZhCN},
+		{"zh-TW", LangZhCN},
+		{"zh-HK", LangZhCN},
+		{"zh-MO", LangZhCN},
+		{"zh-Hant", LangZhCN},
+		{"en", LangEn},
+		{"en-US", LangEn},
+		{"fr", LangEn},
+		{"fr-FR", LangEn},
+		{"fr_CA", LangEn},
+		{"ja", LangEn},
+		{"ja-JP", LangEn},
+		{"ru", LangEn},
+		{"ru-RU", LangEn},
+		{"vi", LangEn},
+		{"vi-VN", LangEn},
+		{"ko", LangEn},
+		{"ko-KR", LangEn},
 		{"de-DE", LangEn},
 	} {
 		assert.Equal(t, tc.want, normalizeLang(tc.input), tc.input)
 	}
-	assert.ElementsMatch(t, []string{"zh-CN", "zh-TW", "en", "fr", "ja", "ko", "ru", "vi"}, SupportedLanguages())
+	assert.ElementsMatch(t, []string{"zh-CN", "en"}, SupportedLanguages())
+	assert.ElementsMatch(t, []string{"zh-CN", "zh-TW", "en", "fr", "ja", "ko", "ru", "vi"}, LoadableLanguages())
+	assert.Equal(t, "zhCN", OfficialPreferenceLanguage("zh-TW"))
+	assert.Equal(t, "zhCN", OfficialPreferenceLanguage("zh-Hant-HK"))
+	assert.Equal(t, "en", OfficialPreferenceLanguage("fr"))
+	assert.Equal(t, "en", OfficialPreferenceLanguage("ja-JP"))
+	assert.Equal(t, "zhCN", OfficialPreferenceLanguage("zhCN"))
+	assert.Equal(t, "en", OfficialPreferenceLanguage("en"))
+	assert.Equal(t, Translate(LangZhCN, MsgQuotaUserInsufficient, map[string]any{"Remaining": "$0.10"}),
+		Translate("zh-TW", MsgQuotaUserInsufficient, map[string]any{"Remaining": "$0.10"}))
+	assert.Equal(t, Translate(LangEn, MsgQuotaUserInsufficient, map[string]any{"Remaining": "$0.10"}),
+		Translate("fr", MsgQuotaUserInsufficient, map[string]any{"Remaining": "$0.10"}))
 }
 
 // 验证码、找回密码、注册提醒、提现结果、通道维护这几封邮件在 7 种语言下都是译文：
@@ -53,7 +76,7 @@ func TestAdtyEmailsAllLanguages(t *testing.T) {
 	}
 	for _, lang := range []string{"zh-CN", "zh-TW", "en", "fr", "ja", "ko", "ru", "vi"} {
 		for _, key := range keys {
-			text := Translate(lang, key, params)
+			text := TranslateLoadable(lang, key, params)
 			assert.NotEqual(t, key, text, "%s %s", lang, key)
 			assert.NotContains(t, text, "{{", "%s %s", lang, key)
 			assert.NotContains(t, text, "<no value>", "%s %s", lang, key)

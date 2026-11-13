@@ -16,20 +16,29 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { createFileRoute, notFound } from '@tanstack/react-router'
+import { createFileRoute, notFound, redirect } from '@tanstack/react-router'
 
 import { prepareLangHome } from '@/features/adty-seo/home-language'
 import { Home } from '@/features/home'
 
 /**
- * Home page in one of the seven non-English languages (adty task 9.3):
- * /zh-cn, /zh-tw, /fr, /ja, /ko, /ru, /vi. Any other single segment is a 404.
- * Static routes such as /pricing and /docs win over this one.
+ * Official non-English home page is `/zh-cn`. Leftover unofficial segments
+ * (`/zh-tw`, `/fr`, `/ja`, `/ko`, `/ru`, `/vi`) stay registered so old links
+ * do not 404, but they resolve to the official language and redirect. Any
+ * other single segment is a 404. Static routes such as /pricing and /docs
+ * win over this one.
  */
 export const Route = createFileRoute('/$lang')({
-  beforeLoad: async ({ params }) => {
-    const lang = await prepareLangHome(params.lang)
-    if (!lang) throw notFound()
+  beforeLoad: async ({ params, location }) => {
+    const prepared = await prepareLangHome(params.lang)
+    if (!prepared) throw notFound()
+    if (prepared.redirectTo) {
+      throw redirect({
+        to: prepared.redirectTo,
+        search: location.search,
+        replace: true,
+      })
+    }
   },
   component: Home,
 })

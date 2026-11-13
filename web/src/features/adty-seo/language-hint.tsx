@@ -35,8 +35,9 @@ import { readHomeLang, rememberHomeLang } from './home-language'
 const HINT_DISMISSED_KEY = 'adtyai:lang-hint-dismissed'
 
 /**
- * The browser's first preferred language when it is one of the seven
- * non-English home languages; null when it prefers English or another one.
+ * The browser's first preferred official language when it is not English;
+ * null when it prefers English or an unofficial leftover language that
+ * falls back to English.
  */
 function browserHomeLanguage(): string | null {
   const tags = window.navigator.languages?.length
@@ -44,7 +45,7 @@ function browserHomeLanguage(): string | null {
     : [window.navigator.language]
   for (const tag of tags) {
     if (!tag) continue
-    // zh-* keeps its region (zh-TW vs zh-CN); fr-FR becomes fr.
+    // Chinese variants, including unofficial zh-TW, resolve to official zhCN.
     const base = tag.toLowerCase().startsWith('zh') ? tag : tag.split('-')[0]
     const code = normalizeInterfaceLanguage(convertDetectedLanguage(base))
     if (code === 'en' && !tag.toLowerCase().startsWith('en')) continue

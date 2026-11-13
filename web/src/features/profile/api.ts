@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { normalizeInterfaceLanguage } from '@/i18n/languages'
 import { api } from '@/lib/api'
 import type { CustomOAuthBinding } from '@/lib/oauth'
 import { authRequestOptions, authResult } from '@/lib/secure-verification'
@@ -92,7 +93,9 @@ export async function updateUserSettings(
 export async function updateUserLanguage(
   language: string
 ): Promise<ApiResponse> {
-  const res = await api.put('/api/user/self', { language })
+  const res = await api.put('/api/user/self', {
+    language: normalizeInterfaceLanguage(language),
+  })
   return res.data
 }
 

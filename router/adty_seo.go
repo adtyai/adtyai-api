@@ -26,10 +26,16 @@ type adtySEOHomeLang struct {
 	ogLocale    string
 }
 
-// adtySEOHomeLangs 的顺序就是 hreflang 标签的顺序；网址里的语言段是内容语言码转小写。
+// adtySEOHomeLangs is the official home language list used for hreflang and
+// the sitemap (A.20.1): English `/` and Simplified Chinese `/zh-cn`.
 var adtySEOHomeLangs = []adtySEOHomeLang{
 	{"/", "en", "en", "en_US"},
 	{"/zh-cn", "zh-CN", "zh-Hans", "zh_CN"},
+}
+
+// adtySEOLeftoverHomeLangs are unofficial paths kept so old links do not 404.
+// They are not advertised as official languages.
+var adtySEOLeftoverHomeLangs = []adtySEOHomeLang{
 	{"/zh-tw", "zh-TW", "zh-Hant", "zh_TW"},
 	{"/fr", "fr", "fr", "fr_FR"},
 	{"/ja", "ja", "ja", "ja_JP"},
@@ -66,7 +72,7 @@ func (p *adtyPrerender) load(buildFS fs.FS) map[string]string {
 	return p.pages
 }
 
-// AdtySEOHomePages 处理首页 8 个语言网址的 GET 和 HEAD：把 index.html 里 <!--adty-head-->
+// AdtySEOHomePages 处理官方首页语言网址（`/`、`/zh-cn`）的 GET 和 HEAD：把 index.html 里 <!--adty-head-->
 // 占位区换成这一页的标题、描述、canonical、hreflang 和分享标签，<html lang> 换成这一页的语言，
 // 并在 #root 前插入预渲染的正文（任务 9.3，执行层决定 23）。其余请求原样交给后面的处理。
 // indexPage 用 main.go 注入过统计脚本的那份。
@@ -81,6 +87,7 @@ func AdtySEOHomePages(indexPage []byte, buildFS fs.FS) gin.HandlerFunc {
 		if !ok {
 			return
 		}
+		page = adtyOfficialSEOHomeLang(page)
 
 		// 分站（任务 11.3）：默认 noindex；开了 SeoIndex 才写正式头部，canonical 指向分站自己的地址。
 		// 预渲染的正文是平台的落地页（顶栏写的是平台站名），分站不插正文，只写头部。
@@ -135,18 +142,36 @@ func AdtySEOHomePages(indexPage []byte, buildFS fs.FS) gin.HandlerFunc {
 	}
 }
 
-// adtySEOHomePage 按路径找首页语言，末尾的 / 不算。
+// adtySEOHomePage 按路径找首页语言（含遗留的非正式路径），末尾的 / 不算。
 func adtySEOHomePage(path string) (adtySEOHomeLang, bool) {
 	trimmed := strings.TrimRight(path, "/")
 	if trimmed == "" {
 		trimmed = "/"
 	}
-	for _, page := range adtySEOHomeLangs {
+	for _, page := range append(append([]adtySEOHomeLang{}, adtySEOHomeLangs...), adtySEOLeftoverHomeLangs...) {
 		if page.path == trimmed {
 			return page, true
 		}
 	}
 	return adtySEOHomeLang{}, false
+}
+
+// adtyOfficialSEOHomeLang resolves a leftover unofficial home path to the
+// official product language: Chinese variants to /zh-cn, everything else to /.
+func adtyOfficialSEOHomeLang(page adtySEOHomeLang) adtySEOHomeLang {
+	for _, official := range adtySEOHomeLangs {
+		if official.path == page.path {
+			return official
+		}
+	}
+	if strings.HasPrefix(strings.ToLower(page.contentLang), "zh") {
+		for _, official := range adtySEOHomeLangs {
+			if official.contentLang == "zh-CN" {
+				return official
+			}
+		}
+	}
+	return adtySEOHomeLangs[0]
 }
 
 // adtySEOBaseURL 是后台的服务器地址；没设或还是上游默认值时返回 nil。

@@ -58,8 +58,8 @@ func Init() error {
 			}
 		}
 
-		// Pre-create localizers for supported languages
-		for _, lang := range SupportedLanguages() {
+		// Pre-create localizers for official languages and leftover packs kept on disk.
+		for _, lang := range LoadableLanguages() {
 			localizers[lang] = i18n.NewLocalizer(bundle, lang)
 		}
 
@@ -71,8 +71,19 @@ func Init() error {
 
 // GetLocalizer returns a localizer for the specified language
 func GetLocalizer(lang string) *i18n.Localizer {
-	lang = normalizeLang(lang)
+	return localizerFor(normalizeLang(lang))
+}
 
+func loadableLocalizer(lang string) *i18n.Localizer {
+	if code, ok := canonicalLoadableLang(lang); ok {
+		lang = code
+	} else {
+		lang = normalizeLang(lang)
+	}
+	return localizerFor(lang)
+}
+
+func localizerFor(lang string) *i18n.Localizer {
 	mu.RLock()
 	loc, ok := localizers[lang]
 	mu.RUnlock()
@@ -119,6 +130,24 @@ func Translate(lang, key string, args ...map[string]any) string {
 	msg, err := loc.Localize(config)
 	if err != nil {
 		// Return key as fallback if translation not found
+		return key
+	}
+	return msg
+}
+
+// TranslateLoadable translates a key using leftover locale packs still kept on
+// disk, without treating those packs as official product languages.
+func TranslateLoadable(lang, key string, args ...map[string]any) string {
+	if lang == "" {
+		lang = common.DefaultLanguage
+	}
+	loc := loadableLocalizer(lang)
+	config := &i18n.LocalizeConfig{MessageID: key}
+	if len(args) > 0 && args[0] != nil {
+		config.TemplateData = args[0]
+	}
+	msg, err := loc.Localize(config)
+	if err != nil {
 		return key
 	}
 	return msg
@@ -194,41 +223,80 @@ func ParseAcceptLanguage(header string) string {
 	return normalizeLang(first)
 }
 
-// normalizeLang normalizes language code to supported format
+// normalizeLang maps any input onto an official product language (A.20.1):
+// Simplified Chinese for Chinese variants (including unofficial zh-TW / Hant /
+// HK / MO), and English for every other leftover or unknown code.
 func normalizeLang(lang string) string {
 	lang = strings.ToLower(strings.ReplaceAll(strings.TrimSpace(lang), "_", "-"))
-
-	// Handle common variations. The web console saves its own codes zhCN and
-	// zhTW, and maps zh-HK, zh-MO and zh-Hant to Traditional Chinese.
 	switch {
-	case lang == "zhtw" || strings.HasPrefix(lang, "zh-tw") || strings.HasPrefix(lang, "zh-hk") ||
-		strings.HasPrefix(lang, "zh-mo") || strings.HasPrefix(lang, "zh-hant"):
-		return LangZhTW
 	case strings.HasPrefix(lang, "zh"):
 		return LangZhCN
 	case strings.HasPrefix(lang, "en"):
 		return LangEn
-	case lang == LangFr || strings.HasPrefix(lang, "fr-"):
-		return LangFr
-	case lang == LangJa || strings.HasPrefix(lang, "ja-"):
-		return LangJa
-	case lang == LangRu || strings.HasPrefix(lang, "ru-"):
-		return LangRu
-	case lang == LangVi || strings.HasPrefix(lang, "vi-"):
-		return LangVi
-	case lang == LangKo || strings.HasPrefix(lang, "ko-"):
-		return LangKo
 	default:
 		return DefaultLang
 	}
 }
 
-// SupportedLanguages returns a list of supported language codes
+// OfficialLanguage is the official product language for detection and saved
+// preferences: zh-CN or en.
+func OfficialLanguage(lang string) string {
+	return normalizeLang(lang)
+}
+
+// OfficialPreferenceLanguage is the value stored for a user language
+// preference. The web console uses zhCN / en; unofficial input is coerced
+// rather than persisted as a new unofficial choice.
+func OfficialPreferenceLanguage(lang string) string {
+	if OfficialLanguage(lang) == LangZhCN {
+		return "zhCN"
+	}
+	return LangEn
+}
+
+// canonicalLoadableLang maps an explicit leftover or official code onto a
+// loadable locale pack so leftover YAML remains reachable for tests and
+// internal loaders. It is not an official product-language list.
+func canonicalLoadableLang(lang string) (string, bool) {
+	lang = strings.ToLower(strings.ReplaceAll(strings.TrimSpace(lang), "_", "-"))
+	if lang == "" {
+		return "", false
+	}
+	switch {
+	case lang == "zhtw" || strings.HasPrefix(lang, "zh-tw") || strings.HasPrefix(lang, "zh-hk") ||
+		strings.HasPrefix(lang, "zh-mo") || strings.HasPrefix(lang, "zh-hant"):
+		return LangZhTW, true
+	case strings.HasPrefix(lang, "zh"):
+		return LangZhCN, true
+	case strings.HasPrefix(lang, "en"):
+		return LangEn, true
+	case lang == LangFr || strings.HasPrefix(lang, "fr-"):
+		return LangFr, true
+	case lang == LangJa || strings.HasPrefix(lang, "ja-"):
+		return LangJa, true
+	case lang == LangRu || strings.HasPrefix(lang, "ru-"):
+		return LangRu, true
+	case lang == LangVi || strings.HasPrefix(lang, "vi-"):
+		return LangVi, true
+	case lang == LangKo || strings.HasPrefix(lang, "ko-"):
+		return LangKo, true
+	default:
+		return "", false
+	}
+}
+
+// SupportedLanguages returns the official product language list (A.20.1).
 func SupportedLanguages() []string {
+	return []string{LangZhCN, LangEn}
+}
+
+// LoadableLanguages is the official list plus leftover locale resources kept
+// on disk. It is not advertised as a product language promise.
+func LoadableLanguages() []string {
 	return []string{LangZhCN, LangZhTW, LangEn, LangFr, LangJa, LangKo, LangRu, LangVi}
 }
 
-// IsSupported checks if a language code is supported
+// IsSupported reports whether a language normalizes to an official product language.
 func IsSupported(lang string) bool {
 	lang = normalizeLang(lang)
 	return slices.Contains(SupportedLanguages(), lang)
