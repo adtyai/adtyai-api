@@ -55,8 +55,11 @@ func isSiteEmailUniqueViolation(err error) bool {
 	return strings.Contains(text, siteEmailUniqueIndex)
 }
 
-// EnsureSiteEmailUniqueIndex makes a non-empty email unique within a site.
-// Empty emails may still repeat. Same-site duplicates must be resolved first.
+// EnsureSiteEmailUniqueIndex makes a non-empty email unique within a live site
+// identity. Inherited main-site accounts keep a distinct inherited_from_site_id
+// so the same address can exist next to a pre-existing main account (A.16.3)
+// without being merged. Empty emails may still repeat. Conflicting rows that
+// share site_id, email, and inherited_from_site_id must be resolved first.
 func EnsureSiteEmailUniqueIndex(db *gorm.DB) error {
 	if db == nil {
 		return fmt.Errorf("site email unique index: database is nil")
@@ -64,13 +67,16 @@ func EnsureSiteEmailUniqueIndex(db *gorm.DB) error {
 	if !db.Migrator().HasTable(&User{}) {
 		return nil
 	}
+	if err := ensureInheritedFromSiteIDColumn(db); err != nil {
+		return err
+	}
 	var duplicates int64
 	if err := db.Raw(`
 		SELECT COUNT(*) FROM (
-			SELECT site_id, LOWER(email) AS normalized_email
+			SELECT site_id, inherited_from_site_id, LOWER(email) AS normalized_email
 			FROM users
 			WHERE email <> ''
-			GROUP BY site_id, LOWER(email)
+			GROUP BY site_id, inherited_from_site_id, LOWER(email)
 			HAVING COUNT(*) > 1
 		) AS duplicated
 	`).Scan(&duplicates).Error; err != nil {
@@ -82,12 +88,79 @@ func EnsureSiteEmailUniqueIndex(db *gorm.DB) error {
 	if db.Dialector.Name() == "mysql" {
 		return ensureMySQLSiteEmailUniqueIndex(db)
 	}
+	current, err := siteEmailUniqueIndexIsCurrent(db)
+	if err != nil {
+		return err
+	}
+	if current {
+		return nil
+	}
+	if err := dropSiteEmailUniqueIndex(db); err != nil {
+		return err
+	}
 	statement := &gorm.Statement{DB: db}
 	return db.Exec(fmt.Sprintf(
-		"CREATE UNIQUE INDEX IF NOT EXISTS %s ON %s (site_id, LOWER(email)) WHERE email <> ''",
+		"CREATE UNIQUE INDEX IF NOT EXISTS %s ON %s (site_id, LOWER(email), inherited_from_site_id) WHERE email <> ''",
 		statement.Quote(siteEmailUniqueIndex),
 		statement.Quote("users"),
 	)).Error
+}
+
+func ensureInheritedFromSiteIDColumn(db *gorm.DB) error {
+	if db.Migrator().HasColumn(&User{}, "inherited_from_site_id") {
+		return nil
+	}
+	if err := db.Migrator().AddColumn(&User{}, "InheritedFromSiteId"); err != nil {
+		return fmt.Errorf("add inherited_from_site_id: %w", err)
+	}
+	return nil
+}
+
+func dropSiteEmailUniqueIndex(db *gorm.DB) error {
+	statement := &gorm.Statement{DB: db}
+	quotedName := statement.Quote(siteEmailUniqueIndex)
+	var err error
+	switch db.Dialector.Name() {
+	case "mysql":
+		err = db.Exec(fmt.Sprintf("ALTER TABLE %s DROP INDEX %s", statement.Quote("users"), quotedName)).Error
+	default:
+		err = db.Exec(fmt.Sprintf("DROP INDEX IF EXISTS %s", quotedName)).Error
+	}
+	if err != nil {
+		// MySQL has no IF EXISTS on older versions; ignore a missing index.
+		if db.Dialector.Name() == "mysql" && strings.Contains(strings.ToLower(err.Error()), "check that it exists") {
+			return nil
+		}
+		return fmt.Errorf("drop site email unique index: %w", err)
+	}
+	return nil
+}
+
+func siteEmailUniqueIndexIsCurrent(db *gorm.DB) (bool, error) {
+	if !db.Migrator().HasIndex("users", siteEmailUniqueIndex) {
+		return false, nil
+	}
+	var definition string
+	var err error
+	switch db.Dialector.Name() {
+	case "postgres":
+		err = db.Raw(
+			"SELECT indexdef FROM pg_indexes WHERE schemaname = current_schema() AND indexname = ?",
+			siteEmailUniqueIndex,
+		).Scan(&definition).Error
+	case "sqlite":
+		err = db.Raw(
+			"SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ?",
+			siteEmailUniqueIndex,
+		).Scan(&definition).Error
+	default:
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("inspect site email unique index: %w", err)
+	}
+	normalized := strings.ToLower(definition)
+	return strings.Contains(normalized, "inherited_from_site_id") && strings.Contains(normalized, "lower(email)"), nil
 }
 
 func ensureMySQLSiteEmailUniqueIndex(db *gorm.DB) error {
@@ -121,21 +194,35 @@ func ensureMySQLSiteEmailUniqueIndex(db *gorm.DB) error {
 		return fmt.Errorf("site email index source users.email is missing")
 	}
 	// site_id (up to 11 digits) + ':' + the email value.
-	dataType := "varchar(320)"
+	dataType := "varchar(340)"
 	if source.CharacterSetName != "" {
 		dataType += " CHARACTER SET " + statement.Quote(source.CharacterSetName)
 	}
 	if source.CollationName != "" {
 		dataType += " COLLATE " + statement.Quote(source.CollationName)
 	}
-	if generated.ColumnType == "" || !strings.HasPrefix(strings.ToLower(generated.ColumnType), "varchar") {
+	wantedExpr := "CASE WHEN email <> '' THEN CONCAT(site_id, ':', inherited_from_site_id, ':', LOWER(email)) ELSE NULL END"
+	var generation string
+	_ = db.Raw(`
+			SELECT GENERATION_EXPRESSION
+			FROM information_schema.columns
+			WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?`,
+		"users", valueColumn).Scan(&generation).Error
+	needsColumn := generated.ColumnType == "" || !strings.HasPrefix(strings.ToLower(generated.ColumnType), "varchar") ||
+		!strings.Contains(strings.ToLower(generation), "inherited_from_site_id")
+	if needsColumn {
+		if db.Migrator().HasIndex("users", siteEmailUniqueIndex) {
+			if err := dropSiteEmailUniqueIndex(db); err != nil {
+				return err
+			}
+		}
 		operation := "MODIFY"
 		if generated.ColumnName == "" {
 			operation = "ADD"
 		}
 		if err := db.Exec(fmt.Sprintf(
-			"ALTER TABLE %s %s COLUMN %s %s GENERATED ALWAYS AS (CASE WHEN email <> '' THEN CONCAT(site_id, ':', LOWER(email)) ELSE NULL END) STORED",
-			quotedTable, operation, quotedValue, dataType,
+			"ALTER TABLE %s %s COLUMN %s %s GENERATED ALWAYS AS (%s) STORED",
+			quotedTable, operation, quotedValue, dataType, wantedExpr,
 		)).Error; err != nil {
 			return fmt.Errorf("add site email index value: %w", err)
 		}

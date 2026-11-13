@@ -433,21 +433,13 @@ describe('overview and reviews', () => {
 })
 
 describe('close site dialog', () => {
-  const others = [
-    site({ id: 5, host: 'other.sites.example', status: 'active' }),
-  ]
-
-  it('removes the close confirmation when Root is downgraded with a destination selected', async () => {
+  it('removes the close confirmation when Root is downgraded', async () => {
     renderWith(
       <CloseSiteDialog
         site={site({ id: 1 })}
-        transferTargets={others}
         open
         onOpenChange={() => undefined}
       />
-    )
-    await userEvent.click(
-      screen.getByRole('radio', { name: 'Move to the main site' })
     )
     expect(screen.getByRole('button', { name: 'Close site' })).toBeEnabled()
     act(() => asSiteAdmin(['read', 'adjust']))
@@ -462,14 +454,10 @@ describe('close site dialog', () => {
     const view = renderWith(
       <CloseSiteDialog
         site={site({ id: 1 })}
-        transferTargets={others}
         open
         onOpenChange={() => undefined}
       />,
       paused.client
-    )
-    await userEvent.click(
-      screen.getByRole('radio', { name: 'Move to the main site' })
     )
     await userEvent.click(screen.getByRole('button', { name: 'Close site' }))
     await waitFor(() => expect(paused.entered).toHaveBeenCalledTimes(1))
@@ -482,78 +470,33 @@ describe('close site dialog', () => {
     expect(api.setSiteStatus).not.toHaveBeenCalled()
   })
 
-  it('cannot be confirmed until a customer destination is chosen', async () => {
-    const user = userEvent.setup()
-    renderWith(
-      <CloseSiteDialog
-        site={site({ id: 1 })}
-        transferTargets={others}
-        open
-        onOpenChange={() => undefined}
-      />
-    )
-
-    const confirm = screen.getByRole('button', { name: 'Close site' })
-    expect(confirm).toBeDisabled()
-    expect(
-      screen.getByText('Choose where the customers go.')
-    ).toBeInTheDocument()
-
-    await user.click(
-      screen.getByRole('radio', { name: 'Move to the main site' })
-    )
-    expect(confirm).toBeEnabled()
-  })
-
-  it('sends the chosen site as transfer_to', async () => {
+  it('sends transfer_to 0 so customers are inherited by the main site', async () => {
     const user = userEvent.setup()
     api.setSiteStatus.mockResolvedValue(site({ status: 'closing' }))
     renderWith(
       <CloseSiteDialog
         site={site({ id: 1 })}
-        transferTargets={others}
         open
         onOpenChange={() => undefined}
       />
     )
 
-    await user.click(
-      screen.getByRole('radio', { name: 'Move to another site' })
-    )
-    await user.selectOptions(
-      screen.getByRole('combobox', { name: 'Target site' }),
-      '5'
-    )
+    expect(
+      screen.queryByRole('radio', { name: 'Move to another site' })
+    ).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Close site' })).toBeEnabled()
     await user.type(screen.getByLabelText('Reason'), 'owner request')
     await user.click(screen.getByRole('button', { name: 'Close site' }))
 
     await waitFor(() =>
       expect(api.setSiteStatus).toHaveBeenCalledWith(1, {
         status: 'closed',
-        transfer_to: 5,
+        transfer_to: 0,
         claw_back: false,
         immediate: false,
         reason: 'owner request',
       })
     )
-  })
-
-  it('needs a target site when moving to another site', async () => {
-    const user = userEvent.setup()
-    renderWith(
-      <CloseSiteDialog
-        site={site({ id: 1 })}
-        transferTargets={others}
-        open
-        onOpenChange={() => undefined}
-      />
-    )
-
-    await user.click(
-      screen.getByRole('radio', { name: 'Move to another site' })
-    )
-
-    expect(screen.getByRole('button', { name: 'Close site' })).toBeDisabled()
   })
 })
 

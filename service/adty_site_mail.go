@@ -462,12 +462,8 @@ func adtyNotifySiteClosing(site *model.AdtySite) {
 	if site == nil {
 		return
 	}
+	// 关站后客户一律到主站登录，通知链接不再指向其他分站。
 	link := AdtySiteBaseURL(nil)
-	if site.CloseTransferTo != 0 {
-		if target := AdtySiteById(site.CloseTransferTo); target != nil {
-			link = AdtySiteBaseURL(target)
-		}
-	}
 	args := map[string]any{
 		"SystemName": AdtyBrandFor(site).Name,
 		"When":       adtyMailWhen(site.CloseExecuteAt),

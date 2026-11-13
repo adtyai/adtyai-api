@@ -529,7 +529,8 @@ func AdjustAdtyAdminSite(c *gin.Context) {
 }
 
 // SetAdtyAdminSiteStatus 暂停、恢复（分站·调整）或关站（仅Root）：
-// {status: active|paused|closed, transfer_to?, claw_back?, immediate?, reason}。关站必须写清客户去向（transfer_to 0 是主站）。
+// {status: active|paused|closed, transfer_to?, claw_back?, immediate?, reason}。
+// 关站不必也不允许指定其他分站：省略 transfer_to 或传 0 表示由主站继承，非 0 为错误。
 func SetAdtyAdminSiteStatus(c *gin.Context) {
 	id, ok := siteIdParam(c)
 	if !ok {
@@ -556,12 +557,16 @@ func SetAdtyAdminSiteStatus(c *gin.Context) {
 			denyAdtyAdminAction(c)
 			return
 		}
-		if body.TransferTo == nil {
-			common.ApiErrorT(c, "Choose where the customers go before closing the site")
-			return
+		transferTo := 0
+		if body.TransferTo != nil {
+			if *body.TransferTo != 0 {
+				common.ApiError(c, service.ErrAdtySiteTransfer)
+				return
+			}
+			transferTo = *body.TransferTo
 		}
 		site, err = service.ScheduleAdtySiteClose(id, c.GetInt("id"), service.AdtySiteClosePlan{
-			TransferTo: *body.TransferTo, ClawBack: body.ClawBack, Immediate: body.Immediate, Reason: body.Reason,
+			TransferTo: transferTo, ClawBack: body.ClawBack, Immediate: body.Immediate, Reason: body.Reason,
 		})
 	default:
 		common.ApiErrorT(c, "Invalid parameters")

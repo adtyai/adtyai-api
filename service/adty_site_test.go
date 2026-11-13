@@ -476,14 +476,19 @@ func TestCloseSiteMovesCustomersToMain(t *testing.T) {
 	db := prepareSiteDB(t)
 	owner, site := openActiveSite(t, db, "closing")
 	customer := siteCustomer(t, db, site, "closing-customer")
+	authBefore := customer.AuthVersion
+	require.NoError(t, db.Model(customer).Update("quota", 1500).Error)
 	require.NoError(t, db.Create(&model.AdtySitePrice{SiteId: site.Id, Markup: decimal.RequireFromString("1.5"), Version: 1}).Error)
+	team, err := CreateAdtyTeam(customer.Id, site.Id, "closing-team", decimal.RequireFromString("0.9"))
+	require.NoError(t, err)
 
-	_, err := RequestAdtySiteClose(owner.Id, "retiring")
+	_, err = RequestAdtySiteClose(owner.Id, "retiring")
 	require.NoError(t, err)
 	before := time.Now().Unix()
 	scheduled, err := ScheduleAdtySiteClose(site.Id, 1, AdtySiteClosePlan{Reason: "owner asked"})
 	require.NoError(t, err)
 	assert.Equal(t, model.AdtySiteStatusClosing, scheduled.Status)
+	assert.Zero(t, scheduled.CloseTransferTo)
 	assert.GreaterOrEqual(t, scheduled.CloseExecuteAt, before+7*86400, "customers get close_notice_days of notice")
 
 	var stored model.User
@@ -494,19 +499,26 @@ func TestCloseSiteMovesCustomersToMain(t *testing.T) {
 	require.NoError(t, RunAdtySiteCloseOnce(scheduled.CloseExecuteAt))
 	require.NoError(t, db.First(&stored, customer.Id).Error)
 	assert.Zero(t, stored.SiteId)
+	assert.Equal(t, site.Id, stored.InheritedFromSiteId)
+	assert.Equal(t, 1500, stored.Quota)
+	assert.Equal(t, authBefore+1, stored.AuthVersion)
 	var rows int64
 	require.NoError(t, db.Model(&model.AdtySiteCustomer{}).Where("user_id = ?", customer.Id).Count(&rows).Error)
 	assert.Zero(t, rows)
+	var inheritedTeam model.AdtyTeam
+	require.NoError(t, db.First(&inheritedTeam, team.Team.Id).Error)
+	assert.Zero(t, inheritedTeam.SiteId)
 	closed, err := GetAdtySite(site.Id)
 	require.NoError(t, err)
 	assert.Equal(t, model.AdtySiteStatusClosed, closed.Status)
+	assert.Zero(t, closed.CloseTransferTo)
 	assert.Equal(t, "closing", closed.Subdomain, "the subdomain stays reserved for redirects")
 
 	_, err = OpenAdtySite(owner.Id, "reopened", model.AdtySiteOpenedByAdmin, AdtySitePreset{})
 	assert.NoError(t, err, "a former owner may open a new site")
 }
 
-func TestCloseSiteTransferKeepsPriceNotHigher(t *testing.T) {
+func TestCloseSiteRejectsTransferToAnotherSite(t *testing.T) {
 	db := prepareSiteDB(t)
 	_, from := openActiveSite(t, db, "from")
 	_, to := openActiveSite(t, db, "to")
@@ -522,29 +534,109 @@ func TestCloseSiteTransferKeepsPriceNotHigher(t *testing.T) {
 	_, err := ScheduleAdtySiteClose(from.Id, 1, AdtySiteClosePlan{TransferTo: from.Id})
 	assert.ErrorIs(t, err, ErrAdtySiteTransfer)
 	_, err = ScheduleAdtySiteClose(from.Id, 1, AdtySiteClosePlan{TransferTo: to.Id, Immediate: true})
-	require.NoError(t, err)
+	assert.ErrorIs(t, err, ErrAdtySiteTransfer)
 
 	var stored model.User
 	require.NoError(t, db.First(&stored, cheap.Id).Error)
-	assert.Equal(t, to.Id, stored.SiteId)
-	var prices []model.AdtySitePrice
-	require.NoError(t, db.Where("site_id = ?", to.Id).Find(&prices).Error)
-	for _, tc := range []struct {
-		user  int
-		group string
-		want  string
-	}{
-		{cheap.Id, "default", "1.2"}, // new default 2 > old 1.2: keep 1.2
-		{cheap.Id, "vip", "1.1"},     // new vip 1.1 < old 1.2: the new site's lower price applies
-		{special.Id, "default", "2"}, // new 2 < old 2.5
-		{special.Id, "vip", "1.1"},
-	} {
-		got := ResolveAdtySiteMarkup(prices, tc.user, tc.group)
-		assert.True(t, got.Equal(decimal.RequireFromString(tc.want)), "user %d group %s: got %s want %s", tc.user, tc.group, got, tc.want)
+	assert.Equal(t, from.Id, stored.SiteId, "a rejected transfer must not move customers")
+	active, err := GetAdtySite(from.Id)
+	require.NoError(t, err)
+	assert.Equal(t, model.AdtySiteStatusActive, active.Status)
+	assert.Zero(t, active.CloseTransferTo)
+
+	closed, err := ScheduleAdtySiteClose(from.Id, 1, AdtySiteClosePlan{TransferTo: 0, Immediate: true})
+	require.NoError(t, err)
+	assert.Equal(t, model.AdtySiteStatusClosed, closed.Status)
+	assert.Zero(t, closed.CloseTransferTo)
+	require.NoError(t, db.First(&stored, cheap.Id).Error)
+	assert.Zero(t, stored.SiteId)
+	assert.Equal(t, from.Id, stored.InheritedFromSiteId)
+	stored = model.User{}
+	require.NoError(t, db.First(&stored, special.Id).Error)
+	assert.Zero(t, stored.SiteId)
+	assert.Equal(t, from.Id, stored.InheritedFromSiteId)
+	var members int64
+	require.NoError(t, db.Model(&model.AdtySiteCustomer{}).Where("user_id IN ?", []int{cheap.Id, special.Id}).Count(&members).Error)
+	assert.Zero(t, members)
+	var carried int64
+	require.NoError(t, db.Model(&model.AdtySitePrice{}).Where("site_id = ? AND user_id IN ?", to.Id, []int{cheap.Id, special.Id}).Count(&carried).Error)
+	assert.Zero(t, carried, "customer prices must not be carried onto another site")
+}
+
+func TestExecuteAdtySiteCloseIgnoresPersistedTransferTo(t *testing.T) {
+	db := prepareSiteDB(t)
+	_, from := openActiveSite(t, db, "queued-from")
+	_, to := openActiveSite(t, db, "queued-to")
+	customer := siteCustomer(t, db, from, "queued-customer")
+	require.NoError(t, db.Model(customer).Update("quota", 800).Error)
+	require.NoError(t, db.Model(&model.AdtySite{}).Where("id = ?", from.Id).Updates(map[string]any{
+		"status": model.AdtySiteStatusClosing, "close_execute_at": 1, "close_transfer_to": to.Id,
+	}).Error)
+
+	require.NoError(t, ExecuteAdtySiteClose(from.Id, 10))
+	var stored model.User
+	require.NoError(t, db.First(&stored, customer.Id).Error)
+	assert.Zero(t, stored.SiteId)
+	assert.NotEqual(t, to.Id, stored.SiteId)
+	assert.Equal(t, from.Id, stored.InheritedFromSiteId)
+	assert.Equal(t, 800, stored.Quota)
+	var members int64
+	require.NoError(t, db.Model(&model.AdtySiteCustomer{}).Where("user_id = ?", customer.Id).Count(&members).Error)
+	assert.Zero(t, members)
+	closed, err := GetAdtySite(from.Id)
+	require.NoError(t, err)
+	assert.Equal(t, model.AdtySiteStatusClosed, closed.Status)
+	assert.Zero(t, closed.CloseTransferTo)
+	stillOpen, err := GetAdtySite(to.Id)
+	require.NoError(t, err)
+	assert.Equal(t, model.AdtySiteStatusActive, stillOpen.Status)
+}
+
+func TestCloseSiteInheritsSameEmailAsSeparateMainIdentity(t *testing.T) {
+	db := prepareSiteDB(t)
+	require.NoError(t, model.EnsureSiteEmailUniqueIndex(db))
+	_, site := openActiveSite(t, db, "same-mail")
+	const shared = "shared-close@example.com"
+	mainUser := referralUser(t, db, "same-mail-main")
+	require.NoError(t, db.Model(mainUser).Updates(map[string]any{"email": shared, "quota": 2000}).Error)
+	customer := siteCustomer(t, db, site, "same-mail-site")
+	require.NoError(t, db.Model(customer).Updates(map[string]any{"email": "Shared-Close@Example.com", "quota": 700}).Error)
+	require.NoError(t, db.Create(&model.Log{UserId: customer.Id, Type: model.LogTypeConsume, Quota: 15}).Error)
+	require.NoError(t, db.Create(&model.Log{UserId: mainUser.Id, Type: model.LogTypeConsume, Quota: 40}).Error)
+
+	closed, err := ScheduleAdtySiteClose(site.Id, 1, AdtySiteClosePlan{Immediate: true})
+	require.NoError(t, err)
+	assert.Equal(t, model.AdtySiteStatusClosed, closed.Status)
+
+	var inherited, original model.User
+	require.NoError(t, db.First(&inherited, customer.Id).Error)
+	require.NoError(t, db.First(&original, mainUser.Id).Error)
+	assert.NotEqual(t, original.Id, inherited.Id)
+	assert.Zero(t, inherited.SiteId)
+	assert.Zero(t, original.SiteId)
+	assert.Equal(t, site.Id, inherited.InheritedFromSiteId)
+	assert.Zero(t, original.InheritedFromSiteId)
+	assert.Equal(t, 700, inherited.Quota)
+	assert.Equal(t, 2000, original.Quota)
+	assert.Equal(t, "shared-close@example.com", model.NormalizeEmail(inherited.Email))
+	assert.Equal(t, shared, model.NormalizeEmail(original.Email))
+	var members int64
+	require.NoError(t, db.Model(&model.AdtySiteCustomer{}).Where("user_id = ?", customer.Id).Count(&members).Error)
+	assert.Zero(t, members)
+	var logs []model.Log
+	require.NoError(t, db.Where("user_id IN ?", []int{customer.Id, mainUser.Id}).Order("user_id").Find(&logs).Error)
+	require.Len(t, logs, 2)
+	byUser := map[int]int{}
+	for _, row := range logs {
+		byUser[row.UserId] = row.Quota
 	}
-	var customer model.AdtySiteCustomer
-	require.NoError(t, db.First(&customer, cheap.Id).Error)
-	assert.Equal(t, to.Id, customer.SiteId)
+	assert.Equal(t, 15, byUser[customer.Id])
+	assert.Equal(t, 40, byUser[mainUser.Id])
+	_, err = model.GetUniqueUserByEmail(shared, 0)
+	assert.ErrorIs(t, err, model.ErrEmailAmbiguous)
+	var byName model.User
+	require.NoError(t, db.Where("username = ?", customer.Username).First(&byName).Error)
+	assert.Equal(t, customer.Id, byName.Id)
 }
 
 func TestForcedCloseIgnoresClawBackFlag(t *testing.T) {

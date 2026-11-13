@@ -65,7 +65,7 @@ func newSiteFixture(t *testing.T) *siteFixture {
 	require.NoError(t, db.Create(&other).Error)
 	closed, err := service.OpenAdtySite(other.Id, "gone", model.AdtySiteOpenedByAdmin, service.AdtySitePreset{})
 	require.NoError(t, err)
-	_, err = service.ScheduleAdtySiteClose(closed.Id, 1, service.AdtySiteClosePlan{TransferTo: site.Id, Immediate: true})
+	_, err = service.ScheduleAdtySiteClose(closed.Id, 1, service.AdtySiteClosePlan{Immediate: true})
 	require.NoError(t, err)
 
 	applicant := model.User{Username: "pending-owner", Password: "x", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: "default", AuthVersion: 1}
@@ -300,105 +300,97 @@ func TestAPIKeyMustMatchRequestSite(t *testing.T) {
 }
 
 func TestClosedSiteRevokesMigratedCustomerKeys(t *testing.T) {
-	for _, destination := range []string{"main", "site"} {
-		for _, immediate := range []bool{false, true} {
-			t.Run(fmt.Sprintf("%s/immediate=%t", destination, immediate), func(t *testing.T) {
-				f := newSiteFixture(t)
-				targetID, targetHost := 0, "main.example.com"
-				if destination == "site" {
-					owner := f.user(t, "migration-target-owner", 0)
-					target, err := service.OpenAdtySite(owner.Id, "migration-target", model.AdtySiteOpenedByAdmin, service.AdtySitePreset{})
+	for _, immediate := range []bool{false, true} {
+		t.Run(fmt.Sprintf("immediate=%t", immediate), func(t *testing.T) {
+			f := newSiteFixture(t)
+			targetHost := "main.example.com"
+			customer := f.user(t, "migrated-key-customer", f.site.Id)
+			require.NoError(t, f.db.Create(&model.AdtySiteCustomer{UserId: customer.Id, SiteId: f.site.Id}).Error)
+			old := model.Token{UserId: customer.Id, Key: "migrationOldSecret", Name: "old key", Status: common.TokenStatusEnabled, ExpiredTime: -1, UnlimitedQuota: true, UsedQuota: 40, RemainQuota: 60}
+			require.NoError(t, f.db.Create(&old).Error)
+			otherUser := f.user(t, "untouched-key-customer", 0)
+			other := model.Token{UserId: otherUser.Id, Key: "untouchedSecret", Status: common.TokenStatusEnabled, ExpiredTime: -1, UnlimitedQuota: true}
+			require.NoError(t, f.db.Create(&other).Error)
+			fresh := model.Token{UserId: customer.Id, Key: "migrationFreshSecret", Status: common.TokenStatusEnabled, ExpiredTime: -1, UnlimitedQuota: true}
+			history := model.Log{UserId: customer.Id, TokenId: old.Id, TokenName: old.Name, Type: model.LogTypeConsume, Quota: 40}
+			require.NoError(t, f.db.Create(&history).Error)
+			if address := os.Getenv("ADTY_TEST_REDIS_ADDR"); address != "" {
+				previousEnabled, previousClient := common.RedisEnabled, common.RDB
+				client := redis.NewClient(&redis.Options{Addr: address, DB: 8})
+				require.NoError(t, client.Ping(t.Context()).Err())
+				var cacheKeys []string
+				for _, token := range []model.Token{old, other, fresh} {
+					hash := common.GenerateHMAC(token.Key)
+					cacheKeys = append(cacheKeys, "token:"+hash, "token:generation:"+hash)
+				}
+				for _, id := range []int{customer.Id, otherUser.Id} {
+					cacheKeys = append(cacheKeys, fmt.Sprintf("user:%d", id), fmt.Sprintf("auth:user:version:%d", id), fmt.Sprintf("auth:user:fence:%d", id))
+				}
+				t.Cleanup(func() {
+					assert.NoError(t, client.Del(context.Background(), cacheKeys...).Err())
+					common.RedisEnabled, common.RDB = previousEnabled, previousClient
+					assert.NoError(t, client.Close())
+				})
+				// Each PostgreSQL schema starts IDs again; remove only this
+				// fixture's keys so earlier subtests cannot supply user metadata.
+				require.NoError(t, client.Del(t.Context(), cacheKeys...).Err())
+				common.RedisEnabled, common.RDB = true, client
+			}
+			request := func(host, path, key string) *httptest.ResponseRecorder {
+				t.Helper()
+				req := httptest.NewRequest(http.MethodGet, path, nil)
+				req.Host = host
+				req.Header.Set("Authorization", "Bearer "+key)
+				response := httptest.NewRecorder()
+				f.engine.ServeHTTP(response, req)
+				return response
+			}
+			for _, path := range []string{"/v1/models", "/api/usage/token/", "/api/log/token"} {
+				response := request(service.AdtySiteDisplayHost(f.site), path, old.Key)
+				require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+			}
+			staleCache := map[string]string{}
+			if common.RedisEnabled {
+				for _, key := range []string{"token:" + common.GenerateHMAC(old.Key), "token:generation:" + common.GenerateHMAC(old.Key), fmt.Sprintf("user:%d", customer.Id)} {
+					data, err := common.RDB.Dump(t.Context(), key).Result()
+					if err == redis.Nil {
+						continue
+					}
 					require.NoError(t, err)
-					targetID, targetHost = target.Id, service.AdtySiteDisplayHost(target)
+					staleCache[key] = data
 				}
-				customer := f.user(t, "migrated-key-customer", f.site.Id)
-				require.NoError(t, f.db.Create(&model.AdtySiteCustomer{UserId: customer.Id, SiteId: f.site.Id}).Error)
-				old := model.Token{UserId: customer.Id, Key: "migrationOldSecret", Name: "old key", Status: common.TokenStatusEnabled, ExpiredTime: -1, UnlimitedQuota: true, UsedQuota: 40, RemainQuota: 60}
-				require.NoError(t, f.db.Create(&old).Error)
-				otherUser := f.user(t, "untouched-key-customer", 0)
-				other := model.Token{UserId: otherUser.Id, Key: "untouchedSecret", Status: common.TokenStatusEnabled, ExpiredTime: -1, UnlimitedQuota: true}
-				require.NoError(t, f.db.Create(&other).Error)
-				fresh := model.Token{UserId: customer.Id, Key: "migrationFreshSecret", Status: common.TokenStatusEnabled, ExpiredTime: -1, UnlimitedQuota: true}
-				history := model.Log{UserId: customer.Id, TokenId: old.Id, TokenName: old.Name, Type: model.LogTypeConsume, Quota: 40}
-				require.NoError(t, f.db.Create(&history).Error)
-				if address := os.Getenv("ADTY_TEST_REDIS_ADDR"); address != "" {
-					previousEnabled, previousClient := common.RedisEnabled, common.RDB
-					client := redis.NewClient(&redis.Options{Addr: address, DB: 8})
-					require.NoError(t, client.Ping(t.Context()).Err())
-					var cacheKeys []string
-					for _, token := range []model.Token{old, other, fresh} {
-						hash := common.GenerateHMAC(token.Key)
-						cacheKeys = append(cacheKeys, "token:"+hash, "token:generation:"+hash)
-					}
-					for _, id := range []int{customer.Id, otherUser.Id} {
-						cacheKeys = append(cacheKeys, fmt.Sprintf("user:%d", id), fmt.Sprintf("auth:user:version:%d", id), fmt.Sprintf("auth:user:fence:%d", id))
-					}
-					t.Cleanup(func() {
-						assert.NoError(t, client.Del(context.Background(), cacheKeys...).Err())
-						common.RedisEnabled, common.RDB = previousEnabled, previousClient
-						assert.NoError(t, client.Close())
-					})
-					// Each PostgreSQL schema starts IDs again; remove only this
-					// fixture's keys so earlier subtests cannot supply user metadata.
-					require.NoError(t, client.Del(t.Context(), cacheKeys...).Err())
-					common.RedisEnabled, common.RDB = true, client
-				}
-				request := func(host, path, key string) *httptest.ResponseRecorder {
-					t.Helper()
-					req := httptest.NewRequest(http.MethodGet, path, nil)
-					req.Host = host
-					req.Header.Set("Authorization", "Bearer "+key)
-					response := httptest.NewRecorder()
-					f.engine.ServeHTTP(response, req)
-					return response
+				require.NotEmpty(t, staleCache)
+			}
+			scheduled, err := service.ScheduleAdtySiteClose(f.site.Id, 1, service.AdtySiteClosePlan{Immediate: immediate})
+			require.NoError(t, err)
+			if !immediate {
+				assert.Equal(t, http.StatusOK, request(service.AdtySiteDisplayHost(f.site), "/v1/models", old.Key).Code)
+				require.NoError(t, service.RunAdtySiteCloseOnce(scheduled.CloseExecuteAt))
+			}
+			for _, path := range []string{"/v1/models", "/api/usage/token/", "/api/log/token"} {
+				response := request(targetHost, path, old.Key)
+				assert.Equal(t, http.StatusUnauthorized, response.Code, path+": "+response.Body.String())
+			}
+			if common.RedisEnabled {
+				for key, data := range staleCache {
+					require.NoError(t, common.RDB.RestoreReplace(t.Context(), key, time.Minute, data).Err())
 				}
 				for _, path := range []string{"/v1/models", "/api/usage/token/", "/api/log/token"} {
-					response := request(service.AdtySiteDisplayHost(f.site), path, old.Key)
-					require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+					assert.Equal(t, http.StatusUnauthorized, request(targetHost, path, old.Key).Code, "restored token/user caches must not restore credentials")
 				}
-				staleCache := map[string]string{}
-				if common.RedisEnabled {
-					for _, key := range []string{"token:" + common.GenerateHMAC(old.Key), "token:generation:" + common.GenerateHMAC(old.Key), fmt.Sprintf("user:%d", customer.Id)} {
-						data, err := common.RDB.Dump(t.Context(), key).Result()
-						if err == redis.Nil {
-							continue
-						}
-						require.NoError(t, err)
-						staleCache[key] = data
-					}
-					require.NotEmpty(t, staleCache)
-				}
-				scheduled, err := service.ScheduleAdtySiteClose(f.site.Id, 1, service.AdtySiteClosePlan{TransferTo: targetID, Immediate: immediate})
-				require.NoError(t, err)
-				if !immediate {
-					assert.Equal(t, http.StatusOK, request(service.AdtySiteDisplayHost(f.site), "/v1/models", old.Key).Code)
-					require.NoError(t, service.RunAdtySiteCloseOnce(scheduled.CloseExecuteAt))
-				}
-				for _, path := range []string{"/v1/models", "/api/usage/token/", "/api/log/token"} {
-					response := request(targetHost, path, old.Key)
-					assert.Equal(t, http.StatusUnauthorized, response.Code, path+": "+response.Body.String())
-				}
-				if common.RedisEnabled {
-					for key, data := range staleCache {
-						require.NoError(t, common.RDB.RestoreReplace(t.Context(), key, time.Minute, data).Err())
-					}
-					for _, path := range []string{"/v1/models", "/api/usage/token/", "/api/log/token"} {
-						assert.Equal(t, http.StatusUnauthorized, request(targetHost, path, old.Key).Code, "restored token/user caches must not restore credentials")
-					}
-				}
-				assert.Equal(t, http.StatusOK, request("main.example.com", "/v1/models", other.Key).Code)
-				require.NoError(t, fresh.InsertWithLimit(100))
-				assert.Equal(t, http.StatusOK, request(targetHost, "/v1/models", fresh.Key).Code)
-				var retired model.Token
-				require.NoError(t, f.db.Unscoped().First(&retired, old.Id).Error)
-				assert.True(t, retired.DeletedAt.Valid, "old credentials must not be re-enabled by normal token editing")
-				assert.Equal(t, 40, retired.UsedQuota)
-				assert.Equal(t, 60, retired.RemainQuota)
-				var preserved model.Log
-				require.NoError(t, f.db.First(&preserved, history.Id).Error)
-				assert.Equal(t, history, preserved)
-			})
-		}
+			}
+			assert.Equal(t, http.StatusOK, request("main.example.com", "/v1/models", other.Key).Code)
+			require.NoError(t, fresh.InsertWithLimit(100))
+			assert.Equal(t, http.StatusOK, request(targetHost, "/v1/models", fresh.Key).Code)
+			var retired model.Token
+			require.NoError(t, f.db.Unscoped().First(&retired, old.Id).Error)
+			assert.True(t, retired.DeletedAt.Valid, "old credentials must not be re-enabled by normal token editing")
+			assert.Equal(t, 40, retired.UsedQuota)
+			assert.Equal(t, 60, retired.RemainQuota)
+			var preserved model.Log
+			require.NoError(t, f.db.First(&preserved, history.Id).Error)
+			assert.Equal(t, history, preserved)
+		})
 	}
 }
 
@@ -452,13 +444,15 @@ func TestClosedSubdomainRedirects(t *testing.T) {
 	f := newSiteFixture(t)
 	resp := f.do(t, http.MethodGet, "gone.sites.example.com", "/wallet?x=1", "")
 	assert.Equal(t, http.StatusFound, resp.Code)
-	assert.Equal(t, "https://shop.sites.example.com/wallet?x=1", resp.Header().Get("Location"), "customers moved to the shop site")
+	assert.Equal(t, "https://main.example.com/wallet?x=1", resp.Header().Get("Location"), "customers inherited by the main site")
 	assert.Equal(t, http.StatusForbidden, f.do(t, http.MethodGet, "gone.sites.example.com", "/api/status", "").Code, "closed sites cannot run API requests as the main site")
 
-	require.NoError(t, f.db.Model(&model.AdtySite{}).Where("id = ?", f.closed.Id).Update("close_transfer_to", 0).Error)
+	// A historically closed site that already moved customers to another site
+	// still redirects there; new closes always record close_transfer_to = 0.
+	require.NoError(t, f.db.Model(&model.AdtySite{}).Where("id = ?", f.closed.Id).Update("close_transfer_to", f.site.Id).Error)
 	service.InvalidateAdtySiteCache()
 	resp = f.do(t, http.MethodGet, "gone.sites.example.com", "/", "")
-	assert.Equal(t, "https://main.example.com/", resp.Header().Get("Location"), "customers moved back to the main site")
+	assert.Equal(t, "https://shop.sites.example.com/", resp.Header().Get("Location"), "historical transfers keep their recorded destination")
 }
 
 func TestRegisterOnSiteSetsSiteId(t *testing.T) {

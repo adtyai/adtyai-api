@@ -247,9 +247,12 @@ func TestOnlyRootCanActivateLegacySiteApplication(t *testing.T) {
 }
 
 func TestOnlyRootCanCloseAdtySite(t *testing.T) {
-	for _, destination := range []string{"main", "site"} {
+	for _, transferBody := range []string{
+		`,"transfer_to":0`,
+		``,
+	} {
 		for _, immediate := range []bool{false, true} {
-			t.Run(fmt.Sprintf("%s/immediate=%t", destination, immediate), func(t *testing.T) {
+			t.Run(fmt.Sprintf("transfer=%q/immediate=%t", transferBody, immediate), func(t *testing.T) {
 				f := newAdtyGuardFixture(t)
 				cfg := withResellerSetting(t)
 				cfg.Enabled, cfg.RootDomains = true, []string{"sites.example.com"}
@@ -260,14 +263,10 @@ func TestOnlyRootCanCloseAdtySite(t *testing.T) {
 				require.NoError(t, f.db.Create(&owner).Error)
 				site, err := service.OpenAdtySite(owner.Id, "close-source", model.AdtySiteOpenedByAdmin, service.AdtySitePreset{})
 				require.NoError(t, err)
-				targetID := 0
-				if destination == "site" {
-					targetOwner := model.User{Username: "target-owner", Password: "x", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: "default"}
-					require.NoError(t, f.db.Create(&targetOwner).Error)
-					target, err := service.OpenAdtySite(targetOwner.Id, "close-target", model.AdtySiteOpenedByAdmin, service.AdtySitePreset{})
-					require.NoError(t, err)
-					targetID = target.Id
-				}
+				otherOwner := model.User{Username: "target-owner", Password: "x", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: "default"}
+				require.NoError(t, f.db.Create(&otherOwner).Error)
+				other, err := service.OpenAdtySite(otherOwner.Id, "close-target", model.AdtySiteOpenedByAdmin, service.AdtySitePreset{})
+				require.NoError(t, err)
 				customer := model.User{Username: "close-customer", Password: "x", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: "default", SiteId: site.Id, Quota: 1000}
 				require.NoError(t, f.db.Create(&customer).Error)
 				require.NoError(t, f.db.Create(&model.AdtySiteCustomer{UserId: customer.Id, SiteId: site.Id}).Error)
@@ -278,7 +277,7 @@ func TestOnlyRootCanCloseAdtySite(t *testing.T) {
 				require.NoError(t, f.db.Where("username = ?", "guard-root").First(&root).Error)
 				rootReadPAT := createAdtyScopedToken(t, root.Id, service.AccessTokenScopeOf(authz.AdtySiteRead))
 				path := fmt.Sprintf("/api/adty/admin/sites/%d/status", site.Id)
-				body := fmt.Sprintf(`{"status":"closed","transfer_to":%d,"immediate":%t,"role":100,"reason":"retiring"}`, targetID, immediate)
+				body := fmt.Sprintf(`{"status":"closed"%s,"immediate":%t,"role":100,"reason":"retiring"}`, transferBody, immediate)
 
 				for _, token := range []string{f.token, adminPAT, rootReadPAT} {
 					denied := adtyJSON(t, f.engine, http.MethodPut, path, body, token)
@@ -313,33 +312,36 @@ func TestOnlyRootCanCloseAdtySite(t *testing.T) {
 					require.NoError(t, f.db.First(&unchanged, site.Id).Error)
 					assert.Equal(t, status, unchanged.Status)
 				}
-				rootToken := f.root
-				if destination == "site" {
-					rootToken = createAdtyScopedToken(t, root.Id, service.AccessTokenScopeOf(authz.AdtySiteAdjust))
-				}
-				closed := adtyJSON(t, f.engine, http.MethodPut, path, body, rootToken)
+				rejected := adtyJSON(t, f.engine, http.MethodPut, path, fmt.Sprintf(`{"status":"closed","transfer_to":%d,"immediate":true}`, other.Id), f.root)
+				require.Equal(t, http.StatusOK, rejected.Code, rejected.Body.String())
+				assert.Contains(t, rejected.Body.String(), `"success":false`)
+				assert.Contains(t, rejected.Body.String(), "Closed-site customers can only be inherited by the main site")
+				require.NoError(t, f.db.First(&unchanged, site.Id).Error)
+				assert.Equal(t, model.AdtySiteStatusActive, unchanged.Status)
+				require.NoError(t, f.db.First(&stored, customer.Id).Error)
+				assert.Equal(t, site.Id, stored.SiteId)
+
+				closed := adtyJSON(t, f.engine, http.MethodPut, path, body, f.root)
 				require.Equal(t, http.StatusOK, closed.Code, closed.Body.String())
 				require.Contains(t, closed.Body.String(), `"success":true`)
 				if !immediate {
 					require.NoError(t, f.db.First(&unchanged, site.Id).Error)
 					assert.Equal(t, model.AdtySiteStatusClosing, unchanged.Status)
+					assert.Zero(t, unchanged.CloseTransferTo)
 					require.NoError(t, f.db.First(&stored, customer.Id).Error)
 					assert.Equal(t, site.Id, stored.SiteId, "scheduled closure must respect the notice period")
 					require.NoError(t, service.RunAdtySiteCloseOnce(unchanged.CloseExecuteAt))
 				}
 				require.NoError(t, f.db.First(&unchanged, site.Id).Error)
 				assert.Equal(t, model.AdtySiteStatusClosed, unchanged.Status)
+				assert.Zero(t, unchanged.CloseTransferTo)
 				require.NoError(t, f.db.First(&stored, customer.Id).Error)
-				assert.Equal(t, targetID, stored.SiteId)
+				assert.Zero(t, stored.SiteId)
+				assert.Equal(t, site.Id, stored.InheritedFromSiteId)
 				assert.Equal(t, 1000, stored.Quota)
 				var members []model.AdtySiteCustomer
 				require.NoError(t, f.db.Where("user_id = ?", customer.Id).Find(&members).Error)
-				if targetID == 0 {
-					assert.Empty(t, members)
-				} else {
-					require.Len(t, members, 1)
-					assert.Equal(t, targetID, members[0].SiteId)
-				}
+				assert.Empty(t, members)
 				var schedule model.AdtySiteAudit
 				require.NoError(t, f.db.Where("site_id = ? AND action = ?", site.Id, "close_schedule").First(&schedule).Error)
 				assert.Equal(t, root.Id, schedule.OperatorId)
@@ -394,8 +396,10 @@ func TestSiteAdminPermissions(t *testing.T) {
 	assert.Contains(t, ok.Body.String(), `"success":true`, ok.Body.String())
 	deniedClose := adtyJSON(t, f.engine, http.MethodPut, adjust+"/status", `{"status":"closed"}`, f.token)
 	assert.Equal(t, http.StatusForbidden, deniedClose.Code, deniedClose.Body.String())
+	closeOther := adtyJSON(t, f.engine, http.MethodPut, adjust+"/status", `{"status":"closed","transfer_to":1}`, f.root)
+	assert.Contains(t, closeOther.Body.String(), "Closed-site customers can only be inherited by the main site")
 	closeNoTarget := adtyJSON(t, f.engine, http.MethodPut, adjust+"/status", `{"status":"closed"}`, f.root)
-	assert.Contains(t, closeNoTarget.Body.String(), "Choose where the customers go before closing the site")
+	assert.Contains(t, closeNoTarget.Body.String(), `"success":true`, closeNoTarget.Body.String())
 
 	detail := adtyJSON(t, f.engine, http.MethodGet, adjust, "", f.token)
 	assert.Contains(t, detail.Body.String(), `"action":"adjust"`)

@@ -58,7 +58,7 @@ type AdtySite struct {
 	// 关站：站长申请时写 CloseRequestedAt；管理员定下客户去向后状态改 closing，到 CloseExecuteAt 由主节点执行。
 	CloseRequestedAt int64  `json:"close_requested_at"`
 	CloseExecuteAt   int64  `json:"close_execute_at" gorm:"index"`
-	CloseTransferTo  int    `json:"close_transfer_to"` // 0 转回主站，否则转给这个站
+	CloseTransferTo  int    `json:"close_transfer_to"` // 新关站只记 0（由主站继承）；历史已转到其他站的已关闭行可能仍非 0
 	CloseClawBack    bool   `json:"close_claw_back"`
 	CloseReason      string `json:"close_reason" gorm:"type:text"`
 	ClosedAt         int64  `json:"closed_at"`
@@ -231,6 +231,7 @@ func AdtySiteTables() []any {
 }
 
 // AdtySetUsersSiteTx 把 fromSite 的客户全部改到 toSite（0 是主站），同事务撤销旧Key。
+// 转到主站时同时写下 inherited_from_site_id，避免与主站已有同邮箱账号合并或撞唯一约束。
 // users.site_id 只由分站服务通过这里和 AdtySetUserSiteTx 改（UpdateWithTx 不会改它）。
 func AdtySetUsersSiteTx(tx *gorm.DB, fromSite, toSite int) ([]int, error) {
 	if fromSite == toSite {
@@ -268,7 +269,14 @@ func AdtySetUsersSiteTx(tx *gorm.DB, fromSite, toSite int) ([]int, error) {
 			return nil, err
 		}
 	}
-	if err := tx.Model(&User{}).Where("id IN ?", ids).Update("site_id", toSite).Error; err != nil {
+	updates := map[string]any{"site_id": toSite}
+	if toSite == 0 {
+		// Stamp the origin only when it is still unset so a later membership
+		// write cannot rewrite a previous close-inherit mapping.
+		updates["inherited_from_site_id"] = gorm.Expr(
+			"CASE WHEN inherited_from_site_id = 0 THEN ? ELSE inherited_from_site_id END", fromSite)
+	}
+	if err := tx.Model(&User{}).Where("id IN ?", ids).Updates(updates).Error; err != nil {
 		return nil, err
 	}
 	return ids, nil

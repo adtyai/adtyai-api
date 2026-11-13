@@ -148,7 +148,6 @@ func TestRiskReleaseSurvivesZeroEventRootTransferAndStaysInOriginalSite(t *testi
 			db := prepareSiteDB(t)
 			require.NoError(t, db.AutoMigrate(&model.Token{}))
 			_, from := openActiveSite(t, db, "zero-root-from")
-			_, to := openActiveSite(t, db, "zero-root-to")
 			customer := siteCustomer(t, db, from, "zero-root-customer")
 			require.NoError(t, db.Model(customer).Update("quota", perUnit("400")).Error)
 			require.NoError(t, db.Model(&model.AdtySiteCustomer{}).Where("user_id = ?", customer.Id).Update("risk_flag", "self_use").Error)
@@ -158,13 +157,15 @@ func TestRiskReleaseSurvivesZeroEventRootTransferAndStaysInOriginalSite(t *testi
 			if releaseOriginal {
 				require.NoError(t, ReviewAdtySiteCustomer(customer.Id, 1, true))
 			}
-			_, err = ScheduleAdtySiteClose(from.Id, 1, AdtySiteClosePlan{TransferTo: to.Id, Immediate: true})
+			_, err = ScheduleAdtySiteClose(from.Id, 1, AdtySiteClosePlan{Immediate: true})
 			require.NoError(t, err)
-			var moved model.AdtySiteCustomer
-			require.NoError(t, db.Where("user_id = ?", customer.Id).First(&moved).Error)
-			assert.False(t, moved.EarningRiskReleased, "transfer resets the new site's risk release")
-			require.NoError(t, db.Model(&moved).Update("risk_flag", "self_use").Error)
-			require.NoError(t, ReviewAdtySiteCustomer(customer.Id, 1, true)) // B's review cannot release A's root.
+			var stored model.User
+			require.NoError(t, db.First(&stored, customer.Id).Error)
+			assert.Zero(t, stored.SiteId)
+			assert.Equal(t, from.Id, stored.InheritedFromSiteId)
+			var members int64
+			require.NoError(t, db.Model(&model.AdtySiteCustomer{}).Where("user_id = ?", customer.Id).Count(&members).Error)
+			assert.Zero(t, members, "inherited customers have no site membership row on main")
 			key := "direct:zero-root-chunk"
 			require.NoError(t, model.QueueDirectBillingDelta(model.BillingOperation{OperationKey: key, EarningRootKey: root.OperationKey,
 				UserId: customer.Id, SiteId: from.Id, SiteMarkup: 1.25, SiteCostFactor: .8}, int(perUnit("125"))))
@@ -174,18 +175,7 @@ func TestRiskReleaseSurvivesZeroEventRootTransferAndStaysInOriginalSite(t *testi
 			require.NoError(t, db.Where("operation_key = ?", key).First(&event).Error)
 			assert.Equal(t, releaseOriginal, event.RiskReleased)
 			assert.Equal(t, "self_use", event.RiskFlag)
-			// A previous approval is also insufficient for a newly frozen risky
-			// request after a later risk reset within the same site.
-			require.NoError(t, db.Model(&moved).Updates(map[string]any{"reviewed": false, "earning_risk_released": false}).Error)
-			newRoot, err := model.ReserveBillingOperation(model.BillingOperation{OperationKey: "request:new-risk-after-old-review",
-				UserId: customer.Id, SiteId: to.Id, SiteMarkup: 1.25, SiteCostFactor: .8}, 0)
-			require.NoError(t, err)
-			require.NoError(t, model.QueueBillingSettlement(newRoot.OperationKey, int(perUnit("50")), false))
-			_, _, err = model.ApplyBillingSettlement(newRoot.OperationKey)
-			require.NoError(t, err)
-			event = model.AdtySiteEarningEvent{}
-			require.NoError(t, db.Where("operation_key = ?", newRoot.OperationKey).First(&event).Error)
-			assert.False(t, event.RiskReleased, "a historical review cannot release a later risky root")
+			assert.Equal(t, from.Id, event.SiteId, "close inherit must not reattribute the original earning root")
 		})
 	}
 }

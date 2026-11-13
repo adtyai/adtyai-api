@@ -101,20 +101,21 @@ type User struct {
 	QuotaPending         int     `json:"-" gorm:"type:bigint;not null;default:0;column:quota_pending"`
 	UsedQuota            int     `json:"used_quota" gorm:"type:int;default:0;column:used_quota"` // used quota
 	// CheckinQuota 是还在钱包里的签到赠送。花掉的钱先算本金，所以只有余额掉到它下面才减少。退款不能把它当成本金。
-	CheckinQuota     int                        `json:"-" gorm:"type:int;default:0;column:checkin_quota"`
-	RequestCount     int                        `json:"request_count" gorm:"type:int;default:0;"` // request number
-	Group            string                     `json:"group" gorm:"type:varchar(64);default:'default'"`
-	DeletedAt        gorm.DeletedAt             `gorm:"index"`
-	LinuxDOId        string                     `json:"linux_do_id" gorm:"column:linux_do_id;index"`
-	Setting          string                     `json:"setting" gorm:"type:text;column:setting"`
-	Remark           string                     `json:"remark,omitempty" gorm:"type:varchar(255)" validate:"max=255"`
-	StripeCustomer   string                     `json:"stripe_customer" gorm:"type:varchar(64);column:stripe_customer;index"`
-	CreatedAt        int64                      `json:"created_at" gorm:"autoCreateTime;column:created_at"`
-	LastLoginAt      int64                      `json:"last_login_at" gorm:"default:0;column:last_login_at"`
-	AuthVersion      int64                      `json:"-" gorm:"type:bigint;not null;default:1;column:auth_version"`
-	SiteId           int                        `json:"site_id" gorm:"index;default:0;column:site_id"` // 所属分站（任务 11.1），0 是主站；只由分站服务写
-	StaffSiteId      int                        `json:"staff_site_id" gorm:"index;not null;default:0"` // Dedicated employee identity, written only by the staff service.
-	AdminPermissions map[string]map[string]bool `json:"admin_permissions,omitempty" gorm:"-:all"`
+	CheckinQuota        int                        `json:"-" gorm:"type:int;default:0;column:checkin_quota"`
+	RequestCount        int                        `json:"request_count" gorm:"type:int;default:0;"` // request number
+	Group               string                     `json:"group" gorm:"type:varchar(64);default:'default'"`
+	DeletedAt           gorm.DeletedAt             `gorm:"index"`
+	LinuxDOId           string                     `json:"linux_do_id" gorm:"column:linux_do_id;index"`
+	Setting             string                     `json:"setting" gorm:"type:text;column:setting"`
+	Remark              string                     `json:"remark,omitempty" gorm:"type:varchar(255)" validate:"max=255"`
+	StripeCustomer      string                     `json:"stripe_customer" gorm:"type:varchar(64);column:stripe_customer;index"`
+	CreatedAt           int64                      `json:"created_at" gorm:"autoCreateTime;column:created_at"`
+	LastLoginAt         int64                      `json:"last_login_at" gorm:"default:0;column:last_login_at"`
+	AuthVersion         int64                      `json:"-" gorm:"type:bigint;not null;default:1;column:auth_version"`
+	SiteId              int                        `json:"site_id" gorm:"index;default:0;column:site_id"`                                        // 所属分站（任务 11.1），0 是主站；只由分站服务写
+	InheritedFromSiteId int                        `json:"inherited_from_site_id" gorm:"index;not null;default:0;column:inherited_from_site_id"` // 关站继承到主站时记下原分站；0 表示不是继承身份
+	StaffSiteId         int                        `json:"staff_site_id" gorm:"index;not null;default:0"`                                        // Dedicated employee identity, written only by the staff service.
+	AdminPermissions    map[string]map[string]bool `json:"admin_permissions,omitempty" gorm:"-:all"`
 }
 
 func (user *User) ToBaseUser() *UserBase {
@@ -807,6 +808,7 @@ func (user *User) UpdateWithTx(tx *gorm.DB, updatePassword bool) error {
 		"request_count",
 		"auth_version",
 		"site_id",
+		"inherited_from_site_id",
 	).Updates(newUser).Error; err != nil {
 		return err
 	}

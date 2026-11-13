@@ -25,8 +25,6 @@ import { Dialog } from '@/components/dialog'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
-import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Textarea } from '@/components/ui/textarea'
 import { handleServerError } from '@/lib/handle-server-error'
 import { ROLE } from '@/lib/roles'
@@ -35,17 +33,13 @@ import { useAuthStore } from '@/stores/auth-store'
 import { setSiteStatus, siteAdminKeys } from '../api'
 import type { AdminSite } from '../types'
 
-type Destination = 'main' | 'site'
-
 /**
- * Close a site (task 11.1, 11.9). Root must say where the customers
- * go: back to the main site, or to another active site. The server refuses
- * a close without transfer_to; the button stays disabled until it is set.
+ * Close a site (task 11.1, 11.9). Root confirms the close; customers are
+ * inherited by the main site only. There is no option to divert them to
+ * another site.
  */
 export function CloseSiteDialog(props: {
   site: AdminSite
-  /** Active sites other than this one. */
-  transferTargets: AdminSite[]
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
@@ -55,18 +49,9 @@ export function CloseSiteDialog(props: {
   )
   const id = useId()
   const queryClient = useQueryClient()
-  const [destination, setDestination] = useState<Destination | null>(null)
-  const [targetId, setTargetId] = useState('')
   const [clawBack, setClawBack] = useState(false)
   const [immediate, setImmediate] = useState(false)
   const [reason, setReason] = useState('')
-  const targets = props.transferTargets.filter(
-    (site) => site.id !== props.site.id && site.status === 'active'
-  )
-
-  let transferTo: number | null = null
-  if (destination === 'main') transferTo = 0
-  if (destination === 'site' && targetId !== '') transferTo = Number(targetId)
 
   const close = useMutation({
     mutationFn: () => {
@@ -75,7 +60,7 @@ export function CloseSiteDialog(props: {
       }
       return setSiteStatus(props.site.id, {
         status: 'closed',
-        transfer_to: transferTo ?? 0,
+        transfer_to: 0,
         claw_back: clawBack,
         immediate,
         reason: reason.trim(),
@@ -97,7 +82,7 @@ export function CloseSiteDialog(props: {
       onOpenChange={props.onOpenChange}
       title={t('Close {{site}}', { site: props.site.host })}
       description={t(
-        'Customers are told before the site closes. On the day it closes, they move to the destination below and the custom and sender domains are removed.'
+        'Customers are told before the site closes. On the day it closes, they are inherited by the main site and the custom and sender domains are removed.'
       )}
       footer={
         <>
@@ -106,7 +91,7 @@ export function CloseSiteDialog(props: {
           </Button>
           <Button
             variant='destructive'
-            disabled={transferTo === null || close.isPending}
+            disabled={close.isPending}
             onClick={() => close.mutate()}
           >
             {t('Close site')}
@@ -115,66 +100,9 @@ export function CloseSiteDialog(props: {
       }
     >
       <div className='flex flex-col gap-4'>
-        <fieldset className='flex flex-col gap-2'>
-          <legend className='mb-1 text-sm font-medium'>
-            {t('Where the customers go')}
-          </legend>
-          <RadioGroup
-            value={destination ?? ''}
-            onValueChange={(value) => setDestination(value as Destination)}
-          >
-            <div className='flex items-center gap-2'>
-              <RadioGroupItem
-                id={`${id}-main`}
-                value='main'
-                aria-labelledby={`${id}-main-label`}
-              />
-              <Label id={`${id}-main-label`} htmlFor={`${id}-main`}>
-                {t('Move to the main site')}
-              </Label>
-            </div>
-            <div className='flex items-center gap-2'>
-              <RadioGroupItem
-                id={`${id}-site`}
-                value='site'
-                disabled={targets.length === 0}
-                aria-labelledby={`${id}-site-label`}
-              />
-              <Label id={`${id}-site-label`} htmlFor={`${id}-site`}>
-                {t('Move to another site')}
-              </Label>
-            </div>
-          </RadioGroup>
-          {destination === 'site' && (
-            <div className='space-y-1 pl-6'>
-              <Label htmlFor={`${id}-target`}>{t('Target site')}</Label>
-              <NativeSelect
-                id={`${id}-target`}
-                value={targetId}
-                onChange={(event) => setTargetId(event.target.value)}
-              >
-                <NativeSelectOption value=''>
-                  {t('Choose a site')}
-                </NativeSelectOption>
-                {targets.map((site) => (
-                  <NativeSelectOption key={site.id} value={String(site.id)}>
-                    {site.host}
-                  </NativeSelectOption>
-                ))}
-              </NativeSelect>
-              <p className='text-muted-foreground text-xs'>
-                {t(
-                  "The new site's markup for these customers cannot be higher than before."
-                )}
-              </p>
-            </div>
-          )}
-          {transferTo === null && (
-            <p className='text-warning text-xs'>
-              {t('Choose where the customers go.')}
-            </p>
-          )}
-        </fieldset>
+        <p className='text-muted-foreground text-sm'>
+          {t('All customers of this site will be inherited by the main site.')}
+        </p>
         <div className='flex items-center gap-2'>
           <Checkbox
             id={`${id}-claw`}

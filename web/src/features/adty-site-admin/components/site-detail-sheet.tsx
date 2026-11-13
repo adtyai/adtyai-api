@@ -61,7 +61,6 @@ import {
   getSiteCustomers,
   getSiteStats,
   reviewAdminBalanceRequest,
-  getSites,
   resumeSiteSettlement,
   reviewSite,
   setSiteStatus,
@@ -185,11 +184,6 @@ function SiteActions(props: {
   }, [dirty, onDirtyChange])
   const [closing, setClosing] = useState(false)
   const [takingDown, setTakingDown] = useState(false)
-  const targets = useQuery({
-    queryKey: siteAdminKeys.list('transfer-targets', {}),
-    queryFn: () => getSites({ p: 1, status: 'active', page_size: 100 }),
-    enabled: closing && canClose,
-  })
   const done = () => {
     toast.success(t('Saved successfully'))
     setReason('')
@@ -481,14 +475,9 @@ function SiteActions(props: {
         disabled={!canDelete}
         handleConfirm={() => canDelete && takedown.mutate()}
       />
-      {canClose && closing && targets.isError && (
-        <ErrorState onRetry={() => void targets.refetch()} />
-      )}
-      {canClose && closing && targets.isPending && <LoadingState />}
-      {canClose && closing && targets.isSuccess && (
+      {canClose && (
         <CloseSiteDialog
           site={site}
-          transferTargets={targets.data?.items ?? []}
           open={closing}
           onOpenChange={setClosing}
         />

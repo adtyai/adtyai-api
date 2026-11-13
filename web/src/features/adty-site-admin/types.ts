@@ -170,7 +170,7 @@ export type SiteCustomer = {
   joined_at: number
 }
 
-/** PUT /api/adty/admin/sites/:id/status. transfer_to is required for closed. */
+/** PUT /api/adty/admin/sites/:id/status. Omitting transfer_to or sending 0 inherits to main; a non-zero value is rejected. */
 export type SiteStatusChange = {
   status: 'active' | 'paused' | 'closed'
   transfer_to?: number

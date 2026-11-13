@@ -33,7 +33,7 @@ var (
 	ErrAdtySiteInviteInvalid = common.NewMessage("The invite code is invalid or used up")
 	ErrAdtySiteInviteOff     = common.NewMessage("Invite codes are not enabled")
 	ErrAdtySiteStatus        = common.NewMessage("The site cannot change to this status")
-	ErrAdtySiteTransfer      = common.NewMessage("Customers can only be moved to another active site")
+	ErrAdtySiteTransfer      = common.NewMessage("Closed-site customers can only be inherited by the main site")
 )
 
 // AdtySitePreset 是开站时预设的单站 d 和 k 上限（管理员直接开或邀请码带的），空就用全局。
@@ -728,7 +728,7 @@ func SetAdtySiteStatus(siteId, adminId int, status, reason string) (*model.AdtyS
 	return GetAdtySite(siteId)
 }
 
-// RequestAdtySiteClose 是站长申请关站：只记下申请时间，客户去向由管理员在 ScheduleAdtySiteClose 里定。
+// RequestAdtySiteClose 是站长申请关站：只记下申请时间。关闭仍由 Root 在主站后台确认，客户一律由主站继承。
 func RequestAdtySiteClose(ownerUserId int, reason string) (*model.AdtySite, error) {
 	var site model.AdtySite
 	err := model.DB.Transaction(func(tx *gorm.DB) error {
@@ -759,14 +759,14 @@ func RequestAdtySiteClose(ownerUserId int, reason string) (*model.AdtySite, erro
 
 // AdtySiteClosePlan 是管理员定下的关站方式。
 type AdtySiteClosePlan struct {
-	TransferTo int  // 0 转回主站
+	TransferTo int  // 只能是 0（主站）；非 0 会被拒绝，不会改写后继续关站
 	ClawBack   bool // 兼容字段：G.7 / SITE-010 不允许因关站作废或扣回收益，传入也会被忽略
 	Immediate  bool // 不等 close_notice_days，立即执行（例如违规）
 	Reason     string
 }
 
-// ScheduleAdtySiteClose 把站点改成 closing，记下客户去向，close_notice_days 天后由主节点执行；
-// Immediate 时立即执行。站点 pending（还没开）时直接关闭，没有客户。
+// ScheduleAdtySiteClose 把站点改成 closing，close_transfer_to 只记 0（由主站继承），
+// close_notice_days 天后由主节点执行；Immediate 时立即执行。站点 pending（还没开）时直接关闭，没有客户。
 func ScheduleAdtySiteClose(siteId, adminId int, plan AdtySiteClosePlan) (*model.AdtySite, error) {
 	now := time.Now().Unix()
 	immediate := plan.Immediate
@@ -785,23 +785,14 @@ func ScheduleAdtySiteClose(siteId, adminId int, plan AdtySiteClosePlan) (*model.
 			immediate = true
 		}
 		if plan.TransferTo != 0 {
-			if plan.TransferTo == site.Id {
-				return ErrAdtySiteTransfer
-			}
-			var target []model.AdtySite
-			if err := tx.Where("id = ? AND status = ?", plan.TransferTo, model.AdtySiteStatusActive).Limit(1).Find(&target).Error; err != nil {
-				return err
-			}
-			if len(target) == 0 {
-				return ErrAdtySiteTransfer
-			}
+			return ErrAdtySiteTransfer
 		}
 		executeAt := now + int64(max(resellerSetting().CloseNoticeDays, 0))*86400
 		if immediate {
 			executeAt = now
 		}
 		updates := map[string]any{
-			"status": model.AdtySiteStatusClosing, "close_execute_at": executeAt, "close_transfer_to": plan.TransferTo,
+			"status": model.AdtySiteStatusClosing, "close_execute_at": executeAt, "close_transfer_to": 0,
 			"close_claw_back": false, "close_reason": truncateText(plan.Reason, 1000),
 		}
 		if err := tx.Model(&model.AdtySite{}).Where("id = ?", site.Id).Updates(updates).Error; err != nil {
@@ -836,7 +827,8 @@ var AdtyOnSiteClosed func(site *model.AdtySite)
 // G.7 / SITE-010 要求关站后收益与佣金按原来源承接，此钩子不再被调用；即使被调用也不会改动资金。
 var AdtySiteClawBackTx func(tx *gorm.DB, site *model.AdtySite, operatorId int) error
 
-// ExecuteAdtySiteClose 执行到期的关站：转移客户、写定价、站点改 closed。可重复调用。
+// ExecuteAdtySiteClose 执行到期的关站：客户、团队一律由主站继承，站点改 closed。可重复调用。
+// 已排期但 close_transfer_to 仍指向其他站的 in-flight 关站同样只继承到主站，不会再分流。
 // 关站不会作废未结收益，也不会扣回已结算佣金；这些金额继续按原来源持有，后续结算、转余额、提现或退款走原规则。
 func ExecuteAdtySiteClose(siteId int, now int64) error {
 	var moved []int
@@ -849,23 +841,8 @@ func ExecuteAdtySiteClose(siteId int, now int64) error {
 		if site.Status != model.AdtySiteStatusClosing || site.CloseExecuteAt > now {
 			return nil
 		}
-		target := site.CloseTransferTo
-		if target != 0 {
-			var targets []model.AdtySite
-			if err := tx.Where("id = ? AND status = ?", target, model.AdtySiteStatusActive).Limit(1).Find(&targets).Error; err != nil {
-				return err
-			}
-			if len(targets) == 0 {
-				// 目标站在通知期内关了或暂停了：转回主站，并记下来。
-				target = 0
-			}
-		}
+		const target = 0
 		var err error
-		if target != 0 {
-			if err := carryCustomerPricesTx(tx, site.Id, target); err != nil {
-				return err
-			}
-		}
 		moved, err = model.AdtySetUsersSiteTx(tx, site.Id, target)
 		if err != nil {
 			return err
@@ -876,17 +853,9 @@ func ExecuteAdtySiteClose(siteId int, now int64) error {
 		if err := InheritAdtyTeamsOnCloseTx(tx, site.Id); err != nil {
 			return err
 		}
-		// 客户行跟着走：转回主站就删掉；转给别的站就改归属，风控标记按新站重新算（清空）。
-		switch {
-		case len(moved) == 0:
-		case target == 0:
+		// 主站没有分站客户行；继承后删掉，避免残留归属。
+		if len(moved) > 0 {
 			if err := tx.Where("user_id IN ?", moved).Delete(&model.AdtySiteCustomer{}).Error; err != nil {
-				return err
-			}
-		default:
-			if err := tx.Model(&model.AdtySiteCustomer{}).Where("user_id IN ?", moved).Updates(map[string]any{
-				"site_id": target, "risk_flag": "", "risk_reason": "", "reviewed": false, "earning_risk_released": false, "joined_at": now,
-			}).Error; err != nil {
 				return err
 			}
 		}

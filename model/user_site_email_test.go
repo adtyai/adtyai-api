@@ -217,3 +217,25 @@ func TestSiteEmailCodeKeyIsScoped(t *testing.T) {
 	assert.Equal(t, "8:user@example.com", SiteEmailCodeKey("user@example.com", 8))
 	assert.NotEqual(t, SiteEmailCodeKey("user@example.com", 0), SiteEmailCodeKey("user@example.com", 8))
 }
+
+func TestSiteEmailUniqueIndexAllowsInheritedMainIdentities(t *testing.T) {
+	db := adtyTestDB(t)
+	require.NoError(t, db.AutoMigrate(&User{}))
+	// Install the pre-0019 (site_id, lower(email)) index, then let Ensure rebuild it.
+	require.NoError(t, db.Exec(`CREATE UNIQUE INDEX ux_users_site_normalized_email ON users (site_id, LOWER(email)) WHERE email <> ''`).Error)
+	require.NoError(t, db.Create(&User{Username: "inherit-main", Password: "x", Email: "keep@example.com", Status: common.UserStatusEnabled, SiteId: 0}).Error)
+	require.NoError(t, EnsureSiteEmailUniqueIndex(db))
+	require.NoError(t, db.Create(&User{Username: "inherit-closed", Password: "x", Email: "KEEP@example.com", Status: common.UserStatusEnabled, SiteId: 0, InheritedFromSiteId: 9}).Error)
+	err := db.Create(&User{Username: "inherit-dup", Password: "x", Email: "keep@example.com", Status: common.UserStatusEnabled, SiteId: 0}).Error
+	require.Error(t, err)
+	assert.True(t, isSiteEmailUniqueViolation(err))
+	require.NoError(t, db.Create(&User{Username: "inherit-live", Password: "x", Email: "keep@example.com", Status: common.UserStatusEnabled, SiteId: 4}).Error)
+	err = db.Create(&User{Username: "inherit-live-dup", Password: "x", Email: "keep@example.com", Status: common.UserStatusEnabled, SiteId: 4}).Error
+	require.Error(t, err)
+	assert.True(t, isSiteEmailUniqueViolation(err))
+	found, err := GetUniqueUserByEmail("keep@example.com", 4)
+	require.NoError(t, err)
+	assert.Equal(t, "inherit-live", found.Username)
+	_, err = GetUniqueUserByEmail("keep@example.com", 0)
+	require.ErrorIs(t, err, ErrEmailAmbiguous)
+}
