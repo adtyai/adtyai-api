@@ -35,6 +35,25 @@ func PostAdtyTeamClose(c *gin.Context) {
 	common.ApiSuccess(c, gin.H{"closed": true})
 }
 
+func PostAdtyTeamProfile(c *gin.Context) {
+	id, ok := adtyInt64Param(c, "id")
+	if !ok {
+		return
+	}
+	var body struct {
+		Name string `json:"name"`
+	}
+	if err := common.DecodeJson(c.Request.Body, &body); err != nil {
+		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	if err := service.UpdateAdtyTeamProfile(c.GetInt("id"), id, body.Name); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"updated": true})
+}
+
 func PostAdtyTeamLeave(c *gin.Context) {
 	id, ok := adtyInt64Param(c, "id")
 	if !ok {

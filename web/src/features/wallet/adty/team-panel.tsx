@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
@@ -65,6 +65,7 @@ export function TeamPanel() {
     },
   })
   const [name, setName] = useState('')
+  const [rename, setRename] = useState('')
   const [discount, setDiscount] = useState('1')
   const [invite, setInvite] = useState('')
   const [issued, setIssued] = useState('')
@@ -75,6 +76,9 @@ export function TeamPanel() {
 
   const refresh = () => void queryClient.invalidateQueries({ queryKey: ['adty-team', 'mine'] })
   const team = mine.data
+  useEffect(() => {
+    setRename(team?.name ?? '')
+  }, [team?.name])
 
   const create = async () => {
     setPending(true)
@@ -177,6 +181,23 @@ export function TeamPanel() {
         )}
         {team?.role === 'leader' && (
           <div className='flex flex-col gap-2'>
+            <div className='flex flex-col gap-1'>
+              <Label htmlFor='team-rename'>{t('Team name')}</Label>
+              <Input id='team-rename' value={rename} onChange={(event) => setRename(event.target.value)} />
+            </div>
+            <Button
+              type='button'
+              variant='outline'
+              disabled={pending || rename.trim() === '' || rename.trim() === team.name}
+              onClick={() =>
+                void run(async () => {
+                  const response = await api.post(`/api/adty/teams/${team.team_id}/profile`, { name: rename.trim() })
+                  if (!response.data?.success) throw new Error(response.data?.message || 'Failed to save')
+                })
+              }
+            >
+              {t('Rename')}
+            </Button>
             <Button type='button' variant='outline' disabled={pending} onClick={() => void issueInvite()}>
               {t('Create invite')}
             </Button>

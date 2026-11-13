@@ -31,6 +31,7 @@ func TestAdtyGapRoutesRegistered(t *testing.T) {
 		"POST /api/adty/admin/site-withdrawals/:id/paying",
 		"POST /api/adty/admin/site-withdrawals/:id/reject",
 		"POST /api/adty/admin/site-withdrawals/:id/paid",
+		"POST /api/adty/teams/:id/profile",
 	} {
 		assert.Truef(t, found[key], "missing route %s", key)
 	}
@@ -68,6 +69,7 @@ func TestAdtyActionRoutesRequireIndependentScopes(t *testing.T) {
 		{"POST /api/adty/admin/reseller/invite-codes", "adty_site:settings_create"},
 		{"DELETE /api/adty/admin/reseller/invite-codes/:id", "adty_site:settings_delete"},
 		{"GET /api/user/admin/referral/settings", "adty_referral:settings_read"},
+		{"POST /api/adty/teams/:id/profile", "wallet:write"},
 	} {
 		t.Run(route.key, func(t *testing.T) {
 			rule, ok := middleware.AccessTokenRouteRule(route.key)

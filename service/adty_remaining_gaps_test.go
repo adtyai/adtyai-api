@@ -28,6 +28,9 @@ func TestTeamProfileAndTopupDoNotAddBonus(t *testing.T) {
 	member := referralUser(t, db, "gap-member")
 	_, err = JoinAdtyTeam(member.Id, created.Team.Id)
 	require.NoError(t, err)
+	require.ErrorIs(t, UpdateAdtyTeamProfile(member.Id, created.Team.Id, "Stolen"), ErrAdtyTeamForbidden)
+	require.NoError(t, db.First(&team, created.Team.Id).Error)
+	require.Equal(t, "Ops Renamed", team.Name)
 	require.NoError(t, DisableAdtyTeamMember(leader.Id, created.Team.Id, member.Id))
 	require.Error(t, SpendAdtyTeam(member.Id, 1, "left-member"))
 }
