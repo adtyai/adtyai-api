@@ -814,9 +814,10 @@ func SumUsedToken(logType int, startTimestamp int64, endTimestamp int64, modelNa
 }
 
 // protectedLogCleanupTypes stay in the logs table. Top-up, refund, and admin
-// adjustment rows are the payment and reconciliation evidence; usage cleanup
-// must not remove them.
-var protectedLogCleanupTypes = []int{LogTypeTopup, LogTypeManage, LogTypeRefund}
+// adjustment rows are the payment and reconciliation evidence; login records
+// belong to the login/security retention category. Usage cleanup must not
+// remove them.
+var protectedLogCleanupTypes = []int{LogTypeTopup, LogTypeManage, LogTypeRefund, LogTypeLogin}
 
 func oldLogScope(ctx context.Context, targetTimestamp int64) *gorm.DB {
 	return LOG_DB.WithContext(ctx).Model(&Log{}).Where("created_at < ? AND type NOT IN ?", targetTimestamp, protectedLogCleanupTypes)
@@ -851,8 +852,8 @@ func DeleteOldLogBatch(ctx context.Context, targetTimestamp int64, limit int) (i
 			return 0, nil
 		}
 		if err := LOG_DB.WithContext(ctx).Exec(
-			"ALTER TABLE logs DELETE WHERE created_at < ? AND type NOT IN (?, ?, ?) SETTINGS mutations_sync = 1",
-			targetTimestamp, LogTypeTopup, LogTypeManage, LogTypeRefund,
+			"ALTER TABLE logs DELETE WHERE created_at < ? AND type NOT IN (?, ?, ?, ?) SETTINGS mutations_sync = 1",
+			targetTimestamp, LogTypeTopup, LogTypeManage, LogTypeRefund, LogTypeLogin,
 		).Error; err != nil {
 			return 0, err
 		}
@@ -863,8 +864,8 @@ func DeleteOldLogBatch(ctx context.Context, targetTimestamp int64, limit int) (i
 		// PostgreSQL rejects LIMIT on DELETE. A nested select keeps the batch
 		// size and lets RowsAffected count every removed row.
 		result := LOG_DB.WithContext(ctx).Exec(
-			"DELETE FROM logs WHERE id IN (SELECT id FROM (SELECT id FROM logs WHERE created_at < ? AND type NOT IN (?, ?, ?) ORDER BY id LIMIT ?) AS old_logs)",
-			targetTimestamp, LogTypeTopup, LogTypeManage, LogTypeRefund, limit,
+			"DELETE FROM logs WHERE id IN (SELECT id FROM (SELECT id FROM logs WHERE created_at < ? AND type NOT IN (?, ?, ?, ?) ORDER BY id LIMIT ?) AS old_logs)",
+			targetTimestamp, LogTypeTopup, LogTypeManage, LogTypeRefund, LogTypeLogin, limit,
 		)
 		if result.Error != nil {
 			return 0, result.Error
