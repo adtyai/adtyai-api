@@ -240,6 +240,24 @@ func TestAdtyTranslationReuseVersionAndNoDebit(t *testing.T) {
 	assert.Equal(t, 500000, quota)
 }
 
+func TestAdtyGroupHealthSeriesUses96FifteenMinuteWindows(t *testing.T) {
+	prepareReferralDialectDB(t, "sqlite")
+	now := time.Date(2026, 11, 13, 12, 7, 0, 0, time.UTC)
+	require.NoError(t, RecordAdtyGroupHealth(0, "vip", "gpt", model.AdtyGroupHealthRequest, model.AdtyGroupHealthSuccess, now))
+	require.NoError(t, RecordAdtyGroupHealth(0, "vip", "gpt", model.AdtyGroupHealthRequest, model.AdtyGroupHealthUpstream, now.Add(-15*time.Minute)))
+
+	rows, err := listAdtyGroupHealth(0, "", now)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.Len(t, rows[0].Series, 96)
+	starts := AdtyHealthWindowStarts(now)
+	assert.Equal(t, starts[0], rows[0].Series[0].Ts)
+	assert.Equal(t, starts[95], rows[0].Series[95].Ts)
+	assert.Equal(t, 1, rows[0].Series[95].Success)
+	assert.Equal(t, 1, rows[0].Series[94].Fail)
+	assert.Equal(t, 2, rows[0].RequestSamples)
+}
+
 func TestAdtyGroupHealthKeepsProbeAndCustomerRefusalApart(t *testing.T) {
 	db := prepareReferralDialectDB(t, "sqlite")
 	user := referralUser(t, db, "health-user")

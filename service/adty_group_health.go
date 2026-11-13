@@ -158,7 +158,7 @@ func ListAdtyGroupHealthForUser(userId int, userGroup, modelName string, allowed
 			continue
 		}
 		filtered = append(filtered, AdtyGroupHealthView{
-			Group: group, Status: model.AdtyGroupHealthNoData, Scope: scope, Series: []AdtyGroupHealthPoint{},
+			Group: group, Status: model.AdtyGroupHealthNoData, Scope: scope, Series: adtyHealthSeries(now, nil),
 		})
 	}
 	return filtered, nil
@@ -214,11 +214,11 @@ func listAdtyGroupHealth(siteId int, modelName string, now time.Time) ([]AdtyGro
 			row.refuse++
 			continue
 		}
-		hour := sample.CreatedAt - (sample.CreatedAt % 3600)
-		point := row.series[hour]
+		window := sample.CreatedAt - (sample.CreatedAt % (15 * 60))
+		point := row.series[window]
 		if point == nil {
-			point = &AdtyGroupHealthPoint{Ts: hour}
-			row.series[hour] = point
+			point = &AdtyGroupHealthPoint{Ts: window}
+			row.series[window] = point
 		}
 		if sample.Outcome == model.AdtyGroupHealthSuccess {
 			row.success++
@@ -235,10 +235,7 @@ func listAdtyGroupHealth(siteId int, modelName string, now time.Time) ([]AdtyGro
 	}
 	out := make([]AdtyGroupHealthView, 0, len(grouped))
 	for group, row := range grouped {
-		view := AdtyGroupHealthView{Group: group, Status: model.AdtyGroupHealthNoData, Scope: scope, UpdatedAt: row.updated, Series: []AdtyGroupHealthPoint{}}
-		for _, point := range row.series {
-			view.Series = append(view.Series, *point)
-		}
+		view := AdtyGroupHealthView{Group: group, Status: model.AdtyGroupHealthNoData, Scope: scope, UpdatedAt: row.updated, Series: adtyHealthSeries(now, row.series)}
 		requestTotal := row.success + row.fail
 		view.RequestSamples = requestTotal
 		view.ProbeSamples = row.probeOK + row.probeNo
@@ -269,6 +266,19 @@ func listAdtyGroupHealth(siteId int, modelName string, now time.Time) ([]AdtyGro
 		out = append(out, view)
 	}
 	return out, nil
+}
+
+func adtyHealthSeries(now time.Time, points map[int64]*AdtyGroupHealthPoint) []AdtyGroupHealthPoint {
+	starts := AdtyHealthWindowStarts(now)
+	out := make([]AdtyGroupHealthPoint, len(starts))
+	for i, ts := range starts {
+		if point := points[ts]; point != nil {
+			out[i] = *point
+			continue
+		}
+		out[i] = AdtyGroupHealthPoint{Ts: ts}
+	}
+	return out
 }
 
 func openAdtyGroupHealthAlert(siteId int, group, kind string) error {
