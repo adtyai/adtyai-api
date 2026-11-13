@@ -60,6 +60,14 @@ func ConsumeAdtyFundBatchesTx(tx *gorm.DB, userID int, amount, balanceBefore int
 	return err
 }
 
+// ConsumeAdtyFundBatchesQuietTx spends lots in FIFO order so remaining tracks
+// a non-charge wallet debit. It does not fire the principal-spent hook; that
+// hook is for usage charges, not official adjustments or staff approvals.
+func ConsumeAdtyFundBatchesQuietTx(tx *gorm.DB, userID int, amount, balanceBefore int64) error {
+	_, err := consumeAdtyFundBatchesTx(tx, userID, amount, balanceBefore, false)
+	return err
+}
+
 func consumeAdtyFundBatchesTx(tx *gorm.DB, userID int, amount, balanceBefore int64, notifyPrincipalSpent bool) (int64, error) {
 	if tx == nil || userID <= 0 || amount <= 0 || !tx.Migrator().HasTable(&AdtyFundBatch{}) {
 		return 0, nil

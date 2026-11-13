@@ -596,12 +596,17 @@ func CreditAdtyTeamTopup(leaderId int, teamId int64, principalQuota int64, ref s
 }
 
 // SubmitAdtyStaffBalanceRequest records an employee request. It does not change the customer balance.
-func SubmitAdtyStaffBalanceRequest(staffUserID, customerUserID int, direction string, amount decimal.Decimal) (*model.AdtyStaffBalanceRequest, error) {
+// The idempotency key is required so a retried submit cannot create a second booking.
+func SubmitAdtyStaffBalanceRequest(staffUserID, customerUserID int, direction string, amount decimal.Decimal, idempotencyKey string) (*model.AdtyStaffBalanceRequest, error) {
 	if staffUserID <= 0 || customerUserID <= 0 || !amount.IsPositive() {
 		return nil, common.NewMessage("Invalid parameters")
 	}
 	if direction != model.AdtyStaffBalanceIncrease && direction != model.AdtyStaffBalanceDecrease {
 		return nil, common.NewMessage("Invalid parameters")
+	}
+	idempotencyKey = strings.TrimSpace(idempotencyKey)
+	if idempotencyKey == "" || len(idempotencyKey) > 64 {
+		return nil, common.NewMessage("Idempotency key is required")
 	}
 	var staff model.AdtySiteStaff
 	if err := model.DB.Where("user_id = ? AND status = ?", staffUserID, "enabled").First(&staff).Error; err != nil {
@@ -614,20 +619,141 @@ func SubmitAdtyStaffBalanceRequest(staffUserID, customerUserID int, direction st
 	if customer.SiteId != staff.SiteId || customer.StaffSiteId != 0 {
 		return nil, common.NewMessage("No permission to perform this action")
 	}
+	if existing, err := findAdtyStaffBalanceRequestByIdemKey(model.DB, idempotencyKey); err != nil {
+		return nil, err
+	} else if existing != nil {
+		if !sameAdtyStaffBalanceRequest(existing, staff.SiteId, staffUserID, customerUserID, direction, amount) {
+			return nil, model.ErrAdtyIdempotencyConflict
+		}
+		return existing, nil
+	}
 	row := &model.AdtyStaffBalanceRequest{
 		SiteId: staff.SiteId, StaffUserId: staffUserID, CustomerUserId: customerUserID,
 		Direction: direction, AmountUSD: amount, Status: model.AdtyStaffBalancePending,
+		IdempotencyKey: &idempotencyKey,
 	}
 	if err := model.DB.Create(row).Error; err != nil {
-		return nil, err
+		existing, lookupErr := findAdtyStaffBalanceRequestByIdemKey(model.DB, idempotencyKey)
+		if lookupErr != nil {
+			return nil, lookupErr
+		}
+		if existing == nil {
+			return nil, err
+		}
+		if !sameAdtyStaffBalanceRequest(existing, staff.SiteId, staffUserID, customerUserID, direction, amount) {
+			return nil, model.ErrAdtyIdempotencyConflict
+		}
+		return existing, nil
 	}
 	return row, nil
 }
 
+func findAdtyStaffBalanceRequestByIdemKey(db *gorm.DB, key string) (*model.AdtyStaffBalanceRequest, error) {
+	var rows []model.AdtyStaffBalanceRequest
+	if err := db.Where("idempotency_key = ?", key).Limit(1).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return nil, nil
+	}
+	return &rows[0], nil
+}
+
+func sameAdtyStaffBalanceRequest(row *model.AdtyStaffBalanceRequest, siteID, staffUserID, customerUserID int, direction string, amount decimal.Decimal) bool {
+	return row != nil && row.SiteId == siteID && row.StaffUserId == staffUserID &&
+		row.CustomerUserId == customerUserID && row.Direction == direction && row.AmountUSD.Equal(amount)
+}
+
+func adtyStaffBalanceLedgerKey(row model.AdtyStaffBalanceRequest) string {
+	if row.IdempotencyKey != nil {
+		if key := strings.TrimSpace(*row.IdempotencyKey); key != "" {
+			return "staff-balance:" + common.Sha1([]byte(key))
+		}
+	}
+	return "staff-balance:" + strconv.FormatInt(row.Id, 10)
+}
+
+func sameStaffBalanceLedger(entry *model.AdtyBalanceLedger, row model.AdtyStaffBalanceRequest, delta int64) bool {
+	if entry == nil {
+		return false
+	}
+	expected := delta
+	if row.Direction == model.AdtyStaffBalanceDecrease {
+		expected = -delta
+	}
+	return entry.Type == model.AdtyLedgerTypeManualAdjust && entry.RefType == "staff_balance" &&
+		entry.RefId == strconv.FormatInt(row.Id, 10) && entry.UserId == row.CustomerUserId &&
+		entry.DeltaQuota == expected
+}
+
+// applyApprovedStaffBalanceTx credits or debits through the official wallet
+// helpers so the same transaction writes the ledger and principal fund batches.
+// A decrease is refused unless available balance (quota minus in-flight holds)
+// covers the full amount.
+func applyApprovedStaffBalanceTx(tx *gorm.DB, row model.AdtyStaffBalanceRequest, reviewerID int) error {
+	quota, err := common.WalletQuotaFromDecimalStrict(row.AmountUSD.Mul(common.QuotaPerUnitDecimal()).Floor())
+	if err != nil {
+		return err
+	}
+	delta := int64(quota)
+	if delta <= 0 {
+		return common.NewMessage("Invalid parameters")
+	}
+	var user model.User
+	if err := model.AdtyLockForUpdate(tx).First(&user, row.CustomerUserId).Error; err != nil {
+		return err
+	}
+	key := adtyStaffBalanceLedgerKey(row)
+	existing, err := model.FindAdtyLedgerByIdemKeyTx(tx, key)
+	if err != nil {
+		return err
+	}
+	if existing != nil {
+		if !sameStaffBalanceLedger(existing, row, delta) {
+			return model.ErrAdtyIdempotencyConflict
+		}
+		return nil
+	}
+	rawBefore := int64(user.Quota)
+	var before, applied int64
+	if row.Direction == model.AdtyStaffBalanceDecrease {
+		var debited int64
+		before, debited, err = model.AdtyDebitUserQuotaTx(tx, row.CustomerUserId, delta)
+		if err != nil {
+			return err
+		}
+		if debited != delta {
+			return common.NewMessage("Customer balance is not enough")
+		}
+		applied = -debited
+		if err := model.ConsumeAdtyFundBatchesQuietTx(tx, row.CustomerUserId, debited, rawBefore); err != nil {
+			return err
+		}
+	} else {
+		before, err = model.AdtyCreditUserQuotaTx(tx, row.CustomerUserId, delta)
+		if err != nil {
+			return err
+		}
+		applied = delta
+		if err := model.CreateAdtyFundBatchesTx(tx, row.CustomerUserId, adtyStaffBalanceLedgerKey(row), delta, 0); err != nil {
+			return err
+		}
+	}
+	return model.InsertAdtyLedgerTx(tx, &model.AdtyBalanceLedger{
+		UserId: row.CustomerUserId, DeltaQuota: applied,
+		BalanceBefore: before, BalanceAfter: before + applied,
+		Type: model.AdtyLedgerTypeManualAdjust, RefType: "staff_balance",
+		RefId: strconv.FormatInt(row.Id, 10), Reason: "staff balance request",
+		OperatorId: reviewerID, IdempotencyKey: &key,
+	})
+}
+
 // ReviewAdtyStaffBalanceRequest approves or rejects a pending request.
-// Site owners review their own site. Root reviews any site. Approval changes the customer quota once.
+// Site owners review their own site. Root reviews any site. Approval changes the customer quota once
+// through the official credit or debit path, writing the ledger and fund batches.
 func ReviewAdtyStaffBalanceRequest(reviewerID int, reviewerRole string, requestID int64, approve bool) error {
-	return model.DB.Transaction(func(tx *gorm.DB) error {
+	var changedUserID int
+	err := model.DB.Transaction(func(tx *gorm.DB) error {
 		var row model.AdtyStaffBalanceRequest
 		if err := model.AdtyLockForUpdate(tx).First(&row, requestID).Error; err != nil {
 			return err
@@ -649,29 +775,22 @@ func ReviewAdtyStaffBalanceRequest(reviewerID int, reviewerRole string, requestI
 		status := model.AdtyStaffBalanceRejected
 		if approve {
 			status = model.AdtyStaffBalanceApproved
-			quota, err := common.WalletQuotaFromDecimalStrict(row.AmountUSD.Mul(common.QuotaPerUnitDecimal()).Floor())
-			if err != nil {
+			if err := applyApprovedStaffBalanceTx(tx, row, reviewerID); err != nil {
 				return err
 			}
-			delta := int64(quota)
-			if row.Direction == model.AdtyStaffBalanceDecrease {
-				var user model.User
-				if err := model.AdtyLockForUpdate(tx).First(&user, row.CustomerUserId).Error; err != nil {
-					return err
-				}
-				if int64(user.Quota) < delta {
-					return common.NewMessage("Customer balance is not enough")
-				}
-				delta = -delta
-			}
-			if err := tx.Model(&model.User{}).Where("id = ?", row.CustomerUserId).Update("quota", gorm.Expr("quota + ?", delta)).Error; err != nil {
-				return err
-			}
+			changedUserID = row.CustomerUserId
 		}
 		return tx.Model(&row).Updates(map[string]any{
 			"status": status, "reviewer_id": reviewerID, "reviewer_role": reviewerRole, "reviewed_at": common.GetTimestamp(),
 		}).Error
 	})
+	if err != nil {
+		return err
+	}
+	if changedUserID > 0 {
+		model.AdtySyncUserQuotaCache(changedUserID, "staff-balance")
+	}
+	return nil
 }
 
 // RecordAdtyPriceRevision appends one price change. History rows are not updated.

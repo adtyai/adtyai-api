@@ -41,6 +41,7 @@ export type StaffBalanceRequest = {
   customer_user_id: number
   direction: StaffBalanceDirection
   amount_usd: string
+  idempotency_key?: string
   status: 'pending' | 'approved' | 'rejected'
   reviewer_id: number
   reviewer_role: string
@@ -99,6 +100,7 @@ export async function createStaffBalanceRequest(input: {
   customer_id: number
   direction: StaffBalanceDirection
   amount_usd: string
+  idempotency_key: string
 }): Promise<StaffBalanceRequest> {
   const response = await api.post<Response<StaffBalanceRequest>>(
     '/api/adty/staff/balance-requests',

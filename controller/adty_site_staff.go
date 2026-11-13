@@ -2,6 +2,7 @@ package controller
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -235,9 +236,10 @@ func PostAdtyStaffBalanceRequest(c *gin.Context) {
 		return
 	}
 	var body struct {
-		CustomerID int    `json:"customer_id"`
-		Direction  string `json:"direction"`
-		AmountUSD  string `json:"amount_usd"`
+		CustomerID     int    `json:"customer_id"`
+		Direction      string `json:"direction"`
+		AmountUSD      string `json:"amount_usd"`
+		IdempotencyKey string `json:"idempotency_key"`
 	}
 	if err := common.DecodeJson(c.Request.Body, &body); err != nil {
 		common.ApiErrorT(c, "Invalid parameters")
@@ -248,8 +250,16 @@ func PostAdtyStaffBalanceRequest(c *gin.Context) {
 		common.ApiErrorT(c, "Invalid parameters")
 		return
 	}
-	row, err := service.SubmitAdtyStaffBalanceRequest(c.GetInt("id"), body.CustomerID, body.Direction, amount)
+	key := strings.TrimSpace(body.IdempotencyKey)
+	if key == "" {
+		key = strings.TrimSpace(c.GetHeader("Idempotency-Key"))
+	}
+	row, err := service.SubmitAdtyStaffBalanceRequest(c.GetInt("id"), body.CustomerID, body.Direction, amount, key)
 	if err != nil {
+		if errors.Is(err, model.ErrAdtyIdempotencyConflict) {
+			common.ApiErrorT(c, "This request was already used for another operation")
+			return
+		}
 		common.ApiError(c, err)
 		return
 	}

@@ -22,6 +22,7 @@ type AdtyStaffBalanceRequest struct {
 	CustomerUserId int             `json:"customer_user_id" gorm:"index"`
 	Direction      string          `json:"direction" gorm:"type:varchar(16)"`
 	AmountUSD      decimal.Decimal `json:"amount_usd" gorm:"type:decimal(20,8);not null"`
+	IdempotencyKey *string         `json:"idempotency_key,omitempty" gorm:"type:varchar(64);uniqueIndex"`
 	Status         string          `json:"status" gorm:"type:varchar(16);index"`
 	ReviewerId     int             `json:"reviewer_id"`
 	ReviewerRole   string          `json:"reviewer_role" gorm:"type:varchar(16)"`

@@ -56,6 +56,7 @@ export function StaffBalanceRequestDialog(props: {
   const [direction, setDirection] = useState<StaffBalanceDirection | ''>('')
   const [amount, setAmount] = useState('')
   const [confirmed, setConfirmed] = useState(false)
+  const [idempotencyKey] = useState(() => crypto.randomUUID())
   const submit = useMutation({
     retry: false,
     mutationFn: () => {
@@ -66,6 +67,7 @@ export function StaffBalanceRequestDialog(props: {
         customer_id: props.customer.id,
         direction,
         amount_usd: amount.trim(),
+        idempotency_key: idempotencyKey,
       })
     },
     onSuccess: () => {
