@@ -584,9 +584,7 @@ func TestTrialGrantLimitsAndLedger(t *testing.T) {
 	require.NoError(t, db.Model(&model.AdtySite{}).Where("id = ?", site.Id).Update("status", model.AdtySiteStatusPaused).Error)
 	paused, err := GrantAdtySiteTrial(site.Id, customer.Id, usd("5"), "k2")
 	require.NoError(t, err)
-	assert.Equal(t, grant.Id, paused.Id, "a paused site still replays the same grant")
-	_, err = GrantAdtySiteTrial(site.Id, customer.Id, usd("1"), "while-paused")
-	assert.Error(t, err, "a new grant needs an active site")
+	assert.Equal(t, grant.Id, paused.Id, "a leftover paused site still replays the same grant")
 	require.NoError(t, db.Model(&model.AdtySite{}).Where("id = ?", site.Id).Update("status", model.AdtySiteStatusActive).Error)
 
 	var stored model.User
@@ -611,6 +609,22 @@ func TestTrialGrantLimitsAndLedger(t *testing.T) {
 	resellerSetting().TrialGrantMaxUSD = nil
 	_, err = GrantAdtySiteTrial(site.Id, customer.Id, usd("1"), "unset")
 	assert.ErrorIs(t, err, ErrAdtySiteTrialUnavailable)
+}
+
+func TestLeftoverPausedSiteAllowsTrialGrant(t *testing.T) {
+	db := prepareSiteDB(t)
+	owner, site := openActiveSite(t, db, "trial-paused")
+	customer := siteCustomer(t, db, site, "trial-paused-customer")
+	affiliate, err := Referral.EnsureAffiliate(owner.Id)
+	require.NoError(t, err)
+	require.NoError(t, db.Model(&model.ReferralCommissionAccount{}).Where("affiliate_id = ?", affiliate.Id).Update("available_amount", 100).Error)
+	require.NoError(t, db.Model(&model.AdtySite{}).Where("id = ?", site.Id).Update("status", model.AdtySiteStatusPaused).Error)
+	grant, err := GrantAdtySiteTrial(site.Id, customer.Id, usd("5"), "leftover-paused")
+	require.NoError(t, err, "leftover paused rows must not freeze new trial grants")
+	require.NotNil(t, grant)
+	var stored model.User
+	require.NoError(t, db.First(&stored, customer.Id).Error)
+	assert.EqualValues(t, perUnit("5"), stored.Quota)
 }
 
 func TestTrialGrantConcurrentSameKey(t *testing.T) {
@@ -765,7 +779,7 @@ func TestSettleAfterFreezeIntoAccount(t *testing.T) {
 	assert.InDelta(t, 54, acc.AvailableAmount, 1e-9, "$45 + $4.5 + $4.5")
 }
 
-func TestPausedSiteNotSettled(t *testing.T) {
+func TestLeftoverPausedSiteStillSettles(t *testing.T) {
 	db := prepareSiteDB(t)
 	_, site := openActiveSite(t, db, "paused-settle")
 	customer := siteCustomer(t, db, site, "paused-customer")
@@ -773,14 +787,13 @@ func TestPausedSiteNotSettled(t *testing.T) {
 	t.Cleanup(func() { adtySiteEarningDayFn = saved })
 	adtySiteEarningDayFn = func() string { return "2026-09-01" }
 	consumeOnSite(t, customer, perUnit("10"))
-	_, err := SetAdtySiteStatus(site.Id, 1, model.AdtySiteStatusPaused, "")
-	require.NoError(t, err)
+	require.NoError(t, db.Model(&model.AdtySite{}).Where("id = ?", site.Id).Update("status", model.AdtySiteStatusPaused).Error)
 	settled, err := RunAdtySiteSettlementOnce(time.Date(2026, 10, 1, 4, 0, 0, 0, time.Local))
 	require.NoError(t, err)
-	assert.Zero(t, settled)
+	assert.Equal(t, 1, settled, "leftover paused rows must not freeze settlement")
 	var row model.AdtySiteEarningDaily
 	require.NoError(t, db.Where("site_id = ?", site.Id).First(&row).Error)
-	assert.Equal(t, model.AdtySiteEarningPending, row.Status)
+	assert.Equal(t, model.AdtySiteEarningAvailable, row.Status)
 }
 
 func TestNegativeRowsSettleWithoutFreeze(t *testing.T) {

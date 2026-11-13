@@ -82,7 +82,7 @@ export function PricingPanel(props: { site: OwnerSite }) {
       )
     },
   })
-  const paused = props.site.status !== 'active'
+  const closing = props.site.status === 'closing'
 
   return (
     <div className='flex flex-col gap-4'>
@@ -102,10 +102,10 @@ export function PricingPanel(props: { site: OwnerSite }) {
           }
         )}
       </p>
-      {paused && (
+      {closing && (
         <Alert>
           <AlertDescription>
-            {t('Prices cannot be changed while the site is paused')}
+            {t('Prices cannot be changed while the site is closing')}
           </AlertDescription>
         </Alert>
       )}
@@ -134,7 +134,7 @@ export function PricingPanel(props: { site: OwnerSite }) {
           min={1}
           step='0.01'
           value={defaultMarkup}
-          disabled={paused}
+          disabled={closing}
           onChange={(event) => setDefaultMarkup(event.target.value)}
         />
       </div>
@@ -147,7 +147,7 @@ export function PricingPanel(props: { site: OwnerSite }) {
               <Input
                 id={`group-name-${index}`}
                 value={row.group}
-                disabled={paused}
+                disabled={closing}
                 onChange={(event) =>
                   setRows((prev) =>
                     prev.map((item, i) =>
@@ -167,7 +167,7 @@ export function PricingPanel(props: { site: OwnerSite }) {
                 min={1}
                 step='0.01'
                 value={row.markup}
-                disabled={paused}
+                disabled={closing}
                 onChange={(event) =>
                   setRows((prev) =>
                     prev.map((item, i) =>
@@ -181,7 +181,7 @@ export function PricingPanel(props: { site: OwnerSite }) {
             </div>
             <Button
               variant='outline'
-              disabled={paused}
+              disabled={closing}
               onClick={() => {
                 if (row.group.trim()) {
                   setRemoved((prev) => [...prev, row.group.trim()])
@@ -196,7 +196,7 @@ export function PricingPanel(props: { site: OwnerSite }) {
         <Button
           size='sm'
           variant='outline'
-          disabled={paused}
+          disabled={closing}
           onClick={() =>
             setRows((prev) => [
               ...prev,
@@ -209,7 +209,7 @@ export function PricingPanel(props: { site: OwnerSite }) {
       </section>
       <div>
         <Button
-          disabled={paused || save.isPending}
+          disabled={closing || save.isPending}
           onClick={() => save.mutate()}
         >
           {t('Save prices')}

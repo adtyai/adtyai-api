@@ -186,7 +186,7 @@ func CreateAdtySiteWithdrawal(input AdtySiteWithdrawInput) (*model.AdtySiteWithd
 		if err := model.AdtyLockForUpdate(tx).First(&site, input.SiteID).Error; err != nil {
 			return err
 		}
-		if site.OwnerUserId != input.OwnerID || site.Status != model.AdtySiteStatusActive {
+		if site.OwnerUserId != input.OwnerID || (site.Status != model.AdtySiteStatusActive && site.Status != model.AdtySiteStatusPaused) {
 			return common.NewMessage("No permission to perform this action")
 		}
 		var existing []model.AdtySiteWithdrawal

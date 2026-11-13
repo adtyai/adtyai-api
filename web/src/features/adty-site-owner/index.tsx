@@ -100,16 +100,12 @@ export function SiteOwnerCenter(props: { section: SiteOwnerSectionId }) {
             )}
             {site.data && (
               <div className='flex flex-col gap-4'>
-                {site.data.status !== 'active' && (
+                {site.data.status === 'closing' && (
                   <Alert>
                     <AlertDescription>
-                      {site.data.status === 'paused'
-                        ? t(
-                            'Your site is paused. Customers can still use it, but prices and bonuses cannot be changed and earnings are not settled.'
-                          )
-                        : t(
-                            'Your site is closing. Customers will be emailed before it closes.'
-                          )}
+                      {t(
+                        'Your site is closing. Customers will be emailed before it closes.'
+                      )}
                     </AlertDescription>
                   </Alert>
                 )}

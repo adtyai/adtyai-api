@@ -63,7 +63,6 @@ import {
   reviewAdminBalanceRequest,
   resumeSiteSettlement,
   reviewSite,
-  setSiteStatus,
   SITE_ADMIN_PAGE_SIZE,
   siteAdminKeys,
   type AdminBalanceRequest,
@@ -253,12 +252,6 @@ function SiteActions(props: {
     },
     onError: (err) => handleServerError(err),
   })
-  const status = useMutation({
-    mutationFn: (next: 'active' | 'paused') =>
-      setSiteStatus(site.id, { status: next, reason: reason.trim() }),
-    onSuccess: done,
-    onError: (err) => handleServerError(err),
-  })
   const settlement = useMutation({
     mutationFn: () => resumeSiteSettlement(site.id),
     onSuccess: done,
@@ -286,7 +279,6 @@ function SiteActions(props: {
   const busy =
     review.isPending ||
     adjust.isPending ||
-    status.isPending ||
     settlement.isPending ||
     takedown.isPending
   const editable = site.status !== 'closed' && site.status !== 'closing'
@@ -393,24 +385,6 @@ function SiteActions(props: {
             onClick={() => adjust.mutate()}
           >
             {t('Save site settings')}
-          </Button>
-        )}
-        {canAdjust && site.status === 'active' && (
-          <Button
-            variant='outline'
-            disabled={busy}
-            onClick={() => status.mutate('paused')}
-          >
-            {t('Pause')}
-          </Button>
-        )}
-        {canAdjust && site.status === 'paused' && (
-          <Button
-            variant='outline'
-            disabled={busy}
-            onClick={() => status.mutate('active')}
-          >
-            {t('Resume')}
           </Button>
         )}
         {canAdjust && (site.settle_hold_reason ?? '') !== '' && (

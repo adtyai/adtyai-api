@@ -527,9 +527,20 @@ func TestMarkupBounds(t *testing.T) {
 	assert.Error(t, err, "the per-site limit applies")
 
 	_, err = SetAdtySiteStatus(site.Id, 1, model.AdtySiteStatusPaused, "")
-	require.NoError(t, err)
-	_, err = savePricing(t, site.Id, 0, "1.1", nil, 0, 0)
-	assert.ErrorIs(t, err, ErrAdtySitePaused)
+	assert.ErrorIs(t, err, ErrAdtySitePauseRetired)
+	var still model.AdtySite
+	require.NoError(t, db.First(&still, site.Id).Error)
+	assert.Equal(t, model.AdtySiteStatusActive, still.Status)
+
+	require.NoError(t, db.Model(&model.AdtySite{}).Where("id = ?", site.Id).Update("status", model.AdtySiteStatusPaused).Error)
+	var version int64
+	var rows []model.AdtySitePrice
+	require.NoError(t, db.Where("site_id = ?", site.Id).Find(&rows).Error)
+	for _, row := range rows {
+		version = max(version, row.Version)
+	}
+	_, err = savePricing(t, site.Id, 0, "1.1", nil, version, 0)
+	assert.NoError(t, err, "leftover paused rows must not freeze pricing")
 }
 
 func TestPricingVersionConflict(t *testing.T) {

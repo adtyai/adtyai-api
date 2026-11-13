@@ -386,10 +386,10 @@ func TestKeysBrandOrdersAndTemplates(t *testing.T) {
 	site := model.AdtySite{OwnerUserId: owner.Id, Subdomain: "brand-site", Status: model.AdtySiteStatusActive}
 	require.NoError(t, db.Create(&site).Error)
 	require.NoError(t, SetSiteBrand(site.Id, "North"))
-	require.NoError(t, SetSiteEnabled(site.Id, false))
+	require.ErrorIs(t, SetSiteEnabled(site.Id, false), ErrAdtySitePauseRetired)
 	require.NoError(t, db.First(&site, site.Id).Error)
 	require.Equal(t, "North", site.Brand)
-	require.Equal(t, model.AdtySiteStatusPaused, site.Status)
+	require.Equal(t, model.AdtySiteStatusActive, site.Status)
 	detail, ok := OrderDetail([]PersonalOrder{{TradeNo: "EPU-9", Kind: "topup", Status: "success"}}, "EPU-9")
 	require.True(t, ok)
 	require.Equal(t, "success", detail.Status)

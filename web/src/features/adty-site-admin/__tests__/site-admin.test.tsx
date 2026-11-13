@@ -58,6 +58,7 @@ const api = vi.hoisted(() => ({
   getSiteReports: vi.fn(),
   handleSiteReport: vi.fn(),
   setSiteStatus: vi.fn(),
+  resumeSiteSettlement: vi.fn(),
   getResellerSettings: vi.fn(),
   saveResellerSettings: vi.fn(),
   getSite: vi.fn(),
@@ -352,6 +353,22 @@ describe('site list', () => {
       screen.queryByRole('form', { name: 'Open a reseller site' })
     ).not.toBeInTheDocument()
     expect(api.createSite).not.toHaveBeenCalled()
+  })
+
+  it('does not list paused as a first-class status filter', async () => {
+    renderWith(<SitesPanel onOpenSite={() => undefined} />)
+    const filter = await screen.findByLabelText('Status')
+    const labels = within(filter as HTMLElement).getAllByRole('option').map(
+      (option) => option.textContent ?? ''
+    )
+    expect(labels).toEqual([
+      'All statuses',
+      'Pending review',
+      'Active',
+      'Closing',
+      'Closed',
+    ])
+    expect(labels).not.toContain('Paused')
   })
 })
 
@@ -986,38 +1003,42 @@ describe('SiteDetailSheet notice takedown', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('hides closure from a delegated admin while preserving pause and resume', async () => {
+  it('hides closure from a delegated admin and does not offer site pause or resume', async () => {
     asSiteAdmin(['read', 'adjust'])
     openSheet(site({}))
-    const pause = await screen.findByRole('button', { name: 'Pause' })
+    await screen.findByRole('button', { name: 'Save site settings' })
     expect(
       screen.queryByRole('button', { name: 'Close site' })
     ).not.toBeInTheDocument()
-    api.getSite.mockResolvedValue({
-      site: site({ status: 'paused' }),
-      audits: [],
-      domains: [],
-      sender_domains: [],
+    expect(
+      screen.queryByRole('button', { name: 'Pause' })
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Resume' })
+    ).not.toBeInTheDocument()
+    expect(api.setSiteStatus).not.toHaveBeenCalled()
+  })
+
+  it('still offers resume settlement when settlement is on hold', async () => {
+    asSiteAdmin(['read', 'adjust'])
+    api.resumeSiteSettlement.mockResolvedValue(
+      site({ settle_hold_reason: '' })
+    )
+    openSheet(site({ settle_hold_reason: 'usage mismatch' }))
+    const resumeSettlement = await screen.findByRole('button', {
+      name: 'Resume settlement',
     })
-    api.setSiteStatus.mockResolvedValue(site({ status: 'paused' }))
-    await userEvent.click(pause)
-    await waitFor(() =>
-      expect(api.setSiteStatus).toHaveBeenCalledWith(1, {
-        status: 'paused',
-        reason: '',
-      })
-    )
-    const resume = await screen.findByRole('button', { name: 'Resume' })
     expect(
-      screen.queryByRole('button', { name: 'Close site' })
+      screen.queryByRole('button', { name: 'Pause' })
     ).not.toBeInTheDocument()
-    await userEvent.click(resume)
+    expect(
+      screen.queryByRole('button', { name: 'Resume' })
+    ).not.toBeInTheDocument()
+    await userEvent.click(resumeSettlement)
     await waitFor(() =>
-      expect(api.setSiteStatus).toHaveBeenCalledWith(1, {
-        status: 'active',
-        reason: '',
-      })
+      expect(api.resumeSiteSettlement).toHaveBeenCalledWith(1)
     )
+    expect(api.setSiteStatus).not.toHaveBeenCalled()
   })
 
   it('allows notice deletion with delete and no adjust grant', async () => {

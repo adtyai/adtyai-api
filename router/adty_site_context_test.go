@@ -144,9 +144,9 @@ func TestSiteContextBySubdomain(t *testing.T) {
 		require.NotNil(t, got, tc.host)
 		assert.Equal(t, tc.want, got.Id, tc.host)
 	}
-	// 暂停的站照常识别。
-	_, err := service.SetAdtySiteStatus(f.site.Id, 1, model.AdtySiteStatusPaused, "")
-	require.NoError(t, err)
+	// 遗留 paused 行仍应识别，但不能再通过已退役的暂停写路径写入。
+	require.NoError(t, f.db.Model(&model.AdtySite{}).Where("id = ?", f.site.Id).Update("status", model.AdtySiteStatusPaused).Error)
+	service.InvalidateAdtySiteCache()
 	require.NotNil(t, siteOf(t, f.engine, "shop.sites.example.com"))
 	// 分站功能关了就不识别。
 	adty_setting.GetResellerSetting().Enabled = false

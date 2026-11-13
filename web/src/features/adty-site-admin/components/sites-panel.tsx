@@ -60,7 +60,6 @@ import { SiteStatusBadge } from './site-status-badge'
 const STATUSES: SiteStatus[] = [
   'pending',
   'active',
-  'paused',
   'closing',
   'closed',
 ]

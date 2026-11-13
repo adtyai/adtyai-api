@@ -200,8 +200,14 @@ describe('PricingPanel', () => {
     expect(api.savePricing).not.toHaveBeenCalled()
   })
 
-  it('locks the form while the site is paused', () => {
+  it('does not lock the form for a leftover paused site', () => {
     render(wrap(<PricingPanel site={ownerSite({ status: 'paused' })} />))
+    expect(screen.getByRole('button', { name: 'Save prices' })).toBeEnabled()
+    expect(screen.getByLabelText('Default markup')).toBeEnabled()
+  })
+
+  it('locks the form while the site is closing', () => {
+    render(wrap(<PricingPanel site={ownerSite({ status: 'closing' })} />))
     expect(screen.getByRole('button', { name: 'Save prices' })).toBeDisabled()
     expect(screen.getByLabelText('Default markup')).toBeDisabled()
   })

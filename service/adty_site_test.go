@@ -668,3 +668,33 @@ func TestForcedCloseIgnoresClawBackFlag(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, model.AdtySiteStatusClosed, closedQueued.Status)
 }
+
+func TestSetAdtySiteStatusRejectsPauseAndResume(t *testing.T) {
+	db := prepareSiteDB(t)
+	_, site := openActiveSite(t, db, "no-pause")
+
+	paused, err := SetAdtySiteStatus(site.Id, 1, model.AdtySiteStatusPaused, "maintenance")
+	assert.Nil(t, paused)
+	assert.ErrorIs(t, err, ErrAdtySitePauseRetired)
+	stored, err := GetAdtySite(site.Id)
+	require.NoError(t, err)
+	assert.Equal(t, model.AdtySiteStatusActive, stored.Status)
+
+	require.NoError(t, db.Model(&model.AdtySite{}).Where("id = ?", site.Id).Update("status", model.AdtySiteStatusPaused).Error)
+	resumed, err := SetAdtySiteStatus(site.Id, 1, model.AdtySiteStatusActive, "resume")
+	assert.Nil(t, resumed)
+	assert.ErrorIs(t, err, ErrAdtySitePauseRetired)
+	stored, err = GetAdtySite(site.Id)
+	require.NoError(t, err)
+	assert.Equal(t, model.AdtySiteStatusPaused, stored.Status, "leftover paused rows must not be flipped by the retired switch")
+
+	requested, err := RequestAdtySiteClose(site.OwnerUserId, "owner asked to close")
+	require.NoError(t, err)
+	assert.Equal(t, model.AdtySiteStatusPaused, requested.Status)
+	assert.NotZero(t, requested.CloseRequestedAt)
+
+	closed, err := ScheduleAdtySiteClose(site.Id, 1, AdtySiteClosePlan{Immediate: true, Reason: "retire leftover"})
+	require.NoError(t, err)
+	assert.Equal(t, model.AdtySiteStatusClosed, closed.Status)
+	assert.Zero(t, closed.CloseTransferTo)
+}

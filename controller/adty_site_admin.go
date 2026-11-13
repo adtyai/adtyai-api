@@ -528,8 +528,9 @@ func AdjustAdtyAdminSite(c *gin.Context) {
 	common.ApiSuccess(c, site)
 }
 
-// SetAdtyAdminSiteStatus 暂停、恢复（分站·调整）或关站（仅Root）：
-// {status: active|paused|closed, transfer_to?, claw_back?, immediate?, reason}。
+// SetAdtyAdminSiteStatus 关站（仅Root）。独立暂停/恢复已退役：
+// status=paused 或把 status=active 当作从暂停恢复，都会被拒绝，站点状态不变。
+// {status: closed, transfer_to?, claw_back?, immediate?, reason}。
 // 关站不必也不允许指定其他分站：省略 transfer_to 或传 0 表示由主站继承，非 0 为错误。
 func SetAdtyAdminSiteStatus(c *gin.Context) {
 	id, ok := siteIdParam(c)
@@ -551,7 +552,8 @@ func SetAdtyAdminSiteStatus(c *gin.Context) {
 	var err error
 	switch body.Status {
 	case model.AdtySiteStatusActive, model.AdtySiteStatusPaused:
-		site, err = service.SetAdtySiteStatus(id, c.GetInt("id"), body.Status, body.Reason)
+		common.ApiError(c, service.ErrAdtySitePauseRetired)
+		return
 	case model.AdtySiteStatusClosed:
 		if c.GetInt("role") < common.RoleRootUser {
 			denyAdtyAdminAction(c)

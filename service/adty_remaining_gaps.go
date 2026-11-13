@@ -381,20 +381,9 @@ func SetSiteBrand(siteID int, name string) error {
 	return nil
 }
 
-// SetSiteEnabled turns a site on or off. Closed sites stay closed.
+// SetSiteEnabled no longer pauses or resumes a site. Independent pause/resume is retired.
 func SetSiteEnabled(siteID int, enabled bool) error {
-	status := model.AdtySiteStatusPaused
-	if enabled {
-		status = model.AdtySiteStatusActive
-	}
-	result := model.DB.Model(&model.AdtySite{}).Where("id = ? AND status <> ?", siteID, model.AdtySiteStatusClosed).Update("status", status)
-	if result.Error != nil {
-		return result.Error
-	}
-	if result.RowsAffected != 1 {
-		return common.NewMessage("Site not found")
-	}
-	return nil
+	return ErrAdtySitePauseRetired
 }
 
 // TestTranslationConnectivity rejects an empty or non-https endpoint before any dial.

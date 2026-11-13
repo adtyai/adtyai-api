@@ -34,6 +34,7 @@ var (
 	ErrAdtySiteInviteOff     = common.NewMessage("Invite codes are not enabled")
 	ErrAdtySiteStatus        = common.NewMessage("The site cannot change to this status")
 	ErrAdtySiteTransfer      = common.NewMessage("Closed-site customers can only be inherited by the main site")
+	ErrAdtySitePauseRetired  = common.NewMessage("Independent site pause and resume is not supported")
 )
 
 // AdtySitePreset 是开站时预设的单站 d 和 k 上限（管理员直接开或邀请码带的），空就用全局。
@@ -697,35 +698,10 @@ func ApplyDueGlobalCostFactor(now int64) error {
 // AdtyOnSiteCostFactorChanged 在管理员改了单站 d 之后调用（11.9 的站内信和邮件通知挂在这里）。
 var AdtyOnSiteCostFactorChanged func(site *model.AdtySite)
 
-// SetAdtySiteStatus 暂停或恢复分站（active ↔ paused）。关站走 ScheduleAdtySiteClose。
+// SetAdtySiteStatus 不再暂停或恢复分站。独立暂停/恢复已退役（DEC-019 / SITE-008）；
+// 关站走 ScheduleAdtySiteClose。任何把站点改成或改出 paused 的请求都返回明确错误，不会静默成功。
 func SetAdtySiteStatus(siteId, adminId int, status, reason string) (*model.AdtySite, error) {
-	if status != model.AdtySiteStatusActive && status != model.AdtySiteStatusPaused {
-		return nil, ErrAdtySiteStatus
-	}
-	err := model.DB.Transaction(func(tx *gorm.DB) error {
-		var site model.AdtySite
-		if err := model.AdtyLockForUpdate(tx).Where("id = ?", siteId).First(&site).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return ErrAdtySiteNotFound
-			}
-			return err
-		}
-		if site.Status != model.AdtySiteStatusActive && site.Status != model.AdtySiteStatusPaused {
-			return ErrAdtySiteStatus
-		}
-		if site.Status == status {
-			return nil
-		}
-		if err := tx.Model(&model.AdtySite{}).Where("id = ?", site.Id).Update("status", status).Error; err != nil {
-			return err
-		}
-		return recordSiteAuditTx(tx, site.Id, "status", adminId, map[string]any{"status": site.Status}, map[string]any{"status": status}, reason)
-	})
-	if err != nil {
-		return nil, err
-	}
-	InvalidateAdtySiteCache()
-	return GetAdtySite(siteId)
+	return nil, ErrAdtySitePauseRetired
 }
 
 // RequestAdtySiteClose 是站长申请关站：只记下申请时间。关闭仍由 Root 在主站后台确认，客户一律由主站继承。

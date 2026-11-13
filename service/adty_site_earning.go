@@ -386,8 +386,8 @@ func GrantAdtySiteTrial(siteId, customerId int, amountUSD decimal.Decimal, idemp
 		if err := model.AdtyLockForUpdate(tx).Where("id = ?", siteId).First(&site).Error; err != nil {
 			return err
 		}
-		if site.Status != model.AdtySiteStatusActive {
-			return ErrAdtySitePaused
+		if site.Status != model.AdtySiteStatusActive && site.Status != model.AdtySiteStatusPaused {
+			return ErrAdtySiteStatus
 		}
 		var customers []model.User
 		if err := tx.Select("id", "site_id").Where("id = ? AND site_id = ?", customerId, siteId).Limit(1).Find(&customers).Error; err != nil {

@@ -403,9 +403,8 @@ func SaveAdtySitePricing(input AdtySitePricingInput) (*AdtySitePricingResult, er
 			return err
 		}
 		switch site.Status {
-		case model.AdtySiteStatusActive:
-		case model.AdtySiteStatusPaused:
-			return ErrAdtySitePaused
+		case model.AdtySiteStatusActive, model.AdtySiteStatusPaused:
+			// leftover paused rows are not a live pause mode; pricing stays editable
 		default:
 			return ErrAdtySiteStatus
 		}

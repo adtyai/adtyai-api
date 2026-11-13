@@ -170,9 +170,9 @@ export type SiteCustomer = {
   joined_at: number
 }
 
-/** PUT /api/adty/admin/sites/:id/status. Omitting transfer_to or sending 0 inherits to main; a non-zero value is rejected. */
+/** PUT /api/adty/admin/sites/:id/status. Independent pause/resume is retired; only close is a write status. Omitting transfer_to or sending 0 inherits to main; a non-zero value is rejected. */
 export type SiteStatusChange = {
-  status: 'active' | 'paused' | 'closed'
+  status: 'closed'
   transfer_to?: number
   claw_back?: boolean
   immediate?: boolean

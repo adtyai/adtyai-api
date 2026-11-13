@@ -62,7 +62,7 @@ export function BonusPanel(props: { site: OwnerSite }) {
       return saveBonusRates(rates, proof)
     },
   })
-  const paused = props.site.status !== 'active'
+  const closing = props.site.status === 'closing'
   const update = (index: number, patch: Partial<TierRow>) =>
     setRows((prev) =>
       prev.map((row, i) => (i === index ? { ...row, ...patch } : row))
@@ -87,7 +87,7 @@ export function BonusPanel(props: { site: OwnerSite }) {
               min={1}
               step={1}
               value={row.tier}
-              disabled={paused}
+              disabled={closing}
               onChange={(event) => update(index, { tier: event.target.value })}
             />
           </div>
@@ -99,13 +99,13 @@ export function BonusPanel(props: { site: OwnerSite }) {
               min={0}
               step='0.1'
               value={row.rate}
-              disabled={paused}
+              disabled={closing}
               onChange={(event) => update(index, { rate: event.target.value })}
             />
           </div>
           <Button
             variant='outline'
-            disabled={paused}
+            disabled={closing}
             onClick={() =>
               setRows((prev) => prev.filter((_, i) => i !== index))
             }
@@ -118,7 +118,7 @@ export function BonusPanel(props: { site: OwnerSite }) {
         <Button
           size='sm'
           variant='outline'
-          disabled={paused}
+          disabled={closing}
           onClick={() =>
             setRows((prev) => [
               ...prev,
@@ -130,7 +130,7 @@ export function BonusPanel(props: { site: OwnerSite }) {
         </Button>
         <Button
           size='sm'
-          disabled={paused || save.isPending}
+          disabled={closing || save.isPending}
           onClick={() => save.mutate()}
         >
           {t('Save bonuses')}

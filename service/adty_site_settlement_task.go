@@ -104,7 +104,7 @@ func settleAdtySite(siteId int, cutoff string, now int64) (bool, error) {
 			}
 			site.SettleHoldReason = ""
 		}
-		holdPositive := site.Status == model.AdtySiteStatusPaused || site.Status == model.AdtySiteStatusPending || strings.TrimSpace(site.SettleHoldReason) != "" || unresolved > 0
+		holdPositive := site.Status == model.AdtySiteStatusPending || strings.TrimSpace(site.SettleHoldReason) != "" || unresolved > 0
 		if !holdPositive {
 			mismatch, reason, err := adtyUsageReconcileMismatch(tx, site.Id, cutoff)
 			if err != nil {
