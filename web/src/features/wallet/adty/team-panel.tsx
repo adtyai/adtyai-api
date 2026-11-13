@@ -24,6 +24,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { api } from '@/lib/api'
 import { getServerErrorMessage } from '@/lib/server-error-message'
 
@@ -67,6 +68,7 @@ export function TeamPanel() {
   const [name, setName] = useState('')
   const [rename, setRename] = useState('')
   const [topupAmount, setTopupAmount] = useState('')
+  const [topupMethod, setTopupMethod] = useState('alipay')
   const [discount, setDiscount] = useState('1')
   const [invite, setInvite] = useState('')
   const [issued, setIssued] = useState('')
@@ -203,6 +205,17 @@ export function TeamPanel() {
               <Label htmlFor='team-topup'>{t('Team top-up')}</Label>
               <Input id='team-topup' value={topupAmount} inputMode='decimal' autoComplete='off' onChange={(event) => setTopupAmount(event.target.value)} />
             </div>
+            <div className='flex flex-col gap-1'>
+              <Label htmlFor='team-topup-method'>{t('Payment method')}</Label>
+              <NativeSelect
+                id='team-topup-method'
+                value={topupMethod}
+                onChange={(event) => setTopupMethod(event.target.value)}
+              >
+                <NativeSelectOption value='alipay'>{t('Alipay')}</NativeSelectOption>
+                <NativeSelectOption value='wxpay'>{t('WeChat Pay')}</NativeSelectOption>
+              </NativeSelect>
+            </div>
             <p className='text-muted-foreground text-sm'>
               {t('A team top-up does not include a payment-method gift. The order stays pending until payment completion credits the shared balance.')}
             </p>
@@ -214,10 +227,14 @@ export function TeamPanel() {
                 void run(async () => {
                   const response = await api.post(
                     `/api/adty/teams/${team.team_id}/topups`,
-                    { amount_usd: topupAmount.trim() },
+                    { amount_usd: topupAmount.trim(), method: topupMethod },
                     { headers: { 'Idempotency-Key': crypto.randomUUID() } }
                   )
                   if (!response.data?.success) throw new Error(response.data?.message || 'Failed to save')
+                  const payURL = response.data?.data?.pay_url
+                  if (typeof payURL === 'string' && payURL !== '') {
+                    window.location.assign(payURL)
+                  }
                   setTopupAmount('')
                 })
               }
