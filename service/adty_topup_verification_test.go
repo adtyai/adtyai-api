@@ -38,7 +38,7 @@ func TestAdtyTopUpVerificationScopesUseImportantOperationPolicy(t *testing.T) {
 	admin, _, adminID, rootID := setupTopUpVerificationUsers(t)
 	enableStepUpFactors(t, admin.Id, true, false, true)
 
-	for _, scope := range []string{VerificationScopeAdtyTopUpRefund, VerificationScopeAdtyTopUpManualComplete} {
+	for _, scope := range []string{VerificationScopeAdtyTopUpRefund, VerificationScopeAdtyTopUpManualRefundStep, VerificationScopeAdtyTopUpManualComplete} {
 		t.Run(scope+"/admin", func(t *testing.T) {
 			requirements, err := GetVerificationRequirements(adminID, scope)
 			require.NoError(t, err)
@@ -71,6 +71,12 @@ func TestAdtyTopUpVerificationContextBinding(t *testing.T) {
 	require.NoError(t, err)
 	_, err = BindVerificationOperation(AdtyTopUpManualCompleteOperation("EPU-1", "0xabc", "checked"))
 	require.NoError(t, err)
+	_, err = BindVerificationOperation(AdtyTopUpManualRefundStepOperation("EPU-1", "refund-1", "payout", "", AdtyManualRefundStepPayout{
+		Status: "success", Currency: "USDT", Amount: "40", Voucher: "wire-1", PaidAt: 11,
+	}))
+	require.NoError(t, err)
+	_, err = BindVerificationOperation(AdtyTopUpManualRefundStepOperation("EPU-1", "refund-1", "not-a-step", "", AdtyManualRefundStepPayout{}))
+	assert.ErrorIs(t, err, ErrVerificationContextInvalid)
 
 	_, err = BindVerificationOperation(AdtyTopUpRefundOperation("EPU-1", "duplicate", "100", &quota))
 	assert.ErrorIs(t, err, ErrVerificationContextInvalid, "usd and quota together are invalid")
@@ -131,5 +137,7 @@ func TestAdtyTopUpVerificationRejectsNonAdmin(t *testing.T) {
 	_, err := GetVerificationRequirements(identity, VerificationScopeAdtyTopUpRefund)
 	assert.ErrorIs(t, err, ErrVerificationForbidden)
 	_, err = GetVerificationRequirements(identity, VerificationScopeAdtyTopUpManualComplete)
+	assert.ErrorIs(t, err, ErrVerificationForbidden)
+	_, err = GetVerificationRequirements(identity, VerificationScopeAdtyTopUpManualRefundStep)
 	assert.ErrorIs(t, err, ErrVerificationForbidden)
 }

@@ -259,7 +259,16 @@ func registerAdtyFinanceRoutes(apiRouter *gin.RouterGroup) {
 	handlePermissionRoute(topup, http.MethodPost, "/:trade_no/query", authz.AdtyFinanceManualCredit, controller.QueryAdtyTopUp)
 	handlePermissionRoute(topup, http.MethodPost, "/:trade_no/complete", authz.AdtyFinanceManualCredit, controller.ManualCompleteAdtyTopUp)
 	handlePermissionRoute(topup, http.MethodGet, "/:trade_no/refund-preview", authz.AdtyFinanceRefund, controller.PreviewAdtyTopUpRefund)
+	handlePermissionRoute(topup, http.MethodGet, "/:trade_no/refunds", authz.AdtyFinanceRefund, controller.ListAdtyTopUpManualRefunds)
+	handlePermissionRoute(topup, http.MethodGet, "/:trade_no/refunds/:refund_id", authz.AdtyFinanceRefund, controller.GetAdtyTopUpManualRefund)
 	handlePermissionRoute(topup, http.MethodPost, "/:trade_no/refund", authz.AdtyFinanceRefund, controller.RefundAdtyTopUp)
+	handlePermissionRoute(topup, http.MethodPost, "/:trade_no/refunds/:refund_id/approve", authz.AdtyFinanceRefund, controller.ApproveAdtyTopUpManualRefund)
+	handlePermissionRoute(topup, http.MethodPost, "/:trade_no/refunds/:refund_id/reclaim", authz.AdtyFinanceRefund, controller.ReclaimAdtyTopUpManualRefund)
+	handlePermissionRoute(topup, http.MethodPost, "/:trade_no/refunds/:refund_id/bonus", authz.AdtyFinanceRefund, controller.PlanAdtyTopUpManualRefundBonus)
+	handlePermissionRoute(topup, http.MethodPost, "/:trade_no/refunds/:refund_id/commission", authz.AdtyFinanceRefund, controller.PlanAdtyTopUpManualRefundCommission)
+	handlePermissionRoute(topup, http.MethodPost, "/:trade_no/refunds/:refund_id/payout", authz.AdtyFinanceRefund, controller.RecordAdtyTopUpManualRefundPayout)
+	handlePermissionRoute(topup, http.MethodPost, "/:trade_no/refunds/:refund_id/complete", authz.AdtyFinanceRefund, controller.CompleteAdtyTopUpManualRefund)
+	handlePermissionRoute(topup, http.MethodPost, "/:trade_no/refunds/:refund_id/terminate", authz.AdtyFinanceRefund, controller.TerminateAdtyTopUpManualRefund)
 }
 
 // registerAdtyBEpusdtRoutes 挂 USDT 下单和回调（任务 4.2）。BEpusdt 只发 POST JSON 回调，不注册 GET。

@@ -338,15 +338,21 @@ func RefundAdtyTopUp(c *gin.Context) {
 			common.ApiErrorT(c, "Invalid parameters")
 			return
 		}
-		result, err = model.RefundAdtyTopUpManualUSD(tradeNo, body.Reason, c.GetInt("id"), body.IdempotencyKey, amount)
-		if err == nil && strings.TrimSpace(body.Proof) != "" {
-			if proofErr := model.RecordAdtyRefundProof(tradeNo, body.Proof); proofErr != nil {
-				err = proofErr
-			}
+		applied, applyErr := model.ApplyAdtyTopUpManualRefund(tradeNo, body.Reason, c.GetInt("id"), body.IdempotencyKey, amount)
+		if applyErr != nil {
+			writeAdtyFinanceError(c, applyErr)
+			return
 		}
-	} else {
-		result, err = model.RefundAdtyTopUp(tradeNo, body.Reason, c.GetInt("id"), body.IdempotencyKey, *refundQuota)
+		recordManageAuditFor(c, applied.Refund.UserId, "adty.topup.refund.apply", map[string]any{
+			"trade_no": tradeNo, "refund_id": applied.Refund.RefundId,
+			"reason":        strings.TrimSpace(body.Reason),
+			"request_usd":   applied.Refund.RequestUSD.String(),
+			"request_quota": applied.Refund.RequestQuota,
+		})
+		common.ApiSuccess(c, applied)
+		return
 	}
+	result, err = model.RefundAdtyTopUp(tradeNo, body.Reason, c.GetInt("id"), body.IdempotencyKey, *refundQuota)
 	if err != nil {
 		writeAdtyFinanceError(c, err)
 		return
@@ -357,6 +363,125 @@ func RefundAdtyTopUp(c *gin.Context) {
 		"refund_amount": result.RefundAmount.String(), "currency": result.Currency,
 	})
 	common.ApiSuccess(c, result)
+}
+
+func ListAdtyTopUpManualRefunds(c *gin.Context) {
+	result, err := model.ListAdtyTopUpManualRefunds(c.Param("trade_no"))
+	if err != nil {
+		writeAdtyFinanceError(c, err)
+		return
+	}
+	common.ApiSuccess(c, result)
+}
+
+func GetAdtyTopUpManualRefund(c *gin.Context) {
+	result, err := model.GetAdtyTopUpManualRefund(c.Param("trade_no"), c.Param("refund_id"))
+	if err != nil {
+		writeAdtyFinanceError(c, err)
+		return
+	}
+	common.ApiSuccess(c, result)
+}
+
+func writeManualRefundStep(c *gin.Context, step string, run func(tradeNo, refundID string, operatorID int, idemKey string) (*model.AdtyManualRefundResult, error)) {
+	var body struct {
+		IdempotencyKey string `json:"idempotency_key"`
+		Note           string `json:"note"`
+		Status         string `json:"status"`
+		Currency       string `json:"currency"`
+		Amount         string `json:"amount"`
+		PaidAt         int64  `json:"paid_at"`
+		Voucher        string `json:"voucher"`
+		Proof          string `json:"proof"`
+	}
+	if c.Request.ContentLength > 0 {
+		if err := common.DecodeJson(c.Request.Body, &body); err != nil {
+			common.ApiErrorT(c, "Invalid parameters")
+			return
+		}
+	}
+	tradeNo := c.Param("trade_no")
+	refundID := c.Param("refund_id")
+	payout := model.AdtyManualRefundPayout{
+		Status:   body.Status,
+		Currency: body.Currency,
+		PaidAt:   body.PaidAt,
+		Voucher:  strings.TrimSpace(body.Voucher),
+	}
+	if payout.Voucher == "" {
+		payout.Voucher = strings.TrimSpace(body.Proof)
+	}
+	if strings.TrimSpace(body.Amount) != "" {
+		amount, err := decimal.NewFromString(strings.TrimSpace(body.Amount))
+		if err != nil {
+			common.ApiErrorT(c, "Invalid parameters")
+			return
+		}
+		payout.Amount = amount
+	}
+	amount := ""
+	if strings.TrimSpace(body.Amount) != "" {
+		amount = payout.Amount.String()
+	}
+	op := service.AdtyTopUpManualRefundStepOperation(tradeNo, refundID, step, body.Note, service.AdtyManualRefundStepPayout{
+		Status: payout.Status, Currency: payout.Currency, Amount: amount,
+		Voucher: payout.Voucher, PaidAt: payout.PaidAt,
+	})
+	if middleware.RequireSecurityProof(c, op) == nil {
+		return
+	}
+	var result *model.AdtyManualRefundResult
+	var err error
+	switch step {
+	case model.AdtyManualRefundStepPayout:
+		result, err = model.RecordAdtyTopUpManualRefundPayout(tradeNo, refundID, c.GetInt("id"), body.IdempotencyKey, payout)
+	case model.AdtyManualRefundStepApprove:
+		result, err = model.ApproveAdtyTopUpManualRefund(tradeNo, refundID, c.GetInt("id"), body.IdempotencyKey, body.Note)
+	case model.AdtyManualRefundStepTerminate:
+		result, err = model.TerminateAdtyTopUpManualRefund(tradeNo, refundID, c.GetInt("id"), body.IdempotencyKey, body.Note)
+	default:
+		result, err = run(tradeNo, refundID, c.GetInt("id"), body.IdempotencyKey)
+	}
+	if err != nil {
+		writeAdtyFinanceError(c, err)
+		return
+	}
+	audit := map[string]any{"trade_no": tradeNo, "refund_id": refundID, "step": step}
+	if result.Refund != nil {
+		audit["status"] = result.Refund.Status
+		audit["shortfall_quota"] = result.Refund.ShortfallQuota
+		audit["payout_status"] = result.Refund.PayoutStatus
+	}
+	recordManageAuditFor(c, result.Refund.UserId, "adty.topup.refund."+step, audit)
+	common.ApiSuccess(c, result)
+}
+
+func ApproveAdtyTopUpManualRefund(c *gin.Context) {
+	writeManualRefundStep(c, model.AdtyManualRefundStepApprove, nil)
+}
+
+func ReclaimAdtyTopUpManualRefund(c *gin.Context) {
+	writeManualRefundStep(c, model.AdtyManualRefundStepReclaim, model.ReclaimAdtyTopUpManualRefund)
+}
+
+func PlanAdtyTopUpManualRefundBonus(c *gin.Context) {
+	writeManualRefundStep(c, model.AdtyManualRefundStepBonus, model.PlanAdtyTopUpManualRefundBonus)
+}
+
+func PlanAdtyTopUpManualRefundCommission(c *gin.Context) {
+	writeManualRefundStep(c, model.AdtyManualRefundStepCommission, model.PlanAdtyTopUpManualRefundCommission)
+}
+
+func RecordAdtyTopUpManualRefundPayout(c *gin.Context) {
+	writeManualRefundStep(c, model.AdtyManualRefundStepPayout, nil)
+}
+
+func CompleteAdtyTopUpManualRefund(c *gin.Context) {
+	writeManualRefundStep(c, model.AdtyManualRefundStepComplete, model.CompleteAdtyTopUpManualRefund)
+}
+
+func TerminateAdtyTopUpManualRefund(c *gin.Context) {
+	writeManualRefundStep(c, model.AdtyManualRefundStepTerminate, nil)
 }
 
 func writeAdtyFinanceError(c *gin.Context, err error) {
@@ -378,6 +503,8 @@ func writeAdtyFinanceError(c *gin.Context, err error) {
 		common.ApiErrorT(c, "The order status does not allow this operation")
 	case errors.Is(err, model.ErrAdtyIdempotencyConflict):
 		common.ApiErrorT(c, "This request was already used for another operation")
+	case errors.Is(err, model.ErrAdtyManualRefundTableMissing):
+		common.ApiErrorT(c, "Manual refund records are unavailable")
 	default:
 		common.ApiError(c, err)
 	}

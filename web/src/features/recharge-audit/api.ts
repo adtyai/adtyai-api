@@ -352,12 +352,71 @@ export type RefundPageFacts = {
   principal_remaining_usd?: string
   pending_quota: number
   refund_occupied_quota: number
+  refund_completed_quota?: number
+  refund_in_progress_quota?: number
+  refund_unknown_quota?: number
+  refund_remaining_quota?: number
+  refund_completed_usd?: string
+  refund_in_progress_usd?: string
+  refund_unknown_usd?: string
+  refund_remaining_usd?: string
+  manual_shortfall_quota?: number
+  manual_shortfall_usd?: string
   bonus_usd: string
   bonus_used_quota: number
   bonus_remaining_quota: number
   cumulative_refund_usd: string
   foreign_reference?: string
   refund_proof?: string
+  commission?: CommissionRefundPreview
+  occupancy?: ManualRefundOccupancy
+  manual_refunds?: ManualRefundRecord[]
+}
+
+export type ManualRefundOccupancy = {
+  face_quota: number
+  completed_quota: number
+  in_progress_quota: number
+  unknown_quota: number
+  occupied_quota: number
+  remaining_quota: number
+  face_usd: string
+  completed_usd: string
+  in_progress_usd: string
+  unknown_usd: string
+  occupied_usd: string
+  remaining_usd: string
+}
+
+export type ManualRefundRecord = {
+  refund_id: string
+  trade_no: string
+  status: string
+  request_usd: string
+  request_quota: number
+  reason: string
+  applied_at?: number
+  approved_at?: number
+  reclaimed_at?: number
+  deducted_principal_quota?: number
+  shortfall_quota?: number
+  shortfall_usd?: string
+  bonus_at?: number
+  bonus_planned_quota?: number
+  bonus_deducted_quota?: number
+  commission_at?: number
+  payout_status?: string
+  payout_currency?: string
+  payout_amount?: string
+  payout_at?: number
+  payout_voucher?: string
+  completed_at?: number
+}
+
+export type ManualRefundResult = {
+  refund?: ManualRefundRecord
+  occupancy?: ManualRefundOccupancy
+  facts?: RefundPageFacts
   commission?: CommissionRefundPreview
 }
 
@@ -374,16 +433,44 @@ export async function refundTopup(
   reason: string,
   idempotencyKey: string,
   refundQuota: number,
-  refundUsd?: string
+  refundUsd?: string,
+  proofToken?: string
 ) {
-  const res = await api.post<ApiResponse<TopupRefundResult>>(
+  const res = await api.post<ApiResponse<ManualRefundResult>>(
     `/api/adty/admin/topup/${encodeURIComponent(tradeNo)}/refund`,
     {
       reason,
       idempotency_key: idempotencyKey,
       refund_quota: refundUsd ? undefined : refundQuota,
       refund_usd: refundUsd || undefined,
-    }
+    },
+    proofHeaders(proofToken)
   )
   return requireServerSuccess(res.data).data
+}
+
+export async function listTopupManualRefunds(tradeNo: string) {
+  const res = await api.get<ApiResponse<ManualRefundResult>>(
+    `/api/adty/admin/topup/${encodeURIComponent(tradeNo)}/refunds`
+  )
+  return requireServerSuccess(res.data).data
+}
+
+export async function runTopupManualRefundStep(
+  tradeNo: string,
+  refundId: string,
+  step: 'approve' | 'reclaim' | 'bonus' | 'commission' | 'payout' | 'complete' | 'terminate',
+  body: Record<string, unknown>,
+  proofToken?: string
+) {
+  const res = await api.post<ApiResponse<ManualRefundResult>>(
+    `/api/adty/admin/topup/${encodeURIComponent(tradeNo)}/refunds/${encodeURIComponent(refundId)}/${step}`,
+    body,
+    proofHeaders(proofToken)
+  )
+  return requireServerSuccess(res.data).data
+}
+
+function proofHeaders(proofToken?: string) {
+  return proofToken ? { headers: { 'X-Security-Proof': proofToken } } : undefined
 }

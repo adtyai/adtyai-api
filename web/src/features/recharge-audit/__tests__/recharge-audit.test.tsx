@@ -33,11 +33,27 @@ const api = vi.hoisted(() => ({
   getPaymentOrphans: vi.fn(),
   previewTopupRefund: vi.fn(),
   refundTopup: vi.fn(),
+  listTopupManualRefunds: vi.fn(),
+  runTopupManualRefundStep: vi.fn(),
   completeTopupManually: vi.fn(),
   creditPaymentOrphan: vi.fn(),
   resolvePaymentOrphan: vi.fn(),
 }))
 vi.mock('../api', () => api)
+vi.mock('@/features/auth/secure-verification/hooks/use-secure-verification', () => ({
+  useSecureVerification: () => ({
+    requestVerification: vi.fn().mockResolvedValue({ proof_token: 'proof' }),
+    dialogProps: { state: { phase: 'idle' } },
+    isActive: false,
+    cancel: vi.fn(),
+  }),
+}))
+vi.mock(
+  '@/features/auth/secure-verification/components/secure-verification-dialog',
+  () => ({
+    SecureVerificationDialog: () => null,
+  })
+)
 vi.mock('@/components/layout', () => {
   const Layout = (props: { children: ReactNode }) => <div>{props.children}</div>
   Layout.Title = (props: { children: ReactNode }) => <h1>{props.children}</h1>
@@ -102,6 +118,63 @@ beforeEach(() => {
     refund_quota: 50000000,
     refund_amount: '100',
     currency: 'USDT',
+    facts: {
+      trade_no: 'EPY7001',
+      site_id: 7,
+      user_id: 7,
+      face_usd: '100',
+      pay_currency: 'CNY',
+      paid_amount: '730',
+      paid_currency: 'CNY',
+      order_rate: '7.3',
+      pending_quota: 0,
+      refund_occupied_quota: 0,
+      refund_completed_usd: '0',
+      refund_in_progress_usd: '0',
+      refund_unknown_usd: '0',
+      refund_remaining_usd: '100',
+      bonus_usd: '2.5',
+      bonus_used_quota: 0,
+      bonus_remaining_quota: 1250000,
+      cumulative_refund_usd: '0',
+    },
+  })
+  api.listTopupManualRefunds.mockResolvedValue({
+    occupancy: {
+      face_quota: 50000000,
+      completed_quota: 0,
+      in_progress_quota: 0,
+      unknown_quota: 0,
+      occupied_quota: 0,
+      remaining_quota: 50000000,
+      face_usd: '100',
+      completed_usd: '0',
+      in_progress_usd: '0',
+      unknown_usd: '0',
+      occupied_usd: '0',
+      remaining_usd: '100',
+    },
+    facts: {
+      trade_no: 'EPY7001',
+      site_id: 7,
+      user_id: 7,
+      face_usd: '100',
+      pay_currency: 'CNY',
+      paid_amount: '730',
+      paid_currency: 'CNY',
+      order_rate: '7.3',
+      pending_quota: 0,
+      refund_occupied_quota: 0,
+      refund_completed_usd: '0',
+      refund_in_progress_usd: '0',
+      refund_unknown_usd: '0',
+      refund_remaining_usd: '100',
+      bonus_usd: '2.5',
+      bonus_used_quota: 0,
+      bonus_remaining_quota: 1250000,
+      cumulative_refund_usd: '0',
+      manual_refunds: [],
+    },
   })
   api.getRechargeAudit.mockResolvedValue({
     page: 1,
@@ -151,88 +224,138 @@ describe('RechargeAudit', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('explains that the bonus is not refunded before confirming', async () => {
+  it('explains the offline stepwise refund flow', async () => {
     const user = userEvent.setup()
     renderPage({ read: true, refund: true })
     await user.click(await screen.findByRole('button', { name: 'Refund' }))
     const dialog = await screen.findByRole('dialog', { name: 'Refund order' })
-    expect(within(dialog).getByText(/The bonus is not refunded/)).toBeVisible()
-  })
-
-  it('shows the quota taken back and the amount to return after refunding', async () => {
-    api.previewTopupRefund.mockResolvedValue({
-      deducted_quota: 40000000,
-      bonus_quota: 1250000,
-      refund_quota: 38750000,
-      refund_amount: '565.75',
-      currency: 'CNY',
-    })
-    api.refundTopup.mockResolvedValue({
-      deducted_quota: 40000000,
-      bonus_quota: 1250000,
-      refund_quota: 38750000,
-      refund_amount: '565.75',
-      currency: 'CNY',
-    })
-    const user = userEvent.setup()
-    renderPage({ read: true, refund: true })
-    await user.click(await screen.findByRole('button', { name: 'Refund' }))
-    await user.type(screen.getByLabelText('Reason (required)'), 'chargeback')
-    const dialog = await screen.findByRole('dialog', { name: 'Refund order' })
-    await screen.findByText(/Refund 565\.75 CNY/)
-    await user.click(within(dialog).getByRole('button', { name: 'Refund' }))
-    const done = await screen.findByRole('dialog', { name: 'Order refunded' })
-    expect(within(done).getByText(/Refund 565\.75 CNY/)).toBeVisible()
-    expect(api.refundTopup.mock.calls[0][3]).toBe(38750000)
     expect(
-      within(done).queryByText(/Nothing to refund/)
-    ).not.toBeInTheDocument()
+      within(dialog).getByText(/record the offline payout, and complete/)
+    ).toBeVisible()
+    expect(within(dialog).getByText('Completed refund (S)')).toBeVisible()
+    expect(within(dialog).getByText('In-progress refund (H)')).toBeVisible()
+    expect(within(dialog).getByText('Unknown payout (U)')).toBeVisible()
   })
 
-  it('says nothing is refunded when the credit left is only bonus', async () => {
-    api.previewTopupRefund.mockResolvedValue({
-      deducted_quota: 0,
-      bonus_quota: 1250000,
-      refund_quota: 0,
-      refund_amount: '0',
-      currency: 'USDT',
-    })
+  it('applies a USD refund request without completing payout', async () => {
     api.refundTopup.mockResolvedValue({
-      deducted_quota: 500000,
-      bonus_quota: 1250000,
-      refund_quota: 0,
-      refund_amount: '0',
-      currency: 'USDT',
+      refund: {
+        refund_id: 'refund-1',
+        trade_no: 'EPY7001',
+        status: 'submitted',
+        request_usd: '40',
+        request_quota: 20000000,
+        reason: 'chargeback',
+      },
     })
     const user = userEvent.setup()
     renderPage({ read: true, refund: true })
     await user.click(await screen.findByRole('button', { name: 'Refund' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Refund order' })
+    await user.type(screen.getByLabelText('Refund amount in USD'), '40')
     await user.type(screen.getByLabelText('Reason (required)'), 'chargeback')
-    const dialog = await screen.findByRole('dialog', { name: 'Refund order' })
-    await screen.findByText(/Refund 0 USDT/)
-    await user.click(within(dialog).getByRole('button', { name: 'Refund' }))
-    const done = await screen.findByRole('dialog', { name: 'Order refunded' })
-    expect(within(done).getByText(/Refund 0 USDT/)).toBeVisible()
-    expect(within(done).getByText(/Nothing to refund/)).toBeVisible()
+    await user.click(within(dialog).getByRole('button', { name: 'Apply refund' }))
+    await waitFor(() => expect(api.refundTopup).toHaveBeenCalled())
+    expect(api.refundTopup.mock.calls[0][0]).toBe('EPY7001')
+    expect(api.refundTopup.mock.calls[0][1]).toBe('chargeback')
+    expect(api.refundTopup.mock.calls[0][4]).toBe('40')
   })
 
-  it('requires a reason before refunding', async () => {
-    api.refundTopup.mockResolvedValue({
-      deducted_quota: 0,
-      bonus_quota: 0,
-      refund_quota: 0,
-      refund_amount: '0',
-      currency: 'CNY',
+  it('lets an operator record an offline payout on an approved refund', async () => {
+    api.listTopupManualRefunds.mockResolvedValue({
+      occupancy: {
+        face_quota: 50000000,
+        completed_quota: 0,
+        in_progress_quota: 20000000,
+        unknown_quota: 0,
+        occupied_quota: 20000000,
+        remaining_quota: 30000000,
+        face_usd: '100',
+        completed_usd: '0',
+        in_progress_usd: '40',
+        unknown_usd: '0',
+        occupied_usd: '40',
+        remaining_usd: '60',
+      },
+      facts: {
+        trade_no: 'EPY7001',
+        site_id: 7,
+        user_id: 7,
+        face_usd: '100',
+        pay_currency: 'CNY',
+        paid_amount: '730',
+        paid_currency: 'CNY',
+        order_rate: '7.3',
+        pending_quota: 0,
+        refund_occupied_quota: 20000000,
+        refund_completed_usd: '0',
+        refund_in_progress_usd: '40',
+        refund_unknown_usd: '0',
+        refund_remaining_usd: '60',
+        bonus_usd: '2.5',
+        bonus_used_quota: 0,
+        bonus_remaining_quota: 1250000,
+        cumulative_refund_usd: '0',
+        manual_shortfall_usd: '20',
+        manual_refunds: [
+          {
+            refund_id: 'refund-1',
+            trade_no: 'EPY7001',
+            status: 'approved',
+            request_usd: '40',
+            request_quota: 20000000,
+            reason: 'chargeback',
+            approved_at: 2,
+            reclaimed_at: 3,
+            shortfall_quota: 10000000,
+            shortfall_usd: '20',
+            bonus_at: 4,
+            commission_at: 5,
+          },
+        ],
+      },
+    })
+    api.runTopupManualRefundStep.mockResolvedValue({
+      refund: { refund_id: 'refund-1', payout_status: 'success' },
     })
     const user = userEvent.setup()
     renderPage({ read: true, refund: true })
     await user.click(await screen.findByRole('button', { name: 'Refund' }))
     const dialog = await screen.findByRole('dialog', { name: 'Refund order' })
-    const confirm = within(dialog).getByRole('button', { name: 'Refund' })
+    expect(within(dialog).getByText(/Manual-handling shortfall/)).toBeVisible()
+    await user.type(screen.getByLabelText('Offline payout currency'), 'CNY')
+    await user.type(screen.getByLabelText('Offline payout amount'), '292')
+    await user.type(screen.getByLabelText('Offline payout voucher'), 'bank-slip-88')
+    await user.click(
+      within(dialog).getByRole('button', { name: 'Record offline payout' })
+    )
+    await waitFor(() => expect(api.runTopupManualRefundStep).toHaveBeenCalled())
+    expect(api.runTopupManualRefundStep.mock.calls[0][0]).toBe('EPY7001')
+    expect(api.runTopupManualRefundStep.mock.calls[0][1]).toBe('refund-1')
+    expect(api.runTopupManualRefundStep.mock.calls[0][2]).toBe('payout')
+  })
+
+  it('requires a reason and USD amount before applying', async () => {
+    api.refundTopup.mockResolvedValue({
+      refund: {
+        refund_id: 'refund-1',
+        trade_no: 'EPY7001',
+        status: 'submitted',
+        request_usd: '40',
+        request_quota: 20000000,
+        reason: 'chargeback',
+      },
+    })
+    const user = userEvent.setup()
+    renderPage({ read: true, refund: true })
+    await user.click(await screen.findByRole('button', { name: 'Refund' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Refund order' })
+    const confirm = within(dialog).getByRole('button', { name: 'Apply refund' })
     expect(confirm).toBeDisabled()
     await user.type(screen.getByLabelText('Reason (required)'), 'chargeback')
-    await screen.findByText(/Refund 100 USDT/)
-    expect(confirm).toBeEnabled()
+    expect(confirm).toBeDisabled()
+    await user.type(screen.getByLabelText('Refund amount in USD'), '40')
+    await waitFor(() => expect(confirm).toBeEnabled())
     await user.click(confirm)
     await waitFor(() => expect(api.refundTopup).toHaveBeenCalled())
     expect(api.refundTopup.mock.calls[0][0]).toBe('EPY7001')

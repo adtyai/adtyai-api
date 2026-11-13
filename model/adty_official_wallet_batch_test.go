@@ -197,11 +197,12 @@ func TestManualRefundUpdatesOrderPrincipalAndGiftBatches(t *testing.T) {
 	require.NoError(t, err)
 	requireWalletMatchesBatches(t, db, user.Id)
 
-	result, err := RefundAdtyTopUpManualUSD("EPU-MANUAL-BATCH", "chargeback", 1, "manual-batch-1", decimal.RequireFromString("40"))
+	result, err := completeManualRefundForTest(t, "EPU-MANUAL-BATCH", "chargeback", 1, "manual-batch-1", decimal.RequireFromString("40"))
 	require.NoError(t, err)
-	require.EqualValues(t, 20_000_000, result.RefundQuota)
-	require.EqualValues(t, 500_000, result.BonusQuota)
-	require.EqualValues(t, 20_500_000, result.DeductedQuota)
+	require.EqualValues(t, 20_000_000, result.Refund.RequestQuota)
+	require.EqualValues(t, 500_000, result.Refund.BonusDeductedQuota)
+	require.EqualValues(t, 20_000_000, result.Refund.DeductedPrincipalQuota)
+	require.Zero(t, result.Refund.ShortfallQuota)
 
 	principal, bonus := adtyFundRemainingBySource(t, db, user.Id, "EPU-MANUAL-BATCH")
 	require.EqualValues(t, 30_000_000, principal)
@@ -209,8 +210,9 @@ func TestManualRefundUpdatesOrderPrincipalAndGiftBatches(t *testing.T) {
 	require.EqualValues(t, 30_750_000, userQuota(t, db, user.Id))
 	requireWalletMatchesBatches(t, db, user.Id)
 
-	again, err := RefundAdtyTopUpManualUSD("EPU-MANUAL-BATCH", "chargeback", 1, "manual-batch-1", decimal.RequireFromString("40"))
+	again, err := completeManualRefundForTest(t, "EPU-MANUAL-BATCH", "chargeback", 1, "manual-batch-1", decimal.RequireFromString("40"))
 	require.NoError(t, err)
+	require.Equal(t, result.Refund.Id, again.Refund.Id)
 	require.Equal(t, result.Ledger.Id, again.Ledger.Id)
 	principal, bonus = adtyFundRemainingBySource(t, db, user.Id, "EPU-MANUAL-BATCH")
 	require.EqualValues(t, 30_000_000, principal)

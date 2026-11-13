@@ -195,8 +195,19 @@ func RefundAdtyTopUp(tradeNo, reason string, operatorID int, idemKey string, exp
 		if topUp.Status != common.TopUpStatusSuccess {
 			return common.NewMessage("Only credited orders can be refunded")
 		}
+		rows, err := lockAdtyManualRefundsTx(tx, tradeNo)
+		if err != nil {
+			return err
+		}
+		held, unknown := adtySumManualRefundOccupancy(rows)
+		if ext.RefundQuota+held+unknown > 0 {
+			return common.NewMessage("Use the manual refund steps for an order that already has refund occupancy")
+		}
 		userID = topUp.UserId
 		deducted, bonus, refundQuota, refundAmount := adtyRefundFigures(ext, before, checkinQuota)
+		if refundQuota > adtyManualRefundCapRemaining(ext.FaceQuota(), ext.RefundQuota, held, unknown) {
+			return common.NewMessage("Refund amount exceeds the remaining principal")
+		}
 		if refundQuota != expectedQuota {
 			return common.NewMessage("The refund amount changed. Refresh the preview and try again")
 		}

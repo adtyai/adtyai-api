@@ -12,8 +12,9 @@ import (
 // Verification scopes for admin top-up fund writes. These always require
 // step-up; there is no amount threshold.
 const (
-	VerificationScopeAdtyTopUpRefund         = "adty.topup.refund"
-	VerificationScopeAdtyTopUpManualComplete = "adty.topup.manual_complete"
+	VerificationScopeAdtyTopUpRefund           = "adty.topup.refund"
+	VerificationScopeAdtyTopUpManualComplete   = "adty.topup.manual_complete"
+	VerificationScopeAdtyTopUpManualRefundStep = "adty.topup.manual_refund_step"
 )
 
 const (
@@ -40,9 +41,25 @@ type AdtyTopUpManualCompleteContext struct {
 	Note    string `json:"note"`
 }
 
+// AdtyTopUpManualRefundStepContext binds a step-up proof to one manual refund
+// step. Payout proofs also bind the recorded currency, amount, voucher, time,
+// and status.
+type AdtyTopUpManualRefundStepContext struct {
+	TradeNo        string `json:"trade_no"`
+	RefundId       string `json:"refund_id"`
+	Step           string `json:"step"`
+	Note           string `json:"note,omitempty"`
+	PayoutStatus   string `json:"payout_status,omitempty"`
+	PayoutCurrency string `json:"payout_currency,omitempty"`
+	PayoutAmount   string `json:"payout_amount,omitempty"`
+	PayoutVoucher  string `json:"payout_voucher,omitempty"`
+	PayoutAt       int64  `json:"payout_at,omitempty"`
+}
+
 var adtyTopUpVerificationPermissions = map[string]authz.Permission{
-	VerificationScopeAdtyTopUpRefund:         authz.AdtyFinanceRefund,
-	VerificationScopeAdtyTopUpManualComplete: authz.AdtyFinanceManualCredit,
+	VerificationScopeAdtyTopUpRefund:           authz.AdtyFinanceRefund,
+	VerificationScopeAdtyTopUpManualComplete:   authz.AdtyFinanceManualCredit,
+	VerificationScopeAdtyTopUpManualRefundStep: authz.AdtyFinanceRefund,
 }
 
 func adtyIsTopUpVerificationScope(scope string) bool {
@@ -111,6 +128,47 @@ func adtyBindTopUpOperation(scope string, fields map[string]json.RawMessage, raw
 			return nil, false
 		}
 		return context, true
+	case VerificationScopeAdtyTopUpManualRefundStep:
+		var context AdtyTopUpManualRefundStepContext
+		if common.Unmarshal(raw, &context) != nil || fields["trade_no"] == nil || fields["refund_id"] == nil || fields["step"] == nil {
+			return nil, false
+		}
+		allowed := map[string]struct{}{
+			"trade_no": {}, "refund_id": {}, "step": {}, "note": {},
+			"payout_status": {}, "payout_currency": {}, "payout_amount": {},
+			"payout_voucher": {}, "payout_at": {},
+		}
+		for key := range fields {
+			if _, ok := allowed[key]; !ok {
+				return nil, false
+			}
+		}
+		context.TradeNo = strings.TrimSpace(context.TradeNo)
+		context.RefundId = strings.TrimSpace(context.RefundId)
+		context.Step = strings.TrimSpace(context.Step)
+		context.Note = strings.TrimSpace(context.Note)
+		context.PayoutStatus = strings.TrimSpace(context.PayoutStatus)
+		context.PayoutCurrency = strings.TrimSpace(context.PayoutCurrency)
+		context.PayoutVoucher = strings.TrimSpace(context.PayoutVoucher)
+		if context.TradeNo == "" || len(context.TradeNo) > adtyTopUpTradeNoMaxLen ||
+			context.RefundId == "" || len(context.RefundId) > 64 ||
+			len(context.Note) > adtyTopUpTextMaxLen ||
+			len(context.PayoutCurrency) > 16 || len(context.PayoutVoucher) > 255 {
+			return nil, false
+		}
+		switch context.Step {
+		case "approve", "reclaim", "bonus", "commission", "payout", "complete", "terminate":
+		default:
+			return nil, false
+		}
+		if context.PayoutAmount != "" {
+			amount, err := decimal.NewFromString(strings.TrimSpace(context.PayoutAmount))
+			if err != nil {
+				return nil, false
+			}
+			context.PayoutAmount = amount.String()
+		}
+		return context, true
 	default:
 		return nil, false
 	}
@@ -131,7 +189,34 @@ func AdtyTopUpManualCompleteOperation(tradeNo, proof, note string) VerificationO
 	return VerificationOperation{Scope: VerificationScopeAdtyTopUpManualComplete, Context: payload}
 }
 
+// AdtyManualRefundStepPayout is the payout evidence bound into a step-up proof.
+type AdtyManualRefundStepPayout struct {
+	Status   string
+	Currency string
+	Amount   string
+	Voucher  string
+	PaidAt   int64
+}
+
+// AdtyTopUpManualRefundStepOperation builds the step-up operation for one
+// manual refund state-machine step.
+func AdtyTopUpManualRefundStepOperation(tradeNo, refundID, step, note string, payout AdtyManualRefundStepPayout) VerificationOperation {
+	payload, _ := common.Marshal(AdtyTopUpManualRefundStepContext{
+		TradeNo:        tradeNo,
+		RefundId:       refundID,
+		Step:           step,
+		Note:           note,
+		PayoutStatus:   payout.Status,
+		PayoutCurrency: payout.Currency,
+		PayoutAmount:   strings.TrimSpace(payout.Amount),
+		PayoutVoucher:  payout.Voucher,
+		PayoutAt:       payout.PaidAt,
+	})
+	return VerificationOperation{Scope: VerificationScopeAdtyTopUpManualRefundStep, Context: payload}
+}
+
 func init() {
 	accessTokenVerificationScopes[VerificationScopeAdtyTopUpRefund] = AccessTokenScopeOf(authz.AdtyFinanceRefund)
 	accessTokenVerificationScopes[VerificationScopeAdtyTopUpManualComplete] = AccessTokenScopeOf(authz.AdtyFinanceManualCredit)
+	accessTokenVerificationScopes[VerificationScopeAdtyTopUpManualRefundStep] = AccessTokenScopeOf(authz.AdtyFinanceRefund)
 }

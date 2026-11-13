@@ -364,7 +364,7 @@ func securityVerificationPolicy(scope string, state model.UserVerificationState)
 		VerificationScopeAdminUserCreate, VerificationScopeAdminUserUpdate, VerificationScopeAdminUserDelete,
 		VerificationScopeAdminUserManage, VerificationScopeAdminUserPasskeyReset,
 		VerificationScopeAdminUserTwoFADisable, VerificationScopeAdminUserBindingClear,
-		VerificationScopeAdtyTopUpRefund, VerificationScopeAdtyTopUpManualComplete:
+		VerificationScopeAdtyTopUpRefund, VerificationScopeAdtyTopUpManualRefundStep, VerificationScopeAdtyTopUpManualComplete:
 		if scope == VerificationScopeAccountDelete && state.Role == common.RoleRootUser {
 			return nil, ErrVerificationForbidden
 		}
@@ -460,7 +460,7 @@ func GetVerificationRequirements(identity AuthIdentity, scope string) (*Verifica
 				VerificationScopeAdminUserCreate, VerificationScopeAdminUserUpdate, VerificationScopeAdminUserDelete,
 				VerificationScopeAdminUserManage, VerificationScopeAdminUserPasskeyReset,
 				VerificationScopeAdminUserTwoFADisable, VerificationScopeAdminUserBindingClear,
-				VerificationScopeAdtyTopUpRefund, VerificationScopeAdtyTopUpManualComplete:
+				VerificationScopeAdtyTopUpRefund, VerificationScopeAdtyTopUpManualRefundStep, VerificationScopeAdtyTopUpManualComplete:
 				methods[i].Available, methods[i].Reason = false, "Password authentication is disabled."
 			default:
 				if adtyIsSiteVerificationScope(scope) {
