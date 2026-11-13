@@ -8,6 +8,22 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestCollectAdtyFundAnomaliesFlagsDuplicateCreditAndRefund(t *testing.T) {
+	db := prepareSiteDB(t)
+	_, site := openActiveSite(t, db, "dup-fund")
+	require.NoError(t, db.Create(&model.AdtyOrderPaymentEvent{TradeNo: "dup-credit", SiteId: site.Id, UserId: 1, Provider: "epay", Source: "callback", Outcome: "credited"}).Error)
+	require.NoError(t, db.Create(&model.AdtyOrderPaymentEvent{TradeNo: "dup-credit", SiteId: site.Id, UserId: 1, Provider: "epay", Source: "callback", Outcome: "credited"}).Error)
+	require.NoError(t, db.Create(&model.AdtyOrderPaymentEvent{TradeNo: "once", SiteId: site.Id, UserId: 1, Provider: "epay", Source: "callback", Outcome: "credited"}).Error)
+	require.NoError(t, db.Create(&model.AdtyOrderPaymentEvent{TradeNo: "once", SiteId: site.Id, UserId: 1, Provider: "epay", Source: "callback", Outcome: "replayed"}).Error)
+	require.NoError(t, db.Create(&model.AdtyOrderPaymentEvent{TradeNo: "dup-refund", SiteId: site.Id, UserId: 1, Provider: "epay", Source: "callback", Outcome: "received", EventType: "refund.succeeded"}).Error)
+	require.NoError(t, db.Create(&model.AdtyOrderPaymentEvent{TradeNo: "dup-refund", SiteId: site.Id, UserId: 1, Provider: "epay", Source: "callback", Outcome: "received", EventType: "refund.succeeded"}).Error)
+
+	kinds, err := CollectAdtyFundAnomalies(site.Id)
+	require.NoError(t, err)
+	require.Contains(t, kinds, "duplicate_credit")
+	require.Contains(t, kinds, "duplicate_refund")
+}
+
 func TestCollectAdtyFundAnomaliesFlagsMarginOverCap(t *testing.T) {
 	db := prepareSiteDB(t)
 	_, site := openActiveSite(t, db, "fund-anomaly")

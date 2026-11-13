@@ -308,6 +308,20 @@ func CollectAdtyFundAnomalies(siteID int) ([]string, error) {
 		}
 	}
 	kinds := AdtyFundAnomalies(balanceGap, int(holds), marginGap)
+	dupCredit, err := adtyDuplicateEventTrades(siteID, "credited", "")
+	if err != nil {
+		return nil, err
+	}
+	dupRefund, err := adtyDuplicateEventTrades(siteID, "", "refund.succeeded")
+	if err != nil {
+		return nil, err
+	}
+	if dupCredit > 0 {
+		kinds = append(kinds, "duplicate_credit")
+	}
+	if dupRefund > 0 {
+		kinds = append(kinds, "duplicate_refund")
+	}
 	ref := strconv.Itoa(siteID)
 	for _, kind := range kinds {
 		var existing int64
@@ -321,6 +335,21 @@ func CollectAdtyFundAnomalies(siteID int) ([]string, error) {
 		}
 	}
 	return kinds, nil
+}
+
+func adtyDuplicateEventTrades(siteID int, outcome, eventType string) (int64, error) {
+	query := model.DB.Model(&model.AdtyOrderPaymentEvent{}).Where("site_id = ?", siteID)
+	if outcome != "" {
+		query = query.Where("outcome = ?", outcome)
+	}
+	if eventType != "" {
+		query = query.Where("event_type = ?", eventType)
+	}
+	var trades []string
+	if err := query.Group("trade_no").Having("COUNT(*) > 1").Pluck("trade_no", &trades).Error; err != nil {
+		return 0, err
+	}
+	return int64(len(trades)), nil
 }
 
 // TransferAdtyEarningToMargin moves earning cash into margin and opens a new draw cycle.
