@@ -149,6 +149,8 @@ beforeEach(() => {
       }
     } else if (path.endsWith('/staff/audits')) {
       data = { total: 0, items: [] }
+    } else if (path.endsWith('/balance-requests')) {
+      data = { items: [] }
     } else {
       data = { total: members.length, items: members }
     }

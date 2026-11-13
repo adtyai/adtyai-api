@@ -8771,8 +8771,14 @@
     "Amount USD": "Số tiền USD",
     "I confirm the payee details before this request is frozen.": "Tôi xác nhận thông tin nhận tiền trước khi đóng băng yêu cầu này.",
     "Submit withdrawal": "Gửi yêu cầu rút",
-    "Withdrawal rules are not set": "Chưa đặt quy tắc rút"
-  },
+    "Withdrawal rules are not set": "Chưa đặt quy tắc rút",
+    "Approved": "Đã duyệt",
+    "Balance requests": "Yêu cầu số dư",
+    "Decrease": "Giảm",
+    "Increase": "Tăng",
+    "Request balance change": "Yêu cầu điều chỉnh số dư",
+    "This request does not change the customer balance until the site owner or Root approves it.": "Yêu cầu này không đổi số dư của khách cho đến khi chủ site hoặc Root phê duyệt."
+},
   "Targeted notifications": "Thông báo theo đối tượng",
   "Site announcements": "Thông báo của trang",
   "New notification": "Tạo thông báo",

@@ -17,7 +17,10 @@ func TestAdtyGapRoutesRegistered(t *testing.T) {
 	for _, key := range []string{
 		"POST /api/adty/notifications/hide",
 		"POST /api/adty/notifications/todo/complete",
+		"GET /api/adty/staff/balance-requests",
 		"POST /api/adty/staff/balance-requests",
+		"GET /api/adty/site/balance-requests",
+		"GET /api/adty/admin/balance-requests",
 		"POST /api/adty/site/balance-requests/:id/review",
 		"POST /api/adty/admin/balance-requests/:id/review",
 		"POST /api/adty/site/wallets/earning-to-margin",

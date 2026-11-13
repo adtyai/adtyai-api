@@ -3,6 +3,7 @@ package controller
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -177,6 +178,56 @@ func PostAdtyStaffCustomerPasswordReset(c *gin.Context) {
 
 func PostAdtyStaffCustomerDisable(c *gin.Context) {
 	manageAdtyStaffCustomer(c, service.AdtyStaffActionCustomerDisable, "customers.disable")
+}
+
+func GetAdtyStaffBalanceRequests(c *gin.Context) {
+	staff, site, ok := adtyStaffRequest(c, "")
+	if !ok {
+		return
+	}
+	rows, err := service.ListStaffBalanceRequests(site.Id)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	own := make([]model.AdtyStaffBalanceRequest, 0, len(rows))
+	for _, row := range rows {
+		if row.StaffUserId == staff.UserId {
+			own = append(own, row)
+		}
+	}
+	common.ApiSuccess(c, gin.H{"items": own})
+}
+
+func GetAdtyOwnerBalanceRequests(c *gin.Context) {
+	site, ok := adtyOwnerSiteOr403(c)
+	if !ok {
+		return
+	}
+	rows, err := service.ListStaffBalanceRequests(site.Id)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"items": rows})
+}
+
+func GetAdtyAdminBalanceRequests(c *gin.Context) {
+	if c.GetInt("role") != common.RoleRootUser {
+		common.ApiErrorStatus(c, http.StatusForbidden, common.NewMessage("No permission to perform this action"))
+		return
+	}
+	siteID, err := strconv.Atoi(c.Query("site_id"))
+	if err != nil || siteID <= 0 {
+		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	rows, err := service.ListStaffBalanceRequests(siteID)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"items": rows})
 }
 
 func PostAdtyStaffBalanceRequest(c *gin.Context) {

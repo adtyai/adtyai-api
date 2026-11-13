@@ -8771,8 +8771,14 @@
     "Amount USD": "Montant USD",
     "I confirm the payee details before this request is frozen.": "Je confirme les coordonnées avant le gel de cette demande.",
     "Submit withdrawal": "Envoyer la demande",
-    "Withdrawal rules are not set": "Règles de retrait non définies"
-  },
+    "Withdrawal rules are not set": "Règles de retrait non définies",
+    "Approved": "Approuvée",
+    "Balance requests": "Demandes de solde",
+    "Decrease": "Diminuer",
+    "Increase": "Augmenter",
+    "Request balance change": "Demander un ajustement de solde",
+    "This request does not change the customer balance until the site owner or Root approves it.": "Cette demande ne change pas le solde du client tant que le propriétaire du site ou Root ne l'a pas approuvée."
+},
   "Targeted notifications": "Notifications ciblées",
   "Site announcements": "Annonces du site",
   "New notification": "Nouvelle notification",

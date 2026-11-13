@@ -8771,8 +8771,14 @@
     "Amount USD": "Amount USD",
     "I confirm the payee details before this request is frozen.": "I confirm the payee details before this request is frozen.",
     "Submit withdrawal": "Submit withdrawal",
-    "Withdrawal rules are not set": "Withdrawal rules are not set"
-  },
+    "Withdrawal rules are not set": "Withdrawal rules are not set",
+    "Approved": "Approved",
+    "Balance requests": "Balance requests",
+    "Decrease": "Decrease",
+    "Increase": "Increase",
+    "Request balance change": "Request balance change",
+    "This request does not change the customer balance until the site owner or Root approves it.": "This request does not change the customer balance until the site owner or Root approves it."
+},
   "Targeted notifications": "Targeted notifications",
   "Site announcements": "Site announcements",
   "New notification": "New notification",

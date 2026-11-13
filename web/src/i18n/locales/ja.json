@@ -8771,8 +8771,14 @@
     "Amount USD": "金額（USD）",
     "I confirm the payee details before this request is frozen.": "受取情報を確認してから、この申請を凍結します。",
     "Submit withdrawal": "出金を申請",
-    "Withdrawal rules are not set": "出金ルールが未設定です"
-  },
+    "Withdrawal rules are not set": "出金ルールが未設定です",
+    "Approved": "承認済み",
+    "Balance requests": "残高申請",
+    "Decrease": "減少",
+    "Increase": "増加",
+    "Request balance change": "残高変更を申請",
+    "This request does not change the customer balance until the site owner or Root approves it.": "サイトオーナーまたは Root が承認するまで、この申請は顧客残高を変えません。"
+},
   "Targeted notifications": "対象を指定した通知",
   "Site announcements": "サイトのお知らせ",
   "New notification": "通知を作成",

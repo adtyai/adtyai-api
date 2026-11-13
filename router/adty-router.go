@@ -421,8 +421,11 @@ func registerAdtyResellerRoutes(apiRouter *gin.RouterGroup) {
 		{http.MethodGet, "/adty/staff/customers/:id/logs", controller.GetAdtyStaffCustomerLogs},
 		{http.MethodPost, "/adty/staff/customers/:id/password-reset", controller.PostAdtyStaffCustomerPasswordReset},
 		{http.MethodPost, "/adty/staff/customers/:id/disable", controller.PostAdtyStaffCustomerDisable},
+		{http.MethodGet, "/adty/staff/balance-requests", controller.GetAdtyStaffBalanceRequests},
 		{http.MethodPost, "/adty/staff/balance-requests", controller.PostAdtyStaffBalanceRequest},
+		{http.MethodGet, "/adty/site/balance-requests", controller.GetAdtyOwnerBalanceRequests},
 		{http.MethodPost, "/adty/site/balance-requests/:id/review", controller.PostAdtyOwnerBalanceReview},
+		{http.MethodGet, "/adty/admin/balance-requests", controller.GetAdtyAdminBalanceRequests},
 		{http.MethodPost, "/adty/admin/balance-requests/:id/review", controller.PostAdtyAdminBalanceReview},
 	} {
 		middleware.DeclareAdtyAccessTokenRoute(route.method, "/api"+route.path, "session", "")

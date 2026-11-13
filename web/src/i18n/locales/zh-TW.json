@@ -8771,8 +8771,14 @@
     "Amount USD": "金額（美元）",
     "I confirm the payee details before this request is frozen.": "我已核對收款資料，再凍結這筆申請。",
     "Submit withdrawal": "提交提現",
-    "Withdrawal rules are not set": "提現規則尚未設定"
-  },
+    "Withdrawal rules are not set": "提現規則尚未設定",
+    "Approved": "已核准",
+    "Balance requests": "餘額申請",
+    "Decrease": "扣減",
+    "Increase": "增加",
+    "Request balance change": "申請調整餘額",
+    "This request does not change the customer balance until the site owner or Root approves it.": "在站長或 Root 核准之前，此申請不會改變客戶餘額。"
+},
   "Targeted notifications": "定向通知",
   "Site announcements": "本站公告",
   "New notification": "新增通知",

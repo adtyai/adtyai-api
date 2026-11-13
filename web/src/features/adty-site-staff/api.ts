@@ -33,6 +33,20 @@ export type StaffPermission =
   | 'customers.password'
   | 'customers.disable'
 export type StaffCustomerAction = 'password-reset' | 'disable'
+export type StaffBalanceDirection = 'increase' | 'decrease'
+export type StaffBalanceRequest = {
+  id: number
+  site_id: number
+  staff_user_id: number
+  customer_user_id: number
+  direction: StaffBalanceDirection
+  amount_usd: string
+  status: 'pending' | 'approved' | 'rejected'
+  reviewer_id: number
+  reviewer_role: string
+  created_at: number
+  reviewed_at: number
+}
 export type StaffAccount = {
   id: number
   user_id: number
@@ -75,6 +89,39 @@ export type StaffUsage = {
 type Response<T> = { success: boolean; message?: string; data: T }
 export const STAFF_PAGE_SIZE = 20
 
+export async function getStaffBalanceRequests(): Promise<StaffBalanceRequest[]> {
+  const response = await api.get<Response<{ items?: StaffBalanceRequest[] }>>(
+    '/api/adty/staff/balance-requests'
+  )
+  return requireServerSuccess(response.data).data.items ?? []
+}
+export async function createStaffBalanceRequest(input: {
+  customer_id: number
+  direction: StaffBalanceDirection
+  amount_usd: string
+}): Promise<StaffBalanceRequest> {
+  const response = await api.post<Response<StaffBalanceRequest>>(
+    '/api/adty/staff/balance-requests',
+    input
+  )
+  return requireServerSuccess(response.data).data
+}
+export async function getOwnerBalanceRequests(): Promise<StaffBalanceRequest[]> {
+  const response = await api.get<Response<{ items?: StaffBalanceRequest[] }>>(
+    '/api/adty/site/balance-requests'
+  )
+  return requireServerSuccess(response.data).data.items ?? []
+}
+export async function reviewOwnerBalanceRequest(
+  id: number,
+  approve: boolean
+): Promise<void> {
+  const response = await api.post<Response<{ reviewed: boolean }>>(
+    `/api/adty/site/balance-requests/${id}/review`,
+    { approve }
+  )
+  requireServerSuccess(response.data)
+}
 export async function getStaffAccounts(
   page: number
 ): Promise<OwnerPage<StaffAccount>> {

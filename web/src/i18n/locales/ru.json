@@ -8771,8 +8771,14 @@
     "Amount USD": "Сумма USD",
     "I confirm the payee details before this request is frozen.": "Я подтверждаю реквизиты до заморозки этой заявки.",
     "Submit withdrawal": "Отправить заявку",
-    "Withdrawal rules are not set": "Правила вывода не заданы"
-  },
+    "Withdrawal rules are not set": "Правила вывода не заданы",
+    "Approved": "Одобрено",
+    "Balance requests": "Заявки на баланс",
+    "Decrease": "Уменьшить",
+    "Increase": "Увеличить",
+    "Request balance change": "Запросить изменение баланса",
+    "This request does not change the customer balance until the site owner or Root approves it.": "Эта заявка не меняет баланс клиента, пока владелец сайта или Root её не одобрит."
+},
   "Targeted notifications": "Адресные уведомления",
   "Site announcements": "Объявления сайта",
   "New notification": "Новое уведомление",

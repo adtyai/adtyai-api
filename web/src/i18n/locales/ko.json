@@ -8745,8 +8745,14 @@
     "Amount USD": "금액 USD",
     "I confirm the payee details before this request is frozen.": "이 신청을 동결하기 전에 수취 정보를 확인합니다.",
     "Submit withdrawal": "출금 신청",
-    "Withdrawal rules are not set": "출금 규칙이 없습니다"
-  },
+    "Withdrawal rules are not set": "출금 규칙이 없습니다",
+    "Approved": "승인됨",
+    "Balance requests": "잔액 신청",
+    "Decrease": "감소",
+    "Increase": "증가",
+    "Request balance change": "잔액 변경 신청",
+    "This request does not change the customer balance until the site owner or Root approves it.": "사이트 소유자 또는 Root가 승인하기 전에는 이 신청이 고객 잔액을 바꾸지 않습니다."
+},
   "Targeted notifications": "대상 지정 알림",
   "Site announcements": "사이트 공지",
   "New notification": "새 알림",

@@ -40,6 +40,7 @@ import {
   STAFF_PAGE_SIZE,
   type StaffCustomerAction,
 } from './api'
+import { StaffBalanceRequestDialog } from './balance-request-dialog'
 import { StaffCustomerActionDialog } from './customer-actions'
 import { StaffRecordsDialog } from './records-dialog'
 
@@ -51,6 +52,9 @@ export function StaffWorkspace() {
     customer: OwnerCustomer
     action: StaffCustomerAction
   } | null>(null)
+  const [balanceCustomer, setBalanceCustomer] = useState<OwnerCustomer | null>(
+    null
+  )
   const [records, setRecords] = useState<{
     customer: OwnerCustomer
     kind: 'topups' | 'logs'
@@ -112,6 +116,7 @@ export function StaffWorkspace() {
     })
   }
   if (
+    canList ||
     grants.includes('customers.topups') ||
     grants.includes('customers.usage') ||
     grants.includes('customers.password') ||
@@ -122,6 +127,15 @@ export function StaffWorkspace() {
       header: t('Actions'),
       cell: (customer) => (
         <div className='flex flex-wrap gap-1'>
+          {canList && (
+            <Button
+              size='sm'
+              variant='outline'
+              onClick={() => setBalanceCustomer(customer)}
+            >
+              {t('Request balance change')}
+            </Button>
+          )}
           {grants.includes('customers.topups') && (
             <Button
               size='sm'
@@ -226,6 +240,14 @@ export function StaffWorkspace() {
                   onClose={() => setRecords(null)}
                 />
               )}
+            {balanceCustomer && canList && (
+              <StaffBalanceRequestDialog
+                key={`${self.data.staff.version}-${balanceCustomer.id}`}
+                customer={balanceCustomer}
+                userId={userId ?? 0}
+                onClose={() => setBalanceCustomer(null)}
+              />
+            )}
             {customerAction &&
               canList &&
               grants.includes(

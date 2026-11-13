@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -28,14 +28,18 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   deleteStaffAccount,
+  getOwnerBalanceRequests,
   getStaffAccounts,
   getStaffAudits,
+  reviewOwnerBalanceRequest,
   saveStaffAccount,
   STAFF_PAGE_SIZE,
   type StaffAccount,
+  type StaffBalanceRequest,
 } from '@/features/adty-site-staff/api'
 import { PageSwitcher } from '@/features/referral/components/page-switcher'
 import { formatTimestamp } from '@/lib/format'
+import { handleServerError } from '@/lib/handle-server-error'
 
 import { siteOwnerKeys } from '../api'
 import { useVerifiedOwnerMutation } from '../hooks/use-verified-owner-mutation'
@@ -52,6 +56,22 @@ export function StaffPanel(props: { siteId: number }) {
     staff: StaffAccount
     action: 'status' | 'delete'
   } | null>(null)
+  const client = useQueryClient()
+  const requests = useQuery({
+    queryKey: siteOwnerKeys.list('balance-requests', { siteId: props.siteId }),
+    queryFn: getOwnerBalanceRequests,
+  })
+  const review = useMutation({
+    mutationFn: (input: { id: number; approve: boolean }) =>
+      reviewOwnerBalanceRequest(input.id, input.approve),
+    onSuccess: () =>
+      void client.invalidateQueries({
+        queryKey: siteOwnerKeys.list('balance-requests', {
+          siteId: props.siteId,
+        }),
+      }),
+    onError: (error) => handleServerError(error),
+  })
   const list = useQuery({
     queryKey: siteOwnerKeys.list('staff', { p: page }),
     queryFn: () => getStaffAccounts(page),
@@ -182,6 +202,93 @@ export function StaffPanel(props: { siteId: number }) {
           />
         </>
       )}
+      <div className='flex flex-col gap-2'>
+        <h2 className='text-lg font-medium'>{t('Balance requests')}</h2>
+        <p className='text-muted-foreground text-sm'>
+          {t(
+            'This request does not change the customer balance until the site owner or Root approves it.'
+          )}
+        </p>
+        {requests.isPending && <Skeleton className='h-24' />}
+        {requests.isError && (
+          <ErrorState onRetry={() => void requests.refetch()} />
+        )}
+        {requests.isSuccess && (
+          <StaticDataTable
+            data={requests.data}
+            getRowKey={(row) => row.id}
+            tableProps={{ 'aria-label': t('Balance requests') }}
+            emptyContent={<EmptyState title={t('No data')} />}
+            columns={[
+              {
+                id: 'customer',
+                header: t('Customer ID'),
+                cell: (row: StaffBalanceRequest) => (
+                  <span className='tabular-nums'>{row.customer_user_id}</span>
+                ),
+              },
+              {
+                id: 'direction',
+                header: t('Direction'),
+                cell: (row: StaffBalanceRequest) =>
+                  row.direction === 'increase' ? t('Increase') : t('Decrease'),
+              },
+              {
+                id: 'amount',
+                header: t('Amount'),
+                cell: (row: StaffBalanceRequest) => (
+                  <span className='tabular-nums'>{row.amount_usd}</span>
+                ),
+              },
+              {
+                id: 'status',
+                header: t('Status'),
+                cell: (row: StaffBalanceRequest) =>
+                  row.status === 'pending'
+                    ? t('Pending')
+                    : row.status === 'approved'
+                      ? t('Approved')
+                      : t('Rejected'),
+              },
+              {
+                id: 'actions',
+                header: t('Actions'),
+                cell: (row: StaffBalanceRequest) =>
+                  row.status === 'pending' ? (
+                    <div className='flex flex-wrap gap-1'>
+                      <Button
+                        size='sm'
+                        variant='outline'
+                        disabled={review.isPending}
+                        onClick={() =>
+                          review.mutate({ id: row.id, approve: true })
+                        }
+                      >
+                        {t('Approve')}
+                      </Button>
+                      <Button
+                        size='sm'
+                        variant='outline'
+                        disabled={review.isPending}
+                        onClick={() =>
+                          review.mutate({ id: row.id, approve: false })
+                        }
+                      >
+                        {t('Reject')}
+                      </Button>
+                    </div>
+                  ) : (
+                    <span className='text-muted-foreground text-xs tabular-nums'>
+                      {row.reviewed_at > 0
+                        ? formatTimestamp(row.reviewed_at)
+                        : '—'}
+                    </span>
+                  ),
+              },
+            ]}
+          />
+        )}
+      </div>
       {editing && (
         <StaffDialog
           siteId={props.siteId}
