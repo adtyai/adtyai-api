@@ -1104,8 +1104,17 @@ func DeleteSelf(c *gin.Context) {
 		return
 	}
 	identity, _ := middleware.GetStepUpIdentity(c)
-	var err error
+	account, err := model.GetUserById(identity.UserID, false)
+	if err != nil {
+		writeSecurityOperationError(c, err)
+		return
+	}
+	code, issued, ok := consumeAccountDeletionCode(c, account.Id, account.Email)
+	if !ok {
+		return
+	}
 	if revokedAccessTokens, err = model.DeleteUserForSession(identity); err != nil {
+		common.RestoreVerificationCodeWithKey(accountDeletionCodeKey(account.Id, account.Email), code, common.AccountDeletionPurpose, issued)
 		if errors.Is(err, model.ErrCannotDeleteRootUser) {
 			common.ApiErrorT(c, "Cannot delete super administrator account")
 			return

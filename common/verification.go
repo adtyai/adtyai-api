@@ -21,6 +21,7 @@ type verificationValue struct {
 const (
 	EmailVerificationPurpose = "v"
 	PasswordResetPurpose     = "r"
+	AccountDeletionPurpose   = "adty_account_delete"
 )
 
 var verificationMutex sync.Mutex

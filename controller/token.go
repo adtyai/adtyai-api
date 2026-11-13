@@ -40,6 +40,7 @@ type tokenRequest struct {
 	AutoGroups tokenAutoGroupsInput `json:"auto_groups"`
 	// 指针区分“未传”和显式 false：新建时未传即开启，更新时未传则保留原值。
 	AllowUserQuotaQuery *bool `json:"allow_user_quota_query"`
+	RateLimitPerMinute  *int  `json:"rate_limit_per_minute"`
 	remainQuotaSet      bool  `json:"-"`
 }
 
@@ -69,7 +70,8 @@ func (r *tokenRequest) UnmarshalJSON(data []byte) error {
 
 type tokenResponse struct {
 	*model.Token
-	AutoGroups []string `json:"auto_groups"`
+	AutoGroups          []string `json:"auto_groups"`
+	RateLimitPerMinute int      `json:"rate_limit_per_minute"`
 }
 
 func maxTokenQuota() int {
@@ -96,7 +98,28 @@ func buildMaskedTokenResponse(token *model.Token) *tokenResponse {
 	if len(autoGroups) == 0 {
 		autoGroups = nil
 	}
-	return &tokenResponse{Token: &maskedToken, AutoGroups: autoGroups}
+	response := &tokenResponse{Token: &maskedToken, AutoGroups: autoGroups}
+	if limit, err := model.GetAdtyKeyLimit(token.Id); err == nil {
+		response.RateLimitPerMinute = limit.PerMinute
+	}
+	return response
+}
+
+func saveTokenRateLimit(c *gin.Context, tokenID int, perMinute *int) bool {
+	if perMinute == nil {
+		return true
+	}
+	var err error
+	if *perMinute <= 0 {
+		err = model.ClearAdtyKeyLimit(tokenID)
+	} else {
+		err = model.SaveAdtyKeyLimit(tokenID, *perMinute)
+	}
+	if err != nil {
+		common.ApiError(c, err)
+		return false
+	}
+	return true
 }
 
 func buildMaskedTokenResponses(tokens []*model.Token) []*tokenResponse {
@@ -396,6 +419,9 @@ func AddToken(c *gin.Context) {
 		return
 	}
 	params["id"] = cleanToken.Id
+	if !saveTokenRateLimit(c, cleanToken.Id, request.RateLimitPerMinute) {
+		return
+	}
 	common.SetContextKey(c, constant.ContextKeyTokenAuditSucceeded, true)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -510,11 +536,28 @@ func UpdateToken(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	previousLimit := 0
+	if statusOnly == "" && request.RateLimitPerMinute != nil {
+		if stored, limitErr := model.GetAdtyKeyLimit(cleanToken.Id); limitErr == nil {
+			previousLimit = stored.PerMinute
+		}
+	}
+	if statusOnly == "" && !saveTokenRateLimit(c, cleanToken.Id, request.RateLimitPerMinute) {
+		return
+	}
 	params["name"] = cleanToken.Name
 	if statusOnly != "" {
 		params["from"], params["to"] = previous.Status, cleanToken.Status
 	} else {
 		changedFields := []string{}
+		rateChanged := false
+		if request.RateLimitPerMinute != nil {
+			next := *request.RateLimitPerMinute
+			if next < 0 {
+				next = 0
+			}
+			rateChanged = next != previousLimit
+		}
 		for _, field := range []struct {
 			name    string
 			changed bool
@@ -531,6 +574,7 @@ func UpdateToken(c *gin.Context) {
 			{"group", previous.Group != cleanToken.Group},
 			{"cross_group_retry", previous.CrossGroupRetry != cleanToken.CrossGroupRetry},
 			{"auto_groups", previous.AutoGroups != cleanToken.AutoGroups},
+			{"rate_limit_per_minute", rateChanged},
 		} {
 			if field.changed {
 				changedFields = append(changedFields, field.name)

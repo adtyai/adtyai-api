@@ -36,6 +36,7 @@ import { cn } from '@/lib/utils'
 
 import {
   downloadExport,
+  getOwnerEarningLines,
   getOwnerEarnings,
   OWNER_PAGE_SIZE,
   siteOwnerKeys,
@@ -93,6 +94,10 @@ export function EarningsPanel() {
   const query = useQuery({
     queryKey: siteOwnerKeys.list('earnings', { p: page, kind }),
     queryFn: () => getOwnerEarnings(page, kind),
+  })
+  const lines = useQuery({
+    queryKey: siteOwnerKeys.list('earning-lines', {}),
+    queryFn: getOwnerEarningLines,
   })
   const exporter = useMutation({
     mutationFn: (exportKind: ExportKind) => downloadExport(exportKind),
@@ -236,6 +241,43 @@ export function EarningsPanel() {
         pageSize={OWNER_PAGE_SIZE}
         onPageChange={setPage}
       />
+      <div className='flex flex-col gap-2'>
+        <h2 className='text-sm font-medium'>{t('Request earnings')}</h2>
+        <p className='text-muted-foreground text-sm'>
+          {t(
+            'Each request shows the model and billing group. Upstream channel names are not shown.'
+          )}
+        </p>
+        <StaticDataTable
+          tableClassName='min-w-[640px]'
+          tableProps={{ 'aria-label': t('Request earnings') }}
+          data={lines.data ?? []}
+          getRowKey={(row) => row.id}
+          emptyContent={
+            <EmptyState className='min-h-24' title={t('No earnings yet')} />
+          }
+          columns={[
+            {
+              id: 'time',
+              header: t('Time'),
+              cell: (row) =>
+                row.created_at > 0 ? formatTimestamp(row.created_at) : '—',
+            },
+            { id: 'model', header: t('Model'), cell: (row) => row.model_name },
+            { id: 'group', header: t('Group'), cell: (row) => row.group },
+            {
+              id: 'request',
+              header: t('Request'),
+              cell: (row) => row.request_id || '—',
+            },
+            {
+              id: 'earning',
+              header: t('Your earnings'),
+              cell: (row) => amountCell(row.earning_usd),
+            },
+          ]}
+        />
+      </div>
     </div>
   )
 }

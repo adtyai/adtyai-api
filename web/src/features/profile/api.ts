@@ -99,13 +99,24 @@ export async function updateUserLanguage(
 /**
  * Delete user account
  */
+export function sendAccountDeletionCode(
+  signal?: AbortSignal
+): Promise<AccountSecurityResult> {
+  return authResult(
+    api.post('/api/user/self/deletion-code', {}, { signal }),
+    'Failed to send email'
+  )
+}
+
 export function deleteUserAccount(
   proof: string,
+  verificationCode: string,
   signal: AbortSignal
 ): Promise<AccountSecurityResult> {
   return authResult(
     api.delete('/api/user/self', {
       ...authRequestOptions,
+      data: { verification_code: verificationCode },
       headers: { 'X-Security-Proof': proof },
       singleUseAuthorization: true,
       signal,

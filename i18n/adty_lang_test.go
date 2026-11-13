@@ -42,6 +42,7 @@ func TestAdtyEmailsAllLanguages(t *testing.T) {
 	}
 	keys := []string{
 		MsgEmailVerificationSubject, MsgEmailVerificationGreeting, MsgEmailVerificationCode, MsgEmailVerificationValidity,
+		MsgEmailAccountDeletionSubject, MsgEmailAccountDeletionGreeting, MsgEmailAccountDeletionCode, MsgEmailAccountDeletionValidity,
 		MsgEmailPasswordResetSubject, MsgEmailPasswordResetGreeting, MsgEmailPasswordResetLink,
 		MsgEmailPasswordResetLinkFallback, MsgEmailPasswordResetValidity,
 		MsgAdtyEmailRegisteredSubject, MsgAdtyEmailRegisteredBody,

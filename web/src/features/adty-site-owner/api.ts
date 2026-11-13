@@ -182,6 +182,23 @@ export async function cancelSiteWithdrawal(id: number): Promise<void> {
   requireServerSuccess(res.data)
 }
 
+export type OwnerEarningLine = {
+  id: number
+  model_name: string
+  group: string
+  request_id: string
+  earning_usd: string
+  created_at: number
+}
+
+export async function getOwnerEarningLines(): Promise<OwnerEarningLine[]> {
+  const res = await api.get<ApiResponse<OwnerEarningLine[]>>(
+    `${BASE}/earnings/lines`,
+    { params: { page_size: 20 } }
+  )
+  return requireServerSuccess(res.data).data ?? []
+}
+
 export async function getOwnerEarnings(
   p: number,
   kind: string

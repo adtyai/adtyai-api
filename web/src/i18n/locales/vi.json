@@ -8807,7 +8807,14 @@
     "Bonus rate": "Tỷ lệ thưởng",
     "Team top-up": "Nạp tiền đội",
     "A team top-up does not include a payment-method gift.": "Nạp tiền đội không gồm thưởng của phương thức thanh toán.",
-    "A team top-up does not include a payment-method gift. The order stays pending until payment completion credits the shared balance.": "Nạp tiền đội không gồm thưởng phương thức thanh toán. Đơn giữ chờ đến khi thanh toán hoàn tất mới cộng vào số dư dùng chung."
+    "A team top-up does not include a payment-method gift. The order stays pending until payment completion credits the shared balance.": "Nạp tiền đội không gồm thưởng phương thức thanh toán. Đơn giữ chờ đến khi thanh toán hoàn tất mới cộng vào số dư dùng chung.",
+    "Empty or zero means no extra limit on this key": "Để trống hoặc 0 nghĩa là khóa này không có giới hạn thêm",
+    "Email confirmation code": "Mã xác nhận email",
+    "Code sent": "Đã gửi mã",
+    "Enter the code sent to your email. It can be used once.": "Nhập mã được gửi tới email của bạn. Mỗi mã chỉ dùng một lần.",
+    "Failed to send email": "Không gửi được email",
+    "Request earnings": "Thu nhập theo yêu cầu",
+    "Each request shows the model and billing group. Upstream channel names are not shown.": "Mỗi yêu cầu hiển thị mô hình và nhóm tính phí. Tên kênh thượng nguồn không được hiển thị."
 },
   "Targeted notifications": "Thông báo theo đối tượng",
   "Site announcements": "Thông báo của trang",

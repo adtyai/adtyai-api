@@ -8807,7 +8807,14 @@
     "Bonus rate": "ボーナス率",
     "Team top-up": "チームチャージ",
     "A team top-up does not include a payment-method gift.": "チームチャージに決済方法のボーナスは含まれません。",
-    "A team top-up does not include a payment-method gift. The order stays pending until payment completion credits the shared balance.": "チームチャージに決済方法のボーナスは含まれません。支払完了まで注文は保留で、共有残高には入りません。"
+    "A team top-up does not include a payment-method gift. The order stays pending until payment completion credits the shared balance.": "チームチャージに決済方法のボーナスは含まれません。支払完了まで注文は保留で、共有残高には入りません。",
+    "Empty or zero means no extra limit on this key": "空または 0 は、このキーに追加の制限がないことを意味します",
+    "Email confirmation code": "メール確認コード",
+    "Code sent": "コードを送信しました",
+    "Enter the code sent to your email. It can be used once.": "メールに届いたコードを入力してください。コードは一度だけ使えます。",
+    "Failed to send email": "メールを送信できませんでした",
+    "Request earnings": "リクエストごとの収益",
+    "Each request shows the model and billing group. Upstream channel names are not shown.": "各リクエストはモデルと課金グループを表示します。上流チャネル名は表示しません。"
 },
   "Targeted notifications": "対象を指定した通知",
   "Site announcements": "サイトのお知らせ",

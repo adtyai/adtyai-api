@@ -119,7 +119,7 @@ func productionPluginRouteHandlers(generation *jsplugin.RoutingGeneration, bindi
 		middleware.TokenAuth(),
 		middleware.SystemPerformanceCheck(),
 		middleware.ModelRequestRateLimit(),
-		middleware.AdtyUserLimit(), // 二开：任务 7.4
+		middleware.AdtyUserLimit(), middleware.AdtyKeyRateLimit(), // 二开：任务 7.4
 		middleware.PrepareTaskPluginRoute(),
 		middleware.AdtyRequireCurrentSiteTerms(),
 		middleware.Distribute(),

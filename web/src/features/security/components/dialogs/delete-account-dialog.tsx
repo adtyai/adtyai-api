@@ -24,10 +24,11 @@ import { toast } from 'sonner'
 
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { SecureVerificationDialog } from '@/features/auth/secure-verification'
-import { deleteUserAccount } from '@/features/profile/api'
+import { deleteUserAccount, sendAccountDeletionCode } from '@/features/profile/api'
 import { clearAuthentication } from '@/lib/api'
 
 import { useAccountSecurity } from '../../hooks/use-account-security'
@@ -42,12 +43,16 @@ export function DeleteAccountDialog(props: DeleteAccountDialogProps) {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const confirmationId = useId()
+  const codeId = useId()
   const [confirmation, setConfirmation] = useState('')
+  const [code, setCode] = useState('')
+  const [sendingCode, setSendingCode] = useState(false)
   const security = useAccountSecurity()
   const cancel = security.cancel
 
   useEffect(() => {
     setConfirmation('')
+    setCode('')
     if (!props.open) cancel()
   }, [props.open, props.username, security.sessionKey, cancel])
 
@@ -55,6 +60,7 @@ export function DeleteAccountDialog(props: DeleteAccountDialogProps) {
     if (!open) {
       security.cancel()
       setConfirmation('')
+      setCode('')
     }
     props.onOpenChange(open)
   }
@@ -66,7 +72,7 @@ export function DeleteAccountDialog(props: DeleteAccountDialogProps) {
         { scope: 'account.delete', title: t('Delete Account') },
         signal
       )
-      return deleteUserAccount(proof, signal)
+      return deleteUserAccount(proof, code.trim(), signal)
     })
     if (!result) return
     toast.success(t('Account deleted successfully'))
@@ -86,7 +92,9 @@ export function DeleteAccountDialog(props: DeleteAccountDialogProps) {
         )}
         confirmText={security.pending ? t('Deleting...') : t('Delete Account')}
         destructive
-        disabled={confirmation !== props.username || security.pending}
+        disabled={
+          confirmation !== props.username || code.trim() === '' || security.pending
+        }
         isLoading={security.pending}
         handleConfirm={handleDelete}
       >
@@ -113,6 +121,36 @@ export function DeleteAccountDialog(props: DeleteAccountDialogProps) {
             placeholder={props.username}
             autoComplete='off'
           />
+        </div>
+        <div className='space-y-2'>
+          <Label htmlFor={codeId}>{t('Email confirmation code')}</Label>
+          <div className='flex gap-2'>
+            <Input
+              id={codeId}
+              value={code}
+              onChange={(event) => setCode(event.target.value)}
+              disabled={security.pending}
+              autoComplete='one-time-code'
+              className='min-w-0 flex-1'
+            />
+            <Button
+              type='button'
+              variant='outline'
+              disabled={sendingCode || security.pending}
+              onClick={() => {
+                setSendingCode(true)
+                void sendAccountDeletionCode()
+                  .then(() => toast.success(t('Code sent')))
+                  .catch(() => toast.error(t('Failed to send email')))
+                  .finally(() => setSendingCode(false))
+              }}
+            >
+              {t('Send code')}
+            </Button>
+          </div>
+          <p className='text-muted-foreground text-sm'>
+            {t('Enter the code sent to your email. It can be used once.')}
+          </p>
         </div>
       </ConfirmDialog>
       <SecureVerificationDialog {...security.verificationDialogProps} />

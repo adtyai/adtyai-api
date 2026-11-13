@@ -134,7 +134,7 @@ func TestSecurityAccountDeletionAcceptsEitherFactorAndRevokesSessions(t *testing
 			otherSession, err := service.CreateLoginSession(user.Id, "password", "127.0.0.1", "second-session")
 			require.NoError(t, err)
 			require.NoError(t, model.DB.Model(&model.User{}).Where("id = ?", user.Id).Update("access_token", "account-delete-access-token").Error)
-			response := securityEnrollmentRequest("DELETE", "/api/user/self", "", proof, identity, DeleteSelf)
+			response := securityEnrollmentRequest("DELETE", "/api/user/self", accountDeletionBody(t, user), proof, identity, DeleteSelf)
 			var result securityEnrollmentResponse
 			require.NoError(t, common.Unmarshal(response.Body.Bytes(), &result))
 			require.True(t, result.Success, response.Body.String())
@@ -191,10 +191,11 @@ func TestSecurityAccountDeletionRechecksTransactionAndConsumesFailedProof(t *tes
 						_ = tx.AddError(errors.New("injected deletion failure"))
 					}
 				}))
-				response := securityEnrollmentRequest("DELETE", "/api/user/self", "", proof, identity, DeleteSelf)
+				body := accountDeletionBody(t, user)
+				response := securityEnrollmentRequest("DELETE", "/api/user/self", body, proof, identity, DeleteSelf)
 				assert.Contains(t, response.Body.String(), `"success":false`)
 				require.NoError(t, model.DB.Callback().Delete().Remove("account-delete-failure"))
-				response = securityEnrollmentRequest("DELETE", "/api/user/self", "", proof, identity, DeleteSelf)
+				response = securityEnrollmentRequest("DELETE", "/api/user/self", body, proof, identity, DeleteSelf)
 				assert.Contains(t, response.Body.String(), "SECURITY_PROOF_CONSUMED")
 			}
 			if scenario != "write failure" {
@@ -214,12 +215,13 @@ func TestSecurityAccountDeletionRechecksTransactionAndConsumesFailedProof(t *tes
 func TestSecurityAccountDeletionConcurrentRequestsHaveOneWinner(t *testing.T) {
 	user, identity := setupSecurityEnrollmentTest(t)
 	proof := issueSecurityEnrollmentProof(t, identity, service.VerificationOperation{Scope: service.VerificationScopeAccountDelete}, "password")
+	body := accountDeletionBody(t, user)
 	start := make(chan struct{})
 	responses := make(chan string, 2)
 	for range 2 {
 		go func() {
 			<-start
-			response := securityEnrollmentRequest("DELETE", "/api/user/self", "", proof, identity, DeleteSelf)
+			response := securityEnrollmentRequest("DELETE", "/api/user/self", body, proof, identity, DeleteSelf)
 			responses <- response.Body.String()
 		}()
 	}

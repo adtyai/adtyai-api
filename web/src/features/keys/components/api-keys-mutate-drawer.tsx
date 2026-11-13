@@ -746,6 +746,34 @@ export function ApiKeysMutateDrawer({
 
                     <FormField
                       control={form.control}
+                      name='rate_limit_per_minute'
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{t('Requests per minute')}</FormLabel>
+                          <FormControl>
+                            <Input
+                              type='number'
+                              min={0}
+                              value={field.value ?? 0}
+                              onChange={(event) =>
+                                field.onChange(
+                                  event.target.value === ''
+                                    ? 0
+                                    : Number(event.target.value)
+                                )
+                              }
+                            />
+                          </FormControl>
+                          <FormDescription>
+                            {t('Empty or zero means no extra limit on this key')}
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
                       name='allow_ips'
                       render={({ field }) => (
                         <FormItem>

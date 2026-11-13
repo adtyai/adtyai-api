@@ -8807,7 +8807,14 @@
     "Bonus rate": "贈金比例",
     "Team top-up": "團隊儲值",
     "A team top-up does not include a payment-method gift.": "團隊儲值不包含支付方式贈金。",
-    "A team top-up does not include a payment-method gift. The order stays pending until payment completion credits the shared balance.": "團隊儲值不包含支付方式贈金。訂單保持待付款，直到付款完成才計入共享餘額。"
+    "A team top-up does not include a payment-method gift. The order stays pending until payment completion credits the shared balance.": "團隊儲值不包含支付方式贈金。訂單保持待付款，直到付款完成才計入共享餘額。",
+    "Empty or zero means no extra limit on this key": "留空或 0 表示這把 Key 沒有額外限速",
+    "Email confirmation code": "郵箱確認碼",
+    "Code sent": "驗證碼已傳送",
+    "Enter the code sent to your email. It can be used once.": "輸入發到你郵箱的驗證碼。每個驗證碼只能用一次。",
+    "Failed to send email": "郵件傳送失敗",
+    "Request earnings": "單次請求收益",
+    "Each request shows the model and billing group. Upstream channel names are not shown.": "每筆請求顯示模型和計費分組，不顯示上游渠道名稱。"
 },
   "Targeted notifications": "定向通知",
   "Site announcements": "本站公告",

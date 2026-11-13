@@ -255,6 +255,22 @@ func GetAdtyOwnerEarnings(c *gin.Context) {
 	common.ApiSuccess(c, gin.H{"balances": balances, "page": pageInfo})
 }
 
+// GetAdtyOwnerEarningLines lists per-request earnings with model and billing group.
+// The response has no upstream channel fields.
+func GetAdtyOwnerEarningLines(c *gin.Context) {
+	site, ok := adtyOwnerSiteOr403(c)
+	if !ok {
+		return
+	}
+	_, offset, limit := adtyPage(c)
+	rows, err := service.ListAdtyOwnerEarningLines(site.Id, offset, limit)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, rows)
+}
+
 // GetAdtyOwnerCustomers 按注册时间分页列出客户：GET /api/adty/site/customers。
 func GetAdtyOwnerCustomers(c *gin.Context) {
 	site, ok := adtyOwnerSiteOr403(c)

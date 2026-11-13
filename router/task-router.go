@@ -15,7 +15,7 @@ func SetTaskRouter(router *gin.Engine) {
 	taskSubmitRouter := router.Group("/v1/tasks")
 	taskSubmitRouter.Use(middleware.RouteTag("relay"), middleware.TokenAuth(), middleware.AdtyRequireCurrentSiteTerms())
 	{
-		taskSubmitRouter.POST("/:key", middleware.AdtyUserLimit(), middleware.PrepareTaskPluginSubmit(), middleware.Distribute(), controller.RelayTask) // 二开：任务 7.4
+		taskSubmitRouter.POST("/:key", middleware.AdtyUserLimit(), middleware.AdtyKeyRateLimit(), middleware.PrepareTaskPluginSubmit(), middleware.Distribute(), controller.RelayTask) // 二开：任务 7.4
 	}
 
 	taskReadRouter := router.Group("/v1/tasks")

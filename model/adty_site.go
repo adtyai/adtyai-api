@@ -224,7 +224,7 @@ func (AdtySiteLookup) TableName() string { return "adty_site_lookups" }
 // AdtySiteTables 是分站的表，迁移和测试共用。
 func AdtySiteTables() []any {
 	return []any{&AdtySite{}, &AdtySiteInviteCode{}, &AdtySiteAudit{}, &AdtySiteCustomer{}, &AdtySitePrice{}, &AdtySiteDomain{},
-		&AdtySiteEarningDaily{}, &AdtySiteTrialGrant{}, &AdtySiteReport{}, &AdtySiteLookup{}, &AdtySiteSenderDomain{},
+		&AdtySiteEarningDaily{}, &AdtySiteEarningLine{}, &AdtySiteTrialGrant{}, &AdtySiteReport{}, &AdtySiteLookup{}, &AdtySiteSenderDomain{},
 		&AdtySiteTier{}, &AdtySiteWallet{}, &AdtySiteWalletLedger{}, &AdtySiteWithdrawal{}, &AdtySiteStaff{}, &AdtySiteOwnership{}}
 }
 

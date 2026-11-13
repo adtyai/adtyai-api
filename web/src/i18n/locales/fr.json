@@ -8807,7 +8807,14 @@
     "Bonus rate": "Taux de bonus",
     "Team top-up": "Recharge d'équipe",
     "A team top-up does not include a payment-method gift.": "Une recharge d'équipe n'inclut pas de bonus du moyen de paiement.",
-    "A team top-up does not include a payment-method gift. The order stays pending until payment completion credits the shared balance.": "Une recharge d'équipe n'inclut pas de bonus du moyen de paiement. La commande reste en attente jusqu'à ce que le paiement crédite le solde partagé."
+    "A team top-up does not include a payment-method gift. The order stays pending until payment completion credits the shared balance.": "Une recharge d'équipe n'inclut pas de bonus du moyen de paiement. La commande reste en attente jusqu'à ce que le paiement crédite le solde partagé.",
+    "Empty or zero means no extra limit on this key": "Vide ou zéro : aucune limite supplémentaire pour cette clé",
+    "Email confirmation code": "Code de confirmation par e-mail",
+    "Code sent": "Code envoyé",
+    "Enter the code sent to your email. It can be used once.": "Saisissez le code envoyé à votre e-mail. Il ne peut être utilisé qu'une fois.",
+    "Failed to send email": "Échec de l'envoi de l'e-mail",
+    "Request earnings": "Gains par requête",
+    "Each request shows the model and billing group. Upstream channel names are not shown.": "Chaque requête affiche le modèle et le groupe de facturation. Le nom du canal amont n'est pas affiché."
 },
   "Targeted notifications": "Notifications ciblées",
   "Site announcements": "Annonces du site",

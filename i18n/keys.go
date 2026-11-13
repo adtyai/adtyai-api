@@ -60,6 +60,11 @@ const (
 	MsgEmailVerificationCode     = "email.verification.code"
 	MsgEmailVerificationValidity = "email.verification.validity"
 
+	MsgEmailAccountDeletionSubject  = "email.account_deletion.subject"
+	MsgEmailAccountDeletionGreeting = "email.account_deletion.greeting"
+	MsgEmailAccountDeletionCode     = "email.account_deletion.code"
+	MsgEmailAccountDeletionValidity = "email.account_deletion.validity"
+
 	MsgEmailPasswordResetSubject      = "email.password_reset.subject"
 	MsgEmailPasswordResetGreeting     = "email.password_reset.greeting"
 	MsgEmailPasswordResetLink         = "email.password_reset.link"

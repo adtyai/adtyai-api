@@ -165,7 +165,11 @@ func adtyRecordConsumeEarning(c *gin.Context, userId int, params *model.RecordCo
 	if charged <= 0 {
 		return
 	}
-	AdtySiteEarningHook(c.GetInt(AdtySiteIdContextKey), userId, charged, k, d, model.AdtySiteEarningUsage, c.GetInt(AdtySiteOwnerContextKey))
+	siteID := c.GetInt(AdtySiteIdContextKey)
+	AdtySiteEarningHook(siteID, userId, charged, k, d, model.AdtySiteEarningUsage, c.GetInt(AdtySiteOwnerContextKey))
+	if lineErr := RecordAdtySiteEarningLine(siteID, userId, params.ModelName, params.Group, c.GetString(common.RequestIdKey), charged, k, d); lineErr != nil {
+		common.SysError(common.LogText("record site earning line failed site=%d user=%d: %s", siteID, userId, lineErr.Error()))
+	}
 }
 
 // adtyAppendTaskSiteAdminInfo 把任务快照里的 k、d、站点写进日志的 admin_info（taskBillingOther 调用），
@@ -229,6 +233,9 @@ func adtyRecordTaskBillingEarning(params *model.RecordTaskBillingLogParams) {
 		return
 	}
 	AdtySiteEarningHook(siteId, params.UserId, quota, k, d, kind, ownerID)
+	if lineErr := RecordAdtySiteEarningLine(siteId, params.UserId, params.ModelName, params.Group, "", quota, k, d); lineErr != nil {
+		common.SysError(common.LogText("record site earning line failed site=%d user=%d: %s", siteId, params.UserId, lineErr.Error()))
+	}
 }
 
 // adtyBonusUSDForSite 是一笔订单要由站长出的加赠（美元）：站点档位的加赠，加上站长出资优惠码的优惠加赠（12.4）。

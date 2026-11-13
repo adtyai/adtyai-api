@@ -17,7 +17,7 @@ func SetVideoRouter(router *gin.Engine) {
 		middleware.AdtyRequireCurrentSiteTerms(),
 		middleware.PinTaskPluginEndpoint(),
 		middleware.TaskPluginEndpointOnly(middleware.ModelRequestRateLimit()),
-		middleware.AdtyUserLimit(), // 二开：任务 7.4
+		middleware.AdtyUserLimit(), middleware.AdtyKeyRateLimit(), // 二开：任务 7.4
 		middleware.PrepareTaskPluginEndpoint(),
 		middleware.Distribute(),
 		func(c *gin.Context) {
@@ -37,6 +37,7 @@ func SetVideoRouter(router *gin.Engine) {
 			middleware.PinTaskPluginEndpoint(),
 			middleware.TaskPluginEndpointOnly(middleware.ModelRequestRateLimit()),
 			middleware.AdtyUserLimit(),
+			middleware.AdtyKeyRateLimit(),
 			middleware.PrepareTaskPluginEndpoint(),
 			middleware.Distribute(),
 			controller.RelayTask,

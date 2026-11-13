@@ -8807,7 +8807,14 @@
     "Bonus rate": "Ставка бонуса",
     "Team top-up": "Пополнение команды",
     "A team top-up does not include a payment-method gift.": "Пополнение команды не включает бонус способа оплаты.",
-    "A team top-up does not include a payment-method gift. The order stays pending until payment completion credits the shared balance.": "Пополнение команды не включает бонус способа оплаты. Заявка остаётся ожидающей, пока завершение оплаты не зачислит общий баланс."
+    "A team top-up does not include a payment-method gift. The order stays pending until payment completion credits the shared balance.": "Пополнение команды не включает бонус способа оплаты. Заявка остаётся ожидающей, пока завершение оплаты не зачислит общий баланс.",
+    "Empty or zero means no extra limit on this key": "Пусто или 0 — без дополнительного лимита для этого ключа",
+    "Email confirmation code": "Код подтверждения по почте",
+    "Code sent": "Код отправлен",
+    "Enter the code sent to your email. It can be used once.": "Введите код из письма. Его можно использовать один раз.",
+    "Failed to send email": "Не удалось отправить письмо",
+    "Request earnings": "Доход по запросу",
+    "Each request shows the model and billing group. Upstream channel names are not shown.": "Каждый запрос показывает модель и группу тарификации. Имя upstream-канала не показывается."
 },
   "Targeted notifications": "Адресные уведомления",
   "Site announcements": "Объявления сайта",

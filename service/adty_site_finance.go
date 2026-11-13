@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
@@ -379,10 +380,38 @@ func ReviewAdtyAnomalyDisposition(id int64, operatorID int, status, note string)
 		if row.Status == "closed" || (row.Status == "reviewing" && status != "closed") || (row.Status != "open" && row.Status != "reviewing") {
 			return common.NewMessage("Invalid parameters")
 		}
-		return tx.Model(&row).Updates(map[string]any{
+		if err := tx.Model(&row).Updates(map[string]any{
 			"status": status, "note": note, "operator_id": operatorID,
-		}).Error
+		}).Error; err != nil {
+			return err
+		}
+		return notifyAdtyAnomalyDispositionTx(tx, row, operatorID, status, note)
 	})
+}
+
+func notifyAdtyAnomalyDispositionTx(tx *gorm.DB, row model.AdtyAnomalyDisposition, operatorID int, status, note string) error {
+	siteID, err := strconv.Atoi(strings.TrimSpace(row.Ref))
+	if err != nil || siteID <= 0 {
+		return nil
+	}
+	publisher := "root"
+	var operator model.User
+	if err := tx.Select("username").First(&operator, operatorID).Error; err == nil && operator.Username != "" {
+		publisher = operator.Username
+	}
+	content := "资金异常处置已记录。Fund anomaly review recorded. " + status
+	if note != "" {
+		content += ": " + note
+	}
+	now := time.Now().Unix()
+	notice := model.AdtyNotificationPublication{
+		IssuerSiteId: 0, PublisherId: operatorID, PublisherName: publisher,
+		Title: "资金异常处置", Content: content, Kind: "system", Audience: "site",
+		TargetSiteId: siteID, TargetSiteName: "", Business: "fund_anomaly",
+		Status: "published", Revision: 1, PublishedAt: now, UpdatedAt: now, UpdatedBy: operatorID,
+		ReadKey: adtyNotificationVersion("anomaly:" + strconv.FormatInt(row.Id, 10) + ":" + status),
+	}
+	return tx.Create(&notice).Error
 }
 
 // TransferAdtyEarningToMargin moves earning cash into margin and opens a new draw cycle.
