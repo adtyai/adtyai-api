@@ -27,12 +27,13 @@ import (
 
 // gin 上下文里记下的仍是存储口径的 k 和供货倍率 d：同一个请求后面的消费日志都从这里取（11.5 的记账）。
 const (
-	AdtySiteMarkupContextKey     = "adty_site_markup"
-	AdtyTeamDiscountContextKey   = "adty_team_discount"
-	AdtyTeamPriceBlockedKey      = "adty_team_price_blocked"
-	AdtySiteCostFactorContextKey = "adty_site_cost_factor"
-	AdtySiteIdContextKey         = "adty_site_id"
-	AdtySiteOwnerContextKey      = "adty_site_owner_user_id"
+	AdtySiteMarkupContextKey      = "adty_site_markup"
+	AdtyTeamDiscountContextKey    = "adty_team_discount"
+	AdtyTeamPriceBlockedKey       = "adty_team_price_blocked"
+	AdtySiteCostFactorContextKey  = "adty_site_cost_factor"
+	AdtySiteBilledRatioContextKey = "adty_site_billed_ratio"
+	AdtySiteIdContextKey          = "adty_site_id"
+	AdtySiteOwnerContextKey       = "adty_site_owner_user_id"
 )
 
 var (
@@ -134,49 +135,91 @@ func adtyStoredMarkupRatio(k decimal.Decimal) decimal.Decimal {
 
 // adtyMarkupFloat 把存储的 k 转成 float 给上下文和快照用。NaN、Inf 或非正数按 1（不加价）处理并记日志；0<k<1 原样返回。
 func adtyMarkupFloat(k decimal.Decimal, userId int, group string) float64 {
-	value := k.InexactFloat64()
-	if math.IsNaN(value) || math.IsInf(value, 0) || value <= 0 {
-		common.SysError(common.LogText("invalid site markup %s for user %d group %s, using 1", k.String(), userId, group))
-		return 1
-	}
-	return value
+	return adtyValidStoredMarkup(k, userId, group).InexactFloat64()
 }
 
-// adtySiteOrdinarySellRatio 用精确十进制计算：供货价因子 = 分组倍率 × 供货倍率，
-// 普通售价因子 = 供货价因子 × (1 + 加价比例)。只在返回给仍使用 float64 的调用方时转换。
-func adtySiteOrdinarySellRatio(groupRatio float64, k, costFactor decimal.Decimal, userId int, group string) (float64, float64) {
-	kFloat := adtyMarkupFloat(k, userId, group)
+func adtyDecimalFloatInvalid(d decimal.Decimal) bool {
+	value := d.InexactFloat64()
+	return math.IsNaN(value) || math.IsInf(value, 0)
+}
+
+func adtyValidStoredMarkup(k decimal.Decimal, userId int, group string) decimal.Decimal {
+	if !k.IsPositive() || adtyDecimalFloatInvalid(k) {
+		common.SysError(common.LogText("invalid site markup %s for user %d group %s, using 1", k.String(), userId, group))
+		return decimal.NewFromInt(1)
+	}
+	return k
+}
+
+func adtyDecimalFiniteNonNegative(d decimal.Decimal) bool {
+	value := d.InexactFloat64()
+	return !math.IsNaN(value) && !math.IsInf(value, 0) && !d.IsNegative()
+}
+
+// adtySiteOrdinarySellRatioDec 用精确十进制计算：供货价因子 = 分组倍率 × 供货倍率，
+// 普通售价因子 = 供货价因子 × (1 + 加价比例)。计费结果不再经过 float64 往返。
+func adtySiteOrdinarySellRatioDec(groupRatio, k, costFactor decimal.Decimal, userId int, group string) (marked, storedK decimal.Decimal, ok bool) {
+	storedK = k
+	if !storedK.IsPositive() || adtyDecimalFloatInvalid(storedK) {
+		storedK = decimal.NewFromInt(1)
+	}
 	if !costFactor.IsPositive() {
 		common.SysError(common.LogText("invalid site cost factor %s for user %d group %s, leaving group ratio unchanged", costFactor.String(), userId, group))
-		return groupRatio, 1
+		return groupRatio, decimal.NewFromInt(1), false
 	}
-	kUsed := k
-	if !k.IsPositive() || math.IsNaN(k.InexactFloat64()) || math.IsInf(k.InexactFloat64(), 0) {
-		kUsed = decimal.NewFromInt(1)
-	}
-	markedDec := decimal.NewFromFloat(groupRatio).Mul(costFactor).Mul(decimal.NewFromInt(1).Add(adtyStoredMarkupRatio(kUsed)))
-	marked := markedDec.InexactFloat64()
-	if math.IsNaN(marked) || math.IsInf(marked, 0) || marked < 0 {
+	marked = groupRatio.Mul(costFactor).Mul(decimal.NewFromInt(1).Add(adtyStoredMarkupRatio(storedK)))
+	if !adtyDecimalFiniteNonNegative(marked) {
 		common.SysError(common.LogText("site sell price overflow for user %d group %s, leaving group ratio unchanged", userId, group))
-		return groupRatio, 1
+		return groupRatio, decimal.NewFromInt(1), false
 	}
-	return marked, kFloat
+	return marked, storedK, true
+}
+
+func adtyRememberBilledRatio(c *gin.Context, billed decimal.Decimal) {
+	if c != nil {
+		c.Set(AdtySiteBilledRatioContextKey, billed)
+	}
+}
+
+// AdtyBilledGroupRatioFromContext 取出本次请求按精确十进制算出的计费分组倍率。
+func AdtyBilledGroupRatioFromContext(c *gin.Context) (decimal.Decimal, bool) {
+	if c == nil {
+		return decimal.Zero, false
+	}
+	value, ok := c.Get(AdtySiteBilledRatioContextKey)
+	if !ok {
+		return decimal.Zero, false
+	}
+	billed, ok := value.(decimal.Decimal)
+	return billed, ok
+}
+
+// AdtyApplySiteMarkupDecimal 按已确认公式用精确十进制计算供货价、售价和团队下限。
+// 返回最终计费分组倍率和存储 k（1 表示加价比例为 0）。
+func AdtyApplySiteMarkupDecimal(c *gin.Context, userId int, group string, groupRatio decimal.Decimal) (billed, storedK decimal.Decimal) {
+	marked, storedK := adtyApplySiteMarkupOnlyDecimal(c, userId, group, groupRatio)
+	billed, storedK = adtyApplyTeamProtocolPriceDecimal(c, userId, groupRatio, marked, storedK)
+	adtyRememberBilledRatio(c, billed)
+	return billed, storedK
 }
 
 // AdtyApplySiteMarkup 在算出分组倍率之后调用：按供货倍率和加价比例改分组倍率，并把 k、d 写进 gin 上下文。
 // 返回普通售价对应的分组倍率和存储 k（1 表示加价比例为 0）。上游的 HandleGroupRatio、Realtime 预扣都调它。
+// 财务权威结果走 AdtyApplySiteMarkupDecimal；这里的 float64 仅留给仍使用浮点的调用方和快照字段。
 func AdtyApplySiteMarkup(c *gin.Context, userId int, group string, groupRatio float64) (float64, float64) {
-	marked, k := adtyApplySiteMarkupOnly(c, userId, group, groupRatio)
-	return adtyApplyTeamProtocolPrice(c, userId, groupRatio, marked, k)
+	billed, storedK := AdtyApplySiteMarkupDecimal(c, userId, group, decimal.NewFromFloat(groupRatio))
+	return billed.InexactFloat64(), storedK.InexactFloat64()
 }
 
-func adtyApplySiteMarkupOnly(c *gin.Context, userId int, group string, groupRatio float64) (float64, float64) {
+func adtyApplySiteMarkupOnlyDecimal(c *gin.Context, userId int, group string, groupRatio decimal.Decimal) (decimal.Decimal, decimal.Decimal) {
+	one := decimal.NewFromInt(1)
 	site := AdtyBillingSiteForUser(userId)
 	if site == nil {
-		return groupRatio, 1
+		return groupRatio, one
 	}
 	kDec := adtyClampMarkup(site, ResolveAdtySiteMarkup(adtySitePrices(site.Id), userId, group), userId, group)
-	k := adtyMarkupFloat(kDec, userId, group)
+	kUsed := adtyValidStoredMarkup(kDec, userId, group)
+	k := kUsed.InexactFloat64()
 	d, dOK := AdtySiteCostFactor(site)
 	if c != nil {
 		c.Set(AdtySiteMarkupContextKey, k)
@@ -192,57 +235,59 @@ func adtyApplySiteMarkupOnly(c *gin.Context, userId int, group string, groupRati
 	}
 	if !dOK {
 		common.SysError(common.LogText("site cost factor missing for user %d group %s, leaving group ratio unchanged", userId, group))
-		return groupRatio, 1
+		return groupRatio, one
 	}
-	return adtySiteOrdinarySellRatio(groupRatio, kDec, d, userId, group)
+	marked, storedK, ok := adtySiteOrdinarySellRatioDec(groupRatio, kUsed, d, userId, group)
+	if !ok {
+		return marked, storedK
+	}
+	return marked, storedK
 }
 
-// adtyApplyTeamProtocolPrice 按已确认口径把团队折后支付比例乘进分站普通售价：
+// adtyApplyTeamProtocolPriceDecimal 按已确认口径把团队折后支付比例乘进分站普通售价：
 // 分站团队折扣计算价 = 分站普通售价 × 分站团队折后支付比例（0.8 表示支付普通售价的 80%），
 // 分站团队最终价 = max(分站供货价, 分站团队折扣计算价)。
 // 供货价沿用 ISS-R1-0009：分组倍率 × 供货倍率。主站团队没有供货价下限（G.2-5）。
 // 支付比例无效或结果溢出时仍置 AdtyTeamPriceBlockedKey；折后价低于供货价时改为按供货价计费，不再拒绝。
-func adtyApplyTeamProtocolPrice(c *gin.Context, userId int, groupRatio, marked, k float64) (float64, float64) {
+func adtyApplyTeamProtocolPriceDecimal(c *gin.Context, userId int, groupRatio, marked, storedK decimal.Decimal) (decimal.Decimal, decimal.Decimal) {
 	if c == nil || userId <= 0 {
-		return marked, k
+		return marked, storedK
 	}
 	tokenId := common.GetContextKeyInt(c, constant.ContextKeyTokenId)
 	if tokenId <= 0 || model.DB == nil || !adtyTeamTableReadyFor(model.DB, &model.AdtyTeamKey{}) {
-		return marked, k
+		return marked, storedK
 	}
 	var binding model.AdtyTeamKey
 	lookup := model.DB.Where("token_id = ? AND user_id = ? AND status = ?", tokenId, userId, model.AdtyTeamMemberActive).Limit(1).Find(&binding)
 	if lookup.Error != nil || lookup.RowsAffected == 0 {
-		return marked, k
+		return marked, storedK
 	}
 	var team model.AdtyTeam
 	if err := model.DB.First(&team, binding.TeamId).Error; err != nil || team.Status != model.AdtyTeamStatusActive || !team.Discount.IsPositive() {
-		return marked, k
+		return marked, storedK
 	}
 	factorDec := team.Discount
-	factor := factorDec.InexactFloat64()
-	if !factorDec.IsPositive() || factorDec.GreaterThan(decimal.NewFromInt(1)) || math.IsNaN(factor) || math.IsInf(factor, 0) {
+	if !factorDec.IsPositive() || factorDec.GreaterThan(decimal.NewFromInt(1)) || adtyDecimalFloatInvalid(factorDec) {
 		c.Set(AdtyTeamPriceBlockedKey, true)
-		return marked, k
+		return marked, storedK
 	}
-	discounted := decimal.NewFromFloat(marked).Mul(factorDec)
+	discounted := marked.Mul(factorDec)
 	nextDec := discounted
 	// 只有分站团队才有供货价下限；主站团队即使有很深的折扣也不抬价。
 	if team.SiteId > 0 {
 		if site := AdtyBillingSiteForUser(userId); site != nil {
-			if d, ok := AdtySiteCostFactor(site); ok && groupRatio > 0 {
-				supply := decimal.NewFromFloat(groupRatio).Mul(d)
+			if d, ok := AdtySiteCostFactor(site); ok && groupRatio.IsPositive() {
+				supply := groupRatio.Mul(d)
 				nextDec = decimal.Max(supply, discounted)
 			}
 		}
 	}
-	next := nextDec.InexactFloat64()
-	if math.IsNaN(next) || math.IsInf(next, 0) || next < 0 {
+	if !adtyDecimalFiniteNonNegative(nextDec) {
 		c.Set(AdtyTeamPriceBlockedKey, true)
-		return marked, k
+		return marked, storedK
 	}
-	c.Set(AdtyTeamDiscountContextKey, factor)
-	return next, k
+	c.Set(AdtyTeamDiscountContextKey, factorDec.InexactFloat64())
+	return nextDec, storedK
 }
 
 // AdtyTeamPriceBlocked 表示本次请求的团队支付比例无效或折后价溢出，计费应拒绝。
@@ -606,11 +651,15 @@ func AdtyStampTaskSiteBilling(c *gin.Context, bc *model.TaskBillingContext) {
 // 提交时已经按供货倍率和加价比例乘进快照的任务（SiteMarkup > 0）用快照里的分组倍率，不再乘；
 // 主站客户的任务照上游用当前分组倍率；没有快照的分站任务按当前公式乘一次。
 func adtyTaskRecalcGroupRatio(task *model.Task, group string, groupRatio float64) float64 {
+	return adtyTaskRecalcGroupRatioDecimal(task, group, decimal.NewFromFloat(groupRatio)).InexactFloat64()
+}
+
+func adtyTaskRecalcGroupRatioDecimal(task *model.Task, group string, groupRatio decimal.Decimal) decimal.Decimal {
 	if bc := task.PrivateData.BillingContext; bc != nil && bc.SiteMarkup > 0 && bc.GroupRatio > 0 {
-		return bc.GroupRatio
+		return decimal.NewFromFloat(bc.GroupRatio)
 	}
-	marked, _ := AdtyApplySiteMarkup(nil, task.UserId, group, groupRatio)
-	return marked
+	billed, _ := AdtyApplySiteMarkupDecimal(nil, task.UserId, group, groupRatio)
+	return billed
 }
 
 func init() {
@@ -763,6 +812,7 @@ func AdtyApplySitePricing(c *gin.Context, groupRatio map[string]float64) {
 		return
 	}
 	for group, ratio := range groupRatio {
-		groupRatio[group], _ = adtySiteOrdinarySellRatio(ratio, AdtySiteVisitorMarkup(site, group), d, 0, group)
+		marked, _, _ := adtySiteOrdinarySellRatioDec(decimal.NewFromFloat(ratio), AdtySiteVisitorMarkup(site, group), d, 0, group)
+		groupRatio[group] = marked.InexactFloat64()
 	}
 }

@@ -19,6 +19,7 @@ import (
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
+	"github.com/shopspring/decimal"
 )
 
 // LogTaskConsumption 记录任务消费日志和统计信息（仅记录，不涉及实际扣费）。
@@ -411,25 +412,28 @@ func RecalculateTaskQuotaByTokens(ctx context.Context, task *model.Task, totalTo
 		return false
 	}
 
-	groupRatio := ratio_setting.GetGroupRatio(group)
-	userGroupRatio, hasUserGroupRatio := ratio_setting.GetGroupGroupRatio(group, group)
-
-	var finalGroupRatio float64
-	if hasUserGroupRatio {
-		finalGroupRatio = userGroupRatio
-	} else {
-		finalGroupRatio = groupRatio
+	finalGroupRatioDec, hasUserGroupRatio := ratio_setting.GetGroupGroupRatioDecimal(group, group)
+	if !hasUserGroupRatio {
+		finalGroupRatioDec = ratio_setting.GetGroupRatioDecimal(group)
 	}
-	finalGroupRatio = adtyTaskRecalcGroupRatio(task, group, finalGroupRatio) // 二开：分站倍率 k（任务 11.4）
+	finalGroupRatioDec = adtyTaskRecalcGroupRatioDecimal(task, group, finalGroupRatioDec) // 二开：分站倍率 k（任务 11.4）
+	finalGroupRatio := finalGroupRatioDec.InexactFloat64()
 
 	// 计算 OtherRatios 乘积（视频折扣、时长等）
+	otherMultiplierDec := decimal.NewFromInt(1)
 	otherMultiplier := 1.0
 	if priceData := taskBillingContextPriceData(task.PrivateData.BillingContext); priceData != nil {
 		otherMultiplier = priceData.OtherRatioMultiplier()
+		otherMultiplierDec = priceData.ApplyOtherRatiosToDecimal(decimal.NewFromInt(1))
 	}
 
 	// 计算实际应扣费额度: totalTokens * modelRatio * groupRatio * otherMultiplier（饱和转换，防止溢出成负数）
-	actualQuota, clamp := common.QuotaFromFloatChecked(float64(totalTokens) * modelRatio * finalGroupRatio * otherMultiplier)
+	actualQuota, clamp := common.QuotaFromDecimalChecked(
+		decimal.NewFromInt(int64(totalTokens)).
+			Mul(decimal.NewFromFloat(modelRatio)).
+			Mul(finalGroupRatioDec).
+			Mul(otherMultiplierDec),
+	)
 
 	reason := common.NewMessage("Recalculated from tokens: tokens {{tokens}}, model ratio {{model_ratio}}, group ratio {{group_ratio}}, other multiplier {{other_multiplier}}", map[string]any{
 		"tokens":           totalTokens,

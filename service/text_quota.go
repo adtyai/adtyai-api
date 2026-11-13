@@ -149,9 +149,22 @@ func mergeToolSurchargeItems(items []ToolSurchargeItem) []ToolSurchargeItem {
 	return merged
 }
 
+func textBilledGroupRatio(relayInfo *relaycommon.RelayInfo, fallback float64) decimal.Decimal {
+	if relayInfo != nil && relayInfo.PriceData.GroupRatioInfo.HasBilledGroupRatio() {
+		return relayInfo.PriceData.GroupRatioInfo.BilledGroupRatio()
+	}
+	if fallback != 0 {
+		return decimal.NewFromFloat(fallback)
+	}
+	if relayInfo != nil {
+		return relayInfo.PriceData.GroupRatioInfo.BilledGroupRatio()
+	}
+	return decimal.Zero
+}
+
 func calculateTextToolCallSurcharge(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, summary *textQuotaSummary) decimal.Decimal {
-	dGroupRatio := decimal.NewFromFloat(summary.GroupRatio)
-	dQuotaPerUnit := decimal.NewFromFloat(common.QuotaPerUnit)
+	dGroupRatio := textBilledGroupRatio(relayInfo, summary.GroupRatio)
+	dQuotaPerUnit := common.QuotaPerUnitDecimal()
 
 	var items []ToolSurchargeItem
 
@@ -205,9 +218,12 @@ func composeTieredTextQuota(relayInfo *relaycommon.RelayInfo, summary textQuotaS
 
 	if tieredResult != nil {
 		if snap := relayInfo.TieredBillingSnapshot; snap != nil {
-			quota, clamp := common.QuotaFromDecimalChecked(decimal.NewFromFloat(tieredResult.ActualQuotaBeforeGroup).
-				Mul(decimal.NewFromFloat(snap.GroupRatio)).
-				Add(summary.ToolCallSurchargeQuota))
+			beforeGroup := tieredResult.ActualQuotaBeforeGroupDec
+			if beforeGroup.IsZero() && tieredResult.ActualQuotaBeforeGroup != 0 {
+				beforeGroup = decimal.NewFromFloat(tieredResult.ActualQuotaBeforeGroup)
+			}
+			groupRatio := textBilledGroupRatio(relayInfo, snap.GroupRatio)
+			quota, clamp := common.QuotaFromDecimalChecked(beforeGroup.Mul(groupRatio).Add(summary.ToolCallSurchargeQuota))
 			noteQuotaClamp(relayInfo, clamp)
 			return quota
 		}
@@ -292,13 +308,13 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 	dCacheRatio := decimal.NewFromFloat(summary.CacheRatio)
 	dImageRatio := decimal.NewFromFloat(summary.ImageRatio)
 	dModelRatio := decimal.NewFromFloat(summary.ModelRatio)
-	dGroupRatio := decimal.NewFromFloat(summary.GroupRatio)
+	dGroupRatio := textBilledGroupRatio(relayInfo, summary.GroupRatio)
 	dModelPrice := decimal.NewFromFloat(summary.ModelPrice)
 	dCacheCreationRatio := decimal.NewFromFloat(summary.CacheCreationRatio)
 	dCacheCreationRatio5m := decimal.NewFromFloat(summary.CacheCreationRatio5m)
 	dCacheCreationRatio1h := decimal.NewFromFloat(summary.CacheCreationRatio1h)
 	dCacheCreationRatio12h := decimal.NewFromFloat(summary.CacheCreationRatio12h)
-	dQuotaPerUnit := decimal.NewFromFloat(common.QuotaPerUnit)
+	dQuotaPerUnit := common.QuotaPerUnitDecimal()
 
 	ratio := dModelRatio.Mul(dGroupRatio)
 	summary.ToolCallSurchargeQuota = calculateTextToolCallSurcharge(ctx, relayInfo, &summary)
@@ -442,8 +458,8 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		q := decimal.NewFromFloat(item.Price).
 			Mul(decimal.NewFromInt(int64(item.Count))).
 			Div(decimal.NewFromInt(1000)).
-			Mul(decimal.NewFromFloat(summary.GroupRatio)).
-			Mul(decimal.NewFromFloat(common.QuotaPerUnit))
+			Mul(textBilledGroupRatio(relayInfo, summary.GroupRatio)).
+			Mul(common.QuotaPerUnitDecimal())
 		extraContent = append(extraContent, common.NewMessage("{{name}} called {{count}} times, cost {{quota}}", map[string]any{
 			"name":  item.Name,
 			"count": item.Count,
@@ -451,7 +467,7 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		}))
 	}
 	if summary.AudioInputPrice > 0 && summary.AudioTokens > 0 {
-		q := decimal.NewFromFloat(summary.AudioInputPrice).Div(decimal.NewFromInt(1000000)).Mul(decimal.NewFromInt(int64(summary.AudioTokens))).Mul(decimal.NewFromFloat(summary.GroupRatio)).Mul(decimal.NewFromFloat(common.QuotaPerUnit))
+		q := decimal.NewFromFloat(summary.AudioInputPrice).Div(decimal.NewFromInt(1000000)).Mul(decimal.NewFromInt(int64(summary.AudioTokens))).Mul(textBilledGroupRatio(relayInfo, summary.GroupRatio)).Mul(common.QuotaPerUnitDecimal())
 		extraContent = append(extraContent, common.NewMessage("Audio input cost {{quota}}", map[string]any{"quota": logger.FormatQuota(common.QuotaFromDecimal(q))}))
 	}
 

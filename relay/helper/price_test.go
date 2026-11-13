@@ -218,7 +218,7 @@ func TestModelPriceHelperTieredRejectsPreConsumeOverflow(t *testing.T) {
 
 	var clamp *common.QuotaClamp
 	require.ErrorAs(t, err, &clamp)
-	require.Equal(t, "QuotaRound", clamp.Op)
+	require.Equal(t, "QuotaFromDecimal", clamp.Op)
 	require.Equal(t, common.QuotaClampOverflow, clamp.Kind)
 }
 

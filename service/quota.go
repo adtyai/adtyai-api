@@ -29,13 +29,38 @@ type TokenDetails struct {
 }
 
 type QuotaInfo struct {
-	InputDetails  TokenDetails
-	OutputDetails TokenDetails
-	ModelName     string
-	UsePrice      bool
-	ModelPrice    float64
-	ModelRatio    float64
-	GroupRatio    float64
+	InputDetails         TokenDetails
+	OutputDetails        TokenDetails
+	ModelName            string
+	UsePrice             bool
+	ModelPrice           float64
+	ModelRatio           float64
+	GroupRatio           float64
+	GroupRatioDecimal    decimal.Decimal
+	hasGroupRatioDecimal bool
+}
+
+func quotaInfoGroupRatio(info QuotaInfo) decimal.Decimal {
+	if info.hasGroupRatioDecimal {
+		return info.GroupRatioDecimal
+	}
+	return decimal.NewFromFloat(info.GroupRatio)
+}
+
+func withBilledGroupRatio(info QuotaInfo, billed decimal.Decimal) QuotaInfo {
+	info.GroupRatioDecimal = billed
+	info.hasGroupRatioDecimal = true
+	if info.GroupRatio == 0 {
+		info.GroupRatio = billed.InexactFloat64()
+	}
+	return info
+}
+
+func quotaInfoFromPriceData(info QuotaInfo, relayInfo *relaycommon.RelayInfo) QuotaInfo {
+	if relayInfo == nil {
+		return info
+	}
+	return withBilledGroupRatio(info, relayInfo.PriceData.GroupRatioInfo.BilledGroupRatio())
 }
 
 func hasCustomModelRatio(modelName string, currentRatio float64) bool {
@@ -49,18 +74,18 @@ func hasCustomModelRatio(modelName string, currentRatio float64) bool {
 func calculateAudioQuota(info QuotaInfo) (int, *common.QuotaClamp) {
 	if info.UsePrice {
 		modelPrice := decimal.NewFromFloat(info.ModelPrice)
-		quotaPerUnit := decimal.NewFromFloat(common.QuotaPerUnit)
-		groupRatio := decimal.NewFromFloat(info.GroupRatio)
+		quotaPerUnit := common.QuotaPerUnitDecimal()
+		groupRatio := quotaInfoGroupRatio(info)
 
 		quota := modelPrice.Mul(quotaPerUnit).Mul(groupRatio)
 		return common.QuotaFromDecimalChecked(quota)
 	}
 
-	completionRatio := decimal.NewFromFloat(ratio_setting.GetCompletionRatio(info.ModelName))
-	audioRatio := decimal.NewFromFloat(ratio_setting.GetAudioRatio(info.ModelName))
-	audioCompletionRatio := decimal.NewFromFloat(ratio_setting.GetAudioCompletionRatio(info.ModelName))
+	completionRatio := ratio_setting.GetCompletionRatioDecimal(info.ModelName)
+	audioRatio := ratio_setting.GetAudioRatioDecimal(info.ModelName)
+	audioCompletionRatio := ratio_setting.GetAudioCompletionRatioDecimal(info.ModelName)
 
-	groupRatio := decimal.NewFromFloat(info.GroupRatio)
+	groupRatio := quotaInfoGroupRatio(info)
 	modelRatio := decimal.NewFromFloat(info.ModelRatio)
 	ratio := groupRatio.Mul(modelRatio)
 
@@ -114,12 +139,15 @@ func PreWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usag
 		relayInfo.UsingGroup = autoGroup.(string)
 	}
 
-	actualGroupRatio := groupRatio
-	userGroupRatio, ok := ratio_setting.GetGroupGroupRatio(relayInfo.UserGroup, relayInfo.UsingGroup)
-	if ok {
-		actualGroupRatio = userGroupRatio
+	actualGroupRatioDec := ratio_setting.GetGroupRatioDecimal(relayInfo.UsingGroup)
+	if exists {
+		actualGroupRatioDec = ratio_setting.GetGroupRatioDecimal(autoGroup.(string))
 	}
-	actualGroupRatio, _ = AdtyApplySiteMarkup(ctx, relayInfo.UserId, relayInfo.UsingGroup, actualGroupRatio) // 二开：任务 11.4
+	if billed, ok := ratio_setting.GetGroupGroupRatioDecimal(relayInfo.UserGroup, relayInfo.UsingGroup); ok {
+		actualGroupRatioDec = billed
+	}
+	actualGroupRatioDec, _ = AdtyApplySiteMarkupDecimal(ctx, relayInfo.UserId, relayInfo.UsingGroup, actualGroupRatioDec) // 二开：任务 11.4
+	actualGroupRatio := actualGroupRatioDec.InexactFloat64()
 
 	quotaInfo := QuotaInfo{
 		InputDetails: TokenDetails{
@@ -135,6 +163,7 @@ func PreWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usag
 		ModelRatio: modelRatio,
 		GroupRatio: actualGroupRatio,
 	}
+	quotaInfo = withBilledGroupRatio(quotaInfo, actualGroupRatioDec)
 
 	quota, clamp := calculateAudioQuota(quotaInfo)
 	noteQuotaClamp(relayInfo, clamp)
@@ -193,9 +222,9 @@ func PostWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, mod
 	audioOutTokens := usage.OutputTokenDetails.AudioTokens
 
 	tokenName := ctx.GetString("token_name")
-	completionRatio := decimal.NewFromFloat(ratio_setting.GetCompletionRatio(modelName))
-	audioRatio := decimal.NewFromFloat(ratio_setting.GetAudioRatio(relayInfo.OriginModelName))
-	audioCompletionRatio := decimal.NewFromFloat(ratio_setting.GetAudioCompletionRatio(modelName))
+	completionRatio := ratio_setting.GetCompletionRatioDecimal(modelName)
+	audioRatio := ratio_setting.GetAudioRatioDecimal(relayInfo.OriginModelName)
+	audioCompletionRatio := ratio_setting.GetAudioCompletionRatioDecimal(modelName)
 
 	modelRatio := relayInfo.PriceData.ModelRatio
 	groupRatio := relayInfo.PriceData.GroupRatioInfo.GroupRatio
@@ -217,6 +246,7 @@ func PostWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, mod
 		ModelRatio: modelRatio,
 		GroupRatio: groupRatio,
 	}
+	quotaInfo = quotaInfoFromPriceData(quotaInfo, relayInfo)
 
 	quota, clamp := calculateAudioQuota(quotaInfo)
 	noteQuotaClamp(relayInfo, clamp)
@@ -338,9 +368,9 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 
 	tokenName := ctx.GetString("token_name")
 	billingModelName := relayInfo.GetBillingModelName()
-	completionRatio := decimal.NewFromFloat(ratio_setting.GetCompletionRatio(billingModelName))
-	audioRatio := decimal.NewFromFloat(ratio_setting.GetAudioRatio(billingModelName))
-	audioCompletionRatio := decimal.NewFromFloat(ratio_setting.GetAudioCompletionRatio(billingModelName))
+	completionRatio := ratio_setting.GetCompletionRatioDecimal(billingModelName)
+	audioRatio := ratio_setting.GetAudioRatioDecimal(billingModelName)
+	audioCompletionRatio := ratio_setting.GetAudioCompletionRatioDecimal(billingModelName)
 
 	modelRatio := relayInfo.PriceData.ModelRatio
 	groupRatio := relayInfo.PriceData.GroupRatioInfo.GroupRatio
@@ -362,6 +392,7 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 		ModelRatio: modelRatio,
 		GroupRatio: groupRatio,
 	}
+	quotaInfo = quotaInfoFromPriceData(quotaInfo, relayInfo)
 
 	quota, clamp := calculateAudioQuota(quotaInfo)
 	noteQuotaClamp(relayInfo, clamp)

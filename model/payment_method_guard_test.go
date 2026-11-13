@@ -164,7 +164,7 @@ func TestRechargeEpayKeepsRedisAndDatabaseCreditInSync(t *testing.T) {
 	useUserCacheMiniRedis(t)
 
 	oldQuotaPerUnit := common.QuotaPerUnit
-	common.QuotaPerUnit = 5
+	common.QuotaPerUnit = 500000
 	t.Cleanup(func() { common.QuotaPerUnit = oldQuotaPerUnit })
 
 	user := insertUserForPaymentGuardTest(t, 502, 7)
@@ -174,17 +174,18 @@ func TestRechargeEpayKeepsRedisAndDatabaseCreditInSync(t *testing.T) {
 	alreadyDone, err := RechargeEpay(order.TradeNo, "alipay", decimal.NewFromInt(10), "127.0.0.1")
 	require.NoError(t, err)
 	assert.False(t, alreadyDone)
-	assert.Equal(t, 17, getUserQuotaForPaymentGuardTest(t, user.Id))
+	const want = 7 + 2*int(common.FixedQuotaPerUnit)
+	assert.Equal(t, want, getUserQuotaForPaymentGuardTest(t, user.Id))
 	cached, err := cacheGetUserBase(user.Id)
 	require.NoError(t, err)
-	assert.Equal(t, 17, cached.Quota)
+	assert.Equal(t, want, cached.Quota)
 
 	alreadyDone, err = RechargeEpay(order.TradeNo, "alipay", decimal.NewFromInt(10), "127.0.0.1")
 	require.NoError(t, err)
 	assert.True(t, alreadyDone)
 	cached, err = cacheGetUserBase(user.Id)
 	require.NoError(t, err)
-	assert.Equal(t, 17, cached.Quota)
+	assert.Equal(t, want, cached.Quota)
 }
 
 func TestRechargeEpayUpdatesPaymentMethodToActual(t *testing.T) {
@@ -240,11 +241,14 @@ func TestRechargeEpayRejectsQuotaOverflowBeforeCompletingOrder(t *testing.T) {
 	truncateTables(t)
 
 	oldQuotaPerUnit := common.QuotaPerUnit
-	common.QuotaPerUnit = float64(common.MaxWalletQuota + 1)
+	common.QuotaPerUnit = 500000
 	t.Cleanup(func() { common.QuotaPerUnit = oldQuotaPerUnit })
 
 	user := insertUserForPaymentGuardTest(t, 505, 3)
 	order := createEpayTestOrder(t, user.Id, "EPAYTESTOVERFLOW", PaymentProviderEpay, common.TopUpStatusPending)
+	// Overflow must come from the official 500,000 scale, not a mutated float unit.
+	overflowAmount := int64(common.MaxWalletQuota)/common.FixedQuotaPerUnit + 1
+	require.NoError(t, DB.Model(&TopUp{}).Where("trade_no = ?", order.TradeNo).Update("amount", overflowAmount).Error)
 
 	_, err := RechargeEpay(order.TradeNo, "alipay", decimal.NewFromInt(10), "127.0.0.1")
 	require.Error(t, err)

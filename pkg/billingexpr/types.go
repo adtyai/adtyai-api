@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	"github.com/QuantumNous/new-api/common"
+
+	"github.com/shopspring/decimal"
 )
 
 type RequestInput struct {
@@ -88,15 +90,16 @@ type TieredResult struct {
 	// BillingTokens records the actual normalized inputs for successful token
 	// billing that explicitly references img_cr. Logs serialize these through
 	// the shared injection path, not as additional snapshot state.
-	BillingTokens          *TokenParams       `json:"-"`
-	ImageCount             *int               `json:"image_count,omitempty"`
-	BillingUnit            BillingUnit        `json:"billing_unit"`
-	FixedPrice             *float64           `json:"fixed_price,omitempty"`
-	ActualQuotaBeforeGroup float64            `json:"actual_quota_before_group"`
-	ActualQuotaAfterGroup  int                `json:"actual_quota_after_group"`
-	MatchedTier            string             `json:"matched_tier"`
-	RequestRules           []RequestRuleTrace `json:"request_rules,omitempty"`
-	CrossedTier            bool               `json:"crossed_tier"`
+	BillingTokens             *TokenParams       `json:"-"`
+	ImageCount                *int               `json:"image_count,omitempty"`
+	BillingUnit               BillingUnit        `json:"billing_unit"`
+	FixedPrice                *float64           `json:"fixed_price,omitempty"`
+	ActualQuotaBeforeGroup    float64            `json:"actual_quota_before_group"`
+	ActualQuotaBeforeGroupDec decimal.Decimal    `json:"-"`
+	ActualQuotaAfterGroup     int                `json:"actual_quota_after_group"`
+	MatchedTier               string             `json:"matched_tier"`
+	RequestRules              []RequestRuleTrace `json:"request_rules,omitempty"`
+	CrossedTier               bool               `json:"crossed_tier"`
 	// Clamp records a single-request saturation event during quota conversion so the
 	// caller can surface it on the consume log for admin auditing. Nil when no
 	// clamping occurred. Not serialized: the marker is attached separately via

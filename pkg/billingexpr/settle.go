@@ -4,19 +4,37 @@ import (
 	"fmt"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/shopspring/decimal"
 )
 
-// quotaConversion converts raw expression output to quota based on the
-// expression version. This is the central dispatch point for future versions
-// that may use a different conversion formula.
-func quotaConversion(exprOutput float64, snap *BillingSnapshot) float64 {
-	if snap.TaskUsageBilling {
-		return exprOutput * snap.QuotaPerUnit
+// snapshotQuotaPerUnitDecimal is the financial authority for converting
+// expression output into internal quota. Official USD books always use the
+// fixed 1 USD = 500,000 scale; a non-standard snapshot unit (tests or
+// historical fixtures) is converted once at this boundary.
+func snapshotQuotaPerUnitDecimal(snap *BillingSnapshot) decimal.Decimal {
+	if snap == nil || snap.QuotaPerUnit == 0 || snap.QuotaPerUnit == float64(common.FixedQuotaPerUnit) {
+		return common.QuotaPerUnitDecimal()
 	}
-	switch snap.ExprVersion {
-	default: // v1: coefficients are $/1M tokens prices
-		return exprOutput / 1_000_000 * snap.QuotaPerUnit
+	return decimal.NewFromFloat(snap.QuotaPerUnit)
+}
+
+func groupRatioDecimal(snap *BillingSnapshot) decimal.Decimal {
+	if snap == nil {
+		return decimal.NewFromInt(1)
 	}
+	return decimal.NewFromFloat(snap.GroupRatio)
+}
+
+// quotaConversionDecimal converts raw expression output to quota based on the
+// expression version. Intermediate math stays in decimal; the caller rounds
+// once when producing the billed integer amount.
+func quotaConversionDecimal(exprOutput float64, snap *BillingSnapshot) decimal.Decimal {
+	output := decimal.NewFromFloat(exprOutput)
+	unit := snapshotQuotaPerUnitDecimal(snap)
+	if snap != nil && snap.TaskUsageBilling {
+		return output.Mul(unit)
+	}
+	return output.Div(decimal.NewFromInt(1_000_000)).Mul(unit)
 }
 
 // ComputeTieredQuota runs the Expr from a frozen BillingSnapshot against
@@ -34,20 +52,21 @@ func ComputeTieredQuotaWithRequest(snap *BillingSnapshot, params TokenParams, re
 		return TieredResult{}, err
 	}
 
-	quotaBeforeGroup := quotaConversion(cost, snap)
-	afterGroup, clamp := common.QuotaRoundChecked(quotaBeforeGroup * snap.GroupRatio)
+	quotaBeforeGroupDec := quotaConversionDecimal(cost, snap)
+	afterGroup, clamp := common.QuotaFromDecimalChecked(quotaBeforeGroupDec.Mul(groupRatioDecimal(snap)))
 	crossed := trace.MatchedTier != snap.EstimatedTier
 
 	result := TieredResult{
-		ImageCount:             trace.ImageCount,
-		BillingUnit:            trace.BillingUnit,
-		FixedPrice:             trace.FixedPrice,
-		ActualQuotaBeforeGroup: quotaBeforeGroup,
-		ActualQuotaAfterGroup:  afterGroup,
-		MatchedTier:            trace.MatchedTier,
-		RequestRules:           trace.RequestRules,
-		CrossedTier:            crossed,
-		Clamp:                  clamp,
+		ImageCount:                trace.ImageCount,
+		BillingUnit:               trace.BillingUnit,
+		FixedPrice:                trace.FixedPrice,
+		ActualQuotaBeforeGroup:    quotaBeforeGroupDec.InexactFloat64(),
+		ActualQuotaBeforeGroupDec: quotaBeforeGroupDec,
+		ActualQuotaAfterGroup:     afterGroup,
+		MatchedTier:               trace.MatchedTier,
+		RequestRules:              trace.RequestRules,
+		CrossedTier:               crossed,
+		Clamp:                     clamp,
 	}
 	if trace.BillingUnit == BillingUnitToken && UsedVarsByHash(snap.ExprString, snap.ExprHash)["img_cr"] {
 		result.BillingTokens = &params

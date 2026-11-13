@@ -12,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/relaykit/types"
 	hosttypes "github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
+	"github.com/shopspring/decimal"
 )
 
 // TieredResultWrapper wraps billingexpr.TieredResult for use at the service layer.
@@ -190,8 +191,9 @@ func refreshTieredBillingGroup(relayInfo *relaycommon.RelayInfo) (*billingexpr.B
 		return snap, nil
 	}
 
-	estimatedQuotaAfterGroup := snap.EstimatedQuotaBeforeGroup * groupRatio
-	estimatedQuota, err := billingexpr.QuotaRoundStrict(estimatedQuotaAfterGroup)
+	estimatedQuota, err := common.QuotaFromDecimalStrict(
+		decimal.NewFromFloat(snap.EstimatedQuotaBeforeGroup).Mul(relayInfo.PriceData.GroupRatioInfo.BilledGroupRatio()),
+	)
 	if err != nil {
 		return nil, err
 	}

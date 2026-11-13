@@ -24,6 +24,7 @@ import (
 	hosttypes "github.com/QuantumNous/new-api/types"
 
 	"github.com/gin-gonic/gin"
+	"github.com/shopspring/decimal"
 )
 
 func modelPriceNotConfiguredError(c *gin.Context, modelName string, userId int) error {
@@ -55,13 +56,22 @@ func HandleGroupRatio(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) hostty
 		groupRatioInfo.GroupSpecialRatio = userGroupRatio
 		groupRatioInfo.GroupRatio = userGroupRatio
 		groupRatioInfo.HasSpecialRatio = true
+		if billed, found := ratio_setting.GetGroupGroupRatioDecimal(relayInfo.UserGroup, relayInfo.UsingGroup); found {
+			groupRatioInfo.SetBilledGroupRatio(billed)
+		}
 	} else {
 		// normal group ratio
 		groupRatioInfo.GroupRatio = ratio_setting.GetGroupRatio(relayInfo.UsingGroup)
+		groupRatioInfo.SetBilledGroupRatio(ratio_setting.GetGroupRatioDecimal(relayInfo.UsingGroup))
 	}
 	// 二开：分站客户乘上站长倍率 k（任务 11.4）；渠道测试不乘，也不记站长收益
 	if !relayInfo.IsChannelTest {
 		groupRatioInfo.GroupRatio, groupRatioInfo.SiteMarkup = service.AdtyApplySiteMarkupHook(ctx, relayInfo.UserId, relayInfo.UsingGroup, groupRatioInfo.GroupRatio)
+		if billed, found := service.AdtyBilledGroupRatioFromContext(ctx); found {
+			groupRatioInfo.SetBilledGroupRatio(billed)
+		} else {
+			groupRatioInfo.SetBilledGroupRatio(decimal.NewFromFloat(groupRatioInfo.GroupRatio))
+		}
 	}
 
 	return groupRatioInfo
@@ -123,8 +133,8 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 		imageRatio, _ = ratio_setting.GetImageRatio(billingModelName)
 		audioRatio = ratio_setting.GetAudioRatio(billingModelName)
 		audioCompletionRatio = ratio_setting.GetAudioCompletionRatio(billingModelName)
-		ratio := modelRatio * groupRatioInfo.GroupRatio
-		quota, err := common.QuotaFromFloatStrict(preConsumedTokens * ratio)
+		ratioDec := decimal.NewFromFloat(modelRatio).Mul(groupRatioInfo.BilledGroupRatio())
+		quota, err := common.QuotaFromDecimalStrict(decimal.NewFromFloat(preConsumedTokens).Mul(ratioDec))
 		if err != nil {
 			return hosttypes.PriceData{}, err
 		}
@@ -408,13 +418,14 @@ func modelPriceHelperTiered(c *gin.Context, info *relaycommon.RelayInfo, billing
 	}
 
 	// Expression coefficients are $/1M tokens prices; convert to quota the same way per-call billing does.
-	quotaBeforeGroup := rawCost / 1_000_000 * common.QuotaPerUnit
+	quotaBeforeGroupDec := decimal.NewFromFloat(rawCost).Div(decimal.NewFromInt(1_000_000)).Mul(common.QuotaPerUnitDecimal())
 	// Scale the reservation, preserving the expression's context-length tier
 	// and leaving actual settlement and fixed request prices unchanged.
 	if trace.BillingUnit != billingexpr.BillingUnitRequest {
-		quotaBeforeGroup *= preConsumeMultiplier
+		quotaBeforeGroupDec = quotaBeforeGroupDec.Mul(decimal.NewFromFloat(preConsumeMultiplier))
 	}
-	preConsumedQuota, err := billingexpr.QuotaRoundStrict(quotaBeforeGroup * groupRatioInfo.GroupRatio)
+	quotaBeforeGroup := quotaBeforeGroupDec.InexactFloat64()
+	preConsumedQuota, err := common.QuotaFromDecimalStrict(quotaBeforeGroupDec.Mul(groupRatioInfo.BilledGroupRatio()))
 	if err != nil {
 		return hosttypes.PriceData{}, err
 	}
@@ -442,7 +453,7 @@ func modelPriceHelperTiered(c *gin.Context, info *relaycommon.RelayInfo, billing
 		EstimatedTier:             trace.MatchedTier,
 		EstimatedBillingUnit:      trace.BillingUnit,
 		EstimatedFixedPrice:       trace.FixedPrice,
-		QuotaPerUnit:              common.QuotaPerUnit,
+		QuotaPerUnit:              float64(common.FixedQuotaPerUnit),
 		ExprVersion:               billingexpr.ExprVersion(exprStr),
 	}
 	info.TieredBillingSnapshot = snapshot

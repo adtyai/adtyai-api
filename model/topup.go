@@ -87,6 +87,13 @@ func ValidateTopUpQuotaCapacity(userId int, creditedQuota int) error {
 
 // creditTopUpQuota shares the owner lock with reservations, refunds, and flushes.
 // Both the logical balance and the raw field addition must fit before credit.
+// topUpQuotaFromUSDUnits converts a whole-unit Amount on a credit or claw-back
+// path using the official 1 USD = 500,000 scale. It does not consult the
+// mutable QuotaPerUnit float.
+func topUpQuotaFromUSDUnits(amount int64) (int, error) {
+	return common.WalletQuotaFromDecimalStrict(decimal.NewFromInt(amount).Mul(common.QuotaPerUnitDecimal()))
+}
+
 func creditTopUpQuota(tx *gorm.DB, userId int, creditedQuota int, updates map[string]any) error {
 	if _, err := topUpQuotaMaxCurrent(creditedQuota); err != nil {
 		return err
@@ -214,9 +221,7 @@ func RechargeEpay(tradeNo string, actualPaymentMethod string, paidMoney decimal.
 			return ErrPaymentAmountMismatch
 		}
 		var quotaErr error
-		quotaToAdd, quotaErr = common.WalletQuotaFromDecimalStrict(
-			decimal.NewFromInt(topUp.Amount).Mul(decimal.NewFromFloat(common.QuotaPerUnit)),
-		)
+		quotaToAdd, quotaErr = topUpQuotaFromUSDUnits(topUp.Amount)
 		if quotaErr != nil || quotaToAdd <= 0 {
 			return ErrInvalidTopUpQuota
 		}
@@ -277,9 +282,7 @@ func Recharge(referenceId string, customerId string, callerIp string) (err error
 			return err
 		}
 
-		quota, err = common.WalletQuotaFromDecimalStrict(
-			decimal.NewFromInt(topUp.Amount).Mul(decimal.NewFromFloat(common.QuotaPerUnit)),
-		)
+		quota, err = topUpQuotaFromUSDUnits(topUp.Amount)
 		if err != nil || quota <= 0 {
 			return ErrInvalidTopUpQuota
 		}
@@ -509,9 +512,7 @@ func ManualCompleteTopUp(tradeNo string, callerIp string) error {
 			// Creem 的 Amount 已经是额度，和 RechargeCreem 同一口径，不能再乘 QuotaPerUnit。
 			quotaToAdd, quotaErr = common.WalletQuotaFromDecimalStrict(decimal.NewFromInt(topUp.Amount))
 		default:
-			quotaToAdd, quotaErr = common.WalletQuotaFromDecimalStrict(
-				decimal.NewFromInt(topUp.Amount).Mul(decimal.NewFromFloat(common.QuotaPerUnit)),
-			)
+			quotaToAdd, quotaErr = topUpQuotaFromUSDUnits(topUp.Amount)
 		}
 		if quotaErr != nil || quotaToAdd <= 0 {
 			return ErrInvalidTopUpQuota
@@ -672,9 +673,7 @@ func RechargeWaffo(tradeNo string, callerIp string) (err error) {
 			return errors.New("invalid top-up order status")
 		}
 
-		quotaToAdd, err = common.WalletQuotaFromDecimalStrict(
-			decimal.NewFromInt(topUp.Amount).Mul(decimal.NewFromFloat(common.QuotaPerUnit)),
-		)
+		quotaToAdd, err = topUpQuotaFromUSDUnits(topUp.Amount)
 		if err != nil || quotaToAdd <= 0 {
 			return ErrInvalidTopUpQuota
 		}
@@ -732,9 +731,7 @@ func RechargeWaffoPancake(tradeNo string) (err error) {
 			return errors.New("invalid top-up order status")
 		}
 
-		quotaToAdd, err = common.WalletQuotaFromDecimalStrict(
-			decimal.NewFromInt(topUp.Amount).Mul(decimal.NewFromFloat(common.QuotaPerUnit)),
-		)
+		quotaToAdd, err = topUpQuotaFromUSDUnits(topUp.Amount)
 		if err != nil || quotaToAdd <= 0 {
 			return ErrInvalidTopUpQuota
 		}
@@ -802,9 +799,7 @@ func RefundWaffo(tradeNo string, idemKey string, fullRefund bool, refundAmount s
 			topUp.Status = common.TopUpStatusRefunded
 			return tx.Save(topUp).Error
 		}
-		credited, err := common.WalletQuotaFromDecimalStrict(
-			decimal.NewFromInt(topUp.Amount).Mul(decimal.NewFromFloat(common.QuotaPerUnit)),
-		)
+		credited, err := topUpQuotaFromUSDUnits(topUp.Amount)
 		if err != nil || credited <= 0 {
 			return ErrInvalidTopUpQuota
 		}
@@ -934,9 +929,7 @@ func RefundWaffoPancake(tradeNo string) error {
 		}
 		userId = topUp.UserId
 		if topUp.Status == common.TopUpStatusSuccess {
-			quota, err := common.WalletQuotaFromDecimalStrict(
-				decimal.NewFromInt(topUp.Amount).Mul(decimal.NewFromFloat(common.QuotaPerUnit)),
-			)
+			quota, err := topUpQuotaFromUSDUnits(topUp.Amount)
 			if err != nil || quota <= 0 {
 				return ErrInvalidTopUpQuota
 			}

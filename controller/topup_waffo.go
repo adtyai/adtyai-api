@@ -278,7 +278,7 @@ func RequestWaffoPay(c *gin.Context) {
 		CreateTime:      time.Now().Unix(),
 		Status:          common.TopUpStatusPending,
 	}
-	if err := createAdtyHostedOrder(c, topUp, decimal.NewFromInt(units).Mul(decimal.NewFromFloat(common.QuotaPerUnit)), getWaffoCurrency(), "", hostedPaymentEnvironment(setting.WaffoSandbox), req.PromoCode, req.PaymentScene); err != nil {
+	if err := createAdtyHostedOrder(c, topUp, decimal.NewFromInt(units).Mul(common.QuotaPerUnitDecimal()), getWaffoCurrency(), "", hostedPaymentEnvironment(setting.WaffoSandbox), req.PromoCode, req.PaymentScene); err != nil {
 		logger.LogError(c.Request.Context(), common.LogText("Waffo failed to create top-up order user_id=%d trade_no=%s amount=%d error=%q", id, merchantOrderId, req.Amount, err.Error()))
 		paymentError(c, common.NewMessage("Failed to create order"))
 		return

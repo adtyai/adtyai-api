@@ -20,6 +20,31 @@ type GroupRatioInfo struct {
 	GroupSpecialRatio float64
 	HasSpecialRatio   bool
 	SiteMarkup        float64 // 二开：已经乘进 GroupRatio 的分站倍率 k；0 或 1 表示没乘（任务 11.4）
+	// GroupRatioDecimal is the financial authority for the billed group ratio
+	// (including site supply/sell/team factors). The float64 GroupRatio field
+	// stays for logs, snapshots, and legacy callers.
+	GroupRatioDecimal    decimal.Decimal `json:"-"`
+	hasGroupRatioDecimal bool
+}
+
+// SetBilledGroupRatio records the exact decimal group ratio used for billing.
+func (g *GroupRatioInfo) SetBilledGroupRatio(value decimal.Decimal) {
+	g.GroupRatioDecimal = value
+	g.hasGroupRatioDecimal = true
+}
+
+// HasBilledGroupRatio reports whether SetBilledGroupRatio recorded an exact value.
+func (g GroupRatioInfo) HasBilledGroupRatio() bool {
+	return g.hasGroupRatioDecimal
+}
+
+// BilledGroupRatio returns the financial-authority group ratio. A missing
+// decimal is converted from the float field once at this boundary.
+func (g GroupRatioInfo) BilledGroupRatio() decimal.Decimal {
+	if g.hasGroupRatioDecimal {
+		return g.GroupRatioDecimal
+	}
+	return decimal.NewFromFloat(g.GroupRatio)
 }
 
 type PriceData struct {
