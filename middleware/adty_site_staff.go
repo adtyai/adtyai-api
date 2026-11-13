@@ -26,7 +26,9 @@ func adtyStaffDashboardAllowed(c *gin.Context, user *model.UserBase, identity se
 		c.Abort()
 		return false
 	}
-	if host := service.AdtySiteForRequest(c); host != nil && host.Id != site.Id {
+	// Compare numeric site ids so a sub-site staff session is also rejected
+	// on the main host (AdtySiteForRequest is nil, AdtyRequestSiteID = 0).
+	if service.AdtyRequestSiteID(c) != site.Id {
 		common.ApiErrorStatus(c, http.StatusForbidden, service.ErrAdtyStaffDenied)
 		c.Abort()
 		return false

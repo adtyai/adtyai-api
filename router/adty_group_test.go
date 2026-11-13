@@ -263,6 +263,13 @@ func adtyJSON(t *testing.T, engine *gin.Engine, method, path, body, token string
 	return adtyJSONWithProof(t, engine, method, path, body, token, "")
 }
 
+// adtyJSONOnHost is adtyJSON with a trusted request Host so dashboard
+// sessions can be exercised on a specific site after login.
+func adtyJSONOnHost(t *testing.T, engine *gin.Engine, host, method, path, body, token string) *httptest.ResponseRecorder {
+	t.Helper()
+	return adtyJSONOnHostWithProof(t, engine, host, method, path, body, token, "")
+}
+
 // adtyJSONWithProof 和 adtyJSON 一样，另带二次验证的 X-Security-Proof（站长敏感操作用）。
 func adtyJSONWithProof(t *testing.T, engine *gin.Engine, method, path, body, token, proof string) *httptest.ResponseRecorder {
 	t.Helper()
@@ -271,6 +278,30 @@ func adtyJSONWithProof(t *testing.T, engine *gin.Engine, method, path, body, tok
 		reader = strings.NewReader(body)
 	}
 	req := httptest.NewRequest(method, path, reader)
+	if body != "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	if proof != "" {
+		req.Header.Set("X-Security-Proof", proof)
+	}
+	resp := httptest.NewRecorder()
+	engine.ServeHTTP(resp, req)
+	return resp
+}
+
+func adtyJSONOnHostWithProof(t *testing.T, engine *gin.Engine, host, method, path, body, token, proof string) *httptest.ResponseRecorder {
+	t.Helper()
+	var reader io.Reader
+	if body != "" {
+		reader = strings.NewReader(body)
+	}
+	req := httptest.NewRequest(method, path, reader)
+	if host != "" {
+		req.Host = host
+	}
 	if body != "" {
 		req.Header.Set("Content-Type", "application/json")
 	}
