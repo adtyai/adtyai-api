@@ -24,6 +24,7 @@ import enCodexCli from './en/codex-cli.md?raw'
 import enErrorsAndLimits from './en/errors-and-limits.md?raw'
 import enFaq from './en/faq.md?raw'
 import enModels from './en/models.md?raw'
+import enAgents from './en/agents.md?raw'
 import enOpenaiSdk from './en/openai-sdk.md?raw'
 import enRoles from './en/roles.md?raw'
 import enQuickstart from './en/quickstart.md?raw'
@@ -32,6 +33,7 @@ import frClaudeCode from './fr/claude-code.md?raw'
 import frCodexCli from './fr/codex-cli.md?raw'
 import frErrorsAndLimits from './fr/errors-and-limits.md?raw'
 import frFaq from './fr/faq.md?raw'
+import frAgents from './fr/agents.md?raw'
 import frOpenaiSdk from './fr/openai-sdk.md?raw'
 import frQuickstart from './fr/quickstart.md?raw'
 import jaCherryStudio from './ja/cherry-studio.md?raw'
@@ -39,6 +41,7 @@ import jaClaudeCode from './ja/claude-code.md?raw'
 import jaCodexCli from './ja/codex-cli.md?raw'
 import jaErrorsAndLimits from './ja/errors-and-limits.md?raw'
 import jaFaq from './ja/faq.md?raw'
+import jaAgents from './ja/agents.md?raw'
 import jaOpenaiSdk from './ja/openai-sdk.md?raw'
 import jaQuickstart from './ja/quickstart.md?raw'
 import koCherryStudio from './ko/cherry-studio.md?raw'
@@ -46,6 +49,7 @@ import koClaudeCode from './ko/claude-code.md?raw'
 import koCodexCli from './ko/codex-cli.md?raw'
 import koErrorsAndLimits from './ko/errors-and-limits.md?raw'
 import koFaq from './ko/faq.md?raw'
+import koAgents from './ko/agents.md?raw'
 import koOpenaiSdk from './ko/openai-sdk.md?raw'
 import koQuickstart from './ko/quickstart.md?raw'
 import ruCherryStudio from './ru/cherry-studio.md?raw'
@@ -53,6 +57,7 @@ import ruClaudeCode from './ru/claude-code.md?raw'
 import ruCodexCli from './ru/codex-cli.md?raw'
 import ruErrorsAndLimits from './ru/errors-and-limits.md?raw'
 import ruFaq from './ru/faq.md?raw'
+import ruAgents from './ru/agents.md?raw'
 import ruOpenaiSdk from './ru/openai-sdk.md?raw'
 import ruQuickstart from './ru/quickstart.md?raw'
 import viCherryStudio from './vi/cherry-studio.md?raw'
@@ -60,6 +65,7 @@ import viClaudeCode from './vi/claude-code.md?raw'
 import viCodexCli from './vi/codex-cli.md?raw'
 import viErrorsAndLimits from './vi/errors-and-limits.md?raw'
 import viFaq from './vi/faq.md?raw'
+import viAgents from './vi/agents.md?raw'
 import viOpenaiSdk from './vi/openai-sdk.md?raw'
 import viQuickstart from './vi/quickstart.md?raw'
 import zhCherryStudio from './zh-CN/cherry-studio.md?raw'
@@ -68,6 +74,7 @@ import zhCodexCli from './zh-CN/codex-cli.md?raw'
 import zhErrorsAndLimits from './zh-CN/errors-and-limits.md?raw'
 import zhFaq from './zh-CN/faq.md?raw'
 import zhModels from './zh-CN/models.md?raw'
+import zhAgents from './zh-CN/agents.md?raw'
 import zhOpenaiSdk from './zh-CN/openai-sdk.md?raw'
 import zhRoles from './zh-CN/roles.md?raw'
 import zhQuickstart from './zh-CN/quickstart.md?raw'
@@ -76,6 +83,7 @@ import zhTwClaudeCode from './zh-TW/claude-code.md?raw'
 import zhTwCodexCli from './zh-TW/codex-cli.md?raw'
 import zhTwErrorsAndLimits from './zh-TW/errors-and-limits.md?raw'
 import zhTwFaq from './zh-TW/faq.md?raw'
+import zhTwAgents from './zh-TW/agents.md?raw'
 import zhTwOpenaiSdk from './zh-TW/openai-sdk.md?raw'
 import zhTwQuickstart from './zh-TW/quickstart.md?raw'
 
@@ -88,6 +96,7 @@ export const DOC_PAGES = [
   'codex-cli',
   'cherry-studio',
   'openai-sdk',
+  'agents',
   'errors-and-limits',
   'faq',
 ] as const
@@ -108,6 +117,7 @@ const DOC_CONTENT: Partial<
     'codex-cli': enCodexCli,
     'cherry-studio': enCherryStudio,
     'openai-sdk': enOpenaiSdk,
+    agents: enAgents,
     'errors-and-limits': enErrorsAndLimits,
     faq: enFaq,
   },
@@ -119,6 +129,7 @@ const DOC_CONTENT: Partial<
     'codex-cli': zhCodexCli,
     'cherry-studio': zhCherryStudio,
     'openai-sdk': zhOpenaiSdk,
+    agents: zhAgents,
     'errors-and-limits': zhErrorsAndLimits,
     faq: zhFaq,
   },
@@ -130,6 +141,7 @@ const DOC_CONTENT: Partial<
     'codex-cli': frCodexCli,
     'cherry-studio': frCherryStudio,
     'openai-sdk': frOpenaiSdk,
+    agents: frAgents,
     'errors-and-limits': frErrorsAndLimits,
     faq: frFaq,
   },
@@ -141,6 +153,7 @@ const DOC_CONTENT: Partial<
     'codex-cli': jaCodexCli,
     'cherry-studio': jaCherryStudio,
     'openai-sdk': jaOpenaiSdk,
+    agents: jaAgents,
     'errors-and-limits': jaErrorsAndLimits,
     faq: jaFaq,
   },
@@ -152,6 +165,7 @@ const DOC_CONTENT: Partial<
     'codex-cli': koCodexCli,
     'cherry-studio': koCherryStudio,
     'openai-sdk': koOpenaiSdk,
+    agents: koAgents,
     'errors-and-limits': koErrorsAndLimits,
     faq: koFaq,
   },
@@ -163,6 +177,7 @@ const DOC_CONTENT: Partial<
     'codex-cli': ruCodexCli,
     'cherry-studio': ruCherryStudio,
     'openai-sdk': ruOpenaiSdk,
+    agents: ruAgents,
     'errors-and-limits': ruErrorsAndLimits,
     faq: ruFaq,
   },
@@ -174,6 +189,7 @@ const DOC_CONTENT: Partial<
     'codex-cli': viCodexCli,
     'cherry-studio': viCherryStudio,
     'openai-sdk': viOpenaiSdk,
+    agents: viAgents,
     'errors-and-limits': viErrorsAndLimits,
     faq: viFaq,
   },
@@ -185,6 +201,7 @@ const DOC_CONTENT: Partial<
     'codex-cli': zhTwCodexCli,
     'cherry-studio': zhTwCherryStudio,
     'openai-sdk': zhTwOpenaiSdk,
+    agents: zhTwAgents,
     'errors-and-limits': zhTwErrorsAndLimits,
     faq: zhTwFaq,
   },

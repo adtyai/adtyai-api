@@ -51,6 +51,7 @@ export function DocPage(props: { slug: string }) {
     'codex-cli': 'Codex CLI',
     'cherry-studio': 'Cherry Studio',
     'openai-sdk': 'OpenAI SDK',
+    agents: t('Agents'),
     'errors-and-limits': t('Errors and limits'),
     faq: t('FAQ'),
   }
