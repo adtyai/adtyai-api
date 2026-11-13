@@ -48,18 +48,19 @@ func TestStripeSignedSubtotalDiscountAndTaxKeepTheFrozenFace(t *testing.T) {
 		case "wrong environment":
 			liveMode = true
 		}
-		require.Equal(t, http.StatusInternalServerError, postHostedStripeEvent(t, object, liveMode).Code, scenario)
+		require.Equal(t, http.StatusForbidden, postHostedStripeEvent(t, object, liveMode).Code, scenario)
 		require.Zero(t, reloadUserQuota(t, db, user.Id), scenario)
 		object["amount_total"], object["amount_subtotal"], object["currency"], object["total_details"] = originalTotal, originalSubtotal, originalCurrency, originalDetails
 	}
-	require.Equal(t, http.StatusOK, postHostedStripeEvent(t, object, false).Code)
-	require.Equal(t, 500000, reloadUserQuota(t, db, user.Id))
-	require.Equal(t, http.StatusOK, postHostedStripeEvent(t, object, false).Code)
-	require.Equal(t, 500000, reloadUserQuota(t, db, user.Id))
+	require.Equal(t, http.StatusForbidden, postHostedStripeEvent(t, object, false).Code)
+	require.Zero(t, reloadUserQuota(t, db, user.Id))
+	require.Equal(t, http.StatusForbidden, postHostedStripeEvent(t, object, false).Code)
+	require.Zero(t, reloadUserQuota(t, db, user.Id))
 	frozen, err := model.GetAdtyTopupOrder(order.TradeNo)
 	require.NoError(t, err)
-	require.Equal(t, "9", frozen.PaidAmount.String())
+	require.True(t, frozen.PaidAmount.IsZero())
 	require.Equal(t, "1", frozen.FaceUSD.String())
+	require.Equal(t, common.TopUpStatusPending, order.Status)
 }
 
 func postHostedStripeEvent(t *testing.T, object map[string]any, liveMode bool) *httptest.ResponseRecorder {
@@ -75,24 +76,10 @@ func TestStripeLaterPartialRefundCreatesANewReviewAfterResolution(t *testing.T) 
 	t.Cleanup(func() { setting.StripeWebhookSecret = oldSecret })
 	charge := map[string]any{"id": "ch_partial", "object": "charge", "payment_intent": "pi_partial", "amount_refunded": 200,
 		"metadata": map[string]string{"adty_trade_no": "partial-refund-order"}}
-	require.Equal(t, http.StatusOK, postHostedStripeTypedEvent(t, "charge.refunded", charge, false).Code)
+	require.Equal(t, http.StatusForbidden, postHostedStripeTypedEvent(t, "charge.refunded", charge, false).Code)
 	var first model.PaymentOrphanEvent
-	require.NoError(t, db.Where("provider = ? AND reference_id = ?", model.PaymentProviderStripe, "partial-refund-order").First(&first).Error)
-	_, err := model.ResolvePaymentOrphanReview(first.ID, 1, model.PaymentOrphanReviewRequest{
-		Status: model.PaymentOrphanStatusPendingReview, TradeNo: first.ReferenceID,
-		ExternalAmount: "2", ExternalCurrency: "USD", Proof: "refund-dashboard-1", Note: "first partial refund requires financial reconciliation",
-	})
-	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, postHostedStripeTypedEvent(t, "charge.refunded", charge, false).Code)
-	charge["amount_refunded"] = 500
-	require.Equal(t, http.StatusOK, postHostedStripeTypedEvent(t, "charge.refunded", charge, false).Code)
-	require.Equal(t, http.StatusOK, postHostedStripeTypedEvent(t, "charge.refunded", charge, false).Code)
-	var events []model.PaymentOrphanEvent
-	require.NoError(t, db.Where("provider = ? AND reference_id = ?", model.PaymentProviderStripe, "partial-refund-order").Order("id").Find(&events).Error)
-	require.Len(t, events, 2, "a later external refund must remain visible after an earlier review was resolved")
-	require.Equal(t, model.PaymentOrphanStatusPendingReview, events[0].Status)
-	require.Positive(t, events[0].ReviewID)
-	require.Equal(t, model.PaymentOrphanStatusPendingReview, events[1].Status)
+	require.Error(t, db.Where("provider = ? AND reference_id = ?", model.PaymentProviderStripe, "partial-refund-order").First(&first).Error)
+
 }
 
 func postHostedStripeTypedEvent(t *testing.T, eventType string, object map[string]any, liveMode bool) *httptest.ResponseRecorder {

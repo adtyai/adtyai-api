@@ -51,6 +51,10 @@ type StripeAdaptor struct {
 }
 
 func (*StripeAdaptor) RequestAmount(c *gin.Context, req *StripePayRequest) {
+	if !isStripeTopUpEnabled() {
+		paymentError(c, common.NewMessage("Stripe payment is not available"))
+		return
+	}
 	if req.Amount < getStripeMinTopup() {
 		paymentError(c, common.NewMessage("Top-up amount cannot be less than {{min}}", map[string]any{"min": getStripeMinTopup()}))
 		return

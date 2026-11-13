@@ -16,9 +16,7 @@ import (
 	"github.com/alicebob/miniredis/v2"
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
-	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/require"
-	"github.com/stripe/stripe-go/v81"
 	"github.com/stripe/stripe-go/v81/webhook"
 	"gorm.io/gorm"
 )
@@ -82,50 +80,14 @@ func TestStripeQuoteChargeAndCreditUseOneAmount(t *testing.T) {
 	})
 
 	quoted := callStripe(t, RequestStripeAmount, user.Id, `{"amount":2,"payment_method":"stripe"}`)
-	require.Contains(t, quoted.Body.String(), `"data":"16.00"`)
-
-	var unitAmount int64
-	stripeNewCheckoutSession = func(params *stripe.CheckoutSessionParams) (*stripe.CheckoutSession, error) {
-		require.NotNil(t, params.LineItems[0].PriceData)
-		require.Equal(t, int64(1), *params.LineItems[0].Quantity)
-		unitAmount = *params.LineItems[0].PriceData.UnitAmount
-		return &stripe.CheckoutSession{ID: "cs_1600", URL: "https://pay.example/stripe-f066"}, nil
-	}
+	require.Contains(t, quoted.Body.String(), "Stripe payment is not available")
 	paid := callStripe(t, RequestStripePay, user.Id, `{"amount":2,"payment_method":"stripe"}`)
-	require.Contains(t, paid.Body.String(), "https://pay.example/stripe-f066")
-	require.Equal(t, int64(1600), unitAmount)
+	require.Contains(t, paid.Body.String(), "Stripe payment is not available")
+	var created int64
+	require.NoError(t, db.Model(&model.TopUp{}).Where("user_id = ?", user.Id).Count(&created).Error)
+	require.Zero(t, created)
+	require.Zero(t, reloadUserQuota(t, db, user.Id))
 
-	var order model.TopUp
-	require.NoError(t, db.Where("user_id = ?", user.Id).First(&order).Error)
-	require.Equal(t, int64(2), order.Amount)
-	require.True(t, decimal.NewFromFloat(order.Money).Equal(decimal.NewFromInt(16)))
-	require.Equal(t, common.TopUpStatusPending, order.Status)
-	frozen, err := model.GetAdtyTopupOrder(order.TradeNo)
-	require.NoError(t, err)
-	require.NotNil(t, frozen, "hosted checkout must persist the same settlement snapshot as other payment providers")
-	require.True(t, frozen.FaceUSD.Equal(decimal.NewFromInt(2)))
-	require.EqualValues(t, 1_000_000, frozen.CreditQuota)
-	require.Equal(t, "USD", frozen.PayCurrency)
-
-	mismatch := postStripeCheckoutWebhook(t, order.TradeNo, 1599)
-	require.Equal(t, http.StatusInternalServerError, mismatch.Code)
-	require.NoError(t, db.First(&order, order.Id).Error)
-	require.Equal(t, common.TopUpStatusPending, order.Status)
-	require.Equal(t, 0, reloadUserQuota(t, db, user.Id))
-
-	matched := postStripeCheckoutWebhook(t, order.TradeNo, 1600)
-	require.Equal(t, http.StatusOK, matched.Code)
-	require.NoError(t, db.First(&order, order.Id).Error)
-	require.Equal(t, common.TopUpStatusSuccess, order.Status)
-	require.Equal(t, 1000000, reloadUserQuota(t, db, user.Id))
-
-	again := callStripe(t, RequestStripePay, user.Id, `{"amount":2,"payment_method":"stripe"}`)
-	require.Contains(t, again.Body.String(), "https://pay.example/stripe-f066")
-	var manual model.TopUp
-	require.NoError(t, db.Where("user_id = ? AND status = ?", user.Id, common.TopUpStatusPending).First(&manual).Error)
-	_, err = model.CompleteAdtyTopUp(manual.TradeNo, model.AdtyPaymentFacts{Provider: model.PaymentProviderStripe, Source: model.AdtyPaymentSourceManual}, "127.0.0.1")
-	require.NoError(t, err)
-	require.Equal(t, 2000000, reloadUserQuota(t, db, user.Id))
 }
 
 func postStripeCheckoutWebhook(t *testing.T, tradeNo string, amountTotal int) *httptest.ResponseRecorder {

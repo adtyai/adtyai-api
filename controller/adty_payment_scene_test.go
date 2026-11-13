@@ -65,6 +65,14 @@ func TestPaymentScenesConstrainNativeProviderEntries(t *testing.T) {
 	payload, err := common.Marshal(policy)
 	require.NoError(t, err)
 	require.NoError(t, db.Model(&model.AdtyPaymentSceneConfig{}).Where("id = ?", 1).Updates(map[string]any{"payload": string(payload), "version": 2}).Error)
+	for _, name := range []string{model.PaymentProviderStripe, model.PaymentProviderCreem, model.PaymentProviderWaffo, model.PaymentProviderWaffoPancake} {
+		provider := service.AdtyPaymentProviderByName(name)
+		require.NotNil(t, provider, "retired providers stay registered for historical admin operations")
+		require.Empty(t, provider.Methods())
+	}
+	for _, method := range []string{"stripe", "creem:prod_scene", "waffo", "waffo_pancake"} {
+		require.Nil(t, service.AdtyPaymentProviderForMethod(method), "retired methods are not in the customer catalog")
+	}
 	for _, entry := range []struct {
 		name, method, body string
 		handler            gin.HandlerFunc
@@ -80,9 +88,11 @@ func TestPaymentScenesConstrainNativeProviderEntries(t *testing.T) {
 		{"pancake unified", "waffo_pancake", `{"amount":100,"method":"waffo_pancake","payment_scene":"restricted"}`, PostAdtyHostedPayment},
 	} {
 		t.Run(entry.name, func(t *testing.T) {
-			provider := service.AdtyPaymentProviderForMethod(entry.method)
-			require.NotNil(t, provider)
-			require.True(t, provider.AvailableFor(entry.method, &service.AdtyQuote{FaceUSD: decimal.NewFromInt(100), PayAmount: decimal.NewFromInt(100)}), "provider must be configured; the scene is what rejects this request")
+			if entry.method == "usdt.trc20" {
+				provider := service.AdtyPaymentProviderForMethod(entry.method)
+				require.NotNil(t, provider)
+				require.True(t, provider.AvailableFor(entry.method, &service.AdtyQuote{FaceUSD: decimal.NewFromInt(100), PayAmount: decimal.NewFromInt(100)}), "provider must be configured; the scene is what rejects this request")
+			}
 			response := callStripe(t, entry.handler, user.Id, entry.body)
 			require.NotContains(t, response.Body.String(), `"success":true`)
 			var body struct {
@@ -98,22 +108,18 @@ func TestPaymentScenesConstrainNativeProviderEntries(t *testing.T) {
 			require.Zero(t, externalCalls)
 		})
 	}
-	policy[0].Providers, policy[0].Methods, policy[0].MaxUSD = []string{"creem"}, []string{"creem:prod_other"}, decimal.Zero
-	payload, err = common.Marshal(policy)
-	require.NoError(t, err)
-	require.NoError(t, db.Model(&model.AdtyPaymentSceneConfig{}).Where("id = ?", 1).Update("payload", string(payload)).Error)
-	response := callStripe(t, RequestCreemPay, user.Id, `{"product_id":"prod_scene","payment_method":"creem","payment_scene":"restricted"}`)
-	require.NotContains(t, response.Body.String(), `"success":true`)
-	var count int64
-	require.NoError(t, db.Model(&model.TopUp{}).Count(&count).Error)
-	require.Zero(t, count, "Creem product method restrictions survive the native product_id mapping")
-	policy[0].Methods, policy[0].Currencies = nil, []string{"USD"}
-	payload, err = common.Marshal(policy)
-	require.NoError(t, err)
-	require.NoError(t, db.Model(&model.AdtyPaymentSceneConfig{}).Where("id = ?", 1).Update("payload", string(payload)).Error)
-	response = callStripe(t, RequestCreemPay, user.Id, `{"product_id":"prod_scene","payment_method":"creem","payment_scene":"restricted"}`)
-	require.NotContains(t, response.Body.String(), `"success":true`)
-	require.NoError(t, db.Model(&model.TopUp{}).Count(&count).Error)
-	require.Zero(t, count, "an EUR product cannot bypass the scene currency restriction")
-	require.Zero(t, externalCalls)
+	for _, entry := range []struct {
+		name    string
+		handler gin.HandlerFunc
+		body    string
+	}{
+		{"creem native leftover method", RequestCreemPay, `{"product_id":"prod_scene","payment_method":"creem","payment_scene":"restricted"}`},
+	} {
+		response := callStripe(t, entry.handler, user.Id, entry.body)
+		require.NotContains(t, response.Body.String(), `"success":true`, entry.name)
+		var count int64
+		require.NoError(t, db.Model(&model.TopUp{}).Count(&count).Error)
+		require.Zero(t, count, "retired hosted pay cannot create orders")
+		require.Zero(t, externalCalls)
+	}
 }

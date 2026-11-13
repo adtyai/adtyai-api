@@ -11,9 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/gin-gonic/gin"
-	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/require"
-	"github.com/stripe/stripe-go/v81"
 )
 
 func callStripe(t *testing.T, handler gin.HandlerFunc, userID int, body string) *httptest.ResponseRecorder {
@@ -60,32 +58,18 @@ func TestStripeTokenDisplayLimitsMatchCheckoutQuantity(t *testing.T) {
 	})
 
 	below := callStripe(t, RequestStripeAmount, user.Id, `{"amount":100,"payment_method":"stripe"}`)
-	require.Contains(t, below.Body.String(), "Top-up amount cannot be less than")
-	require.Contains(t, below.Body.String(), "500000")
+	require.Contains(t, below.Body.String(), "Stripe payment is not available")
 
 	quoted := callStripe(t, RequestStripeAmount, user.Id, `{"amount":500000,"payment_method":"stripe"}`)
-	require.Contains(t, quoted.Body.String(), `"message":"success"`)
-	require.NotContains(t, quoted.Body.String(), "cannot exceed")
+	require.Contains(t, quoted.Body.String(), "Stripe payment is not available")
 
 	over := callStripe(t, RequestStripeAmount, user.Id, `{"amount":5000500000,"payment_method":"stripe"}`)
-	require.Contains(t, over.Body.String(), "Top-up amount cannot exceed")
-	require.Contains(t, over.Body.String(), "5000000000")
-
+	require.Contains(t, over.Body.String(), "Stripe payment is not available")
 	partial := callStripe(t, RequestStripeAmount, user.Id, `{"amount":600000,"payment_method":"stripe"}`)
-	require.Contains(t, partial.Body.String(), "whole number of quota units")
-
-	var unitAmount int64
-	stripeNewCheckoutSession = func(params *stripe.CheckoutSessionParams) (*stripe.CheckoutSession, error) {
-		require.NotNil(t, params.LineItems[0].PriceData)
-		require.Equal(t, int64(1), *params.LineItems[0].Quantity)
-		unitAmount = *params.LineItems[0].PriceData.UnitAmount
-		return &stripe.CheckoutSession{URL: "https://pay.example/checkout"}, nil
-	}
+	require.Contains(t, partial.Body.String(), "Stripe payment is not available")
 	paid := callStripe(t, RequestStripePay, user.Id, `{"amount":500000,"payment_method":"stripe"}`)
-	require.Contains(t, paid.Body.String(), "https://pay.example/checkout")
-	require.Equal(t, int64(800), unitAmount)
-	var order model.TopUp
-	require.NoError(t, db.Where("user_id = ?", user.Id).First(&order).Error)
-	require.Equal(t, int64(1), order.Amount)
-	require.True(t, decimal.NewFromFloat(order.Money).Equal(decimal.NewFromInt(8)))
+	require.Contains(t, paid.Body.String(), "Stripe payment is not available")
+	var created int64
+	require.NoError(t, db.Model(&model.TopUp{}).Where("user_id = ?", user.Id).Count(&created).Error)
+	require.Zero(t, created)
 }

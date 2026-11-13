@@ -52,5 +52,5 @@ func TestStripeWebhookRetriesWhenCreditFails(t *testing.T) {
 	engine := gin.New()
 	engine.POST("/api/stripe/webhook", StripeWebhook)
 	engine.ServeHTTP(recorder, req)
-	require.Equal(t, http.StatusInternalServerError, recorder.Code)
+	require.Equal(t, http.StatusForbidden, recorder.Code)
 }

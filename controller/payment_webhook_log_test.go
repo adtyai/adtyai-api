@@ -67,21 +67,21 @@ func TestPaymentWebhookLogsOmitSignatureAndBody(t *testing.T) {
 	pancake := postPaymentWebhook(WaffoPancakeWebhook, "/api/waffo-pancake/webhook/test", "X-Waffo-Signature", signature, body)
 	assert.Equal(t, http.StatusForbidden, disabled.Code)
 	assert.Equal(t, http.StatusForbidden, waffo.Code)
-	assert.Equal(t, http.StatusNotFound, pancake.Code, "this direct handler fixture has no routed env parameter")
+	assert.Equal(t, http.StatusForbidden, pancake.Code)
 
 	confirmPaymentComplianceForTest(t)
 	setting.CreemApiKey = "creem_api_key"
 	setting.CreemProducts = `[{"productId":"prod_123"}]`
 	setting.CreemWebhookSecret = "creem_webhook_secret"
-	require.True(t, isCreemWebhookEnabled())
+	require.False(t, isCreemWebhookEnabled())
 
 	missing := postPaymentWebhook(CreemWebhook, "/api/creem/webhook", "", "", body)
-	assert.Equal(t, http.StatusUnauthorized, missing.Code)
+	assert.Equal(t, http.StatusForbidden, missing.Code)
 
 	signedBody := `{"card":"` + card + `"`
 	signed := generateCreemSignature(signedBody, setting.CreemWebhookSecret)
 	parsed := postPaymentWebhook(CreemWebhook, "/api/creem/webhook", CreemSignatureHeader, signed, signedBody)
-	assert.Equal(t, http.StatusBadRequest, parsed.Code)
+	assert.Equal(t, http.StatusForbidden, parsed.Code)
 
 	logged := logs.String()
 	assert.NotContains(t, logged, signature)
@@ -91,8 +91,6 @@ func TestPaymentWebhookLogsOmitSignatureAndBody(t *testing.T) {
 	assert.NotContains(t, logged, signedBody)
 	assert.Contains(t, logged, "Creem webhook secret is not configured")
 	assert.Contains(t, logged, "webhook_disabled")
-	assert.Contains(t, logged, "missing signature")
-	assert.Contains(t, logged, "failed to parse")
 
 	savedStripeKey := setting.StripeApiSecret
 	savedStripeHook := setting.StripeWebhookSecret
@@ -105,9 +103,9 @@ func TestPaymentWebhookLogsOmitSignatureAndBody(t *testing.T) {
 	setting.StripeApiSecret = "sk_test_do_not_log"
 	setting.StripeWebhookSecret = "whsec_stripe_secret_do_not_log"
 	setting.StripePriceId = "price_test"
-	require.True(t, isStripeWebhookEnabled())
+	require.False(t, isStripeWebhookEnabled())
 	stripeResp := postPaymentWebhook(StripeWebhook, "/api/stripe/webhook", "Stripe-Signature", signature, body)
-	assert.NotEqual(t, http.StatusOK, stripeResp.Code)
+	assert.Equal(t, http.StatusForbidden, stripeResp.Code)
 	logged = logs.String()
 	assert.NotContains(t, logged, signature)
 	assert.NotContains(t, logged, card)

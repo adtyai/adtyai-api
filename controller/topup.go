@@ -27,11 +27,13 @@ func GetTopUpInfo(c *gin.Context) {
 	complianceConfirmed := operation_setting.IsPaymentComplianceConfirmed()
 
 	data := gin.H{
-		"enable_online_topup":              isEpayTopUpEnabled(),
-		"enable_stripe_topup":              isStripeTopUpEnabled(),
-		"enable_creem_topup":               isCreemTopUpEnabled() && isCreemWebhookConfigured(),
-		"enable_waffo_topup":               isWaffoTopUpEnabled(),
-		"enable_waffo_pancake_topup":       isWaffoPancakeTopUpEnabled(),
+		"enable_online_topup": isEpayTopUpEnabled(),
+		// Retired hosted methods stay in the payload but are never advertised as enabled,
+		// even when live Stripe/Creem/Waffo settings would otherwise turn them on.
+		"enable_stripe_topup":              false,
+		"enable_creem_topup":               false,
+		"enable_waffo_topup":               false,
+		"enable_waffo_pancake_topup":       false,
 		"payment_compliance_confirmed":     complianceConfirmed,
 		"payment_compliance_terms_version": operation_setting.CurrentComplianceTermsVersion,
 		"waffo_pay_methods":                setting.GetWaffoPayMethods(),

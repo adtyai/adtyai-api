@@ -78,31 +78,8 @@ func PostAdtyHostedPayment(c *gin.Context) {
 func (p adtyHostedProvider) Name() string { return string(p) }
 
 func (p adtyHostedProvider) Methods() []service.AdtyMethodInfo {
-	switch p.Name() {
-	case model.PaymentProviderStripe:
-		return []service.AdtyMethodInfo{{Id: p.Name(), Kind: "hosted", Currency: "USD", Label: "Stripe", Available: isStripeTopUpEnabled()}}
-	case model.PaymentProviderWaffo:
-		return []service.AdtyMethodInfo{{Id: p.Name(), Kind: "hosted", Currency: strings.ToUpper(getWaffoCurrency()), Label: "Waffo", Available: isWaffoTopUpEnabled()}}
-	case model.PaymentProviderWaffoPancake:
-		return []service.AdtyMethodInfo{{Id: p.Name(), Kind: "hosted", Currency: "USD", Label: "Waffo Pancake", Available: isWaffoPancakeTopUpEnabled()}}
-	case model.PaymentProviderCreem:
-		var products []CreemProduct
-		if common.UnmarshalJsonStr(setting.CreemProducts, &products) != nil {
-			return nil
-		}
-		methods := make([]service.AdtyMethodInfo, 0, len(products))
-		for _, product := range products {
-			if product.ProductId == "" || product.Quota <= 0 || product.Price <= 0 || common.QuotaPerUnit <= 0 {
-				continue
-			}
-			methods = append(methods, service.AdtyMethodInfo{
-				Id: "creem:" + product.ProductId, Kind: "hosted", Label: "Creem · " + product.Name,
-				Currency: strings.ToUpper(product.Currency),
-				FaceUSD:  decimal.NewFromInt(product.Quota).Div(common.QuotaPerUnitDecimal()).String(), Available: isCreemTopUpEnabled() && isCreemWebhookConfigured(),
-			})
-		}
-		return methods
-	}
+	// Stripe, Creem, and Waffo stay registered so admin query/complete/refund
+	// of historical orders still works, but they are not offered to customers.
 	return nil
 }
 

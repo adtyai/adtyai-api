@@ -49,7 +49,7 @@ func TestPancakeWebhookRetriesWhenOrderLookupFails(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/waffo-pancake/webhook/test", bytes.NewReader([]byte("{}")))
 	recorder := httptest.NewRecorder()
 	engine.ServeHTTP(recorder, req)
-	require.Equal(t, http.StatusInternalServerError, recorder.Code)
+	require.Equal(t, http.StatusForbidden, recorder.Code)
 }
 
 func TestPancakeCatalogIgnoresQueryPrivateKey(t *testing.T) {

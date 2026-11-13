@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -23,6 +24,23 @@ func TestClosedFeatureRoutesRejectBeforeCredit(t *testing.T) {
 		{http.MethodPost, "/api/user/checkin", `{}`},
 		{http.MethodGet, "/api/user/checkin", ""},
 		{http.MethodPost, "/api/user/topup/complete", `{"trade_no":"OLD-1"}`},
+		{http.MethodPost, "/api/stripe/webhook", `{}`},
+		{http.MethodPost, "/api/creem/webhook", `{}`},
+		{http.MethodPost, "/api/waffo/webhook", `{}`},
+		{http.MethodPost, "/api/waffo-pancake/webhook/test", `{}`},
+		{http.MethodPost, "/api/waffo-pancake/webhook/prod", `{}`},
+		{http.MethodPost, "/api/user/stripe/pay", `{}`},
+		{http.MethodPost, "/api/user/stripe/amount", `{}`},
+		{http.MethodPost, "/api/user/creem/pay", `{}`},
+		{http.MethodPost, "/api/user/waffo/pay", `{}`},
+		{http.MethodPost, "/api/user/waffo/amount", `{}`},
+		{http.MethodPost, "/api/user/waffo-pancake/pay", `{}`},
+		{http.MethodPost, "/api/user/waffo-pancake/amount", `{}`},
+		{http.MethodGet, "/api/user/epay/notify", ""},
+		{http.MethodPost, "/api/user/epay/notify", `{}`},
+		{http.MethodPost, "/api/option/waffo-pancake/catalog", `{}`},
+		{http.MethodPost, "/api/option/waffo-pancake/pair", `{}`},
+		{http.MethodPost, "/api/option/waffo-pancake/save", `{}`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.method+" "+tc.path, func(t *testing.T) {
@@ -41,19 +59,41 @@ func TestClosedFeatureRoutesRejectBeforeCredit(t *testing.T) {
 	require.True(t, registered["POST /api/user/epay/notify/:channelId"])
 	require.True(t, registered["GET /api/user/epay/notify/:channelId"])
 	require.True(t, registered["DELETE /api/adty/admin/sites/domains/:id"])
+	require.True(t, registered["POST /api/user/pay"])
+	require.NotContains(t, routeHandler(t, engine, "GET", "/api/user/epay/notify/:channelId"), "AdtyClosedFeature")
+	require.NotContains(t, routeHandler(t, engine, "POST", "/api/user/epay/notify/:channelId"), "AdtyClosedFeature")
+	require.NotContains(t, routeHandler(t, engine, "POST", "/api/user/pay"), "AdtyClosedFeature")
+}
+
+func routeHandler(t *testing.T, engine *gin.Engine, method, path string) string {
+	t.Helper()
+	for _, route := range engine.Routes() {
+		if route.Method == method && route.Path == path {
+			return route.Handler
+		}
+	}
+	t.Fatalf("route not registered: %s %s", method, path)
+	return ""
 }
 
 func TestRestoredPaymentRoutesRequireAuthentication(t *testing.T) {
 	engine := newAccessTokenScopeTestEngine(t)
-	for _, path := range []string{"/api/user/pay", "/api/user/stripe/pay", "/api/user/stripe/amount", "/api/user/creem/pay", "/api/user/waffo/pay", "/api/user/waffo/amount", "/api/user/waffo-pancake/pay", "/api/user/waffo-pancake/amount"} {
-		t.Run(path, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`))
-			req.Header.Set("Content-Type", "application/json")
-			rec := httptest.NewRecorder()
-			engine.ServeHTTP(rec, req)
-			require.Equal(t, http.StatusUnauthorized, rec.Code, rec.Body.String())
-		})
-	}
+	req := httptest.NewRequest(http.MethodPost, "/api/user/pay", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusUnauthorized, rec.Code, rec.Body.String())
+	require.NotContains(t, rec.Body.String(), "not available")
+}
+
+func TestOfficialEpayNotifyIsNotClosed(t *testing.T) {
+	engine := newAccessTokenScopeTestEngine(t)
+	require.Contains(t, routeHandler(t, engine, http.MethodGet, "/api/user/epay/notify/:channelId"), "AdtyEpayNotify")
+	require.Contains(t, routeHandler(t, engine, http.MethodPost, "/api/user/epay/notify/:channelId"), "AdtyEpayNotify")
+	require.NotContains(t, routeHandler(t, engine, http.MethodGet, "/api/user/epay/notify/:channelId"), "AdtyClosedFeature")
+	require.NotContains(t, routeHandler(t, engine, http.MethodPost, "/api/user/epay/notify/:channelId"), "AdtyClosedFeature")
+	require.Contains(t, routeHandler(t, engine, http.MethodPost, "/api/user/pay"), "RequestAdtyEpayPay")
+	require.NotContains(t, routeHandler(t, engine, http.MethodPost, "/api/user/pay"), "AdtyClosedFeature")
 }
 
 func TestAdminCustomDomainDisableRouteIsMounted(t *testing.T) {

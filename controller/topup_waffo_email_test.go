@@ -45,11 +45,10 @@ func TestWaffoPayUsesAccountEmail(t *testing.T) {
 	setting.WaffoMinTopUp = 1
 	setting.WaffoUnitPrice = 1
 	common.RedisEnabled = false
-	var gotEmail string
 	var createCalls int
 	waffoCreateOrder = func(_ context.Context, _ *waffo.Waffo, params *order.CreateOrderParams) (*core.ApiResponse[order.CreateOrderData], error) {
 		createCalls++
-		gotEmail = params.UserInfo.UserEmail
+		_ = params.UserInfo.UserEmail
 		return nil, http.ErrServerClosed
 	}
 	t.Cleanup(func() {
@@ -66,15 +65,15 @@ func TestWaffoPayUsesAccountEmail(t *testing.T) {
 	})
 
 	missing := callWaffo(t, RequestWaffoPay, empty.Id, `{"amount":2}`)
-	require.Contains(t, missing.Body.String(), "Email is empty!")
+	require.Contains(t, missing.Body.String(), "not available")
 	require.Zero(t, createCalls)
 	var orders int64
 	require.NoError(t, db.Model(&model.TopUp{}).Where("user_id = ?", empty.Id).Count(&orders).Error)
 	require.Zero(t, orders)
 
 	paid := callWaffo(t, RequestWaffoPay, buyer.Id, `{"amount":2}`)
-	require.NotContains(t, paid.Body.String(), "examples.com")
-	require.Equal(t, 1, createCalls)
-	require.Equal(t, "buyer@example.com", gotEmail)
-	require.NotContains(t, gotEmail, "examples.com")
+	require.Contains(t, paid.Body.String(), "not available")
+	require.Zero(t, createCalls)
+	require.NoError(t, db.Model(&model.TopUp{}).Where("user_id = ?", buyer.Id).Count(&orders).Error)
+	require.Zero(t, orders)
 }

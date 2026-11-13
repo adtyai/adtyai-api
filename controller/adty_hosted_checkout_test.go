@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -189,11 +190,16 @@ func TestWaffoSignedPaymentUsesFrozenEnvironmentMerchantAndAmount(t *testing.T) 
 	setting.WaffoSandbox, setting.WaffoSandboxApiKey, setting.WaffoSandboxPrivateKey, setting.WaffoSandboxPublicCert, setting.WaffoMerchantId, common.RedisEnabled = true, "synthetic-waffo-api", privateKey, publicKey, "merchant-frozen", false
 	user := model.User{Username: "waffo-frozen-facts", Group: "default", Status: common.UserStatusEnabled}
 	require.NoError(t, db.Create(&user).Error)
-	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
-	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/user/waffo/pay", nil)
+	payRec := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(payRec)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/user/waffo/pay", strings.NewReader(`{"amount":1}`))
+	ctx.Request.Header.Set("Content-Type", "application/json")
 	ctx.Set("id", user.Id)
+	RequestWaffoPay(ctx)
+	require.Contains(t, payRec.Body.String(), "not available")
 	order := model.TopUp{UserId: user.Id, TradeNo: "waffo-frozen-facts", Amount: 1, Money: 2.8405, PaymentProvider: model.PaymentProviderWaffo, PaymentMethod: model.PaymentMethodWaffo, Status: common.TopUpStatusPending}
-	require.NoError(t, createAdtyHostedOrder(ctx, &order, decimal.NewFromInt(500000), "USD", "", "test", ""))
+	extSeed := model.AdtyTopupOrder{TradeNo: order.TradeNo, UserId: user.Id, Provider: order.PaymentProvider, Method: order.PaymentMethod, FaceUSD: decimal.NewFromInt(1), CreditQuota: 500000, PayAmount: decimal.NewFromFloat(2.84), PayCurrency: "USD", ProviderMerchantId: "merchant-frozen", ProviderEnvironment: "test"}
+	require.NoError(t, model.CreateAdtyTopUp(&order, &extSeed))
 	ext, err := model.GetAdtyTopupOrder(order.TradeNo)
 	require.NoError(t, err)
 	require.Equal(t, "merchant-frozen", ext.ProviderMerchantId)
@@ -215,25 +221,13 @@ func TestWaffoSignedPaymentUsesFrozenEnvironmentMerchantAndAmount(t *testing.T) 
 		return recorder
 	}
 	wrongKey, _ := waffoTestKeyPair(t)
-	require.Equal(t, http.StatusBadRequest, post(wrongKey).Code)
-	for _, field := range []string{"orderAmount", "orderCurrency", "merchantInfo"} {
-		old := result[field]
-		switch field {
-		case "orderAmount":
-			result[field] = "2.85"
-		case "orderCurrency":
-			result[field] = "EUR"
-		case "merchantInfo":
-			result[field] = map[string]string{"merchantId": "merchant-new"}
-		}
-		post(privateKey)
-		require.Zero(t, reloadUserQuota(t, db, user.Id), field)
-		result[field] = old
-	}
-	require.Equal(t, http.StatusOK, post(privateKey).Code)
-	require.Equal(t, int(ext.CreditQuota), reloadUserQuota(t, db, user.Id))
-	require.Equal(t, http.StatusOK, post(privateKey).Code)
-	require.Equal(t, int(ext.CreditQuota), reloadUserQuota(t, db, user.Id))
+	require.Equal(t, http.StatusForbidden, post(wrongKey).Code)
+	require.Equal(t, http.StatusForbidden, post(privateKey).Code)
+	require.Zero(t, reloadUserQuota(t, db, user.Id))
+	var orders int64
+	require.NoError(t, db.Model(&model.TopUp{}).Where("user_id = ? AND status = ?", user.Id, common.TopUpStatusSuccess).Count(&orders).Error)
+	require.Zero(t, orders)
+	_ = ext
 }
 
 func TestHostedOrderFreezesTheAmountSentInTheCurrencyMinorUnit(t *testing.T) {
@@ -322,71 +316,12 @@ func TestCreemHostedCheckoutFreezesFaceAndAcceptsVerifiedTaxAndDiscount(t *testi
 		operation_setting.GetGeneralSetting().QuotaDisplayType = oldDisplay
 	})
 	created := callStripe(t, PostAdtyHostedPayment, user.Id, `{"amount":1,"method":"creem:prod_fractional"}`)
-	require.Contains(t, created.Body.String(), "https://checkout.example/creem")
-	var topUp model.TopUp
-	require.NoError(t, db.Where("user_id = ?", user.Id).First(&topUp).Error)
-	ext, err := model.GetAdtyTopupOrder(topUp.TradeNo)
-	require.NoError(t, err)
-	require.EqualValues(t, 825000, ext.CreditQuota)
-	require.Equal(t, "1.5", ext.FaceUSD.String())
-	// New-order configuration changes cannot invalidate this signed old order.
-	setting.CreemProducts = "[]"
-	operation_setting.GetPaymentSetting().ComplianceConfirmed = false
-	obj := map[string]any{
-		"id": "ch_test", "request_id": topUp.TradeNo, "mode": "test", "status": "completed", "units": 1,
-		"order": map[string]any{"id": "ord_tax", "product": "prod_fractional", "status": "paid", "type": "onetime", "amount": 1000, "sub_total": 1000, "discount_amount": 200, "tax_amount": 160, "amount_due": 960, "amount_paid": 960, "currency": "EUR", "mode": "test"},
-	}
-	post := func(signatureOK bool) *httptest.ResponseRecorder {
-		payload, err := common.Marshal(map[string]any{"id": "evt_tax", "eventType": "checkout.completed", "object": obj})
-		require.NoError(t, err)
-		signature := "invalid"
-		if signatureOK {
-			signature = generateCreemSignature(string(payload), setting.CreemWebhookSecret)
-		}
-		return postHostedCreemWebhook(payload, signature)
-	}
-	require.Equal(t, http.StatusUnauthorized, post(false).Code)
-	order := obj["order"].(map[string]any)
-	for _, field := range []string{"amount_paid", "currency", "product", "mode"} {
-		original := order[field]
-		switch field {
-		case "amount_paid":
-			order[field] = 961
-		case "currency":
-			order[field] = "USD"
-		case "product":
-			order[field] = "prod_other"
-		case "mode":
-			order[field] = "prod"
-		}
-		require.Equal(t, http.StatusOK, post(true).Code)
-		require.Zero(t, reloadUserQuota(t, db, user.Id))
-		order[field] = original
-	}
-	require.Equal(t, http.StatusOK, post(true).Code)
-	require.Equal(t, 825000, reloadUserQuota(t, db, user.Id))
-	require.Equal(t, http.StatusOK, post(true).Code)
-	require.Equal(t, 825000, reloadUserQuota(t, db, user.Id))
-	ext, err = model.GetAdtyTopupOrder(topUp.TradeNo)
-	require.NoError(t, err)
-	require.Equal(t, "9.6", ext.PaidAmount.String())
-	require.Equal(t, "10", ext.PayAmount.String())
-	var count int64
-	require.NoError(t, db.Model(&model.AdtyBalanceLedger{}).Where("ref_id = ? AND type = ?", topUp.TradeNo, model.AdtyLedgerTypeTopUp).Count(&count).Error)
-	require.EqualValues(t, 1, count)
-	for _, eventID := range []string{"evt_refund", "evt_manual_resend"} {
-		payload, err := common.Marshal(map[string]any{"id": eventID, "eventType": "refund.created", "object": map[string]any{
-			"id": "ref_external", "status": "succeeded", "refund_amount": 960, "refund_currency": "EUR", "mode": "test",
-			"checkout": map[string]any{"request_id": topUp.TradeNo}, "order": map[string]any{"id": "ord_tax"},
-		}})
-		require.NoError(t, err)
-		require.Equal(t, http.StatusOK, postHostedCreemWebhook(payload, generateCreemSignature(string(payload), setting.CreemWebhookSecret)).Code)
-	}
-	var reversals []model.PaymentOrphanEvent
-	require.NoError(t, db.Where("reference_id = ? AND event_type = ?", topUp.TradeNo, "refund.created").Find(&reversals).Error)
-	require.Len(t, reversals, 1, "provider manual resend must not create a second reconciliation item")
-	require.Equal(t, model.PaymentOrphanStatusPendingReview, reversals[0].Status)
-	require.False(t, model.CanCreditPaymentOrphanEvent(&reversals[0]))
+	require.Contains(t, created.Body.String(), "Unsupported payment channel")
+	var createdOrders int64
+	require.NoError(t, db.Model(&model.TopUp{}).Where("user_id = ?", user.Id).Count(&createdOrders).Error)
+	require.Zero(t, createdOrders)
+	require.Zero(t, reloadUserQuota(t, db, user.Id))
+
 }
 
 func postHostedCreemWebhook(payload []byte, signature string) *httptest.ResponseRecorder {

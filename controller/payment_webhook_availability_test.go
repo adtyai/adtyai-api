@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -30,131 +31,147 @@ func confirmPaymentComplianceForTest(t *testing.T) {
 	paymentSetting.ComplianceTermsVersion = operation_setting.CurrentComplianceTermsVersion
 }
 
-func TestStripeWebhookRemainsAvailableWhenNewCheckoutCloses(t *testing.T) {
+func TestRetiredHostedTopUpAndWebhooksStayClosedEvenWhenConfigured(t *testing.T) {
 	confirmPaymentComplianceForTest(t)
-	originalAPISecret := setting.StripeApiSecret
-	originalWebhookSecret := setting.StripeWebhookSecret
-	originalPriceID := setting.StripePriceId
+	originalStripeAPISecret := setting.StripeApiSecret
+	originalStripeWebhookSecret := setting.StripeWebhookSecret
+	originalStripePriceID := setting.StripePriceId
+	originalCreemAPIKey := setting.CreemApiKey
+	originalCreemProducts := setting.CreemProducts
+	originalCreemWebhookSecret := setting.CreemWebhookSecret
+	originalWaffoEnabled := setting.WaffoEnabled
+	originalWaffoSandbox := setting.WaffoSandbox
+	originalWaffoAPIKey := setting.WaffoApiKey
+	originalWaffoPrivateKey := setting.WaffoPrivateKey
+	originalWaffoPublicCert := setting.WaffoPublicCert
+	originalWaffoSandboxAPIKey := setting.WaffoSandboxApiKey
+	originalWaffoSandboxPrivateKey := setting.WaffoSandboxPrivateKey
+	originalWaffoSandboxPublicCert := setting.WaffoSandboxPublicCert
+	originalPancakeMerchantID := setting.WaffoPancakeMerchantID
+	originalPancakePrivateKey := setting.WaffoPancakePrivateKey
+	originalPancakeProductID := setting.WaffoPancakeProductID
+	originalPancakeEnvironment := setting.WaffoPancakeEnvironment
 	t.Cleanup(func() {
-		setting.StripeApiSecret = originalAPISecret
-		setting.StripeWebhookSecret = originalWebhookSecret
-		setting.StripePriceId = originalPriceID
+		setting.StripeApiSecret = originalStripeAPISecret
+		setting.StripeWebhookSecret = originalStripeWebhookSecret
+		setting.StripePriceId = originalStripePriceID
+		setting.CreemApiKey = originalCreemAPIKey
+		setting.CreemProducts = originalCreemProducts
+		setting.CreemWebhookSecret = originalCreemWebhookSecret
+		setting.WaffoEnabled = originalWaffoEnabled
+		setting.WaffoSandbox = originalWaffoSandbox
+		setting.WaffoApiKey = originalWaffoAPIKey
+		setting.WaffoPrivateKey = originalWaffoPrivateKey
+		setting.WaffoPublicCert = originalWaffoPublicCert
+		setting.WaffoSandboxApiKey = originalWaffoSandboxAPIKey
+		setting.WaffoSandboxPrivateKey = originalWaffoSandboxPrivateKey
+		setting.WaffoSandboxPublicCert = originalWaffoSandboxPublicCert
+		setting.WaffoPancakeMerchantID = originalPancakeMerchantID
+		setting.WaffoPancakePrivateKey = originalPancakePrivateKey
+		setting.WaffoPancakeProductID = originalPancakeProductID
+		setting.WaffoPancakeEnvironment = originalPancakeEnvironment
 	})
 
-	setting.StripeWebhookSecret = ""
 	setting.StripeApiSecret = "sk_test_123"
-	setting.StripePriceId = "price_123"
-	require.False(t, isStripeWebhookEnabled())
-
 	setting.StripeWebhookSecret = "whsec_test"
-	require.True(t, isStripeWebhookEnabled())
-
-	setting.StripePriceId = ""
-	require.True(t, isStripeWebhookEnabled())
-	require.False(t, isStripeTopUpEnabled())
-}
-
-func TestCreemWebhookRemainsAvailableWhenNewCheckoutCloses(t *testing.T) {
-	confirmPaymentComplianceForTest(t)
-	originalAPIKey := setting.CreemApiKey
-	originalProducts := setting.CreemProducts
-	originalWebhookSecret := setting.CreemWebhookSecret
-	t.Cleanup(func() {
-		setting.CreemApiKey = originalAPIKey
-		setting.CreemProducts = originalProducts
-		setting.CreemWebhookSecret = originalWebhookSecret
-	})
-
-	setting.CreemWebhookSecret = ""
+	setting.StripePriceId = "price_123"
 	setting.CreemApiKey = "creem_api_key"
 	setting.CreemProducts = `[{"productId":"prod_123"}]`
-	require.False(t, isCreemWebhookEnabled())
-
 	setting.CreemWebhookSecret = "creem_secret"
-	require.True(t, isCreemWebhookEnabled())
-
-	setting.CreemProducts = "[]"
-	require.True(t, isCreemWebhookEnabled())
-	require.False(t, isCreemTopUpEnabled())
-}
-
-func TestWaffoWebhookEnabledRequiresTopUpAndWebhookConfig(t *testing.T) {
-	confirmPaymentComplianceForTest(t)
-	originalEnabled := setting.WaffoEnabled
-	originalSandbox := setting.WaffoSandbox
-	originalAPIKey := setting.WaffoApiKey
-	originalPrivateKey := setting.WaffoPrivateKey
-	originalPublicCert := setting.WaffoPublicCert
-	originalSandboxAPIKey := setting.WaffoSandboxApiKey
-	originalSandboxPrivateKey := setting.WaffoSandboxPrivateKey
-	originalSandboxPublicCert := setting.WaffoSandboxPublicCert
-	t.Cleanup(func() {
-		setting.WaffoEnabled = originalEnabled
-		setting.WaffoSandbox = originalSandbox
-		setting.WaffoApiKey = originalAPIKey
-		setting.WaffoPrivateKey = originalPrivateKey
-		setting.WaffoPublicCert = originalPublicCert
-		setting.WaffoSandboxApiKey = originalSandboxAPIKey
-		setting.WaffoSandboxPrivateKey = originalSandboxPrivateKey
-		setting.WaffoSandboxPublicCert = originalSandboxPublicCert
-	})
-
 	setting.WaffoEnabled = true
 	setting.WaffoSandbox = false
-	setting.WaffoApiKey = ""
+	setting.WaffoApiKey = "api"
 	setting.WaffoPrivateKey = "private"
 	setting.WaffoPublicCert = "public"
-	require.False(t, isWaffoWebhookEnabled())
-
-	setting.WaffoApiKey = "api"
-	require.True(t, isWaffoWebhookEnabled())
-
-	setting.WaffoEnabled = false
-	require.True(t, isWaffoWebhookEnabled())
-	require.False(t, isWaffoTopUpEnabled())
-
-	setting.WaffoEnabled = true
-	setting.WaffoSandbox = true
-	setting.WaffoSandboxApiKey = ""
+	setting.WaffoSandboxApiKey = "sandbox_api"
 	setting.WaffoSandboxPrivateKey = "sandbox_private"
 	setting.WaffoSandboxPublicCert = "sandbox_public"
-	require.True(t, isWaffoWebhookEnabled(), "the retained production credentials verify old orders")
-	require.False(t, isWaffoTopUpEnabled(), "new orders still require the selected environment")
-
-	setting.WaffoSandboxApiKey = "sandbox_api"
-	require.True(t, isWaffoWebhookEnabled())
-}
-
-func TestWaffoPancakeWebhookEnabledRequiresTopUpAndWebhookConfig(t *testing.T) {
-	confirmPaymentComplianceForTest(t)
-	originalMerchantID := setting.WaffoPancakeMerchantID
-	originalPrivateKey := setting.WaffoPancakePrivateKey
-	originalProductID := setting.WaffoPancakeProductID
-	t.Cleanup(func() {
-		setting.WaffoPancakeMerchantID = originalMerchantID
-		setting.WaffoPancakePrivateKey = originalPrivateKey
-		setting.WaffoPancakeProductID = originalProductID
-	})
-
-	// New checkouts require credentials. Callbacks retain the bundled public
-	// verification keys so orders created before checkout was closed can finish.
-	setting.WaffoPancakeMerchantID = ""
+	setting.WaffoPancakeMerchantID = "merchant"
 	setting.WaffoPancakePrivateKey = "private"
 	setting.WaffoPancakeProductID = "product"
-	require.True(t, isWaffoPancakeWebhookEnabled())
-	require.False(t, isWaffoPancakeTopUpEnabled())
+	setting.WaffoPancakeEnvironment = "test"
 
+	require.False(t, isStripeTopUpEnabled())
+	require.False(t, isStripeWebhookEnabled())
+	require.False(t, isCreemTopUpEnabled())
+	require.False(t, isCreemWebhookEnabled())
+	require.False(t, isWaffoTopUpEnabled())
+	require.False(t, isWaffoWebhookEnabled())
+	require.False(t, isWaffoPancakeTopUpEnabled())
+	require.False(t, isWaffoPancakeWebhookEnabled())
+}
+
+func TestGetTopUpInfoDoesNotAdvertiseRetiredHostedMethods(t *testing.T) {
+	confirmPaymentComplianceForTest(t)
+	gin.SetMode(gin.TestMode)
+	originalStripeAPISecret := setting.StripeApiSecret
+	originalStripeWebhookSecret := setting.StripeWebhookSecret
+	originalStripePriceID := setting.StripePriceId
+	originalCreemAPIKey := setting.CreemApiKey
+	originalCreemProducts := setting.CreemProducts
+	originalCreemWebhookSecret := setting.CreemWebhookSecret
+	originalWaffoEnabled := setting.WaffoEnabled
+	originalWaffoSandbox := setting.WaffoSandbox
+	originalWaffoAPIKey := setting.WaffoApiKey
+	originalWaffoPrivateKey := setting.WaffoPrivateKey
+	originalWaffoPublicCert := setting.WaffoPublicCert
+	originalPancakeMerchantID := setting.WaffoPancakeMerchantID
+	originalPancakePrivateKey := setting.WaffoPancakePrivateKey
+	originalPancakeProductID := setting.WaffoPancakeProductID
+	originalPancakeEnvironment := setting.WaffoPancakeEnvironment
+	t.Cleanup(func() {
+		setting.StripeApiSecret = originalStripeAPISecret
+		setting.StripeWebhookSecret = originalStripeWebhookSecret
+		setting.StripePriceId = originalStripePriceID
+		setting.CreemApiKey = originalCreemAPIKey
+		setting.CreemProducts = originalCreemProducts
+		setting.CreemWebhookSecret = originalCreemWebhookSecret
+		setting.WaffoEnabled = originalWaffoEnabled
+		setting.WaffoSandbox = originalWaffoSandbox
+		setting.WaffoApiKey = originalWaffoAPIKey
+		setting.WaffoPrivateKey = originalWaffoPrivateKey
+		setting.WaffoPublicCert = originalWaffoPublicCert
+		setting.WaffoPancakeMerchantID = originalPancakeMerchantID
+		setting.WaffoPancakePrivateKey = originalPancakePrivateKey
+		setting.WaffoPancakeProductID = originalPancakeProductID
+		setting.WaffoPancakeEnvironment = originalPancakeEnvironment
+	})
+	setting.StripeApiSecret = "sk_test_123"
+	setting.StripeWebhookSecret = "whsec_test"
+	setting.StripePriceId = "price_123"
+	setting.CreemApiKey = "creem_api_key"
+	setting.CreemProducts = `[{"productId":"prod_123","name":"Pack","price":2,"currency":"USD","quota":1000}]`
+	setting.CreemWebhookSecret = "creem_secret"
+	setting.WaffoEnabled = true
+	setting.WaffoSandbox = false
+	setting.WaffoApiKey = "api"
+	setting.WaffoPrivateKey = "private"
+	setting.WaffoPublicCert = "public"
 	setting.WaffoPancakeMerchantID = "merchant"
-	require.True(t, isWaffoPancakeWebhookEnabled())
-
-	setting.WaffoPancakeProductID = ""
-	require.True(t, isWaffoPancakeWebhookEnabled())
-	require.False(t, isWaffoPancakeTopUpEnabled())
-
+	setting.WaffoPancakePrivateKey = "private"
 	setting.WaffoPancakeProductID = "product"
-	setting.WaffoPancakePrivateKey = ""
-	require.True(t, isWaffoPancakeWebhookEnabled())
-	require.False(t, isWaffoPancakeTopUpEnabled())
+	setting.WaffoPancakeEnvironment = "test"
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/user/topup/info", nil)
+	GetTopUpInfo(ctx)
+	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+	var body struct {
+		Success bool
+		Data    struct {
+			EnableStripeTopup       bool `json:"enable_stripe_topup"`
+			EnableCreemTopup        bool `json:"enable_creem_topup"`
+			EnableWaffoTopup        bool `json:"enable_waffo_topup"`
+			EnableWaffoPancakeTopup bool `json:"enable_waffo_pancake_topup"`
+		}
+	}
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &body))
+	require.True(t, body.Success)
+	require.False(t, body.Data.EnableStripeTopup)
+	require.False(t, body.Data.EnableCreemTopup)
+	require.False(t, body.Data.EnableWaffoTopup)
+	require.False(t, body.Data.EnableWaffoPancakeTopup)
 }
 
 func TestEpayWebhookEnabledRequiresTopUpAndWebhookConfig(t *testing.T) {

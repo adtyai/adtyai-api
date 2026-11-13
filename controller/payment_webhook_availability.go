@@ -12,12 +12,9 @@ func isPaymentComplianceConfirmed() bool {
 }
 
 func isStripeTopUpEnabled() bool {
-	if !isPaymentComplianceConfirmed() {
-		return false
-	}
-	return strings.TrimSpace(setting.StripeApiSecret) != "" &&
-		strings.TrimSpace(setting.StripeWebhookSecret) != "" &&
-		strings.TrimSpace(setting.StripePriceId) != ""
+	// Stripe checkout is retired. Credentials may remain in settings, but
+	// customers must not be offered or charged through this entry.
+	return false
 }
 
 func isStripeWebhookConfigured() bool {
@@ -25,17 +22,14 @@ func isStripeWebhookConfigured() bool {
 }
 
 func isStripeWebhookEnabled() bool {
-	return isStripeWebhookConfigured()
+	// Retired Stripe webhooks must not credit a wallet.
+	return false
 }
 
 func isCreemTopUpEnabled() bool {
-	if !isPaymentComplianceConfirmed() {
-		return false
-	}
-	products := strings.TrimSpace(setting.CreemProducts)
-	return strings.TrimSpace(setting.CreemApiKey) != "" &&
-		products != "" &&
-		products != "[]"
+	// Creem checkout is retired. Credentials may remain in settings, but
+	// customers must not be offered or charged through this entry.
+	return false
 }
 
 func isCreemWebhookConfigured() bool {
@@ -43,18 +37,14 @@ func isCreemWebhookConfigured() bool {
 }
 
 func isCreemWebhookEnabled() bool {
-	return isCreemWebhookConfigured()
+	// Retired Creem webhooks must not credit a wallet.
+	return false
 }
 
 func isWaffoTopUpEnabled() bool {
-	if !isPaymentComplianceConfirmed() {
-		return false
-	}
-	if !setting.WaffoEnabled {
-		return false
-	}
-
-	return isWaffoEnvironmentConfigured(setting.WaffoSandbox)
+	// Waffo checkout is retired. Credentials may remain in settings, but
+	// customers must not be offered or charged through this entry.
+	return false
 }
 
 func isWaffoWebhookConfigured() bool {
@@ -74,19 +64,14 @@ func isWaffoEnvironmentConfigured(sandbox bool) bool {
 }
 
 func isWaffoWebhookEnabled() bool {
-	return isWaffoWebhookConfigured()
+	// Retired Waffo webhooks must not credit a wallet.
+	return false
 }
 
 func isWaffoPancakeTopUpEnabled() bool {
-	if !isPaymentComplianceConfirmed() {
-		return false
-	}
-	// Presence-of-credentials = enabled. Webhook public keys ship inside
-	// the SDK; mode (test/prod) is read from each event.
-	return strings.TrimSpace(setting.WaffoPancakeMerchantID) != "" &&
-		strings.TrimSpace(setting.WaffoPancakePrivateKey) != "" &&
-		strings.TrimSpace(setting.WaffoPancakeProductID) != "" &&
-		(setting.WaffoPancakeEnvironment == "test" || setting.WaffoPancakeEnvironment == "prod")
+	// Waffo Pancake checkout is retired. Credentials may remain in
+	// settings, but customers must not be offered or charged through this entry.
+	return false
 }
 
 func isWaffoPancakeWebhookConfigured() bool {
@@ -94,7 +79,8 @@ func isWaffoPancakeWebhookConfigured() bool {
 }
 
 func isWaffoPancakeWebhookEnabled() bool {
-	return isWaffoPancakeWebhookConfigured()
+	// Retired Waffo Pancake webhooks must not credit a wallet.
+	return false
 }
 
 func isEpayTopUpEnabled() bool {

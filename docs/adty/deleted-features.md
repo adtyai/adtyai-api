@@ -8,6 +8,21 @@
 - 保留语言包旧键与历史数据库选项用于升级兼容；不再提供操作入口。
 - 提交：`fix(ui): remove retired check-in controls and refresh read badges`。
 
+## Stripe / Creem / Waffo 与遗留单通道易支付入账入口
+
+- 保留下列路由的永久 403（`This feature is not available`），在鉴权和入账之前拒绝，避免合并时静默恢复旧处理函数；不改写或删除历史充值行、回调日志和设置。
+  - `POST /api/stripe/webhook`、`POST /api/creem/webhook`、`POST /api/waffo/webhook`、`POST /api/waffo-pancake/webhook/:env`
+  - `POST /api/user/stripe/pay`、`POST /api/user/stripe/amount`
+  - `POST /api/user/creem/pay`
+  - `POST /api/user/waffo/pay`、`POST /api/user/waffo/amount`
+  - `POST /api/user/waffo-pancake/pay`、`POST /api/user/waffo-pancake/amount`
+  - 遗留 `GET /api/user/epay/notify` 和 `POST /api/user/epay/notify`（无 `:channelId`，`controller.EpayNotify`）
+  - 仅用于退役托管目录的 `POST /api/option/waffo-pancake/catalog|pair|save`
+- `GET /api/user/topup/info` 的 `enable_stripe_topup`、`enable_creem_topup`、`enable_waffo_topup`、`enable_waffo_pancake_topup` 固定为 false，不再跟随现场 Stripe/Creem/Waffo 设置。官方 `GetAdtyTopUpInfo` / `AdtyPaymentScenesForUser` 不再向客户展示这些托管方式。
+- 保留官方资金路径：`POST /api/user/pay`（`RequestAdtyEpayPay`，仍需登录）、`GET/POST /api/user/epay/notify/:channelId`（`AdtyEpayNotify`）、`/api/adty/topup/*` 报价/下单/取消/查询，以及官方 USDT/易支付通道和已有管理员退款/补单。
+- 保留历史订单的管理员查询、补单和退款能力；不把退役处理函数改造成新的 ADTY 批次入账入口。
+- 提交：`Close retired Stripe, Creem, Waffo, and legacy epay notify payment entries (ISS-R1-0021).`。
+
 ## Playground（最新全平台方案）
 
 - 删除用户菜单、页面、路由、个人和管理员侧栏开关、仪表盘旧快捷链接，以及仅由该功能使用的前端实现和测试。首次请求快捷入口改用已有 `/docs` 页面。

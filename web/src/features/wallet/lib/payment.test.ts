@@ -18,9 +18,12 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { describe, expect, test } from 'vitest'
 
-import { PAYMENT_TYPES } from '../constants'
+import { DEFAULT_MIN_TOPUP, DEFAULT_PAYMENT_TYPE, PAYMENT_TYPES } from '../constants'
+import type { TopupInfo } from '../types'
 import {
   dispatchSelectedPayment,
+  getDefaultPaymentType,
+  getMinTopupAmount,
   isStripePayment,
   isWaffoPayment,
   isWaffoPancakePayment,
@@ -81,5 +84,39 @@ describe('payment dispatch', () => {
 
     expect(success).toBe(false)
     expect(called).toBe(false)
+  })
+})
+
+describe('retired hosted flags are ignored', () => {
+  const hostedEnabled = {
+    enable_online_topup: false,
+    enable_stripe_topup: true,
+    enable_creem_topup: true,
+    enable_waffo_topup: true,
+    enable_waffo_pancake_topup: true,
+    pay_methods: [],
+    min_topup: 10,
+    stripe_min_topup: 20,
+    waffo_min_topup: 30,
+    waffo_pancake_min_topup: 40,
+  } as TopupInfo
+
+  test('does not default to Stripe, Waffo, or Waffo Pancake', () => {
+    expect(getDefaultPaymentType(hostedEnabled)).toBe(DEFAULT_PAYMENT_TYPE)
+  })
+
+  test('does not use retired hosted minimums', () => {
+    expect(getMinTopupAmount(hostedEnabled)).toBe(DEFAULT_MIN_TOPUP)
+  })
+
+  test('keeps official epay methods and minimums', () => {
+    const online = {
+      ...hostedEnabled,
+      enable_online_topup: true,
+      pay_methods: [{ name: 'Alipay', type: 'alipay' }],
+      min_topup: 15,
+    } as TopupInfo
+    expect(getDefaultPaymentType(online)).toBe('alipay')
+    expect(getMinTopupAmount(online)).toBe(15)
   })
 })

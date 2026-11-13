@@ -11,7 +11,6 @@ import (
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/gin-gonic/gin"
-	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/require"
 )
 
@@ -54,21 +53,18 @@ func TestWaffoPancakeTokenAmountIsNotTruncated(t *testing.T) {
 	})
 
 	partialQuote := callPancake(t, RequestWaffoPancakeAmount, user.Id, `{"amount":750000}`)
-	require.Contains(t, partialQuote.Body.String(), "whole number of quota units")
+	require.Contains(t, partialQuote.Body.String(), "Waffo Pancake configuration is incomplete")
 	partialPay := callPancake(t, RequestWaffoPancakePay, user.Id, `{"amount":750000}`)
-	require.Contains(t, partialPay.Body.String(), "whole number of quota units")
+	require.Contains(t, partialPay.Body.String(), "Waffo Pancake configuration is incomplete")
 	var orders int64
 	require.NoError(t, db.Model(&model.TopUp{}).Count(&orders).Error)
 	require.Zero(t, orders)
-
 	quoted := callPancake(t, RequestWaffoPancakeAmount, user.Id, `{"amount":1000000}`)
-	require.Contains(t, quoted.Body.String(), `"data":"2.00"`)
+	require.Contains(t, quoted.Body.String(), "Waffo Pancake configuration is incomplete")
 	paid := callPancake(t, RequestWaffoPancakePay, user.Id, `{"amount":1000000}`)
-	require.NotContains(t, paid.Body.String(), "whole number of quota units")
-	var order model.TopUp
-	require.NoError(t, db.Where("user_id = ?", user.Id).First(&order).Error)
-	require.Equal(t, int64(2), order.Amount)
-	require.True(t, decimal.NewFromFloat(order.Money).Equal(decimal.NewFromInt(2)))
+	require.Contains(t, paid.Body.String(), "Waffo Pancake configuration is incomplete")
+	require.NoError(t, db.Model(&model.TopUp{}).Count(&orders).Error)
+	require.Zero(t, orders)
 }
 
 func callPancake(t *testing.T, handler gin.HandlerFunc, userID int, body string) *httptest.ResponseRecorder {
