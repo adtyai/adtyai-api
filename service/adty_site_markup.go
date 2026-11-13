@@ -197,8 +197,11 @@ func adtyApplySiteMarkupOnly(c *gin.Context, userId int, group string, groupRati
 	return adtySiteOrdinarySellRatio(groupRatio, kDec, d, userId, group)
 }
 
-// adtyApplyTeamProtocolPrice multiplies the site selling price by the team discount.
-// A subsite result below the supply factor is refused instead of being raised.
+// adtyApplyTeamProtocolPrice 按已确认口径把团队折后支付比例乘进分站普通售价：
+// 分站团队折扣计算价 = 分站普通售价 × 分站团队折后支付比例（0.8 表示支付普通售价的 80%），
+// 分站团队最终价 = max(分站供货价, 分站团队折扣计算价)。
+// 供货价沿用 ISS-R1-0009：分组倍率 × 供货倍率。主站团队没有供货价下限（G.2-5）。
+// 支付比例无效或结果溢出时仍置 AdtyTeamPriceBlockedKey；折后价低于供货价时改为按供货价计费，不再拒绝。
 func adtyApplyTeamProtocolPrice(c *gin.Context, userId int, groupRatio, marked, k float64) (float64, float64) {
 	if c == nil || userId <= 0 {
 		return marked, k
@@ -216,16 +219,24 @@ func adtyApplyTeamProtocolPrice(c *gin.Context, userId int, groupRatio, marked, 
 	if err := model.DB.First(&team, binding.TeamId).Error; err != nil || team.Status != model.AdtyTeamStatusActive || !team.Discount.IsPositive() {
 		return marked, k
 	}
-	factor := team.Discount.InexactFloat64()
-	if math.IsNaN(factor) || math.IsInf(factor, 0) || factor <= 0 || factor > 1 {
+	factorDec := team.Discount
+	factor := factorDec.InexactFloat64()
+	if !factorDec.IsPositive() || factorDec.GreaterThan(decimal.NewFromInt(1)) || math.IsNaN(factor) || math.IsInf(factor, 0) {
 		c.Set(AdtyTeamPriceBlockedKey, true)
 		return marked, k
 	}
-	if d := c.GetFloat64(AdtySiteCostFactorContextKey); d > 0 && groupRatio > 0 && marked*factor < groupRatio*d {
-		c.Set(AdtyTeamPriceBlockedKey, true)
-		return marked, k
+	discounted := decimal.NewFromFloat(marked).Mul(factorDec)
+	nextDec := discounted
+	// 只有分站团队才有供货价下限；主站团队即使有很深的折扣也不抬价。
+	if team.SiteId > 0 {
+		if site := AdtyBillingSiteForUser(userId); site != nil {
+			if d, ok := AdtySiteCostFactor(site); ok && groupRatio > 0 {
+				supply := decimal.NewFromFloat(groupRatio).Mul(d)
+				nextDec = decimal.Max(supply, discounted)
+			}
+		}
 	}
-	next := marked * factor
+	next := nextDec.InexactFloat64()
 	if math.IsNaN(next) || math.IsInf(next, 0) || next < 0 {
 		c.Set(AdtyTeamPriceBlockedKey, true)
 		return marked, k
@@ -234,7 +245,8 @@ func adtyApplyTeamProtocolPrice(c *gin.Context, userId int, groupRatio, marked, 
 	return next, k
 }
 
-// AdtyTeamPriceBlocked reports a team price that would undercut the site supply price.
+// AdtyTeamPriceBlocked 表示本次请求的团队支付比例无效或折后价溢出，计费应拒绝。
+// 折后价低于供货价不再走这条拒绝路径。
 func AdtyTeamPriceBlocked(c *gin.Context) bool {
 	return c != nil && c.GetBool(AdtyTeamPriceBlockedKey)
 }

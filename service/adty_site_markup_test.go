@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
@@ -652,4 +653,86 @@ func TestSiteCostFactorAboveOneIsReadable(t *testing.T) {
 	got, ok := AdtySiteCostFactor(&model.AdtySite{CostFactor: dec("1.2")})
 	require.True(t, ok)
 	assert.True(t, got.Equal(decimal.RequireFromString("1.2")))
+}
+
+// bindSiteTeamKey 给用户建一个分站或主站团队，并把一张启用的令牌绑到这个团队上，便于走团队计费。
+func bindSiteTeamKey(t *testing.T, db *gorm.DB, user *model.User, siteId int, name, discount, key string) *gin.Context {
+	t.Helper()
+	created, err := CreateAdtyTeam(user.Id, siteId, name, decimal.RequireFromString(discount))
+	require.NoError(t, err)
+	require.Equal(t, siteId, created.Team.SiteId)
+	token := model.Token{UserId: user.Id, Key: key, Status: common.TokenStatusEnabled, ExpiredTime: -1, UnlimitedQuota: true}
+	require.NoError(t, db.Create(&token).Error)
+	require.NoError(t, BindAdtyTeamKey(user.Id, token.Id))
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Request = httptest.NewRequest("POST", "/", nil)
+	common.SetContextKey(ctx, constant.ContextKeyTokenId, token.Id)
+	return ctx
+}
+
+func TestSiteTeamPriceUsesSupplyFloor(t *testing.T) {
+	db := prepareSiteDB(t)
+	_, site := openActiveSite(t, db, "team-floor")
+	const baseGroup, supplyFactor, storedK = 2.0, 0.8, 1.25
+	supply := baseGroup * supplyFactor
+	sell := supply * (1 + (storedK - 1))
+	sitePrice(t, db, site.Id, 0, "", "1.25")
+
+	t.Run("discounted price above supply is charged as the discounted price", func(t *testing.T) {
+		customer := siteCustomer(t, db, site, "team-floor-above")
+		ctx := bindSiteTeamKey(t, db, customer, site.Id, "Above", "0.90", "team-floor-above-key")
+		got, k := AdtyApplySiteMarkup(ctx, customer.Id, "default", baseGroup)
+		assert.InDelta(t, storedK, k, 1e-12)
+		assert.InDelta(t, sell*0.90, got, 1e-12)
+		assert.Greater(t, got, supply)
+		assert.False(t, AdtyTeamPriceBlocked(ctx))
+		assert.InDelta(t, 0.90, ctx.GetFloat64(AdtyTeamDiscountContextKey), 1e-12)
+	})
+
+	t.Run("discounted price below supply is charged as the supply price", func(t *testing.T) {
+		customer := siteCustomer(t, db, site, "team-floor-below")
+		ctx := bindSiteTeamKey(t, db, customer, site.Id, "Below", "0.70", "team-floor-below-key")
+		got, k := AdtyApplySiteMarkup(ctx, customer.Id, "default", baseGroup)
+		assert.InDelta(t, storedK, k, 1e-12)
+		assert.InDelta(t, supply, got, 1e-12, "final price is max(supply, sell × pay ratio)")
+		assert.Less(t, sell*0.70, supply)
+		assert.False(t, AdtyTeamPriceBlocked(ctx), "a price below supply must be billed, not rejected")
+		assert.InDelta(t, 0.70, ctx.GetFloat64(AdtyTeamDiscountContextKey), 1e-12)
+	})
+
+	t.Run("zero markup keeps the team final price at supply", func(t *testing.T) {
+		require.NoError(t, db.Model(&model.AdtySitePrice{}).Where("site_id = ?", site.Id).Update("markup", decimal.NewFromInt(1)).Error)
+		InvalidateAdtySitePriceCache()
+		t.Cleanup(func() {
+			require.NoError(t, db.Model(&model.AdtySitePrice{}).Where("site_id = ?", site.Id).Update("markup", decimal.RequireFromString("1.25")).Error)
+			InvalidateAdtySitePriceCache()
+		})
+		customer := siteCustomer(t, db, site, "team-floor-zero")
+		ctx := bindSiteTeamKey(t, db, customer, site.Id, "Zero", "0.80", "team-floor-zero-key")
+		got, k := AdtyApplySiteMarkup(ctx, customer.Id, "default", baseGroup)
+		assert.InDelta(t, 1, k, 1e-12)
+		assert.InDelta(t, supply, got, 1e-12, "markup ratio 0: sell equals supply, team final stays at supply")
+		assert.False(t, AdtyTeamPriceBlocked(ctx))
+	})
+
+	t.Run("main-site teams have no supply floor", func(t *testing.T) {
+		leader := referralUser(t, db, "team-floor-main")
+		require.NoError(t, db.Model(leader).Update("site_id", 0).Error)
+		ctx := bindSiteTeamKey(t, db, leader, 0, "Main", "0.50", "team-floor-main-key")
+		got, k := AdtyApplySiteMarkup(ctx, leader.Id, "default", baseGroup)
+		assert.InDelta(t, 1, k, 1e-12)
+		assert.InDelta(t, baseGroup*0.50, got, 1e-12, "main-site team pays the discounted price with no new floor")
+		assert.Less(t, got, supply)
+		assert.False(t, AdtyTeamPriceBlocked(ctx))
+	})
+
+	t.Run("invalid pay ratio still blocks the request", func(t *testing.T) {
+		customer := siteCustomer(t, db, site, "team-floor-invalid")
+		ctx := bindSiteTeamKey(t, db, customer, site.Id, "Invalid", "0.90", "team-floor-invalid-key")
+		require.NoError(t, db.Model(&model.AdtyTeam{}).Where("leader_user_id = ?", customer.Id).Update("discount", decimal.RequireFromString("1.50")).Error)
+		got, k := AdtyApplySiteMarkup(ctx, customer.Id, "default", baseGroup)
+		assert.InDelta(t, storedK, k, 1e-12)
+		assert.InDelta(t, sell, got, 1e-12, "invalid ratio leaves the ordinary sell price and blocks billing")
+		assert.True(t, AdtyTeamPriceBlocked(ctx))
+	})
 }
