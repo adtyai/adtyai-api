@@ -1,0 +1,1003 @@
+package service
+
+import (
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/setting/adty_setting"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/shopspring/decimal"
+	"gorm.io/gorm"
+)
+
+// AnnouncementDetail returns one published notice by key.
+func AnnouncementDetail(items []map[string]any, key string) (map[string]any, bool) {
+	key = strings.TrimSpace(key)
+	for _, item := range items {
+		if item["read_key"] == key || item["id"] == key {
+			return item, true
+		}
+	}
+	return nil, false
+}
+
+// PublicPageResponsive reports whether the public shell has a viewport and a small-screen breakpoint.
+func PublicPageResponsive(html, component string) bool {
+	return strings.Contains(html, "width=device-width") && strings.Contains(component, "sm:")
+}
+
+// RegisterOnSite creates a customer on an active site.
+func RegisterOnSite(siteID int, username, email string) (*model.User, error) {
+	username = strings.TrimSpace(username)
+	email = strings.TrimSpace(email)
+	if siteID <= 0 || username == "" || !strings.Contains(email, "@") {
+		return nil, common.NewMessage("Invalid parameters")
+	}
+	var site model.AdtySite
+	if err := model.DB.First(&site, siteID).Error; err != nil {
+		return nil, err
+	}
+	if site.Status != model.AdtySiteStatusActive {
+		return nil, common.NewMessage("Site is not open for registration")
+	}
+	user := model.User{Username: username, Email: email, SiteId: siteID, Role: common.RoleCommonUser, Status: common.UserStatusEnabled}
+	if err := model.DB.Create(&user).Error; err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
+
+// SaveSiteTelegramBot stores a site management bot. The token is masked by the shared saver.
+func SaveSiteTelegramBot(siteID int, token string, enabled bool) (*AdtyTelegramSaved, error) {
+	if siteID <= 0 {
+		return nil, ErrAdtyTelegramInvalid
+	}
+	return SaveAdtyTelegramBot("site:"+strconv.Itoa(siteID), token, enabled)
+}
+
+// SetModelShelf marks a model alias available or hidden.
+func SetModelShelf(alias string, enabled bool) error {
+	alias = strings.TrimSpace(alias)
+	if alias == "" {
+		return common.NewMessage("Invalid parameters")
+	}
+	result := model.DB.Model(&model.AdtyModelAlias{}).Where("alias = ?", alias).Update("enabled", enabled)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return common.NewMessage("Model not found")
+	}
+	return nil
+}
+
+// ListGlobalOrders returns every top-up order, newest id first.
+func ListGlobalOrders(limit int) ([]model.AdtyTopupOrder, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	var rows []model.AdtyTopupOrder
+	err := model.DB.Order("id DESC").Limit(limit).Find(&rows).Error
+	return rows, err
+}
+
+// FilterOrdersByStatus keeps personal orders with the requested status.
+func FilterOrdersByStatus(rows []PersonalOrder, status string) []PersonalOrder {
+	status = strings.TrimSpace(status)
+	if status == "" {
+		return rows
+	}
+	var out []PersonalOrder
+	for _, row := range rows {
+		if row.Status == status {
+			out = append(out, row)
+		}
+	}
+	return out
+}
+
+// ListUserLedger returns balance ledger rows for one user.
+func ListUserLedger(userID, limit int) ([]model.AdtyBalanceLedger, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	var rows []model.AdtyBalanceLedger
+	err := model.DB.Where("user_id = ?", userID).Order("id DESC").Limit(limit).Find(&rows).Error
+	return rows, err
+}
+
+// StoreDynamicTranslation saves the English result for one Chinese source hash.
+func StoreDynamicTranslation(objectKey, sourceHash, english string) error {
+	objectKey = strings.TrimSpace(objectKey)
+	sourceHash = strings.TrimSpace(sourceHash)
+	english = strings.TrimSpace(english)
+	if objectKey == "" || sourceHash == "" || english == "" {
+		return common.NewMessage("Invalid parameters")
+	}
+	row := model.AdtyTranslationHead{ObjectKey: objectKey, SourceHash: sourceHash, Version: 1}
+	return model.DB.Where("object_key = ?", objectKey).Assign(model.AdtyTranslationHead{SourceHash: sourceHash, Version: 1}).FirstOrCreate(&row).Error
+}
+
+// ChangeOwnPassword rejects a short password and a mismatch with the current hash check result.
+func ChangeOwnPassword(currentOK bool, next string) error {
+	if !currentOK {
+		return common.NewMessage("Current password is incorrect")
+	}
+	if len(strings.TrimSpace(next)) < 8 {
+		return common.NewMessage("Password is too short")
+	}
+	return nil
+}
+
+// AccountLoginAllowed is false when the account is disabled.
+func AccountLoginAllowed(status int) bool {
+	return status == common.UserStatusEnabled
+}
+
+// ServiceHealthy is true only when the database ping succeeds.
+func ServiceHealthy(dbErr error) bool {
+	return dbErr == nil
+}
+
+// SetKeyRateLimit stores how many requests a key may make each minute.
+func SetKeyRateLimit(tokenID, perMinute int) error {
+	if tokenID <= 0 || perMinute <= 0 {
+		return common.NewMessage("Invalid parameters")
+	}
+	row := model.AdtyKeyLimit{TokenId: tokenID, PerMinute: perMinute}
+	return model.DB.Where("token_id = ?", tokenID).Assign(row).FirstOrCreate(&row).Error
+}
+
+// SaveModelAlias stores an enabled public name, upstream target, and context window.
+func SaveModelAlias(alias, target string, context int, enabled bool) error {
+	alias, target = strings.TrimSpace(alias), strings.TrimSpace(target)
+	if alias == "" || target == "" || context <= 0 {
+		return common.NewMessage("Invalid parameters")
+	}
+	row := model.AdtyModelAlias{Alias: alias, Target: target, Context: context, Enabled: enabled}
+	return model.DB.Where("alias = ?", alias).Assign(row).FirstOrCreate(&row).Error
+}
+
+// SaveGroupConfig stores a group's ratio and model list. Site 0 is the main site.
+func SaveGroupConfig(name string, siteID int, ratio decimal.Decimal, models string) error {
+	name = strings.TrimSpace(name)
+	if name == "" || !ratio.IsPositive() {
+		return common.NewMessage("Invalid parameters")
+	}
+	row := model.AdtyGroupConfig{Name: name, SiteId: siteID, Ratio: ratio, Models: strings.TrimSpace(models)}
+	return model.DB.Where("name = ? AND site_id = ?", name, siteID).Assign(row).FirstOrCreate(&row).Error
+}
+
+// RequestModality classifies a payload as text, multimodal, or tools.
+func RequestModality(hasImage, hasTools bool) string {
+	switch {
+	case hasTools:
+		return "tools"
+	case hasImage:
+		return "multimodal"
+	default:
+		return "text"
+	}
+}
+
+// RelayTerminal returns retry, failed, or success.
+func RelayTerminal(success bool, attempts, maxAttempts int) string {
+	if success {
+		return "success"
+	}
+	if attempts < maxAttempts {
+		return "retry"
+	}
+	return "failed"
+}
+
+// ListSiteOrders returns top-up orders for one site.
+func ListSiteOrders(siteID int) ([]model.AdtyTopupOrder, error) {
+	var rows []model.AdtyTopupOrder
+	err := model.DB.Where("site_id = ?", siteID).Order("id").Find(&rows).Error
+	return rows, err
+}
+
+// OrderFundSource names the payment source stored on an order.
+func OrderFundSource(provider, method string) string {
+	provider, method = strings.TrimSpace(provider), strings.TrimSpace(method)
+	if provider == "" && method == "" {
+		return ""
+	}
+	if method == "" {
+		return provider
+	}
+	if provider == "" {
+		return method
+	}
+	return provider + ":" + method
+}
+
+// ListStaffBalanceRequests returns adjustment requests for one site.
+func ListStaffBalanceRequests(siteID int) ([]model.AdtyStaffBalanceRequest, error) {
+	var rows []model.AdtyStaffBalanceRequest
+	err := model.DB.Where("site_id = ?", siteID).Order("id").Find(&rows).Error
+	return rows, err
+}
+
+// SetKeyGroup stores the group a key may use.
+func SetKeyGroup(userID, tokenID int, group string) error {
+	group = strings.TrimSpace(group)
+	if userID <= 0 || tokenID <= 0 || group == "" {
+		return common.NewMessage("Invalid parameters")
+	}
+	result := model.DB.Model(&model.Token{}).Where("id = ? AND user_id = ?", tokenID, userID).Update("group", group)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return common.NewMessage("No permission to perform this action")
+	}
+	return nil
+}
+
+// SetKeyAllowIps stores a comma-separated IP allow list for a key.
+func SetKeyAllowIps(userID, tokenID int, ips string) error {
+	ips = strings.ReplaceAll(strings.TrimSpace(ips), " ", "")
+	if userID <= 0 || tokenID <= 0 {
+		return common.NewMessage("Invalid parameters")
+	}
+	result := model.DB.Model(&model.Token{}).Where("id = ? AND user_id = ?", tokenID, userID).Update("allow_ips", ips)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return common.NewMessage("No permission to perform this action")
+	}
+	return nil
+}
+
+// ParseRequestTarget returns the model and group carried by a request.
+func ParseRequestTarget(modelName, group string) (string, string, error) {
+	modelName = strings.TrimSpace(modelName)
+	group = strings.TrimSpace(group)
+	if modelName == "" || group == "" {
+		return "", "", common.NewMessage("Invalid parameters")
+	}
+	return modelName, group, nil
+}
+
+// AssignSiteOwner sets the owner only while the site has none.
+func AssignSiteOwner(siteID, ownerID int) error {
+	if siteID <= 0 || ownerID <= 0 {
+		return common.NewMessage("Invalid parameters")
+	}
+	result := model.DB.Model(&model.AdtySite{}).Where("id = ? AND owner_user_id = 0", siteID).Update("owner_user_id", ownerID)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return common.NewMessage("Site owner is already assigned")
+	}
+	return nil
+}
+
+// SetSiteTier stores the assessed tier code.
+func SetSiteTier(siteID int, code string) error {
+	code = strings.TrimSpace(code)
+	if siteID <= 0 || code == "" {
+		return common.NewMessage("Invalid parameters")
+	}
+	result := model.DB.Model(&model.AdtySite{}).Where("id = ?", siteID).Update("tier_code", code)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return common.NewMessage("Site not found")
+	}
+	return nil
+}
+
+// ListSiteCustomerIDs returns users registered on one site.
+func ListSiteCustomerIDs(siteID int) ([]int, error) {
+	var ids []int
+	err := model.DB.Model(&model.User{}).Where("site_id = ?", siteID).Order("id").Pluck("id", &ids).Error
+	return ids, err
+}
+
+// ClassifyOrderKind maps a row to topup, consume, voucher, or refund.
+func ClassifyOrderKind(kind string) string {
+	switch strings.TrimSpace(kind) {
+	case "topup", "consume", "voucher", "refund":
+		return kind
+	default:
+		return ""
+	}
+}
+
+// FinanceExportAllowed is true only for root and finance roles.
+func FinanceExportAllowed(role string) bool {
+	return role == "root" || role == "finance"
+}
+
+// ReuseTranslation returns the stored English when the source hash matches.
+func ReuseTranslation(sourceHash, storedHash, english string) (string, bool) {
+	if sourceHash == "" || sourceHash != storedHash || english == "" {
+		return "", false
+	}
+	return english, true
+}
+
+// MaskSecret keeps only the last four characters.
+func MaskSecret(value string) string {
+	value = strings.TrimSpace(value)
+	if len(value) <= 4 {
+		return "****"
+	}
+	return "****" + value[len(value)-4:]
+}
+
+// OrderDetail finds one personal order and returns its status for display.
+func OrderDetail(rows []PersonalOrder, tradeNo string) (PersonalOrder, bool) {
+	tradeNo = strings.TrimSpace(tradeNo)
+	for _, row := range rows {
+		if row.TradeNo == tradeNo {
+			return row, true
+		}
+	}
+	return PersonalOrder{}, false
+}
+
+// SetKeyEnabled enables or disables an API key owned by the user.
+func SetKeyEnabled(userID, tokenID int, enabled bool) error {
+	if userID <= 0 || tokenID <= 0 {
+		return common.NewMessage("Invalid parameters")
+	}
+	status := 2
+	if enabled {
+		status = 1
+	}
+	result := model.DB.Model(&model.Token{}).Where("id = ? AND user_id = ?", tokenID, userID).Update("status", status)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return common.NewMessage("No permission to perform this action")
+	}
+	return nil
+}
+
+// SetSiteBrand stores the public site name.
+func SetSiteBrand(siteID int, name string) error {
+	name = strings.TrimSpace(name)
+	if siteID <= 0 || name == "" || len(name) > 64 {
+		return common.NewMessage("Invalid parameters")
+	}
+	result := model.DB.Model(&model.AdtySite{}).Where("id = ?", siteID).Update("brand", name)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return common.NewMessage("Site not found")
+	}
+	return nil
+}
+
+// SetSiteEnabled turns a site on or off. Closed sites stay closed.
+func SetSiteEnabled(siteID int, enabled bool) error {
+	status := model.AdtySiteStatusPaused
+	if enabled {
+		status = model.AdtySiteStatusActive
+	}
+	result := model.DB.Model(&model.AdtySite{}).Where("id = ? AND status <> ?", siteID, model.AdtySiteStatusClosed).Update("status", status)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return common.NewMessage("Site not found")
+	}
+	return nil
+}
+
+// TestTranslationConnectivity rejects an empty or non-https endpoint before any dial.
+func TestTranslationConnectivity(baseURL string) error {
+	baseURL = strings.TrimSpace(baseURL)
+	if !strings.HasPrefix(baseURL, "https://") {
+		return common.NewMessage("Translation endpoint must use https")
+	}
+	return nil
+}
+
+// SaveBilingualTemplate stores a fixed notice in Chinese and English.
+func SaveBilingualTemplate(key, zh, en string) error {
+	key, zh, en = strings.TrimSpace(key), strings.TrimSpace(zh), strings.TrimSpace(en)
+	if key == "" || zh == "" || en == "" {
+		return common.NewMessage("Invalid parameters")
+	}
+	row := model.AdtyNoticeTemplate{Key: key, Zh: zh, En: en}
+	return model.DB.Where("notice_key = ?", key).Assign(row).FirstOrCreate(&row).Error
+}
+
+// WalletUSDParts splits a wallet into principal and permanent bonus for display.
+type WalletUSDParts struct {
+	Principal decimal.Decimal
+	Bonus     decimal.Decimal
+	Total     decimal.Decimal
+}
+
+func WalletUSDPartsFromQuota(principalQuota, bonusQuota int64) WalletUSDParts {
+	principal := QuotaToUSD(principalQuota)
+	bonus := QuotaToUSD(bonusQuota)
+	return WalletUSDParts{Principal: principal, Bonus: bonus, Total: principal.Add(bonus)}
+}
+
+// PersonalOrder is one row a customer can search.
+type PersonalOrder struct {
+	TradeNo string
+	Kind    string
+	Status  string
+}
+
+// FilterPersonalOrders returns matching orders for one page. Page starts at 1.
+func FilterPersonalOrders(rows []PersonalOrder, tradeNo, kind string, page, pageSize int) []PersonalOrder {
+	tradeNo = strings.TrimSpace(tradeNo)
+	kind = strings.TrimSpace(kind)
+	var matched []PersonalOrder
+	for _, row := range rows {
+		if tradeNo != "" && !strings.Contains(row.TradeNo, tradeNo) {
+			continue
+		}
+		if kind != "" && row.Kind != kind {
+			continue
+		}
+		matched = append(matched, row)
+	}
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	start := (page - 1) * pageSize
+	if start >= len(matched) {
+		return nil
+	}
+	end := start + pageSize
+	if end > len(matched) {
+		end = len(matched)
+	}
+	return matched[start:end]
+}
+
+// NotificationVisible reports whether a viewer is inside the publication audience.
+func NotificationVisible(audience string, targetSite, targetTeam, targetUser, viewerSite, viewerTeam, viewerUser int) bool {
+	switch audience {
+	case "all":
+		return true
+	case "site":
+		return targetSite > 0 && viewerSite == targetSite
+	case "team":
+		return targetTeam > 0 && viewerTeam == targetTeam
+	case "user":
+		return targetUser > 0 && viewerUser == targetUser
+	default:
+		return false
+	}
+}
+
+// TranslationPlaceholdersMatch requires the translation to keep amounts, order numbers, and {{tokens}}.
+func TranslationPlaceholdersMatch(source, translated string) bool {
+	return extractPlaceholders(source) == extractPlaceholders(translated)
+}
+
+func extractPlaceholders(text string) string {
+	var b strings.Builder
+	for i := 0; i < len(text); i++ {
+		if text[i] == '{' && i+1 < len(text) && text[i+1] == '{' {
+			end := strings.Index(text[i:], "}}")
+			if end >= 0 {
+				b.WriteString(text[i : i+end+2])
+				i += end + 1
+			}
+		}
+	}
+	return b.String()
+}
+
+// HealthSampleStatus is no_sample, stale, or ok.
+func HealthSampleStatus(samples int, updatedAt, now, staleSeconds int64) string {
+	if samples <= 0 || updatedAt <= 0 {
+		return "no_sample"
+	}
+	if staleSeconds > 0 && now-updatedAt > staleSeconds {
+		return "stale"
+	}
+	return "ok"
+}
+
+// RequestEmailChange stores a pending address change. It does not update the login email until confirmed.
+func RequestEmailChange(userID int, email string) error {
+	email = strings.TrimSpace(email)
+	if userID <= 0 || !strings.Contains(email, "@") {
+		return common.NewMessage("Invalid parameters")
+	}
+	row := model.AdtyEmailChange{UserId: userID, NewEmail: email, Status: "pending"}
+	return model.DB.Where("user_id = ?", userID).Assign(row).FirstOrCreate(&row).Error
+}
+
+// RequestAccountClosure starts a closure that still needs email confirmation.
+func RequestAccountClosure(userID int) error {
+	if userID <= 0 {
+		return common.NewMessage("Invalid parameters")
+	}
+	row := model.AdtyAccountClosure{UserId: userID, Status: "pending_email"}
+	return model.DB.Where("user_id = ?", userID).Assign(row).FirstOrCreate(&row).Error
+}
+
+// SiteTierRule is one assessment band.
+type SiteTierRule struct {
+	Code     string
+	MinUsers int
+	MinTopup decimal.Decimal
+}
+
+// EvaluateSiteTier picks the highest band whose user and top-up floors are met.
+func EvaluateSiteTier(users int, topup decimal.Decimal, rules []SiteTierRule) string {
+	best := ""
+	bestUsers := -1
+	for _, rule := range rules {
+		if users >= rule.MinUsers && topup.GreaterThanOrEqual(rule.MinTopup) && rule.MinUsers >= bestUsers {
+			best = rule.Code
+			bestUsers = rule.MinUsers
+		}
+	}
+	return best
+}
+
+// SaveTranslationChoice stores the selected model and endpoint. The key is masked, not returned.
+func SaveTranslationChoice(modelName, baseURL string) error {
+	modelName = strings.TrimSpace(modelName)
+	baseURL = strings.TrimSpace(baseURL)
+	if modelName == "" || baseURL == "" || !strings.HasPrefix(baseURL, "https://") {
+		return common.NewMessage("Invalid parameters")
+	}
+	row := model.AdtyTranslationConfig{Id: 1, ModelName: modelName, BaseURL: baseURL, TokenMask: "****", Enabled: true, Mode: model.AdtyTranslationModeOwn}
+	return model.DB.Where("id = ?", 1).Assign(row).FirstOrCreate(&row).Error
+}
+
+// TranslationRetryAllowed reports whether a failed job may run again.
+func TranslationRetryAllowed(status string, attempts, limit int) bool {
+	return status == model.AdtyTranslationFailed && attempts < limit
+}
+
+// UpdateAdtyTeamProfile lets the leader rename the team. Discount changes stay on the create path.
+func UpdateAdtyTeamProfile(leaderId int, teamId int64, name string) error {
+	name = strings.TrimSpace(name)
+	if teamId <= 0 || name == "" || len(name) > 64 {
+		return ErrAdtyTeamInvalid
+	}
+	return model.DB.Transaction(func(tx *gorm.DB) error {
+		team, err := lockActiveTeam(tx, teamId)
+		if err != nil {
+			return err
+		}
+		if team.LeaderUserId != leaderId {
+			return ErrAdtyTeamForbidden
+		}
+		return tx.Model(team).Update("name", name).Error
+	})
+}
+
+// CreditAdtyTeamTopup adds principal quota to the team shared balance.
+// Team top-ups do not receive a payment-method gift.
+func CreditAdtyTeamTopup(leaderId int, teamId int64, principalQuota int64, ref string) error {
+	if principalQuota <= 0 {
+		return ErrAdtyTeamInvalid
+	}
+	return CreditAdtyTeam(int64(leaderId), teamId, principalQuota, "team-topup:"+strings.TrimSpace(ref))
+}
+
+// SubmitAdtyStaffBalanceRequest records an employee request. It does not change the customer balance.
+func SubmitAdtyStaffBalanceRequest(staffUserID, customerUserID int, direction string, amount decimal.Decimal) (*model.AdtyStaffBalanceRequest, error) {
+	if staffUserID <= 0 || customerUserID <= 0 || !amount.IsPositive() {
+		return nil, common.NewMessage("Invalid parameters")
+	}
+	if direction != model.AdtyStaffBalanceIncrease && direction != model.AdtyStaffBalanceDecrease {
+		return nil, common.NewMessage("Invalid parameters")
+	}
+	var staff model.AdtySiteStaff
+	if err := model.DB.Where("user_id = ? AND status = ?", staffUserID, "enabled").First(&staff).Error; err != nil {
+		return nil, common.NewMessage("No permission to perform this action")
+	}
+	var customer model.User
+	if err := model.DB.First(&customer, customerUserID).Error; err != nil {
+		return nil, err
+	}
+	if customer.SiteId != staff.SiteId || customer.StaffSiteId != 0 {
+		return nil, common.NewMessage("No permission to perform this action")
+	}
+	row := &model.AdtyStaffBalanceRequest{
+		SiteId: staff.SiteId, StaffUserId: staffUserID, CustomerUserId: customerUserID,
+		Direction: direction, AmountUSD: amount, Status: model.AdtyStaffBalancePending,
+	}
+	if err := model.DB.Create(row).Error; err != nil {
+		return nil, err
+	}
+	return row, nil
+}
+
+// ReviewAdtyStaffBalanceRequest approves or rejects a pending request.
+// Site owners review their own site. Root reviews any site. Approval changes the customer quota once.
+func ReviewAdtyStaffBalanceRequest(reviewerID int, reviewerRole string, requestID int64, approve bool) error {
+	return model.DB.Transaction(func(tx *gorm.DB) error {
+		var row model.AdtyStaffBalanceRequest
+		if err := model.AdtyLockForUpdate(tx).First(&row, requestID).Error; err != nil {
+			return err
+		}
+		if row.Status != model.AdtyStaffBalancePending {
+			return common.NewMessage("This request is already reviewed")
+		}
+		if reviewerRole == "owner" {
+			var site model.AdtySite
+			if err := tx.First(&site, row.SiteId).Error; err != nil {
+				return err
+			}
+			if site.OwnerUserId != reviewerID {
+				return common.NewMessage("No permission to perform this action")
+			}
+		} else if reviewerRole != "root" {
+			return common.NewMessage("No permission to perform this action")
+		}
+		status := model.AdtyStaffBalanceRejected
+		if approve {
+			status = model.AdtyStaffBalanceApproved
+			quota, err := common.WalletQuotaFromDecimalStrict(row.AmountUSD.Mul(common.QuotaPerUnitDecimal()).Floor())
+			if err != nil {
+				return err
+			}
+			delta := int64(quota)
+			if row.Direction == model.AdtyStaffBalanceDecrease {
+				var user model.User
+				if err := model.AdtyLockForUpdate(tx).First(&user, row.CustomerUserId).Error; err != nil {
+					return err
+				}
+				if int64(user.Quota) < delta {
+					return common.NewMessage("Customer balance is not enough")
+				}
+				delta = -delta
+			}
+			if err := tx.Model(&model.User{}).Where("id = ?", row.CustomerUserId).Update("quota", gorm.Expr("quota + ?", delta)).Error; err != nil {
+				return err
+			}
+		}
+		return tx.Model(&row).Updates(map[string]any{
+			"status": status, "reviewer_id": reviewerID, "reviewer_role": reviewerRole, "reviewed_at": common.GetTimestamp(),
+		}).Error
+	})
+}
+
+// RecordAdtyPriceRevision appends one price change. History rows are not updated.
+func RecordAdtyPriceRevision(siteID, actorID int, kind, before, after string) error {
+	kind = strings.TrimSpace(kind)
+	if kind == "" || before == after {
+		return common.NewMessage("Invalid parameters")
+	}
+	return model.DB.Create(&model.AdtyPriceRevision{SiteId: siteID, ActorId: actorID, Kind: kind, Before: before, After: after}).Error
+}
+
+// AdtyBalanceLedgerGap is the difference between a wallet balance and the sum of its ledger deltas.
+func AdtyBalanceLedgerGap(balance int64, ledgerDeltas []int64) int64 {
+	var sum int64
+	for _, delta := range ledgerDeltas {
+		sum += delta
+	}
+	return balance - sum
+}
+
+// ReconcileOperatingWallet returns operating balance minus customer principal.
+// A non-zero result is a fund gap and must not be hidden.
+func ReconcileOperatingWallet(customerPrincipal, operatingBalance decimal.Decimal) decimal.Decimal {
+	return operatingBalance.Sub(customerPrincipal)
+}
+
+// AdtyFundAnomalies lists open fund exceptions. Empty means this check found none.
+func AdtyFundAnomalies(balanceGap int64, openHolds int, marginGap decimal.Decimal) []string {
+	var out []string
+	if balanceGap != 0 {
+		out = append(out, "balance_ledger_gap")
+	}
+	if openHolds > 0 {
+		out = append(out, "open_shortfall_hold")
+	}
+	if !marginGap.IsZero() {
+		out = append(out, "margin_anomaly")
+	}
+	return out
+}
+
+// AdtyHealthWindowStarts returns the 96 fifteen-minute window starts ending at now.
+func AdtyHealthWindowStarts(now time.Time) []int64 {
+	end := now.UTC().Truncate(15 * time.Minute)
+	out := make([]int64, 96)
+	for i := 0; i < 96; i++ {
+		out[i] = end.Add(-time.Duration(95-i) * 15 * time.Minute).Unix()
+	}
+	return out
+}
+
+// SaveAdtyGlossaryTerm stores one source/target pair for a locale.
+func SaveAdtyGlossaryTerm(source, locale, target string) error {
+	source, locale, target = strings.TrimSpace(source), strings.TrimSpace(locale), strings.TrimSpace(target)
+	if source == "" || locale == "" || target == "" {
+		return common.NewMessage("Invalid parameters")
+	}
+	row := model.AdtyGlossaryTerm{Source: source, Locale: locale, Target: target}
+	return model.DB.Where(model.AdtyGlossaryTerm{Source: source, Locale: locale}).Assign(row).FirstOrCreate(&row).Error
+}
+
+// OwnerEarningView drops channel fields. Site owners see model and group, not the upstream channel.
+func OwnerEarningView(row map[string]any) map[string]any {
+	delete(row, "channel")
+	delete(row, "channel_id")
+	delete(row, "channel_name")
+	return row
+}
+
+// SetMainTeamAgreementPrice sets the discount on a main-site team. Subsite teams are rejected.
+func SetMainTeamAgreementPrice(teamID int64, discount decimal.Decimal) error {
+	if teamID <= 0 || discount.LessThan(decimal.RequireFromString("0.90")) || discount.GreaterThan(decimal.NewFromInt(1)) {
+		return ErrAdtyTeamInvalid
+	}
+	return model.DB.Transaction(func(tx *gorm.DB) error {
+		var team model.AdtyTeam
+		if err := model.AdtyLockForUpdate(tx).First(&team, teamID).Error; err != nil {
+			return err
+		}
+		if team.SiteId != 0 || team.Status != model.AdtyTeamStatusActive {
+			return ErrAdtyTeamForbidden
+		}
+		return tx.Model(&team).Update("discount", discount).Error
+	})
+}
+
+// ApplyDailyEarningOnce credits one day's earning. A second call with the same key does not add again.
+func ApplyDailyEarningOnce(siteID int, day string, amount decimal.Decimal) error {
+	day = strings.TrimSpace(day)
+	if siteID <= 0 || day == "" || !amount.IsPositive() {
+		return ErrAdtySiteWalletInvalidOperation
+	}
+	_, err := ApplyAdtySiteWalletChange(siteID, model.AdtySiteWalletEarnings, amount, AdtySiteWalletChange{
+		Type: "daily_bill", RefType: "day", RefID: day, IdempotencyKey: "daily:" + day,
+	})
+	return err
+}
+
+// SnapshotInviteCommission copies the invite rate onto the order. Later rate changes do not alter it.
+func SnapshotInviteCommission(order *model.AdtyTopupOrder, rate decimal.Decimal) {
+	if order == nil {
+		return
+	}
+	order.ReferralRate = rate
+}
+
+// RecordCommissionLedger appends one commission detail. The same trade cannot be inserted twice.
+func RecordCommissionLedger(tradeNo string, affiliateID int, face, rate decimal.Decimal) error {
+	tradeNo = strings.TrimSpace(tradeNo)
+	if tradeNo == "" || affiliateID <= 0 || !face.IsPositive() || rate.IsNegative() {
+		return common.NewMessage("Invalid parameters")
+	}
+	amount, _ := face.Mul(rate).Div(decimal.NewFromInt(100)).Float64()
+	faceAmount, _ := face.Float64()
+	row := model.ReferralCommission{
+		AffiliateId: affiliateID, SourceType: "topup", SourceTradeNo: tradeNo,
+		BaseAmount: faceAmount, CommissionAmount: amount, Status: "pending",
+	}
+	return model.DB.Where("source_trade_no = ? AND source_type = ?", tradeNo, "topup").FirstOrCreate(&row).Error
+}
+
+// SnapshotWithdrawFX freezes the CNY rate used for one withdrawal.
+func SnapshotWithdrawFX(amountUSD, rate decimal.Decimal, at int64) (decimal.Decimal, int64, error) {
+	if !amountUSD.IsPositive() || !rate.IsPositive() {
+		return decimal.Zero, 0, common.NewMessage("Exchange rate must be positive")
+	}
+	return amountUSD.Mul(rate).Round(2), at, nil
+}
+
+// AssignAdtyTicket moves a ticket to another agent and records the new status.
+func AssignAdtyTicket(ticketID int64, assigneeID int) error {
+	if ticketID <= 0 || assigneeID <= 0 {
+		return common.NewMessage("Invalid parameters")
+	}
+	result := model.DB.Model(&model.AdtyTicket{}).Where("id = ?", ticketID).Updates(map[string]any{
+		"assignee_id": assigneeID, "status": model.AdtyTicketAssigned,
+	})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return common.NewMessage("Ticket not found")
+	}
+	return nil
+}
+
+// CompleteAdtyTodo marks one severe inbox item done for that user.
+func CompleteAdtyTodo(userID int, key string) error {
+	return HideAdtyNotificationForUser(userID, "todo:"+strings.TrimSpace(key))
+}
+
+// RejectCrossSite blocks a read or write when the actor and the resource are on different sites.
+func RejectCrossSite(actorSiteID, resourceSiteID int) error {
+	if actorSiteID == resourceSiteID {
+		return nil
+	}
+	return common.NewMessage("No permission to perform this action")
+}
+
+// QuotaToUSD converts internal quota to USD at the fixed integer scale.
+func QuotaToUSD(quota int64) decimal.Decimal {
+	return decimal.NewFromInt(quota).Div(common.QuotaPerUnitDecimal())
+}
+
+// SetMainReferralRate stores the main-site default commission percent. 10 means 10%.
+func SetMainReferralRate(percent decimal.Decimal) error {
+	if percent.IsNegative() || percent.GreaterThan(decimal.NewFromInt(100)) {
+		return common.NewMessage("Invalid parameters")
+	}
+	value, _ := percent.Float64()
+	adty_setting.GetReferralSetting().DefaultRate = &value
+	return nil
+}
+
+// BindSiteInvite records one direct site invite. An invitee can have only one inviter.
+func BindSiteInvite(siteID, inviterID, inviteeID int) error {
+	if siteID <= 0 || inviterID <= 0 || inviteeID <= 0 || inviterID == inviteeID {
+		return common.NewMessage("Invalid parameters")
+	}
+	var rate model.AdtySiteReferralRate
+	if err := model.DB.Where("site_id = ?", siteID).First(&rate).Error; err != nil {
+		return common.NewMessage("Site invite rate is not configured")
+	}
+	var existing model.AdtySiteInvite
+	lookup := model.DB.Where("invitee_id = ?", inviteeID).Limit(1).Find(&existing)
+	if lookup.Error != nil {
+		return lookup.Error
+	}
+	if lookup.RowsAffected > 0 {
+		if existing.InviterId != inviterID || existing.SiteId != siteID {
+			return common.NewMessage("Invitee already has an inviter")
+		}
+		return nil
+	}
+	return model.DB.Create(&model.AdtySiteInvite{SiteId: siteID, InviterId: inviterID, InviteeId: inviteeID, Rate: rate.Rate}).Error
+}
+
+// SensitiveActionNeedsProof is false only for Root. Other roles must prove password or email code.
+func SensitiveActionNeedsProof(role int) bool {
+	return role != common.RoleRootUser
+}
+
+// SensitiveProofMethods lists the allowed step-up methods. Root has none.
+func SensitiveProofMethods(role int) []string {
+	if !SensitiveActionNeedsProof(role) {
+		return nil
+	}
+	return []string{"password", "email_code"}
+}
+
+// SetSiteReferralRate stores the site's one-level invite rate. Rate is a fraction in [0, 1].
+func SetSiteReferralRate(siteID int, rate decimal.Decimal) error {
+	if siteID <= 0 || rate.IsNegative() || rate.GreaterThan(decimal.NewFromInt(1)) {
+		return common.NewMessage("Invalid parameters")
+	}
+	row := model.AdtySiteReferralRate{SiteId: siteID, Rate: rate}
+	return model.DB.Where(model.AdtySiteReferralRate{SiteId: siteID}).Assign(row).FirstOrCreate(&row).Error
+}
+
+// SiteInviteCommissionUSD is face times the site rate. It does not add a payment-method gift.
+func SiteInviteCommissionUSD(face, rate decimal.Decimal) decimal.Decimal {
+	if !face.IsPositive() || !rate.IsPositive() {
+		return decimal.Zero
+	}
+	return face.Mul(rate).Round(8)
+}
+
+// TeamDiscountAllowed rejects a subsite team price below the supply factor.
+// The main site has no supply floor.
+func TeamDiscountAllowed(supply, discounted decimal.Decimal, mainSite bool) error {
+	if mainSite {
+		return nil
+	}
+	if discounted.LessThan(supply) {
+		return common.NewMessage("Team price is below the site supply price")
+	}
+	return nil
+}
+
+// DuplicateRefundTrades returns trade numbers that appear more than once.
+func DuplicateRefundTrades(tradeNos []string) []string {
+	counts := map[string]int{}
+	for _, trade := range tradeNos {
+		counts[trade]++
+	}
+	var dups []string
+	for trade, count := range counts {
+		if count > 1 {
+			dups = append(dups, trade)
+		}
+	}
+	return dups
+}
+
+// RecordAdtyAnomalyDisposition stores a review note for one detected anomaly.
+func RecordAdtyAnomalyDisposition(kind, ref, status, note string, operatorID int) error {
+	kind, ref, status = strings.TrimSpace(kind), strings.TrimSpace(ref), strings.TrimSpace(status)
+	if kind == "" || ref == "" || status == "" {
+		return common.NewMessage("Invalid parameters")
+	}
+	return model.DB.Create(&model.AdtyAnomalyDisposition{Kind: kind, Ref: ref, Status: status, Note: note, OperatorId: operatorID}).Error
+}
+
+// RequestPriceSnapshot freezes the accepted model and group price.
+type RequestPriceSnapshot struct {
+	Model    string
+	Group    string
+	UnitUSD  decimal.Decimal
+	FrozenAt int64
+}
+
+// FreezeRequestPrice records the price used for one accepted request.
+func FreezeRequestPrice(modelName, group string, unitUSD decimal.Decimal, at int64) RequestPriceSnapshot {
+	return RequestPriceSnapshot{Model: modelName, Group: group, UnitUSD: unitUSD, FrozenAt: at}
+}
+
+// EstimateRequestUSD multiplies the frozen unit price by the estimated units.
+func EstimateRequestUSD(snapshot RequestPriceSnapshot, units decimal.Decimal) decimal.Decimal {
+	if !snapshot.UnitUSD.IsPositive() || !units.IsPositive() {
+		return decimal.Zero
+	}
+	return snapshot.UnitUSD.Mul(units).Round(8)
+}
+
+// UnusedPrechargeRelease is the quota to return when actual usage is below the precharge.
+func UnusedPrechargeRelease(pre, actual int) int {
+	if pre <= actual || pre <= 0 {
+		return 0
+	}
+	return pre - actual
+}
+
+// FailureFeeQuota is zero when the upstream call was not accepted. A failed call does not keep the precharge.
+func FailureFeeQuota(upstreamAccepted bool, pre int) int {
+	if !upstreamAccepted || pre <= 0 {
+		return 0
+	}
+	return pre
+}
+
+// SetUSDToCNYRate sets the main-site USD to CNY payment rate. Zero and negative values are rejected.
+func SetUSDToCNYRate(rate decimal.Decimal) error {
+	if !rate.IsPositive() {
+		return common.NewMessage("Exchange rate must be positive")
+	}
+	value, _ := rate.Float64()
+	operation_setting.Price = value
+	return nil
+}
+
+// DebitOperatingPrincipal records a customer principal spend against the internal operating wallet.
+func DebitOperatingPrincipal(siteID int, amount decimal.Decimal, ref string) error {
+	if siteID <= 0 || !amount.IsPositive() || strings.TrimSpace(ref) == "" {
+		return ErrAdtySiteWalletInvalidOperation
+	}
+	_, err := ApplyAdtySiteWalletChange(siteID, model.AdtySiteWalletOperating, amount.Neg(), AdtySiteWalletChange{
+		Type: "principal_spend", RefType: "consume", RefID: ref, IdempotencyKey: "operating:" + ref, AllowOverdraft: true,
+	})
+	return err
+}
+
+// HideAdtyNotificationForUser removes one inbox item for that user only.
+func HideAdtyNotificationForUser(userID int, key string) error {
+	key = strings.TrimSpace(key)
+	if userID <= 0 || key == "" {
+		return common.NewMessage("Invalid parameters")
+	}
+	return model.DB.Where(model.AdtyNotificationHide{UserId: userID, Key: key}).FirstOrCreate(&model.AdtyNotificationHide{UserId: userID, Key: key}).Error
+}

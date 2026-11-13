@@ -25,7 +25,7 @@ type AdtyTopUpRefundResult struct {
 
 // FaceQuota 是订单本金 F：面额 × QuotaPerUnit 向下取整（和入账算 CreditQuota 一样），不超过 CreditQuota。
 func (ext *AdtyTopupOrder) FaceQuota() int64 {
-	face, err := common.WalletQuotaFromDecimalStrict(ext.FaceUSD.Mul(decimal.NewFromFloat(common.QuotaPerUnit)).Floor())
+	face, err := common.WalletQuotaFromDecimalStrict(ext.FaceUSD.Mul(common.QuotaPerUnitDecimal()).Floor())
 	if err != nil || face < 0 {
 		return 0
 	}

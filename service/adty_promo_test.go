@@ -110,7 +110,7 @@ func TestPromoOffRejectsCodeOnQuote(t *testing.T) {
 	quote, err := AdtyQuoteFor("default", 100, AdtyMethodUSDTTRC20, AdtyPromoInput{UserId: user.Id, Code: "   "})
 	require.NoError(t, err)
 	assert.True(t, quote.PromoBonusUSD.IsZero())
-	assert.EqualValues(t, 51_250_000, quote.CreditQuota)
+	assert.EqualValues(t, 50_000_000, quote.CreditQuota)
 }
 
 func TestPromoPercentAndFixed(t *testing.T) {

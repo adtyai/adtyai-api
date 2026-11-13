@@ -14,7 +14,16 @@ const (
 	MaxQuota       = math.MaxInt32
 	MinQuota       = math.MinInt32
 	MaxWalletQuota = 1<<53 - 1
+	// FixedQuotaPerUnit is the only legal USD scale: 1 USD = 500000 quota.
+	// Financial conversion must use QuotaPerUnitDecimal, not the float variable.
+	FixedQuotaPerUnit int64 = 500000
 )
+
+// QuotaPerUnitDecimal is the financial authority for USD/quota conversion.
+// A mutated QuotaPerUnit float does not change it.
+func QuotaPerUnitDecimal() decimal.Decimal {
+	return decimal.NewFromInt(FixedQuotaPerUnit)
+}
 
 // ValidateWalletQuota enforces the upper bound shared by wallet mutations.
 // Negative balances remain valid because billing can temporarily overdraw a

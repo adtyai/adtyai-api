@@ -197,6 +197,9 @@ func chargeUserQuotaUpToDB(id int, quota int) (int, error) {
 		if charged == 0 {
 			return nil
 		}
+		if err := ConsumeAdtyFundBatchesTx(tx, id, int64(charged), int64(balance)); err != nil {
+			return err
+		}
 		return applyUserQuotaDeltaTx(tx, &user, -charged, common.BatchUpdateEnabled && common.RedisEnabled)
 	})
 	if err != nil {

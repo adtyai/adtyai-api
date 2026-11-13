@@ -405,7 +405,7 @@ func TestFinanceActionsRequirePermissions(t *testing.T) {
 	preview := adtyJSON(t, f.engine, http.MethodGet, "/api/adty/admin/topup/EPU-finance/refund-preview", "", f.token)
 	require.Contains(t, preview.Body.String(), `"success":true`, preview.Body.String())
 	require.Contains(t, preview.Body.String(), `"refund_quota":50000000`)
-	refund = adtyJSON(t, f.engine, http.MethodPost, "/api/adty/admin/topup/EPU-finance/refund", `{"reason":"duplicate","idempotency_key":"refund-1","refund_quota":50000000}`, f.token)
+	refund = adtyJSON(t, f.engine, http.MethodPost, "/api/adty/admin/topup/EPU-finance/refund", `{"reason":"duplicate","idempotency_key":"refund-1","refund_usd":"100"}`, f.token)
 	require.Contains(t, refund.Body.String(), `"success":true`, refund.Body.String())
 	assert.Contains(t, refund.Body.String(), `"deducted_quota":51250000`)
 	assert.Contains(t, refund.Body.String(), `"refund_quota":50000000`, "the bonus is not refunded")

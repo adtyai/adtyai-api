@@ -80,23 +80,30 @@ func TestAdtyBonusForTiers(t *testing.T) {
 func TestAdtyQuoteUSDT(t *testing.T) {
 	confirmAdtyCompliance(t)
 	setAdtyBonusRates(t, testAdtyBonusRates)
+	SetAdtyMethodBonusForTest(t, "usdt", true, "0.025")
 	quote, err := AdtyQuoteFor("default", 100, AdtyMethodUSDTTRC20, AdtyPromoInput{})
 	require.NoError(t, err)
 	assert.Equal(t, "100", quote.PayAmount.String())
 	assert.Equal(t, AdtyCurrencyUSDT, quote.PayCurrency)
 	assert.Equal(t, "2.5", quote.BonusUSD.String())
+	assert.Equal(t, "0.025", quote.BonusRate.String())
 	assert.EqualValues(t, 51_250_000, quote.CreditQuota)
 }
 
 func TestAdtyQuoteEpay(t *testing.T) {
 	confirmAdtyCompliance(t)
 	setAdtyBonusRates(t, testAdtyBonusRates)
+	SetAdtyMethodBonusForTest(t, AdtyMethodAlipay, true, "0.025")
 	quote, err := AdtyQuoteFor("default", 100, AdtyMethodAlipay, AdtyPromoInput{})
 	require.NoError(t, err)
 	assert.Equal(t, "730.00", quote.PayAmount.StringFixed(2))
 	assert.Equal(t, AdtyCurrencyCNY, quote.PayCurrency)
 	assert.Equal(t, "7.3", quote.PriceCNYPerUSD.String())
 	assert.EqualValues(t, 51_250_000, quote.CreditQuota)
+	wx, err := AdtyQuoteFor("default", 100, AdtyMethodWxpay, AdtyPromoInput{})
+	require.NoError(t, err)
+	assert.Equal(t, "730.00", wx.PayAmount.StringFixed(2))
+	assert.Equal(t, AdtyCurrencyCNY, wx.PayCurrency)
 }
 
 func TestAdtyQuoteRejections(t *testing.T) {
@@ -121,9 +128,11 @@ func TestAdtyQuoteRejections(t *testing.T) {
 func TestAdtyQuoteUsesConfiguredRates(t *testing.T) {
 	confirmAdtyCompliance(t)
 	setAdtyBonusRates(t, map[int]float64{10: 3})
+	SetAdtyMethodBonusForTest(t, "usdt", true, "0.03")
 	quote, err := AdtyQuoteFor("default", 10, AdtyMethodUSDTBEP20, AdtyPromoInput{})
 	require.NoError(t, err)
 	assert.Equal(t, "0.3", quote.BonusUSD.String())
+	assert.Equal(t, "0.03", quote.BonusRate.String())
 }
 
 func TestBonusRatesOptionRejectsInvalidKey(t *testing.T) {

@@ -234,7 +234,7 @@ func adtyRedeemPromoOrDropTx(tx *gorm.DB, ext *AdtyTopupOrder, now int64) error 
 	if !errors.Is(err, ErrAdtyPromoUnavailable) {
 		return err
 	}
-	dropQuota := ext.PromoBonusUSD.Mul(decimal.NewFromFloat(common.QuotaPerUnit)).Floor().IntPart()
+	dropQuota := ext.PromoBonusUSD.Mul(common.QuotaPerUnitDecimal()).Floor().IntPart()
 	common.SysLog(common.LogText("promo code %d no longer available for trade_no=%s, credited without the promo bonus", ext.PromoCodeId, ext.TradeNo))
 	ext.CreditQuota -= dropQuota
 	ext.PromoCodeId, ext.PromoBonusUSD, ext.PromoFunder = 0, decimal.Zero, ""

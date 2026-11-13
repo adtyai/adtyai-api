@@ -82,6 +82,9 @@ func TestAdtyVoucherIssueRedeemAndRejects(t *testing.T) {
 
 	held, err := IssueAdtyVoucher(AdtyVoucherIssueInput{IssuerId: owner.Id, Purpose: model.AdtyVoucherPurposeSiteOwner, SiteId: site.Id, AmountUSD: decimal.NewFromInt(2), Reason: "self"})
 	require.NoError(t, err)
+	require.NotEmpty(t, held.Code)
+	_, err = RedeemAdtyVoucher(customer.Id, held.Code)
+	require.ErrorIs(t, err, ErrAdtyVoucherWrongAccount)
 	require.NoError(t, CancelAdtyVoucher(owner.Id, held.Id))
 	_, err = RedeemAdtyVoucher(owner.Id, held.Code)
 	require.ErrorIs(t, err, ErrAdtyVoucherCancelled)

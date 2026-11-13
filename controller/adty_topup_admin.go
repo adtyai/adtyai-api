@@ -282,17 +282,34 @@ func RefundAdtyTopUp(c *gin.Context) {
 		Reason         string `json:"reason"`
 		IdempotencyKey string `json:"idempotency_key"`
 		RefundQuota    *int64 `json:"refund_quota"`
+		RefundUSD      string `json:"refund_usd"`
+		Proof          string `json:"proof"`
 	}
 	if err := common.DecodeJson(c.Request.Body, &body); err != nil {
 		common.ApiErrorT(c, "Invalid parameters")
 		return
 	}
-	if body.RefundQuota == nil {
-		common.ApiErrorT(c, "Refresh the refund preview and try again")
+	tradeNo := c.Param("trade_no")
+	var result *model.AdtyTopUpRefundResult
+	var err error
+	if strings.TrimSpace(body.RefundUSD) != "" {
+		amount, parseErr := decimal.NewFromString(strings.TrimSpace(body.RefundUSD))
+		if parseErr != nil {
+			common.ApiErrorT(c, "Invalid parameters")
+			return
+		}
+		result, err = model.RefundAdtyTopUpManualUSD(tradeNo, body.Reason, c.GetInt("id"), body.IdempotencyKey, amount)
+		if err == nil && strings.TrimSpace(body.Proof) != "" {
+			if proofErr := model.RecordAdtyRefundProof(tradeNo, body.Proof); proofErr != nil {
+				err = proofErr
+			}
+		}
+	} else if body.RefundQuota != nil {
+		result, err = model.RefundAdtyTopUp(tradeNo, body.Reason, c.GetInt("id"), body.IdempotencyKey, *body.RefundQuota)
+	} else {
+		common.ApiErrorT(c, "Enter the refund amount in USD")
 		return
 	}
-	tradeNo := c.Param("trade_no")
-	result, err := model.RefundAdtyTopUp(tradeNo, body.Reason, c.GetInt("id"), body.IdempotencyKey, *body.RefundQuota)
 	if err != nil {
 		writeAdtyFinanceError(c, err)
 		return

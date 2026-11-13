@@ -211,7 +211,45 @@ func GetAdtyNotificationInbox(userID int, site *model.AdtySite, before int) (Adt
 		keys = append(keys, key)
 	}
 	inbox.ReadKeys, err = model.GetAdtyNotificationReadKeys(userID, siteID, keys)
-	return inbox, err
+	if err != nil {
+		return inbox, err
+	}
+	return hideAdtyNotifications(userID, inbox)
+}
+
+func hideAdtyNotifications(userID int, inbox AdtyNotificationInbox) (AdtyNotificationInbox, error) {
+	if userID <= 0 || model.DB == nil || len(inbox.Announcements) == 0 {
+		return inbox, nil
+	}
+	keys := make([]string, 0, len(inbox.Announcements))
+	for _, item := range inbox.Announcements {
+		if key, ok := item["read_key"].(string); ok && key != "" {
+			keys = append(keys, key)
+		}
+	}
+	if len(keys) == 0 {
+		return inbox, nil
+	}
+	var hidden []string
+	if err := model.DB.Model(&model.AdtyNotificationHide{}).Where("user_id = ? AND key IN ?", userID, keys).Pluck("key", &hidden).Error; err != nil {
+		return inbox, err
+	}
+	if len(hidden) == 0 {
+		return inbox, nil
+	}
+	skip := map[string]bool{}
+	for _, key := range hidden {
+		skip[key] = true
+	}
+	visible := inbox.Announcements[:0]
+	for _, item := range inbox.Announcements {
+		key, _ := item["read_key"].(string)
+		if !skip[key] {
+			visible = append(visible, item)
+		}
+	}
+	inbox.Announcements = visible
+	return inbox, nil
 }
 
 func MarkAdtyNotificationInboxRead(userID int, site *model.AdtySite, keys []string) error {

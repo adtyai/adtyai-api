@@ -28,7 +28,7 @@ var adtySiteEarningDayFn = func() string { return time.Now().Format("2006-01-02"
 
 // AdtySiteEarningSplit 算一笔扣费的三项金额（美元，8 位小数）。k ≥ 1、0 < d ≤ 1 由调用方保证。
 func AdtySiteEarningSplit(quota int64, k, d decimal.Decimal) (revenue, platform, earning decimal.Decimal) {
-	perUnit := decimal.NewFromFloat(common.QuotaPerUnit)
+	perUnit := common.QuotaPerUnitDecimal()
 	revenue = decimal.NewFromInt(quota).Div(perUnit).Round(8)
 	platform = decimal.NewFromInt(quota).Mul(d).Div(k).Div(perUnit).Round(8)
 	earning = revenue.Sub(platform)
@@ -324,24 +324,12 @@ func ValidateAdtySiteBonusRates(rates map[int]float64) error {
 	return nil
 }
 
-// SaveAdtySiteBonusRates 保存站长的加赠档位（站长中心 11.6 调用）。站点 paused 时不能改。
+// ErrAdtyAmountTierRetired is returned when a caller tries to save the retired amount-tier gift.
+var ErrAdtyAmountTierRetired = common.NewMessage("Amount-tier bonuses are retired")
+
+// SaveAdtySiteBonusRates rejects new amount-tier gift tables. Payment-method rates are the live rule.
 func SaveAdtySiteBonusRates(siteId int, rates map[int]float64) error {
-	if err := ValidateAdtySiteBonusRates(rates); err != nil {
-		return err
-	}
-	encoded, err := common.Marshal(rates)
-	if err != nil {
-		return err
-	}
-	result := model.DB.Model(&model.AdtySite{}).Where("id = ? AND status = ?", siteId, model.AdtySiteStatusActive).Update("bonus_rates", string(encoded))
-	if result.Error != nil {
-		return result.Error
-	}
-	if result.RowsAffected == 0 {
-		return ErrAdtySitePaused
-	}
-	InvalidateAdtySiteCache()
-	return nil
+	return ErrAdtyAmountTierRetired
 }
 
 // ErrAdtySiteTrialUnavailable 是试用额度没设上限时的错误（约定 I）。
@@ -366,7 +354,7 @@ func GrantAdtySiteTrial(siteId, customerId int, amountUSD decimal.Decimal, idemp
 		return nil, common.NewMessage("Invalid idempotency key")
 	}
 	key = fmt.Sprintf("site-trial:%d:%s", siteId, key)
-	quota := amount.Mul(decimal.NewFromFloat(common.QuotaPerUnit)).Floor()
+	quota := amount.Mul(common.QuotaPerUnitDecimal()).Floor()
 	quotaInt, err := common.WalletQuotaFromDecimalStrict(quota)
 	if err != nil {
 		return nil, err

@@ -28,13 +28,15 @@ var (
 )
 
 type AdtySiteWalletChange struct {
-	Type           string
-	RefType        string
-	RefID          string
-	Reason         string
-	OperatorID     int
-	IdempotencyKey string
-	AllowOverdraft bool
+	Type            string
+	RefType         string
+	RefID           string
+	Reason          string
+	OperatorID      int
+	IdempotencyKey  string
+	AllowOverdraft  bool
+	OpenMarginCycle bool
+	CycleTier       decimal.Decimal
 }
 
 func adtySiteWalletKinds() []string {
@@ -201,7 +203,24 @@ func applyAdtySiteWalletChangeTx(tx *gorm.DB, siteID int, kind string, delta dec
 	if delta.IsNegative() && !change.AllowOverdraft && after.LessThan(minimum) {
 		return nil, ErrAdtySiteWalletInsufficient
 	}
-	if err := tx.Model(&model.AdtySiteWallet{}).Where("id = ?", wallet.Id).Update("balance", after).Error; err != nil {
+	cycleUsed := wallet.CycleUsedUSD
+	cycleTier := wallet.CycleTierUSD
+	if kind == model.AdtySiteWalletMargin && delta.IsNegative() && cycleTier.IsPositive() && !change.AllowOverdraft {
+		allowed := AdtyMarginNewDraw(AdtyMarginDrawInput{
+			TierUSD: cycleTier, Balance: before, Used: cycleUsed,
+		})
+		if delta.Abs().GreaterThan(allowed) {
+			return nil, ErrAdtySiteWalletInsufficient
+		}
+		cycleUsed = cycleUsed.Add(delta.Abs())
+	}
+	if kind == model.AdtySiteWalletMargin && delta.IsPositive() && change.OpenMarginCycle && change.CycleTier.IsPositive() {
+		cycleTier = change.CycleTier
+		cycleUsed = decimal.Zero
+	}
+	if err := tx.Model(&model.AdtySiteWallet{}).Where("id = ?", wallet.Id).Updates(map[string]any{
+		"balance": after, "cycle_tier_usd": cycleTier, "cycle_used_usd": cycleUsed,
+	}).Error; err != nil {
 		return nil, err
 	}
 	result := &model.AdtySiteWalletLedger{
@@ -219,6 +238,42 @@ func applyAdtySiteWalletChangeTx(tx *gorm.DB, siteID int, kind string, delta dec
 // ApplyAdtySiteWalletChange changes one wallet and appends one immutable ledger
 // row. The idempotency key is mandatory because every financial mutation must
 // have a stable replay boundary.
+// OpenAdtyMarginCycle credits the frozen tier and starts a 90% draw cycle.
+func OpenAdtyMarginCycle(siteID int, tier decimal.Decimal, key string) error {
+	if !tier.IsPositive() {
+		return ErrAdtySiteWalletInvalidOperation
+	}
+	if err := EnsureAdtySiteWallets(siteID); err != nil {
+		return err
+	}
+	_, err := ApplyAdtySiteWalletChange(siteID, model.AdtySiteWalletMargin, tier, AdtySiteWalletChange{
+		Type: "margin_cycle_open", IdempotencyKey: key, OpenMarginCycle: true, CycleTier: tier,
+	})
+	return err
+}
+
+// TransferAdtyEarningToMargin moves earning cash into margin and opens a new draw cycle.
+func TransferAdtyEarningToMargin(siteID, operator int, amount, tier decimal.Decimal, key string) error {
+	if !amount.IsPositive() || !tier.IsPositive() || strings.TrimSpace(key) == "" {
+		return ErrAdtySiteWalletInvalidOperation
+	}
+	if err := EnsureAdtySiteWallets(siteID); err != nil {
+		return err
+	}
+	return model.DB.Transaction(func(tx *gorm.DB) error {
+		if _, err := applyAdtySiteWalletChangeTx(tx, siteID, model.AdtySiteWalletEarnings, amount.Neg(), AdtySiteWalletChange{
+			Type: "earning_to_margin", IdempotencyKey: key + ":earn", OperatorID: operator,
+		}); err != nil {
+			return err
+		}
+		_, err := applyAdtySiteWalletChangeTx(tx, siteID, model.AdtySiteWalletMargin, amount, AdtySiteWalletChange{
+			Type: "earning_to_margin", IdempotencyKey: key + ":margin", OperatorID: operator,
+			OpenMarginCycle: true, CycleTier: tier,
+		})
+		return err
+	})
+}
+
 func ApplyAdtySiteWalletChange(siteID int, kind string, delta decimal.Decimal, change AdtySiteWalletChange) (*model.AdtySiteWalletLedger, error) {
 	if !validAdtySiteWalletKind(kind) {
 		return nil, ErrAdtySiteWalletInvalidKind

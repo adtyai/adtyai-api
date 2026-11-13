@@ -47,6 +47,11 @@ type AdtyTopupOrder struct {
 	PaymentSceneVersion  int64           `json:"payment_scene_version"`
 	PaymentSceneSnapshot string          `json:"-" gorm:"type:text"`
 	Method               string          `json:"method" gorm:"type:varchar(32)"`
+	BonusMethod          string          `json:"bonus_method" gorm:"type:varchar(16)"`
+	BonusExpiresAt       int64           `json:"bonus_expires_at" gorm:"not null;default:0"`
+	GiftReserveSource    string          `json:"gift_reserve_source" gorm:"type:varchar(32)"`
+	GiftReserveEarning   decimal.Decimal `json:"gift_reserve_earning" gorm:"type:decimal(20,8);not null;default:0"`
+	GiftReserveMargin    decimal.Decimal `json:"gift_reserve_margin" gorm:"type:decimal(20,8);not null;default:0"`
 	FaceUSD              decimal.Decimal `json:"face_usd" gorm:"column:face_usd;type:decimal(20,8);not null;default:0"`
 	BonusRate            decimal.Decimal `json:"bonus_rate" gorm:"type:decimal(20,8);not null;default:0"`
 	BonusUSD             decimal.Decimal `json:"bonus_usd" gorm:"column:bonus_usd;type:decimal(20,8);not null;default:0"`
@@ -79,6 +84,7 @@ type AdtyTopupOrder struct {
 	RefundReason         string          `json:"-" gorm:"type:text"`
 	RefundQuota          int64           `json:"refund_quota" gorm:"not null;default:0"`                     // 退款时退的本金额度 P（赠金不退）
 	RefundAmount         decimal.Decimal `json:"refund_amount" gorm:"type:decimal(20,8);not null;default:0"` // 退款时应退的金额，支付币种，线下退
+	RefundProof          string          `json:"refund_proof" gorm:"type:varchar(255)"`
 	ProviderPayload      string          `json:"-" gorm:"type:text"`
 	ProviderProductId    string          `json:"-" gorm:"type:varchar(255)"`
 	ProviderMerchantId   string          `json:"-" gorm:"type:varchar(255)"`
@@ -300,6 +306,15 @@ func CompleteAdtyTopUpTx(tx *gorm.DB, tradeNo string, facts AdtyPaymentFacts) (a
 		return false, 0, nil, nil, err
 	}
 	if err := creditTopUpQuota(tx, topUp.UserId, credited, nil); err != nil {
+		return false, 0, nil, nil, err
+	}
+	faceQuota := ext.FaceQuota()
+	bonusQuota := int64(credited) - faceQuota
+	if bonusQuota < 0 {
+		bonusQuota = 0
+		faceQuota = int64(credited)
+	}
+	if err := CreateAdtyFundBatchesTx(tx, topUp.UserId, tradeNo, faceQuota, bonusQuota); err != nil {
 		return false, 0, nil, nil, err
 	}
 	key := "topup:" + common.Sha1([]byte(tradeNo))

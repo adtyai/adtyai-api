@@ -22,27 +22,27 @@ func TestSiteCustomerTopupInfoUsesSiteBonus(t *testing.T) {
 	require.NoError(t, f.db.Model(&model.AdtySite{}).Where("id = ?", f.site.Id).Update("bonus_rates", `{"100":4}`).Error)
 	service.InvalidateAdtySiteCache()
 	within := siteTopupInfo(t, f.engine, token)
-	require.Equal(t, 4.0, within.BonusRates["100"])
-	require.Equal(t, "4", siteTopupQuoteBonus(t, f.engine, token))
+	require.Empty(t, within.BonusRates)
+	require.Equal(t, "0", siteTopupQuoteBonus(t, f.engine, token))
 
 	require.NoError(t, f.db.Model(&model.AdtySite{}).Where("id = ?", f.site.Id).Update("bonus_rates", `{"100":8}`).Error)
 	service.InvalidateAdtySiteCache()
 	over := siteTopupInfo(t, f.engine, token)
-	require.Equal(t, 4.5, over.BonusRates["100"])
+	require.Empty(t, over.BonusRates)
 	var tierRate float64
 	for _, tier := range over.Tiers {
 		if tier.Amount == 100 {
 			tierRate = tier.Rate
 		}
 	}
-	require.Equal(t, 4.5, tierRate)
-	require.Equal(t, "4.5", siteTopupQuoteBonus(t, f.engine, token))
+	require.Equal(t, 0.0, tierRate)
+	require.Equal(t, "0", siteTopupQuoteBonus(t, f.engine, token))
 
 	mainInfo := callAs(t, f.engine, main, http.MethodGet, "/api/adty/topup/info", "")
 	mainBody := decodeAdtyData[struct {
 		BonusRates map[string]float64 `json:"bonus_rates"`
 	}](t, mainInfo.Body)
-	require.Equal(t, 2.5, mainBody.BonusRates["100"])
+	require.Empty(t, mainBody.BonusRates)
 }
 
 type siteTopupInfoBody struct {

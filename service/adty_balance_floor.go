@@ -7,9 +7,9 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// 余额下限：请求前余额不够就拒绝；结算补扣最多扣到 0，没扣到的差额（shortfall）由平台承担，
-// 记在消费日志的 admin_info.shortfall_quota（普通用户的日志投影看不到 admin_info），
-// 站长收益按实扣（日志额度 − shortfall）记。
+// 余额下限：请求前余额不够就拒绝；结算补扣最多扣到 0，不产生负余额。
+// 没扣到的差额记入 adty_billing_holds，并暂停该用户新的付费请求，直到财务核查。
+// 差额同时记在消费日志的 admin_info.shortfall_quota。不从其他账户或站长保证金补扣。
 
 // AdtyBillingShortfallContextKey 存放上一次扣费产生、还没写进消费日志的差额。
 const AdtyBillingShortfallContextKey = "adty_billing_shortfall"
@@ -24,6 +24,7 @@ func adtyNoteBillingShortfall(c *gin.Context, relayInfo *relaycommon.RelayInfo, 
 	}
 	if added := relayInfo.BillingShortfall - before; added > 0 {
 		c.Set(AdtyBillingShortfallContextKey, c.GetInt(AdtyBillingShortfallContextKey)+added)
+		_ = model.RecordAdtyBillingHold(relayInfo.UserId, relayInfo.RequestId, added)
 	}
 }
 

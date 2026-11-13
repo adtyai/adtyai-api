@@ -47,7 +47,7 @@ func PostAdtyHostedPayment(c *gin.Context) {
 		return
 	}
 	if operation_setting.GetQuotaDisplayType() == operation_setting.QuotaDisplayTypeTokens && !strings.HasPrefix(req.Method, "creem:") {
-		amount, err := common.WalletQuotaFromDecimalStrict(decimal.NewFromInt(req.Amount).Mul(decimal.NewFromFloat(common.QuotaPerUnit)))
+		amount, err := common.WalletQuotaFromDecimalStrict(decimal.NewFromInt(req.Amount).Mul(common.QuotaPerUnitDecimal()))
 		if err != nil {
 			paymentError(c, err)
 			return
@@ -98,7 +98,7 @@ func (p adtyHostedProvider) Methods() []service.AdtyMethodInfo {
 			methods = append(methods, service.AdtyMethodInfo{
 				Id: "creem:" + product.ProductId, Kind: "hosted", Label: "Creem · " + product.Name,
 				Currency: strings.ToUpper(product.Currency),
-				FaceUSD:  decimal.NewFromInt(product.Quota).Div(decimal.NewFromFloat(common.QuotaPerUnit)).String(), Available: isCreemTopUpEnabled() && isCreemWebhookConfigured(),
+				FaceUSD:  decimal.NewFromInt(product.Quota).Div(common.QuotaPerUnitDecimal()).String(), Available: isCreemTopUpEnabled() && isCreemWebhookConfigured(),
 			})
 		}
 		return methods
@@ -126,7 +126,7 @@ func adtyHostedQuote(c *gin.Context, req adtyQuoteRequest) (*service.AdtyQuote, 
 	if err != nil {
 		return nil, err
 	}
-	baseQuota := decimal.NewFromInt(req.Amount).Mul(decimal.NewFromFloat(common.QuotaPerUnit))
+	baseQuota := decimal.NewFromInt(req.Amount).Mul(common.QuotaPerUnitDecimal())
 	requestAmount := req.Amount
 	if operation_setting.GetQuotaDisplayType() == operation_setting.QuotaDisplayTypeTokens && !strings.HasPrefix(req.Method, "creem:") {
 		amount, err := common.WalletQuotaFromDecimalStrict(baseQuota)

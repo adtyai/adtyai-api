@@ -469,7 +469,7 @@ func GetAdtySiteUsageBreakdown(siteId int, from, to string) (*AdtySiteUsageBreak
 	if len(userIds) == 0 {
 		return result, nil
 	}
-	perUnit := decimal.NewFromFloat(common.QuotaPerUnit)
+	perUnit := common.QuotaPerUnitDecimal()
 	for _, column := range []string{"model_name", "group"} {
 		quoted := column
 		if column == "group" {

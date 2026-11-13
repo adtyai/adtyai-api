@@ -63,33 +63,7 @@ func AdtyBonusFor(face int64) (rate, bonus decimal.Decimal) {
 	return adtyBonusFromRates(adty_setting.GetTopupSetting().BonusRates, face)
 }
 
-// AdtyTopupDisplayRates 是钱包页要展示的加赠档位。分站客户用站点档位，并按当前主站档加额外上限封顶，和报价一致；主站用后台档位。
-func AdtyTopupDisplayRates(site *model.AdtySite) map[int]float64 {
-	if site == nil {
-		return adty_setting.GetTopupSetting().BonusRates
-	}
-	raw := AdtySiteBonusRates(site)
-	capped := make(map[int]float64, len(raw))
-	for tier, rate := range raw {
-		capped[tier] = rate
-		if tier <= 0 {
-			continue
-		}
-		maxRate := adtySiteBonusCapAmount(int64(tier)).Mul(decimal.NewFromInt(100)).Div(decimal.NewFromInt(int64(tier)))
-		if decimal.NewFromFloat(rate).GreaterThan(maxRate) {
-			value, _ := maxRate.Round(8).Float64()
-			capped[tier] = value
-		}
-	}
-	return capped
-}
-
-// AdtyBonusFromRates 按一组档位算加赠比例和金额。
-func AdtyBonusFromRates(rates map[int]float64, face int64) (rate, bonus decimal.Decimal) {
-	return adtyBonusFromRates(rates, face)
-}
-
-// adtyBonusFromRates 按一组档位算加赠：主站用 adty_topup_setting.bonus_rates，分站客户用站点的 BonusRates（P11）。
+// adtyBonusFromRates 只给历史档位上限计算使用。新订单赠金不走这里。
 func adtyBonusFromRates(rates map[int]float64, face int64) (rate, bonus decimal.Decimal) {
 	best := int64(-1)
 	for tier, tierRate := range rates {
@@ -127,7 +101,7 @@ func AdtyQuoteForSite(site *model.AdtySite, userGroup string, face int64, method
 	if face < int64(operation_setting.MinTopUp) || face <= 0 {
 		return nil, common.NewMessage("Top-up amount cannot be less than {{amount}}", map[string]any{"amount": operation_setting.MinTopUp})
 	}
-	quote, err := adtyQuotaQuoteForSite(site, userGroup, decimal.NewFromInt(face), promo)
+	quote, err := adtyQuotaQuoteForSite(site, userGroup, decimal.NewFromInt(face), method, promo)
 	if err != nil {
 		return nil, err
 	}
@@ -158,7 +132,7 @@ func AdtyHostedQuoteForSite(site *model.AdtySite, userGroup string, baseQuota, p
 	if _, err := common.WalletQuotaFromDecimalStrict(baseQuota); err != nil {
 		return nil, err
 	}
-	quote, err := adtyQuotaQuoteForSite(site, userGroup, baseQuota.Div(decimal.NewFromFloat(common.QuotaPerUnit)), promo)
+	quote, err := adtyQuotaQuoteForSite(site, userGroup, baseQuota.Div(common.QuotaPerUnitDecimal()), "", promo)
 	if err != nil {
 		return nil, err
 	}
@@ -166,35 +140,20 @@ func AdtyHostedQuoteForSite(site *model.AdtySite, userGroup string, baseQuota, p
 	return quote, nil
 }
 
-func adtyQuotaQuoteForSite(site *model.AdtySite, userGroup string, faceUSD decimal.Decimal, promo AdtyPromoInput) (*AdtyQuote, error) {
-	face := faceUSD.IntPart()
-	rate, _ := AdtyBonusFor(face)
-	if site != nil {
-		rate, _ = adtyBonusFromRates(AdtySiteBonusRates(site), face)
-		if face > 0 {
-			capRate := adtySiteBonusCapAmount(face).Mul(decimal.NewFromInt(100)).Div(decimal.NewFromInt(face))
-			rate = decimal.Min(rate, capRate)
-		}
+func adtyQuotaQuoteForSite(site *model.AdtySite, userGroup string, faceUSD decimal.Decimal, method string, promo AdtyPromoInput) (*AdtyQuote, error) {
+	if strings.TrimSpace(promo.Code) != "" {
+		return nil, ErrAdtyPromoRetired
 	}
-	bonus := faceUSD.Mul(rate).Div(decimal.NewFromInt(100)).Round(8)
-	promoCode, promoBonus, err := adtyPromoBonusFor(promo, faceUSD)
+	rate, bonus, err := AdtyPaymentMethodBonus(site, method, faceUSD)
 	if err != nil {
 		return nil, err
 	}
-	if promoCode != nil && promoCode.Funder == model.AdtyPromoFunderSiteOwner {
-		// 站长出资的码只给这个站正在服务的客户；加赠合计不能超过「主站同档 + max_site_bonus_extra」（11.5）。
-		if site == nil || site.Id != promoCode.SiteId {
-			return nil, ErrAdtyPromoInvalid
-		}
-		cap := decimal.Zero
-		if face > 0 {
-			cap = adtySiteBonusCapAmount(face).Mul(faceUSD).Div(decimal.NewFromInt(face))
-		}
-		if bonus.Add(promoBonus).GreaterThan(cap) {
-			return nil, ErrAdtySitePromoOverCap
+	if site != nil && bonus.IsPositive() {
+		if err := SiteBonusEarningCovers(site.Id, bonus); err != nil {
+			return nil, err
 		}
 	}
-	creditQuota := faceUSD.Add(bonus).Add(promoBonus).Mul(decimal.NewFromFloat(common.QuotaPerUnit)).Floor()
+	creditQuota := faceUSD.Add(bonus).Mul(common.QuotaPerUnitDecimal()).Floor()
 	if _, err := common.WalletQuotaFromDecimalStrict(creditQuota); err != nil || !creditQuota.IsPositive() {
 		return nil, common.NewMessage("Top-up quota exceeds the range the system can represent")
 	}
@@ -202,16 +161,11 @@ func adtyQuotaQuoteForSite(site *model.AdtySite, userGroup string, faceUSD decim
 	if !groupRatio.IsPositive() {
 		groupRatio = decimal.NewFromInt(1)
 	}
-	quote := &AdtyQuote{
+	return &AdtyQuote{
 		FaceUSD:         faceUSD,
 		BonusRate:       rate,
 		BonusUSD:        bonus,
 		CreditQuota:     creditQuota.IntPart(),
 		TopupGroupRatio: groupRatio,
-		PromoBonusUSD:   promoBonus,
-	}
-	if promoCode != nil {
-		quote.PromoCodeId, quote.PromoFunder = promoCode.Id, promoCode.Funder
-	}
-	return quote, nil
+	}, nil
 }

@@ -1,0 +1,42 @@
+package service
+
+import (
+	"testing"
+
+	"github.com/QuantumNous/new-api/model"
+	"github.com/shopspring/decimal"
+	"github.com/stretchr/testify/require"
+)
+
+func TestMarginDebitStopsAtNinetyPercentOfOpenCycle(t *testing.T) {
+	db := prepareSiteDB(t)
+	_, site := openActiveSite(t, db, "margin-cycle")
+	require.NoError(t, OpenAdtyMarginCycle(site.Id, decimal.RequireFromString("10000"), "cycle-open"))
+	_, err := ApplyAdtySiteWalletChange(site.Id, model.AdtySiteWalletMargin, decimal.RequireFromString("-9000"), AdtySiteWalletChange{
+		Type: "margin_draw", IdempotencyKey: "draw-9000",
+	})
+	require.NoError(t, err)
+	_, err = ApplyAdtySiteWalletChange(site.Id, model.AdtySiteWalletMargin, decimal.RequireFromString("-1"), AdtySiteWalletChange{
+		Type: "margin_draw", IdempotencyKey: "draw-over",
+	})
+	require.ErrorIs(t, err, ErrAdtySiteWalletInsufficient)
+}
+
+func TestTransferEarningToMarginOpensNewCycle(t *testing.T) {
+	db := prepareSiteDB(t)
+	_, site := openActiveSite(t, db, "margin-transfer")
+	_, err := ApplyAdtySiteWalletChange(site.Id, model.AdtySiteWalletEarnings, decimal.RequireFromString("1000"), AdtySiteWalletChange{
+		Type: "earning_settlement", IdempotencyKey: "earn-1000",
+	})
+	require.NoError(t, err)
+	require.NoError(t, TransferAdtyEarningToMargin(site.Id, 1, decimal.RequireFromString("1000"), decimal.RequireFromString("1000"), "xfer-1"))
+	var margin model.AdtySiteWallet
+	require.NoError(t, db.Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteWalletMargin).First(&margin).Error)
+	require.True(t, margin.Balance.Equal(decimal.RequireFromString("1000")))
+	require.True(t, margin.CycleTierUSD.Equal(decimal.RequireFromString("1000")))
+	require.True(t, margin.CycleUsedUSD.IsZero())
+	_, err = ApplyAdtySiteWalletChange(site.Id, model.AdtySiteWalletMargin, decimal.RequireFromString("-901"), AdtySiteWalletChange{
+		Type: "margin_draw", IdempotencyKey: "draw-over-transfer",
+	})
+	require.ErrorIs(t, err, ErrAdtySiteWalletInsufficient)
+}

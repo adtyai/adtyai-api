@@ -28,17 +28,11 @@ type adtyTierView struct {
 func GetAdtyTopUpInfo(c *gin.Context) {
 	setting := adty_setting.GetTopupSetting()
 	payment := operation_setting.GetPaymentSetting()
-	displayRates := service.AdtyTopupDisplayRates(service.AdtyBillingSiteForUser(c.GetInt("id")))
 	tiers := make([]adtyTierView, 0, len(payment.AmountOptions))
 	for _, amount := range payment.AmountOptions {
-		rate, _ := service.AdtyBonusFromRates(displayRates, int64(amount))
-		value, _ := rate.Float64()
-		tiers = append(tiers, adtyTierView{Amount: amount, Rate: value})
+		tiers = append(tiers, adtyTierView{Amount: amount, Rate: 0})
 	}
 	bonusRates := map[string]float64{}
-	for tier, rate := range displayRates {
-		bonusRates[fmt.Sprint(tier)] = rate
-	}
 	methods := make([]service.AdtyMethodInfo, 0)
 	scenes, err := service.AdtyPaymentScenesForUser(c.GetInt("id"))
 	if err != nil {
@@ -270,6 +264,8 @@ func createAdtyOrder(c *gin.Context, draft adtyOrderDraft) (*model.TopUp, *model
 		UserId:          userID,
 		Provider:        draft.provider,
 		Method:          draft.method,
+		BonusMethod:     service.AdtyBonusMethod(draft.method),
+		BonusExpiresAt:  0,
 		FaceUSD:         quote.FaceUSD,
 		BonusRate:       quote.BonusRate,
 		BonusUSD:        quote.BonusUSD,

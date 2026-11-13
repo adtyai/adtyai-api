@@ -45,6 +45,8 @@ export function DocPage(props: { slug: string }) {
   // Client and SDK names are product names and stay untranslated.
   const titles: Record<DocSlug, string> = {
     quickstart: t('Quick start'),
+    models: t('Models and groups'),
+    roles: t('Role guides'),
     'claude-code': 'Claude Code',
     'codex-cli': 'Codex CLI',
     'cherry-studio': 'Cherry Studio',

@@ -356,6 +356,7 @@ func registerAdtyResellerRoutes(apiRouter *gin.RouterGroup) {
 		{http.MethodPost, "/vouchers", "wallet:write", []gin.HandlerFunc{controller.PostAdtySiteVoucher}},
 		{http.MethodPost, "/vouchers/:id/cancel", "wallet:write", []gin.HandlerFunc{controller.PostAdtyVoucherCancel}},
 		{http.MethodPost, "/vouchers/:id/freeze", "wallet:write", []gin.HandlerFunc{controller.PostAdtyVoucherFreeze}},
+		{http.MethodPut, "/bonus-methods", "wallet:write", []gin.HandlerFunc{controller.PutAdtySiteMethodBonus}},
 		{http.MethodGet, "/wallets", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerWallets}},
 		{http.MethodGet, "/wallet-ledgers", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerWalletLedger}},
 		{http.MethodGet, "/orders", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerOrders}},
@@ -411,9 +412,13 @@ func registerAdtyResellerRoutes(apiRouter *gin.RouterGroup) {
 	root := apiRouter.Group("/adty/admin/reseller", middleware.RootAuth())
 	root.GET("/tiers", controller.GetAdtySiteTiers)
 	root.PUT("/tiers", controller.PutAdtySiteTiers)
+	middleware.DeclareAdtyAccessTokenRoute("PUT", "/api/adty/admin/bonus-methods", "scope", "option:write")
+	apiRouter.PUT("/adty/admin/bonus-methods", middleware.RootAuth(), controller.PutAdtyMainMethodBonus)
 	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/adty/admin/sites/:id/wallets", "scope", "option:read")
 	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/adty/admin/sites/:id/wallet-ledgers", "scope", "option:read")
 	rootWallets := apiRouter.Group("/adty/admin/sites", middleware.RootAuth())
+	middleware.DeclareAdtyAccessTokenRoute("PUT", "/api/adty/admin/sites/:id/bonus-methods", "scope", "option:write")
+	rootWallets.PUT("/:id/bonus-methods", controller.PutAdtySiteBonusMethodAuth)
 	rootWallets.GET("/:id/wallets", controller.GetAdtyAdminSiteWallets)
 	rootWallets.GET("/:id/wallet-ledgers", controller.GetAdtyAdminSiteWalletLedger)
 	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/admin/sites", "scope", "option:write")

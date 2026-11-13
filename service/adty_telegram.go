@@ -103,7 +103,7 @@ func ListAdtyTelegramBots() ([]AdtyTelegramBotView, error) {
 }
 
 func SaveAdtyTelegramBot(purpose, token string, enabled bool) (*AdtyTelegramSaved, error) {
-	if purpose != model.AdtyTelegramPurposeUser && purpose != model.AdtyTelegramPurposeAdmin {
+	if purpose != model.AdtyTelegramPurposeUser && purpose != model.AdtyTelegramPurposeAdmin && !strings.HasPrefix(purpose, "site:") {
 		return nil, ErrAdtyTelegramInvalid
 	}
 	token = strings.TrimSpace(token)

@@ -538,19 +538,21 @@ func TestSiteBonusCappedByMainPlusExtra(t *testing.T) {
 	assert.Error(t, ValidateAdtySiteBonusRates(map[int]float64{50: 2.1}))
 	assert.Error(t, ValidateAdtySiteBonusRates(map[int]float64{500: 6.5}))
 
-	require.NoError(t, SaveAdtySiteBonusRates(site.Id, map[int]float64{100: 4}))
+	require.ErrorIs(t, SaveAdtySiteBonusRates(site.Id, map[int]float64{100: 4}), ErrAdtyAmountTierRetired)
 	quote, err := AdtyQuoteForSite(AdtySiteById(site.Id), "default", 200, AdtyMethodUSDTTRC20, AdtyPromoInput{})
 	require.NoError(t, err)
-	assert.True(t, quote.BonusRate.Equal(usd("4")), "site customers use the site's tiers")
+	assert.True(t, quote.BonusUSD.IsZero(), "amount tiers no longer price a new order")
 	quote, err = AdtyQuoteFor("default", 200, AdtyMethodUSDTTRC20, AdtyPromoInput{})
 	require.NoError(t, err)
-	assert.True(t, quote.BonusRate.Equal(usd("2.5")))
+	assert.True(t, quote.BonusUSD.IsZero())
 
-	require.NoError(t, SaveAdtySiteBonusRates(site.Id, map[int]float64{100: 4.5}))
-	setAdtyBonusRates(t, map[int]float64{100: 1})
-	capped, err := AdtyQuoteForSite(AdtySiteById(site.Id), "default", 100, AdtyMethodUSDTTRC20, AdtyPromoInput{})
+	SetAdtyMethodBonusForTest(t, "usdt", true, "0.025")
+	mainQuote, err := AdtyQuoteFor("default", 100, AdtyMethodUSDTTRC20, AdtyPromoInput{})
 	require.NoError(t, err)
-	assert.True(t, capped.BonusUSD.Equal(usd("3")), "order time recap uses the current main tier plus extra, not the saved 4.5")
+	assert.True(t, mainQuote.BonusUSD.Equal(usd("2.5")))
+	unauthorized, err := AdtyQuoteForSite(AdtySiteById(site.Id), "default", 100, AdtyMethodUSDTTRC20, AdtyPromoInput{})
+	require.NoError(t, err)
+	assert.True(t, unauthorized.BonusUSD.IsZero(), "a site without Root authorization does not inherit the main method gift")
 }
 
 func TestTrialGrantLimitsAndLedger(t *testing.T) {

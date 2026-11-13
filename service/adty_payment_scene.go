@@ -75,7 +75,7 @@ func SaveAdtyPaymentScenes(actorID int, expected int64, scenes []model.AdtyPayme
 		seen[scene.Key] = true
 		for _, amount := range []decimal.Decimal{scene.MinUSD, scene.MaxUSD} {
 			if amount.IsPositive() {
-				if _, err := common.WalletQuotaFromDecimalStrict(amount.Mul(decimal.NewFromFloat(common.QuotaPerUnit))); err != nil {
+				if _, err := common.WalletQuotaFromDecimalStrict(amount.Mul(common.QuotaPerUnitDecimal())); err != nil {
 					return nil, common.NewMessage("Invalid parameters")
 				}
 			}
@@ -389,7 +389,7 @@ func CreateAdtyPaymentOrder(topUp *model.TopUp, ext *model.AdtyTopupOrder, key s
 			return err
 		}
 		ext.PaymentScene, ext.PaymentSceneName, ext.PaymentSceneVersion, ext.PaymentSceneSnapshot = scene.Key, scene.Name, config.Version, string(snapshot)
-		return nil
+		return ReserveAdtySiteGiftTx(tx, ext)
 	}
 	return model.CreateAdtyTopUpWithPolicy(topUp, ext, prepare, validate)
 }

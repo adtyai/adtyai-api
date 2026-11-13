@@ -23,7 +23,9 @@ import enClaudeCode from './en/claude-code.md?raw'
 import enCodexCli from './en/codex-cli.md?raw'
 import enErrorsAndLimits from './en/errors-and-limits.md?raw'
 import enFaq from './en/faq.md?raw'
+import enModels from './en/models.md?raw'
 import enOpenaiSdk from './en/openai-sdk.md?raw'
+import enRoles from './en/roles.md?raw'
 import enQuickstart from './en/quickstart.md?raw'
 import frCherryStudio from './fr/cherry-studio.md?raw'
 import frClaudeCode from './fr/claude-code.md?raw'
@@ -65,7 +67,9 @@ import zhClaudeCode from './zh-CN/claude-code.md?raw'
 import zhCodexCli from './zh-CN/codex-cli.md?raw'
 import zhErrorsAndLimits from './zh-CN/errors-and-limits.md?raw'
 import zhFaq from './zh-CN/faq.md?raw'
+import zhModels from './zh-CN/models.md?raw'
 import zhOpenaiSdk from './zh-CN/openai-sdk.md?raw'
+import zhRoles from './zh-CN/roles.md?raw'
 import zhQuickstart from './zh-CN/quickstart.md?raw'
 import zhTwCherryStudio from './zh-TW/cherry-studio.md?raw'
 import zhTwClaudeCode from './zh-TW/claude-code.md?raw'
@@ -78,6 +82,8 @@ import zhTwQuickstart from './zh-TW/quickstart.md?raw'
 /** Doc pages in sidebar order; doc-page.tsx holds their titles. */
 export const DOC_PAGES = [
   'quickstart',
+  'models',
+  'roles',
   'claude-code',
   'codex-cli',
   'cherry-studio',
@@ -96,6 +102,8 @@ const DOC_CONTENT: Partial<
 > = {
   en: {
     quickstart: enQuickstart,
+    models: enModels,
+    roles: enRoles,
     'claude-code': enClaudeCode,
     'codex-cli': enCodexCli,
     'cherry-studio': enCherryStudio,
@@ -105,6 +113,8 @@ const DOC_CONTENT: Partial<
   },
   'zh-CN': {
     quickstart: zhQuickstart,
+    models: zhModels,
+    roles: zhRoles,
     'claude-code': zhClaudeCode,
     'codex-cli': zhCodexCli,
     'cherry-studio': zhCherryStudio,
@@ -114,6 +124,8 @@ const DOC_CONTENT: Partial<
   },
   fr: {
     quickstart: frQuickstart,
+    models: enModels,
+    roles: enRoles,
     'claude-code': frClaudeCode,
     'codex-cli': frCodexCli,
     'cherry-studio': frCherryStudio,
@@ -123,6 +135,8 @@ const DOC_CONTENT: Partial<
   },
   ja: {
     quickstart: jaQuickstart,
+    models: enModels,
+    roles: enRoles,
     'claude-code': jaClaudeCode,
     'codex-cli': jaCodexCli,
     'cherry-studio': jaCherryStudio,
@@ -132,6 +146,8 @@ const DOC_CONTENT: Partial<
   },
   ko: {
     quickstart: koQuickstart,
+    models: enModels,
+    roles: enRoles,
     'claude-code': koClaudeCode,
     'codex-cli': koCodexCli,
     'cherry-studio': koCherryStudio,
@@ -141,6 +157,8 @@ const DOC_CONTENT: Partial<
   },
   ru: {
     quickstart: ruQuickstart,
+    models: enModels,
+    roles: enRoles,
     'claude-code': ruClaudeCode,
     'codex-cli': ruCodexCli,
     'cherry-studio': ruCherryStudio,
@@ -150,6 +168,8 @@ const DOC_CONTENT: Partial<
   },
   vi: {
     quickstart: viQuickstart,
+    models: enModels,
+    roles: enRoles,
     'claude-code': viClaudeCode,
     'codex-cli': viCodexCli,
     'cherry-studio': viCherryStudio,
@@ -159,6 +179,8 @@ const DOC_CONTENT: Partial<
   },
   'zh-TW': {
     quickstart: zhTwQuickstart,
+    models: zhModels,
+    roles: zhRoles,
     'claude-code': zhTwClaudeCode,
     'codex-cli': zhTwCodexCli,
     'cherry-studio': zhTwCherryStudio,
