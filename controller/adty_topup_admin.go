@@ -269,10 +269,45 @@ func ManualCompleteAdtyTopUp(c *gin.Context) {
 // RefundAdtyTopUp 退款：按当前余额扣回这笔订单还剩的额度，赠金不退，只退没花掉的本金；佣金按比例扣回。
 // 返回扣回额度、退的本金额度和应退金额，真正退钱在线下做。
 func PreviewAdtyTopUpRefund(c *gin.Context) {
-	result, err := model.PreviewAdtyTopUpRefund(c.Param("trade_no"))
+	tradeNo := c.Param("trade_no")
+	result, err := model.PreviewAdtyTopUpRefund(tradeNo)
 	if err != nil {
 		writeAdtyFinanceError(c, err)
 		return
+	}
+	if raw := strings.TrimSpace(c.Query("refund_usd")); raw != "" {
+		request, parseErr := decimal.NewFromString(raw)
+		if parseErr != nil || !request.IsPositive() {
+			common.ApiErrorT(c, "Invalid parameters")
+			return
+		}
+		facts, factErr := model.LoadAdtyRefundPageFacts(tradeNo, request)
+		if factErr != nil {
+			writeAdtyFinanceError(c, factErr)
+			return
+		}
+		result.Facts = facts
+		var commission model.AdtySiteInviteCommission
+		if err := model.DB.Where("trade_no = ?", tradeNo).Limit(1).Find(&commission).Error; err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		if commission.Id != 0 && commission.AmountUSD.IsPositive() {
+			var ext model.AdtyTopupOrder
+			if err := model.DB.Where("trade_no = ?", tradeNo).First(&ext).Error; err != nil {
+				common.ApiError(c, err)
+				return
+			}
+			already := decimal.NewFromInt(ext.RefundQuota).Div(common.QuotaPerUnitDecimal())
+			requestQuota, quotaErr := model.ManualRefundUSDQuota(ext.FaceUSD, already, request)
+			if quotaErr != nil {
+				writeAdtyFinanceError(c, quotaErr)
+				return
+			}
+			result.CommissionIssuedUSD, result.CommissionWithdrawnUSD, result.CommissionClawbackUSD = model.SiteInviteCommissionRefundPreview(
+				commission.AmountUSD, commission.WithdrawnUSD, commission.ClawedUSD, ext.RefundQuota+requestQuota, ext.FaceQuota(),
+			)
+		}
 	}
 	common.ApiSuccess(c, result)
 }

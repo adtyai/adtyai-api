@@ -15,15 +15,16 @@ var AdtyAfterTopUpRefundedTx func(tx *gorm.DB, topUp *TopUp, ext *AdtyTopupOrder
 
 // AdtyTopUpRefundResult 是一次退款的结果：扣回额度 R、赠金额度 G、退的本金额度 P、应退金额（支付币种）。
 type AdtyTopUpRefundResult struct {
-	Ledger                 *AdtyBalanceLedger `json:"ledger"`
-	DeductedQuota          int64              `json:"deducted_quota"`
-	BonusQuota             int64              `json:"bonus_quota"`
-	RefundQuota            int64              `json:"refund_quota"`
-	RefundAmount           decimal.Decimal    `json:"refund_amount"`
-	Currency               string             `json:"currency"`
-	CommissionIssuedUSD    string             `json:"commission_issued_usd,omitempty"`
-	CommissionWithdrawnUSD string             `json:"commission_withdrawn_usd,omitempty"`
-	CommissionClawbackUSD  string             `json:"commission_clawback_usd,omitempty"`
+	Ledger                 *AdtyBalanceLedger   `json:"ledger"`
+	DeductedQuota          int64                `json:"deducted_quota"`
+	BonusQuota             int64                `json:"bonus_quota"`
+	RefundQuota            int64                `json:"refund_quota"`
+	RefundAmount           decimal.Decimal      `json:"refund_amount"`
+	Currency               string               `json:"currency"`
+	Facts                  *AdtyRefundPageFacts `json:"facts,omitempty"`
+	CommissionIssuedUSD    string               `json:"commission_issued_usd,omitempty"`
+	CommissionWithdrawnUSD string               `json:"commission_withdrawn_usd,omitempty"`
+	CommissionClawbackUSD  string               `json:"commission_clawback_usd,omitempty"`
 }
 
 // FaceQuota 是订单本金 F：面额 × QuotaPerUnit 向下取整（和入账算 CreditQuota 一样），不超过 CreditQuota。
@@ -126,6 +127,11 @@ func PreviewAdtyTopUpRefund(tradeNo string) (*AdtyTopUpRefundResult, error) {
 			commission.AmountUSD, commission.WithdrawnUSD, commission.ClawedUSD, refundQuota, ext.FaceQuota(),
 		)
 	}
+	facts, err := LoadAdtyRefundPageFacts(tradeNo, decimal.Zero)
+	if err != nil {
+		return nil, err
+	}
+	result.Facts = facts
 	return result, nil
 }
 

@@ -44,6 +44,91 @@ func ManualRefundUSDQuota(faceUSD, alreadyRefundedUSD, requestUSD decimal.Decima
 	return int64(quota), nil
 }
 
+// AdtyRefundPageFacts is the recorded refund-page check. Amounts come from the
+// order and its fund lots. A blank lot field means that lot was not recorded.
+type AdtyRefundPageFacts struct {
+	TradeNo               string `json:"trade_no"`
+	SiteId                int    `json:"site_id"`
+	UserId                int    `json:"user_id"`
+	FaceUSD               string `json:"face_usd"`
+	PayCurrency           string `json:"pay_currency"`
+	PaidAmount            string `json:"paid_amount"`
+	PaidCurrency          string `json:"paid_currency"`
+	OrderRate             string `json:"order_rate"`
+	PrincipalConsumedUSD  string `json:"principal_consumed_usd,omitempty"`
+	PrincipalRemainingUSD string `json:"principal_remaining_usd,omitempty"`
+	PendingQuota          int64  `json:"pending_quota"`
+	RefundOccupiedQuota   int64  `json:"refund_occupied_quota"`
+	BonusUSD              string `json:"bonus_usd"`
+	BonusUsedQuota        int64  `json:"bonus_used_quota"`
+	BonusRemainingQuota   int64  `json:"bonus_remaining_quota"`
+	CumulativeRefundUSD   string `json:"cumulative_refund_usd"`
+	ForeignReference      string `json:"foreign_reference,omitempty"`
+	RefundProof           string `json:"refund_proof,omitempty"`
+}
+
+// LoadAdtyRefundPageFacts reads the order, its fund lots, and the customer's
+// in-flight precharge. requestUSD, when positive, adds the foreign reference
+// at the stored paid amount. It does not write.
+func LoadAdtyRefundPageFacts(tradeNo string, requestUSD decimal.Decimal) (*AdtyRefundPageFacts, error) {
+	tradeNo = strings.TrimSpace(tradeNo)
+	if tradeNo == "" {
+		return nil, common.NewMessage("Invalid parameters")
+	}
+	var ext AdtyTopupOrder
+	if err := DB.Where("trade_no = ?", tradeNo).First(&ext).Error; err != nil {
+		return nil, err
+	}
+	var user User
+	if err := DB.Select("id", "quota_pending").First(&user, ext.UserId).Error; err != nil {
+		return nil, err
+	}
+	facts := &AdtyRefundPageFacts{
+		TradeNo: tradeNo, SiteId: ext.SiteId, UserId: ext.UserId,
+		FaceUSD: ext.FaceUSD.String(), PayCurrency: ext.PayCurrency,
+		PaidAmount: ext.PaidAmount.String(), PaidCurrency: ext.PaidCurrency,
+		OrderRate: ext.PriceSnapshot.String(), PendingQuota: int64(user.QuotaPending),
+		RefundOccupiedQuota: ext.RefundQuota, BonusUSD: ext.BonusUSD.String(),
+		CumulativeRefundUSD: decimal.NewFromInt(ext.RefundQuota).Div(common.QuotaPerUnitDecimal()).String(),
+		RefundProof:         ext.RefundProof,
+	}
+	var lots []AdtyFundBatch
+	if err := DB.Where("user_id = ? AND source = ?", ext.UserId, tradeNo).Find(&lots).Error; err != nil {
+		return nil, err
+	}
+	var principalOriginal, principalRemaining, bonusOriginal, bonusRemaining int64
+	var sawPrincipal, sawBonus bool
+	for _, lot := range lots {
+		switch lot.Kind {
+		case "principal":
+			principalOriginal += lot.Original
+			principalRemaining += lot.Remaining
+			sawPrincipal = true
+		case "bonus":
+			bonusOriginal += lot.Original
+			bonusRemaining += lot.Remaining
+			sawBonus = true
+		}
+	}
+	if sawPrincipal {
+		facts.PrincipalConsumedUSD = decimal.NewFromInt(principalOriginal - principalRemaining).Div(common.QuotaPerUnitDecimal()).String()
+		facts.PrincipalRemainingUSD = decimal.NewFromInt(principalRemaining).Div(common.QuotaPerUnitDecimal()).String()
+	}
+	if sawBonus {
+		facts.BonusUsedQuota = bonusOriginal - bonusRemaining
+		facts.BonusRemainingQuota = bonusRemaining
+	}
+	if requestUSD.IsPositive() {
+		alreadyUSD := decimal.NewFromInt(ext.RefundQuota).Div(common.QuotaPerUnitDecimal())
+		requestQuota, err := ManualRefundUSDQuota(ext.FaceUSD, alreadyUSD, requestUSD)
+		if err != nil {
+			return nil, err
+		}
+		facts.ForeignReference = adtyRefundAmount(&ext, requestQuota, ext.FaceQuota()).String()
+	}
+	return facts, nil
+}
+
 // RecordAdtyRefundProof stores the offline payment voucher for a refund.
 func RecordAdtyRefundProof(tradeNo, proof string) error {
 	proof = strings.TrimSpace(proof)

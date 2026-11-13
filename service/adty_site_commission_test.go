@@ -300,6 +300,41 @@ func TestSiteInviteCommissionRefundClawsBackByCompletedPrincipalRatio(t *testing
 	require.Equal(t, 0, user.Quota)
 }
 
+func TestRefundPageFactsUseRecordedLotsAndOriginalRate(t *testing.T) {
+	db := prepareReferralDialectDB(t, "sqlite")
+	buyer := referralUser(t, db, "refund-facts-"+strconv.FormatInt(time.Now().UnixNano()%1_000_000, 10))
+	require.NoError(t, db.Model(buyer).Update("quota_pending", int64(500000)).Error)
+	trade := "FACTS-" + strconv.Itoa(buyer.Id)
+	require.NoError(t, db.Create(&model.TopUp{TradeNo: trade, UserId: buyer.Id, Status: common.TopUpStatusSuccess}).Error)
+	require.NoError(t, db.Create(&model.AdtyTopupOrder{
+		TradeNo: trade, UserId: buyer.Id, SiteId: 4, FaceUSD: decimal.NewFromInt(100),
+		PaidAmount: decimal.NewFromInt(700), PaidCurrency: "CNY", PayCurrency: "CNY",
+		PriceSnapshot: decimal.NewFromInt(7), BonusUSD: decimal.NewFromInt(10),
+		CreditQuota: 110 * 500000, RefundQuota: 5 * 500000,
+	}).Error)
+	require.NoError(t, db.Create(&[]model.AdtyFundBatch{
+		{UserId: buyer.Id, Kind: "principal", Source: trade, Original: 100 * 500000, Remaining: 40 * 500000},
+		{UserId: buyer.Id, Kind: "bonus", Source: trade, Original: 10 * 500000, Remaining: 4 * 500000},
+	}).Error)
+	facts, err := model.LoadAdtyRefundPageFacts(trade, decimal.NewFromInt(10))
+	require.NoError(t, err)
+	require.Equal(t, trade, facts.TradeNo)
+	require.Equal(t, 4, facts.SiteId)
+	require.Equal(t, buyer.Id, facts.UserId)
+	require.Equal(t, "100", facts.FaceUSD)
+	require.Equal(t, "700", facts.PaidAmount)
+	require.Equal(t, "CNY", facts.PaidCurrency)
+	require.Equal(t, "7", facts.OrderRate)
+	require.Equal(t, "60", facts.PrincipalConsumedUSD)
+	require.Equal(t, "40", facts.PrincipalRemainingUSD)
+	require.Equal(t, int64(500000), facts.PendingQuota)
+	require.Equal(t, int64(5*500000), facts.RefundOccupiedQuota)
+	require.Equal(t, "10", facts.BonusUSD)
+	require.Equal(t, int64(6*500000), facts.BonusUsedQuota)
+	require.Equal(t, int64(4*500000), facts.BonusRemainingQuota)
+	require.Equal(t, "70", facts.ForeignReference)
+}
+
 func TestRefundPreviewShowsIssuedWithdrawnAndExpectedClawback(t *testing.T) {
 	issued, withdrawn, expected := model.SiteInviteCommissionRefundPreview(
 		decimal.NewFromInt(3), decimal.NewFromInt(1), decimal.RequireFromString("0.5"), 15*500000, 30*500000,

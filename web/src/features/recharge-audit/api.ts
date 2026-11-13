@@ -307,11 +307,34 @@ export type TopupRefundResult = {
   commission_issued_usd?: string
   commission_withdrawn_usd?: string
   commission_clawback_usd?: string
+  facts?: RefundPageFacts
 }
 
-export async function previewTopupRefund(tradeNo: string) {
+export type RefundPageFacts = {
+  trade_no: string
+  site_id: number
+  user_id: number
+  face_usd: string
+  pay_currency: string
+  paid_amount: string
+  paid_currency: string
+  order_rate: string
+  principal_consumed_usd?: string
+  principal_remaining_usd?: string
+  pending_quota: number
+  refund_occupied_quota: number
+  bonus_usd: string
+  bonus_used_quota: number
+  bonus_remaining_quota: number
+  cumulative_refund_usd: string
+  foreign_reference?: string
+  refund_proof?: string
+}
+
+export async function previewTopupRefund(tradeNo: string, refundUsd?: string) {
   const res = await api.get<ApiResponse<TopupRefundResult>>(
-    `/api/adty/admin/topup/${encodeURIComponent(tradeNo)}/refund-preview`
+    `/api/adty/admin/topup/${encodeURIComponent(tradeNo)}/refund-preview`,
+    { params: refundUsd ? { refund_usd: refundUsd } : undefined }
   )
   return requireServerSuccess(res.data).data
 }
@@ -320,11 +343,17 @@ export async function refundTopup(
   tradeNo: string,
   reason: string,
   idempotencyKey: string,
-  refundQuota: number
+  refundQuota: number,
+  refundUsd?: string
 ) {
   const res = await api.post<ApiResponse<TopupRefundResult>>(
     `/api/adty/admin/topup/${encodeURIComponent(tradeNo)}/refund`,
-    { reason, idempotency_key: idempotencyKey, refund_quota: refundQuota }
+    {
+      reason,
+      idempotency_key: idempotencyKey,
+      refund_quota: refundUsd ? undefined : refundQuota,
+      refund_usd: refundUsd || undefined,
+    }
   )
   return requireServerSuccess(res.data).data
 }

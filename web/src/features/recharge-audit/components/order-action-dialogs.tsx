@@ -181,17 +181,30 @@ export function ManualCompleteDialog(props: OrderActionProps) {
 export function RefundDialog(props: OrderActionProps) {
   const { t } = useTranslation()
   const [reason, setReason] = useState('')
+  const [refundUsd, setRefundUsd] = useState('')
   const [idempotencyKey, setIdempotencyKey] = useState('')
   const [result, setResult] = useState<TopupRefundResult | null>(null)
+  const typedAmount = refundUsd.trim()
+  const typedReady = typedAmount === '' || /^\d+(\.\d{1,8})?$/.test(typedAmount)
   useEffect(() => {
     setReason('')
+    setRefundUsd('')
     setResult(null)
     setIdempotencyKey(crypto.randomUUID())
   }, [props.order])
   const preview = useQuery({
-    queryKey: ['topup-refund-preview', props.order?.trade_no, idempotencyKey],
-    queryFn: () => previewTopupRefund(props.order?.trade_no ?? ''),
-    enabled: props.order !== null && result === null,
+    queryKey: [
+      'topup-refund-preview',
+      props.order?.trade_no,
+      idempotencyKey,
+      typedReady ? typedAmount : '',
+    ],
+    queryFn: () =>
+      previewTopupRefund(
+        props.order?.trade_no ?? '',
+        typedAmount || undefined
+      ),
+    enabled: props.order !== null && result === null && typedReady,
   })
   const mutation = useMutation({
     mutationFn: () =>
@@ -199,7 +212,8 @@ export function RefundDialog(props: OrderActionProps) {
         props.order?.trade_no ?? '',
         reason.trim(),
         idempotencyKey,
-        preview.data?.refund_quota ?? 0
+        preview.data?.refund_quota ?? 0,
+        typedAmount || undefined
       ),
     onSuccess: (data) => {
       toast.success(t('Order refunded'))
@@ -262,6 +276,7 @@ export function RefundDialog(props: OrderActionProps) {
             onClick={() => mutation.mutate()}
             disabled={
               reason.trim() === '' ||
+              !typedReady ||
               mutation.isPending ||
               preview.data === undefined
             }
@@ -271,18 +286,121 @@ export function RefundDialog(props: OrderActionProps) {
         </>
       }
     >
+      {preview.data && typedAmount === '' && (
+        <p className='text-sm'>
+          {t(
+            'Refund {{amount}} {{currency}}. This takes back {{quota}} of credit.',
+            {
+              amount: preview.data.refund_amount,
+              currency: preview.data.currency,
+              quota: formatQuota(preview.data.deducted_quota),
+            }
+          )}
+        </p>
+      )}
+      {preview.data?.facts && (
+        <dl className='grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-1 text-sm'>
+          <div className='contents'>
+            <dt className='text-muted-foreground'>{t('Site ID')}</dt>
+            <dd className='text-right tabular-nums'>{preview.data.facts.site_id}</dd>
+          </div>
+          <div className='contents'>
+            <dt className='text-muted-foreground'>{t('Customer ID')}</dt>
+            <dd className='text-right tabular-nums'>{preview.data.facts.user_id}</dd>
+          </div>
+          <div className='contents'>
+            <dt className='text-muted-foreground'>{t('Original principal')}</dt>
+            <dd className='text-right tabular-nums'>{preview.data.facts.face_usd} USD</dd>
+          </div>
+          <div className='contents'>
+            <dt className='text-muted-foreground'>{t('Paid amount')}</dt>
+            <dd className='text-right tabular-nums'>
+              {preview.data.facts.paid_amount} {preview.data.facts.paid_currency}
+            </dd>
+          </div>
+          <div className='contents'>
+            <dt className='text-muted-foreground'>{t('Order rate')}</dt>
+            <dd className='text-right tabular-nums'>{preview.data.facts.order_rate}</dd>
+          </div>
+          {preview.data.facts.principal_consumed_usd && (
+            <div className='contents'>
+              <dt className='text-muted-foreground'>{t('Consumed principal')}</dt>
+              <dd className='text-right tabular-nums'>
+                {preview.data.facts.principal_consumed_usd} USD
+              </dd>
+            </div>
+          )}
+          {preview.data.facts.principal_remaining_usd && (
+            <div className='contents'>
+              <dt className='text-muted-foreground'>{t('Remaining principal')}</dt>
+              <dd className='text-right tabular-nums'>
+                {preview.data.facts.principal_remaining_usd} USD
+              </dd>
+            </div>
+          )}
+          <div className='contents'>
+            <dt className='text-muted-foreground'>{t('In-flight precharge')}</dt>
+            <dd className='text-right tabular-nums'>
+              {formatQuota(preview.data.facts.pending_quota)}
+            </dd>
+          </div>
+          <div className='contents'>
+            <dt className='text-muted-foreground'>{t('Refund occupancy')}</dt>
+            <dd className='text-right tabular-nums'>
+              {formatQuota(preview.data.facts.refund_occupied_quota)}
+            </dd>
+          </div>
+          <div className='contents'>
+            <dt className='text-muted-foreground'>{t('Bonus')}</dt>
+            <dd className='text-right tabular-nums'>{preview.data.facts.bonus_usd} USD</dd>
+          </div>
+          <div className='contents'>
+            <dt className='text-muted-foreground'>{t('Bonus used')}</dt>
+            <dd className='text-right tabular-nums'>
+              {formatQuota(preview.data.facts.bonus_used_quota)}
+            </dd>
+          </div>
+          <div className='contents'>
+            <dt className='text-muted-foreground'>{t('Bonus remaining')}</dt>
+            <dd className='text-right tabular-nums'>
+              {formatQuota(preview.data.facts.bonus_remaining_quota)}
+            </dd>
+          </div>
+          <div className='contents'>
+            <dt className='text-muted-foreground'>{t('Cumulative refund')}</dt>
+            <dd className='text-right tabular-nums'>
+              {preview.data.facts.cumulative_refund_usd} USD
+            </dd>
+          </div>
+          {preview.data.facts.foreign_reference && (
+            <div className='contents'>
+              <dt className='text-muted-foreground'>{t('Foreign reference')}</dt>
+              <dd className='text-right tabular-nums'>
+                {preview.data.facts.foreign_reference}{' '}
+                {preview.data.facts.paid_currency}
+              </dd>
+            </div>
+          )}
+          {preview.data.facts.refund_proof && (
+            <div className='contents'>
+              <dt className='text-muted-foreground'>{t('Proof')}</dt>
+              <dd className='text-right break-all'>{preview.data.facts.refund_proof}</dd>
+            </div>
+          )}
+        </dl>
+      )}
+      <div className='space-y-1'>
+        <Label htmlFor='refund-usd'>{t('Refund amount in USD')}</Label>
+        <Input
+          id='refund-usd'
+          value={refundUsd}
+          inputMode='decimal'
+          autoComplete='off'
+          onChange={(event) => setRefundUsd(event.target.value)}
+        />
+      </div>
       {preview.data && (
         <div className='space-y-1 text-sm'>
-          <p>
-            {t(
-              'Refund {{amount}} {{currency}}. This takes back {{quota}} of credit.',
-              {
-                amount: preview.data.refund_amount,
-                currency: preview.data.currency,
-                quota: formatQuota(preview.data.deducted_quota),
-              }
-            )}
-          </p>
           {preview.data.commission_issued_usd && (
             <p className='tabular-nums'>
               {t('Issued commission')}: {preview.data.commission_issued_usd} USD
