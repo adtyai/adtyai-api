@@ -48,6 +48,10 @@ func CreateAdtyFundBatchesTx(tx *gorm.DB, userID int, source string, principal, 
 	return tx.Create(&rows).Error
 }
 
+// AdtyAfterPrincipalSpentTx runs in the charge transaction after non-legacy
+// principal lots are reduced. Gift consumption does not call it.
+var AdtyAfterPrincipalSpentTx func(tx *gorm.DB, userID int, principalQuota int64) error
+
 // ConsumeAdtyFundBatchesTx spends principal lots before bonus lots.
 // A user with no lots gets one legacy principal lot for the pre-charge balance,
 // then this charge consumes from that lot.
@@ -70,6 +74,7 @@ func ConsumeAdtyFundBatchesTx(tx *gorm.DB, userID int, amount, balanceBefore int
 		return nil
 	}
 	sortAdtyFundBatches(rows)
+	principalTaken := int64(0)
 	for i := range rows {
 		if amount == 0 {
 			break
@@ -81,7 +86,13 @@ func ConsumeAdtyFundBatchesTx(tx *gorm.DB, userID int, amount, balanceBefore int
 		if err := tx.Model(&AdtyFundBatch{}).Where("id = ?", rows[i].Id).Update("remaining", rows[i].Remaining-take).Error; err != nil {
 			return err
 		}
+		if rows[i].Kind == "principal" && rows[i].Source != "legacy" {
+			principalTaken += take
+		}
 		amount -= take
+	}
+	if principalTaken > 0 && AdtyAfterPrincipalSpentTx != nil {
+		return AdtyAfterPrincipalSpentTx(tx, userID, principalTaken)
 	}
 	return nil
 }
