@@ -97,6 +97,72 @@ func TestSiteInviteBalanceWithdrawalCreditsQuotaWithoutWithdrawnCash(t *testing.
 	require.True(t, earning.FrozenUSD.Equal(decimal.RequireFromString("0.5")))
 }
 
+func TestApprovedSiteInviteWithdrawalCanFailWithoutReleasingTheSiteHold(t *testing.T) {
+	db := prepareReferralDialectDB(t, "sqlite")
+	site, owner, inviter := availableSiteCommission(t, db, decimal.NewFromInt(2))
+	require.NoError(t, SaveAdtySiteInviteWithdrawRules("1", "0.1", "7"))
+	row, err := CreateAdtySiteInviteWithdrawal(AdtySiteInviteWithdrawalInput{
+		UserID: inviter.Id, SiteID: site.Id, Amount: decimal.NewFromInt(2), Method: "usdt",
+		Network: "TRC20", AccountNo: "T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb", IdempotencyKey: "wd-fail",
+	})
+	require.NoError(t, err)
+	require.NoError(t, ReviewAdtySiteInviteWithdrawal(owner.Id, row.Id, true, ""))
+	require.NoError(t, ReviewAdtySiteInviteWithdrawal(owner.Id, row.Id, false, "payout failed"))
+	require.NoError(t, db.First(&row, row.Id).Error)
+	require.Equal(t, "rejected", row.Status)
+	var commission model.AdtySiteInviteCommission
+	require.NoError(t, db.Where("inviter_id = ?", inviter.Id).First(&commission).Error)
+	require.True(t, commission.FrozenUSD.IsZero())
+	require.True(t, commission.WithdrawnUSD.IsZero())
+	require.True(t, commission.EarningsHoldUSD.Equal(decimal.NewFromInt(2)))
+	var earning model.AdtySiteWallet
+	require.NoError(t, db.Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteWalletEarnings).First(&earning).Error)
+	require.True(t, earning.Balance.Equal(decimal.NewFromInt(2)))
+	require.True(t, earning.FrozenUSD.Equal(decimal.NewFromInt(2)))
+	require.Error(t, MarkAdtySiteInviteWithdrawalPaid(owner.Id, row.Id, "late", ""))
+	again, err := CreateAdtySiteInviteWithdrawal(AdtySiteInviteWithdrawalInput{
+		UserID: inviter.Id, SiteID: site.Id, Amount: decimal.NewFromInt(2), Method: "balance",
+		IdempotencyKey: "wd-fail-balance",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "paid", again.Status)
+}
+
+func TestMixedRefundLeavesTheRemainingSiteHoldAssignable(t *testing.T) {
+	db := prepareReferralDialectDB(t, "sqlite")
+	site, owner, inviter := availableSiteCommission(t, db, decimal.NewFromInt(4))
+	require.NoError(t, SaveAdtySiteInviteWithdrawRules("1", "0", "7"))
+	_, err := CreateAdtySiteInviteWithdrawal(AdtySiteInviteWithdrawalInput{
+		UserID: inviter.Id, SiteID: site.Id, Amount: decimal.NewFromInt(1), Method: "balance",
+		IdempotencyKey: "mix-balance",
+	})
+	require.NoError(t, err)
+	cash, err := CreateAdtySiteInviteWithdrawal(AdtySiteInviteWithdrawalInput{
+		UserID: inviter.Id, SiteID: site.Id, Amount: decimal.NewFromInt(1), Method: "usdt",
+		Network: "TRC20", AccountNo: "T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb", IdempotencyKey: "mix-cash",
+	})
+	require.NoError(t, err)
+	require.NoError(t, ReviewAdtySiteInviteWithdrawal(owner.Id, cash.Id, true, ""))
+	require.NoError(t, MarkAdtySiteInviteWithdrawalPaid(owner.Id, cash.Id, "tx-mix", "paid"))
+	var commission model.AdtySiteInviteCommission
+	require.NoError(t, db.Where("inviter_id = ?", inviter.Id).First(&commission).Error)
+	ext := &model.AdtyTopupOrder{
+		TradeNo: commission.TradeNo, UserId: commission.InviteeId, SiteId: site.Id,
+		FaceUSD: decimal.NewFromInt(40), CreditQuota: 40 * 500000, RefundQuota: 20 * 500000,
+	}
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return model.AdtyAfterTopUpRefundedTx(tx, &model.TopUp{TradeNo: commission.TradeNo, UserId: commission.InviteeId}, ext)
+	}))
+	require.NoError(t, db.First(&commission, commission.Id).Error)
+	require.True(t, commission.EarningsHoldUSD.Equal(decimal.NewFromInt(1)))
+	require.True(t, SiteInviteCommissionWithdrawable(&commission, time.Unix(commission.AvailableAt, 0)))
+	require.NoError(t, ConvertAdtySiteInviteCommission(inviter.Id, commission.Id, decimal.NewFromInt(1), "mix-rest"))
+	var earning model.AdtySiteWallet
+	require.NoError(t, db.Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteWalletEarnings).First(&earning).Error)
+	require.True(t, earning.Balance.Equal(decimal.NewFromInt(2)))
+	require.True(t, earning.FrozenUSD.IsZero())
+}
+
 func TestSiteInviteUSDTWithdrawalRefusesWhenItsOwnRulesAreUnset(t *testing.T) {
 	db := prepareReferralDialectDB(t, "sqlite")
 	site, _, inviter := availableSiteCommission(t, db, decimal.NewFromInt(2))

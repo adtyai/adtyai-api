@@ -574,6 +574,13 @@ func consumeSiteCommissionHoldTx(tx *gorm.DB, row *model.AdtySiteInviteCommissio
 	}
 	holds := []decimal.Decimal{row.EarningsHoldUSD, row.MarginHoldUSD}
 	parts := splitDecimalByWeights(amount, holds)
+	settled := decimal.Zero
+	for _, part := range parts {
+		settled = settled.Add(part)
+	}
+	if settled.LessThan(amount) {
+		return common.NewMessage("Not enough withdrawable commission")
+	}
 	kinds := []string{model.AdtySiteWalletEarnings, model.AdtySiteWalletMargin}
 	codes := []string{"e", "m"}
 	prefix := "cd"
@@ -635,7 +642,7 @@ func ListAdtySiteInviteCommissions(inviterID int, now time.Time) ([]model.AdtySi
 }
 
 // ConvertAdtySiteInviteCommission moves an available remainder into the inviter's
-// consumption quota. It does not use the referral account or debit a site wallet again.
+// consumption quota and deducts the matching site hold in the same transaction.
 func ConvertAdtySiteInviteCommission(inviterID int, commissionID int64, amount decimal.Decimal, key string) error {
 	key = strings.TrimSpace(key)
 	if inviterID <= 0 || commissionID <= 0 || !amount.IsPositive() || key == "" || len(key) > 40 {

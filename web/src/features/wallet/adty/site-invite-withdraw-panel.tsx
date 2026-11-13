@@ -142,12 +142,9 @@ function freeAmount(row: SiteCommission, nowSeconds: number): number {
   if (row.status !== 'available' || !row.available_at || row.available_at > nowSeconds) {
     return 0
   }
-  const free =
-    Number(row.amount_usd) -
-    Number(row.clawed_usd || 0) -
-    Number(row.converted_usd || 0) -
-    Number(row.withdrawn_usd || 0) -
-    Number(row.frozen_usd || 0)
+  const hold =
+    Number(row.earnings_hold_usd || 0) + Number(row.margin_hold_usd || 0)
+  const free = hold - Number(row.frozen_usd || 0)
   return free > 0 ? free : 0
 }
 

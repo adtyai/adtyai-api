@@ -40,6 +40,8 @@ export type SiteCommission = {
   converted_usd: string
   withdrawn_usd: string
   frozen_usd: string
+  earnings_hold_usd: string
+  margin_hold_usd: string
   available_at: number
 }
 

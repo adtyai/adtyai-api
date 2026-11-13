@@ -248,7 +248,13 @@ func allocateSiteInviteWithdrawalTx(tx *gorm.DB, withdrawal *model.AdtySiteInvit
 }
 
 func siteInviteCommissionFree(row *model.AdtySiteInviteCommission) decimal.Decimal {
-	free := row.AmountUSD.Sub(row.ClawedUSD).Sub(row.ConvertedUSD).Sub(row.WithdrawnUSD).Sub(row.FrozenUSD)
+	if row == nil {
+		return decimal.Zero
+	}
+	// The site hold is what can still be assigned. Allocation freeze is only a
+	// pending cash request. Clawed converted and withdrawn amounts stay in those
+	// fields, so subtracting them again would hide the remaining hold.
+	free := row.EarningsHoldUSD.Add(row.MarginHoldUSD).Sub(row.FrozenUSD)
 	if free.IsNegative() {
 		return decimal.Zero
 	}
@@ -266,7 +272,7 @@ func ReviewAdtySiteInviteWithdrawal(ownerID int, withdrawalID int64, approve boo
 		if err := requireSiteInviteWithdrawOwner(tx, ownerID, row.SiteId); err != nil {
 			return err
 		}
-		if row.Status != model.AdtySiteInviteWithdrawPending || row.Method == "balance" {
+		if row.Method == "balance" || (approve && row.Status != model.AdtySiteInviteWithdrawPending) || (!approve && row.Status != model.AdtySiteInviteWithdrawPending && row.Status != model.AdtySiteInviteWithdrawApproved) {
 			return common.NewMessage("Only pending withdrawals can be reviewed")
 		}
 		if approve {

@@ -181,9 +181,26 @@ function ReviewRow(props: { row: SiteInviteCommissionWithdrawal; onDone: () => v
               onChange={(event) => setProof(event.target.value)}
             />
           </div>
-          <div>
+          <div className='flex flex-col gap-2'>
+            <Label htmlFor={`commission-fail-${row.id}`}>{t('Reason')}</Label>
+            <Input
+              id={`commission-fail-${row.id}`}
+              value={reason}
+              autoComplete='off'
+              onChange={(event) => setReason(event.target.value)}
+            />
+          </div>
+          <div className='flex flex-wrap gap-2'>
             <Button type='submit' variant='outline' disabled={pay.isPending}>
               {t('Mark as paid')}
+            </Button>
+            <Button
+              type='button'
+              variant='outline'
+              disabled={review.isPending}
+              onClick={() => review.mutate(false)}
+            >
+              {t('Reject')}
             </Button>
           </div>
         </form>
