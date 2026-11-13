@@ -1104,12 +1104,15 @@ func SensitiveActionNeedsProof(role int) bool {
 	return role != common.RoleRootUser
 }
 
-// SensitiveProofMethods lists the allowed step-up methods. Root has none.
+// SensitiveProofMethods lists the G.14 important-operation step-up methods on
+// the live path: password first, then email_code. Completing either one is
+// enough. Enrolled 2FA/Passkey may also be offered by securityVerificationPolicy,
+// but they do not replace these two. Root has no challenge methods.
 func SensitiveProofMethods(role int) []string {
 	if !SensitiveActionNeedsProof(role) {
 		return nil
 	}
-	return []string{"password", "email_code"}
+	return []string{VerificationMethodPassword, VerificationMethodEmailCode}
 }
 
 // SetSiteReferralRate stores the site's one-level invite rate. Rate is a fraction in [0, 1].

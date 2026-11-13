@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
@@ -30,6 +31,34 @@ func GetVerificationMethods(c *gin.Context) {
 		return
 	}
 	common.ApiSuccess(c, requirements)
+}
+
+func SendSecurityEmailCode(c *gin.Context) {
+	identity, ok := middleware.GetStepUpIdentity(c)
+	if !ok {
+		writeAccountStatusError(c, http.StatusUnauthorized, "The current sign-in method does not support security verification")
+		return
+	}
+	var request struct {
+		Scope string `json:"scope"`
+	}
+	if err := common.DecodeJson(c.Request.Body, &request); err != nil {
+		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	if err := service.IssueSecurityEmailCode(identity, request.Scope, service.AdtySiteForRequest(c), i18n.StatedLang(c)); err != nil {
+		if errors.Is(err, common.ErrVerificationStoreUnavailable) {
+			common.ApiErrorStatus(c, http.StatusServiceUnavailable, common.NewMessage("Please try again later"))
+			return
+		}
+		if errors.Is(err, service.ErrSecurityEmailCodeDelivery) {
+			common.ApiErrorT(c, "Failed to send email")
+			return
+		}
+		writeSecurityOperationError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{})
 }
 
 // writeSecurityOperationError only exposes known, fixed business messages.
@@ -165,6 +194,7 @@ func UniversalVerify(c *gin.Context) {
 		common.ApiErrorT(c, "Invalid parameters")
 		return
 	}
+	request.SiteID = service.AdtyRequestSiteID(c)
 	proof, err := service.VerifySecurityInput(identity, request)
 	if err != nil {
 		writeSecurityOperationError(c, err)

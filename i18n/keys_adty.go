@@ -15,6 +15,11 @@ const (
 	MsgAdtyEmailRegisteredSubject = "adty.email.registered_subject"
 	MsgAdtyEmailRegisteredBody    = "adty.email.registered_body"
 
+	MsgAdtySecurityStepUpSubject  = "adty.email.security_stepup_subject"
+	MsgAdtySecurityStepUpGreeting = "adty.email.security_stepup_greeting"
+	MsgAdtySecurityStepUpCode     = "adty.email.security_stepup_code"
+	MsgAdtySecurityStepUpValidity = "adty.email.security_stepup_validity"
+
 	MsgAdtyLimitRPM         = "adty.limit.rpm"
 	MsgAdtyLimitTPM         = "adty.limit.tpm"
 	MsgAdtyLimitConcurrency = "adty.limit.concurrency"

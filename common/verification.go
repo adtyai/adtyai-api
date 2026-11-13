@@ -22,6 +22,7 @@ const (
 	EmailVerificationPurpose = "v"
 	PasswordResetPurpose     = "r"
 	AccountDeletionPurpose   = "adty_account_delete"
+	SecurityStepUpPurpose    = "adty_security_stepup"
 )
 
 var verificationMutex sync.Mutex

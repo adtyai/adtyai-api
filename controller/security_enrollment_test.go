@@ -208,8 +208,8 @@ func TestSecurityEnrollmentAccessTokenMethodPolicy(t *testing.T) {
 		{name: "password", method: "password", password: true, oauth: true, available: true},
 		{name: "existing passkey", method: "passkey", password: true, passkey: true, available: true},
 		{name: "existing twofa", method: "2fa", password: true, passkey: true, twoFA: true, available: true},
-		{name: "locked twofa blocks fallback", method: "2fa", password: true, twoFA: true, locked: true},
-		{name: "disabled passkey blocks fallback", method: "passkey", password: true, passkey: true, disabledPasskey: true},
+		{name: "locked twofa does not remove password", method: "2fa", password: true, twoFA: true, locked: true},
+		{name: "disabled passkey does not remove password", method: "passkey", password: true, passkey: true, disabledPasskey: true},
 		{name: "disabled passkey does not block password", method: "password", password: true, disabledPasskey: true, available: true},
 		{name: "linked oauth", method: "oauth", oauth: true, available: true},
 		{name: "wechat session cannot manage tokens", method: "oauth", wechat: true},
@@ -247,15 +247,13 @@ func TestSecurityEnrollmentAccessTokenMethodPolicy(t *testing.T) {
 				service.VerificationScopeAccountBind, service.VerificationScopeAccountUnbind, passwordScope} {
 				requirements, err := service.GetVerificationRequirements(identity, scope)
 				require.NoError(t, err)
-				count := 1
-				if test.twoFA && test.passkey {
-					count = 2
-				}
-				require.Len(t, requirements.Methods, count)
-				assert.Equal(t, test.method, requirements.Methods[0].Method)
-				assert.Equal(t, test.available, requirements.Methods[0].Available)
-				if count == 2 {
-					assert.Equal(t, service.VerificationMethodOption{Method: "passkey", Available: true}, requirements.Methods[1])
+				want := importantOperationMethodsForTest(t, test.password, false, test.twoFA, test.passkey, test.locked, test.disabledPasskey, test.available)
+				assertVerificationMethods(t, requirements.Methods, want)
+				_, err = service.RequireVerificationMethod(identity, scope, test.method)
+				if test.available {
+					require.NoError(t, err)
+				} else {
+					assert.ErrorIs(t, err, service.ErrVerificationUnavailable)
 				}
 				if test.wechat {
 					input := service.VerificationInput{Scope: scope, Method: "session"}
@@ -661,10 +659,10 @@ func TestSecurityEnrollmentMethodPolicy(t *testing.T) {
 		available                                         bool
 	}{
 		{name: "first factor uses password", password: true, method: "password", available: true},
-		{name: "existing passkey takes precedence", password: true, passkey: true, method: "passkey", available: true},
-		{name: "twofa and passkey are alternatives", password: true, passkey: true, twoFA: true, method: "2fa", available: true},
-		{name: "locked twofa permits passkey", password: true, passkey: true, twoFA: true, locked: true, method: "2fa"},
-		{name: "disabled passkey does not fall back", password: true, passkey: true, disabledPasskey: true, method: "passkey"},
+		{name: "existing passkey remains optional", password: true, passkey: true, method: "passkey", available: true},
+		{name: "twofa and passkey remain alternatives", password: true, passkey: true, twoFA: true, method: "2fa", available: true},
+		{name: "locked twofa still offers password and passkey", password: true, passkey: true, twoFA: true, locked: true, method: "2fa"},
+		{name: "disabled passkey does not remove password", password: true, passkey: true, disabledPasskey: true, method: "passkey"},
 		{name: "disabled registration does not request a password", password: true, disabledPasskey: true, method: "password"},
 		{name: "passwordless account without providers is unavailable", method: "oauth"},
 	} {
@@ -687,20 +685,26 @@ func TestSecurityEnrollmentMethodPolicy(t *testing.T) {
 			system_setting.GetPasskeySettings().Enabled = !test.disabledPasskey
 			requirements, err := service.GetVerificationRequirements(identity, "passkey.register")
 			require.NoError(t, err)
-			count := 1
-			if test.twoFA && test.passkey {
-				count = 2
+			want := importantOperationMethodsForTest(t, test.password, false, test.twoFA, test.passkey, test.locked, test.disabledPasskey, test.available)
+			if test.disabledPasskey {
+				for i := range want {
+					want[i].Available = false
+					want[i].Reason = "Passkey authentication is disabled."
+				}
 			}
-			require.Len(t, requirements.Methods, count)
-			assert.Equal(t, test.method, requirements.Methods[0].Method)
-			assert.Equal(t, test.available, requirements.Methods[0].Available)
-			if count == 2 {
-				assert.Equal(t, service.VerificationMethodOption{Method: "passkey", Available: true}, requirements.Methods[1])
+			assertVerificationMethods(t, requirements.Methods, want)
+			_, err = service.RequireVerificationMethod(identity, "passkey.register", test.method)
+			if test.available {
+				require.NoError(t, err)
+			} else if test.method == service.VerificationMethodOAuth || test.method == "oauth" {
+				assert.ErrorIs(t, err, service.ErrVerificationUnavailable)
+			} else {
+				assert.ErrorIs(t, err, service.ErrVerificationUnavailable)
 			}
-			if test.passkey && !test.twoFA {
+			if test.passkey && !test.twoFA && !test.disabledPasskey {
 				requirements, err = service.GetVerificationRequirements(identity, "2fa.setup")
 				require.NoError(t, err)
-				assert.Equal(t, "passkey", requirements.Methods[0].Method)
+				assertVerificationMethods(t, requirements.Methods, importantOperationMethodsForTest(t, test.password, false, false, true, false, false, true))
 			}
 		})
 	}
@@ -1918,4 +1922,48 @@ func TestRootAccountDeleteStaysForbidden(t *testing.T) {
 	require.NoError(t, model.DB.Model(user).Update("role", common.RoleRootUser).Error)
 	_, err := service.GetVerificationRequirements(identity, service.VerificationScopeAccountDelete)
 	require.ErrorIs(t, err, service.ErrVerificationForbidden)
+}
+
+// importantOperationMethodsForTest is the G.14 method list for a non-Root user.
+// 2FA/Passkey are optional extras. oauthAvailable is used only when the account
+// has no password.
+func importantOperationMethodsForTest(t *testing.T, hasPassword, hasEmail, hasTwoFA, hasPasskey, twoFALocked, passkeyDisabled, oauthAvailable bool) []service.VerificationMethodOption {
+	t.Helper()
+	var methods []service.VerificationMethodOption
+	if hasPassword {
+		methods = append(methods, service.VerificationMethodOption{Method: service.VerificationMethodPassword, Available: true})
+	}
+	if hasEmail {
+		methods = append(methods, service.VerificationMethodOption{Method: service.VerificationMethodEmailCode, Available: true})
+	}
+	if hasTwoFA {
+		option := service.VerificationMethodOption{Method: service.VerificationMethodTwoFA, Available: true}
+		if twoFALocked {
+			option.Available, option.Reason = false, service.ErrVerificationLocked.Error()
+		}
+		methods = append(methods, option)
+	}
+	if hasPasskey {
+		option := service.VerificationMethodOption{Method: service.VerificationMethodPasskey, Available: true}
+		if passkeyDisabled {
+			option.Available, option.Reason = false, "Passkey authentication is disabled."
+		}
+		methods = append(methods, option)
+	}
+	if !hasPassword {
+		methods = append(methods, service.VerificationMethodOption{Method: service.VerificationMethodOAuth, Available: oauthAvailable})
+	}
+	return methods
+}
+
+func assertVerificationMethods(t *testing.T, got, want []service.VerificationMethodOption) {
+	t.Helper()
+	require.Len(t, got, len(want))
+	for i := range want {
+		assert.Equal(t, want[i].Method, got[i].Method, "method %d", i)
+		assert.Equal(t, want[i].Available, got[i].Available, "availability of %s", want[i].Method)
+		if want[i].Reason != "" {
+			assert.Equal(t, want[i].Reason, got[i].Reason, "reason of %s", want[i].Method)
+		}
+	}
 }

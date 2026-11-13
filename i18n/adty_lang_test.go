@@ -46,6 +46,7 @@ func TestAdtyEmailsAllLanguages(t *testing.T) {
 		MsgEmailPasswordResetSubject, MsgEmailPasswordResetGreeting, MsgEmailPasswordResetLink,
 		MsgEmailPasswordResetLinkFallback, MsgEmailPasswordResetValidity,
 		MsgAdtyEmailRegisteredSubject, MsgAdtyEmailRegisteredBody,
+		MsgAdtySecurityStepUpSubject, MsgAdtySecurityStepUpGreeting, MsgAdtySecurityStepUpCode, MsgAdtySecurityStepUpValidity,
 		MsgAdtyReferralWithdrawPaidSubject, MsgAdtyReferralWithdrawPaidBody,
 		MsgAdtyReferralWithdrawRejectedSubject, MsgAdtyReferralWithdrawRejectedBody,
 		MsgAdtyEpayMaintenanceSubject, MsgAdtyEpayMaintenanceBody,

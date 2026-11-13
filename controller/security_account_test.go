@@ -116,9 +116,13 @@ func TestSecurityAccountDeletionAcceptsEitherFactorAndRevokesSessions(t *testing
 			_, err = service.RequireVerificationMethod(identity, service.VerificationScopeAccountDelete, method)
 			require.NoError(t, err)
 			if method == "2fa" || method == "passkey" {
-				assert.Len(t, requirements.Methods, 2)
 				_, err = service.RequireVerificationMethod(identity, service.VerificationScopeAccountDelete, "password")
-				assert.ErrorIs(t, err, service.ErrProofMethod)
+				require.NoError(t, err, "locked or disabled 2FA/Passkey must not hide password step-up")
+				methods := make([]string, 0, len(requirements.Methods))
+				for _, option := range requirements.Methods {
+					methods = append(methods, option.Method)
+				}
+				assert.Equal(t, []string{service.VerificationMethodPassword, service.VerificationMethodTwoFA, service.VerificationMethodPasskey}, methods)
 			}
 			proof := issueSecurityEnrollmentProof(t, identity, service.VerificationOperation{Scope: service.VerificationScopeAccountDelete}, method)
 			if method == "password" || method == "2fa" {

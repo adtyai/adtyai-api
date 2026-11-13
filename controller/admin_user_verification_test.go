@@ -332,14 +332,28 @@ func TestAdminUserVerificationPolicy(t *testing.T) {
 		_, identity, _ := setupAdminUserTest(t)
 		requirements, err := service.GetVerificationRequirements(identity, service.VerificationScopeAdminUserDelete)
 		require.NoError(t, err)
-		assert.Equal(t, []service.VerificationMethodOption{{Method: service.VerificationMethodPassword, Available: true}}, requirements.Methods)
+		// Operator is Root in this fixture, so the live policy stays root_exempt.
+		assert.Equal(t, []service.VerificationMethodOption{{Method: service.VerificationMethodRootExempt, Available: true}}, requirements.Methods)
 	})
 	t.Run("prefers an enrolled second factor", func(t *testing.T) {
 		operator, identity, _ := setupAdminUserTest(t)
 		require.NoError(t, model.DB.Create(&model.TwoFA{UserId: operator.Id, Secret: "JBSWY3DPEHPK3PXP", IsEnabled: true}).Error)
 		requirements, err := service.GetVerificationRequirements(identity, service.VerificationScopeAdminUserManage)
 		require.NoError(t, err)
-		assert.Equal(t, []service.VerificationMethodOption{{Method: service.VerificationMethodTwoFA, Available: true}}, requirements.Methods)
+		// Operator is Root in this fixture, so the live policy stays root_exempt.
+		assert.Equal(t, []service.VerificationMethodOption{{Method: service.VerificationMethodRootExempt, Available: true}}, requirements.Methods)
+	})
+	t.Run("non-root admin keeps password when 2FA is enabled", func(t *testing.T) {
+		operator, identity := setupSecurityEnrollmentTest(t)
+		require.NoError(t, model.DB.Model(operator).Update("role", common.RoleAdminUser).Error)
+		require.NoError(t, model.PublishUserAuthCache(operator.Id))
+		require.NoError(t, model.DB.Create(&model.TwoFA{UserId: operator.Id, Secret: "JBSWY3DPEHPK3PXP", IsEnabled: true}).Error)
+		requirements, err := service.GetVerificationRequirements(identity, service.VerificationScopeAdminUserManage)
+		require.NoError(t, err)
+		assert.Equal(t, []service.VerificationMethodOption{
+			{Method: service.VerificationMethodPassword, Available: true},
+			{Method: service.VerificationMethodTwoFA, Available: true},
+		}, requirements.Methods)
 	})
 	t.Run("a legacy token cannot present a proof", func(t *testing.T) {
 		operator, identity, target := setupAdminUserTest(t)
@@ -356,7 +370,7 @@ func TestAdminUserVerificationPolicy(t *testing.T) {
 		require.NoError(t, model.DB.AutoMigrate(&model.ExternalIdentityClaim{}, &model.Token{}))
 		raw, _ := createScopedAccessToken(t, operator.Id, 0, "user:write")
 		router := newAccessTokenTestRouter()
-		response := accessTokenRequest(router, http.MethodPost, "/api/verify", raw, "", fmt.Sprintf(`{"scope":"admin.user.delete","method":"password","password":"enrollment-password","context":{"user_id":%d}}`, target.Id))
+		response := accessTokenRequest(router, http.MethodPost, "/api/verify", raw, "", fmt.Sprintf(`{"scope":"admin.user.delete","method":"root_exempt","context":{"user_id":%d}}`, target.Id))
 		body := decodeSecurityEnrollmentResponse(t, response)
 		require.True(t, body.Success, body.Message)
 		var proof service.SecurityProof

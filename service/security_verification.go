@@ -4,12 +4,15 @@ import (
 	"crypto/hmac"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"html"
 	"slices"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/oauth"
 	"github.com/QuantumNous/new-api/setting/system_setting"
@@ -21,6 +24,7 @@ const (
 	VerificationMethodPasskey            = "passkey"
 	VerificationMethodPassword           = "password"
 	VerificationMethodOAuth              = "oauth"
+	VerificationMethodEmailCode          = "email_code"
 	VerificationMethodSession            = "session"
 	VerificationMethodRootExempt         = "root_exempt"
 	VerificationScopeChannelKeyRead      = "channel.key.read"
@@ -62,6 +66,7 @@ var (
 	ErrVerificationFlowRequired   = errors.New("This verification method requires its dedicated verification flow.")
 	ErrVerificationContextInvalid = errors.New("The action details are invalid.")
 	ErrVerificationForbidden      = errors.New("You do not have permission to perform this action.")
+	ErrSecurityEmailCodeDelivery  = errors.New("Failed to send email")
 )
 
 // VerificationOperation describes the action being authorized, independently of
@@ -327,19 +332,22 @@ type VerificationRequirements struct {
 // securityVerificationPolicy is the only operation-to-method policy. Device
 // support and disabled providers never turn an enrolled factor into an absent one.
 func securityVerificationPolicy(scope string, state model.UserVerificationState) ([]VerificationMethodOption, error) {
-	var methods []string
+	var enrolled []string
 	if state.HasTwoFA {
-		methods = append(methods, VerificationMethodTwoFA)
+		enrolled = append(enrolled, VerificationMethodTwoFA)
 	}
 	if state.HasPasskey {
-		methods = append(methods, VerificationMethodPasskey)
+		enrolled = append(enrolled, VerificationMethodPasskey)
 	}
+	var methods []string
 	switch scope {
 	case VerificationScopeChannelKeyRead, VerificationScopePasskeyDelete, VerificationScopeLogin:
+		methods = enrolled
 	case VerificationScopeTwoFADisable, VerificationScopeTwoFABackupCodes:
 		if !state.HasTwoFA {
 			return nil, model.ErrTwoFANotEnabled
 		}
+		methods = enrolled
 	case VerificationScopePasskeyRegister, VerificationScopeTwoFASetup,
 		VerificationScopeAccessTokenGenerate, VerificationScopeAccessTokenUpdate, VerificationScopeAccessTokenRevoke,
 		VerificationScopeAPIKeyRead,
@@ -357,25 +365,13 @@ func securityVerificationPolicy(scope string, state model.UserVerificationState)
 		if (scope == VerificationScopePasswordSet && state.HasPassword) || (scope == VerificationScopePasswordChange && !state.HasPassword) {
 			return nil, ErrVerificationForbidden
 		}
-		if len(methods) == 0 {
-			if state.HasPassword {
-				methods = []string{VerificationMethodPassword}
-			} else {
-				methods = []string{VerificationMethodOAuth}
-			}
-		}
+		methods = importantOperationMethods(state, enrolled)
 	default:
-		// 二开：站长中心的敏感操作和账号安全操作一样，没有 2FA、Passkey 时用密码（任务 11.6）
+		// 二开：站长中心和公告配置的敏感操作与账号安全一样，提供密码和邮箱验证码（G.14）。
 		if !adtyIsSiteVerificationScope(scope) && !adtyIsNoticeVerificationScope(scope) {
 			return nil, ErrProofScope
 		}
-		if len(methods) == 0 {
-			if state.HasPassword {
-				methods = []string{VerificationMethodPassword}
-			} else {
-				methods = []string{VerificationMethodOAuth}
-			}
-		}
+		methods = importantOperationMethods(state, enrolled)
 	}
 	options := make([]VerificationMethodOption, 0, len(methods))
 	for _, method := range methods {
@@ -681,6 +677,9 @@ type VerificationInput struct {
 	Password          string          `json:"password,omitempty"`
 	PasswordEncrypted string          `json:"password_encrypted,omitempty"`
 	EncryptionKeyID   string          `json:"encryption_key_id,omitempty"`
+	// SiteID is the current request site (AdtyRequestSiteID). It is set by the
+	// controller and must not be taken from client JSON.
+	SiteID int `json:"-"`
 }
 
 func VerifySecurityInput(identity AuthIdentity, input VerificationInput) (*SecurityProof, error) {
@@ -735,6 +734,8 @@ func VerifySecurityInput(identity AuthIdentity, input VerificationInput) (*Secur
 		if backupCode != "" {
 			return completeSecurityVerificationWithBackup(identity, binding, input.Method, backupCode)
 		}
+	case VerificationMethodEmailCode:
+		return completeSecurityVerificationWithEmailCode(identity, binding, input)
 	case VerificationMethodPasskey, VerificationMethodOAuth:
 		return nil, ErrVerificationFlowRequired
 	default:
@@ -821,4 +822,114 @@ func GetOAuthVerificationBinding(identity AuthIdentity, scope, provider string) 
 		}
 	}
 	return "", ErrVerificationUnavailable
+}
+
+// importantOperationMethods is the G.14 step-up list for important operations:
+// password first when the account has one, email_code when a bound email can
+// receive a code, then any enrolled 2FA/Passkey as optional extras. OAuth stays
+// a fallback only for passwordless accounts. Completing any one method is enough.
+func importantOperationMethods(state model.UserVerificationState, enrolled []string) []string {
+	methods := make([]string, 0, 2+len(enrolled)+1)
+	if state.HasPassword {
+		methods = append(methods, VerificationMethodPassword)
+	}
+	if state.HasEmail {
+		methods = append(methods, VerificationMethodEmailCode)
+	}
+	methods = append(methods, enrolled...)
+	if !state.HasPassword {
+		methods = append(methods, VerificationMethodOAuth)
+	}
+	return methods
+}
+
+// SecurityStepUpCodeKey scopes a step-up email code to the request site, the
+// authenticated user, and the operation scope. The site portion uses the same
+// SiteEmailCodeKey helper as registration and password-reset codes.
+func SecurityStepUpCodeKey(email string, siteID, userID int, scope string) string {
+	return fmt.Sprintf("%s:%d:%s", model.SiteEmailCodeKey(email, siteID), userID, strings.TrimSpace(scope))
+}
+
+// sendSecurityStepUpEmail delivers a step-up code. Tests replace it so no real
+// mail is sent; a send failure must not leave a usable code.
+var sendSecurityStepUpEmail = AdtySendSiteEmail
+
+// SetSecurityStepUpEmailSenderForTest replaces the send hook. The returned
+// function restores the previous hook.
+func SetSecurityStepUpEmailSenderForTest(hook func(*model.AdtySite, string, string, string) error) func() {
+	previous := sendSecurityStepUpEmail
+	if hook == nil {
+		sendSecurityStepUpEmail = AdtySendSiteEmail
+	} else {
+		sendSecurityStepUpEmail = hook
+	}
+	return func() { sendSecurityStepUpEmail = previous }
+}
+
+// IssueSecurityEmailCode sends a purpose-bound, short-lived, single-use email
+// code for an important-operation step-up. site is the current request site
+// (nil is the main site, site ID 0).
+func IssueSecurityEmailCode(identity AuthIdentity, scope string, site *model.AdtySite, lang string) error {
+	if _, err := RequireVerificationMethod(identity, scope, VerificationMethodEmailCode); err != nil {
+		return err
+	}
+	if err := common.VerificationStoreReady(); err != nil {
+		return err
+	}
+	user, err := model.GetUserById(identity.UserID, false)
+	if err != nil {
+		return err
+	}
+	email := model.NormalizeEmail(user.Email)
+	if email == "" || !strings.Contains(email, "@") {
+		return ErrVerificationUnavailable
+	}
+	if lang == "" {
+		if setting := user.GetSetting(); setting.Language != "" {
+			lang = setting.Language
+		}
+	}
+	code := common.GenerateVerificationCode(6)
+	siteID := 0
+	if site != nil {
+		siteID = site.Id
+	}
+	key := SecurityStepUpCodeKey(email, siteID, identity.UserID, scope)
+	if err := common.RegisterVerificationCodeWithKey(key, code, common.SecurityStepUpPurpose); err != nil {
+		return err
+	}
+	systemName := map[string]any{"SystemName": AdtyBrandFor(site).HTMLName()}
+	subject := i18n.Translate(lang, i18n.MsgAdtySecurityStepUpSubject, systemName)
+	content := fmt.Sprintf("<p>%s</p><p>%s</p><p>%s</p>",
+		i18n.Translate(lang, i18n.MsgAdtySecurityStepUpGreeting, systemName),
+		i18n.Translate(lang, i18n.MsgAdtySecurityStepUpCode, map[string]any{"Code": html.EscapeString(code)}),
+		i18n.Translate(lang, i18n.MsgAdtySecurityStepUpValidity, map[string]any{"Minutes": common.VerificationValidMinutes}))
+	if err := sendSecurityStepUpEmail(site, subject, email, content); err != nil {
+		_, _ = common.ConsumeVerificationCodeWithKey(key, code, common.SecurityStepUpPurpose)
+		return ErrSecurityEmailCodeDelivery
+	}
+	return nil
+}
+
+func completeSecurityVerificationWithEmailCode(identity AuthIdentity, binding VerificationBinding, input VerificationInput) (*SecurityProof, error) {
+	user, err := model.GetUserById(identity.UserID, false)
+	if err != nil {
+		return nil, err
+	}
+	email := model.NormalizeEmail(user.Email)
+	code := strings.TrimSpace(input.Code)
+	if email == "" || !strings.Contains(email, "@") || code == "" {
+		return nil, ErrVerificationFailed
+	}
+	key := SecurityStepUpCodeKey(email, input.SiteID, identity.UserID, input.Scope)
+	issued, ok := common.ConsumeVerificationCodeWithKey(key, code, common.SecurityStepUpPurpose)
+	if !ok {
+		return nil, ErrVerificationFailed
+	}
+	proof, err := CompleteSecurityVerification(identity, binding, VerificationMethodEmailCode)
+	if err != nil {
+		common.RestoreVerificationCodeWithKey(key, code, common.SecurityStepUpPurpose, issued)
+		return nil, err
+	}
+	return proof, nil
 }
