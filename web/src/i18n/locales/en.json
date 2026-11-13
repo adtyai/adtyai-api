@@ -8762,7 +8762,17 @@
   "Platform data": "Platform data",
   "Submit ticket": "Submit ticket",
   "Notices": "Notices"
-},
+,
+    "Earnings wallet withdrawal": "Earnings wallet withdrawal",
+    "This request freezes the site earnings wallet. Referral commission withdrawals stay on the Referral page.": "This request freezes the site earnings wallet. Referral commission withdrawals stay on the Referral page.",
+    "Could not load withdrawal rules": "Could not load withdrawal rules",
+    "Root has not set the withdrawal minimum, fee, or exchange rate.": "Root has not set the withdrawal minimum, fee, or exchange rate.",
+    "Minimum {{min}} USD. Fee {{fee}} USD. Rate {{rate}}.": "Minimum {{min}} USD. Fee {{fee}} USD. Rate {{rate}}.",
+    "Amount USD": "Amount USD",
+    "I confirm the payee details before this request is frozen.": "I confirm the payee details before this request is frozen.",
+    "Submit withdrawal": "Submit withdrawal",
+    "Withdrawal rules are not set": "Withdrawal rules are not set"
+  },
   "Targeted notifications": "Targeted notifications",
   "Site announcements": "Site announcements",
   "New notification": "New notification",

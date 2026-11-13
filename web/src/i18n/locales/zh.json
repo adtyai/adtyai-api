@@ -8762,7 +8762,17 @@
   "Platform data": "平台数据",
   "Submit ticket": "提交工单",
   "Notices": "通知"
-},
+,
+    "Earnings wallet withdrawal": "收益钱包提现",
+    "This request freezes the site earnings wallet. Referral commission withdrawals stay on the Referral page.": "这笔申请会冻结分站收益钱包。推广佣金提现仍在推广页。",
+    "Could not load withdrawal rules": "提现规则没有载入",
+    "Root has not set the withdrawal minimum, fee, or exchange rate.": "Root 还没有设置提现最低额、手续费或汇率。",
+    "Minimum {{min}} USD. Fee {{fee}} USD. Rate {{rate}}.": "最低 {{min}} 美元。手续费 {{fee}} 美元。汇率 {{rate}}。",
+    "Amount USD": "金额（美元）",
+    "I confirm the payee details before this request is frozen.": "我已核对收款资料，再冻结这笔申请。",
+    "Submit withdrawal": "提交提现",
+    "Withdrawal rules are not set": "提现规则尚未设置"
+  },
   "Targeted notifications": "定向通知",
   "Site announcements": "本站公告",
   "New notification": "新建通知",

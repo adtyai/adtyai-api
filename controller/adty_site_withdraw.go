@@ -10,6 +10,31 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+func GetAdtySiteWithdrawRules(c *gin.Context) {
+	if _, ok := adtyOwnerSiteOr403(c); !ok {
+		return
+	}
+	view, err := service.LoadAdtySiteWithdrawRules()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, view)
+}
+
+func GetAdtySiteWithdrawals(c *gin.Context) {
+	site, ok := adtyOwnerSiteOr403(c)
+	if !ok {
+		return
+	}
+	rows, err := service.ListAdtySiteWithdrawals(site.Id, c.GetInt("id"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"items": rows})
+}
+
 func PostAdtySiteWithdrawal(c *gin.Context) {
 	site, ok := adtyOwnerSiteOr403(c)
 	if !ok {

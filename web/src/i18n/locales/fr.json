@@ -8762,7 +8762,17 @@
   "Platform data": "Données de la plateforme",
   "Submit ticket": "Envoyer un ticket",
   "Notices": "Notifications"
-},
+,
+    "Earnings wallet withdrawal": "Retrait du portefeuille de gains",
+    "This request freezes the site earnings wallet. Referral commission withdrawals stay on the Referral page.": "Cette demande gèle le portefeuille de gains du site. Les retraits de commission restent sur la page Parrainage.",
+    "Could not load withdrawal rules": "Règles de retrait indisponibles",
+    "Root has not set the withdrawal minimum, fee, or exchange rate.": "Root n’a pas défini le minimum, les frais ou le taux de retrait.",
+    "Minimum {{min}} USD. Fee {{fee}} USD. Rate {{rate}}.": "Minimum {{min}} USD. Frais {{fee}} USD. Taux {{rate}}.",
+    "Amount USD": "Montant USD",
+    "I confirm the payee details before this request is frozen.": "Je confirme les coordonnées avant le gel de cette demande.",
+    "Submit withdrawal": "Envoyer la demande",
+    "Withdrawal rules are not set": "Règles de retrait non définies"
+  },
   "Targeted notifications": "Notifications ciblées",
   "Site announcements": "Annonces du site",
   "New notification": "Nouvelle notification",

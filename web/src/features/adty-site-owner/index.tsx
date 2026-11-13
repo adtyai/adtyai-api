@@ -34,6 +34,7 @@ import { AgreementPanel } from './components/agreement-panel'
 import { BonusPanel } from './components/bonus-panel'
 import { CustomersPanel } from './components/customers-panel'
 import { EarningsPanel } from './components/earnings-panel'
+import { WithdrawalPanel } from './components/withdrawal-panel'
 import { OverviewPanel } from './components/overview-panel'
 import { OwnerVerificationProvider } from './components/owner-verification'
 import { PricingPanel } from './components/pricing-panel'
@@ -148,7 +149,10 @@ export function SiteOwnerCenter(props: { section: SiteOwnerSectionId }) {
                     <SiteSettingsPanel site={site.data} />
                   </TabsContent>
                   <TabsContent value='earnings'>
-                    <EarningsPanel />
+                    <div className='flex flex-col gap-8'>
+                      <EarningsPanel />
+                      <WithdrawalPanel />
+                    </div>
                   </TabsContent>
                   <TabsContent value='vouchers'>
                     <VoucherPanel />

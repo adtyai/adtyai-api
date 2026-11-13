@@ -8736,6 +8736,16 @@
     "The staff account changed. Refresh and try again.": "직원 계정이 변경되었습니다. 새로 고친 후 다시 시도하세요.",
     "Staff account not found": "직원 계정을 찾을 수 없습니다",
     "Staff ID": "직원 ID"
+  ,
+    "Earnings wallet withdrawal": "수익 지갑 출금",
+    "This request freezes the site earnings wallet. Referral commission withdrawals stay on the Referral page.": "이 신청은 분점 수익 지갑을 동결합니다. 추천 수수료 출금은 추천 페이지에 있습니다.",
+    "Could not load withdrawal rules": "출금 규칙을 불러오지 못했습니다",
+    "Root has not set the withdrawal minimum, fee, or exchange rate.": "Root가 최소 출금액, 수수료 또는 환율을 아직 설정하지 않았습니다.",
+    "Minimum {{min}} USD. Fee {{fee}} USD. Rate {{rate}}.": "최소 {{min}} USD. 수수료 {{fee}} USD. 환율 {{rate}}.",
+    "Amount USD": "금액 USD",
+    "I confirm the payee details before this request is frozen.": "이 신청을 동결하기 전에 수취 정보를 확인합니다.",
+    "Submit withdrawal": "출금 신청",
+    "Withdrawal rules are not set": "출금 규칙이 없습니다"
   },
   "Targeted notifications": "대상 지정 알림",
   "Site announcements": "사이트 공지",

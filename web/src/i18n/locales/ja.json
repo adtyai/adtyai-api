@@ -8762,7 +8762,17 @@
   "Platform data": "プラットフォームのデータ",
   "Submit ticket": "チケットを送る",
   "Notices": "通知"
-},
+,
+    "Earnings wallet withdrawal": "収益ウォレットの出金",
+    "This request freezes the site earnings wallet. Referral commission withdrawals stay on the Referral page.": "この申請は分站の収益ウォレットを凍結します。紹介手数料の出金は紹介ページのままです。",
+    "Could not load withdrawal rules": "出金ルールを読み込めません",
+    "Root has not set the withdrawal minimum, fee, or exchange rate.": "Root が出金の最低額、手数料、為替レートをまだ設定していません。",
+    "Minimum {{min}} USD. Fee {{fee}} USD. Rate {{rate}}.": "最低 {{min}} USD。手数料 {{fee}} USD。レート {{rate}}。",
+    "Amount USD": "金額（USD）",
+    "I confirm the payee details before this request is frozen.": "受取情報を確認してから、この申請を凍結します。",
+    "Submit withdrawal": "出金を申請",
+    "Withdrawal rules are not set": "出金ルールが未設定です"
+  },
   "Targeted notifications": "対象を指定した通知",
   "Site announcements": "サイトのお知らせ",
   "New notification": "通知を作成",

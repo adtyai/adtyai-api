@@ -115,6 +115,42 @@ func readPositiveOptionTx(tx *gorm.DB, key string) (decimal.Decimal, string, err
 	return requiredPositiveDecimal(raw)
 }
 
+// AdtySiteWithdrawRulesView is what the owner page may show. Unset rules stay blank.
+type AdtySiteWithdrawRulesView struct {
+	Configured    bool     `json:"configured"`
+	MinUSD        string   `json:"min_usd,omitempty"`
+	FeeUSD        string   `json:"fee_usd,omitempty"`
+	AlipayCNYRate string   `json:"alipay_cny_rate,omitempty"`
+	USDTUSDRate   string   `json:"usdt_usd_rate,omitempty"`
+	Methods       []string `json:"methods"`
+}
+
+func LoadAdtySiteWithdrawRules() (AdtySiteWithdrawRulesView, error) {
+	view := AdtySiteWithdrawRulesView{Methods: []string{"alipay", "usdt"}}
+	err := model.DB.Transaction(func(tx *gorm.DB) error {
+		cfg, err := loadAdtySiteWithdrawConfigTx(tx)
+		if errors.Is(err, ErrAdtySiteWithdrawUnset) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		view.Configured = true
+		view.MinUSD = cfg.Min.String()
+		view.FeeUSD = cfg.Fee.String()
+		view.AlipayCNYRate = cfg.AlipayCNYRaw
+		view.USDTUSDRate = cfg.USDTUSDRaw
+		return nil
+	})
+	return view, err
+}
+
+func ListAdtySiteWithdrawals(siteID, ownerID int) ([]model.AdtySiteWithdrawal, error) {
+	var rows []model.AdtySiteWithdrawal
+	err := model.DB.Where("site_id = ? AND owner_user_id = ?", siteID, ownerID).Order("id desc").Limit(20).Find(&rows).Error
+	return rows, err
+}
+
 func CreateAdtySiteWithdrawal(input AdtySiteWithdrawInput) (*model.AdtySiteWithdrawal, error) {
 	method := strings.ToLower(strings.TrimSpace(input.Method))
 	if method != "alipay" && method != "usdt" {

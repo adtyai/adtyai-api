@@ -8762,7 +8762,17 @@
   "Platform data": "Данные платформы",
   "Submit ticket": "Отправить заявку",
   "Notices": "Уведомления"
-},
+,
+    "Earnings wallet withdrawal": "Вывод кошелька дохода",
+    "This request freezes the site earnings wallet. Referral commission withdrawals stay on the Referral page.": "Заявка замораживает кошелек дохода сайта. Вывод комиссий остается на странице приглашений.",
+    "Could not load withdrawal rules": "Правила вывода не загрузились",
+    "Root has not set the withdrawal minimum, fee, or exchange rate.": "Root еще не задал минимум, комиссию или курс вывода.",
+    "Minimum {{min}} USD. Fee {{fee}} USD. Rate {{rate}}.": "Минимум {{min}} USD. Комиссия {{fee}} USD. Курс {{rate}}.",
+    "Amount USD": "Сумма USD",
+    "I confirm the payee details before this request is frozen.": "Я подтверждаю реквизиты до заморозки этой заявки.",
+    "Submit withdrawal": "Отправить заявку",
+    "Withdrawal rules are not set": "Правила вывода не заданы"
+  },
   "Targeted notifications": "Адресные уведомления",
   "Site announcements": "Объявления сайта",
   "New notification": "Новое уведомление",

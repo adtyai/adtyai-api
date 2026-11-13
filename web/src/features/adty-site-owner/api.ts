@@ -107,6 +107,72 @@ export async function getOwnerStats(
   return requireServerSuccess(res.data).data
 }
 
+export type SiteWithdrawRules = {
+  configured: boolean
+  min_usd?: string
+  fee_usd?: string
+  alipay_cny_rate?: string
+  usdt_usd_rate?: string
+  methods: string[]
+}
+
+export type SiteWithdrawal = {
+  id: number
+  amount_usd: string
+  fee_usd: string
+  method: string
+  network: string
+  status: string
+  rate: string
+  payout_amount: string
+  payout_currency: string
+}
+
+export async function getSiteWithdrawRules(): Promise<SiteWithdrawRules> {
+  const res = await api.get<ApiResponse<SiteWithdrawRules>>(
+    `${BASE}/withdrawals/rules`
+  )
+  return requireServerSuccess(res.data).data
+}
+
+export async function getSiteWithdrawals(): Promise<SiteWithdrawal[]> {
+  const res = await api.get<ApiResponse<{ items: SiteWithdrawal[] }>>(
+    `${BASE}/withdrawals`
+  )
+  return requireServerSuccess(res.data).data.items ?? []
+}
+
+export async function createSiteWithdrawal(body: {
+  amount_usd: string
+  method: string
+  network: string
+  account_no: string
+  account_name: string
+  expected_rate: string
+  idempotencyKey: string
+}): Promise<SiteWithdrawal> {
+  const res = await api.post<ApiResponse<SiteWithdrawal>>(
+    `${BASE}/withdrawals`,
+    {
+      amount_usd: body.amount_usd,
+      method: body.method,
+      network: body.network,
+      account_no: body.account_no,
+      account_name: body.account_name,
+      expected_rate: body.expected_rate,
+    },
+    { headers: { 'Idempotency-Key': body.idempotencyKey } }
+  )
+  return requireServerSuccess(res.data).data
+}
+
+export async function cancelSiteWithdrawal(id: number): Promise<void> {
+  const res = await api.post<ApiResponse<unknown>>(
+    `${BASE}/withdrawals/${id}/cancel`
+  )
+  requireServerSuccess(res.data)
+}
+
 export async function getOwnerEarnings(
   p: number,
   kind: string

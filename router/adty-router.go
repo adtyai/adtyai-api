@@ -375,6 +375,8 @@ func registerAdtyResellerRoutes(apiRouter *gin.RouterGroup) {
 		{http.MethodPut, "/bonus-methods", "wallet:write", []gin.HandlerFunc{controller.PutAdtySiteMethodBonus}},
 		{http.MethodGet, "/wallets", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerWallets}},
 		{http.MethodPost, "/wallets/earning-to-margin", "wallet:write", []gin.HandlerFunc{controller.PostAdtyEarningToMargin}},
+		{http.MethodGet, "/withdrawals/rules", "wallet:read", []gin.HandlerFunc{controller.GetAdtySiteWithdrawRules}},
+		{http.MethodGet, "/withdrawals", "wallet:read", []gin.HandlerFunc{controller.GetAdtySiteWithdrawals}},
 		{http.MethodPost, "/withdrawals", "wallet:write", []gin.HandlerFunc{controller.PostAdtySiteWithdrawal}},
 		{http.MethodPost, "/withdrawals/:id/cancel", "wallet:write", []gin.HandlerFunc{controller.PostAdtySiteWithdrawalCancel}},
 		{http.MethodGet, "/wallet-ledgers", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerWalletLedger}},
