@@ -202,11 +202,14 @@ export function useSecureVerification() {
       if (
         current.kind === 'operation' &&
         requirements.methods.length === 1 &&
-        requirements.methods[0].method === 'session' &&
+        (requirements.methods[0].method === 'session' ||
+          requirements.methods[0].method === 'root_exempt') &&
         requirements.methods[0].available
       ) {
+        const method = requirements.methods[0].method
+        if (method !== 'session' && method !== 'root_exempt') return
         const proof = await verify(
-          { method: 'session' },
+          { method },
           current.request,
           requirements.password_encryption_enabled,
           current.controller.signal

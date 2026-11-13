@@ -24,6 +24,7 @@ export type VerificationMethod =
   | 'password'
   | 'oauth'
   | 'session'
+  | 'root_exempt'
 export type SecurityProofScope =
   | 'channel.key.read'
   | 'passkey.register'
@@ -159,6 +160,7 @@ export type VerificationInput =
   | { method: 'passkey'; rpID?: string }
   | { method: 'oauth'; provider: string }
   | { method: 'session' }
+  | { method: 'root_exempt' }
 
 export type RequestVerificationOptions = VerificationOperation & {
   title?: string

@@ -1881,3 +1881,41 @@ func TestSecurityEnrollmentRejectsChangedFirstFactorPolicy(t *testing.T) {
 		}
 	}
 }
+
+func TestRootStepUpDoesNotRequireCredential(t *testing.T) {
+	user, identity := setupSecurityEnrollmentTest(t)
+	require.NoError(t, model.DB.Model(user).Update("role", common.RoleRootUser).Error)
+
+	requirements, err := service.GetVerificationRequirements(identity, service.VerificationScopePasswordChange)
+	require.NoError(t, err)
+	require.Len(t, requirements.Methods, 1)
+	assert.Equal(t, service.VerificationMethodRootExempt, requirements.Methods[0].Method)
+	assert.True(t, requirements.Methods[0].Available)
+
+	proof, err := service.VerifySecurityInput(identity, service.VerificationInput{
+		Scope:  service.VerificationScopePasswordChange,
+		Method: service.VerificationMethodRootExempt,
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, proof.ProofToken)
+	assert.Equal(t, service.VerificationMethodRootExempt, proof.Method)
+
+	_, err = service.ConsumeOperationProof(proof.ProofToken, identity, service.VerificationOperation{Scope: service.VerificationScopePasswordChange})
+	require.NoError(t, err)
+}
+
+func TestNonRootCannotUseRootStepUpExemption(t *testing.T) {
+	_, identity := setupSecurityEnrollmentTest(t)
+	_, err := service.VerifySecurityInput(identity, service.VerificationInput{
+		Scope:  service.VerificationScopePasswordChange,
+		Method: service.VerificationMethodRootExempt,
+	})
+	require.ErrorIs(t, err, service.ErrProofMethod)
+}
+
+func TestRootAccountDeleteStaysForbidden(t *testing.T) {
+	user, identity := setupSecurityEnrollmentTest(t)
+	require.NoError(t, model.DB.Model(user).Update("role", common.RoleRootUser).Error)
+	_, err := service.GetVerificationRequirements(identity, service.VerificationScopeAccountDelete)
+	require.ErrorIs(t, err, service.ErrVerificationForbidden)
+}

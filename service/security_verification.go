@@ -22,6 +22,7 @@ const (
 	VerificationMethodPassword           = "password"
 	VerificationMethodOAuth              = "oauth"
 	VerificationMethodSession            = "session"
+	VerificationMethodRootExempt         = "root_exempt"
 	VerificationScopeChannelKeyRead      = "channel.key.read"
 	VerificationScopePasskeyRegister     = "passkey.register"
 	VerificationScopePasskeyDelete       = "passkey.delete"
@@ -427,6 +428,18 @@ func GetVerificationRequirements(identity AuthIdentity, scope string) (*Verifica
 	if err := requireAccessTokenVerificationScope(identity, scope); err != nil {
 		return nil, err
 	}
+	// G.14.7: Root skips the credential challenge. The proof is still single-use
+	// and bound to this scope. Account deletion stays forbidden for Root.
+	if state.Role == common.RoleRootUser {
+		if scope == VerificationScopeAccountDelete {
+			return nil, ErrVerificationForbidden
+		}
+		return &VerificationRequirements{
+			Scope:                     scope,
+			Methods:                   []VerificationMethodOption{{Method: VerificationMethodRootExempt, Available: true}},
+			PasswordEncryptionEnabled: common.PasswordLoginEncryptionEnabled,
+		}, nil
+	}
 	methods, err := securityVerificationPolicy(scope, *state)
 	if err != nil {
 		return nil, err
@@ -677,6 +690,16 @@ func VerifySecurityInput(identity AuthIdentity, input VerificationInput) (*Secur
 	}
 	if _, err := RequireVerificationMethod(identity, input.Scope, input.Method); err != nil {
 		return nil, err
+	}
+	if input.Method == VerificationMethodRootExempt {
+		state, err := model.GetUserVerificationState(identity.UserID)
+		if err != nil {
+			return nil, err
+		}
+		if state.Role != common.RoleRootUser {
+			return nil, ErrProofMethod
+		}
+		return CompleteSecurityVerification(identity, binding, VerificationMethodRootExempt)
 	}
 	switch input.Method {
 	case VerificationMethodPassword:

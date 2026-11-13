@@ -214,10 +214,11 @@ export async function verify(
     let proof: SecurityProof
     switch (input.method) {
       case 'session':
+      case 'root_exempt':
         proof = await authResult<SecurityProof>(
           api.post(
             '/api/verify',
-            { method: 'session', ...operationFields },
+            { method: input.method, ...operationFields },
             {
               ...authRequestOptions,
               signal,

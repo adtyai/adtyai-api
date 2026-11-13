@@ -247,6 +247,39 @@ it.each(['success', 'cancel', 'retry'] as const)(
   }
 )
 
+it('obtains a Root exemption proof without opening the credential dialog', async () => {
+  vi.spyOn(api, 'get').mockResolvedValue({
+    data: {
+      success: true,
+      data: {
+        ...passwordRequirements,
+        methods: [{ method: 'root_exempt', available: true }],
+      },
+    },
+  })
+  const proof: SecurityProof = {
+    proof_token: 'root-proof',
+    method: 'root_exempt',
+    scope: 'passkey.register',
+    expires_at: Math.floor(Date.now() / 1000) + 300,
+  }
+  const post = vi.spyOn(api, 'post').mockResolvedValue({
+    data: { success: true, data: proof },
+  })
+  const result = vi.fn()
+  const user = userEvent.setup()
+  render(<Harness onResult={result} />)
+  await user.click(screen.getByText('Protected action'))
+  await waitFor(() => expect(post).toHaveBeenCalledTimes(1))
+  expect(post).toHaveBeenCalledWith(
+    '/api/verify',
+    { method: 'root_exempt', scope: 'passkey.register' },
+    expect.objectContaining({ signal: expect.any(AbortSignal) })
+  )
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  await waitFor(() => expect(result).toHaveBeenCalledExactlyOnceWith(proof))
+})
+
 it('keeps the requested channel context fixed while verification is open', async () => {
   vi.spyOn(api, 'get').mockResolvedValue({
     data: {
