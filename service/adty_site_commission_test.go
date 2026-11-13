@@ -14,6 +14,31 @@ import (
 	"gorm.io/gorm"
 )
 
+func TestSiteInviteCommissionKeepsObservationDaysFromRecordTime(t *testing.T) {
+	db := prepareReferralDialectDB(t, "sqlite")
+	site, invitee := seedSiteInvite(t, db, decimal.RequireFromString("0.10"))
+	require.NoError(t, EnsureAdtySiteWallets(site.Id))
+	_, err := ApplyAdtySiteWalletChange(site.Id, model.AdtySiteWalletEarnings, decimal.NewFromInt(5), AdtySiteWalletChange{
+		Type: "earning_settlement", IdempotencyKey: "earn-snapshot",
+	})
+	require.NoError(t, err)
+	require.NoError(t, SaveAdtySiteCommissionPolicy("10", "7"))
+	ext := siteInviteOrder(site.Id, invitee.Id, "SITE-DAYS", decimal.NewFromInt(30))
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return RecordAdtySiteInviteCommissionTx(tx, ext, time.Unix(1_700_000_000, 0))
+	}))
+	var row model.AdtySiteInviteCommission
+	require.NoError(t, db.Where("trade_no = ?", "SITE-DAYS").First(&row).Error)
+	require.Equal(t, int64(7), row.ObservationDays)
+	require.NoError(t, SaveAdtySiteCommissionPolicy("10", "30"))
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return CoverAdtySiteInviteCommissionTx(tx, row.Id, time.Unix(1_700_000_100, 0))
+	}))
+	require.NoError(t, db.First(&row, row.Id).Error)
+	require.Equal(t, int64(7), row.ObservationDays)
+	require.Equal(t, int64(1_700_000_100+7*86400), row.AvailableAt)
+}
+
 func TestSiteInviteCommissionStaysPendingUntilRootConfiguresCoverage(t *testing.T) {
 	db := prepareReferralDialectDB(t, "sqlite")
 	site, invitee := seedSiteInvite(t, db, decimal.RequireFromString("0.10"))

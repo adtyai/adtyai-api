@@ -153,10 +153,16 @@ func RecordAdtySiteInviteCommissionTx(tx *gorm.DB, ext *model.AdtyTopupOrder, no
 	if !amount.IsPositive() {
 		return nil
 	}
+	var observationDays int64
+	if policy, err := loadAdtySiteCommissionPolicy(); err == nil {
+		observationDays = policy.Days
+	} else if !errors.Is(err, ErrAdtySiteReferralUnset) {
+		return err
+	}
 	row := model.AdtySiteInviteCommission{
 		SiteId: ext.SiteId, InviterId: invite.InviterId, InviteeId: ext.UserId, TradeNo: ext.TradeNo,
 		FaceUSD: ext.FaceUSD, Rate: invite.Rate, AmountUSD: amount, Status: model.AdtySiteCommissionPendingCoverage,
-		CreatedAt: now.Unix(),
+		ObservationDays: observationDays, CreatedAt: now.Unix(),
 	}
 	return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&row).Error
 }
@@ -215,9 +221,17 @@ func coverAdtySiteInviteCommissionTx(tx *gorm.DB, id int64, now time.Time, resum
 			return nil
 		}
 	}
+	days := row.ObservationDays
+	if days <= 0 {
+		days = policy.Days
+		row.ObservationDays = days
+		if err := tx.Model(&row).Update("observation_days", days).Error; err != nil {
+			return err
+		}
+	}
 	need := row.AmountUSD.Sub(row.CoveredUSD)
 	if !need.IsPositive() {
-		return markSiteCommissionCovered(tx, &row, now, policy.Days)
+		return markSiteCommissionCovered(tx, &row, now, days)
 	}
 	taken, err := takeSiteCommissionCover(tx, row.SiteId, model.AdtySiteWalletEarnings, need, row.TradeNo)
 	if err != nil {
@@ -234,7 +248,7 @@ func coverAdtySiteInviteCommissionTx(tx *gorm.DB, id int64, now time.Time, resum
 	if row.CoveredUSD.LessThan(row.AmountUSD) {
 		return tx.Model(&row).Update("covered_usd", row.CoveredUSD).Error
 	}
-	return markSiteCommissionCovered(tx, &row, now, policy.Days)
+	return markSiteCommissionCovered(tx, &row, now, days)
 }
 
 func takeSiteCommissionMargin(tx *gorm.DB, siteID int, need decimal.Decimal, tradeNo string) (decimal.Decimal, error) {
