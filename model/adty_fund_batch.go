@@ -56,25 +56,31 @@ var AdtyAfterPrincipalSpentTx func(tx *gorm.DB, userID int, principalQuota int64
 // A user with no lots gets one legacy principal lot for the pre-charge balance,
 // then this charge consumes from that lot.
 func ConsumeAdtyFundBatchesTx(tx *gorm.DB, userID int, amount, balanceBefore int64) error {
+	_, err := consumeAdtyFundBatchesTx(tx, userID, amount, balanceBefore, true)
+	return err
+}
+
+func consumeAdtyFundBatchesTx(tx *gorm.DB, userID int, amount, balanceBefore int64, notifyPrincipalSpent bool) (int64, error) {
 	if tx == nil || userID <= 0 || amount <= 0 || !tx.Migrator().HasTable(&AdtyFundBatch{}) {
-		return nil
+		return 0, nil
 	}
 	var rows []AdtyFundBatch
 	if err := tx.Where("user_id = ? AND remaining > 0", userID).Find(&rows).Error; err != nil {
-		return err
+		return 0, err
 	}
 	if len(rows) == 0 && balanceBefore > 0 {
 		legacy := AdtyFundBatch{UserId: userID, Kind: "principal", Source: "legacy", Original: balanceBefore, Remaining: balanceBefore}
 		if err := tx.Create(&legacy).Error; err != nil {
-			return err
+			return 0, err
 		}
 		rows = []AdtyFundBatch{legacy}
 	}
 	if len(rows) == 0 {
-		return nil
+		return 0, nil
 	}
 	sortAdtyFundBatches(rows)
 	principalTaken := int64(0)
+	taken := int64(0)
 	for i := range rows {
 		if amount == 0 {
 			break
@@ -84,17 +90,83 @@ func ConsumeAdtyFundBatchesTx(tx *gorm.DB, userID int, amount, balanceBefore int
 			take = amount
 		}
 		if err := tx.Model(&AdtyFundBatch{}).Where("id = ?", rows[i].Id).Update("remaining", rows[i].Remaining-take).Error; err != nil {
-			return err
+			return taken, err
 		}
 		if rows[i].Kind == "principal" && rows[i].Source != "legacy" {
 			principalTaken += take
 		}
 		amount -= take
+		taken += take
 	}
-	if principalTaken > 0 && AdtyAfterPrincipalSpentTx != nil {
-		return AdtyAfterPrincipalSpentTx(tx, userID, principalTaken)
+	if notifyPrincipalSpent && principalTaken > 0 && AdtyAfterPrincipalSpentTx != nil {
+		return taken, AdtyAfterPrincipalSpentTx(tx, userID, principalTaken)
 	}
-	return nil
+	return taken, nil
+}
+
+// ReclaimAdtyFundBatchesBySourceTx reduces remaining on the lots of one credit
+// source. Principal and bonus are reduced independently and capped at each
+// kind's remaining. It does not invent lots when none were recorded.
+func ReclaimAdtyFundBatchesBySourceTx(tx *gorm.DB, userID int, source string, principal, bonus int64) (int64, error) {
+	if tx == nil || userID <= 0 || source == "" || (principal <= 0 && bonus <= 0) {
+		return 0, nil
+	}
+	if !tx.Migrator().HasTable(&AdtyFundBatch{}) {
+		return 0, nil
+	}
+	var rows []AdtyFundBatch
+	if err := tx.Where("user_id = ? AND source = ? AND remaining > 0", userID, source).Find(&rows).Error; err != nil {
+		return 0, err
+	}
+	taken := int64(0)
+	for i := range rows {
+		var want *int64
+		switch rows[i].Kind {
+		case "principal":
+			want = &principal
+		case "bonus":
+			want = &bonus
+		default:
+			continue
+		}
+		if *want <= 0 {
+			continue
+		}
+		take := rows[i].Remaining
+		if take > *want {
+			take = *want
+		}
+		if err := tx.Model(&AdtyFundBatch{}).Where("id = ?", rows[i].Id).Update("remaining", rows[i].Remaining-take).Error; err != nil {
+			return taken, err
+		}
+		*want -= take
+		taken += take
+	}
+	return taken, nil
+}
+
+// applyAdtyWalletDebitToBatchesTx keeps the batch ledger in step with a wallet
+// debit. It first reclaims the named source's principal and bonus, then
+// FIFO-consumes any shortfall so total remaining tracks the wallet. Refund
+// shortfalls do not fire the consumption hook; that hook is for charges.
+func applyAdtyWalletDebitToBatchesTx(tx *gorm.DB, userID int, source string, principal, bonus, deducted, balanceBefore int64) error {
+	if deducted <= 0 {
+		return nil
+	}
+	taken, err := ReclaimAdtyFundBatchesBySourceTx(tx, userID, source, principal, bonus)
+	if err != nil {
+		return err
+	}
+	leftover := deducted - taken
+	if leftover <= 0 {
+		return nil
+	}
+	remainingBefore := balanceBefore - taken
+	if remainingBefore < 0 {
+		remainingBefore = 0
+	}
+	_, err = consumeAdtyFundBatchesTx(tx, userID, leftover, remainingBefore, false)
+	return err
 }
 
 func sortAdtyFundBatches(rows []AdtyFundBatch) {

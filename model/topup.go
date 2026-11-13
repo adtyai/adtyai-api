@@ -107,6 +107,15 @@ func creditTopUpQuota(tx *gorm.DB, userId int, creditedQuota int, updates map[st
 	return nil
 }
 
+// creditTopUpQuotaWithPrincipalBatch credits the wallet and records a principal
+// lot for this trade number in the same transaction. Hosted paths have no gift.
+func creditTopUpQuotaWithPrincipalBatch(tx *gorm.DB, userId int, tradeNo string, creditedQuota int, updates map[string]any) error {
+	if err := creditTopUpQuota(tx, userId, creditedQuota, updates); err != nil {
+		return err
+	}
+	return CreateAdtyFundBatchesTx(tx, userId, tradeNo, int64(creditedQuota), 0)
+}
+
 func (topUp *TopUp) Update() error {
 	var err error
 	err = DB.Save(topUp).Error
@@ -216,7 +225,7 @@ func RechargeEpay(tradeNo string, actualPaymentMethod string, paidMoney decimal.
 		if err := tx.Save(topUp).Error; err != nil {
 			return err
 		}
-		return creditTopUpQuota(tx, topUp.UserId, quotaToAdd, nil)
+		return creditTopUpQuotaWithPrincipalBatch(tx, topUp.UserId, topUp.TradeNo, quotaToAdd, nil)
 	})
 	if err != nil {
 		if !errors.Is(err, ErrTopUpNotFound) && !errors.Is(err, ErrPaymentMethodMismatch) && !errors.Is(err, ErrTopUpStatusInvalid) {
@@ -274,7 +283,7 @@ func Recharge(referenceId string, customerId string, callerIp string) (err error
 		if err != nil || quota <= 0 {
 			return ErrInvalidTopUpQuota
 		}
-		return creditTopUpQuota(tx, topUp.UserId, quota, map[string]any{
+		return creditTopUpQuotaWithPrincipalBatch(tx, topUp.UserId, topUp.TradeNo, quota, map[string]any{
 			"stripe_customer": customerId,
 		})
 	})
@@ -516,7 +525,7 @@ func ManualCompleteTopUp(tradeNo string, callerIp string) error {
 		}
 
 		// 增加用户额度（立即写库，保持一致性）
-		if err := creditTopUpQuota(tx, topUp.UserId, quotaToAdd, nil); err != nil {
+		if err := creditTopUpQuotaWithPrincipalBatch(tx, topUp.UserId, topUp.TradeNo, quotaToAdd, nil); err != nil {
 			return err
 		}
 
@@ -615,7 +624,7 @@ func RechargeCreem(referenceId string, customerEmail string, customerName string
 			}
 		}
 
-		return creditTopUpQuota(tx, topUp.UserId, quota, updateFields)
+		return creditTopUpQuotaWithPrincipalBatch(tx, topUp.UserId, topUp.TradeNo, quota, updateFields)
 	})
 
 	if err != nil {
@@ -676,7 +685,7 @@ func RechargeWaffo(tradeNo string, callerIp string) (err error) {
 			return err
 		}
 
-		return creditTopUpQuota(tx, topUp.UserId, quotaToAdd, nil)
+		return creditTopUpQuotaWithPrincipalBatch(tx, topUp.UserId, topUp.TradeNo, quotaToAdd, nil)
 	})
 
 	if err != nil {
@@ -736,7 +745,7 @@ func RechargeWaffoPancake(tradeNo string) (err error) {
 			return err
 		}
 
-		return creditTopUpQuota(tx, topUp.UserId, quotaToAdd, nil)
+		return creditTopUpQuotaWithPrincipalBatch(tx, topUp.UserId, topUp.TradeNo, quotaToAdd, nil)
 	})
 
 	if err != nil {
@@ -835,6 +844,9 @@ func RefundWaffo(tradeNo string, idemKey string, fullRefund bool, refundAmount s
 		clawed = int(claw)
 		if claw > 0 {
 			if err := applyUserQuotaDeltaTx(tx, &user, -int(claw), false); err != nil {
+				return err
+			}
+			if err := applyAdtyWalletDebitToBatchesTx(tx, user.Id, tradeNo, claw, 0, claw, int64(balance)); err != nil {
 				return err
 			}
 		}
@@ -939,6 +951,9 @@ func RefundWaffoPancake(tradeNo string) error {
 			clawed = max(0, min(balance, quota))
 			if clawed > 0 {
 				if err := applyUserQuotaDeltaTx(tx, &user, -clawed, false); err != nil {
+					return err
+				}
+				if err := applyAdtyWalletDebitToBatchesTx(tx, user.Id, tradeNo, int64(clawed), 0, int64(clawed), int64(balance)); err != nil {
 					return err
 				}
 			}

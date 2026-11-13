@@ -30,6 +30,10 @@ type AdtyQuotaAdjustResult struct {
 	Replayed bool
 }
 
+func adtyAdjustFundSource(idemKey string) string {
+	return "adjust:" + common.Sha1([]byte(idemKey))
+}
+
 // AdjustUserQuotaWithLedger 和 AdjustUserQuota 的规则一样，另外要求原因、按幂等键去重、写余额流水。
 // 幂等判断在锁住用户行之后先查后写，不靠唯一键冲突（PostgreSQL 冲突后整个事务作废）。
 func AdjustUserQuotaWithLedger(userID, operatorID, operatorRole int, mode string, value int, reason, idemKey string) (*AdtyQuotaAdjustResult, error) {
@@ -114,6 +118,16 @@ func AdjustUserQuotaWithLedger(userID, operatorID, operatorRole int, mode string
 		}
 		if err := InsertAdtyLedgerTx(tx, entry); err != nil {
 			return err
+		}
+		delta := int64(after) - int64(user.Quota)
+		if delta > 0 {
+			if err := CreateAdtyFundBatchesTx(tx, userID, adtyAdjustFundSource(idemKey), delta, 0); err != nil {
+				return err
+			}
+		} else if delta < 0 {
+			if err := ConsumeAdtyFundBatchesTx(tx, userID, -delta, int64(user.Quota)); err != nil {
+				return err
+			}
 		}
 		result = AdtyQuotaAdjustResult{UserQuotaAdjustment: UserQuotaAdjustment{
 			UserID: user.Id, Username: user.Username, Before: user.Quota, After: after,

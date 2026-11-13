@@ -47,3 +47,30 @@ func TestLegacyBalanceBecomesPrincipalBatch(t *testing.T) {
 	require.Equal(t, "legacy", row.Source)
 	require.EqualValues(t, 60, row.Remaining)
 }
+
+func TestReclaimFundBatchesBySourceCapsEachKind(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&AdtyFundBatch{}))
+	require.NoError(t, db.Create([]AdtyFundBatch{
+		{UserId: 9, Kind: "principal", Source: "order-a", Original: 80, Remaining: 80},
+		{UserId: 9, Kind: "bonus", Source: "order-a", Original: 20, Remaining: 20},
+		{UserId: 9, Kind: "principal", Source: "order-b", Original: 50, Remaining: 50},
+	}).Error)
+	var taken int64
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		var err error
+		taken, err = ReclaimAdtyFundBatchesBySourceTx(tx, 9, "order-a", 100, 5)
+		return err
+	}))
+	require.EqualValues(t, 85, taken)
+	var rows []AdtyFundBatch
+	require.NoError(t, db.Where("user_id = ?", 9).Order("id").Find(&rows).Error)
+	got := map[string]int64{}
+	for _, row := range rows {
+		got[row.Source+":"+row.Kind] = row.Remaining
+	}
+	require.EqualValues(t, 0, got["order-a:principal"])
+	require.EqualValues(t, 15, got["order-a:bonus"])
+	require.EqualValues(t, 50, got["order-b:principal"])
+}

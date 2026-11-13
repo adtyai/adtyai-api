@@ -207,6 +207,20 @@ func RefundAdtyTopUpManualUSD(tradeNo, reason string, operatorID int, idemKey st
 			if err := clampCheckinQuotaDB(tx, topUp.UserId); err != nil {
 				return err
 			}
+			principal := requestQuota
+			bonusTaken := int64(reclaimQuota)
+			if deducted < requestQuota+int64(reclaimQuota) {
+				if deducted < requestQuota {
+					principal = deducted
+					bonusTaken = 0
+				} else {
+					principal = requestQuota
+					bonusTaken = deducted - requestQuota
+				}
+			}
+			if err := applyAdtyWalletDebitToBatchesTx(tx, topUp.UserId, tradeNo, principal, bonusTaken, deducted, before); err != nil {
+				return err
+			}
 		}
 		now := common.GetTimestamp()
 		newRefundQuota := ext.RefundQuota + requestQuota

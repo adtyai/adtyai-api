@@ -198,6 +198,13 @@ func RefundAdtyTopUp(tradeNo, reason string, operatorID int, idemKey string, exp
 			if err := clampCheckinQuotaDB(tx, topUp.UserId); err != nil {
 				return err
 			}
+			bonusTaken := deducted - refundQuota
+			if bonusTaken < 0 {
+				bonusTaken = 0
+			}
+			if err := applyAdtyWalletDebitToBatchesTx(tx, topUp.UserId, tradeNo, refundQuota, bonusTaken, deducted, before); err != nil {
+				return err
+			}
 		}
 		now := common.GetTimestamp()
 		if err := tx.Model(&TopUp{}).Where("id = ?", topUp.Id).Update("status", TopUpStatusRefunded).Error; err != nil {
