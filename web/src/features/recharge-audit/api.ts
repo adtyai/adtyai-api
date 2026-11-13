@@ -227,6 +227,8 @@ export type OrderTrace = PageResponse<OrderTraceEntry> & {
     reason?: string
     commission_clawed_usd?: string
     commission_recovered_usd?: string
+    commission_withdrawn_usd?: string
+    commission_recovery_usd?: string
   }
   section: OrderTraceSection
   sections: OrderTraceSection[]

@@ -85,6 +85,7 @@ type AdtySiteInvite struct {
 	InviterId int             `json:"inviter_id" gorm:"index"`
 	InviteeId int             `json:"invitee_id" gorm:"uniqueIndex"`
 	Rate      decimal.Decimal `json:"rate" gorm:"type:decimal(10,6);not null"`
+	IpHash    string          `json:"-" gorm:"type:varchar(64);index"`
 	CreatedAt int64           `json:"created_at" gorm:"autoCreateTime"`
 }
 

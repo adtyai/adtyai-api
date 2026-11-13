@@ -8861,7 +8861,13 @@
     "Settlement spread is the recorded usage difference. It is not earnings after gifts or commissions.": "Разница расчёта — записанная разница потребления. Это не доход после бонусов и комиссий.",
     "Business day timezone": "Часовой пояс операционного дня",
     "Unset uses UTC. A saved sheet keeps the timezone it was generated with.": "Если пояс не задан, используется UTC. Сохранённый лист хранит пояс, с которым он создан.",
-    "Use UTC": "Использовать UTC"
+    "Use UTC": "Использовать UTC",
+    "Batch registration review": "Проверка массовой регистрации",
+    "Same-IP binds at this count enter review. Leave both fields empty to leave the check off.": "Привязки с одного IP при этом числе уходят на проверку. Оба поля пустые — проверка выключена.",
+    "Window hours": "Окно в часах",
+    "Withdrawn commission": "Выведенная комиссия",
+    "Recovery liability": "Обязательство взыскания",
+    "This invite needs review": "Это приглашение нужно проверить"
 },
   "Targeted notifications": "Адресные уведомления",
   "Site announcements": "Объявления сайта",

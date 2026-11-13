@@ -102,6 +102,16 @@ export function OrderDetailSummary(props: { detail: OrderTrace }) {
               {t('Returned to site wallets')}: {props.detail.refund.commission_recovered_usd} USD
             </p>
           )}
+          {props.detail.refund.commission_withdrawn_usd && (
+            <p className='tabular-nums'>
+              {t('Withdrawn commission')}: {props.detail.refund.commission_withdrawn_usd} USD
+            </p>
+          )}
+          {props.detail.refund.commission_recovery_usd && (
+            <p className='tabular-nums'>
+              {t('Recovery liability')}: {props.detail.refund.commission_recovery_usd} USD
+            </p>
+          )}
           <p className='text-muted-foreground'>
             {t(
               'This records the wallet refund. Return the payment offline through the original payment provider.'

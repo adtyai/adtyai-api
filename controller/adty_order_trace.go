@@ -117,6 +117,21 @@ func getAdtyOrderTrace(c *gin.Context, ownerSiteID *int) {
 		refund["commission_clawed_usd"] = siteCommission.ClawedUSD.String()
 		refund["commission_recovered_usd"] = siteCommission.RecoveredUSD.String()
 	}
+	if siteCommission.Id != 0 && siteCommission.WithdrawnUSD.IsPositive() {
+		refund["commission_withdrawn_usd"] = siteCommission.WithdrawnUSD.String()
+	}
+	var recoveries []model.AdtyCommissionRecovery
+	if err := model.DB.Where("trade_no = ?", tradeNo).Find(&recoveries).Error; err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	recovery := decimal.Zero
+	for _, row := range recoveries {
+		recovery = recovery.Add(row.AmountUSD)
+	}
+	if recovery.IsPositive() {
+		refund["commission_recovery_usd"] = recovery.String()
+	}
 	if ownerSiteID == nil {
 		refund["reason"] = ext.RefundReason
 	}

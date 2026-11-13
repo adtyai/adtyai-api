@@ -47,6 +47,39 @@ func PutAdtySiteReferralCap(c *gin.Context) {
 	common.ApiSuccess(c, gin.H{"saved": true})
 }
 
+func GetAdtySiteInviteBatchPolicy(c *gin.Context) {
+	if c.GetInt("role") != common.RoleRootUser {
+		common.ApiErrorStatus(c, http.StatusForbidden, common.NewMessage("No permission to perform this action"))
+		return
+	}
+	view, err := service.LoadAdtySiteInviteBatchPolicy()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, view)
+}
+
+func PutAdtySiteInviteBatchPolicy(c *gin.Context) {
+	if c.GetInt("role") != common.RoleRootUser {
+		common.ApiErrorStatus(c, http.StatusForbidden, common.NewMessage("No permission to perform this action"))
+		return
+	}
+	var body struct {
+		Threshold   string `json:"threshold"`
+		WindowHours string `json:"window_hours"`
+	}
+	if err := common.DecodeJson(c.Request.Body, &body); err != nil {
+		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	if err := service.SaveAdtySiteInviteBatchPolicy(body.Threshold, body.WindowHours); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"saved": true})
+}
+
 func GetAdtySiteCommissionPolicy(c *gin.Context) {
 	if c.GetInt("role") != common.RoleRootUser {
 		common.ApiErrorStatus(c, http.StatusForbidden, common.NewMessage("No permission to perform this action"))
@@ -298,7 +331,7 @@ func PostAdtyOwnerSiteInvite(c *gin.Context) {
 		common.ApiErrorT(c, "Invalid parameters")
 		return
 	}
-	if err := service.BindAdtyOwnerSiteInvite(site.Id, c.GetInt("id"), body.InviterID, body.InviteeID); err != nil {
+	if err := service.BindAdtyOwnerSiteInviteFromIP(site.Id, c.GetInt("id"), body.InviterID, body.InviteeID, service.HashReferralRiskValue(c.ClientIP())); err != nil {
 		common.ApiError(c, err)
 		return
 	}

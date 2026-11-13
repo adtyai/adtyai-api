@@ -213,6 +213,32 @@ export async function getAdminSettlementSheets(
   return requireServerSuccess(res.data).data ?? []
 }
 
+export async function getAdminSiteInviteBatchPolicy(): Promise<{
+  configured: boolean
+  threshold?: string
+  window_hours?: string
+}> {
+  const res = await api.get<
+    ApiResponse<{
+      configured: boolean
+      threshold?: string
+      window_hours?: string
+    }>
+  >(`${BASE}/site-referral/batch-policy`)
+  return requireServerSuccess(res.data).data
+}
+
+export async function saveAdminSiteInviteBatchPolicy(
+  threshold: string,
+  windowHours: string
+): Promise<void> {
+  const res = await api.put<ApiResponse<{ saved: boolean }>>(
+    `${BASE}/site-referral/batch-policy`,
+    { threshold, window_hours: windowHours }
+  )
+  requireServerSuccess(res.data)
+}
+
 export async function getAdminSiteCommissionPolicy(): Promise<{
   configured: boolean
   pending_coverage_cap?: string

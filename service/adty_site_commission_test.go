@@ -300,6 +300,93 @@ func TestSiteInviteCommissionRefundClawsBackByCompletedPrincipalRatio(t *testing
 	require.Equal(t, 0, user.Quota)
 }
 
+func TestSiteInviteBatchRegisterUsesOnlyASavedRootThreshold(t *testing.T) {
+	db := prepareReferralDialectDB(t, "sqlite")
+	site, inviter, invitees := seedBatchInvite(t, db, 3)
+	for i, invitee := range invitees {
+		require.NoError(t, BindSiteInviteFromIP(site.Id, inviter.Id, invitee.Id, "ip-a"))
+		var count int64
+		require.NoError(t, db.Model(&model.AdtySiteInvite{}).Where("inviter_id = ?", inviter.Id).Count(&count).Error)
+		require.Equal(t, int64(i+1), count)
+	}
+	require.NoError(t, SaveAdtySiteInviteBatchPolicy("2", "24"))
+	other := referralUser(t, db, "batch-other-"+strconv.Itoa(site.Id))
+	require.NoError(t, db.Model(other).Update("site_id", site.Id).Error)
+	require.Error(t, BindSiteInviteFromIP(site.Id, inviter.Id, other.Id, "ip-a"))
+	var blocked model.AdtySiteInvite
+	require.Error(t, db.Where("invitee_id = ?", other.Id).First(&blocked).Error)
+	var anomaly model.AdtyAnomalyDisposition
+	require.NoError(t, db.Where("kind = ? AND ref = ?", "batch_register", strconv.Itoa(site.Id)).First(&anomaly).Error)
+	require.Equal(t, "open", anomaly.Status)
+	allowed := referralUser(t, db, "batch-ok-"+strconv.Itoa(site.Id))
+	require.NoError(t, db.Model(allowed).Update("site_id", site.Id).Error)
+	require.NoError(t, BindSiteInviteFromIP(site.Id, inviter.Id, allowed.Id, "ip-b"))
+	var wallets int64
+	require.NoError(t, db.Model(&model.AdtySiteWalletLedger{}).Count(&wallets).Error)
+	require.Zero(t, wallets)
+}
+
+func seedBatchInvite(t *testing.T, db *gorm.DB, n int) (*model.AdtySite, *model.User, []*model.User) {
+	t.Helper()
+	suffix := strconv.FormatInt(atomic.AddInt64(&siteInviteSeed, 1), 10)
+	owner := referralUser(t, db, "batch-owner-"+suffix)
+	inviter := referralUser(t, db, "batch-inviter-"+suffix)
+	site := &model.AdtySite{OwnerUserId: owner.Id, Subdomain: "batch-" + suffix, RootDomain: "sites.example.com", Status: model.AdtySiteStatusActive}
+	require.NoError(t, db.Create(site).Error)
+	require.NoError(t, db.Model(inviter).Update("site_id", site.Id).Error)
+	require.NoError(t, db.Create(&model.AdtySiteReferralRate{SiteId: site.Id, Rate: decimal.RequireFromString("0.1"), Enabled: true}).Error)
+	invitees := make([]*model.User, 0, n)
+	for i := 0; i < n; i++ {
+		user := referralUser(t, db, "batch-invitee-"+suffix+"-"+strconv.Itoa(i))
+		require.NoError(t, db.Model(user).Update("site_id", site.Id).Error)
+		invitees = append(invitees, user)
+	}
+	return site, inviter, invitees
+}
+
+func TestWithdrawnSiteInviteCommissionRefundRecordsLiabilityWithoutDebitingQuota(t *testing.T) {
+	db := prepareReferralDialectDB(t, "sqlite")
+	site, invitee := seedSiteInvite(t, db, decimal.RequireFromString("0.10"))
+	require.NoError(t, EnsureAdtySiteWallets(site.Id))
+	_, err := ApplyAdtySiteWalletChange(site.Id, model.AdtySiteWalletEarnings, decimal.NewFromInt(3), AdtySiteWalletChange{
+		Type: "earning_settlement", IdempotencyKey: "earn-withdrawn-" + strconv.Itoa(site.Id),
+	})
+	require.NoError(t, err)
+	require.NoError(t, SaveAdtySiteCommissionPolicy("10", "7"))
+	ext := siteInviteOrder(site.Id, invitee.Id, "SITE-WD-"+strconv.Itoa(site.Id), decimal.NewFromInt(30))
+	ext.CreditQuota = 30 * 500000
+	var row model.AdtySiteInviteCommission
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		if err := RecordAdtySiteInviteCommissionTx(tx, ext, time.Unix(1_700_000_000, 0)); err != nil {
+			return err
+		}
+		if err := tx.Where("trade_no = ?", ext.TradeNo).First(&row).Error; err != nil {
+			return err
+		}
+		return CoverAdtySiteInviteCommissionTx(tx, row.Id, time.Unix(1_700_000_100, 0))
+	}))
+	require.NoError(t, db.Model(&row).Update("withdrawn_usd", decimal.NewFromInt(1)).Error)
+	ext.RefundQuota = 30 * 500000
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return model.AdtyAfterTopUpRefundedTx(tx, &model.TopUp{TradeNo: ext.TradeNo, UserId: invitee.Id}, ext)
+	}))
+	require.NoError(t, db.First(&row, row.Id).Error)
+	require.True(t, row.WithdrawnUSD.Equal(decimal.NewFromInt(1)))
+	require.True(t, row.RecoveredUSD.Equal(decimal.NewFromInt(2)))
+	require.True(t, row.RecoveryUSD.IsZero())
+	var liability model.AdtyCommissionRecovery
+	require.NoError(t, db.Where("commission_id = ?", row.Id).First(&liability).Error)
+	require.True(t, liability.AmountUSD.Equal(decimal.NewFromInt(1)))
+	require.Equal(t, "open", liability.Status)
+	require.Equal(t, "withdrawn", liability.Kind)
+	var earning model.AdtySiteWallet
+	require.NoError(t, db.Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteWalletEarnings).First(&earning).Error)
+	require.True(t, earning.Balance.Equal(decimal.NewFromInt(2)))
+	var user model.User
+	require.NoError(t, db.First(&user, row.InviterId).Error)
+	require.Equal(t, 0, user.Quota)
+}
+
 func TestSiteInviteCommissionRefundCancelsUncoveredAmountWithoutMovingWallets(t *testing.T) {
 	db := prepareReferralDialectDB(t, "sqlite")
 	require.NoError(t, db.AutoMigrate(model.ReferralTables()...))

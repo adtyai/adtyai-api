@@ -164,7 +164,15 @@ func BindAdtyOwnerSiteInvite(siteID, ownerID, inviterID, inviteeID int) error {
 	if paid > 0 {
 		return common.NewMessage("This customer already has a paid order")
 	}
-	return BindSiteInvite(siteID, inviterID, inviteeID)
+	return BindSiteInviteFromIP(siteID, inviterID, inviteeID, "")
+}
+
+// BindAdtyOwnerSiteInviteFromIP is the owner bind with the visitor IP hash.
+func BindAdtyOwnerSiteInviteFromIP(siteID, ownerID, inviterID, inviteeID int, ipHash string) error {
+	if _, err := lockOwnerSite(siteID, ownerID); err != nil {
+		return err
+	}
+	return BindSiteInviteFromIP(siteID, inviterID, inviteeID, ipHash)
 }
 
 // SaveAdtyOwnerSiteTeamDiscount updates one site team's discount.

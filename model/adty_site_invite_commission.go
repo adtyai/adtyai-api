@@ -24,6 +24,7 @@ type AdtySiteInviteCommission struct {
 	ClawedUSD       decimal.Decimal `json:"clawed_usd" gorm:"type:decimal(20,8);not null;default:0"`
 	RecoveredUSD    decimal.Decimal `json:"recovered_usd" gorm:"type:decimal(20,8);not null;default:0"`
 	ConvertedUSD    decimal.Decimal `json:"converted_usd" gorm:"type:decimal(20,8);not null;default:0"`
+	WithdrawnUSD    decimal.Decimal `json:"withdrawn_usd" gorm:"type:decimal(20,8);not null;default:0"`
 	RecoveryUSD     decimal.Decimal `json:"recovery_usd" gorm:"type:decimal(20,8);not null;default:0"`
 	Status          string          `json:"status" gorm:"type:varchar(24);index"`
 	ObservationDays int64           `json:"observation_days"`
@@ -33,3 +34,19 @@ type AdtySiteInviteCommission struct {
 }
 
 func (AdtySiteInviteCommission) TableName() string { return "adty_site_invite_commissions" }
+
+// AdtyCommissionRecovery is the liability for commission that was already withdrawn.
+// It does not debit a customer balance.
+type AdtyCommissionRecovery struct {
+	Id             int64           `json:"id"`
+	SiteId         int             `json:"site_id" gorm:"index"`
+	CommissionId   int64           `json:"commission_id" gorm:"index"`
+	TradeNo        string          `json:"trade_no" gorm:"type:varchar(64);index"`
+	AmountUSD      decimal.Decimal `json:"amount_usd" gorm:"type:decimal(20,8);not null"`
+	Kind           string          `json:"kind" gorm:"type:varchar(16)"`
+	Status         string          `json:"status" gorm:"type:varchar(16)"`
+	IdempotencyKey string          `json:"-" gorm:"uniqueIndex;type:varchar(128)"`
+	CreatedAt      int64           `json:"created_at" gorm:"autoCreateTime"`
+}
+
+func (AdtyCommissionRecovery) TableName() string { return "adty_commission_recoveries" }

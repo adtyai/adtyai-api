@@ -43,6 +43,8 @@ func TestAdtyGapRoutesRegistered(t *testing.T) {
 		"PUT /api/adty/admin/site-referral/cap",
 		"GET /api/adty/admin/site-referral/commission-policy",
 		"PUT /api/adty/admin/site-referral/commission-policy",
+		"GET /api/adty/admin/site-referral/batch-policy",
+		"PUT /api/adty/admin/site-referral/batch-policy",
 		"GET /api/adty/admin/business-timezone",
 		"PUT /api/adty/admin/business-timezone",
 		"GET /api/adty/admin/settlement-sheets",

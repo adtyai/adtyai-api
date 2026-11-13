@@ -8861,7 +8861,13 @@
     "Settlement spread is the recorded usage difference. It is not earnings after gifts or commissions.": "Chênh lệch quyết toán là phần chênh tiêu dùng đã ghi. Đó không phải doanh thu sau thưởng hoặc hoa hồng.",
     "Business day timezone": "Múi giờ ngày nghiệp vụ",
     "Unset uses UTC. A saved sheet keeps the timezone it was generated with.": "Chưa cấu hình thì dùng UTC. Phiếu đã lưu giữ múi giờ lúc tạo.",
-    "Use UTC": "Dùng UTC"
+    "Use UTC": "Dùng UTC",
+    "Batch registration review": "Rà soát đăng ký hàng loạt",
+    "Same-IP binds at this count enter review. Leave both fields empty to leave the check off.": "Liên kết cùng IP đạt số này thì vào rà soát. Để trống cả hai ô thì không bật kiểm tra.",
+    "Window hours": "Số giờ cửa sổ",
+    "Withdrawn commission": "Hoa hồng đã rút",
+    "Recovery liability": "Nghĩa vụ truy thu",
+    "This invite needs review": "Lời mời này cần rà soát"
 },
   "Targeted notifications": "Thông báo theo đối tượng",
   "Site announcements": "Thông báo của trang",

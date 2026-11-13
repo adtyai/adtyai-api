@@ -8861,7 +8861,13 @@
     "Settlement spread is the recorded usage difference. It is not earnings after gifts or commissions.": "消費精算差額は記録された消費差額です。贈金や紹介報酬を引いた後の収益ではありません。",
     "Business day timezone": "営業日のタイムゾーン",
     "Unset uses UTC. A saved sheet keeps the timezone it was generated with.": "未設定のときは UTC です。保存済みの精算表は作成時のタイムゾーンを保ちます。",
-    "Use UTC": "UTC を使う"
+    "Use UTC": "UTC を使う",
+    "Batch registration review": "一括登録の確認",
+    "Same-IP binds at this count enter review. Leave both fields empty to leave the check off.": "同じ IP の紐付けがこの回数に達すると確認に入ります。両方空欄なら確認は行いません。",
+    "Window hours": "窓の時間",
+    "Withdrawn commission": "出金済み紹介報酬",
+    "Recovery liability": "回収責任",
+    "This invite needs review": "この招待は確認が必要です"
 },
   "Targeted notifications": "対象を指定した通知",
   "Site announcements": "サイトのお知らせ",

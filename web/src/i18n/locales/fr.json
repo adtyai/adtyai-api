@@ -8861,7 +8861,13 @@
     "Settlement spread is the recorded usage difference. It is not earnings after gifts or commissions.": "L’écart de règlement est la différence de consommation enregistrée. Ce n’est pas le revenu après bonus ou commissions.",
     "Business day timezone": "Fuseau du jour ouvré",
     "Unset uses UTC. A saved sheet keeps the timezone it was generated with.": "Sans réglage, le fuseau est UTC. Un relevé enregistré garde le fuseau de sa génération.",
-    "Use UTC": "Utiliser UTC"
+    "Use UTC": "Utiliser UTC",
+    "Batch registration review": "Revue des inscriptions groupées",
+    "Same-IP binds at this count enter review. Leave both fields empty to leave the check off.": "Les liaisons d’une même IP entrent en revue à ce nombre. Laissez les deux champs vides pour ne pas activer le contrôle.",
+    "Window hours": "Fenêtre en heures",
+    "Withdrawn commission": "Commission retirée",
+    "Recovery liability": "Responsabilité de recouvrement",
+    "This invite needs review": "Cette invitation doit être revue"
 },
   "Targeted notifications": "Notifications ciblées",
   "Site announcements": "Annonces du site",

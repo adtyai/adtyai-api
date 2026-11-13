@@ -8861,7 +8861,13 @@
     "Settlement spread is the recorded usage difference. It is not earnings after gifts or commissions.": "Settlement spread is the recorded usage difference. It is not earnings after gifts or commissions.",
     "Business day timezone": "Business day timezone",
     "Unset uses UTC. A saved sheet keeps the timezone it was generated with.": "Unset uses UTC. A saved sheet keeps the timezone it was generated with.",
-    "Use UTC": "Use UTC"
+    "Use UTC": "Use UTC",
+    "Batch registration review": "Batch registration review",
+    "Same-IP binds at this count enter review. Leave both fields empty to leave the check off.": "Same-IP binds at this count enter review. Leave both fields empty to leave the check off.",
+    "Window hours": "Window hours",
+    "Withdrawn commission": "Withdrawn commission",
+    "Recovery liability": "Recovery liability",
+    "This invite needs review": "This invite needs review"
 },
   "Targeted notifications": "Targeted notifications",
   "Site announcements": "Site announcements",

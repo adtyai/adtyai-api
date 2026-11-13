@@ -17,6 +17,8 @@ import (
 const (
 	adtySiteCommissionCapKey  = "adty_site_referral.pending_coverage_cap"
 	adtySiteCommissionDaysKey = "adty_site_referral.observation_days"
+	adtySiteBatchThresholdKey = "adty_site_referral.batch_register_threshold"
+	adtySiteBatchWindowKey    = "adty_site_referral.batch_register_window_hours"
 )
 
 type adtySiteCommissionPolicy struct {
@@ -83,6 +85,58 @@ func loadAdtySiteCommissionPolicy() (adtySiteCommissionPolicy, error) {
 		return adtySiteCommissionPolicy{}, ErrAdtySiteReferralUnset
 	}
 	return adtySiteCommissionPolicy{Cap: cap, Days: days.IntPart()}, nil
+}
+
+// SaveAdtySiteInviteBatchPolicy stores a separate Root threshold for site invite binds.
+// Both values must be positive integers. Empty values clear the policy. No default is written.
+func SaveAdtySiteInviteBatchPolicy(thresholdRaw, hoursRaw string) error {
+	thresholdRaw = strings.TrimSpace(thresholdRaw)
+	hoursRaw = strings.TrimSpace(hoursRaw)
+	if thresholdRaw == "" && hoursRaw == "" {
+		return model.UpdateOptionsBulk(map[string]string{
+			adtySiteBatchThresholdKey: "",
+			adtySiteBatchWindowKey:    "",
+		})
+	}
+	threshold, err := strconv.ParseInt(thresholdRaw, 10, 64)
+	if err != nil || threshold <= 0 {
+		return common.NewMessage("Invalid parameters")
+	}
+	hours, err := strconv.ParseInt(hoursRaw, 10, 64)
+	if err != nil || hours <= 0 {
+		return common.NewMessage("Invalid parameters")
+	}
+	return model.UpdateOptionsBulk(map[string]string{
+		adtySiteBatchThresholdKey: strconv.FormatInt(threshold, 10),
+		adtySiteBatchWindowKey:    strconv.FormatInt(hours, 10),
+	})
+}
+
+// AdtySiteInviteBatchPolicyView is blank until Root saves both values.
+type AdtySiteInviteBatchPolicyView struct {
+	Configured  bool   `json:"configured"`
+	Threshold   string `json:"threshold,omitempty"`
+	WindowHours string `json:"window_hours,omitempty"`
+}
+
+// LoadAdtySiteInviteBatchPolicy reports the saved site-invite batch threshold.
+func LoadAdtySiteInviteBatchPolicy() (AdtySiteInviteBatchPolicyView, error) {
+	thresholdRaw, thresholdOK, err := model.ReadOptionFromDB(adtySiteBatchThresholdKey)
+	if err != nil {
+		return AdtySiteInviteBatchPolicyView{}, err
+	}
+	windowRaw, windowOK, err := model.ReadOptionFromDB(adtySiteBatchWindowKey)
+	if err != nil {
+		return AdtySiteInviteBatchPolicyView{}, err
+	}
+	threshold, err := strconv.ParseInt(strings.TrimSpace(thresholdRaw), 10, 64)
+	hours, err2 := strconv.ParseInt(strings.TrimSpace(windowRaw), 10, 64)
+	if !thresholdOK || !windowOK || err != nil || err2 != nil || threshold <= 0 || hours <= 0 {
+		return AdtySiteInviteBatchPolicyView{}, nil
+	}
+	return AdtySiteInviteBatchPolicyView{
+		Configured: true, Threshold: strconv.FormatInt(threshold, 10), WindowHours: strconv.FormatInt(hours, 10),
+	}, nil
 }
 
 func commissionMarginOptionKey(siteID int) string {
@@ -347,13 +401,30 @@ func adtySiteInviteCommissionAfterRefundTx(tx *gorm.DB, ext *model.AdtyTopupOrde
 	if !thisClaw.IsPositive() {
 		return nil
 	}
-	unconverted := row.CoveredUSD.Sub(row.RecoveredUSD).Sub(row.ConvertedUSD)
+	withdrawnOutstanding, err := siteCommissionWithdrawnOutstanding(tx, row.Id, row.WithdrawnUSD)
+	if err != nil {
+		return err
+	}
+	liability := thisClaw
+	if liability.GreaterThan(withdrawnOutstanding) {
+		liability = withdrawnOutstanding
+	}
+	if liability.IsPositive() {
+		key := "commission-recovery:" + row.TradeNo + ":" + target.String()
+		if err := tx.Create(&model.AdtyCommissionRecovery{
+			SiteId: row.SiteId, CommissionId: row.Id, TradeNo: row.TradeNo, AmountUSD: liability,
+			Kind: "withdrawn", Status: "open", IdempotencyKey: key,
+		}).Error; err != nil {
+			return err
+		}
+	}
+	unconverted := row.CoveredUSD.Sub(row.RecoveredUSD).Sub(row.ConvertedUSD).Sub(row.WithdrawnUSD)
 	if unconverted.IsNegative() {
 		unconverted = decimal.Zero
 	}
 	recoverable := unconverted
-	if recoverable.GreaterThan(thisClaw) {
-		recoverable = thisClaw
+	if recoverable.GreaterThan(thisClaw.Sub(liability)) {
+		recoverable = thisClaw.Sub(liability)
 	}
 	returned, err := returnSiteCommissionCover(tx, &row, recoverable, target)
 	if err != nil {
@@ -361,7 +432,7 @@ func adtySiteInviteCommissionAfterRefundTx(tx *gorm.DB, ext *model.AdtyTopupOrde
 	}
 	row.ClawedUSD = target
 	row.RecoveredUSD = row.RecoveredUSD.Add(returned)
-	row.RecoveryUSD = row.RecoveryUSD.Add(thisClaw.Sub(returned))
+	row.RecoveryUSD = row.RecoveryUSD.Add(thisClaw.Sub(returned).Sub(liability))
 	updates := map[string]any{
 		"clawed_usd": row.ClawedUSD, "recovered_usd": row.RecoveredUSD, "recovery_usd": row.RecoveryUSD,
 	}
@@ -370,6 +441,25 @@ func adtySiteInviteCommissionAfterRefundTx(tx *gorm.DB, ext *model.AdtyTopupOrde
 		updates["status"] = row.Status
 	}
 	return tx.Model(&row).Updates(updates).Error
+}
+
+func siteCommissionWithdrawnOutstanding(tx *gorm.DB, commissionID int64, withdrawn decimal.Decimal) (decimal.Decimal, error) {
+	if !withdrawn.IsPositive() {
+		return decimal.Zero, nil
+	}
+	var rows []model.AdtyCommissionRecovery
+	if err := tx.Where("commission_id = ? AND kind = ?", commissionID, "withdrawn").Find(&rows).Error; err != nil {
+		return decimal.Zero, err
+	}
+	recorded := decimal.Zero
+	for _, row := range rows {
+		recorded = recorded.Add(row.AmountUSD)
+	}
+	left := withdrawn.Sub(recorded)
+	if left.IsNegative() {
+		return decimal.Zero, nil
+	}
+	return left, nil
 }
 
 func returnSiteCommissionCover(tx *gorm.DB, row *model.AdtySiteInviteCommission, need, clawedAfter decimal.Decimal) (decimal.Decimal, error) {

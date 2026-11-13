@@ -8861,7 +8861,13 @@
     "Settlement spread is the recorded usage difference. It is not earnings after gifts or commissions.": "消費結算價差是已記錄的消費差額，不是扣除贈金或佣金後的收益。",
     "Business day timezone": "業務日時區",
     "Unset uses UTC. A saved sheet keeps the timezone it was generated with.": "未設定時使用 UTC。已生成的結算單保留生成時的時區。",
-    "Use UTC": "使用 UTC"
+    "Use UTC": "使用 UTC",
+    "Batch registration review": "批量註冊覆核",
+    "Same-IP binds at this count enter review. Leave both fields empty to leave the check off.": "同一 IP 的綁定達到這個次數後進入覆核。兩個欄位都留空則不啟用。",
+    "Window hours": "視窗小時數",
+    "Withdrawn commission": "已提現佣金",
+    "Recovery liability": "追償責任",
+    "This invite needs review": "這個邀請需要覆核"
 },
   "Targeted notifications": "定向通知",
   "Site announcements": "本站公告",

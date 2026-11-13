@@ -31,8 +31,10 @@ import { useAuthStore } from '@/stores/auth-store'
 
 import {
   getAdminSiteCommissionPolicy,
+  getAdminSiteInviteBatchPolicy,
   getAdminSiteReferralCap,
   saveAdminSiteCommissionPolicy,
+  saveAdminSiteInviteBatchPolicy,
   saveAdminSiteReferralCap,
   siteAdminKeys,
 } from '../api'
@@ -45,6 +47,8 @@ export function SiteReferralCapPanel() {
   const [maxRate, setMaxRate] = useState('')
   const [coverageCap, setCoverageCap] = useState('')
   const [observationDays, setObservationDays] = useState('')
+  const [batchThreshold, setBatchThreshold] = useState('')
+  const [batchWindow, setBatchWindow] = useState('')
   const cap = useQuery({
     queryKey: siteAdminKeys.list('site-referral-cap', {}),
     queryFn: getAdminSiteReferralCap,
@@ -54,6 +58,21 @@ export function SiteReferralCapPanel() {
     queryKey: siteAdminKeys.list('site-commission-policy', {}),
     queryFn: getAdminSiteCommissionPolicy,
     enabled: isRoot,
+  })
+  const batch = useQuery({
+    queryKey: siteAdminKeys.list('site-invite-batch-policy', {}),
+    queryFn: getAdminSiteInviteBatchPolicy,
+    enabled: isRoot,
+  })
+  const saveBatch = useMutation({
+    mutationFn: () =>
+      saveAdminSiteInviteBatchPolicy(batchThreshold.trim(), batchWindow.trim()),
+    onSuccess: () => {
+      setBatchThreshold('')
+      setBatchWindow('')
+      void client.invalidateQueries({ queryKey: siteAdminKeys.all })
+    },
+    onError: (error) => handleServerError(error),
   })
   const savePolicy = useMutation({
     mutationFn: () =>
@@ -143,6 +162,53 @@ export function SiteReferralCapPanel() {
           observationDays.trim() === ''
         }
         onClick={() => savePolicy.mutate()}
+      >
+        {t('Save')}
+      </Button>
+      <h2 className='text-sm font-medium'>{t('Batch registration review')}</h2>
+      <p className='text-muted-foreground text-sm'>
+        {t(
+          'Same-IP binds at this count enter review. Leave both fields empty to leave the check off.'
+        )}
+      </p>
+      {batch.isError && <ErrorState onRetry={() => void batch.refetch()} />}
+      {batch.data && !batch.data.configured && (
+        <p className='text-sm'>{t('Not configured')}</p>
+      )}
+      {batch.data?.configured && (
+        <p className='text-sm tabular-nums'>
+          {batch.data.threshold} / {batch.data.window_hours}
+        </p>
+      )}
+      <div className='flex flex-col gap-1'>
+        <Label htmlFor='site-batch-threshold'>{t('Count')}</Label>
+        <Input
+          id='site-batch-threshold'
+          value={batchThreshold}
+          inputMode='numeric'
+          autoComplete='off'
+          onChange={(event) => setBatchThreshold(event.target.value)}
+        />
+      </div>
+      <div className='flex flex-col gap-1'>
+        <Label htmlFor='site-batch-window'>{t('Window hours')}</Label>
+        <Input
+          id='site-batch-window'
+          value={batchWindow}
+          inputMode='numeric'
+          autoComplete='off'
+          onChange={(event) => setBatchWindow(event.target.value)}
+        />
+      </div>
+      <Button
+        type='button'
+        variant='outline'
+        disabled={
+          saveBatch.isPending ||
+          batchThreshold.trim() === '' ||
+          batchWindow.trim() === ''
+        }
+        onClick={() => saveBatch.mutate()}
       >
         {t('Save')}
       </Button>

@@ -883,7 +883,101 @@ func BindSiteInvite(siteID, inviterID, inviteeID int) error {
 		}
 		return nil
 	}
-	return model.DB.Create(&model.AdtySiteInvite{SiteId: siteID, InviterId: inviterID, InviteeId: inviteeID, Rate: rate.Rate}).Error
+	return BindSiteInviteFromIP(siteID, inviterID, inviteeID, "")
+}
+
+// BindSiteInviteFromIP records one direct site invite and keeps the client IP hash.
+// A saved Root batch threshold can refuse another same-IP bind and open a review.
+// An unset threshold does not guess a count.
+func BindSiteInviteFromIP(siteID, inviterID, inviteeID int, ipHash string) error {
+	if siteID <= 0 || inviterID <= 0 || inviteeID <= 0 || inviterID == inviteeID {
+		return common.NewMessage("Invalid parameters")
+	}
+	var rate model.AdtySiteReferralRate
+	if err := model.DB.Where("site_id = ?", siteID).First(&rate).Error; err != nil {
+		return common.NewMessage("Site invite rate is not configured")
+	}
+	var inviter, invitee model.User
+	if err := model.DB.First(&inviter, inviterID).Error; err != nil {
+		return err
+	}
+	if err := model.DB.First(&invitee, inviteeID).Error; err != nil {
+		return err
+	}
+	if inviter.SiteId != siteID || invitee.SiteId != siteID {
+		return common.NewMessage("No permission to perform this action")
+	}
+	var paid int64
+	if err := model.DB.Model(&model.TopUp{}).Where("user_id = ? AND status = ?", inviteeID, common.TopUpStatusSuccess).Count(&paid).Error; err != nil {
+		return err
+	}
+	if paid > 0 {
+		return common.NewMessage("This customer already has a paid order")
+	}
+	var existing model.AdtySiteInvite
+	lookup := model.DB.Where("invitee_id = ?", inviteeID).Limit(1).Find(&existing)
+	if lookup.Error != nil {
+		return lookup.Error
+	}
+	if lookup.RowsAffected > 0 {
+		if existing.InviterId != inviterID || existing.SiteId != siteID {
+			return common.NewMessage("Invitee already has an inviter")
+		}
+		return nil
+	}
+	if err := refuseSiteInviteBatch(siteID, inviterID, ipHash); err != nil {
+		return err
+	}
+	return model.DB.Create(&model.AdtySiteInvite{
+		SiteId: siteID, InviterId: inviterID, InviteeId: inviteeID, Rate: rate.Rate, IpHash: strings.TrimSpace(ipHash),
+	}).Error
+}
+
+func refuseSiteInviteBatch(siteID, inviterID int, ipHash string) error {
+	ipHash = strings.TrimSpace(ipHash)
+	if ipHash == "" {
+		return nil
+	}
+	thresholdRaw, thresholdOK, err := model.ReadOptionFromDB(adtySiteBatchThresholdKey)
+	if err != nil || !thresholdOK {
+		return err
+	}
+	windowRaw, windowOK, err := model.ReadOptionFromDB(adtySiteBatchWindowKey)
+	if err != nil || !windowOK {
+		return err
+	}
+	threshold, err := strconv.ParseInt(strings.TrimSpace(thresholdRaw), 10, 64)
+	if err != nil || threshold <= 0 {
+		return nil
+	}
+	hours, err := strconv.ParseInt(strings.TrimSpace(windowRaw), 10, 64)
+	if err != nil || hours <= 0 {
+		return nil
+	}
+	since := time.Now().Unix() - hours*3600
+	var count int64
+	if err := model.DB.Model(&model.AdtySiteInvite{}).
+		Where("inviter_id = ? AND ip_hash = ? AND created_at >= ?", inviterID, ipHash, since).
+		Count(&count).Error; err != nil {
+		return err
+	}
+	if count+1 < threshold {
+		return nil
+	}
+	ref := strconv.Itoa(siteID)
+	note := "inviter " + strconv.Itoa(inviterID)
+	var existing int64
+	if err := model.DB.Model(&model.AdtyAnomalyDisposition{}).
+		Where("kind = ? AND ref = ? AND status = ? AND note = ?", "batch_register", ref, "open", note).
+		Count(&existing).Error; err != nil {
+		return err
+	}
+	if existing == 0 {
+		if err := RecordAdtyAnomalyDisposition("batch_register", ref, "open", note, 0); err != nil {
+			return err
+		}
+	}
+	return common.NewMessage("This invite needs review")
 }
 
 // SensitiveActionNeedsProof is false only for Root. Other roles must prove password or email code.
