@@ -132,6 +132,12 @@ export type AnomalyDisposition = {
   status: string
   note: string
   operator_id: number
+  site_id?: number
+  account_id?: number
+  order_ref?: string
+  difference?: string
+  evidence?: string
+  created_at?: number
 }
 
 export async function getAdminSiteWallets(siteId: number): Promise<AdminWallet[]> {

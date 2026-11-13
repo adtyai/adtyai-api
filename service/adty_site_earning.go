@@ -27,10 +27,26 @@ import (
 var adtySiteEarningDayFn = func() string { return time.Now().Format("2006-01-02") }
 
 // AdtySiteEarningSplit 算一笔扣费的三项金额（美元，8 位小数）。k ≥ 1、0 < d ≤ 1 由调用方保证。
+// This is still the live hook formula (ISS-R1-0009 leftover). Official A.10 books
+// use OfficialAdtySupplySplit; collectors may compare, but must not rewrite this.
 func AdtySiteEarningSplit(quota int64, k, d decimal.Decimal) (revenue, platform, earning decimal.Decimal) {
 	perUnit := common.QuotaPerUnitDecimal()
 	revenue = decimal.NewFromInt(quota).Div(perUnit).Round(8)
 	platform = decimal.NewFromInt(quota).Mul(d).Div(k).Div(perUnit).Round(8)
+	earning = revenue.Sub(platform)
+	return revenue, platform, earning
+}
+
+// OfficialAdtySupplySplit is the A.10 settlement: charged q = P×d×k, supply
+// cost = P×d = q/k, site earning = P×d×(k-1) = q − q/k. It does not replace
+// the live hook formula.
+func OfficialAdtySupplySplit(quota int64, k decimal.Decimal) (revenue, platform, earning decimal.Decimal) {
+	perUnit := common.QuotaPerUnitDecimal()
+	revenue = decimal.NewFromInt(quota).Div(perUnit).Round(8)
+	if !k.IsPositive() {
+		return revenue, decimal.Zero, revenue
+	}
+	platform = decimal.NewFromInt(quota).Div(k).Div(perUnit).Round(8)
 	earning = revenue.Sub(platform)
 	return revenue, platform, earning
 }

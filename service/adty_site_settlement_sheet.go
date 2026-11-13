@@ -318,12 +318,11 @@ func summarizeAdtySiteSettlement(siteID int, day string, start, end int64) (mode
 	siteRef := strconv.Itoa(siteID)
 	for _, row := range anomalies {
 		_, byTrade := tradeSet[row.Ref]
-		if row.Ref != siteRef && !byTrade {
-			continue
+		if row.SiteId == siteID || (row.SiteId == 0 && (row.Ref == siteRef || byTrade)) {
+			sheet.AnomalyCount++
+			note(row.CreatedAt)
+			sheet.IncludedCount++
 		}
-		sheet.AnomalyCount++
-		note(row.CreatedAt)
-		sheet.IncludedCount++
 	}
 
 	if len(paidByCurrency) > 0 {

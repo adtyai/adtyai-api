@@ -93,6 +93,9 @@ type AdtySiteInvite struct {
 func (AdtySiteInvite) TableName() string { return "adty_site_invites" }
 
 // AdtyAnomalyDisposition records a review of a fund anomaly.
+// G.13.5 fields (difference, account, order, site, evidence) sit beside the
+// original review columns. CreatedAt is the discovery time; OperatorId and
+// Status/Note are the handler and disposition result after review.
 type AdtyAnomalyDisposition struct {
 	Id         int64  `json:"id"`
 	Kind       string `json:"kind" gorm:"type:varchar(32);index"`
@@ -100,6 +103,11 @@ type AdtyAnomalyDisposition struct {
 	Status     string `json:"status" gorm:"type:varchar(16)"`
 	Note       string `json:"note" gorm:"type:varchar(255)"`
 	OperatorId int    `json:"operator_id"`
+	SiteId     int    `json:"site_id" gorm:"index"`
+	AccountId  int    `json:"account_id"`
+	OrderRef   string `json:"order_ref" gorm:"type:varchar(128)"`
+	Difference string `json:"difference" gorm:"type:varchar(64)"`
+	Evidence   string `json:"evidence" gorm:"type:text"`
 	CreatedAt  int64  `json:"created_at" gorm:"autoCreateTime"`
 }
 

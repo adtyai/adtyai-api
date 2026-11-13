@@ -159,6 +159,12 @@ export function SiteFundPanel(props: { siteId: number }) {
             <div key={row.id} className='flex flex-wrap items-center gap-2 text-sm'>
               <span className='font-mono text-xs'>{row.kind}</span>
               <span>{row.status}</span>
+              {row.difference ? <span className='tabular-nums'>{row.difference}</span> : null}
+              {row.account_id ? <span>{row.account_id}</span> : null}
+              {row.order_ref ? <span className='font-mono text-xs'>{row.order_ref}</span> : null}
+              {row.evidence ? (
+                <span className='text-muted-foreground text-xs break-all'>{row.evidence}</span>
+              ) : null}
               {row.status !== 'closed' && (
                 <>
                   <Button

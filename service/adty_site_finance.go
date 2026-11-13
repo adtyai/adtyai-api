@@ -277,111 +277,38 @@ func OpenAdtyMarginCycle(siteID int, tier decimal.Decimal, key string) error {
 	return err
 }
 
-// CollectAdtyFundAnomalies compares wallet ledgers, open shortfall holds, and the margin cycle cap.
-// It records a new open disposition for each detected kind and does not invent a tolerance.
+// CollectAdtyFundAnomalies compares wallet ledgers, open shortfall holds, and the margin cycle cap,
+// and independently detects the remaining G.13.4 kinds. It records a new open disposition for
+// each detected item and does not invent a tolerance or repair money.
 func CollectAdtyFundAnomalies(siteID int) ([]string, error) {
-	if siteID <= 0 {
-		return nil, ErrAdtySiteWalletInvalidOperation
-	}
-	var wallets []model.AdtySiteWallet
-	if err := model.DB.Where("site_id = ?", siteID).Find(&wallets).Error; err != nil {
-		return nil, err
-	}
-	balanceGap := int64(0)
-	marginGap := decimal.Zero
-	var operating decimal.Decimal
-	for _, wallet := range wallets {
-		var deltas []decimal.Decimal
-		if err := model.DB.Model(&model.AdtySiteWalletLedger{}).Where("wallet_id = ?", wallet.Id).Pluck("delta", &deltas).Error; err != nil {
-			return nil, err
-		}
-		sum := decimal.Zero
-		for _, delta := range deltas {
-			sum = sum.Add(delta)
-		}
-		if !sum.Equal(wallet.Balance) {
-			balanceGap = 1
-		}
-		if wallet.Kind == model.AdtySiteWalletOperating {
-			operating = wallet.Balance
-		}
-		if wallet.Kind == model.AdtySiteWalletMargin && wallet.CycleTierUSD.IsPositive() {
-			over := wallet.CycleUsedUSD.Sub(AdtyMarginCycleLimit(wallet.CycleTierUSD))
-			if over.IsPositive() {
-				marginGap = over
-			}
-		}
-	}
-	var quota int64
-	if err := model.DB.Model(&model.User{}).Where("site_id = ?", siteID).Select("COALESCE(SUM(quota), 0)").Scan(&quota).Error; err != nil {
-		return nil, err
-	}
-	principal := decimal.NewFromInt(quota).Div(common.QuotaPerUnitDecimal())
-	if !ReconcileOperatingWallet(principal, operating).IsZero() {
-		balanceGap = 1
-	}
-	var userIDs []int
-	if err := model.DB.Model(&model.User{}).Where("site_id = ?", siteID).Pluck("id", &userIDs).Error; err != nil {
-		return nil, err
-	}
-	var holds int64
-	if len(userIDs) > 0 {
-		if err := model.DB.Model(&model.AdtyBillingHold{}).Where("user_id IN ? AND status = ?", userIDs, model.AdtyBillingHoldOpen).Count(&holds).Error; err != nil {
-			return nil, err
-		}
-	}
-	kinds := AdtyFundAnomalies(balanceGap, int(holds), marginGap)
-	dupCredit, err := adtyDuplicateEventTrades(siteID, "credited", "")
+	items, err := detectAdtyFundAnomalies(siteID)
 	if err != nil {
 		return nil, err
 	}
-	dupRefund, err := adtyDuplicateEventTrades(siteID, "", "refund.succeeded")
-	if err != nil {
-		return nil, err
-	}
-	if dupCredit > 0 {
-		kinds = append(kinds, "duplicate_credit")
-	}
-	if dupRefund > 0 {
-		kinds = append(kinds, "duplicate_refund")
-	}
-	ref := strconv.Itoa(siteID)
-	for _, kind := range kinds {
-		var existing int64
-		if err := model.DB.Model(&model.AdtyAnomalyDisposition{}).Where("kind = ? AND ref = ? AND status = ?", kind, ref, "open").Count(&existing).Error; err != nil {
+	kinds := make([]string, 0, len(items))
+	seen := map[string]struct{}{}
+	for _, item := range items {
+		if err := upsertOpenAdtyAnomalyDisposition(item); err != nil {
 			return nil, err
 		}
-		if existing == 0 {
-			if err := RecordAdtyAnomalyDisposition(kind, ref, "open", "detected", 0); err != nil {
-				return nil, err
-			}
+		if _, ok := seen[item.Kind]; ok {
+			continue
 		}
+		seen[item.Kind] = struct{}{}
+		kinds = append(kinds, item.Kind)
 	}
 	return kinds, nil
 }
 
-func adtyDuplicateEventTrades(siteID int, outcome, eventType string) (int64, error) {
-	query := model.DB.Model(&model.AdtyOrderPaymentEvent{}).Where("site_id = ?", siteID)
-	if outcome != "" {
-		query = query.Where("outcome = ?", outcome)
-	}
-	if eventType != "" {
-		query = query.Where("event_type = ?", eventType)
-	}
-	var trades []string
-	if err := query.Group("trade_no").Having("COUNT(*) > 1").Pluck("trade_no", &trades).Error; err != nil {
-		return 0, err
-	}
-	return int64(len(trades)), nil
-}
-
 // ListAdtyAnomalyDispositions returns review rows for one site. It does not create any.
+// Rows recorded with SiteId are listed directly. Legacy rows used the site id as Ref.
 func ListAdtyAnomalyDispositions(siteID int) ([]model.AdtyAnomalyDisposition, error) {
 	if siteID <= 0 {
 		return nil, common.NewMessage("Invalid parameters")
 	}
 	var rows []model.AdtyAnomalyDisposition
-	err := model.DB.Where("ref = ?", strconv.Itoa(siteID)).Order("id desc").Limit(50).Find(&rows).Error
+	err := model.DB.Where("site_id = ? OR (site_id = 0 AND ref = ?)", siteID, strconv.Itoa(siteID)).
+		Order("id desc").Limit(50).Find(&rows).Error
 	return rows, err
 }
 
@@ -412,9 +339,13 @@ func ReviewAdtyAnomalyDisposition(id int64, operatorID int, status, note string)
 }
 
 func notifyAdtyAnomalyDispositionTx(tx *gorm.DB, row model.AdtyAnomalyDisposition, operatorID int, status, note string) error {
-	siteID, err := strconv.Atoi(strings.TrimSpace(row.Ref))
-	if err != nil || siteID <= 0 {
-		return nil
+	siteID := row.SiteId
+	if siteID <= 0 {
+		parsed, err := strconv.Atoi(strings.TrimSpace(row.Ref))
+		if err != nil || parsed <= 0 {
+			return nil
+		}
+		siteID = parsed
 	}
 	publisher := "root"
 	var operator model.User
