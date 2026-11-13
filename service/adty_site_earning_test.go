@@ -847,7 +847,7 @@ func TestSiteOwnerTransfersToBalanceInstantly(t *testing.T) {
 	assert.Equal(t, model.ReferralWithdrawalStatusPending, withdrawal.Status)
 }
 
-func TestForcedCloseVoidsAndClawsBack(t *testing.T) {
+func TestForcedCloseDoesNotVoidOrClawBack(t *testing.T) {
 	db := prepareSiteDB(t)
 	owner, site := openActiveSite(t, db, "clawback")
 	customer := siteCustomer(t, db, site, "clawback-customer")
@@ -863,12 +863,25 @@ func TestForcedCloseVoidsAndClawsBack(t *testing.T) {
 	require.NoError(t, err)
 	affiliate, err := Referral.EnsureAffiliate(owner.Id)
 	require.NoError(t, err)
-	assert.InDelta(t, 0, account(t, db, affiliate.Id).AvailableAmount, 1e-9)
-	var open int64
-	require.NoError(t, db.Model(&model.AdtySiteEarningDaily{}).Where("site_id = ? AND status <> ?", site.Id, model.AdtySiteEarningVoid).Count(&open).Error)
-	assert.Zero(t, open)
+	assert.InDelta(t, 20, account(t, db, affiliate.Id).AvailableAmount, 1e-9, "forced close must not deduct settled commission")
+	var rows []model.AdtySiteEarningDaily
+	require.NoError(t, db.Where("site_id = ? AND kind <> ?", site.Id, model.AdtySiteEarningTrial).Order("id").Find(&rows).Error)
+	require.Len(t, rows, 2)
+	assert.Equal(t, model.AdtySiteEarningAvailable, rows[0].Status)
+	assert.True(t, rows[0].Earning.Equal(decimal.RequireFromString("20")))
+	assert.Equal(t, model.AdtySiteEarningPending, rows[1].Status, "forced close must not void unsettled earnings")
+	assert.True(t, rows[1].Earning.Equal(decimal.RequireFromString("10")))
+	var voided, clawLedgers int64
+	require.NoError(t, db.Model(&model.AdtySiteEarningDaily{}).Where("site_id = ? AND status = ?", site.Id, model.AdtySiteEarningVoid).Count(&voided).Error)
+	assert.Zero(t, voided)
+	require.NoError(t, db.Model(&model.ReferralCommissionLedger{}).Where("affiliate_id = ? AND type = ?", affiliate.Id, "site_earning_clawback").Count(&clawLedgers).Error)
+	assert.Zero(t, clawLedgers)
+	closed, err := GetAdtySite(site.Id)
+	require.NoError(t, err)
+	assert.Equal(t, model.AdtySiteStatusClosed, closed.Status)
+	assert.False(t, closed.CloseClawBack, "ClawBack on the close plan must be ignored")
 
-	// 已结算 100、未结算加赠 -150、可提现仍是 100：负数先入账，扣回不超过当时可提现，账户停在 -50。
+	// 已结算 100、未结算加赠 -150、可提现仍是 100：关站不得当场结算负数，也不得扣回已结算佣金。
 	owner2, site2 := openActiveSite(t, db, "claw-debt")
 	customer2 := siteCustomer(t, db, site2, "claw-debt-customer")
 	adtySiteEarningDayFn = func() string { return "2026-09-01" }
@@ -882,7 +895,18 @@ func TestForcedCloseVoidsAndClawsBack(t *testing.T) {
 	assert.InDelta(t, 100, account(t, db, affiliate2.Id).AvailableAmount, 1e-9)
 	_, err = ScheduleAdtySiteClose(site2.Id, 1, AdtySiteClosePlan{ClawBack: true, Immediate: true})
 	require.NoError(t, err)
-	assert.InDelta(t, -50, account(t, db, affiliate2.Id).AvailableAmount, 1e-9)
+	assert.InDelta(t, 100, account(t, db, affiliate2.Id).AvailableAmount, 1e-9, "forced close must not deduct settled commission")
+	var bonus, usage model.AdtySiteEarningDaily
+	require.NoError(t, db.Where("site_id = ? AND kind = ?", site2.Id, model.AdtySiteEarningBonus).First(&bonus).Error)
+	require.NoError(t, db.Where("site_id = ? AND kind = ?", site2.Id, model.AdtySiteEarningUsage).First(&usage).Error)
+	assert.Equal(t, model.AdtySiteEarningPending, bonus.Status, "unsettled bonus must remain pending under the original source")
+	assert.True(t, bonus.Earning.Equal(decimal.RequireFromString("-150")))
+	assert.Equal(t, model.AdtySiteEarningAvailable, usage.Status)
+	assert.True(t, usage.Earning.Equal(decimal.RequireFromString("100")))
+	require.NoError(t, db.Model(&model.AdtySiteEarningDaily{}).Where("site_id = ? AND status = ?", site2.Id, model.AdtySiteEarningVoid).Count(&voided).Error)
+	assert.Zero(t, voided)
+	require.NoError(t, db.Model(&model.ReferralCommissionLedger{}).Where("affiliate_id = ? AND type = ?", affiliate2.Id, "site_earning_clawback").Count(&clawLedgers).Error)
+	assert.Zero(t, clawLedgers)
 }
 
 func TestEarningHookConcurrentUpsert(t *testing.T) {

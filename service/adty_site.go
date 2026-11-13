@@ -760,7 +760,7 @@ func RequestAdtySiteClose(ownerUserId int, reason string) (*model.AdtySite, erro
 // AdtySiteClosePlan 是管理员定下的关站方式。
 type AdtySiteClosePlan struct {
 	TransferTo int  // 0 转回主站
-	ClawBack   bool // 强制关站时扣回待结算和可提现的收益
+	ClawBack   bool // 兼容字段：G.7 / SITE-010 不允许因关站作废或扣回收益，传入也会被忽略
 	Immediate  bool // 不等 close_notice_days，立即执行（例如违规）
 	Reason     string
 }
@@ -802,7 +802,7 @@ func ScheduleAdtySiteClose(siteId, adminId int, plan AdtySiteClosePlan) (*model.
 		}
 		updates := map[string]any{
 			"status": model.AdtySiteStatusClosing, "close_execute_at": executeAt, "close_transfer_to": plan.TransferTo,
-			"close_claw_back": plan.ClawBack, "close_reason": truncateText(plan.Reason, 1000),
+			"close_claw_back": false, "close_reason": truncateText(plan.Reason, 1000),
 		}
 		if err := tx.Model(&model.AdtySite{}).Where("id = ?", site.Id).Updates(updates).Error; err != nil {
 			return err
@@ -832,10 +832,12 @@ var AdtyOnSiteClosing func(site *model.AdtySite)
 // AdtyOnSiteClosed 在关站事务提交后调用，11.3、11.8 用它删除发件域名和自定义域名。
 var AdtyOnSiteClosed func(site *model.AdtySite)
 
-// AdtySiteClawBackTx 由 11.5 注册：强制关站时作废这个站 pending 的收益行，已结算的从佣金账户扣回。
+// AdtySiteClawBackTx 曾由 11.5 注册，强制关站时作废 pending 收益并扣回已结算佣金。
+// G.7 / SITE-010 要求关站后收益与佣金按原来源承接，此钩子不再被调用；即使被调用也不会改动资金。
 var AdtySiteClawBackTx func(tx *gorm.DB, site *model.AdtySite, operatorId int) error
 
-// ExecuteAdtySiteClose 执行到期的关站：转移客户、写定价、按需扣回收益、站点改 closed。可重复调用。
+// ExecuteAdtySiteClose 执行到期的关站：转移客户、写定价、站点改 closed。可重复调用。
+// 关站不会作废未结收益，也不会扣回已结算佣金；这些金额继续按原来源持有，后续结算、转余额、提现或退款走原规则。
 func ExecuteAdtySiteClose(siteId int, now int64) error {
 	var moved []int
 	var closed model.AdtySite
@@ -888,11 +890,6 @@ func ExecuteAdtySiteClose(siteId int, now int64) error {
 				return err
 			}
 		}
-		if site.CloseClawBack && AdtySiteClawBackTx != nil {
-			if err := AdtySiteClawBackTx(tx, &site, 0); err != nil {
-				return err
-			}
-		}
 		if err := tx.Model(&model.AdtySite{}).Where("id = ?", site.Id).Updates(map[string]any{
 			"status": model.AdtySiteStatusClosed, "closed_at": now, "close_transfer_to": target,
 		}).Error; err != nil {
@@ -900,7 +897,7 @@ func ExecuteAdtySiteClose(siteId int, now int64) error {
 		}
 		site.Status, site.ClosedAt, site.CloseTransferTo = model.AdtySiteStatusClosed, now, target
 		closed = site
-		return recordSiteAuditTx(tx, site.Id, "close", 0, nil, map[string]any{"transfer_to": target, "customers": len(moved), "claw_back": site.CloseClawBack}, "")
+		return recordSiteAuditTx(tx, site.Id, "close", 0, nil, map[string]any{"transfer_to": target, "customers": len(moved), "claw_back": false}, "")
 	})
 	if err != nil {
 		return err

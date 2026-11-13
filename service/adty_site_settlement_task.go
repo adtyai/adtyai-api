@@ -404,78 +404,10 @@ func adtyOwnerAccountTx(tx *gorm.DB, ownerUserId int) (*model.ReferralCommission
 	return lockReferralAccountTx(tx, affiliates[0].Id)
 }
 
-// adtySiteClawBackTx 是强制关站扣回：正数 pending 作废，负数 pending 当场结算（可以为负），
-// skipped 作废。再从当前可提现扣回已结算收益，不超过已结算合计，也不把账户扣成负数。
-// 试用额度发放时已经扣过，不计入扣回。
+// adtySiteClawBackTx 曾在强制关站时作废未结收益、扣回已结算佣金。
+// G.7 / SITE-010 不允许因关站丢失这些资金，因此现在是空操作：收益行和佣金账户都保持原状，
+// 后续结算、转入余额、提现或退款仍按原来源走原规则。
 func adtySiteClawBackTx(tx *gorm.DB, site *model.AdtySite, operatorId int) error {
-	var rows []model.AdtySiteEarningDaily
-	if err := model.AdtyLockForUpdate(tx).Where("site_id = ? AND status IN ? AND kind <> ?", site.Id,
-		[]string{model.AdtySiteEarningPending, model.AdtySiteEarningAvailable}, model.AdtySiteEarningTrial).Find(&rows).Error; err != nil {
-		return err
-	}
-	groups, err := adtySiteEarningsByOwnerTx(tx, site.Id, rows)
-	if err != nil {
-		return err
-	}
-	for _, group := range groups {
-		account, err := adtyOwnerAccountTx(tx, group.OwnerID)
-		if err != nil {
-			return err
-		}
-		negative, settled := decimal.Zero, decimal.Zero
-		ids := make([]int64, 0, len(group.Rows))
-		negativeIDs := make([]int64, 0)
-		for _, row := range group.Rows {
-			ids = append(ids, row.Id)
-			if row.Kind == model.AdtySiteEarningSkipped {
-				continue
-			}
-			if row.Status == model.AdtySiteEarningAvailable {
-				settled = settled.Add(row.Earning)
-			}
-			if row.Status == model.AdtySiteEarningPending && row.Earning.IsNegative() {
-				negative = negative.Add(row.Earning)
-				negativeIDs = append(negativeIDs, row.Id)
-			}
-		}
-		now := time.Now().Unix()
-		if negative.IsNegative() {
-			if err := AdjustAccountTx(tx, account, decimal.Zero, negative, decimal.Zero, decimal.Zero, model.ReferralCommissionLedger{
-				Type: "site_earning", RefType: "site", RefId: fmt.Sprint(site.Id),
-				ExternalRefId: fmt.Sprintf("site-earning-close:%d:%d:%d", site.Id, group.OwnerID, now),
-				Remark:        "negative earnings settled on forced close", Operator: fmt.Sprint(operatorId),
-			}); err != nil {
-				return err
-			}
-			if err := tx.Model(&model.AdtySiteEarningDaily{}).Where("id IN ?", negativeIDs).Update("settled_at", now).Error; err != nil {
-				return err
-			}
-		}
-		var fresh model.ReferralCommissionAccount
-		if err := tx.First(&fresh, account.Id).Error; err != nil {
-			return err
-		}
-		claw := decimal.Min(decimal.Max(settled.Add(negative), decimal.Zero), decimal.Max(moneyDec(fresh.AvailableAmount), decimal.Zero))
-		if claw.IsPositive() {
-			debited := tx.Model(&model.ReferralCommissionAccount{}).Where("id = ? AND available_amount >= ?", account.Id, moneyF(claw)).
-				Update("available_amount", gorm.Expr("available_amount - ?", moneyF(claw)))
-			if debited.Error != nil {
-				return debited.Error
-			}
-			if debited.RowsAffected == 0 {
-				return common.NewMessage("Not enough withdrawable commission")
-			}
-			if err := addReferralLedgerTx(tx, &model.ReferralCommissionLedger{AffiliateId: account.AffiliateId, UserId: account.UserId,
-				DeltaAvailable: moneyF(claw.Neg()), Type: "site_earning_clawback", RefType: "site", RefId: fmt.Sprint(site.Id),
-				ExternalRefId: fmt.Sprintf("site-clawback:%d:%d", site.Id, group.OwnerID), Remark: "forced site close", Operator: fmt.Sprint(operatorId),
-			}); err != nil {
-				return err
-			}
-		}
-		if err := tx.Model(&model.AdtySiteEarningDaily{}).Where("id IN ?", ids).Update("status", model.AdtySiteEarningVoid).Error; err != nil {
-			return err
-		}
-	}
 	return nil
 }
 

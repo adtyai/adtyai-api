@@ -545,21 +545,32 @@ func TestCloseSiteTransferKeepsPriceNotHigher(t *testing.T) {
 	assert.Equal(t, to.Id, customer.SiteId)
 }
 
-func TestForcedCloseClawsBackEarnings(t *testing.T) {
+func TestForcedCloseIgnoresClawBackFlag(t *testing.T) {
 	db := prepareSiteDB(t)
 	_, site := openActiveSite(t, db, "forced")
 	var clawed []int
 	saved := AdtySiteClawBackTx
 	AdtySiteClawBackTx = func(tx *gorm.DB, s *model.AdtySite, _ int) error {
 		clawed = append(clawed, s.Id)
-		return nil
+		return assert.AnError
 	}
 	t.Cleanup(func() { AdtySiteClawBackTx = saved })
 	_, err := ScheduleAdtySiteClose(site.Id, 1, AdtySiteClosePlan{ClawBack: true, Immediate: true, Reason: "abuse"})
 	require.NoError(t, err)
-	assert.Equal(t, []int{site.Id}, clawed)
+	assert.Empty(t, clawed, "close must not invoke the clawback hook")
 	closed, err := GetAdtySite(site.Id)
 	require.NoError(t, err)
 	assert.Equal(t, model.AdtySiteStatusClosed, closed.Status)
-	assert.True(t, closed.CloseClawBack)
+	assert.False(t, closed.CloseClawBack, "ClawBack on the close plan must be ignored")
+
+	// 已经排期且历史标志为 true 的关站，执行时同样不能走扣回。
+	_, queued := openActiveSite(t, db, "forced-queued")
+	require.NoError(t, db.Model(&model.AdtySite{}).Where("id = ?", queued.Id).Updates(map[string]any{
+		"status": model.AdtySiteStatusClosing, "close_execute_at": 1, "close_claw_back": true,
+	}).Error)
+	require.NoError(t, ExecuteAdtySiteClose(queued.Id, 10))
+	assert.Empty(t, clawed, "a previously flagged close must not invoke the clawback hook")
+	closedQueued, err := GetAdtySite(queued.Id)
+	require.NoError(t, err)
+	assert.Equal(t, model.AdtySiteStatusClosed, closedQueued.Status)
 }

@@ -306,7 +306,7 @@ func TestSiteOwnershipMidjourneyChargeAndRefundKeepAcceptanceOwner(t *testing.T)
 	}
 }
 
-func TestSiteOwnershipForcedCloseClawsBackEachActualOwner(t *testing.T) {
+func TestSiteOwnershipForcedCloseKeepsEachActualOwnerFunds(t *testing.T) {
 	for _, dialect := range []string{"sqlite", "mysql", "postgres"} {
 		t.Run(dialect, func(t *testing.T) {
 			f := newSiteOwnershipFixture(t, dialect)
@@ -333,15 +333,19 @@ func TestSiteOwnershipForcedCloseClawsBackEachActualOwner(t *testing.T) {
 			}
 			for range 2 {
 				require.NoError(t, f.db.Transaction(func(tx *gorm.DB) error { return adtySiteClawBackTx(tx, site, f.root.Id) }))
-				for _, expected := range []struct {
-					owner  int
-					amount float64
-				}{{f.old.Id, 93}, {f.next.Id, 89}} {
+				for _, owner := range []int{f.old.Id, f.next.Id} {
 					var account model.ReferralCommissionAccount
-					require.NoError(t, f.db.Where("user_id = ?", expected.owner).First(&account).Error)
-					assert.InDelta(t, expected.amount, account.AvailableAmount, 0.000001)
+					require.NoError(t, f.db.Where("user_id = ?", owner).First(&account).Error)
+					assert.InDelta(t, 100, account.AvailableAmount, 0.000001, "close clawback must not deduct settled commission")
 				}
 			}
+			var pending, available, voided int64
+			require.NoError(t, f.db.Model(&model.AdtySiteEarningDaily{}).Where("site_id = ? AND status = ?", site.Id, model.AdtySiteEarningPending).Count(&pending).Error)
+			require.NoError(t, f.db.Model(&model.AdtySiteEarningDaily{}).Where("site_id = ? AND status = ?", site.Id, model.AdtySiteEarningAvailable).Count(&available).Error)
+			require.NoError(t, f.db.Model(&model.AdtySiteEarningDaily{}).Where("site_id = ? AND status = ?", site.Id, model.AdtySiteEarningVoid).Count(&voided).Error)
+			assert.EqualValues(t, 6, pending, "unsettled earnings must stay pending under the original source")
+			assert.EqualValues(t, 4, available, "settled earnings must stay available under the original source")
+			assert.Zero(t, voided)
 		})
 	}
 }
