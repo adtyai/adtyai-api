@@ -45,6 +45,8 @@ func TestOrderTraceDatabaseMatrix(t *testing.T) {
 			require.NoError(t, db.Create(&model.ReferralCommissionLedger{CommissionId: commission.Id, Type: "commission_clawback", RefId: order.TradeNo, ExternalRefId: "trace-clawback", DeltaAvailable: -0.5, SettlementCurrency: "USD"}).Error)
 			require.NoError(t, db.Create(&model.ReferralCommissionLedger{CommissionId: commission.Id + 99, Type: "commission_transfer", RefId: "other-private-commission", ExternalRefId: "unrelated-commission"}).Error)
 			require.NoError(t, db.Create(&model.AdtySiteWalletLedger{SiteId: 7, WalletKind: "operating", Type: "adjustment", RefType: "topup", RefId: order.TradeNo, IdempotencyKey: "safe-order-adjustment", Delta: decimal.NewFromInt(-1)}).Error)
+			require.NoError(t, db.Create(&model.AdtySiteWalletLedger{SiteId: 7, WalletKind: "margin", Type: "commission_clawback", RefType: "site_invite", RefId: order.TradeNo, IdempotencyKey: "trace-commission-clawback", Delta: decimal.RequireFromString("0.5")}).Error)
+			require.NoError(t, db.Create(&model.AdtySiteInviteCommission{SiteId: 7, InviterId: 3, InviteeId: buyer.Id, TradeNo: order.TradeNo, FaceUSD: decimal.NewFromInt(2), Rate: decimal.RequireFromString("0.1"), AmountUSD: decimal.RequireFromString("0.2"), ClawedUSD: decimal.RequireFromString("0.2"), RecoveredUSD: decimal.RequireFromString("0.2"), Status: "clawed_back"}).Error)
 			require.NoError(t, db.Create(&model.AdtySiteWalletLedger{SiteId: 9, WalletKind: "operating", Type: "adjustment", RefType: "topup", RefId: order.TradeNo, IdempotencyKey: "other-private-site-adjustment", Delta: decimal.NewFromInt(-91)}).Error)
 			require.NoError(t, db.Create(&model.PaymentOrphanEvent{Provider: order.PaymentProvider, ReferenceID: order.TradeNo, EventID: "safe-reversal", EventType: "reversal", Status: "refunded", Payload: "secret-orphan-payload", Error: "secret-provider-error"}).Error)
 			require.NoError(t, db.Create(&model.PaymentOrphanReview{Provider: order.PaymentProvider, TradeNo: order.TradeNo, Status: "refunded", ExternalAmount: decimal.NewFromInt(1), ExternalCurrency: "USD", Note: "authorized-review", Request: "secret-review-request", Proof: "private-review-proof"}).Error)
@@ -57,8 +59,10 @@ func TestOrderTraceDatabaseMatrix(t *testing.T) {
 					Total  int
 					Items  []adtyOrderTraceEntry
 					Refund struct {
-						Reason       string
-						RefundAmount string `json:"refund_amount"`
+						Reason                 string
+						RefundAmount           string `json:"refund_amount"`
+						CommissionClawedUSD    string `json:"commission_clawed_usd"`
+						CommissionRecoveredUSD string `json:"commission_recovered_usd"`
 					}
 					PromoBonusUSD string `json:"promo_bonus_usd"`
 				}
@@ -73,8 +77,10 @@ func TestOrderTraceDatabaseMatrix(t *testing.T) {
 						Total  int
 						Items  []adtyOrderTraceEntry
 						Refund struct {
-							Reason       string
-							RefundAmount string `json:"refund_amount"`
+							Reason                 string
+							RefundAmount           string `json:"refund_amount"`
+							CommissionClawedUSD    string `json:"commission_clawed_usd"`
+							CommissionRecoveredUSD string `json:"commission_recovered_usd"`
 						}
 						PromoBonusUSD string `json:"promo_bonus_usd"`
 					}
@@ -93,6 +99,8 @@ func TestOrderTraceDatabaseMatrix(t *testing.T) {
 			assert.Equal(t, 7, *result.Data.Order.SiteId)
 			assert.Equal(t, "authorized-refund-reason", result.Data.Refund.Reason)
 			assert.Equal(t, "1", result.Data.Refund.RefundAmount)
+			assert.Equal(t, "0.2", result.Data.Refund.CommissionClawedUSD)
+			assert.Equal(t, "0.2", result.Data.Refund.CommissionRecoveredUSD)
 			assert.Equal(t, "0.1", result.Data.PromoBonusUSD)
 			_, result = read("/orders/frozen-trace?section=payments&page_size=20&p=2")
 			require.Len(t, result.Data.Items, 1)
@@ -100,8 +108,12 @@ func TestOrderTraceDatabaseMatrix(t *testing.T) {
 			for _, section := range []string{"wallet", "bonuses", "commissions", "commission_movements", "site_wallet", "exceptions", "reviews"} {
 				_, result = read(fmt.Sprintf("/orders/frozen-trace?section=%s", section))
 				require.True(t, result.Success, section)
-				assert.Equal(t, 1, result.Data.Total, section)
-				require.Len(t, result.Data.Items, 1, section)
+				wantTotal := 1
+				if section == "site_wallet" {
+					wantTotal = 2
+				}
+				assert.Equal(t, wantTotal, result.Data.Total, section)
+				require.Len(t, result.Data.Items, wantTotal, section)
 				if section == "commission_movements" {
 					assert.Equal(t, "-0.5", result.Data.Items[0].AvailableDelta.String())
 				}

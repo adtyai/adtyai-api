@@ -8823,7 +8823,8 @@
     "Pending coverage cap": "Pending coverage cap",
     "Observation days": "Observation days",
     "Cover commission from margin": "Cover commission from margin",
-    "After earnings, the open margin cycle can cover the rest. No amount is set here.": "After earnings, the open margin cycle can cover the rest. No amount is set here."
+    "After earnings, the open margin cycle can cover the rest. No amount is set here.": "After earnings, the open margin cycle can cover the rest. No amount is set here.",
+    "Returned to site wallets": "Returned to site wallets"
 },
   "Targeted notifications": "Targeted notifications",
   "Site announcements": "Site announcements",

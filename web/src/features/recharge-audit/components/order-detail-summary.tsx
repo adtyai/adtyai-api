@@ -92,6 +92,16 @@ export function OrderDetailSummary(props: { detail: OrderTrace }) {
           {props.detail.refund.reason && (
             <p className='break-words'>{props.detail.refund.reason}</p>
           )}
+          {props.detail.refund.commission_clawed_usd && (
+            <p className='tabular-nums'>
+              {t('Commission clawback')}: {props.detail.refund.commission_clawed_usd} USD
+            </p>
+          )}
+          {props.detail.refund.commission_recovered_usd && (
+            <p className='tabular-nums'>
+              {t('Returned to site wallets')}: {props.detail.refund.commission_recovered_usd} USD
+            </p>
+          )}
           <p className='text-muted-foreground'>
             {t(
               'This records the wallet refund. Return the payment offline through the original payment provider.'

@@ -192,6 +192,113 @@ func TestSiteInviteCommissionMarginStopsAtTheOpenCycle(t *testing.T) {
 	require.True(t, marginAgain.Balance.Equal(decimal.NewFromInt(99)))
 }
 
+func TestSiteInviteCommissionRefundClawsBackByCompletedPrincipalRatio(t *testing.T) {
+	db := prepareReferralDialectDB(t, "sqlite")
+	require.NoError(t, db.AutoMigrate(model.ReferralTables()...))
+	site, invitee := seedSiteInvite(t, db, decimal.RequireFromString("0.10"))
+	require.NoError(t, EnsureAdtySiteWallets(site.Id))
+	_, err := ApplyAdtySiteWalletChange(site.Id, model.AdtySiteWalletEarnings, decimal.NewFromInt(1), AdtySiteWalletChange{
+		Type: "earning_settlement", IdempotencyKey: "earn-claw",
+	})
+	require.NoError(t, err)
+	require.NoError(t, OpenAdtyMarginCycle(site.Id, decimal.NewFromInt(100), "claw-cycle"))
+	require.NoError(t, SaveAdtySiteCommissionPolicy("10", "7"))
+	require.NoError(t, AuthorizeAdtySiteCommissionMargin(site.Id, true))
+
+	ext := siteInviteOrder(site.Id, invitee.Id, "SITE-CLAW", decimal.NewFromInt(30))
+	ext.CreditQuota = 30 * 500000
+	var row model.AdtySiteInviteCommission
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		if err := RecordAdtySiteInviteCommissionTx(tx, ext, time.Unix(1_700_000_000, 0)); err != nil {
+			return err
+		}
+		if err := tx.Where("trade_no = ?", "SITE-CLAW").First(&row).Error; err != nil {
+			return err
+		}
+		return CoverAdtySiteInviteCommissionTx(tx, row.Id, time.Unix(1_700_000_100, 0))
+	}))
+	require.NoError(t, db.First(&row, row.Id).Error)
+	require.Equal(t, "covered", row.Status)
+
+	ext.RefundQuota = 15 * 500000
+	topUp := &model.TopUp{TradeNo: "SITE-CLAW", UserId: invitee.Id}
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return model.AdtyAfterTopUpRefundedTx(tx, topUp, ext)
+	}))
+	require.NoError(t, db.First(&row, row.Id).Error)
+	require.True(t, row.ClawedUSD.Equal(decimal.RequireFromString("1.5")))
+	require.True(t, row.RecoveredUSD.Equal(decimal.RequireFromString("1.5")))
+	require.Equal(t, "covered", row.Status)
+	var clawLedger model.AdtySiteWalletLedger
+	require.NoError(t, db.Where("idempotency_key = ?", "commission-clawback:SITE-CLAW:margin:1.5").First(&clawLedger).Error)
+	require.Equal(t, "commission_clawback", clawLedger.Type)
+	require.Equal(t, "site_invite", clawLedger.RefType)
+	require.True(t, clawLedger.Delta.Equal(decimal.RequireFromString("1.5")))
+	var margin model.AdtySiteWallet
+	require.NoError(t, db.Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteWalletMargin).First(&margin).Error)
+	require.True(t, margin.Balance.Equal(decimal.RequireFromString("99.5")))
+	require.True(t, margin.CycleUsedUSD.Equal(decimal.RequireFromString("0.5")))
+	var earning model.AdtySiteWallet
+	require.NoError(t, db.Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteWalletEarnings).First(&earning).Error)
+	require.True(t, earning.Balance.IsZero())
+	var user model.User
+	require.NoError(t, db.First(&user, invitee.Id).Error)
+	require.Equal(t, 0, user.Quota)
+
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return model.AdtyAfterTopUpRefundedTx(tx, topUp, ext)
+	}))
+	require.NoError(t, db.Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteWalletMargin).First(&margin).Error)
+	require.True(t, margin.Balance.Equal(decimal.RequireFromString("99.5")))
+
+	ext.RefundQuota = 30 * 500000
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return model.AdtyAfterTopUpRefundedTx(tx, topUp, ext)
+	}))
+	require.NoError(t, db.First(&row, row.Id).Error)
+	require.True(t, row.ClawedUSD.Equal(decimal.RequireFromString("3")))
+	require.True(t, row.RecoveredUSD.Equal(decimal.RequireFromString("3")))
+	require.Equal(t, "clawed_back", row.Status)
+	require.False(t, SiteInviteCommissionWithdrawable(&row, time.Unix(row.AvailableAt, 0)))
+	require.NoError(t, db.Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteWalletMargin).First(&margin).Error)
+	require.True(t, margin.Balance.Equal(decimal.NewFromInt(100)))
+	require.True(t, margin.CycleUsedUSD.IsZero())
+	require.NoError(t, db.Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteWalletEarnings).First(&earning).Error)
+	require.True(t, earning.Balance.Equal(decimal.NewFromInt(1)))
+	require.NoError(t, db.First(&user, invitee.Id).Error)
+	require.Equal(t, 0, user.Quota)
+}
+
+func TestSiteInviteCommissionRefundCancelsUncoveredAmountWithoutMovingWallets(t *testing.T) {
+	db := prepareReferralDialectDB(t, "sqlite")
+	require.NoError(t, db.AutoMigrate(model.ReferralTables()...))
+	site, invitee := seedSiteInvite(t, db, decimal.RequireFromString("0.10"))
+	require.NoError(t, EnsureAdtySiteWallets(site.Id))
+	require.NoError(t, SaveAdtySiteCommissionPolicy("10", "7"))
+	ext := siteInviteOrder(site.Id, invitee.Id, "SITE-OPEN", decimal.NewFromInt(30))
+	ext.CreditQuota = 30 * 500000
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return RecordAdtySiteInviteCommissionTx(tx, ext, time.Unix(1, 0))
+	}))
+	ext.RefundQuota = 15 * 500000
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return model.AdtyAfterTopUpRefundedTx(tx, &model.TopUp{TradeNo: "SITE-OPEN", UserId: invitee.Id}, ext)
+	}))
+	var row model.AdtySiteInviteCommission
+	require.NoError(t, db.Where("trade_no = ?", "SITE-OPEN").First(&row).Error)
+	require.Equal(t, "pending_coverage", row.Status)
+	require.True(t, row.ClawedUSD.Equal(decimal.RequireFromString("1.5")))
+	require.True(t, row.RecoveredUSD.IsZero())
+	var ledgers int64
+	require.NoError(t, db.Model(&model.AdtySiteWalletLedger{}).Where("type = ?", "commission_clawback").Count(&ledgers).Error)
+	require.Zero(t, ledgers)
+	var wallets []model.AdtySiteWallet
+	require.NoError(t, db.Where("site_id = ?", site.Id).Find(&wallets).Error)
+	for _, wallet := range wallets {
+		require.True(t, wallet.Balance.IsZero(), wallet.Kind)
+	}
+}
+
 func TestSiteInviteCommissionIgnoresTeamTopups(t *testing.T) {
 	db := prepareReferralDialectDB(t, "sqlite")
 	site, invitee := seedSiteInvite(t, db, decimal.RequireFromString("0.10"))

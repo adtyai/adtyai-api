@@ -120,7 +120,7 @@ func SiteCommissionMarginAllowed(siteID int) (bool, error) {
 
 // SiteInviteCommissionWithdrawable is true only after coverage and observation.
 func SiteInviteCommissionWithdrawable(row *model.AdtySiteInviteCommission, now time.Time) bool {
-	return row != nil && row.Status == model.AdtySiteCommissionAvailable && row.AvailableAt > 0 && !now.Before(time.Unix(row.AvailableAt, 0))
+	return row != nil && row.Status == model.AdtySiteCommissionAvailable && row.ClawedUSD.LessThan(row.AmountUSD) && row.AvailableAt > 0 && !now.Before(time.Unix(row.AvailableAt, 0))
 }
 
 // RecordAdtySiteInviteCommissionTx snapshots one site invite commission.
@@ -169,7 +169,7 @@ func CoverAdtySiteInviteCommissionTx(tx *gorm.DB, id int64, now time.Time) error
 	var pending decimal.Decimal
 	if err := tx.Model(&model.AdtySiteInviteCommission{}).
 		Where("site_id = ? AND status = ? AND id <> ?", row.SiteId, model.AdtySiteCommissionPendingCoverage, row.Id).
-		Select("COALESCE(SUM(amount_usd - covered_usd), 0)").Scan(&pending).Error; err != nil {
+		Select("COALESCE(SUM(amount_usd - clawed_usd - covered_usd + recovered_usd), 0)").Scan(&pending).Error; err != nil {
 		return err
 	}
 	if !pending.LessThan(policy.Cap) {
@@ -270,6 +270,100 @@ func markSiteCommissionCovered(tx *gorm.DB, row *model.AdtySiteInviteCommission,
 	return tx.Model(row).Updates(map[string]any{
 		"status": row.Status, "covered_at": row.CoveredAt, "available_at": row.AvailableAt, "covered_usd": row.CoveredUSD,
 	}).Error
+}
+
+func adtySiteInviteCommissionAfterRefundTx(tx *gorm.DB, ext *model.AdtyTopupOrder) error {
+	if tx == nil || ext == nil || ext.SiteId <= 0 || strings.TrimSpace(ext.TradeNo) == "" {
+		return nil
+	}
+	ratio := ext.RefundRatio()
+	if !ratio.IsPositive() {
+		return nil
+	}
+	var row model.AdtySiteInviteCommission
+	lookup := model.AdtyLockForUpdate(tx).Where("trade_no = ?", ext.TradeNo).Limit(1).Find(&row)
+	if lookup.Error != nil || lookup.RowsAffected == 0 || row.Status == model.AdtySiteCommissionClawedBack {
+		return lookup.Error
+	}
+	target := row.AmountUSD.Mul(ratio).Round(8)
+	if !ratio.LessThan(decimal.NewFromInt(1)) || target.GreaterThan(row.AmountUSD) {
+		target = row.AmountUSD
+	}
+	thisClaw := target.Sub(row.ClawedUSD)
+	if !thisClaw.IsPositive() {
+		return nil
+	}
+	recoverable := row.CoveredUSD.Sub(row.RecoveredUSD)
+	if recoverable.GreaterThan(thisClaw) {
+		recoverable = thisClaw
+	}
+	if recoverable.IsNegative() {
+		recoverable = decimal.Zero
+	}
+	returned, err := returnSiteCommissionCover(tx, &row, recoverable, target)
+	if err != nil {
+		return err
+	}
+	row.ClawedUSD = target
+	row.RecoveredUSD = row.RecoveredUSD.Add(returned)
+	updates := map[string]any{"clawed_usd": row.ClawedUSD, "recovered_usd": row.RecoveredUSD}
+	if !row.ClawedUSD.LessThan(row.AmountUSD) {
+		row.Status = model.AdtySiteCommissionClawedBack
+		updates["status"] = row.Status
+	}
+	return tx.Model(&row).Updates(updates).Error
+}
+
+func returnSiteCommissionCover(tx *gorm.DB, row *model.AdtySiteInviteCommission, need, clawedAfter decimal.Decimal) (decimal.Decimal, error) {
+	if !need.IsPositive() {
+		return decimal.Zero, nil
+	}
+	returned := decimal.Zero
+	for _, kind := range []string{model.AdtySiteWalletMargin, model.AdtySiteWalletEarnings} {
+		left := need.Sub(returned)
+		if !left.IsPositive() {
+			break
+		}
+		room, err := siteCommissionSourceOutstanding(tx, row.TradeNo, kind)
+		if err != nil {
+			return decimal.Zero, err
+		}
+		take := decimal.Min(room, left)
+		if !take.IsPositive() {
+			continue
+		}
+		change := AdtySiteWalletChange{
+			Type: "commission_clawback", RefType: "site_invite", RefID: row.TradeNo,
+			IdempotencyKey: "commission-clawback:" + row.TradeNo + ":" + kind + ":" + clawedAfter.String(),
+		}
+		if kind == model.AdtySiteWalletMargin {
+			change.ReleaseCycleUsed = take
+		}
+		if _, err := applyAdtySiteWalletChangeTx(tx, row.SiteId, kind, take, change); err != nil {
+			return decimal.Zero, err
+		}
+		returned = returned.Add(take)
+	}
+	return returned, nil
+}
+
+func siteCommissionSourceOutstanding(tx *gorm.DB, tradeNo, kind string) (decimal.Decimal, error) {
+	var rows []model.AdtySiteWalletLedger
+	if err := tx.Where("ref_type = ? AND ref_id = ? AND wallet_kind = ? AND type IN ?", "site_invite", tradeNo, kind, []string{"commission_cover", "commission_clawback"}).Find(&rows).Error; err != nil {
+		return decimal.Zero, err
+	}
+	outstanding := decimal.Zero
+	for _, entry := range rows {
+		if entry.Type == "commission_cover" {
+			outstanding = outstanding.Add(entry.Delta.Abs())
+			continue
+		}
+		outstanding = outstanding.Sub(entry.Delta.Abs())
+	}
+	if outstanding.IsNegative() {
+		return decimal.Zero, nil
+	}
+	return outstanding, nil
 }
 
 func adtyRecordSiteInviteCommissionTx(tx *gorm.DB, ext *model.AdtyTopupOrder) error {

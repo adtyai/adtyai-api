@@ -31,15 +31,16 @@ var (
 )
 
 type AdtySiteWalletChange struct {
-	Type            string
-	RefType         string
-	RefID           string
-	Reason          string
-	OperatorID      int
-	IdempotencyKey  string
-	AllowOverdraft  bool
-	OpenMarginCycle bool
-	CycleTier       decimal.Decimal
+	Type             string
+	RefType          string
+	RefID            string
+	Reason           string
+	OperatorID       int
+	IdempotencyKey   string
+	AllowOverdraft   bool
+	OpenMarginCycle  bool
+	CycleTier        decimal.Decimal
+	ReleaseCycleUsed decimal.Decimal
 }
 
 func adtySiteWalletKinds() []string {
@@ -220,6 +221,12 @@ func applyAdtySiteWalletChangeTx(tx *gorm.DB, siteID int, kind string, delta dec
 	if kind == model.AdtySiteWalletMargin && delta.IsPositive() && change.OpenMarginCycle && change.CycleTier.IsPositive() {
 		cycleTier = change.CycleTier
 		cycleUsed = decimal.Zero
+	}
+	if kind == model.AdtySiteWalletMargin && delta.IsPositive() && change.ReleaseCycleUsed.IsPositive() && !change.OpenMarginCycle {
+		cycleUsed = cycleUsed.Sub(change.ReleaseCycleUsed)
+		if cycleUsed.IsNegative() {
+			cycleUsed = decimal.Zero
+		}
 	}
 	if err := tx.Model(&model.AdtySiteWallet{}).Where("id = ?", wallet.Id).Updates(map[string]any{
 		"balance": after, "cycle_tier_usd": cycleTier, "cycle_used_usd": cycleUsed,

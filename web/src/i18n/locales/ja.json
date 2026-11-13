@@ -8823,7 +8823,8 @@
     "Pending coverage cap": "未カバー上限",
     "Observation days": "観察日数",
     "Cover commission from margin": "保証金で手数料を補填",
-    "After earnings, the open margin cycle can cover the rest. No amount is set here.": "収益のあと、開始済みの保証金サイクルで残りを補います。ここでは金額を入力しません。"
+    "After earnings, the open margin cycle can cover the rest. No amount is set here.": "収益のあと、開始済みの保証金サイクルで残りを補います。ここでは金額を入力しません。",
+    "Returned to site wallets": "サイトのウォレットへ戻した額"
 },
   "Targeted notifications": "対象を指定した通知",
   "Site announcements": "サイトのお知らせ",

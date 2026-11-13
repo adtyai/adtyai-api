@@ -8823,7 +8823,8 @@
     "Pending coverage cap": "Plafond de couverture en attente",
     "Observation days": "Jours d'observation",
     "Cover commission from margin": "Couvrir la commission avec la marge",
-    "After earnings, the open margin cycle can cover the rest. No amount is set here.": "Après les gains, le cycle de marge ouvert peut couvrir le reste. Aucun montant n'est saisi ici."
+    "After earnings, the open margin cycle can cover the rest. No amount is set here.": "Après les gains, le cycle de marge ouvert peut couvrir le reste. Aucun montant n'est saisi ici.",
+    "Returned to site wallets": "Rendu aux portefeuilles du site"
 },
   "Targeted notifications": "Notifications ciblées",
   "Site announcements": "Annonces du site",

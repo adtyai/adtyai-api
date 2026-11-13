@@ -8823,7 +8823,8 @@
     "Pending coverage cap": "Лимит непокрытой комиссии",
     "Observation days": "Дни наблюдения",
     "Cover commission from margin": "Покрыть комиссию из маржи",
-    "After earnings, the open margin cycle can cover the rest. No amount is set here.": "После дохода открытый цикл маржи может покрыть остаток. Сумма здесь не задаётся."
+    "After earnings, the open margin cycle can cover the rest. No amount is set here.": "После дохода открытый цикл маржи может покрыть остаток. Сумма здесь не задаётся.",
+    "Returned to site wallets": "Возвращено в кошельки сайта"
 },
   "Targeted notifications": "Адресные уведомления",
   "Site announcements": "Объявления сайта",

@@ -392,7 +392,10 @@ func init() {
 		if err := adtyReferralAfterRefundTx(tx, topUp, ext); err != nil {
 			return err
 		}
-		return adtySiteBonusAfterRefundTx(tx, topUp, ext)
+		if err := adtySiteBonusAfterRefundTx(tx, topUp, ext); err != nil {
+			return err
+		}
+		return adtySiteInviteCommissionAfterRefundTx(tx, ext)
 	}
 	adtyMasterTasks = append(adtyMasterTasks, startReferralSettlementTask)
 }

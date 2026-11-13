@@ -108,6 +108,15 @@ func getAdtyOrderTrace(c *gin.Context, ownerSiteID *int) {
 		refundCurrency = ext.PayCurrency
 	}
 	refund := gin.H{"refunded_at": ext.RefundedAt, "refund_quota": ext.RefundQuota, "refund_amount": ext.RefundAmount, "currency": refundCurrency}
+	var siteCommission model.AdtySiteInviteCommission
+	if err := model.DB.Where("trade_no = ?", tradeNo).Limit(1).Find(&siteCommission).Error; err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if siteCommission.Id != 0 && siteCommission.ClawedUSD.IsPositive() {
+		refund["commission_clawed_usd"] = siteCommission.ClawedUSD.String()
+		refund["commission_recovered_usd"] = siteCommission.RecoveredUSD.String()
+	}
 	if ownerSiteID == nil {
 		refund["reason"] = ext.RefundReason
 	}
@@ -144,7 +153,7 @@ func adtyOrderTraceQuery(section string, order rechargeAuditOrder, ownerSiteID *
 		return model.DB.Model(&model.AdtyPromoRedemption{}).Where("trade_no = ? AND user_id = ?", order.TradeNo, order.UserId),
 			"id, 'Promo bonus' AS kind, bonus_usd AS amount, 'USD' AS currency, created_at", true
 	case "site_wallet":
-		q := model.DB.Model(&model.AdtySiteWalletLedger{}).Where("ref_type = ? AND ref_id = ?", "topup", order.TradeNo)
+		q := model.DB.Model(&model.AdtySiteWalletLedger{}).Where("ref_id = ? AND ref_type IN ?", order.TradeNo, []string{"topup", "site_invite"})
 		if order.SiteId == nil {
 			q = q.Where("1 = 0")
 		} else {

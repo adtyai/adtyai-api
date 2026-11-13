@@ -8823,7 +8823,8 @@
     "Pending coverage cap": "待覆蓋上限",
     "Observation days": "觀察天數",
     "Cover commission from margin": "用保證金補足佣金",
-    "After earnings, the open margin cycle can cover the rest. No amount is set here.": "先使用收益。不足部分按已開啟的保證金週期補足。這裡不填寫金額。"
+    "After earnings, the open margin cycle can cover the rest. No amount is set here.": "先使用收益。不足部分按已開啟的保證金週期補足。這裡不填寫金額。",
+    "Returned to site wallets": "已退回分站錢包"
 },
   "Targeted notifications": "定向通知",
   "Site announcements": "本站公告",
