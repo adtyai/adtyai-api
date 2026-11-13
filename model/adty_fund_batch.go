@@ -8,9 +8,9 @@ import (
 // AdtyFundBatch is one recharge principal or permanent bonus lot.
 type AdtyFundBatch struct {
 	Id        int64  `json:"id"`
-	UserId    int    `json:"user_id" gorm:"index"`
-	Kind      string `json:"kind" gorm:"type:varchar(16);index"`
-	Source    string `json:"source" gorm:"type:varchar(64);index"`
+	UserId    int    `json:"user_id" gorm:"uniqueIndex:idx_adty_fund_batch_user_source_kind,priority:1;index"`
+	Kind      string `json:"kind" gorm:"type:varchar(16);uniqueIndex:idx_adty_fund_batch_user_source_kind,priority:3;index"`
+	Source    string `json:"source" gorm:"type:varchar(64);uniqueIndex:idx_adty_fund_batch_user_source_kind,priority:2;index"`
 	Original  int64  `json:"original"`
 	Remaining int64  `json:"remaining"`
 	CreatedAt int64  `json:"created_at" gorm:"autoCreateTime"`
@@ -45,7 +45,16 @@ func CreateAdtyFundBatchesTx(tx *gorm.DB, userID int, source string, principal, 
 	if len(rows) == 0 {
 		return nil
 	}
-	return tx.Create(&rows).Error
+	// Insert under a SAVEPOINT so a concurrent unique conflict does not
+	// abort the caller's PostgreSQL transaction. A replay of the same
+	// (user_id, source, kind) is idempotent success, same as Count>0.
+	err := tx.Transaction(func(inner *gorm.DB) error {
+		return inner.Create(&rows).Error
+	})
+	if err != nil && isAdtyUniqueViolation(err) {
+		return nil
+	}
+	return err
 }
 
 // AdtyAfterPrincipalSpentTx runs in the charge transaction after non-legacy
