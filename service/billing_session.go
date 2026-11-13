@@ -460,7 +460,9 @@ func (s *BillingSession) durableSpec() model.BillingOperation {
 	if s.relayInfo.IsPlayground {
 		row.TokenId = 0
 	}
-	if k, d, ok := AdtySiteMarkupFromContext(s.requestContext); ok {
+	if snap := AdtyFrozenPriceSnapshot(s.requestContext); snap != nil {
+		applySnapshotToBillingOperation(&row, snap)
+	} else if k, d, ok := AdtySiteMarkupFromContext(s.requestContext); ok {
 		row.SiteId, row.SiteMarkup, row.SiteCostFactor = s.requestContext.GetInt(AdtySiteIdContextKey), k, d
 	}
 	return row

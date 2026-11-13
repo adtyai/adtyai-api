@@ -22,6 +22,9 @@ const (
 // 会话已存在时（任务重试换到另一个渠道）把预扣补到 preConsumedQuota，
 // 和首次预扣一样必须由余额覆盖。
 func PreConsumeBilling(c *gin.Context, preConsumedQuota int, relayInfo *relaycommon.RelayInfo) *types.NewAPIError {
+	if c != nil && relayInfo != nil {
+		AdtyFreezeRequestPriceSnapshot(c, relayInfo)
+	}
 	if relayInfo != nil && relayInfo.UserId > 0 {
 		paused, err := model.AdtyUserPaidPaused(relayInfo.UserId)
 		if err != nil {

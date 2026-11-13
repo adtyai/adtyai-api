@@ -213,10 +213,14 @@ func AdtyApplySiteMarkup(c *gin.Context, userId int, group string, groupRatio fl
 
 func adtyApplySiteMarkupOnlyDecimal(c *gin.Context, userId int, group string, groupRatio decimal.Decimal) (decimal.Decimal, decimal.Decimal) {
 	one := decimal.NewFromInt(1)
+	factors := adtyDefaultPriceFactors(group, groupRatio)
 	site := AdtyBillingSiteForUser(userId)
 	if site == nil {
+		adtyRememberPriceFactors(c, factors)
 		return groupRatio, one
 	}
+	factors.MainSite = false
+	factors.SiteId = site.Id
 	kDec := adtyClampMarkup(site, ResolveAdtySiteMarkup(adtySitePrices(site.Id), userId, group), userId, group)
 	kUsed := adtyValidStoredMarkup(kDec, userId, group)
 	k := kUsed.InexactFloat64()
@@ -229,18 +233,27 @@ func adtyApplySiteMarkupOnlyDecimal(c *gin.Context, userId int, group string, gr
 			common.SysError("Request earning owner snapshot unavailable")
 		}
 		c.Set(AdtySiteOwnerContextKey, ownerID)
+		factors.SiteOwnerUserId = ownerID
 		if dOK {
 			c.Set(AdtySiteCostFactorContextKey, d.InexactFloat64())
 		}
 	}
 	if !dOK {
 		common.SysError(common.LogText("site cost factor missing for user %d group %s, leaving group ratio unchanged", userId, group))
+		adtyRememberPriceFactors(c, factors)
 		return groupRatio, one
 	}
 	marked, storedK, ok := adtySiteOrdinarySellRatioDec(groupRatio, kUsed, d, userId, group)
 	if !ok {
+		adtyRememberPriceFactors(c, factors)
 		return marked, storedK
 	}
+	factors.StoredK = storedK
+	factors.MarkupRatio = adtyStoredMarkupRatio(storedK)
+	factors.CostFactor = d
+	factors.SupplyPrice = groupRatio.Mul(d)
+	factors.SellPrice = marked
+	adtyRememberPriceFactors(c, factors)
 	return marked, storedK
 }
 
@@ -273,12 +286,15 @@ func adtyApplyTeamProtocolPriceDecimal(c *gin.Context, userId int, groupRatio, m
 	}
 	discounted := marked.Mul(factorDec)
 	nextDec := discounted
+	var supply decimal.Decimal
+	floorApplied := false
 	// 只有分站团队才有供货价下限；主站团队即使有很深的折扣也不抬价。
 	if team.SiteId > 0 {
 		if site := AdtyBillingSiteForUser(userId); site != nil {
 			if d, ok := AdtySiteCostFactor(site); ok && groupRatio.IsPositive() {
-				supply := groupRatio.Mul(d)
+				supply = groupRatio.Mul(d)
 				nextDec = decimal.Max(supply, discounted)
+				floorApplied = true
 			}
 		}
 	}
@@ -287,6 +303,20 @@ func adtyApplyTeamProtocolPriceDecimal(c *gin.Context, userId int, groupRatio, m
 		return marked, storedK
 	}
 	c.Set(AdtyTeamDiscountContextKey, factorDec.InexactFloat64())
+	factors, ok := adtyPriceFactorsFromContext(c)
+	if !ok {
+		factors = adtyDefaultPriceFactors("", groupRatio)
+		factors.SellPrice = marked
+		factors.StoredK = storedK
+		factors.MarkupRatio = adtyStoredMarkupRatio(storedK)
+	}
+	factors.TeamApplied = true
+	factors.TeamPayRatio = factorDec
+	if floorApplied {
+		factors.FloorApplied = true
+		factors.SupplyFloor = supply
+	}
+	adtyRememberPriceFactors(c, factors)
 	return nextDec, storedK
 }
 
@@ -634,8 +664,8 @@ func AssignAdtySiteCostTiers(month string, revenue map[int]decimal.Decimal) ([]m
 	return changed, nil
 }
 
-// AdtyStampTaskSiteBilling 在任务提交时把这次请求的 k、d 快照进 BillingContext（controller/relay.go）。
-// 轮询结算和退款沿用快照，不受之后改 k、d 的影响。
+// AdtyStampTaskSiteBilling 在任务提交时把这次请求的完整 G.2-11 快照和兼容 k、d 写进 BillingContext。
+// 轮询结算和退款沿用快照，不受之后改价的影响。
 func AdtyStampTaskSiteBilling(c *gin.Context, bc *model.TaskBillingContext) {
 	if bc == nil {
 		return
@@ -643,6 +673,18 @@ func AdtyStampTaskSiteBilling(c *gin.Context, bc *model.TaskBillingContext) {
 	if k, d, ok := AdtySiteMarkupFromContext(c); ok {
 		bc.SiteMarkup, bc.SiteCostFactor, bc.SiteId = k, d, c.GetInt(AdtySiteIdContextKey)
 		bc.SiteOwnerUserId = c.GetInt(AdtySiteOwnerContextKey)
+	}
+	if snap := AdtyFrozenPriceSnapshot(c); snap != nil {
+		bc.PriceSnapshot = snap
+		if bc.SiteId == 0 && snap.SiteId > 0 {
+			bc.SiteId, bc.SiteOwnerUserId = snap.SiteId, snap.SiteOwnerUserId
+		}
+		if bc.SiteMarkup == 0 {
+			bc.SiteMarkup = snap.LegacyMarkupFloat()
+		}
+		if bc.SiteCostFactor == 0 {
+			bc.SiteCostFactor = snap.LegacyCostFactorFloat()
+		}
 	}
 }
 
@@ -654,8 +696,19 @@ func adtyTaskRecalcGroupRatio(task *model.Task, group string, groupRatio float64
 }
 
 func adtyTaskRecalcGroupRatioDecimal(task *model.Task, group string, groupRatio decimal.Decimal) decimal.Decimal {
-	if bc := task.PrivateData.BillingContext; bc != nil && bc.SiteMarkup > 0 && bc.GroupRatio > 0 {
-		return decimal.NewFromFloat(bc.GroupRatio)
+	if task != nil {
+		if bc := task.PrivateData.BillingContext; bc != nil {
+			if snap := bc.PriceSnapshot; snap != nil {
+				if billed, ok := snap.BilledGroupRatioDecimal(); ok {
+					return billed
+				}
+			}
+			// Old rows: keep the previously stored billed ratio and do not
+			// reprice from live site markup / cost factor / team pay.
+			if bc.GroupRatio > 0 {
+				return decimal.NewFromFloat(bc.GroupRatio)
+			}
+		}
 	}
 	billed, _ := AdtyApplySiteMarkupDecimal(nil, task.UserId, group, groupRatio)
 	return billed

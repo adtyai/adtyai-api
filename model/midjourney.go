@@ -32,6 +32,7 @@ type Midjourney struct {
 	BillingSiteOwnerUserId int     `json:"-" gorm:"not null;default:0"`
 	BillingSiteMarkup      float64 `json:"-" gorm:"default:0"`
 	BillingSiteCostFactor  float64 `json:"-" gorm:"default:0"`
+	BillingPriceSnapshot   string  `json:"-" gorm:"type:text"`
 	BillingChargePending   bool    `json:"-" gorm:"index;not null;default:false"`
 	BillingPending         bool    `json:"-" gorm:"index;not null;default:false"`
 	BillingOperationKey    string  `json:"-" gorm:"type:varchar(191)"`

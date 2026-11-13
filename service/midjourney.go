@@ -63,6 +63,21 @@ func PrepareMidjourneyTaskBilling(relayInfo *relaycommon.RelayInfo, task *model.
 			task.BillingSiteOwnerUserId = contexts[0].GetInt(AdtySiteOwnerContextKey)
 			task.BillingSiteMarkup, task.BillingSiteCostFactor = k, d
 		}
+		if snap := AdtyFrozenPriceSnapshot(contexts[0]); snap != nil {
+			if encoded, err := model.EncodeRequestPriceSnapshot(snap); err == nil {
+				task.BillingPriceSnapshot = encoded
+			}
+			if task.BillingSiteId == 0 && snap.SiteId > 0 {
+				task.BillingSiteId = snap.SiteId
+				task.BillingSiteOwnerUserId = snap.SiteOwnerUserId
+			}
+			if task.BillingSiteMarkup == 0 {
+				task.BillingSiteMarkup = snap.LegacyMarkupFloat()
+			}
+			if task.BillingSiteCostFactor == 0 {
+				task.BillingSiteCostFactor = snap.LegacyCostFactorFloat()
+			}
+		}
 	}
 	task.BillingChannelId = task.ChannelId
 	if relayInfo.ChannelMeta != nil && relayInfo.ChannelId > 0 {

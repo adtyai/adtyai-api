@@ -179,6 +179,9 @@ type TaskBillingContext struct {
 	SiteCostFactor  float64 `json:"site_cost_factor,omitempty"`
 	SiteId          int     `json:"site_id,omitempty"` // 收益记给哪个站（客户之后可能随关站转到别的站）
 	SiteOwnerUserId int     `json:"site_owner_user_id,omitempty"`
+	// PriceSnapshot is the authoritative G.2-11 decimal snapshot. Float fields
+	// above stay for compatibility; settlement must use this when present.
+	PriceSnapshot *RequestPriceSnapshot `json:"price_snapshot,omitempty"`
 }
 
 // ResultRetrievable reports whether retrieval surfaces (native query routes,

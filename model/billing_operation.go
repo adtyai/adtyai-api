@@ -52,6 +52,7 @@ type BillingOperation struct {
 	SiteMarkup          float64
 	SiteCostFactor      float64
 	BillingContext      string `gorm:"type:text"`
+	PriceSnapshot       string `gorm:"type:text"`
 	EarningRootKey      string `gorm:"type:varchar(191)"`
 	EarningRiskFlag     string `gorm:"type:varchar(16)"`
 	EarningRiskFrozen   bool
@@ -184,8 +185,18 @@ func ReserveBillingOperation(spec BillingOperation, target int) (*BillingOperati
 		if result.UserId != spec.UserId || result.TokenId != spec.TokenId || result.Kind != "request" || result.State != BillingReserved {
 			return ErrBillingOperationConflict
 		}
+		snapshotWritten := false
 		if result.SiteId != spec.SiteId || result.SiteMarkup != spec.SiteMarkup || result.SiteCostFactor != spec.SiteCostFactor {
 			result.SiteId, result.SiteMarkup, result.SiteCostFactor = spec.SiteId, spec.SiteMarkup, spec.SiteCostFactor
+			snapshotWritten = true
+		}
+		// The G.2-11 snapshot is immutable once written. Fill it only when the
+		// reserved row was created without one.
+		if result.PriceSnapshot == "" && spec.PriceSnapshot != "" {
+			result.PriceSnapshot = spec.PriceSnapshot
+			snapshotWritten = true
+		}
+		if snapshotWritten {
 			if err := tx.Save(&result).Error; err != nil {
 				return err
 			}
@@ -359,6 +370,11 @@ func QueueTaskBillingOperation(task *Task, target int, refund bool) (string, err
 	if bc := task.PrivateData.BillingContext; bc != nil {
 		row.SiteId, row.SiteMarkup, row.SiteCostFactor = bc.SiteId, bc.SiteMarkup, bc.SiteCostFactor
 		row.SiteOwnerUserId = bc.SiteOwnerUserId
+		if encoded, err := EncodeRequestPriceSnapshot(bc.PriceSnapshot); err != nil {
+			return "", err
+		} else if encoded != "" {
+			row.PriceSnapshot = encoded
+		}
 	}
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		if err := freezeBillingSiteOwnerTx(tx, &row, false); err != nil {
@@ -391,7 +407,7 @@ func QueueMidjourneyBillingOperation(task *Midjourney, refund bool) (string, err
 	}
 	row := BillingOperation{OperationKey: key, UserId: task.UserId, TokenId: task.TokenId, Kind: kind, ReferenceId: int64(task.Id),
 		ActualQuota: target, State: state, SiteId: task.BillingSiteId, SiteMarkup: task.BillingSiteMarkup, SiteCostFactor: task.BillingSiteCostFactor,
-		EarningRootKey: task.BillingOperationKey}
+		EarningRootKey: task.BillingOperationKey, PriceSnapshot: task.BillingPriceSnapshot}
 	row.SiteOwnerUserId = task.BillingSiteOwnerUserId
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		if err := freezeBillingSiteOwnerTx(tx, &row, false); err != nil {
@@ -563,6 +579,7 @@ func ApplyBillingSettlement(key string) (*BillingOperation, bool, error) {
 				}
 			}
 		}
+		stampConsumedAmountOnSnapshot(&row)
 		earningQuota := charged
 		if row.Kind == "request" {
 			earningQuota = row.AppliedQuota - row.StreamWalletQuota
@@ -622,4 +639,30 @@ func refreshBillingProjections(row *BillingOperation) {
 	if err := invalidateUserCache(row.UserId); err != nil {
 		common.SysError(common.LogText("failed to invalidate committed wallet projection: user=%d error=%s", row.UserId, err.Error()))
 	}
+}
+
+func stampConsumedAmountOnSnapshot(row *BillingOperation) {
+	if row == nil {
+		return
+	}
+	snap := DecodeRequestPriceSnapshot(row.PriceSnapshot)
+	if snap == nil {
+		return
+	}
+	stamped := snap.WithConsumedQuota(row.AppliedQuota)
+	encoded, err := EncodeRequestPriceSnapshot(stamped)
+	if err != nil || encoded == "" {
+		return
+	}
+	row.PriceSnapshot = encoded
+}
+
+// RequestPriceSnapshot returns the frozen G.2-11 snapshot when the complete
+// official field set is present. Old rows without it return nil; callers must
+// keep previously stored amounts and must not reprice them from live config.
+func (row *BillingOperation) RequestPriceSnapshot() *RequestPriceSnapshot {
+	if row == nil {
+		return nil
+	}
+	return DecodeRequestPriceSnapshot(row.PriceSnapshot)
 }

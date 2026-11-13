@@ -389,14 +389,26 @@ func RecalculateTaskQuotaByTokens(ctx context.Context, task *model.Task, totalTo
 	modelName := taskModelName(task)
 
 	// 提交时冻结的模型倍率优先。缺快照的旧任务才读当前倍率，避免改价追改未完成任务。
-	modelRatio, hasRatioSetting := 0.0, false
-	if task.PrivateData.BillingContext != nil && task.PrivateData.BillingContext.ModelRatio > 0 {
-		modelRatio, hasRatioSetting = task.PrivateData.BillingContext.ModelRatio, true
-	} else {
-		modelRatio, hasRatioSetting, _ = ratio_setting.GetModelRatio(modelName)
+	modelRatioDec, hasRatioSetting := decimal.Zero, false
+	if bc := task.PrivateData.BillingContext; bc != nil {
+		if snap := bc.PriceSnapshot; snap != nil {
+			if d, ok := snap.ModelRatioDecimal(); ok && d.IsPositive() {
+				modelRatioDec, hasRatioSetting = d, true
+			}
+		}
+		if !hasRatioSetting && bc.ModelRatio > 0 {
+			modelRatioDec, hasRatioSetting = decimal.NewFromFloat(bc.ModelRatio), true
+		}
 	}
+	if !hasRatioSetting {
+		modelRatio, ok, _ := ratio_setting.GetModelRatio(modelName)
+		if ok && modelRatio > 0 {
+			modelRatioDec, hasRatioSetting = decimal.NewFromFloat(modelRatio), true
+		}
+	}
+	modelRatio := modelRatioDec.InexactFloat64()
 	// 只有配置了倍率(非固定价格)时才按 token 重新计费
-	if !hasRatioSetting || modelRatio <= 0 {
+	if !hasRatioSetting || !modelRatioDec.IsPositive() {
 		return false
 	}
 
@@ -430,7 +442,7 @@ func RecalculateTaskQuotaByTokens(ctx context.Context, task *model.Task, totalTo
 	// 计算实际应扣费额度: totalTokens * modelRatio * groupRatio * otherMultiplier（饱和转换，防止溢出成负数）
 	actualQuota, clamp := common.QuotaFromDecimalChecked(
 		decimal.NewFromInt(int64(totalTokens)).
-			Mul(decimal.NewFromFloat(modelRatio)).
+			Mul(modelRatioDec).
 			Mul(finalGroupRatioDec).
 			Mul(otherMultiplierDec),
 	)

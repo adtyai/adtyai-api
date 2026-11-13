@@ -48,6 +48,11 @@ func HandleGroupRatio(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) hostty
 		logger.LogDebug(ctx, "final group: %s", autoGroup)
 		relayInfo.UsingGroup = autoGroup.(string)
 	}
+	// Retry/resume must reuse the accept-time snapshot and must not re-read
+	// live model prices, site markup, cost factor, or team pay ratio.
+	if snap := service.AdtyFrozenPriceSnapshot(ctx); snap != nil {
+		return service.GroupRatioInfoFromSnapshot(snap)
+	}
 
 	// check user group special ratio
 	userGroupRatio, ok := ratio_setting.GetGroupGroupRatio(relayInfo.UserGroup, relayInfo.UsingGroup)
@@ -81,6 +86,9 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 	if info != nil {
 		if matched := resolveBillingModelName(info.GetOriginModelName()); matched != "" && matched != info.OriginModelName {
 			info.BillingModelName = matched
+		}
+		if service.AdtyReuseFrozenPriceData(c, info) {
+			return info.PriceData, nil
 		}
 	}
 	billingModelName := info.GetBillingModelName()
@@ -221,11 +229,15 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 		logger.LogDebug(c, "model_price_helper result: %s", priceData.ToSetting())
 	}
 	info.PriceData = priceData
+	service.AdtyFreezeRequestPriceSnapshot(c, info)
 	return priceData, nil
 }
 
 // ModelPriceHelperPerCall 按次/按量计费的 PriceHelper (MJ、Task)
 func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) (hosttypes.PriceData, error) {
+	if service.AdtyReuseFrozenPriceData(c, info) {
+		return info.PriceData, nil
+	}
 	groupRatioInfo := HandleGroupRatio(c, info)
 
 	modelPrice, success := ratio_setting.GetModelPrice(info.OriginModelName, true)
@@ -289,6 +301,10 @@ func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) (hostt
 		UsePrice:       usePrice,
 		Quota:          quota,
 		GroupRatioInfo: groupRatioInfo,
+	}
+	if info != nil {
+		info.PriceData = priceData
+		service.AdtyFreezeRequestPriceSnapshot(c, info)
 	}
 	return priceData, nil
 }
@@ -468,5 +484,6 @@ func modelPriceHelperTiered(c *gin.Context, info *relaycommon.RelayInfo, billing
 	logger.LogDebug(c, "model_price_helper_tiered result: model=%s preConsume=%d quotaBeforeGroup=%.2f groupRatio=%.2f tier=%s", billingModelName, preConsumedQuota, quotaBeforeGroup, groupRatioInfo.GroupRatio, trace.MatchedTier)
 
 	info.PriceData = priceData
+	service.AdtyFreezeRequestPriceSnapshot(c, info)
 	return priceData, nil
 }
