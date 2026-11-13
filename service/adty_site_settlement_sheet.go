@@ -253,7 +253,11 @@ func summarizeAdtySiteSettlement(siteID int, day string, start, end int64) (mode
 			sheet.AdjustmentUSD = sheet.AdjustmentUSD.Add(row.Delta)
 		}
 		if row.Type == "gift_reserve" {
-			sheet.GiftReserveUSD = sheet.GiftReserveUSD.Add(row.Delta.Neg())
+			reserved := row.HoldDelta
+			if reserved.IsZero() {
+				reserved = row.Delta.Neg()
+			}
+			sheet.GiftReserveUSD = sheet.GiftReserveUSD.Add(reserved)
 		}
 		switch row.WalletKind {
 		case model.AdtySiteWalletEarnings:
@@ -262,7 +266,7 @@ func summarizeAdtySiteSettlement(siteID int, day string, start, end int64) (mode
 			if row.Type == "earning_withdraw_freeze" || row.Type == "earning_withdraw_release" {
 				sheet.EarningsFrozenDeltaUSD = sheet.EarningsFrozenDeltaUSD.Add(row.Delta.Neg())
 			}
-			if row.Type == "commission_freeze" || row.Type == "commission_release" || row.Type == "commission_deduct" {
+			if row.Type == "commission_freeze" || row.Type == "commission_release" || row.Type == "commission_deduct" || row.Type == "gift_reserve" || row.Type == "gift_release" {
 				sheet.EarningsFrozenDeltaUSD = sheet.EarningsFrozenDeltaUSD.Add(row.HoldDelta)
 			}
 		case model.AdtySiteWalletMargin:

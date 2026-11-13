@@ -146,17 +146,23 @@ func settleAdtySite(siteId int, cutoff string, now int64) (bool, error) {
 				return err
 			}
 			total := decimal.Zero
+			walletTotal := decimal.Zero
 			ids := make([]int64, 0, len(group.Rows))
 			for _, row := range group.Rows {
 				total = total.Add(row.Earning)
+				// Gift funding is already held as a wallet freeze. Settling the
+				// bonus reporting rows must not spend the same money again.
+				if row.Kind != model.AdtySiteEarningBonus && row.Kind != model.AdtySiteEarningBonusReversal {
+					walletTotal = walletTotal.Add(row.Earning)
+				}
 				ids = append(ids, row.Id)
 			}
-			if !total.IsZero() {
+			if !walletTotal.IsZero() {
 				// A later callback/review may produce another batch on the same
 				// cutoff. Its rows, rather than its date or amount, identify it.
 				slices.Sort(ids)
 				batchKey := fmt.Sprintf("site-earnings:%d:%d:%x", site.Id, group.OwnerID, sha256.Sum256([]byte(fmt.Sprint(ids))))
-				if _, err := applyAdtySiteWalletChangeTx(tx, site.Id, model.AdtySiteWalletEarnings, total, AdtySiteWalletChange{
+				if _, err := applyAdtySiteWalletChangeTx(tx, site.Id, model.AdtySiteWalletEarnings, walletTotal, AdtySiteWalletChange{
 					Type: "site_earning_settlement", RefType: "site_earning", RefID: cutoff,
 					Reason: fmt.Sprintf("site earnings up to %s", cutoff), IdempotencyKey: batchKey, AllowOverdraft: true,
 				}); err != nil {

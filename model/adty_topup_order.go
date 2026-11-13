@@ -139,6 +139,9 @@ var AdtyBeforeTopUpCreateTx func(tx *gorm.DB, topUp *TopUp, ext *AdtyTopupOrder)
 // AdtyAfterTopUpCompleted 在入账提交之后调用（P5 用它清零通道的连续未付）。未注册就跳过。
 var AdtyAfterTopUpCompleted func(topUp *TopUp, ext *AdtyTopupOrder)
 
+// AdtyReleaseTopUpReserveTx 在取消或过期改状态的同一事务里释放分站赠金冻结。未注册就跳过。
+var AdtyReleaseTopUpReserveTx func(tx *gorm.DB, ext *AdtyTopupOrder) error
+
 // CreateAdtyTopUp 在一个事务里插 top_ups 和扩展行。
 func CreateAdtyTopUp(topUp *TopUp, ext *AdtyTopupOrder) error {
 	return CreateAdtyTopUpWithPolicy(topUp, ext, nil, nil)
@@ -535,6 +538,11 @@ func CancelAdtyTopUpAfterLock(tradeNo string, userId int, confirm func(*AdtyTopu
 			}
 		}
 		ext = locked
+		if AdtyReleaseTopUpReserveTx != nil {
+			if err := AdtyReleaseTopUpReserveTx(tx, locked); err != nil {
+				return err
+			}
+		}
 		return tx.Model(&TopUp{}).Where("id = ?", topUp.Id).Update("status", TopUpStatusCanceled).Error
 	})
 	return ext, err
@@ -547,25 +555,48 @@ type ExpiredAdtyTopUp struct {
 	ChannelId int
 }
 
-// ExpireAdtyTopUps 把到期的 pending 订单改成 expired，一条语句完成（只用 PostgreSQL）。
+// ExpireAdtyTopUps 把到期的 pending 订单改成 expired，并在同一事务里释放赠金冻结。
 func ExpireAdtyTopUps(now int64, limit int) ([]ExpiredAdtyTopUp, error) {
 	if limit <= 0 {
 		limit = 200
 	}
-	var tradeNos []string
-	err := DB.Raw(`UPDATE top_ups SET status = ? WHERE status = ? AND trade_no IN (
-		SELECT trade_no FROM adty_topup_orders WHERE expire_at > 0 AND expire_at < ? ORDER BY expire_at LIMIT ?
-	) RETURNING trade_no`, common.TopUpStatusExpired, common.TopUpStatusPending, now, limit).Scan(&tradeNos).Error
-	if err != nil || len(tradeNos) == 0 {
+	var candidates []AdtyTopupOrder
+	err := DB.Table("adty_topup_orders AS a").Select("a.trade_no").
+		Joins("JOIN top_ups t ON t.trade_no = a.trade_no").
+		Where("t.status = ? AND a.expire_at > 0 AND a.expire_at < ?", common.TopUpStatusPending, now).
+		Order("a.expire_at").Limit(limit).
+		Scan(&candidates).Error
+	if err != nil || len(candidates) == 0 {
 		return nil, err
 	}
-	var exts []AdtyTopupOrder
-	if err := DB.Select("trade_no", "provider", "channel_id").Where("trade_no IN ?", tradeNos).Find(&exts).Error; err != nil {
-		return nil, err
-	}
-	out := make([]ExpiredAdtyTopUp, 0, len(exts))
-	for _, ext := range exts {
-		out = append(out, ExpiredAdtyTopUp{TradeNo: ext.TradeNo, Provider: ext.Provider, ChannelId: ext.ChannelId})
+	out := make([]ExpiredAdtyTopUp, 0, len(candidates))
+	for _, candidate := range candidates {
+		var expired *ExpiredAdtyTopUp
+		err := DB.Transaction(func(tx *gorm.DB) error {
+			topUp, locked, err := lockAdtyTopUpTx(tx, candidate.TradeNo)
+			if err != nil {
+				return err
+			}
+			if topUp.Status != common.TopUpStatusPending || locked.ExpireAt <= 0 || locked.ExpireAt >= now {
+				return nil
+			}
+			if AdtyReleaseTopUpReserveTx != nil {
+				if err := AdtyReleaseTopUpReserveTx(tx, locked); err != nil {
+					return err
+				}
+			}
+			if err := tx.Model(&TopUp{}).Where("id = ?", topUp.Id).Update("status", common.TopUpStatusExpired).Error; err != nil {
+				return err
+			}
+			expired = &ExpiredAdtyTopUp{TradeNo: locked.TradeNo, Provider: locked.Provider, ChannelId: locked.ChannelId}
+			return nil
+		})
+		if err != nil {
+			return out, err
+		}
+		if expired != nil {
+			out = append(out, *expired)
+		}
 	}
 	return out, nil
 }

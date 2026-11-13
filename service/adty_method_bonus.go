@@ -148,15 +148,17 @@ func ReserveAdtySiteGiftTx(tx *gorm.DB, ext *model.AdtyTopupOrder) error {
 	}
 	key := "gift:" + ext.TradeNo
 	if fromEarning.IsPositive() {
-		if _, err := applyAdtySiteWalletChangeTx(tx, ext.SiteId, model.AdtySiteWalletEarnings, fromEarning.Neg(), AdtySiteWalletChange{
+		if _, err := applyAdtySiteWalletChangeTx(tx, ext.SiteId, model.AdtySiteWalletEarnings, decimal.Zero, AdtySiteWalletChange{
 			Type: "gift_reserve", RefType: "topup", RefID: ext.TradeNo, IdempotencyKey: key + ":earn",
+			HoldDelta: fromEarning,
 		}); err != nil {
 			return err
 		}
 	}
 	if fromMargin.IsPositive() {
-		if _, err := applyAdtySiteWalletChangeTx(tx, ext.SiteId, model.AdtySiteWalletMargin, fromMargin.Neg(), AdtySiteWalletChange{
+		if _, err := applyAdtySiteWalletChangeTx(tx, ext.SiteId, model.AdtySiteWalletMargin, decimal.Zero, AdtySiteWalletChange{
 			Type: "gift_reserve", RefType: "topup", RefID: ext.TradeNo, IdempotencyKey: key + ":margin",
+			HoldDelta: fromMargin,
 		}); err != nil {
 			return err
 		}
@@ -174,6 +176,33 @@ func ReserveAdtySiteGiftTx(tx *gorm.DB, ext *model.AdtyTopupOrder) error {
 	return nil
 }
 
+// ReleaseAdtySiteGiftTx returns a reserved site gift to its original earning
+// and/or margin source. Cancel and expiry call it in the same transaction as
+// the status change. Replays of the same order are idempotent.
+func ReleaseAdtySiteGiftTx(tx *gorm.DB, ext *model.AdtyTopupOrder) error {
+	if tx == nil || ext == nil || ext.SiteId <= 0 {
+		return nil
+	}
+	key := "gift:" + ext.TradeNo
+	if ext.GiftReserveEarning.IsPositive() {
+		if _, err := applyAdtySiteWalletChangeTx(tx, ext.SiteId, model.AdtySiteWalletEarnings, decimal.Zero, AdtySiteWalletChange{
+			Type: "gift_release", RefType: "topup", RefID: ext.TradeNo, IdempotencyKey: key + ":earn:release",
+			HoldDelta: ext.GiftReserveEarning.Neg(),
+		}); err != nil {
+			return err
+		}
+	}
+	if ext.GiftReserveMargin.IsPositive() {
+		if _, err := applyAdtySiteWalletChangeTx(tx, ext.SiteId, model.AdtySiteWalletMargin, decimal.Zero, AdtySiteWalletChange{
+			Type: "gift_release", RefType: "topup", RefID: ext.TradeNo, IdempotencyKey: key + ":margin:release",
+			HoldDelta: ext.GiftReserveMargin.Neg(),
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func cloneMethodBonus(in map[string]adty_setting.MethodBonusRule) map[string]adty_setting.MethodBonusRule {
 	if in == nil {
 		return nil
@@ -183,4 +212,8 @@ func cloneMethodBonus(in map[string]adty_setting.MethodBonusRule) map[string]adt
 		out[key] = rule
 	}
 	return out
+}
+
+func init() {
+	model.AdtyReleaseTopUpReserveTx = ReleaseAdtySiteGiftTx
 }

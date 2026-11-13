@@ -38,12 +38,12 @@ func RegisterAdtyMaintenanceHook(name string, fn func(now int64)) {
 func RunAdtyTopUpMaintenanceOnce(now int64) {
 	for {
 		expired, err := model.ExpireAdtyTopUps(now, 200)
+		if len(expired) > 0 && AdtyExpiredHook != nil {
+			AdtyExpiredHook(expired)
+		}
 		if err != nil {
 			common.SysError(common.LogText("expire adty topups: %s", err.Error()))
 			break
-		}
-		if len(expired) > 0 && AdtyExpiredHook != nil {
-			AdtyExpiredHook(expired)
 		}
 		if len(expired) < 200 {
 			break

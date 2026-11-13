@@ -266,8 +266,9 @@ func adtySiteBonusWithinCap(face int64, totalBonus decimal.Decimal) bool {
 	return !totalBonus.GreaterThan(adtySiteBonusCapAmount(face))
 }
 
-// adtySiteBonusAfterCreditTx：分站客户充值入账时，加赠按面值从站长收益里扣（记一笔负数，执行层决定 26）。
-// 在入账事务里，只用 OnConflict DoUpdate 写，不做可能失败的查询（审阅重点 10）。
+// adtySiteBonusAfterCreditTx 在入账事务里记下站长出资的加赠（负数日汇总），供报表使用。
+// 分站赠金保障在下单时已冻结，付款后转为保障冻结，实际支出仍为 0；不得在这里再扣钱包。
+// 只用 OnConflict DoUpdate 写，不做可能失败的查询（审阅重点 10）。
 func adtySiteBonusAfterCreditTx(tx *gorm.DB, topUp *model.TopUp, ext *model.AdtyTopupOrder) error {
 	bonus := adtyBonusUSDForSite(ext)
 	if bonus.IsZero() {
