@@ -431,27 +431,30 @@ func TestAdtySiteWalletRejectsShortfallAndRepaysOverdraft(t *testing.T) {
 
 func TestAdtySiteTierSelectionAndManualOverride(t *testing.T) {
 	db := prepareSiteDB(t)
-	starter := model.AdtySiteTier{Code: "starter", Name: "Starter", MinMonthlyUSD: decimal.Zero, DepositUSD: decimal.NewFromInt(10), Enabled: true, SortOrder: 1}
-	growth := model.AdtySiteTier{Code: "growth", Name: "Growth", MinMonthlyUSD: decimal.NewFromInt(500), Enabled: true, SortOrder: 2}
-	enterprise := model.AdtySiteTier{Code: "enterprise", Name: "Enterprise", MinMonthlyUSD: decimal.NewFromInt(2000), Enabled: true, SortOrder: 3}
-	require.NoError(t, SaveAdtySiteTiers([]model.AdtySiteTier{starter, growth, enterprise}))
+	low := model.AdtySiteTier{Code: "fixture-low", Name: "Fixture Low", DepositUSD: decimal.NewFromInt(10), Enabled: true, SortOrder: 1}
+	mid := model.AdtySiteTier{Code: "fixture-mid", Name: "Fixture Mid", MinEffectiveUsers: 1, MinPrincipalUSD: decimal.NewFromInt(50), MinConsumptionUSD: decimal.NewFromInt(20), Enabled: true, SortOrder: 2}
+	high := model.AdtySiteTier{Code: "fixture-high", Name: "Fixture High", MinEffectiveUsers: 5, MinPrincipalUSD: decimal.NewFromInt(200), MinConsumptionUSD: decimal.NewFromInt(80), Enabled: true, SortOrder: 3}
+	require.NoError(t, SaveAdtySiteTiers([]model.AdtySiteTier{low, mid, high}))
 
 	site := &model.AdtySite{OwnerUserId: 903, Subdomain: "tiered", RootDomain: "sites.example.com", Status: model.AdtySiteStatusActive}
 	require.NoError(t, db.Create(site).Error)
-	selected, err := EvaluateAdtySiteTier(site.Id, decimal.NewFromInt(750), 1_700_000_000)
+	customer := siteCustomer(t, db, site, "tiered-user")
+	require.NoError(t, insertAdtySiteTierTopUp(db, site.Id, customer.Id, "tiered-topup", model.PaymentProviderAdtyBEpusdt, decimal.NewFromInt(80), 0, common.TopUpStatusSuccess))
+	require.NoError(t, insertAdtySiteTierBilling(db, site.Id, customer.Id, "tiered-bill", model.BillingSettled, "request", 20))
+	selected, err := EvaluateAdtySiteTierAt(site.Id, 1_700_000_000, "fixture-pin-1")
 	require.NoError(t, err)
-	assert.Equal(t, "growth", selected.TierCode)
+	assert.Equal(t, "fixture-mid", selected.TierCode)
 
-	manual, err := SetAdtySiteTier(site.Id, "starter", AdtySiteTierModeManual, 1_700_000_100)
+	manual, err := SetAdtySiteTier(site.Id, "fixture-low", AdtySiteTierModeManual, 1_700_000_100)
 	require.NoError(t, err)
-	assert.Equal(t, "starter", manual.TierCode)
+	assert.Equal(t, "fixture-low", manual.TierCode)
 	var margin model.AdtySiteWallet
 	require.NoError(t, db.Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteWalletMargin).First(&margin).Error)
 	assert.True(t, margin.RequiredBalance.Equal(decimal.NewFromInt(10)))
 
-	unchanged, err := EvaluateAdtySiteTier(site.Id, decimal.NewFromInt(2500), 1_700_000_200)
+	unchanged, err := EvaluateAdtySiteTierAt(site.Id, 1_700_000_200, "fixture-pin-2")
 	require.NoError(t, err)
-	assert.Equal(t, "starter", unchanged.TierCode)
+	assert.Equal(t, "fixture-low", unchanged.TierCode)
 	assert.Equal(t, AdtySiteTierModeManual, unchanged.TierMode)
 }
 

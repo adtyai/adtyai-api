@@ -19,20 +19,41 @@ var ErrAdtySiteWalletLedgerImmutable = errors.New("site wallet ledger is immutab
 // Monetary values are USD and remain configurable instead of being embedded
 // in code so the same table can support future commercial policies.
 type AdtySiteTier struct {
-	Id            int64            `json:"id"`
-	Code          string           `json:"code" gorm:"uniqueIndex;type:varchar(32)"`
-	Name          string           `json:"name" gorm:"type:varchar(128)"`
-	MinMonthlyUSD decimal.Decimal  `json:"min_monthly_usd" gorm:"type:decimal(20,8);not null;default:0"`
-	CostFactor    *decimal.Decimal `json:"cost_factor" gorm:"type:decimal(10,6)"`
-	MaxMarkup     *decimal.Decimal `json:"max_markup" gorm:"type:decimal(10,4)"`
-	DepositUSD    decimal.Decimal  `json:"deposit_usd" gorm:"type:decimal(20,8);not null;default:0"`
-	Enabled       bool             `json:"enabled"`
-	SortOrder     int              `json:"sort_order"`
-	CreatedAt     int64            `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt     int64            `json:"updated_at" gorm:"autoUpdateTime"`
+	Id                int64            `json:"id"`
+	Code              string           `json:"code" gorm:"uniqueIndex;type:varchar(32)"`
+	Name              string           `json:"name" gorm:"type:varchar(128)"`
+	MinMonthlyUSD     decimal.Decimal  `json:"min_monthly_usd" gorm:"type:decimal(20,8);not null;default:0"` // retained for compatibility; auto evaluation ignores it
+	MinEffectiveUsers int64            `json:"min_effective_users" gorm:"not null;default:0"`
+	MinPrincipalUSD   decimal.Decimal  `json:"min_principal_usd" gorm:"type:decimal(20,8);not null;default:0"`
+	MinConsumptionUSD decimal.Decimal  `json:"min_consumption_usd" gorm:"type:decimal(20,8);not null;default:0"`
+	CostFactor        *decimal.Decimal `json:"cost_factor" gorm:"type:decimal(10,6)"`
+	MaxMarkup         *decimal.Decimal `json:"max_markup" gorm:"type:decimal(10,4)"`
+	DepositUSD        decimal.Decimal  `json:"deposit_usd" gorm:"type:decimal(20,8);not null;default:0"`
+	Enabled           bool             `json:"enabled"`
+	SortOrder         int              `json:"sort_order"`
+	CreatedAt         int64            `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt         int64            `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (AdtySiteTier) TableName() string { return "adty_site_tiers" }
+
+// AdtySiteTierEvaluation is one idempotent auto-evaluation of a site's lifetime grade.
+// Re-running the same site and period must not repeat the grade write, margin mutation, or warning.
+type AdtySiteTierEvaluation struct {
+	Id               int64           `json:"id"`
+	SiteId           int             `json:"site_id" gorm:"uniqueIndex:idx_adty_site_tier_eval;index"`
+	PeriodId         string          `json:"period_id" gorm:"uniqueIndex:idx_adty_site_tier_eval;type:varchar(32)"`
+	StatAt           int64           `json:"stat_at"`
+	EffectiveUsers   int64           `json:"effective_users"`
+	PrincipalUSD     decimal.Decimal `json:"principal_usd" gorm:"type:decimal(20,8);not null;default:0"`
+	ConsumptionUSD   decimal.Decimal `json:"consumption_usd" gorm:"type:decimal(20,8);not null;default:0"`
+	TierCode         string          `json:"tier_code" gorm:"type:varchar(32)"`
+	PreviousTierCode string          `json:"previous_tier_code" gorm:"type:varchar(32)"`
+	Warned           bool            `json:"warned"`
+	CreatedAt        int64           `json:"created_at" gorm:"autoCreateTime"`
+}
+
+func (AdtySiteTierEvaluation) TableName() string { return "adty_site_tier_evaluations" }
 
 type AdtySiteWallet struct {
 	Id              int64           `json:"id"`

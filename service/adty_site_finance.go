@@ -495,10 +495,10 @@ func ValidateAdtySiteTier(tier model.AdtySiteTier) error {
 	if strings.TrimSpace(tier.Code) == "" || len(strings.TrimSpace(tier.Code)) > 32 || strings.TrimSpace(tier.Name) == "" {
 		return ErrAdtySiteTierInvalid
 	}
-	if tier.SortOrder < 0 {
+	if tier.SortOrder < 0 || tier.MinEffectiveUsers < 0 {
 		return ErrAdtySiteTierInvalid
 	}
-	for _, amount := range []decimal.Decimal{tier.MinMonthlyUSD, tier.DepositUSD} {
+	for _, amount := range []decimal.Decimal{tier.MinMonthlyUSD, tier.MinPrincipalUSD, tier.MinConsumptionUSD, tier.DepositUSD} {
 		if amount.IsNegative() || !amount.Equal(amount.Truncate(8)) || amount.GreaterThanOrEqual(decimal.New(1, 12)) {
 			return ErrAdtySiteTierInvalid
 		}
@@ -546,7 +546,9 @@ func SaveAdtySiteTiers(tiers []model.AdtySiteTier) error {
 				continue
 			}
 			if err := tx.Model(&model.AdtySiteTier{}).Where("id = ?", current.Id).Updates(map[string]any{
-				"name": input.Name, "min_monthly_usd": input.MinMonthlyUSD, "cost_factor": input.CostFactor,
+				"name": input.Name, "min_monthly_usd": input.MinMonthlyUSD,
+				"min_effective_users": input.MinEffectiveUsers, "min_principal_usd": input.MinPrincipalUSD,
+				"min_consumption_usd": input.MinConsumptionUSD, "cost_factor": input.CostFactor,
 				"max_markup": input.MaxMarkup, "deposit_usd": input.DepositUSD, "enabled": input.Enabled,
 				"sort_order": input.SortOrder,
 			}).Error; err != nil {
@@ -577,30 +579,156 @@ func SaveAdtySiteTiers(tiers []model.AdtySiteTier) error {
 
 func ListAdtySiteTiers() ([]model.AdtySiteTier, error) {
 	var tiers []model.AdtySiteTier
-	err := model.DB.Order("min_monthly_usd, sort_order, id").Find(&tiers).Error
+	err := model.DB.Order("min_effective_users, min_principal_usd, min_consumption_usd, sort_order, id").Find(&tiers).Error
 	return tiers, err
 }
 
-func SelectAdtySiteTier(tiers []model.AdtySiteTier, monthlySpend decimal.Decimal) *model.AdtySiteTier {
+// AdtySiteTierStats is the A.10 lifetime snapshot used to choose a site grade.
+type AdtySiteTierStats struct {
+	EffectiveUsers int64
+	PrincipalUSD   decimal.Decimal
+	ConsumptionUSD decimal.Decimal
+}
+
+func (stats AdtySiteTierStats) Meets(tier model.AdtySiteTier) bool {
+	return stats.EffectiveUsers >= tier.MinEffectiveUsers &&
+		!stats.PrincipalUSD.LessThan(tier.MinPrincipalUSD) &&
+		!stats.ConsumptionUSD.LessThan(tier.MinConsumptionUSD)
+}
+
+func adtySiteTierHigher(a, b model.AdtySiteTier) bool {
+	if a.MinEffectiveUsers != b.MinEffectiveUsers {
+		return a.MinEffectiveUsers > b.MinEffectiveUsers
+	}
+	if !a.MinPrincipalUSD.Equal(b.MinPrincipalUSD) {
+		return a.MinPrincipalUSD.GreaterThan(b.MinPrincipalUSD)
+	}
+	if !a.MinConsumptionUSD.Equal(b.MinConsumptionUSD) {
+		return a.MinConsumptionUSD.GreaterThan(b.MinConsumptionUSD)
+	}
+	if a.SortOrder != b.SortOrder {
+		return a.SortOrder > b.SortOrder
+	}
+	return a.Id > b.Id
+}
+
+// SelectAdtySiteTier returns the highest enabled grade whose three lifetime
+// thresholds are all met. Monthly spend is not a criterion.
+func SelectAdtySiteTier(tiers []model.AdtySiteTier, stats AdtySiteTierStats) *model.AdtySiteTier {
 	var selected *model.AdtySiteTier
 	for i := range tiers {
 		tier := &tiers[i]
-		if !tier.Enabled || tier.MinMonthlyUSD.GreaterThan(monthlySpend) {
+		if !tier.Enabled || !stats.Meets(*tier) {
 			continue
 		}
-		if selected == nil || tier.MinMonthlyUSD.GreaterThan(selected.MinMonthlyUSD) ||
-			(tier.MinMonthlyUSD.Equal(selected.MinMonthlyUSD) && tier.SortOrder > selected.SortOrder) {
+		if selected == nil || adtySiteTierHigher(*tier, *selected) {
 			selected = tier
 		}
 	}
 	return selected
 }
 
-func EvaluateAdtySiteTier(siteID int, monthlySpend decimal.Decimal, now int64) (*model.AdtySite, error) {
-	if siteID <= 0 || monthlySpend.IsNegative() {
+func adtySiteTierCountsAsPrincipal(order model.AdtyTopupOrder) bool {
+	if order.Provider == model.AdtyVoucherProvider {
+		return order.Method == model.AdtyVoucherPurposeSiteCustomer
+	}
+	return model.IsAdtyPaymentProvider(order.Provider)
+}
+
+func loadAdtySiteTierStatsTx(tx *gorm.DB, siteID int) (AdtySiteTierStats, error) {
+	var stats AdtySiteTierStats
+	if err := tx.Model(&model.User{}).
+		Where("site_id = ? AND status = ? AND staff_site_id = 0", siteID, common.UserStatusEnabled).
+		Count(&stats.EffectiveUsers).Error; err != nil {
+		return stats, err
+	}
+
+	var orders []model.AdtyTopupOrder
+	credited := tx.Model(&model.TopUp{}).Select("trade_no").Where("status IN ?", []string{common.TopUpStatusSuccess, model.TopUpStatusRefunded})
+	if err := tx.Where("site_id = ? AND trade_no IN (?)", siteID, credited).Find(&orders).Error; err != nil {
+		return stats, err
+	}
+	principal := decimal.Zero
+	for i := range orders {
+		if !adtySiteTierCountsAsPrincipal(orders[i]) {
+			continue
+		}
+		principal = principal.Add(adtyRetainedTopUpUSD(&orders[i]))
+	}
+	stats.PrincipalUSD = principal
+
+	var billed int64
+	if err := tx.Model(&model.BillingOperation{}).
+		Where("site_id = ? AND state = ? AND kind IN ?", siteID, model.BillingSettled, []string{"request", "task", "mj_charge"}).
+		Select("COALESCE(SUM(applied_quota), 0)").Scan(&billed).Error; err != nil {
+		return stats, err
+	}
+	stats.ConsumptionUSD = QuotaToUSD(billed)
+	return stats, nil
+}
+
+// ComputeAdtySiteTierStats returns the site's lifetime A.10 totals.
+func ComputeAdtySiteTierStats(siteID int) (AdtySiteTierStats, error) {
+	if siteID <= 0 {
+		return AdtySiteTierStats{}, ErrAdtySiteTierInvalid
+	}
+	return loadAdtySiteTierStatsTx(model.DB, siteID)
+}
+
+// AdtySiteTierPeriodID is the idempotent period for a statistic timestamp.
+func AdtySiteTierPeriodID(now int64) string {
+	if now < 0 {
+		now = 0
+	}
+	return time.Unix(now, 0).UTC().Format("2006-01-02")
+}
+
+func applyAdtySiteTierAssignmentTx(tx *gorm.DB, siteID int, selected *model.AdtySiteTier, now int64) error {
+	updates := map[string]any{
+		"tier_code": "", "tier_mode": AdtySiteTierModeAuto, "tier_updated_at": now,
+		"pending_tier_cost_factor": nil, "pending_tier_cost_factor_at": 0,
+	}
+	required := decimal.Zero
+	if selected != nil {
+		updates["tier_code"] = selected.Code
+		updates["tier_cost_factor"] = selected.CostFactor
+		updates["tier_max_markup"] = selected.MaxMarkup
+		required = selected.DepositUSD
+	} else {
+		updates["tier_cost_factor"] = nil
+		updates["tier_max_markup"] = nil
+	}
+	if err := tx.Model(&model.AdtySiteWallet{}).Where("site_id = ? AND kind = ?", siteID, model.AdtySiteWalletMargin).
+		Update("required_balance", required).Error; err != nil {
+		return err
+	}
+	return tx.Model(&model.AdtySite{}).Where("id = ?", siteID).Updates(updates).Error
+}
+
+func recordAdtySiteTierEvaluationTx(tx *gorm.DB, siteID int, periodID string, now int64, stats AdtySiteTierStats, code, previous string, warned bool) error {
+	return tx.Create(&model.AdtySiteTierEvaluation{
+		SiteId: siteID, PeriodId: periodID, StatAt: now,
+		EffectiveUsers: stats.EffectiveUsers, PrincipalUSD: stats.PrincipalUSD, ConsumptionUSD: stats.ConsumptionUSD,
+		TierCode: code, PreviousTierCode: previous, Warned: warned,
+	}).Error
+}
+
+// EvaluateAdtySiteTier assigns the highest enabled grade that the site's
+// lifetime totals currently meet. A Root manual pin is left untouched.
+func EvaluateAdtySiteTier(siteID int, now int64) (*model.AdtySite, error) {
+	return EvaluateAdtySiteTierAt(siteID, now, AdtySiteTierPeriodID(now))
+}
+
+// EvaluateAdtySiteTierAt is the same evaluation keyed by an explicit period ID.
+// Re-running the same site and period does not repeat the grade write, margin
+// mutation, or lowest-grade warning.
+func EvaluateAdtySiteTierAt(siteID int, now int64, periodID string) (*model.AdtySite, error) {
+	periodID = strings.TrimSpace(periodID)
+	if siteID <= 0 || periodID == "" || len(periodID) > 32 {
 		return nil, ErrAdtySiteTierInvalid
 	}
 	var site model.AdtySite
+	var warn bool
 	err := model.DB.Transaction(func(tx *gorm.DB) error {
 		if err := model.AdtyLockForUpdate(tx).Where("id = ?", siteID).First(&site).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -614,33 +742,40 @@ func EvaluateAdtySiteTier(siteID int, monthlySpend decimal.Decimal, now int64) (
 		if site.TierMode == AdtySiteTierModeManual {
 			return nil
 		}
+		var existing model.AdtySiteTierEvaluation
+		found := tx.Where("site_id = ? AND period_id = ?", siteID, periodID).Limit(1).Find(&existing)
+		if found.Error != nil {
+			return found.Error
+		}
+		if found.RowsAffected > 0 {
+			return nil
+		}
+		stats, err := loadAdtySiteTierStatsTx(tx, siteID)
+		if err != nil {
+			return err
+		}
 		var tiers []model.AdtySiteTier
-		if err := tx.Where("enabled = ? AND min_monthly_usd <= ?", true, monthlySpend).
-			Order("min_monthly_usd DESC, sort_order DESC, id DESC").Limit(1).Find(&tiers).Error; err != nil {
+		if err := tx.Where("enabled = ?", true).Find(&tiers).Error; err != nil {
 			return err
 		}
-		updates := map[string]any{
-			"tier_code": "", "tier_mode": AdtySiteTierModeAuto, "tier_updated_at": now,
-			"pending_tier_cost_factor": nil, "pending_tier_cost_factor_at": 0,
+		selected := SelectAdtySiteTier(tiers, stats)
+		previous := site.TierCode
+		next := ""
+		if selected != nil {
+			next = selected.Code
 		}
-		if len(tiers) > 0 {
-			updates["tier_code"] = tiers[0].Code
-			updates["tier_cost_factor"] = tiers[0].CostFactor
-			updates["tier_max_markup"] = tiers[0].MaxMarkup
-			if err := tx.Model(&model.AdtySiteWallet{}).Where("site_id = ? AND kind = ?", siteID, model.AdtySiteWalletMargin).
-				Update("required_balance", tiers[0].DepositUSD).Error; err != nil {
-				return err
-			}
-		} else {
-			updates["tier_cost_factor"] = nil
-			updates["tier_max_markup"] = nil
-			if err := tx.Model(&model.AdtySiteWallet{}).Where("site_id = ? AND kind = ?", siteID, model.AdtySiteWalletMargin).
-				Update("required_balance", decimal.Zero).Error; err != nil {
+		changed := previous != next
+		if changed {
+			if err := applyAdtySiteTierAssignmentTx(tx, siteID, selected, now); err != nil {
 				return err
 			}
 		}
-		if err := tx.Model(&model.AdtySite{}).Where("id = ?", siteID).Updates(updates).Error; err != nil {
+		warn = selected == nil && len(tiers) > 0
+		if err := recordAdtySiteTierEvaluationTx(tx, siteID, periodID, now, stats, next, previous, warn); err != nil {
 			return err
+		}
+		if !changed && !warn {
+			return nil
 		}
 		site = model.AdtySite{}
 		return tx.Where("id = ?", siteID).First(&site).Error
@@ -648,8 +783,60 @@ func EvaluateAdtySiteTier(siteID int, monthlySpend decimal.Decimal, now int64) (
 	if err != nil {
 		return nil, err
 	}
+	if warn {
+		notifyAdtySiteTierBelowMinimum(siteID, periodID)
+	}
 	InvalidateAdtySiteCache()
 	return &site, nil
+}
+
+func notifyAdtySiteTierBelowMinimum(siteID int, periodID string) {
+	adtyNotifyRootAdmins(func(lang string) (string, string) {
+		if strings.HasPrefix(strings.ToLower(lang), "zh") {
+			return "分站等级未达最低档", "分站 #" + strconv.Itoa(siteID) + " 开站以来累计指标未达到任一已启用等级的三项门槛，仅预警，未关站。周期 " + periodID + "。"
+		}
+		return "Site grade below the lowest configured level", "Site #" + strconv.Itoa(siteID) + " does not meet all three lifetime thresholds of any enabled grade. The site was not closed. Period " + periodID + "."
+	})
+}
+
+// EvaluateDueAdtySiteTiers runs one auto-evaluation period for sites that are
+// not manually pinned. Re-runs of the same period are idempotent.
+func EvaluateDueAdtySiteTiers(now int64) error {
+	periodID := AdtySiteTierPeriodID(now)
+	var ids []int
+	if err := model.DB.Model(&model.AdtySite{}).
+		Where("status IN ?", []string{model.AdtySiteStatusActive, model.AdtySiteStatusPaused, model.AdtySiteStatusClosing}).
+		Where("tier_mode IS NULL OR tier_mode = ? OR tier_mode = ?", "", AdtySiteTierModeAuto).
+		Pluck("id", &ids).Error; err != nil {
+		return err
+	}
+	var first error
+	for _, id := range ids {
+		if _, err := EvaluateAdtySiteTierAt(id, now, periodID); err != nil && first == nil {
+			first = err
+		}
+	}
+	return first
+}
+
+func startAdtySiteTierEvaluationTask() {
+	go func() {
+		run := func() {
+			if err := EvaluateDueAdtySiteTiers(time.Now().Unix()); err != nil {
+				common.SysError(common.LogText("evaluate site tiers: %s", err.Error()))
+			}
+		}
+		run()
+		ticker := time.NewTicker(time.Hour)
+		defer ticker.Stop()
+		for range ticker.C {
+			run()
+		}
+	}()
+}
+
+func init() {
+	adtyMasterTasks = append(adtyMasterTasks, startAdtySiteTierEvaluationTask)
 }
 
 func SetAdtySiteTier(siteID int, code, mode string, now int64) (*model.AdtySite, error) {
