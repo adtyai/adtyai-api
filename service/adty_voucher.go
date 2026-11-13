@@ -453,8 +453,9 @@ func freezeAdtyVoucherWalletTx(tx *gorm.DB, siteId int, kind string, amount deci
 	if err := ensureAdtySiteWalletsTx(tx, siteId); err != nil {
 		return err
 	}
-	_, err := applyAdtySiteWalletChangeTx(tx, siteId, kind, amount.Neg(), AdtySiteWalletChange{
+	_, err := applyAdtySiteWalletChangeTx(tx, siteId, kind, decimal.Zero, AdtySiteWalletChange{
 		Type: "voucher_freeze", RefType: "voucher", RefID: hash[:16], Reason: "voucher issuance freeze", IdempotencyKey: "voucher-freeze:" + hash,
+		HoldDelta: amount,
 	})
 	if err == ErrAdtySiteWalletInsufficient {
 		return ErrAdtyVoucherFunds
@@ -466,9 +467,13 @@ func releaseAdtyVoucherSourceTx(tx *gorm.DB, voucher *model.AdtyVoucher) error {
 	if voucher.SourceKind == model.AdtyVoucherSourcePlatform {
 		return releaseAdtyVoucherLiabilityTx(tx, voucher.AmountUSD)
 	}
-	_, err := applyAdtySiteWalletChangeTx(tx, voucher.SourceSiteId, voucher.SourceKind, voucher.AmountUSD, AdtySiteWalletChange{
+	_, err := applyAdtySiteWalletChangeTx(tx, voucher.SourceSiteId, voucher.SourceKind, decimal.Zero, AdtySiteWalletChange{
 		Type: "voucher_release", RefType: "voucher", RefID: voucher.CodeHash[:16], Reason: "voucher cancellation release", IdempotencyKey: "voucher-release:" + voucher.CodeHash,
+		HoldDelta: voucher.AmountUSD.Neg(),
 	})
+	if err == ErrAdtySiteWalletInsufficient {
+		return ErrAdtyVoucherFunds
+	}
 	return err
 }
 
@@ -476,7 +481,14 @@ func spendAdtyVoucherSourceTx(tx *gorm.DB, voucher *model.AdtyVoucher) error {
 	if voucher.SourceKind == model.AdtyVoucherSourcePlatform {
 		return spendAdtyVoucherLiabilityTx(tx, voucher.AmountUSD)
 	}
-	return nil
+	_, err := applyAdtySiteWalletChangeTx(tx, voucher.SourceSiteId, voucher.SourceKind, voucher.AmountUSD.Neg(), AdtySiteWalletChange{
+		Type: "voucher_spend", RefType: "voucher", RefID: voucher.CodeHash[:16], Reason: "voucher redeem spend", IdempotencyKey: "voucher-spend:" + voucher.CodeHash,
+		HoldDelta: voucher.AmountUSD.Neg(),
+	})
+	if err == ErrAdtySiteWalletInsufficient {
+		return ErrAdtyVoucherFunds
+	}
+	return err
 }
 
 func creditAdtyVoucherMarginTx(tx *gorm.DB, siteId int, amount decimal.Decimal, trade string) error {
