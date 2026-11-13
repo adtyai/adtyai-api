@@ -869,23 +869,27 @@ func TestRefundReversals(t *testing.T) {
 	paidTopUp(t, invitee, "EPU-claw")
 	_, err = RunReferralSettlementOnce(now+8*86400, 50)
 	require.NoError(t, err)
-	// 先把可提现的 10 全转进余额，再退款：可提现变 -10。
+	// 先把可提现的 10 全转进余额，再退款：已提现记追偿，可提现保持 0，不能打成负数。
 	_, err = Referral.CreateWithdrawal(ReferralWithdrawalCreateInput{UserId: affiliate.UserId, Amount: decimal.NewFromInt(10), AccountType: model.ReferralWithdrawToBalance, IdempotencyKey: "w-claw"})
 	require.NoError(t, err)
 	_, err = refundAdtyTopUp(t, "EPU-claw", "chargeback", 1, "k-claw")
 	require.NoError(t, err)
 	assert.Equal(t, model.ReferralCommissionStatusClawedBack, commissionFor(t, db, "EPU-claw").Status)
-	assert.InDelta(t, -10, account(t, db, affiliate.Id).AvailableAmount, 1e-9, "claw-back may go negative")
+	assert.InDelta(t, 0, account(t, db, affiliate.Id).AvailableAmount, 1e-9, "withdrawn clawback must not drive available negative")
+	var clawRecovery model.AdtyCommissionRecovery
+	require.NoError(t, db.Where("trade_no = ? AND kind = ?", "EPU-claw", adtyReferralCommissionRecoveryKind).First(&clawRecovery).Error)
+	assert.True(t, clawRecovery.AmountUSD.Equal(decimal.NewFromInt(10)))
+	assert.Equal(t, "open", clawRecovery.Status)
 
 	// 同步不能把 clawed_back 改回去。
 	require.NoError(t, db.Transaction(func(tx *gorm.DB) error { return syncCommissionStatusTx(tx, commissionFor(t, db, "EPU-claw").Id) }))
 	assert.Equal(t, model.ReferralCommissionStatusClawedBack, commissionFor(t, db, "EPU-claw").Status)
 
-	// 之后的新佣金结算时先抵扣负数。
+	// 之后的新佣金应完整入账，不能被伪造的负余额默默吃掉。
 	paidTopUp(t, invitee, "EPU-next")
 	_, err = RunReferralSettlementOnce(now+20*86400, 50)
 	require.NoError(t, err)
-	assert.InDelta(t, 0, account(t, db, affiliate.Id).AvailableAmount, 1e-9)
+	assert.InDelta(t, 10, account(t, db, affiliate.Id).AvailableAmount, 1e-9)
 
 	// 退款早于计佣：计佣任务标 skipped。
 	paidTopUp(t, invitee, "EPU-early")
@@ -894,6 +898,123 @@ func TestRefundReversals(t *testing.T) {
 	var job model.ReferralCommissionJob
 	require.NoError(t, db.Where("source_trade_no = ?", "EPU-early").First(&job).Error)
 	assert.Equal(t, model.ReferralCommissionJobStatusSkipped, job.Status)
+}
+
+func TestReferralWithdrawnCommissionRefundRecordsRecovery(t *testing.T) {
+	db := prepareReferralDB(t)
+	affiliate, invitee := inviterAndInvitee(t, db, "r8-paid")
+	now := time.Now().Unix()
+	paidTopUp(t, invitee, "EPU-r8-paid")
+	_, err := RunReferralSettlementOnce(now+8*86400, 50)
+	require.NoError(t, err)
+	_, err = Referral.CreateWithdrawal(ReferralWithdrawalCreateInput{UserId: affiliate.UserId, Amount: decimal.NewFromInt(10), AccountType: model.ReferralWithdrawToBalance, IdempotencyKey: "w-r8-paid"})
+	require.NoError(t, err)
+	require.InDelta(t, 0, account(t, db, affiliate.Id).AvailableAmount, 1e-9)
+
+	_, err = refundAdtyTopUp(t, "EPU-r8-paid", "chargeback", 1, "k-r8-paid")
+	require.NoError(t, err)
+	assert.Equal(t, model.ReferralCommissionStatusClawedBack, commissionFor(t, db, "EPU-r8-paid").Status)
+	acc := account(t, db, affiliate.Id)
+	assert.GreaterOrEqual(t, acc.AvailableAmount, 0.0)
+	assert.InDelta(t, 0, acc.AvailableAmount, 1e-9)
+	assert.InDelta(t, 0, acc.FrozenAmount, 1e-9)
+
+	var recoveries []model.AdtyCommissionRecovery
+	require.NoError(t, db.Where("trade_no = ? AND kind = ?", "EPU-r8-paid", adtyReferralCommissionRecoveryKind).Find(&recoveries).Error)
+	require.Len(t, recoveries, 1)
+	assert.True(t, recoveries[0].AmountUSD.Equal(decimal.NewFromInt(10)))
+	assert.Equal(t, "open", recoveries[0].Status)
+	assert.EqualValues(t, commissionFor(t, db, "EPU-r8-paid").Id, recoveries[0].CommissionId)
+
+	var topUp model.TopUp
+	require.NoError(t, db.Where("trade_no = ?", "EPU-r8-paid").First(&topUp).Error)
+	ext, err := model.GetAdtyTopupOrder("EPU-r8-paid")
+	require.NoError(t, err)
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return adtyReferralAfterRefundTx(tx, &topUp, ext)
+	}))
+	require.NoError(t, db.Where("trade_no = ? AND kind = ?", "EPU-r8-paid", adtyReferralCommissionRecoveryKind).Find(&recoveries).Error)
+	require.Len(t, recoveries, 1, "replay must not double-book recovery")
+	assert.True(t, recoveries[0].AmountUSD.Equal(decimal.NewFromInt(10)))
+	assert.InDelta(t, 0, account(t, db, affiliate.Id).AvailableAmount, 1e-9)
+
+	paidTopUp(t, invitee, "EPU-r8-paid-next")
+	_, err = RunReferralSettlementOnce(now+20*86400, 50)
+	require.NoError(t, err)
+	assert.InDelta(t, 10, account(t, db, affiliate.Id).AvailableAmount, 1e-9, "later commission must not be offset by a fake deficit")
+}
+
+func TestReferralBookedCommissionRefundReversesRemainingFunds(t *testing.T) {
+	db := prepareReferralDB(t)
+	now := time.Now().Unix()
+
+	t.Run("available does not over-deduct sibling commission", func(t *testing.T) {
+		affiliate, invitee := inviterAndInvitee(t, db, "r8-avail")
+		paidTopUp(t, invitee, "EPU-r8-avail-a")
+		paidTopUp(t, invitee, "EPU-r8-avail-b")
+		_, err := RunReferralSettlementOnce(now+8*86400, 50)
+		require.NoError(t, err)
+		require.InDelta(t, 20, account(t, db, affiliate.Id).AvailableAmount, 1e-9)
+
+		_, err = refundAdtyTopUp(t, "EPU-r8-avail-a", "chargeback", 1, "k-r8-avail-a")
+		require.NoError(t, err)
+		assert.Equal(t, model.ReferralCommissionStatusClawedBack, commissionFor(t, db, "EPU-r8-avail-a").Status)
+		assert.Equal(t, model.ReferralCommissionStatusAvailable, commissionFor(t, db, "EPU-r8-avail-b").Status)
+		acc := account(t, db, affiliate.Id)
+		assert.InDelta(t, 10, acc.AvailableAmount, 1e-9, "only the refunded commission is reversed")
+		assert.GreaterOrEqual(t, acc.AvailableAmount, 0.0)
+		var recoveries int64
+		require.NoError(t, db.Model(&model.AdtyCommissionRecovery{}).Where("trade_no = ? AND kind = ?", "EPU-r8-avail-a", adtyReferralCommissionRecoveryKind).Count(&recoveries).Error)
+		assert.Zero(t, recoveries)
+	})
+
+	t.Run("frozen reverses frozen funds and does not go negative", func(t *testing.T) {
+		affiliate, invitee := inviterAndInvitee(t, db, "r8-frozen")
+		paidTopUp(t, invitee, "EPU-r8-frozen")
+		_, err := RunReferralSettlementOnce(now+8*86400, 50)
+		require.NoError(t, err)
+
+		cfg := adty_setting.GetReferralSetting()
+		minUSD, fee := cfg.MinWithdrawUSD, cfg.USDTWithdrawFee
+		ten, one := 10.0, 1.0
+		cfg.MinWithdrawUSD, cfg.USDTWithdrawFee = &ten, &one
+		t.Cleanup(func() { cfg.MinWithdrawUSD, cfg.USDTWithdrawFee = minUSD, fee })
+
+		_, err = Referral.CreateWithdrawal(ReferralWithdrawalCreateInput{
+			UserId: affiliate.UserId, Amount: decimal.NewFromInt(10), AccountType: model.ReferralWithdrawToUSDT,
+			AccountNetwork: "TRC20", AccountNo: "T" + "A1B2C3D4E5F6G7H8J9K1L2M3N4P5Q6R7S", IdempotencyKey: "w-r8-frozen",
+		})
+		require.NoError(t, err)
+		assert.Equal(t, model.ReferralCommissionStatusFrozen, commissionFor(t, db, "EPU-r8-frozen").Status)
+		require.InDelta(t, 0, account(t, db, affiliate.Id).AvailableAmount, 1e-9)
+		require.InDelta(t, 10, account(t, db, affiliate.Id).FrozenAmount, 1e-9)
+
+		_, err = refundAdtyTopUp(t, "EPU-r8-frozen", "chargeback", 1, "k-r8-frozen")
+		require.NoError(t, err)
+		assert.Equal(t, model.ReferralCommissionStatusClawedBack, commissionFor(t, db, "EPU-r8-frozen").Status)
+		acc := account(t, db, affiliate.Id)
+		assert.InDelta(t, 0, acc.AvailableAmount, 1e-9)
+		assert.InDelta(t, 0, acc.FrozenAmount, 1e-9, "frozen booked funds must be reversed")
+		assert.GreaterOrEqual(t, acc.AvailableAmount, 0.0)
+		assert.GreaterOrEqual(t, acc.FrozenAmount, 0.0)
+		var recoveries int64
+		require.NoError(t, db.Model(&model.AdtyCommissionRecovery{}).Where("trade_no = ? AND kind = ?", "EPU-r8-frozen", adtyReferralCommissionRecoveryKind).Count(&recoveries).Error)
+		assert.Zero(t, recoveries, "still-frozen funds are reversed, not recorded as recovery")
+	})
+
+	t.Run("partial available refund does not over-deduct", func(t *testing.T) {
+		affiliate, invitee := inviterAndInvitee(t, db, "r8-part")
+		paidTopUp(t, invitee, "EPU-r8-part")
+		_, err := RunReferralSettlementOnce(now+8*86400, 50)
+		require.NoError(t, err)
+		require.NoError(t, db.Model(&model.User{}).Where("id = ?", invitee.Id).Update("quota", perUnit("72.5")).Error)
+		_, err = refundAdtyTopUp(t, "EPU-r8-part", "chargeback", 1, "k-r8-part")
+		require.NoError(t, err)
+		assert.Equal(t, model.ReferralCommissionStatusAvailable, commissionFor(t, db, "EPU-r8-part").Status)
+		acc := account(t, db, affiliate.Id)
+		assert.InDelta(t, 3, acc.AvailableAmount, 1e-9)
+		assert.GreaterOrEqual(t, acc.AvailableAmount, 0.0)
+	})
 }
 
 // 订单 $100 加赠 $2.5：本金 F = $100，赠金 G = $2.5，佣金 $10。退款前的余额决定比例 P ÷ F：

@@ -282,11 +282,11 @@ func referralRefundClawback(commission, ratio decimal.Decimal) decimal.Decimal {
 }
 
 // adtyReferralAfterRefundTx 在退款事务里按退掉的本金比例 ratio = P ÷ F 处理佣金（赠金不退，用户花掉的部分照样计佣）。
-//   - ratio = 1：和以前一样整笔处理。pending 作废并扣掉待结算；已经可提现或已提现的扣回，从可提现里扣，
-//     可以为负（之后的新佣金结算时自然先抵扣）。还没计佣时，计佣任务标 skipped。
-//   - 0 < ratio < 1：状态不改，扣回 佣金 × ratio，记一笔 commission_clawback_partial。pending 的佣金同时把
-//     佣金额减掉这部分，结算时只转剩下的；已经可提现或已提现的从可提现里扣。还没计佣时任务不动，
-//     计佣任务看到订单已退款，按 (1 − ratio) 计佣。
+//   - ratio = 1：整笔处理。pending 作废并扣掉待结算；已经可提现或仍冻结的按实有余额冲回，不为负；
+//     已经提现的记 AdtyCommissionRecovery 追偿责任，不伪造可提现扣回。还没计佣时，计佣任务标 skipped。
+//   - 0 < ratio < 1：状态不改，按佣金 × ratio 处理，记一笔 commission_clawback_partial。pending 的佣金
+//     同时把佣金额减掉这部分，结算时只转剩下的；可提现或冻结按实有余额冲回；已提现记追偿。
+//     还没计佣时任务不动，计佣任务看到订单已退款，按 (1 − ratio) 计佣。
 //   - ratio = 0：什么都不做。
 //
 // 先锁计佣任务行：计佣任务处理时也先锁它，两边串行，不会漏扣或多计。
@@ -339,8 +339,7 @@ func adtyReferralAfterRefundTx(tx *gorm.DB, topUp *model.TopUp, ext *model.AdtyT
 			if err := tx.Model(&model.ReferralCommission{}).Where("id = ?", commission.Id).Update("status", model.ReferralCommissionStatusClawedBack).Error; err != nil {
 				return err
 			}
-			// 不带 available_amount >= ? 的条件：扣回可以让可提现变成负数。
-			if err := AdjustAccountTx(tx, account, decimal.Zero, amount.Neg(), decimal.Zero, decimal.Zero, model.ReferralCommissionLedger{
+			if err := clawBackSettledCommissionTx(tx, account, &commission, amount, topUp.TradeNo, model.ReferralCommissionLedger{
 				CommissionId: commission.Id, Type: "commission_clawback", RefType: "refund", RefId: topUp.TradeNo,
 				ExternalRefId: fmt.Sprintf("clawback:%d", commission.Id), Remark: "order refunded",
 			}); err != nil {
@@ -352,7 +351,7 @@ func adtyReferralAfterRefundTx(tx *gorm.DB, topUp *model.TopUp, ext *model.AdtyT
 }
 
 // clawBackCommissionPartTx 部分扣回一笔佣金（退款只退了一部分本金）：状态不改。pending 的把佣金额和待结算一起减掉；
-// 可提现、冻结、已提现的从可提现里扣（可以为负）；void、clawed_back 不动。流水的外部引用带佣金 id，只记一次。
+// 可提现或冻结的按实有余额冲回（不为负）；已提现记追偿责任。void、clawed_back 不动。流水的外部引用带佣金 id，只记一次。
 func clawBackCommissionPartTx(tx *gorm.DB, account *model.ReferralCommissionAccount, commission *model.ReferralCommission, part decimal.Decimal, tradeNo string) error {
 	if !part.IsPositive() {
 		return nil
@@ -363,15 +362,121 @@ func clawBackCommissionPartTx(tx *gorm.DB, account *model.ReferralCommissionAcco
 	}
 	switch commission.Status {
 	case model.ReferralCommissionStatusPending:
+		if exists, err := referralLedgerExistsTx(tx, entry.ExternalRefId); err != nil {
+			return err
+		} else if exists {
+			return nil
+		}
 		kept := moneyDec(commission.CommissionAmount).Sub(part)
 		if err := tx.Model(&model.ReferralCommission{}).Where("id = ?", commission.Id).Update("commission_amount", moneyF(kept)).Error; err != nil {
 			return err
 		}
 		return AdjustAccountTx(tx, account, part.Neg(), decimal.Zero, decimal.Zero, decimal.Zero, entry)
 	case model.ReferralCommissionStatusAvailable, model.ReferralCommissionStatusFrozen, model.ReferralCommissionStatusPaid:
-		return AdjustAccountTx(tx, account, decimal.Zero, part.Neg(), decimal.Zero, decimal.Zero, entry)
+		return clawBackSettledCommissionTx(tx, account, commission, part, tradeNo, entry)
 	}
 	return nil
+}
+
+// adtyReferralCommissionRecoveryKind 把主站已提现邀请佣金的追偿和分站 kind=withdrawn 分开，避免 commission_id 撞号。
+const adtyReferralCommissionRecoveryKind = "ref_withdrawn"
+
+// clawBackSettledCommissionTx 冲回已入账佣金：还在可提现或冻结里的按实有余额扣，不为负；已经提现的记追偿，不扣可提现。
+func clawBackSettledCommissionTx(tx *gorm.DB, account *model.ReferralCommissionAccount, commission *model.ReferralCommission, part decimal.Decimal, tradeNo string, entry model.ReferralCommissionLedger) error {
+	if !part.IsPositive() {
+		return nil
+	}
+	if exists, err := referralLedgerExistsTx(tx, entry.ExternalRefId); err != nil {
+		return err
+	} else if exists {
+		return nil
+	}
+	if commission.Status == model.ReferralCommissionStatusPaid {
+		if err := recordReferralCommissionRecoveryTx(tx, commission, part, tradeNo); err != nil {
+			return err
+		}
+		return addReferralLedgerTx(tx, &entry)
+	}
+	frozenAlloc, withdrawnAlloc, err := commissionAllocatedTx(tx, commission.Id)
+	if err != nil {
+		return err
+	}
+	if withdrawnAlloc.IsNegative() {
+		withdrawnAlloc = decimal.Zero
+	}
+	if frozenAlloc.IsNegative() {
+		frozenAlloc = decimal.Zero
+	}
+	free := moneyDec(commission.CommissionAmount).Sub(frozenAlloc).Sub(withdrawnAlloc)
+	if free.IsNegative() {
+		free = decimal.Zero
+	}
+	parts := splitDecimalByWeights(part, []decimal.Decimal{withdrawnAlloc, frozenAlloc, free})
+	if parts[0].IsPositive() {
+		if err := recordReferralCommissionRecoveryTx(tx, commission, parts[0], tradeNo); err != nil {
+			return err
+		}
+	}
+	deductFrozen := clawbackLimitedToBalance(account.FrozenAmount, parts[1])
+	deductAvailable := clawbackLimitedToBalance(account.AvailableAmount, parts[2])
+	if !deductFrozen.IsPositive() && !deductAvailable.IsPositive() {
+		return addReferralLedgerTx(tx, &entry)
+	}
+	return AdjustAccountTx(tx, account, decimal.Zero, deductAvailable.Neg(), deductFrozen.Neg(), decimal.Zero, entry)
+}
+
+func clawbackLimitedToBalance(have float64, want decimal.Decimal) decimal.Decimal {
+	if !want.IsPositive() {
+		return decimal.Zero
+	}
+	balance := moneyDec(have)
+	if !balance.IsPositive() {
+		return decimal.Zero
+	}
+	if want.GreaterThan(balance) {
+		return balance
+	}
+	return want
+}
+
+func recordReferralCommissionRecoveryTx(tx *gorm.DB, commission *model.ReferralCommission, target decimal.Decimal, tradeNo string) error {
+	if !target.IsPositive() {
+		return nil
+	}
+	var rows []model.AdtyCommissionRecovery
+	if err := tx.Where("commission_id = ? AND kind = ?", commission.Id, adtyReferralCommissionRecoveryKind).Find(&rows).Error; err != nil {
+		return err
+	}
+	already := decimal.Zero
+	for _, row := range rows {
+		already = already.Add(row.AmountUSD)
+	}
+	part := target.Sub(already)
+	if !part.IsPositive() {
+		return nil
+	}
+	key := fmt.Sprintf("referral-recovery:%d:%s", commission.Id, target.String())
+	if len(key) > 128 {
+		key = fmt.Sprintf("referral-recovery:%d:%s", commission.Id, part.String())
+		if len(key) > 128 {
+			return fmt.Errorf("referral commission recovery key too long")
+		}
+	}
+	return tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "idempotency_key"}}, DoNothing: true}).Create(&model.AdtyCommissionRecovery{
+		SiteId: 0, CommissionId: int64(commission.Id), TradeNo: tradeNo, AmountUSD: part,
+		Kind: adtyReferralCommissionRecoveryKind, Status: "open", IdempotencyKey: key,
+	}).Error
+}
+
+func referralLedgerExistsTx(tx *gorm.DB, externalRefId string) (bool, error) {
+	if externalRefId == "" {
+		return false, nil
+	}
+	var count int64
+	if err := tx.Model(&model.ReferralCommissionLedger{}).Where("external_ref_id = ?", externalRefId).Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }
 
 func init() {
