@@ -50,3 +50,24 @@ func TestAccountDeletionRequiresASingleUseEmailCode(t *testing.T) {
 	ok := securityEnrollmentRequest("DELETE", "/api/user/self", `{"verification_code":"135790"}`, proof, identity, DeleteSelf)
 	assert.Contains(t, ok.Body.String(), `"success":true`, ok.Body.String())
 }
+
+func TestAccountDeletionCodeSendFailureLeavesNoCode(t *testing.T) {
+	user, identity := setupSecurityEnrollmentTest(t)
+	require.NoError(t, model.DB.Model(user).Update("email", "owner@example.com").Error)
+	previous := sendAccountDeletionEmail
+	sendAccountDeletionEmail = func(*model.AdtySite, string, string, string) error {
+		return assert.AnError
+	}
+	t.Cleanup(func() { sendAccountDeletionEmail = previous })
+
+	failed := securityEnrollmentRequest("POST", "/api/user/self/deletion-code", `{}`, "", identity, SendAccountDeletionCode)
+	assert.Contains(t, failed.Body.String(), `"success":false`)
+	stored, err := model.GetUserById(user.Id, false)
+	require.NoError(t, err)
+	assert.False(t, stored.DeletedAt.Valid)
+
+	sendAccountDeletionEmail = func(*model.AdtySite, string, string, string) error { return nil }
+	sent := securityEnrollmentRequest("POST", "/api/user/self/deletion-code", `{}`, "", identity, SendAccountDeletionCode)
+	assert.Contains(t, sent.Body.String(), `"success":true`, sent.Body.String())
+	assert.Contains(t, sent.Body.String(), `"data"`)
+}

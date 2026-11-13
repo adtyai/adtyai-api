@@ -13,6 +13,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+var sendAccountDeletionEmail = service.AdtySendSiteEmail
+
 func accountDeletionCodeKey(userID int, email string) string {
 	return fmt.Sprintf("%d:%s", userID, model.NormalizeEmail(email))
 }
@@ -48,12 +50,12 @@ func SendAccountDeletionCode(c *gin.Context) {
 		i18n.T(c, i18n.MsgEmailAccountDeletionGreeting, systemName),
 		i18n.T(c, i18n.MsgEmailAccountDeletionCode, map[string]any{"Code": code}),
 		i18n.T(c, i18n.MsgEmailAccountDeletionValidity, map[string]any{"Minutes": common.VerificationValidMinutes}))
-	if err := service.AdtySendSiteEmail(site, subject, email, content); err != nil {
+	if err := sendAccountDeletionEmail(site, subject, email, content); err != nil {
 		_, _ = common.ConsumeVerificationCodeWithKey(key, code, common.AccountDeletionPurpose)
 		common.ApiErrorT(c, "Failed to send email")
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"success": true, "message": ""})
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": gin.H{}})
 }
 
 func consumeAccountDeletionCode(c *gin.Context, userID int, email string) (string, time.Time, bool) {
