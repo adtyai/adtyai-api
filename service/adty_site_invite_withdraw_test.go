@@ -210,3 +210,105 @@ func availableSiteCommission(t *testing.T, db *gorm.DB, amount decimal.Decimal) 
 	require.NoError(t, ReleaseAdtySiteInviteCommissions(time.Unix(commission.AvailableAt, 0)))
 	return site, owner, inviter
 }
+
+func TestSiteInviteWithdrawalRejectsWeChatAndAliases(t *testing.T) {
+	for _, dialect := range []string{"sqlite", "postgres"} {
+		t.Run(dialect, func(t *testing.T) {
+			db := prepareReferralDialectDB(t, dialect)
+			site, _, inviter := availableSiteCommission(t, db, decimal.NewFromInt(4))
+			require.NoError(t, SaveAdtySiteInviteWithdrawRules("1", "0.1", "7"))
+			for i, method := range []string{"wechat", "WeChat", "WECHAT", "wxpay", "weixin", "微信", "微信支付"} {
+				_, err := CreateAdtySiteInviteWithdrawal(AdtySiteInviteWithdrawalInput{
+					UserID: inviter.Id, SiteID: site.Id, Amount: decimal.NewFromInt(1), Method: method,
+					AccountName: "Ada", QRImageURL: "/api/referral-assets/ada.png", ExpectedCNYRate: decimal.NewFromInt(7),
+					IdempotencyKey: "wd-wechat-" + dialect + "-" + strconv.Itoa(i),
+				})
+				require.Error(t, err, method)
+				require.Contains(t, err.Error(), "Unsupported withdrawal method", method)
+			}
+			var count int64
+			require.NoError(t, db.Model(&model.AdtySiteInviteWithdrawal{}).Count(&count).Error)
+			require.Zero(t, count)
+		})
+	}
+}
+
+func TestSiteInviteWithdrawalAllowsOfficialMethodsAndRulesCatalog(t *testing.T) {
+	for _, dialect := range []string{"sqlite", "postgres"} {
+		t.Run(dialect, func(t *testing.T) {
+			db := prepareReferralDialectDB(t, dialect)
+			site, _, inviter := availableSiteCommission(t, db, decimal.NewFromInt(6))
+
+			unset, err := LoadAdtySiteInviteWithdrawRules()
+			require.NoError(t, err)
+			require.False(t, unset.Configured)
+			require.Equal(t, []string{"balance"}, unset.Methods)
+
+			require.NoError(t, SaveAdtySiteInviteWithdrawRules("1", "0.1", "7"))
+			view, err := LoadAdtySiteInviteWithdrawRules()
+			require.NoError(t, err)
+			require.True(t, view.Configured)
+			require.Equal(t, []string{"balance", "usdt", "alipay"}, view.Methods)
+			require.NotContains(t, view.Methods, "wechat")
+
+			balance, err := CreateAdtySiteInviteWithdrawal(AdtySiteInviteWithdrawalInput{
+				UserID: inviter.Id, SiteID: site.Id, Amount: decimal.NewFromInt(1), Method: "balance",
+				IdempotencyKey: "wd-ok-balance-" + dialect,
+			})
+			require.NoError(t, err)
+			require.Equal(t, "balance", balance.Method)
+			require.Equal(t, "paid", balance.Status)
+
+			usdt, err := CreateAdtySiteInviteWithdrawal(AdtySiteInviteWithdrawalInput{
+				UserID: inviter.Id, SiteID: site.Id, Amount: decimal.NewFromInt(2), Method: "usdt",
+				Network: "TRC20", AccountNo: "T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb",
+				IdempotencyKey: "wd-ok-usdt-" + dialect,
+			})
+			require.NoError(t, err)
+			require.Equal(t, "usdt", usdt.Method)
+			require.Equal(t, "pending", usdt.Status)
+
+			alipay, err := CreateAdtySiteInviteWithdrawal(AdtySiteInviteWithdrawalInput{
+				UserID: inviter.Id, SiteID: site.Id, Amount: decimal.NewFromInt(2), Method: "alipay",
+				AccountName: "Ada", QRImageURL: "/api/referral-assets/ada.png", ExpectedCNYRate: decimal.NewFromInt(7),
+				IdempotencyKey: "wd-ok-alipay-" + dialect,
+			})
+			require.NoError(t, err)
+			require.Equal(t, "alipay", alipay.Method)
+			require.Equal(t, "pending", alipay.Status)
+
+			var count int64
+			require.NoError(t, db.Model(&model.AdtySiteInviteWithdrawal{}).Count(&count).Error)
+			require.Equal(t, int64(3), count)
+		})
+	}
+}
+
+func TestHistoricalSiteInviteWeChatWithdrawalCanStillBeReviewedAndPaid(t *testing.T) {
+	for _, dialect := range []string{"sqlite", "postgres"} {
+		t.Run(dialect, func(t *testing.T) {
+			db := prepareReferralDialectDB(t, dialect)
+			site, owner, inviter := availableSiteCommission(t, db, decimal.NewFromInt(2))
+			require.NoError(t, SaveAdtySiteInviteWithdrawRules("1", "0.1", "7"))
+			historical := &model.AdtySiteInviteWithdrawal{
+				SiteId: site.Id, UserId: inviter.Id, AmountUSD: decimal.NewFromInt(2),
+				NetUSD: decimal.NewFromInt(2), Method: "wechat", Status: model.AdtySiteInviteWithdrawPending,
+				AccountName: "Ada", QRImageURL: "/api/referral-assets/ada.png", Rate: "7",
+				PayoutAmount: "14.00", PayoutCurrency: "CNY",
+				IdempotencyKey: "wd-hist-wechat-" + dialect,
+			}
+			require.NoError(t, db.Create(historical).Error)
+			require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+				return allocateSiteInviteWithdrawalTx(tx, historical, false)
+			}))
+			require.NoError(t, ReviewAdtySiteInviteWithdrawal(owner.Id, historical.Id, true, ""))
+			require.NoError(t, MarkAdtySiteInviteWithdrawalPaid(owner.Id, historical.Id, "", "paid"))
+			require.NoError(t, db.First(historical, historical.Id).Error)
+			require.Equal(t, "wechat", historical.Method)
+			require.Equal(t, "paid", historical.Status)
+			var commission model.AdtySiteInviteCommission
+			require.NoError(t, db.Where("inviter_id = ?", inviter.Id).First(&commission).Error)
+			require.True(t, commission.WithdrawnUSD.Equal(decimal.NewFromInt(2)))
+		})
+	}
+}

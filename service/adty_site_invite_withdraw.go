@@ -86,13 +86,17 @@ type AdtySiteInviteWithdrawalInput struct {
 }
 
 // CreateAdtySiteInviteWithdrawal freezes available site invite commission.
-// Balance completes immediately into quota. Cash methods stay pending for that site's owner.
+// Balance completes immediately into quota. External payout methods are Alipay or USDT
+// only (DEC-025); cash methods stay pending for that site's owner.
 func CreateAdtySiteInviteWithdrawal(input AdtySiteInviteWithdrawalInput) (*model.AdtySiteInviteWithdrawal, error) {
 	amount := input.Amount.Round(8)
 	key := strings.TrimSpace(input.IdempotencyKey)
 	method := strings.TrimSpace(input.Method)
 	if input.UserID <= 0 || input.SiteID <= 0 || !amount.IsPositive() || key == "" || len(key) > 128 {
 		return nil, common.NewMessage("Invalid parameters")
+	}
+	if isAdtySiteInviteWeChatMethod(method) {
+		return nil, common.NewMessage("Unsupported withdrawal method")
 	}
 	row := &model.AdtySiteInviteWithdrawal{
 		SiteId: input.SiteID, UserId: input.UserID, AmountUSD: amount, NetUSD: amount,
@@ -122,7 +126,7 @@ func CreateAdtySiteInviteWithdrawal(input AdtySiteInviteWithdrawalInput) (*model
 			return nil, common.NewMessage("The amount must be larger than the network fee")
 		}
 		row.Network, row.AccountNo, row.FeeUSD, row.NetUSD = network, strings.TrimSpace(input.AccountNo), rules.Fee, net
-	case "alipay", "wechat":
+	case "alipay":
 		if !rules.Ready {
 			return nil, common.NewMessage("This withdrawal method is not available")
 		}
@@ -416,13 +420,13 @@ func LoadAdtySiteInviteWithdrawRules() (AdtySiteInviteWithdrawRulesView, error) 
 	if err != nil {
 		return AdtySiteInviteWithdrawRulesView{}, err
 	}
-	view := AdtySiteInviteWithdrawRulesView{Methods: []string{"balance"}}
+	view := AdtySiteInviteWithdrawRulesView{Methods: adtySiteInviteWithdrawMethods(false)}
 	if !rules.Ready {
 		return view, nil
 	}
 	view.Configured = true
 	view.MinUSD, view.FeeUSD, view.CNYRate = rules.Min.String(), rules.Fee.String(), rules.Rate.String()
-	view.Methods = []string{"balance", "usdt", "alipay", "wechat"}
+	view.Methods = adtySiteInviteWithdrawMethods(true)
 	return view, nil
 }
 
@@ -463,4 +467,23 @@ func CancelAdtySiteInviteWithdrawal(userID int, withdrawalID int64, now int64) e
 		}
 		return tx.Model(&row).Update("status", model.AdtySiteInviteWithdrawCanceled).Error
 	})
+}
+
+// adtySiteInviteWithdrawMethods is the official catalog for this path.
+// Transfer-to-balance stays available even before Root saves cash rules.
+// External payout is only Alipay or USDT (DEC-025); WeChat is not offered.
+func adtySiteInviteWithdrawMethods(configured bool) []string {
+	if !configured {
+		return []string{"balance"}
+	}
+	return []string{"balance", "usdt", "alipay"}
+}
+
+func isAdtySiteInviteWeChatMethod(method string) bool {
+	switch strings.ToLower(strings.TrimSpace(method)) {
+	case "wechat", "weixin", "wei_xin", "wei-xin", "wx", "wxpay", "wechatpay", "weixinpay", "wechat_pay", "wechat-pay", "微信", "微信支付":
+		return true
+	default:
+		return false
+	}
 }

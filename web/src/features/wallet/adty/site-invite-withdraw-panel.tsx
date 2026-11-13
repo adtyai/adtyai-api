@@ -79,7 +79,7 @@ type ApiResponse<T> = {
 
 type RateChange = { rate: string; cnyAmount: string }
 
-const METHODS = ['balance', 'usdt', 'alipay', 'wechat'] as const
+const METHODS = ['balance', 'usdt', 'alipay'] as const
 type Method = (typeof METHODS)[number]
 
 async function loadRules(): Promise<WithdrawRules> {
@@ -113,10 +113,10 @@ async function createWithdrawal(body: {
       method: body.method,
       network: body.method === 'usdt' ? body.network : '',
       account_no: body.method === 'usdt' ? body.accountNo : '',
-      account_name: body.method === 'alipay' || body.method === 'wechat' ? body.accountName : '',
-      qr_image_url: body.method === 'alipay' || body.method === 'wechat' ? body.qrUrl : '',
+      account_name: body.method === 'alipay' ? body.accountName : '',
+      qr_image_url: body.method === 'alipay' ? body.qrUrl : '',
       expected_cny_rate:
-        body.method === 'alipay' || body.method === 'wechat' ? body.expectedRate : '',
+        body.method === 'alipay' ? body.expectedRate : '',
     },
     { headers: { 'Idempotency-Key': body.idempotencyKey } }
   )
@@ -197,7 +197,7 @@ export function SiteInviteWithdrawPanel(props: {
   const fee = Number(rules.data?.fee_usd || 0)
   const minimum = Number(rules.data?.min_usd || 0)
   const rate = expectedRate || rules.data?.cny_rate || ''
-  const isCny = method === 'alipay' || method === 'wechat'
+  const isCny = method === 'alipay'
   const cnyAmount = isCny && value > 0 && rate !== '' ? (value * Number(rate)).toFixed(2) : ''
   const net = usdtNetAmount(value, fee)
   const cashReady = rules.data?.configured === true
@@ -340,7 +340,7 @@ export function SiteInviteWithdrawPanel(props: {
                   className={method === item ? 'border-foreground' : ''}
                   onClick={() => {
                     setMethod(item)
-                    if (item === 'alipay' || item === 'wechat') {
+                    if (item === 'alipay') {
                       setExpectedRate(rules.data?.cny_rate ?? '')
                     }
                   }}
