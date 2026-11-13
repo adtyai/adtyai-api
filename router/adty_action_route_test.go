@@ -41,6 +41,7 @@ func TestAdtyGapRoutesRegistered(t *testing.T) {
 		"PUT /api/adty/site/referral",
 		"GET /api/adty/site/referral/invites",
 		"POST /api/adty/site/referral/invites",
+		"PUT /api/adty/admin/teams/:id/agreement-price",
 	} {
 		assert.Truef(t, found[key], "missing route %s", key)
 	}

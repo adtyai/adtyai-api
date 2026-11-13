@@ -91,6 +91,41 @@ export type AdminBalanceRequest = {
   reviewed_at: number
 }
 
+export async function saveAdminWithdrawRules(body: {
+  min_usd: string
+  fee_usd: string
+  alipay_cny_rate: string
+  usdt_usd_rate: string
+}): Promise<void> {
+  const res = await api.put<ApiResponse<{ saved: boolean }>>(
+    `${BASE}/site-withdrawals/rules`,
+    body
+  )
+  requireServerSuccess(res.data)
+}
+
+export async function issueAdminMarginVoucher(body: {
+  site_id: number
+  amount_usd: string
+  reason: string
+}): Promise<{ code: string }> {
+  const res = await api.post<ApiResponse<{ code: string }>>(
+    `${BASE}/vouchers`,
+    { purpose: 'site_margin', ...body }
+  )
+  return requireServerSuccess(res.data).data
+}
+
+export async function getAdminFundAnomalies(
+  siteId: number
+): Promise<string[]> {
+  const res = await api.get<ApiResponse<{ kinds?: string[] }>>(
+    `${BASE}/fund-anomalies`,
+    { params: { site_id: siteId } }
+  )
+  return requireServerSuccess(res.data).data.kinds ?? []
+}
+
 export async function getAdminSiteReferralCap(): Promise<{
   cap_configured: boolean
   max_rate?: string

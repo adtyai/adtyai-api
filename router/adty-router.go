@@ -163,6 +163,8 @@ func registerAdtyTopUpRoutes(apiRouter *gin.RouterGroup) {
 	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/admin/site-withdrawals/:id/paid", "scope", "option:write")
 	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/adty/admin/site-referral/cap", "scope", "option:read")
 	middleware.DeclareAdtyAccessTokenRoute("PUT", "/api/adty/admin/site-referral/cap", "scope", "option:write")
+	middleware.DeclareAdtyAccessTokenRoute("PUT", "/api/adty/admin/teams/:id/agreement-price", "scope", "option:write")
+	apiRouter.PUT("/adty/admin/teams/:id/agreement-price", middleware.RootAuth(), controller.PutAdtyMainTeamAgreementPrice)
 	apiRouter.GET("/adty/admin/site-referral/cap", middleware.RootAuth(), controller.GetAdtySiteReferralCap)
 	apiRouter.PUT("/adty/admin/site-referral/cap", middleware.RootAuth(), controller.PutAdtySiteReferralCap)
 	apiRouter.PUT("/adty/admin/site-withdrawals/rules", middleware.RootAuth(), controller.PutAdtySiteWithdrawRules)

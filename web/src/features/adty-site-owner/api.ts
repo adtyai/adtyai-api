@@ -166,6 +166,15 @@ export async function createSiteWithdrawal(body: {
   return requireServerSuccess(res.data).data
 }
 
+export async function transferEarningToMargin(amountUsd: string): Promise<void> {
+  const res = await api.post<ApiResponse<{ transferred: boolean }>>(
+    `${BASE}/wallets/earning-to-margin`,
+    { amount_usd: amountUsd },
+    { headers: { 'Idempotency-Key': crypto.randomUUID() } }
+  )
+  requireServerSuccess(res.data)
+}
+
 export async function cancelSiteWithdrawal(id: number): Promise<void> {
   const res = await api.post<ApiResponse<unknown>>(
     `${BASE}/withdrawals/${id}/cancel`

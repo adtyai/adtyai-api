@@ -9,6 +9,26 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestMainTeamAgreementPriceHasNoSupplyFloor(t *testing.T) {
+	db := prepareReferralDialectDB(t, "sqlite")
+	leader := referralUser(t, db, "agree-leader")
+	main, err := CreateAdtyTeam(leader.Id, 0, "Agree", decimal.NewFromInt(1))
+	require.NoError(t, err)
+	require.NoError(t, SaveAdtyMainTeamAgreementPrice(main.Team.Id, "0.50"))
+	var stored model.AdtyTeam
+	require.NoError(t, db.First(&stored, main.Team.Id).Error)
+	require.True(t, stored.Discount.Equal(decimal.RequireFromString("0.50")))
+
+	owner := referralUser(t, db, "agree-owner")
+	site := model.AdtySite{OwnerUserId: owner.Id, Subdomain: "agree", Status: model.AdtySiteStatusActive}
+	require.NoError(t, db.Create(&site).Error)
+	siteLeader := referralUser(t, db, "agree-site-leader")
+	require.NoError(t, db.Model(siteLeader).Update("site_id", site.Id).Error)
+	siteTeam, err := CreateAdtyTeam(siteLeader.Id, site.Id, "Site", decimal.RequireFromString("0.90"))
+	require.NoError(t, err)
+	require.Error(t, SaveAdtyMainTeamAgreementPrice(siteTeam.Team.Id, "0.50"))
+}
+
 func TestSiteReferralRateStaysUnsetUntilRootSetsCap(t *testing.T) {
 	db := prepareReferralDialectDB(t, "sqlite")
 	owner := referralUser(t, db, "sref-owner")

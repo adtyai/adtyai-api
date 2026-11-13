@@ -46,6 +46,25 @@ func init() {
 	model.AdtyBeforeUserDeleteHook = closeAdtyTeamForDeletedLeader
 }
 
+// SaveAdtyMainTeamAgreementPrice sets a main-site team discount. Subsite teams are rejected.
+// There is no supply-price floor. The discount must be greater than zero and at most 1.
+func SaveAdtyMainTeamAgreementPrice(teamID int64, raw string) error {
+	value, err := decimal.NewFromString(strings.TrimSpace(raw))
+	if teamID <= 0 || err != nil || !value.IsPositive() || value.GreaterThan(decimal.NewFromInt(1)) {
+		return ErrAdtyTeamInvalid
+	}
+	return model.DB.Transaction(func(tx *gorm.DB) error {
+		var team model.AdtyTeam
+		if err := model.AdtyLockForUpdate(tx).First(&team, teamID).Error; err != nil {
+			return err
+		}
+		if team.SiteId != 0 || team.Status != model.AdtyTeamStatusActive {
+			return ErrAdtyTeamForbidden
+		}
+		return tx.Model(&team).Update("discount", value).Error
+	})
+}
+
 var (
 	ErrAdtyTeamInvalid     = common.NewMessage("Invalid parameters")
 	ErrAdtyTeamForbidden   = common.NewMessage("No permission to perform this action")

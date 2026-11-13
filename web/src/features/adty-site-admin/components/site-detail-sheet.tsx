@@ -81,6 +81,7 @@ import { siteNotice } from '../lib/sites'
 import type { AdminSite } from '../types'
 import { CloseSiteDialog } from './close-site-dialog'
 
+import { SiteFundPanel } from './site-fund-panel'
 import { SiteStatusBadge } from './site-status-badge'
 import { SiteVisibilityEditor } from './site-visibility-editor'
 
@@ -813,6 +814,7 @@ export function SiteDetailSheet(props: {
               </section>
               <SiteActions key={site.id} site={site} onDirtyChange={setDirty} />
               <RootBalanceRequests siteId={site.id} />
+              <SiteFundPanel siteId={site.id} />
               <SiteDomains
                 siteId={site.id}
                 domains={query.data?.domains ?? []}
