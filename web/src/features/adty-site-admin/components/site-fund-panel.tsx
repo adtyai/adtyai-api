@@ -32,11 +32,14 @@ import { useAuthStore } from '@/stores/auth-store'
 import {
   getAdminAnomalyDispositions,
   getAdminFundAnomalies,
+  getAdminSiteCommissionMargin,
   getAdminSiteWallets,
   issueAdminMarginVoucher,
   reviewAdminAnomalyDisposition,
+  saveAdminSiteCommissionMargin,
   siteAdminKeys,
 } from '../api'
+import { SwitchRow } from './setting-fields'
 
 /** Root sees the site anomaly scan and can issue a margin code. Amounts are typed, not suggested. */
 export function SiteFundPanel(props: { siteId: number }) {
@@ -71,6 +74,19 @@ export function SiteFundPanel(props: { siteId: number }) {
     queryFn: () => getAdminFundAnomalies(props.siteId),
     enabled: isRoot,
   })
+  const marginAuth = useQuery({
+    queryKey: siteAdminKeys.list('commission-margin', { siteId: props.siteId }),
+    queryFn: () => getAdminSiteCommissionMargin(props.siteId),
+    enabled: isRoot,
+  })
+  const saveMargin = useMutation({
+    mutationFn: (allowed: boolean) =>
+      saveAdminSiteCommissionMargin(props.siteId, allowed),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: siteAdminKeys.all })
+    },
+    onError: (error) => handleServerError(error),
+  })
   const issue = useMutation({
     mutationFn: () =>
       issueAdminMarginVoucher({
@@ -103,6 +119,22 @@ export function SiteFundPanel(props: { siteId: number }) {
             </li>
           ))}
         </ul>
+      )}
+      <h3 className='text-sm font-medium'>{t('Commission coverage')}</h3>
+      {marginAuth.isPending && <LoadingState />}
+      {marginAuth.isError && (
+        <ErrorState onRetry={() => void marginAuth.refetch()} />
+      )}
+      {marginAuth.isSuccess && (
+        <SwitchRow
+          label={t('Cover commission from margin')}
+          hint={t(
+            'After earnings, the open margin cycle can cover the rest. No amount is set here.'
+          )}
+          checked={marginAuth.data.allowed}
+          disabled={saveMargin.isPending}
+          onCheckedChange={(value) => saveMargin.mutate(value)}
+        />
       )}
       <h3 className='text-sm font-medium'>{t('Fund anomalies')}</h3>
       {anomalies.isPending && <LoadingState />}

@@ -211,6 +211,26 @@ export async function saveAdminSiteCommissionPolicy(
   requireServerSuccess(res.data)
 }
 
+export async function getAdminSiteCommissionMargin(
+  siteId: number
+): Promise<{ allowed: boolean }> {
+  const res = await api.get<ApiResponse<{ site_id: number; allowed: boolean }>>(
+    `${BASE}/sites/${siteId}/commission-margin`
+  )
+  return requireServerSuccess(res.data).data
+}
+
+export async function saveAdminSiteCommissionMargin(
+  siteId: number,
+  allowed: boolean
+): Promise<void> {
+  const res = await api.put<ApiResponse<{ site_id: number; allowed: boolean }>>(
+    `${BASE}/sites/${siteId}/commission-margin`,
+    { allowed }
+  )
+  requireServerSuccess(res.data)
+}
+
 export async function saveAdminSiteReferralCap(maxRate: string): Promise<void> {
   const res = await api.put<ApiResponse<{ saved: boolean }>>(
     `${BASE}/site-referral/cap`,

@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 )
@@ -73,6 +74,60 @@ func PutAdtySiteCommissionPolicy(c *gin.Context) {
 		return
 	}
 	common.ApiSuccess(c, gin.H{"saved": true})
+}
+
+func GetAdtySiteCommissionMargin(c *gin.Context) {
+	siteID, ok := adtyCommissionMarginSite(c)
+	if !ok {
+		return
+	}
+	allowed, err := service.SiteCommissionMarginAllowed(siteID)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"site_id": siteID, "allowed": allowed})
+}
+
+func PutAdtySiteCommissionMargin(c *gin.Context) {
+	siteID, ok := adtyCommissionMarginSite(c)
+	if !ok {
+		return
+	}
+	var body struct {
+		Allowed *bool `json:"allowed"`
+	}
+	if err := common.DecodeJson(c.Request.Body, &body); err != nil || body.Allowed == nil {
+		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	if err := service.AuthorizeAdtySiteCommissionMargin(siteID, *body.Allowed); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"site_id": siteID, "allowed": *body.Allowed})
+}
+
+func adtyCommissionMarginSite(c *gin.Context) (int, bool) {
+	if c.GetInt("role") != common.RoleRootUser {
+		common.ApiErrorStatus(c, http.StatusForbidden, common.NewMessage("No permission to perform this action"))
+		return 0, false
+	}
+	siteID, err := strconv.Atoi(c.Param("id"))
+	if err != nil || siteID <= 0 {
+		common.ApiErrorT(c, "Invalid parameters")
+		return 0, false
+	}
+	var count int64
+	if err := model.DB.Model(&model.AdtySite{}).Where("id = ?", siteID).Count(&count).Error; err != nil {
+		common.ApiError(c, err)
+		return 0, false
+	}
+	if count != 1 {
+		common.ApiErrorT(c, "Invalid parameters")
+		return 0, false
+	}
+	return siteID, true
 }
 
 func GetAdtyOwnerSiteReferral(c *gin.Context) {

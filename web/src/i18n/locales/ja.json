@@ -8821,7 +8821,9 @@
     "Commission coverage": "手数料のカバー",
     "Commission coverage is not configured": "手数料のカバーは未設定です",
     "Pending coverage cap": "未カバー上限",
-    "Observation days": "観察日数"
+    "Observation days": "観察日数",
+    "Cover commission from margin": "保証金で手数料を補填",
+    "After earnings, the open margin cycle can cover the rest. No amount is set here.": "収益のあと、開始済みの保証金サイクルで残りを補います。ここでは金額を入力しません。"
 },
   "Targeted notifications": "対象を指定した通知",
   "Site announcements": "サイトのお知らせ",

@@ -8821,7 +8821,9 @@
     "Commission coverage": "Покрытие комиссии",
     "Commission coverage is not configured": "Покрытие комиссии не настроено",
     "Pending coverage cap": "Лимит непокрытой комиссии",
-    "Observation days": "Дни наблюдения"
+    "Observation days": "Дни наблюдения",
+    "Cover commission from margin": "Покрыть комиссию из маржи",
+    "After earnings, the open margin cycle can cover the rest. No amount is set here.": "После дохода открытый цикл маржи может покрыть остаток. Сумма здесь не задаётся."
 },
   "Targeted notifications": "Адресные уведомления",
   "Site announcements": "Объявления сайта",

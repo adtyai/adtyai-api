@@ -8821,7 +8821,9 @@
     "Commission coverage": "Couverture de commission",
     "Commission coverage is not configured": "La couverture de commission n'est pas configurée",
     "Pending coverage cap": "Plafond de couverture en attente",
-    "Observation days": "Jours d'observation"
+    "Observation days": "Jours d'observation",
+    "Cover commission from margin": "Couvrir la commission avec la marge",
+    "After earnings, the open margin cycle can cover the rest. No amount is set here.": "Après les gains, le cycle de marge ouvert peut couvrir le reste. Aucun montant n'est saisi ici."
 },
   "Targeted notifications": "Notifications ciblées",
   "Site announcements": "Annonces du site",

@@ -8781,7 +8781,9 @@
     "Bonus rate": "보너스 비율",
     "Team top-up": "팀 충전",
     "A team top-up does not include a payment-method gift.": "팀 충전에는 결제 수단 보너스가 포함되지 않습니다.",
-    "A team top-up does not include a payment-method gift. The order stays pending until payment completion credits the shared balance.": "팀 충전에는 결제 수단 보너스가 없습니다. 결제 완료 전까지 주문은 대기 상태이며 공유 잔액에 들어가지 않습니다."
+    "A team top-up does not include a payment-method gift. The order stays pending until payment completion credits the shared balance.": "팀 충전에는 결제 수단 보너스가 없습니다. 결제 완료 전까지 주문은 대기 상태이며 공유 잔액에 들어가지 않습니다.",
+    "Cover commission from margin": "보증금으로 수수료 보전",
+    "After earnings, the open margin cycle can cover the rest. No amount is set here.": "수익 이후, 열린 보증금 주기로 나머지를 보전합니다. 여기에는 금액을 입력하지 않습니다."
 },
   "Targeted notifications": "대상 지정 알림",
   "Site announcements": "사이트 공지",

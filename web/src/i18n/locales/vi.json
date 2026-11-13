@@ -8821,7 +8821,9 @@
     "Commission coverage": "Bù hoa hồng",
     "Commission coverage is not configured": "Chưa cấu hình bù hoa hồng",
     "Pending coverage cap": "Trần chờ bù",
-    "Observation days": "Số ngày quan sát"
+    "Observation days": "Số ngày quan sát",
+    "Cover commission from margin": "Bù hoa hồng từ ký quỹ",
+    "After earnings, the open margin cycle can cover the rest. No amount is set here.": "Sau thu nhập, chu kỳ ký quỹ đang mở có thể bù phần còn lại. Không nhập số tiền ở đây."
 },
   "Targeted notifications": "Thông báo theo đối tượng",
   "Site announcements": "Thông báo của trang",

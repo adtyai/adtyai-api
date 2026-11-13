@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -83,6 +84,40 @@ func loadAdtySiteCommissionPolicy() (adtySiteCommissionPolicy, error) {
 	return adtySiteCommissionPolicy{Cap: cap, Days: days.IntPart()}, nil
 }
 
+func commissionMarginOptionKey(siteID int) string {
+	return fmt.Sprintf("adty_site_referral.commission_margin.%d", siteID)
+}
+
+// AuthorizeAdtySiteCommissionMargin records Root's permission for this site to
+// cover an invite-commission shortfall from its own margin cycle.
+// It does not authorize gift margin fill and does not set an amount.
+func AuthorizeAdtySiteCommissionMargin(siteID int, allowed bool) error {
+	if siteID <= 0 {
+		return common.NewMessage("Invalid parameters")
+	}
+	var count int64
+	if err := model.DB.Model(&model.AdtySite{}).Where("id = ?", siteID).Count(&count).Error; err != nil {
+		return err
+	}
+	if count != 1 {
+		return common.NewMessage("Invalid parameters")
+	}
+	value := "0"
+	if allowed {
+		value = "1"
+	}
+	return model.UpdateOption(commissionMarginOptionKey(siteID), value)
+}
+
+// SiteCommissionMarginAllowed reports the saved commission-margin authorization.
+func SiteCommissionMarginAllowed(siteID int) (bool, error) {
+	raw, ok, err := model.ReadOptionFromDB(commissionMarginOptionKey(siteID))
+	if err != nil || !ok {
+		return false, err
+	}
+	return strings.TrimSpace(raw) == "1", nil
+}
+
 // SiteInviteCommissionWithdrawable is true only after coverage and observation.
 func SiteInviteCommissionWithdrawable(row *model.AdtySiteInviteCommission, now time.Time) bool {
 	return row != nil && row.Status == model.AdtySiteCommissionAvailable && row.AvailableAt > 0 && !now.Before(time.Unix(row.AvailableAt, 0))
@@ -150,9 +185,55 @@ func CoverAdtySiteInviteCommissionTx(tx *gorm.DB, id int64, now time.Time) error
 	}
 	row.CoveredUSD = row.CoveredUSD.Add(taken)
 	if row.CoveredUSD.LessThan(row.AmountUSD) {
+		marginTaken, err := takeSiteCommissionMargin(tx, row.SiteId, row.AmountUSD.Sub(row.CoveredUSD), row.TradeNo)
+		if err != nil {
+			return err
+		}
+		row.CoveredUSD = row.CoveredUSD.Add(marginTaken)
+	}
+	if row.CoveredUSD.LessThan(row.AmountUSD) {
 		return tx.Model(&row).Update("covered_usd", row.CoveredUSD).Error
 	}
 	return markSiteCommissionCovered(tx, &row, now, policy.Days)
+}
+
+func takeSiteCommissionMargin(tx *gorm.DB, siteID int, need decimal.Decimal, tradeNo string) (decimal.Decimal, error) {
+	allowedBusiness, err := SiteCommissionMarginAllowed(siteID)
+	if err != nil || !allowedBusiness || !need.IsPositive() {
+		return decimal.Zero, err
+	}
+	key := "commission:" + tradeNo + ":" + model.AdtySiteWalletMargin
+	var existing model.AdtySiteWalletLedger
+	lookup := tx.Where("idempotency_key = ?", key).Limit(1).Find(&existing)
+	if lookup.Error != nil {
+		return decimal.Zero, lookup.Error
+	}
+	if lookup.RowsAffected > 0 {
+		return decimal.Zero, nil
+	}
+	var wallet model.AdtySiteWallet
+	if err := model.AdtyLockForUpdate(tx).Where("site_id = ? AND kind = ?", siteID, model.AdtySiteWalletMargin).First(&wallet).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return decimal.Zero, nil
+		}
+		return decimal.Zero, err
+	}
+	room := AdtyMarginNewDraw(AdtyMarginDrawInput{
+		TierUSD: wallet.CycleTierUSD, Balance: wallet.Balance, Used: wallet.CycleUsedUSD,
+	})
+	take := decimal.Min(need, room)
+	if !take.IsPositive() {
+		return decimal.Zero, nil
+	}
+	if _, err := applyAdtySiteWalletChangeTx(tx, siteID, model.AdtySiteWalletMargin, take.Neg(), AdtySiteWalletChange{
+		Type: "commission_cover", RefType: "site_invite", RefID: tradeNo, IdempotencyKey: key,
+	}); err != nil {
+		if errors.Is(err, ErrAdtySiteWalletInsufficient) {
+			return decimal.Zero, nil
+		}
+		return decimal.Zero, err
+	}
+	return take, nil
 }
 
 func takeSiteCommissionCover(tx *gorm.DB, siteID int, kind string, need decimal.Decimal, tradeNo string) (decimal.Decimal, error) {

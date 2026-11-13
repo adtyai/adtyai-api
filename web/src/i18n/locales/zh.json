@@ -8821,7 +8821,9 @@
     "Commission coverage": "佣金覆盖",
     "Commission coverage is not configured": "佣金覆盖尚未配置",
     "Pending coverage cap": "待覆盖上限",
-    "Observation days": "观察天数"
+    "Observation days": "观察天数",
+    "Cover commission from margin": "用保证金补足佣金",
+    "After earnings, the open margin cycle can cover the rest. No amount is set here.": "先使用收益。不足部分按已开启的保证金周期补足。这里不填写金额。"
 },
   "Targeted notifications": "定向通知",
   "Site announcements": "本站公告",
