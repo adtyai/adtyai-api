@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 	"github.com/shopspring/decimal"
@@ -56,6 +57,35 @@ func PostAdtyTeamTopup(c *gin.Context) {
 		return
 	}
 	key := strings.TrimSpace(c.GetHeader("Idempotency-Key"))
+	if method := strings.TrimSpace(body.Method); method == model.PaymentMethodStripe {
+		if !isStripeTopUpEnabled() {
+			common.ApiErrorT(c, "Stripe payment is not available")
+			return
+		}
+		user, err := model.GetUserById(c.GetInt("id"), false)
+		if err != nil || user == nil {
+			common.ApiErrorT(c, "User does not exist")
+			return
+		}
+		pay, ok := stripeQuotedPay(amount.IntPart(), user.Group)
+		if !ok {
+			common.ApiErrorT(c, "Top-up amount must be a whole number of quota units")
+			return
+		}
+		order, err := service.StartAdtyTeamStripeTopup(c.GetInt("id"), id, amount, pay.Money, key, func(tradeNo string, money decimal.Decimal) (string, string, error) {
+			session, err := genStripeCheckout(tradeNo, user.StripeCustomer, user.Email, money, "", "")
+			if err != nil {
+				return "", "", err
+			}
+			return session.URL, session.ID, nil
+		})
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		common.ApiSuccess(c, order)
+		return
+	}
 	if method := strings.TrimSpace(body.Method); method != "" {
 		order, err := service.StartAdtyTeamTopupPayment(c.GetInt("id"), id, amount, method, key, c.ClientIP())
 		if err != nil {

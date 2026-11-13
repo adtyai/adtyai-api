@@ -214,6 +214,11 @@ export function TeamPanel() {
               >
                 <NativeSelectOption value='alipay'>{t('Alipay')}</NativeSelectOption>
                 <NativeSelectOption value='wxpay'>{t('WeChat Pay')}</NativeSelectOption>
+                <NativeSelectOption value='stripe'>{t('Stripe')}</NativeSelectOption>
+                <NativeSelectOption value='usdt.trc20'>{t('USDT · TRC20')}</NativeSelectOption>
+                <NativeSelectOption value='usdt.bep20'>{t('USDT · BEP20')}</NativeSelectOption>
+                <NativeSelectOption value='usdt.polygon'>{t('USDT · Polygon')}</NativeSelectOption>
+                <NativeSelectOption value='usdt.xlayer'>{t('USDT · X Layer')}</NativeSelectOption>
               </NativeSelect>
             </div>
             <p className='text-muted-foreground text-sm'>
