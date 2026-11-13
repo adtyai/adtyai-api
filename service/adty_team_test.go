@@ -98,7 +98,12 @@ func TestAdtyTeamInviteKeyAndCloseKeepSharedBalance(t *testing.T) {
 func TestAdtyTeamMineUsesTheSignedInSite(t *testing.T) {
 	db := prepareReferralDialectDB(t, "sqlite")
 	leader := referralUser(t, db, "team-mine-leader")
-	created, err := CreateAdtyTeamForCurrentUser(leader.Id, "Desk", decimal.RequireFromString("0.80"))
+	_, err := CreateAdtyTeamForCurrentUser(leader.Id, "Desk", decimal.RequireFromString("0.80"))
+	require.ErrorIs(t, err, ErrAdtyTeamForbidden)
+	var leftover int64
+	require.NoError(t, db.Model(&model.AdtyTeam{}).Count(&leftover).Error)
+	assert.Zero(t, leftover)
+	created, err := CreateAdtyTeam(leader.Id, 0, "Desk", decimal.RequireFromString("0.80"))
 	require.NoError(t, err)
 	assert.Equal(t, 0, created.Team.SiteId)
 	mine, err := GetAdtyTeamMine(leader.Id)
@@ -142,4 +147,108 @@ func TestAdtyTeamProtocolPriceUsesBoundKey(t *testing.T) {
 func decimalPtr(value string) *decimal.Decimal {
 	parsed := decimal.RequireFromString(value)
 	return &parsed
+}
+
+func TestAdtyTeamCreateRequiresRootOrAuthorizedOwner(t *testing.T) {
+	db := prepareReferralDialectDB(t, "sqlite")
+	root := referralUser(t, db, "auth-root")
+	require.NoError(t, db.Model(root).Update("role", common.RoleRootUser).Error)
+	root.Role = common.RoleRootUser
+	mainLeader := referralUser(t, db, "auth-main-leader")
+	mainUser := referralUser(t, db, "auth-main-user")
+	admin := referralUser(t, db, "auth-admin")
+	require.NoError(t, db.Model(admin).Update("role", common.RoleAdminUser).Error)
+
+	ownerA := referralUser(t, db, "auth-owner-a")
+	ownerB := referralUser(t, db, "auth-owner-b")
+	siteA := model.AdtySite{OwnerUserId: ownerA.Id, Subdomain: "auth-a", Status: model.AdtySiteStatusActive, CostFactor: decimalPtr("0.80")}
+	siteB := model.AdtySite{OwnerUserId: ownerB.Id, Subdomain: "auth-b", Status: model.AdtySiteStatusActive, CostFactor: decimalPtr("0.80")}
+	require.NoError(t, db.Create(&siteA).Error)
+	require.NoError(t, db.Create(&siteB).Error)
+	// Owners stay on the main site (users.site_id = 0). Using that field as the
+	// team site would wrongly place an owner-created team on the main site.
+	require.Equal(t, 0, ownerA.SiteId)
+	leaderA := referralUser(t, db, "auth-leader-a")
+	memberA := referralUser(t, db, "auth-member-a")
+	leaderB := referralUser(t, db, "auth-leader-b")
+	staffA := referralUser(t, db, "auth-staff-a")
+	require.NoError(t, db.Model(leaderA).Update("site_id", siteA.Id).Error)
+	require.NoError(t, db.Model(memberA).Update("site_id", siteA.Id).Error)
+	require.NoError(t, db.Model(leaderB).Update("site_id", siteB.Id).Error)
+	require.NoError(t, db.Model(staffA).Updates(map[string]any{"site_id": siteA.Id, "staff_site_id": siteA.Id}).Error)
+	leaderA.SiteId, memberA.SiteId, leaderB.SiteId = siteA.Id, siteA.Id, siteB.Id
+	staffA.SiteId, staffA.StaffSiteId = siteA.Id, siteA.Id
+
+	teamCount := func() int64 {
+		t.Helper()
+		var n int64
+		require.NoError(t, db.Model(&model.AdtyTeam{}).Count(&n).Error)
+		return n
+	}
+	start := teamCount()
+
+	_, err := CreateAdtyTeamForCurrentUser(mainUser.Id, "Self", decimal.RequireFromString("0.50"))
+	require.ErrorIs(t, err, ErrAdtyTeamForbidden)
+	_, err = CreateAdtyTeamForCurrentUser(leaderA.Id, "Self", decimal.RequireFromString("0.90"))
+	require.ErrorIs(t, err, ErrAdtyTeamForbidden)
+	_, err = CreateAdtyMainTeamByRoot(mainUser.Id, mainLeader.Id, "Denied", "0.80")
+	require.ErrorIs(t, err, ErrAdtyTeamForbidden)
+	_, err = CreateAdtyMainTeamByRoot(admin.Id, mainLeader.Id, "Denied", "0.80")
+	require.ErrorIs(t, err, ErrAdtyTeamForbidden)
+	_, err = CreateAdtyOwnerSiteTeam(mainUser.Id, siteA.Id, leaderA.Id, "Denied", "0.90")
+	require.Error(t, err)
+	assert.Equal(t, start, teamCount())
+
+	created, err := CreateAdtyMainTeamByRoot(root.Id, mainLeader.Id, "Main Desk", "0.80")
+	require.NoError(t, err)
+	assert.Equal(t, 0, created.Team.SiteId)
+	assert.Equal(t, mainLeader.Id, created.Team.LeaderUserId)
+	assert.NotEqual(t, root.Id, created.Team.LeaderUserId)
+	assert.True(t, created.Team.Discount.Equal(decimal.RequireFromString("0.80")))
+
+	defaulted, err := CreateAdtyMainTeamByRoot(root.Id, mainUser.Id, "Default Price", "")
+	require.NoError(t, err)
+	assert.Equal(t, 0, defaulted.Team.SiteId)
+	assert.Equal(t, mainUser.Id, defaulted.Team.LeaderUserId)
+	assert.True(t, defaulted.Team.Discount.Equal(decimal.NewFromInt(1)))
+
+	owned, err := CreateAdtyOwnerSiteTeam(ownerA.Id, siteA.Id, leaderA.Id, "Site Desk", "0.90")
+	require.NoError(t, err)
+	assert.Equal(t, siteA.Id, owned.Team.SiteId)
+	assert.NotEqual(t, 0, owned.Team.SiteId)
+	assert.Equal(t, leaderA.Id, owned.Team.LeaderUserId)
+	assert.NotEqual(t, ownerA.Id, owned.Team.LeaderUserId)
+	assert.True(t, owned.Team.Discount.Equal(decimal.RequireFromString("0.90")))
+
+	_, err = CreateAdtyOwnerSiteTeam(ownerA.Id, 0, mainLeader.Id, "Main From Owner", "1")
+	require.Error(t, err)
+	_, err = CreateAdtyOwnerSiteTeam(ownerA.Id, siteB.Id, leaderB.Id, "Other Site", "0.90")
+	require.Error(t, err)
+	_, err = CreateAdtyOwnerSiteTeam(ownerB.Id, siteA.Id, leaderA.Id, "Cross Owner", "0.90")
+	require.Error(t, err)
+	_, err = CreateAdtyOwnerSiteTeam(staffA.Id, siteA.Id, memberA.Id, "Staff Create", "0.90")
+	require.Error(t, err)
+
+	missingID := 9_000_001
+	_, err = CreateAdtyOwnerSiteTeam(ownerA.Id, siteA.Id, missingID, "Missing", "0.90")
+	require.ErrorIs(t, err, ErrAdtyTeamForbidden)
+	_, err = CreateAdtyOwnerSiteTeam(ownerA.Id, siteA.Id, leaderB.Id, "Wrong Site Leader", "0.90")
+	require.ErrorIs(t, err, ErrAdtyTeamForbidden)
+	_, err = CreateAdtyOwnerSiteTeam(ownerA.Id, siteA.Id, staffA.Id, "Staff Leader", "0.90")
+	require.ErrorIs(t, err, ErrAdtyTeamForbidden)
+	_, err = CreateAdtyOwnerSiteTeam(ownerA.Id, siteA.Id, leaderA.Id, "Already Leader", "0.90")
+	require.ErrorIs(t, err, ErrAdtyTeamBusy)
+
+	busyMember, err := JoinAdtyTeam(memberA.Id, owned.Team.Id)
+	require.NoError(t, err)
+	assert.Equal(t, model.AdtyTeamRoleMember, busyMember.Role)
+	_, err = CreateAdtyOwnerSiteTeam(ownerA.Id, siteA.Id, memberA.Id, "Already Member", "0.90")
+	require.ErrorIs(t, err, ErrAdtyTeamBusy)
+
+	require.NoError(t, SaveAdtyMainTeamAgreementPrice(created.Team.Id, "0.70"))
+	require.Error(t, SaveAdtyMainTeamAgreementPrice(owned.Team.Id, "0.70"))
+	require.NoError(t, SaveAdtyOwnerSiteTeamDiscount(siteA.Id, ownerA.Id, owned.Team.Id, "0.85"))
+	require.Error(t, SaveAdtyOwnerSiteTeamDiscount(siteA.Id, ownerB.Id, owned.Team.Id, "0.95"))
+	require.Error(t, SaveAdtyOwnerSiteTeamDiscount(siteA.Id, mainUser.Id, owned.Team.Id, "0.95"))
+	require.Error(t, SaveAdtyOwnerSiteTeamDiscount(siteA.Id, leaderA.Id, owned.Team.Id, "0.95"))
 }

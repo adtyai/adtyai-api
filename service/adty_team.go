@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"reflect"
 	"strings"
 	"sync"
@@ -280,12 +281,71 @@ func RevokeAdtyTeamKey(actorId int, teamId int64, tokenId int) error {
 	})
 }
 
-func CreateAdtyTeamForCurrentUser(leaderId int, name string, discount decimal.Decimal) (*AdtyTeamCreated, error) {
-	var user model.User
-	if err := model.DB.Select("id", "site_id").First(&user, leaderId).Error; err != nil {
+// CreateAdtyTeamForCurrentUser is the former self-serve create path.
+// Ordinary users must not create a team or submit a protocol discount.
+func CreateAdtyTeamForCurrentUser(_ int, _ string, _ decimal.Decimal) (*AdtyTeamCreated, error) {
+	return nil, ErrAdtyTeamForbidden
+}
+
+// adtyTeamDefaultPayRatio is "no discount": the team pays the ordinary price.
+var adtyTeamDefaultPayRatio = decimal.NewFromInt(1)
+
+func adtyTeamDiscountOrDefault(raw string) (decimal.Decimal, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return adtyTeamDefaultPayRatio, nil
+	}
+	value, err := decimal.NewFromString(raw)
+	if err != nil {
+		return decimal.Zero, ErrAdtyTeamInvalid
+	}
+	return value, nil
+}
+
+func createAdtyTeamHidingForeignLeader(leaderId, siteId int, name string, discount decimal.Decimal) (*AdtyTeamCreated, error) {
+	created, err := CreateAdtyTeam(leaderId, siteId, name, discount)
+	if err != nil && errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrAdtyTeamForbidden
+	}
+	return created, err
+}
+
+// CreateAdtyMainTeamByRoot creates a main-site team and designates an existing
+// main-site user as the unique leader. Only Root may call this.
+func CreateAdtyMainTeamByRoot(actorId, leaderId int, name, rawDiscount string) (*AdtyTeamCreated, error) {
+	var actor model.User
+	if err := model.DB.Select("id", "role").First(&actor, actorId).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrAdtyTeamForbidden
+		}
 		return nil, err
 	}
-	return CreateAdtyTeam(leaderId, user.SiteId, name, discount)
+	if actor.Role != common.RoleRootUser {
+		return nil, ErrAdtyTeamForbidden
+	}
+	discount, err := adtyTeamDiscountOrDefault(rawDiscount)
+	if err != nil {
+		return nil, err
+	}
+	return createAdtyTeamHidingForeignLeader(leaderId, 0, name, discount)
+}
+
+// CreateAdtyOwnerSiteTeam creates a team on the owner's own site and designates
+// an existing user of that site as the unique leader. The site comes from the
+// trusted owner context, not users.site_id.
+func CreateAdtyOwnerSiteTeam(ownerId, siteId, leaderId int, name, rawDiscount string) (*AdtyTeamCreated, error) {
+	if siteId <= 0 {
+		return nil, ErrAdtyTeamForbidden
+	}
+	site, err := lockOwnerSite(siteId, ownerId)
+	if err != nil {
+		return nil, err
+	}
+	discount, err := adtyTeamDiscountOrDefault(rawDiscount)
+	if err != nil {
+		return nil, err
+	}
+	return createAdtyTeamHidingForeignLeader(leaderId, site.Id, name, discount)
 }
 
 func CreateAdtyTeam(leaderId, siteId int, name string, discount decimal.Decimal) (*AdtyTeamCreated, error) {

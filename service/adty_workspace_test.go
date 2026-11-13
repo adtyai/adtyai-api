@@ -26,7 +26,7 @@ func TestAdtyTeamPageMembersKeysAndFixedLeader(t *testing.T) {
 	db := prepareReferralDialectDB(t, "sqlite")
 	leader := referralUser(t, db, "team-page-leader")
 	member := referralUser(t, db, "team-page-member")
-	created, err := CreateAdtyTeamForCurrentUser(leader.Id, "Desk", decimal.RequireFromString("1"))
+	created, err := CreateAdtyTeam(leader.Id, 0, "Desk", decimal.RequireFromString("1"))
 	require.NoError(t, err)
 	code, err := CreateAdtyTeamInvite(leader.Id, created.Team.Id, time.Hour)
 	require.NoError(t, err)

@@ -175,6 +175,8 @@ func registerAdtyTopUpRoutes(apiRouter *gin.RouterGroup) {
 	middleware.DeclareAdtyAccessTokenRoute("PUT", "/api/adty/admin/site-referral/commission-policy", "scope", "option:write")
 	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/adty/admin/sites/:id/commission-margin", "scope", "option:read")
 	middleware.DeclareAdtyAccessTokenRoute("PUT", "/api/adty/admin/sites/:id/commission-margin", "scope", "option:write")
+	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/admin/teams", "scope", "option:write")
+	apiRouter.POST("/adty/admin/teams", middleware.RootAuth(), controller.PostAdtyMainTeam)
 	middleware.DeclareAdtyAccessTokenRoute("PUT", "/api/adty/admin/teams/:id/agreement-price", "scope", "option:write")
 	apiRouter.PUT("/adty/admin/teams/:id/agreement-price", middleware.RootAuth(), controller.PutAdtyMainTeamAgreementPrice)
 	apiRouter.GET("/adty/admin/site-referral/cap", middleware.RootAuth(), controller.GetAdtySiteReferralCap)
@@ -434,6 +436,7 @@ func registerAdtyResellerRoutes(apiRouter *gin.RouterGroup) {
 		{http.MethodGet, "/orders/summary", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerOrderSummary}},
 		{http.MethodGet, "/orders/:trade_no", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerOrder}},
 		{http.MethodGet, "/teams", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerSiteTeams}},
+		{http.MethodPost, "/teams", "wallet:write", []gin.HandlerFunc{controller.PostAdtyOwnerSiteTeam}},
 		{http.MethodPut, "/teams/:id/discount", "wallet:write", []gin.HandlerFunc{controller.PutAdtyOwnerSiteTeamDiscount}},
 		{http.MethodGet, "/referral", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerSiteReferral}},
 		{http.MethodPut, "/referral", "wallet:write", []gin.HandlerFunc{controller.PutAdtyOwnerSiteReferral}},

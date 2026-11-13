@@ -118,20 +118,46 @@ func GetAdtyTeamTopups(c *gin.Context) {
 }
 
 func PostAdtyTeam(c *gin.Context) {
+	common.ApiErrorStatus(c, http.StatusForbidden, service.ErrAdtyTeamForbidden)
+}
+
+func PostAdtyMainTeam(c *gin.Context) {
+	if c.GetInt("role") != common.RoleRootUser {
+		common.ApiErrorStatus(c, http.StatusForbidden, common.NewMessage("No permission to perform this action"))
+		return
+	}
 	var body struct {
 		Name     string `json:"name"`
+		LeaderId int    `json:"leader_id"`
 		Discount string `json:"discount"`
 	}
 	if err := common.DecodeJson(c.Request.Body, &body); err != nil {
 		common.ApiErrorT(c, "Invalid parameters")
 		return
 	}
-	discount, err := decimal.NewFromString(body.Discount)
+	created, err := service.CreateAdtyMainTeamByRoot(c.GetInt("id"), body.LeaderId, body.Name, body.Discount)
 	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, created)
+}
+
+func PostAdtyOwnerSiteTeam(c *gin.Context) {
+	site, ok := adtyOwnerSiteOr403(c)
+	if !ok {
+		return
+	}
+	var body struct {
+		Name     string `json:"name"`
+		LeaderId int    `json:"leader_id"`
+		Discount string `json:"discount"`
+	}
+	if err := common.DecodeJson(c.Request.Body, &body); err != nil {
 		common.ApiErrorT(c, "Invalid parameters")
 		return
 	}
-	created, err := service.CreateAdtyTeamForCurrentUser(c.GetInt("id"), body.Name, discount)
+	created, err := service.CreateAdtyOwnerSiteTeam(c.GetInt("id"), site.Id, body.LeaderId, body.Name, body.Discount)
 	if err != nil {
 		common.ApiError(c, err)
 		return
