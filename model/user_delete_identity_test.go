@@ -30,7 +30,7 @@ func TestSoftDeleteReleasesUsernameEmailAndWeChat(t *testing.T) {
 	assert.Empty(t, stored.Email)
 	assert.Empty(t, stored.WeChatId)
 	assert.False(t, IsWeChatIdAlreadyTaken("wx-alice-delete"))
-	assert.False(t, IsEmailAlreadyTaken("alice-delete@example.com"))
+	assert.False(t, IsEmailAlreadyTaken("alice-delete@example.com", 0))
 
 	var stillNamed int64
 	require.NoError(t, DB.Unscoped().Model(&User{}).Where("username = ?", "alice-delete").Count(&stillNamed).Error)

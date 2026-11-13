@@ -256,14 +256,14 @@ func TestEnsureEmailAvailableRejectsExistingEmailCaseInsensitive(t *testing.T) {
 		Status:   common.UserStatusEnabled,
 	}).Error)
 
-	err := EnsureEmailAvailable(" taken@example.COM ", 0)
+	err := EnsureEmailAvailable(" taken@example.COM ", 0, 0)
 	require.ErrorIs(t, err, ErrEmailAlreadyTaken)
 
-	user, err := GetUniqueUserByEmail("TAKEN@example.com")
+	user, err := GetUniqueUserByEmail("TAKEN@example.com", 0)
 	require.NoError(t, err)
 	assert.Equal(t, "existing", user.Username)
 
-	require.NoError(t, EnsureEmailAvailable("taken@example.com", user.Id))
+	require.NoError(t, EnsureEmailAvailable("taken@example.com", 0, user.Id))
 }
 
 func TestInsertRejectsDuplicateEmailWithoutUniqueIndex(t *testing.T) {
@@ -411,45 +411,44 @@ func TestValidateAndFillAcceptsEmailRegardlessOfCase(t *testing.T) {
 	assert.Equal(t, "case-mail-user", exact.Username)
 
 	require.NoError(t, DB.Create(&User{
-		Username: "ambiguous-upper",
+		Username: "site-mail-user",
 		Password: hash,
-		Email:    "LEGACY@example.com",
+		Email:    "shared@example.com",
 		Status:   common.UserStatusEnabled,
+		SiteId:   7,
 	}).Error)
-	require.NoError(t, DB.Create(&User{
-		Username: "ambiguous-lower",
-		Password: hash,
-		Email:    "legacy@example.com",
-		Status:   common.UserStatusEnabled,
-	}).Error)
-	ambiguous := User{Username: "Legacy@Example.com", Password: "correct-horse-1"}
-	require.ErrorIs(t, ambiguous.ValidateAndFill(), ErrInvalidCredentials)
+	crossSite := User{Username: "shared@example.com", Password: "correct-horse-1", SiteId: 7}
+	require.NoError(t, crossSite.ValidateAndFill())
+	assert.Equal(t, "site-mail-user", crossSite.Username)
+	missingOnMain := User{Username: "shared@example.com", Password: "correct-horse-1"}
+	require.ErrorIs(t, missingOnMain.ValidateAndFill(), ErrInvalidCredentials)
 }
 
 func TestResetUserPasswordByEmailRequiresSingleActiveMatch(t *testing.T) {
 	setupUserUpdateTestState(t)
 
 	require.NoError(t, DB.Create(&User{
-		Username: "duplicate-1",
-		Password: "old-1",
-		Email:    "legacy@example.com",
+		Username: "main-shared",
+		Password: "old-main",
+		Email:    "shared-reset@example.com",
 		Status:   common.UserStatusEnabled,
 	}).Error)
 	require.NoError(t, DB.Create(&User{
-		Username: "duplicate-2",
-		Password: "old-2",
-		Email:    "LEGACY@example.com",
+		Username: "site-shared",
+		Password: "old-site",
+		Email:    "SHARED-RESET@example.com",
 		Status:   common.UserStatusEnabled,
+		SiteId:   9,
 	}).Error)
 
-	err := ResetUserPasswordByEmail("legacy@example.com", "NewPassword123")
-	require.ErrorIs(t, err, ErrEmailAmbiguous)
+	require.NoError(t, ResetUserPasswordByEmail("shared-reset@example.com", "NewPassword123", 0))
 
-	var duplicates []User
-	require.NoError(t, DB.Where("LOWER(email) = ?", "legacy@example.com").Order("username asc").Find(&duplicates).Error)
-	require.Len(t, duplicates, 2)
-	assert.Equal(t, "old-1", duplicates[0].Password)
-	assert.Equal(t, "old-2", duplicates[1].Password)
+	var main User
+	require.NoError(t, DB.Where("username = ?", "main-shared").First(&main).Error)
+	assert.True(t, common.ValidatePasswordAndHash("NewPassword123", main.Password))
+	var site User
+	require.NoError(t, DB.Where("username = ?", "site-shared").First(&site).Error)
+	assert.Equal(t, "old-site", site.Password)
 
 	require.NoError(t, DB.Create(&User{
 		Username: "unique",
@@ -458,13 +457,13 @@ func TestResetUserPasswordByEmailRequiresSingleActiveMatch(t *testing.T) {
 		Status:   common.UserStatusEnabled,
 	}).Error)
 
-	require.NoError(t, ResetUserPasswordByEmail("UNIQUE@example.com", "NewPassword123"))
+	require.NoError(t, ResetUserPasswordByEmail("UNIQUE@example.com", "NewPassword123", 0))
 
 	var unique User
 	require.NoError(t, DB.Where("username = ?", "unique").First(&unique).Error)
 	assert.True(t, common.ValidatePasswordAndHash("NewPassword123", unique.Password))
 
-	err = ResetUserPasswordByEmail("missing@example.com", "NewPassword123")
+	err := ResetUserPasswordByEmail("missing@example.com", "NewPassword123", 0)
 	require.True(t, errors.Is(err, ErrEmailNotFound))
 }
 

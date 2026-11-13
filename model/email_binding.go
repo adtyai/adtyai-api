@@ -40,7 +40,11 @@ func CreateEmailBinding(identity AuthSessionIdentity, state EmailBindingState) (
 		if err := validateEmailBindingAccountWithTx(tx, identity, &state); err != nil {
 			return err
 		}
-		if err := ensureEmailAvailableWithTx(tx, state.Email, identity.UserID); err != nil {
+		siteID, err := siteIDForUser(tx, identity.UserID)
+		if err != nil {
+			return err
+		}
+		if err := ensureEmailAvailableWithTx(tx, state.Email, siteID, identity.UserID); err != nil {
 			return err
 		}
 		payload, err := common.Marshal(state)
@@ -108,7 +112,11 @@ func CompleteEmailBinding(identity AuthSessionIdentity, token, email, newCode, o
 		if email == "" || email != NormalizeEmail(email) {
 			return ErrAuthFlowInvalid
 		}
-		if err := lockNormalizedEmail(tx, email); err != nil {
+		siteID, err := siteIDForUser(tx, identity.UserID)
+		if err != nil {
+			return err
+		}
+		if err := lockNormalizedEmail(tx, email, siteID); err != nil {
 			return err
 		}
 		flow, lockedState, err := lockEmailBindingWithTx(tx, identity, token)
@@ -135,10 +143,13 @@ func CompleteEmailBinding(identity AuthSessionIdentity, token, email, newCode, o
 			}
 			return tx.Model(flow).Update("payload", string(payload)).Error
 		}
-		if err := ensureEmailAvailableWithTx(tx, state.Email, identity.UserID); err != nil {
+		if err := ensureEmailAvailableWithTx(tx, state.Email, siteID, identity.UserID); err != nil {
 			return err
 		}
 		if err := tx.Model(&User{}).Where("id = ?", identity.UserID).Update("email", state.Email).Error; err != nil {
+			if isSiteEmailUniqueViolation(err) {
+				return ErrEmailAlreadyTaken
+			}
 			return err
 		}
 		return tx.Model(flow).Update("consumed_at", time.Now()).Error

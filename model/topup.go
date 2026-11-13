@@ -601,14 +601,14 @@ func RechargeCreem(referenceId string, customerEmail string, customerName string
 		// 回调邮箱只在账号还没有邮箱、且没有别人占用时写入。占用时仍入账，不把别人的邮箱记到这个账号上。
 		if customerEmail != "" {
 			var user User
-			err = tx.Select("id", "email").Where("id = ?", topUp.UserId).First(&user).Error
+			err = tx.Select("id", "email", "site_id").Where("id = ?", topUp.UserId).First(&user).Error
 			if err != nil {
 				return err
 			}
 			normalized := NormalizeEmail(customerEmail)
 			if user.Email == "" && normalized != "" {
-				err = withNormalizedEmailLock(tx, normalized, func(locked *gorm.DB) error {
-					availableErr := ensureEmailAvailableWithTx(locked, normalized, topUp.UserId)
+				err = withNormalizedEmailLock(tx, normalized, user.SiteId, func(locked *gorm.DB) error {
+					availableErr := ensureEmailAvailableWithTx(locked, normalized, user.SiteId, topUp.UserId)
 					if errors.Is(availableErr, ErrEmailAlreadyTaken) {
 						common.SysLog(common.LogText("creem callback email already taken trade_no=%s user_id=%d", topUp.TradeNo, topUp.UserId))
 						return nil

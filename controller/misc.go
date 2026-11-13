@@ -270,13 +270,14 @@ func SendEmailVerification(c *gin.Context) {
 		return
 	}
 	// 二开：已注册的邮箱不发验证码，改发一封提醒，响应和正常情况完全一样（任务 7.3）
-	if model.IsEmailAlreadyTaken(email) {
+	siteID := service.AdtyRequestSiteID(c)
+	if model.IsEmailAlreadyTaken(email, siteID) {
 		service.AdtySendRegisteredReminder(c, email)
 		c.JSON(http.StatusOK, gin.H{"success": true, "message": ""})
 		return
 	}
 	code := common.GenerateVerificationCode(6)
-	if err := common.RegisterVerificationCodeWithKey(email, code, common.EmailVerificationPurpose); err != nil {
+	if err := common.RegisterVerificationCodeWithKey(model.SiteEmailCodeKey(email, siteID), code, common.EmailVerificationPurpose); err != nil {
 		// Same empty success as a registered address. A 503 here would show that the address is new.
 		c.JSON(http.StatusOK, gin.H{"success": true, "message": ""})
 		return
@@ -312,7 +313,7 @@ func SendPasswordResetEmail(c *gin.Context) {
 		common.ApiErrorStatus(c, http.StatusServiceUnavailable, common.NewMessage("Please try again later"))
 		return
 	}
-	if user, err := model.GetUniqueUserByEmail(email); err == nil {
+	if user, err := model.GetUniqueUserByEmail(email, service.AdtyRequestSiteID(c)); err == nil {
 		// Preserve the same response for unknown addresses and store failures.
 		_ = sendPasswordResetInstructions(c, user)
 	} else if err != nil && !errors.Is(err, model.ErrEmailNotFound) {
@@ -328,12 +329,12 @@ func SendPasswordResetEmail(c *gin.Context) {
 // No caller receives the reset token or chooses the customer's new password.
 func sendPasswordResetInstructions(c *gin.Context, user *model.User) error {
 	email := model.NormalizeEmail(user.Email)
-	current, err := model.GetUniqueUserByEmail(email)
+	current, err := model.GetUniqueUserByEmail(email, user.SiteId)
 	if err != nil || current.Id != user.Id || current.Status != common.UserStatusEnabled {
 		return common.NewMessage("Invalid parameters")
 	}
 	code := common.GenerateVerificationCode(0)
-	if err := common.RegisterVerificationCodeWithKey(email, code, common.PasswordResetPurpose); err != nil {
+	if err := common.RegisterVerificationCodeWithKey(model.SiteEmailCodeKey(email, current.SiteId), code, common.PasswordResetPurpose); err != nil {
 		return err
 	}
 	// Derive branding and URL from SQL membership, never from the request Host.
@@ -377,12 +378,14 @@ func ResetPassword(c *gin.Context) {
 		common.ApiErrorT(c, "Invalid parameters")
 		return
 	}
-	issued, ok := common.ConsumeVerificationCodeWithKey(req.Email, req.Token, common.PasswordResetPurpose)
+	siteID := service.AdtyRequestSiteID(c)
+	codeKey := model.SiteEmailCodeKey(req.Email, siteID)
+	issued, ok := common.ConsumeVerificationCodeWithKey(codeKey, req.Token, common.PasswordResetPurpose)
 	if !ok {
 		common.ApiErrorT(c, "Password reset link is invalid or has expired")
 		return
 	}
-	outcome, err := model.ResetUserPasswordByEmailWithOutcome(req.Email, req.Password)
+	outcome, err := model.ResetUserPasswordByEmailWithOutcome(req.Email, req.Password, siteID)
 	if outcome.UserID > 0 {
 		committed, notificationFailed := outcome.State == model.PasswordResetCommitted, false
 		if committed {
@@ -390,7 +393,7 @@ func ResetPassword(c *gin.Context) {
 			if lang == "" {
 				lang = i18n.StatedLang(c)
 			}
-			notificationFailed = service.NotifyAccountSecurityChange(lang, outcome.Email, i18n.MsgSecurityEventPasswordUpdated) != nil
+			notificationFailed = service.NotifyAccountSecurityChange(lang, outcome.Email, outcome.UserID, i18n.MsgSecurityEventPasswordUpdated) != nil
 		}
 		c.Set("role", outcome.Role)
 		defer recordUserSecurityAudit(c, outcome.UserID, "user.password_change", map[string]any{
@@ -403,7 +406,7 @@ func ResetPassword(c *gin.Context) {
 			return
 		}
 		if outcome.State == model.PasswordResetNotCommitted {
-			common.RestoreVerificationCodeWithKey(req.Email, req.Token, common.PasswordResetPurpose, issued)
+			common.RestoreVerificationCodeWithKey(codeKey, req.Token, common.PasswordResetPurpose, issued)
 		}
 		common.ApiError(c, err)
 		return

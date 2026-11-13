@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestRegisteredReminderUsesAccountSiteNotRequestSite(t *testing.T) {
+func TestRegisteredReminderUsesCurrentSiteAccount(t *testing.T) {
 	require.NoError(t, i18n.Init())
 	db := prepareSiteDB(t)
 	_, accountSite := openActiveSite(t, db, "acct")
@@ -24,6 +24,9 @@ func TestRegisteredReminderUsesAccountSiteNotRequestSite(t *testing.T) {
 	requestSite, err = GetAdtySite(requestSite.Id)
 	require.NoError(t, err)
 	user := siteCustomer(t, db, accountSite, "remind-customer")
+	other := siteCustomer(t, db, requestSite, "remind-other")
+	require.NoError(t, db.Model(other).Update("email", user.Email).Error)
+	other.Email = user.Email
 	ResetAdtyReminderThrottle()
 
 	var gotFrom, gotContent string
@@ -36,6 +39,16 @@ func TestRegisteredReminderUsesAccountSiteNotRequestSite(t *testing.T) {
 	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
 	ctx.Request = httptest.NewRequest("GET", "/api/verification?email="+user.Email, nil)
 	ctx.Set(AdtySiteContextKey, requestSite)
+	require.True(t, AdtySendRegisteredReminder(ctx, user.Email))
+	assert.Contains(t, gotContent, "Request Shop")
+	assert.NotContains(t, gotContent, "Account Shop")
+	assert.Contains(t, gotFrom, "Request Shop")
+	assert.NotContains(t, gotFrom, "Account Shop")
+
+	ResetAdtyReminderThrottle()
+	ctx, _ = gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Request = httptest.NewRequest("GET", "/api/verification?email="+user.Email, nil)
+	ctx.Set(AdtySiteContextKey, accountSite)
 	require.True(t, AdtySendRegisteredReminder(ctx, user.Email))
 	assert.Contains(t, gotContent, "Account Shop")
 	assert.NotContains(t, gotContent, "Request Shop")

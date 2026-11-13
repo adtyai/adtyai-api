@@ -560,7 +560,7 @@ func handleOAuthBind(c *gin.Context, providerName string, provider oauth.Provide
 		writeSecurityOperationError(c, err)
 		return true, true
 	}
-	notificationFailed := service.NotifyAccountSecurityChange(service.AccountMailLanguage(c, user.Id), user.Email, i18n.MsgSecurityEventLoginLinked, map[string]any{"Provider": provider.GetName()}) != nil
+	notificationFailed := service.NotifyAccountSecurityChange(service.AccountMailLanguage(c, user.Id), user.Email, user.Id, i18n.MsgSecurityEventLoginLinked, map[string]any{"Provider": provider.GetName()}) != nil
 	common.ApiSuccessT(c, "Binding successful", gin.H{"action": "bind", "notification_warning": notificationFailed})
 	return true, notificationFailed
 }
@@ -637,7 +637,7 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 			}
 			if written {
 				user.GitHubId = oauthUser.ProviderUserID
-				notificationFailed := service.NotifyAccountSecurityChange(service.AccountMailLanguage(c, user.Id), user.Email, i18n.MsgSecurityEventLoginLinked, map[string]any{"Provider": provider.GetName()}) != nil
+				notificationFailed := service.NotifyAccountSecurityChange(service.AccountMailLanguage(c, user.Id), user.Email, user.Id, i18n.MsgSecurityEventLoginLinked, map[string]any{"Provider": provider.GetName()}) != nil
 				recordLegacyGitHubBindingAudit(c, user, true, map[string]any{
 					"legacy_id": legacyID, "provider_user_id": oauthUser.ProviderUserID,
 					"verified_email_matched": true, "notification_failed": notificationFailed,
@@ -656,7 +656,7 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 	user.Username = provider.GetProviderPrefix() + strconv.Itoa(model.GetMaxUserId()+1)
 
 	if oauthUser.Username != "" {
-		if exists, err := model.CheckUserExistOrDeleted(oauthUser.Username, ""); err == nil && !exists {
+		if exists, err := model.CheckUserExistOrDeleted(oauthUser.Username, "", 0); err == nil && !exists {
 			// 防止索引退化
 			// 二开：含 @ 的不用，保留自动生成的名字（任务 8.7）
 			if len(oauthUser.Username) <= model.UserNameMaxLength && !strings.Contains(oauthUser.Username, "@") {
@@ -672,9 +672,15 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 	} else {
 		user.DisplayName = provider.GetName() + " User"
 	}
+	// 二开：和密码注册一样，分站上的新用户归当前站；closing 的站不再接受注册（任务 11.2）
+	siteId, registrable := service.AdtyRegisterSiteId(c)
+	if !registrable {
+		return nil, nil, &OAuthRegistrationDisabledError{}
+	}
+	user.SiteId = siteId
 	if oauthUser.Email != "" {
 		user.Email = model.NormalizeEmail(oauthUser.Email)
-		if err := model.EnsureEmailAvailable(user.Email, 0); err != nil {
+		if err := model.EnsureEmailAvailable(user.Email, siteId, 0); err != nil {
 			if errors.Is(err, model.ErrEmailAlreadyTaken) {
 				return nil, nil, &OAuthEmailAlreadyTakenError{}
 			}
@@ -683,12 +689,6 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 	}
 	user.Role = common.RoleCommonUser
 	user.Status = common.UserStatusEnabled
-	// 二开：和密码注册一样，分站上的新用户归当前站；closing 的站不再接受注册（任务 11.2）
-	siteId, registrable := service.AdtyRegisterSiteId(c)
-	if !registrable {
-		return nil, nil, &OAuthRegistrationDisabledError{}
-	}
-	user.SiteId = siteId
 	if !service.AdtyRegisterTermsAccepted(c, siteId) {
 		return nil, nil, &OAuthSiteTermsError{}
 	}

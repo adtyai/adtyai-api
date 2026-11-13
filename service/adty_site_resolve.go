@@ -227,6 +227,15 @@ func AdtyRejectSessionAPIStatus(host string) int {
 	return http.StatusNotFound
 }
 
+// AdtyRequestSiteID is the current request's site. The main site is 0.
+// It uses the trusted host mapping already placed in the request context.
+func AdtyRequestSiteID(c *gin.Context) int {
+	if site := AdtySiteForRequest(c); site != nil {
+		return site.Id
+	}
+	return 0
+}
+
 // AdtySiteForRequest 是当前请求的站点（11.2 的中间件放进上下文）；主站返回 nil。
 // 只认站点表，不读 Host 头之外的东西（防 Host header injection，执行层决定 28）。
 func AdtySiteForRequest(c *gin.Context) *model.AdtySite {

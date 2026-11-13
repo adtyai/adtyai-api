@@ -291,17 +291,17 @@ func generateDefaultSidebarConfigForRole(userRole int) string {
 }
 
 // CheckUserExistOrDeleted check if user exist or deleted, if not exist, return false, nil, if deleted or exist, return true, nil
-func CheckUserExistOrDeleted(username string, email string) (bool, error) {
+func CheckUserExistOrDeleted(username string, email string, siteID int) (bool, error) {
 	var user User
 
-	// err := DB.Unscoped().First(&user, "username = ? or email = ?", username, email).Error
-	// check email if empty
+	// Usernames stay platform-unique, including soft-deleted rows. Emails are
+	// unique per site, including leftover addresses on soft-deleted rows.
 	var err error
 	email = NormalizeEmail(email)
 	if email == "" {
 		err = DB.Unscoped().First(&user, "username = ?", username).Error
 	} else {
-		err = DB.Unscoped().First(&user, "username = ? or LOWER(email) = ?", username, email).Error
+		err = DB.Unscoped().First(&user, "username = ? or (LOWER(email) = ? AND site_id = ?)", username, email, siteID).Error
 	}
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -319,29 +319,29 @@ func NormalizeEmail(email string) string {
 	return strings.ToLower(strings.TrimSpace(email))
 }
 
-func emailQuery(tx *gorm.DB, email string) *gorm.DB {
+func emailQuery(tx *gorm.DB, email string, siteID int) *gorm.DB {
 	if tx == nil {
 		tx = DB
 	}
-	return tx.Unscoped().Model(&User{}).Where("LOWER(email) = ?", NormalizeEmail(email))
+	return tx.Unscoped().Model(&User{}).Where("LOWER(email) = ? AND site_id = ?", NormalizeEmail(email), siteID)
 }
 
-func CountUsersByEmail(email string) (int64, error) {
+func CountUsersByEmail(email string, siteID int) (int64, error) {
 	email = NormalizeEmail(email)
 	if email == "" {
 		return 0, nil
 	}
 	var count int64
-	err := emailQuery(DB, email).Count(&count).Error
+	err := emailQuery(DB, email, siteID).Count(&count).Error
 	return count, err
 }
 
-func IsEmailAvailable(email string, excludeUserID int) (bool, error) {
+func IsEmailAvailable(email string, siteID int, excludeUserID int) (bool, error) {
 	email = NormalizeEmail(email)
 	if email == "" {
 		return true, nil
 	}
-	query := emailQuery(DB, email)
+	query := emailQuery(DB, email, siteID)
 	if excludeUserID > 0 {
 		query = query.Where("id <> ?", excludeUserID)
 	}
@@ -352,8 +352,8 @@ func IsEmailAvailable(email string, excludeUserID int) (bool, error) {
 	return count == 0, nil
 }
 
-func EnsureEmailAvailable(email string, excludeUserID int) error {
-	available, err := IsEmailAvailable(email, excludeUserID)
+func EnsureEmailAvailable(email string, siteID int, excludeUserID int) error {
+	available, err := IsEmailAvailable(email, siteID, excludeUserID)
 	if err != nil {
 		return err
 	}
@@ -364,9 +364,10 @@ func EnsureEmailAvailable(email string, excludeUserID int) error {
 }
 
 // withNormalizedEmailLock serializes concurrent writers that target the same
-// normalized email inside tx, so a "check then write" sequence cannot be raced
-// by two transactions. It must be called inside an active transaction; the lock
-// is scoped to that transaction and released on commit/rollback.
+// normalized email on the same site inside tx, so a "check then write" sequence
+// cannot be raced by two transactions. Cross-site writers of the same address
+// are not blocked. It must be called inside an active transaction; the lock is
+// scoped to that transaction and released on commit/rollback.
 //
 //   - PostgreSQL: transaction-level advisory lock keyed by the normalized email.
 //   - MySQL (default REPEATABLE READ): a locking read that takes a next-key/gap
@@ -375,26 +376,26 @@ func EnsureEmailAvailable(email string, excludeUserID int) error {
 //     write, so a racing second write fails instead of duplicating.
 //
 // An empty email is allowed to repeat and needs no serialization.
-func withNormalizedEmailLock(tx *gorm.DB, email string, fn func(tx *gorm.DB) error) error {
-	if err := lockNormalizedEmail(tx, email); err != nil {
+func withNormalizedEmailLock(tx *gorm.DB, email string, siteID int, fn func(tx *gorm.DB) error) error {
+	if err := lockNormalizedEmail(tx, email, siteID); err != nil {
 		return err
 	}
 	return fn(tx)
 }
 
-func lockNormalizedEmail(tx *gorm.DB, email string) error {
+func lockNormalizedEmail(tx *gorm.DB, email string, siteID int) error {
 	email = NormalizeEmail(email)
 	if email == "" {
 		return nil
 	}
 	switch {
 	case common.UsingMainDatabase(common.DatabaseTypePostgreSQL):
-		if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtext(?))", email).Error; err != nil {
+		if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtext(?))", siteEmailLockKey(email, siteID)).Error; err != nil {
 			return err
 		}
 	case common.UsingMainDatabase(common.DatabaseTypeMySQL):
 		var ids []int
-		if err := tx.Raw("SELECT id FROM users WHERE email = ? FOR UPDATE", email).Scan(&ids).Error; err != nil {
+		if err := tx.Raw("SELECT id FROM users WHERE site_id = ? AND email = ? FOR UPDATE", siteID, email).Scan(&ids).Error; err != nil {
 			return err
 		}
 	}
@@ -600,7 +601,7 @@ func HardDeleteUserById(id int) (int64, error) {
 
 func (user *User) prepareForInsert(tx *gorm.DB) error {
 	user.Email = NormalizeEmail(user.Email)
-	if err := ensureEmailAvailableWithTx(tx, user.Email, 0); err != nil {
+	if err := ensureEmailAvailableWithTx(tx, user.Email, user.SiteId, 0); err != nil {
 		return err
 	}
 	if user.Password == "" {
@@ -617,12 +618,23 @@ func (user *User) prepareForInsert(tx *gorm.DB) error {
 func BindEmailToUser(user *User, email string) error {
 	email = NormalizeEmail(email)
 	if err := DB.Transaction(func(tx *gorm.DB) error {
-		return withNormalizedEmailLock(tx, email, func(tx *gorm.DB) error {
-			if err := ensureEmailAvailableWithTx(tx, email, user.Id); err != nil {
+		siteID, err := siteIDForUser(tx, user.Id)
+		if err != nil {
+			return err
+		}
+		user.SiteId = siteID
+		return withNormalizedEmailLock(tx, email, siteID, func(tx *gorm.DB) error {
+			if err := ensureEmailAvailableWithTx(tx, email, siteID, user.Id); err != nil {
 				return err
 			}
 			user.Email = email
-			return user.UpdateWithTx(tx, false)
+			if err := user.UpdateWithTx(tx, false); err != nil {
+				if isSiteEmailUniqueViolation(err) {
+					return ErrEmailAlreadyTaken
+				}
+				return err
+			}
+			return nil
 		})
 	}); err != nil {
 		return err
@@ -630,12 +642,12 @@ func BindEmailToUser(user *User, email string) error {
 	return updateUserCache(*user)
 }
 
-func ensureEmailAvailableWithTx(tx *gorm.DB, email string, excludeUserID int) error {
+func ensureEmailAvailableWithTx(tx *gorm.DB, email string, siteID int, excludeUserID int) error {
 	email = NormalizeEmail(email)
 	if email == "" {
 		return nil
 	}
-	query := emailQuery(tx, email)
+	query := emailQuery(tx, email, siteID)
 	if excludeUserID > 0 {
 		query = query.Where("id <> ?", excludeUserID)
 	}
@@ -651,7 +663,7 @@ func ensureEmailAvailableWithTx(tx *gorm.DB, email string, excludeUserID int) er
 
 func (user *User) Insert(_ int) error {
 	if err := DB.Transaction(func(tx *gorm.DB) error {
-		return withNormalizedEmailLock(tx, user.Email, func(tx *gorm.DB) error {
+		return withNormalizedEmailLock(tx, user.Email, user.SiteId, func(tx *gorm.DB) error {
 			if err := user.prepareForInsert(tx); err != nil {
 				return err
 			}
@@ -664,7 +676,7 @@ func (user *User) Insert(_ int) error {
 				user.SetSetting(defaultSetting)
 			}
 
-			return tx.Create(user).Error
+			return createUserWithEmailConflict(tx, user)
 		})
 	}); err != nil {
 		return err
@@ -703,7 +715,7 @@ func (user *User) FinishInsert(_ int) {
 // This is used for OAuth registration where user creation and binding need to be atomic.
 // Post-creation tasks (sidebar config, logs) are handled after the transaction commits.
 func (user *User) InsertWithTx(tx *gorm.DB, _ int) error {
-	return withNormalizedEmailLock(tx, user.Email, func(tx *gorm.DB) error {
+	return withNormalizedEmailLock(tx, user.Email, user.SiteId, func(tx *gorm.DB) error {
 		if err := user.prepareForInsert(tx); err != nil {
 			return err
 		}
@@ -715,7 +727,7 @@ func (user *User) InsertWithTx(tx *gorm.DB, _ int) error {
 			user.SetSetting(defaultSetting)
 		}
 
-		return tx.Create(user).Error
+		return createUserWithEmailConflict(tx, user)
 	})
 }
 
@@ -1148,9 +1160,10 @@ func (user *User) ValidateAndFill() (err error) {
 	// Usernames stay case-sensitive. Email is stored lowercase, and PostgreSQL
 	// equality is case-sensitive, so an address typed with different case is
 	// looked up through the same normalized match as registration.
+	siteID := user.SiteId
 	err = DB.Where("username = ?", username).First(user).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		matched, emailErr := GetUniqueUserByEmail(username)
+		matched, emailErr := GetUniqueUserByEmail(username, siteID)
 		switch {
 		case emailErr == nil:
 			*user = *matched
@@ -1184,7 +1197,11 @@ func (user *User) FillUserByEmail() error {
 	if user.Email == "" {
 		return common.NewMessage("Email is empty!")
 	}
-	DB.Where(User{Email: user.Email}).First(user)
+	matched, err := GetUniqueUserByEmail(user.Email, user.SiteId)
+	if err != nil {
+		return err
+	}
+	*user = *matched
 	return nil
 }
 
@@ -1231,18 +1248,18 @@ func (user *User) FillUserByTelegramId() error {
 	return nil
 }
 
-func IsEmailAlreadyTaken(email string) bool {
-	count, err := CountUsersByEmail(email)
+func IsEmailAlreadyTaken(email string, siteID int) bool {
+	count, err := CountUsersByEmail(email, siteID)
 	return err == nil && count > 0
 }
 
-func GetUniqueUserByEmail(email string) (*User, error) {
+func GetUniqueUserByEmail(email string, siteID int) (*User, error) {
 	email = NormalizeEmail(email)
 	if email == "" {
 		return nil, ErrEmailNotFound
 	}
 	var users []User
-	if err := DB.Where("LOWER(email) = ?", email).Limit(2).Find(&users).Error; err != nil {
+	if err := DB.Where("LOWER(email) = ? AND site_id = ?", email, siteID).Limit(2).Find(&users).Error; err != nil {
 		return nil, err
 	}
 	switch len(users) {
@@ -1343,17 +1360,17 @@ type PasswordResetOutcome struct {
 	Language string
 }
 
-func ResetUserPasswordByEmail(email string, password string) error {
-	_, err := ResetUserPasswordByEmailWithOutcome(email, password)
+func ResetUserPasswordByEmail(email string, password string, siteID int) error {
+	_, err := ResetUserPasswordByEmailWithOutcome(email, password, siteID)
 	return err
 }
 
-func ResetUserPasswordByEmailWithOutcome(email string, password string) (PasswordResetOutcome, error) {
+func ResetUserPasswordByEmailWithOutcome(email string, password string, siteID int) (PasswordResetOutcome, error) {
 	outcome := PasswordResetOutcome{}
 	if email == "" || password == "" {
 		return outcome, common.NewMessage("Email or password is empty!")
 	}
-	user, err := GetUniqueUserByEmail(email)
+	user, err := GetUniqueUserByEmail(email, siteID)
 	if err != nil {
 		return outcome, err
 	}
@@ -1372,7 +1389,7 @@ func ResetUserPasswordByEmailWithOutcome(email string, password string) (Passwor
 			}
 			return err
 		}
-		if NormalizeEmail(current.Email) != NormalizeEmail(email) {
+		if NormalizeEmail(current.Email) != NormalizeEmail(email) || current.SiteId != siteID {
 			return ErrEmailNotFound
 		}
 		outcome.UserID, outcome.Role = current.Id, current.Role

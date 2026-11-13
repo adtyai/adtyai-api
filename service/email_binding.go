@@ -88,7 +88,7 @@ func StartEmailBinding(identity AuthIdentity, authorization *model.AuthFlowAutho
 	}
 	data := emailBindingData(token, flow, &state)
 	if state.CurrentEmail != "" && !requireOld {
-		data.NotificationWarning = NotifyAccountSecurityChange(lang, state.CurrentEmail, i18n.MsgSecurityEventEmailChangeRequested) != nil
+		data.NotificationWarning = NotifyAccountSecurityChange(lang, state.CurrentEmail, identity.UserID, i18n.MsgSecurityEventEmailChangeRequested) != nil
 	}
 	return data, nil
 }

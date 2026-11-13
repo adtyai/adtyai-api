@@ -115,7 +115,7 @@ func TestVerificationDoesNotSendACodeWhenTheStoreIsDown(t *testing.T) {
 		assert.NotEqual(t, "new@example.com", mail.to)
 		assert.NotContains(t, mail.content, "/user/reset")
 	}
-	assert.False(t, common.VerifyCodeWithKey("new@example.com", "000000", common.EmailVerificationPurpose))
+	assert.False(t, common.VerifyCodeWithKey(model.SiteEmailCodeKey("new@example.com", 0), "000000", common.EmailVerificationPurpose))
 
 	common.RDB = nil
 	before := len(sent())
@@ -169,9 +169,9 @@ func TestVerificationSameResponseForRegisteredEmail(t *testing.T) {
 	assert.Equal(t, "new@example.com", mails[0].to)
 	assert.Equal(t, "taken@example.com", mails[1].to)
 	assert.Contains(t, mails[1].content, "sign in or reset your password")
-	assert.False(t, common.VerifyCodeWithKey("taken@example.com", "", common.EmailVerificationPurpose))
+	assert.False(t, common.VerifyCodeWithKey(model.SiteEmailCodeKey("taken@example.com", 0), "", common.EmailVerificationPurpose))
 	for _, code := range strings.Fields(mails[1].content) {
-		assert.False(t, common.VerifyCodeWithKey("taken@example.com", code, common.EmailVerificationPurpose),
+		assert.False(t, common.VerifyCodeWithKey(model.SiteEmailCodeKey("taken@example.com", 0), code, common.EmailVerificationPurpose),
 			"the reminder carries no usable code")
 	}
 }
@@ -311,8 +311,10 @@ func TestPasswordResetCommitOutcome(t *testing.T) {
 			}).Error)
 			require.NoError(t, db.Create(&model.UserAccessToken{UserId: owner.Id, TokenHash: strings.Repeat("b", 64)}).Error)
 			const proof = "reset-once-proof"
-			require.NoError(t, common.RegisterVerificationCodeWithKey(owner.Email, proof, common.PasswordResetPurpose))
-			t.Cleanup(func() { common.DeleteKey(owner.Email, common.PasswordResetPurpose) })
+			require.NoError(t, common.RegisterVerificationCodeWithKey(model.SiteEmailCodeKey(owner.Email, owner.SiteId), proof, common.PasswordResetPurpose))
+			t.Cleanup(func() {
+				common.DeleteKey(model.SiteEmailCodeKey(owner.Email, owner.SiteId), common.PasswordResetPurpose)
+			})
 
 			passwordWritten, injected, failQuery := false, false, true
 			if failure == "publish_query" || failure == "session_revoke_query" {
@@ -444,8 +446,10 @@ func TestPasswordResetRejectsChangedEmailOwner(t *testing.T) {
 			require.NoError(t, db.Create(&other).Error)
 			require.NoError(t, db.Create(&model.UserAccessToken{UserId: owner.Id, TokenHash: strings.Repeat("c", 64)}).Error)
 			const proof = "proof-for-original-email-owner"
-			require.NoError(t, common.RegisterVerificationCodeWithKey(owner.Email, proof, common.PasswordResetPurpose))
-			t.Cleanup(func() { common.DeleteKey(owner.Email, common.PasswordResetPurpose) })
+			require.NoError(t, common.RegisterVerificationCodeWithKey(model.SiteEmailCodeKey(owner.Email, owner.SiteId), proof, common.PasswordResetPurpose))
+			t.Cleanup(func() {
+				common.DeleteKey(model.SiteEmailCodeKey(owner.Email, owner.SiteId), common.PasswordResetPurpose)
+			})
 
 			connectionPool, err := db.DB()
 			require.NoError(t, err)
@@ -568,7 +572,7 @@ func TestRegisterExistingEmailGenericError(t *testing.T) {
 		common.EmailVerificationEnabled, common.RegisterEnabled, common.PasswordRegisterEnabled = oldVerify, oldRegister, oldPassword
 	})
 	// A code for the taken address (only possible through a bug or a race) still meets the generic error.
-	common.RegisterVerificationCodeWithKey("taken@example.com", "123456", common.EmailVerificationPurpose)
+	common.RegisterVerificationCodeWithKey(model.SiteEmailCodeKey("taken@example.com", 0), "123456", common.EmailVerificationPurpose)
 
 	register := func(email, code string) string {
 		recorder := httptest.NewRecorder()

@@ -83,6 +83,7 @@ func Login(c *gin.Context) {
 	user := model.User{
 		Username: username,
 		Password: password,
+		SiteId:   service.AdtyRequestSiteID(c),
 	}
 	err = user.ValidateAndFill()
 	if err != nil {
@@ -265,16 +266,22 @@ func Register(c *gin.Context) {
 		common.ApiErrorT(c, "Invalid input {{error}}", map[string]any{"error": err.Error()})
 		return
 	}
+	// 二开：在分站注册就归这个站（任务 11.2）；关站中的分站不再接受注册
+	siteId, registrable := service.AdtyRegisterSiteId(c)
+	if !registrable {
+		common.ApiErrorT(c, "New user registration has been disabled by administrator")
+		return
+	}
 	if common.EmailVerificationEnabled {
 		if user.Email == "" || user.VerificationCode == "" {
 			common.ApiErrorT(c, "Email verification is enabled, please enter email address and verification code")
 			return
 		}
-		if !common.VerifyCodeWithKey(user.Email, user.VerificationCode, common.EmailVerificationPurpose) {
+		if !common.VerifyCodeWithKey(model.SiteEmailCodeKey(user.Email, siteId), user.VerificationCode, common.EmailVerificationPurpose) {
 			common.ApiErrorT(c, "Verification code is incorrect or has expired")
 			return
 		}
-		if err := model.EnsureEmailAvailable(user.Email, 0); err != nil {
+		if err := model.EnsureEmailAvailable(user.Email, siteId, 0); err != nil {
 			if errors.Is(err, model.ErrEmailAlreadyTaken) {
 				// 二开：和验证码错误同一句话，不暴露邮箱已注册（任务 7.3）
 				common.ApiErrorT(c, "Verification code is incorrect or has expired")
@@ -288,7 +295,7 @@ func Register(c *gin.Context) {
 	if common.EmailVerificationEnabled {
 		emailForExistCheck = user.Email
 	}
-	exist, err := model.CheckUserExistOrDeleted(user.Username, emailForExistCheck)
+	exist, err := model.CheckUserExistOrDeleted(user.Username, emailForExistCheck, siteId)
 	if err != nil {
 		common.ApiErrorT(c, "Database error, please contact the administrator")
 		common.SysLog(common.LogText("CheckUserExistOrDeleted error: %v", err))
@@ -303,17 +310,11 @@ func Register(c *gin.Context) {
 		Password:    user.Password,
 		DisplayName: user.Username,
 		Role:        common.RoleCommonUser, // 明确设置角色为普通用户
+		SiteId:      siteId,
 	}
 	if common.EmailVerificationEnabled {
 		cleanUser.Email = user.Email
 	}
-	// 二开：在分站注册就归这个站（任务 11.2）；关站中的分站不再接受注册
-	siteId, registrable := service.AdtyRegisterSiteId(c)
-	if !registrable {
-		common.ApiErrorT(c, "New user registration has been disabled by administrator")
-		return
-	}
-	cleanUser.SiteId = siteId
 	if !service.AdtyRegisterTermsAccepted(c, siteId) {
 		common.ApiErrorT(c, "Accept the current site customer terms first")
 		return
@@ -1018,7 +1019,7 @@ func UpdateSelf(c *gin.Context) {
 			return
 		}
 		succeeded = true
-		notificationFailed = service.NotifyAccountSecurityChange(service.AccountMailLanguage(c, current.Id), current.Email, i18n.MsgSecurityEventPasswordUpdated) != nil
+		notificationFailed = service.NotifyAccountSecurityChange(service.AccountMailLanguage(c, current.Id), current.Email, current.Id, i18n.MsgSecurityEventPasswordUpdated) != nil
 		if err := model.PublishUserAuthCache(cleanUser.Id); err != nil {
 			writeSecurityOperationError(c, err)
 			return

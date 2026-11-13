@@ -56,13 +56,19 @@ var adtySendFromAsync = func(from, subject, to, content string) {
 // 10 分钟内同一邮箱只发一封；返回是否真的发了（只给测试看，调用方的响应不能因此不同）。
 func AdtySendRegisteredReminder(c *gin.Context, email string) bool {
 	key := strings.ToLower(strings.TrimSpace(email))
+	site := AdtySiteForRequest(c)
+	siteID := 0
+	if site != nil {
+		siteID = site.Id
+	}
+	throttleKey := model.SiteEmailCodeKey(key, siteID)
 	now := time.Now()
 	adtyReminderSent.Lock()
-	if last, ok := adtyReminderSent.at[key]; ok && now.Sub(last) < AdtyReminderInterval {
+	if last, ok := adtyReminderSent.at[throttleKey]; ok && now.Sub(last) < AdtyReminderInterval {
 		adtyReminderSent.Unlock()
 		return false
 	}
-	adtyReminderSent.at[key] = now
+	adtyReminderSent.at[throttleKey] = now
 	for addr, at := range adtyReminderSent.at {
 		if now.Sub(at) >= AdtyReminderInterval {
 			delete(adtyReminderSent.at, addr)
@@ -70,14 +76,13 @@ func AdtySendRegisteredReminder(c *gin.Context, email string) bool {
 	}
 	adtyReminderSent.Unlock()
 
-	// 按账号的语言发，和找回密码一样；软删除的账号查不到时用请求语言。
+	// 按当前站点上该邮箱账号的语言发；软删除或未注册时用请求语言。
 	lang := i18n.StatedLang(c)
-	if user, err := model.GetUniqueUserByEmail(key); err == nil {
+	if user, err := model.GetUniqueUserByEmail(key, siteID); err == nil {
 		if userLang := user.GetSetting().Language; userLang != "" {
 			lang = userLang
 		}
 	}
-	site := AdtySiteForEmail(key)
 	params := map[string]any{"SystemName": AdtyBrandFor(site).HTMLName()}
 	subject := i18n.Translate(lang, i18n.MsgAdtyEmailRegisteredSubject, params)
 	content := "<p>" + i18n.Translate(lang, i18n.MsgAdtyEmailRegisteredBody, params) + "</p>"

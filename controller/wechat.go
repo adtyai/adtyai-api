@@ -199,7 +199,7 @@ func WeChatBind(c *gin.Context) {
 		writeSecurityOperationError(c, err)
 		return
 	}
-	notificationFailed = service.NotifyAccountSecurityChange(service.AccountMailLanguage(c, user.Id), user.Email, i18n.MsgSecurityEventWeChatLinked) != nil
+	notificationFailed = service.NotifyAccountSecurityChange(service.AccountMailLanguage(c, user.Id), user.Email, user.Id, i18n.MsgSecurityEventWeChatLinked) != nil
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",

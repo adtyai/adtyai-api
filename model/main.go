@@ -394,6 +394,9 @@ func migrateDB() error {
 	if err := EnsureBuiltinOAuthSubjectIndexes(DB); err != nil {
 		return err
 	}
+	if err := EnsureSiteEmailUniqueIndex(DB); err != nil {
+		return err
+	}
 	if err := EnsureTaskPluginOneActiveIndex(DB); err != nil {
 		return err
 	}

@@ -584,12 +584,12 @@ func adtyNotifySiteCostFactor(site *model.AdtySite) {
 	})
 }
 
-// AdtySiteForEmail 是这个邮箱的账号所属的站点（只有邮箱、没有用户 id 的系统邮件用）；查不到返回 nil。
-func AdtySiteForEmail(email string) *model.AdtySite {
+// AdtySiteForEmail 是这个邮箱在指定站点上的账号所属的站点；查不到返回 nil。
+func AdtySiteForEmail(email string, siteID int) *model.AdtySite {
 	if !resellerSetting().Enabled || strings.TrimSpace(email) == "" {
 		return nil
 	}
-	user, err := model.GetUniqueUserByEmail(model.NormalizeEmail(email))
+	user, err := model.GetUniqueUserByEmail(model.NormalizeEmail(email), siteID)
 	if err != nil {
 		return nil
 	}

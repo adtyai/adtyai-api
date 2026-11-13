@@ -44,12 +44,12 @@ func AccountMailLanguage(c *gin.Context, userId int) string {
 // records delivery failure independently from the already-committed change.
 // eventKey names the change; the notice is written in lang (see
 // AccountMailLanguage).
-func NotifyAccountSecurityChange(lang, email, eventKey string, eventArgs ...map[string]any) error {
+func NotifyAccountSecurityChange(lang, email string, userID int, eventKey string, eventArgs ...map[string]any) error {
 	if email == "" {
 		return nil
 	}
 	event := html.EscapeString(i18n.Translate(lang, eventKey, eventArgs...))
-	site := AdtySiteForEmail(email) // 二开：站名和发件人按收件人所属站点（任务 11.3）
+	site := AdtySiteForUser(userID) // 二开：站名和发件人按账号所属站点（任务 11.3）
 	subject := i18n.Translate(lang, i18n.MsgEmailSecurityNoticeSubject, map[string]any{"SystemName": AdtyBrandFor(site).HTMLName()})
 	content := fmt.Sprintf("<p>%s</p><p>%s</p>",
 		i18n.Translate(lang, i18n.MsgEmailSecurityNoticeChanged, map[string]any{"Event": event}),

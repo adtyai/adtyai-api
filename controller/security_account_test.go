@@ -753,7 +753,7 @@ func TestSecurityAccountMailsFollowTheOwnersLanguage(t *testing.T) {
 				c.Request.Header.Set("Accept-Language", tc.acceptLanguage)
 			}
 			lang := service.AccountMailLanguage(c, user.Id)
-			require.NoError(t, service.NotifyAccountSecurityChange(lang, tc.receiver, i18n.MsgSecurityEventLoginLinked, map[string]any{"Provider": "<b>Corp</b>"}))
+			require.NoError(t, service.NotifyAccountSecurityChange(lang, tc.receiver, user.Id, i18n.MsgSecurityEventLoginLinked, map[string]any{"Provider": "<b>Corp</b>"}))
 			assert.Contains(t, mails(tc.receiver), tc.want)
 		})
 	}
