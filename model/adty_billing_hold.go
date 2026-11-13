@@ -10,6 +10,10 @@ import (
 
 const AdtyBillingHoldOpen = "open"
 
+// ErrAdtyBillingHoldTableMissing is returned when shortfall holds cannot be
+// recorded or checked because the hold table is absent.
+var ErrAdtyBillingHoldTableMissing = errors.New("adty billing hold table is missing")
+
 // AdtyBillingHold is the same-account shortfall waiting for finance review.
 // An open hold pauses new paid requests for that user. It is not a negative balance.
 type AdtyBillingHold struct {
@@ -25,8 +29,11 @@ func (AdtyBillingHold) TableName() string { return "adty_billing_holds" }
 
 // RecordAdtyBillingHold stores one shortfall. Replays of the same request do not add another hold.
 func RecordAdtyBillingHold(userID int, requestID string, shortfall int) error {
-	if userID <= 0 || shortfall <= 0 || DB == nil || !DB.Migrator().HasTable(&AdtyBillingHold{}) {
+	if userID <= 0 || shortfall <= 0 {
 		return nil
+	}
+	if err := adtyRequireBillingHoldTable(); err != nil {
+		return err
 	}
 	if requestID == "" {
 		requestID = common.NewRequestId()
@@ -37,8 +44,11 @@ func RecordAdtyBillingHold(userID int, requestID string, shortfall int) error {
 
 // AdtyUserPaidPaused reports whether this user has an open shortfall hold.
 func AdtyUserPaidPaused(userID int) (bool, error) {
-	if userID <= 0 || DB == nil || !DB.Migrator().HasTable(&AdtyBillingHold{}) {
+	if userID <= 0 {
 		return false, nil
+	}
+	if err := adtyRequireBillingHoldTable(); err != nil {
+		return false, err
 	}
 	var count int64
 	err := DB.Model(&AdtyBillingHold{}).Where("user_id = ? AND status = ?", userID, AdtyBillingHoldOpen).Count(&count).Error
@@ -49,4 +59,11 @@ func AdtyUserPaidPaused(userID int) (bool, error) {
 		return false, err
 	}
 	return count > 0, nil
+}
+
+func adtyRequireBillingHoldTable() error {
+	if DB == nil || !DB.Migrator().HasTable(&AdtyBillingHold{}) {
+		return ErrAdtyBillingHoldTableMissing
+	}
+	return nil
 }

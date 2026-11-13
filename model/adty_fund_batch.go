@@ -11,6 +11,10 @@ import (
 // ErrAdtyFundBatchShortfall is returned when FIFO lots cannot cover a debit.
 var ErrAdtyFundBatchShortfall = errors.New("fund batches cannot cover the debit")
 
+// ErrAdtyFundBatchTableMissing is returned when fund batches cannot be written
+// or consumed because the batch table is absent.
+var ErrAdtyFundBatchTableMissing = errors.New("adty fund batch table is missing")
+
 func adtyFundBatchShortfallError(uncovered int64) error {
 	return fmt.Errorf("%w: uncovered %d", ErrAdtyFundBatchShortfall, uncovered)
 }
@@ -34,8 +38,8 @@ func CreateAdtyFundBatchesTx(tx *gorm.DB, userID int, source string, principal, 
 	if tx == nil || userID <= 0 || source == "" {
 		return nil
 	}
-	if !tx.Migrator().HasTable(&AdtyFundBatch{}) {
-		return nil
+	if err := adtyRequireFundBatchTable(tx); err != nil {
+		return err
 	}
 	var existing int64
 	if err := tx.Model(&AdtyFundBatch{}).Where("user_id = ? AND source = ?", userID, source).Count(&existing).Error; err != nil {
@@ -90,8 +94,11 @@ func ConsumeAdtyFundBatchesQuietTx(tx *gorm.DB, userID int, amount, balanceBefor
 }
 
 func consumeAdtyFundBatchesTx(tx *gorm.DB, userID int, amount, balanceBefore int64, notifyPrincipalSpent bool) (int64, error) {
-	if tx == nil || userID <= 0 || amount <= 0 || !tx.Migrator().HasTable(&AdtyFundBatch{}) {
+	if tx == nil || userID <= 0 || amount <= 0 {
 		return 0, nil
+	}
+	if err := adtyRequireFundBatchTable(tx); err != nil {
+		return 0, err
 	}
 	var rows []AdtyFundBatch
 	if err := tx.Where("user_id = ? AND remaining > 0", userID).Find(&rows).Error; err != nil {
@@ -143,8 +150,8 @@ func ReclaimAdtyFundBatchesBySourceTx(tx *gorm.DB, userID int, source string, pr
 	if tx == nil || userID <= 0 || source == "" || (principal <= 0 && bonus <= 0) {
 		return 0, nil
 	}
-	if !tx.Migrator().HasTable(&AdtyFundBatch{}) {
-		return 0, nil
+	if err := adtyRequireFundBatchTable(tx); err != nil {
+		return 0, err
 	}
 	var rows []AdtyFundBatch
 	if err := tx.Where("user_id = ? AND source = ? AND remaining > 0", userID, source).Find(&rows).Error; err != nil {
@@ -201,6 +208,13 @@ func applyAdtyWalletDebitToBatchesTx(tx *gorm.DB, userID int, source string, pri
 	}
 	_, err = consumeAdtyFundBatchesTx(tx, userID, leftover, remainingBefore, false)
 	return err
+}
+
+func adtyRequireFundBatchTable(tx *gorm.DB) error {
+	if !tx.Migrator().HasTable(&AdtyFundBatch{}) {
+		return ErrAdtyFundBatchTableMissing
+	}
+	return nil
 }
 
 func sortAdtyFundBatches(rows []AdtyFundBatch) {
