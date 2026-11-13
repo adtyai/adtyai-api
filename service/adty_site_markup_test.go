@@ -26,7 +26,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// 分站定价：k 乘进扣费（任务 11.4）。
+// 分站定价：按供货倍率和加价比例计费（ISS-R1-0009 / G.2）。
 
 func sitePrice(t *testing.T, db *gorm.DB, siteId, userId int, group, markup string) {
 	t.Helper()
@@ -56,6 +56,7 @@ func TestSiteMarkupResolveOrder(t *testing.T) {
 		{"customer group beats site group", prices, 9, "default", "1.8"},
 		{"customer default beats site group", prices[1:], 7, "vip", "1.5"},
 		{"nothing set", nil, 7, "vip", "1"},
+		{"stored k below 1 is used", []model.AdtySitePrice{{UserId: 0, Group: "", Markup: decimal.RequireFromString("0.9")}}, 8, "default", "0.9"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := ResolveAdtySiteMarkup(tc.prices, tc.user, tc.group)
@@ -78,8 +79,8 @@ func TestHandleGroupRatioAppliesMarkup(t *testing.T) {
 		want   float64
 		k      float64
 	}{
-		{"site customer", customer.Id, model.AdtySiteStatusActive, 1.2, 1.2},
-		{"paused site keeps the site price", customer.Id, model.AdtySiteStatusPaused, 1.2, 1.2},
+		{"site customer", customer.Id, model.AdtySiteStatusActive, 0.96, 1.2},
+		{"paused site keeps the site price", customer.Id, model.AdtySiteStatusPaused, 0.96, 1.2},
 		{"main-site customer", mainUser.Id, model.AdtySiteStatusActive, 1, 1},
 		{"closed site", customer.Id, model.AdtySiteStatusClosed, 1, 1},
 	} {
@@ -108,13 +109,14 @@ type markupBillingCase struct {
 }
 
 // TestMarkupAppliedOnEveryBillingPath：同一个分站客户和主站客户，同样的用量走各条计费路径，
-// 分站客户扣的都是主站客户的 k 倍（billing.md 要求的整链路检查）。
+// 分站客户扣的都是主站客户的 供货倍率×(1+加价比例) 倍，也就是存储 k × d。
 func TestMarkupAppliedOnEveryBillingPath(t *testing.T) {
 	db := prepareSiteDB(t)
 	require.NoError(t, db.AutoMigrate(&model.Token{}, &model.Channel{}, &model.Task{}))
 	_, site := openActiveSite(t, db, "paths")
 	sitePrice(t, db, site.Id, 0, "", "1.25")
-	const k = 1.25
+	const k, d = 1.25, 0.8
+	const sellFactor = k * d
 
 	savedRatios, savedPrices := ratio_setting.ModelRatio2JSONString(), ratio_setting.ModelPrice2JSONString()
 	savedGroups := ratio_setting.GroupRatio2JSONString()
@@ -228,7 +230,7 @@ func TestMarkupAppliedOnEveryBillingPath(t *testing.T) {
 				charged[onSite] = start - stored.Quota
 			}
 			require.Positive(t, charged[false], "the main-site customer pays something")
-			assert.InDelta(t, float64(charged[false])*k, float64(charged[true]), 1, "site %d vs main %d", charged[true], charged[false])
+			assert.InDelta(t, float64(charged[false])*sellFactor, float64(charged[true]), 1, "site %d vs main %d", charged[true], charged[false])
 		})
 	}
 }
@@ -290,6 +292,7 @@ func TestCostFactorResolveOrder(t *testing.T) {
 		{"tier", model.AdtySite{TierCostFactor: dec("0.7")}, "0.7"},
 		{"global", model.AdtySite{}, "0.8"},
 		{"below the minimum uses the minimum", model.AdtySite{CostFactor: dec("0.3")}, "0.5"},
+		{"above 1 is honored", model.AdtySite{CostFactor: dec("1.2")}, "1.2"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got, ok := AdtySiteCostFactor(&tc.site)
@@ -419,7 +422,7 @@ func TestMarkupReadClampsToCurrentLimit(t *testing.T) {
 	ctx.Request = httptest.NewRequest("POST", "/v1/chat/completions", nil)
 	ratio, k := AdtyApplySiteMarkup(ctx, customer.Id, "default", 2)
 	assert.InDelta(t, 1.2, k, 1e-9)
-	assert.InDelta(t, 2.4, ratio, 1e-9)
+	assert.InDelta(t, 1.92, ratio, 1e-9)
 }
 
 func TestMarkupIncreaseDelayed(t *testing.T) {
@@ -503,7 +506,7 @@ func TestMarkupBounds(t *testing.T) {
 		value string
 		ok    bool
 	}{
-		{"0.99", false}, {"1", true}, {"3", true}, {"3.01", false},
+		{"-0.1", false}, {"0.99", true}, {"1", true}, {"3", true}, {"3.01", false},
 	} {
 		var version int64
 		var rows []model.AdtySitePrice
@@ -577,23 +580,76 @@ func TestPricingShowsSitePrice(t *testing.T) {
 	}
 	visitor, _ := gin.CreateTestContext(httptest.NewRecorder())
 	visitor.Set(AdtySiteContextKey, AdtySiteById(site.Id))
-	assert.Equal(t, map[string]float64{"default": 1.5, "vip": 4}, ratios(visitor), "visitors see the site defaults")
+	assert.InDelta(t, 1.2, ratios(visitor)["default"], 1e-9, "visitors see supply × (1+markup ratio)")
+	assert.InDelta(t, 3.2, ratios(visitor)["vip"], 1e-9)
 
 	loggedIn, _ := gin.CreateTestContext(httptest.NewRecorder())
 	loggedIn.Set("id", customer.Id)
 	got := ratios(loggedIn)
-	assert.InDelta(t, 1.5, got["default"], 1e-9)
-	assert.InDelta(t, 2.4, got["vip"], 1e-9, "a signed-in customer sees their own price")
+	assert.InDelta(t, 1.2, got["default"], 1e-9)
+	assert.InDelta(t, 1.92, got["vip"], 1e-9, "a signed-in customer sees their own price")
 
 	mainVisitor, _ := gin.CreateTestContext(httptest.NewRecorder())
 	assert.Equal(t, map[string]float64{"default": 1, "vip": 2}, ratios(mainVisitor))
-	assert.InDelta(t, 2.4, AdtyUserGroupRatio(customer.Id, "default", "vip"), 1e-9)
+	assert.InDelta(t, 1.92, AdtyUserGroupRatio(customer.Id, "default", "vip"), 1e-9)
 }
 
-// handleGroupRatioForTest 和 relay/helper.HandleGroupRatio 一样算分组倍率再乘 k（helper 引用 service，这里不能反向引用）。
+// handleGroupRatioForTest 和 relay/helper.HandleGroupRatio 一样先算分组倍率再套供货/加价公式（helper 引用 service，这里不能反向引用）。
 // HandleGroupRatio 本身在 relay/helper/price_test.go 的 TestHandleGroupRatioAppliesSiteMarkup 里测。
 func handleGroupRatioForTest(ctx *gin.Context, info *relaycommon.RelayInfo) hosttypes.GroupRatioInfo {
 	ratio := ratio_setting.GetGroupRatio(info.UsingGroup)
 	marked, k := AdtyApplySiteMarkup(ctx, info.UserId, info.UsingGroup, ratio)
 	return hosttypes.GroupRatioInfo{GroupRatio: marked, GroupSpecialRatio: -1, SiteMarkup: k}
+}
+
+func TestSiteSupplyAndSellFormula(t *testing.T) {
+	db := prepareSiteDB(t)
+	_, site := openActiveSite(t, db, "formula")
+	customer := siteCustomer(t, db, site, "formula-customer")
+
+	// Stored k=1.25 means a 25% markup ratio, not 125%. Cost factor 0.8 is the supply multiplier.
+	sitePrice(t, db, site.Id, 0, "", "1.25")
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Request = httptest.NewRequest("POST", "/v1/chat/completions", nil)
+
+	const baseGroup, supplyFactor, storedK = 2.0, 0.8, 1.25
+	supply := baseGroup * supplyFactor
+	sell := supply * (1 + (storedK - 1))
+
+	gotSell, k := AdtyApplySiteMarkup(ctx, customer.Id, "default", baseGroup)
+	assert.InDelta(t, storedK, k, 1e-12)
+	assert.InDelta(t, supply, baseGroup*supplyFactor, 1e-12, "supply = base × cost factor × group ratio")
+	assert.InDelta(t, sell, gotSell, 1e-12, "sell = supply × (1 + markup ratio)")
+	assert.InDelta(t, 2.0, gotSell, 1e-12)
+
+	// Markup ratio 0 (stored k=1) => sell equals supply, and a cost factor below 1 is not forced up.
+	require.NoError(t, db.Model(&model.AdtySitePrice{}).Where("site_id = ?", site.Id).Update("markup", decimal.NewFromInt(1)).Error)
+	InvalidateAdtySitePriceCache()
+	zeroMarkup, k := AdtyApplySiteMarkup(nil, customer.Id, "default", baseGroup)
+	assert.InDelta(t, 1, k, 1e-12)
+	assert.InDelta(t, supply, zeroMarkup, 1e-12, "markup ratio 0 keeps the sell price equal to the supply price")
+	assert.NotEqual(t, baseGroup, zeroMarkup, "cost factor 0.8 must not be forced up to 1")
+
+	// Old k<1 fallback no longer applies: stored 0.9 is a -10% ratio.
+	require.NoError(t, db.Model(&model.AdtySitePrice{}).Where("site_id = ?", site.Id).Update("markup", decimal.RequireFromString("0.9")).Error)
+	InvalidateAdtySitePriceCache()
+	markdown, k := AdtyApplySiteMarkup(nil, customer.Id, "default", baseGroup)
+	assert.InDelta(t, 0.9, k, 1e-12)
+	assert.InDelta(t, supply*0.9, markdown, 1e-12, "k<1 is no longer replaced with 1")
+	assert.NotEqual(t, supply, markdown)
+
+	// A supply multiplier above 1 is honored once stored on the site.
+	require.NoError(t, db.Model(&model.AdtySite{}).Where("id = ?", site.Id).Update("cost_factor", decimal.RequireFromString("1.2")).Error)
+	InvalidateAdtySiteCache()
+	require.NoError(t, db.Model(&model.AdtySitePrice{}).Where("site_id = ?", site.Id).Update("markup", decimal.NewFromInt(1)).Error)
+	InvalidateAdtySitePriceCache()
+	raisedSupply, _ := AdtyApplySiteMarkup(nil, customer.Id, "default", baseGroup)
+	assert.InDelta(t, baseGroup*1.2, raisedSupply, 1e-12, "supply factor 1.2 is used as a multiplier")
+}
+
+func TestSiteCostFactorAboveOneIsReadable(t *testing.T) {
+	prepareSiteDB(t)
+	got, ok := AdtySiteCostFactor(&model.AdtySite{CostFactor: dec("1.2")})
+	require.True(t, ok)
+	assert.True(t, got.Equal(decimal.RequireFromString("1.2")))
 }

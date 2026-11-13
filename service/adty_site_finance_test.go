@@ -630,6 +630,19 @@ func TestAdtySiteTierRejectsValuesRoundedByDatabase(t *testing.T) {
 	}
 }
 
+func TestAdtySiteTierAcceptsConfirmedSupplyAndMarkupMeanings(t *testing.T) {
+	for _, tier := range []model.AdtySiteTier{
+		{Code: "supply", Name: "Supply", CostFactor: dec("1.2")},
+		{Code: "supply", Name: "Supply", CostFactor: dec("0.8")},
+		{Code: "cap", Name: "Cap", MaxMarkup: dec("0.9")},
+	} {
+		assert.NoError(t, ValidateAdtySiteTier(tier), "%+v", tier)
+	}
+	assert.ErrorIs(t, ValidateAdtySiteTier(model.AdtySiteTier{Code: "bad", Name: "Bad", CostFactor: dec("0")}), ErrAdtySiteTierInvalid)
+	assert.ErrorIs(t, ValidateAdtySiteTier(model.AdtySiteTier{Code: "bad", Name: "Bad", MaxMarkup: dec("0")}), ErrAdtySiteTierInvalid)
+	assert.ErrorIs(t, ValidateAdtySiteTier(model.AdtySiteTier{Code: "bad", Name: "Bad", CostFactor: dec("10000")}), ErrAdtySiteTierInvalid)
+}
+
 func TestAdtySiteTierAssignmentUsesCurrentDefinition(t *testing.T) {
 	for _, enabled := range []bool{true, false} {
 		t.Run(fmt.Sprintf("enabled_%t", enabled), func(t *testing.T) {

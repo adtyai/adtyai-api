@@ -202,20 +202,20 @@ func acceptCustomerSiteTerms(userId int, version string) error {
 	})
 }
 
-// validateSitePreset 检查预设的 d 和 k 上限：d 在 [min_cost_factor, 1]，k 上限在 [1, max_markup]。
+// validateSitePreset 检查预设的供货倍率和存储 k 上限：供货倍率必须为正且不低于下限，k 上限必须为正且不超过全局上限。
 func validateSitePreset(costFactor, maxMarkup *decimal.Decimal) error {
 	cfg := resellerSetting()
 	if costFactor != nil {
-		if !costFactor.IsPositive() || costFactor.GreaterThan(decimal.NewFromInt(1)) {
-			return common.NewMessage("The cost factor must be greater than 0 and at most 1")
+		if !costFactor.IsPositive() {
+			return common.NewMessage("The cost factor must be greater than 0")
 		}
 		if cfg.MinCostFactor != nil && costFactor.LessThan(decimal.NewFromFloat(*cfg.MinCostFactor)) {
 			return common.NewMessage("The cost factor cannot be below the minimum cost factor")
 		}
 	}
 	if maxMarkup != nil {
-		if maxMarkup.LessThan(decimal.NewFromInt(1)) || (cfg.MaxMarkup != nil && maxMarkup.GreaterThan(decimal.NewFromFloat(*cfg.MaxMarkup))) {
-			return common.NewMessage("The markup limit must be between 1 and the global limit")
+		if !maxMarkup.IsPositive() || (cfg.MaxMarkup != nil && maxMarkup.GreaterThan(decimal.NewFromFloat(*cfg.MaxMarkup))) {
+			return common.NewMessage("The markup limit must be greater than 0 and at most the global limit")
 		}
 	}
 	return nil
@@ -963,7 +963,7 @@ func carryCustomerPricesTx(tx *gorm.DB, fromSite, toSite int) error {
 	return nil
 }
 
-// ResolveAdtySiteMarkup 在一个站的定价里按「客户 + 分组 → 客户 → 全站 + 分组 → 全站 → 1」取 k（11.4）。
+// ResolveAdtySiteMarkup 在一个站的定价里按「客户 + 分组 → 客户 → 全站 + 分组 → 全站 → 1」取存储 k（11.4）。正数 k（含小于 1）都会采用。
 func ResolveAdtySiteMarkup(prices []model.AdtySitePrice, userId int, group string) decimal.Decimal {
 	best, bestRank := decimal.NewFromInt(1), 0
 	for _, price := range prices {
@@ -978,7 +978,7 @@ func ResolveAdtySiteMarkup(prices []model.AdtySitePrice, userId int, group strin
 		case price.UserId == 0 && price.Group == "":
 			rank = 1
 		}
-		if rank > bestRank && price.Markup.GreaterThanOrEqual(decimal.NewFromInt(1)) {
+		if rank > bestRank && price.Markup.IsPositive() {
 			best, bestRank = price.Markup, rank
 		}
 	}

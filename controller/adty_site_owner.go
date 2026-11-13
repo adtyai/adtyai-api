@@ -118,7 +118,7 @@ func GetAdtyOwnerSite(c *gin.Context) {
 	common.ApiSuccess(c, gin.H{
 		"id": site.Id, "status": site.Status, "subdomain": site.Subdomain, "root_domain": site.RootDomain,
 		"host": service.AdtySiteDisplayHost(site), "base_url": service.AdtySiteBaseURL(site),
-		"cost_factor": d.String(), "markup_min": "1", "markup_max": limit,
+		"cost_factor": d.String(), "markup_min": "0", "markup_max": limit,
 		"markup_increase_delay_hours": cfg.MarkupIncreaseDelayHours, "custom_domain_enabled": cfg.CustomDomainEnabled,
 		"sender_domain_enabled": cfg.SenderDomainEnabled, "brand": brand, "bonus_rates": service.AdtySiteBonusRates(site),
 		"seo_index": site.SeoIndex, "agreement_version": site.AgreementVer, "agreement_at": site.AgreementAt,

@@ -15,12 +15,17 @@ import (
 	"gorm.io/gorm"
 )
 
-// 分站定价：站长倍率 k 乘进扣费（任务 11.4，执行层决定 25）。
-// k 只乘进分组倍率：按倍率、按次、阶梯计价、图片、任务提交、工具调用附加费、违规扣费都从分组倍率走，
-// 不经过 HandleGroupRatio 的 Realtime 预扣和任务按 token 重算各自乘一次。
-// k 不进 PriceData.OtherRatios（会出现在客户日志的计价参数里，等于把加价幅度告诉客户）。
+// 分站定价按 G.2：供货价 = 模型基础价格 × 分站供货倍率 × 本次实际计费分组倍率，
+// 普通售价 = 供货价 × (1 + 分站加价比例)。加价比例为 0 时售价等于供货价。
+// 这些因子只乘进分组倍率，按倍率、按次、阶梯、图片、任务提交、工具附加费、违规扣费都从这条路径走，
+// 不在 HandleGroupRatio 的 Realtime 预扣和任务按 token 重算里再乘一次。
+// 加价幅度不进 PriceData.OtherRatios（会出现在客户日志的计价参数里）。
+//
+// 存储字段 Markup / MaxMarkup 仍是历史上的 k 倍率（库默认 1，界面也按倍率录入）。
+// 1 表示不加价，因此计费时 加价比例 = k - 1；保存值 1.2 是 20% 加价，不能当成 120%。
+// CostFactor 是供货倍率，小于 1 的值要原样使用，不再把 k<1 回退成 1，也不再要求供货倍率 ≤ 1。
 
-// gin 上下文里记下的 k 和 d：同一个请求后面的消费日志都从这里取（11.5 的记账）。
+// gin 上下文里记下的仍是存储口径的 k 和供货倍率 d：同一个请求后面的消费日志都从这里取（11.5 的记账）。
 const (
 	AdtySiteMarkupContextKey     = "adty_site_markup"
 	AdtyTeamDiscountContextKey   = "adty_team_discount"
@@ -80,7 +85,7 @@ func AdtyBillingSiteForUser(userId int) *model.AdtySite {
 	return site
 }
 
-// AdtySiteMarkup 返回分站客户在这个分组的 k；主站客户、站点没有开着时返回 1。只读缓存。
+// AdtySiteMarkup 返回分站客户在这个分组的存储 k（加价比例 = k-1）；主站客户、站点没有开着时返回 1。只读缓存。
 // 已经保存的价如果高于当前上限，按当前上限返回。
 func AdtySiteMarkup(userId int, group string) decimal.Decimal {
 	site := AdtyBillingSiteForUser(userId)
@@ -90,7 +95,7 @@ func AdtySiteMarkup(userId int, group string) decimal.Decimal {
 	return adtyClampMarkup(site, ResolveAdtySiteMarkup(adtySitePrices(site.Id), userId, group), userId, group)
 }
 
-// AdtySiteVisitorMarkup 是分站访客（没登录）看价格页时的 k：全站 + 分组 → 全站 → 1。
+// AdtySiteVisitorMarkup 是分站访客（没登录）看价格页时的存储 k：全站 + 分组 → 全站 → 1。
 func AdtySiteVisitorMarkup(site *model.AdtySite, group string) decimal.Decimal {
 	if !AdtySiteServesCustomers(site) || !resellerSetting().Enabled {
 		return decimal.NewFromInt(1)
@@ -98,8 +103,8 @@ func AdtySiteVisitorMarkup(site *model.AdtySite, group string) decimal.Decimal {
 	return adtyClampMarkup(site, ResolveAdtySiteMarkup(adtySitePrices(site.Id), 0, group), 0, group)
 }
 
-// AdtySiteCostFactor 是站点当前的 d：单站设的 d → 业绩档位的 d → 全局 d；低于 min_cost_factor 时用下限。
-// 全局 d 没设时返回 false（这时分站功能本来就打不开）。
+// AdtySiteCostFactor 是站点当前的供货倍率：单站设的值 → 业绩档位 → 全局；低于 min_cost_factor 时用下限。
+// 供货倍率是正的乘数，可以小于或大于 1。全局值没设时返回 false（这时分站功能本来就打不开）。
 func AdtySiteCostFactor(site *model.AdtySite) (decimal.Decimal, bool) {
 	cfg := resellerSetting()
 	var d decimal.Decimal
@@ -116,24 +121,50 @@ func AdtySiteCostFactor(site *model.AdtySite) (decimal.Decimal, bool) {
 	if cfg.MinCostFactor != nil {
 		d = decimal.Max(d, decimal.NewFromFloat(*cfg.MinCostFactor))
 	}
-	if !d.IsPositive() || d.GreaterThan(decimal.NewFromInt(1)) {
+	if !d.IsPositive() {
 		return decimal.Zero, false
 	}
 	return d, true
 }
 
-// adtyMarkupFloat 把 k 转成 float 乘进分组倍率。结果不是有限正数时按 1 处理并记日志（billing.md 的安全不变式）。
+// adtyStoredMarkupRatio 把存储的 k 换成已确认的加价比例。历史字段是倍率，默认 1 表示不加价，所以比例 = k - 1。
+func adtyStoredMarkupRatio(k decimal.Decimal) decimal.Decimal {
+	return k.Sub(decimal.NewFromInt(1))
+}
+
+// adtyMarkupFloat 把存储的 k 转成 float 给上下文和快照用。NaN、Inf 或非正数按 1（不加价）处理并记日志；0<k<1 原样返回。
 func adtyMarkupFloat(k decimal.Decimal, userId int, group string) float64 {
 	value := k.InexactFloat64()
-	if math.IsNaN(value) || math.IsInf(value, 0) || value < 1 {
+	if math.IsNaN(value) || math.IsInf(value, 0) || value <= 0 {
 		common.SysError(common.LogText("invalid site markup %s for user %d group %s, using 1", k.String(), userId, group))
 		return 1
 	}
 	return value
 }
 
-// AdtyApplySiteMarkup 在算出分组倍率之后调用：分站客户把 k 乘进去，并把 k、d 写进 gin 上下文。
-// 返回乘过 k 的分组倍率和 k（1 表示没乘）。上游的 HandleGroupRatio、Realtime 预扣都调它。
+// adtySiteOrdinarySellRatio 用精确十进制计算：供货价因子 = 分组倍率 × 供货倍率，
+// 普通售价因子 = 供货价因子 × (1 + 加价比例)。只在返回给仍使用 float64 的调用方时转换。
+func adtySiteOrdinarySellRatio(groupRatio float64, k, costFactor decimal.Decimal, userId int, group string) (float64, float64) {
+	kFloat := adtyMarkupFloat(k, userId, group)
+	if !costFactor.IsPositive() {
+		common.SysError(common.LogText("invalid site cost factor %s for user %d group %s, leaving group ratio unchanged", costFactor.String(), userId, group))
+		return groupRatio, 1
+	}
+	kUsed := k
+	if !k.IsPositive() || math.IsNaN(k.InexactFloat64()) || math.IsInf(k.InexactFloat64(), 0) {
+		kUsed = decimal.NewFromInt(1)
+	}
+	markedDec := decimal.NewFromFloat(groupRatio).Mul(costFactor).Mul(decimal.NewFromInt(1).Add(adtyStoredMarkupRatio(kUsed)))
+	marked := markedDec.InexactFloat64()
+	if math.IsNaN(marked) || math.IsInf(marked, 0) || marked < 0 {
+		common.SysError(common.LogText("site sell price overflow for user %d group %s, leaving group ratio unchanged", userId, group))
+		return groupRatio, 1
+	}
+	return marked, kFloat
+}
+
+// AdtyApplySiteMarkup 在算出分组倍率之后调用：按供货倍率和加价比例改分组倍率，并把 k、d 写进 gin 上下文。
+// 返回普通售价对应的分组倍率和存储 k（1 表示加价比例为 0）。上游的 HandleGroupRatio、Realtime 预扣都调它。
 func AdtyApplySiteMarkup(c *gin.Context, userId int, group string, groupRatio float64) (float64, float64) {
 	marked, k := adtyApplySiteMarkupOnly(c, userId, group, groupRatio)
 	return adtyApplyTeamProtocolPrice(c, userId, groupRatio, marked, k)
@@ -144,7 +175,9 @@ func adtyApplySiteMarkupOnly(c *gin.Context, userId int, group string, groupRati
 	if site == nil {
 		return groupRatio, 1
 	}
-	k := adtyMarkupFloat(adtyClampMarkup(site, ResolveAdtySiteMarkup(adtySitePrices(site.Id), userId, group), userId, group), userId, group)
+	kDec := adtyClampMarkup(site, ResolveAdtySiteMarkup(adtySitePrices(site.Id), userId, group), userId, group)
+	k := adtyMarkupFloat(kDec, userId, group)
+	d, dOK := AdtySiteCostFactor(site)
 	if c != nil {
 		c.Set(AdtySiteMarkupContextKey, k)
 		c.Set(AdtySiteIdContextKey, site.Id)
@@ -153,19 +186,15 @@ func adtyApplySiteMarkupOnly(c *gin.Context, userId int, group string, groupRati
 			common.SysError("Request earning owner snapshot unavailable")
 		}
 		c.Set(AdtySiteOwnerContextKey, ownerID)
-		if d, ok := AdtySiteCostFactor(site); ok {
+		if dOK {
 			c.Set(AdtySiteCostFactorContextKey, d.InexactFloat64())
 		}
 	}
-	if k == 1 {
+	if !dOK {
+		common.SysError(common.LogText("site cost factor missing for user %d group %s, leaving group ratio unchanged", userId, group))
 		return groupRatio, 1
 	}
-	marked := groupRatio * k
-	if math.IsNaN(marked) || math.IsInf(marked, 0) || marked < 0 {
-		common.SysError(common.LogText("site markup overflow for user %d group %s, using 1", userId, group))
-		return groupRatio, 1
-	}
-	return marked, k
+	return adtySiteOrdinarySellRatio(groupRatio, kDec, d, userId, group)
 }
 
 // adtyApplyTeamProtocolPrice multiplies the site selling price by the team discount.
@@ -220,7 +249,7 @@ func AdtySiteMarkupFromContext(c *gin.Context) (k, d float64, ok bool) {
 	}
 	k = c.GetFloat64(AdtySiteMarkupContextKey)
 	d = c.GetFloat64(AdtySiteCostFactorContextKey)
-	return k, d, k >= 1 && d > 0
+	return k, d, k > 0 && d > 0
 }
 
 // AdtyAppendSiteMarkupAdminInfo 把 k、d 记进日志的 admin_info，后台核对用；普通用户的日志投影看不到 admin_info。
@@ -297,7 +326,7 @@ func adtyClampMarkup(site *model.AdtySite, k decimal.Decimal, userId int, group 
 }
 
 // SaveAdtySitePricing 保存站长定价。规则（11.4）：
-//   - 1 ≤ k ≤ 上限，否则拒绝；站点 paused 时不能改。
+//   - k 必须为正数且不超过上限（k 是存储倍率，加价比例 = k-1；0 仍表示删掉分组单独价）；站点 paused 时不能改。
 //   - 第一次设置、或者新值 ≤ 现值：立即生效，同时清掉待生效的涨价。
 //   - 新值 > 现值：写进 PendingMarkup，markup_increase_delay_hours 之后由主节点任务生效。
 //   - 版本号是这个站（或这个客户）所有定价行的最大 Version，保存时带 expected_version，不一致就拒绝。
@@ -342,8 +371,8 @@ func SaveAdtySitePricing(input AdtySitePricingInput) (*AdtySitePricingResult, er
 			if markup.IsZero() && group != "" {
 				continue
 			}
-			if markup.LessThan(decimal.NewFromInt(1)) || markup.GreaterThan(limit) {
-				return common.NewMessage("The markup must be between 1 and {{max}}", map[string]any{"max": limit.String()})
+			if !markup.IsPositive() || markup.GreaterThan(limit) {
+				return common.NewMessage("The markup must be greater than 0 and at most {{max}}", map[string]any{"max": limit.String()})
 			}
 		}
 		var rows []model.AdtySitePrice
@@ -562,10 +591,10 @@ func AdtyStampTaskSiteBilling(c *gin.Context, bc *model.TaskBillingContext) {
 }
 
 // adtyTaskRecalcGroupRatio 是任务按 token 重算时的分组倍率（service/task_billing.go）：
-// 提交时乘过 k 的任务（快照里 SiteMarkup ≥ 1）用快照里的分组倍率，已经含 k，不再乘；
-// 主站客户的任务照上游用当前分组倍率；没有快照的分站任务按当前的 k 乘一次。
+// 提交时已经按供货倍率和加价比例乘进快照的任务（SiteMarkup > 0）用快照里的分组倍率，不再乘；
+// 主站客户的任务照上游用当前分组倍率；没有快照的分站任务按当前公式乘一次。
 func adtyTaskRecalcGroupRatio(task *model.Task, group string, groupRatio float64) float64 {
-	if bc := task.PrivateData.BillingContext; bc != nil && bc.SiteMarkup >= 1 && bc.GroupRatio > 0 {
+	if bc := task.PrivateData.BillingContext; bc != nil && bc.SiteMarkup > 0 && bc.GroupRatio > 0 {
 		return bc.GroupRatio
 	}
 	marked, _ := AdtyApplySiteMarkup(nil, task.UserId, group, groupRatio)
@@ -697,14 +726,14 @@ func startAdtySiteMarkupTask() {
 	}()
 }
 
-// AdtyUserGroupRatio 是 /api/user/self/groups 显示的分组倍率：分站客户乘上自己的 k。
+// AdtyUserGroupRatio 是 /api/user/self/groups 显示的分组倍率：分站客户按供货倍率和加价比例计算。
 func AdtyUserGroupRatio(userId int, userGroup, group string) float64 {
 	ratio := GetUserGroupRatio(userGroup, group)
 	marked, _ := AdtyApplySiteMarkup(nil, userId, group, ratio)
 	return marked
 }
 
-// AdtyApplySitePricing 在 /api/pricing 返回前调用：分站客户按自己的 k、分站访客按全站默认的 k 改分组倍率。
+// AdtyApplySitePricing 在 /api/pricing 返回前调用：分站客户按自己的价、分站访客按全站默认价改分组倍率。
 func AdtyApplySitePricing(c *gin.Context, groupRatio map[string]float64) {
 	userId := c.GetInt("id")
 	if userId > 0 {
@@ -717,7 +746,11 @@ func AdtyApplySitePricing(c *gin.Context, groupRatio map[string]float64) {
 	if site == nil {
 		return
 	}
+	d, ok := AdtySiteCostFactor(site)
+	if !ok {
+		return
+	}
 	for group, ratio := range groupRatio {
-		groupRatio[group] = ratio * adtyMarkupFloat(AdtySiteVisitorMarkup(site, group), 0, group)
+		groupRatio[group], _ = adtySiteOrdinarySellRatio(ratio, AdtySiteVisitorMarkup(site, group), d, 0, group)
 	}
 }

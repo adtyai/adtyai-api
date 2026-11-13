@@ -20,14 +20,14 @@ type ResellerSetting struct {
 	ReservedSubdomains []string `json:"reserved_subdomains"`
 	UnknownHostMode    string   `json:"unknown_host_mode"` // main | reject
 
-	CostFactor             *float64           `json:"cost_factor"` // 全局拿货系数 d，0 < d ≤ 1
+	CostFactor             *float64           `json:"cost_factor"` // 全局供货倍率，正数乘数
 	PendingCostFactor      *float64           `json:"pending_cost_factor"`
 	PendingCostFactorAt    int64              `json:"pending_cost_factor_at"`
-	MinCostFactor          *float64           `json:"min_cost_factor"` // d 的下限
+	MinCostFactor          *float64           `json:"min_cost_factor"` // 供货倍率下限
 	PendingMinCostFactor   *float64           `json:"pending_min_cost_factor"`
 	PendingMinCostFactorAt int64              `json:"pending_min_cost_factor_at"`
 	CostFactorTiers        []ResellerCostTier `json:"cost_factor_tiers"`
-	MaxMarkup              *float64           `json:"max_markup"`           // k 的上限，1 ≤ k ≤ 100
+	MaxMarkup              *float64           `json:"max_markup"`           // 存储 k 的上限，加价比例 = k-1，0 < k ≤ 100
 	MaxSiteBonusExtra      *float64           `json:"max_site_bonus_extra"` // 分站加赠比主站同档最多多几个百分点
 	TrialGrantMaxUSD       *float64           `json:"trial_grant_max_usd"`
 	TrialGrantDailyUSD     *float64           `json:"trial_grant_daily_usd"`
@@ -200,8 +200,9 @@ var resellerDomainPattern = regexp.MustCompile(`^([a-z0-9]([a-z0-9-]{0,61}[a-z0-
 // ResellerLabelPattern 是一个 DNS 标签：小写字母、数字、连字符，1–63 位，不以连字符开头或结尾。
 var ResellerLabelPattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 
-func validFraction(value *float64) bool {
-	return value != nil && !math.IsNaN(*value) && *value > 0 && *value <= 1
+// validPositiveMultiplier accepts a supply-price multiplier. Values may be below or above 1.
+func validPositiveMultiplier(value *float64) bool {
+	return value != nil && !math.IsNaN(*value) && !math.IsInf(*value, 0) && *value > 0
 }
 
 // ValidateResellerSetting 检查一份要保存的分站设置。resendConfigured 是上游 ResendApiKey 有没有填。
@@ -219,29 +220,29 @@ func ValidateResellerSetting(s *ResellerSetting, resendConfigured bool) error {
 	if s.UnknownHostMode != ResellerUnknownHostMain && s.UnknownHostMode != ResellerUnknownHostReject {
 		return common.NewMessage("Invalid parameters")
 	}
-	if s.CostFactor != nil && !validFraction(s.CostFactor) {
-		return common.NewMessage("The cost factor must be greater than 0 and at most 1")
+	if s.CostFactor != nil && !validPositiveMultiplier(s.CostFactor) {
+		return common.NewMessage("The cost factor must be greater than 0")
 	}
-	if s.MinCostFactor != nil && !validFraction(s.MinCostFactor) {
-		return common.NewMessage("The cost factor must be greater than 0 and at most 1")
+	if s.MinCostFactor != nil && !validPositiveMultiplier(s.MinCostFactor) {
+		return common.NewMessage("The cost factor must be greater than 0")
 	}
-	if s.PendingCostFactor != nil && !validFraction(s.PendingCostFactor) {
-		return common.NewMessage("The cost factor must be greater than 0 and at most 1")
+	if s.PendingCostFactor != nil && !validPositiveMultiplier(s.PendingCostFactor) {
+		return common.NewMessage("The cost factor must be greater than 0")
 	}
-	if s.PendingMinCostFactor != nil && !validFraction(s.PendingMinCostFactor) {
-		return common.NewMessage("The cost factor must be greater than 0 and at most 1")
+	if s.PendingMinCostFactor != nil && !validPositiveMultiplier(s.PendingMinCostFactor) {
+		return common.NewMessage("The cost factor must be greater than 0")
 	}
 	if s.CostFactor != nil && s.MinCostFactor != nil && *s.CostFactor < *s.MinCostFactor {
 		return common.NewMessage("The cost factor cannot be below the minimum cost factor")
 	}
 	for _, tier := range s.CostFactorTiers {
 		factor := tier.CostFactor
-		if tier.MinMonthlyUSD < 0 || !validFraction(&factor) || (s.MinCostFactor != nil && factor < *s.MinCostFactor) {
-			return common.NewMessage("Each tier needs a monthly amount of at least 0 and a cost factor between the minimum and 1")
+		if tier.MinMonthlyUSD < 0 || !validPositiveMultiplier(&factor) || (s.MinCostFactor != nil && factor < *s.MinCostFactor) {
+			return common.NewMessage("Each tier needs a monthly amount of at least 0 and a cost factor not below the minimum")
 		}
 	}
-	if s.MaxMarkup != nil && (math.IsNaN(*s.MaxMarkup) || *s.MaxMarkup < 1 || *s.MaxMarkup > 100) {
-		return common.NewMessage("The markup limit must be between 1 and 100")
+	if s.MaxMarkup != nil && (math.IsNaN(*s.MaxMarkup) || math.IsInf(*s.MaxMarkup, 0) || *s.MaxMarkup <= 0 || *s.MaxMarkup > 100) {
+		return common.NewMessage("The markup limit must be greater than 0 and at most 100")
 	}
 	if s.MaxSiteBonusExtra != nil && (math.IsNaN(*s.MaxSiteBonusExtra) || *s.MaxSiteBonusExtra < 0 || *s.MaxSiteBonusExtra > 100) {
 		return common.NewMessage("The extra bonus must be between 0 and 100")

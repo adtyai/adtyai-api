@@ -26,6 +26,7 @@ import (
 	"github.com/bytedance/gopkg/util/gopool"
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
+	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -411,9 +412,9 @@ func TestAdtyTaskBillingWalletOnly(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 const (
-	floorSiteMarkup = "1.25" // 分站价 k
-	floorCostFactor = "0.8"  // 拿货价 d，prepareSiteDB 的默认值
-	floorModelPrice = 0.04   // 按次计费的单价（美元）：主站价 20,000 额度，分站价 25,000
+	floorSiteMarkup = "1.25" // 存储 k；加价比例 = k-1
+	floorCostFactor = "0.8"  // 供货倍率，prepareSiteDB 的默认值
+	floorModelPrice = 0.04   // 按次计费的单价（美元）：主站价 20,000 额度；分站售价 = 20,000 × 0.8 × 1.25 = 20,000
 )
 
 // prepareFloorDB 建测试库，关掉 Redis 和批量更新，并把信任门槛设成很小的正数，
@@ -460,7 +461,7 @@ func useFloorMiniRedis(t *testing.T) {
 	})
 }
 
-// floorSite 开一个分站价 k = 1.25 的分站。
+// floorSite 开一个存储 k = 1.25、供货倍率 0.8 的分站（售价因子 = 1）。
 func floorSite(t *testing.T, db *gorm.DB, prefix string) *model.AdtySite {
 	t.Helper()
 	_, site := openActiveSite(t, db, prefix)
@@ -657,7 +658,7 @@ func TestAdtyBalanceFloorTokenFailureStillLogsActualCharge(t *testing.T) {
 			site := floorSite(t, db, "toksf"+protocol)
 			user, token := floorCustomer(t, db, site, "toksf"+protocol, 10_000)
 			ctx, info, quota := floorRelay(t, user, token)
-			require.Equal(t, 25_000, quota)
+			require.Equal(t, 20_000, quota)
 			if protocol != "text" {
 				info.PriceData.UsePrice = false
 				info.PriceData.ModelRatio = 1_000
@@ -682,11 +683,11 @@ func TestAdtyBalanceFloorTokenFailureStillLogsActualCharge(t *testing.T) {
 				}, nil)
 			}
 			assert.Equal(t, 0, floorBalance(t, user.Id))
-			assert.Equal(t, 15_000, info.BillingShortfall)
+			assert.Equal(t, 10_000, info.BillingShortfall)
 			assert.False(t, info.Billing.NeedsRefund(), "a token error cannot undo committed funding")
 			log, adminInfo := floorLastAdminInfo(t, db, user.Id, model.LogTypeConsume)
-			assert.Equal(t, 25_000, log.Quota)
-			assert.EqualValues(t, 15_000, adminInfo["shortfall_quota"])
+			assert.Equal(t, 20_000, log.Quota)
+			assert.EqualValues(t, 10_000, adminInfo["shortfall_quota"])
 			var rows []model.AdtySiteEarningDaily
 			require.NoError(t, db.Where("site_id = ? AND user_id = ?", site.Id, user.Id).Find(&rows).Error)
 			require.Len(t, rows, 1)
@@ -737,18 +738,18 @@ func TestAdtyBalanceFloorSettleShortfall(t *testing.T) {
 	site := floorSite(t, db, "floorshort")
 	user, token := floorCustomer(t, db, site, "floor-short-customer", 10_000)
 	ctx, info, quota := floorRelay(t, user, token)
-	require.Equal(t, 25_000, quota, "site price with k = 1.25")
+	require.Equal(t, 20_000, quota, "site sell price = 20,000 × 0.8 × 1.25")
 
-	// 预扣只估了 4,000，实际 25,000：余额 10,000 只能实扣 10,000，差 15,000。
+	// 预扣只估了 4,000，实际 20,000：余额 10,000 只能实扣 10,000，差 10,000。
 	require.Nil(t, PreConsumeBilling(ctx, 4_000, info))
 	PostTextConsumeQuota(ctx, info, floorUsage(), nil)
 
 	assert.Equal(t, 0, floorBalance(t, user.Id), "balance stops at 0")
-	assertFloorIntField(t, info, "BillingShortfall", 15_000)
+	assertFloorIntField(t, info, "BillingShortfall", 10_000)
 
 	log, adminInfo := floorLastAdminInfo(t, db, user.Id, model.LogTypeConsume)
-	assert.Equal(t, 25_000, log.Quota, "the log keeps the price of the request")
-	assert.EqualValues(t, 15_000, adminInfo["shortfall_quota"], "admin_info %v", adminInfo)
+	assert.Equal(t, 20_000, log.Quota, "the log keeps the price of the request")
+	assert.EqualValues(t, 10_000, adminInfo["shortfall_quota"], "admin_info %v", adminInfo)
 
 	charged := int64(10_000)
 	_, _, wantEarning := AdtySiteEarningSplit(charged, usd(floorSiteMarkup), usd(floorCostFactor))
@@ -759,8 +760,9 @@ func TestAdtyBalanceFloorSettleShortfall(t *testing.T) {
 	assert.True(t, rows[0].Earning.Equal(wantEarning), "earning %s, want %s", rows[0].Earning, wantEarning)
 }
 
-// 5. 分站请求 k = 1.25：预扣和扣费都按乘 k 后的价格，余额下限也按这个价格判断。
+// 5. 分站售价 = 供货价 × (1+加价比例)。用 k=1.5（加价 50%）让售价不同于主站价，余额下限按售价判断。
 func TestAdtyBalanceFloorSiteMarkupPrice(t *testing.T) {
+	const siteSellQuota = 24_000 // 20,000 × 0.8 × 1.5
 	for _, tc := range []struct {
 		name         string
 		onSite       bool
@@ -769,8 +771,8 @@ func TestAdtyBalanceFloorSiteMarkupPrice(t *testing.T) {
 		wantAdmitted bool
 		wantBalance  int
 	}{
-		{name: "site customer pays k times the main price", onSite: true, balance: 25_000, wantQuota: 25_000, wantAdmitted: true, wantBalance: 0},
-		{name: "site customer with only the main price is rejected", onSite: true, balance: 20_000, wantQuota: 25_000, wantAdmitted: false, wantBalance: 20_000},
+		{name: "site customer pays supply times one plus markup ratio", onSite: true, balance: siteSellQuota, wantQuota: siteSellQuota, wantAdmitted: true, wantBalance: 0},
+		{name: "site customer with only the main price is rejected", onSite: true, balance: 20_000, wantQuota: siteSellQuota, wantAdmitted: false, wantBalance: 20_000},
 		{name: "main-site customer pays the main price", onSite: false, balance: 20_000, wantQuota: 20_000, wantAdmitted: true, wantBalance: 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -778,6 +780,8 @@ func TestAdtyBalanceFloorSiteMarkupPrice(t *testing.T) {
 			var site *model.AdtySite
 			if tc.onSite {
 				site = floorSite(t, db, "floorprice")
+				require.NoError(t, db.Model(&model.AdtySitePrice{}).Where("site_id = ?", site.Id).Update("markup", decimal.RequireFromString("1.5")).Error)
+				InvalidateAdtySitePriceCache()
 			}
 			user, token := floorCustomer(t, db, site, "floor-price-customer", tc.balance)
 			ctx, info, quota := floorRelay(t, user, token)

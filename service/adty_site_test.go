@@ -195,9 +195,11 @@ func TestOpenSiteRequiresSettings(t *testing.T) {
 	}{
 		{"enabled without money settings", func(s *adty_setting.ResellerSetting) { s.MaxMarkup = nil }, false, true},
 		{"enabled without root domain", func(s *adty_setting.ResellerSetting) { s.RootDomains = nil }, false, true},
-		{"cost factor above 1", func(s *adty_setting.ResellerSetting) { s.CostFactor = new(1.2) }, false, true},
+		{"cost factor above 1 is allowed", func(s *adty_setting.ResellerSetting) { s.CostFactor = new(1.2) }, false, false},
 		{"cost factor below minimum", func(s *adty_setting.ResellerSetting) { s.CostFactor = new(0.4) }, false, true},
-		{"markup limit below 1", func(s *adty_setting.ResellerSetting) { s.MaxMarkup = new(0.9) }, false, true},
+		{"cost factor not positive", func(s *adty_setting.ResellerSetting) { s.CostFactor = new(0.0) }, false, true},
+		{"markup limit below 1 is allowed", func(s *adty_setting.ResellerSetting) { s.MaxMarkup = new(0.9) }, false, false},
+		{"markup limit not positive", func(s *adty_setting.ResellerSetting) { s.MaxMarkup = new(0.0) }, false, true},
 		{"custom domains without Cloudflare", func(s *adty_setting.ResellerSetting) { s.CustomDomainEnabled = true }, false, true},
 		{"custom domains with Cloudflare", func(s *adty_setting.ResellerSetting) {
 			s.CustomDomainEnabled, s.CloudflareApiToken, s.CloudflareZoneId, s.CnameTarget = true, "tok", "zone", "customers.sites.example.com"

@@ -503,11 +503,15 @@ func ValidateAdtySiteTier(tier model.AdtySiteTier) error {
 			return ErrAdtySiteTierInvalid
 		}
 	}
-	if tier.CostFactor != nil && (!tier.CostFactor.IsPositive() || tier.CostFactor.GreaterThan(decimal.NewFromInt(1)) ||
-		!tier.CostFactor.Equal(tier.CostFactor.Truncate(6))) {
+	// CostFactor is a supply-price multiplier. It may be below or above 1; only
+	// non-positive values or values that would not survive decimal(10,6) are rejected.
+	if tier.CostFactor != nil && (!tier.CostFactor.IsPositive() ||
+		tier.CostFactor.GreaterThanOrEqual(decimal.New(1, 4)) || !tier.CostFactor.Equal(tier.CostFactor.Truncate(6))) {
 		return ErrAdtySiteTierInvalid
 	}
-	if tier.MaxMarkup != nil && (tier.MaxMarkup.LessThan(decimal.NewFromInt(1)) ||
+	// MaxMarkup is still stored as the historical k cap (加价比例 = k-1). It must be
+	// positive so that 1+加价比例 stays positive; the old k>=1 floor is not required.
+	if tier.MaxMarkup != nil && (!tier.MaxMarkup.IsPositive() ||
 		tier.MaxMarkup.GreaterThanOrEqual(decimal.New(1, 6)) || !tier.MaxMarkup.Equal(tier.MaxMarkup.Truncate(4))) {
 		return ErrAdtySiteTierInvalid
 	}
