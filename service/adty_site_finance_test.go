@@ -121,16 +121,19 @@ func TestStaffCustomerActionsDatabaseMatrix(t *testing.T) {
 					assert.ErrorIs(t, err, ErrAdtyStaffDenied, role+" "+grant)
 				}
 			}
-			grants := []string{"customers.read", "customers.password", "customers.disable"}
+			forbidden := []string{"customers.read", "customers.password", "customers.disable"}
+			_, err := CreateAdtyStaff(owner.Id, site.Id, AdtyStaffInput{Username: "action-staff-reset", DisplayName: "Support", Password: "employee-password-42", Role: "support", Permissions: &forbidden})
+			assert.ErrorIs(t, err, ErrAdtyStaffInput, "customers.password is no longer grantable")
+			grants := []string{"customers.read", "customers.disable"}
 			staff, err := CreateAdtyStaff(owner.Id, site.Id, AdtyStaffInput{Username: "action-staff", DisplayName: "Support", Password: "employee-password-42", Role: "support", Permissions: &grants})
 			require.NoError(t, err)
 			customer := referralUser(t, db, "action-customer")
 			require.NoError(t, db.Model(customer).Updates(map[string]any{"site_id": site.Id, "email": "action@example.com", "auth_version": 1}).Error)
 			require.NoError(t, db.Create(&model.AdtySiteCustomer{SiteId: site.Id, UserId: customer.Id, JoinedAt: 1}).Error)
-			for _, action := range []string{"customer.password.reset", "customer.disable"} {
-				_, err := ManageAdtyStaffCustomer(staff.UserId, 1, owner.Id, action)
-				assert.ErrorIs(t, err, gorm.ErrRecordNotFound, "the site owner is never a managed customer")
-			}
+			_, err = ManageAdtyStaffCustomer(staff.UserId, 1, owner.Id, "customer.password.reset")
+			assert.ErrorIs(t, err, ErrAdtyStaffCustomerPasswordReset)
+			_, err = ManageAdtyStaffCustomer(staff.UserId, 1, owner.Id, "customer.disable")
+			assert.ErrorIs(t, err, gorm.ErrRecordNotFound, "the site owner is never a managed customer")
 			const callback = "test:staff-customer-audit-rollback"
 			require.NoError(t, db.Callback().Create().Before("gorm:create").Register(callback, func(tx *gorm.DB) {
 				if tx.Statement.Table == "adty_site_audits" {
@@ -160,24 +163,15 @@ func TestStaffCustomerActionsDatabaseMatrix(t *testing.T) {
 			_, err = ManageAdtyStaffCustomer(staff.UserId, 1, customer.Id, "customer.disable")
 			assert.ErrorIs(t, err, gorm.ErrRecordNotFound, "current owners are protected even without a historical marker")
 			require.NoError(t, db.Delete(&ownedSite).Error)
-			for _, email := range []string{"", "invalid-email"} {
-				require.NoError(t, db.Model(customer).Update("email", email).Error)
-				_, err = ManageAdtyStaffCustomer(staff.UserId, 1, customer.Id, "customer.password.reset")
-				assert.ErrorIs(t, err, ErrAdtyStaffInput)
-			}
-			require.NoError(t, db.Model(customer).Update("email", "action@example.com").Error)
-			duplicate := referralUser(t, db, "duplicate-email")
-			require.NoError(t, db.Model(duplicate).Update("email", "ACTION@example.com").Error)
 			_, err = ManageAdtyStaffCustomer(staff.UserId, 1, customer.Id, "customer.password.reset")
-			assert.ErrorIs(t, err, ErrAdtyStaffInput, "ambiguous email cannot reset another account")
-			require.NoError(t, db.Model(duplicate).Update("email", "").Error)
+			assert.ErrorIs(t, err, ErrAdtyStaffCustomerPasswordReset)
+			var resetAudits []model.AdtySiteAudit
+			require.NoError(t, db.Where("site_id = ? AND action = ?", site.Id, "staff.customer.password.request").Find(&resetAudits).Error)
+			assert.Empty(t, resetAudits, "rejected password reset must not write a staff audit")
 			require.NoError(t, db.Model(&site).Update("status", model.AdtySiteStatusClosing).Error)
 			_, err = ManageAdtyStaffCustomer(staff.UserId, 1, customer.Id, "customer.disable")
 			assert.Error(t, err)
 			require.NoError(t, db.Model(&site).Update("status", model.AdtySiteStatusActive).Error)
-			requested, err := ManageAdtyStaffCustomer(staff.UserId, 1, customer.Id, "customer.password.reset")
-			require.NoError(t, err)
-			assert.Equal(t, "action@example.com", requested.Email)
 			// Serializing with the owner's grant change means a queued action
 			// either commits before revocation or fails with the current grants.
 			var workers sync.WaitGroup
@@ -196,7 +190,7 @@ func TestStaffCustomerActionsDatabaseMatrix(t *testing.T) {
 			assert.ErrorIs(t, err, ErrAdtyStaffDenied)
 			var audits []model.AdtySiteAudit
 			require.NoError(t, db.Where("site_id = ? AND action LIKE ?", site.Id, "staff.customer.%").Find(&audits).Error)
-			expected := 1
+			expected := 0
 			if actionErr == nil {
 				expected++
 			}

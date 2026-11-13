@@ -47,14 +47,13 @@ export function StaffCustomerActionDialog(props: {
       active.current = false
     }
   }, [])
-  const isReset = props.action === 'password-reset'
   const action = useMutation({
     retry: false,
     mutationFn: async () => {
       const proof = await verification.requestVerification({
         scope: 'site.staff.customer.manage',
         context: {
-          action: isReset ? 'customer.password.reset' : 'customer.disable',
+          action: 'customer.disable',
           target: props.customer.id,
         },
         title: t('Confirm it is you'),
@@ -72,11 +71,7 @@ export function StaffCustomerActionDialog(props: {
     },
     onSuccess: (done) => {
       if (!done || !active.current) return
-      toast.success(
-        isReset
-          ? t('Password reset instructions requested')
-          : t('Customer disabled')
-      )
+      toast.success(t('Customer disabled'))
       void client.invalidateQueries({ queryKey: ['adty-staff', props.userId] })
       props.onClose()
     },
@@ -89,26 +84,18 @@ export function StaffCustomerActionDialog(props: {
         onOpenChange={(open) => {
           if (!open && !action.isPending) props.onClose()
         }}
-        title={
-          isReset
-            ? t('Send password reset instructions')
-            : t('Disable customer')
-        }
+        title={t('Disable customer')}
         desc={
           <div className='flex flex-col gap-2'>
             <span className='break-all'>{props.customer.username}</span>
             <span>
-              {isReset
-                ? t(
-                    'Instructions are sent to the customer email. The customer chooses the new password; staff never receive a reset link.'
-                  )
-                : t(
-                    'Existing customer sessions will stop working immediately. Restoring access requires an administrator.'
-                  )}
+              {t(
+                'Existing customer sessions will stop working immediately. Restoring access requires an administrator.'
+              )}
             </span>
           </div>
         }
-        destructive={!isReset}
+        destructive
         isLoading={action.isPending}
         handleConfirm={() => action.mutate()}
       />

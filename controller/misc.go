@@ -325,8 +325,8 @@ func SendPasswordResetEmail(c *gin.Context) {
 	})
 }
 
-// Both self-service and authorized staff requests use the same recovery flow.
-// No caller receives the reset token or chooses the customer's new password.
+// Self-service recovery issues a one-time reset link. No caller, including
+// staff, receives the reset token or chooses the customer's new password.
 func sendPasswordResetInstructions(c *gin.Context, user *model.User) error {
 	email := model.NormalizeEmail(user.Email)
 	current, err := model.GetUniqueUserByEmail(email, user.SiteId)

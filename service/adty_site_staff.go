@@ -13,13 +13,14 @@ import (
 )
 
 var (
-	ErrAdtyStaffDenied   = common.NewMessage("Staff access is not permitted")
-	ErrAdtyStaffInput    = common.NewMessage("Invalid staff role, permissions or account details")
-	ErrAdtyStaffConflict = common.NewMessage("The staff account changed. Refresh and try again.")
+	ErrAdtyStaffDenied                = common.NewMessage("Staff access is not permitted")
+	ErrAdtyStaffInput                 = common.NewMessage("Invalid staff role, permissions or account details")
+	ErrAdtyStaffConflict              = common.NewMessage("The staff account changed. Refresh and try again.")
+	ErrAdtyStaffCustomerPasswordReset = common.NewMessage("Staff cannot reset a customer's password")
 )
 
 var adtyStaffReadPermissions = []string{"customers.read", "customers.balance", "customers.topups", "customers.usage"}
-var adtyStaffPermissions = append(slices.Clone(adtyStaffReadPermissions), "customers.password", "customers.disable")
+var adtyStaffPermissions = append(slices.Clone(adtyStaffReadPermissions), "customers.disable")
 
 type AdtyStaffInput struct {
 	Username        string    `json:"username"`
@@ -250,12 +251,13 @@ func AdtyStaffAccess(userID int, authVersion int64, permission string) (*model.A
 // Customer writes serialize with owner grant changes and site closure. The
 // returned user is internal mail input and must never be serialized to staff.
 func ManageAdtyStaffCustomer(userID int, authVersion int64, customerID int, action string) (*model.User, error) {
-	permission := "customers.disable"
 	if action == AdtyStaffActionCustomerPasswordReset {
-		permission = "customers.password"
-	} else if action != AdtyStaffActionCustomerDisable {
+		return nil, ErrAdtyStaffCustomerPasswordReset
+	}
+	if action != AdtyStaffActionCustomerDisable {
 		return nil, ErrAdtyStaffInput
 	}
+	permission := "customers.disable"
 	var membership model.AdtySiteStaff
 	if err := model.DB.Where("user_id = ? AND status = ?", userID, "enabled").First(&membership).Error; err != nil {
 		return nil, ErrAdtyStaffDenied
@@ -296,31 +298,15 @@ func ManageAdtyStaffCustomer(userID int, authVersion int64, customerID int, acti
 		if err := model.AdtyLockForUpdate(tx).Where("user_id = ? AND site_id = ?", customerID, site.Id).First(&joined).Error; err != nil {
 			return err
 		}
-		auditAction := "staff.customer.password.request"
 		previousStatus := customer.Status
-		if action == AdtyStaffActionCustomerDisable {
-			auditAction = "staff.customer.disable"
-			if _, err := model.IncrementUserAuthVersionWithTx(tx, customerID); err != nil {
-				return err
-			}
-			if err := tx.Model(&model.User{}).Where("id = ?", customerID).Update("status", common.UserStatusDisabled).Error; err != nil {
-				return err
-			}
-			customer.Status = common.UserStatusDisabled
-		} else {
-			customer.Email = model.NormalizeEmail(customer.Email)
-			if customer.Status != common.UserStatusEnabled || common.Validate.Var(customer.Email, "required,email") != nil {
-				return ErrAdtyStaffInput
-			}
-			var count int64
-			if err := tx.Model(&model.User{}).Where("LOWER(email) = ?", customer.Email).Count(&count).Error; err != nil {
-				return err
-			}
-			if count != 1 {
-				return ErrAdtyStaffInput
-			}
+		if _, err := model.IncrementUserAuthVersionWithTx(tx, customerID); err != nil {
+			return err
 		}
-		return recordSiteAuditTx(tx, site.Id, auditAction, userID, map[string]any{"status": previousStatus},
+		if err := tx.Model(&model.User{}).Where("id = ?", customerID).Update("status", common.UserStatusDisabled).Error; err != nil {
+			return err
+		}
+		customer.Status = common.UserStatusDisabled
+		return recordSiteAuditTx(tx, site.Id, "staff.customer.disable", userID, map[string]any{"status": previousStatus},
 			map[string]any{"staff_id": staff.Id, "customer_id": customerID, "status": customer.Status}, "")
 	})
 	if err != nil {
@@ -352,7 +338,7 @@ func AdtyStaffCustomerSite(site *model.AdtySite, staff *model.AdtySiteStaff) *mo
 
 func AdtyStaffErrorStatus(err error) int {
 	switch {
-	case errors.Is(err, ErrAdtyStaffDenied):
+	case errors.Is(err, ErrAdtyStaffDenied), errors.Is(err, ErrAdtyStaffCustomerPasswordReset):
 		return 403
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		return 404

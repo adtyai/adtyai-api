@@ -30,9 +30,8 @@ export type StaffPermission =
   | 'customers.balance'
   | 'customers.topups'
   | 'customers.usage'
-  | 'customers.password'
   | 'customers.disable'
-export type StaffCustomerAction = 'password-reset' | 'disable'
+export type StaffCustomerAction = 'disable'
 export type StaffBalanceDirection = 'increase' | 'decrease'
 export type StaffBalanceRequest = {
   id: number

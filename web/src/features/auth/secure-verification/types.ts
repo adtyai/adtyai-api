@@ -112,7 +112,7 @@ export type VerificationOperation =
   | {
       scope: 'site.staff.customer.manage'
       context: {
-        action: 'customer.password.reset' | 'customer.disable'
+        action: 'customer.disable'
         target: number
       }
     }

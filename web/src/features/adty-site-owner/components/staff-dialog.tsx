@@ -68,7 +68,6 @@ export function StaffDialog(props: {
           'customers.balance',
           'customers.topups',
           'customers.usage',
-          'customers.password',
           'customers.disable',
         ])
       ),
@@ -87,7 +86,14 @@ export function StaffDialog(props: {
       display_name: props.staff?.display_name ?? '',
       password: '',
       role: props.staff?.role ?? 'support',
-      permissions: props.staff?.permissions ?? ['customers.read'],
+      permissions: (props.staff?.permissions ?? ['customers.read']).filter(
+        (permission): permission is StaffPermission =>
+          permission === 'customers.read' ||
+          permission === 'customers.balance' ||
+          permission === 'customers.topups' ||
+          permission === 'customers.usage' ||
+          permission === 'customers.disable'
+      ),
     },
   })
   let action: 'staff.password' | 'staff.create' | 'staff.update' =
@@ -124,10 +130,6 @@ export function StaffDialog(props: {
     { value: 'customers.balance', label: t('View customer balances') },
     { value: 'customers.topups', label: t('View customer recharges') },
     { value: 'customers.usage', label: t('View customer usage') },
-    {
-      value: 'customers.password',
-      label: t('Send password reset instructions'),
-    },
     { value: 'customers.disable', label: t('Disable customer') },
   ]
   let title = t('Edit staff account')

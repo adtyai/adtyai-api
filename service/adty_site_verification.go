@@ -59,7 +59,7 @@ func adtyBindSiteOwnerOperation(scope string, fields map[string]json.RawMessage,
 	var context AdtySiteOwnerContext
 	actions := adtySiteOwnerActions
 	if scope == VerificationScopeAdtyStaffCustomerManage {
-		actions = []string{AdtyStaffActionCustomerPasswordReset, AdtyStaffActionCustomerDisable}
+		actions = []string{AdtyStaffActionCustomerDisable}
 	}
 	if len(fields) != 2 || common.Unmarshal(raw, &context) != nil || !slices.Contains(actions, context.Action) || context.Target < 0 {
 		return nil, false

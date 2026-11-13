@@ -43,7 +43,7 @@ let failAction: boolean
 let writes: { path: string; body: Record<string, unknown>; proof: unknown }[]
 
 beforeEach(() => {
-  permissions = ['customers.read', 'customers.password', 'customers.disable']
+  permissions = ['customers.read', 'customers.disable']
   version = 1
   customerStatus = 1
   failAction = false
@@ -163,49 +163,16 @@ it('hides both customer write actions without explicit permissions', async () =>
   ).not.toBeInTheDocument()
 })
 
-it('requests customer chosen password recovery only after confirmation and fresh verification', async () => {
-  const user = userEvent.setup()
+it('does not offer a staff control to send customer password reset instructions', async () => {
+  permissions = ['customers.read', 'customers.password', 'customers.disable']
   renderWorkspace()
-  await user.click(
-    await screen.findByRole('button', {
-      name: 'Send password reset instructions',
-    })
-  )
-  const confirm = screen.getByRole('alertdialog')
-  expect(within(confirm).getByText(/local-customer/)).toBeInTheDocument()
-  expect(screen.queryByLabelText('New password')).not.toBeInTheDocument()
-  await user.click(within(confirm).getByRole('button', { name: 'Continue' }))
-  await user.type(
-    await screen.findByLabelText('Password', { selector: 'input' }),
-    'employee-password-42'
-  )
-  await user.click(screen.getByRole('button', { name: 'Verify' }))
-  await waitFor(() =>
-    expect(writes.map((write) => write.path)).toEqual([
-      '/api/verify',
-      '/api/adty/staff/customers/20/password-reset',
-    ])
-  )
-  await waitFor(() =>
-    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
-  )
-  expect(writes).toEqual([
-    {
-      path: '/api/verify',
-      body: {
-        scope: 'site.staff.customer.manage',
-        context: { action: 'customer.password.reset', target: 20 },
-        method: 'password',
-        password: 'employee-password-42',
-      },
-      proof: undefined,
-    },
-    {
-      path: '/api/adty/staff/customers/20/password-reset',
-      body: {},
-      proof: 'customer-action-proof',
-    },
-  ])
+  await screen.findByText('local-customer')
+  expect(
+    screen.queryByRole('button', { name: 'Send password reset instructions' })
+  ).not.toBeInTheDocument()
+  expect(
+    screen.getByRole('button', { name: 'Disable customer' })
+  ).toBeInTheDocument()
 })
 
 it('cancels verification without changing a customer and closes confirmation after a grant is revoked', async () => {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"regexp"
 	"strings"
 	"testing"
@@ -185,8 +186,11 @@ func TestOwnerStaffCustomerSecurityActions(t *testing.T) {
 	for _, action := range []string{"password-reset", "disable"} {
 		assert.Equal(t, http.StatusForbidden, call(path+"/"+action, "").Code, "write access defaults to denied")
 	}
-	input := fmt.Sprintf(`{"display_name":"Support","role":"support","permissions":["customers.read","customers.password","customers.disable"],"status":"enabled","expected_version":%d}`, staff.Version)
-	response := f.call(t, http.MethodPut, fmt.Sprintf("/api/adty/site/staff/%d", staff.Id), input, sessionProof(t, f.owner, "staff.update", staff.Id))
+	rejected := fmt.Sprintf(`{"display_name":"Support","role":"support","permissions":["customers.read","customers.password","customers.disable"],"status":"enabled","expected_version":%d}`, staff.Version)
+	response := f.call(t, http.MethodPut, fmt.Sprintf("/api/adty/site/staff/%d", staff.Id), rejected, sessionProof(t, f.owner, "staff.update", staff.Id))
+	assert.Equal(t, http.StatusBadRequest, response.Code, response.Body.String())
+	input := fmt.Sprintf(`{"display_name":"Support","role":"support","permissions":["customers.read","customers.disable"],"status":"enabled","expected_version":%d}`, staff.Version)
+	response = f.call(t, http.MethodPut, fmt.Sprintf("/api/adty/site/staff/%d", staff.Id), input, sessionProof(t, f.owner, "staff.update", staff.Id))
 	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
 	login, err = service.CreateLoginSession(staff.UserId, "password", "127.0.0.1", "staff-security")
 	require.NoError(t, err)
@@ -197,27 +201,30 @@ func TestOwnerStaffCustomerSecurityActions(t *testing.T) {
 		require.NoError(t, err)
 		return proof
 	}
-	assert.Equal(t, http.StatusForbidden, call(path+"/password-reset", "").Code)
-	for _, proof := range []string{issue("customer.disable", mine.Id), issue("customer.password.reset", mine.Id+1000)} {
-		assert.Equal(t, http.StatusForbidden, call(path+"/password-reset", proof).Code)
+	_, err = service.BindVerificationOperation(service.VerificationOperation{Scope: "site.staff.customer.manage", Context: []byte(fmt.Sprintf(`{"action":%q,"target":%d}`, "customer.password.reset", mine.Id))})
+	assert.Error(t, err, "staff must not obtain a proof for customer password reset")
+	assertPasswordResetDenied := func(target int, proof string) {
+		t.Helper()
+		resp := call(fmt.Sprintf("/api/adty/staff/customers/%d/password-reset", target), proof)
+		assert.Equal(t, http.StatusForbidden, resp.Code, resp.Body.String())
+		assert.Contains(t, resp.Body.String(), "Staff cannot reset a customer's password")
 	}
-	assert.Equal(t, http.StatusNotFound, call(fmt.Sprintf("/api/adty/staff/customers/%d/password-reset", other.Id), "").Code)
+	assertPasswordResetDenied(mine.Id, "")
+	assertPasswordResetDenied(mine.Id, issue("customer.disable", mine.Id))
+	assertPasswordResetDenied(other.Id, "")
 	assert.Equal(t, http.StatusNotFound, call(fmt.Sprintf("/api/adty/staff/customers/%d/disable", staff.UserId), "").Code)
 	for _, action := range []string{"password-reset", "disable"} {
 		assert.Equal(t, http.StatusForbidden, f.siteJSON(t, http.MethodPost, path+"/"+action, `{}`, createAdtyScopedToken(t, staff.UserId, "wallet:write")).Code)
 	}
+	require.Empty(t, sent(), "staff must not cause a reset mail or token to be issued")
 	customerLogin, err := service.CreateLoginSession(mine.Id, "password", "127.0.0.1", "customer-security")
 	require.NoError(t, err)
-	proof := issue("customer.password.reset", mine.Id)
-	response = call(path+"/password-reset", proof)
-	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	resetRequest := f.siteJSON(t, http.MethodGet, "/api/reset_password?email="+url.QueryEscape(mine.Email), "", "")
+	require.Equal(t, http.StatusOK, resetRequest.Code, resetRequest.Body.String())
 	require.Len(t, sent(), 1)
 	mail := sent()[0]
 	assert.Equal(t, mine.Email, mail.to)
 	assert.Contains(t, mail.content, "https://center.sites.example.com/user/reset#email=")
-	assert.NotContains(t, response.Body.String(), mine.Email)
-	assert.NotContains(t, response.Body.String(), "token=")
-	assert.Equal(t, http.StatusForbidden, call(path+"/password-reset", proof).Code)
 	var unchanged model.User
 	require.NoError(t, f.db.First(&unchanged, mine.Id).Error)
 	assert.Equal(t, mine.Password, unchanged.Password, "only the customer chooses a replacement password")
@@ -242,7 +249,7 @@ func TestOwnerStaffCustomerSecurityActions(t *testing.T) {
 	assert.Equal(t, common.UserStatusDisabled, unchanged.Status)
 	assert.Equal(t, mine.Quota, unchanged.Quota)
 	audits := f.call(t, http.MethodGet, "/api/adty/site/staff/audits", "", "")
-	assert.Contains(t, audits.Body.String(), "staff.customer.password.request")
+	assert.NotContains(t, audits.Body.String(), "staff.customer.password.request")
 	assert.Contains(t, audits.Body.String(), "staff.customer.disable")
 	for _, secret := range []string{code[1], mine.Email, unchanged.Password, "customer-selected-password-42"} {
 		assert.NotContains(t, audits.Body.String(), secret)

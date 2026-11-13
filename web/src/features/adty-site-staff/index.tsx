@@ -119,7 +119,6 @@ export function StaffWorkspace() {
     canList ||
     grants.includes('customers.topups') ||
     grants.includes('customers.usage') ||
-    grants.includes('customers.password') ||
     grants.includes('customers.disable')
   ) {
     columns.push({
@@ -152,17 +151,6 @@ export function StaffWorkspace() {
               onClick={() => setRecords({ customer, kind: 'logs' })}
             >
               {t('Usage records')}
-            </Button>
-          )}
-          {customer.status === 1 && grants.includes('customers.password') && (
-            <Button
-              size='sm'
-              variant='outline'
-              onClick={() =>
-                setCustomerAction({ customer, action: 'password-reset' })
-              }
-            >
-              {t('Send password reset instructions')}
             </Button>
           )}
           {customer.status === 1 && grants.includes('customers.disable') && (
@@ -250,11 +238,7 @@ export function StaffWorkspace() {
             )}
             {customerAction &&
               canList &&
-              grants.includes(
-                customerAction.action === 'password-reset'
-                  ? 'customers.password'
-                  : 'customers.disable'
-              ) && (
+              grants.includes('customers.disable') && (
                 <StaffCustomerActionDialog
                   key={`${self.data.staff.version}-${customerAction.customer.id}-${customerAction.action}`}
                   customer={customerAction.customer}

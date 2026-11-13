@@ -174,7 +174,10 @@ func GetAdtyStaffSelf(c *gin.Context) {
 }
 
 func PostAdtyStaffCustomerPasswordReset(c *gin.Context) {
-	manageAdtyStaffCustomer(c, service.AdtyStaffActionCustomerPasswordReset, "customers.password")
+	if _, _, ok := adtyStaffRequest(c, ""); !ok {
+		return
+	}
+	common.ApiErrorStatus(c, http.StatusForbidden, service.ErrAdtyStaffCustomerPasswordReset)
 }
 
 func PostAdtyStaffCustomerDisable(c *gin.Context) {
@@ -316,26 +319,13 @@ func manageAdtyStaffCustomer(c *gin.Context, action, permission string) {
 		common.ApiErrorStatus(c, http.StatusBadRequest, common.NewMessage("Invalid parameters"))
 		return
 	}
-	if action == service.AdtyStaffActionCustomerPasswordReset {
-		if err := common.VerificationStoreReady(); err != nil {
-			common.ApiErrorStatus(c, http.StatusServiceUnavailable, common.NewMessage("Please try again later"))
-			return
-		}
-	}
 	if middleware.RequireSecurityProof(c, service.AdtyStaffCustomerOperation(action, id)) == nil {
 		return
 	}
 	identity, _ := middleware.GetSessionAuthIdentity(c)
-	customer, err := service.ManageAdtyStaffCustomer(identity.UserID, identity.UserAuthVersion, id, action)
-	if err != nil {
+	if _, err := service.ManageAdtyStaffCustomer(identity.UserID, identity.UserAuthVersion, id, action); err != nil {
 		common.ApiErrorStatus(c, service.AdtyStaffErrorStatus(err), err)
 		return
-	}
-	if action == service.AdtyStaffActionCustomerPasswordReset {
-		if err := sendPasswordResetInstructions(c, customer); err != nil {
-			common.ApiErrorStatus(c, http.StatusServiceUnavailable, common.NewMessage("Please try again later"))
-			return
-		}
 	}
 	common.ApiSuccess(c, nil)
 }
