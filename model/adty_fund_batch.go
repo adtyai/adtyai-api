@@ -1,9 +1,19 @@
 package model
 
 import (
+	"errors"
+	"fmt"
+
 	"github.com/QuantumNous/new-api/common"
 	"gorm.io/gorm"
 )
+
+// ErrAdtyFundBatchShortfall is returned when FIFO lots cannot cover a debit.
+var ErrAdtyFundBatchShortfall = errors.New("fund batches cannot cover the debit")
+
+func adtyFundBatchShortfallError(uncovered int64) error {
+	return fmt.Errorf("%w: uncovered %d", ErrAdtyFundBatchShortfall, uncovered)
+}
 
 // AdtyFundBatch is one recharge principal or permanent bonus lot.
 type AdtyFundBatch struct {
@@ -63,7 +73,9 @@ var AdtyAfterPrincipalSpentTx func(tx *gorm.DB, userID int, principalQuota int64
 
 // ConsumeAdtyFundBatchesTx spends principal lots before bonus lots.
 // A user with no lots gets one legacy principal lot for the pre-charge balance,
-// then this charge consumes from that lot.
+// then this charge consumes from that lot. If lots still cannot cover the debit,
+// it returns ErrAdtyFundBatchShortfall so the surrounding wallet transaction
+// can roll back.
 func ConsumeAdtyFundBatchesTx(tx *gorm.DB, userID int, amount, balanceBefore int64) error {
 	_, err := consumeAdtyFundBatchesTx(tx, userID, amount, balanceBefore, true)
 	return err
@@ -93,7 +105,7 @@ func consumeAdtyFundBatchesTx(tx *gorm.DB, userID int, amount, balanceBefore int
 		rows = []AdtyFundBatch{legacy}
 	}
 	if len(rows) == 0 {
-		return 0, nil
+		return 0, adtyFundBatchShortfallError(amount)
 	}
 	sortAdtyFundBatches(rows)
 	principalTaken := int64(0)
@@ -114,6 +126,9 @@ func consumeAdtyFundBatchesTx(tx *gorm.DB, userID int, amount, balanceBefore int
 		}
 		amount -= take
 		taken += take
+	}
+	if amount > 0 {
+		return taken, adtyFundBatchShortfallError(amount)
 	}
 	if notifyPrincipalSpent && principalTaken > 0 && AdtyAfterPrincipalSpentTx != nil {
 		return taken, AdtyAfterPrincipalSpentTx(tx, userID, principalTaken)
@@ -164,8 +179,10 @@ func ReclaimAdtyFundBatchesBySourceTx(tx *gorm.DB, userID int, source string, pr
 
 // applyAdtyWalletDebitToBatchesTx keeps the batch ledger in step with a wallet
 // debit. It first reclaims the named source's principal and bonus, then
-// FIFO-consumes any shortfall so total remaining tracks the wallet. Refund
-// shortfalls do not fire the consumption hook; that hook is for charges.
+// FIFO-consumes any leftover so total remaining tracks the wallet. If lots
+// still cannot cover the debit, consume returns ErrAdtyFundBatchShortfall.
+// A leftover after reclaim does not fire the consumption hook; that hook is
+// for charges.
 func applyAdtyWalletDebitToBatchesTx(tx *gorm.DB, userID int, source string, principal, bonus, deducted, balanceBefore int64) error {
 	if deducted <= 0 {
 		return nil

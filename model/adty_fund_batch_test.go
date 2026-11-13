@@ -177,3 +177,119 @@ func TestCreateAdtyFundBatchesTxConcurrentReplayIsIdempotent(t *testing.T) {
 	}
 	requireFundLots(t, db, userID, source, 100, 25, 2)
 }
+
+func remainingBySource(t *testing.T, db *gorm.DB, userID int) map[string]int64 {
+	t.Helper()
+	var rows []AdtyFundBatch
+	require.NoError(t, db.Where("user_id = ?", userID).Order("id").Find(&rows).Error)
+	got := map[string]int64{}
+	for _, row := range rows {
+		got[row.Source+":"+row.Kind] = row.Remaining
+	}
+	return got
+}
+
+func TestConsumeFundBatchesFullyCoveredDecreasesRemaining(t *testing.T) {
+	db := openMemoryFundBatchDB(t)
+	require.NoError(t, db.Create([]AdtyFundBatch{
+		{UserId: 16, Kind: "principal", Source: "p", Original: 30, Remaining: 30},
+		{UserId: 16, Kind: "bonus", Source: "b", Original: 20, Remaining: 20},
+	}).Error)
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return ConsumeAdtyFundBatchesTx(tx, 16, 35, 50)
+	}))
+	got := remainingBySource(t, db, 16)
+	require.EqualValues(t, 0, got["p:principal"])
+	require.EqualValues(t, 15, got["b:bonus"])
+}
+
+func TestConsumeFundBatchesShortfallDoesNotDropRemainder(t *testing.T) {
+	db := openMemoryFundBatchDB(t)
+	require.NoError(t, db.AutoMigrate(&User{}))
+	require.NoError(t, db.Create(&User{Id: 17, Username: "short-17", Password: "password1", Quota: 50}).Error)
+	require.NoError(t, db.Create(&AdtyFundBatch{
+		UserId: 17, Kind: "principal", Source: "thin", Original: 20, Remaining: 20,
+	}).Error)
+
+	err := db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&User{}).Where("id = ?", 17).Update("quota", 0).Error; err != nil {
+			return err
+		}
+		return ConsumeAdtyFundBatchesTx(tx, 17, 50, 50)
+	})
+	require.ErrorIs(t, err, ErrAdtyFundBatchShortfall)
+	require.Contains(t, err.Error(), "uncovered 30")
+
+	var user User
+	require.NoError(t, db.First(&user, 17).Error)
+	require.EqualValues(t, 50, user.Quota)
+	got := remainingBySource(t, db, 17)
+	require.EqualValues(t, 20, got["thin:principal"])
+}
+
+func TestConsumeFundBatchesShortfallWithNoLotsErrors(t *testing.T) {
+	db := openMemoryFundBatchDB(t)
+	err := db.Transaction(func(tx *gorm.DB) error {
+		return ConsumeAdtyFundBatchesTx(tx, 18, 40, 0)
+	})
+	require.ErrorIs(t, err, ErrAdtyFundBatchShortfall)
+	var count int64
+	require.NoError(t, db.Model(&AdtyFundBatch{}).Where("user_id = ?", 18).Count(&count).Error)
+	require.Zero(t, count)
+}
+
+func TestConsumeFundBatchesLegacyLotStillShortErrors(t *testing.T) {
+	db := openMemoryFundBatchDB(t)
+	err := db.Transaction(func(tx *gorm.DB) error {
+		return ConsumeAdtyFundBatchesTx(tx, 19, 40, 25)
+	})
+	require.ErrorIs(t, err, ErrAdtyFundBatchShortfall)
+	var count int64
+	require.NoError(t, db.Model(&AdtyFundBatch{}).Where("user_id = ?", 19).Count(&count).Error)
+	require.Zero(t, count)
+}
+
+func TestConsumeFundBatchesQuietTxShortfallErrors(t *testing.T) {
+	db := openMemoryFundBatchDB(t)
+	require.NoError(t, db.Create(&AdtyFundBatch{
+		UserId: 20, Kind: "principal", Source: "q", Original: 10, Remaining: 10,
+	}).Error)
+	err := db.Transaction(func(tx *gorm.DB) error {
+		return ConsumeAdtyFundBatchesQuietTx(tx, 20, 15, 10)
+	})
+	require.ErrorIs(t, err, ErrAdtyFundBatchShortfall)
+	require.EqualValues(t, 10, remainingBySource(t, db, 20)["q:principal"])
+}
+
+func TestApplyWalletDebitToBatchesShortfallAfterReclaimErrors(t *testing.T) {
+	db := openMemoryFundBatchDB(t)
+	require.NoError(t, db.Create([]AdtyFundBatch{
+		{UserId: 21, Kind: "principal", Source: "order-a", Original: 50, Remaining: 50},
+		{UserId: 21, Kind: "bonus", Source: "order-a", Original: 10, Remaining: 10},
+		{UserId: 21, Kind: "principal", Source: "order-b", Original: 20, Remaining: 20},
+	}).Error)
+	err := db.Transaction(func(tx *gorm.DB) error {
+		return applyAdtyWalletDebitToBatchesTx(tx, 21, "order-a", 50, 10, 100, 80)
+	})
+	require.ErrorIs(t, err, ErrAdtyFundBatchShortfall)
+	got := remainingBySource(t, db, 21)
+	require.EqualValues(t, 50, got["order-a:principal"])
+	require.EqualValues(t, 10, got["order-a:bonus"])
+	require.EqualValues(t, 20, got["order-b:principal"])
+}
+
+func TestApplyWalletDebitToBatchesReclaimThenFIFOCovers(t *testing.T) {
+	db := openMemoryFundBatchDB(t)
+	require.NoError(t, db.Create([]AdtyFundBatch{
+		{UserId: 23, Kind: "principal", Source: "order-a", Original: 50, Remaining: 50},
+		{UserId: 23, Kind: "bonus", Source: "order-a", Original: 10, Remaining: 10},
+		{UserId: 23, Kind: "principal", Source: "order-b", Original: 20, Remaining: 20},
+	}).Error)
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return applyAdtyWalletDebitToBatchesTx(tx, 23, "order-a", 50, 10, 70, 80)
+	}))
+	got := remainingBySource(t, db, 23)
+	require.EqualValues(t, 0, got["order-a:principal"])
+	require.EqualValues(t, 0, got["order-a:bonus"])
+	require.EqualValues(t, 10, got["order-b:principal"])
+}
