@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import type { SettlementSheet } from '@/features/adty-site-owner/api'
 import { api } from '@/lib/api'
 import { requireServerSuccess } from '@/lib/server-error-message'
 
@@ -180,6 +181,36 @@ export async function getAdminSiteReferralCap(): Promise<{
     ApiResponse<{ cap_configured: boolean; max_rate?: string }>
   >(`${BASE}/site-referral/cap`)
   return requireServerSuccess(res.data).data
+}
+
+export async function getAdminBusinessTimezone(): Promise<{
+  configured: boolean
+  timezone: string
+}> {
+  const res = await api.get<
+    ApiResponse<{ configured: boolean; timezone: string }>
+  >(`${BASE}/business-timezone`)
+  return requireServerSuccess(res.data).data
+}
+
+export async function saveAdminBusinessTimezone(
+  timezone: string
+): Promise<void> {
+  const res = await api.put<ApiResponse<{ saved: boolean }>>(
+    `${BASE}/business-timezone`,
+    { timezone }
+  )
+  requireServerSuccess(res.data)
+}
+
+export async function getAdminSettlementSheets(
+  siteId?: number
+): Promise<SettlementSheet[]> {
+  const res = await api.get<ApiResponse<SettlementSheet[]>>(
+    `${BASE}/settlement-sheets`,
+    { params: siteId ? { site_id: siteId } : undefined }
+  )
+  return requireServerSuccess(res.data).data ?? []
 }
 
 export async function getAdminSiteCommissionPolicy(): Promise<{

@@ -37,6 +37,7 @@ import { SiteReferralPanel } from './components/site-referral-panel'
 import { SiteTeamDiscountPanel } from './components/site-team-discount-panel'
 import { EarningToMarginPanel } from './components/earning-to-margin-panel'
 import { EarningsPanel } from './components/earnings-panel'
+import { SettlementSheetPanel } from './components/settlement-sheet-panel'
 import { WithdrawalPanel } from './components/withdrawal-panel'
 import { OverviewPanel } from './components/overview-panel'
 import { OwnerVerificationProvider } from './components/owner-verification'
@@ -156,6 +157,7 @@ export function SiteOwnerCenter(props: { section: SiteOwnerSectionId }) {
                   <TabsContent value='earnings'>
                     <div className='flex flex-col gap-8'>
                       <EarningsPanel />
+                      <SettlementSheetPanel />
                       <EarningToMarginPanel />
                       <WithdrawalPanel />
                     </div>

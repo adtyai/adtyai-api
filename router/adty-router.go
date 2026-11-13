@@ -181,6 +181,12 @@ func registerAdtyTopUpRoutes(apiRouter *gin.RouterGroup) {
 	apiRouter.PUT("/adty/admin/site-referral/cap", middleware.RootAuth(), controller.PutAdtySiteReferralCap)
 	apiRouter.GET("/adty/admin/site-referral/commission-policy", middleware.RootAuth(), controller.GetAdtySiteCommissionPolicy)
 	apiRouter.PUT("/adty/admin/site-referral/commission-policy", middleware.RootAuth(), controller.PutAdtySiteCommissionPolicy)
+	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/adty/admin/business-timezone", "scope", "option:read")
+	middleware.DeclareAdtyAccessTokenRoute("PUT", "/api/adty/admin/business-timezone", "scope", "option:write")
+	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/adty/admin/settlement-sheets", "scope", "option:read")
+	apiRouter.GET("/adty/admin/business-timezone", middleware.RootAuth(), controller.GetAdtyBusinessTimezone)
+	apiRouter.PUT("/adty/admin/business-timezone", middleware.RootAuth(), controller.PutAdtyBusinessTimezone)
+	apiRouter.GET("/adty/admin/settlement-sheets", middleware.RootAuth(), controller.GetAdtyAdminSettlementSheets)
 	apiRouter.PUT("/adty/admin/site-withdrawals/rules", middleware.RootAuth(), controller.PutAdtySiteWithdrawRules)
 	apiRouter.POST("/adty/admin/site-withdrawals/:id/paying", middleware.RootAuth(), controller.PostAdtySiteWithdrawalPaying)
 	apiRouter.POST("/adty/admin/site-withdrawals/:id/reject", middleware.RootAuth(), controller.PostAdtySiteWithdrawalReject)
@@ -395,6 +401,7 @@ func registerAdtyResellerRoutes(apiRouter *gin.RouterGroup) {
 		{http.MethodPut, "/self", "wallet:write", []gin.HandlerFunc{controller.PutAdtyOwnerSite}},
 		{http.MethodGet, "/stats", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerStats}},
 		{http.MethodGet, "/earnings", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerEarnings}},
+		{http.MethodGet, "/settlement-sheets", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerSettlementSheets}},
 		{http.MethodGet, "/earnings/lines", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerEarningLines}},
 		{http.MethodPost, "/vouchers", "wallet:write", []gin.HandlerFunc{controller.PostAdtySiteVoucher}},
 		{http.MethodPost, "/vouchers/:id/cancel", "wallet:write", []gin.HandlerFunc{controller.PostAdtyVoucherCancel}},

@@ -72,6 +72,12 @@ const api = vi.hoisted(() => ({
   getAdminBalanceRequests: vi.fn(),
   reviewAdminBalanceRequest: vi.fn(),
   getAdminSiteReferralCap: vi.fn(),
+  getAdminBusinessTimezone: vi.fn(async () => ({
+    configured: false,
+    timezone: 'UTC',
+  })),
+  getAdminSettlementSheets: vi.fn(async () => []),
+  saveAdminBusinessTimezone: vi.fn(),
   saveAdminSiteReferralCap: vi.fn(),
   getAdminFundAnomalies: vi.fn(),
   getAdminSiteWallets: vi.fn(),

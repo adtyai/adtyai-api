@@ -31,6 +31,7 @@ import { OverviewPanel } from './components/overview-panel'
 import { ReviewsPanel } from './components/reviews-panel'
 import { SettingsPanel } from './components/settings-panel'
 import { MainTeamPricePanel } from './components/main-team-price-panel'
+import { BusinessTimezonePanel } from './components/business-timezone-panel'
 import { SiteReferralCapPanel } from './components/site-referral-cap-panel'
 import { WithdrawRulesPanel } from './components/withdraw-rules-panel'
 import { SiteDetailSheet } from './components/site-detail-sheet'
@@ -106,6 +107,7 @@ export function SiteAdmin(props: { section: SiteAdminSectionId }) {
             </TabsContent>
             <TabsContent value='settings' className='flex flex-col gap-6'>
               <SiteReferralCapPanel />
+              <BusinessTimezonePanel />
               <WithdrawRulesPanel />
               <MainTeamPricePanel />
               {canAdmin(user, ADTY_PERMISSIONS.SITE_READ) && <UsagePanel />}

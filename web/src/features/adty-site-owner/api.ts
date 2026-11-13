@@ -199,6 +199,44 @@ export async function getOwnerEarningLines(): Promise<OwnerEarningLine[]> {
   return requireServerSuccess(res.data).data ?? []
 }
 
+export type SettlementSheet = {
+  id: number
+  site_id: number
+  business_day: string
+  timezone: string
+  day_start: number
+  day_end: number
+  event_watermark: number
+  batch_id: string
+  topup_face_usd: string
+  paid_usd: string
+  paid_by_currency: string
+  consumption_usd: string
+  supply_cost_usd: string
+  spread_usd: string
+  gift_reserve_usd: string
+  gift_funding_usd: string
+  gift_release_usd: string
+  trial_expense_usd: string
+  commission_usd: string
+  pending_coverage_usd: string
+  margin_delta_usd: string
+  earnings_delta_usd: string
+  earnings_available_delta_usd: string
+  earnings_frozen_delta_usd: string
+  withdrawal_usd: string
+  withdrawal_fee_usd: string
+  adjustment_usd: string
+  anomaly_count: number
+}
+
+export async function getOwnerSettlementSheets(): Promise<SettlementSheet[]> {
+  const res = await api.get<ApiResponse<SettlementSheet[]>>(
+    `${BASE}/settlement-sheets`
+  )
+  return requireServerSuccess(res.data).data ?? []
+}
+
 export async function getOwnerEarnings(
   p: number,
   kind: string
