@@ -35,6 +35,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover'
 import { useMediaQuery } from '@/hooks'
+import { formatTimestamp } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 import {
@@ -50,6 +51,7 @@ export type GroupHealth = {
   probe_rate?: number | null
   probe_samples?: number
   scope?: string
+  updated_at?: number
 }
 
 export type ApiKeyGroupOption = {
@@ -71,11 +73,13 @@ type ApiKeyGroupComboboxProps = {
 function GroupHealthLine(props: { health?: GroupHealth }) {
   const { t } = useTranslation()
   const health = props.health
+  const updated = health?.updated_at ? ` · ${t('Last updated')} ${formatTimestamp(health.updated_at)}` : ''
   if (!health || (health.status === 'no_data' && !health.probe_samples && !health.request_samples)) {
     return (
       <span className='text-muted-foreground mt-1 flex items-center gap-2 text-xs'>
         <span className='bg-muted inline-block size-2 rounded-full' />
         {t('No data')}
+        {updated}
       </span>
     )
   }
@@ -84,16 +88,20 @@ function GroupHealthLine(props: { health?: GroupHealth }) {
       <span className='text-muted-foreground mt-1 flex items-center gap-2 text-xs'>
         <span className='bg-muted inline-block size-2 rounded-full' />
         {t('Monitoring interrupted')}
+        {updated}
       </span>
     )
   }
   const request = health.request_success_rate == null ? t('No data') : `${Math.round(health.request_success_rate * 100)}%`
   const probe = health.probe_samples ? (health.probe_rate == null ? t('No data') : `${Math.round(health.probe_rate * 100)}%`) : t('No data')
+  const expired = health.status === 'stale'
   return (
     <span className='text-muted-foreground mt-1 flex items-center gap-2 text-xs tabular-nums'>
-      <span className={health.status === 'degraded' ? 'bg-destructive inline-block size-2 rounded-full' : 'bg-foreground inline-block size-2 rounded-full'} />
+      <span className={health.status === 'degraded' ? 'bg-destructive inline-block size-2 rounded-full' : expired ? 'bg-muted inline-block size-2 rounded-full' : 'bg-foreground inline-block size-2 rounded-full'} />
+      {expired ? `${t('Expired')} · ` : ''}
       {t('Request success')} {request} · {health.request_samples} · {t('Probe availability')} {probe}
       {health.scope === 'site' ? ` · ${t('Site data')}` : ` · ${t('Platform data')}`}
+      {updated}
     </span>
   )
 }

@@ -10,6 +10,7 @@ const (
 	AdtyGroupHealthInterrupted = "interrupted"
 	AdtyGroupHealthOK          = "ok"
 	AdtyGroupHealthDegraded    = "degraded"
+	AdtyGroupHealthStale       = "stale"
 )
 
 // AdtyGroupHealthSample is one finished user request or one probe. It stores no channel or credential.

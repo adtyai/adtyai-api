@@ -221,4 +221,37 @@ describe('API key group combobox Auto effect', () => {
     expect(within(autoOption).getByText('Auto')).toBeInTheDocument()
     setReducedMotion(false)
   })
+
+  test('shows expired samples and the last update time without a channel name', () => {
+    render(
+      <I18nextProvider i18n={i18n}>
+        <ApiKeyGroupCombobox
+          options={[
+            {
+              value: 'vip',
+              label: 'vip',
+              desc: 'Priority group',
+              ratio: 3,
+              health: {
+                status: 'stale',
+                request_success_rate: 1,
+                request_samples: 4,
+                probe_samples: 0,
+                updated_at: 1_700_000_000,
+                scope: 'platform',
+              },
+            },
+          ]}
+          value='vip'
+          onValueChange={() => {}}
+        />
+      </I18nextProvider>
+    )
+    fireEvent.click(getTrigger())
+    const option = getCommandItem('Priority group')
+    expect(option).toHaveTextContent('Expired')
+    expect(option).toHaveTextContent('4')
+    expect(option).toHaveTextContent('Last updated')
+    expect(option.textContent?.toLowerCase()).not.toContain('channel')
+  })
 })

@@ -170,7 +170,7 @@ export function ApiKeysMutateDrawer({
       const response = await api.get('/api/adty/groups/health')
       return response.data as {
         success?: boolean
-        data?: { groups?: Array<{ group: string; status: string; request_success_rate?: number | null; request_samples?: number; probe_rate?: number | null; probe_samples?: number; scope?: string }> }
+        data?: { groups?: Array<{ group: string; status: string; request_success_rate?: number | null; request_samples?: number; probe_rate?: number | null; probe_samples?: number; scope?: string; updated_at?: number }> }
       }
     },
     enabled: open,

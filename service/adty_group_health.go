@@ -244,6 +244,19 @@ func listAdtyGroupHealth(siteId int, modelName string, now time.Time) ([]AdtyGro
 			out = append(out, view)
 			continue
 		}
+		if view.ProbeSamples > 0 {
+			rate := float64(row.probeOK) / float64(view.ProbeSamples)
+			view.ProbeRate = &rate
+		}
+		if HealthSampleStatus(view.RequestSamples+view.ProbeSamples, row.updated, now.Unix(), int64(state.StaleSeconds)) == "stale" {
+			if requestTotal > 0 {
+				rate := float64(row.success) / float64(requestTotal)
+				view.RequestSuccessRate = &rate
+			}
+			view.Status = model.AdtyGroupHealthStale
+			out = append(out, view)
+			continue
+		}
 		if requestTotal == 0 {
 			view.Status = model.AdtyGroupHealthNoData
 		} else {
@@ -255,10 +268,6 @@ func listAdtyGroupHealth(siteId int, modelName string, now time.Time) ([]AdtyGro
 				view.Status = model.AdtyGroupHealthDegraded
 				_ = openAdtyGroupHealthAlert(siteId, group, "degraded")
 			}
-		}
-		if view.ProbeSamples > 0 {
-			rate := float64(row.probeOK) / float64(view.ProbeSamples)
-			view.ProbeRate = &rate
 		}
 		if view.Status == model.AdtyGroupHealthOK {
 			_ = closeAdtyGroupHealthAlert(siteId, group)
