@@ -39,6 +39,8 @@ func TestAdtyGapRoutesRegistered(t *testing.T) {
 		"POST /api/adty/teams/:id/profile",
 		"GET /api/adty/admin/site-referral/cap",
 		"PUT /api/adty/admin/site-referral/cap",
+		"GET /api/adty/site/teams",
+		"PUT /api/adty/site/teams/:id/discount",
 		"GET /api/adty/site/referral",
 		"PUT /api/adty/site/referral",
 		"GET /api/adty/site/referral/invites",

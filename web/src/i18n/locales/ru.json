@@ -8800,7 +8800,10 @@
     "Agreement price": "Договорная цена",
     "A main-site team discount has no supply floor. A subsite team is refused.": "У скидки команды основного сайта нет нижней границы поставки. Команда подсайта отклоняется.",
     "Wallets": "Кошельки",
-    "Mark reviewing": "Отметить на проверке"
+    "Mark reviewing": "Отметить на проверке",
+    "Team discount": "Скидка команды",
+    "A site team discount cannot go below the site supply price. Shared balance is not changed.": "Скидка команды подсайта не может быть ниже цены поставки сайта. Общий баланс не меняется.",
+    "Team price is below the site supply price": "Цена команды ниже цены поставки сайта"
 },
   "Targeted notifications": "Адресные уведомления",
   "Site announcements": "Объявления сайта",

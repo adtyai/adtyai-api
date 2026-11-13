@@ -8800,7 +8800,10 @@
     "Agreement price": "協定価格",
     "A main-site team discount has no supply floor. A subsite team is refused.": "メインサイトのチーム割引に供給価格の下限はありません。サブサイトのチームは拒否されます。",
     "Wallets": "ウォレット",
-    "Mark reviewing": "確認中にする"
+    "Mark reviewing": "確認中にする",
+    "Team discount": "チーム割引",
+    "A site team discount cannot go below the site supply price. Shared balance is not changed.": "分站のチーム割引はサイト供給価格を下回れません。共有残高は変わりません。",
+    "Team price is below the site supply price": "チーム価格がサイト供給価格を下回っています"
 },
   "Targeted notifications": "対象を指定した通知",
   "Site announcements": "サイトのお知らせ",

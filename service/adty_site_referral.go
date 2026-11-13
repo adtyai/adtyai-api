@@ -148,6 +148,42 @@ func BindAdtyOwnerSiteInvite(siteID, ownerID, inviterID, inviteeID int) error {
 	return BindSiteInvite(siteID, inviterID, inviteeID)
 }
 
+// SaveAdtyOwnerSiteTeamDiscount updates one site team's discount.
+// A price below the site supply factor is refused. Shared quota is not changed.
+func SaveAdtyOwnerSiteTeamDiscount(siteID, ownerID int, teamID int64, raw string) error {
+	site, err := lockOwnerSite(siteID, ownerID)
+	if err != nil {
+		return err
+	}
+	value, err := decimal.NewFromString(strings.TrimSpace(raw))
+	if teamID <= 0 || err != nil || !value.IsPositive() || value.GreaterThan(decimal.NewFromInt(1)) {
+		return common.NewMessage("Invalid parameters")
+	}
+	if site.CostFactor != nil && value.LessThan(*site.CostFactor) {
+		return common.NewMessage("Team price is below the site supply price")
+	}
+	return model.DB.Transaction(func(tx *gorm.DB) error {
+		var team model.AdtyTeam
+		if err := model.AdtyLockForUpdate(tx).First(&team, teamID).Error; err != nil {
+			return err
+		}
+		if team.SiteId != siteID || team.Status != model.AdtyTeamStatusActive {
+			return common.NewMessage("No permission to perform this action")
+		}
+		return tx.Model(&team).Update("discount", value).Error
+	})
+}
+
+// ListAdtyOwnerSiteTeams returns active teams on the owner's site.
+func ListAdtyOwnerSiteTeams(siteID, ownerID int) ([]model.AdtyTeam, error) {
+	if _, err := lockOwnerSite(siteID, ownerID); err != nil {
+		return nil, err
+	}
+	var rows []model.AdtyTeam
+	err := model.DB.Where("site_id = ? AND status = ?", siteID, model.AdtyTeamStatusActive).Order("id desc").Limit(50).Find(&rows).Error
+	return rows, err
+}
+
 // ListAdtySiteInvites returns the owner's direct site invites. It does not create any.
 func ListAdtySiteInvites(siteID, ownerID int) ([]model.AdtySiteInvite, error) {
 	if _, err := lockOwnerSite(siteID, ownerID); err != nil {

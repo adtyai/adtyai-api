@@ -29,6 +29,26 @@ func TestMainTeamAgreementPriceHasNoSupplyFloor(t *testing.T) {
 	require.Error(t, SaveAdtyMainTeamAgreementPrice(siteTeam.Team.Id, "0.50"))
 }
 
+func TestOwnerSiteTeamDiscountRespectsSupplyPrice(t *testing.T) {
+	db := prepareReferralDialectDB(t, "sqlite")
+	owner := referralUser(t, db, "team-discount-owner")
+	factor := decimal.RequireFromString("0.70")
+	site := model.AdtySite{OwnerUserId: owner.Id, Subdomain: "team-discount", Status: model.AdtySiteStatusActive, CostFactor: &factor}
+	require.NoError(t, db.Create(&site).Error)
+	leader := referralUser(t, db, "team-discount-leader")
+	require.NoError(t, db.Model(leader).Update("site_id", site.Id).Error)
+	created, err := CreateAdtyTeam(leader.Id, site.Id, "Desk", decimal.RequireFromString("0.80"))
+	require.NoError(t, err)
+	require.Error(t, SaveAdtyOwnerSiteTeamDiscount(site.Id, owner.Id, created.Team.Id, "0.60"))
+	require.NoError(t, SaveAdtyOwnerSiteTeamDiscount(site.Id, owner.Id, created.Team.Id, "0.75"))
+	var stored model.AdtyTeam
+	require.NoError(t, db.First(&stored, created.Team.Id).Error)
+	require.True(t, stored.Discount.Equal(decimal.RequireFromString("0.75")))
+	require.EqualValues(t, 0, stored.SharedQuota)
+	other := referralUser(t, db, "team-discount-other")
+	require.Error(t, SaveAdtyOwnerSiteTeamDiscount(site.Id, other.Id, created.Team.Id, "0.90"))
+}
+
 func TestSiteReferralRateStaysUnsetUntilRootSetsCap(t *testing.T) {
 	db := prepareReferralDialectDB(t, "sqlite")
 	owner := referralUser(t, db, "sref-owner")

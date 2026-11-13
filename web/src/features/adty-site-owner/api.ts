@@ -208,6 +208,32 @@ export type SiteInvite = {
   created_at: number
 }
 
+export type OwnerSiteTeam = {
+  id: number
+  name: string
+  discount: string
+  shared_quota: number
+  status: string
+}
+
+export async function getOwnerSiteTeams(): Promise<OwnerSiteTeam[]> {
+  const res = await api.get<ApiResponse<{ items?: OwnerSiteTeam[] }>>(
+    `${BASE}/teams`
+  )
+  return requireServerSuccess(res.data).data.items ?? []
+}
+
+export async function saveOwnerSiteTeamDiscount(
+  teamId: number,
+  discount: string
+): Promise<void> {
+  const res = await api.put<ApiResponse<{ updated: boolean }>>(
+    `${BASE}/teams/${teamId}/discount`,
+    { discount }
+  )
+  requireServerSuccess(res.data)
+}
+
 export async function getOwnerSiteReferral(): Promise<SiteReferralView> {
   const res = await api.get<ApiResponse<SiteReferralView>>(`${BASE}/referral`)
   return requireServerSuccess(res.data).data
