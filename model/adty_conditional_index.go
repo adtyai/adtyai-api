@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"strings"
 
 	"gorm.io/gorm"
 )
@@ -12,14 +13,28 @@ import (
 // NULL outside the predicate permits any number of non-matching rows.
 // Names and predicates come only from the migration's fixed schema definitions.
 func ensureConditionalUniqueIndex(db *gorm.DB, table, index, column, predicate string) error {
+	return ensureConditionalUniqueIndexOn(db, table, index, nil, column, predicate)
+}
+
+func quoteIndexColumns(statement *gorm.Statement, prefixColumns []string, column string) string {
+	parts := make([]string, 0, len(prefixColumns)+1)
+	for _, name := range prefixColumns {
+		parts = append(parts, statement.Quote(name))
+	}
+	parts = append(parts, statement.Quote(column))
+	return strings.Join(parts, ", ")
+}
+
+func ensureConditionalUniqueIndexOn(db *gorm.DB, table, index string, prefixColumns []string, column, predicate string) error {
 	statement := &gorm.Statement{DB: db}
 	quotedTable := statement.Quote(table)
 	quotedIndex := statement.Quote(index)
 	quotedColumn := statement.Quote(column)
+	quotedColumns := quoteIndexColumns(statement, prefixColumns, column)
 	if db.Dialector.Name() != "mysql" {
 		return db.Exec(fmt.Sprintf(
 			"CREATE UNIQUE INDEX IF NOT EXISTS %s ON %s (%s) WHERE %s",
-			quotedIndex, quotedTable, quotedColumn, predicate,
+			quotedIndex, quotedTable, quotedColumns, predicate,
 		)).Error
 	}
 
@@ -74,5 +89,34 @@ func ensureConditionalUniqueIndex(db *gorm.DB, table, index, column, predicate s
 	if db.Migrator().HasIndex(table, index) {
 		return nil
 	}
-	return db.Exec(fmt.Sprintf("CREATE UNIQUE INDEX %s ON %s (%s)", quotedIndex, quotedTable, quotedValue)).Error
+	quotedIndexColumns := quoteIndexColumns(statement, prefixColumns, valueColumn)
+	return db.Exec(fmt.Sprintf("CREATE UNIQUE INDEX %s ON %s (%s)", quotedIndex, quotedTable, quotedIndexColumns)).Error
+}
+
+func dropIndexIfExists(db *gorm.DB, table any, index string) error {
+	if db == nil || index == "" {
+		return nil
+	}
+	if !db.Migrator().HasIndex(table, index) {
+		return nil
+	}
+	return db.Migrator().DropIndex(table, index)
+}
+
+func dropMySQLGeneratedColumnIfExists(db *gorm.DB, table, column string) error {
+	if db == nil || db.Dialector.Name() != "mysql" || table == "" || column == "" {
+		return nil
+	}
+	var count int64
+	if err := db.Raw(`
+			SELECT COUNT(*) FROM information_schema.columns
+			WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?`,
+		table, column).Scan(&count).Error; err != nil {
+		return fmt.Errorf("inspect generated column %s.%s: %w", table, column, err)
+	}
+	if count == 0 {
+		return nil
+	}
+	statement := &gorm.Statement{DB: db}
+	return db.Exec(fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s", statement.Quote(table), statement.Quote(column))).Error
 }

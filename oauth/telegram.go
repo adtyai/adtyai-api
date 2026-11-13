@@ -184,10 +184,12 @@ func (p *TelegramProvider) GetUserInfo(ctx context.Context, token *OAuthToken) (
 	}, nil
 }
 
-func (p *TelegramProvider) IsUserIDTaken(id string) bool { return model.IsTelegramIdAlreadyTaken(id) }
+func (p *TelegramProvider) IsUserIDTaken(id string, siteID int) bool {
+	return model.IsTelegramIdAlreadyTaken(id, siteID)
+}
 
-func (p *TelegramProvider) FillUserByProviderID(user *model.User, id string) error {
-	stored, err := model.GetUserByTelegramID(id)
+func (p *TelegramProvider) FillUserByProviderID(user *model.User, id string, siteID int) error {
+	stored, err := model.GetUserByTelegramID(id, siteID)
 	if err != nil {
 		return err
 	}

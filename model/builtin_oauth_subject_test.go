@@ -141,6 +141,7 @@ func TestBuiltinOAuthSubjectIndexRejectsExistingDuplicates(t *testing.T) {
 	truncateTables(t)
 	for _, column := range []string{"github_id", "discord_id", "oidc_id", "linux_do_id"} {
 		require.NoError(t, DB.Exec("DROP INDEX IF EXISTS ux_users_"+column+"_subject").Error)
+		require.NoError(t, DB.Exec("DROP INDEX IF EXISTS ux_users_"+column+"_site_subject").Error)
 	}
 	require.NoError(t, DB.Create(&User{Username: "oauth-dupe-1", Password: "password", GitHubId: "gh-dupe"}).Error)
 	require.NoError(t, DB.Create(&User{Username: "oauth-dupe-2", Password: "password", GitHubId: "gh-dupe"}).Error)

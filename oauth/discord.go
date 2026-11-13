@@ -150,12 +150,13 @@ func (p *DiscordProvider) GetUserInfo(ctx context.Context, token *OAuthToken) (*
 	}, nil
 }
 
-func (p *DiscordProvider) IsUserIDTaken(providerUserID string) bool {
-	return model.IsDiscordIdAlreadyTaken(providerUserID)
+func (p *DiscordProvider) IsUserIDTaken(providerUserID string, siteID int) bool {
+	return model.IsDiscordIdAlreadyTaken(providerUserID, siteID)
 }
 
-func (p *DiscordProvider) FillUserByProviderID(user *model.User, providerUserID string) error {
+func (p *DiscordProvider) FillUserByProviderID(user *model.User, providerUserID string, siteID int) error {
 	user.DiscordId = providerUserID
+	user.SiteId = siteID
 	return user.FillUserByDiscordId()
 }
 

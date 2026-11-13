@@ -124,8 +124,12 @@ func UpdateUserBindColumnForSessionWithTx(tx *gorm.DB, identity AuthSessionIdent
 	}
 	// Preserve the existing ownership check within the transaction and update
 	// only the chosen binding column, never a complete user snapshot.
+	var current User
+	if err := tx.Select("id", "site_id").First(&current, identity.UserID).Error; err != nil {
+		return err
+	}
 	var count int64
-	if err := tx.Model(&User{}).Where(column+" = ? AND id <> ?", value, identity.UserID).Count(&count).Error; err != nil {
+	if err := tx.Model(&User{}).Where(column+" = ? AND site_id = ? AND id <> ?", value, current.SiteId, identity.UserID).Count(&count).Error; err != nil {
 		return err
 	}
 	if count != 0 {
@@ -153,8 +157,15 @@ func UpdateUserOAuthBindingForSessionWithTx(tx *gorm.DB, identity AuthSessionIde
 	if err != nil {
 		return err
 	}
-	// The existing unique provider/subject index rejects concurrent ownership.
-	return tx.Model(&binding).Update("provider_user_id", subject).Error
+	siteID, err := siteIDForUser(tx, identity.UserID)
+	if err != nil {
+		return err
+	}
+	err = tx.Model(&binding).Updates(map[string]any{"provider_user_id": subject, "site_id": siteID}).Error
+	if isAdtyUniqueViolation(err) {
+		return ErrExternalIdentityAlreadyClaimed
+	}
+	return err
 }
 
 // MigrateLegacyGitHubBindingWithTx rewrites a login-name GitHub binding to the
@@ -165,8 +176,12 @@ func MigrateLegacyGitHubBindingWithTx(tx *gorm.DB, userID int, legacyID, gitHubI
 	if userID <= 0 || legacyID == "" || gitHubID == "" {
 		return false, ErrAccountBindingChanged
 	}
+	var current User
+	if err := tx.Select("id", "site_id").First(&current, userID).Error; err != nil {
+		return false, err
+	}
 	var count int64
-	if err := tx.Model(&User{}).Where("github_id = ? AND id <> ?", gitHubID, userID).Count(&count).Error; err != nil {
+	if err := tx.Model(&User{}).Where("github_id = ? AND site_id = ? AND id <> ?", gitHubID, current.SiteId, userID).Count(&count).Error; err != nil {
 		return false, err
 	}
 	if count != 0 {

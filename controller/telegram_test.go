@@ -217,7 +217,7 @@ func TestTelegramOAuthPreservesExistingAccountAndBinding(t *testing.T) {
 	}
 	require.NoError(t, common.Unmarshal(body.Data, &login))
 	assert.Equal(t, fixture.user.Id, login.User.ID)
-	stored, err := model.GetUserByTelegramID(telegramID)
+	stored, err := model.GetUserByTelegramID(telegramID, 0)
 	require.NoError(t, err)
 	assert.Equal(t, telegramID, stored.TelegramId)
 	var claim model.ExternalIdentityClaim

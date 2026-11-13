@@ -202,12 +202,13 @@ func (p *GitHubProvider) GetVerifiedEmails(ctx context.Context, token *OAuthToke
 	return verified, nil
 }
 
-func (p *GitHubProvider) IsUserIDTaken(providerUserID string) bool {
-	return model.IsGitHubIdAlreadyTaken(providerUserID)
+func (p *GitHubProvider) IsUserIDTaken(providerUserID string, siteID int) bool {
+	return model.IsGitHubIdAlreadyTaken(providerUserID, siteID)
 }
 
-func (p *GitHubProvider) FillUserByProviderID(user *model.User, providerUserID string) error {
+func (p *GitHubProvider) FillUserByProviderID(user *model.User, providerUserID string, siteID int) error {
 	user.GitHubId = providerUserID
+	user.SiteId = siteID
 	return user.FillUserByGitHubId()
 }
 

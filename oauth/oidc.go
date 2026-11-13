@@ -364,12 +364,13 @@ func oidcEmailVerified(raw json.RawMessage) bool {
 	return false
 }
 
-func (p *OIDCProvider) IsUserIDTaken(providerUserID string) bool {
-	return model.IsOidcIdAlreadyTaken(providerUserID)
+func (p *OIDCProvider) IsUserIDTaken(providerUserID string, siteID int) bool {
+	return model.IsOidcIdAlreadyTaken(providerUserID, siteID)
 }
 
-func (p *OIDCProvider) FillUserByProviderID(user *model.User, providerUserID string) error {
+func (p *OIDCProvider) FillUserByProviderID(user *model.User, providerUserID string, siteID int) error {
 	user.OidcId = providerUserID
+	user.SiteId = siteID
 	return user.FillUserByOidcId()
 }
 

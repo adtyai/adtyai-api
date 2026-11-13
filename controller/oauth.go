@@ -538,7 +538,7 @@ func handleOAuthBind(c *gin.Context, providerName string, provider oauth.Provide
 		writeSecurityOperationError(c, err)
 		return false, false
 	}
-	if provider.IsUserIDTaken(oauthUser.ProviderUserID) {
+	if provider.IsUserIDTaken(oauthUser.ProviderUserID, service.AdtyRequestSiteID(c)) {
 		common.ApiErrorT(c, "This {{provider}} account has already been bound", providerParams(provider.GetName()))
 		return false, false
 	}
@@ -570,17 +570,18 @@ func handleOAuthBind(c *gin.Context, providerName string, provider oauth.Provide
 // returns the rewrite to carry into the challenge.
 func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *oauth.OAuthUser, token *oauth.OAuthToken) (*model.User, *service.LegacyGitHubMigration, error) {
 	user := &model.User{}
+	siteID := service.AdtyRequestSiteID(c)
 	if provider.ProviderUserIDColumn() == "telegram_id" {
-		err := provider.FillUserByProviderID(user, oauthUser.ProviderUserID)
+		err := provider.FillUserByProviderID(user, oauthUser.ProviderUserID, siteID)
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil, oauth.ErrTelegramAccountNotBound
 		}
 		return user, nil, err
 	}
 
-	// Check if user already exists with new ID
-	if provider.IsUserIDTaken(oauthUser.ProviderUserID) {
-		err := provider.FillUserByProviderID(user, oauthUser.ProviderUserID)
+	// Check if user already exists with new ID on this site.
+	if provider.IsUserIDTaken(oauthUser.ProviderUserID, siteID) {
+		err := provider.FillUserByProviderID(user, oauthUser.ProviderUserID, siteID)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -593,10 +594,12 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 
 	// Legacy GitHub bindings stored the login name, which only points at a
 	// candidate account. Values that are all digits are already numeric account
-	// IDs and never take part in the comparison.
+	// IDs and never take part in the comparison. Only a candidate on the current
+	// site may be migrated; a main-site legacy binding must not attach to a
+	// sub-site login.
 	legacyID, _ := oauthUser.Extra["legacy_id"].(string)
-	if strings.ContainsFunc(legacyID, func(r rune) bool { return r < '0' || r > '9' }) && provider.IsUserIDTaken(legacyID) {
-		if err := provider.FillUserByProviderID(user, legacyID); err != nil {
+	if strings.ContainsFunc(legacyID, func(r rune) bool { return r < '0' || r > '9' }) && provider.IsUserIDTaken(legacyID, siteID) {
+		if err := provider.FillUserByProviderID(user, legacyID, siteID); err != nil {
 			return nil, nil, err
 		}
 		if user.Id != 0 {

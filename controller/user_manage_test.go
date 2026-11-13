@@ -289,7 +289,7 @@ func TestDeleteUserHardDeletesSoftDeletedAccount(t *testing.T) {
 	}
 	require.NoError(t, db.Create(&deleted).Error)
 	require.NoError(t, db.Delete(&deleted).Error)
-	require.True(t, model.IsWeChatIdAlreadyTaken("wx-soft-deleted"))
+	require.True(t, model.IsWeChatIdAlreadyTaken("wx-soft-deleted", 0))
 
 	identity, proof := manageUserProof(t, db, service.VerificationOperation{
 		Scope:   service.VerificationScopeAdminUserDelete,
@@ -312,7 +312,7 @@ func TestDeleteUserHardDeletesSoftDeletedAccount(t *testing.T) {
 	var remaining int64
 	require.NoError(t, db.Unscoped().Model(&model.User{}).Where("id = ?", deleted.Id).Count(&remaining).Error)
 	assert.Zero(t, remaining)
-	assert.False(t, model.IsWeChatIdAlreadyTaken("wx-soft-deleted"))
+	assert.False(t, model.IsWeChatIdAlreadyTaken("wx-soft-deleted", 0))
 }
 
 func TestManageUserDeleteReturnsImmediatelyAndUnknownActionFails(t *testing.T) {

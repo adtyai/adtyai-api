@@ -1209,7 +1209,7 @@ func (user *User) FillUserByGitHubId() error {
 	if user.GitHubId == "" {
 		return common.NewMessage("GitHub ID is empty!")
 	}
-	DB.Where(User{GitHubId: user.GitHubId}).First(user)
+	DB.Where("github_id = ? AND site_id = ?", user.GitHubId, user.SiteId).First(user)
 	return nil
 }
 
@@ -1217,7 +1217,7 @@ func (user *User) FillUserByDiscordId() error {
 	if user.DiscordId == "" {
 		return common.NewMessage("Discord ID is empty!")
 	}
-	DB.Where(User{DiscordId: user.DiscordId}).First(user)
+	DB.Where("discord_id = ? AND site_id = ?", user.DiscordId, user.SiteId).First(user)
 	return nil
 }
 
@@ -1225,7 +1225,7 @@ func (user *User) FillUserByOidcId() error {
 	if user.OidcId == "" {
 		return common.NewMessage("OIDC ID is empty!")
 	}
-	DB.Where(User{OidcId: user.OidcId}).First(user)
+	DB.Where("oidc_id = ? AND site_id = ?", user.OidcId, user.SiteId).First(user)
 	return nil
 }
 
@@ -1233,7 +1233,7 @@ func (user *User) FillUserByWeChatId() error {
 	if user.WeChatId == "" {
 		return common.NewMessage("WeChat ID is empty!")
 	}
-	DB.Where(User{WeChatId: user.WeChatId}).First(user)
+	DB.Where("wechat_id = ? AND site_id = ?", user.WeChatId, user.SiteId).First(user)
 	return nil
 }
 
@@ -1241,7 +1241,7 @@ func (user *User) FillUserByTelegramId() error {
 	if user.TelegramId == "" {
 		return common.NewMessage("Telegram ID is empty!")
 	}
-	err := DB.Where(User{TelegramId: user.TelegramId}).First(user).Error
+	err := DB.Where("telegram_id = ? AND site_id = ?", user.TelegramId, user.SiteId).First(user).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return common.NewMessage("This Telegram account is not linked. Sign in using another method and link it first.")
 	}
@@ -1293,9 +1293,35 @@ func AssignBuiltinProviderIDsWithTx(tx *gorm.DB, user *User) error {
 	return err
 }
 
+var builtinOAuthSubjectColumns = []string{"github_id", "discord_id", "oidc_id", "linux_do_id", "wechat_id", "telegram_id"}
+
+func builtinOAuthSubjectIndexName(column string) string {
+	return "ux_users_" + column + "_site_subject"
+}
+
+func legacyBuiltinOAuthSubjectIndexName(column string) string {
+	return "ux_users_" + column + "_subject"
+}
+
+func dropLegacyBuiltinOAuthSubjectIndex(db *gorm.DB, column string) error {
+	legacyIndex := legacyBuiltinOAuthSubjectIndexName(column)
+	if db.Migrator().HasIndex(&User{}, legacyIndex) {
+		if err := db.Migrator().DropIndex(&User{}, legacyIndex); err != nil {
+			return err
+		}
+	} else if db.Migrator().HasIndex("users", legacyIndex) {
+		if err := db.Migrator().DropIndex("users", legacyIndex); err != nil {
+			return err
+		}
+	}
+	return dropMySQLGeneratedColumnIfExists(db, "users", "adty_"+legacyIndex+"_value")
+}
+
 // EnsureBuiltinOAuthSubjectIndexes adds conditional unique indexes for the built-in
-// OAuth columns. Empty values stay unrestricted. Existing duplicates stop the
-// migration instead of being kept.
+// OAuth columns. Uniqueness is (site_id, subject) so the same external identity can
+// exist on two sites. Empty values stay unrestricted. Existing same-site duplicates
+// stop the migration instead of being kept. The previous subject-only unique indexes
+// are dropped so they cannot block a legal cross-site binding.
 func EnsureBuiltinOAuthSubjectIndexes(db *gorm.DB) error {
 	if db == nil {
 		return fmt.Errorf("builtin oauth subject indexes: database is nil")
@@ -1303,10 +1329,10 @@ func EnsureBuiltinOAuthSubjectIndexes(db *gorm.DB) error {
 	if !db.Migrator().HasTable(&User{}) {
 		return nil
 	}
-	for _, column := range []string{"github_id", "discord_id", "oidc_id", "linux_do_id", "wechat_id"} {
+	for _, column := range builtinOAuthSubjectColumns {
 		var duplicates int64
 		query := fmt.Sprintf(
-			"SELECT COUNT(*) FROM (SELECT %[1]s FROM users WHERE %[1]s <> '' GROUP BY %[1]s HAVING COUNT(*) > 1) AS duplicated",
+			"SELECT COUNT(*) FROM (SELECT site_id, %[1]s FROM users WHERE %[1]s <> '' GROUP BY site_id, %[1]s HAVING COUNT(*) > 1) AS duplicated",
 			column,
 		)
 		if err := db.Raw(query).Scan(&duplicates).Error; err != nil {
@@ -1315,31 +1341,47 @@ func EnsureBuiltinOAuthSubjectIndexes(db *gorm.DB) error {
 		if duplicates > 0 {
 			return fmt.Errorf("duplicate %s bindings must be resolved before the unique index", column)
 		}
-		if err := ensureConditionalUniqueIndex(db, "users", "ux_users_"+column+"_subject", column, column+" <> ''"); err != nil {
+		if err := dropLegacyBuiltinOAuthSubjectIndex(db, column); err != nil {
+			return fmt.Errorf("drop legacy builtin oauth subject index %s: %w", column, err)
+		}
+		if err := ensureConditionalUniqueIndexOn(db, "users", builtinOAuthSubjectIndexName(column), []string{"site_id"}, column, column+" <> ''"); err != nil {
 			return fmt.Errorf("create builtin oauth subject index %s: %w", column, err)
 		}
 	}
 	return nil
 }
 
-func IsWeChatIdAlreadyTaken(wechatId string) bool {
-	return DB.Unscoped().Where("wechat_id = ?", wechatId).Find(&User{}).RowsAffected == 1
+func isOAuthSubjectTaken(column, subject string, siteID int, unscoped bool) bool {
+	if subject == "" {
+		return false
+	}
+	query := DB
+	if unscoped {
+		query = query.Unscoped()
+	}
+	var count int64
+	query.Model(&User{}).Where(column+" = ? AND site_id = ?", subject, siteID).Count(&count)
+	return count > 0
 }
 
-func IsGitHubIdAlreadyTaken(githubId string) bool {
-	return DB.Unscoped().Where("github_id = ?", githubId).Find(&User{}).RowsAffected == 1
+func IsWeChatIdAlreadyTaken(wechatId string, siteID int) bool {
+	return isOAuthSubjectTaken("wechat_id", wechatId, siteID, true)
 }
 
-func IsDiscordIdAlreadyTaken(discordId string) bool {
-	return DB.Unscoped().Where("discord_id = ?", discordId).Find(&User{}).RowsAffected == 1
+func IsGitHubIdAlreadyTaken(githubId string, siteID int) bool {
+	return isOAuthSubjectTaken("github_id", githubId, siteID, true)
 }
 
-func IsOidcIdAlreadyTaken(oidcId string) bool {
-	return DB.Where("oidc_id = ?", oidcId).Find(&User{}).RowsAffected == 1
+func IsDiscordIdAlreadyTaken(discordId string, siteID int) bool {
+	return isOAuthSubjectTaken("discord_id", discordId, siteID, true)
 }
 
-func IsTelegramIdAlreadyTaken(telegramId string) bool {
-	return DB.Unscoped().Where("telegram_id = ?", telegramId).Find(&User{}).RowsAffected == 1
+func IsOidcIdAlreadyTaken(oidcId string, siteID int) bool {
+	return isOAuthSubjectTaken("oidc_id", oidcId, siteID, false)
+}
+
+func IsTelegramIdAlreadyTaken(telegramId string, siteID int) bool {
+	return isOAuthSubjectTaken("telegram_id", telegramId, siteID, true)
 }
 
 type PasswordResetCommitState uint8
@@ -1732,17 +1774,15 @@ func GetUsernameById(id int, fromDB bool) (username string, err error) {
 	return username, nil
 }
 
-func IsLinuxDOIdAlreadyTaken(linuxDOId string) bool {
-	var user User
-	err := DB.Unscoped().Where("linux_do_id = ?", linuxDOId).First(&user).Error
-	return !errors.Is(err, gorm.ErrRecordNotFound)
+func IsLinuxDOIdAlreadyTaken(linuxDOId string, siteID int) bool {
+	return isOAuthSubjectTaken("linux_do_id", linuxDOId, siteID, true)
 }
 
 func (user *User) FillUserByLinuxDOId() error {
 	if user.LinuxDOId == "" {
 		return errors.New("linux do id is empty")
 	}
-	err := DB.Where("linux_do_id = ?", user.LinuxDOId).First(user).Error
+	err := DB.Where("linux_do_id = ? AND site_id = ?", user.LinuxDOId, user.SiteId).First(user).Error
 	return err
 }
 

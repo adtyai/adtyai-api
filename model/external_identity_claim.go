@@ -18,10 +18,16 @@ var ErrExternalIdentityAlreadyClaimed = errors.New("external identity is already
 // by an external provider. The two unique indexes make both the provider
 // subject and the user's provider slot single-owner without relying on a
 // check-then-update sequence.
+const (
+	externalIdentitySubjectIndex       = "idx_external_identity_site_subject"
+	legacyExternalIdentitySubjectIndex = "idx_external_identity_subject"
+)
+
 type ExternalIdentityClaim struct {
 	Id        int64     `json:"id" gorm:"primaryKey"`
-	Provider  string    `json:"provider" gorm:"type:varchar(32);not null;uniqueIndex:idx_external_identity_subject,priority:1;uniqueIndex:idx_external_identity_user,priority:1"`
-	Subject   string    `json:"subject" gorm:"type:varchar(128);not null;uniqueIndex:idx_external_identity_subject,priority:2"`
+	Provider  string    `json:"provider" gorm:"type:varchar(32);not null;uniqueIndex:idx_external_identity_site_subject,priority:1;uniqueIndex:idx_external_identity_user,priority:1"`
+	SiteId    int       `json:"site_id" gorm:"not null;default:0;uniqueIndex:idx_external_identity_site_subject,priority:2"`
+	Subject   string    `json:"subject" gorm:"type:varchar(128);not null;uniqueIndex:idx_external_identity_site_subject,priority:3"`
 	UserId    int       `json:"user_id" gorm:"not null;index;uniqueIndex:idx_external_identity_user,priority:2"`
 	CreatedAt time.Time `json:"created_at"`
 }
@@ -41,13 +47,17 @@ func ClaimExternalIdentityWithTx(tx *gorm.DB, provider, subject string, userId i
 		return errors.New("external identity claim is invalid")
 	}
 
-	claim := ExternalIdentityClaim{Provider: provider, Subject: subject, UserId: userId}
+	var owner User
+	if err := tx.Select("id", "site_id").First(&owner, userId).Error; err != nil {
+		return err
+	}
+	claim := ExternalIdentityClaim{Provider: provider, Subject: subject, UserId: userId, SiteId: owner.SiteId}
 	result := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&claim)
 	if result.Error != nil {
 		return result.Error
 	}
 	var subjectOwner ExternalIdentityClaim
-	if err := tx.Where("provider = ? AND subject = ?", provider, subject).First(&subjectOwner).Error; err != nil {
+	if err := tx.Where("provider = ? AND subject = ? AND site_id = ?", provider, subject, owner.SiteId).First(&subjectOwner).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return ErrExternalIdentityAlreadyClaimed
 		}
@@ -76,9 +86,9 @@ func ReleaseExternalIdentityWithTx(tx *gorm.DB, provider string, userId int) err
 		Delete(&ExternalIdentityClaim{}).Error
 }
 
-func GetUserByTelegramID(telegramID string) (*User, error) {
+func GetUserByTelegramID(telegramID string, siteID int) (*User, error) {
 	var user User
-	err := DB.Where("telegram_id = ?", telegramID).First(&user).Error
+	err := DB.Where("telegram_id = ? AND site_id = ?", telegramID, siteID).First(&user).Error
 	return &user, err
 }
 
@@ -132,4 +142,42 @@ func InitializeExternalIdentityClaims() error {
 		}
 		return nil
 	})
+}
+
+// EnsureExternalIdentityClaimSiteIndexes replaces the platform-wide subject
+// unique index with provider + site_id + subject, after copying each claim's
+// site from its user. Same-site duplicates still fail; cross-site subjects
+// become legal once the old index is gone.
+func EnsureExternalIdentityClaimSiteIndexes(db *gorm.DB) error {
+	if db == nil {
+		return fmt.Errorf("external identity claim indexes: database is nil")
+	}
+	if !db.Migrator().HasTable(&ExternalIdentityClaim{}) {
+		return nil
+	}
+	if db.Migrator().HasTable(&User{}) {
+		if err := db.Exec(`
+			UPDATE external_identity_claims
+			SET site_id = COALESCE((SELECT site_id FROM users WHERE users.id = external_identity_claims.user_id), site_id)
+		`).Error; err != nil {
+			return fmt.Errorf("backfill external identity claim site_id: %w", err)
+		}
+	}
+	if db.Migrator().HasIndex(&ExternalIdentityClaim{}, legacyExternalIdentitySubjectIndex) {
+		if err := db.Migrator().DropIndex(&ExternalIdentityClaim{}, legacyExternalIdentitySubjectIndex); err != nil {
+			return fmt.Errorf("drop legacy external identity subject index: %w", err)
+		}
+	}
+	if db.Migrator().HasIndex(&ExternalIdentityClaim{}, externalIdentitySubjectIndex) {
+		return nil
+	}
+	statement := &gorm.Statement{DB: db}
+	return db.Exec(fmt.Sprintf(
+		"CREATE UNIQUE INDEX %s ON %s (%s, %s, %s)",
+		statement.Quote(externalIdentitySubjectIndex),
+		statement.Quote("external_identity_claims"),
+		statement.Quote("provider"),
+		statement.Quote("site_id"),
+		statement.Quote("subject"),
+	)).Error
 }

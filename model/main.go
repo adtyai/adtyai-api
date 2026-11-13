@@ -388,10 +388,16 @@ func migrateDB() error {
 	if err := EnsureLegacyAccessTokenRetireAt(common.GetTimestamp()); err != nil {
 		return fmt.Errorf("initialize legacy access token deadline: %w", err)
 	}
+	if err := EnsureExternalIdentityClaimSiteIndexes(DB); err != nil {
+		return err
+	}
 	if err := InitializeExternalIdentityClaims(); err != nil {
 		return err
 	}
 	if err := EnsureBuiltinOAuthSubjectIndexes(DB); err != nil {
+		return err
+	}
+	if err := EnsureUserOAuthBindingSiteSubjectIndex(DB); err != nil {
 		return err
 	}
 	if err := EnsureSiteEmailUniqueIndex(DB); err != nil {

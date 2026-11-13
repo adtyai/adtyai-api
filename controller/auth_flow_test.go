@@ -325,9 +325,9 @@ type boundLoginOAuthProvider struct {
 	userID int
 }
 
-func (*boundLoginOAuthProvider) IsUserIDTaken(string) bool    { return true }
-func (*boundLoginOAuthProvider) ProviderUserIDColumn() string { return "github_id" }
-func (provider *boundLoginOAuthProvider) FillUserByProviderID(user *model.User, _ string) error {
+func (*boundLoginOAuthProvider) IsUserIDTaken(string, int) bool { return true }
+func (*boundLoginOAuthProvider) ProviderUserIDColumn() string   { return "github_id" }
+func (provider *boundLoginOAuthProvider) FillUserByProviderID(user *model.User, _ string, _ int) error {
 	return model.DB.First(user, provider.userID).Error
 }
 
@@ -644,11 +644,11 @@ func (provider *authFlowTestOAuthProvider) GetUserInfo(context.Context, *oauth.O
 	}
 	return &oauth.OAuthUser{ProviderUserID: "external-user"}, nil
 }
-func (*authFlowTestOAuthProvider) IsUserIDTaken(string) bool                      { return false }
-func (*authFlowTestOAuthProvider) FillUserByProviderID(*model.User, string) error { return nil }
-func (*authFlowTestOAuthProvider) SetProviderUserID(*model.User, string)          {}
-func (*authFlowTestOAuthProvider) GetProviderPrefix() string                      { return "flow_" }
-func (*authFlowTestOAuthProvider) ProviderUserIDColumn() string                   { return "" }
+func (*authFlowTestOAuthProvider) IsUserIDTaken(string, int) bool                      { return false }
+func (*authFlowTestOAuthProvider) FillUserByProviderID(*model.User, string, int) error { return nil }
+func (*authFlowTestOAuthProvider) SetProviderUserID(*model.User, string)               {}
+func (*authFlowTestOAuthProvider) GetProviderPrefix() string                           { return "flow_" }
+func (*authFlowTestOAuthProvider) ProviderUserIDColumn() string                        { return "" }
 
 func setupAuthFlowControllerTest(t *testing.T) *authFlowTestOAuthProvider {
 	t.Helper()
@@ -900,11 +900,12 @@ func (provider *legacyGitHubOAuthProvider) GetVerifiedEmails(context.Context, *o
 	provider.verifiedEmailCalls++
 	return provider.verifiedEmails, provider.verifiedEmailsErr
 }
-func (*legacyGitHubOAuthProvider) IsUserIDTaken(providerUserID string) bool {
-	return model.IsGitHubIdAlreadyTaken(providerUserID)
+func (*legacyGitHubOAuthProvider) IsUserIDTaken(providerUserID string, siteID int) bool {
+	return model.IsGitHubIdAlreadyTaken(providerUserID, siteID)
 }
-func (*legacyGitHubOAuthProvider) FillUserByProviderID(user *model.User, providerUserID string) error {
+func (*legacyGitHubOAuthProvider) FillUserByProviderID(user *model.User, providerUserID string, siteID int) error {
 	user.GitHubId = providerUserID
+	user.SiteId = siteID
 	return user.FillUserByGitHubId()
 }
 func (*legacyGitHubOAuthProvider) SetProviderUserID(user *model.User, providerUserID string) {

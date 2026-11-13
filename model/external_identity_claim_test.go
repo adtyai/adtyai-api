@@ -76,6 +76,10 @@ func TestInitializeExternalIdentityClaimsIsIdempotent(t *testing.T) {
 
 func TestInitializeExternalIdentityClaimsRejectsAmbiguousLegacyBindings(t *testing.T) {
 	truncateTables(t)
+	// Legacy duplicates predate the site-scoped unique index on telegram_id.
+	for _, name := range []string{legacyBuiltinOAuthSubjectIndexName("telegram_id"), builtinOAuthSubjectIndexName("telegram_id")} {
+		require.NoError(t, DB.Exec("DROP INDEX IF EXISTS "+name).Error)
+	}
 
 	first := User{Username: "telegram-legacy-one", Password: "password", TelegramId: "duplicate-telegram-id"}
 	second := User{Username: "telegram-legacy-two", Password: "password", TelegramId: "duplicate-telegram-id"}

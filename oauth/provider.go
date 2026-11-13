@@ -22,11 +22,12 @@ type Provider interface {
 	// GetUserInfo retrieves user information using the access token
 	GetUserInfo(ctx context.Context, token *OAuthToken) (*OAuthUser, error)
 
-	// IsUserIDTaken checks if the provider user ID is already associated with an account
-	IsUserIDTaken(providerUserID string) bool
+	// IsUserIDTaken checks if the provider user ID is already associated with an
+	// account on the current site. Occupancy is provider + site + subject.
+	IsUserIDTaken(providerUserID string, siteID int) bool
 
-	// FillUserByProviderID fills the user model by provider user ID
-	FillUserByProviderID(user *model.User, providerUserID string) error
+	// FillUserByProviderID fills the user model by provider user ID on the current site.
+	FillUserByProviderID(user *model.User, providerUserID string, siteID int) error
 
 	// SetProviderUserID sets the provider user ID on the user model
 	SetProviderUserID(user *model.User, providerUserID string)

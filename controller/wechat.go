@@ -30,7 +30,7 @@ func isWeChatSubjectConflict(err error) bool {
 		return false
 	}
 	text := err.Error()
-	return strings.Contains(text, "wechat_id") || strings.Contains(text, "ux_users_wechat_id_subject")
+	return strings.Contains(text, "wechat_id") || strings.Contains(text, "ux_users_wechat_id_site_subject") || strings.Contains(text, "ux_users_wechat_id_subject")
 }
 
 func getWeChatIdByCode(code string) (string, error) {
@@ -75,10 +75,12 @@ func WeChatAuth(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	siteID := service.AdtyRequestSiteID(c)
 	user := model.User{
 		WeChatId: wechatId,
+		SiteId:   siteID,
 	}
-	if model.IsWeChatIdAlreadyTaken(wechatId) {
+	if model.IsWeChatIdAlreadyTaken(wechatId, siteID) {
 		err := user.FillUserByWeChatId()
 		if err != nil {
 			common.ApiError(c, err)
@@ -124,7 +126,7 @@ func WeChatAuth(c *gin.Context) {
 			}
 			if isWeChatSubjectConflict(err) {
 				// 并发注册撞上刚落库的同一微信时，改走已有账号，不再建第二个用户。
-				user = model.User{WeChatId: wechatId}
+				user = model.User{WeChatId: wechatId, SiteId: siteId}
 				if err := user.FillUserByWeChatId(); err != nil || user.Id == 0 {
 					common.ApiErrorT(c, "This {{provider}} account has already been bound", providerParams("WeChat"))
 					return
@@ -182,7 +184,7 @@ func WeChatBind(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	if model.IsWeChatIdAlreadyTaken(wechatId) {
+	if model.IsWeChatIdAlreadyTaken(wechatId, service.AdtyRequestSiteID(c)) {
 		common.ApiErrorT(c, "This {{provider}} account has already been bound", providerParams("WeChat"))
 		return
 	}
