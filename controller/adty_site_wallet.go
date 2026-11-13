@@ -67,6 +67,49 @@ func GetAdtyOwnerWalletLedger(c *gin.Context) {
 	adtySiteWalletResponse(c, site.Id, true, true)
 }
 
+func GetAdtyAnomalyDispositions(c *gin.Context) {
+	if c.GetInt("role") != common.RoleRootUser {
+		common.ApiErrorStatus(c, http.StatusForbidden, common.NewMessage("No permission to perform this action"))
+		return
+	}
+	siteID, err := strconv.Atoi(c.Query("site_id"))
+	if err != nil || siteID <= 0 {
+		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	rows, err := service.ListAdtyAnomalyDispositions(siteID)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"items": rows})
+}
+
+func PostAdtyAnomalyDispositionReview(c *gin.Context) {
+	if c.GetInt("role") != common.RoleRootUser {
+		common.ApiErrorStatus(c, http.StatusForbidden, common.NewMessage("No permission to perform this action"))
+		return
+	}
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	var body struct {
+		Status string `json:"status"`
+		Note   string `json:"note"`
+	}
+	if err := common.DecodeJson(c.Request.Body, &body); err != nil {
+		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	if err := service.ReviewAdtyAnomalyDisposition(id, c.GetInt("id"), body.Status, body.Note); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"reviewed": true})
+}
+
 func GetAdtyFundAnomalies(c *gin.Context) {
 	siteID, err := strconv.Atoi(c.Query("site_id"))
 	if err != nil || siteID <= 0 {

@@ -116,6 +116,52 @@ export async function issueAdminMarginVoucher(body: {
   return requireServerSuccess(res.data).data
 }
 
+export type AdminWallet = {
+  id: number
+  kind: string
+  balance: string
+  cycle_tier_usd: string
+  cycle_used_usd: string
+}
+
+export type AnomalyDisposition = {
+  id: number
+  kind: string
+  ref: string
+  status: string
+  note: string
+  operator_id: number
+}
+
+export async function getAdminSiteWallets(siteId: number): Promise<AdminWallet[]> {
+  const res = await api.get<ApiResponse<AdminWallet[]>>(
+    `${BASE}/sites/${siteId}/wallets`
+  )
+  return requireServerSuccess(res.data).data ?? []
+}
+
+export async function getAdminAnomalyDispositions(
+  siteId: number
+): Promise<AnomalyDisposition[]> {
+  const res = await api.get<ApiResponse<{ items?: AnomalyDisposition[] }>>(
+    `${BASE}/fund-anomalies/dispositions`,
+    { params: { site_id: siteId } }
+  )
+  return requireServerSuccess(res.data).data.items ?? []
+}
+
+export async function reviewAdminAnomalyDisposition(
+  id: number,
+  status: 'reviewing' | 'closed',
+  note: string
+): Promise<void> {
+  const res = await api.post<ApiResponse<{ reviewed: boolean }>>(
+    `${BASE}/fund-anomalies/dispositions/${id}/review`,
+    { status, note }
+  )
+  requireServerSuccess(res.data)
+}
+
 export async function getAdminFundAnomalies(
   siteId: number
 ): Promise<string[]> {

@@ -8798,7 +8798,9 @@
     "Issue margin code": "Выпустить код маржи",
     "Only the site owner can redeem a margin code.": "Код маржи может погасить только владелец этого сайта.",
     "Agreement price": "Договорная цена",
-    "A main-site team discount has no supply floor. A subsite team is refused.": "У скидки команды основного сайта нет нижней границы поставки. Команда подсайта отклоняется."
+    "A main-site team discount has no supply floor. A subsite team is refused.": "У скидки команды основного сайта нет нижней границы поставки. Команда подсайта отклоняется.",
+    "Wallets": "Кошельки",
+    "Mark reviewing": "Отметить на проверке"
 },
   "Targeted notifications": "Адресные уведомления",
   "Site announcements": "Объявления сайта",

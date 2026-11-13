@@ -29,7 +29,14 @@ import { handleServerError } from '@/lib/handle-server-error'
 import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
 
-import { getAdminFundAnomalies, issueAdminMarginVoucher, siteAdminKeys } from '../api'
+import {
+  getAdminAnomalyDispositions,
+  getAdminFundAnomalies,
+  getAdminSiteWallets,
+  issueAdminMarginVoucher,
+  reviewAdminAnomalyDisposition,
+  siteAdminKeys,
+} from '../api'
 
 /** Root sees the site anomaly scan and can issue a margin code. Amounts are typed, not suggested. */
 export function SiteFundPanel(props: { siteId: number }) {
@@ -39,6 +46,26 @@ export function SiteFundPanel(props: { siteId: number }) {
   const [amount, setAmount] = useState('')
   const [reason, setReason] = useState('')
   const [code, setCode] = useState('')
+  const [note, setNote] = useState('')
+  const wallets = useQuery({
+    queryKey: siteAdminKeys.list('wallets', { siteId: props.siteId }),
+    queryFn: () => getAdminSiteWallets(props.siteId),
+    enabled: isRoot,
+  })
+  const dispositions = useQuery({
+    queryKey: siteAdminKeys.list('dispositions', { siteId: props.siteId }),
+    queryFn: () => getAdminAnomalyDispositions(props.siteId),
+    enabled: isRoot,
+  })
+  const review = useMutation({
+    mutationFn: (input: { id: number; status: 'reviewing' | 'closed' }) =>
+      reviewAdminAnomalyDisposition(input.id, input.status, note.trim()),
+    onSuccess: () => {
+      setNote('')
+      void client.invalidateQueries({ queryKey: siteAdminKeys.all })
+    },
+    onError: (error) => handleServerError(error),
+  })
   const anomalies = useQuery({
     queryKey: siteAdminKeys.list('fund-anomalies', { siteId: props.siteId }),
     queryFn: () => getAdminFundAnomalies(props.siteId),
@@ -62,6 +89,21 @@ export function SiteFundPanel(props: { siteId: number }) {
   if (!isRoot) return null
   return (
     <section className='flex flex-col gap-3'>
+      <h3 className='text-sm font-medium'>{t('Wallets')}</h3>
+      {wallets.isPending && <LoadingState />}
+      {wallets.isError && <ErrorState onRetry={() => void wallets.refetch()} />}
+      {wallets.isSuccess && (
+        <ul className='flex flex-col gap-1 text-sm tabular-nums'>
+          {wallets.data.map((wallet) => (
+            <li key={wallet.id}>
+              {wallet.kind} {wallet.balance}
+              {wallet.kind === 'margin' && wallet.cycle_tier_usd
+                ? ` · ${wallet.cycle_used_usd}/${wallet.cycle_tier_usd}`
+                : ''}
+            </li>
+          ))}
+        </ul>
+      )}
       <h3 className='text-sm font-medium'>{t('Fund anomalies')}</h3>
       {anomalies.isPending && <LoadingState />}
       {anomalies.isError && <ErrorState onRetry={() => void anomalies.refetch()} />}
@@ -76,6 +118,40 @@ export function SiteFundPanel(props: { siteId: number }) {
             </li>
           ))}
         </ul>
+      )}
+      {dispositions.isSuccess && dispositions.data.length > 0 && (
+        <div className='flex flex-col gap-2'>
+          <Label htmlFor='anomaly-note'>{t('Note')}</Label>
+          <Input id='anomaly-note' value={note} onChange={(event) => setNote(event.target.value)} />
+          {dispositions.data.map((row) => (
+            <div key={row.id} className='flex flex-wrap items-center gap-2 text-sm'>
+              <span className='font-mono text-xs'>{row.kind}</span>
+              <span>{row.status}</span>
+              {row.status !== 'closed' && (
+                <>
+                  <Button
+                    type='button'
+                    size='sm'
+                    variant='outline'
+                    disabled={review.isPending}
+                    onClick={() => review.mutate({ id: row.id, status: 'reviewing' })}
+                  >
+                    {t('Mark reviewing')}
+                  </Button>
+                  <Button
+                    type='button'
+                    size='sm'
+                    variant='outline'
+                    disabled={review.isPending || note.trim() === ''}
+                    onClick={() => review.mutate({ id: row.id, status: 'closed' })}
+                  >
+                    {t('Close')}
+                  </Button>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
       )}
       <h3 className='text-sm font-medium'>{t('Issue margin code')}</h3>
       <p className='text-muted-foreground text-sm'>

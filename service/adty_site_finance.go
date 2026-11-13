@@ -352,6 +352,39 @@ func adtyDuplicateEventTrades(siteID int, outcome, eventType string) (int64, err
 	return int64(len(trades)), nil
 }
 
+// ListAdtyAnomalyDispositions returns review rows for one site. It does not create any.
+func ListAdtyAnomalyDispositions(siteID int) ([]model.AdtyAnomalyDisposition, error) {
+	if siteID <= 0 {
+		return nil, common.NewMessage("Invalid parameters")
+	}
+	var rows []model.AdtyAnomalyDisposition
+	err := model.DB.Where("ref = ?", strconv.Itoa(siteID)).Order("id desc").Limit(50).Find(&rows).Error
+	return rows, err
+}
+
+// ReviewAdtyAnomalyDisposition records a Root review. It does not move wallets or customer quota.
+func ReviewAdtyAnomalyDisposition(id int64, operatorID int, status, note string) error {
+	status, note = strings.TrimSpace(status), strings.TrimSpace(note)
+	if id <= 0 || operatorID <= 0 || (status != "reviewing" && status != "closed") {
+		return common.NewMessage("Invalid parameters")
+	}
+	if status == "closed" && note == "" {
+		return common.NewMessage("Invalid parameters")
+	}
+	return model.DB.Transaction(func(tx *gorm.DB) error {
+		var row model.AdtyAnomalyDisposition
+		if err := model.AdtyLockForUpdate(tx).First(&row, id).Error; err != nil {
+			return err
+		}
+		if row.Status == "closed" || (row.Status == "reviewing" && status != "closed") || (row.Status != "open" && row.Status != "reviewing") {
+			return common.NewMessage("Invalid parameters")
+		}
+		return tx.Model(&row).Updates(map[string]any{
+			"status": status, "note": note, "operator_id": operatorID,
+		}).Error
+	})
+}
+
 // TransferAdtyEarningToMargin moves earning cash into margin and opens a new draw cycle.
 func TransferAdtyEarningToMargin(siteID, operator int, amount, tier decimal.Decimal, key string) error {
 	if !amount.IsPositive() || !tier.IsPositive() || strings.TrimSpace(key) == "" {

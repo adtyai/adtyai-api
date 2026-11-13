@@ -8798,7 +8798,9 @@
     "Issue margin code": "Émettre un code de marge",
     "Only the site owner can redeem a margin code.": "Seul le propriétaire du site peut utiliser un code de marge.",
     "Agreement price": "Prix convenu",
-    "A main-site team discount has no supply floor. A subsite team is refused.": "La remise d'une équipe du site principal n'a pas de plancher d'approvisionnement. Une équipe de sous-site est refusée."
+    "A main-site team discount has no supply floor. A subsite team is refused.": "La remise d'une équipe du site principal n'a pas de plancher d'approvisionnement. Une équipe de sous-site est refusée.",
+    "Wallets": "Portefeuilles",
+    "Mark reviewing": "Marquer en vérification"
 },
   "Targeted notifications": "Notifications ciblées",
   "Site announcements": "Annonces du site",

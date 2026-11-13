@@ -8798,7 +8798,9 @@
     "Issue margin code": "Phát hành mã ký quỹ",
     "Only the site owner can redeem a margin code.": "Chỉ chủ site đó mới đổi được mã ký quỹ.",
     "Agreement price": "Giá thỏa thuận",
-    "A main-site team discount has no supply floor. A subsite team is refused.": "Chiết khấu đội của site chính không có sàn giá cung. Đội của site con bị từ chối."
+    "A main-site team discount has no supply floor. A subsite team is refused.": "Chiết khấu đội của site chính không có sàn giá cung. Đội của site con bị từ chối.",
+    "Wallets": "Ví",
+    "Mark reviewing": "Đánh dấu đang kiểm tra"
 },
   "Targeted notifications": "Thông báo theo đối tượng",
   "Site announcements": "Thông báo của trang",

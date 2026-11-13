@@ -26,6 +26,8 @@ func TestAdtyGapRoutesRegistered(t *testing.T) {
 		"POST /api/adty/site/wallets/earning-to-margin",
 		"GET /api/adty/notifications/announcements/:key",
 		"GET /api/adty/admin/fund-anomalies",
+		"GET /api/adty/admin/fund-anomalies/dispositions",
+		"POST /api/adty/admin/fund-anomalies/dispositions/:id/review",
 		"GET /api/adty/site/withdrawals/rules",
 		"GET /api/adty/site/withdrawals",
 		"POST /api/adty/site/withdrawals",

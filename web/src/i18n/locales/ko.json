@@ -8772,7 +8772,9 @@
     "Issue margin code": "보증금 코드 발행",
     "Only the site owner can redeem a margin code.": "보증금 코드는 해당 사이트 소유자만 교환할 수 있습니다.",
     "Agreement price": "협의 가격",
-    "A main-site team discount has no supply floor. A subsite team is refused.": "메인 사이트 팀 할인에는 공급가 하한이 없습니다. 하위 사이트 팀은 거부됩니다."
+    "A main-site team discount has no supply floor. A subsite team is refused.": "메인 사이트 팀 할인에는 공급가 하한이 없습니다. 하위 사이트 팀은 거부됩니다.",
+    "Wallets": "지갑",
+    "Mark reviewing": "확인 중으로 표시"
 },
   "Targeted notifications": "대상 지정 알림",
   "Site announcements": "사이트 공지",

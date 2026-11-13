@@ -1,6 +1,7 @@
 package service
 
 import (
+	"strconv"
 	"testing"
 
 	"github.com/QuantumNous/new-api/model"
@@ -22,6 +23,22 @@ func TestCollectAdtyFundAnomaliesFlagsDuplicateCreditAndRefund(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, kinds, "duplicate_credit")
 	require.Contains(t, kinds, "duplicate_refund")
+}
+
+func TestReviewAdtyAnomalyDispositionDoesNotMoveWallets(t *testing.T) {
+	db := prepareSiteDB(t)
+	_, site := openActiveSite(t, db, "anomaly-review")
+	require.NoError(t, EnsureAdtySiteWallets(site.Id))
+	require.NoError(t, RecordAdtyAnomalyDisposition("balance_ledger_gap", strconv.Itoa(site.Id), "open", "detected", 0))
+	rows, err := ListAdtyAnomalyDispositions(site.Id)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.Error(t, ReviewAdtyAnomalyDisposition(rows[0].Id, 9, "closed", ""))
+	require.NoError(t, ReviewAdtyAnomalyDisposition(rows[0].Id, 9, "closed", "checked"))
+	require.Error(t, ReviewAdtyAnomalyDisposition(rows[0].Id, 9, "closed", "again"))
+	var wallet model.AdtySiteWallet
+	require.NoError(t, db.Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteWalletOperating).First(&wallet).Error)
+	require.True(t, wallet.Balance.IsZero())
 }
 
 func TestCollectAdtyFundAnomaliesFlagsMarginOverCap(t *testing.T) {

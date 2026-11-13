@@ -8798,7 +8798,9 @@
     "Issue margin code": "Issue margin code",
     "Only the site owner can redeem a margin code.": "Only the site owner can redeem a margin code.",
     "Agreement price": "Agreement price",
-    "A main-site team discount has no supply floor. A subsite team is refused.": "A main-site team discount has no supply floor. A subsite team is refused."
+    "A main-site team discount has no supply floor. A subsite team is refused.": "A main-site team discount has no supply floor. A subsite team is refused.",
+    "Wallets": "Wallets",
+    "Mark reviewing": "Mark reviewing"
 },
   "Targeted notifications": "Targeted notifications",
   "Site announcements": "Site announcements",
