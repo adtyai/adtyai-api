@@ -23,12 +23,14 @@ import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { EarningsPanel } from '../components/earnings-panel'
+import { OverviewPanel } from '../components/overview-panel'
 import { OwnerVerificationProvider } from '../components/owner-verification'
 import { PricingPanel } from '../components/pricing-panel'
 import { SiteSettingsPanel } from '../components/site-settings-panel'
 import type { OwnerEarnings, OwnerSite, SitePrice } from '../types'
 
 const api = vi.hoisted(() => ({
+  getOwnerStats: vi.fn(),
   getOwnerEarnings: vi.fn(),
   savePricing: vi.fn(),
   downloadExport: vi.fn(),
@@ -210,6 +212,46 @@ describe('PricingPanel', () => {
     render(wrap(<PricingPanel site={ownerSite({ status: 'closing' })} />))
     expect(screen.getByRole('button', { name: 'Save prices' })).toBeDisabled()
     expect(screen.getByLabelText('Default markup')).toBeDisabled()
+  })
+})
+
+describe('OverviewPanel', () => {
+  it('does not show a period or cumulative top-up total', async () => {
+    api.getOwnerStats.mockResolvedValue({
+      from: '2026-10-15',
+      to: '2026-11-14',
+      total: {
+        day: '',
+        new_customers: 2,
+        paid_customers: 1,
+        active_customers: 1,
+        topup_usd: '88',
+        revenue_usd: '12',
+        platform_usd: '8',
+        earning_usd: '4',
+        bonus_usd: '0',
+        refund_usd: '0',
+        skipped_usd: '0',
+      },
+      series: [],
+    })
+    api.getOwnerEarnings.mockResolvedValue({
+      balances: {
+        pending_usd: '4',
+        skipped_usd: '0',
+        available_usd: '0',
+        frozen_usd: '0',
+        withdrawn_usd: '0',
+      },
+      page: { page: 1, page_size: 20, total: 0, items: [] },
+    })
+    render(wrap(<OverviewPanel />))
+    expect(await screen.findByText('Customer spend')).toBeInTheDocument()
+    expect(screen.getByText('New customers')).toBeInTheDocument()
+    expect(screen.getByText('Paying customers')).toBeInTheDocument()
+    expect(screen.getByText('$12.00')).toBeInTheDocument()
+    expect(screen.queryByText('Top-ups')).not.toBeInTheDocument()
+    expect(screen.queryByText('$88.00')).not.toBeInTheDocument()
   })
 })
 

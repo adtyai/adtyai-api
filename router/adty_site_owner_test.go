@@ -475,7 +475,7 @@ func TestOrderDetailsRespectFrozenSiteAndRedactPrivateEvidence(t *testing.T) {
 	assert.NotContains(t, response.Body.String(), "balance_before")
 	assert.NotContains(t, response.Body.String(), "balance_after")
 	assert.NotContains(t, f.call(t, http.MethodGet, "/api/adty/site/orders", "", "").Body.String(), "private-manual-proof")
-	for _, section := range []string{"commissions", "commission_movements"} {
+	for _, section := range []string{"commissions", "commission_movements", "site_wallet"} {
 		assert.Contains(t, f.call(t, http.MethodGet, "/api/adty/site/orders/trace-mine?section="+section, "", "").Body.String(), `"success":false`)
 	}
 	for _, trade := range []string{"trace-other", "trace-main", "missing-order"} {
@@ -887,19 +887,75 @@ func TestOwnerStatsAndEarnings(t *testing.T) {
 		{SiteId: f.site.Id, UserId: customer.Id, Day: today, Kind: model.AdtySiteEarningBonus, Earning: decimal.NewFromInt(-5), Status: model.AdtySiteEarningPending},
 		{SiteId: f.other.Id, UserId: customer.Id, Day: today, Kind: model.AdtySiteEarningUsage, Revenue: decimal.NewFromInt(999), Earning: decimal.NewFromInt(999), Status: model.AdtySiteEarningPending},
 	}).Error)
+	now := time.Now().Unix()
+	require.NoError(t, f.db.Create(&model.TopUp{TradeNo: "stats-topup", UserId: customer.Id, Status: common.TopUpStatusSuccess, PaymentProvider: model.PaymentProviderStripe, Amount: 88}).Error)
+	require.NoError(t, f.db.Create(&model.AdtyTopupOrder{TradeNo: "stats-topup", UserId: customer.Id, SiteId: f.site.Id, Provider: model.PaymentProviderStripe, FaceUSD: decimal.NewFromInt(88), CreatedAt: now}).Error)
 
+	statsResp := f.call(t, http.MethodGet, "/api/adty/site/stats", "", "")
+	require.Equal(t, http.StatusOK, statsResp.Code, statsResp.Body.String())
+	assert.NotContains(t, statsResp.Body.String(), "topup_usd")
 	var stats struct {
 		Data service.AdtySiteStats `json:"data"`
 	}
-	require.NoError(t, common.Unmarshal(f.call(t, http.MethodGet, "/api/adty/site/stats", "", "").Body.Bytes(), &stats))
+	require.NoError(t, common.Unmarshal(statsResp.Body.Bytes(), &stats))
 	assert.True(t, stats.Data.Total.RevenueUSD.Equal(decimal.NewFromInt(125)))
 	assert.True(t, stats.Data.Total.EarningUSD.Equal(decimal.NewFromInt(40)), "usage $45 minus bonus $5")
 	assert.True(t, stats.Data.Total.PlatformUSD.Add(stats.Data.Total.EarningUSD).Sub(stats.Data.Total.BonusUSD).Equal(stats.Data.Total.RevenueUSD))
 	assert.EqualValues(t, 1, stats.Data.Total.NewCustomers)
+	assert.True(t, stats.Data.Total.TopUpUSD.IsZero(), "owner stats JSON must omit the period top-up total")
 
 	earnings := f.call(t, http.MethodGet, "/api/adty/site/earnings", "", "").Body.String()
 	assert.Contains(t, earnings, `"pending_usd":"40"`)
 	assert.NotContains(t, earnings, "999", "other sites' rows never show up")
+}
+
+func TestOwnerExportStatsOmitsTopupUSD(t *testing.T) {
+	f := newOwnerFixture(t)
+	customer := f.customer(t, f.site, "export-stats-customer", "export-stats@example.com")
+	today := time.Now().Format("2006-01-02")
+	require.NoError(t, f.db.Create(&model.AdtySiteEarningDaily{
+		SiteId: f.site.Id, UserId: customer.Id, Day: today, Kind: model.AdtySiteEarningUsage,
+		Revenue: decimal.NewFromInt(15), Earning: decimal.NewFromInt(6), Status: model.AdtySiteEarningPending,
+	}).Error)
+	now := time.Now().Unix()
+	require.NoError(t, f.db.Create(&model.TopUp{TradeNo: "export-stats-topup", UserId: customer.Id, Status: common.TopUpStatusSuccess, PaymentProvider: model.PaymentProviderStripe, Amount: 88}).Error)
+	require.NoError(t, f.db.Create(&model.AdtyTopupOrder{TradeNo: "export-stats-topup", UserId: customer.Id, SiteId: f.site.Id, Provider: model.PaymentProviderStripe, FaceUSD: decimal.NewFromInt(88), CreatedAt: now}).Error)
+	resp := f.call(t, http.MethodGet, "/api/adty/site/export?kind=stats&from="+today+"&to="+today, "", "")
+	require.Equal(t, http.StatusOK, resp.Code, resp.Body.String())
+	body := resp.Body.String()
+	assert.Contains(t, body, "day,new_customers,paid_customers,active_customers,revenue_usd,earning_usd,bonus_usd,refund_usd")
+	assert.NotContains(t, body, "topup_usd")
+	assert.Contains(t, body, "15.00")
+	assert.Contains(t, body, "6.00")
+	assert.NotContains(t, body, "88.00")
+	assert.Contains(t, resp.Header().Get("Content-Type"), "text/csv")
+}
+
+func TestOwnerOrderTraceOmitsSiteWallet(t *testing.T) {
+	f := newOwnerFixture(t)
+	buyer := f.customer(t, f.site, "owner-trace-buyer", "owner-trace@example.com")
+	require.NoError(t, f.db.Create(&model.TopUp{TradeNo: "owner-trace-mine", UserId: buyer.Id, PaymentProvider: model.PaymentProviderStripe, Status: common.TopUpStatusSuccess}).Error)
+	require.NoError(t, f.db.Create(&model.AdtyTopupOrder{TradeNo: "owner-trace-mine", UserId: buyer.Id, SiteId: f.site.Id, Provider: model.PaymentProviderStripe, FaceUSD: decimal.NewFromInt(2)}).Error)
+	require.NoError(t, f.db.Create(&model.AdtySiteWalletLedger{SiteId: f.site.Id, WalletKind: "operating", Type: "adjustment", RefType: "topup", RefId: "owner-trace-mine", IdempotencyKey: "owner-hidden-operating", Delta: decimal.NewFromInt(-1)}).Error)
+	require.NoError(t, f.db.Create(&model.AdtySiteWalletLedger{SiteId: f.site.Id, WalletKind: "margin", Type: "commission_clawback", RefType: "site_invite", RefId: "owner-trace-mine", IdempotencyKey: "owner-hidden-margin", Delta: decimal.RequireFromString("0.5")}).Error)
+	require.NoError(t, f.db.Create(&model.AdtyBalanceLedger{UserId: buyer.Id, Type: "topup", RefType: "topup", RefId: "owner-trace-mine", DeltaQuota: 200}).Error)
+
+	payments := f.call(t, http.MethodGet, "/api/adty/site/orders/owner-trace-mine", "", "")
+	require.Equal(t, http.StatusOK, payments.Code, payments.Body.String())
+	assert.Contains(t, payments.Body.String(), `"success":true`)
+	assert.NotContains(t, payments.Body.String(), "site_wallet")
+	assert.NotContains(t, payments.Body.String(), "operating")
+	assert.Contains(t, payments.Body.String(), `"payments"`)
+	assert.Contains(t, payments.Body.String(), `"wallet"`)
+
+	hidden := f.call(t, http.MethodGet, "/api/adty/site/orders/owner-trace-mine?section=site_wallet", "", "")
+	assert.Contains(t, hidden.Body.String(), `"success":false`)
+	assert.NotContains(t, hidden.Body.String(), "owner-hidden-operating")
+	assert.NotContains(t, hidden.Body.String(), "Site wallet movement")
+
+	wallet := f.call(t, http.MethodGet, "/api/adty/site/orders/owner-trace-mine?section=wallet", "", "")
+	require.Equal(t, http.StatusOK, wallet.Code, wallet.Body.String())
+	assert.Contains(t, wallet.Body.String(), `"delta_quota":200`)
 }
 
 func TestOwnerCenterRequiresCurrentAgreement(t *testing.T) {

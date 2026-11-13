@@ -82,9 +82,9 @@ func getAdtyOrderTrace(c *gin.Context, ownerSiteID *int) {
 		common.ApiError(c, err)
 		return
 	}
-	sections := []string{"payments", "wallet", "bonuses", "site_wallet", "exceptions", "reviews"}
+	sections := []string{"payments", "wallet", "bonuses", "exceptions", "reviews"}
 	if ownerSiteID == nil {
-		sections = append(sections, "commissions", "commission_movements")
+		sections = []string{"payments", "wallet", "bonuses", "site_wallet", "exceptions", "reviews", "commissions", "commission_movements"}
 	}
 	section := c.DefaultQuery("section", "payments")
 	traceQuery, projection, ok := adtyOrderTraceQuery(section, order, ownerSiteID)
@@ -171,6 +171,9 @@ func adtyOrderTraceQuery(section string, order rechargeAuditOrder, ownerSiteID *
 		return model.DB.Model(&model.AdtyPromoRedemption{}).Where("trade_no = ? AND user_id = ?", order.TradeNo, order.UserId),
 			"id, 'Promo bonus' AS kind, bonus_usd AS amount, 'USD' AS currency, created_at", true
 	case "site_wallet":
+		if ownerSiteID != nil {
+			return nil, "", false
+		}
 		q := model.DB.Model(&model.AdtySiteWalletLedger{}).Where("ref_id = ? AND ref_type IN ?", order.TradeNo, []string{"topup", "site_invite"})
 		if order.SiteId == nil {
 			q = q.Where("1 = 0")

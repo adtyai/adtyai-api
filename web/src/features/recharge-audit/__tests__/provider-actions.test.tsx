@@ -158,6 +158,10 @@ it('uses the owner detail endpoint and hides platform commission sections', asyn
   expect(
     dialog.queryByRole('option', { name: 'Commission wallet movements' })
   ).not.toBeInTheDocument()
+  expect(
+    dialog.queryByRole('option', { name: 'Site wallet movements' })
+  ).not.toBeInTheDocument()
+  expect(dialog.queryByText('Operating wallet')).not.toBeInTheDocument()
 })
 
 it('shows a retry after detail loading fails and displays the recovered empty result', async () => {
@@ -361,6 +365,9 @@ it('opens order details from the order number and paginates the selected trace s
     await screen.findByRole('dialog', { name: 'Order details' })
   )
   expect(await dialog.findByText('evidence-page-1')).toBeVisible()
+  expect(
+    dialog.getByRole('option', { name: 'Site wallet movements' })
+  ).toBeInTheDocument()
   expect(
     dialog.getByText(
       'Earlier payment attempts may not have been recorded. The order snapshot is not a complete callback history.'

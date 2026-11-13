@@ -91,8 +91,10 @@ func TestOrderTraceDatabaseMatrix(t *testing.T) {
 				}
 				return recorder, result
 			}
-			_, result := read("/orders/frozen-trace?section=payments&page_size=20&p=1")
+			recorder, result := read("/orders/frozen-trace?section=payments&page_size=20&p=1")
 			require.True(t, result.Success)
+			assert.Contains(t, recorder.Body.String(), `"site_wallet"`)
+			assert.Contains(t, recorder.Body.String(), `"commissions"`)
 			assert.Equal(t, 21, result.Data.Total)
 			require.Len(t, result.Data.Items, 20)
 			assert.Equal(t, int64(21), result.Data.Items[0].Id)
@@ -120,7 +122,7 @@ func TestOrderTraceDatabaseMatrix(t *testing.T) {
 			}
 			_, result = read("/orders/frozen-trace?section=unknown")
 			assert.False(t, result.Success)
-			recorder, result := read("/orders/missing-order")
+			recorder, result = read("/orders/missing-order")
 			assert.Equal(t, http.StatusNotFound, recorder.Code)
 			assert.False(t, result.Success)
 		})

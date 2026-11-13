@@ -64,7 +64,9 @@ export function OrderDetailDialog(props: {
   ).filter(
     (value) =>
       !props.ownerMode ||
-      (value !== 'commissions' && value !== 'commission_movements')
+      (value !== 'commissions' &&
+        value !== 'commission_movements' &&
+        value !== 'site_wallet')
   )
   return (
     <Dialog

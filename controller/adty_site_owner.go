@@ -194,6 +194,7 @@ func PutAdtyOwnerSite(c *gin.Context) {
 }
 
 // GetAdtyOwnerStats 是经营数据：GET /api/adty/site/stats?from&to（日期 2006-01-02）。
+// 站长前台不展示累计或区间充值汇总，所以响应里省略 topup_usd；内部账务仍按原样计算。
 func GetAdtyOwnerStats(c *gin.Context) {
 	site, ok := adtyOwnerSiteOr403(c)
 	if !ok {
@@ -204,7 +205,52 @@ func GetAdtyOwnerStats(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	common.ApiSuccess(c, stats)
+	common.ApiSuccess(c, adtyOwnerVisibleStats(stats))
+}
+
+// adtyOwnerDayStats 是站长可见的按日经营数据：不含充值汇总。
+type adtyOwnerDayStats struct {
+	Day            string          `json:"day"`
+	NewCustomers   int64           `json:"new_customers"`
+	PaidCustomers  int64           `json:"paid_customers"`
+	ActiveCustomer int64           `json:"active_customers"`
+	RevenueUSD     decimal.Decimal `json:"revenue_usd"`
+	PlatformUSD    decimal.Decimal `json:"platform_usd"`
+	EarningUSD     decimal.Decimal `json:"earning_usd"`
+	BonusUSD       decimal.Decimal `json:"bonus_usd"`
+	RefundUSD      decimal.Decimal `json:"refund_usd"`
+	SkippedUSD     decimal.Decimal `json:"skipped_usd"`
+}
+
+type adtyOwnerStats struct {
+	From   string              `json:"from"`
+	To     string              `json:"to"`
+	Total  adtyOwnerDayStats   `json:"total"`
+	Series []adtyOwnerDayStats `json:"series"`
+}
+
+func adtyOwnerDayStatsOf(day service.AdtySiteDayStats) adtyOwnerDayStats {
+	return adtyOwnerDayStats{
+		Day:            day.Day,
+		NewCustomers:   day.NewCustomers,
+		PaidCustomers:  day.PaidCustomers,
+		ActiveCustomer: day.ActiveCustomer,
+		RevenueUSD:     day.RevenueUSD,
+		PlatformUSD:    day.PlatformUSD,
+		EarningUSD:     day.EarningUSD,
+		BonusUSD:       day.BonusUSD,
+		RefundUSD:      day.RefundUSD,
+		SkippedUSD:     day.SkippedUSD,
+	}
+}
+
+func adtyOwnerVisibleStats(stats *service.AdtySiteStats) adtyOwnerStats {
+	out := adtyOwnerStats{From: stats.From, To: stats.To, Total: adtyOwnerDayStatsOf(stats.Total)}
+	out.Series = make([]adtyOwnerDayStats, len(stats.Series))
+	for i, day := range stats.Series {
+		out.Series[i] = adtyOwnerDayStatsOf(day)
+	}
+	return out
 }
 
 // adtyOwnerEarningRow 是站长看到的一条收益：skipped 只给原因类别（self_use | migration），不给判断依据。
@@ -492,10 +538,10 @@ func GetAdtyOwnerExport(c *gin.Context) {
 			common.ApiError(c, err)
 			return
 		}
-		b.WriteString("day,new_customers,paid_customers,active_customers,topup_usd,revenue_usd,earning_usd,bonus_usd,refund_usd\n")
+		b.WriteString("day,new_customers,paid_customers,active_customers,revenue_usd,earning_usd,bonus_usd,refund_usd\n")
 		for _, day := range stats.Series {
-			fmt.Fprintf(&b, "%s,%d,%d,%d,%s,%s,%s,%s,%s\n", day.Day, day.NewCustomers, day.PaidCustomers, day.ActiveCustomer,
-				day.TopUpUSD.StringFixed(2), day.RevenueUSD.StringFixed(2), day.EarningUSD.StringFixed(2), day.BonusUSD.StringFixed(2), day.RefundUSD.StringFixed(2))
+			fmt.Fprintf(&b, "%s,%d,%d,%d,%s,%s,%s,%s\n", day.Day, day.NewCustomers, day.PaidCustomers, day.ActiveCustomer,
+				day.RevenueUSD.StringFixed(2), day.EarningUSD.StringFixed(2), day.BonusUSD.StringFixed(2), day.RefundUSD.StringFixed(2))
 		}
 	case "customers":
 		var total int64

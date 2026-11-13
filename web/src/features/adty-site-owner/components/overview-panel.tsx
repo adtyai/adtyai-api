@@ -105,7 +105,6 @@ export function OverviewPanel() {
             label: t('Paying customers'),
             value: formatNumber(total?.paid_customers ?? 0, locale),
           },
-          { label: t('Top-ups'), value: money(total?.topup_usd) },
           { label: t('Customer spend'), value: money(total?.revenue_usd) },
         ]}
       />

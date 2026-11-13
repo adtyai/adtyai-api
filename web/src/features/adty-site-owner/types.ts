@@ -94,7 +94,7 @@ export type SiteDayStats = {
   new_customers: number
   paid_customers: number
   active_customers: number
-  topup_usd: string
+  topup_usd?: string
   revenue_usd: string
   platform_usd: string
   earning_usd: string
