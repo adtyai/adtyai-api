@@ -111,13 +111,13 @@ func CreateAdtyStaff(ownerID, siteID int, input AdtyStaffInput) (*AdtyStaffView,
 		if err := adtyStaffOwnerTx(tx, ownerID, siteID); err != nil {
 			return err
 		}
-		// Global login names cannot be reassigned, including deleted accounts.
-		var count int64
-		if err := tx.Unscoped().Model(&model.User{}).Where("username = ?", input.Username).Count(&count).Error; err != nil {
+		// Global login names cannot be reassigned, including deleted accounts
+		// and case-variant spellings of an existing name.
+		if err := model.EnsureUsernameAvailableWithTx(tx, input.Username, 0); err != nil {
+			if errors.Is(err, model.ErrUsernameAlreadyTaken) {
+				return ErrAdtyStaffInput
+			}
 			return err
-		}
-		if count != 0 {
-			return ErrAdtyStaffInput
 		}
 		user := model.User{Username: input.Username, DisplayName: input.DisplayName, Password: hash, Role: common.RoleCommonUser,
 			Status: common.UserStatusEnabled, Group: "default", SiteId: siteID, StaffSiteId: siteID, AuthVersion: 1}

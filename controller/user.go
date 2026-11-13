@@ -324,13 +324,22 @@ func Register(c *gin.Context) {
 			common.ApiErrorT(c, "Verification code is incorrect or has expired") // 二开：任务 7.3
 			return
 		}
+		if errors.Is(err, model.ErrUsernameAlreadyTaken) {
+			common.ApiErrorT(c, "Username already exists or has been deleted")
+			return
+		}
 		common.ApiError(c, err)
 		return
 	}
 
 	// 获取插入后的用户ID
 	var insertedUser model.User
-	if err := model.DB.Where("username = ?", cleanUser.Username).First(&insertedUser).Error; err != nil {
+	if cleanUser.Id > 0 {
+		if err := model.DB.First(&insertedUser, cleanUser.Id).Error; err != nil {
+			common.ApiErrorT(c, "User registration failed or user ID retrieval failed")
+			return
+		}
+	} else if err := model.DB.Where("LOWER(username) = ?", model.NormalizeUsername(cleanUser.Username)).First(&insertedUser).Error; err != nil {
 		common.ApiErrorT(c, "User registration failed or user ID retrieval failed")
 		return
 	}
@@ -1185,6 +1194,10 @@ func CreateUser(c *gin.Context) {
 		authzTouched = touched
 		return err
 	}); err != nil {
+		if errors.Is(err, model.ErrUsernameAlreadyTaken) {
+			common.ApiErrorT(c, "Username already exists or has been deleted")
+			return
+		}
 		common.ApiError(c, err)
 		return
 	}

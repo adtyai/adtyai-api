@@ -112,8 +112,7 @@ func TestSiteEmailAccountsAreIndependent(t *testing.T) {
 		SiteId:   11,
 	}
 	err = takenName.Insert(0)
-	require.Error(t, err)
-	assert.True(t, isAdtyUniqueViolation(err), err.Error())
+	require.ErrorIs(t, err, ErrUsernameAlreadyTaken)
 	exist, err := CheckUserExistOrDeleted(mainUser.Username, "", 11)
 	require.NoError(t, err)
 	assert.True(t, exist)

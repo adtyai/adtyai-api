@@ -9,11 +9,13 @@ var (
 
 // User auth errors
 var (
-	ErrInvalidCredentials   = errors.New("invalid credentials")
-	ErrUserEmptyCredentials = errors.New("empty credentials")
-	ErrEmailAlreadyTaken    = errors.New("email already taken")
-	ErrEmailNotFound        = errors.New("email not found")
-	ErrEmailAmbiguous       = errors.New("email matches multiple users")
+	ErrInvalidCredentials    = errors.New("invalid credentials")
+	ErrUserEmptyCredentials  = errors.New("empty credentials")
+	ErrEmailAlreadyTaken     = errors.New("email already taken")
+	ErrEmailNotFound         = errors.New("email not found")
+	ErrEmailAmbiguous        = errors.New("email matches multiple users")
+	ErrUsernameAlreadyTaken  = errors.New("username already taken")
+	ErrUsernameCaseCollision = errors.New("case-variant usernames must be resolved before the unique index")
 )
 
 // Token auth errors

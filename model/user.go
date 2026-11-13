@@ -295,14 +295,16 @@ func generateDefaultSidebarConfigForRole(userRole int) string {
 func CheckUserExistOrDeleted(username string, email string, siteID int) (bool, error) {
 	var user User
 
-	// Usernames stay platform-unique, including soft-deleted rows. Emails are
-	// unique per site, including leftover addresses on soft-deleted rows.
+	// Usernames stay platform-unique and case-insensitive, including
+	// soft-deleted rows. Emails are unique per site, including leftover
+	// addresses on soft-deleted rows.
 	var err error
 	email = NormalizeEmail(email)
+	username = strings.TrimSpace(username)
 	if email == "" {
-		err = DB.Unscoped().First(&user, "username = ?", username).Error
+		err = DB.Unscoped().First(&user, "LOWER(username) = ?", NormalizeUsername(username)).Error
 	} else {
-		err = DB.Unscoped().First(&user, "username = ? or (LOWER(email) = ? AND site_id = ?)", username, email, siteID).Error
+		err = DB.Unscoped().First(&user, "LOWER(username) = ? or (LOWER(email) = ? AND site_id = ?)", NormalizeUsername(username), email, siteID).Error
 	}
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -605,6 +607,9 @@ func (user *User) prepareForInsert(tx *gorm.DB) error {
 	if err := ensureEmailAvailableWithTx(tx, user.Email, user.SiteId, 0); err != nil {
 		return err
 	}
+	if err := EnsureUsernameAvailableWithTx(tx, user.Username, 0); err != nil {
+		return err
+	}
 	if user.Password == "" {
 		return nil
 	}
@@ -691,7 +696,13 @@ func (user *User) finishInsert() {
 	// 用户创建成功后，根据角色初始化边栏配置
 	// 需要重新获取用户以确保有正确的ID和Role
 	var createdUser User
-	if err := DB.Where("username = ?", user.Username).First(&createdUser).Error; err == nil {
+	var err error
+	if user.Id > 0 {
+		err = DB.First(&createdUser, user.Id).Error
+	} else {
+		err = DB.Where("LOWER(username) = ?", NormalizeUsername(user.Username)).First(&createdUser).Error
+	}
+	if err == nil {
 		// 生成基于角色的默认边栏配置
 		defaultSidebarConfig := generateDefaultSidebarConfigForRole(createdUser.Role)
 		if defaultSidebarConfig != "" {
@@ -786,6 +797,11 @@ func (user *User) UpdateWithTx(tx *gorm.DB, updatePassword bool) error {
 	if err = tx.First(&current, user.Id).Error; err != nil {
 		return err
 	}
+	if strings.TrimSpace(newUser.Username) != "" {
+		if err = EnsureUsernameAvailableWithTx(tx, newUser.Username, user.Id); err != nil {
+			return err
+		}
+	}
 	// Updates(struct) ignores zero values. Match that behavior when deciding
 	// whether this request actually changes authentication-sensitive state;
 	// partial self-profile updates intentionally leave role/status/group empty.
@@ -810,6 +826,9 @@ func (user *User) UpdateWithTx(tx *gorm.DB, updatePassword bool) error {
 		"site_id",
 		"inherited_from_site_id",
 	).Updates(newUser).Error; err != nil {
+		if isUsernameUniqueViolation(err) {
+			return ErrUsernameAlreadyTaken
+		}
 		return err
 	}
 	return tx.First(user, user.Id).Error
@@ -894,6 +913,9 @@ func (user *User) EditWithTx(tx *gorm.DB, updatePassword bool) error {
 	if err = tx.First(&current, user.Id).Error; err != nil {
 		return err
 	}
+	if err = EnsureUsernameAvailableWithTx(tx, newUser.Username, user.Id); err != nil {
+		return err
+	}
 	if newUser.Group != current.Group {
 		if err = lockAssignableAdtyGroupsTx(tx, []string{newUser.Group}); err != nil {
 			return err
@@ -907,6 +929,9 @@ func (user *User) EditWithTx(tx *gorm.DB, updatePassword bool) error {
 		}
 	}
 	if err = tx.Model(&current).Updates(updates).Error; err != nil {
+		if isUsernameUniqueViolation(err) {
+			return ErrUsernameAlreadyTaken
+		}
 		return err
 	}
 	return tx.First(user, user.Id).Error
@@ -978,7 +1003,7 @@ func deletedUserUsername(tx *gorm.DB, userId int) (string, error) {
 			}
 		}
 		var count int64
-		if err := tx.Unscoped().Model(&User{}).Where("username = ? AND id <> ?", candidate, userId).Count(&count).Error; err != nil {
+		if err := tx.Unscoped().Model(&User{}).Where("LOWER(username) = ? AND id <> ?", NormalizeUsername(candidate), userId).Count(&count).Error; err != nil {
 			return "", err
 		}
 		if count == 0 {
@@ -1159,12 +1184,14 @@ func (user *User) ValidateAndFill() (err error) {
 	if username == "" || password == "" {
 		return ErrUserEmptyCredentials
 	}
-	// Usernames stay case-sensitive. Email is stored lowercase, and PostgreSQL
-	// equality is case-sensitive, so an address typed with different case is
-	// looked up through the same normalized match as registration.
+	// Usernames are looked up case-insensitively. Email is stored lowercase,
+	// and an address typed with different case uses the same normalized match
+	// as registration.
 	siteID := user.SiteId
-	err = DB.Where("username = ?", username).First(user).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
+	matched, err := findLiveUserByUsername(DB, username)
+	if err == nil {
+		*user = *matched
+	} else if errors.Is(err, gorm.ErrRecordNotFound) {
 		matched, emailErr := GetUniqueUserByEmail(username, siteID)
 		switch {
 		case emailErr == nil:
@@ -1174,7 +1201,7 @@ func (user *User) ValidateAndFill() (err error) {
 		default:
 			return fmt.Errorf("%w: %v", ErrDatabase, emailErr)
 		}
-	} else if err != nil {
+	} else {
 		return fmt.Errorf("%w: %v", ErrDatabase, err)
 	}
 	if user.Password == "" {

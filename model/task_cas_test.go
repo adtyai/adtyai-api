@@ -63,6 +63,9 @@ func TestMain(m *testing.M) {
 	if err := EnsureSiteEmailUniqueIndex(db); err != nil {
 		panic("failed to add site email unique index: " + err.Error())
 	}
+	if err := EnsureUsernameUniqueIndex(db); err != nil {
+		panic("failed to add username unique index: " + err.Error())
+	}
 
 	os.Exit(m.Run())
 }

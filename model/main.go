@@ -1,6 +1,7 @@
 package model
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"net/url"
@@ -402,6 +403,13 @@ func migrateDB() error {
 	}
 	if err := EnsureSiteEmailUniqueIndex(DB); err != nil {
 		return err
+	}
+	if err := EnsureUsernameUniqueIndex(DB); err != nil {
+		if errors.Is(err, ErrUsernameCaseCollision) {
+			common.SysError(common.LogText("username unique index skipped: %s", err.Error()))
+		} else {
+			return err
+		}
 	}
 	if err := EnsureTaskPluginOneActiveIndex(DB); err != nil {
 		return err

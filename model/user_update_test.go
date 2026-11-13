@@ -404,7 +404,8 @@ func TestValidateAndFillAcceptsEmailRegardlessOfCase(t *testing.T) {
 	require.ErrorIs(t, wrong.ValidateAndFill(), ErrInvalidCredentials)
 
 	byName := User{Username: "Case-Mail-User", Password: "correct-horse-1"}
-	require.ErrorIs(t, byName.ValidateAndFill(), ErrInvalidCredentials)
+	require.NoError(t, byName.ValidateAndFill())
+	assert.Equal(t, "case-mail-user", byName.Username)
 
 	exact := User{Username: "case-mail-user", Password: "correct-horse-1"}
 	require.NoError(t, exact.ValidateAndFill())

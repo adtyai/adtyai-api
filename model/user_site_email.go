@@ -38,6 +38,9 @@ func createUserWithEmailConflict(tx *gorm.DB, user *User) error {
 		if isSiteEmailUniqueViolation(err) {
 			return ErrEmailAlreadyTaken
 		}
+		if isUsernameUniqueViolation(err) {
+			return ErrUsernameAlreadyTaken
+		}
 		return err
 	}
 	return nil
