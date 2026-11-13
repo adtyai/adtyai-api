@@ -76,6 +76,8 @@ func registerAdtyWorkspaceRoutes(apiRouter *gin.RouterGroup) {
 	for _, route := range []struct{ method, path, scope string }{
 		{http.MethodPost, "/api/adty/teams/:id/close", "wallet:write"},
 		{http.MethodPost, "/api/adty/teams/:id/profile", "wallet:write"},
+		{http.MethodPost, "/api/adty/teams/:id/topups", "wallet:write"},
+		{http.MethodGet, "/api/adty/teams/:id/topups", "wallet:read"},
 		{http.MethodPost, "/api/adty/teams/:id/leave", "wallet:write"},
 		{http.MethodPost, "/api/adty/teams/:id/members/:userId/disable", "wallet:write"},
 		{http.MethodPost, "/api/adty/teams/:id/keys", "wallet:write"},
@@ -117,6 +119,8 @@ func registerAdtyWorkspaceRoutes(apiRouter *gin.RouterGroup) {
 	}
 	apiRouter.POST("/adty/teams/:id/close", middleware.UserAuth(), controller.PostAdtyTeamClose)
 	apiRouter.POST("/adty/teams/:id/profile", middleware.UserAuth(), controller.PostAdtyTeamProfile)
+	apiRouter.POST("/adty/teams/:id/topups", middleware.UserAuth(), controller.PostAdtyTeamTopup)
+	apiRouter.GET("/adty/teams/:id/topups", middleware.UserAuth(), controller.GetAdtyTeamTopups)
 	apiRouter.POST("/adty/teams/:id/leave", middleware.UserAuth(), controller.PostAdtyTeamLeave)
 	apiRouter.POST("/adty/teams/:id/members/:userId/disable", middleware.UserAuth(), controller.PostAdtyTeamDisableMember)
 	apiRouter.POST("/adty/teams/:id/keys", middleware.UserAuth(), controller.PostAdtyTeamBindKey)

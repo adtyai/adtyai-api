@@ -8804,7 +8804,10 @@
     "Team discount": "Team discount",
     "A site team discount cannot go below the site supply price. Shared balance is not changed.": "A site team discount cannot go below the site supply price. Shared balance is not changed.",
     "Team price is below the site supply price": "Team price is below the site supply price",
-    "Bonus rate": "Bonus rate"
+    "Bonus rate": "Bonus rate",
+    "Team top-up": "Team top-up",
+    "A team top-up does not include a payment-method gift.": "A team top-up does not include a payment-method gift.",
+    "A team top-up does not include a payment-method gift. The order stays pending until payment completion credits the shared balance.": "A team top-up does not include a payment-method gift. The order stays pending until payment completion credits the shared balance."
 },
   "Targeted notifications": "Targeted notifications",
   "Site announcements": "Site announcements",

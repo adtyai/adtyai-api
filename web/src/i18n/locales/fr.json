@@ -8804,7 +8804,10 @@
     "Team discount": "Remise d'équipe",
     "A site team discount cannot go below the site supply price. Shared balance is not changed.": "La remise d'une équipe de site ne peut pas descendre sous le prix d'approvisionnement. Le solde partagé ne change pas.",
     "Team price is below the site supply price": "Le prix d'équipe est inférieur au prix d'approvisionnement du site",
-    "Bonus rate": "Taux de bonus"
+    "Bonus rate": "Taux de bonus",
+    "Team top-up": "Recharge d'équipe",
+    "A team top-up does not include a payment-method gift.": "Une recharge d'équipe n'inclut pas de bonus du moyen de paiement.",
+    "A team top-up does not include a payment-method gift. The order stays pending until payment completion credits the shared balance.": "Une recharge d'équipe n'inclut pas de bonus du moyen de paiement. La commande reste en attente jusqu'à ce que le paiement crédite le solde partagé."
 },
   "Targeted notifications": "Notifications ciblées",
   "Site announcements": "Annonces du site",

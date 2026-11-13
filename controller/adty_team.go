@@ -3,6 +3,7 @@ package controller
 import (
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -33,6 +34,47 @@ func PutAdtyMainTeamAgreementPrice(c *gin.Context) {
 		return
 	}
 	common.ApiSuccess(c, gin.H{"updated": true})
+}
+
+func PostAdtyTeamTopup(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	var body struct {
+		AmountUSD string `json:"amount_usd"`
+	}
+	if err := common.DecodeJson(c.Request.Body, &body); err != nil {
+		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	amount, err := decimal.NewFromString(strings.TrimSpace(body.AmountUSD))
+	if err != nil {
+		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	key := strings.TrimSpace(c.GetHeader("Idempotency-Key"))
+	order, err := service.CreateAdtyTeamTopupOrder(c.GetInt("id"), id, amount, key)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, order)
+}
+
+func GetAdtyTeamTopups(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	rows, err := service.ListAdtyTeamTopups(c.GetInt("id"), id)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"items": rows})
 }
 
 func PostAdtyTeam(c *gin.Context) {

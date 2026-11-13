@@ -77,6 +77,7 @@ type AdtyTopupOrder struct {
 	PromoCodeId          int             `json:"promo_code_id" gorm:"index;not null;default:0"`                                       // 优惠码（任务 12.4），0 表示没用
 	PromoBonusUSD        decimal.Decimal `json:"promo_bonus_usd" gorm:"column:promo_bonus_usd;type:decimal(20,8);not null;default:0"` // 下单时快照的优惠加赠，已含在 CreditQuota 里
 	PromoFunder          string          `json:"-" gorm:"type:varchar(16);not null;default:''"`                                       // 优惠码出资方快照：platform 或 site_owner
+	TeamId               int64           `json:"team_id" gorm:"index;not null;default:0"`                                             // 团队充值；0 表示个人订单
 	SiteId               int             `json:"-" gorm:"index"`                                                                      // 下单时客户所属的分站（P11）；加赠由这个站的站长出
 	SiteOwnerUserId      int             `json:"-" gorm:"not null;default:0"`
 	LastQueryAt          int64           `json:"-"`
@@ -126,6 +127,10 @@ var (
 // AdtyAfterTopUpCreditedTx 在入账事务里调用（P6 注册返佣计佣任务）。只能做不会失败的写，
 // PostgreSQL 事务里任何一条语句出错，整个入账事务都会作废（审阅重点 10）。
 var AdtyAfterTopUpCreditedTx func(tx *gorm.DB, topUp *TopUp, ext *AdtyTopupOrder) error
+
+// AdtyCreditTeamTopUpTx credits a team order inside the payment transaction.
+// A nil hook must fail closed so a team order cannot fall through to a personal wallet.
+var AdtyCreditTeamTopUpTx func(tx *gorm.DB, topUp *TopUp, ext *AdtyTopupOrder, principal int64) error
 
 // AdtyBeforeTopUpCreateTx 在订单写入事务内生成需要冻结的业务快照。它在创建订单前执行，
 // 使快照与站点身份变更共享同一行锁，避免在事务外读取后被并发开站插入。
@@ -272,6 +277,14 @@ func CompleteAdtyTopUpTx(tx *gorm.DB, tradeNo string, facts AdtyPaymentFacts) (a
 		}
 	}
 	credited = int(ext.CreditQuota)
+	if ext.TeamId > 0 {
+		if ext.BonusUSD.IsPositive() || ext.PromoBonusUSD.IsPositive() || !ext.BonusRate.IsZero() || int64(credited) != ext.FaceQuota() {
+			return false, 0, nil, nil, errors.New("team top-up cannot include a gift")
+		}
+		if AdtyCreditTeamTopUpTx == nil {
+			return false, 0, nil, nil, errors.New("team top-up credit is not configured")
+		}
+	}
 	if err := tx.Model(&TopUp{}).Where("id = ?", topUp.Id).Updates(map[string]any{
 		"status":        common.TopUpStatusSuccess,
 		"complete_time": now,
@@ -297,6 +310,13 @@ func CompleteAdtyTopUpTx(tx *gorm.DB, tradeNo string, facts AdtyPaymentFacts) (a
 	ext.PaidTxHash = strings.TrimSpace(facts.TxHash)
 	ext.PaidSource = facts.Source
 	// 不在事务里调 ValidateTopUpQuotaCapacity：它读全局 DB，看不到事务里的改动。
+	if ext.TeamId > 0 {
+		if err := AdtyCreditTeamTopUpTx(tx, topUp, ext, ext.FaceQuota()); err != nil {
+			return false, 0, nil, nil, err
+		}
+		err = appendAdtyPaymentEventTx(tx, ext, facts.Source, "credited", facts.OperatorId)
+		return false, credited, topUp, ext, err
+	}
 	var user User
 	if err := lockForUpdate(tx).First(&user, topUp.UserId).Error; err != nil {
 		return false, 0, nil, nil, err

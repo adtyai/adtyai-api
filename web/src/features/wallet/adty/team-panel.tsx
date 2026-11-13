@@ -66,6 +66,7 @@ export function TeamPanel() {
   })
   const [name, setName] = useState('')
   const [rename, setRename] = useState('')
+  const [topupAmount, setTopupAmount] = useState('')
   const [discount, setDiscount] = useState('1')
   const [invite, setInvite] = useState('')
   const [issued, setIssued] = useState('')
@@ -74,7 +75,7 @@ export function TeamPanel() {
   const [error, setError] = useState('')
   const [pending, setPending] = useState(false)
 
-  const refresh = () => void queryClient.invalidateQueries({ queryKey: ['adty-team', 'mine'] })
+  const refresh = () => void queryClient.invalidateQueries({ queryKey: ['adty-team'] })
   const team = mine.data
   useEffect(() => {
     setRename(team?.name ?? '')
@@ -197,6 +198,31 @@ export function TeamPanel() {
               }
             >
               {t('Rename')}
+            </Button>
+            <div className='flex flex-col gap-1'>
+              <Label htmlFor='team-topup'>{t('Team top-up')}</Label>
+              <Input id='team-topup' value={topupAmount} inputMode='decimal' autoComplete='off' onChange={(event) => setTopupAmount(event.target.value)} />
+            </div>
+            <p className='text-muted-foreground text-sm'>
+              {t('A team top-up does not include a payment-method gift. The order stays pending until payment completion credits the shared balance.')}
+            </p>
+            <Button
+              type='button'
+              variant='outline'
+              disabled={pending || topupAmount.trim() === ''}
+              onClick={() =>
+                void run(async () => {
+                  const response = await api.post(
+                    `/api/adty/teams/${team.team_id}/topups`,
+                    { amount_usd: topupAmount.trim() },
+                    { headers: { 'Idempotency-Key': crypto.randomUUID() } }
+                  )
+                  if (!response.data?.success) throw new Error(response.data?.message || 'Failed to save')
+                  setTopupAmount('')
+                })
+              }
+            >
+              {t('Team top-up')}
             </Button>
             <Button type='button' variant='outline' disabled={pending} onClick={() => void issueInvite()}>
               {t('Create invite')}

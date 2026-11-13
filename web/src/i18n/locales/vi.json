@@ -8804,7 +8804,10 @@
     "Team discount": "Chiết khấu đội",
     "A site team discount cannot go below the site supply price. Shared balance is not changed.": "Chiết khấu đội của site con không được thấp hơn giá cung của site. Số dư dùng chung không đổi.",
     "Team price is below the site supply price": "Giá đội thấp hơn giá cung của site",
-    "Bonus rate": "Tỷ lệ thưởng"
+    "Bonus rate": "Tỷ lệ thưởng",
+    "Team top-up": "Nạp tiền đội",
+    "A team top-up does not include a payment-method gift.": "Nạp tiền đội không gồm thưởng của phương thức thanh toán.",
+    "A team top-up does not include a payment-method gift. The order stays pending until payment completion credits the shared balance.": "Nạp tiền đội không gồm thưởng phương thức thanh toán. Đơn giữ chờ đến khi thanh toán hoàn tất mới cộng vào số dư dùng chung."
 },
   "Targeted notifications": "Thông báo theo đối tượng",
   "Site announcements": "Thông báo của trang",

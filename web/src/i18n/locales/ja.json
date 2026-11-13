@@ -8804,7 +8804,10 @@
     "Team discount": "チーム割引",
     "A site team discount cannot go below the site supply price. Shared balance is not changed.": "分站のチーム割引はサイト供給価格を下回れません。共有残高は変わりません。",
     "Team price is below the site supply price": "チーム価格がサイト供給価格を下回っています",
-    "Bonus rate": "ボーナス率"
+    "Bonus rate": "ボーナス率",
+    "Team top-up": "チームチャージ",
+    "A team top-up does not include a payment-method gift.": "チームチャージに決済方法のボーナスは含まれません。",
+    "A team top-up does not include a payment-method gift. The order stays pending until payment completion credits the shared balance.": "チームチャージに決済方法のボーナスは含まれません。支払完了まで注文は保留で、共有残高には入りません。"
 },
   "Targeted notifications": "対象を指定した通知",
   "Site announcements": "サイトのお知らせ",

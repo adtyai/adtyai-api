@@ -44,6 +44,21 @@ func adtyTeamTableReadyFor(tx *gorm.DB, modelValue any) bool {
 func init() {
 	model.AdtyTeamReserveHook = reserveAdtyTeamQuotaHook
 	model.AdtyBeforeUserDeleteHook = closeAdtyTeamForDeletedLeader
+	model.AdtyCreditTeamTopUpTx = creditAdtyTeamTopUpTx
+}
+
+func creditAdtyTeamTopUpTx(tx *gorm.DB, topUp *model.TopUp, ext *model.AdtyTopupOrder, principal int64) error {
+	if principal <= 0 || ext == nil || ext.TeamId <= 0 {
+		return ErrAdtyTeamInvalid
+	}
+	var team model.AdtyTeam
+	if err := model.AdtyLockForUpdate(tx).First(&team, ext.TeamId).Error; err != nil {
+		return err
+	}
+	if team.Status != model.AdtyTeamStatusActive || team.LeaderUserId != topUp.UserId {
+		return ErrAdtyTeamForbidden
+	}
+	return applyAdtyTeamQuotaTx(tx, &team, principal, "topup", ext.TradeNo, topUp.UserId)
 }
 
 // SaveAdtyMainTeamAgreementPrice sets a main-site team discount. Subsite teams are rejected.
@@ -344,6 +359,78 @@ func JoinAdtyTeam(userId int, teamId int64) (*model.AdtyTeamMember, error) {
 		return nil
 	})
 	return member, err
+}
+
+// CreateAdtyTeamTopupOrder records a leader top-up with no payment-method gift.
+// It does not credit the team until payment completion.
+func CreateAdtyTeamTopupOrder(leaderID int, teamID int64, amountUSD decimal.Decimal, key string) (*model.AdtyTopupOrder, error) {
+	key = strings.TrimSpace(key)
+	if leaderID <= 0 || teamID <= 0 || !amountUSD.IsPositive() || key == "" {
+		return nil, ErrAdtyTeamInvalid
+	}
+	quota, err := common.WalletQuotaFromDecimalStrict(amountUSD.Mul(common.QuotaPerUnitDecimal()).Floor())
+	if err != nil || quota <= 0 {
+		return nil, ErrAdtyTeamInvalid
+	}
+	tradeNo := "TTEAM" + common.Sha1([]byte(key))[:20]
+	var existing model.AdtyTopupOrder
+	lookup := model.DB.Where("trade_no = ?", tradeNo).Limit(1).Find(&existing)
+	if lookup.Error != nil {
+		return nil, lookup.Error
+	}
+	if lookup.RowsAffected == 1 {
+		if existing.TeamId != teamID || !existing.FaceUSD.Equal(amountUSD) || existing.UserId != leaderID {
+			return nil, ErrAdtyTeamInvalid
+		}
+		return &existing, nil
+	}
+	return createAdtyTeamTopupOrder(leaderID, teamID, amountUSD, int64(quota), tradeNo)
+}
+
+func createAdtyTeamTopupOrder(leaderID int, teamID int64, amountUSD decimal.Decimal, quota int64, tradeNo string) (*model.AdtyTopupOrder, error) {
+	var created *model.AdtyTopupOrder
+	err := model.DB.Transaction(func(tx *gorm.DB) error {
+		var team model.AdtyTeam
+		if err := model.AdtyLockForUpdate(tx).First(&team, teamID).Error; err != nil {
+			return err
+		}
+		if team.Status != model.AdtyTeamStatusActive || team.LeaderUserId != leaderID {
+			return ErrAdtyTeamForbidden
+		}
+		topUp := &model.TopUp{
+			UserId: leaderID, Amount: amountUSD.IntPart(), Money: 0, TradeNo: tradeNo,
+			PaymentMethod: "team", PaymentProvider: model.PaymentProviderAdtyEpay,
+			CreateTime: common.GetTimestamp(), Status: common.TopUpStatusPending,
+		}
+		if err := tx.Create(topUp).Error; err != nil {
+			return err
+		}
+		ext := &model.AdtyTopupOrder{
+			TradeNo: tradeNo, UserId: leaderID, TeamId: teamID, Provider: model.PaymentProviderAdtyEpay,
+			Method: "team", FaceUSD: amountUSD, BonusRate: decimal.Zero, BonusUSD: decimal.Zero,
+			PromoBonusUSD: decimal.Zero, CreditQuota: quota, PayAmount: amountUSD, PayCurrency: "USD",
+			TopupGroupRatio: decimal.NewFromInt(1),
+		}
+		if err := tx.Create(ext).Error; err != nil {
+			return err
+		}
+		created = ext
+		return nil
+	})
+	return created, err
+}
+
+func ListAdtyTeamTopups(leaderID int, teamID int64) ([]model.AdtyTopupOrder, error) {
+	var team model.AdtyTeam
+	if err := model.DB.First(&team, teamID).Error; err != nil {
+		return nil, err
+	}
+	if team.LeaderUserId != leaderID {
+		return nil, ErrAdtyTeamForbidden
+	}
+	var rows []model.AdtyTopupOrder
+	err := model.DB.Where("team_id = ?", teamID).Order("id desc").Limit(20).Find(&rows).Error
+	return rows, err
 }
 
 func CreditAdtyTeam(leaderId, teamId int64, quota int64, ref string) error {

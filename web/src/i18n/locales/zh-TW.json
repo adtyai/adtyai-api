@@ -8804,7 +8804,10 @@
     "Team discount": "團隊折扣",
     "A site team discount cannot go below the site supply price. Shared balance is not changed.": "分站團隊折扣不能低於站點供貨價。共享餘額不會改變。",
     "Team price is below the site supply price": "團隊價格低於站點供貨價",
-    "Bonus rate": "贈金比例"
+    "Bonus rate": "贈金比例",
+    "Team top-up": "團隊儲值",
+    "A team top-up does not include a payment-method gift.": "團隊儲值不包含支付方式贈金。",
+    "A team top-up does not include a payment-method gift. The order stays pending until payment completion credits the shared balance.": "團隊儲值不包含支付方式贈金。訂單保持待付款，直到付款完成才計入共享餘額。"
 },
   "Targeted notifications": "定向通知",
   "Site announcements": "本站公告",

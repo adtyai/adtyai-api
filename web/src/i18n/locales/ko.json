@@ -8778,7 +8778,10 @@
     "Team discount": "팀 할인",
     "A site team discount cannot go below the site supply price. Shared balance is not changed.": "하위 사이트 팀 할인은 사이트 공급가보다 낮을 수 없습니다. 공유 잔액은 바뀌지 않습니다.",
     "Team price is below the site supply price": "팀 가격이 사이트 공급가보다 낮습니다",
-    "Bonus rate": "보너스 비율"
+    "Bonus rate": "보너스 비율",
+    "Team top-up": "팀 충전",
+    "A team top-up does not include a payment-method gift.": "팀 충전에는 결제 수단 보너스가 포함되지 않습니다.",
+    "A team top-up does not include a payment-method gift. The order stays pending until payment completion credits the shared balance.": "팀 충전에는 결제 수단 보너스가 없습니다. 결제 완료 전까지 주문은 대기 상태이며 공유 잔액에 들어가지 않습니다."
 },
   "Targeted notifications": "대상 지정 알림",
   "Site announcements": "사이트 공지",
