@@ -69,6 +69,8 @@ const api = vi.hoisted(() => ({
   deleteInviteCode: vi.fn(),
   disableSiteDomain: vi.fn(),
   disableSiteSenderDomain: vi.fn(),
+  getAdminBalanceRequests: vi.fn(),
+  reviewAdminBalanceRequest: vi.fn(),
 }))
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
@@ -220,6 +222,7 @@ function siteNames(): string[] {
 
 beforeEach(() => {
   asRoot()
+  api.getAdminBalanceRequests.mockResolvedValue([])
 })
 
 afterEach(() => {
@@ -948,6 +951,32 @@ describe('SiteDetailSheet notice takedown', () => {
     })
     renderWith(<SiteDetailSheet siteId={target.id} onOpenChange={() => {}} />)
   }
+
+  it('lets Root approve a pending staff balance request for the open site', async () => {
+    api.getAdminBalanceRequests.mockResolvedValue([
+      {
+        id: 4,
+        site_id: 1,
+        staff_user_id: 8,
+        customer_user_id: 20,
+        direction: 'decrease',
+        amount_usd: '1.50',
+        status: 'pending',
+        reviewer_id: 0,
+        reviewer_role: '',
+        created_at: 1,
+        reviewed_at: 0,
+      },
+    ])
+    openSheet(site({}))
+    const table = await screen.findByRole('table', { name: 'Balance requests' })
+    expect(within(table).getByText('1.50')).toBeInTheDocument()
+    await userEvent.click(within(table).getByRole('button', { name: 'Approve' }))
+    await waitFor(() =>
+      expect(api.reviewAdminBalanceRequest).toHaveBeenCalledWith(4, true)
+    )
+    expect(api.getAdminBalanceRequests).toHaveBeenCalledWith(1)
+  })
 
   it('takes the notice down after confirming', async () => {
     openSheet(withNotice)

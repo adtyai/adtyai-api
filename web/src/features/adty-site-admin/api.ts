@@ -77,6 +77,41 @@ export async function getSiteStats(id: number): Promise<SiteStatsResponse> {
   return requireServerSuccess(res.data).data
 }
 
+export type AdminBalanceRequest = {
+  id: number
+  site_id: number
+  staff_user_id: number
+  customer_user_id: number
+  direction: 'increase' | 'decrease'
+  amount_usd: string
+  status: 'pending' | 'approved' | 'rejected'
+  reviewer_id: number
+  reviewer_role: string
+  created_at: number
+  reviewed_at: number
+}
+
+export async function getAdminBalanceRequests(
+  siteId: number
+): Promise<AdminBalanceRequest[]> {
+  const res = await api.get<ApiResponse<{ items?: AdminBalanceRequest[] }>>(
+    `${BASE}/balance-requests`,
+    { params: { site_id: siteId } }
+  )
+  return requireServerSuccess(res.data).data.items ?? []
+}
+
+export async function reviewAdminBalanceRequest(
+  id: number,
+  approve: boolean
+): Promise<void> {
+  const res = await api.post<ApiResponse<{ reviewed: boolean }>>(
+    `${BASE}/balance-requests/${id}/review`,
+    { approve }
+  )
+  requireServerSuccess(res.data)
+}
+
 export async function getFlaggedCustomers(
   p: number
 ): Promise<SitePage<FlaggedCustomer>> {

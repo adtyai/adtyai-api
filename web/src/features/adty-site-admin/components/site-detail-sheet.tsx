@@ -56,15 +56,18 @@ import {
   clearSiteNotice,
   disableSiteDomain,
   disableSiteSenderDomain,
+  getAdminBalanceRequests,
   getSite,
   getSiteCustomers,
   getSiteStats,
+  reviewAdminBalanceRequest,
   getSites,
   resumeSiteSettlement,
   reviewSite,
   setSiteStatus,
   SITE_ADMIN_PAGE_SIZE,
   siteAdminKeys,
+  type AdminBalanceRequest,
   type AdminSenderDomain,
   type AdminSiteDomain,
 } from '../api'
@@ -595,6 +598,116 @@ function SiteDomains(props: {
   )
 }
 
+function RootBalanceRequests(props: { siteId: number }) {
+  const { t } = useTranslation()
+  const queryClient = useQueryClient()
+  const isRoot = useAuthStore((state) => state.auth.user?.role) === ROLE.SUPER_ADMIN
+  const list = useQuery({
+    queryKey: siteAdminKeys.list('balance-requests', { siteId: props.siteId }),
+    queryFn: () => getAdminBalanceRequests(props.siteId),
+    enabled: isRoot,
+  })
+  const review = useMutation({
+    mutationFn: (input: { id: number; approve: boolean }) =>
+      reviewAdminBalanceRequest(input.id, input.approve),
+    onSuccess: () =>
+      void queryClient.invalidateQueries({
+        queryKey: siteAdminKeys.list('balance-requests', { siteId: props.siteId }),
+      }),
+    onError: (error) => handleServerError(error),
+  })
+  if (!isRoot) return null
+  return (
+    <section className='flex flex-col gap-2'>
+      <h3 className='text-sm font-medium'>{t('Balance requests')}</h3>
+      <p className='text-muted-foreground text-sm'>
+        {t(
+          'This request does not change the customer balance until the site owner or Root approves it.'
+        )}
+      </p>
+      {list.isPending && <LoadingState />}
+      {list.isError && <ErrorState onRetry={() => void list.refetch()} />}
+      {list.isSuccess && (
+        <StaticDataTable
+          tableClassName='min-w-[640px]'
+          tableProps={{ 'aria-label': t('Balance requests') }}
+          data={list.data}
+          getRowKey={(row) => String(row.id)}
+          emptyContent={<EmptyState className='min-h-24' title={t('No data')} />}
+          columns={[
+            {
+              id: 'customer',
+              header: t('Customer ID'),
+              cell: (row: AdminBalanceRequest) => (
+                <span className='tabular-nums'>{row.customer_user_id}</span>
+              ),
+            },
+            {
+              id: 'staff',
+              header: t('User ID'),
+              cell: (row: AdminBalanceRequest) => (
+                <span className='tabular-nums'>{row.staff_user_id}</span>
+              ),
+            },
+            {
+              id: 'direction',
+              header: t('Direction'),
+              cell: (row: AdminBalanceRequest) =>
+                row.direction === 'increase' ? t('Increase') : t('Decrease'),
+            },
+            {
+              id: 'amount',
+              header: t('Amount'),
+              cell: (row: AdminBalanceRequest) => (
+                <span className='tabular-nums'>{row.amount_usd}</span>
+              ),
+            },
+            {
+              id: 'status',
+              header: t('Status'),
+              cell: (row: AdminBalanceRequest) =>
+                row.status === 'pending'
+                  ? t('Pending')
+                  : row.status === 'approved'
+                    ? t('Approved')
+                    : t('Rejected'),
+            },
+            {
+              id: 'actions',
+              header: t('Actions'),
+              cell: (row: AdminBalanceRequest) =>
+                row.status === 'pending' ? (
+                  <div className='flex flex-wrap gap-1'>
+                    <Button
+                      size='sm'
+                      variant='outline'
+                      disabled={review.isPending}
+                      onClick={() => review.mutate({ id: row.id, approve: true })}
+                    >
+                      {t('Approve')}
+                    </Button>
+                    <Button
+                      size='sm'
+                      variant='outline'
+                      disabled={review.isPending}
+                      onClick={() => review.mutate({ id: row.id, approve: false })}
+                    >
+                      {t('Reject')}
+                    </Button>
+                  </div>
+                ) : (
+                  <span className='text-muted-foreground text-xs tabular-nums'>
+                    {row.reviewed_at > 0 ? formatTimestampToDate(row.reviewed_at) : '-'}
+                  </span>
+                ),
+            },
+          ]}
+        />
+      )}
+    </section>
+  )
+}
+
 /** Details of one site (task 11.9): info, actions, customers and the audit trail. */
 export function SiteDetailSheet(props: {
   siteId: number | null
@@ -699,6 +812,7 @@ export function SiteDetailSheet(props: {
                 )}
               </section>
               <SiteActions key={site.id} site={site} onDirtyChange={setDirty} />
+              <RootBalanceRequests siteId={site.id} />
               <SiteDomains
                 siteId={site.id}
                 domains={query.data?.domains ?? []}
