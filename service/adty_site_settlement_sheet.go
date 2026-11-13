@@ -65,6 +65,45 @@ func GenerateAdtySiteSettlementSheets(now time.Time) (int, error) {
 	return writeAdtySettlementDay(day, start.Unix(), end.Unix(), now.Unix(), name)
 }
 
+// CatchUpAdtySiteSettlementSheets fills business days after the latest saved sheet
+// through yesterday, then refreshes yesterday. The first run only writes yesterday.
+// An existing sheet keeps its timezone and window. No wallet is credited.
+func CatchUpAdtySiteSettlementSheets(now time.Time) (int, error) {
+	loc, name, err := loadAdtyBusinessLocation()
+	if err != nil {
+		return 0, err
+	}
+	yesterday, yStart, _ := previousBusinessWindow(now, loc)
+	var sites []model.AdtySite
+	if err := model.DB.Select("id").Find(&sites).Error; err != nil {
+		return 0, err
+	}
+	written := 0
+	for _, site := range sites {
+		var latest []model.AdtySiteSettlementSheet
+		if err := model.DB.Where("site_id = ?", site.Id).Order("business_day DESC").Limit(1).Find(&latest).Error; err != nil {
+			return written, err
+		}
+		if len(latest) == 0 {
+			continue
+		}
+		parsed, err := time.ParseInLocation("2006-01-02", latest[0].BusinessDay, time.UTC)
+		if err != nil {
+			return written, err
+		}
+		for cursor := parsed.AddDate(0, 0, 1); cursor.Format("2006-01-02") < yesterday; cursor = cursor.AddDate(0, 0, 1) {
+			day := cursor.Format("2006-01-02")
+			start := time.Date(cursor.Year(), cursor.Month(), cursor.Day(), 0, 0, 0, 0, loc)
+			if err := writeAdtySiteSettlementSheet(site.Id, day, start.Unix(), start.AddDate(0, 0, 1).Unix(), name, now.Unix()); err != nil {
+				return written, err
+			}
+			written++
+		}
+	}
+	refreshed, err := writeAdtySettlementDay(yesterday, yStart.Unix(), yStart.AddDate(0, 0, 1).Unix(), now.Unix(), name)
+	return written + refreshed, err
+}
+
 func writeAdtySettlementDay(day string, start, end, generatedAt int64, timezone string) (int, error) {
 	var sites []model.AdtySite
 	if err := model.DB.Select("id").Find(&sites).Error; err != nil {
@@ -342,7 +381,7 @@ func startAdtySiteSettlementSheetTask() {
 		ticker := time.NewTicker(10 * time.Minute)
 		defer ticker.Stop()
 		for now := range ticker.C {
-			if _, err := GenerateAdtySiteSettlementSheets(now); err != nil {
+			if _, err := CatchUpAdtySiteSettlementSheets(now); err != nil {
 				common.SysError(common.LogText("site settlement sheet: %s", err.Error()))
 			}
 		}

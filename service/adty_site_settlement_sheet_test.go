@@ -144,6 +144,35 @@ func TestDailySettlementSheetUsesConfiguredTimezoneOrUTC(t *testing.T) {
 	require.Equal(t, time.Date(2026, 6, 2, 0, 0, 0, 0, time.UTC).Unix(), utcSheet.DayStart)
 }
 
+func TestSettlementSheetCatchUpFillsMissingDaysWithoutRewritingExisting(t *testing.T) {
+	db := prepareSiteDB(t)
+	t.Cleanup(func() { _ = db.Delete(&model.Option{Key: adtyBusinessTimezoneKey}).Error })
+	require.NoError(t, db.Delete(&model.Option{Key: adtyBusinessTimezoneKey}).Error)
+	_, site := openActiveSite(t, db, "gap"+strconv.FormatInt(time.Now().UnixNano()%1_000_000, 10))
+	_, err := GenerateAdtySiteSettlementSheets(time.Date(2026, 4, 2, 0, 30, 0, 0, time.UTC))
+	require.NoError(t, err)
+	var first model.AdtySiteSettlementSheet
+	require.NoError(t, db.Where("site_id = ? AND business_day = ?", site.Id, "2026-04-01").First(&first).Error)
+	var ledgers int64
+	require.NoError(t, db.Model(&model.AdtySiteWalletLedger{}).Count(&ledgers).Error)
+
+	_, err = CatchUpAdtySiteSettlementSheets(time.Date(2026, 4, 5, 1, 0, 0, 0, time.UTC))
+	require.NoError(t, err)
+	var kept model.AdtySiteSettlementSheet
+	require.NoError(t, db.Where("site_id = ? AND business_day = ?", site.Id, "2026-04-01").First(&kept).Error)
+	require.Equal(t, first.BatchId, kept.BatchId)
+	require.Equal(t, first.DayStart, kept.DayStart)
+	for _, day := range []string{"2026-04-02", "2026-04-03", "2026-04-04"} {
+		var row model.AdtySiteSettlementSheet
+		require.NoError(t, db.Where("site_id = ? AND business_day = ?", site.Id, day).First(&row).Error)
+		require.Equal(t, "UTC", row.Timezone)
+		require.Equal(t, "site-settlement:"+strconv.Itoa(site.Id)+":"+day, row.BatchId)
+	}
+	var after int64
+	require.NoError(t, db.Model(&model.AdtySiteWalletLedger{}).Count(&after).Error)
+	require.Equal(t, ledgers, after)
+}
+
 func stampSheetFacts(t *testing.T, db *gorm.DB, site, other *model.AdtySite, start int64) {
 	t.Helper()
 	require.NoError(t, db.Create(&[]model.TopUp{
