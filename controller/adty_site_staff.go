@@ -3,12 +3,14 @@ package controller
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
+	"github.com/shopspring/decimal"
 )
 
 func GetAdtyOwnerStaff(c *gin.Context) {
@@ -175,6 +177,63 @@ func PostAdtyStaffCustomerPasswordReset(c *gin.Context) {
 
 func PostAdtyStaffCustomerDisable(c *gin.Context) {
 	manageAdtyStaffCustomer(c, service.AdtyStaffActionCustomerDisable, "customers.disable")
+}
+
+func PostAdtyStaffBalanceRequest(c *gin.Context) {
+	if _, _, ok := adtyStaffRequest(c, ""); !ok {
+		return
+	}
+	var body struct {
+		CustomerID int    `json:"customer_id"`
+		Direction  string `json:"direction"`
+		AmountUSD  string `json:"amount_usd"`
+	}
+	if err := common.DecodeJson(c.Request.Body, &body); err != nil {
+		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	amount, err := decimal.NewFromString(strings.TrimSpace(body.AmountUSD))
+	if err != nil {
+		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	row, err := service.SubmitAdtyStaffBalanceRequest(c.GetInt("id"), body.CustomerID, body.Direction, amount)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, row)
+}
+
+func PostAdtyOwnerBalanceReview(c *gin.Context) {
+	reviewAdtyStaffBalance(c, "owner")
+}
+
+func PostAdtyAdminBalanceReview(c *gin.Context) {
+	if c.GetInt("role") != common.RoleRootUser {
+		common.ApiErrorStatus(c, http.StatusForbidden, common.NewMessage("No permission to perform this action"))
+		return
+	}
+	reviewAdtyStaffBalance(c, "root")
+}
+
+func reviewAdtyStaffBalance(c *gin.Context, role string) {
+	id, ok := adtyInt64Param(c, "id")
+	if !ok {
+		return
+	}
+	var body struct {
+		Approve bool `json:"approve"`
+	}
+	if err := common.DecodeJson(c.Request.Body, &body); err != nil {
+		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	if err := service.ReviewAdtyStaffBalanceRequest(c.GetInt("id"), role, id, body.Approve); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"reviewed": true})
 }
 
 func manageAdtyStaffCustomer(c *gin.Context, action, permission string) {

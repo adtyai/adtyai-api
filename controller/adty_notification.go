@@ -31,6 +31,36 @@ func GetAdtyNotifications(c *gin.Context) {
 	common.ApiSuccess(c, inbox)
 }
 
+func PostAdtyNotificationHide(c *gin.Context) {
+	var body struct {
+		Key string `json:"key"`
+	}
+	if err := common.DecodeJson(c.Request.Body, &body); err != nil {
+		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	if err := service.HideAdtyNotificationForUser(c.GetInt("id"), body.Key); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"hidden": true})
+}
+
+func PostAdtyNotificationTodoComplete(c *gin.Context) {
+	var body struct {
+		Key string `json:"key"`
+	}
+	if err := common.DecodeJson(c.Request.Body, &body); err != nil {
+		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	if err := service.CompleteAdtyTodo(c.GetInt("id"), body.Key); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"completed": true})
+}
+
 // Root and owner routes select the publishing domain on the server. Request
 // fields cannot impersonate a publisher or choose another owner's domain.
 func adtyNotificationIssuer(c *gin.Context) (*model.AdtySite, bool) {

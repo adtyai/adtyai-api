@@ -8,6 +8,23 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestAdtyGapRoutesRegistered(t *testing.T) {
+	engine := newAccessTokenScopeTestEngine(t)
+	found := map[string]bool{}
+	for _, route := range engine.Routes() {
+		found[route.Method+" "+route.Path] = true
+	}
+	for _, key := range []string{
+		"POST /api/adty/notifications/hide",
+		"POST /api/adty/notifications/todo/complete",
+		"POST /api/adty/staff/balance-requests",
+		"POST /api/adty/site/balance-requests/:id/review",
+		"POST /api/adty/admin/balance-requests/:id/review",
+	} {
+		assert.Truef(t, found[key], "missing route %s", key)
+	}
+}
+
 func TestAdtyActionRoutesRequireIndependentScopes(t *testing.T) {
 	restore := middleware.EnableAdtyAdminPermissions()
 	t.Cleanup(restore)

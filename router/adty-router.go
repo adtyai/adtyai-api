@@ -39,9 +39,13 @@ func SetAdtyRouter(apiRouter *gin.RouterGroup) {
 	registerAdtyResellerRoutes(apiRouter)
 	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/adty/notifications", "scope", "profile:read")
 	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/notifications/read", "scope", "profile:write")
+	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/notifications/hide", "scope", "profile:write")
+	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/notifications/todo/complete", "scope", "profile:write")
 	notifications := apiRouter.Group("/adty/notifications", middleware.UserAuth())
 	notifications.GET("", controller.GetAdtyNotifications)
 	notifications.POST("/read", controller.ReadAdtyNotifications)
+	notifications.POST("/hide", controller.PostAdtyNotificationHide)
+	notifications.POST("/todo/complete", controller.PostAdtyNotificationTodoComplete)
 	for _, route := range []struct{ method, path, scope string }{
 		{http.MethodGet, "", "read"}, {http.MethodPost, "", "write"},
 		{http.MethodPut, "/:id", "write"}, {http.MethodDelete, "/:id", "write"},
@@ -398,6 +402,9 @@ func registerAdtyResellerRoutes(apiRouter *gin.RouterGroup) {
 		{http.MethodGet, "/adty/staff/customers/:id/logs", controller.GetAdtyStaffCustomerLogs},
 		{http.MethodPost, "/adty/staff/customers/:id/password-reset", controller.PostAdtyStaffCustomerPasswordReset},
 		{http.MethodPost, "/adty/staff/customers/:id/disable", controller.PostAdtyStaffCustomerDisable},
+		{http.MethodPost, "/adty/staff/balance-requests", controller.PostAdtyStaffBalanceRequest},
+		{http.MethodPost, "/adty/site/balance-requests/:id/review", controller.PostAdtyOwnerBalanceReview},
+		{http.MethodPost, "/adty/admin/balance-requests/:id/review", controller.PostAdtyAdminBalanceReview},
 	} {
 		middleware.DeclareAdtyAccessTokenRoute(route.method, "/api"+route.path, "session", "")
 		handlers := []gin.HandlerFunc{middleware.UserAuth(), middleware.DisableCache()}
