@@ -8824,7 +8824,12 @@
     "Observation days": "Дни наблюдения",
     "Cover commission from margin": "Покрыть комиссию из маржи",
     "After earnings, the open margin cycle can cover the rest. No amount is set here.": "После дохода открытый цикл маржи может покрыть остаток. Сумма здесь не задаётся.",
-    "Returned to site wallets": "Возвращено в кошельки сайта"
+    "Returned to site wallets": "Возвращено в кошельки сайта",
+    "Cover pending commissions": "Покрыть ожидающие комиссии",
+    "Uses the current earnings and authorized margin cycle on the original commission rows.": "Использует текущий доход и разрешённый цикл маржи для исходных записей комиссии.",
+    "Available commission": "Доступная комиссия",
+    "The amount moves from available commission to your balance.": "Сумма переходит из доступной комиссии на баланс.",
+    "Convert commission to balance": "Перевести комиссию на баланс"
 },
   "Targeted notifications": "Адресные уведомления",
   "Site announcements": "Объявления сайта",

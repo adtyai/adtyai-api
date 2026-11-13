@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -120,7 +121,10 @@ func SiteCommissionMarginAllowed(siteID int) (bool, error) {
 
 // SiteInviteCommissionWithdrawable is true only after coverage and observation.
 func SiteInviteCommissionWithdrawable(row *model.AdtySiteInviteCommission, now time.Time) bool {
-	return row != nil && row.Status == model.AdtySiteCommissionAvailable && row.ClawedUSD.LessThan(row.AmountUSD) && row.AvailableAt > 0 && !now.Before(time.Unix(row.AvailableAt, 0))
+	if row == nil || row.Status != model.AdtySiteCommissionAvailable || row.AvailableAt <= 0 || now.Before(time.Unix(row.AvailableAt, 0)) {
+		return false
+	}
+	return row.AmountUSD.Sub(row.ClawedUSD).Sub(row.ConvertedUSD).IsPositive()
 }
 
 // RecordAdtySiteInviteCommissionTx snapshots one site invite commission.
@@ -152,6 +156,32 @@ func RecordAdtySiteInviteCommissionTx(tx *gorm.DB, ext *model.AdtyTopupOrder, no
 // CoverAdtySiteInviteCommissionTx spends site earnings up to Root's pending cap.
 // Observation starts when coverage completes, not when the top-up was created.
 func CoverAdtySiteInviteCommissionTx(tx *gorm.DB, id int64, now time.Time) error {
+	return coverAdtySiteInviteCommissionTx(tx, id, now, false)
+}
+
+// ResumeAdtySiteInviteCoverage funds the site's original pending rows in
+// creation order. It does not create a commission and does not invent an amount.
+func ResumeAdtySiteInviteCoverage(siteID int, now time.Time) error {
+	if siteID <= 0 || model.DB == nil {
+		return common.NewMessage("Invalid parameters")
+	}
+	var ids []int64
+	if err := model.DB.Model(&model.AdtySiteInviteCommission{}).
+		Where("site_id = ? AND status = ?", siteID, model.AdtySiteCommissionPendingCoverage).
+		Order("created_at, id").Pluck("id", &ids).Error; err != nil {
+		return err
+	}
+	for _, id := range ids {
+		if err := model.DB.Transaction(func(tx *gorm.DB) error {
+			return coverAdtySiteInviteCommissionTx(tx, id, now, true)
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func coverAdtySiteInviteCommissionTx(tx *gorm.DB, id int64, now time.Time, resume bool) error {
 	policy, err := loadAdtySiteCommissionPolicy()
 	if errors.Is(err, ErrAdtySiteReferralUnset) {
 		return nil
@@ -166,14 +196,16 @@ func CoverAdtySiteInviteCommissionTx(tx *gorm.DB, id int64, now time.Time) error
 	if row.Status != model.AdtySiteCommissionPendingCoverage {
 		return nil
 	}
-	var pending decimal.Decimal
-	if err := tx.Model(&model.AdtySiteInviteCommission{}).
-		Where("site_id = ? AND status = ? AND id <> ?", row.SiteId, model.AdtySiteCommissionPendingCoverage, row.Id).
-		Select("COALESCE(SUM(amount_usd - clawed_usd - covered_usd + recovered_usd), 0)").Scan(&pending).Error; err != nil {
-		return err
-	}
-	if !pending.LessThan(policy.Cap) {
-		return nil
+	if !resume {
+		var pending decimal.Decimal
+		if err := tx.Model(&model.AdtySiteInviteCommission{}).
+			Where("site_id = ? AND status = ? AND id <> ?", row.SiteId, model.AdtySiteCommissionPendingCoverage, row.Id).
+			Select("COALESCE(SUM(amount_usd - clawed_usd - covered_usd + recovered_usd), 0)").Scan(&pending).Error; err != nil {
+			return err
+		}
+		if !pending.LessThan(policy.Cap) {
+			return nil
+		}
 	}
 	need := row.AmountUSD.Sub(row.CoveredUSD)
 	if !need.IsPositive() {
@@ -293,12 +325,13 @@ func adtySiteInviteCommissionAfterRefundTx(tx *gorm.DB, ext *model.AdtyTopupOrde
 	if !thisClaw.IsPositive() {
 		return nil
 	}
-	recoverable := row.CoveredUSD.Sub(row.RecoveredUSD)
+	unconverted := row.CoveredUSD.Sub(row.RecoveredUSD).Sub(row.ConvertedUSD)
+	if unconverted.IsNegative() {
+		unconverted = decimal.Zero
+	}
+	recoverable := unconverted
 	if recoverable.GreaterThan(thisClaw) {
 		recoverable = thisClaw
-	}
-	if recoverable.IsNegative() {
-		recoverable = decimal.Zero
 	}
 	returned, err := returnSiteCommissionCover(tx, &row, recoverable, target)
 	if err != nil {
@@ -306,7 +339,10 @@ func adtySiteInviteCommissionAfterRefundTx(tx *gorm.DB, ext *model.AdtyTopupOrde
 	}
 	row.ClawedUSD = target
 	row.RecoveredUSD = row.RecoveredUSD.Add(returned)
-	updates := map[string]any{"clawed_usd": row.ClawedUSD, "recovered_usd": row.RecoveredUSD}
+	row.RecoveryUSD = row.RecoveryUSD.Add(thisClaw.Sub(returned))
+	updates := map[string]any{
+		"clawed_usd": row.ClawedUSD, "recovered_usd": row.RecoveredUSD, "recovery_usd": row.RecoveryUSD,
+	}
 	if !row.ClawedUSD.LessThan(row.AmountUSD) {
 		row.Status = model.AdtySiteCommissionClawedBack
 		updates["status"] = row.Status
@@ -364,6 +400,86 @@ func siteCommissionSourceOutstanding(tx *gorm.DB, tradeNo, kind string) (decimal
 		return decimal.Zero, nil
 	}
 	return outstanding, nil
+}
+
+// ListAdtySiteInviteCommissions returns commissions the inviter can move to balance.
+func ListAdtySiteInviteCommissions(inviterID int, now time.Time) ([]model.AdtySiteInviteCommission, error) {
+	if inviterID <= 0 {
+		return nil, common.NewMessage("Invalid parameters")
+	}
+	var rows []model.AdtySiteInviteCommission
+	if err := model.DB.Where("inviter_id = ? AND status = ?", inviterID, model.AdtySiteCommissionAvailable).
+		Order("id").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	ready := make([]model.AdtySiteInviteCommission, 0, len(rows))
+	for i := range rows {
+		if SiteInviteCommissionWithdrawable(&rows[i], now) {
+			ready = append(ready, rows[i])
+		}
+	}
+	return ready, nil
+}
+
+// ConvertAdtySiteInviteCommission moves an available remainder into the inviter's
+// consumption quota. It does not use the referral account or debit a site wallet again.
+func ConvertAdtySiteInviteCommission(inviterID int, commissionID int64, amount decimal.Decimal, key string) error {
+	key = strings.TrimSpace(key)
+	if inviterID <= 0 || commissionID <= 0 || !amount.IsPositive() || key == "" || len(key) > 40 {
+		return common.NewMessage("Invalid parameters")
+	}
+	exact := amount.Mul(common.QuotaPerUnitDecimal())
+	if !exact.Equal(exact.Floor()) {
+		return common.NewMessage("Invalid parameters")
+	}
+	quota, err := common.WalletQuotaFromDecimalStrict(exact)
+	if err != nil || quota <= 0 {
+		return common.NewMessage("Invalid parameters")
+	}
+	ref := "site-comm-cvt:" + strconv.FormatInt(commissionID, 10) + ":" + key
+	if len(ref) > 64 {
+		return common.NewMessage("Invalid parameters")
+	}
+	err = model.DB.Transaction(func(tx *gorm.DB) error {
+		existing, err := model.FindAdtyLedgerByIdemKeyTx(tx, ref)
+		if err != nil {
+			return err
+		}
+		if existing != nil {
+			if existing.UserId != inviterID || existing.DeltaQuota != int64(quota) || existing.Type != model.AdtyLedgerTypeCommissionTransfer {
+				return model.ErrAdtyIdempotencyConflict
+			}
+			return nil
+		}
+		var row model.AdtySiteInviteCommission
+		if err := model.AdtyLockForUpdate(tx).First(&row, commissionID).Error; err != nil {
+			return err
+		}
+		if row.InviterId != inviterID || !SiteInviteCommissionWithdrawable(&row, time.Now()) {
+			return common.NewMessage("No permission to perform this action")
+		}
+		remaining := row.AmountUSD.Sub(row.ClawedUSD).Sub(row.ConvertedUSD)
+		if amount.GreaterThan(remaining) {
+			return common.NewMessage("Invalid parameters")
+		}
+		before, err := model.AdtyCreditUserQuotaTx(tx, inviterID, int64(quota))
+		if err != nil {
+			return err
+		}
+		if err := model.InsertAdtyLedgerTx(tx, &model.AdtyBalanceLedger{
+			UserId: inviterID, DeltaQuota: int64(quota), BalanceBefore: before, BalanceAfter: before + int64(quota),
+			Type: model.AdtyLedgerTypeCommissionTransfer, RefType: "site_invite", RefId: row.TradeNo,
+			Reason: "site invite commission to balance", IdempotencyKey: &ref,
+		}); err != nil {
+			return err
+		}
+		return tx.Model(&row).Update("converted_usd", row.ConvertedUSD.Add(amount)).Error
+	})
+	if err != nil {
+		return err
+	}
+	model.AdtySyncCreditUserQuotaCache(inviterID, int64(quota), "site invite commission")
+	return nil
 }
 
 func adtyRecordSiteInviteCommissionTx(tx *gorm.DB, ext *model.AdtyTopupOrder) error {

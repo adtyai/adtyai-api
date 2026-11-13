@@ -78,6 +78,9 @@ func RunAdtySiteSettlementOnce(now time.Time) (int, error) {
 		}
 		if ok {
 			settled++
+			if err := ResumeAdtySiteInviteCoverage(siteId, now); err != nil {
+				common.SysError(common.LogText("resume site invite coverage failed site=%d: %s", siteId, err.Error()))
+			}
 		}
 	}
 	return settled, first

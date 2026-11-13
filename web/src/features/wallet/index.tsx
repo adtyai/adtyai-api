@@ -28,6 +28,7 @@ import { adtyTopupQueryKeys, getAdtyTopupInfo } from './adty/api'
 import { AdtyPaymentDialogs } from './adty/components/adty-payment-dialogs'
 import { AdtyPendingBanner } from './adty/components/adty-pending-banner'
 import { AdtyRechargeCard } from './adty/components/adty-recharge-card'
+import { SiteCommissionPanel } from './adty/site-commission-panel'
 import { TeamPanel } from './adty/team-panel'
 import { VoucherRedeemCard } from './adty/voucher-redeem-card'
 import { AdtyTopupHistory } from './adty/components/adty-topup-history'
@@ -117,6 +118,7 @@ export function Wallet(props: WalletProps) {
             <WalletStatsCard user={user} loading={userLoading} />
             <VoucherRedeemCard onRedeemed={() => void fetchUser()} />
             <TeamPanel />
+            <SiteCommissionPanel onConverted={() => void fetchUser()} />
             <AdtyPendingBanner
               order={infoQuery.data?.pending}
               onResume={handleResume}

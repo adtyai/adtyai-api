@@ -8824,7 +8824,12 @@
     "Observation days": "Jours d'observation",
     "Cover commission from margin": "Couvrir la commission avec la marge",
     "After earnings, the open margin cycle can cover the rest. No amount is set here.": "Après les gains, le cycle de marge ouvert peut couvrir le reste. Aucun montant n'est saisi ici.",
-    "Returned to site wallets": "Rendu aux portefeuilles du site"
+    "Returned to site wallets": "Rendu aux portefeuilles du site",
+    "Cover pending commissions": "Couvrir les commissions en attente",
+    "Uses the current earnings and authorized margin cycle on the original commission rows.": "Utilise les gains actuels et le cycle de marge autorisé sur les commissions d’origine.",
+    "Available commission": "Commission disponible",
+    "The amount moves from available commission to your balance.": "Le montant passe de la commission disponible a votre solde.",
+    "Convert commission to balance": "Convertir la commission en solde"
 },
   "Targeted notifications": "Notifications ciblées",
   "Site announcements": "Annonces du site",

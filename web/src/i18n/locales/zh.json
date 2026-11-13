@@ -8824,7 +8824,12 @@
     "Observation days": "观察天数",
     "Cover commission from margin": "用保证金补足佣金",
     "After earnings, the open margin cycle can cover the rest. No amount is set here.": "先使用收益。不足部分按已开启的保证金周期补足。这里不填写金额。",
-    "Returned to site wallets": "已退回分站钱包"
+    "Returned to site wallets": "已退回分站钱包",
+    "Cover pending commissions": "处理待覆盖佣金",
+    "Uses the current earnings and authorized margin cycle on the original commission rows.": "按当前收益和已授权的保证金周期处理原来的佣金记录。",
+    "Available commission": "可用佣金",
+    "The amount moves from available commission to your balance.": "金额从可用佣金转入余额。",
+    "Convert commission to balance": "佣金转余额"
 },
   "Targeted notifications": "定向通知",
   "Site announcements": "本站公告",

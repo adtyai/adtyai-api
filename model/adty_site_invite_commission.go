@@ -23,6 +23,8 @@ type AdtySiteInviteCommission struct {
 	CoveredUSD   decimal.Decimal `json:"covered_usd" gorm:"type:decimal(20,8);not null;default:0"`
 	ClawedUSD    decimal.Decimal `json:"clawed_usd" gorm:"type:decimal(20,8);not null;default:0"`
 	RecoveredUSD decimal.Decimal `json:"recovered_usd" gorm:"type:decimal(20,8);not null;default:0"`
+	ConvertedUSD decimal.Decimal `json:"converted_usd" gorm:"type:decimal(20,8);not null;default:0"`
+	RecoveryUSD  decimal.Decimal `json:"recovery_usd" gorm:"type:decimal(20,8);not null;default:0"`
 	Status       string          `json:"status" gorm:"type:varchar(24);index"`
 	CoveredAt    int64           `json:"covered_at"`
 	AvailableAt  int64           `json:"available_at"`

@@ -33,6 +33,7 @@ import {
   bindOwnerSiteInvite,
   getOwnerSiteInvites,
   getOwnerSiteReferral,
+  resumeOwnerSiteCoverage,
   saveOwnerSiteReferral,
   siteOwnerKeys,
 } from '../api'
@@ -60,6 +61,13 @@ export function SiteReferralPanel() {
     },
     onError: (error) => handleServerError(error),
   })
+  const resume = useMutation({
+    mutationFn: resumeOwnerSiteCoverage,
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: siteOwnerKeys.all })
+    },
+    onError: (error) => handleServerError(error),
+  })
   const bind = useMutation({
     mutationFn: () =>
       bindOwnerSiteInvite(Number(inviterId), Number(inviteeId)),
@@ -77,6 +85,19 @@ export function SiteReferralPanel() {
         <p className='text-muted-foreground text-sm'>
           {t('Saving a rate does not pay commission.')}
         </p>
+        <p className='text-muted-foreground text-sm'>
+          {t(
+            'Uses the current earnings and authorized margin cycle on the original commission rows.'
+          )}
+        </p>
+        <Button
+          type='button'
+          variant='outline'
+          disabled={resume.isPending}
+          onClick={() => resume.mutate()}
+        >
+          {t('Cover pending commissions')}
+        </Button>
       </div>
       {rules.isPending && <LoadingState />}
       {rules.isError && <ErrorState onRetry={() => void rules.refetch()} />}

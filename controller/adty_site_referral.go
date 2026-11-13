@@ -4,6 +4,10 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
+
+	"github.com/shopspring/decimal"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
@@ -164,6 +168,52 @@ func PutAdtyOwnerSiteReferral(c *gin.Context) {
 		return
 	}
 	common.ApiSuccess(c, gin.H{"saved": true})
+}
+
+func GetAdtySiteCommissions(c *gin.Context) {
+	rows, err := service.ListAdtySiteInviteCommissions(c.GetInt("id"), time.Now())
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"items": rows})
+}
+
+func PostAdtySiteCommissionConvert(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	var body struct {
+		AmountUSD string `json:"amount_usd"`
+	}
+	if err := common.DecodeJson(c.Request.Body, &body); err != nil {
+		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	amount, err := decimal.NewFromString(strings.TrimSpace(body.AmountUSD))
+	if err != nil {
+		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	if err := service.ConvertAdtySiteInviteCommission(c.GetInt("id"), id, amount, strings.TrimSpace(c.GetHeader("Idempotency-Key"))); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"converted": true})
+}
+
+func PostAdtyOwnerSiteCoverageResume(c *gin.Context) {
+	site, ok := adtyOwnerSiteOr403(c)
+	if !ok {
+		return
+	}
+	if err := service.ResumeAdtySiteInviteCoverage(site.Id, time.Now()); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"resumed": true})
 }
 
 func GetAdtyOwnerSiteTeams(c *gin.Context) {

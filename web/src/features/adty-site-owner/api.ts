@@ -270,6 +270,13 @@ export async function getOwnerSiteInvites(): Promise<SiteInvite[]> {
   return requireServerSuccess(res.data).data.items ?? []
 }
 
+export async function resumeOwnerSiteCoverage(): Promise<void> {
+  const res = await api.post<ApiResponse<{ resumed: boolean }>>(
+    `${BASE}/referral/cover-pending`
+  )
+  requireServerSuccess(res.data)
+}
+
 export async function bindOwnerSiteInvite(
   inviterId: number,
   inviteeId: number

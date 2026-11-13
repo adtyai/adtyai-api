@@ -8824,7 +8824,12 @@
     "Observation days": "観察日数",
     "Cover commission from margin": "保証金で手数料を補填",
     "After earnings, the open margin cycle can cover the rest. No amount is set here.": "収益のあと、開始済みの保証金サイクルで残りを補います。ここでは金額を入力しません。",
-    "Returned to site wallets": "サイトのウォレットへ戻した額"
+    "Returned to site wallets": "サイトのウォレットへ戻した額",
+    "Cover pending commissions": "未カバーの手数料を処理",
+    "Uses the current earnings and authorized margin cycle on the original commission rows.": "現在の収益と、認可済みの保証金サイクルで元の手数料記録を処理します。",
+    "Available commission": "使える手数料",
+    "The amount moves from available commission to your balance.": "金額は使える手数料から残高へ移ります。",
+    "Convert commission to balance": "手数料を残高へ移す"
 },
   "Targeted notifications": "対象を指定した通知",
   "Site announcements": "サイトのお知らせ",

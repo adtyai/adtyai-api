@@ -8824,7 +8824,12 @@
     "Observation days": "Observation days",
     "Cover commission from margin": "Cover commission from margin",
     "After earnings, the open margin cycle can cover the rest. No amount is set here.": "After earnings, the open margin cycle can cover the rest. No amount is set here.",
-    "Returned to site wallets": "Returned to site wallets"
+    "Returned to site wallets": "Returned to site wallets",
+    "Cover pending commissions": "Cover pending commissions",
+    "Uses the current earnings and authorized margin cycle on the original commission rows.": "Uses the current earnings and authorized margin cycle on the original commission rows.",
+    "Available commission": "Available commission",
+    "The amount moves from available commission to your balance.": "The amount moves from available commission to your balance.",
+    "Convert commission to balance": "Convert commission to balance"
 },
   "Targeted notifications": "Targeted notifications",
   "Site announcements": "Site announcements",

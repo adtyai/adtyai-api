@@ -299,6 +299,113 @@ func TestSiteInviteCommissionRefundCancelsUncoveredAmountWithoutMovingWallets(t 
 	}
 }
 
+func TestSiteInviteCommissionConvertsAvailableRemainderToInviterQuota(t *testing.T) {
+	db := prepareReferralDialectDB(t, "sqlite")
+	site, invitee := seedSiteInvite(t, db, decimal.RequireFromString("0.10"))
+	require.NoError(t, EnsureAdtySiteWallets(site.Id))
+	_, err := ApplyAdtySiteWalletChange(site.Id, model.AdtySiteWalletEarnings, decimal.NewFromInt(3), AdtySiteWalletChange{
+		Type: "earning_settlement", IdempotencyKey: "earn-convert",
+	})
+	require.NoError(t, err)
+	require.NoError(t, SaveAdtySiteCommissionPolicy("10", "7"))
+	ext := siteInviteOrder(site.Id, invitee.Id, "SITE-CVT", decimal.NewFromInt(30))
+	var row model.AdtySiteInviteCommission
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		if err := RecordAdtySiteInviteCommissionTx(tx, ext, time.Unix(1_700_000_000, 0)); err != nil {
+			return err
+		}
+		if err := tx.Where("trade_no = ?", "SITE-CVT").First(&row).Error; err != nil {
+			return err
+		}
+		return CoverAdtySiteInviteCommissionTx(tx, row.Id, time.Unix(1_700_000_100, 0))
+	}))
+	require.NoError(t, db.First(&row, row.Id).Error)
+	var invite model.AdtySiteInvite
+	require.NoError(t, db.Where("site_id = ? AND invitee_id = ?", site.Id, invitee.Id).First(&invite).Error)
+	require.Error(t, ConvertAdtySiteInviteCommission(invite.InviterId, row.Id, decimal.NewFromInt(1), "cvt-1"))
+
+	require.NoError(t, ReleaseAdtySiteInviteCommissions(time.Unix(row.AvailableAt, 0)))
+	require.NoError(t, ConvertAdtySiteInviteCommission(invite.InviterId, row.Id, decimal.NewFromInt(1), "cvt-1"))
+	require.NoError(t, ConvertAdtySiteInviteCommission(invite.InviterId, row.Id, decimal.NewFromInt(1), "cvt-1"))
+	var inviter model.User
+	require.NoError(t, db.First(&inviter, invite.InviterId).Error)
+	require.Equal(t, 500000, inviter.Quota)
+	require.NoError(t, db.First(&row, row.Id).Error)
+	require.True(t, row.ConvertedUSD.Equal(decimal.NewFromInt(1)))
+	var inviteeUser model.User
+	require.NoError(t, db.First(&inviteeUser, invitee.Id).Error)
+	require.Equal(t, 0, inviteeUser.Quota)
+	var earning model.AdtySiteWallet
+	require.NoError(t, db.Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteWalletEarnings).First(&earning).Error)
+	require.True(t, earning.Balance.IsZero())
+	require.Error(t, ConvertAdtySiteInviteCommission(invitee.Id, row.Id, decimal.NewFromInt(1), "cvt-other"))
+
+	ext.CreditQuota = 30 * 500000
+	ext.RefundQuota = 30 * 500000
+	require.NoError(t, db.AutoMigrate(model.ReferralTables()...))
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return model.AdtyAfterTopUpRefundedTx(tx, &model.TopUp{TradeNo: "SITE-CVT", UserId: invitee.Id}, ext)
+	}))
+	require.NoError(t, db.First(&row, row.Id).Error)
+	require.True(t, row.ClawedUSD.Equal(decimal.NewFromInt(3)))
+	require.True(t, row.RecoveredUSD.Equal(decimal.NewFromInt(2)))
+	require.True(t, row.RecoveryUSD.Equal(decimal.NewFromInt(1)))
+	require.NoError(t, db.First(&inviter, invite.InviterId).Error)
+	require.Equal(t, 500000, inviter.Quota)
+	require.NoError(t, db.Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteWalletEarnings).First(&earning).Error)
+	require.True(t, earning.Balance.Equal(decimal.NewFromInt(2)))
+}
+
+func TestResumeSiteInviteCoverageFundsOriginalRowsInOrder(t *testing.T) {
+	db := prepareReferralDialectDB(t, "sqlite")
+	site, invitee := seedSiteInvite(t, db, decimal.RequireFromString("0.10"))
+	require.NoError(t, EnsureAdtySiteWallets(site.Id))
+	_, err := ApplyAdtySiteWalletChange(site.Id, model.AdtySiteWalletEarnings, decimal.NewFromInt(3), AdtySiteWalletChange{
+		Type: "earning_settlement", IdempotencyKey: "earn-resume",
+	})
+	require.NoError(t, err)
+	require.NoError(t, SaveAdtySiteCommissionPolicy("2", "7"))
+
+	older := siteInviteOrder(site.Id, invitee.Id, "SITE-OLD", decimal.NewFromInt(30))
+	newer := siteInviteOrder(site.Id, invitee.Id, "SITE-NEW", decimal.NewFromInt(30))
+	var oldRow, newRow model.AdtySiteInviteCommission
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		if err := RecordAdtySiteInviteCommissionTx(tx, older, time.Unix(1_700_000_000, 0)); err != nil {
+			return err
+		}
+		if err := RecordAdtySiteInviteCommissionTx(tx, newer, time.Unix(1_700_000_010, 0)); err != nil {
+			return err
+		}
+		if err := tx.Where("trade_no = ?", "SITE-OLD").First(&oldRow).Error; err != nil {
+			return err
+		}
+		return CoverAdtySiteInviteCommissionTx(tx, oldRow.Id, time.Unix(1_700_000_100, 0))
+	}))
+	require.NoError(t, db.First(&oldRow, oldRow.Id).Error)
+	require.Equal(t, "pending_coverage", oldRow.Status)
+	var earning model.AdtySiteWallet
+	require.NoError(t, db.Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteWalletEarnings).First(&earning).Error)
+	require.True(t, earning.Balance.Equal(decimal.NewFromInt(3)), "a backlog at the cap does not spend earnings on one row")
+
+	require.NoError(t, ResumeAdtySiteInviteCoverage(site.Id, time.Unix(1_700_000_200, 0)))
+	require.NoError(t, db.First(&oldRow, oldRow.Id).Error)
+	require.NoError(t, db.Where("trade_no = ?", "SITE-NEW").First(&newRow).Error)
+	require.Equal(t, "covered", oldRow.Status)
+	require.Equal(t, "pending_coverage", newRow.Status)
+	require.Equal(t, int64(1_700_000_200+7*86400), oldRow.AvailableAt)
+	require.NoError(t, db.Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteWalletEarnings).First(&earning).Error)
+	require.True(t, earning.Balance.IsZero())
+	var count int64
+	require.NoError(t, db.Model(&model.AdtySiteInviteCommission{}).Count(&count).Error)
+	require.Equal(t, int64(2), count)
+
+	require.NoError(t, ResumeAdtySiteInviteCoverage(site.Id, time.Unix(1_700_000_300, 0)))
+	require.NoError(t, db.Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteWalletEarnings).First(&earning).Error)
+	require.True(t, earning.Balance.IsZero())
+	require.NoError(t, db.Model(&model.AdtySiteInviteCommission{}).Count(&count).Error)
+	require.Equal(t, int64(2), count)
+}
+
 func TestSiteInviteCommissionIgnoresTeamTopups(t *testing.T) {
 	db := prepareReferralDialectDB(t, "sqlite")
 	site, invitee := seedSiteInvite(t, db, decimal.RequireFromString("0.10"))
