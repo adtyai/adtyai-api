@@ -8893,7 +8893,9 @@
     "USDT fee (USD)": "Frais USDT (USD)",
     "Turn cash withdrawal off": "Fermer le retrait en espèces",
     "1 USD = {{rate}} CNY. You receive ¥{{cny}}.": "1 USD = {{rate}} CNY. Vous recevez ¥{{cny}}.",
-    "Network fee {{fee}} USD. You receive {{net}} USD.": "Frais de réseau {{fee}} USD. Vous recevez {{net}} USD."
+    "Network fee {{fee}} USD. You receive {{net}} USD.": "Frais de réseau {{fee}} USD. Vous recevez {{net}} USD.",
+    "A transfer to balance deducts the site hold. External payout releases it after payment is complete.": "Un transfert vers le solde déduit le gel du site. Un paiement externe le libère une fois le versement terminé.",
+    "Invite commission holds are not available for this withdrawal.": "Les gels de commission d’invitation ne sont pas disponibles pour ce retrait."
 },
   "Targeted notifications": "Notifications ciblées",
   "Site announcements": "Annonces du site",

@@ -8893,7 +8893,9 @@
     "USDT fee (USD)": "USDT 手续费（USD）",
     "Turn cash withdrawal off": "关闭现金提现",
     "1 USD = {{rate}} CNY. You receive ¥{{cny}}.": "1 USD = {{rate}} CNY。到账 ¥{{cny}}。",
-    "Network fee {{fee}} USD. You receive {{net}} USD.": "网络手续费 {{fee}} USD。到账 {{net}} USD。"
+    "Network fee {{fee}} USD. You receive {{net}} USD.": "网络手续费 {{fee}} USD。到账 {{net}} USD。",
+    "A transfer to balance deducts the site hold. External payout releases it after payment is complete.": "转到站内余额会扣掉对应冻结款。外部打款完成后，冻结款退回原来源。",
+    "Invite commission holds are not available for this withdrawal.": "邀请佣金冻结款不能用于这笔提现。"
 },
   "Targeted notifications": "定向通知",
   "Site announcements": "本站公告",

@@ -14,6 +14,36 @@ import (
 	"gorm.io/gorm"
 )
 
+func TestSiteCommissionFreezeBlocksALaterEarningsDebit(t *testing.T) {
+	db := prepareReferralDialectDB(t, "sqlite")
+	site, invitee := seedSiteInvite(t, db, decimal.RequireFromString("0.10"))
+	require.NoError(t, EnsureAdtySiteWallets(site.Id))
+	_, err := ApplyAdtySiteWalletChange(site.Id, model.AdtySiteWalletEarnings, decimal.NewFromInt(5), AdtySiteWalletChange{
+		Type: "earning_settlement", IdempotencyKey: "earn-block",
+	})
+	require.NoError(t, err)
+	require.NoError(t, SaveAdtySiteCommissionPolicy("10", "1"))
+	ext := siteInviteOrder(site.Id, invitee.Id, "SITE-BLOCK", decimal.NewFromInt(30))
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		if err := RecordAdtySiteInviteCommissionTx(tx, ext, time.Unix(1, 0)); err != nil {
+			return err
+		}
+		var row model.AdtySiteInviteCommission
+		if err := tx.Where("trade_no = ?", ext.TradeNo).First(&row).Error; err != nil {
+			return err
+		}
+		return CoverAdtySiteInviteCommissionTx(tx, row.Id, time.Unix(2, 0))
+	}))
+	_, err = ApplyAdtySiteWalletChange(site.Id, model.AdtySiteWalletEarnings, decimal.NewFromInt(-3), AdtySiteWalletChange{
+		Type: "earning_withdraw_freeze", IdempotencyKey: "blocked-withdraw",
+	})
+	require.ErrorIs(t, err, ErrAdtySiteWalletInsufficient)
+	_, err = ApplyAdtySiteWalletChange(site.Id, model.AdtySiteWalletEarnings, decimal.NewFromInt(-2), AdtySiteWalletChange{
+		Type: "earning_withdraw_freeze", IdempotencyKey: "open-withdraw",
+	})
+	require.NoError(t, err)
+}
+
 func TestSiteInviteCommissionKeepsObservationDaysFromRecordTime(t *testing.T) {
 	db := prepareReferralDialectDB(t, "sqlite")
 	site, invitee := seedSiteInvite(t, db, decimal.RequireFromString("0.10"))
@@ -70,7 +100,8 @@ func TestSiteInviteCommissionStaysPendingUntilRootConfiguresCoverage(t *testing.
 	require.Equal(t, int64(1_700_000_100+7*86400), row.AvailableAt)
 	require.False(t, SiteInviteCommissionWithdrawable(&row, time.Unix(1_700_000_100, 0)))
 	require.NoError(t, db.Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteWalletEarnings).First(&wallet).Error)
-	require.True(t, wallet.Balance.Equal(decimal.NewFromInt(17)))
+	require.True(t, wallet.Balance.Equal(decimal.NewFromInt(20)))
+	require.True(t, wallet.FrozenUSD.Equal(decimal.NewFromInt(3)))
 
 	require.NoError(t, ReleaseAdtySiteInviteCommissions(time.Unix(row.AvailableAt, 0)))
 	require.NoError(t, db.First(&row, row.Id).Error)
@@ -145,19 +176,22 @@ func TestSiteInviteCommissionMarginFillsShortfallOnlyAfterRootAuthorizesThatBusi
 	require.True(t, row.CoveredUSD.Equal(decimal.RequireFromString("3")))
 	require.Equal(t, int64(1_700_000_200+7*86400), row.AvailableAt)
 	require.NoError(t, db.Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteWalletMargin).First(&margin).Error)
-	require.True(t, margin.Balance.Equal(decimal.NewFromInt(98)))
-	require.True(t, margin.CycleUsedUSD.Equal(decimal.NewFromInt(2)))
+	require.True(t, margin.Balance.Equal(decimal.NewFromInt(100)))
+	require.True(t, margin.FrozenUSD.Equal(decimal.NewFromInt(2)))
+	require.True(t, margin.CycleUsedUSD.IsZero())
 	var ledger model.AdtySiteWalletLedger
 	require.NoError(t, db.Where("idempotency_key = ?", "commission:SITE-M:margin").First(&ledger).Error)
-	require.Equal(t, "commission_cover", ledger.Type)
+	require.Equal(t, "commission_freeze", ledger.Type)
 	require.Equal(t, model.AdtySiteWalletMargin, ledger.WalletKind)
-	require.True(t, ledger.Delta.Equal(decimal.NewFromInt(-2)))
+	require.True(t, ledger.Delta.IsZero())
+	require.True(t, ledger.HoldDelta.Equal(decimal.NewFromInt(2)))
 
 	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
 		return CoverAdtySiteInviteCommissionTx(tx, row.Id, time.Unix(1_700_000_300, 0))
 	}))
 	require.NoError(t, db.Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteWalletMargin).First(&margin).Error)
-	require.True(t, margin.Balance.Equal(decimal.NewFromInt(98)))
+	require.True(t, margin.Balance.Equal(decimal.NewFromInt(100)))
+	require.True(t, margin.FrozenUSD.Equal(decimal.NewFromInt(2)))
 
 	extBoth := siteInviteOrder(site.Id, invitee.Id, "SITE-M2", decimal.NewFromInt(30))
 	var both model.AdtySiteInviteCommission
@@ -175,10 +209,12 @@ func TestSiteInviteCommissionMarginFillsShortfallOnlyAfterRootAuthorizesThatBusi
 	require.True(t, both.CoveredUSD.Equal(decimal.RequireFromString("3")))
 	var earning model.AdtySiteWallet
 	require.NoError(t, db.Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteWalletEarnings).First(&earning).Error)
-	require.True(t, earning.Balance.IsZero())
+	require.True(t, earning.Balance.Equal(decimal.NewFromInt(1)))
+	require.True(t, earning.FrozenUSD.Equal(decimal.NewFromInt(1)))
 	var marginAfter model.AdtySiteWallet
 	require.NoError(t, db.Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteWalletMargin).First(&marginAfter).Error)
-	require.True(t, marginAfter.Balance.Equal(decimal.NewFromInt(95)))
+	require.True(t, marginAfter.Balance.Equal(decimal.NewFromInt(100)))
+	require.True(t, marginAfter.FrozenUSD.Equal(decimal.NewFromInt(5)))
 }
 
 func TestSiteInviteCommissionMarginStopsAtTheOpenCycle(t *testing.T) {
@@ -210,8 +246,9 @@ func TestSiteInviteCommissionMarginStopsAtTheOpenCycle(t *testing.T) {
 	require.True(t, row.CoveredUSD.Equal(decimal.NewFromInt(2)))
 	var margin model.AdtySiteWallet
 	require.NoError(t, db.Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteWalletMargin).First(&margin).Error)
-	require.True(t, margin.Balance.Equal(decimal.NewFromInt(99)))
-	require.True(t, margin.CycleUsedUSD.Equal(decimal.NewFromInt(90)))
+	require.True(t, margin.Balance.Equal(decimal.NewFromInt(100)))
+	require.True(t, margin.FrozenUSD.Equal(decimal.NewFromInt(1)))
+	require.True(t, margin.CycleUsedUSD.Equal(decimal.NewFromInt(89)))
 
 	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
 		return CoverAdtySiteInviteCommissionTx(tx, row.Id, time.Unix(1_700_000_200, 0))
@@ -220,7 +257,8 @@ func TestSiteInviteCommissionMarginStopsAtTheOpenCycle(t *testing.T) {
 	require.Equal(t, "pending_coverage", row.Status)
 	var marginAgain model.AdtySiteWallet
 	require.NoError(t, db.Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteWalletMargin).First(&marginAgain).Error)
-	require.True(t, marginAgain.Balance.Equal(decimal.NewFromInt(99)))
+	require.True(t, marginAgain.Balance.Equal(decimal.NewFromInt(100)))
+	require.True(t, marginAgain.FrozenUSD.Equal(decimal.NewFromInt(1)))
 }
 
 func TestSiteInviteCommissionRefundClawsBackByCompletedPrincipalRatio(t *testing.T) {
@@ -260,18 +298,19 @@ func TestSiteInviteCommissionRefundClawsBackByCompletedPrincipalRatio(t *testing
 	require.True(t, row.ClawedUSD.Equal(decimal.RequireFromString("1.5")))
 	require.True(t, row.RecoveredUSD.Equal(decimal.RequireFromString("1.5")))
 	require.Equal(t, "covered", row.Status)
-	var clawLedger model.AdtySiteWalletLedger
-	require.NoError(t, db.Where("idempotency_key = ?", "commission-clawback:SITE-CLAW:margin:1.5").First(&clawLedger).Error)
-	require.Equal(t, "commission_clawback", clawLedger.Type)
-	require.Equal(t, "site_invite", clawLedger.RefType)
-	require.True(t, clawLedger.Delta.Equal(decimal.RequireFromString("1.5")))
+	var releaseLedger model.AdtySiteWalletLedger
+	require.NoError(t, db.Where("type = ? AND wallet_kind = ?", "commission_release", model.AdtySiteWalletMargin).First(&releaseLedger).Error)
+	require.True(t, releaseLedger.Delta.IsZero())
+	require.True(t, releaseLedger.HoldDelta.IsNegative())
 	var margin model.AdtySiteWallet
 	require.NoError(t, db.Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteWalletMargin).First(&margin).Error)
-	require.True(t, margin.Balance.Equal(decimal.RequireFromString("99.5")))
-	require.True(t, margin.CycleUsedUSD.Equal(decimal.RequireFromString("0.5")))
+	require.True(t, margin.Balance.Equal(decimal.NewFromInt(100)))
+	require.True(t, margin.FrozenUSD.Equal(decimal.NewFromInt(1)))
+	require.True(t, margin.CycleUsedUSD.IsZero())
 	var earning model.AdtySiteWallet
 	require.NoError(t, db.Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteWalletEarnings).First(&earning).Error)
-	require.True(t, earning.Balance.IsZero())
+	require.True(t, earning.Balance.Equal(decimal.NewFromInt(1)))
+	require.True(t, earning.FrozenUSD.Equal(decimal.RequireFromString("0.5")))
 	var user model.User
 	require.NoError(t, db.First(&user, invitee.Id).Error)
 	require.Equal(t, 0, user.Quota)
@@ -280,7 +319,8 @@ func TestSiteInviteCommissionRefundClawsBackByCompletedPrincipalRatio(t *testing
 		return model.AdtyAfterTopUpRefundedTx(tx, topUp, ext)
 	}))
 	require.NoError(t, db.Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteWalletMargin).First(&margin).Error)
-	require.True(t, margin.Balance.Equal(decimal.RequireFromString("99.5")))
+	require.True(t, margin.Balance.Equal(decimal.NewFromInt(100)))
+	require.True(t, margin.FrozenUSD.Equal(decimal.NewFromInt(1)))
 
 	ext.RefundQuota = 30 * 500000
 	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
@@ -293,9 +333,11 @@ func TestSiteInviteCommissionRefundClawsBackByCompletedPrincipalRatio(t *testing
 	require.False(t, SiteInviteCommissionWithdrawable(&row, time.Unix(row.AvailableAt, 0)))
 	require.NoError(t, db.Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteWalletMargin).First(&margin).Error)
 	require.True(t, margin.Balance.Equal(decimal.NewFromInt(100)))
+	require.True(t, margin.FrozenUSD.IsZero())
 	require.True(t, margin.CycleUsedUSD.IsZero())
 	require.NoError(t, db.Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteWalletEarnings).First(&earning).Error)
 	require.True(t, earning.Balance.Equal(decimal.NewFromInt(1)))
+	require.True(t, earning.FrozenUSD.IsZero())
 	require.NoError(t, db.First(&user, invitee.Id).Error)
 	require.Equal(t, 0, user.Quota)
 }
@@ -411,7 +453,11 @@ func TestWithdrawnSiteInviteCommissionRefundRecordsLiabilityWithoutDebitingQuota
 		}
 		return CoverAdtySiteInviteCommissionTx(tx, row.Id, time.Unix(1_700_000_100, 0))
 	}))
-	require.NoError(t, db.Model(&row).Update("withdrawn_usd", decimal.NewFromInt(1)).Error)
+	require.NoError(t, db.Model(&row).Updates(map[string]any{
+		"withdrawn_usd": decimal.NewFromInt(1), "earnings_hold_usd": decimal.NewFromInt(2),
+	}).Error)
+	require.NoError(t, db.Model(&model.AdtySiteWallet{}).Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteWalletEarnings).
+		Update("frozen_usd", decimal.NewFromInt(2)).Error)
 	ext.RefundQuota = 30 * 500000
 	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
 		return model.AdtyAfterTopUpRefundedTx(tx, &model.TopUp{TradeNo: ext.TradeNo, UserId: invitee.Id}, ext)
@@ -427,7 +473,8 @@ func TestWithdrawnSiteInviteCommissionRefundRecordsLiabilityWithoutDebitingQuota
 	require.Equal(t, "withdrawn", liability.Kind)
 	var earning model.AdtySiteWallet
 	require.NoError(t, db.Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteWalletEarnings).First(&earning).Error)
-	require.True(t, earning.Balance.Equal(decimal.NewFromInt(2)))
+	require.True(t, earning.Balance.Equal(decimal.NewFromInt(3)))
+	require.True(t, earning.FrozenUSD.IsZero())
 	var user model.User
 	require.NoError(t, db.First(&user, row.InviterId).Error)
 	require.Equal(t, 0, user.Quota)
@@ -454,7 +501,7 @@ func TestSiteInviteCommissionRefundCancelsUncoveredAmountWithoutMovingWallets(t 
 	require.True(t, row.ClawedUSD.Equal(decimal.RequireFromString("1.5")))
 	require.True(t, row.RecoveredUSD.IsZero())
 	var ledgers int64
-	require.NoError(t, db.Model(&model.AdtySiteWalletLedger{}).Where("type = ?", "commission_clawback").Count(&ledgers).Error)
+	require.NoError(t, db.Model(&model.AdtySiteWalletLedger{}).Where("type = ?", "commission_deduct").Count(&ledgers).Error)
 	require.Zero(t, ledgers)
 	var wallets []model.AdtySiteWallet
 	require.NoError(t, db.Where("site_id = ?", site.Id).Find(&wallets).Error)
@@ -501,7 +548,8 @@ func TestSiteInviteCommissionConvertsAvailableRemainderToInviterQuota(t *testing
 	require.Equal(t, 0, inviteeUser.Quota)
 	var earning model.AdtySiteWallet
 	require.NoError(t, db.Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteWalletEarnings).First(&earning).Error)
-	require.True(t, earning.Balance.IsZero())
+	require.True(t, earning.Balance.Equal(decimal.NewFromInt(2)))
+	require.True(t, earning.FrozenUSD.Equal(decimal.NewFromInt(2)))
 	require.Error(t, ConvertAdtySiteInviteCommission(invitee.Id, row.Id, decimal.NewFromInt(1), "cvt-other"))
 
 	ext.CreditQuota = 30 * 500000
@@ -513,11 +561,13 @@ func TestSiteInviteCommissionConvertsAvailableRemainderToInviterQuota(t *testing
 	require.NoError(t, db.First(&row, row.Id).Error)
 	require.True(t, row.ClawedUSD.Equal(decimal.NewFromInt(3)))
 	require.True(t, row.RecoveredUSD.Equal(decimal.NewFromInt(2)))
-	require.True(t, row.RecoveryUSD.Equal(decimal.NewFromInt(1)))
+	require.True(t, row.RecoveryUSD.IsZero())
+	require.True(t, row.ConvertedClawedUSD.Equal(decimal.NewFromInt(1)))
 	require.NoError(t, db.First(&inviter, invite.InviterId).Error)
-	require.Equal(t, 500000, inviter.Quota)
+	require.Equal(t, 0, inviter.Quota)
 	require.NoError(t, db.Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteWalletEarnings).First(&earning).Error)
 	require.True(t, earning.Balance.Equal(decimal.NewFromInt(2)))
+	require.True(t, earning.FrozenUSD.IsZero())
 }
 
 func TestResumeSiteInviteCoverageFundsOriginalRowsInOrder(t *testing.T) {
@@ -549,7 +599,8 @@ func TestResumeSiteInviteCoverageFundsOriginalRowsInOrder(t *testing.T) {
 	require.Equal(t, "pending_coverage", oldRow.Status)
 	var earning model.AdtySiteWallet
 	require.NoError(t, db.Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteWalletEarnings).First(&earning).Error)
-	require.True(t, earning.Balance.Equal(decimal.NewFromInt(3)), "a backlog at the cap does not spend earnings on one row")
+	require.True(t, earning.Balance.Equal(decimal.NewFromInt(3)))
+	require.True(t, earning.FrozenUSD.IsZero(), "a backlog at the cap does not freeze earnings on one row")
 
 	require.NoError(t, ResumeAdtySiteInviteCoverage(site.Id, time.Unix(1_700_000_200, 0)))
 	require.NoError(t, db.First(&oldRow, oldRow.Id).Error)
@@ -558,14 +609,16 @@ func TestResumeSiteInviteCoverageFundsOriginalRowsInOrder(t *testing.T) {
 	require.Equal(t, "pending_coverage", newRow.Status)
 	require.Equal(t, int64(1_700_000_200+7*86400), oldRow.AvailableAt)
 	require.NoError(t, db.Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteWalletEarnings).First(&earning).Error)
-	require.True(t, earning.Balance.IsZero())
+	require.True(t, earning.Balance.Equal(decimal.NewFromInt(3)))
+	require.True(t, earning.FrozenUSD.Equal(decimal.NewFromInt(3)))
 	var count int64
 	require.NoError(t, db.Model(&model.AdtySiteInviteCommission{}).Count(&count).Error)
 	require.Equal(t, int64(2), count)
 
 	require.NoError(t, ResumeAdtySiteInviteCoverage(site.Id, time.Unix(1_700_000_300, 0)))
 	require.NoError(t, db.Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteWalletEarnings).First(&earning).Error)
-	require.True(t, earning.Balance.IsZero())
+	require.True(t, earning.Balance.Equal(decimal.NewFromInt(3)))
+	require.True(t, earning.FrozenUSD.Equal(decimal.NewFromInt(3)))
 	require.NoError(t, db.Model(&model.AdtySiteInviteCommission{}).Count(&count).Error)
 	require.Equal(t, int64(2), count)
 }

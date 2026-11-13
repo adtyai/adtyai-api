@@ -150,6 +150,8 @@ func RefundAdtyTopUpManualUSD(tradeNo, reason string, operatorID int, idemKey st
 	}
 	var result *AdtyTopUpRefundResult
 	var userID int
+	var committedTopUp *TopUp
+	var committedExt *AdtyTopupOrder
 	replay := false
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		topUp, ext, err := lockAdtyTopUpTx(tx, tradeNo)
@@ -245,6 +247,7 @@ func RefundAdtyTopUpManualUSD(tradeNo, reason string, operatorID int, idemKey st
 		topUp.Status = status
 		ext.RefundQuota, ext.RefundAmount = newRefundQuota, ext.RefundAmount.Add(requestUSD)
 		ext.RefundDeductedQuota, ext.RefundBonusQuota = deducted, int64(reclaimQuota)
+		committedTopUp, committedExt = topUp, ext
 		if AdtyAfterTopUpRefundedTx != nil {
 			return AdtyAfterTopUpRefundedTx(tx, topUp, ext)
 		}
@@ -257,6 +260,9 @@ func RefundAdtyTopUpManualUSD(tradeNo, reason string, operatorID int, idemKey st
 		if err := invalidateUserCache(userID); err != nil {
 			common.SysError(common.LogText("refund cache update failed user_id=%d: %s", userID, err.Error()))
 		}
+	}
+	if !replay && AdtyAfterTopUpRefundCommitted != nil {
+		AdtyAfterTopUpRefundCommitted(committedTopUp, committedExt)
 	}
 	return result, nil
 }

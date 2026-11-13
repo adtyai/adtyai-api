@@ -43,6 +43,13 @@ func TestSiteInviteCashWithdrawalIsReviewedByThatSiteOwner(t *testing.T) {
 	var ledgers int64
 	require.NoError(t, db.Model(&model.AdtySiteWalletLedger{}).Where("type = ?", "site_earning").Count(&ledgers).Error)
 	require.Zero(t, ledgers)
+	var earning model.AdtySiteWallet
+	require.NoError(t, db.Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteWalletEarnings).First(&earning).Error)
+	require.True(t, earning.Balance.Equal(decimal.NewFromInt(3)))
+	require.True(t, earning.FrozenUSD.Equal(decimal.NewFromInt(1)))
+	var deducts int64
+	require.NoError(t, db.Model(&model.AdtySiteWalletLedger{}).Where("type = ?", "commission_deduct").Count(&deducts).Error)
+	require.Zero(t, deducts)
 }
 
 func TestSiteInviteWithdrawalRejectReleasesTheFreeze(t *testing.T) {
@@ -60,6 +67,11 @@ func TestSiteInviteWithdrawalRejectReleasesTheFreeze(t *testing.T) {
 	require.NoError(t, db.Where("inviter_id = ?", inviter.Id).First(&commission).Error)
 	require.True(t, commission.FrozenUSD.IsZero())
 	require.True(t, commission.WithdrawnUSD.IsZero())
+	require.True(t, commission.EarningsHoldUSD.Equal(decimal.NewFromInt(2)))
+	var earning model.AdtySiteWallet
+	require.NoError(t, db.Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteWalletEarnings).First(&earning).Error)
+	require.True(t, earning.Balance.Equal(decimal.NewFromInt(2)))
+	require.True(t, earning.FrozenUSD.Equal(decimal.NewFromInt(2)))
 	require.Error(t, MarkAdtySiteInviteWithdrawalPaid(owner.Id, row.Id, "", "late"))
 }
 
@@ -79,6 +91,10 @@ func TestSiteInviteBalanceWithdrawalCreditsQuotaWithoutWithdrawnCash(t *testing.
 	require.True(t, commission.FrozenUSD.IsZero())
 	require.NoError(t, db.First(inviter, inviter.Id).Error)
 	require.Equal(t, 750000, inviter.Quota)
+	var earning model.AdtySiteWallet
+	require.NoError(t, db.Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteWalletEarnings).First(&earning).Error)
+	require.True(t, earning.Balance.Equal(decimal.RequireFromString("0.5")))
+	require.True(t, earning.FrozenUSD.Equal(decimal.RequireFromString("0.5")))
 }
 
 func TestSiteInviteUSDTWithdrawalRefusesWhenItsOwnRulesAreUnset(t *testing.T) {

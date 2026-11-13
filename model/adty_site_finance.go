@@ -40,6 +40,7 @@ type AdtySiteWallet struct {
 	Kind            string          `json:"kind" gorm:"uniqueIndex:idx_adty_site_wallet;type:varchar(16)"`
 	Currency        string          `json:"currency" gorm:"type:varchar(16)"`
 	Balance         decimal.Decimal `json:"balance" gorm:"type:decimal(28,8);not null;default:0"`
+	FrozenUSD       decimal.Decimal `json:"frozen_usd" gorm:"type:decimal(28,8);not null;default:0"`
 	RequiredBalance decimal.Decimal `json:"required_balance" gorm:"type:decimal(28,8);not null;default:0"`
 	CycleTierUSD    decimal.Decimal `json:"cycle_tier_usd" gorm:"type:decimal(20,8);not null;default:0"`
 	CycleUsedUSD    decimal.Decimal `json:"cycle_used_usd" gorm:"type:decimal(20,8);not null;default:0"`
@@ -55,6 +56,7 @@ type AdtySiteWalletLedger struct {
 	WalletId       int64           `json:"wallet_id" gorm:"index"`
 	WalletKind     string          `json:"wallet_kind" gorm:"type:varchar(16);index"`
 	Delta          decimal.Decimal `json:"delta" gorm:"type:decimal(28,8);not null"`
+	HoldDelta      decimal.Decimal `json:"hold_delta" gorm:"type:decimal(28,8);not null;default:0"`
 	BalanceBefore  decimal.Decimal `json:"balance_before" gorm:"type:decimal(28,8);not null"`
 	BalanceAfter   decimal.Decimal `json:"balance_after" gorm:"type:decimal(28,8);not null"`
 	Type           string          `json:"type" gorm:"type:varchar(32);index"`

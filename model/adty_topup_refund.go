@@ -13,6 +13,9 @@ import (
 // 调用时 ext.RefundQuota 已经是这次退的本金额度 P，比例用 ext.RefundRatio()。
 var AdtyAfterTopUpRefundedTx func(tx *gorm.DB, topUp *TopUp, ext *AdtyTopupOrder) error
 
+// AdtyAfterTopUpRefundCommitted runs after a refund transaction commits.
+var AdtyAfterTopUpRefundCommitted func(topUp *TopUp, ext *AdtyTopupOrder)
+
 // AdtyTopUpRefundResult 是一次退款的结果：扣回额度 R、赠金额度 G、退的本金额度 P、应退金额（支付币种）。
 type AdtyTopUpRefundResult struct {
 	Ledger                 *AdtyBalanceLedger   `json:"ledger"`
@@ -148,6 +151,8 @@ func RefundAdtyTopUp(tradeNo, reason string, operatorID int, idemKey string, exp
 	}
 	var result *AdtyTopUpRefundResult
 	var userID int
+	var committedTopUp *TopUp
+	var committedExt *AdtyTopupOrder
 	replay := false
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		topUp, ext, err := lockAdtyTopUpTx(tx, tradeNo)
@@ -231,6 +236,7 @@ func RefundAdtyTopUp(tradeNo, reason string, operatorID int, idemKey string, exp
 		topUp.Status = TopUpStatusRefunded
 		ext.RefundedAt, ext.RefundReason, ext.RefundQuota, ext.RefundAmount = now, reason, refundQuota, refundAmount
 		ext.RefundDeductedQuota, ext.RefundBonusQuota = deducted, bonus
+		committedTopUp, committedExt = topUp, ext
 		if AdtyAfterTopUpRefundedTx != nil {
 			return AdtyAfterTopUpRefundedTx(tx, topUp, ext)
 		}
@@ -245,6 +251,9 @@ func RefundAdtyTopUp(tradeNo, reason string, operatorID int, idemKey string, exp
 		if err := invalidateUserCache(userID); err != nil {
 			common.SysError(common.LogText("refund cache update failed user_id=%d: %s", userID, err.Error()))
 		}
+	}
+	if !replay && AdtyAfterTopUpRefundCommitted != nil {
+		AdtyAfterTopUpRefundCommitted(committedTopUp, committedExt)
 	}
 	return result, nil
 }

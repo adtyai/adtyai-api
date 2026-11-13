@@ -8893,7 +8893,9 @@
     "USDT fee (USD)": "USDT 手数料（USD）",
     "Turn cash withdrawal off": "現金出金を止める",
     "1 USD = {{rate}} CNY. You receive ¥{{cny}}.": "1 USD = {{rate}} CNY。受取額は ¥{{cny}} です。",
-    "Network fee {{fee}} USD. You receive {{net}} USD.": "ネットワーク手数料 {{fee}} USD。受取額は {{net}} USD です。"
+    "Network fee {{fee}} USD. You receive {{net}} USD.": "ネットワーク手数料 {{fee}} USD。受取額は {{net}} USD です。",
+    "A transfer to balance deducts the site hold. External payout releases it after payment is complete.": "残高への移動は、対応する凍結分を差し引きます。外部送金が完了すると、凍結分は元の口座に戻ります。",
+    "Invite commission holds are not available for this withdrawal.": "招待コミッションの凍結分は、この出金には使えません。"
 },
   "Targeted notifications": "対象を指定した通知",
   "Site announcements": "サイトのお知らせ",

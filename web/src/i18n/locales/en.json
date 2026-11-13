@@ -8893,7 +8893,9 @@
     "USDT fee (USD)": "USDT fee (USD)",
     "Turn cash withdrawal off": "Turn cash withdrawal off",
     "1 USD = {{rate}} CNY. You receive ¥{{cny}}.": "1 USD = {{rate}} CNY. You receive ¥{{cny}}.",
-    "Network fee {{fee}} USD. You receive {{net}} USD.": "Network fee {{fee}} USD. You receive {{net}} USD."
+    "Network fee {{fee}} USD. You receive {{net}} USD.": "Network fee {{fee}} USD. You receive {{net}} USD.",
+    "A transfer to balance deducts the site hold. External payout releases it after payment is complete.": "A transfer to balance deducts the site hold. External payout releases it after payment is complete.",
+    "Invite commission holds are not available for this withdrawal.": "Invite commission holds are not available for this withdrawal."
 },
   "Targeted notifications": "Targeted notifications",
   "Site announcements": "Site announcements",

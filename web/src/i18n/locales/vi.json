@@ -8893,7 +8893,9 @@
     "USDT fee (USD)": "Phí USDT (USD)",
     "Turn cash withdrawal off": "Tắt rút tiền mặt",
     "1 USD = {{rate}} CNY. You receive ¥{{cny}}.": "1 USD = {{rate}} CNY. Bạn nhận ¥{{cny}}.",
-    "Network fee {{fee}} USD. You receive {{net}} USD.": "Phí mạng {{fee}} USD. Bạn nhận {{net}} USD."
+    "Network fee {{fee}} USD. You receive {{net}} USD.": "Phí mạng {{fee}} USD. Bạn nhận {{net}} USD.",
+    "A transfer to balance deducts the site hold. External payout releases it after payment is complete.": "Chuyển vào số dư sẽ trừ khoản đóng băng tương ứng. Sau khi chi trả bên ngoài xong, khoản đóng băng trả về nguồn cũ.",
+    "Invite commission holds are not available for this withdrawal.": "Khoản đóng băng hoa hồng mời không dùng được cho lần rút này."
 },
   "Targeted notifications": "Thông báo theo đối tượng",
   "Site announcements": "Thông báo của trang",

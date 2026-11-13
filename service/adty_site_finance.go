@@ -41,6 +41,7 @@ type AdtySiteWalletChange struct {
 	OpenMarginCycle  bool
 	CycleTier        decimal.Decimal
 	ReleaseCycleUsed decimal.Decimal
+	HoldDelta        decimal.Decimal
 }
 
 func adtySiteWalletKinds() []string {
@@ -147,7 +148,7 @@ func listAdtySiteWalletLedger(siteID int, kind string, offset, limit int, hideOp
 }
 
 func sameAdtySiteWalletOperation(entry *model.AdtySiteWalletLedger, siteID int, kind string, delta decimal.Decimal, change AdtySiteWalletChange) bool {
-	return entry.SiteId == siteID && entry.WalletKind == kind && entry.Delta.Equal(delta) && entry.Type == change.Type &&
+	return entry.SiteId == siteID && entry.WalletKind == kind && entry.Delta.Equal(delta) && entry.HoldDelta.Equal(change.HoldDelta) && entry.Type == change.Type &&
 		entry.RefType == change.RefType && entry.RefId == change.RefID && entry.Reason == change.Reason &&
 		entry.OperatorId == change.OperatorID && entry.AllowOverdraft == change.AllowOverdraft
 }
@@ -159,7 +160,7 @@ func validAdtySiteWalletAmount(amount decimal.Decimal) bool {
 }
 
 func applyAdtySiteWalletChangeTx(tx *gorm.DB, siteID int, kind string, delta decimal.Decimal, change AdtySiteWalletChange) (*model.AdtySiteWalletLedger, error) {
-	if delta.IsZero() || !validAdtySiteWalletAmount(delta) {
+	if (delta.IsZero() && change.HoldDelta.IsZero()) || (!delta.IsZero() && !validAdtySiteWalletAmount(delta)) || (!change.HoldDelta.IsZero() && !validAdtySiteWalletAmount(change.HoldDelta)) {
 		return nil, ErrAdtySiteWalletInvalidOperation
 	}
 	var existing model.AdtySiteWalletLedger
@@ -197,26 +198,40 @@ func applyAdtySiteWalletChangeTx(tx *gorm.DB, siteID int, kind string, delta dec
 	}
 	before := wallet.Balance
 	after := before.Add(delta)
-	if !validAdtySiteWalletAmount(after) {
+	frozenAfter := wallet.FrozenUSD.Add(change.HoldDelta)
+	if !validAdtySiteWalletAmount(after) || frozenAfter.IsNegative() || !validAdtySiteWalletAmount(frozenAfter) {
 		return nil, ErrAdtySiteWalletInvalidOperation
 	}
 	minimum := decimal.Zero
 	if kind == model.AdtySiteWalletMargin {
 		minimum = wallet.RequiredBalance
 	}
-	if delta.IsNegative() && !change.AllowOverdraft && after.LessThan(minimum) {
+	if (delta.IsNegative() || change.HoldDelta.IsPositive()) && !change.AllowOverdraft && after.Sub(frozenAfter).LessThan(minimum) {
 		return nil, ErrAdtySiteWalletInsufficient
 	}
 	cycleUsed := wallet.CycleUsedUSD
 	cycleTier := wallet.CycleTierUSD
 	if kind == model.AdtySiteWalletMargin && delta.IsNegative() && cycleTier.IsPositive() && !change.AllowOverdraft {
+		newDraw := delta.Abs()
+		if change.HoldDelta.IsNegative() {
+			consumed := decimal.Min(change.HoldDelta.Abs(), newDraw)
+			newDraw = newDraw.Sub(consumed)
+		}
 		allowed := AdtyMarginNewDraw(AdtyMarginDrawInput{
-			TierUSD: cycleTier, Balance: before, Used: cycleUsed,
+			TierUSD: cycleTier, Balance: before, Used: cycleUsed, Frozen: wallet.FrozenUSD,
 		})
-		if delta.Abs().GreaterThan(allowed) {
+		if newDraw.GreaterThan(allowed) {
 			return nil, ErrAdtySiteWalletInsufficient
 		}
 		cycleUsed = cycleUsed.Add(delta.Abs())
+	}
+	if kind == model.AdtySiteWalletMargin && delta.IsZero() && change.HoldDelta.IsPositive() && cycleTier.IsPositive() && !change.AllowOverdraft {
+		allowed := AdtyMarginNewDraw(AdtyMarginDrawInput{
+			TierUSD: cycleTier, Balance: before, Used: cycleUsed, Frozen: wallet.FrozenUSD,
+		})
+		if change.HoldDelta.GreaterThan(allowed) {
+			return nil, ErrAdtySiteWalletInsufficient
+		}
 	}
 	if kind == model.AdtySiteWalletMargin && delta.IsPositive() && change.OpenMarginCycle && change.CycleTier.IsPositive() {
 		cycleTier = change.CycleTier
@@ -229,12 +244,12 @@ func applyAdtySiteWalletChangeTx(tx *gorm.DB, siteID int, kind string, delta dec
 		}
 	}
 	if err := tx.Model(&model.AdtySiteWallet{}).Where("id = ?", wallet.Id).Updates(map[string]any{
-		"balance": after, "cycle_tier_usd": cycleTier, "cycle_used_usd": cycleUsed,
+		"balance": after, "frozen_usd": frozenAfter, "cycle_tier_usd": cycleTier, "cycle_used_usd": cycleUsed,
 	}).Error; err != nil {
 		return nil, err
 	}
 	result := &model.AdtySiteWalletLedger{
-		SiteId: siteID, WalletId: wallet.Id, WalletKind: kind, Delta: delta,
+		SiteId: siteID, WalletId: wallet.Id, WalletKind: kind, Delta: delta, HoldDelta: change.HoldDelta,
 		BalanceBefore: before, BalanceAfter: after, Type: change.Type,
 		RefType: change.RefType, RefId: change.RefID, Reason: change.Reason,
 		OperatorId: change.OperatorID, AllowOverdraft: change.AllowOverdraft, IdempotencyKey: change.IdempotencyKey,

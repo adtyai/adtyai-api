@@ -104,6 +104,9 @@ export function WithdrawalPanel() {
             'Customer invite commission withdrawals are reviewed on the Customers tab.'
           )}
         </p>
+        <p className='text-muted-foreground text-sm'>
+          {t('Invite commission holds are not available for this withdrawal.')}
+        </p>
       </div>
       {rules.isError && (
         <p className='text-destructive text-sm'>{t('Could not load withdrawal rules')}</p>

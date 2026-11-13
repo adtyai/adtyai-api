@@ -297,6 +297,11 @@ export function SiteInviteWithdrawPanel(props: {
         <p className='text-muted-foreground text-sm'>
           {t('The site owner reviews cash withdrawals of invite commission.')}
         </p>
+        <p className='text-muted-foreground text-sm'>
+          {t(
+            'A transfer to balance deducts the site hold. External payout releases it after payment is complete.'
+          )}
+        </p>
         <p className='text-sm tabular-nums'>
           {t('Withdrawable: {{amount}}', { amount: formatUsd(available, locale) })}
         </p>

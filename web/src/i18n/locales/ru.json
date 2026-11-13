@@ -8893,7 +8893,9 @@
     "USDT fee (USD)": "Комиссия USDT (USD)",
     "Turn cash withdrawal off": "Закрыть вывод наличными",
     "1 USD = {{rate}} CNY. You receive ¥{{cny}}.": "1 USD = {{rate}} CNY. Вы получите ¥{{cny}}.",
-    "Network fee {{fee}} USD. You receive {{net}} USD.": "Сетевая комиссия {{fee}} USD. Вы получите {{net}} USD."
+    "Network fee {{fee}} USD. You receive {{net}} USD.": "Сетевая комиссия {{fee}} USD. Вы получите {{net}} USD.",
+    "A transfer to balance deducts the site hold. External payout releases it after payment is complete.": "Перевод на баланс списывает соответствующую заморозку. После внешней выплаты заморозка возвращается в исходный источник.",
+    "Invite commission holds are not available for this withdrawal.": "Заморозка пригласительной комиссии недоступна для этого вывода."
 },
   "Targeted notifications": "Адресные уведомления",
   "Site announcements": "Объявления сайта",

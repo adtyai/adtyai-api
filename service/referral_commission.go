@@ -3,6 +3,7 @@ package service
 import (
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -396,6 +397,16 @@ func init() {
 			return err
 		}
 		return adtySiteInviteCommissionAfterRefundTx(tx, ext)
+	}
+	model.AdtyAfterTopUpRefundCommitted = func(_ *model.TopUp, ext *model.AdtyTopupOrder) {
+		if ext == nil || strings.TrimSpace(ext.TradeNo) == "" || model.DB == nil {
+			return
+		}
+		var row model.AdtySiteInviteCommission
+		if err := model.DB.Select("inviter_id").Where("trade_no = ?", ext.TradeNo).Limit(1).Find(&row).Error; err != nil || row.InviterId <= 0 {
+			return
+		}
+		model.AdtySyncUserQuotaCache(row.InviterId, "site invite commission clawback")
 	}
 	adtyMasterTasks = append(adtyMasterTasks, startReferralSettlementTask)
 }

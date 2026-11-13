@@ -35,6 +35,45 @@ func AdtyCreditUserQuotaTx(tx *gorm.DB, userId int, quota int64) (before int64, 
 	return int64(balance), applyUserQuotaDeltaTx(tx, &user, int(quota), false)
 }
 
+// AdtyDebitUserQuotaTx debits quota inside the caller's transaction.
+// It never takes the balance below zero. debited may be less than quota.
+func AdtyDebitUserQuotaTx(tx *gorm.DB, userId int, quota int64) (before int64, debited int64, err error) {
+	if quota <= 0 || userId <= 0 {
+		return 0, 0, errors.New("debit quota must be positive")
+	}
+	var user User
+	if err := lockForUpdate(tx).First(&user, userId).Error; err != nil {
+		return 0, 0, err
+	}
+	balance, err := userWalletBalance(user.Quota, user.QuotaPending)
+	if err != nil {
+		return 0, 0, err
+	}
+	before = int64(balance)
+	if before <= 0 {
+		return before, 0, nil
+	}
+	debited = quota
+	if debited > before {
+		debited = before
+	}
+	if err := applyUserQuotaDeltaTx(tx, &user, -int(debited), false); err != nil {
+		return 0, 0, err
+	}
+	return before, debited, nil
+}
+
+// AdtySyncUserQuotaCache invalidates one user's quota cache after a committed change.
+func AdtySyncUserQuotaCache(userId int, operation string) {
+	if userId <= 0 {
+		return
+	}
+	if err := invalidateUserCache(userId); err != nil {
+		common.SysError(common.LogText("failed to sync %s to user quota cache: %s", operation, err.Error()))
+		recordWalletCacheReview(userId, 0, operation, err)
+	}
+}
+
 // AdtySyncCreditUserQuotaCache 在加额度的事务提交后同步缓存。
 func AdtySyncCreditUserQuotaCache(userId int, quota int64, operation string) {
 	if quota <= 0 {

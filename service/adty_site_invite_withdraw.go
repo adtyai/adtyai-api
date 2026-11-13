@@ -231,6 +231,11 @@ func allocateSiteInviteWithdrawalTx(tx *gorm.DB, withdrawal *model.AdtySiteInvit
 		}).Error; err != nil {
 			return err
 		}
+		if toBalance {
+			if err := consumeSiteCommissionHoldTx(tx, &rows[i], take, false, "wd:"+strconv.FormatInt(withdrawal.Id, 10)); err != nil {
+				return err
+			}
+		}
 		if err := tx.Model(&rows[i]).Update(field, gorm.Expr(field+" + ?", take)).Error; err != nil {
 			return err
 		}
@@ -304,6 +309,9 @@ func MarkAdtySiteInviteWithdrawalPaid(ownerID int, withdrawalID int64, txID, pro
 		for _, item := range items {
 			var commission model.AdtySiteInviteCommission
 			if err := model.AdtyLockForUpdate(tx).First(&commission, item.CommissionId).Error; err != nil {
+				return err
+			}
+			if err := consumeSiteCommissionHoldTx(tx, &commission, item.AmountUSD, true, "paid:"+strconv.FormatInt(row.Id, 10)+":"+strconv.FormatInt(item.Id, 10)); err != nil {
 				return err
 			}
 			if err := tx.Model(&commission).Updates(map[string]any{
