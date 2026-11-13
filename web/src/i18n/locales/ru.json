@@ -8817,7 +8817,11 @@
     "Each request shows the model and billing group. Upstream channel names are not shown.": "Каждый запрос показывает модель и группу тарификации. Имя upstream-канала не показывается.",
     "Allowed groups": "Разрешенные группы",
     "Every live billing group": "Все действующие группы",
-    "Leave empty to allow every live billing group. Separate group IDs with commas.": "Оставьте пустым, чтобы разрешить все действующие группы. Идентификаторы разделяйте запятыми."
+    "Leave empty to allow every live billing group. Separate group IDs with commas.": "Оставьте пустым, чтобы разрешить все действующие группы. Идентификаторы разделяйте запятыми.",
+    "Commission coverage": "Покрытие комиссии",
+    "Commission coverage is not configured": "Покрытие комиссии не настроено",
+    "Pending coverage cap": "Лимит непокрытой комиссии",
+    "Observation days": "Дни наблюдения"
 },
   "Targeted notifications": "Адресные уведомления",
   "Site announcements": "Объявления сайта",

@@ -383,7 +383,10 @@ func init() {
 		if err := adtySiteBonusAfterCreditTx(tx, topUp, ext); err != nil {
 			return err
 		}
-		return adtyCreditOperatingPrincipalTx(tx, topUp, ext)
+		if err := adtyCreditOperatingPrincipalTx(tx, topUp, ext); err != nil {
+			return err
+		}
+		return adtyRecordSiteInviteCommissionTx(tx, ext)
 	}
 	model.AdtyAfterTopUpRefundedTx = func(tx *gorm.DB, topUp *model.TopUp, ext *model.AdtyTopupOrder) error {
 		if err := adtyReferralAfterRefundTx(tx, topUp, ext); err != nil {

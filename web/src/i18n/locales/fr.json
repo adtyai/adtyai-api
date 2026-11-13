@@ -8817,7 +8817,11 @@
     "Each request shows the model and billing group. Upstream channel names are not shown.": "Chaque requête affiche le modèle et le groupe de facturation. Le nom du canal amont n'est pas affiché.",
     "Allowed groups": "Groupes autorisés",
     "Every live billing group": "Tous les groupes de facturation",
-    "Leave empty to allow every live billing group. Separate group IDs with commas.": "Laissez vide pour autoriser tous les groupes de facturation. Séparez les identifiants par des virgules."
+    "Leave empty to allow every live billing group. Separate group IDs with commas.": "Laissez vide pour autoriser tous les groupes de facturation. Séparez les identifiants par des virgules.",
+    "Commission coverage": "Couverture de commission",
+    "Commission coverage is not configured": "La couverture de commission n'est pas configurée",
+    "Pending coverage cap": "Plafond de couverture en attente",
+    "Observation days": "Jours d'observation"
 },
   "Targeted notifications": "Notifications ciblées",
   "Site announcements": "Annonces du site",

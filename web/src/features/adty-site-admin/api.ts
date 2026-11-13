@@ -182,6 +182,35 @@ export async function getAdminSiteReferralCap(): Promise<{
   return requireServerSuccess(res.data).data
 }
 
+export async function getAdminSiteCommissionPolicy(): Promise<{
+  configured: boolean
+  pending_coverage_cap?: string
+  observation_days?: string
+}> {
+  const res = await api.get<
+    ApiResponse<{
+      configured: boolean
+      pending_coverage_cap?: string
+      observation_days?: string
+    }>
+  >(`${BASE}/site-referral/commission-policy`)
+  return requireServerSuccess(res.data).data
+}
+
+export async function saveAdminSiteCommissionPolicy(
+  pendingCoverageCap: string,
+  observationDays: string
+): Promise<void> {
+  const res = await api.put<ApiResponse<{ saved: boolean }>>(
+    `${BASE}/site-referral/commission-policy`,
+    {
+      pending_coverage_cap: pendingCoverageCap,
+      observation_days: observationDays,
+    }
+  )
+  requireServerSuccess(res.data)
+}
+
 export async function saveAdminSiteReferralCap(maxRate: string): Promise<void> {
   const res = await api.put<ApiResponse<{ saved: boolean }>>(
     `${BASE}/site-referral/cap`,

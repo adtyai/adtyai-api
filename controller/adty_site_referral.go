@@ -42,6 +42,39 @@ func PutAdtySiteReferralCap(c *gin.Context) {
 	common.ApiSuccess(c, gin.H{"saved": true})
 }
 
+func GetAdtySiteCommissionPolicy(c *gin.Context) {
+	if c.GetInt("role") != common.RoleRootUser {
+		common.ApiErrorStatus(c, http.StatusForbidden, common.NewMessage("No permission to perform this action"))
+		return
+	}
+	view, err := service.LoadAdtySiteCommissionPolicy()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, view)
+}
+
+func PutAdtySiteCommissionPolicy(c *gin.Context) {
+	if c.GetInt("role") != common.RoleRootUser {
+		common.ApiErrorStatus(c, http.StatusForbidden, common.NewMessage("No permission to perform this action"))
+		return
+	}
+	var body struct {
+		PendingCoverageCap string `json:"pending_coverage_cap"`
+		ObservationDays    string `json:"observation_days"`
+	}
+	if err := common.DecodeJson(c.Request.Body, &body); err != nil {
+		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	if err := service.SaveAdtySiteCommissionPolicy(body.PendingCoverageCap, body.ObservationDays); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"saved": true})
+}
+
 func GetAdtyOwnerSiteReferral(c *gin.Context) {
 	site, ok := adtyOwnerSiteOr403(c)
 	if !ok {

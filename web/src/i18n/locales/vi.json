@@ -8817,7 +8817,11 @@
     "Each request shows the model and billing group. Upstream channel names are not shown.": "Mỗi yêu cầu hiển thị mô hình và nhóm tính phí. Tên kênh thượng nguồn không được hiển thị.",
     "Allowed groups": "Nhóm được phép",
     "Every live billing group": "Mọi nhóm tính phí hiện có",
-    "Leave empty to allow every live billing group. Separate group IDs with commas.": "Để trống để cho phép mọi nhóm tính phí hiện có. Ngăn cách ID nhóm bằng dấu phẩy."
+    "Leave empty to allow every live billing group. Separate group IDs with commas.": "Để trống để cho phép mọi nhóm tính phí hiện có. Ngăn cách ID nhóm bằng dấu phẩy.",
+    "Commission coverage": "Bù hoa hồng",
+    "Commission coverage is not configured": "Chưa cấu hình bù hoa hồng",
+    "Pending coverage cap": "Trần chờ bù",
+    "Observation days": "Số ngày quan sát"
 },
   "Targeted notifications": "Thông báo theo đối tượng",
   "Site announcements": "Thông báo của trang",

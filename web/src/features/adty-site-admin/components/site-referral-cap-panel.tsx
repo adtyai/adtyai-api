@@ -30,7 +30,9 @@ import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
 
 import {
+  getAdminSiteCommissionPolicy,
   getAdminSiteReferralCap,
+  saveAdminSiteCommissionPolicy,
   saveAdminSiteReferralCap,
   siteAdminKeys,
 } from '../api'
@@ -41,10 +43,27 @@ export function SiteReferralCapPanel() {
   const isRoot = useAuthStore((state) => state.auth.user?.role) === ROLE.SUPER_ADMIN
   const client = useQueryClient()
   const [maxRate, setMaxRate] = useState('')
+  const [coverageCap, setCoverageCap] = useState('')
+  const [observationDays, setObservationDays] = useState('')
   const cap = useQuery({
     queryKey: siteAdminKeys.list('site-referral-cap', {}),
     queryFn: getAdminSiteReferralCap,
     enabled: isRoot,
+  })
+  const policy = useQuery({
+    queryKey: siteAdminKeys.list('site-commission-policy', {}),
+    queryFn: getAdminSiteCommissionPolicy,
+    enabled: isRoot,
+  })
+  const savePolicy = useMutation({
+    mutationFn: () =>
+      saveAdminSiteCommissionPolicy(coverageCap.trim(), observationDays.trim()),
+    onSuccess: () => {
+      setCoverageCap('')
+      setObservationDays('')
+      void client.invalidateQueries({ queryKey: siteAdminKeys.all })
+    },
+    onError: (error) => handleServerError(error),
   })
   const save = useMutation({
     mutationFn: () => saveAdminSiteReferralCap(maxRate.trim()),
@@ -81,6 +100,49 @@ export function SiteReferralCapPanel() {
         variant='outline'
         disabled={save.isPending || maxRate.trim() === ''}
         onClick={() => save.mutate()}
+      >
+        {t('Save')}
+      </Button>
+      <h2 className='text-sm font-medium'>{t('Commission coverage')}</h2>
+      {policy.isPending && <LoadingState />}
+      {policy.isError && <ErrorState onRetry={() => void policy.refetch()} />}
+      {policy.data && !policy.data.configured && (
+        <p className='text-sm'>{t('Commission coverage is not configured')}</p>
+      )}
+      {policy.data?.configured && (
+        <p className='text-sm tabular-nums'>
+          {policy.data.pending_coverage_cap} / {policy.data.observation_days}
+        </p>
+      )}
+      <div className='flex flex-col gap-1'>
+        <Label htmlFor='site-coverage-cap'>{t('Pending coverage cap')}</Label>
+        <Input
+          id='site-coverage-cap'
+          value={coverageCap}
+          inputMode='decimal'
+          autoComplete='off'
+          onChange={(event) => setCoverageCap(event.target.value)}
+        />
+      </div>
+      <div className='flex flex-col gap-1'>
+        <Label htmlFor='site-observation-days'>{t('Observation days')}</Label>
+        <Input
+          id='site-observation-days'
+          value={observationDays}
+          inputMode='numeric'
+          autoComplete='off'
+          onChange={(event) => setObservationDays(event.target.value)}
+        />
+      </div>
+      <Button
+        type='button'
+        variant='outline'
+        disabled={
+          savePolicy.isPending ||
+          coverageCap.trim() === '' ||
+          observationDays.trim() === ''
+        }
+        onClick={() => savePolicy.mutate()}
       >
         {t('Save')}
       </Button>

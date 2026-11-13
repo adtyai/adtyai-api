@@ -8817,7 +8817,11 @@
     "Each request shows the model and billing group. Upstream channel names are not shown.": "各リクエストはモデルと課金グループを表示します。上流チャネル名は表示しません。",
     "Allowed groups": "許可するグループ",
     "Every live billing group": "すべての課金グループ",
-    "Leave empty to allow every live billing group. Separate group IDs with commas.": "空欄にすると、すべての課金グループを許可します。グループ ID はカンマで区切ります。"
+    "Leave empty to allow every live billing group. Separate group IDs with commas.": "空欄にすると、すべての課金グループを許可します。グループ ID はカンマで区切ります。",
+    "Commission coverage": "手数料のカバー",
+    "Commission coverage is not configured": "手数料のカバーは未設定です",
+    "Pending coverage cap": "未カバー上限",
+    "Observation days": "観察日数"
 },
   "Targeted notifications": "対象を指定した通知",
   "Site announcements": "サイトのお知らせ",

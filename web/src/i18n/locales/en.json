@@ -8817,7 +8817,11 @@
     "Each request shows the model and billing group. Upstream channel names are not shown.": "Each request shows the model and billing group. Upstream channel names are not shown.",
     "Allowed groups": "Allowed groups",
     "Every live billing group": "Every live billing group",
-    "Leave empty to allow every live billing group. Separate group IDs with commas.": "Leave empty to allow every live billing group. Separate group IDs with commas."
+    "Leave empty to allow every live billing group. Separate group IDs with commas.": "Leave empty to allow every live billing group. Separate group IDs with commas.",
+    "Commission coverage": "Commission coverage",
+    "Commission coverage is not configured": "Commission coverage is not configured",
+    "Pending coverage cap": "Pending coverage cap",
+    "Observation days": "Observation days"
 },
   "Targeted notifications": "Targeted notifications",
   "Site announcements": "Site announcements",

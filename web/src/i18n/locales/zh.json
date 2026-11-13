@@ -8817,7 +8817,11 @@
     "Each request shows the model and billing group. Upstream channel names are not shown.": "每笔请求显示模型和计费分组，不显示上游渠道名称。",
     "Allowed groups": "授权分组",
     "Every live billing group": "全部现有计费分组",
-    "Leave empty to allow every live billing group. Separate group IDs with commas.": "留空表示允许全部现有计费分组。多个分组 ID 用逗号分开。"
+    "Leave empty to allow every live billing group. Separate group IDs with commas.": "留空表示允许全部现有计费分组。多个分组 ID 用逗号分开。",
+    "Commission coverage": "佣金覆盖",
+    "Commission coverage is not configured": "佣金覆盖尚未配置",
+    "Pending coverage cap": "待覆盖上限",
+    "Observation days": "观察天数"
 },
   "Targeted notifications": "定向通知",
   "Site announcements": "本站公告",
