@@ -442,6 +442,45 @@ func TestSiteReferralOffDoesNotRecordCommissionOnThatSite(t *testing.T) {
 	require.Equal(t, site.Id, restored.SiteId)
 }
 
+func TestInviterSeesPendingSiteCommissionBeforeItIsWithdrawable(t *testing.T) {
+	db := prepareReferralDialectDB(t, "sqlite")
+	site, invitee := seedSiteInvite(t, db, decimal.RequireFromString("0.10"))
+	ext := siteInviteOrder(site.Id, invitee.Id, "SITE-SEE", decimal.NewFromInt(30))
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return RecordAdtySiteInviteCommissionTx(tx, ext, time.Unix(1_700_000_000, 0))
+	}))
+	var invite model.AdtySiteInvite
+	require.NoError(t, db.Where("site_id = ? AND invitee_id = ?", site.Id, invitee.Id).First(&invite).Error)
+	rows, err := ListAdtySiteInviteCommissions(invite.InviterId, time.Unix(1_700_000_000, 0))
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.Equal(t, "pending_coverage", rows[0].Status)
+	require.Equal(t, "SITE-SEE", rows[0].TradeNo)
+	require.False(t, SiteInviteCommissionWithdrawable(&rows[0], time.Unix(1_700_000_000, 0)))
+}
+
+func TestBindSiteInviteRejectsCrossSiteAndPaidCustomers(t *testing.T) {
+	db := prepareReferralDialectDB(t, "sqlite")
+	site, _ := seedSiteInvite(t, db, decimal.RequireFromString("0.10"))
+	var invite model.AdtySiteInvite
+	require.NoError(t, db.Where("site_id = ?", site.Id).First(&invite).Error)
+	outsider := referralUser(t, db, "other-site-inviter")
+	sameSite := referralUser(t, db, "same-site-invitee")
+	require.NoError(t, db.Model(sameSite).Update("site_id", site.Id).Error)
+	require.Error(t, BindSiteInvite(site.Id, outsider.Id, sameSite.Id))
+	var created int64
+	require.NoError(t, db.Model(&model.AdtySiteInvite{}).Where("invitee_id = ?", sameSite.Id).Count(&created).Error)
+	require.Zero(t, created)
+
+	require.NoError(t, db.Create(&model.TopUp{
+		UserId: sameSite.Id, Amount: 5, Money: 5, TradeNo: "fresh-paid",
+		Status: common.TopUpStatusSuccess,
+	}).Error)
+	require.Error(t, BindSiteInvite(site.Id, invite.InviterId, sameSite.Id))
+	require.NoError(t, db.Model(&model.AdtySiteInvite{}).Where("invitee_id = ?", sameSite.Id).Count(&created).Error)
+	require.Zero(t, created)
+}
+
 func TestSiteInviteCommissionIgnoresTeamTopups(t *testing.T) {
 	db := prepareReferralDialectDB(t, "sqlite")
 	site, invitee := seedSiteInvite(t, db, decimal.RequireFromString("0.10"))

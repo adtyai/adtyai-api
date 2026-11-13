@@ -8831,7 +8831,9 @@
     "The amount moves from available commission to your balance.": "金額は使える手数料から残高へ移ります。",
     "Convert commission to balance": "手数料を残高へ移す",
     "Invite commission": "招待手数料",
-    "New top-ups do not create commission while this is off.": "オフの間、新しいチャージは手数料を作りません。"
+    "New top-ups do not create commission while this is off.": "オフの間、新しいチャージは手数料を作りません。",
+    "Pending coverage": "カバー待ち",
+    "Covered": "カバー済み"
 },
   "Targeted notifications": "対象を指定した通知",
   "Site announcements": "サイトのお知らせ",

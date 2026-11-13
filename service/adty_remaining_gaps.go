@@ -855,6 +855,23 @@ func BindSiteInvite(siteID, inviterID, inviteeID int) error {
 	if err := model.DB.Where("site_id = ?", siteID).First(&rate).Error; err != nil {
 		return common.NewMessage("Site invite rate is not configured")
 	}
+	var inviter, invitee model.User
+	if err := model.DB.First(&inviter, inviterID).Error; err != nil {
+		return err
+	}
+	if err := model.DB.First(&invitee, inviteeID).Error; err != nil {
+		return err
+	}
+	if inviter.SiteId != siteID || invitee.SiteId != siteID {
+		return common.NewMessage("No permission to perform this action")
+	}
+	var paid int64
+	if err := model.DB.Model(&model.TopUp{}).Where("user_id = ? AND status = ?", inviteeID, common.TopUpStatusSuccess).Count(&paid).Error; err != nil {
+		return err
+	}
+	if paid > 0 {
+		return common.NewMessage("This customer already has a paid order")
+	}
 	var existing model.AdtySiteInvite
 	lookup := model.DB.Where("invitee_id = ?", inviteeID).Limit(1).Find(&existing)
 	if lookup.Error != nil {

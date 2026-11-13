@@ -31,7 +31,9 @@ import { requireServerSuccess } from '@/lib/server-error-message'
 type SiteCommission = {
   id: number
   trade_no: string
+  status: string
   amount_usd: string
+  rate: string
   clawed_usd: string
   converted_usd: string
 }
@@ -98,26 +100,39 @@ function CommissionRow(props: { row: SiteCommission; onConverted: () => void }) 
   return (
     <div className='flex flex-col gap-2'>
       <p className='text-sm tabular-nums'>
-        {props.row.trade_no} · {props.row.amount_usd}
+        {props.row.trade_no} · {props.row.amount_usd} ·{' '}
+        {commissionStatusLabel(props.row.status, (key) => t(key))}
       </p>
-      <div className='flex flex-col gap-1'>
-        <Label htmlFor={`site-commission-${props.row.id}`}>{t('Amount')}</Label>
-        <Input
-          id={`site-commission-${props.row.id}`}
-          value={amount}
-          inputMode='decimal'
-          autoComplete='off'
-          onChange={(event) => setAmount(event.target.value)}
-        />
-      </div>
-      <Button
-        type='button'
-        variant='outline'
-        disabled={convert.isPending || amount.trim() === ''}
-        onClick={() => convert.mutate()}
-      >
-        {t('Convert commission to balance')}
-      </Button>
+      {props.row.status === 'available' && (
+        <>
+          <div className='flex flex-col gap-1'>
+            <Label htmlFor={`site-commission-${props.row.id}`}>{t('Amount')}</Label>
+            <Input
+              id={`site-commission-${props.row.id}`}
+              value={amount}
+              inputMode='decimal'
+              autoComplete='off'
+              onChange={(event) => setAmount(event.target.value)}
+            />
+          </div>
+          <Button
+            type='button'
+            variant='outline'
+            disabled={convert.isPending || amount.trim() === ''}
+            onClick={() => convert.mutate()}
+          >
+            {t('Convert commission to balance')}
+          </Button>
+        </>
+      )}
     </div>
   )
+}
+
+function commissionStatusLabel(status: string, t: (key: string) => string) {
+  if (status === 'pending_coverage') return t('Pending coverage')
+  if (status === 'covered') return t('Covered')
+  if (status === 'available') return t('Available')
+  if (status === 'clawed_back') return t('Clawed back')
+  return status
 }

@@ -410,23 +410,15 @@ func siteCommissionSourceOutstanding(tx *gorm.DB, tradeNo, kind string) (decimal
 	return outstanding, nil
 }
 
-// ListAdtySiteInviteCommissions returns commissions the inviter can move to balance.
+// ListAdtySiteInviteCommissions returns the inviter's commission rows and their status.
+// It does not mark a row withdrawable.
 func ListAdtySiteInviteCommissions(inviterID int, now time.Time) ([]model.AdtySiteInviteCommission, error) {
 	if inviterID <= 0 {
 		return nil, common.NewMessage("Invalid parameters")
 	}
 	var rows []model.AdtySiteInviteCommission
-	if err := model.DB.Where("inviter_id = ? AND status = ?", inviterID, model.AdtySiteCommissionAvailable).
-		Order("id").Find(&rows).Error; err != nil {
-		return nil, err
-	}
-	ready := make([]model.AdtySiteInviteCommission, 0, len(rows))
-	for i := range rows {
-		if SiteInviteCommissionWithdrawable(&rows[i], now) {
-			ready = append(ready, rows[i])
-		}
-	}
-	return ready, nil
+	err := model.DB.Where("inviter_id = ?", inviterID).Order("id").Find(&rows).Error
+	return rows, err
 }
 
 // ConvertAdtySiteInviteCommission moves an available remainder into the inviter's

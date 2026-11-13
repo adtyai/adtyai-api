@@ -8831,7 +8831,9 @@
     "The amount moves from available commission to your balance.": "Le montant passe de la commission disponible a votre solde.",
     "Convert commission to balance": "Convertir la commission en solde",
     "Invite commission": "Commission d’invitation",
-    "New top-ups do not create commission while this is off.": "Lorsqu’il est désactivé, les nouvelles recharges ne créent pas de commission."
+    "New top-ups do not create commission while this is off.": "Lorsqu’il est désactivé, les nouvelles recharges ne créent pas de commission.",
+    "Pending coverage": "Couverture en attente",
+    "Covered": "Couvert"
 },
   "Targeted notifications": "Notifications ciblées",
   "Site announcements": "Annonces du site",

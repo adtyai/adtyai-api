@@ -8831,7 +8831,9 @@
     "The amount moves from available commission to your balance.": "金額從可用佣金轉入餘額。",
     "Convert commission to balance": "佣金轉餘額",
     "Invite commission": "邀請返佣",
-    "New top-ups do not create commission while this is off.": "關閉後，新充值不產生佣金。"
+    "New top-ups do not create commission while this is off.": "關閉後，新充值不產生佣金。",
+    "Pending coverage": "待覆蓋",
+    "Covered": "已覆蓋"
 },
   "Targeted notifications": "定向通知",
   "Site announcements": "本站公告",

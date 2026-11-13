@@ -141,6 +141,8 @@ func TestPricingWalletsReferralAndReplayGuards(t *testing.T) {
 	require.NoError(t, SetSiteReferralRate(site.Id, decimal.RequireFromString("0.08")))
 	inviter := referralUser(t, db, "site-inviter")
 	invitee := referralUser(t, db, "site-invitee")
+	require.NoError(t, db.Model(inviter).Update("site_id", site.Id).Error)
+	require.NoError(t, db.Model(invitee).Update("site_id", site.Id).Error)
 	require.NoError(t, BindSiteInvite(site.Id, inviter.Id, invitee.Id))
 	require.Error(t, BindSiteInvite(site.Id, owner.Id, invitee.Id))
 	_, err = ApplyAdtySiteWalletChange(site.Id, model.AdtySiteWalletEarnings, decimal.NewFromInt(5), AdtySiteWalletChange{Type: "earn", IdempotencyKey: "earn-ledger"})

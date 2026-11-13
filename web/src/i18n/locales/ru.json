@@ -8831,7 +8831,9 @@
     "The amount moves from available commission to your balance.": "Сумма переходит из доступной комиссии на баланс.",
     "Convert commission to balance": "Перевести комиссию на баланс",
     "Invite commission": "Комиссия за приглашение",
-    "New top-ups do not create commission while this is off.": "Пока выключено, новые пополнения не создают комиссию."
+    "New top-ups do not create commission while this is off.": "Пока выключено, новые пополнения не создают комиссию.",
+    "Pending coverage": "Ожидает покрытия",
+    "Covered": "Покрыто"
 },
   "Targeted notifications": "Адресные уведомления",
   "Site announcements": "Объявления сайта",
