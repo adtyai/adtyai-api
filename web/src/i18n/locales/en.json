@@ -8867,7 +8867,9 @@
     "Window hours": "Window hours",
     "Withdrawn commission": "Withdrawn commission",
     "Recovery liability": "Recovery liability",
-    "This invite needs review": "This invite needs review"
+    "This invite needs review": "This invite needs review",
+    "Issued commission": "Issued commission",
+    "Expected commission clawback": "Expected commission clawback"
 },
   "Targeted notifications": "Targeted notifications",
   "Site announcements": "Site announcements",

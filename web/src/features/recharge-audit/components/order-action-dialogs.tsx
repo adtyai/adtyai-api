@@ -272,16 +272,35 @@ export function RefundDialog(props: OrderActionProps) {
       }
     >
       {preview.data && (
-        <p>
-          {t(
-            'Refund {{amount}} {{currency}}. This takes back {{quota}} of credit.',
-            {
-              amount: preview.data.refund_amount,
-              currency: preview.data.currency,
-              quota: formatQuota(preview.data.deducted_quota),
-            }
+        <div className='space-y-1 text-sm'>
+          <p>
+            {t(
+              'Refund {{amount}} {{currency}}. This takes back {{quota}} of credit.',
+              {
+                amount: preview.data.refund_amount,
+                currency: preview.data.currency,
+                quota: formatQuota(preview.data.deducted_quota),
+              }
+            )}
+          </p>
+          {preview.data.commission_issued_usd && (
+            <p className='tabular-nums'>
+              {t('Issued commission')}: {preview.data.commission_issued_usd} USD
+            </p>
           )}
-        </p>
+          {preview.data.commission_withdrawn_usd && (
+            <p className='tabular-nums'>
+              {t('Withdrawn commission')}: {preview.data.commission_withdrawn_usd}{' '}
+              USD
+            </p>
+          )}
+          {preview.data.commission_clawback_usd && (
+            <p className='tabular-nums'>
+              {t('Expected commission clawback')}:{' '}
+              {preview.data.commission_clawback_usd} USD
+            </p>
+          )}
+        </div>
       )}
       <div className='space-y-2'>
         <Label htmlFor='refund-reason'>{t('Reason (required)')}</Label>

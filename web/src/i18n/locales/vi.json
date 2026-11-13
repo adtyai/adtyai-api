@@ -8867,7 +8867,9 @@
     "Window hours": "Số giờ cửa sổ",
     "Withdrawn commission": "Hoa hồng đã rút",
     "Recovery liability": "Nghĩa vụ truy thu",
-    "This invite needs review": "Lời mời này cần rà soát"
+    "This invite needs review": "Lời mời này cần rà soát",
+    "Issued commission": "Hoa hồng đã phát",
+    "Expected commission clawback": "Hoa hồng dự kiến thu hồi"
 },
   "Targeted notifications": "Thông báo theo đối tượng",
   "Site announcements": "Thông báo của trang",

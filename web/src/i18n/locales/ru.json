@@ -8867,7 +8867,9 @@
     "Window hours": "Окно в часах",
     "Withdrawn commission": "Выведенная комиссия",
     "Recovery liability": "Обязательство взыскания",
-    "This invite needs review": "Это приглашение нужно проверить"
+    "This invite needs review": "Это приглашение нужно проверить",
+    "Issued commission": "Начисленная комиссия",
+    "Expected commission clawback": "Ожидаемый возврат комиссии"
 },
   "Targeted notifications": "Адресные уведомления",
   "Site announcements": "Объявления сайта",

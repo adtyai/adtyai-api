@@ -35,6 +35,36 @@ type AdtySiteInviteCommission struct {
 
 func (AdtySiteInviteCommission) TableName() string { return "adty_site_invite_commissions" }
 
+// SiteInviteCommissionThisClaw is the claw for this refund ratio, minus what was already clawed.
+// The ratio is refunded principal over the original principal, capped at 1.
+func SiteInviteCommissionThisClaw(amount, already decimal.Decimal, refundQuota, faceQuota int64) decimal.Decimal {
+	ratio := decimal.NewFromInt(1)
+	if faceQuota > 0 {
+		ratio = decimal.NewFromInt(refundQuota).Div(decimal.NewFromInt(faceQuota))
+		if ratio.IsNegative() {
+			ratio = decimal.Zero
+		}
+		if ratio.GreaterThan(decimal.NewFromInt(1)) {
+			ratio = decimal.NewFromInt(1)
+		}
+	}
+	target := amount.Mul(ratio).Round(8)
+	if !ratio.LessThan(decimal.NewFromInt(1)) || target.GreaterThan(amount) {
+		target = amount
+	}
+	thisClaw := target.Sub(already)
+	if thisClaw.IsNegative() {
+		return decimal.Zero
+	}
+	return thisClaw
+}
+
+// SiteInviteCommissionRefundPreview reports issued commission, withdrawn commission,
+// and the clawback this refund ratio would record. It does not move money.
+func SiteInviteCommissionRefundPreview(amount, withdrawn, already decimal.Decimal, refundQuota, faceQuota int64) (issued, withdrawnOut, expected string) {
+	return amount.String(), withdrawn.String(), SiteInviteCommissionThisClaw(amount, already, refundQuota, faceQuota).String()
+}
+
 // AdtyCommissionRecovery is the liability for commission that was already withdrawn.
 // It does not debit a customer balance.
 type AdtyCommissionRecovery struct {

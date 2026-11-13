@@ -8867,7 +8867,9 @@
     "Window hours": "窓の時間",
     "Withdrawn commission": "出金済み紹介報酬",
     "Recovery liability": "回収責任",
-    "This invite needs review": "この招待は確認が必要です"
+    "This invite needs review": "この招待は確認が必要です",
+    "Issued commission": "発行済み紹介報酬",
+    "Expected commission clawback": "見込回収額"
 },
   "Targeted notifications": "対象を指定した通知",
   "Site announcements": "サイトのお知らせ",

@@ -300,6 +300,17 @@ func TestSiteInviteCommissionRefundClawsBackByCompletedPrincipalRatio(t *testing
 	require.Equal(t, 0, user.Quota)
 }
 
+func TestRefundPreviewShowsIssuedWithdrawnAndExpectedClawback(t *testing.T) {
+	issued, withdrawn, expected := model.SiteInviteCommissionRefundPreview(
+		decimal.NewFromInt(3), decimal.NewFromInt(1), decimal.RequireFromString("0.5"), 15*500000, 30*500000,
+	)
+	require.Equal(t, "3", issued)
+	require.Equal(t, "1", withdrawn)
+	require.Equal(t, "1", expected)
+	_, _, none := model.SiteInviteCommissionRefundPreview(decimal.Zero, decimal.Zero, decimal.Zero, 1, 1)
+	require.Equal(t, "0", none)
+}
+
 func TestSiteInviteBatchRegisterUsesOnlyASavedRootThreshold(t *testing.T) {
 	db := prepareReferralDialectDB(t, "sqlite")
 	site, inviter, invitees := seedBatchInvite(t, db, 3)

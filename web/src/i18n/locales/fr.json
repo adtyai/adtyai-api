@@ -8867,7 +8867,9 @@
     "Window hours": "Fenêtre en heures",
     "Withdrawn commission": "Commission retirée",
     "Recovery liability": "Responsabilité de recouvrement",
-    "This invite needs review": "Cette invitation doit être revue"
+    "This invite needs review": "Cette invitation doit être revue",
+    "Issued commission": "Commission émise",
+    "Expected commission clawback": "Commission à reprendre"
 },
   "Targeted notifications": "Notifications ciblées",
   "Site announcements": "Annonces du site",

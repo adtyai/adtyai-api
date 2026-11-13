@@ -8867,7 +8867,9 @@
     "Window hours": "窗口小时数",
     "Withdrawn commission": "已提现佣金",
     "Recovery liability": "追偿责任",
-    "This invite needs review": "这个邀请需要复核"
+    "This invite needs review": "这个邀请需要复核",
+    "Issued commission": "已发佣金",
+    "Expected commission clawback": "预计冲回佣金"
 },
   "Targeted notifications": "定向通知",
   "Site announcements": "本站公告",

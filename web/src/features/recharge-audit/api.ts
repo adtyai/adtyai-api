@@ -304,6 +304,9 @@ export type TopupRefundResult = {
   refund_quota: number
   refund_amount: string
   currency: string
+  commission_issued_usd?: string
+  commission_withdrawn_usd?: string
+  commission_clawback_usd?: string
 }
 
 export async function previewTopupRefund(tradeNo: string) {

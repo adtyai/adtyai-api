@@ -384,8 +384,7 @@ func adtySiteInviteCommissionAfterRefundTx(tx *gorm.DB, ext *model.AdtyTopupOrde
 	if tx == nil || ext == nil || ext.SiteId <= 0 || strings.TrimSpace(ext.TradeNo) == "" {
 		return nil
 	}
-	ratio := ext.RefundRatio()
-	if !ratio.IsPositive() {
+	if ext.RefundRatio().IsZero() && ext.FaceQuota() > 0 && ext.RefundQuota <= 0 {
 		return nil
 	}
 	var row model.AdtySiteInviteCommission
@@ -393,14 +392,11 @@ func adtySiteInviteCommissionAfterRefundTx(tx *gorm.DB, ext *model.AdtyTopupOrde
 	if lookup.Error != nil || lookup.RowsAffected == 0 || row.Status == model.AdtySiteCommissionClawedBack {
 		return lookup.Error
 	}
-	target := row.AmountUSD.Mul(ratio).Round(8)
-	if !ratio.LessThan(decimal.NewFromInt(1)) || target.GreaterThan(row.AmountUSD) {
-		target = row.AmountUSD
-	}
-	thisClaw := target.Sub(row.ClawedUSD)
+	thisClaw := model.SiteInviteCommissionThisClaw(row.AmountUSD, row.ClawedUSD, ext.RefundQuota, ext.FaceQuota())
 	if !thisClaw.IsPositive() {
 		return nil
 	}
+	target := row.ClawedUSD.Add(thisClaw)
 	withdrawnOutstanding, err := siteCommissionWithdrawnOutstanding(tx, row.Id, row.WithdrawnUSD)
 	if err != nil {
 		return err
