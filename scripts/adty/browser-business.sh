@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run the production UI against a real, isolated PostgreSQL 17 + Redis backend.
+# Run the production UI against a real, isolated PostgreSQL + Redis backend.
 # Requires ADTY_TEST_PG_DSN for a role allowed to CREATE DATABASE, plus native
 # go, bun, node, python3, psql, redis-server and redis-cli. Install web dependencies
 # and Playwright Chromium first. ADTY_CHROMIUM_PATH may select system Chromium.
@@ -75,11 +75,11 @@ for adty_tool in go bun node python3 psql redis-server redis-cli; do
 done
 
 adty_pg_version=$(psql "$ADTY_TEST_PG_DSN" -XAt -v ON_ERROR_STOP=1 -c 'SHOW server_version_num')
-if ! [[ "$adty_pg_version" =~ ^[0-9]+$ ]] ||
-  [ "$adty_pg_version" -lt 170000 ] || [ "$adty_pg_version" -ge 180000 ]; then
-  echo "browser-business: PostgreSQL 17 is required (server_version_num=$adty_pg_version)" >&2
+if ! [[ "$adty_pg_version" =~ ^[0-9]+$ ]] || [ "$adty_pg_version" -le 0 ]; then
+  echo "browser-business: could not read server_version_num ($adty_pg_version)" >&2
   exit 1
 fi
+echo "browser-business: server_version_num=$adty_pg_version"
 
 adty_tmpdir=$(mktemp -d "${TMPDIR:-/tmp}/adty-browser.XXXXXXXX")
 adty_database="adty_browser_$(date +%s)_$$_${RANDOM}"

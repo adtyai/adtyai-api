@@ -55,7 +55,7 @@
 | `service/system_task.go` | `runLogCleanupTask` 在每批删除前检查取消 | 已经开始的清理不能在取消后继续删用量日志 | 审查 v3 |
 | `middleware/cors.go` | 不再同时允许任意 Origin 和凭据 | 跨站浏览器不能被声明为可携带会话 cookie | 审查 v3 |
 | `main.go` | pprof 只监听 127.0.0.1，并给 HTTP 服务加安全响应头 | 分析端口和登录页不能对所有网卡或任意站点开放 | 审查 v3 |
-| `docker-compose.yml` | 示例密码改为必填环境变量，端口只绑 127.0.0.1，数据库镜像改为 PostgreSQL 17 | 根目录 compose 不能用公开示例密码和全网卡端口启动；已有 16 数据目录须独立迁移 | 审查 v3 / v4 |
+| `docker-compose.yml` | 示例密码改为必填环境变量，端口只绑 127.0.0.1，建议数据库镜像为 PostgreSQL 17 | 根目录 compose 不能用公开示例密码和全网卡端口启动；已有数据目录升级主要版本须另建目录迁移，不把其他主版本排除在验收之外 | 审查 v3 / v4 |
 | `controller/system_task.go` | 清理目标落在 90 天保留期内时返回 400 | 未来时间戳不能启动一次删掉近期付款日志的任务 | 审查 v3 |
 | `model/log.go` | `CountOldLog` 和 `DeleteOldLogBatch` 不删除充值、退款和管理员调额日志；关掉消费日志时仍写 `quota_data` | 用量清理不能误删付款记录；关日志不能让真实扣费失去汇总证据 | 审查 v3 |
 | `middleware/adty_user_limit.go` | 计数存储出错时返回 503，不再放行请求 | Redis 故障不能放开按用户的 RPM、TPM 和并发限制 | 审查 v3 |

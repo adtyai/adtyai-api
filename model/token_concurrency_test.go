@@ -79,9 +79,8 @@ func TestTokenConcurrencyPostgreSQL(t *testing.T) {
 	})
 	var version int
 	require.NoError(t, db.Raw("SHOW server_version_num").Scan(&version).Error)
-	require.GreaterOrEqual(t, version, 170000)
-	require.Less(t, version, 180000)
-	t.Logf("PostgreSQL before: %d; Redis DB: 7", version)
+	require.Positive(t, version)
+	t.Logf("server_version_num=%d; Redis DB: 7", version)
 	require.NoError(t, db.AutoMigrate(&User{}, &Token{}, &AdtyGroup{}, &Channel{}, &Ability{}))
 
 	seed := func(t *testing.T) Token {

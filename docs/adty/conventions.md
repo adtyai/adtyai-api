@@ -56,7 +56,7 @@
 - 先写测试并确认失败，再实现并确认通过，然后提交。
 - 后端用 testify 的 require/assert。
 - （v2.5）我们写的、要用数据库的测试一律连 PostgreSQL，统一用各包的 `adtyTestDB(t)`（文件 `adty_testhelper_test.go`，任务 2.1 起）：
-  - 连接串读环境变量 `ADTY_TEST_PG_DSN`，没设就 `t.Skip` 并说明原因。从任务 2.1 起，check.sh 跑后端时要求它有值，CI 的 test 作业起 postgres:17 并设好它，所以门禁里这些测试不会被跳过。验收还须读取连接实例的 `server_version_num`，确认 `170000 <= 值 < 180000`，不能只凭 DSN 或镜像名判断。
+  - 连接串读环境变量 `ADTY_TEST_PG_DSN`，没设就 `t.Skip` 并说明原因。从任务 2.1 起，check.sh 跑后端时要求它有值，CI 的 test 作业建议起 postgres:17 并设好它，所以门禁里这些测试不会被跳过。验收读取连接实例的 `server_version_num` 并记录，不设最低或最高版本，版本不同不算失败，不能只凭 DSN 或镜像名判断。
   - 每个测试建一个随机名字的 schema，连接时用 `search_path` 指向它，测试结束删掉。`go test` 会同时跑多个包，各测试互不干扰。
   - model 和 service 包已经有 TestMain（model/task_cas_test.go:19、service/task_billing_test.go:30），`adtyTestDB` 在单个测试里换库、用完换回，写法参照 service/text_quota_test.go:78-82。换库时调 `common.SetDatabaseTypes(PostgreSQL, PostgreSQL)` 并重跑列名初始化：上游的 `initCol` 未导出（model/main.go:43），在 `model/adty_testsupport.go` 加一个导出包装；恢复时把数据库类型和列名一起还原。
 - 上游自己的测试照旧用它们的内存 SQLite，我们改过的上游代码不能让它们失败（执行层决定 11 的例外）。钉住上游行为的特征测试（任务 1.1）也沿用上游包里现成的测试库。任务 1.6 的 `TestAdtyDeletedSchemaAbsent` 跑的是上游的完整迁移，也用内存 SQLite：删订阅时去掉的 SQLite 专用建表语句只在 SQLite 上执行，换成 PostgreSQL 就查不到它们回来没有；而且 P1 时 `adtyTestDB` 还没有。
@@ -80,7 +80,7 @@
 - 网络（实测）：proxy.golang.org 和 sum.golang.org 连不上，Go 改用 goproxy.cn；校验和数据库也经它代理，GOSUMDB 不用改。github.com、npm 仓库、bun.sh、nodejs.org、Debian 源都能连。
 - 下载慢或失败时走代理：Windows 上的代理是 127.0.0.1:10808（HTTP、SOCKS 都行），用 `bash ~/adtyai/bin/with-proxy.sh <命令>` 重跑。实测这个代理只监听 Windows 的 127.0.0.1，而 WSL 现在是 NAT 网络模式，WSL 里的 127.0.0.1 指 WSL 自己，所以 WSL 暂时用不了它。要用的话二选一：在代理软件里打开「允许局域网连接」，脚本会改走 Windows 主机在 WSL 网络里的地址；或者把 WSL 改成镜像网络模式（`%USERPROFILE%\.wslconfig` 里写 `[wsl2]` 和 `networkingMode=mirrored`，再 `wsl --shutdown`）。两种都改你机器上的设置，由你来定。
 - WSL 实例在没有 wsl.exe 连着时会自动停；/tmp 是内存盘，停一次就清空。中间结果和日志放 `~/.cache/`，不放 /tmp。
-- 测试使用自己的隔离 PostgreSQL 17 实例和独立数据库或 schema，配置 `ADTY_TEST_PG_DSN`；连接后读取 `server_version_num`，必须在 170000 到 179999 之间。目标 CI 和生产配置也使用 17。保留上游 SQLite/miniredis 单测，但资金集成验证必须用真实 PostgreSQL 17 和真实 Redis，并覆盖进程重启、缓存丢失、并发和故障恢复。系统自带的正式 PostgreSQL、Redis 服务和生产数据卷不用于测试；16 → 17 迁移只在合成数据的独立新目录演练。
+- 测试使用自己的隔离 PostgreSQL 实例和独立数据库或 schema，配置 `ADTY_TEST_PG_DSN`。连接后记录 `server_version_num`，不设最低或最高版本，版本不同不算失败。新部署和 CI 建议使用 PostgreSQL 17，不把 16、18 或其他版本排除在验收之外。保留上游 SQLite、MySQL 兼容代码和已有单测，只用于避免破坏上游资产，不作为 ADTY 验收证据；缺失、未执行或失败不阻塞验收。资金集成验证必须用真实 PostgreSQL 和真实 Redis，并覆盖进程重启、缓存丢失、并发和故障恢复。系统自带的正式 PostgreSQL、Redis 服务和生产数据卷不用于测试。已有数据目录升级主要版本时，必须另建目录迁移并核对账目，不能直接换镜像启动。
 - Docker 没装：镜像在 GitHub Actions 里构建；做 10.1 时如果要在本地试跑 compose 再装（要 sudo）。
 - 检查脚本 `bash scripts/adty/check.sh`（在副本里跑）：`--backend` 跑三个 Go 模块（根模块、relaykit、tokenkit）的 go vet、go build、go test；`--frontend` 跑 typecheck、lint、test、copyright:check；不带参数两个都跑。脚本开头 `set -euo pipefail`，任何一步失败就停。
 - 单测：后端 `GOWORK=off go test ./model -run TestXxx -count=1`；前端在 `web` 目录 `bun run test -- <文件名>`；都写进任务脚本，经 wrun.sh 在副本里跑。
@@ -92,6 +92,7 @@
 - 站长不可更换。Root 从主站已有用户指定唯一站长后，转让、交接写接口和前端入口都必须拒绝。关站时客户和仍存续的团队迁入主站；负责人已退出而关闭的团队不复活。历史交接记录只解释旧订单的财务归属，不能作为新的交接入口。
 - 站长界面只显示收益和保证金。经营钱包继续记账，但不出现在站长页面，站长充值汇总接口返回 403。
 - 分站客户的一级邀请佣金单独记账，不进主站 `referral_*`，也不进站长收益提现。成立时先冻结本站收益；收益不够时，只在 Root 已授权的保证金周期额度内冻结。两边都不够就保持待覆盖，不能转余额，也不能提现。转到站内余额时，扣掉对应冻结并在同一事务里加可消费额度。现金提现只由该站站长审核；提交、驳回、撤销或打款失败都不释放冻结。支付宝、微信、USDT 只有标记打款完成后，才把冻结退回原来源。退款按已完成本金比例：还冻着的释放，已转余额的冲回用户余额，已外部打款的只记追偿。最低额、手续费和人民币汇率未保存时拒绝现金方式，不抄 `adty_site_withdraw.*`，也不调用 `Referral.CreateWithdrawal`。
+- ADTY 的正式运行、部署、资金测试和验收只使用 PostgreSQL，不使用 SQLite 或 MySQL。不设最低版本或最高版本；测试时记录实际 `server_version_num`，版本不同不算失败。建议版本为 PostgreSQL 17。新部署优先使用 17，但不把 16、18 或其他版本排除在验收之外。已有数据目录升级主要版本时，必须另建目录迁移并核对账目，不能直接换镜像启动。仓库保留上游 SQLite、MySQL 兼容代码和已有单测，只用于避免破坏上游资产，不作为验收证据。这些测试缺失、未执行或失败，不阻塞 ADTY 验收。
 - 全平台只有一种充值额度兑换码。优惠码的报价和写入拒绝新使用；历史行保留，不重算。兑换码不是优惠加赠，也不产生渠道赠金或邀请佣金。
 - 团队只有一个负责人，不能转让。负责人退出或注销时关闭团队，共享余额保留，不自动退款或分给成员。绑定的 Key 只扣团队共享余额。团队价 = 站点售价 × 折扣；分站结果低于供货价时拒绝。
 - Telegram 只有两个通知机器人：用户通知、管理通知。Token 仅 Root 配置，加密保存、脱敏展示，变更走二次验证。绑定不复用 Telegram OAuth，也不能登录、找回密码或充当二次验证。机器人不能查询或修改账户、余额、Key、退款或提现。

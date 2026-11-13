@@ -1,6 +1,6 @@
 # 部署：Docker Compose、Nginx 和 Cloudflare
 
-单台服务器：Cloudflare 小云朵 → 本机 Nginx（443）→ `127.0.0.1:3000` 上的 adtyai-api 容器，目标数据库为 PostgreSQL 17，Redis 也在 compose 里，不对外开端口。已有 PostgreSQL 16 数据卷不能直接换成 17 镜像启动，须另建数据目录迁移并核对账目。文件都在 `deploy/adty/`（任务 10.1）：
+单台服务器：Cloudflare 小云朵 → 本机 Nginx（443）→ `127.0.0.1:3000` 上的 adtyai-api 容器。正式运行和验收只使用 PostgreSQL，不使用 SQLite 或 MySQL。不设最低版本或最高版本。建议版本为 PostgreSQL 17，compose 示例优先使用 17，但不把 16、18 或其他版本排除在验收之外。Redis 也在 compose 里，不对外开端口。已有数据目录升级主要版本时，必须另建目录迁移并核对账目，不能直接换镜像启动。文件都在 `deploy/adty/`（任务 10.1）：
 
 | 文件 | 用途 |
 | --- | --- |
@@ -32,7 +32,7 @@ sudo cp .env.example .env && sudo chmod 600 .env
 - `SESSION_SECRET`、`CRYPTO_SECRET` 分开设，设了就不要再改：换了会让所有登录会话、推广 cookie 签名、防刷指纹和任务产物的签名失效。不设 `CRYPTO_SECRET` 时它等于 `SESSION_SECRET`，以后想换 `SESSION_SECRET` 就会连带出问题，所以一开始就分开。
 - `.env` 另存一份到密码管理器。备份脚本不备份 `.env`，恢复时要用它。
 - Cloudflare Token 和 Turnstile widget secret 的数据库加密要求显式设置至少 32 字节的 `CRYPTO_SECRET`（建议上述随机 64 位十六进制），不能使用临时生成或会话默认值。所有节点及恢复环境必须使用同一个 key。历史明文首次载入自动加密；key 错误或密文损坏会停用本节点此域凭证并记录通用错误。恢复原 key 后重载配置，或由 Root 重新录入有效凭证；不得把密文当令牌填回界面。外部令牌泄露时先在 Cloudflare 撤销，再由 Root 保存替代值；不要直接修改 `CRYPTO_SECRET`，它还用于其他签名。旧明文备份仍须按敏感文件保管，不能因新版本加密就公开。
-- `LOG_SQL_DSN` 可选，留空时日志使用主库；设置时必须是 PostgreSQL 17，且 API 容器和用于备份的 postgres 客户端容器均能访问它。备份按 API 容器实际的 `SQL_DSN` 和 `LOG_SQL_DSN` 导出，不假设连接是 compose 默认库。
+- `LOG_SQL_DSN` 可选，留空时日志使用主库；设置时必须是 PostgreSQL，不限定主版本，且 API 容器和用于备份的 postgres 客户端容器均能访问它。备份按 API 容器实际的 `SQL_DSN` 和 `LOG_SQL_DSN` 导出，不假设连接是 compose 默认库。
 - compose 里固定写好的：`SESSION_COOKIE_SECURE=true`（和 `SESSION_COOKIE_TRUSTED_URL` 必须同时设，否则启动失败）、`ERROR_LOG_ENABLED=true`（默认关，不开就不记错误日志）、`BATCH_UPDATE_ENABLED=true`、`TRUSTED_PROXIES=172.30.0.1`。
 
 ## 3. 选镜像标签，从 GHCR 拉取
@@ -125,7 +125,7 @@ robots.txt 由网关按站点返回（任务 11.3）：主站和开了 SEO 的�
 
 ## 9. 备份和恢复
 
-`backup.sh` 从运行中的 API 读取数据库连接，用 PostgreSQL 17 的 `pg_dump --format=custom` 导出主库；配置了不同的 `LOG_SQL_DSN` 时，同一时间戳另存 `adtyai-logdb-<时间>.dump`。日志连接为空或与主库连接完全相同时只导出一次；同一库的等价但不同写法会安全地多导出一份。每份归档经 `pg_restore --list` 校验，再打包 `/opt/adtyai/data`（返佣收款码、打款凭证等上传文件）。全部成功才发布文件、清理本机超过 14 天的三类归档并同步到 `BACKUP_REMOTE`；任何导出或校验失败都不发布和复制不完整文件组，也不清理旧备份。
+`backup.sh` 从运行中的 API 读取数据库连接，用 PostgreSQL 的 `pg_dump --format=custom` 导出主库；配置了不同的 `LOG_SQL_DSN` 时，同一时间戳另存 `adtyai-logdb-<时间>.dump`。客户端主版本应能读取该库，升级主要版本时另建目录迁移，不能直接换镜像启动。日志连接为空或与主库连接完全相同时只导出一次；同一库的等价但不同写法会安全地多导出一份。每份归档经 `pg_restore --list` 校验，再打包 `/opt/adtyai/data`（返佣收款码、打款凭证等上传文件）。全部成功才发布文件、清理本机超过 14 天的三类归档并同步到 `BACKUP_REMOTE`；任何导出或校验失败都不发布和复制不完整文件组，也不清理旧备份。
 
 数据库密码经 libpq 分离，只通过 stdin 和容器内 `PGPASSWORD` 传递，避免进入命令参数或日志。宿主机必须有 `python3` 和 `libpq5`。应用 pgx 的 `search_path` 等服务器参数会转成 PostgreSQL `options`，已有 `options` 保留；仅忽略 pgx 的语句/描述缓存容量和查询执行模式，这些不适用于 `pg_dump`。`database` 别名和 `servicefile` 会转换为 libpq 的对应配置。客户端证书、service 文件使用已有只读挂载路径；脚本拒绝含 `sslpassword`、`krbspn` 或显式协议版本限制（`min_protocol_version`/`max_protocol_version`）的连接，不静默降低认证或协议要求。脚本不会保存 `.env`、数据库角色或 TLS 证书，这些须独立安全保管。
 

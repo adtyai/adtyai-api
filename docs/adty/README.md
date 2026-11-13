@@ -16,7 +16,7 @@ adtyai-api 是 [QuantumNous/new-api](https://github.com/QuantumNous/new-api) 的
 - **站长分站（P11）**：正式分站由 Root 从主站已有用户创建，站长不可更换，转让入口必须拒绝。关站由 Root 发起，客户和存续团队迁入主站。站长界面只显示收益和保证金；经营钱包继续记账，但不展示，站长充值汇总返回 403。历史订单、异步任务、退款、结算和追回按原操作冻结的财务归属处理，不能按当前站长重算。分站客户的一级邀请佣金单独冻结，现金提现由该站站长审核；验收门仍未关闭。
 - **营销与兑换码**：独立营销中心、群发及营销自动邮件、营销同意和偏好、注册来源采集及统计已删除。优惠码报价和写入已退役，历史行保留且不重算。充值额度只使用一种兑换码。关站、涨价等业务系统邮件保留。
 - **员工、通知和财务**：分站员工有独立工作区和明确的只读或客户安全操作授权，权限由服务端逐次核对，撤权立即使旧会话失效；客户调额资金规则仍待补齐。通知支持发布、版本化已读回执，指定业务范围及部分角色角标仍未完成。用户可按站点筛选，财务可查看统一订单和冻结详情、追溯关联资金链，并按授权补查或处理退款。
-- **数据库**：部署目标为 PostgreSQL 17，缓存用 Redis。保留上游 SQLite 单测和 SQLite、MySQL、PostgreSQL 的兼容代码；ADTY 启动时主库或日志库不是 PostgreSQL 就直接退出。已有 PostgreSQL 16 数据目录须独立迁移，不能直接换镜像启动，见 [deploy.md](deploy.md)。
+- **数据库**：正式运行、部署、资金测试和验收只使用 PostgreSQL，不使用 SQLite 或 MySQL。不设最低版本或最高版本；测试时记录实际 `server_version_num`，版本不同不算失败。建议版本为 PostgreSQL 17，新部署优先使用 17，但不把 16、18 或其他版本排除在验收之外。缓存用 Redis。ADTY 启动时主库或日志库不是 PostgreSQL 就直接退出。仓库保留上游 SQLite、MySQL 兼容代码和已有单测，只用于避免破坏上游资产，不作为验收证据；这些测试缺失、未执行或失败，不阻塞验收。已有数据目录升级主要版本时，必须另建目录迁移并核对账目，不能直接换镜像启动，见 [deploy.md](deploy.md)。
 - **版本号**：`.github/workflows/adty-ghcr.yml` 在镜像构建时生成 `VERSION`，前后端共用；`main` 为 `main-<短 SHA>`，标签构建为标签名，其他分支为 `<分支名>-<短 SHA>`，拉取请求为 `pr-<编号>-<短 SHA>`。仓库内空的 `VERSION` 是构建占位，web 和 Electron 的 `package.json` 版本独立维护；上游 v1.0.0-rc.47 只表示二开起点。
 - **名字、Logo 和语言**：访客、调用 API 的人、上游服务商和浏览器开发者工具能看到的 New API，都换成 ADTY AI 或 adtyai。正式语言只有简体中文和英文；站名 ADTY AI 不翻译。已有的另外六种语言包可以留在仓库里，但不在选择器、首页或文档中承诺。Logo 换成「层叠网关」一套（`web/public` 下的图标、manifest、分享图），原稿和生成脚本在仓库外的 `adtyai-logo` 目录（`source/build.py`）。Go 模块路径不改；LICENSE、NOTICE、THIRD-PARTY-LICENSES.md、上游源文件头和页脚的上游署名都保留（AGPL）。
 - **首页**：`/` 固定是英文，另外 7 种语言用 `/zh-cn`、`/ko` 这类网址；首页的标题、描述和正文写进网页源码，其余页面一律 noindex。
@@ -26,7 +26,7 @@ adtyai-api 是 [QuantumNous/new-api](https://github.com/QuantumNous/new-api) 的
 
 仓库根目录的 AGENTS.md 保留上游写给 AI 代理的通用规范，并补充本 fork 的站长不可更换、固定额度、支付场景和版本约定。下面四点说明本 fork 的具体约定，合并上游时一起核对：
 
-1. **数据库**：ADTY 的部署和资金验收目标为真实 PostgreSQL 17；通过连接实例的 `server_version_num` 确认主版本。上游自己的 SQLite 单测照旧保留，公共建表、迁移和业务代码继续保留 SQLite、MySQL、PostgreSQL 的兼容分支。涉及数据库行为的修改，必须在真实 SQLite、MySQL、PostgreSQL 上验证；迁移覆盖新库、历史升级和重复执行，资金集成验证还须使用隔离 PostgreSQL 17 和真实 Redis。
+1. **数据库**：ADTY 的正式运行、部署、资金测试和验收只使用 PostgreSQL。不设最低版本或最高版本；记录实际 `server_version_num`，版本不同不算失败。建议版本为 17，新部署优先使用 17，16、18 或其他版本不排除在验收之外。上游 SQLite、MySQL 兼容代码和已有单测照旧保留，只避免破坏上游资产，不作为验收证据；缺失、未执行或失败不阻塞验收。资金测试使用隔离的 PostgreSQL 和真实 Redis。已有数据目录升级主要版本时，必须另建目录迁移并核对账目，不能直接换镜像启动。
 2. **对外的名字**：AGENTS.md 规定 New API 和 QuantumNous 的名称、标识「任何情况下不得修改」。本 fork 按执行层决定 21 和任务 8.9，把访客、调用方、上游服务商和浏览器能看到的名字换成了 ADTY AI 或 adtyai（cookie 名、错误类型、本地存储键、网页标题、Logo 等，改了哪些、哪些不改见 conventions.md 和任务 8.9）。LICENSE、NOTICE、THIRD-PARTY-LICENSES.md、源码版权头、页脚的上游署名、Go 模块路径 `github.com/QuantumNous/new-api` 都照旧保留。
 3. **docs/adty/ 下的文档**：AGENTS.md 说没有用户明确要求时不要在 `docs/` 下新建文件。`docs/adty/` 下的文档都是按实施方案（约定 A：工程文档放 `docs/adty/`）或用户的要求建的，以后改功能时要同步更新这里的文档。
 4. **语言**：正式语言只有简体中文和英文。已有八种语言包仍可留在仓库里，避免重写框架，但不是正式承诺。新的正式文案必须有中文和英文。根目录 AGENTS.md 已按这条同步。

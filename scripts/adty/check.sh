@@ -136,7 +136,7 @@ if [ "$run_frontend" -eq 1 ]; then
 fi
 
 if [ "$run_backend" -eq 1 ] && [ "$run_frontend" -eq 1 ]; then
-  step "生产浏览器：隔离 PostgreSQL 17、Redis、真实钱包和权限"
+  step "生产浏览器：隔离 PostgreSQL、Redis、真实钱包和权限"
   bash scripts/adty/browser-business.sh
 fi
 
