@@ -8777,7 +8777,15 @@
     "Decrease": "減少",
     "Increase": "増加",
     "Request balance change": "残高変更を申請",
-    "This request does not change the customer balance until the site owner or Root approves it.": "サイトオーナーまたは Root が承認するまで、この申請は顧客残高を変えません。"
+    "This request does not change the customer balance until the site owner or Root approves it.": "サイトオーナーまたは Root が承認するまで、この申請は顧客残高を変えません。",
+    "Bind invite": "招待を結びつける",
+    "Invitee": "招待された人",
+    "Invite rate": "招待率",
+    "Maximum invite rate": "招待率の上限",
+    "One-level invites": "一次招待",
+    "Saving a rate does not pay commission.": "率を保存しても紹介報酬は支払われません。",
+    "The referral cap is not configured": "招待率の上限は未設定です",
+    "This customer already has a paid order": "この顧客には支払い済みの注文があります"
 },
   "Targeted notifications": "対象を指定した通知",
   "Site announcements": "サイトのお知らせ",

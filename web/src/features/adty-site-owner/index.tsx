@@ -33,6 +33,7 @@ import { getOwnerSite, siteOwnerKeys } from './api'
 import { AgreementPanel } from './components/agreement-panel'
 import { BonusPanel } from './components/bonus-panel'
 import { CustomersPanel } from './components/customers-panel'
+import { SiteReferralPanel } from './components/site-referral-panel'
 import { EarningsPanel } from './components/earnings-panel'
 import { WithdrawalPanel } from './components/withdrawal-panel'
 import { OverviewPanel } from './components/overview-panel'
@@ -127,8 +128,9 @@ export function SiteOwnerCenter(props: { section: SiteOwnerSectionId }) {
                   <TabsContent value='overview'>
                     <OverviewPanel />
                   </TabsContent>
-                  <TabsContent value='customers'>
+                  <TabsContent value='customers' className='flex flex-col gap-8'>
                     <CustomersPanel />
+                    <SiteReferralPanel />
                   </TabsContent>
                   <TabsContent value='orders'>
                     <RechargeAudit ownerMode ownerSiteId={site.data.id} />

@@ -8751,7 +8751,15 @@
     "Decrease": "감소",
     "Increase": "증가",
     "Request balance change": "잔액 변경 신청",
-    "This request does not change the customer balance until the site owner or Root approves it.": "사이트 소유자 또는 Root가 승인하기 전에는 이 신청이 고객 잔액을 바꾸지 않습니다."
+    "This request does not change the customer balance until the site owner or Root approves it.": "사이트 소유자 또는 Root가 승인하기 전에는 이 신청이 고객 잔액을 바꾸지 않습니다.",
+    "Bind invite": "초대 연결",
+    "Invitee": "초대받은 사람",
+    "Invite rate": "초대 비율",
+    "Maximum invite rate": "초대 비율 상한",
+    "One-level invites": "1단계 초대",
+    "Saving a rate does not pay commission.": "비율을 저장해도 수수료는 지급되지 않습니다.",
+    "The referral cap is not configured": "초대 비율 상한이 설정되지 않았습니다",
+    "This customer already has a paid order": "이 고객은 이미 결제된 주문이 있습니다"
 },
   "Targeted notifications": "대상 지정 알림",
   "Site announcements": "사이트 공지",

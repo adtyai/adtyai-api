@@ -8777,7 +8777,15 @@
     "Decrease": "Giảm",
     "Increase": "Tăng",
     "Request balance change": "Yêu cầu điều chỉnh số dư",
-    "This request does not change the customer balance until the site owner or Root approves it.": "Yêu cầu này không đổi số dư của khách cho đến khi chủ site hoặc Root phê duyệt."
+    "This request does not change the customer balance until the site owner or Root approves it.": "Yêu cầu này không đổi số dư của khách cho đến khi chủ site hoặc Root phê duyệt.",
+    "Bind invite": "Gắn lời mời",
+    "Invitee": "Người được mời",
+    "Invite rate": "Tỷ lệ mời",
+    "Maximum invite rate": "Tỷ lệ mời tối đa",
+    "One-level invites": "Mời một cấp",
+    "Saving a rate does not pay commission.": "Lưu tỷ lệ không trả hoa hồng.",
+    "The referral cap is not configured": "Chưa cấu hình trần tỷ lệ mời",
+    "This customer already has a paid order": "Khách này đã có đơn đã thanh toán"
 },
   "Targeted notifications": "Thông báo theo đối tượng",
   "Site announcements": "Thông báo của trang",

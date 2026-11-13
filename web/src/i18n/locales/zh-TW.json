@@ -8777,7 +8777,15 @@
     "Decrease": "扣減",
     "Increase": "增加",
     "Request balance change": "申請調整餘額",
-    "This request does not change the customer balance until the site owner or Root approves it.": "在站長或 Root 核准之前，此申請不會改變客戶餘額。"
+    "This request does not change the customer balance until the site owner or Root approves it.": "在站長或 Root 核准之前，此申請不會改變客戶餘額。",
+    "Bind invite": "綁定邀請",
+    "Invitee": "被邀請人",
+    "Invite rate": "邀請比例",
+    "Maximum invite rate": "邀請比例上限",
+    "One-level invites": "一級邀請",
+    "Saving a rate does not pay commission.": "儲存比例不會發放佣金。",
+    "The referral cap is not configured": "還沒有設定邀請比例上限",
+    "This customer already has a paid order": "這位客戶已經有成功儲值訂單"
 },
   "Targeted notifications": "定向通知",
   "Site announcements": "本站公告",

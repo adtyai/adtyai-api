@@ -8777,7 +8777,15 @@
     "Decrease": "Decrease",
     "Increase": "Increase",
     "Request balance change": "Request balance change",
-    "This request does not change the customer balance until the site owner or Root approves it.": "This request does not change the customer balance until the site owner or Root approves it."
+    "This request does not change the customer balance until the site owner or Root approves it.": "This request does not change the customer balance until the site owner or Root approves it.",
+    "Bind invite": "Bind invite",
+    "Invitee": "Invitee",
+    "Invite rate": "Invite rate",
+    "Maximum invite rate": "Maximum invite rate",
+    "One-level invites": "One-level invites",
+    "Saving a rate does not pay commission.": "Saving a rate does not pay commission.",
+    "The referral cap is not configured": "The referral cap is not configured",
+    "This customer already has a paid order": "This customer already has a paid order"
 },
   "Targeted notifications": "Targeted notifications",
   "Site announcements": "Site announcements",

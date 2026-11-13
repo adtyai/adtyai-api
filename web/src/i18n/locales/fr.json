@@ -8777,7 +8777,15 @@
     "Decrease": "Diminuer",
     "Increase": "Augmenter",
     "Request balance change": "Demander un ajustement de solde",
-    "This request does not change the customer balance until the site owner or Root approves it.": "Cette demande ne change pas le solde du client tant que le propriétaire du site ou Root ne l'a pas approuvée."
+    "This request does not change the customer balance until the site owner or Root approves it.": "Cette demande ne change pas le solde du client tant que le propriétaire du site ou Root ne l'a pas approuvée.",
+    "Bind invite": "Lier l'invitation",
+    "Invitee": "Invité",
+    "Invite rate": "Taux d'invitation",
+    "Maximum invite rate": "Taux d'invitation maximal",
+    "One-level invites": "Invitations à un niveau",
+    "Saving a rate does not pay commission.": "Enregistrer un taux ne verse pas de commission.",
+    "The referral cap is not configured": "Le plafond de parrainage n'est pas configuré",
+    "This customer already has a paid order": "Ce client a déjà une commande payée"
 },
   "Targeted notifications": "Notifications ciblées",
   "Site announcements": "Annonces du site",

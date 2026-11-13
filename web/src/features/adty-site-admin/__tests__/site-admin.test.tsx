@@ -71,6 +71,8 @@ const api = vi.hoisted(() => ({
   disableSiteSenderDomain: vi.fn(),
   getAdminBalanceRequests: vi.fn(),
   reviewAdminBalanceRequest: vi.fn(),
+  getAdminSiteReferralCap: vi.fn(),
+  saveAdminSiteReferralCap: vi.fn(),
 }))
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
@@ -223,6 +225,7 @@ function siteNames(): string[] {
 beforeEach(() => {
   asRoot()
   api.getAdminBalanceRequests.mockResolvedValue([])
+  api.getAdminSiteReferralCap.mockResolvedValue({ cap_configured: false })
 })
 
 afterEach(() => {

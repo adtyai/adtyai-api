@@ -8777,7 +8777,15 @@
     "Decrease": "Уменьшить",
     "Increase": "Увеличить",
     "Request balance change": "Запросить изменение баланса",
-    "This request does not change the customer balance until the site owner or Root approves it.": "Эта заявка не меняет баланс клиента, пока владелец сайта или Root её не одобрит."
+    "This request does not change the customer balance until the site owner or Root approves it.": "Эта заявка не меняет баланс клиента, пока владелец сайта или Root её не одобрит.",
+    "Bind invite": "Привязать приглашение",
+    "Invitee": "Приглашённый",
+    "Invite rate": "Ставка приглашения",
+    "Maximum invite rate": "Максимальная ставка приглашения",
+    "One-level invites": "Одноуровневые приглашения",
+    "Saving a rate does not pay commission.": "Сохранение ставки не выплачивает комиссию.",
+    "The referral cap is not configured": "Предел реферальной ставки не задан",
+    "This customer already has a paid order": "У этого клиента уже есть оплаченный заказ"
 },
   "Targeted notifications": "Адресные уведомления",
   "Site announcements": "Объявления сайта",

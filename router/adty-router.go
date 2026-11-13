@@ -161,6 +161,10 @@ func registerAdtyTopUpRoutes(apiRouter *gin.RouterGroup) {
 	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/admin/site-withdrawals/:id/paying", "scope", "option:write")
 	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/admin/site-withdrawals/:id/reject", "scope", "option:write")
 	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/admin/site-withdrawals/:id/paid", "scope", "option:write")
+	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/adty/admin/site-referral/cap", "scope", "option:read")
+	middleware.DeclareAdtyAccessTokenRoute("PUT", "/api/adty/admin/site-referral/cap", "scope", "option:write")
+	apiRouter.GET("/adty/admin/site-referral/cap", middleware.RootAuth(), controller.GetAdtySiteReferralCap)
+	apiRouter.PUT("/adty/admin/site-referral/cap", middleware.RootAuth(), controller.PutAdtySiteReferralCap)
 	apiRouter.PUT("/adty/admin/site-withdrawals/rules", middleware.RootAuth(), controller.PutAdtySiteWithdrawRules)
 	apiRouter.POST("/adty/admin/site-withdrawals/:id/paying", middleware.RootAuth(), controller.PostAdtySiteWithdrawalPaying)
 	apiRouter.POST("/adty/admin/site-withdrawals/:id/reject", middleware.RootAuth(), controller.PostAdtySiteWithdrawalReject)
@@ -385,6 +389,10 @@ func registerAdtyResellerRoutes(apiRouter *gin.RouterGroup) {
 		{http.MethodGet, "/orders", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerOrders}},
 		{http.MethodGet, "/orders/summary", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerOrderSummary}},
 		{http.MethodGet, "/orders/:trade_no", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerOrder}},
+		{http.MethodGet, "/referral", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerSiteReferral}},
+		{http.MethodPut, "/referral", "wallet:write", []gin.HandlerFunc{controller.PutAdtyOwnerSiteReferral}},
+		{http.MethodGet, "/referral/invites", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerSiteInvites}},
+		{http.MethodPost, "/referral/invites", "wallet:write", []gin.HandlerFunc{controller.PostAdtyOwnerSiteInvite}},
 		{http.MethodGet, "/customers", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerCustomers}},
 		{http.MethodGet, "/customers/lookup", "wallet:read", []gin.HandlerFunc{controller.LookupAdtyOwnerCustomer}},
 		{http.MethodGet, "/customers/:id", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerCustomer}},

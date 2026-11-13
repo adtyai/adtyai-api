@@ -183,6 +183,52 @@ export async function getOwnerEarnings(
   return requireServerSuccess(res.data).data
 }
 
+export type SiteReferralView = {
+  cap_configured: boolean
+  max_rate?: string
+  rate_configured: boolean
+  rate?: string
+}
+
+export type SiteInvite = {
+  id: number
+  site_id: number
+  inviter_id: number
+  invitee_id: number
+  rate: string
+  created_at: number
+}
+
+export async function getOwnerSiteReferral(): Promise<SiteReferralView> {
+  const res = await api.get<ApiResponse<SiteReferralView>>(`${BASE}/referral`)
+  return requireServerSuccess(res.data).data
+}
+
+export async function saveOwnerSiteReferral(rate: string): Promise<void> {
+  const res = await api.put<ApiResponse<{ saved: boolean }>>(`${BASE}/referral`, {
+    rate,
+  })
+  requireServerSuccess(res.data)
+}
+
+export async function getOwnerSiteInvites(): Promise<SiteInvite[]> {
+  const res = await api.get<ApiResponse<{ items?: SiteInvite[] }>>(
+    `${BASE}/referral/invites`
+  )
+  return requireServerSuccess(res.data).data.items ?? []
+}
+
+export async function bindOwnerSiteInvite(
+  inviterId: number,
+  inviteeId: number
+): Promise<void> {
+  const res = await api.post<ApiResponse<{ bound: boolean }>>(
+    `${BASE}/referral/invites`,
+    { inviter_id: inviterId, invitee_id: inviteeId }
+  )
+  requireServerSuccess(res.data)
+}
+
 export async function getOwnerCustomers(
   p: number
 ): Promise<OwnerPage<OwnerCustomer>> {

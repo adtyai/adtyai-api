@@ -91,6 +91,24 @@ export type AdminBalanceRequest = {
   reviewed_at: number
 }
 
+export async function getAdminSiteReferralCap(): Promise<{
+  cap_configured: boolean
+  max_rate?: string
+}> {
+  const res = await api.get<
+    ApiResponse<{ cap_configured: boolean; max_rate?: string }>
+  >(`${BASE}/site-referral/cap`)
+  return requireServerSuccess(res.data).data
+}
+
+export async function saveAdminSiteReferralCap(maxRate: string): Promise<void> {
+  const res = await api.put<ApiResponse<{ saved: boolean }>>(
+    `${BASE}/site-referral/cap`,
+    { max_rate: maxRate }
+  )
+  requireServerSuccess(res.data)
+}
+
 export async function getAdminBalanceRequests(
   siteId: number
 ): Promise<AdminBalanceRequest[]> {
