@@ -41,6 +41,7 @@ import { Route as PricingIndexRouteImport } from './routes/pricing/index'
 import { Route as RCodeRouteImport } from './routes/r/$code'
 import { Route as RankingsIndexRouteImport } from './routes/rankings/index'
 import { Route as SetupIndexRouteImport } from './routes/setup/index'
+import { Route as TeamRegisterCodeRouteImport } from './routes/team-register/$code'
 import { Route as authUserResetRouteImport } from './routes/(auth)/user/reset'
 import { Route as AuthenticatedAdminReferralIndexRouteImport } from './routes/_authenticated/admin-referral/index'
 import { Route as AuthenticatedChannelsIndexRouteImport } from './routes/_authenticated/channels/index'
@@ -243,6 +244,11 @@ const RankingsIndexRoute = RankingsIndexRouteImport.update({
 const SetupIndexRoute = SetupIndexRouteImport.update({
   id: '/setup/',
   path: '/setup/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TeamRegisterCodeRoute = TeamRegisterCodeRouteImport.update({
+  id: '/team-register/$code',
+  path: '/team-register/$code',
   getParentRoute: () => rootRouteImport,
 } as any)
 const authUserResetRoute = authUserResetRouteImport.update({
@@ -531,6 +537,7 @@ export interface FileRoutesByFullPath {
   '/docs/$slug': typeof DocsSlugRoute
   '/oauth/$provider': typeof OauthProviderRoute
   '/r/$code': typeof RCodeRoute
+  '/team-register/$code': typeof TeamRegisterCodeRoute
   '/about/': typeof AboutIndexRoute
   '/docs/': typeof DocsIndexRoute
   '/pricing/': typeof PricingIndexRoute
@@ -606,6 +613,7 @@ export interface FileRoutesByTo {
   '/docs/$slug': typeof DocsSlugRoute
   '/oauth/$provider': typeof OauthProviderRoute
   '/r/$code': typeof RCodeRoute
+  '/team-register/$code': typeof TeamRegisterCodeRoute
   '/about': typeof AboutIndexRoute
   '/docs': typeof DocsIndexRoute
   '/pricing': typeof PricingIndexRoute
@@ -685,6 +693,7 @@ export interface FileRoutesById {
   '/docs/$slug': typeof DocsSlugRoute
   '/oauth/$provider': typeof OauthProviderRoute
   '/r/$code': typeof RCodeRoute
+  '/team-register/$code': typeof TeamRegisterCodeRoute
   '/about/': typeof AboutIndexRoute
   '/docs/': typeof DocsIndexRoute
   '/pricing/': typeof PricingIndexRoute
@@ -763,6 +772,7 @@ export interface FileRouteTypes {
     | '/docs/$slug'
     | '/oauth/$provider'
     | '/r/$code'
+    | '/team-register/$code'
     | '/about/'
     | '/docs/'
     | '/pricing/'
@@ -838,6 +848,7 @@ export interface FileRouteTypes {
     | '/docs/$slug'
     | '/oauth/$provider'
     | '/r/$code'
+    | '/team-register/$code'
     | '/about'
     | '/docs'
     | '/pricing'
@@ -916,6 +927,7 @@ export interface FileRouteTypes {
     | '/docs/$slug'
     | '/oauth/$provider'
     | '/r/$code'
+    | '/team-register/$code'
     | '/about/'
     | '/docs/'
     | '/pricing/'
@@ -985,6 +997,7 @@ export interface RootRouteChildren {
   DocsSlugRoute: typeof DocsSlugRoute
   OauthProviderRoute: typeof OauthProviderRoute
   RCodeRoute: typeof RCodeRoute
+  TeamRegisterCodeRoute: typeof TeamRegisterCodeRoute
   AboutIndexRoute: typeof AboutIndexRoute
   DocsIndexRoute: typeof DocsIndexRoute
   PricingIndexRoute: typeof PricingIndexRoute
@@ -1217,6 +1230,13 @@ declare module '@tanstack/react-router' {
       path: '/setup'
       fullPath: '/setup/'
       preLoaderRoute: typeof SetupIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/team-register/$code': {
+      id: '/team-register/$code'
+      path: '/team-register/$code'
+      fullPath: '/team-register/$code'
+      preLoaderRoute: typeof TeamRegisterCodeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/(auth)/user/reset': {
@@ -1704,6 +1724,7 @@ const rootRouteChildren: RootRouteChildren = {
   DocsSlugRoute: DocsSlugRoute,
   OauthProviderRoute: OauthProviderRoute,
   RCodeRoute: RCodeRoute,
+  TeamRegisterCodeRoute: TeamRegisterCodeRoute,
   AboutIndexRoute: AboutIndexRoute,
   DocsIndexRoute: DocsIndexRoute,
   PricingIndexRoute: PricingIndexRoute,

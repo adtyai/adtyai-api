@@ -26,6 +26,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { RechargeAudit } from '@/features/recharge-audit'
+import { TeamRegistrationLinksPanel } from '@/features/adty-team-registration'
 import { DraftNavigationProvider } from '@/features/system-settings/components/draft-navigation-provider'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -130,6 +131,7 @@ export function SiteOwnerCenter(props: { section: SiteOwnerSectionId }) {
                   </TabsContent>
                   <TabsContent value='customers' className='flex flex-col gap-8'>
                     <CustomersPanel />
+                    <TeamRegistrationLinksPanel actor='owner' />
                     <SiteTeamDiscountPanel />
                     <SiteReferralPanel />
                     <CommissionWithdrawalPanel />

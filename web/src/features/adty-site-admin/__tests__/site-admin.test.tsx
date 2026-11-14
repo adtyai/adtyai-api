@@ -94,6 +94,21 @@ vi.mock('../api', async (importOriginal) => ({
   ...api,
 }))
 
+const teamRegistrationApi = vi.hoisted(() => ({
+  listTeamRegistrations: vi.fn(async () => []),
+  issueTeamRegistration: vi.fn(),
+  revokeTeamRegistration: vi.fn(),
+}))
+vi.mock('@/features/adty-team-registration/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/features/adty-team-registration/api')>()),
+  listTeamRegistrations: (...args: unknown[]) =>
+    teamRegistrationApi.listTeamRegistrations(...args),
+  issueTeamRegistration: (...args: unknown[]) =>
+    teamRegistrationApi.issueTeamRegistration(...args),
+  revokeTeamRegistration: (...args: unknown[]) =>
+    teamRegistrationApi.revokeTeamRegistration(...args),
+}))
+
 function site(overrides: Partial<AdminSite>): AdminSite {
   return {
     id: 1,
@@ -245,6 +260,7 @@ beforeEach(() => {
   api.getAdminFundAnomalies.mockResolvedValue([])
   api.getAdminSiteWallets.mockResolvedValue([])
   api.getAdminAnomalyDispositions.mockResolvedValue([])
+  teamRegistrationApi.listTeamRegistrations.mockResolvedValue([])
 })
 
 afterEach(() => {

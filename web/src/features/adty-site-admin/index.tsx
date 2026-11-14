@@ -22,7 +22,9 @@ import { useTranslation } from 'react-i18next'
 
 import { SectionPageLayout } from '@/components/layout'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { TeamRegistrationLinksPanel } from '@/features/adty-team-registration'
 import { DraftNavigationProvider } from '@/features/system-settings/components/draft-navigation-provider'
+import { USER_ROLE } from '@/features/users/constants'
 import { ADTY_PERMISSIONS, canAdmin } from '@/lib/adty-permissions'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -96,6 +98,9 @@ export function SiteAdmin(props: { section: SiteAdminSectionId }) {
               <SiteReferralCapPanel />
               <BusinessTimezonePanel />
               <WithdrawRulesPanel />
+              {user?.role === USER_ROLE.ROOT && (
+                <TeamRegistrationLinksPanel actor='root' />
+              )}
               <MainTeamPricePanel />
               {canAdmin(user, ADTY_PERMISSIONS.SITE_READ) && <UsagePanel />}
               <SettingsPanel
