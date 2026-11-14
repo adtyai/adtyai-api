@@ -56,9 +56,26 @@ func TestOwnerStaffLifecycleAndScope(t *testing.T) {
 	assert.NotContains(t, response.Body.String(), "employee-password-42")
 	assert.NotContains(t, response.Body.String(), employee.Password)
 	assert.ElementsMatch(t, []string{"customers.read"}, staff.Permissions)
+	// 两种拒绝要分开看，混在一起会让断言失去意义：
+	//   主站主机上，个人访问令牌能落地，缺 wallet 之外的权限由 scope 判定拒绝 → 403；
+	//   站点主机上，令牌没有签发站点绑定，A.4.4 / DEC-023 先行拒绝 → 401。
+	// 站长员工管理接口要求真实登录会话，个人访问令牌进不来。R2-0017 之后，
+	// 拒绝的理由还取决于主机：令牌没有签发站点绑定，在站点主机上被 A.4.4
+	// 挡成 401；在主站主机上则落到路由规则，被挡成 403 AUTH_SESSION_REQUIRED。
+	// 两种都必须拒绝，且都不能是 200——这才是这条断言要保住的不变量。
 	for _, token := range []string{createAdtyScopedToken(t, f.owner.Id, "wallet:read"), createAdtyScopedToken(t, employee.Id, "wallet:read")} {
-		assert.Equal(t, http.StatusForbidden, f.siteJSON(t, http.MethodGet, "/api/adty/site/staff", "", token).Code)
-		assert.Equal(t, http.StatusForbidden, f.siteJSON(t, http.MethodGet, "/api/adty/staff/self", "", token).Code)
+		for _, rec := range []*httptest.ResponseRecorder{
+			callAs(t, f.engine, token, http.MethodGet, "/api/adty/site/staff", ""),
+			f.siteJSON(t, http.MethodGet, "/api/adty/site/staff", "", token),
+			callAs(t, f.engine, token, http.MethodGet, "/api/adty/staff/self", ""),
+			f.siteJSON(t, http.MethodGet, "/api/adty/staff/self", "", token),
+		} {
+			assert.NotEqual(t, http.StatusOK, rec.Code, rec.Body.String())
+			assert.Contains(t, rec.Body.String(), `"success":false`, rec.Body.String())
+			assert.True(t,
+				strings.Contains(rec.Body.String(), "AUTH_UNAUTHORIZED") || strings.Contains(rec.Body.String(), "AUTH_SESSION_REQUIRED"),
+				rec.Body.String())
+		}
 	}
 	assert.Contains(t, f.call(t, http.MethodPost, "/api/adty/site/staff", create, proof).Body.String(), "SECURITY_PROOF_CONSUMED")
 	login, err := service.CreateLoginSession(employee.Id, "password", "127.0.0.1", "staff-test")
@@ -995,12 +1012,17 @@ func sessionTokenFor(t *testing.T, user model.User) string {
 	}))
 	token, _, err := service.IssueAccessToken(service.AuthIdentity{
 		UserID: user.Id, SessionID: sid, UserAuthVersion: user.AuthVersion, SessionVersion: 1,
+		// A.4.4 / DEC-023：会话必须绑定它被签发的站点主机，否则在站点主机上
+		// 调用仪表盘接口会被 fail-closed 拒绝。
+		HasIssuedSiteID: true, IssuedSiteID: user.SiteId,
 	})
 	require.NoError(t, err)
 	return token
 }
 
-func callAs(t *testing.T, engine *gin.Engine, token, method, path, body string) *httptest.ResponseRecorder {
+// callAs 以给定会话令牌发一个请求。最后一个可选参数是请求 Host：站点绑定
+// 的用户必须从自己站点的主机访问（A.4.4 / DEC-023），不带 Host 时按主站处理。
+func callAs(t *testing.T, engine *gin.Engine, token, method, path, body string, host ...string) *httptest.ResponseRecorder {
 	t.Helper()
 	var req *http.Request
 	if body == "" {
@@ -1008,6 +1030,9 @@ func callAs(t *testing.T, engine *gin.Engine, token, method, path, body string) 
 	} else {
 		req = httptest.NewRequest(method, path, strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
+	}
+	if len(host) > 0 && host[0] != "" {
+		req.Host = host[0]
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	resp := httptest.NewRecorder()
@@ -1025,32 +1050,33 @@ func TestCustomerAcceptsSiteTerms(t *testing.T) {
 	token := sessionTokenFor(t, customer)
 	current := service.AdtyCurrentSiteCustomerTermsVersion()
 
-	self := callAs(t, f.engine, token, http.MethodGet, "/api/user/self", "")
+	siteHost := f.siteHost()
+	self := callAs(t, f.engine, token, http.MethodGet, "/api/user/self", "", siteHost)
 	require.Equal(t, http.StatusOK, self.Code, self.Body.String())
 	assert.Contains(t, self.Body.String(), `"site_terms_required":true`)
 	assert.Contains(t, self.Body.String(), `"site_terms_version":"`+current+`"`)
 
-	blockedKey := callAs(t, f.engine, token, http.MethodPost, "/api/token/", `{"name":"before-terms","expired_time":-1,"unlimited_quota":true}`)
+	blockedKey := callAs(t, f.engine, token, http.MethodPost, "/api/token/", `{"name":"before-terms","expired_time":-1,"unlimited_quota":true}`, siteHost)
 	assert.Equal(t, http.StatusForbidden, blockedKey.Code, blockedKey.Body.String())
 	assert.Contains(t, blockedKey.Body.String(), "Accept the current site customer terms first")
-	blockedQuote := callAs(t, f.engine, token, http.MethodPost, "/api/adty/topup/quote", `{"amount":10,"method":"usdt.trc20"}`)
+	blockedQuote := callAs(t, f.engine, token, http.MethodPost, "/api/adty/topup/quote", `{"amount":10,"method":"usdt.trc20"}`, siteHost)
 	assert.Equal(t, http.StatusForbidden, blockedQuote.Code, blockedQuote.Body.String())
 	assert.Contains(t, blockedQuote.Body.String(), "Accept the current site customer terms first")
 
-	wrong := callAs(t, f.engine, token, http.MethodPost, "/api/adty/site/terms/accept", `{"version":"0"}`)
+	wrong := callAs(t, f.engine, token, http.MethodPost, "/api/adty/site/terms/accept", `{"version":"0"}`, siteHost)
 	assert.Contains(t, wrong.Body.String(), `"success":false`)
 	var row model.AdtySiteCustomer
 	require.NoError(t, f.db.Where("user_id = ?", customer.Id).First(&row).Error)
 	assert.Empty(t, row.TermsVersion)
 
-	accepted := callAs(t, f.engine, token, http.MethodPost, "/api/adty/site/terms/accept", `{"version":"`+current+`"}`)
+	accepted := callAs(t, f.engine, token, http.MethodPost, "/api/adty/site/terms/accept", `{"version":"`+current+`"}`, siteHost)
 	require.Contains(t, accepted.Body.String(), `"success":true`, accepted.Body.String())
 	assert.Contains(t, accepted.Body.String(), `"site_terms_required":false`)
 	require.NoError(t, f.db.Where("user_id = ?", customer.Id).First(&row).Error)
 	assert.Equal(t, current, row.TermsVersion)
 	assert.NotZero(t, row.TermsAt)
 
-	again := callAs(t, f.engine, token, http.MethodGet, "/api/user/self", "")
+	again := callAs(t, f.engine, token, http.MethodGet, "/api/user/self", "", siteHost)
 	assert.Contains(t, again.Body.String(), `"site_terms_required":false`)
 }
 

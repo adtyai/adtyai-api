@@ -114,12 +114,30 @@ func (f *teamAuthFixture) createUser(t *testing.T, username string, role, siteID
 	return user
 }
 
+// session 签发的会话必须绑定到用户实际操作的那台主机（A.4.4 / DEC-023）。
+// 站点成员用自身 SiteId；站长自身 SiteId 为 0，但他在自己站点的主机上操作，
+// 所以按 owner_user_id 反查他的站点。主站用户仍是 0。
 func (f *teamAuthFixture) session(t *testing.T, user *model.User) string {
 	t.Helper()
-	bundle, err := service.CreateLoginSession(user.Id, "password", "127.0.0.1", "team-auth-test")
+	bundle, err := service.CreateLoginSessionOnSite(user.Id, teamAuthIssuedSite(t, f.db, user), "password", "127.0.0.1", "team-auth-test")
 	require.NoError(t, err)
 	require.NotEmpty(t, bundle.AccessToken)
 	return bundle.AccessToken
+}
+
+func teamAuthIssuedSite(t *testing.T, db *gorm.DB, user *model.User) int {
+	t.Helper()
+	if user == nil {
+		return 0
+	}
+	if user.SiteId != 0 {
+		return user.SiteId
+	}
+	var site model.AdtySite
+	if err := db.Where("owner_user_id = ?", user.Id).Limit(1).Find(&site).Error; err != nil {
+		t.Fatalf("look up owned site for %s: %v", user.Username, err)
+	}
+	return site.Id
 }
 
 func (f *teamAuthFixture) siteAHost() string { return service.AdtySiteDisplayHost(f.siteA) }
