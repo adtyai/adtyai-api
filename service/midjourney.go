@@ -170,7 +170,7 @@ func RefundMidjourneyQuota(ctx context.Context, task *model.Midjourney, reason s
 	other.SetAdmin("billing_operation_key", key)
 	other.SetPublic("task_id", task.MjId)
 	other.SetPublic("reason", reason)
-	if task.BillingSiteId > 0 && task.BillingSiteMarkup >= 1 && task.BillingSiteCostFactor > 0 {
+	if task.BillingSiteId > 0 && adtyEarningFactorsUsable(task.BillingSiteMarkup, task.BillingSiteCostFactor) {
 		other.SetAdmin("site_id", task.BillingSiteId)
 		other.SetAdmin("site_owner_user_id", task.BillingSiteOwnerUserId)
 		other.SetAdmin("site_markup", task.BillingSiteMarkup)

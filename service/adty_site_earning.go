@@ -29,7 +29,7 @@ var adtySiteEarningDayFn = func() string { return time.Now().Format("2006-01-02"
 // to book A.10 books. Markup k may be below 1 and the cost factor d may be
 // above 1; only non-positive or non-finite values are rejected.
 func adtyEarningFactorsUsable(k, d float64) bool {
-	return k > 0 && d > 0 && !math.IsNaN(k) && !math.IsNaN(d) && !math.IsInf(k, 0) && !math.IsInf(d, 0)
+	return model.BillingEarningFactorsUsable(k, d)
 }
 
 // AdtySiteEarningSplit 按 A.10 拆一笔已扣费额度（美元，8 位小数）。

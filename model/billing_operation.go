@@ -27,6 +27,14 @@ var (
 	ErrBillingTokenInsufficient  = errors.New("token quota insufficient")
 )
 
+// BillingEarningFactorsUsable reports whether a stored markup k and supply
+// cost factor d can book A.10 earnings or be kept on a pricing snapshot.
+// k may be below 1 and d may be above 1; only non-positive or non-finite
+// values are rejected.
+func BillingEarningFactorsUsable(k, d float64) bool {
+	return k > 0 && d > 0 && !math.IsNaN(k) && !math.IsNaN(d) && !math.IsInf(k, 0) && !math.IsInf(d, 0)
+}
+
 // BillingOperation is the main-database identity and recovery record for a
 // reservation and its final disposition. It contains no credential or payload.
 // Reserved/applied wallet amounts are distinct from token charges and shortfall.
@@ -587,7 +595,7 @@ func ApplyBillingSettlement(key string) (*BillingOperation, bool, error) {
 				earningQuota = 0
 			}
 		}
-		if row.SiteId > 0 && row.SiteMarkup >= 1 && !math.IsInf(row.SiteMarkup, 0) && row.SiteCostFactor > 0 && row.SiteCostFactor <= 1 && earningQuota != 0 {
+		if row.SiteId > 0 && BillingEarningFactorsUsable(row.SiteMarkup, row.SiteCostFactor) && earningQuota != 0 {
 			if err := freezeBillingSiteOwnerTx(tx, &row, false); err != nil {
 				return err
 			}

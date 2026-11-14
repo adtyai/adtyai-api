@@ -1065,3 +1065,81 @@ func TestEarningHookBooksWhenKBelowOneOrDAboveOne(t *testing.T) {
 	require.NoError(t, db.Model(&model.AdtySiteEarningDaily{}).Where("site_id = ?", site.Id).Count(&after).Error)
 	assert.Equal(t, before, after, "non-positive k or d still does not book")
 }
+
+func TestBillingSettlementBooksEarningsWhenKBelowOneOrDAboveOne(t *testing.T) {
+	db := prepareSiteDB(t)
+	_, site := openActiveSite(t, db, "bill-k-d-bounds")
+	customer := siteCustomer(t, db, site, "bill-k-d-bounds-customer")
+	require.NoError(t, db.Model(customer).Update("quota", perUnit("400")).Error)
+
+	// k=0.8 was previously blocked by SiteMarkup>=1; d=1.5 was blocked by SiteCostFactor<=1.
+	cases := []struct {
+		name, key string
+		k, d      float64
+		charge    string
+	}{
+		{name: "k below one", key: "direct:k-below-one", k: 0.8, d: 0.5, charge: "80"},
+		{name: "d above one", key: "direct:d-above-one", k: 1.25, d: 1.5, charge: "50"},
+		{name: "k below one and d above one", key: "direct:k-and-d-out-of-old-range", k: 0.8, d: 1.5, charge: "80"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.NoError(t, model.QueueDirectBillingDelta(model.BillingOperation{
+				OperationKey: tc.key, UserId: customer.Id, SiteId: site.Id,
+				SiteMarkup: tc.k, SiteCostFactor: tc.d,
+			}, int(perUnit(tc.charge))))
+			_, _, err := model.ApplyBillingSettlement(tc.key)
+			require.NoError(t, err)
+			var event model.AdtySiteEarningEvent
+			require.NoError(t, db.Where("operation_key = ?", tc.key).First(&event).Error)
+			assert.Equal(t, site.Id, event.SiteId)
+			assert.Equal(t, customer.Id, event.UserId)
+			assert.InDelta(t, tc.k, event.Markup, 1e-9)
+			assert.InDelta(t, tc.d, event.CostFactor, 1e-9)
+			assert.EqualValues(t, perUnit(tc.charge), event.Quota)
+		})
+	}
+
+	var before int64
+	require.NoError(t, db.Model(&model.AdtySiteEarningEvent{}).Where("site_id = ?", site.Id).Count(&before).Error)
+	require.NoError(t, model.QueueDirectBillingDelta(model.BillingOperation{
+		OperationKey: "direct:k-zero", UserId: customer.Id, SiteId: site.Id,
+		SiteMarkup: 0, SiteCostFactor: 1.5,
+	}, int(perUnit("10"))))
+	_, _, err := model.ApplyBillingSettlement("direct:k-zero")
+	require.NoError(t, err)
+	require.NoError(t, model.QueueDirectBillingDelta(model.BillingOperation{
+		OperationKey: "direct:d-zero", UserId: customer.Id, SiteId: site.Id,
+		SiteMarkup: 1.25, SiteCostFactor: 0,
+	}, int(perUnit("10"))))
+	_, _, err = model.ApplyBillingSettlement("direct:d-zero")
+	require.NoError(t, err)
+	var after int64
+	require.NoError(t, db.Model(&model.AdtySiteEarningEvent{}).Where("site_id = ?", site.Id).Count(&after).Error)
+	assert.Equal(t, before, after, "non-positive k or d still must not book an earning event")
+}
+
+func TestMidjourneyRefundKeepsSnapshotWhenKBelowOneOrDAboveOne(t *testing.T) {
+	db := prepareSiteDB(t)
+	require.NoError(t, db.AutoMigrate(&model.Midjourney{}, &model.Channel{}))
+	_, site := openActiveSite(t, db, "mj-k-d-snap")
+	customer := siteCustomer(t, db, site, "mj-k-d-snap-customer")
+	task := &model.Midjourney{
+		UserId: customer.Id, MjId: "mj-k-d-snap", Action: "IMAGINE", Status: "FAILURE", SubmitTime: time.Now().Unix(),
+		Quota: int(perUnit("80")), BillingSiteId: site.Id, BillingSiteMarkup: 0.8, BillingSiteCostFactor: 1.5,
+	}
+	require.NoError(t, db.Create(task).Error)
+	require.NoError(t, ReviewAdtySiteCustomer(customer.Id, 1, true))
+	require.True(t, RefundMidjourneyQuota(context.Background(), task, "upstream failed"))
+
+	var event model.AdtySiteEarningEvent
+	require.NoError(t, db.Where("operation_key = ?", fmt.Sprintf("mj:%d:refund", task.Id)).First(&event).Error)
+	assert.InDelta(t, 0.8, event.Markup, 1e-9)
+	assert.InDelta(t, 1.5, event.CostFactor, 1e-9)
+	assert.EqualValues(t, -perUnit("80"), event.Quota)
+
+	var log model.Log
+	require.NoError(t, db.Where("user_id = ? AND type = ?", customer.Id, model.LogTypeRefund).First(&log).Error)
+	assert.Contains(t, log.Other, `"site_markup":0.8`, "refund log must keep a k<1 submit snapshot")
+	assert.Contains(t, log.Other, `"site_cost_factor":1.5`, "refund log must keep a d>1 submit snapshot")
+}
