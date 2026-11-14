@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"strconv"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -84,8 +87,48 @@ func outboundClient() *http.Client {
 	}
 }
 
+// endpointURLTestHook lets fixtures use a reserved host such as example.com
+// that is rewritten onto a local httptest server. Ambient DNS may map that
+// name to a blocked range (for example 198.18.0.0/15), which would otherwise
+// make NewOIDCOAuthFlow report the provider as unconfigured.
+var endpointURLTestHook struct {
+	mu   sync.RWMutex
+	host string
+}
+
+// AllowEndpointHostForTest skips DNS/IP filtering for host during endpoint
+// URL checks. Other hosts still use the production SSRF validator. The hook
+// is restored when cleanup runs.
+func AllowEndpointHostForTest(cleanup func(func()), host string) {
+	endpointURLTestHook.mu.Lock()
+	previous := endpointURLTestHook.host
+	endpointURLTestHook.host = host
+	endpointURLTestHook.mu.Unlock()
+	cleanup(func() {
+		endpointURLTestHook.mu.Lock()
+		endpointURLTestHook.host = previous
+		endpointURLTestHook.mu.Unlock()
+	})
+}
+
+func endpointURLTestHost() string {
+	endpointURLTestHook.mu.RLock()
+	defer endpointURLTestHook.mu.RUnlock()
+	return endpointURLTestHook.host
+}
+
 // ValidateEndpointURL rejects loopback, private, and link-local OAuth endpoints.
 func ValidateEndpointURL(raw string) error {
+	if host := endpointURLTestHost(); host != "" {
+		parsed, err := url.Parse(raw)
+		if err != nil {
+			return err
+		}
+		if (parsed.Scheme == "http" || parsed.Scheme == "https") &&
+			parsed.Host != "" && strings.EqualFold(parsed.Hostname(), host) {
+			return nil
+		}
+	}
 	protection, err := oauthProtection()
 	if err != nil {
 		return err

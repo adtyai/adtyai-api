@@ -55,6 +55,10 @@ type oidcOAuthFixture struct {
 
 func setupOIDCOauthTest(t *testing.T) *oidcOAuthFixture {
 	t.Helper()
+	// The fixture rewrites example.com onto a local httptest server. Skip
+	// DNS/IP filtering for that host so a sinkhole address such as
+	// 198.18.0.1 does not make /api/oauth/state fail to initialize.
+	oauth.AllowEndpointHostForTest(t.Cleanup, "example.com")
 	user, _ := setupSecurityEnrollmentTest(t)
 	previous := *system_setting.GetOIDCSettings()
 	previousAddress := system_setting.ServerAddress
