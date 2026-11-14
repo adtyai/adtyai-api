@@ -111,9 +111,16 @@ func SiteBonusEarningCovers(siteID int, bonus decimal.Decimal) error {
 	return nil
 }
 
-// ReserveAdtySiteGiftTx freezes a site gift from the earning wallet, then from an authorized margin cycle.
+// ReserveAdtySiteGiftTx freezes the site-funded gift from the earning wallet,
+// then from an authorized margin cycle. The reserved amount is the same
+// site-funded total as adtyBonusUSDForSite: the payment-method gift plus any
+// owner-funded promo bonus. Platform-funded promo bonus is not reserved.
 func ReserveAdtySiteGiftTx(tx *gorm.DB, ext *model.AdtyTopupOrder) error {
-	if tx == nil || ext == nil || ext.SiteId <= 0 || !ext.BonusUSD.IsPositive() {
+	if tx == nil || ext == nil || ext.SiteId <= 0 {
+		return nil
+	}
+	bonus := adtyBonusUSDForSite(ext)
+	if !bonus.IsPositive() {
 		return nil
 	}
 	if err := ensureAdtySiteWalletsTx(tx, ext.SiteId); err != nil {
@@ -124,13 +131,13 @@ func ReserveAdtySiteGiftTx(tx *gorm.DB, ext *model.AdtyTopupOrder) error {
 		return err
 	}
 	fromEarning := earning.Balance.Sub(earning.FrozenUSD)
-	if fromEarning.GreaterThan(ext.BonusUSD) {
-		fromEarning = ext.BonusUSD
+	if fromEarning.GreaterThan(bonus) {
+		fromEarning = bonus
 	}
 	if fromEarning.IsNegative() {
 		fromEarning = decimal.Zero
 	}
-	rest := ext.BonusUSD.Sub(fromEarning)
+	rest := bonus.Sub(fromEarning)
 	fromMargin := decimal.Zero
 	if rest.IsPositive() {
 		if !adty_setting.SiteBonusMarginFillAllowed(ext.SiteId) {

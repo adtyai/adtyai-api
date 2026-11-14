@@ -39,6 +39,80 @@ func TestReserveSiteGiftUsesEarningThenAuthorizedMargin(t *testing.T) {
 	assertGiftLedger(t, db, site.Id, "gift_reserve", "GIFT-1", model.AdtySiteWalletMargin, "0", "6")
 }
 
+func TestReserveSiteGiftIncludesOwnerPromoBonus(t *testing.T) {
+	db := prepareSiteDB(t)
+	_, site := openActiveSite(t, db, "gift-promo-owner")
+	_, err := ApplyAdtySiteWalletChange(site.Id, model.AdtySiteWalletEarnings, decimal.RequireFromString("4"), AdtySiteWalletChange{
+		Type: "earning_settlement", IdempotencyKey: "promo-owner-earn-4",
+	})
+	require.NoError(t, err)
+	require.NoError(t, OpenAdtyMarginCycle(site.Id, decimal.RequireFromString("20"), "promo-owner-cycle"))
+	adty_setting.AuthorizeSiteBonusMarginFill(site.Id, true)
+	t.Cleanup(func() { adty_setting.AuthorizeSiteBonusMarginFill(site.Id, false) })
+	ext := &model.AdtyTopupOrder{
+		TradeNo: "GIFT-PROMO-OWNER", SiteId: site.Id,
+		BonusUSD: decimal.RequireFromString("10"), PromoBonusUSD: decimal.RequireFromString("5"),
+		PromoFunder: model.AdtyPromoFunderSiteOwner, Method: "usdt.trc20", BonusMethod: "usdt",
+	}
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return ReserveAdtySiteGiftTx(tx, ext)
+	}))
+	require.Equal(t, "earning+margin", ext.GiftReserveSource)
+	require.True(t, ext.GiftReserveEarning.Equal(decimal.RequireFromString("4")))
+	require.True(t, ext.GiftReserveMargin.Equal(decimal.RequireFromString("11")))
+	earning, margin := mustSiteGiftWallets(t, db, site.Id)
+	require.True(t, earning.FrozenUSD.Equal(decimal.RequireFromString("4")))
+	require.True(t, margin.FrozenUSD.Equal(decimal.RequireFromString("11")))
+	assertGiftLedger(t, db, site.Id, "gift_reserve", "GIFT-PROMO-OWNER", model.AdtySiteWalletEarnings, "0", "4")
+	assertGiftLedger(t, db, site.Id, "gift_reserve", "GIFT-PROMO-OWNER", model.AdtySiteWalletMargin, "0", "11")
+}
+
+func TestReserveSiteGiftCoversOwnerPromoBonusAlone(t *testing.T) {
+	db := prepareSiteDB(t)
+	_, site := openActiveSite(t, db, "gift-promo-only")
+	_, err := ApplyAdtySiteWalletChange(site.Id, model.AdtySiteWalletEarnings, decimal.RequireFromString("10"), AdtySiteWalletChange{
+		Type: "earning_settlement", IdempotencyKey: "promo-only-earn-10",
+	})
+	require.NoError(t, err)
+	ext := &model.AdtyTopupOrder{
+		TradeNo: "GIFT-PROMO-ONLY", SiteId: site.Id,
+		PromoBonusUSD: decimal.RequireFromString("5"), PromoFunder: model.AdtyPromoFunderSiteOwner,
+		Method: "usdt.trc20",
+	}
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return ReserveAdtySiteGiftTx(tx, ext)
+	}))
+	require.Equal(t, "earning", ext.GiftReserveSource)
+	require.True(t, ext.GiftReserveEarning.Equal(decimal.RequireFromString("5")))
+	require.True(t, ext.GiftReserveMargin.IsZero())
+	earning, _ := mustSiteGiftWallets(t, db, site.Id)
+	require.True(t, earning.FrozenUSD.Equal(decimal.RequireFromString("5")))
+	assertGiftLedger(t, db, site.Id, "gift_reserve", "GIFT-PROMO-ONLY", model.AdtySiteWalletEarnings, "0", "5")
+}
+
+func TestReserveSiteGiftIgnoresPlatformPromoBonus(t *testing.T) {
+	db := prepareSiteDB(t)
+	_, site := openActiveSite(t, db, "gift-promo-platform")
+	_, err := ApplyAdtySiteWalletChange(site.Id, model.AdtySiteWalletEarnings, decimal.RequireFromString("20"), AdtySiteWalletChange{
+		Type: "earning_settlement", IdempotencyKey: "promo-platform-earn-20",
+	})
+	require.NoError(t, err)
+	ext := &model.AdtyTopupOrder{
+		TradeNo: "GIFT-PROMO-PLATFORM", SiteId: site.Id,
+		BonusUSD: decimal.RequireFromString("10"), PromoBonusUSD: decimal.RequireFromString("5"),
+		PromoFunder: model.AdtyPromoFunderPlatform, Method: "usdt.trc20", BonusMethod: "usdt",
+	}
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return ReserveAdtySiteGiftTx(tx, ext)
+	}))
+	require.Equal(t, "earning", ext.GiftReserveSource)
+	require.True(t, ext.GiftReserveEarning.Equal(decimal.RequireFromString("10")))
+	require.True(t, ext.GiftReserveMargin.IsZero())
+	earning, _ := mustSiteGiftWallets(t, db, site.Id)
+	require.True(t, earning.FrozenUSD.Equal(decimal.RequireFromString("10")))
+	assertGiftLedger(t, db, site.Id, "gift_reserve", "GIFT-PROMO-PLATFORM", model.AdtySiteWalletEarnings, "0", "10")
+}
+
 func TestCancelSiteGiftReleasesFreezeIdempotently(t *testing.T) {
 	db := prepareSiteDB(t)
 	_, site, customer, ext := seedReservedSiteGift(t, db, "gift-cancel", "10")
