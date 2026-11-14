@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { invalidateSidebarBadges } from '@/hooks/use-sidebar-badges'
 
 import { ErrorState } from '@/components/error-state'
 import { LoadingState } from '@/components/loading-state'
@@ -66,6 +67,7 @@ export function SiteFundPanel(props: { siteId: number }) {
     onSuccess: () => {
       setNote('')
       void client.invalidateQueries({ queryKey: siteAdminKeys.all })
+      void invalidateSidebarBadges(client)
     },
     onError: (error) => handleServerError(error),
   })
@@ -84,6 +86,7 @@ export function SiteFundPanel(props: { siteId: number }) {
       saveAdminSiteCommissionMargin(props.siteId, allowed),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: siteAdminKeys.all })
+      void invalidateSidebarBadges(client)
     },
     onError: (error) => handleServerError(error),
   })
@@ -99,6 +102,7 @@ export function SiteFundPanel(props: { siteId: number }) {
       setAmount('')
       setReason('')
       void client.invalidateQueries({ queryKey: siteAdminKeys.all })
+      void invalidateSidebarBadges(client)
     },
     onError: (error) => handleServerError(error),
   })

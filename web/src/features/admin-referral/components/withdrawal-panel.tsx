@@ -20,6 +20,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { invalidateSidebarBadges } from '@/hooks/use-sidebar-badges'
 
 import { CopyButton } from '@/components/copy-button'
 import { StaticDataTable } from '@/components/data-table/static/static-data-table'
@@ -118,6 +119,7 @@ export function WithdrawalPanel(props: {
   })
   const refresh = () =>
     queryClient.invalidateQueries({ queryKey: adminReferralKeys.all })
+    void invalidateSidebarBadges(queryClient)
   const review = useMutation({
     mutationFn: (input: { row: ReferralWithdrawal; approve: boolean }) =>
       reviewWithdrawal(input.row.id, { approve: input.approve, reason }),

@@ -93,6 +93,7 @@ func registerAdtyWorkspaceRoutes(apiRouter *gin.RouterGroup) {
 		{http.MethodPut, "/api/adty/admin/telegram/bots/:purpose", "option:write"},
 		{http.MethodPost, "/api/adty/admin/telegram/bots/:purpose/test", "option:write"},
 		{http.MethodPost, "/api/adty/telegram/webhook/:purpose/:secret", "session"},
+		{http.MethodGet, "/api/adty/badges", "profile:read"},
 		{http.MethodGet, "/api/adty/tickets", "profile:read"},
 		{http.MethodPost, "/api/adty/tickets", "profile:write"},
 		{http.MethodGet, "/api/adty/tickets/:id", "profile:read"},
@@ -150,6 +151,7 @@ func registerAdtyWorkspaceRoutes(apiRouter *gin.RouterGroup) {
 	root.GET("/data-retention", controller.GetAdtyDataRetention)
 	root.PUT("/data-retention", controller.PutAdtyDataRetention)
 	root.GET("/data-retention/runs", controller.GetAdtyDataRetentionRuns)
+	apiRouter.GET("/adty/badges", middleware.UserAuth(), controller.GetAdtySidebarBadges)
 	apiRouter.GET("/adty/tickets", middleware.UserAuth(), controller.GetAdtyTickets)
 	apiRouter.POST("/adty/tickets", middleware.UserAuth(), controller.PostAdtyTicket)
 	apiRouter.GET("/adty/tickets/:id", middleware.UserAuth(), controller.GetAdtyTicket)

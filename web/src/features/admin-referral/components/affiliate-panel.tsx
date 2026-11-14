@@ -20,6 +20,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { invalidateSidebarBadges } from '@/hooks/use-sidebar-badges'
 
 import { StaticDataTable } from '@/components/data-table/static/static-data-table'
 import { Dialog } from '@/components/dialog'
@@ -104,6 +105,7 @@ export function AffiliatePanel(props: {
     setReason('')
     setAdjustKey(crypto.randomUUID())
     void queryClient.invalidateQueries({ queryKey: adminReferralKeys.all })
+    void invalidateSidebarBadges(queryClient)
   }
   const partner = useMutation({
     mutationFn: (approve: boolean) =>

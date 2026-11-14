@@ -35,23 +35,16 @@ func referralPage(c *gin.Context, query *gorm.DB, out any) bool {
 }
 
 // GetReferralAdminBadges 是侧边栏「推广管理」旁的待处理数：合作伙伴申请 + 待审核提现 + 待打款提现。
+// 计数按调用者的角色与站点过滤：Root 全局，非 Root 管理员只看主站，不再做未过滤的全局合计。
 func GetReferralAdminBadges(c *gin.Context) {
-	var partners, pendingWithdrawals, approvedWithdrawals int64
-	if err := model.DB.Model(&model.ReferralAffiliate{}).Where("partner_status = ?", model.ReferralPartnerStatusPending).Count(&partners).Error; err != nil {
-		common.ApiError(c, err)
-		return
-	}
-	if err := model.DB.Model(&model.ReferralWithdrawal{}).Where("status = ?", model.ReferralWithdrawalStatusPending).Count(&pendingWithdrawals).Error; err != nil {
-		common.ApiError(c, err)
-		return
-	}
-	if err := model.DB.Model(&model.ReferralWithdrawal{}).Where("status = ?", model.ReferralWithdrawalStatusApproved).Count(&approvedWithdrawals).Error; err != nil {
+	badges, err := service.CollectAdtyReferralAdminBadges(c.GetInt("id"))
+	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
 	common.ApiSuccess(c, gin.H{
-		"partners": partners, "pending_withdrawals": pendingWithdrawals, "approved_withdrawals": approvedWithdrawals,
-		"total": partners + pendingWithdrawals + approvedWithdrawals,
+		"partners": badges.Partners, "pending_withdrawals": badges.PendingWithdrawals, "approved_withdrawals": badges.ApprovedWithdrawals,
+		"total": badges.Partners + badges.PendingWithdrawals + badges.ApprovedWithdrawals,
 	})
 }
 

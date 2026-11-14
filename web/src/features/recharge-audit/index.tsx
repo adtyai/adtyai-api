@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { invalidateSidebarBadges } from '@/hooks/use-sidebar-badges'
 
 import { StaticDataTable } from '@/components/data-table/static/static-data-table'
 import { EmptyState } from '@/components/empty-state'
@@ -133,6 +134,7 @@ export function RechargeAudit(props: {
   })
   const refresh = () =>
     queryClient.invalidateQueries({ queryKey: ['recharge-audit'] })
+    void invalidateSidebarBadges(queryClient)
   const total = ordersQuery.data?.total ?? 0
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE))
 

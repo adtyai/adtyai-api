@@ -42,8 +42,17 @@ import {
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import {
+  ORDER_MANAGEMENT_BADGE_KINDS,
+  REFERRAL_ADMIN_BADGE_KINDS,
+  RESELLER_SITES_BADGE_KINDS,
+  SITE_OWNER_BADGE_KINDS,
+  STAFF_WORKSPACE_BADGE_KINDS,
+  TICKET_BADGE_KINDS,
+  useSidebarBadges,
+} from '@/hooks/use-sidebar-badges'
+
 import type { SidebarData } from '@/components/layout/types'
-import { useAdminReferralBadge } from '@/features/admin-referral/hooks/use-admin-referral-badge'
 import { ADTY_PERMISSIONS } from '@/lib/adty-permissions'
 import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
@@ -58,7 +67,39 @@ export function useSidebarData(): SidebarData {
   // ADTY task 8.2: titles and order follow the console mockup. Group ids are
   // unchanged because module switches and the admin-only filter key on them.
   const { t } = useTranslation()
-  const referralBadge = useAdminReferralBadge()
+  const sidebarBadges = useSidebarBadges()
+  const failedLabel = t('Sidebar badge unavailable')
+  const mixedLabel = t('Sidebar badge pending work')
+  const staffWorkspaceBadge = sidebarBadges.badge(
+    STAFF_WORKSPACE_BADGE_KINDS,
+    mixedLabel,
+    failedLabel
+  )
+  const ticketsBadge = sidebarBadges.badge(
+    TICKET_BADGE_KINDS,
+    mixedLabel,
+    failedLabel
+  )
+  const siteOwnerBadge = sidebarBadges.badge(
+    SITE_OWNER_BADGE_KINDS,
+    mixedLabel,
+    failedLabel
+  )
+  const referralAdminBadge = sidebarBadges.badge(
+    REFERRAL_ADMIN_BADGE_KINDS,
+    mixedLabel,
+    failedLabel
+  )
+  const resellerSitesBadge = sidebarBadges.badge(
+    RESELLER_SITES_BADGE_KINDS,
+    mixedLabel,
+    failedLabel
+  )
+  const orderManagementBadge = sidebarBadges.badge(
+    ORDER_MANAGEMENT_BADGE_KINDS,
+    mixedLabel,
+    failedLabel
+  )
   const isSiteOwner = useAuthStore(
     (state) => state.auth.user?.adty_site_owner === true
   )
@@ -74,7 +115,7 @@ export function useSidebarData(): SidebarData {
             id: 'personal',
             title: t('Account'),
             items: [
-              { title: t('Staff workspace'), url: '/site-staff', icon: Users },
+              { title: t('Staff workspace'), url: '/site-staff', icon: Users, badge: staffWorkspaceBadge },
             ],
           },
         ],
@@ -144,6 +185,7 @@ export function useSidebarData(): SidebarData {
               title: t('Tickets'),
               url: '/profile#tickets',
               icon: LifeBuoy,
+              badge: ticketsBadge,
             },
             {
               title: t('Referral'),
@@ -158,6 +200,7 @@ export function useSidebarData(): SidebarData {
                     url: '/site-owner/overview',
                     activeUrls: ['/site-owner'],
                     icon: Store,
+                    badge: siteOwnerBadge,
                   },
                 ]
               : []),
@@ -199,7 +242,7 @@ export function useSidebarData(): SidebarData {
               title: t('Referral admin'),
               url: '/admin-referral',
               icon: HandCoins,
-              badge: referralBadge,
+              badge: referralAdminBadge,
               requiredPermission: ADTY_PERMISSIONS.REFERRAL_READ,
             },
             {
@@ -207,12 +250,14 @@ export function useSidebarData(): SidebarData {
               url: '/site-admin/sites',
               activeUrls: ['/site-admin'],
               icon: Store,
+              badge: resellerSitesBadge,
               requiredPermission: ADTY_PERMISSIONS.SITE_READ,
             },
             {
               title: t('Order management'),
               url: '/recharge-audit',
               icon: ReceiptText,
+              badge: orderManagementBadge,
               requiredPermission: ADTY_PERMISSIONS.FINANCE_READ,
             },
             {
@@ -238,5 +283,5 @@ export function useSidebarData(): SidebarData {
         },
       ],
     }
-  }, [t, referralBadge, isSiteOwner, isStaff])
+  }, [t, staffWorkspaceBadge, ticketsBadge, siteOwnerBadge, referralAdminBadge, resellerSitesBadge, orderManagementBadge, isSiteOwner, isStaff])
 }

@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { invalidateSidebarBadges } from '@/hooks/use-sidebar-badges'
 
 import { StaticDataTable } from '@/components/data-table/static/static-data-table'
 import { EmptyState } from '@/components/empty-state'
@@ -60,6 +61,7 @@ export function SiteReferralPanel() {
     onSuccess: () => {
       setRate('')
       void client.invalidateQueries({ queryKey: siteOwnerKeys.all })
+      void invalidateSidebarBadges(client)
     },
     onError: (error) => handleServerError(error),
   })
@@ -67,6 +69,7 @@ export function SiteReferralPanel() {
     mutationFn: (enabled: boolean) => saveOwnerSiteReferralEnabled(enabled),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: siteOwnerKeys.all })
+      void invalidateSidebarBadges(client)
     },
     onError: (error) => handleServerError(error),
   })
@@ -74,6 +77,7 @@ export function SiteReferralPanel() {
     mutationFn: resumeOwnerSiteCoverage,
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: siteOwnerKeys.all })
+      void invalidateSidebarBadges(client)
     },
     onError: (error) => handleServerError(error),
   })
@@ -84,6 +88,7 @@ export function SiteReferralPanel() {
       setInviterId('')
       setInviteeId('')
       void client.invalidateQueries({ queryKey: siteOwnerKeys.all })
+      void invalidateSidebarBadges(client)
     },
     onError: (error) => handleServerError(error),
   })

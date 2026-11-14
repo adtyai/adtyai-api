@@ -20,6 +20,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { invalidateSidebarBadges } from '@/hooks/use-sidebar-badges'
 
 import { ErrorState } from '@/components/error-state'
 import { SectionPageLayout } from '@/components/layout'
@@ -73,6 +74,7 @@ export function AdminReferral() {
     onSuccess: () => {
       toast.success(t('Settlement finished'))
       void queryClient.invalidateQueries({ queryKey: adminReferralKeys.all })
+      void invalidateSidebarBadges(queryClient)
     },
     onError: (err) => handleServerError(err),
   })

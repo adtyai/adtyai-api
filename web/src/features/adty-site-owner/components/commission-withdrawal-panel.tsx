@@ -20,6 +20,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { invalidateSidebarBadges } from '@/hooks/use-sidebar-badges'
 
 import { CopyButton } from '@/components/copy-button'
 import { ErrorState } from '@/components/error-state'
@@ -219,6 +220,7 @@ export function CommissionWithdrawalPanel() {
   })
   const refresh = () =>
     void client.invalidateQueries({ queryKey: siteOwnerKeys.all })
+    void invalidateSidebarBadges(client)
 
   return (
     <section className='flex flex-col gap-4' aria-label={t('Invite commission withdrawal')}>

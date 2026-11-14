@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { invalidateSidebarBadges } from '@/hooks/use-sidebar-badges'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -74,6 +75,7 @@ export function StaffBalanceRequestDialog(props: {
       void client.invalidateQueries({
         queryKey: ['adty-staff', props.userId, 'balance-requests'],
       })
+      void invalidateSidebarBadges(client)
       props.onClose()
     },
     onError: (error) => handleServerError(error),

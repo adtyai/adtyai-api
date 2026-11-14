@@ -8754,6 +8754,8 @@
   "Binding code": "绑定码",
   "Telegram user id": "Telegram 用户编号",
   "Confirm binding": "确认绑定",
+  "Sidebar badge unavailable": "角标不可用",
+  "Sidebar badge pending work": "待办",
   "Tickets": "工单",
   "Images only. Hide API keys, passwords, and payment details.": "只能上传图片。请遮挡 API Key、密码和支付信息。",
   "No tickets": "还没有工单",

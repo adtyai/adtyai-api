@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { invalidateSidebarBadges } from '@/hooks/use-sidebar-badges'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -91,6 +92,7 @@ export function TicketCenter() {
 
   const refresh = async () => {
     await queryClient.invalidateQueries({ queryKey: ['adty-tickets'] })
+    void invalidateSidebarBadges(queryClient)
   }
 
   const create = async () => {

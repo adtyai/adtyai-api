@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { invalidateSidebarBadges } from '@/hooks/use-sidebar-badges'
 
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { StaticDataTable } from '@/components/data-table'
@@ -70,6 +71,7 @@ export function StaffPanel(props: { siteId: number }) {
           siteId: props.siteId,
         }),
       }),
+      void invalidateSidebarBadges(client)
     onError: (error) => handleServerError(error),
   })
   const list = useQuery({

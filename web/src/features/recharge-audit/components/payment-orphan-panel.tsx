@@ -20,6 +20,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { invalidateSidebarBadges } from '@/hooks/use-sidebar-badges'
 
 import { StaticDataTable } from '@/components/data-table/static/static-data-table'
 import { EmptyState } from '@/components/empty-state'
@@ -62,6 +63,7 @@ export function PaymentOrphanPanel(props: PaymentOrphanPanelProps) {
   })
   const refresh = () =>
     queryClient.invalidateQueries({ queryKey: ['recharge-audit'] })
+    void invalidateSidebarBadges(queryClient)
   const credit = useMutation({
     mutationFn: (id: number) => creditPaymentOrphan(id, ''),
     onSuccess: () => {

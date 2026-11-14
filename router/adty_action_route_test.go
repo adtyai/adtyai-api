@@ -15,6 +15,7 @@ func TestAdtyGapRoutesRegistered(t *testing.T) {
 		found[route.Method+" "+route.Path] = true
 	}
 	for _, key := range []string{
+		"GET /api/adty/badges",
 		"POST /api/adty/notifications/hide",
 		"POST /api/adty/notifications/todo/complete",
 		"GET /api/adty/staff/balance-requests",
