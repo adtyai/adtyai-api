@@ -181,7 +181,8 @@ func TestMarkupAppliedOnEveryBillingPath(t *testing.T) {
 		}},
 		{"violation fee", func(t *testing.T, ctx *gin.Context, user *model.User, token *model.Token) int {
 			info := newInfo(ctx, user, token, "markup-text")
-			charged := ChargeViolationFeeIfNeeded(ctx, info, types.NewError(fmt.Errorf("blocked"), types.ErrorCodeViolationFeeGrokCSAM))
+			charged, err := ChargeViolationFeeIfNeeded(ctx, info, types.NewError(fmt.Errorf("blocked"), types.ErrorCodeViolationFeeGrokCSAM))
+			require.NoError(t, err)
 			require.True(t, charged)
 			return 0
 		}},

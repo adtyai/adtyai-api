@@ -100,31 +100,32 @@ func calcViolationFeeQuota(amount, groupRatio float64) int {
 
 // ChargeViolationFeeIfNeeded charges an additional fee after the normal flow finishes (including refund).
 // It uses Grok fee settings as the fee policy.
-func ChargeViolationFeeIfNeeded(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, apiErr *types.NewAPIError) bool {
+// If the wallet debit succeeds but the shortfall hold cannot be recorded, charged is true and the hold error is returned.
+func ChargeViolationFeeIfNeeded(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, apiErr *types.NewAPIError) (bool, error) {
 	if ctx == nil || relayInfo == nil || apiErr == nil {
-		return false
+		return false, nil
 	}
 	if !shouldChargeViolationFee(apiErr) {
-		return false
+		return false, nil
 	}
 
 	settings := model_setting.GetGrokSettings()
 	if settings == nil || !settings.ViolationDeductionEnabled {
-		return false
+		return false, nil
 	}
 
 	groupRatio := relayInfo.PriceData.GroupRatioInfo.GroupRatio
 	feeQuota := calcViolationFeeQuota(settings.ViolationDeductionAmount, groupRatio)
 	if feeQuota <= 0 {
-		return false
+		return false, nil
 	}
 
 	shortfallBefore := relayInfo.BillingShortfall
 	if err := PostConsumeQuota(relayInfo, feeQuota, 0, true, ctx); err != nil {
 		logger.LogError(ctx, common.LogText("failed to charge violation fee: %s", err.Error()))
-		return false
+		return false, err
 	}
-	adtyNoteBillingShortfall(ctx, relayInfo, shortfallBefore) // 二开：余额下限
+	holdErr := adtyNoteBillingShortfall(ctx, relayInfo, shortfallBefore)
 
 	model.UpdateUserUsedQuotaAndRequestCount(relayInfo.UserId, feeQuota)
 	model.UpdateChannelUsedQuota(relayInfo.ChannelId, feeQuota)
@@ -159,5 +160,5 @@ func ChargeViolationFeeIfNeeded(ctx *gin.Context, relayInfo *relaycommon.RelayIn
 		Other:          other,
 	})
 
-	return true
+	return true, holdErr
 }

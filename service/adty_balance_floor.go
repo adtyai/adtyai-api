@@ -2,6 +2,7 @@ package service
 
 import (
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/gin-gonic/gin"
@@ -17,15 +18,22 @@ const AdtyBillingShortfallContextKey = "adty_billing_shortfall"
 const adtyShortfallAdminKey = "shortfall_quota"
 
 // adtyNoteBillingShortfall 在扣费之后调用：把这次扣费新增的差额（RelayInfo.BillingShortfall 的增量）
-// 记进 gin 上下文，交给紧接着的 RecordConsumeLog 钩子写日志。
-func adtyNoteBillingShortfall(c *gin.Context, relayInfo *relaycommon.RelayInfo, before int) {
+// 记进 gin 上下文，交给紧接着的 RecordConsumeLog 钩子写日志，并写入暂停记录。
+// 暂停记录写入失败不得被当成成功，错误交给调用方；本函数不回滚已经成功的钱包扣款。
+func adtyNoteBillingShortfall(c *gin.Context, relayInfo *relaycommon.RelayInfo, before int) error {
 	if c == nil || relayInfo == nil {
-		return
+		return nil
 	}
-	if added := relayInfo.BillingShortfall - before; added > 0 {
-		c.Set(AdtyBillingShortfallContextKey, c.GetInt(AdtyBillingShortfallContextKey)+added)
-		_ = model.RecordAdtyBillingHold(relayInfo.UserId, relayInfo.RequestId, added)
+	added := relayInfo.BillingShortfall - before
+	if added <= 0 {
+		return nil
 	}
+	c.Set(AdtyBillingShortfallContextKey, c.GetInt(AdtyBillingShortfallContextKey)+added)
+	if err := model.RecordAdtyBillingHold(relayInfo.UserId, relayInfo.RequestId, added); err != nil {
+		logger.LogError(c, common.LogText("failed to record billing shortfall hold for request %s: %s", relayInfo.RequestId, err.Error()))
+		return err
+	}
+	return nil
 }
 
 // adtyTakeBillingShortfall 由消费日志钩子调用：取出差额写进 admin_info 并清零，一笔差额只记一条日志。

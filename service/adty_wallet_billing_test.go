@@ -423,7 +423,7 @@ func prepareFloorDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	workerBaseline := gopool.WorkerCount()
 	db := prepareSiteDB(t)
-	require.NoError(t, db.AutoMigrate(&model.Token{}, &model.Channel{}, &model.Task{}, &model.Midjourney{}))
+	require.NoError(t, db.AutoMigrate(&model.Token{}, &model.Channel{}, &model.Task{}, &model.Midjourney{}, &model.AdtyBillingHold{}))
 	quotaSetting := operation_setting.GetQuotaSetting()
 	oldTrust, oldBatch, oldLogConsume := quotaSetting.TrustQuotaUSD, common.BatchUpdateEnabled, common.LogConsumeEnabled
 	savedGroups := ratio_setting.GroupRatio2JSONString()
@@ -1045,7 +1045,9 @@ func TestAdtyBalanceFloorViolationFee(t *testing.T) {
 
 	user, token := floorCustomer(t, db, nil, "floor-violation", 1000)
 	ctx, info, _ := floorRelay(t, user, token)
-	require.True(t, ChargeViolationFeeIfNeeded(ctx, info, types.NewError(fmt.Errorf("blocked"), types.ErrorCodeViolationFeeGrokCSAM)))
+	charged, err := ChargeViolationFeeIfNeeded(ctx, info, types.NewError(fmt.Errorf("blocked"), types.ErrorCodeViolationFeeGrokCSAM))
+	require.NoError(t, err)
+	require.True(t, charged)
 	assert.Equal(t, 0, floorBalance(t, user.Id))
 	log, adminInfo := floorLastAdminInfo(t, db, user.Id, model.LogTypeConsume)
 	assert.Equal(t, 20_000, log.Quota)

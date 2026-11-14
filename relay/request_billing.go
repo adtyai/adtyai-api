@@ -77,6 +77,8 @@ func RefundFailedRequestBilling(c *gin.Context, info *relaycommon.RelayInfo, api
 	if info.Billing != nil {
 		info.Billing.Refund(c)
 	}
-	service.ChargeViolationFeeIfNeeded(c, info, apiErr)
+	if _, err := service.ChargeViolationFeeIfNeeded(c, info, apiErr); err != nil {
+		logger.LogError(c, common.LogText("failed to record violation-fee shortfall hold: %s", err.Error()))
+	}
 	return apiErr
 }

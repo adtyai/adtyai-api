@@ -139,9 +139,12 @@ func SettleBilling(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, actualQuo
 
 		shortfallBefore := relayInfo.BillingShortfall
 		err := relayInfo.Billing.Settle(actualQuota)
-		adtyNoteBillingShortfall(ctx, relayInfo, shortfallBefore)
+		holdErr := adtyNoteBillingShortfall(ctx, relayInfo, shortfallBefore)
 		if err != nil {
 			return err
+		}
+		if holdErr != nil {
+			return holdErr
 		}
 
 		// 发送额度通知
@@ -156,8 +159,11 @@ func SettleBilling(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, actualQuo
 	if quotaDelta != 0 {
 		shortfallBefore := relayInfo.BillingShortfall
 		_, err := postConsumeQuotaWithResult(relayInfo, quotaDelta, relayInfo.FinalPreConsumedQuota, true, ctx)
-		adtyNoteBillingShortfall(ctx, relayInfo, shortfallBefore) // 二开：余额下限
-		return err
+		holdErr := adtyNoteBillingShortfall(ctx, relayInfo, shortfallBefore)
+		if err != nil {
+			return err
+		}
+		return holdErr
 	}
 	return nil
 }

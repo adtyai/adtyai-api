@@ -212,7 +212,7 @@ func PreWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usag
 	}
 	shortfallBefore := relayInfo.BillingShortfall
 	result, err := postConsumeQuotaWithResult(relayInfo, quota, 0, false, ctx)
-	adtyNoteBillingShortfall(ctx, relayInfo, shortfallBefore) // 二开：余额下限，差额记到本会话下一条消费日志
+	holdErr := adtyNoteBillingShortfall(ctx, relayInfo, shortfallBefore)
 	if err != nil {
 		return err
 	}
@@ -227,7 +227,7 @@ func PreWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usag
 		relayInfo.RealtimeAlreadyCharged += charged
 	}
 	logger.LogInfo(ctx, common.LogText("realtime streaming consume quota success, quota: %d", quota))
-	return nil
+	return holdErr
 }
 
 func PostWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, modelName string,
