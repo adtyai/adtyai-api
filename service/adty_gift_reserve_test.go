@@ -452,10 +452,23 @@ func TestPrepareTopUpGiftReacquiresOwnerPromoShortfallWhenHeldEqualsBonusUSD(t *
 			Type: "gift_reserve", RefType: "topup", RefID: tradeNo, IdempotencyKey: "gift:" + tradeNo + ":earn",
 			HoldDelta: bonusUSD,
 		})
-		return err
+		if err != nil {
+			return err
+		}
+		ext.GiftReserveEarning = bonusUSD
+		ext.GiftReserveMargin = decimal.Zero
+		ext.GiftReserveSource = "earning"
+		return tx.Model(ext).Updates(map[string]any{
+			"gift_reserve_source":  ext.GiftReserveSource,
+			"gift_reserve_earning": ext.GiftReserveEarning,
+			"gift_reserve_margin":  ext.GiftReserveMargin,
+		}).Error
 	}))
 	earningBefore, _ := mustSiteGiftWallets(t, db, site.Id)
 	require.True(t, earningBefore.FrozenUSD.Equal(bonusUSD))
+	require.True(t, ext.GiftReserveEarning.Equal(bonusUSD))
+	require.True(t, ext.GiftReserveMargin.IsZero())
+	require.Equal(t, "earning", ext.GiftReserveSource)
 
 	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
 		granted, err := prepareTopUpGiftOnCreditTx(tx, ext, common.TopUpStatusExpired)
@@ -467,15 +480,92 @@ func TestPrepareTopUpGiftReacquiresOwnerPromoShortfallWhenHeldEqualsBonusUSD(t *
 	}))
 	earning, _ := mustSiteGiftWallets(t, db, site.Id)
 	require.True(t, earning.FrozenUSD.Equal(decimal.RequireFromString("15")))
-	require.True(t, ext.GiftReserveEarning.Equal(decimal.RequireFromString("5")))
+	require.True(t, ext.GiftReserveEarning.Equal(decimal.RequireFromString("15")))
 	require.True(t, ext.GiftReserveMargin.IsZero())
 	require.Equal(t, "earning", ext.GiftReserveSource)
+	var stored model.AdtyTopupOrder
+	require.NoError(t, db.Where("trade_no = ?", tradeNo).First(&stored).Error)
+	require.True(t, stored.GiftReserveEarning.Equal(decimal.RequireFromString("15")))
+	require.True(t, stored.GiftReserveMargin.IsZero())
+	require.Equal(t, "earning", stored.GiftReserveSource)
 	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
 		held, err := netGiftHoldTx(tx, site.Id, tradeNo)
 		if err != nil {
 			return err
 		}
 		require.True(t, held.Equal(decimal.RequireFromString("15")))
+		return ReleaseAdtySiteGiftTx(tx, &stored)
+	}))
+	earningAfter, _ := mustSiteGiftWallets(t, db, site.Id)
+	require.True(t, earningAfter.FrozenUSD.IsZero())
+	assertGiftLedger(t, db, site.Id, "gift_release", tradeNo, model.AdtySiteWalletEarnings, "0", "-15")
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		held, err := netGiftHoldTx(tx, site.Id, tradeNo)
+		if err != nil {
+			return err
+		}
+		require.True(t, held.IsZero(), "release must unfreeze the combined official reserve, not only the increment")
+		return nil
+	}))
+}
+
+func TestConsumingOwnerPromoSiteGiftReleasesFullEntitlementProportion(t *testing.T) {
+	db := prepareSiteDB(t)
+	_, site, customer, ext := seedReservedSiteGiftWithPromo(t, db, "gift-spend-owner", "10", "5", model.AdtyPromoFunderSiteOwner)
+	require.True(t, ext.GiftReserveEarning.Add(ext.GiftReserveMargin).Equal(decimal.RequireFromString("15")))
+	_, err := model.CompleteAdtyTopUp(ext.TradeNo, model.AdtyPaymentFacts{
+		Provider: model.PaymentProviderAdtyBEpusdt, PaidAmount: decimal.NewFromInt(100), FiatAmount: decimal.NewFromInt(100),
+		PaidCurrency: "USDT", Source: model.AdtyPaymentSourceCallback,
+	}, "")
+	require.NoError(t, err)
+
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return model.ConsumeAdtyFundBatchesTx(tx, customer.Id, 50_000_000, 57_500_000)
+	}))
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		held, err := netGiftHoldTx(tx, site.Id, ext.TradeNo)
+		if err != nil {
+			return err
+		}
+		require.True(t, held.Equal(decimal.RequireFromString("15")), "consuming principal must not release the gift guarantee")
+		return nil
+	}))
+
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return model.ConsumeAdtyFundBatchesTx(tx, customer.Id, 2_500_000, 7_500_000)
+	}))
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		held, err := netGiftHoldTx(tx, site.Id, ext.TradeNo)
+		if err != nil {
+			return err
+		}
+		require.True(t, held.Equal(decimal.RequireFromString("10")), "partial bonus consume must release 5 against the full 15 entitlement, not ~3.33")
+		return nil
+	}))
+}
+
+func TestConsumingPlatformPromoSiteGiftIgnoresPlatformExtra(t *testing.T) {
+	db := prepareSiteDB(t)
+	_, site, customer, ext := seedReservedSiteGiftWithPromo(t, db, "gift-spend-plat", "10", "5", model.AdtyPromoFunderPlatform)
+	require.True(t, ext.GiftReserveEarning.Add(ext.GiftReserveMargin).Equal(decimal.RequireFromString("10")))
+	_, err := model.CompleteAdtyTopUp(ext.TradeNo, model.AdtyPaymentFacts{
+		Provider: model.PaymentProviderAdtyBEpusdt, PaidAmount: decimal.NewFromInt(100), FiatAmount: decimal.NewFromInt(100),
+		PaidCurrency: "USDT", Source: model.AdtyPaymentSourceCallback,
+	}, "")
+	require.NoError(t, err)
+
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return model.ConsumeAdtyFundBatchesTx(tx, customer.Id, 50_000_000, 57_500_000)
+	}))
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return model.ConsumeAdtyFundBatchesTx(tx, customer.Id, 2_500_000, 7_500_000)
+	}))
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		held, err := netGiftHoldTx(tx, site.Id, ext.TradeNo)
+		if err != nil {
+			return err
+		}
+		require.True(t, held.Equal(decimal.RequireFromString("5")), "platform-funded promo extras must not be included in the spend proportion")
 		return nil
 	}))
 }

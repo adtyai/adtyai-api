@@ -206,6 +206,18 @@ func reacquireAdtySiteGiftTx(tx *gorm.DB, ext *model.AdtyTopupOrder) error {
 		}
 		fromMargin = rest
 	}
+	// Official snapshot used later by ReleaseAdtySiteGiftTx. Capture the
+	// pre-increment base now so a shortfall top-up can add this reservation
+	// onto the original official total instead of replacing it.
+	addToExisting := held.IsPositive()
+	origEarning, origMargin := ext.GiftReserveEarning, ext.GiftReserveMargin
+	if addToExisting && !origEarning.IsPositive() && !origMargin.IsPositive() {
+		heldEarning, heldMargin, err := netGiftHoldByKindTx(tx, ext.SiteId, ext.TradeNo)
+		if err != nil {
+			return err
+		}
+		origEarning, origMargin = heldEarning, heldMargin
+	}
 	key := "gift:" + ext.TradeNo
 	already, err := adtyWalletIdempotencyExists(tx, key+":earn:reacquire", key+":margin:reacquire")
 	if err != nil {
@@ -227,12 +239,20 @@ func reacquireAdtySiteGiftTx(tx *gorm.DB, ext *model.AdtyTopupOrder) error {
 			return err
 		}
 	}
-	ext.GiftReserveEarning = fromEarning
-	ext.GiftReserveMargin = fromMargin
+	if addToExisting {
+		ext.GiftReserveEarning = origEarning.Add(fromEarning)
+		ext.GiftReserveMargin = origMargin.Add(fromMargin)
+	} else {
+		// Full reacquire after cancel/expire: net hold is 0 because Release
+		// already wrote gift_release. Set the snapshot to this reservation
+		// only; do not add it onto a stale pre-release snapshot.
+		ext.GiftReserveEarning = fromEarning
+		ext.GiftReserveMargin = fromMargin
+	}
 	switch {
-	case fromEarning.IsPositive() && fromMargin.IsPositive():
+	case ext.GiftReserveEarning.IsPositive() && ext.GiftReserveMargin.IsPositive():
 		ext.GiftReserveSource = "earning+margin"
-	case fromMargin.IsPositive():
+	case ext.GiftReserveMargin.IsPositive():
 		ext.GiftReserveSource = "margin"
 	default:
 		ext.GiftReserveSource = "earning"
@@ -450,7 +470,8 @@ func applySiteGiftSpendForSourceTx(tx *gorm.DB, userID int, tradeNo string, take
 	if err := tx.Where("trade_no = ? AND user_id = ?", tradeNo, userID).Limit(1).Find(&ext).Error; err != nil {
 		return err
 	}
-	if ext.Id == 0 || ext.SiteId <= 0 || !ext.BonusUSD.IsPositive() {
+	bonus := adtyBonusUSDForSite(&ext)
+	if ext.Id == 0 || ext.SiteId <= 0 || !bonus.IsPositive() {
 		return nil
 	}
 	if ext.GiftFulfillmentStatus == model.AdtyGiftFulfillmentPending {
@@ -474,7 +495,7 @@ func applySiteGiftSpendForSourceTx(tx *gorm.DB, userID int, tradeNo string, take
 		Select("COALESCE(SUM(remaining),0)").Scan(&remaining).Error; err != nil {
 		return err
 	}
-	toSpend := ext.BonusUSD.Mul(decimal.NewFromInt(takenQuota)).Div(decimal.NewFromInt(siteQuota)).RoundFloor(8)
+	toSpend := bonus.Mul(decimal.NewFromInt(takenQuota)).Div(decimal.NewFromInt(siteQuota)).RoundFloor(8)
 	if remaining <= 0 || toSpend.GreaterThan(held) {
 		toSpend = held
 	}
