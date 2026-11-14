@@ -254,12 +254,12 @@ func PostAdtyAdminTelegramTest(c *gin.Context) {
 }
 
 func GetAdtyTickets(c *gin.Context) {
-	rows, canNote, err := service.ListAdtyTickets(c.GetInt("id"))
+	list, err := service.ListAdtyTickets(c.GetInt("id"), c.Query("queue"))
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	common.ApiSuccess(c, gin.H{"tickets": rows, "can_note": canNote})
+	common.ApiSuccess(c, list)
 }
 
 func PostAdtyTicket(c *gin.Context) {

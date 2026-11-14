@@ -1,12 +1,21 @@
 package model
 
+import "gorm.io/gorm"
+
 const (
-	AdtyTicketOpen             = "open"
-	AdtyTicketAssigned         = "assigned"
-	AdtyTicketWaitingUser      = "waiting_user"
-	AdtyTicketWaitingInternal  = "waiting_internal"
-	AdtyTicketResolved         = "resolved"
-	AdtyTicketClosed           = "closed"
+	AdtyTicketNew               = "new"
+	AdtyTicketPendingAssignment = "pending_assignment"
+	AdtyTicketInProgress        = "in_progress"
+	AdtyTicketWaitingUser       = "waiting_user"
+	AdtyTicketWaitingInternal   = "waiting_internal"
+	AdtyTicketResolved          = "resolved"
+	AdtyTicketClosed            = "closed"
+	// AdtyTicketLegacyOpen and AdtyTicketLegacyAssigned are historical stored
+	// values. RemapAdtyTicketLegacyStatuses and NormalizeAdtyTicketStatus map
+	// them into the official states: assigned → in_progress; unassigned open →
+	// new; open with an assignee → in_progress.
+	AdtyTicketLegacyOpen       = "open"
+	AdtyTicketLegacyAssigned   = "assigned"
 	AdtyTicketVisibilityPublic = "public"
 	AdtyTicketVisibilityNote   = "internal"
 	AdtyTicketPriorityNormal   = "normal"
@@ -89,3 +98,45 @@ type AdtyTicketPolicy struct {
 }
 
 func (AdtyTicketPolicy) TableName() string { return "adty_ticket_policies" }
+
+// NormalizeAdtyTicketStatus maps a stored status, including historical leftovers,
+// onto one official G.12.7 state. assigned → in_progress; unassigned open → new;
+// open with an assignee → in_progress. Official values are returned unchanged.
+func NormalizeAdtyTicketStatus(status string, assigneeId int) string {
+	switch status {
+	case AdtyTicketLegacyAssigned:
+		return AdtyTicketInProgress
+	case AdtyTicketLegacyOpen:
+		if assigneeId > 0 {
+			return AdtyTicketInProgress
+		}
+		return AdtyTicketNew
+	default:
+		return status
+	}
+}
+
+// AdtyTicketStatusIsLive reports whether an official (or leftover) status is still open for handling.
+func AdtyTicketStatusIsLive(status string, assigneeId int) bool {
+	switch NormalizeAdtyTicketStatus(status, assigneeId) {
+	case AdtyTicketNew, AdtyTicketPendingAssignment, AdtyTicketInProgress, AdtyTicketWaitingUser, AdtyTicketWaitingInternal:
+		return true
+	default:
+		return false
+	}
+}
+
+// RemapAdtyTicketLegacyStatuses rewrites leftover open/assigned rows into official
+// states. Tickets are never deleted. The mapping is idempotent.
+func RemapAdtyTicketLegacyStatuses(db *gorm.DB) error {
+	if db == nil {
+		db = DB
+	}
+	if err := db.Model(&AdtyTicket{}).Where("status = ?", AdtyTicketLegacyAssigned).Update("status", AdtyTicketInProgress).Error; err != nil {
+		return err
+	}
+	if err := db.Model(&AdtyTicket{}).Where("status = ? AND assignee_id > 0", AdtyTicketLegacyOpen).Update("status", AdtyTicketInProgress).Error; err != nil {
+		return err
+	}
+	return db.Model(&AdtyTicket{}).Where("status = ? AND assignee_id = 0", AdtyTicketLegacyOpen).Update("status", AdtyTicketNew).Error
+}

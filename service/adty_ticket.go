@@ -49,6 +49,23 @@ type AdtyTicketDetail struct {
 	CanManage bool                      `json:"can_manage"`
 }
 
+type AdtyTicketBadges struct {
+	New               int64 `json:"new"`
+	PendingAssignment int64 `json:"pending_assignment"`
+	InProgress        int64 `json:"in_progress"`
+	WaitingUser       int64 `json:"waiting_user"`
+	WaitingInternal   int64 `json:"waiting_internal"`
+	Urgent            int64 `json:"urgent"`
+	Pending           int64 `json:"pending"`
+}
+
+type AdtyTicketList struct {
+	Tickets   []model.AdtyTicket `json:"tickets"`
+	CanNote   bool               `json:"can_note"`
+	CanManage bool               `json:"can_manage"`
+	Badges    AdtyTicketBadges   `json:"badges"`
+}
+
 type adtyTicketActor struct {
 	User        model.User
 	Staff       *model.AdtySiteStaff
@@ -112,7 +129,7 @@ func CreateAdtyTicket(userId int, input AdtyTicketInput) (*model.AdtyTicket, err
 		}
 		ticket := model.AdtyTicket{
 			SiteId: actor.User.SiteId, UserId: actor.User.Id, TeamId: actor.TeamId, Type: input.Type,
-			Title: input.Title, Priority: priority, Status: model.AdtyTicketOpen,
+			Title: input.Title, Priority: priority, Status: model.AdtyTicketNew,
 			RelatedKind: input.RelatedKind, RelatedRef: input.RelatedRef, RelatedModel: input.RelatedModel,
 			RelatedGroup: input.RelatedGroup, RelatedError: input.RelatedError,
 		}
@@ -135,13 +152,33 @@ func CreateAdtyTicket(userId int, input AdtyTicketInput) (*model.AdtyTicket, err
 	return created, err
 }
 
-func ListAdtyTickets(userId int) ([]model.AdtyTicket, bool, error) {
+func ListAdtyTickets(userId int, queue string) (*AdtyTicketList, error) {
 	actor, err := loadAdtyTicketActor(userId)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
+	scope := scopedAdtyTickets(actor)
 	var rows []model.AdtyTicket
-	query := model.DB.Order("id DESC").Limit(100)
+	query, err := applyAdtyTicketQueueFilter(scope.Session(&gorm.Session{}).Order("id DESC").Limit(100), queue)
+	if err != nil {
+		return nil, err
+	}
+	if err := query.Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	for i := range rows {
+		rows[i].Status = model.NormalizeAdtyTicketStatus(rows[i].Status, rows[i].AssigneeId)
+	}
+	badges, err := countAdtyTicketBadges(scope.Session(&gorm.Session{}))
+	if err != nil {
+		return nil, err
+	}
+	probe := model.AdtyTicket{SiteId: actor.scopeSite()}
+	return &AdtyTicketList{Tickets: rows, CanNote: actor.canNote(probe), CanManage: actor.canManage(probe), Badges: badges}, nil
+}
+
+func scopedAdtyTickets(actor adtyTicketActor) *gorm.DB {
+	query := model.DB.Model(&model.AdtyTicket{})
 	switch {
 	case actor.User.Role >= common.RoleRootUser:
 	case actor.User.Role >= common.RoleAdminUser:
@@ -155,10 +192,58 @@ func ListAdtyTickets(userId int) ([]model.AdtyTicket, bool, error) {
 	default:
 		query = query.Where("user_id = ?", actor.User.Id)
 	}
-	if err := query.Find(&rows).Error; err != nil {
-		return nil, false, err
+	return query
+}
+
+func applyAdtyTicketQueueFilter(query *gorm.DB, queue string) (*gorm.DB, error) {
+	switch strings.TrimSpace(queue) {
+	case "", "all":
+		return query, nil
+	case "pending":
+		return query.Where("status = ? OR status = ? OR (status = ? AND assignee_id = 0)",
+			model.AdtyTicketNew, model.AdtyTicketPendingAssignment, model.AdtyTicketLegacyOpen), nil
+	case "waiting_user":
+		return query.Where("status = ?", model.AdtyTicketWaitingUser), nil
+	case "in_progress":
+		return query.Where("status = ? OR status = ? OR (status = ? AND assignee_id > 0)",
+			model.AdtyTicketInProgress, model.AdtyTicketLegacyAssigned, model.AdtyTicketLegacyOpen), nil
+	case "urgent":
+		return query.Where("priority = ? AND status NOT IN ?", model.AdtyTicketPriorityUrgent, []string{model.AdtyTicketResolved, model.AdtyTicketClosed}), nil
+	default:
+		return nil, ErrAdtyTicketInvalid
 	}
-	return rows, actor.canNote(model.AdtyTicket{SiteId: actor.scopeSite()}), nil
+}
+
+func countAdtyTicketBadges(scope *gorm.DB) (AdtyTicketBadges, error) {
+	var badges AdtyTicketBadges
+	var err error
+	count := func(dest *int64, apply func(*gorm.DB) *gorm.DB) {
+		if err != nil {
+			return
+		}
+		err = apply(scope.Session(&gorm.Session{})).Count(dest).Error
+	}
+	count(&badges.New, func(q *gorm.DB) *gorm.DB {
+		return q.Where("status = ? OR (status = ? AND assignee_id = 0)", model.AdtyTicketNew, model.AdtyTicketLegacyOpen)
+	})
+	count(&badges.PendingAssignment, func(q *gorm.DB) *gorm.DB {
+		return q.Where("status = ?", model.AdtyTicketPendingAssignment)
+	})
+	count(&badges.InProgress, func(q *gorm.DB) *gorm.DB {
+		return q.Where("status = ? OR status = ? OR (status = ? AND assignee_id > 0)",
+			model.AdtyTicketInProgress, model.AdtyTicketLegacyAssigned, model.AdtyTicketLegacyOpen)
+	})
+	count(&badges.WaitingUser, func(q *gorm.DB) *gorm.DB {
+		return q.Where("status = ?", model.AdtyTicketWaitingUser)
+	})
+	count(&badges.WaitingInternal, func(q *gorm.DB) *gorm.DB {
+		return q.Where("status = ?", model.AdtyTicketWaitingInternal)
+	})
+	count(&badges.Urgent, func(q *gorm.DB) *gorm.DB {
+		return q.Where("priority = ? AND status NOT IN ?", model.AdtyTicketPriorityUrgent, []string{model.AdtyTicketResolved, model.AdtyTicketClosed})
+	})
+	badges.Pending = badges.New + badges.PendingAssignment
+	return badges, err
 }
 
 func GetAdtyTicket(userId int, ticketId int64) (*AdtyTicketDetail, error) {
@@ -189,6 +274,7 @@ func GetAdtyTicket(userId int, ticketId int64) (*AdtyTicketDetail, error) {
 	if err := model.DB.Where("ticket_id = ?", ticket.Id).Order("id ASC").Find(&events).Error; err != nil {
 		return nil, err
 	}
+	ticket.Status = model.NormalizeAdtyTicketStatus(ticket.Status, ticket.AssigneeId)
 	return &AdtyTicketDetail{Ticket: ticket, Messages: messages, Images: images, Events: events, CanNote: actor.canNote(ticket), CanManage: actor.canManage(ticket)}, nil
 }
 
@@ -213,53 +299,166 @@ func SetAdtyTicketStatus(userId int, ticketId int64, status, priority string, as
 		if !actor.canRead(ticket) {
 			return ErrAdtyTicketForbidden
 		}
-		next := ticket.Status
-		switch status {
-		case "resolve":
-			next = model.AdtyTicketResolved
-		case "reopen":
-			if ticket.UserId != actor.User.Id && !actor.canManage(ticket) {
-				return ErrAdtyTicketForbidden
-			}
-			next = model.AdtyTicketOpen
-		case "close":
+		current := model.NormalizeAdtyTicketStatus(ticket.Status, ticket.AssigneeId)
+		nextAssignee := ticket.AssigneeId
+		if assigneeId > 0 {
 			if !actor.canManage(ticket) {
 				return ErrAdtyTicketForbidden
 			}
-			next = model.AdtyTicketClosed
-		case "waiting_user", "waiting_internal", "assigned":
-			if !actor.canManage(ticket) {
-				return ErrAdtyTicketForbidden
-			}
-			next = status
-		case "":
-		default:
-			return ErrAdtyTicketInvalid
+			nextAssignee = assigneeId
 		}
-		updates := map[string]any{"status": next}
+		nextPriority := ticket.Priority
 		if priority != "" {
 			if !actor.canManage(ticket) {
 				return ErrAdtyTicketForbidden
 			}
 			switch priority {
 			case model.AdtyTicketPriorityNormal, model.AdtyTicketPriorityHigh, model.AdtyTicketPriorityUrgent:
-				updates["priority"] = priority
+				nextPriority = priority
 			default:
 				return ErrAdtyTicketInvalid
 			}
 		}
-		if assigneeId > 0 {
-			if !actor.canManage(ticket) {
-				return ErrAdtyTicketForbidden
-			}
-			updates["assignee_id"] = assigneeId
-			updates["status"] = model.AdtyTicketAssigned
+		action := "status"
+		next, err := nextAdtyTicketStatus(tx, actor, ticket, current, strings.TrimSpace(status), nextAssignee)
+		if err != nil {
+			return err
+		}
+		if next == "reopen_idempotent" {
+			return nil
+		}
+		if strings.HasPrefix(next, "reopen:") {
+			action = "reopen"
+			next = strings.TrimPrefix(next, "reopen:")
+		}
+		if next == model.AdtyTicketInProgress && nextAssignee <= 0 {
+			return ErrAdtyTicketInvalid
+		}
+		if (next == model.AdtyTicketNew || next == model.AdtyTicketPendingAssignment) && nextAssignee > 0 {
+			return ErrAdtyTicketInvalid
+		}
+		if next == current && nextAssignee == ticket.AssigneeId && nextPriority == ticket.Priority {
+			return nil
+		}
+		updates := map[string]any{"status": next}
+		if nextPriority != ticket.Priority {
+			updates["priority"] = nextPriority
+		}
+		if nextAssignee != ticket.AssigneeId {
+			updates["assignee_id"] = nextAssignee
 		}
 		if err := tx.Model(&ticket).Updates(updates).Error; err != nil {
 			return err
 		}
-		return tx.Create(&model.AdtyTicketEvent{TicketId: ticket.Id, ActorId: actor.User.Id, Action: "status", Detail: next}).Error
+		if action == "reopen" {
+			return tx.Create(&model.AdtyTicketEvent{TicketId: ticket.Id, ActorId: actor.User.Id, Action: "reopen", Detail: next}).Error
+		}
+		if next == current && nextAssignee != ticket.AssigneeId {
+			return tx.Create(&model.AdtyTicketEvent{TicketId: ticket.Id, ActorId: actor.User.Id, Action: "status", Detail: next}).Error
+		}
+		if next == current && nextPriority != ticket.Priority {
+			return tx.Create(&model.AdtyTicketEvent{TicketId: ticket.Id, ActorId: actor.User.Id, Action: "priority", Detail: nextPriority}).Error
+		}
+		return tx.Create(&model.AdtyTicketEvent{TicketId: ticket.Id, ActorId: actor.User.Id, Action: action, Detail: next}).Error
 	})
+}
+
+func nextAdtyTicketStatus(tx *gorm.DB, actor adtyTicketActor, ticket model.AdtyTicket, current, requested string, nextAssignee int) (string, error) {
+	landing := reopenAdtyTicketLanding(nextAssignee)
+	switch requested {
+	case "resolve":
+		if current == model.AdtyTicketClosed {
+			return "", ErrAdtyTicketInvalid
+		}
+		return model.AdtyTicketResolved, nil
+	case "reopen":
+		if ticket.UserId != actor.User.Id && !actor.canManage(ticket) {
+			return "", ErrAdtyTicketForbidden
+		}
+		if current == model.AdtyTicketResolved || current == model.AdtyTicketClosed {
+			return "reopen:" + landing, nil
+		}
+		if idempotentAdtyTicketReopen(tx, ticket, current, ticket.AssigneeId) {
+			return "reopen_idempotent", nil
+		}
+		return "", ErrAdtyTicketInvalid
+	case "close":
+		if !actor.canManage(ticket) {
+			return "", ErrAdtyTicketForbidden
+		}
+		return model.AdtyTicketClosed, nil
+	case model.AdtyTicketWaitingUser, model.AdtyTicketWaitingInternal:
+		if !actor.canManage(ticket) {
+			return "", ErrAdtyTicketForbidden
+		}
+		if !canMoveAdtyTicketToWaiting(current) {
+			return "", ErrAdtyTicketInvalid
+		}
+		return requested, nil
+	case model.AdtyTicketInProgress:
+		if !actor.canManage(ticket) {
+			return "", ErrAdtyTicketForbidden
+		}
+		if !canAssignAdtyTicket(current) {
+			return "", ErrAdtyTicketInvalid
+		}
+		return model.AdtyTicketInProgress, nil
+	case model.AdtyTicketPendingAssignment:
+		if !actor.canManage(ticket) {
+			return "", ErrAdtyTicketForbidden
+		}
+		if nextAssignee > 0 {
+			return "", ErrAdtyTicketInvalid
+		}
+		if current != model.AdtyTicketNew && current != model.AdtyTicketPendingAssignment {
+			return "", ErrAdtyTicketInvalid
+		}
+		return model.AdtyTicketPendingAssignment, nil
+	case "":
+		if nextAssignee != ticket.AssigneeId {
+			if !canAssignAdtyTicket(current) {
+				return "", ErrAdtyTicketInvalid
+			}
+			return model.AdtyTicketInProgress, nil
+		}
+		return current, nil
+	default:
+		return "", ErrAdtyTicketInvalid
+	}
+}
+
+func canAssignAdtyTicket(current string) bool {
+	switch current {
+	case model.AdtyTicketNew, model.AdtyTicketPendingAssignment, model.AdtyTicketInProgress, model.AdtyTicketWaitingUser, model.AdtyTicketWaitingInternal:
+		return true
+	default:
+		return false
+	}
+}
+
+func canMoveAdtyTicketToWaiting(current string) bool {
+	switch current {
+	case model.AdtyTicketInProgress, model.AdtyTicketWaitingUser, model.AdtyTicketWaitingInternal:
+		return true
+	default:
+		return false
+	}
+}
+
+func reopenAdtyTicketLanding(assigneeId int) string {
+	if assigneeId > 0 {
+		return model.AdtyTicketInProgress
+	}
+	return model.AdtyTicketPendingAssignment
+}
+
+func idempotentAdtyTicketReopen(tx *gorm.DB, ticket model.AdtyTicket, current string, assigneeId int) bool {
+	if current != reopenAdtyTicketLanding(assigneeId) {
+		return false
+	}
+	var event model.AdtyTicketEvent
+	lookup := tx.Where("ticket_id = ?", ticket.Id).Order("id DESC").Limit(1).Find(&event)
+	return lookup.Error == nil && lookup.RowsAffected > 0 && event.Action == "reopen"
 }
 
 func AddAdtyTicketImage(userId int, ticketId int64, data []byte) (*model.AdtyTicketImage, error) {

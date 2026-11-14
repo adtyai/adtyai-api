@@ -909,13 +909,20 @@ func SnapshotWithdrawFX(amountUSD, rate decimal.Decimal, at int64) (decimal.Deci
 	return amountUSD.Mul(rate).Round(2), at, nil
 }
 
-// AssignAdtyTicket moves a ticket to another agent and records the new status.
+// AssignAdtyTicket moves a ticket to another agent and records the official in-progress status.
 func AssignAdtyTicket(ticketID int64, assigneeID int) error {
 	if ticketID <= 0 || assigneeID <= 0 {
 		return common.NewMessage("Invalid parameters")
 	}
-	result := model.DB.Model(&model.AdtyTicket{}).Where("id = ?", ticketID).Updates(map[string]any{
-		"assignee_id": assigneeID, "status": model.AdtyTicketAssigned,
+	var ticket model.AdtyTicket
+	if err := model.DB.First(&ticket, ticketID).Error; err != nil {
+		return err
+	}
+	if !canAssignAdtyTicket(model.NormalizeAdtyTicketStatus(ticket.Status, ticket.AssigneeId)) {
+		return common.NewMessage("Invalid parameters")
+	}
+	result := model.DB.Model(&ticket).Updates(map[string]any{
+		"assignee_id": assigneeID, "status": model.AdtyTicketInProgress,
 	})
 	if result.Error != nil {
 		return result.Error

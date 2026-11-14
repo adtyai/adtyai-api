@@ -10,10 +10,19 @@ import { Textarea } from '@/components/ui/textarea'
 import { api } from '@/lib/api'
 import { getServerErrorMessage } from '@/lib/server-error-message'
 
+import {
+  TICKET_QUEUES,
+  type TicketBadges,
+  type TicketQueueId,
+  ticketStatusLabel,
+} from './ticket-status'
+
 type Ticket = {
   id: number
   title: string
   status: string
+  priority?: string
+  assignee_id?: number
 }
 
 type TicketMessage = {
@@ -26,18 +35,32 @@ type TicketDetail = {
   ticket: Ticket
   messages: TicketMessage[]
   can_note: boolean
+  can_manage: boolean
+}
+
+type TicketList = {
+  tickets?: Ticket[]
+  can_note?: boolean
+  can_manage?: boolean
+  badges?: TicketBadges
 }
 
 export function TicketCenter() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
+  const [queue, setQueue] = useState<TicketQueueId | ''>('')
   const list = useQuery({
-    queryKey: ['adty-tickets'],
+    queryKey: ['adty-tickets', queue],
     queryFn: async () => {
-      const response = await api.get('/api/adty/tickets')
-      const body = response.data as { success?: boolean; data?: { tickets?: Ticket[] }; message?: string }
+      const response = await api.get('/api/adty/tickets', { params: queue ? { queue } : {} })
+      const body = response.data as { success?: boolean; data?: TicketList; message?: string }
       if (!body.success) throw new Error(body.message || 'Failed to load data')
-      return body.data?.tickets ?? []
+      return {
+        tickets: body.data?.tickets ?? [],
+        can_note: Boolean(body.data?.can_note),
+        can_manage: Boolean(body.data?.can_manage),
+        badges: body.data?.badges,
+      }
     },
   })
   const [selected, setSelected] = useState<number | null>(null)
@@ -45,6 +68,7 @@ export function TicketCenter() {
   const [body, setBody] = useState('')
   const [reply, setReply] = useState('')
   const [note, setNote] = useState('')
+  const [assignee, setAssignee] = useState('')
   const [related, setRelated] = useState('')
   const [error, setError] = useState('')
   const [pending, setPending] = useState(false)
@@ -55,7 +79,7 @@ export function TicketCenter() {
   }, [])
 
   const detail = useQuery({
-    queryKey: ['adty-tickets', selected],
+    queryKey: ['adty-tickets', 'detail', selected],
     enabled: selected !== null,
     queryFn: async () => {
       const response = await api.get(`/api/adty/tickets/${selected}`)
@@ -94,6 +118,28 @@ export function TicketCenter() {
     }
   }
 
+  const updateStatus = async (status: string, assigneeId?: number) => {
+    if (selected === null) return
+    setPending(true)
+    setError('')
+    try {
+      const response = await api.post(`/api/adty/tickets/${selected}/status`, {
+        status,
+        assignee_id: assigneeId ?? 0,
+      })
+      const payload = response.data as { success?: boolean; message?: string }
+      if (!payload.success) throw new Error(payload.message || 'Failed to save')
+      await refresh()
+    } catch (cause) {
+      setError(getServerErrorMessage(cause, t('Failed to save')))
+    } finally {
+      setPending(false)
+    }
+  }
+
+  const badges = list.data?.badges
+  const canManage = Boolean(list.data?.can_manage || detail.data?.can_manage)
+
   return (
     <Card id='tickets'>
       <CardContent className='flex flex-col gap-4 py-4'>
@@ -103,15 +149,37 @@ export function TicketCenter() {
             {t('Images only. Hide API keys, passwords, and payment details.')}
           </p>
         </div>
+        {canManage && badges && (
+          <div className='flex flex-col gap-2'>
+            <div className='flex flex-wrap gap-2'>
+              {TICKET_QUEUES.map((item) => (
+                <Button
+                  key={item.id}
+                  type='button'
+                  size='sm'
+                  variant={queue === item.id ? 'default' : 'outline'}
+                  onClick={() => setQueue(queue === item.id ? '' : item.id)}
+                >
+                  {t(item.label)}
+                  <span className='tabular-nums'>{badges[item.badge] ?? 0}</span>
+                </Button>
+              ))}
+            </div>
+            <p className='text-muted-foreground text-xs'>
+              {t('Ticket badge new')} {badges.new} · {t('Ticket badge pending assignment')}{' '}
+              {badges.pending_assignment} · {t('Ticket status in progress')} {badges.in_progress}
+            </p>
+          </div>
+        )}
         {list.isLoading && <p className='text-muted-foreground text-sm'>{t('Loading...')}</p>}
         {list.isError && (
           <Button type='button' variant='outline' onClick={() => void list.refetch()}>
             {t('Retry')}
           </Button>
         )}
-        {list.data && list.data.length === 0 && <p className='text-muted-foreground text-sm'>{t('No tickets')}</p>}
+        {list.data && list.data.tickets.length === 0 && <p className='text-muted-foreground text-sm'>{t('No tickets')}</p>}
         <div className='flex flex-col gap-2'>
-          {(list.data ?? []).map((ticket) => (
+          {(list.data?.tickets ?? []).map((ticket) => (
             <button
               key={ticket.id}
               type='button'
@@ -119,13 +187,18 @@ export function TicketCenter() {
               onClick={() => setSelected(ticket.id)}
             >
               <span className='min-w-0 truncate'>{ticket.title}</span>
-              <span className='text-muted-foreground shrink-0'>{ticket.status}</span>
+              <span className='text-muted-foreground shrink-0'>
+                {t(ticketStatusLabel(ticket.status, ticket.assignee_id))}
+              </span>
             </button>
           ))}
         </div>
         {detail.data && (
           <div className='flex flex-col gap-3'>
             <h3 className='text-sm font-medium'>{detail.data.ticket.title}</h3>
+            <p className='text-muted-foreground text-sm'>
+              {t(ticketStatusLabel(detail.data.ticket.status, detail.data.ticket.assignee_id))}
+            </p>
             {detail.data.messages.map((message) => (
               <p key={message.id} className='text-sm whitespace-pre-wrap'>
                 {message.visibility === 'internal' ? `${t('Internal note')}: ` : ''}
@@ -162,6 +235,77 @@ export function TicketCenter() {
                   {t('Internal note')}
                 </Button>
               </>
+            )}
+            {detail.data.can_manage && (
+              <>
+                <Label htmlFor='ticket-assignee'>{t('Ticket assignee')}</Label>
+                <Input
+                  id='ticket-assignee'
+                  value={assignee}
+                  onChange={(event) => setAssignee(event.target.value)}
+                />
+                <div className='flex flex-wrap gap-2'>
+                  <Button
+                    type='button'
+                    variant='outline'
+                    disabled={pending || !/^\d+$/.test(assignee.trim())}
+                    onClick={() => void updateStatus('', Number(assignee.trim()))}
+                  >
+                    {t('Assign ticket')}
+                  </Button>
+                  <Button
+                    type='button'
+                    variant='outline'
+                    disabled={pending}
+                    onClick={() => void updateStatus('pending_assignment')}
+                  >
+                    {t('Ticket status pending assignment')}
+                  </Button>
+                  <Button
+                    type='button'
+                    variant='outline'
+                    disabled={pending}
+                    onClick={() => void updateStatus('in_progress')}
+                  >
+                    {t('Ticket status in progress')}
+                  </Button>
+                  <Button
+                    type='button'
+                    variant='outline'
+                    disabled={pending}
+                    onClick={() => void updateStatus('waiting_user')}
+                  >
+                    {t('Ticket status waiting user')}
+                  </Button>
+                  <Button
+                    type='button'
+                    variant='outline'
+                    disabled={pending}
+                    onClick={() => void updateStatus('waiting_internal')}
+                  >
+                    {t('Ticket status waiting internal')}
+                  </Button>
+                  <Button type='button' variant='outline' disabled={pending} onClick={() => void updateStatus('resolve')}>
+                    {t('Ticket status resolved')}
+                  </Button>
+                  <Button type='button' variant='outline' disabled={pending} onClick={() => void updateStatus('close')}>
+                    {t('Ticket status closed')}
+                  </Button>
+                  <Button type='button' variant='outline' disabled={pending} onClick={() => void updateStatus('reopen')}>
+                    {t('Reopen ticket')}
+                  </Button>
+                </div>
+              </>
+            )}
+            {!detail.data.can_manage && (
+              <div className='flex flex-wrap gap-2'>
+                <Button type='button' variant='outline' disabled={pending} onClick={() => void updateStatus('resolve')}>
+                  {t('Confirm ticket resolved')}
+                </Button>
+                <Button type='button' variant='outline' disabled={pending} onClick={() => void updateStatus('reopen')}>
+                  {t('Request ticket continue')}
+                </Button>
+              </div>
             )}
             <Label htmlFor='ticket-image'>{t('Image')}</Label>
             <Input

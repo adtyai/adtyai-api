@@ -222,12 +222,12 @@ func TestRemainingPriceCommissionAndIsolation(t *testing.T) {
 	require.EqualValues(t, 99, frozenAt)
 	require.NoError(t, RejectCrossSite(site.Id, site.Id))
 	require.Error(t, RejectCrossSite(site.Id, site.Id+1))
-	require.NoError(t, db.Create(&model.AdtyTicket{SiteId: site.Id, UserId: owner.Id, Title: "help", Status: model.AdtyTicketOpen}).Error)
+	require.NoError(t, db.Create(&model.AdtyTicket{SiteId: site.Id, UserId: owner.Id, Title: "help", Status: model.AdtyTicketNew}).Error)
 	var ticket model.AdtyTicket
 	require.NoError(t, db.Where("site_id = ?", site.Id).First(&ticket).Error)
 	require.NoError(t, AssignAdtyTicket(ticket.Id, owner.Id))
 	require.NoError(t, db.First(&ticket, ticket.Id).Error)
-	require.Equal(t, model.AdtyTicketAssigned, ticket.Status)
+	require.Equal(t, model.AdtyTicketInProgress, ticket.Status)
 	require.NoError(t, CompleteAdtyTodo(owner.Id, "severe-1"))
 }
 
