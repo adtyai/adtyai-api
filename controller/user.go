@@ -270,7 +270,14 @@ func Register(c *gin.Context) {
 			common.ApiErrorT(c, "Email verification is enabled, please enter email address and verification code")
 			return
 		}
-		if !common.VerifyCodeWithKey(model.SiteEmailCodeKey(user.Email, siteId), user.VerificationCode, common.EmailVerificationPurpose) {
+		// G.14.5: consume on a successful check. If a later register write
+		// fails, the client must request a new code; do not restore this one.
+		_, status := common.ConsumeVerificationCodeWithKeyStatus(model.SiteEmailCodeKey(user.Email, siteId), user.VerificationCode, common.EmailVerificationPurpose)
+		if status != common.VerificationOK {
+			if status == common.VerificationLocked {
+				common.ApiErrorT(c, service.ErrVerificationCodeLocked.Error())
+				return
+			}
 			common.ApiErrorT(c, "Verification code is incorrect or has expired")
 			return
 		}

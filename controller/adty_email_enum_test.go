@@ -587,6 +587,8 @@ func TestRegisterExistingEmailGenericError(t *testing.T) {
 	assert.Contains(t, taken, "Verification code is incorrect or has expired")
 	assert.Contains(t, wrong, "Verification code is incorrect or has expired")
 	assert.NotContains(t, taken, "already in use")
+	assert.False(t, common.VerifyCodeWithKey(model.SiteEmailCodeKey("taken@example.com", 0), "123456", common.EmailVerificationPurpose),
+		"a successfully checked code must be consumed even when the taken-email write then fails")
 }
 
 func TestRegisterDefaultTokenRespectsOwnerLimit(t *testing.T) {
