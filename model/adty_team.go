@@ -18,6 +18,7 @@ const (
 type AdtyTeam struct {
 	Id           int64           `json:"id"`
 	SiteId       int             `json:"site_id" gorm:"index"`
+	SourceSiteId int             `json:"source_site_id" gorm:"index;not null;default:0;column:source_site_id"` // 关站迁入主站时记下原分站；0 表示不是迁入团队或历史未回填
 	LeaderUserId int             `json:"leader_user_id" gorm:"index"`
 	Name         string          `json:"name" gorm:"type:varchar(64);not null"`
 	Discount     decimal.Decimal `json:"discount" gorm:"type:decimal(10,4);not null"`

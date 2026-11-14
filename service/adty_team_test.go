@@ -14,6 +14,7 @@ import (
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 func TestAdtyTeamSharedBalanceAndSingleMembership(t *testing.T) {
@@ -373,4 +374,148 @@ func requireTeamInviteAudit(t *testing.T, inviteId int64, action string, actorId
 	assert.NotContains(t, log.BeforeValue, secret)
 	assert.NotContains(t, log.AfterValue, secret)
 	assert.NotContains(t, log.Content, secret)
+}
+
+func TestInheritAdtyTeamsOnCloseRecordsSourceSiteAndKeepsIdentity(t *testing.T) {
+	db := prepareSiteDB(t)
+	_, site := openActiveSite(t, db, "team-src")
+	_, other := openActiveSite(t, db, "team-other")
+	leader := siteCustomer(t, db, site, "team-src-leader")
+	member := siteCustomer(t, db, site, "team-src-member")
+	created, err := CreateAdtyTeam(leader.Id, site.Id, "Migrating", decimal.RequireFromString("0.90"))
+	require.NoError(t, err)
+	teamID := created.Team.Id
+	joined, err := JoinAdtyTeam(member.Id, teamID)
+	require.NoError(t, err)
+	assert.Equal(t, model.AdtyTeamRoleMember, joined.Role)
+
+	token := model.Token{UserId: member.Id, Key: "team-src-key", Status: common.TokenStatusEnabled, ExpiredTime: -1, UnlimitedQuota: true}
+	require.NoError(t, db.Create(&token).Error)
+	require.NoError(t, BindAdtyTeamKey(member.Id, token.Id))
+
+	historical := model.AdtyTeam{
+		SiteId: 0, LeaderUserId: leader.Id, Name: "legacy-main",
+		Discount: decimal.NewFromInt(1), Status: model.AdtyTeamStatusActive,
+	}
+	require.NoError(t, db.Create(&historical).Error)
+
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return InheritAdtyTeamsOnCloseTx(tx, site.Id)
+	}))
+
+	var inherited model.AdtyTeam
+	require.NoError(t, db.First(&inherited, teamID).Error)
+	assert.Equal(t, teamID, inherited.Id)
+	assert.Zero(t, inherited.SiteId)
+	assert.Equal(t, site.Id, inherited.SourceSiteId)
+	assert.Equal(t, model.AdtyTeamStatusActive, inherited.Status)
+	assert.Zero(t, inherited.ClosedAt)
+	assert.Equal(t, leader.Id, inherited.LeaderUserId)
+
+	var members []model.AdtyTeamMember
+	require.NoError(t, db.Where("team_id = ?", teamID).Order("id").Find(&members).Error)
+	require.Len(t, members, 2)
+	assert.Equal(t, leader.Id, members[0].UserId)
+	assert.Equal(t, model.AdtyTeamRoleLeader, members[0].Role)
+	assert.Equal(t, model.AdtyTeamMemberActive, members[0].Status)
+	assert.Equal(t, member.Id, members[1].UserId)
+	assert.Equal(t, model.AdtyTeamRoleMember, members[1].Role)
+	assert.Equal(t, model.AdtyTeamMemberActive, members[1].Status)
+
+	require.NoError(t, db.First(&token, token.Id).Error)
+	assert.Equal(t, common.TokenStatusDisabled, token.Status)
+	assert.False(t, token.DeletedAt.Valid)
+	var key model.AdtyTeamKey
+	require.NoError(t, db.Where("token_id = ?", token.Id).First(&key).Error)
+	assert.Equal(t, model.AdtyTeamMemberLeft, key.Status)
+
+	var leftover model.AdtyTeam
+	require.NoError(t, db.First(&leftover, historical.Id).Error)
+	assert.Zero(t, leftover.SiteId)
+	assert.Zero(t, leftover.SourceSiteId)
+
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return InheritAdtyTeamsOnCloseTx(tx, site.Id)
+	}))
+	require.NoError(t, db.First(&inherited, teamID).Error)
+	assert.Zero(t, inherited.SiteId)
+	assert.Equal(t, site.Id, inherited.SourceSiteId)
+	assert.Equal(t, model.AdtyTeamStatusActive, inherited.Status)
+	require.NoError(t, db.First(&token, token.Id).Error)
+	assert.Equal(t, common.TokenStatusDisabled, token.Status)
+
+	require.NoError(t, db.Model(&inherited).Update("site_id", site.Id).Error)
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return InheritAdtyTeamsOnCloseTx(tx, site.Id)
+	}))
+	require.NoError(t, db.First(&inherited, teamID).Error)
+	assert.Zero(t, inherited.SiteId)
+	assert.Equal(t, site.Id, inherited.SourceSiteId)
+
+	require.NoError(t, db.Model(&inherited).Updates(map[string]any{"site_id": site.Id, "source_site_id": other.Id}).Error)
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return InheritAdtyTeamsOnCloseTx(tx, site.Id)
+	}))
+	require.NoError(t, db.First(&inherited, teamID).Error)
+	assert.Zero(t, inherited.SiteId)
+	assert.Equal(t, other.Id, inherited.SourceSiteId)
+
+	require.NoError(t, db.Model(&inherited).Updates(map[string]any{"site_id": 0, "source_site_id": site.Id}).Error)
+
+	_, err = ScheduleAdtySiteClose(site.Id, 1, AdtySiteClosePlan{TransferTo: other.Id, Immediate: true})
+	assert.ErrorIs(t, err, ErrAdtySiteTransfer)
+
+	closed, err := ScheduleAdtySiteClose(site.Id, 1, AdtySiteClosePlan{Immediate: true})
+	require.NoError(t, err)
+	assert.Equal(t, model.AdtySiteStatusClosed, closed.Status)
+	assert.Zero(t, closed.CloseTransferTo)
+
+	require.NoError(t, db.First(&inherited, teamID).Error)
+	assert.Equal(t, teamID, inherited.Id)
+	assert.Zero(t, inherited.SiteId)
+	assert.Equal(t, site.Id, inherited.SourceSiteId)
+	assert.Equal(t, model.AdtyTeamStatusActive, inherited.Status)
+	assert.Equal(t, leader.Id, inherited.LeaderUserId)
+
+	require.NoError(t, db.Where("team_id = ?", teamID).Order("id").Find(&members).Error)
+	require.Len(t, members, 2)
+	assert.Equal(t, leader.Id, members[0].UserId)
+	assert.Equal(t, member.Id, members[1].UserId)
+	assert.Equal(t, model.AdtyTeamMemberActive, members[0].Status)
+	assert.Equal(t, model.AdtyTeamMemberActive, members[1].Status)
+
+	require.NoError(t, db.Unscoped().First(&token, token.Id).Error)
+	assert.True(t, token.DeletedAt.Valid)
+	require.NoError(t, db.Where("token_id = ?", token.Id).First(&key).Error)
+	assert.Equal(t, model.AdtyTeamMemberLeft, key.Status)
+
+	require.NoError(t, db.First(&leftover, historical.Id).Error)
+	assert.Zero(t, leftover.SiteId)
+	assert.Zero(t, leftover.SourceSiteId)
+
+	var storedLeader, storedMember model.User
+	require.NoError(t, db.First(&storedLeader, leader.Id).Error)
+	require.NoError(t, db.First(&storedMember, member.Id).Error)
+	assert.Zero(t, storedLeader.SiteId)
+	assert.Zero(t, storedMember.SiteId)
+	assert.Equal(t, leader.Id, storedLeader.Id)
+	assert.Equal(t, member.Id, storedMember.Id)
+	assert.NotEqual(t, other.Id, storedLeader.SiteId)
+	assert.NotEqual(t, other.Id, storedMember.SiteId)
+
+	mine, err := GetAdtyTeamMine(leader.Id)
+	require.NoError(t, err)
+	require.NotNil(t, mine)
+	assert.Equal(t, teamID, mine.TeamId)
+	assert.Zero(t, mine.SiteId)
+	assert.Equal(t, site.Id, mine.SourceSiteId)
+	assert.Equal(t, model.AdtyTeamStatusActive, mine.Status)
+
+	require.NoError(t, db.Model(&inherited).Updates(map[string]any{"site_id": 0, "source_site_id": 0}).Error)
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return InheritAdtyTeamsOnCloseTx(tx, site.Id)
+	}))
+	require.NoError(t, db.First(&inherited, teamID).Error)
+	assert.Zero(t, inherited.SiteId)
+	assert.Zero(t, inherited.SourceSiteId)
 }

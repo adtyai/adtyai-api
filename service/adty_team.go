@@ -111,15 +111,16 @@ type AdtyTeamKeyView struct {
 }
 
 type AdtyTeamMine struct {
-	TeamId      int64                `json:"team_id"`
-	Name        string               `json:"name"`
-	SiteId      int                  `json:"site_id"`
-	Role        string               `json:"role"`
-	Discount    decimal.Decimal      `json:"discount"`
-	SharedQuota int64                `json:"shared_quota"`
-	Status      string               `json:"status"`
-	Members     []AdtyTeamMemberView `json:"members"`
-	Keys        []AdtyTeamKeyView    `json:"keys"`
+	TeamId       int64                `json:"team_id"`
+	Name         string               `json:"name"`
+	SiteId       int                  `json:"site_id"`
+	SourceSiteId int                  `json:"source_site_id"`
+	Role         string               `json:"role"`
+	Discount     decimal.Decimal      `json:"discount"`
+	SharedQuota  int64                `json:"shared_quota"`
+	Status       string               `json:"status"`
+	Members      []AdtyTeamMemberView `json:"members"`
+	Keys         []AdtyTeamKeyView    `json:"keys"`
 }
 
 // AdtyTeamInviteDefaultTTL is the existing controller default when the caller
@@ -168,7 +169,7 @@ func GetAdtyTeamMine(userId int) (*AdtyTeamMine, error) {
 		return nil, err
 	}
 	page := &AdtyTeamMine{
-		TeamId: team.Id, Name: team.Name, SiteId: team.SiteId, Role: membership.Role,
+		TeamId: team.Id, Name: team.Name, SiteId: team.SiteId, SourceSiteId: team.SourceSiteId, Role: membership.Role,
 		Discount: team.Discount, SharedQuota: team.SharedQuota, Status: team.Status,
 		Members: []AdtyTeamMemberView{}, Keys: []AdtyTeamKeyView{},
 	}
@@ -846,8 +847,15 @@ func BindAdtyTeamKey(userId, tokenId int) error {
 	})
 }
 
+// InheritAdtyTeamsOnCloseTx 把关闭分站上仍活跃的团队迁入主站。
+// team_id、负责人和成员关系保持不变；当前 site_id 改为主站 0，并在 source_site_id 仍为空时记下原分站。
+// 已记录的 source_site_id 不会被重试改成 0 或另一个猜测值。已在主站且来源为空的历史团队不会被回填。
+// 关站迁入不会关闭团队；原团队 API Key 仍按迁移安全规则停用。
 func InheritAdtyTeamsOnCloseTx(tx *gorm.DB, siteId int) error {
 	if !adtyTeamTableReadyFor(tx, &model.AdtyTeam{}) {
+		return nil
+	}
+	if siteId == 0 {
 		return nil
 	}
 	var teams []model.AdtyTeam
@@ -858,7 +866,12 @@ func InheritAdtyTeamsOnCloseTx(tx *gorm.DB, siteId int) error {
 		if err := disableAdtyTeamKeysTx(tx, team.Id); err != nil {
 			return err
 		}
-		if err := tx.Model(&model.AdtyTeam{}).Where("id = ?", team.Id).Update("site_id", 0).Error; err != nil {
+		updates := map[string]any{"site_id": 0}
+		// 只在来源尚未记录、且迁移前 site_id 就是正在关闭的分站时写入；已在主站（0）的不猜测来源。
+		if team.SourceSiteId == 0 && team.SiteId == siteId {
+			updates["source_site_id"] = team.SiteId
+		}
+		if err := tx.Model(&model.AdtyTeam{}).Where("id = ?", team.Id).Updates(updates).Error; err != nil {
 			return err
 		}
 	}

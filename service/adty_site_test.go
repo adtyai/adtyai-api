@@ -526,7 +526,11 @@ func TestCloseSiteMovesCustomersToMain(t *testing.T) {
 	requireArchivedCloseIdentity(t, db, customer.Id, site.Id)
 	var inheritedTeam model.AdtyTeam
 	require.NoError(t, db.First(&inheritedTeam, team.Team.Id).Error)
+	assert.Equal(t, team.Team.Id, inheritedTeam.Id)
 	assert.Zero(t, inheritedTeam.SiteId)
+	assert.Equal(t, site.Id, inheritedTeam.SourceSiteId)
+	assert.Equal(t, model.AdtyTeamStatusActive, inheritedTeam.Status)
+	assert.Equal(t, customer.Id, inheritedTeam.LeaderUserId)
 	closed, err := GetAdtySite(site.Id)
 	require.NoError(t, err)
 	assert.Equal(t, model.AdtySiteStatusClosed, closed.Status)
