@@ -90,7 +90,7 @@ func applyTokenQuotaDeltaTx(tx *gorm.DB, token *Token, delta int, pending bool) 
 	return nil
 }
 
-func reserveUserQuotaDB(id int, quota int) (bool, error) {
+func reserveUserQuotaDB(id int, quota int, operationID string) (bool, error) {
 	reserved := false
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		var user User
@@ -105,6 +105,12 @@ func reserveUserQuotaDB(id int, quota int) (bool, error) {
 			return nil
 		}
 		if err := applyUserQuotaDeltaTx(tx, &user, -quota, common.BatchUpdateEnabled && common.RedisEnabled); err != nil {
+			return err
+		}
+		// A.12.1: record which batches back this pre-charge so a release or a
+		// refund can return the same shares (A.12.2.6). The batch rows themselves
+		// are consumed at settlement, not here.
+		if err := AllocateAdtyFundAllocationsTx(tx, id, operationID, int64(quota)); err != nil {
 			return err
 		}
 		reserved = true
@@ -157,15 +163,28 @@ func flushTokenQuota(id int) error {
 
 // TryReserveUserQuota checks the shared durable logical balance under the user
 // row lock. A cache miss, outage, or a different process cannot authorize the
-// same unflushed amount again.
+// same unflushed amount again. It carries no operation identity, so it records
+// no fund shares; the relay billing path must use
+// TryReserveUserQuotaForOperation instead.
 func TryReserveUserQuota(id int, quota int) (bool, error) {
+	return tryReserveUserQuota(id, quota, "")
+}
+
+// TryReserveUserQuotaForOperation is the relay billing reservation. The
+// operation key makes the pre-charge reversible: A.12.2.6 requires releases and
+// refunds to hand back the original shares instead of a merged balance.
+func TryReserveUserQuotaForOperation(id int, quota int, operationID string) (bool, error) {
+	return tryReserveUserQuota(id, quota, operationID)
+}
+
+func tryReserveUserQuota(id int, quota int, operationID string) (bool, error) {
 	if quota < 0 {
 		return false, errors.New("quota cannot be negative")
 	}
 	if quota == 0 {
 		return true, nil
 	}
-	reserved, err := reserveUserQuotaDB(id, quota)
+	reserved, err := reserveUserQuotaDB(id, quota, operationID)
 	if err != nil || !reserved {
 		return false, err
 	}

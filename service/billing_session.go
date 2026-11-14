@@ -439,11 +439,15 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 		if relayInfo.RequestId == "" {
 			relayInfo.RequestId = common.NewRequestId()
 		}
+		operationKey := "request:" + relayInfo.RequestId
 		session := &BillingSession{
-			relayInfo:      relayInfo,
-			funding:        &WalletFunding{userId: relayInfo.UserId},
+			relayInfo: relayInfo,
+			funding: &WalletFunding{
+				userId:       relayInfo.UserId,
+				operationKey: operationKey,
+			},
 			lang:           i18n.StatedLang(c),
-			operationKey:   "request:" + relayInfo.RequestId,
+			operationKey:   operationKey,
 			requestContext: c,
 		}
 		if apiErr := session.preConsume(c, preConsumedQuota); apiErr != nil {
