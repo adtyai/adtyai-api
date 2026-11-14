@@ -1366,7 +1366,6 @@
     "The notice disappears from the site at once. The owner's other brand settings stay.": "공지는 사이트에서 바로 사라집니다. 운영자의 다른 브랜드 설정은 유지됩니다.",
     "The notice can be at most 500 characters": "공지는 500자 이하여야 합니다",
     "The new token will only be shown once. Copy it and store it securely.": "새 토큰은 한 번만 표시돼요. 복사해서 안전하게 보관하세요.",
-    "The new site's markup for these customers cannot be higher than before.": "새 사이트에서 이 고객들의 배율은 이전보다 높을 수 없습니다.",
     "The name recipients see. Leave blank to use the site name.": "수신자에게 보이는 이름이에요. 비워 두면 사이트 이름을 사용해요.",
     "The name displayed across the application": "애플리케이션 전체에 표시되는 이름",
     "The model-level expression cannot be evaluated by: {{plugins}}": "다음에서는 모델 수준 표현식을 평가할 수 없어요: {{plugins}}",
