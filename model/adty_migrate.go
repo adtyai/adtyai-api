@@ -1,6 +1,7 @@
 package model
 
 import (
+	"errors"
 	"os"
 	"strings"
 
@@ -49,6 +50,13 @@ func MigrateAdtyTables() error {
 	}
 	if err := DB.AutoMigrate(&AdtyPromoCode{}, &AdtyPromoRedemption{}, &AdtyNotificationRead{}, &AdtyNotificationPublication{}, &AdtyVoucher{}, &AdtyVoucherLiability{}, &AdtyVoucherAuthorization{}, &AdtyVoucherCloseGrant{}, &AdtyTeam{}, &AdtyTeamMember{}, &AdtyTeamLedger{}, &AdtyTeamInvite{}, &AdtyTeamKey{}); err != nil {
 		return err
+	}
+	if err := EnsureActiveTeamMembershipUniqueIndex(DB); err != nil {
+		if errors.Is(err, ErrActiveTeamMembershipCollision) {
+			common.SysError(common.LogText("active team membership unique index skipped: %s", err.Error()))
+		} else {
+			return err
+		}
 	}
 	if err := DB.AutoMigrate(&AdtyTelegramBot{}, &AdtyTelegramChallenge{}, &AdtyTelegramBinding{}, &AdtyTelegramDelivery{}, &AdtyTicket{}, &AdtyTicketMessage{}, &AdtyTicketImage{}, &AdtyTicketEvent{}, &AdtyTicketPolicy{}, &AdtyTranslationConfig{}, &AdtyTranslationHead{}, &AdtyTranslationJob{}, &AdtyTranslationUsage{}, &AdtyGroupHealthSample{}, &AdtyGroupHealthState{}, &AdtyGroupHealthAlert{}, &AdtyDataRetentionPolicy{}, &AdtyDataRetentionRun{}, &AdtyDataRetentionRunItem{}); err != nil {
 		return err

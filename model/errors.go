@@ -18,6 +18,11 @@ var (
 	ErrUsernameCaseCollision = errors.New("case-variant usernames must be resolved before the unique index")
 )
 
+// Team membership errors
+var (
+	ErrActiveTeamMembershipCollision = errors.New("duplicate active team memberships must be resolved before the unique index")
+)
+
 // Token auth errors
 var (
 	ErrTokenNotProvided = errors.New("token not provided")

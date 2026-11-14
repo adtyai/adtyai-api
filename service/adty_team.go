@@ -416,7 +416,7 @@ func CreateAdtyTeam(leaderId, siteId int, name string, discount decimal.Decimal)
 		}
 		member := model.AdtyTeamMember{TeamId: team.Id, UserId: leader.Id, Role: model.AdtyTeamRoleLeader, Status: model.AdtyTeamMemberActive}
 		if err := tx.Create(&member).Error; err != nil {
-			return err
+			return mapAdtyTeamMemberWriteError(err)
 		}
 		created = &AdtyTeamCreated{Team: team, Member: member}
 		return nil
@@ -446,7 +446,7 @@ func JoinAdtyTeam(userId int, teamId int64) (*model.AdtyTeamMember, error) {
 		}
 		row := model.AdtyTeamMember{TeamId: team.Id, UserId: user.Id, Role: model.AdtyTeamRoleMember, Status: model.AdtyTeamMemberActive}
 		if err := tx.Create(&row).Error; err != nil {
-			return err
+			return mapAdtyTeamMemberWriteError(err)
 		}
 		member = &row
 		return nil
@@ -612,6 +612,13 @@ func rejectActiveTeamMembership(tx *gorm.DB, userId int) error {
 		return ErrAdtyTeamBusy
 	}
 	return nil
+}
+
+func mapAdtyTeamMemberWriteError(err error) error {
+	if model.IsActiveTeamMembershipUniqueViolation(err) {
+		return ErrAdtyTeamBusy
+	}
+	return err
 }
 
 func lockActiveTeam(tx *gorm.DB, teamId int64) (*model.AdtyTeam, error) {
@@ -967,7 +974,7 @@ func joinAdtyTeamTx(tx *gorm.DB, userId int, teamId int64) (*model.AdtyTeamMembe
 	}
 	row := model.AdtyTeamMember{TeamId: team.Id, UserId: user.Id, Role: model.AdtyTeamRoleMember, Status: model.AdtyTeamMemberActive}
 	if err := tx.Create(&row).Error; err != nil {
-		return nil, err
+		return nil, mapAdtyTeamMemberWriteError(err)
 	}
 	return &row, nil
 }

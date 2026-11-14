@@ -30,6 +30,9 @@ type AdtyTeam struct {
 func (AdtyTeam) TableName() string { return "adty_teams" }
 
 // AdtyTeamMember binds one user to one team. A second active membership is rejected.
+// idx_adty_team_member uniquely binds (team_id, user_id). A partial unique index
+// ux_adty_team_members_one_active_user additionally guarantees at most one active
+// row per user across teams. Left history is outside that index.
 type AdtyTeamMember struct {
 	Id        int64  `json:"id"`
 	TeamId    int64  `json:"team_id" gorm:"uniqueIndex:idx_adty_team_member,priority:1"`
