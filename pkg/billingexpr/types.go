@@ -58,6 +58,10 @@ type TraceResult struct {
 	MatchedTier  string             `json:"matched_tier"`
 	RequestRules []RequestRuleTrace `json:"request_rules,omitempty"`
 	Cost         float64            `json:"cost"`
+	// CostDec is the exact expression output handed to settlement. Cost is the
+	// float64 view of the same value and is kept for traces and callers that
+	// still read the legacy field.
+	CostDec decimal.Decimal `json:"-"`
 }
 
 // BillingSnapshot captures billing state at pre-consume time. Expression and

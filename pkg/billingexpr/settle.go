@@ -28,13 +28,12 @@ func groupRatioDecimal(snap *BillingSnapshot) decimal.Decimal {
 // quotaConversionDecimal converts raw expression output to quota based on the
 // expression version. Intermediate math stays in decimal; the caller rounds
 // once when producing the billed integer amount.
-func quotaConversionDecimal(exprOutput float64, snap *BillingSnapshot) decimal.Decimal {
-	output := decimal.NewFromFloat(exprOutput)
+func quotaConversionDecimal(exprOutput decimal.Decimal, snap *BillingSnapshot) decimal.Decimal {
 	unit := snapshotQuotaPerUnitDecimal(snap)
 	if snap != nil && snap.TaskUsageBilling {
-		return output.Mul(unit)
+		return exprOutput.Mul(unit)
 	}
-	return output.Div(decimal.NewFromInt(1_000_000)).Mul(unit)
+	return exprOutput.Div(decimal.NewFromInt(1_000_000)).Mul(unit)
 }
 
 // ComputeTieredQuota runs the Expr from a frozen BillingSnapshot against
@@ -47,12 +46,12 @@ func ComputeTieredQuotaWithRequest(snap *BillingSnapshot, params TokenParams, re
 	if snap.TaskUsageBilling && UsesFixedPricingByHash(snap.ExprString, snap.ExprHash) {
 		return TieredResult{}, fmt.Errorf("fixed pricing is not supported for task usage expressions")
 	}
-	cost, trace, err := RunExprByHashWithRequest(snap.ExprString, snap.ExprHash, params, request)
+	_, trace, err := RunExprByHashWithRequest(snap.ExprString, snap.ExprHash, params, request)
 	if err != nil {
 		return TieredResult{}, err
 	}
 
-	quotaBeforeGroupDec := quotaConversionDecimal(cost, snap)
+	quotaBeforeGroupDec := quotaConversionDecimal(trace.CostDec, snap)
 	afterGroup, clamp := common.QuotaFromDecimalChecked(quotaBeforeGroupDec.Mul(groupRatioDecimal(snap)))
 	crossed := trace.MatchedTier != snap.EstimatedTier
 

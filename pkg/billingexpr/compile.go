@@ -65,11 +65,12 @@ func (p *requestRulePatcher) Visit(node *ast.Node) {
 	})
 
 	traceFunction := requestRuleTraceFunction
-	var multiplierNode ast.Node = &ast.FloatNode{Value: multiplier}
+	// Keep the original literal node so decimal evaluation can recover the
+	// source text of multipliers that are not exactly representable in float64.
+	multiplierNode := conditional.Exp1
 	if _, multiplierIsInt := conditional.Exp1.(*ast.IntegerNode); multiplierIsInt {
 		if _, fallbackIsInt := conditional.Exp2.(*ast.IntegerNode); fallbackIsInt {
 			traceFunction = requestRuleTraceIntFunction
-			multiplierNode = conditional.Exp1
 		}
 	}
 
@@ -111,6 +112,8 @@ func usesRequestProbe(node ast.Node) bool {
 
 type cachedEntry struct {
 	prog          *vm.Program
+	tree          ast.Node
+	body          string
 	usedVars      map[string]bool
 	usedUsageKeys map[string]bool
 	requestRules  []RequestRuleTrace
@@ -210,16 +213,22 @@ func compileEntryFromCacheByHash(exprStr, hash string) (*cachedEntry, error) {
 		}
 	}
 	patcher := &requestRulePatcher{}
-	prog, err := expr.Compile(body, expr.Env(getCompileEnv(version)), expr.Patch(patcher), expr.AsFloat64())
+	ast.Walk(&tree.Node, patcher)
 	if patcher.restrictedIdentifier != "" {
 		return nil, fmt.Errorf("expr compile error: identifier %q is reserved for internal use", patcher.restrictedIdentifier)
 	}
+	// Compile still type-checks and accepts the same programs; financial
+	// evaluation uses the patched parse tree with exact decimals instead of
+	// the float64 VM program.
+	prog, err := expr.Compile(body, expr.Env(getCompileEnv(version)), expr.Patch(&requestRulePatcher{}), expr.AsFloat64())
 	if err != nil {
 		return nil, fmt.Errorf("expr compile error: %w", err)
 	}
 
 	entry := &cachedEntry{
 		prog:          prog,
+		tree:          tree.Node,
+		body:          body,
 		usedVars:      extractUsedVars(prog),
 		usedUsageKeys: extractUsedUsageKeys(prog),
 		requestRules:  patcher.requestRules,
