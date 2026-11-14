@@ -63,18 +63,85 @@ func GetAdtyPromoCodes(c *gin.Context) {
 	referralPage(c, query, &items)
 }
 
-func refuseAdtyPromoWrite(c *gin.Context) {
+func refuseAdtyPromoWrite(c *gin.Context, action string) {
+	recordAdtyPromoWriteOfficialAudit(c, action)
 	common.ApiError(c, service.ErrAdtyPromoRetired)
+}
+
+func recordAdtyPromoWriteOfficialAudit(c *gin.Context, action string) {
+	objectID := strings.TrimSpace(c.Param("id"))
+	if objectID == "" {
+		objectID = "new"
+	}
+	siteID := adtyPromoAuditSiteID(c, action)
+	var before any
+	if snapshot := adtyPromoAuditSnapshot(c.Param("id"), siteID, action); snapshot != nil {
+		before = snapshot
+		if siteID == 0 {
+			if id, ok := snapshot["site_id"].(int); ok {
+				siteID = id
+			}
+		}
+	}
+	service.WriteAdtyPromoOfficialAudit(
+		c.GetInt("id"),
+		siteID,
+		objectID,
+		action,
+		service.ErrAdtyPromoRetired.Error(),
+		before,
+		map[string]any{"result": model.AuditResultFailure},
+		model.AuditResultFailure,
+	)
+}
+
+func adtyPromoAuditSiteID(c *gin.Context, action string) int {
+	if id := service.AdtyRequestSiteID(c); id != 0 {
+		return id
+	}
+	if !strings.HasPrefix(action, "adty.site.") {
+		return 0
+	}
+	var sites []model.AdtySite
+	if err := model.DB.Where("owner_user_id = ? AND status IN ?", c.GetInt("id"),
+		[]string{model.AdtySiteStatusActive, model.AdtySiteStatusPaused}).Limit(1).Find(&sites).Error; err != nil || len(sites) == 0 {
+		return 0
+	}
+	return sites[0].Id
+}
+
+func adtyPromoAuditSnapshot(idText string, siteID int, action string) map[string]any {
+	id, err := strconv.Atoi(idText)
+	if err != nil || id <= 0 {
+		return nil
+	}
+	if strings.HasPrefix(action, "adty.site.") && siteID == 0 {
+		return nil
+	}
+	query := model.DB.Where("id = ?", id)
+	if strings.HasPrefix(action, "adty.site.") {
+		query = query.Where("site_id = ? AND funder = ?", siteID, model.AdtyPromoFunderSiteOwner)
+	}
+	var codes []model.AdtyPromoCode
+	if err := query.Limit(1).Find(&codes).Error; err != nil || len(codes) == 0 {
+		return nil
+	}
+	code := codes[0]
+	return map[string]any{
+		"id": code.Id, "kind": code.Kind, "value": code.Value.String(),
+		"min_face_usd": code.MinFaceUSD.String(), "enabled": code.Enabled,
+		"site_id": code.SiteId, "funder": code.Funder,
+	}
 }
 
 // PostAdtyPromoCode 新建平台出资的优惠码（Root）。
 func PostAdtyPromoCode(c *gin.Context) {
-	refuseAdtyPromoWrite(c)
+	refuseAdtyPromoWrite(c, "adty.marketing.promo_create")
 }
 
 // PutAdtyPromoCode 改优惠码（Root）。码本身和已用次数不改。
 func PutAdtyPromoCode(c *gin.Context) {
-	refuseAdtyPromoWrite(c)
+	refuseAdtyPromoWrite(c, "adty.marketing.promo_update")
 }
 
 // 站长中心的优惠码（12.4 站长出资）。码固定为本站、出资方是站长，优惠加赠从站长收益里扣。
@@ -140,15 +207,15 @@ func GetAdtySitePromoCodes(c *gin.Context) {
 
 // PostAdtySitePromoCode 站长新建本站的优惠码。
 func PostAdtySitePromoCode(c *gin.Context) {
-	refuseAdtyPromoWrite(c)
+	refuseAdtyPromoWrite(c, "adty.site.promo_create")
 }
 
 // PutAdtySitePromoCode 站长改本站的码；码本身、站点、出资方不改。
 func PutAdtySitePromoCode(c *gin.Context) {
-	refuseAdtyPromoWrite(c)
+	refuseAdtyPromoWrite(c, "adty.site.promo_update")
 }
 
 // DeleteAdtySitePromoCode 站长删本站的码。未付订单仍可入账本金和档位加赠，核销时移除已删除码的优惠加赠。
 func DeleteAdtySitePromoCode(c *gin.Context) {
-	refuseAdtyPromoWrite(c)
+	refuseAdtyPromoWrite(c, "adty.site.promo_delete")
 }

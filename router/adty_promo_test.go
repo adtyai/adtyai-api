@@ -2,6 +2,7 @@ package router
 
 import (
 	"net/http"
+	"strconv"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
@@ -12,6 +13,7 @@ import (
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 func TestRetiredMarketingEndpointsReturnNotFound(t *testing.T) {
@@ -189,4 +191,129 @@ func TestPromoDisabledBlocksQuoteAndPay(t *testing.T) {
 	stillRefused := adtyJSON(t, f.engine, http.MethodPost, "/api/adty/topup/quote", quoteWithCode, token)
 	require.Contains(t, stillRefused.Body.String(), "Promo codes are not available")
 	assert.Zero(t, gw.snapshot().creates)
+}
+
+func officialPromoAuditDB() *gorm.DB {
+	if model.LOG_DB != nil {
+		return model.LOG_DB
+	}
+	return model.DB
+}
+
+func requirePromoOfficialAudit(t *testing.T, objectID, action string) model.AuditLog {
+	t.Helper()
+	var log model.AuditLog
+	require.NoError(t, officialPromoAuditDB().Where("object_type = ? AND object_id = ? AND action = ?", "promo", objectID, action).Order("id desc").Take(&log).Error)
+	return log
+}
+
+// 优惠码管理写路径仍注册，写入仍拒绝，但每次到达处理函数的写尝试都写官方审计。
+func TestPromoManagementWritesWriteOfficialAudit(t *testing.T) {
+	f := newAdtyGuardFixture(t)
+	require.NoError(t, f.db.AutoMigrate(&model.AuthFlow{}, &model.TwoFA{}, &model.PasskeyCredential{}))
+	cfg := withResellerSetting(t)
+	cfg.Enabled, cfg.RootDomains = true, []string{"sites.example.com"}
+	cfg.CostFactor, cfg.MinCostFactor, cfg.MaxMarkup = new(0.8), new(0.5), new(3.0)
+	cfg.MaxSiteBonusExtra, cfg.TrialGrantMaxUSD, cfg.TrialGrantDailyUSD = new(2.0), new(0.0), new(0.0)
+
+	body := `{"code":"AUDIT-NEW1","kind":"percent","value":"10","min_face_usd":"30","max_uses":100,"per_user_limit":1,"enabled":true}`
+	resp := adtyJSON(t, f.engine, http.MethodPost, "/api/adty/admin/promo-codes", body, f.root)
+	assert.Contains(t, resp.Body.String(), "Promo codes are not available")
+	createLog := requirePromoOfficialAudit(t, "new", "adty.marketing.promo_create")
+	require.NotNil(t, createLog.SiteId)
+	assert.Equal(t, 0, *createLog.SiteId)
+	assert.Equal(t, model.AuditResultFailure, createLog.Result)
+	assert.False(t, createLog.Success)
+	assert.Equal(t, "Promo codes are not available", createLog.Reason)
+	assert.Empty(t, createLog.ApprovalRef)
+	assert.Contains(t, createLog.AfterValue, `"result":"failure"`)
+	assert.NotContains(t, createLog.AfterValue, "AUDIT-NEW1")
+	assert.NotContains(t, createLog.BeforeValue, "AUDIT-NEW1")
+	assert.NotContains(t, createLog.Content, "AUDIT-NEW1")
+	var root model.User
+	require.NoError(t, f.db.Where("username = ?", "guard-root").First(&root).Error)
+	assert.Equal(t, root.Id, createLog.UserId)
+	assert.Equal(t, "guard-root", createLog.Username)
+	var created int64
+	require.NoError(t, f.db.Model(&model.AdtyPromoCode{}).Where("code = ?", "AUDIT-NEW1").Count(&created).Error)
+	assert.Zero(t, created)
+
+	existing := model.AdtyPromoCode{Code: "AUDIT-OLD1", Kind: model.AdtyPromoKindPercent, Value: decimal.NewFromInt(10), Enabled: true, Funder: model.AdtyPromoFunderPlatform}
+	require.NoError(t, f.db.Create(&existing).Error)
+	resp = adtyJSON(t, f.engine, http.MethodPut, "/api/adty/admin/promo-codes/"+strconv.Itoa(existing.Id), `{"kind":"fixed","value":"5","enabled":false}`, f.root)
+	assert.Contains(t, resp.Body.String(), "Promo codes are not available")
+	updateLog := requirePromoOfficialAudit(t, strconv.Itoa(existing.Id), "adty.marketing.promo_update")
+	require.NotNil(t, updateLog.SiteId)
+	assert.Equal(t, 0, *updateLog.SiteId)
+	assert.Equal(t, model.AuditResultFailure, updateLog.Result)
+	assert.False(t, updateLog.Success)
+	assert.Equal(t, "Promo codes are not available", updateLog.Reason)
+	assert.Empty(t, updateLog.ApprovalRef)
+	assert.Contains(t, updateLog.BeforeValue, `"id":`+strconv.Itoa(existing.Id))
+	assert.Contains(t, updateLog.BeforeValue, `"enabled":true`)
+	assert.NotContains(t, updateLog.BeforeValue, "AUDIT-OLD1")
+	assert.NotContains(t, updateLog.AfterValue, "AUDIT-OLD1")
+	var stillEnabled bool
+	require.NoError(t, f.db.Model(&model.AdtyPromoCode{}).Select("enabled").Where("id = ?", existing.Id).Scan(&stillEnabled).Error)
+	assert.True(t, stillEnabled)
+
+	ownerToken := adtySessionToken(t, f.db, "promo-audit-owner", common.RoleCommonUser)
+	var owner model.User
+	require.NoError(t, f.db.Where("username = ?", "promo-audit-owner").First(&owner).Error)
+	site, err := service.OpenAdtySite(owner.Id, "promo-audit-shop", model.AdtySiteOpenedByAdmin, service.AdtySitePreset{})
+	require.NoError(t, err)
+	require.NoError(t, f.db.Model(&model.AdtySite{}).Where("id = ?", site.Id).Update("agreement_ver", service.AdtyCurrentSiteAgreementVersion()).Error)
+	service.InvalidateAdtySiteCache()
+
+	siteBody := `{"code":"AUDIT-SITE1","kind":"percent","value":"1","enabled":true}`
+	resp = adtyJSON(t, f.engine, http.MethodPost, "/api/adty/site/promo-codes", siteBody, ownerToken)
+	assert.Contains(t, resp.Body.String(), "Promo codes are not available")
+	siteCreateLog := requirePromoOfficialAudit(t, "new", "adty.site.promo_create")
+	require.NotNil(t, siteCreateLog.SiteId)
+	assert.Equal(t, site.Id, *siteCreateLog.SiteId)
+	assert.Equal(t, owner.Id, siteCreateLog.UserId)
+	assert.Equal(t, model.AuditResultFailure, siteCreateLog.Result)
+	assert.False(t, siteCreateLog.Success)
+	assert.NotContains(t, siteCreateLog.AfterValue, "AUDIT-SITE1")
+	var siteCreated int64
+	require.NoError(t, f.db.Model(&model.AdtyPromoCode{}).Where("code = ?", "AUDIT-SITE1").Count(&siteCreated).Error)
+	assert.Zero(t, siteCreated)
+
+	siteCode := model.AdtyPromoCode{Code: "AUDIT-KEEP1", Kind: model.AdtyPromoKindPercent, Value: decimal.NewFromInt(1), SiteId: site.Id,
+		Funder: model.AdtyPromoFunderSiteOwner, Enabled: true, CreatedBy: owner.Id}
+	require.NoError(t, f.db.Create(&siteCode).Error)
+	resp = adtyJSON(t, f.engine, http.MethodPut, "/api/adty/site/promo-codes/"+strconv.Itoa(siteCode.Id), `{"kind":"percent","value":"2","enabled":false}`, ownerToken)
+	assert.Contains(t, resp.Body.String(), "Promo codes are not available")
+	siteUpdateLog := requirePromoOfficialAudit(t, strconv.Itoa(siteCode.Id), "adty.site.promo_update")
+	require.NotNil(t, siteUpdateLog.SiteId)
+	assert.Equal(t, site.Id, *siteUpdateLog.SiteId)
+	assert.Equal(t, model.AuditResultFailure, siteUpdateLog.Result)
+	assert.Contains(t, siteUpdateLog.BeforeValue, `"id":`+strconv.Itoa(siteCode.Id))
+	assert.NotContains(t, siteUpdateLog.BeforeValue, "AUDIT-KEEP1")
+
+	resp = adtyJSON(t, f.engine, http.MethodDelete, "/api/adty/site/promo-codes/"+strconv.Itoa(siteCode.Id), "", ownerToken)
+	assert.Contains(t, resp.Body.String(), "Promo codes are not available")
+	deleteLog := requirePromoOfficialAudit(t, strconv.Itoa(siteCode.Id), "adty.site.promo_delete")
+	require.NotNil(t, deleteLog.SiteId)
+	assert.Equal(t, site.Id, *deleteLog.SiteId)
+	assert.Equal(t, owner.Id, deleteLog.UserId)
+	assert.Equal(t, model.AuditResultFailure, deleteLog.Result)
+	assert.False(t, deleteLog.Success)
+	assert.Equal(t, "Promo codes are not available", deleteLog.Reason)
+	assert.Empty(t, deleteLog.ApprovalRef)
+	assert.Contains(t, deleteLog.BeforeValue, `"id":`+strconv.Itoa(siteCode.Id))
+	assert.Contains(t, deleteLog.BeforeValue, `"funder":"`+model.AdtyPromoFunderSiteOwner+`"`)
+	assert.NotContains(t, deleteLog.BeforeValue, "AUDIT-KEEP1")
+	assert.NotContains(t, deleteLog.AfterValue, "AUDIT-KEEP1")
+	var remaining int64
+	require.NoError(t, f.db.Model(&model.AdtyPromoCode{}).Where("id = ?", siteCode.Id).Count(&remaining).Error)
+	assert.EqualValues(t, 1, remaining)
+
+	listed := adtyJSON(t, f.engine, http.MethodGet, "/api/adty/admin/promo-codes", "", f.root)
+	require.Equal(t, http.StatusOK, listed.Code)
+	var writeCount, listCount int64
+	require.NoError(t, officialPromoAuditDB().Model(&model.AuditLog{}).Where("object_type = ? AND action LIKE ?", "promo", "adty.%.promo_%").Count(&writeCount).Error)
+	require.NoError(t, officialPromoAuditDB().Model(&model.AuditLog{}).Where("action LIKE ?", "%promo%list%").Count(&listCount).Error)
+	assert.EqualValues(t, 5, writeCount)
+	assert.Zero(t, listCount)
 }

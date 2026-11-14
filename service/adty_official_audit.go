@@ -43,6 +43,17 @@ func writeAdtyOfficialAudit(actorId, siteId int, objectType, objectID, action, r
 	}
 }
 
+// WriteAdtyPromoOfficialAudit records an official G.13.2 audit for a promo
+// management write path. The current handlers refuse the write, so result is
+// typically failure; this does not change write behavior.
+func WriteAdtyPromoOfficialAudit(actorId, siteId int, objectID, action, reason string, before, after any, result string) {
+	objectID = strings.TrimSpace(objectID)
+	if objectID == "" {
+		objectID = "new"
+	}
+	writeAdtyOfficialAudit(actorId, siteId, "promo", objectID, action, reason, "", before, after, result)
+}
+
 func adtyWalletIdempotencyExists(tx *gorm.DB, keys ...string) (bool, error) {
 	if tx == nil {
 		return false, nil
