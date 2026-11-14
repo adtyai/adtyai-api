@@ -583,6 +583,60 @@ func SetAdtyAdminSiteStatus(c *gin.Context) {
 	common.ApiSuccess(c, site)
 }
 
+// ListAdtyPausedSiteRepairs lists leftover status=paused sites for Root review.
+// Listing does not change any row.
+func ListAdtyPausedSiteRepairs(c *gin.Context) {
+	if c.GetInt("role") != common.RoleRootUser {
+		denyAdtyAdminAction(c)
+		return
+	}
+	sites, err := service.ListLeftoverPausedAdtySites()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	views, err := buildSiteAdminViews(sites)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, views)
+}
+
+// RepairAdtyPausedSite is the Root-only one-time repair for one leftover paused site.
+// outcome=active repairs the row to active; outcome=close enters the existing
+// close/handover flow (main-site inheritance). Pause is not written back.
+func RepairAdtyPausedSite(c *gin.Context) {
+	if c.GetInt("role") != common.RoleRootUser {
+		denyAdtyAdminAction(c)
+		return
+	}
+	id, ok := siteIdParam(c)
+	if !ok {
+		return
+	}
+	var body struct {
+		Outcome   string `json:"outcome"`
+		Immediate bool   `json:"immediate"`
+		Reason    string `json:"reason"`
+	}
+	if err := common.DecodeJson(c.Request.Body, &body); err != nil {
+		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	site, err := service.RepairLeftoverPausedAdtySite(id, c.GetInt("id"), body.Outcome, service.AdtySiteClosePlan{
+		Immediate: body.Immediate, Reason: body.Reason,
+	})
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	recordManageAuditFor(c, site.OwnerUserId, "adty.site.paused_repair", map[string]any{
+		"site_id": site.Id, "outcome": strings.TrimSpace(body.Outcome), "status": site.Status,
+	})
+	common.ApiSuccess(c, site)
+}
+
 // ResumeAdtySiteSettlement 清掉对账暂停并立刻再结一次。数字还是对不上时响应里仍有 settle_hold_reason。
 func ResumeAdtySiteSettlement(c *gin.Context) {
 	id, ok := siteIdParam(c)

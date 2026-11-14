@@ -814,3 +814,80 @@ func TestSetAdtySiteStatusRejectsPauseAndResume(t *testing.T) {
 	assert.Equal(t, model.AdtySiteStatusClosed, closed.Status)
 	assert.Zero(t, closed.CloseTransferTo)
 }
+
+func TestLeftoverPausedSitesAreListedAndRepairedByRootWithoutAutoFlip(t *testing.T) {
+	db := prepareSiteDB(t)
+	root := referralUser(t, db, "paused-repair-root")
+	_, keepPaused := openActiveSite(t, db, "keep-paused")
+	_, repairActive := openActiveSite(t, db, "repair-active")
+	_, repairClose := openActiveSite(t, db, "repair-close")
+	_, stayActive := openActiveSite(t, db, "stay-active")
+	require.NoError(t, db.Model(&model.AdtySite{}).Where("id IN ?", []int{keepPaused.Id, repairActive.Id, repairClose.Id}).
+		Update("status", model.AdtySiteStatusPaused).Error)
+
+	listed, err := ListLeftoverPausedAdtySites()
+	require.NoError(t, err)
+	ids := make([]int, 0, len(listed))
+	for _, site := range listed {
+		ids = append(ids, site.Id)
+		assert.Equal(t, model.AdtySiteStatusPaused, site.Status)
+	}
+	assert.Contains(t, ids, keepPaused.Id)
+	assert.Contains(t, ids, repairActive.Id)
+	assert.Contains(t, ids, repairClose.Id)
+	assert.NotContains(t, ids, stayActive.Id)
+
+	for _, id := range []int{keepPaused.Id, repairActive.Id, repairClose.Id} {
+		stored, err := GetAdtySite(id)
+		require.NoError(t, err)
+		assert.Equal(t, model.AdtySiteStatusPaused, stored.Status, "listing leftover paused sites must not flip them")
+	}
+	storedActive, err := GetAdtySite(stayActive.Id)
+	require.NoError(t, err)
+	assert.Equal(t, model.AdtySiteStatusActive, storedActive.Status)
+
+	_, err = SetAdtySiteStatus(keepPaused.Id, root.Id, model.AdtySiteStatusActive, "must stay retired")
+	assert.ErrorIs(t, err, ErrAdtySitePauseRetired)
+	_, err = SetAdtySiteStatus(stayActive.Id, root.Id, model.AdtySiteStatusPaused, "must stay retired")
+	assert.ErrorIs(t, err, ErrAdtySitePauseRetired)
+	unchanged, err := GetAdtySite(keepPaused.Id)
+	require.NoError(t, err)
+	assert.Equal(t, model.AdtySiteStatusPaused, unchanged.Status)
+
+	activated, err := RepairLeftoverPausedAdtySite(repairActive.Id, root.Id, AdtyPausedRepairOutcomeActive, AdtySiteClosePlan{Reason: "confirm leftover site"})
+	require.NoError(t, err)
+	assert.Equal(t, model.AdtySiteStatusActive, activated.Status)
+	stillPaused, err := GetAdtySite(keepPaused.Id)
+	require.NoError(t, err)
+	assert.Equal(t, model.AdtySiteStatusPaused, stillPaused.Status, "repairing one site must not flip the others")
+
+	var activeAudits []model.AdtySiteAudit
+	require.NoError(t, db.Where("site_id = ? AND action = ?", repairActive.Id, "paused_repair").Order("id").Find(&activeAudits).Error)
+	require.Len(t, activeAudits, 1)
+	assert.Equal(t, root.Id, activeAudits[0].OperatorId)
+	assert.Equal(t, "confirm leftover site", activeAudits[0].Reason)
+	assert.Contains(t, activeAudits[0].OldValue, model.AdtySiteStatusPaused)
+	assert.Contains(t, activeAudits[0].NewValue, model.AdtySiteStatusActive)
+	assert.Contains(t, activeAudits[0].NewValue, AdtyPausedRepairOutcomeActive)
+
+	closed, err := RepairLeftoverPausedAdtySite(repairClose.Id, root.Id, AdtyPausedRepairOutcomeClose, AdtySiteClosePlan{Reason: "enter official close"})
+	require.NoError(t, err)
+	assert.Equal(t, model.AdtySiteStatusClosing, closed.Status)
+	assert.Zero(t, closed.CloseTransferTo)
+	assert.NotZero(t, closed.CloseExecuteAt)
+	assert.Equal(t, "enter official close", closed.CloseReason)
+
+	var closeAudits []model.AdtySiteAudit
+	require.NoError(t, db.Where("site_id = ? AND action IN ?", repairClose.Id, []string{"paused_repair", "close_schedule"}).Order("id").Find(&closeAudits).Error)
+	require.Len(t, closeAudits, 2)
+	assert.Equal(t, "paused_repair", closeAudits[0].Action)
+	assert.Equal(t, root.Id, closeAudits[0].OperatorId)
+	assert.Contains(t, closeAudits[0].NewValue, AdtyPausedRepairOutcomeClose)
+	assert.Equal(t, "close_schedule", closeAudits[1].Action)
+
+	_, err = RepairLeftoverPausedAdtySite(stayActive.Id, root.Id, AdtyPausedRepairOutcomeActive, AdtySiteClosePlan{Reason: "not paused"})
+	assert.ErrorIs(t, err, ErrAdtySitePausedRepair)
+	stillActive, err := GetAdtySite(stayActive.Id)
+	require.NoError(t, err)
+	assert.Equal(t, model.AdtySiteStatusActive, stillActive.Status)
+}

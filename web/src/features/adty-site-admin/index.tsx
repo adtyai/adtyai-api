@@ -26,16 +26,17 @@ import { DraftNavigationProvider } from '@/features/system-settings/components/d
 import { ADTY_PERMISSIONS, canAdmin } from '@/lib/adty-permissions'
 import { useAuthStore } from '@/stores/auth-store'
 
+import { BusinessTimezonePanel } from './components/business-timezone-panel'
+import { MainTeamPricePanel } from './components/main-team-price-panel'
 import { OverviewPanel } from './components/overview-panel'
+import { PausedSiteRepairPanel } from './components/paused-site-repair-panel'
 import { ReviewsPanel } from './components/reviews-panel'
 import { SettingsPanel } from './components/settings-panel'
-import { MainTeamPricePanel } from './components/main-team-price-panel'
-import { BusinessTimezonePanel } from './components/business-timezone-panel'
-import { SiteReferralCapPanel } from './components/site-referral-cap-panel'
-import { WithdrawRulesPanel } from './components/withdraw-rules-panel'
 import { SiteDetailSheet } from './components/site-detail-sheet'
+import { SiteReferralCapPanel } from './components/site-referral-cap-panel'
 import { SitesPanel } from './components/sites-panel'
 import { UsagePanel } from './components/usage-panel'
+import { WithdrawRulesPanel } from './components/withdraw-rules-panel'
 import {
   canOpenSiteAdminSection,
   SITE_ADMIN_SECTIONS,
@@ -65,6 +66,7 @@ export function SiteAdmin(props: { section: SiteAdminSectionId }) {
       <SectionPageLayout>
         <SectionPageLayout.Title>{t('Reseller sites')}</SectionPageLayout.Title>
         <SectionPageLayout.Content>
+          {props.section === 'sites' && <PausedSiteRepairPanel />}
           <Tabs
             value={props.section}
             onValueChange={(value) =>

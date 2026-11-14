@@ -39,6 +39,14 @@ var (
 	ErrAdtySiteStatus           = common.NewMessage("The site cannot change to this status")
 	ErrAdtySiteTransfer         = common.NewMessage("Closed-site customers can only be inherited by the main site")
 	ErrAdtySitePauseRetired     = common.NewMessage("Independent site pause and resume is not supported")
+	ErrAdtySitePausedRepair     = common.NewMessage("Only leftover paused sites can be repaired this way")
+)
+
+// Outcomes for the Root-only leftover paused-site repair (DEC-019 / ISS-R2-0022).
+// Pause is not an operating mode and is not reintroduced as a write path.
+const (
+	AdtyPausedRepairOutcomeActive = "active"
+	AdtyPausedRepairOutcomeClose  = "close"
 )
 
 // AdtySitePreset 是开站时预设的单站 d 和 k 上限（管理员直接开或邀请码带的），空就用全局。
@@ -722,8 +730,64 @@ var AdtyOnSiteCostFactorChanged func(site *model.AdtySite)
 
 // SetAdtySiteStatus 不再暂停或恢复分站。独立暂停/恢复已退役（DEC-019 / SITE-008）；
 // 关站走 ScheduleAdtySiteClose。任何把站点改成或改出 paused 的请求都返回明确错误，不会静默成功。
+// 遗留 status=paused 行只能由 Root 通过 RepairLeftoverPausedAdtySite 人工逐站修复，不会在此自动翻转。
 func SetAdtySiteStatus(siteId, adminId int, status, reason string) (*model.AdtySite, error) {
 	return nil, ErrAdtySitePauseRetired
+}
+
+// ListLeftoverPausedAdtySites returns leftover status=paused rows for Root review.
+// It does not change any site status.
+func ListLeftoverPausedAdtySites() ([]model.AdtySite, error) {
+	var sites []model.AdtySite
+	if err := model.DB.Where("status = ?", model.AdtySiteStatusPaused).Order("id ASC").Find(&sites).Error; err != nil {
+		return nil, err
+	}
+	return sites, nil
+}
+
+// RepairLeftoverPausedAdtySite is the Root-only one-time repair for a leftover
+// paused row. Root chooses, per site, either repair to active or enter the
+// existing close/handover flow (ScheduleAdtySiteClose, customers inherited by
+// the main site). Other statuses are rejected. Pause/resume write paths stay retired.
+func RepairLeftoverPausedAdtySite(siteId, adminId int, outcome string, plan AdtySiteClosePlan) (*model.AdtySite, error) {
+	switch strings.TrimSpace(outcome) {
+	case AdtyPausedRepairOutcomeActive:
+		return repairLeftoverPausedAdtySiteToActive(siteId, adminId, plan.Reason)
+	case AdtyPausedRepairOutcomeClose:
+		plan.TransferTo = 0
+		plan.ClawBack = false
+		return scheduleAdtySiteClose(siteId, adminId, plan, model.AdtySiteStatusPaused)
+	default:
+		return nil, ErrAdtySiteStatus
+	}
+}
+
+func repairLeftoverPausedAdtySiteToActive(siteId, adminId int, reason string) (*model.AdtySite, error) {
+	err := model.DB.Transaction(func(tx *gorm.DB) error {
+		var site model.AdtySite
+		if err := model.AdtyLockForUpdate(tx).Where("id = ?", siteId).First(&site).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrAdtySiteNotFound
+			}
+			return err
+		}
+		if site.Status != model.AdtySiteStatusPaused {
+			return ErrAdtySitePausedRepair
+		}
+		updates := map[string]any{"status": model.AdtySiteStatusActive}
+		if err := tx.Model(&model.AdtySite{}).Where("id = ?", site.Id).Updates(updates).Error; err != nil {
+			return err
+		}
+		return recordSiteAuditTx(tx, site.Id, "paused_repair", adminId,
+			map[string]any{"status": site.Status},
+			map[string]any{"status": model.AdtySiteStatusActive, "outcome": AdtyPausedRepairOutcomeActive},
+			reason)
+	})
+	if err != nil {
+		return nil, err
+	}
+	InvalidateAdtySiteCache()
+	return GetAdtySite(siteId)
 }
 
 // RequestAdtySiteClose 是站长申请关站：只记下申请时间。关闭仍由 Root 在主站后台确认，客户一律由主站继承。
@@ -766,6 +830,10 @@ type AdtySiteClosePlan struct {
 // ScheduleAdtySiteClose 把站点改成 closing，close_transfer_to 只记 0（由主站继承），
 // close_notice_days 天后由主节点执行；Immediate 时立即执行。站点 pending（还没开）时直接关闭，没有客户。
 func ScheduleAdtySiteClose(siteId, adminId int, plan AdtySiteClosePlan) (*model.AdtySite, error) {
+	return scheduleAdtySiteClose(siteId, adminId, plan, "")
+}
+
+func scheduleAdtySiteClose(siteId, adminId int, plan AdtySiteClosePlan, requiredStatus string) (*model.AdtySite, error) {
 	now := time.Now().Unix()
 	immediate := plan.Immediate
 	err := model.DB.Transaction(func(tx *gorm.DB) error {
@@ -775,6 +843,9 @@ func ScheduleAdtySiteClose(siteId, adminId int, plan AdtySiteClosePlan) (*model.
 				return ErrAdtySiteNotFound
 			}
 			return err
+		}
+		if requiredStatus != "" && site.Status != requiredStatus {
+			return ErrAdtySitePausedRepair
 		}
 		if site.Status == model.AdtySiteStatusClosed {
 			return ErrAdtySiteStatus
@@ -795,6 +866,16 @@ func ScheduleAdtySiteClose(siteId, adminId int, plan AdtySiteClosePlan) (*model.
 		}
 		if err := tx.Model(&model.AdtySite{}).Where("id = ?", site.Id).Updates(updates).Error; err != nil {
 			return err
+		}
+		if requiredStatus == model.AdtySiteStatusPaused {
+			if err := recordSiteAuditTx(tx, site.Id, "paused_repair", adminId,
+				map[string]any{"status": site.Status},
+				map[string]any{
+					"status": model.AdtySiteStatusClosing, "outcome": AdtyPausedRepairOutcomeClose,
+					"close_execute_at": executeAt, "immediate": immediate,
+				}, plan.Reason); err != nil {
+				return err
+			}
 		}
 		return recordSiteAuditTx(tx, site.Id, "close_schedule", adminId, map[string]any{"status": site.Status}, updates, plan.Reason)
 	})

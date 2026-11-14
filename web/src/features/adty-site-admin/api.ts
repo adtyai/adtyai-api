@@ -138,7 +138,9 @@ export type AnomalyDisposition = {
   created_at?: number
 }
 
-export async function getAdminSiteWallets(siteId: number): Promise<AdminWallet[]> {
+export async function getAdminSiteWallets(
+  siteId: number
+): Promise<AdminWallet[]> {
   const res = await api.get<ApiResponse<AdminWallet[]>>(
     `${BASE}/sites/${siteId}/wallets`
   )
@@ -167,9 +169,7 @@ export async function reviewAdminAnomalyDisposition(
   requireServerSuccess(res.data)
 }
 
-export async function getAdminFundAnomalies(
-  siteId: number
-): Promise<string[]> {
+export async function getAdminFundAnomalies(siteId: number): Promise<string[]> {
   const res = await api.get<ApiResponse<{ kinds?: string[] }>>(
     `${BASE}/fund-anomalies`,
     { params: { site_id: siteId } }
@@ -506,6 +506,24 @@ export async function setSiteStatus(
   return requireServerSuccess(res.data).data
 }
 
+export async function getPausedSiteRepairs(): Promise<AdminSite[]> {
+  const res = await api.get<ApiResponse<AdminSite[]>>(
+    `${BASE}/sites/paused-repairs`
+  )
+  return requireServerSuccess(res.data).data ?? []
+}
+
+export async function repairPausedSite(
+  id: number,
+  body: { outcome: 'active' | 'close'; reason: string; immediate?: boolean }
+): Promise<AdminSite> {
+  const res = await api.post<ApiResponse<AdminSite>>(
+    `${BASE}/sites/${id}/paused-repair`,
+    body
+  )
+  return requireServerSuccess(res.data).data
+}
+
 /** Takes the site's public notice down (site adjust permission); the rest of the brand stays. */
 export async function clearSiteNotice(
   id: number,
@@ -540,4 +558,3 @@ export async function saveResellerSettings(
   )
   return requireServerSuccess(res.data).data
 }
-

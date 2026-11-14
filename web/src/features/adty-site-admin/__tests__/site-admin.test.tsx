@@ -40,6 +40,7 @@ import { useAuthStore } from '@/stores/auth-store'
 
 import { CloseSiteDialog } from '../components/close-site-dialog'
 import { OverviewPanel } from '../components/overview-panel'
+import { PausedSiteRepairPanel } from '../components/paused-site-repair-panel'
 import { ReviewsPanel } from '../components/reviews-panel'
 import { SettingsPanel } from '../components/settings-panel'
 import { SiteDetailSheet } from '../components/site-detail-sheet'
@@ -58,6 +59,8 @@ const api = vi.hoisted(() => ({
   getSiteReports: vi.fn(),
   handleSiteReport: vi.fn(),
   setSiteStatus: vi.fn(),
+  getPausedSiteRepairs: vi.fn(),
+  repairPausedSite: vi.fn(),
   resumeSiteSettlement: vi.fn(),
   getResellerSettings: vi.fn(),
   saveResellerSettings: vi.fn(),
@@ -236,6 +239,7 @@ function siteNames(): string[] {
 
 beforeEach(() => {
   asRoot()
+  api.getPausedSiteRepairs.mockResolvedValue([])
   api.getAdminBalanceRequests.mockResolvedValue([])
   api.getAdminSiteReferralCap.mockResolvedValue({ cap_configured: false })
   api.getAdminFundAnomalies.mockResolvedValue([])
@@ -283,7 +287,12 @@ describe('site list', () => {
   })
 
   it('asks the server to sort by revenue and shows this month', async () => {
-    renderWith(<SitesPanel onOpenSite={() => undefined} />)
+    renderWith(
+      <>
+        <PausedSiteRepairPanel />
+        <SitesPanel onOpenSite={() => undefined} />
+      </>
+    )
 
     await screen.findByText('beta.sites.example')
     expect(api.getSites).toHaveBeenCalledWith(
@@ -296,7 +305,12 @@ describe('site list', () => {
 
   it('sends the next sort to the server instead of reordering the page', async () => {
     const user = userEvent.setup()
-    renderWith(<SitesPanel onOpenSite={() => undefined} />)
+    renderWith(
+      <>
+        <PausedSiteRepairPanel />
+        <SitesPanel onOpenSite={() => undefined} />
+      </>
+    )
     await screen.findByText('beta.sites.example')
 
     await user.click(screen.getByRole('button', { name: /Customers/ }))
@@ -316,7 +330,12 @@ describe('site list', () => {
 
   it('opens a site through the create API', async () => {
     const user = userEvent.setup()
-    renderWith(<SitesPanel onOpenSite={() => undefined} />)
+    renderWith(
+      <>
+        <PausedSiteRepairPanel />
+        <SitesPanel onOpenSite={() => undefined} />
+      </>
+    )
     await screen.findByText('beta.sites.example')
 
     await user.type(screen.getByRole('textbox', { name: 'User ID' }), '15')
@@ -334,7 +353,12 @@ describe('site list', () => {
 
   it('does not offer site creation to an adjust-only admin', async () => {
     asSiteAdmin(['read', 'adjust'])
-    renderWith(<SitesPanel onOpenSite={() => undefined} />)
+    renderWith(
+      <>
+        <PausedSiteRepairPanel />
+        <SitesPanel onOpenSite={() => undefined} />
+      </>
+    )
     await screen.findByRole('table', { name: 'Reseller sites' })
     expect(
       screen.queryByRole('form', { name: 'Open a reseller site' })
@@ -344,7 +368,12 @@ describe('site list', () => {
 
   it('does not offer site creation to an admin even with the create grant', async () => {
     asSiteAdmin(['read', 'create'])
-    renderWith(<SitesPanel onOpenSite={() => undefined} />)
+    renderWith(
+      <>
+        <PausedSiteRepairPanel />
+        <SitesPanel onOpenSite={() => undefined} />
+      </>
+    )
     await screen.findByRole('table', { name: 'Reseller sites' })
     expect(
       screen.queryByRole('form', { name: 'Open a reseller site' })
@@ -353,11 +382,16 @@ describe('site list', () => {
   })
 
   it('does not list paused as a first-class status filter', async () => {
-    renderWith(<SitesPanel onOpenSite={() => undefined} />)
-    const filter = await screen.findByLabelText('Status')
-    const labels = within(filter as HTMLElement).getAllByRole('option').map(
-      (option) => option.textContent ?? ''
+    renderWith(
+      <>
+        <PausedSiteRepairPanel />
+        <SitesPanel onOpenSite={() => undefined} />
+      </>
     )
+    const filter = await screen.findByLabelText('Status')
+    const labels = within(filter as HTMLElement)
+      .getAllByRole('option')
+      .map((option) => option.textContent ?? '')
     expect(labels).toEqual([
       'All statuses',
       'Pending review',
@@ -366,6 +400,103 @@ describe('site list', () => {
       'Closed',
     ])
     expect(labels).not.toContain('Paused')
+  })
+
+  it('lets Root review leftover paused sites and repair one to active without auto-flipping the list', async () => {
+    const leftover = site({
+      id: 21,
+      host: 'legacy-paused.sites.example',
+      status: 'paused',
+    })
+    api.getPausedSiteRepairs.mockResolvedValue([leftover])
+    api.repairPausedSite.mockResolvedValue({ ...leftover, status: 'active' })
+    const user = userEvent.setup()
+    renderWith(
+      <>
+        <PausedSiteRepairPanel />
+        <SitesPanel onOpenSite={() => undefined} />
+      </>
+    )
+    const host = await screen.findByText('legacy-paused.sites.example')
+    const panel = screen.getByRole('region', { name: 'Leftover paused sites' })
+    expect(panel).toContainElement(host)
+    expect(
+      within(panel).getByText(
+        'These leftover paused sites are not an operating mode. Review each one and either repair it to active or enter close/handover. Nothing is changed automatically.'
+      )
+    ).toBeInTheDocument()
+    await user.click(
+      within(panel).getByRole('button', { name: 'Repair to active' })
+    )
+    const confirm = await screen.findByRole('alertdialog')
+    await user.type(within(confirm).getByLabelText('Reason'), 'root reviewed')
+    await user.click(
+      within(confirm).getByRole('button', { name: 'Repair to active' })
+    )
+    await waitFor(() =>
+      expect(api.repairPausedSite).toHaveBeenCalledWith(21, {
+        outcome: 'active',
+        reason: 'root reviewed',
+        immediate: undefined,
+      })
+    )
+    expect(api.setSiteStatus).not.toHaveBeenCalled()
+  })
+
+  it('lets Root send a leftover paused site into existing close/handover', async () => {
+    const leftover = site({
+      id: 22,
+      host: 'closing-paused.sites.example',
+      status: 'paused',
+    })
+    api.getPausedSiteRepairs.mockResolvedValue([leftover])
+    api.repairPausedSite.mockResolvedValue({ ...leftover, status: 'closing' })
+    const user = userEvent.setup()
+    renderWith(
+      <>
+        <PausedSiteRepairPanel />
+        <SitesPanel onOpenSite={() => undefined} />
+      </>
+    )
+    const panel = await screen.findByRole('region', {
+      name: 'Leftover paused sites',
+    })
+    await screen.findByText('closing-paused.sites.example')
+    await user.click(
+      within(panel).getByRole('button', { name: 'Enter close/handover' })
+    )
+    const dialog = await screen.findByRole('dialog')
+    await user.type(within(dialog).getByLabelText('Reason'), 'enter handover')
+    await user.click(
+      within(dialog).getByRole('button', { name: 'Enter close/handover' })
+    )
+    await waitFor(() =>
+      expect(api.repairPausedSite).toHaveBeenCalledWith(22, {
+        outcome: 'close',
+        reason: 'enter handover',
+        immediate: false,
+      })
+    )
+    expect(api.setSiteStatus).not.toHaveBeenCalled()
+  })
+
+  it('does not show leftover paused repair actions to a non-Root admin', async () => {
+    asSiteAdmin(['read', 'adjust'])
+    api.getPausedSiteRepairs.mockResolvedValue([
+      site({ id: 21, host: 'legacy-paused.sites.example', status: 'paused' }),
+    ])
+    renderWith(
+      <>
+        <PausedSiteRepairPanel />
+        <SitesPanel onOpenSite={() => undefined} />
+      </>
+    )
+    await screen.findByRole('table', { name: 'Reseller sites' })
+    expect(
+      screen.queryByRole('region', { name: 'Leftover paused sites' })
+    ).not.toBeInTheDocument()
+    expect(api.getPausedSiteRepairs).not.toHaveBeenCalled()
+    expect(api.repairPausedSite).not.toHaveBeenCalled()
   })
 })
 
@@ -980,7 +1111,9 @@ describe('SiteDetailSheet notice takedown', () => {
     openSheet(site({}))
     const table = await screen.findByRole('table', { name: 'Balance requests' })
     expect(within(table).getByText('1.50')).toBeInTheDocument()
-    await userEvent.click(within(table).getByRole('button', { name: 'Approve' }))
+    await userEvent.click(
+      within(table).getByRole('button', { name: 'Approve' })
+    )
     await waitFor(() =>
       expect(api.reviewAdminBalanceRequest).toHaveBeenCalledWith(4, true)
     )
@@ -1050,9 +1183,7 @@ describe('SiteDetailSheet notice takedown', () => {
 
   it('still offers resume settlement when settlement is on hold', async () => {
     asSiteAdmin(['read', 'adjust'])
-    api.resumeSiteSettlement.mockResolvedValue(
-      site({ settle_hold_reason: '' })
-    )
+    api.resumeSiteSettlement.mockResolvedValue(site({ settle_hold_reason: '' }))
     openSheet(site({ settle_hold_reason: 'usage mismatch' }))
     const resumeSettlement = await screen.findByRole('button', {
       name: 'Resume settlement',
@@ -1204,7 +1335,6 @@ describe('queued Site settings and invite authority', () => {
     await waitFor(() => expect(paused.client.isMutating()).toBe(0))
     expect(api.saveResellerSettings).toHaveBeenCalledWith({ freeze_days: 29 })
   })
-
 })
 
 describe('UsagePanel', () => {

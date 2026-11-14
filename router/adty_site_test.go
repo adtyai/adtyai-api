@@ -816,3 +816,85 @@ func TestResellerUsage(t *testing.T) {
 	assert.True(t, usage.WidgetSlotsLow, "fewer than 5 slots left")
 	assert.EqualValues(t, 1, usage.UnassignedDomains)
 }
+
+func TestRootPausedSiteRepairIsManualAndRejectedForNonRoot(t *testing.T) {
+	f := newAdtyGuardFixture(t)
+	cfg := withResellerSetting(t)
+	cfg.Enabled, cfg.RootDomains = true, []string{"sites.example.com"}
+	cfg.CostFactor, cfg.MinCostFactor, cfg.MaxMarkup = new(0.8), new(0.5), new(3.0)
+	cfg.MaxSiteBonusExtra, cfg.TrialGrantMaxUSD, cfg.TrialGrantDailyUSD = new(0.0), new(0.0), new(0.0)
+	cfg.CloseNoticeDays = 7
+
+	owner := model.User{Username: "paused-repair-owner", Password: "x", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: "default"}
+	require.NoError(t, f.db.Create(&owner).Error)
+	keep, err := service.OpenAdtySite(owner.Id, "keep-paused", model.AdtySiteOpenedByAdmin, service.AdtySitePreset{})
+	require.NoError(t, err)
+	otherOwner := model.User{Username: "paused-repair-owner-2", Password: "x", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: "default"}
+	require.NoError(t, f.db.Create(&otherOwner).Error)
+	repairActive, err := service.OpenAdtySite(otherOwner.Id, "repair-active", model.AdtySiteOpenedByAdmin, service.AdtySitePreset{})
+	require.NoError(t, err)
+	closeOwner := model.User{Username: "paused-repair-owner-3", Password: "x", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: "default"}
+	require.NoError(t, f.db.Create(&closeOwner).Error)
+	repairClose, err := service.OpenAdtySite(closeOwner.Id, "repair-close", model.AdtySiteOpenedByAdmin, service.AdtySitePreset{})
+	require.NoError(t, err)
+	require.NoError(t, f.db.Model(&model.AdtySite{}).Where("id IN ?", []int{keep.Id, repairActive.Id, repairClose.Id}).
+		Update("status", model.AdtySiteStatusPaused).Error)
+
+	listPath := "/api/adty/admin/sites/paused-repairs"
+	f.grant(t, authz.AdtySiteRead, authz.AdtySiteAdjust)
+	deniedList := adtyJSON(t, f.engine, http.MethodGet, listPath, "", f.token)
+	assert.Equal(t, http.StatusForbidden, deniedList.Code, deniedList.Body.String())
+
+	listed := adtyJSON(t, f.engine, http.MethodGet, listPath, "", f.root)
+	require.Equal(t, http.StatusOK, listed.Code, listed.Body.String())
+	assert.Contains(t, listed.Body.String(), `"success":true`)
+	assert.Contains(t, listed.Body.String(), "keep-paused")
+	assert.Contains(t, listed.Body.String(), "repair-active")
+	assert.Contains(t, listed.Body.String(), "repair-close")
+	for _, id := range []int{keep.Id, repairActive.Id, repairClose.Id} {
+		var stored model.AdtySite
+		require.NoError(t, f.db.First(&stored, id).Error)
+		assert.Equal(t, model.AdtySiteStatusPaused, stored.Status, "listing must not auto-flip leftover paused rows")
+	}
+
+	repairPath := func(id int) string { return fmt.Sprintf("/api/adty/admin/sites/%d/paused-repair", id) }
+	deniedRepair := adtyJSON(t, f.engine, http.MethodPost, repairPath(repairActive.Id), `{"outcome":"active","reason":"admin cannot repair"}`, f.token)
+	assert.Equal(t, http.StatusForbidden, deniedRepair.Code, deniedRepair.Body.String())
+	var stillPaused model.AdtySite
+	require.NoError(t, f.db.First(&stillPaused, repairActive.Id).Error)
+	assert.Equal(t, model.AdtySiteStatusPaused, stillPaused.Status)
+
+	deniedPause := adtyJSON(t, f.engine, http.MethodPut, fmt.Sprintf("/api/adty/admin/sites/%d/status", keep.Id), `{"status":"paused"}`, f.root)
+	assert.Contains(t, deniedPause.Body.String(), "Independent site pause and resume is not supported")
+	deniedResume := adtyJSON(t, f.engine, http.MethodPut, fmt.Sprintf("/api/adty/admin/sites/%d/status", keep.Id), `{"status":"active"}`, f.root)
+	assert.Contains(t, deniedResume.Body.String(), "Independent site pause and resume is not supported")
+	var keepAfterDenied model.AdtySite
+	require.NoError(t, f.db.First(&keepAfterDenied, keep.Id).Error)
+	assert.Equal(t, model.AdtySiteStatusPaused, keepAfterDenied.Status)
+
+	activated := adtyJSON(t, f.engine, http.MethodPost, repairPath(repairActive.Id), `{"outcome":"active","reason":"root repaired"}`, f.root)
+	require.Contains(t, activated.Body.String(), `"success":true`, activated.Body.String())
+	var afterActive model.AdtySite
+	require.NoError(t, f.db.First(&afterActive, repairActive.Id).Error)
+	assert.Equal(t, model.AdtySiteStatusActive, afterActive.Status)
+
+	closed := adtyJSON(t, f.engine, http.MethodPost, repairPath(repairClose.Id), `{"outcome":"close","reason":"enter handover"}`, f.root)
+	require.Contains(t, closed.Body.String(), `"success":true`, closed.Body.String())
+	var afterClose model.AdtySite
+	require.NoError(t, f.db.First(&afterClose, repairClose.Id).Error)
+	assert.Equal(t, model.AdtySiteStatusClosing, afterClose.Status)
+	assert.Zero(t, afterClose.CloseTransferTo)
+
+	var keepRow model.AdtySite
+	require.NoError(t, f.db.First(&keepRow, keep.Id).Error)
+	assert.Equal(t, model.AdtySiteStatusPaused, keepRow.Status)
+
+	var audits []model.AdtySiteAudit
+	require.NoError(t, f.db.Where("site_id IN ? AND action = ?", []int{repairActive.Id, repairClose.Id}, "paused_repair").Find(&audits).Error)
+	require.Len(t, audits, 2)
+	var rootUser model.User
+	require.NoError(t, f.db.Where("username = ?", "guard-root").First(&rootUser).Error)
+	for _, audit := range audits {
+		assert.Equal(t, rootUser.Id, audit.OperatorId)
+	}
+}
