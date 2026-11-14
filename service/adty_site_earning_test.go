@@ -836,10 +836,10 @@ func TestNegativeRowsSettleWithoutFreeze(t *testing.T) {
 	assert.Equal(t, model.AdtySiteEarningPending, usage.Status)
 	affiliate, err := Referral.EnsureAffiliate(owner.Id)
 	require.NoError(t, err)
-	assert.InDelta(t, -10, account(t, db, affiliate.Id).AvailableAmount, 1e-9)
+	assert.InDelta(t, 0, account(t, db, affiliate.Id).AvailableAmount, 1e-9, "bonus settlement must not reduce the commission book")
 }
 
-func TestNegativeSettlementBlocksWithdraw(t *testing.T) {
+func TestBonusSettlementDoesNotReduceCommissionAvailable(t *testing.T) {
 	db := prepareSiteDB(t)
 	owner, site := openActiveSite(t, db, "negative")
 	customer := siteCustomer(t, db, site, "negative-customer")
@@ -848,14 +848,16 @@ func TestNegativeSettlementBlocksWithdraw(t *testing.T) {
 	adtySiteEarningDayFn = func() string { return "2026-09-01" }
 	siteTopUp(t, customer, site, "EPU-negative", 100, "10")
 	consumeOnSite(t, customer, perUnit("10")) // k=1 价差为 0，加赠 −$10
-	_, err := RunAdtySiteSettlementOnce(time.Date(2026, 10, 1, 4, 0, 0, 0, time.Local))
-	require.NoError(t, err)
 	affiliate, err := Referral.EnsureAffiliate(owner.Id)
 	require.NoError(t, err)
-	assert.InDelta(t, -10, account(t, db, affiliate.Id).AvailableAmount, 1e-9)
-	_, err = Referral.CreateWithdrawal(ReferralWithdrawalCreateInput{UserId: owner.Id, Amount: usd("25"), AccountType: model.ReferralWithdrawToUSDT,
+	require.NoError(t, db.Model(&model.ReferralCommissionAccount{}).Where("affiliate_id = ?", affiliate.Id).Update("available_amount", 25).Error)
+	_, err = RunAdtySiteSettlementOnce(time.Date(2026, 10, 1, 4, 0, 0, 0, time.Local))
+	require.NoError(t, err)
+	assert.InDelta(t, 25, account(t, db, affiliate.Id).AvailableAmount, 1e-9, "gift settlement must not reduce the commission book")
+	withdrawal, err := Referral.CreateWithdrawal(ReferralWithdrawalCreateInput{UserId: owner.Id, Amount: usd("25"), AccountType: model.ReferralWithdrawToUSDT,
 		AccountNetwork: "TRC20", AccountNo: "T" + "A1B2C3D4E5F6G7H8J9K1L2M3N4P5Q6R7S", IdempotencyKey: "neg-1"})
-	assert.ErrorIs(t, err, ErrReferralInsufficient)
+	require.NoError(t, err)
+	assert.Equal(t, model.ReferralWithdrawalStatusPending, withdrawal.Status)
 }
 
 func TestSiteOwnerTransfersToBalanceInstantly(t *testing.T) {

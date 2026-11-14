@@ -176,7 +176,7 @@ func TestPayAndSettleSiteGiftDoesNotDoubleSpend(t *testing.T) {
 	require.Equal(t, model.AdtySiteEarningAvailable, bonus.Status)
 	affiliate, err := Referral.EnsureAffiliate(owner.Id)
 	require.NoError(t, err)
-	require.InDelta(t, -10, account(t, db, affiliate.Id).AvailableAmount, 1e-9)
+	require.InDelta(t, 0, account(t, db, affiliate.Id).AvailableAmount, 1e-9, "gift settlement must not reduce the commission book")
 }
 
 func TestLatePayAfterCancelReacquiresGiftGuarantee(t *testing.T) {

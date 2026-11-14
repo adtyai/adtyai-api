@@ -145,13 +145,12 @@ func settleAdtySite(siteId int, cutoff string, now int64) (bool, error) {
 			if err != nil {
 				return err
 			}
-			total := decimal.Zero
 			walletTotal := decimal.Zero
 			ids := make([]int64, 0, len(group.Rows))
 			for _, row := range group.Rows {
-				total = total.Add(row.Earning)
 				// Gift funding is already held as a wallet freeze. Settling the
-				// bonus reporting rows must not spend the same money again.
+				// bonus reporting rows must not spend the same money again,
+				// and must not reduce the parallel commission book either.
 				if row.Kind != model.AdtySiteEarningBonus && row.Kind != model.AdtySiteEarningBonusReversal {
 					walletTotal = walletTotal.Add(row.Earning)
 				}
@@ -168,12 +167,12 @@ func settleAdtySite(siteId int, cutoff string, now int64) (bool, error) {
 				}); err != nil {
 					return err
 				}
-			}
-			if err := AdjustAccountTx(tx, account, decimal.Zero, total, decimal.Zero, decimal.Zero, model.ReferralCommissionLedger{
-				Type: "site_earning", RefType: "site", RefId: fmt.Sprint(site.Id),
-				ExternalRefId: fmt.Sprintf("site-earning:%d:%d:%s:%d", site.Id, group.OwnerID, cutoff, now), Remark: fmt.Sprintf("site earnings up to %s", cutoff),
-			}); err != nil {
-				return err
+				if err := AdjustAccountTx(tx, account, decimal.Zero, walletTotal, decimal.Zero, decimal.Zero, model.ReferralCommissionLedger{
+					Type: "site_earning", RefType: "site", RefId: fmt.Sprint(site.Id),
+					ExternalRefId: fmt.Sprintf("site-earning:%d:%d:%s:%d", site.Id, group.OwnerID, cutoff, now), Remark: fmt.Sprintf("site earnings up to %s", cutoff),
+				}); err != nil {
+					return err
+				}
 			}
 			if err := tx.Model(&model.AdtySiteEarningDaily{}).Where("id IN ?", ids).Updates(map[string]any{
 				"status": model.AdtySiteEarningAvailable, "settled_at": now,
