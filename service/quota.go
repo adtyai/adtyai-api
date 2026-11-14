@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -352,26 +353,51 @@ func CalcOpenRouterCacheCreateTokens(usage dto.Usage, priceData types.PriceData)
 	if priceData.CacheCreationRatio == 1 {
 		return 0
 	}
-	quotaPrice := priceData.ModelRatio / common.QuotaPerUnit
-	promptCacheCreatePrice := quotaPrice * priceData.CacheCreationRatio
-	promptCacheReadPrice := quotaPrice * priceData.CacheRatio
-	completionPrice := quotaPrice * priceData.CompletionRatio
+	// PriceData still snapshots ratios as float64. Convert each input once at
+	// this boundary and keep the existing inversion in exact decimal.
+	modelRatio := decimal.NewFromFloat(priceData.ModelRatio)
+	cacheCreationRatio := decimal.NewFromFloat(priceData.CacheCreationRatio)
+	cacheRatio := decimal.NewFromFloat(priceData.CacheRatio)
+	completionRatio := decimal.NewFromFloat(priceData.CompletionRatio)
+	quotaPrice := modelRatio.Div(common.QuotaPerUnitDecimal())
+	promptCacheCreatePrice := quotaPrice.Mul(cacheCreationRatio)
+	promptCacheReadPrice := quotaPrice.Mul(cacheRatio)
+	completionPrice := quotaPrice.Mul(completionRatio)
 
-	cost, _ := usage.Cost.(float64)
-	totalPromptTokens := float64(usage.PromptTokens)
-	completionTokens := float64(usage.CompletionTokens)
-	promptCacheReadTokens := float64(usage.PromptTokensDetails.CachedTokens)
+	cost, ok := openRouterUsageCostDecimal(usage.Cost)
+	if !ok {
+		return -1
+	}
+	totalPromptTokens := decimal.NewFromInt(int64(usage.PromptTokens))
+	completionTokens := decimal.NewFromInt(int64(usage.CompletionTokens))
+	promptCacheReadTokens := decimal.NewFromInt(int64(usage.PromptTokensDetails.CachedTokens))
 
-	value := (cost -
-		totalPromptTokens*quotaPrice +
-		promptCacheReadTokens*(quotaPrice-promptCacheReadPrice) -
-		completionTokens*completionPrice) /
-		(promptCacheCreatePrice - quotaPrice)
-	quota, clamp := common.QuotaRoundChecked(value)
+	denom := promptCacheCreatePrice.Sub(quotaPrice)
+	if denom.IsZero() {
+		return -1
+	}
+	value := cost.
+		Sub(totalPromptTokens.Mul(quotaPrice)).
+		Add(promptCacheReadTokens.Mul(quotaPrice.Sub(promptCacheReadPrice))).
+		Sub(completionTokens.Mul(completionPrice)).
+		Div(denom)
+	quota, clamp := common.QuotaFromDecimalChecked(value)
 	if clamp != nil {
 		return -1
 	}
 	return quota
+}
+
+func openRouterUsageCostDecimal(cost any) (decimal.Decimal, bool) {
+	v, ok := cost.(float64)
+	if !ok {
+		// Preserve the previous type assertion: a non-float64 cost is treated as 0.
+		return decimal.Zero, true
+	}
+	if math.IsNaN(v) || math.IsInf(v, 0) {
+		return decimal.Zero, false
+	}
+	return decimal.NewFromFloat(v), true
 }
 
 func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage *dto.Usage, extraContent []*common.Message) error {
