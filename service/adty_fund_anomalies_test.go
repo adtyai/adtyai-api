@@ -46,19 +46,24 @@ func TestCollectAdtyFundAnomaliesCoversMissingG134Kinds(t *testing.T) {
 	quota := int64(1_000_000)
 	k := decimal.RequireFromString("1.25")
 	d := decimal.RequireFromString("0.8")
-	_, bookedPlatform, bookedEarning := AdtySiteEarningSplit(quota, k, d)
+	perUnit := common.QuotaPerUnitDecimal()
+	revenue := decimal.NewFromInt(quota).Div(perUnit).Round(8)
+	// Historical leftover books used platform = q×d/k, written before ISS-R2-0009.
+	legacyPlatform := decimal.NewFromInt(quota).Mul(d).Div(k).Div(perUnit).Round(8)
+	legacyEarning := revenue.Sub(legacyPlatform)
 	_, officialPlatform, officialEarning := OfficialAdtySupplySplit(quota, k)
-	require.False(t, officialPlatform.Equal(bookedPlatform))
-	require.False(t, officialEarning.Equal(bookedEarning))
-	earningKey := "request:g134-" + strconv.Itoa(site.Id)
+	require.False(t, officialPlatform.Equal(legacyPlatform))
+	require.False(t, officialEarning.Equal(legacyEarning))
+	eventKey := "request:g134-" + strconv.Itoa(site.Id)
+	earningKey := "earning-daily:2026-11-14:" + model.AdtySiteEarningUsage + ":" + strconv.Itoa(customer.Id)
 	require.NoError(t, db.Create(&model.AdtySiteEarningEvent{
-		OperationKey: earningKey, SiteId: site.Id, UserId: customer.Id,
+		OperationKey: eventKey, SiteId: site.Id, UserId: customer.Id,
 		Quota: int(quota), Markup: 1.25, CostFactor: 0.8, Day: "2026-11-14",
 	}).Error)
 	require.NoError(t, db.Create(&model.AdtySiteEarningDaily{
 		SiteId: site.Id, UserId: customer.Id, Day: "2026-11-14",
 		Kind: model.AdtySiteEarningUsage, Quota: quota,
-		Revenue: decimal.NewFromInt(2), Platform: bookedPlatform, Earning: bookedEarning,
+		Revenue: revenue, Platform: legacyPlatform, Earning: legacyEarning,
 		Status: model.AdtySiteEarningPending,
 	}).Error)
 
@@ -117,7 +122,7 @@ func TestCollectAdtyFundAnomaliesCoversMissingG134Kinds(t *testing.T) {
 	earning := byKind[AdtyAnomalyEarningSupplyMismatch+"|"+earningKey]
 	require.Equal(t, site.Id, earning.SiteId)
 	require.Equal(t, customer.Id, earning.AccountId)
-	require.Equal(t, officialEarning.Sub(bookedEarning).Abs().String(), earning.Difference)
+	require.Equal(t, officialEarning.Sub(legacyEarning).Abs().String(), earning.Difference)
 	require.Contains(t, earning.Evidence, "official_platform")
 
 	refund := byKind[AdtyAnomalyRefundAmountMismatch+"|"+refundTrade]

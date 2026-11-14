@@ -304,7 +304,7 @@ func adtyLogUsageEarning(row model.Log, siteId int) (decimal.Decimal, bool) {
 		return decimal.Zero, false
 	}
 	k, d := adtyAnyFloat(info["site_markup"]), adtyAnyFloat(info["site_cost_factor"])
-	if k < 1 || d <= 0 || d > 1 {
+	if !adtyEarningFactorsUsable(k, d) {
 		return decimal.Zero, false
 	}
 	charged := int64(row.Quota) - int64(adtyAnyInt(info["shortfall_quota"]))

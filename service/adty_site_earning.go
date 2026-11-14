@@ -15,31 +15,33 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// 站长收益记账（任务 11.5，执行层决定 25、26）。
-// 客户付 P × k，平台收 P × d，站长收益 P × (k − d)。扣费额度 q = P × k × QuotaPerUnit，所以
-//   客户付的钱 = q ÷ QuotaPerUnit
-//   平台收入   = q × d ÷ k ÷ QuotaPerUnit
-//   站长收益   = q × (k − d) ÷ k ÷ QuotaPerUnit
+// 站长收益记账（任务 11.5）。
+// ISS-R1-0009 之后实扣额度 q = P × d × k（供货价 × (1+加价比例)）。
+// A.10：客户付的钱 = q ÷ QuotaPerUnit；平台供货成本 = P × d = q ÷ k；
+// 站长收益（价差）= 客户付 − 供货成本 = P × d × (k − 1)。
 // 三项都用 decimal 算；站长收益用「客户付 − 平台收」得出，两项相加正好等于客户付的钱。
 // 记账只累加当天仍待结算的槽位，钩子失败只记日志，不影响请求。
 
 // adtySiteEarningDayFn 是记账用的日期（服务器时区），测试可以替换。
 var adtySiteEarningDayFn = func() string { return time.Now().Format("2006-01-02") }
 
-// AdtySiteEarningSplit 算一笔扣费的三项金额（美元，8 位小数）。k ≥ 1、0 < d ≤ 1 由调用方保证。
-// This is still the live hook formula (ISS-R1-0009 leftover). Official A.10 books
-// use OfficialAdtySupplySplit; collectors may compare, but must not rewrite this.
+// adtyEarningFactorsUsable reports whether a stored k/d snapshot can be used
+// to book A.10 books. Markup k may be below 1 and the cost factor d may be
+// above 1; only non-positive or non-finite values are rejected.
+func adtyEarningFactorsUsable(k, d float64) bool {
+	return k > 0 && d > 0 && !math.IsNaN(k) && !math.IsNaN(d) && !math.IsInf(k, 0) && !math.IsInf(d, 0)
+}
+
+// AdtySiteEarningSplit 按 A.10 拆一笔已扣费额度（美元，8 位小数）。
+// 实扣 q = P×d×k，供货成本 = q/k，站长收益 = q − q/k。供货倍率 d 已含在 q 里，不再参与拆分。
+// k 须为正；k<1 时收益可为负（售价低于供货成本）。
 func AdtySiteEarningSplit(quota int64, k, d decimal.Decimal) (revenue, platform, earning decimal.Decimal) {
-	perUnit := common.QuotaPerUnitDecimal()
-	revenue = decimal.NewFromInt(quota).Div(perUnit).Round(8)
-	platform = decimal.NewFromInt(quota).Mul(d).Div(k).Div(perUnit).Round(8)
-	earning = revenue.Sub(platform)
-	return revenue, platform, earning
+	return OfficialAdtySupplySplit(quota, k)
 }
 
 // OfficialAdtySupplySplit is the A.10 settlement: charged q = P×d×k, supply
-// cost = P×d = q/k, site earning = P×d×(k-1) = q − q/k. It does not replace
-// the live hook formula.
+// cost = P×d = q/k, site earning = P×d×(k-1) = q − q/k. The live hook uses
+// the same formula via AdtySiteEarningSplit.
 func OfficialAdtySupplySplit(quota int64, k decimal.Decimal) (revenue, platform, earning decimal.Decimal) {
 	perUnit := common.QuotaPerUnitDecimal()
 	revenue = decimal.NewFromInt(quota).Div(perUnit).Round(8)
@@ -133,7 +135,7 @@ func adtySiteCustomerRisk(userId int) (flag string) {
 // AdtySiteEarningHook 给一笔消费或退款记站长收益：quota 是客户的扣费额度（退款传正数，kind 用 refund），
 // k、d 是扣费当时的快照。客户不是分站客户或没有 k 时直接返回。
 func AdtySiteEarningHook(siteId, userId int, quota int64, k, d float64, kind string, frozenOwnerIDs ...int) {
-	if siteId <= 0 || userId <= 0 || quota == 0 || k < 1 || d <= 0 || d > 1 || math.IsNaN(k) || math.IsInf(k, 0) {
+	if siteId <= 0 || userId <= 0 || quota == 0 || !adtyEarningFactorsUsable(k, d) {
 		return
 	}
 	revenue, platform, earning := AdtySiteEarningSplit(quota, decimal.NewFromFloat(k), decimal.NewFromFloat(d))
@@ -191,7 +193,7 @@ func adtyRecordConsumeEarning(c *gin.Context, userId int, params *model.RecordCo
 // adtyAppendTaskSiteAdminInfo 把任务快照里的 k、d、站点写进日志的 admin_info（taskBillingOther 调用），
 // RecordTaskBillingLog 的钩子从那里读。普通用户的日志投影看不到 admin_info。
 func adtyAppendTaskSiteAdminInfo(bc *model.TaskBillingContext, other *model.LogOther) {
-	if bc == nil || other == nil || bc.SiteMarkup < 1 || bc.SiteCostFactor <= 0 {
+	if bc == nil || other == nil || !adtyEarningFactorsUsable(bc.SiteMarkup, bc.SiteCostFactor) {
 		return
 	}
 	other.SetAdmin("site_markup", bc.SiteMarkup)
@@ -223,7 +225,7 @@ func adtyRecordTaskBillingEarning(params *model.RecordTaskBillingLogParams) {
 	k, _ := adminInfo["site_markup"].(float64)
 	d, _ := adminInfo["site_cost_factor"].(float64)
 	siteId, _ := adminInfo["site_id"].(int)
-	if k < 1 || d <= 0 {
+	if !adtyEarningFactorsUsable(k, d) {
 		if _, isTask := snapshot["is_task"]; isTask {
 			return // 主站客户的任务
 		}

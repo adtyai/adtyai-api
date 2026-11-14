@@ -52,9 +52,16 @@ func TestEarningSplitExact(t *testing.T) {
 	prepareSiteDB(t)
 	revenue, platform, earning := AdtySiteEarningSplit(perUnit("125"), usd("1.25"), usd("0.8"))
 	assert.True(t, revenue.Equal(usd("125")), "revenue %s", revenue)
-	assert.True(t, platform.Equal(usd("80")), "platform %s", platform)
-	assert.True(t, earning.Equal(usd("45")), "earning %s", earning)
+	assert.True(t, platform.Equal(usd("100")), "platform %s", platform)
+	assert.True(t, earning.Equal(usd("25")), "earning %s", earning)
 	assert.True(t, platform.Add(earning).Equal(revenue))
+	_, officialPlatform, officialEarning := OfficialAdtySupplySplit(perUnit("125"), usd("1.25"))
+	assert.True(t, platform.Equal(officialPlatform))
+	assert.True(t, earning.Equal(officialEarning))
+	// d is already inside the charged quota, so a different cost factor must not change the split.
+	_, platform2, earning2 := AdtySiteEarningSplit(perUnit("125"), usd("1.25"), usd("1.5"))
+	assert.True(t, platform2.Equal(platform))
+	assert.True(t, earning2.Equal(earning))
 
 	// 除不尽时两项相加仍然等于客户付的钱。
 	revenue, platform, earning = AdtySiteEarningSplit(1_234_567, usd("1.3"), usd("0.77"))
@@ -67,16 +74,16 @@ func TestEarningUsesLoggedSnapshot(t *testing.T) {
 	customer := siteCustomer(t, db, site, "snapshot-customer")
 	sitePrice(t, db, site.Id, 0, "", "1.25")
 	consumeOnSite(t, customer, perUnit("125"))
-	assert.True(t, earningTotals(t, db, site.Id)[model.AdtySiteEarningUsage].Equal(usd("45")))
+	assert.True(t, earningTotals(t, db, site.Id)[model.AdtySiteEarningUsage].Equal(usd("25")))
 
 	require.NoError(t, db.Model(&model.AdtySitePrice{}).Where("site_id = ?", site.Id).Update("markup", usd("2")).Error)
 	_, err := AdjustAdtySite(site.Id, 1, AdtySiteAdjust{CostFactor: dec("0.5")})
 	require.NoError(t, err)
-	assert.True(t, earningTotals(t, db, site.Id)[model.AdtySiteEarningUsage].Equal(usd("45")), "already recorded earnings do not change")
+	assert.True(t, earningTotals(t, db, site.Id)[model.AdtySiteEarningUsage].Equal(usd("25")), "already recorded earnings do not change")
 
 	consumeOnSite(t, customer, perUnit("100"))
-	// 新的 k 2、d 0.5：$100 × (2 − 0.5) ÷ 2 = $75。
-	assert.True(t, earningTotals(t, db, site.Id)[model.AdtySiteEarningUsage].Equal(usd("120")))
+	// 新的 k 2：$100 × (2 − 1) ÷ 2 = $50。合计 $25 + $50 = $75。
+	assert.True(t, earningTotals(t, db, site.Id)[model.AdtySiteEarningUsage].Equal(usd("75")))
 }
 
 // siteTask 建一个提交时带分站快照的任务。
@@ -103,7 +110,7 @@ func TestMidjourneyRefundUsesSubmitSnapshot(t *testing.T) {
 	// explicit conversion audit establishes that its charge was payable.
 	require.NoError(t, ReviewAdtySiteCustomer(customer.Id, 1, true))
 	require.True(t, RefundMidjourneyQuota(context.Background(), task, "upstream failed"))
-	assert.True(t, earningTotals(t, db, site.Id)[model.AdtySiteEarningRefund].Equal(usd("-45")), "refund keeps the submit snapshot, not the current k of 3")
+	assert.True(t, earningTotals(t, db, site.Id)[model.AdtySiteEarningRefund].Equal(usd("-25")), "refund keeps the submit snapshot, not the current k of 3")
 }
 
 func TestMidjourneyStampPreservesFrozenRequestSnapshot(t *testing.T) {
@@ -165,13 +172,13 @@ func TestDurableTaskRefundKeepsOriginalRiskDispositionAfterReview(t *testing.T) 
 					return task
 				}
 				oldTask := chargeTask("125")
-				require.True(t, earningTotals(t, db, site.Id)[model.AdtySiteEarningSkipped].Equal(usd("45")))
+				require.True(t, earningTotals(t, db, site.Id)[model.AdtySiteEarningSkipped].Equal(usd("25")))
 				require.NoError(t, ReviewAdtySiteCustomer(customer.Id, 1, convert))
 				chargeTask("50") // A new request after review earns independently.
 				remainingEarning := decimal.Zero
 				if partial {
 					RecalculateTaskQuota(context.Background(), oldTask, int(perUnit("100")), common.NewMessage("partial refund"))
-					remainingEarning = usd("36")
+					remainingEarning = usd("20")
 				} else {
 					require.True(t, RefundTaskQuota(context.Background(), oldTask, "upstream failed"))
 				}
@@ -181,7 +188,7 @@ func TestDurableTaskRefundKeepsOriginalRiskDispositionAfterReview(t *testing.T) 
 				require.NoError(t, err)
 				affiliate, err := Referral.EnsureAffiliate(owner.Id)
 				require.NoError(t, err)
-				want := usd("18")
+				want := usd("10")
 				if convert {
 					want = want.Add(remainingEarning)
 				}
@@ -291,7 +298,7 @@ func TestDurableEarningProjectionRecoversWithoutConsumeLogs(t *testing.T) {
 	failProjection = false
 	require.NoError(t, RecoverBillingOperations(context.Background(), 100))
 	require.NoError(t, RecoverBillingOperations(context.Background(), 100))
-	assert.True(t, earningTotals(t, db, site.Id)[model.AdtySiteEarningUsage].Equal(usd("45")))
+	assert.True(t, earningTotals(t, db, site.Id)[model.AdtySiteEarningUsage].Equal(usd("25")))
 	mismatch, reason, err := adtyUsageReconcileMismatch(db, site.Id, time.Now().AddDate(0, 0, 1).Format("2006-01-02"))
 	require.NoError(t, err)
 	assert.False(t, mismatch, reason)
@@ -309,8 +316,8 @@ func TestTaskRefundReversesEarningWithSnapshot(t *testing.T) {
 	task := siteTask(t, db, customer, site, int(perUnit("125")), 1.25, 0.8)
 	require.NoError(t, ReviewAdtySiteCustomer(customer.Id, 1, true))
 	require.True(t, RefundTaskQuota(context.Background(), task, "upstream failed"))
-	// 快照 k 1.25、d 0.8，不按现在的 k 3：退 $125 → 站长 −$45。
-	assert.True(t, earningTotals(t, db, site.Id)[model.AdtySiteEarningRefund].Equal(usd("-45")))
+	// 快照 k 1.25，不按现在的 k 3：退 $125 → 站长 −$25。
+	assert.True(t, earningTotals(t, db, site.Id)[model.AdtySiteEarningRefund].Equal(usd("-25")))
 }
 
 func TestNegativeTaskDeltaReversesEarning(t *testing.T) {
@@ -321,9 +328,9 @@ func TestNegativeTaskDeltaReversesEarning(t *testing.T) {
 	task := siteTask(t, db, customer, site, int(perUnit("125")), 1.25, 0.8)
 	require.NoError(t, ReviewAdtySiteCustomer(customer.Id, 1, true))
 	RecalculateTaskQuota(context.Background(), task, int(perUnit("100")), common.NewMessage("adjusted"))
-	assert.True(t, earningTotals(t, db, site.Id)[model.AdtySiteEarningRefund].Equal(usd("-9")), "$25 back × 0.36 = $9")
+	assert.True(t, earningTotals(t, db, site.Id)[model.AdtySiteEarningRefund].Equal(usd("-5")), "$25 back × 0.2 = $5")
 	RecalculateTaskQuota(context.Background(), task, int(perUnit("112.5")), common.NewMessage("adjusted"))
-	assert.True(t, earningTotals(t, db, site.Id)[model.AdtySiteEarningUsage].Equal(usd("4.5")), "a positive delta earns")
+	assert.True(t, earningTotals(t, db, site.Id)[model.AdtySiteEarningUsage].Equal(usd("2.5")), "a positive delta earns")
 }
 
 func TestEarningRecordedWhenConsumeLogDisabled(t *testing.T) {
@@ -338,7 +345,7 @@ func TestEarningRecordedWhenConsumeLogDisabled(t *testing.T) {
 	var logs int64
 	require.NoError(t, db.Model(&model.Log{}).Where("user_id = ?", customer.Id).Count(&logs).Error)
 	assert.Zero(t, logs)
-	assert.True(t, earningTotals(t, db, site.Id)[model.AdtySiteEarningUsage].Equal(usd("45")))
+	assert.True(t, earningTotals(t, db, site.Id)[model.AdtySiteEarningUsage].Equal(usd("25")))
 }
 
 func TestChannelTestNotCounted(t *testing.T) {
@@ -393,13 +400,13 @@ func TestSiteBonusDeductedFromEarning(t *testing.T) {
 	assert.EqualValues(t, perUnit("105"), stored.Quota, "pays $100, gets $105")
 	assert.True(t, earningTotals(t, db, site.Id)[model.AdtySiteEarningBonus].Equal(usd("-5")))
 
-	consumeOnSite(t, customer, perUnit("105")) // k 1（没设定价）
+	consumeOnSite(t, customer, perUnit("105")) // k 1（没设定价）：售价等于供货价，价差为 0
 	totals := earningTotals(t, db, site.Id)
-	assert.True(t, totals[model.AdtySiteEarningUsage].Equal(usd("21")), "$105 × (1 − 0.8)")
-	assert.True(t, totals[model.AdtySiteEarningUsage].Add(totals[model.AdtySiteEarningBonus]).Equal(usd("16")))
+	assert.True(t, totals[model.AdtySiteEarningUsage].Equal(usd("0")), "k=1 leaves no site markup")
+	assert.True(t, totals[model.AdtySiteEarningUsage].Add(totals[model.AdtySiteEarningBonus]).Equal(usd("-5")))
 	var platform struct{ Total decimal.Decimal }
-	require.NoError(t, db.Model(&model.AdtySiteEarningDaily{}).Select("COALESCE(SUM(platform),0) AS total").Where("site_id = ?", site.Id).Scan(&platform).Error)
-	assert.True(t, platform.Total.Equal(usd("84")), "the platform keeps exactly $105 × 0.8")
+	require.NoError(t, db.Model(&model.AdtySiteEarningDaily{}).Select("COALESCE(SUM(platform),0) AS total").Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteEarningUsage).Scan(&platform).Error)
+	assert.True(t, platform.Total.Equal(usd("105")), "the platform keeps the full charged amount when k=1")
 }
 
 func TestTopupRefundReversesBonusDeduction(t *testing.T) {
@@ -468,7 +475,7 @@ func TestPartialTopupRefundKeepsUsageEarning(t *testing.T) {
 	_, site := openActiveSite(t, db, "partial-refund")
 	customer := siteCustomer(t, db, site, "partial-refund-customer")
 	siteTopUp(t, customer, site, "EPU-site-partial", 100, "5")
-	consumeOnSite(t, customer, perUnit("30")) // k 1、d 0.8：站长 +$6
+	consumeOnSite(t, customer, perUnit("30")) // k 1：售价等于供货价，消费价差为 0
 	require.NoError(t, db.Model(&model.User{}).Where("id = ?", customer.Id).Update("quota", perUnit("75")).Error)
 
 	result, err := refundAdtyTopUp(t, "EPU-site-partial", "chargeback", 1, "refund-site-partial")
@@ -478,7 +485,7 @@ func TestPartialTopupRefundKeepsUsageEarning(t *testing.T) {
 	assert.True(t, result.RefundAmount.Equal(usd("70")))
 	totals := earningTotals(t, db, site.Id)
 	assert.True(t, totals[model.AdtySiteEarningBonusReversal].Equal(usd("5")))
-	assert.True(t, totals[model.AdtySiteEarningUsage].Equal(usd("6")), "earnings from spent credit stay")
+	assert.True(t, totals[model.AdtySiteEarningUsage].Equal(usd("0")), "k=1 usage earning stays at zero after the refund")
 	assert.True(t, totals[model.AdtySiteEarningRefund].IsZero())
 }
 
@@ -692,7 +699,7 @@ func TestSelfUseFlagSkipsEarning(t *testing.T) {
 
 	consumeOnSite(t, customer, perUnit("125"))
 	totals := earningTotals(t, db, site.Id)
-	assert.True(t, totals[model.AdtySiteEarningSkipped].Equal(usd("45")))
+	assert.True(t, totals[model.AdtySiteEarningSkipped].Equal(usd("25")))
 	assert.True(t, totals[model.AdtySiteEarningUsage].IsZero())
 	var skipped model.AdtySiteEarningDaily
 	require.NoError(t, db.Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteEarningSkipped).First(&skipped).Error)
@@ -715,7 +722,10 @@ func TestMigrationFlagSkipsEarning(t *testing.T) {
 	require.NoError(t, db.First(&row, customer.Id).Error)
 	assert.Equal(t, model.AdtySiteRiskMigration, row.RiskFlag)
 	consumeOnSite(t, customer, perUnit("10"))
-	assert.False(t, earningTotals(t, db, site.Id)[model.AdtySiteEarningSkipped].IsZero())
+	var skipped model.AdtySiteEarningDaily
+	require.NoError(t, db.Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteEarningSkipped).First(&skipped).Error)
+	assert.Equal(t, model.AdtySiteRiskMigration, skipped.Reason)
+	assert.True(t, earningTotals(t, db, site.Id)[model.AdtySiteEarningUsage].IsZero())
 
 	resellerSetting().MigrationCheckEnabled = false
 	other := registerSiteCustomer(t, db, site, "migrated-unchecked", "192.0.2.98", "payer-device")
@@ -734,7 +744,7 @@ func TestReviewedCustomerEarns(t *testing.T) {
 	consumeOnSite(t, customer, perUnit("10"))
 	totals := earningTotals(t, db, site.Id)
 	assert.True(t, totals[model.AdtySiteEarningSkipped].IsZero(), "pending skipped rows were converted")
-	assert.True(t, totals[model.AdtySiteEarningUsage].Equal(usd("4")), "$20 × (1 − 0.8)")
+	assert.True(t, totals[model.AdtySiteEarningUsage].Equal(usd("0")), "k=1 leaves no site markup on the converted rows")
 }
 
 func TestSettleAfterFreezeIntoAccount(t *testing.T) {
@@ -764,10 +774,10 @@ func TestSettleAfterFreezeIntoAccount(t *testing.T) {
 	affiliate, err := Referral.EnsureAffiliate(owner.Id)
 	require.NoError(t, err)
 	acc := account(t, db, affiliate.Id)
-	assert.InDelta(t, 45, acc.AvailableAmount, 1e-9)
+	assert.InDelta(t, 25, acc.AvailableAmount, 1e-9)
 	var ledger model.ReferralCommissionLedger
 	require.NoError(t, db.Where("affiliate_id = ? AND type = ?", affiliate.Id, "site_earning").First(&ledger).Error)
-	assert.InDelta(t, 45, ledger.DeltaAvailable, 1e-9)
+	assert.InDelta(t, 25, ledger.DeltaAvailable, 1e-9)
 
 	// 同一天结算后又有消费，记进新的槽位，下次结算再算。
 	adtySiteEarningDayFn = func() string { return "2026-10-01" }
@@ -776,7 +786,7 @@ func TestSettleAfterFreezeIntoAccount(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 1, settled)
 	acc = account(t, db, affiliate.Id)
-	assert.InDelta(t, 54, acc.AvailableAmount, 1e-9, "$45 + $4.5 + $4.5")
+	assert.InDelta(t, 30, acc.AvailableAmount, 1e-9, "$25 + $2.5 + $2.5")
 }
 
 func TestLeftoverPausedSiteStillSettles(t *testing.T) {
@@ -826,12 +836,12 @@ func TestNegativeSettlementBlocksWithdraw(t *testing.T) {
 	t.Cleanup(func() { adtySiteEarningDayFn = saved })
 	adtySiteEarningDayFn = func() string { return "2026-09-01" }
 	siteTopUp(t, customer, site, "EPU-negative", 100, "10")
-	consumeOnSite(t, customer, perUnit("10")) // +$2，加赠 −$10
+	consumeOnSite(t, customer, perUnit("10")) // k=1 价差为 0，加赠 −$10
 	_, err := RunAdtySiteSettlementOnce(time.Date(2026, 10, 1, 4, 0, 0, 0, time.Local))
 	require.NoError(t, err)
 	affiliate, err := Referral.EnsureAffiliate(owner.Id)
 	require.NoError(t, err)
-	assert.InDelta(t, -8, account(t, db, affiliate.Id).AvailableAmount, 1e-9)
+	assert.InDelta(t, -10, account(t, db, affiliate.Id).AvailableAmount, 1e-9)
 	_, err = Referral.CreateWithdrawal(ReferralWithdrawalCreateInput{UserId: owner.Id, Amount: usd("25"), AccountType: model.ReferralWithdrawToUSDT,
 		AccountNetwork: "TRC20", AccountNo: "T" + "A1B2C3D4E5F6G7H8J9K1L2M3N4P5Q6R7S", IdempotencyKey: "neg-1"})
 	assert.ErrorIs(t, err, ErrReferralInsufficient)
@@ -936,7 +946,7 @@ func TestEarningHookConcurrentUpsert(t *testing.T) {
 	var row model.AdtySiteEarningDaily
 	require.NoError(t, db.Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteEarningUsage).First(&row).Error)
 	assert.EqualValues(t, perUnit("50"), row.Quota)
-	assert.True(t, row.Earning.Equal(usd("18")), "50 × $0.36, got %s", row.Earning)
+	assert.True(t, row.Earning.Equal(usd("10")), "50 × $0.2, got %s", row.Earning)
 	assert.True(t, row.Revenue.Equal(usd("50")))
 	var rows int64
 	require.NoError(t, db.Model(&model.AdtySiteEarningDaily{}).Where("site_id = ?", site.Id).Count(&rows).Error)
@@ -962,7 +972,7 @@ func TestEarningHookOnSQLite(t *testing.T) {
 	require.NoError(t, model.DB.Where("site_id = 3").First(&row).Error)
 	assert.Equal(t, 1, row.SiteOwnerUserId)
 	assert.EqualValues(t, perUnit("2"), row.Quota)
-	assert.True(t, row.Earning.Equal(usd("0.72")))
+	assert.True(t, row.Earning.Equal(usd("0.4")))
 }
 
 func TestReviewedSkippedDoesNotHoldSettlement(t *testing.T) {
@@ -1019,4 +1029,26 @@ func TestEarningHookFailureIncrementsCounter(t *testing.T) {
 	var stored model.AdtySite
 	require.NoError(t, db.First(&stored, site.Id).Error)
 	assert.EqualValues(t, 1, stored.EarningHookFailures)
+}
+
+func TestEarningHookBooksWhenKBelowOneOrDAboveOne(t *testing.T) {
+	db := prepareSiteDB(t)
+	_, site := openActiveSite(t, db, "k-d-bounds")
+	customer := siteCustomer(t, db, site, "k-d-bounds-customer")
+
+	// k=0.8：售价低于供货成本，价差为负。
+	AdtySiteEarningHook(site.Id, customer.Id, perUnit("80"), 0.8, 0.5, model.AdtySiteEarningUsage)
+	assert.True(t, earningTotals(t, db, site.Id)[model.AdtySiteEarningUsage].Equal(usd("-20")))
+
+	// d=1.5 以前会被直接跳过；d 已含在实扣 q 里，按 k=1.25 记 $10。
+	AdtySiteEarningHook(site.Id, customer.Id, perUnit("50"), 1.25, 1.5, model.AdtySiteEarningUsage)
+	assert.True(t, earningTotals(t, db, site.Id)[model.AdtySiteEarningUsage].Equal(usd("-10")))
+
+	var before int64
+	require.NoError(t, db.Model(&model.AdtySiteEarningDaily{}).Where("site_id = ?", site.Id).Count(&before).Error)
+	AdtySiteEarningHook(site.Id, customer.Id, perUnit("50"), 0, 1.5, model.AdtySiteEarningUsage)
+	AdtySiteEarningHook(site.Id, customer.Id, perUnit("50"), 1.25, 0, model.AdtySiteEarningUsage)
+	var after int64
+	require.NoError(t, db.Model(&model.AdtySiteEarningDaily{}).Where("site_id = ?", site.Id).Count(&after).Error)
+	assert.Equal(t, before, after, "non-positive k or d still does not book")
 }

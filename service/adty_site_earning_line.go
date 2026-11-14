@@ -1,7 +1,6 @@
 package service
 
 import (
-	"math"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -13,7 +12,7 @@ import (
 // It does not accept or store an upstream channel name.
 func RecordAdtySiteEarningLine(siteID, userID int, modelName, group, requestID string, quota int64, k, d float64) error {
 	modelName, group, requestID = strings.TrimSpace(modelName), strings.TrimSpace(group), strings.TrimSpace(requestID)
-	if siteID <= 0 || userID <= 0 || quota == 0 || modelName == "" || group == "" || k < 1 || d <= 0 || d > 1 || math.IsNaN(k) || math.IsInf(k, 0) {
+	if siteID <= 0 || userID <= 0 || quota == 0 || modelName == "" || group == "" || !adtyEarningFactorsUsable(k, d) {
 		return common.NewMessage("Invalid parameters")
 	}
 	revenue, platform, earning := AdtySiteEarningSplit(quota, decimal.NewFromFloat(k), decimal.NewFromFloat(d))

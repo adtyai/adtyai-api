@@ -368,44 +368,11 @@ func detectEarningSupplyMismatches(siteID int) ([]adtyFundAnomalyItem, error) {
 	if err := model.DB.Where("site_id = ? AND projected = ?", siteID, false).Find(&events).Error; err != nil {
 		return nil, err
 	}
+	// Live split now matches A.10, so unprojected events are not themselves a
+	// formula mismatch. Historical daily rows can still disagree with official
+	// books and are compared below against the official sum of these events.
 	var items []adtyFundAnomalyItem
 	seen := map[string]struct{}{}
-	for _, event := range events {
-		k := decimal.NewFromFloat(event.Markup)
-		d := decimal.NewFromFloat(event.CostFactor)
-		if event.Quota == 0 || !k.IsPositive() {
-			continue
-		}
-		officialRevenue, officialPlatform, officialEarning := OfficialAdtySupplySplit(int64(event.Quota), k)
-		bookedRevenue, bookedPlatform, bookedEarning := AdtySiteEarningSplit(int64(event.Quota), k, d)
-		if officialPlatform.Equal(bookedPlatform) && officialEarning.Equal(bookedEarning) {
-			continue
-		}
-		ref := event.OperationKey
-		if strings.TrimSpace(ref) == "" {
-			ref = "earning:" + strconv.Itoa(event.UserId) + ":" + event.Day
-		}
-		if _, ok := seen[ref]; ok {
-			continue
-		}
-		seen[ref] = struct{}{}
-		items = append(items, adtyFundAnomalyItem{
-			Kind:       AdtyAnomalyEarningSupplyMismatch,
-			Ref:        ref,
-			OrderRef:   ref,
-			SiteID:     siteID,
-			AccountID:  event.UserId,
-			Difference: officialEarning.Sub(bookedEarning).Abs().String(),
-			Evidence: mustAnomalyEvidence(map[string]any{
-				"operation_key": event.OperationKey, "quota": event.Quota,
-				"markup": event.Markup, "cost_factor": event.CostFactor,
-				"official_revenue": officialRevenue.String(), "official_platform": officialPlatform.String(),
-				"official_earning": officialEarning.String(), "booked_revenue": bookedRevenue.String(),
-				"booked_platform": bookedPlatform.String(), "booked_earning": bookedEarning.String(),
-				"reason": "site earning and supply-cost books do not match A.10 (q = P×d×k, supply = P×d)",
-			}),
-		})
-	}
 
 	var dailies []model.AdtySiteEarningDaily
 	if err := model.DB.Where("site_id = ? AND kind IN ?", siteID,

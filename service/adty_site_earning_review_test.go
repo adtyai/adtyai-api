@@ -283,7 +283,7 @@ func TestReviewConvertsNullableHistoricalDurableRiskEvent(t *testing.T) {
 	var event model.AdtySiteEarningEvent
 	require.NoError(t, db.Where("operation_key = ?", root.OperationKey).First(&event).Error)
 	assert.True(t, event.RiskReleased)
-	assert.True(t, earningTotals(t, db, site.Id)[model.AdtySiteEarningUsage].Equal(usd("45")))
+	assert.True(t, earningTotals(t, db, site.Id)[model.AdtySiteEarningUsage].Equal(usd("25")))
 	assert.True(t, earningTotals(t, db, site.Id)[model.AdtySiteEarningSkipped].IsZero())
 }
 
