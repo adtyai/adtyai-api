@@ -57,6 +57,7 @@ var accessTokenRouteRules = map[string]accessTokenRouteRule{
 	"GET /api/oauth/:provider":            accessTokenSessionRule,
 	"GET /api/verify/methods":             accessTokenAnyRule,
 	"POST /api/verify":                    accessTokenAnyRule,
+	"POST /api/verify/email-code":         accessTokenSessionRule,
 
 	// router/api-router.go: /api/user (self)
 	"GET /api/user/sessions":                       accessTokenSessionRule,
@@ -67,6 +68,7 @@ var accessTokenRouteRules = map[string]accessTokenRouteRule{
 	"GET /api/user/models":                         accessTokenScopeRule("profile:read"),
 	"PUT /api/user/self":                           accessTokenScopeRule("profile:write"),
 	"DELETE /api/user/self":                        accessTokenScopeRule("account_security:write"),
+	"POST /api/user/self/deletion-code":            accessTokenSessionRule,
 	"GET /api/user/access_tokens":                  accessTokenSessionRule,
 	"GET /api/user/access_tokens/catalog":          accessTokenSessionRule,
 	"GET /api/user/access_tokens/scopes":           accessTokenSessionRule,

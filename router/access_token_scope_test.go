@@ -40,6 +40,8 @@ var accessTokenExemptRoutes = []string{
 	"GET /api/reset_password",
 	"POST /api/user/reset",
 	"POST /api/user/register",
+	// 用注册码完成团队注册，未登录即可调用，同 /api/user/register。
+	"POST /api/adty/team-registrations/complete",
 	"GET /api/user/login/encryption-key",
 	"POST /api/user/login",
 	"POST /api/user/login/2fa",
