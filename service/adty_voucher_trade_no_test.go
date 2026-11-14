@@ -83,6 +83,8 @@ func TestAdtyVoucherRedeemTradeNoUniqueAndExactCredit(t *testing.T) {
 	var topUp model.TopUp
 	require.NoError(t, db.Where("trade_no = ?", redeemed.TradeNo).First(&topUp).Error)
 	assert.EqualValues(t, wantQuota, topUp.Amount, "compatibility Amount is the exact credited quota, not USD IntPart")
+	assert.True(t, topUp.MoneyExact.Equal(amount), "compatibility MoneyExact holds the exact face, not float64 Money")
+	assert.True(t, topUp.CompatFaceUSD().Equal(amount))
 	assert.Equal(t, common.TopUpStatusSuccess, topUp.Status)
 
 	var credited model.User
@@ -212,4 +214,62 @@ func TestAdtyVoucherConcurrentRedeemOnPostgresCreditsOnce(t *testing.T) {
 	assert.EqualValues(t, 1, tradeRows)
 	assert.EqualValues(t, 1, official)
 	assert.EqualValues(t, 1, ledgers)
+}
+
+func TestAdtyVoucherCompatibilityTopUpStoresExactFaceNotFloat(t *testing.T) {
+	db := prepareReferralDialectDB(t, "postgres")
+	ResetAdtyVoucherGuesses()
+
+	root := referralUser(t, db, "vch-exact-root")
+	require.NoError(t, db.Model(root).Update("role", common.RoleRootUser).Error)
+	user := referralUser(t, db, "vch-exact-user")
+	require.NoError(t, SetAdtyVoucherIssuanceLimit(root.Id, decimal.NewFromInt(40)))
+
+	amount := decimal.RequireFromString("19.99")
+	_, exactInFloat := amount.Float64()
+	require.False(t, exactInFloat, "19.99 is not an exact float64 value, so Money cannot be the authoritative face")
+
+	wantQuota, err := common.WalletQuotaFromDecimalStrict(amount.Mul(common.QuotaPerUnitDecimal()))
+	require.NoError(t, err)
+	assert.EqualValues(t, 9_995_000, wantQuota)
+	assert.NotEqualValues(t, amount.IntPart(), wantQuota)
+
+	issued, err := IssueAdtyVoucher(AdtyVoucherIssueInput{IssuerId: root.Id, Purpose: model.AdtyVoucherPurposeMainUser, AmountUSD: amount, Reason: "inexact-float-face"})
+	require.NoError(t, err)
+	assert.True(t, issued.AmountUSD.Equal(amount))
+	assert.EqualValues(t, wantQuota, issued.Quota)
+
+	redeemed, err := RedeemAdtyVoucher(user.Id, issued.Code)
+	require.NoError(t, err)
+	require.False(t, redeemed.Replayed)
+	assert.True(t, redeemed.AmountUSD.Equal(amount))
+	assert.EqualValues(t, wantQuota, redeemed.Quota)
+
+	var official model.AdtyTopupOrder
+	require.NoError(t, db.Where("trade_no = ? AND provider = ?", redeemed.TradeNo, model.AdtyVoucherProvider).First(&official).Error)
+	assert.True(t, official.FaceUSD.Equal(amount))
+	assert.True(t, official.PayAmount.Equal(amount))
+	assert.True(t, official.PaidAmount.Equal(amount))
+	assert.EqualValues(t, wantQuota, official.CreditQuota)
+
+	var topUp model.TopUp
+	require.NoError(t, db.Where("trade_no = ?", redeemed.TradeNo).First(&topUp).Error)
+	assert.True(t, topUp.MoneyExact.Equal(amount), "compatibility projection must store the exact face in MoneyExact")
+	assert.True(t, topUp.CompatFaceUSD().Equal(amount))
+	assert.EqualValues(t, wantQuota, topUp.Amount)
+	assert.Equal(t, common.TopUpStatusSuccess, topUp.Status)
+	assert.NotZero(t, topUp.Money, "unified order list still has a legacy money display value")
+
+	var stored string
+	require.NoError(t, db.Raw(`SELECT money_exact::text FROM top_ups WHERE trade_no = ?`, redeemed.TradeNo).Scan(&stored).Error)
+	assert.True(t, decimal.RequireFromString(stored).Equal(amount))
+
+	var credited model.User
+	require.NoError(t, db.First(&credited, user.Id).Error)
+	assert.EqualValues(t, wantQuota, credited.Quota)
+
+	var ledger model.AdtyBalanceLedger
+	require.NoError(t, db.Where("user_id = ? AND type = ? AND ref_id = ?", user.Id, model.AdtyLedgerTypeVoucher, redeemed.TradeNo).First(&ledger).Error)
+	assert.EqualValues(t, wantQuota, ledger.DeltaQuota)
+	assert.EqualValues(t, wantQuota, ledger.BalanceAfter)
 }

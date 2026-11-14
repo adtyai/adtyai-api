@@ -840,11 +840,14 @@ func insertAdtyVoucherOrderTx(tx *gorm.DB, userId int, trade string, voucher *mo
 		return err
 	}
 	// TopUp is only a compatibility projection for the unified order list.
-	// Money remains float64 and is not used to credit the wallet or ledger;
-	// Amount is likewise not the credited source. Exact values live on
-	// AdtyTopupOrder and the voucher row.
+	// MoneyExact stores the exact face amount so this row does not treat
+	// float64 or IntPart as the authoritative face. Money is still filled
+	// as a legacy display projection for the existing list JSON field and
+	// is not used to credit the wallet or ledger. Amount is the already-
+	// determined exact credit quota and is likewise not the credited source.
+	// Exact values used for crediting live on AdtyTopupOrder and the voucher.
 	topUp := model.TopUp{
-		UserId: userId, Amount: voucher.Quota,
+		UserId: userId, Amount: voucher.Quota, MoneyExact: voucher.AmountUSD,
 		TradeNo: trade, PaymentMethod: voucher.Purpose, PaymentProvider: model.AdtyVoucherProvider,
 		CreateTime: now, CompleteTime: now, Status: common.TopUpStatusSuccess,
 	}

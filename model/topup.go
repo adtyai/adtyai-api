@@ -13,16 +13,34 @@ import (
 )
 
 type TopUp struct {
-	Id              int     `json:"id"`
-	UserId          int     `json:"user_id" gorm:"index"`
-	Amount          int64   `json:"amount"`
-	Money           float64 `json:"money"`
-	TradeNo         string  `json:"trade_no" gorm:"unique;type:varchar(255);index"`
-	PaymentMethod   string  `json:"payment_method" gorm:"type:varchar(50)"`
-	PaymentProvider string  `json:"payment_provider" gorm:"type:varchar(50);default:''"`
-	CreateTime      int64   `json:"create_time"`
-	CompleteTime    int64   `json:"complete_time"`
-	Status          string  `json:"status"`
+	Id              int             `json:"id"`
+	UserId          int             `json:"user_id" gorm:"index"`
+	Amount          int64           `json:"amount"`
+	Money           float64         `json:"money"`
+	MoneyExact      decimal.Decimal `json:"money_exact" gorm:"type:decimal(20,8);not null;default:0"`
+	TradeNo         string          `json:"trade_no" gorm:"unique;type:varchar(255);index"`
+	PaymentMethod   string          `json:"payment_method" gorm:"type:varchar(50)"`
+	PaymentProvider string          `json:"payment_provider" gorm:"type:varchar(50);default:''"`
+	CreateTime      int64           `json:"create_time"`
+	CompleteTime    int64           `json:"complete_time"`
+	Status          string          `json:"status"`
+}
+
+// CompatFaceUSD returns the exact compatibility face amount when one was
+// stored on MoneyExact. Official Stripe/Epay/Creem/Waffo rows that only
+// wrote the legacy float64 Money column fall back to that value. Neither
+// field is a wallet or ledger credit source.
+func (topUp *TopUp) CompatFaceUSD() decimal.Decimal {
+	if topUp == nil {
+		return decimal.Zero
+	}
+	if !topUp.MoneyExact.IsZero() {
+		return topUp.MoneyExact
+	}
+	if topUp.Money == 0 {
+		return decimal.Zero
+	}
+	return decimal.NewFromFloat(topUp.Money)
 }
 
 const (
