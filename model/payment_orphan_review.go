@@ -146,13 +146,25 @@ func ResolvePaymentOrphanReview(id int64, operatorID int, request PaymentOrphanR
 				return common.NewMessage("A full external reversal and the original wallet refund are required")
 			}
 			var ledgers []AdtyBalanceLedger
-			if err := tx.Where("type = ? AND ref_type = ? AND ref_id = ? AND user_id = ?", AdtyLedgerTypeRefund, "topup", topUp.TradeNo, topUp.UserId).Limit(2).Find(&ledgers).Error; err != nil {
+			if err := tx.Where("type = ? AND ref_type = ? AND ref_id = ? AND user_id = ?", AdtyLedgerTypeRefund, "topup", topUp.TradeNo, topUp.UserId).Order("id asc").Find(&ledgers).Error; err != nil {
 				return err
 			}
-			if len(ledgers) != 1 || ledgers[0].DeltaQuota > 0 || ledgers[0].DeltaQuota < -int64(common.MaxWalletQuota) || -ledgers[0].DeltaQuota > ext.CreditQuota || ext.RefundQuota < 0 || ext.RefundQuota > ext.FaceQuota() || ext.RefundQuota > -ledgers[0].DeltaQuota || !ext.RefundAmount.Equal(adtyRefundAmount(ext, ext.RefundQuota, ext.FaceQuota())) {
+			if len(ledgers) == 0 {
 				return common.NewMessage("The original wallet refund ledger is required")
 			}
-			review.RefundLedgerID, review.DeductedQuota = ledgers[0].Id, -ledgers[0].DeltaQuota
+			var deducted int64
+			for _, ledger := range ledgers {
+				if ledger.DeltaQuota > 0 || ledger.DeltaQuota < -int64(common.MaxWalletQuota) {
+					return common.NewMessage("The original wallet refund ledger is required")
+				}
+				deducted += -ledger.DeltaQuota
+			}
+			refundUSD := decimal.NewFromInt(ext.RefundQuota).Div(common.QuotaPerUnitDecimal())
+			amountOK := ext.RefundAmount.Equal(adtyRefundAmount(ext, ext.RefundQuota, ext.FaceQuota())) || ext.RefundAmount.Equal(refundUSD)
+			if deducted > ext.CreditQuota || ext.RefundQuota < 0 || ext.RefundQuota > ext.FaceQuota() || !amountOK {
+				return common.NewMessage("The original wallet refund ledger is required")
+			}
+			review.RefundLedgerID, review.DeductedQuota = ledgers[0].Id, deducted
 			review.RefundQuota, review.RefundAmount = ext.RefundQuota, ext.RefundAmount
 			review.ExposureAmount = decimal.Max(amount.Sub(ext.RefundAmount), decimal.Zero)
 		case PaymentOrphanStatusNeverCredited:

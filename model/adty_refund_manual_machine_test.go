@@ -8,35 +8,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func completeManualRefundForTest(t *testing.T, tradeNo, reason string, operator int, refundID string, requestUSD decimal.Decimal) (*AdtyManualRefundResult, error) {
-	t.Helper()
-	if _, err := ApplyAdtyTopUpManualRefund(tradeNo, reason, operator, refundID, requestUSD); err != nil {
-		return nil, err
-	}
-	if _, err := ApproveAdtyTopUpManualRefund(tradeNo, refundID, operator, refundID+":approve", ""); err != nil {
-		return nil, err
-	}
-	if _, err := ReclaimAdtyTopUpManualRefund(tradeNo, refundID, operator, refundID+":reclaim"); err != nil {
-		return nil, err
-	}
-	if _, err := PlanAdtyTopUpManualRefundBonus(tradeNo, refundID, operator, refundID+":bonus"); err != nil {
-		return nil, err
-	}
-	if _, err := PlanAdtyTopUpManualRefundCommission(tradeNo, refundID, operator, refundID+":commission"); err != nil {
-		return nil, err
-	}
-	if _, err := RecordAdtyTopUpManualRefundPayout(tradeNo, refundID, operator, refundID+":payout", AdtyManualRefundPayout{
-		Status:   AdtyManualRefundPayoutSuccess,
-		Currency: "USDT",
-		Amount:   requestUSD,
-		PaidAt:   1,
-		Voucher:  "voucher-" + refundID,
-	}); err != nil {
-		return nil, err
-	}
-	return CompleteAdtyTopUpManualRefund(tradeNo, refundID, operator, refundID+":complete")
-}
-
 func seedManualRefundOrder(t *testing.T, name, tradeNo string) *User {
 	t.Helper()
 	user := seedAdtyTopUpUser(t, DB, name, 0)

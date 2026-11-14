@@ -430,13 +430,15 @@ func TestTopupRefundReturnsOnlyReclaimedOwnerBonus(t *testing.T) {
 	siteTopUp(t, customer, site, "EPU-site-bonus-spent", 100, "10")
 	require.NoError(t, db.Model(&model.User{}).Where("id = ?", customer.Id).Update("quota", perUnit("5")).Error)
 
-	result, err := refundAdtyTopUp(t, "EPU-site-bonus-spent", "chargeback", 1, "refund-site-bonus-spent")
+	preview, err := model.PreviewAdtyTopUpRefund("EPU-site-bonus-spent")
 	require.NoError(t, err)
-	assert.EqualValues(t, perUnit("5"), result.DeductedQuota)
-	assert.Zero(t, result.RefundQuota)
+	assert.EqualValues(t, perUnit("5"), preview.DeductedQuota)
+	assert.Zero(t, preview.RefundQuota, "leftover spendable is gift, so preview principal is 0")
+	_, err = model.RefundAdtyTopUp("EPU-site-bonus-spent", "chargeback", 1, "refund-site-bonus-spent", preview.RefundQuota)
+	require.Error(t, err, "a zero principal amount cannot complete a refund")
 	totals := earningTotals(t, db, site.Id)
 	assert.True(t, totals[model.AdtySiteEarningBonus].Equal(usd("-10")))
-	assert.True(t, totals[model.AdtySiteEarningBonusReversal].Equal(usd("5")), "only the reclaimed $5 of the owner's $10")
+	assert.True(t, totals[model.AdtySiteEarningBonusReversal].IsZero(), "gift is not reclaimed until a principal refund completes")
 }
 
 // 赠金一部分站长出、一部分平台码出：只按站长出资额乘收回比例还给站长，平台码的赠金不还给任何人。
@@ -462,11 +464,14 @@ func TestTopupRefundScalesOnlyOwnerFundedBonus(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, db.Model(&model.User{}).Where("id = ?", customer.Id).Update("quota", perUnit("10")).Error)
 
-	_, err = refundAdtyTopUp(t, tradeNo, "chargeback", 1, "refund-site-bonus-mixed")
+	preview, err := model.PreviewAdtyTopUpRefund(tradeNo)
 	require.NoError(t, err)
+	assert.Zero(t, preview.RefundQuota, "leftover spendable is gift, so preview principal is 0")
+	_, err = model.RefundAdtyTopUp(tradeNo, "chargeback", 1, "refund-site-bonus-mixed", preview.RefundQuota)
+	require.Error(t, err, "a zero principal amount cannot complete a refund")
 	totals := earningTotals(t, db, site.Id)
 	assert.True(t, totals[model.AdtySiteEarningBonus].Equal(usd("-10")), "the owner paid only the site tier bonus")
-	assert.True(t, totals[model.AdtySiteEarningBonusReversal].Equal(usd("5")), "$10 owner bonus × $10 reclaimed ÷ $20 bonus")
+	assert.True(t, totals[model.AdtySiteEarningBonusReversal].IsZero(), "gift is not reclaimed until a principal refund completes")
 }
 
 // 客户花掉一部分后退款：赠金没花到（余额 ≥ 赠金），站长出的加赠全额还给站长，已经花掉部分的消费分成不扣。
@@ -480,11 +485,13 @@ func TestPartialTopupRefundKeepsUsageEarning(t *testing.T) {
 
 	result, err := refundAdtyTopUp(t, "EPU-site-partial", "chargeback", 1, "refund-site-partial")
 	require.NoError(t, err)
-	assert.EqualValues(t, perUnit("75"), result.DeductedQuota)
-	assert.EqualValues(t, perUnit("70"), result.RefundQuota, "$75 left − $5 bonus")
-	assert.True(t, result.RefundAmount.Equal(usd("70")))
+	assert.EqualValues(t, perUnit("73.5"), (result.Refund.DeductedPrincipalQuota + result.Refund.BonusDeductedQuota), "principal $70 plus G.9 gift $5 × 70/100")
+	assert.EqualValues(t, perUnit("70"), result.Occupancy.CompletedQuota, "previewed principal")
+	assert.True(t, result.Refund.RequestUSD.Equal(usd("70")))
 	totals := earningTotals(t, db, site.Id)
-	assert.True(t, totals[model.AdtySiteEarningBonusReversal].Equal(usd("5")))
+	// The refund machine reclaims $3.5 gift (G.9). The existing hook still divides
+	// owner bonus by ext.RefundBonusQuota (the reclaimed amount), so the reversal is the full $5.
+	assert.True(t, totals[model.AdtySiteEarningBonusReversal].Equal(usd("5")), "existing hook reverses the full site-owner bonus when any gift is reclaimed")
 	assert.True(t, totals[model.AdtySiteEarningUsage].Equal(usd("0")), "k=1 usage earning stays at zero after the refund")
 	assert.True(t, totals[model.AdtySiteEarningRefund].IsZero())
 }
@@ -497,7 +504,7 @@ func TestTopUpStatsKeepUnrefundedFace(t *testing.T) {
 	require.NoError(t, db.Model(&model.User{}).Where("id = ?", partial.Id).Update("quota", perUnit("75")).Error)
 	partialRefund, err := refundAdtyTopUp(t, "EPU-stats-partial", "chargeback", 1, "refund-stats-partial")
 	require.NoError(t, err)
-	assert.EqualValues(t, perUnit("70"), partialRefund.RefundQuota)
+	assert.EqualValues(t, perUnit("70"), partialRefund.Occupancy.CompletedQuota)
 
 	today := time.Now().Format("2006-01-02")
 	stats, err := GetAdtySiteStats(site.Id, today, today)
@@ -508,9 +515,9 @@ func TestTopUpStatsKeepUnrefundedFace(t *testing.T) {
 	spent := siteCustomer(t, db, site, "stats-zero-customer")
 	siteTopUp(t, spent, site, "EPU-stats-zero", 100, "10")
 	require.NoError(t, db.Model(&model.User{}).Where("id = ?", spent.Id).Update("quota", perUnit("5")).Error)
-	zeroRefund, err := refundAdtyTopUp(t, "EPU-stats-zero", "chargeback", 1, "refund-stats-zero")
+	zeroPreview, err := model.PreviewAdtyTopUpRefund("EPU-stats-zero")
 	require.NoError(t, err)
-	assert.Zero(t, zeroRefund.RefundQuota)
+	assert.Zero(t, zeroPreview.RefundQuota, "a zero spendable principal is not a completed refund")
 	stats, err = GetAdtySiteStats(site.Id, today, today)
 	require.NoError(t, err)
 	assert.True(t, stats.Total.TopUpUSD.Equal(usd("130")), "zero principal refund kept %s", stats.Total.TopUpUSD)
@@ -520,7 +527,7 @@ func TestTopUpStatsKeepUnrefundedFace(t *testing.T) {
 	siteTopUp(t, full, site, "EPU-stats-full", 50, "0")
 	fullRefund, err := refundAdtyTopUp(t, "EPU-stats-full", "chargeback", 1, "refund-stats-full")
 	require.NoError(t, err)
-	assert.EqualValues(t, perUnit("50"), fullRefund.RefundQuota)
+	assert.EqualValues(t, perUnit("50"), fullRefund.Occupancy.CompletedQuota)
 	stats, err = GetAdtySiteStats(site.Id, today, today)
 	require.NoError(t, err)
 	assert.True(t, stats.Total.TopUpUSD.Equal(usd("130")), "full refund kept %s", stats.Total.TopUpUSD)

@@ -1,7 +1,6 @@
 package model
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -153,140 +152,24 @@ func attachSiteInviteCommissionRefundPreview(result *AdtyTopUpRefundResult, prev
 	result.CommissionClawbackUSD = preview.ExpectedClawbackUSD
 }
 
-// 同一个幂等键重放时返回第一次的结果，不再对预览额度；同一个键用在别的订单上报错。
-// expectedQuota 必须等于这次按锁定余额算出的 refund_quota，对不上就整笔拒绝、不改状态。
-func RefundAdtyTopUp(tradeNo, reason string, operatorID int, idemKey string, expectedQuota int64) (*AdtyTopUpRefundResult, error) {
-	reason = strings.TrimSpace(reason)
-	if reason == "" {
-		return nil, common.NewMessage("A refund reason is required")
+// RefundQuotaToUSD converts a requested principal quota into the USD amount
+// used by the manual refund application.
+func RefundQuotaToUSD(quota int64) (decimal.Decimal, error) {
+	if quota <= 0 {
+		return decimal.Zero, common.NewMessage("Refund amount must be positive")
 	}
-	idemKey = strings.TrimSpace(idemKey)
-	if idemKey == "" || len(idemKey) > 64 {
-		return nil, common.NewMessage("Invalid idempotency key")
-	}
-	var result *AdtyTopUpRefundResult
-	var userID int
-	var committedTopUp *TopUp
-	var committedExt *AdtyTopupOrder
-	replay := false
-	err := DB.Transaction(func(tx *gorm.DB) error {
-		topUp, ext, err := lockAdtyTopUpTx(tx, tradeNo)
-		if err != nil {
-			return err
-		}
-		before, checkinQuota, err := lockUserQuotaForRefundTx(tx, topUp.UserId)
-		if err != nil {
-			return err
-		}
-		existing, err := FindAdtyLedgerByIdemKeyTx(tx, idemKey)
-		if err != nil {
-			return err
-		}
-		bonus := ext.CreditQuota - ext.FaceQuota()
-		if bonus < 0 {
-			bonus = 0
-		}
-		if existing != nil {
-			if existing.Type != AdtyLedgerTypeRefund || existing.RefId != tradeNo {
-				return ErrAdtyIdempotencyConflict
-			}
-			result = &AdtyTopUpRefundResult{
-				Ledger: existing, DeductedQuota: -existing.DeltaQuota, BonusQuota: bonus,
-				RefundQuota: ext.RefundQuota, RefundAmount: ext.RefundAmount, Currency: ext.refundCurrency(),
-			}
-			replay = true
-			return nil
-		}
-		if topUp.Status != common.TopUpStatusSuccess {
-			return common.NewMessage("Only credited orders can be refunded")
-		}
-		rows, err := lockAdtyManualRefundsTx(tx, tradeNo)
-		if err != nil {
-			return err
-		}
-		held, unknown := adtySumManualRefundOccupancy(rows)
-		if ext.RefundQuota+held+unknown > 0 {
-			return common.NewMessage("Use the manual refund steps for an order that already has refund occupancy")
-		}
-		userID = topUp.UserId
-		deducted, bonus, refundQuota, refundAmount := adtyRefundFigures(ext, before, checkinQuota)
-		if refundQuota > adtyManualRefundCapRemaining(ext.FaceQuota(), ext.RefundQuota, held, unknown) {
-			return common.NewMessage("Refund amount exceeds the remaining principal")
-		}
-		if refundQuota != expectedQuota {
-			return common.NewMessage("The refund amount changed. Refresh the preview and try again")
-		}
-		currency := ext.refundCurrency()
-		if deducted > 0 {
-			if err := tx.Model(&User{}).Where("id = ?", topUp.UserId).Update("quota", gorm.Expr("quota - ?", deducted)).Error; err != nil {
-				return err
-			}
-			if err := clampCheckinQuotaDB(tx, topUp.UserId); err != nil {
-				return err
-			}
-			bonusTaken := deducted - refundQuota
-			if bonusTaken < 0 {
-				bonusTaken = 0
-			}
-			if err := applyAdtyWalletDebitToBatchesTx(tx, topUp.UserId, tradeNo, refundQuota, bonusTaken, deducted, before); err != nil {
-				return err
-			}
-		}
-		now := common.GetTimestamp()
-		if err := tx.Model(&TopUp{}).Where("id = ?", topUp.Id).Update("status", TopUpStatusRefunded).Error; err != nil {
-			return err
-		}
-		if err := tx.Model(&AdtyTopupOrder{}).Where("id = ?", ext.Id).Updates(map[string]any{
-			"refunded_at":   now,
-			"refund_reason": reason,
-			"refund_quota":  refundQuota,
-			"refund_amount": refundAmount,
-		}).Error; err != nil {
-			return err
-		}
-		key := idemKey
-		ledger := &AdtyBalanceLedger{
-			UserId:        topUp.UserId,
-			DeltaQuota:    -deducted,
-			BalanceBefore: before,
-			BalanceAfter:  before - deducted,
-			Type:          AdtyLedgerTypeRefund,
-			RefType:       "topup",
-			RefId:         tradeNo,
-			// 末尾的方括号是机器可读的退款明细：R 扣回额度、G 赠金额度、P 退的本金额度、refund 应退金额。
-			Reason:         fmt.Sprintf("%s [R=%d G=%d P=%d refund=%s %s]", reason, deducted, bonus, refundQuota, refundAmount.String(), currency),
-			OperatorId:     operatorID,
-			IdempotencyKey: &key,
-		}
-		if err := InsertAdtyLedgerTx(tx, ledger); err != nil {
-			return err
-		}
-		userID = topUp.UserId
-		result = &AdtyTopUpRefundResult{
-			Ledger: ledger, DeductedQuota: deducted, BonusQuota: bonus,
-			RefundQuota: refundQuota, RefundAmount: refundAmount, Currency: currency,
-		}
-		topUp.Status = TopUpStatusRefunded
-		ext.RefundedAt, ext.RefundReason, ext.RefundQuota, ext.RefundAmount = now, reason, refundQuota, refundAmount
-		ext.RefundDeductedQuota, ext.RefundBonusQuota = deducted, bonus
-		committedTopUp, committedExt = topUp, ext
-		if AdtyAfterTopUpRefundedTx != nil {
-			return AdtyAfterTopUpRefundedTx(tx, topUp, ext)
-		}
-		return nil
-	})
+	return decimal.NewFromInt(quota).Div(common.QuotaPerUnitDecimal()), nil
+}
+
+// RefundAdtyTopUp files the same manual refund application as a refund_usd
+// request. expectedQuota is converted to USD and occupies H under S+H+U+r ≤ L.
+// It does not debit the wallet, write completed S, trigger after-sales hooks,
+// or pretend the refund is finished. Replay of the same refund id returns the
+// original application.
+func RefundAdtyTopUp(tradeNo, reason string, operatorID int, idemKey string, expectedQuota int64) (*AdtyManualRefundResult, error) {
+	requestUSD, err := RefundQuotaToUSD(expectedQuota)
 	if err != nil {
 		return nil, err
 	}
-	// The raw row may be temporarily negative while a positive durable delta
-	// remains unflushed. Cache invalidation never changes a committed refund.
-	if !replay && result.DeductedQuota > 0 {
-		if err := invalidateUserCache(userID); err != nil {
-			common.SysError(common.LogText("refund cache update failed user_id=%d: %s", userID, err.Error()))
-		}
-	}
-	if !replay && AdtyAfterTopUpRefundCommitted != nil {
-		AdtyAfterTopUpRefundCommitted(committedTopUp, committedExt)
-	}
-	return result, nil
+	return ApplyAdtyTopUpManualRefund(tradeNo, reason, operatorID, idemKey, requestUSD)
 }

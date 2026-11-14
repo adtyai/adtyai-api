@@ -342,39 +342,33 @@ func RefundAdtyTopUp(c *gin.Context) {
 	if middleware.RequireSecurityProof(c, service.AdtyTopUpRefundOperation(tradeNo, body.Reason, refundUSD, refundQuota)) == nil {
 		return
 	}
-	var result *model.AdtyTopUpRefundResult
-	var err error
+	var amount decimal.Decimal
+	var parseErr error
 	if refundUSD != "" {
-		amount, parseErr := decimal.NewFromString(refundUSD)
+		amount, parseErr = decimal.NewFromString(refundUSD)
 		if parseErr != nil {
 			common.ApiErrorT(c, "Invalid parameters")
 			return
 		}
-		applied, applyErr := model.ApplyAdtyTopUpManualRefund(tradeNo, body.Reason, c.GetInt("id"), body.IdempotencyKey, amount)
-		if applyErr != nil {
-			writeAdtyFinanceError(c, applyErr)
+	} else {
+		amount, parseErr = model.RefundQuotaToUSD(*refundQuota)
+		if parseErr != nil {
+			writeAdtyFinanceError(c, parseErr)
 			return
 		}
-		recordManageAuditFor(c, applied.Refund.UserId, "adty.topup.refund.apply", map[string]any{
-			"trade_no": tradeNo, "refund_id": applied.Refund.RefundId,
-			"reason":        strings.TrimSpace(body.Reason),
-			"request_usd":   applied.Refund.RequestUSD.String(),
-			"request_quota": applied.Refund.RequestQuota,
-		})
-		common.ApiSuccess(c, applied)
+	}
+	applied, applyErr := model.ApplyAdtyTopUpManualRefund(tradeNo, body.Reason, c.GetInt("id"), body.IdempotencyKey, amount)
+	if applyErr != nil {
+		writeAdtyFinanceError(c, applyErr)
 		return
 	}
-	result, err = model.RefundAdtyTopUp(tradeNo, body.Reason, c.GetInt("id"), body.IdempotencyKey, *refundQuota)
-	if err != nil {
-		writeAdtyFinanceError(c, err)
-		return
-	}
-	recordManageAuditFor(c, result.Ledger.UserId, "adty.topup.refund", map[string]any{
-		"trade_no": tradeNo, "reason": strings.TrimSpace(body.Reason),
-		"deducted_quota": result.DeductedQuota, "refund_quota": result.RefundQuota,
-		"refund_amount": result.RefundAmount.String(), "currency": result.Currency,
+	recordManageAuditFor(c, applied.Refund.UserId, "adty.topup.refund.apply", map[string]any{
+		"trade_no": tradeNo, "refund_id": applied.Refund.RefundId,
+		"reason":        strings.TrimSpace(body.Reason),
+		"request_usd":   applied.Refund.RequestUSD.String(),
+		"request_quota": applied.Refund.RequestQuota,
 	})
-	common.ApiSuccess(c, result)
+	common.ApiSuccess(c, applied)
 }
 
 func ListAdtyTopUpManualRefunds(c *gin.Context) {

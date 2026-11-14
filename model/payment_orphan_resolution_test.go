@@ -34,9 +34,7 @@ func TestPaymentOrphanRefundUsesOriginalLedgerAndRecordsUncoveredCash(t *testing
 			request := PaymentOrphanReviewRequest{Status: PaymentOrphanStatusRefunded, TradeNo: event.ReferenceID, ExternalAmount: "90", ExternalCurrency: "USDT", Proof: "provider-refund-receipt", Note: "verified cumulative full reversal, spent principal is not recovered"}
 			_, err := ResolvePaymentOrphanReview(event.ID, 1, request)
 			require.Error(t, err, "provider reversal alone must not pretend a wallet refund happened")
-			preview, err := PreviewAdtyTopUpRefund(event.ReferenceID)
-			require.NoError(t, err)
-			refund, err := RefundAdtyTopUp(event.ReferenceID, "external reversal", 1, "external-original-refund", preview.RefundQuota)
+			refund, err := completeManualRefundForTest(t, event.ReferenceID, "external reversal", 1, "external-original-refund", decimal.RequireFromString("100"))
 			require.NoError(t, err)
 			for _, field := range []string{"amount", "currency", "order", "proof", "note"} {
 				invalid := request
@@ -57,12 +55,17 @@ func TestPaymentOrphanRefundUsesOriginalLedgerAndRecordsUncoveredCash(t *testing
 			}
 			review, err := ResolvePaymentOrphanReview(event.ID, 1, request)
 			require.NoError(t, err)
-			require.Equal(t, refund.Ledger.Id, review.RefundLedgerID)
-			require.Equal(t, refund.DeductedQuota, review.DeductedQuota)
-			require.Equal(t, refund.RefundQuota, review.RefundQuota)
-			require.True(t, refund.RefundAmount.Equal(review.RefundAmount))
-			require.True(t, decimal.NewFromInt(90).Sub(refund.RefundAmount).Equal(review.ExposureAmount))
-			require.Zero(t, userQuota(t, db, user.Id))
+			var ledgers []AdtyBalanceLedger
+			require.NoError(t, db.Where("type = ? AND ref_type = ? AND ref_id = ?", AdtyLedgerTypeRefund, "topup", event.ReferenceID).Order("id asc").Find(&ledgers).Error)
+			require.NotEmpty(t, ledgers)
+			require.Equal(t, ledgers[0].Id, review.RefundLedgerID)
+			require.Equal(t, (refund.Refund.DeductedPrincipalQuota + refund.Refund.BonusDeductedQuota), review.DeductedQuota)
+			require.Equal(t, refund.Occupancy.CompletedQuota, review.RefundQuota)
+			require.True(t, refund.Refund.RequestUSD.Equal(review.RefundAmount))
+			require.True(t, decimal.Zero.Equal(review.ExposureAmount), "external 90 vs completed USD 100")
+			if balance == 0 {
+				require.Zero(t, userQuota(t, db, user.Id))
+			}
 			again, err := ResolvePaymentOrphanReview(event.ID, 2, request)
 			require.NoError(t, err)
 			require.JSONEq(t, common.GetJsonString(review), common.GetJsonString(again), "a repeated decision preserves its original operator and time")
@@ -152,16 +155,28 @@ func TestPaymentOrphanRefundRejectsUnrelatedLedgerAndUnboundedAmounts(t *testing
 	seedCreditedOrder(t, db, user.Id, "refund-ledger-binding", PaymentProviderAdtyBEpusdt, "100", "10", "0", "100")
 	event := PaymentOrphanEvent{Provider: PaymentProviderAdtyBEpusdt, ReferenceID: "refund-ledger-binding", EventID: "reversal:ledger-binding", EventType: "refund.completed"}
 	require.NoError(t, RecordPaymentOrphanEvent(&event))
-	refund, err := RefundAdtyTopUp(event.ReferenceID, "provider reversal", 1, "ledger-binding-refund", 35_000_000)
+	_, err := completeManualRefundForTest(t, event.ReferenceID, "provider reversal", 1, "ledger-binding-refund", decimal.RequireFromString("100"))
 	require.NoError(t, err)
 	request := PaymentOrphanReviewRequest{Status: PaymentOrphanStatusRefunded, TradeNo: event.ReferenceID, ExternalAmount: "100", ExternalCurrency: "USDT", Proof: "full-receipt", Note: "verified full reversal"}
+	var ledgers []AdtyBalanceLedger
+	require.NoError(t, db.Where("type = ? AND ref_type = ? AND ref_id = ?", AdtyLedgerTypeRefund, "topup", event.ReferenceID).Order("id asc").Find(&ledgers).Error)
+	require.NotEmpty(t, ledgers)
+	ids := make([]int64, len(ledgers))
+	for i, row := range ledgers {
+		ids[i] = row.Id
+	}
 	for _, field := range []string{"type", "ref_type", "ref_id", "user_id", "delta_quota"} {
-		original := map[string]any{"type": refund.Ledger.Type, "ref_type": refund.Ledger.RefType, "ref_id": refund.Ledger.RefId, "user_id": refund.Ledger.UserId, "delta_quota": refund.Ledger.DeltaQuota}[field]
+		originals := make([]any, len(ledgers))
+		for i, row := range ledgers {
+			originals[i] = map[string]any{"type": row.Type, "ref_type": row.RefType, "ref_id": row.RefId, "user_id": row.UserId, "delta_quota": row.DeltaQuota}[field]
+		}
 		invalid := map[string]any{"type": AdtyLedgerTypeTopUp, "ref_type": "manual", "ref_id": "unrelated-order", "user_id": user.Id + 1, "delta_quota": 1}[field]
-		require.NoError(t, db.Model(&AdtyBalanceLedger{}).Where("id = ?", refund.Ledger.Id).Update(field, invalid).Error)
+		require.NoError(t, db.Model(&AdtyBalanceLedger{}).Where("id IN ?", ids).Update(field, invalid).Error)
 		_, err := ResolvePaymentOrphanReview(event.ID, 1, request)
 		require.Error(t, err, field)
-		require.NoError(t, db.Model(&AdtyBalanceLedger{}).Where("id = ?", refund.Ledger.Id).Update(field, original).Error)
+		for i, id := range ids {
+			require.NoError(t, db.Model(&AdtyBalanceLedger{}).Where("id = ?", id).Update(field, originals[i]).Error)
+		}
 	}
 	for _, amount := range []string{"-1", "1e2147483647", "0.000000001", "1000000000000", "NaN"} {
 		invalid := request

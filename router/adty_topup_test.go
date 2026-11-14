@@ -427,6 +427,36 @@ func TestFinanceActionsRequirePermissions(t *testing.T) {
 	assert.Contains(t, summary.Body.String(), `"currency":"USD"`)
 }
 
+func TestRefundQuotaPOSTAppliesManualRefundWithoutCompleting(t *testing.T) {
+	f := newAdtyGuardFixture(t)
+	adtySessionToken(t, f.db, "quota-buyer", common.RoleCommonUser)
+	var user model.User
+	require.NoError(t, f.db.Where("username = ?", "quota-buyer").First(&user).Error)
+	seedRouterOrder(t, f.db, user.Id, "EPU-quota-apply", common.TopUpStatusPending, common.GetTimestamp()+900)
+	f.grant(t, authz.AdtyFinanceRead, authz.AdtyFinanceManualCredit, authz.AdtyFinanceRefund)
+	complete := adtyJSONWithProof(t, f.engine, http.MethodPost, "/api/adty/admin/topup/EPU-quota-apply/complete", `{"proof":"0xabc","note":"checked"}`, f.token, financeAdminProof(t, f, service.AdtyTopUpManualCompleteOperation("EPU-quota-apply", "0xabc", "checked")))
+	require.Contains(t, complete.Body.String(), `"success":true`, complete.Body.String())
+	var funded model.User
+	require.NoError(t, f.db.First(&funded, user.Id).Error)
+	startQuota := funded.Quota
+	require.Positive(t, startQuota)
+
+	quota := int64(25_000_000)
+	body := `{"reason":"duplicate","idempotency_key":"refund-quota-1","refund_quota":25000000}`
+	refund := adtyJSONWithProof(t, f.engine, http.MethodPost, "/api/adty/admin/topup/EPU-quota-apply/refund", body, f.token, financeAdminProof(t, f, service.AdtyTopUpRefundOperation("EPU-quota-apply", "duplicate", "", &quota)))
+	require.Contains(t, refund.Body.String(), `"success":true`, refund.Body.String())
+	assert.Contains(t, refund.Body.String(), `"refund_id":"refund-quota-1"`)
+	assert.Contains(t, refund.Body.String(), `"request_quota":25000000`)
+	assert.Contains(t, refund.Body.String(), `"status":"submitted"`)
+	assert.Contains(t, refund.Body.String(), `"in_progress_quota":25000000`)
+	assert.NotContains(t, refund.Body.String(), `"status":"completed"`)
+	require.NoError(t, f.db.First(&funded, user.Id).Error)
+	assert.Equal(t, startQuota, funded.Quota, "refund_quota apply occupies the cap but does not debit")
+	ext, err := model.GetAdtyTopupOrder("EPU-quota-apply")
+	require.NoError(t, err)
+	assert.Zero(t, ext.RefundQuota, "completed S is not written at apply")
+}
+
 func TestPaymentOrphanReviewRequiresWritePermissionAndEvidence(t *testing.T) {
 	f := newAdtyGuardFixture(t)
 	event := &model.PaymentOrphanEvent{Provider: model.PaymentProviderStripe, ReferenceID: "review-router-order", EventID: "reversal:router-review", EventType: "dispute.open"}

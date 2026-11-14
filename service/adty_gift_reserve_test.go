@@ -362,7 +362,7 @@ func TestRefundPaidSiteGiftReleasesGuaranteeIdempotently(t *testing.T) {
 	require.EqualValues(t, 50_000_000, preview.RefundQuota)
 	result, err := model.RefundAdtyTopUp(ext.TradeNo, "unused principal", owner.Id, "gift-refund-1", preview.RefundQuota)
 	require.NoError(t, err)
-	require.EqualValues(t, 50_000_000, result.RefundQuota)
+	require.EqualValues(t, 50_000_000, result.Occupancy.CompletedQuota)
 
 	earning, margin := mustSiteGiftWallets(t, db, site.Id)
 	require.True(t, earning.Balance.Equal(earningBefore.Balance))
@@ -375,7 +375,7 @@ func TestRefundPaidSiteGiftReleasesGuaranteeIdempotently(t *testing.T) {
 
 	again, err := model.RefundAdtyTopUp(ext.TradeNo, "unused principal", owner.Id, "gift-refund-1", preview.RefundQuota)
 	require.NoError(t, err)
-	require.EqualValues(t, result.RefundQuota, again.RefundQuota)
+	require.EqualValues(t, result.Occupancy.CompletedQuota, again.Occupancy.CompletedQuota)
 	earningAgain, marginAgain := mustSiteGiftWallets(t, db, site.Id)
 	require.True(t, earningAgain.FrozenUSD.IsZero())
 	require.True(t, marginAgain.FrozenUSD.IsZero())
@@ -401,7 +401,7 @@ func TestRefundAfterPendingFulfillmentReturnsFullPrincipal(t *testing.T) {
 	require.EqualValues(t, 50_000_000, preview.RefundQuota)
 	result, err := model.RefundAdtyTopUp(ext.TradeNo, "pending gift refund", owner.Id, "gift-rf-pend-1", preview.RefundQuota)
 	require.NoError(t, err)
-	require.EqualValues(t, 50_000_000, result.RefundQuota)
+	require.EqualValues(t, 50_000_000, result.Occupancy.CompletedQuota)
 	require.EqualValues(t, 0, userQuotaOf(t, db, customer.Id))
 	var row model.AdtyGiftFulfillment
 	require.NoError(t, db.Where("trade_no = ?", ext.TradeNo).First(&row).Error)

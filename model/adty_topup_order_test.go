@@ -13,59 +13,37 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestRefundKeepsDurableWalletAndLedgerAtomicOnFailure(t *testing.T) {
-	for _, databaseFailure := range []bool{true, false} {
-		t.Run(map[bool]string{true: "database rollback", false: "metadata cache outage"}[databaseFailure], func(t *testing.T) {
-			db := prepareAdtyTopUpDB(t)
-			server := useUserCacheMiniRedis(t)
-			resetBatchUpdateTestState(t)
-			common.BatchUpdateEnabled = true
-			user := seedAdtyTopUpUser(t, db, "refund-atomic", 55000000)
-			seedCreditedOrder(t, db, user.Id, "RF-atomic", PaymentProviderAdtyBEpusdt, "100", "10", "0", "100")
-			require.NoError(t, DecreaseUserQuota(user.Id, 15000000, false))
-			_, err := GetUserCache(user.Id)
-			require.NoError(t, err)
-			if databaseFailure {
-				const callback = "audit_refund_ledger_failure"
-				require.NoError(t, db.Callback().Create().Before("gorm:create").Register(callback, func(tx *gorm.DB) {
-					if tx.Statement.Table == "adty_balance_ledgers" {
-						tx.AddError(gorm.ErrInvalidTransaction)
-					}
-				}))
-				t.Cleanup(func() { _ = db.Callback().Create().Remove(callback) })
-			} else {
-				server.SetError("READONLY")
-			}
-			_, err = RefundAdtyTopUp("RF-atomic", "synthetic refund", 1, "atomic-refund", 35000000)
-			var stored User
-			require.NoError(t, db.First(&stored, user.Id).Error)
-			require.Equal(t, -15000000, stored.QuotaPending)
-			var count int64
-			require.NoError(t, db.Model(&AdtyBalanceLedger{}).Where("user_id = ?", user.Id).Count(&count).Error)
-			if databaseFailure {
-				require.ErrorIs(t, err, gorm.ErrInvalidTransaction)
-				require.Equal(t, 55000000, stored.Quota)
-				require.Equal(t, common.TopUpStatusSuccess, topUpStatus(t, db, "RF-atomic"))
-				require.Zero(t, count)
-			} else {
-				require.NoError(t, err, "metadata failures cannot undo a committed refund")
-				require.Equal(t, 15000000, stored.Quota)
-				require.Equal(t, TopUpStatusRefunded, topUpStatus(t, db, "RF-atomic"))
-				require.EqualValues(t, 1, count)
-				again, err := RefundAdtyTopUp("RF-atomic", "synthetic refund", 1, "atomic-refund", 35000000)
-				require.NoError(t, err)
-				require.EqualValues(t, 40000000, again.DeductedQuota)
-			}
-			server.SetError("")
-			current, err := GetUserCache(user.Id)
-			require.NoError(t, err)
-			if databaseFailure {
-				require.Equal(t, 40000000, current.Quota)
-			} else {
-				require.Zero(t, current.Quota)
-			}
-		})
-	}
+func TestRefundAdtyTopUpDoesNotDebitWhenCacheIsDown(t *testing.T) {
+	db := prepareAdtyTopUpDB(t)
+	server := useUserCacheMiniRedis(t)
+	resetBatchUpdateTestState(t)
+	common.BatchUpdateEnabled = true
+	user := seedAdtyTopUpUser(t, db, "refund-atomic", 55000000)
+	seedCreditedOrder(t, db, user.Id, "RF-atomic", PaymentProviderAdtyBEpusdt, "100", "10", "0", "100")
+	require.NoError(t, DecreaseUserQuota(user.Id, 15000000, false))
+	_, err := GetUserCache(user.Id)
+	require.NoError(t, err)
+	server.SetError("READONLY")
+
+	applied, err := RefundAdtyTopUp("RF-atomic", "synthetic refund", 1, "atomic-refund", 35000000)
+	require.NoError(t, err)
+	require.Equal(t, AdtyManualRefundStatusSubmitted, applied.Refund.Status)
+	require.EqualValues(t, 35000000, applied.Occupancy.InProgressQuota)
+	require.Zero(t, applied.Occupancy.CompletedQuota)
+
+	var stored User
+	require.NoError(t, db.First(&stored, user.Id).Error)
+	require.Equal(t, -15000000, stored.QuotaPending)
+	require.Equal(t, 55000000, stored.Quota, "apply occupies H but does not debit")
+	require.Equal(t, common.TopUpStatusSuccess, topUpStatus(t, db, "RF-atomic"))
+	var count int64
+	require.NoError(t, db.Model(&AdtyBalanceLedger{}).Where("user_id = ?", user.Id).Count(&count).Error)
+	require.Zero(t, count)
+
+	again, err := RefundAdtyTopUp("RF-atomic", "synthetic refund", 1, "atomic-refund", 35000000)
+	require.NoError(t, err)
+	require.Equal(t, applied.Refund.RefundId, again.Refund.RefundId)
+	require.Equal(t, AdtyManualRefundStatusSubmitted, again.Refund.Status)
 }
 
 func prepareAdtyTopUpDB(t *testing.T) *gorm.DB {
@@ -383,42 +361,42 @@ func TestRefundAdtyTopUp(t *testing.T) {
 	db := prepareAdtyTopUpDB(t)
 	user := seedAdtyTopUpUser(t, db, "refund", 0)
 	seedAdtyOrder(t, user.Id, "EPU-refund", PaymentProviderAdtyBEpusdt, common.TopUpStatusPending)
-	_, err := refundAdtyTopUp(t, "EPU-refund", "chargeback", 1, "refund-key-1")
+	_, err := RefundAdtyTopUp("EPU-refund", "chargeback", 1, "refund-key-1", 25_000_000)
 	require.Error(t, err, "pending orders cannot be refunded")
 
 	_, err = CompleteAdtyTopUp("EPU-refund", usdtFacts("EPU-refund", "50.01"), "")
 	require.NoError(t, err)
 	require.NoError(t, db.Model(&User{}).Where("id = ?", user.Id).Update("quota", 1_000_000).Error)
+	before := userQuota(t, db, user.Id)
 
-	// 余额 1,000,000 不到赠金 1,250,000：扣光余额，本金一分不退，余额不变负。
-	first, err := refundAdtyTopUp(t, "EPU-refund", "chargeback", 1, "refund-key-1")
+	preview, err := PreviewAdtyTopUpRefund("EPU-refund")
 	require.NoError(t, err)
-	assert.EqualValues(t, -1_000_000, first.Ledger.DeltaQuota)
-	assert.EqualValues(t, 1_000_000, first.Ledger.BalanceBefore)
-	assert.EqualValues(t, 0, first.Ledger.BalanceAfter)
-	assert.EqualValues(t, 1_000_000, first.DeductedQuota)
-	assert.EqualValues(t, 1_250_000, first.BonusQuota)
-	assert.EqualValues(t, 0, first.RefundQuota)
-	assert.True(t, first.RefundAmount.IsZero(), "refund amount %s", first.RefundAmount)
-	assert.Equal(t, "USDT", first.Currency)
-	assert.Equal(t, 0, userQuota(t, db, user.Id))
-	assert.Equal(t, TopUpStatusRefunded, topUpStatus(t, db, "EPU-refund"))
+	assert.EqualValues(t, 1_000_000, preview.DeductedQuota)
+	assert.EqualValues(t, 0, preview.RefundQuota, "spendable leftover is all gift, so preview principal is 0")
 
-	again, err := refundAdtyTopUp(t, "EPU-refund", "chargeback", 1, "refund-key-1")
-	require.NoError(t, err, "replaying the same key returns the first result")
-	assert.Equal(t, first.Ledger.Id, again.Ledger.Id)
-	assert.Equal(t, first.DeductedQuota, again.DeductedQuota)
-	assert.Equal(t, first.BonusQuota, again.BonusQuota)
-	assert.Equal(t, first.RefundQuota, again.RefundQuota)
-	assert.True(t, first.RefundAmount.Equal(again.RefundAmount))
-	assert.Equal(t, 0, userQuota(t, db, user.Id))
+	_, err = RefundAdtyTopUp("EPU-refund", "chargeback", 1, "refund-key-1", 0)
+	require.Error(t, err, "a zero principal amount cannot start a refund")
+	assert.Equal(t, before, userQuota(t, db, user.Id))
+	assert.Equal(t, common.TopUpStatusSuccess, topUpStatus(t, db, "EPU-refund"))
+
+	first, err := RefundAdtyTopUp("EPU-refund", "chargeback", 1, "refund-key-1", 25_000_000)
+	require.NoError(t, err)
+	assert.Equal(t, AdtyManualRefundStatusSubmitted, first.Refund.Status)
+	assert.EqualValues(t, 25_000_000, first.Refund.RequestQuota)
+	assert.EqualValues(t, 25_000_000, first.Occupancy.InProgressQuota)
+	assert.Zero(t, first.Occupancy.CompletedQuota)
+	assert.Equal(t, before, userQuota(t, db, user.Id), "apply occupies the cap but does not debit")
+	assert.Equal(t, common.TopUpStatusSuccess, topUpStatus(t, db, "EPU-refund"))
+
+	again, err := RefundAdtyTopUp("EPU-refund", "chargeback", 1, "refund-key-1", 25_000_000)
+	require.NoError(t, err, "replaying the same key returns the first application")
+	assert.Equal(t, first.Refund.RefundId, again.Refund.RefundId)
+	assert.Equal(t, first.Refund.Status, again.Refund.Status)
+	assert.Equal(t, before, userQuota(t, db, user.Id))
 
 	seedAdtyOrder(t, user.Id, "EPU-other", PaymentProviderAdtyBEpusdt, common.TopUpStatusSuccess)
-	_, err = refundAdtyTopUp(t, "EPU-other", "chargeback", 1, "refund-key-1")
+	_, err = RefundAdtyTopUp("EPU-other", "chargeback", 1, "refund-key-1", 25_000_000)
 	require.ErrorIs(t, err, ErrAdtyIdempotencyConflict)
-
-	_, err = CompleteAdtyTopUp("EPU-refund", usdtFacts("EPU-refund", "50.01"), "")
-	require.ErrorIs(t, err, ErrTopUpStatusInvalid, "a refunded order is never credited again")
 }
 
 // seedCreditedOrder 建一笔已到账的订单：面额 face 美元、赠金 bonus 美元（含优惠加赠 promo），实付 paid。
@@ -472,22 +450,14 @@ func TestRefundAdtyTopUpOnlyUnspentPrincipal(t *testing.T) {
 			seedCreditedOrder(t, db, user.Id, tradeNo, tc.provider, tc.face, tc.bonus, tc.promo, tc.paid)
 			require.NoError(t, db.Model(&User{}).Where("id = ?", user.Id).Update("quota", tc.balance).Error)
 
-			result, err := refundAdtyTopUp(t, tradeNo, "chargeback", 1, "key-"+tc.name)
+			preview, err := PreviewAdtyTopUpRefund(tradeNo)
 			require.NoError(t, err)
-			assert.Equal(t, tc.deducted, result.DeductedQuota, "R")
-			assert.Equal(t, tc.bonusQuota, result.BonusQuota, "G")
-			assert.Equal(t, tc.refundQuota, result.RefundQuota, "P")
-			assert.True(t, result.RefundAmount.Equal(decimal.RequireFromString(tc.refund)), "refund %s, want %s", result.RefundAmount, tc.refund)
-			assert.EqualValues(t, tc.balance-tc.deducted, userQuota(t, db, user.Id))
-			assert.Equal(t, -tc.deducted, result.Ledger.DeltaQuota)
-			assert.Equal(t, tc.balance-tc.deducted, result.Ledger.BalanceAfter)
-			assert.Equal(t, TopUpStatusRefunded, topUpStatus(t, db, tradeNo))
-
-			ext, err := GetAdtyTopupOrder(tradeNo)
-			require.NoError(t, err)
-			assert.Equal(t, tc.refundQuota, ext.RefundQuota)
-			assert.True(t, ext.RefundAmount.Equal(result.RefundAmount))
-			assert.NotZero(t, ext.RefundedAt)
+			assert.Equal(t, tc.deducted, preview.DeductedQuota, "R")
+			assert.Equal(t, tc.bonusQuota, preview.BonusQuota, "G")
+			assert.Equal(t, tc.refundQuota, preview.RefundQuota, "P")
+			assert.True(t, preview.RefundAmount.Equal(decimal.RequireFromString(tc.refund)), "refund %s, want %s", preview.RefundAmount, tc.refund)
+			assert.EqualValues(t, tc.balance, userQuota(t, db, user.Id), "preview does not debit")
+			assert.Equal(t, common.TopUpStatusSuccess, topUpStatus(t, db, tradeNo))
 		})
 	}
 }
@@ -526,13 +496,13 @@ func TestCheckinQuotaIsNotRefundedAsPrincipal(t *testing.T) {
 	require.Equal(t, int(q("10"))+5000, stored.Quota)
 	require.Equal(t, 5000, stored.CheckinQuota, "花掉本金后签到赠送还在")
 
-	result, err := refundAdtyTopUp(t, "RF-checkin", "chargeback", 1, "key-checkin")
+	preview, err := PreviewAdtyTopUpRefund("RF-checkin")
 	require.NoError(t, err)
-	assert.Equal(t, q("10"), result.DeductedQuota)
-	assert.EqualValues(t, 0, result.RefundQuota)
-	assert.True(t, result.RefundAmount.IsZero(), "refund %s", result.RefundAmount)
+	assert.Equal(t, q("10"), preview.DeductedQuota)
+	assert.EqualValues(t, 0, preview.RefundQuota)
+	assert.True(t, preview.RefundAmount.IsZero(), "refund %s", preview.RefundAmount)
 	require.NoError(t, db.First(&stored, user.Id).Error)
-	assert.Equal(t, 5000, stored.Quota)
+	assert.Equal(t, int(q("10"))+5000, stored.Quota, "preview does not debit leftover gift or checkin")
 	assert.Equal(t, 5000, stored.CheckinQuota)
 
 	untouched := seedAdtyTopUpUser(t, db, "checkin-full", 0)
@@ -540,13 +510,13 @@ func TestCheckinQuotaIsNotRefundedAsPrincipal(t *testing.T) {
 	require.NoError(t, db.Model(&User{}).Where("id = ?", untouched.Id).Updates(map[string]any{
 		"quota": q("110") + 5000, "checkin_quota": 5000,
 	}).Error)
-	full, err := refundAdtyTopUp(t, "RF-checkin-full", "chargeback", 1, "key-checkin-full")
+	full, err := PreviewAdtyTopUpRefund("RF-checkin-full")
 	require.NoError(t, err)
 	assert.Equal(t, q("110"), full.DeductedQuota)
 	assert.Equal(t, q("100"), full.RefundQuota)
 	var left User
 	require.NoError(t, db.First(&left, untouched.Id).Error)
-	assert.Equal(t, 5000, left.Quota)
+	assert.Equal(t, int(q("110"))+5000, left.Quota, "preview does not debit")
 	assert.Equal(t, 5000, left.CheckinQuota)
 }
 
@@ -557,12 +527,12 @@ func TestRefundAdtyTopUpTakesOnlyThisOrderCredit(t *testing.T) {
 	seedCreditedOrder(t, db, user.Id, "RF-two-b", PaymentProviderAdtyBEpusdt, "100", "10", "0", "100")
 	require.NoError(t, db.Model(&User{}).Where("id = ?", user.Id).Update("quota", 110_000_000).Error)
 
-	result, err := refundAdtyTopUp(t, "RF-two-a", "chargeback", 1, "two-a")
+	result, err := PreviewAdtyTopUpRefund("RF-two-a")
 	require.NoError(t, err)
-	assert.EqualValues(t, 55_000_000, result.DeductedQuota, "only this order's credit C is taken back")
+	assert.EqualValues(t, 55_000_000, result.DeductedQuota, "only this order's credit C is in the preview")
 	assert.EqualValues(t, 50_000_000, result.RefundQuota)
 	assert.True(t, result.RefundAmount.Equal(decimal.NewFromInt(100)))
-	assert.Equal(t, 55_000_000, userQuota(t, db, user.Id))
+	assert.Equal(t, 110_000_000, userQuota(t, db, user.Id), "preview does not debit")
 }
 
 // 生产配置是 Redis 加批量更新（deploy/adty/docker-compose.yml）：消费先扣缓存，数据库要等批量刷新。
@@ -585,16 +555,15 @@ func TestRefundAdtyTopUpUsesCachedBalanceUnderBatchUpdates(t *testing.T) {
 	require.True(t, reserved)
 	require.EqualValues(t, q("110"), userQuota(t, db, user.Id), "batch delta is not flushed yet")
 
-	result, err := refundAdtyTopUp(t, "RF-batch", "chargeback", 1, "key-batch")
+	result, err := PreviewAdtyTopUpRefund("RF-batch")
 	require.NoError(t, err)
 	assert.Equal(t, q("80"), result.DeductedQuota, "R comes from the live (cached) balance")
 	assert.Equal(t, q("70"), result.RefundQuota)
 	assert.True(t, result.RefundAmount.Equal(decimal.RequireFromString("70")), "refund %s", result.RefundAmount)
 	cached, err := GetUserQuota(user.Id, false)
 	require.NoError(t, err)
-	assert.Zero(t, cached, "cached balance ends at 0, not negative")
-	batchUpdate()
-	assert.Zero(t, userQuota(t, db, user.Id), "database ends at 0 after the batch flush")
+	assert.EqualValues(t, q("80"), cached, "preview does not debit the cache")
+	assert.EqualValues(t, q("110"), userQuota(t, db, user.Id), "database is unchanged until a later machine step")
 }
 
 // 开了 Redis（不开批量）时走缓存扣回：三个例子和负余额的结果和数据库路径一样，缓存和数据库都落到同一个值。
@@ -624,23 +593,15 @@ func TestRefundAdtyTopUpWithRedis(t *testing.T) {
 			_, err := GetUserCache(user.Id) // 缓存从数据库水合
 			require.NoError(t, err)
 
-			result, err := refundAdtyTopUp(t, tradeNo, "chargeback", 1, "key-redis-"+tc.name)
+			result, err := PreviewAdtyTopUpRefund(tradeNo)
 			require.NoError(t, err)
 			assert.Equal(t, tc.deducted, result.DeductedQuota, "R")
 			assert.Equal(t, tc.back, result.RefundQuota, "P")
 			assert.True(t, result.RefundAmount.Equal(decimal.RequireFromString(tc.refund)), "refund %s", result.RefundAmount)
 			cached, err := GetUserQuota(user.Id, false)
 			require.NoError(t, err)
-			assert.EqualValues(t, tc.balance-tc.deducted, cached, "cache")
-			assert.EqualValues(t, tc.balance-tc.deducted, userQuota(t, db, user.Id), "database")
-			assert.Equal(t, tc.balance-tc.deducted, result.Ledger.BalanceAfter)
-
-			again, err := refundAdtyTopUp(t, tradeNo, "chargeback", 1, "key-redis-"+tc.name)
-			require.NoError(t, err)
-			assert.Equal(t, result.DeductedQuota, again.DeductedQuota, "replay returns the same R")
-			cached, err = GetUserQuota(user.Id, false)
-			require.NoError(t, err)
-			assert.EqualValues(t, tc.balance-tc.deducted, cached, "replay does not charge the cache again")
+			assert.EqualValues(t, tc.balance, cached, "preview does not debit the cache")
+			assert.EqualValues(t, tc.balance, userQuota(t, db, user.Id), "database")
 		})
 	}
 }

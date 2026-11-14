@@ -25,17 +25,17 @@ func TestRefundUsesPendingBatchDeltaWhenFlushHasDetachedQueue(t *testing.T) {
 	batchUpdateStores[BatchUpdateTypeUserQuota] = make(map[int]int)
 	batchUpdateLocks[BatchUpdateTypeUserQuota].Unlock()
 
-	// The live balance is 80 after the queued 30-unit spend, so the refund
-	// should deduct 80 and return 70 principal quota (the 10-unit bonus stays).
+	// The live balance is 80 after the queued 30-unit spend, so the preview
+	// principal is 70. Apply occupies H and does not debit.
+	preview, err := PreviewAdtyTopUpRefund("RF-detached")
+	require.NoError(t, err)
+	require.Equal(t, q("80"), preview.DeductedQuota)
+	require.Equal(t, q("70"), preview.RefundQuota)
 	result, err := RefundAdtyTopUp("RF-detached", "chargeback", 1, "detached-refund-1", q("70"))
 	require.NoError(t, err)
-	require.Equal(t, q("80"), result.DeductedQuota)
-	require.Equal(t, q("70"), result.RefundQuota)
-	// The queued spend is still unflushed, so the row keeps that 30 until the
-	// next batch flush. The refund itself has already removed the live 80.
-	require.Equal(t, int(q("30")), userQuota(t, db, user.Id))
-	FlushBatchUpdates()
-	require.Zero(t, userQuota(t, db, user.Id))
+	require.Equal(t, AdtyManualRefundStatusSubmitted, result.Refund.Status)
+	require.Zero(t, result.Occupancy.CompletedQuota)
+	require.Equal(t, int(q("110")), userQuota(t, db, user.Id), "apply does not debit; the unflushed spend is still queued")
 }
 
 func TestSpentCheckinGiftDoesNotProtectLaterTopUp(t *testing.T) {
@@ -55,12 +55,14 @@ func TestSpentCheckinGiftDoesNotProtectLaterTopUp(t *testing.T) {
 	preview, err := PreviewAdtyTopUpRefund("RF-gift-spent")
 	require.NoError(t, err)
 	require.EqualValues(t, 500000, preview.RefundQuota, "later principal cannot revive the spent part of a gift")
+	var before User
+	require.NoError(t, db.First(&before, user.Id).Error)
 	result, err := RefundAdtyTopUp("RF-gift-spent", "synthetic refund", 1, "gift-spent-refund", 500000)
 	require.NoError(t, err)
-	require.EqualValues(t, 500000, result.DeductedQuota)
-	FlushBatchUpdates()
+	require.Equal(t, AdtyManualRefundStatusSubmitted, result.Refund.Status)
+	require.Zero(t, result.Occupancy.CompletedQuota)
 	var stored User
 	require.NoError(t, db.First(&stored, user.Id).Error)
-	require.Equal(t, 20, stored.Quota)
-	require.Equal(t, 20, stored.CheckinQuota)
+	require.Equal(t, before.Quota, stored.Quota, "apply does not debit the later principal or leftover checkin")
+	require.Equal(t, before.CheckinQuota, stored.CheckinQuota)
 }

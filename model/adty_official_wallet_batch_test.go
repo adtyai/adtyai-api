@@ -229,8 +229,8 @@ func TestRefundAdtyTopUpReclaimsOrderBatches(t *testing.T) {
 
 	result, err := refundAdtyTopUp(t, "EPU-AUTO-BATCH", "chargeback", 1, "auto-batch-1")
 	require.NoError(t, err)
-	require.EqualValues(t, 50_000_000, result.RefundQuota)
-	require.EqualValues(t, 51_250_000, result.DeductedQuota)
+	require.EqualValues(t, 50_000_000, result.Occupancy.CompletedQuota)
+	require.EqualValues(t, 51_250_000, (result.Refund.DeductedPrincipalQuota + result.Refund.BonusDeductedQuota))
 
 	principal, bonus := adtyFundRemainingBySource(t, db, user.Id, "EPU-AUTO-BATCH")
 	require.EqualValues(t, 0, principal)
