@@ -106,6 +106,8 @@ export function PricingPanel(props: { site: OwnerSite }) {
     },
   })
   const closing = props.site.status === 'closing'
+  const markupMin = Number(props.site.markup_min)
+  const markupMinAttr = Number.isFinite(markupMin) ? markupMin : 0
 
   return (
     <div className='flex flex-col gap-4'>
@@ -166,7 +168,7 @@ export function PricingPanel(props: { site: OwnerSite }) {
         <Input
           id='default-markup'
           type='number'
-          min={1}
+          min={markupMinAttr}
           step='0.01'
           value={defaultMarkup}
           disabled={closing}
@@ -199,7 +201,7 @@ export function PricingPanel(props: { site: OwnerSite }) {
               <Input
                 id={`group-markup-${index}`}
                 type='number'
-                min={1}
+                min={markupMinAttr}
                 step='0.01'
                 value={row.markup}
                 disabled={closing}
@@ -268,7 +270,7 @@ export function PricingPanel(props: { site: OwnerSite }) {
               <Input
                 id={`model-markup-${index}`}
                 type='number'
-                min={1}
+                min={markupMinAttr}
                 step='0.01'
                 value={row.markup}
                 disabled={closing}

@@ -123,9 +123,9 @@ export function SettingsPanel(props: {
   const cfReady = cloudflareReady(saved, drafts)
 
   const moneyLabels: Record<MoneyKey, string> = {
-    cost_factor: t('Cost factor d (0 to 1)'),
+    cost_factor: t('Cost factor d (greater than 0)'),
     min_cost_factor: t('Minimum cost factor'),
-    max_markup: t('Markup limit k (1 to 100)'),
+    max_markup: t('Markup limit k (greater than 0, at most 100)'),
     max_site_bonus_extra: t('Extra top-up bonus over the main site (points)'),
     trial_grant_max_usd: t('Trial credit per grant (USD)'),
     trial_grant_daily_usd: t('Trial credit per day (USD)'),

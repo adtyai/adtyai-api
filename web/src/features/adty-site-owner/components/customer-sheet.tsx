@@ -337,7 +337,7 @@ export function CustomerSheet(props: {
                   <Input
                     id='own-markup'
                     type='number'
-                    min={1}
+                    min={0}
                     step='0.01'
                     value={markup}
                     onChange={(event) => setMarkup(event.target.value)}

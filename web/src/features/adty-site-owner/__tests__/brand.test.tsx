@@ -40,7 +40,7 @@ const site: OwnerSite = {
   host: 'shop.sites.example.test',
   base_url: 'https://shop.sites.example.test',
   cost_factor: '0.8',
-  markup_min: '1',
+  markup_min: '0',
   markup_max: '3',
   markup_increase_delay_hours: 24,
   custom_domain_enabled: false,

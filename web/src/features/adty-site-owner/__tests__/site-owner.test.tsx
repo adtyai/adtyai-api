@@ -92,7 +92,7 @@ function ownerSite(overrides: Partial<OwnerSite> = {}): OwnerSite {
     host: 'shop.sites.example',
     base_url: 'https://shop.sites.example',
     cost_factor: '0.8',
-    markup_min: '1',
+    markup_min: '0',
     markup_max: '3',
     markup_increase_delay_hours: 24,
     custom_domain_enabled: false,
@@ -169,6 +169,25 @@ describe('PricingPanel', () => {
   it('shows no pending section when nothing is waiting', () => {
     render(wrap(<PricingPanel site={ownerSite()} />))
     expect(screen.queryByTestId('pending-increase')).not.toBeInTheDocument()
+  })
+
+  it('lets the owner enter a markup below 1 when the API minimum is 0', async () => {
+    verification.requestVerification.mockResolvedValue({
+      proof_token: 'proof-k',
+    })
+    render(wrap(<PricingPanel site={ownerSite()} />))
+    const field = screen.getByLabelText('Default markup')
+    expect(field).toHaveAttribute('min', '0')
+    await userEvent.clear(field)
+    await userEvent.type(field, '0.8')
+    await userEvent.click(screen.getByRole('button', { name: 'Save prices' }))
+    await waitFor(() =>
+      expect(api.savePricing).toHaveBeenCalledWith(
+        expect.objectContaining({ default_markup: '0.8', expected_version: 3 }),
+        'proof-k'
+      )
+    )
+    expect(screen.getByText(/Allowed markup: 0 to 3/)).toBeInTheDocument()
   })
 
   it('sends the proof for site-wide pricing with the current version', async () => {

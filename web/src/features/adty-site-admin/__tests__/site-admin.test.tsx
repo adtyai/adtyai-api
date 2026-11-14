@@ -519,6 +519,38 @@ describe('reseller settings', () => {
     api.getResellerSettings.mockResolvedValue(settings)
   })
 
+  it('shows A.10 cost-factor and markup-limit labels and accepts values outside the old k>=1 and d<=1 bounds', async () => {
+    const user = userEvent.setup()
+    api.saveResellerSettings.mockResolvedValue(settings)
+    renderWith(<SettingsPanel canWrite canWriteSecrets />)
+
+    const costFactor = await screen.findByLabelText(
+      'Cost factor d (greater than 0)'
+    )
+    const markupLimit = screen.getByLabelText(
+      'Markup limit k (greater than 0, at most 100)'
+    )
+    expect(
+      screen.queryByLabelText('Cost factor d (0 to 1)')
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByLabelText('Markup limit k (1 to 100)')
+    ).not.toBeInTheDocument()
+
+    await user.clear(costFactor)
+    await user.type(costFactor, '1.5')
+    await user.clear(markupLimit)
+    await user.type(markupLimit, '0.9')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() =>
+      expect(api.saveResellerSettings).toHaveBeenCalledWith({
+        cost_factor: 1.5,
+        max_markup: 0.9,
+      })
+    )
+  })
+
   it('shows a recoverable error when settings fail instead of an endless loading state', async () => {
     api.getResellerSettings.mockRejectedValueOnce(
       new Error('Synthetic settings failure')
