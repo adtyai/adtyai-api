@@ -928,8 +928,10 @@ func AdtyApplySitePricing(c *gin.Context, groupRatio map[string]float64) {
 }
 
 // AdtyAdjustPricingForSiteModels 返回价格列表的副本，把每个模型的标价和倍率按
-// 该模型有效 k 相对同一分组空模型 k 的比值放大或缩小。group_ratio 已经乘过空模型加价，
-// 这样公开价格页显示的是该模型的有效售价。不改动缓存中的原始切片。
+// 该模型有效 k 相对同一分组空模型 k 的比值放大或缩小。group_ratio 已经乘过该分组的空模型加价，
+// 因此对传入的 group，model_price * group_ratio[group] 等于该模型的有效售价，与计费使用同一套有效 k。
+// 不改动缓存中的原始切片。单次调整只对这一个分组成立；切换到另一分组展示时，若各分组的
+// k_model/k_empty 不同，需要按那个分组重新调整，不能直接拿当前分组的标价去乘另一分组的 group_ratio。
 func AdtyAdjustPricingForSiteModels(c *gin.Context, group string, pricing []model.Pricing) []model.Pricing {
 	if c == nil || len(pricing) == 0 {
 		return pricing

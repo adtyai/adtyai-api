@@ -1,15 +1,19 @@
 package controller
 
 import (
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
+	"github.com/QuantumNous/new-api/setting/adty_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/shopspring/decimal"
@@ -157,4 +161,120 @@ func TestUpstreamPricingFiltersByUsableGroups(t *testing.T) {
 	}
 	assert.Contains(t, names, "zz-public-model")
 	assert.NotContains(t, names, "zz-hidden-model", "只在隐藏分组里的模型不返回")
+}
+
+func TestGetPricingUsesSameEffectiveMarkupAsBillingWhenGroupEmptyCoexists(t *testing.T) {
+	db := adtyTestDB(t)
+	oldRedis := common.RedisEnabled
+	common.RedisEnabled = false
+	t.Cleanup(func() { common.RedisEnabled = oldRedis })
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.Channel{}, &model.Ability{}, &model.Model{}, &model.Vendor{}))
+	require.NoError(t, model.MigrateAdtyTables())
+
+	savedReseller := *adty_setting.GetResellerSetting()
+	t.Cleanup(func() {
+		*adty_setting.GetResellerSetting() = savedReseller
+		service.InvalidateAdtySiteCache()
+		service.InvalidateAdtySitePriceCache()
+	})
+	cfg := adty_setting.GetResellerSetting()
+	*cfg = adty_setting.DefaultResellerSetting()
+	cfg.Enabled = true
+	cfg.RootDomains = []string{"sites.example.com"}
+	costFactor, minCostFactor, maxMarkup := 0.8, 0.5, 3.0
+	bonusExtra, trialMax, trialDaily := 2.0, 5.0, 20.0
+	cfg.CostFactor, cfg.MinCostFactor, cfg.MaxMarkup = &costFactor, &minCostFactor, &maxMarkup
+	cfg.MaxSiteBonusExtra, cfg.TrialGrantMaxUSD, cfg.TrialGrantDailyUSD = &bonusExtra, &trialMax, &trialDaily
+	service.InvalidateAdtySiteCache()
+
+	owner := model.User{Username: "price-scope-owner", Password: "hashed-password", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: "default", AuthVersion: 1, Email: "price-scope-owner@example.com"}
+	require.NoError(t, db.Create(&owner).Error)
+	site, err := service.OpenAdtySite(owner.Id, "pricescope", model.AdtySiteOpenedByAdmin, service.AdtySitePreset{})
+	require.NoError(t, err)
+
+	customer := model.User{Username: "price-scope-customer", Password: "hashed-password", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: "vip", AuthVersion: 1, Email: "price-scope-customer@example.com"}
+	require.NoError(t, db.Create(&customer).Error)
+	require.NoError(t, model.AdtySetUserSiteTx(db, customer.Id, site.Id))
+	require.NoError(t, db.Create(&model.AdtySiteCustomer{UserId: customer.Id, SiteId: site.Id, JoinedAt: time.Now().Unix()}).Error)
+
+	for _, row := range []model.AdtySitePrice{
+		{SiteId: site.Id, UserId: 0, Group: "", Model: "", Markup: decimal.RequireFromString("1.2"), Version: 1},
+		{SiteId: site.Id, UserId: 0, Group: "", Model: "gpt-4", Markup: decimal.RequireFromString("1.5"), Version: 1},
+		{SiteId: site.Id, UserId: 0, Group: "vip", Model: "", Markup: decimal.RequireFromString("1.3"), Version: 1},
+	} {
+		require.NoError(t, db.Create(&row).Error)
+	}
+	service.InvalidateAdtySitePriceCache()
+
+	oldUsable := setting.UserUsableGroups2JSONString()
+	oldRatio := ratio_setting.GroupRatio2JSONString()
+	oldGroupGroup := ratio_setting.GroupGroupRatio2JSONString()
+	oldModelPrice := ratio_setting.ModelPrice2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(oldUsable))
+		require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(oldRatio))
+		require.NoError(t, ratio_setting.UpdateGroupGroupRatioByJSONString(oldGroupGroup))
+		require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(oldModelPrice))
+		model.InvalidatePricingCache()
+	})
+	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{"default":"Default group","vip":"VIP group"}`))
+	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"default":1,"vip":2}`))
+	require.NoError(t, ratio_setting.UpdateGroupGroupRatioByJSONString(`{"vip":{"default":0.7}}`))
+	require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(`{"gpt-4":2,"claude-3":2}`))
+	require.NoError(t, db.Create(&[]model.Ability{
+		{Group: "default", Model: "gpt-4", ChannelId: 1, Enabled: true},
+		{Group: "vip", Model: "gpt-4", ChannelId: 1, Enabled: true},
+		{Group: "default", Model: "claude-3", ChannelId: 1, Enabled: true},
+		{Group: "vip", Model: "claude-3", ChannelId: 1, Enabled: true},
+	}).Error)
+	model.InvalidatePricingCache()
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/pricing", nil)
+	ctx.Set("id", customer.Id)
+	GetPricing(ctx)
+
+	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+	var payload struct {
+		Success    bool               `json:"success"`
+		Data       []model.Pricing    `json:"data"`
+		GroupRatio map[string]float64 `json:"group_ratio"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &payload))
+	require.True(t, payload.Success)
+
+	assert.InDelta(t, 0.7*0.8*1.2, payload.GroupRatio["default"], 1e-12)
+	assert.InDelta(t, 2*0.8*1.3, payload.GroupRatio["vip"], 1e-12)
+
+	byName := map[string]model.Pricing{}
+	for _, item := range payload.Data {
+		byName[item.ModelName] = item
+	}
+	require.Contains(t, byName, "gpt-4")
+	require.Contains(t, byName, "claude-3")
+	assert.InDelta(t, 2*1.5/1.3, byName["gpt-4"].ModelPrice, 1e-12, "listed gpt-4 price is scaled for the viewer's vip group")
+	assert.InDelta(t, 2, byName["claude-3"].ModelPrice, 1e-12, "claude-3 keeps the vip empty markup already in group_ratio")
+
+	billedVipGPT, kVipGPT := service.AdtyApplySiteMarkup(nil, customer.Id, "vip", 2, "gpt-4")
+	billedVipClaude, kVipClaude := service.AdtyApplySiteMarkup(nil, customer.Id, "vip", 2, "claude-3")
+	assert.InDelta(t, 1.5, kVipGPT, 1e-12)
+	assert.InDelta(t, 1.3, kVipClaude, 1e-12)
+	assert.InDelta(t, 2*billedVipGPT, byName["gpt-4"].ModelPrice*payload.GroupRatio["vip"], 1e-12, "current-group display matches billing for gpt-4")
+	assert.InDelta(t, 2*billedVipClaude, byName["claude-3"].ModelPrice*payload.GroupRatio["vip"], 1e-12)
+
+	billedDefaultGPT, _ := service.AdtyApplySiteMarkup(nil, customer.Id, "default", 0.7, "gpt-4")
+	billedDefaultClaude, _ := service.AdtyApplySiteMarkup(nil, customer.Id, "default", 0.7, "claude-3")
+	assert.InDelta(t, 2*billedDefaultClaude, byName["claude-3"].ModelPrice*payload.GroupRatio["default"], 1e-12, "models that inherit empty markup stay correct when the displayed group changes")
+	switchedGPT := byName["gpt-4"].ModelPrice * payload.GroupRatio["default"]
+	assert.Greater(t, math.Abs(2*billedDefaultGPT-switchedGPT), 1e-9, "reusing vip-adjusted model prices with the default group_ratio is the switch-group inaccuracy")
+
+	// Re-adjusting the official list for the selected group restores the billing markup.
+	official := []model.Pricing{
+		{ModelName: "gpt-4", ModelPrice: 2},
+		{ModelName: "claude-3", ModelPrice: 2},
+	}
+	adjustedDefault := service.AdtyAdjustPricingForSiteModels(ctx, "default", official)
+	assert.InDelta(t, 2*billedDefaultGPT, adjustedDefault[0].ModelPrice*payload.GroupRatio["default"], 1e-12)
+	assert.InDelta(t, 2*billedDefaultClaude, adjustedDefault[1].ModelPrice*payload.GroupRatio["default"], 1e-12)
 }

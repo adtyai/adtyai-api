@@ -1013,14 +1013,16 @@ func carryCustomerPricesTx(tx *gorm.DB, fromSite, toSite int) error {
 	return nil
 }
 
-// ResolveAdtySiteMarkup 在一个站的定价里按「客户 + 分组 → 客户 → 全站 + 分组 → 全站 → 1」取存储 k（11.4）。
-// 同一客户/分组层级上，单模型独立行覆盖该层级的空模型默认；没有独立行时继承空模型/全局加价。
-// 更具体的客户/分组行仍然优先于更不具体的行。正数 k（含小于 1）都会采用。modelName 为空时只使用空模型默认行。
+// ResolveAdtySiteMarkup 在一个站的定价里按官方「全局 + 单模型独立加价」取存储 k（11.4）。
+// 若该模型存在适用的单模型独立加价，取其中最具体的一行（客户+分组 → 客户 → 全站+分组 → 全站）。
+// 否则取最具体的空模型/全局行，新模型继承该全局加价。正数 k（含小于 1）都会采用。
+// 因此更具体的单模型仍覆盖更不具体的单模型；没有单模型时，更具体的空模型仍覆盖更不具体的空模型；
+// 站点级（或更不具体的）单模型不会被更具体但空模型的客户/分组行盖掉。
+// modelName 为空时只使用空模型默认行，不计单模型行。
 func ResolveAdtySiteMarkup(prices []model.AdtySitePrice, userId int, group, modelName string) decimal.Decimal {
 	modelName = adtyNormalizeSitePriceModel(modelName)
-	bestRank := 0
+	bestModelRank, bestEmptyRank := 0, 0
 	var bestModel, bestEmpty decimal.Decimal
-	hasModel, hasEmpty := false, false
 	for _, price := range prices {
 		if !price.Markup.IsPositive() {
 			continue
@@ -1043,23 +1045,22 @@ func ResolveAdtySiteMarkup(prices []model.AdtySitePrice, userId int, group, mode
 		if rowModel != "" && rowModel != modelName {
 			continue
 		}
-		if rank > bestRank {
-			bestRank = rank
-			hasModel, hasEmpty = false, false
-		}
-		if rank != bestRank {
-			continue
-		}
 		if rowModel != "" {
-			hasModel, bestModel = true, price.Markup
+			if rank >= bestModelRank {
+				bestModelRank = rank
+				bestModel = price.Markup
+			}
 			continue
 		}
-		hasEmpty, bestEmpty = true, price.Markup
+		if rank >= bestEmptyRank {
+			bestEmptyRank = rank
+			bestEmpty = price.Markup
+		}
 	}
-	if hasModel {
+	if bestModelRank > 0 {
 		return bestModel
 	}
-	if hasEmpty {
+	if bestEmptyRank > 0 {
 		return bestEmpty
 	}
 	return decimal.NewFromInt(1)
