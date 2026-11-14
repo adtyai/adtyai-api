@@ -504,10 +504,19 @@ func TestCheckinQuotaIsNotRefundedAsPrincipal(t *testing.T) {
 	}
 	user := seedAdtyTopUpUser(t, db, "checkin-refund", 0)
 	seedCreditedOrder(t, db, user.Id, "RF-checkin", PaymentProviderAdtyBEpusdt, "100", "10", "0", "100")
-	require.NoError(t, db.Model(&User{}).Where("id = ?", user.Id).Update("quota", q("110")).Error)
-	record, err := UserCheckin(user.Id)
-	require.NoError(t, err)
-	require.Equal(t, 5000, record.QuotaAwarded)
+	require.NoError(t, db.Model(&User{}).Where("id = ?", user.Id).Updates(map[string]any{
+		"quota": q("110") + 5000, "checkin_quota": 5000,
+	}).Error)
+	require.NoError(t, db.Create(&Checkin{UserId: user.Id, CheckinDate: "2020-01-01", QuotaAwarded: 5000, CreatedAt: 1}).Error)
+	_, err := UserCheckin(user.Id)
+	require.ErrorIs(t, err, ErrCheckinRetired)
+	var afterCall User
+	require.NoError(t, db.First(&afterCall, user.Id).Error)
+	require.Equal(t, int(q("110"))+5000, afterCall.Quota)
+	require.Equal(t, 5000, afterCall.CheckinQuota)
+	var awards int64
+	require.NoError(t, db.Model(&Checkin{}).Where("user_id = ?", user.Id).Count(&awards).Error)
+	require.EqualValues(t, 1, awards, "UserCheckin must not insert a new award")
 
 	reserved, err := TryReserveUserQuota(user.Id, int(q("100")))
 	require.NoError(t, err)

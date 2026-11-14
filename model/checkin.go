@@ -1,12 +1,9 @@
 package model
 
 import (
-	"math/rand"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/setting/operation_setting"
-	"gorm.io/gorm"
 )
 
 // Checkin 签到记录
@@ -48,76 +45,14 @@ func HasCheckedInToday(userId int) (bool, error) {
 	return count > 0, err
 }
 
-// UserCheckin atomically records the check-in and credits the shared wallet.
+// ErrCheckinRetired is the official closed-feature message. Check-in awards
+// are retired; historical checkins rows and checkin_quota remain as facts.
+var ErrCheckinRetired = common.NewMessage("This feature is not available")
+
+// UserCheckin is retired. It must not create a new award or credit the wallet,
+// even if checkin_setting.enabled is set to true. Historical records stay.
 func UserCheckin(userId int) (*Checkin, error) {
-	setting := operation_setting.GetCheckinSetting()
-	if !setting.Enabled {
-		return nil, common.NewMessage("Check-in feature is not enabled")
-	}
-
-	// 检查今天是否已签到
-	hasChecked, err := HasCheckedInToday(userId)
-	if err != nil {
-		return nil, err
-	}
-	if hasChecked {
-		return nil, common.NewMessage("Already checked in today")
-	}
-
-	// 计算随机额度奖励
-	quotaAwarded := setting.MinQuota
-	if setting.MaxQuota > setting.MinQuota {
-		quotaAwarded = setting.MinQuota + rand.Intn(setting.MaxQuota-setting.MinQuota+1)
-	}
-
-	today := time.Now().Format("2006-01-02")
-	checkin := &Checkin{
-		UserId:       userId,
-		CheckinDate:  today,
-		QuotaAwarded: quotaAwarded,
-		CreatedAt:    time.Now().Unix(),
-	}
-
-	return userCheckinWithTransaction(checkin, userId, quotaAwarded)
-}
-
-// All supported databases use one transaction; SQLite's production DSN starts
-// an immediate write transaction instead of emitting FOR UPDATE.
-func userCheckinWithTransaction(checkin *Checkin, userId int, quotaAwarded int) (*Checkin, error) {
-	if quotaAwarded <= 0 || quotaAwarded > common.MaxWalletQuota {
-		return nil, common.NewMessage("Check-in failed: quota update error")
-	}
-	err := DB.Transaction(func(tx *gorm.DB) error {
-		// 步骤1: 创建签到记录
-		// 数据库有唯一约束 (user_id, checkin_date)，可以防止并发重复签到
-		if err := tx.Create(checkin).Error; err != nil {
-			return common.NewMessage("Check-in failed, please try again later")
-		}
-
-		var user User
-		if err := lockForUpdate(tx).First(&user, userId).Error; err != nil {
-			return err
-		}
-		before, err := userWalletBalance(user.Quota, user.QuotaPending)
-		if err != nil {
-			return err
-		}
-		if err := applyUserQuotaDeltaTx(tx, &user, quotaAwarded, false); err != nil {
-			return common.NewMessage("Check-in failed: quota update error")
-		}
-		// Previously spent gifts stay spent. If an existing wallet is in debt,
-		// only the part of this award remaining after that debt is protected.
-		gift := max(0, min(max(0, min(user.CheckinQuota, before))+quotaAwarded, before+quotaAwarded))
-		return tx.Model(&User{}).Where("id = ?", userId).Update("checkin_quota", gift).Error
-	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	syncCreditUserQuotaCache(userId, quotaAwarded, common.LogText("checkin"))
-
-	return checkin, nil
+	return nil, ErrCheckinRetired
 }
 
 // GetUserCheckinStats 获取用户签到统计信息

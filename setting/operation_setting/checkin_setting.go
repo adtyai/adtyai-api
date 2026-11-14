@@ -26,9 +26,10 @@ func GetCheckinSetting() *CheckinSetting {
 	return &checkinSetting
 }
 
-// IsCheckinEnabled 是否启用签到功能
+// IsCheckinEnabled is permanently false. Stored checkin_setting.enabled
+// cannot turn award crediting back on.
 func IsCheckinEnabled() bool {
-	return checkinSetting.Enabled
+	return false
 }
 
 // GetCheckinQuotaRange 获取签到额度范围
