@@ -257,6 +257,7 @@ func applyAdtySiteWalletChangeTx(tx *gorm.DB, siteID int, kind string, delta dec
 	if err := tx.Create(result).Error; err != nil {
 		return nil, err
 	}
+	writeAdtyMarginWalletOfficialAudit(result, change, wallet.FrozenUSD, frozenAfter, cycleUsed, cycleTier)
 	return result, nil
 }
 

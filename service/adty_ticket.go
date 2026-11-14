@@ -109,6 +109,7 @@ func CreateAdtyTicket(userId int, input AdtyTicketInput) (*model.AdtyTicket, err
 		return nil, err
 	}
 	var created *model.AdtyTicket
+	createdNew := false
 	err = model.DB.Transaction(func(tx *gorm.DB) error {
 		dedupe := ticketDedupe(0, input.Idempotency)
 		if input.Idempotency != "" {
@@ -147,8 +148,19 @@ func CreateAdtyTicket(userId int, input AdtyTicketInput) (*model.AdtyTicket, err
 			return err
 		}
 		created = &ticket
+		createdNew = true
 		return nil
 	})
+	if err == nil && createdNew && created != nil {
+		writeAdtyOfficialAudit(userId, created.SiteId, "ticket", strconv.FormatInt(created.Id, 10), "adty.ticket.create", "", "",
+			nil,
+			map[string]any{
+				"ticket_id": created.Id, "site_id": created.SiteId, "user_id": created.UserId,
+				"team_id": created.TeamId, "type": created.Type, "title": created.Title,
+				"priority": created.Priority, "status": created.Status, "related_kind": created.RelatedKind,
+			},
+			model.AuditResultSuccess)
+	}
 	return created, err
 }
 
@@ -291,7 +303,9 @@ func SetAdtyTicketStatus(userId int, ticketId int64, status, priority string, as
 	if err != nil {
 		return err
 	}
-	return model.DB.Transaction(func(tx *gorm.DB) error {
+	var statusAudit map[string]any
+	var statusBefore map[string]any
+	err = model.DB.Transaction(func(tx *gorm.DB) error {
 		var ticket model.AdtyTicket
 		if err := model.AdtyLockForUpdate(tx).First(&ticket, ticketId).Error; err != nil {
 			return err
@@ -350,6 +364,14 @@ func SetAdtyTicketStatus(userId int, ticketId int64, status, priority string, as
 		if err := tx.Model(&ticket).Updates(updates).Error; err != nil {
 			return err
 		}
+		statusBefore = map[string]any{
+			"ticket_id": ticket.Id, "status": current, "priority": ticket.Priority, "assignee_id": ticket.AssigneeId,
+			"site_id": ticket.SiteId, "user_id": ticket.UserId,
+		}
+		statusAudit = map[string]any{
+			"ticket_id": ticket.Id, "status": next, "priority": nextPriority, "assignee_id": nextAssignee,
+			"site_id": ticket.SiteId, "user_id": ticket.UserId, "event": action,
+		}
 		if action == "reopen" {
 			return tx.Create(&model.AdtyTicketEvent{TicketId: ticket.Id, ActorId: actor.User.Id, Action: "reopen", Detail: next}).Error
 		}
@@ -361,6 +383,15 @@ func SetAdtyTicketStatus(userId int, ticketId int64, status, priority string, as
 		}
 		return tx.Create(&model.AdtyTicketEvent{TicketId: ticket.Id, ActorId: actor.User.Id, Action: action, Detail: next}).Error
 	})
+	if err == nil && statusAudit != nil {
+		siteID := 0
+		if value, ok := statusAudit["site_id"].(int); ok {
+			siteID = value
+		}
+		writeAdtyOfficialAudit(userId, siteID, "ticket", strconv.FormatInt(ticketId, 10), "adty.ticket.status", "", "",
+			statusBefore, statusAudit, model.AuditResultSuccess)
+	}
+	return err
 }
 
 func nextAdtyTicketStatus(tx *gorm.DB, actor adtyTicketActor, ticket model.AdtyTicket, current, requested string, nextAssignee int) (string, error) {
@@ -549,6 +580,8 @@ func writeAdtyTicketMessage(userId int, ticketId int64, body, idempotency, visib
 	var saved *model.AdtyTicketMessage
 	var notifyUser int
 	var notifyID int64
+	createdNew := false
+	var ticketSiteID int
 	err = model.DB.Transaction(func(tx *gorm.DB) error {
 		var ticket model.AdtyTicket
 		if err := model.AdtyLockForUpdate(tx).First(&ticket, ticketId).Error; err != nil {
@@ -584,12 +617,23 @@ func writeAdtyTicketMessage(userId int, ticketId int64, body, idempotency, visib
 			return err
 		}
 		saved = &row
+		createdNew = true
+		ticketSiteID = ticket.SiteId
 		if visibility == model.AdtyTicketVisibilityPublic {
 			notifyUser = ticket.UserId
 			notifyID = ticket.Id
 		}
 		return nil
 	})
+	if err == nil && createdNew && saved != nil && visibility == model.AdtyTicketVisibilityPublic {
+		writeAdtyOfficialAudit(userId, ticketSiteID, "ticket", strconv.FormatInt(ticketId, 10), "adty.ticket.reply", "", "",
+			nil,
+			map[string]any{
+				"ticket_id": ticketId, "message_id": saved.Id, "author_id": saved.AuthorId,
+				"visibility": saved.Visibility, "site_id": ticketSiteID,
+			},
+			model.AuditResultSuccess)
+	}
 	if err == nil && notifyUser > 0 && saved != nil {
 		_ = QueueAdtyTelegramNotice(notifyUser, model.AdtyTelegramPurposeUser,
 			"工单 "+strconv.FormatInt(notifyID, 10)+" 有新回复。请在网站查看。\n\nTicket "+strconv.FormatInt(notifyID, 10)+" has a new reply. Open the website.",

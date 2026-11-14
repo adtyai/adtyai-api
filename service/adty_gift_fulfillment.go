@@ -172,6 +172,10 @@ func reacquireAdtySiteGiftTx(tx *gorm.DB, ext *model.AdtyTopupOrder) error {
 		fromMargin = rest
 	}
 	key := "gift:" + ext.TradeNo
+	already, err := adtyWalletIdempotencyExists(tx, key+":earn:reacquire", key+":margin:reacquire")
+	if err != nil {
+		return err
+	}
 	if fromEarning.IsPositive() {
 		if _, err := applyAdtySiteWalletChangeTx(tx, ext.SiteId, model.AdtySiteWalletEarnings, decimal.Zero, AdtySiteWalletChange{
 			Type: "gift_reserve", RefType: "topup", RefID: ext.TradeNo, IdempotencyKey: key + ":earn:reacquire",
@@ -197,6 +201,15 @@ func reacquireAdtySiteGiftTx(tx *gorm.DB, ext *model.AdtyTopupOrder) error {
 		ext.GiftReserveSource = "margin"
 	default:
 		ext.GiftReserveSource = "earning"
+	}
+	if !already && (fromEarning.IsPositive() || fromMargin.IsPositive()) {
+		writeAdtyGiftOfficialAudit(ext.UserId, ext.SiteId, ext.TradeNo, "adty.gift.reserve", "reacquire",
+			map[string]any{"earning": "0", "margin": "0"},
+			map[string]any{
+				"trade_no": ext.TradeNo, "site_id": ext.SiteId, "bonus_usd": ext.BonusUSD.String(),
+				"source": ext.GiftReserveSource, "earning": fromEarning.String(), "margin": fromMargin.String(),
+				"phase": "reacquire",
+			})
 	}
 	return nil
 }
@@ -304,6 +317,10 @@ func releaseUnusedSiteGiftGuaranteeTx(tx *gorm.DB, ext *model.AdtyTopupOrder) er
 		}
 	}
 	key := "gift:" + ext.TradeNo
+	already, err := adtyWalletIdempotencyExists(tx, key+":earn:refund-release", key+":margin:refund-release")
+	if err != nil {
+		return err
+	}
 	if relEarning.IsPositive() {
 		if _, err := applyAdtySiteWalletChangeTx(tx, ext.SiteId, model.AdtySiteWalletEarnings, decimal.Zero, AdtySiteWalletChange{
 			Type: "gift_release", RefType: "topup", RefID: ext.TradeNo, IdempotencyKey: key + ":earn:refund-release",
@@ -319,6 +336,14 @@ func releaseUnusedSiteGiftGuaranteeTx(tx *gorm.DB, ext *model.AdtyTopupOrder) er
 		}); err != nil {
 			return err
 		}
+	}
+	if !already && (relEarning.IsPositive() || relMargin.IsPositive()) {
+		writeAdtyGiftOfficialAudit(ext.UserId, ext.SiteId, ext.TradeNo, "adty.gift.release", "unused gift guarantee released on refund",
+			map[string]any{"earning": heldEarning.String(), "margin": heldMargin.String()},
+			map[string]any{
+				"trade_no": ext.TradeNo, "earning": relEarning.String(), "margin": relMargin.String(),
+				"phase": "refund",
+			})
 	}
 	return cancelPendingGiftFulfillmentOnFullRefundTx(tx, ext, reclaimed, bonusQuota)
 }
@@ -442,6 +467,10 @@ func applySiteGiftSpendForSourceTx(tx *gorm.DB, userID int, tradeNo string, take
 		return err
 	}
 	key := "gift:" + tradeNo + ":spend:" + strconv.FormatInt(spentAfter, 10)
+	already, err := adtyWalletIdempotencyExists(tx, key+":earn", key+":margin")
+	if err != nil {
+		return err
+	}
 	if relEarning.IsPositive() {
 		if _, err := applyAdtySiteWalletChangeTx(tx, ext.SiteId, model.AdtySiteWalletEarnings, relEarning.Neg(), AdtySiteWalletChange{
 			Type: "gift_spend", RefType: "topup", RefID: tradeNo, IdempotencyKey: key + ":earn",
@@ -457,6 +486,14 @@ func applySiteGiftSpendForSourceTx(tx *gorm.DB, userID int, tradeNo string, take
 		}); err != nil {
 			return err
 		}
+	}
+	if !already && (relEarning.IsPositive() || relMargin.IsPositive()) {
+		writeAdtyGiftOfficialAudit(userID, ext.SiteId, tradeNo, "adty.gift.spend", "",
+			map[string]any{"earning": heldEarning.String(), "margin": heldMargin.String()},
+			map[string]any{
+				"trade_no": tradeNo, "earning": relEarning.String(), "margin": relMargin.String(),
+				"taken_quota": takenQuota,
+			})
 	}
 	return nil
 }

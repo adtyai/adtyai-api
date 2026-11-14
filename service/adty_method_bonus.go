@@ -154,6 +154,10 @@ func ReserveAdtySiteGiftTx(tx *gorm.DB, ext *model.AdtyTopupOrder) error {
 		fromMargin = rest
 	}
 	key := "gift:" + ext.TradeNo
+	already, err := adtyWalletIdempotencyExists(tx, key+":earn", key+":margin")
+	if err != nil {
+		return err
+	}
 	if fromEarning.IsPositive() {
 		if _, err := applyAdtySiteWalletChangeTx(tx, ext.SiteId, model.AdtySiteWalletEarnings, decimal.Zero, AdtySiteWalletChange{
 			Type: "gift_reserve", RefType: "topup", RefID: ext.TradeNo, IdempotencyKey: key + ":earn",
@@ -180,6 +184,16 @@ func ReserveAdtySiteGiftTx(tx *gorm.DB, ext *model.AdtyTopupOrder) error {
 	default:
 		ext.GiftReserveSource = "earning"
 	}
+	if !already && (fromEarning.IsPositive() || fromMargin.IsPositive()) {
+		writeAdtyGiftOfficialAudit(ext.UserId, ext.SiteId, ext.TradeNo, "adty.gift.reserve", "",
+			map[string]any{"earning": "0", "margin": "0"},
+			map[string]any{
+				"trade_no": ext.TradeNo, "site_id": ext.SiteId, "bonus_usd": ext.BonusUSD.String(),
+				"promo_bonus_usd": ext.PromoBonusUSD.String(), "source": ext.GiftReserveSource,
+				"earning": fromEarning.String(), "margin": fromMargin.String(),
+				"method": ext.Method, "bonus_method": ext.BonusMethod,
+			})
+	}
 	return nil
 }
 
@@ -191,6 +205,10 @@ func ReleaseAdtySiteGiftTx(tx *gorm.DB, ext *model.AdtyTopupOrder) error {
 		return nil
 	}
 	key := "gift:" + ext.TradeNo
+	already, err := adtyWalletIdempotencyExists(tx, key+":earn:release", key+":margin:release")
+	if err != nil {
+		return err
+	}
 	if ext.GiftReserveEarning.IsPositive() {
 		if _, err := applyAdtySiteWalletChangeTx(tx, ext.SiteId, model.AdtySiteWalletEarnings, decimal.Zero, AdtySiteWalletChange{
 			Type: "gift_release", RefType: "topup", RefID: ext.TradeNo, IdempotencyKey: key + ":earn:release",
@@ -206,6 +224,14 @@ func ReleaseAdtySiteGiftTx(tx *gorm.DB, ext *model.AdtyTopupOrder) error {
 		}); err != nil {
 			return err
 		}
+	}
+	if !already && (ext.GiftReserveEarning.IsPositive() || ext.GiftReserveMargin.IsPositive()) {
+		writeAdtyGiftOfficialAudit(ext.UserId, ext.SiteId, ext.TradeNo, "adty.gift.release", "",
+			map[string]any{
+				"trade_no": ext.TradeNo, "source": ext.GiftReserveSource,
+				"earning": ext.GiftReserveEarning.String(), "margin": ext.GiftReserveMargin.String(),
+			},
+			map[string]any{"trade_no": ext.TradeNo, "earning": "0", "margin": "0", "source": ext.GiftReserveSource})
 	}
 	return nil
 }

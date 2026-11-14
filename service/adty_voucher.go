@@ -6,6 +6,7 @@ import (
 	"encoding/base32"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -211,6 +212,17 @@ func IssueAdtyVoucher(input AdtyVoucherIssueInput) (*AdtyVoucherIssued, error) {
 		issued = &AdtyVoucherIssued{Id: row.Id, Code: code, CodeTail: tail, Purpose: row.Purpose, AmountUSD: row.AmountUSD, Quota: row.Quota}
 		return nil
 	})
+	if err == nil && issued != nil {
+		siteID := input.SiteId
+		writeAdtyOfficialAudit(input.IssuerId, siteID, "voucher", strconv.FormatInt(issued.Id, 10), "adty.voucher.issue", input.Reason, "",
+			nil,
+			map[string]any{
+				"voucher_id": issued.Id, "purpose": issued.Purpose, "amount_usd": issued.AmountUSD.String(),
+				"quota": issued.Quota, "status": model.AdtyVoucherStatusPending, "source": input.Source,
+				"site_id": siteID, "code_tail": issued.CodeTail,
+			},
+			model.AuditResultSuccess)
+	}
 	return issued, err
 }
 
@@ -261,6 +273,9 @@ func RedeemAdtyVoucher(userId int, code string) (*AdtyVoucherRedeemed, error) {
 func redeemAdtyVoucherOnce(userId int, hash string, attempt int) (*AdtyVoucherRedeemed, int64, error) {
 	var result *AdtyVoucherRedeemed
 	var credit int64
+	var redeemAudit map[string]any
+	var redeemVoucherID int64
+	var redeemSiteID int
 	err := model.DB.Transaction(func(tx *gorm.DB) error {
 		user, err := lockAdtyVoucherUser(tx, userId)
 		if err != nil {
@@ -334,8 +349,25 @@ func redeemAdtyVoucherOnce(userId int, hash string, attempt int) (*AdtyVoucherRe
 			return err
 		}
 		result = &AdtyVoucherRedeemed{TradeNo: trade, Purpose: voucher.Purpose, AmountUSD: voucher.AmountUSD, Quota: voucher.Quota}
+		redeemVoucherID = voucher.Id
+		redeemSiteID = voucher.TargetSiteId
+		if redeemSiteID == 0 {
+			redeemSiteID = voucher.SourceSiteId
+		}
+		redeemAudit = map[string]any{
+			"voucher_id": voucher.Id, "purpose": voucher.Purpose, "amount_usd": voucher.AmountUSD.String(),
+			"quota": voucher.Quota, "status": model.AdtyVoucherStatusRedeemed, "trade_no": trade,
+			"redeemer_id": user.Id, "source_kind": voucher.SourceKind, "source_site_id": voucher.SourceSiteId,
+			"target_site_id": voucher.TargetSiteId,
+		}
 		return nil
 	})
+	if err == nil && result != nil && !result.Replayed && redeemAudit != nil {
+		writeAdtyOfficialAudit(userId, redeemSiteID, "voucher", strconv.FormatInt(redeemVoucherID, 10), "adty.voucher.redeem", "", "",
+			map[string]any{"status": model.AdtyVoucherStatusPending},
+			redeemAudit,
+			model.AuditResultSuccess)
+	}
 	return result, credit, err
 }
 
@@ -386,7 +418,8 @@ func generateAdtyVoucherTradeNo(hash string, attempt int) string {
 }
 
 func FreezeAdtyVoucher(actorId int, voucherId int64) error {
-	return model.DB.Transaction(func(tx *gorm.DB) error {
+	var snapshot model.AdtyVoucher
+	err := model.DB.Transaction(func(tx *gorm.DB) error {
 		actor, err := lockAdtyVoucherUser(tx, actorId)
 		if err != nil {
 			return err
@@ -409,8 +442,13 @@ func FreezeAdtyVoucher(actorId int, voucherId int64) error {
 		if updated.RowsAffected != 1 {
 			return common.NewMessage("Invalid parameters")
 		}
+		snapshot = voucher
 		return nil
 	})
+	if err == nil && snapshot.Id != 0 {
+		writeAdtyVoucherStatusAudit(actorId, snapshot, "adty.voucher.freeze", "", model.AdtyVoucherStatusPending, model.AdtyVoucherStatusFrozen)
+	}
+	return err
 }
 
 // InheritAdtyVouchersOnCloseTx keeps unredeemed customer codes under the original
@@ -441,7 +479,8 @@ func InheritAdtyVouchersOnCloseTx(tx *gorm.DB, siteId int, movedUserIDs []int) e
 }
 
 func CancelAdtyVoucher(actorId int, voucherId int64) error {
-	return model.DB.Transaction(func(tx *gorm.DB) error {
+	var snapshot model.AdtyVoucher
+	err := model.DB.Transaction(func(tx *gorm.DB) error {
 		actor, err := lockAdtyVoucherUser(tx, actorId)
 		if err != nil {
 			return err
@@ -453,8 +492,13 @@ func CancelAdtyVoucher(actorId int, voucherId int64) error {
 		if actor.Role != common.RoleRootUser && voucher.IssuerId != actor.Id {
 			return common.NewMessage("No permission to perform this action")
 		}
+		snapshot = voucher
 		return cancelAdtyVoucherTx(tx, &voucher)
 	})
+	if err == nil && snapshot.Id != 0 {
+		writeAdtyVoucherStatusAudit(actorId, snapshot, "adty.voucher.cancel", "", snapshot.Status, model.AdtyVoucherStatusCancelled)
+	}
+	return err
 }
 
 func revokeUnusedOwnerAndMarginVouchersOnCloseTx(tx *gorm.DB, siteId int) error {
@@ -465,9 +509,11 @@ func revokeUnusedOwnerAndMarginVouchersOnCloseTx(tx *gorm.DB, siteId int) error 
 		return err
 	}
 	for i := range vouchers {
+		before := vouchers[i]
 		if err := cancelAdtyVoucherTx(tx, &vouchers[i]); err != nil {
 			return err
 		}
+		writeAdtyVoucherStatusAudit(0, before, "adty.voucher.cancel", "unused owner or margin voucher revoked on site close", before.Status, model.AdtyVoucherStatusCancelled)
 	}
 	return nil
 }
@@ -877,4 +923,23 @@ func noteAdtyVoucherGuessRedis(userId int, now int64) error {
 		now,
 		adtyVoucherGuessWindow,
 	).Err()
+}
+
+func writeAdtyVoucherStatusAudit(actorId int, voucher model.AdtyVoucher, action, reason, beforeStatus, afterStatus string) {
+	siteID := voucher.TargetSiteId
+	if siteID == 0 {
+		siteID = voucher.SourceSiteId
+	}
+	writeAdtyOfficialAudit(actorId, siteID, "voucher", strconv.FormatInt(voucher.Id, 10), action, reason, "",
+		map[string]any{
+			"voucher_id": voucher.Id, "purpose": voucher.Purpose, "amount_usd": voucher.AmountUSD.String(),
+			"quota": voucher.Quota, "status": beforeStatus, "source_kind": voucher.SourceKind,
+			"source_site_id": voucher.SourceSiteId, "target_site_id": voucher.TargetSiteId,
+		},
+		map[string]any{
+			"voucher_id": voucher.Id, "purpose": voucher.Purpose, "amount_usd": voucher.AmountUSD.String(),
+			"quota": voucher.Quota, "status": afterStatus, "source_kind": voucher.SourceKind,
+			"source_site_id": voucher.SourceSiteId, "target_site_id": voucher.TargetSiteId,
+		},
+		model.AuditResultSuccess)
 }
