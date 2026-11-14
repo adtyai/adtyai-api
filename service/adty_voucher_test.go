@@ -54,6 +54,12 @@ func TestAdtyVoucherIssueRedeemAndRejects(t *testing.T) {
 	var user model.User
 	require.NoError(t, db.First(&user, mainUser.Id).Error)
 	assert.EqualValues(t, 5*500000, user.Quota)
+	var lots []model.AdtyFundBatch
+	require.NoError(t, db.Where("user_id = ? AND source = ?", mainUser.Id, redeemed.TradeNo).Find(&lots).Error)
+	require.Len(t, lots, 1)
+	assert.Equal(t, "principal", lots[0].Kind)
+	assert.EqualValues(t, 5*500000, lots[0].Original)
+	assert.EqualValues(t, 5*500000, lots[0].Remaining)
 	var orders int64
 	require.NoError(t, db.Model(&model.AdtyTopupOrder{}).Where("trade_no = ? AND provider = ?", redeemed.TradeNo, model.AdtyVoucherProvider).Count(&orders).Error)
 	assert.EqualValues(t, 1, orders)
@@ -78,6 +84,9 @@ func TestAdtyVoucherIssueRedeemAndRejects(t *testing.T) {
 	marginRedeem, err := RedeemAdtyVoucher(owner.Id, marginCode.Code)
 	require.NoError(t, err)
 	assert.Equal(t, model.AdtyVoucherPurposeSiteMargin, marginRedeem.Purpose)
+	var marginLots int64
+	require.NoError(t, db.Model(&model.AdtyFundBatch{}).Where("user_id = ? AND source = ?", owner.Id, marginRedeem.TradeNo).Count(&marginLots).Error)
+	assert.Zero(t, marginLots, "margin vouchers must not write wallet fund lots")
 	var margin model.AdtySiteWallet
 	require.NoError(t, db.Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteWalletMargin).First(&margin).Error)
 	assert.True(t, margin.Balance.Equal(decimal.NewFromInt(4)))

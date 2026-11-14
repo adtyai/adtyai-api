@@ -541,6 +541,11 @@ func TestSiteInviteCommissionConvertsAvailableRemainderToInviterQuota(t *testing
 	var inviter model.User
 	require.NoError(t, db.First(&inviter, invite.InviterId).Error)
 	require.Equal(t, 500000, inviter.Quota)
+	var convertLots []model.AdtyFundBatch
+	require.NoError(t, db.Where("user_id = ? AND source = ?", inviter.Id, "site-comm-cvt:"+strconv.FormatInt(row.Id, 10)+":cvt-1").Find(&convertLots).Error)
+	require.Len(t, convertLots, 1)
+	require.Equal(t, "principal", convertLots[0].Kind)
+	require.EqualValues(t, 500000, convertLots[0].Remaining)
 	require.NoError(t, db.First(&row, row.Id).Error)
 	require.True(t, row.ConvertedUSD.Equal(decimal.NewFromInt(1)))
 	var inviteeUser model.User

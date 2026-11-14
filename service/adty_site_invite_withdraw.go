@@ -185,11 +185,14 @@ func CreateAdtySiteInviteWithdrawal(input AdtySiteInviteWithdrawalInput) (*model
 			if err != nil {
 				return err
 			}
-			return model.InsertAdtyLedgerTx(tx, &model.AdtyBalanceLedger{
+			if err := model.InsertAdtyLedgerTx(tx, &model.AdtyBalanceLedger{
 				UserId: input.UserID, DeltaQuota: int64(quota), BalanceBefore: before, BalanceAfter: before + int64(quota),
 				Type: model.AdtyLedgerTypeCommissionTransfer, RefType: "site_invite_withdrawal", RefId: strconv.FormatInt(row.Id, 10),
 				Reason: "site invite commission to balance", IdempotencyKey: &ref,
-			})
+			}); err != nil {
+				return err
+			}
+			return model.CreateAdtyFundBatchesTx(tx, input.UserID, ref, int64(quota), 0)
 		}
 		return nil
 	})

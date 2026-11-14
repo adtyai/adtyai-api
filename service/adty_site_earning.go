@@ -460,6 +460,9 @@ func GrantAdtySiteTrial(siteId, customerId int, amountUSD decimal.Decimal, idemp
 		}); err != nil {
 			return err
 		}
+		if err := model.CreateAdtyFundBatchesTx(tx, customerId, ref, 0, int64(quotaInt)); err != nil {
+			return err
+		}
 		now := time.Now().Unix()
 		updated := tx.Model(&model.AdtySiteEarningDaily{}).
 			Where("site_id = ? AND site_owner_user_id = ? AND user_id = ? AND day = ? AND kind = ? AND status = ?", siteId, site.OwnerUserId, customerId, day, model.AdtySiteEarningTrial, model.AdtySiteEarningAvailable).

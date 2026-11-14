@@ -600,6 +600,12 @@ func TestTrialGrantLimitsAndLedger(t *testing.T) {
 	var ledger model.AdtyBalanceLedger
 	require.NoError(t, db.Where("user_id = ? AND type = ?", customer.Id, model.AdtyLedgerTypeSiteTrial).First(&ledger).Error)
 	assert.EqualValues(t, perUnit("5"), ledger.DeltaQuota)
+	var trialLots []model.AdtyFundBatch
+	require.NoError(t, db.Where("user_id = ? AND source = ?", customer.Id, fmt.Sprintf("site-trial-%d", grant.Id)).Find(&trialLots).Error)
+	require.Len(t, trialLots, 1)
+	assert.Equal(t, "bonus", trialLots[0].Kind)
+	assert.EqualValues(t, perUnit("5"), trialLots[0].Original)
+	assert.EqualValues(t, perUnit("5"), trialLots[0].Remaining)
 	assert.True(t, earningTotals(t, db, site.Id)[model.AdtySiteEarningTrial].Equal(usd("-5")))
 	var trialRow model.AdtySiteEarningDaily
 	require.NoError(t, db.Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteEarningTrial).First(&trialRow).Error)
@@ -632,6 +638,11 @@ func TestLeftoverPausedSiteAllowsTrialGrant(t *testing.T) {
 	var stored model.User
 	require.NoError(t, db.First(&stored, customer.Id).Error)
 	assert.EqualValues(t, perUnit("5"), stored.Quota)
+	var pausedLots []model.AdtyFundBatch
+	require.NoError(t, db.Where("user_id = ? AND source = ?", customer.Id, fmt.Sprintf("site-trial-%d", grant.Id)).Find(&pausedLots).Error)
+	require.Len(t, pausedLots, 1)
+	assert.Equal(t, "bonus", pausedLots[0].Kind)
+	assert.EqualValues(t, perUnit("5"), pausedLots[0].Remaining)
 }
 
 func TestTrialGrantConcurrentSameKey(t *testing.T) {

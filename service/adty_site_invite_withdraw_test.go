@@ -91,6 +91,11 @@ func TestSiteInviteBalanceWithdrawalCreditsQuotaWithoutWithdrawnCash(t *testing.
 	require.True(t, commission.FrozenUSD.IsZero())
 	require.NoError(t, db.First(inviter, inviter.Id).Error)
 	require.Equal(t, 750000, inviter.Quota)
+	var withdrawLots []model.AdtyFundBatch
+	require.NoError(t, db.Where("user_id = ? AND source = ?", inviter.Id, "site-invite-wd:"+strconv.FormatInt(row.Id, 10)).Find(&withdrawLots).Error)
+	require.Len(t, withdrawLots, 1)
+	require.Equal(t, "principal", withdrawLots[0].Kind)
+	require.EqualValues(t, 750000, withdrawLots[0].Remaining)
 	var earning model.AdtySiteWallet
 	require.NoError(t, db.Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteWalletEarnings).First(&earning).Error)
 	require.True(t, earning.Balance.Equal(decimal.RequireFromString("0.5")))

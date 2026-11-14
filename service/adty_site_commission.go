@@ -661,6 +661,9 @@ func ConvertAdtySiteInviteCommission(inviterID int, commissionID int64, amount d
 		}); err != nil {
 			return err
 		}
+		if err := model.CreateAdtyFundBatchesTx(tx, inviterID, ref, int64(quota), 0); err != nil {
+			return err
+		}
 		return tx.Model(&row).Updates(map[string]any{
 			"converted_usd":     row.ConvertedUSD.Add(amount),
 			"earnings_hold_usd": row.EarningsHoldUSD, "margin_hold_usd": row.MarginHoldUSD,

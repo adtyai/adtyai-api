@@ -325,6 +325,9 @@ func redeemAdtyVoucherOnce(userId int, hash string, attempt int) (*AdtyVoucherRe
 			}); err != nil {
 				return err
 			}
+			if err := model.CreateAdtyFundBatchesTx(tx, user.Id, trade, voucher.Quota, 0); err != nil {
+				return err
+			}
 			credit = voucher.Quota
 		}
 		if err := insertAdtyVoucherOrderTx(tx, user.Id, trade, &voucher, now); err != nil {
