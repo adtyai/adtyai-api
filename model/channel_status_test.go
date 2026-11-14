@@ -206,3 +206,49 @@ func TestAutoDisableRefreshesStaleCacheWhenRowIsManuallyDisabled(t *testing.T) {
 		})
 	}
 }
+
+func TestAutoDisablePersistsWhenStaleCacheAlreadyAutoDisabled(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		multiKey bool
+	}{
+		{name: "single key stale AutoDisabled cache still persists Enabled row"},
+		{name: "multi key stale AutoDisabled cache still persists Enabled row", multiKey: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			setupChannelStatusTest(t)
+			common.MemoryCacheEnabled = true
+
+			channel := Channel{Name: t.Name(), Key: "key-a", Status: common.ChannelStatusEnabled, Models: "test-model", Group: "default"}
+			usingKey := "key-a"
+			if tc.multiKey {
+				// key-b already failed, so a failure on key-a disables every key.
+				channel.Key = "key-a\nkey-b"
+				channel.ChannelInfo = ChannelInfo{IsMultiKey: true, MultiKeySize: 2, MultiKeyStatusList: map[int]int{1: common.ChannelStatusAutoDisabled}}
+			}
+			require.NoError(t, channel.Insert())
+			require.NoError(t, InitChannelCache())
+
+			CacheUpdateChannelStatus(channel.Id, common.ChannelStatusAutoDisabled)
+			stale, err := CacheGetChannel(channel.Id)
+			require.NoError(t, err)
+			require.Equal(t, common.ChannelStatusAutoDisabled, stale.Status)
+
+			storedBefore, err := GetChannelById(channel.Id, true)
+			require.NoError(t, err)
+			require.Equal(t, common.ChannelStatusEnabled, storedBefore.Status)
+
+			changed := UpdateChannelStatus(channel.Id, usingKey, common.ChannelStatusAutoDisabled, "provider rejected key")
+			assert.True(t, changed)
+
+			stored, err := GetChannelById(channel.Id, true)
+			require.NoError(t, err)
+			assert.Equal(t, common.ChannelStatusAutoDisabled, stored.Status)
+
+			cached, err := CacheGetChannel(channel.Id)
+			require.NoError(t, err)
+			assert.Equal(t, common.ChannelStatusAutoDisabled, cached.Status)
+			assert.Equal(t, stored.ChannelInfo.MultiKeyStatusList, cached.ChannelInfo.MultiKeyStatusList)
+		})
+	}
+}

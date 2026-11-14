@@ -803,7 +803,6 @@ func UpdateChannelStatus(channelId int, usingKey string, status int, reason stri
 	pollingLock.Lock()
 	defer pollingLock.Unlock()
 
-	cacheAlreadyAtStatus := false
 	if common.MemoryCacheEnabled {
 		channelCache, _ := CacheGetChannel(channelId)
 		if channelCache == nil {
@@ -830,9 +829,9 @@ func UpdateChannelStatus(channelId int, usingKey string, status int, reason stri
 				if status != common.ChannelStatusAutoDisabled {
 					return false
 				}
-				// A stale AutoDisabled entry can hide a manual disable in the
-				// database. Keep going so the stored-row guard can refresh it.
-				cacheAlreadyAtStatus = true
+				// A stale AutoDisabled entry can hide a manual disable or an
+				// Enabled row in the database. Keep going so the stored-row
+				// guard can refresh, or AutoDisabled can still be persisted.
 			} else {
 				CacheUpdateChannelStatus(channelId, status)
 			}
@@ -870,7 +869,7 @@ func UpdateChannelStatus(channelId int, usingKey string, status int, reason stri
 		overridesKeyExhaustion := channel.ChannelInfo.IsMultiKey && usingKey == "" &&
 			status == common.ChannelStatusManuallyDisabled && reason != ChannelStatusReasonAllKeysDisabled &&
 			channel.GetOtherInfo()["status_reason"] == ChannelStatusReasonAllKeysDisabled
-		if (channel.Status == status || cacheAlreadyAtStatus) && !overridesKeyExhaustion {
+		if channel.Status == status && !overridesKeyExhaustion {
 			return false
 		}
 
