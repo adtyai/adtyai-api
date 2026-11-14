@@ -20,12 +20,14 @@ import { cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { ThemeQuickSwitcher } from '@/components/theme-quick-switcher'
 import {
   ThemeCustomizationProvider,
   useThemeCustomization,
 } from '@/context/theme-customization-provider'
 import { ThemeProvider, useTheme } from '@/context/theme-provider'
 import { initializeFrontendCache } from '@/lib/frontend-cache'
+import { THEME_STORAGE_KEYS } from '@/lib/theme-storage'
 
 const savedPreferences = {
   'adtyai:theme:v1:mode': 'dark',
@@ -94,6 +96,22 @@ function ThemeFixture() {
   )
 }
 
+function mockSystemDarkMode(dark: boolean) {
+  vi.spyOn(window, 'matchMedia').mockImplementation(
+    (query: string) =>
+      ({
+        matches: dark && query === '(prefers-color-scheme: dark)',
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+        onchange: null,
+      }) as MediaQueryList
+  )
+}
+
 beforeEach(() => {
   localStorage.clear()
 })
@@ -123,7 +141,7 @@ describe('theme preference persistence', () => {
 
     render(<ThemeFixture />)
 
-    expect(screen.getByLabelText('Theme mode')).toHaveTextContent('system')
+    expect(screen.getByLabelText('Theme mode')).toHaveTextContent('light')
     expect(document.documentElement).toHaveClass('light')
     expect(document.body).not.toHaveAttribute('data-theme-preset')
     expect(document.body).toHaveAttribute('data-theme-font', 'system')
@@ -169,7 +187,7 @@ describe('theme preference persistence', () => {
     first.unmount()
     render(<ThemeFixture />)
 
-    expect(screen.getByLabelText('Theme mode')).toHaveTextContent('system')
+    expect(screen.getByLabelText('Theme mode')).toHaveTextContent('light')
     expect(document.documentElement).toHaveClass('light')
     expect(document.body).not.toHaveAttribute('data-theme-preset')
     expect(document.body).toHaveAttribute('data-theme-font', 'system')
@@ -192,7 +210,7 @@ describe('theme preference persistence', () => {
 
       render(<ThemeFixture />)
 
-      expect(screen.getByLabelText('Theme mode')).toHaveTextContent('system')
+      expect(screen.getByLabelText('Theme mode')).toHaveTextContent('light')
       expect(document.body).not.toHaveAttribute('data-theme-preset')
       expect(document.body).toHaveAttribute('data-theme-font', 'system')
       expect(document.body).not.toHaveAttribute('data-theme-radius')
@@ -208,7 +226,7 @@ describe('theme preference persistence', () => {
 
     render(<ThemeFixture />)
 
-    expect(screen.getByLabelText('Theme mode')).toHaveTextContent('system')
+    expect(screen.getByLabelText('Theme mode')).toHaveTextContent('light')
     expect(document.body).not.toHaveAttribute('data-theme-preset')
   })
 
@@ -229,7 +247,7 @@ describe('theme preference persistence', () => {
 
     await user.click(screen.getByRole('button', { name: 'Reset' }))
 
-    expect(screen.getByLabelText('Theme mode')).toHaveTextContent('system')
+    expect(screen.getByLabelText('Theme mode')).toHaveTextContent('light')
     expect(document.body).not.toHaveAttribute('data-theme-preset')
   })
 
@@ -262,7 +280,91 @@ describe('theme preference persistence', () => {
   })
 })
 
+describe('official light-first theme default', () => {
+  it('resolves unsaved preference to light even when the system is dark', () => {
+    mockSystemDarkMode(true)
+    render(<ThemeFixture />)
+
+    expect(screen.getByLabelText('Theme mode')).toHaveTextContent('light')
+    expect(document.documentElement).toHaveClass('light')
+    expect(document.documentElement).not.toHaveClass('dark')
+  })
+
+  it('resolves an invalid stored mode to light even when the system is dark', () => {
+    mockSystemDarkMode(true)
+    localStorage.setItem(THEME_STORAGE_KEYS.mode, 'sepia')
+    render(<ThemeFixture />)
+
+    expect(screen.getByLabelText('Theme mode')).toHaveTextContent('light')
+    expect(document.documentElement).toHaveClass('light')
+    expect(document.documentElement).not.toHaveClass('dark')
+  })
+
+  it('honors a saved dark preference', () => {
+    mockSystemDarkMode(false)
+    localStorage.setItem(THEME_STORAGE_KEYS.mode, 'dark')
+    render(<ThemeFixture />)
+
+    expect(screen.getByLabelText('Theme mode')).toHaveTextContent('dark')
+    expect(document.documentElement).toHaveClass('dark')
+  })
+
+  it('honors a saved system preference and follows a dark OS', () => {
+    mockSystemDarkMode(true)
+    localStorage.setItem(THEME_STORAGE_KEYS.mode, 'system')
+    render(<ThemeFixture />)
+
+    expect(screen.getByLabelText('Theme mode')).toHaveTextContent('system')
+    expect(document.documentElement).toHaveClass('dark')
+    expect(document.documentElement).not.toHaveClass('light')
+  })
+
+  it('returns to official light after reset, even when the system is dark', async () => {
+    mockSystemDarkMode(true)
+    localStorage.setItem(THEME_STORAGE_KEYS.mode, 'dark')
+    const user = userEvent.setup()
+    render(<ThemeFixture />)
+
+    expect(screen.getByLabelText('Theme mode')).toHaveTextContent('dark')
+    await user.click(screen.getByRole('button', { name: 'Reset' }))
+
+    expect(screen.getByLabelText('Theme mode')).toHaveTextContent('light')
+    expect(document.documentElement).toHaveClass('light')
+    expect(document.documentElement).not.toHaveClass('dark')
+    expect(localStorage.getItem(THEME_STORAGE_KEYS.mode)).toBeNull()
+  })
+
+  it('still offers dark and system in the theme switcher', async () => {
+    const user = userEvent.setup()
+    render(
+      <ThemeProvider>
+        <ThemeCustomizationProvider>
+          <ThemeQuickSwitcher />
+          <ThemeControls />
+        </ThemeCustomizationProvider>
+      </ThemeProvider>
+    )
+
+    const light = screen.getByRole('radio', { name: 'Light' })
+    const dark = screen.getByRole('radio', { name: 'Dark' })
+    const system = screen.getByRole('radio', { name: 'System' })
+    expect(light).toBeInTheDocument()
+    expect(dark).toBeInTheDocument()
+    expect(system).toBeInTheDocument()
+    expect(light).toHaveAttribute('aria-checked', 'true')
+
+    await user.click(dark)
+    expect(screen.getByLabelText('Theme mode')).toHaveTextContent('dark')
+    expect(document.documentElement).toHaveClass('dark')
+
+    await user.click(system)
+    expect(screen.getByLabelText('Theme mode')).toHaveTextContent('system')
+    expect(localStorage.getItem(THEME_STORAGE_KEYS.mode)).toBe('system')
+  })
+})
+
 describe('theme font selection', () => {
+
   it('keeps manually selected Sans after remounting and switching presets', async () => {
     const user = userEvent.setup()
     const first = render(<ThemeFixture />)

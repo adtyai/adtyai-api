@@ -56,19 +56,22 @@
     <meta name="msapplication-TileColor" content="#0A0A0A" />
 
     <meta name="theme-color" content="#fff" />
-    <!-- Resolve the theme before first paint so the page never flashes light
+    <!-- Resolve the theme before first paint so first paint is official light
+         unless the user already saved another valid mode (dark or system),
          and one-shot detectors (e.g. Dark Reader) see the real theme.
          Keep in sync with ThemeProvider and THEME_STORAGE_KEYS.mode. -->
     <script>
       ;(function () {
-        var theme = 'system'
+        var theme = 'light'
         try {
-          theme = localStorage.getItem('adtyai:theme:v1:mode') || 'system'
+          theme = localStorage.getItem('adtyai:theme:v1:mode') || 'light'
         } catch (e) {}
-        if (theme !== 'dark' && theme !== 'light') {
+        if (theme === 'system') {
           theme = window.matchMedia('(prefers-color-scheme: dark)').matches
             ? 'dark'
             : 'light'
+        } else if (theme !== 'dark' && theme !== 'light') {
+          theme = 'light'
         }
         document.documentElement.classList.add(theme)
       })()

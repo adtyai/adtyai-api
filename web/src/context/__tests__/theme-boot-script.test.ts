@@ -81,20 +81,42 @@ describe('index.html theme boot script', () => {
     expect(document.documentElement).not.toHaveClass('dark')
   })
 
-  it('follows the system dark mode when no preference is saved', () => {
+  it('first-paints official light when no preference is saved, even if the system is dark', () => {
     mockSystemDarkMode(true)
 
     runBootScript()
 
-    expect(document.documentElement).toHaveClass('dark')
+    expect(document.documentElement).toHaveClass('light')
+    expect(document.documentElement).not.toHaveClass('dark')
   })
 
-  it('follows the system light mode when the saved value is invalid', () => {
-    mockSystemDarkMode(false)
+  it('first-paints official light when the saved value is invalid, even if the system is dark', () => {
+    mockSystemDarkMode(true)
     localStorage.setItem(THEME_STORAGE_KEYS.mode, 'sepia')
 
     runBootScript()
 
     expect(document.documentElement).toHaveClass('light')
+    expect(document.documentElement).not.toHaveClass('dark')
+  })
+
+  it('honors a saved system preference and follows a dark OS', () => {
+    mockSystemDarkMode(true)
+    localStorage.setItem(THEME_STORAGE_KEYS.mode, 'system')
+
+    runBootScript()
+
+    expect(document.documentElement).toHaveClass('dark')
+    expect(document.documentElement).not.toHaveClass('light')
+  })
+
+  it('honors a saved system preference and follows a light OS', () => {
+    mockSystemDarkMode(false)
+    localStorage.setItem(THEME_STORAGE_KEYS.mode, 'system')
+
+    runBootScript()
+
+    expect(document.documentElement).toHaveClass('light')
+    expect(document.documentElement).not.toHaveClass('dark')
   })
 })
