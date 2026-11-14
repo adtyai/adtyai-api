@@ -8919,7 +8919,9 @@
     "1 USD = {{rate}} CNY. You receive ¥{{cny}}.": "1 USD = {{rate}} CNY。受取額は ¥{{cny}} です。",
     "Network fee {{fee}} USD. You receive {{net}} USD.": "ネットワーク手数料 {{fee}} USD。受取額は {{net}} USD です。",
     "A transfer to balance deducts the site hold. External payout releases it after payment is complete.": "残高への移動は、対応する凍結分を差し引きます。外部送金が完了すると、凍結分は元の口座に戻ります。",
-    "Invite commission holds are not available for this withdrawal.": "招待コミッションの凍結分は、この出金には使えません。"
+    "Invite commission holds are not available for this withdrawal.": "招待コミッションの凍結分は、この出金には使えません。",
+    "Post-discount payment ratio": "割引後の支払割合",
+    "0.8 means pay 80% of the ordinary price; 1 means pay the ordinary (full) price.": "小数の比率を入力します。0.8 は通常価格の 80% を支払うことを意味し、1 は通常価格（定価）を支払うことを意味します。"
 },
   "Targeted notifications": "対象を指定した通知",
   "Site announcements": "サイトのお知らせ",

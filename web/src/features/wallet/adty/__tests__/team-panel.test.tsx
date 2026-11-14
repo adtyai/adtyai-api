@@ -109,7 +109,24 @@ describe('TeamPanel', () => {
     }))
     render(<TeamPanel />, { wrapper })
     expect(await screen.findByText('Alpha')).toBeInTheDocument()
+    expect(screen.getByText('Post-discount payment ratio')).toBeInTheDocument()
+    expect(screen.queryByText('Discount')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Create team' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Join team' })).not.toBeInTheDocument()
+  })
+
+  it('labels the create-team price as a post-discount payment ratio and defaults to paying the ordinary price', async () => {
+    mockMineTeamGet(() => ({
+      data: { success: true, data: { team: null } },
+    }))
+    render(<TeamPanel />, { wrapper })
+    const field = await screen.findByLabelText('Post-discount payment ratio')
+    expect(field).toHaveValue('1')
+    expect(
+      screen.getByText(
+        '0.8 means pay 80% of the ordinary price; 1 means pay the ordinary (full) price.'
+      )
+    ).toBeInTheDocument()
+    expect(screen.queryByLabelText('Discount')).not.toBeInTheDocument()
   })
 })

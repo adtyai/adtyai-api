@@ -8919,7 +8919,9 @@
     "1 USD = {{rate}} CNY. You receive ¥{{cny}}.": "1 USD = {{rate}} CNY. Вы получите ¥{{cny}}.",
     "Network fee {{fee}} USD. You receive {{net}} USD.": "Сетевая комиссия {{fee}} USD. Вы получите {{net}} USD.",
     "A transfer to balance deducts the site hold. External payout releases it after payment is complete.": "Перевод на баланс списывает соответствующую заморозку. После внешней выплаты заморозка возвращается в исходный источник.",
-    "Invite commission holds are not available for this withdrawal.": "Заморозка пригласительной комиссии недоступна для этого вывода."
+    "Invite commission holds are not available for this withdrawal.": "Заморозка пригласительной комиссии недоступна для этого вывода.",
+    "Post-discount payment ratio": "Доля оплаты после скидки",
+    "0.8 means pay 80% of the ordinary price; 1 means pay the ordinary (full) price.": "Введите десятичную долю. 0.8 означает оплату 80% обычной цены; 1 означает оплату обычной (полной) цены."
 },
   "Targeted notifications": "Адресные уведомления",
   "Site announcements": "Объявления сайта",

@@ -8919,7 +8919,9 @@
     "1 USD = {{rate}} CNY. You receive ¥{{cny}}.": "1 USD = {{rate}} CNY. Bạn nhận ¥{{cny}}.",
     "Network fee {{fee}} USD. You receive {{net}} USD.": "Phí mạng {{fee}} USD. Bạn nhận {{net}} USD.",
     "A transfer to balance deducts the site hold. External payout releases it after payment is complete.": "Chuyển vào số dư sẽ trừ khoản đóng băng tương ứng. Sau khi chi trả bên ngoài xong, khoản đóng băng trả về nguồn cũ.",
-    "Invite commission holds are not available for this withdrawal.": "Khoản đóng băng hoa hồng mời không dùng được cho lần rút này."
+    "Invite commission holds are not available for this withdrawal.": "Khoản đóng băng hoa hồng mời không dùng được cho lần rút này.",
+    "Post-discount payment ratio": "Tỷ lệ thanh toán sau giảm giá",
+    "0.8 means pay 80% of the ordinary price; 1 means pay the ordinary (full) price.": "Nhập tỷ lệ thập phân. 0.8 nghĩa là trả 80% giá thông thường; 1 nghĩa là trả giá thông thường (giá gốc)."
 },
   "Targeted notifications": "Thông báo theo đối tượng",
   "Site announcements": "Thông báo của trang",

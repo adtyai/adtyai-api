@@ -8970,7 +8970,9 @@
     "Deposit": "Deposit",
     "Clawback": "Clawback",
     "Recovery": "Recovery",
-    "Lot remaining is a projection of funding lots, not a second wallet.": "Lot remaining is a projection of funding lots, not a second wallet."
+    "Lot remaining is a projection of funding lots, not a second wallet.": "Lot remaining is a projection of funding lots, not a second wallet.",
+    "Post-discount payment ratio": "Post-discount payment ratio",
+    "0.8 means pay 80% of the ordinary price; 1 means pay the ordinary (full) price.": "0.8 means pay 80% of the ordinary price; 1 means pay the ordinary (full) price."
 },
   "Targeted notifications": "Targeted notifications",
   "Site announcements": "Site announcements",

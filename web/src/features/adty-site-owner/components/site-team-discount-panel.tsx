@@ -66,7 +66,7 @@ export function SiteTeamDiscountPanel() {
                 {team.name} · <span className='tabular-nums'>{team.discount}</span>
               </p>
               <div className='flex flex-col gap-1'>
-                <Label htmlFor={`team-discount-${team.id}`}>{t('Discount')}</Label>
+                <Label htmlFor={`team-discount-${team.id}`}>{t('Post-discount payment ratio')}</Label>
                 <Input
                   id={`team-discount-${team.id}`}
                   value={value}
@@ -76,6 +76,9 @@ export function SiteTeamDiscountPanel() {
                     setDrafts((current) => ({ ...current, [team.id]: event.target.value }))
                   }
                 />
+                <p className='text-muted-foreground text-sm'>
+                  {t('0.8 means pay 80% of the ordinary price; 1 means pay the ordinary (full) price.')}
+                </p>
               </div>
               <Button
                 type='button'

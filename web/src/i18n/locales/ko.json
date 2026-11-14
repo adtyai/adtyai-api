@@ -8817,7 +8817,9 @@
     "Invite commission": "초대 수수료",
     "New top-ups do not create commission while this is off.": "꺼져 있으면 새 충전은 수수료를 만들지 않습니다.",
     "Pending coverage": "보전 대기",
-    "Covered": "보전됨"
+    "Covered": "보전됨",
+    "Post-discount payment ratio": "할인 후 결제 비율",
+    "0.8 means pay 80% of the ordinary price; 1 means pay the ordinary (full) price.": "소수 비율을 입력하세요. 0.8은 일반 가격의 80%를 지불한다는 뜻이고, 1은 일반 가격(정가)을 지불한다는 뜻입니다."
 },
   "Targeted notifications": "대상 지정 알림",
   "Site announcements": "사이트 공지",

@@ -8970,7 +8970,9 @@
     "Deposit": "保证金",
     "Clawback": "冲回",
     "Recovery": "追偿",
-    "Lot remaining is a projection of funding lots, not a second wallet.": "这是资金批次剩余的汇总投影，不是另一本钱包。"
+    "Lot remaining is a projection of funding lots, not a second wallet.": "这是资金批次剩余的汇总投影，不是另一本钱包。",
+    "Post-discount payment ratio": "折后支付比例",
+    "0.8 means pay 80% of the ordinary price; 1 means pay the ordinary (full) price.": "请填写小数比例。0.8 表示按普通价的 80% 支付；1 表示按普通价（原价）支付。"
 },
   "Targeted notifications": "定向通知",
   "Site announcements": "本站公告",

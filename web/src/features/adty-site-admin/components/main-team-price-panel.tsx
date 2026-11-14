@@ -61,8 +61,11 @@ export function MainTeamPricePanel() {
           <Input id='main-team-id' value={teamId} inputMode='numeric' onChange={(event) => setTeamId(event.target.value)} />
         </div>
         <div className='flex flex-col gap-1'>
-          <Label htmlFor='main-team-discount'>{t('Discount')}</Label>
+          <Label htmlFor='main-team-discount'>{t('Post-discount payment ratio')}</Label>
           <Input id='main-team-discount' value={discount} inputMode='decimal' onChange={(event) => setDiscount(event.target.value)} />
+          <p className='text-muted-foreground text-sm'>
+            {t('0.8 means pay 80% of the ordinary price; 1 means pay the ordinary (full) price.')}
+          </p>
         </div>
       </div>
       <Button

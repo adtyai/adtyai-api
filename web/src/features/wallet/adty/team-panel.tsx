@@ -215,7 +215,7 @@ export function TeamPanel() {
               <dd className='tabular-nums'>{team.shared_quota}</dd>
             </div>
             <div className='flex flex-col gap-1'>
-              <dt className='text-muted-foreground'>{t('Discount')}</dt>
+              <dt className='text-muted-foreground'>{t('Post-discount payment ratio')}</dt>
               <dd className='tabular-nums'>{team.discount}</dd>
             </div>
             <div className='flex flex-col gap-1'>
@@ -469,8 +469,11 @@ export function TeamPanel() {
               <Input id='team-name' value={name} onChange={(event) => setName(event.target.value)} />
             </div>
             <div className='flex flex-col gap-1'>
-              <Label htmlFor='team-discount'>{t('Discount')}</Label>
+              <Label htmlFor='team-discount'>{t('Post-discount payment ratio')}</Label>
               <Input id='team-discount' value={discount} inputMode='decimal' onChange={(event) => setDiscount(event.target.value)} />
+              <p className='text-muted-foreground text-sm'>
+                {t('0.8 means pay 80% of the ordinary price; 1 means pay the ordinary (full) price.')}
+              </p>
             </div>
             <Button type='button' disabled={pending || name.trim() === ''} onClick={() => void create()}>
               {t('Create team')}

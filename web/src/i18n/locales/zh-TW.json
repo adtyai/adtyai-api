@@ -8919,7 +8919,9 @@
     "1 USD = {{rate}} CNY. You receive ¥{{cny}}.": "1 USD = {{rate}} CNY。到帳 ¥{{cny}}。",
     "Network fee {{fee}} USD. You receive {{net}} USD.": "網路手續費 {{fee}} USD。到帳 {{net}} USD。",
     "A transfer to balance deducts the site hold. External payout releases it after payment is complete.": "轉到站內餘額會扣掉對應凍結款。外部打款完成後，凍結款退回原來源。",
-    "Invite commission holds are not available for this withdrawal.": "邀請佣金凍結款不能用於這筆提現。"
+    "Invite commission holds are not available for this withdrawal.": "邀請佣金凍結款不能用於這筆提現。",
+    "Post-discount payment ratio": "折後支付比例",
+    "0.8 means pay 80% of the ordinary price; 1 means pay the ordinary (full) price.": "請填寫小數比例。0.8 表示按普通價的 80% 支付；1 表示按普通價（原價）支付。"
 },
   "Targeted notifications": "定向通知",
   "Site announcements": "本站公告",
