@@ -49,28 +49,16 @@ func GetReferralAdminBadges(c *gin.Context) {
 }
 
 // GetReferralOverview 是推广的总览数字（美元）。
+// 口径与角标相同：Root 全局，非 Root 管理员只看主站用户（users.site_id = 0），不再做未过滤的全局合计。
 func GetReferralOverview(c *gin.Context) {
-	var affiliates, bindings int64
-	if err := model.DB.Model(&model.ReferralAffiliate{}).Count(&affiliates).Error; err != nil {
-		common.ApiError(c, err)
-		return
-	}
-	if err := model.DB.Model(&model.ReferralBinding{}).Count(&bindings).Error; err != nil {
-		common.ApiError(c, err)
-		return
-	}
-	var sums struct {
-		Pending, Available, Frozen, Withdrawn decimal.Decimal
-	}
-	if err := model.DB.Model(&model.ReferralCommissionAccount{}).Select(
-		"COALESCE(SUM(pending_amount),0) AS pending, COALESCE(SUM(available_amount),0) AS available, COALESCE(SUM(frozen_amount),0) AS frozen, COALESCE(SUM(withdrawn_amount),0) AS withdrawn",
-	).Scan(&sums).Error; err != nil {
+	overview, err := service.CollectAdtyReferralOverview(c.GetInt("id"))
+	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
 	common.ApiSuccess(c, gin.H{
-		"affiliates": affiliates, "bindings": bindings, "pending": sums.Pending.StringFixed(2),
-		"available": sums.Available.StringFixed(2), "frozen": sums.Frozen.StringFixed(2), "withdrawn": sums.Withdrawn.StringFixed(2),
+		"affiliates": overview.Affiliates, "bindings": overview.Bindings, "pending": overview.Pending.StringFixed(2),
+		"available": overview.Available.StringFixed(2), "frozen": overview.Frozen.StringFixed(2), "withdrawn": overview.Withdrawn.StringFixed(2),
 	})
 }
 

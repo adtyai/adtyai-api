@@ -4,6 +4,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service/authz"
+	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 )
 
@@ -144,6 +145,64 @@ func CollectAdtyReferralAdminBadges(userID int) (AdtyReferralAdminBadges, error)
 		return out, ErrAdtyTicketForbidden
 	}
 	return countAdtyReferralAdminBadges(siteID)
+}
+
+// AdtyReferralOverview is the referral admin overview totals, in the same
+// dollar fields GetReferralOverview already returns.
+type AdtyReferralOverview struct {
+	Affiliates int64
+	Bindings   int64
+	Pending    decimal.Decimal
+	Available  decimal.Decimal
+	Frozen     decimal.Decimal
+	Withdrawn  decimal.Decimal
+}
+
+// CollectAdtyReferralOverview applies the same caller scope as
+// CollectAdtyReferralAdminBadges: Root is global; a non-root admin is
+// limited to main-site users (users.site_id = 0). The counting formula
+// itself is unchanged (affiliate and binding counts plus commission-account
+// SUM). Bindings are scoped by inviter_user_id, the affiliate user, matching
+// how badge counts and the binding list already identify the partner.
+// Callers without referral-admin standing receive an authorization error
+// rather than a global or leaked total.
+func CollectAdtyReferralOverview(userID int) (AdtyReferralOverview, error) {
+	var out AdtyReferralOverview
+	if userID <= 0 {
+		return out, common.NewMessage("Invalid parameters")
+	}
+	actor, err := loadAdtyTicketActor(userID)
+	if err != nil {
+		return out, err
+	}
+	siteID, ok := referralAdminSiteScope(actor)
+	if !ok {
+		return out, ErrAdtyTicketForbidden
+	}
+	return countAdtyReferralOverview(siteID)
+}
+
+func countAdtyReferralOverview(siteID *int) (AdtyReferralOverview, error) {
+	var out AdtyReferralOverview
+	var err error
+	out.Affiliates, err = countScoped(scopeReferralUserQuery(model.DB.Model(&model.ReferralAffiliate{}), "user_id", siteID))
+	if err != nil {
+		return out, err
+	}
+	out.Bindings, err = countScoped(scopeReferralUserQuery(model.DB.Model(&model.ReferralBinding{}), "inviter_user_id", siteID))
+	if err != nil {
+		return out, err
+	}
+	var sums struct {
+		Pending, Available, Frozen, Withdrawn decimal.Decimal
+	}
+	if err := scopeReferralUserQuery(model.DB.Model(&model.ReferralCommissionAccount{}), "user_id", siteID).Select(
+		"COALESCE(SUM(pending_amount),0) AS pending, COALESCE(SUM(available_amount),0) AS available, COALESCE(SUM(frozen_amount),0) AS frozen, COALESCE(SUM(withdrawn_amount),0) AS withdrawn",
+	).Scan(&sums).Error; err != nil {
+		return out, err
+	}
+	out.Pending, out.Available, out.Frozen, out.Withdrawn = sums.Pending, sums.Available, sums.Frozen, sums.Withdrawn
+	return out, nil
 }
 
 func collectAdtyReferralAdminBadgeCounts(counts map[string]int64, actor adtyTicketActor) error {
