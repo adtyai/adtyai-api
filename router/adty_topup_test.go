@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -204,7 +205,8 @@ func TestFinanceQueryRequiresWritePermissionAndCreditsOnce(t *testing.T) {
 		{"amount mismatch", true, true, false, false},
 	} {
 		paid, wrongAmount, gatewayFails = scenario.paid, scenario.wrong, scenario.failed
-		response := adtyJSON(t, f.engine, http.MethodPost, path, `{}`, writePAT)
+		queryOp := service.AdtyTopUpQueryOperation(order.TradeNo)
+		response := adtyJSONWithProof(t, f.engine, http.MethodPost, path, `{}`, writePAT, financeProofForCredential(t, f, writePAT, queryOp))
 		var body struct {
 			Success bool
 			Data    struct{ Status string }
@@ -220,7 +222,8 @@ func TestFinanceQueryRequiresWritePermissionAndCreditsOnce(t *testing.T) {
 	}
 	paid, wrongAmount, gatewayFails = true, false, false
 	for _, credential := range []string{writePAT, f.token, f.root} {
-		response := adtyJSON(t, f.engine, http.MethodPost, path, `{}`, credential)
+		queryOp := service.AdtyTopUpQueryOperation(order.TradeNo)
+		response := adtyJSONWithProof(t, f.engine, http.MethodPost, path, `{}`, credential, financeProofForCredential(t, f, credential, queryOp))
 		require.Contains(t, response.Body.String(), `"success":true`, response.Body.String())
 		assert.Contains(t, response.Body.String(), `"status":"success"`)
 	}
@@ -239,11 +242,11 @@ func TestFinanceQueryRequiresWritePermissionAndCreditsOnce(t *testing.T) {
 	f.grant(t, authz.AdtyFinanceRead)
 	assert.Equal(t, http.StatusForbidden, adtyJSON(t, f.engine, http.MethodPost, path, `{}`, writePAT).Code)
 	seedRouterOrder(t, f.db, user.Id, "bepusdt-no-query", common.TopUpStatusPending, common.GetTimestamp()+900)
-	unsupported := adtyJSON(t, f.engine, http.MethodPost, "/api/adty/admin/topup/bepusdt-no-query/query", `{}`, f.root)
+	unsupported := adtyJSONWithProof(t, f.engine, http.MethodPost, "/api/adty/admin/topup/bepusdt-no-query/query", `{}`, f.root, financeProofForCredential(t, f, f.root, service.AdtyTopUpQueryOperation("bepusdt-no-query")))
 	assert.Contains(t, unsupported.Body.String(), `"success":false`)
 	require.NoError(t, f.db.Create(&model.TopUp{UserId: user.Id, TradeNo: "creem-missing-details", PaymentProvider: model.PaymentProviderCreem, PaymentMethod: model.PaymentMethodCreem, Status: common.TopUpStatusPending}).Error)
 	require.NotPanics(t, func() {
-		missing := adtyJSON(t, f.engine, http.MethodPost, "/api/adty/admin/topup/creem-missing-details/query", `{}`, f.root)
+		missing := adtyJSONWithProof(t, f.engine, http.MethodPost, "/api/adty/admin/topup/creem-missing-details/query", `{}`, f.root, financeProofForCredential(t, f, f.root, service.AdtyTopUpQueryOperation("creem-missing-details")))
 		assert.Equal(t, http.StatusOK, missing.Code)
 		assert.Contains(t, missing.Body.String(), `"success":false`)
 	})
@@ -434,9 +437,11 @@ func TestPaymentOrphanReviewRequiresWritePermissionAndEvidence(t *testing.T) {
 	denied := adtyJSON(t, f.engine, http.MethodPost, path, body, f.token)
 	require.Equal(t, http.StatusForbidden, denied.Code)
 	f.grant(t, authz.AdtyFinanceRead, authz.AdtyFinanceManualCredit)
-	missingProof := adtyJSON(t, f.engine, http.MethodPost, path, `{"status":"refunded","note":"clicked refunded"}`, f.token)
-	require.Contains(t, missingProof.Body.String(), `"success":false`)
-	result := adtyJSON(t, f.engine, http.MethodPost, path, body, f.token)
+	assert.Contains(t, adtyJSON(t, f.engine, http.MethodPost, path, body, f.token).Body.String(), "SECURITY_PROOF_REQUIRED")
+	invalidBody := `{"status":"refunded","note":"clicked refunded"}`
+	missingEvidence := adtyJSONWithProof(t, f.engine, http.MethodPost, path, invalidBody, f.token, financeAdminProof(t, f, financeResolveOp(event.ID, invalidBody)))
+	require.Contains(t, missingEvidence.Body.String(), `"success":false`)
+	result := adtyJSONWithProof(t, f.engine, http.MethodPost, path, body, f.token, financeAdminProof(t, f, financeResolveOp(event.ID, body)))
 	require.Contains(t, result.Body.String(), `"success":true`, result.Body.String())
 	require.Contains(t, result.Body.String(), `"external_amount":"0"`)
 	listed := adtyJSON(t, f.engine, http.MethodGet, "/api/user/admin/finance/payment-orphans?status=pending_review", "", f.token)
@@ -475,7 +480,8 @@ func TestOrphanCreditRunsBonusAndHooks(t *testing.T) {
 	require.NoError(t, model.RecordPaymentOrphanEvent(epay))
 
 	for _, event := range []*model.PaymentOrphanEvent{usdt, epay} {
-		resp := adtyJSON(t, f.engine, http.MethodPost, fmt.Sprintf("/api/user/admin/finance/payment-orphans/%d/credit", event.ID), `{"note":"verified"}`, f.token)
+		path := fmt.Sprintf("/api/user/admin/finance/payment-orphans/%d/credit", event.ID)
+		resp := adtyJSONWithProof(t, f.engine, http.MethodPost, path, `{"note":"verified"}`, f.token, financeAdminProof(t, f, service.AdtyPaymentOrphanCreditOperation(event.ID, "verified")))
 		require.Contains(t, resp.Body.String(), `"success":true`, resp.Body.String())
 	}
 	var stored model.User
@@ -486,7 +492,7 @@ func TestOrphanCreditRunsBonusAndHooks(t *testing.T) {
 	var orphan model.PaymentOrphanEvent
 	require.NoError(t, f.db.First(&orphan, usdt.ID).Error)
 	assert.Equal(t, model.PaymentOrphanStatusCredited, orphan.Status)
-	again := adtyJSON(t, f.engine, http.MethodPost, fmt.Sprintf("/api/user/admin/finance/payment-orphans/%d/credit", usdt.ID), `{}`, f.token)
+	again := adtyJSONWithProof(t, f.engine, http.MethodPost, fmt.Sprintf("/api/user/admin/finance/payment-orphans/%d/credit", usdt.ID), `{}`, f.token, financeAdminProof(t, f, service.AdtyPaymentOrphanCreditOperation(usdt.ID, "")))
 	assert.Contains(t, again.Body.String(), `"success":false`)
 }
 
@@ -497,12 +503,50 @@ func financeAdminProof(t *testing.T, f *adtyGuardFixture, operation service.Veri
 
 func financeUserProof(t *testing.T, user model.User, method string, operation service.VerificationOperation) string {
 	t.Helper()
+	return financeIdentityProof(t, service.AuthIdentity{UserID: user.Id, SessionID: "sid-" + user.Username, UserAuthVersion: user.AuthVersion, SessionVersion: 1}, method, operation)
+}
+
+func financeIdentityProof(t *testing.T, identity service.AuthIdentity, method string, operation service.VerificationOperation) string {
+	t.Helper()
 	binding, err := service.BindVerificationOperation(operation)
 	require.NoError(t, err)
-	identity := service.AuthIdentity{UserID: user.Id, SessionID: "sid-" + user.Username, UserAuthVersion: user.AuthVersion, SessionVersion: 1}
 	proof, _, err := service.IssueSecurityProof(identity, method, binding)
 	require.NoError(t, err)
 	return proof
+}
+
+func financeProofForCredential(t *testing.T, f *adtyGuardFixture, credential string, operation service.VerificationOperation) string {
+	t.Helper()
+	if strings.HasPrefix(credential, model.AccessTokenPrefix) {
+		var token model.UserAccessToken
+		require.NoError(t, f.db.Where("token_hash = ?", model.AccessTokenFingerprint(credential)).First(&token).Error)
+		var user model.User
+		require.NoError(t, f.db.First(&user, token.UserId).Error)
+		method := service.VerificationMethodPassword
+		if user.Role == common.RoleRootUser {
+			method = service.VerificationMethodRootExempt
+		}
+		return financeIdentityProof(t, service.AuthIdentity{
+			UserID: user.Id, SessionID: model.AccessTokenSessionID(token.Id),
+			UserAuthVersion: user.AuthVersion, SessionVersion: model.AccessTokenSessionVersion,
+		}, method, operation)
+	}
+	if credential == f.token {
+		return financeAdminProof(t, f, operation)
+	}
+	if credential == f.root {
+		var root model.User
+		require.NoError(t, f.db.Where("username = ?", "guard-root").First(&root).Error)
+		return financeUserProof(t, root, service.VerificationMethodRootExempt, operation)
+	}
+	t.Fatalf("unknown finance credential")
+	return ""
+}
+
+func financeResolveOp(id int64, body string) service.VerificationOperation {
+	var review model.PaymentOrphanReviewRequest
+	_ = common.UnmarshalJsonStr(body, &review)
+	return service.AdtyPaymentOrphanResolveOperation(id, review.Status, review.TradeNo, review.ExternalAmount, review.ExternalCurrency, review.Proof, review.Note, review.DismissalReason)
 }
 
 func TestFinanceRefundAndCompleteRequireSecurityProof(t *testing.T) {
@@ -601,4 +645,86 @@ func TestFinanceRefundAndCompleteRequireSecurityProof(t *testing.T) {
 	deniedRefund := adtyJSONWithProof(t, f.engine, http.MethodPost, refundPath, `{"reason":"x","idempotency_key":"k-denied","refund_quota":1}`, f.token, financeAdminProof(t, f, service.AdtyTopUpRefundOperation("EPU-proof-refund", "x", "", &quota)))
 	assert.Equal(t, http.StatusForbidden, deniedRefund.Code)
 	assert.NotContains(t, deniedRefund.Body.String(), "SECURITY_PROOF")
+}
+
+func TestFinanceCreditResolveAndQueryRequireSecurityProof(t *testing.T) {
+	f := newAdtyGuardFixture(t)
+	adtySessionToken(t, f.db, "proof-orphan-buyer", common.RoleCommonUser)
+	var buyer model.User
+	require.NoError(t, f.db.Where("username = ?", "proof-orphan-buyer").First(&buyer).Error)
+	var root model.User
+	require.NoError(t, f.db.Where("username = ?", "guard-root").First(&root).Error)
+
+	seedRouterOrder(t, f.db, buyer.Id, "EPU-proof-query", common.TopUpStatusPending, common.GetTimestamp()+900)
+	require.NoError(t, model.UpdateAdtyTopupOrderFields("EPU-proof-query", map[string]any{"pay_address": "TAddr", "gateway_trade_id": "gw-proof"}))
+
+	seedRouterOrder(t, f.db, buyer.Id, "EPU-proof-orphan", common.TopUpStatusExpired, 100)
+	require.NoError(t, model.UpdateAdtyTopupOrderFields("EPU-proof-orphan", map[string]any{"pay_address": "TAddr", "gateway_trade_id": "gw-orphan"}))
+	orphan := &model.PaymentOrphanEvent{Provider: model.PaymentProviderAdtyBEpusdt, EventType: "callback", ReferenceID: "EPU-proof-orphan",
+		Reason: "temporary failure", Payload: `{"actual_amount":100,"amount":100,"token":"TAddr","trade_id":"gw-orphan","block_transaction_id":"0xtx"}`}
+	require.NoError(t, model.RecordPaymentOrphanEvent(orphan))
+	other := &model.PaymentOrphanEvent{Provider: model.PaymentProviderAdtyBEpusdt, EventType: "callback", ReferenceID: "EPU-proof-orphan-other",
+		Reason: "temporary failure", Payload: `{"actual_amount":100,"amount":100,"token":"TAddr","trade_id":"gw-other","block_transaction_id":"0xother"}`}
+	require.NoError(t, model.RecordPaymentOrphanEvent(other))
+	reviewEvent := &model.PaymentOrphanEvent{Provider: model.PaymentProviderStripe, ReferenceID: "review-proof-order", EventID: "reversal:router-proof", EventType: "dispute.open"}
+	require.NoError(t, model.RecordPaymentOrphanEvent(reviewEvent))
+
+	creditPath := fmt.Sprintf("/api/user/admin/finance/payment-orphans/%d/credit", orphan.ID)
+	creditBody := `{"note":"verified"}`
+	creditOp := service.AdtyPaymentOrphanCreditOperation(orphan.ID, "verified")
+	resolvePath := fmt.Sprintf("/api/user/admin/finance/payment-orphans/%d/resolve", reviewEvent.ID)
+	resolveBody := `{"status":"pending_review","trade_no":"review-proof-order","external_amount":"0","external_currency":"USD","proof":"provider-dispute-open","note":"not an actual completed reversal"}`
+	resolveOp := financeResolveOp(reviewEvent.ID, resolveBody)
+	queryPath := "/api/adty/admin/topup/EPU-proof-query/query"
+	queryOp := service.AdtyTopUpQueryOperation("EPU-proof-query")
+
+	f.grant(t, authz.AdtyFinanceRead)
+	deniedCredit := adtyJSONWithProof(t, f.engine, http.MethodPost, creditPath, creditBody, f.token, financeAdminProof(t, f, creditOp))
+	assert.Equal(t, http.StatusForbidden, deniedCredit.Code)
+	assert.NotContains(t, deniedCredit.Body.String(), "SECURITY_PROOF")
+	deniedResolve := adtyJSONWithProof(t, f.engine, http.MethodPost, resolvePath, resolveBody, f.token, financeAdminProof(t, f, resolveOp))
+	assert.Equal(t, http.StatusForbidden, deniedResolve.Code)
+	assert.NotContains(t, deniedResolve.Body.String(), "SECURITY_PROOF")
+	deniedQuery := adtyJSONWithProof(t, f.engine, http.MethodPost, queryPath, `{}`, f.token, financeAdminProof(t, f, queryOp))
+	assert.Equal(t, http.StatusForbidden, deniedQuery.Code)
+	assert.NotContains(t, deniedQuery.Body.String(), "SECURITY_PROOF")
+
+	f.grant(t, authz.AdtyFinanceRead, authz.AdtyFinanceManualCredit)
+	assert.Contains(t, adtyJSON(t, f.engine, http.MethodPost, creditPath, creditBody, f.token).Body.String(), "SECURITY_PROOF_REQUIRED")
+	assert.Contains(t, adtyJSON(t, f.engine, http.MethodPost, resolvePath, resolveBody, f.token).Body.String(), "SECURITY_PROOF_REQUIRED")
+	assert.Contains(t, adtyJSON(t, f.engine, http.MethodPost, queryPath, `{}`, f.token).Body.String(), "SECURITY_PROOF_REQUIRED")
+
+	assert.Contains(t, adtyJSONWithProof(t, f.engine, http.MethodPost, creditPath, creditBody, f.token, financeAdminProof(t, f, service.AdtyPaymentOrphanCreditOperation(other.ID, "verified"))).Body.String(), "SECURITY_PROOF_CONTEXT_MISMATCH")
+	assert.Contains(t, adtyJSONWithProof(t, f.engine, http.MethodPost, creditPath, creditBody, f.token, financeAdminProof(t, f, service.AdtyTopUpQueryOperation("EPU-proof-orphan"))).Body.String(), "SECURITY_PROOF_SCOPE_MISMATCH")
+	var pending model.PaymentOrphanEvent
+	require.NoError(t, f.db.First(&pending, orphan.ID).Error)
+	assert.NotEqual(t, model.PaymentOrphanStatusCredited, pending.Status)
+
+	assert.Contains(t, adtyJSONWithProof(t, f.engine, http.MethodPost, resolvePath, resolveBody, f.token, financeAdminProof(t, f, financeResolveOp(other.ID, resolveBody))).Body.String(), "SECURITY_PROOF_CONTEXT_MISMATCH")
+	assert.Contains(t, adtyJSONWithProof(t, f.engine, http.MethodPost, queryPath, `{}`, f.token, financeAdminProof(t, f, service.AdtyTopUpQueryOperation("EPU-proof-orphan"))).Body.String(), "SECURITY_PROOF_CONTEXT_MISMATCH")
+
+	okCredit := financeAdminProof(t, f, creditOp)
+	credit := adtyJSONWithProof(t, f.engine, http.MethodPost, creditPath, creditBody, f.token, okCredit)
+	require.Contains(t, credit.Body.String(), `"success":true`, credit.Body.String())
+	replayCredit := adtyJSONWithProof(t, f.engine, http.MethodPost, creditPath, creditBody, f.token, okCredit)
+	assert.Contains(t, replayCredit.Body.String(), "SECURITY_PROOF_CONSUMED")
+
+	okResolve := financeAdminProof(t, f, resolveOp)
+	resolve := adtyJSONWithProof(t, f.engine, http.MethodPost, resolvePath, resolveBody, f.token, okResolve)
+	require.Contains(t, resolve.Body.String(), `"success":true`, resolve.Body.String())
+	replayResolve := adtyJSONWithProof(t, f.engine, http.MethodPost, resolvePath, resolveBody, f.token, okResolve)
+	assert.Contains(t, replayResolve.Body.String(), "SECURITY_PROOF_CONSUMED")
+
+	okQuery := financeAdminProof(t, f, queryOp)
+	queried := adtyJSONWithProof(t, f.engine, http.MethodPost, queryPath, `{}`, f.token, okQuery)
+	assert.NotContains(t, queried.Body.String(), "SECURITY_PROOF", queried.Body.String())
+	replayQuery := adtyJSONWithProof(t, f.engine, http.MethodPost, queryPath, `{}`, f.token, okQuery)
+	assert.Contains(t, replayQuery.Body.String(), "SECURITY_PROOF_CONSUMED")
+
+	rootQuery := adtyJSONWithProof(t, f.engine, http.MethodPost, queryPath, `{}`, f.root, financeUserProof(t, root, service.VerificationMethodRootExempt, queryOp))
+	assert.NotContains(t, rootQuery.Body.String(), "SECURITY_PROOF", rootQuery.Body.String())
+	requirements, err := service.GetVerificationRequirements(service.AuthIdentity{UserID: root.Id, SessionID: "sid-" + root.Username, UserAuthVersion: root.AuthVersion, SessionVersion: 1}, service.VerificationScopeAdtyTopUpQuery)
+	require.NoError(t, err)
+	require.Len(t, requirements.Methods, 1)
+	assert.Equal(t, service.VerificationMethodRootExempt, requirements.Methods[0].Method)
 }

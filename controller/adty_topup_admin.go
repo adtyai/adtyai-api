@@ -17,10 +17,14 @@ import (
 )
 
 // QueryAdtyTopUp may credit a verified payment, so its route requires the same
-// explicit write permission as manual completion. Provider errors may contain
-// credential-bearing URLs and must not reach API responses or audit metadata.
+// explicit write permission as manual completion, plus a one-operation step-up
+// proof. Provider errors may contain credential-bearing URLs and must not reach
+// API responses or audit metadata.
 func QueryAdtyTopUp(c *gin.Context) {
 	tradeNo := c.Param("trade_no")
+	if middleware.RequireSecurityProof(c, service.AdtyTopUpQueryOperation(tradeNo)) == nil {
+		return
+	}
 	var topUp model.TopUp
 	if err := model.DB.Where("trade_no = ?", tradeNo).First(&topUp).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -140,6 +144,9 @@ func CreditPaymentOrphan(c *gin.Context) {
 		Note string `json:"note"`
 	}
 	_ = common.DecodeJson(c.Request.Body, &body)
+	if middleware.RequireSecurityProof(c, service.AdtyPaymentOrphanCreditOperation(id, body.Note)) == nil {
+		return
+	}
 	var topUp *model.TopUp
 	var ext *model.AdtyTopupOrder
 	var credited int
@@ -191,6 +198,11 @@ func ResolvePaymentOrphan(c *gin.Context) {
 	var body model.PaymentOrphanReviewRequest
 	if err := common.DecodeJson(c.Request.Body, &body); err != nil {
 		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	if middleware.RequireSecurityProof(c, service.AdtyPaymentOrphanResolveOperation(
+		id, body.Status, body.TradeNo, body.ExternalAmount, body.ExternalCurrency, body.Proof, body.Note, body.DismissalReason,
+	)) == nil {
 		return
 	}
 	review, err := model.ResolvePaymentOrphanReview(id, c.GetInt("id"), body)

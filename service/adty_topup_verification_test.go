@@ -38,7 +38,14 @@ func TestAdtyTopUpVerificationScopesUseImportantOperationPolicy(t *testing.T) {
 	admin, _, adminID, rootID := setupTopUpVerificationUsers(t)
 	enableStepUpFactors(t, admin.Id, true, false, true)
 
-	for _, scope := range []string{VerificationScopeAdtyTopUpRefund, VerificationScopeAdtyTopUpManualRefundStep, VerificationScopeAdtyTopUpManualComplete} {
+	for _, scope := range []string{
+		VerificationScopeAdtyTopUpRefund,
+		VerificationScopeAdtyTopUpManualRefundStep,
+		VerificationScopeAdtyTopUpManualComplete,
+		VerificationScopeAdtyPaymentOrphanCredit,
+		VerificationScopeAdtyPaymentOrphanResolve,
+		VerificationScopeAdtyTopUpQuery,
+	} {
 		t.Run(scope+"/admin", func(t *testing.T) {
 			requirements, err := GetVerificationRequirements(adminID, scope)
 			require.NoError(t, err)
@@ -71,6 +78,12 @@ func TestAdtyTopUpVerificationContextBinding(t *testing.T) {
 	require.NoError(t, err)
 	_, err = BindVerificationOperation(AdtyTopUpManualCompleteOperation("EPU-1", "0xabc", "checked"))
 	require.NoError(t, err)
+	_, err = BindVerificationOperation(AdtyPaymentOrphanCreditOperation(7, "verified"))
+	require.NoError(t, err)
+	_, err = BindVerificationOperation(AdtyPaymentOrphanResolveOperation(7, "pending_review", "EPU-1", "0", "USD", "provider-open", "not a reversal", ""))
+	require.NoError(t, err)
+	_, err = BindVerificationOperation(AdtyTopUpQueryOperation("EPU-1"))
+	require.NoError(t, err)
 	_, err = BindVerificationOperation(AdtyTopUpManualRefundStepOperation("EPU-1", "refund-1", "payout", "", AdtyManualRefundStepPayout{
 		Status: "success", Currency: "USDT", Amount: "40", Voucher: "wire-1", PaidAt: 11,
 	}))
@@ -88,6 +101,12 @@ func TestAdtyTopUpVerificationContextBinding(t *testing.T) {
 	assert.ErrorIs(t, err, ErrVerificationContextInvalid)
 	_, err = BindVerificationOperation(AdtyTopUpManualCompleteOperation("EPU-1", "", "checked"))
 	assert.ErrorIs(t, err, ErrVerificationContextInvalid)
+	_, err = BindVerificationOperation(AdtyPaymentOrphanCreditOperation(0, "verified"))
+	assert.ErrorIs(t, err, ErrVerificationContextInvalid)
+	_, err = BindVerificationOperation(AdtyPaymentOrphanResolveOperation(7, "", "EPU-1", "0", "USD", "proof", "note", ""))
+	assert.ErrorIs(t, err, ErrVerificationContextInvalid)
+	_, err = BindVerificationOperation(AdtyTopUpQueryOperation(""))
+	assert.ErrorIs(t, err, ErrVerificationContextInvalid)
 
 	sameUSD, err := BindVerificationOperation(AdtyTopUpRefundOperation("EPU-1", "duplicate", "100.00", nil))
 	require.NoError(t, err)
@@ -104,6 +123,30 @@ func TestAdtyTopUpVerificationContextBinding(t *testing.T) {
 	otherReason, err := BindVerificationOperation(AdtyTopUpRefundOperation("EPU-1", "other", "100", nil))
 	require.NoError(t, err)
 	assert.NotEqual(t, canonical.ContextHash, otherReason.ContextHash)
+
+	sameCredit, err := BindVerificationOperation(AdtyPaymentOrphanCreditOperation(7, " verified "))
+	require.NoError(t, err)
+	credit, err := BindVerificationOperation(AdtyPaymentOrphanCreditOperation(7, "verified"))
+	require.NoError(t, err)
+	assert.Equal(t, sameCredit.ContextHash, credit.ContextHash)
+	otherCredit, err := BindVerificationOperation(AdtyPaymentOrphanCreditOperation(8, "verified"))
+	require.NoError(t, err)
+	assert.NotEqual(t, credit.ContextHash, otherCredit.ContextHash)
+
+	sameResolve, err := BindVerificationOperation(AdtyPaymentOrphanResolveOperation(7, "pending_review", "EPU-1", "0.00", "usd", "provider-open", "note", ""))
+	require.NoError(t, err)
+	resolve, err := BindVerificationOperation(AdtyPaymentOrphanResolveOperation(7, "pending_review", "EPU-1", "0", "USD", "provider-open", "note", ""))
+	require.NoError(t, err)
+	assert.Equal(t, sameResolve.ContextHash, resolve.ContextHash)
+	otherResolve, err := BindVerificationOperation(AdtyPaymentOrphanResolveOperation(7, "pending_review", "EPU-2", "0", "USD", "provider-open", "note", ""))
+	require.NoError(t, err)
+	assert.NotEqual(t, resolve.ContextHash, otherResolve.ContextHash)
+
+	query, err := BindVerificationOperation(AdtyTopUpQueryOperation("EPU-1"))
+	require.NoError(t, err)
+	otherQuery, err := BindVerificationOperation(AdtyTopUpQueryOperation("EPU-2"))
+	require.NoError(t, err)
+	assert.NotEqual(t, query.ContextHash, otherQuery.ContextHash)
 }
 
 func TestAdtyTopUpVerificationProofIsBoundAndSingleUse(t *testing.T) {
@@ -139,5 +182,11 @@ func TestAdtyTopUpVerificationRejectsNonAdmin(t *testing.T) {
 	_, err = GetVerificationRequirements(identity, VerificationScopeAdtyTopUpManualComplete)
 	assert.ErrorIs(t, err, ErrVerificationForbidden)
 	_, err = GetVerificationRequirements(identity, VerificationScopeAdtyTopUpManualRefundStep)
+	assert.ErrorIs(t, err, ErrVerificationForbidden)
+	_, err = GetVerificationRequirements(identity, VerificationScopeAdtyPaymentOrphanCredit)
+	assert.ErrorIs(t, err, ErrVerificationForbidden)
+	_, err = GetVerificationRequirements(identity, VerificationScopeAdtyPaymentOrphanResolve)
+	assert.ErrorIs(t, err, ErrVerificationForbidden)
+	_, err = GetVerificationRequirements(identity, VerificationScopeAdtyTopUpQuery)
 	assert.ErrorIs(t, err, ErrVerificationForbidden)
 }
