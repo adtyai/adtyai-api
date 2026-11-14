@@ -20,6 +20,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { ErrorState } from '@/components/error-state'
+import { LoadingState } from '@/components/loading-state'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -200,6 +202,8 @@ export function TeamPanel() {
             {t('A team key spends the shared balance. The discount applies only to that key.')}
           </p>
         </div>
+        {mine.isPending && <LoadingState />}
+        {mine.isError && <ErrorState onRetry={() => void mine.refetch()} />}
         {team && (
           <dl className='grid grid-cols-2 gap-3 text-sm'>
             <div className='flex flex-col gap-1'>
@@ -458,7 +462,7 @@ export function TeamPanel() {
             </Button>
           </div>
         )}
-        {!team && (
+        {mine.isSuccess && !team && (
           <div className='flex flex-col gap-3'>
             <div className='flex flex-col gap-1'>
               <Label htmlFor='team-name'>{t('Team name')}</Label>
