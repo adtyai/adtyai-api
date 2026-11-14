@@ -57,6 +57,9 @@ export type BillingPluginVariant = {
 
 export type PricingModel = {
   billing_plugin_variants?: BillingPluginVariant[]
+  // When true, the listed usage schema is plugin-only; ordinary requests pay
+  // the model-level price. Used by withBasePricing for display classification.
+  ordinary_pricing?: boolean
   id: number
   model_name: string
   description?: string

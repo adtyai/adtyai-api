@@ -74,6 +74,23 @@ export function withPluginPricing(
   }
 }
 
+// The model-level price as ordinary requests pay it: no plugin usage facts.
+export function withOrdinaryPricing(model: PricingModel): PricingModel {
+  return {
+    ...model,
+    billing_usage_schema: undefined,
+    billing_usage_examples: undefined,
+    billing_plugin_variants: undefined,
+    ordinary_pricing: undefined,
+  }
+}
+
+// The price a model is summarised by: the model-level price when ordinary
+// requests still pay it, as most requests do; otherwise its plugin prices.
+export function withBasePricing(model: PricingModel): PricingModel {
+  return model.ordinary_pricing ? withOrdinaryPricing(model) : model
+}
+
 export function pluginExpressionsEqual(
   left: Record<string, string> = {},
   right: Record<string, string> = {}
