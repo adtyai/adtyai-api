@@ -271,3 +271,28 @@ func TestAdjustUserQuotaWithLedgerMaintainsFundBatches(t *testing.T) {
 	require.EqualValues(t, 0, userQuota(t, db, user.Id))
 	requireWalletMatchesBatches(t, db, user.Id)
 }
+
+func TestAdjustUserQuotaWithLedgerDoesNotFirePrincipalSpentHook(t *testing.T) {
+	db := prepareAdtyTopUpDB(t)
+	user := seedAdtyTopUpUser(t, db, "adjust-quiet-hook", 0)
+
+	_, err := AdjustUserQuotaWithLedger(user.Id, 1, common.RoleRootUser, "add", 1_000_000, "grant", "adjust-quiet-add")
+	require.NoError(t, err)
+
+	prev := AdtyAfterPrincipalSpentTx
+	called := 0
+	AdtyAfterPrincipalSpentTx = func(tx *gorm.DB, userID int, principalQuota int64) error {
+		called++
+		t.Errorf("manual adjust fired principal-spent hook user=%d quota=%d", userID, principalQuota)
+		return nil
+	}
+	t.Cleanup(func() { AdtyAfterPrincipalSpentTx = prev })
+
+	_, err = AdjustUserQuotaWithLedger(user.Id, 1, common.RoleRootUser, "subtract", 400_000, "trim", "adjust-quiet-sub")
+	require.NoError(t, err)
+	require.Equal(t, 0, called)
+	_, _, remaining := sumAdtyFundRemaining(t, db, user.Id)
+	require.EqualValues(t, 600_000, remaining)
+	require.EqualValues(t, 600_000, userQuota(t, db, user.Id))
+	requireWalletMatchesBatches(t, db, user.Id)
+}
