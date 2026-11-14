@@ -1,10 +1,13 @@
 package model
 
 import (
+	"time"
+
 	"github.com/QuantumNous/new-api/common"
 	"github.com/gin-gonic/gin"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // 站长分站（P11）的站点、开站邀请码和站点审计。只由 service/adty_site*.go 写。
@@ -102,11 +105,19 @@ type AdtySiteAudit struct {
 
 func (AdtySiteAudit) TableName() string { return "adty_site_audits" }
 
-// AdtySiteCustomer 是分站客户，和 users.site_id 同步写（11.2 注册、11.1 关站转移）。
-// 风控标记和复核在 11.5，条款勾选在 11.7。
+// 分站客户成员状态。关站继承到主站时归档原站成员关系，不删除行。
+const (
+	AdtySiteCustomerActive   = "active"
+	AdtySiteCustomerArchived = "archived"
+)
+
+// AdtySiteCustomer 是分站客户，和 users.site_id 同步写（11.2 注册、11.1 关站继承）。
+// 风控标记和复核在 11.5，条款勾选在 11.7。关站迁入主站时归档（保留原 site_id 和 user_id），不删除。
 type AdtySiteCustomer struct {
 	UserId              int    `json:"user_id" gorm:"primaryKey;autoIncrement:false"`
 	SiteId              int    `json:"site_id" gorm:"index"`
+	Status              string `json:"status" gorm:"type:varchar(16);index;not null;default:active"`
+	ArchivedAt          int64  `json:"archived_at"`
 	RiskFlag            string `json:"risk_flag" gorm:"type:varchar(16)"` // 空 | self_use | migration
 	RiskReason          string `json:"-" gorm:"type:text"`                // 只给后台看
 	Reviewed            bool   `json:"reviewed"`
@@ -117,6 +128,31 @@ type AdtySiteCustomer struct {
 }
 
 func (AdtySiteCustomer) TableName() string { return "adty_site_customers" }
+
+func (c *AdtySiteCustomer) BeforeCreate(tx *gorm.DB) error {
+	if c.Status == "" {
+		c.Status = AdtySiteCustomerActive
+	}
+	return nil
+}
+
+// AdtyLiveSiteCustomer 只保留未归档的成员行，供运营查询使用；归档行仍留在表里供追溯。
+func AdtyLiveSiteCustomer(db *gorm.DB) *gorm.DB {
+	return db.Where("archived_at = 0 AND status <> ?", AdtySiteCustomerArchived)
+}
+
+// AdtyUserSiteMigration 是关站迁入主站的用户级迁移身份映射（A.16.3 / D.4）。
+// 按 user_id + 原 site_id + 目标站（主站为 0）只记一次，重试保持幂等。Id 即 migration_id。
+// 不回填无法确知来源的历史用户。
+type AdtyUserSiteMigration struct {
+	Id           int64 `json:"id" gorm:"primaryKey"`
+	UserId       int   `json:"user_id" gorm:"uniqueIndex:ux_adty_user_site_migration;index"`
+	SourceSiteId int   `json:"source_site_id" gorm:"uniqueIndex:ux_adty_user_site_migration"`
+	TargetSiteId int   `json:"target_site_id" gorm:"uniqueIndex:ux_adty_user_site_migration"`
+	CreatedAt    int64 `json:"created_at"`
+}
+
+func (AdtyUserSiteMigration) TableName() string { return "adty_user_site_migrations" }
 
 // AdtySitePrice 是站长定价（11.4 / A.10）：同一站内按「客户 + 分组」取最具体的一条，
 // 并在同一客户/分组层级上允许单模型独立加价。Model 为空是该层级对所有模型的默认；
@@ -227,14 +263,14 @@ func (AdtySiteLookup) TableName() string { return "adty_site_lookups" }
 
 // AdtySiteTables 是分站的表，迁移和测试共用。
 func AdtySiteTables() []any {
-	return []any{&AdtySite{}, &AdtySiteInviteCode{}, &AdtySiteAudit{}, &AdtySiteCustomer{}, &AdtySitePrice{}, &AdtySiteDomain{},
+	return []any{&AdtySite{}, &AdtySiteInviteCode{}, &AdtySiteAudit{}, &AdtySiteCustomer{}, &AdtyUserSiteMigration{}, &AdtySitePrice{}, &AdtySiteDomain{},
 		&AdtySiteEarningDaily{}, &AdtySiteEarningLine{}, &AdtySiteTrialGrant{}, &AdtySiteReport{}, &AdtySiteLookup{}, &AdtySiteSenderDomain{},
 		&AdtySiteTier{}, &AdtySiteTierEvaluation{}, &AdtySiteWallet{}, &AdtySiteWalletLedger{}, &AdtySiteWithdrawal{}, &AdtySiteStaff{}, &AdtySiteOwnership{},
 		&AdtySiteSettlementSheet{}}
 }
 
 // AdtySetUsersSiteTx 把 fromSite 的客户全部改到 toSite（0 是主站），同事务撤销旧Key。
-// 转到主站时同时写下 inherited_from_site_id，避免与主站已有同邮箱账号合并或撞唯一约束。
+// 转到主站时同时写下 inherited_from_site_id，并记一条迁移身份映射；不合并、不覆盖同邮箱的主站已有账号，也不改 user_id。
 // users.site_id 只由分站服务通过这里和 AdtySetUserSiteTx 改（UpdateWithTx 不会改它）。
 func AdtySetUsersSiteTx(tx *gorm.DB, fromSite, toSite int) ([]int, error) {
 	if fromSite == toSite {
@@ -282,7 +318,42 @@ func AdtySetUsersSiteTx(tx *gorm.DB, fromSite, toSite int) ([]int, error) {
 	if err := tx.Model(&User{}).Where("id IN ?", ids).Updates(updates).Error; err != nil {
 		return nil, err
 	}
+	if toSite == 0 {
+		if err := RecordAdtyUserSiteMigrationsTx(tx, ids, fromSite, toSite, time.Now().Unix()); err != nil {
+			return nil, err
+		}
+	}
 	return ids, nil
+}
+
+// RecordAdtyUserSiteMigrationsTx 为迁入主站的账号记下 user_id、原站和目标站。已有同样键的行保持原样（幂等）。
+func RecordAdtyUserSiteMigrationsTx(tx *gorm.DB, userIds []int, sourceSite, targetSite int, now int64) error {
+	if len(userIds) == 0 || sourceSite == targetSite {
+		return nil
+	}
+	rows := make([]AdtyUserSiteMigration, len(userIds))
+	for i, userId := range userIds {
+		rows[i] = AdtyUserSiteMigration{
+			UserId:       userId,
+			SourceSiteId: sourceSite,
+			TargetSiteId: targetSite,
+			CreatedAt:    now,
+		}
+	}
+	return tx.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "user_id"}, {Name: "source_site_id"}, {Name: "target_site_id"}},
+		DoNothing: true,
+	}).Create(&rows).Error
+}
+
+// ArchiveAdtySiteCustomersOnCloseTx 归档原站成员关系，保留原来的 site_id 和 user_id。已归档的行不会被改回或删掉。
+func ArchiveAdtySiteCustomersOnCloseTx(tx *gorm.DB, userIds []int, siteId int, now int64) error {
+	if len(userIds) == 0 {
+		return nil
+	}
+	return tx.Model(&AdtySiteCustomer{}).
+		Where("user_id IN ? AND site_id = ? AND archived_at = 0 AND status <> ?", userIds, siteId, AdtySiteCustomerArchived).
+		Updates(map[string]any{"status": AdtySiteCustomerArchived, "archived_at": now}).Error
 }
 
 // AdtySetUserSiteTx 设置一个用户的所属分站（注册时用）。

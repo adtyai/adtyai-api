@@ -350,7 +350,16 @@ func TestOnlyRootCanCloseAdtySite(t *testing.T) {
 				assert.Equal(t, 1000, stored.Quota)
 				var members []model.AdtySiteCustomer
 				require.NoError(t, f.db.Where("user_id = ?", customer.Id).Find(&members).Error)
-				assert.Empty(t, members)
+				require.Len(t, members, 1)
+				assert.Equal(t, site.Id, members[0].SiteId)
+				assert.Equal(t, customer.Id, members[0].UserId)
+				assert.Equal(t, model.AdtySiteCustomerArchived, members[0].Status)
+				assert.NotZero(t, members[0].ArchivedAt)
+				var mappings []model.AdtyUserSiteMigration
+				require.NoError(t, f.db.Where("user_id = ?", customer.Id).Find(&mappings).Error)
+				require.Len(t, mappings, 1)
+				assert.Equal(t, site.Id, mappings[0].SourceSiteId)
+				assert.Zero(t, mappings[0].TargetSiteId)
 				var schedule model.AdtySiteAudit
 				require.NoError(t, f.db.Where("site_id = ? AND action = ?", site.Id, "close_schedule").First(&schedule).Error)
 				assert.Equal(t, root.Id, schedule.OperatorId)

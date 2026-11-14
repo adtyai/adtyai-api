@@ -241,7 +241,7 @@ func GetAdtyAdminSitesOverview(c *gin.Context) {
 // 默认只列没复核的；后台能看到判断依据（risk_reason），站长看不到。
 func GetAdtyAdminFlaggedCustomers(c *gin.Context) {
 	pageInfo := common.GetPageQuery(c)
-	query := model.DB.Model(&model.AdtySiteCustomer{}).Where("risk_flag <> ''")
+	query := model.AdtyLiveSiteCustomer(model.DB.Model(&model.AdtySiteCustomer{})).Where("risk_flag <> ''")
 	if c.Query("all") != "1" {
 		query = query.Where("reviewed = ?", false)
 	}

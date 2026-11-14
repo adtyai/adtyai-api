@@ -368,7 +368,7 @@ func GetAdtySitesOverview(from, to string) (*AdtySitesOverview, error) {
 	if err := model.DB.Model(&model.AdtySiteReport{}).Where("status = ?", model.AdtySiteReportPending).Count(&result.PendingReports).Error; err != nil {
 		return nil, err
 	}
-	if err := model.DB.Model(&model.AdtySiteCustomer{}).Where("risk_flag <> '' AND reviewed = ?", false).Count(&result.FlaggedCustomers).Error; err != nil {
+	if err := model.AdtyLiveSiteCustomer(model.DB.Model(&model.AdtySiteCustomer{})).Where("risk_flag <> '' AND reviewed = ?", false).Count(&result.FlaggedCustomers).Error; err != nil {
 		return nil, err
 	}
 	if err := model.DB.Model(&model.AdtySiteDomain{}).

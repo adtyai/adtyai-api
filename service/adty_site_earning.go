@@ -121,7 +121,7 @@ func upsertAdtySiteEarningTx(tx *gorm.DB, day string, entry adtySiteEarningEntry
 // adtySiteCustomerRisk 取客户的风控状态：有标记并且没复核过时，收益记进 skipped。
 func adtySiteCustomerRisk(userId int) (flag string) {
 	var rows []model.AdtySiteCustomer
-	if err := model.DB.Select("user_id", "risk_flag", "reviewed").Where("user_id = ?", userId).Limit(1).Find(&rows).Error; err != nil || len(rows) == 0 {
+	if err := model.AdtyLiveSiteCustomer(model.DB).Select("user_id", "risk_flag", "reviewed").Where("user_id = ?", userId).Limit(1).Find(&rows).Error; err != nil || len(rows) == 0 {
 		return ""
 	}
 	if rows[0].Reviewed {

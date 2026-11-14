@@ -498,7 +498,7 @@ func SaveAdtySitePricing(input AdtySitePricingInput) (*AdtySitePricingResult, er
 			return ErrAdtySitePricingConflict
 		}
 		var customerCount int64
-		if err := tx.Model(&model.AdtySiteCustomer{}).Where("site_id = ?", site.Id).Count(&customerCount).Error; err != nil {
+		if err := model.AdtyLiveSiteCustomer(tx.Model(&model.AdtySiteCustomer{})).Where("site_id = ?", site.Id).Count(&customerCount).Error; err != nil {
 			return err
 		}
 		next := version + 1

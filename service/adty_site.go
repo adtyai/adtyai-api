@@ -834,6 +834,7 @@ var AdtySiteClawBackTx func(tx *gorm.DB, site *model.AdtySite, operatorId int) e
 
 // ExecuteAdtySiteClose 执行到期的关站：客户、团队一律由主站继承，站点改 closed。可重复调用。
 // 已排期但 close_transfer_to 仍指向其他站的 in-flight 关站同样只继承到主站，不会再分流。
+// 迁入账号保留独立 user_id、inherited_from_site_id、迁移身份映射，并把原站 AdtySiteCustomer 归档而不是删除。
 // 关站不会作废未结收益，也不会扣回已结算佣金；这些金额继续按原来源持有，后续结算、转余额、提现或退款走原规则。
 func ExecuteAdtySiteClose(siteId int, now int64) error {
 	var moved []int
@@ -858,11 +859,9 @@ func ExecuteAdtySiteClose(siteId int, now int64) error {
 		if err := InheritAdtyTeamsOnCloseTx(tx, site.Id); err != nil {
 			return err
 		}
-		// 主站没有分站客户行；继承后删掉，避免残留归属。
-		if len(moved) > 0 {
-			if err := tx.Where("user_id IN ?", moved).Delete(&model.AdtySiteCustomer{}).Error; err != nil {
-				return err
-			}
+		// 主站没有在用的分站客户行；原站成员关系归档保留，不删除，以便追溯原始站点。
+		if err := model.ArchiveAdtySiteCustomersOnCloseTx(tx, moved, site.Id, now); err != nil {
+			return err
 		}
 		if err := tx.Model(&model.AdtySite{}).Where("id = ?", site.Id).Updates(map[string]any{
 			"status": model.AdtySiteStatusClosed, "closed_at": now, "close_transfer_to": target,
@@ -871,7 +870,9 @@ func ExecuteAdtySiteClose(siteId int, now int64) error {
 		}
 		site.Status, site.ClosedAt, site.CloseTransferTo = model.AdtySiteStatusClosed, now, target
 		closed = site
-		return recordSiteAuditTx(tx, site.Id, "close", 0, nil, map[string]any{"transfer_to": target, "customers": len(moved), "claw_back": false}, "")
+		return recordSiteAuditTx(tx, site.Id, "close", 0, nil, map[string]any{
+			"transfer_to": target, "customers": len(moved), "archived_memberships": len(moved), "claw_back": false,
+		}, "")
 	})
 	if err != nil {
 		return err

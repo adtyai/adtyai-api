@@ -163,9 +163,7 @@ func TestRiskReleaseSurvivesZeroEventRootTransferAndStaysInOriginalSite(t *testi
 			require.NoError(t, db.First(&stored, customer.Id).Error)
 			assert.Zero(t, stored.SiteId)
 			assert.Equal(t, from.Id, stored.InheritedFromSiteId)
-			var members int64
-			require.NoError(t, db.Model(&model.AdtySiteCustomer{}).Where("user_id = ?", customer.Id).Count(&members).Error)
-			assert.Zero(t, members, "inherited customers have no site membership row on main")
+			requireArchivedCloseIdentity(t, db, customer.Id, from.Id)
 			key := "direct:zero-root-chunk"
 			require.NoError(t, model.QueueDirectBillingDelta(model.BillingOperation{OperationKey: key, EarningRootKey: root.OperationKey,
 				UserId: customer.Id, SiteId: from.Id, SiteMarkup: 1.25, SiteCostFactor: .8}, int(perUnit("125"))))

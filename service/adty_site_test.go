@@ -472,6 +472,27 @@ func TestNoCommissionForSiteCustomer(t *testing.T) {
 	assert.Equal(t, affiliate.Id, affiliateID, "main-site customers still earn commission")
 }
 
+func requireArchivedCloseIdentity(t *testing.T, db *gorm.DB, userId, sourceSiteId int) model.AdtyUserSiteMigration {
+	t.Helper()
+	var membership model.AdtySiteCustomer
+	require.NoError(t, db.Where("user_id = ?", userId).First(&membership).Error)
+	assert.Equal(t, userId, membership.UserId)
+	assert.Equal(t, sourceSiteId, membership.SiteId)
+	assert.Equal(t, model.AdtySiteCustomerArchived, membership.Status)
+	assert.NotZero(t, membership.ArchivedAt)
+	var live int64
+	require.NoError(t, model.AdtyLiveSiteCustomer(db.Model(&model.AdtySiteCustomer{})).Where("user_id = ?", userId).Count(&live).Error)
+	assert.Zero(t, live, "inherited customers have no live site membership on main")
+	var mappings []model.AdtyUserSiteMigration
+	require.NoError(t, db.Where("user_id = ?", userId).Find(&mappings).Error)
+	require.Len(t, mappings, 1)
+	assert.Equal(t, userId, mappings[0].UserId)
+	assert.Equal(t, sourceSiteId, mappings[0].SourceSiteId)
+	assert.Zero(t, mappings[0].TargetSiteId)
+	assert.NotZero(t, mappings[0].Id)
+	return mappings[0]
+}
+
 func TestCloseSiteMovesCustomersToMain(t *testing.T) {
 	db := prepareSiteDB(t)
 	owner, site := openActiveSite(t, db, "closing")
@@ -502,9 +523,7 @@ func TestCloseSiteMovesCustomersToMain(t *testing.T) {
 	assert.Equal(t, site.Id, stored.InheritedFromSiteId)
 	assert.Equal(t, 1500, stored.Quota)
 	assert.Equal(t, authBefore+1, stored.AuthVersion)
-	var rows int64
-	require.NoError(t, db.Model(&model.AdtySiteCustomer{}).Where("user_id = ?", customer.Id).Count(&rows).Error)
-	assert.Zero(t, rows)
+	requireArchivedCloseIdentity(t, db, customer.Id, site.Id)
 	var inheritedTeam model.AdtyTeam
 	require.NoError(t, db.First(&inheritedTeam, team.Team.Id).Error)
 	assert.Zero(t, inheritedTeam.SiteId)
@@ -555,9 +574,8 @@ func TestCloseSiteRejectsTransferToAnotherSite(t *testing.T) {
 	require.NoError(t, db.First(&stored, special.Id).Error)
 	assert.Zero(t, stored.SiteId)
 	assert.Equal(t, from.Id, stored.InheritedFromSiteId)
-	var members int64
-	require.NoError(t, db.Model(&model.AdtySiteCustomer{}).Where("user_id IN ?", []int{cheap.Id, special.Id}).Count(&members).Error)
-	assert.Zero(t, members)
+	requireArchivedCloseIdentity(t, db, cheap.Id, from.Id)
+	requireArchivedCloseIdentity(t, db, special.Id, from.Id)
 	var carried int64
 	require.NoError(t, db.Model(&model.AdtySitePrice{}).Where("site_id = ? AND user_id IN ?", to.Id, []int{cheap.Id, special.Id}).Count(&carried).Error)
 	assert.Zero(t, carried, "customer prices must not be carried onto another site")
@@ -580,9 +598,7 @@ func TestExecuteAdtySiteCloseIgnoresPersistedTransferTo(t *testing.T) {
 	assert.NotEqual(t, to.Id, stored.SiteId)
 	assert.Equal(t, from.Id, stored.InheritedFromSiteId)
 	assert.Equal(t, 800, stored.Quota)
-	var members int64
-	require.NoError(t, db.Model(&model.AdtySiteCustomer{}).Where("user_id = ?", customer.Id).Count(&members).Error)
-	assert.Zero(t, members)
+	requireArchivedCloseIdentity(t, db, customer.Id, from.Id)
 	closed, err := GetAdtySite(from.Id)
 	require.NoError(t, err)
 	assert.Equal(t, model.AdtySiteStatusClosed, closed.Status)
@@ -620,9 +636,13 @@ func TestCloseSiteInheritsSameEmailAsSeparateMainIdentity(t *testing.T) {
 	assert.Equal(t, 2000, original.Quota)
 	assert.Equal(t, "shared-close@example.com", model.NormalizeEmail(inherited.Email))
 	assert.Equal(t, shared, model.NormalizeEmail(original.Email))
-	var members int64
-	require.NoError(t, db.Model(&model.AdtySiteCustomer{}).Where("user_id = ?", customer.Id).Count(&members).Error)
-	assert.Zero(t, members)
+	requireArchivedCloseIdentity(t, db, customer.Id, site.Id)
+	var mainMemberships int64
+	require.NoError(t, db.Model(&model.AdtySiteCustomer{}).Where("user_id = ?", mainUser.Id).Count(&mainMemberships).Error)
+	assert.Zero(t, mainMemberships)
+	var mainMappings int64
+	require.NoError(t, db.Model(&model.AdtyUserSiteMigration{}).Where("user_id = ?", mainUser.Id).Count(&mainMappings).Error)
+	assert.Zero(t, mainMappings)
 	var logs []model.Log
 	require.NoError(t, db.Where("user_id IN ?", []int{customer.Id, mainUser.Id}).Order("user_id").Find(&logs).Error)
 	require.Len(t, logs, 2)
@@ -637,6 +657,43 @@ func TestCloseSiteInheritsSameEmailAsSeparateMainIdentity(t *testing.T) {
 	var byName model.User
 	require.NoError(t, db.Where("username = ?", customer.Username).First(&byName).Error)
 	assert.Equal(t, customer.Id, byName.Id)
+}
+
+func TestCloseSiteMappingAndArchiveAreIdempotent(t *testing.T) {
+	db := prepareSiteDB(t)
+	_, site := openActiveSite(t, db, "retry-close")
+	customer := siteCustomer(t, db, site, "retry-close-customer")
+	require.NoError(t, db.Model(customer).Update("quota", 900).Error)
+
+	closed, err := ScheduleAdtySiteClose(site.Id, 1, AdtySiteClosePlan{Immediate: true})
+	require.NoError(t, err)
+	assert.Equal(t, model.AdtySiteStatusClosed, closed.Status)
+
+	first := requireArchivedCloseIdentity(t, db, customer.Id, site.Id)
+	var stored model.User
+	require.NoError(t, db.First(&stored, customer.Id).Error)
+	assert.Zero(t, stored.SiteId)
+	assert.Equal(t, site.Id, stored.InheritedFromSiteId)
+	assert.Equal(t, 900, stored.Quota)
+	assert.Equal(t, customer.Id, stored.Id)
+
+	require.NoError(t, ExecuteAdtySiteClose(site.Id, time.Now().Unix()+10))
+	second := requireArchivedCloseIdentity(t, db, customer.Id, site.Id)
+	assert.Equal(t, first.Id, second.Id)
+	assert.Equal(t, first.CreatedAt, second.CreatedAt)
+	var mappingCount int64
+	require.NoError(t, db.Model(&model.AdtyUserSiteMigration{}).Where("user_id = ?", customer.Id).Count(&mappingCount).Error)
+	assert.Equal(t, int64(1), mappingCount)
+	var memberships []model.AdtySiteCustomer
+	require.NoError(t, db.Where("user_id = ?", customer.Id).Find(&memberships).Error)
+	require.Len(t, memberships, 1)
+	assert.Equal(t, model.AdtySiteCustomerArchived, memberships[0].Status)
+	assert.Equal(t, first.SourceSiteId, memberships[0].SiteId)
+	require.NoError(t, db.First(&stored, customer.Id).Error)
+	assert.Zero(t, stored.SiteId)
+	assert.Equal(t, site.Id, stored.InheritedFromSiteId)
+	assert.Equal(t, customer.Id, stored.Id)
+	assert.Equal(t, 900, stored.Quota)
 }
 
 func TestForcedCloseIgnoresClawBackFlag(t *testing.T) {
