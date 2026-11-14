@@ -1,0 +1,42 @@
+# Official Appendix E.2 unit checklist. Do not delete these entries.
+- id: CHK-CALLCHAIN
+  applies_to: [backend, frontend]
+  question: 真实调用链是否完整（入口→中间件→服务→数据）？
+  evidence_required: [符号路径, 调用方列表]
+  failure_severity: P1
+
+- id: CHK-TX
+  applies_to: [backend, db]
+  question: 事务边界是否正确，失败是否回滚？
+  evidence_required: [事务起点终点, 失败路径]
+  failure_severity: P0
+
+- id: CHK-PERM
+  applies_to: [backend, frontend]
+  question: 权限是否服务端强制，是否存在前端隐藏代替鉴权？
+  evidence_required: [中间件, 角色矩阵, 拒绝路径]
+  failure_severity: P0
+
+- id: CHK-IDEMP
+  applies_to: [backend, db]
+  question: 幂等键是否由唯一约束保证，重试是否产生重复副作用？
+  evidence_required: [唯一约束, 重试路径]
+  failure_severity: P0
+
+- id: CHK-FUND
+  applies_to: [backend, db]
+  question: 资金变动是否有唯一权威来源、是否可重复计入？
+  evidence_required: [账户模型, 流水, 快照]
+  failure_severity: P0
+
+- id: CHK-ERROR
+  applies_to: [backend, frontend]
+  question: 异常、边界、空数据是否有明确行为，是否泄露内部信息？
+  evidence_required: [错误分支, 用户可见文案]
+  failure_severity: P2
+
+- id: CHK-RETIRE
+  applies_to: [backend, frontend]
+  question: 是否存在退役功能的残留入口、路由、服务、配置？
+  evidence_required: [静态引用检查, deleted-paths 对照]
+  failure_severity: P2

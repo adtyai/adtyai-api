@@ -1,0 +1,95 @@
+{"rule_id": "G.1", "title": "美元记账、汇率和内部额度", "source": "volume1"}
+{"rule_id": "G.2", "title": "价格、模型和团队协议价", "source": "volume1"}
+{"rule_id": "G.3", "title": "本金、赠金和消费顺序", "source": "volume1"}
+{"rule_id": "G.4", "title": "支付方式充值赠金规则", "source": "volume1"}
+{"rule_id": "G.5", "title": "分站三钱包、保证金和收益", "source": "volume1"}
+{"rule_id": "G.6", "title": "团队与员工", "source": "volume1"}
+{"rule_id": "G.7", "title": "分站关闭和迁移", "source": "volume1"}
+{"rule_id": "G.8", "title": "统一充值额度兑换码", "source": "volume1"}
+{"rule_id": "G.9", "title": "退款、返佣和调整", "source": "volume1"}
+{"rule_id": "G.10", "title": "Telegram 双 Bot", "source": "volume1"}
+{"rule_id": "G.11", "title": "AI 翻译", "source": "volume1"}
+{"rule_id": "G.12", "title": "客服中心", "source": "volume1"}
+{"rule_id": "G.13", "title": "操作审计和资金异常预警", "source": "volume1"}
+{"rule_id": "G.14", "title": "二次身份验证", "source": "volume1"}
+{"rule_id": "G.15", "title": "客服图片与安全", "source": "volume1"}
+{"rule_id": "G.16", "title": "代码清理与代码瘦身", "source": "volume1"}
+{"rule_id": "G.17", "title": "安全政策与工程保护", "source": "volume1"}
+{"rule_id": "G.18", "title": "最终清零定义", "source": "volume1"}
+{"rule_id": "A.1", "title": "基线使用、来源与验证方式", "source": "volume1"}
+{"rule_id": "A.2", "title": "正式产品功能范围与退役代码治理", "source": "volume1"}
+{"rule_id": "A.3", "title": "平台整体架构", "source": "volume1"}
+{"rule_id": "A.4", "title": "用户角色与权限体系", "source": "volume1"}
+{"rule_id": "A.5", "title": "主站用户端", "source": "volume1"}
+{"rule_id": "A.6", "title": "模型、渠道与 API 中转", "source": "volume1"}
+{"rule_id": "A.7", "title": "统一计费系统", "source": "volume1"}
+{"rule_id": "A.8", "title": "统一支付网关", "source": "volume1"}
+{"rule_id": "A.9", "title": "团队账户系统", "source": "volume1"}
+{"rule_id": "A.9.1", "title": "团队创建和负责人", "source": "volume1"}
+{"rule_id": "A.9.2", "title": "团队成员（团队员工子账号）", "source": "volume1"}
+{"rule_id": "A.9.3", "title": "团队共享余额", "source": "volume1"}
+{"rule_id": "A.9.4", "title": "团队 API Key", "source": "volume1"}
+{"rule_id": "A.9.5", "title": "团队协议价", "source": "volume1"}
+{"rule_id": "A.9.6", "title": "团队生命周期测试", "source": "volume1"}
+{"rule_id": "A.10", "title": "分站系统", "source": "volume1"}
+{"rule_id": "A.11", "title": "分站三钱包", "source": "volume1"}
+{"rule_id": "A.12", "title": "分站客户余额、本金批次与永久赠金", "source": "volume1"}
+{"rule_id": "A.12.1", "title": "客户余额组成", "source": "volume1"}
+{"rule_id": "A.12.2", "title": "固定消费顺序", "source": "volume1"}
+{"rule_id": "A.12.3", "title": "永久赠金", "source": "volume1"}
+{"rule_id": "A.12.4", "title": "客户余额调整", "source": "volume1"}
+{"rule_id": "A.12.5", "title": "调减待核查", "source": "volume1"}
+{"rule_id": "A.12.6", "title": "退款、赠金回收和消费竞争", "source": "volume1"}
+{"rule_id": "A.12.7", "title": "站长页面可见范围", "source": "volume1"}
+{"rule_id": "A.12.8", "title": "必测算例", "source": "volume1"}
+{"rule_id": "A.13", "title": "邀请关系与佣金", "source": "volume1"}
+{"rule_id": "A.13.1", "title": "主站邀请返佣", "source": "volume1"}
+{"rule_id": "A.13.2", "title": "分站一级邀请返佣", "source": "volume1"}
+{"rule_id": "A.13.3", "title": "佣金计算", "source": "volume1"}
+{"rule_id": "A.13.4", "title": "分站佣金资金冻结与去向 [R-02]", "source": "volume1"}
+{"rule_id": "A.13.5", "title": "退款按状态释放、冲回或追偿", "source": "volume1"}
+{"rule_id": "A.13.6", "title": "反作弊与测试", "source": "volume1"}
+{"rule_id": "A.14", "title": "站长收益、提现与人工退款", "source": "volume1"}
+{"rule_id": "A.14.1", "title": "收益入账和结算", "source": "volume1"}
+{"rule_id": "A.14.2", "title": "收益提现", "source": "volume1"}
+{"rule_id": "A.14.3", "title": "客户充值人工退款", "source": "volume1"}
+{"rule_id": "A.14.4", "title": "资金责任和异常", "source": "volume1"}
+{"rule_id": "A.14.5", "title": "财务调整和审计", "source": "volume1"}
+{"rule_id": "A.15", "title": "分站域名与品牌管理", "source": "volume1"}
+{"rule_id": "A.16", "title": "客户迁移与分站关闭", "source": "volume1"}
+{"rule_id": "A.16.1", "title": "唯一关闭承接方向", "source": "volume1"}
+{"rule_id": "A.16.2", "title": "关闭前通知", "source": "volume1"}
+{"rule_id": "A.16.3", "title": "同邮箱账号迁移", "source": "volume1"}
+{"rule_id": "A.16.4", "title": "迁移资产范围", "source": "volume1"}
+{"rule_id": "A.16.5", "title": "API Key 和会话", "source": "volume1"}
+{"rule_id": "A.16.6", "title": "资金和订单责任", "source": "volume1"}
+{"rule_id": "A.16.7", "title": "迁移测试", "source": "volume1"}
+{"rule_id": "A.17", "title": "统一用户管理与订单管理", "source": "volume1"}
+{"rule_id": "A.17.1", "title": "账号注销", "source": "volume1"}
+{"rule_id": "A.17.2", "title": "数据保存期限", "source": "volume1"}
+{"rule_id": "A.17.3", "title": "统一用户列表", "source": "volume1"}
+{"rule_id": "A.17.4", "title": "统一订单管理", "source": "volume1"}
+{"rule_id": "A.17.5", "title": "查询和导出", "source": "volume1"}
+{"rule_id": "A.18", "title": "站内通知、公告与 Telegram 通知", "source": "volume1"}
+{"rule_id": "A.18.1", "title": "站内通知是权威记录", "source": "volume1"}
+{"rule_id": "A.18.2", "title": "收件范围", "source": "volume1"}
+{"rule_id": "A.18.3", "title": "通知类型", "source": "volume1"}
+{"rule_id": "A.18.4", "title": "双语内容", "source": "volume1"}
+{"rule_id": "A.18.5", "title": "Telegram 两个通知 Bot", "source": "volume1"}
+{"rule_id": "A.18.6", "title": "通知验收", "source": "volume1"}
+{"rule_id": "A.19", "title": "后台菜单折叠与全功能角标", "source": "volume1"}
+{"rule_id": "A.20", "title": "简体中文、英文与 UI 规范", "source": "volume1"}
+{"rule_id": "A.20.1", "title": "正式语言", "source": "volume1"}
+{"rule_id": "A.20.2", "title": "翻译规则", "source": "volume1"}
+{"rule_id": "A.20.3", "title": "UI 统一规范", "source": "volume1"}
+{"rule_id": "A.20.4", "title": "页面视觉和交互验收", "source": "volume1"}
+{"rule_id": "A.21", "title": "PostgreSQL、资金安全与数据隔离", "source": "volume1"}
+{"rule_id": "A.21.1", "title": "关系型数据库", "source": "volume1"}
+{"rule_id": "A.21.2", "title": "本方案数据库测试范围 [R-03]", "source": "volume1"}
+{"rule_id": "A.21.3", "title": "数据隔离", "source": "volume1"}
+{"rule_id": "A.21.4", "title": "资金流水和事务", "source": "volume1"}
+{"rule_id": "A.21.5", "title": "数据库迁移和事务恢复", "source": "volume1"}
+{"rule_id": "A.22", "title": "主站系统设置、邮件与 AI 翻译服务", "source": "volume1"}
+{"rule_id": "A.22.1", "title": "Root 系统设置", "source": "volume1"}
+{"rule_id": "A.22.2", "title": "系统事务邮件", "source": "volume1"}
+{"rule_id": "A.22.3", "title": "AI 翻译服务设置", "source": "volume1"}
