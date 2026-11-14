@@ -18,14 +18,26 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
 
+import { FILTER_ALL } from './constants'
 import type { PricingData } from './types'
+
+/** Group sent to /api/pricing so the list is adjusted for that display group. */
+export function pricingDisplayGroupParam(group?: string): string | undefined {
+  const trimmed = group?.trim()
+  if (!trimmed || trimmed === FILTER_ALL) return undefined
+  return trimmed
+}
 
 // ----------------------------------------------------------------------------
 // Pricing APIs
 // ----------------------------------------------------------------------------
 
 // Get model pricing data
-export async function getPricing(): Promise<PricingData> {
-  const res = await api.get('/api/pricing')
+export async function getPricing(group?: string): Promise<PricingData> {
+  const displayGroup = pricingDisplayGroupParam(group)
+  const res = await api.get(
+    '/api/pricing',
+    displayGroup ? { params: { group: displayGroup } } : undefined
+  )
   return res.data
 }

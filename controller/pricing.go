@@ -58,7 +58,16 @@ func GetPricing(c *gin.Context) {
 	service.AdtyApplySitePricing(c, groupRatio) // 二开：分站价格（任务 11.4）
 	usableGroup = service.GetUserUsableGroups(group)
 	pricing = filterPricingByUsableGroups(pricing, usableGroup)
-	pricing = service.AdtyAdjustPricingForSiteModels(c, group, pricing)
+	// Display lists are only valid for one group. If the public price page
+	// asks for a usable display group, re-adjust for that group instead of
+	// reusing a list already scaled for the viewer's current group (ISS-R3-0009).
+	adjustGroup := group
+	if requested := c.Query("group"); requested != "" && requested != "all" {
+		if _, ok := usableGroup[requested]; ok {
+			adjustGroup = requested
+		}
+	}
+	pricing = service.AdtyAdjustPricingForSiteModels(c, adjustGroup, pricing)
 	// check groupRatio contains usableGroup
 	for group := range ratio_setting.GetGroupRatioCopy() {
 		if _, ok := usableGroup[group]; !ok {

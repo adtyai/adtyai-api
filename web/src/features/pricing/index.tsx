@@ -16,12 +16,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useSearch } from '@tanstack/react-router'
 import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { PublicLayout } from '@/components/layout'
 import { PageTransition } from '@/components/page-transition'
 import { toIntlLocale } from '@/i18n/languages'
+import { useAuthStore } from '@/stores/auth-store'
 
 import {
   LoadingSkeleton,
@@ -36,13 +38,23 @@ import {
 import { EXCLUDED_GROUPS, VIEW_MODES } from './constants'
 import { useFilters } from './hooks/use-filters'
 import { useOfficialPrices } from './hooks/use-official-prices'
-import { usePricingData } from './hooks/use-pricing-data'
+import {
+  resolvePricingDisplayGroup,
+  usePricingData,
+} from './hooks/use-pricing-data'
 
 export function Pricing() {
   const { t, i18n } = useTranslation()
   const [selectedModelName, setSelectedModelName] = useState<string | null>(
     null
   )
+
+  const search = useSearch({ from: '/pricing/' })
+  const userGroup = useAuthStore((state) => state.auth.user?.group)
+  const [explicitGroup, setExplicitGroup] = useState<string | undefined>(
+    () => search.group
+  )
+  const displayGroup = resolvePricingDisplayGroup(explicitGroup, userGroup)
 
   const {
     models,
@@ -54,7 +66,7 @@ export function Pricing() {
     isLoading,
     priceRate,
     usdExchangeRate,
-  } = usePricingData()
+  } = usePricingData(true, displayGroup)
   const officialPrices = useOfficialPrices()
 
   // Groups the viewer can pick; hidden group IDs on models are not shown.
@@ -64,6 +76,11 @@ export function Pricing() {
         (g) => !EXCLUDED_GROUPS.includes(g)
       ),
     [usableGroup]
+  )
+
+  const groupControl = useMemo(
+    () => ({ value: explicitGroup, onChange: setExplicitGroup }),
+    [explicitGroup]
   )
 
   const {
@@ -93,7 +110,7 @@ export function Pricing() {
     availableTags,
     clearFilters,
     clearSearch,
-  } = useFilters(models || [], availableGroups)
+  } = useFilters(models || [], availableGroups, groupControl)
 
   const handleModelClick = useCallback((modelName: string) => {
     setSelectedModelName(modelName)

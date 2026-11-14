@@ -277,4 +277,29 @@ func TestGetPricingUsesSameEffectiveMarkupAsBillingWhenGroupEmptyCoexists(t *tes
 	adjustedDefault := service.AdtyAdjustPricingForSiteModels(ctx, "default", official)
 	assert.InDelta(t, 2*billedDefaultGPT, adjustedDefault[0].ModelPrice*payload.GroupRatio["default"], 1e-12)
 	assert.InDelta(t, 2*billedDefaultClaude, adjustedDefault[1].ModelPrice*payload.GroupRatio["default"], 1e-12)
+
+	// The public price page can request that adjustment with ?group=.
+	displayRecorder := httptest.NewRecorder()
+	displayCtx, _ := gin.CreateTestContext(displayRecorder)
+	displayCtx.Request = httptest.NewRequest(http.MethodGet, "/api/pricing?group=default", nil)
+	displayCtx.Set("id", customer.Id)
+	GetPricing(displayCtx)
+	require.Equal(t, http.StatusOK, displayRecorder.Code, displayRecorder.Body.String())
+	var displayPayload struct {
+		Success    bool               `json:"success"`
+		Data       []model.Pricing    `json:"data"`
+		GroupRatio map[string]float64 `json:"group_ratio"`
+	}
+	require.NoError(t, common.Unmarshal(displayRecorder.Body.Bytes(), &displayPayload))
+	require.True(t, displayPayload.Success)
+	displayByName := map[string]model.Pricing{}
+	for _, item := range displayPayload.Data {
+		displayByName[item.ModelName] = item
+	}
+	require.Contains(t, displayByName, "gpt-4")
+	assert.InDelta(t, 2*1.5/1.2, displayByName["gpt-4"].ModelPrice, 1e-12)
+	assert.InDelta(t, 2*billedDefaultGPT, displayByName["gpt-4"].ModelPrice*displayPayload.GroupRatio["default"], 1e-12, "refetched default list matches billing")
+	assert.Greater(t, math.Abs(displayByName["gpt-4"].ModelPrice-byName["gpt-4"].ModelPrice), 1e-9, "the default list is not the vip-adjusted list")
+	assert.InDelta(t, payload.GroupRatio["default"], displayPayload.GroupRatio["default"], 1e-12, "group_ratio is unchanged by the display-group hook")
+	assert.InDelta(t, payload.GroupRatio["vip"], displayPayload.GroupRatio["vip"], 1e-12)
 }

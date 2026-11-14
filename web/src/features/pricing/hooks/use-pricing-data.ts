@@ -22,13 +22,29 @@ import { useMemo } from 'react'
 import { useStatus } from '@/hooks/use-status'
 import { requireServerSuccess } from '@/lib/server-error-message'
 
-import { getPricing } from '../api'
+import { getPricing, pricingDisplayGroupParam } from '../api'
+import { FILTER_ALL } from '../constants'
 import type { PricingData, PricingModel } from '../types'
+
+/**
+ * Group used to fetch a price list adjusted for the current display group
+ * (ISS-R3-0009). "all" has no single adjustment group, so the request omits
+ * the parameter and the backend keeps the viewer's current group.
+ */
+export function resolvePricingDisplayGroup(
+  explicitGroup?: string,
+  userGroup?: string
+): string | undefined {
+  if (explicitGroup === FILTER_ALL) return undefined
+  return pricingDisplayGroupParam(explicitGroup || userGroup || 'default')
+}
 
 let pricedModels: PricingModel[] = []
 let pricedFrom: PricingData | undefined
 
-export function modelsFromPricing(data: PricingData | undefined): PricingModel[] {
+export function modelsFromPricing(
+  data: PricingData | undefined
+): PricingModel[] {
   if (!Array.isArray(data?.data)) return []
   if (
     pricedFrom?.data === data.data &&
@@ -54,12 +70,13 @@ export function modelsFromPricing(data: PricingData | undefined): PricingModel[]
   return pricedModels
 }
 
-export function usePricingData(enabled = true) {
+export function usePricingData(enabled = true, displayGroup?: string) {
   const { status } = useStatus()
+  const groupParam = pricingDisplayGroupParam(displayGroup)
 
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ['pricing'],
-    queryFn: async () => requireServerSuccess(await getPricing()),
+    queryKey: groupParam ? ['pricing', groupParam] : ['pricing'],
+    queryFn: async () => requireServerSuccess(await getPricing(groupParam)),
     staleTime: 5 * 60 * 1000,
     enabled,
   })

@@ -48,9 +48,15 @@ const pricing = {
   auto_groups: [],
 } satisfies PricingData
 
-vi.mock('../../api', () => ({
-  getPricing: () => Promise.resolve(pricing),
-}))
+const getPricing = vi.hoisted(() => vi.fn())
+
+vi.mock('../../api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../api')>()
+  return {
+    ...actual,
+    getPricing,
+  }
+})
 
 const client = new QueryClient({
   defaultOptions: { queries: { retry: false } },
@@ -63,6 +69,7 @@ function wrapper({ children }: { children: ReactNode }) {
 describe('usePricingData', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    getPricing.mockImplementation(async () => pricing)
   })
 
   it('keeps the same model list when the price payload is unchanged', async () => {
@@ -111,5 +118,56 @@ describe('usePricingData', () => {
     const second = modelsFromPricing(changed)
     expect(second).not.toBe(first)
     expect(second[0].group_ratio).toEqual({ default: 2 })
+  })
+
+  it('refetches the list when the display group changes and does not reuse the previous group prices', async () => {
+    const isolatedClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    function isolatedWrapper({ children }: { children: ReactNode }) {
+      return createElement(
+        QueryClientProvider,
+        { client: isolatedClient },
+        children
+      )
+    }
+
+    const vipList = {
+      ...pricing,
+      data: [{ ...pricing.data[0], model_price: 2 * (1.5 / 1.3) }],
+      group_ratio: { default: 0.672, vip: 2.08 },
+    } satisfies PricingData
+    const defaultList = {
+      ...pricing,
+      data: [{ ...pricing.data[0], model_price: 2 * (1.5 / 1.2) }],
+      group_ratio: { default: 0.672, vip: 2.08 },
+    } satisfies PricingData
+
+    getPricing.mockImplementation(async (group?: string) => {
+      if (group === 'default') return defaultList
+      return vipList
+    })
+
+    const hook = renderHook(
+      ({ group }: { group?: string }) => usePricingData(true, group),
+      { wrapper: isolatedWrapper, initialProps: { group: 'vip' } }
+    )
+    await waitFor(() =>
+      expect(hook.result.current.models[0]?.model_price).toBeCloseTo(
+        2 * (1.5 / 1.3)
+      )
+    )
+    expect(getPricing).toHaveBeenCalledWith('vip')
+
+    hook.rerender({ group: 'default' })
+    await waitFor(() =>
+      expect(hook.result.current.models[0]?.model_price).toBeCloseTo(
+        2 * (1.5 / 1.2)
+      )
+    )
+    expect(getPricing).toHaveBeenCalledWith('default')
+    expect(hook.result.current.models[0].model_price).not.toBeCloseTo(
+      2 * (1.5 / 1.3)
+    )
   })
 })

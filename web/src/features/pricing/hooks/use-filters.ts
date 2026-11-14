@@ -63,12 +63,19 @@ function getDefaultGroupFilter(
   availableGroups: string[]
 ): string {
   const preferred = userGroup || 'default'
+  if (availableGroups.length === 0) return preferred
   return availableGroups.includes(preferred) ? preferred : FILTER_ALL
+}
+
+export type PricingGroupControl = {
+  value: string | undefined
+  onChange: (group: string | undefined) => void
 }
 
 export function useFilters(
   models: PricingModel[],
-  availableGroups: string[] = []
+  availableGroups: string[] = [],
+  groupControl?: PricingGroupControl
 ) {
   const search = useSearch({ from: '/pricing/' })
   const userGroup = useAuthStore((state) => state.auth.user?.group)
@@ -77,7 +84,7 @@ export function useFilters(
     search: search.search,
     sort: search.sort,
     vendor: search.vendor,
-    group: search.group,
+    group: groupControl ? groupControl.value : search.group,
     quotaType: search.quotaType,
     endpointType: search.endpointType,
     tag: search.tag,
@@ -92,7 +99,8 @@ export function useFilters(
   const vendorFilter = filterState.vendor || FILTER_ALL
   // No group in the state means "not chosen yet"; an explicit FILTER_ALL
   // means the viewer picked all groups.
-  const groupFilter = filterState.group || defaultGroup
+  const explicitGroup = groupControl ? groupControl.value : filterState.group
+  const groupFilter = explicitGroup || defaultGroup
   const quotaTypeFilter = filterState.quotaType || QUOTA_TYPES.ALL
   const endpointTypeFilter = filterState.endpointType || ENDPOINT_TYPES.ALL
   const tagFilter = filterState.tag || FILTER_ALL
@@ -127,8 +135,15 @@ export function useFilters(
     [updateFilters]
   )
   const setGroupFilter = useCallback(
-    (v: string) => updateFilters({ group: v || undefined }),
-    [updateFilters]
+    (v: string) => {
+      const next = v || undefined
+      if (groupControl) {
+        groupControl.onChange(next)
+        return
+      }
+      updateFilters({ group: next })
+    },
+    [groupControl, updateFilters]
   )
   const setQuotaTypeFilter = useCallback(
     (v: string) =>
@@ -224,6 +239,7 @@ export function useFilters(
   )
 
   const clearFilters = useCallback(() => {
+    groupControl?.onChange(undefined)
     updateFilters({
       vendor: undefined,
       group: undefined,
@@ -231,7 +247,7 @@ export function useFilters(
       endpointType: undefined,
       tag: undefined,
     })
-  }, [updateFilters])
+  }, [groupControl, updateFilters])
 
   const clearSearch = useCallback(() => {
     updateFilters({ search: undefined })

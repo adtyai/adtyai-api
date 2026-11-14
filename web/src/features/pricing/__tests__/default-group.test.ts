@@ -92,4 +92,10 @@ describe('default pricing group', () => {
     const { result } = renderHook(() => useFilters(models, ['default', 'vip']))
     expect(result.current.groupFilter).toBe('all')
   })
+
+  it('keeps the preferred group while available groups have not loaded yet', () => {
+    const { result } = renderHook(() => useFilters(models, []))
+    expect(result.current.groupFilter).toBe('default')
+    expect(result.current.hasActiveFilters).toBe(false)
+  })
 })
