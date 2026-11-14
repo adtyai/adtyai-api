@@ -419,6 +419,50 @@ func TestAdtyStaffDashboardAllowedRejectsNilHostAsMainSite(t *testing.T) {
 	assert.Contains(t, denied.Body.String(), "Staff access is not permitted")
 }
 
+func TestStaffDashboardAllowsBalanceRequestRoutes(t *testing.T) {
+	f := setupDashboardSiteAuthTest(t)
+	const path = "/api/adty/staff/balance-requests"
+	router := gin.New()
+	router.Use(f.attachRequestSite())
+	entered := func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"id": c.GetInt("id"), "entered": true})
+	}
+	auth := UserAuth()
+	router.GET(path, auth, entered)
+	router.POST(path, auth, entered)
+	router.GET("/api/adty/site/balance-requests", auth, entered)
+	router.POST("/api/adty/site/balance-requests/:id/review", auth, entered)
+	router.POST("/api/user/token", auth, entered)
+
+	for _, method := range []string{http.MethodGet, http.MethodPost} {
+		request := httptest.NewRequest(method, path, nil)
+		request.Host = dashboardSiteAHost
+		request.Header.Set("Authorization", "Bearer "+f.staffSession)
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, request)
+		assert.Equal(t, http.StatusOK, response.Code, method+" "+path+": "+response.Body.String())
+		body := decodeDashboardSiteBody(t, response)
+		assert.True(t, body.Entered, method)
+		assert.Equal(t, f.staffA.Id, body.ID, method)
+	}
+
+	for _, tc := range []struct{ method, path string }{
+		{http.MethodGet, "/api/adty/site/balance-requests"},
+		{http.MethodPost, "/api/adty/site/balance-requests/1/review"},
+		{http.MethodPost, "/api/user/token"},
+	} {
+		request := httptest.NewRequest(tc.method, tc.path, nil)
+		request.Host = dashboardSiteAHost
+		request.Header.Set("Authorization", "Bearer "+f.staffSession)
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, request)
+		label := tc.method + " " + tc.path
+		assert.Equal(t, http.StatusForbidden, response.Code, label+": "+response.Body.String())
+		assert.Contains(t, response.Body.String(), "Staff access is not permitted", label)
+		assert.NotContains(t, response.Body.String(), `"entered":true`, label)
+	}
+}
+
 func TestTokenOrUserAuthRejectsCrossSiteDashboardSession(t *testing.T) {
 	f := setupDashboardSiteAuthTest(t)
 	router := f.dashboardRouter(TokenOrUserAuth(), dashboardSiteProtected)
