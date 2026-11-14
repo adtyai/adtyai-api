@@ -569,3 +569,25 @@ func mustResponsesEventsFromChatChunk(t *testing.T, state *ChatToResponsesStream
 	require.NoError(t, err)
 	return events
 }
+
+func TestUsageFromChatUsageMapsTopLevelReasoningTokensWithoutAddingToTotals(t *testing.T) {
+	src := &dto.Usage{
+		PromptTokens:     10,
+		CompletionTokens: 20,
+		TotalTokens:      30,
+		ReasoningTokens:  8,
+	}
+
+	usage := UsageFromChatUsage(src)
+
+	require.NotNil(t, usage)
+	assert.Equal(t, 8, usage.ReasoningTokens)
+	assert.Equal(t, 8, usage.CompletionTokenDetails.ReasoningTokens)
+	require.NotNil(t, usage.OutputTokensDetails)
+	assert.Equal(t, 8, usage.OutputTokensDetails.ReasoningTokens)
+	assert.Equal(t, 10, usage.PromptTokens)
+	assert.Equal(t, 10, usage.InputTokens)
+	assert.Equal(t, 20, usage.CompletionTokens)
+	assert.Equal(t, 20, usage.OutputTokens)
+	assert.Equal(t, 30, usage.TotalTokens)
+}

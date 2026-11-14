@@ -163,8 +163,26 @@ func ApplyResponsesUsage(dst *dto.Usage, src *dto.Usage) {
 	if src.OutputTokensDetails != nil {
 		incoming.CompletionTokenDetails = *src.OutputTokensDetails
 	}
+	// Map top-level or details reasoning into details only; do not add it
+	// into CompletionTokens / TotalTokens.
+	rt := src.ReasoningTokens
+	if rt == 0 && src.OutputTokensDetails != nil {
+		rt = src.OutputTokensDetails.ReasoningTokens
+	}
+	if rt == 0 {
+		rt = src.CompletionTokenDetails.ReasoningTokens
+	}
+	if rt != 0 {
+		incoming.ReasoningTokens = rt
+		if incoming.CompletionTokenDetails.ReasoningTokens == 0 {
+			incoming.CompletionTokenDetails.ReasoningTokens = rt
+		}
+	}
 	incoming.PromptCacheHitTokens = src.PromptCacheHitTokens
 	dto.MergeUsageNonZero(dst, incoming)
+	if rt != 0 && dst.ReasoningTokens == 0 {
+		dst.ReasoningTokens = rt
+	}
 	outputDetails := dst.CompletionTokenDetails
 	if outputDetails != (dto.OutputTokenDetails{}) {
 		dst.OutputTokensDetails = &outputDetails

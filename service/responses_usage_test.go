@@ -215,6 +215,26 @@ func TestApplyResponsesUsageFallsBackToCompletionTokenDetails(t *testing.T) {
 	assert.Equal(t, 9, dst.OutputTokensDetails.ReasoningTokens)
 }
 
+func TestApplyResponsesUsageMapsTopLevelReasoningTokensWithoutAddingToTotals(t *testing.T) {
+	dst := &dto.Usage{}
+	src := &dto.Usage{
+		InputTokens:     10,
+		OutputTokens:    20,
+		TotalTokens:     30,
+		ReasoningTokens: 8,
+	}
+
+	ApplyResponsesUsage(dst, src)
+
+	assert.Equal(t, 8, dst.ReasoningTokens)
+	assert.Equal(t, 8, dst.CompletionTokenDetails.ReasoningTokens)
+	require.NotNil(t, dst.OutputTokensDetails)
+	assert.Equal(t, 8, dst.OutputTokensDetails.ReasoningTokens)
+	assert.Equal(t, 10, dst.PromptTokens)
+	assert.Equal(t, 20, dst.CompletionTokens)
+	assert.Equal(t, 30, dst.TotalTokens)
+}
+
 func TestApplyResponsesUsagePreservesBillingSnapshotAcrossPartialUpdates(t *testing.T) {
 	dst := &dto.Usage{}
 	src := &dto.Usage{

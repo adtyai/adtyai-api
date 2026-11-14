@@ -38,6 +38,7 @@ func OaiResponsesHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 
 	info.ObserveResponseModel(responsesResponse.Model)
 	responseBody = rewriteSGLangResponsesCreatedAt(info, responseBody, "created_at", responsesResponse.CreatedAt)
+	responseBody = ensureResponsesUsageReasoningDetails(responseBody, "usage")
 
 	// 写入新的 response body
 	service.IOCopyBytesGracefully(c, resp, responseBody)
@@ -88,6 +89,7 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 		}
 		if streamResponse.Response != nil {
 			data = string(rewriteSGLangResponsesCreatedAt(info, []byte(data), "response.created_at", streamResponse.Response.CreatedAt))
+			data = string(ensureResponsesUsageReasoningDetails([]byte(data), "response.usage"))
 		}
 		accumulator.Observe(&streamResponse, common.StringToByteSlice(data))
 		if err := helper.ResponseChunkData(c, streamResponse, data); err != nil {
@@ -103,6 +105,31 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 	common.SetContextKey(c, constant.ContextKeyResponseStreamStatus, info.StreamStatus)
 	info.StreamStatus.RequireTerminal()
 	return accumulator.Finish(), nil
+}
+
+// ensureResponsesUsageReasoningDetails copies a top-level usage.reasoning_tokens
+// value into usage.output_tokens_details without re-serializing the body.
+func ensureResponsesUsageReasoningDetails(payload []byte, usagePath string) []byte {
+	usage := gjson.GetBytes(payload, usagePath)
+	if !usage.Exists() {
+		return payload
+	}
+	rt := usage.Get("reasoning_tokens").Int()
+	if rt == 0 {
+		rt = usage.Get("output_tokens_details.reasoning_tokens").Int()
+	}
+	if rt == 0 {
+		return payload
+	}
+	detailsPath := usagePath + ".output_tokens_details.reasoning_tokens"
+	if gjson.GetBytes(payload, detailsPath).Int() != 0 {
+		return payload
+	}
+	patched, err := sjson.SetBytes(payload, detailsPath, rt)
+	if err != nil {
+		return payload
+	}
+	return patched
 }
 
 func rewriteSGLangResponsesCreatedAt(info *relaycommon.RelayInfo, payload []byte, path string, createdAt dto.IntValue) []byte {

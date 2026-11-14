@@ -41,6 +41,9 @@ func MergeUsageNonZero(current *Usage, incoming *Usage) *Usage {
 	if incoming.ClaudeCacheCreation1hTokens > 0 {
 		current.ClaudeCacheCreation1hTokens = incoming.ClaudeCacheCreation1hTokens
 	}
+	if incoming.ReasoningTokens > 0 {
+		current.ReasoningTokens = incoming.ReasoningTokens
+	}
 
 	mergeInputTokenDetails(&current.PromptTokensDetails, incoming.PromptTokensDetails)
 	if incoming.InputTokensDetails != nil {
