@@ -2249,7 +2249,9 @@ func TestTaskSubmitStreamContract(t *testing.T) {
 		{"intermediate state limit", "data: {\"largeState\":true}\n\ndata: {\"resetState\":true}\n\n", "text/event-stream", false},
 		{"encoded state limit", "data: {\"escapedState\":true}\n\n", "text/event-stream", false},
 		{"event limit", "data: " + strings.Repeat("x", maxTaskPluginPersistedJSONBytes) + "\n\n", "text/event-stream", false},
-		{"wrong response type", "{}", "application/json", false},
+		// A gateway released before relayed streams answers a stream request
+		// on its native route with one JSON body.
+		{"JSON reply to a stream request", `{"document":"helloworld","units":3,"event":"message","id":"doc-1"}`, "application/json", true},
 		{"undeclared stream", "data: {}\n\n", "text/event-stream", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -2292,7 +2294,7 @@ func TestTaskSubmitStreamCancellationClosesReader(t *testing.T) {
 	defer writer.Close()
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	_, err = New(plugin).readSubmitEvents(ctx, &http.Response{Header: http.Header{"Content-Type": {"text/event-stream"}}, Body: reader}, nil)
+	_, _, err = New(plugin).readSubmitEvents(ctx, &http.Response{Header: http.Header{"Content-Type": {"text/event-stream"}}, Body: reader}, nil, submitEventStream{frameLimit: maxTaskPluginPersistedJSONBytes})
 	require.ErrorIs(t, err, context.Canceled)
 	_, err = writer.Write([]byte("data: {}\n\n"))
 	require.Error(t, err)
@@ -2306,7 +2308,7 @@ func TestTaskSubmitStreamIdleTimeout(t *testing.T) {
 	require.NoError(t, err)
 	reader, writer := io.Pipe()
 	defer writer.Close()
-	_, err = New(plugin).readSubmitEvents(t.Context(), &http.Response{Header: http.Header{"Content-Type": {"text/event-stream"}}, Body: reader}, nil)
+	_, _, err = New(plugin).readSubmitEvents(t.Context(), &http.Response{Header: http.Header{"Content-Type": {"text/event-stream"}}, Body: reader}, nil, submitEventStream{frameLimit: maxTaskPluginPersistedJSONBytes})
 	require.ErrorContains(t, err, "idle timeout")
 }
 

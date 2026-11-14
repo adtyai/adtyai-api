@@ -80,7 +80,7 @@ func TestKlingNativeRouteSubmitPollSettleAndQuery(t *testing.T) {
 	database, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, database.AutoMigrate(&model.User{}, &model.Token{}, &model.Channel{}, &model.Task{}, &model.Log{},
-		&model.BillingOperation{}, &model.BillingOperationMovement{}, &model.AdtySiteEarningEvent{}))
+		&model.BillingOperation{}, &model.BillingOperationMovement{}, &model.AdtySiteEarningEvent{}, &model.AdtyBillingHold{}))
 	model.DB = database
 	model.LOG_DB = database
 	common.MemoryCacheEnabled = false
