@@ -348,7 +348,12 @@ func netGiftHoldByKindTx(tx *gorm.DB, siteID int, tradeNo string) (earning, marg
 }
 
 func cancelPendingGiftFulfillmentOnFullRefundTx(tx *gorm.DB, ext *model.AdtyTopupOrder, reclaimed, bonusQuota int64) error {
-	if ext == nil || reclaimed < bonusQuota || bonusQuota <= 0 {
+	if ext == nil {
+		return nil
+	}
+	fullPrincipal := ext.FaceQuota() > 0 && ext.RefundQuota >= ext.FaceQuota()
+	fullGift := bonusQuota > 0 && reclaimed >= bonusQuota
+	if !fullPrincipal && !fullGift {
 		return nil
 	}
 	res := tx.Model(&model.AdtyGiftFulfillment{}).

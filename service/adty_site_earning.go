@@ -305,7 +305,10 @@ func adtySiteBonusAfterCreditTx(tx *gorm.DB, topUp *model.TopUp, ext *model.Adty
 func adtySiteBonusAfterRefundTx(tx *gorm.DB, topUp *model.TopUp, ext *model.AdtyTopupOrder) error {
 	bonus := adtyBonusUSDForSite(ext)
 	if bonus.IsZero() || ext.RefundBonusQuota <= 0 {
-		return nil
+		// Official complete may reclaim no gift when A.8 fulfillment is still
+		// pending (the promise was never credited). A full principal refund
+		// must still cancel that pending fulfillment.
+		return cancelPendingGiftFulfillmentOnFullRefundTx(tx, ext, ext.RefundBonusQuota, ext.RefundBonusQuota)
 	}
 	reclaimed := min(ext.RefundBonusQuota, max(ext.RefundDeductedQuota, 0))
 	returned := bonus.Mul(decimal.NewFromInt(reclaimed)).Div(decimal.NewFromInt(ext.RefundBonusQuota)).RoundFloor(8)
