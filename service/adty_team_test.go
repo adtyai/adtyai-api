@@ -547,3 +547,59 @@ func TestInheritAdtyTeamsOnCloseRecordsSourceSiteAndKeepsIdentity(t *testing.T) 
 	assert.Zero(t, inherited.SiteId)
 	assert.Zero(t, inherited.SourceSiteId)
 }
+
+func TestBackfillAdtyTeamSourceSiteIDDoesNotChangeClosePath(t *testing.T) {
+	db := prepareSiteDB(t)
+	_, site := openActiveSite(t, db, "team-bf-src")
+	leader := siteCustomer(t, db, site, "team-bf-leader")
+
+	// Historical main-site team with an independently recorded origin.
+	known := model.AdtyTeam{
+		SiteId: 0, LeaderUserId: leader.Id, Name: "known-historical",
+		Discount: decimal.NewFromInt(1), Status: model.AdtyTeamStatusActive,
+	}
+	require.NoError(t, db.Create(&known).Error)
+	require.NoError(t, db.Create(&model.AdtyTeamRegistrationLink{
+		SiteId: site.Id, CodeHash: "hash-known-close", CreatedBy: leader.Id,
+		UsedBy: leader.Id, UsedAt: time.Now().Unix(), TeamId: known.Id,
+	}).Error)
+
+	// Native main-site team owned by the same later-inherited leader, no recorded team origin.
+	legacy := model.AdtyTeam{
+		SiteId: 0, LeaderUserId: leader.Id, Name: "legacy-main",
+		Discount: decimal.NewFromInt(1), Status: model.AdtyTeamStatusActive,
+	}
+	require.NoError(t, db.Create(&legacy).Error)
+
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return InheritAdtyTeamsOnCloseTx(tx, site.Id)
+	}))
+
+	load := func(id int64) model.AdtyTeam {
+		t.Helper()
+		var row model.AdtyTeam
+		require.NoError(t, db.Where("id = ?", id).Take(&row).Error)
+		return row
+	}
+
+	stored := load(known.Id)
+	assert.Zero(t, stored.SiteId)
+	assert.Zero(t, stored.SourceSiteId, "close must not itself backfill an already-on-main empty source")
+	stored = load(legacy.Id)
+	assert.Zero(t, stored.SiteId)
+	assert.Zero(t, stored.SourceSiteId)
+
+	require.NoError(t, model.BackfillAdtyTeamSourceSiteID(db))
+
+	stored = load(known.Id)
+	assert.Zero(t, stored.SiteId)
+	assert.Equal(t, site.Id, stored.SourceSiteId)
+	stored = load(legacy.Id)
+	assert.Zero(t, stored.SourceSiteId, "must not guess a source for a native main-site team")
+
+	require.NoError(t, model.BackfillAdtyTeamSourceSiteID(db))
+	stored = load(known.Id)
+	assert.Equal(t, site.Id, stored.SourceSiteId)
+	stored = load(legacy.Id)
+	assert.Zero(t, stored.SourceSiteId)
+}

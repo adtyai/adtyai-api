@@ -18,7 +18,7 @@ const (
 type AdtyTeam struct {
 	Id           int64           `json:"id"`
 	SiteId       int             `json:"site_id" gorm:"index"`
-	SourceSiteId int             `json:"source_site_id" gorm:"index;not null;default:0;column:source_site_id"` // 关站迁入主站时记下原分站；0 表示不是迁入团队或历史未回填
+	SourceSiteId int             `json:"source_site_id" gorm:"index;not null;default:0;column:source_site_id"` // 关站迁入主站时记下原分站；0 表示不是迁入团队或历史未回填。历史主站团队仅在来源已独立记录时由 BackfillAdtyTeamSourceSiteID 补写
 	LeaderUserId int             `json:"leader_user_id" gorm:"index"`
 	Name         string          `json:"name" gorm:"type:varchar(64);not null"`
 	Discount     decimal.Decimal `json:"discount" gorm:"type:decimal(10,4);not null"`
@@ -157,3 +157,51 @@ var AdtyTeamReserveHook func(tx *gorm.DB, tokenId, userId, delta int, ref string
 
 // AdtyBeforeUserDeleteHook closes a team when its leader is deleted.
 var AdtyBeforeUserDeleteHook func(tx *gorm.DB, userId int) error
+
+// BackfillAdtyTeamSourceSiteID 为已迁入主站（site_id=0）且 source_site_id 仍为空的历史团队补写来源站（A.16.4 / G.7.2）。
+// 只使用已核销的团队注册链接上独立记下的非零 SiteId 和 TeamId；同一团队若出现多个不同来源则视为不明确，不回填。
+// 不从负责人和成员的 inherited_from_site_id、用户迁移映射或订单/工单上的客户站点推断来源，以免把原生主站团队误标成迁入团队。
+// 已有非零 source_site_id 不覆盖；仍在分站（site_id!=0）或没有已知来源的主站团队保持 0。可重复执行。
+func BackfillAdtyTeamSourceSiteID(db *gorm.DB) error {
+	if db == nil {
+		db = DB
+	}
+	if db == nil {
+		return nil
+	}
+	if !db.Migrator().HasTable(&AdtyTeam{}) || !db.Migrator().HasColumn(&AdtyTeam{}, "source_site_id") {
+		return nil
+	}
+	if !db.Migrator().HasTable(&AdtyTeamRegistrationLink{}) {
+		return nil
+	}
+
+	var rows []struct {
+		TeamId int64 `gorm:"column:team_id"`
+		SiteId int   `gorm:"column:site_id"`
+	}
+	if err := db.Model(&AdtyTeamRegistrationLink{}).
+		Select("team_id, MAX(site_id) AS site_id").
+		Where("team_id > ? AND site_id > ? AND used_at <> ?", 0, 0, 0).
+		Group("team_id").
+		Having("COUNT(DISTINCT site_id) = ?", 1).
+		Scan(&rows).Error; err != nil {
+		return err
+	}
+	if len(rows) == 0 {
+		return nil
+	}
+	return db.Transaction(func(tx *gorm.DB) error {
+		for _, row := range rows {
+			if row.TeamId <= 0 || row.SiteId <= 0 {
+				continue
+			}
+			if err := tx.Model(&AdtyTeam{}).
+				Where("id = ? AND site_id = ? AND source_site_id = ?", row.TeamId, 0, 0).
+				Update("source_site_id", row.SiteId).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}

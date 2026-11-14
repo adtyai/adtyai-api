@@ -854,7 +854,8 @@ func BindAdtyTeamKey(userId, tokenId int) error {
 
 // InheritAdtyTeamsOnCloseTx 把关闭分站上仍活跃的团队迁入主站。
 // team_id、负责人和成员关系保持不变；当前 site_id 改为主站 0，并在 source_site_id 仍为空时记下原分站。
-// 已记录的 source_site_id 不会被重试改成 0 或另一个猜测值。已在主站且来源为空的历史团队不会被回填。
+// 已记录的 source_site_id 不会被重试改成 0 或另一个猜测值。已在主站且来源为空的历史团队不会被本函数回填；
+// 来源已独立记录的历史团队由 model.BackfillAdtyTeamSourceSiteID 在迁移时补写。
 // 关站迁入不会关闭团队；原团队 API Key 仍按迁移安全规则停用。
 func InheritAdtyTeamsOnCloseTx(tx *gorm.DB, siteId int) error {
 	if !adtyTeamTableReadyFor(tx, &model.AdtyTeam{}) {
