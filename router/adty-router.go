@@ -167,6 +167,8 @@ func registerAdtyWorkspaceRoutes(apiRouter *gin.RouterGroup) {
 func registerAdtyTopUpRoutes(apiRouter *gin.RouterGroup) {
 	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/adty/admin/payment-scenes", "scope", "option:read")
 	middleware.DeclareAdtyAccessTokenRoute("PUT", "/api/adty/admin/payment-scenes", "scope", "option:write")
+	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/adty/admin/billing/price-snapshot-backfill", "scope", "option:read")
+	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/admin/billing/price-snapshot-backfill", "scope", "option:write")
 	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/adty/admin/fund-anomalies", "scope", "option:read")
 	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/adty/admin/fund-anomalies/dispositions", "scope", "option:read")
 	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/admin/fund-anomalies/dispositions/:id/review", "scope", "option:write")
@@ -217,6 +219,8 @@ func registerAdtyTopUpRoutes(apiRouter *gin.RouterGroup) {
 	apiRouter.POST("/adty/admin/site-withdrawals/:id/paid", middleware.RootAuth(), controller.PostAdtySiteWithdrawalPaid)
 	apiRouter.GET("/adty/admin/payment-scenes", middleware.RootAuth(), controller.GetAdtyPaymentScenes)
 	apiRouter.PUT("/adty/admin/payment-scenes", middleware.RootAuth(), controller.PutAdtyPaymentScenes)
+	apiRouter.GET("/adty/admin/billing/price-snapshot-backfill", middleware.RootAuth(), controller.GetAdtyPriceSnapshotBackfill)
+	apiRouter.POST("/adty/admin/billing/price-snapshot-backfill", middleware.RootAuth(), controller.PostAdtyPriceSnapshotBackfill)
 	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/adty/topup/info", "scope", "wallet:read")
 	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/topup/quote", "scope", "wallet:read")
 	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/topup/hosted/pay", "scope", "wallet:write")

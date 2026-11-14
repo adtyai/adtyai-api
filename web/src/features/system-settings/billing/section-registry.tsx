@@ -26,6 +26,7 @@ import { AdtyOfficialPricesSection } from '../models/adty-official-prices-sectio
 import { RatioSettingsCard } from '../models/ratio-settings-card'
 import type { BillingSettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
+import { PriceSnapshotBackfillSection } from './price-snapshot-backfill-section'
 
 const getModelDefaults = (settings: BillingSettings) => ({
   ModelPrice: settings.ModelPrice,
@@ -201,6 +202,11 @@ const BILLING_SECTIONS = [
         }}
       />
     ),
+  },
+  {
+    id: 'price-snapshot-backfill',
+    titleKey: 'Historical price snapshots',
+    build: () => <PriceSnapshotBackfillSection />,
   },
   {
     id: 'promo-codes',
