@@ -5908,6 +5908,7 @@
     "Failed to load plugins": "加载插件失败",
     "Failed to load playground models": "加载 playground 模型失败",
     "Failed to load playground groups": "加载 playground 分组失败",
+    "Failed to load performance metrics": "加载性能指标失败",
     "Failed to load Passkey status": "加载 Passkey 状态失败",
     "Failed to load models": "加载模型失败",
     "Failed to load model pricing": "加载模型定价失败",

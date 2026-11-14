@@ -12,6 +12,18 @@ import (
 	"github.com/samber/lo"
 )
 
+var (
+	queryPerfMetricsSummary = perfmetrics.QuerySummaryAll
+	queryPerfMetrics        = perfmetrics.Query
+)
+
+const perfMetricsLoadFailed = "Failed to load performance metrics"
+
+func reportPerfMetricsQueryError(c *gin.Context, err error, what string) {
+	common.SysError(common.LogText("query performance metrics %s: %s", what, err.Error()))
+	common.ApiErrorStatus(c, http.StatusInternalServerError, common.NewMessage(perfMetricsLoadFailed))
+}
+
 func GetPerfMetricsSummary(c *gin.Context) {
 	hours := 24
 	if rawHours := c.Query("hours"); rawHours != "" {
@@ -26,12 +38,9 @@ func GetPerfMetricsSummary(c *gin.Context) {
 		return
 	}
 	activeGroups := append(lo.Keys(ratio_setting.GetGroupRatioCopy()), "auto")
-	result, err := perfmetrics.QuerySummaryAll(hours, activeGroups, recentModels...)
+	result, err := queryPerfMetricsSummary(hours, activeGroups, recentModels...)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"message": err.Error(),
-		})
+		reportPerfMetricsQueryError(c, err, "summary")
 		return
 	}
 
@@ -58,17 +67,14 @@ func GetPerfMetrics(c *gin.Context) {
 		}
 	}
 
-	result, err := perfmetrics.Query(perfmetrics.QueryParams{
+	result, err := queryPerfMetrics(perfmetrics.QueryParams{
 		Model:         modelName,
 		Group:         c.Query("group"),
 		Hours:         hours,
 		AllowedGroups: append(lo.Keys(ratio_setting.GetGroupRatioCopy()), "auto"),
 	})
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"message": err.Error(),
-		})
+		reportPerfMetricsQueryError(c, err, "model")
 		return
 	}
 
