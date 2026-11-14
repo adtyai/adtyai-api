@@ -383,43 +383,51 @@ func CreateAdtyOwnerSiteTeam(ownerId, siteId, leaderId int, name, rawDiscount st
 }
 
 func CreateAdtyTeam(leaderId, siteId int, name string, discount decimal.Decimal) (*AdtyTeamCreated, error) {
+	var created *AdtyTeamCreated
+	err := model.DB.Transaction(func(tx *gorm.DB) error {
+		row, err := createAdtyTeamTx(tx, leaderId, siteId, name, discount)
+		if err != nil {
+			return err
+		}
+		created = row
+		return nil
+	})
+	return created, err
+}
+
+func createAdtyTeamTx(tx *gorm.DB, leaderId, siteId int, name string, discount decimal.Decimal) (*AdtyTeamCreated, error) {
 	name = strings.TrimSpace(name)
 	if leaderId <= 0 || siteId < 0 || name == "" || len(name) > 64 || !adtySiteTeamPayRatioConfigValid(discount) {
 		return nil, ErrAdtyTeamInvalid
 	}
-	var created *AdtyTeamCreated
-	err := model.DB.Transaction(func(tx *gorm.DB) error {
-		leader, err := lockAdtyTeamUser(tx, leaderId)
-		if err != nil {
-			return err
+	leader, err := lockAdtyTeamUser(tx, leaderId)
+	if err != nil {
+		return nil, err
+	}
+	if leader.SiteId != siteId || leader.StaffSiteId != 0 {
+		return nil, ErrAdtyTeamForbidden
+	}
+	if siteId > 0 {
+		var site model.AdtySite
+		if err := tx.First(&site, siteId).Error; err != nil {
+			return nil, err
 		}
-		if leader.SiteId != siteId || leader.StaffSiteId != 0 {
-			return ErrAdtyTeamForbidden
+		if site.Status != model.AdtySiteStatusActive {
+			return nil, ErrAdtyTeamForbidden
 		}
-		if siteId > 0 {
-			var site model.AdtySite
-			if err := tx.First(&site, siteId).Error; err != nil {
-				return err
-			}
-			if site.Status != model.AdtySiteStatusActive {
-				return ErrAdtyTeamForbidden
-			}
-		}
-		if err := rejectActiveTeamMembership(tx, leader.Id); err != nil {
-			return err
-		}
-		team := model.AdtyTeam{SiteId: siteId, LeaderUserId: leader.Id, Name: name, Discount: discount, Status: model.AdtyTeamStatusActive}
-		if err := tx.Create(&team).Error; err != nil {
-			return err
-		}
-		member := model.AdtyTeamMember{TeamId: team.Id, UserId: leader.Id, Role: model.AdtyTeamRoleLeader, Status: model.AdtyTeamMemberActive}
-		if err := tx.Create(&member).Error; err != nil {
-			return mapAdtyTeamMemberWriteError(err)
-		}
-		created = &AdtyTeamCreated{Team: team, Member: member}
-		return nil
-	})
-	return created, err
+	}
+	if err := rejectActiveTeamMembership(tx, leader.Id); err != nil {
+		return nil, err
+	}
+	team := model.AdtyTeam{SiteId: siteId, LeaderUserId: leader.Id, Name: name, Discount: discount, Status: model.AdtyTeamStatusActive}
+	if err := tx.Create(&team).Error; err != nil {
+		return nil, err
+	}
+	member := model.AdtyTeamMember{TeamId: team.Id, UserId: leader.Id, Role: model.AdtyTeamRoleLeader, Status: model.AdtyTeamMemberActive}
+	if err := tx.Create(&member).Error; err != nil {
+		return nil, mapAdtyTeamMemberWriteError(err)
+	}
+	return &AdtyTeamCreated{Team: team, Member: member}, nil
 }
 
 func JoinAdtyTeam(userId int, teamId int64) (*model.AdtyTeamMember, error) {

@@ -185,6 +185,12 @@ func registerAdtyTopUpRoutes(apiRouter *gin.RouterGroup) {
 	middleware.DeclareAdtyAccessTokenRoute("PUT", "/api/adty/admin/sites/:id/commission-margin", "scope", "option:write")
 	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/admin/teams", "scope", "option:write")
 	apiRouter.POST("/adty/admin/teams", middleware.RootAuth(), controller.PostAdtyMainTeam)
+	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/admin/team-registrations", "scope", "option:write")
+	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/adty/admin/team-registrations", "scope", "option:read")
+	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/admin/team-registrations/:id/revoke", "scope", "option:write")
+	apiRouter.POST("/adty/admin/team-registrations", middleware.RootAuth(), controller.PostAdtyMainTeamRegistration)
+	apiRouter.GET("/adty/admin/team-registrations", middleware.RootAuth(), controller.GetAdtyMainTeamRegistrations)
+	apiRouter.POST("/adty/admin/team-registrations/:id/revoke", middleware.RootAuth(), controller.PostAdtyMainTeamRegistrationRevoke)
 	middleware.DeclareAdtyAccessTokenRoute("PUT", "/api/adty/admin/teams/:id/agreement-price", "scope", "option:write")
 	apiRouter.PUT("/adty/admin/teams/:id/agreement-price", middleware.RootAuth(), controller.PutAdtyMainTeamAgreementPrice)
 	apiRouter.GET("/adty/admin/site-referral/cap", middleware.RootAuth(), controller.GetAdtySiteReferralCap)
@@ -253,6 +259,7 @@ func registerAdtyTopUpRoutes(apiRouter *gin.RouterGroup) {
 	apiRouter.GET("/adty/teams/:id/invites", middleware.UserAuth(), controller.GetAdtyTeamInvites)
 	apiRouter.POST("/adty/teams/:id/invites/:inviteId/revoke", middleware.UserAuth(), controller.PostAdtyTeamRevokeInvite)
 	apiRouter.POST("/adty/teams/accept", middleware.UserAuth(), controller.PostAdtyTeamAccept)
+	apiRouter.POST("/adty/team-registrations/complete", middleware.CriticalRateLimit(), controller.PostAdtyTeamRegistrationComplete)
 }
 
 // registerAdtyFinanceRoutes 挂充值对账、补单和退款（任务 3.5），按后台权限注册。
@@ -458,6 +465,9 @@ func registerAdtyResellerRoutes(apiRouter *gin.RouterGroup) {
 		{http.MethodGet, "/orders/:trade_no", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerOrder}},
 		{http.MethodGet, "/teams", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerSiteTeams}},
 		{http.MethodPost, "/teams", "wallet:write", []gin.HandlerFunc{controller.PostAdtyOwnerSiteTeam}},
+		{http.MethodPost, "/team-registrations", "wallet:write", []gin.HandlerFunc{controller.PostAdtyOwnerSiteTeamRegistration}},
+		{http.MethodGet, "/team-registrations", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerSiteTeamRegistrations}},
+		{http.MethodPost, "/team-registrations/:id/revoke", "wallet:write", []gin.HandlerFunc{controller.PostAdtyOwnerSiteTeamRegistrationRevoke}},
 		{http.MethodPut, "/teams/:id/discount", "wallet:write", []gin.HandlerFunc{controller.PutAdtyOwnerSiteTeamDiscount}},
 		{http.MethodGet, "/referral", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerSiteReferral}},
 		{http.MethodPut, "/referral", "wallet:write", []gin.HandlerFunc{controller.PutAdtyOwnerSiteReferral}},

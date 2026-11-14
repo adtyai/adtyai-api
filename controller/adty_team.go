@@ -270,3 +270,117 @@ func PostAdtyTeamAccept(c *gin.Context) {
 	}
 	common.ApiSuccess(c, member)
 }
+
+func PostAdtyMainTeamRegistration(c *gin.Context) {
+	if c.GetInt("role") != common.RoleRootUser {
+		common.ApiErrorStatus(c, http.StatusForbidden, common.NewMessage("No permission to perform this action"))
+		return
+	}
+	ttl, ok := parseAdtyTeamInviteTTL(c)
+	if !ok {
+		return
+	}
+	issued, err := service.CreateAdtyMainTeamRegistration(c.GetInt("id"), ttl)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, issued)
+}
+
+func GetAdtyMainTeamRegistrations(c *gin.Context) {
+	if c.GetInt("role") != common.RoleRootUser {
+		common.ApiErrorStatus(c, http.StatusForbidden, common.NewMessage("No permission to perform this action"))
+		return
+	}
+	rows, err := service.ListAdtyMainTeamRegistrations(c.GetInt("id"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"items": rows})
+}
+
+func PostAdtyMainTeamRegistrationRevoke(c *gin.Context) {
+	if c.GetInt("role") != common.RoleRootUser {
+		common.ApiErrorStatus(c, http.StatusForbidden, common.NewMessage("No permission to perform this action"))
+		return
+	}
+	id, ok := adtyPathId(c)
+	if !ok {
+		return
+	}
+	view, err := service.RevokeAdtyMainTeamRegistration(c.GetInt("id"), int64(id))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, view)
+}
+
+func PostAdtyOwnerSiteTeamRegistration(c *gin.Context) {
+	site, ok := adtyOwnerSiteOr403(c)
+	if !ok {
+		return
+	}
+	ttl, ok := parseAdtyTeamInviteTTL(c)
+	if !ok {
+		return
+	}
+	issued, err := service.CreateAdtyOwnerSiteTeamRegistration(c.GetInt("id"), site.Id, ttl)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, issued)
+}
+
+func GetAdtyOwnerSiteTeamRegistrations(c *gin.Context) {
+	site, ok := adtyOwnerSiteOr403(c)
+	if !ok {
+		return
+	}
+	rows, err := service.ListAdtyOwnerSiteTeamRegistrations(c.GetInt("id"), site.Id)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"items": rows})
+}
+
+func PostAdtyOwnerSiteTeamRegistrationRevoke(c *gin.Context) {
+	site, ok := adtyOwnerSiteOr403(c)
+	if !ok {
+		return
+	}
+	id, ok := adtyPathId(c)
+	if !ok {
+		return
+	}
+	view, err := service.RevokeAdtyOwnerSiteTeamRegistration(c.GetInt("id"), site.Id, int64(id))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, view)
+}
+
+func PostAdtyTeamRegistrationComplete(c *gin.Context) {
+	var body struct {
+		Code     string `json:"code"`
+		Username string `json:"username"`
+		Password string `json:"password"`
+		Name     string `json:"name"`
+		SiteId   *int   `json:"site_id"`
+	}
+	if err := common.DecodeJson(c.Request.Body, &body); err != nil {
+		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	created, err := service.CompleteAdtyTeamRegistration(body.Code, body.Username, body.Password, body.Name, body.SiteId)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, created)
+}

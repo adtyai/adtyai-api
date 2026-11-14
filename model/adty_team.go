@@ -99,6 +99,46 @@ func AdtyTeamInviteStatus(invite AdtyTeamInvite, now int64) string {
 
 func (AdtyTeamInvite) TableName() string { return "adty_team_invites" }
 
+const (
+	AdtyTeamRegistrationStatusOutstanding = "outstanding"
+	AdtyTeamRegistrationStatusExpired     = "expired"
+	AdtyTeamRegistrationStatusUsed        = "used"
+	AdtyTeamRegistrationStatusRevoked     = "revoked"
+)
+
+// AdtyTeamRegistrationLink is a one-time, expiring credential that creates a
+// team and its unique leader. SiteId is fixed at issuance. The plaintext code
+// is not stored.
+type AdtyTeamRegistrationLink struct {
+	Id        int64  `json:"id"`
+	SiteId    int    `json:"site_id" gorm:"index;not null"`
+	CodeHash  string `json:"-" gorm:"uniqueIndex;type:varchar(64);not null"`
+	CreatedBy int    `json:"created_by"`
+	ExpiresAt int64  `json:"expires_at" gorm:"index"`
+	UsedBy    int    `json:"used_by"`
+	UsedAt    int64  `json:"used_at"`
+	TeamId    int64  `json:"team_id"`
+	RevokedBy int    `json:"revoked_by"`
+	RevokedAt int64  `json:"revoked_at"`
+	CreatedAt int64  `json:"created_at" gorm:"autoCreateTime"`
+}
+
+// AdtyTeamRegistrationStatus returns outstanding, expired, used, or revoked.
+func AdtyTeamRegistrationStatus(link AdtyTeamRegistrationLink, now int64) string {
+	if link.UsedAt != 0 {
+		return AdtyTeamRegistrationStatusUsed
+	}
+	if link.RevokedAt != 0 {
+		return AdtyTeamRegistrationStatusRevoked
+	}
+	if link.ExpiresAt < now {
+		return AdtyTeamRegistrationStatusExpired
+	}
+	return AdtyTeamRegistrationStatusOutstanding
+}
+
+func (AdtyTeamRegistrationLink) TableName() string { return "adty_team_registration_links" }
+
 // AdtyTeamKey binds an API token to the member and team that the server stored.
 type AdtyTeamKey struct {
 	Id        int64  `json:"id"`
