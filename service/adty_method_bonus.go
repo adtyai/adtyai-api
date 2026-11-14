@@ -216,4 +216,5 @@ func cloneMethodBonus(in map[string]adty_setting.MethodBonusRule) map[string]adt
 
 func init() {
 	model.AdtyReleaseTopUpReserveTx = ReleaseAdtySiteGiftTx
+	initGiftFulfillmentHooks()
 }
