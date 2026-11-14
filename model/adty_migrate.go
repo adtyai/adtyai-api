@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting"
@@ -85,6 +86,9 @@ func migrateAdtySiteTables() error {
 		return err
 	}
 	if err := EnsureAdtySitePriceUniqueIndex(DB); err != nil {
+		return err
+	}
+	if err := BackfillAdtyUserSiteMigrationsFromInheritedSiteID(DB, time.Now().Unix()); err != nil {
 		return err
 	}
 	if DB.Migrator().HasIndex(&AdtySiteEarningDaily{}, "idx_site_earning") {

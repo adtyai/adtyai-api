@@ -143,7 +143,7 @@ func AdtyLiveSiteCustomer(db *gorm.DB) *gorm.DB {
 
 // AdtyUserSiteMigration 是关站迁入主站的用户级迁移身份映射（A.16.3 / D.4）。
 // 按 user_id + 原 site_id + 目标站（主站为 0）只记一次，重试保持幂等。Id 即 migration_id。
-// 不回填无法确知来源的历史用户。
+// 已迁入主站且用户行上已有 inherited_from_site_id 的历史账号会补发映射行；不猜测来源。
 type AdtyUserSiteMigration struct {
 	Id           int64 `json:"id" gorm:"primaryKey"`
 	UserId       int   `json:"user_id" gorm:"uniqueIndex:ux_adty_user_site_migration;index"`
@@ -344,6 +344,47 @@ func RecordAdtyUserSiteMigrationsTx(tx *gorm.DB, userIds []int, sourceSite, targ
 		Columns:   []clause.Column{{Name: "user_id"}, {Name: "source_site_id"}, {Name: "target_site_id"}},
 		DoNothing: true,
 	}).Create(&rows).Error
+}
+
+// BackfillAdtyUserSiteMigrationsFromInheritedSiteID 为已迁入主站、且用户行上已记下
+// inherited_from_site_id 的历史账号补发映射行和 migration_id（A.16.3 / D.4）。
+// 来源必须已经记在用户行上，不静默猜测。已有同样键的行保持原样（幂等）。
+func BackfillAdtyUserSiteMigrationsFromInheritedSiteID(db *gorm.DB, now int64) error {
+	if db == nil {
+		db = DB
+	}
+	if db == nil {
+		return nil
+	}
+	if !db.Migrator().HasTable(&User{}) || !db.Migrator().HasColumn(&User{}, "inherited_from_site_id") {
+		return nil
+	}
+	if !db.Migrator().HasTable(&AdtyUserSiteMigration{}) {
+		return nil
+	}
+	var users []User
+	if err := db.Select("id", "inherited_from_site_id").
+		Where("site_id = ? AND inherited_from_site_id <> ?", 0, 0).
+		Order("id").
+		Find(&users).Error; err != nil {
+		return err
+	}
+	if len(users) == 0 {
+		return nil
+	}
+	bySource := make(map[int][]int)
+	for i := range users {
+		source := users[i].InheritedFromSiteId
+		bySource[source] = append(bySource[source], users[i].Id)
+	}
+	return db.Transaction(func(tx *gorm.DB) error {
+		for source, ids := range bySource {
+			if err := RecordAdtyUserSiteMigrationsTx(tx, ids, source, 0, now); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 // ArchiveAdtySiteCustomersOnCloseTx 归档原站成员关系，保留原来的 site_id 和 user_id。已归档的行不会被改回或删掉。
