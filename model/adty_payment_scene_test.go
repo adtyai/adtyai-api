@@ -44,7 +44,7 @@ func TestPaymentSceneMigrationDatabaseMatrix(t *testing.T) {
 				require.NoError(t, common.UnmarshalJsonStr(config.Payload, &scenes))
 				require.Len(t, scenes, 1)
 				assert.Equal(t, "wallet_topup", scenes[0].Key)
-				assert.Len(t, scenes[0].Providers, 6)
+				assert.Len(t, scenes[0].Providers, 2)
 				require.NoError(t, db.Model(config).Updates(map[string]any{"version": 8, "payload": "[]"}).Error)
 				for range 2 {
 					require.NoError(t, migrateDB())

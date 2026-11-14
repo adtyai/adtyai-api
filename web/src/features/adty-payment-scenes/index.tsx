@@ -37,6 +37,7 @@ import {
   savePaymentScenes,
   type PaymentSceneConfig,
 } from './api'
+import { dropRetiredHostedPaymentProvidersFromScenes } from './retired-providers'
 import { PaymentSceneEditor } from './scene-editor'
 
 function SceneManagement(props: { userId: number }) {
@@ -62,8 +63,8 @@ function SceneManagement(props: { userId: number }) {
       }
       return savePaymentScenes({
         ...target.config,
-        scenes: target.config.scenes.filter(
-          (_, index) => index !== target.index
+        scenes: dropRetiredHostedPaymentProvidersFromScenes(
+          target.config.scenes.filter((_, index) => index !== target.index)
         ),
       })
     },

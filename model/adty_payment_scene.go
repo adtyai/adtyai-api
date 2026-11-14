@@ -40,7 +40,7 @@ var ErrAdtyPaymentSceneConflict = errors.New("payment scene configuration versio
 func seedAdtyPaymentScenes() error {
 	scenes := []AdtyPaymentScene{{
 		Key: "wallet_topup", Name: "Wallet top-up", Business: "wallet_topup", Enabled: true,
-		Providers: []string{PaymentProviderAdtyBEpusdt, PaymentProviderAdtyEpay, PaymentProviderStripe, PaymentProviderCreem, PaymentProviderWaffo, PaymentProviderWaffoPancake},
+		Providers: []string{PaymentProviderAdtyBEpusdt, PaymentProviderAdtyEpay},
 		Methods:   []string{}, ChannelIDs: []int{}, Currencies: []string{}, SiteScope: "all", SiteIDs: []int{}, UserTypes: []string{},
 	}}
 	payload, err := common.Marshal(scenes)

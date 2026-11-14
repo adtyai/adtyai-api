@@ -50,6 +50,17 @@ const PAYMENT_TYPE_ICON_NAMES: Record<string, string> = {
   wxpay: 'SiWechat',
 }
 
+const RETIRED_HOSTED_PAY_METHOD_TYPES = new Set([
+  'stripe',
+  'creem',
+  'waffo',
+  'waffo_pancake',
+])
+
+function isRetiredHostedPayMethodType(type: string) {
+  return RETIRED_HOSTED_PAY_METHOD_TYPES.has(type.trim().toLowerCase())
+}
+
 function getDefaultIconName(type: string) {
   return PAYMENT_TYPE_ICON_NAMES[type] ?? ''
 }
@@ -78,23 +89,6 @@ export function PaymentMethodsVisualEditor({
         icon: getDefaultIconName('wxpay'),
         name: '微信',
         type: 'wxpay',
-      },
-    },
-    {
-      name: t('Stripe'),
-      template: {
-        icon: getDefaultIconName('stripe'),
-        min_topup: '10',
-        name: 'Stripe',
-        type: 'stripe',
-      },
-    },
-    {
-      name: 'Waffo Pancake',
-      template: {
-        icon: getDefaultIconName('waffo_pancake'),
-        name: 'Waffo Pancake',
-        type: 'waffo_pancake',
       },
     },
     {
@@ -127,6 +121,7 @@ export function PaymentMethodsVisualEditor({
         'type' in item &&
         typeof item.name === 'string' &&
         typeof item.type === 'string' &&
+        !isRetiredHostedPayMethodType(item.type) &&
         (!('icon' in item) || typeof item.icon === 'string') &&
         (!('min_topup' in item) || typeof item.min_topup === 'string') &&
         (!('color' in item) || typeof item.color === 'string')

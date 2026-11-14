@@ -268,7 +268,31 @@ func rejectChangedQuotaPerUnit(value string) error {
 	return nil
 }
 
+func rejectRetiredPayMethodTypes(value string) error {
+	var methods []map[string]string
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	if err := common.UnmarshalJsonStr(value, &methods); err != nil {
+		return nil // existing PayMethods parser reports the format error
+	}
+	for _, method := range methods {
+		if PayMethodTypeIsRetiredHosted(method["type"]) {
+			return ErrRetiredHostedPaymentChannel
+		}
+	}
+	return nil
+}
+
 func validateOptionValue(key string, value string) error {
+	if IsRetiredHostedPaymentOptionKey(key) {
+		return ErrRetiredHostedPaymentChannel
+	}
+	if key == "PayMethods" {
+		if err := rejectRetiredPayMethodTypes(value); err != nil {
+			return err
+		}
+	}
 	if key == "WaffoPancakeEnvironment" && value != "test" && value != "prod" {
 		return errors.New("invalid Waffo Pancake environment")
 	}

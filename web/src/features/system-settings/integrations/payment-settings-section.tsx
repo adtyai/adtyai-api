@@ -237,6 +237,21 @@ const providerSchemas = {
   }),
 }
 type PaymentTab = keyof typeof providerSchemas | 'usdt'
+const OPERABLE_PAYMENT_TABS = ['general', 'epay', 'usdt'] as const
+type OperablePaymentTab = (typeof OPERABLE_PAYMENT_TABS)[number]
+
+function isOperablePaymentTab(tab: string): tab is OperablePaymentTab {
+  return (OPERABLE_PAYMENT_TABS as readonly string[]).includes(tab)
+}
+
+function isRetiredHostedPaymentOptionKey(key: string) {
+  return /^(Stripe|Creem|Waffo)/.test(key)
+}
+
+function operablePaymentSchema(tab: PaymentTab) {
+  const operable = isOperablePaymentTab(tab) ? tab : 'general'
+  return providerSchemas[operable === 'usdt' ? 'general' : operable]
+}
 type WaffoFormFieldValues = Omit<WaffoSettingsValues, 'WaffoPayMethods'>
 type PaymentBaseFormValues = Omit<
   PaymentFormValues,
@@ -278,9 +293,7 @@ export function PaymentSettingsSection({
   const navigate = useNavigate({ from: '/system-settings/billing/$section' })
   const initialTab = React.useMemo(() => {
     const tab = new URLSearchParams(location.searchStr).get('tab')
-    return tab && (Object.hasOwn(providerSchemas, tab) || tab === 'usdt')
-      ? (tab as PaymentTab)
-      : 'general'
+    return tab && isOperablePaymentTab(tab) ? tab : 'general'
   }, [location.searchStr])
   const [activeTab, setActiveTab] = React.useState(initialTab)
   const queryClient = useQueryClient()
@@ -354,9 +367,7 @@ export function PaymentSettingsSection({
 
   const form = useForm<PaymentFormValues>({
     resolver: zodResolver(
-      providerSchemas[
-        activeTab === 'usdt' ? 'general' : activeTab
-      ].passthrough()
+      operablePaymentSchema(activeTab).passthrough()
     ) as unknown as Resolver<PaymentFormValues>,
     mode: 'onChange', // Enable real-time validation
     defaultValues: {
@@ -724,20 +735,22 @@ export function PaymentSettingsSection({
         waffoPancakeSelection.storeID !== waffoPancakeSavedBinding.storeID ||
         waffoPancakeSelection.productID !== waffoPancakeSavedBinding.productID)
 
-    const fields =
-      providerSchemas[activeTab === 'usdt' ? 'general' : activeTab].shape
+    const fields = operablePaymentSchema(activeTab).shape
     const providerUpdates = updates.filter((update) => {
+      if (isRetiredHostedPaymentOptionKey(update.key)) {
+        return false
+      }
       if (
         update.key === 'payment_setting.amount_options' ||
         update.key === 'adty_topup_setting.bonus_rates'
       ) {
         return activeTab === 'general'
       }
-      if (update.key === 'WaffoPayMethods') return activeTab === 'waffo'
+      if (update.key === 'WaffoPayMethods') return false
       return update.key in fields
     })
 
-    if (providerUpdates.length === 0 && !hasWaffoPancakeChanges) {
+    if (providerUpdates.length === 0) {
       toast.info(t('No changes to save'))
       return
     }
@@ -908,20 +921,27 @@ export function PaymentSettingsSection({
             className='min-w-0'
           >
             <div className='overflow-x-auto pb-1'>
-              <TabsList className='grid min-w-[52rem] grid-cols-7'>
+              <TabsList className='grid min-w-[24rem] grid-cols-3'>
                 <TabsTrigger value='general'>{t('General')}</TabsTrigger>
                 <TabsTrigger value='epay'>Epay</TabsTrigger>
                 <TabsTrigger value='usdt'>USDT</TabsTrigger>
-                <TabsTrigger value='stripe'>{t('Stripe')}</TabsTrigger>
-                <TabsTrigger value='creem'>Creem</TabsTrigger>
-                <TabsTrigger value='waffo-pancake'>Waffo Pancake</TabsTrigger>
-                <TabsTrigger value='waffo'>Waffo</TabsTrigger>
               </TabsList>
             </div>
 
             <TabsContent value='general' className={paymentTabContentClassName}>
               <div className='space-y-4'>
                 <PaymentSceneManager />
+                <Alert>
+                  <ShieldAlert />
+                  <AlertTitle>
+                    {t('Hosted checkout channels are retired')}
+                  </AlertTitle>
+                  <AlertDescription>
+                    {t(
+                      'Stripe, Creem, and Waffo are no longer operable collection channels. Existing stored secrets stay in place and cannot be updated as live checkout settings.'
+                    )}
+                  </AlertDescription>
+                </Alert>
                 <div>
                   <h3 className='text-lg font-medium'>
                     {t('General Settings')}
@@ -1270,379 +1290,402 @@ export function PaymentSettingsSection({
               </div>
             </TabsContent>
 
-            <TabsContent value='stripe' className={paymentTabContentClassName}>
-              <div className='space-y-4'>
-                <div>
-                  <h3 className='text-lg font-medium'>{t('Stripe Gateway')}</h3>
-                  <p className='text-muted-foreground text-sm'>
-                    {t('Configuration for Stripe payment integration')}
-                  </p>
-                </div>
+            {false && (
+              <>
+                <TabsContent
+                  value='stripe'
+                  className={paymentTabContentClassName}
+                >
+                  <div className='space-y-4'>
+                    <div>
+                      <h3 className='text-lg font-medium'>
+                        {t('Stripe Gateway')}
+                      </h3>
+                      <p className='text-muted-foreground text-sm'>
+                        {t('Configuration for Stripe payment integration')}
+                      </p>
+                    </div>
 
-                <div className='rounded-md bg-blue-50 p-4 text-sm text-blue-900 dark:bg-blue-950 dark:text-blue-100'>
-                  <p className='mb-2 font-medium'>
-                    {t('Webhook Configuration:')}
-                  </p>
-                  <ul className='list-inside list-disc space-y-1'>
-                    <li>
-                      {t('Webhook URL:')}{' '}
-                      <code className='rounded bg-blue-100 px-1 py-0.5 text-xs dark:bg-blue-900'>
-                        {'<ServerAddress>/api/stripe/webhook'}
-                      </code>
-                    </li>
-                    <li>
-                      {t('Required events:')}{' '}
-                      <code className='rounded bg-blue-100 px-1 py-0.5 text-xs dark:bg-blue-900'>
-                        {t('checkout.session.completed')}
-                      </code>{' '}
-                      {t('and')}{' '}
-                      <code className='rounded bg-blue-100 px-1 py-0.5 text-xs dark:bg-blue-900'>
-                        {t('checkout.session.expired')}
-                      </code>
-                    </li>
-                    <li>
-                      {t('Configure at:')}{' '}
-                      <a
-                        href='https://dashboard.stripe.com/developers'
-                        target='_blank'
-                        rel='noreferrer'
-                        className='underline hover:no-underline'
-                      >
-                        {t('Stripe Dashboard')}
-                      </a>
-                    </li>
-                  </ul>
-                </div>
+                    <div className='rounded-md bg-blue-50 p-4 text-sm text-blue-900 dark:bg-blue-950 dark:text-blue-100'>
+                      <p className='mb-2 font-medium'>
+                        {t('Webhook Configuration:')}
+                      </p>
+                      <ul className='list-inside list-disc space-y-1'>
+                        <li>
+                          {t('Webhook URL:')}{' '}
+                          <code className='rounded bg-blue-100 px-1 py-0.5 text-xs dark:bg-blue-900'>
+                            {'<ServerAddress>/api/stripe/webhook'}
+                          </code>
+                        </li>
+                        <li>
+                          {t('Required events:')}{' '}
+                          <code className='rounded bg-blue-100 px-1 py-0.5 text-xs dark:bg-blue-900'>
+                            {t('checkout.session.completed')}
+                          </code>{' '}
+                          {t('and')}{' '}
+                          <code className='rounded bg-blue-100 px-1 py-0.5 text-xs dark:bg-blue-900'>
+                            {t('checkout.session.expired')}
+                          </code>
+                        </li>
+                        <li>
+                          {t('Configure at:')}{' '}
+                          <a
+                            href='https://dashboard.stripe.com/developers'
+                            target='_blank'
+                            rel='noreferrer'
+                            className='underline hover:no-underline'
+                          >
+                            {t('Stripe Dashboard')}
+                          </a>
+                        </li>
+                      </ul>
+                    </div>
 
-                <div className='grid gap-6 md:grid-cols-3'>
-                  <FormField
-                    control={form.control}
-                    name='StripeApiSecret'
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('API secret')}</FormLabel>
-                        <FormControl>
-                          <Input
-                            type='password'
-                            placeholder={t('sk_xxx or rk_xxx')}
-                            autoComplete='new-password'
-                            {...field}
-                            onChange={(event) =>
-                              field.onChange(event.target.value)
-                            }
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          {t('Stripe API key (leave blank unless updating)')}
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name='StripeWebhookSecret'
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('Webhook secret')}</FormLabel>
-                        <FormControl>
-                          <Input
-                            type='password'
-                            placeholder={t('whsec_xxx')}
-                            autoComplete='new-password'
-                            {...field}
-                            onChange={(event) =>
-                              field.onChange(event.target.value)
-                            }
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          {t(
-                            'Webhook signing secret (leave blank unless updating)'
-                          )}
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name='StripePriceId'
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('Price ID')}</FormLabel>
-                        <FormControl>
-                          <Input
-                            placeholder={t('price_xxx')}
-                            {...field}
-                            onChange={(event) =>
-                              field.onChange(event.target.value)
-                            }
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          {t('Stripe product price ID')}
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
-                <div className='grid gap-6 md:grid-cols-3'>
-                  <FormField
-                    control={form.control}
-                    name='StripeUnitPrice'
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>
-                          {t('Unit price (local currency / USD)')}
-                        </FormLabel>
-                        <FormControl>
-                          <Input
-                            type='number'
-                            step='0.01'
-                            min={0}
-                            {...safeNumberFieldProps(field)}
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          {t('e.g., 8 means 8 local currency per USD')}
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name='StripeMinTopUp'
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('Minimum top-up (USD)')}</FormLabel>
-                        <FormControl>
-                          <Input
-                            type='number'
-                            step='0.01'
-                            min={0}
-                            {...safeNumberFieldProps(field)}
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          {t('Minimum recharge amount in USD')}
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name='StripePromotionCodesEnabled'
-                    render={({ field }) => (
-                      <SettingsSwitchItem>
-                        <SettingsSwitchContent>
-                          <FormLabel>{t('Promotion codes')}</FormLabel>
-                          <FormDescription>
-                            {t('Allow users to enter promo codes')}
-                          </FormDescription>
-                        </SettingsSwitchContent>
-                        <FormControl>
-                          <Switch
-                            checked={field.value}
-                            onCheckedChange={field.onChange}
-                          />
-                        </FormControl>
-                      </SettingsSwitchItem>
-                    )}
-                  />
-                </div>
-              </div>
-            </TabsContent>
-
-            <TabsContent value='creem' className={paymentTabContentClassName}>
-              <div className='space-y-4'>
-                <div>
-                  <h3 className='text-lg font-medium'>{t('Creem Gateway')}</h3>
-                  <p className='text-muted-foreground text-sm'>
-                    {t('Configuration for Creem payment integration')}
-                  </p>
-                </div>
-
-                <div className='rounded-md bg-blue-50 p-4 text-sm text-blue-900 dark:bg-blue-950 dark:text-blue-100'>
-                  <p className='mb-2 font-medium'>
-                    {t('Webhook Configuration:')}
-                  </p>
-                  <ul className='list-inside list-disc space-y-1'>
-                    <li>
-                      {t('Webhook URL:')}{' '}
-                      <code className='rounded bg-blue-100 px-1 py-0.5 text-xs dark:bg-blue-900'>
-                        {'<ServerAddress>/api/creem/webhook'}
-                      </code>
-                    </li>
-                    <li>{t('Configure in your Creem dashboard')}</li>
-                  </ul>
-                </div>
-
-                <div className='grid gap-6 md:grid-cols-2'>
-                  <FormField
-                    control={form.control}
-                    name='CreemApiKey'
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('API Key')}</FormLabel>
-                        <FormControl>
-                          <Input
-                            type='password'
-                            placeholder={t('Enter Creem API key')}
-                            autoComplete='new-password'
-                            {...field}
-                            onChange={(event) =>
-                              field.onChange(event.target.value)
-                            }
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          {t('Creem API key (leave blank unless updating)')}
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name='CreemWebhookSecret'
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('Webhook Secret')}</FormLabel>
-                        <FormControl>
-                          <Input
-                            type='password'
-                            placeholder={t('Enter webhook secret')}
-                            autoComplete='new-password'
-                            {...field}
-                            onChange={(event) =>
-                              field.onChange(event.target.value)
-                            }
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          {t(
-                            'Webhook signing secret (leave blank unless updating)'
-                          )}
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
-                <FormField
-                  control={form.control}
-                  name='CreemTestMode'
-                  render={({ field }) => (
-                    <SettingsSwitchItem>
-                      <SettingsSwitchContent>
-                        <FormLabel>{t('Test Mode')}</FormLabel>
-                        <FormDescription>
-                          {t('Enable test mode for Creem payments')}
-                        </FormDescription>
-                      </SettingsSwitchContent>
-                      <FormControl>
-                        <Switch
-                          checked={field.value}
-                          onCheckedChange={field.onChange}
-                        />
-                      </FormControl>
-                    </SettingsSwitchItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name='CreemProducts'
-                  render={({ field }) => (
-                    <FormItem>
-                      <div className='mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between'>
-                        <FormLabel>{t('Products')}</FormLabel>
-                        <Button
-                          type='button'
-                          variant='outline'
-                          size='sm'
-                          onClick={() =>
-                            setCreemProductsVisualMode(!creemProductsVisualMode)
-                          }
-                          className='w-full sm:w-auto'
-                        >
-                          {creemProductsVisualMode ? (
-                            <>
-                              <Code2 className='mr-2 h-3 w-3' />
-                              {t('JSON Editor')}
-                            </>
-                          ) : (
-                            <>
-                              <Eye className='mr-2 h-3 w-3' />
-                              {t('Visual Editor')}
-                            </>
-                          )}
-                        </Button>
-                      </div>
-                      <FormControl>
-                        {creemProductsVisualMode ? (
-                          <CreemProductsVisualEditor
-                            value={field.value}
-                            onChange={field.onChange}
-                          />
-                        ) : (
-                          <JsonCodeEditor
-                            value={field.value}
-                            onChange={field.onChange}
-                            name={field.name}
-                            onBlur={field.onBlur}
-                            textareaRef={field.ref}
-                            placeholder='[{"name":"Basic","productId":"prod_xxx","price":10,"quota":500000,"currency":"USD"}]'
-                            heightClassName='h-40 min-h-40 max-h-40'
-                            aria-invalid={Boolean(
-                              form.formState.errors.CreemProducts
-                            )}
-                          />
+                    <div className='grid gap-6 md:grid-cols-3'>
+                      <FormField
+                        control={form.control}
+                        name='StripeApiSecret'
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>{t('API secret')}</FormLabel>
+                            <FormControl>
+                              <Input
+                                type='password'
+                                placeholder={t('sk_xxx or rk_xxx')}
+                                autoComplete='new-password'
+                                {...field}
+                                onChange={(event) =>
+                                  field.onChange(event.target.value)
+                                }
+                              />
+                            </FormControl>
+                            <FormDescription>
+                              {t(
+                                'Stripe API key (leave blank unless updating)'
+                              )}
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
                         )}
-                      </FormControl>
-                      <FormDescription>
-                        {t('Configure Creem products. Provide a JSON array.')}
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-            </TabsContent>
+                      />
 
-            <TabsContent
-              value='waffo-pancake'
-              className={paymentTabContentClassName}
-            >
-              <WaffoPancakeSettingsSection
-                defaultValues={waffoPancakeDefaultValues}
-                values={waffoPancakeValues}
-                onValueChange={setWaffoPancakeValue}
-                selectedBinding={waffoPancakeSelection}
-                savedBinding={waffoPancakeSavedBinding}
-                onSelectedBindingChange={setWaffoPancakeSelection}
-              />
-            </TabsContent>
+                      <FormField
+                        control={form.control}
+                        name='StripeWebhookSecret'
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>{t('Webhook secret')}</FormLabel>
+                            <FormControl>
+                              <Input
+                                type='password'
+                                placeholder={t('whsec_xxx')}
+                                autoComplete='new-password'
+                                {...field}
+                                onChange={(event) =>
+                                  field.onChange(event.target.value)
+                                }
+                              />
+                            </FormControl>
+                            <FormDescription>
+                              {t(
+                                'Webhook signing secret (leave blank unless updating)'
+                              )}
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
 
-            <TabsContent value='waffo' className={paymentTabContentClassName}>
-              <WaffoSettingsSection
-                values={waffoValues}
-                onValueChange={setWaffoValue}
-                payMethods={waffoPayMethods}
-                onPayMethodsChange={setWaffoPayMethods}
-              />
-            </TabsContent>
+                      <FormField
+                        control={form.control}
+                        name='StripePriceId'
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>{t('Price ID')}</FormLabel>
+                            <FormControl>
+                              <Input
+                                placeholder={t('price_xxx')}
+                                {...field}
+                                onChange={(event) =>
+                                  field.onChange(event.target.value)
+                                }
+                              />
+                            </FormControl>
+                            <FormDescription>
+                              {t('Stripe product price ID')}
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+
+                    <div className='grid gap-6 md:grid-cols-3'>
+                      <FormField
+                        control={form.control}
+                        name='StripeUnitPrice'
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>
+                              {t('Unit price (local currency / USD)')}
+                            </FormLabel>
+                            <FormControl>
+                              <Input
+                                type='number'
+                                step='0.01'
+                                min={0}
+                                {...safeNumberFieldProps(field)}
+                              />
+                            </FormControl>
+                            <FormDescription>
+                              {t('e.g., 8 means 8 local currency per USD')}
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name='StripeMinTopUp'
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>{t('Minimum top-up (USD)')}</FormLabel>
+                            <FormControl>
+                              <Input
+                                type='number'
+                                step='0.01'
+                                min={0}
+                                {...safeNumberFieldProps(field)}
+                              />
+                            </FormControl>
+                            <FormDescription>
+                              {t('Minimum recharge amount in USD')}
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name='StripePromotionCodesEnabled'
+                        render={({ field }) => (
+                          <SettingsSwitchItem>
+                            <SettingsSwitchContent>
+                              <FormLabel>{t('Promotion codes')}</FormLabel>
+                              <FormDescription>
+                                {t('Allow users to enter promo codes')}
+                              </FormDescription>
+                            </SettingsSwitchContent>
+                            <FormControl>
+                              <Switch
+                                checked={field.value}
+                                onCheckedChange={field.onChange}
+                              />
+                            </FormControl>
+                          </SettingsSwitchItem>
+                        )}
+                      />
+                    </div>
+                  </div>
+                </TabsContent>
+
+                <TabsContent
+                  value='creem'
+                  className={paymentTabContentClassName}
+                >
+                  <div className='space-y-4'>
+                    <div>
+                      <h3 className='text-lg font-medium'>
+                        {t('Creem Gateway')}
+                      </h3>
+                      <p className='text-muted-foreground text-sm'>
+                        {t('Configuration for Creem payment integration')}
+                      </p>
+                    </div>
+
+                    <div className='rounded-md bg-blue-50 p-4 text-sm text-blue-900 dark:bg-blue-950 dark:text-blue-100'>
+                      <p className='mb-2 font-medium'>
+                        {t('Webhook Configuration:')}
+                      </p>
+                      <ul className='list-inside list-disc space-y-1'>
+                        <li>
+                          {t('Webhook URL:')}{' '}
+                          <code className='rounded bg-blue-100 px-1 py-0.5 text-xs dark:bg-blue-900'>
+                            {'<ServerAddress>/api/creem/webhook'}
+                          </code>
+                        </li>
+                        <li>{t('Configure in your Creem dashboard')}</li>
+                      </ul>
+                    </div>
+
+                    <div className='grid gap-6 md:grid-cols-2'>
+                      <FormField
+                        control={form.control}
+                        name='CreemApiKey'
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>{t('API Key')}</FormLabel>
+                            <FormControl>
+                              <Input
+                                type='password'
+                                placeholder={t('Enter Creem API key')}
+                                autoComplete='new-password'
+                                {...field}
+                                onChange={(event) =>
+                                  field.onChange(event.target.value)
+                                }
+                              />
+                            </FormControl>
+                            <FormDescription>
+                              {t('Creem API key (leave blank unless updating)')}
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name='CreemWebhookSecret'
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>{t('Webhook Secret')}</FormLabel>
+                            <FormControl>
+                              <Input
+                                type='password'
+                                placeholder={t('Enter webhook secret')}
+                                autoComplete='new-password'
+                                {...field}
+                                onChange={(event) =>
+                                  field.onChange(event.target.value)
+                                }
+                              />
+                            </FormControl>
+                            <FormDescription>
+                              {t(
+                                'Webhook signing secret (leave blank unless updating)'
+                              )}
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+
+                    <FormField
+                      control={form.control}
+                      name='CreemTestMode'
+                      render={({ field }) => (
+                        <SettingsSwitchItem>
+                          <SettingsSwitchContent>
+                            <FormLabel>{t('Test Mode')}</FormLabel>
+                            <FormDescription>
+                              {t('Enable test mode for Creem payments')}
+                            </FormDescription>
+                          </SettingsSwitchContent>
+                          <FormControl>
+                            <Switch
+                              checked={field.value}
+                              onCheckedChange={field.onChange}
+                            />
+                          </FormControl>
+                        </SettingsSwitchItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name='CreemProducts'
+                      render={({ field }) => (
+                        <FormItem>
+                          <div className='mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between'>
+                            <FormLabel>{t('Products')}</FormLabel>
+                            <Button
+                              type='button'
+                              variant='outline'
+                              size='sm'
+                              onClick={() =>
+                                setCreemProductsVisualMode(
+                                  !creemProductsVisualMode
+                                )
+                              }
+                              className='w-full sm:w-auto'
+                            >
+                              {creemProductsVisualMode ? (
+                                <>
+                                  <Code2 className='mr-2 h-3 w-3' />
+                                  {t('JSON Editor')}
+                                </>
+                              ) : (
+                                <>
+                                  <Eye className='mr-2 h-3 w-3' />
+                                  {t('Visual Editor')}
+                                </>
+                              )}
+                            </Button>
+                          </div>
+                          <FormControl>
+                            {creemProductsVisualMode ? (
+                              <CreemProductsVisualEditor
+                                value={field.value}
+                                onChange={field.onChange}
+                              />
+                            ) : (
+                              <JsonCodeEditor
+                                value={field.value}
+                                onChange={field.onChange}
+                                name={field.name}
+                                onBlur={field.onBlur}
+                                textareaRef={field.ref}
+                                placeholder='[{"name":"Basic","productId":"prod_xxx","price":10,"quota":500000,"currency":"USD"}]'
+                                heightClassName='h-40 min-h-40 max-h-40'
+                                aria-invalid={Boolean(
+                                  form.formState.errors.CreemProducts
+                                )}
+                              />
+                            )}
+                          </FormControl>
+                          <FormDescription>
+                            {t(
+                              'Configure Creem products. Provide a JSON array.'
+                            )}
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                </TabsContent>
+
+                <TabsContent
+                  value='waffo-pancake'
+                  className={paymentTabContentClassName}
+                >
+                  <WaffoPancakeSettingsSection
+                    defaultValues={waffoPancakeDefaultValues}
+                    values={waffoPancakeValues}
+                    onValueChange={setWaffoPancakeValue}
+                    selectedBinding={waffoPancakeSelection}
+                    savedBinding={waffoPancakeSavedBinding}
+                    onSelectedBindingChange={setWaffoPancakeSelection}
+                  />
+                </TabsContent>
+
+                <TabsContent
+                  value='waffo'
+                  className={paymentTabContentClassName}
+                >
+                  <WaffoSettingsSection
+                    values={waffoValues}
+                    onValueChange={setWaffoValue}
+                    payMethods={waffoPayMethods}
+                    onPayMethodsChange={setWaffoPayMethods}
+                  />
+                </TabsContent>
+              </>
+            )}
           </Tabs>
         </SettingsForm>
       </Form>

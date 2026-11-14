@@ -36,6 +36,65 @@ func IsAdtyPaymentProvider(provider string) bool {
 	return false
 }
 
+// ErrRetiredHostedPaymentChannel is returned when Root tries to write Stripe,
+// Creem, or Waffo as an operable collection channel. Existing stored secrets
+// may remain, but they cannot be updated as live checkout settings.
+var ErrRetiredHostedPaymentChannel = common.NewMessage("Stripe, Creem, and Waffo are no longer operable collection channels")
+
+// IsRetiredHostedPaymentProvider reports whether a provider is a retired
+// hosted checkout (Stripe, Creem, Waffo, or Waffo Pancake). Historical orders
+// may still name these providers; they must not be configured as live channels.
+func IsRetiredHostedPaymentProvider(provider string) bool {
+	switch provider {
+	case PaymentProviderStripe, PaymentProviderCreem, PaymentProviderWaffo, PaymentProviderWaffoPancake:
+		return true
+	}
+	return false
+}
+
+// IsOperableAdtyPaymentProvider is true for collection channels Root may still configure.
+func IsOperableAdtyPaymentProvider(provider string) bool {
+	return IsAdtyPaymentProvider(provider) && !IsRetiredHostedPaymentProvider(provider)
+}
+
+// IsRetiredHostedPaymentOptionKey is true for generic option keys that would
+// configure retired Stripe/Creem/Waffo checkout as a live channel.
+func IsRetiredHostedPaymentOptionKey(key string) bool {
+	switch {
+	case key == "PayMethods":
+		return false
+	case strings.HasPrefix(key, "Stripe"),
+		strings.HasPrefix(key, "Creem"),
+		strings.HasPrefix(key, "Waffo"):
+		return true
+	default:
+		return false
+	}
+}
+
+// PayMethodTypeIsRetiredHosted is true for PayMethods JSON types that would
+// present Stripe, Creem, or Waffo as a customer checkout option.
+func PayMethodTypeIsRetiredHosted(methodType string) bool {
+	switch strings.ToLower(strings.TrimSpace(methodType)) {
+	case PaymentProviderStripe, PaymentProviderCreem, PaymentProviderWaffo, PaymentProviderWaffoPancake:
+		return true
+	}
+	return false
+}
+
+// FilterRetiredPayMethods drops Stripe/Creem/Waffo types from a PayMethods list
+// so leftover stored JSON cannot advertise retired checkout to customers.
+func FilterRetiredPayMethods(methods []map[string]string) []map[string]string {
+	out := make([]map[string]string, 0, len(methods))
+	for _, method := range methods {
+		if PayMethodTypeIsRetiredHosted(method["type"]) {
+			continue
+		}
+		out = append(out, method)
+	}
+	return out
+}
+
 // AdtyTopupOrder 是订单事实（任务 3.2），按 trade_no 对应上游的 top_ups，上游表不加字段。
 type AdtyTopupOrder struct {
 	Id                    int64           `json:"id"`

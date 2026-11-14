@@ -209,7 +209,7 @@ it('exposes dynamic payment scene management on the Root general tab', async () 
   ).toBeVisible()
 })
 
-it('preserves an inactive provider draft when refreshed settings include another provider save', async () => {
+it('preserves an Epay draft when refreshed settings include another provider save', async () => {
   await mount('epay')
   await userEvent.type(
     screen.getByLabelText('Epay merchant ID'),
@@ -221,9 +221,8 @@ it('preserves an inactive provider draft when refreshed settings include another
   expect(screen.getByLabelText('Epay merchant ID')).toHaveValue(
     'draft_merchant'
   )
-  await userEvent.click(screen.getByRole('tab', { name: 'Stripe' }))
-  expect(screen.getByLabelText('Price ID')).toHaveValue('price_remote')
 })
+
 afterEach(() => {
   cleanup()
   clients.splice(0).forEach((client) => client.clear())
@@ -231,24 +230,33 @@ afterEach(() => {
   useAuthStore.getState().auth.reset()
 })
 
-it.each([
-  ['stripe', 'Stripe'],
-  ['creem', 'Creem'],
-  ['waffo-pancake', 'Waffo Pancake'],
-  ['waffo', 'Waffo'],
-])('opens the %s provider from its deep link', async (tab, name) => {
-  await mount(tab)
-  expect(screen.getByRole('tab', { name })).toHaveAttribute(
-    'aria-selected',
-    'true'
-  )
-})
+it.each(['stripe', 'creem', 'waffo-pancake', 'waffo'])(
+  'does not offer retired %s checkout as an operable admin tab',
+  async (tab) => {
+    await mount(tab)
+    expect(screen.getByRole('tab', { name: 'General' })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    )
+    expect(
+      screen.queryByRole('tab', { name: 'Stripe' })
+    ).not.toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: 'Creem' })).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('tab', { name: 'Waffo Pancake' })
+    ).not.toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: 'Waffo' })).not.toBeInTheDocument()
+    expect(
+      screen.getByText('Hosted checkout channels are retired')
+    ).toBeVisible()
+  }
+)
 
-it('keeps Stripe selected when switching from Epay and restores the previous tab on history back', async () => {
+it('keeps USDT selected when switching from Epay and restores the previous tab on history back', async () => {
   const router = await mount('epay')
-  await userEvent.click(screen.getByRole('tab', { name: 'Stripe' }))
+  await userEvent.click(screen.getByRole('tab', { name: 'USDT' }))
   await waitFor(() =>
-    expect(screen.getByRole('tab', { name: 'Stripe' })).toHaveAttribute(
+    expect(screen.getByRole('tab', { name: 'USDT' })).toHaveAttribute(
       'aria-selected',
       'true'
     )
@@ -262,103 +270,27 @@ it('keeps Stripe selected when switching from Epay and restores the previous tab
   )
 })
 
-it('saves Stripe while an unconfigured Waffo setting is invalid without saving another provider', async () => {
+it('saves official Epay settings and never writes retired hosted payment keys', async () => {
   const put = vi
     .spyOn(api, 'put')
     .mockResolvedValue({ data: { success: true } })
-  await mount('general', true)
-  await userEvent.click(screen.getByRole('tab', { name: 'Stripe' }))
-  const price = screen.getByLabelText('Price ID')
-  await userEvent.type(price, 'price_synthetic')
+  await mount('epay')
+  await userEvent.type(
+    screen.getByLabelText('Epay merchant ID'),
+    'epay_official'
+  )
   await userEvent.click(
-    screen.getByRole('button', { name: /Save (all settings|Changes)/ })
+    screen.getAllByRole('button', { name: 'Save Changes' })[0]
   )
   await waitFor(() =>
     expect(put).toHaveBeenCalledWith('/api/option/', {
-      key: 'StripePriceId',
-      value: 'price_synthetic',
+      key: 'EpayId',
+      value: 'epay_official',
     })
   )
-  expect(put).toHaveBeenCalledTimes(1)
-})
-
-it('defaults Pancake to production and saves the explicitly selected environment with its binding', async () => {
-  const post = vi.spyOn(api, 'post').mockImplementation(async (url) => ({
-    data: {
-      message: 'success',
-      data: String(url).endsWith('/save')
-        ? { store_id: 'store_saved', product_id: 'prod_saved' }
-        : {
-            stores: [
-              {
-                id: 'store_saved',
-                name: 'Saved store',
-                onetimeProducts: [{ id: 'prod_saved', name: 'Saved product' }],
-              },
-            ],
-          },
-    },
-  }))
-  await mount('waffo-pancake', false, true)
-  const environment = screen.getByLabelText('Environment')
-  expect(environment).toHaveValue('prod')
-  await userEvent.selectOptions(environment, 'test')
-  await userEvent.click(
-    screen.getByRole('button', { name: 'Refresh saved Stripe' })
-  )
-  expect(environment).toHaveValue('test')
-  await userEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
-  await waitFor(() =>
-    expect(post).toHaveBeenCalledWith('/api/option/waffo-pancake/save', {
-      merchant_id: 'MER_saved',
-      private_key: '',
-      return_url: '',
-      store_id: 'store_saved',
-      product_id: 'prod_saved',
-      environment: 'test',
-    })
-  )
-})
-
-it('preserves a Pancake product draft when the saved binding refreshes', async () => {
-  vi.spyOn(api, 'post').mockResolvedValue({
-    data: {
-      message: 'success',
-      data: {
-        stores: [
-          {
-            id: 'store_saved',
-            name: 'Saved store',
-            onetimeProducts: [
-              { id: 'prod_saved', name: 'Saved product' },
-              { id: 'prod_draft', name: 'Draft product' },
-              { id: 'prod_remote', name: 'Remote product' },
-            ],
-          },
-        ],
-      },
-    },
-  })
-  await mount('waffo-pancake', false, true)
-  const product = await screen.findByPlaceholderText('Select a product')
-  await userEvent.click(product)
-  await userEvent.click(
-    await screen.findByRole('option', { name: 'Draft product (prod_draft)' })
-  )
-  await userEvent.click(
-    screen.getByRole('button', { name: 'Refresh provider bindings' })
-  )
-  expect(product).toHaveValue('Draft product (prod_draft)')
-})
-
-it('preserves a deleted Waffo payment-method draft when saved methods refresh', async () => {
-  await mount('waffo')
-  await userEvent.click(screen.getByRole('button', { name: 'Open menu' }))
-  await userEvent.click(await screen.findByRole('menuitem', { name: 'Delete' }))
-  expect(screen.getByText('No payment methods configured')).toBeVisible()
-  await userEvent.click(
-    screen.getByRole('button', { name: 'Refresh provider bindings' })
-  )
-  expect(screen.getByText('No payment methods configured')).toBeVisible()
-  expect(screen.queryByText('Remote method')).not.toBeInTheDocument()
+  expect(
+    put.mock.calls.some((call) =>
+      /^(Stripe|Creem|Waffo)/.test(String(call[1]?.key ?? ''))
+    )
+  ).toBe(false)
 })

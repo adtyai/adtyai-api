@@ -51,7 +51,7 @@ beforeEach(() => {
         name: 'Wallet top-up',
         business: 'wallet_topup',
         enabled: true,
-        providers: ['stripe'],
+        providers: ['bepusdt'],
         methods: [],
         channel_ids: [],
         currencies: ['USD'],
@@ -62,9 +62,17 @@ beforeEach(() => {
         max_usd: '0',
       },
     ],
-    provider_options: [{ provider: 'stripe', label: 'Stripe' }],
+    provider_options: [
+      { provider: 'bepusdt', label: 'BEpusdt' },
+      { provider: 'adty_epay', label: 'Epay channels' },
+    ],
     method_options: [
-      { id: 'stripe', label: 'Stripe', currency: 'USD', available: true },
+      {
+        id: 'usdt.trc20',
+        label: 'USDT TRC20',
+        currency: 'USDT',
+        available: true,
+      },
     ],
   }
   useAuthStore.getState().auth.setUser({ id: 1, username: 'root', role: 100 })
@@ -222,7 +230,7 @@ it('names scene restrictions and selects a real provider when creating a scene',
     expect(dialog.getByRole('combobox', { name })).toBeInTheDocument()
   }
   await user.click(dialog.getByRole('combobox', { name: 'Payment providers' }))
-  await user.click(await screen.findByRole('option', { name: 'Stripe' }))
+  await user.click(await screen.findByRole('option', { name: 'BEpusdt' }))
   await user.keyboard('{Escape}')
   await user.type(
     dialog.getByRole('textbox', { name: 'Scene identifier' }),
@@ -239,6 +247,38 @@ it('names scene restrictions and selects a real provider when creating a scene',
   expect(writes[0].scenes[1]).toMatchObject({
     key: 'checkout',
     name: 'New checkout',
-    providers: ['stripe'],
+    providers: ['bepusdt'],
+  })
+})
+
+it('drops retired hosted providers when saving a historical scene and does not offer them', async () => {
+  config.scenes[0].providers = ['stripe', 'bepusdt', 'waffo']
+  const user = userEvent.setup()
+  renderManager()
+  await user.click(
+    await screen.findByRole('button', {
+      name: 'Edit payment scene Wallet top-up',
+    })
+  )
+  const dialog = within(screen.getByRole('dialog'))
+  await user.click(dialog.getByRole('combobox', { name: 'Payment providers' }))
+  expect(
+    screen.queryByRole('option', { name: 'Stripe' })
+  ).not.toBeInTheDocument()
+  expect(screen.getByRole('option', { name: 'BEpusdt' })).toBeInTheDocument()
+  await user.keyboard('{Escape}')
+  const name = dialog.getByRole('textbox', { name: 'Name' })
+  await user.clear(name)
+  await user.type(name, 'Official checkout')
+  await user.click(dialog.getByRole('button', { name: 'Save payment scene' }))
+  await user.click(
+    within(screen.getByRole('alertdialog')).getByRole('button', {
+      name: 'Continue',
+    })
+  )
+  await waitFor(() => expect(writes).toHaveLength(1))
+  expect(writes[0].scenes[0]).toMatchObject({
+    name: 'Official checkout',
+    providers: ['bepusdt'],
   })
 })
