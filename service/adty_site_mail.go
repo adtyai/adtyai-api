@@ -457,21 +457,201 @@ func adtySiteCustomerUsers(siteId int) []model.User {
 	return users
 }
 
-// adtyNotifySiteClosing 给这个站的客户发关站邮件。
+// AdtyDeliverSiteEmail is the official synchronous delivery used when a
+// close-migration batch must record success or failure (A.16.2). Tests may
+// replace it. Mail failure must not block internal migration.
+var AdtyDeliverSiteEmail = func(site *model.AdtySite, subject, receiver, content string) error {
+	return AdtySendSiteEmail(site, subject, receiver, content)
+}
+
+// SendAdtySiteCloseMigrationMail sends the official bilingual (zh-CN + en)
+// close-migration mail and records the batch inventory required by A.16.2:
+// target site, recipient count, success/fail counts, send time, and retry
+// status. Already successful recipients are not mailed again. A delivery
+// error is recorded as retryable and does not abort the rest of the batch
+// or the close path. Each message is sent to one recipient only.
+func SendAdtySiteCloseMigrationMail(site *model.AdtySite) error {
+	return sendAdtySiteCloseMigrationMail(site, false)
+}
+
+// RetryAdtySiteCloseMigrationMail resends only failed or pending recipients
+// of the official close-migration batch. It must not leak another recipient's
+// email, or another same-email account's orders or balances.
+func RetryAdtySiteCloseMigrationMail(site *model.AdtySite) error {
+	return sendAdtySiteCloseMigrationMail(site, true)
+}
+
+func sendAdtySiteCloseMigrationMail(site *model.AdtySite, retryOnly bool) error {
+	if site == nil || model.DB == nil {
+		return nil
+	}
+	now := time.Now().Unix()
+	batch, err := loadOrCreateAdtySiteCloseMailBatch(site.Id, now)
+	if err != nil {
+		return err
+	}
+	if err := ensureAdtySiteCloseMailRecipients(batch, site.Id, now, retryOnly); err != nil {
+		return err
+	}
+	var recipients []model.AdtySiteCloseMailRecipient
+	if err := model.DB.Where("batch_id = ? AND status <> ?", batch.Id, model.AdtySiteCloseMailSuccess).
+		Order("user_id").Find(&recipients).Error; err != nil {
+		return err
+	}
+	for i := range recipients {
+		row := &recipients[i]
+		subject, body := renderAdtySiteCloseMigrationMail(site, row)
+		deliverErr := AdtyDeliverSiteEmail(site, subject, row.Email, body)
+		row.AttemptCount++
+		row.LastAttemptAt = time.Now().Unix()
+		row.UpdatedAt = row.LastAttemptAt
+		if deliverErr != nil {
+			row.Status = model.AdtySiteCloseMailFailed
+			row.LastError = truncateText(deliverErr.Error(), 1000)
+		} else {
+			row.Status = model.AdtySiteCloseMailSuccess
+			row.LastError = ""
+		}
+		if err := model.DB.Model(row).Updates(map[string]any{
+			"status":          row.Status,
+			"last_error":      row.LastError,
+			"attempt_count":   row.AttemptCount,
+			"last_attempt_at": row.LastAttemptAt,
+			"updated_at":      row.UpdatedAt,
+		}).Error; err != nil {
+			return err
+		}
+	}
+	return refreshAdtySiteCloseMailBatchCounts(batch.Id, time.Now().Unix())
+}
+
+func loadOrCreateAdtySiteCloseMailBatch(siteId int, now int64) (*model.AdtySiteCloseMailBatch, error) {
+	var batch model.AdtySiteCloseMailBatch
+	lookup := model.DB.Where("site_id = ?", siteId).Limit(1).Find(&batch)
+	if lookup.Error != nil {
+		return nil, lookup.Error
+	}
+	if lookup.RowsAffected == 1 {
+		return &batch, nil
+	}
+	batch = model.AdtySiteCloseMailBatch{
+		SiteId:      siteId,
+		RetryStatus: model.AdtySiteCloseMailRetryNone,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	if err := model.DB.Create(&batch).Error; err != nil {
+		// A concurrent first send may have inserted the unique site row.
+		if err := model.DB.Where("site_id = ?", siteId).First(&batch).Error; err != nil {
+			return nil, err
+		}
+	}
+	return &batch, nil
+}
+
+func ensureAdtySiteCloseMailRecipients(batch *model.AdtySiteCloseMailBatch, siteId int, now int64, retryOnly bool) error {
+	var existing int64
+	if err := model.DB.Model(&model.AdtySiteCloseMailRecipient{}).Where("batch_id = ?", batch.Id).Count(&existing).Error; err != nil {
+		return err
+	}
+	if existing > 0 || retryOnly {
+		return nil
+	}
+	var users []model.User
+	if err := model.DB.Select("id", "username", "email", "site_id").Where("site_id = ?", siteId).Order("id").Find(&users).Error; err != nil {
+		return err
+	}
+	for _, user := range users {
+		email := strings.TrimSpace(user.Email)
+		if email == "" {
+			continue
+		}
+		row := model.AdtySiteCloseMailRecipient{
+			BatchId:   batch.Id,
+			SiteId:    siteId,
+			UserId:    user.Id,
+			Username:  user.Username,
+			Email:     email,
+			Status:    model.AdtySiteCloseMailPending,
+			CreatedAt: now,
+			UpdatedAt: now,
+		}
+		if err := model.DB.Where("batch_id = ? AND user_id = ?", batch.Id, user.Id).FirstOrCreate(&row).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func refreshAdtySiteCloseMailBatchCounts(batchId int64, now int64) error {
+	var total, success, failed int64
+	if err := model.DB.Model(&model.AdtySiteCloseMailRecipient{}).Where("batch_id = ?", batchId).Count(&total).Error; err != nil {
+		return err
+	}
+	if err := model.DB.Model(&model.AdtySiteCloseMailRecipient{}).Where("batch_id = ? AND status = ?", batchId, model.AdtySiteCloseMailSuccess).Count(&success).Error; err != nil {
+		return err
+	}
+	if err := model.DB.Model(&model.AdtySiteCloseMailRecipient{}).Where("batch_id = ? AND status = ?", batchId, model.AdtySiteCloseMailFailed).Count(&failed).Error; err != nil {
+		return err
+	}
+	retryStatus := model.AdtySiteCloseMailRetryComplete
+	if total == 0 {
+		retryStatus = model.AdtySiteCloseMailRetryNone
+	} else if failed > 0 {
+		retryStatus = model.AdtySiteCloseMailRetryRetryable
+	}
+	return model.DB.Model(&model.AdtySiteCloseMailBatch{}).Where("id = ?", batchId).Updates(map[string]any{
+		"recipient_count": total,
+		"success_count":   success,
+		"fail_count":      failed,
+		"sent_at":         now,
+		"retry_status":    retryStatus,
+		"updated_at":      now,
+	}).Error
+}
+
+func adtyCloseMigrationSupportContact(site *model.AdtySite) string {
+	if contact := strings.TrimSpace(AdtyBrandFor(site).SupportContact); contact != "" {
+		return contact
+	}
+	if contact := strings.TrimSpace(adty_setting.GetSiteSetting().SupportEmail); contact != "" {
+		return contact
+	}
+	return ""
+}
+
+func renderAdtySiteCloseMigrationMail(site *model.AdtySite, recipient *model.AdtySiteCloseMailRecipient) (subject, body string) {
+	support := adtyCloseMigrationSupportContact(site)
+	if support == "" {
+		support = "the main site support channel / 主站客服入口"
+	}
+	args := map[string]any{
+		"SystemName":     AdtyBrandFor(site).Name,
+		"When":           adtyMailWhen(site.CloseExecuteAt),
+		"Link":           AdtySiteBaseURL(nil),
+		"Username":       recipient.Username,
+		"SupportContact": support,
+	}
+	zhSubject := i18n.Translate("zh-CN", i18n.MsgAdtySiteMigrationMailSubject, args)
+	enSubject := i18n.Translate("en", i18n.MsgAdtySiteMigrationMailSubject, args)
+	subject = zhSubject
+	if enSubject != "" && enSubject != zhSubject {
+		subject = zhSubject + " / " + enSubject
+	}
+	zhBody := html.EscapeString(i18n.Translate("zh-CN", i18n.MsgAdtySiteMigrationMailBody, args))
+	enBody := html.EscapeString(i18n.Translate("en", i18n.MsgAdtySiteMigrationMailBody, args))
+	body = "<p>" + zhBody + "</p><p>" + enBody + "</p>"
+	return subject, body
+}
+
+// adtyNotifySiteClosing 给这个站的客户发官方关站迁移邮件（A.16.2）。
+// 发送失败只记入批次失败清单，不能阻断后续内部迁移。
 func adtyNotifySiteClosing(site *model.AdtySite) {
 	if site == nil {
 		return
 	}
-	// 关站后客户一律到主站登录，通知链接不再指向其他分站。
-	link := AdtySiteBaseURL(nil)
-	args := map[string]any{
-		"SystemName": AdtyBrandFor(site).Name,
-		"When":       adtyMailWhen(site.CloseExecuteAt),
-		"Link":       link,
-	}
-	for _, user := range adtySiteCustomerUsers(site.Id) {
-		copied := user
-		adtySendSiteMail(site, &copied, i18n.MsgAdtySiteClosingSubject, i18n.MsgAdtySiteClosingBody, args)
+	if err := SendAdtySiteCloseMigrationMail(site); err != nil {
+		common.SysError(common.LogText("close migration mail for site %d failed: %s", site.Id, err.Error()))
 	}
 }
 

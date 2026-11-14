@@ -320,16 +320,27 @@ func TestClosingHookEmailsCustomers(t *testing.T) {
 	_, site := openActiveSite(t, db, "closemail")
 	customer := siteCustomer(t, db, site, "closemail-customer")
 	var sent []string
-	previous := AdtySendSiteEmailAsync
-	AdtySendSiteEmailAsync = func(_ *model.AdtySite, subject, to, _ string) {
-		sent = append(sent, to+":"+subject)
+	previous := AdtyDeliverSiteEmail
+	AdtyDeliverSiteEmail = func(_ *model.AdtySite, subject, to, content string) error {
+		sent = append(sent, to+":"+subject+":"+content)
+		return nil
 	}
-	t.Cleanup(func() { AdtySendSiteEmailAsync = previous })
+	t.Cleanup(func() { AdtyDeliverSiteEmail = previous })
 	site.CloseExecuteAt = 1_700_000_000
 	require.NotNil(t, AdtyOnSiteClosing)
 	AdtyOnSiteClosing(site)
 	require.NotEmpty(t, sent)
 	assert.Contains(t, sent[0], customer.Email)
+	assert.Contains(t, sent[0], customer.Username)
+	assert.NotContains(t, sent[0], "@example.net")
+	var batch model.AdtySiteCloseMailBatch
+	require.NoError(t, db.Where("site_id = ?", site.Id).First(&batch).Error)
+	assert.Equal(t, site.Id, batch.SiteId)
+	assert.Equal(t, 1, batch.RecipientCount)
+	assert.Equal(t, 1, batch.SuccessCount)
+	assert.Zero(t, batch.FailCount)
+	assert.Equal(t, model.AdtySiteCloseMailRetryComplete, batch.RetryStatus)
+	assert.NotZero(t, batch.SentAt)
 }
 
 func TestClosedSiteDeletesSenderDomain(t *testing.T) {

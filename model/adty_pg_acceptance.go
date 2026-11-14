@@ -21,6 +21,9 @@ var ErrPostgresAcceptanceDSNUnset = errors.New("BLK-ENV-PG: ADTY_TEST_PG_DSN / T
 // OfficialPostgresThrowawayPrefix2310 是 ADTY-23-10 验收用的一次性库名前缀。
 const OfficialPostgresThrowawayPrefix2310 = "adty_m2310_"
 
+// OfficialPostgresThrowawayPrefix1617 是 A.16.7 关站迁移矩阵验收用的一次性库名前缀。
+const OfficialPostgresThrowawayPrefix1617 = "adty_m1617_"
+
 var officialThrowawayPostgresNamePattern = regexp.MustCompile(`^adty_m[0-9]{4}_[0-9a-f]{16}$`)
 var officialThrowawayPostgresPrefixPattern = regexp.MustCompile(`^adty_m[0-9]{4}_$`)
 

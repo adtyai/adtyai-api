@@ -266,7 +266,7 @@ func AdtySiteTables() []any {
 	return []any{&AdtySite{}, &AdtySiteInviteCode{}, &AdtySiteAudit{}, &AdtySiteCustomer{}, &AdtyUserSiteMigration{}, &AdtySitePrice{}, &AdtySiteDomain{},
 		&AdtySiteEarningDaily{}, &AdtySiteEarningLine{}, &AdtySiteTrialGrant{}, &AdtySiteReport{}, &AdtySiteLookup{}, &AdtySiteSenderDomain{},
 		&AdtySiteTier{}, &AdtySiteTierEvaluation{}, &AdtySiteWallet{}, &AdtySiteWalletLedger{}, &AdtySiteWithdrawal{}, &AdtySiteStaff{}, &AdtySiteOwnership{},
-		&AdtySiteSettlementSheet{}}
+		&AdtySiteSettlementSheet{}, &AdtySiteCloseMailBatch{}, &AdtySiteCloseMailRecipient{}}
 }
 
 // AdtySetUsersSiteTx 把 fromSite 的客户全部改到 toSite（0 是主站），同事务撤销旧Key。

@@ -21,6 +21,8 @@ adty.marketing.unsubscribe_done: "You have been unsubscribed from product update
 adty.marketing.unsubscribe_invalid: "This unsubscribe link is not valid."
 adty.site.closing_subject: "{{.SystemName}} is closing"
 adty.site.closing_body: "{{.SystemName}} closes on {{.When}}. After that, sign in at {{.Link}}. Your balance moves with your account."
+adty.site.migration_mail_subject: "{{.SystemName}} is closing; sign in on the main site"
+adty.site.migration_mail_body: "{{.SystemName}} will close on {{.When}}. Accounts on this site are inherited by the main site only; they are not transferred to another site. Sign in at {{.Link}} with this account's unique username {{.Username}} and complete any required verification: choose this account by that username, then verify the password. This account's orders and balance stay with this account and are not merged into any other account that shares the same email. API keys from the closing site are revoked at migration and historical records are kept; create new keys on the main site. For support, contact: {{.SupportContact}}"
 adty.site.markup_subject: "Prices on {{.SystemName}} are going up"
 adty.site.markup_body: "{{.Detail}} on {{.SystemName}} takes effect on {{.When}}. Until then the current price applies. Sign in at {{.Link}}."
 adty.site.cost_pending_subject: "Your site cost factor will change"
