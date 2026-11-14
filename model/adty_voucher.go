@@ -41,10 +41,13 @@ type AdtyVoucher struct {
 	IssuerId        int             `json:"issuer_id" gorm:"index"`
 	RedeemerId      int             `json:"redeemer_id" gorm:"index"`
 	InheritedByMain bool            `json:"inherited_by_main"`
-	TradeNo         string          `json:"trade_no" gorm:"type:varchar(64);index"`
-	CreatedAt       int64           `json:"created_at" gorm:"autoCreateTime"`
-	RedeemedAt      int64           `json:"redeemed_at"`
-	UpdatedAt       int64           `json:"updated_at" gorm:"autoUpdateTime"`
+	// TradeNo is empty until redeem. Uniqueness of non-empty values is enforced
+	// by ux_adty_vouchers_trade_no, not by a full-column uniqueIndex, so pending
+	// codes can share an empty trade number.
+	TradeNo    string `json:"trade_no" gorm:"type:varchar(64);index"`
+	CreatedAt  int64  `json:"created_at" gorm:"autoCreateTime"`
+	RedeemedAt int64  `json:"redeemed_at"`
+	UpdatedAt  int64  `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (AdtyVoucher) TableName() string { return "adty_vouchers" }

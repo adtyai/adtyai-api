@@ -23,6 +23,11 @@ var (
 	ErrActiveTeamMembershipCollision = errors.New("duplicate active team memberships must be resolved before the unique index")
 )
 
+// Voucher redeem-order uniqueness
+var (
+	ErrAdtyVoucherTradeNoCollision = errors.New("duplicate voucher trade numbers must be resolved before the unique index")
+)
+
 // Token auth errors
 var (
 	ErrTokenNotProvided = errors.New("token not provided")

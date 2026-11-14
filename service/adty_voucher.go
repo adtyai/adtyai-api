@@ -3,6 +3,7 @@ package service
 import (
 	"crypto/rand"
 	"encoding/base32"
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -13,7 +14,9 @@ import (
 	"gorm.io/gorm"
 )
 
-const adtyVoucherQuotaPerUSD int64 = 500000
+const adtyVoucherTradeNoAttempts = 8
+
+var adtyVoucherTradeNoTestHook func(hash string, attempt int) string
 
 var (
 	ErrAdtyVoucherInvalid      = common.NewMessage("Voucher code is invalid")
@@ -155,6 +158,42 @@ func RedeemAdtyVoucher(userId int, code string) (*AdtyVoucherRedeemed, error) {
 	hash := model.AdtyVoucherCodeHash(code)
 	var result *AdtyVoucherRedeemed
 	var credit int64
+	var err error
+	for attempt := 0; attempt < adtyVoucherTradeNoAttempts; attempt++ {
+		result, credit, err = redeemAdtyVoucherOnce(userId, hash, attempt)
+		if err == nil {
+			break
+		}
+		if !model.IsAdtyVoucherTradeNoUniqueViolation(err) {
+			noteAdtyVoucherGuess(userId, time.Now().Unix())
+			return nil, err
+		}
+		replay, lookErr := loadAdtyVoucherRedeemReplay(userId, hash)
+		if lookErr != nil {
+			noteAdtyVoucherGuess(userId, time.Now().Unix())
+			return nil, lookErr
+		}
+		if replay != nil {
+			return replay, nil
+		}
+		// Still pending: the generated trade number collided with another
+		// formal order. Retry with a new number so this code is not credited
+		// twice and a unique violation is not returned as a raw 500 after a
+		// second order was inserted.
+	}
+	if err != nil {
+		noteAdtyVoucherGuess(userId, time.Now().Unix())
+		return nil, err
+	}
+	if credit > 0 {
+		model.AdtySyncCreditUserQuotaCache(userId, credit, "voucher redemption")
+	}
+	return result, nil
+}
+
+func redeemAdtyVoucherOnce(userId int, hash string, attempt int) (*AdtyVoucherRedeemed, int64, error) {
+	var result *AdtyVoucherRedeemed
+	var credit int64
 	err := model.DB.Transaction(func(tx *gorm.DB) error {
 		user, err := lockAdtyVoucherUser(tx, userId)
 		if err != nil {
@@ -187,7 +226,10 @@ func RedeemAdtyVoucher(userId int, code string) (*AdtyVoucherRedeemed, error) {
 		if err := adtyVoucherRedeemAllowed(tx, user, &voucher); err != nil {
 			return err
 		}
-		trade := "VCH" + strings.ToUpper(common.Sha1([]byte(hash + ":" + time.Now().Format(time.RFC3339Nano))))[:20]
+		trade, err := allocateAdtyVoucherTradeNo(tx, hash, attempt)
+		if err != nil {
+			return err
+		}
 		now := time.Now().Unix()
 		updated := tx.Model(&model.AdtyVoucher{}).Where("id = ? AND status = ?", voucher.Id, model.AdtyVoucherStatusPending).
 			Updates(map[string]any{"status": model.AdtyVoucherStatusRedeemed, "redeemer_id": user.Id, "trade_no": trade, "redeemed_at": now})
@@ -224,14 +266,53 @@ func RedeemAdtyVoucher(userId int, code string) (*AdtyVoucherRedeemed, error) {
 		result = &AdtyVoucherRedeemed{TradeNo: trade, Purpose: voucher.Purpose, AmountUSD: voucher.AmountUSD, Quota: voucher.Quota}
 		return nil
 	})
-	if err != nil {
-		noteAdtyVoucherGuess(userId, time.Now().Unix())
-		return nil, err
+	return result, credit, err
+}
+
+func loadAdtyVoucherRedeemReplay(userId int, hash string) (*AdtyVoucherRedeemed, error) {
+	var voucher model.AdtyVoucher
+	lookup := model.DB.Where("code_hash = ?", hash).Limit(1).Find(&voucher)
+	if lookup.Error != nil {
+		return nil, lookup.Error
 	}
-	if credit > 0 {
-		model.AdtySyncCreditUserQuotaCache(userId, credit, "voucher redemption")
+	if lookup.RowsAffected == 0 || voucher.Status != model.AdtyVoucherStatusRedeemed {
+		return nil, nil
 	}
-	return result, nil
+	if voucher.RedeemerId == userId {
+		return &AdtyVoucherRedeemed{TradeNo: voucher.TradeNo, Purpose: voucher.Purpose, AmountUSD: voucher.AmountUSD, Quota: voucher.Quota, Replayed: true}, nil
+	}
+	return nil, ErrAdtyVoucherUsed
+}
+
+func allocateAdtyVoucherTradeNo(tx *gorm.DB, hash string, attemptSeed int) (string, error) {
+	for attempt := 0; attempt < adtyVoucherTradeNoAttempts; attempt++ {
+		trade := generateAdtyVoucherTradeNo(hash, attemptSeed*adtyVoucherTradeNoAttempts+attempt)
+		if trade == "" {
+			continue
+		}
+		taken, err := model.AdtyVoucherTradeNoTaken(tx, trade)
+		if err != nil {
+			return "", err
+		}
+		if !taken {
+			return trade, nil
+		}
+	}
+	return "", fmt.Errorf("allocate voucher trade_no: no unused order number available")
+}
+
+func generateAdtyVoucherTradeNo(hash string, attempt int) string {
+	if adtyVoucherTradeNoTestHook != nil {
+		if trade := strings.TrimSpace(adtyVoucherTradeNoTestHook(hash, attempt)); trade != "" {
+			return trade
+		}
+	}
+	nonce := fmt.Sprintf("%s:%s:%d", hash, time.Now().Format(time.RFC3339Nano), attempt)
+	sum := strings.ToUpper(common.Sha1([]byte(nonce)))
+	if len(sum) < 20 {
+		return ""
+	}
+	return "VCH" + sum[:20]
 }
 
 func FreezeAdtyVoucher(actorId int, voucherId int64) error {
@@ -384,14 +465,18 @@ func SetAdtyVoucherMarginAuthorization(actorId, siteId int, allowed bool) error 
 }
 
 func adtyVoucherQuota(amount decimal.Decimal) (int64, error) {
-	if common.QuotaPerUnit != float64(adtyVoucherQuotaPerUSD) || !amount.IsPositive() || amount.Exponent() < -2 || amount.GreaterThan(decimal.NewFromInt(100000)) {
+	if !amount.IsPositive() || amount.Exponent() < -2 || amount.GreaterThan(decimal.NewFromInt(100000)) {
 		return 0, common.NewMessage("Invalid parameters")
 	}
-	quota := amount.Mul(decimal.NewFromInt(adtyVoucherQuotaPerUSD))
-	if !quota.Equal(quota.Floor()) || quota.GreaterThan(decimal.NewFromInt(int64(common.MaxWalletQuota))) {
+	computed := amount.Mul(common.QuotaPerUnitDecimal())
+	if !computed.Equal(computed.Truncate(0)) {
 		return 0, common.NewMessage("Invalid parameters")
 	}
-	return quota.IntPart(), nil
+	quota, err := common.WalletQuotaFromDecimalStrict(computed)
+	if err != nil || quota <= 0 {
+		return 0, common.NewMessage("Invalid parameters")
+	}
+	return int64(quota), nil
 }
 
 func newAdtyVoucherCode() (string, error) {
@@ -579,20 +664,32 @@ func adtyVoucherRedeemAllowed(tx *gorm.DB, user *model.User, voucher *model.Adty
 }
 
 func insertAdtyVoucherOrderTx(tx *gorm.DB, userId int, trade string, voucher *model.AdtyVoucher, now int64) error {
-	topUp := model.TopUp{
-		UserId: userId, Amount: voucher.AmountUSD.IntPart(), Money: voucher.AmountUSD.InexactFloat64(),
-		TradeNo: trade, PaymentMethod: voucher.Purpose, PaymentProvider: model.AdtyVoucherProvider,
-		CreateTime: now, CompleteTime: now, Status: common.TopUpStatusSuccess,
-	}
-	if err := tx.Create(&topUp).Error; err != nil {
-		return err
-	}
-	return tx.Create(&model.AdtyTopupOrder{
+	// Official decimal amounts and the already-determined credit are the
+	// source of truth. Wallet and ledger credit use voucher.Quota / AmountUSD
+	// directly; this formal order does not go through float or IntPart.
+	if err := tx.Create(&model.AdtyTopupOrder{
 		TradeNo: trade, UserId: userId, Provider: model.AdtyVoucherProvider, Method: voucher.Purpose,
 		FaceUSD: voucher.AmountUSD, CreditQuota: voucher.Quota, PayAmount: voucher.AmountUSD, PayCurrency: "USD",
 		PaidAmount: voucher.AmountUSD, PaidCurrency: "USD", PaidSource: "voucher", SiteId: voucher.TargetSiteId,
 		SiteOwnerUserId: voucher.IssuerId, TopupGroupRatio: decimal.NewFromInt(1),
-	}).Error
+	}).Error; err != nil {
+		return err
+	}
+	// TopUp is only a compatibility projection for the unified order list.
+	// Money remains float64 and is not used to credit the wallet or ledger;
+	// Amount is likewise not the credited source. Exact values live on
+	// AdtyTopupOrder and the voucher row.
+	topUp := model.TopUp{
+		UserId: userId, Amount: voucher.Quota,
+		TradeNo: trade, PaymentMethod: voucher.Purpose, PaymentProvider: model.AdtyVoucherProvider,
+		CreateTime: now, CompleteTime: now, Status: common.TopUpStatusSuccess,
+	}
+	if f, exact := voucher.AmountUSD.Float64(); exact {
+		topUp.Money = f
+	} else {
+		topUp.Money = voucher.AmountUSD.InexactFloat64()
+	}
+	return tx.Create(&topUp).Error
 }
 
 func allowAdtyVoucherGuess(userId int, now int64) bool {
