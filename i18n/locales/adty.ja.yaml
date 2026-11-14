@@ -21,6 +21,8 @@ adty.marketing.unsubscribe_done: "製品の最新情報やお得な情報のメ�
 adty.marketing.unsubscribe_invalid: "この配信停止リンクは無効です。"
 adty.site.closing_subject: "{{.SystemName}} はまもなく閉鎖されます"
 adty.site.closing_body: "{{.SystemName}} は {{.When}} に閉鎖されます。その後は {{.Link}} からログインしてください。残高はアカウントと一緒に移ります。"
+adty.site.migration_mail_subject: "{{.SystemName}} はまもなく閉鎖されます。メインサイトからログインしてください"
+adty.site.migration_mail_body: "{{.SystemName}} は {{.When}} に閉鎖されます。このサイトのアカウントはメインサイトのみが継承し、他のサイトへは移管されません。このアカウント固有のユーザー名 {{.Username}} を使って {{.Link}} からログインし、必要な確認を完了してください。まずそのユーザー名でこのアカウントを選び、次にパスワードを確認します。このアカウントの注文と残高はこのアカウントに付いたままメインサイトへ移り、同じメールアドレスの他のアカウントには統合されません。閉鎖サイトの API キーは移行時に取り消され、履歴は保持されます。メインサイトで新しいキーを作成してください。サポートが必要な場合は、次までご連絡ください：{{.SupportContact}}"
 adty.site.markup_subject: "{{.SystemName}} の価格が上がります"
 adty.site.markup_body: "{{.SystemName}} の {{.Detail}} は {{.When}} から適用されます。それまでは現在の価格です。{{.Link}} からログインしてください。"
 adty.site.cost_pending_subject: "サイトの原価係数が変わります"

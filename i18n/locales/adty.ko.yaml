@@ -21,6 +21,8 @@ adty.marketing.unsubscribe_done: "제품 소식과 혜택 메일 수신이 거�
 adty.marketing.unsubscribe_invalid: "이 수신 거부 링크는 유효하지 않습니다."
 adty.site.closing_subject: "{{.SystemName}}이(가) 곧 종료됩니다"
 adty.site.closing_body: "{{.SystemName}}은(는) {{.When}}에 종료됩니다. 이후에는 {{.Link}}에서 로그인하세요. 잔액은 계정과 함께 이동합니다."
+adty.site.migration_mail_subject: "{{.SystemName}}이(가) 곧 종료됩니다. 메인 사이트에서 로그인하세요"
+adty.site.migration_mail_body: "{{.SystemName}}은(는) {{.When}}에 종료됩니다. 이 사이트의 계정은 메인 사이트에서만 승계되며, 다른 사이트로 이전되지 않습니다. 이 계정의 고유 사용자 이름 {{.Username}}(으)로 {{.Link}}에서 로그인한 뒤 필요한 확인을 완료하세요. 먼저 해당 사용자 이름으로 이 계정을 선택한 다음 비밀번호를 확인하세요. 이 계정의 주문과 잔액은 이 계정에 그대로 남으며, 같은 이메일을 쓰는 다른 계정으로 합쳐지지 않습니다. 종료되는 사이트의 API 키는 마이그레이션 시 취소되고 이력은 보관됩니다. 메인 사이트에서 새 키를 만드세요. 도움이 필요하면 다음으로 문의하세요: {{.SupportContact}}"
 adty.site.markup_subject: "{{.SystemName}}의 가격이 오릅니다"
 adty.site.markup_body: "{{.SystemName}}에서 {{.Detail}}이(가) {{.When}}부터 적용됩니다. 그때까지는 현재 가격이 적용됩니다. {{.Link}}에서 로그인하세요."
 adty.site.cost_pending_subject: "사이트 원가 계수가 변경됩니다"

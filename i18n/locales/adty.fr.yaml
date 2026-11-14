@@ -21,6 +21,8 @@ adty.marketing.unsubscribe_done: "Vous ne recevrez plus les nouveautés et les o
 adty.marketing.unsubscribe_invalid: "Ce lien de désabonnement n'est pas valide."
 adty.site.closing_subject: "{{.SystemName}} va fermer"
 adty.site.closing_body: "{{.SystemName}} ferme le {{.When}}. Ensuite, connectez-vous sur {{.Link}}. Le solde suit le compte."
+adty.site.migration_mail_subject: "{{.SystemName}} va fermer ; connectez-vous sur le site principal"
+adty.site.migration_mail_body: "{{.SystemName}} ferme le {{.When}}. Les comptes de ce site sont hérités uniquement par le site principal ; ils ne sont pas transférés vers un autre site. Connectez-vous sur {{.Link}} avec le nom d'utilisateur unique de ce compte, {{.Username}}, et effectuez toute vérification requise : choisissez ce compte à l'aide de ce nom d'utilisateur, puis vérifiez le mot de passe. Les commandes et le solde de ce compte restent avec ce compte et ne sont pas fusionnés avec un autre compte partageant la même adresse e-mail. Les clés API du site qui ferme sont révoquées lors de la migration et l'historique est conservé ; créez de nouvelles clés sur le site principal. Pour obtenir de l'aide, contactez : {{.SupportContact}}"
 adty.site.markup_subject: "Les prix de {{.SystemName}} augmentent"
 adty.site.markup_body: "{{.Detail}} sur {{.SystemName}} entre en vigueur le {{.When}}. Jusque-là, le prix actuel s'applique. Connectez-vous sur {{.Link}}."
 adty.site.cost_pending_subject: "Le coefficient de coût du site va changer"

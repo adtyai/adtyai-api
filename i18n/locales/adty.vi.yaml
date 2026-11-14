@@ -21,6 +21,8 @@ adty.marketing.unsubscribe_done: "Bạn đã hủy đăng ký nhận cập nhậ
 adty.marketing.unsubscribe_invalid: "Liên kết hủy đăng ký này không hợp lệ."
 adty.site.closing_subject: "{{.SystemName}} sắp đóng cửa"
 adty.site.closing_body: "{{.SystemName}} đóng cửa vào {{.When}}. Sau đó hãy đăng nhập tại {{.Link}}. Số dư đi cùng tài khoản."
+adty.site.migration_mail_subject: "{{.SystemName}} sắp đóng cửa; hãy đăng nhập trên trang chính"
+adty.site.migration_mail_body: "{{.SystemName}} đóng cửa vào {{.When}}. Tài khoản trên trang này chỉ được trang chính kế thừa; không được chuyển sang trang khác. Hãy đăng nhập tại {{.Link}} bằng tên người dùng duy nhất của tài khoản này {{.Username}} và hoàn tất mọi xác minh cần thiết: chọn tài khoản này bằng tên người dùng đó, rồi xác minh mật khẩu. Đơn hàng và số dư của tài khoản này đi cùng tài khoản này, không được gộp vào tài khoản khác dùng chung email. Khóa API của trang sắp đóng sẽ bị thu hồi khi chuyển, lịch sử được giữ lại; hãy tạo khóa mới trên trang chính. Nếu cần hỗ trợ, hãy liên hệ: {{.SupportContact}}"
 adty.site.markup_subject: "Giá trên {{.SystemName}} sẽ tăng"
 adty.site.markup_body: "{{.Detail}} trên {{.SystemName}} có hiệu lực từ {{.When}}. Trước đó vẫn áp dụng giá hiện tại. Đăng nhập tại {{.Link}}."
 adty.site.cost_pending_subject: "Hệ số chi phí của trang sẽ đổi"
