@@ -2,6 +2,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { ErrorState } from '@/components/error-state'
+import { LoadingState } from '@/components/loading-state'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -27,7 +29,7 @@ export function TranslationAdminPanel() {
     queryFn: async () => {
       const response = await api.get('/api/adty/admin/translation')
       const body = response.data as { success?: boolean; data?: TranslationView; message?: string }
-      if (!body.success || !body.data) throw new Error(body.message || 'Failed to load data')
+      if (!body.success || !body.data) throw new Error(body.message || t('Failed to load'))
       return body.data
     },
   })
@@ -72,6 +74,15 @@ export function TranslationAdminPanel() {
             {t('Chinese stays available when English is not ready. Customers are not charged.')}
           </p>
         </div>
+        {config.isPending ? (
+          <LoadingState />
+        ) : config.isError ? (
+          <ErrorState
+            description={getServerErrorMessage(config.error, t('Failed to load'))}
+            onRetry={() => void config.refetch()}
+          />
+        ) : (
+          <>
         {config.data && (
           <p className='text-muted-foreground text-sm tabular-nums'>
             {t('Saved')} {config.data.saved_at || 0} · {t('Tested')} {config.data.tested_at || 0} · {t('Translated')} {config.data.translated_at || 0}
@@ -106,6 +117,8 @@ export function TranslationAdminPanel() {
         </Button>
         {result && <p className='text-sm whitespace-pre-wrap'>{result}</p>}
         {error && <p className='text-destructive text-sm'>{error}</p>}
+          </>
+        )}
         <SecureVerificationDialog {...verification.dialogProps} />
       </CardContent>
     </Card>

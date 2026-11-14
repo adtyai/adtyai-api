@@ -20,7 +20,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { EmptyState } from '@/components/empty-state'
 import { ErrorState } from '@/components/error-state'
+import { LoadingState } from '@/components/loading-state'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -81,14 +83,15 @@ export function SiteCommissionPanel(props: { onConverted: () => void }) {
     queryKey: ['adty-site-commissions'],
     queryFn: listSiteCommissions,
   })
-  if (rows.isSuccess && rows.data.length === 0) return null
   return (
     <section className='flex flex-col gap-3'>
       <h2 className='text-sm font-medium'>{t('Available commission')}</h2>
       <p className='text-muted-foreground text-sm'>
         {t('The amount moves from available commission to your balance.')}
       </p>
+      {rows.isPending && <LoadingState />}
       {rows.isError && <ErrorState onRetry={() => void rows.refetch()} />}
+      {rows.isSuccess && rows.data.length === 0 && <EmptyState />}
       {rows.data?.map((row) => (
         <CommissionRow
           key={row.id}
