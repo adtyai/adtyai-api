@@ -38,6 +38,15 @@ import type {
 type ApiResponse<T> = { success: boolean; message?: string; data: T }
 
 const BASE = '/api/adty/admin'
+
+/**
+ * 服务端把空集合序列化成 null 或对象时，`data ?? []` 会把这个非数组原样返回，
+ * 调用方一旦 `.map` 就整块白屏。列表只有数组才算数，其它形状一律按空列表处理。
+ */
+function listOrEmpty<T>(value: T[] | null | undefined): T[] {
+  return Array.isArray(value) ? value : []
+}
+
 export const SITE_ADMIN_PAGE_SIZE = 20
 
 export const siteAdminKeys = {
@@ -144,7 +153,7 @@ export async function getAdminSiteWallets(
   const res = await api.get<ApiResponse<AdminWallet[]>>(
     `${BASE}/sites/${siteId}/wallets`
   )
-  return requireServerSuccess(res.data).data ?? []
+  return listOrEmpty(requireServerSuccess(res.data).data)
 }
 
 export async function getAdminAnomalyDispositions(
@@ -214,7 +223,7 @@ export async function getAdminSettlementSheets(
     `${BASE}/settlement-sheets`,
     { params: siteId ? { site_id: siteId } : undefined }
   )
-  return requireServerSuccess(res.data).data ?? []
+  return listOrEmpty(requireServerSuccess(res.data).data)
 }
 
 export async function getAdminSiteInviteBatchPolicy(): Promise<{
@@ -510,7 +519,7 @@ export async function getPausedSiteRepairs(): Promise<AdminSite[]> {
   const res = await api.get<ApiResponse<AdminSite[]>>(
     `${BASE}/sites/paused-repairs`
   )
-  return requireServerSuccess(res.data).data ?? []
+  return listOrEmpty(requireServerSuccess(res.data).data)
 }
 
 export async function repairPausedSite(

@@ -107,14 +107,20 @@ export function SiteFundPanel(props: { siteId: number }) {
     onError: (error) => handleServerError(error),
   })
   if (!isRoot) return null
+  // 缓存里可能留着旧形状的响应；列表只认数组，其它一律当空，否则 `.map` 会让整页白屏。
+  const walletRows = Array.isArray(wallets.data) ? wallets.data : []
+  const anomalyKinds = Array.isArray(anomalies.data) ? anomalies.data : []
   return (
     <section className='flex flex-col gap-3'>
       <h3 className='text-sm font-medium'>{t('Wallets')}</h3>
       {wallets.isPending && <LoadingState />}
       {wallets.isError && <ErrorState onRetry={() => void wallets.refetch()} />}
-      {wallets.isSuccess && (
+      {wallets.isSuccess && walletRows.length === 0 && (
+        <p className='text-sm'>{t('No data')}</p>
+      )}
+      {wallets.isSuccess && walletRows.length > 0 && (
         <ul className='flex flex-col gap-1 text-sm tabular-nums'>
-          {wallets.data.map((wallet) => (
+          {walletRows.map((wallet) => (
             <li key={wallet.id}>
               {wallet.kind} {wallet.balance}
               {wallet.kind === 'margin' && wallet.cycle_tier_usd
@@ -143,12 +149,12 @@ export function SiteFundPanel(props: { siteId: number }) {
       <h3 className='text-sm font-medium'>{t('Fund anomalies')}</h3>
       {anomalies.isPending && <LoadingState />}
       {anomalies.isError && <ErrorState onRetry={() => void anomalies.refetch()} />}
-      {anomalies.isSuccess && anomalies.data.length === 0 && (
+      {anomalies.isSuccess && anomalyKinds.length === 0 && (
         <p className='text-sm'>{t('No data')}</p>
       )}
-      {anomalies.isSuccess && anomalies.data.length > 0 && (
+      {anomalies.isSuccess && anomalyKinds.length > 0 && (
         <ul className='flex flex-col gap-1 text-sm'>
-          {anomalies.data.map((kind) => (
+          {anomalyKinds.map((kind) => (
             <li key={kind} className='font-mono text-xs'>
               {kind}
             </li>
