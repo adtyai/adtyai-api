@@ -312,6 +312,13 @@ func adtyReferralAfterRefundTx(tx *gorm.DB, topUp *model.TopUp, ext *model.AdtyT
 	if err := model.AdtyLockForUpdate(tx).Where("source_type = ? AND source_trade_no = ?", model.ReferralSourceTopup, topUp.TradeNo).Order("id").Find(&commissions).Error; err != nil {
 		return err
 	}
+	commissionIDs := make([]int, 0, len(commissions))
+	for _, commission := range commissions {
+		commissionIDs = append(commissionIDs, commission.Id)
+	}
+	if err := lockFrozenWithdrawalsForCommissionsTx(tx, commissionIDs); err != nil {
+		return err
+	}
 	for _, commission := range commissions {
 		amount := moneyDec(commission.CommissionAmount)
 		account, err := lockReferralAccountTx(tx, commission.AffiliateId)
@@ -382,6 +389,7 @@ func clawBackCommissionPartTx(tx *gorm.DB, account *model.ReferralCommissionAcco
 const adtyReferralCommissionRecoveryKind = "ref_withdrawn"
 
 // clawBackSettledCommissionTx 冲回已入账佣金：还在可提现或冻结里的按实有余额扣，不为负；已经提现的记追偿，不扣可提现。
+// 从待处理或已审核提现里扣回的冻结占用，会同步缩减或解除对应提现单，避免后续打款或驳回再按原冻结额搬账户。
 func clawBackSettledCommissionTx(tx *gorm.DB, account *model.ReferralCommissionAccount, commission *model.ReferralCommission, part decimal.Decimal, tradeNo string, entry model.ReferralCommissionLedger) error {
 	if !part.IsPositive() {
 		return nil
@@ -419,6 +427,11 @@ func clawBackSettledCommissionTx(tx *gorm.DB, account *model.ReferralCommissionA
 	}
 	deductFrozen := clawbackLimitedToBalance(account.FrozenAmount, parts[1])
 	deductAvailable := clawbackLimitedToBalance(account.AvailableAmount, parts[2])
+	if deductFrozen.IsPositive() {
+		if err := shrinkFrozenWithdrawalOccupancyTx(tx, commission.Id, deductFrozen); err != nil {
+			return err
+		}
+	}
 	if !deductFrozen.IsPositive() && !deductAvailable.IsPositive() {
 		return addReferralLedgerTx(tx, &entry)
 	}

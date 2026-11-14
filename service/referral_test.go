@@ -1017,6 +1017,108 @@ func TestReferralBookedCommissionRefundReversesRemainingFunds(t *testing.T) {
 	})
 }
 
+func enableReferralUSDTWithdrawForTest(t *testing.T) {
+	t.Helper()
+	cfg := adty_setting.GetReferralSetting()
+	minUSD, fee := cfg.MinWithdrawUSD, cfg.USDTWithdrawFee
+	ten, one := 10.0, 1.0
+	cfg.MinWithdrawUSD, cfg.USDTWithdrawFee = &ten, &one
+	t.Cleanup(func() { cfg.MinWithdrawUSD, cfg.USDTWithdrawFee = minUSD, fee })
+}
+
+func createReferralUSDTWithdrawal(t *testing.T, userId int, amount int64, key string) *model.ReferralWithdrawal {
+	t.Helper()
+	w, err := Referral.CreateWithdrawal(ReferralWithdrawalCreateInput{
+		UserId: userId, Amount: decimal.NewFromInt(amount), AccountType: model.ReferralWithdrawToUSDT,
+		AccountNetwork: "TRC20", AccountNo: "T" + "A1B2C3D4E5F6G7H8J9K1L2M3N4P5Q6R7S", IdempotencyKey: key,
+	})
+	require.NoError(t, err)
+	return w
+}
+
+func TestReferralFrozenCommissionRefundShrinksPendingWithdrawal(t *testing.T) {
+	db := prepareReferralDB(t)
+	now := time.Now().Unix()
+	enableReferralUSDTWithdrawForTest(t)
+
+	t.Run("full refund cancels the pending withdrawal and later reject does not restore funds", func(t *testing.T) {
+		affiliate, invitee := inviterAndInvitee(t, db, "r8-wd-full")
+		paidTopUp(t, invitee, "EPU-r8-wd-full")
+		_, err := RunReferralSettlementOnce(now+8*86400, 50)
+		require.NoError(t, err)
+		w := createReferralUSDTWithdrawal(t, affiliate.UserId, 10, "w-r8-wd-full")
+		require.Equal(t, model.ReferralWithdrawalStatusPending, w.Status)
+
+		_, err = refundAdtyTopUp(t, "EPU-r8-wd-full", "chargeback", 1, "k-r8-wd-full")
+		require.NoError(t, err)
+		require.NoError(t, db.First(w, w.Id).Error)
+		assert.Equal(t, model.ReferralWithdrawalStatusCanceled, w.Status)
+		assert.InDelta(t, 0, w.Amount, 1e-9)
+		var frozenItems int64
+		require.NoError(t, db.Model(&model.ReferralWithdrawalItem{}).Where("withdrawal_id = ? AND status = ?", w.Id, model.ReferralWithdrawalItemStatusFrozen).Count(&frozenItems).Error)
+		assert.Zero(t, frozenItems)
+		acc := account(t, db, affiliate.Id)
+		assert.InDelta(t, 0, acc.AvailableAmount, 1e-9)
+		assert.InDelta(t, 0, acc.FrozenAmount, 1e-9)
+
+		require.Error(t, Referral.ReviewWithdrawal(w.Id, 1, false, "too late", "", ""))
+		acc = account(t, db, affiliate.Id)
+		assert.InDelta(t, 0, acc.AvailableAmount, 1e-9, "a canceled withdrawal must not restore clawed-back funds")
+		assert.InDelta(t, 0, acc.FrozenAmount, 1e-9)
+	})
+
+	t.Run("refund of one frozen commission shrinks a mixed withdrawal; reject returns only the remainder", func(t *testing.T) {
+		affiliate, invitee := inviterAndInvitee(t, db, "r8-wd-mix")
+		paidTopUp(t, invitee, "EPU-r8-wd-mix-a")
+		paidTopUp(t, invitee, "EPU-r8-wd-mix-b")
+		_, err := RunReferralSettlementOnce(now+8*86400, 50)
+		require.NoError(t, err)
+		w := createReferralUSDTWithdrawal(t, affiliate.UserId, 20, "w-r8-wd-mix")
+		require.InDelta(t, 0, account(t, db, affiliate.Id).AvailableAmount, 1e-9)
+		require.InDelta(t, 20, account(t, db, affiliate.Id).FrozenAmount, 1e-9)
+
+		_, err = refundAdtyTopUp(t, "EPU-r8-wd-mix-a", "chargeback", 1, "k-r8-wd-mix-a")
+		require.NoError(t, err)
+		require.NoError(t, db.First(w, w.Id).Error)
+		assert.Equal(t, model.ReferralWithdrawalStatusPending, w.Status)
+		assert.InDelta(t, 10, w.Amount, 1e-9)
+		acc := account(t, db, affiliate.Id)
+		assert.InDelta(t, 0, acc.AvailableAmount, 1e-9)
+		assert.InDelta(t, 10, acc.FrozenAmount, 1e-9)
+		assert.Equal(t, model.ReferralCommissionStatusClawedBack, commissionFor(t, db, "EPU-r8-wd-mix-a").Status)
+		assert.Equal(t, model.ReferralCommissionStatusFrozen, commissionFor(t, db, "EPU-r8-wd-mix-b").Status)
+
+		require.NoError(t, Referral.ReviewWithdrawal(w.Id, 1, false, "cancel remainder", "", ""))
+		acc = account(t, db, affiliate.Id)
+		assert.InDelta(t, 10, acc.AvailableAmount, 1e-9, "reject must return only the remaining occupancy")
+		assert.InDelta(t, 0, acc.FrozenAmount, 1e-9)
+		assert.GreaterOrEqual(t, acc.AvailableAmount, 0.0)
+		assert.GreaterOrEqual(t, acc.FrozenAmount, 0.0)
+	})
+
+	t.Run("payout and reject of a historical leftover do not move the original freeze", func(t *testing.T) {
+		affiliate, invitee := inviterAndInvitee(t, db, "r8-wd-legacy")
+		paidTopUp(t, invitee, "EPU-r8-wd-legacy-reject")
+		paidTopUp(t, invitee, "EPU-r8-wd-legacy-pay")
+		_, err := RunReferralSettlementOnce(now+8*86400, 50)
+		require.NoError(t, err)
+		rejectW := createReferralUSDTWithdrawal(t, affiliate.UserId, 10, "w-r8-wd-legacy-reject")
+		payW := createReferralUSDTWithdrawal(t, affiliate.UserId, 10, "w-r8-wd-legacy-pay")
+		require.NoError(t, Referral.ReviewWithdrawal(payW.Id, 1, true, "", "", ""))
+		require.NoError(t, db.Model(&model.ReferralCommissionAccount{}).Where("affiliate_id = ?", affiliate.Id).Updates(map[string]any{
+			"frozen_amount": 0, "available_amount": 0,
+		}).Error)
+
+		require.NoError(t, Referral.ReviewWithdrawal(rejectW.Id, 1, false, "legacy leftover", "", ""))
+		require.NoError(t, Referral.MarkWithdrawalPaid(payW.Id, 1, "0xlegacy", "", "", "", ""))
+		acc := account(t, db, affiliate.Id)
+		assert.InDelta(t, 0, acc.AvailableAmount, 1e-9, "reject must not credit the already-clawed freeze")
+		assert.InDelta(t, 0, acc.FrozenAmount, 1e-9)
+		assert.InDelta(t, 0, acc.WithdrawnAmount, 1e-9, "payout must not move the already-clawed freeze into withdrawn")
+		assert.GreaterOrEqual(t, acc.FrozenAmount, 0.0)
+	})
+}
+
 // 订单 $100 加赠 $2.5：本金 F = $100，赠金 G = $2.5，佣金 $10。退款前的余额决定比例 P ÷ F：
 // 余额 $72.5 → 扣回 $72.5、退本金 $70，比例 0.7；余额 $2.5 → 只扣回赠金，比例 0。
 func TestRefundClawsBackCommissionByRefundedShare(t *testing.T) {

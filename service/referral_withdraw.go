@@ -289,6 +289,13 @@ func (s *ReferralService) lockAffiliateByUserTx(tx *gorm.DB, userId int) (*model
 func (s *ReferralService) CancelWithdrawal(withdrawalId, userId int, now int64) error {
 	window := int64(max(referralSetting().CancelWindowMinutes, 0)) * 60
 	return model.DB.Transaction(func(tx *gorm.DB) error {
+		var peek model.ReferralWithdrawal
+		if err := tx.Where("id = ? AND user_id = ?", withdrawalId, userId).First(&peek).Error; err != nil {
+			return err
+		}
+		if err := lockWithdrawalCommissionRowsTx(tx, peek.Id); err != nil {
+			return err
+		}
 		var withdrawal model.ReferralWithdrawal
 		if err := model.AdtyLockForUpdate(tx).Where("id = ? AND user_id = ?", withdrawalId, userId).First(&withdrawal).Error; err != nil {
 			return err
@@ -303,8 +310,187 @@ func (s *ReferralService) CancelWithdrawal(withdrawalId, userId int, now int64) 
 	})
 }
 
+// lockFrozenWithdrawalsForCommissionsTx 按提现 id 锁住仍占用这些佣金的待处理或已审核提现。
+// 退款在锁账户之前调用，和打款/驳回一样走「先佣金、再提现、再账户」。
+func lockFrozenWithdrawalsForCommissionsTx(tx *gorm.DB, commissionIDs []int) error {
+	if tx == nil || len(commissionIDs) == 0 {
+		return nil
+	}
+	var ids []int
+	if err := tx.Model(&model.ReferralWithdrawalItem{}).
+		Where("commission_id IN ? AND status = ?", commissionIDs, model.ReferralWithdrawalItemStatusFrozen).
+		Order("withdrawal_id").
+		Pluck("withdrawal_id", &ids).Error; err != nil {
+		return err
+	}
+	seen := map[int]struct{}{}
+	for _, id := range ids {
+		if id <= 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		var row model.ReferralWithdrawal
+		if err := model.AdtyLockForUpdate(tx).Where("id = ?", id).First(&row).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// shrinkFrozenWithdrawalOccupancyTx 按这次实际从冻结余额冲回的金额，缩减对应提现明细和提现单占用。
+// 占用降到 0 时解除提现单，不再次搬动账户。
+func shrinkFrozenWithdrawalOccupancyTx(tx *gorm.DB, commissionId int, amount decimal.Decimal) error {
+	if tx == nil || commissionId <= 0 || !amount.IsPositive() {
+		return nil
+	}
+	var items []model.ReferralWithdrawalItem
+	if err := model.AdtyLockForUpdate(tx).
+		Where("commission_id = ? AND status = ?", commissionId, model.ReferralWithdrawalItemStatusFrozen).
+		Order("id").Find(&items).Error; err != nil {
+		return err
+	}
+	remaining := amount
+	reducedBy := map[int]decimal.Decimal{}
+	for i := range items {
+		if !remaining.IsPositive() {
+			break
+		}
+		have := moneyDec(items[i].AllocatedAmount)
+		if !have.IsPositive() {
+			continue
+		}
+		take := have
+		if take.GreaterThan(remaining) {
+			take = remaining
+		}
+		left := have.Sub(take)
+		updates := map[string]any{"allocated_amount": moneyF(left)}
+		if !left.IsPositive() {
+			updates["status"] = model.ReferralWithdrawalItemStatusReleased
+			updates["allocated_amount"] = 0
+		}
+		if err := tx.Model(&model.ReferralWithdrawalItem{}).Where("id = ?", items[i].Id).Updates(updates).Error; err != nil {
+			return err
+		}
+		if items[i].CommissionId > 0 && !left.IsPositive() {
+			if err := syncCommissionStatusTx(tx, items[i].CommissionId); err != nil {
+				return err
+			}
+		}
+		reducedBy[items[i].WithdrawalId] = reducedBy[items[i].WithdrawalId].Add(take)
+		remaining = remaining.Sub(take)
+	}
+	for withdrawalId, reduced := range reducedBy {
+		if err := reduceOrReleaseWithdrawalAfterClawbackTx(tx, withdrawalId, reduced); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func reduceOrReleaseWithdrawalAfterClawbackTx(tx *gorm.DB, withdrawalId int, reduced decimal.Decimal) error {
+	if tx == nil || withdrawalId <= 0 || !reduced.IsPositive() {
+		return nil
+	}
+	var withdrawal model.ReferralWithdrawal
+	if err := model.AdtyLockForUpdate(tx).Where("id = ?", withdrawalId).First(&withdrawal).Error; err != nil {
+		return err
+	}
+	switch withdrawal.Status {
+	case model.ReferralWithdrawalStatusPending, model.ReferralWithdrawalStatusApproved:
+	default:
+		return nil
+	}
+	occupied, err := withdrawalFrozenItemTotalTx(tx, withdrawalId)
+	if err != nil {
+		return err
+	}
+	amount := moneyDec(withdrawal.Amount).Sub(reduced)
+	if amount.IsNegative() {
+		amount = decimal.Zero
+	}
+	if occupied.LessThan(amount) {
+		amount = occupied
+	}
+	updates := withdrawalAmountUpdates(&withdrawal, amount)
+	if !amount.IsPositive() {
+		now := time.Now().Unix()
+		updates["status"] = model.ReferralWithdrawalStatusCanceled
+		updates["canceled_at"] = now
+		updates["reject_reason"] = "commission refunded"
+		if err := tx.Model(&model.ReferralWithdrawal{}).Where("id = ?", withdrawal.Id).Updates(updates).Error; err != nil {
+			return err
+		}
+		return (&ReferralService{}).releaseWithdrawalItemsTx(tx, withdrawal.Id)
+	}
+	return tx.Model(&model.ReferralWithdrawal{}).Where("id = ?", withdrawal.Id).Updates(updates).Error
+}
+
+func withdrawalAmountUpdates(withdrawal *model.ReferralWithdrawal, amount decimal.Decimal) map[string]any {
+	if amount.IsNegative() {
+		amount = decimal.Zero
+	}
+	net := amount.Sub(moneyDec(withdrawal.FeeAmount))
+	if net.IsNegative() {
+		net = decimal.Zero
+	}
+	updates := map[string]any{"amount": moneyF(amount), "net_amount": moneyF(net)}
+	if rate, err := decimal.NewFromString(strings.TrimSpace(withdrawal.CNYRate)); err == nil && rate.IsPositive() {
+		updates["cny_amount"] = amount.Mul(rate).Round(2).StringFixed(2)
+	}
+	return updates
+}
+
+func withdrawalFrozenItemTotalTx(tx *gorm.DB, withdrawalId int) (decimal.Decimal, error) {
+	var items []model.ReferralWithdrawalItem
+	if err := tx.Where("withdrawal_id = ? AND status = ?", withdrawalId, model.ReferralWithdrawalItemStatusFrozen).Find(&items).Error; err != nil {
+		return decimal.Zero, err
+	}
+	total := decimal.Zero
+	for _, item := range items {
+		total = total.Add(moneyDec(item.AllocatedAmount))
+	}
+	if total.IsNegative() {
+		return decimal.Zero, nil
+	}
+	return total, nil
+}
+
+// withdrawalMovableFrozenTx 是打款或驳回时还可以从这笔提现搬动的冻结额：
+// 取当前冻结明细、提现单金额和账户实有冻结里的最小正数。
+func withdrawalMovableFrozenTx(tx *gorm.DB, withdrawal *model.ReferralWithdrawal, account *model.ReferralCommissionAccount) (decimal.Decimal, error) {
+	if withdrawal == nil {
+		return decimal.Zero, nil
+	}
+	occupied, err := withdrawalFrozenItemTotalTx(tx, withdrawal.Id)
+	if err != nil {
+		return decimal.Zero, err
+	}
+	amount := moneyDec(withdrawal.Amount)
+	if !occupied.IsPositive() {
+		amount = decimal.Zero
+	} else if occupied.LessThan(amount) {
+		amount = occupied
+	}
+	if account != nil {
+		frozen := moneyDec(account.FrozenAmount)
+		if !frozen.IsPositive() {
+			amount = decimal.Zero
+		} else if frozen.LessThan(amount) {
+			amount = frozen
+		}
+	}
+	if amount.IsNegative() {
+		return decimal.Zero, nil
+	}
+	return amount, nil
+}
+
 // lockWithdrawalCommissionRowsTx 先按佣金 id 锁住这笔提现占用的佣金。
-// 退款扣回是先锁佣金再锁账户；这里保持同一顺序，避免打款或驳回和退款互相锁死。
+// 退款扣回是先锁佣金，再锁相关提现，再锁账户；打款或驳回保持同一顺序，避免互相锁死。
 func lockWithdrawalCommissionRowsTx(tx *gorm.DB, withdrawalId int) error {
 	var ids []int
 	if err := tx.Model(&model.ReferralWithdrawalItem{}).
@@ -327,16 +513,23 @@ func lockWithdrawalCommissionRowsTx(tx *gorm.DB, withdrawalId int) error {
 	return nil
 }
 
-// releaseWithdrawalTx 驳回或撤回：冻结的金额回到可提现，明细释放。
+// releaseWithdrawalTx 驳回或撤回：仍冻结在这笔提现里的金额回到可提现，明细释放。
+// 账户搬动按当前冻结占用和账户实有冻结取小，不按已经冲回过的原申请额再搬一次。
 func (s *ReferralService) releaseWithdrawalTx(tx *gorm.DB, withdrawal *model.ReferralWithdrawal, status string, actor int, reason string, now int64) error {
 	if err := lockWithdrawalCommissionRowsTx(tx, withdrawal.Id); err != nil {
+		return err
+	}
+	if err := model.AdtyLockForUpdate(tx).Where("id = ?", withdrawal.Id).First(withdrawal).Error; err != nil {
 		return err
 	}
 	account, err := lockReferralAccountTx(tx, withdrawal.AffiliateId)
 	if err != nil {
 		return err
 	}
-	amount := moneyDec(withdrawal.Amount)
+	amount, err := withdrawalMovableFrozenTx(tx, withdrawal, account)
+	if err != nil {
+		return err
+	}
 	updates := map[string]any{"status": status, "reject_reason": truncateText(reason, 1000)}
 	if status == model.ReferralWithdrawalStatusCanceled {
 		updates["canceled_at"], updates["canceled_by"] = now, actor
@@ -348,6 +541,9 @@ func (s *ReferralService) releaseWithdrawalTx(tx *gorm.DB, withdrawal *model.Ref
 	}
 	if err := s.releaseWithdrawalItemsTx(tx, withdrawal.Id); err != nil {
 		return err
+	}
+	if !amount.IsPositive() {
+		return nil
 	}
 	return AdjustAccountTx(tx, account, decimal.Zero, amount, amount.Neg(), decimal.Zero, model.ReferralCommissionLedger{
 		WithdrawalId: withdrawal.Id, Type: "withdraw_release", RefType: "withdrawal", RefId: fmt.Sprint(withdrawal.Id),
@@ -361,6 +557,13 @@ func (s *ReferralService) ReviewWithdrawal(withdrawalId, adminId int, approve bo
 	var notifyUser int
 	var withdrawalCopy model.ReferralWithdrawal
 	err := model.DB.Transaction(func(tx *gorm.DB) error {
+		var peek model.ReferralWithdrawal
+		if err := tx.Where("id = ?", withdrawalId).First(&peek).Error; err != nil {
+			return err
+		}
+		if err := lockWithdrawalCommissionRowsTx(tx, peek.Id); err != nil {
+			return err
+		}
 		var withdrawal model.ReferralWithdrawal
 		if err := model.AdtyLockForUpdate(tx).Where("id = ?", withdrawalId).First(&withdrawal).Error; err != nil {
 			return err
@@ -394,6 +597,16 @@ func (s *ReferralService) MarkWithdrawalPaid(withdrawalId, adminId int, txnNo, p
 	now := time.Now().Unix()
 	var withdrawalCopy model.ReferralWithdrawal
 	err := model.DB.Transaction(func(tx *gorm.DB) error {
+		var peek model.ReferralWithdrawal
+		if err := tx.Where("id = ?", withdrawalId).First(&peek).Error; err != nil {
+			return err
+		}
+		if peek.AccountType == model.ReferralWithdrawToUSDT && strings.TrimSpace(txnNo) == "" {
+			return common.NewMessage("Enter the transaction hash")
+		}
+		if err := lockWithdrawalCommissionRowsTx(tx, peek.Id); err != nil {
+			return err
+		}
 		var withdrawal model.ReferralWithdrawal
 		if err := model.AdtyLockForUpdate(tx).Where("id = ?", withdrawalId).First(&withdrawal).Error; err != nil {
 			return err
@@ -401,13 +614,11 @@ func (s *ReferralService) MarkWithdrawalPaid(withdrawalId, adminId int, txnNo, p
 		if withdrawal.Status != model.ReferralWithdrawalStatusApproved {
 			return common.NewMessage("This withdrawal cannot be marked as paid")
 		}
-		if withdrawal.AccountType == model.ReferralWithdrawToUSDT && strings.TrimSpace(txnNo) == "" {
-			return common.NewMessage("Enter the transaction hash")
-		}
-		if err := lockWithdrawalCommissionRowsTx(tx, withdrawal.Id); err != nil {
+		account, err := lockReferralAccountTx(tx, withdrawal.AffiliateId)
+		if err != nil {
 			return err
 		}
-		account, err := lockReferralAccountTx(tx, withdrawal.AffiliateId)
+		amount, err := withdrawalMovableFrozenTx(tx, &withdrawal, account)
 		if err != nil {
 			return err
 		}
@@ -420,12 +631,13 @@ func (s *ReferralService) MarkWithdrawalPaid(withdrawalId, adminId int, txnNo, p
 		if err := s.markWithdrawalItemsPaidTx(tx, withdrawal.Id); err != nil {
 			return err
 		}
-		amount := moneyDec(withdrawal.Amount)
-		if err := AdjustAccountTx(tx, account, decimal.Zero, decimal.Zero, amount.Neg(), amount, model.ReferralCommissionLedger{
-			WithdrawalId: withdrawal.Id, Type: "withdraw_paid", RefType: "withdrawal", RefId: fmt.Sprint(withdrawal.Id),
-			ExternalRefId: fmt.Sprintf("paid:%d", withdrawal.Id), Remark: strings.TrimSpace(txnNo), Operator: fmt.Sprint(adminId),
-		}); err != nil {
-			return err
+		if amount.IsPositive() {
+			if err := AdjustAccountTx(tx, account, decimal.Zero, decimal.Zero, amount.Neg(), amount, model.ReferralCommissionLedger{
+				WithdrawalId: withdrawal.Id, Type: "withdraw_paid", RefType: "withdrawal", RefId: fmt.Sprint(withdrawal.Id),
+				ExternalRefId: fmt.Sprintf("paid:%d", withdrawal.Id), Remark: strings.TrimSpace(txnNo), Operator: fmt.Sprint(adminId),
+			}); err != nil {
+				return err
+			}
 		}
 		withdrawalCopy = withdrawal
 		withdrawalCopy.PaymentTxnNo = strings.TrimSpace(txnNo)
