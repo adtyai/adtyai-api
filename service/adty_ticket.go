@@ -80,6 +80,17 @@ func SetAdtyTicketImageDirForTest(dir string) func() {
 	return func() { adtyTicketImageDir = old }
 }
 
+func adtyTicketImageFilePath(storage string) (string, error) {
+	storage = strings.TrimSpace(storage)
+	if storage == "" {
+		return "", nil
+	}
+	if strings.Contains(storage, "..") || strings.ContainsAny(storage, `/\`) {
+		return "", ErrAdtyTicketInvalid
+	}
+	return filepath.Join(adtyTicketImageDir(), storage), nil
+}
+
 func CreateAdtyTicket(userId int, input AdtyTicketInput) (*model.AdtyTicket, error) {
 	input.Title = strings.TrimSpace(redactAdtySecrets(input.Title))
 	input.Body = strings.TrimSpace(redactAdtySecrets(input.Body))

@@ -12,8 +12,8 @@ import (
 func TestSoftDeleteReleasesUsernameEmailAndWeChat(t *testing.T) {
 	user := &User{
 		Username: "alice-delete", Password: "hash", Email: "alice-delete@example.com",
-		WeChatId: "wx-alice-delete", Role: common.RoleCommonUser, Status: common.UserStatusEnabled,
-		AuthVersion: 1,
+		DisplayName: "Alice Delete", WeChatId: "wx-alice-delete", Role: common.RoleCommonUser,
+		Status: common.UserStatusEnabled, AuthVersion: 1,
 	}
 	require.NoError(t, DB.Create(user).Error)
 	t.Cleanup(func() {
@@ -28,7 +28,9 @@ func TestSoftDeleteReleasesUsernameEmailAndWeChat(t *testing.T) {
 	assert.NotNil(t, stored.DeletedAt)
 	assert.NotEqual(t, "alice-delete", stored.Username)
 	assert.Empty(t, stored.Email)
+	assert.Empty(t, stored.DisplayName)
 	assert.Empty(t, stored.WeChatId)
+	assert.Equal(t, common.UserStatusEnabled, stored.Status)
 	assert.False(t, IsWeChatIdAlreadyTaken("wx-alice-delete", 0))
 	assert.False(t, IsEmailAlreadyTaken("alice-delete@example.com", 0))
 

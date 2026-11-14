@@ -1,11 +1,13 @@
 package model
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
@@ -1013,27 +1015,165 @@ func deletedUserUsername(tx *gorm.DB, userId int) (string, error) {
 	return "", fmt.Errorf("no free username tombstone for user %d", userId)
 }
 
-// releaseSoftDeletedIdentity drops the login names and provider subjects before
-// a soft delete. Those columns are still unique, or looked up with Unscoped,
-// so leaving them would block the same person from registering again.
+// releaseSoftDeletedIdentity drops the login names, personal-profile fields,
+// and provider subjects before a soft delete. Those columns are still unique,
+// or looked up with Unscoped, so leaving them would block the same person
+// from registering again. The row stays listable as cancelled.
 func releaseSoftDeletedIdentity(tx *gorm.DB, userId int) error {
-	if err := releaseAllExternalIdentitiesWithTx(tx, userId); err != nil {
-		return err
+	_, err := applyCancelledAccountProfileClear(tx, userId, false)
+	return err
+}
+
+func cancelledAccountProfileAssignments(username, setting string) map[string]any {
+	return map[string]any{
+		"username":     username,
+		"display_name": "",
+		"email":        "",
+		"github_id":    "",
+		"discord_id":   "",
+		"oidc_id":      "",
+		"wechat_id":    "",
+		"telegram_id":  "",
+		"linux_do_id":  "",
+		"setting":      setting,
 	}
-	username, err := deletedUserUsername(tx, userId)
+}
+
+func isCancelledUsernameTombstone(username string, userId int) bool {
+	base := NormalizeUsername(fmt.Sprintf("del%d", userId))
+	normalized := NormalizeUsername(username)
+	if normalized == base {
+		return true
+	}
+	return strings.HasPrefix(normalized, base+"x")
+}
+
+func sanitizeCancelledAccountSetting(raw string) string {
+	if strings.TrimSpace(raw) == "" {
+		return raw
+	}
+	setting := dto.UserSetting{}
+	if err := common.Unmarshal([]byte(raw), &setting); err != nil {
+		return raw
+	}
+	setting.NotificationEmail = ""
+	setting.WebhookUrl = ""
+	setting.WebhookSecret = ""
+	setting.BarkUrl = ""
+	setting.GotifyUrl = ""
+	setting.GotifyToken = ""
+	encoded, err := common.Marshal(setting)
 	if err != nil {
-		return err
+		return raw
 	}
-	return tx.Model(&User{}).Where("id = ?", userId).Updates(map[string]any{
-		"username":    username,
-		"email":       "",
-		"github_id":   "",
-		"discord_id":  "",
-		"oidc_id":     "",
-		"wechat_id":   "",
-		"telegram_id": "",
-		"linux_do_id": "",
-	}).Error
+	return string(encoded)
+}
+
+func cancelledAccountProfileIsClear(user User) bool {
+	if !isCancelledUsernameTombstone(user.Username, user.Id) {
+		return false
+	}
+	if user.Email != "" || user.DisplayName != "" || user.GitHubId != "" || user.DiscordId != "" ||
+		user.OidcId != "" || user.WeChatId != "" || user.TelegramId != "" || user.LinuxDOId != "" {
+		return false
+	}
+	return user.Setting == sanitizeCancelledAccountSetting(user.Setting)
+}
+
+// applyCancelledAccountProfileClear idempotently clears population and personal
+// profile fields. When unscoped is true it only touches already-cancelled rows.
+func applyCancelledAccountProfileClear(tx *gorm.DB, userId int, unscoped bool) (bool, error) {
+	if tx == nil || userId <= 0 {
+		return false, common.NewMessage("ID is empty!")
+	}
+	read := tx
+	if unscoped {
+		read = tx.Unscoped()
+	}
+	var user User
+	if err := read.Where("id = ?", userId).First(&user).Error; err != nil {
+		return false, err
+	}
+	if unscoped && !user.DeletedAt.Valid {
+		return false, nil
+	}
+	if cancelledAccountProfileIsClear(user) {
+		return false, nil
+	}
+	if err := releaseAllExternalIdentitiesWithTx(tx, userId); err != nil {
+		return false, err
+	}
+	username := user.Username
+	if !isCancelledUsernameTombstone(username, userId) {
+		next, err := deletedUserUsername(tx, userId)
+		if err != nil {
+			return false, err
+		}
+		username = next
+	}
+	updates := cancelledAccountProfileAssignments(username, sanitizeCancelledAccountSetting(user.Setting))
+	write := tx.Model(&User{}).Where("id = ?", userId)
+	if unscoped {
+		write = tx.Unscoped().Model(&User{}).Where("id = ?", userId)
+	}
+	if err := write.Updates(updates).Error; err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// ClearCancelledAccountProfileLeftovers idempotently clears leftover PII on
+// already-cancelled accounts whose cancellation is older than cutoff. It never
+// hard-deletes the row and never touches active accounts.
+func ClearCancelledAccountProfileLeftovers(ctx context.Context, cutoff int64, limit int) (int64, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	if DB == nil {
+		return 0, errors.New("database unavailable")
+	}
+	if cutoff <= 0 {
+		return 0, nil
+	}
+	cutoffTime := time.Unix(cutoff, 0)
+	var cleared int64
+	lastID := 0
+	for {
+		if ctx != nil {
+			if err := ctx.Err(); err != nil {
+				return cleared, err
+			}
+		}
+		var users []User
+		if err := DB.Unscoped().
+			Where("deleted_at IS NOT NULL AND deleted_at < ? AND id > ?", cutoffTime, lastID).
+			Order("id").
+			Limit(limit).
+			Find(&users).Error; err != nil {
+			return cleared, err
+		}
+		if len(users) == 0 {
+			return cleared, nil
+		}
+		for _, user := range users {
+			lastID = user.Id
+			var changed bool
+			err := DB.Transaction(func(tx *gorm.DB) error {
+				ok, err := applyCancelledAccountProfileClear(tx, user.Id, true)
+				changed = ok
+				return err
+			})
+			if err != nil {
+				return cleared, err
+			}
+			if changed {
+				cleared++
+			}
+		}
+		if len(users) < limit {
+			return cleared, nil
+		}
+	}
 }
 
 // ErrSiteOwnerCannotDelete means the account still owns a site that serves

@@ -248,10 +248,14 @@ func TestUserDeleteKeepsHistoricalOrdersAndLedgersAndRevokesLiveAccess(t *testin
 	db := adtyTestDB(t)
 	precheckUserDeleteTables(t, db)
 	user := newPrecheckUser(t, "keep-books")
+	require.NoError(t, db.Model(user).Updates(map[string]any{"display_name": "Keep Books", "github_id": "keep-books-gh"}).Error)
 	identity := newPrecheckSession(t, user)
+	require.NoError(t, db.AutoMigrate(&Task{}, &AuditLog{}))
 	require.NoError(t, db.Create(&TopUp{UserId: user.Id, TradeNo: "hist-keep-books", Status: common.TopUpStatusSuccess, Amount: 25, CompleteTime: time.Now().Unix()}).Error)
 	require.NoError(t, db.Create(&AdtyTopupOrder{TradeNo: "hist-keep-books", UserId: user.Id, FaceUSD: decimal.NewFromInt(25), CreditQuota: 12_500_000}).Error)
 	require.NoError(t, db.Create(&AdtyBalanceLedger{UserId: user.Id, DeltaQuota: 12_500_000, BalanceBefore: 0, BalanceAfter: 12_500_000, Type: AdtyLedgerTypeTopUp, RefType: "topup", RefId: "hist-keep-books"}).Error)
+	require.NoError(t, db.Create(&Task{UserId: user.Id, TaskID: "artifact-keep-books", Status: TaskStatusSuccess, Action: "image"}).Error)
+	require.NoError(t, LOG_DB.Create(&AuditLog{EventId: "audit-keep-books", UserId: user.Id, Username: "keep-books", Category: AuditCategoryOperation, Action: "user.login", Content: "keep-audit", Success: true, Result: AuditResultSuccess, CreatedAt: time.Now().Unix()}).Error)
 	require.NoError(t, db.Create(&AdtyManualRefund{
 		RefundId: "done-keep-books", TradeNo: "hist-keep-books", UserId: user.Id,
 		Status: AdtyManualRefundStatusCompleted, RequestUSD: decimal.NewFromInt(1), RequestQuota: 500000,
@@ -282,7 +286,29 @@ func TestUserDeleteKeepsHistoricalOrdersAndLedgersAndRevokesLiveAccess(t *testin
 	require.NoError(t, db.Unscoped().First(&stored, user.Id).Error)
 	assert.True(t, stored.DeletedAt.Valid)
 	assert.Empty(t, stored.Email)
+	assert.Empty(t, stored.DisplayName)
+	assert.Empty(t, stored.GitHubId)
 	assert.NotEqual(t, "keep-books", stored.Username)
+	assert.Equal(t, user.Id, stored.Id)
+	assert.Equal(t, user.SiteId, stored.SiteId)
+	assert.Equal(t, common.UserStatusEnabled, stored.Status)
+	var tasks, audits int64
+	require.NoError(t, db.Model(&Task{}).Where("task_id = ?", "artifact-keep-books").Count(&tasks).Error)
+	require.NoError(t, LOG_DB.Model(&AuditLog{}).Where("event_id = ?", "audit-keep-books").Count(&audits).Error)
+	assert.EqualValues(t, 1, tasks)
+	assert.EqualValues(t, 1, audits)
+	deletedStatus := -1
+	listed, total, err := SearchUsers(fmt.Sprintf("%d", user.Id), "", nil, &deletedStatus, 0, 20, 0, nil)
+	require.NoError(t, err)
+	assert.GreaterOrEqual(t, total, int64(1))
+	found := false
+	for _, item := range listed {
+		if item.Id == user.Id {
+			found = true
+			assert.True(t, item.DeletedAt.Valid)
+		}
+	}
+	assert.True(t, found, "cancelled account must remain listable as 已注销")
 }
 
 func TestUserDeleteStillRejectsRootAndOpenSiteOwners(t *testing.T) {

@@ -3,12 +3,15 @@ package service
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/gin-gonic/gin"
+
+	"gorm.io/gorm"
 )
 
 const (
@@ -17,11 +20,9 @@ const (
 
 	dataRetentionSkipUnconfigured = "unconfigured; no automatic deletion"
 	dataRetentionSkipNotification = "permanent retention; automatic cleanup must not delete notification history"
-	dataRetentionSkipAccount      = "no safe cancelled-account population to retain, de-identify, or delete without risking active accounts or financial history"
-	dataRetentionSkipOrders       = "orders and payment events are not safely automatically deletable with the current schema"
-	dataRetentionSkipFinancial    = "financial ledgers are not safely automatically deletable with the current schema"
-	dataRetentionSkipTickets      = "ticket images are stored on disk and automatic deletion is not safely mapped without a complete file-cleanup path"
-	dataRetentionSkipArtifacts    = "task inputs, outputs, and generated file associations are not safely automatically deletable with the current schema"
+	dataRetentionSkipOrders       = "policy: orders and payment events are never automatically deleted, including after a retention period expires or an account is cancelled"
+	dataRetentionSkipFinancial    = "policy: financial ledgers are never automatically deleted, including after a retention period expires or an account is cancelled"
+	dataRetentionSkipArtifacts    = "policy: task artifacts are kept by default, as in official NewAPI; they are never automatically deleted after a retention period expires or an account is cancelled"
 	dataRetentionSkipDeidentify   = "de-identification is not implemented for this category; no automatic deletion was performed"
 )
 
@@ -83,8 +84,7 @@ func dataRetentionCatalog() []dataRetentionCategorySpec {
 			AutoCleanable:   true,
 			AllowedActions:  []string{model.DataRetentionActionDelete, model.DataRetentionActionDeidentify},
 			DefaultBehavior: "no_automatic_deletion",
-			Notes:           "Root may set a retain, de-identify, or delete action. The task does not use account cancellation as a trigger to wipe orders, ledgers, or audit facts, and it will not act until a safe cancelled-account population exists.",
-			SkipConfigured:  dataRetentionSkipAccount,
+			Notes:           "Self-cancel immediately clears that account's population and personal-profile fields; the row stays listable as cancelled. When Root sets a period, later runs may idempotently clear leftover PII only on already-cancelled accounts. The task never deletes the account row, and never wipes orders, ledgers, audit, billing facts, or task artifacts because of cancellation.",
 		},
 		{
 			Category:        model.DataRetentionCategoryLoginSecurity,
@@ -109,7 +109,7 @@ func dataRetentionCatalog() []dataRetentionCategorySpec {
 			AutoCleanable:   true,
 			AllowedActions:  []string{model.DataRetentionActionDelete},
 			DefaultBehavior: "no_automatic_deletion",
-			Notes:           "Listed for Root configuration. Automatic deletion is skipped until a safe mapping exists. Historical orders are never deleted because an account was cancelled.",
+			Notes:           "Listed for Root configuration. Automatic cleanup never deletes orders or payment events, including after a configured period expires or an account is cancelled. Changing a policy does not delete history by itself.",
 			SkipConfigured:  dataRetentionSkipOrders,
 		},
 		{
@@ -118,7 +118,7 @@ func dataRetentionCatalog() []dataRetentionCategorySpec {
 			AutoCleanable:   true,
 			AllowedActions:  []string{model.DataRetentionActionDelete},
 			DefaultBehavior: "no_automatic_deletion",
-			Notes:           "Listed for Root configuration. Automatic deletion is skipped until a safe mapping exists. Financial facts are never deleted because an account was cancelled.",
+			Notes:           "Listed for Root configuration. Automatic cleanup never deletes financial ledgers, including after a configured period expires or an account is cancelled. Changing a policy does not delete history by itself.",
 			SkipConfigured:  dataRetentionSkipFinancial,
 		},
 		{
@@ -127,8 +127,8 @@ func dataRetentionCatalog() []dataRetentionCategorySpec {
 			AutoCleanable:   true,
 			AllowedActions:  []string{model.DataRetentionActionDelete},
 			DefaultBehavior: "no_automatic_deletion",
-			Notes:           "Listed for Root configuration. Automatic deletion is skipped until ticket images on disk can be removed safely with the database rows.",
-			SkipConfigured:  dataRetentionSkipTickets,
+			Notes:           "When Root sets a period, later runs may delete only already closed or resolved tickets whose close or resolve time is older than that period, honoring a 90-day safety floor. Disk images are removed first; a file-delete failure leaves that ticket's records in place. Open, in-progress, and waiting tickets are not touched. Unconfigured tickets are not auto-deleted.",
+			MinDays:         90,
 		},
 		{
 			Category:        model.DataRetentionCategoryNotificationHistory,
@@ -152,7 +152,7 @@ func dataRetentionCatalog() []dataRetentionCategorySpec {
 			AutoCleanable:   true,
 			AllowedActions:  []string{model.DataRetentionActionDelete},
 			DefaultBehavior: "no_automatic_deletion",
-			Notes:           "Listed for Root configuration. Automatic deletion is skipped until generated files and their associations can be removed safely.",
+			Notes:           "Listed for Root configuration. Task artifacts follow official NewAPI and are kept by default. Automatic cleanup never deletes them after a configured period expires or an account is cancelled. Changing a policy does not delete history by itself.",
 			SkipConfigured:  dataRetentionSkipArtifacts,
 		},
 	}
@@ -408,6 +408,16 @@ func applyDataRetentionCategory(ctx context.Context, spec dataRetentionCategoryS
 		item.SkipReason = spec.SkipConfigured
 		return item
 	}
+	if spec.Category == model.DataRetentionCategoryUserAccountProfile {
+		cleared, err := model.ClearCancelledAccountProfileLeftovers(ctx, now.Add(-time.Duration(effectiveRetentionDays(days, spec.MinDays))*24*time.Hour).Unix(), dataRetentionCleanupBatchSize)
+		if err != nil {
+			item.FailureCount = 1
+			item.SkipReason = err.Error()
+			return item
+		}
+		item.DeidentifyCount = cleared
+		return item
+	}
 	if action == model.DataRetentionActionDeidentify {
 		item.SkipReason = dataRetentionSkipDeidentify
 		return item
@@ -474,9 +484,97 @@ func executeDataRetentionDelete(ctx context.Context, category string, days int, 
 			return count, 1, err
 		}
 		return count, 0, nil
+	case model.DataRetentionCategorySupportTickets:
+		return deleteExpiredSupportTickets(ctx, cutoff, dataRetentionCleanupBatchSize)
 	default:
 		return 0, 0, nil
 	}
+}
+
+func deleteExpiredSupportTickets(ctx context.Context, cutoff int64, limit int) (deleted, failed int64, err error) {
+	if limit <= 0 {
+		limit = dataRetentionCleanupBatchSize
+	}
+	if model.DB == nil {
+		return 0, 0, fmt.Errorf("database unavailable")
+	}
+	var lastID int64
+	for {
+		if err := ctx.Err(); err != nil {
+			return deleted, failed, err
+		}
+		var ids []int64
+		lookup := model.DB.WithContext(ctx).Raw(`
+			SELECT t.id
+			FROM adty_tickets t
+			WHERE t.status IN (?, ?)
+			  AND t.id > ?
+			  AND COALESCE(
+			    (SELECT MAX(e.created_at) FROM adty_ticket_events e
+			      WHERE e.ticket_id = t.id AND e.action = ? AND e.detail IN (?, ?)),
+			    t.updated_at,
+			    t.created_at
+			  ) < ?
+			ORDER BY t.id
+			LIMIT ?
+		`, model.AdtyTicketResolved, model.AdtyTicketClosed, lastID, "status", model.AdtyTicketResolved, model.AdtyTicketClosed, cutoff, limit)
+		if err := lookup.Scan(&ids).Error; err != nil {
+			return deleted, failed, err
+		}
+		if len(ids) == 0 {
+			return deleted, failed, nil
+		}
+		for _, id := range ids {
+			lastID = id
+			ok, ferr := deleteOneExpiredSupportTicket(ctx, id)
+			if ferr != nil {
+				return deleted, failed, ferr
+			}
+			if ok {
+				deleted++
+			} else {
+				failed++
+			}
+		}
+		if len(ids) < limit {
+			return deleted, failed, nil
+		}
+	}
+}
+
+func deleteOneExpiredSupportTicket(ctx context.Context, ticketID int64) (bool, error) {
+	var images []model.AdtyTicketImage
+	if err := model.DB.WithContext(ctx).Where("ticket_id = ?", ticketID).Order("id").Find(&images).Error; err != nil {
+		return false, err
+	}
+	for _, image := range images {
+		path, err := adtyTicketImageFilePath(image.Storage)
+		if err != nil {
+			return false, nil
+		}
+		if path == "" {
+			continue
+		}
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return false, nil
+		}
+	}
+	err := model.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("ticket_id = ?", ticketID).Delete(&model.AdtyTicketImage{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("ticket_id = ?", ticketID).Delete(&model.AdtyTicketMessage{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("ticket_id = ?", ticketID).Delete(&model.AdtyTicketEvent{}).Error; err != nil {
+			return err
+		}
+		return tx.Where("id = ?", ticketID).Delete(&model.AdtyTicket{}).Error
+	})
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func drainRetentionBatches(ctx context.Context, fn func() (int64, error)) (int64, error) {

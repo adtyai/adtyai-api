@@ -102,3 +102,27 @@ func TestAccountDeletionCodeLocksAfterMaxAttempts(t *testing.T) {
 	ok := securityEnrollmentRequest("DELETE", "/api/user/self", `{"verification_code":"246810"}`, proof, identity, DeleteSelf)
 	assert.Contains(t, ok.Body.String(), `"success":true`, ok.Body.String())
 }
+
+func TestAccountDeletionClearsProfileAndKeepsCancelledRow(t *testing.T) {
+	user, identity := setupSecurityEnrollmentTest(t)
+	user.Email = "owner@example.com"
+	user.DisplayName = "Owner Name"
+	require.NoError(t, model.DB.Model(user).Updates(map[string]any{
+		"email": user.Email, "display_name": user.DisplayName, "github_id": "owner-gh",
+	}).Error)
+	operation := service.VerificationOperation{Scope: service.VerificationScopeAccountDelete}
+	proof := issueSecurityEnrollmentProof(t, identity, operation, service.VerificationMethodPassword)
+	ok := securityEnrollmentRequest("DELETE", "/api/user/self", accountDeletionBody(t, user), proof, identity, DeleteSelf)
+	assert.Contains(t, ok.Body.String(), `"success":true`, ok.Body.String())
+
+	var stored model.User
+	require.NoError(t, model.DB.Unscoped().First(&stored, user.Id).Error)
+	assert.True(t, stored.DeletedAt.Valid)
+	assert.Empty(t, stored.Email)
+	assert.Empty(t, stored.DisplayName)
+	assert.Empty(t, stored.GitHubId)
+	assert.NotEqual(t, "enrollment-user", stored.Username)
+	assert.Equal(t, user.Id, stored.Id)
+	assert.Equal(t, user.SiteId, stored.SiteId)
+	assert.Equal(t, common.UserStatusEnabled, stored.Status)
+}
