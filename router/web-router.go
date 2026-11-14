@@ -49,6 +49,8 @@ func SetWebRouter(router *gin.Engine, assets WebAssets, pluginDispatcher gin.Han
 	)
 }
 
+// rejectRetiredFeaturePath returns JSON 404 for retired namespaces, including
+// official Playground /pg paths. This is not a live relay route. See internal/adtygov.
 func rejectRetiredFeaturePath(c *gin.Context) {
 	for _, prefix := range []string{"/pg", "/api/adty/marketing", "/api/adty/admin/marketing", "/api/deployments"} {
 		if c.Request.URL.Path == prefix || strings.HasPrefix(c.Request.URL.Path, prefix+"/") {

@@ -56,6 +56,8 @@ const (
 
 func Path2RelayMode(path string) int {
 	relayMode := RelayModeUnknown
+	// /pg/chat/completions is official keep-list path classification for the
+	// retired Playground namespace, not a registered user route. See internal/adtygov.
 	if strings.HasPrefix(path, "/v1/chat/completions") || strings.HasPrefix(path, "/pg/chat/completions") {
 		relayMode = RelayModeChatCompletions
 	} else if strings.HasPrefix(path, "/v1/completions") {

@@ -11,6 +11,8 @@ import (
 )
 
 // adtyAPIPathPrefixes identifies API requests for closed-site and custom-domain handling.
+// "/pg/" is official keep-list classification of the retired Playground
+// namespace, not a registered user feature. See internal/adtygov.
 var adtyAPIPathPrefixes = []string{"/api/", "/v1/", "/v1beta/", "/mj/", "/pg/"}
 
 func adtyIsSessionAPI(path string) bool {

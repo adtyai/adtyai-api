@@ -94,11 +94,13 @@ type RelayInfo struct {
 	//SendLastReasoningResponse bool
 	IsStream               bool
 	IsGeminiBatchEmbedding bool
-	IsPlayground           bool
-	UsePrice               bool
-	RelayMode              int
-	OriginModelName        string
-	ResponseModel          *ResponseModel
+	// IsPlayground is the official keep-list compatibility flag for retired
+	// Playground requests. It is not a registered user feature. See internal/adtygov.
+	IsPlayground    bool
+	UsePrice        bool
+	RelayMode       int
+	OriginModelName string
+	ResponseModel   *ResponseModel
 
 	// BillingModelName is the pricing identity for this request. It is kept
 	// separate from OriginModelName and UpstreamModelName so virtual pricing
@@ -656,6 +658,8 @@ func genBaseRelayInfo(c *gin.Context, request dto.Request) *RelayInfo {
 		info.RequestURLPath = strings.Replace(info.RequestURLPath, "/v1/edits", "/v1/images/edits", 1)
 	}
 
+	// Official keep-list compatibility if a leftover /pg request reached
+	// GenRelayInfo. No live /pg relay route is registered. See internal/adtygov.
 	if strings.HasPrefix(c.Request.URL.Path, "/pg") {
 		info.IsPlayground = true
 		info.RequestURLPath = strings.TrimPrefix(info.RequestURLPath, "/pg")

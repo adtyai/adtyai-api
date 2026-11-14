@@ -432,6 +432,8 @@ var reservedRouteNamespaces = []string{
 	"/errors",
 	"/keys",
 	"/models",
+	// Official keep-list reserved paths for the retired Playground namespace.
+	// Plugins cannot claim /pg. See internal/adtygov.
 	"/playground",
 	"/pg",
 	"/profile",
