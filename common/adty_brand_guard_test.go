@@ -49,7 +49,7 @@ func TestAdtyBrandGuard(t *testing.T) {
 		}
 		if d.IsDir() {
 			switch d.Name() {
-			case ".git", "web", "node_modules", "vendor", "electron":
+			case ".git", "web", "node_modules", "vendor":
 				return filepath.SkipDir
 			}
 			return nil

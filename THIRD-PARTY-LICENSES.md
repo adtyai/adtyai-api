@@ -1,9 +1,9 @@
 # Third-Party Licenses
 
 This file summarizes direct third-party dependencies used by distributed builds of this project.
-It is an engineering compliance artifact and should be kept with Docker images, standalone binaries, frontend bundles, and Electron installers.
+It is an engineering compliance artifact and should be kept with Docker images, standalone binaries, and frontend bundles.
 
-Scope: direct dependencies from `go.mod` (including the in-repo `relaykit` and `tokenkit` modules), `web/package.json`, and `electron/package.json`.
+Scope: direct dependencies from `go.mod` (including the in-repo `relaykit` and `tokenkit` modules) and `web/package.json`.
 Versions below are the resolved versions for the checked-in manifests and lockfiles. Go module versions are listed separately when the standalone modules resolve different versions. Transitive dependencies should be audited before a final external release.
 
 ## Dependency Inventory
@@ -164,9 +164,6 @@ Versions below are the resolved versions for the checked-in manifests and lockfi
 | web      | development | npm       | `oxlint`                                                | `1.74.0`                             | MIT                     |
 | web      | development | npm       | `playwright`                                            | `1.65.0`                             | Apache-2.0              |
 | web      | development | npm       | `vitest`                                                | `5.0.4`                              | MIT                     |
-| electron | development | npm       | `cross-env`                                             | `7.0.3`                              | MIT                     |
-| electron | development | npm       | `electron`                                              | `42.11.18`                           | MIT                     |
-| electron | development | npm       | `electron-builder`                                      | `26.15.3`                            | MIT                     |
 
 ## License Texts
 

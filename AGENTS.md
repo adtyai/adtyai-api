@@ -13,7 +13,7 @@ This is an AI API gateway/proxy built with Go. It aggregates 40+ upstream AI pro
 - **Databases**: SQLite, MySQL, PostgreSQL for the primary database (all three must be supported); a separately configured log database also supports ClickHouse
 - **Cache**: Redis (go-redis) + in-memory cache
 - **Auth**: Browser sessions, API tokens and personal access tokens, JWT, WebAuthn/Passkeys, TOTP, OAuth/OIDC; Casbin authorization in `service/authz/`
-- **Extensions**: JavaScript task plugins executed by moejs; Electron desktop wrapper
+- **Extensions**: JavaScript task plugins executed by moejs
 - **Frontend package manager**: Bun (preferred over npm/yarn/pnpm)
 
 ## Architecture
@@ -22,7 +22,7 @@ This is an AI API gateway/proxy built with Go. It aggregates 40+ upstream AI pro
 - `relaykit/` is an independent Go module for protocol DTOs and conversions; transport, authentication, database access, and billing stay in the host.
 - `tokenkit/` is an independent Go module for text and image token counting and estimation; request parsing, file loading, and billing stay in the host.
 - JavaScript task plugins live in `plugins/tasks/`, run through `pkg/jsplugin/`, and integrate with host task polling and settlement.
-- `web/` is the React frontend (see `web/AGENTS.md`); `electron/` is the desktop wrapper.
+- `web/` is the React frontend (see `web/AGENTS.md`).
 
 ## ADTY Fork Conventions
 
@@ -41,7 +41,7 @@ This is an AI API gateway/proxy built with Go. It aggregates 40+ upstream AI pro
 - Do not add a public platform status page, a user consumption-analytics product, voucher batches, a configuration-history restore button, a desktop-client release, or any Telegram account, payment, or key operation.
 - Payment scenes use versioned Root configuration and server-side validation in every checkout path. Existing orders retain their frozen facts. Site staff use their separate workspace and explicit server-side permissions.
 - ADTY formal operation, deployment, fund tests, and acceptance use PostgreSQL only. Do not use SQLite or MySQL for those. Do not set a minimum or maximum PostgreSQL version. Record the actual `server_version_num`; a different version is not a failure. PostgreSQL 17 is recommended. New deployments prefer 17, and 16, 18, or another version is not excluded from acceptance. A major upgrade of an existing data directory must use a new directory, migrate, and reconcile accounts. Do not start that directory by swapping the image. Keep upstream SQLite and MySQL compatibility code and existing unit tests so those upstream assets are not broken. They are not ADTY acceptance evidence. A missing, unrun, or failed SQLite or MySQL check does not block ADTY acceptance.
-- `.github/workflows/adty-ghcr.yml` writes `VERSION` at build time: `main-<short SHA>` for `main`, the tag name for tag builds, `<ref>-<short SHA>` for other branches, and `pr-<number>-<short SHA>` for pull requests. The checked-in `VERSION` file stays empty; the web and Electron `package.json` versions stay independent package metadata and are not the image version. The Electron tree is not a product release.
+- `.github/workflows/adty-ghcr.yml` writes `VERSION` at build time: `main-<short SHA>` for `main`, the tag name for tag builds, `<ref>-<short SHA>` for other branches, and `pr-<number>-<short SHA>` for pull requests. The checked-in `VERSION` file stays empty; the web `package.json` version stays independent package metadata and is not the image version.
 
 ## Internationalization (i18n)
 
