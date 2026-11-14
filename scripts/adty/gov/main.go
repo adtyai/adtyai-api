@@ -1,6 +1,7 @@
 // Command adtygov is the official in-repo entry point for H.24 process
-// capabilities ADTY-24-01, 24-02, 24-03, 24-04, 24-05, 24-07, and 24-08.
-// It does not claim ADTY-24-06, 24-09, or 24-10, and it does not run Phase D.
+// capabilities ADTY-24-01 through 24-08. ADTY-24-06 is landed as a
+// retirement-chain inventory. This tool does not claim ADTY-24-06, 24-09,
+// or 24-10 closed, and it does not run Phase D.
 package main
 
 import (
@@ -114,6 +115,8 @@ func run(cmd string, args []string) error {
 		return nil
 	case "cleanup-campaign":
 		return writeJSON(os.Stdout, adtygov.OfficialCleanupCampaign())
+	case "retired-chains":
+		return writeJSON(os.Stdout, adtygov.OfficialRetiredChainInventory())
 	case "rereview-record":
 		return writeJSON(os.Stdout, adtygov.NewRereviewEntry())
 	case "capabilities":
@@ -132,8 +135,9 @@ func run(cmd string, args []string) error {
 }
 
 func usage(w io.Writer) {
-	fmt.Fprint(w, `Official H.24 process tooling (ADTY-24-01..05, 24-07, 24-08).
-Does not claim ADTY-24-06, 24-09, or 24-10, and does not run Phase D or smoke/scale.
+	fmt.Fprint(w, `Official H.24 process tooling (ADTY-24-01..08).
+ADTY-24-06 is landed as an inventory and is not claimed closed.
+Does not claim ADTY-24-06, 24-09, or 24-10 closed, and does not run Phase D or smoke/scale.
 
 Commands:
   enumerate-units [--root DIR] [-o FILE]   ADTY-24-01 current-tree units.jsonl
@@ -142,6 +146,7 @@ Commands:
   review-record [--run-id ID] [-o FILE]    ADTY-24-03 recorded, not-executed run
   validate-issues FILE                     ADTY-24-04 validate a manifest (does not edit frozen issues)
   record-rca FILE                          ADTY-24-05 validate RCA/fix linkage records
+  retired-chains                           ADTY-24-06 retirement-chain inventory (not claimed closed)
   cleanup-campaign                         ADTY-24-07 campaign artifact (not executed)
   rereview-record                          ADTY-24-08 rereview entry (Phase D not run)
   capabilities                             landed vs not-claimed IDs

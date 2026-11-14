@@ -21,11 +21,13 @@ func TestOfficialH24GovernanceLanding(t *testing.T) {
 	require.True(t, HasLandedEntry(CapRCAFix))
 	require.True(t, HasLandedEntry(CapCleanup))
 	require.True(t, HasLandedEntry(CapRereview))
+	require.True(t, HasLandedEntry(CapRetiredChain), "ADTY-24-06 inventory is landed in-repo")
+	require.Equal(t, []string{CapRetiredChain, CapSmoke, CapScale}, NotClaimedCapabilities)
 	for _, id := range NotClaimedCapabilities {
-		require.False(t, HasLandedEntry(id), "%s must not be claimed landed as closed work", id)
 		require.False(t, ClaimedClosed(id), "%s must not be claimed closed", id)
 	}
-	require.Equal(t, []string{CapRetiredChain, CapSmoke, CapScale}, NotClaimedCapabilities)
+	require.False(t, HasLandedEntry(CapSmoke))
+	require.False(t, HasLandedEntry(CapScale))
 
 	t.Run("ADTY-24-01 inventory", func(t *testing.T) {
 		units, err := EnumerateUnits(root)

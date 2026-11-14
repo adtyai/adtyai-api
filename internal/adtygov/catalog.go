@@ -15,13 +15,16 @@ const (
 )
 
 // LandedCapabilities are the official process tools this package provides.
-// Landing them does not mean a full review, cleanup campaign, or Phase D/E already ran.
+// Landing them does not mean a full review, cleanup campaign, Phase D/E,
+// or a claimed-closed retirement already ran. ADTY-24-06 is landed as an
+// inventory; it is not claimed closed.
 var LandedCapabilities = []string{
 	CapInventory,
 	CapRuleMapping,
 	CapGlobalReview,
 	CapIssueManifest,
 	CapRCAFix,
+	CapRetiredChain,
 	CapCleanup,
 	CapRereview,
 }
@@ -43,8 +46,9 @@ type EntryPoint struct {
 	ClaimedClosed bool   `json:"claimed_closed"`
 }
 
-// OfficialEntryPoints returns the seven landed capabilities and explicitly
-// lists 24-06, 24-09, and 24-10 as not claimed closed.
+// OfficialEntryPoints returns the landed H.24 capabilities and explicitly
+// lists 24-06, 24-09, and 24-10 as not claimed closed. ADTY-24-06 is landed
+// because the retirement-chain inventory now lives in the repo.
 func OfficialEntryPoints() []EntryPoint {
 	return []EntryPoint{
 		{ID: CapInventory, Title: "全仓源码资产盘点", Command: "adtygov enumerate-units", Artifact: "internal/adtygov.EnumerateUnits", Landed: true},
@@ -52,7 +56,7 @@ func OfficialEntryPoints() []EntryPoint {
 		{ID: CapGlobalReview, Title: "全局代码审查", Command: "adtygov review-record", Artifact: "internal/adtygov.NewReviewRun", Landed: true},
 		{ID: CapIssueManifest, Title: "全项目问题清单管理", Command: "adtygov validate-issues", Artifact: "internal/adtygov.ValidateIssueManifest", Landed: true},
 		{ID: CapRCAFix, Title: "缺陷根因分析与修复", Command: "adtygov record-rca", Artifact: "internal/adtygov.ValidateRCA", Landed: true},
-		{ID: CapRetiredChain, Title: "退役功能完整调用链清理", ClaimedClosed: false, Landed: false},
+		{ID: CapRetiredChain, Title: "退役功能完整调用链清理", Command: "adtygov retired-chains", Artifact: "internal/adtygov.OfficialRetiredChainInventory", Landed: true, ClaimedClosed: false},
 		{ID: CapCleanup, Title: "重复代码与无效依赖清理", Command: "adtygov cleanup-campaign", Artifact: "internal/adtygov.OfficialCleanupCampaign", Landed: true},
 		{ID: CapRereview, Title: "修复后全项目重新审查", Command: "adtygov rereview-record", Artifact: "internal/adtygov.NewRereviewEntry", Landed: true},
 		{ID: CapSmoke, Title: "全局审查清零后的完整冒烟测试", ClaimedClosed: false, Landed: false},

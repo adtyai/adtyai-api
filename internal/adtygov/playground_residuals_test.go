@@ -38,7 +38,7 @@ func TestOfficialPlaygroundResidualCallSitesAreMarked(t *testing.T) {
 	require.False(t, ClaimedClosed(CapRetiredChain))
 	require.False(t, ClaimedClosed(CapSmoke))
 	require.False(t, ClaimedClosed(CapScale))
-	require.False(t, HasLandedEntry(CapRetiredChain))
+	require.True(t, HasLandedEntry(CapRetiredChain), "the 24-06 inventory is landed; it is not claimed closed")
 	campaign := OfficialCleanupCampaign()
 	require.False(t, campaign.Executed)
 	require.False(t, campaign.MassDeleted)
