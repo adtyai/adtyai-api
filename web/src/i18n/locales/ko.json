@@ -2039,6 +2039,7 @@
     "Send me product updates and offers by email. I can unsubscribe at any time.": "제품 소식과 혜택을 이메일로 받습니다. 언제든 수신 거부할 수 있습니다.",
     "Send exactly the amount shown; it may include an extra 0.01.": "표시된 금액을 그대로 보내세요. 0.01이 더해질 수 있습니다.",
     "Send code": "코드를 보내요",
+    "Email verification code": "이메일 인증 코드",
     "Send chat completions to the OpenAI-compatible /v1/chat/completions instead of the native Ollama /api/chat": "네이티브 Ollama /api/chat 대신 OpenAI 호환 /v1/chat/completions로 채팅 완성을 보내요",
     "Send campaigns": "캠페인 발송",
     "Send at (empty = right away)": "발송 시각 (비우면 즉시)",

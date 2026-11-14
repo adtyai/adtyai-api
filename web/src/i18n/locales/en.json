@@ -8853,6 +8853,7 @@
     "A team top-up does not include a payment-method gift. The order stays pending until payment completion credits the shared balance.": "A team top-up does not include a payment-method gift. The order stays pending until payment completion credits the shared balance.",
     "Empty or zero means no extra limit on this key": "Empty or zero means no extra limit on this key",
     "Email confirmation code": "Email confirmation code",
+    "Email verification code": "Email verification code",
     "Code sent": "Code sent",
     "Enter the code sent to your email. It can be used once.": "Enter the code sent to your email. It can be used once.",
     "Failed to send email": "Failed to send email",

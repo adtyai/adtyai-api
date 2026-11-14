@@ -39,6 +39,20 @@ import type {
   VerificationRequirements,
 } from '../types'
 
+function preferredVerificationMethod(
+  methods: VerificationRequirements['methods'],
+  isLogin: boolean
+) {
+  if (isLogin) {
+    return methods.find((option) => option.method === 'passkey') ?? methods[0]
+  }
+  return (
+    methods.find((option) => option.method === 'password') ??
+    methods.find((option) => option.method === 'email_code') ??
+    methods[0]
+  )
+}
+
 type VerificationAction =
   | { type: 'reset' }
   | { type: 'loading'; request: VerificationRequest }
@@ -61,8 +75,10 @@ function verificationReducer(
       const methods = action.requirements.methods.filter(
         (option) => option.available
       )
-      const preferred =
-        methods.find((option) => option.method === 'passkey') ?? methods[0]
+      const preferred = preferredVerificationMethod(
+        methods,
+        state.request.scope === 'auth.login'
+      )
       let input: VerificationInput | null = null
       switch (preferred?.method) {
         case '2fa':
@@ -70,6 +86,9 @@ function verificationReducer(
           break
         case 'password':
           input = { method: 'password', password: '' }
+          break
+        case 'email_code':
+          input = { method: 'email_code', code: '' }
           break
         case 'passkey':
           input = { method: 'passkey' }
@@ -104,7 +123,9 @@ function verificationReducer(
       if (input?.method === 'password') {
         input = { method: 'password', password: '' }
       }
-      if (input?.method === '2fa') input = { method: '2fa', code: '' }
+      if (input?.method === '2fa' || input?.method === 'email_code') {
+        input = { method: input.method, code: '' }
+      }
       return { ...state, phase: 'verifying', input, error: undefined }
     }
     case 'error':

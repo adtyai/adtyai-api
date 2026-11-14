@@ -8825,6 +8825,7 @@
     "A team top-up does not include a payment-method gift. The order stays pending until payment completion credits the shared balance.": "團隊儲值不包含支付方式贈金。訂單保持待付款，直到付款完成才計入共享餘額。",
     "Empty or zero means no extra limit on this key": "留空或 0 表示這把 Key 沒有額外限速",
     "Email confirmation code": "郵箱確認碼",
+    "Email verification code": "郵箱驗證碼",
     "Code sent": "驗證碼已傳送",
     "Enter the code sent to your email. It can be used once.": "輸入發到你郵箱的驗證碼。每個驗證碼只能用一次。",
     "Failed to send email": "郵件傳送失敗",

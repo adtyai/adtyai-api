@@ -602,3 +602,128 @@ it('verifies with the clicked provider when several linked accounts are availabl
     screen.getByRole('button', { name: 'Continue with Linux DO' })
   ).toBeDisabled()
 })
+
+it('prefers re-entering the account password when a Passkey is also available', async () => {
+  vi.stubGlobal('PublicKeyCredential', class {})
+  vi.spyOn(api, 'get').mockResolvedValue({
+    data: {
+      success: true,
+      data: {
+        scope: 'account.password.change',
+        methods: [
+          { method: 'passkey', available: true },
+          { method: 'email_code', available: true },
+          { method: 'password', available: true },
+        ],
+        oauth_providers: [],
+        password_encryption_enabled: false,
+      },
+    },
+  })
+  const user = userEvent.setup()
+  render(
+    <Harness
+      operation={{ scope: 'account.password.change' }}
+      onResult={vi.fn()}
+    />
+  )
+  await user.click(screen.getByText('Protected action'))
+  expect(await screen.findByRole('tab', { name: 'Password' })).toHaveAttribute(
+    'aria-selected',
+    'true'
+  )
+  expect(screen.getByRole('tab', { name: 'Passkey' })).toHaveAttribute(
+    'aria-selected',
+    'false'
+  )
+  expect(
+    screen.getByRole('tab', { name: 'Email verification code' })
+  ).toHaveAttribute('aria-selected', 'false')
+  expect(
+    screen.getByLabelText('Password', { selector: 'input' })
+  ).toBeInTheDocument()
+})
+
+it('requests and submits an email verification code through the existing APIs', async () => {
+  vi.spyOn(api, 'get').mockResolvedValue({
+    data: {
+      success: true,
+      data: {
+        scope: 'account.password.change',
+        methods: [
+          { method: 'password', available: true },
+          { method: 'email_code', available: true },
+        ],
+        oauth_providers: [],
+        password_encryption_enabled: false,
+      },
+    },
+  })
+  const proof: SecurityProof = {
+    proof_token: 'email-proof',
+    method: 'email_code',
+    scope: 'account.password.change',
+    expires_at: Math.floor(Date.now() / 1000) + 300,
+  }
+  const post = vi.spyOn(api, 'post').mockImplementation((url) => {
+    if (url === '/api/verify/email-code') {
+      return Promise.resolve({ data: { success: true, data: {} } })
+    }
+    return Promise.resolve({ data: { success: true, data: proof } })
+  })
+  const result = vi.fn()
+  const user = userEvent.setup()
+  render(
+    <Harness
+      operation={{ scope: 'account.password.change' }}
+      onResult={result}
+    />
+  )
+  await user.click(screen.getByText('Protected action'))
+  await user.click(
+    await screen.findByRole('tab', { name: 'Email verification code' })
+  )
+  expect(
+    screen.getByLabelText('Email verification code', { selector: 'input' })
+  ).toBeInTheDocument()
+  expect(
+    screen.getByText('Enter the code sent to your email. It can be used once.')
+  ).toBeInTheDocument()
+  const sendCode = screen.getByRole('button', { name: 'Send code' })
+  expect(sendCode).toBeEnabled()
+  await user.click(sendCode)
+  await waitFor(() =>
+    expect(post).toHaveBeenCalledWith(
+      '/api/verify/email-code',
+      { scope: 'account.password.change' },
+      expect.anything()
+    )
+  )
+  expect(await screen.findByText('Code sent')).toBeInTheDocument()
+  await user.type(
+    screen.getByLabelText('Email verification code', { selector: 'input' }),
+    '654321'
+  )
+  await user.click(screen.getByRole('button', { name: 'Verify' }))
+  await waitFor(() => expect(result).toHaveBeenCalledExactlyOnceWith(proof))
+  expect(post).toHaveBeenCalledWith(
+    '/api/verify',
+    {
+      method: 'email_code',
+      scope: 'account.password.change',
+      code: '654321',
+    },
+    expect.objectContaining({ signal: expect.any(AbortSignal) })
+  )
+})
+
+it('keeps Email verification code labels in the maintained locales', async () => {
+  const locales = ['en', 'zh', 'zh-TW', 'ja', 'ko', 'ru', 'fr', 'vi'] as const
+  for (const locale of locales) {
+    const catalog = await import(`@/i18n/locales/${locale}.json`)
+    expect(catalog.translation['Email verification code'], locale).toEqual(
+      expect.any(String)
+    )
+    expect(catalog.translation['Email verification code'].trim()).not.toBe('')
+  }
+})

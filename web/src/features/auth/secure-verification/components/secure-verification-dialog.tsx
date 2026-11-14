@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { KeyRound, Loader2, ShieldCheck } from 'lucide-react'
-import { useId } from 'react'
+import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Dialog } from '@/components/dialog'
@@ -25,9 +25,11 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { AuthOperationError } from '@/lib/secure-verification'
 
 import type { PasskeyDomains } from '../../passkey/assertion'
 import { PasskeyDomainSelector } from '../../passkey/components/passkey-domain-selector'
+import { requestSecurityEmailCode } from '../api'
 import type {
   SecureVerificationState,
   VerificationInput,
@@ -47,8 +49,10 @@ const methodLabels: Record<VerificationMethod, string> = {
   '2fa': 'Authenticator code',
   passkey: 'Passkey',
   password: 'Password',
+  email_code: 'Email verification code',
   oauth: 'Linked account',
   session: 'Login session',
+  root_exempt: 'Root exemption',
 }
 
 export function SecureVerificationDialog(props: SecureVerificationDialogProps) {
@@ -67,7 +71,7 @@ export function SecureVerificationDialog(props: SecureVerificationDialogProps) {
   if (input?.method === 'password') {
     canVerify = canVerify && input.password.length > 0
   }
-  if (input?.method === '2fa') {
+  if (input?.method === '2fa' || input?.method === 'email_code') {
     canVerify = canVerify && input.code.trim().length >= 6
   }
   // Linked-account verification starts from the provider button itself.
@@ -82,6 +86,9 @@ export function SecureVerificationDialog(props: SecureVerificationDialogProps) {
         break
       case 'password':
         props.onInputChange({ method, password: '' })
+        break
+      case 'email_code':
+        props.onInputChange({ method, code: '' })
         break
       case 'passkey':
         props.onInputChange({ method })
@@ -198,6 +205,21 @@ export function SecureVerificationDialog(props: SecureVerificationDialogProps) {
                   }
                 />
               </TabsContent>
+              <TabsContent value='email_code' className='space-y-2'>
+                <EmailCodeFields
+                  inputId={inputId}
+                  code={input.method === 'email_code' ? input.code : ''}
+                  scope={
+                    state.request.scope === 'auth.login'
+                      ? undefined
+                      : state.request.scope
+                  }
+                  disabled={verifying}
+                  onChange={(code) =>
+                    props.onInputChange({ method: 'email_code', code })
+                  }
+                />
+              </TabsContent>
               <TabsContent value='2fa' className='space-y-2'>
                 <Label htmlFor={inputId}>
                   {acceptsBackupCode
@@ -276,5 +298,75 @@ export function SecureVerificationDialog(props: SecureVerificationDialogProps) {
         </form>
       )}
     </Dialog>
+  )
+}
+
+function EmailCodeFields(props: {
+  inputId: string
+  code: string
+  scope?: string
+  disabled: boolean
+  onChange: (code: string) => void
+}) {
+  const { t } = useTranslation()
+  const [sending, setSending] = useState(false)
+  const [sent, setSent] = useState(false)
+  const [sendError, setSendError] = useState<string>()
+  const canRequest = Boolean(props.scope) && !props.disabled && !sending
+
+  const requestCode = () => {
+    if (!props.scope || !canRequest) return
+    setSending(true)
+    setSendError(undefined)
+    void requestSecurityEmailCode(props.scope)
+      .then(() => {
+        setSent(true)
+      })
+      .catch((error) => {
+        setSent(false)
+        setSendError(AuthOperationError.from(error).message)
+      })
+      .finally(() => setSending(false))
+  }
+
+  return (
+    <>
+      <Label htmlFor={props.inputId}>{t('Email verification code')}</Label>
+      <div className='flex gap-2'>
+        <Input
+          id={props.inputId}
+          autoComplete='one-time-code'
+          inputMode='numeric'
+          maxLength={6}
+          autoFocus
+          disabled={props.disabled}
+          value={props.code}
+          onChange={(event) => props.onChange(event.target.value)}
+          className='min-w-0 flex-1'
+        />
+        <Button
+          type='button'
+          variant='outline'
+          disabled={!canRequest}
+          onClick={requestCode}
+        >
+          {sending && <Loader2 className='size-4 animate-spin' />}
+          {t('Send code')}
+        </Button>
+      </div>
+      <p className='text-muted-foreground text-sm'>
+        {t('Enter the code sent to your email. It can be used once.')}
+      </p>
+      {sent && !sendError && (
+        <p role='status' className='text-sm'>
+          {t('Code sent')}
+        </p>
+      )}
+      {sendError && (
+        <p role='alert' className='text-destructive text-sm'>
+          {t(sendError)}
+        </p>
+      )}
+    </>
   )
 }

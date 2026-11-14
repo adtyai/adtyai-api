@@ -67,6 +67,19 @@ export async function checkVerificationMethods(
   return withDeviceAvailability(requirements, passkeySupported)
 }
 
+export async function requestSecurityEmailCode(
+  scope: string,
+  signal?: AbortSignal
+): Promise<void> {
+  await authResult(
+    api.post(
+      '/api/verify/email-code',
+      { scope },
+      { ...authRequestOptions, signal }
+    )
+  )
+}
+
 function withDeviceAvailability(
   requirements: VerificationRequirements,
   passkeySupported: boolean
@@ -227,6 +240,7 @@ export async function verify(
         )
         break
       case '2fa':
+      case 'email_code':
         proof = await authResult<SecurityProof>(
           api.post(
             '/api/verify',
