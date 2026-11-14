@@ -959,60 +959,6 @@ func ExecuteAdtySiteClose(siteId int, now int64) error {
 	return nil
 }
 
-// carryCustomerPricesTx：转给另一个站时，新站对这批客户的 k 不能高于原来的。
-// 对每个客户、每个出现过的分组（含「所有分组」）取 min(原站 k, 新站 k)；只要有一项比新站低，
-// 就把这个客户所有分组都写成单独定价。客户级的「所有分组」一行会盖过新站的分组价，所以不能只写低的那几项。
-// 两边都没单设的分组走客户的「所有分组」那一行，它等于两边全站默认的较小值，同样不高于原价。
-func carryCustomerPricesTx(tx *gorm.DB, fromSite, toSite int) error {
-	var userIds []int
-	if err := tx.Model(&model.User{}).Where("site_id = ?", fromSite).Pluck("id", &userIds).Error; err != nil {
-		return err
-	}
-	if len(userIds) == 0 {
-		return nil
-	}
-	var fromPrices, toPrices []model.AdtySitePrice
-	if err := tx.Where("site_id = ?", fromSite).Find(&fromPrices).Error; err != nil {
-		return err
-	}
-	if err := tx.Where("site_id = ?", toSite).Find(&toPrices).Error; err != nil {
-		return err
-	}
-	type priceScope struct{ Group, Model string }
-	scopes := map[priceScope]bool{{}: true}
-	for _, price := range fromPrices {
-		scopes[priceScope{Group: price.Group, Model: adtyNormalizeSitePriceModel(price.Model)}] = true
-	}
-	for _, price := range toPrices {
-		scopes[priceScope{Group: price.Group, Model: adtyNormalizeSitePriceModel(price.Model)}] = true
-	}
-	now := time.Now().Unix()
-	for _, userId := range userIds {
-		targets := map[priceScope]decimal.Decimal{}
-		lower := false
-		for scope := range scopes {
-			oldK := ResolveAdtySiteMarkup(fromPrices, userId, scope.Group, scope.Model)
-			newK := ResolveAdtySiteMarkup(toPrices, userId, scope.Group, scope.Model)
-			targets[scope] = decimal.Min(oldK, newK)
-			if oldK.LessThan(newK) {
-				lower = true
-			}
-		}
-		if !lower {
-			continue
-		}
-		for scope, markup := range targets {
-			if err := tx.Clauses(clause.OnConflict{
-				Columns:   []clause.Column{{Name: "site_id"}, {Name: "user_id"}, {Name: "group"}, {Name: "model"}},
-				DoUpdates: clause.Assignments(map[string]any{"markup": markup, "pending_markup": decimal.Zero, "pending_at": 0, "updated_at": now}),
-			}).Create(&model.AdtySitePrice{SiteId: toSite, UserId: userId, Group: scope.Group, Model: scope.Model, Markup: markup, UpdatedAt: now, Version: 1}).Error; err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
 // ResolveAdtySiteMarkup 在一个站的定价里按官方「全局 + 单模型独立加价」取存储 k（11.4）。
 // 若该模型存在适用的单模型独立加价，取其中最具体的一行（客户+分组 → 客户 → 全站+分组 → 全站）。
 // 否则取最具体的空模型/全局行，新模型继承该全局加价。正数 k（含小于 1）都会采用。
