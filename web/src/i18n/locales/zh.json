@@ -8947,7 +8947,11 @@
     "Recovery liable party: inviter": "责任主体：邀请人",
     "Earnings hold": "收益冻结",
     "Margin hold": "保证金冻结",
-    "Clawback from balance": "已冲回余额"
+    "Clawback from balance": "已冲回余额",
+    "Principal": "本金",
+    "Permanent bonus": "永久赠金",
+    "Remaining permanent bonus": "剩余永久赠金",
+    "Lot remaining is a projection of funding lots, not a second wallet.": "这是资金批次剩余的汇总投影，不是另一本钱包。"
 },
   "Targeted notifications": "定向通知",
   "Site announcements": "本站公告",

@@ -30,6 +30,7 @@ import { SectionPageLayout } from '@/components/layout'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { OwnerCustomer } from '@/features/adty-site-owner/types'
+import { WalletLotProjectionLines } from '@/features/wallet/components/wallet-lot-projection'
 import { PageSwitcher } from '@/features/referral/components/page-switcher'
 import { formatQuota } from '@/lib/format'
 import { useAuthStore } from '@/stores/auth-store'
@@ -102,7 +103,17 @@ export function StaffWorkspace() {
       id: 'balance',
       header: t('Balance'),
       cell: (customer) =>
-        customer.balance === undefined ? '—' : formatQuota(customer.balance),
+        customer.balance === undefined ? (
+          '—'
+        ) : (
+          <div>
+            <div>{formatQuota(customer.balance)}</div>
+            <WalletLotProjectionLines
+              compact
+              projection={customer.wallet_lot_projection}
+            />
+          </div>
+        ),
     })
   }
   if (grants.includes('customers.usage')) {

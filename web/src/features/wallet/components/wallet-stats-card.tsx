@@ -25,6 +25,8 @@ import { formatQuota } from '@/lib/format'
 
 import type { UserWalletData } from '../types'
 
+import { WalletLotProjectionLines } from './wallet-lot-projection'
+
 interface WalletStatsCardProps {
   user: UserWalletData | null
   loading?: boolean
@@ -95,6 +97,11 @@ export function WalletStatsCard(props: WalletStatsCardProps) {
           <div className='text-muted-foreground/60 mt-1 hidden text-xs md:block'>
             {item.description}
           </div>
+          {item.label === t('Current Balance') && (
+            <WalletLotProjectionLines
+              projection={props.user?.wallet_lot_projection}
+            />
+          )}
         </div>
       ))}
     </div>

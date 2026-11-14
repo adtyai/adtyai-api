@@ -197,6 +197,17 @@ export interface AmountRequest {
   amount: number
 }
 
+/** Official remaining 本金 / 永久赠金 projection of funding lots (DEC-001 USD). */
+export type WalletLotProjection = {
+  principal_quota: number
+  bonus_quota: number
+  total_quota: number
+  principal_usd: string
+  bonus_usd: string
+  total_usd: string
+  source?: string
+}
+
 /**
  * User wallet data
  */
@@ -213,6 +224,8 @@ export interface UserWalletData {
   request_count: number
   /** User group */
   group: string
+  /** Remaining 本金 and 永久赠金 projected from funding lots */
+  wallet_lot_projection?: WalletLotProjection
 }
 
 /**

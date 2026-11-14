@@ -41,6 +41,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { DraftDiscardDialog } from '@/features/system-settings/components/draft-discard-dialog'
 import { useDraftNavigation } from '@/features/system-settings/hooks/use-draft-navigation'
 import { formatUsd } from '@/features/wallet/adty/lib/money'
+import { WalletLotProjectionLines } from '@/features/wallet/components/wallet-lot-projection'
 import { toIntlLocale } from '@/i18n/languages'
 import { formatQuota, formatTimestamp } from '@/lib/format'
 import { handleServerError } from '@/lib/handle-server-error'
@@ -143,6 +144,11 @@ export function CustomerSheet(props: {
                 {customer.balance === undefined
                   ? t('Hidden by the platform')
                   : formatQuota(customer.balance)}
+                {customer.balance !== undefined && (
+                  <WalletLotProjectionLines
+                    projection={customer.wallet_lot_projection}
+                  />
+                )}
               </dd>
               <dt className='text-muted-foreground'>{t('Used')}</dt>
               <dd>

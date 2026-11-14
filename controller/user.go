@@ -587,7 +587,7 @@ func buildSelfUserData(user *model.User) map[string]any {
 	if user.StaffSiteId > 0 {
 		required, version = false, "" // Staff use the dedicated workspace's site agreement gate.
 	}
-	return map[string]any{
+	data := map[string]any{
 		"id":                  user.Id,
 		"username":            user.Username,
 		"display_name":        user.DisplayName,
@@ -613,6 +613,21 @@ func buildSelfUserData(user *model.User) map[string]any {
 		"staff_site_id":       user.StaffSiteId,
 		"site_terms_required": required,
 		"site_terms_version":  version,
+	}
+	attachWalletLotProjection(data, user)
+	return data
+}
+
+// attachWalletLotProjection adds remaining 本金 and 永久赠金 from fund lots.
+// The existing quota field stays the available-balance projection; this is not a second wallet.
+func attachWalletLotProjection(data map[string]any, user *model.User) {
+	proj, ok, err := service.ProjectWalletLotsForUser(user)
+	if err != nil {
+		common.SysLog(common.LogText("wallet lot projection: %s", err.Error()))
+		return
+	}
+	if ok {
+		data["wallet_lot_projection"] = proj
 	}
 }
 

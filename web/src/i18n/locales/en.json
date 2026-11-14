@@ -8947,7 +8947,11 @@
     "Recovery liable party: inviter": "Recovery liable party: inviter",
     "Earnings hold": "Earnings hold",
     "Margin hold": "Margin hold",
-    "Clawback from balance": "Clawback from balance"
+    "Clawback from balance": "Clawback from balance",
+    "Principal": "Principal",
+    "Permanent bonus": "Permanent bonus",
+    "Remaining permanent bonus": "Remaining permanent bonus",
+    "Lot remaining is a projection of funding lots, not a second wallet.": "Lot remaining is a projection of funding lots, not a second wallet."
 },
   "Targeted notifications": "Targeted notifications",
   "Site announcements": "Site announcements",

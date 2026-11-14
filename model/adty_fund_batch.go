@@ -238,3 +238,76 @@ func adtyFundBatchLess(a, b AdtyFundBatch) bool {
 	}
 	return a.Id < b.Id
 }
+
+// AdtyFundBatchKindRemaining is the remaining quota of one lot kind for one user.
+type AdtyFundBatchKindRemaining struct {
+	Principal int64
+	Bonus     int64
+	HasLots   bool
+}
+
+// SumAdtyFundBatchRemainingByKind totals remaining principal and permanent bonus lots.
+// It does not invent lots and does not include promised or not-yet-granted bonus.
+func SumAdtyFundBatchRemainingByKind(userID int) (AdtyFundBatchKindRemaining, error) {
+	sums, err := SumAdtyFundBatchRemainingByKindForUsers([]int{userID})
+	if err != nil {
+		return AdtyFundBatchKindRemaining{}, err
+	}
+	return sums[userID], nil
+}
+
+// SumAdtyFundBatchRemainingByKindForUsers totals remaining principal and bonus lots per user.
+func SumAdtyFundBatchRemainingByKindForUsers(userIDs []int) (map[int]AdtyFundBatchKindRemaining, error) {
+	out := map[int]AdtyFundBatchKindRemaining{}
+	if DB == nil || len(userIDs) == 0 {
+		return out, nil
+	}
+	ids := uniquePositiveIDs(userIDs)
+	if len(ids) == 0 {
+		return out, nil
+	}
+	if err := adtyRequireFundBatchTable(DB); err != nil {
+		return nil, err
+	}
+	type kindSum struct {
+		UserId    int    `gorm:"column:user_id"`
+		Kind      string `gorm:"column:kind"`
+		Remaining int64  `gorm:"column:remaining"`
+	}
+	var rows []kindSum
+	if err := DB.Model(&AdtyFundBatch{}).
+		Select("user_id, kind, COALESCE(SUM(remaining), 0) AS remaining").
+		Where("user_id IN ? AND kind IN ?", ids, []string{"principal", "bonus"}).
+		Group("user_id, kind").
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		current := out[row.UserId]
+		current.HasLots = true
+		switch row.Kind {
+		case "principal":
+			current.Principal = row.Remaining
+		case "bonus":
+			current.Bonus = row.Remaining
+		}
+		out[row.UserId] = current
+	}
+	return out, nil
+}
+
+func uniquePositiveIDs(ids []int) []int {
+	seen := map[int]struct{}{}
+	out := make([]int, 0, len(ids))
+	for _, id := range ids {
+		if id <= 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out
+}

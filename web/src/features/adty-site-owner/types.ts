@@ -16,6 +16,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+
+import type { WalletLotProjection } from '@/features/wallet/types'
+
 /** Server-paged list (common.PageInfo). */
 export type OwnerPage<T> = {
   page: number
@@ -153,6 +156,7 @@ export type OwnerCustomer = {
   created_at: number
   balance?: number
   used_quota?: number
+  wallet_lot_projection?: WalletLotProjection
   risk_flag?: 'self_use' | 'migration'
   reviewed: boolean
 }

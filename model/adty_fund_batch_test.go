@@ -363,3 +363,31 @@ func TestConsumeFundBatchesShortfallDoesNotFireHook(t *testing.T) {
 	require.Zero(t, fired)
 	require.EqualValues(t, 20, remainingBySource(t, db, 46)["thin:principal"])
 }
+
+func TestSumFundBatchRemainingByKind(t *testing.T) {
+	db := openMemoryFundBatchDB(t)
+	previous := DB
+	DB = db
+	t.Cleanup(func() { DB = previous })
+	require.NoError(t, db.Create([]AdtyFundBatch{
+		{UserId: 11, Kind: "principal", Source: "a", Original: 80, Remaining: 50},
+		{UserId: 11, Kind: "principal", Source: "b", Original: 20, Remaining: 20},
+		{UserId: 11, Kind: "bonus", Source: "a", Original: 40, Remaining: 15},
+		{UserId: 12, Kind: "bonus", Source: "c", Original: 9, Remaining: 9},
+	}).Error)
+	sum, err := SumAdtyFundBatchRemainingByKind(11)
+	require.NoError(t, err)
+	require.True(t, sum.HasLots)
+	require.EqualValues(t, 70, sum.Principal)
+	require.EqualValues(t, 15, sum.Bonus)
+	other, err := SumAdtyFundBatchRemainingByKind(12)
+	require.NoError(t, err)
+	require.True(t, other.HasLots)
+	require.EqualValues(t, 0, other.Principal)
+	require.EqualValues(t, 9, other.Bonus)
+	empty, err := SumAdtyFundBatchRemainingByKind(13)
+	require.NoError(t, err)
+	require.False(t, empty.HasLots)
+	require.EqualValues(t, 0, empty.Principal)
+	require.EqualValues(t, 0, empty.Bonus)
+}

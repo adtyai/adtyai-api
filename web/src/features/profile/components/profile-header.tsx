@@ -25,6 +25,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { IconBadge, type IconBadgeTone } from '@/components/ui/icon-badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useGroupDisplay } from '@/features/adty-groups/hooks/use-group-display'
+import { WalletLotProjectionLines } from '@/features/wallet/components/wallet-lot-projection'
 import { getUserAvatarFallback, getUserAvatarStyle } from '@/lib/avatar'
 import { formatCompactNumber, formatQuota } from '@/lib/format'
 import { getRoleLabel } from '@/lib/roles'
@@ -185,6 +186,11 @@ export function ProfileHeader({ profile, loading }: ProfileHeaderProps) {
               <div className='text-muted-foreground/60 mt-1 hidden text-xs md:block'>
                 {item.description}
               </div>
+              {item.label === t('Current Balance') && (
+                <WalletLotProjectionLines
+                  projection={profile.wallet_lot_projection}
+                />
+              )}
             </div>
           ))}
         </div>

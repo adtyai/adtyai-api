@@ -29,6 +29,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { PageSwitcher } from '@/features/referral/components/page-switcher'
+import { WalletLotProjectionLines } from '@/features/wallet/components/wallet-lot-projection'
 import { formatQuota, formatTimestamp } from '@/lib/format'
 import { handleServerError } from '@/lib/handle-server-error'
 
@@ -74,7 +75,17 @@ export function CustomersPanel() {
     },
   })
   const balanceCell = (customer: OwnerCustomer) =>
-    customer.balance === undefined ? '—' : formatQuota(customer.balance)
+    customer.balance === undefined ? (
+      '—'
+    ) : (
+      <div>
+        <div>{formatQuota(customer.balance)}</div>
+        <WalletLotProjectionLines
+          compact
+          projection={customer.wallet_lot_projection}
+        />
+      </div>
+    )
   if (list.isError && !list.data) {
     return <ErrorState onRetry={() => void list.refetch()} />
   }

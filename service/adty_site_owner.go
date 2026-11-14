@@ -112,17 +112,18 @@ func adtyOwnerEmail(email string, visibility map[string]string) string {
 
 // AdtyOwnerCustomer 是站长看到的一个客户：没有 IP、设备、第三方登录、手机号、风控依据。
 type AdtyOwnerCustomer struct {
-	Id         int    `json:"id"`
-	Username   string `json:"username"`
-	Email      string `json:"email"`
-	Status     int    `json:"status"`
-	Group      string `json:"group"`
-	CreatedAt  int64  `json:"created_at"`
-	Balance    *int   `json:"balance,omitempty"`    // customer_balance 关着时不返回
-	UsedQuota  *int   `json:"used_quota,omitempty"` // customer_usage 关着时不返回
-	RiskFlag   string `json:"risk_flag,omitempty"`  // 只给类别（self_use | migration），不给判断依据
-	Reviewed   bool   `json:"reviewed"`
-	LastActive int64  `json:"last_active,omitempty"`
+	Id                  int                  `json:"id"`
+	Username            string               `json:"username"`
+	Email               string               `json:"email"`
+	Status              int                  `json:"status"`
+	Group               string               `json:"group"`
+	CreatedAt           int64                `json:"created_at"`
+	Balance             *int                 `json:"balance,omitempty"`    // customer_balance 关着时不返回
+	UsedQuota           *int                 `json:"used_quota,omitempty"` // customer_usage 关着时不返回
+	WalletLotProjection *WalletLotProjection `json:"wallet_lot_projection,omitempty"`
+	RiskFlag            string               `json:"risk_flag,omitempty"` // 只给类别（self_use | migration），不给判断依据
+	Reviewed            bool                 `json:"reviewed"`
+	LastActive          int64                `json:"last_active,omitempty"`
 }
 
 func adtyOwnerCustomerView(visibility map[string]string, user model.User, customer model.AdtySiteCustomer) (AdtyOwnerCustomer, error) {
@@ -133,6 +134,11 @@ func adtyOwnerCustomerView(visibility map[string]string, user model.User, custom
 	if adtyVisible(visibility, "customer_balance") {
 		balance := user.ToBaseUser().Quota
 		view.Balance = &balance
+		if proj, ok, err := ProjectWalletLotsForUser(&user); err != nil {
+			return view, err
+		} else if ok {
+			view.WalletLotProjection = &proj
+		}
 	}
 	if adtyVisible(visibility, "customer_usage") {
 		used, err := adtyUsageSinceJoin(user.Id, customer.JoinedAt, user.UsedQuota)
