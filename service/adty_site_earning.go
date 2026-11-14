@@ -307,12 +307,14 @@ func adtySiteBonusAfterRefundTx(tx *gorm.DB, topUp *model.TopUp, ext *model.Adty
 	}
 	reclaimed := min(ext.RefundBonusQuota, max(ext.RefundDeductedQuota, 0))
 	returned := bonus.Mul(decimal.NewFromInt(reclaimed)).Div(decimal.NewFromInt(ext.RefundBonusQuota)).RoundFloor(8)
-	if !returned.IsPositive() {
-		return nil
+	if returned.IsPositive() {
+		if err := upsertAdtySiteEarningTx(tx, adtySiteEarningDayFn(), adtySiteEarningEntry{
+			SiteId: ext.SiteId, SiteOwnerUserId: ext.SiteOwnerUserId, UserId: topUp.UserId, Kind: model.AdtySiteEarningBonusReversal, Earning: returned,
+		}); err != nil {
+			return err
+		}
 	}
-	return upsertAdtySiteEarningTx(tx, adtySiteEarningDayFn(), adtySiteEarningEntry{
-		SiteId: ext.SiteId, SiteOwnerUserId: ext.SiteOwnerUserId, UserId: topUp.UserId, Kind: model.AdtySiteEarningBonusReversal, Earning: returned,
-	})
+	return releaseUnusedSiteGiftGuaranteeTx(tx, ext)
 }
 
 // AdtySiteBonusRates 是站点的加赠档位（站长设的 JSON：档位美元 → 百分比）；空就不送。

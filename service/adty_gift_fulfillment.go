@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/setting/adty_setting"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
@@ -247,4 +247,120 @@ func notifyPendingGiftFulfillmentAfterCredit(_ *model.TopUp, ext *model.AdtyTopu
 func initGiftFulfillmentHooks() {
 	model.AdtyPrepareTopUpGiftOnCreditTx = prepareTopUpGiftOnCreditTx
 	model.AdtyAfterTopUpCreditCommitted = notifyPendingGiftFulfillmentAfterCredit
+}
+
+// releaseUnusedSiteGiftGuaranteeTx releases the unused portion of a paid
+// order's site-gift guarantee back to the original earning and/or margin
+// wallets. The unused amount follows the official reclaim: site gift ×
+// min(G, R) ÷ G. A full reclaim clears any remaining net hold, including a
+// hold re-acquired after cancel or expiry. Idempotent for one official refund.
+func releaseUnusedSiteGiftGuaranteeTx(tx *gorm.DB, ext *model.AdtyTopupOrder) error {
+	if tx == nil || ext == nil || ext.SiteId <= 0 {
+		return nil
+	}
+	bonusQuota := ext.RefundBonusQuota
+	if bonusQuota <= 0 {
+		return nil
+	}
+	reclaimed := min(bonusQuota, max(ext.RefundDeductedQuota, 0))
+	siteBonus := adtyBonusUSDForSite(ext)
+	if !siteBonus.IsPositive() || reclaimed <= 0 {
+		return nil
+	}
+	unusedUSD := siteBonus.Mul(decimal.NewFromInt(reclaimed)).Div(decimal.NewFromInt(bonusQuota)).RoundFloor(8)
+	if reclaimed == bonusQuota {
+		unusedUSD = siteBonus
+	}
+	heldEarning, heldMargin, err := netGiftHoldByKindTx(tx, ext.SiteId, ext.TradeNo)
+	if err != nil {
+		return err
+	}
+	held := heldEarning.Add(heldMargin)
+	if !held.IsPositive() {
+		return cancelPendingGiftFulfillmentOnFullRefundTx(tx, ext, reclaimed, bonusQuota)
+	}
+	toRelease := unusedUSD
+	if toRelease.GreaterThan(held) || reclaimed == bonusQuota {
+		toRelease = held
+	}
+	if !toRelease.IsPositive() {
+		return cancelPendingGiftFulfillmentOnFullRefundTx(tx, ext, reclaimed, bonusQuota)
+	}
+	relEarning := decimal.Zero
+	if held.IsPositive() && heldEarning.IsPositive() {
+		relEarning = toRelease.Mul(heldEarning).Div(held).RoundFloor(8)
+		if relEarning.GreaterThan(heldEarning) {
+			relEarning = heldEarning
+		}
+	}
+	relMargin := toRelease.Sub(relEarning)
+	if relMargin.GreaterThan(heldMargin) {
+		relMargin = heldMargin
+		relEarning = toRelease.Sub(relMargin)
+		if relEarning.GreaterThan(heldEarning) {
+			relEarning = heldEarning
+		}
+	}
+	key := "gift:" + ext.TradeNo
+	if relEarning.IsPositive() {
+		if _, err := applyAdtySiteWalletChangeTx(tx, ext.SiteId, model.AdtySiteWalletEarnings, decimal.Zero, AdtySiteWalletChange{
+			Type: "gift_release", RefType: "topup", RefID: ext.TradeNo, IdempotencyKey: key + ":earn:refund-release",
+			HoldDelta: relEarning.Neg(),
+		}); err != nil {
+			return err
+		}
+	}
+	if relMargin.IsPositive() {
+		if _, err := applyAdtySiteWalletChangeTx(tx, ext.SiteId, model.AdtySiteWalletMargin, decimal.Zero, AdtySiteWalletChange{
+			Type: "gift_release", RefType: "topup", RefID: ext.TradeNo, IdempotencyKey: key + ":margin:refund-release",
+			HoldDelta: relMargin.Neg(),
+		}); err != nil {
+			return err
+		}
+	}
+	return cancelPendingGiftFulfillmentOnFullRefundTx(tx, ext, reclaimed, bonusQuota)
+}
+
+func netGiftHoldByKindTx(tx *gorm.DB, siteID int, tradeNo string) (earning, margin decimal.Decimal, err error) {
+	var rows []model.AdtySiteWalletLedger
+	if err = tx.Where("site_id = ? AND ref_type = ? AND ref_id = ? AND type IN ?",
+		siteID, "topup", tradeNo, []string{"gift_reserve", "gift_release"}).
+		Find(&rows).Error; err != nil {
+		return decimal.Zero, decimal.Zero, err
+	}
+	for _, row := range rows {
+		switch row.WalletKind {
+		case model.AdtySiteWalletEarnings:
+			earning = earning.Add(row.HoldDelta)
+		case model.AdtySiteWalletMargin:
+			margin = margin.Add(row.HoldDelta)
+		}
+	}
+	if earning.IsNegative() {
+		earning = decimal.Zero
+	}
+	if margin.IsNegative() {
+		margin = decimal.Zero
+	}
+	return earning, margin, nil
+}
+
+func cancelPendingGiftFulfillmentOnFullRefundTx(tx *gorm.DB, ext *model.AdtyTopupOrder, reclaimed, bonusQuota int64) error {
+	if ext == nil || reclaimed < bonusQuota || bonusQuota <= 0 {
+		return nil
+	}
+	res := tx.Model(&model.AdtyGiftFulfillment{}).
+		Where("trade_no = ? AND status = ?", ext.TradeNo, model.AdtyGiftFulfillmentPending).
+		Updates(map[string]any{"status": model.AdtyGiftFulfillmentCanceled, "reason": "full refund cancelled pending fulfillment"})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return nil
+	}
+	if err := tx.Model(&model.AdtyTopupOrder{}).Where("id = ?", ext.Id).Update("gift_fulfillment_status", model.AdtyGiftFulfillmentCanceled).Error; err != nil {
+		return err
+	}
+	ext.GiftFulfillmentStatus = model.AdtyGiftFulfillmentCanceled
+	return nil
 }
