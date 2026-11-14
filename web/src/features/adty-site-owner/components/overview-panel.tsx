@@ -22,6 +22,7 @@ import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from 'recharts'
 
 import { EmptyState } from '@/components/empty-state'
 import { ErrorState } from '@/components/error-state'
+import { LoadingState } from '@/components/loading-state'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import {
   ChartContainer,
@@ -52,7 +53,7 @@ export function OverviewPanel() {
   const balances = earnings.data?.balances
   const total = stats.data?.total
   const money = (value: string | undefined) =>
-    formatUsd(Number(value ?? 0), locale)
+    value == null || value === '' ? '—' : formatUsd(Number(value), locale)
   const chartConfig = {
     revenue: { label: t('Customer spend'), color: 'var(--chart-1)' },
     earning: { label: t('Your earnings'), color: 'var(--chart-2)' },
@@ -68,6 +69,9 @@ export function OverviewPanel() {
   }
   if ((stats.isError && !stats.data) || (earnings.isError && !earnings.data)) {
     return <ErrorState onRetry={retry} />
+  }
+  if (stats.isPending || earnings.isPending) {
+    return <LoadingState />
   }
 
   return (

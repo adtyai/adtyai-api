@@ -308,8 +308,17 @@ describe('OverviewPanel', () => {
     expect(screen.getByText('New customers')).toBeInTheDocument()
     expect(screen.getByText('Paying customers')).toBeInTheDocument()
     expect(screen.getByText('$12.00')).toBeInTheDocument()
+    expect(screen.getAllByText('$0.00').length).toBeGreaterThan(0)
     expect(screen.queryByText('Top-ups')).not.toBeInTheDocument()
     expect(screen.queryByText('$88.00')).not.toBeInTheDocument()
+  })
+
+  it('shows a loading state for amounts instead of $0.00 while queries are pending', async () => {
+    api.getOwnerStats.mockReturnValue(new Promise(() => {}))
+    api.getOwnerEarnings.mockReturnValue(new Promise(() => {}))
+    render(wrap(<OverviewPanel />))
+    expect(await screen.findByText('Loading...')).toBeInTheDocument()
+    expect(screen.queryByText('$0.00')).not.toBeInTheDocument()
   })
 })
 
@@ -359,6 +368,14 @@ describe('EarningsPanel', () => {
     expect(screen.getByText('$-8.00')).toHaveAttribute('data-negative', 'true')
     expect(screen.getByText('$12.50')).not.toHaveAttribute('data-negative')
     expect(screen.getAllByText('2026-10-01')).toHaveLength(2)
+  })
+
+  it('shows a loading state for amounts instead of $0.00 while the query is pending', async () => {
+    api.getOwnerEarnings.mockReturnValue(new Promise(() => {}))
+    render(wrap(<EarningsPanel />))
+    expect(await screen.findByText('Loading...')).toBeInTheDocument()
+    expect(screen.queryByText('$0.00')).not.toBeInTheDocument()
+    expect(screen.queryByText('Pending settlement')).not.toBeInTheDocument()
   })
 
   it('points withdrawals to the earnings wallet withdrawal on this tab, not the Referral page', async () => {

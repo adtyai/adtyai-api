@@ -24,6 +24,7 @@ import { useTranslation } from 'react-i18next'
 import { StaticDataTable } from '@/components/data-table/static/static-data-table'
 import { EmptyState } from '@/components/empty-state'
 import { ErrorState } from '@/components/error-state'
+import { LoadingState } from '@/components/loading-state'
 import { StatusBadge } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
@@ -105,7 +106,7 @@ export function EarningsPanel() {
   })
   const balances = query.data?.balances
   const money = (value: string | undefined) =>
-    formatUsd(Number(value ?? 0), locale)
+    value == null || value === '' ? '—' : formatUsd(Number(value), locale)
   const amountCell = (value: string) => (
     <span
       data-negative={isNegativeAmount(value) ? 'true' : undefined}
@@ -117,6 +118,9 @@ export function EarningsPanel() {
 
   if (query.isError && !query.data) {
     return <ErrorState onRetry={() => void query.refetch()} />
+  }
+  if (query.isPending) {
+    return <LoadingState />
   }
 
   return (
