@@ -54,17 +54,33 @@ type AuthBundle struct {
 }
 
 func CreateLoginSession(userID int, loginMethod, ip, userAgent string) (*AuthBundle, error) {
-	return createLoginSession(userID, 0, loginMethod, ip, userAgent)
+	return createLoginSession(userID, 0, loginMethod, ip, userAgent, nil)
 }
 
 func CreateLoginSessionAtAuthVersion(userID int, expectedAuthVersion int64, loginMethod, ip, userAgent string) (*AuthBundle, error) {
 	if expectedAuthVersion <= 0 {
 		return nil, ErrLoginSessionInvalid
 	}
-	return createLoginSession(userID, expectedAuthVersion, loginMethod, ip, userAgent)
+	return createLoginSession(userID, expectedAuthVersion, loginMethod, ip, userAgent, nil)
 }
 
-func createLoginSession(userID int, expectedAuthVersion int64, loginMethod, ip, userAgent string) (*AuthBundle, error) {
+// CreateLoginSessionOnSite issues a session bound to issuedSiteID (0 = main).
+func CreateLoginSessionOnSite(userID, issuedSiteID int, loginMethod, ip, userAgent string) (*AuthBundle, error) {
+	siteID := issuedSiteID
+	return createLoginSession(userID, 0, loginMethod, ip, userAgent, &siteID)
+}
+
+// CreateLoginSessionForRequest records the current request site on the session.
+// expectedAuthVersion 0 means "use the user's current auth version".
+func CreateLoginSessionForRequest(c *gin.Context, userID int, expectedAuthVersion int64, loginMethod, ip, userAgent string) (*AuthBundle, error) {
+	if expectedAuthVersion < 0 {
+		return nil, ErrLoginSessionInvalid
+	}
+	siteID := AdtyRequestSiteID(c)
+	return createLoginSession(userID, expectedAuthVersion, loginMethod, ip, userAgent, &siteID)
+}
+
+func createLoginSession(userID int, expectedAuthVersion int64, loginMethod, ip, userAgent string, issuedSiteID *int) (*AuthBundle, error) {
 	user, err := model.GetUserCache(userID)
 	if err != nil {
 		return nil, err
@@ -90,7 +106,7 @@ func createLoginSession(userID int, expectedAuthVersion int64, loginMethod, ip, 
 	if issuanceCount >= int64(common.UserSessionIssuanceLimit) {
 		return nil, model.ErrUserSessionIssuanceLimit
 	}
-	session, refreshSecret, err := newLoginSession(userID, user.AuthVersion, loginMethod, ip, userAgent)
+	session, refreshSecret, err := newLoginSession(userID, user.AuthVersion, loginMethod, ip, userAgent, issuedSiteID)
 	if err != nil {
 		return nil, err
 	}
@@ -105,7 +121,7 @@ func createLoginSession(userID int, expectedAuthVersion int64, loginMethod, ip, 
 	return bundle, nil
 }
 
-func newLoginSession(userID int, authVersion int64, loginMethod, ip, userAgent string) (*model.UserSession, string, error) {
+func newLoginSession(userID int, authVersion int64, loginMethod, ip, userAgent string, issuedSiteID *int) (*model.UserSession, string, error) {
 	refreshSecret, err := common.GenerateRandomCharsKey(64)
 	if err != nil {
 		return nil, "", err
@@ -125,10 +141,25 @@ func newLoginSession(userID int, authVersion int64, loginMethod, ip, userAgent s
 		LastActiveAt:    now,
 		ExpiresAt:       time.Unix(now, 0).Add(LoginSessionTTL).Unix(),
 	}
+	if issuedSiteID != nil {
+		session.BindIssuedSite(*issuedSiteID)
+	}
 	if session.LoginMethod == "" {
 		session.LoginMethod = "unknown"
 	}
 	return session, refreshSecret, nil
+}
+
+// BindIdentityIssuedSite copies the session's issuance site onto identity.
+// The session row is authoritative; a missing value clears any token claim
+// so a legacy session cannot gain a host binding from the JWT alone.
+func BindIdentityIssuedSite(identity AuthIdentity, session *model.UserSession) AuthIdentity {
+	if id, ok := session.IssuedSite(); ok {
+		identity.BindIssuedSite(id)
+		return identity
+	}
+	identity.ClearIssuedSite()
+	return identity
 }
 
 func ValidateLoginSession(identity AuthIdentity) (*model.UserSession, *model.UserBase, error) {
@@ -409,6 +440,7 @@ func issueAuthBundle(session *model.UserSession, rawRefreshToken string, current
 		UserAuthVersion: session.UserAuthVersion,
 		SessionVersion:  session.Version,
 	}
+	identity = BindIdentityIssuedSite(identity, session)
 	accessToken, accessExpiresAt, err := IssueAccessToken(identity)
 	if err != nil {
 		return nil, err

@@ -188,23 +188,14 @@ func setupLoginAtAuthVersion(user *model.User, expectedAuthVersion int64, c *gin
 		common.ApiError(c, err)
 		return
 	}
-	var bundle *service.AuthBundle
-	if expectedAuthVersion > 0 {
-		bundle, err = service.CreateLoginSessionAtAuthVersion(
-			user.Id,
-			expectedAuthVersion,
-			loginMethodFromContext(c),
-			c.ClientIP(),
-			c.Request.UserAgent(),
-		)
-	} else {
-		bundle, err = service.CreateLoginSession(
-			user.Id,
-			loginMethodFromContext(c),
-			c.ClientIP(),
-			c.Request.UserAgent(),
-		)
-	}
+	bundle, err := service.CreateLoginSessionForRequest(
+		c,
+		user.Id,
+		expectedAuthVersion,
+		loginMethodFromContext(c),
+		c.ClientIP(),
+		c.Request.UserAgent(),
+	)
 	if err != nil {
 		writeAuthSessionError(c, err)
 		return

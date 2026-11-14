@@ -84,6 +84,37 @@ type AuthSessionIdentity struct {
 	SessionID       string `json:"session_id"`
 	UserAuthVersion int64  `json:"auth_version"`
 	SessionVersion  int64  `json:"session_version"`
+	// IssuedSiteID is the site the login session was created on (0 = main).
+	// HasIssuedSiteID is false for sessions issued before this field existed.
+	IssuedSiteID    int  `json:"issued_site_id,omitempty"`
+	HasIssuedSiteID bool `json:"has_issued_site_id,omitempty"`
+}
+
+// IssuedSite returns the recorded issuance site when the session was bound
+// to a host at login. A missing value is not the same as the main site (0).
+func (identity AuthSessionIdentity) IssuedSite() (int, bool) {
+	if !identity.HasIssuedSiteID {
+		return 0, false
+	}
+	return identity.IssuedSiteID, true
+}
+
+// BindIssuedSite records that this identity was issued on siteID (0 = main).
+func (identity *AuthSessionIdentity) BindIssuedSite(siteID int) {
+	if identity == nil {
+		return
+	}
+	identity.IssuedSiteID = siteID
+	identity.HasIssuedSiteID = true
+}
+
+// ClearIssuedSite marks a legacy identity that has no issuance-host binding.
+func (identity *AuthSessionIdentity) ClearIssuedSite() {
+	if identity == nil {
+		return
+	}
+	identity.IssuedSiteID = 0
+	identity.HasIssuedSiteID = false
 }
 
 // AuthFlowAuthorization is server-owned state carried into a configuration flow

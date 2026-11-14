@@ -136,10 +136,25 @@ func createDashboardSite(t *testing.T, ownerID int, subdomain string) *model.Adt
 
 func issueDashboardSiteSession(t *testing.T, userID int) string {
 	t.Helper()
-	bundle, err := service.CreateLoginSession(userID, "password", "127.0.0.1", "dashboard-site-auth-test")
+	return issueDashboardSiteSessionOnSite(t, userID, nil)
+}
+
+func issueDashboardSiteSessionOnSite(t *testing.T, userID int, issuedSiteID *int) string {
+	t.Helper()
+	var bundle *service.AuthBundle
+	var err error
+	if issuedSiteID == nil {
+		bundle, err = service.CreateLoginSession(userID, "password", "127.0.0.1", "dashboard-site-auth-test")
+	} else {
+		bundle, err = service.CreateLoginSessionOnSite(userID, *issuedSiteID, "password", "127.0.0.1", "dashboard-site-auth-test")
+	}
 	require.NoError(t, err)
 	require.NotEmpty(t, bundle.AccessToken)
 	return bundle.AccessToken
+}
+
+func dashboardIssuedSiteID(id int) *int {
+	return &id
 }
 
 func (f *dashboardSiteAuthFixture) attachRequestSite() gin.HandlerFunc {
@@ -318,19 +333,66 @@ func TestDashboardPATIsSiteBoundAndRelayAPIKeyUsesTokenAuth(t *testing.T) {
 	assert.Equal(t, f.mainUser.Id, relayBody.ID)
 }
 
-func TestSiteOwnerSessionAllowedOnOwnSiteAndMain(t *testing.T) {
+func TestSiteOwnerTokenIssuedOnMainRejectedOnOwnSite(t *testing.T) {
+	f := setupDashboardSiteAuthTest(t)
+	router := f.dashboardRouter(UserAuth(), dashboardSiteProtected)
+	token := issueDashboardSiteSessionOnSite(t, f.ownerA.Id, dashboardIssuedSiteID(0))
+
+	ok := dashboardSiteRequest(router, dashboardSiteProtected, dashboardSiteMainHost, token)
+	assert.Equal(t, http.StatusOK, ok.Code)
+	assert.Equal(t, f.ownerA.Id, decodeDashboardSiteBody(t, ok).ID)
+
+	for _, host := range []string{dashboardSiteAHost, dashboardSiteAAlias, dashboardSiteBHost} {
+		denied := dashboardSiteRequest(router, dashboardSiteProtected, host, token)
+		assert.Equal(t, http.StatusUnauthorized, denied.Code, host)
+		assert.Contains(t, denied.Body.String(), "AUTH_UNAUTHORIZED", host)
+		assert.NotContains(t, denied.Body.String(), `"entered":true`, host)
+	}
+}
+
+func TestSiteOwnerTokenIssuedOnSiteRejectedOnMainAndOtherSite(t *testing.T) {
+	f := setupDashboardSiteAuthTest(t)
+	router := f.dashboardRouter(UserAuth(), dashboardSiteProtected)
+	token := issueDashboardSiteSessionOnSite(t, f.ownerA.Id, dashboardIssuedSiteID(f.siteA.Id))
+
+	ok := dashboardSiteRequest(router, dashboardSiteProtected, dashboardSiteAHost, token)
+	assert.Equal(t, http.StatusOK, ok.Code)
+	assert.Equal(t, f.ownerA.Id, decodeDashboardSiteBody(t, ok).ID)
+	alias := dashboardSiteRequest(router, dashboardSiteProtected, dashboardSiteAAlias, token)
+	assert.Equal(t, http.StatusOK, alias.Code)
+	assert.Equal(t, f.ownerA.Id, decodeDashboardSiteBody(t, alias).ID)
+
+	for _, host := range []string{dashboardSiteMainHost, dashboardSiteBHost} {
+		denied := dashboardSiteRequest(router, dashboardSiteProtected, host, token)
+		assert.Equal(t, http.StatusUnauthorized, denied.Code, host)
+		assert.Contains(t, denied.Body.String(), "AUTH_UNAUTHORIZED", host)
+		assert.NotContains(t, denied.Body.String(), `"entered":true`, host)
+	}
+}
+
+func TestSiteOwnerTokenIssuedOnOwnSiteAcceptedForOwnerDashboard(t *testing.T) {
+	f := setupDashboardSiteAuthTest(t)
+	router := f.dashboardRouter(UserAuth(), dashboardSiteProtected)
+	token := issueDashboardSiteSessionOnSite(t, f.ownerA.Id, dashboardIssuedSiteID(f.siteA.Id))
+
+	response := dashboardSiteRequest(router, dashboardSiteProtected, dashboardSiteAHost, token)
+	assert.Equal(t, http.StatusOK, response.Code)
+	body := decodeDashboardSiteBody(t, response)
+	assert.True(t, body.Entered)
+	assert.Equal(t, f.ownerA.Id, body.ID)
+}
+
+func TestLegacySiteOwnerSessionHasNoCrossHostException(t *testing.T) {
+	// Sessions issued before issuance-site binding have no host field.
+	// They are accepted only on users.site_id (main for owners).
 	f := setupDashboardSiteAuthTest(t)
 	router := f.dashboardRouter(UserAuth(), dashboardSiteProtected)
 
-	for _, host := range []string{dashboardSiteMainHost, dashboardSiteAHost, dashboardSiteAAlias} {
-		response := dashboardSiteRequest(router, dashboardSiteProtected, host, f.ownerSession)
-		assert.Equal(t, http.StatusOK, response.Code, host)
-		body := decodeDashboardSiteBody(t, response)
-		assert.True(t, body.Entered, host)
-		assert.Equal(t, f.ownerA.Id, body.ID, host)
-	}
+	ok := dashboardSiteRequest(router, dashboardSiteProtected, dashboardSiteMainHost, f.ownerSession)
+	assert.Equal(t, http.StatusOK, ok.Code)
+	assert.Equal(t, f.ownerA.Id, decodeDashboardSiteBody(t, ok).ID)
 
-	denied := dashboardSiteRequest(router, dashboardSiteProtected, dashboardSiteBHost, f.ownerSession)
+	denied := dashboardSiteRequest(router, dashboardSiteProtected, dashboardSiteAHost, f.ownerSession)
 	assert.Equal(t, http.StatusUnauthorized, denied.Code)
 	assert.Contains(t, denied.Body.String(), "AUTH_UNAUTHORIZED")
 	assert.NotContains(t, denied.Body.String(), `"entered":true`)

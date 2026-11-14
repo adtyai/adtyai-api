@@ -60,7 +60,7 @@ func authHelper(c *gin.Context, minRole int) {
 	}
 	// Post-login Host binding (A.4.4 / DEC-023) is not optional and is not
 	// gated on SiteLoginOnly. Reject before setting a privileged context.
-	if !adtyDashboardSiteBound(c, user) {
+	if !adtyDashboardSiteBound(c, user, identity) {
 		abortWithWebMessage(c, http.StatusUnauthorized, "AUTH_UNAUTHORIZED", common.NewMessage("Unauthorized, invalid access token"))
 		return
 	}
@@ -132,7 +132,7 @@ func TryUserAuth() func(c *gin.Context) {
 				credentialKind = dashboardCredentialUnmatched
 			}
 		}
-		if credentialKind != dashboardCredentialUnmatched && !adtyDashboardSiteBound(c, user) {
+		if credentialKind != dashboardCredentialUnmatched && !adtyDashboardSiteBound(c, user, identity) {
 			// Optional auth must not attach a cross-site dashboard credential.
 			// Leave the request anonymous, same as a token outside its grant.
 			credentialKind = dashboardCredentialUnmatched
@@ -230,11 +230,11 @@ func classifyDashboardCredential(c *gin.Context) (*model.UserBase, service.AuthI
 		if err != nil {
 			return nil, service.AuthIdentity{}, dashboardCredentialInternal, err
 		}
-		_, user, err := service.ValidateLoginSession(identity)
+		session, user, err := service.ValidateLoginSession(identity)
 		if err != nil {
 			return nil, service.AuthIdentity{}, dashboardCredentialInternal, err
 		}
-		return user, identity, dashboardCredentialInternal, nil
+		return user, service.BindIdentityIssuedSite(identity, session), dashboardCredentialInternal, nil
 	}
 	lookup := lookupAccessToken(c, raw)
 	if lookup.user != nil {
@@ -384,22 +384,42 @@ func authorizationToken(header string) (string, bool) {
 // The request site comes from the trusted host mapping already in context
 // (AdtyRequestSiteID / AdtySiteForRequest); the main site is site_id 0.
 // This check is not optional and must not be gated on SiteLoginOnly, which
-// only applies when a session is issued. Site owners are main-site accounts
-// (users.site_id = 0) who authenticate on their own site's domain.
-func adtyDashboardSiteBound(c *gin.Context, user *model.UserBase) bool {
+// only applies when a session is issued.
+//
+// Ordinary users and staff stay bound by users.site_id. Site owners are
+// main-site accounts (users.site_id = 0) who must use a session issued on
+// the same host: a main-site token cannot enter a site domain, and a
+// site-domain token cannot enter the main site or another site.
+//
+// Legacy sessions with no issuance-site field do not get the owner
+// cross-host exception; they are accepted only on users.site_id (the main
+// site for owners). Newly issued sessions always record the issuance site.
+func adtyDashboardSiteBound(c *gin.Context, user *model.UserBase, identity service.AuthIdentity) bool {
 	if user == nil {
 		return false
 	}
 	requestSiteID := service.AdtyRequestSiteID(c)
-	if user.SiteId == requestSiteID {
+	if user.SiteId != 0 {
+		if user.SiteId != requestSiteID {
+			return false
+		}
+		if issued, ok := identity.IssuedSite(); ok && issued != requestSiteID {
+			return false
+		}
 		return true
 	}
-	if user.SiteId == 0 && requestSiteID > 0 {
-		if site := service.AdtySiteForRequest(c); site != nil && site.Id == requestSiteID && site.OwnerUserId == user.Id {
-			return true
-		}
+	issued, ok := identity.IssuedSite()
+	if !ok {
+		return requestSiteID == 0
 	}
-	return false
+	if issued != requestSiteID {
+		return false
+	}
+	if requestSiteID == 0 {
+		return true
+	}
+	site := service.AdtySiteForRequest(c)
+	return site != nil && site.Id == requestSiteID && site.OwnerUserId == user.Id
 }
 
 func setDashboardAuthContext(c *gin.Context, user *model.UserBase, identity service.AuthIdentity, useAccessToken bool) {
@@ -484,12 +504,13 @@ func TokenOrUserAuth() func(c *gin.Context) {
 				writeDashboardAuthError(c, err)
 				return
 			}
-			_, user, err := service.ValidateLoginSession(identity)
+			session, user, err := service.ValidateLoginSession(identity)
 			if err != nil {
 				writeDashboardAuthError(c, err)
 				return
 			}
-			if !adtyDashboardSiteBound(c, user) {
+			identity = service.BindIdentityIssuedSite(identity, session)
+			if !adtyDashboardSiteBound(c, user, identity) {
 				writeDashboardAuthError(c, service.ErrAuthTokenInvalid)
 				return
 			}

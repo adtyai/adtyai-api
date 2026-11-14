@@ -133,6 +133,16 @@ func requireLoginVerificationMethod(state *model.UserVerificationState, method s
 }
 
 func VerifyLoginCode(token, code, ip, userAgent string) (*AuthBundle, *LegacyGitHubMigration, error) {
+	return verifyLoginCode(token, code, ip, userAgent, nil)
+}
+
+// VerifyLoginCodeOnSite completes 2FA login and binds the session to issuedSiteID.
+func VerifyLoginCodeOnSite(token, code, ip, userAgent string, issuedSiteID int) (*AuthBundle, *LegacyGitHubMigration, error) {
+	siteID := issuedSiteID
+	return verifyLoginCode(token, code, ip, userAgent, &siteID)
+}
+
+func verifyLoginCode(token, code, ip, userAgent string, issuedSiteID *int) (*AuthBundle, *LegacyGitHubMigration, error) {
 	verification, err := RequireLoginVerification(token, VerificationMethodTwoFA)
 	if err != nil {
 		return nil, nil, err
@@ -147,7 +157,7 @@ func VerifyLoginCode(token, code, ip, userAgent string) (*AuthBundle, *LegacyGit
 	}
 	verification.pendingBackupCode = backupCode
 	verification.pendingTOTPStep = totpStep
-	return CompleteLoginVerification(token, verification, VerificationMethodTwoFA, ip, userAgent)
+	return completeLoginVerification(token, verification, VerificationMethodTwoFA, ip, userAgent, issuedSiteID)
 }
 
 // CompleteLoginVerification must only run after a concrete factor ceremony.
@@ -156,10 +166,21 @@ func VerifyLoginCode(token, code, ip, userAgent string) (*AuthBundle, *LegacyGit
 // returned migration is non-nil when the flow's pending GitHub binding rewrite
 // was written together with the session.
 func CompleteLoginVerification(token string, verification *LoginVerification, method, ip, userAgent string) (*AuthBundle, *LegacyGitHubMigration, error) {
+	return completeLoginVerification(token, verification, method, ip, userAgent, nil)
+}
+
+// CompleteLoginVerificationOnSite completes a verified login and binds the
+// session to issuedSiteID (0 = main).
+func CompleteLoginVerificationOnSite(token string, verification *LoginVerification, method, ip, userAgent string, issuedSiteID int) (*AuthBundle, *LegacyGitHubMigration, error) {
+	siteID := issuedSiteID
+	return completeLoginVerification(token, verification, method, ip, userAgent, &siteID)
+}
+
+func completeLoginVerification(token string, verification *LoginVerification, method, ip, userAgent string, issuedSiteID *int) (*AuthBundle, *LegacyGitHubMigration, error) {
 	if verification == nil || verification.Flow == nil || verification.State == nil {
 		return nil, nil, model.ErrAuthFlowInvalid
 	}
-	session, refreshSecret, err := newLoginSession(verification.State.UserID, verification.payload.AuthVersion, verification.payload.LoginMethod, ip, userAgent)
+	session, refreshSecret, err := newLoginSession(verification.State.UserID, verification.payload.AuthVersion, verification.payload.LoginMethod, ip, userAgent, issuedSiteID)
 	if err != nil {
 		return nil, nil, err
 	}

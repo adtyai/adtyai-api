@@ -42,13 +42,16 @@ var (
 type AuthIdentity = model.AuthSessionIdentity
 
 type authClaims struct {
-	TokenUse        string   `json:"token_use"`
-	SessionID       string   `json:"sid"`
-	UserAuthVersion int64    `json:"uv"`
-	SessionVersion  int64    `json:"sv"`
-	Method          string   `json:"method,omitempty"`
-	Scopes          []string `json:"scopes,omitempty"`
-	ContextHash     string   `json:"context_hash,omitempty"`
+	TokenUse        string `json:"token_use"`
+	SessionID       string `json:"sid"`
+	UserAuthVersion int64  `json:"uv"`
+	SessionVersion  int64  `json:"sv"`
+	// IssuedSiteID is optional so a 0 (main site) is distinct from a legacy
+	// token that predates issuance-host binding.
+	IssuedSiteID *int     `json:"iss_site,omitempty"`
+	Method       string   `json:"method,omitempty"`
+	Scopes       []string `json:"scopes,omitempty"`
+	ContextHash  string   `json:"context_hash,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -79,6 +82,10 @@ func IssueAccessToken(identity AuthIdentity) (string, int64, error) {
 			ID:        uuid.NewString(),
 		},
 	}
+	if identity.HasIssuedSiteID {
+		siteID := identity.IssuedSiteID
+		claims.IssuedSiteID = &siteID
+	}
 	signed, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(authSigningKey(accessTokenUse))
 	return signed, expiresAt.Unix(), err
 }
@@ -92,12 +99,16 @@ func ParseAccessToken(raw string) (AuthIdentity, error) {
 	if err != nil || userID <= 0 || claims.SessionID == "" || claims.UserAuthVersion <= 0 || claims.SessionVersion <= 0 {
 		return AuthIdentity{}, ErrAuthTokenInvalid
 	}
-	return AuthIdentity{
+	identity := AuthIdentity{
 		UserID:          userID,
 		SessionID:       claims.SessionID,
 		UserAuthVersion: claims.UserAuthVersion,
 		SessionVersion:  claims.SessionVersion,
-	}, nil
+	}
+	if claims.IssuedSiteID != nil {
+		identity.BindIssuedSite(*claims.IssuedSiteID)
+	}
+	return identity, nil
 }
 
 // ParseDashboardAccessToken distinguishes new-api dashboard JWTs from opaque

@@ -18,7 +18,7 @@ const (
 	UserSessionStatusRevoking = "revoking"
 	UserSessionStatusRevoked  = "revoked"
 
-	userSessionCacheSchema      = 1
+	userSessionCacheSchema      = 2
 	userSessionListLimit        = 100
 	userSessionRevokeBatchSize  = 500
 	userSessionCleanupScanLimit = 1000
@@ -56,10 +56,29 @@ type UserSession struct {
 	ExpiresAt           int64  `json:"expires_at" gorm:"type:bigint;not null;column:expires_at;index:idx_user_sessions_user_status_expiry,priority:3;index:idx_user_sessions_expires_at"`
 	RevokedAt           int64  `json:"revoked_at,omitempty" gorm:"type:bigint;not null;default:0;column:revoked_at;index:idx_user_sessions_status_revoked,priority:2"`
 	RevokedReason       string `json:"revoked_reason,omitempty" gorm:"type:varchar(64);column:revoked_reason"`
+	// IssuedSiteID is the request site at login (0 = main). Nil means a
+	// session created before issuance-host binding existed.
+	IssuedSiteID *int `json:"issued_site_id,omitempty" gorm:"column:issued_site_id"`
 }
 
 func (UserSession) TableName() string {
 	return "user_sessions"
+}
+
+// IssuedSite returns the recorded issuance site when one was stored at login.
+func (session *UserSession) IssuedSite() (int, bool) {
+	if session == nil || session.IssuedSiteID == nil {
+		return 0, false
+	}
+	return *session.IssuedSiteID, true
+}
+
+// BindIssuedSite records that this session was created on siteID (0 = main).
+func (session *UserSession) BindIssuedSite(siteID int) {
+	if session == nil {
+		return
+	}
+	session.IssuedSiteID = &siteID
 }
 
 func (session *UserSession) AfterFind(_ *gorm.DB) error {
@@ -81,11 +100,13 @@ type userSessionCacheEntry struct {
 	ExpiresAt       int64
 	RevokedAt       int64
 	RevokedReason   string
+	IssuedSiteID    int
+	HasIssuedSiteID bool
 	CacheSchema     int
 }
 
 func (session *UserSession) cacheEntry() *userSessionCacheEntry {
-	return &userSessionCacheEntry{
+	entry := &userSessionCacheEntry{
 		SID:             session.SID,
 		UserID:          session.UserID,
 		Version:         session.Version,
@@ -101,10 +122,15 @@ func (session *UserSession) cacheEntry() *userSessionCacheEntry {
 		RevokedReason:   session.RevokedReason,
 		CacheSchema:     userSessionCacheSchema,
 	}
+	if id, ok := session.IssuedSite(); ok {
+		entry.IssuedSiteID = id
+		entry.HasIssuedSiteID = true
+	}
+	return entry
 }
 
 func (entry *userSessionCacheEntry) session() *UserSession {
-	return &UserSession{
+	session := &UserSession{
 		SID:             entry.SID,
 		UserID:          entry.UserID,
 		Version:         entry.Version,
@@ -119,6 +145,10 @@ func (entry *userSessionCacheEntry) session() *UserSession {
 		RevokedAt:       entry.RevokedAt,
 		RevokedReason:   entry.RevokedReason,
 	}
+	if entry.HasIssuedSiteID {
+		session.BindIssuedSite(entry.IssuedSiteID)
+	}
+	return session
 }
 
 func userSessionCacheKey(sid string) string {
@@ -333,17 +363,23 @@ redis.call('HSET', KEYS[1],
   'UserAuthVersion', ARGV[4], 'Status', ARGV[5],
   'LoginMethod', ARGV[6], 'IP', ARGV[7], 'UserAgent', ARGV[8],
   'CreatedAt', ARGV[9], 'LastActiveAt', ARGV[10], 'ExpiresAt', ARGV[11],
-  'RevokedAt', ARGV[12], 'RevokedReason', ARGV[13], 'CacheSchema', ARGV[14])
+  'RevokedAt', ARGV[12], 'RevokedReason', ARGV[13], 'CacheSchema', ARGV[14],
+  'IssuedSiteID', ARGV[16], 'HasIssuedSiteID', ARGV[17])
 if ARGV[5] == 'active' then
   redis.call('PEXPIREAT', KEYS[1], ARGV[15])
 else
   redis.call('PEXPIRE', KEYS[1], ARGV[15])
 end
 return 1`
+	hasIssued := 0
+	if entry.HasIssuedSiteID {
+		hasIssued = 1
+	}
 	result, err := common.RDB.Eval(context.Background(), script, []string{userSessionCacheKey(entry.SID)},
 		entry.SID, entry.UserID, entry.Version, entry.UserAuthVersion, entry.Status,
 		entry.LoginMethod, entry.IP, entry.UserAgent, entry.CreatedAt, entry.LastActiveAt,
 		entry.ExpiresAt, entry.RevokedAt, entry.RevokedReason, entry.CacheSchema, redisExpiration,
+		entry.IssuedSiteID, hasIssued,
 	).Int()
 	if err != nil {
 		return err
