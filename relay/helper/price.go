@@ -92,7 +92,11 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 		}
 	}
 	billingModelName := info.GetBillingModelName()
-	modelPrice, usePrice := ratio_setting.GetModelPrice(billingModelName, false)
+	modelPriceDec, usePrice := ratio_setting.GetModelPriceDecimal(billingModelName, false)
+	modelPrice := float64(-1)
+	if usePrice {
+		modelPrice = modelPriceDec.InexactFloat64()
+	}
 
 	groupRatioInfo := HandleGroupRatio(c, info)
 
@@ -103,7 +107,11 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 
 	var preConsumedQuota int
 	var modelRatio float64
+	var modelRatioDec decimal.Decimal
+	var hasModelRatioDec bool
 	var completionRatio float64
+	var completionRatioDec decimal.Decimal
+	var hasCompletionRatioDec bool
 	var cacheRatio float64
 	var imageRatio float64
 	var cacheCreationRatio float64
@@ -111,7 +119,11 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 	var cacheCreationRatio1h float64
 	var cacheCreationRatio12h float64
 	var audioRatio float64
+	var audioRatioDec decimal.Decimal
+	var hasAudioRatioDec bool
 	var audioCompletionRatio float64
+	var audioCompletionRatioDec decimal.Decimal
+	var hasAudioCompletionRatioDec bool
 	var freeModel bool
 	if !usePrice {
 		preConsumeMultiplier, err := operation_setting.InputPreConsumeMultiplier()
@@ -121,7 +133,9 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 		preConsumedTokens := float64(promptTokens) * preConsumeMultiplier
 		var success bool
 		var matchName string
-		modelRatio, success, matchName = ratio_setting.GetModelRatio(billingModelName)
+		modelRatioDec, success, matchName = ratio_setting.GetModelRatioDecimal(billingModelName)
+		hasModelRatioDec = true
+		modelRatio = modelRatioDec.InexactFloat64()
 		if !success {
 			acceptUnsetRatio := false
 			if info.UserSetting.AcceptUnsetRatioModel {
@@ -131,7 +145,9 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 				return hosttypes.PriceData{}, modelPriceNotConfiguredError(c, matchName, info.UserId)
 			}
 		}
-		completionRatio = ratio_setting.GetCompletionRatio(billingModelName)
+		completionRatioDec = ratio_setting.GetCompletionRatioDecimal(billingModelName)
+		hasCompletionRatioDec = true
+		completionRatio = completionRatioDec.InexactFloat64()
 		cacheRatio, _ = ratio_setting.GetCacheRatio(billingModelName)
 		cacheCreationRatio, _ = ratio_setting.GetCreateCacheRatio(billingModelName)
 		cacheCreationRatio5m = cacheCreationRatio
@@ -139,9 +155,13 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 		cacheCreationRatio1h = cacheCreationRatio * hosttypes.ClaudeCacheCreation1hMultiplier
 		cacheCreationRatio12h = cacheCreationRatio * hosttypes.OpenAICacheCreation12hMultiplier
 		imageRatio, _ = ratio_setting.GetImageRatio(billingModelName)
-		audioRatio = ratio_setting.GetAudioRatio(billingModelName)
-		audioCompletionRatio = ratio_setting.GetAudioCompletionRatio(billingModelName)
-		ratioDec := decimal.NewFromFloat(modelRatio).Mul(groupRatioInfo.BilledGroupRatio())
+		audioRatioDec = ratio_setting.GetAudioRatioDecimal(billingModelName)
+		hasAudioRatioDec = true
+		audioRatio = audioRatioDec.InexactFloat64()
+		audioCompletionRatioDec = ratio_setting.GetAudioCompletionRatioDecimal(billingModelName)
+		hasAudioCompletionRatioDec = true
+		audioCompletionRatio = audioCompletionRatioDec.InexactFloat64()
+		ratioDec := modelRatioDec.Mul(groupRatioInfo.BilledGroupRatio())
 		quota, err := common.QuotaFromDecimalStrict(decimal.NewFromFloat(preConsumedTokens).Mul(ratioDec))
 		if err != nil {
 			return hosttypes.PriceData{}, err
@@ -152,7 +172,8 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 		}
 	} else {
 		if meta.ImagePriceRatio != 0 {
-			modelPrice = modelPrice * meta.ImagePriceRatio
+			modelPriceDec = modelPriceDec.Mul(decimal.NewFromFloat(meta.ImagePriceRatio))
+			modelPrice = modelPriceDec.InexactFloat64()
 		}
 		if _, image := info.Request.(*dto.ImageRequest); image {
 			info.ImageQuotaBeforeGroup = modelPrice * common.QuotaPerUnit
@@ -194,6 +215,21 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 		CacheCreation1hRatio:  cacheCreationRatio1h,
 		CacheCreation12hRatio: cacheCreationRatio12h,
 		QuotaToPreConsume:     preConsumedQuota,
+	}
+	if usePrice {
+		priceData.SetBilledModelPrice(modelPriceDec)
+	}
+	if hasModelRatioDec {
+		priceData.SetBilledModelRatio(modelRatioDec)
+	}
+	if hasCompletionRatioDec {
+		priceData.SetBilledCompletionRatio(completionRatioDec)
+	}
+	if hasAudioRatioDec {
+		priceData.SetBilledAudioRatio(audioRatioDec)
+	}
+	if hasAudioCompletionRatioDec {
+		priceData.SetBilledAudioCompletionRatio(audioCompletionRatioDec)
 	}
 	if usePrice {
 		for name, ratio := range meta.BillingRatios {
@@ -240,19 +276,31 @@ func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) (hostt
 	}
 	groupRatioInfo := HandleGroupRatio(c, info)
 
-	modelPrice, success := ratio_setting.GetModelPrice(info.OriginModelName, true)
+	modelPriceDec, success := ratio_setting.GetModelPriceDecimal(info.OriginModelName, true)
 	usePrice := success
+	var modelPrice float64
 	var modelRatio float64
+	var modelRatioDec decimal.Decimal
+	var hasModelRatioDec bool
+	var hasModelPriceDec bool
+	if success {
+		hasModelPriceDec = true
+		modelPrice = modelPriceDec.InexactFloat64()
+	}
 
 	if !success {
 		defaultPrice, ok := ratio_setting.GetDefaultModelPriceMap()[info.OriginModelName]
 		if ok {
+			modelPriceDec = ratio_setting.DecimalFromFloat(defaultPrice)
+			hasModelPriceDec = true
 			modelPrice = defaultPrice
 			usePrice = true
 		} else {
 			var ratioSuccess bool
 			var matchName string
-			modelRatio, ratioSuccess, matchName = ratio_setting.GetModelRatio(info.OriginModelName)
+			modelRatioDec, ratioSuccess, matchName = ratio_setting.GetModelRatioDecimal(info.OriginModelName)
+			hasModelRatioDec = true
+			modelRatio = modelRatioDec.InexactFloat64()
 			acceptUnsetRatio := false
 			if info.UserSetting.AcceptUnsetRatioModel {
 				acceptUnsetRatio = true
@@ -301,6 +349,12 @@ func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) (hostt
 		UsePrice:       usePrice,
 		Quota:          quota,
 		GroupRatioInfo: groupRatioInfo,
+	}
+	if hasModelPriceDec {
+		priceData.SetBilledModelPrice(modelPriceDec)
+	}
+	if hasModelRatioDec {
+		priceData.SetBilledModelRatio(modelRatioDec)
 	}
 	if info != nil {
 		info.PriceData = priceData

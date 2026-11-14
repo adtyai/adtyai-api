@@ -65,6 +65,98 @@ type PriceData struct {
 	Quota                 int // 按次计费的最终额度（MJ / Task）
 	QuotaToPreConsume     int // 按量计费的预消耗额度
 	GroupRatioInfo        GroupRatioInfo
+	// Decimal authorities for official billing. The float64 fields above stay
+	// for logs, display, and outbound JSON.
+	ModelPriceDecimal              decimal.Decimal `json:"-"`
+	hasModelPriceDecimal           bool
+	ModelRatioDecimal              decimal.Decimal `json:"-"`
+	hasModelRatioDecimal           bool
+	CompletionRatioDecimal         decimal.Decimal `json:"-"`
+	hasCompletionRatioDecimal      bool
+	AudioRatioDecimal              decimal.Decimal `json:"-"`
+	hasAudioRatioDecimal           bool
+	AudioCompletionRatioDecimal    decimal.Decimal `json:"-"`
+	hasAudioCompletionRatioDecimal bool
+}
+
+func (p *PriceData) SetBilledModelPrice(value decimal.Decimal) {
+	p.ModelPriceDecimal = value
+	p.hasModelPriceDecimal = true
+}
+
+func (p PriceData) HasBilledModelPrice() bool {
+	return p.hasModelPriceDecimal
+}
+
+func (p PriceData) BilledModelPrice() decimal.Decimal {
+	if p.hasModelPriceDecimal {
+		return p.ModelPriceDecimal
+	}
+	return decimal.NewFromFloat(p.ModelPrice)
+}
+
+func (p *PriceData) SetBilledModelRatio(value decimal.Decimal) {
+	p.ModelRatioDecimal = value
+	p.hasModelRatioDecimal = true
+}
+
+func (p PriceData) HasBilledModelRatio() bool {
+	return p.hasModelRatioDecimal
+}
+
+func (p PriceData) BilledModelRatio() decimal.Decimal {
+	if p.hasModelRatioDecimal {
+		return p.ModelRatioDecimal
+	}
+	return decimal.NewFromFloat(p.ModelRatio)
+}
+
+func (p *PriceData) SetBilledCompletionRatio(value decimal.Decimal) {
+	p.CompletionRatioDecimal = value
+	p.hasCompletionRatioDecimal = true
+}
+
+func (p PriceData) HasBilledCompletionRatio() bool {
+	return p.hasCompletionRatioDecimal
+}
+
+func (p PriceData) BilledCompletionRatio() decimal.Decimal {
+	if p.hasCompletionRatioDecimal {
+		return p.CompletionRatioDecimal
+	}
+	return decimal.NewFromFloat(p.CompletionRatio)
+}
+
+func (p *PriceData) SetBilledAudioRatio(value decimal.Decimal) {
+	p.AudioRatioDecimal = value
+	p.hasAudioRatioDecimal = true
+}
+
+func (p PriceData) HasBilledAudioRatio() bool {
+	return p.hasAudioRatioDecimal
+}
+
+func (p PriceData) BilledAudioRatio() decimal.Decimal {
+	if p.hasAudioRatioDecimal {
+		return p.AudioRatioDecimal
+	}
+	return decimal.NewFromFloat(p.AudioRatio)
+}
+
+func (p *PriceData) SetBilledAudioCompletionRatio(value decimal.Decimal) {
+	p.AudioCompletionRatioDecimal = value
+	p.hasAudioCompletionRatioDecimal = true
+}
+
+func (p PriceData) HasBilledAudioCompletionRatio() bool {
+	return p.hasAudioCompletionRatioDecimal
+}
+
+func (p PriceData) BilledAudioCompletionRatio() decimal.Decimal {
+	if p.hasAudioCompletionRatioDecimal {
+		return p.AudioCompletionRatioDecimal
+	}
+	return decimal.NewFromFloat(p.AudioCompletionRatio)
 }
 
 func (p *PriceData) AddOtherRatio(key string, ratio float64) {

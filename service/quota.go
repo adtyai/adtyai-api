@@ -71,7 +71,35 @@ func quotaInfoFromPriceData(info QuotaInfo, relayInfo *relaycommon.RelayInfo) Qu
 	if relayInfo == nil {
 		return info
 	}
-	return withBilledGroupRatio(info, relayInfo.PriceData.GroupRatioInfo.BilledGroupRatio())
+	info = withBilledGroupRatio(info, relayInfo.PriceData.GroupRatioInfo.BilledGroupRatio())
+	price := relayInfo.PriceData
+	if price.HasBilledModelRatio() {
+		info.ModelRatioDecimal = price.BilledModelRatio()
+		info.hasModelRatioDecimal = true
+		if info.ModelRatio == 0 {
+			info.ModelRatio = info.ModelRatioDecimal.InexactFloat64()
+		}
+	}
+	if price.HasBilledModelPrice() {
+		info.ModelPriceDecimal = price.BilledModelPrice()
+		info.hasModelPriceDecimal = true
+		if info.ModelPrice == 0 {
+			info.ModelPrice = info.ModelPriceDecimal.InexactFloat64()
+		}
+	}
+	if price.HasBilledCompletionRatio() {
+		info.CompletionRatioDecimal = price.BilledCompletionRatio()
+		info.hasCompletionRatioDecimal = true
+	}
+	if price.HasBilledAudioRatio() {
+		info.AudioRatioDecimal = price.BilledAudioRatio()
+		info.hasAudioRatioDecimal = true
+	}
+	if price.HasBilledAudioCompletionRatio() {
+		info.AudioCompletionRatioDecimal = price.BilledAudioCompletionRatio()
+		info.hasAudioCompletionRatioDecimal = true
+	}
+	return info
 }
 
 func hasCustomModelRatio(modelName string, currentRatio float64) bool {
@@ -156,7 +184,11 @@ func PreWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usag
 	audioInputTokens := usage.InputTokenDetails.AudioTokens
 	audioOutTokens := usage.OutputTokenDetails.AudioTokens
 	groupRatio := ratio_setting.GetGroupRatio(relayInfo.UsingGroup)
-	modelRatio, _, _ := ratio_setting.GetModelRatio(modelName)
+	modelRatioDec, _, _ := ratio_setting.GetModelRatioDecimal(modelName)
+	if relayInfo.PriceData.HasBilledModelRatio() {
+		modelRatioDec = relayInfo.PriceData.BilledModelRatio()
+	}
+	modelRatio := modelRatioDec.InexactFloat64()
 
 	autoGroup, exists := common.GetContextKey(ctx, constant.ContextKeyAutoGroup)
 	if exists {
@@ -190,6 +222,8 @@ func PreWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usag
 		GroupRatio: actualGroupRatio,
 	}
 	quotaInfo = withBilledGroupRatio(quotaInfo, actualGroupRatioDec)
+	quotaInfo.ModelRatioDecimal = modelRatioDec
+	quotaInfo.hasModelRatioDecimal = true
 	if snap := AdtyFrozenPriceSnapshot(ctx); snap != nil {
 		quotaInfo = applySnapshotToQuotaInfo(quotaInfo, snap)
 	}
@@ -353,12 +387,13 @@ func CalcOpenRouterCacheCreateTokens(usage dto.Usage, priceData types.PriceData)
 	if priceData.CacheCreationRatio == 1 {
 		return 0
 	}
-	// PriceData still snapshots ratios as float64. Convert each input once at
-	// this boundary and keep the existing inversion in exact decimal.
-	modelRatio := decimal.NewFromFloat(priceData.ModelRatio)
+	// Model and completion ratios use the PriceData decimal authority when
+	// present. Cache ratios still have no Get*Decimal authority, so they
+	// convert from the float snapshot once at this boundary.
+	modelRatio := priceData.BilledModelRatio()
 	cacheCreationRatio := decimal.NewFromFloat(priceData.CacheCreationRatio)
 	cacheRatio := decimal.NewFromFloat(priceData.CacheRatio)
-	completionRatio := decimal.NewFromFloat(priceData.CompletionRatio)
+	completionRatio := priceData.BilledCompletionRatio()
 	quotaPrice := modelRatio.Div(common.QuotaPerUnitDecimal())
 	promptCacheCreatePrice := quotaPrice.Mul(cacheCreationRatio)
 	promptCacheReadPrice := quotaPrice.Mul(cacheRatio)

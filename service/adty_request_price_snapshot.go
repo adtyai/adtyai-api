@@ -121,10 +121,10 @@ func buildRequestPriceSnapshot(c *gin.Context, info *relaycommon.RelayInfo) *mod
 	}
 
 	unit := model.BillingUnitPerToken
-	base := decimal.NewFromFloat(price.ModelRatio)
+	base := price.BilledModelRatio()
 	if price.UsePrice {
 		unit = model.BillingUnitPerCall
-		base = decimal.NewFromFloat(price.ModelPrice)
+		base = price.BilledModelPrice()
 	}
 	if info.TieredBillingSnapshot != nil && info.TieredBillingSnapshot.BillingMode == "tiered_expr" {
 		unit = model.BillingUnitTieredExpr
@@ -176,20 +176,20 @@ func buildRequestPriceSnapshot(c *gin.Context, info *relaycommon.RelayInfo) *mod
 	}
 	if price.UsePrice {
 		snap.ModelPrice = base.String()
-	} else if price.ModelRatio != 0 || unit == model.BillingUnitPerToken {
-		snap.ModelRatio = decimal.NewFromFloat(price.ModelRatio).String()
+	} else if price.HasBilledModelRatio() || price.ModelRatio != 0 || unit == model.BillingUnitPerToken {
+		snap.ModelRatio = price.BilledModelRatio().String()
 	}
-	if price.CompletionRatio != 0 {
-		snap.CompletionRatio = decimal.NewFromFloat(price.CompletionRatio).String()
+	if completion := price.BilledCompletionRatio(); (price.HasBilledCompletionRatio() && !completion.IsZero()) || price.CompletionRatio != 0 {
+		snap.CompletionRatio = completion.String()
 	}
 	if price.CacheRatio != 0 {
 		snap.CacheRatio = decimal.NewFromFloat(price.CacheRatio).String()
 	}
-	if price.AudioRatio != 0 {
-		snap.AudioRatio = decimal.NewFromFloat(price.AudioRatio).String()
+	if audio := price.BilledAudioRatio(); (price.HasBilledAudioRatio() && !audio.IsZero()) || price.AudioRatio != 0 {
+		snap.AudioRatio = audio.String()
 	}
-	if price.AudioCompletionRatio != 0 {
-		snap.AudioCompletionRatio = decimal.NewFromFloat(price.AudioCompletionRatio).String()
+	if audioCompletion := price.BilledAudioCompletionRatio(); (price.HasBilledAudioCompletionRatio() && !audioCompletion.IsZero()) || price.AudioCompletionRatio != 0 {
+		snap.AudioCompletionRatio = audioCompletion.String()
 	}
 	return snap
 }
