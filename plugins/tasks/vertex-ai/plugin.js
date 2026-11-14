@@ -1,16 +1,62 @@
+// Gemini Omni bills tokens: input, text output (including thinking) and video
+// output (with audio). A second of output video is reserved at these Vertex
+// token densities (cloud.google.com/gemini-enterprise-agent-platform/generative-ai/pricing).
+// These are vendor token estimates for reservation, not NewAPI USD price tables.
+// Default ratio/price expressions for gemini-omni-* are left unset.
+const OMNI_VIDEO_TOKENS_PER_SECOND = { "360p": 1931, "720p": 5792, "1080p": 8688, "4k": 17376 };
+const RESOLUTIONS = Object.keys(OMNI_VIDEO_TOKENS_PER_SECOND);
+const OMNI_TOKEN_LIMIT = 2147483647;
+const OMNI_USAGE_SCHEMA = {
+  // Input tokens (reported on completion).
+  input_tokens: {
+    type: "number",
+    unit: "token",
+    description: { en: "Input token unit price", zh: "输入 Token 单价" },
+  },
+  // Text output tokens, including thinking (reported on completion).
+  output_tokens: {
+    type: "number",
+    unit: "token",
+    description: { en: "Text output token unit price", zh: "文本输出 Token 单价" },
+  },
+  // Video output tokens (estimated at submit, reported on completion).
+  video_tokens: {
+    type: "number",
+    unit: "token",
+    description: { en: "Video output token unit price", zh: "视频输出 Token 单价" },
+  },
+};
+function saturatedTokens(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) return NaN;
+  return Math.min(n, OMNI_TOKEN_LIMIT);
+}
+// Input and text output are only known on completion, which reports them.
+function omniUsageFacts(seconds, resolution) {
+  return { input_tokens: 0, output_tokens: 0, video_tokens: saturatedTokens(seconds * OMNI_VIDEO_TOKENS_PER_SECOND[resolution]) };
+}
+
 export const meta = {
   apiVersion: 1,
   key: "vertex-ai",
-  name: "Google Veo (Vertex AI)",
+  name: "Google Veo & Gemini Omni (Vertex AI)",
   icon: "VertexAI.Color",
   description: {
-    en: "Google Veo video generation on Vertex AI (text-to-video and image-to-video)",
-    zh: "Google Veo 视频生成（文生视频、图生视频），Vertex AI 版本",
+    en: "Google Veo and Gemini Omni Flash video generation on Vertex AI (text-to-video and image-to-video)",
+    zh: "Google Veo 与 Gemini Omni Flash 视频生成（文生视频、图生视频），Vertex AI 版本",
   },
-  version: "1.1.0",
+  version: "1.3.0",
   channelTypes: [41],
   author: { name: "QuantumNous" },
-  models: ["veo-3.0-generate-001", "veo-3.0-fast-generate-001", "veo-3.1-generate-preview", "veo-3.1-fast-generate-preview"],
+  models: [
+    "veo-3.0-generate-001",
+    "veo-3.0-fast-generate-001",
+    "veo-3.1-generate-preview",
+    "veo-3.1-fast-generate-preview",
+    "gemini-omni-1.1-flash-preview",
+    "gemini-omni-flash-preview",
+    "gemini-omni-1.2-flash",
+  ],
   fetchMode: "per_task",
   auth: { type: "oauth2_jwt" },
   upstreams: ["vendor", "new_api"],
@@ -39,6 +85,18 @@ export const meta = {
     { label: "8s 1080p audio", facts: { seconds: 8, resolution: "1080p", generate_audio: true } },
     { label: "8s 4k audio", facts: { seconds: 8, resolution: "4k", generate_audio: true } },
   ],
+  usageProfiles: [
+    {
+      models: ["gemini-omni-1.2-flash", "gemini-omni-1.1-flash-preview", "gemini-omni-flash-preview"],
+      schema: OMNI_USAGE_SCHEMA,
+      examples: [
+        { label: "3s 360p", facts: omniUsageFacts(3, "360p") },
+        { label: "8s 720p", facts: omniUsageFacts(8, "720p") },
+        { label: "8s 1080p", facts: omniUsageFacts(8, "1080p") },
+        { label: "10s 4k", facts: omniUsageFacts(10, "4k") },
+      ],
+    },
+  ],
   // Vertex AI request and response bodies, for clients and for a downstream New
   // API gateway. The model segment carries the method: predictLongRunning
   // submits and fetchPredictOperation polls. The gateway runs every request in
@@ -48,6 +106,20 @@ export const meta = {
     {
       method: "POST",
       path: "/vertex-ai/v1/projects/:project/locations/:location/publishers/google/models/:model",
+      type: "dynamic",
+      decode: "modelMethod",
+      render: "operation",
+    },
+    {
+      method: "POST",
+      path: "/v1/projects/:project/locations/:location/publishers/google/models/:model",
+      type: "dynamic",
+      decode: "modelMethod",
+      render: "operation",
+    },
+    {
+      method: "POST",
+      path: "/v1beta1/projects/:project/locations/:location/publishers/google/models/:model",
       type: "dynamic",
       decode: "modelMethod",
       render: "operation",
@@ -73,6 +145,116 @@ function requestHeaders(ctx) {
   if (!viaGateway(ctx)) headers["x-goog-user-project"] = ctx.auth.projectId;
   return headers;
 }
+
+function omniModel(ctx) {
+  return trimmed(ctx.upstreamModel || ctx.model).startsWith("gemini-omni-");
+}
+// Gemini Omni runs through the Interactions API, which Vertex serves on the
+// global endpoint only, and returns the video inline in the interaction.
+function interactionsURL(ctx, interactionId) {
+  if (viaGateway(ctx)) throw new Error("Gemini Omni is not available through a New API gateway");
+  const base = trimmed(ctx.baseUrl).replace(/\/$/, "") || "https://aiplatform.googleapis.com";
+  const url = base + "/v1beta1/projects/" + ctx.auth.projectId + "/locations/global/interactions";
+  return interactionId ? url + "/" + encodeURIComponent(interactionId) : url;
+}
+function omniResolution(req) {
+  const metadata = req.metadata || {};
+  const value = String(req.resolution || metadata.resolution || resolution(req.size)).toLowerCase();
+  if (!RESOLUTIONS.includes(value)) throw new Error("resolution must be one of " + RESOLUTIONS.join(", "));
+  return value;
+}
+// Omni 1.2 generates up to 15 seconds; 1.1 and first/last-frame interpolation
+// stop at 10, which Vertex itself rejects.
+function omniDuration(req) {
+  const n = req.duration === undefined || req.duration === "" ? 8 : Number(req.duration);
+  if (!Number.isInteger(n) || n < 3 || n > 15) throw new Error("seconds must be an integer from 3 to 15");
+  return n;
+}
+// inputImage is an input image's media type and base64 bytes: an uploaded
+// file placeholder, a data URL or bare base64.
+function inputImage(ctx, image) {
+  let mime = "";
+  let data = image;
+  if (plainObject(image) && image.__fileRef) {
+    mime = String(image.mimeType || "").toLowerCase();
+    if (mime !== "image/jpeg" && mime !== "image/png") {
+      for (const file of ctx.files || []) {
+        if (file.ref === image.__fileRef || file.field === "input_reference") {
+          mime = String(file.mimeType || "").toLowerCase();
+          break;
+        }
+      }
+    }
+  } else {
+    const text = String(image);
+    const comma = text.indexOf(",");
+    data = text;
+    if (text.startsWith("data:")) {
+      mime = text.slice(5, comma).split(";")[0].toLowerCase();
+      data = text.slice(comma + 1);
+    } else if (text.startsWith("iVBORw0KGgo")) mime = "image/png";
+    else if (text.startsWith("/9j/")) mime = "image/jpeg";
+  }
+  if (mime !== "image/jpeg" && mime !== "image/png") throw new Error("input image must be image/jpeg or image/png");
+  return { mime: mime, data: data };
+}
+// Images keep the client's order: two are the first and last frame, more are
+// subject references. The task hint limits the image count, so it is only sent
+// for the single-image and text-only forms.
+function omniSubmitRequest(ctx, req, model) {
+  const input = [];
+  const images = req.images || [];
+  for (const image of images) {
+    const frame = inputImage(ctx, image);
+    input.push({ type: "image", mime_type: frame.mime, data: frame.data });
+  }
+  if (trimmed(req.prompt)) input.push({ type: "text", text: req.prompt });
+  if (!input.length) throw new Error("prompt is required");
+  const body = {
+    model: model,
+    input: input,
+    response_format: [{ type: "video", aspect_ratio: aspect(req.size), resolution: omniResolution(req), duration: omniDuration(req) + "s" }],
+    background: true,
+    store: true,
+  };
+  const task = images.length ? "image_to_video" : "text_to_video";
+  if (images.length < 2) body.generation_config = { video_config: { task: task } };
+  return { url: interactionsURL(ctx), method: "POST", headers: requestHeaders(ctx), body: body, action: task };
+}
+function isInteraction(body) {
+  return plainObject(body) !== null && (body.object === "interaction" || Array.isArray(body.steps));
+}
+function omniVideo(body) {
+  const steps = Array.isArray(body.steps) ? body.steps : [];
+  for (let i = 0; i < steps.length; i++) {
+    const step = steps[i];
+    if (!plainObject(step) || step.type !== "model_output" || !Array.isArray(step.content)) continue;
+    for (let j = 0; j < step.content.length; j++) {
+      const part = step.content[j];
+      if (!plainObject(part) || part.type !== "video") continue;
+      return { path: ["steps", i, "content", j, "data"], mimeType: trimmed(part.mime_type) || "video/mp4", uri: trimmed(part.uri) };
+    }
+  }
+  return null;
+}
+function omniTaskResult(body) {
+  body = plainObject(body) || {};
+  if (plainObject(body.error) && body.error.message) return { status: "FAILURE", progress: "100%", reason: body.error.message };
+  const status = trimmed(body.status).toLowerCase();
+  if (status === "in_progress" || status === "queued") return { status: "IN_PROGRESS", progress: "50%" };
+  if (["failed", "cancelled", "canceled", "expired", "incomplete"].includes(status)) {
+    const error = plainObject((body.errors || [])[0]) || {};
+    const reason = [trimmed(error.code), trimmed(error.message)].filter(Boolean).join(": ");
+    return { status: "FAILURE", progress: "100%", reason: reason || status };
+  }
+  if (status !== "completed") return { status: "UNKNOWN", reason: "unrecognized interaction state" };
+  const video = omniVideo(body);
+  if (!video) return { status: "FAILURE", progress: "100%", reason: "interaction completed without a video" };
+  const result = { status: "SUCCESS", progress: "100%" };
+  if (video.uri) result.remoteUrl = video.uri;
+  return result;
+}
+
 function responsesInput(req) {
   const texts = [],
     images = [];
@@ -243,6 +425,7 @@ export function buildSubmitRequest(ctx) {
   const req = ctx.requestBody || {},
     metadata = Object.assign({}, req.metadata || {}),
     model = ctx.upstreamModel || "veo-3.0-generate-001";
+  if (omniModel(ctx)) return omniSubmitRequest(ctx, req, model);
   if (Number(req.duration) > 0) metadata.durationSeconds = Number(req.duration);
   if (!metadata.resolution && req.size) metadata.resolution = resolution(req.size);
   if (!metadata.aspectRatio && req.size) metadata.aspectRatio = aspect(req.size);
@@ -288,22 +471,49 @@ export function buildSubmitRequest(ctx) {
 
 export function parseSubmitResponse(ctx, resp) {
   const body = resp.body || {};
+  if (omniModel(ctx)) {
+    const id = trimmed(body.id);
+    if (!id) throw new Error("missing interaction id");
+    return { taskId: id, taskData: body };
+  }
   if (!String(body.name || "").trim()) throw new Error("missing operation name");
   return { taskId: utils.base64URL(body.name), taskData: body };
 }
 export function extractUsage(ctx) {
   const req = ctx.requestBody || {};
   const metadata = req.metadata || {};
+  if (omniModel(ctx)) return omniUsageFacts(omniDuration(req), omniResolution(req));
   return {
     seconds: duration(req),
     resolution: String(metadata.resolution || resolution(req.size) || "720p").toLowerCase(),
     generate_audio: metadata.generateAudio !== false,
   };
 }
-export function extractUsageOnComplete() {
-  return null;
+// Facts Vertex does not report are omitted so the host keeps the submit estimate.
+// Only gemini-omni-* uses this token schema; Veo keeps seconds/resolution/audio.
+export function extractUsageOnComplete(ctx, _result, body) {
+  if (!ctx || !omniModel(ctx)) return null;
+  const usage = plainObject(body && body.usage);
+  if (!usage) return null;
+  const facts = {};
+  const inputTokens = saturatedTokens(usage.total_input_tokens);
+  if (Number.isFinite(inputTokens)) facts.input_tokens = inputTokens;
+  let textTokens = saturatedTokens(usage.total_thought_tokens);
+  let videoTokens = NaN;
+  for (const item of Array.isArray(usage.output_tokens_by_modality) ? usage.output_tokens_by_modality : []) {
+    const entry = plainObject(item) || {};
+    const tokens = saturatedTokens(entry.tokens);
+    const modality = trimmed(entry.modality).toLowerCase();
+    if (!Number.isFinite(tokens)) continue;
+    if (modality === "video" || modality === "audio") videoTokens = (Number.isFinite(videoTokens) ? videoTokens : 0) + tokens;
+    else textTokens = (Number.isFinite(textTokens) ? textTokens : 0) + tokens;
+  }
+  if (Number.isFinite(textTokens)) facts.output_tokens = Math.min(textTokens, OMNI_TOKEN_LIMIT);
+  if (Number.isFinite(videoTokens)) facts.video_tokens = Math.min(videoTokens, OMNI_TOKEN_LIMIT);
+  return facts;
 }
 export function buildQueryRequest(ctx) {
+  if (omniModel(ctx)) return { url: interactionsURL(ctx, ctx.taskId), method: "GET", headers: requestHeaders(ctx) };
   const name = decodeTaskId(ctx.taskId),
     project = operationPart(name, "projects/"),
     location = operationPart(name, "locations/"),
@@ -317,6 +527,7 @@ export function buildQueryRequest(ctx) {
   };
 }
 export function parseTaskResult(ctx, body) {
+  if (omniModel(ctx)) return omniTaskResult(body);
   if (body.error && body.error.message) return { status: "FAILURE", progress: "100%", reason: body.error.message };
   // Google long-running operations omit `done` (proto3 default) while still
   // running, so a missing key means in-progress; only a non-operation shape is
@@ -326,10 +537,28 @@ export function parseTaskResult(ctx, body) {
   const url = dataVideo(body.response || {});
   return { status: "SUCCESS", progress: "100%", url: url, remoteUrl: url };
 }
-export function listArtifacts() {
+export function listArtifacts(task) {
+  if (isInteraction(task && task.data)) {
+    const omni = omniVideo(task.data);
+    if (task.status !== "SUCCESS" || !omni || omni.uri) return [];
+    return [{ key: "video", type: "video", mimeType: omni.mimeType }];
+  }
   return [];
 }
-export function buildContentRequest() {
+export function buildContentRequest(ctx) {
+  if (isInteraction(ctx && ctx.data)) {
+    if (ctx.artifactKey !== "video") throw new Error("artifact_not_found");
+    const omni = omniVideo(ctx.data);
+    if (!omni) throw new Error("artifact_not_found");
+    return {
+      url: interactionsURL(ctx, ctx.upstreamTaskId),
+      method: "GET",
+      headers: requestHeaders(ctx),
+      responseType: "json",
+      contentPath: omni.path,
+      mimeType: omni.mimeType,
+    };
+  }
   throw new Error("artifact_not_found");
 }
 function completionMessage(ctx, task) {
@@ -366,7 +595,7 @@ export const protocols = {
         if (trimmed(image) && !images.includes(trimmed(image))) images.push(trimmed(image));
       }
       if (!prompt && images.length === 0) throw new Error("input is required");
-      if (images.length && !validImageInput(images[0])) throw new Error("input image must be a data URL or base64 value");
+      if (!images.every(validImageInput)) throw new Error("input image must be a data URL or base64 value");
       const metadata = Object.assign({}, req.metadata || {});
       if (Object.prototype.hasOwnProperty.call(req, "resolution")) metadata.resolution = req.resolution;
       const requestBody = { model: model, prompt: prompt, metadata: metadata };
@@ -464,14 +693,16 @@ protocols.openai_video = {
       if (req.seconds !== undefined) req.seconds = Number(req.seconds);
       else if (req.duration !== undefined) req.seconds = Number(req.duration);
     }
+    // Gemini Omni's duration and resolution are checked where the request is built.
+    const omni = omniModel(ctx);
     const seconds = req.seconds === undefined ? req.duration : req.seconds;
     if (seconds !== undefined) {
       const n = Number(seconds);
-      if (n !== 4 && n !== 6 && n !== 8) throw new Error("seconds must be one of 4, 6, or 8");
+      if (!omni && n !== 4 && n !== 6 && n !== 8) throw new Error("seconds must be one of 4, 6, or 8");
       req.duration = n;
     }
     const providedResolution = req.resolution !== undefined ? req.resolution : req.metadata && req.metadata.resolution;
-    if (providedResolution !== undefined && providedResolution !== "") {
+    if (!omni && providedResolution !== undefined && providedResolution !== "") {
       const value = String(providedResolution).toLowerCase();
       if (value !== "720p" && value !== "1080p" && value !== "4k") throw new Error("resolution must be one of 720p, 1080p, or 4k");
     }
