@@ -2,6 +2,7 @@ package model
 
 import (
 	"errors"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"gorm.io/gorm"
@@ -82,11 +83,7 @@ func rejectUserDeletePreconditions(tx *gorm.DB, userId int) error {
 	if err := rejectUnsettledSiteEarningsForDelete(tx, userId); err != nil {
 		return err
 	}
-	// Payment orphan events have no user_id. When they also cannot be
-	// tied to an order, they cannot be safely attributed to this account.
-	// A.17.1 / DEC-018: leave that category for a later official mapping
-	// rather than inventing settlement or a guessed owner.
-	return nil
+	return rejectAttributablePaymentOrphansForDelete(tx, userId)
 }
 
 func rejectActiveStaffIdentityForDelete(tx *gorm.DB, userId int) error {
@@ -218,6 +215,130 @@ func rejectUnsettledSiteEarningsForDelete(tx *gorm.DB, userId int) error {
 		return ErrUserDeleteUnsettledSiteEarning
 	}
 	return nil
+}
+
+// userDeleteUnfinishedTopUpStatuses are the local order states that official
+// payment recovery can still credit. A completed order is historical, not pending.
+var userDeleteUnfinishedTopUpStatuses = []string{
+	common.TopUpStatusPending, common.TopUpStatusFailed, common.TopUpStatusExpired, TopUpStatusCanceled,
+}
+
+// rejectAttributablePaymentOrphansForDelete refuses cancellation when a
+// pending-review PaymentOrphanEvent can be tied to this account's unfinished
+// order through existing association fields only. It does not credit, refund,
+// dismiss, or guess a user_id on the event.
+func rejectAttributablePaymentOrphansForDelete(tx *gorm.DB, userId int) error {
+	if blocked, err := userHasReferenceAttributedPaymentOrphan(tx, userId); err != nil {
+		return err
+	} else if blocked {
+		return ErrUserDeleteUnfinishedPayment
+	}
+	if blocked, err := userHasSessionAttributedPaymentOrphan(tx, userId); err != nil {
+		return err
+	} else if blocked {
+		return ErrUserDeleteUnfinishedPayment
+	}
+	return nil
+}
+
+// userHasReferenceAttributedPaymentOrphan is true when a pending-review
+// event's ReferenceID is an existing trade_no of this user's unfinished order.
+// ReferenceID is never treated as a user_id, even when it happens to be numeric.
+func userHasReferenceAttributedPaymentOrphan(tx *gorm.DB, userId int) (bool, error) {
+	if !tx.Migrator().HasTable(&PaymentOrphanEvent{}) || !tx.Migrator().HasTable(&TopUp{}) {
+		return false, nil
+	}
+	var count int64
+	err := tx.Model(&PaymentOrphanEvent{}).
+		Joins("JOIN top_ups ON top_ups.trade_no = adty_payment_orphan_events.reference_id").
+		Where("adty_payment_orphan_events.status = ? AND adty_payment_orphan_events.reference_id <> ? AND top_ups.user_id = ? AND top_ups.status IN ?",
+			PaymentOrphanStatusPendingReview, "", userId, userDeleteUnfinishedTopUpStatuses,
+		).Limit(1).Count(&count).Error
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+// userHasSessionAttributedPaymentOrphan is true only when a pending-review
+// event has no ReferenceID, and its SessionID uniquely matches one of this
+// user's unfinished orders the same way official reversal recovery does:
+// provider plus paid_tx_hash or gateway_trade_id, and exactly one row.
+// Zero or multiple matches, a missing provider, or an order owned by someone
+// else are not safe attribution.
+func userHasSessionAttributedPaymentOrphan(tx *gorm.DB, userId int) (bool, error) {
+	if !tx.Migrator().HasTable(&PaymentOrphanEvent{}) || !tx.Migrator().HasTable(&AdtyTopupOrder{}) || !tx.Migrator().HasTable(&TopUp{}) {
+		return false, nil
+	}
+	var orders []AdtyTopupOrder
+	if err := tx.Model(&AdtyTopupOrder{}).
+		Select("trade_no", "user_id", "provider", "gateway_trade_id", "paid_tx_hash").
+		Where("user_id = ? AND (NULLIF(gateway_trade_id, '') IS NOT NULL OR NULLIF(paid_tx_hash, '') IS NOT NULL)", userId).
+		Find(&orders).Error; err != nil {
+		return false, err
+	}
+	if len(orders) == 0 {
+		return false, nil
+	}
+	tradeNos := make([]string, 0, len(orders))
+	for _, order := range orders {
+		tradeNos = append(tradeNos, order.TradeNo)
+	}
+	var topUps []TopUp
+	if err := tx.Model(&TopUp{}).Select("trade_no", "status").
+		Where("trade_no IN ? AND user_id = ? AND status IN ?", tradeNos, userId, userDeleteUnfinishedTopUpStatuses).
+		Find(&topUps).Error; err != nil {
+		return false, err
+	}
+	unfinished := make(map[string]struct{}, len(topUps))
+	for _, topUp := range topUps {
+		unfinished[topUp.TradeNo] = struct{}{}
+	}
+	seen := make(map[string]struct{})
+	for _, order := range orders {
+		if _, ok := unfinished[order.TradeNo]; !ok {
+			continue
+		}
+		provider := strings.TrimSpace(order.Provider)
+		if provider == "" {
+			continue
+		}
+		var vouchers []string
+		if voucher := strings.TrimSpace(order.GatewayTradeId); voucher != "" {
+			vouchers = append(vouchers, voucher)
+		}
+		if voucher := strings.TrimSpace(order.PaidTxHash); voucher != "" && (len(vouchers) == 0 || voucher != vouchers[0]) {
+			vouchers = append(vouchers, voucher)
+		}
+		for _, voucher := range vouchers {
+			key := provider + "\x00" + voucher
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			var matches int64
+			if err := tx.Model(&AdtyTopupOrder{}).
+				Where("provider = ? AND (paid_tx_hash = ? OR gateway_trade_id = ?)", provider, voucher, voucher).
+				Limit(2).Count(&matches).Error; err != nil {
+				return false, err
+			}
+			if matches != 1 {
+				continue
+			}
+			var count int64
+			err := tx.Model(&PaymentOrphanEvent{}).
+				Where("status = ? AND (reference_id IS NULL OR reference_id = ?) AND session_id = ? AND provider = ?",
+					PaymentOrphanStatusPendingReview, "", voucher, provider,
+				).Limit(1).Count(&count).Error
+			if err != nil {
+				return false, err
+			}
+			if count > 0 {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
 }
 
 func userDeleteHasRows(tx *gorm.DB, model any, query string, args ...any) (bool, error) {

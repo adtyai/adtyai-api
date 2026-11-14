@@ -415,3 +415,190 @@ func TestUserDeleteDoesNotInventPaymentOrphanAttribution(t *testing.T) {
 	require.NoError(t, db.Where("event_id = ?", "orphan-"+user.Username).First(&orphan).Error)
 	assert.Equal(t, PaymentOrphanStatusPendingReview, orphan.Status)
 }
+
+func seedPrecheckUserOrder(t *testing.T, db *gorm.DB, user *User, tradeNo, status, provider, gatewayID, paidTxHash string) {
+	t.Helper()
+	require.NoError(t, db.Create(&TopUp{
+		UserId: user.Id, TradeNo: tradeNo, Status: status, Amount: 10, PaymentProvider: provider,
+	}).Error)
+	require.NoError(t, db.Create(&AdtyTopupOrder{
+		TradeNo: tradeNo, UserId: user.Id, Provider: provider,
+		GatewayTradeId: gatewayID, PaidTxHash: paidTxHash, FaceUSD: decimal.NewFromInt(10),
+	}).Error)
+}
+
+func assertPaymentOrphanUntouched(t *testing.T, db *gorm.DB, eventID, status, referenceID, sessionID string) {
+	t.Helper()
+	var orphan PaymentOrphanEvent
+	require.NoError(t, db.Where("event_id = ?", eventID).First(&orphan).Error)
+	assert.Equal(t, status, orphan.Status)
+	assert.Equal(t, referenceID, orphan.ReferenceID)
+	assert.Equal(t, sessionID, orphan.SessionID)
+	assert.False(t, db.Migrator().HasColumn(&PaymentOrphanEvent{}, "user_id"), "must not invent a user_id column")
+}
+
+func TestUserDeleteRefusesSafelyAttributedPaymentOrphan(t *testing.T) {
+	db := adtyTestDB(t)
+	precheckUserDeleteTables(t, db)
+
+	for _, status := range []string{common.TopUpStatusFailed, common.TopUpStatusExpired, TopUpStatusCanceled} {
+		t.Run(status, func(t *testing.T) {
+			user := newPrecheckUser(t, "orphan-ref-"+status)
+			tradeNo := "pay-ref-" + user.Username
+			eventID := "orphan-ref-" + user.Username
+			seedPrecheckUserOrder(t, db, user, tradeNo, status, PaymentProviderAdtyBEpusdt, "gw-"+tradeNo, "")
+			require.NoError(t, db.Create(&PaymentOrphanEvent{
+				Provider: PaymentProviderAdtyBEpusdt, EventID: eventID, EventType: "payment_callback",
+				ReferenceID: tradeNo, SessionID: "gw-" + tradeNo, Status: PaymentOrphanStatusPendingReview,
+			}).Error)
+
+			identity := newPrecheckSession(t, user)
+			_, err := DeleteUserForSession(identity)
+			require.ErrorIs(t, err, ErrUserDeleteUnfinishedPayment)
+			assertUserNotDeleted(t, user)
+			assertPaymentOrphanUntouched(t, db, eventID, PaymentOrphanStatusPendingReview, tradeNo, "gw-"+tradeNo)
+
+			_, err = user.HardDelete()
+			require.ErrorIs(t, err, ErrUserDeleteUnfinishedPayment)
+			assertUserNotDeleted(t, user)
+			assertPaymentOrphanUntouched(t, db, eventID, PaymentOrphanStatusPendingReview, tradeNo, "gw-"+tradeNo)
+		})
+	}
+}
+
+func TestUserDeleteRefusesSessionAttributedPaymentOrphan(t *testing.T) {
+	db := adtyTestDB(t)
+	precheckUserDeleteTables(t, db)
+
+	cases := []struct {
+		name    string
+		gateway string
+		txHash  string
+		session string
+	}{
+		{name: "gateway-trade-id", gateway: "gw-unique-session", session: "gw-unique-session"},
+		{name: "paid-tx-hash", txHash: "0xunique-session", session: "0xunique-session"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			user := newPrecheckUser(t, "orphan-sid-"+tc.name)
+			tradeNo := "pay-sid-" + user.Username
+			eventID := "orphan-sid-" + user.Username
+			seedPrecheckUserOrder(t, db, user, tradeNo, common.TopUpStatusExpired, PaymentProviderAdtyBEpusdt, tc.gateway, tc.txHash)
+			require.NoError(t, db.Create(&PaymentOrphanEvent{
+				Provider: PaymentProviderAdtyBEpusdt, EventID: eventID, EventType: "payment_callback",
+				SessionID: tc.session, Status: PaymentOrphanStatusPendingReview,
+			}).Error)
+
+			_, err := DeleteUserForSession(newPrecheckSession(t, user))
+			require.ErrorIs(t, err, ErrUserDeleteUnfinishedPayment)
+			assertUserNotDeleted(t, user)
+			assertPaymentOrphanUntouched(t, db, eventID, PaymentOrphanStatusPendingReview, "", tc.session)
+		})
+	}
+}
+
+func TestUserDeleteIgnoresUnsafePaymentOrphanAttribution(t *testing.T) {
+	db := adtyTestDB(t)
+	precheckUserDeleteTables(t, db)
+
+	cases := []struct {
+		name string
+		seed func(user *User) (eventID, status, referenceID, sessionID string)
+	}{
+		{
+			name: "reference is this user id but no order",
+			seed: func(user *User) (string, string, string, string) {
+				eventID := "orphan-userid-" + user.Username
+				reference := fmt.Sprintf("%d", user.Id)
+				require.NoError(t, db.Create(&PaymentOrphanEvent{
+					Provider: "wallet", EventID: eventID, EventType: "wallet_cache_sync",
+					ReferenceID: reference, Status: PaymentOrphanStatusPendingReview,
+				}).Error)
+				return eventID, PaymentOrphanStatusPendingReview, reference, ""
+			},
+		},
+		{
+			name: "reference belongs to another user",
+			seed: func(user *User) (string, string, string, string) {
+				other := newPrecheckUser(t, "orphan-other-"+user.Username)
+				tradeNo := "pay-other-" + user.Username
+				seedPrecheckUserOrder(t, db, other, tradeNo, common.TopUpStatusExpired, PaymentProviderAdtyBEpusdt, "gw-"+tradeNo, "")
+				eventID := "orphan-other-" + user.Username
+				require.NoError(t, db.Create(&PaymentOrphanEvent{
+					Provider: PaymentProviderAdtyBEpusdt, EventID: eventID, EventType: "payment_callback",
+					ReferenceID: tradeNo, Status: PaymentOrphanStatusPendingReview,
+				}).Error)
+				return eventID, PaymentOrphanStatusPendingReview, tradeNo, ""
+			},
+		},
+		{
+			name: "session id matches two orders",
+			seed: func(user *User) (string, string, string, string) {
+				other := newPrecheckUser(t, "orphan-amb-"+user.Username)
+				shared := "gw-ambiguous-" + user.Username
+				seedPrecheckUserOrder(t, db, user, "pay-amb-a-"+user.Username, common.TopUpStatusExpired, PaymentProviderAdtyBEpusdt, shared, "")
+				seedPrecheckUserOrder(t, db, other, "pay-amb-b-"+user.Username, common.TopUpStatusExpired, PaymentProviderAdtyBEpusdt, shared, "")
+				eventID := "orphan-amb-" + user.Username
+				require.NoError(t, db.Create(&PaymentOrphanEvent{
+					Provider: PaymentProviderAdtyBEpusdt, EventID: eventID, EventType: "payment_callback",
+					SessionID: shared, Status: PaymentOrphanStatusPendingReview,
+				}).Error)
+				return eventID, PaymentOrphanStatusPendingReview, "", shared
+			},
+		},
+		{
+			name: "resolved orphan is not unfinished work",
+			seed: func(user *User) (string, string, string, string) {
+				tradeNo := "pay-credited-" + user.Username
+				seedPrecheckUserOrder(t, db, user, tradeNo, common.TopUpStatusExpired, PaymentProviderAdtyBEpusdt, "gw-"+tradeNo, "")
+				eventID := "orphan-credited-" + user.Username
+				require.NoError(t, db.Create(&PaymentOrphanEvent{
+					Provider: PaymentProviderAdtyBEpusdt, EventID: eventID, EventType: "payment_callback",
+					ReferenceID: tradeNo, Status: PaymentOrphanStatusCredited,
+				}).Error)
+				return eventID, PaymentOrphanStatusCredited, tradeNo, ""
+			},
+		},
+		{
+			name: "completed order is not a pending order",
+			seed: func(user *User) (string, string, string, string) {
+				tradeNo := "pay-success-" + user.Username
+				seedPrecheckUserOrder(t, db, user, tradeNo, common.TopUpStatusSuccess, PaymentProviderAdtyBEpusdt, "gw-"+tradeNo, "0x"+tradeNo)
+				eventID := "orphan-success-" + user.Username
+				require.NoError(t, db.Create(&PaymentOrphanEvent{
+					Provider: PaymentProviderAdtyBEpusdt, EventID: eventID, EventType: "duplicate_payment",
+					ReferenceID: tradeNo, SessionID: "0x" + tradeNo, Status: PaymentOrphanStatusPendingReview,
+				}).Error)
+				return eventID, PaymentOrphanStatusPendingReview, tradeNo, "0x" + tradeNo
+			},
+		},
+		{
+			name: "expired order without an attributable orphan",
+			seed: func(user *User) (string, string, string, string) {
+				tradeNo := "pay-expired-clear-" + user.Username
+				seedPrecheckUserOrder(t, db, user, tradeNo, common.TopUpStatusExpired, PaymentProviderAdtyBEpusdt, "gw-"+tradeNo, "")
+				eventID := "orphan-clear-" + user.Username
+				require.NoError(t, db.Create(&PaymentOrphanEvent{
+					Provider: PaymentProviderAdtyBEpusdt, EventID: eventID, EventType: "payment_callback",
+					ReferenceID: "missing-" + user.Username, SessionID: "unrelated-" + user.Username,
+					Status: PaymentOrphanStatusPendingReview,
+				}).Error)
+				return eventID, PaymentOrphanStatusPendingReview, "missing-" + user.Username, "unrelated-" + user.Username
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			user := newPrecheckUser(t, "orphan-unsafe-"+fmt.Sprintf("%d", time.Now().UnixNano()))
+			eventID, status, referenceID, sessionID := tc.seed(user)
+			_, err := DeleteUserForSession(newPrecheckSession(t, user))
+			require.NoError(t, err)
+			var stored User
+			require.NoError(t, db.Unscoped().First(&stored, user.Id).Error)
+			assert.True(t, stored.DeletedAt.Valid)
+			assertPaymentOrphanUntouched(t, db, eventID, status, referenceID, sessionID)
+		})
+	}
+}
