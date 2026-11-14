@@ -22,6 +22,41 @@ func siteEmailLockKey(email string, siteID int) string {
 	return SiteEmailCodeKey(email, siteID)
 }
 
+// PasswordResetCodeKey binds a password-reset challenge to one account: the
+// site-scoped email, unique user_id, username, and inherited-site mapping.
+func PasswordResetCodeKey(user *User) string {
+	if user == nil {
+		return ""
+	}
+	return fmt.Sprintf("%s:%d:%s:%d", SiteEmailCodeKey(user.Email, user.SiteId), user.Id, NormalizeUsername(user.Username), user.InheritedFromSiteId)
+}
+
+// ResolveUserForEmailChallenge locates the account a login or reset challenge
+// should bind to. Email alone is accepted only when it uniquely identifies a
+// user on the site. When the same site has more than one account with that
+// email, username is required and must belong to that email and site.
+func ResolveUserForEmailChallenge(email, username string, siteID int) (*User, error) {
+	email = NormalizeEmail(email)
+	username = strings.TrimSpace(username)
+	if username != "" {
+		user, err := findLiveUserByUsername(DB, username)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, ErrEmailNotFound
+			}
+			return nil, err
+		}
+		if user.SiteId != siteID || (email != "" && NormalizeEmail(user.Email) != email) {
+			return nil, ErrEmailNotFound
+		}
+		return user, nil
+	}
+	if email == "" {
+		return nil, ErrEmailNotFound
+	}
+	return GetUniqueUserByEmail(email, siteID)
+}
+
 func siteIDForUser(tx *gorm.DB, userID int) (int, error) {
 	if tx == nil {
 		tx = DB

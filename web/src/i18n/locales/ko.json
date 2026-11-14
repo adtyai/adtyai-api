@@ -568,6 +568,8 @@
     "Users": "사용자",
     "Username or password is incorrect, or user has been banned": "사용자 이름 또는 비밀번호가 올바르지 않거나 사용자가 차단되었어요",
     "Username or Email": "사용자 이름 또는 이메일",
+    "This email matches more than one account. Enter your unique username, then continue.": "이 이메일은 여러 계정과 일치합니다. 고유 사용자 이름을 입력한 뒤 계속하세요.",
+    "If this email has more than one account, enter your unique username.": "이 이메일에 계정이 둘 이상이면 고유 사용자 이름을 입력하세요.",
     "Username must be 20 characters or fewer": "사용자 이름은 20자 이하여야 합니다",
     "Username must be {{max}} characters or fewer": "사용자 이름은 {{max}}자 이하여야 해요",
     "Username Field": "사용자 이름 필드",

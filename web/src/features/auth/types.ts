@@ -84,6 +84,8 @@ export interface Login2FAResponse {
 export interface ApiResponse<T = unknown> {
   success: boolean
   message: string
+  message_key?: string
+  code?: string
   data?: T
 }
 

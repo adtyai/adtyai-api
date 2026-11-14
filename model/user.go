@@ -1208,8 +1208,10 @@ func (user *User) ValidateAndFill() (err error) {
 		switch {
 		case emailErr == nil:
 			*user = *matched
-		case errors.Is(emailErr, ErrEmailNotFound), errors.Is(emailErr, ErrEmailAmbiguous):
+		case errors.Is(emailErr, ErrEmailNotFound):
 			return ErrInvalidCredentials
+		case errors.Is(emailErr, ErrEmailAmbiguous):
+			return ErrEmailAmbiguous
 		default:
 			return fmt.Errorf("%w: %v", ErrDatabase, emailErr)
 		}
@@ -1448,15 +1450,28 @@ func ResetUserPasswordByEmail(email string, password string, siteID int) error {
 	return err
 }
 
-func ResetUserPasswordByEmailWithOutcome(email string, password string, siteID int) (PasswordResetOutcome, error) {
+func ResetUserPasswordByIdentity(email, username, password string, siteID int) (PasswordResetOutcome, error) {
 	outcome := PasswordResetOutcome{}
-	if email == "" || password == "" {
+	if password == "" || (strings.TrimSpace(email) == "" && strings.TrimSpace(username) == "") {
 		return outcome, common.NewMessage("Email or password is empty!")
 	}
-	user, err := GetUniqueUserByEmail(email, siteID)
+	user, err := ResolveUserForEmailChallenge(email, username, siteID)
 	if err != nil {
 		return outcome, err
 	}
+	return resetUserPasswordWithOutcome(user, password)
+}
+
+func ResetUserPasswordByEmailWithOutcome(email string, password string, siteID int) (PasswordResetOutcome, error) {
+	return ResetUserPasswordByIdentity(email, "", password, siteID)
+}
+
+func resetUserPasswordWithOutcome(user *User, password string) (PasswordResetOutcome, error) {
+	outcome := PasswordResetOutcome{}
+	if user == nil || user.Id <= 0 || password == "" {
+		return outcome, common.NewMessage("Email or password is empty!")
+	}
+	email, siteID := user.Email, user.SiteId
 	outcome.UserID, outcome.Role = user.Id, user.Role
 	outcome.Email, outcome.Language = user.Email, user.GetSetting().Language
 	hashedPassword, err := common.HashAccountPassword(password)

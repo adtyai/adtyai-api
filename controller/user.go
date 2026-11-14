@@ -93,6 +93,8 @@ func Login(c *gin.Context) {
 			common.ApiErrorT(c, "Database error, please contact the administrator")
 		case errors.Is(err, model.ErrUserEmptyCredentials):
 			common.ApiErrorT(c, "Invalid parameters")
+		case errors.Is(err, model.ErrEmailAmbiguous):
+			common.ApiErrorStatus(c, http.StatusOK, common.NewMessage(model.EmailAmbiguousPrompt), gin.H{"code": model.EmailAmbiguousCode})
 		default:
 			if err := adtyRecordLoginFailure(username); err != nil {
 				common.SysLog(common.LogText("login failure lock unavailable: %s", err.Error()))

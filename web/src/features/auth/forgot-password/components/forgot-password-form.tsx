@@ -69,7 +69,7 @@ export function ForgotPasswordForm({
 
   const form = useForm<z.infer<typeof forgotPasswordFormSchema>>({
     resolver: zodResolver(forgotPasswordFormSchema),
-    defaultValues: { email: '' },
+    defaultValues: { email: '', username: '' },
   })
   const turnstileReady = !isTurnstileEnabled || Boolean(turnstileToken)
 
@@ -78,11 +78,21 @@ export function ForgotPasswordForm({
 
     setIsLoading(true)
     try {
-      const res = await sendPasswordResetEmail(data.email, turnstileToken)
+      const res = await sendPasswordResetEmail(
+        data.email,
+        turnstileToken,
+        data.username
+      )
       if (res?.success) {
-        form.reset()
+        form.reset({ email: data.email, username: data.username })
         startCountdown()
         toast.success(t('Reset email sent, please check your inbox'))
+      } else if (res?.code === 'EMAIL_AMBIGUOUS') {
+        form.setError('username', {
+          message: t(
+            'This email matches more than one account. Enter your unique username, then continue.'
+          ),
+        })
       } else {
         handleServerError(
           createServerError(res, t('Failed to send reset email'))
@@ -113,6 +123,28 @@ export function ForgotPasswordForm({
               <FormControl>
                 <Input placeholder='name@example.com' {...field} />
               </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name='username'
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>{t('Username')}</FormLabel>
+              <FormControl>
+                <Input
+                  autoComplete='username'
+                  placeholder={t('Username')}
+                  {...field}
+                />
+              </FormControl>
+              <p className='text-muted-foreground text-sm'>
+                {t(
+                  'If this email has more than one account, enter your unique username.'
+                )}
+              </p>
               <FormMessage />
             </FormItem>
           )}

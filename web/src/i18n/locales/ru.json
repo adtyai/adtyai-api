@@ -1588,6 +1588,8 @@
     "Users": "Пользователи",
     "Username or password is incorrect, or user has been banned": "Неверное имя пользователя или пароль, либо пользователь заблокирован",
     "Username or Email": "Имя пользователя или Email",
+    "This email matches more than one account. Enter your unique username, then continue.": "Этот адрес почты соответствует нескольким учётным записям. Введите уникальное имя пользователя и продолжите.",
+    "If this email has more than one account, enter your unique username.": "Если на этот адрес зарегистрировано несколько учётных записей, введите уникальное имя пользователя.",
     "Username must be {{max}} characters or fewer": "Имя пользователя должно содержать не более {{max}} символов",
     "Username Field": "Поле имени пользователя",
     "Username confirmation does not match": "Подтверждение имени пользователя не совпадает",

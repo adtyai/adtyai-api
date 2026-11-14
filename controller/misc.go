@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -313,10 +315,17 @@ func SendPasswordResetEmail(c *gin.Context) {
 		common.ApiErrorStatus(c, http.StatusServiceUnavailable, common.NewMessage("Please try again later"))
 		return
 	}
-	if user, err := model.GetUniqueUserByEmail(email, service.AdtyRequestSiteID(c)); err == nil {
-		// Preserve the same response for unknown addresses and store failures.
+	username := strings.TrimSpace(c.Query("username"))
+	user, err := model.ResolveUserForEmailChallenge(email, username, service.AdtyRequestSiteID(c))
+	switch {
+	case err == nil:
 		_ = sendPasswordResetInstructions(c, user)
-	} else if err != nil && !errors.Is(err, model.ErrEmailNotFound) {
+	case errors.Is(err, model.ErrEmailAmbiguous):
+		common.ApiErrorStatus(c, http.StatusOK, common.NewMessage(model.EmailAmbiguousPrompt), gin.H{"code": model.EmailAmbiguousCode})
+		return
+	case errors.Is(err, model.ErrEmailNotFound):
+		// Preserve the same success response for unknown addresses.
+	default:
 		logger.LogWarn(c.Request.Context(), common.LogText("skip password reset email for %s: %s", email, err.Error()))
 	}
 	c.JSON(http.StatusOK, gin.H{
@@ -329,17 +338,18 @@ func SendPasswordResetEmail(c *gin.Context) {
 // staff, receives the reset token or chooses the customer's new password.
 func sendPasswordResetInstructions(c *gin.Context, user *model.User) error {
 	email := model.NormalizeEmail(user.Email)
-	current, err := model.GetUniqueUserByEmail(email, user.SiteId)
-	if err != nil || current.Id != user.Id || current.Status != common.UserStatusEnabled {
+	current, err := model.GetUserById(user.Id, false)
+	if err != nil || current == nil || current.Id != user.Id || current.Status != common.UserStatusEnabled {
 		return common.NewMessage("Invalid parameters")
 	}
+	email = model.NormalizeEmail(current.Email)
 	code := common.GenerateVerificationCode(0)
-	if err := common.RegisterVerificationCodeWithKey(model.SiteEmailCodeKey(email, current.SiteId), code, common.PasswordResetPurpose); err != nil {
+	if err := common.RegisterVerificationCodeWithKey(model.PasswordResetCodeKey(current), code, common.PasswordResetPurpose); err != nil {
 		return err
 	}
 	// Derive branding and URL from SQL membership, never from the request Host.
 	site := service.AdtySiteForUser(current.Id)
-	link := fmt.Sprintf("%s/user/reset#email=%s&token=%s", service.AdtySiteBaseURL(site), url.QueryEscape(email), url.QueryEscape(code))
+	link := fmt.Sprintf("%s/user/reset#email=%s&token=%s&username=%s", service.AdtySiteBaseURL(site), url.QueryEscape(email), url.QueryEscape(code), url.QueryEscape(current.Username))
 	lang := current.GetSetting().Language
 	if lang == "" {
 		lang = i18n.StatedLang(c)
@@ -353,11 +363,13 @@ func sendPasswordResetInstructions(c *gin.Context, user *model.User) error {
 		i18n.Translate(lang, i18n.MsgEmailPasswordResetLinkFallback, linkParams),
 		i18n.Translate(lang, i18n.MsgEmailPasswordResetValidity, map[string]any{"Minutes": common.VerificationValidMinutes}))
 	service.AdtySendSiteEmailAsync(site, subject, email, content)
+	writePasswordResetChallengeAudit(current)
 	return nil
 }
 
 type PasswordResetRequest struct {
 	Email    string `json:"email"`
+	Username string `json:"username"`
 	Token    string `json:"token"`
 	Password string `json:"password"`
 }
@@ -370,7 +382,8 @@ func ResetPassword(c *gin.Context) {
 		return
 	}
 	req.Email = model.NormalizeEmail(req.Email)
-	if req.Email == "" || req.Token == "" {
+	req.Username = strings.TrimSpace(req.Username)
+	if (req.Email == "" && req.Username == "") || req.Token == "" {
 		common.ApiErrorT(c, "Invalid parameters")
 		return
 	}
@@ -379,13 +392,27 @@ func ResetPassword(c *gin.Context) {
 		return
 	}
 	siteID := service.AdtyRequestSiteID(c)
-	codeKey := model.SiteEmailCodeKey(req.Email, siteID)
+	user, err := model.ResolveUserForEmailChallenge(req.Email, req.Username, siteID)
+	if err != nil {
+		common.ApiErrorT(c, "Password reset link is invalid or has expired")
+		return
+	}
+	codeKey := model.PasswordResetCodeKey(user)
 	issued, ok := common.ConsumeVerificationCodeWithKey(codeKey, req.Token, common.PasswordResetPurpose)
+	if !ok {
+		if _, uniqueErr := model.GetUniqueUserByEmail(user.Email, siteID); uniqueErr == nil {
+			legacyKey := model.SiteEmailCodeKey(user.Email, siteID)
+			issued, ok = common.ConsumeVerificationCodeWithKey(legacyKey, req.Token, common.PasswordResetPurpose)
+			if ok {
+				codeKey = legacyKey
+			}
+		}
+	}
 	if !ok {
 		common.ApiErrorT(c, "Password reset link is invalid or has expired")
 		return
 	}
-	outcome, err := model.ResetUserPasswordByEmailWithOutcome(req.Email, req.Password, siteID)
+	outcome, err := model.ResetUserPasswordByIdentity(user.Email, user.Username, req.Password, siteID)
 	if outcome.UserID > 0 {
 		committed, notificationFailed := outcome.State == model.PasswordResetCommitted, false
 		if committed {
@@ -415,4 +442,26 @@ func ResetPassword(c *gin.Context) {
 		"success": true,
 		"message": "",
 	})
+}
+
+func writePasswordResetChallengeAudit(user *model.User) {
+	if user == nil {
+		return
+	}
+	rec := model.OfficialAuditWrite{
+		UserId: user.Id, Username: user.Username, ActorRole: user.Role,
+		SiteID:     model.OfficialAuditSiteIDPointer(user.SiteId),
+		ObjectType: "user", ObjectID: strconv.Itoa(user.Id),
+		Action: "adty.user.password_reset.challenge", Category: model.AuditCategoryOperation,
+		Content: "adty.user.password_reset.challenge",
+		After: map[string]any{
+			"user_id": user.Id, "username": user.Username,
+			"site_id": user.SiteId, "inherited_from_site_id": user.InheritedFromSiteId,
+			"purpose": common.PasswordResetPurpose, "result": model.AuditResultSuccess,
+		},
+		Result: model.AuditResultSuccess, Success: true,
+	}
+	if err := model.WriteOfficialAuditLog(nil, rec); err != nil {
+		common.SysLog(common.LogText("password reset challenge audit write failed: %s", err.Error()))
+	}
 }

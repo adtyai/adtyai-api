@@ -18,6 +18,11 @@ var (
 	ErrUsernameCaseCollision = errors.New("case-variant usernames must be resolved before the unique index")
 )
 
+const (
+	EmailAmbiguousPrompt = "This email matches more than one account. Enter your unique username, then continue."
+	EmailAmbiguousCode   = "EMAIL_AMBIGUOUS"
+)
+
 // Team membership errors
 var (
 	ErrActiveTeamMembershipCollision = errors.New("duplicate active team memberships must be resolved before the unique index")

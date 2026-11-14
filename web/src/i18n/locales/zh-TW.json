@@ -1606,6 +1606,8 @@
     "Users": "用戶",
     "Username or password is incorrect, or user has been banned": "使用者名稱或密碼錯誤，或使用者已被封鎖",
     "Username or Email": "用戶名或電郵",
+    "This email matches more than one account. Enter your unique username, then continue.": "此電子郵件對應多個帳號。請先輸入你的唯一使用者名稱，然後再繼續。",
+    "If this email has more than one account, enter your unique username.": "如果此電子郵件有多個帳號，請輸入你的唯一使用者名稱。",
     "Username must be {{max}} characters or fewer": "使用者名稱長度不能超過 {{max}} 個字元",
     "Username Field": "用戶名欄位",
     "Username confirmation does not match": "用戶名確認不匹配",

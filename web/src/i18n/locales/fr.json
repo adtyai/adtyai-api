@@ -7674,6 +7674,8 @@
     "Username Field": "Champ nom d'utilisateur",
     "Username must be {{max}} characters or fewer": "Le nom d’utilisateur doit comporter {{max}} caractères au maximum",
     "Username or Email": "Nom d'utilisateur ou e-mail",
+    "This email matches more than one account. Enter your unique username, then continue.": "Cette adresse e-mail correspond à plusieurs comptes. Saisissez votre nom d'utilisateur unique, puis continuez.",
+    "If this email has more than one account, enter your unique username.": "Si cette adresse e-mail a plusieurs comptes, saisissez votre nom d'utilisateur unique.",
     "Username or password is incorrect, or user has been banned": "Nom d’utilisateur ou mot de passe incorrect, ou l’utilisateur a été banni",
     "Users call": "Appelé par l’utilisateur",
     "Users call the model on the left. The platform forwards the request to the upstream model on the right.": "Les utilisateurs appellent le modèle à gauche. La plateforme transmet la requête au modèle amont à droite.",

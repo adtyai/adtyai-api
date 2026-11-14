@@ -30,6 +30,7 @@ export const Route = createFileRoute('/(auth)/user/reset')({
   ): ResetPasswordSearchParams => ({
     email: typeof search.email === 'string' ? search.email : undefined,
     token: typeof search.token === 'string' ? search.token : undefined,
+    username: typeof search.username === 'string' ? search.username : undefined,
   }),
   component: UserResetPassword,
 })
@@ -49,12 +50,22 @@ function UserResetPassword() {
     const read = browser.__adtyReadPasswordResetLink
     delete browser.__adtyReadPasswordResetLink
     if (read || search.email !== undefined || search.token !== undefined) {
-      setCredentials(read?.() ?? { email: search.email, token: search.token })
+      setCredentials(
+        read?.() ?? {
+          email: search.email,
+          token: search.token,
+          username: search.username,
+        }
+      )
       void navigate({ to: '/user/reset', search: {}, hash: '', replace: true })
     }
-  }, [browser, navigate, search.email, search.token])
+  }, [browser, navigate, search.email, search.token, search.username])
 
   return (
-    <ResetPasswordConfirm email={credentials.email} token={credentials.token} />
+    <ResetPasswordConfirm
+      email={credentials.email}
+      token={credentials.token}
+      username={credentials.username}
+    />
   )
 }

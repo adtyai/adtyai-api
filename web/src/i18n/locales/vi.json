@@ -7769,6 +7769,8 @@
     "Username Field": "Trường Tên người dùng",
     "Username must be {{max}} characters or fewer": "Tên người dùng tối đa {{max}} ký tự",
     "Username or Email": "Tên đăng nhập hoặc Email",
+    "This email matches more than one account. Enter your unique username, then continue.": "Email này khớp với nhiều tài khoản. Hãy nhập tên người dùng duy nhất của bạn, rồi tiếp tục.",
+    "If this email has more than one account, enter your unique username.": "Nếu email này có nhiều tài khoản, hãy nhập tên người dùng duy nhất của bạn.",
     "Username or password is incorrect, or user has been banned": "Tên người dùng hoặc mật khẩu không đúng, hoặc người dùng đã bị cấm",
     "Users": "Người dùng",
     "Users call": "Người dùng gọi",

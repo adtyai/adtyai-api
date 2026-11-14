@@ -7176,6 +7176,8 @@
     "Username Field": "Username Field",
     "Username must be {{max}} characters or fewer": "Username must be {{max}} characters or fewer",
     "Username or Email": "Username or Email",
+    "This email matches more than one account. Enter your unique username, then continue.": "This email matches more than one account. Enter your unique username, then continue.",
+    "If this email has more than one account, enter your unique username.": "If this email has more than one account, enter your unique username.",
     "Username or password is incorrect, or user has been banned": "Username or password is incorrect, or user has been banned",
     "Users": "Users",
     "Users call": "Users call",

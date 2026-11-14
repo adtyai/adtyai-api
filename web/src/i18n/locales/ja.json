@@ -1523,6 +1523,8 @@
     "Users": "ユーザー",
     "Username or password is incorrect, or user has been banned": "ユーザー名またはパスワードが正しくないか、ユーザーが利用停止されています",
     "Username or Email": "ユーザー名またはメールアドレス",
+    "This email matches more than one account. Enter your unique username, then continue.": "このメールアドレスは複数のアカウントに一致します。続けて進む前に、一意のユーザー名を入力してください。",
+    "If this email has more than one account, enter your unique username.": "このメールアドレスに複数のアカウントがある場合は、一意のユーザー名を入力してください。",
     "Username must be {{max}} characters or fewer": "ユーザー名は {{max}} 文字以内で入力してください",
     "Username Field": "ユーザー名フィールド",
     "Username confirmation does not match": "ユーザー名の確認が一致しません",

@@ -36,6 +36,7 @@ import { AuthLayout } from '../auth-layout'
 export type ResetPasswordSearchParams = {
   email?: string
   token?: string
+  username?: string
 }
 
 type ResetPasswordConfirmProps = ResetPasswordSearchParams
@@ -43,6 +44,7 @@ type ResetPasswordConfirmProps = ResetPasswordSearchParams
 export function ResetPasswordConfirm({
   email,
   token,
+  username,
 }: ResetPasswordConfirmProps) {
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -72,7 +74,7 @@ export function ResetPasswordConfirm({
     try {
       const res = await api.post(
         '/api/user/reset',
-        { email, token, password },
+        { email, token, password, username },
         {
           skipBusinessError: true,
         } as Record<string, unknown>
@@ -149,7 +151,10 @@ export function ResetPasswordConfirm({
             disabled={
               done
                 ? false
-                : loading || isActive || !isValidResetLink || password.length < 8
+                : loading ||
+                  isActive ||
+                  !isValidResetLink ||
+                  password.length < 8
             }
           >
             {done && t('auth.resetPasswordConfirm.backToLogin')}
@@ -158,9 +163,7 @@ export function ResetPasswordConfirm({
               t('auth.resetPasswordConfirm.retry', {
                 seconds: secondsLeft,
               })}
-            {!done &&
-              !isActive &&
-              t('auth.resetPasswordConfirm.confirm')}
+            {!done && !isActive && t('auth.resetPasswordConfirm.confirm')}
           </Button>
 
           {!done && (

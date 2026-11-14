@@ -150,10 +150,15 @@ export async function logout(): Promise<ApiResponse> {
 // Send password reset email
 export async function sendPasswordResetEmail(
   email: string,
-  turnstile?: string
+  turnstile?: string,
+  username?: string
 ): Promise<ApiResponse> {
   const res = await api.get('/api/reset_password', {
-    params: { email, turnstile },
+    params: {
+      email,
+      turnstile,
+      ...(username?.trim() ? { username: username.trim() } : {}),
+    },
   })
   return res.data
 }
