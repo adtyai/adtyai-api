@@ -1095,3 +1095,42 @@ func TestDeleteCustomDomainRequiresCurrentAgreement(t *testing.T) {
 	assert.Equal(t, model.AdtySiteDomainRemoved, stored.Status)
 	require.Equal(t, 1, cloudflareCalls, "removal checks for an owned orphan before marking the domain removed")
 }
+
+func TestOwnerVoucherWritesRequireSecurityProof(t *testing.T) {
+	f := newOwnerFixture(t)
+	require.NoError(t, service.EnsureAdtySiteWallets(f.site.Id))
+	_, err := service.ApplyAdtySiteWalletChange(f.site.Id, model.AdtySiteWalletEarnings, decimal.NewFromInt(30), service.AdtySiteWalletChange{
+		Type: "seed", Reason: "seed earnings", IdempotencyKey: "owner-voucher-seed",
+	})
+	require.NoError(t, err)
+
+	const issuePath = "/api/adty/site/vouchers"
+	const issueBody = `{"purpose":"site_customer","amount_usd":"10.50","reason":"customer"}`
+	assert.Contains(t, f.call(t, http.MethodPost, issuePath, issueBody, "").Body.String(), "SECURITY_PROOF_REQUIRED")
+	assert.Contains(t, f.call(t, http.MethodPost, issuePath, issueBody, sessionProof(t, f.owner, service.AdtySiteOwnerActionVoucherIssue, f.other.Id)).Body.String(), "SECURITY_PROOF_CONTEXT_MISMATCH")
+	assert.Contains(t, f.call(t, http.MethodPost, issuePath, issueBody, sessionProof(t, f.owner, service.AdtySiteOwnerActionPromo, f.site.Id)).Body.String(), "SECURITY_PROOF_CONTEXT_MISMATCH")
+
+	issued := f.call(t, http.MethodPost, issuePath, issueBody, sessionProof(t, f.owner, service.AdtySiteOwnerActionVoucherIssue, f.site.Id))
+	require.Contains(t, issued.Body.String(), `"success":true`, issued.Body.String())
+	var issuedID int64
+	require.NoError(t, f.db.Model(&model.AdtyVoucher{}).Where("issuer_id = ? AND purpose = ?", f.owner.Id, model.AdtyVoucherPurposeSiteCustomer).Select("id").Scan(&issuedID).Error)
+	require.NotZero(t, issuedID)
+
+	freezePath := fmt.Sprintf("/api/adty/site/vouchers/%d/freeze", issuedID)
+	assert.Contains(t, f.call(t, http.MethodPost, freezePath, "", "").Body.String(), "SECURITY_PROOF_REQUIRED")
+	assert.Contains(t, f.call(t, http.MethodPost, freezePath, "", sessionProof(t, f.owner, service.AdtySiteOwnerActionVoucherCancel, int(issuedID))).Body.String(), "SECURITY_PROOF_CONTEXT_MISMATCH")
+	frozen := f.call(t, http.MethodPost, freezePath, "", sessionProof(t, f.owner, service.AdtySiteOwnerActionVoucherFreeze, int(issuedID)))
+	require.Contains(t, frozen.Body.String(), `"success":true`, frozen.Body.String())
+	replayFreeze := f.call(t, http.MethodPost, freezePath, "", sessionProof(t, f.owner, service.AdtySiteOwnerActionVoucherFreeze, int(issuedID)))
+	assert.NotContains(t, replayFreeze.Body.String(), "SECURITY_PROOF", replayFreeze.Body.String())
+
+	cancelIssued := f.call(t, http.MethodPost, issuePath, issueBody, sessionProof(t, f.owner, service.AdtySiteOwnerActionVoucherIssue, f.site.Id))
+	require.Contains(t, cancelIssued.Body.String(), `"success":true`, cancelIssued.Body.String())
+	var cancelID int64
+	require.NoError(t, f.db.Model(&model.AdtyVoucher{}).Where("issuer_id = ? AND purpose = ? AND status = ?", f.owner.Id, model.AdtyVoucherPurposeSiteCustomer, model.AdtyVoucherStatusPending).Select("id").Scan(&cancelID).Error)
+	require.NotZero(t, cancelID)
+	cancelPath := fmt.Sprintf("/api/adty/site/vouchers/%d/cancel", cancelID)
+	assert.Contains(t, f.call(t, http.MethodPost, cancelPath, "", "").Body.String(), "SECURITY_PROOF_REQUIRED")
+	cancelled := f.call(t, http.MethodPost, cancelPath, "", sessionProof(t, f.owner, service.AdtySiteOwnerActionVoucherCancel, int(cancelID)))
+	require.Contains(t, cancelled.Body.String(), `"success":true`, cancelled.Body.String())
+}

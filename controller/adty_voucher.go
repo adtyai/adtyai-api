@@ -44,6 +44,9 @@ func PostAdtySiteVoucher(c *gin.Context) {
 		common.ApiErrorT(c, "Invalid parameters")
 		return
 	}
+	if !adtyRequireOwnerProof(c, service.AdtySiteOwnerActionVoucherIssue, site.Id) {
+		return
+	}
 	issued, err := service.IssueAdtyVoucher(service.AdtyVoucherIssueInput{
 		IssuerId: c.GetInt("id"), Purpose: body.Purpose, SiteId: site.Id, AmountUSD: amount, Source: body.Source, Reason: body.Reason,
 	})
@@ -85,6 +88,10 @@ func PostAdtyVoucherFreeze(c *gin.Context) {
 	if !ok {
 		return
 	}
+	// Root admin freeze stays on the existing G.14.7 path and is not part of ISS-R2-0048.
+	if c.GetInt("role") != common.RoleRootUser && !adtyRequireOwnerProof(c, service.AdtySiteOwnerActionVoucherFreeze, id) {
+		return
+	}
 	if err := service.FreezeAdtyVoucher(c.GetInt("id"), int64(id)); err != nil {
 		common.ApiError(c, err)
 		return
@@ -114,6 +121,9 @@ func PutAdtyVoucherMarginAuthorization(c *gin.Context) {
 func PostAdtyVoucherCancel(c *gin.Context) {
 	id, ok := adtyPathId(c)
 	if !ok {
+		return
+	}
+	if !adtyRequireOwnerProof(c, service.AdtySiteOwnerActionVoucherCancel, id) {
 		return
 	}
 	if err := service.CancelAdtyVoucher(c.GetInt("id"), int64(id)); err != nil {

@@ -32,10 +32,14 @@ const (
 	AdtySiteOwnerActionStaffUpdate   = "staff.update"  // target: membership ID
 	AdtySiteOwnerActionStaffPassword = "staff.password"
 	AdtySiteOwnerActionStaffDelete   = "staff.delete"
+	AdtySiteOwnerActionVoucherIssue  = "voucher.issue"  // target: site ID
+	AdtySiteOwnerActionVoucherFreeze = "voucher.freeze" // target: voucher ID
+	AdtySiteOwnerActionVoucherCancel = "voucher.cancel" // target: voucher ID
 )
 
 var adtySiteOwnerActions = []string{AdtySiteOwnerActionPricing, AdtySiteOwnerActionBonus, AdtySiteOwnerActionTrial, AdtySiteOwnerActionDomain, AdtySiteOwnerActionPromo, AdtySiteOwnerActionSender,
-	AdtySiteOwnerActionStaffCreate, AdtySiteOwnerActionStaffUpdate, AdtySiteOwnerActionStaffPassword, AdtySiteOwnerActionStaffDelete}
+	AdtySiteOwnerActionStaffCreate, AdtySiteOwnerActionStaffUpdate, AdtySiteOwnerActionStaffPassword, AdtySiteOwnerActionStaffDelete,
+	AdtySiteOwnerActionVoucherIssue, AdtySiteOwnerActionVoucherFreeze, AdtySiteOwnerActionVoucherCancel}
 
 // AdtySiteOwnerContext 是 proof 绑定的操作：哪种操作、对哪个目标。
 type AdtySiteOwnerContext struct {
