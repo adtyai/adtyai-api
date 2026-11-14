@@ -20,6 +20,7 @@ type GeminiChatRequest struct {
 	ToolConfig         *ToolConfig                `json:"toolConfig,omitempty"`
 	SystemInstructions *GeminiChatContent         `json:"systemInstruction,omitempty"`
 	CachedContent      string                     `json:"cachedContent,omitempty"`
+	ContinuationToken  json.RawMessage            `json:"continuationToken,omitempty"`
 }
 
 // UnmarshalJSON allows GeminiChatRequest to accept both snake_case and camelCase fields.
@@ -28,6 +29,7 @@ func (r *GeminiChatRequest) UnmarshalJSON(data []byte) error {
 	var aux struct {
 		Alias
 		SystemInstructionSnake *GeminiChatContent `json:"system_instruction,omitempty"`
+		ContinuationTokenSnake json.RawMessage    `json:"continuation_token,omitempty"`
 	}
 
 	if err := kitutil.Unmarshal(data, &aux); err != nil {
@@ -38,6 +40,9 @@ func (r *GeminiChatRequest) UnmarshalJSON(data []byte) error {
 
 	if aux.SystemInstructionSnake != nil {
 		r.SystemInstructions = aux.SystemInstructionSnake
+	}
+	if aux.ContinuationTokenSnake != nil {
+		r.ContinuationToken = aux.ContinuationTokenSnake
 	}
 
 	return nil
@@ -510,6 +515,7 @@ type MediaResolution string
 type GeminiChatCandidate struct {
 	Content           GeminiChatContent        `json:"content"`
 	FinishReason      *string                  `json:"finishReason"`
+	ContinuationToken json.RawMessage          `json:"continuationToken,omitempty"`
 	Index             int64                    `json:"index"`
 	SafetyRatings     []GeminiChatSafetyRating `json:"safetyRatings"`
 	GroundingMetadata *GeminiGroundingMetadata `json:"groundingMetadata,omitempty"`
