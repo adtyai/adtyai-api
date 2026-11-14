@@ -177,8 +177,8 @@ func ReserveAdtySiteGiftTx(tx *gorm.DB, ext *model.AdtyTopupOrder) error {
 }
 
 // ReleaseAdtySiteGiftTx returns a reserved site gift to its original earning
-// and/or margin source. Cancel and expiry call it in the same transaction as
-// the status change. Replays of the same order are idempotent.
+// and/or margin source. Cancel, expiry, and replace call it in the same
+// transaction as the status change. Replays of the same order are idempotent.
 func ReleaseAdtySiteGiftTx(tx *gorm.DB, ext *model.AdtyTopupOrder) error {
 	if tx == nil || ext == nil || ext.SiteId <= 0 {
 		return nil

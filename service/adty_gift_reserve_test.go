@@ -72,6 +72,44 @@ func TestCancelSiteGiftReleasesFreezeIdempotently(t *testing.T) {
 	require.EqualValues(t, 1, countGiftLedgers(t, db, site.Id, "gift_release", ext.TradeNo, model.AdtySiteWalletMargin))
 }
 
+func TestReplaceSiteGiftReleasesFreezeIdempotently(t *testing.T) {
+	db := prepareSiteDB(t)
+	_, site, customer, ext := seedReservedSiteGift(t, db, "gift-replace", "10")
+	earningBefore, marginBefore := mustSiteGiftWallets(t, db, site.Id)
+	require.True(t, earningBefore.FrozenUSD.Equal(decimal.RequireFromString("4")))
+	require.True(t, marginBefore.FrozenUSD.Equal(decimal.RequireFromString("6")))
+
+	replaced, err := model.ReplaceAdtyTopUpAfterLock(ext.TradeNo, customer.Id, nil)
+	require.NoError(t, err)
+	require.Equal(t, ext.TradeNo, replaced.TradeNo)
+
+	earning, margin := mustSiteGiftWallets(t, db, site.Id)
+	require.True(t, earning.Balance.Equal(earningBefore.Balance))
+	require.True(t, earning.FrozenUSD.IsZero())
+	require.True(t, margin.Balance.Equal(marginBefore.Balance))
+	require.True(t, margin.FrozenUSD.IsZero())
+	assertGiftLedger(t, db, site.Id, "gift_release", ext.TradeNo, model.AdtySiteWalletEarnings, "0", "-4")
+	assertGiftLedger(t, db, site.Id, "gift_release", ext.TradeNo, model.AdtySiteWalletMargin, "0", "-6")
+
+	_, err = model.ReplaceAdtyTopUpAfterLock(ext.TradeNo, customer.Id, nil)
+	require.ErrorIs(t, err, model.ErrAdtyTopUpNotCancel)
+	_, err = model.CompleteAdtyTopUp(ext.TradeNo, model.AdtyPaymentFacts{
+		Provider: model.PaymentProviderAdtyBEpusdt, PaidAmount: decimal.NewFromInt(100), FiatAmount: decimal.NewFromInt(100),
+		PaidCurrency: "USDT", Source: model.AdtyPaymentSourceCallback,
+	}, "")
+	require.ErrorIs(t, err, model.ErrTopUpStatusInvalid)
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return ReleaseAdtySiteGiftTx(tx, ext)
+	}))
+	earningAgain, marginAgain := mustSiteGiftWallets(t, db, site.Id)
+	require.True(t, earningAgain.Balance.Equal(earning.Balance))
+	require.True(t, earningAgain.FrozenUSD.IsZero())
+	require.True(t, marginAgain.Balance.Equal(margin.Balance))
+	require.True(t, marginAgain.FrozenUSD.IsZero())
+	require.EqualValues(t, 1, countGiftLedgers(t, db, site.Id, "gift_release", ext.TradeNo, model.AdtySiteWalletEarnings))
+	require.EqualValues(t, 1, countGiftLedgers(t, db, site.Id, "gift_release", ext.TradeNo, model.AdtySiteWalletMargin))
+}
+
 func TestExpireSiteGiftReleasesFreezeIdempotently(t *testing.T) {
 	db := prepareSiteDB(t)
 	_, site, _, ext := seedReservedSiteGift(t, db, "gift-expire", "10")

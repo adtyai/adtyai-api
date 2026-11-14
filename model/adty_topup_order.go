@@ -139,7 +139,7 @@ var AdtyBeforeTopUpCreateTx func(tx *gorm.DB, topUp *TopUp, ext *AdtyTopupOrder)
 // AdtyAfterTopUpCompleted 在入账提交之后调用（P5 用它清零通道的连续未付）。未注册就跳过。
 var AdtyAfterTopUpCompleted func(topUp *TopUp, ext *AdtyTopupOrder)
 
-// AdtyReleaseTopUpReserveTx 在取消或过期改状态的同一事务里释放分站赠金冻结。未注册就跳过。
+// AdtyReleaseTopUpReserveTx 在取消、过期或被替换改状态的同一事务里释放分站赠金冻结。未注册就跳过。
 var AdtyReleaseTopUpReserveTx func(tx *gorm.DB, ext *AdtyTopupOrder) error
 
 // CreateAdtyTopUp 在一个事务里插 top_ups 和扩展行。
@@ -512,6 +512,11 @@ func ReplaceAdtyTopUpAfterLock(tradeNo string, userId int, confirm func(*AdtyTop
 			}
 		}
 		ext = locked
+		if AdtyReleaseTopUpReserveTx != nil {
+			if err := AdtyReleaseTopUpReserveTx(tx, locked); err != nil {
+				return err
+			}
+		}
 		return tx.Model(&TopUp{}).Where("id = ?", topUp.Id).Update("status", TopUpStatusReplaced).Error
 	})
 	return ext, err
