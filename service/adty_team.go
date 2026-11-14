@@ -384,7 +384,7 @@ func CreateAdtyOwnerSiteTeam(ownerId, siteId, leaderId int, name, rawDiscount st
 
 func CreateAdtyTeam(leaderId, siteId int, name string, discount decimal.Decimal) (*AdtyTeamCreated, error) {
 	name = strings.TrimSpace(name)
-	if leaderId <= 0 || siteId < 0 || name == "" || len(name) > 64 || !discount.IsPositive() || discount.GreaterThan(decimal.NewFromInt(1)) {
+	if leaderId <= 0 || siteId < 0 || name == "" || len(name) > 64 || !adtySiteTeamPayRatioConfigValid(discount) {
 		return nil, ErrAdtyTeamInvalid
 	}
 	var created *AdtyTeamCreated
@@ -403,9 +403,6 @@ func CreateAdtyTeam(leaderId, siteId int, name string, discount decimal.Decimal)
 			}
 			if site.Status != model.AdtySiteStatusActive {
 				return ErrAdtyTeamForbidden
-			}
-			if site.CostFactor != nil && discount.LessThan(*site.CostFactor) {
-				return ErrAdtyTeamInvalid
 			}
 		}
 		if err := rejectActiveTeamMembership(tx, leader.Id); err != nil {

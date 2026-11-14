@@ -29,7 +29,7 @@ func TestMainTeamAgreementPriceHasNoSupplyFloor(t *testing.T) {
 	require.Error(t, SaveAdtyMainTeamAgreementPrice(siteTeam.Team.Id, "0.50"))
 }
 
-func TestOwnerSiteTeamDiscountRespectsSupplyPrice(t *testing.T) {
+func TestOwnerSiteTeamDiscountFollowsG2Formula(t *testing.T) {
 	db := prepareReferralDialectDB(t, "sqlite")
 	owner := referralUser(t, db, "team-discount-owner")
 	factor := decimal.RequireFromString("0.70")
@@ -39,14 +39,26 @@ func TestOwnerSiteTeamDiscountRespectsSupplyPrice(t *testing.T) {
 	require.NoError(t, db.Model(leader).Update("site_id", site.Id).Error)
 	created, err := CreateAdtyTeam(leader.Id, site.Id, "Desk", decimal.RequireFromString("0.80"))
 	require.NoError(t, err)
-	require.Error(t, SaveAdtyOwnerSiteTeamDiscount(site.Id, owner.Id, created.Team.Id, "0.60"))
-	require.NoError(t, SaveAdtyOwnerSiteTeamDiscount(site.Id, owner.Id, created.Team.Id, "0.75"))
+
+	// d=0.70, k=1.6: ratio 0.65 is below CostFactor, but 1.6×0.65=1.04 so discounted >= supply.
+	// Config must allow it because validity follows G.2, not ratio versus CostFactor.
+	require.NoError(t, SaveAdtyOwnerSiteTeamDiscount(site.Id, owner.Id, created.Team.Id, "0.65"))
 	var stored model.AdtyTeam
 	require.NoError(t, db.First(&stored, created.Team.Id).Error)
-	require.True(t, stored.Discount.Equal(decimal.RequireFromString("0.75")))
+	require.True(t, stored.Discount.Equal(decimal.RequireFromString("0.65")))
+
+	// Markup ratio 0 (k=1): 0.60 makes discounted < supply. Billing uses max(), so save is allowed.
+	require.NoError(t, SaveAdtyOwnerSiteTeamDiscount(site.Id, owner.Id, created.Team.Id, "0.60"))
+	require.NoError(t, db.First(&stored, created.Team.Id).Error)
+	require.True(t, stored.Discount.Equal(decimal.RequireFromString("0.60")))
 	require.EqualValues(t, 0, stored.SharedQuota)
+
+	require.Error(t, SaveAdtyOwnerSiteTeamDiscount(site.Id, owner.Id, created.Team.Id, "0"))
+	require.Error(t, SaveAdtyOwnerSiteTeamDiscount(site.Id, owner.Id, created.Team.Id, "1.01"))
 	other := referralUser(t, db, "team-discount-other")
 	require.Error(t, SaveAdtyOwnerSiteTeamDiscount(site.Id, other.Id, created.Team.Id, "0.90"))
+	require.NoError(t, db.First(&stored, created.Team.Id).Error)
+	require.True(t, stored.Discount.Equal(decimal.RequireFromString("0.60")))
 }
 
 func TestSiteReferralRateStaysUnsetUntilRootSetsCap(t *testing.T) {

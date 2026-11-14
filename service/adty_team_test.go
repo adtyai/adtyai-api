@@ -27,8 +27,6 @@ func TestAdtyTeamSharedBalanceAndSingleMembership(t *testing.T) {
 	require.NoError(t, db.Model(leader).Update("site_id", site.Id).Error)
 	require.NoError(t, db.Model(member).Update("site_id", site.Id).Error)
 
-	_, err := CreateAdtyTeam(leader.Id, site.Id, "Ops", decimal.RequireFromString("0.70"))
-	require.ErrorIs(t, err, ErrAdtyTeamInvalid)
 	created, err := CreateAdtyTeam(leader.Id, site.Id, "Ops", decimal.RequireFromString("0.90"))
 	require.NoError(t, err)
 	_, err = CreateAdtyTeam(leader.Id, site.Id, "Second", decimal.NewFromInt(1))
@@ -149,6 +147,36 @@ func TestAdtyTeamProtocolPriceUsesBoundKey(t *testing.T) {
 func decimalPtr(value string) *decimal.Decimal {
 	parsed := decimal.RequireFromString(value)
 	return &parsed
+}
+
+func TestCreateAdtyTeamFollowsG2PayRatioFormula(t *testing.T) {
+	db := prepareReferralDialectDB(t, "sqlite")
+	owner := referralUser(t, db, "g2-create-owner")
+	// d=0.80. Discounted price >= supply iff stored k × payment ratio >= 1.
+	site := model.AdtySite{OwnerUserId: owner.Id, Subdomain: "g2-create", Status: model.AdtySiteStatusActive, CostFactor: decimalPtr("0.80")}
+	require.NoError(t, db.Create(&site).Error)
+
+	// k=1.5: ratio 0.70 is below CostFactor, but 1.5×0.70=1.05 so discounted >= supply.
+	leaderAbove := referralUser(t, db, "g2-create-above")
+	require.NoError(t, db.Model(leaderAbove).Update("site_id", site.Id).Error)
+	above, err := CreateAdtyTeam(leaderAbove.Id, site.Id, "Above", decimal.RequireFromString("0.70"))
+	require.NoError(t, err)
+	require.True(t, above.Team.Discount.Equal(decimal.RequireFromString("0.70")))
+
+	// Markup ratio 0 (stored k=1): any ratio < 1 makes discounted < supply.
+	// Billing already charges max(supply, discounted), so config must accept it.
+	leaderBelow := referralUser(t, db, "g2-create-below")
+	require.NoError(t, db.Model(leaderBelow).Update("site_id", site.Id).Error)
+	below, err := CreateAdtyTeam(leaderBelow.Id, site.Id, "Below", decimal.RequireFromString("0.50"))
+	require.NoError(t, err)
+	require.True(t, below.Team.Discount.Equal(decimal.RequireFromString("0.50")))
+
+	leaderBad := referralUser(t, db, "g2-create-bad")
+	require.NoError(t, db.Model(leaderBad).Update("site_id", site.Id).Error)
+	_, err = CreateAdtyTeam(leaderBad.Id, site.Id, "Bad", decimal.Zero)
+	require.ErrorIs(t, err, ErrAdtyTeamInvalid)
+	_, err = CreateAdtyTeam(leaderBad.Id, site.Id, "Bad", decimal.RequireFromString("1.01"))
+	require.ErrorIs(t, err, ErrAdtyTeamInvalid)
 }
 
 func TestAdtyTeamCreateRequiresRootOrAuthorizedOwner(t *testing.T) {

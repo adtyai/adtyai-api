@@ -334,6 +334,13 @@ func AdtyTeamPriceBlocked(c *gin.Context) bool {
 	return c != nil && c.GetBool(AdtyTeamPriceBlockedKey)
 }
 
+// adtySiteTeamPayRatioConfigValid 判断分站团队折后支付比例在配置时是否可保存。
+// 计费按 G.2：最终价 = max(分站供货价, 分站普通售价×折后支付比例)，折后价低于供货价时抬到供货价。
+// 因此配置时不得把支付比例本身和供货倍率比较后拒绝；仅拒绝非正或大于 1 的比例。
+func adtySiteTeamPayRatioConfigValid(ratio decimal.Decimal) bool {
+	return ratio.IsPositive() && !ratio.GreaterThan(decimal.NewFromInt(1))
+}
+
 // AdtyApplySiteMarkupHook 是 HandleGroupRatio 调用的入口（relay/helper/price.go），测试可以替换。
 var AdtyApplySiteMarkupHook = AdtyApplySiteMarkup
 

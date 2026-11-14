@@ -175,19 +175,17 @@ func BindAdtyOwnerSiteInviteFromIP(siteID, ownerID, inviterID, inviteeID int, ip
 	return BindSiteInviteFromIP(siteID, inviterID, inviteeID, ipHash)
 }
 
-// SaveAdtyOwnerSiteTeamDiscount updates one site team's discount.
-// A price below the site supply factor is refused. Shared quota is not changed.
+// SaveAdtyOwnerSiteTeamDiscount updates one site team's payment ratio.
+// Validity follows G.2: final team price = max(site supply price, site regular
+// sale price × payment ratio). Billing already applies that floor, so a ratio
+// below the site cost factor is not rejected. Shared quota is not changed.
 func SaveAdtyOwnerSiteTeamDiscount(siteID, ownerID int, teamID int64, raw string) error {
-	site, err := lockOwnerSite(siteID, ownerID)
-	if err != nil {
+	if _, err := lockOwnerSite(siteID, ownerID); err != nil {
 		return err
 	}
 	value, err := decimal.NewFromString(strings.TrimSpace(raw))
-	if teamID <= 0 || err != nil || !value.IsPositive() || value.GreaterThan(decimal.NewFromInt(1)) {
+	if teamID <= 0 || err != nil || !adtySiteTeamPayRatioConfigValid(value) {
 		return common.NewMessage("Invalid parameters")
-	}
-	if site.CostFactor != nil && value.LessThan(*site.CostFactor) {
-		return common.NewMessage("Team price is below the site supply price")
 	}
 	return model.DB.Transaction(func(tx *gorm.DB) error {
 		var team model.AdtyTeam
