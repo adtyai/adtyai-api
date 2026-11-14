@@ -334,6 +334,64 @@ func TestRefundAfterPendingFulfillmentReturnsFullPrincipal(t *testing.T) {
 	require.Equal(t, model.AdtyGiftFulfillmentCanceled, row.Status)
 }
 
+func TestConsumingSiteGiftDebitsGuaranteeOnce(t *testing.T) {
+	db := prepareSiteDB(t)
+	_, site, customer, ext := seedReservedSiteGift(t, db, "gift-spend", "10")
+	_, err := model.CompleteAdtyTopUp(ext.TradeNo, model.AdtyPaymentFacts{
+		Provider: model.PaymentProviderAdtyBEpusdt, PaidAmount: decimal.NewFromInt(100), FiatAmount: decimal.NewFromInt(100),
+		PaidCurrency: "USDT", Source: model.AdtyPaymentSourceCallback,
+	}, "")
+	require.NoError(t, err)
+
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return model.ConsumeAdtyFundBatchesTx(tx, customer.Id, 50_000_000, 55_000_000)
+	}))
+	earning, margin := mustSiteGiftWallets(t, db, site.Id)
+	require.True(t, earning.FrozenUSD.Equal(decimal.RequireFromString("4")))
+	require.True(t, earning.Balance.Equal(decimal.RequireFromString("4")))
+	require.True(t, margin.FrozenUSD.Equal(decimal.RequireFromString("6")))
+	require.True(t, margin.Balance.Equal(decimal.RequireFromString("20")))
+
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return model.ConsumeAdtyFundBatchesTx(tx, customer.Id, 2_500_000, 5_000_000)
+	}))
+	earning, margin = mustSiteGiftWallets(t, db, site.Id)
+	require.True(t, earning.FrozenUSD.Equal(decimal.RequireFromString("2")))
+	require.True(t, earning.Balance.Equal(decimal.RequireFromString("2")))
+	require.True(t, margin.FrozenUSD.Equal(decimal.RequireFromString("3")))
+	require.True(t, margin.Balance.Equal(decimal.RequireFromString("17")))
+
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return model.ConsumeAdtyFundBatchesTx(tx, customer.Id, 2_500_000, 2_500_000)
+	}))
+	earning, margin = mustSiteGiftWallets(t, db, site.Id)
+	require.True(t, earning.FrozenUSD.IsZero())
+	require.True(t, earning.Balance.IsZero())
+	require.True(t, margin.FrozenUSD.IsZero())
+	require.True(t, margin.Balance.Equal(decimal.RequireFromString("14")))
+	require.EqualValues(t, 2, countGiftLedgers(t, db, site.Id, "gift_spend", ext.TradeNo, model.AdtySiteWalletEarnings))
+	require.EqualValues(t, 2, countGiftLedgers(t, db, site.Id, "gift_spend", ext.TradeNo, model.AdtySiteWalletMargin))
+}
+
+func TestQuietBonusDebitDoesNotSpendSiteGiftGuarantee(t *testing.T) {
+	db := prepareSiteDB(t)
+	_, site, customer, ext := seedReservedSiteGift(t, db, "gift-quiet", "10")
+	_, err := model.CompleteAdtyTopUp(ext.TradeNo, model.AdtyPaymentFacts{
+		Provider: model.PaymentProviderAdtyBEpusdt, PaidAmount: decimal.NewFromInt(100), FiatAmount: decimal.NewFromInt(100),
+		PaidCurrency: "USDT", Source: model.AdtyPaymentSourceCallback,
+	}, "")
+	require.NoError(t, err)
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return model.ConsumeAdtyFundBatchesQuietTx(tx, customer.Id, 52_500_000, 55_000_000)
+	}))
+	earning, margin := mustSiteGiftWallets(t, db, site.Id)
+	require.True(t, earning.FrozenUSD.Equal(decimal.RequireFromString("4")))
+	require.True(t, earning.Balance.Equal(decimal.RequireFromString("4")))
+	require.True(t, margin.FrozenUSD.Equal(decimal.RequireFromString("6")))
+	require.True(t, margin.Balance.Equal(decimal.RequireFromString("20")))
+	require.EqualValues(t, 0, countGiftLedgers(t, db, site.Id, "gift_spend", ext.TradeNo, model.AdtySiteWalletEarnings))
+}
+
 func drainSiteGiftWallets(t *testing.T, db *gorm.DB, siteID int, prefix string) error {
 	t.Helper()
 	earning, margin := mustSiteGiftWallets(t, db, siteID)

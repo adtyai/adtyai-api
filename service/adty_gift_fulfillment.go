@@ -3,6 +3,7 @@ package service
 import (
 	"encoding/json"
 	"errors"
+	"strconv"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -247,6 +248,7 @@ func notifyPendingGiftFulfillmentAfterCredit(_ *model.TopUp, ext *model.AdtyTopu
 func initGiftFulfillmentHooks() {
 	model.AdtyPrepareTopUpGiftOnCreditTx = prepareTopUpGiftOnCreditTx
 	model.AdtyAfterTopUpCreditCommitted = notifyPendingGiftFulfillmentAfterCredit
+	model.AdtyAfterBonusSpentTx = applySiteGiftSpendOnBonusTx
 }
 
 // releaseUnusedSiteGiftGuaranteeTx releases the unused portion of a paid
@@ -362,5 +364,94 @@ func cancelPendingGiftFulfillmentOnFullRefundTx(tx *gorm.DB, ext *model.AdtyTopu
 		return err
 	}
 	ext.GiftFulfillmentStatus = model.AdtyGiftFulfillmentCanceled
+	return nil
+}
+
+func applySiteGiftSpendOnBonusTx(tx *gorm.DB, userID int, spends []model.AdtyBonusSpend) error {
+	for _, spend := range spends {
+		if err := applySiteGiftSpendForSourceTx(tx, userID, spend.Source, spend.Quota); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func applySiteGiftSpendForSourceTx(tx *gorm.DB, userID int, tradeNo string, takenQuota int64) error {
+	if tx == nil || userID <= 0 || tradeNo == "" || takenQuota <= 0 {
+		return nil
+	}
+	var ext model.AdtyTopupOrder
+	if err := tx.Where("trade_no = ? AND user_id = ?", tradeNo, userID).Limit(1).Find(&ext).Error; err != nil {
+		return err
+	}
+	if ext.Id == 0 || ext.SiteId <= 0 || !ext.BonusUSD.IsPositive() {
+		return nil
+	}
+	if ext.GiftFulfillmentStatus == model.AdtyGiftFulfillmentPending {
+		return nil
+	}
+	heldEarning, heldMargin, err := netGiftHoldByKindTx(tx, ext.SiteId, ext.TradeNo)
+	if err != nil {
+		return err
+	}
+	held := heldEarning.Add(heldMargin)
+	if !held.IsPositive() {
+		return nil
+	}
+	siteQuota, err := siteGiftBonusQuota(&ext)
+	if err != nil || siteQuota <= 0 {
+		return err
+	}
+	var remaining int64
+	if err := tx.Model(&model.AdtyFundBatch{}).
+		Where("user_id = ? AND source = ? AND kind = ?", userID, tradeNo, "bonus").
+		Select("COALESCE(SUM(remaining),0)").Scan(&remaining).Error; err != nil {
+		return err
+	}
+	toSpend := ext.BonusUSD.Mul(decimal.NewFromInt(takenQuota)).Div(decimal.NewFromInt(siteQuota)).RoundFloor(8)
+	if remaining <= 0 || toSpend.GreaterThan(held) {
+		toSpend = held
+	}
+	if !toSpend.IsPositive() {
+		return nil
+	}
+	relEarning := decimal.Zero
+	if heldEarning.IsPositive() {
+		relEarning = toSpend.Mul(heldEarning).Div(held).RoundFloor(8)
+		if relEarning.GreaterThan(heldEarning) {
+			relEarning = heldEarning
+		}
+	}
+	relMargin := toSpend.Sub(relEarning)
+	if relMargin.GreaterThan(heldMargin) {
+		relMargin = heldMargin
+		relEarning = toSpend.Sub(relMargin)
+		if relEarning.GreaterThan(heldEarning) {
+			relEarning = heldEarning
+		}
+	}
+	var spentAfter int64
+	if err := tx.Model(&model.AdtyFundBatch{}).
+		Where("user_id = ? AND source = ? AND kind = ?", userID, tradeNo, "bonus").
+		Select("COALESCE(SUM(original - remaining),0)").Scan(&spentAfter).Error; err != nil {
+		return err
+	}
+	key := "gift:" + tradeNo + ":spend:" + strconv.FormatInt(spentAfter, 10)
+	if relEarning.IsPositive() {
+		if _, err := applyAdtySiteWalletChangeTx(tx, ext.SiteId, model.AdtySiteWalletEarnings, relEarning.Neg(), AdtySiteWalletChange{
+			Type: "gift_spend", RefType: "topup", RefID: tradeNo, IdempotencyKey: key + ":earn",
+			HoldDelta: relEarning.Neg(),
+		}); err != nil {
+			return err
+		}
+	}
+	if relMargin.IsPositive() {
+		if _, err := applyAdtySiteWalletChangeTx(tx, ext.SiteId, model.AdtySiteWalletMargin, relMargin.Neg(), AdtySiteWalletChange{
+			Type: "gift_spend", RefType: "topup", RefID: tradeNo, IdempotencyKey: key + ":margin",
+			HoldDelta: relMargin.Neg(),
+		}); err != nil {
+			return err
+		}
+	}
 	return nil
 }

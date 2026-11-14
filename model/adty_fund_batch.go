@@ -75,6 +75,17 @@ func CreateAdtyFundBatchesTx(tx *gorm.DB, userID int, source string, principal, 
 // principal lots are reduced. Gift consumption does not call it.
 var AdtyAfterPrincipalSpentTx func(tx *gorm.DB, userID int, principalQuota int64) error
 
+// AdtyBonusSpend is one source's bonus lot reduction in a usage charge.
+type AdtyBonusSpend struct {
+	Source string
+	Quota  int64
+}
+
+// AdtyAfterBonusSpentTx runs in the charge transaction after bonus lots are
+// reduced. Official adjustments and refunds that use the quiet/reclaim path
+// do not call it.
+var AdtyAfterBonusSpentTx func(tx *gorm.DB, userID int, spends []AdtyBonusSpend) error
+
 // ConsumeAdtyFundBatchesTx spends principal lots before bonus lots.
 // A user with no lots gets one legacy principal lot for the pre-charge balance,
 // then this charge consumes from that lot. If lots still cannot cover the debit,
@@ -117,6 +128,7 @@ func consumeAdtyFundBatchesTx(tx *gorm.DB, userID int, amount, balanceBefore int
 	sortAdtyFundBatches(rows)
 	principalTaken := int64(0)
 	taken := int64(0)
+	bonusBySource := map[string]int64{}
 	for i := range rows {
 		if amount == 0 {
 			break
@@ -131,6 +143,9 @@ func consumeAdtyFundBatchesTx(tx *gorm.DB, userID int, amount, balanceBefore int
 		if rows[i].Kind == "principal" && rows[i].Source != "legacy" {
 			principalTaken += take
 		}
+		if rows[i].Kind == "bonus" && rows[i].Source != "" && take > 0 {
+			bonusBySource[rows[i].Source] += take
+		}
 		amount -= take
 		taken += take
 	}
@@ -138,7 +153,16 @@ func consumeAdtyFundBatchesTx(tx *gorm.DB, userID int, amount, balanceBefore int
 		return taken, adtyFundBatchShortfallError(amount)
 	}
 	if notifyPrincipalSpent && principalTaken > 0 && AdtyAfterPrincipalSpentTx != nil {
-		return taken, AdtyAfterPrincipalSpentTx(tx, userID, principalTaken)
+		if err := AdtyAfterPrincipalSpentTx(tx, userID, principalTaken); err != nil {
+			return taken, err
+		}
+	}
+	if notifyPrincipalSpent && len(bonusBySource) > 0 && AdtyAfterBonusSpentTx != nil {
+		spends := make([]AdtyBonusSpend, 0, len(bonusBySource))
+		for source, quota := range bonusBySource {
+			spends = append(spends, AdtyBonusSpend{Source: source, Quota: quota})
+		}
+		return taken, AdtyAfterBonusSpentTx(tx, userID, spends)
 	}
 	return taken, nil
 }
