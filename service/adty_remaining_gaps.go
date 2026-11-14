@@ -9,8 +9,10 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting/adty_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/gin-gonic/gin"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // AnnouncementDetail returns one published notice by key.
@@ -1224,9 +1226,64 @@ func DebitOperatingPrincipal(siteID int, amount decimal.Decimal, ref string) err
 
 // HideAdtyNotificationForUser removes one inbox item for that user only.
 func HideAdtyNotificationForUser(userID int, key string) error {
+	return hideAdtyNotificationForUser(nil, userID, key)
+}
+
+// HideAdtyNotificationForUserFromRequest is the request-scoped hide path so
+// the official audit can use the site already resolved for this request.
+func HideAdtyNotificationForUserFromRequest(c *gin.Context, userID int, key string) error {
+	return hideAdtyNotificationForUser(c, userID, key)
+}
+
+func hideAdtyNotificationForUser(c *gin.Context, userID int, key string) error {
 	key = strings.TrimSpace(key)
 	if userID <= 0 || key == "" {
 		return common.NewMessage("Invalid parameters")
 	}
-	return model.DB.Where(model.AdtyNotificationHide{UserId: userID, Key: key}).FirstOrCreate(&model.AdtyNotificationHide{UserId: userID, Key: key}).Error
+	row := model.AdtyNotificationHide{UserId: userID, Key: key}
+	result := model.DB.Clauses(clause.OnConflict{DoNothing: true}).Create(&row)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return nil
+	}
+	writeAdtyNotificationHideAudit(c, userID, key)
+	return nil
+}
+
+func writeAdtyNotificationHideAudit(c *gin.Context, userID int, key string) {
+	rec := model.OfficialAuditWrite{
+		UserId:     userID,
+		SiteID:     model.OfficialAuditSiteIDPointer(0),
+		ObjectType: "notification",
+		ObjectID:   key,
+		Action:     "adty.notification.hide",
+		Category:   model.AuditCategoryOperation,
+		Content:    "adty.notification.hide",
+		Result:     model.AuditResultSuccess,
+		Success:    true,
+	}
+	var actor *model.User
+	if userID > 0 {
+		if user, err := model.GetUserById(userID, false); err == nil && user != nil {
+			actor = user
+			rec.Username = user.Username
+			rec.ActorRole = user.Role
+		}
+	}
+	rec.SiteID = model.OfficialAuditSiteIDPointer(officialNotificationHideSiteID(c, actor))
+	if err := model.WriteOfficialAuditLog(c, rec); err != nil {
+		common.SysLog(common.LogText("official notification hide audit write failed: %s", err.Error()))
+	}
+}
+
+func officialNotificationHideSiteID(c *gin.Context, user *model.User) int {
+	if site := AdtySiteForRequest(c); site != nil {
+		return site.Id
+	}
+	if user != nil {
+		return user.SiteId
+	}
+	return 0
 }

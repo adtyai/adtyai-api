@@ -54,7 +54,7 @@ func PostAdtyNotificationHide(c *gin.Context) {
 		common.ApiErrorT(c, "Invalid parameters")
 		return
 	}
-	if err := service.HideAdtyNotificationForUser(c.GetInt("id"), body.Key); err != nil {
+	if err := service.HideAdtyNotificationForUserFromRequest(c, c.GetInt("id"), body.Key); err != nil {
 		common.ApiError(c, err)
 		return
 	}

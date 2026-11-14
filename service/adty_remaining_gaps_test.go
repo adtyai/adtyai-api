@@ -1,6 +1,7 @@
 package service
 
 import (
+	"net/http/httptest"
 	"os"
 	"strconv"
 	"testing"
@@ -10,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting/adty_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/gin-gonic/gin"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -447,6 +449,70 @@ func TestPriceRevisionAndBalanceGap(t *testing.T) {
 	var hides int64
 	require.NoError(t, db.Model(&model.AdtyNotificationHide{}).Where("user_id = ?", 9).Count(&hides).Error)
 	require.EqualValues(t, 1, hides)
+	var hideAudits int64
+	require.NoError(t, model.LOG_DB.Model(&model.AuditLog{}).Where("action = ? AND object_id = ?", "adty.notification.hide", "notice-1").Count(&hideAudits).Error)
+	require.EqualValues(t, 1, hideAudits)
+}
+
+func TestHideAdtyNotificationWritesOfficialAuditOnce(t *testing.T) {
+	db := prepareReferralDialectDB(t, "sqlite")
+	require.NoError(t, model.MigrateAuditLogs())
+	user := referralUser(t, db, "notice-hide-actor")
+	site := model.AdtySite{OwnerUserId: user.Id, Subdomain: "notice-hide-site", Status: model.AdtySiteStatusActive, AgreementVer: AdtyCurrentSiteAgreementVersion()}
+	require.NoError(t, db.Create(&site).Error)
+	require.NoError(t, db.Model(user).Update("site_id", site.Id).Error)
+	user.SiteId = site.Id
+	publication := model.AdtyNotificationPublication{
+		IssuerSiteId: 0, PublisherId: 1, PublisherName: "Root",
+		Audience: "all", TargetSiteId: site.Id, TargetSiteName: site.Subdomain,
+		Kind: "notice", Title: "Maintenance", Content: "window",
+		Business: "ops", Status: "published", Revision: 1,
+		ReadKey: "notice-audit-1", PublishedAt: 1, UpdatedAt: 1, UpdatedBy: 1,
+	}
+	require.NoError(t, db.Create(&publication).Error)
+
+	require.Error(t, HideAdtyNotificationForUser(0, publication.ReadKey))
+	require.Error(t, HideAdtyNotificationForUser(user.Id, "  "))
+	var beforeAudits int64
+	require.NoError(t, model.LOG_DB.Model(&model.AuditLog{}).Where("action = ?", "adty.notification.hide").Count(&beforeAudits).Error)
+	require.Zero(t, beforeAudits)
+
+	require.NoError(t, HideAdtyNotificationForUser(user.Id, publication.ReadKey))
+	require.NoError(t, HideAdtyNotificationForUser(user.Id, publication.ReadKey))
+
+	var hides int64
+	require.NoError(t, db.Model(&model.AdtyNotificationHide{}).Where("user_id = ? AND key = ?", user.Id, publication.ReadKey).Count(&hides).Error)
+	require.EqualValues(t, 1, hides)
+
+	var audits []model.AuditLog
+	require.NoError(t, model.LOG_DB.Where("action = ? AND object_id = ?", "adty.notification.hide", publication.ReadKey).Find(&audits).Error)
+	require.Len(t, audits, 1)
+	row := audits[0]
+	require.NotNil(t, row.SiteId)
+	require.Equal(t, site.Id, *row.SiteId)
+	require.Equal(t, "notification", row.ObjectType)
+	require.Equal(t, publication.ReadKey, row.ObjectId)
+	require.Equal(t, "adty.notification.hide", row.Action)
+	require.Equal(t, model.AuditResultSuccess, row.Result)
+	require.True(t, row.Success)
+	require.Equal(t, user.Id, row.UserId)
+	require.Equal(t, "notice-hide-actor", row.Username)
+	require.Equal(t, common.RoleCommonUser, row.ActorRole)
+
+	var still model.AdtyNotificationPublication
+	require.NoError(t, db.First(&still, publication.Id).Error)
+	require.Equal(t, "published", still.Status)
+	require.Equal(t, publication.ReadKey, still.ReadKey)
+
+	requestSite := model.AdtySite{Id: site.Id + 100}
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Set(AdtySiteContextKey, &requestSite)
+	require.NoError(t, HideAdtyNotificationForUserFromRequest(ctx, user.Id, "notice-audit-ctx"))
+	var fromRequest model.AuditLog
+	require.NoError(t, model.LOG_DB.Where("action = ? AND object_id = ?", "adty.notification.hide", "notice-audit-ctx").Take(&fromRequest).Error)
+	require.NotNil(t, fromRequest.SiteId)
+	require.Equal(t, requestSite.Id, *fromRequest.SiteId)
 }
 
 func staffBalanceBatchRemaining(t *testing.T, db *gorm.DB, userID int) int64 {
