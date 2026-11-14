@@ -155,6 +155,139 @@ func TestUserAuthNeverFallsBackForRecognizedInvalidInternalJWT(t *testing.T) {
 	assert.Contains(t, response.Body.String(), "AUTH_UNAUTHORIZED")
 }
 
+func dashboardAuthTestRouter(site *model.AdtySite) *gin.Engine {
+	router := gin.New()
+	if site != nil {
+		router.Use(func(c *gin.Context) {
+			c.Set(service.AdtySiteContextKey, site)
+			c.Next()
+		})
+	}
+	router.GET("/api/perf-metrics", RootAuth(), func(c *gin.Context) { c.Status(http.StatusNoContent) })
+	router.GET("/api/user/", AdminAuth(), func(c *gin.Context) { c.Status(http.StatusNoContent) })
+	showIdentity := func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"id": c.GetInt("id"), "role": c.GetInt("role")})
+	}
+	router.GET("/api/user/self", UserAuth(), showIdentity)
+	router.GET("/api/pricing", TryUserAuth(), showIdentity)
+	return router
+}
+
+func userQuerySelectsOnlyWalletQuota(tx *gorm.DB) bool {
+	if tx == nil || tx.Statement == nil || len(tx.Statement.Selects) == 0 {
+		return false
+	}
+	for _, column := range tx.Statement.Selects {
+		switch strings.ToLower(strings.TrimSpace(column)) {
+		case "quota", "quota_pending":
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func TestDashboardAuthRejectsRedisRoleTampering(t *testing.T) {
+	const siteID = 17
+	requestSite := &model.AdtySite{Id: siteID}
+	for _, role := range []int{common.RoleCommonUser, common.RoleAdminUser, common.RoleRootUser} {
+		t.Run(fmt.Sprintf("role_%d", role), func(t *testing.T) {
+			setupDashboardAuthMiddlewareTest(t)
+			gin.SetMode(gin.TestMode)
+			_, redisClient := useRateLimitMiniRedis(t)
+			legacy := "cache-integrity-legacy"
+			user := &model.User{
+				Username: "cache-integrity-site", Password: "password-placeholder", Role: role,
+				Status: common.UserStatusEnabled, Group: "default", AccessToken: &legacy, AuthVersion: 1,
+				SiteId: siteID, StaffSiteId: 0,
+			}
+			require.NoError(t, model.DB.Create(user).Error)
+			bundle, err := service.CreateLoginSessionOnSite(user.Id, siteID, "password", "127.0.0.1", "cache-integrity-test")
+			require.NoError(t, err)
+			pat, _ := createMiddlewareScopedToken(t, user.Id, 0, "profile:read", "user:read")
+
+			router := dashboardAuthTestRouter(requestSite)
+			mainRouter := dashboardAuthTestRouter(nil)
+			rootStatus, adminStatus := http.StatusForbidden, http.StatusForbidden
+			if role == common.RoleRootUser {
+				rootStatus = http.StatusNoContent
+			}
+			if role >= common.RoleAdminUser {
+				adminStatus = http.StatusNoContent
+			}
+			for _, credential := range []struct{ name, raw string }{
+				{name: "login JWT", raw: bundle.AccessToken},
+				{name: "scoped PAT", raw: pat},
+				{name: "legacy token", raw: legacy},
+			} {
+				t.Run(credential.name, func(t *testing.T) {
+					cacheKey := fmt.Sprintf("user:%d", user.Id)
+					require.NoError(t, redisClient.HSet(t.Context(), cacheKey, "Role", role).Err())
+					response := middlewareBearerRequest(router, "/api/perf-metrics", credential.raw)
+					require.Equal(t, rootStatus, response.Code, response.Body.String())
+					response = middlewareBearerRequest(router, "/api/user/", credential.raw)
+					require.Equal(t, adminStatus, response.Code, response.Body.String())
+
+					// Forge a main-site root projection without a matching MAC.
+					require.NoError(t, redisClient.HSet(t.Context(), cacheKey,
+						"Role", common.RoleRootUser,
+						"SiteId", 0,
+						"StaffSiteId", 0,
+					).Err())
+					response = middlewareBearerRequest(mainRouter, "/api/perf-metrics", credential.raw)
+					assert.Equal(t, http.StatusUnauthorized, response.Code, response.Body.String())
+					assert.Contains(t, response.Body.String(), "AUTH_UNAUTHORIZED")
+					response = middlewareBearerRequest(router, "/api/perf-metrics", credential.raw)
+					assert.Equal(t, rootStatus, response.Code, response.Body.String())
+					response = middlewareBearerRequest(router, "/api/user/", credential.raw)
+					assert.Equal(t, adminStatus, response.Code, response.Body.String())
+					for _, path := range []string{"/api/user/self", "/api/pricing"} {
+						response = middlewareBearerRequest(router, path, credential.raw)
+						require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+						var body struct {
+							ID   int `json:"id"`
+							Role int `json:"role"`
+						}
+						require.NoError(t, common.Unmarshal(response.Body.Bytes(), &body))
+						assert.Equal(t, user.Id, body.ID, path)
+						assert.Equal(t, role, body.Role, path)
+					}
+					cached := redisClient.HGetAll(t.Context(), cacheKey).Val()
+					assert.Equal(t, fmt.Sprintf("%d", role), cached["Role"], "tampered role must be rebuilt from the database")
+					assert.Equal(t, fmt.Sprintf("%d", siteID), cached["SiteId"], "tampered SiteId must be rebuilt from the database")
+					assert.Equal(t, "0", cached["StaffSiteId"], "tampered StaffSiteId must be rebuilt from the database")
+					assert.Equal(t, "5", cached["CacheSchema"], "rebuilt cache must keep schema 5")
+				})
+			}
+			stored, err := model.GetUserById(user.Id, false)
+			require.NoError(t, err)
+			assert.Equal(t, role, stored.Role)
+			assert.Equal(t, siteID, stored.SiteId)
+			assert.Zero(t, stored.StaffSiteId)
+			if role == common.RoleCommonUser {
+				const callbackName = "test:dashboard-auth-user-read-failure"
+				require.NoError(t, model.DB.Callback().Query().Before("gorm:query").Register(callbackName, func(tx *gorm.DB) {
+					if tx.Statement != nil && tx.Statement.Table == "users" && !userQuerySelectsOnlyWalletQuota(tx) {
+						tx.AddError(errors.New("forced user database read failure"))
+					}
+				}))
+				t.Cleanup(func() { model.DB.Callback().Query().Remove(callbackName) })
+				response := middlewareBearerRequest(router, "/api/user/self", bundle.AccessToken)
+				assert.Equal(t, http.StatusOK, response.Code, "a valid cache hit must not rebuild the user row; wallet quota may still be read from SQL")
+				require.NoError(t, redisClient.HSet(t.Context(), fmt.Sprintf("user:%d", user.Id),
+					"CacheMAC", "tampered",
+					"Role", common.RoleRootUser,
+					"SiteId", 0,
+					"StaffSiteId", 0,
+				).Err())
+				response = middlewareBearerRequest(router, "/api/perf-metrics", bundle.AccessToken)
+				assert.Equal(t, http.StatusInternalServerError, response.Code, response.Body.String())
+				assert.Contains(t, response.Body.String(), "AUTH_INTERNAL_ERROR")
+			}
+		})
+	}
+}
+
 func TestTryUserAuthCredentialClassification(t *testing.T) {
 	setupDashboardAuthMiddlewareTest(t)
 	gin.SetMode(gin.TestMode)

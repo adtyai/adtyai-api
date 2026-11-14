@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 
@@ -23,12 +24,14 @@ var ErrUserAuthCachePending = errors.New("user authentication state update is pe
 
 var ErrUserAuthVersionConflict = errors.New("user authentication version update conflicted")
 
+// Fence and version keys use the user cache key as their hash tag so the
+// cache fill script and the floor MGET stay in one slot on sharded Redis.
 func getUserAuthFenceKey(userId int) string {
-	return fmt.Sprintf("auth:user:fence:%d", userId)
+	return fmt.Sprintf("auth:user:fence:{%s}", getUserCacheKey(userId))
 }
 
 func getUserAuthVersionKey(userId int) string {
-	return fmt.Sprintf("auth:user:version:%d", userId)
+	return fmt.Sprintf("auth:user:version:{%s}", getUserCacheKey(userId))
 }
 
 // A pending fence only covers the interval between publishing the next
@@ -55,6 +58,11 @@ func writeUserCache(user *UserBase, includeQuota bool) error {
 		includeQuotaArg = "1"
 	}
 	ttl := userCacheTTLSeconds()
+	user.CacheExpiresAt = time.Now().Add(time.Duration(ttl) * time.Second).UnixMilli()
+	mac, err := user.cacheMAC()
+	if err != nil {
+		return err
+	}
 	const script = `
 local incoming = tonumber(ARGV[1])
 local pending = tonumber(redis.call('GET', KEYS[2]) or '0')
@@ -75,8 +83,10 @@ end
 redis.call('HSET', KEYS[1],
   'Id', ARGV[2], 'Group', ARGV[3], 'Email', ARGV[4],
   'Status', ARGV[5], 'Role', ARGV[6], 'Username', ARGV[7],
-  'Setting', ARGV[8], 'AuthVersion', ARGV[1], 'CacheSchema', ARGV[9], 'SiteId', ARGV[13], 'StaffSiteId', ARGV[14])
-if ARGV[10] == '1' and redis.call('HEXISTS', KEYS[1], 'Quota') == 0 then
+  'Setting', ARGV[8], 'AuthVersion', ARGV[1], 'CacheSchema', ARGV[9],
+  'SiteId', ARGV[13], 'StaffSiteId', ARGV[14],
+  'CacheExpiresAt', ARGV[15], 'CacheMAC', ARGV[16])
+if ARGV[10] == '1' and not string.match(redis.call('HGET', KEYS[1], 'Quota') or '', '^-?%d+$') then
   redis.call('HSET', KEYS[1], 'Quota', ARGV[11])
 end
 redis.call('EXPIRE', KEYS[1], ARGV[12])
@@ -84,7 +94,8 @@ return 1`
 	result, err := common.RDB.Eval(context.Background(), script,
 		[]string{getUserCacheKey(user.Id), getUserAuthFenceKey(user.Id), getUserAuthVersionKey(user.Id)},
 		user.AuthVersion, user.Id, user.Group, user.Email, user.Status, user.Role,
-		user.Username, user.Setting, user.CacheSchema, includeQuotaArg, user.Quota, ttl, user.SiteId, user.StaffSiteId,
+		user.Username, user.Setting, user.CacheSchema, includeQuotaArg, user.Quota, ttl,
+		user.SiteId, user.StaffSiteId, user.CacheExpiresAt, mac,
 	).Int()
 	if err != nil {
 		return err
@@ -219,13 +230,39 @@ func BumpUserAuthVersion(userId int) (int64, error) {
 }
 
 // PublishUserAuthCache refreshes the current database state after a successful
-// auth-sensitive transaction without touching the cached quota field.
+// auth-sensitive transaction without overwriting a live cached quota field.
+// Group and profile updates keep the same authentication version, so a delayed
+// refresh re-reads after publishing and repairs any newer metadata it replaced.
 func PublishUserAuthCache(userId int) error {
-	user, err := GetUserById(userId, false)
+	if !common.RedisEnabled {
+		return nil
+	}
+	if userId <= 0 {
+		return fmt.Errorf("invalid user id")
+	}
+	authoritative, err := GetUserById(userId, false)
 	if err != nil {
 		return err
 	}
-	return updateUserCache(*user)
+	for range 3 {
+		if err := updateUserCache(*authoritative); err != nil {
+			return err
+		}
+		verified, err := GetUserById(userId, false)
+		if err != nil {
+			return err
+		}
+		previousBase, verifiedBase := authoritative.ToBaseUser(), verified.ToBaseUser()
+		previousBase.Quota, verifiedBase.Quota = 0, 0
+		if *previousBase == *verifiedBase {
+			return nil
+		}
+		authoritative = verified
+	}
+	if err := updateUserCache(*authoritative); err != nil {
+		return err
+	}
+	return fmt.Errorf("user metadata changed repeatedly during cache refresh")
 }
 
 // InitializeUserAuthVersions must run after AutoMigrate when upgrading an

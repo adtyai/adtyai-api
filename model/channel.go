@@ -806,6 +806,12 @@ func UpdateChannelStatus(channelId int, usingKey string, status int, reason stri
 	if common.MemoryCacheEnabled {
 		channelCache, _ := CacheGetChannel(channelId)
 		if channelCache == nil {
+			// Returned before any cache write, so this node has nothing to restore.
+			return false
+		}
+		// A request failure must not replace an admin's manual disable;
+		// otherwise automatic recovery could re-enable the channel later.
+		if status == common.ChannelStatusAutoDisabled && channelCache.Status == common.ChannelStatusManuallyDisabled {
 			return false
 		}
 		if channelCache.ChannelInfo.IsMultiKey {
@@ -820,9 +826,15 @@ func UpdateChannelStatus(channelId int, usingKey string, status int, reason stri
 		} else {
 			// 如果缓存渠道存在，且状态已是目标状态，直接返回
 			if channelCache.Status == status {
-				return false
+				if status != common.ChannelStatusAutoDisabled {
+					return false
+				}
+				// A stale AutoDisabled entry can hide a manual disable or an
+				// Enabled row in the database. Keep going so the stored-row
+				// guard can refresh, or AutoDisabled can still be persisted.
+			} else {
+				CacheUpdateChannelStatus(channelId, status)
 			}
-			CacheUpdateChannelStatus(channelId, status)
 		}
 	}
 
@@ -845,6 +857,13 @@ func UpdateChannelStatus(channelId int, usingKey string, status int, reason stri
 	if err != nil {
 		return false
 	} else {
+		// Check the stored row too, since this node's cache may be stale.
+		if status == common.ChannelStatusAutoDisabled && channel.Status == common.ChannelStatusManuallyDisabled {
+			// The cache branch may already have written AutoDisabled on this
+			// node. Refresh from the stored row so auto-probe cannot reopen it.
+			refreshNeeded = common.MemoryCacheEnabled
+			return false
+		}
 		// A manual channel operation must replace the exhaustion reason even
 		// when the status value is already manually disabled.
 		overridesKeyExhaustion := channel.ChannelInfo.IsMultiKey && usingKey == "" &&
