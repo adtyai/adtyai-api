@@ -268,3 +268,35 @@ func TestSecurityStepUpCodeKeyUsesSiteEmailCodeKey(t *testing.T) {
 	assert.True(t, strings.HasPrefix(SecurityStepUpCodeKey(" User@Example.com ", 8, 42, VerificationScopePasswordChange), model.SiteEmailCodeKey("User@Example.com", 8)))
 	assert.NotEqual(t, SecurityStepUpCodeKey("user@example.com", 0, 1, VerificationScopePasswordChange), SecurityStepUpCodeKey("user@example.com", 8, 1, VerificationScopePasswordChange))
 }
+
+func TestSecurityEmailCodeLocksAfterMaxAttempts(t *testing.T) {
+	_, identity := setupSecurityStepUpTest(t)
+	sent := captureStepUpEmail(t)
+	require.NoError(t, IssueSecurityEmailCode(identity, VerificationScopePasswordChange, nil, "en"))
+	code := extractStepUpCode(t, sent.content)
+
+	for attempt := 1; attempt <= common.MaxFailAttempts; attempt++ {
+		_, err := VerifySecurityInput(identity, VerificationInput{
+			Method: VerificationMethodEmailCode, Scope: VerificationScopePasswordChange, Code: "000000",
+		})
+		if attempt < common.MaxFailAttempts {
+			assert.ErrorIs(t, err, ErrVerificationFailed)
+		} else {
+			assert.ErrorIs(t, err, ErrVerificationCodeLocked)
+		}
+	}
+
+	_, err := VerifySecurityInput(identity, VerificationInput{
+		Method: VerificationMethodEmailCode, Scope: VerificationScopePasswordChange, Code: code,
+	})
+	assert.ErrorIs(t, err, ErrVerificationCodeLocked, "a later correct guess must not complete step-up after the lock")
+
+	require.NoError(t, IssueSecurityEmailCode(identity, VerificationScopePasswordChange, nil, "en"))
+	fresh := extractStepUpCode(t, sent.content)
+	proof, err := VerifySecurityInput(identity, VerificationInput{
+		Method: VerificationMethodEmailCode, Scope: VerificationScopePasswordChange, Code: fresh,
+	})
+	require.NoError(t, err)
+	_, err = ConsumeOperationProof(proof.ProofToken, identity, VerificationOperation{Scope: VerificationScopePasswordChange})
+	require.NoError(t, err)
+}

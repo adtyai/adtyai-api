@@ -3,6 +3,7 @@ package common
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -14,8 +15,9 @@ import (
 var ErrVerificationStoreUnavailable = errors.New("verification code store unavailable")
 
 type verificationValue struct {
-	code string
-	time time.Time
+	code     string
+	time     time.Time
+	failures int
 }
 
 const (
@@ -25,10 +27,25 @@ const (
 	SecurityStepUpPurpose    = "adty_security_stepup"
 )
 
+// VerificationStatus is the outcome of checking a stored email verification code.
+type VerificationStatus int
+
+const (
+	VerificationOK VerificationStatus = iota
+	VerificationInvalid
+	VerificationLocked
+)
+
 var verificationMutex sync.Mutex
 var verificationMap map[string]verificationValue
 var verificationMapMaxSize = 10
 var VerificationValidMinutes = 10
+
+// Email-code guesses use MaxFailAttempts, the same official cap already used by
+// TOTP / login 2FA (and matched by EmailBindingMaxAttempts). After that cap the
+// current code stays unusable, including a later correct guess, until a new
+// code is issued for the same purpose and key. LockoutDuration is not applied
+// here; it remains a TOTP/2FA timed lock.
 
 func GenerateVerificationCode(length int) string {
 	code := uuid.New().String()
@@ -56,13 +73,38 @@ func VerificationStoreReady() error {
 	return nil
 }
 
+func formatVerificationPayload(issued time.Time, code string, failures int) string {
+	return issued.UTC().Format(time.RFC3339Nano) + "\n" + code + "\n" + strconv.Itoa(failures)
+}
+
+func parseVerificationPayload(payload string) (time.Time, string, int, bool) {
+	issuedText, rest, ok := strings.Cut(payload, "\n")
+	if !ok {
+		return time.Time{}, "", 0, false
+	}
+	code, failText, hasFailures := strings.Cut(rest, "\n")
+	failures := 0
+	if hasFailures {
+		parsed, err := strconv.Atoi(failText)
+		if err != nil || parsed < 0 {
+			return time.Time{}, "", 0, false
+		}
+		failures = parsed
+	}
+	issued, err := time.Parse(time.RFC3339Nano, issuedText)
+	if err != nil {
+		return time.Time{}, "", 0, false
+	}
+	return issued, code, failures, true
+}
+
 func RegisterVerificationCodeWithKey(key string, code string, purpose string) error {
 	if err := VerificationStoreReady(); err != nil {
 		return err
 	}
 	issued := time.Now()
 	if verificationStoreShared() {
-		payload := issued.UTC().Format(time.RFC3339Nano) + "\n" + code
+		payload := formatVerificationPayload(issued, code, 0)
 		if err := RDB.Set(context.Background(), verificationRedisKey(purpose, key), payload, time.Duration(VerificationValidMinutes)*time.Minute).Err(); err != nil {
 			SysError(LogText("verification code store failed: %s", err.Error()))
 			return ErrVerificationStoreUnavailable
@@ -82,60 +124,133 @@ func RegisterVerificationCodeWithKey(key string, code string, purpose string) er
 }
 
 func VerifyCodeWithKey(key string, code string, purpose string) bool {
-	if verificationStoreShared() {
-		_, ok := consumeSharedVerification(key, code, purpose, false)
-		return ok
-	}
-	verificationMutex.Lock()
-	defer verificationMutex.Unlock()
-	return verificationCodeMatches(key, code, purpose, time.Now())
+	return VerifyCodeWithKeyStatus(key, code, purpose) == VerificationOK
+}
+
+// VerifyCodeWithKeyStatus checks a stored code without consuming it on success.
+// Wrong guesses and a locked code still increment or honor the attempt limit.
+func VerifyCodeWithKeyStatus(key string, code string, purpose string) VerificationStatus {
+	_, status := checkVerificationCode(key, code, purpose, false)
+	return status
 }
 
 // ConsumeVerificationCodeWithKey 核对并立刻删掉验证码。同一个码只有一次能成功。
 // 返回的签发时间用于失败时按原有效期放回去。
 func ConsumeVerificationCodeWithKey(key string, code string, purpose string) (time.Time, bool) {
+	issued, status := ConsumeVerificationCodeWithKeyStatus(key, code, purpose)
+	return issued, status == VerificationOK
+}
+
+// ConsumeVerificationCodeWithKeyStatus is the status-aware form of
+// ConsumeVerificationCodeWithKey. A locked code is not consumed as success.
+func ConsumeVerificationCodeWithKeyStatus(key string, code string, purpose string) (time.Time, VerificationStatus) {
+	return checkVerificationCode(key, code, purpose, true)
+}
+
+func checkVerificationCode(key, code, purpose string, consume bool) (time.Time, VerificationStatus) {
 	if verificationStoreShared() {
-		return consumeSharedVerification(key, code, purpose, true)
+		return consumeSharedVerification(key, code, purpose, consume)
 	}
 	verificationMutex.Lock()
 	defer verificationMutex.Unlock()
-	now := time.Now()
-	if !verificationCodeMatches(key, code, purpose, now) {
-		return time.Time{}, false
-	}
-	issued := verificationMap[purpose+key].time
-	delete(verificationMap, purpose+key)
-	return issued, true
+	return checkMemoryVerification(key, code, purpose, time.Now(), consume)
 }
 
-func consumeSharedVerification(key, code, purpose string, deleteKey bool) (time.Time, bool) {
-	redisKey := verificationRedisKey(purpose, key)
-	var payload string
-	var err error
-	if deleteKey {
-		const consume = `
+func checkMemoryVerification(key, code, purpose string, now time.Time, consume bool) (time.Time, VerificationStatus) {
+	value, okay := verificationMap[purpose+key]
+	if !okay {
+		return time.Time{}, VerificationInvalid
+	}
+	if int(now.Sub(value.time).Seconds()) >= VerificationValidMinutes*60 {
+		delete(verificationMap, purpose+key)
+		return time.Time{}, VerificationInvalid
+	}
+	if value.failures >= MaxFailAttempts {
+		return time.Time{}, VerificationLocked
+	}
+	if code != value.code {
+		value.failures++
+		verificationMap[purpose+key] = value
+		if value.failures >= MaxFailAttempts {
+			return time.Time{}, VerificationLocked
+		}
+		return time.Time{}, VerificationInvalid
+	}
+	if consume {
+		delete(verificationMap, purpose+key)
+	}
+	return value.time, VerificationOK
+}
+
+// consumeSharedVerificationLua atomically checks, counts failed guesses, and
+// optionally consumes a matching code. ARGV: [code, maxAttempts, consumeFlag].
+const consumeSharedVerificationLua = `
 local payload = redis.call('GET', KEYS[1])
-if not payload then return '' end
-local separator = string.find(payload, '\n', 1, true)
-if not separator or string.sub(payload, separator + 1) ~= ARGV[1] then return '' end
-redis.call('DEL', KEYS[1])
-return payload`
-		payload, err = RDB.Eval(context.Background(), consume, []string{redisKey}, code).Text()
-	} else {
-		payload, err = RDB.Get(context.Background(), redisKey).Result()
+if not payload or payload == '' then
+  return 'missing'
+end
+local sep = string.find(payload, '\n', 1, true)
+if not sep then
+  return 'invalid'
+end
+local issued = string.sub(payload, 1, sep - 1)
+local rest = string.sub(payload, sep + 1)
+local sep2 = string.find(rest, '\n', 1, true)
+local stored
+local attempts = 0
+if sep2 then
+  stored = string.sub(rest, 1, sep2 - 1)
+  attempts = tonumber(string.sub(rest, sep2 + 1)) or 0
+else
+  stored = rest
+end
+local maxAttempts = tonumber(ARGV[2])
+if attempts >= maxAttempts then
+  return 'locked'
+end
+if stored == ARGV[1] then
+  if ARGV[3] == '1' then
+    redis.call('DEL', KEYS[1])
+  end
+  return 'ok\n' .. issued
+end
+attempts = attempts + 1
+local newPayload = issued .. '\n' .. stored .. '\n' .. tostring(attempts)
+local ttl = redis.call('PTTL', KEYS[1])
+if ttl > 0 then
+  redis.call('SET', KEYS[1], newPayload, 'PX', ttl)
+elseif ttl == -1 then
+  redis.call('SET', KEYS[1], newPayload)
+end
+if attempts >= maxAttempts then
+  return 'locked'
+end
+return 'mismatch'
+`
+
+func consumeSharedVerification(key, code, purpose string, deleteKey bool) (time.Time, VerificationStatus) {
+	redisKey := verificationRedisKey(purpose, key)
+	consumeFlag := 0
+	if deleteKey {
+		consumeFlag = 1
 	}
-	if err != nil || payload == "" {
-		return time.Time{}, false
-	}
-	issuedText, stored, ok := strings.Cut(payload, "\n")
-	if !ok || stored != code {
-		return time.Time{}, false
-	}
-	issued, err := time.Parse(time.RFC3339Nano, issuedText)
+	raw, err := RDB.Eval(context.Background(), consumeSharedVerificationLua, []string{redisKey}, code, MaxFailAttempts, consumeFlag).Result()
 	if err != nil {
-		return time.Time{}, false
+		return time.Time{}, VerificationInvalid
 	}
-	return issued, true
+	payload, _ := raw.(string)
+	switch {
+	case payload == "locked":
+		return time.Time{}, VerificationLocked
+	case strings.HasPrefix(payload, "ok\n"):
+		issued, err := time.Parse(time.RFC3339Nano, strings.TrimPrefix(payload, "ok\n"))
+		if err != nil {
+			return time.Time{}, VerificationInvalid
+		}
+		return issued, VerificationOK
+	default:
+		return time.Time{}, VerificationInvalid
+	}
 }
 
 // RestoreVerificationCodeWithKey 在消费之后的写入失败时把原码放回去。
@@ -145,7 +260,7 @@ func RestoreVerificationCodeWithKey(key string, code string, purpose string, iss
 		if code == "" || issued.IsZero() || int(time.Since(issued).Seconds()) >= VerificationValidMinutes*60 {
 			return
 		}
-		payload := issued.UTC().Format(time.RFC3339Nano) + "\n" + code
+		payload := formatVerificationPayload(issued, code, 0)
 		ttl := time.Duration(VerificationValidMinutes)*time.Minute - time.Since(issued)
 		if ttl <= 0 {
 			return
@@ -167,14 +282,6 @@ func RestoreVerificationCodeWithKey(key string, code string, purpose string, iss
 		return
 	}
 	verificationMap[purpose+key] = verificationValue{code: code, time: issued}
-}
-
-func verificationCodeMatches(key string, code string, purpose string, now time.Time) bool {
-	value, okay := verificationMap[purpose+key]
-	if !okay || int(now.Sub(value.time).Seconds()) >= VerificationValidMinutes*60 {
-		return false
-	}
-	return code == value.code
 }
 
 func DeleteKey(key string, purpose string) {

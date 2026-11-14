@@ -70,9 +70,13 @@ func consumeAccountDeletionCode(c *gin.Context, userID int, email string) (strin
 		common.ApiErrorT(c, "Email confirmation code is invalid")
 		return "", time.Time{}, false
 	}
-	issued, ok := common.ConsumeVerificationCodeWithKey(accountDeletionCodeKey(userID, email), code, common.AccountDeletionPurpose)
-	if !ok {
-		common.ApiErrorT(c, "Email confirmation code is invalid")
+	issued, status := common.ConsumeVerificationCodeWithKeyStatus(accountDeletionCodeKey(userID, email), code, common.AccountDeletionPurpose)
+	if status != common.VerificationOK {
+		if status == common.VerificationLocked {
+			common.ApiErrorT(c, service.ErrVerificationCodeLocked.Error())
+		} else {
+			common.ApiErrorT(c, "Email confirmation code is invalid")
+		}
 		return "", time.Time{}, false
 	}
 	return code, issued, true

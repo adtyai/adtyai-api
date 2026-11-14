@@ -1511,6 +1511,7 @@ func TestSecurityEnrollmentPublicErrorsDiscardWrappedDetails(t *testing.T) {
 	}{
 		{service.ErrVerificationFailed, "SECURITY_VERIFICATION_FAILED", service.ErrVerificationFailed.Error()},
 		{service.ErrVerificationLocked, "SECURITY_VERIFICATION_LOCKED", service.ErrVerificationLocked.Error()},
+		{service.ErrVerificationCodeLocked, "SECURITY_EMAIL_CODE_LOCKED", service.ErrVerificationCodeLocked.Error()},
 		{service.ErrOAuthAccountMismatch, "OAUTH_ACCOUNT_MISMATCH", service.ErrOAuthAccountMismatch.Error()},
 		{model.ErrTwoFASetupInvalid, "TWOFA_SETUP_INVALID", model.ErrTwoFASetupInvalid.Error()},
 	} {

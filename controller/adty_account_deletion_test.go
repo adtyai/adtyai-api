@@ -71,3 +71,34 @@ func TestAccountDeletionCodeSendFailureLeavesNoCode(t *testing.T) {
 	assert.Contains(t, sent.Body.String(), `"success":true`, sent.Body.String())
 	assert.Contains(t, sent.Body.String(), `"data"`)
 }
+
+func TestAccountDeletionCodeLocksAfterMaxAttempts(t *testing.T) {
+	user, identity := setupSecurityEnrollmentTest(t)
+	require.NoError(t, model.DB.Model(user).Update("email", "owner@example.com").Error)
+	operation := service.VerificationOperation{Scope: service.VerificationScopeAccountDelete}
+	require.NoError(t, common.RegisterVerificationCodeWithKey(accountDeletionCodeKey(user.Id, "owner@example.com"), "135790", common.AccountDeletionPurpose))
+
+	for attempt := 1; attempt <= common.MaxFailAttempts; attempt++ {
+		proof := issueSecurityEnrollmentProof(t, identity, operation, service.VerificationMethodPassword)
+		wrong := securityEnrollmentRequest("DELETE", "/api/user/self", `{"verification_code":"000000"}`, proof, identity, DeleteSelf)
+		assert.Contains(t, wrong.Body.String(), `"success":false`)
+		if attempt < common.MaxFailAttempts {
+			assert.Contains(t, wrong.Body.String(), "Email confirmation code is invalid")
+		} else {
+			assert.Contains(t, wrong.Body.String(), service.ErrVerificationCodeLocked.Error())
+		}
+	}
+
+	proof := issueSecurityEnrollmentProof(t, identity, operation, service.VerificationMethodPassword)
+	locked := securityEnrollmentRequest("DELETE", "/api/user/self", `{"verification_code":"135790"}`, proof, identity, DeleteSelf)
+	assert.Contains(t, locked.Body.String(), `"success":false`)
+	assert.Contains(t, locked.Body.String(), service.ErrVerificationCodeLocked.Error())
+	stored, err := model.GetUserById(user.Id, false)
+	require.NoError(t, err)
+	assert.False(t, stored.DeletedAt.Valid, "a locked email code must not delete the account")
+
+	require.NoError(t, common.RegisterVerificationCodeWithKey(accountDeletionCodeKey(user.Id, "owner@example.com"), "246810", common.AccountDeletionPurpose))
+	proof = issueSecurityEnrollmentProof(t, identity, operation, service.VerificationMethodPassword)
+	ok := securityEnrollmentRequest("DELETE", "/api/user/self", `{"verification_code":"246810"}`, proof, identity, DeleteSelf)
+	assert.Contains(t, ok.Body.String(), `"success":true`, ok.Body.String())
+}

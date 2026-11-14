@@ -117,6 +117,8 @@ func writeSecurityOperationError(c *gin.Context, err error) {
 		code, message = "SECURITY_VERIFICATION_FAILED", service.ErrVerificationFailed.Error()
 	case errors.Is(err, service.ErrVerificationLocked):
 		code, message = "SECURITY_VERIFICATION_LOCKED", service.ErrVerificationLocked.Error()
+	case errors.Is(err, service.ErrVerificationCodeLocked):
+		code, message = "SECURITY_EMAIL_CODE_LOCKED", service.ErrVerificationCodeLocked.Error()
 	case errors.Is(err, service.ErrVerificationUnavailable):
 		code, message = "SECURITY_METHOD_UNAVAILABLE", service.ErrVerificationUnavailable.Error()
 	case errors.Is(err, service.ErrVerificationFlowRequired):

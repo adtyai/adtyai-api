@@ -63,6 +63,7 @@ var (
 	ErrVerificationFailed         = errors.New("Verification failed. Please try again.")
 	ErrVerificationUnavailable    = errors.New("This verification method is currently unavailable.")
 	ErrVerificationLocked         = errors.New("Two-factor authentication is temporarily locked.")
+	ErrVerificationCodeLocked     = errors.New("Too many incorrect codes. Start email verification again.")
 	ErrVerificationFlowRequired   = errors.New("This verification method requires its dedicated verification flow.")
 	ErrVerificationContextInvalid = errors.New("The action details are invalid.")
 	ErrVerificationForbidden      = errors.New("You do not have permission to perform this action.")
@@ -935,8 +936,11 @@ func completeSecurityVerificationWithEmailCode(identity AuthIdentity, binding Ve
 		return nil, ErrVerificationFailed
 	}
 	key := SecurityStepUpCodeKey(email, input.SiteID, identity.UserID, input.Scope)
-	issued, ok := common.ConsumeVerificationCodeWithKey(key, code, common.SecurityStepUpPurpose)
-	if !ok {
+	issued, status := common.ConsumeVerificationCodeWithKeyStatus(key, code, common.SecurityStepUpPurpose)
+	if status != common.VerificationOK {
+		if status == common.VerificationLocked {
+			return nil, ErrVerificationCodeLocked
+		}
 		return nil, ErrVerificationFailed
 	}
 	proof, err := CompleteSecurityVerification(identity, binding, VerificationMethodEmailCode)
