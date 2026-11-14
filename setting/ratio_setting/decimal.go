@@ -1,53 +1,93 @@
 package ratio_setting
 
-import "github.com/shopspring/decimal"
+import (
+	"strings"
 
-// DecimalFromFloat converts a float64 setting at the storage boundary.
-// Financial arithmetic must use the returned decimal, not the original float.
+	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/shopspring/decimal"
+)
+
+// unsetModelRatioDecimal is the self-use fallback previously returned as 37.5.
+var unsetModelRatioDecimal = decimal.RequireFromString("37.5")
+
+// DecimalFromFloat converts a float64 setting at the storage or default-literal
+// boundary. After that conversion, financial arithmetic must use the decimal
+// authority rather than the original float.
 func DecimalFromFloat(value float64) decimal.Decimal {
 	return decimal.NewFromFloat(value)
 }
 
-// GetGroupRatioDecimal is GetGroupRatio converted once at the setting boundary.
+// GetGroupRatioDecimal reads the decimal group-ratio authority. Missing names
+// still default to 1, matching GetGroupRatio.
 func GetGroupRatioDecimal(name string) decimal.Decimal {
-	return DecimalFromFloat(GetGroupRatio(name))
+	if ratio, ok := groupRatioStore.getDecimal(name); ok {
+		return ratio
+	}
+	common.SysLog(common.LogText("group ratio not found: %s", name))
+	return decimal.NewFromInt(1)
 }
 
-// GetGroupGroupRatioDecimal is GetGroupGroupRatio converted once at the boundary.
+// GetGroupGroupRatioDecimal reads the decimal group-group ratio authority.
 func GetGroupGroupRatioDecimal(userGroup, usingGroup string) (decimal.Decimal, bool) {
-	ratio, ok := GetGroupGroupRatio(userGroup, usingGroup)
-	if !ok {
-		return decimal.Zero, false
-	}
-	return DecimalFromFloat(ratio), true
+	return groupGroupRatioStore.getDecimal(userGroup, usingGroup)
 }
 
-// GetModelPriceDecimal is GetModelPrice converted once at the setting boundary.
+// GetModelPriceDecimal reads the decimal model-price authority.
 func GetModelPriceDecimal(name string, printErr bool) (decimal.Decimal, bool) {
-	price, ok := GetModelPrice(name, printErr)
-	if !ok {
-		return decimal.Zero, false
+	name = FormatMatchingModelName(name)
+	if price, ok := modelPriceStore.getDecimal(name); ok {
+		return price, true
 	}
-	return DecimalFromFloat(price), true
+	if printErr {
+		common.SysError(common.LogText("model price not found: %s", name))
+	}
+	return decimal.Zero, false
 }
 
-// GetModelRatioDecimal is GetModelRatio converted once at the setting boundary.
+// GetModelRatioDecimal reads the decimal model-ratio authority.
 func GetModelRatioDecimal(name string) (decimal.Decimal, bool, string) {
-	ratio, ok, match := GetModelRatio(name)
-	return DecimalFromFloat(ratio), ok, match
+	name = FormatMatchingModelName(name)
+	if ratio, ok := modelRatioStore.getDecimal(name); ok {
+		return ratio, true, name
+	}
+	return unsetModelRatioDecimal, operation_setting.SelfUseModeEnabled, name
 }
 
-// GetCompletionRatioDecimal is GetCompletionRatio converted once at the boundary.
+// GetCompletionRatioDecimal follows the same configured vs hardcoded policy as
+// GetCompletionRatio, using the decimal authority for saved values.
 func GetCompletionRatioDecimal(name string) decimal.Decimal {
-	return DecimalFromFloat(GetCompletionRatio(name))
+	name = FormatMatchingModelName(name)
+	configured, ok := completionRatioStore.getDecimal(name)
+	if strings.Contains(name, "/") && ok {
+		return configured
+	}
+	hardCodedRatio, locked := getHardcodedCompletionModelRatio(name)
+	if locked {
+		return DecimalFromFloat(hardCodedRatio)
+	}
+	if ok {
+		return configured
+	}
+	return DecimalFromFloat(hardCodedRatio)
 }
 
-// GetAudioRatioDecimal is GetAudioRatio converted once at the setting boundary.
+// GetAudioRatioDecimal reads the decimal audio-ratio authority. Missing names
+// still default to 1, matching GetAudioRatio.
 func GetAudioRatioDecimal(name string) decimal.Decimal {
-	return DecimalFromFloat(GetAudioRatio(name))
+	name = FormatMatchingModelName(name)
+	if ratio, ok := audioRatioStore.getDecimal(name); ok {
+		return ratio
+	}
+	return decimal.NewFromInt(1)
 }
 
-// GetAudioCompletionRatioDecimal is GetAudioCompletionRatio converted once at the boundary.
+// GetAudioCompletionRatioDecimal reads the decimal audio completion-ratio
+// authority. Missing names still default to 1, matching GetAudioCompletionRatio.
 func GetAudioCompletionRatioDecimal(name string) decimal.Decimal {
-	return DecimalFromFloat(GetAudioCompletionRatio(name))
+	name = FormatMatchingModelName(name)
+	if ratio, ok := audioCompletionRatioStore.getDecimal(name); ok {
+		return ratio
+	}
+	return decimal.NewFromInt(1)
 }

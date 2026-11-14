@@ -6,6 +6,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting/config"
 	"github.com/QuantumNous/new-api/types"
+	"github.com/shopspring/decimal"
 )
 
 var defaultGroupRatio = map[string]float64{
@@ -15,6 +16,8 @@ var defaultGroupRatio = map[string]float64{
 }
 
 var groupRatioMap = types.NewRWMap[string, float64]()
+var groupRatioDecimals = types.NewRWMap[string, decimal.Decimal]()
+var groupRatioStore = newRatioJSONMap(groupRatioMap, groupRatioDecimals)
 
 var defaultGroupGroupRatio = map[string]map[string]float64{
 	"vip": {
@@ -23,13 +26,15 @@ var defaultGroupGroupRatio = map[string]map[string]float64{
 }
 
 var groupGroupRatioMap = types.NewRWMap[string, map[string]float64]()
+var groupGroupRatioDecimals = types.NewRWMap[string, map[string]decimal.Decimal]()
+var groupGroupRatioStore = newNestedRatioJSONMap(groupGroupRatioMap, groupGroupRatioDecimals)
 
 var defaultGroupSpecialUsableGroup = map[string]map[string]string{}
 
 type GroupRatioSetting struct {
-	GroupRatio              *types.RWMap[string, float64]            `json:"group_ratio"`
-	GroupGroupRatio         *types.RWMap[string, map[string]float64] `json:"group_group_ratio"`
-	GroupSpecialUsableGroup *types.RWMap[string, map[string]string]  `json:"group_special_usable_group"`
+	GroupRatio              *ratioJSONMap                           `json:"group_ratio"`
+	GroupGroupRatio         *nestedRatioJSONMap                     `json:"group_group_ratio"`
+	GroupSpecialUsableGroup *types.RWMap[string, map[string]string] `json:"group_special_usable_group"`
 }
 
 var groupRatioSetting GroupRatioSetting
@@ -40,11 +45,13 @@ func init() {
 
 	groupRatioMap.AddAll(defaultGroupRatio)
 	groupGroupRatioMap.AddAll(defaultGroupGroupRatio)
+	groupRatioStore.syncFromFloats()
+	groupGroupRatioStore.syncFromFloats()
 
 	groupRatioSetting = GroupRatioSetting{
 		GroupSpecialUsableGroup: groupSpecialUsableGroup,
-		GroupRatio:              groupRatioMap,
-		GroupGroupRatio:         groupGroupRatioMap,
+		GroupRatio:              groupRatioStore,
+		GroupGroupRatio:         groupGroupRatioStore,
 	}
 
 	config.GlobalConfig.Register("group_ratio_setting", &groupRatioSetting)
@@ -72,7 +79,7 @@ func GroupRatio2JSONString() string {
 }
 
 func UpdateGroupRatioByJSONString(jsonStr string) error {
-	return types.LoadFromJsonString(groupRatioMap, jsonStr)
+	return groupRatioStore.loadJSON(jsonStr)
 }
 
 func GetGroupRatio(name string) float64 {
@@ -101,7 +108,7 @@ func GroupGroupRatio2JSONString() string {
 }
 
 func UpdateGroupGroupRatioByJSONString(jsonStr string) error {
-	return types.LoadFromJsonString(groupGroupRatioMap, jsonStr)
+	return groupGroupRatioStore.loadJSON(jsonStr)
 }
 
 func CheckGroupRatio(jsonStr string) error {

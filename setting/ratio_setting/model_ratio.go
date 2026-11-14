@@ -8,6 +8,7 @@ import (
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	hostreasoning "github.com/QuantumNous/new-api/setting/reasoning"
 	"github.com/QuantumNous/new-api/types"
+	"github.com/shopspring/decimal"
 )
 
 // from songquanpeng/one-api
@@ -322,8 +323,16 @@ var defaultAudioCompletionRatio = map[string]float64{
 }
 
 var modelPriceMap = types.NewRWMap[string, float64]()
+var modelPriceDecimals = types.NewRWMap[string, decimal.Decimal]()
+var modelPriceStore = newRatioJSONMap(modelPriceMap, modelPriceDecimals)
+
 var modelRatioMap = types.NewRWMap[string, float64]()
+var modelRatioDecimals = types.NewRWMap[string, decimal.Decimal]()
+var modelRatioStore = newRatioJSONMap(modelRatioMap, modelRatioDecimals)
+
 var completionRatioMap = types.NewRWMap[string, float64]()
+var completionRatioDecimals = types.NewRWMap[string, decimal.Decimal]()
+var completionRatioStore = newRatioJSONMap(completionRatioMap, completionRatioDecimals)
 
 var defaultCompletionRatio = map[string]float64{
 	"gpt-4-gizmo-*":  2,
@@ -342,6 +351,11 @@ func InitRatioSettings() {
 	imageRatioMap.AddAll(defaultImageRatio)
 	audioRatioMap.AddAll(defaultAudioRatio)
 	audioCompletionRatioMap.AddAll(defaultAudioCompletionRatio)
+	modelPriceStore.syncFromFloats()
+	modelRatioStore.syncFromFloats()
+	completionRatioStore.syncFromFloats()
+	audioRatioStore.syncFromFloats()
+	audioCompletionRatioStore.syncFromFloats()
 }
 
 func GetModelPriceMap() map[string]float64 {
@@ -353,7 +367,11 @@ func ModelPrice2JSONString() string {
 }
 
 func UpdateModelPriceByJSONString(jsonStr string) error {
-	return types.LoadFromJsonStringWithCallback(modelPriceMap, jsonStr, InvalidateExposedDataCache)
+	if err := modelPriceStore.loadJSON(jsonStr); err != nil {
+		return err
+	}
+	InvalidateExposedDataCache()
+	return nil
 }
 
 // GetModelPrice 返回模型的价格，如果模型不存在则返回-1，false
@@ -371,7 +389,11 @@ func GetModelPrice(name string, printErr bool) (float64, bool) {
 }
 
 func UpdateModelRatioByJSONString(jsonStr string) error {
-	return types.LoadFromJsonStringWithCallback(modelRatioMap, jsonStr, InvalidateExposedDataCache)
+	if err := modelRatioStore.loadJSON(jsonStr); err != nil {
+		return err
+	}
+	InvalidateExposedDataCache()
+	return nil
 }
 
 // 处理带有思考预算的模型名称，方便统一定价
@@ -430,7 +452,11 @@ func CompletionRatio2JSONString() string {
 }
 
 func UpdateCompletionRatioByJSONString(jsonStr string) error {
-	return types.LoadFromJsonStringWithCallback(completionRatioMap, jsonStr, InvalidateExposedDataCache)
+	if err := completionRatioStore.loadJSON(jsonStr); err != nil {
+		return err
+	}
+	InvalidateExposedDataCache()
+	return nil
 }
 
 func GetCompletionRatio(name string) float64 {
@@ -645,7 +671,11 @@ var defaultImageRatio = map[string]float64{
 }
 var imageRatioMap = types.NewRWMap[string, float64]()
 var audioRatioMap = types.NewRWMap[string, float64]()
+var audioRatioDecimals = types.NewRWMap[string, decimal.Decimal]()
+var audioRatioStore = newRatioJSONMap(audioRatioMap, audioRatioDecimals)
 var audioCompletionRatioMap = types.NewRWMap[string, float64]()
+var audioCompletionRatioDecimals = types.NewRWMap[string, decimal.Decimal]()
+var audioCompletionRatioStore = newRatioJSONMap(audioCompletionRatioMap, audioCompletionRatioDecimals)
 
 func ImageRatio2JSONString() string {
 	return imageRatioMap.MarshalJSONString()
@@ -670,7 +700,11 @@ func AudioRatio2JSONString() string {
 }
 
 func UpdateAudioRatioByJSONString(jsonStr string) error {
-	return types.LoadFromJsonStringWithCallback(audioRatioMap, jsonStr, InvalidateExposedDataCache)
+	if err := audioRatioStore.loadJSON(jsonStr); err != nil {
+		return err
+	}
+	InvalidateExposedDataCache()
+	return nil
 }
 
 func AudioCompletionRatio2JSONString() string {
@@ -678,7 +712,11 @@ func AudioCompletionRatio2JSONString() string {
 }
 
 func UpdateAudioCompletionRatioByJSONString(jsonStr string) error {
-	return types.LoadFromJsonStringWithCallback(audioCompletionRatioMap, jsonStr, InvalidateExposedDataCache)
+	if err := audioCompletionRatioStore.loadJSON(jsonStr); err != nil {
+		return err
+	}
+	InvalidateExposedDataCache()
+	return nil
 }
 
 func GetModelRatioCopy() map[string]float64 {
