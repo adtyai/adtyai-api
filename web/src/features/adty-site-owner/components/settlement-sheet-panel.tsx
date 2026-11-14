@@ -41,7 +41,7 @@ type Line = {
   raw?: string
 }
 
-export function settlementSheetLines(
+function settlementSheetLines(
   t: TFunction,
   sheet: SettlementSheet,
   locale: string | undefined

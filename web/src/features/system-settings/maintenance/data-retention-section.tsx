@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -59,6 +59,26 @@ const ACTION_LABELS: Record<string, string> = {
   delete: 'Delete after the period',
   deidentify: 'De-identify after the period',
   exclude: 'Permanent retention (not auto-cleaned)',
+}
+
+function RetentionGate(props: {
+  isRoot: boolean
+  isError: boolean
+  error: unknown
+  children: ReactNode
+}) {
+  const { t } = useTranslation()
+  if (!props.isRoot) {
+    return <p className='text-sm'>{t('Only Root can view and change data retention periods.')}</p>
+  }
+  if (props.isError) {
+    return (
+      <p className='text-destructive text-sm'>
+        {getServerErrorMessage(props.error, t('Failed to load data'))}
+      </p>
+    )
+  }
+  return props.children
 }
 
 export function DataRetentionSection() {
@@ -154,13 +174,11 @@ export function DataRetentionSection() {
           'Root configures how long each data category is kept. Unconfigured categories are not auto-deleted. Changing a period only affects later cleanup runs and does not immediately delete historical data. Notification history cannot be given an automatic cleanup period.'
         )}
       </p>
-      {!isRoot ? (
-        <p className='text-sm'>{t('Only Root can view and change data retention periods.')}</p>
-      ) : settings.isError ? (
-        <p className='text-destructive text-sm'>
-          {getServerErrorMessage(settings.error, t('Failed to load data'))}
-        </p>
-      ) : (
+      <RetentionGate
+        isRoot={isRoot}
+        isError={settings.isError}
+        error={settings.error}
+      >
         <div className='flex flex-col gap-5'>
           {categories.map((category) => {
             const draft = drafts[category.category] ?? {
@@ -256,7 +274,7 @@ export function DataRetentionSection() {
             )
           })}
         </div>
-      )}
+      </RetentionGate>
     </SettingsSection>
   )
 }

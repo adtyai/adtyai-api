@@ -23,7 +23,7 @@ import type { WalletLotProjection } from '../types'
 export type { WalletLotProjection }
 
 /** Renders the official USD string from WalletUSDPartsFromQuota without a second rounding rule. */
-export function formatOfficialUsd(amount: string): string {
+function formatOfficialUsd(amount: string): string {
   return `$${amount}`
 }
 

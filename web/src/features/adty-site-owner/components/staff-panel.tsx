@@ -46,6 +46,15 @@ import { siteOwnerKeys } from '../api'
 import { useVerifiedOwnerMutation } from '../hooks/use-verified-owner-mutation'
 import { StaffDialog } from './staff-dialog'
 
+function staffRequestStatusLabel(
+  status: StaffBalanceRequest['status'],
+  t: (key: string) => string
+) {
+  if (status === 'pending') return t('Pending')
+  if (status === 'approved') return t('Approved')
+  return t('Rejected')
+}
+
 export function StaffPanel(props: { siteId: number }) {
   const { t } = useTranslation()
   const [page, setPage] = useState(1)
@@ -247,11 +256,7 @@ export function StaffPanel(props: { siteId: number }) {
                 id: 'status',
                 header: t('Status'),
                 cell: (row: StaffBalanceRequest) =>
-                  row.status === 'pending'
-                    ? t('Pending')
-                    : row.status === 'approved'
-                      ? t('Approved')
-                      : t('Rejected'),
+                  staffRequestStatusLabel(row.status, t),
               },
               {
                 id: 'actions',

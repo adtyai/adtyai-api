@@ -233,11 +233,12 @@ export function RefundDialog(props: OrderActionProps) {
   const refunds = listing.data?.facts?.manual_refunds ?? facts?.manual_refunds ?? []
   const selected =
     refunds.find((row) => row.refund_id === selectedId) ?? refunds[0]
+  const firstRefundId = refunds[0]?.refund_id
   useEffect(() => {
-    if (!selectedId && refunds[0]?.refund_id) {
-      setSelectedId(refunds[0].refund_id)
+    if (!selectedId && firstRefundId) {
+      setSelectedId(firstRefundId)
     }
-  }, [refunds, selectedId])
+  }, [firstRefundId, selectedId])
 
   const refresh = () => {
     void listing.refetch()

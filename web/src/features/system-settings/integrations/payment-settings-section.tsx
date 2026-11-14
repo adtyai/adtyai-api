@@ -85,6 +85,13 @@ import {
   type WaffoSettingsValues,
 } from './waffo-settings-section'
 
+/**
+ * Stripe and Creem hosted payment channels were retired in ISS-R2-0023. Their
+ * configuration tabs are kept behind this flag instead of being deleted so the
+ * retirement stays traceable; the block renders nothing while it is false.
+ */
+const LEGACY_HOSTED_PAYMENT_TABS_ENABLED = false
+
 function isHttpOriginUrl(value: string) {
   const trimmed = value.trim()
   if (!trimmed) return true
@@ -1290,7 +1297,7 @@ export function PaymentSettingsSection({
               </div>
             </TabsContent>
 
-            {false && (
+            {LEGACY_HOSTED_PAYMENT_TABS_ENABLED && (
               <>
                 <TabsContent
                   value='stripe'

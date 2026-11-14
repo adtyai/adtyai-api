@@ -28,11 +28,25 @@ import { formatTimestamp } from '@/lib/format'
 
 import { savePricing } from '../api'
 import { useVerifiedOwnerMutation } from '../hooks/use-verified-owner-mutation'
-import { newRowKey, pendingIncreases, siteMarkups } from '../lib/site-owner'
+import {
+  newRowKey,
+  pendingIncreases,
+  siteMarkups,
+  type PendingIncrease,
+} from '../lib/site-owner'
 import type { OwnerSite } from '../types'
 
 type GroupRow = { key: string; group: string; markup: string }
 type ModelRow = { key: string; model: string; markup: string }
+
+function pendingIncreaseGroupLabel(
+  item: PendingIncrease,
+  t: (key: string) => string
+) {
+  if (!item.model) return item.group || t('All groups')
+  if (!item.group) return item.model
+  return `${item.model} (${item.group})`
+}
 
 /** Site-wide markup, per-group markups, and per-model independent markups (A.10). */
 export function PricingPanel(props: { site: OwnerSite }) {
@@ -149,11 +163,7 @@ export function PricingPanel(props: { site: OwnerSite }) {
                 data-testid='pending-increase'
               >
                 {t('{{group}}: {{current}} → {{next}} from {{time}}', {
-                  group: item.model
-                    ? item.group
-                      ? `${item.model} (${item.group})`
-                      : item.model
-                    : item.group || t('All groups'),
+                  group: pendingIncreaseGroupLabel(item, t),
                   current: item.current,
                   next: item.next,
                   time: formatTimestamp(item.at),

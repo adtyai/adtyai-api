@@ -105,7 +105,9 @@ export function TeamPanel() {
     queryKey: ['adty-team', 'invites', team?.team_id],
     enabled: team?.role === 'leader' && Boolean(team?.team_id),
     queryFn: async () => {
-      const response = await api.get(`/api/adty/teams/${team!.team_id}/invites`)
+      const teamId = team?.team_id
+      if (!teamId) return []
+      const response = await api.get(`/api/adty/teams/${teamId}/invites`)
       const body = response.data as { success?: boolean; data?: { items?: TeamInvite[] } }
       if (!body.success) throw new Error('Failed to load data')
       return body.data?.items ?? []

@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { ErrorState } from '@/components/error-state'
@@ -36,6 +36,26 @@ type TranslationView = {
   saved_at: number
   tested_at: number
   translated_at: number
+}
+
+function ConfigGate(props: {
+  isPending: boolean
+  isError: boolean
+  error: unknown
+  onRetry: () => void
+  children: ReactNode
+}) {
+  const { t } = useTranslation()
+  if (props.isPending) return <LoadingState />
+  if (props.isError) {
+    return (
+      <ErrorState
+        description={getServerErrorMessage(props.error, t('Failed to load'))}
+        onRetry={props.onRetry}
+      />
+    )
+  }
+  return props.children
 }
 
 export function TranslationAdminPanel() {
@@ -92,14 +112,12 @@ export function TranslationAdminPanel() {
             {t('Chinese stays available when English is not ready. Customers are not charged.')}
           </p>
         </div>
-        {config.isPending ? (
-          <LoadingState />
-        ) : config.isError ? (
-          <ErrorState
-            description={getServerErrorMessage(config.error, t('Failed to load'))}
-            onRetry={() => void config.refetch()}
-          />
-        ) : (
+        <ConfigGate
+          isPending={config.isPending}
+          isError={config.isError}
+          error={config.error}
+          onRetry={() => void config.refetch()}
+        >
           <>
         {config.data && (
           <p className='text-muted-foreground text-sm tabular-nums'>
@@ -136,7 +154,7 @@ export function TranslationAdminPanel() {
         {result && <p className='text-sm whitespace-pre-wrap'>{result}</p>}
         {error && <p className='text-destructive text-sm'>{error}</p>}
           </>
-        )}
+        </ConfigGate>
         <SecureVerificationDialog {...verification.dialogProps} />
       </CardContent>
     </Card>

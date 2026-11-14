@@ -33,6 +33,16 @@ type BindView = {
   purpose: string
 }
 
+function boundLabel(
+  bound: boolean,
+  status: string,
+  t: (key: string) => string
+) {
+  if (bound) return t('Bound')
+  if (status === 'needs_reconfirm') return t('Needs confirmation')
+  return t('Not bound')
+}
+
 export function TelegramBindCard(props: { purpose: 'user' | 'admin' }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
@@ -106,7 +116,7 @@ export function TelegramBindCard(props: { purpose: 'user' | 'admin' }) {
         {status.data && (
           <p className='text-sm'>
             <span className='bg-muted mr-2 inline-block size-2 rounded-full align-middle' />
-            {bound ? t('Bound') : status.data.status === 'needs_reconfirm' ? t('Needs confirmation') : t('Not bound')}
+            {boundLabel(bound, status.data.status, t)}
             {status.data.telegram_user_id > 0 && (
               <span className='text-muted-foreground tabular-nums'> · {status.data.telegram_user_id}</span>
             )}

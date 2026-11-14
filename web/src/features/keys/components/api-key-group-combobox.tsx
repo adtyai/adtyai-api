@@ -70,6 +70,21 @@ type ApiKeyGroupComboboxProps = {
   disabled?: boolean
 }
 
+function statusDotClass(status: string, expired: boolean) {
+  const base = 'inline-block size-2 rounded-full'
+  if (status === 'degraded') return `bg-destructive ${base}`
+  if (expired) return `bg-muted ${base}`
+  return `bg-foreground ${base}`
+}
+
+function formatRate(
+  rate: number | null | undefined,
+  t: (key: string) => string
+) {
+  if (rate == null) return t('No data')
+  return `${Math.round(rate * 100)}%`
+}
+
 function GroupHealthLine(props: { health?: GroupHealth }) {
   const { t } = useTranslation()
   const health = props.health
@@ -92,12 +107,14 @@ function GroupHealthLine(props: { health?: GroupHealth }) {
       </span>
     )
   }
-  const request = health.request_success_rate == null ? t('No data') : `${Math.round(health.request_success_rate * 100)}%`
-  const probe = health.probe_samples ? (health.probe_rate == null ? t('No data') : `${Math.round(health.probe_rate * 100)}%`) : t('No data')
+  const request = formatRate(health.request_success_rate, t)
+  const probe = health.probe_samples
+    ? formatRate(health.probe_rate, t)
+    : t('No data')
   const expired = health.status === 'stale'
   return (
     <span className='text-muted-foreground mt-1 flex items-center gap-2 text-xs tabular-nums'>
-      <span className={health.status === 'degraded' ? 'bg-destructive inline-block size-2 rounded-full' : expired ? 'bg-muted inline-block size-2 rounded-full' : 'bg-foreground inline-block size-2 rounded-full'} />
+      <span className={statusDotClass(health.status, expired)} />
       {expired ? `${t('Expired')} · ` : ''}
       {t('Request success')} {request} · {health.request_samples} · {t('Probe availability')} {probe}
       {health.scope === 'site' ? ` · ${t('Site data')}` : ` · ${t('Platform data')}`}

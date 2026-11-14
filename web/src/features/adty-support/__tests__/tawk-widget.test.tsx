@@ -18,8 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, render, waitFor } from '@testing-library/react'
-import { createInstance } from 'i18next'
-import type { i18n as I18n } from 'i18next'
+import { createInstance, type i18n as I18n } from 'i18next'
 import { useMemo, type ReactNode } from 'react'
 import { I18nextProvider, initReactI18next } from 'react-i18next'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'

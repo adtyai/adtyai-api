@@ -96,6 +96,15 @@ function readAllowedGroups(raw?: string) {
   return raw
 }
 
+function balanceRequestStatusLabel(
+  status: AdminBalanceRequest['status'],
+  t: (key: string) => string
+) {
+  if (status === 'pending') return t('Pending')
+  if (status === 'approved') return t('Approved')
+  return t('Rejected')
+}
+
 function Info(props: { label: string; value: string }) {
   return (
     <div className='flex flex-col gap-0.5'>
@@ -227,14 +236,16 @@ function SiteActions(props: {
         body.visibility = serializeSiteVisibility(visibility)
       }
       if (allowedGroups.trim() !== readAllowedGroups(site.allowed_groups)) {
-        if (allowedGroups.trim() === '') clear.push('allowed_groups')
-        else
+        if (allowedGroups.trim() === '') {
+          clear.push('allowed_groups')
+        } else {
           body.allowed_groups = JSON.stringify(
             allowedGroups
               .split(',')
               .map((id) => id.trim())
               .filter(Boolean)
           )
+        }
       }
       if (clear.length > 0) body.clear = clear
       return adjustSite(site.id, body)
@@ -677,11 +688,7 @@ function RootBalanceRequests(props: { siteId: number }) {
               id: 'status',
               header: t('Status'),
               cell: (row: AdminBalanceRequest) =>
-                row.status === 'pending'
-                  ? t('Pending')
-                  : row.status === 'approved'
-                    ? t('Approved')
-                    : t('Rejected'),
+                balanceRequestStatusLabel(row.status, t),
             },
             {
               id: 'actions',
