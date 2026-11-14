@@ -1078,6 +1078,9 @@ func (user *User) delete(identity *AuthSessionIdentity) (int64, error) {
 		if ownsSite {
 			return ErrSiteOwnerCannotDelete
 		}
+		if err := rejectUserDeletePreconditions(tx, user.Id); err != nil {
+			return err
+		}
 		if AdtyBeforeUserDeleteHook != nil {
 			if err := AdtyBeforeUserDeleteHook(tx, user.Id); err != nil {
 				return err
@@ -1091,6 +1094,9 @@ func (user *User) delete(identity *AuthSessionIdentity) (int64, error) {
 		if err != nil {
 			return err
 		}
+		if err := revokeLiveAPIKeysWithTx(tx, user.Id); err != nil {
+			return err
+		}
 		if err := releaseSoftDeletedIdentity(tx, user.Id); err != nil {
 			return err
 		}
@@ -1102,6 +1108,9 @@ func (user *User) delete(identity *AuthSessionIdentity) (int64, error) {
 		return revokedAccessTokens, err
 	}
 	if _, err := RevokeAllUserSessions(user.Id, "user_deleted"); err != nil {
+		return revokedAccessTokens, err
+	}
+	if err := InvalidateUserTokensCache(user.Id); err != nil {
 		return revokedAccessTokens, err
 	}
 	return revokedAccessTokens, invalidateUserCache(user.Id)
@@ -1121,6 +1130,9 @@ func (user *User) HardDelete() (int64, error) {
 		}
 		if ownsSite {
 			return ErrSiteOwnerCannotDelete
+		}
+		if err := rejectUserDeletePreconditions(tx, user.Id); err != nil {
+			return err
 		}
 		deletedAuthVersion, err = IncrementUserAuthVersionWithTx(tx, user.Id)
 		if err != nil {

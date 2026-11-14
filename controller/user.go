@@ -1057,6 +1057,34 @@ func UpdateSelf(c *gin.Context) {
 	return
 }
 
+func writeUserDeleteBlockError(c *gin.Context, err error) bool {
+	switch {
+	case errors.Is(err, model.ErrCannotDeleteRootUser):
+		common.ApiErrorT(c, "Cannot delete super administrator account")
+	case errors.Is(err, model.ErrSiteOwnerCannotDelete):
+		common.ApiErrorT(c, "Close the site before deleting this account")
+	case errors.Is(err, model.ErrUserDeleteUnfinishedPayment):
+		common.ApiErrorT(c, model.ErrUserDeleteUnfinishedPayment.Error())
+	case errors.Is(err, model.ErrUserDeleteInFlightBilling):
+		common.ApiErrorT(c, model.ErrUserDeleteInFlightBilling.Error())
+	case errors.Is(err, model.ErrUserDeleteOpenBillingHold):
+		common.ApiErrorT(c, model.ErrUserDeleteOpenBillingHold.Error())
+	case errors.Is(err, model.ErrUserDeleteUnfinishedRefund):
+		common.ApiErrorT(c, model.ErrUserDeleteUnfinishedRefund.Error())
+	case errors.Is(err, model.ErrUserDeleteUnfinishedWithdraw):
+		common.ApiErrorT(c, model.ErrUserDeleteUnfinishedWithdraw.Error())
+	case errors.Is(err, model.ErrUserDeletePendingBalanceReq):
+		common.ApiErrorT(c, model.ErrUserDeletePendingBalanceReq.Error())
+	case errors.Is(err, model.ErrUserDeleteActiveStaff):
+		common.ApiErrorT(c, model.ErrUserDeleteActiveStaff.Error())
+	case errors.Is(err, model.ErrUserDeleteUnfinishedTeamFinance):
+		common.ApiErrorT(c, model.ErrUserDeleteUnfinishedTeamFinance.Error())
+	default:
+		return false
+	}
+	return true
+}
+
 func DeleteUser(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
@@ -1079,8 +1107,7 @@ func DeleteUser(c *gin.Context) {
 	}
 	revokedAccessTokens, err := model.HardDeleteUserById(id)
 	if err != nil {
-		if errors.Is(err, model.ErrSiteOwnerCannotDelete) {
-			common.ApiErrorT(c, "Close the site before deleting this account")
+		if writeUserDeleteBlockError(c, err) {
 			return
 		}
 		common.ApiError(c, err)
@@ -1125,12 +1152,7 @@ func DeleteSelf(c *gin.Context) {
 	}
 	if revokedAccessTokens, err = model.DeleteUserForSession(identity); err != nil {
 		common.RestoreVerificationCodeWithKey(accountDeletionCodeKey(account.Id, account.Email), code, common.AccountDeletionPurpose, issued)
-		if errors.Is(err, model.ErrCannotDeleteRootUser) {
-			common.ApiErrorT(c, "Cannot delete super administrator account")
-			return
-		}
-		if errors.Is(err, model.ErrSiteOwnerCannotDelete) {
-			common.ApiErrorT(c, "Close the site before deleting this account")
+		if writeUserDeleteBlockError(c, err) {
 			return
 		}
 		writeSecurityOperationError(c, err)
@@ -1296,8 +1318,7 @@ func ManageUser(c *gin.Context) {
 		}
 		revokedAccessTokens, err := user.Delete()
 		if err != nil {
-			if errors.Is(err, model.ErrSiteOwnerCannotDelete) {
-				common.ApiErrorT(c, "Close the site before deleting this account")
+			if writeUserDeleteBlockError(c, err) {
 				return
 			}
 			common.ApiError(c, err)
