@@ -8550,7 +8550,7 @@
     "Void": "Void",
     "Balances": "Balances",
     "Pending settlement": "Pending settlement",
-    "Earnings settle into the same account as referral commissions; withdraw them on the Referral page. A negative balance cannot be withdrawn.": "Earnings settle into the same account as referral commissions; withdraw them on the Referral page. A negative balance cannot be withdrawn.",
+    "Withdraw site earnings using Earnings wallet withdrawal on this tab. A negative balance cannot be withdrawn.": "Withdraw site earnings using Earnings wallet withdrawal on this tab. A negative balance cannot be withdrawn.",
     "All types": "All types",
     "Export earnings": "Export earnings",
     "Export report": "Export report",

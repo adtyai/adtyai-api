@@ -341,6 +341,23 @@ describe('EarningsPanel', () => {
     expect(screen.getByText('$12.50')).not.toHaveAttribute('data-negative')
     expect(screen.getAllByText('2026-10-01')).toHaveLength(2)
   })
+
+  it('points withdrawals to the earnings wallet withdrawal on this tab, not the Referral page', async () => {
+    api.getOwnerEarnings.mockResolvedValue(earnings)
+    render(wrap(<EarningsPanel />))
+    const guidance = await screen.findByText(
+      'Withdraw site earnings using Earnings wallet withdrawal on this tab. A negative balance cannot be withdrawn.'
+    )
+    expect(guidance).toBeInTheDocument()
+    expect(guidance).toHaveTextContent('A negative balance cannot be withdrawn.')
+    expect(guidance).not.toHaveTextContent('Referral page')
+    expect(guidance).not.toHaveTextContent('referral commissions')
+    expect(
+      screen.queryByText(
+        /settle into the same account as referral commissions|withdraw them on the Referral page/i
+      )
+    ).not.toBeInTheDocument()
+  })
 })
 
 describe('Sender domain', () => {

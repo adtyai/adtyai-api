@@ -266,7 +266,7 @@
     "Export report": "导出经营报表",
     "Export earnings": "导出收益流水",
     "All types": "全部类型",
-    "Earnings settle into the same account as referral commissions; withdraw them on the Referral page. A negative balance cannot be withdrawn.": "收益结算进和推广佣金同一个账户，请到推广返佣页提现。余额为负时不能提现。",
+    "Withdraw site earnings using Earnings wallet withdrawal on this tab. A negative balance cannot be withdrawn.": "请在本页使用「收益钱包提现」提取站长收益。余额为负时不能提现。",
     "Pending settlement": "待结算",
     "Balances": "余额",
     "Void": "已作废",

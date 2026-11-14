@@ -141,7 +141,7 @@ export function EarningsPanel() {
       />
       <p className='text-muted-foreground text-sm'>
         {t(
-          'Earnings settle into the same account as referral commissions; withdraw them on the Referral page. A negative balance cannot be withdrawn.'
+          'Withdraw site earnings using Earnings wallet withdrawal on this tab. A negative balance cannot be withdrawn.'
         )}
       </p>
       <div className='flex flex-wrap items-center gap-2'>
