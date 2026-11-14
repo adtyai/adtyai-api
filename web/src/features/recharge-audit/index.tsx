@@ -132,9 +132,10 @@ export function RechargeAudit(props: {
     queryFn: () => getRechargeAuditSummary(filters, props.ownerMode),
     enabled: props.ownerMode !== true,
   })
-  const refresh = () =>
-    queryClient.invalidateQueries({ queryKey: ['recharge-audit'] })
+  const refresh = () => {
+    void queryClient.invalidateQueries({ queryKey: ['recharge-audit'] })
     void invalidateSidebarBadges(queryClient)
+  }
   const total = ordersQuery.data?.total ?? 0
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE))
 

@@ -218,9 +218,10 @@ export function CommissionWithdrawalPanel() {
     queryKey: siteOwnerKeys.list('commission-withdrawals', {}),
     queryFn: getOwnerCommissionWithdrawals,
   })
-  const refresh = () =>
+  const refresh = () => {
     void client.invalidateQueries({ queryKey: siteOwnerKeys.all })
     void invalidateSidebarBadges(client)
+  }
 
   return (
     <section className='flex flex-col gap-4' aria-label={t('Invite commission withdrawal')}>

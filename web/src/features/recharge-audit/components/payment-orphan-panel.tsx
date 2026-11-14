@@ -61,9 +61,10 @@ export function PaymentOrphanPanel(props: PaymentOrphanPanelProps) {
     queryKey: ['recharge-audit', 'orphans', status],
     queryFn: () => getPaymentOrphans(status, 1),
   })
-  const refresh = () =>
-    queryClient.invalidateQueries({ queryKey: ['recharge-audit'] })
+  const refresh = () => {
+    void queryClient.invalidateQueries({ queryKey: ['recharge-audit'] })
     void invalidateSidebarBadges(queryClient)
+  }
   const credit = useMutation({
     mutationFn: (id: number) => creditPaymentOrphan(id, ''),
     onSuccess: () => {
