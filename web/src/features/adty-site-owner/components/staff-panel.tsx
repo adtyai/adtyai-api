@@ -65,13 +65,14 @@ export function StaffPanel(props: { siteId: number }) {
   const review = useMutation({
     mutationFn: (input: { id: number; approve: boolean }) =>
       reviewOwnerBalanceRequest(input.id, input.approve),
-    onSuccess: () =>
+    onSuccess: () => {
       void client.invalidateQueries({
         queryKey: siteOwnerKeys.list('balance-requests', {
           siteId: props.siteId,
         }),
-      }),
+      })
       void invalidateSidebarBadges(client)
+    },
     onError: (error) => handleServerError(error),
   })
   const list = useQuery({
