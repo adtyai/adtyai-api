@@ -16,10 +16,12 @@ func precheckUserDeleteTables(t *testing.T, db interface{ AutoMigrate(...any) er
 	t.Helper()
 	require.NoError(t, db.AutoMigrate(
 		&User{}, &UserSession{}, &Token{}, &UserAccessToken{}, &ExternalIdentityClaim{}, &AdtySite{},
+		&TwoFA{}, &TwoFABackupCode{}, &PasskeyCredential{}, &AuthFlow{}, &UserOAuthBinding{},
 		&TopUp{}, &AdtyTopupOrder{}, &AdtyBalanceLedger{}, &BillingOperation{},
 		&AdtyBillingHold{}, &AdtyManualRefund{}, &AdtySiteWithdrawal{},
 		&AdtySiteInviteWithdrawal{}, &ReferralWithdrawal{}, &AdtyStaffBalanceRequest{},
 		&AdtySiteStaff{}, &AdtyTeam{}, &AdtyTeamMember{}, &AdtyTeamKey{},
+		&AdtyVoucher{}, &AdtySiteEarningDaily{}, &PaymentOrphanEvent{},
 	))
 }
 
@@ -168,6 +170,54 @@ func TestUserDeletePreconditionsRefuseUnfinishedWorkAndLeaveAccountIntact(t *tes
 				require.NoError(t, db.Model(&AdtySiteStaff{}).Where("user_id = ?", user.Id).Update("status", "deleted").Error)
 			},
 		},
+		{
+			name: "issued pending voucher",
+			want: ErrUserDeleteUnfinishedVoucher,
+			seed: func(user *User) {
+				require.NoError(t, db.Create(&AdtyVoucher{
+					CodeHash: "hash-iss-" + user.Username, CodeTail: "abcd1234",
+					Purpose: AdtyVoucherPurposeSiteCustomer, Status: AdtyVoucherStatusPending,
+					AmountUSD: decimal.NewFromInt(10), Quota: 5_000_000,
+					SourceKind: AdtyVoucherSourceEarnings, IssuerId: user.Id,
+				}).Error)
+			},
+			clear: func(user *User) {
+				require.NoError(t, db.Model(&AdtyVoucher{}).Where("issuer_id = ?", user.Id).Update("status", AdtyVoucherStatusCancelled).Error)
+			},
+		},
+		{
+			name: "bound frozen margin voucher on a closed site",
+			want: ErrUserDeleteUnfinishedVoucher,
+			seed: func(user *User) {
+				site := AdtySite{OwnerUserId: user.Id, Subdomain: "vouch-" + user.Username, Status: AdtySiteStatusClosed}
+				require.NoError(t, db.Create(&site).Error)
+				require.NoError(t, db.Create(&AdtyVoucher{
+					CodeHash: "hash-bound-" + user.Username, CodeTail: "efgh5678",
+					Purpose: AdtyVoucherPurposeSiteMargin, Status: AdtyVoucherStatusFrozen,
+					AmountUSD: decimal.NewFromInt(20), Quota: 10_000_000,
+					SourceKind: AdtyVoucherSourcePlatform, TargetSiteId: site.Id, IssuerId: 1,
+				}).Error)
+			},
+			clear: func(user *User) {
+				require.NoError(t, db.Model(&AdtyVoucher{}).Where("code_hash = ?", "hash-bound-"+user.Username).Update("status", AdtyVoucherStatusCancelled).Error)
+			},
+		},
+		{
+			name: "pending site earning after the site closed",
+			want: ErrUserDeleteUnsettledSiteEarning,
+			seed: func(user *User) {
+				site := AdtySite{OwnerUserId: user.Id, Subdomain: "earn-" + user.Username, Status: AdtySiteStatusClosed}
+				require.NoError(t, db.Create(&site).Error)
+				require.NoError(t, db.Create(&AdtySiteEarningDaily{
+					SiteId: site.Id, SiteOwnerUserId: user.Id, UserId: user.Id,
+					Day: "2026-11-01", Kind: AdtySiteEarningUsage, Earning: decimal.NewFromInt(3),
+					Status: AdtySiteEarningPending,
+				}).Error)
+			},
+			clear: func(user *User) {
+				require.NoError(t, db.Model(&AdtySiteEarningDaily{}).Where("site_owner_user_id = ?", user.Id).Update("status", AdtySiteEarningAvailable).Error)
+			},
+		},
 	}
 
 	for _, tc := range cases {
@@ -295,4 +345,47 @@ func TestUserDeleteRefusesTeamLeaderWithPendingTeamTopupThenClosesWhenClear(t *t
 	var topUp TopUp
 	require.NoError(t, db.Where("trade_no = ?", "TTEAM-pending").First(&topUp).Error)
 	assert.Equal(t, TopUpStatusCanceled, topUp.Status)
+}
+
+func TestHardDeleteClosesTeamWhenLeaderHasNoUnfinishedFinance(t *testing.T) {
+	db := adtyTestDB(t)
+	precheckUserDeleteTables(t, db)
+	previous := AdtyBeforeUserDeleteHook
+	AdtyBeforeUserDeleteHook = func(tx *gorm.DB, userId int) error {
+		return tx.Model(&AdtyTeam{}).Where("leader_user_id = ? AND status = ?", userId, AdtyTeamStatusActive).
+			Updates(map[string]any{"status": AdtyTeamStatusClosed, "closed_at": time.Now().Unix()}).Error
+	}
+	t.Cleanup(func() { AdtyBeforeUserDeleteHook = previous })
+
+	leader := newPrecheckUser(t, "hard-del-leader")
+	team := AdtyTeam{LeaderUserId: leader.Id, Name: "HardOps", Status: AdtyTeamStatusActive, SharedQuota: 150000}
+	require.NoError(t, db.Create(&team).Error)
+
+	_, err := leader.HardDelete()
+	require.NoError(t, err)
+	var storedTeam AdtyTeam
+	require.NoError(t, db.First(&storedTeam, team.Id).Error)
+	assert.Equal(t, AdtyTeamStatusClosed, storedTeam.Status)
+	assert.EqualValues(t, 150000, storedTeam.SharedQuota)
+	var stored User
+	require.Error(t, db.Unscoped().First(&stored, leader.Id).Error)
+}
+
+func TestUserDeleteDoesNotInventPaymentOrphanAttribution(t *testing.T) {
+	db := adtyTestDB(t)
+	precheckUserDeleteTables(t, db)
+	user := newPrecheckUser(t, "orphan-unmapped")
+	require.NoError(t, db.Create(&PaymentOrphanEvent{
+		Provider: "epusdt", EventID: "orphan-" + user.Username, EventType: "paid",
+		ReferenceID: "no-order", Status: PaymentOrphanStatusPendingReview,
+	}).Error)
+	identity := newPrecheckSession(t, user)
+	_, err := DeleteUserForSession(identity)
+	require.NoError(t, err, "an orphan without user_id or an order is not invented as this account's unfinished work")
+	var stored User
+	require.NoError(t, db.Unscoped().First(&stored, user.Id).Error)
+	assert.True(t, stored.DeletedAt.Valid)
+	var orphan PaymentOrphanEvent
+	require.NoError(t, db.Where("event_id = ?", "orphan-"+user.Username).First(&orphan).Error)
+	assert.Equal(t, PaymentOrphanStatusPendingReview, orphan.Status)
 }

@@ -1087,6 +1087,10 @@ func writeUserDeleteBlockError(c *gin.Context, err error) bool {
 		common.ApiErrorT(c, model.ErrUserDeleteActiveStaff.Error())
 	case errors.Is(err, model.ErrUserDeleteUnfinishedTeamFinance):
 		common.ApiErrorT(c, model.ErrUserDeleteUnfinishedTeamFinance.Error())
+	case errors.Is(err, model.ErrUserDeleteUnfinishedVoucher):
+		common.ApiErrorT(c, model.ErrUserDeleteUnfinishedVoucher.Error())
+	case errors.Is(err, model.ErrUserDeleteUnsettledSiteEarning):
+		common.ApiErrorT(c, model.ErrUserDeleteUnsettledSiteEarning.Error())
 	default:
 		return false
 	}

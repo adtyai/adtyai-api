@@ -18,6 +18,8 @@ var (
 	ErrUserDeletePendingBalanceReq     = errors.New("Finish pending staff balance-approval requests before deleting this account")
 	ErrUserDeleteActiveStaff           = errors.New("Revoke the staff identity before deleting this account")
 	ErrUserDeleteUnfinishedTeamFinance = errors.New("Finish unfinished team finance before deleting this account")
+	ErrUserDeleteUnfinishedVoucher     = errors.New("Finish unredeemed or frozen vouchers before deleting this account")
+	ErrUserDeleteUnsettledSiteEarning  = errors.New("Finish unsettled site earnings before deleting this account")
 )
 
 // rejectUserDeletePreconditions blocks soft-delete and hard-delete when the
@@ -74,6 +76,16 @@ func rejectUserDeletePreconditions(tx *gorm.DB, userId int) error {
 	} else if blocked {
 		return ErrUserDeletePendingBalanceReq
 	}
+	if err := rejectUnfinishedVouchersForDelete(tx, userId); err != nil {
+		return err
+	}
+	if err := rejectUnsettledSiteEarningsForDelete(tx, userId); err != nil {
+		return err
+	}
+	// Payment orphan events have no user_id. When they also cannot be
+	// tied to an order, they cannot be safely attributed to this account.
+	// A.17.1 / DEC-018: leave that category for a later official mapping
+	// rather than inventing settlement or a guessed owner.
 	return nil
 }
 
@@ -153,6 +165,59 @@ func userHasUnfinishedWithdrawals(tx *gorm.DB, userId int) (bool, error) {
 	}
 	return userDeleteHasRows(tx, &ReferralWithdrawal{},
 		"user_id = ? AND status IN ?", userId, []string{ReferralWithdrawalStatusPending, ReferralWithdrawalStatusApproved})
+}
+
+// rejectUnfinishedVouchersForDelete refuses cancellation when the user is the
+// issuer of a pending or frozen code, or the owner of a site (including a
+// closed site) that still has a bound unredeemed owner/margin code. It does
+// not cancel or redeem the codes; G.8.15 remains the official cancel path.
+func rejectUnfinishedVouchersForDelete(tx *gorm.DB, userId int) error {
+	if blocked, err := userDeleteHasRows(tx, &AdtyVoucher{},
+		"issuer_id = ? AND status IN ?", userId, []string{AdtyVoucherStatusPending, AdtyVoucherStatusFrozen},
+	); err != nil {
+		return err
+	} else if blocked {
+		return ErrUserDeleteUnfinishedVoucher
+	}
+	if !tx.Migrator().HasTable(&AdtySite{}) || !tx.Migrator().HasTable(&AdtyVoucher{}) {
+		return nil
+	}
+	var siteIDs []int
+	if err := tx.Model(&AdtySite{}).Where("owner_user_id = ?", userId).Pluck("id", &siteIDs).Error; err != nil {
+		return err
+	}
+	if len(siteIDs) == 0 {
+		return nil
+	}
+	blocked, err := userDeleteHasRows(tx, &AdtyVoucher{},
+		"target_site_id IN ? AND purpose IN ? AND status IN ?",
+		siteIDs,
+		[]string{AdtyVoucherPurposeSiteOwner, AdtyVoucherPurposeSiteMargin},
+		[]string{AdtyVoucherStatusPending, AdtyVoucherStatusFrozen},
+	)
+	if err != nil {
+		return err
+	}
+	if blocked {
+		return ErrUserDeleteUnfinishedVoucher
+	}
+	return nil
+}
+
+// rejectUnsettledSiteEarningsForDelete refuses cancellation when daily site
+// earnings for this owner are still pending settlement, including leftovers
+// after the site has already closed. It does not book, void, or pay out.
+func rejectUnsettledSiteEarningsForDelete(tx *gorm.DB, userId int) error {
+	blocked, err := userDeleteHasRows(tx, &AdtySiteEarningDaily{},
+		"site_owner_user_id = ? AND status = ?", userId, AdtySiteEarningPending,
+	)
+	if err != nil {
+		return err
+	}
+	if blocked {
+		return ErrUserDeleteUnsettledSiteEarning
+	}
+	return nil
 }
 
 func userDeleteHasRows(tx *gorm.DB, model any, query string, args ...any) (bool, error) {

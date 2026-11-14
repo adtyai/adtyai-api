@@ -1134,6 +1134,11 @@ func (user *User) HardDelete() (int64, error) {
 		if err := rejectUserDeletePreconditions(tx, user.Id); err != nil {
 			return err
 		}
+		if AdtyBeforeUserDeleteHook != nil {
+			if err := AdtyBeforeUserDeleteHook(tx, user.Id); err != nil {
+				return err
+			}
+		}
 		deletedAuthVersion, err = IncrementUserAuthVersionWithTx(tx, user.Id)
 		if err != nil {
 			return err
