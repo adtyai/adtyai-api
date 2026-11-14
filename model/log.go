@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"time"
 
@@ -187,7 +188,26 @@ func RecordLogWithAdminInfo(userId int, logType int, content string, adminInfo *
 		if c != nil {
 			actorRole = c.GetInt("role")
 		}
-		RecordAuditLog(c, AuditLog{UserId: userId, Username: username, ActorRole: actorRole, Category: AuditCategoryOperation, Content: content, Other: AuditOther{AdminInfo: adminInfo, Op: operation}, Success: true})
+		params := map[string]any{}
+		action := content
+		if operation != nil {
+			action = operation.Action
+			for key, value := range operation.Params {
+				params[key] = value
+			}
+		}
+		siteID := InferOfficialAuditSiteID(c, params)
+		objectType, objectID := InferOfficialAuditObject(action, params, strconv.Itoa(userId))
+		before, after := InferOfficialAuditBeforeAfter(params)
+		if err := WriteOfficialAuditLog(c, OfficialAuditWrite{
+			UserId: userId, Username: username, ActorRole: actorRole, SiteID: OfficialAuditSiteIDPointer(siteID),
+			ObjectType: objectType, ObjectID: objectID, Action: action, Category: AuditCategoryOperation,
+			Content: content, Before: before, After: after, Reason: InferOfficialAuditReason(params),
+			ApprovalRef: InferOfficialAuditApprovalRef(params), Result: AuditResultSuccess, Success: true,
+			Other: AuditOther{AdminInfo: adminInfo, Op: operation},
+		}); err != nil {
+			common.SysLog(common.LogText("official audit log write failed: %s", err.Error()))
+		}
 		return
 	}
 	if len(request) > 0 && request[0] != nil {
@@ -216,7 +236,16 @@ func RecordLoginLog(userId, actorRole int, username string, content string, ip s
 	if len(request) > 0 {
 		c = request[0]
 	}
-	RecordAuditLog(c, AuditLog{UserId: userId, Username: username, ActorRole: actorRole, Category: AuditCategoryLogin, Action: action, Content: content, Ip: ip, Other: other, Success: true})
+	siteID := InferOfficialAuditSiteID(c, params)
+	objectType, objectID := InferOfficialAuditObject(action, params, strconv.Itoa(userId))
+	if err := WriteOfficialAuditLog(c, OfficialAuditWrite{
+		UserId: userId, Username: username, ActorRole: actorRole, SiteID: OfficialAuditSiteIDPointer(siteID),
+		ObjectType: objectType, ObjectID: objectID, Action: action, Category: AuditCategoryLogin,
+		Content: content, Reason: InferOfficialAuditReason(params), ApprovalRef: InferOfficialAuditApprovalRef(params),
+		Result: AuditResultSuccess, Success: true, Ip: ip, Other: other,
+	}); err != nil {
+		common.SysLog(common.LogText("official audit log write failed: %s", err.Error()))
+	}
 }
 
 // RecordOperationAuditLog writes new operation/security events to the audit table.
@@ -245,7 +274,18 @@ func RecordOperationAuditLog(logUserId, actorRole int, content string, ip string
 		status = auditInfo.Status
 		success = auditInfo.Success
 	}
-	RecordAuditLog(c, AuditLog{UserId: logUserId, Username: username, ActorRole: actorRole, Category: category, Action: action, Content: content, Ip: ip, Status: status, Success: success, Other: other})
+	siteID := InferOfficialAuditSiteID(c, params)
+	objectType, objectID := InferOfficialAuditObject(action, params, strconv.Itoa(logUserId))
+	before, after := InferOfficialAuditBeforeAfter(params)
+	if err := WriteOfficialAuditLog(c, OfficialAuditWrite{
+		UserId: logUserId, Username: username, ActorRole: actorRole, SiteID: OfficialAuditSiteIDPointer(siteID),
+		ObjectType: objectType, ObjectID: objectID, Action: action, Category: category, Content: content,
+		Before: before, After: after, Reason: InferOfficialAuditReason(params),
+		ApprovalRef: InferOfficialAuditApprovalRef(params), Result: OfficialAuditResult(success),
+		Success: success, Status: status, Ip: ip, Other: other,
+	}); err != nil {
+		common.SysLog(common.LogText("official audit log write failed: %s", err.Error()))
+	}
 }
 
 func RecordTopupLog(userId int, content *common.Message, callerIp string, paymentMethod string, callbackPaymentMethod string) {

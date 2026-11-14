@@ -331,6 +331,32 @@ function renderWithQueryClient(ui: ReactElement) {
   return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>)
 }
 
+it('surfaces official first-class audit fields for site, object, before/after, reason and approval', async () => {
+  const { dialog } = await openDetails({
+    ...entry,
+    site_id: 7,
+    object_type: 'user',
+    object_id: '22',
+    before_value: '{"quota":100}',
+    after_value: '{"quota":150}',
+    reason: 'staff adjustment',
+    approval_ref: 'approval-9',
+    result: 'success',
+  })
+  expect(within(dialog).getByText('Site ID')).toBeVisible()
+  expect(within(dialog).getByText('7')).toBeVisible()
+  expect(within(dialog).getByText('Object')).toBeVisible()
+  expect(within(dialog).getByText('user / 22')).toBeVisible()
+  expect(within(dialog).getByText('Before value')).toBeVisible()
+  expect(within(dialog).getByText('{"quota":100}')).toBeVisible()
+  expect(within(dialog).getByText('After value')).toBeVisible()
+  expect(within(dialog).getByText('{"quota":150}')).toBeVisible()
+  expect(within(dialog).getByText('Reason')).toBeVisible()
+  expect(within(dialog).getByText('staff adjustment')).toBeVisible()
+  expect(within(dialog).getByText('Approval association')).toBeVisible()
+  expect(within(dialog).getByText('approval-9')).toBeVisible()
+})
+
 async function openDetails(log: AuditLog = entry) {
   renderWithQueryClient(<AuditLogDetailsDialog entry={log} />)
   const trigger = screen.getByRole('button', { name: 'Details' })

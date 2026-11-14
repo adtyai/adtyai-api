@@ -223,10 +223,39 @@ func validateSitePreset(costFactor, maxMarkup *decimal.Decimal) error {
 }
 
 func recordSiteAuditTx(tx *gorm.DB, siteId int, action string, operatorId int, oldValue, newValue any, reason string) error {
-	return tx.Create(&model.AdtySiteAudit{
+	reason = truncateText(reason, 1000)
+	if err := tx.Create(&model.AdtySiteAudit{
 		SiteId: siteId, Action: action, OperatorId: operatorId,
-		OldValue: common.GetJsonString(oldValue), NewValue: common.GetJsonString(newValue), Reason: truncateText(reason, 1000),
-	}).Error
+		OldValue: common.GetJsonString(oldValue), NewValue: common.GetJsonString(newValue), Reason: reason,
+	}).Error; err != nil {
+		return err
+	}
+	username, role := "", 0
+	if operatorId > 0 {
+		var users []model.User
+		if err := tx.Select("id", "username", "role").Where("id = ?", operatorId).Limit(1).Find(&users).Error; err != nil {
+			return err
+		}
+		if len(users) > 0 {
+			username, role = users[0].Username, users[0].Role
+		}
+	}
+	officialAction := action
+	if !strings.Contains(action, ".") {
+		officialAction = "adty.site." + action
+	}
+	siteID := siteId
+	if err := model.WriteOfficialAuditLog(nil, model.OfficialAuditWrite{
+		UserId: operatorId, Username: username, ActorRole: role,
+		SiteID: &siteID, ObjectType: "site", ObjectID: strconv.Itoa(siteId),
+		Action: officialAction, Category: model.AuditCategoryOperation, Content: officialAction,
+		Before: oldValue, After: newValue, Reason: reason, Result: model.AuditResultSuccess, Success: true,
+	}); err != nil {
+		// Compatibility AdtySiteAudit is already in this transaction. A log-store
+		// failure must not roll back the business change.
+		common.SysLog(common.LogText("official site audit write failed: %s", err.Error()))
+	}
+	return nil
 }
 
 // OpenAdtySite 开站：三种方式最后都调它。在一个事务里锁用户行、查重、建站点、写审计；

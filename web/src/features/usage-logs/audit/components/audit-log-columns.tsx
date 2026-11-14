@@ -106,6 +106,32 @@ export function useAuditLogColumns(
     }
     columns.push(
       {
+        accessorKey: 'site_id',
+        header: t('Site ID'),
+        size: 80,
+        cell: ({ row }) => (
+          <span className='font-mono tabular-nums'>
+            {row.original.site_id === null || row.original.site_id === undefined
+              ? '—'
+              : row.original.site_id}
+          </span>
+        ),
+        meta: { label: t('Site ID'), mobileHidden: true },
+      },
+      {
+        id: 'object',
+        header: t('Object'),
+        size: 160,
+        accessorFn: (entry) =>
+          [entry.object_type, entry.object_id].filter(Boolean).join(' / '),
+        cell: ({ row, getValue }) => (
+          <span className='font-mono'>
+            {getValue<string>() || '—'}
+          </span>
+        ),
+        meta: { label: t('Object'), mobileHidden: true },
+      },
+      {
         accessorKey: 'ip',
         header: 'IP',
         size: 120,

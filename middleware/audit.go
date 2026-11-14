@@ -236,7 +236,21 @@ func TokenOperationAudit() gin.HandlerFunc {
 			// supplies the result without retaining an unbounded response body.
 			entry.Success = entry.Status < 400 && common.GetContextKeyBool(c, constant.ContextKeyTokenAuditSucceeded)
 		}
-		model.RecordAuditLog(c, entry)
+		paramMap := map[string]any{}
+		for key, value := range params {
+			paramMap[key] = value
+		}
+		siteID := model.InferOfficialAuditSiteID(c, paramMap)
+		objectType, objectID := model.InferOfficialAuditObject(action, paramMap, strconv.Itoa(entry.UserId), action)
+		before, after := model.InferOfficialAuditBeforeAfter(paramMap)
+		_ = model.WriteOfficialAuditLog(c, model.OfficialAuditWrite{
+			UserId: entry.UserId, Username: entry.Username, ActorRole: entry.ActorRole,
+			SiteID: model.OfficialAuditSiteIDPointer(siteID), ObjectType: objectType, ObjectID: objectID,
+			Action: action, Category: entry.Category, Content: content, Before: before, After: after,
+			Reason: model.InferOfficialAuditReason(paramMap), ApprovalRef: model.InferOfficialAuditApprovalRef(paramMap),
+			Result: model.OfficialAuditResult(entry.Success), Success: entry.Success, Status: entry.Status,
+			Other: entry.Other,
+		})
 	}
 }
 
@@ -300,5 +314,26 @@ func finishAccessTokenAudit(c *gin.Context) {
 	}
 	audit.entry.Status = audit.writer.Status()
 	audit.entry.Success = auditResponseSuccess(audit.entry.Status, audit.writer.body.Bytes())
-	model.RecordAuditLog(c, audit.entry)
+	if audit.entry.Action == "" {
+		audit.entry.Action = "access_token.request"
+	}
+	params := map[string]any{}
+	if audit.entry.Other.Op != nil {
+		for key, value := range audit.entry.Other.Op.Params {
+			params[key] = value
+		}
+	}
+	if audit.entry.TokenRef != "" {
+		params["token_ref"] = audit.entry.TokenRef
+	}
+	siteID := model.InferOfficialAuditSiteID(c, params)
+	objectType, objectID := model.InferOfficialAuditObject(audit.entry.Action, params, audit.entry.TokenRef, strconv.Itoa(audit.entry.UserId), audit.entry.Action)
+	_ = model.WriteOfficialAuditLog(c, model.OfficialAuditWrite{
+		UserId: audit.entry.UserId, Username: audit.entry.Username, ActorRole: audit.entry.ActorRole,
+		SiteID: model.OfficialAuditSiteIDPointer(siteID), ObjectType: objectType, ObjectID: objectID,
+		Action: audit.entry.Action, Category: audit.entry.Category, Content: audit.entry.Content,
+		Result: model.OfficialAuditResult(audit.entry.Success), Success: audit.entry.Success,
+		Status: audit.entry.Status, TokenRef: audit.entry.TokenRef, AuthMethod: audit.entry.AuthMethod,
+		EventId: audit.entry.EventId, CreatedAt: audit.entry.CreatedAt, Other: audit.entry.Other,
+	})
 }

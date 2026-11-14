@@ -41,6 +41,14 @@ export interface AuditLog {
   request_id: string
   content: string
   other: Record<string, unknown> | null
+  site_id?: number | null
+  object_type?: string
+  object_id?: string
+  before_value?: string
+  after_value?: string
+  reason?: string
+  approval_ref?: string
+  result?: string
 }
 export interface AuditFilters {
   p: number

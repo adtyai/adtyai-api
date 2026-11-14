@@ -332,11 +332,19 @@ func manageAdtyStaffCustomer(c *gin.Context, action, permission string) {
 
 // Record access before sending any customer data; no body, password or keys.
 func adtyStaffReadAudit(c *gin.Context, staff *model.AdtySiteStaff, action string, target int) bool {
-	err := model.DB.Create(&model.AdtySiteAudit{SiteId: staff.SiteId, OperatorId: staff.UserId, Action: action,
-		NewValue: common.GetJsonString(gin.H{"staff_id": staff.Id, "customer_id": target})}).Error
-	if err != nil {
+	after := gin.H{"staff_id": staff.Id, "customer_id": target}
+	if err := model.DB.Create(&model.AdtySiteAudit{SiteId: staff.SiteId, OperatorId: staff.UserId, Action: action,
+		NewValue: common.GetJsonString(after)}).Error; err != nil {
 		common.ApiError(c, err)
 		return false
+	}
+	if err := model.WriteOfficialAuditLog(c, model.OfficialAuditWrite{
+		UserId: staff.UserId, Username: c.GetString("username"), ActorRole: c.GetInt("role"),
+		SiteID: model.OfficialAuditSiteIDPointer(staff.SiteId), ObjectType: "site.staff",
+		ObjectID: strconv.Itoa(staff.Id), Action: "adty." + action, Category: model.AuditCategoryOperation,
+		Content: action, After: after, Result: model.AuditResultSuccess, Success: true,
+	}); err != nil {
+		common.SysLog(common.LogText("official staff audit write failed: %s", err.Error()))
 	}
 	return true
 }

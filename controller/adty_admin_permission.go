@@ -149,11 +149,11 @@ func appendAdtyPermissionAuditTx(c *gin.Context, tx *gorm.DB, userID, role int, 
 	}
 	slices.Sort(added)
 	slices.Sort(removed)
-	event := prepareManageAudit(c, userID, "adty.admin_permissions.update", map[string]any{
+	event := prepareManageAuditChange(c, userID, "adty.admin_permissions.update", map[string]any{
 		"id":      userID,
 		"added":   added,
 		"removed": removed,
 		"patch":   patch,
-	})
+	}, before, after, "", "")
 	return event, model.AppendAuditIntentTx(tx, event)
 }

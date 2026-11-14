@@ -157,10 +157,22 @@ func SaveAdtyPaymentScenes(actorID int, expected int64, scenes []model.AdtyPayme
 		if result.RowsAffected != 1 {
 			return model.ErrAdtyPaymentSceneConflict
 		}
-		audit.UserId, audit.Username, audit.ActorRole = actor.Id, actor.Username, actor.Role
-		audit.Category, audit.Action, audit.Success = model.AuditCategoryOperation, "adty.payment_scenes.update", true
-		audit.Other = model.AuditOther{RootInfo: model.AuditFields{"previous_version": expected, "version": expected + 1, "scene_count": len(scenes)}}
-		audit = model.PrepareAuditLog(nil, audit)
+		siteID := 0
+		prepared, err := model.PrepareOfficialAuditLog(nil, model.OfficialAuditWrite{
+			UserId: actor.Id, Username: actor.Username, ActorRole: actor.Role,
+			SiteID: &siteID, ObjectType: "adty.payment_scenes", ObjectID: "config",
+			Action: "adty.payment_scenes.update", Category: model.AuditCategoryOperation,
+			Content: "Updated payment scenes",
+			Before:  map[string]any{"version": expected},
+			After:   map[string]any{"version": expected + 1, "scene_count": len(scenes)},
+			Result:  model.AuditResultSuccess, Success: true,
+			EventId: audit.EventId, RequestId: audit.RequestId, CreatedAt: audit.CreatedAt,
+			Other: model.AuditOther{RootInfo: model.AuditFields{"previous_version": expected, "version": expected + 1, "scene_count": len(scenes)}},
+		})
+		if err != nil {
+			return err
+		}
+		audit = prepared
 		return model.AppendAuditIntentTx(tx, audit)
 	})
 	if err != nil {

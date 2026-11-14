@@ -269,22 +269,23 @@ func SaveDataRetentionPolicies(c *gin.Context, actorID int, actorName string, in
 		changes = append(changes, fmt.Sprintf("%s:%s->%s/%d", category, prev, action, *input.RetentionDays))
 	}
 	if len(changes) > 0 {
-		entry := model.AuditLog{
-			UserId:    actorID,
-			Username:  actorName,
-			ActorRole: common.RoleRootUser,
-			Category:  model.AuditCategoryOperation,
-			Action:    "data_retention.update",
-			Success:   true,
-			Content:   "data retention policy updated: " + strings.Join(changes, "; "),
+		siteID := 0
+		if err := model.WriteOfficialAuditLog(c, model.OfficialAuditWrite{
+			UserId: actorID, Username: actorName, ActorRole: common.RoleRootUser,
+			SiteID: &siteID, ObjectType: "data_retention", ObjectID: "policy",
+			Action: "data_retention.update", Category: model.AuditCategoryOperation,
+			Content: "data retention policy updated: " + strings.Join(changes, "; "),
+			After:   strings.Join(changes, "; "),
+			Result:  model.AuditResultSuccess, Success: true,
 			Other: model.AuditOther{
 				Op: &model.AuditOperation{
 					Action: "data_retention.update",
 					Params: model.AuditFields{"changes": strings.Join(changes, "; ")},
 				},
 			},
+		}); err != nil {
+			return err
 		}
-		model.RecordAuditLog(c, entry)
 	}
 	return nil
 }

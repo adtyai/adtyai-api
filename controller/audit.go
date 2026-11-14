@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
 
 	"github.com/gin-gonic/gin"
 )
@@ -198,12 +200,68 @@ func prepareManageAudit(c *gin.Context, targetUserID int, action string, params 
 	if targetUserID > 0 && targetUserID != c.GetInt("id") {
 		params["target_user_id"] = targetUserID
 	}
-	return model.PrepareAuditLog(c, model.AuditLog{
+	siteID := service.AdtyRequestSiteID(c)
+	if inferred := model.InferOfficialAuditSiteID(c, params); inferred != 0 || params["site_id"] != nil {
+		siteID = inferred
+	}
+	objectType, objectID := model.InferOfficialAuditObject(action, params, strconv.Itoa(targetUserID), strconv.Itoa(c.GetInt("id")), action)
+	before, after := model.InferOfficialAuditBeforeAfter(params)
+	entry, err := model.PrepareOfficialAuditLog(c, model.OfficialAuditWrite{
 		UserId: c.GetInt("id"), Username: c.GetString("username"), ActorRole: c.GetInt("role"),
-		Category: model.AuditCategoryOperation, Action: action, Content: auditContentEN(action, params),
-		Status: http.StatusOK, Success: true,
+		SiteID: model.OfficialAuditSiteIDPointer(siteID), ObjectType: objectType, ObjectID: objectID,
+		Action: action, Category: model.AuditCategoryOperation, Content: auditContentEN(action, params),
+		Before: before, After: after, Reason: model.InferOfficialAuditReason(params),
+		ApprovalRef: model.InferOfficialAuditApprovalRef(params), Result: model.AuditResultSuccess,
+		Success: true, Status: http.StatusOK,
 		Other: model.AuditOther{Op: &model.AuditOperation{Action: action, Params: params}, AdminInfo: auditOperatorInfo(c)},
 	})
+	if err != nil {
+		return model.AuditLog{}
+	}
+	return entry
+}
+
+// prepareManageAuditChange freezes an official G.13.2 record with explicit
+// before/after business values, reason, and optional approval association.
+func prepareManageAuditChange(c *gin.Context, targetUserID int, action string, params map[string]any, before, after any, reason, approvalRef string) model.AuditLog {
+	if params == nil {
+		params = map[string]any{}
+	}
+	if targetUserID > 0 && targetUserID != c.GetInt("id") {
+		params["target_user_id"] = targetUserID
+	}
+	if strings.TrimSpace(reason) != "" && params["reason"] == nil {
+		params["reason"] = reason
+	}
+	if strings.TrimSpace(approvalRef) != "" && params["approval_ref"] == nil {
+		params["approval_ref"] = approvalRef
+	}
+	siteID := service.AdtyRequestSiteID(c)
+	if inferred := model.InferOfficialAuditSiteID(c, params); inferred != 0 || params["site_id"] != nil {
+		siteID = inferred
+	}
+	objectType, objectID := model.InferOfficialAuditObject(action, params, strconv.Itoa(targetUserID), strconv.Itoa(c.GetInt("id")), action)
+	if before == nil && after == nil {
+		before, after = model.InferOfficialAuditBeforeAfter(params)
+	}
+	if strings.TrimSpace(reason) == "" {
+		reason = model.InferOfficialAuditReason(params)
+	}
+	if strings.TrimSpace(approvalRef) == "" {
+		approvalRef = model.InferOfficialAuditApprovalRef(params)
+	}
+	entry, err := model.PrepareOfficialAuditLog(c, model.OfficialAuditWrite{
+		UserId: c.GetInt("id"), Username: c.GetString("username"), ActorRole: c.GetInt("role"),
+		SiteID: model.OfficialAuditSiteIDPointer(siteID), ObjectType: objectType, ObjectID: objectID,
+		Action: action, Category: model.AuditCategoryOperation, Content: auditContentEN(action, params),
+		Before: before, After: after, Reason: reason, ApprovalRef: approvalRef,
+		Result: model.AuditResultSuccess, Success: true, Status: http.StatusOK,
+		Other: model.AuditOther{Op: &model.AuditOperation{Action: action, Params: params}, AdminInfo: auditOperatorInfo(c)},
+	})
+	if err != nil {
+		return model.AuditLog{}
+	}
+	return entry
 }
 
 func deliverCommittedAudits(c *gin.Context, events []model.AuditLog) {

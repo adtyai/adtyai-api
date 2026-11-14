@@ -27,25 +27,33 @@ const (
 // AuditLog is retained independently of usage logs and their cleanup/TTL policy.
 // TokenRef identifies a PAT generation without storing its bearer credential.
 type AuditLog struct {
-	Id         int        `json:"id"`
-	EventId    string     `json:"event_id" gorm:"type:varchar(64);uniqueIndex;index:idx_audit_time_event,priority:2"`
-	UserId     int        `json:"user_id" gorm:"index:idx_audit_user_time,priority:1"`
-	Username   string     `json:"username" gorm:"type:varchar(64);index"`
-	ActorRole  int        `json:"actor_role"` // Immutable role of the actor when the event began, not the log owner.
-	CreatedAt  int64      `json:"created_at" gorm:"type:bigint;index:idx_audit_user_time,priority:2;index:idx_audit_token_time,priority:2;index;index:idx_audit_time_event,priority:1"`
-	Category   string     `json:"category" gorm:"type:varchar(24);index"`
-	Action     string     `json:"action" gorm:"type:varchar(128)"`
-	TokenRef   string     `json:"token_ref" gorm:"type:varchar(64);index:idx_audit_token_time,priority:1"`
-	AuthMethod string     `json:"auth_method" gorm:"type:varchar(24)"`
-	Ip         string     `json:"ip" gorm:"type:varchar(64)"`
-	UserAgent  string     `json:"user_agent" gorm:"type:varchar(512)"`
-	Method     string     `json:"method" gorm:"type:varchar(16)"`
-	Route      string     `json:"route" gorm:"type:varchar(255)"`
-	Status     int        `json:"status"`
-	Success    bool       `json:"success"`
-	RequestId  string     `json:"request_id" gorm:"type:varchar(64);index"`
-	Content    string     `json:"content" gorm:"type:text"`
-	Other      AuditOther `json:"other" gorm:"type:json"`
+	Id          int        `json:"id"`
+	EventId     string     `json:"event_id" gorm:"type:varchar(64);uniqueIndex;index:idx_audit_time_event,priority:2"`
+	UserId      int        `json:"user_id" gorm:"index:idx_audit_user_time,priority:1"`
+	Username    string     `json:"username" gorm:"type:varchar(64);index"`
+	ActorRole   int        `json:"actor_role"` // Immutable role of the actor when the event began, not the log owner.
+	CreatedAt   int64      `json:"created_at" gorm:"type:bigint;index:idx_audit_user_time,priority:2;index:idx_audit_token_time,priority:2;index;index:idx_audit_time_event,priority:1;index:idx_audit_site_time,priority:2"`
+	Category    string     `json:"category" gorm:"type:varchar(24);index"`
+	Action      string     `json:"action" gorm:"type:varchar(128)"`
+	TokenRef    string     `json:"token_ref" gorm:"type:varchar(64);index:idx_audit_token_time,priority:1"`
+	AuthMethod  string     `json:"auth_method" gorm:"type:varchar(24)"`
+	Ip          string     `json:"ip" gorm:"type:varchar(64)"`
+	UserAgent   string     `json:"user_agent" gorm:"type:varchar(512)"`
+	Method      string     `json:"method" gorm:"type:varchar(16)"`
+	Route       string     `json:"route" gorm:"type:varchar(255)"`
+	Status      int        `json:"status"`
+	Success     bool       `json:"success"`
+	RequestId   string     `json:"request_id" gorm:"type:varchar(64);index"`
+	Content     string     `json:"content" gorm:"type:text"`
+	Other       AuditOther `json:"other" gorm:"type:json"`
+	SiteId      *int       `json:"site_id" gorm:"index:idx_audit_site_time,priority:1"`
+	ObjectType  string     `json:"object_type" gorm:"type:varchar(64);index:idx_audit_object,priority:1"`
+	ObjectId    string     `json:"object_id" gorm:"type:varchar(128);index:idx_audit_object,priority:2"`
+	BeforeValue string     `json:"before_value" gorm:"type:text"`
+	AfterValue  string     `json:"after_value" gorm:"type:text"`
+	Reason      string     `json:"reason" gorm:"type:text"`
+	ApprovalRef string     `json:"approval_ref" gorm:"type:varchar(128);index"`
+	Result      string     `json:"result" gorm:"type:varchar(32)"`
 }
 
 type AuditLogFilter struct {
@@ -133,6 +141,7 @@ func writeAuditLog(ctx context.Context, entry AuditLog, idempotent bool) error {
 	if LOG_DB == nil {
 		return errors.New("log database unavailable")
 	}
+	redactAuditLog(&entry)
 	entry.Id = 0
 	var row any = &entry
 	if common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
@@ -341,14 +350,35 @@ func MigrateAuditLogs() error {
 	if !common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
 		return LOG_DB.AutoMigrate(&AuditLog{})
 	}
-	return LOG_DB.Exec(`CREATE TABLE IF NOT EXISTS audit_logs (
+	if err := LOG_DB.Exec(`CREATE TABLE IF NOT EXISTS audit_logs (
 		id Int64 DEFAULT 0, event_id String, user_id Int64, username String, actor_role Int32,
 		created_at Int64, category String, action String, token_ref String,
 		auth_method String, ip String, user_agent String, method String, route String,
-		status Int32, success UInt8, request_id String, content String, other JSON
+		status Int32, success UInt8, request_id String, content String, other JSON,
+		site_id Nullable(Int64), object_type String, object_id String, before_value String,
+		after_value String, reason String, approval_ref String, result String
 	) ENGINE = MergeTree()
 	PARTITION BY toYYYYMM(toDateTime(created_at))
-	ORDER BY (created_at, event_id)`).Error
+	ORDER BY (created_at, event_id)`).Error; err != nil {
+		return err
+	}
+	// Existing ClickHouse stores created before G.13.2 keep historical rows
+	// unchanged; new columns are added empty when the table already exists.
+	for _, stmt := range []string{
+		`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS site_id Nullable(Int64)`,
+		`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS object_type String`,
+		`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS object_id String`,
+		`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS before_value String`,
+		`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS after_value String`,
+		`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS reason String`,
+		`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS approval_ref String`,
+		`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS result String`,
+	} {
+		if err := LOG_DB.Exec(stmt).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func ValidAuditCategory(category string) bool {

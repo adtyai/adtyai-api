@@ -55,11 +55,32 @@ export function AuditLogDetailsDialog(props: { entry: AuditLog }) {
     { label: t('Request ID'), value: props.entry.request_id },
     { label: t('Token identifier'), value: props.entry.token_ref },
   ].filter((field) => !!field.value)
+  const officialFields = [
+    {
+      label: t('Site ID'),
+      value:
+        props.entry.site_id === null || props.entry.site_id === undefined
+          ? ''
+          : String(props.entry.site_id),
+      copyable: true,
+    },
+    {
+      label: t('Object'),
+      value: [props.entry.object_type, props.entry.object_id]
+        .filter((part) => !!part)
+        .join(' / '),
+    },
+    { label: t('Before value'), value: props.entry.before_value, copyable: true },
+    { label: t('After value'), value: props.entry.after_value, copyable: true },
+    { label: t('Reason'), value: props.entry.reason },
+    { label: t('Approval association'), value: props.entry.approval_ref },
+  ].filter((field) => field.value !== undefined && field.value !== null && field.value !== '')
   const hasOperation =
     detail.actor ||
     detail.target ||
     detail.authentication ||
     detail.fields.length ||
+    officialFields.length ||
     detail.metadataUnavailable
   const hasRequest = Boolean(
     props.entry.method ||
@@ -134,6 +155,9 @@ export function AuditLogDetailsDialog(props: { entry: AuditLog }) {
               label={t('Authentication Method')}
               value={detail.authentication}
             />
+          )}
+          {officialFields.length > 0 && (
+            <AuditDetailFields fields={officialFields} />
           )}
           {!detail.operation && <AuditDetailFields fields={detail.fields} />}
           {detail.metadataUnavailable && (
