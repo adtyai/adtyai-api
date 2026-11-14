@@ -364,6 +364,41 @@ func TestConsumeFundBatchesShortfallDoesNotFireHook(t *testing.T) {
 	require.EqualValues(t, 20, remainingBySource(t, db, 46)["thin:principal"])
 }
 
+func TestConsumeFundBatchesQuietTxFiresBonusHookNotPrincipalHook(t *testing.T) {
+	db := openMemoryFundBatchDB(t)
+	require.NoError(t, db.Create([]AdtyFundBatch{
+		{UserId: 47, Kind: "principal", Source: "topup-p", Original: 50, Remaining: 50},
+		{UserId: 47, Kind: "bonus", Source: "topup-b", Original: 20, Remaining: 20},
+	}).Error)
+
+	prevPrincipal := AdtyAfterPrincipalSpentTx
+	prevBonus := AdtyAfterBonusSpentTx
+	principalCalled := 0
+	var bonusSpends []AdtyBonusSpend
+	AdtyAfterPrincipalSpentTx = func(tx *gorm.DB, userID int, principalQuota int64) error {
+		principalCalled++
+		t.Errorf("QuietTx fired principal-spent hook user=%d quota=%d", userID, principalQuota)
+		return nil
+	}
+	AdtyAfterBonusSpentTx = func(tx *gorm.DB, userID int, spends []AdtyBonusSpend) error {
+		require.Equal(t, 47, userID)
+		bonusSpends = append([]AdtyBonusSpend(nil), spends...)
+		return nil
+	}
+	t.Cleanup(func() {
+		AdtyAfterPrincipalSpentTx = prevPrincipal
+		AdtyAfterBonusSpentTx = prevBonus
+	})
+
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return ConsumeAdtyFundBatchesQuietTx(tx, 47, 60, 70)
+	}))
+	require.Equal(t, 0, principalCalled)
+	require.Equal(t, []AdtyBonusSpend{{Source: "topup-b", Quota: 10}}, bonusSpends)
+	require.EqualValues(t, 0, remainingBySource(t, db, 47)["topup-p:principal"])
+	require.EqualValues(t, 10, remainingBySource(t, db, 47)["topup-b:bonus"])
+}
+
 func TestSumFundBatchRemainingByKind(t *testing.T) {
 	db := openMemoryFundBatchDB(t)
 	previous := DB

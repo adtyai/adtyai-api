@@ -81,9 +81,10 @@ type AdtyBonusSpend struct {
 	Quota  int64
 }
 
-// AdtyAfterBonusSpentTx runs in the charge transaction after bonus lots are
-// reduced. Official adjustments and refunds that use the quiet/reclaim path
-// do not call it.
+// AdtyAfterBonusSpentTx runs after bonus lots are reduced, both on usage
+// charges and on the quiet path used by official adjustments and staff
+// approvals, so the matching site gift-guarantee can be released. Refunds
+// that reclaim lots by source do not call it.
 var AdtyAfterBonusSpentTx func(tx *gorm.DB, userID int, spends []AdtyBonusSpend) error
 
 // ConsumeAdtyFundBatchesTx spends principal lots before bonus lots.
@@ -99,6 +100,8 @@ func ConsumeAdtyFundBatchesTx(tx *gorm.DB, userID int, amount, balanceBefore int
 // ConsumeAdtyFundBatchesQuietTx spends lots in FIFO order so remaining tracks
 // a non-charge wallet debit. It does not fire the principal-spent hook; that
 // hook is for usage charges, not official adjustments or staff approvals.
+// It does fire the bonus-spent hook so an approved or official reduction that
+// consumes top-up bonus lots can release the corresponding site gift guarantee.
 func ConsumeAdtyFundBatchesQuietTx(tx *gorm.DB, userID int, amount, balanceBefore int64) error {
 	_, err := consumeAdtyFundBatchesTx(tx, userID, amount, balanceBefore, false)
 	return err
@@ -152,12 +155,15 @@ func consumeAdtyFundBatchesTx(tx *gorm.DB, userID int, amount, balanceBefore int
 	if amount > 0 {
 		return taken, adtyFundBatchShortfallError(amount)
 	}
+	// notifyPrincipalSpent gates only the usage-charge hook. The bonus hook
+	// still runs on the quiet path so manual/staff reductions release the
+	// corresponding site gift-guarantee without debiting the operating wallet.
 	if notifyPrincipalSpent && principalTaken > 0 && AdtyAfterPrincipalSpentTx != nil {
 		if err := AdtyAfterPrincipalSpentTx(tx, userID, principalTaken); err != nil {
 			return taken, err
 		}
 	}
-	if notifyPrincipalSpent && len(bonusBySource) > 0 && AdtyAfterBonusSpentTx != nil {
+	if len(bonusBySource) > 0 && AdtyAfterBonusSpentTx != nil {
 		spends := make([]AdtyBonusSpend, 0, len(bonusBySource))
 		for source, quota := range bonusBySource {
 			spends = append(spends, AdtyBonusSpend{Source: source, Quota: quota})

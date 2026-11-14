@@ -551,7 +551,7 @@ func TestRefundReleaseUsesRemainingNetHoldAfterGiftSpend(t *testing.T) {
 	}))
 }
 
-func TestQuietBonusDebitDoesNotSpendSiteGiftGuarantee(t *testing.T) {
+func TestQuietBonusDebitSpendsSiteGiftGuarantee(t *testing.T) {
 	db := prepareSiteDB(t)
 	_, site, customer, ext := seedReservedSiteGift(t, db, "gift-quiet", "10")
 	_, err := model.CompleteAdtyTopUp(ext.TradeNo, model.AdtyPaymentFacts{
@@ -559,15 +559,80 @@ func TestQuietBonusDebitDoesNotSpendSiteGiftGuarantee(t *testing.T) {
 		PaidCurrency: "USDT", Source: model.AdtyPaymentSourceCallback,
 	}, "")
 	require.NoError(t, err)
+	operatingBefore := mustSiteOperatingWallet(t, db, site.Id)
 	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
 		return model.ConsumeAdtyFundBatchesQuietTx(tx, customer.Id, 52_500_000, 55_000_000)
 	}))
-	earning, margin := mustSiteGiftWallets(t, db, site.Id)
-	require.True(t, earning.FrozenUSD.Equal(decimal.RequireFromString("4")))
-	require.True(t, earning.Balance.Equal(decimal.RequireFromString("4")))
-	require.True(t, margin.FrozenUSD.Equal(decimal.RequireFromString("6")))
-	require.True(t, margin.Balance.Equal(decimal.RequireFromString("20")))
-	require.EqualValues(t, 0, countGiftLedgers(t, db, site.Id, "gift_spend", ext.TradeNo, model.AdtySiteWalletEarnings))
+	requirePartialTopupGiftSpendWithoutOperatingDebit(t, db, site.Id, ext.TradeNo, operatingBefore)
+}
+
+func TestAdjustUserQuotaReduceReleasesSiteGiftGuarantee(t *testing.T) {
+	db := prepareSiteDB(t)
+	_, site, customer, ext := seedReservedSiteGift(t, db, "gift-adjust-sub", "10")
+	_, err := model.CompleteAdtyTopUp(ext.TradeNo, model.AdtyPaymentFacts{
+		Provider: model.PaymentProviderAdtyBEpusdt, PaidAmount: decimal.NewFromInt(100), FiatAmount: decimal.NewFromInt(100),
+		PaidCurrency: "USDT", Source: model.AdtyPaymentSourceCallback,
+	}, "")
+	require.NoError(t, err)
+	operatingBefore := mustSiteOperatingWallet(t, db, site.Id)
+
+	adjusted, err := model.AdjustUserQuotaWithLedger(customer.Id, 1, common.RoleRootUser, "subtract", 52_500_000, "trim bonus-backed balance", "gift-adjust-sub-1")
+	require.NoError(t, err)
+	require.False(t, adjusted.Replayed)
+	require.Equal(t, 55_000_000, adjusted.Before)
+	require.Equal(t, 2_500_000, adjusted.After)
+	require.EqualValues(t, 2_500_000, userQuotaOf(t, db, customer.Id))
+	requirePartialTopupGiftSpendWithoutOperatingDebit(t, db, site.Id, ext.TradeNo, operatingBefore)
+}
+
+func TestApprovedStaffDecreaseReleasesSiteGiftGuarantee(t *testing.T) {
+	db := prepareSiteDB(t)
+	owner, site, customer, ext := seedReservedSiteGift(t, db, "gift-staff-dec", "10")
+	staffUser := referralUser(t, db, "gift-staff-dec-staff")
+	require.NoError(t, db.Create(&model.AdtySiteStaff{
+		SiteId: site.Id, OwnerUserId: owner.Id, UserId: staffUser.Id, Status: "enabled", Role: "support",
+	}).Error)
+	_, err := model.CompleteAdtyTopUp(ext.TradeNo, model.AdtyPaymentFacts{
+		Provider: model.PaymentProviderAdtyBEpusdt, PaidAmount: decimal.NewFromInt(100), FiatAmount: decimal.NewFromInt(100),
+		PaidCurrency: "USDT", Source: model.AdtyPaymentSourceCallback,
+	}, "")
+	require.NoError(t, err)
+	operatingBefore := mustSiteOperatingWallet(t, db, site.Id)
+
+	request, err := SubmitAdtyStaffBalanceRequest(staffUser.Id, customer.Id, model.AdtyStaffBalanceDecrease, decimal.RequireFromString("105"), "gift-staff-dec-1")
+	require.NoError(t, err)
+	require.NoError(t, ReviewAdtyStaffBalanceRequest(owner.Id, "owner", request.Id, true))
+	require.EqualValues(t, 2_500_000, userQuotaOf(t, db, customer.Id))
+	requirePartialTopupGiftSpendWithoutOperatingDebit(t, db, site.Id, ext.TradeNo, operatingBefore)
+}
+
+func requirePartialTopupGiftSpendWithoutOperatingDebit(t *testing.T, db *gorm.DB, siteID int, tradeNo string, operatingBefore model.AdtySiteWallet) {
+	t.Helper()
+	earning, margin := mustSiteGiftWallets(t, db, siteID)
+	require.True(t, earning.FrozenUSD.Equal(decimal.RequireFromString("2")))
+	require.True(t, earning.Balance.Equal(decimal.RequireFromString("2")))
+	require.True(t, margin.FrozenUSD.Equal(decimal.RequireFromString("3")))
+	require.True(t, margin.Balance.Equal(decimal.RequireFromString("17")))
+	require.EqualValues(t, 1, countGiftLedgers(t, db, siteID, "gift_spend", tradeNo, model.AdtySiteWalletEarnings))
+	require.EqualValues(t, 1, countGiftLedgers(t, db, siteID, "gift_spend", tradeNo, model.AdtySiteWalletMargin))
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		held, err := netGiftHoldTx(tx, siteID, tradeNo)
+		if err != nil {
+			return err
+		}
+		require.True(t, held.Equal(decimal.RequireFromString("5")))
+		return nil
+	}))
+	operating := mustSiteOperatingWallet(t, db, siteID)
+	require.True(t, operating.Balance.Equal(operatingBefore.Balance), "manual or quiet reduction must not debit the operating wallet as paid usage")
+	require.EqualValues(t, 0, countLedgersByType(t, db, siteID, "principal_consume"))
+}
+
+func mustSiteOperatingWallet(t *testing.T, db *gorm.DB, siteID int) model.AdtySiteWallet {
+	t.Helper()
+	var wallet model.AdtySiteWallet
+	require.NoError(t, db.Where("site_id = ? AND kind = ?", siteID, model.AdtySiteWalletOperating).First(&wallet).Error)
+	return wallet
 }
 
 func drainSiteGiftWallets(t *testing.T, db *gorm.DB, siteID int, prefix string) error {

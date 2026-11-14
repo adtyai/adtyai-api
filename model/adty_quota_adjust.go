@@ -126,8 +126,9 @@ func AdjustUserQuotaWithLedger(userID, operatorID, operatorRole int, mode string
 			}
 		} else if delta < 0 {
 			// Manual adjust is not a usage charge: keep the customer's lots in
-			// sync, but do not fire the principal-spent hook (that hook debits
-			// the site operating wallet).
+			// sync and release any corresponding site gift-guarantee, but do
+			// not fire the principal-spent hook (that hook debits the site
+			// operating wallet).
 			if err := ConsumeAdtyFundBatchesQuietTx(tx, userID, -delta, int64(user.Quota)); err != nil {
 				return err
 			}
