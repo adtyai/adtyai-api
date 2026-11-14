@@ -52,6 +52,92 @@ func requireOfficialPostgresCloseMigrationDSN(t *testing.T) string {
 	return dsn
 }
 
+// TestOfficialMigrateInstallsAuditLogsForSiteClose 确认官方 migrate 之后，关站路径
+// 的正式 audit_logs 写入能在全新 PostgreSQL 上落库，而不只写入 adty_site_audits。
+func TestOfficialMigrateInstallsAuditLogsForSiteClose(t *testing.T) {
+	dsn := requireOfficialPostgresCloseMigrationDSN(t)
+
+	admin, err := model.OpenOfficialPostgresAcceptance(dsn)
+	if err != nil {
+		t.Fatalf("BLK-ENV-PG: PostgreSQL instance is unreachable: %v", err)
+	}
+	adminSQL, err := admin.DB()
+	if err != nil {
+		_ = model.CloseOfficialGorm(admin)
+		t.Fatalf("BLK-ENV-PG: PostgreSQL instance is unreachable: %v", err)
+	}
+	if err := adminSQL.Ping(); err != nil {
+		_ = model.CloseOfficialGorm(admin)
+		t.Fatalf("BLK-ENV-PG: PostgreSQL instance is unreachable: %v", err)
+	}
+	var current string
+	if err := admin.Raw("SELECT current_database()").Scan(&current).Error; err != nil {
+		_ = model.CloseOfficialGorm(admin)
+		t.Fatalf("BLK-ENV-PG: PostgreSQL instance is unreachable: %v", err)
+	}
+	require.NotEmpty(t, current)
+	require.False(t, model.OfficialThrowawayPostgresName(current), "admin DSN must not already point at a throwaway database")
+	t.Cleanup(func() {
+		require.NoError(t, model.CloseOfficialGorm(admin))
+	})
+
+	name, err := model.NewOfficialThrowawayPostgresName(model.OfficialPostgresThrowawayPrefix1617)
+	require.NoError(t, err)
+	db, err := model.CreateOfficialThrowawayPostgresDatabase(admin, dsn, name)
+	require.NoError(t, err, "create throwaway database %s", name)
+	t.Logf("throwaway database: %s", name)
+
+	previousRedis, previousBatch := common.RedisEnabled, common.BatchUpdateEnabled
+	common.RedisEnabled, common.BatchUpdateEnabled = false, false
+	savedReseller := *adty_setting.GetResellerSetting()
+	restoreDB := model.SwapOfficialPackageDatabase(db, common.DatabaseTypePostgreSQL, common.DatabaseTypePostgreSQL)
+	dropped := false
+	t.Cleanup(func() {
+		common.RedisEnabled, common.BatchUpdateEnabled = previousRedis, previousBatch
+		*adty_setting.GetResellerSetting() = savedReseller
+		InvalidateAdtySiteCache()
+		if dropped {
+			return
+		}
+		dropped = true
+		_ = model.CloseOfficialGorm(db)
+		restoreDB()
+		if dropErr := model.DropOfficialThrowawayPostgresDatabase(admin, name); dropErr != nil {
+			t.Errorf("drop throwaway database %s: %v", name, dropErr)
+		}
+	})
+
+	require.NoError(t, model.RunOfficialMigrateDB(), "official migrate must initialize the throwaway database")
+	require.True(t, model.LOG_DB.Migrator().HasTable(&model.AuditLog{}), "official migrate must install audit_logs")
+	require.NoError(t, i18n.Init())
+
+	cfg := adty_setting.GetResellerSetting()
+	*cfg = adty_setting.DefaultResellerSetting()
+	cfg.Enabled = true
+	cfg.RootDomains = []string{"sites.example.com"}
+	cfg.CostFactor, cfg.MinCostFactor, cfg.MaxMarkup = new(0.8), new(0.5), new(3.0)
+	cfg.MaxSiteBonusExtra, cfg.TrialGrantMaxUSD, cfg.TrialGrantDailyUSD = new(2.0), new(5.0), new(20.0)
+	InvalidateAdtySiteCache()
+
+	_, site := openActiveSite(t, db, "a1604")
+	closeSiteNow(t, site)
+
+	var siteRow model.AdtySiteAudit
+	require.NoError(t, db.Where("site_id = ? AND action = ?", site.Id, "close").Take(&siteRow).Error)
+	assert.Zero(t, siteRow.OperatorId)
+
+	var official model.AuditLog
+	require.NoError(t, model.LOG_DB.Where("action = ? AND object_id = ?", "adty.site.close", fmt.Sprintf("%d", site.Id)).Take(&official).Error, "formal audit_logs write must succeed after official migrate")
+	require.NotNil(t, official.SiteId)
+	assert.Equal(t, site.Id, *official.SiteId)
+	assert.Equal(t, "site", official.ObjectType)
+	assert.Equal(t, fmt.Sprintf("%d", site.Id), official.ObjectId)
+	assert.Equal(t, "adty.site.close", official.Action)
+	assert.Equal(t, model.AuditResultSuccess, official.Result)
+	assert.True(t, official.Success)
+	assert.Contains(t, official.AfterValue, `"transfer_to":0`)
+}
+
 // TestAdtyPostgreSQLCloseMigrationMatrixAcceptance 是 A.16.7 在真实 PostgreSQL
 // 上的仓库内关闭条件：12 个官方场景并逐笔核对余额、账本、订单、团队、Key 和
 // 原站点映射。它不把 L0/L1、FLOW-013 或 5.2 上线记为已关闭。

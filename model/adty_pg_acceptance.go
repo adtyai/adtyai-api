@@ -176,7 +176,26 @@ func SwapOfficialPackageDatabase(db *gorm.DB, mainType, logType common.DatabaseT
 	}
 }
 
-// RunOfficialMigrateDB runs the official migrateDB path, including MigrateAdtyTables.
+// RunOfficialMigrateDB runs the official migrateDB path, including MigrateAdtyTables,
+// then installs audit_logs with the existing MigrateAuditLogs helper so formal
+// audit writes can land on a freshly migrated database. This does not change the
+// official InitDB / InitLogDB startup order: InitDB still only calls migrateDB,
+// and InitLogDB still calls MigrateAuditLogs.
 func RunOfficialMigrateDB() error {
-	return migrateDB()
+	if err := migrateDB(); err != nil {
+		return err
+	}
+	if LOG_DB == nil {
+		if DB == nil {
+			return errors.New("official migrate requires an initialized package database")
+		}
+		// Formal writes target LOG_DB. When it is unset they share the main DB,
+		// as InitLogDB does when LOG_SQL_DSN is empty. Install the table there
+		// without leaving LOG_DB initialized as a side effect of migrate.
+		LOG_DB = DB
+		err := MigrateAuditLogs()
+		LOG_DB = nil
+		return err
+	}
+	return MigrateAuditLogs()
 }
