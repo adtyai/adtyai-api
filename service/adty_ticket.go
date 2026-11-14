@@ -94,8 +94,15 @@ func adtyTicketImageFilePath(storage string) (string, error) {
 func CreateAdtyTicket(userId int, input AdtyTicketInput) (*model.AdtyTicket, error) {
 	input.Title = strings.TrimSpace(redactAdtySecrets(input.Title))
 	input.Body = strings.TrimSpace(redactAdtySecrets(input.Body))
-	input.RelatedRef = strings.TrimSpace(input.RelatedRef)
-	if userId <= 0 || input.Title == "" || input.Body == "" || len(input.Title) > 120 || adtyTextHasSecret(input.RelatedRef) {
+	// 关联字段同样是用户手输的自由文本：related_error 最常见的就是一段带请求头或
+	// token 的报错原文，related_ref / model / group 也可能粘进 key。四个字段一律
+	// 先脱敏再落库，和 Title/Body 走同一条路径，而不是拿原始文本拒单——拒单会让
+	// 用户知道「哪句话里有敏感串」，却拿不到单。
+	input.RelatedRef = strings.TrimSpace(redactAdtySecrets(input.RelatedRef))
+	input.RelatedModel = strings.TrimSpace(redactAdtySecrets(input.RelatedModel))
+	input.RelatedGroup = strings.TrimSpace(redactAdtySecrets(input.RelatedGroup))
+	input.RelatedError = strings.TrimSpace(redactAdtySecrets(input.RelatedError))
+	if userId <= 0 || input.Title == "" || input.Body == "" || len(input.Title) > 120 {
 		return nil, ErrAdtyTicketInvalid
 	}
 	if input.Type == "" {
