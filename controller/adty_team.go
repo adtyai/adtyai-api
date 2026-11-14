@@ -1,6 +1,8 @@
 package controller
 
 import (
+	"bytes"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -174,17 +176,83 @@ func GetAdtyTeamMine(c *gin.Context) {
 	common.ApiSuccess(c, gin.H{"team": mine})
 }
 
+func parseAdtyTeamInviteTTL(c *gin.Context) (time.Duration, bool) {
+	ttl := service.AdtyTeamInviteDefaultTTL
+	if c.Request.Body == nil {
+		return ttl, true
+	}
+	raw, err := io.ReadAll(io.LimitReader(c.Request.Body, 4096))
+	if err != nil {
+		common.ApiErrorT(c, "Invalid parameters")
+		return 0, false
+	}
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 {
+		return ttl, true
+	}
+	var body struct {
+		TTLSeconds *int64 `json:"ttl_seconds"`
+	}
+	if err := common.Unmarshal(raw, &body); err != nil {
+		common.ApiErrorT(c, "Invalid parameters")
+		return 0, false
+	}
+	if body.TTLSeconds == nil {
+		return ttl, true
+	}
+	if *body.TTLSeconds <= 0 {
+		common.ApiErrorT(c, "Invalid parameters")
+		return 0, false
+	}
+	return time.Duration(*body.TTLSeconds) * time.Second, true
+}
+
 func PostAdtyTeamInvite(c *gin.Context) {
 	id, ok := adtyPathId(c)
 	if !ok {
 		return
 	}
-	code, err := service.CreateAdtyTeamInvite(c.GetInt("id"), int64(id), 24*time.Hour)
+	ttl, ok := parseAdtyTeamInviteTTL(c)
+	if !ok {
+		return
+	}
+	issued, err := service.CreateAdtyTeamInvite(c.GetInt("id"), int64(id), ttl)
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	common.ApiSuccess(c, gin.H{"code": code})
+	common.ApiSuccess(c, issued)
+}
+
+func GetAdtyTeamInvites(c *gin.Context) {
+	id, ok := adtyPathId(c)
+	if !ok {
+		return
+	}
+	rows, err := service.ListAdtyTeamInvites(c.GetInt("id"), int64(id))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"items": rows})
+}
+
+func PostAdtyTeamRevokeInvite(c *gin.Context) {
+	id, ok := adtyPathId(c)
+	if !ok {
+		return
+	}
+	inviteId, err := strconv.ParseInt(c.Param("inviteId"), 10, 64)
+	if err != nil || inviteId <= 0 {
+		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	view, err := service.RevokeAdtyTeamInvite(c.GetInt("id"), int64(id), inviteId)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, view)
 }
 
 func PostAdtyTeamAccept(c *gin.Context) {

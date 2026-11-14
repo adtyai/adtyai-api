@@ -57,15 +57,40 @@ type AdtyTeamLedger struct {
 
 func (AdtyTeamLedger) TableName() string { return "adty_team_ledgers" }
 
+const (
+	AdtyTeamInviteStatusOutstanding = "outstanding"
+	AdtyTeamInviteStatusExpired     = "expired"
+	AdtyTeamInviteStatusUsed        = "used"
+	AdtyTeamInviteStatusRevoked     = "revoked"
+)
+
 // AdtyTeamInvite is a one-time, expiring join credential. The plaintext is not stored.
 type AdtyTeamInvite struct {
 	Id        int64  `json:"id"`
 	TeamId    int64  `json:"team_id" gorm:"index"`
 	CodeHash  string `json:"-" gorm:"uniqueIndex;type:varchar(64);not null"`
+	CreatedBy int    `json:"created_by"`
 	ExpiresAt int64  `json:"expires_at" gorm:"index"`
 	UsedBy    int    `json:"used_by"`
 	UsedAt    int64  `json:"used_at"`
+	RevokedBy int    `json:"revoked_by"`
+	RevokedAt int64  `json:"revoked_at"`
 	CreatedAt int64  `json:"created_at" gorm:"autoCreateTime"`
+}
+
+// AdtyTeamInviteStatus returns outstanding, expired, used, or revoked.
+// Revoked is preferred over expiry; a used invite stays used even if later marked revoked.
+func AdtyTeamInviteStatus(invite AdtyTeamInvite, now int64) string {
+	if invite.UsedAt != 0 {
+		return AdtyTeamInviteStatusUsed
+	}
+	if invite.RevokedAt != 0 {
+		return AdtyTeamInviteStatusRevoked
+	}
+	if invite.ExpiresAt < now {
+		return AdtyTeamInviteStatusExpired
+	}
+	return AdtyTeamInviteStatusOutstanding
 }
 
 func (AdtyTeamInvite) TableName() string { return "adty_team_invites" }

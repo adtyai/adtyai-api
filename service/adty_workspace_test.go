@@ -28,9 +28,9 @@ func TestAdtyTeamPageMembersKeysAndFixedLeader(t *testing.T) {
 	member := referralUser(t, db, "team-page-member")
 	created, err := CreateAdtyTeam(leader.Id, 0, "Desk", decimal.RequireFromString("1"))
 	require.NoError(t, err)
-	code, err := CreateAdtyTeamInvite(leader.Id, created.Team.Id, time.Hour)
+	issued, err := CreateAdtyTeamInvite(leader.Id, created.Team.Id, time.Hour)
 	require.NoError(t, err)
-	_, err = AcceptAdtyTeamInvite(member.Id, code)
+	_, err = AcceptAdtyTeamInvite(member.Id, issued.Code)
 	require.NoError(t, err)
 	token := model.Token{UserId: member.Id, Name: "member-key", Key: "team-page-secret", Status: common.TokenStatusEnabled, ExpiredTime: -1, UnlimitedQuota: true}
 	require.NoError(t, db.Create(&token).Error)

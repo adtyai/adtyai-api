@@ -3,6 +3,7 @@ package service
 import (
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
@@ -66,12 +67,12 @@ func TestAdtyTeamInviteKeyAndCloseKeepSharedBalance(t *testing.T) {
 	require.NoError(t, db.Model(member).Update("site_id", 0).Error)
 	created, err := CreateAdtyTeam(leader.Id, 0, "Main", decimal.NewFromInt(1))
 	require.NoError(t, err)
-	code, err := CreateAdtyTeamInvite(leader.Id, created.Team.Id, time.Hour)
+	issued, err := CreateAdtyTeamInvite(leader.Id, created.Team.Id, time.Hour)
 	require.NoError(t, err)
-	joined, err := AcceptAdtyTeamInvite(member.Id, code)
+	joined, err := AcceptAdtyTeamInvite(member.Id, issued.Code)
 	require.NoError(t, err)
 	assert.Equal(t, created.Team.Id, joined.TeamId)
-	_, err = AcceptAdtyTeamInvite(member.Id, code)
+	_, err = AcceptAdtyTeamInvite(member.Id, issued.Code)
 	require.Error(t, err)
 	token := model.Token{UserId: member.Id, Key: "team-key-secret", Status: common.TokenStatusEnabled, ExpiredTime: -1, UnlimitedQuota: true}
 	require.NoError(t, db.Create(&token).Error)
@@ -251,4 +252,125 @@ func TestAdtyTeamCreateRequiresRootOrAuthorizedOwner(t *testing.T) {
 	require.Error(t, SaveAdtyOwnerSiteTeamDiscount(siteA.Id, ownerB.Id, owned.Team.Id, "0.95"))
 	require.Error(t, SaveAdtyOwnerSiteTeamDiscount(siteA.Id, mainUser.Id, owned.Team.Id, "0.95"))
 	require.Error(t, SaveAdtyOwnerSiteTeamDiscount(siteA.Id, leaderA.Id, owned.Team.Id, "0.95"))
+}
+
+func TestAdtyTeamInviteRevokeTTLAndAuthorization(t *testing.T) {
+	db := prepareReferralDialectDB(t, "postgres")
+	leader := referralUser(t, db, "invite-rev-leader")
+	member := referralUser(t, db, "invite-rev-member")
+	otherLeader := referralUser(t, db, "invite-rev-other-leader")
+	staff := referralUser(t, db, "invite-rev-staff")
+	require.NoError(t, db.Model(staff).Updates(map[string]any{"staff_site_id": 1}).Error)
+	require.NoError(t, db.Model(leader).Update("site_id", 0).Error)
+	require.NoError(t, db.Model(member).Update("site_id", 0).Error)
+	require.NoError(t, db.Model(otherLeader).Update("site_id", 0).Error)
+	created, err := CreateAdtyTeam(leader.Id, 0, "Invite Desk", decimal.NewFromInt(1))
+	require.NoError(t, err)
+	otherTeam, err := CreateAdtyTeam(otherLeader.Id, 0, "Other", decimal.NewFromInt(1))
+	require.NoError(t, err)
+
+	now := time.Now().Unix()
+	defaultIssued, err := CreateAdtyTeamInvite(leader.Id, created.Team.Id, AdtyTeamInviteDefaultTTL)
+	require.NoError(t, err)
+	require.NotEmpty(t, defaultIssued.Code)
+	assert.Equal(t, leader.Id, defaultIssued.CreatedBy)
+	assert.Equal(t, model.AdtyTeamInviteStatusOutstanding, defaultIssued.Status)
+	assert.InDelta(t, now+int64(AdtyTeamInviteDefaultTTL.Seconds()), defaultIssued.ExpiresAt, 3)
+
+	customIssued, err := CreateAdtyTeamInvite(leader.Id, created.Team.Id, 2*time.Hour)
+	require.NoError(t, err)
+	assert.InDelta(t, now+int64((2*time.Hour).Seconds()), customIssued.ExpiresAt, 3)
+	assert.NotEqual(t, defaultIssued.ExpiresAt, customIssued.ExpiresAt)
+
+	_, err = CreateAdtyTeamInvite(leader.Id, created.Team.Id, 0)
+	require.ErrorIs(t, err, ErrAdtyTeamInvalid)
+	_, err = CreateAdtyTeamInvite(leader.Id, created.Team.Id, -time.Hour)
+	require.ErrorIs(t, err, ErrAdtyTeamInvalid)
+	_, err = CreateAdtyTeamInvite(leader.Id, created.Team.Id, 7*24*time.Hour+time.Second)
+	require.ErrorIs(t, err, ErrAdtyTeamInvalid)
+	_, err = CreateAdtyTeamInvite(member.Id, created.Team.Id, time.Hour)
+	require.ErrorIs(t, err, ErrAdtyTeamForbidden)
+	_, err = CreateAdtyTeamInvite(otherLeader.Id, created.Team.Id, time.Hour)
+	require.ErrorIs(t, err, ErrAdtyTeamForbidden)
+	_, err = CreateAdtyTeamInvite(staff.Id, created.Team.Id, time.Hour)
+	require.ErrorIs(t, err, ErrAdtyTeamForbidden)
+
+	expired, err := CreateAdtyTeamInvite(leader.Id, created.Team.Id, time.Second)
+	require.NoError(t, err)
+	require.NoError(t, db.Model(&model.AdtyTeamInvite{}).Where("id = ?", expired.Id).Update("expires_at", time.Now().Add(-time.Second).Unix()).Error)
+	_, err = AcceptAdtyTeamInvite(member.Id, expired.Code)
+	require.ErrorIs(t, err, ErrAdtyTeamInvalid)
+
+	toRevoke, err := CreateAdtyTeamInvite(leader.Id, created.Team.Id, time.Hour)
+	require.NoError(t, err)
+	_, err = RevokeAdtyTeamInvite(member.Id, created.Team.Id, toRevoke.Id)
+	require.ErrorIs(t, err, ErrAdtyTeamForbidden)
+	_, err = RevokeAdtyTeamInvite(otherLeader.Id, created.Team.Id, toRevoke.Id)
+	require.ErrorIs(t, err, ErrAdtyTeamForbidden)
+	_, err = RevokeAdtyTeamInvite(staff.Id, created.Team.Id, toRevoke.Id)
+	require.ErrorIs(t, err, ErrAdtyTeamForbidden)
+	_, err = RevokeAdtyTeamInvite(otherLeader.Id, otherTeam.Team.Id, toRevoke.Id)
+	require.ErrorIs(t, err, ErrAdtyTeamForbidden)
+
+	revoked, err := RevokeAdtyTeamInvite(leader.Id, created.Team.Id, toRevoke.Id)
+	require.NoError(t, err)
+	assert.Equal(t, model.AdtyTeamInviteStatusRevoked, revoked.Status)
+	assert.Equal(t, leader.Id, revoked.CreatedBy)
+	assert.Equal(t, leader.Id, revoked.RevokedBy)
+	assert.NotZero(t, revoked.RevokedAt)
+	_, err = AcceptAdtyTeamInvite(member.Id, toRevoke.Code)
+	require.ErrorIs(t, err, ErrAdtyTeamInvalid)
+	var stillOpen int64
+	require.NoError(t, db.Model(&model.AdtyTeamMember{}).Where("user_id = ? AND status = ?", member.Id, model.AdtyTeamMemberActive).Count(&stillOpen).Error)
+	assert.Zero(t, stillOpen)
+
+	used, err := CreateAdtyTeamInvite(leader.Id, created.Team.Id, time.Hour)
+	require.NoError(t, err)
+	joined, err := AcceptAdtyTeamInvite(member.Id, used.Code)
+	require.NoError(t, err)
+	assert.Equal(t, created.Team.Id, joined.TeamId)
+	_, err = RevokeAdtyTeamInvite(leader.Id, created.Team.Id, used.Id)
+	require.ErrorIs(t, err, ErrAdtyTeamInvalid)
+	var membership model.AdtyTeamMember
+	require.NoError(t, db.Where("user_id = ? AND team_id = ?", member.Id, created.Team.Id).First(&membership).Error)
+	assert.Equal(t, model.AdtyTeamMemberActive, membership.Status)
+	_, err = AcceptAdtyTeamInvite(member.Id, used.Code)
+	require.ErrorIs(t, err, ErrAdtyTeamInvalid)
+
+	listed, err := ListAdtyTeamInvites(leader.Id, created.Team.Id)
+	require.NoError(t, err)
+	require.NotEmpty(t, listed)
+	_, err = ListAdtyTeamInvites(member.Id, created.Team.Id)
+	require.ErrorIs(t, err, ErrAdtyTeamForbidden)
+	_, err = ListAdtyTeamInvites(staff.Id, created.Team.Id)
+	require.ErrorIs(t, err, ErrAdtyTeamForbidden)
+	statuses := map[int64]string{}
+	for _, row := range listed {
+		statuses[row.Id] = row.Status
+		assert.Equal(t, created.Team.Id, row.TeamId)
+		assert.Equal(t, leader.Id, row.CreatedBy)
+	}
+	assert.Equal(t, model.AdtyTeamInviteStatusRevoked, statuses[toRevoke.Id])
+	assert.Equal(t, model.AdtyTeamInviteStatusUsed, statuses[used.Id])
+	assert.Equal(t, model.AdtyTeamInviteStatusExpired, statuses[expired.Id])
+	assert.Equal(t, model.AdtyTeamInviteStatusOutstanding, statuses[customIssued.Id])
+
+	requireTeamInviteAudit(t, defaultIssued.Id, "adty.team.invite.create", leader.Id, defaultIssued.Code)
+	requireTeamInviteAudit(t, toRevoke.Id, "adty.team.invite.revoke", leader.Id, toRevoke.Code)
+	requireTeamInviteAudit(t, used.Id, "adty.team.invite.accept", member.Id, used.Code)
+}
+
+func requireTeamInviteAudit(t *testing.T, inviteId int64, action string, actorId int, secret string) {
+	t.Helper()
+	var log model.AuditLog
+	require.NoError(t, model.DB.Where("object_type = ? AND object_id = ? AND action = ?", "team_invite", strconv.FormatInt(inviteId, 10), action).First(&log).Error)
+	assert.Equal(t, model.AuditResultSuccess, log.Result)
+	assert.True(t, log.Success)
+	assert.Equal(t, actorId, log.UserId)
+	assert.Contains(t, log.AfterValue, "created_by")
+	assert.Contains(t, log.AfterValue, `"result":"success"`)
+	assert.NotContains(t, log.AfterValue, "code_hash")
+	assert.NotContains(t, log.BeforeValue, secret)
+	assert.NotContains(t, log.AfterValue, secret)
+	assert.NotContains(t, log.Content, secret)
 }

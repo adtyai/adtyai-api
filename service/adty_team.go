@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -119,6 +120,38 @@ type AdtyTeamMine struct {
 	Status      string               `json:"status"`
 	Members     []AdtyTeamMemberView `json:"members"`
 	Keys        []AdtyTeamKeyView    `json:"keys"`
+}
+
+// AdtyTeamInviteDefaultTTL is the existing controller default when the caller
+// does not set a validity period. It is not a newly signed official number.
+const AdtyTeamInviteDefaultTTL = 24 * time.Hour
+
+// adtyTeamInviteMaxTTL is the existing CreateAdtyTeamInvite upper bound.
+const adtyTeamInviteMaxTTL = 7 * 24 * time.Hour
+
+// AdtyTeamInviteIssue is returned once when an invite is created. The plaintext
+// code is not stored and is omitted from later list views.
+type AdtyTeamInviteIssue struct {
+	Id        int64  `json:"id"`
+	Code      string `json:"code,omitempty"`
+	ExpiresAt int64  `json:"expires_at"`
+	CreatedBy int    `json:"created_by"`
+	CreatedAt int64  `json:"created_at"`
+	Status    string `json:"status"`
+}
+
+// AdtyTeamInviteView is a secret-free list row for a team's invites.
+type AdtyTeamInviteView struct {
+	Id        int64  `json:"id"`
+	TeamId    int64  `json:"team_id"`
+	CreatedBy int    `json:"created_by"`
+	CreatedAt int64  `json:"created_at"`
+	ExpiresAt int64  `json:"expires_at"`
+	UsedBy    int    `json:"used_by"`
+	UsedAt    int64  `json:"used_at"`
+	RevokedBy int    `json:"revoked_by"`
+	RevokedAt int64  `json:"revoked_at"`
+	Status    string `json:"status"`
 }
 
 func GetAdtyTeamMine(userId int) (*AdtyTeamMine, error) {
@@ -592,31 +625,53 @@ func lockActiveTeam(tx *gorm.DB, teamId int64) (*model.AdtyTeam, error) {
 	return &team, nil
 }
 
-func CreateAdtyTeamInvite(leaderId int, teamId int64, ttl time.Duration) (string, error) {
-	if ttl <= 0 || ttl > 7*24*time.Hour {
-		return "", ErrAdtyTeamInvalid
+func canManageAdtyTeamInvites(team *model.AdtyTeam, actorId int) bool {
+	return team != nil && team.LeaderUserId == actorId
+}
+
+func CreateAdtyTeamInvite(actorId int, teamId int64, ttl time.Duration) (*AdtyTeamInviteIssue, error) {
+	if ttl <= 0 || ttl > adtyTeamInviteMaxTTL {
+		return nil, ErrAdtyTeamInvalid
 	}
 	raw := make([]byte, 16)
 	if _, err := rand.Read(raw); err != nil {
-		return "", err
+		return nil, err
 	}
 	code := hex.EncodeToString(raw)
 	sum := sha256.Sum256([]byte(code))
 	hash := hex.EncodeToString(sum[:])
+	var invite model.AdtyTeamInvite
+	var siteID int
 	err := model.DB.Transaction(func(tx *gorm.DB) error {
 		team, err := lockActiveTeam(tx, teamId)
 		if err != nil {
 			return err
 		}
-		if team.LeaderUserId != leaderId {
+		if !canManageAdtyTeamInvites(team, actorId) {
 			return ErrAdtyTeamForbidden
 		}
-		return tx.Create(&model.AdtyTeamInvite{TeamId: team.Id, CodeHash: hash, ExpiresAt: time.Now().Add(ttl).Unix()}).Error
+		invite = model.AdtyTeamInvite{
+			TeamId: team.Id, CodeHash: hash, CreatedBy: actorId, ExpiresAt: time.Now().Add(ttl).Unix(),
+		}
+		if err := tx.Create(&invite).Error; err != nil {
+			return err
+		}
+		siteID = team.SiteId
+		return nil
 	})
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	return code, nil
+	issued := &AdtyTeamInviteIssue{
+		Id: invite.Id, Code: code, ExpiresAt: invite.ExpiresAt,
+		CreatedBy: invite.CreatedBy, CreatedAt: invite.CreatedAt,
+		Status: model.AdtyTeamInviteStatusOutstanding,
+	}
+	writeAdtyTeamInviteAudit(actorId, siteID, invite.Id, "adty.team.invite.create", nil, map[string]any{
+		"invite_id": invite.Id, "team_id": invite.TeamId, "created_by": actorId,
+		"expires_at": invite.ExpiresAt, "result": model.AuditResultSuccess,
+	}, model.AuditResultSuccess)
+	return issued, nil
 }
 
 func AcceptAdtyTeamInvite(userId int, code string) (*model.AdtyTeamMember, error) {
@@ -627,15 +682,21 @@ func AcceptAdtyTeamInvite(userId int, code string) (*model.AdtyTeamMember, error
 	sum := sha256.Sum256([]byte(code))
 	hash := hex.EncodeToString(sum[:])
 	var member *model.AdtyTeamMember
+	var invite model.AdtyTeamInvite
+	var siteID int
 	err := model.DB.Transaction(func(tx *gorm.DB) error {
-		var invite model.AdtyTeamInvite
 		lookup := model.AdtyLockForUpdate(tx).Where("code_hash = ?", hash).Limit(1).Find(&invite)
 		if lookup.Error != nil {
 			return lookup.Error
 		}
-		if lookup.RowsAffected == 0 || invite.UsedAt != 0 || invite.ExpiresAt < time.Now().Unix() {
+		if lookup.RowsAffected == 0 || invite.UsedAt != 0 || invite.RevokedAt != 0 || invite.ExpiresAt < time.Now().Unix() {
 			return ErrAdtyTeamInvalid
 		}
+		var team model.AdtyTeam
+		if err := tx.First(&team, invite.TeamId).Error; err != nil {
+			return err
+		}
+		siteID = team.SiteId
 		joined, err := joinAdtyTeamTx(tx, userId, invite.TeamId)
 		if err != nil {
 			return err
@@ -643,10 +704,117 @@ func AcceptAdtyTeamInvite(userId int, code string) (*model.AdtyTeamMember, error
 		if err := tx.Model(&invite).Updates(map[string]any{"used_by": userId, "used_at": time.Now().Unix()}).Error; err != nil {
 			return err
 		}
+		invite.UsedBy, invite.UsedAt = userId, time.Now().Unix()
 		member = joined
 		return nil
 	})
-	return member, err
+	if err != nil {
+		return nil, err
+	}
+	writeAdtyTeamInviteAudit(userId, siteID, invite.Id, "adty.team.invite.accept", nil, map[string]any{
+		"invite_id": invite.Id, "team_id": invite.TeamId, "created_by": invite.CreatedBy,
+		"used_by": userId, "result": model.AuditResultSuccess,
+	}, model.AuditResultSuccess)
+	return member, nil
+}
+
+func ListAdtyTeamInvites(actorId int, teamId int64) ([]AdtyTeamInviteView, error) {
+	var team model.AdtyTeam
+	if err := model.DB.First(&team, teamId).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrAdtyTeamForbidden
+		}
+		return nil, err
+	}
+	if !canManageAdtyTeamInvites(&team, actorId) {
+		return nil, ErrAdtyTeamForbidden
+	}
+	var rows []model.AdtyTeamInvite
+	if err := model.DB.Where("team_id = ?", team.Id).Order("id DESC").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	now := time.Now().Unix()
+	out := make([]AdtyTeamInviteView, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, adtyTeamInviteView(row, now))
+	}
+	return out, nil
+}
+
+func RevokeAdtyTeamInvite(actorId int, teamId, inviteId int64) (*AdtyTeamInviteView, error) {
+	if inviteId <= 0 {
+		return nil, ErrAdtyTeamInvalid
+	}
+	var view AdtyTeamInviteView
+	var siteID int
+	var createdBy int
+	err := model.DB.Transaction(func(tx *gorm.DB) error {
+		team, err := lockActiveTeam(tx, teamId)
+		if err != nil {
+			return err
+		}
+		if !canManageAdtyTeamInvites(team, actorId) {
+			return ErrAdtyTeamForbidden
+		}
+		var invite model.AdtyTeamInvite
+		lookup := model.AdtyLockForUpdate(tx).Where("id = ? AND team_id = ?", inviteId, team.Id).Limit(1).Find(&invite)
+		if lookup.Error != nil {
+			return lookup.Error
+		}
+		if lookup.RowsAffected == 0 {
+			return ErrAdtyTeamForbidden
+		}
+		if invite.UsedAt != 0 || invite.RevokedAt != 0 {
+			return ErrAdtyTeamInvalid
+		}
+		now := time.Now().Unix()
+		if err := tx.Model(&invite).Updates(map[string]any{"revoked_by": actorId, "revoked_at": now}).Error; err != nil {
+			return err
+		}
+		invite.RevokedBy, invite.RevokedAt = actorId, now
+		siteID = team.SiteId
+		createdBy = invite.CreatedBy
+		view = adtyTeamInviteView(invite, now)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	writeAdtyTeamInviteAudit(actorId, siteID, view.Id, "adty.team.invite.revoke", map[string]any{
+		"invite_id": view.Id, "team_id": teamId, "status": model.AdtyTeamInviteStatusOutstanding,
+	}, map[string]any{
+		"invite_id": view.Id, "team_id": teamId, "created_by": createdBy,
+		"revoked_by": actorId, "revoked_at": view.RevokedAt, "result": model.AuditResultSuccess,
+		"status": model.AdtyTeamInviteStatusRevoked,
+	}, model.AuditResultSuccess)
+	return &view, nil
+}
+
+func adtyTeamInviteView(invite model.AdtyTeamInvite, now int64) AdtyTeamInviteView {
+	return AdtyTeamInviteView{
+		Id: invite.Id, TeamId: invite.TeamId, CreatedBy: invite.CreatedBy, CreatedAt: invite.CreatedAt,
+		ExpiresAt: invite.ExpiresAt, UsedBy: invite.UsedBy, UsedAt: invite.UsedAt,
+		RevokedBy: invite.RevokedBy, RevokedAt: invite.RevokedAt,
+		Status: model.AdtyTeamInviteStatus(invite, now),
+	}
+}
+
+func writeAdtyTeamInviteAudit(actorId, siteId int, inviteId int64, action string, before, after any, result string) {
+	rec := model.OfficialAuditWrite{
+		UserId: actorId, SiteID: model.OfficialAuditSiteIDPointer(siteId),
+		ObjectType: "team_invite", ObjectID: strconv.FormatInt(inviteId, 10),
+		Action: action, Category: model.AuditCategoryOperation, Content: action,
+		Before: before, After: after, Result: result, Success: result == model.AuditResultSuccess,
+	}
+	if actorId > 0 {
+		if user, err := model.GetUserById(actorId, false); err == nil && user != nil {
+			rec.Username = user.Username
+			rec.ActorRole = user.Role
+		}
+	}
+	if err := model.WriteOfficialAuditLog(nil, rec); err != nil {
+		common.SysLog(common.LogText("official team invite audit write failed: %s", err.Error()))
+	}
 }
 
 func BindAdtyTeamKey(userId, tokenId int) error {

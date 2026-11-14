@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/i18n"
@@ -339,4 +340,79 @@ func TestAuthorizedTeamInviteAcceptAndMineStillWork(t *testing.T) {
 	require.Equal(t, http.StatusOK, memberMine.Code, memberMine.Body.String())
 	assert.Contains(t, memberMine.Body.String(), "Site Desk")
 	assert.Contains(t, memberMine.Body.String(), `"role":"member"`)
+}
+
+func TestAuthorizedTeamInviteTTLAndRevoke(t *testing.T) {
+	f := newTeamAuthFixture(t)
+	created := f.decodeCreated(t, f.call(t, http.MethodPost, f.siteAHost(), "/api/adty/site/teams",
+		fmt.Sprintf(`{"name":"Invite Desk","leader_id":%d,"discount":"0.90"}`, f.leaderA.Id), f.ownerATok))
+
+	now := time.Now().Unix()
+	defaultInvite := f.call(t, http.MethodPost, f.siteAHost(), fmt.Sprintf("/api/adty/teams/%d/invites", created.Team.Id), "", f.leaderATok)
+	require.Equal(t, http.StatusOK, defaultInvite.Code, defaultInvite.Body.String())
+	defaultIssued := decodeAdtyData[service.AdtyTeamInviteIssue](t, defaultInvite.Body)
+	require.NotEmpty(t, defaultIssued.Code)
+	assert.InDelta(t, now+int64(service.AdtyTeamInviteDefaultTTL.Seconds()), defaultIssued.ExpiresAt, 5)
+	assert.NotContains(t, defaultInvite.Body.String(), "code_hash")
+
+	customInvite := f.call(t, http.MethodPost, f.siteAHost(), fmt.Sprintf("/api/adty/teams/%d/invites", created.Team.Id), `{"ttl_seconds":3600}`, f.leaderATok)
+	require.Equal(t, http.StatusOK, customInvite.Code, customInvite.Body.String())
+	customIssued := decodeAdtyData[service.AdtyTeamInviteIssue](t, customInvite.Body)
+	assert.InDelta(t, now+3600, customIssued.ExpiresAt, 5)
+	assert.Less(t, customIssued.ExpiresAt, defaultIssued.ExpiresAt)
+
+	teamAuthRejected(t, f.call(t, http.MethodPost, f.siteAHost(), fmt.Sprintf("/api/adty/teams/%d/invites", created.Team.Id), `{"ttl_seconds":0}`, f.leaderATok))
+	teamAuthRejected(t, f.call(t, http.MethodPost, f.siteAHost(), fmt.Sprintf("/api/adty/teams/%d/invites", created.Team.Id), `{"ttl_seconds":-1}`, f.leaderATok))
+
+	toRevoke := f.call(t, http.MethodPost, f.siteAHost(), fmt.Sprintf("/api/adty/teams/%d/invites", created.Team.Id), `{"ttl_seconds":7200}`, f.leaderATok)
+	require.Equal(t, http.StatusOK, toRevoke.Code, toRevoke.Body.String())
+	revocable := decodeAdtyData[service.AdtyTeamInviteIssue](t, toRevoke.Body)
+
+	for _, tc := range []struct{ name, token string }{
+		{"member", f.memberATok},
+		{"ordinary user", f.userATok},
+		{"staff", f.staffATok},
+		{"other site leader", f.leaderBTok},
+		{"site owner", f.ownerATok},
+		{"root", f.rootTok},
+	} {
+		t.Run("unauthorized revoke "+tc.name, func(t *testing.T) {
+			teamAuthRejected(t, f.call(t, http.MethodPost, f.siteAHost(),
+				fmt.Sprintf("/api/adty/teams/%d/invites/%d/revoke", created.Team.Id, revocable.Id), "", tc.token))
+		})
+		t.Run("unauthorized list "+tc.name, func(t *testing.T) {
+			teamAuthRejected(t, f.call(t, http.MethodGet, f.siteAHost(),
+				fmt.Sprintf("/api/adty/teams/%d/invites", created.Team.Id), "", tc.token))
+		})
+	}
+
+	revoked := f.call(t, http.MethodPost, f.siteAHost(),
+		fmt.Sprintf("/api/adty/teams/%d/invites/%d/revoke", created.Team.Id, revocable.Id), "", f.leaderATok)
+	require.Equal(t, http.StatusOK, revoked.Code, revoked.Body.String())
+	view := decodeAdtyData[service.AdtyTeamInviteView](t, revoked.Body)
+	assert.Equal(t, model.AdtyTeamInviteStatusRevoked, view.Status)
+	assert.Equal(t, f.leaderA.Id, view.CreatedBy)
+	assert.Equal(t, f.leaderA.Id, view.RevokedBy)
+	teamAuthRejected(t, f.call(t, http.MethodPost, f.siteAHost(), "/api/adty/teams/accept",
+		fmt.Sprintf(`{"code":%q}`, revocable.Code), f.memberATok))
+
+	usedInvite := f.call(t, http.MethodPost, f.siteAHost(), fmt.Sprintf("/api/adty/teams/%d/invites", created.Team.Id), "", f.leaderATok)
+	require.Equal(t, http.StatusOK, usedInvite.Code, usedInvite.Body.String())
+	used := decodeAdtyData[service.AdtyTeamInviteIssue](t, usedInvite.Body)
+	accepted := f.call(t, http.MethodPost, f.siteAHost(), "/api/adty/teams/accept", fmt.Sprintf(`{"code":%q}`, used.Code), f.memberATok)
+	require.Equal(t, http.StatusOK, accepted.Code, accepted.Body.String())
+	teamAuthRejected(t, f.call(t, http.MethodPost, f.siteAHost(),
+		fmt.Sprintf("/api/adty/teams/%d/invites/%d/revoke", created.Team.Id, used.Id), "", f.leaderATok))
+	memberMine := f.call(t, http.MethodGet, f.siteAHost(), "/api/adty/teams/mine", "", f.memberATok)
+	require.Equal(t, http.StatusOK, memberMine.Code, memberMine.Body.String())
+	assert.Contains(t, memberMine.Body.String(), `"role":"member"`)
+
+	listed := f.call(t, http.MethodGet, f.siteAHost(), fmt.Sprintf("/api/adty/teams/%d/invites", created.Team.Id), "", f.leaderATok)
+	require.Equal(t, http.StatusOK, listed.Code, listed.Body.String())
+	assert.Contains(t, listed.Body.String(), `"status":"revoked"`)
+	assert.Contains(t, listed.Body.String(), `"status":"used"`)
+	assert.Contains(t, listed.Body.String(), `"status":"outstanding"`)
+	assert.NotContains(t, listed.Body.String(), "code_hash")
+	assert.NotContains(t, listed.Body.String(), revocable.Code)
+	assert.NotContains(t, listed.Body.String(), used.Code)
 }

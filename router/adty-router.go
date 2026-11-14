@@ -220,6 +220,8 @@ func registerAdtyTopUpRoutes(apiRouter *gin.RouterGroup) {
 	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/adty/teams/mine", "scope", "wallet:read")
 	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/teams", "scope", "wallet:write")
 	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/teams/:id/invites", "scope", "wallet:write")
+	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/adty/teams/:id/invites", "scope", "wallet:read")
+	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/teams/:id/invites/:inviteId/revoke", "scope", "wallet:write")
 	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/teams/accept", "scope", "wallet:write")
 
 	topup := apiRouter.Group("/adty/topup", middleware.UserAuth(), middleware.AdtyRequireCurrentSiteTerms())
@@ -246,6 +248,8 @@ func registerAdtyTopUpRoutes(apiRouter *gin.RouterGroup) {
 	apiRouter.GET("/adty/teams/mine", middleware.UserAuth(), controller.GetAdtyTeamMine)
 	apiRouter.POST("/adty/teams", middleware.UserAuth(), controller.PostAdtyTeam)
 	apiRouter.POST("/adty/teams/:id/invites", middleware.UserAuth(), controller.PostAdtyTeamInvite)
+	apiRouter.GET("/adty/teams/:id/invites", middleware.UserAuth(), controller.GetAdtyTeamInvites)
+	apiRouter.POST("/adty/teams/:id/invites/:inviteId/revoke", middleware.UserAuth(), controller.PostAdtyTeamRevokeInvite)
 	apiRouter.POST("/adty/teams/accept", middleware.UserAuth(), controller.PostAdtyTeamAccept)
 }
 

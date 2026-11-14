@@ -53,6 +53,25 @@ type TeamMine = {
   keys?: TeamKey[]
 }
 
+type TeamInvite = {
+  id: number
+  created_by: number
+  created_at: number
+  expires_at: number
+  used_by: number
+  used_at: number
+  revoked_by: number
+  revoked_at: number
+  status: string
+}
+
+const inviteStatusLabel: Record<string, string> = {
+  outstanding: 'Outstanding',
+  expired: 'Expired',
+  used: 'Used',
+  revoked: 'Revoked',
+}
+
 export function TeamPanel() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
@@ -72,6 +91,7 @@ export function TeamPanel() {
   const [discount, setDiscount] = useState('1')
   const [invite, setInvite] = useState('')
   const [issued, setIssued] = useState('')
+  const [ttlHours, setTtlHours] = useState('24')
   const [tokenId, setTokenId] = useState('')
   const [confirmClose, setConfirmClose] = useState(false)
   const [error, setError] = useState('')
@@ -79,6 +99,16 @@ export function TeamPanel() {
 
   const refresh = () => void queryClient.invalidateQueries({ queryKey: ['adty-team'] })
   const team = mine.data
+  const invites = useQuery({
+    queryKey: ['adty-team', 'invites', team?.team_id],
+    enabled: team?.role === 'leader' && Boolean(team?.team_id),
+    queryFn: async () => {
+      const response = await api.get(`/api/adty/teams/${team!.team_id}/invites`)
+      const body = response.data as { success?: boolean; data?: { items?: TeamInvite[] } }
+      if (!body.success) throw new Error('Failed to load data')
+      return body.data?.items ?? []
+    },
+  })
   useEffect(() => {
     setRename(team?.name ?? '')
   }, [team?.name])
@@ -104,16 +134,24 @@ export function TeamPanel() {
 
   const issueInvite = async () => {
     if (!team) return
+    const hours = Number(ttlHours)
+    if (!Number.isFinite(hours) || hours <= 0) {
+      setError(t('Invalid parameters'))
+      return
+    }
     setPending(true)
     setError('')
     try {
-      const response = await api.post(`/api/adty/teams/${team.team_id}/invites`)
+      const response = await api.post(`/api/adty/teams/${team.team_id}/invites`, {
+        ttl_seconds: Math.round(hours * 3600),
+      })
       const body = response.data as { success?: boolean; message?: string; data?: { code?: string } }
       if (!body.success || !body.data?.code) {
         setError(t(body.message || 'Failed to save'))
         return
       }
       setIssued(body.data.code)
+      void queryClient.invalidateQueries({ queryKey: ['adty-team', 'invites'] })
     } catch (cause) {
       setError(getServerErrorMessage(cause, t('Failed to save')))
     } finally {
@@ -245,6 +283,16 @@ export function TeamPanel() {
             >
               {t('Team top-up')}
             </Button>
+            <div className='flex flex-col gap-1'>
+              <Label htmlFor='team-invite-ttl'>{t('Validity (hours)')}</Label>
+              <Input
+                id='team-invite-ttl'
+                value={ttlHours}
+                inputMode='decimal'
+                autoComplete='off'
+                onChange={(event) => setTtlHours(event.target.value)}
+              />
+            </div>
             <Button type='button' variant='outline' disabled={pending} onClick={() => void issueInvite()}>
               {t('Create invite')}
             </Button>
@@ -254,6 +302,36 @@ export function TeamPanel() {
               </p>
             )}
             <p className='text-muted-foreground text-sm'>{t('The invite code is shown once')}</p>
+            <div className='flex flex-col gap-2'>
+              <h3 className='text-sm font-medium'>{t('Invites')}</h3>
+              {(invites.data ?? []).length === 0 && (
+                <p className='text-muted-foreground text-sm'>{t('No invites yet')}</p>
+              )}
+              {(invites.data ?? []).map((row) => (
+                <div key={row.id} className='flex items-center justify-between gap-3 text-sm'>
+                  <span className='min-w-0 truncate'>
+                    #{row.id} · {t(inviteStatusLabel[row.status] ?? row.status)} · {t('Validity')}:{' '}
+                    {row.expires_at ? new Date(row.expires_at * 1000).toLocaleString() : '—'}
+                  </span>
+                  {row.status === 'outstanding' && (
+                    <Button
+                      type='button'
+                      variant='outline'
+                      size='sm'
+                      disabled={pending}
+                      onClick={() =>
+                        void run(async () => {
+                          const response = await api.post(`/api/adty/teams/${team.team_id}/invites/${row.id}/revoke`)
+                          if (!response.data?.success) throw new Error(response.data?.message || 'Failed to save')
+                        })
+                      }
+                    >
+                      {t('Revoke invite')}
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </div>
             <div className='flex flex-col gap-2'>
               <h3 className='text-sm font-medium'>{t('Members')}</h3>
               {(team.members ?? []).map((member) => (
