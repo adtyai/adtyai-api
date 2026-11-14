@@ -805,7 +805,7 @@ func TestBindSiteInviteRejectsCrossSiteAndPaidCustomers(t *testing.T) {
 	outsider := referralUser(t, db, "other-site-inviter")
 	sameSite := referralUser(t, db, "same-site-invitee")
 	require.NoError(t, db.Model(sameSite).Update("site_id", site.Id).Error)
-	require.Error(t, BindSiteInvite(site.Id, outsider.Id, sameSite.Id))
+	require.Error(t, bindSiteInvite(site.Id, outsider.Id, sameSite.Id))
 	var created int64
 	require.NoError(t, db.Model(&model.AdtySiteInvite{}).Where("invitee_id = ?", sameSite.Id).Count(&created).Error)
 	require.Zero(t, created)
@@ -814,7 +814,7 @@ func TestBindSiteInviteRejectsCrossSiteAndPaidCustomers(t *testing.T) {
 		UserId: sameSite.Id, Amount: 5, Money: 5, TradeNo: "fresh-paid",
 		Status: common.TopUpStatusSuccess,
 	}).Error)
-	require.Error(t, BindSiteInvite(site.Id, invite.InviterId, sameSite.Id))
+	require.Error(t, bindSiteInvite(site.Id, invite.InviterId, sameSite.Id))
 	require.NoError(t, db.Model(&model.AdtySiteInvite{}).Where("invitee_id = ?", sameSite.Id).Count(&created).Error)
 	require.Zero(t, created)
 }

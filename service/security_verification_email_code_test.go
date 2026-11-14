@@ -204,16 +204,16 @@ func TestRootImportantOperationStaysExemptFromPasswordAndEmailCode(t *testing.T)
 }
 
 func TestSensitiveProofMethodsMatchesLiveNonRootPolicy(t *testing.T) {
-	assert.False(t, SensitiveActionNeedsProof(common.RoleRootUser))
-	assert.Empty(t, SensitiveProofMethods(common.RoleRootUser))
-	assert.True(t, SensitiveActionNeedsProof(common.RoleCommonUser))
-	assert.Equal(t, []string{VerificationMethodPassword, VerificationMethodEmailCode}, SensitiveProofMethods(common.RoleCommonUser))
-	assert.Equal(t, []string{VerificationMethodPassword, VerificationMethodEmailCode}, SensitiveProofMethods(common.RoleAdminUser))
+	assert.False(t, sensitiveActionNeedsProof(common.RoleRootUser))
+	assert.Empty(t, sensitiveProofMethods(common.RoleRootUser))
+	assert.True(t, sensitiveActionNeedsProof(common.RoleCommonUser))
+	assert.Equal(t, []string{VerificationMethodPassword, VerificationMethodEmailCode}, sensitiveProofMethods(common.RoleCommonUser))
+	assert.Equal(t, []string{VerificationMethodPassword, VerificationMethodEmailCode}, sensitiveProofMethods(common.RoleAdminUser))
 
 	_, identity := setupSecurityStepUpTest(t)
 	requirements, err := GetVerificationRequirements(identity, VerificationScopePasswordChange)
 	require.NoError(t, err)
-	assert.Equal(t, SensitiveProofMethods(common.RoleCommonUser), methodNames(requirements)[:2])
+	assert.Equal(t, sensitiveProofMethods(common.RoleCommonUser), methodNames(requirements)[:2])
 }
 
 func TestSecurityEmailCodeIsSiteScopedSingleUse(t *testing.T) {

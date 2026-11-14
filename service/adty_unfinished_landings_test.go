@@ -31,7 +31,7 @@ func TestOwnerEarningLineShowsModelAndGroupWithoutChannel(t *testing.T) {
 func TestAnomalyReviewNotifiesTheSite(t *testing.T) {
 	db := prepareReferralDialectDB(t, "sqlite")
 	owner := referralUser(t, db, "anomaly-note-owner")
-	require.NoError(t, RecordAdtyAnomalyDisposition("balance_ledger_gap", strconv.Itoa(4), "open", "detected", 0))
+	require.NoError(t, recordAdtyAnomalyDisposition("balance_ledger_gap", strconv.Itoa(4), "open", "detected", 0))
 	var row model.AdtyAnomalyDisposition
 	require.NoError(t, db.First(&row).Error)
 	require.NoError(t, ReviewAdtyAnomalyDisposition(row.Id, owner.Id, "closed", "checked the ledger"))

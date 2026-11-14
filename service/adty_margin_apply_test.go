@@ -29,7 +29,7 @@ func TestReviewAdtyAnomalyDispositionDoesNotMoveWallets(t *testing.T) {
 	db := prepareSiteDB(t)
 	_, site := openActiveSite(t, db, "anomaly-review")
 	require.NoError(t, EnsureAdtySiteWallets(site.Id))
-	require.NoError(t, RecordAdtyAnomalyDisposition("balance_ledger_gap", strconv.Itoa(site.Id), "open", "detected", 0))
+	require.NoError(t, recordAdtyAnomalyDisposition("balance_ledger_gap", strconv.Itoa(site.Id), "open", "detected", 0))
 	rows, err := ListAdtyAnomalyDispositions(site.Id)
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
