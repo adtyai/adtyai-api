@@ -340,7 +340,7 @@ export function RefundDialog(props: OrderActionProps) {
     <Dialog
       open={props.order !== null}
       onOpenChange={props.onOpenChange}
-      title={t('Refund order')}
+      title={t('Manual refund')}
       description={t(
         'Apply a USD refund against the original top-up, then approve, record internal principal reclaim or the manual-handling shortfall, record the offline payout, and complete. Do not call the original payment channel.'
       )}

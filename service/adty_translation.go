@@ -429,7 +429,7 @@ func adtyTranslationKeepsFacts(source, english string) bool {
 	if adtyNegationSource.MatchString(source) && !adtyNegationTarget.MatchString(english) {
 		return false
 	}
-	return true
+	return adtyTranslationKeepsGlossary(source, english)
 }
 
 func AdtyTranslationCallsDoNotDebit(userId int) (int, error) {

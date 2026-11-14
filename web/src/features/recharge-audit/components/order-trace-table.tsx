@@ -83,7 +83,7 @@ export function OrderTraceTable(props: { entries: OrderTraceEntry[] }) {
               {entry.pending_delta !== undefined && (
                 <span>
                   {t('Pending')}: {entry.pending_delta} · {t('Available')}:{' '}
-                  {entry.available_delta} · {t('Frozen')}: {entry.frozen_delta}{' '}
+                  {entry.available_delta} · {t('Frozen amount')}: {entry.frozen_delta}{' '}
                   · {t('Withdrawn')}: {entry.withdrawn_delta}
                 </span>
               )}
