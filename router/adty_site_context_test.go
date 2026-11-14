@@ -325,11 +325,12 @@ func TestClosedSiteRevokesMigratedCustomerKeys(t *testing.T) {
 				require.NoError(t, client.Ping(t.Context()).Err())
 				var cacheKeys []string
 				for _, token := range []model.Token{old, other, fresh} {
-					hash := common.GenerateHMAC(token.Key)
-					cacheKeys = append(cacheKeys, "token:"+hash, "token:generation:"+hash)
+					cacheKey := "token:" + common.GenerateHMAC(token.Key)
+					cacheKeys = append(cacheKeys, cacheKey, "token:generation:{"+cacheKey+"}")
 				}
 				for _, id := range []int{customer.Id, otherUser.Id} {
-					cacheKeys = append(cacheKeys, fmt.Sprintf("user:%d", id), fmt.Sprintf("auth:user:version:%d", id), fmt.Sprintf("auth:user:fence:%d", id))
+					userKey := fmt.Sprintf("user:%d", id)
+					cacheKeys = append(cacheKeys, userKey, "auth:user:version:{"+userKey+"}", "auth:user:fence:{"+userKey+"}")
 				}
 				t.Cleanup(func() {
 					assert.NoError(t, client.Del(context.Background(), cacheKeys...).Err())
@@ -356,7 +357,8 @@ func TestClosedSiteRevokesMigratedCustomerKeys(t *testing.T) {
 			}
 			staleCache := map[string]string{}
 			if common.RedisEnabled {
-				for _, key := range []string{"token:" + common.GenerateHMAC(old.Key), "token:generation:" + common.GenerateHMAC(old.Key), fmt.Sprintf("user:%d", customer.Id)} {
+				oldCacheKey := "token:" + common.GenerateHMAC(old.Key)
+				for _, key := range []string{oldCacheKey, "token:generation:{" + oldCacheKey + "}", fmt.Sprintf("user:%d", customer.Id)} {
 					data, err := common.RDB.Dump(t.Context(), key).Result()
 					if err == redis.Nil {
 						continue
