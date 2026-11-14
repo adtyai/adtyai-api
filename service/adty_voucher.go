@@ -1,8 +1,10 @@
 package service
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base32"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -14,7 +16,49 @@ import (
 	"gorm.io/gorm"
 )
 
-const adtyVoucherTradeNoAttempts = 8
+const (
+	adtyVoucherTradeNoAttempts = 8
+	adtyVoucherGuessMax        = 8
+	adtyVoucherGuessWindow     = 15 * 60
+)
+
+const adtyVoucherGuessKeyPrefix = "adty:voucher:guess:"
+
+// adtyVoucherGuessAllowScript counts timestamps in the sliding window
+// without recording a new guess, so a later successful redeem is not charged.
+const adtyVoucherGuessAllowScript = `
+local key = KEYS[1]
+local now = tonumber(ARGV[1])
+local window = tonumber(ARGV[2])
+local max = tonumber(ARGV[3])
+local items = redis.call('LRANGE', key, 0, -1)
+local kept = 0
+for i = 1, #items do
+  if now - tonumber(items[i]) < window then
+    kept = kept + 1
+  end
+end
+if kept < max then
+  return 1
+end
+return 0
+`
+
+const adtyVoucherGuessNoteScript = `
+local key = KEYS[1]
+local now = tonumber(ARGV[1])
+local window = tonumber(ARGV[2])
+local items = redis.call('LRANGE', key, 0, -1)
+redis.call('DEL', key)
+for i = 1, #items do
+  if now - tonumber(items[i]) < window then
+    redis.call('RPUSH', key, items[i])
+  end
+end
+redis.call('RPUSH', key, now)
+redis.call('EXPIRE', key, window)
+return 1
+`
 
 var adtyVoucherTradeNoTestHook func(hash string, attempt int) string
 
@@ -64,6 +108,29 @@ func ResetAdtyVoucherGuesses() {
 	voucherGuess.mu.Lock()
 	voucherGuess.fails = nil
 	voucherGuess.mu.Unlock()
+	if !common.RedisEnabled || common.RDB == nil {
+		return
+	}
+	ctx := context.Background()
+	var cursor uint64
+	pattern := adtyVoucherGuessKeyPrefix + "*"
+	for {
+		keys, next, err := common.RDB.Scan(ctx, cursor, pattern, 100).Result()
+		if err != nil {
+			return
+		}
+		if len(keys) > 0 {
+			_ = common.RDB.Del(ctx, keys...).Err()
+		}
+		cursor = next
+		if cursor == 0 {
+			break
+		}
+	}
+}
+
+func adtyVoucherGuessKey(userId int) string {
+	return fmt.Sprintf("%s%d", adtyVoucherGuessKeyPrefix, userId)
 }
 
 func IssueAdtyVoucher(input AdtyVoucherIssueInput) (*AdtyVoucherIssued, error) {
@@ -693,12 +760,25 @@ func insertAdtyVoucherOrderTx(tx *gorm.DB, userId int, trade string, voucher *mo
 }
 
 func allowAdtyVoucherGuess(userId int, now int64) bool {
+	if common.RedisEnabled {
+		ok, err := allowAdtyVoucherGuessRedis(userId, now)
+		if err != nil {
+			return false
+		}
+		return ok
+	}
 	voucherGuess.mu.Lock()
 	defer voucherGuess.mu.Unlock()
-	return len(recentAdtyVoucherGuesses(userId, now)) < 8
+	return len(recentAdtyVoucherGuesses(userId, now)) < adtyVoucherGuessMax
 }
 
 func noteAdtyVoucherGuess(userId int, now int64) {
+	if common.RedisEnabled {
+		if err := noteAdtyVoucherGuessRedis(userId, now); err != nil {
+			common.SysLog(common.LogText("official voucher guess limiter write failed: %s", err.Error()))
+		}
+		return
+	}
 	voucherGuess.mu.Lock()
 	defer voucherGuess.mu.Unlock()
 	if voucherGuess.fails == nil {
@@ -710,9 +790,40 @@ func noteAdtyVoucherGuess(userId int, now int64) {
 func recentAdtyVoucherGuesses(userId int, now int64) []int64 {
 	var kept []int64
 	for _, at := range voucherGuess.fails[userId] {
-		if now-at < 15*60 {
+		if now-at < adtyVoucherGuessWindow {
 			kept = append(kept, at)
 		}
 	}
 	return kept
+}
+
+func allowAdtyVoucherGuessRedis(userId int, now int64) (bool, error) {
+	if common.RDB == nil {
+		return false, errors.New("Redis client is not initialized")
+	}
+	result, err := common.RDB.Eval(
+		context.Background(),
+		adtyVoucherGuessAllowScript,
+		[]string{adtyVoucherGuessKey(userId)},
+		now,
+		adtyVoucherGuessWindow,
+		adtyVoucherGuessMax,
+	).Int64()
+	if err != nil {
+		return false, err
+	}
+	return result == 1, nil
+}
+
+func noteAdtyVoucherGuessRedis(userId int, now int64) error {
+	if common.RDB == nil {
+		return errors.New("Redis client is not initialized")
+	}
+	return common.RDB.Eval(
+		context.Background(),
+		adtyVoucherGuessNoteScript,
+		[]string{adtyVoucherGuessKey(userId)},
+		now,
+		adtyVoucherGuessWindow,
+	).Err()
 }

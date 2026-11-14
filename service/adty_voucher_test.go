@@ -1,11 +1,15 @@
 package service
 
 import (
+	"context"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/alicebob/miniredis/v2"
+	"github.com/go-redis/redis/v8"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -377,4 +381,70 @@ func countAdtyVoucherLedgers(t *testing.T, db *gorm.DB, siteId int, typ, kind st
 	var n int64
 	require.NoError(t, db.Model(&model.AdtySiteWalletLedger{}).Where("site_id = ? AND type = ? AND wallet_kind = ?", siteId, typ, kind).Count(&n).Error)
 	return n
+}
+
+func TestAdtyVoucherGuessLimitSharedAcrossRedisClients(t *testing.T) {
+	db := prepareReferralDialectDB(t, "sqlite")
+	previousRedis, previousClient := common.RedisEnabled, common.RDB
+	server := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: server.Addr()})
+	require.NoError(t, client.Ping(context.Background()).Err())
+	common.RedisEnabled = true
+	common.RDB = client
+	t.Cleanup(func() {
+		_ = client.Close()
+		common.RedisEnabled = previousRedis
+		common.RDB = previousClient
+		ResetAdtyVoucherGuesses()
+	})
+	ResetAdtyVoucherGuesses()
+
+	now := time.Now().Unix()
+	userA := 42
+	// A timestamp at the window edge is already expired and must not count.
+	noteAdtyVoucherGuess(userA, now-adtyVoucherGuessWindow)
+	require.True(t, allowAdtyVoucherGuess(userA, now))
+
+	// Two logical clients share one Redis budget for the same user.
+	for i := 0; i < adtyVoucherGuessMax; i++ {
+		require.True(t, allowAdtyVoucherGuess(userA, now), "shared allow before note %d", i)
+		noteAdtyVoucherGuess(userA, now)
+	}
+	require.False(t, allowAdtyVoucherGuess(userA, now), "9th failed guess in the window must be denied")
+	require.True(t, allowAdtyVoucherGuess(userA, now+adtyVoucherGuessWindow), "guesses older than 15 minutes must drop out")
+	require.True(t, allowAdtyVoucherGuess(userA+1, now), "a different user has a separate budget")
+
+	root := referralUser(t, db, "voucher-guess-root")
+	require.NoError(t, db.Model(root).Update("role", common.RoleRootUser).Error)
+	mainUser := referralUser(t, db, "voucher-guess-main")
+	require.NoError(t, SetAdtyVoucherIssuanceLimit(root.Id, decimal.NewFromInt(10)))
+	issued, err := IssueAdtyVoucher(AdtyVoucherIssueInput{IssuerId: root.Id, Purpose: model.AdtyVoucherPurposeMainUser, AmountUSD: decimal.NewFromInt(1), Reason: "guess-success"})
+	require.NoError(t, err)
+	redeemed, err := RedeemAdtyVoucher(mainUser.Id, issued.Code)
+	require.NoError(t, err)
+	require.False(t, redeemed.Replayed)
+	replay, err := RedeemAdtyVoucher(mainUser.Id, issued.Code)
+	require.NoError(t, err)
+	require.True(t, replay.Replayed)
+
+	// Successful redeem and replay must not consume a failed-guess slot.
+	guessNow := time.Now().Unix()
+	for i := 0; i < adtyVoucherGuessMax; i++ {
+		_, err = RedeemAdtyVoucher(mainUser.Id, "NOTAREALVOUCHERCODE1")
+		require.ErrorIs(t, err, ErrAdtyVoucherInvalid, "failed guess %d", i)
+	}
+	_, err = RedeemAdtyVoucher(mainUser.Id, "NOTAREALVOUCHERCODE1")
+	require.ErrorIs(t, err, ErrAdtyVoucherRate)
+	require.False(t, allowAdtyVoucherGuess(mainUser.Id, guessNow))
+
+	// Redis marked enabled with a missing client fails closed and does not
+	// fall back to the in-memory counter.
+	common.RDB = nil
+	require.False(t, allowAdtyVoucherGuess(99, guessNow))
+	_, err = RedeemAdtyVoucher(99, "NOTAREALVOUCHERCODE1")
+	require.ErrorIs(t, err, ErrAdtyVoucherRate)
+	voucherGuess.mu.Lock()
+	_, remembered := voucherGuess.fails[99]
+	voucherGuess.mu.Unlock()
+	require.False(t, remembered, "fail-closed Redis must not record an in-memory guess")
 }
