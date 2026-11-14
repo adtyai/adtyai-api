@@ -74,6 +74,9 @@ func migrateAdtySiteTables() error {
 	if err := DB.AutoMigrate(AdtySiteTables()...); err != nil {
 		return err
 	}
+	if err := EnsureAdtySitePriceUniqueIndex(DB); err != nil {
+		return err
+	}
 	if DB.Migrator().HasIndex(&AdtySiteEarningDaily{}, "idx_site_earning") {
 		return DB.Migrator().DropIndex(&AdtySiteEarningDaily{}, "idx_site_earning")
 	}

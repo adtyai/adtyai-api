@@ -32,13 +32,16 @@ import { newRowKey, pendingIncreases, siteMarkups } from '../lib/site-owner'
 import type { OwnerSite } from '../types'
 
 type GroupRow = { key: string; group: string; markup: string }
+type ModelRow = { key: string; model: string; markup: string }
 
-/** Site-wide markup and per-group markups, with pending increases (task 11.4). */
+/** Site-wide markup, per-group markups, and per-model independent markups (A.10). */
 export function PricingPanel(props: { site: OwnerSite }) {
   const { t } = useTranslation()
   const [defaultMarkup, setDefaultMarkup] = useState('')
   const [rows, setRows] = useState<GroupRow[]>([])
+  const [modelRows, setModelRows] = useState<ModelRow[]>([])
   const [removed, setRemoved] = useState<string[]>([])
+  const [removedModels, setRemovedModels] = useState<string[]>([])
   useEffect(() => {
     const current = siteMarkups(props.site.prices)
     setDefaultMarkup(current.defaultMarkup)
@@ -49,15 +52,27 @@ export function PricingPanel(props: { site: OwnerSite }) {
         markup,
       }))
     )
+    setModelRows(
+      Object.entries(current.models).map(([model, markup]) => ({
+        key: newRowKey(),
+        model,
+        markup,
+      }))
+    )
     setRemoved([])
+    setRemovedModels([])
   }, [props.site.prices])
   const savedMarkups = siteMarkups(props.site.prices)
   useDraftNavigation(
     defaultMarkup !== savedMarkups.defaultMarkup ||
       removed.length > 0 ||
+      removedModels.length > 0 ||
       JSON.stringify(
         Object.fromEntries(rows.map((row) => [row.group, row.markup]))
-      ) !== JSON.stringify(savedMarkups.groups)
+      ) !== JSON.stringify(savedMarkups.groups) ||
+      JSON.stringify(
+        Object.fromEntries(modelRows.map((row) => [row.model, row.markup]))
+      ) !== JSON.stringify(savedMarkups.models)
   )
   const pending = pendingIncreases(props.site.prices)
   const save = useVerifiedOwnerMutation<void>({
@@ -72,10 +87,18 @@ export function PricingPanel(props: { site: OwnerSite }) {
       }
       // "0" asks the server to drop a group's own price.
       for (const group of removed) groups[group] = '0'
+      const models: Record<string, string> = {}
+      for (const row of modelRows) {
+        if (row.model.trim() && row.markup) {
+          models[row.model.trim()] = row.markup
+        }
+      }
+      for (const model of removedModels) models[model] = '0'
       return savePricing(
         {
           default_markup: defaultMarkup || undefined,
           group_markups: groups,
+          model_markups: models,
           expected_version: props.site.pricing_version,
         },
         proof
@@ -90,6 +113,11 @@ export function PricingPanel(props: { site: OwnerSite }) {
         {t(
           'Customers pay the main site price times your markup. Lowering a markup applies at once; raising it applies after {{hours}} hours, and customers are told by email.',
           { hours: props.site.markup_increase_delay_hours }
+        )}
+      </p>
+      <p className='text-muted-foreground text-sm'>
+        {t(
+          'Removing an independent model markup restores the global markup immediately.'
         )}
       </p>
       <p className='text-muted-foreground text-sm'>
@@ -114,9 +142,16 @@ export function PricingPanel(props: { site: OwnerSite }) {
           <h3 className='text-sm font-medium'>{t('Pending increases')}</h3>
           <ul className='text-sm'>
             {pending.map((item) => (
-              <li key={item.group || 'default'} data-testid='pending-increase'>
+              <li
+                key={`${item.model ?? ''}::${item.group || 'default'}`}
+                data-testid='pending-increase'
+              >
                 {t('{{group}}: {{current}} → {{next}} from {{time}}', {
-                  group: item.group || t('All groups'),
+                  group: item.model
+                    ? item.group
+                      ? `${item.model} (${item.group})`
+                      : item.model
+                    : item.group || t('All groups'),
                   current: item.current,
                   next: item.next,
                   time: formatTimestamp(item.at),
@@ -205,6 +240,75 @@ export function PricingPanel(props: { site: OwnerSite }) {
           }
         >
           {t('Add group')}
+        </Button>
+      </section>
+      <section aria-label={t('Markup by model')} className='space-y-2'>
+        <h3 className='text-sm font-medium'>{t('Markup by model')}</h3>
+        {modelRows.map((row, index) => (
+          <div key={row.key} className='flex items-end gap-2'>
+            <div className='space-y-2'>
+              <Label htmlFor={`model-name-${index}`}>{t('Model')}</Label>
+              <Input
+                id={`model-name-${index}`}
+                value={row.model}
+                disabled={closing}
+                onChange={(event) =>
+                  setModelRows((prev) =>
+                    prev.map((item, i) =>
+                      i === index
+                        ? { ...item, model: event.target.value }
+                        : item
+                    )
+                  )
+                }
+              />
+            </div>
+            <div className='space-y-2'>
+              <Label htmlFor={`model-markup-${index}`}>{t('Markup')}</Label>
+              <Input
+                id={`model-markup-${index}`}
+                type='number'
+                min={1}
+                step='0.01'
+                value={row.markup}
+                disabled={closing}
+                onChange={(event) =>
+                  setModelRows((prev) =>
+                    prev.map((item, i) =>
+                      i === index
+                        ? { ...item, markup: event.target.value }
+                        : item
+                    )
+                  )
+                }
+              />
+            </div>
+            <Button
+              variant='outline'
+              disabled={closing}
+              onClick={() => {
+                if (row.model.trim()) {
+                  setRemovedModels((prev) => [...prev, row.model.trim()])
+                }
+                setModelRows((prev) => prev.filter((_, i) => i !== index))
+              }}
+            >
+              {t('Remove')}
+            </Button>
+          </div>
+        ))}
+        <Button
+          size='sm'
+          variant='outline'
+          disabled={closing}
+          onClick={() =>
+            setModelRows((prev) => [
+              ...prev,
+              { key: newRowKey(), model: '', markup: '' },
+            ])
+          }
+        >
+          {t('Add model')}
         </Button>
       </section>
       <div>

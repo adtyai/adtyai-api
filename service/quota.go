@@ -171,7 +171,7 @@ func PreWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usag
 	if billed, ok := ratio_setting.GetGroupGroupRatioDecimal(relayInfo.UserGroup, relayInfo.UsingGroup); ok {
 		actualGroupRatioDec = billed
 	}
-	actualGroupRatioDec, _ = AdtyApplySiteMarkupDecimal(ctx, relayInfo.UserId, relayInfo.UsingGroup, actualGroupRatioDec) // 二开：任务 11.4
+	actualGroupRatioDec, _ = AdtyApplySiteMarkupDecimal(ctx, relayInfo.UserId, relayInfo.UsingGroup, actualGroupRatioDec, modelName) // 二开：任务 11.4
 	actualGroupRatio := actualGroupRatioDec.InexactFloat64()
 
 	quotaInfo := QuotaInfo{

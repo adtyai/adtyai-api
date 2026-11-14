@@ -32,6 +32,7 @@ func adtyOwnedSite(c *gin.Context) (*model.AdtySite, bool) {
 type adtySitePricingBody struct {
 	DefaultMarkup   *string           `json:"default_markup"`
 	GroupMarkups    map[string]string `json:"group_markups"` // 值为 "0" 表示删掉这个分组的单独价
+	ModelMarkups    map[string]string `json:"model_markups"` // 值为 "0" 表示删掉这个模型的独立加价
 	ExpectedVersion int64             `json:"expected_version"`
 }
 
@@ -41,7 +42,7 @@ func saveAdtySitePricing(c *gin.Context, site *model.AdtySite, userId int) {
 		common.ApiErrorT(c, "Invalid parameters")
 		return
 	}
-	input := service.AdtySitePricingInput{SiteId: site.Id, UserId: userId, ExpectedVersion: body.ExpectedVersion, GroupMarkups: map[string]decimal.Decimal{}}
+	input := service.AdtySitePricingInput{SiteId: site.Id, UserId: userId, ExpectedVersion: body.ExpectedVersion, GroupMarkups: map[string]decimal.Decimal{}, ModelMarkups: map[string]decimal.Decimal{}}
 	if body.DefaultMarkup != nil && strings.TrimSpace(*body.DefaultMarkup) != "" {
 		value, err := decimal.NewFromString(strings.TrimSpace(*body.DefaultMarkup))
 		if err != nil {
@@ -58,6 +59,14 @@ func saveAdtySitePricing(c *gin.Context, site *model.AdtySite, userId int) {
 		}
 		input.GroupMarkups[group] = value
 	}
+	for modelName, raw := range body.ModelMarkups {
+		value, err := decimal.NewFromString(strings.TrimSpace(raw))
+		if err != nil {
+			common.ApiErrorT(c, "Invalid parameters")
+			return
+		}
+		input.ModelMarkups[modelName] = value
+	}
 	result, err := service.SaveAdtySitePricing(input)
 	if err != nil {
 		common.ApiError(c, err)
@@ -66,7 +75,8 @@ func saveAdtySitePricing(c *gin.Context, site *model.AdtySite, userId int) {
 	common.ApiSuccess(c, result)
 }
 
-// PutAdtySitePricing 保存全站定价：PUT /api/adty/site/pricing {default_markup, group_markups, expected_version}。
+// PutAdtySitePricing 保存全站定价：PUT /api/adty/site/pricing {default_markup, group_markups, model_markups, expected_version}。
+// 只接受加价配置；供货倍率和主站标准价格不能从这条路径改（SPRC-014）。
 func PutAdtySitePricing(c *gin.Context) {
 	site, ok := adtyOwnedSite(c)
 	if !ok {

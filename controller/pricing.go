@@ -58,6 +58,7 @@ func GetPricing(c *gin.Context) {
 	service.AdtyApplySitePricing(c, groupRatio) // 二开：分站价格（任务 11.4）
 	usableGroup = service.GetUserUsableGroups(group)
 	pricing = filterPricingByUsableGroups(pricing, usableGroup)
+	pricing = service.AdtyAdjustPricingForSiteModels(c, group, pricing)
 	// check groupRatio contains usableGroup
 	for group := range ratio_setting.GetGroupRatioCopy() {
 		if _, ok := usableGroup[group]; !ok {

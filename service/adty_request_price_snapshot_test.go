@@ -32,7 +32,7 @@ func TestRequestPriceSnapshotOfficialFieldsAtReserve(t *testing.T) {
 		UsePrice:       true,
 		GroupRatioInfo: hosttypes.GroupRatioInfo{GroupRatio: 1},
 	})
-	billed, storedK := AdtyApplySiteMarkupDecimal(ctx, customer.Id, "default", decimal.NewFromInt(1))
+	billed, storedK := AdtyApplySiteMarkupDecimal(ctx, customer.Id, "default", decimal.NewFromInt(1), "")
 	require.True(t, storedK.Equal(decimal.RequireFromString("1.25")))
 	info.PriceData.GroupRatioInfo.GroupRatio = billed.InexactFloat64()
 	info.PriceData.GroupRatioInfo.SetBilledGroupRatio(billed)
@@ -91,7 +91,7 @@ func TestRequestPriceSnapshotIgnoresLivePriceChangesOnRetryAndSettle(t *testing.
 
 	ctx, info := snapshotRelay(t, customer.Id, "default", hosttypes.PriceData{ModelRatio: 2})
 	info.OriginModelName = "snap-retry-model"
-	billed, _ := AdtyApplySiteMarkupDecimal(ctx, customer.Id, "default", decimal.NewFromInt(1))
+	billed, _ := AdtyApplySiteMarkupDecimal(ctx, customer.Id, "default", decimal.NewFromInt(1), "")
 	info.PriceData.GroupRatioInfo.SetBilledGroupRatio(billed)
 	AdtyFreezeRequestPriceSnapshot(ctx, info)
 	snap := AdtyFrozenPriceSnapshot(ctx)
@@ -109,7 +109,7 @@ func TestRequestPriceSnapshotIgnoresLivePriceChangesOnRetryAndSettle(t *testing.
 	InvalidateAdtySitePriceCache()
 	InvalidateAdtySiteCache()
 
-	live, _ := AdtyApplySiteMarkupDecimal(nil, customer.Id, "default", decimal.NewFromInt(3))
+	live, _ := AdtyApplySiteMarkupDecimal(nil, customer.Id, "default", decimal.NewFromInt(3), "")
 	assert.False(t, live.Equal(billed), "live config changed")
 	AdtyFreezeRequestPriceSnapshot(ctx, info)
 	unchanged := AdtyFrozenPriceSnapshot(ctx)
@@ -187,7 +187,7 @@ func TestRequestPriceSnapshotMainSiteAndTeamRepresentable(t *testing.T) {
 
 	t.Run("main-site non-team", func(t *testing.T) {
 		ctx, info := snapshotRelay(t, mainUser.Id, "default", hosttypes.PriceData{ModelRatio: 2, GroupRatioInfo: hosttypes.GroupRatioInfo{GroupRatio: 1.5}})
-		billed, _ := AdtyApplySiteMarkupDecimal(ctx, mainUser.Id, "default", decimal.RequireFromString("1.5"))
+		billed, _ := AdtyApplySiteMarkupDecimal(ctx, mainUser.Id, "default", decimal.RequireFromString("1.5"), "")
 		info.PriceData.GroupRatioInfo.SetBilledGroupRatio(billed)
 		AdtyFreezeRequestPriceSnapshot(ctx, info)
 		snap := AdtyFrozenPriceSnapshot(ctx)
@@ -203,7 +203,7 @@ func TestRequestPriceSnapshotMainSiteAndTeamRepresentable(t *testing.T) {
 
 	t.Run("main-site team has no supply floor", func(t *testing.T) {
 		info := &relaycommon.RelayInfo{UserId: mainUser.Id, UsingGroup: "default", StartTime: time.Now(), PriceData: hosttypes.PriceData{ModelRatio: 2}}
-		billed, _ := AdtyApplySiteMarkupDecimal(mainTeam, mainUser.Id, "default", decimal.RequireFromString("1.5"))
+		billed, _ := AdtyApplySiteMarkupDecimal(mainTeam, mainUser.Id, "default", decimal.RequireFromString("1.5"), "")
 		info.PriceData.GroupRatioInfo.SetBilledGroupRatio(billed)
 		AdtyFreezeRequestPriceSnapshot(mainTeam, info)
 		snap := AdtyFrozenPriceSnapshot(mainTeam)
@@ -217,7 +217,7 @@ func TestRequestPriceSnapshotMainSiteAndTeamRepresentable(t *testing.T) {
 
 	t.Run("site team records floor and final at supply", func(t *testing.T) {
 		info := &relaycommon.RelayInfo{UserId: siteUser.Id, UsingGroup: "default", StartTime: time.Now(), PriceData: hosttypes.PriceData{ModelRatio: 2}}
-		billed, _ := AdtyApplySiteMarkupDecimal(siteTeam, siteUser.Id, "default", decimal.RequireFromString("1.5"))
+		billed, _ := AdtyApplySiteMarkupDecimal(siteTeam, siteUser.Id, "default", decimal.RequireFromString("1.5"), "")
 		info.PriceData.GroupRatioInfo.SetBilledGroupRatio(billed)
 		AdtyFreezeRequestPriceSnapshot(siteTeam, info)
 		snap := AdtyFrozenPriceSnapshot(siteTeam)

@@ -55,6 +55,14 @@ func InvalidateAdtySitePriceCache() {
 	adtySitePriceMu.Unlock()
 }
 
+func adtyNormalizeSitePriceModel(name string) string {
+	return strings.TrimSpace(name)
+}
+
+func adtySitePriceKey(group, modelName string) string {
+	return group + "" + adtyNormalizeSitePriceModel(modelName)
+}
+
 func adtySitePrices(siteId int) []model.AdtySitePrice {
 	adtySitePriceMu.Lock()
 	defer adtySitePriceMu.Unlock()
@@ -86,22 +94,22 @@ func AdtyBillingSiteForUser(userId int) *model.AdtySite {
 	return site
 }
 
-// AdtySiteMarkup 返回分站客户在这个分组的存储 k（加价比例 = k-1）；主站客户、站点没有开着时返回 1。只读缓存。
-// 已经保存的价如果高于当前上限，按当前上限返回。
-func AdtySiteMarkup(userId int, group string) decimal.Decimal {
+// AdtySiteMarkup 返回分站客户在这个分组、这个模型上的存储 k（加价比例 = k-1）；主站客户、站点没有开着时返回 1。只读缓存。
+// modelName 为空时使用该客户/分组层级的默认加价。已经保存的价如果高于当前上限，按当前上限返回。
+func AdtySiteMarkup(userId int, group, modelName string) decimal.Decimal {
 	site := AdtyBillingSiteForUser(userId)
 	if site == nil {
 		return decimal.NewFromInt(1)
 	}
-	return adtyClampMarkup(site, ResolveAdtySiteMarkup(adtySitePrices(site.Id), userId, group), userId, group)
+	return adtyClampMarkup(site, ResolveAdtySiteMarkup(adtySitePrices(site.Id), userId, group, modelName), userId, group)
 }
 
-// AdtySiteVisitorMarkup 是分站访客（没登录）看价格页时的存储 k：全站 + 分组 → 全站 → 1。
-func AdtySiteVisitorMarkup(site *model.AdtySite, group string) decimal.Decimal {
+// AdtySiteVisitorMarkup 是分站访客（没登录）看价格页时的存储 k：全站 + 分组 → 全站 → 1，并套用该模型的独立加价（若有）。
+func AdtySiteVisitorMarkup(site *model.AdtySite, group, modelName string) decimal.Decimal {
 	if !AdtySiteServesCustomers(site) || !resellerSetting().Enabled {
 		return decimal.NewFromInt(1)
 	}
-	return adtyClampMarkup(site, ResolveAdtySiteMarkup(adtySitePrices(site.Id), 0, group), 0, group)
+	return adtyClampMarkup(site, ResolveAdtySiteMarkup(adtySitePrices(site.Id), 0, group, modelName), 0, group)
 }
 
 // AdtySiteCostFactor 是站点当前的供货倍率：单站设的值 → 业绩档位 → 全局；低于 min_cost_factor 时用下限。
@@ -196,8 +204,8 @@ func AdtyBilledGroupRatioFromContext(c *gin.Context) (decimal.Decimal, bool) {
 
 // AdtyApplySiteMarkupDecimal 按已确认公式用精确十进制计算供货价、售价和团队下限。
 // 返回最终计费分组倍率和存储 k（1 表示加价比例为 0）。
-func AdtyApplySiteMarkupDecimal(c *gin.Context, userId int, group string, groupRatio decimal.Decimal) (billed, storedK decimal.Decimal) {
-	marked, storedK := adtyApplySiteMarkupOnlyDecimal(c, userId, group, groupRatio)
+func AdtyApplySiteMarkupDecimal(c *gin.Context, userId int, group string, groupRatio decimal.Decimal, modelName string) (billed, storedK decimal.Decimal) {
+	marked, storedK := adtyApplySiteMarkupOnlyDecimal(c, userId, group, groupRatio, modelName)
 	billed, storedK = adtyApplyTeamProtocolPriceDecimal(c, userId, groupRatio, marked, storedK)
 	adtyRememberBilledRatio(c, billed)
 	return billed, storedK
@@ -206,12 +214,12 @@ func AdtyApplySiteMarkupDecimal(c *gin.Context, userId int, group string, groupR
 // AdtyApplySiteMarkup 在算出分组倍率之后调用：按供货倍率和加价比例改分组倍率，并把 k、d 写进 gin 上下文。
 // 返回普通售价对应的分组倍率和存储 k（1 表示加价比例为 0）。上游的 HandleGroupRatio、Realtime 预扣都调它。
 // 财务权威结果走 AdtyApplySiteMarkupDecimal；这里的 float64 仅留给仍使用浮点的调用方和快照字段。
-func AdtyApplySiteMarkup(c *gin.Context, userId int, group string, groupRatio float64) (float64, float64) {
-	billed, storedK := AdtyApplySiteMarkupDecimal(c, userId, group, decimal.NewFromFloat(groupRatio))
+func AdtyApplySiteMarkup(c *gin.Context, userId int, group string, groupRatio float64, modelName string) (float64, float64) {
+	billed, storedK := AdtyApplySiteMarkupDecimal(c, userId, group, decimal.NewFromFloat(groupRatio), modelName)
 	return billed.InexactFloat64(), storedK.InexactFloat64()
 }
 
-func adtyApplySiteMarkupOnlyDecimal(c *gin.Context, userId int, group string, groupRatio decimal.Decimal) (decimal.Decimal, decimal.Decimal) {
+func adtyApplySiteMarkupOnlyDecimal(c *gin.Context, userId int, group string, groupRatio decimal.Decimal, modelName string) (decimal.Decimal, decimal.Decimal) {
 	one := decimal.NewFromInt(1)
 	factors := adtyDefaultPriceFactors(group, groupRatio)
 	site := AdtyBillingSiteForUser(userId)
@@ -221,7 +229,7 @@ func adtyApplySiteMarkupOnlyDecimal(c *gin.Context, userId int, group string, gr
 	}
 	factors.MainSite = false
 	factors.SiteId = site.Id
-	kDec := adtyClampMarkup(site, ResolveAdtySiteMarkup(adtySitePrices(site.Id), userId, group), userId, group)
+	kDec := adtyClampMarkup(site, ResolveAdtySiteMarkup(adtySitePrices(site.Id), userId, group, modelName), userId, group)
 	kUsed := adtyValidStoredMarkup(kDec, userId, group)
 	k := kUsed.InexactFloat64()
 	d, dOK := AdtySiteCostFactor(site)
@@ -353,24 +361,27 @@ func AdtyAppendSiteMarkupAdminInfo(c *gin.Context, other *model.LogOther) {
 	}
 }
 
-// AdtySitePricingInput 是站长保存定价的请求：默认 k、按分组的 k，带乐观锁版本。
+// AdtySitePricingInput 是站长保存定价的请求：默认 k、按分组的 k、按模型的独立 k，带乐观锁版本。
 type AdtySitePricingInput struct {
 	SiteId          int
 	UserId          int // 0 = 全站定价；否则是这个客户的单独定价
 	DefaultMarkup   *decimal.Decimal
 	GroupMarkups    map[string]decimal.Decimal // 值为 0 表示删掉这个分组的单独价
+	ModelMarkups    map[string]decimal.Decimal // 值为 0 表示删掉这个模型的独立加价，恢复全局
 	ExpectedVersion int64
 	Now             int64
 }
 
 // AdtySitePricingResult 说明保存后哪些项是立即生效、哪些在等涨价延迟。
 type AdtySitePricingResult struct {
-	Version   int64                 `json:"version"`
-	Immediate []string              `json:"immediate"`
-	Pending   map[string]int64      `json:"pending"` // 分组（空串是默认）→ 生效时间
-	Prices    []model.AdtySitePrice `json:"prices"`
-	Raised    []model.AdtySitePrice `json:"-"`
-	Site      *model.AdtySite       `json:"-"`
+	Version        int64                 `json:"version"`
+	Immediate      []string              `json:"immediate"`
+	Pending        map[string]int64      `json:"pending"` // 分组（空串是默认）→ 生效时间
+	ModelImmediate []string              `json:"model_immediate,omitempty"`
+	ModelPending   map[string]int64      `json:"model_pending,omitempty"`
+	Prices         []model.AdtySitePrice `json:"prices"`
+	Raised         []model.AdtySitePrice `json:"-"`
+	Site           *model.AdtySite       `json:"-"`
 }
 
 // adtySiteMaxMarkup 是这个站的 k 上限：单站和全局都设了就取较小的那个。
@@ -413,7 +424,8 @@ func adtyClampMarkup(site *model.AdtySite, k decimal.Decimal, userId int, group 
 }
 
 // SaveAdtySitePricing 保存站长定价。规则（11.4）：
-//   - k 必须为正数且不超过上限（k 是存储倍率，加价比例 = k-1；0 仍表示删掉分组单独价）；站点 paused 时不能改。
+//   - k 必须为正数且不超过上限（k 是存储倍率，加价比例 = k-1；0 仍表示删掉分组单独价或单模型独立加价）；站点 paused 时不能改。
+//   - 删除单模型独立加价立即生效，该模型随后继承全局加价，并清掉进程内定价缓存（SPRC-005）。
 //   - 第一次设置、或者新值 ≤ 现值：立即生效，同时清掉待生效的涨价。
 //   - 新值 > 现值：写进 PendingMarkup，markup_increase_delay_hours 之后由主节点任务生效。
 //   - 版本号是这个站（或这个客户）所有定价行的最大 Version，保存时带 expected_version，不一致就拒绝。
@@ -423,7 +435,7 @@ func SaveAdtySitePricing(input AdtySitePricingInput) (*AdtySitePricingResult, er
 		now = time.Now().Unix()
 	}
 	delay := int64(max(resellerSetting().MarkupIncreaseDelayHours, 0)) * 3600
-	result := &AdtySitePricingResult{Pending: map[string]int64{}}
+	result := &AdtySitePricingResult{Pending: map[string]int64{}, ModelPending: map[string]int64{}}
 	err := model.DB.Transaction(func(tx *gorm.DB) error {
 		var site model.AdtySite
 		if err := model.AdtyLockForUpdate(tx).Where("id = ?", input.SiteId).First(&site).Error; err != nil {
@@ -442,22 +454,33 @@ func SaveAdtySitePricing(input AdtySitePricingInput) (*AdtySitePricingResult, er
 		if !ok {
 			return ErrAdtySiteDisabled
 		}
-		changes := map[string]decimal.Decimal{}
+		type priceChange struct {
+			group, model string
+			markup       decimal.Decimal
+		}
+		var changes []priceChange
 		if input.DefaultMarkup != nil {
-			changes[""] = *input.DefaultMarkup
+			changes = append(changes, priceChange{markup: *input.DefaultMarkup})
 		}
 		for group, markup := range input.GroupMarkups {
 			group = strings.TrimSpace(group)
 			if group == "" || len(group) > 64 {
 				return common.NewMessage("Invalid parameters")
 			}
-			changes[group] = markup
+			changes = append(changes, priceChange{group: group, markup: markup})
 		}
-		for group, markup := range changes {
-			if markup.IsZero() && group != "" {
+		for modelName, markup := range input.ModelMarkups {
+			modelName = adtyNormalizeSitePriceModel(modelName)
+			if modelName == "" || len(modelName) > 191 {
+				return common.NewMessage("Invalid parameters")
+			}
+			changes = append(changes, priceChange{model: modelName, markup: markup})
+		}
+		for _, change := range changes {
+			if change.markup.IsZero() && (change.group != "" || change.model != "") {
 				continue
 			}
-			if !markup.IsPositive() || markup.GreaterThan(limit) {
+			if !change.markup.IsPositive() || change.markup.GreaterThan(limit) {
 				return common.NewMessage("The markup must be greater than 0 and at most {{max}}", map[string]any{"max": limit.String()})
 			}
 		}
@@ -469,7 +492,7 @@ func SaveAdtySitePricing(input AdtySitePricingInput) (*AdtySitePricingResult, er
 		existing := map[string]model.AdtySitePrice{}
 		for _, row := range rows {
 			version = max(version, row.Version)
-			existing[row.Group] = row
+			existing[adtySitePriceKey(row.Group, row.Model)] = row
 		}
 		if version != input.ExpectedVersion {
 			return ErrAdtySitePricingConflict
@@ -479,10 +502,33 @@ func SaveAdtySitePricing(input AdtySitePricingInput) (*AdtySitePricingResult, er
 			return err
 		}
 		next := version + 1
-		for group, markup := range changes {
-			row, found := existing[group]
+		recordImmediate := func(change priceChange) {
+			if change.model != "" {
+				result.ModelImmediate = append(result.ModelImmediate, change.model)
+				return
+			}
+			result.Immediate = append(result.Immediate, change.group)
+		}
+		recordPending := func(change priceChange, at int64) {
+			if change.model != "" {
+				result.ModelPending[change.model] = at
+				return
+			}
+			result.Pending[change.group] = at
+		}
+		for _, change := range changes {
+			group, modelName, markup := change.group, change.model, change.markup
+			row, found := existing[adtySitePriceKey(group, modelName)]
 			if markup.IsZero() {
 				if !found {
+					continue
+				}
+				// SPRC-005: 删除单模型独立加价必须立刻恢复全局加价，不能留下缓存价。
+				if modelName != "" {
+					if err := tx.Where("id = ?", row.Id).Delete(&model.AdtySitePrice{}).Error; err != nil {
+						return err
+					}
+					recordImmediate(change)
 					continue
 				}
 				// 删掉分组单独价等于改用上一级。上一级不更高，或站上还没有客户，就马上删。
@@ -491,12 +537,12 @@ func SaveAdtySitePricing(input AdtySitePricingInput) (*AdtySitePricingResult, er
 				if err := tx.Where("site_id = ? AND id <> ?", site.Id, row.Id).Find(&others).Error; err != nil {
 					return err
 				}
-				fallback := ResolveAdtySiteMarkup(others, input.UserId, group)
+				fallback := ResolveAdtySiteMarkup(others, input.UserId, group, modelName)
 				if !customerCountPositive(customerCount) || fallback.LessThanOrEqual(row.Markup) {
 					if err := tx.Where("id = ?", row.Id).Delete(&model.AdtySitePrice{}).Error; err != nil {
 						return err
 					}
-					result.Immediate = append(result.Immediate, group)
+					recordImmediate(change)
 					continue
 				}
 				// 到期后删掉这一行，之后跟着上一级变，不把删除当时的高价冻住。
@@ -506,7 +552,7 @@ func SaveAdtySitePricing(input AdtySitePricingInput) (*AdtySitePricingResult, er
 				}).Error; err != nil {
 					return err
 				}
-				result.Pending[group] = now + delay
+				recordPending(change, now+delay)
 				notice := row
 				notice.PendingMarkup = fallback
 				result.Raised = append(result.Raised, notice)
@@ -519,15 +565,15 @@ func SaveAdtySitePricing(input AdtySitePricingInput) (*AdtySitePricingResult, er
 					if err := tx.Where("site_id = ? AND user_id = ?", site.Id, input.UserId).Find(&others).Error; err != nil {
 						return err
 					}
-					current = ResolveAdtySiteMarkup(others, input.UserId, group)
+					current = ResolveAdtySiteMarkup(others, input.UserId, group, modelName)
 				}
-				row = model.AdtySitePrice{SiteId: site.Id, UserId: input.UserId, Group: group, Version: next, UpdatedAt: now}
+				row = model.AdtySitePrice{SiteId: site.Id, UserId: input.UserId, Group: group, Model: modelName, Version: next, UpdatedAt: now}
 				if customerCountPositive(customerCount) && markup.GreaterThan(current) {
 					row.Markup, row.PendingMarkup, row.PendingAt = current, markup, now+delay
 					if err := tx.Create(&row).Error; err != nil {
 						return err
 					}
-					result.Pending[group] = now + delay
+					recordPending(change, now+delay)
 					result.Raised = append(result.Raised, row)
 					continue
 				}
@@ -535,16 +581,16 @@ func SaveAdtySitePricing(input AdtySitePricingInput) (*AdtySitePricingResult, er
 				if err := tx.Create(&row).Error; err != nil {
 					return err
 				}
-				result.Immediate = append(result.Immediate, group)
+				recordImmediate(change)
 				continue
 			}
 			updates := map[string]any{"version": next, "updated_at": now}
 			if markup.LessThanOrEqual(row.Markup) {
 				updates["markup"], updates["pending_markup"], updates["pending_at"] = markup, decimal.Zero, 0
-				result.Immediate = append(result.Immediate, group)
+				recordImmediate(change)
 			} else {
 				updates["pending_markup"], updates["pending_at"] = markup, now+delay
-				result.Pending[group] = now + delay
+				recordPending(change, now+delay)
 				row.PendingMarkup, row.PendingAt = markup, now+delay
 				result.Raised = append(result.Raised, row)
 			}
@@ -710,7 +756,11 @@ func adtyTaskRecalcGroupRatioDecimal(task *model.Task, group string, groupRatio 
 			}
 		}
 	}
-	billed, _ := AdtyApplySiteMarkupDecimal(nil, task.UserId, group, groupRatio)
+	modelName := ""
+	if task != nil {
+		modelName = adtyNormalizeSitePriceModel(task.Properties.OriginModelName)
+	}
+	billed, _ := AdtyApplySiteMarkupDecimal(nil, task.UserId, group, groupRatio, modelName)
 	return billed
 }
 
@@ -842,16 +892,17 @@ func startAdtySiteMarkupTask() {
 // AdtyUserGroupRatio 是 /api/user/self/groups 显示的分组倍率：分站客户按供货倍率和加价比例计算。
 func AdtyUserGroupRatio(userId int, userGroup, group string) float64 {
 	ratio := GetUserGroupRatio(userGroup, group)
-	marked, _ := AdtyApplySiteMarkup(nil, userId, group, ratio)
+	marked, _ := AdtyApplySiteMarkup(nil, userId, group, ratio, "")
 	return marked
 }
 
 // AdtyApplySitePricing 在 /api/pricing 返回前调用：分站客户按自己的价、分站访客按全站默认价改分组倍率。
+// 分组倍率按空模型（全局）加价计算；单模型独立加价由 AdtyAdjustPricingForSiteModels 乘进各模型的标价/倍率。
 func AdtyApplySitePricing(c *gin.Context, groupRatio map[string]float64) {
 	userId := c.GetInt("id")
 	if userId > 0 {
 		for group, ratio := range groupRatio {
-			groupRatio[group], _ = AdtyApplySiteMarkup(nil, userId, group, ratio)
+			groupRatio[group], _ = AdtyApplySiteMarkup(nil, userId, group, ratio, "")
 		}
 		return
 	}
@@ -864,7 +915,56 @@ func AdtyApplySitePricing(c *gin.Context, groupRatio map[string]float64) {
 		return
 	}
 	for group, ratio := range groupRatio {
-		marked, _, _ := adtySiteOrdinarySellRatioDec(decimal.NewFromFloat(ratio), AdtySiteVisitorMarkup(site, group), d, 0, group)
+		marked, _, _ := adtySiteOrdinarySellRatioDec(decimal.NewFromFloat(ratio), AdtySiteVisitorMarkup(site, group, ""), d, 0, group)
 		groupRatio[group] = marked.InexactFloat64()
 	}
+}
+
+// AdtyAdjustPricingForSiteModels 返回价格列表的副本，把每个模型的标价和倍率按
+// 该模型有效 k 相对同一分组空模型 k 的比值放大或缩小。group_ratio 已经乘过空模型加价，
+// 这样公开价格页显示的是该模型的有效售价。不改动缓存中的原始切片。
+func AdtyAdjustPricingForSiteModels(c *gin.Context, group string, pricing []model.Pricing) []model.Pricing {
+	if c == nil || len(pricing) == 0 {
+		return pricing
+	}
+	userId := c.GetInt("id")
+	var site *model.AdtySite
+	if userId > 0 {
+		site = AdtyBillingSiteForUser(userId)
+	} else {
+		site = AdtySiteForRequest(c)
+		userId = 0
+	}
+	if site == nil || !AdtySiteServesCustomers(site) || !resellerSetting().Enabled {
+		return pricing
+	}
+	prices := adtySitePrices(site.Id)
+	baseK := adtyClampMarkup(site, ResolveAdtySiteMarkup(prices, userId, group, ""), userId, group)
+	if !baseK.IsPositive() {
+		return pricing
+	}
+	out := make([]model.Pricing, len(pricing))
+	copy(out, pricing)
+	changed := false
+	for i := range out {
+		name := adtyNormalizeSitePriceModel(out[i].ModelName)
+		if name == "" {
+			continue
+		}
+		modelK := adtyClampMarkup(site, ResolveAdtySiteMarkup(prices, userId, group, name), userId, group)
+		if !modelK.IsPositive() || modelK.Equal(baseK) {
+			continue
+		}
+		factor := modelK.Div(baseK)
+		out[i].ModelPrice = decimal.NewFromFloat(out[i].ModelPrice).Mul(factor).InexactFloat64()
+		if out[i].ModelRatio != nil {
+			scaled := decimal.NewFromFloat(*out[i].ModelRatio).Mul(factor).InexactFloat64()
+			out[i].ModelRatio = &scaled
+		}
+		changed = true
+	}
+	if !changed {
+		return pricing
+	}
+	return out
 }

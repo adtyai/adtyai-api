@@ -44,6 +44,7 @@ export type SitePrice = {
   site_id: number
   user_id: number
   group: string
+  model?: string
   markup: string
   pending_markup: string
   pending_at: number

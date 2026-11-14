@@ -134,14 +134,14 @@ func TestAdtyTeamProtocolPriceUsesBoundKey(t *testing.T) {
 	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
 	ctx.Request = httptest.NewRequest(http.MethodPost, "/", nil)
 	common.SetContextKey(ctx, constant.ContextKeyTokenId, token.Id)
-	marked, k := AdtyApplySiteMarkup(ctx, member.Id, "default", 2)
+	marked, k := AdtyApplySiteMarkup(ctx, member.Id, "default", 2, "")
 	assert.Equal(t, 1.0, k)
 	assert.InDelta(t, 1.0, marked, 0.000001)
 	assert.False(t, AdtyTeamPriceBlocked(ctx))
 
 	personal, _ := gin.CreateTestContext(httptest.NewRecorder())
 	personal.Request = httptest.NewRequest(http.MethodPost, "/", nil)
-	unchanged, _ := AdtyApplySiteMarkup(personal, member.Id, "default", 2)
+	unchanged, _ := AdtyApplySiteMarkup(personal, member.Id, "default", 2, "")
 	assert.InDelta(t, 2.0, unchanged, 0.000001)
 }
 

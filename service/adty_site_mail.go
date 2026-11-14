@@ -483,6 +483,9 @@ func adtyMarkupRaisedDetail(raised []model.AdtySitePrice) (string, int64) {
 		if group == "" {
 			group = "all groups"
 		}
+		if modelName := strings.TrimSpace(row.Model); modelName != "" {
+			group = group + " / " + modelName
+		}
 		next := row.PendingMarkup
 		if next.IsZero() && row.Markup.IsPositive() {
 			next = row.Markup

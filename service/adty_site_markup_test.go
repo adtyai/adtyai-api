@@ -60,7 +60,7 @@ func TestSiteMarkupResolveOrder(t *testing.T) {
 		{"stored k below 1 is used", []model.AdtySitePrice{{UserId: 0, Group: "", Markup: decimal.RequireFromString("0.9")}}, 8, "default", "0.9"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := ResolveAdtySiteMarkup(tc.prices, tc.user, tc.group)
+			got := ResolveAdtySiteMarkup(tc.prices, tc.user, tc.group, "")
 			assert.True(t, got.Equal(decimal.RequireFromString(tc.want)), "got %s", got)
 		})
 	}
@@ -89,7 +89,7 @@ func TestHandleGroupRatioAppliesMarkup(t *testing.T) {
 			require.NoError(t, db.Model(&model.AdtySite{}).Where("id = ?", site.Id).Update("status", tc.status).Error)
 			InvalidateAdtySiteCache()
 			ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
-			ratio, k := AdtyApplySiteMarkup(ctx, tc.user, "default", 1.0)
+			ratio, k := AdtyApplySiteMarkup(ctx, tc.user, "default", 1.0, "")
 			assert.InDelta(t, tc.want, ratio, 1e-12)
 			assert.InDelta(t, tc.k, k, 1e-12)
 			if tc.k > 1 {
@@ -408,20 +408,20 @@ func TestMarkupReadClampsToCurrentLimit(t *testing.T) {
 	_, site := openActiveSite(t, db, "cap-read")
 	customer := siteCustomer(t, db, site, "cap-read-customer")
 	sitePrice(t, db, site.Id, 0, "", "2.5")
-	assert.True(t, AdtySiteMarkup(customer.Id, "default").Equal(decimal.RequireFromString("2.5")))
+	assert.True(t, AdtySiteMarkup(customer.Id, "default", "").Equal(decimal.RequireFromString("2.5")))
 
 	resellerSetting().MaxMarkup = new(1.5)
-	assert.True(t, AdtySiteMarkup(customer.Id, "default").Equal(decimal.RequireFromString("1.5")), "global cap is lower than the stored price")
+	assert.True(t, AdtySiteMarkup(customer.Id, "default", "").Equal(decimal.RequireFromString("1.5")), "global cap is lower than the stored price")
 
 	require.NoError(t, db.Model(&model.AdtySite{}).Where("id = ?", site.Id).Update("max_markup", decimal.RequireFromString("2")).Error)
 	InvalidateAdtySiteCache()
-	assert.True(t, AdtySiteMarkup(customer.Id, "default").Equal(decimal.RequireFromString("1.5")), "the lower of the site cap and the global cap wins")
+	assert.True(t, AdtySiteMarkup(customer.Id, "default", "").Equal(decimal.RequireFromString("1.5")), "the lower of the site cap and the global cap wins")
 
 	require.NoError(t, db.Model(&model.AdtySite{}).Where("id = ?", site.Id).Update("max_markup", decimal.RequireFromString("1.2")).Error)
 	InvalidateAdtySiteCache()
 	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
 	ctx.Request = httptest.NewRequest("POST", "/v1/chat/completions", nil)
-	ratio, k := AdtyApplySiteMarkup(ctx, customer.Id, "default", 2)
+	ratio, k := AdtyApplySiteMarkup(ctx, customer.Id, "default", 2, "")
 	assert.InDelta(t, 1.2, k, 1e-9)
 	assert.InDelta(t, 1.92, ratio, 1e-9)
 }
@@ -434,11 +434,11 @@ func TestMarkupIncreaseDelayed(t *testing.T) {
 	first, err := savePricing(t, site.Id, 0, "1.2", nil, 0, now)
 	require.NoError(t, err)
 	assert.Equal(t, now+24*3600, first.Pending[""], "the first price waits when the site already has customers")
-	assert.True(t, AdtySiteMarkup(customer.Id, "default").Equal(decimal.NewFromInt(1)))
+	assert.True(t, AdtySiteMarkup(customer.Id, "default", "").Equal(decimal.NewFromInt(1)))
 	appliedNow, err := ApplyDueAdtySiteMarkups(now + 24*3600)
 	require.NoError(t, err)
 	assert.EqualValues(t, 1, appliedNow)
-	assert.True(t, AdtySiteMarkup(customer.Id, "default").Equal(decimal.RequireFromString("1.2")))
+	assert.True(t, AdtySiteMarkup(customer.Id, "default", "").Equal(decimal.RequireFromString("1.2")))
 	var afterFirst model.AdtySitePrice
 	require.NoError(t, db.Where("site_id = ? AND user_id = 0 AND \"group\" = ?", site.Id, "").First(&afterFirst).Error)
 	assert.Greater(t, afterFirst.Version, first.Version)
@@ -451,7 +451,7 @@ func TestMarkupIncreaseDelayed(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, now+24*3600, raised.Pending[""])
 	require.Len(t, notified, 1, "customers are told about the increase")
-	assert.True(t, AdtySiteMarkup(customer.Id, "default").Equal(decimal.RequireFromString("1.2")), "the old price holds during the delay")
+	assert.True(t, AdtySiteMarkup(customer.Id, "default", "").Equal(decimal.RequireFromString("1.2")), "the old price holds during the delay")
 
 	applied, err := ApplyDueAdtySiteMarkups(now + 24*3600 - 1)
 	require.NoError(t, err)
@@ -459,13 +459,13 @@ func TestMarkupIncreaseDelayed(t *testing.T) {
 	applied, err = ApplyDueAdtySiteMarkups(now + 24*3600)
 	require.NoError(t, err)
 	assert.EqualValues(t, 1, applied)
-	assert.True(t, AdtySiteMarkup(customer.Id, "default").Equal(decimal.RequireFromString("1.8")))
+	assert.True(t, AdtySiteMarkup(customer.Id, "default", "").Equal(decimal.RequireFromString("1.8")))
 	var stored model.AdtySitePrice
 	require.NoError(t, db.Where("site_id = ? AND user_id = 0 AND \"group\" = ?", site.Id, "").First(&stored).Error)
 	assert.Greater(t, stored.Version, raised.Version, "taking effect moves the pricing version")
 	_, err = savePricing(t, site.Id, 0, "1.2", nil, raised.Version, now+24*3600)
 	require.ErrorIs(t, err, ErrAdtySitePricingConflict)
-	assert.True(t, AdtySiteMarkup(customer.Id, "default").Equal(decimal.RequireFromString("1.8")))
+	assert.True(t, AdtySiteMarkup(customer.Id, "default", "").Equal(decimal.RequireFromString("1.8")))
 }
 
 func TestMarkupDecreaseImmediate(t *testing.T) {
@@ -478,8 +478,8 @@ func TestMarkupDecreaseImmediate(t *testing.T) {
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []string{"", "vip"}, lowered.Immediate)
 	assert.Empty(t, lowered.Pending)
-	assert.True(t, AdtySiteMarkup(customer.Id, "default").Equal(decimal.RequireFromString("1.4")))
-	assert.True(t, AdtySiteMarkup(customer.Id, "vip").Equal(decimal.RequireFromString("1.1")))
+	assert.True(t, AdtySiteMarkup(customer.Id, "default", "").Equal(decimal.RequireFromString("1.4")))
+	assert.True(t, AdtySiteMarkup(customer.Id, "vip", "").Equal(decimal.RequireFromString("1.1")))
 }
 
 func TestDecreaseCancelsPendingIncrease(t *testing.T) {
@@ -497,7 +497,7 @@ func TestDecreaseCancelsPendingIncrease(t *testing.T) {
 	applied, err := ApplyDueAdtySiteMarkups(now + 48*3600)
 	require.NoError(t, err)
 	assert.Zero(t, applied, "the pending increase is gone")
-	assert.True(t, AdtySiteMarkup(customer.Id, "default").Equal(decimal.RequireFromString("1.3")))
+	assert.True(t, AdtySiteMarkup(customer.Id, "default", "").Equal(decimal.RequireFromString("1.3")))
 }
 
 func TestMarkupBounds(t *testing.T) {
@@ -561,7 +561,7 @@ func TestUserLogHidesMarkup(t *testing.T) {
 	sitePrice(t, db, site.Id, 0, "", "1.4")
 	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
 	ctx.Request = httptest.NewRequest("POST", "/v1/chat/completions", nil)
-	AdtyApplySiteMarkup(ctx, customer.Id, "default", 1)
+	AdtyApplySiteMarkup(ctx, customer.Id, "default", 1, "")
 	model.RecordConsumeLog(ctx, customer.Id, model.RecordConsumeLogParams{ModelName: "m", Quota: 1400, Other: model.NewLogOther()})
 
 	var log model.Log
@@ -610,7 +610,7 @@ func TestPricingShowsSitePrice(t *testing.T) {
 // HandleGroupRatio 本身在 relay/helper/price_test.go 的 TestHandleGroupRatioAppliesSiteMarkup 里测。
 func handleGroupRatioForTest(ctx *gin.Context, info *relaycommon.RelayInfo) hosttypes.GroupRatioInfo {
 	ratio := ratio_setting.GetGroupRatio(info.UsingGroup)
-	marked, k := AdtyApplySiteMarkup(ctx, info.UserId, info.UsingGroup, ratio)
+	marked, k := AdtyApplySiteMarkup(ctx, info.UserId, info.UsingGroup, ratio, "")
 	return hosttypes.GroupRatioInfo{GroupRatio: marked, GroupSpecialRatio: -1, SiteMarkup: k}
 }
 
@@ -628,7 +628,7 @@ func TestSiteSupplyAndSellFormula(t *testing.T) {
 	supply := baseGroup * supplyFactor
 	sell := supply * (1 + (storedK - 1))
 
-	gotSell, k := AdtyApplySiteMarkup(ctx, customer.Id, "default", baseGroup)
+	gotSell, k := AdtyApplySiteMarkup(ctx, customer.Id, "default", baseGroup, "")
 	assert.InDelta(t, storedK, k, 1e-12)
 	assert.InDelta(t, supply, baseGroup*supplyFactor, 1e-12, "supply = base × cost factor × group ratio")
 	assert.InDelta(t, sell, gotSell, 1e-12, "sell = supply × (1 + markup ratio)")
@@ -637,7 +637,7 @@ func TestSiteSupplyAndSellFormula(t *testing.T) {
 	// Markup ratio 0 (stored k=1) => sell equals supply, and a cost factor below 1 is not forced up.
 	require.NoError(t, db.Model(&model.AdtySitePrice{}).Where("site_id = ?", site.Id).Update("markup", decimal.NewFromInt(1)).Error)
 	InvalidateAdtySitePriceCache()
-	zeroMarkup, k := AdtyApplySiteMarkup(nil, customer.Id, "default", baseGroup)
+	zeroMarkup, k := AdtyApplySiteMarkup(nil, customer.Id, "default", baseGroup, "")
 	assert.InDelta(t, 1, k, 1e-12)
 	assert.InDelta(t, supply, zeroMarkup, 1e-12, "markup ratio 0 keeps the sell price equal to the supply price")
 	assert.NotEqual(t, baseGroup, zeroMarkup, "cost factor 0.8 must not be forced up to 1")
@@ -645,7 +645,7 @@ func TestSiteSupplyAndSellFormula(t *testing.T) {
 	// Old k<1 fallback no longer applies: stored 0.9 is a -10% ratio.
 	require.NoError(t, db.Model(&model.AdtySitePrice{}).Where("site_id = ?", site.Id).Update("markup", decimal.RequireFromString("0.9")).Error)
 	InvalidateAdtySitePriceCache()
-	markdown, k := AdtyApplySiteMarkup(nil, customer.Id, "default", baseGroup)
+	markdown, k := AdtyApplySiteMarkup(nil, customer.Id, "default", baseGroup, "")
 	assert.InDelta(t, 0.9, k, 1e-12)
 	assert.InDelta(t, supply*0.9, markdown, 1e-12, "k<1 is no longer replaced with 1")
 	assert.NotEqual(t, supply, markdown)
@@ -655,7 +655,7 @@ func TestSiteSupplyAndSellFormula(t *testing.T) {
 	InvalidateAdtySiteCache()
 	require.NoError(t, db.Model(&model.AdtySitePrice{}).Where("site_id = ?", site.Id).Update("markup", decimal.NewFromInt(1)).Error)
 	InvalidateAdtySitePriceCache()
-	raisedSupply, _ := AdtyApplySiteMarkup(nil, customer.Id, "default", baseGroup)
+	raisedSupply, _ := AdtyApplySiteMarkup(nil, customer.Id, "default", baseGroup, "")
 	assert.InDelta(t, baseGroup*1.2, raisedSupply, 1e-12, "supply factor 1.2 is used as a multiplier")
 }
 
@@ -692,7 +692,7 @@ func TestSiteTeamPriceUsesSupplyFloor(t *testing.T) {
 	t.Run("discounted price above supply is charged as the discounted price", func(t *testing.T) {
 		customer := siteCustomer(t, db, site, "team-floor-above")
 		ctx := bindSiteTeamKey(t, db, customer, site.Id, "Above", "0.90", "team-floor-above-key")
-		got, k := AdtyApplySiteMarkup(ctx, customer.Id, "default", baseGroup)
+		got, k := AdtyApplySiteMarkup(ctx, customer.Id, "default", baseGroup, "")
 		assert.InDelta(t, storedK, k, 1e-12)
 		assert.InDelta(t, sell*0.90, got, 1e-12)
 		assert.Greater(t, got, supply)
@@ -703,7 +703,7 @@ func TestSiteTeamPriceUsesSupplyFloor(t *testing.T) {
 	t.Run("discounted price below supply is charged as the supply price", func(t *testing.T) {
 		customer := siteCustomer(t, db, site, "team-floor-below")
 		ctx := bindSiteTeamKey(t, db, customer, site.Id, "Below", "0.70", "team-floor-below-key")
-		got, k := AdtyApplySiteMarkup(ctx, customer.Id, "default", baseGroup)
+		got, k := AdtyApplySiteMarkup(ctx, customer.Id, "default", baseGroup, "")
 		assert.InDelta(t, storedK, k, 1e-12)
 		assert.InDelta(t, supply, got, 1e-12, "final price is max(supply, sell × pay ratio)")
 		assert.Less(t, sell*0.70, supply)
@@ -720,7 +720,7 @@ func TestSiteTeamPriceUsesSupplyFloor(t *testing.T) {
 		})
 		customer := siteCustomer(t, db, site, "team-floor-zero")
 		ctx := bindSiteTeamKey(t, db, customer, site.Id, "Zero", "0.80", "team-floor-zero-key")
-		got, k := AdtyApplySiteMarkup(ctx, customer.Id, "default", baseGroup)
+		got, k := AdtyApplySiteMarkup(ctx, customer.Id, "default", baseGroup, "")
 		assert.InDelta(t, 1, k, 1e-12)
 		assert.InDelta(t, supply, got, 1e-12, "markup ratio 0: sell equals supply, team final stays at supply")
 		assert.False(t, AdtyTeamPriceBlocked(ctx))
@@ -730,7 +730,7 @@ func TestSiteTeamPriceUsesSupplyFloor(t *testing.T) {
 		leader := referralUser(t, db, "team-floor-main")
 		require.NoError(t, db.Model(leader).Update("site_id", 0).Error)
 		ctx := bindSiteTeamKey(t, db, leader, 0, "Main", "0.50", "team-floor-main-key")
-		got, k := AdtyApplySiteMarkup(ctx, leader.Id, "default", baseGroup)
+		got, k := AdtyApplySiteMarkup(ctx, leader.Id, "default", baseGroup, "")
 		assert.InDelta(t, 1, k, 1e-12)
 		assert.InDelta(t, baseGroup*0.50, got, 1e-12, "main-site team pays the discounted price with no new floor")
 		assert.Less(t, got, supply)
@@ -741,7 +741,7 @@ func TestSiteTeamPriceUsesSupplyFloor(t *testing.T) {
 		customer := siteCustomer(t, db, site, "team-floor-invalid")
 		ctx := bindSiteTeamKey(t, db, customer, site.Id, "Invalid", "0.90", "team-floor-invalid-key")
 		require.NoError(t, db.Model(&model.AdtyTeam{}).Where("leader_user_id = ?", customer.Id).Update("discount", decimal.RequireFromString("1.50")).Error)
-		got, k := AdtyApplySiteMarkup(ctx, customer.Id, "default", baseGroup)
+		got, k := AdtyApplySiteMarkup(ctx, customer.Id, "default", baseGroup, "")
 		assert.InDelta(t, storedK, k, 1e-12)
 		assert.InDelta(t, sell, got, 1e-12, "invalid ratio leaves the ordinary sell price and blocks billing")
 		assert.True(t, AdtyTeamPriceBlocked(ctx))

@@ -44,7 +44,7 @@ func consumeOnSite(t *testing.T, user *model.User, quota int64) {
 	t.Helper()
 	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
 	ctx.Request = httptest.NewRequest("POST", "/v1/chat/completions", nil)
-	AdtyApplySiteMarkup(ctx, user.Id, "default", 1)
+	AdtyApplySiteMarkup(ctx, user.Id, "default", 1, "")
 	model.RecordConsumeLog(ctx, user.Id, model.RecordConsumeLogParams{ModelName: "m", Quota: int(quota), Group: "default"})
 }
 
@@ -152,7 +152,7 @@ func TestDurableTaskRefundKeepsOriginalRiskDispositionAfterReview(t *testing.T) 
 				sitePrice(t, db, site.Id, 0, "", "1.25")
 				chargeTask := func(amount string) *model.Task {
 					c := adtyWalletRelayContext()
-					AdtyApplySiteMarkup(c, customer.Id, "default", 1)
+					AdtyApplySiteMarkup(c, customer.Id, "default", 1, "")
 					info := adtyWalletRelayInfo(customer.Id, 0, "")
 					info.IsPlayground = true
 					quota := int(perUnit(amount))
@@ -224,7 +224,7 @@ func TestRealtimeRefundKeepsRiskDispositionWithoutInitialEarningEvent(t *testing
 			sitePrice(t, db, site.Id, 0, "", "1.25")
 			seedToken(t, 9993, customer.Id, "risk-realtime", int(perUnit("400")))
 			c := adtyWalletRelayContext()
-			AdtyApplySiteMarkup(c, customer.Id, "default", 1)
+			AdtyApplySiteMarkup(c, customer.Id, "default", 1, "")
 			info := adtyWalletRelayInfo(customer.Id, 9993, "sk-risk-realtime")
 			info.OriginModelName, info.UsingGroup, info.UserGroup = "gpt-4o-realtime-preview", "default", "default"
 			require.Nil(t, PreConsumeBilling(c, 0, info))
@@ -237,7 +237,7 @@ func TestRealtimeRefundKeepsRiskDispositionWithoutInitialEarningEvent(t *testing
 			require.Zero(t, rootEvents, "the zero opening reserve has no earning event to inherit from")
 			require.NoError(t, ReviewAdtySiteCustomer(customer.Id, 1, convert))
 			fresh := adtyWalletRelayContext()
-			AdtyApplySiteMarkup(fresh, customer.Id, "default", 1)
+			AdtyApplySiteMarkup(fresh, customer.Id, "default", 1, "")
 			newInfo := adtyWalletRelayInfo(customer.Id, 0, "")
 			newInfo.IsPlayground = true
 			require.Nil(t, PreConsumeBilling(fresh, int(perUnit("50")), newInfo))
@@ -265,7 +265,7 @@ func TestDurableEarningProjectionRecoversWithoutConsumeLogs(t *testing.T) {
 	sitePrice(t, db, site.Id, 0, "", "1.25")
 	require.NoError(t, db.Model(customer).Update("quota", perUnit("200")).Error)
 	c := adtyWalletRelayContext()
-	AdtyApplySiteMarkup(c, customer.Id, "default", 1)
+	AdtyApplySiteMarkup(c, customer.Id, "default", 1, "")
 	info := adtyWalletRelayInfo(customer.Id, 0, "")
 	info.IsPlayground = true
 	require.Nil(t, PreConsumeBilling(c, int(perUnit("125")), info))

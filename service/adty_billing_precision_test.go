@@ -54,7 +54,7 @@ func TestInexactFloatProductIsBilledAtExactDecimal(t *testing.T) {
 
 	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
 	ctx.Request = httptest.NewRequest("POST", "/", nil)
-	billed, k := AdtyApplySiteMarkupDecimal(ctx, customer.Id, "default", group)
+	billed, k := AdtyApplySiteMarkupDecimal(ctx, customer.Id, "default", group, "")
 	require.True(t, k.Equal(storedK))
 	require.True(t, billed.Equal(sell), "got %s want %s", billed, sell)
 	fromCtx, ok := AdtyBilledGroupRatioFromContext(ctx)
@@ -64,14 +64,14 @@ func TestInexactFloatProductIsBilledAtExactDecimal(t *testing.T) {
 	// Markup ratio 0 => sell equals supply, with exact decimal (no float equality).
 	require.NoError(t, db.Model(&model.AdtySitePrice{}).Where("site_id = ?", site.Id).Update("markup", decimal.NewFromInt(1)).Error)
 	InvalidateAdtySitePriceCache()
-	zeroMarkup, k := AdtyApplySiteMarkupDecimal(nil, customer.Id, "default", group)
+	zeroMarkup, k := AdtyApplySiteMarkupDecimal(nil, customer.Id, "default", group, "")
 	require.True(t, k.Equal(decimal.NewFromInt(1)))
 	require.True(t, zeroMarkup.Equal(group.Mul(cost)), "got %s", zeroMarkup)
 
 	// Restore the stored k used for the billed-amount proof.
 	require.NoError(t, db.Model(&model.AdtySitePrice{}).Where("site_id = ?", site.Id).Update("markup", storedK).Error)
 	InvalidateAdtySitePriceCache()
-	billed, _ = AdtyApplySiteMarkupDecimal(ctx, customer.Id, "default", group)
+	billed, _ = AdtyApplySiteMarkupDecimal(ctx, customer.Id, "default", group, "")
 	require.True(t, billed.Equal(sell))
 
 	// Final billed amount: only one rounding at the official helper.
@@ -118,7 +118,7 @@ func TestSiteTeamFormulasHoldInDecimal(t *testing.T) {
 	t.Run("discounted below supply is billed at supply and not rejected", func(t *testing.T) {
 		customer := siteCustomer(t, db, site, "precision-team-below")
 		ctx := bindSiteTeamKey(t, db, customer, site.Id, "Below", "0.7", "precision-team-below-key")
-		billed, k := AdtyApplySiteMarkupDecimal(ctx, customer.Id, "default", group)
+		billed, k := AdtyApplySiteMarkupDecimal(ctx, customer.Id, "default", group, "")
 		require.True(t, k.Equal(storedK))
 		require.True(t, billed.Equal(supply), "got %s want supply %s (sell*0.7=%s)", billed, supply, sell.Mul(decimal.RequireFromString("0.7")))
 		assert.False(t, AdtyTeamPriceBlocked(ctx))
@@ -128,7 +128,7 @@ func TestSiteTeamFormulasHoldInDecimal(t *testing.T) {
 		customer := siteCustomer(t, db, site, "precision-team-above")
 		ctx := bindSiteTeamKey(t, db, customer, site.Id, "Above", "0.95", "precision-team-above-key")
 		want := sell.Mul(decimal.RequireFromString("0.95"))
-		billed, _ := AdtyApplySiteMarkupDecimal(ctx, customer.Id, "default", group)
+		billed, _ := AdtyApplySiteMarkupDecimal(ctx, customer.Id, "default", group, "")
 		require.True(t, billed.Equal(want), "got %s want %s", billed, want)
 		assert.True(t, billed.GreaterThan(supply))
 		assert.False(t, AdtyTeamPriceBlocked(ctx))
@@ -138,7 +138,7 @@ func TestSiteTeamFormulasHoldInDecimal(t *testing.T) {
 		leader := referralUser(t, db, "precision-team-main")
 		require.NoError(t, db.Model(leader).Update("site_id", 0).Error)
 		ctx := bindSiteTeamKey(t, db, leader, 0, "Main", "0.5", "precision-team-main-key")
-		billed, k := AdtyApplySiteMarkupDecimal(ctx, leader.Id, "default", group)
+		billed, k := AdtyApplySiteMarkupDecimal(ctx, leader.Id, "default", group, "")
 		require.True(t, k.Equal(decimal.NewFromInt(1)))
 		require.True(t, billed.Equal(group.Mul(decimal.RequireFromString("0.5"))), "got %s", billed)
 		assert.True(t, billed.LessThan(supply))
@@ -149,7 +149,7 @@ func TestSiteTeamFormulasHoldInDecimal(t *testing.T) {
 		customer := siteCustomer(t, db, site, "precision-team-invalid")
 		ctx := bindSiteTeamKey(t, db, customer, site.Id, "Invalid", "0.95", "precision-team-invalid-key")
 		require.NoError(t, db.Model(&model.AdtyTeam{}).Where("leader_user_id = ?", customer.Id).Update("discount", decimal.RequireFromString("1.50")).Error)
-		billed, _ := AdtyApplySiteMarkupDecimal(ctx, customer.Id, "default", group)
+		billed, _ := AdtyApplySiteMarkupDecimal(ctx, customer.Id, "default", group, "")
 		require.True(t, billed.Equal(sell), "got %s", billed)
 		assert.True(t, AdtyTeamPriceBlocked(ctx))
 	})

@@ -242,6 +242,8 @@
     "Promo codes add bonus credit to a paid top-up on your site. The bonus is taken from your earnings.": "优惠码在你站上的充值到账时额外加赠，加赠从你的收益里扣。",
     "Save prices": "保存价格",
     "Markup by group": "按分组的倍率",
+    "Markup by model": "按模型的独立加价",
+    "Removing an independent model markup restores the global markup immediately.": "删除某个模型的独立加价后，该模型立即恢复使用全局加价。",
     "Default markup": "默认倍率",
     "All groups": "所有分组",
     "{{group}}: {{current}} → {{next}} from {{time}}": "{{group}}：{{current}} → {{next}}，{{time}} 起生效",

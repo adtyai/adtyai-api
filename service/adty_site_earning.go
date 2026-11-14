@@ -236,7 +236,7 @@ func adtyRecordTaskBillingEarning(params *model.RecordTaskBillingLogParams) {
 			return
 		}
 		siteId, d = site.Id, cost.InexactFloat64()
-		k = adtyMarkupFloat(AdtySiteMarkup(params.UserId, params.Group), params.UserId, params.Group)
+		k = adtyMarkupFloat(AdtySiteMarkup(params.UserId, params.Group, params.ModelName), params.UserId, params.Group)
 	}
 	// 余额下限：差额结算的收益按实扣记（只有补扣会有差额，退款日志里没有这个键）。
 	quota := int64(params.Quota) - adtyLoggedShortfall(params.Other)

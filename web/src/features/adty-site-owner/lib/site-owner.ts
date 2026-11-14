@@ -26,6 +26,7 @@ export function isNegativeAmount(value: string | undefined): boolean {
 /** A raise that is saved but not in effect yet. */
 export type PendingIncrease = {
   group: string
+  model?: string
   current: string
   next: string
   at: number
@@ -44,11 +45,19 @@ export function pendingIncreases(
     )
     .map((price) => ({
       group: price.group,
+      model: price.model || undefined,
       current: price.markup,
       next: price.pending_markup,
       at: price.pending_at,
     }))
     .sort((a, b) => {
+      const modelA = a.model ?? ''
+      const modelB = b.model ?? ''
+      if (modelA !== modelB) {
+        if (modelA === '') return -1
+        if (modelB === '') return 1
+        return modelA.localeCompare(modelB)
+      }
       if (a.group === b.group) return 0
       if (a.group === '') return -1
       if (b.group === '') return 1
@@ -60,15 +69,22 @@ export function pendingIncreases(
 export function siteMarkups(prices: SitePrice[] | null | undefined): {
   defaultMarkup: string
   groups: Record<string, string>
+  models: Record<string, string>
 } {
   let defaultMarkup = ''
   const groups: Record<string, string> = {}
+  const models: Record<string, string> = {}
   for (const price of prices ?? []) {
     if (price.user_id !== 0) continue
+    const model = (price.model ?? '').trim()
+    if (model) {
+      if (price.group === '') models[model] = price.markup
+      continue
+    }
     if (price.group === '') defaultMarkup = price.markup
     else groups[price.group] = price.markup
   }
-  return { defaultMarkup, groups }
+  return { defaultMarkup, groups, models }
 }
 
 /** A fresh idempotency key for one trial grant. */

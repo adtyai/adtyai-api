@@ -807,7 +807,7 @@ func (s *priceTestReservation) ReserveBeforeSubmit(quota int) error { return s.R
 func TestHandleGroupRatioAppliesSiteMarkup(t *testing.T) {
 	saved := service.AdtyApplySiteMarkupHook
 	t.Cleanup(func() { service.AdtyApplySiteMarkupHook = saved })
-	service.AdtyApplySiteMarkupHook = func(_ *gin.Context, userId int, group string, ratio float64) (float64, float64) {
+	service.AdtyApplySiteMarkupHook = func(_ *gin.Context, userId int, group string, ratio float64, _ string) (float64, float64) {
 		if userId == 7 && group == "default" {
 			return ratio * 1.2, 1.2
 		}

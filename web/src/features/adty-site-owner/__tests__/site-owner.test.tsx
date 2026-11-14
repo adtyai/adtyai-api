@@ -74,6 +74,7 @@ function price(overrides: Partial<SitePrice>): SitePrice {
     site_id: 7,
     user_id: 0,
     group: '',
+    model: '',
     markup: '1.2',
     pending_markup: '0',
     pending_at: 0,
@@ -212,6 +213,44 @@ describe('PricingPanel', () => {
     render(wrap(<PricingPanel site={ownerSite({ status: 'closing' })} />))
     expect(screen.getByRole('button', { name: 'Save prices' })).toBeDisabled()
     expect(screen.getByLabelText('Default markup')).toBeDisabled()
+  })
+
+  it('lists a pending independent model markup and can remove it to restore global', async () => {
+    verification.requestVerification.mockResolvedValue({
+      proof_token: 'proof-model',
+    })
+    render(
+      wrap(
+        <PricingPanel
+          site={ownerSite({
+            prices: [
+              price({}),
+              price({
+                id: 3,
+                model: 'gpt-4',
+                markup: '1.5',
+                pending_markup: '1.8',
+                pending_at: 1_800_000_000,
+              }),
+            ],
+          })}
+        />
+      )
+    )
+    const rows = screen.getAllByTestId('pending-increase')
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toHaveTextContent('gpt-4: 1.5 → 1.8')
+    expect(screen.getByDisplayValue('gpt-4')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Remove' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Save prices' }))
+    await waitFor(() => expect(api.savePricing).toHaveBeenCalled())
+    expect(api.savePricing).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model_markups: { 'gpt-4': '0' },
+        expected_version: 3,
+      }),
+      'proof-model'
+    )
   })
 })
 

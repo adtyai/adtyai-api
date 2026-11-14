@@ -903,21 +903,22 @@ func carryCustomerPricesTx(tx *gorm.DB, fromSite, toSite int) error {
 	if err := tx.Where("site_id = ?", toSite).Find(&toPrices).Error; err != nil {
 		return err
 	}
-	groups := map[string]bool{"": true}
+	type priceScope struct{ Group, Model string }
+	scopes := map[priceScope]bool{{}: true}
 	for _, price := range fromPrices {
-		groups[price.Group] = true
+		scopes[priceScope{Group: price.Group, Model: adtyNormalizeSitePriceModel(price.Model)}] = true
 	}
 	for _, price := range toPrices {
-		groups[price.Group] = true
+		scopes[priceScope{Group: price.Group, Model: adtyNormalizeSitePriceModel(price.Model)}] = true
 	}
 	now := time.Now().Unix()
 	for _, userId := range userIds {
-		targets := map[string]decimal.Decimal{}
+		targets := map[priceScope]decimal.Decimal{}
 		lower := false
-		for group := range groups {
-			oldK := ResolveAdtySiteMarkup(fromPrices, userId, group)
-			newK := ResolveAdtySiteMarkup(toPrices, userId, group)
-			targets[group] = decimal.Min(oldK, newK)
+		for scope := range scopes {
+			oldK := ResolveAdtySiteMarkup(fromPrices, userId, scope.Group, scope.Model)
+			newK := ResolveAdtySiteMarkup(toPrices, userId, scope.Group, scope.Model)
+			targets[scope] = decimal.Min(oldK, newK)
 			if oldK.LessThan(newK) {
 				lower = true
 			}
@@ -925,11 +926,11 @@ func carryCustomerPricesTx(tx *gorm.DB, fromSite, toSite int) error {
 		if !lower {
 			continue
 		}
-		for group, markup := range targets {
+		for scope, markup := range targets {
 			if err := tx.Clauses(clause.OnConflict{
-				Columns:   []clause.Column{{Name: "site_id"}, {Name: "user_id"}, {Name: "group"}},
+				Columns:   []clause.Column{{Name: "site_id"}, {Name: "user_id"}, {Name: "group"}, {Name: "model"}},
 				DoUpdates: clause.Assignments(map[string]any{"markup": markup, "pending_markup": decimal.Zero, "pending_at": 0, "updated_at": now}),
-			}).Create(&model.AdtySitePrice{SiteId: toSite, UserId: userId, Group: group, Markup: markup, UpdatedAt: now, Version: 1}).Error; err != nil {
+			}).Create(&model.AdtySitePrice{SiteId: toSite, UserId: userId, Group: scope.Group, Model: scope.Model, Markup: markup, UpdatedAt: now, Version: 1}).Error; err != nil {
 				return err
 			}
 		}
@@ -937,10 +938,18 @@ func carryCustomerPricesTx(tx *gorm.DB, fromSite, toSite int) error {
 	return nil
 }
 
-// ResolveAdtySiteMarkup 在一个站的定价里按「客户 + 分组 → 客户 → 全站 + 分组 → 全站 → 1」取存储 k（11.4）。正数 k（含小于 1）都会采用。
-func ResolveAdtySiteMarkup(prices []model.AdtySitePrice, userId int, group string) decimal.Decimal {
-	best, bestRank := decimal.NewFromInt(1), 0
+// ResolveAdtySiteMarkup 在一个站的定价里按「客户 + 分组 → 客户 → 全站 + 分组 → 全站 → 1」取存储 k（11.4）。
+// 同一客户/分组层级上，单模型独立行覆盖该层级的空模型默认；没有独立行时继承空模型/全局加价。
+// 更具体的客户/分组行仍然优先于更不具体的行。正数 k（含小于 1）都会采用。modelName 为空时只使用空模型默认行。
+func ResolveAdtySiteMarkup(prices []model.AdtySitePrice, userId int, group, modelName string) decimal.Decimal {
+	modelName = adtyNormalizeSitePriceModel(modelName)
+	bestRank := 0
+	var bestModel, bestEmpty decimal.Decimal
+	hasModel, hasEmpty := false, false
 	for _, price := range prices {
+		if !price.Markup.IsPositive() {
+			continue
+		}
 		rank := 0
 		switch {
 		case price.UserId == userId && userId != 0 && price.Group == group && group != "":
@@ -952,11 +961,33 @@ func ResolveAdtySiteMarkup(prices []model.AdtySitePrice, userId int, group strin
 		case price.UserId == 0 && price.Group == "":
 			rank = 1
 		}
-		if rank > bestRank && price.Markup.IsPositive() {
-			best, bestRank = price.Markup, rank
+		if rank == 0 {
+			continue
 		}
+		rowModel := adtyNormalizeSitePriceModel(price.Model)
+		if rowModel != "" && rowModel != modelName {
+			continue
+		}
+		if rank > bestRank {
+			bestRank = rank
+			hasModel, hasEmpty = false, false
+		}
+		if rank != bestRank {
+			continue
+		}
+		if rowModel != "" {
+			hasModel, bestModel = true, price.Markup
+			continue
+		}
+		hasEmpty, bestEmpty = true, price.Markup
 	}
-	return best
+	if hasModel {
+		return bestModel
+	}
+	if hasEmpty {
+		return bestEmpty
+	}
+	return decimal.NewFromInt(1)
 }
 
 // RunAdtySiteCloseOnce 执行所有到期的关站，由主节点任务调用。

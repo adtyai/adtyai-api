@@ -118,7 +118,7 @@ export function CustomerSheet(props: {
     onError: (err) => handleServerError(err),
   })
   const customer = detail.data?.customer
-  const ownMarkup = detail.data?.prices?.find((row) => row.group === '')?.markup
+  const ownMarkup = detail.data?.prices?.find((row) => row.group === '' && !row.model)?.markup
 
   return (
     <Sheet

@@ -118,12 +118,15 @@ type AdtySiteCustomer struct {
 
 func (AdtySiteCustomer) TableName() string { return "adty_site_customers" }
 
-// AdtySitePrice 是站长定价（11.4）：同一站内按「客户 + 分组」取最具体的一条。
+// AdtySitePrice 是站长定价（11.4 / A.10）：同一站内按「客户 + 分组」取最具体的一条，
+// 并在同一客户/分组层级上允许单模型独立加价。Model 为空是该层级对所有模型的默认；
+// 非空则只覆盖那个模型。已有行的空模型保持全站/该层级默认。
 type AdtySitePrice struct {
 	Id            int             `json:"id"`
-	SiteId        int             `json:"site_id" gorm:"uniqueIndex:idx_site_price"`
-	UserId        int             `json:"user_id" gorm:"uniqueIndex:idx_site_price"`                // 0 = 全站默认
-	Group         string          `json:"group" gorm:"uniqueIndex:idx_site_price;type:varchar(64)"` // 空 = 所有分组
+	SiteId        int             `json:"site_id" gorm:"uniqueIndex:idx_site_price_model"`
+	UserId        int             `json:"user_id" gorm:"uniqueIndex:idx_site_price_model"`                                     // 0 = 全站默认
+	Group         string          `json:"group" gorm:"uniqueIndex:idx_site_price_model;type:varchar(64)"`                      // 空 = 所有分组
+	Model         string          `json:"model" gorm:"uniqueIndex:idx_site_price_model;type:varchar(191);not null;default:''"` // 空 = 所有模型的默认
 	Markup        decimal.Decimal `json:"markup" gorm:"type:decimal(10,4);not null;default:1"`
 	PendingMarkup decimal.Decimal `json:"pending_markup" gorm:"type:decimal(10,4);not null;default:0"` // 0 = 没有待生效的涨价
 	PendingAt     int64           `json:"pending_at"`

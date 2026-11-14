@@ -471,6 +471,7 @@ export async function savePricing(
   body: {
     default_markup?: string
     group_markups?: Record<string, string>
+    model_markups?: Record<string, string>
     expected_version: number
   },
   proof: string,
