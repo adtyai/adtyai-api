@@ -65,9 +65,6 @@ const api = vi.hoisted(() => ({
   getSiteCustomers: vi.fn(),
   clearSiteNotice: vi.fn(),
   getResellerUsage: vi.fn(),
-  getInviteCodes: vi.fn(),
-  saveInviteCode: vi.fn(),
-  deleteInviteCode: vi.fn(),
   disableSiteDomain: vi.fn(),
   disableSiteSenderDomain: vi.fn(),
   getAdminBalanceRequests: vi.fn(),
@@ -215,7 +212,7 @@ function pausedMutationClient() {
 }
 
 async function renderSiteSettingsPage(
-  section: 'settings' | 'invite-codes' = 'settings',
+  section: 'settings' = 'settings',
   client?: QueryClient
 ) {
   vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined)
@@ -1092,125 +1089,21 @@ describe('SiteDetailSheet notice takedown', () => {
 })
 
 describe('invite code actions', () => {
-  beforeEach(() => {
-    api.getInviteCodes.mockResolvedValue({
-      page: 1,
-      page_size: 20,
-      total: 1,
-      items: [
-        {
-          id: 7,
-          code: 'INVITE-7',
-          max_uses: 1,
-          used_count: 0,
-          expire_at: 0,
-          cost_factor: null,
-          max_markup: null,
-          note: '',
-          created_at: 1_700_000_000,
-        },
-      ],
-    })
-    api.saveInviteCode.mockResolvedValue({ id: 8, code: 'INVITE-8' })
-    api.deleteInviteCode.mockResolvedValue(undefined)
-  })
-
-  it.each(['settings_read', 'settings', 'settings_delete'])(
-    'does not offer create for %s',
-    async (action) => {
-      asSiteAdmin(['settings_read', action])
-      await renderSiteSettingsPage('invite-codes')
-      await screen.findByText('INVITE-7')
-      expect(
-        screen.queryByRole('button', { name: 'New invite code' })
-      ).not.toBeInTheDocument()
-    }
-  )
-
-  it('creates an invite code without the edit or delete action', async () => {
-    asSiteAdmin(['settings_read', 'settings_create'])
-    await renderSiteSettingsPage('invite-codes')
-    await userEvent.click(
-      await screen.findByRole('button', { name: 'New invite code' })
-    )
-    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
-    await waitFor(() =>
-      expect(api.saveInviteCode).toHaveBeenCalledWith(
-        null,
-        expect.objectContaining({ max_uses: 1 })
-      )
-    )
+  it('does not offer the retired invite-codes admin section', async () => {
+    asSiteAdmin([
+      'settings_read',
+      'settings',
+      'settings_create',
+      'settings_delete',
+    ])
+    await renderSiteSettingsPage('settings')
     expect(
-      screen.queryByRole('button', { name: 'Edit' })
+      screen.queryByRole('tab', { name: 'Invite codes' })
     ).not.toBeInTheDocument()
-    expect(
-      screen.queryByRole('button', { name: 'Delete' })
-    ).not.toBeInTheDocument()
-  })
-
-  it('offers editing without borrowing delete or create', async () => {
-    asSiteAdmin(['settings_read', 'settings'])
-    await renderSiteSettingsPage('invite-codes')
-    await userEvent.click(await screen.findByRole('button', { name: 'Edit' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
-    await waitFor(() =>
-      expect(api.saveInviteCode).toHaveBeenCalledWith(
-        7,
-        expect.objectContaining({ max_uses: 1 })
-      )
-    )
-    expect(
-      screen.queryByRole('button', { name: 'Delete' })
-    ).not.toBeInTheDocument()
+    expect(screen.queryByText('Invite codes')).not.toBeInTheDocument()
     expect(
       screen.queryByRole('button', { name: 'New invite code' })
     ).not.toBeInTheDocument()
-  })
-
-  it('deletes without the edit or create action', async () => {
-    asSiteAdmin(['settings_read', 'settings_delete'])
-    await renderSiteSettingsPage('invite-codes')
-    await userEvent.click(await screen.findByRole('button', { name: 'Delete' }))
-    await userEvent.click(
-      within(
-        screen.getByRole('alertdialog', { name: 'Delete invite code' })
-      ).getByRole('button', { name: 'Delete' })
-    )
-    await waitFor(() => expect(api.deleteInviteCode).toHaveBeenCalledWith(7))
-    expect(
-      screen.queryByRole('button', { name: 'Edit' })
-    ).not.toBeInTheDocument()
-    expect(
-      screen.queryByRole('button', { name: 'New invite code' })
-    ).not.toBeInTheDocument()
-  })
-
-  it('blocks deletion after permission is revoked in an open confirmation', async () => {
-    asSiteAdmin(['settings_read', 'settings_delete'])
-    await renderSiteSettingsPage('invite-codes')
-    await userEvent.click(await screen.findByRole('button', { name: 'Delete' }))
-    act(() => asSiteAdmin(['settings_read']))
-    const dialog = screen.queryByRole('alertdialog', {
-      name: 'Delete invite code',
-    })
-    if (dialog) {
-      await userEvent.click(
-        within(dialog).getByRole('button', { name: 'Delete' })
-      )
-    }
-    expect(api.deleteInviteCode).not.toHaveBeenCalled()
-  })
-
-  it('blocks create after permission is revoked in an open editor', async () => {
-    asSiteAdmin(['settings_read', 'settings_create'])
-    await renderSiteSettingsPage('invite-codes')
-    await userEvent.click(
-      await screen.findByRole('button', { name: 'New invite code' })
-    )
-    act(() => asSiteAdmin(['settings_read']))
-    const save = screen.queryByRole('button', { name: 'Save' })
-    if (save) await userEvent.click(save)
-    expect(api.saveInviteCode).not.toHaveBeenCalled()
   })
 })
 
@@ -1231,26 +1124,6 @@ describe('queued Site settings and invite authority', () => {
       widget_slots_low: false,
       unassigned_domains: 0,
     })
-    api.getInviteCodes.mockResolvedValue({
-      page: 1,
-      page_size: 20,
-      total: 1,
-      items: [
-        {
-          id: 7,
-          code: 'INVITE-7',
-          max_uses: 1,
-          used_count: 0,
-          expire_at: 0,
-          cost_factor: null,
-          max_markup: null,
-          note: '',
-          created_at: 1_700_000_000,
-        },
-      ],
-    })
-    api.saveInviteCode.mockResolvedValue({ id: 8, code: 'INVITE-8' })
-    api.deleteInviteCode.mockResolvedValue(undefined)
   })
 
   it('rejects a queued settings write after revocation and unmount', async () => {
@@ -1300,42 +1173,6 @@ describe('queued Site settings and invite authority', () => {
     expect(api.saveResellerSettings).toHaveBeenCalledWith({ freeze_days: 29 })
   })
 
-  it.each(['create', 'write', 'delete'] as const)(
-    'rejects queued invite %s after revocation and unmount',
-    async (action) => {
-      const grant = action === 'write' ? 'settings' : `settings_${action}`
-      asSiteAdmin(['settings_read', grant])
-      const paused = pausedMutationClient()
-      const view = await renderSiteSettingsPage('invite-codes', paused.client)
-      await screen.findByText('INVITE-7')
-      if (action === 'delete') {
-        await userEvent.click(screen.getByRole('button', { name: 'Delete' }))
-        await userEvent.click(
-          within(
-            screen.getByRole('alertdialog', { name: 'Delete invite code' })
-          ).getByRole('button', { name: 'Delete' })
-        )
-      } else {
-        await userEvent.click(
-          screen.getByRole('button', {
-            name: action === 'create' ? 'New invite code' : 'Edit',
-          })
-        )
-        await userEvent.click(screen.getByRole('button', { name: 'Save' }))
-      }
-      await waitFor(() => expect(paused.entered).toHaveBeenCalledTimes(1))
-      act(() => {
-        asSiteAdmin(['settings_read'])
-        view.unmount()
-      })
-      await act(async () => {
-        paused.resume()
-      })
-      await waitFor(() => expect(paused.client.isMutating()).toBe(0))
-      expect(api.saveInviteCode).not.toHaveBeenCalled()
-      expect(api.deleteInviteCode).not.toHaveBeenCalled()
-    }
-  )
 })
 
 describe('UsagePanel', () => {

@@ -26,7 +26,6 @@ import { DraftNavigationProvider } from '@/features/system-settings/components/d
 import { ADTY_PERMISSIONS, canAdmin } from '@/lib/adty-permissions'
 import { useAuthStore } from '@/stores/auth-store'
 
-import { InviteCodesPanel } from './components/invite-codes-panel'
 import { OverviewPanel } from './components/overview-panel'
 import { ReviewsPanel } from './components/reviews-panel'
 import { SettingsPanel } from './components/settings-panel'
@@ -55,7 +54,6 @@ export function SiteAdmin(props: { section: SiteAdminSectionId }) {
     sites: t('Sites'),
     overview: t('Overview'),
     reviews: t('Risk reviews and reports'),
-    'invite-codes': t('Invite codes'),
     settings: t('Settings'),
   }
   const visible = SITE_ADMIN_SECTIONS.filter((section) =>
@@ -91,19 +89,6 @@ export function SiteAdmin(props: { section: SiteAdminSectionId }) {
             </TabsContent>
             <TabsContent value='reviews'>
               <ReviewsPanel />
-            </TabsContent>
-            <TabsContent value='invite-codes'>
-              <InviteCodesPanel
-                canCreate={canAdmin(
-                  user,
-                  ADTY_PERMISSIONS.SITE_SETTINGS_CREATE
-                )}
-                canWrite={canSettings}
-                canDelete={canAdmin(
-                  user,
-                  ADTY_PERMISSIONS.SITE_SETTINGS_DELETE
-                )}
-              />
             </TabsContent>
             <TabsContent value='settings' className='flex flex-col gap-6'>
               <SiteReferralCapPanel />

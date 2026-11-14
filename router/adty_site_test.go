@@ -168,9 +168,24 @@ func TestSelfServiceSiteApplicationIsDisabled(t *testing.T) {
 	f.engine.ServeHTTP(response, req)
 
 	assert.Equal(t, http.StatusForbidden, response.Code)
+	assert.Contains(t, response.Body.String(), "Unauthorized, insufficient privileges")
 	var sites int64
 	require.NoError(t, f.db.Model(&model.AdtySite{}).Where("subdomain = ?", "self-created").Count(&sites).Error)
 	assert.Zero(t, sites)
+
+	require.NoError(t, f.db.Create(&model.AdtySiteInviteCode{Code: "histopen12a", MaxUses: 5}).Error)
+	inviteReq := httptest.NewRequest(http.MethodPost, "/api/adty/site/apply", strings.NewReader(`{"subdomain":"invite-opened","invite_code":"histopen12a"}`))
+	inviteReq.Host = "main.example.com"
+	inviteReq.Header.Set("Content-Type", "application/json")
+	inviteReq.Header.Set("Authorization", "Bearer "+token)
+	inviteResp := httptest.NewRecorder()
+	f.engine.ServeHTTP(inviteResp, inviteReq)
+	assert.Equal(t, http.StatusForbidden, inviteResp.Code)
+	require.NoError(t, f.db.Model(&model.AdtySite{}).Where("subdomain = ?", "invite-opened").Count(&sites).Error)
+	assert.Zero(t, sites)
+	var stored model.AdtySiteInviteCode
+	require.NoError(t, f.db.Where("code = ?", "histopen12a").First(&stored).Error)
+	assert.Equal(t, 0, stored.UsedCount)
 }
 
 func TestOnlyRootCanCreateAdtySite(t *testing.T) {
@@ -440,7 +455,15 @@ func TestSiteAdminPermissions(t *testing.T) {
 	assert.Equal(t, http.StatusForbidden, code.Code, "settings write cannot replace invite creation")
 	f.grant(t, authz.AdtySiteSettingsCreate)
 	code = adtyJSON(t, f.engine, http.MethodPost, "/api/adty/admin/reseller/invite-codes", `{"max_uses":2,"cost_factor":"0.6"}`, f.token)
-	assert.Contains(t, code.Body.String(), `"used_count":0`, code.Body.String())
+	assert.Equal(t, http.StatusForbidden, code.Code, "invite-code minting is retired even with the create grant")
+	assert.Contains(t, code.Body.String(), "Unauthorized, insufficient privileges")
+	var minted int64
+	require.NoError(t, f.db.Model(&model.AdtySiteInviteCode{}).Count(&minted).Error)
+	assert.Zero(t, minted)
+	updated := adtyJSON(t, f.engine, http.MethodPut, "/api/adty/admin/reseller/invite-codes/1", `{"max_uses":9}`, f.token)
+	assert.Equal(t, http.StatusForbidden, updated.Code)
+	deleted := adtyJSON(t, f.engine, http.MethodDelete, "/api/adty/admin/reseller/invite-codes/1", "", f.token)
+	assert.Equal(t, http.StatusForbidden, deleted.Code)
 }
 
 func TestResellerSettingsDelegation(t *testing.T) {

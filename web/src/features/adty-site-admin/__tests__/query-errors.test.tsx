@@ -24,7 +24,6 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { api } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth-store'
 
-import { InviteCodesPanel } from '../components/invite-codes-panel'
 import { OverviewPanel } from '../components/overview-panel'
 import { ReviewsPanel } from '../components/reviews-panel'
 import { SitesPanel } from '../components/sites-panel'
@@ -40,14 +39,6 @@ it.each([
   {
     name: 'sites',
     node: <SitesPanel onOpenSite={() => {}} />,
-    data: { items: [], total: 0 },
-    ready: 'No data',
-  },
-  {
-    name: 'invite codes',
-    node: (
-      <InviteCodesPanel canCreate={false} canWrite={false} canDelete={false} />
-    ),
     data: { items: [], total: 0 },
     ready: 'No data',
   },

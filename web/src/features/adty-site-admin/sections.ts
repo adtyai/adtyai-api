@@ -28,7 +28,6 @@ export const SITE_ADMIN_SECTIONS = [
   { id: 'sites', permission: ADTY_PERMISSIONS.SITE_READ },
   { id: 'overview', permission: ADTY_PERMISSIONS.SITE_READ },
   { id: 'reviews', permission: ADTY_PERMISSIONS.SITE_REVIEW },
-  { id: 'invite-codes', permission: ADTY_PERMISSIONS.SITE_SETTINGS_READ },
   { id: 'settings', permission: ADTY_PERMISSIONS.SITE_SETTINGS_READ },
 ] as const satisfies ReadonlyArray<{
   id: string

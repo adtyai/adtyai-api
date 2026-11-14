@@ -2,6 +2,7 @@ package controller
 
 import (
 	"cmp"
+	"net/http"
 	"slices"
 	"strconv"
 	"strings"
@@ -831,80 +832,21 @@ func GetAdtySiteInviteCodes(c *gin.Context) {
 	common.ApiSuccess(c, pageInfo)
 }
 
-type adtySiteInviteBody struct {
-	Code       string  `json:"code"`
-	MaxUses    int     `json:"max_uses"`
-	ExpireAt   int64   `json:"expire_at"`
-	CostFactor *string `json:"cost_factor"`
-	MaxMarkup  *string `json:"max_markup"`
-	Note       string  `json:"note"`
+// rejectRetiredSiteInviteWrite is the closed door for invite-code minting,
+// updates, and deletes. Historical invite-code rows stay; this is not an
+// official opening path (A.10-01 / SITE-002). Same wording as POST /api/adty/site/apply.
+func rejectRetiredSiteInviteWrite(c *gin.Context) {
+	c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"success": false, "message": "Unauthorized, insufficient privileges"})
 }
 
-func saveAdtySiteInvite(c *gin.Context, id int) {
-	var body adtySiteInviteBody
-	if err := common.DecodeJson(c.Request.Body, &body); err != nil {
-		common.ApiErrorT(c, "Invalid parameters")
-		return
-	}
-	costFactor, err1 := parseOptionalDecimal(body.CostFactor)
-	maxMarkup, err2 := parseOptionalDecimal(body.MaxMarkup)
-	if err1 != nil || err2 != nil {
-		common.ApiErrorT(c, "Invalid parameters")
-		return
-	}
-	code := &model.AdtySiteInviteCode{Id: id, Code: body.Code, MaxUses: body.MaxUses, ExpireAt: body.ExpireAt,
-		CostFactor: costFactor, MaxMarkup: maxMarkup, Note: body.Note, CreatedBy: c.GetInt("id")}
-	if id > 0 {
-		var existing model.AdtySiteInviteCode
-		if err := model.DB.First(&existing, id).Error; err != nil {
-			common.ApiErrorT(c, "Invalid parameters")
-			return
-		}
-		code.Code = existing.Code
-	}
-	if err := service.SaveAdtySiteInviteCode(code); err != nil {
-		common.ApiError(c, err)
-		return
-	}
-	recordManageAudit(c, "adty.site.invite", map[string]any{"invite_id": code.Id, "code": code.Code})
-	var stored model.AdtySiteInviteCode
-	if err := model.DB.First(&stored, code.Id).Error; err != nil {
-		common.ApiError(c, err)
-		return
-	}
-	common.ApiSuccess(c, stored)
-}
+// CreateAdtySiteInviteCode is retired; invite-code minting is no longer an official opening path.
+func CreateAdtySiteInviteCode(c *gin.Context) { rejectRetiredSiteInviteWrite(c) }
 
-// CreateAdtySiteInviteCode 新建开站邀请码（分站·设置），code 为空就自动生成。
-func CreateAdtySiteInviteCode(c *gin.Context) { saveAdtySiteInvite(c, 0) }
+// UpdateAdtySiteInviteCode is retired; historical invite-code rows are not rewritten here.
+func UpdateAdtySiteInviteCode(c *gin.Context) { rejectRetiredSiteInviteWrite(c) }
 
-// UpdateAdtySiteInviteCode 改开站邀请码的次数、有效期、预设和备注（码本身不改）。
-func UpdateAdtySiteInviteCode(c *gin.Context) {
-	id, ok := siteIdParam(c)
-	if !ok {
-		return
-	}
-	saveAdtySiteInvite(c, id)
-}
-
-// DeleteAdtySiteInviteCode 删除开站邀请码；已经用它开的站不受影响。
-func DeleteAdtySiteInviteCode(c *gin.Context) {
-	id, ok := siteIdParam(c)
-	if !ok {
-		return
-	}
-	result := model.DB.Delete(&model.AdtySiteInviteCode{}, id)
-	if result.Error != nil {
-		common.ApiError(c, result.Error)
-		return
-	}
-	if result.RowsAffected == 0 {
-		common.ApiErrorT(c, "Invalid parameters")
-		return
-	}
-	recordManageAudit(c, "adty.site.invite_delete", map[string]any{"invite_id": id})
-	common.ApiSuccess(c, gin.H{"deleted_at": time.Now().Unix()})
-}
+// DeleteAdtySiteInviteCode is retired; historical invite-code rows stay.
+func DeleteAdtySiteInviteCode(c *gin.Context) { rejectRetiredSiteInviteWrite(c) }
 
 // ReviewAdtySiteCustomer 复核风控客户（分站·审核）：POST /api/adty/admin/sites/customers/:id/review {convert_skipped}。
 // 认可后之后的消费正常计收益；convert_skipped 时还没结算的 skipped 收益改成 usage。

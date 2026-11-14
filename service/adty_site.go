@@ -32,9 +32,13 @@ var (
 	ErrAdtySiteAgreement     = common.NewMessage("Accept the current site agreement first")
 	ErrAdtySiteInviteInvalid = common.NewMessage("The invite code is invalid or used up")
 	ErrAdtySiteInviteOff     = common.NewMessage("Invite codes are not enabled")
-	ErrAdtySiteStatus        = common.NewMessage("The site cannot change to this status")
-	ErrAdtySiteTransfer      = common.NewMessage("Closed-site customers can only be inherited by the main site")
-	ErrAdtySitePauseRetired  = common.NewMessage("Independent site pause and resume is not supported")
+	// ErrAdtySiteSelfServeRetired is the official closed-door message for the
+	// retired self-serve / invite-code opening path (A.10-01 / SITE-002). Same
+	// wording as the HTTP POST /api/adty/site/apply rejection entry.
+	ErrAdtySiteSelfServeRetired = common.NewMessage("Unauthorized, insufficient privileges")
+	ErrAdtySiteStatus           = common.NewMessage("The site cannot change to this status")
+	ErrAdtySiteTransfer         = common.NewMessage("Closed-site customers can only be inherited by the main site")
+	ErrAdtySitePauseRetired     = common.NewMessage("Independent site pause and resume is not supported")
 )
 
 // AdtySitePreset 是开站时预设的单站 d 和 k 上限（管理员直接开或邀请码带的），空就用全局。
@@ -258,10 +262,14 @@ func recordSiteAuditTx(tx *gorm.DB, siteId int, action string, operatorId int, o
 	return nil
 }
 
-// OpenAdtySite 开站：三种方式最后都调它。在一个事务里锁用户行、查重、建站点、写审计；
-// 开成 active 时同时写 ReferralAffiliate.SiteOwnerSince（邀请返佣从此停止，执行层决定 27）。
-// 申请开站（apply）建 pending，审核通过时再写 SiteOwnerSince。
+// OpenAdtySite is the official Root opening path (AdtySiteOpenedByAdmin).
+// Self-serve apply and invite-code opening are retired and rejected even if
+// called directly (A.10-01 / SITE-002). Opening as active still writes
+// ReferralAffiliate.SiteOwnerSince in the same transaction.
 func OpenAdtySite(userId int, subdomain, openedBy string, preset AdtySitePreset) (*model.AdtySite, error) {
+	if openedBy != model.AdtySiteOpenedByAdmin || preset.InviteCodeId > 0 {
+		return nil, ErrAdtySiteSelfServeRetired
+	}
 	cfg := resellerSetting()
 	if !cfg.Ready() {
 		return nil, ErrAdtySiteDisabled
@@ -411,26 +419,11 @@ func markAffiliateSiteOwnerTx(tx *gorm.DB, userId int, now int64) error {
 	}).Error
 }
 
-// ApplyAdtySite 是站长申请开站：带有效的邀请码就直接开成 active 并用码上的预设，否则建 pending 等审核。
+// ApplyAdtySite is retired. Self-serve and invite-code opening cannot create
+// sites even if called directly; toggling InviteCodeEnabled does not turn it
+// back on. Historical application rows stay; Root still reviews pending ones.
 func ApplyAdtySite(userId int, subdomain, contactInfo, agreeVersion, inviteCode string) (*model.AdtySite, error) {
-	preset := AdtySitePreset{ContactInfo: contactInfo, AgreementVer: agreeVersion, OperatorId: userId}
-	inviteCode = strings.ToUpper(strings.TrimSpace(inviteCode))
-	if inviteCode == "" {
-		return OpenAdtySite(userId, subdomain, model.AdtySiteOpenedByApply, preset)
-	}
-	if !resellerSetting().InviteCodeEnabled {
-		return nil, ErrAdtySiteInviteOff
-	}
-	var codes []model.AdtySiteInviteCode
-	if err := model.DB.Where("code = ?", inviteCode).Limit(1).Find(&codes).Error; err != nil {
-		return nil, err
-	}
-	if len(codes) == 0 {
-		return nil, ErrAdtySiteInviteInvalid
-	}
-	code := codes[0]
-	preset.InviteCodeId, preset.CostFactor, preset.MaxMarkup = code.Id, code.CostFactor, code.MaxMarkup
-	return OpenAdtySite(userId, subdomain, model.AdtySiteOpenedByInvite, preset)
+	return nil, ErrAdtySiteSelfServeRetired
 }
 
 // ReviewAdtySiteApplication 通过或驳回开站申请。通过时写 SiteOwnerSince，可以同时设单站 d 和 k 上限。
@@ -1024,39 +1017,11 @@ func NewAdtySiteInviteCode() (string, error) {
 	return b.String(), nil
 }
 
-// SaveAdtySiteInviteCode 新建（Id 为 0）或修改一个开站邀请码。新建时 Code 为空就自动生成。
+// SaveAdtySiteInviteCode is retired. Invite-code minting is not an official
+// opening path (A.10-01 / SITE-002). Historical invite-code rows stay and
+// must be seeded by direct database writes in tests.
 func SaveAdtySiteInviteCode(code *model.AdtySiteInviteCode) error {
-	if code.MaxUses < 0 || code.ExpireAt < 0 {
-		return common.NewMessage("Invalid parameters")
-	}
-	if err := validateSitePreset(code.CostFactor, code.MaxMarkup); err != nil {
-		return err
-	}
-	code.Code = strings.ToUpper(strings.TrimSpace(code.Code))
-	code.Note = truncateText(code.Note, 500)
-	if code.Id == 0 {
-		if code.Code == "" {
-			generated, err := NewAdtySiteInviteCode()
-			if err != nil {
-				return err
-			}
-			code.Code = generated
-		}
-		if len(code.Code) > 32 || !adty_setting.ResellerLabelPattern.MatchString(strings.ToLower(code.Code)) {
-			return common.NewMessage("Invalid parameters")
-		}
-		var exists int64
-		if err := model.DB.Model(&model.AdtySiteInviteCode{}).Where("code = ?", code.Code).Count(&exists).Error; err != nil {
-			return err
-		}
-		if exists > 0 {
-			return common.NewMessage("This invite code already exists")
-		}
-		return model.DB.Create(code).Error
-	}
-	return model.DB.Model(&model.AdtySiteInviteCode{}).Where("id = ?", code.Id).Updates(map[string]any{
-		"max_uses": code.MaxUses, "expire_at": code.ExpireAt, "cost_factor": code.CostFactor, "max_markup": code.MaxMarkup, "note": code.Note,
-	}).Error
+	return ErrAdtySiteSelfServeRetired
 }
 
 // AdtySiteDisplayHost 是站点的平台子域名主机名。

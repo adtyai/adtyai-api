@@ -22,8 +22,6 @@ import { requireServerSuccess } from '@/lib/server-error-message'
 
 import type {
   AdminSite,
-  InviteCode,
-  InviteCodeInput,
   ResellerSettings,
   ResellerUsage,
   ResellerSettingsUpdate,
@@ -543,34 +541,3 @@ export async function saveResellerSettings(
   return requireServerSuccess(res.data).data
 }
 
-export async function getInviteCodes(p: number): Promise<SitePage<InviteCode>> {
-  const res = await api.get<ApiResponse<SitePage<InviteCode>>>(
-    `${BASE}/reseller/invite-codes`,
-    { params: { p, page_size: SITE_ADMIN_PAGE_SIZE } }
-  )
-  return requireServerSuccess(res.data).data
-}
-
-export async function saveInviteCode(
-  id: number | null,
-  body: InviteCodeInput
-): Promise<InviteCode> {
-  const res =
-    id === null
-      ? await api.post<ApiResponse<InviteCode>>(
-          `${BASE}/reseller/invite-codes`,
-          body
-        )
-      : await api.put<ApiResponse<InviteCode>>(
-          `${BASE}/reseller/invite-codes/${id}`,
-          body
-        )
-  return requireServerSuccess(res.data).data
-}
-
-export async function deleteInviteCode(id: number): Promise<void> {
-  const res = await api.delete<ApiResponse<unknown>>(
-    `${BASE}/reseller/invite-codes/${id}`
-  )
-  requireServerSuccess(res.data)
-}

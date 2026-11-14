@@ -51,6 +51,34 @@ func openActiveSite(t *testing.T, db *gorm.DB, prefix string) (*model.User, *mod
 	return owner, site
 }
 
+func seedHistoricalPendingApplication(t *testing.T, db *gorm.DB, ownerId int, subdomain, contact, agreeVer string) *model.AdtySite {
+	t.Helper()
+	site := &model.AdtySite{
+		OwnerUserId:  ownerId,
+		Subdomain:    subdomain,
+		RootDomain:   "sites.example.com",
+		Status:       model.AdtySiteStatusPending,
+		OpenedBy:     model.AdtySiteOpenedByApply,
+		ContactInfo:  contact,
+		AgreementVer: agreeVer,
+		AgreementAt:  time.Now().Unix(),
+	}
+	require.NoError(t, db.Create(site).Error)
+	require.NoError(t, EnsureAdtySiteWallets(site.Id))
+	return site
+}
+
+func seedHistoricalInviteCode(t *testing.T, db *gorm.DB, code *model.AdtySiteInviteCode) *model.AdtySiteInviteCode {
+	t.Helper()
+	if code.Code == "" {
+		generated, err := NewAdtySiteInviteCode()
+		require.NoError(t, err)
+		code.Code = generated
+	}
+	require.NoError(t, db.Create(code).Error)
+	return code
+}
+
 func siteCustomer(t *testing.T, db *gorm.DB, site *model.AdtySite, name string) *model.User {
 	t.Helper()
 	user := referralUser(t, db, name)
@@ -262,23 +290,32 @@ func TestApplyRejectsUnpublishedAgreement(t *testing.T) {
 	t.Cleanup(func() { legal.SiteAgreementVersion = previous })
 	owner := referralUser(t, db, "unpublished")
 	_, err := ApplyAdtySite(owner.Id, "zero", "", "0", "")
-	assert.ErrorIs(t, err, ErrAdtySiteAgreement)
+	assert.ErrorIs(t, err, ErrAdtySiteSelfServeRetired)
+	var sites int64
+	require.NoError(t, db.Model(&model.AdtySite{}).Where("subdomain = ?", "zero").Count(&sites).Error)
+	assert.Zero(t, sites)
 }
 
 func TestOpenSiteByApplyThenApprove(t *testing.T) {
 	db := prepareSiteDB(t)
 	owner := referralUser(t, db, "applicant")
 	_, err := ApplyAdtySite(owner.Id, "applied", "tg @me", "2", "")
-	assert.ErrorIs(t, err, ErrAdtySiteAgreement, "an old agreement version is rejected")
+	assert.ErrorIs(t, err, ErrAdtySiteSelfServeRetired)
+	_, err = ApplyAdtySite(owner.Id, "applied", "tg @me", "3", "")
+	assert.ErrorIs(t, err, ErrAdtySiteSelfServeRetired, "current agreement does not reopen self-serve apply")
+	_, err = OpenAdtySite(owner.Id, "applied", model.AdtySiteOpenedByApply, AdtySitePreset{AgreementVer: "3"})
+	assert.ErrorIs(t, err, ErrAdtySiteSelfServeRetired)
+	var created int64
+	require.NoError(t, db.Model(&model.AdtySite{}).Where("owner_user_id = ?", owner.Id).Count(&created).Error)
+	assert.Zero(t, created)
 
-	site, err := ApplyAdtySite(owner.Id, "applied", "tg @me", "3", "")
-	require.NoError(t, err)
+	site := seedHistoricalPendingApplication(t, db, owner.Id, "applied", "tg @me", "3")
 	assert.Equal(t, model.AdtySiteStatusPending, site.Status)
 	assert.Equal(t, model.AdtySiteOpenedByApply, site.OpenedBy)
 	assert.Equal(t, "3", site.AgreementVer)
 	assert.Positive(t, site.AgreementAt)
 	_, err = ApplyAdtySite(owner.Id, "second", "", "3", "")
-	assert.ErrorIs(t, err, ErrAdtySiteAlreadyOwner, "a pending application counts as a site")
+	assert.ErrorIs(t, err, ErrAdtySiteSelfServeRetired)
 
 	approved, err := ReviewAdtySiteApplication(site.Id, 1, true, dec("0.7"), dec("2"), "ok")
 	require.NoError(t, err)
@@ -289,13 +326,18 @@ func TestOpenSiteByApplyThenApprove(t *testing.T) {
 	assert.ErrorIs(t, err, ErrAdtySiteStatus)
 
 	other := referralUser(t, db, "rejected-applicant")
-	rejected, err := ApplyAdtySite(other.Id, "rejected", "", "3", "")
-	require.NoError(t, err)
+	_, err = ApplyAdtySite(other.Id, "rejected", "", "3", "")
+	assert.ErrorIs(t, err, ErrAdtySiteSelfServeRetired)
+	rejected := seedHistoricalPendingApplication(t, db, other.Id, "rejected", "", "3")
 	rejected, err = ReviewAdtySiteApplication(rejected.Id, 1, false, nil, nil, "no")
 	require.NoError(t, err)
 	assert.Equal(t, model.AdtySiteStatusClosed, rejected.Status)
 	_, err = ApplyAdtySite(other.Id, "rejected-again", "", "3", "")
-	assert.NoError(t, err, "a rejected applicant can apply again")
+	assert.ErrorIs(t, err, ErrAdtySiteSelfServeRetired, "a rejected applicant also cannot self-apply")
+	rootOpened, err := OpenAdtySite(other.Id, "rejected-again", model.AdtySiteOpenedByAdmin, AdtySitePreset{})
+	require.NoError(t, err)
+	assert.Equal(t, model.AdtySiteStatusActive, rootOpened.Status)
+	assert.Equal(t, model.AdtySiteOpenedByAdmin, rootOpened.OpenedBy)
 }
 
 func TestOpenSiteByAdmin(t *testing.T) {
@@ -320,37 +362,48 @@ func TestOpenSiteByAdmin(t *testing.T) {
 
 func TestOpenSiteByInviteCodeAppliesPreset(t *testing.T) {
 	db := prepareSiteDB(t)
-	code := &model.AdtySiteInviteCode{MaxUses: 2, CostFactor: dec("0.65"), MaxMarkup: dec("2.5")}
-	require.NoError(t, SaveAdtySiteInviteCode(code))
+	assert.ErrorIs(t, SaveAdtySiteInviteCode(&model.AdtySiteInviteCode{MaxUses: 2, CostFactor: dec("0.65"), MaxMarkup: dec("2.5")}), ErrAdtySiteSelfServeRetired)
+
+	code := seedHistoricalInviteCode(t, db, &model.AdtySiteInviteCode{MaxUses: 2, CostFactor: dec("0.65"), MaxMarkup: dec("2.5")})
 	require.Len(t, code.Code, 12)
+	var before int64
+	require.NoError(t, db.Model(&model.AdtySite{}).Count(&before).Error)
 
 	owner := referralUser(t, db, "invited")
-	site, err := ApplyAdtySite(owner.Id, "invited", "", "3", " "+code.Code+" ")
-	require.NoError(t, err)
-	assert.Equal(t, model.AdtySiteStatusActive, site.Status)
-	assert.Equal(t, model.AdtySiteOpenedByInvite, site.OpenedBy)
-	assert.True(t, site.CostFactor.Equal(decimal.RequireFromString("0.65")))
-	assert.True(t, site.MaxMarkup.Equal(decimal.RequireFromString("2.5")))
-	var stored model.AdtySiteInviteCode
-	require.NoError(t, db.First(&stored, code.Id).Error)
-	assert.Equal(t, 1, stored.UsedCount)
+	_, err := ApplyAdtySite(owner.Id, "invited", "", "3", " "+code.Code+" ")
+	assert.ErrorIs(t, err, ErrAdtySiteSelfServeRetired)
+	_, err = OpenAdtySite(owner.Id, "invited", model.AdtySiteOpenedByInvite, AdtySitePreset{InviteCodeId: code.Id, CostFactor: code.CostFactor, MaxMarkup: code.MaxMarkup, AgreementVer: "3"})
+	assert.ErrorIs(t, err, ErrAdtySiteSelfServeRetired)
+	_, err = OpenAdtySite(owner.Id, "invited-admin-invite", model.AdtySiteOpenedByAdmin, AdtySitePreset{InviteCodeId: code.Id})
+	assert.ErrorIs(t, err, ErrAdtySiteSelfServeRetired, "an invite-code id cannot open a site through the official admin path")
 
 	_, err = ApplyAdtySite(referralUser(t, db, "bad-code").Id, "bad-code", "", "3", "NOPE")
-	assert.ErrorIs(t, err, ErrAdtySiteInviteInvalid)
-	expired := &model.AdtySiteInviteCode{ExpireAt: time.Now().Unix() - 10}
-	require.NoError(t, SaveAdtySiteInviteCode(expired))
+	assert.ErrorIs(t, err, ErrAdtySiteSelfServeRetired)
+	expired := seedHistoricalInviteCode(t, db, &model.AdtySiteInviteCode{Code: "expiredcode1", ExpireAt: time.Now().Unix() - 10})
 	_, err = ApplyAdtySite(referralUser(t, db, "expired-code").Id, "expired-code", "", "3", expired.Code)
-	assert.ErrorIs(t, err, ErrAdtySiteInviteInvalid)
+	assert.ErrorIs(t, err, ErrAdtySiteSelfServeRetired)
 
+	adty_setting.GetResellerSetting().InviteCodeEnabled = true
+	_, err = ApplyAdtySite(referralUser(t, db, "codes-on").Id, "codes-on", "", "3", code.Code)
+	assert.ErrorIs(t, err, ErrAdtySiteSelfServeRetired, "InviteCodeEnabled must not turn opening back on")
 	adty_setting.GetResellerSetting().InviteCodeEnabled = false
 	_, err = ApplyAdtySite(referralUser(t, db, "codes-off").Id, "codes-off", "", "3", code.Code)
-	assert.ErrorIs(t, err, ErrAdtySiteInviteOff)
+	assert.ErrorIs(t, err, ErrAdtySiteSelfServeRetired)
+
+	var after int64
+	require.NoError(t, db.Model(&model.AdtySite{}).Count(&after).Error)
+	assert.Equal(t, before, after)
+	var stored model.AdtySiteInviteCode
+	require.NoError(t, db.First(&stored, code.Id).Error)
+	assert.Equal(t, 0, stored.UsedCount)
+	var expiredStored model.AdtySiteInviteCode
+	require.NoError(t, db.First(&expiredStored, expired.Id).Error)
+	assert.Equal(t, 0, expiredStored.UsedCount)
 }
 
 func TestInviteCodeConcurrentUseRespectsMax(t *testing.T) {
 	db := prepareSiteDB(t)
-	code := &model.AdtySiteInviteCode{MaxUses: 3}
-	require.NoError(t, SaveAdtySiteInviteCode(code))
+	code := seedHistoricalInviteCode(t, db, &model.AdtySiteInviteCode{MaxUses: 3})
 	owners := make([]*model.User, 10)
 	for i := range owners {
 		owners[i] = referralUser(t, db, "race-"+string(rune('a'+i)))
@@ -365,10 +418,13 @@ func TestInviteCodeConcurrentUseRespectsMax(t *testing.T) {
 		})
 	}
 	wg.Wait()
-	assert.EqualValues(t, 3, opened.Load())
+	assert.Zero(t, opened.Load())
 	var stored model.AdtySiteInviteCode
 	require.NoError(t, db.First(&stored, code.Id).Error)
-	assert.Equal(t, 3, stored.UsedCount)
+	assert.Equal(t, 0, stored.UsedCount)
+	var sites int64
+	require.NoError(t, db.Model(&model.AdtySite{}).Where("subdomain LIKE ?", "race-%").Count(&sites).Error)
+	assert.Zero(t, sites)
 }
 
 func TestSiteCustomerCannotOpenSite(t *testing.T) {
@@ -378,7 +434,7 @@ func TestSiteCustomerCannotOpenSite(t *testing.T) {
 	_, err := OpenAdtySite(customer.Id, "mine", model.AdtySiteOpenedByAdmin, AdtySitePreset{})
 	assert.ErrorIs(t, err, ErrAdtySiteCustomer)
 	_, err = ApplyAdtySite(customer.Id, "mine", "", "3", "")
-	assert.ErrorIs(t, err, ErrAdtySiteCustomer)
+	assert.ErrorIs(t, err, ErrAdtySiteSelfServeRetired)
 }
 
 func TestOpenSiteCreatesAffiliateStop(t *testing.T) {
@@ -444,8 +500,7 @@ func TestOpenSiteMarksAffiliate(t *testing.T) {
 	require.NoError(t, err)
 	require.Zero(t, affiliate.SiteOwnerSince)
 
-	pending, err := ApplyAdtySite(owner.Id, "aff", "", "3", "")
-	require.NoError(t, err)
+	pending := seedHistoricalPendingApplication(t, db, owner.Id, "aff", "", "3")
 	var stored model.ReferralAffiliate
 	require.NoError(t, db.First(&stored, affiliate.Id).Error)
 	assert.Zero(t, stored.SiteOwnerSince, "a pending application does not stop commissions yet")

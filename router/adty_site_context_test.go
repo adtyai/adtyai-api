@@ -71,8 +71,13 @@ func newSiteFixture(t *testing.T) *siteFixture {
 	applicant := model.User{Username: "pending-owner", Password: "x", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: "default", AuthVersion: 1}
 	require.NoError(t, db.Create(&applicant).Error)
 	adty_setting.GetLegalSetting().SiteAgreementVersion = 1
-	pending, err := service.ApplyAdtySite(applicant.Id, "later", "", "1", "")
-	require.NoError(t, err)
+	pending := &model.AdtySite{
+		OwnerUserId: applicant.Id, Subdomain: "later", RootDomain: "sites.example.com",
+		Status: model.AdtySiteStatusPending, OpenedBy: model.AdtySiteOpenedByApply,
+		AgreementVer: "1", AgreementAt: 1,
+	}
+	require.NoError(t, db.Create(pending).Error)
+	require.NoError(t, service.EnsureAdtySiteWallets(pending.Id))
 	service.InvalidateAdtySiteCache()
 
 	gin.SetMode(gin.TestMode)
