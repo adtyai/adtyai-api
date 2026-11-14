@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
@@ -37,6 +38,9 @@ func ReviewAdtySiteEarning(c *gin.Context) {
 	}
 	if err := common.DecodeJson(c.Request.Body, &body); err != nil || strings.TrimSpace(body.OperationKey) == "" {
 		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	if middleware.RequireSecurityProof(c, service.AdtySiteEarningReviewOperation(body.OperationKey, body.OriginalCharge, body.Reason)) == nil {
 		return
 	}
 	if err := service.ReviewAdtySiteEarningRoot(body.OperationKey, c.GetInt("id"), body.OriginalCharge, body.Reason); err != nil {

@@ -18,6 +18,7 @@ const (
 	VerificationScopeAdtyPaymentOrphanCredit   = "adty.payment_orphan.credit"
 	VerificationScopeAdtyPaymentOrphanResolve  = "adty.payment_orphan.resolve"
 	VerificationScopeAdtyTopUpQuery            = "adty.topup.query"
+	VerificationScopeAdtySiteEarningReview     = "adty.site_earning.review"
 )
 
 const (
@@ -83,6 +84,14 @@ type AdtyTopUpQueryContext struct {
 	TradeNo string `json:"trade_no"`
 }
 
+// AdtySiteEarningReviewContext binds a review proof to one earning-root
+// decision and the recorded reason.
+type AdtySiteEarningReviewContext struct {
+	OperationKey   string `json:"operation_key"`
+	OriginalCharge string `json:"original_charge"`
+	Reason         string `json:"reason"`
+}
+
 var adtyTopUpVerificationPermissions = map[string]authz.Permission{
 	VerificationScopeAdtyTopUpRefund:           authz.AdtyFinanceRefund,
 	VerificationScopeAdtyTopUpManualComplete:   authz.AdtyFinanceManualCredit,
@@ -90,6 +99,7 @@ var adtyTopUpVerificationPermissions = map[string]authz.Permission{
 	VerificationScopeAdtyPaymentOrphanCredit:   authz.AdtyFinanceManualCredit,
 	VerificationScopeAdtyPaymentOrphanResolve:  authz.AdtyFinanceManualCredit,
 	VerificationScopeAdtyTopUpQuery:            authz.AdtyFinanceManualCredit,
+	VerificationScopeAdtySiteEarningReview:     authz.AdtyFinanceManualCredit,
 }
 
 func adtyIsTopUpVerificationScope(scope string) bool {
@@ -262,6 +272,24 @@ func adtyBindTopUpOperation(scope string, fields map[string]json.RawMessage, raw
 			return nil, false
 		}
 		return context, true
+	case VerificationScopeAdtySiteEarningReview:
+		var context AdtySiteEarningReviewContext
+		if len(fields) != 3 || fields["operation_key"] == nil || fields["original_charge"] == nil || fields["reason"] == nil || common.Unmarshal(raw, &context) != nil {
+			return nil, false
+		}
+		context.OperationKey = strings.TrimSpace(context.OperationKey)
+		context.OriginalCharge = strings.TrimSpace(context.OriginalCharge)
+		context.Reason = strings.TrimSpace(context.Reason)
+		if context.OperationKey == "" || len(context.OperationKey) > adtyTopUpTradeNoMaxLen ||
+			len(context.Reason) == 0 || len(context.Reason) > adtyTopUpTextMaxLen {
+			return nil, false
+		}
+		switch context.OriginalCharge {
+		case "released", "skipped":
+		default:
+			return nil, false
+		}
+		return context, true
 	default:
 		return nil, false
 	}
@@ -332,6 +360,15 @@ func AdtyTopUpQueryOperation(tradeNo string) VerificationOperation {
 	return VerificationOperation{Scope: VerificationScopeAdtyTopUpQuery, Context: payload}
 }
 
+func AdtySiteEarningReviewOperation(operationKey, originalCharge, reason string) VerificationOperation {
+	payload, _ := common.Marshal(AdtySiteEarningReviewContext{
+		OperationKey:   strings.TrimSpace(operationKey),
+		OriginalCharge: strings.TrimSpace(originalCharge),
+		Reason:         strings.TrimSpace(reason),
+	})
+	return VerificationOperation{Scope: VerificationScopeAdtySiteEarningReview, Context: payload}
+}
+
 func init() {
 	accessTokenVerificationScopes[VerificationScopeAdtyTopUpRefund] = AccessTokenScopeOf(authz.AdtyFinanceRefund)
 	accessTokenVerificationScopes[VerificationScopeAdtyTopUpManualComplete] = AccessTokenScopeOf(authz.AdtyFinanceManualCredit)
@@ -339,4 +376,5 @@ func init() {
 	accessTokenVerificationScopes[VerificationScopeAdtyPaymentOrphanCredit] = AccessTokenScopeOf(authz.AdtyFinanceManualCredit)
 	accessTokenVerificationScopes[VerificationScopeAdtyPaymentOrphanResolve] = AccessTokenScopeOf(authz.AdtyFinanceManualCredit)
 	accessTokenVerificationScopes[VerificationScopeAdtyTopUpQuery] = AccessTokenScopeOf(authz.AdtyFinanceManualCredit)
+	accessTokenVerificationScopes[VerificationScopeAdtySiteEarningReview] = AccessTokenScopeOf(authz.AdtyFinanceManualCredit)
 }

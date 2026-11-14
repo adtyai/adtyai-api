@@ -365,7 +365,7 @@ func securityVerificationPolicy(scope string, state model.UserVerificationState)
 		VerificationScopeAdminUserCreate, VerificationScopeAdminUserUpdate, VerificationScopeAdminUserDelete,
 		VerificationScopeAdminUserManage, VerificationScopeAdminUserPasskeyReset,
 		VerificationScopeAdminUserTwoFADisable, VerificationScopeAdminUserBindingClear,
-		VerificationScopeAdtyTopUpRefund, VerificationScopeAdtyTopUpManualRefundStep, VerificationScopeAdtyTopUpManualComplete, VerificationScopeAdtyPaymentOrphanCredit, VerificationScopeAdtyPaymentOrphanResolve, VerificationScopeAdtyTopUpQuery:
+		VerificationScopeAdtyTopUpRefund, VerificationScopeAdtyTopUpManualRefundStep, VerificationScopeAdtyTopUpManualComplete, VerificationScopeAdtyPaymentOrphanCredit, VerificationScopeAdtyPaymentOrphanResolve, VerificationScopeAdtyTopUpQuery, VerificationScopeAdtySiteEarningReview:
 		if scope == VerificationScopeAccountDelete && state.Role == common.RoleRootUser {
 			return nil, ErrVerificationForbidden
 		}
@@ -461,7 +461,7 @@ func GetVerificationRequirements(identity AuthIdentity, scope string) (*Verifica
 				VerificationScopeAdminUserCreate, VerificationScopeAdminUserUpdate, VerificationScopeAdminUserDelete,
 				VerificationScopeAdminUserManage, VerificationScopeAdminUserPasskeyReset,
 				VerificationScopeAdminUserTwoFADisable, VerificationScopeAdminUserBindingClear,
-				VerificationScopeAdtyTopUpRefund, VerificationScopeAdtyTopUpManualRefundStep, VerificationScopeAdtyTopUpManualComplete, VerificationScopeAdtyPaymentOrphanCredit, VerificationScopeAdtyPaymentOrphanResolve, VerificationScopeAdtyTopUpQuery:
+				VerificationScopeAdtyTopUpRefund, VerificationScopeAdtyTopUpManualRefundStep, VerificationScopeAdtyTopUpManualComplete, VerificationScopeAdtyPaymentOrphanCredit, VerificationScopeAdtyPaymentOrphanResolve, VerificationScopeAdtyTopUpQuery, VerificationScopeAdtySiteEarningReview:
 				methods[i].Available, methods[i].Reason = false, "Password authentication is disabled."
 			default:
 				if adtyIsSiteVerificationScope(scope) {
