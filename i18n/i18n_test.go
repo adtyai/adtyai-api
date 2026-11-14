@@ -115,8 +115,11 @@ func TestBackendMessageLanguage(t *testing.T) {
 	}
 }
 
-// A key missing from a locale, or a template that does not parse, reaches
-// clients as the raw key.
+// Official and leftover locale packs must contain every declared keys.go
+// message, and every template must render. Leftover packs are checked through
+// TranslateLoadable, which still returns the raw key when a leftover pack
+// cannot localize. Official Translate no longer returns the raw key; that
+// fallback is covered in TestTranslateFallback.
 func TestLocalesRenderEveryKey(t *testing.T) {
 	require.NoError(t, Init())
 	keysFile, err := parser.ParseFile(token.NewFileSet(), "keys.go", nil, parser.SkipObjectResolution)

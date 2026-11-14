@@ -111,28 +111,61 @@ func T(c *gin.Context, key string, args ...map[string]any) string {
 	return Translate(StatedLang(c), key, args...)
 }
 
+// Fallback shown when neither official pack can localize a key. These are
+// official-language strings, not message IDs, so a last-resort failure never
+// leaks a raw key or an internal error (CHK-ERROR, A.20.2).
+const (
+	fallbackTranslationZhCN = "暂时无法显示该提示，请稍后重试。"
+	fallbackTranslationEn   = "This message could not be displayed. Please try again later."
+)
+
 // Translate translates a message key for the specified language. An empty
 // language means the reader stated none and gets common.DefaultLanguage.
+// Official languages are only zh-CN and en (A.20.1). If the requested official
+// pack cannot localize the key (missing translation or template error), the
+// other official pack is tried. If both fail, a short human-readable fallback
+// in the requested official language is returned. The raw MessageID and
+// internal error text are never returned to users.
 func Translate(lang, key string, args ...map[string]any) string {
 	if lang == "" {
 		lang = common.DefaultLanguage
 	}
-	loc := GetLocalizer(lang)
-
-	config := &i18n.LocalizeConfig{
-		MessageID: key,
-	}
-
+	requested := normalizeLang(lang)
+	config := &i18n.LocalizeConfig{MessageID: key}
 	if len(args) > 0 && args[0] != nil {
 		config.TemplateData = args[0]
 	}
-
-	msg, err := loc.Localize(config)
-	if err != nil {
-		// Return key as fallback if translation not found
-		return key
+	if msg, ok := localizeOfficial(requested, key, config); ok {
+		return msg
 	}
-	return msg
+	if other := otherOfficialLanguage(requested); other != requested {
+		if msg, ok := localizeOfficial(other, key, config); ok {
+			return msg
+		}
+	}
+	return safeTranslationFallback(requested)
+}
+
+func localizeOfficial(lang, key string, config *i18n.LocalizeConfig) (string, bool) {
+	msg, err := GetLocalizer(lang).Localize(config)
+	if err != nil || msg == "" || msg == key {
+		return "", false
+	}
+	return msg, true
+}
+
+func otherOfficialLanguage(lang string) string {
+	if lang == LangZhCN {
+		return LangEn
+	}
+	return LangZhCN
+}
+
+func safeTranslationFallback(lang string) string {
+	if lang == LangZhCN {
+		return fallbackTranslationZhCN
+	}
+	return fallbackTranslationEn
 }
 
 // TranslateLoadable translates a key using leftover locale packs still kept on
