@@ -58,7 +58,7 @@ export function TermsFooter({
 
   return (
     <p className={cn('text-muted-foreground text-center text-xs', className)}>
-      {text}{' '}
+      {t(text)}{' '}
       {activeLinks.map((link, index) => (
         <span key={link.href}>
           {index > 0 && index === activeLinks.length - 1 && ` ${t('and')} `}
@@ -67,7 +67,7 @@ export function TermsFooter({
             href={link.href}
             className='hover:text-primary underline underline-offset-4'
           >
-            {link.label}
+            {t(link.label)}
           </a>
         </span>
       ))}

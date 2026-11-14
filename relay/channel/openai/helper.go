@@ -210,7 +210,7 @@ func HandleFinalResponse(c *gin.Context, info *relaycommon.RelayInfo, lastStream
 			return
 		}
 
-		info.ClaudeConvertInfo.Usage = usage
+		info.EnsureClaudeConvertInfo().Usage = usage
 
 		result, err := service.ConvertStreamResponse(c, info, types.RelayFormatClaude, &streamResponse)
 		if err != nil {
@@ -225,7 +225,34 @@ func HandleFinalResponse(c *gin.Context, info *relaycommon.RelayInfo, lastStream
 		for _, resp := range claudeResponses {
 			_ = helper.ClaudeData(c, *resp)
 		}
-		info.ClaudeConvertInfo.Done = true
+		// Some OpenAI-compatible upstreams never send a usage-bearing chunk
+		// (e.g. they ignore stream_options.include_usage). In that case
+		// StreamResponseOpenAI2Claude keeps the message open waiting for usage
+		// and never emits message_delta/message_stop, so Claude-format clients
+		// see an unterminated turn. Force-finalize here using the existing
+		// ClaudeConvertInfo and already-written Usage. Do not mark Done before
+		// Finalize succeeds; FinalizeStreamResponseOpenAI2Claude is a no-op if
+		// the converter already finalized on a usage chunk.
+		state, serr := relayconvert.NewResponseStreamState(types.RelayFormatOpenAI, types.RelayFormatClaude, relayconvert.ResponseStreamOptions{
+			ID:      streamResponse.Id,
+			Model:   streamResponse.Model,
+			Created: streamResponse.Created,
+		})
+		if serr != nil {
+			common.SysLog(common.LogText("error creating Claude stream state: %s", serr.Error()))
+			return
+		}
+		state.SetUsage(usage)
+		finalResults, ferr := service.FinalizeStreamResponse(c, info, state)
+		if ferr != nil {
+			common.SysLog(common.LogText("error finalizing Claude stream response: %s", ferr.Error()))
+			return
+		}
+		for _, resp := range finalResults {
+			if cr, ok := resp.Value.(*dto.ClaudeResponse); ok && cr != nil {
+				_ = helper.ClaudeData(c, *cr)
+			}
+		}
 
 	case types.RelayFormatGemini:
 		var streamResponse dto.ChatCompletionsStreamResponse

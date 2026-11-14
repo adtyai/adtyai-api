@@ -52,7 +52,7 @@ import {
   useSidebarBadges,
 } from '@/hooks/use-sidebar-badges'
 
-import type { SidebarData } from '@/components/layout/types'
+import type { SidebarBadges, SidebarData } from '@/components/layout/types'
 import { ADTY_PERMISSIONS } from '@/lib/adty-permissions'
 import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
@@ -63,7 +63,7 @@ import { useAuthStore } from '@/stores/auth-store'
  * These are shown when the URL does not match any nested sidebar view
  * registered in `layout/lib/sidebar-view-registry.ts`.
  */
-export function useSidebarData(): SidebarData {
+export function useSidebarData(badges: SidebarBadges = {}): SidebarData {
   // ADTY task 8.2: titles and order follow the console mockup. Group ids are
   // unchanged because module switches and the admin-only filter key on them.
   const { t } = useTranslation()
@@ -278,10 +278,12 @@ export function useSidebarData(): SidebarData {
               activeUrls: ['/system-settings'],
               icon: Settings,
               requiredRole: ROLE.SUPER_ADMIN,
+              // Model pricing lives in System Settings.
+              badge: badges.modelPricing,
             },
           ],
         },
       ],
     }
-  }, [t, staffWorkspaceBadge, ticketsBadge, siteOwnerBadge, referralAdminBadge, resellerSitesBadge, orderManagementBadge, isSiteOwner, isStaff])
+  }, [t, staffWorkspaceBadge, ticketsBadge, siteOwnerBadge, referralAdminBadge, resellerSitesBadge, orderManagementBadge, isSiteOwner, isStaff, badges.modelPricing])
 }

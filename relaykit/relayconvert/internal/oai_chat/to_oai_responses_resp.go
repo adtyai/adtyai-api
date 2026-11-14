@@ -197,6 +197,23 @@ func UsageFromChatUsage(src *dto.Usage) *dto.Usage {
 		src.CompletionTokenDetails.ImageTokens != 0 {
 		usage.CompletionTokenDetails = src.CompletionTokenDetails
 	}
+
+	// Capture reasoning_tokens from top-level (e.g. Moonshot/Kimi) or from
+	// completion_tokens_details. Put them only into details; do not add them
+	// into CompletionTokens / TotalTokens.
+	reasoningTokens := src.ReasoningTokens
+	if reasoningTokens == 0 {
+		reasoningTokens = src.CompletionTokenDetails.ReasoningTokens
+	}
+	usage.ReasoningTokens = reasoningTokens
+	if reasoningTokens != 0 && usage.CompletionTokenDetails.ReasoningTokens == 0 {
+		usage.CompletionTokenDetails.ReasoningTokens = reasoningTokens
+	}
+	if usage.CompletionTokenDetails != (dto.OutputTokenDetails{}) {
+		details := usage.CompletionTokenDetails
+		usage.OutputTokensDetails = &details
+	}
+
 	usage.ClaudeCacheCreation5mTokens = src.ClaudeCacheCreation5mTokens
 	usage.ClaudeCacheCreation1hTokens = src.ClaudeCacheCreation1hTokens
 	return usage
