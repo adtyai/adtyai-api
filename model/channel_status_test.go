@@ -158,3 +158,51 @@ func TestAutoDisableKeepsManualDisable(t *testing.T) {
 		}
 	}
 }
+
+func TestAutoDisableRefreshesStaleCacheWhenRowIsManuallyDisabled(t *testing.T) {
+	for _, tc := range []struct {
+		name             string
+		multiKey         bool
+		staleCacheStatus int
+	}{
+		{name: "single key stale AutoDisabled cache is restored", staleCacheStatus: common.ChannelStatusAutoDisabled},
+		{name: "single key stale Enabled cache is not left AutoDisabled", staleCacheStatus: common.ChannelStatusEnabled},
+		{name: "multi key stale AutoDisabled cache is restored", multiKey: true, staleCacheStatus: common.ChannelStatusAutoDisabled},
+		{name: "multi key stale Enabled cache is not left AutoDisabled", multiKey: true, staleCacheStatus: common.ChannelStatusEnabled},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			setupChannelStatusTest(t)
+			common.MemoryCacheEnabled = true
+
+			channel := Channel{Name: t.Name(), Key: "key-a", Status: common.ChannelStatusManuallyDisabled, Models: "test-model", Group: "default"}
+			usingKey := "key-a"
+			if tc.multiKey {
+				channel.Key = "key-a\nkey-b"
+				channel.ChannelInfo = ChannelInfo{IsMultiKey: true, MultiKeySize: 2}
+			}
+			channel.SetOtherInfo(map[string]any{"status_reason": "manual operation", "status_time": int64(1234)})
+			require.NoError(t, channel.Insert())
+			require.NoError(t, InitChannelCache())
+
+			CacheUpdateChannelStatus(channel.Id, tc.staleCacheStatus)
+			stale, err := CacheGetChannel(channel.Id)
+			require.NoError(t, err)
+			require.Equal(t, tc.staleCacheStatus, stale.Status)
+
+			changed := UpdateChannelStatus(channel.Id, usingKey, common.ChannelStatusAutoDisabled, "provider rejected key")
+			assert.False(t, changed)
+
+			stored, err := GetChannelById(channel.Id, true)
+			require.NoError(t, err)
+			assert.Equal(t, common.ChannelStatusManuallyDisabled, stored.Status)
+			assert.Equal(t, "manual operation", stored.GetOtherInfo()["status_reason"])
+			assert.Equal(t, float64(1234), stored.GetOtherInfo()["status_time"])
+			assert.Equal(t, channel.ChannelInfo.MultiKeyStatusList, stored.ChannelInfo.MultiKeyStatusList)
+
+			cached, err := CacheGetChannel(channel.Id)
+			require.NoError(t, err)
+			assert.Equal(t, common.ChannelStatusManuallyDisabled, cached.Status)
+			assert.Equal(t, stored.ChannelInfo.MultiKeyStatusList, cached.ChannelInfo.MultiKeyStatusList)
+		})
+	}
+}
