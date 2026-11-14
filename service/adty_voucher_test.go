@@ -370,6 +370,90 @@ func TestAdtyVoucherCloseRevokesOwnerAndMarginCodes(t *testing.T) {
 	require.True(t, earning.FrozenUSD.IsZero())
 }
 
+func TestAdtyVoucherClosedSiteBackfillsOwnerAndMarginCodes(t *testing.T) {
+	db := prepareReferralDialectDB(t, "sqlite")
+	ResetAdtyVoucherGuesses()
+	root := referralUser(t, db, "voucher-backfill-root")
+	require.NoError(t, db.Model(root).Update("role", common.RoleRootUser).Error)
+	owner := referralUser(t, db, "voucher-backfill-owner")
+	customer := referralUser(t, db, "voucher-backfill-customer")
+	liveOwner := referralUser(t, db, "voucher-backfill-live-owner")
+	site := model.AdtySite{OwnerUserId: owner.Id, Subdomain: "voucher-backfill", Status: model.AdtySiteStatusActive, AgreementVer: AdtyCurrentSiteAgreementVersion()}
+	require.NoError(t, db.Create(&site).Error)
+	live := model.AdtySite{OwnerUserId: liveOwner.Id, Subdomain: "voucher-backfill-live", Status: model.AdtySiteStatusActive, AgreementVer: AdtyCurrentSiteAgreementVersion()}
+	require.NoError(t, db.Create(&live).Error)
+	require.NoError(t, db.Model(customer).Update("site_id", site.Id).Error)
+	require.NoError(t, EnsureAdtySiteWallets(site.Id))
+	require.NoError(t, EnsureAdtySiteWallets(live.Id))
+	_, err := ApplyAdtySiteWalletChange(site.Id, model.AdtySiteWalletEarnings, decimal.NewFromInt(40), AdtySiteWalletChange{
+		Type: "seed", Reason: "seed", IdempotencyKey: "voucher-backfill-seed",
+	})
+	require.NoError(t, err)
+	_, err = ApplyAdtySiteWalletChange(live.Id, model.AdtySiteWalletEarnings, decimal.NewFromInt(20), AdtySiteWalletChange{
+		Type: "seed", Reason: "seed", IdempotencyKey: "voucher-backfill-live-seed",
+	})
+	require.NoError(t, err)
+	require.NoError(t, SetAdtyVoucherIssuanceLimit(root.Id, decimal.NewFromInt(20)))
+
+	selfIssued, err := IssueAdtyVoucher(AdtyVoucherIssueInput{IssuerId: owner.Id, Purpose: model.AdtyVoucherPurposeSiteOwner, SiteId: site.Id, AmountUSD: decimal.NewFromInt(5), Reason: "self pending leftover"})
+	require.NoError(t, err)
+	frozenSelf, err := IssueAdtyVoucher(AdtyVoucherIssueInput{IssuerId: owner.Id, Purpose: model.AdtyVoucherPurposeSiteOwner, SiteId: site.Id, AmountUSD: decimal.NewFromInt(2), Reason: "self frozen leftover"})
+	require.NoError(t, err)
+	require.NoError(t, FreezeAdtyVoucher(owner.Id, frozenSelf.Id))
+	marginIssued, err := IssueAdtyVoucher(AdtyVoucherIssueInput{IssuerId: root.Id, Purpose: model.AdtyVoucherPurposeSiteMargin, SiteId: site.Id, AmountUSD: decimal.NewFromInt(4), Reason: "margin leftover"})
+	require.NoError(t, err)
+	customerIssued, err := IssueAdtyVoucher(AdtyVoucherIssueInput{IssuerId: owner.Id, Purpose: model.AdtyVoucherPurposeSiteCustomer, SiteId: site.Id, AmountUSD: decimal.NewFromInt(6), Reason: "customer keep"})
+	require.NoError(t, err)
+	liveIssued, err := IssueAdtyVoucher(AdtyVoucherIssueInput{IssuerId: liveOwner.Id, Purpose: model.AdtyVoucherPurposeSiteOwner, SiteId: live.Id, AmountUSD: decimal.NewFromInt(3), Reason: "live keep"})
+	require.NoError(t, err)
+
+	// Historical close path marked unused codes inherited and set the site
+	// closed without revoking owner or margin holds.
+	require.NoError(t, db.Model(&model.AdtyVoucher{}).
+		Where("id IN ?", []int64{selfIssued.Id, frozenSelf.Id, marginIssued.Id, customerIssued.Id}).
+		Update("inherited_by_main", true).Error)
+	require.NoError(t, db.Model(&site).Update("status", model.AdtySiteStatusClosed).Error)
+
+	earning := mustAdtyVoucherWallet(t, db, site.Id, model.AdtySiteWalletEarnings)
+	require.True(t, earning.FrozenUSD.Equal(decimal.NewFromInt(13)))
+	var liability model.AdtyVoucherLiability
+	require.NoError(t, db.Where("scope = ?", "main").First(&liability).Error)
+	require.True(t, liability.FrozenUSD.Equal(decimal.NewFromInt(4)))
+
+	require.NoError(t, RunAdtySiteCloseOnce(10))
+
+	var selfRow, frozenSelfRow, marginRow, customerRow, liveRow model.AdtyVoucher
+	require.NoError(t, db.First(&selfRow, selfIssued.Id).Error)
+	require.NoError(t, db.First(&frozenSelfRow, frozenSelf.Id).Error)
+	require.NoError(t, db.First(&marginRow, marginIssued.Id).Error)
+	require.NoError(t, db.First(&customerRow, customerIssued.Id).Error)
+	require.NoError(t, db.First(&liveRow, liveIssued.Id).Error)
+	assert.Equal(t, model.AdtyVoucherStatusCancelled, selfRow.Status)
+	assert.Equal(t, model.AdtyVoucherStatusCancelled, frozenSelfRow.Status)
+	assert.Equal(t, model.AdtyVoucherStatusCancelled, marginRow.Status)
+	assert.Equal(t, model.AdtyVoucherStatusPending, customerRow.Status)
+	assert.True(t, customerRow.InheritedByMain)
+	assert.Equal(t, model.AdtyVoucherStatusPending, liveRow.Status)
+	assert.False(t, liveRow.InheritedByMain)
+
+	earning = mustAdtyVoucherWallet(t, db, site.Id, model.AdtySiteWalletEarnings)
+	require.True(t, earning.Balance.Equal(decimal.NewFromInt(40)), "backfill must release owner holds without spending earnings")
+	require.True(t, earning.FrozenUSD.Equal(decimal.NewFromInt(6)), "customer code must keep its earnings hold")
+	liveWallet := mustAdtyVoucherWallet(t, db, live.Id, model.AdtySiteWalletEarnings)
+	require.True(t, liveWallet.FrozenUSD.Equal(decimal.NewFromInt(3)))
+	require.NoError(t, db.Where("scope = ?", "main").First(&liability).Error)
+	require.True(t, liability.FrozenUSD.IsZero(), "backfill must release platform margin holds")
+	require.True(t, liability.SpentUSD.IsZero())
+
+	_, err = RedeemAdtyVoucher(owner.Id, selfIssued.Code)
+	require.ErrorIs(t, err, ErrAdtyVoucherCancelled)
+	_, err = RedeemAdtyVoucher(owner.Id, marginIssued.Code)
+	require.ErrorIs(t, err, ErrAdtyVoucherCancelled)
+
+	require.NoError(t, RunAdtySiteCloseOnce(10))
+	require.EqualValues(t, 2, countAdtyVoucherLedgers(t, db, site.Id, "voucher_release", model.AdtySiteWalletEarnings))
+}
+
 func mustAdtyVoucherWallet(t *testing.T, db *gorm.DB, siteId int, kind string) model.AdtySiteWallet {
 	t.Helper()
 	var wallet model.AdtySiteWallet

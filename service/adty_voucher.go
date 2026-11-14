@@ -472,6 +472,54 @@ func revokeUnusedOwnerAndMarginVouchersOnCloseTx(tx *gorm.DB, siteId int) error 
 	return nil
 }
 
+// RevokeUnusedOwnerAndMarginVouchersOnClosedSites cancels leftover unused
+// site-owner and site-margin codes on sites that are already closed, and
+// releases their source holds. Later closes are handled by
+// InheritAdtyVouchersOnCloseTx; this backfills historical pending or
+// inherited_by_main rows that were never revoked.
+func RevokeUnusedOwnerAndMarginVouchersOnClosedSites() error {
+	if model.DB == nil {
+		return nil
+	}
+	return model.DB.Transaction(func(tx *gorm.DB) error {
+		return revokeUnusedOwnerAndMarginVouchersOnClosedSitesTx(tx)
+	})
+}
+
+func revokeUnusedOwnerAndMarginVouchersOnClosedSitesTx(tx *gorm.DB) error {
+	if tx == nil {
+		return nil
+	}
+	var leftovers []model.AdtyVoucher
+	if err := tx.Select("id", "target_site_id", "source_site_id").
+		Where("purpose IN ? AND status IN ?", []string{model.AdtyVoucherPurposeSiteOwner, model.AdtyVoucherPurposeSiteMargin}, []string{model.AdtyVoucherStatusPending, model.AdtyVoucherStatusFrozen}).
+		Find(&leftovers).Error; err != nil {
+		return err
+	}
+	siteIDs := map[int]struct{}{}
+	for _, voucher := range leftovers {
+		if voucher.TargetSiteId > 0 {
+			siteIDs[voucher.TargetSiteId] = struct{}{}
+		}
+		if voucher.SourceSiteId > 0 {
+			siteIDs[voucher.SourceSiteId] = struct{}{}
+		}
+	}
+	for siteID := range siteIDs {
+		var site model.AdtySite
+		if err := tx.Select("id", "status").Where("id = ?", siteID).Limit(1).Find(&site).Error; err != nil {
+			return err
+		}
+		if site.Id == 0 || site.Status != model.AdtySiteStatusClosed {
+			continue
+		}
+		if err := revokeUnusedOwnerAndMarginVouchersOnCloseTx(tx, siteID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func cancelAdtyVoucherTx(tx *gorm.DB, voucher *model.AdtyVoucher) error {
 	if voucher.Status != model.AdtyVoucherStatusPending && voucher.Status != model.AdtyVoucherStatusFrozen {
 		return common.NewMessage("Invalid parameters")

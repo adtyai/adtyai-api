@@ -984,7 +984,7 @@ func ResolveAdtySiteMarkup(prices []model.AdtySitePrice, userId int, group, mode
 	return decimal.NewFromInt(1)
 }
 
-// RunAdtySiteCloseOnce 执行所有到期的关站，由主节点任务调用。
+// RunAdtySiteCloseOnce 执行所有到期的关站，并由主节点任务回补已关站、仍占用冻结的站长自用/保证金未兑码。
 func RunAdtySiteCloseOnce(now int64) error {
 	var ids []int
 	if err := model.DB.Model(&model.AdtySite{}).Where("status = ? AND close_execute_at <= ?", model.AdtySiteStatusClosing, now).Pluck("id", &ids).Error; err != nil {
@@ -997,6 +997,12 @@ func RunAdtySiteCloseOnce(now int64) error {
 			if first == nil {
 				first = err
 			}
+		}
+	}
+	if err := RevokeUnusedOwnerAndMarginVouchersOnClosedSites(); err != nil {
+		common.SysError(common.LogText("revoke leftover owner and margin vouchers on closed sites: %s", err.Error()))
+		if first == nil {
+			first = err
 		}
 	}
 	return first
