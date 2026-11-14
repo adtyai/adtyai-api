@@ -344,6 +344,142 @@ func TestLatePayAfterCancelRecordsPendingGiftWhenUncovered(t *testing.T) {
 	require.EqualValues(t, 1, notifies)
 }
 
+func TestSiteGiftBonusQuotaUsesAdtyBonusUSDForSite(t *testing.T) {
+	ownerQuota, err := siteGiftBonusQuota(&model.AdtyTopupOrder{
+		SiteId: 1, BonusUSD: decimal.RequireFromString("10"), PromoBonusUSD: decimal.RequireFromString("5"),
+		PromoFunder: model.AdtyPromoFunderSiteOwner,
+	})
+	require.NoError(t, err)
+	require.EqualValues(t, 7_500_000, ownerQuota)
+
+	platformQuota, err := siteGiftBonusQuota(&model.AdtyTopupOrder{
+		SiteId: 1, BonusUSD: decimal.RequireFromString("10"), PromoBonusUSD: decimal.RequireFromString("5"),
+		PromoFunder: model.AdtyPromoFunderPlatform,
+	})
+	require.NoError(t, err)
+	require.EqualValues(t, 5_000_000, platformQuota)
+
+	promoOnly, err := siteGiftBonusQuota(&model.AdtyTopupOrder{
+		SiteId: 1, PromoBonusUSD: decimal.RequireFromString("5"), PromoFunder: model.AdtyPromoFunderSiteOwner,
+	})
+	require.NoError(t, err)
+	require.EqualValues(t, 2_500_000, promoOnly)
+
+	plain, err := siteGiftBonusQuota(&model.AdtyTopupOrder{
+		SiteId: 1, BonusUSD: decimal.RequireFromString("10"),
+	})
+	require.NoError(t, err)
+	require.EqualValues(t, 5_000_000, plain)
+}
+
+func TestLatePayAfterCancelReacquiresOwnerPromoBonus(t *testing.T) {
+	db := prepareSiteDB(t)
+	_, site, customer, ext := seedReservedSiteGiftWithPromo(t, db, "gift-late-owner", "10", "5", model.AdtyPromoFunderSiteOwner)
+	require.Equal(t, "earning+margin", ext.GiftReserveSource)
+	require.True(t, ext.GiftReserveEarning.Equal(decimal.RequireFromString("4")))
+	require.True(t, ext.GiftReserveMargin.Equal(decimal.RequireFromString("11")))
+	_, err := model.CancelAdtyTopUp(ext.TradeNo, customer.Id)
+	require.NoError(t, err)
+	earningOpen, marginOpen := mustSiteGiftWallets(t, db, site.Id)
+	require.True(t, earningOpen.FrozenUSD.IsZero())
+	require.True(t, marginOpen.FrozenUSD.IsZero())
+
+	_, err = model.CompleteAdtyTopUp(ext.TradeNo, model.AdtyPaymentFacts{
+		Provider: model.PaymentProviderAdtyBEpusdt, PaidAmount: decimal.NewFromInt(100), FiatAmount: decimal.NewFromInt(100),
+		PaidCurrency: "USDT", Source: model.AdtyPaymentSourceCallback,
+	}, "")
+	require.NoError(t, err)
+
+	earning, margin := mustSiteGiftWallets(t, db, site.Id)
+	require.True(t, earning.Balance.Equal(earningOpen.Balance))
+	require.True(t, earning.FrozenUSD.Equal(decimal.RequireFromString("4")))
+	require.True(t, margin.Balance.Equal(marginOpen.Balance))
+	require.True(t, margin.FrozenUSD.Equal(decimal.RequireFromString("11")))
+	require.EqualValues(t, 57_500_000, userQuotaOf(t, db, customer.Id))
+	require.EqualValues(t, 0, countGiftFulfillments(t, db, ext.TradeNo))
+	require.EqualValues(t, 2, countGiftLedgers(t, db, site.Id, "gift_reserve", ext.TradeNo, model.AdtySiteWalletEarnings))
+	require.EqualValues(t, 2, countGiftLedgers(t, db, site.Id, "gift_reserve", ext.TradeNo, model.AdtySiteWalletMargin))
+}
+
+func TestLatePayAfterCancelIgnoresPlatformPromoBonus(t *testing.T) {
+	db := prepareSiteDB(t)
+	_, site, customer, ext := seedReservedSiteGiftWithPromo(t, db, "gift-late-plat", "10", "5", model.AdtyPromoFunderPlatform)
+	require.Equal(t, "earning+margin", ext.GiftReserveSource)
+	require.True(t, ext.GiftReserveEarning.Equal(decimal.RequireFromString("4")))
+	require.True(t, ext.GiftReserveMargin.Equal(decimal.RequireFromString("6")))
+	_, err := model.CancelAdtyTopUp(ext.TradeNo, customer.Id)
+	require.NoError(t, err)
+
+	_, err = model.CompleteAdtyTopUp(ext.TradeNo, model.AdtyPaymentFacts{
+		Provider: model.PaymentProviderAdtyBEpusdt, PaidAmount: decimal.NewFromInt(100), FiatAmount: decimal.NewFromInt(100),
+		PaidCurrency: "USDT", Source: model.AdtyPaymentSourceCallback,
+	}, "")
+	require.NoError(t, err)
+
+	earning, margin := mustSiteGiftWallets(t, db, site.Id)
+	require.True(t, earning.FrozenUSD.Equal(decimal.RequireFromString("4")))
+	require.True(t, margin.FrozenUSD.Equal(decimal.RequireFromString("6")))
+	require.EqualValues(t, 57_500_000, userQuotaOf(t, db, customer.Id))
+	require.EqualValues(t, 0, countGiftFulfillments(t, db, ext.TradeNo))
+}
+
+func TestPrepareTopUpGiftReacquiresOwnerPromoShortfallWhenHeldEqualsBonusUSD(t *testing.T) {
+	db := prepareSiteDB(t)
+	_, site := openActiveSite(t, db, "gift-late-short")
+	customer := siteCustomer(t, db, site, "gift-late-short-customer")
+	_, err := ApplyAdtySiteWalletChange(site.Id, model.AdtySiteWalletEarnings, decimal.RequireFromString("20"), AdtySiteWalletChange{
+		Type: "earning_settlement", IdempotencyKey: "gift-late-short-earn-20",
+	})
+	require.NoError(t, err)
+	face := decimal.NewFromInt(100)
+	bonusUSD := decimal.RequireFromString("10")
+	promoUSD := decimal.RequireFromString("5")
+	credit := face.Add(bonusUSD).Add(promoUSD).Mul(decimal.NewFromFloat(common.QuotaPerUnit)).Floor().IntPart()
+	tradeNo := "EPU-gift-late-short"
+	ext := &model.AdtyTopupOrder{
+		TradeNo: tradeNo, UserId: customer.Id, Provider: model.PaymentProviderAdtyBEpusdt, Method: "usdt.trc20",
+		FaceUSD: face, BonusRate: bonusUSD.Div(face), BonusUSD: bonusUSD, PromoBonusUSD: promoUSD,
+		PromoFunder: model.AdtyPromoFunderSiteOwner, CreditQuota: credit,
+		PayAmount: face, PayCurrency: "USDT", TopupGroupRatio: decimal.NewFromInt(1),
+		ExpireAt: time.Now().Unix() + 900, SiteId: site.Id,
+	}
+	require.NoError(t, model.CreateAdtyTopUp(
+		&model.TopUp{UserId: customer.Id, Amount: 100, TradeNo: tradeNo, PaymentMethod: "usdt.trc20", PaymentProvider: model.PaymentProviderAdtyBEpusdt, Status: common.TopUpStatusPending},
+		ext,
+	))
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		_, err := applyAdtySiteWalletChangeTx(tx, site.Id, model.AdtySiteWalletEarnings, decimal.Zero, AdtySiteWalletChange{
+			Type: "gift_reserve", RefType: "topup", RefID: tradeNo, IdempotencyKey: "gift:" + tradeNo + ":earn",
+			HoldDelta: bonusUSD,
+		})
+		return err
+	}))
+	earningBefore, _ := mustSiteGiftWallets(t, db, site.Id)
+	require.True(t, earningBefore.FrozenUSD.Equal(bonusUSD))
+
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		granted, err := prepareTopUpGiftOnCreditTx(tx, ext, common.TopUpStatusExpired)
+		if err != nil {
+			return err
+		}
+		require.EqualValues(t, 7_500_000, granted)
+		return nil
+	}))
+	earning, _ := mustSiteGiftWallets(t, db, site.Id)
+	require.True(t, earning.FrozenUSD.Equal(decimal.RequireFromString("15")))
+	require.True(t, ext.GiftReserveEarning.Equal(decimal.RequireFromString("5")))
+	require.True(t, ext.GiftReserveMargin.IsZero())
+	require.Equal(t, "earning", ext.GiftReserveSource)
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		held, err := netGiftHoldTx(tx, site.Id, tradeNo)
+		if err != nil {
+			return err
+		}
+		require.True(t, held.Equal(decimal.RequireFromString("15")))
+		return nil
+	}))
+}
+
 func TestRefundPaidSiteGiftReleasesGuaranteeIdempotently(t *testing.T) {
 	db := prepareSiteDB(t)
 	owner, site, _, ext := seedReservedSiteGift(t, db, "gift-refund", "10")
@@ -667,6 +803,48 @@ func countGiftFulfillments(t *testing.T, db *gorm.DB, tradeNo string) int64 {
 	var n int64
 	require.NoError(t, db.Model(&model.AdtyGiftFulfillment{}).Where("trade_no = ?", tradeNo).Count(&n).Error)
 	return n
+}
+
+func seedReservedSiteGiftWithPromo(t *testing.T, db *gorm.DB, prefix, bonus, promoBonus, funder string) (*model.User, *model.AdtySite, *model.User, *model.AdtyTopupOrder) {
+	t.Helper()
+	owner, site := openActiveSite(t, db, prefix)
+	customer := siteCustomer(t, db, site, prefix+"-customer")
+	_, err := ApplyAdtySiteWalletChange(site.Id, model.AdtySiteWalletEarnings, decimal.RequireFromString("4"), AdtySiteWalletChange{
+		Type: "earning_settlement", IdempotencyKey: prefix + "-earn-4",
+	})
+	require.NoError(t, err)
+	require.NoError(t, OpenAdtyMarginCycle(site.Id, decimal.RequireFromString("20"), prefix+"-cycle"))
+	adty_setting.AuthorizeSiteBonusMarginFill(site.Id, true)
+	t.Cleanup(func() { adty_setting.AuthorizeSiteBonusMarginFill(site.Id, false) })
+	bonusUSD := decimal.RequireFromString(bonus)
+	promoUSD := decimal.Zero
+	if promoBonus != "" {
+		promoUSD = decimal.RequireFromString(promoBonus)
+	}
+	face := decimal.NewFromInt(100)
+	credit := face.Add(bonusUSD).Add(promoUSD).Mul(decimal.NewFromFloat(common.QuotaPerUnit)).Floor().IntPart()
+	tradeNo := "EPU-" + prefix
+	ext := &model.AdtyTopupOrder{
+		TradeNo: tradeNo, UserId: customer.Id, Provider: model.PaymentProviderAdtyBEpusdt, Method: "usdt.trc20",
+		FaceUSD: face, BonusRate: bonusUSD.Div(face), BonusUSD: bonusUSD, PromoBonusUSD: promoUSD, PromoFunder: funder,
+		CreditQuota: credit, PayAmount: face, PayCurrency: "USDT", TopupGroupRatio: decimal.NewFromInt(1),
+		ExpireAt: time.Now().Unix() + 900, SiteId: site.Id,
+	}
+	require.NoError(t, model.CreateAdtyTopUp(
+		&model.TopUp{UserId: customer.Id, Amount: 100, TradeNo: tradeNo, PaymentMethod: "usdt.trc20", PaymentProvider: model.PaymentProviderAdtyBEpusdt, Status: common.TopUpStatusPending},
+		ext,
+	))
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		if err := ReserveAdtySiteGiftTx(tx, ext); err != nil {
+			return err
+		}
+		return tx.Model(ext).Updates(map[string]any{
+			"gift_reserve_source":  ext.GiftReserveSource,
+			"gift_reserve_earning": ext.GiftReserveEarning,
+			"gift_reserve_margin":  ext.GiftReserveMargin,
+		}).Error
+	}))
+	return owner, site, customer, ext
 }
 
 func seedReservedSiteGift(t *testing.T, db *gorm.DB, prefix, bonus string) (*model.User, *model.AdtySite, *model.User, *model.AdtyTopupOrder) {

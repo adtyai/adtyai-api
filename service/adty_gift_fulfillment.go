@@ -54,7 +54,8 @@ func stringsHasZH(lang string) bool {
 
 func prepareTopUpGiftOnCreditTx(tx *gorm.DB, ext *model.AdtyTopupOrder, priorStatus string) (int64, error) {
 	totalBonus := topUpBonusQuota(ext)
-	if tx == nil || ext == nil || ext.SiteId <= 0 || !ext.BonusUSD.IsPositive() {
+	bonus := adtyBonusUSDForSite(ext)
+	if tx == nil || ext == nil || ext.SiteId <= 0 || !bonus.IsPositive() {
 		return totalBonus, nil
 	}
 	switch priorStatus {
@@ -70,7 +71,7 @@ func prepareTopUpGiftOnCreditTx(tx *gorm.DB, ext *model.AdtyTopupOrder, priorSta
 	if err != nil {
 		return 0, err
 	}
-	if !held.LessThan(ext.BonusUSD) {
+	if !held.LessThan(bonus) {
 		return totalBonus, nil
 	}
 	if err := reacquireAdtySiteGiftTx(tx, ext); err != nil {
@@ -113,10 +114,14 @@ func topUpBonusQuota(ext *model.AdtyTopupOrder) int64 {
 }
 
 func siteGiftBonusQuota(ext *model.AdtyTopupOrder) (int64, error) {
-	if ext == nil || !ext.BonusUSD.IsPositive() {
+	if ext == nil {
 		return 0, nil
 	}
-	quota, err := common.WalletQuotaFromDecimalStrict(ext.BonusUSD.Mul(common.QuotaPerUnitDecimal()).Floor())
+	bonus := adtyBonusUSDForSite(ext)
+	if !bonus.IsPositive() {
+		return 0, nil
+	}
+	quota, err := common.WalletQuotaFromDecimalStrict(bonus.Mul(common.QuotaPerUnitDecimal()).Floor())
 	if err != nil {
 		return 0, err
 	}
@@ -153,7 +158,11 @@ func netGiftHoldTx(tx *gorm.DB, siteID int, tradeNo string) (decimal.Decimal, er
 }
 
 func reacquireAdtySiteGiftTx(tx *gorm.DB, ext *model.AdtyTopupOrder) error {
-	if tx == nil || ext == nil || ext.SiteId <= 0 || !ext.BonusUSD.IsPositive() {
+	if tx == nil || ext == nil || ext.SiteId <= 0 {
+		return errGiftGuaranteeShort
+	}
+	bonus := adtyBonusUSDForSite(ext)
+	if !bonus.IsPositive() {
 		return errGiftGuaranteeShort
 	}
 	if err := ensureAdtySiteWalletsTx(tx, ext.SiteId); err != nil {
@@ -163,14 +172,25 @@ func reacquireAdtySiteGiftTx(tx *gorm.DB, ext *model.AdtyTopupOrder) error {
 	if err := model.AdtyLockForUpdate(tx).Where("site_id = ? AND kind = ?", ext.SiteId, model.AdtySiteWalletEarnings).First(&earning).Error; err != nil {
 		return err
 	}
+	held, err := netGiftHoldTx(tx, ext.SiteId, ext.TradeNo)
+	if err != nil {
+		return err
+	}
+	if held.IsNegative() {
+		held = decimal.Zero
+	}
+	needed := bonus.Sub(held)
+	if !needed.IsPositive() {
+		return nil
+	}
 	fromEarning := earning.Balance.Sub(earning.FrozenUSD)
-	if fromEarning.GreaterThan(ext.BonusUSD) {
-		fromEarning = ext.BonusUSD
+	if fromEarning.GreaterThan(needed) {
+		fromEarning = needed
 	}
 	if fromEarning.IsNegative() {
 		fromEarning = decimal.Zero
 	}
-	rest := ext.BonusUSD.Sub(fromEarning)
+	rest := needed.Sub(fromEarning)
 	fromMargin := decimal.Zero
 	if rest.IsPositive() {
 		if !adty_setting.SiteBonusMarginFillAllowed(ext.SiteId) {
@@ -222,7 +242,8 @@ func reacquireAdtySiteGiftTx(tx *gorm.DB, ext *model.AdtyTopupOrder) error {
 			map[string]any{"earning": "0", "margin": "0"},
 			map[string]any{
 				"trade_no": ext.TradeNo, "site_id": ext.SiteId, "bonus_usd": ext.BonusUSD.String(),
-				"source": ext.GiftReserveSource, "earning": fromEarning.String(), "margin": fromMargin.String(),
+				"promo_bonus_usd": ext.PromoBonusUSD.String(), "source": ext.GiftReserveSource,
+				"earning": fromEarning.String(), "margin": fromMargin.String(),
 				"phase": "reacquire",
 			})
 	}
