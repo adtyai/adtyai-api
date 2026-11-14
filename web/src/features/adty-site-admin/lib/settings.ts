@@ -50,7 +50,6 @@ export type RuleKey = (typeof RULE_KEYS)[number]
 /** Feature switches other than enabled and the two that need Cloudflare / Resend. */
 export const SWITCH_KEYS = [
   'site_login_only',
-  'invite_code_enabled',
   'self_use_check_enabled',
   'migration_check_enabled',
 ] as const

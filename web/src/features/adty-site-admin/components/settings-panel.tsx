@@ -142,7 +142,6 @@ export function SettingsPanel(props: {
   }
   const switchLabels: Record<SwitchKey, string> = {
     site_login_only: t('Site customers sign in only on their site'),
-    invite_code_enabled: t('Site opening invite codes'),
     self_use_check_enabled: t('Check for self-use'),
     migration_check_enabled: t('Check for main site migration'),
   }

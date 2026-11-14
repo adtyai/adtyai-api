@@ -682,6 +682,34 @@ describe('reseller settings', () => {
     )
   })
 
+  it('does not show or save the retired site-opening invite-code switch', async () => {
+    const user = userEvent.setup()
+    api.getResellerSettings.mockResolvedValue({
+      ...settings,
+      invite_code_enabled: true,
+    })
+    api.saveResellerSettings.mockResolvedValue(settings)
+    renderWith(<SettingsPanel canWrite canWriteSecrets />)
+
+    expect(
+      await screen.findByRole('switch', { name: 'Check for self-use' })
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('switch', { name: 'Site opening invite codes' })
+    ).not.toBeInTheDocument()
+
+    await user.click(
+      screen.getByRole('switch', { name: 'Check for self-use' })
+    )
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() =>
+      expect(api.saveResellerSettings).toHaveBeenCalledWith({
+        self_use_check_enabled: false,
+      })
+    )
+  })
+
   it('shows a recoverable error when settings fail instead of an endless loading state', async () => {
     api.getResellerSettings.mockRejectedValueOnce(
       new Error('Synthetic settings failure')
