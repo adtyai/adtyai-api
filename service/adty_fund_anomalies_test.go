@@ -234,6 +234,24 @@ func TestCollectAdtyFundAnomaliesFlagsPayoutMismatchWithoutMutatingLedgers(t *te
 	require.Equal(t, userLedgersBefore, userLedgersAfter)
 }
 
+func TestLoadGiftHoldByTradeIncludesGiftSpend(t *testing.T) {
+	db := prepareSiteDB(t)
+	_, site := openActiveSite(t, db, "gift-hold-spend")
+	trade := "GIFT-HOLD-" + strconv.Itoa(site.Id)
+	require.NoError(t, db.Create(&[]model.AdtySiteWalletLedger{
+		{SiteId: site.Id, WalletKind: model.AdtySiteWalletEarnings, Type: "gift_reserve", RefType: "topup", RefId: trade, HoldDelta: decimal.NewFromInt(4), IdempotencyKey: "hold-reserve-earn-" + trade},
+		{SiteId: site.Id, WalletKind: model.AdtySiteWalletMargin, Type: "gift_reserve", RefType: "topup", RefId: trade, HoldDelta: decimal.NewFromInt(6), IdempotencyKey: "hold-reserve-margin-" + trade},
+		{SiteId: site.Id, WalletKind: model.AdtySiteWalletEarnings, Type: "gift_spend", RefType: "topup", RefId: trade, Delta: decimal.NewFromInt(-2), HoldDelta: decimal.NewFromInt(-2), IdempotencyKey: "hold-spend-earn-" + trade},
+		{SiteId: site.Id, WalletKind: model.AdtySiteWalletMargin, Type: "gift_spend", RefType: "topup", RefId: trade, Delta: decimal.NewFromInt(-3), HoldDelta: decimal.NewFromInt(-3), IdempotencyKey: "hold-spend-margin-" + trade},
+		{SiteId: site.Id, WalletKind: model.AdtySiteWalletEarnings, Type: "gift_release", RefType: "topup", RefId: trade, HoldDelta: decimal.NewFromInt(-1), IdempotencyKey: "hold-release-earn-" + trade},
+	}).Error)
+
+	holds, counts, err := loadGiftHoldByTrade(site.Id, []string{trade})
+	require.NoError(t, err)
+	require.EqualValues(t, 5, counts[trade])
+	require.True(t, holds[trade].Equal(decimal.NewFromInt(4)), "net hold must be reserve+release+spend")
+}
+
 func snapshotSiteWallets(t *testing.T, db *gorm.DB, siteID int) []model.AdtySiteWallet {
 	t.Helper()
 	var wallets []model.AdtySiteWallet

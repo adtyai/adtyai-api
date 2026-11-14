@@ -351,7 +351,7 @@ func loadGiftHoldByTrade(siteID int, tradeNos []string) (map[string]decimal.Deci
 	var rows []holdRow
 	err := model.DB.Model(&model.AdtySiteWalletLedger{}).
 		Select("ref_id, COALESCE(SUM(hold_delta), 0) AS held, COUNT(*) AS ledgers").
-		Where("site_id = ? AND ref_type = ? AND ref_id IN ? AND type IN ?", siteID, "topup", tradeNos, []string{"gift_reserve", "gift_release"}).
+		Where("site_id = ? AND ref_type = ? AND ref_id IN ? AND type IN ?", siteID, "topup", tradeNos, adtyGiftNetHoldTypes()).
 		Group("ref_id").Scan(&rows).Error
 	if err != nil {
 		return nil, nil, err

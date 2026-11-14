@@ -447,6 +447,108 @@ func TestConsumingSiteGiftDebitsGuaranteeOnce(t *testing.T) {
 	require.True(t, margin.Balance.Equal(decimal.RequireFromString("14")))
 	require.EqualValues(t, 2, countGiftLedgers(t, db, site.Id, "gift_spend", ext.TradeNo, model.AdtySiteWalletEarnings))
 	require.EqualValues(t, 2, countGiftLedgers(t, db, site.Id, "gift_spend", ext.TradeNo, model.AdtySiteWalletMargin))
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		held, err := netGiftHoldTx(tx, site.Id, ext.TradeNo)
+		if err != nil {
+			return err
+		}
+		require.True(t, held.IsZero(), "exhausting the gift batch must not leave or re-open the original reserve")
+		return nil
+	}))
+}
+
+func TestNetGiftHoldIncludesGiftSpend(t *testing.T) {
+	db := prepareSiteDB(t)
+	_, site, customer, ext := seedReservedSiteGift(t, db, "gift-net-hold", "10")
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		held, err := netGiftHoldTx(tx, site.Id, ext.TradeNo)
+		if err != nil {
+			return err
+		}
+		require.True(t, held.Equal(decimal.RequireFromString("10")))
+		earning, margin, err := netGiftHoldByKindTx(tx, site.Id, ext.TradeNo)
+		if err != nil {
+			return err
+		}
+		require.True(t, earning.Equal(decimal.RequireFromString("4")))
+		require.True(t, margin.Equal(decimal.RequireFromString("6")))
+		return nil
+	}))
+
+	_, err := model.CompleteAdtyTopUp(ext.TradeNo, model.AdtyPaymentFacts{
+		Provider: model.PaymentProviderAdtyBEpusdt, PaidAmount: decimal.NewFromInt(100), FiatAmount: decimal.NewFromInt(100),
+		PaidCurrency: "USDT", Source: model.AdtyPaymentSourceCallback,
+	}, "")
+	require.NoError(t, err)
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return model.ConsumeAdtyFundBatchesTx(tx, customer.Id, 50_000_000, 55_000_000)
+	}))
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return model.ConsumeAdtyFundBatchesTx(tx, customer.Id, 2_500_000, 5_000_000)
+	}))
+
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		held, err := netGiftHoldTx(tx, site.Id, ext.TradeNo)
+		if err != nil {
+			return err
+		}
+		require.True(t, held.Equal(decimal.RequireFromString("5")), "net hold must include negative gift_spend HoldDelta")
+		earning, margin, err := netGiftHoldByKindTx(tx, site.Id, ext.TradeNo)
+		if err != nil {
+			return err
+		}
+		require.True(t, earning.Equal(decimal.RequireFromString("2")))
+		require.True(t, margin.Equal(decimal.RequireFromString("3")))
+		return nil
+	}))
+}
+
+func TestRefundReleaseUsesRemainingNetHoldAfterGiftSpend(t *testing.T) {
+	db := prepareSiteDB(t)
+	_, site, customer, ext := seedReservedSiteGift(t, db, "gift-rf-spend", "10")
+	_, err := model.CompleteAdtyTopUp(ext.TradeNo, model.AdtyPaymentFacts{
+		Provider: model.PaymentProviderAdtyBEpusdt, PaidAmount: decimal.NewFromInt(100), FiatAmount: decimal.NewFromInt(100),
+		PaidCurrency: "USDT", Source: model.AdtyPaymentSourceCallback,
+	}, "")
+	require.NoError(t, err)
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return model.ConsumeAdtyFundBatchesTx(tx, customer.Id, 50_000_000, 55_000_000)
+	}))
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return model.ConsumeAdtyFundBatchesTx(tx, customer.Id, 2_500_000, 5_000_000)
+	}))
+	earning, margin := mustSiteGiftWallets(t, db, site.Id)
+	require.True(t, earning.FrozenUSD.Equal(decimal.RequireFromString("2")))
+	require.True(t, margin.FrozenUSD.Equal(decimal.RequireFromString("3")))
+	earnBalance, marginBalance := earning.Balance, margin.Balance
+
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		var row model.AdtyTopupOrder
+		if err := tx.Where("trade_no = ?", ext.TradeNo).First(&row).Error; err != nil {
+			return err
+		}
+		row.RefundBonusQuota = 5_000_000
+		row.RefundDeductedQuota = 5_000_000
+		return releaseUnusedSiteGiftGuaranteeTx(tx, &row)
+	}))
+
+	earning, margin = mustSiteGiftWallets(t, db, site.Id)
+	require.True(t, earning.FrozenUSD.IsZero())
+	require.True(t, margin.FrozenUSD.IsZero())
+	require.True(t, earning.Balance.Equal(earnBalance), "refund release must not re-debit already spent guarantee")
+	require.True(t, margin.Balance.Equal(marginBalance), "refund release must not re-debit already spent guarantee")
+	assertGiftLedger(t, db, site.Id, "gift_release", ext.TradeNo, model.AdtySiteWalletEarnings, "0", "-2")
+	assertGiftLedger(t, db, site.Id, "gift_release", ext.TradeNo, model.AdtySiteWalletMargin, "0", "-3")
+	require.EqualValues(t, 1, countGiftLedgers(t, db, site.Id, "gift_release", ext.TradeNo, model.AdtySiteWalletEarnings))
+	require.EqualValues(t, 1, countGiftLedgers(t, db, site.Id, "gift_release", ext.TradeNo, model.AdtySiteWalletMargin))
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		held, err := netGiftHoldTx(tx, site.Id, ext.TradeNo)
+		if err != nil {
+			return err
+		}
+		require.True(t, held.IsZero())
+		return nil
+	}))
 }
 
 func TestQuietBonusDebitDoesNotSpendSiteGiftGuarantee(t *testing.T) {

@@ -233,6 +233,38 @@ func stampSheetFacts(t *testing.T, db *gorm.DB, site, other *model.AdtySite, sta
 	require.NoError(t, db.Model(&model.AdtyAnomalyDisposition{}).Where("ref = ?", "no-site").Update("created_at", start+100).Error)
 }
 
+func TestSettlementSheetEarningsFrozenDeltaIncludesGiftSpend(t *testing.T) {
+	db := prepareSiteDB(t)
+	t.Cleanup(func() { _ = db.Delete(&model.Option{Key: adtyBusinessTimezoneKey}).Error })
+	require.NoError(t, db.Delete(&model.Option{Key: adtyBusinessTimezoneKey}).Error)
+	_, site := openActiveSite(t, db, "sheetspend"+strconv.FormatInt(time.Now().UnixNano()%1_000_000, 10))
+	now := time.Date(2026, 7, 21, 0, 30, 0, 0, time.UTC)
+	start := time.Date(2026, 7, 20, 0, 0, 0, 0, time.UTC).Unix()
+	suffix := strconv.Itoa(site.Id)
+	rows := []model.AdtySiteWalletLedger{
+		{SiteId: site.Id, WalletKind: model.AdtySiteWalletEarnings, Type: "gift_reserve", HoldDelta: decimal.NewFromInt(4), IdempotencyKey: "sheet-spend-reserve-" + suffix},
+		{SiteId: site.Id, WalletKind: model.AdtySiteWalletEarnings, Type: "gift_release", HoldDelta: decimal.NewFromInt(-1), IdempotencyKey: "sheet-spend-release-" + suffix},
+		{SiteId: site.Id, WalletKind: model.AdtySiteWalletEarnings, Type: "gift_spend", Delta: decimal.NewFromInt(-2), HoldDelta: decimal.NewFromInt(-2), IdempotencyKey: "sheet-spend-earn-" + suffix},
+		{SiteId: site.Id, WalletKind: model.AdtySiteWalletMargin, Type: "gift_spend", Delta: decimal.NewFromInt(-3), HoldDelta: decimal.NewFromInt(-3), IdempotencyKey: "sheet-spend-margin-" + suffix},
+	}
+	require.NoError(t, db.Create(&rows).Error)
+	for _, key := range []string{"sheet-spend-reserve-", "sheet-spend-release-", "sheet-spend-earn-", "sheet-spend-margin-"} {
+		require.NoError(t, db.Session(&gorm.Session{SkipHooks: true}).Model(&model.AdtySiteWalletLedger{}).
+			Where("idempotency_key = ?", key+suffix).Update("created_at", start+10).Error)
+	}
+
+	count, err := GenerateAdtySiteSettlementSheets(now)
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, count, 1)
+	var sheet model.AdtySiteSettlementSheet
+	require.NoError(t, db.Where("site_id = ? AND business_day = ?", site.Id, "2026-07-20").First(&sheet).Error)
+	require.True(t, sheet.GiftReserveUSD.Equal(decimal.NewFromInt(4)))
+	require.True(t, sheet.GiftReleaseUSD.IsZero(), "GiftReleaseUSD is still taken from bonus-reversal earnings, not gift_spend")
+	require.True(t, sheet.EarningsFrozenDeltaUSD.Equal(decimal.NewFromInt(1)), "frozen earnings delta must include gift_spend HoldDelta")
+	require.True(t, sheet.EarningsDeltaUSD.Equal(decimal.NewFromInt(-2)))
+	require.True(t, sheet.MarginDeltaUSD.Equal(decimal.NewFromInt(-3)))
+}
+
 func mustLoc(t *testing.T, name string) *time.Location {
 	t.Helper()
 	loc, err := time.LoadLocation(name)

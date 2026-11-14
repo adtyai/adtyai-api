@@ -123,10 +123,25 @@ func siteGiftBonusQuota(ext *model.AdtyTopupOrder) (int64, error) {
 	return int64(quota), nil
 }
 
+// adtyGiftNetHoldTypes is the typelist for remaining site-gift guarantee hold.
+// gift_spend and gift_release both carry a negative HoldDelta.
+func adtyGiftNetHoldTypes() []string {
+	return []string{"gift_reserve", "gift_release", "gift_spend"}
+}
+
+func isAdtyGiftNetHoldType(typ string) bool {
+	switch typ {
+	case "gift_reserve", "gift_release", "gift_spend":
+		return true
+	default:
+		return false
+	}
+}
+
 func netGiftHoldTx(tx *gorm.DB, siteID int, tradeNo string) (decimal.Decimal, error) {
 	var rows []model.AdtySiteWalletLedger
 	if err := tx.Where("site_id = ? AND ref_type = ? AND ref_id = ? AND type IN ?",
-		siteID, "topup", tradeNo, []string{"gift_reserve", "gift_release"}).
+		siteID, "topup", tradeNo, adtyGiftNetHoldTypes()).
 		Find(&rows).Error; err != nil {
 		return decimal.Zero, err
 	}
@@ -351,7 +366,7 @@ func releaseUnusedSiteGiftGuaranteeTx(tx *gorm.DB, ext *model.AdtyTopupOrder) er
 func netGiftHoldByKindTx(tx *gorm.DB, siteID int, tradeNo string) (earning, margin decimal.Decimal, err error) {
 	var rows []model.AdtySiteWalletLedger
 	if err = tx.Where("site_id = ? AND ref_type = ? AND ref_id = ? AND type IN ?",
-		siteID, "topup", tradeNo, []string{"gift_reserve", "gift_release"}).
+		siteID, "topup", tradeNo, adtyGiftNetHoldTypes()).
 		Find(&rows).Error; err != nil {
 		return decimal.Zero, decimal.Zero, err
 	}
