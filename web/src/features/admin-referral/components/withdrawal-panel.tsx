@@ -117,9 +117,10 @@ export function WithdrawalPanel(props: {
     queryKey: adminReferralKeys.list('withdrawals', params),
     queryFn: () => getAdminWithdrawals(params),
   })
-  const refresh = () =>
-    queryClient.invalidateQueries({ queryKey: adminReferralKeys.all })
+  const refresh = () => {
+    void queryClient.invalidateQueries({ queryKey: adminReferralKeys.all })
     void invalidateSidebarBadges(queryClient)
+  }
   const review = useMutation({
     mutationFn: (input: { row: ReferralWithdrawal; approve: boolean }) =>
       reviewWithdrawal(input.row.id, { approve: input.approve, reason }),

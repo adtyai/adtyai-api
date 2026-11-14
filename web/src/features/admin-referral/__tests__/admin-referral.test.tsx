@@ -29,10 +29,14 @@ import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { ReferralWithdrawal } from '@/features/referral/types'
+import type {
+  ReferralAffiliate,
+  ReferralWithdrawal,
+} from '@/features/referral/types'
 import { useAuthStore } from '@/stores/auth-store'
 
 import type { ReferralSettings } from '../api'
+import { AffiliatePanel } from '../components/affiliate-panel'
 import { SettingsPanel } from '../components/settings-panel'
 import { WithdrawalPanel } from '../components/withdrawal-panel'
 import { useAdminReferralBadge } from '../hooks/use-admin-referral-badge'
@@ -43,6 +47,9 @@ const api = vi.hoisted(() => ({
   getAdminWithdrawals: vi.fn(),
   reviewWithdrawal: vi.fn(),
   payWithdrawal: vi.fn(),
+  getAffiliates: vi.fn(),
+  reviewPartner: vi.fn(),
+  runSettlement: vi.fn(),
   getReferralBadges: vi.fn(),
   getReferralOverview: vi.fn(),
   getReferralSettings: vi.fn(),
@@ -51,6 +58,16 @@ const api = vi.hoisted(() => ({
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
   ...api,
+}))
+
+const http = vi.hoisted(() => ({
+  get: vi.fn(),
+  counts: {} as Record<string, number>,
+  failNext: false,
+}))
+vi.mock('@/lib/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/api')>()),
+  api: { get: http.get },
 }))
 
 function withdrawal(
@@ -114,7 +131,85 @@ function wrapper(props: { children: ReactNode }) {
   )
 }
 
+function affiliate(
+  overrides: Partial<ReferralAffiliate> = {}
+): ReferralAffiliate {
+  return {
+    id: 1,
+    user_id: 9,
+    invite_code: 'ABC123',
+    status: 'approved',
+    partner_status: 'pending',
+    applicant_note: 'Please review',
+    rate_override: null,
+    acquisition_enabled: true,
+    settlement_enabled: true,
+    withdrawal_enabled: true,
+    risk_reason: '',
+    risk_note: '',
+    site_owner_since: 0,
+    created_at: 1_700_000_000,
+    ...overrides,
+  }
+}
+
+function serveSidebarBadges(counts: Record<string, number>) {
+  http.counts = counts
+}
+
+function badgeGets(): number {
+  return http.get.mock.calls.filter((call) => call[0] === '/api/adty/badges')
+    .length
+}
+
+function ReferralSidebarBadge() {
+  const badge = useAdminReferralBadge()
+  return <div data-testid='referral-sidebar-badge'>{badge ?? ''}</div>
+}
+
+function renderWithReferralBadge(ui: ReactNode) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  function Shell(props: { children: ReactNode }) {
+    return (
+      <QueryClientProvider client={client}>
+        <ReferralSidebarBadge />
+        {props.children}
+      </QueryClientProvider>
+    )
+  }
+  return { client, ...render(ui, { wrapper: Shell }) }
+}
+
 beforeEach(() => {
+  http.failNext = false
+  http.counts = {}
+  http.get.mockImplementation(async (url: string) => {
+    if (url === '/api/adty/badges') {
+      if (http.failNext) {
+        http.failNext = false
+        throw new Error('badge query failed')
+      }
+      return {
+        data: {
+          success: true,
+          data: { counts: { ...http.counts } },
+        },
+      }
+    }
+    return { data: { success: true, data: {} } }
+  })
+  api.reviewWithdrawal.mockResolvedValue(undefined)
+  api.payWithdrawal.mockResolvedValue(undefined)
+  api.reviewPartner.mockResolvedValue(undefined)
+  api.runSettlement.mockResolvedValue(undefined)
+  api.getAffiliates.mockResolvedValue({
+    page: 1,
+    page_size: 20,
+    total: 0,
+    items: [],
+  })
   api.getReferralSettings.mockResolvedValue(settings)
   api.getReferralOverview.mockResolvedValue({
     affiliates: 0,
@@ -354,22 +449,156 @@ describe('buildSettingsUpdate', () => {
 })
 
 describe('useAdminReferralBadge', () => {
-  it('shows the pending count from the badges API', async () => {
+  it('shows the pending count from the scoped sidebar badge API', async () => {
     asAdmin({ read: true })
-    api.getReferralBadges.mockResolvedValue({
-      partners: 1,
-      pending_withdrawals: 2,
-      approved_withdrawals: 1,
-      total: 4,
-    })
+    serveSidebarBadges({ referral_withdrawals_pending: 3 })
     const { result } = renderHook(() => useAdminReferralBadge(), { wrapper })
-    await waitFor(() => expect(result.current).toBe('4'))
+    await waitFor(() => expect(result.current).toBe('3'))
+    expect(http.get).toHaveBeenCalledWith('/api/adty/badges')
+    expect(api.getReferralBadges).not.toHaveBeenCalled()
   })
 
-  it('does not query without the read permission', () => {
+  it('does not show a badge without the read permission', () => {
     asAdmin({})
+    serveSidebarBadges({ referral_withdrawals_pending: 3 })
     const { result } = renderHook(() => useAdminReferralBadge(), { wrapper })
     expect(result.current).toBeUndefined()
-    expect(api.getReferralBadges).not.toHaveBeenCalled()
+  })
+
+  it('does not treat a failed badge refetch as the previous successful number', async () => {
+    asAdmin({ read: true })
+    serveSidebarBadges({ referral_partners: 2 })
+    const { client } = renderWithReferralBadge(<div />)
+    expect(await screen.findByTestId('referral-sidebar-badge')).toHaveTextContent(
+      '2'
+    )
+    http.failNext = true
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: ['adty-sidebar-badges'] })
+    })
+    await waitFor(() =>
+      expect(screen.getByTestId('referral-sidebar-badge')).toHaveTextContent(
+        'Sidebar badge unavailable'
+      )
+    )
+    expect(screen.getByTestId('referral-sidebar-badge')).not.toHaveTextContent(
+      '2'
+    )
+  })
+})
+
+describe('official referral sidebar badge refresh', () => {
+  it('updates immediately after a partner review without waiting 5 minutes', async () => {
+    asAdmin({ read: true, review: true })
+    serveSidebarBadges({ referral_partners: 2 })
+    api.getAffiliates.mockResolvedValue({
+      page: 1,
+      page_size: 20,
+      total: 1,
+      items: [affiliate()],
+    })
+    api.reviewPartner.mockImplementation(async () => {
+      serveSidebarBadges({ referral_partners: 1 })
+    })
+    const user = userEvent.setup()
+    const initialGets = badgeGets()
+    renderWithReferralBadge(
+      <AffiliatePanel canReview canAdjust={false} partnerOnly />
+    )
+    expect(await screen.findByTestId('referral-sidebar-badge')).toHaveTextContent(
+      '2'
+    )
+    await user.click(await screen.findByRole('button', { name: 'Review' }))
+    await user.type(screen.getByLabelText('Partner rate (%)'), '16')
+    const afterLoad = badgeGets()
+    expect(afterLoad).toBeGreaterThan(initialGets)
+    await user.click(screen.getByRole('button', { name: 'Approve' }))
+    await waitFor(() =>
+      expect(screen.getByTestId('referral-sidebar-badge')).toHaveTextContent(
+        '1'
+      )
+    )
+    expect(api.reviewPartner).toHaveBeenCalled()
+    expect(badgeGets()).toBeGreaterThan(afterLoad)
+  })
+
+  it('updates immediately after a withdrawal review without waiting 5 minutes', async () => {
+    asAdmin({ read: true, review: true, payout: true })
+    serveSidebarBadges({ referral_withdrawals_pending: 2 })
+    api.reviewWithdrawal.mockImplementation(async () => {
+      serveSidebarBadges({ referral_withdrawals_pending: 1 })
+    })
+    const user = userEvent.setup()
+    renderWithReferralBadge(<WithdrawalPanel canReview canPayout />)
+    expect(await screen.findByTestId('referral-sidebar-badge')).toHaveTextContent(
+      '2'
+    )
+    const afterLoad = badgeGets()
+    await user.click(await screen.findByRole('button', { name: 'Approve' }))
+    await waitFor(() =>
+      expect(screen.getByTestId('referral-sidebar-badge')).toHaveTextContent(
+        '1'
+      )
+    )
+    expect(api.reviewWithdrawal).toHaveBeenCalled()
+    expect(badgeGets()).toBeGreaterThan(afterLoad)
+  })
+
+  it('updates immediately after marking a withdrawal paid without waiting 5 minutes', async () => {
+    asAdmin({ read: true, review: true, payout: true })
+    serveSidebarBadges({ referral_withdrawals_approved: 1 })
+    api.payWithdrawal.mockImplementation(async () => {
+      serveSidebarBadges({})
+    })
+    const user = userEvent.setup()
+    renderWithReferralBadge(<WithdrawalPanel canReview canPayout />)
+    expect(await screen.findByTestId('referral-sidebar-badge')).toHaveTextContent(
+      '1'
+    )
+    const afterLoad = badgeGets()
+    await user.click(await screen.findByRole('button', { name: 'Mark as paid' }))
+    await user.click(screen.getByRole('button', { name: 'Confirm' }))
+    await waitFor(() =>
+      expect(screen.getByTestId('referral-sidebar-badge')).toHaveTextContent('')
+    )
+    expect(api.payWithdrawal).toHaveBeenCalled()
+    expect(badgeGets()).toBeGreaterThan(afterLoad)
+  })
+
+  it('updates immediately after a settlement without waiting 5 minutes', async () => {
+    asAdmin({ read: true, adjust: true })
+    serveSidebarBadges({ referral_commissions_frozen: 4 })
+    api.runSettlement.mockImplementation(async () => {
+      serveSidebarBadges({})
+    })
+    const user = userEvent.setup()
+    renderWithReferralBadge(<AdminReferral />)
+    expect(await screen.findByTestId('referral-sidebar-badge')).toHaveTextContent(
+      '4'
+    )
+    const afterLoad = badgeGets()
+    await user.click(screen.getByRole('button', { name: 'Run settlement now' }))
+    await waitFor(() =>
+      expect(screen.getByTestId('referral-sidebar-badge')).toHaveTextContent('')
+    )
+    expect(api.runSettlement).toHaveBeenCalled()
+    expect(badgeGets()).toBeGreaterThan(afterLoad)
+  })
+
+  it('does not clear the referral todo when the admin menu is opened', async () => {
+    asAdmin({ read: true, review: true })
+    serveSidebarBadges({ referral_partners: 3 })
+    const user = userEvent.setup()
+    renderWithReferralBadge(<AdminReferral />)
+    expect(await screen.findByTestId('referral-sidebar-badge')).toHaveTextContent(
+      '3'
+    )
+    await user.click(screen.getByRole('tab', { name: 'Partner applications' }))
+    expect(screen.getByTestId('referral-sidebar-badge')).toHaveTextContent('3')
+    await user.click(screen.getByRole('tab', { name: 'Withdrawals' }))
+    expect(screen.getByTestId('referral-sidebar-badge')).toHaveTextContent('3')
+    expect(api.reviewPartner).not.toHaveBeenCalled()
+    expect(api.reviewWithdrawal).not.toHaveBeenCalled()
+    expect(api.payWithdrawal).not.toHaveBeenCalled()
   })
 })
