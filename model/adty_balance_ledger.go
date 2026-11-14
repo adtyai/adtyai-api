@@ -41,8 +41,17 @@ func (AdtyBalanceLedger) TableName() string {
 
 // InsertAdtyLedgerTx 写一条流水。
 func InsertAdtyLedgerTx(tx *gorm.DB, entry *AdtyBalanceLedger) error {
+	if entry == nil {
+		return errors.New("ledger entry is required")
+	}
 	if entry.IdempotencyKey != nil && strings.TrimSpace(*entry.IdempotencyKey) == "" {
 		entry.IdempotencyKey = nil
+	}
+	if err := RejectRestrictedAdtyFundWrite(tx, AdtyFundWrite{
+		AccountID: entry.UserId,
+		OrderRef:  strings.TrimSpace(entry.RefId),
+	}); err != nil {
+		return err
 	}
 	return tx.Create(entry).Error
 }

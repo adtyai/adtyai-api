@@ -174,6 +174,11 @@ func applyAdtySiteWalletChangeTx(tx *gorm.DB, siteID int, kind string, delta dec
 		}
 		return &existing, nil
 	}
+	if err := model.RejectRestrictedAdtyFundWrite(tx, model.AdtyFundWrite{
+		SiteID: siteID, OrderRef: change.RefID,
+	}); err != nil {
+		return nil, err
+	}
 	if err := ensureAdtySiteWalletsTx(tx, siteID); err != nil {
 		return nil, err
 	}
@@ -195,6 +200,11 @@ func applyAdtySiteWalletChangeTx(tx *gorm.DB, siteID int, kind string, delta dec
 			return nil, ErrAdtySiteWalletIdempotencyConflict
 		}
 		return &existing, nil
+	}
+	if err := model.RejectRestrictedAdtyFundWrite(tx, model.AdtyFundWrite{
+		SiteID: siteID, OrderRef: change.RefID,
+	}); err != nil {
+		return nil, err
 	}
 	before := wallet.Balance
 	after := before.Add(delta)
@@ -280,7 +290,7 @@ func OpenAdtyMarginCycle(siteID int, tier decimal.Decimal, key string) error {
 
 // CollectAdtyFundAnomalies compares wallet ledgers, open shortfall holds, and the margin cycle cap,
 // and independently detects the remaining G.13.4 kinds. It records a new open disposition for
-// each detected item and does not invent a tolerance or repair money.
+// each detected item and does not invent a tolerance, repair money, or apply a write restriction.
 func CollectAdtyFundAnomalies(siteID int) ([]string, error) {
 	items, err := detectAdtyFundAnomalies(siteID)
 	if err != nil {
@@ -314,6 +324,8 @@ func ListAdtyAnomalyDispositions(siteID int) ([]model.AdtyAnomalyDisposition, er
 }
 
 // ReviewAdtyAnomalyDisposition records a Root review. It does not move wallets or customer quota.
+// Setting status to reviewing restricts related fund writes for the recorded account, order, or
+// site; closing the item lifts that restriction.
 func ReviewAdtyAnomalyDisposition(id int64, operatorID int, status, note string) error {
 	status, note = strings.TrimSpace(status), strings.TrimSpace(note)
 	if id <= 0 || operatorID <= 0 || (status != "reviewing" && status != "closed") {

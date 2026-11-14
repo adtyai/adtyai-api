@@ -26,6 +26,9 @@ func PreConsumeBilling(c *gin.Context, preConsumedQuota int, relayInfo *relaycom
 		AdtyFreezeRequestPriceSnapshot(c, relayInfo)
 	}
 	if relayInfo != nil && relayInfo.UserId > 0 {
+		if err := model.RejectRestrictedAdtyFundWrite(model.DB, model.AdtyFundWrite{AccountID: relayInfo.UserId}); err != nil {
+			return types.NewErrorWithStatusCode(err, types.ErrorCodeAccessDenied, http.StatusForbidden, types.ErrOptionWithSkipRetry())
+		}
 		paused, err := model.AdtyUserPaidPaused(relayInfo.UserId)
 		if err != nil {
 			return types.NewErrorWithStatusCode(err, types.ErrorCodeInsufficientUserQuota, http.StatusForbidden, types.ErrOptionWithSkipRetry())
