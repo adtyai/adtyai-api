@@ -346,26 +346,45 @@ func handleNovaRequest(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor) 
 		return types.NewError(errors.Wrap(err, "unmarshal nova response"), types.ErrorCodeBadResponseBody), nil
 	}
 
+	// Nova 在仅返回 stopReason、guardrail 拦截、只返回工具调用等合法形态下，
+	// output.message.content 会是空数组或整个缺失。这里先判 len 再取值：content 为空
+	// 时按 refusal 处理，返回空 choices，而不是下标越界 panic 掉整条请求。
+	contentBlocks := novaResp.Output.Message.Content
+	content := ""
+	if len(contentBlocks) > 0 {
+		content = contentBlocks[0].Text
+	}
+
 	// 构造OpenAI格式响应
 	response := dto.OpenAITextResponse{
 		Id:      helper.GetResponseID(c),
 		Object:  "chat.completion",
 		Created: common.GetTimestamp(),
 		Model:   info.UpstreamModelName,
-		Choices: []dto.OpenAITextResponseChoice{{
+		Choices: make([]dto.OpenAITextResponseChoice, 0, 1),
+	}
+	if len(contentBlocks) > 0 {
+		response.Choices = append(response.Choices, dto.OpenAITextResponseChoice{
 			Index: 0,
 			Message: dto.Message{
 				Role:    "assistant",
-				Content: novaResp.Output.Message.Content[0].Text,
+				Content: content,
 			},
 			FinishReason: "stop",
-		}},
-		Usage: dto.Usage{
-			PromptTokens:     novaResp.Usage.InputTokens,
-			CompletionTokens: novaResp.Usage.OutputTokens,
-			TotalTokens:      novaResp.Usage.TotalTokens,
-		},
+		})
 	}
+
+	usage := dto.Usage{
+		PromptTokens:     novaResp.Usage.InputTokens,
+		CompletionTokens: novaResp.Usage.OutputTokens,
+		TotalTokens:      novaResp.Usage.TotalTokens,
+	}
+	if usage.PromptTokens == 0 && usage.CompletionTokens == 0 && usage.TotalTokens == 0 {
+		// 向上游拿不到 usage（拦截/空 content 时常见）就会全零——那等于这次调用免费。
+		// 退回本地估算：没有文本可数，只有输入 token。
+		usage = *service.ResponseText2Usage(c, content, info.UpstreamModelName, info.GetEstimatePromptTokens())
+	}
+	response.Usage = usage
 
 	c.JSON(http.StatusOK, response)
 	return nil, &response.Usage
