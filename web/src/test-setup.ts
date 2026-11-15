@@ -22,22 +22,32 @@ import i18next from 'i18next'
 import { initReactI18next } from 'react-i18next'
 import { afterEach, beforeAll } from 'vitest'
 
+import {
+  createI18nOptions,
+  installInterfaceLanguageNormalization,
+} from '@/i18n/init-options'
+
 // The testing-library default of 1000ms for findBy*/waitFor is too tight for
 // this suite on contended CI runners, where a first-in-file test also pays the
 // full cold-render cost. Keep it below vitest's testTimeout so async lookup
 // failures still report the missing element instead of a generic test timeout.
 configure({ asyncUtilTimeout: 5000 })
 
+// Run every test file on the same i18next configuration the product ships
+// (see src/i18n/init-options.ts): same `supportedLngs`, same normalization of
+// unofficial codes. Resource bundles stay empty unless a test adds its own, so
+// the only change here is how a language code resolves. Tests that still switch
+// to a leftover pack (fr, ja, zhTW, ...) now have to assert the official
+// language the product would really use — see ISS-R4-0041.
 beforeAll(async () => {
-  await i18next.use(initReactI18next).init({
-    lng: 'en',
-    fallbackLng: 'en',
-    resources: {
+  await i18next.use(initReactI18next).init(
+    createI18nOptions('en', {
       en: {
         translation: {},
       },
-    },
-  })
+    })
+  )
+  installInterfaceLanguageNormalization(i18next)
 })
 
 afterEach(() => {

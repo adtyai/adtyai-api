@@ -21,9 +21,11 @@ import { initReactI18next } from 'react-i18next'
 
 import { bindDocumentLang } from './adty-document-lang'
 import {
-  convertDetectedLanguage,
-  normalizeInterfaceLanguage,
-} from './languages'
+  createI18nOptions,
+  installInterfaceLanguageNormalization,
+  toInterfaceLanguage,
+} from './init-options'
+import { normalizeInterfaceLanguage } from './languages'
 
 const localeLoaders = {
   en: () => import('./locales/en.json'),
@@ -36,19 +38,11 @@ const localeLoaders = {
   zhTW: () => import('./locales/zh-TW.json'),
 } as const
 
-type InterfaceLanguage = keyof typeof localeLoaders
-
-function interfaceLanguage(value: string | undefined): InterfaceLanguage {
-  // Official product languages only. Leftover loaders stay for on-disk packs
-  // but are never selected as the running interface language.
-  return normalizeInterfaceLanguage(convertDetectedLanguage(value ?? ''))
-}
-
 /** Load one language pack. The other languages stay out of the first page load. */
 export async function loadInterfaceLanguage(
   value: string | undefined
 ): Promise<void> {
-  const code = interfaceLanguage(value)
+  const code = toInterfaceLanguage(value)
   if (i18n.hasResourceBundle(code, 'translation')) return
   const pack = await localeLoaders[code]()
   const messages = pack.default as { translation?: object }
@@ -69,21 +63,12 @@ export function readStoredInterfaceLanguage(): string {
   } catch {
     // A blocked Storage getter or read must not prevent the first render.
   }
-  return interfaceLanguage(storedLanguage ?? window.navigator.language)
+  return toInterfaceLanguage(storedLanguage ?? window.navigator.language)
 }
 
 i18n.use(initReactI18next).init({
-  lng: readStoredInterfaceLanguage(),
-  fallbackLng: 'en',
-  supportedLngs: ['en', 'zhCN'],
-  load: 'currentOnly',
-  partialBundledLanguages: true,
-  resources: {},
-  nsSeparator: false, // Allow literal colons in keys (e.g., URLs, labels)
+  ...createI18nOptions(readStoredInterfaceLanguage()),
   debug: import.meta.env.DEV,
-  interpolation: {
-    escapeValue: false, // not needed for react as it escapes by default
-  },
 })
 
 // Every switch — header, login, profile, home URL — waits for that pack
@@ -98,12 +83,7 @@ i18n.on('languageChanged', (language) => {
     // Private mode: the choice simply is not remembered.
   }
 })
-const originalChangeLanguage = i18n.changeLanguage.bind(i18n)
-i18n.changeLanguage = async (language, callback) => {
-  const code = interfaceLanguage(language)
-  await loadInterfaceLanguage(code)
-  return originalChangeLanguage(code, callback)
-}
+installInterfaceLanguageNormalization(i18n, loadInterfaceLanguage)
 export function whenInterfaceLanguageReady(): Promise<unknown> {
   return i18n.changeLanguage(readStoredInterfaceLanguage())
 }
