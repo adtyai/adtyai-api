@@ -661,10 +661,38 @@ type adtyResellerSettingsView struct {
 	CloudflareTokenConfigured bool            `json:"cloudflare_token_configured"`
 	WidgetSecretConfigured    map[string]bool `json:"turnstile_secret_configured"`
 	CloudflareConfigured      bool            `json:"cloudflare_configured"`
-	ResendConfigured          bool            `json:"resend_configured"`
-	MoneyConfigured           bool            `json:"money_configured"`
-	SiteAgreementVersion      int             `json:"site_agreement_version"`
-	SiteCustomerTermsVersion  int             `json:"site_customer_terms_version"`
+	// TurnstileConfigured 单独报，**不要并进 CloudflareConfigured**：
+	// 一个是「域名加不上」，一个是「人机验证登记静默跳过」，缺它们的后果不同。
+	TurnstileConfigured bool `json:"turnstile_configured"`
+	// SettingsWarnings 是「保存成功了、但有一处配置不会生效」的可见提示。
+	// 空数组表示没有。**它不是拒绝理由**——每一项都说明「功能降级到什么程度」。
+	SettingsWarnings         []string `json:"settings_warnings"`
+	ResendConfigured         bool     `json:"resend_configured"`
+	MoneyConfigured          bool     `json:"money_configured"`
+	SiteAgreementVersion     int      `json:"site_agreement_version"`
+	SiteCustomerTermsVersion int      `json:"site_customer_terms_version"`
+}
+
+// adtyResellerSettingsWarnings 列出「保存是成功的，但这几项不会生效」的地方。
+//
+// **它不拒绝保存**：拒绝会让「先填一半、回头再补」变成不可能，而这几项的失败
+// 后果都是「功能降级」而非「算错钱」。
+//
+// 第一条是最需要人看见的：`CustomDomainEnabled && !TurnstileConfigured()` 时，
+// 自定义域名能用，但人机验证**从未登记**——`service/adty_turnstile_hosts.go` 的
+// `adtyTurnstileAssign` 在 `account == ""` 或没有 widget 时直接 `return "", nil`，
+// 无错、无日志、无标记，5 分钟一轮永远走同一空分支。
+func adtyResellerSettingsWarnings(cfg *adty_setting.ResellerSetting) []string {
+	warnings := []string{}
+	if cfg.CustomDomainEnabled && !cfg.TurnstileConfigured() {
+		warnings = append(warnings,
+			"Custom domains are on but Turnstile is not configured (account id or widgets missing): new domains will not be registered for human verification.")
+	}
+	if cfg.SenderDomainEnabled && !adtyResendConfigured() {
+		warnings = append(warnings,
+			"Sender domains are on but the Resend API key is empty: sender domains cannot be verified.")
+	}
+	return warnings
 }
 
 func adtyResendConfigured() bool {
@@ -680,6 +708,8 @@ func GetAdtyResellerSettings(c *gin.Context) {
 		CloudflareTokenConfigured: strings.TrimSpace(cfg.CloudflareApiToken) != "",
 		WidgetSecretConfigured:    map[string]bool{},
 		CloudflareConfigured:      cfg.CloudflareConfigured(),
+		TurnstileConfigured:       cfg.TurnstileConfigured(),
+		SettingsWarnings:          adtyResellerSettingsWarnings(&cfg),
 		ResendConfigured:          adtyResendConfigured(),
 		MoneyConfigured:           cfg.ResellerMoneyConfigured(),
 		SiteAgreementVersion:      adty_setting.GetLegalSetting().SiteAgreementVersion,

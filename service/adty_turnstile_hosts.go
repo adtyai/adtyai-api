@@ -12,6 +12,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/setting/adty_setting"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -79,6 +80,18 @@ func adtyTurnstileAssign(ctx context.Context, tx *gorm.DB, hostname string) (str
 	cfg := resellerSetting()
 	account := strings.TrimSpace(cfg.CloudflareAccountId)
 	if account == "" || len(cfg.TurnstileWidgets) == 0 {
+		// **配置缺失要喊一声，名额满要静默。** 这两种情形以前共用这一条 return，
+		// 于是「没配好」和「没名额」在日志里完全同形，而前者是配置缺陷、后者是
+		// 正常降级（域名照常能用，验证改在平台子域名上做）。
+		//
+		// 只喊缺配的那一半，而且带上缺的是哪一个：
+		//   - account 为空 → Turnstile 那一侧根本没接通，每一轮都会落到这里；
+		//   - widget 为空 → 同上。
+		// 这条日志每 5 分钟回轮一次，**所以它必须点名缺的字段**，否则读的人只看
+		// 到「又一条」而不知道要补哪里。
+		common.SysError(common.LogText(
+			"turnstile assignment skipped for %q: %s; the domain still works but has no human verification",
+			hostname, missingTurnstileConfig(cfg)))
 		return "", nil
 	}
 	if err := adtyLockTurnstileWidgets(tx, account); err != nil {
@@ -228,4 +241,17 @@ func AdtyTurnstileVerifyAt(ctx context.Context, verifyURL, secret, token, remote
 		host = h
 	}
 	return host == "" || strings.EqualFold(result.Hostname, host), nil
+}
+
+// missingTurnstileConfig 说出 Turnstile 登记缺的是哪一块。**只报缺项，不报「未配置」**——
+// 后者读的人还得自己去翻设置页。
+func missingTurnstileConfig(cfg *adty_setting.ResellerSetting) string {
+	missing := make([]string, 0, 2)
+	if strings.TrimSpace(cfg.CloudflareAccountId) == "" {
+		missing = append(missing, "cloudflare_account_id is empty")
+	}
+	if len(cfg.TurnstileWidgets) == 0 {
+		missing = append(missing, "no turnstile widgets configured")
+	}
+	return strings.Join(missing, " and ")
 }
