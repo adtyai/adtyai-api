@@ -149,6 +149,10 @@ func ConsumeAdtyFundBatchesQuietTx(tx *gorm.DB, userID int, amount, balanceBefor
 	return err
 }
 
+// consumeAdtyFundBatchesTx returns how much of the debit was backed by lots that
+// existed before any legacy top-up, not how much was debited. The difference is
+// the drift: money that sat on the account with no lot behind it. Callers that
+// only need the error discard it; settlement records it as fund_batch_gap.
 func consumeAdtyFundBatchesTx(tx *gorm.DB, userID int, amount, balanceBefore int64, notifyPrincipalSpent bool) (int64, error) {
 	if tx == nil || userID <= 0 || amount <= 0 {
 		return 0, nil
@@ -164,10 +168,21 @@ func consumeAdtyFundBatchesTx(tx *gorm.DB, userID int, amount, balanceBefore int
 	// 升级前的余额从来没有对应的行，退款（IncreaseUserQuota）也不会补行。
 	// 这部分要落到那条唯一的 legacy 批次上，否则扣费一定失败。
 	var lotTotal int64
+	// realRemaining 记下**补建之前**每个批次真正有多少额度。补建之后 remaining
+	// 里有一部分是刚凭空写进去的，不能算进「批次背书了多少」。
+	realRemaining := make(map[int64]int64, len(rows))
 	for i := range rows {
 		lotTotal += rows[i].Remaining
+		realRemaining[rows[i].Id] = rows[i].Remaining
 	}
 	if short := balanceBefore - lotTotal; short > 0 {
+		// 补建是必须的：存量用户升级前的额度从来没有对应行，退款
+		// （IncreaseUserQuota）也不会补行，不补建就一笔都扣不出去。
+		//
+		// 但**补建不等于「这批钱有批次背书」**。补出去的那部分正是账本漂移，
+		// 必须由调用方作为 fund_batch_gap 记下来——否则「批次永远等于余额」，
+		// 对账永远读到 0，这一列等于没加。所以返回值报的是补建前的真实覆盖，
+		// 不是实际扣掉的额度。
 		if err := ensureAdtyLegacyBatchTx(tx, userID, short); err != nil {
 			return 0, err
 		}
@@ -182,6 +197,7 @@ func consumeAdtyFundBatchesTx(tx *gorm.DB, userID int, amount, balanceBefore int
 	sortAdtyFundBatches(rows)
 	principalTaken := int64(0)
 	taken := int64(0)
+	backed := int64(0)
 	bonusBySource := map[string]int64{}
 	for i := range rows {
 		if amount == 0 {
@@ -191,8 +207,18 @@ func consumeAdtyFundBatchesTx(tx *gorm.DB, userID int, amount, balanceBefore int
 		if take > amount {
 			take = amount
 		}
+		// 本次从这一行扣走的额度里，有多少是补建之前就真在那儿的。
+		// 逐行取 min 而不是「taken - short」：扣费是从真实批次先扣的，
+		// 当本次扣费小于缺口时（比如余额 50、批次 20、只扣 10），
+		// taken - short 会算成 -20，把一次完全有背书的扣费报成漂移。
+		if real := realRemaining[rows[i].Id]; real > 0 {
+			backed += take
+			if take > real {
+				backed -= take - real
+			}
+		}
 		if err := tx.Model(&AdtyFundBatch{}).Where("id = ?", rows[i].Id).Update("remaining", rows[i].Remaining-take).Error; err != nil {
-			return taken, err
+			return backed, err
 		}
 		if rows[i].Kind == "principal" && rows[i].Source != "legacy" {
 			principalTaken += take
@@ -204,14 +230,14 @@ func consumeAdtyFundBatchesTx(tx *gorm.DB, userID int, amount, balanceBefore int
 		taken += take
 	}
 	if amount > 0 {
-		return taken, adtyFundBatchShortfallError(amount)
+		return backed, adtyFundBatchShortfallError(amount)
 	}
 	// notifyPrincipalSpent gates only the usage-charge hook. The bonus hook
 	// still runs on the quiet path so manual/staff reductions release the
 	// corresponding site gift-guarantee without debiting the operating wallet.
 	if notifyPrincipalSpent && principalTaken > 0 && AdtyAfterPrincipalSpentTx != nil {
 		if err := AdtyAfterPrincipalSpentTx(tx, userID, principalTaken); err != nil {
-			return taken, err
+			return backed, err
 		}
 	}
 	if len(bonusBySource) > 0 && AdtyAfterBonusSpentTx != nil {
@@ -219,9 +245,10 @@ func consumeAdtyFundBatchesTx(tx *gorm.DB, userID int, amount, balanceBefore int
 		for source, quota := range bonusBySource {
 			spends = append(spends, AdtyBonusSpend{Source: source, Quota: quota})
 		}
-		return taken, AdtyAfterBonusSpentTx(tx, userID, spends)
+		return backed, AdtyAfterBonusSpentTx(tx, userID, spends)
 	}
-	return taken, nil
+	_ = taken
+	return backed, nil
 }
 
 // ReclaimAdtyFundBatchesBySourceTx reduces remaining on the lots of one credit

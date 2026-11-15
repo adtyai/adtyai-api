@@ -342,13 +342,19 @@ func SettleAdtyFundAllocationsTx(tx *gorm.DB, userID int, operationID string, ap
 	if len(shares) == 0 {
 		// 没有分摊：升级前的 operation 与 legacy 直接扣费仍然走原路径，
 		// 保留「首次消费时为旧余额补建 legacy 批次」的行为。
+		//
+		// 但这条路径**必须报出真实的 backed**，不能直接 return applied。
+		// 直接 return applied 会让 `fund_batch_gap` 恒等于 0，而这里恰恰是
+		// 最需要观测漂移的一类账户（没有分摊的 legacy 用户）——那一列的全部
+		// 意义就被这条 return 抵消掉了。
 		if applied == 0 {
 			return 0, nil
 		}
-		if err := ConsumeAdtyFundBatchesTx(tx, userID, applied, balanceBefore); err != nil {
+		backed, err := consumeAdtyFundBatchesTx(tx, userID, applied, balanceBefore, true)
+		if err != nil {
 			return 0, err
 		}
-		return applied, nil
+		return backed, nil
 	}
 
 	left := applied

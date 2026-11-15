@@ -577,12 +577,19 @@ func TestLegacyBatchSurvivesExhaustionAndRefundPG(t *testing.T) {
 	assert.EqualValues(t, 2*first, lots[0].Original, "同一条 legacy 批次累加两次")
 	assert.EqualValues(t, 0, lots[0].Remaining)
 
-	// 这条用例守的核心事实：退款再消费不该记成账本缺口。
-	// 修前预扣阶段会打 "batches cannot back the whole reservation" 并把
-	// 0 条分摊留给结算，看起来像缺口；实际结算按 pre-operation 余额补齐后是 0。
+	// 这条用例守的核心事实：**退款再消费必须记成账本缺口，且金额正好等于退款**。
+	//
+	// 我最初在这里断言 gap == 0，理由是「结算按 pre-operation 余额补齐了」。
+	// 那个理由是循环论证：补齐是消费路径自己凭空造出来的额度，用造出来的额度
+	// 去证明「没有缺口」，等于让 `fund_batch_gap` 结构上恒为 0。把 backed 改成
+	// 「补建前真实覆盖」之后，这里读出 20,000 —— 而这正是事实：
+	// `IncreaseUserQuota` 只加 `users.quota`，不建也不补批次，A.12 要求的
+	// 「退款按原分摊回退并保留原批次」在退款路径上根本没实现。
+	// 这条 gap 就是那个缺陷的可观测症状，不是误报。
 	var gap struct{ Total int64 }
 	require.NoError(t, db.Model(&BillingOperation{}).
 		Select("coalesce(sum(fund_batch_gap),0) as total").
 		Where("user_id = ?", user.Id).Scan(&gap).Error)
-	assert.Zero(t, gap.Total, "退款再消费不应产生 fund_batch_gap")
+	assert.EqualValues(t, first, gap.Total,
+		"退款路径不回补批次，缺口必须等于退款金额；gap 读到 0 说明这一列被抵消了")
 }

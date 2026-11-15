@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/glebarez/sqlite"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
@@ -203,6 +204,15 @@ func TestConsumeFundBatchesFullyCoveredDecreasesRemaining(t *testing.T) {
 	require.EqualValues(t, 15, got["b:bonus"])
 }
 
+// 「批次少于余额」是账本漂移的形状，不是扣费失败的理由。
+//
+// 这条用例我原来写的是「库里余额改成 0，却传 balanceBefore=50，然后要求报错」。
+// 那个输入自相矛盾：它把 balanceBefore 传成一个自己刚在库里否认掉的值。旧代码
+// 不看 balanceBefore（只在无批次时用它建批次），所以这个谎没影响；新代码信任它，
+// 于是凭空补了 30 —— 测试红的不是行为，是输入。
+//
+// 改成前后一致的输入：库里有 50，批次只有 20。结论应当是**能扣、扣完、
+// 而且补建出来的那 30 被记成漂移**（由结算层写进 fund_batch_gap）。
 func TestConsumeFundBatchesShortfallDoesNotDropRemainder(t *testing.T) {
 	db := openMemoryFundBatchDB(t)
 	require.NoError(t, db.AutoMigrate(&User{}))
@@ -211,20 +221,24 @@ func TestConsumeFundBatchesShortfallDoesNotDropRemainder(t *testing.T) {
 		UserId: 17, Kind: "principal", Source: "thin", Original: 20, Remaining: 20,
 	}).Error)
 
+	var backed int64
 	err := db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&User{}).Where("id = ?", 17).Update("quota", 0).Error; err != nil {
 			return err
 		}
-		return ConsumeAdtyFundBatchesTx(tx, 17, 50, 50)
+		got, err := consumeAdtyFundBatchesTx(tx, 17, 50, 50, true)
+		backed = got
+		return err
 	})
-	require.ErrorIs(t, err, ErrAdtyFundBatchShortfall)
-	require.Contains(t, err.Error(), "uncovered 30")
+	require.NoError(t, err, "余额够就该能扣，哪怕批次不全")
+	assert.EqualValues(t, 20, backed, "backed 只算补建前真有的额度，凭空补的 30 不算")
 
 	var user User
 	require.NoError(t, db.First(&user, 17).Error)
-	require.EqualValues(t, 50, user.Quota)
+	require.EqualValues(t, 0, user.Quota)
 	got := remainingBySource(t, db, 17)
-	require.EqualValues(t, 20, got["thin:principal"])
+	require.EqualValues(t, 0, got["thin:principal"], "真实批次被扣光")
+	require.EqualValues(t, 0, got["legacy:principal"], "补建的 30 也正好扣完")
 }
 
 func TestConsumeFundBatchesShortfallWithNoLotsErrors(t *testing.T) {
@@ -343,6 +357,10 @@ func TestApplyWalletDebitToBatchesMissingTableErrors(t *testing.T) {
 	require.ErrorIs(t, err, ErrAdtyFundBatchTableMissing)
 }
 
+// 同一件事：真的扣不出去的时候（余额也不够），钩子不许触发。
+//
+// 这条原来传的是 balanceBefore=50 而库里根本没有这个用户，同样是自相矛盾的输入；
+// 它被改成了「余额确实只有 20，却要扣 50」——这才是钩子不该触发的场景。
 func TestConsumeFundBatchesShortfallDoesNotFireHook(t *testing.T) {
 	db := openMemoryFundBatchDB(t)
 	require.NoError(t, db.Create(&AdtyFundBatch{
@@ -357,10 +375,11 @@ func TestConsumeFundBatchesShortfallDoesNotFireHook(t *testing.T) {
 	t.Cleanup(func() { AdtyAfterPrincipalSpentTx = prev })
 
 	err := db.Transaction(func(tx *gorm.DB) error {
-		return ConsumeAdtyFundBatchesTx(tx, 46, 50, 50)
+		return ConsumeAdtyFundBatchesTx(tx, 46, 50, 20)
 	})
 	require.ErrorIs(t, err, ErrAdtyFundBatchShortfall)
-	require.Zero(t, fired)
+	require.Zero(t, fired, "扣不出去就不能报「本金已花掉」")
+	// 整笔回滚：剩余额度原样留着，不能因为一半扣成功就少掉一块。
 	require.EqualValues(t, 20, remainingBySource(t, db, 46)["thin:principal"])
 }
 
