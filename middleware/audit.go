@@ -243,7 +243,7 @@ func TokenOperationAudit() gin.HandlerFunc {
 		siteID := model.InferOfficialAuditSiteID(c, paramMap)
 		objectType, objectID := model.InferOfficialAuditObject(action, paramMap, strconv.Itoa(entry.UserId), action)
 		before, after := model.InferOfficialAuditBeforeAfter(paramMap)
-		_ = model.WriteOfficialAuditLog(c, model.OfficialAuditWrite{
+		writeAuditOrLogFailure(c, "token route", entry.UserId, action, model.OfficialAuditWrite{
 			UserId: entry.UserId, Username: entry.Username, ActorRole: entry.ActorRole,
 			SiteID: model.OfficialAuditSiteIDPointer(siteID), ObjectType: objectType, ObjectID: objectID,
 			Action: action, Category: entry.Category, Content: content, Before: before, After: after,
@@ -252,6 +252,36 @@ func TokenOperationAudit() gin.HandlerFunc {
 			Other: entry.Other,
 		})
 	}
+}
+
+// writeAuditOrLogFailure 写一条后台审计，并**不让写失败影响业务请求**。
+//
+// 审计是旁路：它挂了不该把用户的操作打回去，那是可用性倒退。但静默吞掉错误
+// 等于「安全事故没留痕、日志里也看不出来」，所以失败必须落一条 SysError，
+// 带上够定位的信息：哪条链路、哪个用户、哪个 action、以及底层错误。
+//
+// 两处调用点（a.audit 的后台写路由、P.audit 的个人访问令牌请求）以前都是
+// `_ = model.WriteOfficialAuditLog(...)`，全仓 13 个调用点里只有这两处吞错。
+func writeAuditOrLogFailure(c *gin.Context, chain string, userID int, action string, rec model.OfficialAuditWrite) {
+	if err := model.WriteOfficialAuditLog(c, rec); err != nil {
+		common.SysError(common.LogText(
+			"official audit write failed: chain=%s user_id=%d action=%s route=%s error=%s",
+			chain, userID, action, requestRouteLabel(c), err.Error()))
+	}
+}
+
+// requestRouteLabel 给出可定位的路由，而不是整条 URL（后者可能带查询串里的敏感值）。
+func requestRouteLabel(c *gin.Context) string {
+	if c == nil {
+		return ""
+	}
+	if full := c.FullPath(); full != "" {
+		return c.Request.Method + " " + full
+	}
+	if c.Request != nil && c.Request.URL != nil {
+		return c.Request.Method + " " + c.Request.URL.Path
+	}
+	return ""
 }
 
 type accessTokenRequestAudit struct {
@@ -328,7 +358,7 @@ func finishAccessTokenAudit(c *gin.Context) {
 	}
 	siteID := model.InferOfficialAuditSiteID(c, params)
 	objectType, objectID := model.InferOfficialAuditObject(audit.entry.Action, params, audit.entry.TokenRef, strconv.Itoa(audit.entry.UserId), audit.entry.Action)
-	_ = model.WriteOfficialAuditLog(c, model.OfficialAuditWrite{
+	writeAuditOrLogFailure(c, "access token request", audit.entry.UserId, audit.entry.Action, model.OfficialAuditWrite{
 		UserId: audit.entry.UserId, Username: audit.entry.Username, ActorRole: audit.entry.ActorRole,
 		SiteID: model.OfficialAuditSiteIDPointer(siteID), ObjectType: objectType, ObjectID: objectID,
 		Action: audit.entry.Action, Category: audit.entry.Category, Content: audit.entry.Content,
