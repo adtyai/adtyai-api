@@ -84,17 +84,17 @@ export async function saveOwnerSite(body: {
   return requireServerSuccess(res.data).data
 }
 
-/** Bonus tiers need a proof for action `bonus` with the site id as target. */
-export async function saveBonusRates(
-  rates: Record<string, number>,
-  proof: string
-): Promise<OwnerSite> {
-  const res = await api.put<ApiResponse<OwnerSite>>(
-    `${BASE}/self`,
-    { bonus_rates: rates },
-    proofHeaders(proof)
+/** One payment-method gift rule; Root must have authorized the method for this site. */
+export async function saveOwnerSiteMethodBonus(
+  method: string,
+  enabled: boolean,
+  rate: string
+): Promise<void> {
+  const res = await api.put<ApiResponse<{ site_id: number }>>(
+    `${BASE}/bonus-methods`,
+    { method, enabled, rate }
   )
-  return requireServerSuccess(res.data).data
+  requireServerSuccess(res.data)
 }
 
 export async function getOwnerStats(

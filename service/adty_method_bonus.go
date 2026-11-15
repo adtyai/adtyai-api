@@ -54,6 +54,35 @@ func adtyMethodBonusRule(site *model.AdtySite, key string) (adty_setting.MethodB
 	return adty_setting.MainMethodBonus(key)
 }
 
+// AdtySiteBonusMethod is one payment method Root authorized for a site's gift,
+// with the owner's current rule. Rate is a decimal fraction, not a percent.
+type AdtySiteBonusMethod struct {
+	Method  string `json:"method"`
+	Enabled bool   `json:"enabled"`
+	Rate    string `json:"rate"`
+}
+
+// AdtySiteBonusMethods lists the methods Root authorized for this site, in a fixed
+// order. A method Root did not authorize is absent: a rate there would never be paid.
+func AdtySiteBonusMethods(site *model.AdtySite) []AdtySiteBonusMethod {
+	if site == nil {
+		return nil
+	}
+	methods := make([]AdtySiteBonusMethod, 0, 3)
+	for _, method := range []string{AdtyMethodAlipay, AdtyMethodWxpay, "usdt"} {
+		if !adty_setting.SiteMethodBonusAllowed(site.Id, method) {
+			continue
+		}
+		rule, configured := adty_setting.SiteMethodBonus(site.Id, method)
+		rate := "0"
+		if configured {
+			rate = rule.Rate
+		}
+		methods = append(methods, AdtySiteBonusMethod{Method: method, Enabled: configured && rule.Enabled, Rate: rate})
+	}
+	return methods
+}
+
 // SiteBonusEarningCovers refuses a promised site gift unless earning cash covers it,
 // or Root authorized margin fill and the open margin cycle can cover the remainder.
 func SiteBonusEarningCovers(siteID int, bonus decimal.Decimal) error {

@@ -52,7 +52,7 @@ const site: OwnerSite = {
     notice: '',
     support_contact: '',
   },
-  bonus_rates: {},
+  bonus_methods: [],
   seo_index: false,
   agreement_version: '1',
   agreement_at: 1,
