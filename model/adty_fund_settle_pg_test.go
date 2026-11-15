@@ -1,6 +1,9 @@
 package model
 
 import (
+	"errors"
+	"fmt"
+	"sync"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
@@ -280,4 +283,46 @@ func TestAdtyFundAllocationDoesNotDoubleClaimBatchPG(t *testing.T) {
 		require.NoError(t, err, "已登记的预扣必须都能结清")
 	}
 	assert.EqualValues(t, 0, f.remaining(t))
+}
+
+// 32 个 goroutine 抢同一批次：登记总量不能超过批次余量。
+//
+// 关键在夹具：**让 users.quota 大于批次余量**（drift 状态，正是存量数据的形状）。
+// 账面一致时 quota 那道闸会先把总量卡在 remaining 上，批次守卫根本没被考到——
+// 我第一版就是这么写的，把守卫去掉测试照样绿，是个假阳性。
+func TestAdtyFundAllocationConcurrentClaimStaysUnderBatchPG(t *testing.T) {
+	f := newFundSettleFixture(t, 50_000_000)
+	// 只留 20,000,000 批次余量，而 quota 仍是 50,000,000：模拟 drift。
+	require.NoError(t, f.db.Model(&AdtyFundBatch{}).
+		Where("user_id = ?", f.user.Id).Update("remaining", 20_000_000).Error)
+
+	const workers = 32
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var unexpected []error
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			key := fmt.Sprintf("request:burst-%d", idx)
+			_, err := ReserveBillingOperation(BillingOperation{
+				OperationKey: key, UserId: f.user.Id, Kind: "request",
+			}, 2_000_000)
+			if err != nil && !errors.Is(err, ErrBillingWalletInsufficient) {
+				mu.Lock()
+				unexpected = append(unexpected, err)
+				mu.Unlock()
+			}
+		}(i)
+	}
+	wg.Wait()
+	require.Empty(t, unexpected, "并发下只允许「余额不足」这一种拒绝")
+
+	var held struct{ Total int64 }
+	require.NoError(t, f.db.Model(&AdtyFundAllocation{}).
+		Select("coalesce(sum(held - settled),0) as total").
+		Where("user_id = ?", f.user.Id).Scan(&held).Error)
+	assert.LessOrEqual(t, held.Total, int64(20_000_000),
+		"登记的预扣总额不得超过批次余量（%d > 20,000,000 即为双登记）", held.Total)
+	assert.Positive(t, held.Total, "至少有一笔应当登记成功")
 }
