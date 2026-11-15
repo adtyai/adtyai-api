@@ -94,8 +94,10 @@ func detectExistingAdtyFundAnomalies(siteID int) ([]adtyFundAnomalyItem, error) 
 			}
 		}
 	}
+	// 客户本金必须取逻辑余额（quota + quota_pending），与 model.userWalletBalance 同口径：
+	// 批次扣费在刷新前留在 quota_pending 里，只看 raw quota 会把在途扣费当成资金缺口（ISS-R4-0097）。
 	var quota int64
-	if err := model.DB.Model(&model.User{}).Where("site_id = ?", siteID).Select("COALESCE(SUM(quota), 0)").Scan(&quota).Error; err != nil {
+	if err := model.DB.Model(&model.User{}).Where("site_id = ?", siteID).Select("COALESCE(SUM(quota + quota_pending), 0)").Scan(&quota).Error; err != nil {
 		return nil, err
 	}
 	principal := decimal.NewFromInt(quota).Div(common.QuotaPerUnitDecimal())
