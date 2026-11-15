@@ -196,8 +196,8 @@ func GetAdtyAdminSiteStats(c *gin.Context) {
 		return
 	}
 	body := gin.H{"stats": stats, "breakdown": breakdown, "monthly": service.AdtyMonthlySeries(stats.Series)}
-	// 提现属于推广账户。没有推广·查看时不返回（方案 11.9）。
-	if service.AdtyAdminCan(c.GetInt("id"), authz.AdtyReferralRead) {
+	// 提现属于推广账户：要推广·查看，并且当前访问令牌要有 adty_referral:read scope（方案 11.9）。
+	if adtyAdminFieldVisible(c, authz.AdtyReferralRead) {
 		balances, err := service.GetAdtySiteBalances(site)
 		if err != nil {
 			common.ApiError(c, err)
@@ -399,7 +399,8 @@ func GetAdtyAdminSiteCustomers(c *gin.Context) {
 			risks[row.UserId] = row
 		}
 	}
-	showEmail := authz.Can(c.GetInt("id"), c.GetInt("role"), authz.AdtyUserRead)
+	// 邮箱属于用户资料：要用户·查看，并且当前访问令牌要有 adty_user:read scope。
+	showEmail := adtyAdminFieldVisible(c, authz.AdtyUserRead)
 	items := make([]gin.H, 0, len(users))
 	for _, user := range users {
 		risk := risks[user.Id]

@@ -74,6 +74,31 @@ func adtyAccessTokenMayManage(c *gin.Context, action string) bool {
 	}
 }
 
+// adtyFieldScopeAllows 说明当前访问令牌是否带了这个权限对应的 scope。
+// 浏览器会话没有访问令牌上下文，字段跟随实时授权；旧版明文令牌没有 scope，按最小权限处理。
+func adtyFieldScopeAllows(c *gin.Context, permission authz.Permission) bool {
+	legacy, isToken := c.Get("access_token_legacy")
+	if !isToken {
+		return true
+	}
+	if legacy == true {
+		return false
+	}
+	scopes, _ := c.Get("access_token_scopes")
+	granted, _ := scopes.([]string)
+	return service.AccessTokenScopeAllowsRoute(granted, c.GetInt("access_token_scope_version"), c.GetInt("role"),
+		c.Request.Method, c.FullPath(), service.AccessTokenScopeOf(permission))
+}
+
+// adtyAdminFieldVisible 是字段级的只读判定：实时授权 ∩ 当前访问令牌 scope。
+// 用在路由权限覆盖不到、要按字段决定返回原文还是掩码的地方。
+func adtyAdminFieldVisible(c *gin.Context, permission authz.Permission) bool {
+	if !service.AdtyAdminCan(c.GetInt("id"), permission) {
+		return false
+	}
+	return adtyFieldScopeAllows(c, permission)
+}
+
 // adtyCheckManageAction 按 ManageUser 的动作细分权限：启用、禁用要用户·编辑，删除要用户·删除，
 // 调余额要用户·调余额；提升、降级沿用上游规则（只有超级管理员，由 canManageTargetRole 等检查）。
 // 被拒时已写好 403。
