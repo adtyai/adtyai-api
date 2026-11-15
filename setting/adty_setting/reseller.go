@@ -190,19 +190,36 @@ func HoldMinCostFactorIncrease(next, previous *ResellerSetting, now int64) bool 
 	return true
 }
 
-// CloudflareConfigured 说明自定义域名要的四项都填了。
+// CloudflareConfigured 说明**自定义域名**要的三项都填了。
 //
-// 第四项 `CloudflareAccountId` 原来不在这条判据里，而 Turnstile 登记
-// （`service/adty_turnstile_hosts.go` 的 `adtyTurnstileAssign`）用 account_id
-// 拼 API 路径。**缺它时后台显示「已配置」，而 Turnstile 从未登记过**：
-// 那个分支是 `if account == "" { return "", nil }` —— 无错、无日志、无标记，
-// 5 分钟一轮永远走同一空分支。所以这个函数漏一项，等于把一个静默失败
-// 伪装成「配置完成」。
+// 这三项是 DNS 记录那一路的全部输入（token 用来调 API、zone 决定写哪个区、
+// CNAME target 是记录值）。**它刻意不含 `CloudflareAccountId`**：
+// account 只被 Turnstile 那一路用，而 Turnstile 是独立的可选项——
+// 一个只用自定义域名、不开 Turnstile 的部署，填这三项就该能保存。
+// 把它塞进这里，会让「三项齐全但不用 Turnstile」的保存被拒，
+// 而且拒绝文案说的是「token、zone ID 和 CNAME target」——判据和文案当场不一致。
+//
+// account_id 的可选性单独由 `TurnstileConfigured()` 表达，见下。
 func (s *ResellerSetting) CloudflareConfigured() bool {
 	return strings.TrimSpace(s.CloudflareApiToken) != "" &&
 		strings.TrimSpace(s.CloudflareZoneId) != "" &&
-		strings.TrimSpace(s.CloudflareAccountId) != "" &&
 		strings.TrimSpace(s.CnameTarget) != ""
+}
+
+// TurnstileConfigured 说明 Turnstile 登记那一侧要的三项都填了。
+//
+// 与 `CloudflareConfigured` 分开，是因为它们服务两条不同的通路，缺了它们的
+// 后果也不同：自定义域名缺项 → 域名加不上；Turnstile 缺项 → **没有任何报错**，
+// `service/adty_turnstile_hosts.go` 的 `adtyTurnstileAssign` 走
+// `if account == "" { return "", nil }`，无错、无日志、无标记，5 分钟一轮
+// 永远走同一空分支，而管理页仍显示「已配置」。
+//
+// **所以这个函数存在的意义是让「静默」这件事有一个可判定的入口**：
+// 谁能读它，谁就能把「没配全」变成一个可见的状态，而不是一个空分支。
+func (s *ResellerSetting) TurnstileConfigured() bool {
+	return strings.TrimSpace(s.CloudflareApiToken) != "" &&
+		strings.TrimSpace(s.CloudflareAccountId) != "" &&
+		len(s.TurnstileWidgets) > 0
 }
 
 var resellerDomainPattern = regexp.MustCompile(`^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$`)
