@@ -83,7 +83,16 @@ func rechargeAuditQuery(c *gin.Context, ownerSiteID *int) (*gorm.DB, bool) {
 	}
 	if keyword := strings.TrimSpace(c.Query("keyword")); keyword != "" {
 		like := "%" + keyword + "%"
-		query = query.Where("(t.trade_no LIKE ? OR u.username LIKE ? OR a.paid_tx_hash LIKE ? OR a.gateway_trade_id LIKE ?)", like, like, like, like)
+		// 只筛「这个视图真的会返回」的列：站长视图里 manual 来源的 paid_tx_hash 会被清空
+		// （见 getRechargeAudit），gateway_trade_id 从不返回。这两列若能筛，空/非空就是一个
+		// 逐字符的盲注 oracle，绕过同一文件里已经写下的遮蔽。
+		conds := "t.trade_no LIKE ? OR u.username LIKE ?"
+		args := []any{like, like}
+		if ownerSiteID == nil {
+			conds += " OR a.paid_tx_hash LIKE ? OR a.gateway_trade_id LIKE ?"
+			args = append(args, like, like)
+		}
+		query = query.Where("("+conds+")", args...)
 	}
 	if status := strings.TrimSpace(c.Query("status")); status != "" && status != "all" {
 		valid := false
