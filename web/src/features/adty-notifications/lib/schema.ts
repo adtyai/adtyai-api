@@ -34,8 +34,18 @@ export const notificationSchema = z
     audience: z.enum(['all_users', 'all_sites', 'site']),
     target_site_id: z.number().int().nonnegative(),
     business: z.string().trim().max(200, 'Invalid parameters'),
+    sync_telegram: z.boolean(),
+    telegram_channel: z.string().trim().max(128, 'Invalid parameters'),
   })
   .superRefine((value, ctx) => {
+    // 勾了同步但没填频道，排进队列也是一条发不出去的投递，前端先挡住。
+    if (value.sync_telegram && value.telegram_channel === '') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['telegram_channel'],
+        message: 'Enter the Telegram channel',
+      })
+    }
     if (value.audience === 'site' && value.target_site_id <= 0) {
       ctx.addIssue({
         code: 'custom',

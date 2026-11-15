@@ -122,7 +122,7 @@ func TestAdtyTelegramBindIsNotifyOnlyAndDoesNotDial(t *testing.T) {
 
 	require.NoError(t, QueueAdtyTelegramNotice(user.Id, model.AdtyTelegramPurposeUser, "余额已入账\n\nBalance credited", "notice-1"))
 	require.Error(t, QueueAdtyTelegramNotice(user.Id, model.AdtyTelegramPurposeUser, "sk-secretvalueplease", "notice-secret"))
-	require.Error(t, QueueAdtyPublicTelegram("channel", "订单 123 已退款", true))
+	require.Error(t, QueueAdtyPublicTelegram("channel", model.AdtyTelegramPurposeAdmin, "订单 123 已退款"))
 	var count int64
 	require.NoError(t, db.Model(&model.AdtyTelegramDelivery{}).Where("event_key = ?", "notice-1").Count(&count).Error)
 	assert.EqualValues(t, 1, count)

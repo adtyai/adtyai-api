@@ -32,6 +32,10 @@ type AdtyNotificationInput struct {
 	TargetSiteId int    `json:"target_site_id"`
 	Business     string `json:"business"`
 	Revision     int64  `json:"revision"`
+	// SyncTelegram 勾了才把这条公告排进 TG 队列；TelegramChannel 是目标频道
+	// （`@name` 或 `-100…`）。都不填就是只发站内。
+	SyncTelegram    bool   `json:"sync_telegram"`
+	TelegramChannel string `json:"telegram_channel"`
 }
 
 func ListAdtyManagedNotifications(issuerSiteID, start, limit int) ([]model.AdtyNotificationPublication, int64, error) {
@@ -107,7 +111,30 @@ func SaveAdtyNotificationPublication(actorID int, issuer *model.AdtySite, id int
 	if id > 0 {
 		return &row, model.UpdateAdtyNotificationPublication(&row, input.Revision)
 	}
-	return &row, model.DB.Create(&row).Error
+	if err := model.DB.Create(&row).Error; err != nil {
+		return nil, err
+	}
+	// 只有「新发布」才推送：编辑一条已发布的公告不该再往频道里刷一遍。
+	// 入队失败不回滚公告——公告落库是主事实，TG 只是通知，失败留日志由重试任务接手。
+	if input.SyncTelegram {
+		purpose := model.AdtyTelegramPurposeAdmin
+		if issuer != nil {
+			purpose = model.AdtyTelegramPurposeUser
+		}
+		if err := QueueAdtyPublicTelegram(input.TelegramChannel, purpose, announceTelegramBody(row)); err != nil {
+			common.SysError(common.LogText("queue announcement %d for telegram failed: %s", row.Id, err.Error()))
+		}
+	}
+	return &row, nil
+}
+
+// announceTelegramBody 把公告压成一条频道消息：标题 + 正文。
+// 正文已经在上面的校验里 TrimSpace 过，这里只做拼接，不重新解释内容。
+func announceTelegramBody(row model.AdtyNotificationPublication) string {
+	if row.Title == "" {
+		return row.Content
+	}
+	return row.Title + "\n\n" + row.Content
 }
 
 // A matching Host alone does not entitle an unrelated account to site content.

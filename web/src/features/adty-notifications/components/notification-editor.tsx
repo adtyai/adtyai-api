@@ -25,6 +25,7 @@ import { useTranslation } from 'react-i18next'
 import { Dialog } from '@/components/dialog'
 import { ErrorState } from '@/components/error-state'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Field,
   FieldError,
@@ -32,6 +33,7 @@ import {
   FieldLabel,
 } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { Textarea } from '@/components/ui/textarea'
 import { DraftDiscardDialog } from '@/features/system-settings/components/draft-discard-dialog'
@@ -68,16 +70,24 @@ export function NotificationEditor(props: {
   const [discarding, setDiscarding] = useState(false)
   const form = useForm<NotificationInput>({
     resolver: zodResolver(notificationSchema),
-    defaultValues: props.row ?? {
-      title: '',
-      content: '',
-      kind: 'platform',
-      audience: props.mode === 'owner' ? 'site' : 'all_users',
-      target_site_id: props.siteId,
-      business: '',
-    },
+    // 编辑既有公告时后端不回 sync_telegram / telegram_channel（它们不是
+    // publication 的列），这里显式补齐，否则表单字段是 undefined，
+    // z.boolean() 会直接判无效、保存按钮永远报错。
+    defaultValues: props.row
+      ? { ...props.row, sync_telegram: false, telegram_channel: '' }
+      : {
+          title: '',
+          content: '',
+          kind: 'platform',
+          audience: props.mode === 'owner' ? 'site' : 'all_users',
+          target_site_id: props.siteId,
+          business: '',
+          sync_telegram: false,
+          telegram_channel: '',
+        },
   })
   const audience = form.watch('audience')
+  const syncTelegram = form.watch('sync_telegram')
   useDraftNavigation(form.formState.isDirty)
   const sites = useQuery({
     queryKey: ['adty-notification-targets', props.userId],
@@ -237,6 +247,43 @@ export function NotificationEditor(props: {
                     onRetry={() => void sites.refetch()}
                   />
                 )}
+              </Field>
+            )}
+            <Field>
+              <div className='flex items-center gap-2'>
+                <Checkbox
+                  id={`${id}-sync-telegram`}
+                  disabled={save.isPending}
+                  checked={syncTelegram === true}
+                  onCheckedChange={(checked) =>
+                    form.setValue('sync_telegram', checked === true, {
+                      shouldDirty: true,
+                    })
+                  }
+                />
+                <Label htmlFor={`${id}-sync-telegram`}>
+                  {t('Sync to Telegram')}
+                </Label>
+              </div>
+            </Field>
+            {syncTelegram && (
+              <Field data-invalid={!!errors.telegram_channel}>
+                <FieldLabel htmlFor={`${id}-telegram-channel`}>
+                  {t('Telegram channel')}
+                </FieldLabel>
+                <Input
+                  id={`${id}-telegram-channel`}
+                  maxLength={128}
+                  placeholder='@your_channel'
+                  aria-invalid={!!errors.telegram_channel}
+                  disabled={save.isPending}
+                  {...form.register('telegram_channel')}
+                />
+                <FieldError>
+                  {errors.telegram_channel?.message
+                    ? t(errors.telegram_channel.message)
+                    : null}
+                </FieldError>
               </Field>
             )}
             <Field>

@@ -324,3 +324,53 @@ it('offers retry after management loading fails and hides publishing from an ord
     screen.queryByRole('button', { name: 'New notification' })
   ).not.toBeInTheDocument()
 })
+
+it('sends the telegram channel only when the sync box is ticked', async () => {
+  const user = userEvent.setup()
+  vi.spyOn(api, 'get').mockResolvedValue({
+    data: { success: true, data: { items: [], total: 0 } },
+  })
+  const post = vi
+    .spyOn(api, 'post')
+    .mockResolvedValue({ data: { success: true, data: { id: 1 } } })
+  mount()
+  await user.click(screen.getByRole('button', { name: 'New notification' }))
+  const dialog = screen.getByRole('dialog', { name: 'New notification' })
+  await user.type(within(dialog).getByLabelText('Title'), 'Channel notice')
+  await user.type(within(dialog).getByLabelText('Content'), 'Body')
+
+  // 不勾：请求里不该出现频道。频道输入框在勾选前也不该渲染。
+  expect(
+    within(dialog).queryByLabelText('Telegram channel')
+  ).not.toBeInTheDocument()
+
+  await user.click(
+    within(dialog).getByRole('checkbox', { name: 'Sync to Telegram' })
+  )
+  const channel = await within(dialog).findByLabelText('Telegram channel')
+
+  // 勾了但没填频道：前端拦住，不发出一个没有目标的投递。
+  await user.click(
+    within(dialog).getByRole('button', { name: 'Publish notification' })
+  )
+  expect(
+    await within(dialog).findByText('Enter the Telegram channel', {
+      selector: '[role=alert]',
+    })
+  ).toBeVisible()
+  expect(post).not.toHaveBeenCalled()
+
+  await user.type(channel, '@adty_ops')
+  await user.click(
+    within(dialog).getByRole('button', { name: 'Publish notification' })
+  )
+  await waitFor(() =>
+    expect(post).toHaveBeenCalledWith(
+      '/api/adty/admin/notifications',
+      expect.objectContaining({
+        sync_telegram: true,
+        telegram_channel: '@adty_ops',
+      })
+    )
+  )
+})

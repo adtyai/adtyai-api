@@ -75,6 +75,12 @@ type AdtyTelegramDelivery struct {
 	Body      string `json:"body" gorm:"type:text"`
 	LastError string `json:"last_error" gorm:"type:varchar(128)"`
 	Public    bool   `json:"public"`
+	// Channel 是公开公告要投递到的目标：频道的 @username 或数字 id（-100…）。
+	// 私有通知按绑定关系投递，这一列为空。
+	//
+	// 以前 channel 只参与 EventKey 哈希、不落库，于是「同一段文字发到两个频道」
+	// 会算出同一个 EventKey，被唯一索引当成重复丢掉一条。
+	Channel   string `json:"channel" gorm:"type:varchar(128)"`
 	CreatedAt int64  `json:"created_at" gorm:"autoCreateTime"`
 }
 

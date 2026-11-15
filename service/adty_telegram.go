@@ -6,7 +6,9 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"regexp"
 	"strconv"
@@ -37,11 +39,19 @@ var AdtyTelegramGetMe = func(string) (int64, string, error) {
 }
 
 // AdtyTelegramSender delivers a notice. Tests leave it unset so no message leaves the process.
-var AdtyTelegramSender func(botToken string, chatID int64, text string) error
+//
+// chat 是字符串而不是 int64：公告要发到分站自己的频道，站长手里只有 `@their_channel`
+// 这类名字，让他们自己去翻数字 id 会让每个分站都来问一遍。数字 id（`-100…`）一样
+// 能放进字符串，两种写法都只是 Telegram API 的 chat_id 参数。
+var AdtyTelegramSender func(botToken string, chat string, text string) error
 
 func init() {
 	if os.Getenv("ADTY_TELEGRAM_ALLOW_NETWORK") == "1" {
 		AdtyTelegramGetMe = adtyTelegramGetMeHTTP
+		// 之前这里是空的：`AdtyTelegramSender` 全仓没有任何赋值，于是
+		// RetryAdtyTelegram 里的发送分支永远进不去，队列只会一路 attempts+1
+		// 直到 dead。开关和 getMe 用的是同一个，避免两个「是否允许联网」的口径。
+		AdtyTelegramSender = adtyTelegramSendMessageHTTP
 	}
 }
 
@@ -386,14 +396,32 @@ func QueueAdtyTelegramNotice(userId int, purpose, body, eventKey string) error {
 	})
 }
 
-func QueueAdtyPublicTelegram(channel, body string, public bool) error {
-	if !public || channel == "" || adtyTelegramPrivateWords.MatchString(body) || adtyTextHasSecret(body) {
+// QueueAdtyPublicTelegram 把一条对外公告排进公开频道队列。
+//
+// channel 是目标频道（`@name` 或 `-100…`）。bot 是按 purpose 存的，没有站点维度：
+// 主站公告走 admin bot，分站公告走 user bot，站点之间的区别落在 channel 上——
+// 那个 bot 必须是目标频道的管理员。以前 purpose 写死成 admin，分站公告只能借用
+// 主站 bot，而主站 bot 未必在分站频道里。
+//
+// 正文先脱敏再入队，不因命中敏感串就拒——和工单那四个字段同一条口径：拒单既不
+// 告诉管理员哪句有问题，也挡住了正常发布。私有词（订单/退款/保证金…）仍然拒，
+// 因为那些内容本来就不该出现在公开频道，脱敏解决不了「不该发」。
+func QueueAdtyPublicTelegram(channel, purpose, body string) error {
+	channel, body = strings.TrimSpace(channel), strings.TrimSpace(body)
+	if channel == "" || body == "" || (purpose != model.AdtyTelegramPurposeUser && purpose != model.AdtyTelegramPurposeAdmin) {
+		return ErrAdtyTelegramInvalid
+	}
+	if adtyTelegramPrivateWords.MatchString(body) {
 		return ErrAdtyTelegramPrivate
 	}
+	body = redactAdtySecrets(body)
+	// EventKey 必须把 channel 算进去：同一段文字发到两个频道是两条投递，
+	// 只哈希 body 会让第二条被唯一索引当成重复丢掉。
 	sum := sha256.Sum256([]byte(channel + "\n" + body))
 	return model.DB.Create(&model.AdtyTelegramDelivery{
 		EventKey: "public:" + hex.EncodeToString(sum[:16]),
-		Purpose:  model.AdtyTelegramPurposeAdmin, Body: body, Status: model.AdtyTelegramDeliveryWait, Public: true,
+		Purpose:  purpose, Body: body, Channel: channel,
+		Status: model.AdtyTelegramDeliveryWait, Public: true,
 	}).Error
 }
 
@@ -406,14 +434,29 @@ func RetryAdtyTelegram() (int, error) {
 	for _, row := range rows {
 		status := model.AdtyTelegramDeliveryFail
 		last := "sender unavailable"
-		if AdtyTelegramSender != nil && !row.Public {
-			var binding model.AdtyTelegramBinding
+		if AdtyTelegramSender != nil {
 			var bot model.AdtyTelegramBot
-			_ = model.DB.First(&binding, row.BindingId).Error
 			_ = model.DB.Where("purpose = ?", row.Purpose).Limit(1).Find(&bot).Error
 			token, err := model.OpenAdtyPurposeSecret("telegram:"+row.Purpose, bot.TokenCipher)
-			if err == nil && AdtyTelegramSender(token, binding.TelegramUserId, row.Body) == nil {
-				status, last = model.AdtyTelegramDeliverySent, ""
+			if err != nil {
+				last = "bot token unavailable"
+			} else if row.Public {
+				// 公开公告发到频道，目标取自行上的 Channel。下面这条分支以前不存在：
+				// `!row.Public` 把公开行整个排除在发送之外，它们只会 attempts+1
+				// 一路走到 dead，队列等于没有出口。
+				if row.Channel == "" {
+					last = "channel missing"
+				} else if AdtyTelegramSender(token, row.Channel, row.Body) == nil {
+					status, last = model.AdtyTelegramDeliverySent, ""
+				} else {
+					last = "channel send failed"
+				}
+			} else {
+				var binding model.AdtyTelegramBinding
+				_ = model.DB.First(&binding, row.BindingId).Error
+				if AdtyTelegramSender(token, strconv.FormatInt(binding.TelegramUserId, 10), row.Body) == nil {
+					status, last = model.AdtyTelegramDeliverySent, ""
+				}
 			}
 		}
 		attempts := row.Attempts + 1
@@ -470,6 +513,55 @@ func mustOpenTelegramToken(row model.AdtyTelegramBot) string {
 		return ""
 	}
 	return plain
+}
+
+// adtyTelegramSendMessageHTTP 发一条消息到 chat（`@name` 或数字 id）。
+// 只在 ADTY_TELEGRAM_ALLOW_NETWORK=1 时被装上，测试里永远是 nil。
+func adtyTelegramSendMessageHTTP(token, chat, text string) error {
+	payload := url.Values{}
+	payload.Set("chat_id", chat)
+	payload.Set("text", text)
+	payload.Set("disable_web_page_preview", "true")
+	endpoint := "https://api.telegram.org/bot" + token + "/sendMessage"
+	response, err := http.PostForm(endpoint, payload)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	var body struct {
+		Ok          bool   `json:"ok"`
+		Description string `json:"description"`
+	}
+	if response.StatusCode != http.StatusOK {
+		return fmt.Errorf("telegram sendMessage status %d", response.StatusCode)
+	}
+	if err := common.DecodeJson(response.Body, &body); err != nil {
+		return err
+	}
+	if !body.Ok {
+		return fmt.Errorf("telegram sendMessage rejected: %s", body.Description)
+	}
+	return nil
+}
+
+// startAdtyTelegramDeliveryTask 定期把待发/失败的投递重试出去。
+//
+// `RetryAdtyTelegram` 在此之前零生产调用方：入队的行没有任何东西去消费，
+// 队列只增不减。这条任务就是它的出口。
+func startAdtyTelegramDeliveryTask() {
+	go func() {
+		ticker := time.NewTicker(time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			if _, err := RetryAdtyTelegram(); err != nil {
+				common.SysError(common.LogText("telegram delivery task: %s", err.Error()))
+			}
+		}
+	}()
+}
+
+func init() {
+	adtyMasterTasks = append(adtyMasterTasks, startAdtyTelegramDeliveryTask)
 }
 
 func adtyTelegramGetMeHTTP(token string) (int64, string, error) {
