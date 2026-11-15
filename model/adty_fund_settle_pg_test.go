@@ -326,3 +326,53 @@ func TestAdtyFundAllocationConcurrentClaimStaysUnderBatchPG(t *testing.T) {
 		"登记的预扣总额不得超过批次余量（%d > 20,000,000 即为双登记）", held.Total)
 	assert.Positive(t, held.Total, "至少有一笔应当登记成功")
 }
+
+// 老用户：升级前就有额度、从来没有过批次。结算必须能走通。
+//
+// 这条是 `TestAdtyBalanceFloor*` 在 service 包暴露的回归在 model 层的等价物：
+// 预扣把余额扣成 0 之后，若把「此刻余额」当成补建 legacy 批次的基数，补出来的
+// 批次只有 0，本次消耗一分都扣不动，整笔结算失败、重试永远失败——而用户其实
+// 只是「老、没有批次」，不是账面有问题。
+func TestLegacyUserWithoutBatchesCanSettlePG(t *testing.T) {
+	dsn := requireAdtyOfficialPostgresAcceptanceDSN(t)
+	admin := connectAdtyPostgresAcceptanceInstance(t, dsn)
+	db := openAdtyThrowawayMigrateDatabase(t, admin, dsn)
+	require.NoError(t, db.AutoMigrate(&User{}, &AdtyFundBatch{}, &AdtyFundAllocation{},
+		&BillingOperation{}, &BillingOperationMovement{}))
+	common.BatchUpdateEnabled = false
+	common.RedisEnabled = false
+
+	// 只有余额，一行批次都没有。
+	const principal = 20_000
+	user := User{Username: "legacy-no-lot", Password: "pg-acceptance-pass", Quota: principal}
+	require.NoError(t, db.Create(&user).Error)
+
+	// 预扣把余额扣到 0（这正是「全花完」的最坏情形）。
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return AllocateAdtyFundAllocationsTx(tx, user.Id, "request:legacy-1", principal)
+	}))
+	reserved, err := TryReserveUserQuotaForOperation(user.Id, principal, "request:legacy-1")
+	require.NoError(t, err)
+	require.True(t, reserved)
+
+	var afterReserve User
+	require.NoError(t, db.First(&afterReserve, user.Id).Error)
+	require.EqualValues(t, 0, afterReserve.Quota, "全部预扣")
+
+	op := BillingOperation{OperationKey: "request:legacy-1", UserId: user.Id, Kind: "request",
+		ReservedQuota: principal, ActualQuota: principal, State: BillingSettlePending}
+	require.NoError(t, db.Create(&op).Error)
+	_, _, err = ApplyBillingSettlement(op.OperationKey)
+	require.NoError(t, err, "老用户没有批次也必须能结算")
+
+	var userAfter User
+	require.NoError(t, db.First(&userAfter, user.Id).Error)
+	assert.EqualValues(t, 0, userAfter.Quota)
+
+	// 补建的 legacy 批次应正好被本次消耗吃干净。
+	sums, err := SumAdtyFundBatchRemainingByKind(user.Id)
+	require.NoError(t, err)
+	assert.EqualValues(t, int64(userAfter.Quota)+int64(userAfter.QuotaPending), sums.Principal+sums.Bonus,
+		"批次合计必须等于活余额")
+	assert.Zero(t, sums.Principal, "本金批次应被吃干净")
+}

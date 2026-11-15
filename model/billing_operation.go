@@ -543,7 +543,12 @@ func ApplyBillingSettlement(key string) (*BillingOperation, bool, error) {
 			return err
 		}
 		if !teamPaid {
-			if err := SettleAdtyFundAllocationsTx(tx, row.UserId, row.OperationKey, int64(base+charged), int64(balance)); err != nil {
+			// 传的是「这次业务消耗之前」的钱包余额，不是此刻的余额：
+			// 预扣的 base 已经在 PreConsume 阶段扣掉了，若把此刻余额（可能已是 0）
+			// 传给「无批次时补建 legacy 批次」的分支，补出来的批次不够扣本次消耗，
+			// 结算会整笔失败——老用户（升级前就有额度、从来没批次）就再也结不了账。
+			// initial = 此刻余额 + base（预扣已扣） = balance + base。
+			if err := SettleAdtyFundAllocationsTx(tx, row.UserId, row.OperationKey, int64(base+charged), int64(balance+base)); err != nil {
 				return err
 			}
 		}
