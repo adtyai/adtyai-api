@@ -107,9 +107,18 @@ func AdjustUserQuotaWithLedger(userID, operatorID, operatorRole int, mode string
 		if err := clampCheckinQuotaDB(tx, userID); err != nil {
 			return err
 		}
+		// 流水和另外四类写入方（充值、退款、兑换码、佣金转余额）用同一把尺子：逻辑余额
+		// （raw + pending）。只记 raw 时，quota_pending 非零的账号在同一张流水表里会
+		// 看到两种口径，相邻两行满足不了 after(n) == before(n+1)，对账无法复算。
+		liquid, err := userWalletBalance(user.Quota, user.QuotaPending)
+		if err != nil {
+			return err
+		}
 		entry := &AdtyBalanceLedger{
 			UserId: userID, DeltaQuota: int64(after) - int64(user.Quota),
-			BalanceBefore: int64(user.Quota), BalanceAfter: int64(after),
+			// DeltaQuota 保留 raw 差值：pending 在调额事务里不变，raw 差值和逻辑差值恒等。
+			// liveAfter 就是 userWalletBalance(after, user.QuotaPending)，上面已按逻辑余额校验过。
+			BalanceBefore: int64(liquid), BalanceAfter: int64(liveAfter),
 			Type: AdtyLedgerTypeManualAdjust, RefType: "admin", RefId: refID,
 			Reason: reason, OperatorId: operatorID,
 		}
