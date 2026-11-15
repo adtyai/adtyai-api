@@ -561,3 +561,64 @@ func TestSendEmailExplicitStartTLSRejectsUntrustedCertificateByDefault(t *testin
 	require.Error(t, err)
 	require.Contains(t, fmt.Sprint(err), "certificate")
 }
+
+// The custom LOGIN and NTLM mechanisms must keep the protection that
+// net/smtp.PlainAuth applies: no credentials on a plaintext, non-localhost
+// connection. Regression for ISS-R4-0114.
+func TestSMTPCustomAuthRejectsRemotePlaintextConnection(t *testing.T) {
+	withSMTPSettings(t)
+	SMTPServer = "smtp.example.com"
+	SMTPAccount = "sender@example.com"
+	SMTPToken = "secret"
+
+	remote := func(auth []string) *smtp.ServerInfo {
+		return &smtp.ServerInfo{Name: "smtp.example.com", Auth: auth}
+	}
+
+	t.Run("forced LOGIN", func(t *testing.T) {
+		SMTPForceAuthLogin = true
+		t.Cleanup(func() { SMTPForceAuthLogin = false })
+		mech, _, err := AutoSMTPAuth(SMTPAccount, SMTPToken).Start(remote([]string{"LOGIN"}))
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "unencrypted connection")
+		require.Empty(t, mech)
+	})
+
+	t.Run("advertised LOGIN", func(t *testing.T) {
+		SMTPForceAuthLogin = false
+		mech, _, err := AutoSMTPAuth(SMTPAccount, SMTPToken).Start(remote([]string{"LOGIN"}))
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "unencrypted connection")
+		require.Empty(t, mech)
+	})
+
+	t.Run("outlook NTLM", func(t *testing.T) {
+		SMTPForceAuthLogin = false
+		SMTPAccount = "sender@outlook.com"
+		t.Cleanup(func() { SMTPAccount = "sender@example.com" })
+		mech, _, err := AutoSMTPAuth(SMTPAccount, SMTPToken).Start(remote([]string{"NTLM"}))
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "unencrypted connection")
+		require.Empty(t, mech)
+	})
+
+	t.Run("TLS connection", func(t *testing.T) {
+		SMTPForceAuthLogin = true
+		t.Cleanup(func() { SMTPForceAuthLogin = false })
+		server := &smtp.ServerInfo{Name: "smtp.example.com", TLS: true, Auth: []string{"LOGIN"}}
+		mech, _, err := AutoSMTPAuth(SMTPAccount, SMTPToken).Start(server)
+		require.NoError(t, err)
+		require.Equal(t, "LOGIN", mech)
+	})
+
+	t.Run("localhost plaintext", func(t *testing.T) {
+		SMTPForceAuthLogin = true
+		t.Cleanup(func() { SMTPForceAuthLogin = false })
+		for _, name := range []string{"localhost", "127.0.0.1", "::1", "[::1]:25", "localhost:25"} {
+			server := &smtp.ServerInfo{Name: name, Auth: []string{"LOGIN"}}
+			mech, _, err := AutoSMTPAuth(SMTPAccount, SMTPToken).Start(server)
+			require.NoError(t, err, name)
+			require.Equal(t, "LOGIN", mech, name)
+		}
+	})
+}
