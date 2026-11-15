@@ -119,12 +119,16 @@ type TaskPrivateData struct {
 	// other private task state so public task DTOs cannot expose it by accident.
 	Execution *TaskExecutionSnapshot `json:"execution,omitempty"`
 	// 计费上下文：用于异步退款/差额结算（轮询阶段读取）
-	BillingSource       string                `json:"billing_source,omitempty"`  // "wallet"
-	TokenId             int                   `json:"token_id,omitempty"`        // 令牌 ID，用于令牌额度退款
-	NodeName            string                `json:"node_name,omitempty"`       // 发起任务的节点名，轮询结算阶段据此归属日志而非最后查询节点
-	BillingContext      *TaskBillingContext   `json:"billing_context,omitempty"` // 计费参数快照（用于轮询阶段重新计算）
-	BillingOperationKey string                `json:"billing_operation_key,omitempty"`
-	TokenConsumedQuota  *int                  `json:"token_consumed_quota,omitempty"`
+	BillingSource       string              `json:"billing_source,omitempty"`  // "wallet"
+	TokenId             int                 `json:"token_id,omitempty"`        // 令牌 ID，用于令牌额度退款
+	NodeName            string              `json:"node_name,omitempty"`       // 发起任务的节点名，轮询结算阶段据此归属日志而非最后查询节点
+	BillingContext      *TaskBillingContext `json:"billing_context,omitempty"` // 计费参数快照（用于轮询阶段重新计算）
+	BillingOperationKey string              `json:"billing_operation_key,omitempty"`
+	TokenConsumedQuota  *int                `json:"token_consumed_quota,omitempty"`
+	// BillingReviewReason 标记「恢复链无法自动结算、已移交人工复核」的任务。
+	// 没有 adaptor 就无法重算实际用量，退还是补扣只能由人判断；恢复链因此写上
+	// 原因并把 billing_pending 关掉，而不是每 15 秒在同一处静默跳过（ISS-R4-0095）。
+	BillingReviewReason string                `json:"billing_review_reason,omitempty"`
 	CompletionBilling   *commonRelay.TaskInfo `json:"completion_billing,omitempty"`
 	// ResponsesBackground records that the openai_responses create request
 	// asked for background:true. Every task is durable and survives client
@@ -225,7 +229,7 @@ func (p *TaskPrivateData) Scan(val any) error {
 func (p TaskPrivateData) Value() (driver.Value, error) {
 	if p.Key == "" && p.UpstreamTaskID == "" && p.ResultURL == "" &&
 		p.Execution == nil && p.BillingSource == "" &&
-		p.TokenId == 0 && p.NodeName == "" && p.BillingContext == nil && p.BillingOperationKey == "" && p.TokenConsumedQuota == nil && p.CompletionBilling == nil &&
+		p.TokenId == 0 && p.NodeName == "" && p.BillingContext == nil && p.BillingOperationKey == "" && p.TokenConsumedQuota == nil && p.CompletionBilling == nil && p.BillingReviewReason == "" &&
 		!p.ResponsesBackground && len(p.PluginState) == 0 && p.PollFailures == 0 &&
 		!p.ResultDiscarded {
 		return nil, nil
