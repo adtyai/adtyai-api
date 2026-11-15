@@ -32,8 +32,43 @@ type AdtyFundBatch struct {
 
 func (AdtyFundBatch) TableName() string { return "adty_fund_batches" }
 
+// adtyMissingFundBatchKinds 返回 wanted 里按 (user_id, source, kind) 还不存在的那些行——
+// 与唯一索引 idx_adty_fund_batch_user_source_kind 同一个维度。
+func adtyMissingFundBatchKinds(tx *gorm.DB, userID int, source string, wanted []AdtyFundBatch) ([]AdtyFundBatch, error) {
+	kinds := make([]string, 0, len(wanted))
+	for _, row := range wanted {
+		kinds = append(kinds, row.Kind)
+	}
+	var present []string
+	if err := tx.Model(&AdtyFundBatch{}).
+		Where("user_id = ? AND source = ? AND kind IN ?", userID, source, kinds).
+		Pluck("kind", &present).Error; err != nil {
+		return nil, err
+	}
+	seen := make(map[string]bool, len(present))
+	for _, kind := range present {
+		seen[kind] = true
+	}
+	missing := make([]AdtyFundBatch, 0, len(wanted))
+	for _, row := range wanted {
+		if !seen[row.Kind] {
+			missing = append(missing, row)
+		}
+	}
+	return missing, nil
+}
+
 // CreateAdtyFundBatchesTx records the principal and bonus lots for one credit.
-// A replay of the same source does not insert a second pair.
+//
+// 幂等判据是 (user_id, source, kind)，和唯一索引同维度：已经记过的 kind 不会重复插入，
+// 但同一 source 下还缺的 kind 会补建。旧版只用 (user_id, source) 计数，existing > 0
+// 就 return nil，于是「先只传 principal、后补 bonus」这种调用被静默吞掉、函数还返回成功
+// （ISS-R4-0025）。
+//
+// 调用约束：一个 source 对应一次入账事件。同一 source 下分两次调用、各传一种 kind 是
+// 允许的（第二次补建缺的那一种）；但本函数只按行去重，不比较金额——重复调用不会把
+// remaining 改成新金额。新增调用点若自带新 source，必须自己保证这个 source 只有一个
+// 「首次写入者」，否则第二次调用会被当成重放。
 func CreateAdtyFundBatchesTx(tx *gorm.DB, userID int, source string, principal, bonus int64) error {
 	if tx == nil || userID <= 0 || source == "" {
 		return nil
@@ -41,34 +76,46 @@ func CreateAdtyFundBatchesTx(tx *gorm.DB, userID int, source string, principal, 
 	if err := adtyRequireFundBatchTable(tx); err != nil {
 		return err
 	}
-	var existing int64
-	if err := tx.Model(&AdtyFundBatch{}).Where("user_id = ? AND source = ?", userID, source).Count(&existing).Error; err != nil {
-		return err
-	}
-	if existing > 0 {
-		return nil
-	}
 	now := common.GetTimestamp()
-	rows := make([]AdtyFundBatch, 0, 2)
+	wanted := make([]AdtyFundBatch, 0, 2)
 	if principal > 0 {
-		rows = append(rows, AdtyFundBatch{UserId: userID, Kind: "principal", Source: source, Original: principal, Remaining: principal, CreatedAt: now})
+		wanted = append(wanted, AdtyFundBatch{UserId: userID, Kind: "principal", Source: source, Original: principal, Remaining: principal, CreatedAt: now})
 	}
 	if bonus > 0 {
-		rows = append(rows, AdtyFundBatch{UserId: userID, Kind: "bonus", Source: source, Original: bonus, Remaining: bonus, CreatedAt: now})
+		wanted = append(wanted, AdtyFundBatch{UserId: userID, Kind: "bonus", Source: source, Original: bonus, Remaining: bonus, CreatedAt: now})
 	}
-	if len(rows) == 0 {
+	if len(wanted) == 0 {
+		return nil
+	}
+	missing, err := adtyMissingFundBatchKinds(tx, userID, source, wanted)
+	if err != nil {
+		return err
+	}
+	if len(missing) == 0 {
 		return nil
 	}
 	// Insert under a SAVEPOINT so a concurrent unique conflict does not
-	// abort the caller's PostgreSQL transaction. A replay of the same
-	// (user_id, source, kind) is idempotent success, same as Count>0.
-	err := tx.Transaction(func(inner *gorm.DB) error {
-		return inner.Create(&rows).Error
+	// abort the caller's PostgreSQL transaction.
+	err = tx.Transaction(func(inner *gorm.DB) error {
+		return inner.Create(&missing).Error
 	})
-	if err != nil && isAdtyUniqueViolation(err) {
+	if err == nil {
 		return nil
 	}
-	return err
+	if !isAdtyUniqueViolation(err) {
+		return err
+	}
+	// 并发下另一个事务先插了其中一行。只有「这一笔想要的每种 kind 现在都在库里」
+	// 才算幂等成功；缺任何一种就是这笔入账少落了一行，必须返回错误让调用方回滚，
+	// 不能像旧代码那样把冲突一律吞成 nil。
+	still, queryErr := adtyMissingFundBatchKinds(tx, userID, source, wanted)
+	if queryErr != nil {
+		return queryErr
+	}
+	if len(still) == 0 {
+		return nil
+	}
+	return fmt.Errorf("adty fund batch insert conflicted and %d kind(s) are still missing: %w", len(still), err)
 }
 
 // adtyLegacyBatchSource 是「没有订单来源的额度」那一条批次的固定 source。

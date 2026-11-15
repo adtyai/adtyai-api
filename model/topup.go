@@ -134,6 +134,13 @@ func creditTopUpQuota(tx *gorm.DB, userId int, creditedQuota int, updates map[st
 
 // creditTopUpQuotaWithPrincipalBatch credits the wallet and records a principal
 // lot for this trade number in the same transaction. Hosted paths have no gift.
+//
+// 只建 principal，source 用 tradeNo——所以这个 source 的「首次写入者」必须是这里：
+// 同一 tradeNo 若另有一条路径要补 bonus（model/adty_topup_order.go 的
+// CompleteAdtyTopUpTx 是双 kind），两条路不能对同一笔订单先后各调一次本函数与
+// CreateAdtyFundBatchesTx，否则谁先写谁说了算。CreateAdtyFundBatchesTx 的幂等判据
+// 已按 (user_id, source, kind) 收紧（ISS-R4-0025），kind 会补建，但金额不会：
+// 新增调用点必须自己保证 source 不重源。
 func creditTopUpQuotaWithPrincipalBatch(tx *gorm.DB, userId int, tradeNo string, creditedQuota int, updates map[string]any) error {
 	if err := creditTopUpQuota(tx, userId, creditedQuota, updates); err != nil {
 		return err

@@ -140,6 +140,73 @@ func TestAdtyFundBatchUniqueOnUserSourceKind(t *testing.T) {
 	require.NoError(t, db.Create(&AdtyFundBatch{UserId: 15, Kind: "principal", Source: "order-u", Original: 10, Remaining: 10}).Error)
 }
 
+// ISS-R4-0025 的形状：先只传 principal，之后同一个 source 再补 bonus。
+// 旧判据只数 (user_id, source)，第二次调用撞 existing > 0 就 return nil，bonus 永不落库。
+func TestCreateAdtyFundBatchesTxAddsKindMissingUnderSameSource(t *testing.T) {
+	db := openMemoryFundBatchDB(t)
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return CreateAdtyFundBatchesTx(tx, 31, "trade-31", 60, 0)
+	}))
+	requireFundLots(t, db, 31, "trade-31", 60, 0, 1)
+
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return CreateAdtyFundBatchesTx(tx, 31, "trade-31", 60, 15)
+	}))
+	requireFundLots(t, db, 31, "trade-31", 60, 15, 2)
+}
+
+// 并发下两个事务对同一个 source 各写一种 kind：要么两行都在，要么失败的一方
+// 真的返回错误。绝不允许「返回 nil 但行不在」——那是旧代码的假成功。
+func TestCreateAdtyFundBatchesTxConcurrentKindsNeverFakeSuccess(t *testing.T) {
+	db := adtyTestDB(t)
+	require.NoError(t, db.AutoMigrate(&AdtyFundBatch{}))
+
+	const userID = 32
+	const source = "concurrent-kinds"
+	credits := []struct {
+		kind      string
+		principal int64
+		bonus     int64
+	}{
+		{kind: "principal", principal: 100},
+		{kind: "bonus", bonus: 25},
+	}
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	errs := make([]error, len(credits))
+	for i := range credits {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			errs[i] = db.Transaction(func(tx *gorm.DB) error {
+				return CreateAdtyFundBatchesTx(tx, userID, source, credits[i].principal, credits[i].bonus)
+			})
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+
+	if errs[0] == nil && errs[1] == nil {
+		requireFundLots(t, db, userID, source, 100, 25, 2)
+		return
+	}
+	var rows []AdtyFundBatch
+	require.NoError(t, db.Where("user_id = ? AND source = ?", userID, source).Find(&rows).Error)
+	for i, credit := range credits {
+		if errs[i] != nil {
+			continue
+		}
+		found := false
+		for _, row := range rows {
+			if row.Kind == credit.kind {
+				found = true
+			}
+		}
+		require.True(t, found, "worker %d 返回 nil 但 %s 行不在库里（假成功）", i, credit.kind)
+	}
+}
+
 func TestCreateAdtyFundBatchesTxConcurrentReplayIsIdempotent(t *testing.T) {
 	db := adtyTestDB(t)
 	require.NoError(t, db.AutoMigrate(&AdtyFundBatch{}))
