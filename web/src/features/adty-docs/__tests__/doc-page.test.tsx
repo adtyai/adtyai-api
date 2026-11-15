@@ -65,13 +65,13 @@ describe('DocPage', () => {
     ).toBeVisible()
   })
 
-  // Task 9.2 added every page in all eight languages (docs-complete.test.ts),
-  // so the English fallback in getDocMarkdown is no longer reached.
-  it('shows the Japanese page when the interface language is ja', async () => {
+  // ja is a leftover pack on disk, never a running interface language: the
+  // product coerces it onto en, so the reader gets the English page.
+  it('shows the English page for a leftover ja interface language', async () => {
     await i18next.changeLanguage('ja')
     renderDoc('quickstart')
     expect(
-      await screen.findByRole('heading', { level: 1, name: 'クイックスタート' })
+      await screen.findByRole('heading', { level: 1, name: 'Quick start' })
     ).toBeVisible()
   })
 

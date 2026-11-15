@@ -53,6 +53,9 @@ const options = {
 let currentOptions: Record<string, string>
 let client: QueryClient
 beforeEach(() => {
+  // The suite ships no language packs, so add the one zhCN string this file
+  // asserts on; every other key falls back to en.
+  i18next.addResourceBundle('zhCN', 'translation', { seconds: '秒' })
   client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
@@ -92,6 +95,7 @@ afterEach(async () => {
   cleanup()
   client.clear()
   vi.restoreAllMocks()
+  i18next.removeResourceBundle('zhCN', 'translation')
   await i18next.changeLanguage('en')
 })
 function Workspace() {
@@ -992,17 +996,13 @@ it('unavailable cache statistics show an unknown count and refresh recovers the 
 })
 
 it.each([
-  ['zhCN', /100,000/, '3,600 seconds'],
-  ['zhTW', /100,000/, '3,600 seconds'],
-  ['en', /100,000/, '3,600 seconds'],
-  ['ja', /100,000/, '3,600 seconds'],
-  ['fr', /100\s000/, /3\s600 seconds/],
-  ['ru', /100\s000/, /3\s600 seconds/],
-  ['vi', /100\.000/, '3.600 seconds'],
-  ['invalid_locale', /100,000/, '3,600 seconds'],
+  ['en', /100,000/, '3,600 seconds', 'zhCN', '3,600 秒'],
+  ['zhCN', /100,000/, '3,600 秒', 'en', '3,600 seconds'],
+  // A stored leftover code resolves to en, the product's fallback language.
+  ['invalid_locale', /100,000/, '3,600 seconds', 'zhCN', '3,600 秒'],
 ] as const)(
   'renders cache statistics and TTL with the project language code %s and updates formatting after a language switch',
-  async (language, capacity, ttl) => {
+  async (language, capacity, ttl, switchedLanguage, switchedTtl) => {
     const rules = JSON.parse(options['channel_affinity_setting.rules'])
     rules[0].ttl_seconds = 3600
     currentOptions['channel_affinity_setting.rules'] = JSON.stringify(rules)
@@ -1022,13 +1022,11 @@ it.each([
     ).toHaveTextContent('2')
 
     await act(async () => {
-      await i18next.changeLanguage('fr')
+      await i18next.changeLanguage(switchedLanguage)
     })
 
-    await waitFor(() => expect(status).toHaveTextContent(/2\s*\/\s*100\s000/))
-    expect(
-      within(table).getByRole('cell', { name: /3\s600 seconds/ })
-    ).toBeVisible()
+    await waitFor(() => expect(status).toHaveTextContent(/2\s*\/\s*100,000/))
+    expect(within(table).getByRole('cell', { name: switchedTtl })).toBeVisible()
     expect(api.patch).not.toHaveBeenCalled()
   }
 )

@@ -153,7 +153,7 @@ const navigationCases: NavigationCase[] = [
 beforeEach(() => {
   useAuthStore.getState().auth.reset()
   useSystemConfigStore.getState().setLoading(false)
-  i18next.addResourceBundle('fr', 'translation', { Home: 'Accueil' })
+  i18next.addResourceBundle('zhCN', 'translation', { Home: '主页' })
 })
 
 afterEach(async () => {
@@ -162,7 +162,7 @@ afterEach(async () => {
   useAuthStore.getState().auth.reset()
   useSystemConfigStore.setState(initialSystemConfig)
   await i18next.changeLanguage('en')
-  i18next.removeResourceBundle('fr', 'translation')
+  i18next.removeResourceBundle('zhCN', 'translation')
   localStorage.clear()
 })
 
@@ -264,10 +264,10 @@ describe.each(navigationCases)('$name stable link identity', (navigation) => {
     home.focus()
 
     await act(async () => {
-      await i18next.changeLanguage('fr')
+      await i18next.changeLanguage('zhCN')
     })
 
-    expect(navigation.query('Accueil')[0]).toBe(home)
+    expect(navigation.query('主页')[0]).toBe(home)
     expect(home).toHaveFocus()
   })
 })

@@ -241,10 +241,13 @@ it('updates count unit labels across cards, table cells and breakdowns with loca
       </div>
     </>
   )
+  // Only en and zhCN are running interface languages. A leftover zhTW cookie
+  // runs as zhCN and a leftover fr cookie runs as en, so both keep the unit
+  // label of the official language instead of their on-disk pack.
   for (const [language, unit] of [
     ['en', 'image'],
-    ['zhTW', '張'],
     ['zhCN', '张'],
+    ['zhTW', '张'],
     ['fr', 'image'],
   ]) {
     await act(() => i18next.changeLanguage(language))
