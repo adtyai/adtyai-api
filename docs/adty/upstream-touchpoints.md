@@ -567,3 +567,4 @@
 | `service/security_verification.go` | 二次验证增加 `adty.notice.configure`，只允许 Root | Bot Token 和翻译凭据变更要重新验证，证明绑定目标和动作 | A.24.10 |
 | `controller/misc.go` | `GetStatus` 里 `announcements` 字段的数据源从 `console_setting.GetAnnouncements()` 换成 `service.AdtyPublicAnnouncementsForRequest(c)`，返回形状不变 | 公告并入新表后，`/api/status` 仍要服务未登录访客（这条路由没有认证中间件），所以数据源换、形状不换；按 Host 决定站点可见性，分站不会看到主站公告 | 公告并入 |
 | `web/src/features/system-settings/content/announcements-section.tsx` | 删掉直接编辑 `console_setting.announcements` 的旧表格和它的新增/编辑/删除对话框，只留公开面板开关和 `NotificationManager` | 新旧两套都能发公告、读者只有一份：同一件事两个来源。公告统一由发布记录承载，旧 option 保留为回滚源 | 公告并入 |
+| `docker-compose.yml` | app 服务的 environment 增加 `ADTY_TELEGRAM_ALLOW_NETWORK=1` | 不设这一条时出站 Telegram 完全关闭，通知与公告同步一条都发不出去，而外部只看到「没有消息要发」；开发用 compose 故意不设，避免本机测试往真实频道发消息 | 公告 TG 同步 |

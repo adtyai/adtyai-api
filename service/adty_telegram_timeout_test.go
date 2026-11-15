@@ -93,3 +93,34 @@ func readServiceFile(t *testing.T, name string) string {
 	require.NoError(t, err)
 	return string(raw)
 }
+
+// 没有发送实现时启动必须喊一声。
+//
+// 不设 `ADTY_TELEGRAM_ALLOW_NETWORK=1` 时 `AdtyTelegramSender` 是 nil：队列照常
+// 入队，但一条都发不出去，而且会一路走到 dead。**外部看到的和「没有消息要发」
+// 完全一样**，所以这行日志是唯一能区分两者的东西。
+func TestTelegramDeliveryTaskWarnsWhenSenderIsMissing(t *testing.T) {
+	previous := AdtyTelegramSender
+	AdtyTelegramSender = nil
+	t.Cleanup(func() { AdtyTelegramSender = previous })
+
+	logged := captureSysLog(t)
+	startAdtyTelegramDeliveryTask()
+
+	assert.Contains(t, logged.String(), "telegram delivery is disabled",
+		"没有发送实现时必须留下痕迹，否则「开关没开」和「没消息」同形")
+	assert.Contains(t, logged.String(), "ADTY_TELEGRAM_ALLOW_NETWORK",
+		"提示要指名那个变量，否则读日志的人还得自己找")
+}
+
+// 有发送实现时不该喊这一条——否则它每天都会在日志里出现，然后被无视。
+func TestTelegramDeliveryTaskStaysQuietWhenSenderIsSet(t *testing.T) {
+	previous := AdtyTelegramSender
+	AdtyTelegramSender = func(token, chat, text string) error { return nil }
+	t.Cleanup(func() { AdtyTelegramSender = previous })
+
+	logged := captureSysLog(t)
+	startAdtyTelegramDeliveryTask()
+
+	assert.NotContains(t, logged.String(), "telegram delivery is disabled")
+}

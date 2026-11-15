@@ -563,6 +563,12 @@ func adtyTelegramSendMessageHTTP(token, chat, text string) error {
 // `RetryAdtyTelegram` 在此之前零生产调用方：入队的行没有任何东西去消费，
 // 队列只增不减。这条任务就是它的出口。
 func startAdtyTelegramDeliveryTask() {
+	// 没有发送实现时，这条任务只会把队列一路推到 dead，而且全程没有错误。
+	// 「开关没打开」和「没有消息要发」在外部看起来完全一样，所以必须喊一声。
+	if AdtyTelegramSender == nil {
+		common.SysError(common.LogText(
+			"telegram delivery is disabled: ADTY_TELEGRAM_ALLOW_NETWORK is not \"1\", so no message can leave this process; queued rows will be marked failed and eventually dead"))
+	}
 	go func() {
 		ticker := time.NewTicker(time.Minute)
 		defer ticker.Stop()
