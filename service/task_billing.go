@@ -111,19 +111,6 @@ func resolveTokenKey(ctx context.Context, tokenId int, taskID string) string {
 	return token.Key
 }
 
-// taskAdjustFunding 调整任务的资金来源（钱包），delta > 0 表示扣费，delta < 0 表示退还。
-// 二开（余额下限）：扣费最多扣到 0，返回没扣到、由平台承担的差额；退还时差额为 0。
-func taskAdjustFunding(task *model.Task, delta int) (shortfall int, err error) {
-	if delta > 0 {
-		charged, err := model.ChargeUserQuotaUpTo(task.UserId, delta)
-		if err != nil {
-			return 0, err
-		}
-		return delta - charged, nil
-	}
-	return 0, model.IncreaseUserQuota(task.UserId, -delta, false)
-}
-
 // taskAdjustTokenQuota 调整任务的令牌额度，delta > 0 表示扣费，delta < 0 表示退还。
 // 需要通过 resolveTokenKey 运行时获取 key（不从 PrivateData 中读取）。
 func taskAdjustTokenQuota(ctx context.Context, task *model.Task, delta int) {

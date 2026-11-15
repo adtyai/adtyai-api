@@ -537,22 +537,6 @@ func assertFloorIntField(t *testing.T, v any, field string, want int) {
 	assert.EqualValues(t, want, got.Int(), "%s.%s", value.Type(), field)
 }
 
-// callTaskAdjustFunding 按约定的签名 taskAdjustFunding(task, delta) (shortfall int, err error) 调用。
-// 实现改签名之前它只返回 error，用反射调，旧签名时报失败。等实现改好后可以改成直接调用。
-func callTaskAdjustFunding(t *testing.T, task *model.Task, delta int) (int, bool) {
-	t.Helper()
-	out := reflect.ValueOf(taskAdjustFunding).Call([]reflect.Value{reflect.ValueOf(task), reflect.ValueOf(delta)})
-	if len(out) != 2 {
-		assert.Failf(t, "old signature", "taskAdjustFunding returns %d values, want (shortfall int, err error)", len(out))
-		return 0, false
-	}
-	if err, _ := out[1].Interface().(error); err != nil {
-		assert.NoError(t, err)
-		return 0, false
-	}
-	return int(out[0].Int()), true
-}
-
 // floorLastAdminInfo 取用户最近一条 logType 日志，返回日志和它的 other.admin_info。
 func floorLastAdminInfo(t *testing.T, db *gorm.DB, userID, logType int) (model.Log, map[string]any) {
 	t.Helper()
@@ -853,16 +837,6 @@ func TestAdtyBalanceFloorAsyncPaths(t *testing.T) {
 		assert.Equal(t, 0, floorBalance(t, user.Id), "balance stops at 0")
 		_, adminInfo := floorLastAdminInfo(t, db, user.Id, model.LogTypeConsume)
 		assert.EqualValues(t, 4_000, adminInfo["shortfall_quota"], "admin_info %v", adminInfo)
-	})
-	t.Run("taskAdjustFunding returns the shortfall", func(t *testing.T) {
-		db := prepareFloorDB(t)
-		user, token := floorCustomer(t, db, nil, "floor-task-funding", 500)
-		task := floorTask(t, db, user, token, 0)
-
-		if shortfall, ok := callTaskAdjustFunding(t, task, 2_000); ok {
-			assert.Equal(t, 1_500, shortfall)
-		}
-		assert.Equal(t, 0, floorBalance(t, user.Id), "balance stops at 0")
 	})
 	t.Run("realtime usage charge", func(t *testing.T) {
 		// Realtime 每段用量走 PostConsumeQuota；PreWssConsumeQuota 的余额检查不加锁，
