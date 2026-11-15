@@ -75,10 +75,12 @@ func TestAdtyFundAllocationRecordsPreChargeSharesPG(t *testing.T) {
 	require.EqualValues(t, 25_000_000, claimed, "the whole amount is recorded against its own operation")
 
 	// Held totals are readable for the reconciliation check that comes later.
+	// 本金批次总额 50M，第一笔占走 30M，所以第二笔只能再拿 20M 本金；剩下 5M
+	// 由赠金批次补足。把已被占用的 30M 从可用量里扣掉，正是这里该守住的不变量。
 	heldPrincipal, heldBonus, err := SumAdtyFundAllocationHeld(user.Id)
 	require.NoError(t, err)
-	require.EqualValues(t, 55_000_000, heldPrincipal)
-	require.EqualValues(t, 0, heldBonus)
+	require.EqualValues(t, 50_000_000, heldPrincipal)
+	require.EqualValues(t, 5_000_000, heldBonus)
 
 	// Pre-charging must not make a user's usable quota disappear: capacity stays
 	// with users.quota and adty_fund_batches.remaining until settlement lands.

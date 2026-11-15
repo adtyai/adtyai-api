@@ -81,6 +81,13 @@ func AllocateAdtyFundAllocationsTx(tx *gorm.DB, userID int, operationID string, 
 	if len(batches) == 0 {
 		return nil
 	}
+	// 同一批次上别人还占着的额度必须先扣掉，否则两个并发预扣会把同一笔
+	// remaining 各登记一次；结算时条件更新只允许一个成功，另一个整事务回滚，
+	// 那个请求已经调过上游、却再也结不了账。
+	heldByBatch, err := outstandingAdtyFundAllocationByBatchTx(tx, userID)
+	if err != nil {
+		return err
+	}
 	var maxSeq struct{ Seq int }
 	if err := tx.Model(&AdtyFundAllocation{}).
 		Select("coalesce(max(seq),0) as seq").
@@ -99,7 +106,7 @@ func AllocateAdtyFundAllocationsTx(tx *gorm.DB, userID int, operationID string, 
 		if batch.Kind != "principal" {
 			continue
 		}
-		available := batch.Remaining
+		available := batch.Remaining - heldByBatch[batch.Id]
 		if available <= 0 {
 			continue
 		}
@@ -128,7 +135,7 @@ func AllocateAdtyFundAllocationsTx(tx *gorm.DB, userID int, operationID string, 
 		if batch.Kind != "bonus" {
 			continue
 		}
-		available := batch.Remaining
+		available := batch.Remaining - heldByBatch[batch.Id]
 		if available <= 0 {
 			continue
 		}
@@ -154,7 +161,10 @@ func AllocateAdtyFundAllocationsTx(tx *gorm.DB, userID int, operationID string, 
 		// The batches cannot cover this reservation. That is not fatal on the
 		// pre-charge path (balances can still carry legacy quota), but the
 		// mismatch must be visible instead of silently losing the trail.
-		common.SysError(common.LogText("adty fund allocation short by %d quota for user=%d operation=%s", remaining, userID, operationID))
+		// 这里不拒绝预扣：users.quota 才是准入权威，存量用户可能有一部分额度
+		// 从来没有对应批次（升级前就在账上）。因为账面不全而拒绝用户消费，
+		// 等于让历史数据问题变成「余额还在却花不出去」。
+		common.SysError(common.LogText("adty fund allocation short by %d quota for user=%d operation=%s: batches cannot back the whole reservation", remaining, userID, operationID))
 	}
 	return nil
 }
@@ -188,6 +198,30 @@ func SumAdtyFundAllocationHeld(userID int) (principal, bonus int64, err error) {
 		}
 	}
 	return principal, bonus, nil
+}
+
+// outstandingAdtyFundAllocationByBatchTx 汇总每个批次上仍被占用（已登记未结算）的额度。
+// 预扣时要从批次的可用量里扣掉它，否则同一笔 remaining 会被两个并发预扣各登记一次。
+func outstandingAdtyFundAllocationByBatchTx(tx *gorm.DB, userID int) (map[int64]int64, error) {
+	out := map[int64]int64{}
+	if tx == nil || userID <= 0 {
+		return out, nil
+	}
+	var rows []struct {
+		BatchId int64
+		Held    int64
+	}
+	if err := tx.Model(&AdtyFundAllocation{}).
+		Select("batch_id, coalesce(sum(held - settled),0) as held").
+		Where("user_id = ? AND held > settled", userID).
+		Group("batch_id").
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		out[row.BatchId] = row.Held
+	}
+	return out, nil
 }
 
 // pickAdtyFundBatchOrder sorts lots the way A.12.2 consumes them: principal by
@@ -308,13 +342,16 @@ func SettleAdtyFundAllocationsTx(tx *gorm.DB, userID int, operationID string, ap
 		}
 		left -= take
 	}
+	backed := applied - left
 	if left > 0 {
-		// 批次总量不足以覆盖实际消耗：账面已经不一致，必须让事务失败而不是悄悄放过。
-		return adtyFundBatchShortfallError(left)
+		// 批次总量不足以覆盖本次消耗。这是**账面不全**，不是代码写错：升级前的
+		// 余额可能有一部分从来没有对应批次。此时若让整笔结算失败，配额扣减也会
+		// 跟着回滚——用户已经用完上游，却一分钱不扣，那比账面对不上更糟。
+		// 所以扣掉能扣的部分、把差额作为已知缺口记进日志，由一致性巡检去追。
+		common.SysError(common.LogText("adty fund settlement short by %d quota for user=%d operation=%s: batches could not back the whole charge", left, userID, operationID))
 	}
-	// 收尾校验：这个 operation 名下被占用的额度必须正好等于本次实际消耗。
-	// 不等说明前面某处漏记了分摊（或释放多了），此时静默通过会让批次与余额的
-	// 偏差永久留在账上，所以直接让事务回滚。
+	// 收尾校验只覆盖「已经被批次支撑的那部分」：剩余占用必须正好等于 backed。
+	// 不等说明前面某处漏记或重复释放，那是代码问题，必须让事务回滚。
 	var total struct{ Held int64 }
 	if err := tx.Model(&AdtyFundAllocation{}).
 		Select("coalesce(sum(held),0) as held").
@@ -322,8 +359,8 @@ func SettleAdtyFundAllocationsTx(tx *gorm.DB, userID int, operationID string, ap
 		Scan(&total).Error; err != nil {
 		return err
 	}
-	if total.Held != applied {
-		return adtyFundBatchShortfallError(total.Held - applied)
+	if total.Held != backed {
+		return adtyFundBatchShortfallError(total.Held - backed)
 	}
 	return nil
 }

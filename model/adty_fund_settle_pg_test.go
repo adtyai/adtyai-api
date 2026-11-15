@@ -239,3 +239,45 @@ func TestTeamKeyConsumptionLeavesMemberBatchesUntouchedPG(t *testing.T) {
 	assert.EqualValues(t, 50_000_000, f.remaining(t), "结算也不能扣成员个人批次")
 	assert.EqualValues(t, 50_000_000, f.quota(t), "团队付款不在成员个人账上再扣一次")
 }
+
+// ISS-R4-0033：两个并发预扣不能把同一笔批次额度各登记一次。
+//
+// 修前 :102 的可用量只取 batch.Remaining，不减别人已占用的 held，于是两个
+// operation 都能登记满额；结算时条件更新只允许一个成功，另一个整事务回滚，
+// 那个请求已经调过上游、却再也结不了账。
+func TestAdtyFundAllocationDoesNotDoubleClaimBatchPG(t *testing.T) {
+	f := newFundSettleFixture(t, 50_000_000)
+
+	for _, spec := range []struct {
+		key   string
+		quota int
+	}{
+		{"request:claim-1", 30_000_000},
+		{"request:claim-2", 20_000_000},
+	} {
+		_, err := ReserveBillingOperation(BillingOperation{
+			OperationKey: spec.key, UserId: f.user.Id, Kind: "request",
+		}, spec.quota)
+		require.NoError(t, err)
+	}
+
+	var total struct{ Held int64 }
+	require.NoError(t, f.db.Model(&AdtyFundAllocation{}).
+		Select("coalesce(sum(held - settled),0) as held").
+		Where("user_id = ?", f.user.Id).Scan(&total).Error)
+	assert.EqualValues(t, 50_000_000, total.Held, "所有预扣登记加起来不能超过批次余量")
+
+	// 两条都已登记的预扣都能正常结算，不需要任何一条回滚。
+	for _, spec := range []struct {
+		key   string
+		quota int
+	}{
+		{"request:claim-1", 30_000_000},
+		{"request:claim-2", 20_000_000},
+	} {
+		require.NoError(t, QueueBillingSettlement(spec.key, spec.quota, false))
+		_, _, err := ApplyBillingSettlement(spec.key)
+		require.NoError(t, err, "已登记的预扣必须都能结清")
+	}
+	assert.EqualValues(t, 0, f.remaining(t))
+}
