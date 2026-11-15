@@ -92,37 +92,7 @@ export type PricingModel = {
   billing_usage_examples?: BillingUsageExample[]
   /** Pricing version returned by backend, useful for cache busting */
   pricing_version?: string
-  /**
-   * Optional model metadata fields reserved for backend-provided catalog data.
-   * Keep them data-driven; do not synthesize display values on the client.
-   */
-  context_length?: number
-  max_output_tokens?: number
-  knowledge_cutoff?: string
-  release_date?: string
-  parameter_count?: string
-  input_modalities?: Modality[]
-  output_modalities?: Modality[]
-  capabilities?: ModelCapability[]
 }
-
-/** Input/output modalities supported by a model. */
-export type Modality = 'text' | 'image' | 'audio' | 'video' | 'file'
-
-/** Functional capabilities a model exposes. */
-export type ModelCapability =
-  | 'function_calling'
-  | 'streaming'
-  | 'vision'
-  | 'json_mode'
-  | 'structured_output'
-  | 'reasoning'
-  | 'tools'
-  | 'system_prompt'
-  | 'web_search'
-  | 'code_interpreter'
-  | 'caching'
-  | 'embeddings'
 
 export type PricingData = {
   success: boolean
