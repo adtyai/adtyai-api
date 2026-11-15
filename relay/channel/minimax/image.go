@@ -14,6 +14,7 @@ import (
 	"github.com/QuantumNous/new-api/service"
 
 	"github.com/gin-gonic/gin"
+	"github.com/tidwall/gjson"
 )
 
 type MiniMaxImageRequest struct {
@@ -175,6 +176,42 @@ func responseMiniMax2OpenAIImage(response *MiniMaxImageResponse, info *relaycomm
 	return imageResponse, nil
 }
 
+// miniMaxImagePayloadCount counts billable images in the rebuilt OpenAI-format
+// response body with the same rule as openaiImageResponseCount
+// (relay/channel/openai/relay_image.go): object-shaped data is one image when it
+// carries url or b64_json; for arrays the count is the larger of the url-bearing
+// and b64_json-bearing entry counts, so a split image shape is billed once.
+// It is deliberately not the raw array length: the upstream may return fewer
+// images than requested, and entries without a payload bill nothing.
+func miniMaxImagePayloadCount(responseBody []byte) int64 {
+	data := gjson.GetBytes(responseBody, "data")
+	if data.IsObject() {
+		if miniMaxImageDataHasField(data, "url") || miniMaxImageDataHasField(data, "b64_json") {
+			return 1
+		}
+		return 0
+	}
+	if !data.IsArray() {
+		return 0
+	}
+	var urls, b64s int64
+	data.ForEach(func(_, item gjson.Result) bool {
+		if miniMaxImageDataHasField(item, "url") {
+			urls++
+		}
+		if miniMaxImageDataHasField(item, "b64_json") {
+			b64s++
+		}
+		return true
+	})
+	return max(urls, b64s)
+}
+
+func miniMaxImageDataHasField(item gjson.Result, field string) bool {
+	value := item.Get(field)
+	return value.Type == gjson.String && value.Raw != `""`
+}
+
 func miniMaxImageHandler(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (*dto.Usage, *types.NewAPIError) {
 	responseBody, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -201,6 +238,12 @@ func miniMaxImageHandler(c *gin.Context, resp *http.Response, info *relaycommon.
 	jsonResponse, err := common.Marshal(openAIResponse)
 	if err != nil {
 		return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
+	}
+
+	// Bill the images that are actually delivered. MiniMax may return fewer
+	// entries than the requested n, and an entry without a payload bills nothing.
+	if info != nil {
+		info.UpdateImageCount(miniMaxImagePayloadCount(jsonResponse))
 	}
 
 	c.Writer.Header().Set("Content-Type", "application/json")
