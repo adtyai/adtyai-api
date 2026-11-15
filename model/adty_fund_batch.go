@@ -71,6 +71,48 @@ func CreateAdtyFundBatchesTx(tx *gorm.DB, userID int, source string, principal, 
 	return err
 }
 
+// adtyLegacyBatchSource 是「没有订单来源的额度」那一条批次的固定 source。
+// 每个用户只有一条（唯一索引 user_id + source + kind），补额度是往上加，
+// 不是新插一行——否则第二次补建就会撞唯一索引。
+const adtyLegacyBatchSource = "legacy"
+
+// ensureAdtyLegacyBatchTx 把「没有批次背书」的额度补进那条 legacy 批次。
+//
+// topUp 是本次要补的额度。已经存在就加在 remaining/original 上（幂等：补过之后
+// 再算一次 short 会是 0）；不存在才新建。
+//
+// 走 SAVEPOINT：并发下两个事务可能同时判断「还没有 legacy 批次」，唯一索引会让
+// 其中一个失败。冲突时重读并补额度，不算错误——否则并发的第二笔扣费会整笔失败。
+func ensureAdtyLegacyBatchTx(tx *gorm.DB, userID int, topUp int64) error {
+	if tx == nil || userID <= 0 || topUp <= 0 {
+		return nil
+	}
+	apply := func(db *gorm.DB) error {
+		result := db.Model(&AdtyFundBatch{}).
+			Where("user_id = ? AND source = ? AND kind = ?", userID, adtyLegacyBatchSource, "principal").
+			Updates(map[string]any{
+				"remaining": gorm.Expr("remaining + ?", topUp),
+				"original":  gorm.Expr("original + ?", topUp),
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected > 0 {
+			return nil
+		}
+		return db.Create(&AdtyFundBatch{
+			UserId: userID, Kind: "principal", Source: adtyLegacyBatchSource,
+			Original: topUp, Remaining: topUp,
+		}).Error
+	}
+	err := tx.Transaction(apply)
+	if err != nil && isAdtyUniqueViolation(err) {
+		// 另一个事务刚建好这一行：补同样的额度，然后照常消费。
+		return tx.Transaction(apply)
+	}
+	return err
+}
+
 // AdtyAfterPrincipalSpentTx runs in the charge transaction after non-legacy
 // principal lots are reduced. Gift consumption does not call it.
 var AdtyAfterPrincipalSpentTx func(tx *gorm.DB, userID int, principalQuota int64) error
@@ -115,15 +157,24 @@ func consumeAdtyFundBatchesTx(tx *gorm.DB, userID int, amount, balanceBefore int
 		return 0, err
 	}
 	var rows []AdtyFundBatch
-	if err := tx.Where("user_id = ? AND remaining > 0", userID).Find(&rows).Error; err != nil {
+	if err := tx.Where("user_id = ?", userID).Find(&rows).Error; err != nil {
 		return 0, err
 	}
-	if len(rows) == 0 && balanceBefore > 0 {
-		legacy := AdtyFundBatch{UserId: userID, Kind: "principal", Source: "legacy", Original: balanceBefore, Remaining: balanceBefore}
-		if err := tx.Create(&legacy).Error; err != nil {
+	// 批次总量与「这次业务之前」的余额之间的差，是**没有批次背书的额度**：
+	// 升级前的余额从来没有对应的行，退款（IncreaseUserQuota）也不会补行。
+	// 这部分要落到那条唯一的 legacy 批次上，否则扣费一定失败。
+	var lotTotal int64
+	for i := range rows {
+		lotTotal += rows[i].Remaining
+	}
+	if short := balanceBefore - lotTotal; short > 0 {
+		if err := ensureAdtyLegacyBatchTx(tx, userID, short); err != nil {
 			return 0, err
 		}
-		rows = []AdtyFundBatch{legacy}
+	}
+	// 只消费还有剩余的批次；上面补过之后重新读，避免拿旧快照算。
+	if err := tx.Where("user_id = ? AND remaining > 0", userID).Find(&rows).Error; err != nil {
+		return 0, err
 	}
 	if len(rows) == 0 {
 		return 0, adtyFundBatchShortfallError(amount)

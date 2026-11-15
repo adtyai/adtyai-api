@@ -501,3 +501,66 @@ func TestAdtyFundSettlementGapIsZeroWhenBooksBalancePG(t *testing.T) {
 	require.NoError(t, err)
 	assert.Zero(t, settled.FundBatchGap, "批次足够时不该记缺口")
 }
+
+// 花光批次 → 退款回额度 → 再消费：这是懒建 legacy 批次撞唯一索引的那条路。
+//
+// `adty_fund_batches` 的唯一索引是 (user_id, source, kind)。修前懒建用的是裸
+// source='legacy'，所以每个用户只能成功一次：第二次进入这条分支时 Create 撞
+// 唯一索引，原始 DB 错误让整笔扣费失败。退款走 IncreaseUserQuota，不会补批次，
+// 所以「花光 + 退款 + 再消费」必然复现。
+func TestLegacyBatchSurvivesExhaustionAndRefundPG(t *testing.T) {
+	dsn := requireAdtyOfficialPostgresAcceptanceDSN(t)
+	admin := connectAdtyPostgresAcceptanceInstance(t, dsn)
+	db := openAdtyThrowawayMigrateDatabase(t, admin, dsn)
+	require.NoError(t, db.AutoMigrate(&User{}, &AdtyFundBatch{}, &AdtyFundAllocation{},
+		&BillingOperation{}, &BillingOperationMovement{}))
+	common.BatchUpdateEnabled = false
+	common.RedisEnabled = false
+
+	const first = 20_000
+	user := User{Username: "legacy-refund-cycle", Password: "pg-acceptance-pass", Quota: first}
+	require.NoError(t, db.Create(&user).Error)
+
+	settleOnce := func(t *testing.T, key string, quota int) {
+		t.Helper()
+		ok, err := TryReserveUserQuotaForOperation(user.Id, quota, key)
+		require.NoError(t, err)
+		require.True(t, ok)
+		op := BillingOperation{OperationKey: key, UserId: user.Id, Kind: "request",
+			ReservedQuota: quota, ActualQuota: quota, State: BillingSettlePending}
+		require.NoError(t, db.Create(&op).Error)
+		_, _, err = ApplyBillingSettlement(op.OperationKey)
+		require.NoError(t, err, "第 %s 次消费必须能结算", key)
+	}
+
+	// 第一次：零批次用户消费掉全部余额，懒建出 source='legacy' 的那一行。
+	settleOnce(t, "request:legacy-cycle-1", first)
+
+	var afterFirst User
+	require.NoError(t, db.First(&afterFirst, user.Id).Error)
+	require.EqualValues(t, 0, afterFirst.Quota)
+	var lots []AdtyFundBatch
+	require.NoError(t, db.Where("user_id = ?", user.Id).Find(&lots).Error)
+	require.Len(t, lots, 1, "只应有一条 legacy 批次")
+	require.EqualValues(t, 0, lots[0].Remaining, "第一次消费把它花光了")
+
+	// 退款回额度：IncreaseUserQuota 不建批次，这正是撞车的触发条件。
+	require.NoError(t, IncreaseUserQuota(user.Id, first, false))
+
+	// 第二次：批次存在但 remaining=0，必须能补额度并继续消费，而不是撞唯一索引。
+	settleOnce(t, "request:legacy-cycle-2", first)
+
+	var afterSecond User
+	require.NoError(t, db.First(&afterSecond, user.Id).Error)
+	assert.EqualValues(t, 0, afterSecond.Quota)
+
+	require.NoError(t, db.Where("user_id = ?", user.Id).Find(&lots).Error)
+	require.Len(t, lots, 1, "补额度不能新插一行：唯一索引 (user_id, source, kind)")
+	assert.EqualValues(t, 2*first, lots[0].Original, "同一条 legacy 批次累加两次")
+	assert.EqualValues(t, 0, lots[0].Remaining)
+
+	sums, err := SumAdtyFundBatchRemainingByKind(user.Id)
+	require.NoError(t, err)
+	assert.EqualValues(t, int64(afterSecond.Quota), sums.Principal+sums.Bonus,
+		"批次合计必须等于活余额")
+}
