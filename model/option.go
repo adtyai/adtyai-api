@@ -531,6 +531,19 @@ func UpdateOptionsBulk(values map[string]string) error {
 	return nil
 }
 
+// LockOptionValueTx 在调用方的事务里读一行配置，并加行锁直到事务结束。
+//
+// 整串 JSON 覆盖写的读-改-写必须拿它当基准：基准若取本进程的内存快照，另一个
+// 副本刚写进去的键会被这份陈旧快照静默覆盖（ISS-R4-0099）。行还不存在时返回
+// 空串，写回时由 SaveOptionsTx 建行。加密类配置不走这里，仍用 readAdtyOptionSecret。
+func LockOptionValueTx(tx *gorm.DB, key string) (string, error) {
+	var row Option
+	if err := lockForUpdate(tx).Where(&Option{Key: key}).Limit(1).Find(&row).Error; err != nil {
+		return "", err
+	}
+	return row.Value, nil
+}
+
 // SaveOptionsTx 在调用方的事务里写配置。调用方提交成功后再 ApplyOptionValues，失败时内存保持原样。
 func SaveOptionsTx(tx *gorm.DB, values map[string]string) error {
 	if len(values) == 0 {

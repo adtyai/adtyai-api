@@ -40,9 +40,7 @@ func TestLoginLockUsesRedisWhenItIsEnabled(t *testing.T) {
 	previousEnabled, previousClient := common.RedisEnabled, common.RDB
 	t.Cleanup(func() {
 		common.RedisEnabled, common.RDB = previousEnabled, previousClient
-		adtyLoginFailuresMu.Lock()
-		adtyLoginFailures = map[string]adtyLoginFailure{}
-		adtyLoginFailuresMu.Unlock()
+		common.ResetLoginFailuresForTest()
 	})
 	common.RedisEnabled = true
 	common.RDB = nil
@@ -55,9 +53,7 @@ func TestLoginLockUsesRedisWhenItIsEnabled(t *testing.T) {
 	for i := 0; i < adtyLoginFailureLimit; i++ {
 		require.NoError(t, adtyRecordLoginFailure(name))
 	}
-	adtyLoginFailuresMu.Lock()
-	adtyLoginFailures = map[string]adtyLoginFailure{}
-	adtyLoginFailuresMu.Unlock()
+	common.ResetLoginFailuresForTest()
 	common.RDB = clientB
 	assert.True(t, adtyLoginLocked(name), "another process must see the same failure count")
 	adtyClearLoginFailures(name)

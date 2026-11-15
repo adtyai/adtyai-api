@@ -20,14 +20,28 @@ type adtyMethodBonusBody struct {
 
 // saveAdtyBonusMethodOption 把一个加赠配置写进 options，并与审计同事务。
 //
-// 顺序是先落库、提交后由配置层按落库值更新内存：写库失败时内存保持旧值，
-// 接口返回错误，不会出现「界面显示已保存、重启后配置消失」。
-func saveAdtyBonusMethodOption(c *gin.Context, key, value, action string, params map[string]any, after any) bool {
+// 先落库、提交后由配置层按落库值更新内存：写库失败时内存保持旧值，接口返回
+// 错误，不会出现「界面显示已保存、重启后配置消失」。
+//
+// 合并基准在事务内用行锁从库里读（merge 收到的 current），不取本进程的内存
+// 快照：整串 JSON 覆盖写时，取内存当基准会让另一个副本刚写入的规则被静默抹掉
+// （ISS-R4-0099）。
+func saveAdtyBonusMethodOption(c *gin.Context, key, action string, params map[string]any, after any, merge func(current string) (string, error)) bool {
 	event := prepareManageAuditChange(c, 0, action, params, nil, after, "", "")
+	var value string
 	err := model.DB.Transaction(func(tx *gorm.DB) error {
-		if err := model.SaveOptionsTx(tx, map[string]string{key: value}); err != nil {
+		current, err := model.LockOptionValueTx(tx, key)
+		if err != nil {
 			return err
 		}
+		merged, err := merge(current)
+		if err != nil {
+			return err
+		}
+		if err := model.SaveOptionsTx(tx, map[string]string{key: merged}); err != nil {
+			return err
+		}
+		value = merged
 		return model.AppendAuditIntentTx(tx, event)
 	})
 	if err != nil {
@@ -48,14 +62,17 @@ func PutAdtyMainMethodBonus(c *gin.Context) {
 		common.ApiErrorT(c, "Invalid parameters")
 		return
 	}
-	value, err := adty_setting.BuildMainMethodBonus(body.Method, body.Enabled, body.Rate)
-	if err != nil {
+	merge := func(current string) (string, error) {
+		return adty_setting.MergeMainMethodBonus(current, body.Method, body.Enabled, body.Rate)
+	}
+	// 非法参数要在事务外就变成 400：事务里的错误一律按写库失败回 500。
+	if _, err := merge(""); err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	if !saveAdtyBonusMethodOption(c, adty_setting.TopupSettingKeyMethodBonus, value, "adty.topup.method_bonus.update",
+	if !saveAdtyBonusMethodOption(c, adty_setting.TopupSettingKeyMethodBonus, "adty.topup.method_bonus.update",
 		map[string]any{"method": body.Method, "enabled": body.Enabled, "rate": body.Rate},
-		map[string]any{"method": body.Method, "enabled": body.Enabled}) {
+		map[string]any{"method": body.Method, "enabled": body.Enabled}, merge) {
 		return
 	}
 	common.ApiSuccess(c, adty_setting.GetTopupSetting().MethodBonus)
@@ -73,14 +90,16 @@ func PutAdtySiteBonusMethodAuth(c *gin.Context) {
 		common.ApiErrorT(c, "Invalid parameters")
 		return
 	}
-	value, err := adty_setting.BuildSiteMethodAuth(siteID, body.Method, *body.Allowed)
-	if err != nil {
+	merge := func(current string) (string, error) {
+		return adty_setting.MergeSiteMethodAuth(current, siteID, body.Method, *body.Allowed)
+	}
+	if _, err := merge(""); err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	if !saveAdtyBonusMethodOption(c, adty_setting.TopupSettingKeySiteMethodAuth, value, "adty.topup.site_method_auth.update",
+	if !saveAdtyBonusMethodOption(c, adty_setting.TopupSettingKeySiteMethodAuth, "adty.topup.site_method_auth.update",
 		map[string]any{"method": body.Method, "allowed": *body.Allowed, "site_id": siteID},
-		map[string]any{"method": body.Method, "allowed": *body.Allowed}) {
+		map[string]any{"method": body.Method, "allowed": *body.Allowed}, merge) {
 		return
 	}
 	common.ApiSuccess(c, gin.H{"site_id": siteID, "allowed": *body.Allowed})
@@ -97,14 +116,16 @@ func PutAdtySiteMethodBonus(c *gin.Context) {
 		common.ApiErrorT(c, "Invalid parameters")
 		return
 	}
-	value, err := adty_setting.BuildSiteMethodBonus(site.Id, body.Method, body.Enabled, body.Rate)
-	if err != nil {
+	merge := func(current string) (string, error) {
+		return adty_setting.MergeSiteMethodBonus(current, site.Id, body.Method, body.Enabled, body.Rate)
+	}
+	if _, err := merge(""); err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	if !saveAdtyBonusMethodOption(c, adty_setting.TopupSettingKeySiteMethodBonus, value, "adty.topup.site_method_bonus.update",
+	if !saveAdtyBonusMethodOption(c, adty_setting.TopupSettingKeySiteMethodBonus, "adty.topup.site_method_bonus.update",
 		map[string]any{"method": body.Method, "enabled": body.Enabled, "rate": body.Rate, "site_id": site.Id},
-		map[string]any{"method": body.Method, "enabled": body.Enabled}) {
+		map[string]any{"method": body.Method, "enabled": body.Enabled}, merge) {
 		return
 	}
 	common.ApiSuccess(c, gin.H{"site_id": site.Id})

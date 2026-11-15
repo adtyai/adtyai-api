@@ -224,9 +224,22 @@ func resolveAdtyTeamRegistrationLeader(tx *gorm.DB, siteId int, username, passwo
 	if existing.SiteId != siteId || existing.StaffSiteId != 0 || existing.Status != common.UserStatusEnabled {
 		return 0, nil, ErrAdtyTeamForbidden
 	}
-	if existing.Password == "" || !common.ValidatePasswordAndHash(password, existing.Password) {
+	if existing.Password == "" {
 		return 0, nil, ErrAdtyTeamRegistrationUnverified
 	}
+	// 这个入口是匿名的（router 只挂了 IP 级限流），口令校验必须和登录共用同一套
+	// 失败计数与锁定：否则一枚注册链接就是全平台用户名的密码预言机，猜错也不计数
+	// （ISS-R4-0105）。锁上之后连密码正确也返回同一句话，不额外暴露状态。
+	if common.LoginLocked(existing.Username) {
+		return 0, nil, ErrAdtyTeamRegistrationUnverified
+	}
+	if !common.ValidatePasswordAndHash(password, existing.Password) {
+		if err := common.RecordLoginFailure(existing.Username); err != nil {
+			common.SysLog(common.LogText("team registration failure lock unavailable: %s", err.Error()))
+		}
+		return 0, nil, ErrAdtyTeamRegistrationUnverified
+	}
+	common.ClearLoginFailures(existing.Username)
 	return existing.Id, nil, nil
 }
 
