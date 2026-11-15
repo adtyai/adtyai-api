@@ -52,6 +52,13 @@ var AdtyTelegramGetMe = func(string) (int64, string, error) {
 // 所以超时不是「让失败更快」，是让整条重试机制保持活着。
 var adtyTelegramHTTP = &http.Client{Timeout: 15 * time.Second}
 
+// adtyTelegramInteractiveHTTP 用于**交互式**调用（保存 bot token 时验证身份）。
+//
+// 它和投递那个 15 秒的 client 分开，是因为等待的人不同：投递是后台 goroutine，
+// 15 秒没人等；而 `getMe` 是用户点了「保存」之后同步等结果——**15 秒会让人以为
+// 卡死，然后重复点，产生第二个保存请求。**
+var adtyTelegramInteractiveHTTP = &http.Client{Timeout: 5 * time.Second}
+
 // adtyTelegramAPIBase 是出站 API 的根地址，**留作变量给测试替换**。
 //
 // 写死字面量时，验超时的用例只能自己拼一个 URL 去调 client——那样验的是
@@ -596,7 +603,7 @@ func adtyTelegramGetMeHTTP(token string) (int64, string, error) {
 	if err != nil {
 		return 0, "", ErrAdtyTelegramUnverified
 	}
-	response, err := adtyTelegramHTTP.Do(request)
+	response, err := adtyTelegramInteractiveHTTP.Do(request)
 	if err != nil || response.StatusCode != http.StatusOK {
 		if response != nil {
 			_ = response.Body.Close()

@@ -39,10 +39,13 @@ func TestTelegramOutboundCallsGiveUpOnSilentPeer(t *testing.T) {
 	}()
 
 	previousBase, previousClient := adtyTelegramAPIBase, adtyTelegramHTTP
+	previousInteractive := adtyTelegramInteractiveHTTP
 	adtyTelegramAPIBase = "http://" + listener.Addr().String()
 	adtyTelegramHTTP = &http.Client{Timeout: 300 * time.Millisecond}
+	adtyTelegramInteractiveHTTP = &http.Client{Timeout: 300 * time.Millisecond}
 	t.Cleanup(func() {
 		adtyTelegramAPIBase, adtyTelegramHTTP = previousBase, previousClient
+		adtyTelegramInteractiveHTTP = previousInteractive
 	})
 
 	cases := map[string]func() error{
@@ -81,16 +84,28 @@ func TestTelegramHTTPClientHasTimeout(t *testing.T) {
 		"不能直接用 DefaultClient：它没有超时")
 }
 
-// 两处出站调用都必须走这个 client。文本层面的守门：
-// 任何一处回到 `http.PostForm` / `http.DefaultClient`，这里就红。
-func TestTelegramOutboundCallsUseSharedClient(t *testing.T) {
+// 两处出站调用都必须走**各自那个**带 Timeout 的 client，不能回到裸调用。
+//
+// 两个 client 分工不同：投递（后台 goroutine，没人等）用 15 秒的；
+// getMe（用户点完保存同步等）用 5 秒的。所以这里分别钉住。
+//
+// **失败信息只报命中的那一行，不 dump 整个文件。** 上一版用 `assert.Contains`
+// 断言整份源码，失败时会把 600 行源码灌进日志，真正要看的那一句被埋掉。
+func TestTelegramOutboundCallsUseBoundedClients(t *testing.T) {
 	source := readServiceFile(t, "adty_telegram.go")
-	assert.Contains(t, source, "adtyTelegramHTTP.PostForm")
-	assert.Contains(t, source, "adtyTelegramHTTP.Do(")
-	assert.NotContains(t, source, "http.PostForm(",
-		"http.PostForm 用的是 DefaultClient，没有超时")
-	assert.NotContains(t, source, "http.DefaultClient.Do(",
-		"DefaultClient 没有超时，会让投递 goroutine 永久挂住")
+	for name, want := range map[string]string{
+		"投递":    "adtyTelegramHTTP.PostForm",
+		"getMe": "adtyTelegramInteractiveHTTP.Do(",
+	} {
+		assert.Contains(t, source, want, "%s 必须走带 Timeout 的 client", name)
+	}
+	for _, banned := range []struct{ call, why string }{
+		{"http.PostForm(", "http.PostForm 用的是 DefaultClient，没有超时"},
+		{"http.DefaultClient.Do(", "DefaultClient 没有超时，会让投递 goroutine 永久挂住"},
+		{"&http.Client{}", "新建的 client 没有 Timeout：即使它调得对，也绕过了这两个共用 client"},
+	} {
+		assert.NotContains(t, source, banned.call, "%s", banned.why)
+	}
 }
 
 // readServiceFile 读本包内的源文件，供「文本层面守门」那类断言用。
@@ -131,4 +146,25 @@ func TestTelegramDeliveryTaskStaysQuietWhenSenderIsSet(t *testing.T) {
 	startAdtyTelegramDeliveryTask()
 
 	assert.NotContains(t, logged.String(), "telegram delivery is disabled")
+}
+
+// 交互式调用（保存 bot token 时的 getMe）必须用**更短**的超时。
+//
+// 它和投递的 15 秒分开，是因为等待的人不同：投递是后台 goroutine，没人等；
+// getMe 是用户点了「保存」之后同步等结果——15 秒会让人以为卡死，然后重复点。
+func TestTelegramInteractiveClientIsShorterThanDelivery(t *testing.T) {
+	require.NotNil(t, adtyTelegramInteractiveHTTP)
+	assert.Positive(t, adtyTelegramInteractiveHTTP.Timeout, "交互式 client 也必须有超时")
+	assert.NotSame(t, adtyTelegramHTTP, adtyTelegramInteractiveHTTP,
+		"两者必须是不同的 client，否则「交互式更短」这件事无处安放")
+	assert.Less(t, adtyTelegramInteractiveHTTP.Timeout, adtyTelegramHTTP.Timeout,
+		"交互式等待必须短于后台投递：%v vs %v",
+		adtyTelegramInteractiveHTTP.Timeout, adtyTelegramHTTP.Timeout)
+}
+
+// getMe 必须走交互式那个 client —— 文本守门。
+func TestTelegramGetMeUsesInteractiveClient(t *testing.T) {
+	source := readServiceFile(t, "adty_telegram.go")
+	assert.Contains(t, source, "adtyTelegramInteractiveHTTP.Do(request)",
+		"getMe 是同步交互调用，必须走 5 秒那个 client")
 }
