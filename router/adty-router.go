@@ -308,8 +308,8 @@ func registerAdtyEpayRoutes(apiRouter *gin.RouterGroup) {
 	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/user/epay/notify/:channelId", "session", "")
 	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/user/epay/notify/:channelId", "session", "")
 	apiRouter.POST("/adty/epay/pay", middleware.UserAuth(), middleware.AdtyRequireCurrentSiteTerms(), middleware.UserCriticalRateLimit("CT:pay-epay"), controller.RequestAdtyEpayPay)
-	apiRouter.GET("/user/epay/notify/:channelId", controller.AdtyEpayNotify)
-	apiRouter.POST("/user/epay/notify/:channelId", middleware.AnonymousRequestBodyLimit(), controller.AdtyEpayNotify)
+	apiRouter.GET("/user/epay/notify/:channelId", middleware.PaymentNotifyRateLimit(), controller.AdtyEpayNotify)
+	apiRouter.POST("/user/epay/notify/:channelId", middleware.PaymentNotifyRateLimit(), middleware.AnonymousRequestBodyLimit(), controller.AdtyEpayNotify)
 
 	admin := apiRouter.Group("/adty/admin/epay", middleware.AdminAuth())
 	handlePermissionRoute(admin, http.MethodGet, "/channels", authz.AdtyPaymentRead, controller.GetAdtyEpayChannels)
