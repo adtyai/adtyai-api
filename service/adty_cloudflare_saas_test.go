@@ -14,9 +14,9 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/common/logsinktest"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting/adty_setting"
-	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -857,32 +857,12 @@ func TestClosedSiteRemovesItsDomains(t *testing.T) {
 	assert.Equal(t, []string{"cf-1"}, fake.deletes)
 }
 
-// captureSysLogs 把 common.SysLog、SysError 写的日志收进缓冲区，返回读取函数。
+// captureSysLogs 用共享的日志 sink 收 common.SysLog / SysError 的输出。
+//
+// 这个 helper 原来自己持 `common.LogWriterMu` 换 gin 的两个 writer；现在
+// 全仓只有 `logsinktest` 一种做法，避免两套并存。
 func captureSysLogs(t *testing.T) func() string {
 	t.Helper()
-	var buffer strings.Builder
-	var mu sync.Mutex
-	writer := writerFunc(func(p []byte) (int, error) {
-		mu.Lock()
-		defer mu.Unlock()
-		return buffer.Write(p)
-	})
-	common.LogWriterMu.Lock()
-	oldOut, oldErr := gin.DefaultWriter, gin.DefaultErrorWriter
-	gin.DefaultWriter, gin.DefaultErrorWriter = writer, writer
-	common.LogWriterMu.Unlock()
-	t.Cleanup(func() {
-		common.LogWriterMu.Lock()
-		gin.DefaultWriter, gin.DefaultErrorWriter = oldOut, oldErr
-		common.LogWriterMu.Unlock()
-	})
-	return func() string {
-		mu.Lock()
-		defer mu.Unlock()
-		return buffer.String()
-	}
+	buffer := logsinktest.Capture(t)
+	return buffer.String
 }
-
-type writerFunc func(p []byte) (int, error)
-
-func (f writerFunc) Write(p []byte) (int, error) { return f(p) }

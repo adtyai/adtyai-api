@@ -1,11 +1,9 @@
 package service
 
 import (
-	"strings"
 	"testing"
 
-	"github.com/QuantumNous/new-api/common"
-	"github.com/gin-gonic/gin"
+	"github.com/QuantumNous/new-api/common/logsinktest"
 
 	"github.com/QuantumNous/new-api/model"
 	"github.com/stretchr/testify/assert"
@@ -106,19 +104,12 @@ func TestRefundWithoutAllocationTableStillTracesPG(t *testing.T) {
 	assert.Contains(t, logged.String(), "request:no-table-1", "痕迹要能定位到具体 operation")
 }
 
-// 抓 SysLog/SysError 的输出：它们写 gin 的两个全局 writer，测试里换成内存缓冲。
-// 换 writer 必须持 LogWriterMu —— 那正是它在生产里防日志轮转并发的原因。
-func captureSysLog(t *testing.T) *strings.Builder {
+// captureSysLog 用共享的日志 sink 收 SysLog/SysError 的输出。
+//
+// 原来这里自己持 `common.LogWriterMu` 换 gin 的两个 writer——**那把锁是实现的
+// 细节**，让每个要验日志的测试复述它，等于要求每个作者都记得同一件事。
+// 现在换成 `logsinktest`，还原绑在 `t.Cleanup` 上。
+func captureSysLog(t *testing.T) *logsinktest.Buffer {
 	t.Helper()
-	buffer := &strings.Builder{}
-	common.LogWriterMu.Lock()
-	previousOut, previousErr := gin.DefaultWriter, gin.DefaultErrorWriter
-	gin.DefaultWriter, gin.DefaultErrorWriter = buffer, buffer
-	common.LogWriterMu.Unlock()
-	t.Cleanup(func() {
-		common.LogWriterMu.Lock()
-		gin.DefaultWriter, gin.DefaultErrorWriter = previousOut, previousErr
-		common.LogWriterMu.Unlock()
-	})
-	return buffer
+	return logsinktest.Capture(t)
 }
