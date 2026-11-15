@@ -2013,7 +2013,17 @@ func EnsureOneRootUserIndex(db *gorm.DB) error {
 		fmt.Sprintf("role = %d AND deleted_at IS NULL", common.RoleRootUser))
 }
 
+// rootUserCreateSavepoint 只包住建根账号这一条 INSERT，失败时用它回滚掉冲突
+// 在 PostgreSQL 里留下的中止状态，好让后面那条 count 还能执行。
+const rootUserCreateSavepoint = "adty_create_root_user"
+
 // CreateRootUserIfAbsent 在初始化锁里创建根账号。并发初始化只会留下一个。
+//
+// 唯一冲突只能吞一种：并发初始化里另一个赢家已经抢到了根账号。别的冲突（用户名
+// 或邮箱被非 root 账号占用）必须上报——controller/setup.go 只在 err == nil 时把
+// 实例标记成已初始化，吞掉这类冲突就是「实例已初始化，但没有管理员」，setup 入口
+// 从此关闭，只能手工改库。所以这里不看约束名（约束名会随重建/别名变化），冲突后
+// 再数一次根账号：数到了才算并发赢家，没数到就报错。
 func CreateRootUserIfAbsent(user *User) error {
 	return DB.Transaction(func(tx *gorm.DB) error {
 		if common.UsingMainDatabase(common.DatabaseTypePostgreSQL) {
@@ -2028,8 +2038,25 @@ func CreateRootUserIfAbsent(user *User) error {
 		if count > 0 {
 			return nil
 		}
-		if err := tx.Create(user).Error; err != nil && !isAdtyUniqueViolation(err) {
+		if err := tx.SavePoint(rootUserCreateSavepoint).Error; err != nil {
 			return err
+		}
+		createErr := tx.Create(user).Error
+		if createErr == nil {
+			return nil
+		}
+		if !isAdtyUniqueViolation(createErr) {
+			return createErr
+		}
+		if err := tx.RollbackTo(rootUserCreateSavepoint).Error; err != nil {
+			return createErr
+		}
+		var roots int64
+		if err := tx.Model(&User{}).Where("role = ?", common.RoleRootUser).Count(&roots).Error; err != nil {
+			return err
+		}
+		if roots == 0 {
+			return fmt.Errorf("create root user: username or email already taken: %w", createErr)
 		}
 		return nil
 	})
