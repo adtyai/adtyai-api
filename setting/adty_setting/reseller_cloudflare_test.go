@@ -42,7 +42,7 @@ func TestCloudflareConfiguredNeedsOnlyTheThreeDnsFields(t *testing.T) {
 	}
 }
 
-// Turnstile 那一侧的判据单独一条，且它必须能**说出**「没配全」。
+// Turnstile 那一侧的判据单独一条，而且它只圈住「会静默跳过登记」的两个条件。
 //
 // 这个函数存在的意义不是「校验保存」，是让「静默跳过登记」有一个可判定的入口——
 // 那个空分支今天仍然存在，但至少现在是「能被问出来的」。
@@ -56,7 +56,6 @@ func TestTurnstileConfiguredRequiresAccountAndWidget(t *testing.T) {
 
 	for name, mutate := range map[string]func(*ResellerSetting){
 		"account id": func(s *ResellerSetting) { s.CloudflareAccountId = "" },
-		"api token":  func(s *ResellerSetting) { s.CloudflareApiToken = "" },
 		"widget":     func(s *ResellerSetting) { s.TurnstileWidgets = nil },
 	} {
 		broken := complete

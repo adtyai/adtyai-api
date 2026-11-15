@@ -217,9 +217,7 @@ func (s *ResellerSetting) CloudflareConfigured() bool {
 // **所以这个函数存在的意义是让「静默」这件事有一个可判定的入口**：
 // 谁能读它，谁就能把「没配全」变成一个可见的状态，而不是一个空分支。
 func (s *ResellerSetting) TurnstileConfigured() bool {
-	return strings.TrimSpace(s.CloudflareApiToken) != "" &&
-		strings.TrimSpace(s.CloudflareAccountId) != "" &&
-		len(s.TurnstileWidgets) > 0
+	return strings.TrimSpace(s.CloudflareAccountId) != "" && len(s.TurnstileWidgets) > 0
 }
 
 var resellerDomainPattern = regexp.MustCompile(`^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$`)
