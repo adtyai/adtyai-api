@@ -375,7 +375,7 @@ func TestReplacingTokenLimitCommitsPendingUsageOnce(t *testing.T) {
 }
 
 func TestDurableQuotaMigrationAndRestartRecovery(t *testing.T) {
-	db := adtyTestDB(t)
+	db := adtyTestDBWithSchema(t)
 	require.NoError(t, db.AutoMigrate(&User{}, &Token{}))
 	resetBatchUpdateTestState(t)
 	useUserCacheMiniRedis(t)
@@ -589,7 +589,7 @@ func TestChargeUserQuotaUpToSQLite(t *testing.T) {
 
 func TestChargeUserQuotaUpToPostgres(t *testing.T) {
 	runChargeUserQuotaUpToCases(t, func(t *testing.T) {
-		db := adtyTestDB(t)
+		db := adtyTestDBWithSchema(t)
 		require.NoError(t, db.AutoMigrate(&User{}))
 	})
 }
@@ -608,7 +608,7 @@ func TestChargeUserQuotaUpToRejectsNegativeAmount(t *testing.T) {
 func TestChargeUserQuotaUpToConcurrentNeverOverdraws(t *testing.T) {
 	for _, redisOn := range []bool{false, true} {
 		t.Run(map[bool]string{false: "无Redis", true: "Redis"}[redisOn], func(t *testing.T) {
-			db := adtyTestDB(t)
+			db := adtyTestDBWithSchema(t)
 			require.NoError(t, db.AutoMigrate(&User{}))
 			resetBatchUpdateTestState(t)
 			if redisOn {

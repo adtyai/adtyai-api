@@ -9,6 +9,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
+	"gorm.io/gorm"
 )
 
 // adtyExit 留给测试替换。生产环境直接退出，不能改用 FatalLog，否则测试挡不住。
@@ -39,17 +40,27 @@ func CheckAdtyPostgreSQL() {
 }
 
 // MigrateAdtyTables 建二开的表。只由主节点的 migrateDB 调用；上游测试在 SQLite 上也会走到这里，只用 AutoMigrate。
+// MigrateAdtyTables 用包级 DB 建二开的表。保留这个名字给上游迁移入口用。
 func MigrateAdtyTables() error {
-	if err := DB.AutoMigrate(&AdtyPaymentSceneConfig{}); err != nil {
+	return MigrateAdtyTablesOn(DB)
+}
+
+// MigrateAdtyTablesOn 在指定连接上建二开的表。
+//
+// 测试必须用这个：`migrateAdtyTestSchema` 的调用方传进来的是它们自己的库，
+// 不一定是包级 DB。只写全局版本时函数会「成功」地迁移了另一套表，调用方随后
+// 撞「表不存在」，现象和没修一模一样。
+func MigrateAdtyTablesOn(db *gorm.DB) error {
+	if err := db.AutoMigrate(&AdtyPaymentSceneConfig{}); err != nil {
 		return err
 	}
-	if err := seedAdtyPaymentScenes(); err != nil {
+	if err := seedAdtyPaymentScenesOn(db); err != nil {
 		return err
 	}
-	if err := DB.AutoMigrate(&AdtyGroup{}, &AdtyTopupOrder{}, &AdtyOrderPaymentEvent{}, &PaymentOrphanEvent{}, &PaymentOrphanReview{}, &AdtyBalanceLedger{}, &BillingOperation{}, &BillingOperationMovement{}, &AdtySiteEarningEvent{}, &AdtyEpayChannel{}, &AdtyEpayChannelMethod{}, &AdtyUserFingerprint{}, &AdtyUserLimit{}, &AdtyOfficialPrice{}, &AdtyBillingHold{}, &AdtyFundBatch{}, &AdtyFundAllocation{}, &AdtyGiftFulfillment{}, &AdtyManualRefund{}, &AdtyStaffBalanceRequest{}, &AdtyPriceRevision{}, &AdtyNotificationHide{}, &AdtyGlossaryTerm{}, &AdtySiteReferralRate{}, &AdtySiteInvite{}, &AdtySiteInviteCommission{}, &AdtyCommissionRecovery{}, &AdtySiteInviteWithdrawal{}, &AdtySiteInviteWithdrawalItem{}, &AdtyAnomalyDisposition{}, &AdtyEmailChange{}, &AdtyAccountClosure{}, &AdtyNoticeTemplate{}, &AdtyKeyLimit{}, &AdtyModelAlias{}, &AdtyGroupConfig{}); err != nil {
+	if err := db.AutoMigrate(&AdtyGroup{}, &AdtyTopupOrder{}, &AdtyOrderPaymentEvent{}, &PaymentOrphanEvent{}, &PaymentOrphanReview{}, &AdtyBalanceLedger{}, &BillingOperation{}, &BillingOperationMovement{}, &AdtySiteEarningEvent{}, &AdtyEpayChannel{}, &AdtyEpayChannelMethod{}, &AdtyUserFingerprint{}, &AdtyUserLimit{}, &AdtyOfficialPrice{}, &AdtyBillingHold{}, &AdtyFundBatch{}, &AdtyFundAllocation{}, &AdtyGiftFulfillment{}, &AdtyManualRefund{}, &AdtyStaffBalanceRequest{}, &AdtyPriceRevision{}, &AdtyNotificationHide{}, &AdtyGlossaryTerm{}, &AdtySiteReferralRate{}, &AdtySiteInvite{}, &AdtySiteInviteCommission{}, &AdtyCommissionRecovery{}, &AdtySiteInviteWithdrawal{}, &AdtySiteInviteWithdrawalItem{}, &AdtyAnomalyDisposition{}, &AdtyEmailChange{}, &AdtyAccountClosure{}, &AdtyNoticeTemplate{}, &AdtyKeyLimit{}, &AdtyModelAlias{}, &AdtyGroupConfig{}); err != nil {
 		return err
 	}
-	if err := DB.AutoMigrate(&AdtyPromoCode{}, &AdtyPromoRedemption{}, &AdtyNotificationRead{}, &AdtyNotificationPublication{}, &AdtyVoucher{}, &AdtyVoucherLiability{}, &AdtyVoucherAuthorization{}, &AdtyVoucherCloseGrant{}, &AdtyTeam{}, &AdtyTeamMember{}, &AdtyTeamLedger{}, &AdtyTeamInvite{}, &AdtyTeamRegistrationLink{}, &AdtyTeamKey{}); err != nil {
+	if err := db.AutoMigrate(&AdtyPromoCode{}, &AdtyPromoRedemption{}, &AdtyNotificationRead{}, &AdtyNotificationPublication{}, &AdtyVoucher{}, &AdtyVoucherLiability{}, &AdtyVoucherAuthorization{}, &AdtyVoucherCloseGrant{}, &AdtyTeam{}, &AdtyTeamMember{}, &AdtyTeamLedger{}, &AdtyTeamInvite{}, &AdtyTeamRegistrationLink{}, &AdtyTeamKey{}); err != nil {
 		return err
 	}
 	if err := EnsureAdtyVoucherTradeNoUniqueIndex(DB); err != nil {
@@ -66,20 +77,24 @@ func MigrateAdtyTables() error {
 			return err
 		}
 	}
-	if err := DB.AutoMigrate(&AdtyTelegramBot{}, &AdtyTelegramChallenge{}, &AdtyTelegramBinding{}, &AdtyTelegramDelivery{}, &AdtyTicket{}, &AdtyTicketMessage{}, &AdtyTicketImage{}, &AdtyTicketEvent{}, &AdtyTicketPolicy{}, &AdtyTranslationConfig{}, &AdtyTranslationHead{}, &AdtyTranslationJob{}, &AdtyTranslationUsage{}, &AdtyGroupHealthSample{}, &AdtyGroupHealthState{}, &AdtyGroupHealthAlert{}, &AdtyDataRetentionPolicy{}, &AdtyDataRetentionRun{}, &AdtyDataRetentionRunItem{}); err != nil {
+	if err := db.AutoMigrate(&AdtyTelegramBot{}, &AdtyTelegramChallenge{}, &AdtyTelegramBinding{}, &AdtyTelegramDelivery{}, &AdtyTicket{}, &AdtyTicketMessage{}, &AdtyTicketImage{}, &AdtyTicketEvent{}, &AdtyTicketPolicy{}, &AdtyTranslationConfig{}, &AdtyTranslationHead{}, &AdtyTranslationJob{}, &AdtyTranslationUsage{}, &AdtyGroupHealthSample{}, &AdtyGroupHealthState{}, &AdtyGroupHealthAlert{}, &AdtyDataRetentionPolicy{}, &AdtyDataRetentionRun{}, &AdtyDataRetentionRunItem{}); err != nil {
 		return err
 	}
 	if err := RemapAdtyTicketLegacyStatuses(DB); err != nil {
 		return err
 	}
-	if err := migrateAdtyReferralTables(); err != nil {
+	if err := migrateAdtyReferralTablesOn(db); err != nil {
 		return err
 	}
-	return migrateAdtySiteTables()
+	return migrateAdtySiteTablesOn(db)
 }
 
 // migrateAdtySiteTables 建分站的表（P11）。
 func migrateAdtySiteTables() error {
+	return migrateAdtySiteTablesOn(DB)
+}
+
+func migrateAdtySiteTablesOn(db *gorm.DB) error {
 	// AutoMigrate creates the new owner-aware unique index before we remove
 	// the old constraint. A failed migration therefore never loses uniqueness.
 	if err := DB.AutoMigrate(AdtySiteTables()...); err != nil {
@@ -102,7 +117,11 @@ func migrateAdtySiteTables() error {
 
 // migrateAdtyReferralTables 建推广返佣的 12 张表（任务 6.1）。
 func migrateAdtyReferralTables() error {
-	return DB.AutoMigrate(ReferralTables()...)
+	return migrateAdtyReferralTablesOn(DB)
+}
+
+func migrateAdtyReferralTablesOn(db *gorm.DB) error {
+	return db.AutoMigrate(ReferralTables()...)
 }
 
 // migrateAdtyTables 是挂到上游迁移上的同名入口，测试也直接调用它。
