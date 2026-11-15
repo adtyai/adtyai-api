@@ -9,6 +9,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
@@ -217,6 +218,95 @@ func TestRechargeAuditSiteOwnershipDatabaseMatrix(t *testing.T) {
 					assert.False(t, invalid.Success, filter)
 				}
 			}
+		})
+	}
+}
+
+// TestRechargeAuditOwnerKeywordScopeDatabaseMatrix 站长视图的关键词只能命中响应里会返回的列：
+// paid_tx_hash（manual 来源会被清空）和 gateway_trade_id（从不返回）不能当筛选面，
+// 否则「有没有结果」就是一个逐字符还原字段值的 oracle。
+func TestRechargeAuditOwnerKeywordScopeDatabaseMatrix(t *testing.T) {
+	for _, dialect := range []struct{ kind, env string }{{"sqlite", ""}, {"mysql", "TEST_MYSQL_DSN"}, {"postgres", "TEST_POSTGRES_DSN"}} {
+		t.Run(dialect.kind, func(t *testing.T) {
+			if dialect.env != "" && os.Getenv(dialect.env) == "" {
+				t.Skip("database DSN not configured")
+			}
+			db := modelManagementDB(t, dialect.kind, os.Getenv(dialect.env))
+			require.NoError(t, db.AutoMigrate(&model.TopUp{}, &model.AdtyTopupOrder{}, &model.AdtySite{}, &model.AdtyEpayChannel{}))
+			owner := model.User{Username: "keyword-scope-owner", Role: common.RoleCommonUser, Status: common.UserStatusEnabled}
+			require.NoError(t, db.Create(&owner).Error)
+			site := model.AdtySite{OwnerUserId: owner.Id, Subdomain: "keyword-scope", RootDomain: "sites.test",
+				Status: model.AdtySiteStatusActive, AgreementVer: service.AdtyCurrentSiteAgreementVersion()}
+			require.NoError(t, db.Create(&site).Error)
+			buyer := model.User{Username: "keyword-scope-buyer", Role: common.RoleCommonUser, SiteId: site.Id}
+			require.NoError(t, db.Create(&buyer).Error)
+			t.Cleanup(service.InvalidateAdtySiteCache)
+			for _, fixture := range []struct{ trade, txHash, gatewayID string }{
+				{"scope-manual", "0xdeadbeefcafe", "gw-secret-manual"},
+				{"scope-callback", "0xfeedface", "gw-secret-callback"},
+			} {
+				source := model.AdtyPaymentSourceManual
+				if fixture.trade == "scope-callback" {
+					source = "callback"
+				}
+				require.NoError(t, db.Create(&model.TopUp{TradeNo: fixture.trade, UserId: buyer.Id,
+					PaymentProvider: model.PaymentProviderAdtyBEpusdt, PaymentMethod: "bepusdt",
+					Status: common.TopUpStatusSuccess, Amount: 2, Money: 2, CreateTime: 1, CompleteTime: 2}).Error)
+				require.NoError(t, db.Create(&model.AdtyTopupOrder{TradeNo: fixture.trade, UserId: buyer.Id, SiteId: site.Id,
+					Provider: model.PaymentProviderAdtyBEpusdt, PaidTxHash: fixture.txHash, PaidSource: source,
+					GatewayTradeId: fixture.gatewayID, FaceUSD: decimal.NewFromInt(2)}).Error)
+			}
+			request := func(handler gin.HandlerFunc, path string, setRole bool) struct {
+				Success bool
+				Data    struct {
+					Total int
+					Items []struct {
+						TradeNo    string `json:"trade_no"`
+						PaidTxHash string `json:"paid_tx_hash"`
+					}
+				}
+			} {
+				t.Helper()
+				recorder := httptest.NewRecorder()
+				c, _ := gin.CreateTestContext(recorder)
+				c.Request = httptest.NewRequest(http.MethodGet, path, nil)
+				if setRole {
+					c.Set("role", common.RoleRootUser)
+				} else {
+					c.Set("id", owner.Id)
+				}
+				handler(c)
+				require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+				var listed struct {
+					Success bool
+					Data    struct {
+						Total int
+						Items []struct {
+							TradeNo    string `json:"trade_no"`
+							PaidTxHash string `json:"paid_tx_hash"`
+						}
+					}
+				}
+				require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &listed), recorder.Body.String())
+				return listed
+			}
+			// 站长：只能在会返回的列上筛。
+			require.Equal(t, 2, request(GetAdtyOwnerOrders, "/orders", false).Data.Total)
+			assert.Equal(t, 1, request(GetAdtyOwnerOrders, "/orders?keyword=scope-manual", false).Data.Total)
+			for _, secret := range []string{"deadbeefcafe", "gw-secret-manual", "gw-secret-callback", "feedface"} {
+				assert.Equal(t, 0, request(GetAdtyOwnerOrders, "/orders?keyword="+secret, false).Data.Total,
+					"owner keyword must not match a column the owner view never returns: "+secret)
+			}
+			// 后台视图不受影响：这两列照旧可筛，也照旧返回。
+			manual := request(GetRechargeAudit, "/orders?keyword=deadbeefcafe", true)
+			require.Equal(t, 1, manual.Data.Total)
+			require.Len(t, manual.Data.Items, 1)
+			assert.Equal(t, "0xdeadbeefcafe", manual.Data.Items[0].PaidTxHash)
+			assert.Equal(t, 1, request(GetRechargeAudit, "/orders?keyword=gw-secret-callback", true).Data.Total)
+			// 站长视图仍然清空 manual 来源的链上哈希。
+			ownerList := request(GetAdtyOwnerOrders, "/orders?keyword=scope-manual", false)
+			require.Len(t, ownerList.Data.Items, 1)
+			assert.Empty(t, ownerList.Data.Items[0].PaidTxHash)
 		})
 	}
 }
