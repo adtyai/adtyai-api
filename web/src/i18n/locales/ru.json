@@ -1186,7 +1186,7 @@
     "Only credited orders can be refunded": "Вернуть можно только зачисленные заказы",
     "Invalid idempotency key": "Недопустимый ключ идемпотентности",
     "A refund reason is required": "Нужно указать причину возврата",
-    "Top-up credited: {{face}} plus {{bonus}} bonus, paid {{paid}} {{currency}}": "Пополнение зачислено: {{face}} и бонус {{bonus}}, оплачено {{paid}} {{currency}}",
+    "Top-up credited: {{face}} plus {{bonus}} bonus ({{quota}} credited in total), paid {{paid}} {{currency}}": "Пополнение зачислено: {{face}} и бонус {{bonus}} (всего зачислено {{quota}}), оплачено {{paid}} {{currency}}",
     "Bonus rate for {{tier}} must be between 0 and 100": "Бонус для {{tier}} должен быть от 0 до 100",
     "Bonus tier {{tier}} must be a whole dollar amount": "Порог бонуса {{tier}} должен быть целой суммой в долларах",
     "Bonus rates must be a JSON object of amount to percent": "Бонусы должны быть JSON-объектом «сумма → процент»",

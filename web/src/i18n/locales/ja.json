@@ -1139,7 +1139,7 @@
     "Only credited orders can be refunded": "入金済みの注文のみ返金できます",
     "Invalid idempotency key": "冪等キーが無効です",
     "A refund reason is required": "返金理由は必須です",
-    "Top-up credited: {{face}} plus {{bonus}} bonus, paid {{paid}} {{currency}}": "チャージ入金：{{face}}、ボーナス {{bonus}}、支払 {{paid}} {{currency}}",
+    "Top-up credited: {{face}} plus {{bonus}} bonus ({{quota}} credited in total), paid {{paid}} {{currency}}": "チャージ入金：{{face}}、ボーナス {{bonus}}（合計 {{quota}} 入金）、支払 {{paid}} {{currency}}",
     "Bonus tier {{tier}} must be a whole dollar amount": "ボーナスの段階 {{tier}} は整数のドル金額にしてください",
     "Bonus rates must be a JSON object of amount to percent": "ボーナス率は「金額 → パーセント」の JSON オブジェクトにしてください",
     "The top-up price is not configured": "チャージ価格が設定されていません",

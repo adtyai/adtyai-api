@@ -7672,7 +7672,7 @@
     "Bonus rates must be a JSON object of amount to percent": "Bonus rates must be a JSON object of amount to percent",
     "Bonus tier {{tier}} must be a whole dollar amount": "Bonus tier {{tier}} must be a whole dollar amount",
     "Bonus rate for {{tier}} must be between 0 and 100": "Bonus rate for {{tier}} must be between 0 and 100",
-    "Top-up credited: {{face}} plus {{bonus}} bonus, paid {{paid}} {{currency}}": "Top-up credited: {{face}} plus {{bonus}} bonus, paid {{paid}} {{currency}}",
+    "Top-up credited: {{face}} plus {{bonus}} bonus ({{quota}} credited in total), paid {{paid}} {{currency}}": "Top-up credited: {{face}} plus {{bonus}} bonus ({{quota}} credited in total), paid {{paid}} {{currency}}",
     "A refund reason is required": "A refund reason is required",
     "Invalid idempotency key": "Invalid idempotency key",
     "Only credited orders can be refunded": "Only credited orders can be refunded",

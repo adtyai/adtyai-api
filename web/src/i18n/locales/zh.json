@@ -1202,7 +1202,7 @@
     "Only credited orders can be refunded": "只有已到账的订单可以退款",
     "Invalid idempotency key": "幂等键无效",
     "A refund reason is required": "必须填写退款原因",
-    "Top-up credited: {{face}} plus {{bonus}} bonus, paid {{paid}} {{currency}}": "充值到账：{{face}}，加赠 {{bonus}}，实付 {{paid}} {{currency}}",
+    "Top-up credited: {{face}} plus {{bonus}} bonus ({{quota}} credited in total), paid {{paid}} {{currency}}": "充值到账：{{face}}，加赠 {{bonus}}（共到账 {{quota}}），实付 {{paid}} {{currency}}",
     "Bonus tier {{tier}} must be a whole dollar amount": "加赠档位 {{tier}} 必须是整数美元",
     "Bonus rates must be a JSON object of amount to percent": "加赠比例必须是「金额 → 百分比」的 JSON 对象",
     "The top-up price is not configured": "未设置充值价格",

@@ -8098,7 +8098,7 @@
     "Top-up is unavailable while quota is displayed as tokens": "La recharge est indisponible lorsque le quota est affiché en tokens",
     "Top-up amount cannot be less than {{amount}}": "Le montant de recharge ne peut pas être inférieur à {{amount}}",
     "The top-up price is not configured": "Le prix de recharge n'est pas configuré",
-    "Top-up credited: {{face}} plus {{bonus}} bonus, paid {{paid}} {{currency}}": "Recharge créditée : {{face}} plus {{bonus}} de bonus, payé {{paid}} {{currency}}",
+    "Top-up credited: {{face}} plus {{bonus}} bonus ({{quota}} credited in total), paid {{paid}} {{currency}}": "Recharge créditée : {{face}} plus {{bonus}} de bonus ({{quota}} crédités au total), payé {{paid}} {{currency}}",
     "Invalid idempotency key": "Clé d'idempotence invalide",
     "You have an order waiting for payment": "Vous avez une commande en attente de paiement",
     "{{method}}, ${{amount}}, order {{tradeNo}}": "{{method}}, ${{amount}}, commande {{tradeNo}}",

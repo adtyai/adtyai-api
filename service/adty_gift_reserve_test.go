@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting/adty_setting"
 	"github.com/shopspring/decimal"
@@ -344,104 +345,27 @@ func TestLatePayAfterCancelRecordsPendingGiftWhenUncovered(t *testing.T) {
 	require.EqualValues(t, 1, notifies)
 }
 
-func TestMarginTopUpFulfillsPendingSiteGift(t *testing.T) {
+// 站点保障金补不上加赠时，只有本金到账；入账说明必须写实际到账额度。
+// 报下单时冻结的全额加赠，用户按日志算余额就算不平（ISS-R4-0112）。
+func TestPendingGiftCreditLogShowsActuallyCreditedQuota(t *testing.T) {
 	db := prepareSiteDB(t)
-	owner, site, customer, ext := seedReservedSiteGift(t, db, "gift-fulfil", "10")
+	_, site, customer, ext := seedReservedSiteGift(t, db, "gift-log-pend", "10")
 	_, err := model.CancelAdtyTopUp(ext.TradeNo, customer.Id)
 	require.NoError(t, err)
-	require.NoError(t, drainSiteGiftWallets(t, db, site.Id, "gift-fulfil"))
-	_, err = model.CompleteAdtyTopUp(ext.TradeNo, model.AdtyPaymentFacts{
-		Provider: model.PaymentProviderAdtyBEpusdt, PaidAmount: decimal.NewFromInt(100), FiatAmount: decimal.NewFromInt(100),
-		PaidCurrency: "USDT", Source: model.AdtyPaymentSourceCallback,
-	}, "")
-	require.NoError(t, err)
-	// 本金到账、赠金被扣下：pending，客户只拿到 50,000,000。
-	require.EqualValues(t, 50_000_000, userQuotaOf(t, db, customer.Id))
-	reloaded, err := model.GetAdtyTopupOrder(ext.TradeNo)
-	require.NoError(t, err)
-	require.Equal(t, model.AdtyGiftFulfillmentPending, reloaded.GiftFulfillmentStatus)
-
-	notified := 0
-	oldNotify := adtyNotifyGiftFulfillmentFulfilled
-	adtyNotifyGiftFulfillmentFulfilled = func(*model.AdtyGiftFulfillment, int64) { notified++ }
-	t.Cleanup(func() { adtyNotifyGiftFulfillmentFulfilled = oldNotify })
-
-	// 保障还不够：兑现必须是空操作，pending 原样保留。
-	n, err := ResumePendingAdtyGiftFulfillments(site.Id)
-	require.NoError(t, err)
-	require.Zero(t, n)
-	require.EqualValues(t, 50_000_000, userQuotaOf(t, db, customer.Id))
-
-	// 站长补足保证金（唯一的补足入口）：收益转保证金，转账提交后自动兑现一次。
-	_, err = ApplyAdtySiteWalletChange(site.Id, model.AdtySiteWalletEarnings, decimal.RequireFromString("20"), AdtySiteWalletChange{
-		Type: "earning_settlement", IdempotencyKey: "gift-fulfil-topup",
-	})
-	require.NoError(t, err)
-	require.NoError(t, TransferAdtyEarningToMargin(site.Id, owner.Id,
-		decimal.RequireFromString("20"), decimal.RequireFromString("20"), "gift-fulfil-transfer"))
-
-	require.EqualValues(t, 55_000_000, userQuotaOf(t, db, customer.Id))
-	require.EqualValues(t, 1, notified)
-	var row model.AdtyGiftFulfillment
-	require.NoError(t, db.Where("trade_no = ?", ext.TradeNo).First(&row).Error)
-	require.Equal(t, model.AdtyGiftFulfillmentFulfilled, row.Status)
-	require.Contains(t, row.History, "fulfilled")
-	reloaded, err = model.GetAdtyTopupOrder(ext.TradeNo)
-	require.NoError(t, err)
-	require.Equal(t, model.AdtyGiftFulfillmentFulfilled, reloaded.GiftFulfillmentStatus)
-	// 保障这次真的取回来了：保证金上留 10 USD 冻结。
-	_, margin := mustSiteGiftWallets(t, db, site.Id)
-	require.True(t, margin.FrozenUSD.Equal(decimal.RequireFromString("10")))
-	// 首次下单时保证金那 6 USD 的 reserve 在取消时已释放，兑现时又按 10 USD 重新取了一次。
-	var reserve model.AdtySiteWalletLedger
-	require.NoError(t, db.Where("site_id = ? AND type = ? AND ref_id = ? AND wallet_kind = ?", site.Id, "gift_reserve", ext.TradeNo, model.AdtySiteWalletMargin).
-		Order("id desc").First(&reserve).Error)
-	require.True(t, reserve.HoldDelta.Equal(decimal.RequireFromString("10")))
-	// 批次跟着余额走：本单赠金批次补齐到全额。
-	var batch model.AdtyFundBatch
-	require.NoError(t, db.Where("user_id = ? AND source = ? AND kind = ?", customer.Id, ext.TradeNo, "bonus").First(&batch).Error)
-	require.EqualValues(t, 5_000_000, batch.Original)
-	require.EqualValues(t, 5_000_000, batch.Remaining)
-	var credit model.AdtyBalanceLedger
-	require.NoError(t, db.Where("user_id = ? AND ref_id = ? AND type = ?", customer.Id, ext.TradeNo, model.AdtyLedgerTypeGiftFulfillment).First(&credit).Error)
-	require.EqualValues(t, 5_000_000, credit.DeltaQuota)
-
-	// 重放的扫描不能再发一次：额度、通知、保障流水都不许再动。
-	reserves := countGiftLedgers(t, db, site.Id, "gift_reserve", ext.TradeNo, model.AdtySiteWalletMargin)
-	n, err = ResumePendingAdtyGiftFulfillments(site.Id)
-	require.NoError(t, err)
-	require.Zero(t, n)
-	require.EqualValues(t, 55_000_000, userQuotaOf(t, db, customer.Id))
-	require.EqualValues(t, 1, notified)
-	require.EqualValues(t, reserves, countGiftLedgers(t, db, site.Id, "gift_reserve", ext.TradeNo, model.AdtySiteWalletMargin))
-}
-
-func TestMarginTopUpShortOfGuaranteeLeavesGiftPending(t *testing.T) {
-	db := prepareSiteDB(t)
-	owner, site, customer, ext := seedReservedSiteGift(t, db, "gift-fulfil-short", "10")
-	_, err := model.CancelAdtyTopUp(ext.TradeNo, customer.Id)
-	require.NoError(t, err)
-	require.NoError(t, drainSiteGiftWallets(t, db, site.Id, "gift-fulfil-short"))
+	require.NoError(t, drainSiteGiftWallets(t, db, site.Id, "gift-log-pend"))
 	_, err = model.CompleteAdtyTopUp(ext.TradeNo, model.AdtyPaymentFacts{
 		Provider: model.PaymentProviderAdtyBEpusdt, PaidAmount: decimal.NewFromInt(100), FiatAmount: decimal.NewFromInt(100),
 		PaidCurrency: "USDT", Source: model.AdtyPaymentSourceCallback,
 	}, "")
 	require.NoError(t, err)
 
-	// 只补 2 USD：90% 的可取额度 1.8 USD 还是不够 10 USD 赠金。
-	_, err = ApplyAdtySiteWalletChange(site.Id, model.AdtySiteWalletEarnings, decimal.RequireFromString("2"), AdtySiteWalletChange{
-		Type: "earning_settlement", IdempotencyKey: "gift-fulfil-short-topup",
-	})
-	require.NoError(t, err)
-	require.NoError(t, TransferAdtyEarningToMargin(site.Id, owner.Id,
-		decimal.RequireFromString("2"), decimal.RequireFromString("2"), "gift-fulfil-short-transfer"))
-
-	require.EqualValues(t, 50_000_000, userQuotaOf(t, db, customer.Id))
-	var row model.AdtyGiftFulfillment
-	require.NoError(t, db.Where("trade_no = ?", ext.TradeNo).First(&row).Error)
-	require.Equal(t, model.AdtyGiftFulfillmentPending, row.Status)
-	_, margin := mustSiteGiftWallets(t, db, site.Id)
-	require.True(t, margin.FrozenUSD.IsZero())
+	credited := userQuotaOf(t, db, customer.Id)
+	require.EqualValues(t, 50_000_000, credited)
+	var entry model.Log
+	require.NoError(t, db.Where("user_id = ? AND type = ?", customer.Id, model.LogTypeTopup).Order("id DESC").First(&entry).Error)
+	require.Contains(t, entry.Content, "plus $0.00 bonus", "说明里的加赠必须是实际到账的那部分")
+	require.Contains(t, entry.Content, logger.FormatQuota(credited), "说明里必须写出实际到账额度")
+	require.NotContains(t, entry.Content, "plus $10.00 bonus", "不能报下单时冻结的全额加赠")
 }
 
 func TestSiteGiftBonusQuotaUsesAdtyBonusUSDForSite(t *testing.T) {
@@ -1104,4 +1028,104 @@ func countLedgersByType(t *testing.T, db *gorm.DB, siteID int, typ string) int64
 	var n int64
 	require.NoError(t, db.Model(&model.AdtySiteWalletLedger{}).Where("site_id = ? AND type = ?", siteID, typ).Count(&n).Error)
 	return n
+}
+
+func TestMarginTopUpFulfillsPendingSiteGift(t *testing.T) {
+	db := prepareSiteDB(t)
+	owner, site, customer, ext := seedReservedSiteGift(t, db, "gift-fulfil", "10")
+	_, err := model.CancelAdtyTopUp(ext.TradeNo, customer.Id)
+	require.NoError(t, err)
+	require.NoError(t, drainSiteGiftWallets(t, db, site.Id, "gift-fulfil"))
+	_, err = model.CompleteAdtyTopUp(ext.TradeNo, model.AdtyPaymentFacts{
+		Provider: model.PaymentProviderAdtyBEpusdt, PaidAmount: decimal.NewFromInt(100), FiatAmount: decimal.NewFromInt(100),
+		PaidCurrency: "USDT", Source: model.AdtyPaymentSourceCallback,
+	}, "")
+	require.NoError(t, err)
+	// 本金到账、赠金被扣下：pending，客户只拿到 50,000,000。
+	require.EqualValues(t, 50_000_000, userQuotaOf(t, db, customer.Id))
+	reloaded, err := model.GetAdtyTopupOrder(ext.TradeNo)
+	require.NoError(t, err)
+	require.Equal(t, model.AdtyGiftFulfillmentPending, reloaded.GiftFulfillmentStatus)
+
+	notified := 0
+	oldNotify := adtyNotifyGiftFulfillmentFulfilled
+	adtyNotifyGiftFulfillmentFulfilled = func(*model.AdtyGiftFulfillment, int64) { notified++ }
+	t.Cleanup(func() { adtyNotifyGiftFulfillmentFulfilled = oldNotify })
+
+	// 保障还不够：兑现必须是空操作，pending 原样保留。
+	n, err := ResumePendingAdtyGiftFulfillments(site.Id)
+	require.NoError(t, err)
+	require.Zero(t, n)
+	require.EqualValues(t, 50_000_000, userQuotaOf(t, db, customer.Id))
+
+	// 站长补足保证金（唯一的补足入口）：收益转保证金，转账提交后自动兑现一次。
+	_, err = ApplyAdtySiteWalletChange(site.Id, model.AdtySiteWalletEarnings, decimal.RequireFromString("20"), AdtySiteWalletChange{
+		Type: "earning_settlement", IdempotencyKey: "gift-fulfil-topup",
+	})
+	require.NoError(t, err)
+	require.NoError(t, TransferAdtyEarningToMargin(site.Id, owner.Id,
+		decimal.RequireFromString("20"), decimal.RequireFromString("20"), "gift-fulfil-transfer"))
+
+	require.EqualValues(t, 55_000_000, userQuotaOf(t, db, customer.Id))
+	require.EqualValues(t, 1, notified)
+	var row model.AdtyGiftFulfillment
+	require.NoError(t, db.Where("trade_no = ?", ext.TradeNo).First(&row).Error)
+	require.Equal(t, model.AdtyGiftFulfillmentFulfilled, row.Status)
+	require.Contains(t, row.History, "fulfilled")
+	reloaded, err = model.GetAdtyTopupOrder(ext.TradeNo)
+	require.NoError(t, err)
+	require.Equal(t, model.AdtyGiftFulfillmentFulfilled, reloaded.GiftFulfillmentStatus)
+	// 保障这次真的取回来了：保证金上留 10 USD 冻结。
+	_, margin := mustSiteGiftWallets(t, db, site.Id)
+	require.True(t, margin.FrozenUSD.Equal(decimal.RequireFromString("10")))
+	// 首次下单时保证金那 6 USD 的 reserve 在取消时已释放，兑现时又按 10 USD 重新取了一次。
+	var reserve model.AdtySiteWalletLedger
+	require.NoError(t, db.Where("site_id = ? AND type = ? AND ref_id = ? AND wallet_kind = ?", site.Id, "gift_reserve", ext.TradeNo, model.AdtySiteWalletMargin).
+		Order("id desc").First(&reserve).Error)
+	require.True(t, reserve.HoldDelta.Equal(decimal.RequireFromString("10")))
+	// 批次跟着余额走：本单赠金批次补齐到全额。
+	var batch model.AdtyFundBatch
+	require.NoError(t, db.Where("user_id = ? AND source = ? AND kind = ?", customer.Id, ext.TradeNo, "bonus").First(&batch).Error)
+	require.EqualValues(t, 5_000_000, batch.Original)
+	require.EqualValues(t, 5_000_000, batch.Remaining)
+	var credit model.AdtyBalanceLedger
+	require.NoError(t, db.Where("user_id = ? AND ref_id = ? AND type = ?", customer.Id, ext.TradeNo, model.AdtyLedgerTypeGiftFulfillment).First(&credit).Error)
+	require.EqualValues(t, 5_000_000, credit.DeltaQuota)
+
+	// 重放的扫描不能再发一次：额度、通知、保障流水都不许再动。
+	reserves := countGiftLedgers(t, db, site.Id, "gift_reserve", ext.TradeNo, model.AdtySiteWalletMargin)
+	n, err = ResumePendingAdtyGiftFulfillments(site.Id)
+	require.NoError(t, err)
+	require.Zero(t, n)
+	require.EqualValues(t, 55_000_000, userQuotaOf(t, db, customer.Id))
+	require.EqualValues(t, 1, notified)
+	require.EqualValues(t, reserves, countGiftLedgers(t, db, site.Id, "gift_reserve", ext.TradeNo, model.AdtySiteWalletMargin))
+}
+
+func TestMarginTopUpShortOfGuaranteeLeavesGiftPending(t *testing.T) {
+	db := prepareSiteDB(t)
+	owner, site, customer, ext := seedReservedSiteGift(t, db, "gift-fulfil-short", "10")
+	_, err := model.CancelAdtyTopUp(ext.TradeNo, customer.Id)
+	require.NoError(t, err)
+	require.NoError(t, drainSiteGiftWallets(t, db, site.Id, "gift-fulfil-short"))
+	_, err = model.CompleteAdtyTopUp(ext.TradeNo, model.AdtyPaymentFacts{
+		Provider: model.PaymentProviderAdtyBEpusdt, PaidAmount: decimal.NewFromInt(100), FiatAmount: decimal.NewFromInt(100),
+		PaidCurrency: "USDT", Source: model.AdtyPaymentSourceCallback,
+	}, "")
+	require.NoError(t, err)
+
+	// 只补 2 USD：90% 的可取额度 1.8 USD 还是不够 10 USD 赠金。
+	_, err = ApplyAdtySiteWalletChange(site.Id, model.AdtySiteWalletEarnings, decimal.RequireFromString("2"), AdtySiteWalletChange{
+		Type: "earning_settlement", IdempotencyKey: "gift-fulfil-short-topup",
+	})
+	require.NoError(t, err)
+	require.NoError(t, TransferAdtyEarningToMargin(site.Id, owner.Id,
+		decimal.RequireFromString("2"), decimal.RequireFromString("2"), "gift-fulfil-short-transfer"))
+
+	require.EqualValues(t, 50_000_000, userQuotaOf(t, db, customer.Id))
+	var row model.AdtyGiftFulfillment
+	require.NoError(t, db.Where("trade_no = ?", ext.TradeNo).First(&row).Error)
+	require.Equal(t, model.AdtyGiftFulfillmentPending, row.Status)
+	_, margin := mustSiteGiftWallets(t, db, site.Id)
+	require.True(t, margin.FrozenUSD.IsZero())
 }
