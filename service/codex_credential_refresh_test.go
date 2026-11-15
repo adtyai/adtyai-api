@@ -183,3 +183,109 @@ func TestRefreshCodexChannelCredentialSerializesTokenRotation(t *testing.T) {
 	require.NoError(t, db.First(&stored, channel.Id).Error)
 	require.Contains(t, stored.Key, `"refresh_token":"rt-3"`)
 }
+
+// 这条守的是 `ISS-R4-0103` 的 (a) 面：**跨进程 advisory lock 必须受调用方 deadline 约束。**
+//
+// 修前拿锁用的是 `context.Background()`，调用方给的 `ctx` 根本没传进来。另一个进程
+// 卡死但连接还在时，`pg_advisory_lock` 会无限期阻塞，连带这条渠道的 `sync.Mutex`
+// 一起占住，之后该渠道所有刷新和相关 HTTP 请求永不返回。
+//
+// 断言：ctx 1s 到期前后必须带着 `context.DeadlineExceeded` 返回，且**不能**在没拿到
+// 锁的情况下已经去上游换票。
+func TestCodexRefreshLockHonorsCallerDeadline(t *testing.T) {
+	db := adtyTestDB(t)
+	require.NoError(t, db.AutoMigrate(&model.Channel{}))
+	channel := &model.Channel{
+		Name: "codex-lock-deadline", Type: constant.ChannelTypeCodex, Status: 1,
+		Key: `{"access_token":"at-1","refresh_token":"rt-1","account_id":"acc"}`,
+	}
+	require.NoError(t, db.Create(channel).Error)
+
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	conn, err := sqlDB.Conn(context.Background())
+	require.NoError(t, err)
+	_, err = conn.ExecContext(context.Background(), "SELECT pg_advisory_lock($1)", codexRefreshLockKey(channel.Id))
+	require.NoError(t, err)
+	held := true
+	unlockOther := func() {
+		if !held {
+			return
+		}
+		held = false
+		_, _ = conn.ExecContext(context.Background(), "SELECT pg_advisory_unlock($1)", codexRefreshLockKey(channel.Id))
+	}
+	t.Cleanup(func() {
+		unlockOther()
+		_ = conn.Close()
+	})
+
+	upstreamCalled := make(chan struct{}, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalled <- struct{}{}
+		_, _ = w.Write([]byte(`{"access_token":"at-2","refresh_token":"rt-2","expires_in":3600}`))
+	}))
+	t.Cleanup(server.Close)
+	t.Cleanup(SetCodexOAuthTokenURLForTest(server.URL))
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := RefreshCodexChannelCredential(ctx, channel.Id, CodexCredentialRefreshOptions{})
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		require.ErrorIs(t, err, context.DeadlineExceeded, "拿锁必须跟随调用方 deadline")
+	case <-time.After(5 * time.Second):
+		// 修前就在这里挂住：1s 的 ctx 对 advisory lock 完全不生效。
+		unlockOther()
+		t.Fatal("refresh 在调用方 deadline 之后仍在等跨进程锁（ISS-R4-0103：pg_advisory_lock 无超时）")
+	}
+	unlockOther()
+	select {
+	case <-upstreamCalled:
+		t.Fatal("没拿到锁就不该去上游换票")
+	case <-time.After(200 * time.Millisecond):
+	}
+}
+
+// 这条守的是 `ISS-R4-0103` 的 (b) 面：解锁失败时**不能**把带锁的连接还回池。
+//
+// session 级 advisory lock 跟着物理连接走，`conn.Close()` 只是还池。修前解锁错误被
+// `_, _ =` 吞掉、连接照旧还池，于是这把锁留在了池里，下一个拿到这条连接的人
+// 以为自己在别处加锁。丢弃物理连接后会话结束，锁必须随之释放。
+//
+// 断言方式取「物理会话是否还在」：advisory lock 在同会话内可重入，
+// 直接在池里再 `pg_try_advisory_lock` 一次会假阳性（拿到的可能就是同一条连接）。
+func TestDiscardedCodexRefreshConnReleasesSessionLock(t *testing.T) {
+	db := adtyTestDB(t)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+
+	conn, err := sqlDB.Conn(context.Background())
+	require.NoError(t, err)
+	key := codexRefreshLockKey(987654321)
+	_, err = conn.ExecContext(context.Background(), "SELECT pg_advisory_lock($1)", key)
+	require.NoError(t, err)
+	var pid int
+	require.NoError(t, conn.QueryRowContext(context.Background(), "SELECT pg_backend_pid()").Scan(&pid))
+
+	discardCodexRefreshConn(conn)
+
+	other, err := sqlDB.Conn(context.Background())
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = other.Close() })
+
+	// 会话结束是服务端异步收尾，给一小段时间轮询。
+	alive := 1
+	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
+		require.NoError(t, other.QueryRowContext(context.Background(),
+			"SELECT count(*) FROM pg_stat_activity WHERE pid = $1", pid).Scan(&alive))
+		if alive == 0 {
+			break
+		}
+	}
+	require.Zero(t, alive, "带锁的连接必须被丢弃（物理会话结束），不能只 Close 还回池")
+}
