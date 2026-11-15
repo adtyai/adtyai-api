@@ -28,8 +28,13 @@ func (UserOAuthBinding) TableName() string {
 }
 
 // EnsureUserOAuthBindingSiteSubjectIndex copies each binding's site from its
-// user, drops the platform-wide (provider, subject) unique index, and keeps a
-// unique scope of provider + site + subject.
+// user, narrows the unique scope to provider + site + subject, and only then
+// drops the platform-wide (provider, subject) unique index.
+//
+// The order matters. This migration runs on the master node only, but old nodes
+// keep serving OAuth callbacks during a rolling deploy, and duplicate binding
+// checks are "count then insert". Dropping first would leave a window where
+// nothing stops one provider account from being bound to two users.
 func EnsureUserOAuthBindingSiteSubjectIndex(db *gorm.DB) error {
 	if db == nil {
 		return fmt.Errorf("user oauth binding site subject index: database is nil")
@@ -45,23 +50,59 @@ func EnsureUserOAuthBindingSiteSubjectIndex(db *gorm.DB) error {
 			return fmt.Errorf("backfill user oauth binding site_id: %w", err)
 		}
 	}
+	if err := ensureUserOAuthBindingSiteSubjectUniqueIndex(db); err != nil {
+		return err
+	}
 	if db.Migrator().HasIndex(&UserOAuthBinding{}, legacyUserOAuthBindingSubjectIndex) {
 		if err := db.Migrator().DropIndex(&UserOAuthBinding{}, legacyUserOAuthBindingSubjectIndex); err != nil {
 			return fmt.Errorf("drop legacy user oauth binding subject index: %w", err)
 		}
 	}
+	return nil
+}
+
+// ensureUserOAuthBindingSiteSubjectUniqueIndex counts the rows that the new
+// scope would reject before it creates the index.
+//
+// Duplicates must stop the migration for a human to resolve, not be kept. The
+// count is also how we decide whether the data may pass: it does not look at
+// index names, which change when an index is rebuilt or aliased, so "is there
+// already a unique index" is never answered from a name. A failed create leaves
+// the legacy index in place instead of leaving the table unconstrained.
+func ensureUserOAuthBindingSiteSubjectUniqueIndex(db *gorm.DB) error {
+	var duplicated int64
+	query := `
+		SELECT COUNT(*) FROM (
+			SELECT provider_id, site_id, provider_user_id
+			FROM user_oauth_bindings
+			GROUP BY provider_id, site_id, provider_user_id
+			HAVING COUNT(*) > 1
+		) AS duplicated
+	`
+	if err := db.Raw(query).Scan(&duplicated).Error; err != nil {
+		return fmt.Errorf("count duplicate user oauth bindings: %w", err)
+	}
+	if duplicated > 0 {
+		return fmt.Errorf(
+			"duplicate user oauth bindings must be resolved before the unique index: %d (provider, site, subject) groups",
+			duplicated,
+		)
+	}
 	if db.Migrator().HasIndex(&UserOAuthBinding{}, userOAuthBindingSiteSubjectIndex) {
 		return nil
 	}
 	statement := &gorm.Statement{DB: db}
-	return db.Exec(fmt.Sprintf(
+	if err := db.Exec(fmt.Sprintf(
 		"CREATE UNIQUE INDEX %s ON %s (%s, %s, %s)",
 		statement.Quote(userOAuthBindingSiteSubjectIndex),
 		statement.Quote("user_oauth_bindings"),
 		statement.Quote("provider_id"),
 		statement.Quote("site_id"),
 		statement.Quote("provider_user_id"),
-	)).Error
+	)).Error; err != nil {
+		return fmt.Errorf("create user oauth binding site subject index: %w", err)
+	}
+	return nil
 }
 
 // GetUserOAuthBindingsByUserId returns all OAuth bindings for a user
