@@ -3,8 +3,10 @@ package controller
 import (
 	"testing"
 
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting/adty_setting"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // 保存**不拒绝**，但要让「这几项不会生效」在响应里看得见。
@@ -46,4 +48,25 @@ func TestResellerWarningsSurfaceSenderDomainGap(t *testing.T) {
 	warnings := adtyResellerSettingsWarnings(cfg)
 	assert.Len(t, warnings, 1)
 	assert.Contains(t, warnings[0], "Resend API key is empty")
+}
+
+// 密钥被清空时只有一行 SysError，运营看到的现象却是「分站注册全挂了」，
+// 根因还在另一条密钥上（ISS-R4-0122）。所以要把「哪一条读不出来」摆到设置页上。
+func TestResellerSettingsWarnAboutClearedSecrets(t *testing.T) {
+	db := modelManagementDB(t, "sqlite", "")
+	require.NoError(t, db.AutoMigrate(&model.Option{}))
+	t.Setenv("CRYPTO_SECRET", "synthetic-encryption-key-for-local-tests-only")
+	key := adty_setting.ResellerSettingModule + "." + adty_setting.ResellerKeyCloudflareTok
+	require.NoError(t, db.Save(&model.Option{Key: key, Value: "adty:secret:v1:truncated"}).Error)
+
+	model.InitOptionMap()
+	warnings := adtyClearedSecretWarnings()
+	require.Len(t, warnings, 1)
+	assert.Contains(t, warnings[0], key, "要说清是哪一条密钥被清空了")
+	assert.Contains(t, warnings[0], "re-enter it")
+
+	// 填好之后不再有这条告警（顺带把包级状态清干净）。
+	require.NoError(t, db.Save(&model.Option{Key: key, Value: ""}).Error)
+	model.InitOptionMap()
+	assert.Empty(t, adtyClearedSecretWarnings())
 }

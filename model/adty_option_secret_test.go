@@ -192,7 +192,9 @@ func TestSiteSecretOptionsDatabaseMatrix(t *testing.T) {
 				loadOptionsFromDatabase()
 				assert.False(t, common.RegisterEnabled, "an unreadable provider secret must not block unrelated security settings")
 				assert.Empty(t, cfg.CloudflareApiToken, "a failed reload must invalidate the old token")
-				assert.Empty(t, cfg.TurnstileWidgetSecret)
+				// 坏的是 token，widget secret 解得好好的：不能被连带清空（ISS-R4-0122）。
+				assert.Equal(t, map[string]string{"widget": "synthetic-widget-secret"}, cfg.TurnstileWidgetSecret,
+					"an unrelated credential must survive another one's corruption")
 				assert.Equal(t, bad, stored(tokenKey), "corrupted ciphertext must never be replaced with plaintext")
 			}
 			require.NoError(t, db.Save(&Option{Key: tokenKey, Value: upgraded}).Error)

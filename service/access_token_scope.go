@@ -264,7 +264,9 @@ var accessTokenLegacyActionScopes = map[string]map[string]string{
 	"GET /api/vendors/search":                          {"adty_model:read": "model:read"},
 	"GET /api/vendors/:id":                             {"adty_model:read": "model:read"},
 	"POST /api/vendors/operations/preview":             {"adty_model:read": "model:read"},
-	"PUT /api/models/":                                 {"adty_model:write": "model:write"},
+	// 下架（status=0）和删除是同一个动作，走同一个粗粒度 scope：能删的旧令牌
+	// 不该因为这次下架要「模型·删除」而突然做不了（ISS-R4-0117）。
+	"PUT /api/models/":                                 {"adty_model:write": "model:write", "adty_model:delete": "model:write"},
 	"PUT /api/vendors/":                                {"adty_model:write": "model:write"},
 	"GET /api/prefill_group/":                          {"adty_model:read": "group:read"},
 	"PUT /api/prefill_group/":                          {"adty_model:write": "group:write"},

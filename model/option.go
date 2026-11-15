@@ -252,12 +252,16 @@ func loadOptionsFromDatabase() {
 	defer passkeyOptionMutex.Unlock()
 	options, err := AllOption()
 	if err != nil {
-		clearAdtyOptionSecrets()
+		// 只清解不开的那一条：一条坏密文不该连带清掉另一条完好的密钥（ISS-R4-0122）。
+		reloadAdtyOptionSecrets()
 		common.SysError("could not load options; verify database access, CRYPTO_SECRET and encrypted site settings")
 		// A broken provider credential must not suppress unrelated security policy.
 		if err := DB.Where(commonKeyCol+" NOT IN ?", adtySecretOptionKeys).Find(&options).Error; err != nil {
 			return
 		}
+	} else {
+		// 这次整批都读得出来，之前「哪条被清空」的记录就该消失。
+		recordAdtyClearedOptionSecrets(nil)
 	}
 	passkeyOptions := make(map[string]string)
 	for _, option := range options {
