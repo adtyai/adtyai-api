@@ -32,9 +32,16 @@ afterEach(() => {
   useAuthStore.getState().auth.reset()
 })
 
-it.each(['Cost factor', 'Markup limit', 'Reason'])(
+// 同一张面板上有两处「Reason」：站点编辑的 site-reason 和保证金码的
+// margin-code-reason。按标签文字找会命中两个，所以用字段 id 定位——
+// 这不是产品缺陷，是选择器不够具体。
+it.each([
+  ['Cost factor', 'site-cost-factor'],
+  ['Markup limit', 'site-max-markup'],
+  ['Reason', 'site-reason'],
+])(
   'confirms before closing site management with an edited %s',
-  async (label) => {
+  async (_label, fieldId) => {
     useAuthStore.getState().auth.setUser({ id: 1, username: 'root', role: 100 })
     vi.spyOn(api, 'get').mockImplementation(async (url) => {
       const path = String(url)
@@ -70,10 +77,16 @@ it.each(['Cost factor', 'Markup limit', 'Reason'])(
       </QueryClientProvider>
     )
     const user = userEvent.setup()
-    await user.type(await screen.findByLabelText(label), '1.25')
+    const field = () => {
+      const element = document.getElementById(fieldId)
+      if (!element) throw new Error(`field ${fieldId} is not mounted`)
+      return element
+    }
+    await waitFor(() => expect(field()).toBeInTheDocument())
+    await user.type(field(), '1.25')
     await user.keyboard('{Escape}')
     await user.click(await screen.findByRole('button', { name: 'Stay' }))
-    expect(screen.getByLabelText(label)).toHaveValue('1.25')
+    expect(field()).toHaveValue('1.25')
     expect(onOpenChange).not.toHaveBeenCalled()
     await user.keyboard('{Escape}')
     await user.click(await screen.findByRole('button', { name: 'Leave' }))
@@ -82,17 +95,18 @@ it.each(['Cost factor', 'Markup limit', 'Reason'])(
   }
 )
 
-it.each(['stats', 'customers', 'transfer-targets'])(
+// 关站对话框现在固定 `transfer_to: 0`（客户由主站继承），页面上已经没有
+// 「转移目标」列表，`/sites` 在这次渲染里根本不会被请求，所以原来那条
+// transfer-targets 用例测的是一个已移除的控件，永远等不到错误态。
+// 其余两条（stats / customers）仍然有效。
+it.each(['stats', 'customers'])(
   'retries failed site %s without presenting empty data',
   async (section) => {
     let failed = true
     useAuthStore.getState().auth.setUser({ id: 1, username: 'root', role: 100 })
     const requests = vi.spyOn(api, 'get').mockImplementation(async (url) => {
       const path = String(url)
-      const isTarget =
-        section === 'transfer-targets'
-          ? path.endsWith('/sites')
-          : path.endsWith(`/${section}`)
+      const isTarget = path.endsWith(`/${section}`)
       if (isTarget && failed) throw new Error('offline')
       let data: unknown = {
         site: {
@@ -127,11 +141,6 @@ it.each(['stats', 'customers', 'transfer-targets'])(
       </QueryClientProvider>
     )
     await screen.findByText('alpha.example')
-    if (section === 'transfer-targets') {
-      await userEvent
-        .setup()
-        .click(screen.getByRole('button', { name: 'Close site' }))
-    }
     const retry = await screen.findByRole('button', { name: 'Retry' })
     const before = requests.mock.calls.length
     failed = false

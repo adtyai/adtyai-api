@@ -151,8 +151,12 @@ describe('site owner center entry', () => {
       ?.items.map((item) => item.title)
 
   it('shows Site owner center after Referral for a site owner', () => {
+    // Tickets 是后加的入口，位置在 Wallet 之后、Referral 之前
+    // （`use-sidebar-data.ts` 的 personal 分组）。它不是「Referral 消失」，
+    // 而是断言漏了这个新项。
     expect(accountTitles(true)).toEqual([
       'Wallet',
+      'Tickets',
       'Referral',
       'Site owner center',
       'Profile',
@@ -189,7 +193,13 @@ describe('security sidebar visibility', () => {
       result.current
         .find((group) => group.id === 'personal')
         ?.items.map((item) => item.title)
-    ).toEqual(['Wallet', 'Referral', 'Profile', 'Security & Access'])
+    ).toEqual([
+      'Wallet',
+      'Tickets',
+      'Referral',
+      'Profile',
+      'Security & Access',
+    ])
     expect(
       result.current
         .flatMap((group) => group.items)
