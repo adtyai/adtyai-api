@@ -62,3 +62,51 @@ func TestEnsureAdtySitePriceUniqueIndexMigratesLegacyIndex(t *testing.T) {
 		Markup: decimal.RequireFromString("1.1"), Version: 1, UpdatedAt: 1,
 	}).Error)
 }
+
+// 同名的旧索引存在但定义不对时，迁移必须失败退出，不能把「索引存在」当成
+// 「唯一约束已生效」——否则紧接着删掉 idx_site_price，表上就一条唯一约束都没有。
+func TestEnsureAdtySitePriceUniqueIndexRejectsStaleIndex(t *testing.T) {
+	db := adtyTestDB(t)
+	cases := []struct {
+		name  string
+		stale string
+	}{
+		{
+			name:  "same name without uniqueness",
+			stale: `CREATE INDEX idx_site_price_model ON adty_site_prices (site_id, user_id, "group", model)`,
+		},
+		{
+			name:  "same name on the wrong columns",
+			stale: `CREATE UNIQUE INDEX idx_site_price_model ON adty_site_prices (site_id)`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.NoError(t, db.Exec(`DROP TABLE IF EXISTS adty_site_prices`).Error)
+			require.NoError(t, db.Exec(`
+				CREATE TABLE adty_site_prices (
+					id bigserial PRIMARY KEY,
+					site_id int,
+					user_id int,
+					"group" varchar(64),
+					model varchar(191) NOT NULL DEFAULT '',
+					markup decimal(10,4) NOT NULL DEFAULT 1,
+					pending_markup decimal(10,4) NOT NULL DEFAULT 0,
+					pending_at bigint,
+					version bigint,
+					updated_at bigint
+				)
+			`).Error)
+			require.NoError(t, db.Exec(`CREATE UNIQUE INDEX idx_site_price ON adty_site_prices (site_id, user_id, "group")`).Error)
+			require.NoError(t, db.Exec(tc.stale).Error)
+
+			err := EnsureAdtySitePriceUniqueIndex(db)
+			require.Error(t, err, "an index that exists but is not current must fail the migration")
+			assert.True(t, db.Migrator().HasIndex(&AdtySitePrice{}, adtySitePriceLegacyIndex),
+				"the legacy unique index must survive a failed rebuild")
+
+			require.Error(t, EnsureAdtySitePriceUniqueIndex(db), "the failure must be stable on retry")
+			assert.True(t, db.Migrator().HasIndex(&AdtySitePrice{}, adtySitePriceLegacyIndex))
+		})
+	}
+}
