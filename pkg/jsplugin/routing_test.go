@@ -833,6 +833,11 @@ func TestDeclarativeRouteValidationProtectsNamespacesAndCanonicalSyntax(t *testi
 			expectedError: "reserved namespace /console",
 		},
 		{
+			name:          "retired marketing entry",
+			route:         Route{Method: "GET", Path: "/marketing", Type: RouteTypeDynamic, Decode: "decode", Render: "render"},
+			expectedError: "reserved namespace /marketing",
+		},
+		{
 			name:          "dynamic root can claim reserved subtree",
 			route:         Route{Method: "POST", Path: "/:root/jobs", Type: RouteTypeSubmit},
 			expectedError: "intersects reserved namespace",

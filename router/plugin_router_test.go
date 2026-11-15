@@ -387,7 +387,7 @@ func TestRetiredPlaygroundPathBeatsPluginDispatcher(t *testing.T) {
 		c.Abort()
 	})
 
-	for _, path := range []string{"/pg/chat/completions", "/api/adty/marketing/self", "/api/adty/admin/marketing/campaigns", "/api/deployments", "/api/deployments/settings", "/api/deployments/old/containers"} {
+	for _, path := range []string{"/pg/chat/completions", "/marketing", "/marketing/campaigns", "/api/adty/marketing/self", "/api/adty/admin/marketing/campaigns", "/api/deployments", "/api/deployments/settings", "/api/deployments/old/containers"} {
 		recorder := performPluginRequest(outer, http.MethodPost, path)
 		assert.Equal(t, http.StatusNotFound, recorder.Code, path)
 		assert.Contains(t, recorder.Body.String(), "Invalid URL", path)
@@ -402,6 +402,36 @@ func TestPlaygroundNamespaceRemainsReservedForPlugins(t *testing.T) {
 	assert.Contains(t, err.Error(), "reserved namespace /pg")
 }
 
+// The marketing module is retired, so /marketing has no page: the outer
+// router answers with the JSON 404 before the plugin dispatcher and before the
+// embedded frontend shell (docs/adty/features.md, /marketing 无页面).
+func TestRetiredMarketingEntryIsJSONNotFound(t *testing.T) {
+	outer := gin.New()
+	SetWebRouter(outer, WebAssets{IndexPage: []byte("<html>dashboard shell</html>")}, func(c *gin.Context) {
+		c.String(http.StatusOK, "plugin")
+		c.Abort()
+	})
+
+	for _, method := range []string{http.MethodGet, http.MethodPost} {
+		for _, path := range []string{"/marketing", "/marketing/", "/marketing/campaigns", "/marketing/promo-codes"} {
+			recorder := performPluginRequest(outer, method, path)
+			assert.Equal(t, http.StatusNotFound, recorder.Code, method+" "+path)
+			assert.Contains(t, recorder.Body.String(), "Invalid URL", method+" "+path)
+			assert.NotContains(t, recorder.Body.String(), "dashboard shell", method+" "+path)
+			assert.NotContains(t, recorder.Body.String(), "plugin", method+" "+path)
+			assert.Contains(t, recorder.Header().Get("Content-Type"), "application/json", method+" "+path)
+		}
+	}
+}
+
+func TestMarketingEntryRemainsReservedForPlugins(t *testing.T) {
+	_, err := jsplugin.CompilePlugin(routerPluginSource("retired-marketing", "1.0.0", `[
+		{method: "GET", path: "/marketing", type: "dynamic"}
+	]`), jsplugin.Options{Key: "retired-marketing", Version: "1.0.0"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "reserved namespace /marketing")
+}
+
 func TestExternalFrontendRejectsRetiredPlaygroundPath(t *testing.T) {
 	previousRegistry := jsplugin.DefaultRegistry
 	jsplugin.DefaultRegistry = jsplugin.NewRegistry()
@@ -414,7 +444,7 @@ func TestExternalFrontendRejectsRetiredPlaygroundPath(t *testing.T) {
 
 	engine := gin.New()
 	SetRouter(engine, WebAssets{})
-	for _, path := range []string{"/pg/chat/completions", "/api/adty/marketing/self", "/api/adty/admin/marketing/campaigns", "/api/deployments", "/api/deployments/settings", "/api/deployments/old/containers"} {
+	for _, path := range []string{"/pg/chat/completions", "/marketing", "/marketing/campaigns", "/api/adty/marketing/self", "/api/adty/admin/marketing/campaigns", "/api/deployments", "/api/deployments/settings", "/api/deployments/old/containers"} {
 		recorder := performPluginRequest(engine, http.MethodPost, path)
 		assert.Equal(t, http.StatusNotFound, recorder.Code, path)
 		assert.Contains(t, recorder.Body.String(), "Invalid URL", path)
