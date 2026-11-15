@@ -67,9 +67,6 @@ var PasswordLoginEnabled = true
 var PasswordLoginEncryptionEnabled = false
 var PasswordRegisterEnabled = true
 var EmailVerificationEnabled = false
-var GitHubOAuthEnabled = false
-var LinuxDOOAuthEnabled = false
-var WeChatAuthEnabled = false
 var TurnstileCheckEnabled = false
 var RegisterEnabled = true
 
@@ -109,14 +106,8 @@ var SMTPAccount = ""
 var SMTPFrom = ""
 var SMTPToken = ""
 
-var GitHubClientId = ""
-var GitHubClientSecret = ""
-var LinuxDOClientId = ""
-var LinuxDOClientSecret = ""
-var LinuxDOMinimumTrustLevel = 0
-
-var WeChatServerAddress = ""
-var WeChatServerToken = ""
+// WeChatAccountQRCodeImageURL only backs the historical wechat_qrcode status
+// key that site-scoped responses still normalize; WeChat sign-in is gone.
 var WeChatAccountQRCodeImageURL = ""
 
 var TurnstileSiteKey = ""
