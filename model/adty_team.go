@@ -155,6 +155,27 @@ func (AdtyTeamKey) TableName() string { return "adty_team_keys" }
 // handled is false when the token is not a team key.
 var AdtyTeamReserveHook func(tx *gorm.DB, tokenId, userId, delta int, ref string) (handled bool, err error)
 
+// AdtyTokenIsTeamKeyTx reports whether this token is bound to a team. A team key
+// spends the shared team balance, so the member's personal wallet — and their
+// principal lots — must not be charged for it.
+//
+// 判断只看绑定关系，不看团队余额：reserveAdtyTeamQuotaHook 在团队余额不足时
+// 直接报错，而不是回落到个人钱包，所以「有绑定」等价于「这笔是团队付的」。
+func AdtyTokenIsTeamKeyTx(tx *gorm.DB, tokenId int) (bool, error) {
+	if tx == nil || tokenId <= 0 {
+		return false, nil
+	}
+	if !tx.Migrator().HasTable(&AdtyTeamKey{}) {
+		// 没有绑表就等于没有团队 Key，个人计费照旧。
+		return false, nil
+	}
+	var count int64
+	if err := tx.Model(&AdtyTeamKey{}).Where("token_id = ?", tokenId).Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
 // AdtyBeforeUserDeleteHook closes a team when its leader is deleted.
 var AdtyBeforeUserDeleteHook func(tx *gorm.DB, userId int) error
 

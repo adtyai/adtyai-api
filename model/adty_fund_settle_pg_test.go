@@ -202,3 +202,40 @@ func TestLegacyChargeStillConsumesBatchPG(t *testing.T) {
 	require.NoError(t, err)
 	assert.EqualValues(t, int64(f.quota(t)), sums.Principal+sums.Bonus)
 }
+
+// 团队 Key 由团队共享余额付款，成员的个人本金批次不能参与。
+//
+// 这是「扣错人」级别的缺陷：如果结算时按 UserId 去扣批次，团队消费会把员工
+// 自己的本金吃掉。ReserveBillingOperation 的团队分支在登记分摊之前就返回了，
+// 所以这个 operation 名下本来就没有分摊；结算必须据此跳过，而不是把 applied
+// 当成「没登记过的旧账单」去扣个人批次。
+func TestTeamKeyConsumptionLeavesMemberBatchesUntouchedPG(t *testing.T) {
+	f := newFundSettleFixture(t, 50_000_000)
+	require.NoError(t, f.db.AutoMigrate(&AdtyTeamKey{}, &Token{}))
+	require.NoError(t, f.db.Create(&AdtyTeamKey{
+		TokenId: 9001, TeamId: 1, UserId: f.user.Id, Status: "active",
+	}).Error)
+
+	previousHook := AdtyTeamReserveHook
+	AdtyTeamReserveHook = func(tx *gorm.DB, tokenId, userId, delta int, ref string) (bool, error) {
+		return true, nil // 模拟团队余额已扣
+	}
+	t.Cleanup(func() { AdtyTeamReserveHook = previousHook })
+
+	spec := BillingOperation{OperationKey: "request:team-1", UserId: f.user.Id, TokenId: 9001, Kind: "request"}
+	_, err := ReserveBillingOperation(spec, 30_000_000)
+	require.NoError(t, err)
+
+	assert.EqualValues(t, 50_000_000, f.quota(t), "团队付款不动成员个人余额")
+	assert.EqualValues(t, 50_000_000, f.remaining(t), "预扣阶段不动个人批次")
+	assert.EqualValues(t, 0, f.held(t, "request:team-1"), "团队付款不登记个人分摊")
+
+	require.NoError(t, f.db.Model(&BillingOperation{}).
+		Where("operation_key = ?", "request:team-1").
+		Updates(map[string]any{"actual_quota": 30_000_000, "state": BillingSettlePending}).Error)
+	_, _, err = ApplyBillingSettlement("request:team-1")
+	require.NoError(t, err)
+
+	assert.EqualValues(t, 50_000_000, f.remaining(t), "结算也不能扣成员个人批次")
+	assert.EqualValues(t, 50_000_000, f.quota(t), "团队付款不在成员个人账上再扣一次")
+}

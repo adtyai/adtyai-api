@@ -535,8 +535,17 @@ func ApplyBillingSettlement(key string) (*BillingOperation, bool, error) {
 		// A.12.1/A.12.2.6：预扣阶段登记的分摊在这里转成实扣，同时把批次 remaining
 		// 扣掉。两者同一事务，失败一起回滚，不会出现「余额变了批次没变」。
 		// applied 是这次业务最终真正消耗的额度：预扣 base + 补扣 charged。
-		if err := SettleAdtyFundAllocationsTx(tx, row.UserId, row.OperationKey, int64(base+charged), int64(balance)); err != nil {
+		//
+		// 团队 Key 由团队共享余额付款，成员的个人本金批次不参与——不跳过的话，
+		// 团队消费会吃掉员工自己的本金，那是「扣错人」而不是「多扣」。
+		teamPaid, err := AdtyTokenIsTeamKeyTx(tx, row.TokenId)
+		if err != nil {
 			return err
+		}
+		if !teamPaid {
+			if err := SettleAdtyFundAllocationsTx(tx, row.UserId, row.OperationKey, int64(base+charged), int64(balance)); err != nil {
+				return err
+			}
 		}
 		row.ReservedQuota, row.TokenReservedQuota = base, tokenBase
 		row.Shortfall, row.AppliedQuota = delta-charged, base+charged

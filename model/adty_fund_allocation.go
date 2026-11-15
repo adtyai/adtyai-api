@@ -312,6 +312,19 @@ func SettleAdtyFundAllocationsTx(tx *gorm.DB, userID int, operationID string, ap
 		// 批次总量不足以覆盖实际消耗：账面已经不一致，必须让事务失败而不是悄悄放过。
 		return adtyFundBatchShortfallError(left)
 	}
+	// 收尾校验：这个 operation 名下被占用的额度必须正好等于本次实际消耗。
+	// 不等说明前面某处漏记了分摊（或释放多了），此时静默通过会让批次与余额的
+	// 偏差永久留在账上，所以直接让事务回滚。
+	var total struct{ Held int64 }
+	if err := tx.Model(&AdtyFundAllocation{}).
+		Select("coalesce(sum(held),0) as held").
+		Where("user_id = ? AND operation_id = ?", userID, operationID).
+		Scan(&total).Error; err != nil {
+		return err
+	}
+	if total.Held != applied {
+		return adtyFundBatchShortfallError(total.Held - applied)
+	}
 	return nil
 }
 
