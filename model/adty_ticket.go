@@ -59,17 +59,20 @@ type AdtyTicketMessage struct {
 func (AdtyTicketMessage) TableName() string { return "adty_ticket_messages" }
 
 // AdtyTicketImage is a private raster attachment. Bytes stay on disk; this row is the authorization record.
+// Visibility mirrors AdtyTicketMessage: an image uploaded for an internal note is
+// internal and never reaches a customer, in the detail list or by direct id.
 type AdtyTicketImage struct {
-	Id        int64  `json:"id"`
-	TicketId  int64  `json:"ticket_id" gorm:"index"`
-	MessageId int64  `json:"message_id" gorm:"index"`
-	Mime      string `json:"mime" gorm:"type:varchar(32)"`
-	Size      int    `json:"size"`
-	Width     int    `json:"width"`
-	Height    int    `json:"height"`
-	SHA256    string `json:"sha256" gorm:"type:varchar(64)"`
-	Storage   string `json:"-" gorm:"type:varchar(128)"`
-	CreatedAt int64  `json:"created_at" gorm:"autoCreateTime"`
+	Id         int64  `json:"id"`
+	TicketId   int64  `json:"ticket_id" gorm:"index"`
+	MessageId  int64  `json:"message_id" gorm:"index"`
+	Visibility string `json:"visibility" gorm:"type:varchar(16);index"`
+	Mime       string `json:"mime" gorm:"type:varchar(32)"`
+	Size       int    `json:"size"`
+	Width      int    `json:"width"`
+	Height     int    `json:"height"`
+	SHA256     string `json:"sha256" gorm:"type:varchar(64)"`
+	Storage    string `json:"-" gorm:"type:varchar(128)"`
+	CreatedAt  int64  `json:"created_at" gorm:"autoCreateTime"`
 }
 
 func (AdtyTicketImage) TableName() string { return "adty_ticket_images" }
@@ -139,4 +142,18 @@ func RemapAdtyTicketLegacyStatuses(db *gorm.DB) error {
 		return err
 	}
 	return db.Model(&AdtyTicket{}).Where("status = ? AND assignee_id = 0", AdtyTicketLegacyOpen).Update("status", AdtyTicketNew).Error
+}
+
+// BackfillAdtyTicketImageVisibility hides every image written before the
+// visibility column existed. Stored rows cannot prove their message was a
+// public reply, and the two mistakes are not symmetric: hiding a customer's
+// public image is a visible, appealable defect, while exposing an internal
+// screenshot cannot be undone. Legacy rows therefore land on internal.
+func BackfillAdtyTicketImageVisibility(db *gorm.DB) error {
+	if db == nil {
+		db = DB
+	}
+	return db.Model(&AdtyTicketImage{}).
+		Where("visibility IS NULL OR visibility = ?", "").
+		Update("visibility", AdtyTicketVisibilityNote).Error
 }
