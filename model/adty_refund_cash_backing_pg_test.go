@@ -191,3 +191,84 @@ func TestCompletedRefundReplaysDespiteCashBackingCheckPG(t *testing.T) {
 	assert.Equal(t, AdtyManualRefundStatusCompleted, row.Status)
 	assert.EqualValues(t, now, row.CompletedAt, "重放不能改写完成时间")
 }
+
+// ISS-R4-0053：现金背书是每个入口自己的义务，不是只有「申请」和「完成」两处。
+//
+// 当前不出事只是因为「唯一的行创建点在申请阶段的门之后」，安全模型是
+// 「多入口、单闸门」——补丁之前留下的行会走 approve → payout → complete，
+// 0043 只在最后一步拦。一旦有人新增跳过完成的路径，整条链路对存量行无防护。
+// 所以这里逐入口断言「独立可拒」，而不是「最终不付钱」。
+
+func TestStaleSubmittedTeamRefundCannotApprovePG(t *testing.T) {
+	db, root := adtyCashRefundFixture(t)
+	seedAdtyCashRefundOrder(t, db, root, "STALE-SUBMITTED-TEAM-1", "adty_team", 42, decimal.Zero)
+	now := common.GetTimestamp()
+	require.NoError(t, db.Create(&AdtyManualRefund{
+		RefundId: "stale-submitted-team", TradeNo: "STALE-SUBMITTED-TEAM-1", UserId: root.Id,
+		Status: AdtyManualRefundStatusSubmitted, RequestUSD: decimal.NewFromInt(100),
+		RequestQuota: 50_000_000, Reason: "submitted before the patch",
+		ApplyOperatorId: root.Id, AppliedAt: now, ApplyIdemKey: "stale-submitted-team",
+	}).Error)
+
+	_, err := ApproveAdtyTopUpManualRefund("STALE-SUBMITTED-TEAM-1", "stale-submitted-team",
+		root.Id, "approve-stale-submitted-team", "")
+	require.Error(t, err, "补丁前遗留的 submitted 团队单不能在审批阶段被推进")
+	assert.Contains(t, err.Error(), "cannot be refunded in cash")
+
+	var row AdtyManualRefund
+	require.NoError(t, db.Where("refund_id = ?", "stale-submitted-team").First(&row).Error)
+	assert.Equal(t, AdtyManualRefundStatusSubmitted, row.Status, "被拒的审批不能推进状态")
+	assert.Zero(t, row.ApprovedAt, "被拒的审批不能写审批时间")
+}
+
+func TestStaleApprovedTeamRefundCannotRecordPayoutPG(t *testing.T) {
+	db, root := adtyCashRefundFixture(t)
+	seedAdtyCashRefundOrder(t, db, root, "STALE-PAYOUT-TEAM-1", "adty_team", 42, decimal.Zero)
+	now := common.GetTimestamp()
+	require.NoError(t, db.Create(&AdtyManualRefund{
+		RefundId: "stale-payout-team", TradeNo: "STALE-PAYOUT-TEAM-1", UserId: root.Id,
+		Status: AdtyManualRefundStatusApproved, RequestUSD: decimal.NewFromInt(100),
+		RequestQuota: 50_000_000, Reason: "approved before the patch",
+		ApplyOperatorId: root.Id, AppliedAt: now, ApplyIdemKey: "stale-payout-team",
+		ApproveOperatorId: root.Id, ApprovedAt: now,
+	}).Error)
+
+	_, err := RecordAdtyTopUpManualRefundPayout("STALE-PAYOUT-TEAM-1", "stale-payout-team",
+		root.Id, "payout-stale-payout-team", AdtyManualRefundPayout{
+			Status: AdtyManualRefundPayoutSuccess, Currency: "USDT",
+			Amount: decimal.NewFromInt(100), PaidAt: now, Voucher: "TX-STALE-1",
+		})
+	require.Error(t, err, "补丁前遗留的 approved 团队单不能在记录打款时落一个线下付款事实")
+	assert.Contains(t, err.Error(), "cannot be refunded in cash")
+
+	var row AdtyManualRefund
+	require.NoError(t, db.Where("refund_id = ?", "stale-payout-team").First(&row).Error)
+	assert.Zero(t, row.PayoutRecordedAt, "被拒的打款不能写打款时间")
+	assert.Empty(t, row.PayoutVoucher, "被拒的打款不能写打款凭证")
+
+	var ext AdtyTopupOrder
+	require.NoError(t, db.Where("trade_no = ?", "STALE-PAYOUT-TEAM-1").First(&ext).Error)
+	assert.Empty(t, ext.RefundProof, "被拒的打款不能写订单退款凭证")
+}
+
+// 修复不能连带挡住正常业务：有现金背书的单必须照旧走完审批和记录打款。
+func TestCashBackedRefundStillApprovesAndRecordsPayoutPG(t *testing.T) {
+	db, root := adtyCashRefundFixture(t)
+	seedAdtyCashRefundOrder(t, db, root, "CASH-STEPS-1", PaymentProviderAdtyBEpusdt, 0, decimal.NewFromInt(100))
+
+	_, err := ApplyAdtyTopUpManualRefund("CASH-STEPS-1", "customer asked", root.Id, "cash-steps-1", decimal.NewFromInt(100))
+	require.NoError(t, err)
+
+	_, err = ApproveAdtyTopUpManualRefund("CASH-STEPS-1", "cash-steps-1", root.Id, "approve-cash-steps-1", "")
+	require.NoError(t, err, "真实现金充值单必须仍能审批")
+
+	now := common.GetTimestamp()
+	result, err := RecordAdtyTopUpManualRefundPayout("CASH-STEPS-1", "cash-steps-1", root.Id,
+		"payout-cash-steps-1", AdtyManualRefundPayout{
+			Status: AdtyManualRefundPayoutSuccess, Currency: "USDT",
+			Amount: decimal.NewFromInt(100), PaidAt: now, Voucher: "TX-CASH-1",
+		})
+	require.NoError(t, err, "真实现金充值单必须仍能记录打款")
+	require.NotNil(t, result)
+	assert.Equal(t, AdtyManualRefundPayoutSuccess, result.Refund.PayoutStatus)
+}
