@@ -63,14 +63,14 @@ func MigrateAdtyTablesOn(db *gorm.DB) error {
 	if err := db.AutoMigrate(&AdtyPromoCode{}, &AdtyPromoRedemption{}, &AdtyNotificationRead{}, &AdtyNotificationPublication{}, &AdtyVoucher{}, &AdtyVoucherLiability{}, &AdtyVoucherAuthorization{}, &AdtyVoucherCloseGrant{}, &AdtyTeam{}, &AdtyTeamMember{}, &AdtyTeamLedger{}, &AdtyTeamInvite{}, &AdtyTeamRegistrationLink{}, &AdtyTeamKey{}); err != nil {
 		return err
 	}
-	if err := EnsureAdtyVoucherTradeNoUniqueIndex(DB); err != nil {
+	if err := EnsureAdtyVoucherTradeNoUniqueIndex(db); err != nil {
 		if errors.Is(err, ErrAdtyVoucherTradeNoCollision) {
 			common.SysError(common.LogText("voucher trade_no unique index skipped: %s", err.Error()))
 		} else {
 			return err
 		}
 	}
-	if err := EnsureActiveTeamMembershipUniqueIndex(DB); err != nil {
+	if err := EnsureActiveTeamMembershipUniqueIndex(db); err != nil {
 		if errors.Is(err, ErrActiveTeamMembershipCollision) {
 			common.SysError(common.LogText("active team membership unique index skipped: %s", err.Error()))
 		} else {
@@ -80,7 +80,7 @@ func MigrateAdtyTablesOn(db *gorm.DB) error {
 	if err := db.AutoMigrate(&AdtyTelegramBot{}, &AdtyTelegramChallenge{}, &AdtyTelegramBinding{}, &AdtyTelegramDelivery{}, &AdtyTicket{}, &AdtyTicketMessage{}, &AdtyTicketImage{}, &AdtyTicketEvent{}, &AdtyTicketPolicy{}, &AdtyTranslationConfig{}, &AdtyTranslationHead{}, &AdtyTranslationJob{}, &AdtyTranslationUsage{}, &AdtyGroupHealthSample{}, &AdtyGroupHealthState{}, &AdtyGroupHealthAlert{}, &AdtyDataRetentionPolicy{}, &AdtyDataRetentionRun{}, &AdtyDataRetentionRunItem{}); err != nil {
 		return err
 	}
-	if err := RemapAdtyTicketLegacyStatuses(DB); err != nil {
+	if err := RemapAdtyTicketLegacyStatuses(db); err != nil {
 		return err
 	}
 	if err := migrateAdtyReferralTablesOn(db); err != nil {
@@ -97,20 +97,20 @@ func migrateAdtySiteTables() error {
 func migrateAdtySiteTablesOn(db *gorm.DB) error {
 	// AutoMigrate creates the new owner-aware unique index before we remove
 	// the old constraint. A failed migration therefore never loses uniqueness.
-	if err := DB.AutoMigrate(AdtySiteTables()...); err != nil {
+	if err := db.AutoMigrate(AdtySiteTables()...); err != nil {
 		return err
 	}
-	if err := EnsureAdtySitePriceUniqueIndex(DB); err != nil {
+	if err := EnsureAdtySitePriceUniqueIndex(db); err != nil {
 		return err
 	}
-	if err := BackfillAdtyUserSiteMigrationsFromInheritedSiteID(DB, time.Now().Unix()); err != nil {
+	if err := BackfillAdtyUserSiteMigrationsFromInheritedSiteID(db, time.Now().Unix()); err != nil {
 		return err
 	}
-	if err := BackfillAdtyTeamSourceSiteID(DB); err != nil {
+	if err := BackfillAdtyTeamSourceSiteID(db); err != nil {
 		return err
 	}
-	if DB.Migrator().HasIndex(&AdtySiteEarningDaily{}, "idx_site_earning") {
-		return DB.Migrator().DropIndex(&AdtySiteEarningDaily{}, "idx_site_earning")
+	if db.Migrator().HasIndex(&AdtySiteEarningDaily{}, "idx_site_earning") {
+		return db.Migrator().DropIndex(&AdtySiteEarningDaily{}, "idx_site_earning")
 	}
 	return nil
 }

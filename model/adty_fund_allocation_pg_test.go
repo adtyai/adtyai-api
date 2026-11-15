@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
@@ -106,4 +107,44 @@ func TestAdtyFundAllocationTableIsMigratedPG(t *testing.T) {
 	before := snapshotAdtyMigrateSchema(t, db)
 	require.NoError(t, migrateDB(), "repeated startup must be idempotent")
 	assertAdtyMigrateSchemaUnchanged(t, db, before)
+}
+
+// ISS-R4-0049：MigrateAdtyTablesOn 必须在调用方的连接上建表，一处都不能漏。
+//
+// 它内部还要建索引、回填、删旧索引、建分站表——这些调用以前传的是包级 DB，
+// 于是「换一条连接迁移」只对前一半表成立，后半程悄悄落到了另一个库上，
+// 调用方随后撞「表不存在」，而现象和「迁移没跑」一模一样。
+//
+// 这条测试不看实现，只看结果：把包级 DB 指到一个空库，让 On() 迁移另一条
+// 连接，然后断言「目标连接上该有的都在，包级 DB 上一个都不该有」。
+func TestMigrateAdtyTablesOnUsesOnlyCallerConnectionPG(t *testing.T) {
+	dsn := requireAdtyOfficialPostgresAcceptanceDSN(t)
+	admin := connectAdtyPostgresAcceptanceInstance(t, dsn)
+
+	// 被迁移的目标库。
+	target := openAdtyThrowawayMigrateDatabase(t, admin, dsn)
+	// 另一条完全独立的库，冒充「包级 DB」。
+	decoy := openAdtyThrowawayMigrateDatabase(t, admin, dsn)
+
+	previousDB := DB
+	DB = decoy
+	t.Cleanup(func() { DB = previousDB })
+
+	require.NoError(t, MigrateAdtyTablesOn(target))
+
+	required := []any{
+		&AdtyFundBatch{}, &AdtyFundAllocation{}, &AdtyBillingHold{},
+		&AdtySite{}, &AdtySitePrice{}, &AdtySiteEarningDaily{},
+		&AdtyVoucher{}, &AdtyTeamMember{}, &AdtyTicket{}, &AdtyPromoCode{},
+	}
+	for _, entity := range required {
+		assert.True(t, target.Migrator().HasTable(entity),
+			"目标连接上缺少 %T：说明 On() 有分支落到了包级 DB", entity)
+	}
+
+	// 反向：包级 DB 不该被动过。
+	for _, entity := range required {
+		assert.False(t, decoy.Migrator().HasTable(entity),
+			"%T 被建到了包级 DB 上：On() 有分支仍在用全局 DB", entity)
+	}
 }
