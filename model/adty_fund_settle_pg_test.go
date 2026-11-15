@@ -162,3 +162,43 @@ func TestAdtyFundSettleFailsWhenBatchesCannotCoverPG(t *testing.T) {
 	assert.Equal(t, BillingSettlePending, after.State, "失败不能把状态推进到已结算")
 	assert.EqualValues(t, 20_000_000, f.quota(t), "回滚后余额保持预扣后的值")
 }
+
+// 结算幂等：同一次结算被重放时，批次只能被扣一次。
+// 恢复任务、重复 Apply、上游重试都可能走到这里。
+func TestAdtyFundSettleIsIdempotentPG(t *testing.T) {
+	f := newFundSettleFixture(t, 50_000_000)
+	f.reserve(t, 30_000_000, "request:idem-1")
+	op := BillingOperation{OperationKey: "request:idem-1", UserId: f.user.Id, Kind: "request",
+		ReservedQuota: 30_000_000, ActualQuota: 30_000_000, State: BillingSettlePending}
+	require.NoError(t, f.db.Create(&op).Error)
+
+	_, _, err := ApplyBillingSettlement(op.OperationKey)
+	require.NoError(t, err)
+	first := f.remaining(t)
+
+	for i := 0; i < 3; i++ {
+		_, _, err = ApplyBillingSettlement(op.OperationKey)
+		require.NoError(t, err)
+		require.EqualValues(t, first, f.remaining(t), "重放结算不能再扣一次批次")
+	}
+	assert.EqualValues(t, 20_000_000, first)
+	assert.EqualValues(t, 20_000_000, f.quota(t))
+}
+
+// legacy 扣费路径（没有 operationId 的分摊）仍然要扣批次。
+//
+// 这条是「把 chargeUserQuotaUpToDB 改成只扣余额、批次全交给分摊」那个方案的反证：
+// 该路径没有分摊可依，若批次不再由它扣，这些消费就永远不递减本金，
+// 正是本单要修的缺陷本身。
+func TestLegacyChargeStillConsumesBatchPG(t *testing.T) {
+	f := newFundSettleFixture(t, 50_000_000)
+	charged, err := ChargeUserQuotaUpTo(f.user.Id, 10_000_000)
+	require.NoError(t, err)
+	require.EqualValues(t, 10_000_000, charged)
+
+	assert.EqualValues(t, 40_000_000, f.quota(t))
+	assert.EqualValues(t, 40_000_000, f.remaining(t), "无分摊的扣费路径必须自己扣批次")
+	sums, err := SumAdtyFundBatchRemainingByKind(f.user.Id)
+	require.NoError(t, err)
+	assert.EqualValues(t, int64(f.quota(t)), sums.Principal+sums.Bonus)
+}

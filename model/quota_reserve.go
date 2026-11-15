@@ -199,6 +199,11 @@ func tryReserveUserQuota(id int, quota int, operationID string) (bool, error) {
 
 // chargeUserQuotaUpToDB 在事务里锁行读余额，按 min(余额, quota) 扣减，余额已 ≤ 0
 // 时不改库。SQLite 没有 FOR UPDATE，但单写者模型下事务内读写同样不会并发交错。
+//
+// 它是「没有预扣分摊」的那条扣费路径，所以必须自己扣批次——否则这类消费的
+// 本金永远不递减，退款就会多退（本单修的正是这个）。反过来，带 operationId 的
+// 中转结算走 ApplyBillingSettlement，由分摊转实扣来扣批次，两条路互斥，
+// 不要在这里再判断分摊，否则没有分摊的 legacy 扣费会漏扣批次。
 // Redis 关闭时即使开了批量更新也直写数据库（不进批量队列），和 reserveUserQuotaDB 一致，
 // 否则落后于队列的数据库余额会让并发结算扣穿下限。
 func chargeUserQuotaUpToDB(id int, quota int) (int, error) {
