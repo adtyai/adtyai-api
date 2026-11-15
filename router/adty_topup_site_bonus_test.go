@@ -21,13 +21,13 @@ func TestSiteCustomerTopupInfoUsesSiteBonus(t *testing.T) {
 
 	require.NoError(t, f.db.Model(&model.AdtySite{}).Where("id = ?", f.site.Id).Update("bonus_rates", `{"100":4}`).Error)
 	service.InvalidateAdtySiteCache()
-	within := siteTopupInfo(t, f.engine, token)
+	within := siteTopupInfo(t, f.engine, token, f.siteHost())
 	require.Empty(t, within.BonusRates)
-	require.Equal(t, "0", siteTopupQuoteBonus(t, f.engine, token))
+	require.Equal(t, "0", siteTopupQuoteBonus(t, f.engine, token, f.siteHost()))
 
 	require.NoError(t, f.db.Model(&model.AdtySite{}).Where("id = ?", f.site.Id).Update("bonus_rates", `{"100":8}`).Error)
 	service.InvalidateAdtySiteCache()
-	over := siteTopupInfo(t, f.engine, token)
+	over := siteTopupInfo(t, f.engine, token, f.siteHost())
 	require.Empty(t, over.BonusRates)
 	var tierRate float64
 	for _, tier := range over.Tiers {
@@ -36,7 +36,7 @@ func TestSiteCustomerTopupInfoUsesSiteBonus(t *testing.T) {
 		}
 	}
 	require.Equal(t, 0.0, tierRate)
-	require.Equal(t, "0", siteTopupQuoteBonus(t, f.engine, token))
+	require.Equal(t, "0", siteTopupQuoteBonus(t, f.engine, token, f.siteHost()))
 
 	mainInfo := callAs(t, f.engine, main, http.MethodGet, "/api/adty/topup/info", "")
 	mainBody := decodeAdtyData[struct {
@@ -53,16 +53,20 @@ type siteTopupInfoBody struct {
 	BonusRates map[string]float64 `json:"bonus_rates"`
 }
 
-func siteTopupInfo(t *testing.T, engine *gin.Engine, token string) siteTopupInfoBody {
+// siteTopupInfo 以分站客户身份读充值信息。
+//
+// host 必须传：分站客户的登录会话是按主机绑定的（ISS-R2-0017），不带 Host
+// 会被当成主站请求而 401——那是鉴权拒绝，和加赠计算无关。
+func siteTopupInfo(t *testing.T, engine *gin.Engine, token, host string) siteTopupInfoBody {
 	t.Helper()
-	info := callAs(t, engine, token, http.MethodGet, "/api/adty/topup/info", "")
-	require.Equal(t, http.StatusOK, info.Code)
+	info := callAs(t, engine, token, http.MethodGet, "/api/adty/topup/info", "", host)
+	require.Equal(t, http.StatusOK, info.Code, info.Body.String())
 	return decodeAdtyData[siteTopupInfoBody](t, info.Body)
 }
 
-func siteTopupQuoteBonus(t *testing.T, engine *gin.Engine, token string) string {
+func siteTopupQuoteBonus(t *testing.T, engine *gin.Engine, token, host string) string {
 	t.Helper()
-	quote := callAs(t, engine, token, http.MethodPost, "/api/adty/topup/quote", `{"amount":100,"method":"usdt.trc20"}`)
+	quote := callAs(t, engine, token, http.MethodPost, "/api/adty/topup/quote", `{"amount":100,"method":"usdt.trc20"}`, host)
 	quoted := decodeAdtyData[struct {
 		Quote struct {
 			BonusUSD decimal.Decimal `json:"bonus_usd"`
