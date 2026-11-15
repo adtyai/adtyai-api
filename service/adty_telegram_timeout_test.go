@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/QuantumNous/new-api/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -117,12 +118,21 @@ func readServiceFile(t *testing.T, name string) string {
 	return string(raw)
 }
 
-// 没有发送实现时启动必须喊一声。
+// **配了 bot 但发不出去** → 启动必须喊一声。
 //
 // 不设 `ADTY_TELEGRAM_ALLOW_NETWORK=1` 时 `AdtyTelegramSender` 是 nil：队列照常
 // 入队，但一条都发不出去，而且会一路走到 dead。**外部看到的和「没有消息要发」
 // 完全一样**，所以这行日志是唯一能区分两者的东西。
-func TestTelegramDeliveryTaskWarnsWhenSenderIsMissing(t *testing.T) {
+func TestTelegramDeliveryTaskWarnsWhenBotConfiguredButSenderMissing(t *testing.T) {
+	db := announcementTestDB(t)
+	t.Setenv("CRYPTO_SECRET", "adty-telegram-warn-test-secret-32bytes-min")
+	cipher, err := model.SealAdtyPurposeSecret("telegram:"+model.AdtyTelegramPurposeAdmin, "123456789:token")
+	require.NoError(t, err)
+	require.NoError(t, db.Create(&model.AdtyTelegramBot{
+		Purpose: model.AdtyTelegramPurposeAdmin, BotId: 1, Username: "root_bot",
+		TokenCipher: cipher, Enabled: true,
+	}).Error)
+
 	previous := AdtyTelegramSender
 	AdtyTelegramSender = nil
 	t.Cleanup(func() { AdtyTelegramSender = previous })
@@ -130,10 +140,28 @@ func TestTelegramDeliveryTaskWarnsWhenSenderIsMissing(t *testing.T) {
 	logged := captureSysLog(t)
 	startAdtyTelegramDeliveryTask()
 
-	assert.Contains(t, logged.String(), "telegram delivery is disabled",
-		"没有发送实现时必须留下痕迹，否则「开关没开」和「没消息」同形")
+	assert.Contains(t, logged.String(), "bot is configured",
+		"配了 bot 却发不出去时必须留下痕迹，否则「开关没开」和「没消息」同形")
 	assert.Contains(t, logged.String(), "ADTY_TELEGRAM_ALLOW_NETWORK",
 		"提示要指名那个变量，否则读日志的人还得自己找")
+}
+
+// **本来就不用 Telegram 的部署不该喊。** 只看 sender 为 nil 的话，本地开发、
+// 不带通知的单体部署、CI 每次启动都会打一条 ERROR——后果不是多一行日志，
+// 是这条日志从此不被读（`ISS-R4-0065`）。
+func TestTelegramDeliveryTaskStaysQuietWhenNoBotConfigured(t *testing.T) {
+	db := announcementTestDB(t)
+	require.NoError(t, db.Model(&model.AdtyTelegramBot{}).Where("1 = 1").Delete(&model.AdtyTelegramBot{}).Error)
+
+	previous := AdtyTelegramSender
+	AdtyTelegramSender = nil
+	t.Cleanup(func() { AdtyTelegramSender = previous })
+
+	logged := captureSysLog(t)
+	startAdtyTelegramDeliveryTask()
+
+	assert.NotContains(t, logged.String(), "bot is configured",
+		"没配 bot 就是没打算发 Telegram：这不是异常，不该报警")
 }
 
 // 有发送实现时不该喊这一条——否则它每天都会在日志里出现，然后被无视。

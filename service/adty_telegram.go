@@ -579,9 +579,14 @@ func adtyTelegramSendMessageHTTP(token, chat, text string) error {
 func startAdtyTelegramDeliveryTask() {
 	// 没有发送实现时，这条任务只会把队列一路推到 dead，而且全程没有错误。
 	// 「开关没打开」和「没有消息要发」在外部看起来完全一样，所以必须喊一声。
-	if AdtyTelegramSender == nil {
+	//
+	// **判据不能只看 sender 为 nil。** 一个本来就不用 Telegram 的部署（本地开发、
+	// 不带通知的单体部署、CI）永远是 nil，那样每次启动都会打一条 ERROR——
+	// 后果不是多一行日志，是**这条日志从此不被读**。
+	// 所以只在「库里真的配了 bot」时才喊：那才是「配了但发不出去」。
+	if AdtyTelegramSender == nil && adtyTelegramHasConfiguredBots() {
 		common.SysError(common.LogText(
-			"telegram delivery is disabled: ADTY_TELEGRAM_ALLOW_NETWORK is not \"1\", so no message can leave this process; queued rows will be marked failed and eventually dead"))
+			"telegram delivery is disabled but a bot is configured: ADTY_TELEGRAM_ALLOW_NETWORK is not \"1\", so no message can leave this process; queued rows will be marked failed and eventually dead"))
 	}
 	go func() {
 		ticker := time.NewTicker(time.Minute)
@@ -622,4 +627,25 @@ func adtyTelegramGetMeHTTP(token string) (int64, string, error) {
 		return 0, "", ErrAdtyTelegramUnverified
 	}
 	return body.Result.Id, body.Result.Username, nil
+}
+
+// adtyTelegramHasConfiguredBots 说明库里是否真的配过「启用且带 token」的 bot。
+//
+// 它只回答一个问题：**这个部署本来是想发 Telegram 的吗？** 不是的话，
+// 「sender 为 nil」是正常状态，不该报警。
+//
+// 库不可用时返回 false —— 启动阶段库还没好是常态，那种情况下打一条
+// 「Telegram 没配」是噪音，而真正的连接问题有它自己的日志。
+func adtyTelegramHasConfiguredBots() bool {
+	if model.DB == nil {
+		return false
+	}
+	var count int64
+	err := model.DB.Model(&model.AdtyTelegramBot{}).
+		Where("enabled = ? AND token_cipher <> ?", true, "").
+		Count(&count).Error
+	if err != nil {
+		return false
+	}
+	return count > 0
 }
