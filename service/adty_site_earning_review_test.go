@@ -69,7 +69,11 @@ func TestLegacyTaskEarningReviewClosesRefundAfterCustomerTransfer(t *testing.T) 
 				require.NoError(t, RecoverBillingOperations(context.Background(), 100))
 				_, err = RunAdtySiteSettlementOnce(time.Now().AddDate(0, 0, 30))
 				require.NoError(t, err)
-				assert.InDelta(t, 18, account(t, db, affiliate.Id).AvailableAmount, 1e-9)
+				// 原断言读 referral 佣金账户的 18：那是 ISS-R4-0111 删掉的双记路径算出来的数，
+				// 和已结算明细也对不上（usage +35、refund −25 = 10）。收益只进站点收益钱包。
+				assert.True(t, siteWalletBalance(t, db, site.Id, model.AdtySiteWalletEarnings).Equal(usd("10")))
+				assert.Zero(t, account(t, db, affiliate.Id).AvailableAmount,
+					"结算不得再记进 referral 佣金账户（ISS-R4-0111）")
 				var auditCount int64
 				require.NoError(t, db.Model(&model.AdtySiteAudit{}).Where("site_id = ? AND action = ?", site.Id, "earning_review").Count(&auditCount).Error)
 				assert.EqualValues(t, 1, auditCount)
@@ -205,7 +209,10 @@ func TestLegacyEarningReviewProjectionFailureRecoversSettlementHold(t *testing.T
 	assert.Empty(t, stored.SettleHoldReason, "a committed review must recover without an operator repeating it")
 	affiliate, err := Referral.EnsureAffiliate(owner.Id)
 	require.NoError(t, err)
-	assert.InDelta(t, 18, account(t, db, affiliate.Id).AvailableAmount, 1e-9)
+	// 同上的口径：usage +35、refund −25 = 10，只进站点收益钱包；referral 账户不记钱。
+	assert.True(t, siteWalletBalance(t, db, site.Id, model.AdtySiteWalletEarnings).Equal(usd("10")))
+	assert.Zero(t, account(t, db, affiliate.Id).AvailableAmount,
+		"结算不得再记进 referral 佣金账户（ISS-R4-0111）")
 }
 
 func TestLegacyRootDecisionSerializesAdjustmentWithoutCustomer(t *testing.T) {

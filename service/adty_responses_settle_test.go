@@ -37,7 +37,10 @@ func testPostConsumeQuotaSettleFailureRefundsPrecharge(t *testing.T, realtime bo
 	t.Cleanup(func() {
 		require.NoError(t, opened.Close())
 	})
-	require.NoError(t, opened.DB.AutoMigrate(&model.User{}, &model.Token{}, &model.Log{}, &model.Channel{}, &model.Task{}, &model.Midjourney{}, &model.BillingOperation{}, &model.BillingOperationMovement{}, &model.AdtySiteEarningEvent{}))
+	// 结算链路会读分摊、批次和 hold 表；夹具缺表会让结算整笔失败（报的是「table is missing」）。
+	// 与 task_billing_test.go 的 TestMain 保持同一份清单。
+	require.NoError(t, opened.DB.AutoMigrate(&model.User{}, &model.Token{}, &model.Log{}, &model.Channel{}, &model.Task{}, &model.Midjourney{}, &model.BillingOperation{}, &model.BillingOperationMovement{}, &model.AdtySiteEarningEvent{},
+		&model.AdtyFundBatch{}, &model.AdtyFundAllocation{}, &model.AdtyBillingHold{}))
 
 	const startQuota = 1000000
 	const preConsumed = 10000

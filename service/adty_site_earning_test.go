@@ -192,8 +192,12 @@ func TestDurableTaskRefundKeepsOriginalRiskDispositionAfterReview(t *testing.T) 
 				if convert {
 					want = want.Add(remainingEarning)
 				}
-				assert.InDelta(t, want.InexactFloat64(), account(t, db, affiliate.Id).AvailableAmount, 1e-9,
+				// 原断言读 referral 佣金账户，那是 ISS-R4-0111 删掉的双记行为：同一笔收益
+				// 同时进站点收益钱包和佣金账户，站长两本账各提一次。现在收益只进站点钱包。
+				assert.True(t, siteWalletBalance(t, db, site.Id, model.AdtySiteWalletEarnings).Equal(want),
 					"refunds must reverse the original task's earning disposition, without consuming a later task's earnings")
+				assert.Zero(t, account(t, db, affiliate.Id).AvailableAmount,
+					"settlement must not credit the referral account (ISS-R4-0111)")
 				if !convert {
 					assert.True(t, earningTotals(t, db, site.Id)[model.AdtySiteEarningSkipped].Equal(remainingEarning))
 				}
@@ -791,11 +795,13 @@ func TestSettleAfterFreezeIntoAccount(t *testing.T) {
 	assert.Equal(t, 1, settled)
 	affiliate, err := Referral.EnsureAffiliate(owner.Id)
 	require.NoError(t, err)
-	acc := account(t, db, affiliate.Id)
-	assert.InDelta(t, 25, acc.AvailableAmount, 1e-9)
-	var ledger model.ReferralCommissionLedger
-	require.NoError(t, db.Where("affiliate_id = ? AND type = ?", affiliate.Id, "site_earning").First(&ledger).Error)
-	assert.InDelta(t, 25, ledger.DeltaAvailable, 1e-9)
+	// 原断言读 referral 佣金账户（ISS-R4-0111 之前结算会双记一遍），现在只进站点收益钱包。
+	assert.True(t, siteWalletBalance(t, db, site.Id, model.AdtySiteWalletEarnings).Equal(usd("25")))
+	var ledger model.AdtySiteWalletLedger
+	require.NoError(t, db.Where("site_id = ? AND type = ?", site.Id, "site_earning_settlement").First(&ledger).Error)
+	assert.True(t, ledger.Delta.Equal(usd("25")))
+	assert.Zero(t, account(t, db, affiliate.Id).AvailableAmount,
+		"settlement must not credit the referral account (ISS-R4-0111)")
 
 	// 同一天结算后又有消费，记进新的槽位，下次结算再算。
 	adtySiteEarningDayFn = func() string { return "2026-10-01" }
@@ -803,8 +809,8 @@ func TestSettleAfterFreezeIntoAccount(t *testing.T) {
 	settled, err = RunAdtySiteSettlementOnce(day("2026-10-13 04:00"))
 	require.NoError(t, err)
 	assert.Equal(t, 1, settled)
-	acc = account(t, db, affiliate.Id)
-	assert.InDelta(t, 30, acc.AvailableAmount, 1e-9, "$25 + $2.5 + $2.5")
+	assert.True(t, siteWalletBalance(t, db, site.Id, model.AdtySiteWalletEarnings).Equal(usd("30")),
+		"$25 + $2.5 + $2.5")
 }
 
 func TestLeftoverPausedSiteStillSettles(t *testing.T) {

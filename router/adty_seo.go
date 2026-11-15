@@ -129,7 +129,12 @@ func AdtySEOHomePages(indexPage []byte, buildFS fs.FS) gin.HandlerFunc {
 		// index.html noindex is replaced by this head, so keep noindex until a
 		// real origin is configured and the request host matches it.
 		noindex := base == nil || !adtySameHost(c.Request.Host, base)
-		out := adtyRenderHomePage(indexPage, page, adtyMainSEO(base, noindex), body)
+		head := adtyMainSEO(base, noindex)
+		// 结构化数据只写在请求路径就是 / 的那一页（features.md：「只在 `/` 写」）。
+		// /ja 这类遗留路径经过 adtyOfficialSEOHomeLang 后 page.path 也是 "/"，
+		// 只看解析后的 page 会把同一段 WebSite 数据重复输出到别名网址上。
+		head.websiteData = adtySEOIsRootPath(c.Request.URL.Path)
+		out := adtyRenderHomePage(indexPage, page, head, body)
 		if noindex {
 			c.Header("X-Robots-Tag", "noindex")
 		} else {
@@ -140,6 +145,11 @@ func AdtySEOHomePages(indexPage []byte, buildFS fs.FS) gin.HandlerFunc {
 		c.Data(http.StatusOK, "text/html; charset=utf-8", out)
 		c.Abort()
 	}
+}
+
+// adtySEOIsRootPath 判断请求路径是不是首页根路径，末尾的 / 不算。
+func adtySEOIsRootPath(path string) bool {
+	return strings.TrimRight(path, "/") == ""
 }
 
 // adtySEOHomePage 按路径找首页语言（含遗留的非正式路径），末尾的 / 不算。
