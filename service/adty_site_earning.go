@@ -463,7 +463,8 @@ func GrantAdtySiteTrial(siteId, customerId int, amountUSD decimal.Decimal, idemp
 		}); err != nil {
 			return err
 		}
-		if err := model.CreateAdtyFundBatchesTx(tx, customerId, ref, 0, int64(quotaInt)); err != nil {
+		// 试用金是发给这个站的客户的，批次直接记在发放站上（ISS-R4-0047）。
+		if err := model.CreateAdtyFundBatchesWithSiteTx(tx, customerId, model.AdtyFundBatchSiteID(siteId), ref, 0, int64(quotaInt)); err != nil {
 			return err
 		}
 		now := time.Now().Unix()

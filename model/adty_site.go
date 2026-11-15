@@ -272,6 +272,8 @@ func AdtySiteTables() []any {
 // AdtySetUsersSiteTx 把 fromSite 的客户全部改到 toSite（0 是主站），同事务撤销旧Key。
 // 转到主站时同时写下 inherited_from_site_id，并记一条迁移身份映射；不合并、不覆盖同邮箱的主站已有账号，也不改 user_id。
 // users.site_id 只由分站服务通过这里和 AdtySetUserSiteTx 改（UpdateWithTx 不会改它）。
+// 客户的资金批次也要一起搬（ISS-R4-0047）：批次自带 site_id 之后，不搬就是
+// 「客户在新站、本金挂旧站」，两边的本金负债同时算错。
 func AdtySetUsersSiteTx(tx *gorm.DB, fromSite, toSite int) ([]int, error) {
 	if fromSite == toSite {
 		return nil, nil
@@ -316,6 +318,9 @@ func AdtySetUsersSiteTx(tx *gorm.DB, fromSite, toSite int) ([]int, error) {
 			"CASE WHEN inherited_from_site_id = 0 THEN ? ELSE inherited_from_site_id END", fromSite)
 	}
 	if err := tx.Model(&User{}).Where("id IN ?", ids).Updates(updates).Error; err != nil {
+		return nil, err
+	}
+	if err := adtyMoveFundBatchesToSiteTx(tx, ids, fromSite, toSite); err != nil {
 		return nil, err
 	}
 	if toSite == 0 {

@@ -661,7 +661,8 @@ func ConvertAdtySiteInviteCommission(inviterID int, commissionID int64, amount d
 		}); err != nil {
 			return err
 		}
-		if err := model.CreateAdtyFundBatchesTx(tx, inviterID, ref, int64(quota), 0); err != nil {
+		// 转化到余额的批次记在佣金行所属站（row.SiteId）。
+		if err := model.CreateAdtyFundBatchesWithSiteTx(tx, inviterID, model.AdtyFundBatchSiteID(row.SiteId), ref, int64(quota), 0); err != nil {
 			return err
 		}
 		return tx.Model(&row).Updates(map[string]any{

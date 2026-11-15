@@ -138,7 +138,13 @@ func creditTopUpQuotaWithPrincipalBatch(tx *gorm.DB, userId int, tradeNo string,
 	if err := creditTopUpQuota(tx, userId, creditedQuota, updates); err != nil {
 		return err
 	}
-	return CreateAdtyFundBatchesTx(tx, userId, tradeNo, int64(creditedQuota), 0)
+	// 上游遗留 TopUp 流程本身没有站点上下文，取客户当前所属站填批次
+	// （ISS-R4-0047）。creditTopUpQuota 刚刚锁过同一行，读不到只能是真的出问题。
+	siteID, err := adtyFundBatchSiteOfUserTx(tx, userId)
+	if err != nil {
+		return err
+	}
+	return CreateAdtyFundBatchesWithSiteTx(tx, userId, siteID, tradeNo, int64(creditedQuota), 0)
 }
 
 func (topUp *TopUp) Update() error {

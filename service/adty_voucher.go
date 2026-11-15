@@ -340,7 +340,13 @@ func redeemAdtyVoucherOnce(userId int, hash string, attempt int) (*AdtyVoucherRe
 			}); err != nil {
 				return err
 			}
-			if err := model.CreateAdtyFundBatchesTx(tx, user.Id, trade, voucher.Quota, 0); err != nil {
+			// 币值批次的站点取券的目标站，没有目标站时退回来源站（与下面审计行
+			// 的口径一致）。0 是主站，不是「未知」。
+			batchSite := voucher.TargetSiteId
+			if batchSite == 0 {
+				batchSite = voucher.SourceSiteId
+			}
+			if err := model.CreateAdtyFundBatchesWithSiteTx(tx, user.Id, model.AdtyFundBatchSiteID(batchSite), trade, voucher.Quota, 0); err != nil {
 				return err
 			}
 			credit = voucher.Quota
