@@ -689,15 +689,23 @@ func RunAdtySiteDomainCheckOnce(ctx context.Context, now time.Time) error {
 		return err
 	}
 	changed := false
+	// 一行坏域名不能把整轮停在自己身上：后面的行照样要查。失败逐行留痕，全部跑完
+	// 再一起报上去——改成 continue 不等于让 DB 故障看不见。
+	var failures []string
 	for i := range domains {
 		activated, err := adtyCheckDomainSnapshot(ctx, &domains[i], now)
 		if err != nil {
-			return err
+			common.SysError(common.LogText("adty domain check failed for domain %d: %s", domains[i].Id, err.Error()))
+			failures = append(failures, fmt.Sprintf("domain %d: %s", domains[i].Id, err.Error()))
+			continue
 		}
 		changed = changed || activated
 	}
 	if changed {
 		InvalidateAdtySiteCache()
+	}
+	if len(failures) > 0 {
+		return fmt.Errorf("adty domain check failed for %d of %d domains: %s", len(failures), len(domains), strings.Join(failures, "; "))
 	}
 	return nil
 }
@@ -714,7 +722,17 @@ func adtyCheckDomainSnapshot(ctx context.Context, snapshot *model.AdtySiteDomain
 		}
 		if domain.CFHostnameId == "" {
 			if err := adtyAttachCustomHostnameLocked(ctx, tx, domain); err != nil {
-				return err
+				// Cloudflare 拒绝这个主机名（非法、已被别的 zone 占用、token 缺权限……）
+				// 是这一行的属性，不是整批的：记账，并让超时判断也能看到它。
+				// 其它错误（DB 写失败之类）照旧上抛：事务已经坏了，不能装作没事。
+				if !errors.Is(err, ErrAdtyCloudflareFailed) && !errors.Is(err, ErrAdtyCloudflareRejected) {
+					return err
+				}
+				updates := map[string]any{"last_checked_at": now.Unix(), "last_error": err.Error()}
+				if now.Sub(time.Unix(domain.CreatedAt, 0)) > adtyCustomDomainTimeout {
+					return adtyMarkCustomDomainFailed(ctx, tx, zone, domain, updates)
+				}
+				return adtyDomainSnapshotQuery(tx, domain).Updates(updates).Error
 			}
 			if domain.CFHostnameId == "" {
 				updates := map[string]any{"last_checked_at": now.Unix()}
