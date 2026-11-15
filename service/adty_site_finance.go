@@ -388,12 +388,16 @@ func TransferAdtyEarningToMargin(siteID, operator int, amount, tier decimal.Deci
 	if !amount.IsPositive() || !tier.IsPositive() || strings.TrimSpace(key) == "" {
 		return ErrAdtySiteWalletInvalidOperation
 	}
+	earnKey, marginKey, err := adtyEarningToMarginKeys(siteID, key)
+	if err != nil {
+		return err
+	}
 	if err := EnsureAdtySiteWallets(siteID); err != nil {
 		return err
 	}
 	return model.DB.Transaction(func(tx *gorm.DB) error {
 		if _, err := applyAdtySiteWalletChangeTx(tx, siteID, model.AdtySiteWalletEarnings, amount.Neg(), AdtySiteWalletChange{
-			Type: "earning_to_margin", IdempotencyKey: key + ":earn", OperatorID: operator,
+			Type: "earning_to_margin", IdempotencyKey: earnKey, OperatorID: operator,
 		}); err != nil {
 			return err
 		}
@@ -402,7 +406,7 @@ func TransferAdtyEarningToMargin(siteID, operator int, amount, tier decimal.Deci
 			return err
 		}
 		change := AdtySiteWalletChange{
-			Type: "earning_to_margin", IdempotencyKey: key + ":margin", OperatorID: operator,
+			Type: "earning_to_margin", IdempotencyKey: marginKey, OperatorID: operator,
 		}
 		if opensCycle {
 			change.OpenMarginCycle = true
@@ -411,6 +415,19 @@ func TransferAdtyEarningToMargin(siteID, operator int, amount, tier decimal.Deci
 		_, err = applyAdtySiteWalletChangeTx(tx, siteID, model.AdtySiteWalletMargin, amount, change)
 		return err
 	})
+}
+
+// adtyEarningToMarginKeys scopes the client idempotency key to one site. The
+// ledger has a single global unique index on idempotency_key, so an unscoped
+// client string would let one site fail, pre-empt, or probe another site's
+// transfers. The 128 limit is the column width.
+func adtyEarningToMarginKeys(siteID int, key string) (string, string, error) {
+	scoped := "site:" + strconv.Itoa(siteID) + ":" + strings.TrimSpace(key)
+	earn, margin := scoped+":earn", scoped+":margin"
+	if len(earn) > 128 || len(margin) > 128 {
+		return "", "", ErrAdtySiteWalletIdempotencyKey
+	}
+	return earn, margin, nil
 }
 
 // adtyEarningTopUpOpensMarginCycleTx reports whether this credit is the top-up
