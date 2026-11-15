@@ -116,6 +116,16 @@ func getMinTopup() int64 {
 	return int64(minTopup)
 }
 
+// minPayMoneyUSD 是支付网关能收的最小金额（美元）。预览接口（RequestAmount）和真正的下单
+// 入口（RequestEpay 等）必须共用这一个判据：之前两处各写一遍比较，预览用 `<=`、下单用 `<`，
+// 于是 payMoney == 0.01 时预览报「金额太低」而下单放行（ISS-R4-0128）。
+const minPayMoneyUSD = 0.01
+
+// payMoneyTooLow 报告网关应收金额是否低于可收下限。金额边界只在这里定义一次。
+func payMoneyTooLow(payMoney float64) bool {
+	return payMoney < minPayMoneyUSD
+}
+
 func getTopUpQuota(amount int64) (int, error) {
 	quota := decimal.NewFromInt(amount)
 	if operation_setting.GetQuotaDisplayType() == operation_setting.QuotaDisplayTypeTokens {
@@ -226,7 +236,7 @@ func RequestEpay(c *gin.Context) {
 		return
 	}
 	payMoney := getPayMoney(req.Amount, group)
-	if payMoney < 0.01 {
+	if payMoneyTooLow(payMoney) {
 		paymentError(c, common.NewMessage("Payment amount is too low"))
 		return
 	}
@@ -450,7 +460,7 @@ func RequestAmount(c *gin.Context) {
 		return
 	}
 	payMoney := getPayMoney(req.Amount, group)
-	if payMoney <= 0.01 {
+	if payMoneyTooLow(payMoney) {
 		paymentError(c, common.NewMessage("Payment amount is too low"))
 		return
 	}
