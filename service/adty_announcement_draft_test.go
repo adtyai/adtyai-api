@@ -3,6 +3,7 @@ package service
 import (
 	"testing"
 
+	"github.com/QuantumNous/new-api/internal/pgtest"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -14,10 +15,7 @@ import (
 // 顶掉了这个位置（把时间设到未来），而发布时间被去掉之后那个位置就空了。
 func TestAnnouncementDraftIsInvisibleUntilPublishedPG(t *testing.T) {
 	db := announcementTestDB(t)
-	var version int
-	require.NoError(t, db.Raw("SHOW server_version_num").Scan(&version).Error)
-	require.NotZero(t, version, "live server_version_num must be recorded as evidence")
-	t.Logf("evidence only (not a pass/fail condition): server_version_num=%d", version)
+	pgtest.RecordServerVersion(t, db)
 
 	t.Setenv("CRYPTO_SECRET", "adty-announcement-draft-test-secret")
 	cipher, err := model.SealAdtyPurposeSecret("telegram:"+model.AdtyTelegramPurposeAdmin, "123456789:token")

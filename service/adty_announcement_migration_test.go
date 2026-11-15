@@ -5,6 +5,7 @@ import (
 
 	"time"
 
+	"github.com/QuantumNous/new-api/internal/pgtest"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting/console_setting"
 	"github.com/stretchr/testify/assert"
@@ -33,10 +34,7 @@ const legacyAnnouncementsFixture = `[
 // 正文逐字节保留；重复执行不再多插一行。
 func TestMigrateLegacyAnnouncementsIsIdempotentPG(t *testing.T) {
 	db := announcementTestDB(t)
-	var version int
-	require.NoError(t, db.Raw("SHOW server_version_num").Scan(&version).Error)
-	require.NotZero(t, version, "live server_version_num must be recorded as evidence")
-	t.Logf("evidence only (not a pass/fail condition): server_version_num=%d", version)
+	pgtest.RecordServerVersion(t, db)
 
 	created, err := MigrateLegacyAnnouncements(legacyAnnouncementsFixture)
 	require.NoError(t, err)
@@ -114,10 +112,7 @@ func TestMigrateLegacyAnnouncementsSkipsBlankContent(t *testing.T) {
 // 公开面板按站点读：主站看不到分站定向公告，分站看得到自己的那条和全平台的。
 func TestLegacyAnnouncementsVisiblePerSitePG(t *testing.T) {
 	db := announcementTestDB(t)
-	var version int
-	require.NoError(t, db.Raw("SHOW server_version_num").Scan(&version).Error)
-	require.NotZero(t, version, "live server_version_num must be recorded as evidence")
-	t.Logf("evidence only (not a pass/fail condition): server_version_num=%d", version)
+	pgtest.RecordServerVersion(t, db)
 
 	_, err := MigrateLegacyAnnouncements(legacyAnnouncementsFixture)
 	require.NoError(t, err)
@@ -170,10 +165,7 @@ func contentsOf(rows []model.AdtyNotificationPublication) []string {
 // 未读角标也就翻倍。删掉旧 option 那段读之后，这里必须只有一份。
 func TestNotificationInboxShowsMigratedAnnouncementOncePG(t *testing.T) {
 	db := announcementTestDB(t)
-	var version int
-	require.NoError(t, db.Raw("SHOW server_version_num").Scan(&version).Error)
-	require.NotZero(t, version, "live server_version_num must be recorded as evidence")
-	t.Logf("evidence only (not a pass/fail condition): server_version_num=%d", version)
+	pgtest.RecordServerVersion(t, db)
 
 	setting := console_setting.GetConsoleSetting()
 	previous := *setting
@@ -207,10 +199,7 @@ func TestNotificationInboxShowsMigratedAnnouncementOncePG(t *testing.T) {
 // 这条钉的是「ReadKey 不随位置变化」。把下标加回哈希，它立刻红。
 func TestMigrateLegacyAnnouncementsIsStableAcrossReorderPG(t *testing.T) {
 	db := announcementTestDB(t)
-	var version int
-	require.NoError(t, db.Raw("SHOW server_version_num").Scan(&version).Error)
-	require.NotZero(t, version, "live server_version_num must be recorded as evidence")
-	t.Logf("evidence only (not a pass/fail condition): server_version_num=%d", version)
+	pgtest.RecordServerVersion(t, db)
 
 	created, err := MigrateLegacyAnnouncements(legacyAnnouncementsFixture)
 	require.NoError(t, err)
@@ -240,10 +229,7 @@ func TestMigrateLegacyAnnouncementsIsStableAcrossReorderPG(t *testing.T) {
 // 旧面板里复制一条、连日期都没改：两条都要留下，不能第二条被静默丢掉。
 func TestMigrateLegacyAnnouncementsKeepsTrueDuplicatesPG(t *testing.T) {
 	db := announcementTestDB(t)
-	var version int
-	require.NoError(t, db.Raw("SHOW server_version_num").Scan(&version).Error)
-	require.NotZero(t, version, "live server_version_num must be recorded as evidence")
-	t.Logf("evidence only (not a pass/fail condition): server_version_num=%d", version)
+	pgtest.RecordServerVersion(t, db)
 
 	raw := `[
   {"content":"重复的那条","publishDate":"2026-11-01T02:00:00Z"},

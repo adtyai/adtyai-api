@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/internal/pgtest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -15,10 +16,7 @@ import (
 // 现在它是验收：held 归零，且同一批次的容量立刻全部可用。
 func TestRefundReleasesPrechargedAllocationsPG(t *testing.T) {
 	db := adtyTestDBWithSchema(t)
-	var version int
-	require.NoError(t, db.Raw("SHOW server_version_num").Scan(&version).Error)
-	require.NotZero(t, version, "live server_version_num must be recorded as evidence")
-	t.Logf("evidence only (not a pass/fail condition): server_version_num=%d", version)
+	pgtest.RecordServerVersion(t, db)
 
 	common.BatchUpdateEnabled = false
 	t.Cleanup(func() { common.BatchUpdateEnabled = false })

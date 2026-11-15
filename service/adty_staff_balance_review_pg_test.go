@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/internal/pgtest"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
@@ -22,10 +23,7 @@ import (
 // 管理员报 `fund batches cannot cover the debit: uncovered 40`，且没有绕法。
 func TestStaffBalanceReviewDebitsBatchesFromLogicalBalancePG(t *testing.T) {
 	db := announcementTestDB(t)
-	var version int
-	require.NoError(t, db.Raw("SHOW server_version_num").Scan(&version).Error)
-	require.NotZero(t, version, "live server_version_num must be recorded as evidence")
-	t.Logf("evidence only (not a pass/fail condition): server_version_num=%d", version)
+	pgtest.RecordServerVersion(t, db)
 
 	const (
 		rawQuota = 10
@@ -88,10 +86,7 @@ func TestStaffBalanceReviewDebitsBatchesFromLogicalBalancePG(t *testing.T) {
 // debited 正常，但传错 before 会让补建基数变成 0，扣不动。
 func TestStaffBalanceReviewWorksWhenRawQuotaIsExhaustedPG(t *testing.T) {
 	db := announcementTestDB(t)
-	var version int
-	require.NoError(t, db.Raw("SHOW server_version_num").Scan(&version).Error)
-	require.NotZero(t, version, "live server_version_num must be recorded as evidence")
-	t.Logf("evidence only (not a pass/fail condition): server_version_num=%d", version)
+	pgtest.RecordServerVersion(t, db)
 
 	owner := ticketTestUser(t, db, "review2-owner", 1)
 	site := model.AdtySite{Subdomain: "review2-site", RootDomain: "example.com", Status: model.AdtySiteStatusActive}

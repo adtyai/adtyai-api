@@ -3,6 +3,7 @@ package model
 import (
 	"testing"
 
+	"github.com/QuantumNous/new-api/internal/pgtest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -16,10 +17,7 @@ import (
 //  2. 第二次启动不报错、也不把已有数据清掉。
 func TestAdtyTelegramDeliveryChannelColumnPG(t *testing.T) {
 	db := adtyTestDBWithSchema(t)
-	var version int
-	require.NoError(t, db.Raw("SHOW server_version_num").Scan(&version).Error)
-	require.NotZero(t, version, "live server_version_num must be recorded as evidence")
-	t.Logf("evidence only (not a pass/fail condition): server_version_num=%d", version)
+	pgtest.RecordServerVersion(t, db)
 
 	require.True(t, db.Migrator().HasColumn(&AdtyTelegramDelivery{}, "channel"))
 
@@ -41,10 +39,7 @@ func TestAdtyTelegramDeliveryChannelColumnPG(t *testing.T) {
 // 且重复启动既不改已有值、也不把 telegram_at 抹回 0（抹回去等于允许重推）。
 func TestAdtyNotificationTelegramColumnsPG(t *testing.T) {
 	db := adtyTestDBWithSchema(t)
-	var version int
-	require.NoError(t, db.Raw("SHOW server_version_num").Scan(&version).Error)
-	require.NotZero(t, version, "live server_version_num must be recorded as evidence")
-	t.Logf("evidence only (not a pass/fail condition): server_version_num=%d", version)
+	pgtest.RecordServerVersion(t, db)
 
 	require.True(t, db.Migrator().HasColumn(&AdtyNotificationPublication{}, "telegram_channel"))
 	require.True(t, db.Migrator().HasColumn(&AdtyNotificationPublication{}, "telegram_at"))

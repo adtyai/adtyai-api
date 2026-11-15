@@ -3,6 +3,7 @@ package model
 import (
 	"testing"
 
+	"github.com/QuantumNous/new-api/internal/pgtest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -15,10 +16,7 @@ import (
 // 的全部意义，被这条 return 抵消掉。
 func TestNoShareSettlementReportsBackedCoveragePG(t *testing.T) {
 	db := adtyTestDBWithSchema(t)
-	var version int
-	require.NoError(t, db.Raw("SHOW server_version_num").Scan(&version).Error)
-	require.NotZero(t, version, "live server_version_num must be recorded as evidence")
-	t.Logf("evidence only (not a pass/fail condition): server_version_num=%d", version)
+	pgtest.RecordServerVersion(t, db)
 
 	require.NoError(t, db.Create(&User{Id: 901, Username: "noshare-901", Password: "password1", Quota: 0}).Error)
 	// 批次只有 20，余额 50：这就是「钱在账上、批次不全」的漂移形状。
@@ -57,10 +55,7 @@ func TestNoShareSettlementReportsBackedCoveragePG(t *testing.T) {
 // 调用方自己的事务语义，而那正是它需要遵守的东西。
 func TestOverstatedBalanceIsVisibleAsGapNotPreventedPG(t *testing.T) {
 	db := adtyTestDBWithSchema(t)
-	var version int
-	require.NoError(t, db.Raw("SHOW server_version_num").Scan(&version).Error)
-	require.NotZero(t, version, "live server_version_num must be recorded as evidence")
-	t.Logf("evidence only (not a pass/fail condition): server_version_num=%d", version)
+	pgtest.RecordServerVersion(t, db)
 
 	// 库里余额是 0，调用方却声称消费前有 50 —— 这就是被高报的输入。
 	require.NoError(t, db.Create(&User{Id: 902, Username: "overstated-902", Password: "password1", Quota: 0}).Error)

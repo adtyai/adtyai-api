@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/QuantumNous/new-api/internal/pgtest"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -17,10 +18,7 @@ import (
 // 放进去的东西摆好，直接验函数本身。
 func TestPublicAnnouncementsReadFromPublicationsPG(t *testing.T) {
 	db := announcementTestDB(t)
-	var version int
-	require.NoError(t, db.Raw("SHOW server_version_num").Scan(&version).Error)
-	require.NotZero(t, version, "live server_version_num must be recorded as evidence")
-	t.Logf("evidence only (not a pass/fail condition): server_version_num=%d", version)
+	pgtest.RecordServerVersion(t, db)
 
 	siteA := model.AdtySite{Subdomain: "pub-a", RootDomain: "example.com", Status: model.AdtySiteStatusActive}
 	require.NoError(t, db.Create(&siteA).Error)

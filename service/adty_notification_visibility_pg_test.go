@@ -3,6 +3,7 @@ package service
 import (
 	"testing"
 
+	"github.com/QuantumNous/new-api/internal/pgtest"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -17,10 +18,7 @@ import (
 // 不经过认证，直接问 `adtyVisibleNotificationPublications` 谁能看到什么。
 func TestNotificationVisibilityRulePG(t *testing.T) {
 	db := announcementTestDB(t)
-	var version int
-	require.NoError(t, db.Raw("SHOW server_version_num").Scan(&version).Error)
-	require.NotZero(t, version, "live server_version_num must be recorded as evidence")
-	t.Logf("evidence only (not a pass/fail condition): server_version_num=%d", version)
+	pgtest.RecordServerVersion(t, db)
 
 	siteA := model.AdtySite{Subdomain: "vis-a", RootDomain: "example.com", Status: model.AdtySiteStatusActive}
 	require.NoError(t, db.Create(&siteA).Error)

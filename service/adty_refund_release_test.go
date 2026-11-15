@@ -5,6 +5,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common/logsinktest"
 
+	"github.com/QuantumNous/new-api/internal/pgtest"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -16,10 +17,7 @@ import (
 // 把 `Refund` 改回只调 `IncreaseUserQuota`，这条立刻红——那正是修之前的形态。
 func TestWalletFundingRefundReleasesAllocationsPG(t *testing.T) {
 	db := announcementTestDB(t)
-	var version int
-	require.NoError(t, db.Raw("SHOW server_version_num").Scan(&version).Error)
-	require.NotZero(t, version, "live server_version_num must be recorded as evidence")
-	t.Logf("evidence only (not a pass/fail condition): server_version_num=%d", version)
+	pgtest.RecordServerVersion(t, db)
 
 	user := ticketTestUser(t, db, "funding-refund", 1)
 	require.NoError(t, db.Model(&model.User{}).Where("id = ?", user.Id).Update("quota", 100_000).Error)
@@ -80,10 +78,7 @@ func TestWalletFundingRefundWithoutOperationKeyPG(t *testing.T) {
 // 不能只活在代码注释里。
 func TestRefundWithoutAllocationTableStillTracesPG(t *testing.T) {
 	db := announcementTestDB(t)
-	var version int
-	require.NoError(t, db.Raw("SHOW server_version_num").Scan(&version).Error)
-	require.NotZero(t, version, "live server_version_num must be recorded as evidence")
-	t.Logf("evidence only (not a pass/fail condition): server_version_num=%d", version)
+	pgtest.RecordServerVersion(t, db)
 
 	user := ticketTestUser(t, db, "refund-no-table", 1)
 	require.NoError(t, db.Model(&model.User{}).Where("id = ?", user.Id).Update("quota", 0).Error)
