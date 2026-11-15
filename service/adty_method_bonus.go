@@ -2,7 +2,6 @@ package service
 
 import (
 	"strings"
-	"testing"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
@@ -53,25 +52,6 @@ func adtyMethodBonusRule(site *model.AdtySite, key string) (adty_setting.MethodB
 		return adty_setting.SiteMethodBonus(site.Id, key)
 	}
 	return adty_setting.MainMethodBonus(key)
-}
-
-func SetAdtyMethodBonusForTest(t *testing.T, method string, enabled bool, rate string) {
-	t.Helper()
-	setting := adty_setting.GetTopupSetting()
-	old := cloneMethodBonus(setting.MethodBonus)
-	if setting.MethodBonus == nil {
-		setting.MethodBonus = map[string]adty_setting.MethodBonusRule{}
-	}
-	setting.MethodBonus[AdtyBonusMethod(method)] = adty_setting.MethodBonusRule{Enabled: enabled, Rate: rate}
-	t.Cleanup(func() { setting.MethodBonus = old })
-}
-
-func ClearAdtyMethodBonusForTest(t *testing.T) {
-	t.Helper()
-	setting := adty_setting.GetTopupSetting()
-	old := cloneMethodBonus(setting.MethodBonus)
-	setting.MethodBonus = map[string]adty_setting.MethodBonusRule{}
-	t.Cleanup(func() { setting.MethodBonus = old })
 }
 
 // SiteBonusEarningCovers refuses a promised site gift unless earning cash covers it,
