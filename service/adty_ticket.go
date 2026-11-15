@@ -17,6 +17,9 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	// WebP 只用于解码：注册 "webp" 格式并让 image.Decode 能识别。
+	// 这里显式引入，避免依赖同包其它文件的间接 import。
+	_ "golang.org/x/image/webp"
 	"gorm.io/gorm"
 )
 
@@ -805,13 +808,15 @@ func sanitizeAdtyTicketImage(data []byte, policy model.AdtyTicketPolicy) ([]byte
 			return nil, "", 0, 0, ErrAdtyTicketImage
 		}
 		return buf.Bytes(), "image/gif", config.Width, config.Height, nil
-	default:
-		if len(data) >= 12 && bytes.Equal(data[:4], []byte("RIFF")) && bytes.Equal(data[8:12], []byte("WEBP")) {
-			if bytes.Contains(data, []byte("EXIF")) || bytes.Contains(data, []byte("XMP ")) {
-				return nil, "", 0, 0, ErrAdtyTicketImage
-			}
-			return data, "image/webp", config.Width, config.Height, nil
+	case "webp":
+		// Go 只有 WebP 解码器、没有编码器，所以这里存成 PNG。
+		// 重编码必然丢掉所有 chunk，元数据清理因此和 JPEG/PNG 一样由解码-编码完成，
+		// 不再是「扫一下 EXIF 字样就原样返回」那种黑名单检查——换块名或大小写就能绕过。
+		if err := png.Encode(&buf, decoded); err != nil {
+			return nil, "", 0, 0, ErrAdtyTicketImage
 		}
+		return buf.Bytes(), "image/png", config.Width, config.Height, nil
+	default:
 		return nil, "", 0, 0, ErrAdtyTicketImage
 	}
 }
