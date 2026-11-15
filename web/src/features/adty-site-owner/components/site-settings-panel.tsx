@@ -32,6 +32,14 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { NotificationManager } from '@/features/adty-notifications/components/notification-manager'
@@ -52,7 +60,13 @@ import {
 } from '../api'
 import { useVerifiedOwnerMutation } from '../hooks/use-verified-owner-mutation'
 import { parseSenderRecords } from '../lib/site-owner'
-import type { OwnerSite, SenderDomain, SiteBrand, SiteDomain } from '../types'
+import type {
+  OwnerSite,
+  SenderDomain,
+  SiteBrand,
+  SiteDomain,
+  SiteDomainRole,
+} from '../types'
 
 const BRAND_LIMITS: Record<
   Exclude<keyof SiteBrand, 'logo_url' | 'favicon_url'>,
@@ -206,10 +220,11 @@ function DomainsCard(props: { site: OwnerSite }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [hostname, setHostname] = useState('')
+  const [role, setRole] = useState<SiteDomainRole>('site')
   useDraftNavigation(hostname !== '')
   const [deleting, setDeleting] = useState<SiteDomain | null>(null)
   const add = useMutation({
-    mutationFn: () => addDomain(hostname.trim()),
+    mutationFn: () => addDomain(hostname.trim(), role),
     onSuccess: () => {
       toast.success(t('Saved successfully'))
       setHostname('')
@@ -247,6 +262,11 @@ function DomainsCard(props: { site: OwnerSite }) {
                 <div className='flex items-center justify-between gap-2'>
                   <span className='font-mono text-sm'>{domain.hostname}</span>
                   <div className='flex items-center gap-2'>
+                    <span className='text-muted-foreground text-xs'>
+                      {domain.role === 'base_url'
+                        ? t('API address')
+                        : t('Site domain')}
+                    </span>
                     <StatusBadge
                       variant={domainVariant(domain.status)}
                       label={domainLabel(t, domain.status)}
@@ -272,16 +292,35 @@ function DomainsCard(props: { site: OwnerSite }) {
                 )}
               </div>
             ))}
-            <div className='flex items-end gap-2'>
+            <div className='flex flex-wrap items-end gap-2'>
               <div className='space-y-2'>
-                <Label htmlFor='new-domain'>{t('Add a domain')}</Label>
+                <Label htmlFor='new-domain'>{t('Domain')}</Label>
                 <Input
                   id='new-domain'
-                  className='w-72'
-                  placeholder='api.example.com'
+                  className='w-64'
+                  placeholder='www.example.com'
                   value={hostname}
                   onChange={(event) => setHostname(event.target.value)}
                 />
+              </div>
+              <div className='space-y-2'>
+                <Label>{t('What it is for')}</Label>
+                <Select
+                  value={role}
+                  onValueChange={(value) => setRole(value as SiteDomainRole)}
+                >
+                  <SelectTrigger className='w-56'>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent alignItemWithTrigger={false}>
+                    <SelectGroup>
+                      <SelectItem value='site'>{t('Site domain')}</SelectItem>
+                      <SelectItem value='base_url'>
+                        {t('API address')}
+                      </SelectItem>
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
               </div>
               <Button
                 disabled={!hostname.trim() || add.isPending}
@@ -290,6 +329,15 @@ function DomainsCard(props: { site: OwnerSite }) {
                 {t('Add')}
               </Button>
             </div>
+            <p className='text-muted-foreground text-xs'>
+              {role === 'base_url'
+                ? t(
+                    'An API address only answers /v1 calls. Opening it in a browser shows nothing, and signing in does not work on it.'
+                  )
+                : t(
+                    'A site domain serves the whole site: pages, sign-in and top-up. This is the address your customers visit.'
+                  )}
+            </p>
           </>
         )}
         <ConfirmDialog

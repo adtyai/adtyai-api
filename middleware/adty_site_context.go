@@ -90,28 +90,48 @@ func AdtySiteContext() gin.HandlerFunc {
 
 func adtyHandleCustomDomain(c *gin.Context, host string) {
 	site := service.AdtySiteForHost(host)
-	if site != nil {
-		c.Set(service.AdtySiteContextKey, site)
-	}
-	path := c.Request.URL.Path
-	if adtyIsRelayPath(path) || adtyCustomDomainPublicPage(path) || adtyCustomDomainPublicAPI(path) {
-		c.Next()
+	if site == nil {
+		// 域名表里还留着这个 Host，但站点已经查不到：按未知 Host 处理，不回退到主站。
+		c.AbortWithStatus(http.StatusNotFound)
 		return
 	}
-	// Custom domains only serve public pages, public status APIs, and relay.
-	// Every other /api path is an account or admin action and is rejected.
-	if adtyIsAPIPath(path) || adtyCustomDomainAccountAPI(path) {
+	c.Set(service.AdtySiteContextKey, site)
+	path := c.Request.URL.Path
+	// API 地址域名（role=base_url）：只放行 relay（/v1、/v1beta、/mj、/pg）和几个探活接口，
+	// 页面一律 404、账号接口一律 403。站长给客户的「API 地址」打开就只是个 API，
+	// 看不到网站，也拿不到登录页。
+	if service.AdtyIsApiOnlyHost(host) {
+		if adtyIsRelayPath(path) || adtyApiOnlyProbePath(path) {
+			c.Next()
+			return
+		}
+		if adtyIsAPIPath(path) {
+			c.AbortWithStatus(http.StatusForbidden)
+			return
+		}
+		c.AbortWithStatus(http.StatusNotFound)
+		return
+	}
+	// 站点域名（role=site）承接完整的客户端体验（登录、注册、充值、用量、令牌），
+	// 只有平台级管理接口仍被拒绝。
+	if adtyCustomDomainAdminAPI(path) {
 		c.AbortWithStatus(http.StatusForbidden)
 		return
 	}
-	if site != nil {
-		if target := service.AdtySiteBaseURL(site); target != "" {
-			c.Redirect(http.StatusFound, target+c.Request.URL.RequestURI())
-			c.Abort()
-			return
+	if !service.AdtySiteServesCustomers(site) {
+		// 站点已关停、只是缓存里还留着域名行：页面跳到客户的新归属，接口一律拒绝，
+		// 和平台子域名的关站处理保持一致。
+		if !adtyIsAPIPath(path) {
+			if target := service.AdtySiteBaseURL(service.AdtySiteById(site.CloseTransferTo)); target != "" {
+				c.Redirect(http.StatusFound, target+c.Request.URL.RequestURI())
+				c.Abort()
+				return
+			}
 		}
+		c.AbortWithStatus(http.StatusForbidden)
+		return
 	}
-	c.AbortWithStatus(http.StatusForbidden)
+	c.Next()
 }
 
 // AdtyRequireCurrentSiteTerms blocks account and relay use until a site customer
@@ -140,11 +160,15 @@ func AdtyRequireCurrentSiteTerms() gin.HandlerFunc {
 	}
 }
 
-func adtyCustomDomainAccountAPI(path string) bool {
+// adtyCustomDomainAdminAPI 是自定义域名上仍然拒绝的平台级管理接口。
+// 其余 /api 路径都按客户端体验放行（登录、注册、充值、用量、令牌等）。
+//
+// /api/oauth 暂时也在这里：第三方登录回跳依赖平台子域名的 host-only Cookie，
+// 自定义域名上的 OAuth 留给后续单独支持（见 TestCustomDomainRejectsOAuth）。
+func adtyCustomDomainAdminAPI(path string) bool {
 	prefixes := []string{
-		"/api/user", "/api/token", "/api/log", "/api/data", "/api/option",
-		"/api/channel", "/api/verification", "/api/reset_password", "/api/oauth",
-		"/api/adty/topup", "/api/adty/admin", "/api/adty/site/",
+		"/api/adty/admin", "/api/channel", "/api/option", "/api/deployments",
+		"/api/adty/marketing/admin", "/api/oauth",
 	}
 	for _, prefix := range prefixes {
 		if path == strings.TrimSuffix(prefix, "/") || strings.HasPrefix(path, prefix) {
@@ -154,35 +178,19 @@ func adtyCustomDomainAccountAPI(path string) bool {
 	return false
 }
 
-func adtyCustomDomainPublicAPI(path string) bool {
+// adtyApiOnlyProbePath 是 API 地址域名上仍然放行的探活/元信息接口：客户端调 /v1 之前
+// 会先看服务是否在线、有哪些模型分组，这些不带账号状态，放行没有风险。
+func adtyApiOnlyProbePath(path string) bool {
 	switch path {
-	case "/api/status", "/api/ready", "/api/uptime/status", "/api/ratio_config", "/api/adty/groups/display", "/api/adty/site":
+	case "/api/status", "/api/ready", "/api/uptime/status", "/api/ratio_config",
+		"/api/adty/groups/display", "/api/adty/site":
 		return true
 	}
-	return strings.HasPrefix(path, "/api/adty/legal/") || strings.HasPrefix(path, "/api/adty/pricing")
+	return strings.HasPrefix(path, "/api/adty/pricing")
 }
 
 func adtyIsRelayPath(path string) bool {
 	return strings.HasPrefix(path, "/v1/") || path == "/v1" ||
 		strings.HasPrefix(path, "/v1beta/") || path == "/v1beta" ||
 		strings.HasPrefix(path, "/mj/") || strings.HasPrefix(path, "/pg/")
-}
-
-func adtyCustomDomainPublicPage(path string) bool {
-	if path != "/" {
-		path = strings.TrimSuffix(path, "/")
-	}
-	switch path {
-	case "/", "/pricing", "/docs", "/about", "/rankings", "/status",
-		"/user-agreement", "/privacy-policy", "/refund-policy",
-		"/zh-cn", "/zh-tw", "/fr", "/ja", "/ko", "/ru", "/vi",
-		"/robots.txt", "/sitemap.xml", "/favicon.ico":
-		return true
-	}
-	if strings.HasPrefix(path, "/pricing/") || strings.HasPrefix(path, "/docs/") ||
-		strings.HasPrefix(path, "/.well-known/") || strings.HasPrefix(path, "/uploads/") {
-		return true
-	}
-	base := path[strings.LastIndex(path, "/")+1:]
-	return strings.Contains(base, ".")
 }

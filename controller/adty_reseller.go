@@ -44,16 +44,18 @@ func GetAdtySiteDomains(c *gin.Context) {
 	common.ApiSuccess(c, domains)
 }
 
-// AddAdtySiteDomain 绑定自定义域名：POST /api/adty/site/domains {hostname}（任务 11.8）。
+// AddAdtySiteDomain 绑定自定义域名：POST /api/adty/site/domains {hostname, role}（任务 11.8）。
+// role 选填：site（站点域名，默认）或 base_url（API 地址，只放行 /v1 这类接口）。
 func AddAdtySiteDomain(c *gin.Context) {
 	var body struct {
 		Hostname string `json:"hostname"`
+		Role     string `json:"role"`
 	}
 	if err := common.DecodeJson(c.Request.Body, &body); err != nil {
 		common.ApiErrorT(c, "Invalid parameters")
 		return
 	}
-	domain, err := service.AddAdtySiteDomain(c.Request.Context(), c.GetInt("id"), body.Hostname)
+	domain, err := service.AddAdtySiteDomainWithRole(c.Request.Context(), c.GetInt("id"), body.Hostname, body.Role)
 	if err != nil {
 		common.ApiError(c, err)
 		return

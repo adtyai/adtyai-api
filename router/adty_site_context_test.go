@@ -178,7 +178,7 @@ func TestSiteContextByActiveCustomDomainOnly(t *testing.T) {
 	assert.Equal(t, "https://shop.sites.example.com", service.AdtySiteBaseURL(got), "links stay on the platform subdomain")
 }
 
-func TestCustomDomainAndUnknownHostRejectVerificationAndReset(t *testing.T) {
+func TestCustomDomainServesVerificationAndReset(t *testing.T) {
 	f := newSiteFixture(t)
 	saved := service.AdtyLoadCustomDomains
 	service.AdtyLoadCustomDomains = func() (map[string]int, error) {
@@ -198,7 +198,10 @@ func TestCustomDomainAndUnknownHostRejectVerificationAndReset(t *testing.T) {
 		{http.MethodPost, "/api/user/reset"},
 	}
 	for _, check := range checks {
-		assert.Equal(t, http.StatusForbidden, f.do(t, check.method, "api.customer-brand.com", check.path, `{"email":"a@example.com","token":"x","password":"correct-horse-1"}`).Code, check.path)
+		// 自定义域名承接完整客户端体验：验证码、找回密码都不再被中间件拒绝。
+		custom := f.do(t, check.method, "api.customer-brand.com", check.path, `{"email":"a@example.com","token":"x","password":"correct-horse-1"}`)
+		assert.NotEqual(t, http.StatusForbidden, custom.Code, check.path)
+		assert.Empty(t, custom.Header().Get("Location"), check.path)
 		assert.Equal(t, http.StatusNotFound, f.do(t, check.method, "stranger.example.net", check.path, `{}`).Code, check.path)
 		assert.Equal(t, http.StatusForbidden, f.do(t, check.method, "gone.sites.example.com", check.path, `{}`).Code, check.path)
 		assert.NotEqual(t, http.StatusForbidden, f.do(t, check.method, "shop.sites.example.com", check.path, `{}`).Code, check.path)
@@ -206,7 +209,7 @@ func TestCustomDomainAndUnknownHostRejectVerificationAndReset(t *testing.T) {
 	}
 }
 
-func TestCustomDomainRedirectsConsoleAndRejectsAccountAPI(t *testing.T) {
+func TestCustomDomainServesAccountAPI(t *testing.T) {
 	f := newSiteFixture(t)
 	saved := service.AdtyLoadCustomDomains
 	service.AdtyLoadCustomDomains = func() (map[string]int, error) {
@@ -218,17 +221,47 @@ func TestCustomDomainRedirectsConsoleAndRejectsAccountAPI(t *testing.T) {
 	})
 	service.InvalidateAdtySiteCache()
 
-	page := f.do(t, http.MethodGet, "api.customer-brand.com", "/sign-in", "")
-	assert.Equal(t, http.StatusFound, page.Code)
-	assert.Equal(t, "https://shop.sites.example.com/sign-in", page.Header().Get("Location"))
-	wallet := f.do(t, http.MethodGet, "api.customer-brand.com", "/wallet", "")
-	assert.Equal(t, http.StatusFound, wallet.Code)
-	assert.Contains(t, wallet.Header().Get("Location"), "https://shop.sites.example.com/wallet")
-
-	assert.Equal(t, http.StatusForbidden, f.do(t, http.MethodGet, "api.customer-brand.com", "/api/user/self", "").Code)
-	assert.Equal(t, http.StatusForbidden, f.do(t, http.MethodPost, "api.customer-brand.com", "/api/adty/epay/pay", `{}`).Code)
-	assert.Equal(t, http.StatusForbidden, f.do(t, http.MethodPut, "api.customer-brand.com", "/api/adty/marketing/self", `{}`).Code)
+	// 控制台页面不再跳回平台子域名。
+	for _, path := range []string{"/sign-in", "/wallet"} {
+		page := f.do(t, http.MethodGet, "api.customer-brand.com", path, "")
+		assert.NotEqual(t, http.StatusFound, page.Code, path)
+		assert.Empty(t, page.Header().Get("Location"), path)
+		assert.NotEqual(t, http.StatusForbidden, page.Code, path)
+	}
 	assert.Equal(t, http.StatusOK, f.do(t, http.MethodGet, "api.customer-brand.com", "/", "").Code)
+
+	// 登录、充值、营销偏好等客户端接口都放行。
+	for _, request := range []struct{ method, path, body string }{
+		{http.MethodGet, "/api/user/self", ""},
+		{http.MethodPost, "/api/adty/epay/pay", `{}`},
+		{http.MethodPut, "/api/adty/marketing/self", `{}`},
+	} {
+		response := f.do(t, request.method, "api.customer-brand.com", request.path, request.body)
+		assert.NotEqual(t, http.StatusForbidden, response.Code, request.path+": "+response.Body.String())
+		assert.NotEqual(t, http.StatusFound, response.Code, request.path)
+		assert.Empty(t, response.Header().Get("Location"), request.path)
+	}
+
+	// 分站客户可以直接在自定义域名上登录，主站账号仍然进不来。
+	customer := f.user(t, "custom-domain-customer", f.site.Id)
+	login := func(username string) string {
+		body := fmt.Sprintf(`{"username":%q,"password":"correct-horse-1"}`, username)
+		return f.do(t, http.MethodPost, "api.customer-brand.com", "/api/user/login", body).Body.String()
+	}
+	require.Contains(t, login(customer.Username), `"success":true`)
+	outsider := f.user(t, "custom-domain-outsider", 0)
+	assert.Contains(t, login(outsider.Username), `"success":false`, "a main-site account cannot sign in on a custom domain")
+
+	// 平台级管理接口仍然拒绝。
+	for _, request := range []struct{ method, path string }{
+		{http.MethodGet, "/api/adty/admin/sites"},
+		{http.MethodGet, "/api/channel/"},
+		{http.MethodGet, "/api/option/"},
+		{http.MethodGet, "/api/deployments"},
+		{http.MethodGet, "/api/adty/marketing/admin/campaigns"},
+	} {
+		assert.Equal(t, http.StatusForbidden, f.do(t, request.method, "api.customer-brand.com", request.path, "").Code, request.path)
+	}
 	assert.NotEqual(t, http.StatusForbidden, f.do(t, http.MethodGet, "shop.sites.example.com", "/api/user/self", "").Code)
 }
 
@@ -747,4 +780,102 @@ func TestSiteNoticeAndHomePageContentAreEmpty(t *testing.T) {
 	assert.Equal(t, "<p>main-home</p>", body("main.example.com", "/api/home_page_content"))
 	assert.Empty(t, body("shop.sites.example.com", "/api/notice"))
 	assert.Empty(t, body("shop.sites.example.com", "/api/home_page_content"))
+}
+
+// API 地址域名（role=base_url）只放行 relay 和探活接口：页面一律 404，账号接口一律 403。
+// 站长给客户的「API 地址」打开就该只是个 API，不是站长的网站。
+func TestCustomDomainApiRoleServesOnlyRelay(t *testing.T) {
+	f := newSiteFixture(t)
+	savedCustom, savedApi := service.AdtyLoadCustomDomains, service.AdtyLoadApiOnlyDomains
+	service.AdtyLoadCustomDomains = func() (map[string]int, error) {
+		return map[string]int{"shop.customer-brand.com": f.site.Id, "api.customer-brand.com": f.site.Id}, nil
+	}
+	service.AdtyLoadApiOnlyDomains = func() (map[string]bool, error) {
+		return map[string]bool{"api.customer-brand.com": true}, nil
+	}
+	t.Cleanup(func() {
+		service.AdtyLoadCustomDomains, service.AdtyLoadApiOnlyDomains = savedCustom, savedApi
+		service.InvalidateAdtySiteCache()
+	})
+	service.InvalidateAdtySiteCache()
+
+	// 站点域名照常出页面。
+	assert.Equal(t, http.StatusOK, f.do(t, http.MethodGet, "shop.customer-brand.com", "/", "").Code)
+
+	// API 地址域名：页面 404。
+	for _, path := range []string{"/", "/pricing", "/docs", "/sign-in", "/wallet"} {
+		assert.Equal(t, http.StatusNotFound, f.do(t, http.MethodGet, "api.customer-brand.com", path, "").Code, path)
+	}
+
+	// API 地址域名：账号接口 403。
+	for _, path := range []string{"/api/user/self", "/api/user/login", "/api/adty/epay/pay", "/api/adty/site/domains"} {
+		assert.Equal(t, http.StatusForbidden, f.do(t, http.MethodGet, "api.customer-brand.com", path, "").Code, path)
+	}
+
+	// API 地址域名：探活接口放行（客户端调 /v1 前会看服务在不在）。
+	assert.NotEqual(t, http.StatusForbidden, f.do(t, http.MethodGet, "api.customer-brand.com", "/api/status", "").Code)
+	assert.NotEqual(t, http.StatusNotFound, f.do(t, http.MethodGet, "api.customer-brand.com", "/api/status", "").Code)
+
+	// API 地址域名：relay 放行（不是 403、不是 404；没有带 key 时会是 401 之类）。
+	for _, path := range []string{"/v1/models", "/v1/chat/completions"} {
+		code := f.do(t, http.MethodPost, "api.customer-brand.com", path, "{}").Code
+		assert.NotEqual(t, http.StatusForbidden, code, path)
+		assert.NotEqual(t, http.StatusNotFound, code, path)
+	}
+
+	// API 地址域名仍然属于同一个站（用 relay 路径探测：页面路径在这里本来就会被 Abort）。
+	var captured *model.AdtySite
+	probe := gin.New()
+	probe.Use(middleware.AdtySiteContext())
+	probe.POST("/v1/probe", func(c *gin.Context) { captured = service.AdtySiteForRequest(c) })
+	req := httptest.NewRequest(http.MethodPost, "/v1/probe", strings.NewReader("{}"))
+	req.Host = "api.customer-brand.com"
+	probe.ServeHTTP(httptest.NewRecorder(), req)
+	require.NotNil(t, captured)
+	assert.Equal(t, f.site.Id, captured.Id)
+}
+
+// /api/status 的 server_address 在分站要跟着品牌走：配了 API 地址域名时到处都显示那个
+// （客户拿去调接口，跟从哪个页面复制的无关）；没配时才用访客当前所在的站点域名，
+// 最后才退回平台子域名。
+func TestStatusServerAddressFollowsCustomDomain(t *testing.T) {
+	f := newSiteFixture(t)
+	savedCustom, savedApi := service.AdtyLoadCustomDomains, service.AdtyLoadApiOnlyDomains
+	t.Cleanup(func() {
+		service.AdtyLoadCustomDomains, service.AdtyLoadApiOnlyDomains = savedCustom, savedApi
+		service.InvalidateAdtySiteCache()
+	})
+
+	// 没有自定义域名：平台子域名照旧。
+	service.InvalidateAdtySiteCache()
+	platform := f.do(t, http.MethodGet, "shop.sites.example.com", "/api/status", "")
+	require.Equal(t, http.StatusOK, platform.Code, platform.Body.String())
+	assert.Contains(t, platform.Body.String(), `"server_address":"https://shop.sites.example.com"`)
+
+	// 只绑了站点域名：显示访客当前这个域名，不是平台子域名。
+	service.AdtyLoadCustomDomains = func() (map[string]int, error) {
+		return map[string]int{"shop.customer-brand.com": f.site.Id}, nil
+	}
+	service.AdtyLoadApiOnlyDomains = func() (map[string]bool, error) { return map[string]bool{}, nil }
+	service.InvalidateAdtySiteCache()
+	custom := f.do(t, http.MethodGet, "shop.customer-brand.com", "/api/status", "")
+	require.Equal(t, http.StatusOK, custom.Code, custom.Body.String())
+	assert.Contains(t, custom.Body.String(), `"server_address":"https://shop.customer-brand.com"`)
+	assert.NotContains(t, custom.Body.String(), "shop.sites.example.com")
+
+	// 配了 API 地址域名：不管从哪个入口打开，显示的都是它。
+	service.AdtyLoadCustomDomains = func() (map[string]int, error) {
+		return map[string]int{
+			"shop.customer-brand.com": f.site.Id,
+			"api.customer-brand.com":  f.site.Id,
+		}, nil
+	}
+	service.AdtyLoadApiOnlyDomains = func() (map[string]bool, error) {
+		return map[string]bool{"api.customer-brand.com": true}, nil
+	}
+	service.InvalidateAdtySiteCache()
+	for _, host := range []string{"shop.sites.example.com", "shop.customer-brand.com"} {
+		body := f.do(t, http.MethodGet, host, "/api/status", "").Body.String()
+		assert.Contains(t, body, `"server_address":"https://api.customer-brand.com"`, host)
+	}
 }

@@ -66,13 +66,14 @@ const (
 )
 
 var (
-	ErrAdtyCustomDomainOff     = common.NewMessage("Custom domains are not available")
-	ErrAdtyCustomDomainInvalid = common.NewMessage("Enter a subdomain such as api.example.com; root domains and our own domains cannot be used")
-	ErrAdtyCustomDomainTaken   = common.NewMessage("This domain is already used by another site")
-	ErrAdtyCustomDomainLimit   = common.NewMessage("This site already has the maximum number of custom domains")
-	ErrAdtyCustomDomainRate    = common.NewMessage("This site has added too many custom domains this hour")
-	ErrAdtyCloudflareRejected  = common.NewMessage("Cloudflare rejected the request; check the API token permissions")
-	ErrAdtyCloudflareFailed    = common.NewMessage("Cloudflare could not complete the request; try again later")
+	ErrAdtyCustomDomainOff         = common.NewMessage("Custom domains are not available")
+	ErrAdtyCustomDomainInvalid     = common.NewMessage("Enter a subdomain such as api.example.com; root domains and our own domains cannot be used")
+	ErrAdtyCustomDomainTaken       = common.NewMessage("This domain is already used by another site")
+	ErrAdtyCustomDomainLimit       = common.NewMessage("This site already has the maximum number of custom domains")
+	ErrAdtyCustomDomainRate        = common.NewMessage("This site has added too many custom domains this hour")
+	ErrAdtyCustomDomainRoleInvalid = common.NewMessage("Domain role must be site or base_url")
+	ErrAdtyCloudflareRejected      = common.NewMessage("Cloudflare rejected the request; check the API token permissions")
+	ErrAdtyCloudflareFailed        = common.NewMessage("Cloudflare could not complete the request; try again later")
 )
 
 // AdtyCloudflareError 是 Cloudflare 返回的错误（外壳 success=false 或非 2xx）。
@@ -358,6 +359,12 @@ func adtyCloudflareUserError(err error) error {
 // AddAdtySiteDomain 给站长的站绑定一个自定义域名。先发归属 TXT，查到令牌才在 Cloudflare 建主机名。
 // 别的站 pending、active、failed 的主机名算占用。removed 可以重加，但必须换新令牌并重新验证。
 func AddAdtySiteDomain(ctx context.Context, ownerUserId int, rawHost string) (*model.AdtySiteDomain, error) {
+	return AddAdtySiteDomainWithRole(ctx, ownerUserId, rawHost, model.AdtySiteDomainRoleSite)
+}
+
+// AddAdtySiteDomainWithRole 是 AddAdtySiteDomain 的带用途版本：role 只有 site（站点域名）
+// 和 base_url（API 地址）两种，空值按 site 处理。数量仍受 MaxCustomDomainsPerSite 限制。
+func AddAdtySiteDomainWithRole(ctx context.Context, ownerUserId int, rawHost, role string) (*model.AdtySiteDomain, error) {
 	cfg := resellerSetting()
 	if !cfg.CustomDomainEnabled || !cfg.CloudflareConfigured() {
 		return nil, ErrAdtyCustomDomainOff
@@ -369,6 +376,14 @@ func AddAdtySiteDomain(ctx context.Context, ownerUserId int, rawHost string) (*m
 	host, err := normalizeCustomDomain(rawHost)
 	if err != nil {
 		return nil, err
+	}
+	role = strings.ToLower(strings.TrimSpace(role))
+	switch role {
+	case "", model.AdtySiteDomainRoleSite:
+		role = model.AdtySiteDomainRoleSite
+	case model.AdtySiteDomainRoleBaseURL:
+	default:
+		return nil, ErrAdtyCustomDomainRoleInvalid
 	}
 	var domain model.AdtySiteDomain
 	err = model.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -401,7 +416,7 @@ func AddAdtySiteDomain(ctx context.Context, ownerUserId int, rawHost string) (*m
 			return err
 		}
 		domain = model.AdtySiteDomain{
-			SiteId: site.Id, Hostname: host, OwnershipToken: token, Status: model.AdtySiteDomainPending,
+			SiteId: site.Id, Hostname: host, Role: role, OwnershipToken: token, Status: model.AdtySiteDomainPending,
 			VerifyRecords: adtyOwnershipRecords(host, token, strings.TrimSpace(cfg.CnameTarget)),
 			LastCheckedAt: now, CreatedAt: now,
 		}
@@ -410,7 +425,7 @@ func AddAdtySiteDomain(ctx context.Context, ownerUserId int, rawHost string) (*m
 		}
 		domain.Id = existing.Id
 		return tx.Model(&model.AdtySiteDomain{}).Where("id = ?", existing.Id).Updates(map[string]any{
-			"site_id": site.Id, "ownership_token": token, "cf_hostname_id": "", "status": model.AdtySiteDomainPending,
+			"site_id": site.Id, "role": role, "ownership_token": token, "cf_hostname_id": "", "status": model.AdtySiteDomainPending,
 			"ssl_status": "", "verify_records": domain.VerifyRecords, "turnstile_widget": "",
 			"last_error": "", "last_checked_at": now, "created_at": now,
 		}).Error
@@ -792,6 +807,22 @@ func adtyLoadActiveCustomDomains() (map[string]int, error) {
 	return hosts, nil
 }
 
+// adtyLoadApiOnlyCustomDomains 是「用途是 API 地址、已 active 的自定义域名」（AdtyLoadApiOnlyDomains）。
+// 这些主机只放行 relay 和探活接口，页面和账号接口都拒绝。
+func adtyLoadApiOnlyCustomDomains() (map[string]bool, error) {
+	var domains []model.AdtySiteDomain
+	if err := model.DB.Select("hostname").
+		Where("status = ? AND role = ?", model.AdtySiteDomainActive, model.AdtySiteDomainRoleBaseURL).
+		Find(&domains).Error; err != nil {
+		return nil, err
+	}
+	hosts := make(map[string]bool, len(domains))
+	for _, domain := range domains {
+		hosts[strings.ToLower(domain.Hostname)] = true
+	}
+	return hosts, nil
+}
+
 func startAdtySiteDomainTask() {
 	go func() {
 		ticker := time.NewTicker(5 * time.Minute)
@@ -809,6 +840,7 @@ func startAdtySiteDomainTask() {
 func init() {
 	adtyMasterTasks = append(adtyMasterTasks, startAdtySiteDomainTask)
 	AdtyLoadCustomDomains = adtyLoadActiveCustomDomains
+	AdtyLoadApiOnlyDomains = adtyLoadApiOnlyCustomDomains
 	previous := AdtyOnSiteClosed
 	AdtyOnSiteClosed = func(site *model.AdtySite) {
 		if previous != nil {

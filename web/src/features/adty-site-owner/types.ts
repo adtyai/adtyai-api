@@ -54,10 +54,17 @@ export type SitePrice = {
   version: number
 }
 
+/**
+ * What a custom domain is for. `site` serves the whole site; `base_url` serves
+ * only the relay so the address given to a customer is a pure API endpoint.
+ */
+export type SiteDomainRole = 'site' | 'base_url'
+
 /** A custom domain (model.AdtySiteDomain, task 11.8). */
 export type SiteDomain = {
   id: number
   hostname: string
+  role: SiteDomainRole
   status: 'pending' | 'active' | 'failed' | 'removed'
   ssl_status: string
   verify_records: string

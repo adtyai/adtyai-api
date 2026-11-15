@@ -22,6 +22,7 @@ type adtySiteSnapshot struct {
 	byId     map[int]*model.AdtySite
 	byHost   map[string]*model.AdtySite // <子域名>.<根域名>
 	byCustom map[string]*model.AdtySite // 已 active 的自定义域名
+	apiOnly  map[string]bool            // 用途是 base_url 的自定义域名：只放行 relay
 	loadedAt time.Time
 }
 
@@ -32,6 +33,10 @@ var (
 
 // AdtyLoadCustomDomains 由 11.8 注册：返回已经 active 的自定义域名（小写主机名 → 站点 id）。
 var AdtyLoadCustomDomains func() (map[string]int, error)
+
+// AdtyLoadApiOnlyDomains 由 11.8 注册：返回已经 active、用途是 API 地址（role=base_url）的自定义域名。
+// 这些主机只放行 relay 路径（/v1 等），页面和账号接口一律拒绝，让站长给客户的「API 地址」是个纯接口。
+var AdtyLoadApiOnlyDomains func() (map[string]bool, error)
 
 // AdtySiteNames returns display names without exposing the sites' financial or private settings.
 // A missing historical site keeps its ID and an empty name; site 0 is always the main site.
@@ -83,7 +88,7 @@ func loadAdtySiteSnapshot() *adtySiteSnapshot {
 	}
 	snapshot := &adtySiteSnapshot{
 		byId: map[int]*model.AdtySite{}, byHost: map[string]*model.AdtySite{},
-		byCustom: map[string]*model.AdtySite{}, loadedAt: time.Now(),
+		byCustom: map[string]*model.AdtySite{}, apiOnly: map[string]bool{}, loadedAt: time.Now(),
 	}
 	var sites []model.AdtySite
 	if err := model.DB.Find(&sites).Error; err != nil {
@@ -107,8 +112,27 @@ func loadAdtySiteSnapshot() *adtySiteSnapshot {
 			}
 		}
 	}
+	if AdtyLoadApiOnlyDomains != nil {
+		apiHosts, err := AdtyLoadApiOnlyDomains()
+		if err != nil {
+			common.SysError(common.LogText("load adty api-only domains failed: %s", err.Error()))
+		}
+		for host := range apiHosts {
+			snapshot.apiOnly[strings.ToLower(host)] = true
+		}
+	}
 	adtySiteCache = snapshot
 	return snapshot
+}
+
+// AdtyIsApiOnlyHost 说明这个主机是不是「API 地址」的自定义域名（role=base_url）。
+// 这类主机只放行 relay，页面和账号接口都拒绝。
+func AdtyIsApiOnlyHost(host string) bool {
+	host = AdtyNormalizeHost(host)
+	if host == "" {
+		return false
+	}
+	return loadAdtySiteSnapshot().apiOnly[host]
 }
 
 // AdtySiteById 从缓存取站点（只读，调用方不要改返回值）；没有返回 nil。
@@ -208,14 +232,18 @@ func AdtySiteForHost(host string) *model.AdtySite {
 }
 
 // AdtyRejectSessionAPIStatus 判断这个 Host 能不能调用登录、注册、验证码和找回密码。
-// 主站和还在服务的平台子域名返回 0。自定义域名和已关闭的站返回 403，其余 Host 返回 404。
+// 主站、还在服务的平台子域名和还在服务的自定义域名返回 0（自定义域名承接完整客户端体验）。
+// 已关闭、已停止服务的站返回 403，其余 Host 返回 404。
 func AdtyRejectSessionAPIStatus(host string) int {
 	host = AdtyNormalizeHost(host)
 	if host == "" || AdtyIsMainHost(host) || !resellerSetting().Enabled {
 		return 0
 	}
 	snapshot := loadAdtySiteSnapshot()
-	if _, ok := snapshot.byCustom[host]; ok {
+	if site := snapshot.byCustom[host]; site != nil {
+		if AdtySiteServesCustomers(site) {
+			return 0
+		}
 		return http.StatusForbidden
 	}
 	if site := snapshot.byHost[host]; site != nil {
@@ -276,6 +304,98 @@ func AdtySiteBaseURL(site *model.AdtySite) string {
 	return scheme + "://" + AdtySiteDisplayHost(site)
 }
 
+// AdtySitePublicBaseURL 是「用户看得见的返回地址」：站点在服务并且绑了已激活的自定义域名时，
+// 优先用自定义域名（站长的品牌门面），否则退回平台子域名。
+//
+// 只给支付跳回这类「付完钱要回到站长自己的站」的地址用。SEO 的 canonical、邮件里的站点地址、
+// 站点识别继续用 AdtySiteBaseURL —— 那几个换域名会影响已收录页面和已发出的链接。
+func AdtySitePublicBaseURL(site *model.AdtySite) string {
+	main := strings.TrimRight(system_setting.ServerAddress, "/")
+	if site == nil {
+		return main
+	}
+	if host := adtyPreferredCustomHost(site.Id); host != "" {
+		scheme := "https"
+		if parsed, err := url.Parse(main); err == nil && parsed.Scheme != "" {
+			scheme = parsed.Scheme
+		}
+		return scheme + "://" + host
+	}
+	return AdtySiteBaseURL(site)
+}
+
+// adtyPreferredCustomHost 挑一个站点对外露出的自定义域名：只取用途是站点域名（role=site）的那些，
+// 按创建顺序取第一个。API 地址域名（role=base_url）不能拿来当跳回地址——那种域名不给人看页面。
+// 没有已激活的站点域名时返回空，调用方退回平台子域名。
+func adtyPreferredCustomHost(siteId int) string {
+	if siteId <= 0 || model.DB == nil {
+		return ""
+	}
+	var domains []model.AdtySiteDomain
+	if err := model.DB.Where("site_id = ? AND status = ? AND role = ?",
+		siteId, model.AdtySiteDomainActive, model.AdtySiteDomainRoleSite).
+		Order("id").Find(&domains).Error; err != nil {
+		return ""
+	}
+	for _, domain := range domains {
+		if host := strings.ToLower(strings.TrimSpace(domain.Hostname)); host != "" {
+			return host
+		}
+	}
+	return ""
+}
+
+// adtyBaseURLHostForSite 从站点缓存里挑这个站的 API 地址域名（role=base_url、已 active），
+// 按创建顺序取第一个。不查库：AdtyOverrideStatus 在 /api/status 的锁内外都会被调用。
+func adtyBaseURLHostForSite(snapshot *adtySiteSnapshot, siteId int) string {
+	if snapshot == nil || siteId <= 0 {
+		return ""
+	}
+	best := ""
+	for host, site := range snapshot.byCustom {
+		if site == nil || site.Id != siteId || !snapshot.apiOnly[host] {
+			continue
+		}
+		// byCustom 是 map，遍历顺序不固定，拿不到域名行的创建顺序；
+		// 取主机名字典序最小的那个，保证同一份缓存下多次请求结果一致。
+		if best == "" || host < best {
+			best = host
+		}
+	}
+	return best
+}
+
+// adtyStatusAPIAddress 是 /api/status 里 server_address 该显示什么：客户复制它去调接口。
+// 优先级：站长配的 API 地址域名（那是专门给客户端用的）→ 访客当前所在的站点域名 → 平台子域名。
+// 这样客户在 www.fenzhan1.com 上看到的地址就是站长的品牌，而不是平台域名。
+func adtyStatusAPIAddress(c *gin.Context, site *model.AdtySite) string {
+	if site == nil {
+		return strings.TrimRight(system_setting.ServerAddress, "/")
+	}
+	snapshot := loadAdtySiteSnapshot()
+	if host := adtyBaseURLHostForSite(snapshot, site.Id); host != "" {
+		return adtyScheme() + "://" + host
+	}
+	if c != nil {
+		host := AdtyNormalizeHost(c.Request.Host)
+		// 只认这个站自己的域名：主站域名和别人的域名都不能出现在分站页面上。
+		if host != "" && !snapshot.apiOnly[host] {
+			if owner, ok := snapshot.byCustom[host]; ok && owner != nil && owner.Id == site.Id {
+				return adtyScheme() + "://" + host
+			}
+		}
+	}
+	return AdtySiteBaseURL(site)
+}
+
+// adtyScheme 跟主站 ServerAddress 用同一个协议（生产是 https）。
+func adtyScheme() string {
+	if parsed, err := url.Parse(strings.TrimRight(system_setting.ServerAddress, "/")); err == nil && parsed.Scheme != "" {
+		return parsed.Scheme
+	}
+	return "https"
+}
+
 // AdtyOverrideStatus 在 /api/status 末尾调用（controller/misc.go）：当前请求是分站时，换成分站的站名、Logo、
 // 地址，关掉第三方登录和 Passkey，并清掉主站页脚、公告和 Passkey 域名。
 // Turnstile 继续用全局 site key，不在这里查 widget。
@@ -295,7 +415,7 @@ func AdtyOverrideStatus(c *gin.Context, data map[string]any) {
 	data["site_title"] = brand.Title
 	data["favicon"] = brand.FaviconURL
 	data["theme_color"] = brand.ThemeColor
-	data["server_address"] = AdtySiteBaseURL(site)
+	data["server_address"] = adtyStatusAPIAddress(c, site)
 	data["adty_site"] = map[string]any{"id": site.Id, "status": site.Status, "subdomain": site.Subdomain}
 	if version := adty_setting.GetLegalSetting().SiteCustomerTermsVersion; version > 0 {
 		data["site_customer_terms_version"] = version
@@ -334,8 +454,8 @@ func AdtySiteLoginAllowed(c *gin.Context, userId int) bool {
 	return users[0].SiteId == current
 }
 
-// adtySessionHostAllowed 拒绝在自定义域名和已关闭分站的平台子域名上建立会话。
-// 这些主机可以提供页面和 API，登录和二次验证必须回到平台子域名，已关闭的站直接拒绝。
+// adtySessionHostAllowed 拒绝在已关停分站的主机上建立会话。自定义域名和平台子域名一样，
+// 站点还在服务时都可以登录和二次验证；站点关掉后两种主机都拒绝。
 func adtySessionHostAllowed(c *gin.Context) bool {
 	if c == nil || c.Request == nil || !resellerSetting().Enabled {
 		return true
@@ -345,10 +465,11 @@ func adtySessionHostAllowed(c *gin.Context) bool {
 		return true
 	}
 	snapshot := loadAdtySiteSnapshot()
-	if _, ok := snapshot.byCustom[host]; ok {
-		return false
+	site := snapshot.byCustom[host]
+	if site == nil {
+		site = snapshot.byHost[host]
 	}
-	if site := snapshot.byHost[host]; site != nil && site.Status == model.AdtySiteStatusClosed {
+	if site != nil && !AdtySiteServesCustomers(site) {
 		return false
 	}
 	return true

@@ -32,6 +32,7 @@ import type {
   SenderDomain,
   SiteBrand,
   SiteDomain,
+  SiteDomainRole,
   SiteStats,
 } from './types'
 
@@ -529,9 +530,18 @@ export async function deleteOwnerPromoCode(
   requireServerSuccess(res.data)
 }
 
-export async function addDomain(hostname: string): Promise<SiteDomain> {
+/**
+ * Binds a custom domain. `role` says what the domain is for:
+ * `site` serves the whole site (pages, sign-in, top-up); `base_url` serves only
+ * the relay (`/v1` …) so the address a customer pastes into a client is a pure API.
+ */
+export async function addDomain(
+  hostname: string,
+  role: SiteDomainRole = 'site'
+): Promise<SiteDomain> {
   const res = await api.post<ApiResponse<SiteDomain>>(`${BASE}/domains`, {
     hostname,
+    role,
   })
   return requireServerSuccess(res.data).data
 }
