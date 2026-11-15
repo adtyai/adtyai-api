@@ -14,7 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// invalidModelMetaPage 在收成默认页之前拒绝负数页码。收成默认页会让「非法分页」看起来像第一页。
+// invalidModelMetaPage 在收成默认页之前拒绝非法分页。收成默认页会让「非法分页」看起来像第一页。
 func invalidModelMetaPage(c *gin.Context) bool {
 	for _, key := range []string{"p", "page_size", "ps", "size"} {
 		raw := c.Query(key)
@@ -48,7 +48,9 @@ func listModelsMeta(c *gin.Context, keyword, vendor string) {
 		return
 	}
 
-	if squareState != "" && invalidModelMetaPage(c) {
+	// 分页校验对所有请求生效。它守护的是「负页码不许变成负 offset」，与是否按
+	// square_state 过滤无关：只看 square_state 时才校验，等于不带的请求没有防线。
+	if invalidModelMetaPage(c) {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "Invalid pagination"})
 		return
 	}
