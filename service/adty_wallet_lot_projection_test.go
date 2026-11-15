@@ -69,14 +69,40 @@ func TestProjectWalletLotsSeparatesPrincipalAndBonus(t *testing.T) {
 	assert.EqualValues(t, 0, proj.BonusQuota)
 	assert.Equal(t, WalletLotProjectionSourceBatches, proj.Source)
 
+	// ISS-R4-0074: a user with no stored lots has no principal/bonus split to show.
+	// The assertion this block used to make (source legacy_principal, principal
+	// 1_500_000, 3 USD) encoded the defect: it pinned a projection built from the raw
+	// balance, which disagrees with the logical balance the payload's quota carries.
 	legacy := createLotUser(t, "lots-legacy", 1_500_000)
-	proj, ok, err = ProjectWalletLotsForUser(legacy)
+	_, ok, err = ProjectWalletLotsForUser(legacy)
 	require.NoError(t, err)
-	require.True(t, ok)
-	assert.Equal(t, WalletLotProjectionSourceLegacy, proj.Source)
-	assert.EqualValues(t, 1_500_000, proj.PrincipalQuota)
-	assert.EqualValues(t, 0, proj.BonusQuota)
-	assert.True(t, proj.PrincipalUSD.Equal(decimal.RequireFromString("3")))
+	assert.False(t, ok, "a user without lots must not get a wallet_lot_projection")
+}
+
+// TestProjectWalletLotsOmitsClientWithoutLotsRegardlessOfPending pins ISS-R4-0074 at
+// the value that made it visible: quota=10 with quota_pending=100 is a logical balance
+// of 110, so a projection built from the raw quota (10) would publish two different
+// balances in one payload. With no lots there is nothing to project, so ok must be
+// false and the field stays absent (controller/user.go attaches it only when ok).
+func TestProjectWalletLotsOmitsClientWithoutLotsRegardlessOfPending(t *testing.T) {
+	db := adtyTestDB(t)
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.AdtyFundBatch{}))
+
+	user := createLotUser(t, "lots-legacy-pending", 10)
+	require.NoError(t, db.Model(&model.User{}).Where("id = ?", user.Id).Update("quota_pending", 100).Error)
+	require.NoError(t, db.First(user, user.Id).Error)
+	require.EqualValues(t, 10, user.Quota)
+	require.EqualValues(t, 100, user.QuotaPending)
+	require.EqualValues(t, 110, user.ToBaseUser().Quota, "payload quota is the logical balance")
+
+	proj, ok, err := ProjectWalletLotsForUser(user)
+	require.NoError(t, err)
+	assert.False(t, ok, "no lots + quota_pending != 0 must not emit a raw-quota projection")
+	assert.Equal(t, WalletLotProjection{}, proj)
+
+	all, err := ProjectWalletLotsForUsers([]model.User{*user})
+	require.NoError(t, err)
+	assert.NotContains(t, all, user.Id, "batch projection must omit users without lots too")
 }
 
 func TestProjectWalletLotsDoesNotChangeSpendOrCredit(t *testing.T) {

@@ -10,9 +10,10 @@ import (
 const (
 	// WalletLotProjectionSourceBatches is a remaining-by-kind sum of stored lots.
 	WalletLotProjectionSourceBatches = "fund_batches"
-	// WalletLotProjectionSourceLegacy is a display-only stand-in when a user has
-	// no stored lots yet. ConsumeAdtyFundBatchesTx would record the raw balance
-	// as one principal lot; this projection does not write that lot.
+	// WalletLotProjectionSourceLegacy is the historical display-only stand-in for a
+	// user with no stored lots. Those users now get no projection at all
+	// (ISS-R4-0074): the stand-in reported the raw balance, which is not the logical
+	// balance the payload's quota field carries once quota_pending is non-zero.
 	WalletLotProjectionSourceLegacy = "legacy_principal"
 )
 
@@ -69,14 +70,13 @@ func ProjectWalletLotsForUsers(users []model.User) (map[int]WalletLotProjection,
 			continue
 		}
 		sum := sums[user.Id]
-		principal, bonus := sum.Principal, sum.Bonus
-		source := WalletLotProjectionSourceBatches
 		if !sum.HasLots {
-			// Display-only: a user with no lots is still treated as legacy principal.
-			principal, bonus = int64(user.Quota), 0
-			source = WalletLotProjectionSourceLegacy
+			// No stored lots means no principal/bonus split to report. A stand-in built
+			// from the raw balance would disagree with the logical balance the payload's
+			// quota field carries whenever quota_pending != 0 (ISS-R4-0074), so omit.
+			continue
 		}
-		out[user.Id] = walletLotProjectionFromQuota(principal, bonus, source)
+		out[user.Id] = walletLotProjectionFromQuota(sum.Principal, sum.Bonus, WalletLotProjectionSourceBatches)
 	}
 	return out, nil
 }
