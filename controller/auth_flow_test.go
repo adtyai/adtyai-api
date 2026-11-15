@@ -332,23 +332,12 @@ func (provider *boundLoginOAuthProvider) FillUserByProviderID(user *model.User, 
 }
 
 func TestSecurityLoginAllPrimaryTransportsRequireAdditionalVerification(t *testing.T) {
-	for _, transport := range []string{"oauth", "custom oauth", "wechat", "telegram"} {
+	for _, transport := range []string{"oauth", "custom oauth", "wechat"} {
 		t.Run(transport, func(t *testing.T) {
-			var user *model.User
-			var telegram *telegramOAuthFixture
-			if transport == "telegram" {
-				telegram = setupTelegramOAuthTest(t)
-				user = telegram.user
-			} else {
-				user, _ = setupSecurityEnrollmentTest(t)
-			}
+			user, _ := setupSecurityEnrollmentTest(t)
 			newSecurityLoginPasskey(t, user.Id)
 			var response *httptest.ResponseRecorder
 			switch transport {
-			case "telegram":
-				require.NoError(t, model.DB.Model(user).Update("telegram_id", "42").Error)
-				state, code := telegram.authorization(t, "login", service.AuthIdentity{}, "", telegramIdentityClaims(42))
-				response = telegramOAuthCallback(state, code, service.AuthIdentity{})
 			case "wechat":
 				require.NoError(t, model.DB.Model(user).Update("wechat_id", "bound-wechat").Error)
 				upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

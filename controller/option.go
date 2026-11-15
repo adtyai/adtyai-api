@@ -194,7 +194,10 @@ func UpdateOption(c *gin.Context) {
 	switch option.Key {
 	// Deleted with invite rewards, redemption codes and subscriptions
 	// (docs/adty/deleted-features.md); nothing reads them any more.
-	case "QuotaForInviter", "QuotaForInvitee", "TopUpLink", "WaffoSubscriptionReturnUrl":
+	case "QuotaForInviter", "QuotaForInvitee", "TopUpLink", "WaffoSubscriptionReturnUrl",
+		// Telegram 只是通知通道（约定 I）；OAuth 登录链已退役，开关和客户端凭据
+		// 都不再接受写入，历史明文凭据由 model.InitOptionMap 清理。
+		"TelegramOAuthEnabled", "telegram.client_id", "telegram.client_secret":
 		common.ApiErrorStatus(c, http.StatusBadRequest, common.NewMessage("Invalid parameters"))
 		return
 	// 二开：加赠比例写错时 config 会静默保留旧值，先校验（任务 3.1）
@@ -276,15 +279,6 @@ func UpdateOption(c *gin.Context) {
 	case "TurnstileCheckEnabled":
 		if option.Value == "true" && common.TurnstileSiteKey == "" {
 			common.ApiErrorT(c, "Cannot enable Turnstile verification. Enter the Turnstile settings first.")
-			return
-		}
-	case "TelegramOAuthEnabled":
-		if option.Value == "true" && !system_setting.GetTelegramSettings().IsConfigured() {
-			c.JSON(http.StatusOK, gin.H{
-				"success": false,
-				"code":    "TELEGRAM_OAUTH_NOT_CONFIGURED",
-				"message": "Telegram OAuth is not configured or enabled. Please contact your administrator.",
-			})
 			return
 		}
 	case "theme.frontend":

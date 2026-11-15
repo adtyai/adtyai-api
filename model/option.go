@@ -65,7 +65,6 @@ func InitOptionMap() {
 	common.OptionMap["EmailVerificationEnabled"] = strconv.FormatBool(common.EmailVerificationEnabled)
 	common.OptionMap["GitHubOAuthEnabled"] = strconv.FormatBool(common.GitHubOAuthEnabled)
 	common.OptionMap["LinuxDOOAuthEnabled"] = strconv.FormatBool(common.LinuxDOOAuthEnabled)
-	common.OptionMap["TelegramOAuthEnabled"] = strconv.FormatBool(common.TelegramOAuthEnabled)
 	common.OptionMap["WeChatAuthEnabled"] = strconv.FormatBool(common.WeChatAuthEnabled)
 	common.OptionMap["TurnstileCheckEnabled"] = strconv.FormatBool(common.TurnstileCheckEnabled)
 	common.OptionMap["RegisterEnabled"] = strconv.FormatBool(common.RegisterEnabled)
@@ -213,7 +212,32 @@ func InitOptionMap() {
 	maps.Copy(common.OptionMap, modelConfigs)
 
 	common.OptionMapRWMutex.Unlock()
+	purgeRetiredTelegramOAuthOptions()
 	loadOptionsFromDatabase()
+}
+
+// Telegram OAuth is retired (docs/adty/conventions.md 约定 I: Telegram is a
+// notification channel only). client_id/client_secret were the only plaintext
+// credential pair this product kept in the options table, so they are dropped
+// rather than preserved for upgrade compatibility.
+var retiredTelegramOAuthOptionKeys = []string{
+	"telegram.client_id",
+	"telegram.client_secret",
+}
+
+// IsRetiredTelegramOAuthOptionKey reports option keys that belonged to the
+// retired Telegram sign-in chain and must never be written again.
+func IsRetiredTelegramOAuthOptionKey(key string) bool {
+	return key == "TelegramOAuthEnabled" || slices.Contains(retiredTelegramOAuthOptionKeys, key)
+}
+
+func purgeRetiredTelegramOAuthOptions() {
+	if DB == nil {
+		return
+	}
+	if err := DB.Where(map[string]any{"key": retiredTelegramOAuthOptionKeys}).Delete(&Option{}).Error; err != nil {
+		common.SysError(common.LogText("failed to drop retired Telegram OAuth credentials: %s", err.Error()))
+	}
 }
 
 func loadOptionsFromDatabase() {
@@ -287,6 +311,9 @@ func rejectRetiredPayMethodTypes(value string) error {
 func validateOptionValue(key string, value string) error {
 	if IsRetiredHostedPaymentOptionKey(key) {
 		return ErrRetiredHostedPaymentChannel
+	}
+	if IsRetiredTelegramOAuthOptionKey(key) {
+		return common.NewMessage("Telegram sign-in has been retired; Telegram is a notification channel only")
 	}
 	if key == "PayMethods" {
 		if err := rejectRetiredPayMethodTypes(value); err != nil {
@@ -637,8 +664,6 @@ func updateOptionMap(key string, value string) (err error) {
 			common.LinuxDOOAuthEnabled = boolValue
 		case "WeChatAuthEnabled":
 			common.WeChatAuthEnabled = boolValue
-		case "TelegramOAuthEnabled":
-			common.TelegramOAuthEnabled = boolValue
 		case "TurnstileCheckEnabled":
 			common.TurnstileCheckEnabled = boolValue
 		case "RegisterEnabled":

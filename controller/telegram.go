@@ -6,8 +6,9 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// TelegramLegacyAuth retires the unsigned-flow widget endpoints. Existing
-// Telegram bindings are used by the unified OAuth provider instead.
+// TelegramLegacyAuth retires the unsigned-flow widget endpoints. Telegram is a
+// notification channel only (docs/adty/conventions.md 约定 I); neither these
+// endpoints nor the unified OAuth provider offer sign-in any more.
 func TelegramLegacyAuth(c *gin.Context) {
 	c.JSON(http.StatusGone, gin.H{
 		"success": false,
