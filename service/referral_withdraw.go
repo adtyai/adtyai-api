@@ -252,6 +252,12 @@ func (s *ReferralService) CreateWithdrawal(input ReferralWithdrawalCreateInput) 
 			}); err != nil {
 				return err
 			}
+			// 转余额也要留下批次背书（对偶：adty_site_invite_withdraw.go 的转余额路径）：
+			// 只加余额不写批次，下一次扣费会把这条真实入账补建成 legacy 批次，
+			// 从而被记为 fund_batch_gap，对账口径从此不可用。source 用 ledger 的幂等键。
+			if err := model.CreateAdtyFundBatchesTx(tx, input.UserId, ref, creditQuota, 0); err != nil {
+				return err
+			}
 		}
 		if err := addReferralLedgerTx(tx, &model.ReferralCommissionLedger{
 			AffiliateId: affiliate.Id, UserId: input.UserId, WithdrawalId: withdrawal.Id, Type: ledgerType,

@@ -1254,12 +1254,25 @@ func TestWithdrawToBalanceInstantAndIdempotent(t *testing.T) {
 	db.Model(&model.ReferralWithdrawalItem{}).Where("withdrawal_id = ? AND status = ?", w.Id, model.ReferralWithdrawalItemStatusWithdrawn).Count(&items)
 	assert.EqualValues(t, 1, ledgers)
 	assert.EqualValues(t, 1, items)
+	// 转余额必须留下批次背书：否则下一次扣费会把它补建成 legacy 批次并记成
+	// fund_batch_gap，对账口径从此分不清真实入账和漂移。
+	lots := func() []model.AdtyFundBatch {
+		var rows []model.AdtyFundBatch
+		require.NoError(t, db.Where("user_id = ?", affiliate.UserId).Find(&rows).Error)
+		return rows
+	}
+	require.Len(t, lots(), 1)
+	assert.Equal(t, "principal", lots()[0].Kind)
+	assert.Equal(t, fmt.Sprintf("referral-withdrawal-%d", w.Id), lots()[0].Source)
+	assert.EqualValues(t, 15_000_000, lots()[0].Remaining)
 
 	again, err := Referral.CreateWithdrawal(input)
 	require.NoError(t, err)
 	assert.Equal(t, w.Id, again.Id)
 	require.NoError(t, db.First(&user, affiliate.UserId).Error)
 	assert.Equal(t, 15_000_000, user.Quota)
+	require.Len(t, lots(), 1, "a replay must not write a second batch")
+	assert.EqualValues(t, user.Quota, lots()[0].Remaining, "Σ batches remaining == logical balance")
 }
 
 func TestWithdrawUSDTRules(t *testing.T) {
