@@ -34,14 +34,20 @@ func TestNotificationPublishingIsolation(t *testing.T) {
 	owner := adtySessionToken(t, f.db, "notice-owner", common.RoleCommonUser)
 	customer := adtySessionToken(t, f.db, "notice-customer", common.RoleCommonUser)
 	stranger := adtySessionToken(t, f.db, "notice-stranger", common.RoleCommonUser)
-	var ownerUser, rootUser model.User
+	var ownerUser, rootUser, customerUser model.User
 	require.NoError(t, f.db.Where("username = ?", "notice-owner").First(&ownerUser).Error)
 	require.NoError(t, f.db.Where("username = ?", "notice-root").First(&rootUser).Error)
+	require.NoError(t, f.db.Where("username = ?", "notice-customer").First(&customerUser).Error)
 	require.NoError(t, f.db.Model(&model.User{}).Where("username = ?", "notice-customer").Update("site_id", f.site.Id).Error)
 	require.NoError(t, f.db.Model(&model.AdtySite{}).Where("id = ?", f.site.Id).Updates(map[string]any{
 		"owner_user_id": ownerUser.Id, "agreement_ver": service.AdtyCurrentSiteAgreementVersion(),
 	}).Error)
 	service.InvalidateAdtySiteCache()
+	// 会话绑定到签发它的主机（A.4.4 / DEC-023）：分站客户只能用在自己站点主机上签的会话，
+	// 站长在主站控制台用主站会话、在分站用分站会话。adtySessionToken 签的会话没有签发站点，
+	// 只能在主站用，所以这里另签两个分站会话。
+	customerOnSite := adtySessionOnSite(t, customerUser.Id, f.site.Id)
+	ownerOnSite := adtySessionOnSite(t, ownerUser.Id, f.site.Id)
 	request := func(method, host, path, token, body string, status int) apiEnvelope {
 		t.Helper()
 		req := httptest.NewRequest(method, path, strings.NewReader(body))
@@ -72,11 +78,14 @@ func TestNotificationPublishingIsolation(t *testing.T) {
 	assert.EqualValues(t, rootUser.Id, created.Data["publisher_id"])
 	assert.EqualValues(t, 0, created.Data["issuer_site_id"])
 	assert.Equal(t, "notice-root", created.Data["publisher_name"])
-	for _, ctx := range []struct{ host, token string }{{main, customer}, {main, stranger}, {shop, stranger}} {
-		got := request(http.MethodGet, ctx.host, inbox+"?site_id="+fmt.Sprint(f.site.Id), ctx.token, "", http.StatusOK)
-		assert.NotContains(t, fmt.Sprint(got.Data["announcements"]), "Only this shop")
-	}
-	for _, token := range []string{customer, owner} {
+	// 主站上的主站用户看不到定向公告。
+	got := request(http.MethodGet, main, inbox+"?site_id="+fmt.Sprint(f.site.Id), stranger, "", http.StatusOK)
+	assert.NotContains(t, fmt.Sprint(got.Data["announcements"]), "Only this shop")
+	// 原断言让分站客户在主站主机、主站用户在分站主机都拿到 200，那是 Host 绑定之前的
+	// 预期：会话当时不绑签发站点。现在的规则是跨站会话一律 401，比「看到了但是空的」更严。
+	request(http.MethodGet, main, inbox+"?site_id="+fmt.Sprint(f.site.Id), customer, "", http.StatusUnauthorized)
+	request(http.MethodGet, shop, inbox+"?site_id="+fmt.Sprint(f.site.Id), stranger, "", http.StatusUnauthorized)
+	for _, token := range []string{customerOnSite, ownerOnSite} {
 		got := request(http.MethodGet, shop, inbox, token, "", http.StatusOK)
 		require.True(t, got.Success, got.Message)
 		assert.Contains(t, fmt.Sprint(got.Data["announcements"]), "Only this shop")
@@ -93,7 +102,7 @@ func TestNotificationPublishingIsolation(t *testing.T) {
 	require.True(t, mine.Success, mine.Message)
 	assert.EqualValues(t, f.site.Id, mine.Data["issuer_site_id"])
 	assert.EqualValues(t, ownerUser.Id, mine.Data["publisher_id"])
-	got := request(http.MethodGet, shop, inbox, customer, "", http.StatusOK)
+	got = request(http.MethodGet, shop, inbox, customerOnSite, "", http.StatusOK)
 	var key string
 	for _, raw := range got.Data["announcements"].([]any) {
 		item := raw.(map[string]any)
@@ -102,19 +111,19 @@ func TestNotificationPublishingIsolation(t *testing.T) {
 		}
 	}
 	require.NotEmpty(t, key)
-	assert.True(t, request(http.MethodPost, shop, inbox+"/read", customer, `{"keys":["`+key+`"]}`, http.StatusOK).Success)
+	assert.True(t, request(http.MethodPost, shop, inbox+"/read", customerOnSite, `{"keys":["`+key+`"]}`, http.StatusOK).Success)
 	edit := fmt.Sprintf(`{"revision":1,"title":"Scoped maintenance","content":"Edited shop notice","kind":"maintenance","audience":"site","target_site_id":%d}`, f.site.Id)
 	updated := request(http.MethodPut, main, rootPath+fmt.Sprintf("/%d", id), root, edit, http.StatusOK)
 	require.True(t, updated.Success, updated.Message)
 	assert.EqualValues(t, 2, updated.Data["revision"])
 	assert.Equal(t, created.Data["published_at"], updated.Data["published_at"])
 	request(http.MethodPut, main, rootPath+fmt.Sprintf("/%d", id), root, edit, http.StatusConflict)
-	assert.False(t, request(http.MethodPost, shop, inbox+"/read", customer, `{"keys":["`+key+`"]}`, http.StatusOK).Success)
-	got = request(http.MethodGet, shop, inbox, customer, "", http.StatusOK)
+	assert.False(t, request(http.MethodPost, shop, inbox+"/read", customerOnSite, `{"keys":["`+key+`"]}`, http.StatusOK).Success)
+	got = request(http.MethodGet, shop, inbox, customerOnSite, "", http.StatusOK)
 	assert.Empty(t, got.Data["read_keys"], "editing creates a new unread revision")
 	withdrawn := request(http.MethodDelete, main, rootPath+fmt.Sprintf("/%d", id), root, `{"revision":2}`, http.StatusOK)
 	require.True(t, withdrawn.Success, withdrawn.Message)
-	assert.NotContains(t, fmt.Sprint(request(http.MethodGet, shop, inbox, customer, "", http.StatusOK).Data), "Edited shop notice")
+	assert.NotContains(t, fmt.Sprint(request(http.MethodGet, shop, inbox, customerOnSite, "", http.StatusOK).Data), "Edited shop notice")
 	assert.Contains(t, fmt.Sprint(request(http.MethodGet, main, rootPath, root, "", http.StatusOK).Data), "withdrawn", "management retains withdrawn history")
 	for _, audience := range []string{"all_users", "all_sites"} {
 		body := fmt.Sprintf(`{"title":"%s","content":"%s message","kind":"system","audience":"%s"}`, audience, audience, audience)
@@ -125,7 +134,7 @@ func TestNotificationPublishingIsolation(t *testing.T) {
 	// all_sites 是「平台级、覆盖所有站」的显式选项，主站也在覆盖范围内。
 	// 原来这里断言 NotContains，那是需求变化前的行为，不是回归。
 	assert.Contains(t, mainInbox, "all_sites message")
-	shopInbox := fmt.Sprint(request(http.MethodGet, shop, inbox, customer, "", http.StatusOK).Data)
+	shopInbox := fmt.Sprint(request(http.MethodGet, shop, inbox, customerOnSite, "", http.StatusOK).Data)
 	// 主站公告**不**同步到分站（老板明确否掉的形态）。这条原来是 Contains，
 	// 改的是需求，不是回归：分站只能看到 all_sites 和自己那条定向公告。
 	assert.NotContains(t, shopInbox, "all_users message")
@@ -237,12 +246,18 @@ func TestNotificationInboxReadIsolation(t *testing.T) {
 	for _, invalid := range []string{`{"keys":["forged"]}`, `{"keys":["` + strings.Repeat("0", 64) + `"]}`, `{"keys":[]}`} {
 		assert.False(t, request(http.MethodPost, main, inbox+"/read", a, invalid, http.StatusOK).Success)
 	}
-	branch := request(http.MethodGet, "shop.sites.example.com", inbox, a, "", http.StatusOK)
+	// 主站账号的会话不能进分站主机（A.4.4 / DEC-023）。原来这里断言 200 再断言收件箱为空，
+	// 那是 Host 绑定之前的预期；现在跨站直接 401，比「进得去但看不到」更严。
+	request(http.MethodGet, "shop.sites.example.com", inbox, a, "", http.StatusUnauthorized)
+	// 分站客户在分站主机上看到的是分站自己的收件箱：主站公告、主站公告的已读状态都不跨站。
+	shopUser := f.user(t, "notification-shop", f.site.Id)
+	shopToken := adtySessionOnSite(t, shopUser.Id, f.site.Id)
+	branch := request(http.MethodGet, "shop.sites.example.com", inbox, shopToken, "", http.StatusOK)
 	require.True(t, branch.Success, branch.Message)
 	assert.Empty(t, branch.Data["notice"])
 	assert.Empty(t, branch.Data["announcements"])
 	assert.Empty(t, branch.Data["read_keys"])
-	assert.False(t, request(http.MethodPost, "shop.sites.example.com", inbox+"/read", a, body, http.StatusOK).Success)
+	assert.False(t, request(http.MethodPost, "shop.sites.example.com", inbox+"/read", shopToken, body, http.StatusOK).Success)
 	edit := `{"revision":1,"title":"Edited announcement","content":"Edited announcement","kind":"system","audience":"all_users"}`
 	request(http.MethodPut, main, "/api/adty/admin/notifications/"+fmt.Sprint(announcementID), root, edit, http.StatusOK)
 	edited := request(http.MethodGet, main, inbox, a, "", http.StatusOK)
@@ -284,6 +299,17 @@ func captureSiteMail(t *testing.T) func() []capturedMail {
 	}
 }
 
+// adtySessionOnSite 给已有用户签一个绑定到 siteID 主机的会话（0 是主站）。
+// A.4.4 / DEC-023 之后会话绑定签发主机，adtySessionToken 造出来的会话没有签发站点，
+// 只能在主站用；要在分站主机上操作用这个。
+func adtySessionOnSite(t *testing.T, userID, siteID int) string {
+	t.Helper()
+	bundle, err := service.CreateLoginSessionOnSite(userID, siteID, "password", "127.0.0.1", "adty-site-brand-test")
+	require.NoError(t, err)
+	require.NotEmpty(t, bundle.AccessToken)
+	return bundle.AccessToken
+}
+
 func newBrandFixture(t *testing.T) *siteFixture {
 	t.Helper()
 	require.NoError(t, i18n.Init())
@@ -314,20 +340,28 @@ func TestResetLinkUsesUserSiteNotHost(t *testing.T) {
 	mainUser := f.user(t, "main-user", 0)
 	require.NoError(t, f.db.Model(&model.User{}).Where("id = ?", mainUser.Id).Update("email", "m@example.com").Error)
 
-	// 主站域名上找回：链接按账号所属站点，不按请求 Host。
-	f.do(t, http.MethodGet, "main.example.com", "/api/reset_password?email="+url.QueryEscape("c@example.com"), "")
+	// 找回在账号所属站点的主机上发起。Host 写成大小写和端口都不同的形式：
+	// 邮件里的地址仍然只从站点表取，不跟请求的 Host 走。
+	f.do(t, http.MethodGet, "SHOP.Sites.Example.com:443", "/api/reset_password?email="+url.QueryEscape("c@example.com"), "")
 	denied := f.do(t, http.MethodGet, "evil.example.net", "/api/reset_password?email="+url.QueryEscape("c@example.com"), "")
 	assert.Equal(t, http.StatusNotFound, denied.Code, "an unknown host cannot send a reset mail")
-	f.do(t, http.MethodGet, "shop.sites.example.com", "/api/reset_password?email="+url.QueryEscape("m@example.com"), "")
+	f.do(t, http.MethodGet, "main.example.com:443", "/api/reset_password?email="+url.QueryEscape("m@example.com"), "")
 
 	mails := sent()
 	require.Len(t, mails, 2)
 	assert.Contains(t, mails[0].content, "https://shop.sites.example.com/user/reset#email=c%40example.com&token=")
-	assert.NotContains(t, mails[0].content, "evil.example.net")
+	assert.NotContains(t, mails[0].content, "SHOP.Sites.Example.com:443")
 	assert.Contains(t, mails[0].subject, "Shop AI")
 	assert.Equal(t, "Shop AI <noreply@mail.adtyai.com>", mails[0].from)
-	assert.Contains(t, mails[1].content, "https://main.example.com/user/reset#email=m%40example.com&token=", "主站用户在分站域名上找回，链接仍是主站")
+	assert.Contains(t, mails[1].content, "https://main.example.com/user/reset#email=m%40example.com&token=", "主站用户的链接仍是主站地址")
 	assert.NotContains(t, mails[1].subject, "Shop AI")
+
+	// 原来的第一段断言是「在主站域名上给分站客户发一封带分站链接的信」。那是按邮箱
+	// 全局查账号时的预期；账号按站点隔离之后（同邮箱在各站是独立账号，重置码也按站点
+	// 隔离，见 controller/adty_site_email_test.go 的 TestVerificationAndPasswordResetCodesStayOnOneSite），
+	// 主站主机解析不到分站账号，行为与未知邮箱一致：回成功、不发信。
+	f.do(t, http.MethodGet, "main.example.com", "/api/reset_password?email="+url.QueryEscape("c@example.com"), "")
+	assert.Len(t, sent(), 2, "a main-site host must not resolve a sub-site account")
 }
 
 func TestVerificationMailUsesRequestSite(t *testing.T) {

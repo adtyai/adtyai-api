@@ -19,7 +19,10 @@ func TestFailTasksWithoutChannelRefundsPrecharge(t *testing.T) {
 	t.Cleanup(func() {
 		require.NoError(t, opened.Close())
 	})
-	require.NoError(t, opened.DB.AutoMigrate(&model.User{}, &model.Token{}, &model.Channel{}, &model.Task{}, &model.Log{}, &model.Midjourney{}, &model.BillingOperation{}, &model.BillingOperationMovement{}, &model.AdtySiteEarningEvent{}))
+	// 退款走账单结算链路，会读分摊和批次表；夹具缺表会让退款整笔回滚（「钱退不回去」）。
+	// 与 task_billing_test.go 的 TestMain 保持同一份清单。
+	require.NoError(t, opened.DB.AutoMigrate(&model.User{}, &model.Token{}, &model.Channel{}, &model.Task{}, &model.Log{}, &model.Midjourney{}, &model.BillingOperation{}, &model.BillingOperationMovement{}, &model.AdtySiteEarningEvent{},
+		&model.AdtyFundBatch{}, &model.AdtyFundAllocation{}, &model.AdtyBillingHold{}))
 
 	const userID, tokenID, channelID = 71, 71, 71
 	const startQuota, charged, tokenRemain = 10000, 3000, 5000

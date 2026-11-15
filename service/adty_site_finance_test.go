@@ -498,7 +498,9 @@ func TestAdtySiteSettlementCreditsLateBatchOnSameCutoff(t *testing.T) {
 	assert.EqualValues(t, 2, ledgerCount)
 	var account model.ReferralCommissionAccount
 	require.NoError(t, db.Where("user_id = ?", owner.Id).First(&account).Error)
-	assert.InDelta(t, 24, account.AvailableAmount, 0.00000001)
+	// 原断言要求 referral 佣金账户里也有 24——那正是 ISS-R4-0111 删掉的双记行为。
+	// 上面已经断言钱包余额是 24；佣金账户必须保持不动，否则站长能两本账各提一次。
+	assert.Zero(t, account.AvailableAmount, "站点收益不得再记进 referral 佣金账户（ISS-R4-0111）")
 }
 
 func TestAdtySiteWalletAllowsPartialMarginTopupAndDebtRepayment(t *testing.T) {
