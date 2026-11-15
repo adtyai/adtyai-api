@@ -423,7 +423,7 @@ func CompleteAdtyTopUpTx(tx *gorm.DB, tradeNo string, facts AdtyPaymentFacts) (a
 	if err := creditTopUpQuota(tx, topUp.UserId, credited, nil); err != nil {
 		return false, 0, nil, nil, err
 	}
-	if err := CreateAdtyFundBatchesTx(tx, topUp.UserId, tradeNo, faceQuota, bonusQuota); err != nil {
+	if err := CreateAdtyFundBatchesWithSiteTx(tx, topUp.UserId, AdtyFundBatchSiteID(ext.SiteId), tradeNo, faceQuota, bonusQuota); err != nil {
 		return false, 0, nil, nil, err
 	}
 	key := "topup:" + common.Sha1([]byte(tradeNo))

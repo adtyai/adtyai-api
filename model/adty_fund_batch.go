@@ -20,9 +20,15 @@ func adtyFundBatchShortfallError(uncovered int64) error {
 }
 
 // AdtyFundBatch is one recharge principal or permanent bonus lot.
+//
+// SiteId 是这批额度归属的站（0 是主站）。A.12.1 要求批次自带站点；ISS-R4-0047
+// 本轮只补这一列，出资主体 / 币种 / 关联流水仍未做（见该条 fix_direction）。
+// 指针为 nil 表示「证不出站点」：历史行与没有订单/凭据可查的补建额度留 NULL，
+// 不写推断值——推断值一旦落库就再也分不清真假。
 type AdtyFundBatch struct {
 	Id        int64  `json:"id"`
 	UserId    int    `json:"user_id" gorm:"uniqueIndex:idx_adty_fund_batch_user_source_kind,priority:1;index"`
+	SiteId    *int   `json:"site_id,omitempty" gorm:"index"`
 	Kind      string `json:"kind" gorm:"type:varchar(16);uniqueIndex:idx_adty_fund_batch_user_source_kind,priority:3;index"`
 	Source    string `json:"source" gorm:"type:varchar(64);uniqueIndex:idx_adty_fund_batch_user_source_kind,priority:2;index"`
 	Original  int64  `json:"original"`
@@ -34,7 +40,21 @@ func (AdtyFundBatch) TableName() string { return "adty_fund_batches" }
 
 // CreateAdtyFundBatchesTx records the principal and bonus lots for one credit.
 // A replay of the same source does not insert a second pair.
+// 站点不可知的调用方用它：批次落 NULL，不猜。
 func CreateAdtyFundBatchesTx(tx *gorm.DB, userID int, source string, principal, bonus int64) error {
+	return CreateAdtyFundBatchesWithSiteTx(tx, userID, nil, source, principal, bonus)
+}
+
+// AdtyFundBatchSiteID 把已知站点变成写进批次的指针。0 是主站，是具体值而不是
+// 「未知」；未知只能传 nil。
+func AdtyFundBatchSiteID(siteID int) *int { return &siteID }
+
+// CreateAdtyFundBatchesWithSiteTx 同 CreateAdtyFundBatchesTx，并记下这批额度的
+// 站点（ISS-R4-0047）。
+//
+// 站点是批次自带的属性，不是每次查询时反推的：站迁移时批次必须跟着客户一起搬
+// （见 AdtySetUsersSiteTx），所以站点一旦写入就由账本自己维护。
+func CreateAdtyFundBatchesWithSiteTx(tx *gorm.DB, userID int, siteID *int, source string, principal, bonus int64) error {
 	if tx == nil || userID <= 0 || source == "" {
 		return nil
 	}
@@ -51,10 +71,10 @@ func CreateAdtyFundBatchesTx(tx *gorm.DB, userID int, source string, principal, 
 	now := common.GetTimestamp()
 	rows := make([]AdtyFundBatch, 0, 2)
 	if principal > 0 {
-		rows = append(rows, AdtyFundBatch{UserId: userID, Kind: "principal", Source: source, Original: principal, Remaining: principal, CreatedAt: now})
+		rows = append(rows, AdtyFundBatch{UserId: userID, SiteId: siteID, Kind: "principal", Source: source, Original: principal, Remaining: principal, CreatedAt: now})
 	}
 	if bonus > 0 {
-		rows = append(rows, AdtyFundBatch{UserId: userID, Kind: "bonus", Source: source, Original: bonus, Remaining: bonus, CreatedAt: now})
+		rows = append(rows, AdtyFundBatch{UserId: userID, SiteId: siteID, Kind: "bonus", Source: source, Original: bonus, Remaining: bonus, CreatedAt: now})
 	}
 	if len(rows) == 0 {
 		return nil
@@ -69,6 +89,36 @@ func CreateAdtyFundBatchesTx(tx *gorm.DB, userID int, source string, principal, 
 		return nil
 	}
 	return err
+}
+
+// adtyMoveFundBatchesToSiteTx 把迁移用户的批次一起搬到目标站（ISS-R4-0047）。
+//
+// 站迁移以前不需要碰批次表：那张表里根本没有站点字段。加了 site_id 之后不动它，
+// 迁移完就是「客户在新站、本金挂在旧站」，按站点算本金负债会把两个站同时算错。
+//
+// 只搬 site_id 等于原站的行：NULL 是「当时就证不出站点」的历史行，搬过去只是把
+// 未知换成错的已知。表不存在说明这套库还没建批次表，没有批次可搬，不是错误。
+func adtyMoveFundBatchesToSiteTx(tx *gorm.DB, userIDs []int, fromSite, toSite int) error {
+	if tx == nil || len(userIDs) == 0 || fromSite == toSite {
+		return nil
+	}
+	if !tx.Migrator().HasTable(&AdtyFundBatch{}) {
+		return nil
+	}
+	return tx.Model(&AdtyFundBatch{}).
+		Where("user_id IN ? AND site_id = ?", userIDs, fromSite).
+		Update("site_id", toSite).Error
+}
+
+// adtyFundBatchSiteOfUserTx 读用户当前所属站，给没有其它站点上下文的写入路径
+// 兜底。用户行在读不到时返回错误：那说明调用方拿到的不是可用账户，静默写 NULL
+// 会把「漏填」伪装成「历史行」。
+func adtyFundBatchSiteOfUserTx(tx *gorm.DB, userID int) (*int, error) {
+	var user User
+	if err := tx.Select("id", "site_id").First(&user, userID).Error; err != nil {
+		return nil, err
+	}
+	return AdtyFundBatchSiteID(user.SiteId), nil
 }
 
 // adtyLegacyBatchSource 是「没有订单来源的额度」那一条批次的固定 source。
@@ -100,6 +150,8 @@ func ensureAdtyLegacyBatchTx(tx *gorm.DB, userID int, topUp int64) error {
 		if result.RowsAffected > 0 {
 			return nil
 		}
+		// 补建的是「没有批次背书的额度」，站点无从证明，留 NULL 而不是拿
+		// 用户当前站点顶上。
 		return db.Create(&AdtyFundBatch{
 			UserId: userID, Kind: "principal", Source: adtyLegacyBatchSource,
 			Original: topUp, Remaining: topUp,

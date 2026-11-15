@@ -729,7 +729,8 @@ func applyApprovedStaffBalanceTx(tx *gorm.DB, row model.AdtyStaffBalanceRequest,
 			return err
 		}
 		applied = delta
-		if err := model.CreateAdtyFundBatchesTx(tx, row.CustomerUserId, adtyStaffBalanceLedgerKey(row), delta, 0); err != nil {
+		// 员工调额批次记在申请单所在站（row.SiteId），与该单的出资钱包同站。
+		if err := model.CreateAdtyFundBatchesWithSiteTx(tx, row.CustomerUserId, model.AdtyFundBatchSiteID(row.SiteId), adtyStaffBalanceLedgerKey(row), delta, 0); err != nil {
 			return err
 		}
 	}

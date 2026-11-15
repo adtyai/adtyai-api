@@ -130,7 +130,8 @@ func AdjustUserQuotaWithLedger(userID, operatorID, operatorRole int, mode string
 		}
 		delta := int64(after) - int64(user.Quota)
 		if delta > 0 {
-			if err := CreateAdtyFundBatchesTx(tx, userID, adtyAdjustFundSource(idemKey), delta, 0); err != nil {
+			// 调额批次记在客户所属站：按站点算本金负债时要能看见这笔凭空补的额度。
+			if err := CreateAdtyFundBatchesWithSiteTx(tx, userID, AdtyFundBatchSiteID(user.SiteId), adtyAdjustFundSource(idemKey), delta, 0); err != nil {
 				return err
 			}
 		} else if delta < 0 {

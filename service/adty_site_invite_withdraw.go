@@ -192,7 +192,8 @@ func CreateAdtySiteInviteWithdrawal(input AdtySiteInviteWithdrawalInput) (*model
 			}); err != nil {
 				return err
 			}
-			return model.CreateAdtyFundBatchesTx(tx, input.UserID, ref, int64(quota), 0)
+			// 邀请佣金转到余额的批次记在佣金所属站（row.SiteId）。
+			return model.CreateAdtyFundBatchesWithSiteTx(tx, input.UserID, model.AdtyFundBatchSiteID(row.SiteId), ref, int64(quota), 0)
 		}
 		return nil
 	})
