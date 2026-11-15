@@ -105,10 +105,12 @@ func RecoverBillingOperations(ctx context.Context, limit int) error {
 			continue
 		}
 		if GetTaskAdaptorFunc == nil {
+			flagTaskBillingManualReview(ctx, task, "no task adaptor factory is registered for platform "+string(task.Platform))
 			continue
 		}
 		adaptor := GetTaskAdaptorFunc(task.Platform)
 		if adaptor == nil {
+			flagTaskBillingManualReview(ctx, task, "no task adaptor for platform "+string(task.Platform))
 			continue
 		}
 		result := task.PrivateData.CompletionBilling
@@ -147,6 +149,33 @@ func RecoverBillingOperations(ctx context.Context, limit int) error {
 		}
 	}
 	return first
+}
+
+// flagTaskBillingManualReview 收口「恢复链救不了」的任务：一条 SysError 留痕，
+// 行上写复核原因并把 billing_pending 关掉。
+//
+// 为什么不能只是 continue：这两个分支既不推进也不写日志，任务每 15 秒被同一个
+// 地方跳过（`billing_pending = true AND billing_initial_pending = false`），预扣
+// 额度永久停在中间态且运营完全看不到（ISS-R4-0095）。
+//
+// 为什么不顺手退或补扣：没有 adaptor 就重算不出实际用量，退多少、补多少都是猜。
+// 预扣额度保持原样，由 BillingReviewReason 交给人工判断——恢复链在这里只负责
+// 「让这行停下来并被看见」，不替人做财务决定。
+func flagTaskBillingManualReview(ctx context.Context, task *model.Task, reason string) {
+	if task == nil {
+		return
+	}
+	common.SysError(common.LogText("task billing recovery: %s, task %s platform %s user %d keeps its reserved charge and is flagged for manual review",
+		reason, task.TaskID, task.Platform, task.UserId))
+	task.PrivateData.BillingReviewReason = reason
+	err := model.DB.WithContext(ctx).Model(&model.Task{}).Where("id = ? AND billing_pending = ?", task.ID, true).
+		Updates(map[string]any{"billing_pending": false, "private_data": task.PrivateData}).Error
+	if err != nil {
+		// 写不进去就还是原来的死循环，所以这一条必须报出来，不能只返回。
+		common.SysError(common.LogText("task billing recovery: failed to flag task %s for manual review: %s", task.TaskID, err.Error()))
+		return
+	}
+	task.BillingPending = false
 }
 
 // StartBillingRecovery runs on every serving node, including non-master nodes,
