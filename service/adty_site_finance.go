@@ -388,7 +388,7 @@ func TransferAdtyEarningToMargin(siteID, operator int, amount, tier decimal.Deci
 	if err := EnsureAdtySiteWallets(siteID); err != nil {
 		return err
 	}
-	return model.DB.Transaction(func(tx *gorm.DB) error {
+	if err := model.DB.Transaction(func(tx *gorm.DB) error {
 		if _, err := applyAdtySiteWalletChangeTx(tx, siteID, model.AdtySiteWalletEarnings, amount.Neg(), AdtySiteWalletChange{
 			Type: "earning_to_margin", IdempotencyKey: key + ":earn", OperatorID: operator,
 		}); err != nil {
@@ -399,7 +399,16 @@ func TransferAdtyEarningToMargin(siteID, operator int, amount, tier decimal.Deci
 			OpenMarginCycle: true, CycleTier: tier,
 		})
 		return err
-	})
+	}); err != nil {
+		return err
+	}
+	// 这是站长补足保证金的唯一生产入口，也是「待履约赠金」唯一的兑现时机
+	// （ISS-R4-0076）。转账已经提交，兑现失败不回滚它：没兑现的仍是 pending，
+	// 下一次补足会再试。
+	if _, err := ResumePendingAdtyGiftFulfillments(siteID); err != nil {
+		common.SysLog(common.LogText("gift fulfillment: resume after margin top-up site %d: %s", siteID, err.Error()))
+	}
+	return nil
 }
 
 func ApplyAdtySiteWalletChange(siteID int, kind string, delta decimal.Decimal, change AdtySiteWalletChange) (*model.AdtySiteWalletLedger, error) {
