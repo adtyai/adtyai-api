@@ -1010,6 +1010,28 @@ func applyAdtyTeamQuotaTx(tx *gorm.DB, team *model.AdtyTeam, delta int64, kind, 
 	team.SharedQuota = after
 	return tx.Create(&model.AdtyTeamLedger{
 		TeamId: team.Id, DeltaQuota: delta, BalanceBefore: before, BalanceAfter: after,
-		Type: kind, RefId: ref, ActorUserId: actor, IdempotencyKey: kind + ":" + ref,
+		Type: kind, RefId: ref, ActorUserId: actor, IdempotencyKey: adtyTeamLedgerKey(kind, ref, after),
 	}).Error
+}
+
+// adtyTeamLedgerKey 构造团队流水的幂等键（`ISS-R4-0067`）。
+//
+// **`reserve` 必须把「变更后的余额」算进键里**：同一个 operation 会有第二次预扣
+// （发送前补扣、阶梯价上调），而它们共用同一个 `ref`（operation_key）。只按
+// `kind:ref` 构键时，第二次预扣必撞唯一索引 → 每个需要补扣的团队 Key 请求都失败。
+//
+// **其余三种 kind 刻意保持 `kind:ref`**：它们一个 ref 就代表一个事件，
+// 而唯一索引正是「同一个事件入账两次」的防线。把余额也算进键会**拆掉这条防线**：
+//
+//   - `topup:<tradeNo>` 若带上 after，重放一次充值回调时余额已经变过、after 不同，
+//     于是**新行成立 → 团队余额被重复加一次**；
+//   - `credit` / `spend` 同理。
+//
+// 也就是说：「多事件共用一个 ref」是 `reserve` 独有的性质，修复必须只作用于它。
+// 把它推广成「所有 kind 都带 after」等于用一条撞键错误换一次重复入账。
+func adtyTeamLedgerKey(kind, ref string, after int64) string {
+	if kind == "reserve" {
+		return kind + ":" + ref + ":" + strconv.FormatInt(after, 10)
+	}
+	return kind + ":" + ref
 }
