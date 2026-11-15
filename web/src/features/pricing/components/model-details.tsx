@@ -18,18 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router'
-import {
-  ArrowLeft,
-  CalendarClock,
-  Code2,
-  FileText,
-  HeartPulse,
-  Info,
-  Layers,
-  Maximize2,
-  Sparkles,
-  Timer,
-} from 'lucide-react'
+import { ArrowLeft, Code2, HeartPulse, Info, Timer } from 'lucide-react'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -99,12 +88,7 @@ import {
   taskTierConditions,
   pricingDisplayFallbackKey,
 } from '../lib/task-price-display'
-import type {
-  ModelCapability,
-  PriceType,
-  PricingModel,
-  TokenUnit,
-} from '../types'
+import type { PriceType, PricingModel, TokenUnit } from '../types'
 import { DynamicPricingBreakdown } from './dynamic-pricing-breakdown'
 import { ModelBillingModeBadge } from './model-billing-mode-badge'
 import { ModelDetailsApi } from './model-details-api'
@@ -188,54 +172,7 @@ function UnconfiguredTaskPricingNotice(props: { model: PricingModel }) {
   )
 }
 
-const CAPABILITY_LABEL_KEYS: Record<ModelCapability, string> = {
-  function_calling: 'Function calling',
-  streaming: 'Streaming',
-  vision: 'Vision',
-  json_mode: 'JSON mode',
-  structured_output: 'Structured output',
-  reasoning: 'Reasoning',
-  tools: 'Tools',
-  system_prompt: 'System prompt',
-  web_search: 'Web search',
-  code_interpreter: 'Code interpreter',
-  caching: 'Prompt caching',
-  embeddings: 'Embeddings',
-}
-
-const MODALITY_LABEL_KEYS: Record<string, string> = {
-  text: 'Text',
-  image: 'Image',
-  audio: 'Audio',
-  video: 'Video',
-  file: 'File',
-}
-
-const TOKEN_FORMAT = new Intl.NumberFormat(undefined, {
-  maximumFractionDigits: 1,
-})
 const MODEL_DETAILS_SKELETON_KEYS = ['first', 'second', 'third', 'fourth']
-
-function formatCatalogTokenCount(tokens: number): string {
-  if (!Number.isFinite(tokens) || tokens <= 0) return ''
-  if (tokens >= 1_000_000) {
-    return `${TOKEN_FORMAT.format(tokens / 1_000_000)}M`
-  }
-  if (tokens >= 1_000) {
-    return `${TOKEN_FORMAT.format(tokens / 1_000)}K`
-  }
-  return TOKEN_FORMAT.format(tokens)
-}
-
-function formatCatalogYearMonth(value?: string): string {
-  if (!value) return ''
-  const [yearStr, monthStr] = value.split('-')
-  const year = Number(yearStr)
-  const month = Number(monthStr)
-  if (!Number.isFinite(year) || !Number.isFinite(month)) return value
-  const date = new Date(Date.UTC(year, month - 1, 1))
-  return date.toLocaleString(undefined, { year: 'numeric', month: 'short' })
-}
 
 function normalizeCatalogItems(items?: readonly string[]): string[] {
   if (!items) return []
@@ -340,185 +277,6 @@ function CatalogInfoCell(props: { label: string; children: React.ReactNode }) {
   )
 }
 
-function ModalityLabels(props: { items: string[] }) {
-  const { t } = useTranslation()
-  if (props.items.length === 0) return null
-
-  return (
-    <span className='inline-flex items-center gap-1 align-middle'>
-      {props.items.map((item) => (
-        <span key={item} className='font-medium'>
-          {t(MODALITY_LABEL_KEYS[item] ?? item)}
-        </span>
-      ))}
-    </span>
-  )
-}
-
-function ModelBackendQuickStats(props: { model: PricingModel }) {
-  const { t } = useTranslation()
-  const model = props.model
-  const inputModalities = normalizeCatalogItems(model.input_modalities)
-  const outputModalities = normalizeCatalogItems(model.output_modalities)
-  const contextLength = model.context_length ?? 0
-  const maxOutput = model.max_output_tokens ?? 0
-  const knowledgeCutoff = formatCatalogYearMonth(model.knowledge_cutoff)
-  const releaseDate = formatCatalogYearMonth(model.release_date)
-
-  const stats: {
-    key: string
-    icon: React.ComponentType<{ className?: string }>
-    label: string
-    value: React.ReactNode
-    hint?: string
-  }[] = []
-
-  if (contextLength > 0) {
-    stats.push({
-      key: 'context',
-      icon: Layers,
-      label: t('Context'),
-      value: formatCatalogTokenCount(contextLength),
-      hint: t('Maximum input window'),
-    })
-  }
-
-  if (maxOutput > 0) {
-    stats.push({
-      key: 'max-output',
-      icon: Maximize2,
-      label: t('Max output'),
-      value: formatCatalogTokenCount(maxOutput),
-      hint: t('Maximum tokens per response'),
-    })
-  }
-
-  if (inputModalities.length > 0 || outputModalities.length > 0) {
-    stats.push({
-      key: 'modalities',
-      icon: FileText,
-      label: t('Modalities'),
-      value: (
-        <span className='inline-flex items-center gap-1'>
-          <ModalityLabels items={inputModalities} />
-          {inputModalities.length > 0 && outputModalities.length > 0 && (
-            <span className='text-muted-foreground/40'>→</span>
-          )}
-          <ModalityLabels items={outputModalities} />
-        </span>
-      ),
-    })
-  }
-
-  if (knowledgeCutoff) {
-    stats.push({
-      key: 'knowledge',
-      icon: Sparkles,
-      label: t('Knowledge cutoff'),
-      value: knowledgeCutoff,
-    })
-  }
-
-  if (releaseDate) {
-    stats.push({
-      key: 'release',
-      icon: CalendarClock,
-      label: t('Released'),
-      value: releaseDate,
-    })
-  }
-
-  if (stats.length === 0) return null
-
-  return (
-    <div className='bg-muted/20 grid grid-cols-2 gap-px overflow-hidden rounded-lg border @md/details:grid-cols-3 @2xl/details:grid-cols-5'>
-      {stats.map((stat) => {
-        const Icon = stat.icon
-        return (
-          <div
-            key={stat.key}
-            className='bg-background flex min-w-0 flex-col gap-0.5 px-3 py-2.5'
-          >
-            <span className='text-muted-foreground inline-flex min-w-0 items-center gap-1 text-[10px] font-medium tracking-wider uppercase'>
-              <Icon className='size-3 shrink-0' />
-              <span className='truncate'>{stat.label}</span>
-            </span>
-            <span className='text-foreground truncate text-sm font-semibold tabular-nums'>
-              {stat.value}
-            </span>
-            {stat.hint && (
-              <span className='text-muted-foreground/60 truncate text-[10px]'>
-                {stat.hint}
-              </span>
-            )}
-          </div>
-        )
-      })}
-    </div>
-  )
-}
-
-function ModelBackendSignalsSection(props: { model: PricingModel }) {
-  const { t } = useTranslation()
-  const capabilities = normalizeCatalogItems(props.model.capabilities)
-  const inputModalities = normalizeCatalogItems(props.model.input_modalities)
-  const outputModalities = normalizeCatalogItems(props.model.output_modalities)
-
-  if (
-    capabilities.length === 0 &&
-    inputModalities.length === 0 &&
-    outputModalities.length === 0
-  ) {
-    return null
-  }
-
-  return (
-    <section>
-      <SectionTitle>
-        {t('Capabilities')} / {t('Supported modalities')}
-      </SectionTitle>
-      <div className='grid gap-3 rounded-xl border p-3 @2xl/details:grid-cols-[minmax(0,1.5fr)_minmax(260px,1fr)]'>
-        {capabilities.length > 0 ? (
-          <CatalogPillList
-            items={capabilities.map((capability) =>
-              t(
-                CAPABILITY_LABEL_KEYS[capability as ModelCapability] ??
-                  capability
-              )
-            )}
-          />
-        ) : (
-          <div />
-        )}
-        {(inputModalities.length > 0 || outputModalities.length > 0) && (
-          <div className='grid gap-2 sm:grid-cols-2'>
-            {inputModalities.length > 0 && (
-              <div className='flex items-center justify-between gap-3 rounded-lg border px-3 py-2'>
-                <span className='text-muted-foreground text-xs font-medium'>
-                  {t('Input')}
-                </span>
-                <CatalogTextValue>
-                  <ModalityLabels items={inputModalities} />
-                </CatalogTextValue>
-              </div>
-            )}
-            {outputModalities.length > 0 && (
-              <div className='flex items-center justify-between gap-3 rounded-lg border px-3 py-2'>
-                <span className='text-muted-foreground text-xs font-medium'>
-                  {t('Output')}
-                </span>
-                <CatalogTextValue>
-                  <ModalityLabels items={outputModalities} />
-                </CatalogTextValue>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    </section>
-  )
-}
-
 function ModelBackendProviderSection(props: { model: PricingModel }) {
   const { t } = useTranslation()
   const groupDisplay = useGroupDisplay()
@@ -566,14 +324,6 @@ function ModelBackendProviderSection(props: { model: PricingModel }) {
     )
   }
 
-  if (model.parameter_count) {
-    cells.push(
-      <CatalogInfoCell key='parameters' label={t('Parameters')}>
-        <CatalogTextValue>{model.parameter_count}</CatalogTextValue>
-      </CatalogInfoCell>
-    )
-  }
-
   if (cells.length === 0) return null
 
   return (
@@ -587,13 +337,7 @@ function ModelBackendProviderSection(props: { model: PricingModel }) {
 }
 
 function ModelBackendDetailsSection(props: { model: PricingModel }) {
-  return (
-    <>
-      <ModelBackendQuickStats model={props.model} />
-      <ModelBackendSignalsSection model={props.model} />
-      <ModelBackendProviderSection model={props.model} />
-    </>
-  )
+  return <ModelBackendProviderSection model={props.model} />
 }
 
 // ----------------------------------------------------------------------------
