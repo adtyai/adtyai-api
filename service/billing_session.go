@@ -74,6 +74,18 @@ func (s *BillingSession) Settle(actualQuota int) error {
 		projectBillingEarnings(s.operationKey)
 		return nil
 	}
+	// ── 以下是非持久化（legacy）结算路径 ──────────────────────────────────
+	//
+	// **本分支今日运行期不可达。** 生产里 `BillingSession` 只有一个构造点
+	// （本文件 `newBillingSession` 那段），它总是把 `operationKey` 设成
+	// `"request:" + RequestId`，所以上面那个 `if s.operationKey != ""` 永远为真。
+	//
+	// **唯一的守卫就是「只有一个构造点」这件事**，而它没有任何强制：
+	// 谁新增第二个构造点、或者直接写 `&BillingSession{}`，这里就会静默复活。
+	//
+	// 删这个分支之前先读 ISS-R4-0046 与 v246。删掉它会把「不变量被违反」的行为
+	// 从「走 legacy 扣费」变成「静默不扣任何费用」——后者不报错，是更坏的失败形态。
+	// 守门测试：`TestBillingSessionAlwaysCarriesOperationKey`（新增构造点即红）。
 	if s.settled {
 		return nil
 	}
