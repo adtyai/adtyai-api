@@ -3,11 +3,14 @@ package model
 import (
 	"context"
 	"fmt"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const (
@@ -15,6 +18,7 @@ const (
 	optionPrimaryKeyLockName = "new_api_options_pk"
 	optionPrimaryKeyLockID   = 75820193
 	optionLegacyTablePrefix  = "options_legacy_"
+	optionQuotaPerUnitKey    = "QuotaPerUnit"
 )
 
 func migrateOptionPrimaryKey(db *gorm.DB) error {
@@ -117,10 +121,15 @@ func withOptionPrimaryKeyLock(db *gorm.DB, fn func(*gorm.DB) error) error {
 
 func repairOptionPrimaryKey(db *gorm.DB) error {
 	var rows []Option
-	if err := db.Find(&rows).Error; err != nil {
+	// 显式排序：「保留最后一行」必须是一个能写在文档里的规则。不加 ORDER BY 时
+	// PostgreSQL 返回物理顺序，同一份数据换环境、或 VACUUM FULL 之后可能选出
+	// 不同的值（ISS-R4-0113）。
+	if err := db.Order(clause.OrderByColumn{Column: clause.Column{Name: "key"}}).
+		Order(clause.OrderByColumn{Column: clause.Column{Name: "value"}}).
+		Find(&rows).Error; err != nil {
 		return fmt.Errorf("read options rows: %w", err)
 	}
-	deduped, skippedEmpty := dedupeOptionRows(rows)
+	deduped, skippedEmpty, conflicting := dedupeOptionRows(rows)
 	if db.Migrator().HasTable(optionPrimaryKeyTmpTable) {
 		if err := db.Migrator().DropTable(optionPrimaryKeyTmpTable); err != nil {
 			return fmt.Errorf("drop leftover %s: %w", optionPrimaryKeyTmpTable, err)
@@ -160,32 +169,60 @@ func repairOptionPrimaryKey(db *gorm.DB) error {
 		return fmt.Errorf("options table still has no unique key after rebuild")
 	}
 	common.SysLog(common.LogText("rebuilt options table with primary key from %d rows into %d keys; previous rows kept in %s", len(rows)-skippedEmpty, len(deduped), backup))
+	if len(conflicting) > 0 {
+		// 一条汇总，便于事后按这份键名清单补录；逐键的取值在上面各条里。
+		common.SysError(common.LogText("options rebuild kept one value for %d conflicting keys: %s", len(conflicting), strings.Join(conflicting, ", ")))
+	}
 	return nil
 }
 
-func dedupeOptionRows(rows []Option) ([]Option, int) {
+// dedupeOptionRows 按 Key 去重：冲突时保留排序后的最后一行，并返回发生过值冲突
+// 的键（已排序、去重）供调用方汇总。
+func dedupeOptionRows(rows []Option) ([]Option, int, []string) {
 	seen := make(map[string]int)
 	deduped := make([]Option, 0, len(rows))
 	skippedEmpty := 0
+	conflicting := make([]string, 0)
 	for _, row := range rows {
 		if row.Key == "" {
 			skippedEmpty++
 			continue
 		}
-		if i, ok := seen[row.Key]; ok {
-			if deduped[i].Value != row.Value {
-				common.SysError(common.LogText("options key %q had conflicting values; keeping the last row", row.Key))
-			}
-			deduped[i].Value = row.Value
+		value := optionRebuildValue(row.Key, row.Value)
+		i, ok := seen[row.Key]
+		if !ok {
+			seen[row.Key] = len(deduped)
+			deduped = append(deduped, Option{Key: row.Key, Value: value})
 			continue
 		}
-		seen[row.Key] = len(deduped)
-		deduped = append(deduped, Option{Key: row.Key, Value: row.Value})
+		if kept := deduped[i].Value; kept != value {
+			conflicting = append(conflicting, row.Key)
+			// 值也必须进日志：只留键名时，事后没人能回答「最后选中的是哪个值」，
+			// 而这正是本次重建唯一不可逆的决定。
+			common.SysError(common.LogText("options key %q had conflicting values: kept=%q dropped=%q", row.Key, value, kept))
+		}
+		deduped[i].Value = value
 	}
 	if skippedEmpty > 0 {
 		common.SysError(common.LogText("skipped %d options rows with empty keys while rebuilding the primary key", skippedEmpty))
 	}
-	return deduped, skippedEmpty
+	slices.Sort(conflicting)
+	return deduped, skippedEmpty, slices.Compact(conflicting)
+}
+
+// optionRebuildValue 返回重建时应当落库的值。
+//
+// 约定 C 把 QuotaPerUnit 的唯一合法值定死在 500000，已存的其他值加载时一律不
+// 生效（model/option.go 的加载分支直接拒绝）。所以这个键根本不需要「按行序猜」：
+// 重建直接取合法值，连「不同环境选出不同比例」的余地都没有。其余键保持
+// 「保留最后一行」。换掉的值写进错误日志，因为重建是不可逆的。
+func optionRebuildValue(key, value string) string {
+	legal := strconv.Itoa(fixedQuotaPerUnit)
+	if key != optionQuotaPerUnitKey || strings.TrimSpace(value) == legal {
+		return value
+	}
+	common.SysError(common.LogText("options key %q rebuilt with the only legal value: dropped=%q kept=%q", key, value, legal))
+	return legal
 }
 
 func swapOptionTables(db *gorm.DB, tmp, backup string) error {
