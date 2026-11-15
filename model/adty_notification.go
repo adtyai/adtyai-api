@@ -2,6 +2,7 @@ package model
 
 import (
 	"github.com/QuantumNous/new-api/common"
+	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
@@ -112,3 +113,38 @@ func ReleaseAdtyNotificationTelegramSlot(id int) error {
 		Where("id = ?", id).
 		Update("telegram_at", 0).Error
 }
+
+// ImportLegacyAnnouncement 把一条旧 `console_setting.announcements` 落成一条
+// IssuerSiteId=0、Audience=all_users 的发布记录，返回是否真的插入了一行。
+//
+// 幂等靠 ReadKey 的唯一索引，不靠「先查一遍再插」：重复导入会撞索引，
+// OnConflict DoNothing 让它安静跳过，row 数不变。这条属性是可重跑的前提——
+// 启动时每次都会调，不能每次多一批。
+func ImportLegacyAnnouncement(row *AdtyNotificationPublication) (bool, error) {
+	result := DB.Clauses(clause.OnConflict{DoNothing: true}).Create(row)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
+}
+
+// ListAdtyNotificationsForSite 返回某个站点上「已发布」的公告，供公开面板读。
+//
+// siteID=0 是主站。可见性与 `adtyVisibleNotificationPublications` 同一套规则，
+// 但这里没有登录用户，所以只按站点判断——这正是分站架构下对的依据。
+// 主站只看到 all_users（以及 all_sites，那本来就包含主站）；分站看到
+// all_users + all_sites + 自己那条。
+func ListAdtyNotificationsForSite(siteID int, limit int) ([]AdtyNotificationPublication, error) {
+	query := DB.Model(&AdtyNotificationPublication{}).Where("status = ?", "published")
+	if siteID == 0 {
+		query = query.Where("audience IN ?", []string{"all_users", "all_sites"})
+	} else {
+		query = query.Where("audience = ? OR audience = ? OR (audience = ? AND target_site_id = ?)",
+			"all_users", "all_sites", "site", siteID)
+	}
+	items := []AdtyNotificationPublication{}
+	err := query.Order("published_at DESC, id DESC").Limit(limit).Find(&items).Error
+	return items, err
+}
+
+var _ = gorm.ErrRecordNotFound

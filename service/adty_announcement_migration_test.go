@@ -1,0 +1,155 @@
+package service
+
+import (
+	"testing"
+
+	"time"
+
+	"github.com/QuantumNous/new-api/model"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
+)
+
+// announcementTestDB 开一个真 PG schema 并建齐二开表。
+//
+// service 包自己的 `adtyTestDB` 只建 TestMain 那份固定清单，公告表不在里面；
+// 逐个测试自己 AutoMigrate 会漏，所以这里显式跑一遍完整迁移。
+func announcementTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	db := prepareReferralDialectDB(t, "postgres")
+	require.NoError(t, model.MigrateAdtyTablesOn(db))
+	return db
+}
+
+const legacyAnnouncementsFixture = `[
+  {"content":"站点将于 02:00 维护","publishDate":"2026-11-01T02:00:00Z","type":"warning","extra":"请提前保存"},
+  {"content":"欢迎使用","publishDate":"2026-10-20T08:30:00Z"},
+  {"content":"已恢复","publishDate":"2026-11-10T08:00:00Z","type":"success","extra":"感谢等待"}
+]`
+
+// 迁移把每条旧公告落成 IssuerSiteId=0 / Audience=all_users 的一条发布记录，
+// 正文逐字节保留；重复执行不再多插一行。
+func TestMigrateLegacyAnnouncementsIsIdempotentPG(t *testing.T) {
+	db := announcementTestDB(t)
+	var version int
+	require.NoError(t, db.Raw("SHOW server_version_num").Scan(&version).Error)
+	require.Equal(t, 170012, version, "证据必须来自 PostgreSQL 17.12")
+
+	created, err := MigrateLegacyAnnouncements(legacyAnnouncementsFixture)
+	require.NoError(t, err)
+	assert.Equal(t, 3, created)
+
+	var rows []model.AdtyNotificationPublication
+	require.NoError(t, db.Order("id ASC").Find(&rows).Error)
+	require.Len(t, rows, 3)
+
+	for _, row := range rows {
+		assert.Zero(t, row.IssuerSiteId, "旧公告都是平台级：发布域是主站")
+		assert.Equal(t, "all_users", row.Audience)
+		assert.Equal(t, "published", row.Status)
+	}
+	// 正文逐字节一致——这是唯一不会被「看起来对」蒙混过去的断言。
+	assert.Equal(t, "站点将于 02:00 维护", rows[0].Content)
+	assert.Equal(t, "欢迎使用", rows[1].Content)
+	assert.Equal(t, "已恢复", rows[2].Content)
+	// 旧结构没有标题，extra 放到最接近标题的位置；颜色语义存在 Business 里。
+	assert.Equal(t, "请提前保存", rows[0].Title)
+	assert.Equal(t, "legacy:type=warning", rows[0].Business)
+	assert.Equal(t, "legacy:type=success", rows[2].Business)
+	assert.Empty(t, rows[1].Business, "default 类型不写标记")
+	// 发布时间从 RFC3339 转成 unix，不能都变成「迁移那一刻」。
+	// 期望值从同一个字面量解析出来，不写死数字——写死的数字我算错过一次，
+	// 而那种错会被读成「迁移逻辑错了」。
+	wantPublish, err := time.Parse(time.RFC3339, "2026-11-01T02:00:00Z")
+	require.NoError(t, err)
+	assert.EqualValues(t, wantPublish.Unix(), rows[0].PublishedAt)
+
+	// 再跑一次：一行都不许多。
+	created, err = MigrateLegacyAnnouncements(legacyAnnouncementsFixture)
+	require.NoError(t, err)
+	assert.Zero(t, created, "重复迁移必须插入 0 行")
+
+	var count int64
+	require.NoError(t, db.Model(&model.AdtyNotificationPublication{}).Count(&count).Error)
+	assert.EqualValues(t, 3, count, "重跑后行数不变")
+}
+
+// 坏 JSON 不该让启动失败，但不能静默：返回错误由调用方记日志。
+func TestMigrateLegacyAnnouncementsRejectsBrokenJSON(t *testing.T) {
+	announcementTestDB(t)
+	created, err := MigrateLegacyAnnouncements(`[{"content":`)
+	assert.Error(t, err)
+	assert.Zero(t, created)
+}
+
+// 空 option 是常态（没配过公告），不该报错也不该插行。
+func TestMigrateLegacyAnnouncementsSkipsEmptyOption(t *testing.T) {
+	db := announcementTestDB(t)
+	for _, raw := range []string{"", "   ", "[]"} {
+		created, err := MigrateLegacyAnnouncements(raw)
+		require.NoError(t, err)
+		assert.Zero(t, created)
+	}
+	var count int64
+	require.NoError(t, db.Model(&model.AdtyNotificationPublication{}).Count(&count).Error)
+	assert.Zero(t, count)
+}
+
+// 正文为空的条目跳过——旧校验会拦住它，但库里的历史数据不受校验保护。
+func TestMigrateLegacyAnnouncementsSkipsBlankContent(t *testing.T) {
+	db := announcementTestDB(t)
+	created, err := MigrateLegacyAnnouncements(`[{"content":"   ","publishDate":"2026-11-01T02:00:00Z"}]`)
+	require.NoError(t, err)
+	assert.Zero(t, created)
+	var count int64
+	require.NoError(t, db.Model(&model.AdtyNotificationPublication{}).Count(&count).Error)
+	assert.Zero(t, count)
+}
+
+// 公开面板按站点读：主站看不到分站定向公告，分站看得到自己的那条和全平台的。
+func TestLegacyAnnouncementsVisiblePerSitePG(t *testing.T) {
+	db := announcementTestDB(t)
+	var version int
+	require.NoError(t, db.Raw("SHOW server_version_num").Scan(&version).Error)
+	require.Equal(t, 170012, version, "证据必须来自 PostgreSQL 17.12")
+
+	_, err := MigrateLegacyAnnouncements(legacyAnnouncementsFixture)
+	require.NoError(t, err)
+
+	// 再插一条只给 7 号站的公告和一条给所有分站的。
+	for _, row := range []model.AdtyNotificationPublication{
+		{IssuerSiteId: 7, Audience: "site", TargetSiteId: 7, Kind: "platform", Title: "只给七号站",
+			Content: "只给七号站", Status: "published", Revision: 1, ReadKey: "k-site-7", PublishedAt: 3},
+		{IssuerSiteId: 0, Audience: "all_sites", Kind: "platform", Title: "所有分站",
+			Content: "所有分站", Status: "published", Revision: 1, ReadKey: "k-all-sites", PublishedAt: 4},
+	} {
+		_, err := model.ImportLegacyAnnouncement(&row)
+		require.NoError(t, err)
+	}
+
+	main, err := model.ListAdtyNotificationsForSite(0, 50)
+	require.NoError(t, err)
+	mainContents := contentsOf(main)
+	assert.Contains(t, mainContents, "欢迎使用")
+	assert.Contains(t, mainContents, "所有分站")
+	assert.NotContains(t, mainContents, "只给七号站", "主站不能看到分站定向公告")
+
+	seven, err := model.ListAdtyNotificationsForSite(7, 50)
+	require.NoError(t, err)
+	sevenContents := contentsOf(seven)
+	assert.Contains(t, sevenContents, "只给七号站")
+	assert.Contains(t, sevenContents, "欢迎使用", "平台公告分站也要看到")
+
+	eight, err := model.ListAdtyNotificationsForSite(8, 50)
+	require.NoError(t, err)
+	assert.NotContains(t, contentsOf(eight), "只给七号站", "别的站看不到七号站的公告")
+}
+
+func contentsOf(rows []model.AdtyNotificationPublication) []string {
+	out := make([]string, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, row.Content)
+	}
+	return out
+}
