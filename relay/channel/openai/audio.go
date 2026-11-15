@@ -97,8 +97,7 @@ func OpenaiTTSHandler(c *gin.Context, resp *http.Response, info *relaycommon.Rel
 		if durationErr != nil {
 			logger.LogWarn(c, common.LogText("failed to get audio duration: %v", durationErr))
 			// 如果无法获取时长，则设置保底的 CompletionTokens，根据body大小计算
-			sizeInKB := float64(len(bodyBytes)) / 1000.0
-			estimatedTokens := int(math.Ceil(sizeInKB)) // 粗略估算每KB约等于1 token
+			estimatedTokens := estimatedAudioTokensFromSizeKB(float64(len(bodyBytes)) / 1000.0)
 			usage.CompletionTokens = estimatedTokens
 			usage.CompletionTokenDetails.AudioTokens = estimatedTokens
 		} else if duration > 0 {
@@ -112,6 +111,16 @@ func OpenaiTTSHandler(c *gin.Context, resp *http.Response, info *relaycommon.Rel
 	}
 
 	return usage
+}
+
+// estimatedAudioTokensFromSizeKB 是拿不到音频时长时的兜底估算：粗略按每 KB 约 1 token。
+//
+// 必须和 `:107` 的时长口径一样走 `common.QuotaRound`（饱和 + 越界留 QuotaClamp 痕迹）：
+// 裸 `int()` 转换既丢掉 int32 饱和、也不会留下任何审计痕迹，billing.md:14 明令禁止
+// 「把算出来的 quota / token 数用裸 cast 转 int」。单独成函数是为了让饱和这一面可测
+// ——响应体大小本身在测试里到不了 int32 上限。
+func estimatedAudioTokensFromSizeKB(sizeInKB float64) int {
+	return common.QuotaRound(math.Ceil(sizeInKB))
 }
 
 func OpenaiSTTHandler(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo, responseFormat string) (*types.NewAPIError, *dto.Usage) {
