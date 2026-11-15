@@ -25,6 +25,9 @@ web/src/features/usage-logs/lib/billing-source.ts
 web/src/features/usage-logs/lib/__tests__/billing-source.test.ts
 web/src/features/usage-logs/components/__tests__/billing-source-visibility.test.tsx
 
+# Telegram OAuth 登录（ISS-R4-0121，约定 I：Telegram 只是通知通道）
+setting/system_setting/telegram.go
+
 # 兑换码（任务 1.4，后端）
 controller/redemption.go
 controller/redemption_batch_test.go

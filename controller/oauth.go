@@ -40,7 +40,6 @@ type oauthStateRequest struct {
 type oauthFlowPayload struct {
 	BrowserBindingHash string                         `json:"browser_binding_hash,omitempty"`
 	Verification       *service.OAuthVerificationFlow `json:"verification,omitempty"`
-	Telegram           *oauth.TelegramOAuthFlow       `json:"telegram,omitempty"`
 	OIDC               *oauth.OIDCOAuthFlow           `json:"oidc,omitempty"`
 	SessionIdentity    *service.AuthIdentity          `json:"session_identity,omitempty"`
 	Authorization      *model.AuthFlowAuthorization   `json:"authorization,omitempty"`
@@ -63,6 +62,12 @@ func GenerateOAuthCode(c *gin.Context) {
 	}
 	request.Provider = strings.TrimSpace(request.Provider)
 	request.Intent = strings.TrimSpace(request.Intent)
+	// 约定 I：Telegram 只是通知通道，OAuth 登录链已退役；这里直接拒绝，避免
+	// 任何“先填凭据再打开开关”的路径把它重新变成登录入口。
+	if request.Provider == "telegram" {
+		writeSecurityOperationError(c, oauth.TelegramConfigurationError())
+		return
+	}
 	refreshCustomOAuthProvider(request.Provider)
 	provider := oauth.GetProvider(request.Provider)
 	if provider == nil || !provider.IsEnabled() ||
@@ -118,14 +123,6 @@ func GenerateOAuthCode(c *gin.Context) {
 		flowPayload.BrowserBindingHash = oauthLoginBrowserHash(browserToken)
 	}
 	bindingStarted := false
-	if request.Provider == "telegram" {
-		telegramFlow, err := oauth.NewTelegramOAuthFlow()
-		if err != nil {
-			writeSecurityOperationError(c, err)
-			return
-		}
-		flowPayload.Telegram = telegramFlow
-	}
 	if request.Provider == "oidc" {
 		oidcFlow, err := oauth.NewOIDCOAuthFlow()
 		if err != nil {
@@ -153,13 +150,6 @@ func GenerateOAuthCode(c *gin.Context) {
 			}
 			flowPayload.Authorization = middleware.RequireSecurityProof(c, service.VerificationOperation{Scope: service.VerificationScopeAccountBind, Context: context})
 			if flowPayload.Authorization == nil {
-				return
-			}
-			flowPayload.SessionIdentity = &identity
-		}
-		if flowPayload.Telegram != nil {
-			if _, _, err := service.ValidateLoginSession(identity); err != nil {
-				writeSecurityOperationError(c, err)
 				return
 			}
 			flowPayload.SessionIdentity = &identity
@@ -195,9 +185,6 @@ func GenerateOAuthCode(c *gin.Context) {
 	bindingStarted = request.Intent == model.AuthFlowIntentBind
 	data := gin.H{"flow_token": state, "expires_at": expiresAt.Unix(),
 		"redirect_uri": strings.TrimRight(system_setting.ServerAddress, "/") + "/oauth/" + url.PathEscape(request.Provider)}
-	if flowPayload.Telegram != nil {
-		data["authorization_url"] = flowPayload.Telegram.AuthorizationURL(state)
-	}
 	if flowPayload.OIDC != nil {
 		authorizationURL, err := flowPayload.OIDC.AuthorizationURL(state)
 		if err != nil || authorizationURL == "" {
@@ -365,30 +352,6 @@ func HandleOAuth(c *gin.Context) {
 		return
 	}
 
-	// 3. Check if provider is enabled
-	var telegramPayload oauthFlowPayload
-	if providerName == "telegram" {
-		if err := oauth.TelegramConfigurationError(); err != nil {
-			writeSecurityOperationError(c, err)
-			return
-		}
-		if err := common.UnmarshalJsonStr(pendingFlow.Payload, &telegramPayload); err != nil || telegramPayload.Telegram == nil {
-			writeSecurityOperationError(c, model.ErrAuthFlowInvalid)
-			return
-		}
-		if pendingFlow.Intent != model.AuthFlowIntentLogin {
-			identity, _ := middleware.GetSessionAuthIdentity(c)
-			if telegramPayload.SessionIdentity == nil || *telegramPayload.SessionIdentity != identity {
-				writeSecurityOperationError(c, model.ErrAuthFlowInvalid)
-				return
-			}
-			if _, _, err := service.ValidateLoginSession(identity); err != nil {
-				writeSecurityOperationError(c, err)
-				return
-			}
-		}
-		c.Set(oauth.TelegramOAuthFlowContextKey, telegramPayload.Telegram)
-	}
 	if providerName == "oidc" {
 		var oidcPayload oauthFlowPayload
 		if err := common.UnmarshalJsonStr(pendingFlow.Payload, &oidcPayload); err != nil || oidcPayload.OIDC == nil {
@@ -397,6 +360,7 @@ func HandleOAuth(c *gin.Context) {
 		}
 		c.Set(oauth.OIDCOAuthFlowContextKey, oidcPayload.OIDC)
 	}
+	// 3. Check if provider is enabled
 	if !provider.IsEnabled() {
 		common.ApiErrorT(c, "{{provider}} login and registration has not been enabled by administrator", providerParams(provider.GetName()))
 		return

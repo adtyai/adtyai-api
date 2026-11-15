@@ -351,3 +351,15 @@ P6 移植旧项目前端时，不要把 `?aff=` 和 `features/auth/lib/storage.t
 删除 io.net 部署、硬件/地区/报价、实例与容器管理 API、SDK、前端部署分区、对话框及系统设置。旧 `/api/deployments` 精确路径和子路径在插件分发与外置前端重定向前返回 JSON 404；Root、普通管理员和旧 PAT 均不能操作。`model_deployment.*` 不再经通用配置 API 返回或接受写入，旧持久化值和历史审计不删除。
 
 旧 `/console/deployment` 回退模型元数据，旧设置书签回退全局模型设置；渠道列表移除 io.net 部署快捷入口。保留模型/厂商元数据、正常渠道、中转协议、云供应商区域字段、历史渠道数据及审计事件显示；语言包旧键和上游赞助署名保留。完整删除路径见 deleted-paths.txt。
+
+## Telegram OAuth 登录与二次验证
+
+约定 I 写的是「Telegram 只有两个通知机器人……绑定不复用 Telegram OAuth，也不能登录、找回密码或充当二次验证」，但上游把这条链完整实现成了可用功能：Root 填 `telegram.client_id` / `telegram.client_secret`，再 `PUT /api/option/ TelegramOAuthEnabled=true`，`POST /api/oauth/state` 就能拿到 `authorization_url`，回调直接发会话。凭据还明文存进 options 表。本提交按「隔离或退役」的要求把它退役。
+
+- 删除 `setting/system_setting/telegram.go`（`ClientID`/`ClientSecret` 的明文存储，路径见 [deleted-paths.txt](deleted-paths.txt)）。
+- `oauth/telegram.go` 只保留退役说明和错误值：`TelegramProvider` 仍注册（占住 `telegram` 这个名字，防止被自定义 OAuth Provider 顶替），但 `IsEnabled()` 恒为 false，换 token / 取用户信息直接返回 `ErrTelegramOAuthNotConfigured`；`TelegramOAuthFlow`、`NewTelegramOAuthFlow` 和 PKCE 流程删除。
+- `controller/oauth.go` 的 `/api/oauth/state` 对 `provider=telegram` 直接返回 `TELEGRAM_OAUTH_NOT_CONFIGURED`；回调里读 `flowPayload.Telegram` 的分支、绑定分支和 `authorization_url` 分支一并删除。
+- 配置项：`TelegramOAuthEnabled`、`telegram.client_id`、`telegram.client_secret` 不再出现在 `/api/status`、`/api/option/`，`PUT /api/option/` 写入返回 400；`model.InitOptionMap` 启动时删掉历史 `telegram.client_id`/`client_secret` 行（这是凭据，不是要留的兼容配置）。
+- 保留：`GET /api/oauth/telegram/login`、`POST /api/oauth/telegram/bind/start`、`GET /api/oauth/telegram/bind/:flow_token` 的永久 410（`TELEGRAM_LEGACY_AUTH_REMOVED`）；`telegram_id` 列和历史绑定数据；用户通知 / 管理通知两个机器人及其 `telegram:*` 加密 Token（`model/adty_telegram.go`）；语言包旧键。
+- 测试：`controller/telegram_test.go` 由「登录/绑定/二次验证成功」改成「登录被拒、开关与凭据不可写、历史凭据被清理、旧路由仍是 410」；`controller/security_enrollment_test.go` 和 `controller/auth_flow_test.go` 里依赖 Telegram 登录成功的用例删除。
+- 提交：`ISS-R4-0121`

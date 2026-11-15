@@ -2,187 +2,54 @@ package oauth
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"fmt"
-	"io"
-	"net/http"
-	"net/url"
-	"strconv"
-	"strings"
-	"time"
 
-	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
-	"github.com/QuantumNous/new-api/setting/system_setting"
-	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/gin-gonic/gin"
-	"golang.org/x/oauth2"
 )
 
-const (
-	TelegramIssuer              = "https://oauth.telegram.org"
-	TelegramOAuthFlowContextKey = "telegram_oauth_flow"
-)
-
+// 约定 I（docs/adty/conventions.md）：Telegram 只有用户通知和管理通知两个
+// 机器人，Token 仅 Root 配置、加密保存、脱敏展示；绑定不复用 Telegram OAuth，
+// 也不能登录、找回密码或充当二次验证。原先把这条约定实现成了一条完整的
+// OAuth 登录链，只要管理员填上 client_id/client_secret 再打开开关就能用。
+//
+// 这条链现在已退役：Provider 仍然注册（占住 "telegram" 这个名字，防止被
+// 自定义 OAuth Provider 顶替），但 IsEnabled 恒为 false，换取 token 和取用户
+// 信息都直接返回 ErrTelegramOAuthNotConfigured。下表的 Telegram 绑定与通知
+// 机器人（model/adty_telegram.go）与本文件无关，继续正常工作。
 var (
-	ErrTelegramOAuthNotConfigured = errors.New("Telegram OAuth is not configured or enabled. Please contact your administrator.")
+	ErrTelegramOAuthNotConfigured = errors.New("Telegram sign-in has been retired. Use another sign-in method.")
 	ErrTelegramOAuthConflict      = errors.New("The telegram OAuth provider name is reserved. Ask your administrator to rename the conflicting custom provider.")
 	ErrTelegramOAuthFailed        = errors.New("Telegram authorization failed. Please try again.")
 	ErrTelegramAccountNotBound    = errors.New("This Telegram account is not linked. Sign in using another method and link it first.")
 )
 
-// TelegramOAuthFlow keeps the PKCE secret and original client configuration on
-// the server. Only AuthorizationURL is sent to the browser.
-type TelegramOAuthFlow struct {
-	CodeVerifier string `json:"code_verifier"`
-	ClientID     string `json:"client_id"`
-	RedirectURI  string `json:"redirect_uri"`
-}
-
+// TelegramConfigurationError reports why Telegram is not offered as a sign-in
+// method. It never returns nil.
 func TelegramConfigurationError() error {
-	if HasCustomProviderConflict("telegram") {
-		return ErrTelegramOAuthConflict
-	}
-	if !common.TelegramOAuthEnabled || !system_setting.GetTelegramSettings().IsConfigured() {
-		return ErrTelegramOAuthNotConfigured
-	}
-	return nil
+	return ErrTelegramOAuthNotConfigured
 }
 
-func NewTelegramOAuthFlow() (*TelegramOAuthFlow, error) {
-	if err := TelegramConfigurationError(); err != nil {
-		return nil, err
-	}
-	redirectURI := strings.TrimRight(system_setting.ServerAddress, "/") + "/oauth/telegram"
-	parsed, err := url.Parse(redirectURI)
-	if err != nil || parsed.Host == "" || (parsed.Scheme != "https" && parsed.Scheme != "http") {
-		return nil, ErrTelegramOAuthNotConfigured
-	}
-	return &TelegramOAuthFlow{
-		CodeVerifier: oauth2.GenerateVerifier(),
-		ClientID:     strings.TrimSpace(system_setting.GetTelegramSettings().ClientID),
-		RedirectURI:  redirectURI,
-	}, nil
-}
-
-func (flow *TelegramOAuthFlow) AuthorizationURL(state string) string {
-	values := url.Values{
-		"client_id":             {flow.ClientID},
-		"redirect_uri":          {flow.RedirectURI},
-		"response_type":         {"code"},
-		"scope":                 {"openid profile"},
-		"state":                 {state},
-		"code_challenge":        {oauth2.S256ChallengeFromVerifier(flow.CodeVerifier)},
-		"code_challenge_method": {"S256"},
-	}
-	return TelegramIssuer + "/auth?" + values.Encode()
-}
-
-type TelegramProvider struct {
-	client *http.Client
-	keys   oidc.KeySet
-}
+type TelegramProvider struct{}
 
 func init() {
-	Register("telegram", NewTelegramProvider(&http.Client{Timeout: 20 * time.Second}))
-}
-
-// NewTelegramProvider shares the HTTP client with a long-lived, cached JWKS
-// verifier. Tests can exercise the real protocol using a local HTTP transport.
-func NewTelegramProvider(client *http.Client) *TelegramProvider {
-	return &TelegramProvider{
-		client: client,
-		keys: oidc.NewRemoteKeySet(
-			oidc.ClientContext(context.Background(), client),
-			TelegramIssuer+"/.well-known/jwks.json",
-		),
-	}
+	Register("telegram", &TelegramProvider{})
 }
 
 func (p *TelegramProvider) GetName() string { return "Telegram" }
 
-func (p *TelegramProvider) IsEnabled() bool { return TelegramConfigurationError() == nil }
+func (p *TelegramProvider) IsEnabled() bool { return false }
 
-func (p *TelegramProvider) ExchangeToken(ctx context.Context, code string, c *gin.Context) (*OAuthToken, error) {
-	if err := TelegramConfigurationError(); err != nil {
-		return nil, err
-	}
-	value, _ := c.Get(TelegramOAuthFlowContextKey)
-	flow, ok := value.(*TelegramOAuthFlow)
-	settings := system_setting.GetTelegramSettings()
-	if !ok || flow == nil || flow.CodeVerifier == "" || code == "" ||
-		flow.ClientID != strings.TrimSpace(settings.ClientID) ||
-		flow.RedirectURI != strings.TrimRight(system_setting.ServerAddress, "/")+"/oauth/telegram" {
-		return nil, ErrTelegramOAuthFailed
-	}
-	values := url.Values{
-		"grant_type":    {"authorization_code"},
-		"code":          {code},
-		"client_id":     {flow.ClientID},
-		"redirect_uri":  {flow.RedirectURI},
-		"code_verifier": {flow.CodeVerifier},
-	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, TelegramIssuer+"/token", strings.NewReader(values.Encode()))
-	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrTelegramOAuthFailed, err)
-	}
-	request.SetBasicAuth(flow.ClientID, strings.TrimSpace(settings.ClientSecret))
-	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	response, err := p.client.Do(request)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrTelegramOAuthFailed, err)
-	}
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("%w: token endpoint status %d", ErrTelegramOAuthFailed, response.StatusCode)
-	}
-	var token OAuthToken
-	if err := common.DecodeJson(io.LimitReader(response.Body, 1<<20), &token); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrTelegramOAuthFailed, err)
-	}
-	if token.IDToken == "" {
-		return nil, ErrTelegramOAuthFailed
-	}
-	token.ClientID = flow.ClientID
-	return &token, nil
+func (p *TelegramProvider) ExchangeToken(context.Context, string, *gin.Context) (*OAuthToken, error) {
+	return nil, ErrTelegramOAuthNotConfigured
 }
 
-func (p *TelegramProvider) GetUserInfo(ctx context.Context, token *OAuthToken) (*OAuthUser, error) {
-	if err := TelegramConfigurationError(); err != nil {
-		return nil, err
-	}
-	if token == nil || token.ClientID != strings.TrimSpace(system_setting.GetTelegramSettings().ClientID) {
-		return nil, ErrTelegramOAuthFailed
-	}
-	verifier := oidc.NewVerifier(TelegramIssuer, p.keys, &oidc.Config{
-		ClientID: token.ClientID, SupportedSigningAlgs: []string{oidc.RS256, oidc.ES256},
-	})
-	verified, err := verifier.Verify(ctx, token.IDToken)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrTelegramOAuthFailed, err)
-	}
-	var rawClaims json.RawMessage
-	if err := verified.Claims(&rawClaims); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrTelegramOAuthFailed, err)
-	}
-	var claims struct {
-		ID       json.Number `json:"id"`
-		Name     string      `json:"name"`
-		Username string      `json:"preferred_username"`
-	}
-	if err := common.Unmarshal(rawClaims, &claims); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrTelegramOAuthFailed, err)
-	}
-	id, err := strconv.ParseUint(claims.ID.String(), 10, 64)
-	if err != nil || id == 0 || verified.Subject == "" {
-		return nil, ErrTelegramOAuthFailed
-	}
-	return &OAuthUser{
-		ProviderUserID: strconv.FormatUint(id, 10),
-		Username:       claims.Username, DisplayName: claims.Name,
-	}, nil
+func (p *TelegramProvider) GetUserInfo(context.Context, *OAuthToken) (*OAuthUser, error) {
+	return nil, ErrTelegramOAuthNotConfigured
 }
+
+// The remaining methods only read and write the telegram_id column that
+// historical bindings already use; no sign-in chain reaches them any more.
 
 func (p *TelegramProvider) IsUserIDTaken(id string, siteID int) bool {
 	return model.IsTelegramIdAlreadyTaken(id, siteID)
