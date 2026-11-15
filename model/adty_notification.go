@@ -25,6 +25,16 @@ type AdtyNotificationPublication struct {
 	PublishedAt    int64  `json:"published_at" gorm:"not null"`
 	UpdatedAt      int64  `json:"updated_at" gorm:"not null"`
 	UpdatedBy      int    `json:"updated_by" gorm:"not null"`
+	// TelegramChannel 是这条公告要同步到的 TG 频道（`@name` 或 `-100…`）。
+	// 空表示不同步。存在公告上而不是每次请求里带，编辑时才知道原来发到哪。
+	TelegramChannel string `json:"telegram_channel" gorm:"type:varchar(128);not null;default:''"`
+	// TelegramAt 是这条公告推送 TG 的时刻；0 表示没推过。
+	//
+	// 它只回答「推过没有」，不记「最近一次入队时间」：公告要推的是
+	// 「新通知」，不是「持续编辑」。同一条公告改三次就是三条推送，
+	// 用户会把它当骚扰——改错别字的收益远小于这个代价。
+	// 所以非 0 之后就不再推，哪怕内容改了。
+	TelegramAt int64 `json:"telegram_at" gorm:"not null;default:0"`
 }
 
 var ErrAdtyNotificationConflict = common.NewMessage("This notification was changed elsewhere. Reload and try again")
@@ -38,7 +48,7 @@ func UpdateAdtyNotificationPublication(row *AdtyNotificationPublication, revisio
 			"audience": row.Audience, "target_site_id": row.TargetSiteId, "target_site_name": row.TargetSiteName,
 			"kind": row.Kind, "title": row.Title, "content": row.Content, "business": row.Business,
 			"status": row.Status, "revision": revision + 1, "updated_at": row.UpdatedAt, "updated_by": row.UpdatedBy,
-			"read_key": row.ReadKey,
+			"read_key": row.ReadKey, "telegram_channel": row.TelegramChannel,
 		})
 	if result.Error != nil {
 		return result.Error
@@ -78,4 +88,27 @@ func MarkAdtyNotificationsRead(userID, siteID int, keys []string, now int64) err
 		rows = append(rows, AdtyNotificationRead{UserId: userID, SiteId: siteID, ReadKey: key, ReadAt: now})
 	}
 	return DB.Clauses(clause.OnConflict{DoNothing: true}).Create(&rows).Error
+}
+
+// ClaimAdtyNotificationTelegramSlot 原子地抢下这条公告的 TG 推送权。
+//
+// 条件写在 SQL 里（`telegram_at = 0`）而不是「先读再判断再写」：并发保存同一条
+// 公告时只有一个能拿到 RowsAffected=1，另一个直接跳过。应用层 check-then-write
+// 在这里会漏——两个请求都能读到 0。
+func ClaimAdtyNotificationTelegramSlot(id int, at int64) (bool, error) {
+	result := DB.Model(&AdtyNotificationPublication{}).
+		Where("id = ? AND telegram_at = 0", id).
+		Update("telegram_at", at)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
+}
+
+// ReleaseAdtyNotificationTelegramSlot 在入队失败后把推送权还回去，
+// 否则这条公告会被永久标成「推过」，而实际一条都没发出去。
+func ReleaseAdtyNotificationTelegramSlot(id int) error {
+	return DB.Model(&AdtyNotificationPublication{}).
+		Where("id = ?", id).
+		Update("telegram_at", 0).Error
 }

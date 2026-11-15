@@ -43,6 +43,7 @@ func TestAnnouncementQueuesTelegramOnlyWhenAsked(t *testing.T) {
 	}, false)
 	require.NoError(t, err)
 	assert.Zero(t, countTelegramDeliveries(t, db), "没勾同步就不该入队")
+	assert.EqualValues(t, 0, telegramAtOf(t, db, "Maintenance", "Tonight 02:00"), "没推过就不能留推送标记")
 
 	// 勾了：入队一条，频道落库。
 	_, err = SaveAdtyNotificationPublication(root.Id, nil, 0, AdtyNotificationInput{
@@ -102,9 +103,105 @@ func TestPublicTelegramRedactsInsteadOfRejecting(t *testing.T) {
 	assert.Error(t, QueueAdtyPublicTelegram("@ops", model.AdtyTelegramPurposeAdmin, "订单 123 已退款"))
 }
 
+func telegramAtOf(t *testing.T, db *gorm.DB, title, content string) int64 {
+	t.Helper()
+	var row model.AdtyNotificationPublication
+	require.NoError(t, db.Where("title = ? AND content = ?", title, content).First(&row).Error)
+	return row.TelegramAt
+}
+
 func countTelegramDeliveries(t *testing.T, db *gorm.DB) int64 {
 	t.Helper()
 	var n int64
 	require.NoError(t, db.Model(&model.AdtyTelegramDelivery{}).Count(&n).Error)
 	return n
+}
+
+// 同一条公告改三次只能推一次。
+//
+// 「新建才推、编辑不推」按操作类型分流的写法看起来等价，但公告先发布、后勾上
+// 同步时就永远没机会推；这条测的正是「按推过没有分流」：勾上之后仍能推一次，
+// 之后无论改多少遍都不再推。
+func TestAnnouncementPushesTelegramOnceOnly(t *testing.T) {
+	db := prepareReferralDialectDB(t, "postgres")
+	root := ticketTestUser(t, db, "announce-once", 100)
+	t.Setenv("CRYPTO_SECRET", "adty-announcement-telegram-test-secret")
+	cipher, err := model.SealAdtyPurposeSecret("telegram:"+model.AdtyTelegramPurposeAdmin, "123456789:token")
+	require.NoError(t, err)
+	require.NoError(t, db.Create(&model.AdtyTelegramBot{
+		Purpose: model.AdtyTelegramPurposeAdmin, BotId: 1, Username: "root_bot",
+		TokenCipher: cipher, Enabled: true,
+	}).Error)
+
+	var sent int
+	previous := AdtyTelegramSender
+	AdtyTelegramSender = func(token, chat, text string) error { sent++; return nil }
+	t.Cleanup(func() { AdtyTelegramSender = previous })
+
+	// 先发布，不勾同步。
+	row, err := SaveAdtyNotificationPublication(root.Id, nil, 0, AdtyNotificationInput{
+		Title: "Rules", Content: "First version", Kind: "rules", Audience: "all_users",
+	}, false)
+	require.NoError(t, err)
+	require.Zero(t, telegramAtOf(t, db, "Rules", "First version"))
+	assert.Zero(t, countTelegramDeliveries(t, db))
+
+	// 后来勾上同步：仍然能推一次（这正是「按操作类型分流」做不到的）。
+	_, err = SaveAdtyNotificationPublication(root.Id, nil, row.Id, AdtyNotificationInput{
+		Title: "Rules", Content: "First version", Kind: "rules", Audience: "all_users",
+		Revision: row.Revision, SyncTelegram: true, TelegramChannel: "@adty_ops",
+	}, false)
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, countTelegramDeliveries(t, db), "后勾上同步也要推一次")
+	assert.NotZero(t, telegramAtOf(t, db, "Rules", "First version"))
+
+	// 再改两遍（改错别字）：一条都不该新增。
+	var current model.AdtyNotificationPublication
+	require.NoError(t, db.Where("id = ?", row.Id).First(&current).Error)
+	for _, body := range []string{"Second version", "Third version"} {
+		_, err = SaveAdtyNotificationPublication(root.Id, nil, row.Id, AdtyNotificationInput{
+			Title: "Rules", Content: body, Kind: "rules", Audience: "all_users",
+			Revision: current.Revision, SyncTelegram: true, TelegramChannel: "@adty_ops",
+		}, false)
+		require.NoError(t, err)
+		require.NoError(t, db.Where("id = ?", row.Id).First(&current).Error)
+	}
+	assert.EqualValues(t, 1, countTelegramDeliveries(t, db), "推过的公告再改不重推")
+	assert.Zero(t, sent, "还没到发送时机（Retry 未跑）")
+
+	_, err = RetryAdtyTelegram()
+	require.NoError(t, err)
+	assert.Equal(t, 1, sent, "队列里只有一条")
+}
+
+// 并发保存同一公告时只有一个能抢到推送权。
+//
+// 条件写在 SQL 里（telegram_at = 0）而不是先读后写；应用层 check-then-write
+// 在这里会漏——两个请求都能读到 0。把 claim 改成先读后写，这条会红。
+func TestAnnouncementTelegramSlotIsClaimedOnceUnderConcurrency(t *testing.T) {
+	db := prepareReferralDialectDB(t, "postgres")
+	root := ticketTestUser(t, db, "announce-race", 100)
+	row, err := SaveAdtyNotificationPublication(root.Id, nil, 0, AdtyNotificationInput{
+		Title: "Race", Content: "Body", Kind: "system", Audience: "all_users",
+	}, false)
+	require.NoError(t, err)
+
+	claims := make(chan bool, 8)
+	for i := 0; i < 8; i++ {
+		go func(at int64) {
+			won, err := model.ClaimAdtyNotificationTelegramSlot(row.Id, at)
+			if err != nil {
+				claims <- false
+				return
+			}
+			claims <- won
+		}(int64(1000 + i))
+	}
+	winners := 0
+	for i := 0; i < 8; i++ {
+		if <-claims {
+			winners++
+		}
+	}
+	assert.Equal(t, 1, winners, "8 个并发保存只能有一个拿到推送权")
 }

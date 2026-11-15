@@ -374,3 +374,43 @@ it('sends the telegram channel only when the sync box is ticked', async () => {
     )
   )
 })
+
+it('shows an already pushed publication as synced and keeps its channel', async () => {
+  const user = userEvent.setup()
+  vi.spyOn(api, 'get').mockResolvedValue({
+    data: {
+      success: true,
+      data: {
+        items: [
+          {
+            id: 9,
+            revision: 3,
+            title: 'Pushed notice',
+            content: 'Body',
+            kind: 'system',
+            audience: 'all_users',
+            target_site_id: 0,
+            target_site_name: '',
+            business: '',
+            publisher_id: 1,
+            publisher_name: 'root',
+            issuer_site_id: 0,
+            published_at: 1,
+            status: 'published',
+            telegram_channel: '@adty_ops',
+            telegram_at: 1700000000,
+          },
+        ],
+        total: 1,
+      },
+    },
+  })
+  mount()
+  await user.click(await screen.findByRole('button', { name: 'Edit' }))
+  const dialog = screen.getByRole('dialog', { name: 'Edit notification' })
+  expect(within(dialog).getByRole('checkbox', { name: 'Sync to Telegram' }))
+    .toBeChecked()
+  expect(within(dialog).getByLabelText('Telegram channel')).toHaveValue(
+    '@adty_ops'
+  )
+})

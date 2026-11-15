@@ -35,3 +35,29 @@ func TestAdtyTelegramDeliveryChannelColumnPG(t *testing.T) {
 	require.NoError(t, db.Where("event_key = ?", "public:seed").First(&row).Error)
 	assert.Equal(t, "@ops", row.Channel, "重复迁移不能丢已有的频道")
 }
+
+// 公告表新增 telegram_channel / telegram_at 两列，同样要在全新库上建出来，
+// 且重复启动既不改已有值、也不把 telegram_at 抹回 0（抹回去等于允许重推）。
+func TestAdtyNotificationTelegramColumnsPG(t *testing.T) {
+	db := adtyTestDBWithSchema(t)
+	var version int
+	require.NoError(t, db.Raw("SHOW server_version_num").Scan(&version).Error)
+	require.Equal(t, 170012, version, "证据必须来自 PostgreSQL 17.12")
+
+	require.True(t, db.Migrator().HasColumn(&AdtyNotificationPublication{}, "telegram_channel"))
+	require.True(t, db.Migrator().HasColumn(&AdtyNotificationPublication{}, "telegram_at"))
+
+	require.NoError(t, db.Create(&AdtyNotificationPublication{
+		IssuerSiteId: 0, PublisherId: 1, PublisherName: "root", Audience: "all_users",
+		Kind: "system", Title: "Seed", Content: "Body", Status: "published",
+		ReadKey: "seed-key", PublishedAt: 1, Revision: 1,
+		TelegramChannel: "@ops", TelegramAt: 1700000000,
+	}).Error)
+
+	require.NoError(t, MigrateAdtyTablesOn(db), "重复启动不应失败")
+
+	var row AdtyNotificationPublication
+	require.NoError(t, db.Where("read_key = ?", "seed-key").First(&row).Error)
+	assert.Equal(t, "@ops", row.TelegramChannel, "重复迁移不能丢频道")
+	assert.EqualValues(t, 1700000000, row.TelegramAt, "重复迁移不能把已推标记抹回 0")
+}

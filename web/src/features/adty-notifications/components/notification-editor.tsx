@@ -70,11 +70,15 @@ export function NotificationEditor(props: {
   const [discarding, setDiscarding] = useState(false)
   const form = useForm<NotificationInput>({
     resolver: zodResolver(notificationSchema),
-    // 编辑既有公告时后端不回 sync_telegram / telegram_channel（它们不是
-    // publication 的列），这里显式补齐，否则表单字段是 undefined，
+    // 编辑既有公告时后端只回 telegram_channel / telegram_at，没有 sync_telegram
+    // 这一列；这里由「推过没有」反推勾选状态，否则表单字段是 undefined，
     // z.boolean() 会直接判无效、保存按钮永远报错。
     defaultValues: props.row
-      ? { ...props.row, sync_telegram: false, telegram_channel: '' }
+      ? {
+          ...props.row,
+          sync_telegram: (props.row.telegram_at ?? 0) > 0,
+          telegram_channel: props.row.telegram_channel ?? '',
+        }
       : {
           title: '',
           content: '',

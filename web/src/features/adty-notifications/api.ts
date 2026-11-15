@@ -31,6 +31,10 @@ export type Publication = NotificationInput & {
   target_site_name: string
   published_at: number
   status: 'published' | 'withdrawn'
+  // 后端回的这两个列让编辑器知道「这条原来发到哪个频道、有没有推过」。
+  // 推过的公告再保存不会重推，所以勾选框只是历史记录，不代表这次会发。
+  telegram_channel?: string
+  telegram_at?: number
 }
 export const notificationManagerKey = ['adty-notification-manager'] as const
 

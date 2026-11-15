@@ -108,24 +108,57 @@ func SaveAdtyNotificationPublication(actorID int, issuer *model.AdtySite, id int
 	row.Title, row.Content, row.Business = input.Title, input.Content, input.Business
 	row.Kind, row.Audience, row.TargetSiteId, row.Status = input.Kind, input.Audience, input.TargetSiteId, "published"
 	row.ReadKey = adtyNotificationVersion("publication:" + common.GetUUID())
-	if id > 0 {
-		return &row, model.UpdateAdtyNotificationPublication(&row, input.Revision)
+	// 不勾同步就把频道一起清掉：留着上一轮的频道名，下次勾上会安静地发到
+	// 一个没人预期的目标。
+	if input.SyncTelegram {
+		row.TelegramChannel = strings.TrimSpace(input.TelegramChannel)
+	} else {
+		row.TelegramChannel = ""
 	}
-	if err := model.DB.Create(&row).Error; err != nil {
+	if id > 0 {
+		if err := model.UpdateAdtyNotificationPublication(&row, input.Revision); err != nil {
+			return nil, err
+		}
+	} else if err := model.DB.Create(&row).Error; err != nil {
 		return nil, err
 	}
-	// 只有「新发布」才推送：编辑一条已发布的公告不该再往频道里刷一遍。
-	// 入队失败不回滚公告——公告落库是主事实，TG 只是通知，失败留日志由重试任务接手。
-	if input.SyncTelegram {
-		purpose := model.AdtyTelegramPurposeAdmin
-		if issuer != nil {
-			purpose = model.AdtyTelegramPurposeUser
-		}
-		if err := QueueAdtyPublicTelegram(input.TelegramChannel, purpose, announceTelegramBody(row)); err != nil {
-			common.SysError(common.LogText("queue announcement %d for telegram failed: %s", row.Id, err.Error()))
-		}
-	}
+	// 入队失败不回滚公告：公告落库是主事实，TG 只是通知。
+	pushAdtyNotificationToTelegram(&row, issuer)
 	return &row, nil
+}
+
+// pushAdtyNotificationToTelegram 尝试把公告推一次到频道，并保证「一条公告最多推一次」。
+//
+// 「新建才推、编辑不推」这种按操作类型分流的写法不够：公告先发布、后勾上同步，
+// 就永远没机会推了。这里按「推过没有」分流（`telegram_at`），既让后勾的能推出去，
+// 也不让改了错别字的公告再推一遍。抢名额靠 SQL 条件写，不靠先读后写。
+func pushAdtyNotificationToTelegram(row *model.AdtyNotificationPublication, issuer *model.AdtySite) {
+	channel := strings.TrimSpace(row.TelegramChannel)
+	if channel == "" {
+		return // 没配频道就不发，也不报错
+	}
+	purpose := model.AdtyTelegramPurposeAdmin
+	if issuer != nil {
+		purpose = model.AdtyTelegramPurposeUser
+	}
+	at := time.Now().Unix()
+	won, err := model.ClaimAdtyNotificationTelegramSlot(row.Id, at)
+	if err != nil {
+		common.SysError(common.LogText("claim telegram slot for announcement %d failed: %s", row.Id, err.Error()))
+		return
+	}
+	if !won {
+		return // 推过了，这次编辑只更新站内内容
+	}
+	row.TelegramAt = at
+	if err := QueueAdtyPublicTelegram(channel, purpose, announceTelegramBody(*row)); err != nil {
+		// 名额要还回去：`telegram_at` 非 0 的意思是「发过了」，而这次一条都没发。
+		row.TelegramAt = 0
+		if releaseErr := model.ReleaseAdtyNotificationTelegramSlot(row.Id); releaseErr != nil {
+			common.SysError(common.LogText("release telegram slot for announcement %d failed: %s", row.Id, releaseErr.Error()))
+		}
+		common.SysError(common.LogText("queue announcement %d for telegram failed: %s", row.Id, err.Error()))
+	}
 }
 
 // announceTelegramBody 把公告压成一条频道消息：标题 + 正文。
