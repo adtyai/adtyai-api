@@ -62,6 +62,11 @@ func TestMain(m *testing.M) {
 		&model.BillingOperation{},
 		&model.BillingOperationMovement{},
 		&model.AdtySiteEarningEvent{},
+		// 扣费链路会写这三张：缺了就会在运行时撞「table is missing」，
+		// 而那个错误不带表名，看不出缺的是哪张。
+		&model.AdtyFundBatch{},
+		&model.AdtyFundAllocation{},
+		&model.AdtyBillingHold{},
 	); err != nil {
 		panic("failed to migrate: " + err.Error())
 	}
