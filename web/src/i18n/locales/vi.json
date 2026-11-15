@@ -8152,7 +8152,7 @@
     "Top-up is unavailable while quota is displayed as tokens": "Không thể nạp tiền khi hạn mức đang hiển thị theo token",
     "Top-up amount cannot be less than {{amount}}": "Số tiền nạp không được nhỏ hơn {{amount}}",
     "The top-up price is not configured": "Chưa cấu hình giá nạp tiền",
-    "Top-up credited: {{face}} plus {{bonus}} bonus, paid {{paid}} {{currency}}": "Đã nạp: {{face}} cộng thưởng {{bonus}}, đã trả {{paid}} {{currency}}",
+    "Top-up credited: {{face}} plus {{bonus}} bonus ({{quota}} credited in total), paid {{paid}} {{currency}}": "Đã nạp: {{face}} cộng thưởng {{bonus}} (tổng {{quota}} đã nạp), đã trả {{paid}} {{currency}}",
     "Only credited orders can be refunded": "Chỉ có thể hoàn tiền đơn đã ghi có",
     "Use Recharge Audit to complete this order": "Hãy dùng Đối soát nạp tiền để hoàn tất đơn này",
     "You have an order waiting for payment": "Bạn có một đơn đang chờ thanh toán",

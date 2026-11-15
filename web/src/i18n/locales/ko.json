@@ -996,7 +996,7 @@
     "Top-up group ratios": "충전 그룹 비율",
     "Top-up from (USD)": "충전 기준 (USD)",
     "Top-up finance": "충전 재무",
-    "Top-up credited: {{face}} plus {{bonus}} bonus, paid {{paid}} {{currency}}": "충전 입금: 액면 {{face}}, 보너스 {{bonus}}, 결제 {{paid}} {{currency}}",
+    "Top-up credited: {{face}} plus {{bonus}} bonus ({{quota}} credited in total), paid {{paid}} {{currency}}": "충전 입금: 액면 {{face}}, 보너스 {{bonus}} (총 {{quota}} 입금), 결제 {{paid}} {{currency}}",
     "Top-up bonus": "충전 보너스",
     "Top-up Audit Info": "충전 감사 정보",
     "Top-up amount options": "충전 금액 옵션",

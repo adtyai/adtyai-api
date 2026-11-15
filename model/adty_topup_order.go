@@ -548,19 +548,35 @@ func FinishAdtyTopUpCredit(topUp *TopUp, ext *AdtyTopupOrder, credited int, call
 func finishAdtyTopUpCredit(topUp *TopUp, ext *AdtyTopupOrder, credited int, callerIp string) {
 	syncCreditUserQuotaCache(topUp.UserId, credited, common.LogText("adty topup"))
 	common.SysLog(common.LogText("adty top-up credited trade_no=%s user_id=%d quota=%d", topUp.TradeNo, topUp.UserId, credited))
-	RecordTopupLog(topUp.UserId, common.NewMessage("Top-up credited: {{face}} plus {{bonus}} bonus, paid {{paid}} {{currency}}", map[string]any{
-		"face":     "$" + ext.FaceUSD.StringFixed(2),
-		"bonus":    "$" + ext.BonusUSD.StringFixed(2),
-		"paid":     ext.PaidAmount.String(),
-		"currency": ext.PaidCurrency,
-		"quota":    logger.FormatQuota(credited),
-	}), callerIp, topUp.PaymentMethod, topUp.PaymentProvider)
+	RecordTopupLog(topUp.UserId, adtyTopUpCreditedMessage(ext, credited), callerIp, topUp.PaymentMethod, topUp.PaymentProvider)
 	if AdtyAfterTopUpCompleted != nil {
 		AdtyAfterTopUpCompleted(topUp, ext)
 	}
 	if AdtyAfterTopUpCreditCommitted != nil {
 		AdtyAfterTopUpCreditCommitted(topUp, ext, credited)
 	}
+}
+
+// adtyTopUpCreditedMessage 是用户看到的入账说明，里面的数字必须等于实际到账：
+// 站点保障金不够时加赠会缩水，差额记为待履约，而 ext.BonusUSD 仍是下单时冻结的
+// 全额。直接报全额，说明就比用户余额多出一笔加赠（ISS-R4-0112）。
+func adtyTopUpCreditedMessage(ext *AdtyTopupOrder, credited int) *common.Message {
+	bonusQuota := int64(credited) - ext.FaceQuota()
+	if bonusQuota < 0 {
+		bonusQuota = 0
+	}
+	bonusUSD := ext.BonusUSD
+	if int64(credited) < ext.CreditQuota {
+		// 加赠被削减过：按真实到账倒算加赠，别再报冻结的全额。
+		bonusUSD = decimal.NewFromInt(bonusQuota).Div(common.QuotaPerUnitDecimal())
+	}
+	return common.NewMessage("Top-up credited: {{face}} plus {{bonus}} bonus ({{quota}} credited in total), paid {{paid}} {{currency}}", map[string]any{
+		"face":     "$" + ext.FaceUSD.StringFixed(2),
+		"bonus":    "$" + bonusUSD.StringFixed(2),
+		"paid":     ext.PaidAmount.String(),
+		"currency": ext.PaidCurrency,
+		"quota":    logger.FormatQuota(credited),
+	})
 }
 
 // CancelAdtyTopUp 取消本人的 pending 订单。

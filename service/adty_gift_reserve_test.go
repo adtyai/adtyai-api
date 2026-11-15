@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting/adty_setting"
 	"github.com/shopspring/decimal"
@@ -342,6 +343,29 @@ func TestLatePayAfterCancelRecordsPendingGiftWhenUncovered(t *testing.T) {
 	require.EqualValues(t, 50_000_000, userQuotaOf(t, db, customer.Id))
 	require.EqualValues(t, 1, countGiftFulfillments(t, db, ext.TradeNo))
 	require.EqualValues(t, 1, notifies)
+}
+
+// 站点保障金补不上加赠时，只有本金到账；入账说明必须写实际到账额度。
+// 报下单时冻结的全额加赠，用户按日志算余额就算不平（ISS-R4-0112）。
+func TestPendingGiftCreditLogShowsActuallyCreditedQuota(t *testing.T) {
+	db := prepareSiteDB(t)
+	_, site, customer, ext := seedReservedSiteGift(t, db, "gift-log-pend", "10")
+	_, err := model.CancelAdtyTopUp(ext.TradeNo, customer.Id)
+	require.NoError(t, err)
+	require.NoError(t, drainSiteGiftWallets(t, db, site.Id, "gift-log-pend"))
+	_, err = model.CompleteAdtyTopUp(ext.TradeNo, model.AdtyPaymentFacts{
+		Provider: model.PaymentProviderAdtyBEpusdt, PaidAmount: decimal.NewFromInt(100), FiatAmount: decimal.NewFromInt(100),
+		PaidCurrency: "USDT", Source: model.AdtyPaymentSourceCallback,
+	}, "")
+	require.NoError(t, err)
+
+	credited := userQuotaOf(t, db, customer.Id)
+	require.EqualValues(t, 50_000_000, credited)
+	var entry model.Log
+	require.NoError(t, db.Where("user_id = ? AND type = ?", customer.Id, model.LogTypeTopup).Order("id DESC").First(&entry).Error)
+	require.Contains(t, entry.Content, "plus $0.00 bonus", "说明里的加赠必须是实际到账的那部分")
+	require.Contains(t, entry.Content, logger.FormatQuota(credited), "说明里必须写出实际到账额度")
+	require.NotContains(t, entry.Content, "plus $10.00 bonus", "不能报下单时冻结的全额加赠")
 }
 
 func TestSiteGiftBonusQuotaUsesAdtyBonusUSDForSite(t *testing.T) {
