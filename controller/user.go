@@ -1082,8 +1082,6 @@ func writeUserDeleteBlockError(c *gin.Context, err error) bool {
 		common.ApiErrorT(c, model.ErrUserDeleteUnfinishedPayment.Error())
 	case errors.Is(err, model.ErrUserDeleteInFlightBilling):
 		common.ApiErrorT(c, model.ErrUserDeleteInFlightBilling.Error())
-	case errors.Is(err, model.ErrUserDeleteOpenBillingHold):
-		common.ApiErrorT(c, model.ErrUserDeleteOpenBillingHold.Error())
 	case errors.Is(err, model.ErrUserDeleteUnfinishedRefund):
 		common.ApiErrorT(c, model.ErrUserDeleteUnfinishedRefund.Error())
 	case errors.Is(err, model.ErrUserDeleteUnfinishedWithdraw):

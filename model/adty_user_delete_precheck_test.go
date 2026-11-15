@@ -91,16 +91,6 @@ func TestUserDeletePreconditionsRefuseUnfinishedWorkAndLeaveAccountIntact(t *tes
 			},
 		},
 		{
-			name: "open shortfall hold",
-			want: ErrUserDeleteOpenBillingHold,
-			seed: func(user *User) {
-				require.NoError(t, db.Create(&AdtyBillingHold{UserId: user.Id, RequestId: "hold-" + user.Username, ShortfallQuota: 5, Status: AdtyBillingHoldOpen}).Error)
-			},
-			clear: func(user *User) {
-				require.NoError(t, db.Model(&AdtyBillingHold{}).Where("user_id = ?", user.Id).Update("status", "resolved").Error)
-			},
-		},
-		{
 			name: "submitted manual refund",
 			want: ErrUserDeleteUnfinishedRefund,
 			seed: func(user *User) {
@@ -601,4 +591,27 @@ func TestUserDeleteIgnoresUnsafePaymentOrphanAttribution(t *testing.T) {
 			assertPaymentOrphanUntouched(t, db, eventID, status, referenceID, sessionID)
 		})
 	}
+}
+
+// 有开口差额的用户**必须能销号**（`ISS-R4-0084`）。
+//
+// 「用户有欠款记录不该妨碍他走人」——差额只是财务对账的数据，不是销号门禁。
+// 这条和上表里被删掉的 `open shortfall hold` 用例是同一个位置的正反两面：
+// 那条断言「拦住」，这条断言「不拦」。
+func TestUserDeletePrecheckAllowsOpenShortfallHold(t *testing.T) {
+	db := adtyTestDB(t)
+	precheckUserDeleteTables(t, db)
+	user := newPrecheckUser(t, "hold-delete")
+	require.NoError(t, db.Create(&AdtyBillingHold{
+		UserId: user.Id, RequestId: "hold-delete-1", ShortfallQuota: 5, Status: AdtyBillingHoldOpen,
+	}).Error)
+
+	_, err := user.Delete()
+	require.NoError(t, err,
+		"开口差额不该挡住销号：它不是余额，是待财务核的差额记录（ISS-R4-0084）")
+
+	// 记录本身不因为销号被删掉——财务对账还要看得到。
+	var holds int64
+	require.NoError(t, db.Model(&AdtyBillingHold{}).Where("user_id = ?", user.Id).Count(&holds).Error)
+	assert.EqualValues(t, 1, holds, "差额记录保留，销号不销毁审计数据")
 }

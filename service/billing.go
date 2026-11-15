@@ -29,18 +29,6 @@ func PreConsumeBilling(c *gin.Context, preConsumedQuota int, relayInfo *relaycom
 		if err := model.RejectRestrictedAdtyFundWrite(model.DB, model.AdtyFundWrite{AccountID: relayInfo.UserId}); err != nil {
 			return types.NewErrorWithStatusCode(err, types.ErrorCodeAccessDenied, http.StatusForbidden, types.ErrOptionWithSkipRetry())
 		}
-		paused, err := model.AdtyUserPaidPaused(relayInfo.UserId)
-		if err != nil {
-			return types.NewErrorWithStatusCode(err, types.ErrorCodeInsufficientUserQuota, http.StatusForbidden, types.ErrOptionWithSkipRetry())
-		}
-		if paused {
-			return types.NewErrorWithStatusCode(
-				errors.New("paid requests are paused until the shortfall hold is reviewed"),
-				types.ErrorCodeInsufficientUserQuota,
-				http.StatusForbidden,
-				types.ErrOptionWithSkipRetry(),
-			)
-		}
 	}
 	if relayInfo != nil && relayInfo.QuotaClamp != nil {
 		return types.NewErrorWithStatusCode(

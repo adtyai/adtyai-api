@@ -48,11 +48,6 @@ func rejectUserDeletePreconditions(tx *gorm.DB, userId int) error {
 	} else if blocked {
 		return ErrUserDeleteInFlightBilling
 	}
-	if blocked, err := userDeleteHasRows(tx, &AdtyBillingHold{}, "user_id = ? AND status = ?", userId, AdtyBillingHoldOpen); err != nil {
-		return err
-	} else if blocked {
-		return ErrUserDeleteOpenBillingHold
-	}
 	if blocked, err := userDeleteHasRows(tx, &AdtyManualRefund{},
 		"user_id = ? AND (status IN ? OR (payout_status = ? AND status NOT IN ?))",
 		userId,
