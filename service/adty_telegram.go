@@ -38,6 +38,20 @@ var AdtyTelegramGetMe = func(string) (int64, string, error) {
 	return 0, "", ErrAdtyTelegramUnverified
 }
 
+// adtyTelegramHTTP 是所有出站 Telegram 调用共用的 client，**必须带 Timeout**。
+//
+// 投递任务是一条单线程串行的 goroutine（ticker 每分钟一次，逐条发 20 行）。
+// 用 `http.DefaultClient`（无 timeout）时，一次 TCP 卡住（对端不响应 / 丢包 /
+// DNS 卡住）就会让它永久停在那行，而且：
+//   - 队列只增不减；
+//   - 没有任何错误日志（函数没返回，SysError 不执行）；
+//   - ticker 也不再触发（goroutine 卡在上一次循环里）。
+//
+// 「没有新消息发出」的外观和「没有消息要发」一模一样，不会自愈。
+//
+// 所以超时不是「让失败更快」，是让整条重试机制保持活着。
+var adtyTelegramHTTP = &http.Client{Timeout: 15 * time.Second}
+
 // AdtyTelegramSender delivers a notice. Tests leave it unset so no message leaves the process.
 //
 // chat 是字符串而不是 int64：公告要发到分站自己的频道，站长手里只有 `@their_channel`
@@ -523,7 +537,7 @@ func adtyTelegramSendMessageHTTP(token, chat, text string) error {
 	payload.Set("text", text)
 	payload.Set("disable_web_page_preview", "true")
 	endpoint := "https://api.telegram.org/bot" + token + "/sendMessage"
-	response, err := http.PostForm(endpoint, payload)
+	response, err := adtyTelegramHTTP.PostForm(endpoint, payload)
 	if err != nil {
 		return err
 	}
@@ -569,7 +583,7 @@ func adtyTelegramGetMeHTTP(token string) (int64, string, error) {
 	if err != nil {
 		return 0, "", ErrAdtyTelegramUnverified
 	}
-	response, err := http.DefaultClient.Do(request)
+	response, err := adtyTelegramHTTP.Do(request)
 	if err != nil || response.StatusCode != http.StatusOK {
 		if response != nil {
 			_ = response.Body.Close()
