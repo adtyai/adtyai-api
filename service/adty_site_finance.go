@@ -380,7 +380,10 @@ func notifyAdtyAnomalyDispositionTx(tx *gorm.DB, row model.AdtyAnomalyDispositio
 	return tx.Create(&notice).Error
 }
 
-// TransferAdtyEarningToMargin moves earning cash into margin and opens a new draw cycle.
+// TransferAdtyEarningToMargin moves earning cash into margin. Only the top-up
+// that refills the margin wallet to the tier deposit opens a new draw cycle;
+// every smaller credit just moves cash. Opening a cycle on any positive credit
+// would let a 0.00000001 transfer zero CycleUsedUSD and hand the 90% cap back.
 func TransferAdtyEarningToMargin(siteID, operator int, amount, tier decimal.Decimal, key string) error {
 	if !amount.IsPositive() || !tier.IsPositive() || strings.TrimSpace(key) == "" {
 		return ErrAdtySiteWalletInvalidOperation
@@ -394,12 +397,32 @@ func TransferAdtyEarningToMargin(siteID, operator int, amount, tier decimal.Deci
 		}); err != nil {
 			return err
 		}
-		_, err := applyAdtySiteWalletChangeTx(tx, siteID, model.AdtySiteWalletMargin, amount, AdtySiteWalletChange{
+		opensCycle, err := adtyEarningTopUpOpensMarginCycleTx(tx, siteID, amount, tier)
+		if err != nil {
+			return err
+		}
+		change := AdtySiteWalletChange{
 			Type: "earning_to_margin", IdempotencyKey: key + ":margin", OperatorID: operator,
-			OpenMarginCycle: true, CycleTier: tier,
-		})
+		}
+		if opensCycle {
+			change.OpenMarginCycle = true
+			change.CycleTier = tier
+		}
+		_, err = applyAdtySiteWalletChangeTx(tx, siteID, model.AdtySiteWalletMargin, amount, change)
 		return err
 	})
+}
+
+// adtyEarningTopUpOpensMarginCycleTx reports whether this credit is the top-up
+// that lifts the margin wallet from below the tier deposit to the deposit
+// itself. A credit landing on a wallet that already holds the deposit is not a
+// new cycle, so replaying it must not reset the cycle usage.
+func adtyEarningTopUpOpensMarginCycleTx(tx *gorm.DB, siteID int, amount, tier decimal.Decimal) (bool, error) {
+	var margin model.AdtySiteWallet
+	if err := model.AdtyLockForUpdate(tx).Where("site_id = ? AND kind = ?", siteID, model.AdtySiteWalletMargin).First(&margin).Error; err != nil {
+		return false, err
+	}
+	return margin.Balance.LessThan(tier) && margin.Balance.Add(amount).GreaterThanOrEqual(tier), nil
 }
 
 func ApplyAdtySiteWalletChange(siteID int, kind string, delta decimal.Decimal, change AdtySiteWalletChange) (*model.AdtySiteWalletLedger, error) {
