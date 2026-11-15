@@ -55,6 +55,21 @@ func (AdtyFundAllocation) TableName() string { return "adty_fund_allocations" }
 // 预扣阶段补建 legacy 批次，才不会让每一笔「老用户 + 没有批次」的预扣都打一条
 // ERROR（结算时本来就会补、会扣，那条 ERROR 是误报）。
 func AllocateAdtyFundAllocationsTx(tx *gorm.DB, userID int, operationID string, amount, balanceBefore int64) error {
+	return allocateAdtyFundAllocationsTx(tx, userID, operationID, amount, balanceBefore, true)
+}
+
+// allocateAdtyFundAllocationsTx 是 AllocateAdtyFundAllocationsTx 的实现。
+//
+// allowLegacyTopUp 区分两个调用面上「同一件事」的两种含义：
+//   - 预扣（true）：批次不够时补建 legacy 批次，让老用户能继续消费，
+//     否则每一笔「有余额没批次」的预扣都会打一条 ERROR；
+//   - 结算（false）：**不许凭空造额度**。结算时批次不够就是账面漂移，
+//     它必须被 `fund_batch_gap` 记录下来，而不是被补建成「账正好平」。
+//
+// 如果结算也允许补建，「余额 50M、批次只 20M」的漂移会被一次结算直接抹平
+// （补建 50M 覆盖全额），`fund_batch_gap` 从此恒为 0——那正是 `6b66c7b`
+// 那条窄边界要守住的东西。
+func allocateAdtyFundAllocationsTx(tx *gorm.DB, userID int, operationID string, amount, balanceBefore int64, allowLegacyTopUp bool) error {
 	if tx == nil || userID <= 0 || operationID == "" || amount <= 0 {
 		return nil
 	}
@@ -64,16 +79,25 @@ func AllocateAdtyFundAllocationsTx(tx *gorm.DB, userID int, operationID string, 
 	// 同一 operation 可能多次预扣（发送前补扣、阶梯价上调）。amount 是累计应预扣
 	// 总额，这里只补差额，重复调用不会重复登记。
 	var taken struct {
-		Held    int64
-		Settled int64
+		Held int64
 	}
 	if err := tx.Model(&AdtyFundAllocation{}).
-		Select("coalesce(sum(held),0) as held, coalesce(sum(settled),0) as settled").
+		Select("coalesce(sum(held),0) as held").
 		Where("operation_id = ? AND user_id = ?", operationID, userID).
 		Scan(&taken).Error; err != nil {
 		return err
 	}
-	amount -= taken.Held + taken.Settled
+	// **只减 `held`，不要再减 `settled`。**
+	//
+	// `held` 是这条 operation 累计登记的额度；`settled` 是其中已经转成实扣的
+	// **子集**——结算时 `held` 会收窄到与 `settled` 相等（`:389-393`），而
+	// 占用统计用的是 `held - settled`（`:258`、`:286`）。所以 `sum(held)` 已经
+	// 包含 settled，再减一遍等于把同一笔算两次：差额恒为负 → 下面 `return nil`
+	// → **同一 operation 的第二次预扣永远不登记分摊**。
+	//
+	// `63e169d` 引入的。它要的是「按差额补记」（`ISS-R4-0033`），而这一行让补记
+	// 只对首次预扣有效。
+	amount -= taken.Held
 	if amount <= 0 {
 		return nil
 	}
@@ -164,7 +188,7 @@ func AllocateAdtyFundAllocationsTx(tx *gorm.DB, userID int, operationID string, 
 		}
 		remaining -= take
 	}
-	if remaining > 0 && balanceBefore > 0 {
+	if allowLegacyTopUp && remaining > 0 && balanceBefore > 0 {
 		// 批次不足以背书这次预扣。存量用户可能有一部分额度从来没有对应批次
 		// （升级前就在账上，退款也不会补行），所以先把缺的那块补进唯一的
 		// legacy 批次，再按新批次登记一次分摊。
@@ -399,7 +423,11 @@ func SettleAdtyFundAllocationsTx(tx *gorm.DB, userID int, operationID string, ap
 		return applied, nil
 	}
 	// 已登记额度不够覆盖实际消耗：补记一条已结算分摊，再按 FIFO 扣批次。
-	if err := AllocateAdtyFundAllocationsTx(tx, userID, operationID, applied, balanceBefore); err != nil {
+	//
+	// **结算路径不许补建 legacy 批次**（allowLegacyTopUp=false）：这里差额的
+	// 含义是「账面本来就没这么多背书」，它要落进 fund_batch_gap，不能被一次
+	// 补建抹成「账正好平」。补建只属于预扣——那是为了让老用户**能消费**。
+	if err := allocateAdtyFundAllocationsTx(tx, userID, operationID, applied, balanceBefore, false); err != nil {
 		return 0, err
 	}
 	if err := tx.Where("user_id = ? AND operation_id = ? AND settled = 0", userID, operationID).
