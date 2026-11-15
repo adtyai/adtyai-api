@@ -4,6 +4,7 @@ import (
 	"errors"
 
 	"github.com/QuantumNous/new-api/common"
+	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
@@ -35,11 +36,24 @@ func RecordAdtyBillingHold(userID int, requestID string, shortfall int) error {
 	if err := adtyRequireBillingHoldTable(); err != nil {
 		return err
 	}
+	return RecordAdtyBillingHoldTx(DB, userID, requestID, shortfall)
+}
+
+// RecordAdtyBillingHoldTx 在调用方的事务里写一条短差额挂账：差额与扣款必须同生共死，
+// 分开写会出现「款扣了、挂账没落」这种对账再也修不回来的状态。
+// 表不在就返回错误由调用方决定，这里不吞。
+func RecordAdtyBillingHoldTx(tx *gorm.DB, userID int, requestID string, shortfall int) error {
+	if userID <= 0 || shortfall <= 0 {
+		return nil
+	}
+	if tx == nil || !tx.Migrator().HasTable(&AdtyBillingHold{}) {
+		return ErrAdtyBillingHoldTableMissing
+	}
 	if requestID == "" {
 		requestID = common.NewRequestId()
 	}
 	row := AdtyBillingHold{UserId: userID, RequestId: requestID, ShortfallQuota: shortfall, Status: AdtyBillingHoldOpen}
-	return DB.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "request_id"}}, DoNothing: true}).Create(&row).Error
+	return tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "request_id"}}, DoNothing: true}).Create(&row).Error
 }
 
 // 这里原来有一个 `AdtyUserPaidPaused`：它回答「这个用户有没有未结的差额」，

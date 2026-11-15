@@ -3,6 +3,7 @@ package model
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -853,6 +854,9 @@ func RefundWaffo(tradeNo string, idemKey string, fullRefund bool, refundAmount s
 		if err != nil {
 			return err
 		}
+		// want 是这次退款「应收回」的额度，claw 是余额里「能收回」的额度。
+		// 两者必须分开：余额不足时差额不能跟着 claw 一起被夹掉（约定 C 第 3 条）。
+		want := claw
 		if int64(balance) < claw {
 			claw = int64(balance)
 		}
@@ -861,6 +865,7 @@ func RefundWaffo(tradeNo string, idemKey string, fullRefund bool, refundAmount s
 		}
 		userId = topUp.UserId
 		clawed = int(claw)
+		shortfall := want - claw
 		if claw > 0 {
 			if err := applyUserQuotaDeltaTx(tx, &user, -int(claw), false); err != nil {
 				return err
@@ -869,7 +874,14 @@ func RefundWaffo(tradeNo string, idemKey string, fullRefund bool, refundAmount s
 				return err
 			}
 		}
-		if fullRefund || remaining-claw <= 0 {
+		if shortfall > 0 {
+			// 已消费的部分收不回来：挂账留痕，订单保持 success 等人工处理。
+			// fullRefund 说的是「上游退了多少」，不是「我们收回了多少」——
+			// 不能因为它为真就宣布这笔单已退款完毕，否则差额从账面上永久消失。
+			if err := recordAdtyRefundShortfallTx(tx, topUp.UserId, "waffo-refund-shortfall:", tradeNo, idemKey, shortfall); err != nil {
+				return err
+			}
+		} else if fullRefund || remaining-claw <= 0 {
 			topUp.Status = common.TopUpStatusRefunded
 			if err := tx.Save(topUp).Error; err != nil {
 				return err
@@ -898,6 +910,22 @@ func RefundWaffo(tradeNo string, idemKey string, fullRefund bool, refundAmount s
 		}
 	}
 	return nil
+}
+
+// adtyRefundShortfallRequestId 是退款差额挂账的 request_id：同一订单的同一次退款请求
+// 重放不会重复挂账（request_id 唯一键 + OnConflict DoNothing）。
+// 先压一层 sha1 是因为 adty_billing_holds.request_id 只有 varchar(64)，而 trade_no 有 255。
+func adtyRefundShortfallRequestId(prefix, tradeNo, idemKey string) string {
+	return prefix + common.Sha1([]byte(tradeNo+"|"+idemKey))
+}
+
+// recordAdtyRefundShortfallTx 把「应收回但没收回」的额度挂到 adty_billing_holds。
+// 挂不上账就让整个退款失败：回调可以重试，差额一旦从账面消失就再也对不回来了。
+func recordAdtyRefundShortfallTx(tx *gorm.DB, userId int, prefix, tradeNo, idemKey string, shortfall int64) error {
+	if shortfall <= 0 {
+		return nil
+	}
+	return RecordAdtyBillingHoldTx(tx, userId, adtyRefundShortfallRequestId(prefix, tradeNo, idemKey), int(shortfall))
 }
 
 func waffoRefundClaw(orderMoney float64, refundAmount string, fullRefund bool, remaining int64, credited int64) (int64, error) {
@@ -929,7 +957,14 @@ func waffoRefundClaw(orderMoney float64, refundAmount string, fullRefund bool, r
 	return int64(claw), nil
 }
 
+// pancakeRefundLedgerKey 是 Pancake 退款流水的幂等键：同一订单、同一「已收回累计额」
+// 只会写一条，所以同一回调重放不会重复写流水。sha1 是为了塞进 varchar(64)。
+func pancakeRefundLedgerKey(tradeNo string, already int64) string {
+	return "pancake-refund:" + common.Sha1([]byte(tradeNo+"|"+strconv.FormatInt(already, 10)))
+}
+
 // RefundWaffoPancake 收回一笔已入账的 Pancake 额度，最多扣到 0。重复退款不再扣。
+// 扣不动的那部分挂账，订单保持 success，等财务处理。
 func RefundWaffoPancake(tradeNo string) error {
 	if tradeNo == "" {
 		return errors.New("payment order number not provided")
@@ -952,6 +987,7 @@ func RefundWaffoPancake(tradeNo string) error {
 			return nil
 		}
 		userId = topUp.UserId
+		fullyRecovered := true
 		if topUp.Status == common.TopUpStatusSuccess {
 			quota, err := topUpQuotaFromUSDUnits(topUp.Amount)
 			if err != nil || quota <= 0 {
@@ -965,7 +1001,22 @@ func RefundWaffoPancake(tradeNo string) error {
 			if err != nil {
 				return err
 			}
-			clawed = max(0, min(balance, quota))
+			// 这一单此前已经收回多少，按流水算：重放时 want 归零，不会再扣一次。
+			var already int64
+			if err := tx.Raw(
+				`SELECT COALESCE(SUM(-delta_quota), 0) FROM adty_balance_ledgers WHERE ref_id = ? AND type = ?`,
+				tradeNo, AdtyLedgerTypeRefund,
+			).Scan(&already).Error; err != nil {
+				return err
+			}
+			if already < 0 {
+				already = 0
+			}
+			want := int64(quota) - already
+			if want < 0 {
+				want = 0
+			}
+			clawed = int(min(int64(balance), want))
 			if clawed > 0 {
 				if err := applyUserQuotaDeltaTx(tx, &user, -clawed, false); err != nil {
 					return err
@@ -973,7 +1024,34 @@ func RefundWaffoPancake(tradeNo string) error {
 				if err := applyAdtyWalletDebitToBatchesTx(tx, user.Id, tradeNo, int64(clawed), 0, int64(clawed), int64(balance)); err != nil {
 					return err
 				}
+				// 钱包已经扣、批次已经销，就必须在同一个事务里写流水：
+				// 这里原来一行都没有，总账上查不到这笔退款（约定 C 第 1 条）。
+				key := pancakeRefundLedgerKey(tradeNo, already)
+				if err := InsertAdtyLedgerTx(tx, &AdtyBalanceLedger{
+					UserId:         user.Id,
+					DeltaQuota:     -int64(clawed),
+					BalanceBefore:  int64(balance),
+					BalanceAfter:   int64(balance - clawed),
+					Type:           AdtyLedgerTypeRefund,
+					RefType:        "topup",
+					RefId:          tradeNo,
+					Reason:         "waffo pancake refund",
+					IdempotencyKey: &key,
+				}); err != nil {
+					return err
+				}
 			}
+			if shortfall := want - int64(clawed); shortfall > 0 {
+				// 没收回来的部分挂账；clawed==0 时把订单标成 refunded 等于对财务说
+				// 「已退完」，而一分钱都没收回，所以这里也不许置 refunded。
+				if err := recordAdtyRefundShortfallTx(tx, topUp.UserId, "pancake-shortfall:", tradeNo, "", shortfall); err != nil {
+					return err
+				}
+				fullyRecovered = false
+			}
+		}
+		if !fullyRecovered {
+			return nil
 		}
 		topUp.Status = common.TopUpStatusRefunded
 		return tx.Save(topUp).Error

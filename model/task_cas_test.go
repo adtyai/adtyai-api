@@ -61,6 +61,10 @@ func TestMain(m *testing.M) {
 		// 所以这里也要把这两张表建出来，否则它们会在运行时撞「表不存在」。
 		&AdtyFundBatch{},
 		&AdtyFundAllocation{},
+		// 退款路径现在既写余额流水也写差额挂账（ISS-R4-0092 / ISS-R4-0093），
+		// 走包级 DB 的退款用例同样需要这两张表。
+		&AdtyBalanceLedger{},
+		&AdtyBillingHold{},
 	); err != nil {
 		panic("failed to migrate: " + err.Error())
 	}
