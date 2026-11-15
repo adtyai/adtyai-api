@@ -706,3 +706,70 @@ func TestAzureHostedWebSearch(t *testing.T) {
 		})
 	}
 }
+
+// The non-streaming Responses entry point must not settle a zero bill when
+// upstream omits usage, or reports input tokens only: the output text was
+// already delivered, so the missing counts are estimated from it, like the
+// stream accumulator does in Finish.
+func TestOaiResponsesHandlerEstimatesMissingUsage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	const output = `"output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"the quick brown fox jumps over the lazy dog"}]}]`
+	for _, tc := range []struct {
+		name       string
+		usage      string
+		wantPrompt int
+	}{
+		{name: "usage omitted", usage: "", wantPrompt: 7},
+		{name: "input tokens only", usage: `,"usage":{"input_tokens":800,"total_tokens":800}`, wantPrompt: 800},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := `{"id":"resp_1","object":"response","model":"gpt-5.1","status":"completed",` + output + tc.usage + `}`
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+			info := &relaycommon.RelayInfo{
+				OriginModelName: "gpt-5.1",
+				ChannelMeta:     &relaycommon.ChannelMeta{UpstreamModelName: "gpt-5.1"},
+			}
+			info.SetEstimatePromptTokens(7)
+			resp := &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(body)),
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+			}
+
+			usage, apiErr := OaiResponsesHandler(c, info, resp)
+			require.Nil(t, apiErr)
+			require.NotNil(t, usage)
+			assert.Equal(t, tc.wantPrompt, usage.PromptTokens)
+			assert.Greater(t, usage.CompletionTokens, 0)
+			assert.Equal(t, usage.PromptTokens+usage.CompletionTokens, usage.TotalTokens)
+		})
+	}
+}
+
+// Reported counts stay authoritative: the estimate only fills gaps.
+func TestOaiResponsesHandlerKeepsReportedUsage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	body := `{"id":"resp_1","object":"response","model":"gpt-5.1","status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"hello"}]}],"usage":{"input_tokens":10,"output_tokens":3,"total_tokens":13}}`
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	info := &relaycommon.RelayInfo{
+		OriginModelName: "gpt-5.1",
+		ChannelMeta:     &relaycommon.ChannelMeta{UpstreamModelName: "gpt-5.1"},
+	}
+	info.SetEstimatePromptTokens(7)
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(strings.NewReader(body)),
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+	}
+
+	usage, apiErr := OaiResponsesHandler(c, info, resp)
+	require.Nil(t, apiErr)
+	require.NotNil(t, usage)
+	assert.Equal(t, 10, usage.PromptTokens)
+	assert.Equal(t, 3, usage.CompletionTokens)
+	assert.Equal(t, 13, usage.TotalTokens)
+}
