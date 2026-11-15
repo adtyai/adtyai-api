@@ -72,7 +72,7 @@ afterEach(async () => {
     for (const root of roots.splice(0)) root.unmount()
   })
   vi.restoreAllMocks()
-  vi.doUnmock('@/i18n/locales/fr.json')
+  vi.doUnmock('@/i18n/locales/zh.json')
   vi.doUnmock('i18next')
   vi.doUnmock('@/lib/api')
   vi.doUnmock('@/routeTree.gen')
@@ -83,20 +83,20 @@ afterEach(async () => {
 })
 
 test('the first screen uses the saved language after its real pack loads', async () => {
-  window.localStorage.setItem('i18nextLng', 'fr')
+  window.localStorage.setItem('i18nextLng', 'zhCN')
 
   await act(async () => {
     await import('@/main')
   })
 
-  expect(await screen.findByText('Se connecter')).toBeVisible()
-  expect(window.localStorage.getItem('i18nextLng')).toBe('fr')
+  expect(await screen.findByText('登录')).toBeVisible()
+  expect(window.localStorage.getItem('i18nextLng')).toBe('zhCN')
 })
 
 test.each(['getter', 'getItem'] as const)(
   'a blocked localStorage %s still mounts the browser language on first visit',
   async (operation) => {
-    vi.spyOn(window.navigator, 'language', 'get').mockReturnValue('fr-FR')
+    vi.spyOn(window.navigator, 'language', 'get').mockReturnValue('zh-CN')
     const blocked = () => {
       throw new DOMException('Storage is blocked', 'SecurityError')
     }
@@ -110,12 +110,12 @@ test.each(['getter', 'getItem'] as const)(
       await import('@/main')
     })
 
-    expect(await screen.findByText('Se connecter')).toBeVisible()
+    expect(await screen.findByText('登录')).toBeVisible()
   }
 )
 
 test('a failed storage write keeps the selected language and first screen usable', async () => {
-  window.localStorage.setItem('i18nextLng', 'fr')
+  window.localStorage.setItem('i18nextLng', 'zhCN')
   vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
     throw new DOMException('Storage is full', 'QuotaExceededError')
   })
@@ -124,14 +124,14 @@ test('a failed storage write keeps the selected language and first screen usable
     await import('@/main')
   })
 
-  expect(await screen.findByText('Se connecter')).toBeVisible()
+  expect(await screen.findByText('登录')).toBeVisible()
 })
 
 test.each(['synchronous', 'asynchronous'] as const)(
   'a %s language startup failure displays Retry and recovers on the next attempt',
   async (failure) => {
     const user = userEvent.setup()
-    window.localStorage.setItem('i18nextLng', 'fr')
+    window.localStorage.setItem('i18nextLng', 'zhCN')
     const config = await import('@/i18n/config')
     const ready = vi.spyOn(config, 'whenInterfaceLanguageReady')
     if (failure === 'synchronous') {
@@ -149,16 +149,16 @@ test.each(['synchronous', 'asynchronous'] as const)(
     const retry = await screen.findByRole('button', { name: 'Retry' })
     expect(retry).toBeVisible()
     await user.click(retry)
-    expect(await screen.findByText('Se connecter')).toBeVisible()
+    expect(await screen.findByText('登录')).toBeVisible()
     expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull()
   }
 )
 
 test('a rejected language chunk shows Retry and preserves the choice until loading recovers', async () => {
   const user = userEvent.setup()
-  window.localStorage.setItem('i18nextLng', 'fr')
-  vi.doMock('@/i18n/locales/fr.json', () => {
-    throw new TypeError('Failed to fetch dynamically imported module: /fr.json')
+  window.localStorage.setItem('i18nextLng', 'zhCN')
+  vi.doMock('@/i18n/locales/zh.json', () => {
+    throw new TypeError('Failed to fetch dynamically imported module: /zh.json')
   })
 
   await act(async () => {
@@ -167,13 +167,13 @@ test('a rejected language chunk shows Retry and preserves the choice until loadi
 
   const retry = await screen.findByRole('button', { name: 'Retry' })
   expect(retry).toBeVisible()
-  expect(window.localStorage.getItem('i18nextLng')).toBe('fr')
+  expect(window.localStorage.getItem('i18nextLng')).toBe('zhCN')
   await user.click(retry)
   expect(await screen.findByRole('button', { name: 'Retry' })).toBeVisible()
-  expect(window.localStorage.getItem('i18nextLng')).toBe('fr')
-  vi.doUnmock('@/i18n/locales/fr.json')
+  expect(window.localStorage.getItem('i18nextLng')).toBe('zhCN')
+  vi.doUnmock('@/i18n/locales/zh.json')
   await user.click(screen.getByRole('button', { name: 'Retry' }))
-  expect(await screen.findByText('Se connecter')).toBeVisible()
+  expect(await screen.findByText('登录')).toBeVisible()
 })
 
 test('the production route compiler preserves split paths and named exports while using the project recovery helper', async () => {
