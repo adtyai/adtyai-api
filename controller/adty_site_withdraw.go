@@ -1,6 +1,8 @@
 package controller
 
 import (
+	"errors"
+	"io"
 	"net/http"
 	"strings"
 
@@ -133,13 +135,25 @@ func reviewAdtySiteWithdrawal(c *gin.Context, action string) {
 		TxID   string `json:"tx_id"`
 		Proof  string `json:"proof"`
 	}
-	_ = common.DecodeJson(c.Request.Body, &body)
+	// A malformed body must not fall through with zero values: reject can release
+	// frozen earnings, so an unreadable request is refused instead of executed
+	// with an empty reason. An empty body stays allowed because "paying" takes
+	// no parameters.
+	if err := common.DecodeJson(c.Request.Body, &body); err != nil && !errors.Is(err, io.EOF) {
+		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
 	var err error
 	switch action {
 	case "paying":
 		err = service.MarkAdtySiteWithdrawalPaying(id, c.GetInt("id"))
 	case "reject":
-		err = service.RejectAdtySiteWithdrawal(id, c.GetInt("id"), body.Reason)
+		reason := strings.TrimSpace(body.Reason)
+		if reason == "" {
+			common.ApiErrorT(c, "Reject reason is required")
+			return
+		}
+		err = service.RejectAdtySiteWithdrawal(id, c.GetInt("id"), reason)
 	default:
 		err = service.MarkAdtySiteWithdrawalPaid(id, c.GetInt("id"), body.TxID, body.Proof)
 	}
