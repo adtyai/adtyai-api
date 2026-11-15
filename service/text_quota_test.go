@@ -1387,6 +1387,31 @@ func TestCalculateTextToolCallSurchargeKeepsSearchPreviewFallbackWithCustomFunct
 	assert.True(t, expected.Equal(surcharge), "got %s want %s", surcharge, expected)
 }
 
+// /v1/alpha/search bills its one web_search_preview call itself; the
+// *-search-preview model-name fallback must not bill the same call again.
+func TestCalculateTextToolCallSurchargeDoesNotDoubleBillAlphaSearch(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+
+	relayInfo := &relaycommon.RelayInfo{
+		RelayMode:       relayconstant.RelayModeAlphaSearch,
+		OriginModelName: "gpt-4o-search-preview",
+	}
+	relayInfo.SetBillableToolCount(dto.BuildInToolWebSearchPreview, 1)
+	summary := &textQuotaSummary{
+		ModelName:  relayInfo.OriginModelName,
+		GroupRatio: 1,
+	}
+
+	surcharge := calculateTextToolCallSurcharge(ctx, relayInfo, summary)
+
+	require.Len(t, summary.ToolSurchargeItems, 1)
+	assert.Equal(t, dto.BuildInToolWebSearchPreview, summary.ToolSurchargeItems[0].Name)
+	assert.Equal(t, 1, summary.ToolSurchargeItems[0].Count)
+	expected := decimal.NewFromFloat(25.0 / 1000).Mul(decimal.NewFromFloat(common.QuotaPerUnit))
+	assert.True(t, expected.Equal(surcharge), "got %s want %s", surcharge, expected)
+}
+
 func TestCalculateTextToolCallSurchargeDoesNotInferSearchForResponses(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())

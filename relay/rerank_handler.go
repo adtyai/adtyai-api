@@ -100,6 +100,32 @@ func RerankHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 		service.ResetStatusCode(newAPIError, statusCodeMappingStr)
 		return newAPIError
 	}
-	service.PostTextConsumeQuota(c, info, usage.(*dto.Usage), nil)
+	service.PostTextConsumeQuota(c, info, rerankBillingUsage(usage, info), nil)
 	return nil
+}
+
+// rerankBillingUsage returns the usage to settle. Rerank upstreams often omit
+// usage or report zero tokens, and settling that would refund the whole
+// pre-charge; the cohere and xinference handlers already estimate for their own
+// channels, so this is the fallback for every other rerank path. It also
+// replaces the bare type assertion on the adaptor's usage, which panics when
+// the adaptor hands back a nil interface.
+func rerankBillingUsage(usage any, info *relaycommon.RelayInfo) *dto.Usage {
+	billingUsage, _ := usage.(*dto.Usage)
+	if billingUsage != nil {
+		copied := *billingUsage
+		billingUsage = &copied
+	} else {
+		billingUsage = &dto.Usage{}
+	}
+	if billingUsage.TotalTokens == 0 {
+		if billingUsage.PromptTokens == 0 {
+			billingUsage.PromptTokens = info.GetEstimatePromptTokens()
+		}
+		billingUsage.TotalTokens = billingUsage.PromptTokens + billingUsage.CompletionTokens
+	}
+	if billingUsage.PromptTokens == 0 && billingUsage.CompletionTokens == 0 {
+		billingUsage.PromptTokens = billingUsage.TotalTokens
+	}
+	return billingUsage
 }
