@@ -3,6 +3,7 @@ package ali
 import (
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strings"
 
@@ -14,6 +15,29 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+// clampedTokenCount puts an upstream-reported token count into the billable
+// range: negatives become zero and oversized values saturate. Only input is
+// priced, so the ceiling is the largest value that can survive the token
+// arithmetic in the quota calculation.
+func clampedTokenCount(count int) int {
+	return min(max(count, 0), math.MaxInt32)
+}
+
+// saturatingTokenSum adds clamped upstream token counts without wrapping: the
+// total saturates instead of going negative when input_tokens and image_tokens
+// are both reported absurdly large.
+func saturatingTokenSum(counts ...int) int {
+	total := 0
+	for _, count := range counts {
+		clamped := clampedTokenCount(count)
+		if total > math.MaxInt32-clamped {
+			return math.MaxInt32
+		}
+		total += clamped
+	}
+	return total
+}
 
 // Bailian multimodal embedding models (qwen3-vl-embedding, qwen2.5-vl-embedding,
 // tongyi-embedding-vision-*, multimodal-embedding-v1) are not served in
@@ -163,18 +187,22 @@ func MultimodalEmbeddingHandler(c *gin.Context, resp *http.Response, info *relay
 	// input_tokens_details. Only input is priced, so output_tokens (also part of
 	// total_tokens) is never billed. A response without usage falls back to the
 	// request estimate, as in compatible mode.
+	// The counts below are used verbatim for billing, so clamp them to a
+	// billable range first: a negative image_tokens would otherwise shrink the
+	// charge, and an overflowing sum would wrap negative and slip past the
+	// zero-usage fallback as a free request.
 	u := aliResponse.Usage
 	var usage dto.Usage
 	if details := u.InputTokensDetails; details != nil {
-		usage.PromptTokens = u.InputTokens
-		usage.PromptTokensDetails.TextTokens = details.TextTokens
-		usage.PromptTokensDetails.ImageTokens = details.ImageTokens
+		usage.PromptTokens = clampedTokenCount(u.InputTokens)
+		usage.PromptTokensDetails.TextTokens = clampedTokenCount(details.TextTokens)
+		usage.PromptTokensDetails.ImageTokens = clampedTokenCount(details.ImageTokens)
 	} else {
-		usage.PromptTokens = u.InputTokens + u.ImageTokens
-		usage.PromptTokensDetails.TextTokens = u.InputTokens
-		usage.PromptTokensDetails.ImageTokens = u.ImageTokens
+		usage.PromptTokens = saturatingTokenSum(u.InputTokens, u.ImageTokens)
+		usage.PromptTokensDetails.TextTokens = clampedTokenCount(u.InputTokens)
+		usage.PromptTokensDetails.ImageTokens = clampedTokenCount(u.ImageTokens)
 	}
-	if usage.PromptTokens == 0 {
+	if usage.PromptTokens <= 0 {
 		usage.PromptTokens = info.GetEstimatePromptTokens()
 	}
 	usage.TotalTokens = usage.PromptTokens

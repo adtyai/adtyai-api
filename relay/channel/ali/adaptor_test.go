@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -476,6 +477,34 @@ func TestMultimodalEmbeddingResponse(t *testing.T) {
 			name:      "no usage bills the estimate",
 			model:     "qwen3-vl-embedding",
 			body:      `{"output":{"embeddings":[{"index":0,"embedding":[0.5],"type":"text"}]},"request_id":"r3"}`,
+			estimate:  12,
+			wantData:  []dto.EmbeddingResponseItem{{Object: "embedding", Index: 0, Embedding: []float64{0.5}}},
+			wantUsage: &dto.Usage{PromptTokens: 12, TotalTokens: 12},
+		},
+		{
+			// image_tokens is reported by the upstream and may be negative; it
+			// must not be able to shrink the billable count.
+			name:      "negative image tokens are clamped",
+			model:     "qwen3-vl-embedding",
+			body:      `{"output":{"embeddings":[{"index":0,"embedding":[0.5],"type":"image"}]},` + `"usage":{"input_tokens":100,"image_tokens":-1000000,"total_tokens":-999900},"request_id":"r5"}`,
+			wantData:  []dto.EmbeddingResponseItem{{Object: "embedding", Index: 0, Embedding: []float64{0.5}}},
+			wantUsage: &dto.Usage{PromptTokens: 100, TotalTokens: 100, PromptTokensDetails: dto.InputTokenDetails{TextTokens: 100}},
+		},
+		{
+			// input_tokens + image_tokens must saturate instead of wrapping to a
+			// negative total, which would settle the request for free.
+			name:     "overflowing token sum saturates",
+			model:    "qwen3-vl-embedding",
+			body:     fmt.Sprintf(`{"output":{"embeddings":[{"index":0,"embedding":[0.5],"type":"text"}]},`+`"usage":{"input_tokens":%d,"image_tokens":100},"request_id":"r6"}`, math.MaxInt64-1),
+			wantData: []dto.EmbeddingResponseItem{{Object: "embedding", Index: 0, Embedding: []float64{0.5}}},
+			wantUsage: &dto.Usage{PromptTokens: math.MaxInt32, TotalTokens: math.MaxInt32,
+				PromptTokensDetails: dto.InputTokenDetails{TextTokens: math.MaxInt32, ImageTokens: 100}},
+		},
+		{
+			// A clamped-to-zero total still has to reach the estimate fallback.
+			name:      "negative input tokens fall back to the estimate",
+			model:     "qwen3-vl-embedding",
+			body:      `{"output":{"embeddings":[{"index":0,"embedding":[0.5],"type":"text"}]},` + `"usage":{"input_tokens":-5,"image_tokens":-5},"request_id":"r7"}`,
 			estimate:  12,
 			wantData:  []dto.EmbeddingResponseItem{{Object: "embedding", Index: 0, Embedding: []float64{0.5}}},
 			wantUsage: &dto.Usage{PromptTokens: 12, TotalTokens: 12},

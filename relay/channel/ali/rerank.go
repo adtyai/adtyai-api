@@ -54,10 +54,18 @@ func RerankHandler(c *gin.Context, resp *http.Response, info *relaycommon.RelayI
 		}, resp.StatusCode), nil
 	}
 
+	// Rerank results are delivered before billing, and some Bailian rerank
+	// models answer without a usage block. A zero (or negative) upstream count
+	// would settle the request as unpaid, so fall back to the request-side
+	// estimate, as the embedding handlers do.
+	totalTokens := aliResponse.Usage.TotalTokens
+	if totalTokens <= 0 {
+		totalTokens = info.GetEstimatePromptTokens()
+	}
 	usage := dto.Usage{
-		PromptTokens:     aliResponse.Usage.TotalTokens,
+		PromptTokens:     totalTokens,
 		CompletionTokens: 0,
-		TotalTokens:      aliResponse.Usage.TotalTokens,
+		TotalTokens:      totalTokens,
 	}
 	rerankResponse := dto.RerankResponse{
 		Results: aliResponse.Output.Results,
