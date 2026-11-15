@@ -39,8 +39,8 @@ func CheckAdtyPostgreSQL() {
 	adtyExit(1)
 }
 
-// MigrateAdtyTables 建二开的表。只由主节点的 migrateDB 调用；上游测试在 SQLite 上也会走到这里，只用 AutoMigrate。
-// MigrateAdtyTables 用包级 DB 建二开的表。保留这个名字给上游迁移入口用。
+// MigrateAdtyTables 用包级 DB 建二开的表。上游的 migrateDB 只把它挂在主节点上；
+// 上游的 SQLite 测试也会走到这里，那里同样只用 AutoMigrate。
 func MigrateAdtyTables() error {
 	return MigrateAdtyTablesOn(DB)
 }
