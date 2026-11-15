@@ -50,8 +50,8 @@ func TestSiteGiftQuoteRequiresEarningReserve(t *testing.T) {
 
 func TestSameMethodSharesBonusAcrossChains(t *testing.T) {
 	confirmAdtyCompliance(t)
-	require.NoError(t, adty_setting.SetMainMethodBonus("usdt", true, "0.02"))
-	t.Cleanup(func() { _ = adty_setting.SetMainMethodBonus("usdt", false, "0") })
+	setMainBonusForTest(t, "usdt", true, "0.02")
+	t.Cleanup(func() { setMainBonusForTest(t, "usdt", false, "0") })
 	trc, err := AdtyQuoteFor("default", 100, AdtyMethodUSDTTRC20, AdtyPromoInput{})
 	require.NoError(t, err)
 	bep, err := AdtyQuoteFor("default", 100, AdtyMethodUSDTBEP20, AdtyPromoInput{})
@@ -64,8 +64,8 @@ func TestSiteGiftCanUseAuthorizedMarginFill(t *testing.T) {
 	db := prepareSiteDB(t)
 	confirmAdtyCompliance(t)
 	_, site := openActiveSite(t, db, "gift-margin")
-	require.NoError(t, adty_setting.AuthorizeSiteBonusMethod(site.Id, "usdt", true))
-	require.NoError(t, adty_setting.SetSiteMethodBonus(site.Id, "usdt", true, "0.10"))
+	authorizeSiteBonusForTest(t, site.Id, "usdt", true)
+	setSiteBonusForTest(t, site.Id, "usdt", true, "0.10")
 	adty_setting.AuthorizeSiteBonusMarginFill(site.Id, true)
 	require.NoError(t, OpenAdtyMarginCycle(site.Id, decimal.RequireFromString("20"), "gift-margin-cycle"))
 	quote, err := AdtyQuoteForSite(AdtySiteById(site.Id), "default", 100, AdtyMethodUSDTTRC20, AdtyPromoInput{})
@@ -77,4 +77,27 @@ func TestPromoCodeIsRetiredOnQuote(t *testing.T) {
 	confirmAdtyCompliance(t)
 	_, err := AdtyQuoteFor("default", 100, AdtyMethodAlipay, AdtyPromoInput{Code: "SAVE10"})
 	require.Error(t, err)
+}
+
+// 加赠配置现在只有一条写入口：先算出要落库的 JSON，再由配置层同步进内存。
+// 测试预置配置也走这两步，避免出现只改内存的旁路。
+func setMainBonusForTest(t *testing.T, method string, enabled bool, rate string) {
+	t.Helper()
+	value, err := adty_setting.BuildMainMethodBonus(method, enabled, rate)
+	require.NoError(t, err)
+	require.NoError(t, adty_setting.ApplyMethodBonusOption(adty_setting.TopupSettingKeyMethodBonus, value))
+}
+
+func authorizeSiteBonusForTest(t *testing.T, siteID int, method string, allowed bool) {
+	t.Helper()
+	value, err := adty_setting.BuildSiteMethodAuth(siteID, method, allowed)
+	require.NoError(t, err)
+	require.NoError(t, adty_setting.ApplyMethodBonusOption(adty_setting.TopupSettingKeySiteMethodAuth, value))
+}
+
+func setSiteBonusForTest(t *testing.T, siteID int, method string, enabled bool, rate string) {
+	t.Helper()
+	value, err := adty_setting.BuildSiteMethodBonus(siteID, method, enabled, rate)
+	require.NoError(t, err)
+	require.NoError(t, adty_setting.ApplyMethodBonusOption(adty_setting.TopupSettingKeySiteMethodBonus, value))
 }
