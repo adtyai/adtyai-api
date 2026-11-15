@@ -277,13 +277,26 @@ func confirmRouterCompliance(t *testing.T) {
 	t.Cleanup(func() { payment.ComplianceConfirmed, payment.ComplianceTermsVersion = oldConfirmed, oldVersion })
 }
 
-// setRouterBonusRates 设一个 $100 加赠 2.5% 的档位，结束时还原。加赠没有内置档位（任务 3.6）。
+// setRouterBonusRates 打开「按支付方式加赠 2.5%」，结束时还原。
+//
+// 金额档位加赠已经退役：新订单的赠金只按支付方式快照计算
+// （`setting/adty_setting/topup.go` 的 BonusRates 注释、
+// `service/adty_topup_quote.go` 的 adtyBonusFromRates、AGENTS.md 的同名条款）。
+// 这个 helper 以前写 BonusRates，等于让测试断言一条不参与计价的老规则，
+// 于是所有走它的用例都在要求实现「恢复退役机制」——红灯的原因在测试这边。
+//
+// 两种支付方式都设，覆盖这批用例里出现的 epay（alipay）与 BEpusdt（usdt.*）：
+// AdtyBonusMethod 会把 usdt.trc20 / usdt.bep20 归一成 usdt。
 func setRouterBonusRates(t *testing.T) {
 	t.Helper()
 	setting := adty_setting.GetTopupSetting()
-	old := setting.BonusRates
-	setting.BonusRates = map[int]float64{10: 1, 100: 2.5}
-	t.Cleanup(func() { setting.BonusRates = old })
+	old := setting.MethodBonus
+	t.Cleanup(func() { setting.MethodBonus = old })
+	for _, method := range []string{"usdt", "alipay"} {
+		value, err := adty_setting.BuildMainMethodBonus(method, true, "0.025")
+		require.NoError(t, err)
+		require.NoError(t, adty_setting.ApplyMethodBonusOption(adty_setting.TopupSettingKeyMethodBonus, value))
+	}
 }
 
 func seedRouterOrder(t *testing.T, db *gorm.DB, userID int, tradeNo, status string, expireAt int64) {
