@@ -18,6 +18,7 @@ type FundingSource interface {
 	PreConsume(amount int) error
 	// Settle 根据差额调整资金来源（正数补扣，负数退还），返回补扣的实扣额。
 	// 二开（余额下限）：补扣最多扣到 0，delta − 实扣由平台承担。
+	// 钱包实现的正数分支自 ISS-R4-0054 起不再扣费，见 WalletFunding.Settle。
 	Settle(delta int) (charged int, err error)
 	// Refund 退还所有预扣费
 	Refund() error
@@ -30,6 +31,17 @@ type FundingSource interface {
 // ErrInsufficientWalletQuota 钱包原子预扣失败（余额不足），未发生任何扣减。
 // BillingSession 据此映射为 ErrorCodeInsufficientUserQuota。
 var ErrInsufficientWalletQuota = errors.New("wallet quota insufficient")
+
+// ErrLegacyWalletCharge 表示调用方走到了「没有 operation key 的扣费」这条路。
+//
+// 自 ISS-R4-0054 起这里**没有扣费实现**：production 唯一的构造点总是给
+// BillingSession 设 `operationKey`，实际扣费由 ApplyBillingSettlement 完成，
+// 原来那条 `ChargeUserQuotaUpTo` 已连同钉住它的测试一起删除。
+//
+// 为什么返回错误而不是返回 (0, nil)：`BillingSession.Settle` 的 legacy 分支
+// 只有在「不变量被违反」时才可达。那时静默不扣费等于免费放行，比报错坏得多；
+// 报错是可见的失败，也是让下一个人去读 ISS-R4-0046 / ISS-R4-0054 的信号。
+var ErrLegacyWalletCharge = errors.New("legacy wallet settle has no charge path: settlement must carry an operation key")
 
 type WalletFunding struct {
 	userId       int
@@ -60,7 +72,9 @@ func (w *WalletFunding) Settle(delta int) (int, error) {
 		return 0, nil
 	}
 	if delta > 0 {
-		return model.ChargeUserQuotaUpTo(w.userId, delta)
+		// 正数补扣在生产上不存在：带 operation key 的结算走 ApplyBillingSettlement
+		// 自己扣费（含余额下限）。走到这里说明 BillingSession 的 legacy 分支被复活了。
+		return 0, ErrLegacyWalletCharge
 	}
 	return 0, model.IncreaseUserQuota(w.userId, -delta, false)
 }

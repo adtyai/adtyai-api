@@ -84,7 +84,12 @@ func (s *BillingSession) Settle(actualQuota int) error {
 	// 谁新增第二个构造点、或者直接写 `&BillingSession{}`，这里就会静默复活。
 	//
 	// 删这个分支之前先读 ISS-R4-0046 与 v246。删掉它会把「不变量被违反」的行为
-	// 从「走 legacy 扣费」变成「静默不扣任何费用」——后者不报错，是更坏的失败形态。
+	// 从「报错」变成「静默不扣任何费用」——后者不报错，是更坏的失败形态。
+	//
+	// **这条扣费路径已经没有了（ISS-R4-0054）**：`model.ChargeUserQuotaUpTo` 连同
+	// 钉住它的测试一起删除，`funding.Settle` 的正数分支改为返回
+	// `ErrLegacyWalletCharge`。所以「本路径当前无生产调用方」，而且一旦被复活，
+	// 它会以错误收场、不会静默放行——这正是保留本分支的理由。
 	// 守门测试：`TestBillingSessionAlwaysCarriesOperationKey`（新增构造点即红）。
 	if s.settled {
 		return nil

@@ -193,19 +193,6 @@ func TestAdtyFundSettleIsIdempotentPG(t *testing.T) {
 // 这条是「把 chargeUserQuotaUpToDB 改成只扣余额、批次全交给分摊」那个方案的反证：
 // 该路径没有分摊可依，若批次不再由它扣，这些消费就永远不递减本金，
 // 正是本单要修的缺陷本身。
-func TestLegacyChargeStillConsumesBatchPG(t *testing.T) {
-	f := newFundSettleFixture(t, 50_000_000)
-	charged, err := ChargeUserQuotaUpTo(f.user.Id, 10_000_000)
-	require.NoError(t, err)
-	require.EqualValues(t, 10_000_000, charged)
-
-	assert.EqualValues(t, 40_000_000, f.quota(t))
-	assert.EqualValues(t, 40_000_000, f.remaining(t), "无分摊的扣费路径必须自己扣批次")
-	sums, err := SumAdtyFundBatchRemainingByKind(f.user.Id)
-	require.NoError(t, err)
-	assert.EqualValues(t, int64(f.quota(t)), sums.Principal+sums.Bonus)
-}
-
 // 团队 Key 由团队共享余额付款，成员的个人本金批次不能参与。
 //
 // 这是「扣错人」级别的缺陷：如果结算时按 UserId 去扣批次，团队消费会把员工

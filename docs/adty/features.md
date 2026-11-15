@@ -191,7 +191,7 @@ BEpusdt 使用官方 `POST /api/v1/pay/info`，只信任与冻结付款链接同
 - 后台手动调额（`model/adty_quota_adjust.go`）：「减少」不能把活余额减到 0 以下；「覆盖」的目标原始额度必须非负，覆盖后的活余额也不能为负。0 可以。这是 2026-11-06 选定的下限。在同一用户行锁内用数据库 `quota + quota_pending` 检查下限和钱包上限，原始 before/after 仍用于审计；算术溢出直接拒绝。「增加」保留减少已有债务的语义。普通用户资料更新不覆盖 `quota_pending` 和已消费的签到赠金。
 - 令牌额度（`remain_quota`）结算时仍按全额扣，照上游原样；它不影响钱包余额。
 
-**相关代码**：`model.ChargeUserQuotaUpTo`（`model/quota_reserve.go`，在数据库用户行锁内按活余额扣减）、`model/billing_quota.go`、`service/adty_balance_floor.go`、`service/billing_session.go`。新写的扣费代码要用 `ChargeUserQuotaUpTo`，不要用不执行余额下限准入的 `model.DecreaseUserQuota`。
+**相关代码**：`model/billing_operation.go`（`ReserveBillingOperation` → `ApplyBillingSettlement`，在数据库用户行锁内按活余额扣减并记短差）、`model/billing_quota.go`、`service/adty_balance_floor.go`、`service/billing_session.go`。新写的扣费代码要走这条预扣分摊 + 结算的路，不要直接改余额，也不要用不执行余额下限准入的 `model.DecreaseUserQuota`。（`model.ChargeUserQuotaUpTo` 已在 `ISS-R4-0054` 删除，见 conventions.md 约定 C。）
 
 2026-11-01 用户要求（提交 5a6cae6de、cc51f530e），方案里没有这一项。
 

@@ -39,15 +39,11 @@ func TestSiteOperatingWalletTracksCustomerPrincipalOnly(t *testing.T) {
 	require.NoError(t, db.Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteWalletOperating).First(&wallet).Error)
 	require.True(t, wallet.Balance.Equal(decimal.NewFromInt(1)), "site top-up principal credits the operating wallet")
 
-	charged, err := model.ChargeUserQuotaUpTo(customer.Id, 300000)
-	require.NoError(t, err)
-	require.Equal(t, 300000, charged)
+	consumeAdtyTestQuota(t, customer.Id, 300000)
 	require.NoError(t, db.Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteWalletOperating).First(&wallet).Error)
 	require.True(t, wallet.Balance.Equal(decimal.RequireFromString("0.4")), "consumption debits only the principal share")
 
-	charged, err = model.ChargeUserQuotaUpTo(customer.Id, 200000)
-	require.NoError(t, err)
-	require.Equal(t, 200000, charged)
+	consumeAdtyTestQuota(t, customer.Id, 200000)
 	require.NoError(t, db.Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteWalletOperating).First(&wallet).Error)
 	require.True(t, wallet.Balance.Equal(decimal.Zero), "the rest of the principal clears the operating wallet")
 
@@ -55,9 +51,7 @@ func TestSiteOperatingWalletTracksCustomerPrincipalOnly(t *testing.T) {
 		UserId: customer.Id, Kind: "bonus", Source: "gift-1", Original: 100000, Remaining: 100000,
 	}).Error)
 	require.NoError(t, db.Model(customer).Update("quota", 100000).Error)
-	charged, err = model.ChargeUserQuotaUpTo(customer.Id, 100000)
-	require.NoError(t, err)
-	require.Equal(t, 100000, charged, "gift consumption is not refused when the operating wallet is empty")
+	consumeAdtyTestQuota(t, customer.Id, 100000) // gift consumption is not refused when the operating wallet is empty
 	require.NoError(t, db.Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteWalletOperating).First(&wallet).Error)
 	require.True(t, wallet.Balance.Equal(decimal.Zero), "gift consumption does not debit the operating wallet")
 }
@@ -122,9 +116,27 @@ func TestManualQuotaAdjustDoesNotDebitOperatingWallet(t *testing.T) {
 		Type: "adjustment", RefType: "test", RefID: "restore-op-adj", IdempotencyKey: "restore-op-adj",
 	})
 	require.NoError(t, err)
-	charged, err := model.ChargeUserQuotaUpTo(customer.Id, 200000)
-	require.NoError(t, err)
-	require.Equal(t, 200000, charged)
+	consumeAdtyTestQuota(t, customer.Id, 200000)
 	require.NoError(t, db.Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteWalletOperating).First(&wallet).Error)
 	require.True(t, wallet.Balance.Equal(decimal.Zero), "a later usage charge still debits the operating wallet")
+}
+
+// consumeAdtyTestQuota 驱动一次「用量消耗」：同一事务里先扣批次（会触发
+// principal-spent hook，也就是这两条用例真正在测的东西），再扣用户钱包余额。
+//
+// 原来的驱动是 `model.ChargeUserQuotaUpTo`；它在真实流量上不可达，已随
+// ISS-R4-0054 连同钉住它的测试一起删除，所以这里直接落在它做过的那两步上。
+func consumeAdtyTestQuota(t *testing.T, userID, quota int) {
+	t.Helper()
+	require.NoError(t, model.DB.Transaction(func(tx *gorm.DB) error {
+		var user model.User
+		if err := tx.Select("id", "quota").First(&user, userID).Error; err != nil {
+			return err
+		}
+		if err := model.ConsumeAdtyFundBatchesTx(tx, userID, int64(quota), int64(user.Quota)); err != nil {
+			return err
+		}
+		return tx.Model(&model.User{}).Where("id = ?", userID).
+			Update("quota", gorm.Expr("quota - ?", quota)).Error
+	}))
 }

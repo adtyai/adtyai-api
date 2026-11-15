@@ -11,8 +11,9 @@ import (
 
 // 这条是**守卫**，不是覆盖。
 //
-// `BillingSession.Settle` 里那段 legacy 结算路径（`funding.Settle` →
-// `ChargeUserQuotaUpTo`）运行期不可达，唯一原因是生产只有一个构造点、
+// `BillingSession.Settle` 里那段 legacy 结算路径（`funding.Settle`，正数补扣
+// 自 ISS-R4-0054 起直接返回 `ErrLegacyWalletCharge`）运行期不可达，
+// 唯一原因是生产只有一个构造点、
 // 而它总把 `operationKey` 设成非空。**那个不变量没有任何强制。**
 //
 // 所以这条测试守的是「只有一个构造点」这件事本身：
