@@ -22,6 +22,11 @@ func StartAdty() {
 	if err := model.ClearAdtyPlaceholderGroupRatio(); err != nil {
 		common.SysError(common.LogText("clear placeholder group ratio: %s", err.Error()))
 	}
+	// 系统翻译（ISS-R4-0012）：Root 打开了翻译但协议或地址填不全时，启动日志里说清楚，
+	// 否则后台看起来一切正常，只是每一条动态译文都停在「英文未就绪」。
+	if err := CheckAdtyTranslationProvider(); err != nil {
+		common.SysError(common.LogText("adty translation enabled but unusable: %s", err.Error()))
+	}
 	for _, task := range adtyMasterTasks {
 		task()
 	}

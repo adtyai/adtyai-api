@@ -30,10 +30,10 @@ var (
 	adtyNegationTarget        = regexp.MustCompile(`(?i)\b(not|no|never|without|cannot|can't|do not)\b`)
 )
 
-// AdtyTranslateFunc performs one system translation. The default does not dial a provider or debit a customer.
-var AdtyTranslateFunc = func(modelName, text string) (string, error) {
-	return "", ErrAdtyTranslationInvalid
-}
+// AdtyTranslateFunc performs one system translation. The default calls the Root-configured
+// translator over HTTP (see adty_translation_provider.go); it does not debit a customer.
+// Tests replace it with a fake to keep the rest of the chain offline.
+var AdtyTranslateFunc = adtyTranslateViaProvider
 
 type AdtyTranslationView struct {
 	Mode         string `json:"mode"`
