@@ -51,11 +51,13 @@ func TestMigrateLegacyAnnouncementsIsIdempotentPG(t *testing.T) {
 		assert.Equal(t, "published", row.Status)
 	}
 	// 正文逐字节一致——这是唯一不会被「看起来对」蒙混过去的断言。
-	assert.Equal(t, "站点将于 02:00 维护", rows[0].Content)
-	assert.Equal(t, "欢迎使用", rows[1].Content)
-	assert.Equal(t, "已恢复", rows[2].Content)
-	// 旧结构没有标题，extra 放到最接近标题的位置；颜色语义存在 Business 里。
-	assert.Equal(t, "请提前保存", rows[0].Title)
+	// `extra` 是正文旁的短备注，不是标题：按原文顺序接在正文后面，Title 留空。
+	// 放进 Title 会让前端把一条公告拆成两段，而 varchar(120) 还会把备注截掉。
+	assert.Equal(t, "站点将于 02:00 维护\n\n请提前保存", rows[0].Content)
+	assert.Equal(t, "欢迎使用", rows[1].Content, "没有备注的条目原样保留")
+	assert.Equal(t, "已恢复\n\n感谢等待", rows[2].Content)
+	assert.Empty(t, rows[0].Title, "旧结构没有标题，迁移不该造一个")
+	// 颜色语义存在 Business 里，回滚时能还原。
 	assert.Equal(t, "legacy:type=warning", rows[0].Business)
 	assert.Equal(t, "legacy:type=success", rows[2].Business)
 	assert.Empty(t, rows[1].Business, "default 类型不写标记")
@@ -192,4 +194,61 @@ func TestNotificationInboxShowsMigratedAnnouncementOncePG(t *testing.T) {
 	}
 	assert.Equal(t, 1, count, "旧 option 与新表同时读会让同一条公告出现两次")
 	assert.EqualValues(t, 1, inbox.UnreadPublications)
+}
+
+// 数组重排不能让公告重插一遍。
+//
+// 旧面板就是按数组编辑的：删掉第 2 条，第 3 条就变成第 2 条。如果 ReadKey 把
+// 数组下标算进哈希，后面每一条都会算出新键、全部重插——公告在面板上直接重复。
+//
+// 这条钉的是「ReadKey 不随位置变化」。把下标加回哈希，它立刻红。
+func TestMigrateLegacyAnnouncementsIsStableAcrossReorderPG(t *testing.T) {
+	db := announcementTestDB(t)
+	var version int
+	require.NoError(t, db.Raw("SHOW server_version_num").Scan(&version).Error)
+	require.Equal(t, 170012, version, "证据必须来自 PostgreSQL 17.12")
+
+	created, err := MigrateLegacyAnnouncements(legacyAnnouncementsFixture)
+	require.NoError(t, err)
+	require.Equal(t, 3, created)
+
+	// 删掉中间那条（顺序全变），再迁一次。
+	reordered := `[
+  {"content":"站点将于 02:00 维护","publishDate":"2026-11-01T02:00:00Z","type":"warning","extra":"请提前保存"},
+  {"content":"已恢复","publishDate":"2026-11-10T08:00:00Z","type":"success","extra":"感谢等待"}
+]`
+	created, err = MigrateLegacyAnnouncements(reordered)
+	require.NoError(t, err)
+	assert.Zero(t, created, "重排不产生新行：ReadKey 不该随数组位置变化")
+
+	var count int64
+	require.NoError(t, db.Model(&model.AdtyNotificationPublication{}).Count(&count).Error)
+	assert.EqualValues(t, 3, count, "删掉的那条仍在库里（迁移不是同步，不删数据）")
+
+	// 重复启动也不插：内容没变就撞唯一索引。
+	for range 3 {
+		created, err = MigrateLegacyAnnouncements(legacyAnnouncementsFixture)
+		require.NoError(t, err)
+		assert.Zero(t, created, "内容没变就一次都不该再插")
+	}
+}
+
+// 旧面板里复制一条、连日期都没改：两条都要留下，不能第二条被静默丢掉。
+func TestMigrateLegacyAnnouncementsKeepsTrueDuplicatesPG(t *testing.T) {
+	db := announcementTestDB(t)
+	var version int
+	require.NoError(t, db.Raw("SHOW server_version_num").Scan(&version).Error)
+	require.Equal(t, 170012, version, "证据必须来自 PostgreSQL 17.12")
+
+	raw := `[
+  {"content":"重复的那条","publishDate":"2026-11-01T02:00:00Z"},
+  {"content":"重复的那条","publishDate":"2026-11-01T02:00:00Z"}
+]`
+	created, err := MigrateLegacyAnnouncements(raw)
+	require.NoError(t, err)
+	assert.Equal(t, 2, created, "真重复的两条都留着：序号是「同样内容里的第几条」")
+
+	var count int64
+	require.NoError(t, db.Model(&model.AdtyNotificationPublication{}).Count(&count).Error)
+	assert.EqualValues(t, 2, count)
 }

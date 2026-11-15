@@ -38,7 +38,10 @@ func MigrateLegacyAnnouncements(raw string) (created int, err error) {
 		return 0, err
 	}
 	now := time.Now().Unix()
-	for index, entry := range entries {
+	// 同一段「发布时间 + 正文」出现过几次。用它当序号，而不是数组下标：
+	// 序号只随「有没有重复」变化，不随位置变化。
+	seen := map[string]int{}
+	for _, entry := range entries {
 		content, _ := entry["content"].(string)
 		if strings.TrimSpace(content) == "" {
 			continue
@@ -55,23 +58,35 @@ func MigrateLegacyAnnouncements(raw string) (created int, err error) {
 			// 回滚时能还原，而不是给它编一个新的类别。
 			business = "legacy:type=" + legacyType
 		}
-		title := ""
+		// `extra` 不是标题，是**正文旁边的短备注**（「2025 年起生效」这类），
+		// 和正文是一体的。所以按原文顺序接在正文后面，Title 留空。
+		//
+		// 两个理由，一个是顺序、一个是可逆性：
+		// 放进 Title 会让前端把一条公告拆成「标题」和「正文」两段，原来的阅读
+		// 顺序就没了；而 Title 是 varchar(120)，`extra` 有 100 字上限又被截断，
+		// 截掉的正是正文的一部分。
+		// 标题为空在界面上最多多一个空行（改一行数据就能补），正文被截断则原文
+		// 就没了——两种错误的可逆性完全不同。前端不渲染空标题是前端该处理的事。
 		if extra, ok := entry["extra"].(string); ok {
-			// 旧结构没有标题，`extra` 是紧跟在正文旁的短备注，最接近标题的位置。
-			title = truncateAdtyRunes(strings.TrimSpace(extra), 120)
+			if trimmed := strings.TrimSpace(extra); trimmed != "" {
+				content = content + "\n\n" + extra
+			}
 		}
+		dedupeKey := publishDate + "\n" + content
+		ordinal := seen[dedupeKey]
+		seen[dedupeKey] = ordinal + 1
 		row := model.AdtyNotificationPublication{
 			IssuerSiteId:  0, // 主站发布域；旧公告都是平台级的
 			PublisherId:   0,
 			PublisherName: "legacy",
 			Audience:      "all_users",
 			Kind:          kind,
-			Title:         title,
-			Content:       content, // 逐字节保留，不 trim 不改写
+			Title:         "",
+			Content:       content, // 正文逐字节保留；备注按原文顺序接在后面
 			Business:      business,
 			Status:        "published",
 			Revision:      1,
-			ReadKey:       legacyAnnouncementReadKey(index, publishDate, content),
+			ReadKey:       legacyAnnouncementReadKey(publishDate, content, ordinal),
 			PublishedAt:   publishedAt,
 			UpdatedAt:     publishedAt,
 			UpdatedBy:     0,
@@ -87,18 +102,28 @@ func MigrateLegacyAnnouncements(raw string) (created int, err error) {
 	return created, nil
 }
 
-// legacyAnnouncementReadKey 由「位置 + 发布时间 + 正文」决定。改正文就是另一条记录了，
-// 这是想要的：迁移不是同步，它只负责把当时那份搬过去一次。
-func legacyAnnouncementReadKey(index int, publishDate, content string) string {
-	sum := sha256.Sum256([]byte(legacyAnnouncementMarker + strconv.Itoa(index) + "\n" + publishDate + "\n" + content))
+// legacyAnnouncementReadKey 由「发布时间 + 正文 + 同内容出现序号」决定。
+//
+// **不含数组下标**，这是关键：旧面板按数组编辑，删一条会让后面所有条目换位置。
+// 下标进哈希的话，重排一次就会给后面每一条算出新键、全部重插一遍——公告在面板上
+// 就重复了。而「重排后仍同一行」才是迁移该有的行为。
+//
+// `ordinal` 只用来区分**真正重复**的条目（旧面板里复制一条、连日期都没改）。
+// 它是「同样内容里的第几条」，不随位置变化：删掉前面一条，后面那条的序号不变。
+func legacyAnnouncementReadKey(publishDate, content string, ordinal int) string {
+	sum := sha256.Sum256([]byte(legacyAnnouncementMarker + publishDate + "\n" + content + "\n" + strconv.Itoa(ordinal)))
 	return hex.EncodeToString(sum[:])
 }
 
-// migrateAdtyLegacyAnnouncementsOnStart 在启动时跑一次。失败只记日志：
-// 公告迁移失败不该让服务起不来，但必须留下可查的痕迹。
+// migrateAdtyLegacyAnnouncementsOnStart 在启动时跑一次，失败只记日志。
+//
+// 不需要额外的「这个 option 迁过没有」标记：ReadKey 由内容决定（不含数组下标），
+// 重复执行会撞唯一索引，第二次插入 0 行。**重排数组也不会重插**——这正是把下标
+// 从哈希里拿掉的原因。
 func migrateAdtyLegacyAnnouncementsOnStart() {
 	created, err := MigrateLegacyAnnouncements(console_setting.GetConsoleSetting().Announcements)
 	if err != nil {
+		// 坏数据不该让服务起不来，但必须留痕。
 		common.SysError(common.LogText("migrate legacy announcements failed: %s", err.Error()))
 		return
 	}
@@ -109,12 +134,4 @@ func migrateAdtyLegacyAnnouncementsOnStart() {
 
 func init() {
 	adtyMasterTasks = append(adtyMasterTasks, migrateAdtyLegacyAnnouncementsOnStart)
-}
-
-func truncateAdtyRunes(value string, limit int) string {
-	runes := []rune(value)
-	if len(runes) <= limit {
-		return value
-	}
-	return string(runes[:limit])
 }
