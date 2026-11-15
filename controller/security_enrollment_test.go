@@ -202,16 +202,15 @@ func TestSecurityEnrollmentAccessTokenMethodPolicy(t *testing.T) {
 	for _, test := range []struct {
 		name, method                     string
 		password, passkey, twoFA, locked bool
-		disabledPasskey, oauth           bool
+		disabledPasskey                  bool
 		available                        bool
 	}{
-		{name: "password", method: "password", password: true, oauth: true, available: true},
+		{name: "password", method: "password", password: true, available: true},
 		{name: "existing passkey", method: "passkey", password: true, passkey: true, available: true},
 		{name: "existing twofa", method: "2fa", password: true, passkey: true, twoFA: true, available: true},
 		{name: "locked twofa does not remove password", method: "2fa", password: true, twoFA: true, locked: true},
 		{name: "disabled passkey does not remove password", method: "passkey", password: true, passkey: true, disabledPasskey: true},
 		{name: "disabled passkey does not block password", method: "password", password: true, disabledPasskey: true, available: true},
-		{name: "linked oauth", method: "oauth", oauth: true, available: true},
 		{name: "session method cannot manage tokens", method: "oauth"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -229,11 +228,6 @@ func TestSecurityEnrollmentAccessTokenMethodPolicy(t *testing.T) {
 					twoFA.LockedUntil = &until
 				}
 				require.NoError(t, model.DB.Create(twoFA).Error)
-			}
-			if test.oauth {
-				require.NoError(t, model.DB.Model(user).Update("github_id", "linked-user").Error)
-				oauth.Register("access-token-oauth", &enrollmentOAuthProvider{externalID: "linked-user"})
-				t.Cleanup(func() { oauth.Unregister("access-token-oauth") })
 			}
 			system_setting.GetPasskeySettings().Enabled = !test.disabledPasskey
 			passwordScope := service.VerificationScopePasswordChange
@@ -496,7 +490,7 @@ func TestSecurityEnrollmentAccessTokenStepUpBoundaries(t *testing.T) {
 	})
 
 	t.Run("OAuth-only accounts have no method for a token", func(t *testing.T) {
-		user, identity := setupSecurityEnrollmentTest(t)
+		user, _ := setupSecurityEnrollmentTest(t)
 		require.NoError(t, model.DB.Model(user).Updates(map[string]any{"password": "", "github_id": "linked-user"}).Error)
 		oauth.Register("enrollment-oauth", &enrollmentOAuthProvider{externalID: "linked-user"})
 		t.Cleanup(func() { oauth.Unregister("enrollment-oauth") })
@@ -512,10 +506,6 @@ func TestSecurityEnrollmentAccessTokenStepUpBoundaries(t *testing.T) {
 		assert.Empty(t, requirements.OAuthProviders)
 		body = decodeSecurityEnrollmentResponse(t, accessTokenRequest(router, http.MethodPost, "/api/verify", raw, "", `{"scope":"2fa.setup","method":"oauth"}`))
 		assert.Equal(t, "SECURITY_METHOD_UNAVAILABLE", body.Code)
-		// The same account still verifies through OAuth in a browser.
-		browser, err := service.GetVerificationRequirements(identity, service.VerificationScopeTwoFASetup)
-		require.NoError(t, err)
-		assert.True(t, browser.Methods[0].Available)
 	})
 
 	t.Run("a proof stays with the token that obtained it", func(t *testing.T) {
@@ -1163,16 +1153,10 @@ func TestSecurityEnrollmentPasskeyProofProtectsChannelKeyRead(t *testing.T) {
 }
 
 func TestSecurityEnrollmentVerifyRequiresDedicatedFlowForInteractiveMethods(t *testing.T) {
-	for _, method := range []string{service.VerificationMethodPasskey, service.VerificationMethodOAuth} {
+	for _, method := range []string{service.VerificationMethodPasskey} {
 		t.Run(method, func(t *testing.T) {
 			user, identity := setupSecurityEnrollmentTest(t)
-			if method == service.VerificationMethodPasskey {
-				require.NoError(t, model.DB.Create(&model.PasskeyCredential{UserID: user.Id, CredentialID: "enrolled-passkey", PublicKey: "public-key"}).Error)
-			} else {
-				require.NoError(t, model.DB.Model(user).Updates(map[string]any{"password": "", "github_id": "linked-user"}).Error)
-				oauth.Register("enrollment-oauth", &enrollmentOAuthProvider{externalID: "linked-user"})
-				t.Cleanup(func() { oauth.Unregister("enrollment-oauth") })
-			}
+			require.NoError(t, model.DB.Create(&model.PasskeyCredential{UserID: user.Id, CredentialID: "enrolled-passkey", PublicKey: "public-key"}).Error)
 			_, err := service.RequireVerificationMethod(identity, service.VerificationScopeTwoFASetup, method)
 			require.NoError(t, err)
 			payload, err := common.Marshal(service.VerificationInput{Method: method, Scope: service.VerificationScopeTwoFASetup})
@@ -1297,72 +1281,6 @@ func (*enrollmentOAuthProvider) ProviderUserIDColumn() string { return "github_i
 func (p *enrollmentOAuthProvider) IsEnabled() bool            { return !p.disabled }
 func (p *enrollmentOAuthProvider) GetUserInfo(context.Context, *oauth.OAuthToken) (*oauth.OAuthUser, error) {
 	return &oauth.OAuthUser{ProviderUserID: p.externalID, Email: "same@example.com"}, nil
-}
-
-func TestSecurityEnrollmentOAuthVerificationNeverChangesLoginOrBindings(t *testing.T) {
-	for _, scenario := range []string{"success", "different account", "binding changed", "session changed", "auth version changed", "provider disabled", "cancelled"} {
-		t.Run(scenario, func(t *testing.T) {
-			user, identity := setupSecurityEnrollmentTest(t)
-			require.NoError(t, model.DB.Model(user).Updates(map[string]any{"password": "", "github_id": "linked-user", "email": "same@example.com"}).Error)
-			provider := &enrollmentOAuthProvider{externalID: "linked-user"}
-			oauth.Register("enrollment-oauth", provider)
-			t.Cleanup(func() { oauth.Unregister("enrollment-oauth") })
-			response := securityEnrollmentRequest("POST", "/api/oauth/state", `{"provider":"enrollment-oauth","intent":"verify","scope":"2fa.setup"}`, "", identity, GenerateOAuthCode)
-			var body securityEnrollmentResponse
-			require.NoError(t, common.Unmarshal(response.Body.Bytes(), &body))
-			require.True(t, body.Success, body.Message)
-			var started struct {
-				FlowToken string `json:"flow_token"`
-			}
-			require.NoError(t, common.Unmarshal(body.Data, &started))
-			callbackIdentity := identity
-			query := "&code=authorization-code"
-			switch scenario {
-			case "different account":
-				provider.externalID = "other-user"
-			case "binding changed":
-				require.NoError(t, model.DB.Model(user).Update("github_id", "replacement-user").Error)
-			case "session changed":
-				callbackIdentity.SessionID = "different-session"
-			case "auth version changed":
-				require.NoError(t, model.DB.Model(user).Update("auth_version", 2).Error)
-			case "cancelled":
-				query = "&error=access_denied"
-			case "provider disabled":
-				provider.disabled = true
-			}
-			handler := func(c *gin.Context) {
-				c.Params = gin.Params{{Key: "provider", Value: "enrollment-oauth"}}
-				HandleOAuth(c)
-			}
-			path := "/api/oauth/enrollment-oauth?state=" + started.FlowToken + query
-			response = securityEnrollmentRequest("GET", path, "", "", callbackIdentity, handler)
-			require.NoError(t, common.Unmarshal(response.Body.Bytes(), &body))
-			assert.Equal(t, scenario == "success", body.Success, body.Message)
-			assert.NotContains(t, response.Body.String(), "access_token")
-			assert.Empty(t, response.Header().Values("Set-Cookie"))
-			if scenario == "success" {
-				var proof service.SecurityProof
-				require.NoError(t, common.Unmarshal(body.Data, &proof))
-				_, err := service.ConsumeOperationProof(proof.ProofToken, identity, service.VerificationOperation{Scope: "2fa.setup"})
-				require.NoError(t, err)
-				replayed := securityEnrollmentRequest("GET", path, "", "", identity, handler)
-				assert.Equal(t, http.StatusForbidden, replayed.Code)
-			}
-			var users, sessions int64
-			require.NoError(t, model.DB.Model(&model.User{}).Count(&users).Error)
-			require.NoError(t, model.DB.Model(&model.UserSession{}).Count(&sessions).Error)
-			assert.EqualValues(t, 1, users)
-			assert.EqualValues(t, 1, sessions)
-			stored, err := model.GetUserById(user.Id, false)
-			require.NoError(t, err)
-			expectedBinding := "linked-user"
-			if scenario == "binding changed" {
-				expectedBinding = "replacement-user"
-			}
-			assert.Equal(t, expectedBinding, stored.GitHubId)
-		})
-	}
 }
 
 func TestSecurityEnrollmentEncryptedPasswordVerification(t *testing.T) {

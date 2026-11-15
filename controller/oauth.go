@@ -552,8 +552,11 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 		return nil, &OAuthSiteTermsError{}
 	}
 
-	// Create the user. The only provider still registered (Telegram) never
-	// reaches this path: it looks up an existing binding instead of creating one.
+	// Stamp the provider subject before the row is written: that column is what
+	// later lookups (IsUserIDTaken/FillUserByProviderID) match on, so a new
+	// account without it could never be found again by this provider. The only
+	// provider still registered (Telegram) never reaches this path anyway.
+	provider.SetProviderUserID(user, oauthUser.ProviderUserID)
 	err := model.DB.Transaction(func(tx *gorm.DB) error {
 		return user.InsertWithTx(tx, 0)
 	})

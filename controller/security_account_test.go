@@ -92,14 +92,9 @@ func TestSecurityAccountDeletionRequiresScopedProof(t *testing.T) {
 }
 
 func TestSecurityAccountDeletionAcceptsEitherFactorAndRevokesSessions(t *testing.T) {
-	for _, method := range []string{"password", "oauth", "2fa", "passkey"} {
+	for _, method := range []string{"password", "2fa", "passkey"} {
 		t.Run(method, func(t *testing.T) {
 			user, identity := setupSecurityEnrollmentTest(t)
-			if method == "oauth" {
-				require.NoError(t, model.DB.Model(user).Updates(map[string]any{"password": "", "github_id": "linked-user"}).Error)
-				oauth.Register("account-delete-oauth", &enrollmentOAuthProvider{externalID: "linked-user"})
-				t.Cleanup(func() { oauth.Unregister("account-delete-oauth") })
-			}
 			if method == "2fa" || method == "passkey" {
 				newSecurityLoginPasskey(t, user.Id)
 				factor := &model.TwoFA{UserId: user.Id, Secret: "JBSWY3DPEHPK3PXP", IsEnabled: true}
@@ -828,8 +823,11 @@ func TestSecurityAccountEmailRejectsChangedAuthorization(t *testing.T) {
 	}
 }
 
+// Third-party bind is retired: only the Telegram placeholder is registered and
+// its bind column is the one exception left. The flow checks in front of that
+// path still have to reject stale, foreign and expired callbacks.
 func TestSecurityAccountOAuthBindingRejectsInvalidFlow(t *testing.T) {
-	for _, scenario := range []string{"success and replay", "other session", "wrong provider", "expired", "old flow", "mfa enabled"} {
+	for _, scenario := range []string{"other session", "wrong provider", "expired", "old flow", "mfa enabled"} {
 		t.Run(scenario, func(t *testing.T) {
 			user, identity := setupSecurityEnrollmentTest(t)
 			oauth.Register("account-oauth", &enrollmentOAuthProvider{externalID: "new-binding"})
@@ -864,14 +862,10 @@ func TestSecurityAccountOAuthBindingRejectsInvalidFlow(t *testing.T) {
 			path := "/api/oauth/" + provider + "?state=" + started.FlowToken + "&code=provider-code"
 			response = securityEnrollmentRequest("GET", path, "", "", identity, handler)
 			require.NoError(t, common.Unmarshal(response.Body.Bytes(), &result))
-			assert.Equal(t, scenario == "success and replay", result.Success, response.Body.String())
+			assert.False(t, result.Success, response.Body.String())
 			current, err := model.GetUserById(user.Id, false)
 			require.NoError(t, err)
-			assert.Equal(t, scenario == "success and replay", current.GitHubId == "new-binding")
-			if result.Success {
-				replay := securityEnrollmentRequest("GET", path, "", "", identity, handler)
-				assert.Contains(t, replay.Body.String(), `"success":false`)
-			}
+			assert.NotEqual(t, "new-binding", current.GitHubId)
 		})
 	}
 }

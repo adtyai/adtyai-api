@@ -5,7 +5,6 @@ DELETE /api/prefill_group/:id group:write
 DELETE /api/user/:id user:write
 DELETE /api/user/:id/2fa user:write
 DELETE /api/user/:id/bindings/:binding_type user:write
-DELETE /api/user/:id/oauth/bindings/:provider_id user:write
 DELETE /api/user/:id/reset_passkey user:write
 DELETE /api/vendors/:id model:write
 GET /api/authz/catalog user:read
@@ -30,7 +29,6 @@ GET /api/task log:read
 GET /api/user/ user:read
 GET /api/user/2fa/stats user:read
 GET /api/user/:id user:read
-GET /api/user/:id/oauth/bindings user:read
 GET /api/user/search user:read
 GET /api/user/sites user:read
 GET /api/user/topup billing:read
