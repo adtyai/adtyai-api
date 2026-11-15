@@ -162,6 +162,11 @@ func ClaudeResponsesStreamHandler(c *gin.Context, resp *http.Response, info *rel
 		return nil, streamErr
 	}
 	if streamFailed {
+		// The failure event is already delivered, but the output streamed before
+		// it reached the client and stays billable. Run the same estimate-and-
+		// finalize path as a normal terminal so the missing output_tokens frame
+		// is not billed as zero. It only rewrites usage, never the response.
+		HandleStreamFinalResponse(c, info, claudeInfo)
 		return claudeInfo.Usage, nil
 	}
 
