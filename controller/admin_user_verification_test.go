@@ -242,7 +242,7 @@ func TestAdminUserProofIsBoundToTargetAndActionAndConsumedOnce(t *testing.T) {
 	other := &model.User{Username: "other-user", Password: target.Password, Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: "default", AuthVersion: 1}
 	require.NoError(t, model.DB.Create(other).Error)
 	disableTarget := service.VerificationOperation{Scope: service.VerificationScopeAdminUserManage, Context: []byte(fmt.Sprintf(`{"user_id":%d,"action":"disable"}`, target.Id))}
-	proof := issueSecurityEnrollmentProof(t, identity, disableTarget, service.VerificationMethodPassword)
+	proof := issueSecurityEnrollmentProof(t, identity, disableTarget, service.VerificationMethodRootExempt)
 
 	for _, test := range []struct {
 		name, body, code string
@@ -279,7 +279,7 @@ func TestAdminUserProofIsBoundToTargetAndActionAndConsumedOnce(t *testing.T) {
 	require.NotNil(t, audit.Other.Op)
 	verificationMethod, err := common.Marshal(audit.Other.Op.Params["verification_method"])
 	require.NoError(t, err)
-	assert.JSONEq(t, `"password"`, string(verificationMethod))
+	assert.JSONEq(t, `"root_exempt"`, string(verificationMethod))
 	targetUserID, err := common.Marshal(audit.Other.Op.Params["target_user_id"])
 	require.NoError(t, err)
 	assert.JSONEq(t, fmt.Sprint(target.Id), string(targetUserID))
