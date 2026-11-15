@@ -98,8 +98,11 @@ export function NotificationEditor(props: {
     queryFn: async () => requireServerSuccess(await getUserSites()).data,
     enabled: props.mode === 'root' && audience === 'site',
   })
+  // 草稿：还没发出去、随时可改。已发布的条目不能再退回草稿（撤回才是那个动作），
+  // 所以只在「新建」或「这条本来是草稿」时给出这个按钮。
+  const canSaveDraft = !props.row || props.row.status === 'draft'
   const save = useMutation({
-    mutationFn: (input: NotificationInput) => {
+    mutationFn: (input: NotificationInput & { draft?: boolean }) => {
       const user = useAuthStore.getState().auth.user
       if (
         user?.id !== props.userId ||
@@ -141,8 +144,26 @@ export function NotificationEditor(props: {
             <Button variant='outline' disabled={save.isPending} onClick={close}>
               {t('Cancel')}
             </Button>
+            {canSaveDraft && (
+              <Button
+                type='button'
+                variant='secondary'
+                disabled={save.isPending}
+                onClick={form.handleSubmit((input) =>
+                  save.mutate({ ...input, draft: true })
+                )}
+              >
+                {t('Save as draft')}
+              </Button>
+            )}
             <Button type='submit' form={id} disabled={save.isPending}>
-              {t(props.row ? 'Save changes' : 'Publish notification')}
+              {t(
+                props.row?.status === 'draft'
+                  ? 'Publish now'
+                  : props.row
+                    ? 'Save changes'
+                    : 'Publish notification'
+              )}
             </Button>
           </>
         }

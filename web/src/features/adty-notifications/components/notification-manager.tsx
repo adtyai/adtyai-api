@@ -159,10 +159,18 @@ function NotificationManagement(props: {
                   cell: (row) => (
                     <StatusBadge
                       label={t(
-                        row.status === 'withdrawn' ? 'Withdrawn' : 'Published'
+                        row.status === 'draft'
+                          ? 'Draft'
+                          : row.status === 'withdrawn'
+                            ? 'Withdrawn'
+                            : 'Published'
                       )}
                       variant={
-                        row.status === 'withdrawn' ? 'neutral' : 'success'
+                        row.status === 'draft'
+                          ? 'warning'
+                          : row.status === 'withdrawn'
+                            ? 'neutral'
+                            : 'success'
                       }
                     />
                   ),
@@ -171,7 +179,7 @@ function NotificationManagement(props: {
                   id: 'actions',
                   header: t('Actions'),
                   cell: (row) =>
-                    row.status === 'published' && (
+                    row.status !== 'withdrawn' && (
                       <div className='flex gap-2'>
                         <Button
                           size='sm'

@@ -35,6 +35,10 @@ type AdtyNotificationInput struct {
 	// （`@name` 或 `-100…`）。都不填就是只发站内。
 	SyncTelegram    bool   `json:"sync_telegram"`
 	TelegramChannel string `json:"telegram_channel"`
+	// Draft 表示「先存着，别发」。草稿不出现任何读者面前、不推 TG；
+	// 编辑草稿时把它改成 false 就是发布。已发布的公告不能再退回草稿
+	// （撤回才是那个动作），见下面的判断。
+	Draft bool `json:"draft"`
 }
 
 func ListAdtyManagedNotifications(issuerSiteID, start, limit int) ([]model.AdtyNotificationPublication, int64, error) {
@@ -57,12 +61,23 @@ func SaveAdtyNotificationPublication(actorID int, issuer *model.AdtySite, id int
 		}
 	}
 	row := model.AdtyNotificationPublication{IssuerSiteId: issuerID}
+	currentStatus := ""
 	if id > 0 {
 		if err := model.DB.Where("id = ? AND issuer_site_id = ?", id, issuerID).First(&row).Error; err != nil {
 			return nil, err
 		}
+		currentStatus = row.Status
 		if input.Revision <= 0 {
 			return nil, common.NewMessage("Invalid parameters")
+		}
+		if currentStatus == "withdrawn" {
+			// 撤回的公告是历史记录，不是可编辑对象。
+			return nil, common.NewMessage("Invalid parameters")
+		}
+		if currentStatus == "published" && input.Draft {
+			// 已发布的不能退回草稿：那是「悄无声息地把它从所有人眼前拿走」，
+			// 而撤回这个动作是显式且有历史的。
+			return nil, common.NewMessage("Published announcements cannot be turned back into drafts")
 		}
 	} else {
 		if withdraw || input.Revision != 0 {
@@ -73,7 +88,11 @@ func SaveAdtyNotificationPublication(actorID int, issuer *model.AdtySite, id int
 			return nil, err
 		}
 		row.PublisherId, row.PublisherName = actorID, publisher.Username
-		row.PublishedAt, row.Revision = time.Now().Unix(), 1
+		row.Revision = 1
+		// 草稿没有「发布时间」：它还没发。0 在界面上就是「还没发」。
+		if !input.Draft {
+			row.PublishedAt = time.Now().Unix()
+		}
 	}
 	row.UpdatedAt, row.UpdatedBy = time.Now().Unix(), actorID
 	if withdraw {
@@ -81,7 +100,10 @@ func SaveAdtyNotificationPublication(actorID int, issuer *model.AdtySite, id int
 		return &row, model.UpdateAdtyNotificationPublication(&row, input.Revision)
 	}
 	input.Title, input.Content, input.Business = strings.TrimSpace(input.Title), strings.TrimSpace(input.Content), strings.TrimSpace(input.Business)
-	if input.Title == "" || utf8.RuneCountInString(input.Title) > 120 || input.Content == "" || utf8.RuneCountInString(input.Content) > 10000 || utf8.RuneCountInString(input.Business) > 200 ||
+	// 草稿允许空标题空正文——「先存着、回头再写」正是它存在的理由，要求填满就等于
+	// 没有草稿。但长度上限和类别/受众枚举始终要校验：那些是存储约束，不是完整度。
+	if (!input.Draft && (input.Title == "" || input.Content == "")) ||
+		utf8.RuneCountInString(input.Title) > 120 || utf8.RuneCountInString(input.Content) > 10000 || utf8.RuneCountInString(input.Business) > 200 ||
 		!slices.Contains([]string{"platform", "system", "maintenance", "rules"}, input.Kind) || !slices.Contains([]string{"all_users", "all_sites", "site"}, input.Audience) {
 		return nil, common.NewMessage("Invalid parameters")
 	}
@@ -105,7 +127,16 @@ func SaveAdtyNotificationPublication(actorID int, issuer *model.AdtySite, id int
 		return nil, common.NewMessage("Invalid parameters")
 	}
 	row.Title, row.Content, row.Business = input.Title, input.Content, input.Business
-	row.Kind, row.Audience, row.TargetSiteId, row.Status = input.Kind, input.Audience, input.TargetSiteId, "published"
+	row.Kind, row.Audience, row.TargetSiteId = input.Kind, input.Audience, input.TargetSiteId
+	row.Status = "published"
+	if input.Draft {
+		row.Status = "draft"
+	}
+	// 第一次从草稿变成发布时，发布时间才是「现在」。之后编辑已发布的公告
+	// 不改它——那会把一条老公告在首页顶到最新。
+	if row.Status == "published" && row.PublishedAt == 0 {
+		row.PublishedAt = time.Now().Unix()
+	}
 	row.ReadKey = adtyNotificationVersion("publication:" + common.GetUUID())
 	// 不勾同步就把频道一起清掉：留着上一轮的频道名，下次勾上会安静地发到
 	// 一个没人预期的目标。
@@ -122,7 +153,10 @@ func SaveAdtyNotificationPublication(actorID int, issuer *model.AdtySite, id int
 		return nil, err
 	}
 	// 入队失败不回滚公告：公告落库是主事实，TG 只是通知。
-	pushAdtyNotificationToTelegram(&row, issuer)
+	// 草稿不推：它连站内读者都还看不到。
+	if row.Status == "published" {
+		pushAdtyNotificationToTelegram(&row, issuer)
+	}
 	return &row, nil
 }
 

@@ -9078,6 +9078,8 @@
   "Telegram channel": "Telegram 频道",
   "Enter the Telegram channel": "请填写 Telegram 频道",
   "When disabled, published announcements are hidden from the public dashboard.": "关闭后，已发布的公告不会在公开面板显示。",
+  "Save as draft": "存为草稿",
+  "Publish now": "立即发布",
   "Related business": "关联业务",
   "Select a site": "请选择分站",
   "This notification was changed elsewhere. Reload and try again": "通知已被其他操作修改，请刷新后重试",

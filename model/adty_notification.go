@@ -44,7 +44,9 @@ var ErrAdtyNotificationConflict = common.NewMessage("This notification was chang
 // cannot overwrite a revision or restore a withdrawn publication.
 func UpdateAdtyNotificationPublication(row *AdtyNotificationPublication, revision int64) error {
 	result := DB.Model(&AdtyNotificationPublication{}).
-		Where("id = ? AND issuer_site_id = ? AND revision = ? AND status = ?", row.Id, row.IssuerSiteId, revision, "published").
+		// 草稿也能编辑：`draft` 存在的意义就是「还没发出去、随便改」。
+		// 已撤回的不能编辑——那不是编辑对象，是历史记录。
+		Where("id = ? AND issuer_site_id = ? AND revision = ? AND status IN ?", row.Id, row.IssuerSiteId, revision, []string{"published", "draft"}).
 		Updates(map[string]any{
 			"audience": row.Audience, "target_site_id": row.TargetSiteId, "target_site_name": row.TargetSiteName,
 			"kind": row.Kind, "title": row.Title, "content": row.Content, "business": row.Business,
