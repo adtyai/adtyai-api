@@ -285,9 +285,12 @@ func PostWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, mod
 	audioOutTokens := usage.OutputTokenDetails.AudioTokens
 
 	tokenName := ctx.GetString("token_name")
-	completionRatio := ratio_setting.GetCompletionRatioDecimal(modelName)
-	audioRatio := ratio_setting.GetAudioRatioDecimal(relayInfo.OriginModelName)
-	audioCompletionRatio := ratio_setting.GetAudioCompletionRatioDecimal(modelName)
+	// 结算与预扣必须用同一个计价身份。modelName 是渠道映射后的上游名，用它查倍率会让同一次
+	// 结算横跨两张价目表（ISS-R4-0096）；与 PostAudioConsumeQuota 一样统一取 billing 身份。
+	billingModelName := relayInfo.GetBillingModelName()
+	completionRatio := ratio_setting.GetCompletionRatioDecimal(billingModelName)
+	audioRatio := ratio_setting.GetAudioRatioDecimal(billingModelName)
+	audioCompletionRatio := ratio_setting.GetAudioCompletionRatioDecimal(billingModelName)
 
 	modelRatio := relayInfo.PriceData.ModelRatio
 	groupRatio := relayInfo.PriceData.GroupRatioInfo.GroupRatio
@@ -303,7 +306,7 @@ func PostWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, mod
 			TextTokens:  textOutTokens,
 			AudioTokens: audioOutTokens,
 		},
-		ModelName:  modelName,
+		ModelName:  billingModelName,
 		UsePrice:   usePrice,
 		ModelPrice: modelPrice,
 		ModelRatio: modelRatio,
