@@ -293,7 +293,9 @@ func setRouterBonusRates(t *testing.T) {
 	old := setting.MethodBonus
 	t.Cleanup(func() { setting.MethodBonus = old })
 	for _, method := range []string{"usdt", "alipay"} {
-		value, err := adty_setting.BuildMainMethodBonus(method, true, "0.025")
+		base, err := common.Marshal(adty_setting.GetTopupSetting().MethodBonus)
+		require.NoError(t, err)
+		value, err := adty_setting.MergeMainMethodBonus(string(base), method, true, "0.025")
 		require.NoError(t, err)
 		require.NoError(t, adty_setting.ApplyMethodBonusOption(adty_setting.TopupSettingKeyMethodBonus, value))
 	}

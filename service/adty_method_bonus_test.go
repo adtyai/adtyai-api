@@ -3,6 +3,7 @@ package service
 import (
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting/adty_setting"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/require"
@@ -79,25 +80,36 @@ func TestPromoCodeIsRetiredOnQuote(t *testing.T) {
 	require.Error(t, err)
 }
 
-// 加赠配置现在只有一条写入口：先算出要落库的 JSON，再由配置层同步进内存。
-// 测试预置配置也走这两步，避免出现只改内存的旁路。
+// 加赠配置现在只有一条写入口：以事务内加锁读到的当前值为基准合并，再由配置层
+// 同步进内存。测试预置配置也走这两步，避免出现只改内存的旁路；这里的基准取内存
+// 里的现值，相当于测试自己扮演那个「当前值」。
+func currentBonusJSON(t *testing.T, value any) string {
+	t.Helper()
+	encoded, err := common.Marshal(value)
+	require.NoError(t, err)
+	return string(encoded)
+}
+
 func setMainBonusForTest(t *testing.T, method string, enabled bool, rate string) {
 	t.Helper()
-	value, err := adty_setting.BuildMainMethodBonus(method, enabled, rate)
+	base := currentBonusJSON(t, adty_setting.GetTopupSetting().MethodBonus)
+	value, err := adty_setting.MergeMainMethodBonus(base, method, enabled, rate)
 	require.NoError(t, err)
 	require.NoError(t, adty_setting.ApplyMethodBonusOption(adty_setting.TopupSettingKeyMethodBonus, value))
 }
 
 func authorizeSiteBonusForTest(t *testing.T, siteID int, method string, allowed bool) {
 	t.Helper()
-	value, err := adty_setting.BuildSiteMethodAuth(siteID, method, allowed)
+	base := currentBonusJSON(t, adty_setting.GetTopupSetting().SiteMethodAuth)
+	value, err := adty_setting.MergeSiteMethodAuth(base, siteID, method, allowed)
 	require.NoError(t, err)
 	require.NoError(t, adty_setting.ApplyMethodBonusOption(adty_setting.TopupSettingKeySiteMethodAuth, value))
 }
 
 func setSiteBonusForTest(t *testing.T, siteID int, method string, enabled bool, rate string) {
 	t.Helper()
-	value, err := adty_setting.BuildSiteMethodBonus(siteID, method, enabled, rate)
+	base := currentBonusJSON(t, adty_setting.GetTopupSetting().SiteMethodBonus)
+	value, err := adty_setting.MergeSiteMethodBonus(base, siteID, method, enabled, rate)
 	require.NoError(t, err)
 	require.NoError(t, adty_setting.ApplyMethodBonusOption(adty_setting.TopupSettingKeySiteMethodBonus, value))
 }

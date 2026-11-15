@@ -44,12 +44,12 @@ func SiteMethodBonusAllowed(siteID int, method string) bool {
 	return false
 }
 
-// BuildMainMethodBonus 校验一条主站规则，并返回写进
-// adty_topup_setting.method_bonus 的完整 JSON。
+// MergeMainMethodBonus 校验一条主站规则，并把它合并进 current。
 //
-// 它只算不写：内存里的开关必须由配置层在事务提交之后从落库值同步，
-// 这样「写库失败」不会留下一个只在内存里生效、重启就消失的加赠比例。
-func BuildMainMethodBonus(method string, enabled bool, rate string) (string, error) {
+// current 必须是同一个事务里加行锁从 options 表读到的值，不能是本进程的内存
+// 快照：这里写回去的是整张表，基准一旦陈旧，另一节点刚保存的规则就会被静默
+// 抹掉（ISS-R4-0099）。它只算不写，内存仍由配置层在事务提交之后按落库值同步。
+func MergeMainMethodBonus(current string, method string, enabled bool, rate string) (string, error) {
 	key, err := canonicalBonusMethod(method)
 	if err != nil {
 		return "", err
@@ -58,17 +58,20 @@ func BuildMainMethodBonus(method string, enabled bool, rate string) (string, err
 	if err != nil {
 		return "", err
 	}
-	next := make(map[string]MethodBonusRule, len(topupSetting.MethodBonus)+1)
-	for name, rule := range topupSetting.MethodBonus {
-		next[name] = rule
+	var next map[string]MethodBonusRule
+	if err := unmarshalBonusSetting(current, &next); err != nil {
+		return "", err
+	}
+	if next == nil {
+		next = map[string]MethodBonusRule{}
 	}
 	next[key] = MethodBonusRule{Enabled: enabled, Rate: parsed}
 	return marshalBonusSetting(next)
 }
 
-// BuildSiteMethodAuth 校验一次站点授权变更，并返回写进
-// adty_topup_setting.site_method_auth 的完整 JSON。只算不写，理由同上。
-func BuildSiteMethodAuth(siteID int, method string, allowed bool) (string, error) {
+// MergeSiteMethodAuth 校验一次站点授权变更，并把它合并进 current。理由同上：
+// 基准取库里加锁读到的当前值，不取内存快照。
+func MergeSiteMethodAuth(current string, siteID int, method string, allowed bool) (string, error) {
 	if siteID <= 0 {
 		return "", errBonusMethod("site is required")
 	}
@@ -76,13 +79,16 @@ func BuildSiteMethodAuth(siteID int, method string, allowed bool) (string, error
 	if err != nil {
 		return "", err
 	}
-	next := make(map[int][]string, len(topupSetting.SiteMethodAuth)+1)
-	for id, methods := range topupSetting.SiteMethodAuth {
-		next[id] = methods
+	var next map[int][]string
+	if err := unmarshalBonusSetting(current, &next); err != nil {
+		return "", err
 	}
-	current := next[siteID]
-	updated := make([]string, 0, len(current)+1)
-	for _, item := range current {
+	if next == nil {
+		next = map[int][]string{}
+	}
+	authorized := next[siteID]
+	updated := make([]string, 0, len(authorized)+1)
+	for _, item := range authorized {
 		if item != key {
 			updated = append(updated, item)
 		}
@@ -94,9 +100,12 @@ func BuildSiteMethodAuth(siteID int, method string, allowed bool) (string, error
 	return marshalBonusSetting(next)
 }
 
-// BuildSiteMethodBonus 校验一条站长规则（必须在 Root 授权的支付方式内），
-// 并返回写进 adty_topup_setting.site_method_bonus 的完整 JSON。只算不写。
-func BuildSiteMethodBonus(siteID int, method string, enabled bool, rate string) (string, error) {
+// MergeSiteMethodBonus 校验一条站长规则（必须在 Root 授权的支付方式内），
+// 并把它合并进 current。理由同上。
+//
+// 「Root 是否授权了这个支付方式」读的仍是配置层的内存：那是授权，不是被覆盖的
+// 写基准，与 ISS-R4-0099 的陈旧快照丢写是两件事。
+func MergeSiteMethodBonus(current string, siteID int, method string, enabled bool, rate string) (string, error) {
 	key, err := canonicalBonusMethod(method)
 	if err != nil {
 		return "", err
@@ -108,13 +117,12 @@ func BuildSiteMethodBonus(siteID int, method string, enabled bool, rate string) 
 	if err != nil {
 		return "", err
 	}
-	next := make(map[int]map[string]MethodBonusRule, len(topupSetting.SiteMethodBonus)+1)
-	for id, rules := range topupSetting.SiteMethodBonus {
-		copied := make(map[string]MethodBonusRule, len(rules)+1)
-		for name, rule := range rules {
-			copied[name] = rule
-		}
-		next[id] = copied
+	var next map[int]map[string]MethodBonusRule
+	if err := unmarshalBonusSetting(current, &next); err != nil {
+		return "", err
+	}
+	if next == nil {
+		next = map[int]map[string]MethodBonusRule{}
 	}
 	if next[siteID] == nil {
 		next[siteID] = map[string]MethodBonusRule{}
@@ -133,6 +141,14 @@ func ApplyMethodBonusOption(key, value string) error {
 		return errBonusMethod("unknown bonus setting key")
 	}
 	return config.UpdateConfigFromMap(&topupSetting, map[string]string{field: value})
+}
+
+// unmarshalBonusSetting 解析 options 里读到的一串配置；空串表示这一行还没有。
+func unmarshalBonusSetting(current string, value any) error {
+	if strings.TrimSpace(current) == "" {
+		return nil
+	}
+	return common.UnmarshalJsonStr(current, value)
 }
 
 func marshalBonusSetting(value any) (string, error) {
