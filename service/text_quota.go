@@ -181,7 +181,13 @@ func calculateTextToolCallSurcharge(ctx *gin.Context, relayInfo *relaycommon.Rel
 			items = collectToolSurchargeItem(items, name, count, summary.ModelName)
 		}
 	}
+	// The model-name fallback covers a search that upstream did not report.
+	// When the request already recorded a hosted search call (for example
+	// /v1/alpha/search bills one web_search_preview call per request), that
+	// record is the only source of truth and the fallback must not add a
+	// second charge for the same call.
 	if relayInfo.RelayMode != relayconstant.RelayModeResponses &&
+		!hasRecordedHostedSearchCall(relayInfo) &&
 		strings.HasSuffix(summary.ModelName, "search-preview") {
 		items = collectToolSurchargeItem(items, dto.BuildInToolWebSearchPreview, 1, summary.ModelName)
 	}
@@ -197,6 +203,20 @@ func calculateTextToolCallSurcharge(ctx *gin.Context, relayInfo *relaycommon.Rel
 	}
 
 	return surcharge
+}
+
+// hasRecordedHostedSearchCall reports whether this request already recorded a
+// hosted web search call under either web search price key.
+func hasRecordedHostedSearchCall(relayInfo *relaycommon.RelayInfo) bool {
+	if relayInfo == nil || relayInfo.ResponsesUsageInfo == nil {
+		return false
+	}
+	for _, name := range []string{dto.BuildInToolWebSearchPreview, dto.BuildInToolWebSearch} {
+		if tool := relayInfo.ResponsesUsageInfo.BuiltInTools[name]; tool != nil && tool.CallCount > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // noteQuotaClamp records the first quota saturation event onto relayInfo so it
