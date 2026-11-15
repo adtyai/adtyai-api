@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"time"
+	"unicode/utf8"
 
 	"github.com/QuantumNous/new-api/common"
 	"gorm.io/gorm"
@@ -19,6 +20,14 @@ const (
 	BillingSettled       = "settled"
 	BillingRefunded      = "refunded"
 	BillingCanceled      = "canceled"
+	// BillingDead 是重试预算耗尽的死信：结算永远成功不了的 op 停在这里等人工，
+	// 不再参与恢复扫描，把队头让给还能成功的 op（ISS-R4-0094）。
+	//
+	// 人工处置有两条路，都不在自动恢复里替人决定：补齐前置条件（例如 `adty_fund_batch`
+	// 补批次）后把行放回队列——
+	// `UPDATE billing_operations SET state='settle_pending', attempts=0, next_retry_at=0 WHERE operation_key=$1`
+	// ——或者按 attempts/last_error 对账后退钱。amounts 都还在行上，没有丢。
+	BillingDead = "dead"
 )
 
 var (
@@ -59,8 +68,16 @@ type BillingOperation struct {
 	// （存量用户本来就有一部分额度没有批次）。两者都为 0 才说明账是平的。
 	// 对账口径：`select user_id, sum(fund_batch_gap) ... group by user_id`，
 	// 非零即有漂移，且能定位到具体 operation。
-	FundBatchGap        int64  `gorm:"not null;default:0"`
-	State               string `gorm:"type:varchar(24);index;not null"`
+	FundBatchGap int64  `gorm:"not null;default:0"`
+	State        string `gorm:"type:varchar(24);index;not null"`
+	// 恢复重试预算。失败的结算整笔回滚，连 autoUpdateTime 写的 updated_at 一起
+	// 撤销，所以只靠 `Order("updated_at")` 排序时同一条永久失败的 op 每轮都排在
+	// 最前：积够 limit 条就把恢复链彻底饿死。三列让失败真正落到行上：
+	// attempts 计连续失败次数，next_retry_at 是下次允许重试的时刻（0 = 立即，
+	// 兼容存量行），用完预算的 op 转 BillingDead。
+	Attempts            int    `gorm:"not null;default:0"`
+	LastError           string `gorm:"type:text"`
+	NextRetryAt         int64  `gorm:"not null;default:0;index"`
 	SiteId              int
 	SiteOwnerUserId     int `gorm:"not null;default:0"`
 	SiteMarkup          float64
@@ -121,6 +138,78 @@ func GetBillingOperation(key string) (*BillingOperation, error) {
 	var row BillingOperation
 	err := DB.Where("operation_key = ?", key).First(&row).Error
 	return &row, err
+}
+
+// BillingOperationRetryBackoff 是恢复链的退避阶梯：每一步都比上一步长一个
+// 数量级，走完还在失败就进死信。15 秒是扫描周期本身，所以第一次失败只是
+// 「下一轮再试」，之后才真正拉开距离。
+var BillingOperationRetryBackoff = []time.Duration{
+	15 * time.Second, time.Minute, 5 * time.Minute, 30 * time.Minute, 2 * time.Hour, 12 * time.Hour,
+}
+
+// BillingOperationMaxAttempts 是单条 op 的重试上限，含第一次尝试的失败。
+const BillingOperationMaxAttempts = 7
+
+// BillingOperationRetryDelay 返回第 attempts 次失败之后要等多久再试。
+func BillingOperationRetryDelay(attempts int) time.Duration {
+	if attempts <= 0 {
+		return 0
+	}
+	if attempts > len(BillingOperationRetryBackoff) {
+		return BillingOperationRetryBackoff[len(BillingOperationRetryBackoff)-1]
+	}
+	return BillingOperationRetryBackoff[attempts-1]
+}
+
+// RecordBillingOperationRetryFailure 把一次失败的结算记到行上：attempts+1、
+// last_error、next_retry_at，用完预算就转 BillingDead。返回 dead 表示这条 op
+// 已经进死信，调用方应当把它报出来。
+//
+// 它必须单独提交：结算事务已经整笔回滚，这次记录是唯一留下来的证据。也因此
+// 它用 UpdateColumns 而不是 Save——updated_at 由 autoUpdateTime 维护，这里想
+// 让它继续只表示「最后一次真正动过财务状态」的时刻，排序交给 next_retry_at。
+func RecordBillingOperationRetryFailure(key string, failure error, now int64) (bool, error) {
+	if key == "" || failure == nil {
+		return false, nil
+	}
+	dead := false
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var row BillingOperation
+		if err := lockForUpdate(tx).Where("operation_key = ?", key).First(&row).Error; err != nil {
+			return err
+		}
+		attempts := row.Attempts + 1
+		state, nextRetryAt := row.State, int64(0)
+		if attempts >= BillingOperationMaxAttempts {
+			state, dead = BillingDead, true
+		} else {
+			nextRetryAt = now + int64(BillingOperationRetryDelay(attempts)/time.Second)
+		}
+		return tx.Model(&BillingOperation{}).Where("operation_key = ?", key).UpdateColumns(map[string]any{
+			"attempts": attempts, "last_error": truncateBillingOperationError(failure.Error()),
+			"next_retry_at": nextRetryAt, "state": state,
+		}).Error
+	})
+	if err != nil {
+		return false, err
+	}
+	return dead, nil
+}
+
+// 一行的 last_error 只需要够定位问题，不该把整棵错误树塞进主库。
+const billingOperationLastErrorLimit = 2000
+
+// 按 rune 边界截断：错误里带中文时，切在多字节字符中间会让 PostgreSQL 直接
+// 拒绝这条 UPDATE（invalid byte sequence），而这条 UPDATE 正是失败的唯一证据。
+func truncateBillingOperationError(message string) string {
+	if len(message) <= billingOperationLastErrorLimit {
+		return message
+	}
+	cut := billingOperationLastErrorLimit
+	for cut > 0 && !utf8.RuneStart(message[cut]) {
+		cut--
+	}
+	return message[:cut]
 }
 
 // freezeBillingEarningRiskTx binds later adjustments to the original request's

@@ -82,15 +82,32 @@ func RecoverBillingOperations(ctx context.Context, limit int) error {
 			return err
 		}
 	}
+	// 只有到点的 op 才进队列：next_retry_at = 0 是存量行与新建行（立即可以试），
+	// 失败过的按退避阶梯排到将来。排序也必须换到 next_retry_at 上——失败会整笔
+	// 回滚，updated_at 不前进，只按它排的话永久失败的 op 永远占据队头。
+	retryNow := time.Now().Unix()
 	var pending []model.BillingOperation
-	if err := model.DB.WithContext(ctx).Where("state IN ?", []string{model.BillingSettlePending, model.BillingRefundPending}).
-		Order("updated_at, operation_key").Limit(limit).Find(&pending).Error; err != nil {
+	if err := model.DB.WithContext(ctx).Where("state IN ? AND (next_retry_at IS NULL OR next_retry_at <= ?)",
+		[]string{model.BillingSettlePending, model.BillingRefundPending}, retryNow).
+		Order("next_retry_at, updated_at, operation_key").Limit(limit).Find(&pending).Error; err != nil {
 		return err
 	}
 	var first error
 	for _, op := range pending {
-		if _, _, err := model.ApplyBillingSettlement(op.OperationKey); err != nil && first == nil {
-			first = err
+		if _, _, err := model.ApplyBillingSettlement(op.OperationKey); err != nil {
+			if first == nil {
+				first = err
+			}
+			// 失败必须回执：不记 attempts 的话，同一条 op 每 15 秒重新排到队头，
+			// 攒够 limit 条就把「其他所有待结算 op」全部饿死（ISS-R4-0094）。
+			dead, retryErr := model.RecordBillingOperationRetryFailure(op.OperationKey, err, retryNow)
+			if retryErr != nil {
+				common.SysError(common.LogText("billing recovery: failed to record the retry budget for %s: %s", op.OperationKey, retryErr.Error()))
+			}
+			if dead {
+				common.SysError(common.LogText("billing recovery: operation %s moved to the dead letter after %d attempts and needs manual settlement, last error: %s",
+					op.OperationKey, model.BillingOperationMaxAttempts, err.Error()))
+			}
 		}
 	}
 	var tasks []model.Task

@@ -41,8 +41,9 @@ func rejectUserDeletePreconditions(tx *gorm.DB, userId int) error {
 	} else if blocked {
 		return ErrUserDeleteUnfinishedPayment
 	}
+	// BillingDead 也算未了结：钱还停在这条 op 里，删号就把唯一的线索一起删了。
 	if blocked, err := userDeleteHasRows(tx, &BillingOperation{}, "user_id = ? AND state IN ?", userId, []string{
-		BillingReserved, BillingSettlePending, BillingRefundPending,
+		BillingReserved, BillingSettlePending, BillingRefundPending, BillingDead,
 	}); err != nil {
 		return err
 	} else if blocked {
