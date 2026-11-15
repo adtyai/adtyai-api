@@ -522,21 +522,51 @@ func ApplyBillingSettlement(key string) (*BillingOperation, bool, error) {
 				return tx.Save(&row).Error
 			}
 		}
-		var user User
-		if err := lockForUpdate(tx).First(&user, row.UserId).Error; err != nil {
-			return err
-		}
-		balance, err := userWalletBalance(user.Quota, user.QuotaPending)
+		delta := row.ActualQuota - base
+		// 团队 Key 的差额只记团队账（`ISS-R4-0017`）。判定必须发生在动 users.quota
+		// 之前：先按个人钱包扣（退），再让钩子去动团队余额，等于同一笔差额记了两条
+		// 账——补扣是扣错人，退还更是给成员凭空加钱。
+		teamPaid, err := AdtyTokenIsTeamKeyTx(tx, row.TokenId)
 		if err != nil {
 			return err
 		}
-		delta := row.ActualQuota - base
-		charged := delta
-		if delta > 0 {
-			charged = max(0, min(balance, delta))
-		}
-		if err := applyUserQuotaDeltaTx(tx, &user, -charged, common.BatchUpdateEnabled && common.RedisEnabled); err != nil {
-			return err
+		charged := 0
+		balance := 0
+		if teamPaid {
+			// 与 AdtyTeamReserveHook 对称的结算钩子：delta>0 从团队共享余额补扣，
+			// delta<0 退回团队，并入 adty_team_ledgers。团队付不起的差额记 Shortfall，
+			// 绝不回落成员个人钱包。
+			if AdtyTeamSettleHook != nil {
+				handled, applied, hookErr := AdtyTeamSettleHook(tx, row.TokenId, row.UserId, delta, row.OperationKey)
+				if hookErr != nil {
+					return hookErr
+				}
+				if !handled {
+					// 绑定存在而钩子说不是团队 Key：账的归属不明，宁可让恢复任务
+					// 重试，也不能挑一个钱包去扣。
+					return ErrBillingOperationConflict
+				}
+				charged = applied
+			} else if delta != 0 {
+				// 团队 Key 却没有结算钩子（构建缺了 service 的注册）：不能退回个人钱包。
+				return ErrBillingOperationConflict
+			}
+		} else {
+			var user User
+			if err := lockForUpdate(tx).First(&user, row.UserId).Error; err != nil {
+				return err
+			}
+			balance, err = userWalletBalance(user.Quota, user.QuotaPending)
+			if err != nil {
+				return err
+			}
+			charged = delta
+			if delta > 0 {
+				charged = max(0, min(balance, delta))
+			}
+			if err := applyUserQuotaDeltaTx(tx, &user, -charged, common.BatchUpdateEnabled && common.RedisEnabled); err != nil {
+				return err
+			}
 		}
 		// A.12.1/A.12.2.6：预扣阶段登记的分摊在这里转成实扣，同时把批次 remaining
 		// 扣掉。两者同一事务，失败一起回滚，不会出现「余额变了批次没变」。
@@ -544,10 +574,6 @@ func ApplyBillingSettlement(key string) (*BillingOperation, bool, error) {
 		//
 		// 团队 Key 由团队共享余额付款，成员的个人本金批次不参与——不跳过的话，
 		// 团队消费会吃掉员工自己的本金，那是「扣错人」而不是「多扣」。
-		teamPaid, err := AdtyTokenIsTeamKeyTx(tx, row.TokenId)
-		if err != nil {
-			return err
-		}
 		var backedByBatches int64
 		if !teamPaid {
 			// 传的是「这次业务消耗之前」的钱包余额，不是此刻的余额：
@@ -563,7 +589,10 @@ func ApplyBillingSettlement(key string) (*BillingOperation, bool, error) {
 		}
 		// 差额落库，不能只写日志：日志不可聚合，事后无法回答「这个用户漂了多少、
 		// 从哪一笔开始漂」。团队 Key 由团队余额付款，个人批次不参与，gap 记 0。
-		row.FundBatchGap = int64(base+charged) - backedByBatches
+		row.FundBatchGap = 0
+		if !teamPaid {
+			row.FundBatchGap = int64(base+charged) - backedByBatches
+		}
 		row.ReservedQuota, row.TokenReservedQuota = base, tokenBase
 		row.Shortfall, row.AppliedQuota = delta-charged, base+charged
 		row.TokenAppliedQuota = 0
@@ -588,7 +617,13 @@ func ApplyBillingSettlement(key string) (*BillingOperation, bool, error) {
 				tokenDelta = tokenBase - row.ActualQuota
 			}
 		}
-		if err := recordBillingMovementTx(tx, &row, "apply", -charged, tokenDelta); err != nil {
+		// 团队付款没有动个人钱包，流水里的钱包差额必须是 0；否则对账会把这笔差额
+		// 当成成员钱包的变动，和团队流水重复计一次。
+		walletDelta := -charged
+		if teamPaid {
+			walletDelta = 0
+		}
+		if err := recordBillingMovementTx(tx, &row, "apply", walletDelta, tokenDelta); err != nil {
 			return err
 		}
 		if row.Kind == "task" || row.Kind == "request" && row.ReferenceId > 0 {

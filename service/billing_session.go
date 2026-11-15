@@ -434,15 +434,29 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 		if err != nil {
 			return nil, types.NewError(err, types.ErrorCodeQueryDataError, types.ErrOptionWithSkipRetry())
 		}
-		if userQuota <= 0 {
+		// 团队 Key 花的是团队共享余额：准入也看团队余额，而不是成员个人钱包。
+		// 否则个人余额为 0 的成员即使团队余额充足也会在预扣前被拒，团队 Key 等于
+		// 用不了（`ISS-R4-0017`）。非团队 Key 仍按个人余额判断。
+		available := int64(userQuota)
+		if relayInfo.TokenId > 0 && !relayInfo.IsPlayground {
+			teamQuota, isTeamKey, teamErr := adtyTeamSharedQuotaForToken(relayInfo.TokenId)
+			if teamErr != nil {
+				return nil, types.NewError(teamErr, types.ErrorCodeQueryDataError, types.ErrOptionWithSkipRetry())
+			}
+			if isTeamKey {
+				available = teamQuota
+			}
+		}
+		remaining := int(min(available, int64(math.MaxInt)))
+		if available <= 0 {
 			return nil, types.NewErrorWithStatusCode(
-				errors.New(i18n.T(c, i18n.MsgQuotaUserInsufficient, map[string]any{"Remaining": logger.FormatQuota(userQuota)})),
+				errors.New(i18n.T(c, i18n.MsgQuotaUserInsufficient, map[string]any{"Remaining": logger.FormatQuota(remaining)})),
 				types.ErrorCodeInsufficientUserQuota, http.StatusForbidden,
 				types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog())
 		}
-		if userQuota-preConsumedQuota < 0 {
+		if available-int64(preConsumedQuota) < 0 {
 			return nil, types.NewErrorWithStatusCode(
-				errors.New(i18n.T(c, i18n.MsgQuotaPreConsumeInsufficient, map[string]any{"Remaining": logger.FormatQuota(userQuota), "Required": logger.FormatQuota(preConsumedQuota)})),
+				errors.New(i18n.T(c, i18n.MsgQuotaPreConsumeInsufficient, map[string]any{"Remaining": logger.FormatQuota(remaining), "Required": logger.FormatQuota(preConsumedQuota)})),
 				types.ErrorCodeInsufficientUserQuota, http.StatusForbidden,
 				types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog())
 		}

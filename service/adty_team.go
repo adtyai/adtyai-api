@@ -45,6 +45,7 @@ func adtyTeamTableReadyFor(tx *gorm.DB, modelValue any) bool {
 
 func init() {
 	model.AdtyTeamReserveHook = reserveAdtyTeamQuotaHook
+	model.AdtyTeamSettleHook = settleAdtyTeamQuotaHook
 	model.AdtyBeforeUserDeleteHook = closeAdtyTeamForDeletedLeader
 	model.AdtyCreditTeamTopUpTx = creditAdtyTeamTopUpTx
 }
@@ -915,6 +916,83 @@ func reserveAdtyTeamQuotaHook(tx *gorm.DB, tokenId, userId, delta int, ref strin
 	return true, nil
 }
 
+// settleAdtyTeamQuotaHook 是 reserveAdtyTeamQuotaHook 的结算侧对称项（`ISS-R4-0017`）。
+//
+// 预扣已经把 base 从团队余额扣掉了；结算时的差额 delta 必须记在同一条团队账上：
+// delta>0 补扣团队，delta<0 退回团队，并写一条 adty_team_ledgers。成员个人钱包
+// 全程不参与——这正是原来「补扣扣错人、退还凭空多给」的修法。
+//
+// 判定只看绑定关系，不看绑定状态、不看团队是否已关闭：预扣发生时这笔就是团队付的，
+// 成员事后退出团队或团队被关闭都不能把差额改记到个人钱包，也不能让结算永远卡住。
+// 团队余额不够补扣时扣到 0 为止，剩下的差额由调用方记 Shortfall。
+func settleAdtyTeamQuotaHook(tx *gorm.DB, tokenId, userId, delta int, ref string) (bool, int, error) {
+	if tokenId <= 0 {
+		return false, 0, nil
+	}
+	if !adtyTeamTableReadyFor(tx, &model.AdtyTeamKey{}) {
+		return false, 0, nil
+	}
+	var key model.AdtyTeamKey
+	lookup := tx.Where("token_id = ?", tokenId).Limit(1).Find(&key)
+	if lookup.Error != nil {
+		return false, 0, lookup.Error
+	}
+	if lookup.RowsAffected == 0 {
+		return false, 0, nil
+	}
+	if key.UserId != userId {
+		return false, 0, ErrAdtyTeamForbidden
+	}
+	if delta == 0 {
+		return true, 0, nil
+	}
+	var team model.AdtyTeam
+	if err := model.AdtyLockForUpdate(tx).First(&team, key.TeamId).Error; err != nil {
+		return true, 0, err
+	}
+	applied, kind := delta, "settle"
+	if delta > 0 {
+		if team.SharedQuota < int64(delta) {
+			applied = int(team.SharedQuota)
+		}
+		if applied <= 0 {
+			// 团队余额已见底：不写 0 额流水，差额整笔记 Shortfall。
+			return true, 0, nil
+		}
+	} else {
+		kind = "refund"
+	}
+	if err := applyAdtyTeamQuotaTx(tx, &team, -int64(applied), kind, ref, userId); err != nil {
+		return true, 0, err
+	}
+	return true, applied, nil
+}
+
+// adtyTeamSharedQuotaForToken 返回团队 Key 当前可用的共享余额，不是团队 Key 时 ok=false。
+// 团队 Key 的准入门槛是团队共享余额，不是成员个人钱包：个人余额为 0 的成员拿着
+// 有余额的团队 Key 也必须能发请求（`ISS-R4-0017`）。
+func adtyTeamSharedQuotaForToken(tokenId int) (quota int64, ok bool, err error) {
+	if tokenId <= 0 || model.DB == nil || !adtyTeamTableReadyFor(model.DB, &model.AdtyTeamKey{}) {
+		return 0, false, nil
+	}
+	var key model.AdtyTeamKey
+	lookup := model.DB.Where("token_id = ? AND status = ?", tokenId, model.AdtyTeamMemberActive).Limit(1).Find(&key)
+	if lookup.Error != nil {
+		return 0, false, lookup.Error
+	}
+	if lookup.RowsAffected == 0 {
+		return 0, false, nil
+	}
+	var team model.AdtyTeam
+	if err := model.DB.First(&team, key.TeamId).Error; err != nil {
+		return 0, false, err
+	}
+	if team.Status != model.AdtyTeamStatusActive {
+		return 0, true, nil
+	}
+	return team.SharedQuota, true, nil
+}
+
 func closeAdtyTeamForDeletedLeader(tx *gorm.DB, userId int) error {
 	if !adtyTeamTableReadyFor(tx, &model.AdtyTeam{}) {
 		return nil
@@ -1020,12 +1098,14 @@ func applyAdtyTeamQuotaTx(tx *gorm.DB, team *model.AdtyTeam, delta int64, kind, 
 // （发送前补扣、阶梯价上调），而它们共用同一个 `ref`（operation_key）。只按
 // `kind:ref` 构键时，第二次预扣必撞唯一索引 → 每个需要补扣的团队 Key 请求都失败。
 //
-// **其余三种 kind 刻意保持 `kind:ref`**：它们一个 ref 就代表一个事件，
+// **其余 kind 刻意保持 `kind:ref`**：它们一个 ref 就代表一个事件，
 // 而唯一索引正是「同一个事件入账两次」的防线。把余额也算进键会**拆掉这条防线**：
 //
 //   - `topup:<tradeNo>` 若带上 after，重放一次充值回调时余额已经变过、after 不同，
 //     于是**新行成立 → 团队余额被重复加一次**；
-//   - `credit` / `spend` 同理。
+//   - `credit` / `spend` 同理；
+//   - `settle` / `refund` 一个 operation_key 只结算一次（状态机保证），同一 kind 下
+//     不会再出现第二个事件，所以也必须是 `kind:ref`。
 //
 // 也就是说：「多事件共用一个 ref」是 `reserve` 独有的性质，修复必须只作用于它。
 // 把它推广成「所有 kind 都带 after」等于用一条撞键错误换一次重复入账。

@@ -155,6 +155,18 @@ func (AdtyTeamKey) TableName() string { return "adty_team_keys" }
 // handled is false when the token is not a team key.
 var AdtyTeamReserveHook func(tx *gorm.DB, tokenId, userId, delta int, ref string) (handled bool, err error)
 
+// AdtyTeamSettleHook 是 AdtyTeamReserveHook 的结算侧对称项（`ISS-R4-0017`）：
+// 团队 Key 的结算差额记到团队共享余额，成员个人钱包不再参与。
+//
+//   - delta > 0：从团队余额补扣，applied 为团队真正付得起的那部分（余额见底时
+//     小于 delta，差额由调用方记 Shortfall，绝不回落成员钱包）；
+//   - delta < 0：把未用的预扣退回团队，applied = delta；
+//   - delta == 0：不动账，也不写流水；
+//   - handled 为 false 表示这个 token 不是团队 Key，调用方按个人钱包结算。
+//
+// 判定和扣减必须在结算事务里完成，并且要在动 users.quota 之前。
+var AdtyTeamSettleHook func(tx *gorm.DB, tokenId, userId, delta int, ref string) (handled bool, applied int, err error)
+
 // AdtyTokenIsTeamKeyTx reports whether this token is bound to a team. A team key
 // spends the shared team balance, so the member's personal wallet — and their
 // principal lots — must not be charged for it.
