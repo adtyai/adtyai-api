@@ -11,8 +11,8 @@ import (
 
 // pinnedVersionAssertion 匹配「把 PostgreSQL **补丁号**当通过条件」的写法：
 //
-//	require.Equal(t, 170012, version, ...)
-//	require.EqualValues(t, 170012, ...)
+//	require.Equal(t, 170012, version, ...)   ← 门禁会剥掉本行；`rg 170012` 数得到
+//	require.EqualValues(t, 170012, ...)      ← 同上
 //
 // 只要数字是五到六位的 `17xxxx`，就是同一个错——**它把「我跑的是 17.12」
 // 变成了测试通过的条件**，而测试要验的（扣费、退款、迁移、可见性）与补丁号无关。

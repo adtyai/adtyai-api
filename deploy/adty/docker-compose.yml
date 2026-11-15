@@ -38,6 +38,10 @@ services:
       ERROR_LOG_ENABLED: "true"
       BATCH_UPDATE_ENABLED: "true"
       ADTY_FLUSH_TOKEN: ${ADTY_FLUSH_TOKEN:?set ADTY_FLUSH_TOKEN in .env}
+      # Telegram 出站总开关。不设时 `AdtyTelegramSender` 是 nil，每条投递
+      # Fail→×5→Dead、队列自己清干净、零日志——「没有通知要发」和「一条都发不出去」
+      # 外观完全一样。默认开：库里配了 bot 就该发；要紧急停用设 0 即可，不用改本文件。
+      ADTY_TELEGRAM_ALLOW_NETWORK: ${ADTY_TELEGRAM_ALLOW_NETWORK:-1}
       NODE_NAME: ${NODE_NAME:-adtyai-node-1}
       TZ: ${TZ:-UTC}
       # Nginx 的请求经下面这个网络的网关进入容器，只信任它
