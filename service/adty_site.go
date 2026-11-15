@@ -264,8 +264,13 @@ func recordSiteAuditTx(tx *gorm.DB, siteId int, action string, operatorId int, o
 		Before: oldValue, After: newValue, Reason: reason, Result: model.AuditResultSuccess, Success: true,
 	}); err != nil {
 		// Compatibility AdtySiteAudit is already in this transaction. A log-store
-		// failure must not roll back the business change.
-		common.SysLog(common.LogText("official site audit write failed: %s", err.Error()))
+		// failure must not roll back the business change, but it must not be
+		// silent either: the official row is the only copy of the audit trail
+		// that leaves the business transaction, so losing it has to be
+		// observable and locatable afterwards.
+		common.SysError(common.LogText(
+			"official site audit write failed: site_id=%d operator_id=%d action=%s object_id=%s error=%s",
+			siteId, operatorId, officialAction, strconv.Itoa(siteId), err.Error()))
 	}
 	return nil
 }
