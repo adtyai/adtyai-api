@@ -122,6 +122,10 @@ func GetModelMeta(c *gin.Context) {
 
 // CreateModelMeta 新建模型
 func CreateModelMeta(c *gin.Context) {
+	if err := adtyAuthorizeAdminActions(c, authz.AdtyModelCreate); err != nil {
+		denyAdtyAdminAction(c)
+		return
+	}
 	var m model.Model
 	if err := c.ShouldBindJSON(&m); err != nil {
 		common.ApiError(c, err)
@@ -170,6 +174,12 @@ func UpdateModelMeta(c *gin.Context) {
 		common.ApiErrorT(c, "Missing model ID")
 		return
 	}
+	// 改元数据要「模型·编辑」；把目录里的模型撤成 status=0（下架）与删除是同一个
+	// 业务动作——公开目录里看不到、也下不了单——所以要同一档权限（ISS-R4-0117）。
+	if err := adtyAuthorizeAdminActions(c, adtyModelUpdatePermissions(m.Id, m.Status)...); err != nil {
+		denyAdtyAdminAction(c)
+		return
+	}
 
 	if statusOnly {
 		if m.Status != 0 && m.Status != 1 {
@@ -211,6 +221,34 @@ func UpdateModelMeta(c *gin.Context) {
 	model.RefreshPricing()
 	m.HasMetadata = m.Id > 0
 	common.ApiSuccess(c, &m)
+}
+
+// adtyModelUpdatePermissions 是一次模型更新要的权限：编辑元数据要「模型·编辑」，
+// 把还在目录里的模型撤成 status=0 还要「模型·删除」。
+//
+// 下架对用户的效果和删除一样（`FillModelSquareStates` 判成 hidden，公开目录里看不到、
+// 也下不了单），所以两者按同一档授权（约定 D 第 1 条）。只让「请求里带了 status」
+// 走删除也不行：`Model.Update` 是无条件写 status 的，整个请求体漏掉 status 字段
+// （反序列化成 0）同样是下架。
+func adtyModelUpdatePermissions(id, status int) []authz.Permission {
+	permissions := []authz.Permission{authz.AdtyModelWrite}
+	if !adtyModelUpdateHides(id, status) {
+		return permissions
+	}
+	return append(permissions, authz.AdtyModelDelete)
+}
+
+// adtyModelUpdateHides 判断这次更新是不是一次新的下架。已经隐藏的模型没有动作可做，
+// 读不到的行交给后面的更新自己报错——两种情况都不额外要删除权限。
+func adtyModelUpdateHides(id, status int) bool {
+	if status != 0 {
+		return false
+	}
+	var current model.Model
+	if err := model.DB.Select("id", "status").First(&current, id).Error; err != nil {
+		return false
+	}
+	return current.Status != 0
 }
 
 // DeleteModelMeta 删除模型
