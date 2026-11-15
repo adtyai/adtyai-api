@@ -255,7 +255,24 @@ func (s *ReferralService) CreateWithdrawal(input ReferralWithdrawalCreateInput) 
 			// 转余额也要留下批次背书（对偶：adty_site_invite_withdraw.go 的转余额路径）：
 			// 只加余额不写批次，下一次扣费会把这条真实入账补建成 legacy 批次，
 			// 从而被记为 fund_batch_gap，对账口径从此不可用。source 用 ledger 的幂等键。
-			if err := model.CreateAdtyFundBatchesTx(tx, input.UserId, ref, creditQuota, 0); err != nil {
+			//
+			// 站点必须一起写（ISS-R4-0047）：这条批次背书的是**用户的**本金，归属跟着
+			// 用户当前所属站走，和 creditTopUpQuotaWithPrincipalBatch (model/topup.go)
+			// 以及用户调额的批次写入同一条口径。
+			//
+			// 两处修复各自都对，合起来才不一致：0086（w6）给这条路加了批次写入时
+			// 还没有 site 列；0047（w23）给对偶路径加了 site，但他没回来改这里。
+			// 结果同一个业务的两个实现又分叉了——这次差的是站点。
+			//
+			// 落 NULL 不只是「少一个字段」：按 adty_fund_batch.go 的定义，NULL 表示
+			// 「当时就证不出站点」。这里站点是已知的，写 NULL 等于把漏填伪装成历史遗留，
+			// 按站算本金负债时这部分会掉进「站点未知」，两边都不平。
+			var batchOwner model.User
+			if err := tx.Select("id", "site_id").First(&batchOwner, input.UserId).Error; err != nil {
+				return err
+			}
+			if err := model.CreateAdtyFundBatchesWithSiteTx(tx, input.UserId,
+				model.AdtyFundBatchSiteID(batchOwner.SiteId), ref, creditQuota, 0); err != nil {
 				return err
 			}
 		}

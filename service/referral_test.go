@@ -1239,6 +1239,12 @@ func availableAffiliate(t *testing.T, db *gorm.DB, prefix string, available floa
 func TestWithdrawToBalanceInstantAndIdempotent(t *testing.T) {
 	db := prepareReferralDB(t)
 	affiliate := availableAffiliate(t, db, "tobal", 50)
+	// 把用户放到一个分站上：这条批次背书的是他的本金，站点必须跟着他走。
+	// 不设站点（或写 NULL）时，按站算本金负债会把这块掉进「站点未知」。
+	batchSite := model.AdtySite{OwnerUserId: affiliate.UserId, Subdomain: "tobal-site",
+		Status: model.AdtySiteStatusActive, CostFactor: decimalPtr("0.80")}
+	require.NoError(t, db.Create(&batchSite).Error)
+	require.NoError(t, db.Model(&model.User{}).Where("id = ?", affiliate.UserId).Update("site_id", batchSite.Id).Error)
 	input := ReferralWithdrawalCreateInput{UserId: affiliate.UserId, Amount: decimal.NewFromInt(30), AccountType: model.ReferralWithdrawToBalance, IdempotencyKey: "tobal-1"}
 	w, err := Referral.CreateWithdrawal(input)
 	require.NoError(t, err)
@@ -1265,6 +1271,10 @@ func TestWithdrawToBalanceInstantAndIdempotent(t *testing.T) {
 	assert.Equal(t, "principal", lots()[0].Kind)
 	assert.Equal(t, fmt.Sprintf("referral-withdrawal-%d", w.Id), lots()[0].Source)
 	assert.EqualValues(t, 15_000_000, lots()[0].Remaining)
+	// 站点必须写进去，而且必须是用户所属站（ISS-R4-0047）：对偶路径
+	// （adty_site_invite_withdraw.go 的转余额）就是这么写的，这条不能例外。
+	require.NotNil(t, lots()[0].SiteId, "批次必须带站点：落 NULL 会被当成「证不出站点」的历史行")
+	assert.Equal(t, batchSite.Id, *lots()[0].SiteId)
 
 	again, err := Referral.CreateWithdrawal(input)
 	require.NoError(t, err)
