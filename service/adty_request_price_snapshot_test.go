@@ -10,6 +10,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	hosttypes "github.com/QuantumNous/new-api/types"
@@ -271,4 +272,55 @@ func snapshotRelay(t *testing.T, userId int, group string, price hosttypes.Price
 		PriceData:  price,
 	}
 	return ctx, info
+}
+
+// tiered_expr 的 accept 不能把 "0" 冻结成"价格"：表达式才是价格来源。
+func TestRequestPriceSnapshotTieredOmitsFabricatedZeroPrice(t *testing.T) {
+	ctx, info := snapshotRelay(t, 11, "default", hosttypes.PriceData{QuotaToPreConsume: 2_000_000})
+	info.OriginModelName = "snap-tiered-model"
+	info.TieredBillingSnapshot = &billingexpr.BillingSnapshot{
+		BillingMode:               "tiered_expr",
+		ModelName:                 "snap-tiered-model",
+		EstimatedQuotaBeforeGroup: 2_000_000,
+		QuotaPerUnit:              float64(common.FixedQuotaPerUnit),
+	}
+	AdtyFreezeRequestPriceSnapshot(ctx, info)
+
+	snap := AdtyFrozenPriceSnapshot(ctx)
+	require.NotNil(t, snap, "a tiered request must still freeze its group ratio and site rates")
+	assert.Equal(t, model.BillingUnitTieredExpr, snap.BillingUnit)
+	assert.Equal(t, "", snap.ModelBasePrice)
+	assert.Equal(t, "", snap.FinalPrice)
+	assert.Equal(t, "", snap.SupplyCost)
+	assert.Equal(t, "", snap.SellPrice)
+	assert.True(t, snap.HasOfficialFields())
+	assert.True(t, AdtyReuseFrozenPriceData(ctx, info), "retry must keep reusing the frozen record")
+
+	// 消费额落进同一条记录，不再与一个假的零价并列。
+	settled := snap.WithConsumedQuota(1_500_000)
+	require.NotNil(t, settled)
+	assert.NotEmpty(t, settled.ConsumedAmount)
+	encoded, err := model.EncodeRequestPriceSnapshot(settled)
+	require.NoError(t, err)
+	decoded := model.DecodeRequestPriceSnapshot(encoded)
+	require.NotNil(t, decoded, "an empty tiered price stays legal after a store round-trip")
+	assert.Equal(t, "", decoded.FinalPrice)
+	assert.NotEmpty(t, decoded.ConsumedAmount)
+}
+
+// 同一条"零 base"记录：线上不建，backfill 也不建——判据只有一个。
+func TestRequestPriceSnapshotZeroBaseIsNotFrozenForEitherWriter(t *testing.T) {
+	ctx, info := snapshotRelay(t, 12, "default", hosttypes.PriceData{ModelRatio: 0})
+	info.OriginModelName = "snap-zero-model"
+	info.TieredBillingSnapshot = &billingexpr.BillingSnapshot{BillingMode: "tiered_expr", ModelName: "snap-zero-model"}
+	AdtyFreezeRequestPriceSnapshot(ctx, info)
+	snap := AdtyFrozenPriceSnapshot(ctx)
+	require.NotNil(t, snap)
+	assert.Equal(t, "", snap.ModelBasePrice, "no base ratio is frozen as zero")
+
+	legacy, reason := model.BuildHistoricalRequestPriceSnapshot(model.HistoricalPriceSnapshotSource{
+		ModelName: "snap-zero-model", GroupRatio: 1, AcceptedAt: 1,
+	})
+	require.Nil(t, legacy)
+	assert.Equal(t, model.PriceSnapshotBackfillSkipMissingBasePrice, reason)
 }

@@ -55,22 +55,56 @@ type RequestPriceSnapshot struct {
 }
 
 // HasOfficialFields reports whether the G.2-11 field set is present as stored
-// strings (not reconstructed from float64). An empty billing group is allowed
-// when the request had no named group; team pay and the supply floor may be
-// empty when they do not apply.
+// strings (not reconstructed from float64) and carries a price the record can
+// stand behind. An empty billing group is allowed when the request had no named
+// group; team pay and the supply floor may be empty when they do not apply.
+//
+// The price strings are part of that contract rather than decoration: "0" is
+// not "no price", it is a wrong price that contradicts the amount later stored
+// in consumed_amount. This is the single criterion both writers ask - the
+// accept-time freeze and the historical backfill - so a record is legal for
+// both of them or for neither.
 func (s *RequestPriceSnapshot) HasOfficialFields() bool {
 	if s == nil {
 		return false
 	}
-	return strings.TrimSpace(s.ModelBasePrice) != "" &&
+	return s.HasPriceBasis() &&
 		strings.TrimSpace(s.GroupRatio) != "" &&
 		strings.TrimSpace(s.SiteCostFactor) != "" &&
 		strings.TrimSpace(s.SiteMarkupRatio) != "" &&
-		strings.TrimSpace(s.FinalPrice) != "" &&
 		strings.TrimSpace(s.Currency) != "" &&
 		strings.TrimSpace(s.BillingUnit) != "" &&
 		s.AcceptedAt != 0 &&
 		strings.TrimSpace(s.RuleVersion) != ""
+}
+
+// HasPriceBasis reports whether the stored price strings are legal for the
+// snapshot's billing unit. A tiered_expr request is priced by its expression
+// and has no base ratio to freeze, so it may omit ModelBasePrice and
+// FinalPrice - but never store a zero in their place. Every other unit must
+// freeze a positive base price and a final price that parses and is not
+// negative (a zero final price is legitimate for a free group).
+func (s *RequestPriceSnapshot) HasPriceBasis() bool {
+	if s == nil {
+		return false
+	}
+	if s.BillingUnit == BillingUnitTieredExpr {
+		return optionalSnapshotPrice(s.ModelBasePrice) && optionalSnapshotPrice(s.FinalPrice)
+	}
+	base, hasBase := ParseSnapshotDecimal(s.ModelBasePrice)
+	final, hasFinal := ParseSnapshotDecimal(s.FinalPrice)
+	return hasBase && base.IsPositive() && hasFinal && !final.IsNegative()
+}
+
+// optionalSnapshotPrice reads a price field that may be omitted but must be a
+// positive decimal when it is present. An empty string means "not applicable";
+// anything else has to stand on its own.
+func optionalSnapshotPrice(value string) bool {
+	if strings.TrimSpace(value) == "" {
+		return true
+	}
+	d, ok := ParseSnapshotDecimal(value)
+	return ok && d.IsPositive()
 }
 
 // ParseSnapshotDecimal parses an authoritative snapshot decimal string.

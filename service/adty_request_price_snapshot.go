@@ -146,21 +146,32 @@ func buildRequestPriceSnapshot(c *gin.Context, info *relaycommon.RelayInfo) *mod
 	if modelName == "" {
 		modelName = info.OriginModelName
 	}
+	basePrice := base.String()
+	finalPrice := base.Mul(finalRatio).String()
+	supplyCost := base.Mul(factors.SupplyPrice).String()
+	sellPrice := base.Mul(factors.SellPrice).String()
+	// A tiered_expr request is priced by its expression, not by a base ratio.
+	// Freeze "no base price" instead of a zero: a zero would sit next to the
+	// amount actually billed and contradict it (model.HasOfficialFields refuses
+	// fabricated zeros, and the backfill never writes them either).
+	if unit == model.BillingUnitTieredExpr && !base.IsPositive() {
+		basePrice, finalPrice, supplyCost, sellPrice = "", "", "", ""
+	}
 	snap := &model.RequestPriceSnapshot{
 		SchemaVersion:    model.RequestPriceSnapshotVersion,
 		ModelName:        modelName,
-		ModelBasePrice:   base.String(),
+		ModelBasePrice:   basePrice,
 		BillingGroup:     factors.BillingGroup,
 		GroupRatio:       factors.GroupRatio.String(),
 		SiteCostFactor:   factors.CostFactor.String(),
 		SiteMarkupRatio:  factors.MarkupRatio.String(),
-		FinalPrice:       base.Mul(finalRatio).String(),
+		FinalPrice:       finalPrice,
 		Currency:         model.RequestPriceCurrencyUSD,
 		BillingUnit:      unit,
 		AcceptedAt:       acceptedAt,
 		RuleVersion:      model.RequestPriceSnapshotVersion,
-		SupplyCost:       base.Mul(factors.SupplyPrice).String(),
-		SellPrice:        base.Mul(factors.SellPrice).String(),
+		SupplyCost:       supplyCost,
+		SellPrice:        sellPrice,
 		SiteId:           factors.SiteId,
 		SiteOwnerUserId:  factors.SiteOwnerUserId,
 		MainSite:         factors.MainSite || factors.SiteId == 0,
@@ -171,13 +182,13 @@ func buildRequestPriceSnapshot(c *gin.Context, info *relaycommon.RelayInfo) *mod
 		snap.TeamApplied = true
 		snap.TeamPayRatio = factors.TeamPayRatio.String()
 	}
-	if factors.FloorApplied {
+	if factors.FloorApplied && basePrice != "" {
 		snap.SupplyPriceFloor = base.Mul(factors.SupplyFloor).String()
 	}
 	if price.UsePrice {
-		snap.ModelPrice = base.String()
-	} else if price.HasBilledModelRatio() || price.ModelRatio != 0 || unit == model.BillingUnitPerToken {
-		snap.ModelRatio = price.BilledModelRatio().String()
+		snap.ModelPrice = basePrice
+	} else if basePrice != "" && (price.HasBilledModelRatio() || price.ModelRatio != 0 || unit == model.BillingUnitPerToken) {
+		snap.ModelRatio = basePrice
 	}
 	if completion := price.BilledCompletionRatio(); (price.HasBilledCompletionRatio() && !completion.IsZero()) || price.CompletionRatio != 0 {
 		snap.CompletionRatio = completion.String()
