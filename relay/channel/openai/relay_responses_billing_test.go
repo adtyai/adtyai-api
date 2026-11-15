@@ -511,7 +511,7 @@ func TestOaiResponsesHandlersKeepCacheWriteTTLSplit(t *testing.T) {
 			case "stream":
 				usage, apiErr = OaiResponsesStreamHandler(c, info, resp)
 			default:
-				usage, apiErr = OaiResponsesCompactionHandler(c, resp)
+				usage, apiErr = OaiResponsesCompactionHandler(c, info, resp)
 			}
 			require.Nil(t, apiErr)
 			require.NotNil(t, usage)
@@ -705,4 +705,74 @@ func TestAzureHostedWebSearch(t *testing.T) {
 			assert.Equal(t, map[string]int{"bing_web_search": 5}, billed)
 		})
 	}
+}
+
+// Compaction bills the input side, and upstream may omit usage entirely: the
+// compacted body has already been delivered, so the prompt count is estimated
+// from the request instead of settling a zero bill.
+func TestOaiResponsesCompactionHandlerEstimatesMissingUsage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	for _, tc := range []struct {
+		name  string
+		usage string
+	}{
+		{name: "usage omitted", usage: ""},
+		{name: "usage null", usage: `,"usage":null`},
+		{name: "usage zeroed", usage: `,"usage":{"input_tokens":0,"output_tokens":0,"total_tokens":0}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := `{"id":"cmp_1","object":"response.compaction","output":[],"created_at":1763200000` + tc.usage + `}`
+			w := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(w)
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses/compact", nil)
+			info := &relaycommon.RelayInfo{
+				RelayFormat:     types.RelayFormatOpenAIResponses,
+				OriginModelName: "gpt-6-astra",
+				ChannelMeta:     &relaycommon.ChannelMeta{UpstreamModelName: "gpt-6-astra"},
+			}
+			info.SetEstimatePromptTokens(7)
+			resp := &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(body)),
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+			}
+
+			usage, apiErr := OaiResponsesCompactionHandler(c, info, resp)
+			require.Nil(t, apiErr)
+			require.NotNil(t, usage)
+			assert.Contains(t, w.Body.String(), "cmp_1", "the compacted body was delivered before settlement")
+			assert.Equal(t, 7, usage.PromptTokens)
+			assert.Equal(t, 0, usage.CompletionTokens)
+			assert.Equal(t, 7, usage.TotalTokens)
+		})
+	}
+}
+
+// Reported counts stay authoritative: the estimate only fills a zero prompt.
+func TestOaiResponsesCompactionHandlerKeepsReportedUsage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	body := `{"id":"cmp_1","object":"response.compaction","output":[],"usage":{"input_tokens":12000,"output_tokens":40,"total_tokens":12040}}`
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses/compact", nil)
+	info := &relaycommon.RelayInfo{
+		RelayFormat:     types.RelayFormatOpenAIResponses,
+		OriginModelName: "gpt-6-astra",
+		ChannelMeta:     &relaycommon.ChannelMeta{UpstreamModelName: "gpt-6-astra"},
+	}
+	info.SetEstimatePromptTokens(7)
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(strings.NewReader(body)),
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+	}
+
+	usage, apiErr := OaiResponsesCompactionHandler(c, info, resp)
+	require.Nil(t, apiErr)
+	require.NotNil(t, usage)
+	assert.Equal(t, 12000, usage.PromptTokens)
+	assert.Equal(t, 40, usage.CompletionTokens)
+	assert.Equal(t, 12040, usage.TotalTokens)
 }
