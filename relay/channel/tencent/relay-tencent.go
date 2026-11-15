@@ -89,25 +89,67 @@ func streamResponseTencent2OpenAI(TencentResponse *TencentChatResponse) *dto.Cha
 	return &response
 }
 
+// unwrapTencentStreamFrame 兼容把流式帧也套一层 {"Response":{...}} 的上游/网关（与非流的
+// TencentChatResponseSB 同形）。这种帧直接解进 TencentChatResponse 会得到全零对象，
+// 错误帧于是变成「没有 choices 的空 chunk」。只在看起来是空帧时多解一遍。
+func unwrapTencentStreamFrame(data string, response TencentChatResponse) TencentChatResponse {
+	if len(response.Choices) > 0 || response.Error.Code != 0 || !strings.Contains(data, `"Response"`) {
+		return response
+	}
+	var wrapped TencentChatResponseSB
+	if err := common.Unmarshal([]byte(data), &wrapped); err != nil {
+		return response
+	}
+	return wrapped.Response
+}
+
+// tencentStreamMaxBadFrames 是流式响应里连续无法解析的帧上限。超过这个数量说明这不是
+// 可用的 SSE 流，继续空转到 EOF 只会把坏数据当空数据吞掉。
+const tencentStreamMaxBadFrames = 5
+
 func tencentStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {
 	var responseText strings.Builder
 	scanner := helper.NewStreamScanner(resp.Body)
 	scanner.Split(bufio.ScanLines)
+	defer service.CloseResponseBodyGracefully(resp)
 
 	helper.SetEventStreamHeaders(c)
 
+	badFrames := 0
 	for scanner.Scan() {
 		data := scanner.Text()
 		if len(data) < 5 || !strings.HasPrefix(data, "data:") {
 			continue
 		}
-		data = strings.TrimPrefix(data, "data:")
+		data = strings.TrimSpace(strings.TrimPrefix(data, "data:"))
+		if data == "" {
+			continue
+		}
+		if data == "[DONE]" {
+			break
+		}
 
 		var tencentResponse TencentChatResponse
 		err := common.Unmarshal([]byte(data), &tencentResponse)
 		if err != nil {
+			badFrames++
 			common.SysLog(common.LogText("error unmarshalling stream response: %s", err.Error()))
+			if badFrames >= tencentStreamMaxBadFrames {
+				return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
+			}
 			continue
+		}
+		badFrames = 0
+		tencentResponse = unwrapTencentStreamFrame(data, tencentResponse)
+
+		// 上游会把错误直接塞在 SSE 帧里（同文件非流式 TencentChatResponseSB 分支就检查了这一层），
+		// 不检查就会把失败帧当成「一个没有 choices 的正常 chunk」推给客户端，
+		// 最后以 [DONE] 和成功结账收场。
+		if tencentResponse.Error.Code != 0 {
+			return nil, types.WithOpenAIError(types.OpenAIError{
+				Message: tencentResponse.Error.Message,
+				Code:    tencentResponse.Error.Code,
+			}, http.StatusBadGateway)
 		}
 
 		response := streamResponseTencent2OpenAI(&tencentResponse)
@@ -126,8 +168,6 @@ func tencentStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *htt
 	}
 
 	helper.Done(c)
-
-	service.CloseResponseBodyGracefully(resp)
 
 	return service.ResponseText2Usage(c, responseText.String(), info.UpstreamModelName, info.GetEstimatePromptTokens()), nil
 }
