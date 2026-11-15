@@ -159,3 +159,35 @@ func loadTopUpStatus(t *testing.T, db *gorm.DB, tradeNo string) string {
 	require.NoError(t, db.Where("trade_no = ?", tradeNo).First(&row).Error)
 	return row.Status
 }
+
+// ISS-R4-0043 第 1 条：幂等重放必须原样通过。
+//
+// 现金背书检查放在 `row.Status == Completed` 的重放分支之后，所以一条历史
+// 已完成的退款单再次调用完成接口时，应当按幂等返回原结果，而不是被新校验
+// 判成「没有现金背书」——已完成的历史记录不能重算。
+func TestCompletedRefundReplaysDespiteCashBackingCheckPG(t *testing.T) {
+	db, root := adtyCashRefundFixture(t)
+	seedAdtyCashRefundOrder(t, db, root, "REPLAY-TEAM-1", "adty_team", 42, decimal.Zero)
+	now := common.GetTimestamp()
+	require.NoError(t, db.Create(&AdtyManualRefund{
+		RefundId: "replay-team-refund", TradeNo: "REPLAY-TEAM-1", UserId: root.Id,
+		Status: AdtyManualRefundStatusCompleted, RequestUSD: decimal.NewFromInt(100),
+		RequestQuota: 50_000_000, Reason: "already completed before the patch",
+		AppliedAt: now, ApprovedAt: now, ReclaimedAt: now, BonusAt: now,
+		CommissionAt: now, PayoutRecordedAt: now, PayoutStatus: AdtyManualRefundPayoutSuccess,
+		CompletedAt: now, CompleteIdemKey: "complete-replay-team-refund",
+	}).Error)
+
+	before := root.Quota
+	_, err := CompleteAdtyTopUpManualRefund("REPLAY-TEAM-1", "replay-team-refund", root.Id, "complete-replay-team-refund")
+	require.NoError(t, err, "已完成的单重放必须成功，不能被新校验挡住")
+
+	var user User
+	require.NoError(t, db.First(&user, root.Id).Error)
+	assert.EqualValues(t, before, user.Quota, "重放不能改动余额")
+
+	var row AdtyManualRefund
+	require.NoError(t, db.Where("refund_id = ?", "replay-team-refund").First(&row).Error)
+	assert.Equal(t, AdtyManualRefundStatusCompleted, row.Status)
+	assert.EqualValues(t, now, row.CompletedAt, "重放不能改写完成时间")
+}
