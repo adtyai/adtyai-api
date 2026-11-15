@@ -120,7 +120,7 @@ func GetAdtyOwnerSite(c *gin.Context) {
 		"host": service.AdtySiteDisplayHost(site), "base_url": service.AdtySiteBaseURL(site),
 		"cost_factor": d.String(), "markup_min": "0", "markup_max": limit,
 		"markup_increase_delay_hours": cfg.MarkupIncreaseDelayHours, "custom_domain_enabled": cfg.CustomDomainEnabled,
-		"sender_domain_enabled": cfg.SenderDomainEnabled, "brand": brand, "bonus_rates": service.AdtySiteBonusRates(site),
+		"sender_domain_enabled": cfg.SenderDomainEnabled, "brand": brand, "bonus_methods": service.AdtySiteBonusMethods(site),
 		"seo_index": site.SeoIndex, "agreement_version": site.AgreementVer, "agreement_at": site.AgreementAt,
 		"close_requested_at": site.CloseRequestedAt,
 		"prices":             prices, "pricing_version": version, "domains": domains, "visibility": service.AdtySiteVisibility(site),
@@ -129,6 +129,7 @@ func GetAdtyOwnerSite(c *gin.Context) {
 
 // PutAdtyOwnerSite 改站点资料：PUT /api/adty/site/self {brand?, bonus_rates?, seo_index?}。
 // 改加赠要二次验证（target = 站点 id）；品牌和 SEO 开关不用。站点 paused 时不能改加赠。
+// bonus_rates 只为了把退役的金额档位回成明确错误，按支付方式的加赠走 PUT /adty/site/bonus-methods。
 func PutAdtyOwnerSite(c *gin.Context) {
 	site, ok := adtyOwnerSiteOr403(c)
 	if !ok {

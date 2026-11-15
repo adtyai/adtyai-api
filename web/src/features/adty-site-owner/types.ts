@@ -65,6 +65,14 @@ export type SiteDomain = {
   created_at: number
 }
 
+/** One payment method the owner may put a gift on (service.AdtySiteBonusMethod). */
+export type OwnerBonusMethod = {
+  method: string
+  enabled: boolean
+  /** Decimal fraction, not a percent and not an amount tier: 0.025 pays 2.5%. */
+  rate: string
+}
+
 /** GET /api/adty/site/self (controller/adty_site_owner.go). */
 export type OwnerSite = {
   id: number
@@ -80,8 +88,8 @@ export type OwnerSite = {
   custom_domain_enabled: boolean
   sender_domain_enabled: boolean
   brand: SiteBrand
-  /** Tier USD (as a JSON object key) → bonus percent. */
-  bonus_rates: Record<string, number>
+  /** Payment methods Root authorized for this site's gift, with the owner's rule. */
+  bonus_methods: OwnerBonusMethod[]
   seo_index: boolean
   agreement_version: string
   agreement_at: number

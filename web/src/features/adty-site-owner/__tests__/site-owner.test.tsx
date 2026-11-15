@@ -22,6 +22,7 @@ import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { BonusPanel } from '../components/bonus-panel'
 import { EarningsPanel } from '../components/earnings-panel'
 import { OverviewPanel } from '../components/overview-panel'
 import { OwnerVerificationProvider } from '../components/owner-verification'
@@ -38,6 +39,7 @@ const api = vi.hoisted(() => ({
   removeSenderDomain: vi.fn(),
   uploadLogo: vi.fn(),
   saveOwnerSite: vi.fn(),
+  saveOwnerSiteMethodBonus: vi.fn(),
 }))
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
@@ -104,7 +106,7 @@ function ownerSite(overrides: Partial<OwnerSite> = {}): OwnerSite {
       notice: '',
       support_contact: '',
     },
-    bonus_rates: {},
+    bonus_methods: [],
     seo_index: false,
     agreement_version: '3',
     agreement_at: 1_700_000_000,
@@ -501,5 +503,42 @@ describe('Brand logo', () => {
         }),
       })
     )
+  })
+})
+
+describe('BonusPanel', () => {
+  it('edits a payment-method gift and shows no amount tiers', async () => {
+    api.saveOwnerSiteMethodBonus.mockResolvedValue(undefined)
+    render(
+      wrap(
+        <BonusPanel
+          site={ownerSite({
+            bonus_methods: [{ method: 'alipay', enabled: false, rate: '0' }],
+          })}
+        />
+      )
+    )
+    expect(screen.getByText('Alipay')).toBeInTheDocument()
+    expect(screen.queryByText('Top-up from (USD)')).not.toBeInTheDocument()
+    const rate = screen.getByLabelText('Bonus rate')
+    await userEvent.clear(rate)
+    await userEvent.type(rate, '0.025')
+    await userEvent.click(screen.getByRole('switch'))
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() =>
+      expect(api.saveOwnerSiteMethodBonus).toHaveBeenCalledWith(
+        'alipay',
+        true,
+        '0.025'
+      )
+    )
+  })
+
+  it('says no method is authorized when the platform authorized none', () => {
+    render(wrap(<BonusPanel site={ownerSite()} />))
+    expect(
+      screen.getByText(/No payment method is authorized for a gift yet/)
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('switch')).not.toBeInTheDocument()
   })
 })
