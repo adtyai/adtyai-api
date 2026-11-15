@@ -302,7 +302,10 @@ export function PaymentSettingsSection({
     const tab = new URLSearchParams(location.searchStr).get('tab')
     return tab && isOperablePaymentTab(tab) ? tab : 'general'
   }, [location.searchStr])
-  const [activeTab, setActiveTab] = React.useState(initialTab)
+  // 显式标成 PaymentTab 而不是让 TS 从 initialTab 推出收窄后的联合：
+  // 已退役的 tab（stripe / creem / waffo / waffo-pancake）仍保留保存分支与
+  // 比较判断，退役清理是独立的一张单，这里只保证类型不收窄到互相矛盾。
+  const [activeTab, setActiveTab] = React.useState<PaymentTab>(initialTab)
   const queryClient = useQueryClient()
   const updateOption = useUpdateOption()
   const initialFormValues = React.useMemo<PaymentFormValues>(

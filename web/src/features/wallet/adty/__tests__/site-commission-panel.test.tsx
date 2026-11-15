@@ -38,6 +38,7 @@ const availableRow: SiteCommission = {
   frozen_usd: '0',
   earnings_hold_usd: '0',
   margin_hold_usd: '0',
+  available_at: 0,
 }
 
 function mockSiteCommissionGet(handler: (url: string) => unknown | Promise<unknown>) {

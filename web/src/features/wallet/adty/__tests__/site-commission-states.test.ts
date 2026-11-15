@@ -37,8 +37,13 @@ describe('official commission states', () => {
       'External payout completed and released'
     )
     expect(OFFICIAL_COMMISSION_STATE_LABELS.not_issued).toBe('Not issued')
+    // 断言「不存在 Covered 这个标签」。labels 是 as const，Object.values 推出
+    // 字面量联合，直接 includes 一个不在联合里的字符串会被类型系统拒绝；
+    // 这里刻意放宽成 string[]，因为要证明的正是「它不在里面」。
     expect(
-      Object.values(OFFICIAL_COMMISSION_STATE_LABELS).includes('Covered')
+      (Object.values(OFFICIAL_COMMISSION_STATE_LABELS) as string[]).includes(
+        'Covered'
+      )
     ).toBe(false)
     expect(officialCommissionStateLabel('covered')).toBe('covered')
   })

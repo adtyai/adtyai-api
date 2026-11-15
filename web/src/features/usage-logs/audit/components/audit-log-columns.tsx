@@ -124,7 +124,7 @@ export function useAuditLogColumns(
         size: 160,
         accessorFn: (entry) =>
           [entry.object_type, entry.object_id].filter(Boolean).join(' / '),
-        cell: ({ row, getValue }) => (
+        cell: ({ getValue }) => (
           <span className='font-mono'>
             {getValue<string>() || '—'}
           </span>

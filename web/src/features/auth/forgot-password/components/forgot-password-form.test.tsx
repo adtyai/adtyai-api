@@ -73,7 +73,10 @@ it('asks for a unique username when the email matches more than one account', as
       })
     )
   )
-  expect(get.mock.calls[0][1]?.params?.username).toBeUndefined()
+  const firstRequest = get.mock.calls[0][1] as
+    | { params?: { username?: string } }
+    | undefined
+  expect(firstRequest?.params?.username).toBeUndefined()
 
   get.mockResolvedValue({
     data: { success: true, message: '' },

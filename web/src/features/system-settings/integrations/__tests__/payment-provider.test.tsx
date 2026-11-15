@@ -289,8 +289,9 @@ it('saves official Epay settings and never writes retired hosted payment keys', 
     })
   )
   expect(
-    put.mock.calls.some((call) =>
-      /^(Stripe|Creem|Waffo)/.test(String(call[1]?.key ?? ''))
-    )
+    put.mock.calls.some((call) => {
+      const option = call[1] as { key?: string } | undefined
+      return /^(Stripe|Creem|Waffo)/.test(String(option?.key ?? ''))
+    })
   ).toBe(false)
 })

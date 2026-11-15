@@ -101,12 +101,17 @@ const teamRegistrationApi = vi.hoisted(() => ({
 }))
 vi.mock('@/features/adty-team-registration/api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/features/adty-team-registration/api')>()),
-  listTeamRegistrations: (...args: unknown[]) =>
-    teamRegistrationApi.listTeamRegistrations(...args),
-  issueTeamRegistration: (...args: unknown[]) =>
-    teamRegistrationApi.issueTeamRegistration(...args),
-  revokeTeamRegistration: (...args: unknown[]) =>
-    teamRegistrationApi.revokeTeamRegistration(...args),
+  // 用目标函数自己的 Parameters 收窄，而不是 unknown[]：
+  // 后者展开进有具体签名的函数会被 TS 拒绝（TS2556），而且掩盖了参数类型。
+  listTeamRegistrations: (
+    ...args: Parameters<typeof teamRegistrationApi.listTeamRegistrations>
+  ) => teamRegistrationApi.listTeamRegistrations(...args),
+  issueTeamRegistration: (
+    ...args: Parameters<typeof teamRegistrationApi.issueTeamRegistration>
+  ) => teamRegistrationApi.issueTeamRegistration(...args),
+  revokeTeamRegistration: (
+    ...args: Parameters<typeof teamRegistrationApi.revokeTeamRegistration>
+  ) => teamRegistrationApi.revokeTeamRegistration(...args),
 }))
 
 function site(overrides: Partial<AdminSite>): AdminSite {

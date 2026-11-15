@@ -99,6 +99,10 @@ describe('retired hosted flags are ignored', () => {
     stripe_min_topup: 20,
     waffo_min_topup: 30,
     waffo_pancake_min_topup: 40,
+    // 这两个字段是 ADTY 加在 TopupInfo 上的（充值面额预设与折扣档），
+    // 上游夹具没有；补成空值让夹具与真实类型对齐，而不是放宽成 unknown。
+    amount_options: [],
+    discount: {},
   } as TopupInfo
 
   test('does not default to Stripe, Waffo, or Waffo Pancake', () => {

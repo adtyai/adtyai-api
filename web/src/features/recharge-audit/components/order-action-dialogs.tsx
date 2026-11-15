@@ -317,7 +317,7 @@ export function RefundDialog(props: OrderActionProps) {
         proof.proof_token
       )
     },
-    onSuccess: (data, step) => {
+    onSuccess: (_data, step) => {
       toast.success(
         step === 'complete' ? t('Refund completed') : t('Refund step recorded')
       )
