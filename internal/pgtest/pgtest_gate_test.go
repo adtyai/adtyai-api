@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// pinnedVersionAssertion 匹配「把 PostgreSQL 补丁号当通过条件」的写法：
+// pinnedVersionAssertion 匹配「把 PostgreSQL **补丁号**当通过条件」的写法：
 //
 //	require.Equal(t, 170012, version, ...)
 //	require.EqualValues(t, 170012, ...)
@@ -17,6 +17,10 @@ import (
 // 只要数字是五到六位的 `17xxxx`，就是同一个错——**它把「我跑的是 17.12」
 // 变成了测试通过的条件**，而测试要验的（扣费、退款、迁移、可见性）与补丁号无关。
 // 升到 17.13 就红、改个数字就绿，这个约束于是变成一个没人看的常量。
+//
+// **主版本断言不在禁列**：`pgtest.RecordServerVersion` 里那条
+// `num / 10000 != RequiredPostgresMajor` 是刻意的（17.13 不红、16/18 才红），
+// 它写的是除法和常量，不是 `require.Equal(t, 17xxxx, …)`，正则不会命中。
 var pinnedVersionAssertion = regexp.MustCompile(`require\.(Equal|EqualValues)\(t, 17\d{4},`)
 
 // 这条是**门禁**：它不验产品行为，只防「有人又把版本号钉回去」。
