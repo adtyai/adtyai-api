@@ -847,6 +847,9 @@ func RefundWaffo(tradeNo string, idemKey string, fullRefund bool, refundAmount s
 		if err != nil {
 			return err
 		}
+		// want 是这次退款「应收回」的额度，claw 是余额里「能收回」的额度。
+		// 两者必须分开：余额不足时差额不能跟着 claw 一起被夹掉（约定 C 第 3 条）。
+		want := claw
 		if int64(balance) < claw {
 			claw = int64(balance)
 		}
@@ -855,6 +858,7 @@ func RefundWaffo(tradeNo string, idemKey string, fullRefund bool, refundAmount s
 		}
 		userId = topUp.UserId
 		clawed = int(claw)
+		shortfall := want - claw
 		if claw > 0 {
 			if err := applyUserQuotaDeltaTx(tx, &user, -int(claw), false); err != nil {
 				return err
@@ -863,7 +867,14 @@ func RefundWaffo(tradeNo string, idemKey string, fullRefund bool, refundAmount s
 				return err
 			}
 		}
-		if fullRefund || remaining-claw <= 0 {
+		if shortfall > 0 {
+			// 已消费的部分收不回来：挂账留痕，订单保持 success 等人工处理。
+			// fullRefund 说的是「上游退了多少」，不是「我们收回了多少」——
+			// 不能因为它为真就宣布这笔单已退款完毕，否则差额从账面上永久消失。
+			if err := recordAdtyRefundShortfallTx(tx, topUp.UserId, "waffo-refund-shortfall:", tradeNo, idemKey, shortfall); err != nil {
+				return err
+			}
+		} else if fullRefund || remaining-claw <= 0 {
 			topUp.Status = common.TopUpStatusRefunded
 			if err := tx.Save(topUp).Error; err != nil {
 				return err
@@ -892,6 +903,22 @@ func RefundWaffo(tradeNo string, idemKey string, fullRefund bool, refundAmount s
 		}
 	}
 	return nil
+}
+
+// adtyRefundShortfallRequestId 是退款差额挂账的 request_id：同一订单的同一次退款请求
+// 重放不会重复挂账（request_id 唯一键 + OnConflict DoNothing）。
+// 先压一层 sha1 是因为 adty_billing_holds.request_id 只有 varchar(64)，而 trade_no 有 255。
+func adtyRefundShortfallRequestId(prefix, tradeNo, idemKey string) string {
+	return prefix + common.Sha1([]byte(tradeNo+"|"+idemKey))
+}
+
+// recordAdtyRefundShortfallTx 把「应收回但没收回」的额度挂到 adty_billing_holds。
+// 挂不上账就让整个退款失败：回调可以重试，差额一旦从账面消失就再也对不回来了。
+func recordAdtyRefundShortfallTx(tx *gorm.DB, userId int, prefix, tradeNo, idemKey string, shortfall int64) error {
+	if shortfall <= 0 {
+		return nil
+	}
+	return RecordAdtyBillingHoldTx(tx, userId, adtyRefundShortfallRequestId(prefix, tradeNo, idemKey), int(shortfall))
 }
 
 func waffoRefundClaw(orderMoney float64, refundAmount string, fullRefund bool, remaining int64, credited int64) (int64, error) {
