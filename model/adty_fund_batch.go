@@ -217,7 +217,11 @@ func consumeAdtyFundBatchesTx(tx *gorm.DB, userID int, amount, balanceBefore int
 				backed -= take - real
 			}
 		}
-		if err := tx.Model(&AdtyFundBatch{}).Where("id = ?", rows[i].Id).Update("remaining", rows[i].Remaining-take).Error; err != nil {
+		// 扣减交给 deductAdtyFundBatchTx 的同一套三件套（WHERE remaining >= ? +
+		// gorm.Expr("remaining - ?") + RowsAffected 校验）：WHERE 挡「余额不足」，
+		// Expr 挡「丢更新」——不把内存里读到的绝对值写回去。这里不再依赖
+		// 「调用方已锁 users 行」这个未声明的约定，那只是当前的巧合，不是保证。
+		if err := deductAdtyFundBatchTx(tx, rows[i].Id, take); err != nil {
 			return backed, err
 		}
 		if rows[i].Kind == "principal" && rows[i].Source != "legacy" {
@@ -283,7 +287,9 @@ func ReclaimAdtyFundBatchesBySourceTx(tx *gorm.DB, userID int, source string, pr
 		if take > *want {
 			take = *want
 		}
-		if err := tx.Model(&AdtyFundBatch{}).Where("id = ?", rows[i].Id).Update("remaining", rows[i].Remaining-take).Error; err != nil {
+		// 同上：条件更新 + 原子减法 + RowsAffected 校验，缺一件就分别是
+		// 「扣成负数」或「并发覆盖掉别人已提交的扣减」。
+		if err := deductAdtyFundBatchTx(tx, rows[i].Id, take); err != nil {
 			return taken, err
 		}
 		*want -= take
