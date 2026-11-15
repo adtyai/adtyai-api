@@ -252,6 +252,9 @@ func adtyFundKindRank(row AdtyFundBatch) int {
 // SettleAdtyFundAllocationsTx 把一次结算落到批次与分摊上。
 //
 // applied 是这次业务最终真正消耗的额度（= 预扣 base + 补扣 charged，全额退款时为 0）。
+// 返回值 backed 是**批次真正支撑得起的那部分**；applied-backed 就是这笔业务的账本缺口，
+// 调用方把它落进 billing_operations.fund_batch_gap 供按用户聚合对账。
+//
 // 规则：
 //   - 已登记的分摊按 seq 顺序把 held 转成 settled，对应金额从批次 remaining 扣掉；
 //   - applied 小于已登记额度时，剩下的部分只是释放（批次没被扣过，不需要回补）；
@@ -260,28 +263,31 @@ func adtyFundKindRank(row AdtyFundBatch) int {
 //
 // 扣批次用条件更新 + RowsAffected 校验：并发下扣不够就整事务回滚，
 // 不做静默重试——那会把「这次没扣成」伪装成「扣到别的地方去了」。
-func SettleAdtyFundAllocationsTx(tx *gorm.DB, userID int, operationID string, applied int64, balanceBefore int64) error {
+func SettleAdtyFundAllocationsTx(tx *gorm.DB, userID int, operationID string, applied int64, balanceBefore int64) (int64, error) {
 	if tx == nil || userID <= 0 {
-		return nil
+		return 0, nil
 	}
 	if applied < 0 {
-		return ErrAdtyFundAllocationMissing
+		return 0, ErrAdtyFundAllocationMissing
 	}
 	var shares []AdtyFundAllocation
 	if operationID != "" {
 		if err := lockForUpdate(tx).
 			Where("user_id = ? AND operation_id = ?", userID, operationID).
 			Order("seq ASC").Find(&shares).Error; err != nil {
-			return err
+			return 0, err
 		}
 	}
 	if len(shares) == 0 {
 		// 没有分摊：升级前的 operation 与 legacy 直接扣费仍然走原路径，
 		// 保留「首次消费时为旧余额补建 legacy 批次」的行为。
 		if applied == 0 {
-			return nil
+			return 0, nil
 		}
-		return ConsumeAdtyFundBatchesTx(tx, userID, applied, balanceBefore)
+		if err := ConsumeAdtyFundBatchesTx(tx, userID, applied, balanceBefore); err != nil {
+			return 0, err
+		}
+		return applied, nil
 	}
 
 	left := applied
@@ -296,32 +302,32 @@ func SettleAdtyFundAllocationsTx(tx *gorm.DB, userID int, operationID string, ap
 			if err := tx.Model(&AdtyFundAllocation{}).
 				Where("id = ? AND held = ?", shares[i].Id, shares[i].Held).
 				Updates(map[string]any{"held": 0}).Error; err != nil {
-				return err
+				return 0, err
 			}
 			continue
 		}
 		if err := deductAdtyFundBatchTx(tx, shares[i].BatchId, take); err != nil {
-			return err
+			return 0, err
 		}
 		// 只消费了一部分时，把这份分摊收窄到实际消耗，held 与 settled 相等，
 		// 未用到的部分随之释放（批次没有扣过它，不需要回补）。
 		if err := tx.Model(&AdtyFundAllocation{}).
 			Where("id = ? AND held = ?", shares[i].Id, shares[i].Held).
 			Updates(map[string]any{"held": take, "settled": shares[i].Settled + take}).Error; err != nil {
-			return err
+			return 0, err
 		}
 		left -= take
 	}
 	if left <= 0 {
-		return nil
+		return applied, nil
 	}
 	// 已登记额度不够覆盖实际消耗：补记一条已结算分摊，再按 FIFO 扣批次。
 	if err := AllocateAdtyFundAllocationsTx(tx, userID, operationID, applied); err != nil {
-		return err
+		return 0, err
 	}
 	if err := tx.Where("user_id = ? AND operation_id = ? AND settled = 0", userID, operationID).
 		Order("seq ASC").Find(&shares).Error; err != nil {
-		return err
+		return 0, err
 	}
 	for i := range shares {
 		if left <= 0 {
@@ -333,12 +339,12 @@ func SettleAdtyFundAllocationsTx(tx *gorm.DB, userID int, operationID string, ap
 		}
 		take := min(held, left)
 		if err := deductAdtyFundBatchTx(tx, shares[i].BatchId, take); err != nil {
-			return err
+			return 0, err
 		}
 		if err := tx.Model(&AdtyFundAllocation{}).
 			Where("id = ? AND held = ?", shares[i].Id, shares[i].Held).
 			Updates(map[string]any{"held": take, "settled": shares[i].Settled + take}).Error; err != nil {
-			return err
+			return 0, err
 		}
 		left -= take
 	}
@@ -347,7 +353,7 @@ func SettleAdtyFundAllocationsTx(tx *gorm.DB, userID int, operationID string, ap
 		// 批次总量不足以覆盖本次消耗。这是**账面不全**，不是代码写错：升级前的
 		// 余额可能有一部分从来没有对应批次。此时若让整笔结算失败，配额扣减也会
 		// 跟着回滚——用户已经用完上游，却一分钱不扣，那比账面对不上更糟。
-		// 所以扣掉能扣的部分、把差额作为已知缺口记进日志，由一致性巡检去追。
+		// 所以扣掉能扣的部分，差额由调用方落库（fund_batch_gap），日志只作补充。
 		common.SysError(common.LogText("adty fund settlement short by %d quota for user=%d operation=%s: batches could not back the whole charge", left, userID, operationID))
 	}
 	// 收尾校验只覆盖「已经被批次支撑的那部分」：剩余占用必须正好等于 backed。
@@ -357,12 +363,12 @@ func SettleAdtyFundAllocationsTx(tx *gorm.DB, userID int, operationID string, ap
 		Select("coalesce(sum(held),0) as held").
 		Where("user_id = ? AND operation_id = ?", userID, operationID).
 		Scan(&total).Error; err != nil {
-		return err
+		return 0, err
 	}
 	if total.Held != backed {
-		return adtyFundBatchShortfallError(total.Held - backed)
+		return 0, adtyFundBatchShortfallError(total.Held - backed)
 	}
-	return nil
+	return backed, nil
 }
 
 // deductAdtyFundBatchTx 扣一个批次的 remaining。扣不动就报错，让调用方整事务回滚。

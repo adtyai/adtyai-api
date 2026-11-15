@@ -148,3 +148,18 @@ func TestMigrateAdtyTablesOnUsesOnlyCallerConnectionPG(t *testing.T) {
 			"%T 被建到了包级 DB 上：On() 有分支仍在用全局 DB", entity)
 	}
 }
+
+// 新列必须出现在空库迁移与重复启动之后（AutoMigrate 加列）。
+func TestBillingOperationFundBatchGapColumnMigratesPG(t *testing.T) {
+	dsn := requireAdtyOfficialPostgresAcceptanceDSN(t)
+	admin := connectAdtyPostgresAcceptanceInstance(t, dsn)
+	db := openAdtyThrowawayMigrateDatabase(t, admin, dsn)
+
+	require.NoError(t, MigrateAdtyTablesOn(db))
+	require.True(t, db.Migrator().HasColumn(&BillingOperation{}, "fund_batch_gap"),
+		"empty-db migrate must create billing_operations.fund_batch_gap")
+
+	before := snapshotAdtyMigrateSchema(t, db)
+	require.NoError(t, MigrateAdtyTablesOn(db), "repeated startup must be idempotent")
+	assertAdtyMigrateSchemaUnchanged(t, db, before)
+}

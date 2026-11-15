@@ -39,21 +39,27 @@ func BillingEarningFactorsUsable(k, d float64) bool {
 // reservation and its final disposition. It contains no credential or payload.
 // Reserved/applied wallet amounts are distinct from token charges and shortfall.
 type BillingOperation struct {
-	OperationKey        string `gorm:"type:varchar(191);primaryKey"`
-	UserId              int    `gorm:"index;not null"`
-	TokenId             int
-	TokenUnlimited      bool
-	LeaseOwner          string `gorm:"type:varchar(64);index"`
-	Kind                string `gorm:"type:varchar(24);not null"` // request, task, mj_charge, mj_refund
-	ReferenceId         int64  `gorm:"index"`
-	ReservedQuota       int
-	TokenReservedQuota  int
-	StreamWalletQuota   int // independently committed realtime chunks included in the final target
-	StreamTokenQuota    int
-	ActualQuota         int
-	AppliedQuota        int
-	TokenAppliedQuota   int
-	Shortfall           int
+	OperationKey       string `gorm:"type:varchar(191);primaryKey"`
+	UserId             int    `gorm:"index;not null"`
+	TokenId            int
+	TokenUnlimited     bool
+	LeaseOwner         string `gorm:"type:varchar(64);index"`
+	Kind               string `gorm:"type:varchar(24);not null"` // request, task, mj_charge, mj_refund
+	ReferenceId        int64  `gorm:"index"`
+	ReservedQuota      int
+	TokenReservedQuota int
+	StreamWalletQuota  int // independently committed realtime chunks included in the final target
+	StreamTokenQuota   int
+	ActualQuota        int
+	AppliedQuota       int
+	TokenAppliedQuota  int
+	Shortfall          int
+	// FundBatchGap 是「本次实扣」减去「批次真正支撑得起的额度」的差。
+	// 它和 Shortfall 不是一回事：Shortfall 是用户余额不够，Gap 是批次账不全
+	// （存量用户本来就有一部分额度没有批次）。两者都为 0 才说明账是平的。
+	// 对账口径：`select user_id, sum(fund_batch_gap) ... group by user_id`，
+	// 非零即有漂移，且能定位到具体 operation。
+	FundBatchGap        int64  `gorm:"not null;default:0"`
 	State               string `gorm:"type:varchar(24);index;not null"`
 	SiteId              int
 	SiteOwnerUserId     int `gorm:"not null;default:0"`
@@ -542,16 +548,22 @@ func ApplyBillingSettlement(key string) (*BillingOperation, bool, error) {
 		if err != nil {
 			return err
 		}
+		var backedByBatches int64
 		if !teamPaid {
 			// 传的是「这次业务消耗之前」的钱包余额，不是此刻的余额：
 			// 预扣的 base 已经在 PreConsume 阶段扣掉了，若把此刻余额（可能已是 0）
 			// 传给「无批次时补建 legacy 批次」的分支，补出来的批次不够扣本次消耗，
 			// 结算会整笔失败——老用户（升级前就有额度、从来没批次）就再也结不了账。
 			// initial = 此刻余额 + base（预扣已扣） = balance + base。
-			if err := SettleAdtyFundAllocationsTx(tx, row.UserId, row.OperationKey, int64(base+charged), int64(balance+base)); err != nil {
+			backed, err := SettleAdtyFundAllocationsTx(tx, row.UserId, row.OperationKey, int64(base+charged), int64(balance+base))
+			if err != nil {
 				return err
 			}
+			backedByBatches = backed
 		}
+		// 差额落库，不能只写日志：日志不可聚合，事后无法回答「这个用户漂了多少、
+		// 从哪一笔开始漂」。团队 Key 由团队余额付款，个人批次不参与，gap 记 0。
+		row.FundBatchGap = int64(base+charged) - backedByBatches
 		row.ReservedQuota, row.TokenReservedQuota = base, tokenBase
 		row.Shortfall, row.AppliedQuota = delta-charged, base+charged
 		row.TokenAppliedQuota = 0

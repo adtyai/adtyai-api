@@ -420,3 +420,84 @@ func TestLegacyUserPartialReserveSettlesPG(t *testing.T) {
 		"补建批次扣完本次消耗后，剩余必须等于活余额")
 	assert.EqualValues(t, principal-reserved, sums.Principal)
 }
+
+// 账本缺口必须落库，不能只写日志。
+//
+// 场景：用户有批次，但批次总量小于活余额（存量 drift 的形状）。
+// 本次消耗 30,000，批次只支撑得起 20,000 → fund_batch_gap = 10,000。
+// 对账口径是 `select user_id, sum(fund_batch_gap) group by user_id`，
+// 所以这一列必须非零且能定位到 operation。
+func TestAdtyFundSettlementRecordsBatchGapPG(t *testing.T) {
+	dsn := requireAdtyOfficialPostgresAcceptanceDSN(t)
+	admin := connectAdtyPostgresAcceptanceInstance(t, dsn)
+	db := openAdtyThrowawayMigrateDatabase(t, admin, dsn)
+	require.NoError(t, db.AutoMigrate(&User{}, &AdtyFundBatch{}, &AdtyFundAllocation{},
+		&BillingOperation{}, &BillingOperationMovement{}))
+	common.BatchUpdateEnabled = false
+	common.RedisEnabled = false
+
+	const principal = 50_000_000
+	const batchOnly = 20_000_000 // 只给 20M 批次，活余额仍是 50M
+	const spend = 30_000_000
+
+	user := User{Username: "gap-shape", Password: "pg-acceptance-pass", Quota: principal}
+	require.NoError(t, db.Create(&user).Error)
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return CreateAdtyFundBatchesTx(tx, user.Id, "order-gap", batchOnly, 0)
+	}))
+
+	ok, err := TryReserveUserQuotaForOperation(user.Id, spend, "request:gap-1")
+	require.NoError(t, err)
+	require.True(t, ok)
+
+	op := BillingOperation{OperationKey: "request:gap-1", UserId: user.Id, Kind: "request",
+		ReservedQuota: spend, ActualQuota: spend, State: BillingSettlePending}
+	require.NoError(t, db.Create(&op).Error)
+	settled, applied, err := ApplyBillingSettlement(op.OperationKey)
+	require.NoError(t, err)
+	require.True(t, applied)
+	require.Equal(t, BillingSettled, settled.State)
+
+	assert.EqualValues(t, spend-batchOnly, settled.FundBatchGap,
+		"批次只支撑 %d，本次实扣 %d，缺口应为 %d", batchOnly, spend, spend-batchOnly)
+
+	// 对账查询本身也要能跑：按用户聚合，非零即漂移。
+	var drift struct{ Total int64 }
+	require.NoError(t, db.Model(&BillingOperation{}).
+		Select("coalesce(sum(fund_batch_gap),0) as total").
+		Where("user_id = ?", user.Id).Scan(&drift).Error)
+	assert.EqualValues(t, spend-batchOnly, drift.Total)
+
+	var batch AdtyFundBatch
+	require.NoError(t, db.Where("user_id = ?", user.Id).First(&batch).Error)
+	assert.Zero(t, batch.Remaining, "批次被扣到 0，差额就是撑不住的那部分")
+}
+
+// 账是平的（批次 = 活余额）时，gap 必须是 0——不能因为「走过这条路径」就记一笔。
+func TestAdtyFundSettlementGapIsZeroWhenBooksBalancePG(t *testing.T) {
+	dsn := requireAdtyOfficialPostgresAcceptanceDSN(t)
+	admin := connectAdtyPostgresAcceptanceInstance(t, dsn)
+	db := openAdtyThrowawayMigrateDatabase(t, admin, dsn)
+	require.NoError(t, db.AutoMigrate(&User{}, &AdtyFundBatch{}, &AdtyFundAllocation{},
+		&BillingOperation{}, &BillingOperationMovement{}))
+	common.BatchUpdateEnabled = false
+	common.RedisEnabled = false
+
+	const principal = 50_000_000
+	const spend = 30_000_000
+	user := User{Username: "gap-zero", Password: "pg-acceptance-pass", Quota: principal}
+	require.NoError(t, db.Create(&user).Error)
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return CreateAdtyFundBatchesTx(tx, user.Id, "order-even", principal, 0)
+	}))
+	ok, err := TryReserveUserQuotaForOperation(user.Id, spend, "request:gap-0")
+	require.NoError(t, err)
+	require.True(t, ok)
+
+	op := BillingOperation{OperationKey: "request:gap-0", UserId: user.Id, Kind: "request",
+		ReservedQuota: spend, ActualQuota: spend, State: BillingSettlePending}
+	require.NoError(t, db.Create(&op).Error)
+	settled, _, err := ApplyBillingSettlement(op.OperationKey)
+	require.NoError(t, err)
+	assert.Zero(t, settled.FundBatchGap, "批次足够时不该记缺口")
+}
