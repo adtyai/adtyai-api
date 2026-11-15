@@ -48,7 +48,7 @@ afterEach(async () => {
   await act(() => i18next.changeLanguage('en'))
 })
 
-test('uses Chinese calendar locales for zhCN and zhTW in both date pickers', async () => {
+test('uses the Simplified Chinese calendar locale for zhCN in both date pickers', async () => {
   await setInterfaceLanguage('zhCN')
   const datePicker = render(
     <DatePicker selected={selected} onSelect={() => undefined} />
@@ -61,20 +61,25 @@ test('uses Chinese calendar locales for zhCN and zhTW in both date pickers', asy
   )
   expect(await openCalendar()).toHaveTextContent('zh-CN')
   dateTimePicker.unmount()
+})
 
+// zhTW is a leftover pack on disk, never a running interface language: the
+// product coerces it onto zhCN, so the calendar must not switch to zh-TW.
+test('coerces a leftover zhTW interface language onto the zhCN calendar locale', async () => {
   await setInterfaceLanguage('zhTW')
   render(<DatePicker selected={selected} onSelect={() => undefined} />)
-  expect(await openCalendar()).toHaveTextContent('zh-TW')
+  expect(await openCalendar()).toHaveTextContent('zh-CN')
 })
 
-test('uses the Korean calendar locale', async () => {
+test('uses the English calendar locale', async () => {
+  await setInterfaceLanguage('en')
+  render(<DatePicker selected={selected} onSelect={() => undefined} />)
+  expect(await openCalendar()).toHaveTextContent('en-US')
+})
+
+// Korean is a leftover pack on disk: a stored ko value falls back to English.
+test('falls back to the English calendar for a leftover ko interface language', async () => {
   await setInterfaceLanguage('ko')
   render(<DatePicker selected={selected} onSelect={() => undefined} />)
-  expect(await openCalendar()).toHaveTextContent('ko')
-})
-
-test('keeps French on the French calendar locale', async () => {
-  await setInterfaceLanguage('fr')
-  render(<DatePicker selected={selected} onSelect={() => undefined} />)
-  expect(await openCalendar()).toHaveTextContent('fr')
+  expect(await openCalendar()).toHaveTextContent('en-US')
 })

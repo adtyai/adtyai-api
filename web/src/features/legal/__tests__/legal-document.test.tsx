@@ -81,16 +81,19 @@ describe('LegalDocument', () => {
   it('refetches the text after the language changes', async () => {
     serve(
       {
-        'user-agreement': { en: 'English terms', fr: 'Conditions en français' },
+        'user-agreement': {
+          en: 'English terms',
+          'zh-CN': '用户协议正文',
+        },
       },
       { refund_policy_enabled: false }
     )
     renderPage(<UserAgreement />)
     expect(await screen.findByText('English terms')).toBeVisible()
 
-    await act(() => i18next.changeLanguage('fr'))
+    await act(() => i18next.changeLanguage('zhCN'))
 
-    expect(await screen.findByText('Conditions en français')).toBeVisible()
+    expect(await screen.findByText('用户协议正文')).toBeVisible()
   })
 })
 

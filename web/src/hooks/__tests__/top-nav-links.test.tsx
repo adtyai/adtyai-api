@@ -39,9 +39,9 @@ const businessIds = [
 
 beforeEach(() => {
   useAuthStore.getState().auth.reset()
-  i18next.addResourceBundle('fr', 'translation', {
-    Home: 'Accueil',
-    Docs: 'Documentation',
+  i18next.addResourceBundle('zhCN', 'translation', {
+    Home: '主页',
+    Docs: '文档',
   })
 })
 
@@ -50,7 +50,7 @@ afterEach(async () => {
   clients.splice(0).forEach((client) => client.clear())
   useAuthStore.getState().auth.reset()
   await i18next.changeLanguage('en')
-  i18next.removeResourceBundle('fr', 'translation')
+  i18next.removeResourceBundle('zhCN', 'translation')
   localStorage.clear()
 })
 
@@ -100,15 +100,15 @@ describe('top navigation business identity', () => {
     const { result } = renderLinks()
 
     await act(async () => {
-      await i18next.changeLanguage('fr')
+      await i18next.changeLanguage('zhCN')
     })
 
     expect(result.current.map((link) => link.id)).toEqual(businessIds)
     expect(result.current.find((link) => link.id === 'home')?.title).toBe(
-      'Accueil'
+      '主页'
     )
     expect(result.current.find((link) => link.id === 'docs')?.title).toBe(
-      'Documentation'
+      '文档'
     )
   })
 

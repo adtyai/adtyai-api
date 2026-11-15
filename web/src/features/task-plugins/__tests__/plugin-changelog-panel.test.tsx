@@ -62,6 +62,11 @@ const chinese = english
     'locale: zh-CN'
   )
   .replace('Configure resolution prices.', '配置分辨率价格。')
+/** A release that ships no Chinese sidecar, so a zhCN reader gets the notice. */
+const englishOnly = english.replace(
+  'translations:\n  zh-CN: CHANGELOG.zh-CN.md\n',
+  ''
+)
 const clients: QueryClient[] = []
 
 function renderPanel() {
@@ -124,16 +129,21 @@ test('renders inline formatting and resolves release links against the source in
 test('changing language chooses Chinese when declared and otherwise displays English with a fallback notice', async () => {
   vi.stubGlobal(
     'fetch',
-    vi.fn(
-      async (url: string) =>
-        new Response(url.endsWith('CHANGELOG.zh-CN.md') ? chinese : english)
-    )
+    vi.fn(async (url: string) => {
+      if (url.includes('/1.1.0/')) {
+        return new Response(englishOnly.replaceAll('1.2.0', '1.1.0'))
+      }
+      return new Response(
+        url.endsWith('CHANGELOG.zh-CN.md') ? chinese : english
+      )
+    })
   )
-  renderPanel()
+  const view = renderPanel()
   expect(await screen.findByText('Configure resolution prices.')).toBeVisible()
   await act(() => i18next.changeLanguage('zhCN'))
   expect(await screen.findByText('配置分辨率价格。')).toBeVisible()
-  await act(() => i18next.changeLanguage('fr'))
+  // 1.1.0 declares no Chinese sidecar: a zhCN reader sees English plus the notice.
+  view.setVersion('1.1.0')
   expect(
     await screen.findByText(
       'This changelog is not available in your language. Showing English.'
