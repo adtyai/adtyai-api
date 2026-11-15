@@ -63,3 +63,36 @@ func TestTurnstileConfiguredRequiresAccountAndWidget(t *testing.T) {
 		assert.False(t, broken.TurnstileConfigured(), "缺 %s 就是没配全，登记会静默跳过", name)
 	}
 }
+
+// 端到端：**开自定义域名、不用 Turnstile 的部署必须能保存。**
+//
+// `0069` 的三条连锁后果全部源自这一步——`ValidateResellerSetting` 拒绝保存之后，
+// 后面两处（新增域名、定期检查任务）再也没机会跑到。所以这里直接验保存这一关。
+func TestResellerSettingSavesWithoutTurnstileAccount(t *testing.T) {
+	trial := 1.0
+	daily := 1.0
+	minFactor := 1.0
+	maxMarkup := 2.0
+	extra := 0.5
+	cfg := ResellerSetting{
+		Enabled:             true,
+		CustomDomainEnabled: true,
+		RootDomains:         []string{"example.com"},
+		// 三项齐全——这是「域名那一路」的全部输入。
+		CloudflareApiToken: "cf-token",
+		CloudflareZoneId:   "zone-1",
+		CnameTarget:        "edge.example.com",
+		// 刻意不给 account / widget：这个部署不用 Turnstile。
+		CostFactor:            &minFactor,
+		MinCostFactor:         &minFactor,
+		MaxMarkup:             &maxMarkup,
+		MaxSiteBonusExtra:     &extra,
+		TrialGrantMaxUSD:      &trial,
+		TrialGrantDailyUSD:    &daily,
+		FingerprintWindowDays: 7,
+		UnknownHostMode:       ResellerUnknownHostMain,
+	}
+	assert.NoError(t, ValidateResellerSetting(&cfg, true),
+		"开自定义域名但不用 Turnstile 是正常部署：保存不该被拒（ISS-R4-0069）")
+	assert.False(t, cfg.TurnstileConfigured(), "它的 Turnstile 确实没配")
+}
