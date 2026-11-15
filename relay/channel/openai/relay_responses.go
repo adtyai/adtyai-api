@@ -46,6 +46,28 @@ func OaiResponsesHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 	// compute usage
 	usage := &dto.Usage{}
 	service.ApplyResponsesUsage(usage, responsesResponse.Usage)
+
+	// Upstream may omit usage, or report only input tokens. The body has already
+	// been delivered, so estimate the missing counts from it instead of settling
+	// a zero bill, the same way ResponsesUsageAccumulator.Finish does for the
+	// stream.
+	if usage.CompletionTokens == 0 || usage.PromptTokens == 0 {
+		text := service.ExtractOutputTextFromResponses(&responsesResponse)
+		if text != "" || usage.PromptTokens == 0 {
+			fallback := service.ResponseText2Usage(c, text, info.GetUpstreamModelName(), info.GetEstimatePromptTokens())
+			if usage.PromptTokens == 0 {
+				usage.PromptTokens = fallback.PromptTokens
+			}
+			if usage.CompletionTokens == 0 {
+				usage.CompletionTokens = fallback.CompletionTokens
+			}
+			usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
+			if usage.BillingUsage != nil {
+				usage.BillingUsage = dto.CloneBillingUsageWithEstimatedCompletion(usage.BillingUsage, usage.CompletionTokens)
+			}
+		}
+	}
+
 	// Count actual tool invocations from Output (not tool declarations).
 	for _, output := range responsesResponse.Output {
 		switch output.Type {
