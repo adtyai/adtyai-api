@@ -2006,6 +2006,16 @@ func EnsureOneRootUserIndex(db *gorm.DB) error {
 		return err
 	}
 	if roots > 1 {
+		// 不变量已经破了：索引建不起来，但不能安静地跳过——这道索引唯一的职责就是
+		// 拦住第二条未删除的根账号，最需要它的库恰恰是这一种（ISS-R4-0126）。
+		// 不返回错误：model/main.go 会把它变成启动失败，而这里该做的是留痕、继续启动。
+		var ids []int
+		if err := db.Model(&User{}).Where("role = ? AND deleted_at IS NULL", common.RoleRootUser).
+			Order("id").Pluck("id", &ids).Error; err != nil {
+			common.SysError(common.LogText("multiple live root users found; ux_users_one_live_root not created (listing ids failed: %s)", err.Error()))
+			return nil
+		}
+		common.SysError(common.LogText("multiple live root users found (%v); ux_users_one_live_root not created", ids))
 		return nil
 	}
 	// SQLite 不允许部分索引的 WHERE 里出现参数，角色值是常量。
