@@ -36,7 +36,7 @@ export function Hero(props: { signedIn: boolean }) {
     <section
       id='hero'
       aria-labelledby='hero-title'
-      className='relative isolate flex min-h-svh flex-col justify-center overflow-hidden px-6 pt-32 pb-24 md:px-10'
+      className='relative isolate flex min-h-svh flex-col justify-center overflow-hidden px-6 pt-32 pb-24 sm:px-8 sm:pt-36 md:px-10'
     >
       <div
         aria-hidden

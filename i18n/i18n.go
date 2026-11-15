@@ -101,6 +101,13 @@ func localizerFor(lang string) *i18n.Localizer {
 		return loc
 	}
 
+	// Init 之前 bundle 是 nil，NewLocalizer(nil, ...) 会在 Localize 时解引用
+	// nil bundle 直接 panic。调用方（localizeOfficial）看到 nil 会走兜底文案，
+	// 所以未初始化时宁可返回 nil，也不要把进程打崩。
+	if bundle == nil {
+		return nil
+	}
+
 	loc = i18n.NewLocalizer(bundle, lang, DefaultLang)
 	localizers[lang] = loc
 	return loc
@@ -147,7 +154,11 @@ func Translate(lang, key string, args ...map[string]any) string {
 }
 
 func localizeOfficial(lang, key string, config *i18n.LocalizeConfig) (string, bool) {
-	msg, err := GetLocalizer(lang).Localize(config)
+	loc := GetLocalizer(lang)
+	if loc == nil {
+		return "", false
+	}
+	msg, err := loc.Localize(config)
 	if err != nil || msg == "" || msg == key {
 		return "", false
 	}

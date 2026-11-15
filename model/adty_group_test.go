@@ -98,7 +98,7 @@ func TestCIWorkflowRunsPostgreSQL(t *testing.T) {
 		jobs []string
 	}{
 		{"ci.yml", []string{"backend", "e2e"}},
-		{"adty-ghcr.yml", []string{"test"}},
+		{"adty-ghcr.yml", []string{"test-backend"}},
 	} {
 		data, err := os.ReadFile("../.github/workflows/" + fixture.file)
 		require.NoError(t, err)

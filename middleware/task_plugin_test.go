@@ -2073,18 +2073,28 @@ func TestRouteTaskPluginEndpointUsesSelectedChannel(t *testing.T) {
 			common.RedisEnabled = false
 			t.Setenv("SQL_DSN", dsn)
 			require.NoError(t, model.InitDB())
-			database := model.DB
+			baseDB := model.DB
 			// Every table belongs to this run, including when a developer points
 			// a test DSN at a database shared with another test suite.
-			database.Config.NamingStrategy = schema.NamingStrategy{TablePrefix: "endpoint_route_" + common.GetUUID() + "_"}
-			require.NoError(t, database.AutoMigrate(&model.Channel{}, &model.Ability{}, &model.Task{}))
+			// GORM caches a parsed schema per model type and ignores NamingStrategy
+			// changes, so mutating NamingStrategy on the live handle leaves any type
+			// that was already parsed (model.Model included) bound to its unprefixed
+			// table, and AutoMigrate then creates "models" instead of the prefixed
+			// table the shelf query looks for. Open a second handle with the prefix at
+			// construction time: its schema cache is cold, so DDL and queries agree.
+			prefix := "endpoint_route_" + common.GetUUID() + "_"
+			database, err := gorm.Open(baseDB.Dialector, &gorm.Config{NamingStrategy: schema.NamingStrategy{TablePrefix: prefix}})
+			require.NoError(t, err)
+			model.DB = database
+			require.NoError(t, database.AutoMigrate(&model.Channel{}, &model.Ability{}, &model.Task{}, &model.Model{}))
+			require.True(t, database.Migrator().HasTable(prefix+"models"), "model.Model must be migrated under this run's prefixed table")
 			t.Cleanup(func() {
-				for _, table := range []any{&model.Ability{}, &model.Channel{}, &model.Task{}} {
+				for _, table := range []any{&model.Ability{}, &model.Channel{}, &model.Task{}, &model.Model{}} {
 					require.NoError(t, database.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(table).Error)
 				}
 				common.MemoryCacheEnabled = true
 				model.InitChannelCache()
-				require.NoError(t, database.Migrator().DropTable(&model.Ability{}, &model.Channel{}, &model.Task{}))
+				require.NoError(t, database.Migrator().DropTable(&model.Ability{}, &model.Channel{}, &model.Task{}, &model.Model{}))
 				model.DB = previousDB
 				common.SetDatabaseTypes(previousMain, previousLog)
 				common.SQLitePath, common.IsMasterNode = previousPath, previousMaster
@@ -2095,6 +2105,9 @@ func TestRouteTaskPluginEndpointUsesSelectedChannel(t *testing.T) {
 				sqlDB, err := database.DB()
 				require.NoError(t, err)
 				require.NoError(t, sqlDB.Close())
+				baseSQLDB, err := baseDB.DB()
+				require.NoError(t, err)
+				require.NoError(t, baseSQLDB.Close())
 			})
 			query := "SELECT version()"
 			if dialect == "sqlite" {
