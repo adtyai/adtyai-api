@@ -349,7 +349,7 @@ func TestLegacyUserWithoutBatchesCanSettlePG(t *testing.T) {
 
 	// 预扣把余额扣到 0（这正是「全花完」的最坏情形）。
 	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
-		return AllocateAdtyFundAllocationsTx(tx, user.Id, "request:legacy-1", principal)
+		return AllocateAdtyFundAllocationsTx(tx, user.Id, "request:legacy-1", principal, principal)
 	}))
 	reserved, err := TryReserveUserQuotaForOperation(user.Id, principal, "request:legacy-1")
 	require.NoError(t, err)
@@ -547,6 +547,24 @@ func TestLegacyBatchSurvivesExhaustionAndRefundPG(t *testing.T) {
 	// 退款回额度：IncreaseUserQuota 不建批次，这正是撞车的触发条件。
 	require.NoError(t, IncreaseUserQuota(user.Id, first, false))
 
+	// 退款这一刻账是**不平**的，而且差额正好等于退款金额——这是实测结果，
+	// 不是假设：`IncreaseUserQuota` 只加 `users.quota`，不建/不补批次。
+	//
+	// 所以「消费前 Σremaining == quota + pending」这条断言在这里不成立；
+	// 真正的补偿发生在下一次扣费（懒建按 pre-operation 余额补齐）。这里把
+	// 已知差额显式断言出来，它既是事实记录，也是「为什么必须有懒建」的证据。
+	var afterRefund User
+	require.NoError(t, db.First(&afterRefund, user.Id).Error)
+	sumsAfterRefund, err := SumAdtyFundBatchRemainingByKind(user.Id)
+	require.NoError(t, err)
+	require.EqualValues(t, first, int64(afterRefund.Quota)+int64(afterRefund.QuotaPending),
+		"退款后活余额回到原值")
+	require.Zero(t, sumsAfterRefund.Principal+sumsAfterRefund.Bonus,
+		"退款不建批次：这是已知差额的来源")
+	assert.EqualValues(t, first,
+		int64(afterRefund.Quota)+int64(afterRefund.QuotaPending)-(sumsAfterRefund.Principal+sumsAfterRefund.Bonus),
+		"退款后的已知差额等于退款金额")
+
 	// 第二次：批次存在但 remaining=0，必须能补额度并继续消费，而不是撞唯一索引。
 	settleOnce(t, "request:legacy-cycle-2", first)
 
@@ -559,8 +577,12 @@ func TestLegacyBatchSurvivesExhaustionAndRefundPG(t *testing.T) {
 	assert.EqualValues(t, 2*first, lots[0].Original, "同一条 legacy 批次累加两次")
 	assert.EqualValues(t, 0, lots[0].Remaining)
 
-	sums, err := SumAdtyFundBatchRemainingByKind(user.Id)
-	require.NoError(t, err)
-	assert.EqualValues(t, int64(afterSecond.Quota), sums.Principal+sums.Bonus,
-		"批次合计必须等于活余额")
+	// 这条用例守的核心事实：退款再消费不该记成账本缺口。
+	// 修前预扣阶段会打 "batches cannot back the whole reservation" 并把
+	// 0 条分摊留给结算，看起来像缺口；实际结算按 pre-operation 余额补齐后是 0。
+	var gap struct{ Total int64 }
+	require.NoError(t, db.Model(&BillingOperation{}).
+		Select("coalesce(sum(fund_batch_gap),0) as total").
+		Where("user_id = ?", user.Id).Scan(&gap).Error)
+	assert.Zero(t, gap.Total, "退款再消费不应产生 fund_batch_gap")
 }

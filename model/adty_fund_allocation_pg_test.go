@@ -130,7 +130,33 @@ func TestMigrateAdtyTablesOnUsesOnlyCallerConnectionPG(t *testing.T) {
 	DB = decoy
 	t.Cleanup(func() { DB = previousDB })
 
+	// 先在目标库上铺一张「遗留状态」的工单，用来验第三处副作用（状态重映射）。
+	require.NoError(t, target.AutoMigrate(&AdtyTicket{}))
+	require.NoError(t, target.Create(&AdtyTicket{
+		UserId: 1, Type: "other", Title: "legacy",
+		Status: AdtyTicketLegacyAssigned, Priority: "normal",
+	}).Error)
+
 	require.NoError(t, MigrateAdtyTablesOn(target))
+
+	// 三处曾经传错连接的调用各自留下可观察的产物：
+	//   ① 兑换码订单号唯一索引
+	//   ② 活跃团队成员唯一索引
+	//   ③ 遗留工单状态重映射
+	assert.True(t, target.Migrator().HasIndex(&AdtyVoucher{}, adtyVoucherTradeNoUniqueIndex),
+		"兑换码唯一索引必须建在目标连接上")
+	assert.True(t, target.Migrator().HasIndex(&AdtyTeamMember{}, activeTeamMembershipUniqueIndex),
+		"团队唯一索引必须建在目标连接上")
+	var remapped AdtyTicket
+	require.NoError(t, target.Where("title = ?", "legacy").First(&remapped).Error)
+	assert.Equal(t, AdtyTicketInProgress, remapped.Status,
+		"遗留状态 assigned 必须被重映射成 in_progress")
+
+	// 诱饵库这三个产物一个都不该有。
+	assert.False(t, decoy.Migrator().HasTable(&AdtyVoucher{}),
+		"兑换码表被建到了包级 DB 上：索引那一步仍在用全局 DB")
+	assert.False(t, decoy.Migrator().HasTable(&AdtyTeamMember{}),
+		"团队成员表被建到了包级 DB 上：索引那一步仍在用全局 DB")
 
 	required := []any{
 		&AdtyFundBatch{}, &AdtyFundAllocation{}, &AdtyBillingHold{},

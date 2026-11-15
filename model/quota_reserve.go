@@ -110,7 +110,7 @@ func reserveUserQuotaDB(id int, quota int, operationID string) (bool, error) {
 		// A.12.1: record which batches back this pre-charge so a release or a
 		// refund can return the same shares (A.12.2.6). The batch rows themselves
 		// are consumed at settlement, not here.
-		if err := AllocateAdtyFundAllocationsTx(tx, id, operationID, int64(quota)); err != nil {
+		if err := AllocateAdtyFundAllocationsTx(tx, id, operationID, int64(quota), int64(balance)); err != nil {
 			return err
 		}
 		reserved = true

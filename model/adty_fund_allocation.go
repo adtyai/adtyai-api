@@ -51,7 +51,10 @@ func (AdtyFundAllocation) TableName() string { return "adty_fund_allocations" }
 //
 // A user without lots gets no shares: those accounts still settle through the
 // legacy path in ConsumeAdtyFundBatchesTx, which invents a lot on first spend.
-func AllocateAdtyFundAllocationsTx(tx *gorm.DB, userID int, operationID string, amount int64) error {
+// balanceBefore 是「这次业务开始消耗之前」的钱包余额。它用来判断账面缺多少额度：
+// 预扣阶段补建 legacy 批次，才不会让每一笔「老用户 + 没有批次」的预扣都打一条
+// ERROR（结算时本来就会补、会扣，那条 ERROR 是误报）。
+func AllocateAdtyFundAllocationsTx(tx *gorm.DB, userID int, operationID string, amount, balanceBefore int64) error {
 	if tx == nil || userID <= 0 || operationID == "" || amount <= 0 {
 		return nil
 	}
@@ -157,13 +160,71 @@ func AllocateAdtyFundAllocationsTx(tx *gorm.DB, userID int, operationID string, 
 		}
 		remaining -= take
 	}
+	if remaining > 0 && balanceBefore > 0 {
+		// 批次不足以背书这次预扣。存量用户可能有一部分额度从来没有对应批次
+		// （升级前就在账上，退款也不会补行），所以先把缺的那块补进唯一的
+		// legacy 批次，再按新批次登记一次分摊。
+		//
+		// 为什么在预扣就补、而不是留到结算：留到结算也能算对，但每次「花完 →
+		// 退款 → 再消费」都会在预扣阶段打一条 ERROR。生产上那条会被当成资金
+		// 异常去查，而真正的缺口反而叫不出声。
+		var lotTotal int64
+		for i := range batches {
+			lotTotal += batches[i].Remaining
+		}
+		// **只在批次总额为 0 时补**，而不是「只要有差额就补」。
+		//
+		// 这个边界是整个 drift 机制的前提：如果每次预扣都把 remaining 补齐到
+		// 余额，批次表就永远等于余额，`fund_batch_gap` 永远是 0，对账失去意义。
+		// 「有批次但少于余额」正是账本漂移的形状，它应当被**记录**，不是被悄悄修好。
+		//
+		// 总额为 0 覆盖两种正当情形：从来没有批次（存量老用户）、以及唯一那条
+		// legacy 批次已经被花光（退款回额度不会补批次）。
+		if lotTotal == 0 && balanceBefore > 0 {
+			if err := ensureAdtyLegacyBatchTx(tx, userID, balanceBefore); err != nil {
+				return err
+			}
+			var fresh []AdtyFundBatch
+			if err := tx.Where("user_id = ? AND remaining > 0", userID).Find(&fresh).Error; err != nil {
+				return err
+			}
+			pickAdtyFundBatchOrder(fresh)
+			var maxSeq struct{ Seq int }
+			if err := tx.Model(&AdtyFundAllocation{}).
+				Select("coalesce(max(seq),0) as seq").
+				Where("operation_id = ? AND user_id = ?", operationID, userID).
+				Scan(&maxSeq).Error; err != nil {
+				return err
+			}
+			seq := maxSeq.Seq
+			for _, batch := range fresh {
+				if remaining <= 0 {
+					break
+				}
+				if batch.Kind != "principal" {
+					continue
+				}
+				take := min(batch.Remaining, remaining)
+				if take <= 0 {
+					continue
+				}
+				seq++
+				if err := tx.Create(&AdtyFundAllocation{
+					UserId: userID, BatchId: batch.Id, OperationId: operationID, Seq: seq,
+					Kind: batch.Kind, Source: batch.Source, Held: take,
+				}).Error; err != nil {
+					if isAdtyUniqueViolation(err) {
+						return ErrAdtyFundAllocationMissing
+					}
+					return err
+				}
+				remaining -= take
+			}
+		}
+	}
 	if remaining > 0 {
-		// The batches cannot cover this reservation. That is not fatal on the
-		// pre-charge path (balances can still carry legacy quota), but the
-		// mismatch must be visible instead of silently losing the trail.
-		// 这里不拒绝预扣：users.quota 才是准入权威，存量用户可能有一部分额度
-		// 从来没有对应批次（升级前就在账上）。因为账面不全而拒绝用户消费，
-		// 等于让历史数据问题变成「余额还在却花不出去」。
+		// 仍然不够：这里的余额确实没有可依据的来源（例如 balanceBefore 也为 0）。
+		// 不拒绝预扣——users.quota 才是准入权威——但要留一条可查的痕迹。
 		common.SysError(common.LogText("adty fund allocation short by %d quota for user=%d operation=%s: batches cannot back the whole reservation", remaining, userID, operationID))
 	}
 	return nil
@@ -322,7 +383,7 @@ func SettleAdtyFundAllocationsTx(tx *gorm.DB, userID int, operationID string, ap
 		return applied, nil
 	}
 	// 已登记额度不够覆盖实际消耗：补记一条已结算分摊，再按 FIFO 扣批次。
-	if err := AllocateAdtyFundAllocationsTx(tx, userID, operationID, applied); err != nil {
+	if err := AllocateAdtyFundAllocationsTx(tx, userID, operationID, applied, balanceBefore); err != nil {
 		return 0, err
 	}
 	if err := tx.Where("user_id = ? AND operation_id = ? AND settled = 0", userID, operationID).

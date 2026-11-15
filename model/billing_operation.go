@@ -274,7 +274,7 @@ func ReserveBillingOperation(spec BillingOperation, target int) (*BillingOperati
 		}
 		// 补扣同样要登记分摊：结算时按「预扣 + 补扣」总额扣批次，漏登记会让
 		// 实际消耗大于已登记额度。传累计 target，函数内部只补差额。
-		if err := AllocateAdtyFundAllocationsTx(tx, result.UserId, result.OperationKey, int64(target)); err != nil {
+		if err := AllocateAdtyFundAllocationsTx(tx, result.UserId, result.OperationKey, int64(target), int64(balance)); err != nil {
 			return err
 		}
 		result.ReservedQuota = target
