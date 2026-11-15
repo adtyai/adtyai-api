@@ -157,7 +157,7 @@ func TestAdjustRollbackKeepsDurableBalanceAndCacheUnchanged(t *testing.T) {
 }
 
 func TestAdjustCommitsOnceWhenMetadataCacheIsUnavailable(t *testing.T) {
-	db := adtyTestDB(t)
+	db := adtyTestDBWithSchema(t)
 	require.NoError(t, db.AutoMigrate(&User{}, &AdtyBalanceLedger{}))
 	server := useUserCacheMiniRedis(t)
 	resetBatchUpdateTestState(t)
@@ -180,7 +180,7 @@ func TestAdjustCommitsOnceWhenMetadataCacheIsUnavailable(t *testing.T) {
 }
 
 func TestAdjustUsesLogicalBoundsForTransientRawRows(t *testing.T) {
-	db := adtyTestDB(t)
+	db := adtyTestDBWithSchema(t)
 	require.NoError(t, db.AutoMigrate(&User{}, &AdtyBalanceLedger{}))
 	resetBatchUpdateTestState(t)
 	for _, withLedger := range []bool{false, true} {
@@ -231,7 +231,7 @@ func TestOverrideRejectsUnrepresentableAuditDelta(t *testing.T) {
 }
 
 func TestAdminAdjustmentNonnegativeBoundaryWithPendingBalance(t *testing.T) {
-	db := adtyTestDB(t)
+	db := adtyTestDBWithSchema(t)
 	require.NoError(t, db.AutoMigrate(&User{}, &AdtyBalanceLedger{}))
 	resetBatchUpdateTestState(t)
 	for _, withLedger := range []bool{false, true} {

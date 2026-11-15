@@ -129,7 +129,14 @@ func AdjustUserQuotaWithLedger(userID, operatorID, operatorRole int, mode string
 			// sync and release any corresponding site gift-guarantee, but do
 			// not fire the principal-spent hook (that hook debits the site
 			// operating wallet).
-			if err := ConsumeAdtyFundBatchesQuietTx(tx, userID, -delta, int64(user.Quota)); err != nil {
+			// 传逻辑余额（raw + pending），不是 raw：批次总量要跟「用户实际能用多少」
+			// 对齐，否则余额主要落在 quota_pending 里的账号会被算成「批次够了」或
+			// 「批次差很多」两种相反的错误。
+			logical, err := userWalletBalance(user.Quota, user.QuotaPending)
+			if err != nil {
+				return err
+			}
+			if err := ConsumeAdtyFundBatchesQuietTx(tx, userID, -delta, int64(logical)); err != nil {
 				return err
 			}
 		}
