@@ -480,7 +480,13 @@ func ReleaseAdtyFundAllocationsTx(tx *gorm.DB, userID int, operationID string) e
 	// 因为登记和释放用的是同一张表，登记不进去的时候也就没有占用。
 	//
 	// 真实场景是迁移没跑全的库（以及各自 AutoMigrate 的测试夹具）。
+	//
+	// **必须留痕**：放行钱不等于这件事没发生。表不存在意味着「这次退款没有
+	// 分摊记录可释放」，事后对账看不到任何痕迹——所以打一条可聚合的日志。
+	// 和 `fund_batch_gap` 同一条口径：差额要能聚合，不能只在日志里说一句就没了。
 	if !tx.Migrator().HasTable(&AdtyFundAllocation{}) {
+		common.SysError(common.LogText(
+			"refund released without allocation table: user=%d operation=%s", userID, operationID))
 		return nil
 	}
 	return tx.Model(&AdtyFundAllocation{}).
