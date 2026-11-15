@@ -467,6 +467,9 @@ var reservedRouteNamespaces = []string{
 	"/dashboard",
 	"/errors",
 	"/keys",
+	// The marketing module is retired: /marketing has no page and only the
+	// JSON 404 in the outer router serves it. Plugins cannot claim the entry.
+	"/marketing",
 	"/models",
 	// Official keep-list reserved paths for the retired Playground namespace.
 	// Plugins cannot claim /pg. See internal/adtygov.
