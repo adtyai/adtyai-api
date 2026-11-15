@@ -20,11 +20,12 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
-  test:
-    name: Backend and frontend tests
+  # 后端、前端拆成两个作业并行跑，互相没有 needs；镜像要等两个都绿才构建
+  test-backend:
+    name: Backend vet, build, and test
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
-    # 上游 ci.yml 的后端 15 分钟、前端 10 分钟，这里合成一个作业
+    # 上游 ci.yml 的后端 15 分钟；这里还多跑了 govulncheck 和闭环检查
     timeout-minutes: 25
     env:
       GOWORK: 'off'
@@ -105,8 +106,23 @@ jobs:
       - name: Run closed-loop checks
         run: bash scripts/adty/e2e-closed-loop.sh
 
-      # 前端同 ci.yml，另加 lint 和 copyright:check 的基线比较（和 scripts/adty/check.sh 一样，
-      # 见 docs/adty/baseline.md）。ratchet.mjs 和 copyright:check 用 node 跑，版本同 web/.node-version
+  # 前端同 ci.yml，另加 lint 和 copyright:check 的基线比较（和 scripts/adty/check.sh 一样，
+  # 见 docs/adty/baseline.md）。ratchet.mjs 和 copyright:check 用 node 跑，版本同 web/.node-version
+  # make check-plugins 只是 bun run lint:plugins + format:plugins:check，依赖这里已经装好的依赖，
+  # 单独开作业还要重新 checkout + install，反而更慢，所以留在本作业里。
+  test-frontend:
+    name: Frontend build, lint, and test
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    # 上游 ci.yml 的前端 10 分钟；这里还多跑了 lint、build、test 和 i18n/copyright 检查
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.sha }}
+
       - name: Set up Node
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
@@ -148,17 +164,27 @@ jobs:
       - name: Check copyright headers against baseline
         run: node scripts/adty/ratchet.mjs copyright
 
+  # 两个架构各用一个原生 runner 并行构建（arm64 用 GitHub 免费的 ubuntu-24.04-arm，不用 QEMU），
+  # 每边按 digest 推单架构镜像，再由 merge 合成 manifest list。
   image:
-    name: Build image, push on main, merge/* and v* tags
-    needs: test
-    # 只写 needs 的话 test 被跳过时 image 也会被跳过；PR 和手动运行没有 test，也要构建
-    if: ${{ !cancelled() && (needs.test.result == 'success' || (github.event_name != 'push' && needs.test.result == 'skipped')) }}
-    runs-on: ubuntu-latest
+    name: Build ${{ matrix.arch }} image
+    needs: [test-backend, test-frontend]
+    # 只写 needs 的话测试被跳过时 image 也会被跳过；PR 和手动运行没有测试，也要构建
+    if: ${{ !cancelled() && ((needs.test-backend.result == 'success' && needs.test-frontend.result == 'success') || (github.event_name != 'push' && needs.test-backend.result == 'skipped' && needs.test-frontend.result == 'skipped')) }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+            platform: linux/amd64
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            platform: linux/arm64
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
       packages: write
-    outputs:
-      digest: ${{ steps.build.outputs.digest }}
     env:
       # 只有 push 事件、并且是 main、merge/* 分支或 v* 标签时才登录 ghcr.io 并推送，其他情况只构建。
       # merge/* 的镜像给测试环境做合并上游后的客户端回归（docs/adty/upstream-merge.md 第 7 步）
@@ -197,6 +223,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # tags 由 merge 统一生成；这里只要 labels（OCI 标签写在各架构镜像自己的 config 里）
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
@@ -211,23 +238,110 @@ jobs:
             type=ref,event=tag
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
 
-      # 必须写 context: .：默认的 Git 上下文会忽略上面写入的 VERSION，镜像里的版本号会是空的
+      # 必须写 context: .：默认的 Git 上下文会忽略上面写入的 VERSION，镜像里的版本号会是空的。
+      # 单架构按 digest 推送，不进 ::tag，manifest list 交给 merge 作业合成。
       - name: Build image
         id: build
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
-          platforms: linux/amd64
-          push: ${{ env.PUSH_IMAGE == 'true' }}
-          tags: ${{ steps.meta.outputs.tags }}
+          platforms: ${{ matrix.platform }}
+          # 推送时按 digest 推单架构镜像（digest 交给 merge）；PR 和手动运行只验证构建，不带 exporter
+          outputs: ${{ env.PUSH_IMAGE == 'true' && format('type=image,name=ghcr.io/{0},push-by-digest=true,name-canonical=true,push=true', github.repository) || '' }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # 两个架构的缓存要分开 scope，否则会互相覆盖
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
+
+      - name: Export digest
+        id: digest
+        if: env.PUSH_IMAGE == 'true'
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
+      # 矩阵实例之间共享不了 outputs，digest 用 artifact 传给 merge
+      - name: Upload digest
+        if: env.PUSH_IMAGE == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: digest-${{ matrix.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # 把两个架构的 digest 合成一个 manifest list，套上原来的 tags。不推送时（PR、手动运行）只跳过打标签。
+  merge:
+    name: Merge multi-arch manifest
+    needs: image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      # manifest list 的 digest，promote-main 用它把 :main 指过来
+      digest: ${{ steps.digest.outputs.digest }}
+    env:
+      PUSH_IMAGE: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/merge/') || startsWith(github.ref, 'refs/tags/v')) }}
+
+    steps:
+      - name: Set up Docker Buildx
+        if: env.PUSH_IMAGE == 'true'
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Log in to GHCR
+        if: env.PUSH_IMAGE == 'true'
+        uses: docker/login-action@c99871dec2022cc055c062a10cc1a1310835ceb4 # v4.3.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download digests
+        if: env.PUSH_IMAGE == 'true'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: /tmp/digests
+          pattern: digest-*
+          merge-multiple: true
+
+      - name: Extract metadata
+        id: meta
+        if: env.PUSH_IMAGE == 'true'
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ghcr.io/${{ github.repository }}
+          flavor: latest=false
+          # sha 标签只给 main，避免标签构建覆盖同名 sha 镜像。
+          # merge/* 分支只打 merge-<名字>：分支名里的 / 会被换成 -，所以不用另加前缀
+          tags: |
+            type=sha,prefix=sha-,format=short,enable=${{ github.ref == 'refs/heads/main' }}
+            type=ref,event=branch,enable=${{ startsWith(github.ref, 'refs/heads/merge/') }}
+            type=ref,event=tag
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+
+      - name: Create manifest list
+        if: env.PUSH_IMAGE == 'true'
+        working-directory: /tmp/digests
+        run: |
+          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf 'ghcr.io/${{ github.repository }}@sha256:%s ' *)
+
+      - name: Read manifest digest
+        id: digest
+        if: env.PUSH_IMAGE == 'true'
+        run: |
+          tag=$(jq -cr '.tags[0]' <<< "$DOCKER_METADATA_OUTPUT_JSON")
+          digest=$(docker buildx imagetools inspect "$tag" --format '{{json .Manifest}}' | jq -r '.digest')
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
   promote-main:
     name: Promote the current main image
-    needs: image
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # 测试全绿才把 :main 指向新 digest；镜像本身只打 sha-<7 位>/分支/标签，不碰 :main
+    needs: [merge, test-backend, test-frontend]
+    if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.test-backend.result == 'success' && needs.test-frontend.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -251,5 +365,5 @@ jobs:
       - name: Promote immutable digest after checking main
         env:
           GH_TOKEN: ${{ github.token }}
-          IMAGE_DIGEST: ${{ needs.image.outputs.digest }}
+          IMAGE_DIGEST: ${{ needs.merge.outputs.digest }}
         run: bash scripts/adty/promote-main-image.sh "$IMAGE_DIGEST"
