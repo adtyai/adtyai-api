@@ -16,6 +16,29 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// normalizeXAIUsage 用上游的 prompt_tokens / total_tokens 推出 completion_tokens，
+// 并保证这个差值不会变成负数（ISS-R4-0071）。
+//
+// 上游这两个字段自相矛盾时（total < prompt；极端情形 total = 0），`total - prompt`
+// 是负数。负的 completion 会先冲抵已经完成的那部分输出的费用；随后
+// `service/text_quota.go` 又用 `prompt + completion` 重算 total，负数正好把 total
+// 抹成 0，`hasBillableUsage()` 判成「无可计费用量」，于是整单免费。
+//
+// 矛盾时以 prompt 为准：total 抬到 prompt、completion 记 0，并留一条错误日志——
+// 静默记 0 会让「上游回包自相矛盾」和「真的没有输出」在账面上长得一模一样。
+func normalizeXAIUsage(usage *dto.Usage, where string) {
+	if usage == nil {
+		return
+	}
+	if usage.TotalTokens < usage.PromptTokens {
+		common.SysError(common.LogText(
+			"%s upstream usage is self-contradictory: total_tokens=%d < prompt_tokens=%d, billing prompt tokens only",
+			where, usage.TotalTokens, usage.PromptTokens))
+		usage.TotalTokens = usage.PromptTokens
+	}
+	usage.CompletionTokens = max(usage.TotalTokens-usage.PromptTokens, 0)
+}
+
 func streamResponseXAI2OpenAI(xAIResp *dto.ChatCompletionsStreamResponse, usage *dto.Usage) *dto.ChatCompletionsStreamResponse {
 	if xAIResp == nil {
 		return nil
@@ -56,7 +79,7 @@ func xAIStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 			containStreamUsage = true
 			usage.PromptTokens = xAIResp.Usage.PromptTokens
 			usage.TotalTokens = xAIResp.Usage.TotalTokens
-			usage.CompletionTokens = usage.TotalTokens - usage.PromptTokens
+			normalizeXAIUsage(usage, "xai stream")
 			usage.PromptTokensDetails = xAIResp.Usage.PromptTokensDetails
 			usage.CompletionTokenDetails = xAIResp.Usage.CompletionTokenDetails
 		}
@@ -92,7 +115,7 @@ func xAIHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response
 		return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
 	}
 	if xaiResponse.Usage != nil {
-		xaiResponse.Usage.CompletionTokens = xaiResponse.Usage.TotalTokens - xaiResponse.Usage.PromptTokens
+		normalizeXAIUsage(xaiResponse.Usage, "xai non-stream")
 		xaiResponse.Usage.CompletionTokenDetails.TextTokens = xaiResponse.Usage.CompletionTokens - xaiResponse.Usage.CompletionTokenDetails.ReasoningTokens
 	}
 
