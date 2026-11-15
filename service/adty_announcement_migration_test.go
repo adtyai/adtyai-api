@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/setting/console_setting"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -139,7 +140,10 @@ func TestLegacyAnnouncementsVisiblePerSitePG(t *testing.T) {
 	require.NoError(t, err)
 	sevenContents := contentsOf(seven)
 	assert.Contains(t, sevenContents, "只给七号站")
-	assert.Contains(t, sevenContents, "欢迎使用", "平台公告分站也要看到")
+	// 旧公告是 all_users，也就是「主站公告」：分站看不到。这正是老板要的形态，
+	// 也是这次迁移不会污染分站的原因（迁移前它们就已经只有主站可见）。
+	assert.NotContains(t, sevenContents, "欢迎使用", "主站公告不同步到分站")
+	assert.Contains(t, sevenContents, "所有分站", "all_sites 是平台级，分站可见")
 
 	eight, err := model.ListAdtyNotificationsForSite(8, 50)
 	require.NoError(t, err)
@@ -152,4 +156,40 @@ func contentsOf(rows []model.AdtyNotificationPublication) []string {
 		out = append(out, row.Content)
 	}
 	return out
+}
+
+// 迁移之后，收件箱里每一条旧公告**只出现一次**。
+//
+// 这条是这次并入里最容易漏的地方：`adtyCurrentNotificationInbox` 原来同时读
+// 旧 option 和 publications，迁移把同样的内容搬进新表之后，主站收件箱就会把
+// 每条旧公告显示两遍，而且两份的 read_key 不一样——已读一份，另一份还是未读，
+// 未读角标也就翻倍。删掉旧 option 那段读之后，这里必须只有一份。
+func TestNotificationInboxShowsMigratedAnnouncementOncePG(t *testing.T) {
+	db := announcementTestDB(t)
+	var version int
+	require.NoError(t, db.Raw("SHOW server_version_num").Scan(&version).Error)
+	require.Equal(t, 170012, version, "证据必须来自 PostgreSQL 17.12")
+
+	setting := console_setting.GetConsoleSetting()
+	previous := *setting
+	t.Cleanup(func() { *setting = previous })
+	setting.AnnouncementsEnabled = true
+	setting.Announcements = `[{"content":"只此一条","publishDate":"2026-11-01T02:00:00Z","type":"warning"}]`
+
+	created, err := MigrateLegacyAnnouncements(setting.Announcements)
+	require.NoError(t, err)
+	require.Equal(t, 1, created)
+
+	user := ticketTestUser(t, db, "inbox-once", 1)
+	inbox, err := GetAdtyNotificationInbox(user.Id, nil, 0)
+	require.NoError(t, err)
+
+	count := 0
+	for _, item := range inbox.Announcements {
+		if item["content"] == "只此一条" {
+			count++
+		}
+	}
+	assert.Equal(t, 1, count, "旧 option 与新表同时读会让同一条公告出现两次")
+	assert.EqualValues(t, 1, inbox.UnreadPublications)
 }

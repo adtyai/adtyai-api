@@ -11,7 +11,6 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
-	"github.com/QuantumNous/new-api/setting/console_setting"
 	"gorm.io/gorm"
 )
 
@@ -178,17 +177,28 @@ func adtyVisibleNotificationPublications(userID int, site *model.AdtySite) (*gor
 		return nil, err
 	}
 	query := model.DB.Model(&model.AdtyNotificationPublication{}).Where("status = ?", "published")
+	// 可见性规则（老板定，总管 2026-11-15 落成表格）：
+	//
+	//	audience    主站可见  分站可见
+	//	all_users   ✅        ❌  ← 主站公告**不**同步到分站
+	//	all_sites   ✅        ✅  平台级公告，必须显式选择才会到处跑
+	//	site+target 仅 target 是自己时可见
+	//
+	// 注意 `all_users` 在分站这一侧被刻意排除：这不是回归，是需求。
+	// 「主站发的自动到处跑」正是老板明确否掉的形态；要覆盖所有站只能靠
+	// `all_sites` 那个显式选项。改这一行之前先读上面这张表。
 	if site == nil {
-		return query.Where("audience = ?", "all_users"), nil
+		return query.Where("audience IN ?", []string{"all_users", "all_sites"}), nil
 	}
 	var current model.AdtySite
 	if err := model.DB.First(&current, site.Id).Error; err != nil {
 		return nil, err
 	}
 	if user.SiteId != site.Id && current.OwnerUserId != userID {
-		return query.Where("audience = ?", "all_users"), nil
+		// 只是访问了这个域名、并不属于这个站：平台级公告照常，站内定向内容不给。
+		return query.Where("audience = ?", "all_sites"), nil
 	}
-	return query.Where("audience = ? OR audience = ? OR (audience = ? AND target_site_id = ?)", "all_users", "all_sites", "site", site.Id), nil
+	return query.Where("audience = ? OR (audience = ? AND target_site_id = ?)", "all_sites", "site", site.Id), nil
 }
 
 func adtyNotificationVersion(source string) string {
@@ -211,19 +221,13 @@ func adtyCurrentNotificationInbox(site *model.AdtySite) (AdtyNotificationInbox, 
 		inbox.NoticeKey = adtyNotificationVersion("notice:" + inbox.Notice)
 		keys = append(keys, inbox.NoticeKey)
 	}
-	if console_setting.GetConsoleSetting().AnnouncementsEnabled {
-		announcements := console_setting.GetAnnouncements()
-		for _, item := range announcements[:min(len(announcements), 20)] {
-			raw, err := common.Marshal(item)
-			if err != nil {
-				return inbox, nil, err
-			}
-			key := adtyNotificationVersion("announcement:" + string(raw))
-			item["read_key"] = key
-			inbox.Announcements = append(inbox.Announcements, item)
-			keys = append(keys, key)
-		}
-	}
+	// 旧 `console_setting.announcements` 不再在这里读。
+	//
+	// 它和 `adty_notification_publications` 同时读会让每一条旧公告在收件箱里
+	// 出现两次（read_key 还不一样，已读状态也对不上）——迁移把同样的内容搬进
+	// 新表之后，这就是必然结果。上面那段循环已经由下面的 publications 查询取代。
+	//
+	// 那个 option 本身保留不删：它是回滚源（见 `MigrateLegacyAnnouncements`）。
 	return inbox, keys, nil
 }
 

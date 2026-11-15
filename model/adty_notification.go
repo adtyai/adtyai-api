@@ -135,14 +135,22 @@ func ImportLegacyAnnouncement(row *AdtyNotificationPublication) (bool, error) {
 // 主站只看到 all_users（以及 all_sites，那本来就包含主站）；分站看到
 // all_users + all_sites + 自己那条。
 func ListAdtyNotificationsForSite(siteID int, limit int) ([]AdtyNotificationPublication, error) {
+	items := []AdtyNotificationPublication{}
+	// 调用方是 `/api/status`——那条路由在服务启动的最前面就会被访问。
+	// 库还没初始化时这里是 nil，直接解引用会把整份 status 打成 panic，
+	// 而公告只是 status 里的一个可选字段，不能拖垮站点开关和支付方式。
+	if DB == nil {
+		return items, nil
+	}
 	query := DB.Model(&AdtyNotificationPublication{}).Where("status = ?", "published")
+	// 与 `adtyVisibleNotificationPublications` 同一张表：分站看不到 `all_users`。
+	// 两处规则必须一起改，否则公开面板和站内收件箱会给出不同的可见范围。
 	if siteID == 0 {
 		query = query.Where("audience IN ?", []string{"all_users", "all_sites"})
 	} else {
-		query = query.Where("audience = ? OR audience = ? OR (audience = ? AND target_site_id = ?)",
-			"all_users", "all_sites", "site", siteID)
+		query = query.Where("audience = ? OR (audience = ? AND target_site_id = ?)",
+			"all_sites", "site", siteID)
 	}
-	items := []AdtyNotificationPublication{}
 	err := query.Order("published_at DESC, id DESC").Limit(limit).Find(&items).Error
 	return items, err
 }

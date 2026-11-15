@@ -122,9 +122,13 @@ func TestNotificationPublishingIsolation(t *testing.T) {
 	}
 	mainInbox := fmt.Sprint(request(http.MethodGet, main, inbox, stranger, "", http.StatusOK).Data)
 	assert.Contains(t, mainInbox, "all_users message")
-	assert.NotContains(t, mainInbox, "all_sites message")
+	// all_sites 是「平台级、覆盖所有站」的显式选项，主站也在覆盖范围内。
+	// 原来这里断言 NotContains，那是需求变化前的行为，不是回归。
+	assert.Contains(t, mainInbox, "all_sites message")
 	shopInbox := fmt.Sprint(request(http.MethodGet, shop, inbox, customer, "", http.StatusOK).Data)
-	assert.Contains(t, shopInbox, "all_users message")
+	// 主站公告**不**同步到分站（老板明确否掉的形态）。这条原来是 Contains，
+	// 改的是需求，不是回归：分站只能看到 all_sites 和自己那条定向公告。
+	assert.NotContains(t, shopInbox, "all_users message")
 	assert.Contains(t, shopInbox, "all_sites message")
 }
 
@@ -171,7 +175,8 @@ func TestNotificationInboxReadIsolation(t *testing.T) {
 	previous := *setting
 	t.Cleanup(func() { *setting = previous })
 	setting.AnnouncementsEnabled = true
-	setting.Announcements = `[{"id":11,"content":"Original announcement","type":"default","publishDate":"2026-01-01"}]`
+	// 收件箱不再读旧 option（迁移之后会和 publications 重复），所以这条用例
+	// 改成先发一条真正的公告。read_key 随内容版本变化这件事由发布记录承担。
 	common.OptionMapRWMutex.Lock()
 	common.OptionMap["Notice"] = " Account notice "
 	common.OptionMapRWMutex.Unlock()
@@ -198,6 +203,13 @@ func TestNotificationInboxReadIsolation(t *testing.T) {
 	}
 	const main = "main.example.com"
 	const inbox = "/api/adty/notifications"
+	// 收件箱不再读旧 option：迁移之后同一段文字会从 publications 再来一遍，
+	// read_key 还不一样，已读状态对不上。所以先发一条真正的公告，
+	// 「改内容 = 新版本 = 未读」这件事由发布记录的 revision 承担。
+	root := adtySessionToken(t, f.db, "notification-inbox-root", common.RoleRootUser)
+	published := request(http.MethodPost, main, "/api/adty/admin/notifications", root,
+		`{"title":"Original announcement","content":"Original announcement","kind":"system","audience":"all_users"}`, http.StatusOK)
+	announcementID := int(published.Data["id"].(float64))
 	request(http.MethodGet, main, inbox, "", "", http.StatusUnauthorized)
 	first := request(http.MethodGet, main, inbox, a, "", http.StatusOK)
 	require.True(t, first.Success, first.Message)
@@ -231,7 +243,8 @@ func TestNotificationInboxReadIsolation(t *testing.T) {
 	assert.Empty(t, branch.Data["announcements"])
 	assert.Empty(t, branch.Data["read_keys"])
 	assert.False(t, request(http.MethodPost, "shop.sites.example.com", inbox+"/read", a, body, http.StatusOK).Success)
-	setting.Announcements = `[{"id":11,"content":"Edited announcement","type":"default","publishDate":"2026-01-01"}]`
+	edit := `{"revision":1,"title":"Edited announcement","content":"Edited announcement","kind":"system","audience":"all_users"}`
+	request(http.MethodPut, main, "/api/adty/admin/notifications/"+fmt.Sprint(announcementID), root, edit, http.StatusOK)
 	edited := request(http.MethodGet, main, inbox, a, "", http.StatusOK)
 	assert.Len(t, edited.Data["read_keys"], 1, "the old notice stays read but edited content is unread")
 	newKey := edited.Data["announcements"].([]any)[0].(map[string]any)["read_key"].(string)

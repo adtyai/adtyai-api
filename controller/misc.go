@@ -169,7 +169,12 @@ func GetStatus(c *gin.Context) {
 		data["api_info"] = console_setting.GetApiInfo()
 	}
 	if cs.AnnouncementsEnabled {
-		data["announcements"] = console_setting.GetAnnouncements()
+		// 从这里起数据源是 `adty_notification_publications`，不再是
+		// `console_setting.announcements`（那个 option 只作为回滚源保留）。
+		// 形状保持不变：这条路由没有认证，公开面板靠它给未登录访客看公告，
+		// 换成需要登录的新接口会让匿名访客看不到公告——那是行为退化。
+		// 按 Host 判断站点可见性，所以分站只会读到自己的和平台级公告。
+		data["announcements"] = service.AdtyPublicAnnouncementsForRequest(c)
 	}
 	if cs.FAQEnabled {
 		data["faq"] = console_setting.GetFAQ()
