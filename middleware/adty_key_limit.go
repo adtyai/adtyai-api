@@ -45,9 +45,17 @@ func AdtyKeyRateLimit() gin.HandlerFunc {
 	}
 }
 
+// adtyKeyRateBucket is one key's counter inside a single minute window. The minute is
+// stored next to the count so an expired window can be dropped instead of kept forever.
+type adtyKeyRateBucket struct {
+	minute int64
+	count  int
+}
+
 var (
-	adtyKeyRateMemory   = map[string]int{}
-	adtyKeyRateMemoryMu sync.Mutex
+	adtyKeyRateMemory            = map[int]adtyKeyRateBucket{}
+	adtyKeyRateMemorySwept int64 = -1
+	adtyKeyRateMemoryMu    sync.Mutex
 )
 
 func adtyKeyRateAllow(tokenID, perMinute int, now time.Time) (bool, error) {
@@ -65,9 +73,26 @@ func adtyKeyRateAllow(tokenID, perMinute int, now time.Time) (bool, error) {
 		}
 		return count <= int64(perMinute), nil
 	}
-	bucket := fmt.Sprintf("%d:%d", tokenID, now.Unix()/60)
+	minute := now.Unix() / 60
 	adtyKeyRateMemoryMu.Lock()
 	defer adtyKeyRateMemoryMu.Unlock()
-	adtyKeyRateMemory[bucket]++
-	return adtyKeyRateMemory[bucket] <= perMinute, nil
+	// The Redis branch gives every per-minute bucket a two-minute TTL. The memory branch
+	// has to expire the same way, otherwise it keeps one bucket per key per minute for the
+	// life of the process. Sweeping only when the minute changes keeps that to one pass per
+	// minute, and the map then holds at most two windows instead of every window ever seen.
+	if minute != adtyKeyRateMemorySwept {
+		adtyKeyRateMemorySwept = minute
+		for id, bucket := range adtyKeyRateMemory {
+			if bucket.minute < minute-1 {
+				delete(adtyKeyRateMemory, id)
+			}
+		}
+	}
+	bucket := adtyKeyRateMemory[tokenID]
+	if bucket.minute != minute {
+		bucket = adtyKeyRateBucket{minute: minute}
+	}
+	bucket.count++
+	adtyKeyRateMemory[tokenID] = bucket
+	return bucket.count <= perMinute, nil
 }
