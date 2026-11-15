@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"reflect"
 	"strconv"
 	"strings"
@@ -90,6 +91,10 @@ var (
 	ErrAdtyTeamFunds       = common.NewMessage("Insufficient available funds")
 	ErrAdtyTeamClosed      = common.NewMessage("This team is closed")
 	ErrAdtyTeamLeaderFixed = common.NewMessage("The team leader cannot be replaced")
+	// 幂等键是客户端自由文本，和仓库内其它入参一样要限长（40/64/100/128 都有先例，
+	// 团队充值取 64）。超长必须报出具体原因：只说 Invalid parameters 的话，
+	// 调用方会以为是业务冲突而不是入参问题。
+	ErrAdtyTeamIdempotencyKey = common.NewMessage("Idempotency-Key is too long (maximum 64 characters)")
 )
 
 type AdtyTeamCreated struct {
@@ -461,6 +466,56 @@ func JoinAdtyTeam(userId int, teamId int64) (*model.AdtyTeamMember, error) {
 	return member, err
 }
 
+// adtyTeamTopupKeyMaxLen 是团队充值幂等键的长度上限。
+const adtyTeamTopupKeyMaxLen = 64
+
+// adtyTeamTopupTradeNo 由「团队 + 客户端幂等键」派生单号。
+//
+// 键必须带团队作用域：单号是全局唯一的，若只由客户端自由文本派生，A 团队用过的
+// key 会永久占住 B 团队的同一个 key，B 只会拿到 Invalid parameters 而查不出原因
+// （ISS-R4-0068）。
+func adtyTeamTopupTradeNo(prefix string, teamID int64, key string) string {
+	return prefix + common.Sha1([]byte(fmt.Sprintf("%d:%s", teamID, key)))[:20]
+}
+
+// adtyTeamTopupLegacyTradeNo 是 ISS-R4-0068 之前的单号规则：只有 key，没有团队。
+// 仅用于认出旧规则下已经建过的单，让同一个 key 的重放仍然回到那张单。
+func adtyTeamTopupLegacyTradeNo(prefix, key string) string {
+	return prefix + common.Sha1([]byte(key))[:20]
+}
+
+// adtyClaimTeamTopupReplay 认领同一个幂等键上一次下过的单，返回 (订单, 是否冲突)。
+//
+// 先按新规则（团队作用域）的单号查：命中且是同一笔单就是重放，不是同一笔就冲突
+// ——同一个 key 换了金额或付款方式必须拒绝，否则会新建一张同号单撞唯一索引。
+//
+// 再按旧规则（只有 key）的单号查：那是升级前建的单，只有 sameOrder 也成立时才算
+// 重放。对不上说明这个 key 被别的团队占着，忽略即可——跨团队不再互相阻塞正是本次
+// 修复的目的，而已经在库里的老单也不必迁移。
+func adtyClaimTeamTopupReplay(newTradeNo, legacyTradeNo string, sameOrder func(*model.AdtyTopupOrder) bool) (*model.AdtyTopupOrder, bool, error) {
+	for i, tradeNo := range []string{newTradeNo, legacyTradeNo} {
+		if tradeNo == "" {
+			continue
+		}
+		var existing model.AdtyTopupOrder
+		lookup := model.DB.Where("trade_no = ?", tradeNo).Limit(1).Find(&existing)
+		if lookup.Error != nil {
+			return nil, false, lookup.Error
+		}
+		if lookup.RowsAffected != 1 {
+			continue
+		}
+		if sameOrder(&existing) {
+			return &existing, false, nil
+		}
+		if i == 0 {
+			// 新单号命中但不是同一笔：这是调用方拿同一个 key 改了参数。
+			return nil, true, nil
+		}
+	}
+	return nil, false, nil
+}
+
 // CreateAdtyTeamTopupOrder records a leader top-up with no payment-method gift.
 // It does not credit the team until payment completion.
 func CreateAdtyTeamTopupOrder(leaderID int, teamID int64, amountUSD decimal.Decimal, key string) (*model.AdtyTopupOrder, error) {
@@ -468,21 +523,25 @@ func CreateAdtyTeamTopupOrder(leaderID int, teamID int64, amountUSD decimal.Deci
 	if leaderID <= 0 || teamID <= 0 || !amountUSD.IsPositive() || key == "" {
 		return nil, ErrAdtyTeamInvalid
 	}
+	if len(key) > adtyTeamTopupKeyMaxLen {
+		return nil, ErrAdtyTeamIdempotencyKey
+	}
 	quota, err := common.WalletQuotaFromDecimalStrict(amountUSD.Mul(common.QuotaPerUnitDecimal()).Floor())
 	if err != nil || quota <= 0 {
 		return nil, ErrAdtyTeamInvalid
 	}
-	tradeNo := "TTEAM" + common.Sha1([]byte(key))[:20]
-	var existing model.AdtyTopupOrder
-	lookup := model.DB.Where("trade_no = ?", tradeNo).Limit(1).Find(&existing)
-	if lookup.Error != nil {
-		return nil, lookup.Error
+	tradeNo := adtyTeamTopupTradeNo("TTEAM", teamID, key)
+	existing, conflict, err := adtyClaimTeamTopupReplay(tradeNo, adtyTeamTopupLegacyTradeNo("TTEAM", key), func(o *model.AdtyTopupOrder) bool {
+		return o.TeamId == teamID && o.UserId == leaderID && o.FaceUSD.Equal(amountUSD)
+	})
+	if err != nil {
+		return nil, err
 	}
-	if lookup.RowsAffected == 1 {
-		if existing.TeamId != teamID || !existing.FaceUSD.Equal(amountUSD) || existing.UserId != leaderID {
-			return nil, ErrAdtyTeamInvalid
-		}
-		return &existing, nil
+	if conflict {
+		return nil, ErrAdtyTeamInvalid
+	}
+	if existing != nil {
+		return existing, nil
 	}
 	return createAdtyTeamTopupOrder(leaderID, teamID, amountUSD, int64(quota), tradeNo)
 }

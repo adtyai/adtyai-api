@@ -507,13 +507,15 @@ func TestPrepareTieredBillingForSelectedGroupTopUpRejectsInsufficientBalance(t *
 	require.NoError(t, err)
 	assert.Equal(t, 20_000, userQuota)
 
-	// actual 80k against the 50k reservation: the 30k delta can only take the
-	// remaining 20k; the 10k shortfall is absorbed by the platform.
-	require.NoError(t, session.Settle(80_000))
+	// 这条 session 是手工构造的、没有 operationKey，于是 Settle 落到 legacy 分支。
+	// 该分支在生产上不可达（ISS-R4-0046），且自 ISS-R4-0054 起它不再有扣费实现：
+	// 正数补扣会明确报错，而不是静默不扣。「扣到 0、差额由平台承担」这条语义
+	// 在生产路径上有覆盖（TestAdtyBalanceFloorSettleShortfall）。
+	require.ErrorIs(t, session.Settle(80_000), ErrLegacyWalletCharge)
 	userQuota, err = model.GetUserQuota(userID, false)
 	require.NoError(t, err)
-	assert.Equal(t, 0, userQuota)
-	assert.Equal(t, 10_000, relayInfo.BillingShortfall)
+	assert.Equal(t, 20_000, userQuota, "legacy 分支既不扣费也不退款")
+	assert.Equal(t, 0, relayInfo.BillingShortfall)
 }
 
 func TestBillingSessionReserveWalletTopUpDecrementsBalance(t *testing.T) {

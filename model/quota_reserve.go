@@ -235,64 +235,6 @@ func tryReserveUserQuota(id int, quota int, operationID string) (bool, error) {
 	return true, nil
 }
 
-// chargeUserQuotaUpToDB 在事务里锁行读余额，按 min(余额, quota) 扣减，余额已 ≤ 0
-// 时不改库。SQLite 没有 FOR UPDATE，但单写者模型下事务内读写同样不会并发交错。
-//
-// 它是「没有预扣分摊」的那条扣费路径，所以必须自己扣批次——否则这类消费的
-// 本金永远不递减，退款就会多退（本单修的正是这个）。反过来，带 operationId 的
-// 中转结算走 ApplyBillingSettlement，由分摊转实扣来扣批次，两条路互斥，
-// 不要在这里再判断分摊，否则没有分摊的 legacy 扣费会漏扣批次。
-// Redis 关闭时即使开了批量更新也直写数据库（不进批量队列），和 reserveUserQuotaDB 一致，
-// 否则落后于队列的数据库余额会让并发结算扣穿下限。
-func chargeUserQuotaUpToDB(id int, quota int) (int, error) {
-	charged := 0
-	err := DB.Transaction(func(tx *gorm.DB) error {
-		var user User
-		if err := lockForUpdate(tx).First(&user, id).Error; err != nil {
-			return err
-		}
-		balance, err := userWalletBalance(user.Quota, user.QuotaPending)
-		if err != nil {
-			return err
-		}
-		charged = max(min(balance, quota), 0)
-		if charged == 0 {
-			return nil
-		}
-		if err := ConsumeAdtyFundBatchesTx(tx, id, int64(charged), int64(balance)); err != nil {
-			return err
-		}
-		return applyUserQuotaDeltaTx(tx, &user, -charged, common.BatchUpdateEnabled && common.RedisEnabled)
-	})
-	if err != nil {
-		return 0, err
-	}
-	return charged, nil
-}
-
-// ChargeUserQuotaUpTo 原子扣减钱包余额，最多扣到 0（余额下限，不透支），返回实扣额。
-// It shares the same durable admission path as reservations. The caller treats
-// any shortfall as a platform cost; Redis never authorizes a charge.
-func ChargeUserQuotaUpTo(id int, quota int) (int, error) {
-	if quota < 0 {
-		return 0, errors.New("quota cannot be negative")
-	}
-	if quota == 0 {
-		return 0, nil
-	}
-	charged, err := chargeUserQuotaUpToDB(id, quota)
-	if err != nil || charged == 0 {
-		return charged, err
-	}
-	if common.BatchUpdateEnabled && common.RedisEnabled {
-		addNewRecord(BatchUpdateTypeUserQuota, id, 0)
-	}
-	if err := invalidateUserCache(id); err != nil {
-		common.SysError(common.LogText("failed to invalidate committed wallet projection: user=%d error=%s", id, err.Error()))
-	}
-	return charged, nil
-}
-
 // TryReserveTokenQuota atomically checks and deducts a token quota. Unlimited
 // tokens skip the balance check but still update remain/used accounting.
 func TryReserveTokenQuota(id int, key string, quota int, unlimited bool) (bool, error) {

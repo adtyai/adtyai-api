@@ -261,9 +261,12 @@ func TestBatchReservationSurvivesCacheAndLocalQueueLoss(t *testing.T) {
 			reserved, err = TryReserveUserQuota(user.Id, 80)
 			require.NoError(t, err)
 			require.False(t, reserved, "an unflushed reservation must remain authoritative without Redis or the local queue")
-			charged, err := ChargeUserQuotaUpTo(user.Id, 80)
+			reserved, err = TryReserveUserQuota(user.Id, 21)
 			require.NoError(t, err)
-			require.Equal(t, 20, charged, "only the unreserved balance remains spendable")
+			require.False(t, reserved, "only the unreserved balance remains spendable")
+			reserved, err = TryReserveUserQuota(user.Id, 20)
+			require.NoError(t, err)
+			require.True(t, reserved)
 
 			FlushBatchUpdates()
 			require.Equal(t, 0, getUserQuotaFromDB(t, user.Id), "flushing must recover all durable deltas without the old queue")
@@ -435,9 +438,13 @@ func TestBatchCreditRetainsNegativeRawRowUntilFlush(t *testing.T) {
 	require.NoError(t, DecreaseUserQuota(user.Id, 80, true))
 	require.Equal(t, -80, getUserQuotaFromDB(t, user.Id), "a direct debit may precede an unflushed credit")
 
-	charged, err := ChargeUserQuotaUpTo(user.Id, 50)
+	// 逻辑余额 = raw(-80) + 未刷的信用(100) = 20：再多一分都预扣不动。
+	reserved, err := TryReserveUserQuotaForOperation(user.Id, 21, "batch-credit-test")
 	require.NoError(t, err)
-	require.Equal(t, 20, charged, "the logical balance includes the durable positive credit")
+	require.False(t, reserved, "the logical balance includes the durable positive credit")
+	reserved, err = TryReserveUserQuotaForOperation(user.Id, 20, "batch-credit-test")
+	require.NoError(t, err)
+	require.True(t, reserved)
 	require.Equal(t, -80, getUserQuotaFromDB(t, user.Id), "do not clamp the raw row or prematurely flush the credit")
 	FlushBatchUpdates()
 	require.Equal(t, 0, getUserQuotaFromDB(t, user.Id))
@@ -523,116 +530,6 @@ func TestSynchronousReserveCompensatesCacheWhenPersistenceFails(t *testing.T) {
 	require.NoError(t, cacheErr)
 	assert.Equal(t, 12, cachedToken.RemainQuota)
 	assert.Zero(t, cachedToken.UsedQuota)
-}
-
-// 余额下限：结算最多扣到 0，不透支。同一组用例在 SQLite（上游测试库）和
-// PostgreSQL（adtyTestDB）上各跑一遍，覆盖 Redis 开关和 BatchUpdateEnabled 开关。
-func runChargeUserQuotaUpToCases(t *testing.T, prepare func(t *testing.T)) {
-	cases := []struct {
-		name        string
-		balance     int
-		charge      int
-		wantCharged int
-		wantBalance int
-	}{
-		{name: "扣足", balance: 100, charge: 60, wantCharged: 60, wantBalance: 40},
-		{name: "刚好扣完", balance: 60, charge: 60, wantCharged: 60, wantBalance: 0},
-		{name: "不够时扣到 0", balance: 10, charge: 225, wantCharged: 10, wantBalance: 0},
-		{name: "余额已为 0", balance: 0, charge: 5, wantCharged: 0, wantBalance: 0},
-		{name: "余额已为负", balance: -7, charge: 5, wantCharged: 0, wantBalance: -7},
-	}
-	modes := []struct {
-		name  string
-		redis bool
-		batch bool
-	}{
-		{name: "直写", redis: false, batch: false},
-		{name: "批量无Redis", redis: false, batch: true},
-		{name: "Redis直写", redis: true, batch: false},
-		{name: "Redis批量", redis: true, batch: true},
-	}
-	for _, mode := range modes {
-		for _, tc := range cases {
-			t.Run(mode.name+"/"+tc.name, func(t *testing.T) {
-				prepare(t)
-				resetBatchUpdateTestState(t)
-				if mode.redis {
-					useUserCacheMiniRedis(t)
-				}
-				common.BatchUpdateEnabled = mode.batch
-
-				user := createReserveTestUser(t, tc.balance)
-				charged, err := ChargeUserQuotaUpTo(user.Id, tc.charge)
-				require.NoError(t, err)
-				assert.Equal(t, tc.wantCharged, charged)
-
-				if mode.redis {
-					cached, err := GetUserCache(user.Id)
-					require.NoError(t, err)
-					assert.Equal(t, tc.wantBalance, cached.Quota, "缓存余额")
-				}
-				if mode.redis && mode.batch {
-					// 缓存侧扣减走批量队列，刷新前数据库不变。
-					assert.Equal(t, tc.balance, getUserQuotaFromDB(t, user.Id))
-					batchUpdate()
-				}
-				// Redis 关闭时即使开了批量也直接条件更新数据库，不进队列。
-				assert.Equal(t, tc.wantBalance, getUserQuotaFromDB(t, user.Id), "数据库余额")
-			})
-		}
-	}
-}
-
-func TestChargeUserQuotaUpToSQLite(t *testing.T) {
-	runChargeUserQuotaUpToCases(t, truncateTables)
-}
-
-func TestChargeUserQuotaUpToPostgres(t *testing.T) {
-	runChargeUserQuotaUpToCases(t, func(t *testing.T) {
-		db := adtyTestDBWithSchema(t)
-		require.NoError(t, db.AutoMigrate(&User{}))
-	})
-}
-
-func TestChargeUserQuotaUpToRejectsNegativeAmount(t *testing.T) {
-	truncateTables(t)
-	resetBatchUpdateTestState(t)
-	user := createReserveTestUser(t, 10)
-	charged, err := ChargeUserQuotaUpTo(user.Id, -1)
-	assert.Error(t, err)
-	assert.Zero(t, charged)
-	assert.Equal(t, 10, getUserQuotaFromDB(t, user.Id))
-}
-
-// 并发结算：总实扣等于原余额，余额停在 0（PostgreSQL 行锁下验证）。
-func TestChargeUserQuotaUpToConcurrentNeverOverdraws(t *testing.T) {
-	for _, redisOn := range []bool{false, true} {
-		t.Run(map[bool]string{false: "无Redis", true: "Redis"}[redisOn], func(t *testing.T) {
-			db := adtyTestDBWithSchema(t)
-			require.NoError(t, db.AutoMigrate(&User{}))
-			resetBatchUpdateTestState(t)
-			if redisOn {
-				useUserCacheMiniRedis(t)
-			}
-			user := createReserveTestUser(t, 5)
-
-			var wg sync.WaitGroup
-			var mu sync.Mutex
-			total := 0
-			for range 20 {
-				wg.Go(func() {
-					charged, err := ChargeUserQuotaUpTo(user.Id, 2)
-					assert.NoError(t, err)
-					mu.Lock()
-					total += charged
-					mu.Unlock()
-				})
-			}
-			wg.Wait()
-			assert.Equal(t, 5, total)
-			assert.Equal(t, 0, getUserQuotaFromDB(t, user.Id))
-		})
-	}
 }
 
 func TestTokenCacheInitPreservesLiveQuotaAndFenceBlocksStaleSnapshot(t *testing.T) {

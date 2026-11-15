@@ -19,23 +19,27 @@ func StartAdtyTeamTopupPayment(leaderID int, teamID int64, amountUSD decimal.Dec
 	if leaderID <= 0 || teamID <= 0 || !amountUSD.IsPositive() || !amountUSD.Equal(decimal.NewFromInt(amountUSD.IntPart())) || key == "" {
 		return nil, ErrAdtyTeamInvalid
 	}
+	if len(key) > adtyTeamTopupKeyMaxLen {
+		return nil, ErrAdtyTeamIdempotencyKey
+	}
 	if IsAdtyUSDTMethod(method) {
 		return startAdtyTeamBEpusdtTopup(leaderID, teamID, amountUSD, method, key)
 	}
 	if !IsAdtyEpayMethod(method) {
 		return nil, ErrAdtyTeamInvalid
 	}
-	tradeNo := "TTEP" + common.Sha1([]byte(key))[:20]
-	var existing model.AdtyTopupOrder
-	lookup := model.DB.Where("trade_no = ?", tradeNo).Limit(1).Find(&existing)
-	if lookup.Error != nil {
-		return nil, lookup.Error
+	tradeNo := adtyTeamTopupTradeNo("TTEP", teamID, key)
+	existing, conflict, err := adtyClaimTeamTopupReplay(tradeNo, adtyTeamTopupLegacyTradeNo("TTEP", key), func(o *model.AdtyTopupOrder) bool {
+		return o.TeamId == teamID && o.UserId == leaderID && o.FaceUSD.Equal(amountUSD) && o.Method == method
+	})
+	if err != nil {
+		return nil, err
 	}
-	if lookup.RowsAffected == 1 {
-		if existing.TeamId != teamID || existing.UserId != leaderID || !existing.FaceUSD.Equal(amountUSD) || existing.Method != method {
-			return nil, ErrAdtyTeamInvalid
-		}
-		return &existing, nil
+	if conflict {
+		return nil, ErrAdtyTeamInvalid
+	}
+	if existing != nil {
+		return existing, nil
 	}
 	var team model.AdtyTeam
 	if err := model.DB.First(&team, teamID).Error; err != nil {
@@ -109,17 +113,21 @@ func StartAdtyTeamStripeTopup(leaderID int, teamID int64, amountUSD, payAmount d
 	if leaderID <= 0 || teamID <= 0 || !amountUSD.IsPositive() || !amountUSD.Equal(decimal.NewFromInt(amountUSD.IntPart())) || !payAmount.IsPositive() || key == "" || checkout == nil {
 		return nil, ErrAdtyTeamInvalid
 	}
-	tradeNo := "TTS" + common.Sha1([]byte(key))[:20]
-	var existing model.AdtyTopupOrder
-	lookup := model.DB.Where("trade_no = ?", tradeNo).Limit(1).Find(&existing)
-	if lookup.Error != nil {
-		return nil, lookup.Error
+	if len(key) > adtyTeamTopupKeyMaxLen {
+		return nil, ErrAdtyTeamIdempotencyKey
 	}
-	if lookup.RowsAffected == 1 {
-		if existing.TeamId != teamID || existing.UserId != leaderID || !existing.FaceUSD.Equal(amountUSD) || existing.Provider != model.PaymentProviderStripe {
-			return nil, ErrAdtyTeamInvalid
-		}
-		return &existing, nil
+	tradeNo := adtyTeamTopupTradeNo("TTS", teamID, key)
+	existing, conflict, err := adtyClaimTeamTopupReplay(tradeNo, adtyTeamTopupLegacyTradeNo("TTS", key), func(o *model.AdtyTopupOrder) bool {
+		return o.TeamId == teamID && o.UserId == leaderID && o.FaceUSD.Equal(amountUSD) && o.Provider == model.PaymentProviderStripe
+	})
+	if err != nil {
+		return nil, err
+	}
+	if conflict {
+		return nil, ErrAdtyTeamInvalid
+	}
+	if existing != nil {
+		return existing, nil
 	}
 	return createAdtyTeamHostedTopup(leaderID, teamID, amountUSD, payAmount, "USD", model.PaymentProviderStripe, model.PaymentMethodStripe, tradeNo, func(tradeNo string) (string, string, error) {
 		return checkout(tradeNo, payAmount)
@@ -185,17 +193,18 @@ func startAdtyTeamBEpusdtTopup(leaderID int, teamID int64, amountUSD decimal.Dec
 	if !setting.BEpusdtConfigured() || !setting.BEpusdtChainEnabled(method) {
 		return nil, common.NewMessage("This payment method is not available")
 	}
-	tradeNo := "TTU" + common.Sha1([]byte(key))[:20]
-	var existing model.AdtyTopupOrder
-	lookup := model.DB.Where("trade_no = ?", tradeNo).Limit(1).Find(&existing)
-	if lookup.Error != nil {
-		return nil, lookup.Error
+	tradeNo := adtyTeamTopupTradeNo("TTU", teamID, key)
+	existing, conflict, err := adtyClaimTeamTopupReplay(tradeNo, adtyTeamTopupLegacyTradeNo("TTU", key), func(o *model.AdtyTopupOrder) bool {
+		return o.TeamId == teamID && o.UserId == leaderID && o.FaceUSD.Equal(amountUSD) && o.Method == method
+	})
+	if err != nil {
+		return nil, err
 	}
-	if lookup.RowsAffected == 1 {
-		if existing.TeamId != teamID || existing.UserId != leaderID || !existing.FaceUSD.Equal(amountUSD) || existing.Method != method {
-			return nil, ErrAdtyTeamInvalid
-		}
-		return &existing, nil
+	if conflict {
+		return nil, ErrAdtyTeamInvalid
+	}
+	if existing != nil {
+		return existing, nil
 	}
 	var team model.AdtyTeam
 	if err := model.DB.First(&team, teamID).Error; err != nil {
