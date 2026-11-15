@@ -76,3 +76,29 @@ func TestBuildHistoricalRequestPriceSnapshotSkipsUnsafeRows(t *testing.T) {
 	require.Equal(t, existing, got)
 	assert.Equal(t, "2", got.ModelBasePrice)
 }
+
+// 历史 tiered 行没有 base 也不该被丢掉：与 accept 时同一判据，建一条不带零价的快照。
+func TestBuildHistoricalRequestPriceSnapshotTieredWithoutBaseOmitsPrice(t *testing.T) {
+	snap, reason := BuildHistoricalRequestPriceSnapshot(HistoricalPriceSnapshotSource{
+		ModelName:      "hist-tiered",
+		BillingGroup:   "default",
+		GroupRatio:     1.2,
+		SiteMarkup:     1.25,
+		SiteCostFactor: 0.8,
+		SiteId:         9,
+		Tiered:         true,
+		AcceptedAt:     1700000000,
+	})
+	require.Equal(t, "", reason)
+	require.NotNil(t, snap)
+	require.True(t, snap.HasOfficialFields())
+	assert.Equal(t, BillingUnitTieredExpr, snap.BillingUnit)
+	assert.Equal(t, "", snap.ModelBasePrice)
+	assert.Equal(t, "", snap.FinalPrice)
+	assert.Equal(t, "1.2", snap.GroupRatio)
+	assert.Equal(t, "1.25", snap.StoredMarkupK, "the frozen factors are still worth backfilling")
+
+	// 非 tiered 行缺 base 仍然跳过：留空只对"由表达式定价"的记录成立。
+	_, reason = BuildHistoricalRequestPriceSnapshot(HistoricalPriceSnapshotSource{GroupRatio: 1.2, AcceptedAt: 1})
+	assert.Equal(t, PriceSnapshotBackfillSkipMissingBasePrice, reason)
+}

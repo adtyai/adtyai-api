@@ -44,12 +44,18 @@ func BuildHistoricalRequestPriceSnapshot(src HistoricalPriceSnapshotSource) (*Re
 		return src.Existing, PriceSnapshotBackfillSkipAlreadyComplete
 	}
 
-	base, unit, ok := historicalBasePrice(src)
-	if !ok {
+	base, unit, hasBase := historicalBasePrice(src)
+	if !hasBase {
 		if src.ModelRatio == 0 && src.ModelPrice == 0 && src.GroupRatio == 0 && src.SiteMarkup == 0 && src.SiteCostFactor == 0 {
 			return nil, PriceSnapshotBackfillSkipNoStoredPricing
 		}
-		return nil, PriceSnapshotBackfillSkipMissingBasePrice
+		// A tiered_expr row has no base ratio by design. Build it with the price
+		// fields omitted, exactly as the accept-time freeze does, so the two
+		// writers never disagree about whether such a record is legal and never
+		// store a zero price that contradicts the amount billed.
+		if unit != BillingUnitTieredExpr {
+			return nil, PriceSnapshotBackfillSkipMissingBasePrice
+		}
 	}
 	billed, ok := decimalFromStoredFloat(src.GroupRatio)
 	if !ok {
@@ -63,15 +69,21 @@ func BuildHistoricalRequestPriceSnapshot(src HistoricalPriceSnapshotSource) (*Re
 		return nil, PriceSnapshotBackfillSkipMissingAcceptedAt
 	}
 
+	basePrice := ""
+	finalPrice := ""
+	if hasBase {
+		basePrice = base.String()
+		finalPrice = base.Mul(billed).String()
+	}
 	snap := &RequestPriceSnapshot{
 		SchemaVersion:    RequestPriceSnapshotVersion,
 		ModelName:        strings.TrimSpace(src.ModelName),
-		ModelBasePrice:   base.String(),
+		ModelBasePrice:   basePrice,
 		BillingGroup:     strings.TrimSpace(src.BillingGroup),
 		GroupRatio:       billed.String(),
 		SiteCostFactor:   cost.String(),
 		SiteMarkupRatio:  markupRatio.String(),
-		FinalPrice:       base.Mul(billed).String(),
+		FinalPrice:       finalPrice,
 		Currency:         RequestPriceCurrencyUSD,
 		BillingUnit:      unit,
 		AcceptedAt:       src.AcceptedAt,
@@ -85,11 +97,11 @@ func BuildHistoricalRequestPriceSnapshot(src HistoricalPriceSnapshotSource) (*Re
 		snap.StoredMarkupK = storedK
 	}
 	if unit == BillingUnitPerCall {
-		snap.ModelPrice = base.String()
+		snap.ModelPrice = basePrice
 	} else if d, ok := decimalFromStoredFloat(src.ModelRatio); ok {
 		snap.ModelRatio = d.String()
 	} else if unit == BillingUnitPerToken {
-		snap.ModelRatio = base.String()
+		snap.ModelRatio = basePrice
 	}
 	if !snap.HasOfficialFields() {
 		return nil, PriceSnapshotBackfillSkipNoStoredPricing
