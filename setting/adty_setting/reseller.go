@@ -190,9 +190,19 @@ func HoldMinCostFactorIncrease(next, previous *ResellerSetting, now int64) bool 
 	return true
 }
 
-// CloudflareConfigured 说明自定义域名要的三项都填了。
+// CloudflareConfigured 说明自定义域名要的四项都填了。
+//
+// 第四项 `CloudflareAccountId` 原来不在这条判据里，而 Turnstile 登记
+// （`service/adty_turnstile_hosts.go` 的 `adtyTurnstileAssign`）用 account_id
+// 拼 API 路径。**缺它时后台显示「已配置」，而 Turnstile 从未登记过**：
+// 那个分支是 `if account == "" { return "", nil }` —— 无错、无日志、无标记，
+// 5 分钟一轮永远走同一空分支。所以这个函数漏一项，等于把一个静默失败
+// 伪装成「配置完成」。
 func (s *ResellerSetting) CloudflareConfigured() bool {
-	return strings.TrimSpace(s.CloudflareApiToken) != "" && strings.TrimSpace(s.CloudflareZoneId) != "" && strings.TrimSpace(s.CnameTarget) != ""
+	return strings.TrimSpace(s.CloudflareApiToken) != "" &&
+		strings.TrimSpace(s.CloudflareZoneId) != "" &&
+		strings.TrimSpace(s.CloudflareAccountId) != "" &&
+		strings.TrimSpace(s.CnameTarget) != ""
 }
 
 var resellerDomainPattern = regexp.MustCompile(`^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$`)
