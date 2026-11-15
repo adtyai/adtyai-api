@@ -818,6 +818,12 @@ func CompleteAdtyTopUpManualRefund(tradeNo, refundID string, operatorID int, ide
 		if err := adtyRequireApprovedManualRefund(row); err != nil {
 			return err
 		}
+		// 申请阶段的那道闸挡不住「补丁之前就已经 approved」的单：它们仍在流程里，
+		// 完成时会直接走到付款。这里必须复核一次，而且要在任何扣减/写账之前。
+		// 幂等重放分支在上面已经 return，不会到这里，所以已完成的单不受影响。
+		if err := adtyEnsureCreditedOrder(topUp, ext); err != nil {
+			return err
+		}
 		if row.ReclaimedAt == 0 {
 			return common.NewMessage("Internal principal reclaim has not been recorded")
 		}
