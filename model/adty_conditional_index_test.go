@@ -113,6 +113,37 @@ func TestConditionalIndexesDatabaseMatrix(t *testing.T) {
 	}
 }
 
+// EnsureOneRootUserIndex 在「已经有多个未删除 root」时不建索引是对的（本来也建不起来），
+// 但必须留下痕迹：ISS-R4-0126 之前这条分支是静默 return，索引在最需要它的库里消失，
+// 启动日志里一个字都没有，之后再把谁提成 Root 也没人拦。
+func TestEnsureOneRootUserIndexReportsMultipleLiveRoots(t *testing.T) {
+	db := isolatedMigrationTestDatabase(t, "sqlite")
+	require.NoError(t, db.AutoMigrate(&User{}))
+	first := User{Username: "root-one", Password: "password", Role: common.RoleRootUser}
+	second := User{Username: "root-two", Password: "password", Role: common.RoleRootUser}
+	require.NoError(t, db.Create(&first).Error)
+	require.NoError(t, db.Create(&second).Error)
+
+	var mu sync.Mutex
+	var lines []string
+	restore := common.SetSysLogSink(func(level, message string) {
+		mu.Lock()
+		defer mu.Unlock()
+		lines = append(lines, level+" "+message)
+	})
+	t.Cleanup(restore)
+
+	require.NoError(t, EnsureOneRootUserIndex(db), "破掉的不变量不能让启动失败")
+	assert.False(t, db.Migrator().HasIndex(&User{}, "ux_users_one_live_root"),
+		"已有两个未删除 root 时索引建不起来，这条分支保留")
+
+	mu.Lock()
+	joined := strings.Join(lines, "\n")
+	mu.Unlock()
+	assert.Contains(t, joined, "ux_users_one_live_root", "建不起索引这件事必须进日志")
+	assert.Contains(t, joined, fmt.Sprint([]int{first.Id, second.Id}), "日志要能指出是哪几个账号")
+}
+
 func TestFullStartupMigrationDatabaseMatrix(t *testing.T) {
 	for _, dialect := range []string{"sqlite", "mysql", "postgres"} {
 		for _, upgrade := range []bool{false, true} {

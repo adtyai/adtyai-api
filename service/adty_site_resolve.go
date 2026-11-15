@@ -279,7 +279,8 @@ func AdtySiteBaseURL(site *model.AdtySite) string {
 // AdtyOverrideStatus 在 /api/status 末尾调用（controller/misc.go）：当前请求是分站时，换成分站的站名、Logo、
 // 地址，关掉第三方登录和 Passkey，并清掉主站页脚、公告和 Passkey 域名。
 // Turnstile 继续用全局 site key，不在这里查 widget。
-// GetStatus 持有 OptionMap 的读锁，这里只读请求上下文和进程内站点，不查库，也不再拿这把锁。
+// 它只读请求上下文和进程内站点：不查库，也不拿 OptionMap 的锁。所以调用点在锁内锁外都对——
+// 现在 GetStatus 在拼响应之前就放掉了配置读锁（ISS-R4-0123）。
 func AdtyOverrideStatus(c *gin.Context, data map[string]any) {
 	// Check-in rewards are not a product. Hide the calendar even if an old
 	// option row still says the feature is on.

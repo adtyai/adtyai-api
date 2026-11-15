@@ -74,10 +74,18 @@ func GetStatus(c *gin.Context) {
 		turnstileSiteKey = choice.SiteKey
 	}
 
+	// 公告是一次真实的 DB 查询，同样必须在配置锁之外算（规则见上面 :69-72）：
+	// `/api/status` 是匿名热路径，把数据库往返放在全局读锁里，会让保存设置的后台
+	// 请求排在每个匿名页面加载后面。开关取自进程内快照，GetConsoleSetting 不拿锁，
+	// 所以可以先看开关再决定要不要查。
 	cs := console_setting.GetConsoleSetting()
+	var publicAnnouncements []service.AdtyPublicAnnouncement
+	if cs.AnnouncementsEnabled {
+		publicAnnouncements = service.AdtyPublicAnnouncementsForRequest(c)
+	}
 	passkeySetting := system_setting.PasskeySettingsSnapshot()
+	// 锁只包住读 OptionMap / 全局变量的这段，读完立刻放（下面都是拼响应，不碰配置）。
 	common.OptionMapRWMutex.RLock()
-	defer common.OptionMapRWMutex.RUnlock()
 
 	legalSetting := system_setting.GetLegalSettings()
 
@@ -161,6 +169,7 @@ func GetStatus(c *gin.Context) {
 		"quota_remind_threshold":      common.QuotaRemindThreshold,
 		"payment_methods":             paymentMethods,
 	}
+	common.OptionMapRWMutex.RUnlock()
 
 	// 根据启用状态注入可选内容
 	if cs.ApiInfoEnabled {
@@ -172,7 +181,7 @@ func GetStatus(c *gin.Context) {
 		// 形状保持不变：这条路由没有认证，公开面板靠它给未登录访客看公告，
 		// 换成需要登录的新接口会让匿名访客看不到公告——那是行为退化。
 		// 按 Host 判断站点可见性，所以分站只会读到自己的和平台级公告。
-		data["announcements"] = service.AdtyPublicAnnouncementsForRequest(c)
+		data["announcements"] = publicAnnouncements
 	}
 	if cs.FAQEnabled {
 		data["faq"] = console_setting.GetFAQ()
