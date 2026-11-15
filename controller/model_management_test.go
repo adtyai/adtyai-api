@@ -659,9 +659,19 @@ export function parseTaskResult() { return {}; }
 						assert.Equal(t, http.StatusBadRequest, recorder.Code)
 						assert.False(t, result.Success)
 					}
-					for _, query := range []string{"p=-1", "page_size=-1"} {
-						recorder := modelManagementRequest(t, SearchModelsMeta, "GET", "/api/models/search?square_state=visible&"+query, nil, nil)
-						assert.Equal(t, http.StatusBadRequest, recorder.Code)
+					// ISS-R4-0116：分页校验跟 square_state 无关。带过滤条件时拒绝的参数，
+					// 不带过滤条件时也必须拒绝，否则负页码会直接变成 SQL 里的负 offset。
+					for _, handler := range []gin.HandlerFunc{GetAllModelsMeta, SearchModelsMeta} {
+						for _, square := range []string{"", "&square_state=visible"} {
+							for _, query := range []string{"p=-1", "page_size=-1", "p=0", "p=abc"} {
+								path := "/api/models/?" + query + square
+								recorder := modelManagementRequest(t, handler, "GET", path, nil, nil)
+								assert.Equal(t, http.StatusBadRequest, recorder.Code, path)
+							}
+							// 合法分页照旧。
+							recorder := modelManagementRequest(t, handler, "GET", "/api/models/?p=1&page_size=10"+square, nil, nil)
+							assert.Equal(t, http.StatusOK, recorder.Code, square)
+						}
 					}
 					var oversizedPage filteredResponse
 					modelManagementRequest(t, SearchModelsMeta, "GET", "/api/models/search?square_state=visible&keyword=square-&p="+strconv.Itoa(int(^uint(0)>>1)), nil, &oversizedPage)
