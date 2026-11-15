@@ -164,6 +164,10 @@ jobs:
       - name: Check copyright headers against baseline
         run: node scripts/adty/ratchet.mjs copyright
 
+      # 文档必须跟着代码走：文档路径、openapi 路由、删除清单（scripts/adty/doc-refs.mjs）
+      - name: Check docs against code
+        run: node scripts/adty/doc-refs.mjs
+
   # 两个架构各用一个原生 runner 并行构建（arm64 用 GitHub 免费的 ubuntu-24.04-arm，不用 QEMU），
   # 每边按 digest 推单架构镜像，再由 merge 合成 manifest list。
   image:

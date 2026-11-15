@@ -34,6 +34,42 @@ sudo cp .env.example .env && sudo chmod 600 .env
 - Cloudflare Token 和 Turnstile widget secret 的数据库加密要求显式设置至少 32 字节的 `CRYPTO_SECRET`（建议上述随机 64 位十六进制），不能使用临时生成或会话默认值。所有节点及恢复环境必须使用同一个 key。历史明文首次载入自动加密；key 错误或密文损坏会停用本节点此域凭证并记录通用错误。恢复原 key 后重载配置，或由 Root 重新录入有效凭证；不得把密文当令牌填回界面。外部令牌泄露时先在 Cloudflare 撤销，再由 Root 保存替代值；不要直接修改 `CRYPTO_SECRET`，它还用于其他签名。旧明文备份仍须按敏感文件保管，不能因新版本加密就公开。
 - `LOG_SQL_DSN` 可选，留空时日志使用主库；设置时必须是 PostgreSQL，不限定主版本，且 API 容器和用于备份的 postgres 客户端容器均能访问它。备份按 API 容器实际的 `SQL_DSN` 和 `LOG_SQL_DSN` 导出，不假设连接是 compose 默认库。
 - compose 里固定写好的：`SESSION_COOKIE_SECURE=true`（和 `SESSION_COOKIE_TRUSTED_URL` 必须同时设，否则启动失败）、`ERROR_LOG_ENABLED=true`（默认关，不开就不记错误日志）、`BATCH_UPDATE_ENABLED=true`、`TRUSTED_PROXIES=172.30.0.1`。
+- `ADTY_FLUSH_TOKEN` 必填：`docker-compose.yml:40` 写成 `${ADTY_FLUSH_TOKEN:?set ADTY_FLUSH_TOKEN in .env}`，**不填 `docker compose up` 会直接报错退出**。它就是第 10 节升级时 `POST /api/adty/internal/flush-batch` 要带的 `X-Adty-Flush-Token`（`controller/adty_topup.go:155`），`backup.sh` 也从运行中的容器里读它，所以换值后要重启 API 容器。
+
+下面这些变量代码里真的在读，只有标「必填」的不填起不来：
+
+| 变量 | 必填 | 默认 | 说明 |
+| --- | --- | --- | --- |
+| `ADTY_IMAGE` | 是 | — | 镜像标签，生产只用 sha（第 3 节） |
+| `POSTGRES_PASSWORD`、`REDIS_PASSWORD` | 是 | — | 数据库和 Redis 密码，PostgreSQL 的只在首次建库时生效 |
+| `SESSION_SECRET`、`CRYPTO_SECRET` | 是 | — | 会话与加密密钥，分开设（见上面的密钥说明） |
+| `SESSION_COOKIE_TRUSTED_URL` | 是 | — | 与 `SESSION_COOKIE_SECURE=true` 配套，写 https origin |
+| `ADTY_FLUSH_TOKEN` | 是 | — | 内部刷盘接口密钥，compose 用 `:?` 强制要求 |
+| `LOG_SQL_DSN` | 否 | 空（用主库） | 独立日志库，必须是 PostgreSQL |
+| `ADTY_TELEGRAM_ALLOW_NETWORK` | 否 | `1` | 设成 `0` 时进程里没有 Telegram sender：通知和公告同步全部失败，外部只看到「没有消息要发」 |
+| `NODE_NAME` | 否 | `adtyai-node-1` | 节点名，多节点时区分 |
+| `TZ` | 否 | `UTC` | 容器本地时区；业务日切不看它，看后台的 `adty.business_timezone` |
+| `MAX_REQUEST_BODY_MB` | 否 | 128 | 单请求体上限（`common/init.go:190`），要和 Nginx 的 100m 一起考虑 |
+| `ANONYMOUS_REQUEST_BODY_LIMIT_KB` | 否 | 512 | 匿名请求体上限（`common/init.go:191`） |
+| `TASK_PLUGIN_ENABLED` | 否 | true | 任务插件总开关（`common/init.go:198`） |
+| `TASK_PLUGIN_PROTOCOL_TIMEOUT_SECONDS` | 否 | 600 | 客户端等待插件任务的协议超时，超时回 504（`common/init.go:214`） |
+| `ADTY_OFFICIAL_PRICE_SYNC_HOURS` | 否 | 24 | 主节点同步官方价的间隔，最少 1 小时（`service/adty_official_price.go:174`） |
+| `REFERRAL_SETTLEMENT_INTERVAL_SECONDS` | 否 | 60 | 主节点返佣结算间隔，最少 10 秒（`service/referral_commission.go:534`） |
+| `ADTY_TOPUP_MAINTENANCE_INTERVAL_SECONDS` | 否 | 60 | 主节点充值单维护间隔（`service/adty_topup_task.go:73`） |
+
+最后三个只在主节点生效。
+
+### 后台必须配置的 option 键
+
+这些不是环境变量，是数据库 options 表里的键。有的没配会让对应功能一直不生效，有的有代码内默认值；上线前按下表逐项确认：
+
+| 键 | 说明 |
+| --- | --- |
+| `adty_site_withdraw.min_usd`、`fee_usd`、`alipay_cny_rate`、`usdt_usd_rate` | 站长收益提现的最低额、手续费、人民币和 USDT 汇率。任一未设或非正数，站长的现金提现全部被拒绝（`service/adty_site_withdraw.go:15-18`） |
+| `adty.business_timezone` | 业务日切时区，写 IANA 名（如 `Asia/Shanghai`）；不设按 UTC 切日，决定日结单落在哪一天（`service/adty_site_settlement_sheet.go:15`） |
+| `adty_site_referral.pending_coverage_cap`、`observation_days` | 分站客户一级邀请佣金的待覆盖额上限和观察天数。不配时佣金永远停在「待覆盖」，既不冻结本站收益也不转余额；两个都必须是正数，观察天数决定冻结多久后转成可提现（`service/adty_site_commission.go:54-87`） |
+| `adty_site_referral.batch_register_threshold`、`batch_register_window_hours` | 批量注册风控的触发人数和统计窗口（小时），不配就不启用。注意键名里是 `batch_register_window_hours`（`service/adty_site_commission.go:20-21`） |
+| `adty_reseller_setting.max_custom_domains_per_site`、`custom_domain_creates_per_hour` | 每个站点最多绑几个自定义域名、每小时最多创建几次；不配时用代码内默认值 2 和 3（`setting/adty_setting/reseller.go:117-118`） |
 
 ## 3. 选镜像标签，从 GHCR 拉取
 
@@ -96,7 +132,7 @@ BACKUP_REMOTE=backup@backup-host:/srv/backup/adtyai/
 
 网段脚本的行为：从 https://www.cloudflare.com/ips-v4 和 https://www.cloudflare.com/ips-v6 下载（两个文件结尾都没有换行，脚本不会漏掉最后一行），每行都校验是合法的 IPv4 或 IPv6 网段，数量不能太少；然后替换 include 文件并 `nginx -t`，不通过就换回旧文件。下载失败、校验不过、`nginx -t` 不过时都保留旧文件、不 reload、退出码非 0，日志里能看到原因。网段没变时不 reload Nginx，但照样刷新一遍 ufw。
 
-robots.txt 由网关按站点返回（任务 11.3）：主站和开了 SEO 的分站只屏蔽 `/api/`、`/v1/`、`/pay/`，没开 SEO 的分站整站不收录，Nginx 不用另配。sitemap 另外在 Nginx 上配，只放首页的 8 个网址。
+`robots.txt` 和 `sitemap.xml` 都由应用生成，Nginx 不用配：`router/adty-router.go:615-616` 挂了 `GET /robots.txt` 和 `GET /sitemap.xml`，`router/adty_seo.go` 按主站/分站生成（主站和开了 SEO 的分站只屏蔽 `/api/`、`/v1/`、`/pay/`，没开 SEO 的分站整站不收录、robots 里也不给 sitemap；sitemap 只列首页的正式语言网址）。`deploy/adty/nginx.conf` 里没有任何 sitemap 配置。
 
 ## 6. Cloudflare 面板
 
@@ -187,7 +223,7 @@ sudo docker compose ps adtyai-api                 # 等到 healthy
 
 ## 11. 站长分站（P11）
 
-分站有两种域名：平台子域名 `<子域名>.<分站根域名>`，和站长自己的自定义域名。两种都走同一台机器、同一个网关，网关按请求的 Host 查站点表识别是哪个站（任务 11.2），Nginx 只要把 Host 原样传过去。下面用 `sites.example.com` 代表分站根域名。
+分站有两种域名来源：平台子域名 `<子域名>.<分站根域名>`，和站长自己的自定义域名。自定义域名本身又按用途分两种：`role=site` 出页面、登录、充值和用量，`role=base_url` 只放行 `/v1`、`/v1beta`、`/mj`、`/pg` 与探活（页面 404，账号接口 403）。两种都走同一台机器、同一个网关，网关按请求的 Host 查站点表识别是哪个站（任务 11.2），Nginx 只要把 Host 原样传过去。下面用 `sites.example.com` 代表分站根域名。
 
 ### Cloudflare
 
@@ -210,7 +246,7 @@ sudo docker compose ps adtyai-api                 # 等到 healthy
 
 ### Nginx
 
-`nginx.conf` 末尾的第二个 `server` 块接收主站以外的所有 Host，配置和主站一样（真实 IP、透传、超时、100m 请求体），另外透传 `CF-IPCountry`（营销同意的默认值按它判断，任务 12.1）。
+`nginx.conf` 末尾的第二个 `server` 块接收主站以外的所有 Host，配置和主站一样（真实 IP、透传、超时、100m 请求体），另外透传 `CF-IPCountry`。
 
 - `server_name` 写成正则 `~.`，匹配任意 Host。nginx 里单写 `_` 只是一个匹配不到的名字，收不到请求。
 - 代价：带任意 SNI 的握手都会拿到分站证书，不再被第一个 `server` 块的 `ssl_reject_handshake` 拒掉；不带 SNI（用 IP 直连）的照样拒。443 只对 Cloudflare 网段开放（第 5 节的 ufw 规则），所以可以接受。这个块必须在 ufw 规则生效之后再加载。

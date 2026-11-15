@@ -8,7 +8,7 @@ DEV_POSTGRES_DB = new-api
 DEV_POSTGRES_USER = root
 DEV_SQLITE_PATH ?= one-api.db
 
-.PHONY: all build-web build-all-web check-plugins start-api dev dev-api dev-api-rebuild dev-web reset-setup test
+.PHONY: all build-web build-all-web check check-docs check-plugins start-api dev dev-api dev-api-rebuild dev-web reset-setup test
 
 all: build-all-web start-api
 
@@ -23,6 +23,13 @@ build-all-web: build-web
 check-plugins:
 	@cd $(WEB_DIR) && bun run lint:plugins
 	@cd $(WEB_DIR) && bun run format:plugins:check
+
+# 文档漂移检查：文档里的文件路径、openapi 路由和删除清单（scripts/adty/doc-refs.mjs）
+check-docs:
+	@node scripts/adty/doc-refs.mjs
+
+# 聚合检查：插件 lint 和文档漂移
+check: check-plugins check-docs
 
 start-api:
 	@echo "Starting api dev server..."

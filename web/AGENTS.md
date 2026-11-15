@@ -68,12 +68,12 @@
   各 feature 的 `constants.ts` 中常出现「枚举/状态 + 展示文案」或「成功/错误消息」，须统一约定以免遗漏 i18n、用法混乱：
   - **成功/错误/提示类消息**（如 `SUCCESS_MESSAGES`、`ERROR_MESSAGES`）：常量值仅表示 **i18n 键**（与英文 fallback 同字面量）。展示时**必须**通过 `t()` 使用，例如 `toast.success(t(SUCCESS_MESSAGES.API_KEY_CREATED))`、`toast.error(t(ERROR_MESSAGES.UNEXPECTED))`，**禁止**直接 `toast.success(SUCCESS_MESSAGES.xxx)` 当作最终文案。
   - **状态/选项的 label**：在常量中统一用 **labelKey**（字符串，即 i18n 键），组件中通过 `t(config.labelKey)` 渲染；或约定用 `label` 存与 en 一致的 key 字符串，组件用 `t(config.label)`。同一 feature 内只采用一种方式，避免混用。
-  - **新增此类常量时**：同步在 `src/i18n/static-keys.ts` 中登记对应 key（若项目用其做提取），或确保文案以 `t('...')` 字面量形式出现以便扫描，避免遗漏翻译。
+  - **新增此类常量时**：新 key 必须出现在全部 8 个语言包（`src/i18n/locales/*.json`）里，且译文不得与英文相同；CI 的两个 workflow 都跑 `node scripts/adty/i18n-check.mjs` 检查这一点。`src/i18n/static-keys.ts` 的 `STATIC_I18N_KEYS` 目前全仓没有 import，只是人工登记，不参与提取或校验。
 
 **数字格式化与 Intl 语言参数（强制）**
 
 - 普通数字、紧凑数字展示必须优先复用 `@/lib/format` 的 `formatNumber` / `formatCompactNumber`；金额、余额与额度使用已有 `@/lib/currency` 或对应业务封装，保留精度、单位与换算语义。已有封装无法表达的格式选项才可直接使用 `Intl.NumberFormat`，不能为统一调用方式改变数值显示精度。
-- 正式产品语言只有简体中文和英文。语言选择器不得把繁体中文、法语、日语、韩语、俄语、越南语展示为已开放语言。这些语言包可以留在仓库里，避免重写 i18n 框架，但不能在文档、首页或选择器里承诺。
+- 正式产品语言只有简体中文和英文。语言选择器不得把繁体中文、法语、日语、韩语、俄语、越南语展示为已开放语言。这些语言包可以留在仓库里，避免重写 i18n 框架，但不能在文档、首页或选择器里承诺。新增 key 仍必须写进全部 8 个语言包且译文不同于英文，`scripts/adty/i18n-check.mjs` 会强制；只写 `en`/`zh` 会 CI 失败。
 - `zhCN` / `zhTW` 是项目的界面语言码，不是合法的 BCP 47 标签。来自界面语言的参数，无论直接引用、解构、变量别名或函数透传，在进入 `Intl.*`、`toLocaleString` / `toLocaleDateString` / `toLocaleTimeString` 或公共格式化函数前，必须使用 `@/i18n/languages` 的 `toIntlLocale()` 转换。禁止自行编写 `zhCN` 等语言码映射。
 - React 组件通过 `useTranslation()` 订阅语言，在渲染时计算 `const locale = toIntlLocale(i18n.resolvedLanguage || i18n.language)`，例如 `formatNumber(value, locale)`。不得把当前语言固定在模块常量或初始 state 中；语言切换后格式必须更新。明确使用运行环境默认语言或固定协议语言的场景，可省略 locale、传 `undefined` 或使用合法的固定标签。
 - `bun run lint` / `bun run lint:fix` 启用 **`project/intl-locale` error**，检查上述调用中的原始 `language` / `resolvedLanguage`、本地变量赋值与解构别名，以及非法固定标签；不得通过 lint-disable 绕过。静态检查不追踪跨函数或跨模块的数据流，调用方仍须遵守转换约定。
@@ -84,7 +84,7 @@
 - **表达式**：禁止 2 层及以上嵌套三元表达式；改用 `if-else`、提前返回或抽取函数。单层三元可保留，但需简洁。
 - **可读性**：控制函数圈复杂度，复杂逻辑拆成小函数；变量与函数命名需有意义，遵循驼峰等常规约定。
 - **TypeScript**：避免 `any`，优先具体类型或 `unknown`；为参数与返回值显式标注类型；仅类型用途的导入使用 `import type { X } from '...'`。
-- **类型检查**：每次改动 TypeScript 或 TSX 代码后都要执行类型检查（如 `bun check -b`）；若出现类型错误，须修复至无错误为止，不得遗留。
+- **类型检查**：每次改动 TypeScript 或 TSX 代码后都要执行类型检查（如 `bun run typecheck`）；若出现类型错误，须修复至无错误为止，不得遗留。
 - **Lint 检查**：每次完成代码改动前，必须对所涉及文件执行 lint 检查，并修复这些文件中的所有 lint error；不得遗留 error。warning 可按变更范围与风险评估处理。
 - **解构**：对象非必要不要进行解构，特别是组件的 props；直接使用 `props.xxx` 更清晰，避免不必要的解构增加代码复杂度。
 
@@ -117,7 +117,7 @@
 ### 3.4 性能
 
 - **React**：合理使用 `useMemo`、`useCallback` 减少无效重渲染；避免在渲染路径中创建新对象/数组；必要时使用 `React.memo`。
-- **代码分割**：使用 `React.lazy` 与动态 `import` 做按需加载，控制首屏与路由体积。界面语言包同样按当前语言动态加载，不把八份 locale 打进首包。
+- **代码分割**：使用 `React.lazy` 与动态 `import` 做按需加载，控制首屏与路由体积。界面语言包只打包、加载 `en` 与 `zhCN` 两个 loader（`src/i18n/languages.ts` 的 `LOADABLE_INTERFACE_LANGUAGE_CODES`），其余六份语言包留在磁盘上但不参与构建。
 - **资源**：图片选用合适格式与尺寸，大列表使用虚拟滚动（如 @tanstack/react-virtual），大量图片考虑懒加载。使用日志表只挂载可见行。
 - **主线程**：同一份价目、状态或配置未变化时，不重建数组、不写存储、不因更新检查顺带刷新整页状态。图表筛选变化时更新现有实例，不拆掉重建。
 
@@ -180,7 +180,7 @@
 
 ### 3.14 测试
 
-- 工具函数与纯逻辑优先单元测试（Vitest），测试文件 `*.test.ts`；组件用 React Testing Library 测交互与行为，避免测实现细节。
+- 工具函数与纯逻辑优先单元测试（Vitest），测试文件 `*.test.ts(x)`；组件用 React Testing Library 测交互与行为，避免测实现细节。
 - 新增功能、修复缺陷或修改现有行为时，必须同步新增或更新测试；Bug 修复必须先编写能够稳定复现问题的失败用例，再实现修复并确认用例转为通过。
 - 修改前端组件的布局、尺寸、滚动定位、焦点管理、键盘操作、选中状态、禁用状态、加载状态、空状态、错误状态或响应式行为时，必须补充对应的回归测试，覆盖本次变更保护的用户可见行为，防止后续调整重新引入问题。
 - 功能模块或组件模块的测试必须放在该模块专属的 `__tests__/` 目录中，例如 `src/components/model-group-selector/__tests__/layout.test.ts`；禁止将新增测试文件与正式代码文件平铺在同一目录。
@@ -199,7 +199,7 @@
 - 测试必须保护真实用户行为、稳定 API 契约或明确回归路径；禁止为了覆盖率添加 smoke、sleep/timing、随机输入、日志输出或只证明代码运行的测试。
 - 新增或大幅重写测试时优先使用 Vitest 与 React Testing Library 的标准断言和查询方式，避免手写通用断言辅助函数；只有表达项目特定业务不变量时才抽取测试 helper。
 - 清理测试时先合并重复场景、删除不明不白的实现细节断言；若旧测试间接覆盖了真实契约，需替换为更小、更直接的行为测试。
-- 提交前必须至少运行受影响测试文件，并根据影响范围执行相关测试集、`bun check -b` 和涉及文件的 lint；不得在未看到最新通过结果的情况下声明测试完成。
+- 提交前必须至少运行受影响测试文件，并根据影响范围执行相关测试集、`bun run typecheck` 和涉及文件的 lint；不得在未看到最新通过结果的情况下声明测试完成。
 
 ### 3.15 依赖管理
 
@@ -208,9 +208,9 @@
 
 ### 3.16 构建与部署
 
-- 使用 Rsbuild，配置见 `rsbuild.config.ts`；脚本以 `package.json` 为准（如 `bun run dev`、`bun run build`、`bun check -b`、`bun run lint`、`bun run format`），包管理见 [3.15 依赖管理](#315-依赖管理)。
-- 代码分割与懒加载策略见 [3.4 性能](#34-性能)；资源使用合适格式与压缩，环境变量用 `.env` 且以 `VITE_` 前缀，不在代码中硬编码。
-- **发布前**：执行 typecheck、lint、format 检查，完成生产构建并检查产物体积与环境变量配置。
+- 使用 Rsbuild，配置见 `rsbuild.config.ts`；脚本以 `package.json` 为准（如 `bun run dev`、`bun run build`、`bun run typecheck`、`bun run lint`、`bun run format`），包管理见 [3.15 依赖管理](#315-依赖管理)。
+- 代码分割与懒加载策略见 [3.4 性能](#34-性能)；资源使用合适格式与压缩，环境变量用 `.env` 且以 `VITE_` 前缀，不在代码中硬编码；例外是 `rsbuild.config.ts` 还读无前缀的 `PUBLIC_CDN_URL`（静态资源前缀）。
+- **发布前**：执行 typecheck、lint、format 检查，完成生产构建并检查产物体积与环境变量配置；CI 另外跑 `node scripts/adty/i18n-check.mjs` 和 `bun run browser:smoke`（用 Chromium 对生产构建做冒烟），发布前按这两条一起对齐。
 - **版本号**：由 `../.github/workflows/adty-ghcr.yml` 在构建时写入根目录 `VERSION`，前后端使用同一值；`main` 使用 `main-<短 SHA>`，标签构建使用标签名，其他分支使用 `<分支名>-<短 SHA>`，拉取请求使用 `pr-<编号>-<短 SHA>`。仓库里的 `VERSION` 保持为空。`package.json` 的包版本不代表镜像发布版本。
 
 ---

@@ -4,7 +4,7 @@
 
 **约定 A：代码放哪、怎么命名**
 - 后端新文件以 `adty_` 开头（`model/adty_*.go`、`service/adty_*.go`、`controller/adty_*.go`、`middleware/adty_*.go`），配置放 `setting/adty_setting/`。从旧项目移植的文件沿用旧名（如 `service/bepusdt.go`、`model/referral.go`），方便对照。
-- 新表名 `adty_*`；移植的返佣表沿用 `referral_*`。所有新表在 `model/adty_migrate.go` 的 `migrateAdtyTables` 里登记，只在主节点执行（上游迁移就只在主节点跑，model/main.go:215-222）。
+- 新表名 `adty_*`；移植的返佣表沿用 `referral_*`。所有新表在 `model/adty_migrate.go` 的 `MigrateAdtyTables` 里登记，只在主节点执行（`model/main.go:395` 调用它；`migrateAdtyTables` 只是给测试用的同名别名。上游迁移只在主节点跑，主节点判断在 `model/main.go:193`）。
 - 新接口一律在 `router/adty-router.go` 的 `SetAdtyRouter`（router 包，可直接用未导出的 `handlePermissionRoute`）里注册。全新接口用 `/api/adty/...`；移植的沿用旧项目路径（`/api/user/bepusdt/*`、`/api/user/referral/*`、`/api/user/admin/referral/*`、`/api/user/admin/finance/*`、`/api/referral-assets/*path`）；易支付回调用 `/api/user/epay/notify/:channelId`（和上游的 `/api/user/epay/notify` 不冲突，gin 静态路由优先）。
 - 每个接口都登记访问令牌规则（执行层决定 14）。删接口时同步删 `middleware/access_token_routes.go` 里的规则。
 - 前端新功能放 `web/src/features/adty-*`；钱包里的新组件放 `web/src/features/wallet/adty/`；移植的沿用 `features/referral`、`features/admin-referral`、`features/recharge-audit`。
@@ -13,7 +13,7 @@
 
 **约定 B：改上游文件**
 - 只加挂载点或做删除，不顺手重构。每改一个上游文件（包括上游的测试文件），在 `docs/adty/upstream-touchpoints.md` 记一行：文件、改了什么、为什么。
-- 主要挂载点：`router/api-router.go`（`SetApiRouter` 末尾一行 `SetAdtyRouter(apiRouter)`）、`main.go`（`model.InitDB()` 后一行 PostgreSQL 检查，`authz.Init` 前一行开启后台权限，`go model.SyncOptions` 后一行 `service.StartAdty()`）、`model/main.go`（一行 `migrateAdtyTables`）、`middleware/auth.go`（一行后台权限检查）、`controller/user.go`（注册、ManageUser、UpdateUser、登录响应各一行钩子）、`controller/option.go`（一段分组校验）、`model/log.go`（日志投影、TPM 计数）、`model/topup.go`（一行拒绝）、几个中转路由文件（限流）、`i18n/i18n.go`（加载新文件和新语言）、`web/src/styles/theme.css`（主题）。其余见各任务。
+- 主要挂载点：`router/api-router.go`（`SetApiRouter` 末尾一行 `SetAdtyRouter(apiRouter)`）、`main.go`（`model.InitDB()` 前一行 PostgreSQL 检查，`authz.Init` 前一行开启后台权限，`go model.SyncOptions` 后一行 `service.StartAdty()`）、`model/main.go`（一行 `MigrateAdtyTables`）、`middleware/auth.go`（一行后台权限检查）、`controller/user.go`（注册、ManageUser、UpdateUser、登录响应各一行钩子）、`controller/option.go`（一段分组校验）、`model/log.go`（日志投影、TPM 计数）、`model/topup.go`（一行拒绝）、几个中转路由文件（限流）、`i18n/i18n.go`（加载新文件和新语言）、`web/src/styles/theme.css`（主题）。其余见各任务。
 - 前端语言包只增不删；后端上游 yaml 不动（执行层决定 13）。
 - `web/src/routeTree.gen.ts` 由构建生成并已入库。增删路由后先跑 `bun run build` 重新生成，用 `git grep` 确认旧路由不在了，再跑检查，和改动一起提交。它带 `// @ts-nocheck`，类型检查发现不了里面的旧引用。冲突时也重新生成，不手工合。
 
@@ -23,12 +23,12 @@
 - 余额不能变负：每个钱包请求都要先预扣，余额不够就拒绝；结算补扣最多扣到 0，没扣到的差额记入同一账户短差额挂账并暂停新的付费请求（见 features.md 的「余额下限」）。新写的扣费代码要走「预扣分摊 → `model.ApplyBillingSettlement` 结算」这条路，不要直接改余额，也不要用不执行余额下限准入的 `model.DecreaseUserQuota`。（原来的 `model.ChargeUserQuotaUpTo` 已在 `ISS-R4-0054` 删除：它唯一的生产调用在运行期不可达。）
 - 显示：美元、人民币保留 2 位；USDT 按网关返回的位数原样显示。
 - 支付商名：`bepusdt`、`adty_epay`。支付方式：`usdt.trc20`、`usdt.bep20`、`usdt.polygon`、`usdt.xlayer`、`alipay`、`wxpay`。
-- 订单状态沿用上游 `top_ups.status` 的 `pending`、`success`、`expired`、`failed`（common/constants.go:275-278），新增 `canceled`、`refunded`。注意表名是 `top_ups`。
-- 后台「货币显示」设为 USD（上线清单）。TOKENS 显示模式会改变金额含义（controller/topup.go:154-158），这时报价接口直接拒绝。
+- 订单状态沿用上游 `top_ups.status` 的 `pending`、`success`、`expired`、`failed`（`common/constants.go:256-260`），新增 `canceled`、`refunded`；`canceled` 定义在 extended 模型里（`model/adty_topup_order.go:21`）。注意表名是 `top_ups`。
+- 后台「货币显示」设为 USD（上线清单）。TOKENS 显示模式会改变金额含义（`controller/topup.go:148-155`，该文件多处按 `QuotaDisplayTypeTokens` 换算），这时报价接口直接拒绝（`service/adty_topup_quote.go:94`）。
 
 **约定 D：权限和密钥**
-- 我们的后台接口一律用 `handlePermissionRoute(adminGroup, 方法, 路径, authz.AdtyXxx, 处理函数)` 注册，`adminGroup` 挂 `middleware.AdminAuth()`；权限清单见任务 2.6，文中写作「区域·动作」。只有超级管理员能做的（系统设置里的页面、易支付通道的新增和密钥、管理员任免）用 `middleware.RootAuth()`（middleware/auth.go:144），访问令牌规则登记为 `option:read` 或 `option:write`。
-- 存进 options 的密钥，键名必须以 `secret`、`Secret`、`Key`、`Token` 或 `api_key` 结尾，`GET /api/option/` 才会过滤掉（controller/option.go:92-96）。易支付通道的商户密钥存在通道表的 `merchant_key` 列（列名用 merchant_key，不用笼统的 key），字段带 `json:"-"`。
+- 我们的后台接口一律用 `handlePermissionRoute(adminGroup, 方法, 路径, authz.AdtyXxx, 处理函数)` 注册，`adminGroup` 挂 `middleware.AdminAuth()`；权限清单见任务 2.6，文中写作「区域·动作」。只有超级管理员能做的（系统设置里的页面、易支付通道的新增和密钥、管理员任免）用 `middleware.RootAuth()`（`middleware/auth.go:162`），访问令牌规则登记为 `option:read` 或 `option:write`。
+- 存进 options 的密钥，键名必须以 `secret`、`Secret`、`Key`、`Token` 或 `api_key` 结尾，`GET /api/option/` 才会过滤掉（`controller/option.go:84-88`）。易支付通道的商户密钥存在通道表的 `merchant_key` 列（列名用 merchant_key，不用笼统的 key），字段带 `json:"-"`。
 - 仓库是公开的：密钥、证书、服务器地址都不进仓库。
 - AGPL：不删 LICENSE、NOTICE、THIRD-PARTY-LICENSES.md 和上游源文件头（`bun run copyright:check` 会查），不自称官方。公开页脚不放上游署名、源码链接和客服邮箱。
 
@@ -56,7 +56,7 @@
 - 先写测试并确认失败，再实现并确认通过，然后提交。
 - 后端用 testify 的 require/assert。
 - （v2.5）我们写的、要用数据库的测试一律连 PostgreSQL，统一用各包的 `adtyTestDB(t)`（文件 `adty_testhelper_test.go`，任务 2.1 起）：
-  - 连接串读环境变量 `ADTY_TEST_PG_DSN`，没设就 `t.Skip` 并说明原因。从任务 2.1 起，check.sh 跑后端时要求它有值，CI 的 test 作业建议起 postgres:17 并设好它，所以门禁里这些测试不会被跳过。验收读取连接实例的 `server_version_num` 并记录，不设最低或最高版本，版本不同不算失败，不能只凭 DSN 或镜像名判断。
+  - 连接串读环境变量 `ADTY_TEST_PG_DSN`，没设就 `t.Skip` 并说明原因。从任务 2.1 起，check.sh 跑后端时要求它有值，CI 的 `test-backend` 作业建议起 postgres:17 并设好它，所以门禁里这些测试不会被跳过。验收读取连接实例的 `server_version_num` 并记录，不设最低或最高版本，版本不同不算失败，不能只凭 DSN 或镜像名判断。
   - 每个测试建一个随机名字的 schema，连接时用 `search_path` 指向它，测试结束删掉。`go test` 会同时跑多个包，各测试互不干扰。
   - model 和 service 包已经有 TestMain（model/task_cas_test.go:19、service/task_billing_test.go:30），`adtyTestDB` 在单个测试里换库、用完换回，写法参照 service/text_quota_test.go:78-82。换库时调 `common.SetDatabaseTypes(PostgreSQL, PostgreSQL)` 并重跑列名初始化：上游的 `initCol` 未导出（model/main.go:43），在 `model/adty_testsupport.go` 加一个导出包装；恢复时把数据库类型和列名一起还原。
 - 上游自己的测试照旧用它们的内存 SQLite，我们改过的上游代码不能让它们失败（执行层决定 11 的例外）。钉住上游行为的特征测试（任务 1.1）也沿用上游包里现成的测试库。任务 1.6 的 `TestAdtyDeletedSchemaAbsent` 跑的是上游的完整迁移，也用内存 SQLite：删订阅时去掉的 SQLite 专用建表语句只在 SQLite 上执行，换成 PostgreSQL 就查不到它们回来没有；而且 P1 时 `adtyTestDB` 还没有。

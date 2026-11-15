@@ -15,56 +15,63 @@
 - **公告已读角标（N-02）**：登录账号的 Notice 与 announcements 回执保存在服务端，按账号和当前 Host 隔离，同账号其他设备或标签页可在重新读取后同步；按公告内容版本计算，编辑同 ID 公告会重新计为未读。匿名访客仍用本地回执，历史匿名数据不会迁入登录账号。此项只补已读链，不包含 N-01 定向发布或 N-04 业务待办。
 - **定向通知（N-01，部分范围）**：Root 在系统设置→内容→公告的“定向通知”发布平台公告、系统通知、维护通知和经营规则调整；接收范围为全部用户、全部分站、指定单个分站。站长在站长中心→本站设置的“本站公告”管理自己站点的客户公告和经营说明，不能修改 Root 的通知。指定/全部分站的收件同时校验当前 Host 与 SQL 账号归属或站长身份；“全部用户”是 Root 明确授权全平台可见的范围。通知中心 Timeline 展示标题、发布人、类型、接收对象、时间及可选关联业务说明；每页 20 条，支持加载更多，角标包含后续页面未读数。登录账号才能收到新发布通知，匿名旧公告配置保持原有行为，旧公告开关不控制新发布通知。编辑会产生新的未读版本；版本冲突须重新读取，撤回后不再展示但保留发布及已读历史。表为 `adty_notification_publications`，管理接口分别为 `/api/adty/admin/notifications`（Root，PAT `option:read/write`）与 `/api/adty/site/notifications`（当前站长，PAT `wallet:read/write`）。指定业务范围的收件规则仍待确认，关联说明不构成收件筛选；员工授权与真实待办、外部邮件/短信/推送未由本批实现，N-01 不因本批部分范围关闭。
 
-目录：充值和加赠 · USDT 和易支付多通道 · 充值退款 · 余额下限 · 推广返佣 · 站长分站 · 分组和后台权限 · 营销模块删除与优惠码保留 · 网页客服、状态页、多语言、首页 SEO · 限流、脱敏和其他安全 · 官方价、接入文档、条款 · 品牌和 Logo。
+目录：充值和加赠 · USDT 和易支付多通道 · 充值退款 · 余额下限 · 推广返佣 · 站长分站 · 分组和后台权限 · 营销模块删除与优惠码退役 · 网页客服、状态页、多语言、首页 SEO · 限流、脱敏和其他安全 · 官方价、接入文档、条款 · 品牌和 Logo。
 
 ## 充值和加赠
 
-**做什么**：用户在钱包页（`/wallet`）选面额、选已配置的支付方式充值，支持 BEpusdt、易支付、Stripe、Creem、Waffo 和 Waffo Pancake，按后台设的档位多送一部分额度，可以再用优惠码多送。Creem 按已配置商品的固定面额下单。
+**做什么**：用户在钱包页（`/wallet`）选面额、选已配置的支付方式充值，支持 BEpusdt、易支付、Stripe、Creem、Waffo 和 Waffo Pancake。加赠按支付方式配置：主站由 Root 设每种方式的比例；分站要先由 Root 逐站授权支付方式，站长再在授权范围内设本站比例。优惠码已退役，报价和写入一律拒绝；能主动加额度的只有充值额度兑换码（`adty_voucher`）。
 
 **规则**：
 
 - **面额**：普通自选面额为正整数美元，不低于最低充值额 `MinTopUp`（默认 1）；Creem 使用商品配置的固定美元面额，可以有小数。钱包总额不能超过 2^53 − 1 额度，下单时会检查。易支付还受通道的单笔和每日限额限制。
-- **加赠档位**：`adty_topup_setting.bonus_rates`，JSON，键是整数美元，值是百分数，例如 `{"100": 2.5}` 表示 $100 起送 2.5%。保存时键必须是正整数，值在 0–100。**没有内置档位**（默认 `{}`，不送）。
-- **取档**：取「不超过面额、比例大于 0」的最大一档，档和档之间不插值；比最小档还少就不送。自定义金额也按这条。比例填 0 的档会被跳过、下面一档照样生效，所以「填 0」做不到「某个金额以上不送」。
-- 钱包页的金额按钮来自上游的 `payment_setting.amount_options`（默认 10、20、50、100、200、500），和加赠档位是两套配置。
+- **加赠按支付方式**：三个配置键 `adty_topup_setting.method_bonus`（主站规则）、`adty_topup_setting.site_method_auth`（Root 对分站的逐站授权）、`adty_topup_setting.site_method_bonus`（站长在本站授权范围内的规则）。每条规则是 `{"enabled": bool, "rate": "0.025"}`，`rate` 是 **0–1 的小数比例**（0.025 = 2.5%），不是百分数，也不是金额档位；没有规则或 `enabled=false` 就不送（`setting/adty_setting/bonus_method.go:20-23,186-195`）。支付方式规范化成 `alipay`、`wxpay`、`usdt`，USDT 的 TRC20 / BEP20 / Polygon / X Layer **共用一条 `usdt` 规则**（`service/adty_method_bonus.go:15-26`）。
+- **金额档位已退役**：`adty_topup_setting.bonus_rates` 只剩历史值，结构体注释写明「已退役的金额档位，不参与新订单赠金」（`setting/adty_setting/topup.go:13`）。保存档位的 `SaveAdtySiteBonusRates` 一律返回 `ErrAdtyAmountTierRetired`（`service/adty_site_earning.go:370-376`）。旧档位唯一的用途是算分站加赠上限里的「主站同档比例」。
+- **Root 授权流程**：主站比例 Root 用 `PUT /api/adty/admin/bonus-methods {method, enabled, rate}`。分站先由 Root 调 `PUT /api/adty/admin/sites/:id/bonus-methods {method, allowed}` 逐站授权；站长再调 `PUT /api/adty/site/bonus-methods {method, enabled, rate}` 设本站规则。未授权的支付方式站长存不进去（`MergeSiteMethodBonus` 直接拒绝），也不会付赠金（`setting/adty_setting/bonus_method.go:103-132`、`service/adty_method_bonus.go:47-55`）。
+- **报价两道闸**（分站加赠为正值时）：
+  1. **规则上限** `adtySiteBonusWithinCap`：本站加赠 ≤ 面额 ×（主站历史同档比例 + `adty_reseller_setting.max_site_bonus_extra`）÷ 100。主站同档比例从退役的 `bonus_rates` 按整数面额取「不超过它的最高档」，`max_site_bonus_extra` 没设按 0（`service/adty_site_earning.go:279-297`）。
+  2. **保障** `SiteBonusEarningCovers`：站长收益钱包的可用余额（`balance − frozen_usd`）要够垫这笔赠金；不够时只有 Root 授权了保证金补位（`adty_topup_setting.site_bonus_margin_fill`）且保证金本周期还能支取才放行（`service/adty_method_bonus.go:86-121`）。两道都过才报价，否则直接拒绝（`service/adty_topup_quote.go:151-165`）。
 - **公式**：
-  - 加赠 = 面额 × 比例 ÷ 100（8 位小数）。
-  - 入账额度 = (面额 + 加赠 + 优惠加赠) × QuotaPerUnit，向下取整。
-  - USDT 应付 = 面额 × 分组充值倍率（8 位）；下单后改成网关返回的实际应付（可能多出几分钱，用来区分订单）。
+  - 加赠 = 面额 × rate（8 位小数）。
+  - 入账额度 = (面额 + 加赠) × QuotaPerUnit，向下取整。
+  - USDT 应付 = 面额 × 分组充值倍率（8 位）；下单后改成网关返回的实际应付。
   - 支付宝、微信应付 = 面额 × 人民币单价 `Price`（默认 7.3）× 分组充值倍率（2 位）。
-  - 优惠码只多送额度，应付不变。返佣只按面额算，不含任何加赠。
-- **优惠码**：类型是按比例（0 < 值 ≤ 100）或固定金额（0 < 值 ≤ $100000）；码由 3–32 位大写字母、数字、`_`、`-` 组成，不分大小写。报价时校验：启用、适用站点和用户所属站点一致、在有效期内、面额达到最低面额、总次数和每人次数没用完、「只限新用户」时这个人从没充值成功过。次数在入账事务里用条件更新扣，每笔订单只核销一次；订单过期或取消不占次数。入账时码已经不能用了（停用、用完、删掉），照常入账面额和档位加赠，只去掉优惠加赠（钱已经收到了，不拒绝入账）。
-  - **平台出资**：Root 在「系统设置 → 计费 → 优惠码」建，可以指定适用站点；不记站长收益。
-  - **站长出资**：站长在站长中心建，只给本站客户用；站点档位加赠 + 优惠加赠不能超过 面额 ×（主站同档比例 + `adty_reseller_setting.max_site_bonus_extra`）÷ 100；入账时站长出的部分从站长收益里扣（见「站长分站」）。
-- **分站客户**：按站点自己的档位（`adty_sites.bonus_rates`）算，不会回落到主站档位。
+  - 返佣只按面额算，不含任何加赠。
+- **保障冻结与待履约**：下单/入账时按「站长出资的加赠」从收益钱包冻结，不够再用 Root 授权的保证金（流水 `gift_reserve`）；取消、过期、替换时按原路释放（`gift_release`）；客户消费赠金时按比例释放（`gift_spend`）（`service/adty_method_bonus.go:127-246`、`service/adty_gift_fulfillment.go:534-616`）。如果客户在订单取消或过期之后才付款、而站长当时保障不足：**本金照常入账，赠金记成「待履约」**（`adty_gift_fulfillments`，状态 `pending`），不可消费；站长把收益转进保证金（`POST /api/adty/site/wallets/earning-to-margin`）后，系统立即重取保障并补发（`service/adty_gift_fulfillment.go:340-472`、`service/adty_site_finance.go:420-425`）。整笔退款会把 pending 取消。
+- **分站客户**：只用 Root 授权过的支付方式下站长自己的规则；站长没设或没开就不送，不存在「回落到主站规则」。
+- **优惠码**：已退役。报价带码直接返回 `ErrAdtyPromoRetired`（`service/adty_topup_quote.go:143-146`），后台和站长码的写入接口一律拒绝，只剩 GET 列表。历史订单和核销行保留、不重算。要主动加额度只能用充值额度兑换码。
 
-**算例**（档位 `{10: 1, 30: 1.5, 100: 2.5, 100000: 8}`）：
+**算例（主站，`method_bonus` = `usdt` 2.5%、`alipay` 1%）**：
 
-- $100 USDT：加赠 $2.5，入账 $102.5（51,250,000 额度），应付 100 USDT；用支付宝应付 ¥730.00，入账相同。
-- 自定义 $150：落在 100 档，加赠 $3.75，入账 $153.75。
-- $100 加 10% 平台优惠码：优惠加赠 $10，入账 $112.5（56,250,000），应付仍是 100。
-- 分站上限：主站 100 档 2.5%、`max_site_bonus_extra` = 2，那么 $100 的分站订单，站点加赠加站长码合计不能超过 $4.5。
+- $100 USDT：加赠 $100 × 0.025 = $2.50，入账 $102.50 = 51,250,000 额度；应付 100 USDT。
+- $100 支付宝（`Price` 7.3）：加赠 $1.00，入账 $101.00 = 50,500,000 额度；应付 ¥730.00。
+- 自定义 $150 USDT：加赠 $3.75，入账 $153.75 = 76,875,000 额度。
+
+**算例（分站）**：主站旧 100 档 2.5%、`max_site_bonus_extra` = 2，则 $100 订单的加赠上限 = 100 × (2.5 + 2) ÷ 100 = **$4.50**。站长把 USDT 规则设成 3%，加赠 $3.00 ≤ $4.50，且收益钱包可用余额 ≥ $3.00 时才能报价；可用余额只有 $2.00 又没授权保证金补位，报价被拒。站长把比例调到 5%，加赠 $5.00 > $4.50，报价被拒。
 
 **后台**：
 
-- 系统设置 → 计费 → 支付（只有超级管理员）：人民币单价 `Price`、最低充值 `MinTopUp`、金额按钮、加赠档位、回调地址 `CustomCallbackAddress`。
-- 系统设置 → 计费 → 优惠码（`/system-settings/billing/promo-codes`，Root）：平台出资的码。
-- 站长中心 → 加赠、优惠码（`/site-owner/bonus`、`/site-owner/promo-codes`）：站点档位和站长出资的码。
+- 系统设置 → 计费 → 支付（只有超级管理员）：人民币单价 `Price`、最低充值 `MinTopUp`、金额按钮、各支付方式加赠、回调地址 `CustomCallbackAddress`。
+- 分站管理 → 站点明细：Root 逐站勾选可加赠的支付方式。
+- 站长中心 → 加赠（`/site-owner/bonus`）：已授权方式的开关和比例。
+- 优惠码页面只读，只列历史行。
 
-**默认**：没有档位，不送加赠。2026-11-01 起不再需要「支付合规确认」，支付默认就能用（见 deleted-features.md）。
+**默认**：没有任何支付方式规则，不送加赠。2026-11-01 起不再需要「支付合规确认」，支付默认就能用（见 deleted-features.md）。
 
 **表和接口**：
 
-- 表：`top_ups`（上游的充值记录，`Amount` 记美元面额、`Money` 记应付）、`adty_topup_orders`（面额、加赠、入账额度、优惠、站点、返佣快照）、`adty_promo_codes`、`adty_promo_redemptions`。
+- 表：`top_ups`（上游充值记录，`Amount` 记美元面额、`Money` 记应付）、`adty_topup_orders`（面额、加赠、入账额度、站点、赠金保障来源与待履约状态）、`adty_gift_fulfillments`；`adty_promo_codes`、`adty_promo_redemptions` 只保留历史；兑换码用 `adty_vouchers`。
 - 用户：`GET /api/adty/topup/info`、`POST /api/adty/topup/quote`、`GET /api/adty/topup/orders/:trade_no`、`POST /api/adty/topup/orders/:trade_no/cancel`、`GET /api/adty/topup/pending`、`GET /api/adty/topup/self`。
-- 平台优惠码：`GET`、`POST /api/adty/admin/promo-codes`，`PUT /api/adty/admin/promo-codes/:id`。站长优惠码：`GET`、`POST /api/adty/site/promo-codes`，`PUT`、`DELETE /api/adty/site/promo-codes/:id`（写操作要重新验证身份）。
+- 加赠配置：`PUT /api/adty/admin/bonus-methods`、`PUT /api/adty/admin/sites/:id/bonus-methods`（Root，PAT `option:write`）、`PUT /api/adty/site/bonus-methods`（站长，PAT `wallet:write`）。
+- 优惠码只剩 `GET /api/adty/admin/promo-codes`（支付·查看）和 `GET /api/adty/site/promo-codes`（站长，PAT `wallet:read`）；POST、PUT、DELETE 全部返回退役错误。
 
 **限制**：
 
-- 分站客户的钱包档位卡、报价和入账统一使用站点档位。
-- 站长删掉优惠码以后，已下单未付款的订单仍可入账本金和档位加赠，核销时会去掉这张码的优惠加赠。
+- 上限和保障是两条独立判断：上限查「规则允不允许给」，保障查「站长的钱够不够垫」。二者都过才报价。
+- `max_site_bonus_extra` 只放宽上限，不会给站长钱；收益不够、保证金没授权时同样报价失败。
+- 待履约赠金在补足保障前不能消费；全额退款时取消，不会折现。
+- 站长删掉旧的金额档位不影响新订单：新订单根本不读档位。
 
-任务 3.1、3.3、3.6、12.4。和方案不一致：方案 3.1 原来有 13 档内置加赠，已经按 3.6 删掉，全部在后台设置。
+任务 3.1、3.3、3.6、12.4。和旧文档不一致：方案 3.1 的内置 13 档和后来的金额档位都已退役，现规则按支付方式计，见 `setting/adty_setting/bonus_method.go`；优惠码整条链路也已退役。
 
 ## USDT（BEpusdt）和易支付多通道
 
@@ -115,7 +122,7 @@ BEpusdt 使用官方 `POST /api/v1/pay/info`，只信任与冻结付款链接同
 
 设这笔订单：
 
-- 入账额度 C = 本金 F + 赠金 G。F 是面额换算成额度（向下取整），G = C − F，包括档位加赠和优惠码加赠。
+- 入账额度 C = 本金 F + 赠金 G。F 是面额换算成额度（向下取整），G = C − F，即支付方式加赠（历史订单里还可能含已退役的档位或优惠码加赠）。
 - 用户现在的活余额是 B（锁住用户行后读取 `quota + quota_pending`，见下）；还留在钱包的签到赠送额度为 X。
 
 那么：
@@ -146,7 +153,7 @@ BEpusdt 使用官方 `POST /api/v1/pay/info`，只信任与冻结付款链接同
 
 **分站订单**（P11）：
 
-- 站长出的加赠只按收回的比例还给站长：收回的赠金 = min(G, R)，还给站长 = 站长出资的加赠 × min(G, R) ÷ G。平台优惠码出的赠金收回了不还给任何人。
+- 站长出的加赠只按收回的比例还给站长：收回的赠金 = min(G, R)，还给站长 = 站长出资的加赠 × min(G, R) ÷ G。平台出的赠金（历史平台优惠码）收回了不还给任何人。
   - 例：赠金 $10 全部由站长出，用户花了 $105、余额 $5：R = $5，只收回 $5，还给站长 $5，不是 $10。
   - 例：站长加赠 $10 加平台码 $10（G = $20），余额 $10：收回 $10，还给站长 $10 × $10 ÷ $20 = $5。
 - 站长的消费分成不扣：站长收益是按客户的消费记的，充值本身不产生站长收益；退款收回的是没花掉的余额，客户已经花掉的是真实消费。
@@ -173,7 +180,7 @@ BEpusdt 使用官方 `POST /api/v1/pay/info`，只信任与冻结付款链接同
 
 **规则**：
 
-- **请求前**：每个钱包请求都先预扣估算的费用（上游原有的估算：提示词 tokens 加上 max_tokens，请求里设了才算；分站请求已经乘上站长倍率 k）。预扣是带条件的原子扣减（余额 ≥ 预扣额才扣），并发的请求不能一起通过。余额不够就返回上游原有的额度不足错误（HTTP 403，错误码 `insufficient_user_quota`），请求不发给上游。
+- **请求前**：每个钱包请求都先预扣估算的费用（上游原有的估算：提示词 tokens 加上 max_tokens，请求里设了才算；分站请求已经按「分组倍率 × d × k」算好售价）。预扣是带条件的原子扣减（余额 ≥ 预扣额才扣），并发的请求不能一起通过。余额不够就返回上游原有的额度不足错误（HTTP 403，错误码 `insufficient_user_quota`），请求不发给上游。
   - 上游原来余额高于「信任额度」（`quota_setting.trust_quota_usd`，默认 $10）时跳过预扣，这条旁路对钱包请求已经关掉；设置项还在，但对钱包不再生效。
   - 图片张数、任务重试价、阶梯计费切换分组后的补预扣也一样：余额不够就 403。
 - **结算时**：实际费用比预扣多，补扣的部分最多扣到 0；没扣到的差额由平台承担。余额到 0 以后，下一个请求在预扣时就被拒绝，所以每个用户最多少收一次请求的差额。实际费用比预扣少时，多扣的退回，和上游一样。
@@ -229,7 +236,7 @@ BEpusdt 使用官方 `POST /api/v1/pay/info`，只信任与冻结付款链接同
 - 分站客户打开推广页时也会建一个推广员和邀请码；如果有主站用户用这个链接注册，他的充值会给这个分站客户计佣。方案只排除了「被邀请人是分站客户」，没提到这种情况，待定。
 - 上线时要先把批量注册阈值设成 0，真实 IP 验证通过后再改回 3（见上线清单）。代码默认是 3。
 
-任务 6.1–6.8、11.1。和方案不一致：方案说合作伙伴比例 15–20，代码只限制 0–100；方案 11.1 要求「站长首次提现必须人工审核」，用户在 a75c8b3da（2026-11-01）去掉了，站长收益转余额和别的佣金一样立即完成。
+任务 6.1–6.8、11.1。和方案不一致：方案说合作伙伴比例 15–20，代码只限制 0–100；方案 11.1 要求「站长首次提现必须人工审核」：现在站长收益走独立提现，每笔都由 Root 审核后打款，不再转进推广佣金余额（见「站长收益提现」）。
 
 ## 分站邀请佣金
 
@@ -250,17 +257,17 @@ BEpusdt 使用官方 `POST /api/v1/pay/info`，只信任与冻结付款链接同
 
 ## 站长分站
 
-**团队共享余额**：一个启用账号只能有一个活动团队。加入用一次性限时邀请。分站团队折扣不能低于该站供货系数。充值只由负责人记入共享额度。绑定到团队的 Key 调用只扣团队余额，不扣个人余额。协议价是站点正常售价乘团队折扣；分站结果低于供货价时拒绝请求。未绑定团队的 Key 不乘折扣。钱包页可以创建团队、查看共享额度和折扣，负责人可以发一次性邀请，成员可以用邀请码加入。页面不能自选站点。负责人注销或关闭团队后余额保留，Key 停用。分站关闭后存续团队迁到主站，旧 Key 停用，余额和成员关系不拆。
+**团队共享余额**：一个启用账号只能有一个活动团队。加入用一次性限时邀请。充值只由负责人记入共享额度。绑定到团队的 Key 调用只扣团队余额，不扣个人余额。协议价是站点正常售价乘团队折扣；分站结果低于供货价时按供货价计费（`max(供货价, 售价 × 折扣)`），不再拒绝请求。未绑定团队的 Key 不乘折扣。钱包页可以创建团队、查看共享额度和折扣，负责人可以发一次性邀请，成员可以用邀请码加入。页面不能自选站点。负责人注销或关闭团队后余额保留，Key 停用。分站关闭后存续团队迁到主站，旧 Key 停用，余额和成员关系不拆。
 
-**优惠码已退役**：新建、修改、删除和报价都不能再使用优惠码。历史兑换记录保留，不因此重算。钱包和后台不再提供填写入口。
+**优惠码已退役**：新建、修改、删除和报价都不能再使用优惠码。历史核销记录保留，不因此重算。钱包和后台不再提供填写入口。
 
 **充值额度兑换码**：全平台只有一种兑换码。Root 先设置主站发行额度后，才能发主站用户本金码或指定分站站长保证金码。站长用本站可用收益冻结后，发本站客户码或本人消费本金码。兑换成功写订单和流水，不加赠、不计邀请佣金。完整码只在生成时返回一次。未兑换码可以冻结，冻结后不能兑换，取消才释放来源。Root 可以授权站长用保证金发行。关站后未兑换码由主站承接原受众，不变成主站通用码。
 
 **站长不可更换**：正式站长不能更换。`POST /api/adty/admin/sites/:id/owner` 仍只对 Root 和 `option:write` 开放，但调用一律拒绝，不改站长、协议、员工、会话或余额。分站详情不再提供更换表单。历史 `adty_site_ownerships` 记录保留，不作为新的转让入口。
 
-已有交接记录仍按原财务归属解释：新请求、异步任务和充值冻结实际接受时的财务站长；后续调整、到账、加赠及退款沿原单归属。旧记录未记归属时仅归首份交接记录的原站长，不按秒级时间推断。当前产品不再产生新的站长交接。站长端不返回经营钱包和充值汇总；后台三钱包记账保留。站长独立收益账户与三钱包完整资金链属于 FIN-J-02 / FIN-I-04，仍未由本批关闭。
+已有交接记录仍按原财务归属解释：新请求、异步任务和充值冻结实际接受时的财务站长；后续调整、到账、加赠及退款沿原单归属。旧记录未记归属时仅归首份交接记录的原站长，不按秒级时间推断。当前产品不再产生新的站长交接。站长端不返回经营钱包和充值汇总；后台三钱包记账保留。站长收益钱包、结算和独立提现见「收益、冻结、结算、提现」和「新规范实施状态」。
 
-**做什么**：用户可以开一个分站（白标），用自己的站名和 Logo 拉客户。客户付「主站价 × 站长倍率 k」，平台收「主站价 × 拿货系数 d」，站长赚差价，收益按消费记账、冻结后可以提现。客户是平台的用户，钱由平台收。
+**做什么**：用户可以开一个分站（白标），用自己的站名和 Logo 拉客户。客户付「供货价 × (1 + 加价比例)」，平台按供货价收，站长赚差价，收益按消费记账、冻结后可以提现。客户是平台的用户，钱由平台收。
 
 **设置总则**：模块 `adty_reseller_setting`，只能在「分站管理 → 设置」（`/site-admin/settings`）或 `PUT /api/adty/admin/reseller/settings` 改（通用的 `PUT /api/option/` 拒绝这个前缀，防止绕过校验）。六个钱的参数**没有默认值**：`cost_factor`、`min_cost_factor`、`max_markup`、`max_site_bonus_extra`、`trial_grant_max_usd`、`trial_grant_daily_usd`。它们都设了、并且 `root_domains` 不为空，总开关 `enabled` 才能打开。
 
@@ -277,30 +284,56 @@ BEpusdt 使用官方 `POST /api/v1/pay/info`，只信任与冻结付款链接同
 
 ### 定价：d 和 k
 
-- **d（拿货系数）**：管理员设，0 < d ≤ 1。取值顺序：单站设的 d → 业绩档位的 d → 全局 `cost_factor`；结果低于 `min_cost_factor` 时用下限。管理员在站点明细里改单站 d（`PUT /api/adty/admin/sites/:id`）。
-- **k（站长倍率）**：站长设，1 ≤ k ≤ 上限（单站设的上限 → 全局 `max_markup`，1–100）。可以按全站、按分组、按单个客户设；取 k 的顺序：客户 + 分组 → 客户 → 全站 + 分组 → 全站 → 1。
-- **改价**：降价和第一次设置立即生效；涨价写成待生效，`markup_increase_delay_hours`（默认 24）小时后由主节点生效（每 5 分钟检查）；涨价没生效前又降价，取消待生效的涨价。只有 active 的站能改价，暂停和关站中都不能。保存带版本号，别处改过就报冲突。站长中心 → 定价（`/site-owner/pricing`）显示待生效的涨价和生效时间。
-- **扣费**：k 乘进分组倍率，所有扣费路径都覆盖（文本、按次、阶梯计价、图片、任务、Realtime、任务按 token 重算）；k 和 d 只记在日志的 `admin_info` 里，客户看不到。价格页和分组列表也按 k 显示分站价。
-- **算例**：主站价 $0.40，k = 1.25，d = 0.8：客户扣 $0.50；平台收 $0.50 × 0.8 ÷ 1.25 = $0.32；站长收 $0.18，等于 $0.40 ×（1.25 − 0.8）。
+分站价格只有一条公式，不是「客户付主站价 × k、平台收主站价 × d」两套独立价格（`service/adty_site_markup.go:18-27,167-184`）：
+
+```
+供货价 = 分组倍率 × d
+售价   = 供货价 × (1 + 加价比例) = 分组倍率 × d × k
+```
+
+「分组倍率」是上游按分组算出的基础倍率（主站价 = 基础价 × 分组倍率）。存储字段仍叫 k、按**倍率**保存：**1 表示不加价**，1.2 表示加价 20%；计费时加价比例 = k − 1（`service/adty_site_markup.go:139-142`）。k 小于 1 表示低于供货价卖，收益会是负数。
+
+- **d（供货倍率）**：管理员设，正数即可，**可以大于 1**，不再要求 ≤ 1（`service/adty_site_markup.go:26,115-137`）。取值：单站 d → 等级/业绩档位的 d → 全局 `cost_factor`；结果低于 `min_cost_factor` 时抬到下限。管理员用 `PUT /api/adty/admin/sites/:id` 改单站 d。
+- **k（站长加价倍率）**：站长设，必须是正数且不超过上限。上限取「单站上限、等级上限、全局 `max_markup`」三者中最小的；实际扣费时还会按当前上限再截一次（`service/adty_site_markup.go:394-431`）。
+- **按模型加价**：同一张定价表 `adty_site_prices` 可以有模型级行。解析顺序：客户+分组 → 客户 → 全站+分组 → 全站 → 1；带模型名的行优先于同层级不带模型的行（`service/adty_site.go:973-1018`）。价格页按模型有效 k 相对同分组通用 k 的比例缩放该模型标价（`service/adty_site_markup.go:930-979`）。
+- **改价**：第一次设置或降价立即生效；涨价写待生效，`markup_increase_delay_hours`（默认 24）小时后由主节点每 5 分钟的任务生效；涨价没生效前又降价，取消待生效值（`service/adty_site_markup.go:433-623,874-897`）。active 站和遗留的 paused 行可以改价，pending、closing、closed 拒绝。保存带版本号，别处改过返回冲突。
+- **团队协议价**：分站团队折后价 = 分站普通售价 × 团队支付比例，最终价不得低于供货价：`max(供货价, 售价 × 比例)`；主站团队没有这个下限（`service/adty_site_markup.go:268-329`）。
+- **扣费与显示**：d、k 只乘进分组倍率，文本、按次、阶梯、图片、任务、Realtime 全走同一入口；两个值只记在日志的 `admin_info`，客户看不到。价格页和分组列表按分站售价显示。
+
+**算例**（主站基础价 $0.40，分组倍率 1）：
+
+- d = 0.7、k = 1.5：供货价 = $0.40 × 0.7 = $0.28；售价 = $0.28 × 1.5 = **$0.42**；平台收 $0.42 ÷ 1.5 = $0.28；站长赚 $0.14。
+- d = 1.1、k = 1.2（d > 1）：供货价 = $0.40 × 1.1 = $0.44；售价 = $0.44 × 1.2 = **$0.528**；平台收 $0.528 ÷ 1.2 = $0.44；站长赚 $0.088。
+- 同一个站再给某个模型单独设 k = 1.8：该模型售价 = $0.40 × 0.7 × 1.8 = **$0.504**，其他模型仍是 $0.42。
 
 ### 加赠和试用额度
 
-- **加赠**：站长在站长中心 → 加赠（`/site-owner/bonus`）设本站档位（要重新验证身份），每一档不能超过「主站同档比例 + `max_site_bonus_extra`」（没设按 0，即不能高于主站）。分站客户只用站点档位，站点没设就不送。加赠由站长出：客户充值入账时，给站长记一笔负的收益（`bonus`）；站长出资的优惠码一样。
-- **试用额度**：站长在客户详情里给单个客户送（`POST /api/adty/site/customers/:id/trial`，要重新验证身份），单次不超过 `trial_grant_max_usd`，本站每天合计不超过 `trial_grant_daily_usd`，任一没设就不能送；给客户加额度并写余额流水（`site_trial`），给站长记一笔负的收益（`trial`）。
+- **加赠**：按支付方式，不按金额档位。Root 先逐站授权支付方式（`site_method_auth`），站长再在站长中心 → 加赠（`/site-owner/bonus`）设本站比例（`site_method_bonus`，要重新验证身份）。上限、收益保障、赠金冻结和待履约见「充值和加赠」。旧站点金额档位 `adty_sites.bonus_rates` 不再接受新保存（`SaveAdtySiteBonusRates` 返回 `ErrAdtyAmountTierRetired`）。
+- **试用额度**：站长在客户详情里给单个客户送（`POST /api/adty/site/customers/:id/trial`，要重新验证身份），单次不超过 `trial_grant_max_usd`、本站每天合计不超过 `trial_grant_daily_usd`，任一没设就不能送。钱从站长的推广佣金可提现余额里扣（`referral_commission_accounts.available_amount`），不够就拒绝；给客户加额度、写余额流水 `site_trial`，并记一条已结算的 `trial` 日汇总行（只做报表，结算任务不再取它）（`service/adty_site_earning.go:381-506`）。
 
 ### 收益、冻结、结算、提现
 
-- **记账**：每笔消费按扣费当时的 k、d 记：站长收益 = 扣费 ×（k − d）÷ k，平台收入 = 扣费 × d ÷ k，两项相加正好是客户付的钱。余额下限生效时按实际扣到的额度记（见「余额下限」）。按「站、客户、日期、类型」累加进日汇总表 `adty_site_earning_daily`，类型有 usage、refund、bonus、bonus_reversal、trial、skipped。渠道测试不记账；关掉消费日志也照样记账。
+- **记账**：每笔消费按扣费当时的 k 拆：客户付 q（额度按 QuotaPerUnit 折成美元），平台供货成本 = q ÷ k，站长收益 = q − q ÷ k（`service/adty_site_earning.go:35-54`）。d 已经包含在 q 里，不再单独参与拆分；k 小于 1 时收益为负。余额下限生效时按实际扣到的额度记（见「余额下限」）。按「站、客户、日期、类型」累加进日汇总表 `adty_site_earning_daily`，类型有 usage、refund、bonus、bonus_reversal、trial、skipped。渠道测试不记账；关掉消费日志也照样记账。
 - **风控**：客户在分站注册时判一次：和站长 `fingerprint_window_days`（默认 30）天内用过同样的 IP 或设备，标「疑似自用」；和主站某个充过值的用户设备相同，标「疑似主站迁移」。两种检查各有开关（`self_use_check_enabled`、`migration_check_enabled`，默认都开）。被标记、没复核的客户照常扣费，收益记成 skipped、不结算。管理员复核后（`POST /api/adty/admin/sites/customers/:id/review`）之后的消费正常计，还可以把没结算的 skipped 改回 usage。
-- **结算**：每天第一次过 `settle_hour`（默认 4 点，服务器时区）后跑一次：冻结满 `freeze_days`（默认 7）天的 pending 行按站汇总（负数一起加），加进站长的佣金账户，写流水 `site_earning`。暂停的站跳过。
-- **提现**：在推广页（`/referral`）提，和推广佣金同一个账户、同一套规则：转余额立即完成，USDT 和收款码人工审核；可提现余额不够（包括为负）时提不了；还要求推广返佣总开关打开。
-- **算例**（k 1.25、d 0.8、冻结 7 天）：10-01 当天客户扣 $125 → 站长 +$45；客户充 $100、站点加赠 5% → −$5；送试用 $2 → −$2；当天合计 $38，10-08 凌晨 4 点后转为可提现。
+- **结算**：每天第一次过 `settle_hour`（默认 4 点，服务器时区）后跑一次。pending 行里，负数随时结；正数要等日期 ≤ 今天 − `freeze_days`（默认 7）（`service/adty_site_settlement_task.go:18-33,120-138`）。站点待审、有结算暂停原因、有未复核的收益事件或消费对账对不上时，正收益继续挂起。汇总后**只记站点收益钱包**（`adty_site_wallets` 的 earnings），流水类型 `site_earning_settlement`；**不再记推广佣金账户 `referral_*`**，避免同一笔钱在两个账户各提一次（`service/adty_site_settlement_task.go:143-184`）。行改成 available。bonus / bonus_reversal 只更新日汇总报表，不再动钱包（赠金保障在充值环节已经冻结）。
+- **算例**（主站基础价 $100、d = 0.7、k = 1.5、冻结 7 天）：客户扣 $105 → 平台 $70、站长 +$35；当天客户充 $100、站点 USDT 加赠 2% → −$2；送试用 $2 → −$2；当天合计 $31，10-08 04:00 后结进收益钱包。
+
+#### 站长收益提现
+
+- **独立链路**：不走 `/referral` 的推广佣金账户，直接从站点收益钱包提（`service/adty_site_withdraw.go`）。
+- **配置**：Root 必须先设 `adty_site_withdraw.min_usd`、`fee_usd`、`alipay_cny_rate`、`usdt_usd_rate` 四项，缺一项或非正数就整条链路拒绝（`service/adty_site_withdraw.go:14-19,55-116`）。接口 `PUT /api/adty/admin/site-withdrawals/rules`（Root）。
+- **方式**：支付宝或 USDT。USDT 按所选链校验地址；支付宝要收款人姓名和账号。金额不低于 `min_usd`，且必须大于 `fee_usd`。
+- **实付**：`(申请金额 − fee_usd) × 对应汇率`。支付宝按 `alipay_cny_rate` 出人民币，USDT 按 `usdt_usd_rate` 出 USDT。用户提交时要带看到的汇率，汇率变了会要求确认新汇率。
+- **资金**：申请时当场从 earnings 钱包余额扣下，写流水 `earning_withdraw_freeze`；幂等键重复提交返回原单。
+- **状态机**：`pending` →（Root 标记打款中）`paying` →（Root 记录打款）`paid`；`pending` 可由站长 `POST /api/adty/site/withdrawals/:id/cancel` 撤销，或由 Root `reject` 驳回，两条都把金额退回 earnings（`earning_withdraw_release`）。USDT 标记 `paid` 必须填交易号；两种方式至少要有交易号或凭证（`service/adty_site_withdraw.go:236-317`）。
+- **算例**：申请 $150、`fee_usd` = 2、`usdt_usd_rate` = 1：实付 148 USDT。申请 $50、`fee_usd` = 2、`alipay_cny_rate` = 7.1：实付 (50 − 2) × 7.1 = **¥340.80**。
+- **接口**：站长 `GET /api/adty/site/withdrawals`、`GET /api/adty/site/withdrawals/rules`、`POST /api/adty/site/withdrawals`、`POST /api/adty/site/withdrawals/:id/cancel`；Root `POST /api/adty/admin/site-withdrawals/:id/paying|reject|paid`。
 
 ### 站长中心
 
-站长中心（`/site-owner/<分区>`，侧边栏只对站长显示）：概览（收益数字、近 30 天、趋势）；客户（列表、精确查找、详情：请求记录、充值、密钥、送试用、单独定价、举报）；定价；加赠；优惠码；站点设置（品牌和 Logo、自定义域名、发件域名、SEO 开关）；收益流水（含 CSV 导出，邮箱一律打码）；开站协议（只读）。
+站长中心（`/site-owner/<分区>`，侧边栏只对站长显示）：概览（收益数字、近 30 天、趋势）；客户（列表、精确查找、详情：请求记录、充值、密钥、送试用、单独定价、举报）；定价；加赠；收益提现；站点设置（品牌和 Logo、自定义域名、发件域名、SEO 开关）；收益流水（含 CSV 导出，邮箱一律打码）；开站协议（只读）。
 
-改全站价、改客户价、改加赠、送试用、删自定义域名、建改删优惠码、删发件域名，都要重新验证身份（上游的二次验证：有 2FA 或 Passkey 用它们，没有就用密码；验证一次只能用一次，绑定具体操作和对象）。
+改全站价、改客户价、改加赠、送试用、提现、删自定义域名、删发件域名，都要重新验证身份（上游的二次验证：有 2FA 或 Passkey 用它们，没有就用密码；验证一次只能用一次，绑定具体操作和对象）。
 
 品牌图片：Logo 和独立 Favicon 均接受 PNG、JPEG、WebP，不超过 200 KB，存在 `/data/uploads/site-assets`；新上传拒绝 SVG。站长可保存最多 80 字符的网站标题和 `#RRGGBB` 主色；标题、站名、标语、公告、客服联系方式按纯文本显示。标题留空沿用站名/标语；Favicon 留空回退 Logo，再回退平台图标；主题色留空恢复平台默认。保存按当前站长归属更新，公开配置按 Host 隔离。
 
@@ -317,15 +350,19 @@ BEpusdt 使用官方 `POST /api/v1/pay/info`，只信任与冻结付款链接同
 | `request_logs` | on | 请求时间、模型、令牌名、扣费（客户价）、token 数、耗时、是否流式（走客户自己看到的日志投影） |
 | `customer_tokens` | on | 密钥名称、状态、最后使用时间 |
 
-永远看不到：IP、设备、第三方登录、手机号、风控的判断依据（只给类别）、渠道、倍率、密钥本身、请求和回复内容、其他分站和主站的数据。精确查找（`GET /api/adty/site/customers/lookup?q=`）必须是完整的用户名或邮箱，每站每小时最多 `customer_lookup_per_hour`（默认 20）次，每次都记进 `adty_site_lookups`。
+永远看不到：IP、设备、手机号、风控的判断依据（只给类别）、渠道、倍率、密钥本身、请求和回复内容、其他分站和主站的数据。精确查找（`GET /api/adty/site/customers/lookup?q=`）必须是完整的用户名或邮箱，每站每小时最多 `customer_lookup_per_hour`（默认 20）次，每次都记进 `adty_site_lookups`。
 
 ### 自定义域名和 Turnstile
 
 - 要先打开 `custom_domain_enabled`（默认关），并填好 `cloudflare_apiToken`（密钥）、`cloudflare_zone_id`、`cname_target`，否则打不开。另有 `cloudflare_account_id`、`fallback_origin`（回源主机名）、`turnstile_widgets`（每个 widget 的 `id`、`site_key`）和 `turnstile_widget_secret`（widget id → secret，密钥）。
 - Cloudflare Token 和 widget secret 在 options 中以 AES-256-GCM 加密；只有部署固定的 `CRYPTO_SECRET` 能解密，数据库备份不包含该 key。历史明文首次读取时在行锁内升级，重复加载保持密文不变。错误 key 或损坏密文会清空本节点此域的运行密钥并记录不含秘密的错误，其余安全设置仍可加载。Root 可替换/清空密钥；空串保存保持旧值，任何角色均不能从接口读到原值或密文。
+- **两种 role**：每个域名带 `role`，建站时用 `POST /api/adty/site/domains {hostname, role}` 指定（`controller/adty_reseller.go:47-52`、`model/adty_site_domain.go:13-28`）：
+  - `role=site`（默认）：站点域名，承接完整页面和账号流程——浏览、注册、登录、充值、密钥、用量都行；只有平台级管理接口（`/api/adty/admin`、`/api/option`、`/api/channel` 等）返回 403（`middleware/adty_site_context.go:115-120,168-179`）。
+  - `role=base_url`：API 地址，只放行 relay（`/v1`、`/v1beta`、`/mj`、`/pg`）和探活/元信息接口（`/api/status`、`/api/ready`、`/api/uptime/status`、`/api/ratio_config`、`/api/adty/groups/display`、`/api/adty/site`、`/api/adty/pricing*`）。其他页面一律 404，其他账号接口一律 403（`middleware/adty_site_context.go:100-114,181-196`）。
 - **流程**：站长在站点设置里填子域名（不能是根域名，不能在我们的根域名、主站域名、CNAME 目标、回源主机名下）→ 后端调 Cloudflare 建自定义主机名（HTTP 验证、DV 证书），3 秒后再查一次取验证记录 → 站长中心显示「把这个域名 CNAME 到 `cname_target`」和要加的 TXT 记录 → 主节点每 5 分钟查一次，主机名和证书都是 active 才启用；72 小时还不通标失败，站长重新提交就是重试。
 - **Turnstile**：域名启用后，按 `turnstile_widgets` 的顺序登记进第一个还有空位的 widget（每个 widget 最多 10 个域名）；名额满了域名照常能用，之后每 5 分钟重试登记。`/api/status` 按当前站点返回对应的 site key，校验时用对应的 secret，并核对 Cloudflare 返回的主机名。
-- 表：`adty_site_domains`。接口：`GET`、`POST /api/adty/site/domains`，`DELETE /api/adty/site/domains/:id`（要重新验证）。
+- **`/api/status` 的 `server_address`**：优先返回这个站已启用的 `role=base_url` 域名（专门给客户端复制），没有时用访客当前所在的站点域名，最后回落到平台子域名（`service/adty_site_resolve.go:350-389`）。
+- 表：`adty_site_domains`（`role` 列）。接口：`GET`、`POST /api/adty/site/domains`，`DELETE /api/adty/site/domains/:id`（要重新验证）。
 - 2026-11-01 还没用真实的 Cloudflare 账号测过，代码按官方 API 文档写，上线前按任务 11.0 实测。
 
 ### 发件域名
@@ -338,11 +375,11 @@ BEpusdt 使用官方 `POST /api/v1/pay/info`，只信任与冻结付款链接同
 ### 关站和暂停
 
 - **Root 关站**：站点明细里的「关站」（`PUT /api/adty/admin/sites/:id/status`，`status=closed`）仅 Root 可执行，普通管理员获授「分站·调整」也不能安排或立即关站。客户固定由主站继承，可以立即执行。站点先变成关站中，`close_notice_days`（默认 7）天后由主节点执行。前端同步隐藏普通管理员入口；弹窗打开或请求排队后 Root 身份失效，也不发送关站请求。
-- **执行时**：客户改成主站价；关站不扣回也不作废收益：已结算的留在站长的佣金账户（可提现），未结算的保持 pending 等自然结算；删除自定义域名和发件域名；平台子域名的页面跳到主站。
+- **执行时**：客户改成主站价；关站不扣回也不作废收益：已结算的留在站长的收益钱包（可提现），未结算的保持 pending 等自然结算；删除自定义域名和发件域名；平台子域名的页面跳到主站。
 - **迁移凭证**：客户归属变更与旧 API Key 软删除在同一事务内提交；旧 Key 永久失效，普通编辑不能重新启用。Key 行、历史 ID、额度和消费日志保留，客户在新站点重新创建 Key。创建 Key 与迁移使用同一用户锁：先完成创建的 Key 随迁移撤销，迁移后创建的保留。迁移同时递增用户认证版本，拒绝旧用户缓存与旧浏览器会话，客户需重新登录；PAT 凭证本身不因此撤销。事务回滚时归属、Key 和版本一并回滚，已发布的临时认证屏障到期前可能暂时拒绝鉴权。
 - **迁移验收边界**：上述凭证撤销不代表资金来源、赠金、冻结金额、未结佣金、提现及在途请求/任务已经完成结清验收；切换时点与对账规则仍待确认，不据此关闭 FIN-I-06。
 - 关站中：客户照常使用，不能注册新用户，站长不能改价。
-- **暂停**：获授「分站·调整」的普通管理员仍可暂停和恢复；客户照常使用和注册，收益照常记但不结算；站长不能改价、改加赠、送试用。
+- **暂停已退役**：暂停/恢复的写入口不再接受（遗留 `status=paused` 的行只能由 Root 用 `POST /api/adty/admin/sites/:id/paused-repair` 一次性修复成 active 或关站）。遗留 paused 行按 active 处理：客户照常使用、收益照常结算、站长可改价和提现（`service/adty_site.go:738-770`、`service/adty_site_settlement_task.go:107`）。
 - 站长申请关站有接口 `POST /api/adty/site/close`，只记下申请时间，站点状态不变。
 
 ### 按域名识别站点、注册和登录
@@ -350,16 +387,16 @@ BEpusdt 使用官方 `POST /api/v1/pay/info`，只信任与冻结付款链接同
 - 每个请求按实际 Host 头识别主站、已启用自定义域名或「子域名.根域名」；未知 Host 的页面和 API 都返回 404，不受旧 `unknown_host_mode` 配置影响。关闭分站的 API 返回 403，页面继续跳到客户的新归属。分站总开关关闭时，所有非主站 Host 都返回 404。
 - 在分站注册的用户归这个站（`users.site_id`），以后不能改；分站客户不走推广绑定。
 - `site_login_only`（默认开）：分站客户只能在自己的分站登录，主站用户只能在主站登录；不符时的提示和密码错一样，不暴露账号存在。API Key 独立按所属站点绑定实际 Host：主站 Key 只用于主站，分站 Key 只用于所属站的有效域名，跨站返回 403，未知 Host 返回 404；只读用量、日志和模型接口也执行，不能用 `X-Forwarded-Host` 绕过。
-- 分站的 `/api/status` 返回分站的站名、Logo、`site_title`、独立 `favicon`、`theme_color`、地址和 Turnstile site key，并关掉第三方登录和 Passkey。前端统一应用标题、图标、主色及浏览器主题色；主题切换保留站点主色，前景按亮度选择黑或白。
+- 分站的 `/api/status` 返回分站的站名、Logo、`site_title`、独立 `favicon`、`theme_color`、地址和 Turnstile site key，并把历史第三方登录字段（GitHub、Discord、LinuxDO、Telegram、微信、OIDC 等）清成关闭、关掉 Passkey。前端统一应用标题、图标、主色及浏览器主题色；主题切换保留站点主色，前景按亮度选择黑或白。
 - 邮件链接、站名、支付跳回地址只从站点表取，不读请求的 Host 头。找回密码按用户所属站点生成链接。
 - **支付跳回**：易支付付完回到主站的 `/pay/result/<订单号>.<签名>`，签名对就 302 到订单所属站点的钱包，不对就去主站钱包。
 - **SEO**：分站首页默认 noindex，站长可以在站点设置里打开收录（`adty_sites.seo_index`），打开后 canonical 指向分站自己的地址；分站的 `/robots.txt` 没开收录时整站 Disallow。
 
 ### 主站的分站管理
 
-分站管理（`/site-admin/<分区>`），权限是「分站」的查看、审核、调整、设置四项：
+分站管理（`/site-admin/<分区>`），权限按「分站」的 read、create、review、adjust、delete、settings_read、settings、settings_create、settings_delete 细分：
 
-- 站点列表和明细（状态、站长、域名、d、k 上限、客户），通过或驳回申请，改 d 和 k 上限，暂停、恢复、关站，一键下线公告（`DELETE /api/adty/admin/sites/:id/notice`，只清空公告，写审计）。
+- 站点列表和明细（状态、站长、域名、d、k 上限、客户），通过或驳回旧申请，改 d 和 k 上限，关站，一键下线公告（`DELETE /api/adty/admin/sites/:id/notice`，只清空公告，写审计）。
 - 设置：`adty_reseller_setting` 的全部填写项（Cloudflare Token 只写不读；没填时显示「未配置」，依赖它的开关打不开），用量卡片（Resend 发件域名按状态计数和最近一次「名额已满」的时间；每个 Turnstile widget 已登记的域名数 / 10，第一个 widget 含主站域名和根域名，剩余少于 5 个时提醒）。
 - 邀请码的增删改查。
 - 每个写操作都写审计（`adty_site_audits`）。
@@ -370,7 +407,7 @@ BEpusdt 使用官方 `POST /api/v1/pay/info`，只信任与冻结付款链接同
 - 本轮验证覆盖返佣下单快照、Host与Key隔离、Root开站和旧审批，以及只读可见性设置。SQLite 3.50.4、MySQL 8.4.13、PostgreSQL 17.11 已实际执行返佣日限额及开站并发矩阵；不据此扩大为所有资金行为的三库验收。
 - Linux副本中 `bash scripts/adty/check.sh --backend` 和 `--frontend` 均退出0；前端295文件、3341项测试通过，1194个ADTY语言键八语检查通过。生产浏览器门禁 `bash scripts/adty/browser-business.sh` 在隔离PostgreSQL 17与Redis上通过，覆盖真实页面下单、续付、验签、入账、回调幂等、取消、审核记录、可见性保存及权限；仅外部支付网关使用mock。
 - 直接开站已与佣金转余额统一为先锁推广员、再锁用户的顺序；开站失败回滚站长标记和新账户。MySQL 开站事务使用 READ COMMITTED，资格检查包含等待用户锁之前已提交的待审核站点；并发推广页创建记录仍补齐站长标记，重开保留首次时间且阻止并行恢复返佣清零。真实三库回归、历史审批锁等待和本轮完整后端门禁通过；原 PostgreSQL 死锁、MySQL 双站及并发漏标记均先观察失败后修复。
-- 以上是本轮局部证据，整体仍为“代码级验收未通过”。团队、通知、员工权限及完整三钱包收支等最新总方案缺口尚未闭环。外部DNS、Cloudflare、SSL及支付供应商仍待实际联调。
+- 以上是本轮局部证据，整体仍为“代码级验收未通过”。团队、通知、员工权限等总方案缺口尚未闭环；三钱包和收益提现的实现状态见「新规范实施状态」和「站长收益提现」。外部 DNS、Cloudflare、SSL 及支付供应商仍待实际联调。
 - 关站前客户通知、涨价前客户通知、改 d 后站长通知已接入站点系统邮件；营销发送任务已删除。发送结果及失败可重试状态按邮件任务记录。
 - 每月业绩档位任务已注册，按上月业绩计算 `tier_cost_factor`，未达到档位时恢复默认规则。
 - 总览、风控复核和举报、经营数据均已接入实际接口；站点列表显示本月充值、营业额和收益，排序由后端执行。
@@ -379,18 +416,19 @@ BEpusdt 使用官方 `POST /api/v1/pay/info`，只信任与冻结付款链接同
 - 分站客户注册表单展示当前条款并记录接受版本和时间；条款升级后，提交任务、协议请求和 WebSocket 消息也校验当前版本。
 - `customer_usage` 客户列表字段是累计用量；请求记录按客户查询，经营数据另按模型和日期统计。
 
-任务 11.1–11.11。和方案不一致的还有：方案的键名 `cloudflare_api_token` 在代码里是 `cloudflare_apiToken`；方案写分站设置只有超级管理员能改，代码按「分站·设置」权限；站长首次提现人工审核已经去掉（a75c8b3da，用户 2026-11-01）；退款时站长加赠按收回比例还（见「充值退款」）。
+任务 11.1–11.11。和方案不一致的还有：方案的键名 `cloudflare_api_token` 在代码里是 `cloudflare_apiToken`；方案写分站设置只有超级管理员能改，代码按「分站·设置」权限；推广佣金的首次提现人工审核已经去掉（a75c8b3da，用户 2026-11-01）；站长收益不走推广佣金，改走独立的收益提现，每笔经 Root 审核后打款（见「站长收益提现」）；退款时站长加赠按收回比例还（见「充值退款」）。
 
-### 新规范分期实施：等级和三钱包基础（2026-11-09）
+### 新规范实施状态：等级和三钱包（2026-11-09 起）
 
-工作区《ADTYAI_分站系统开发规范》是新的业务基线，上述 P11 说明仍描述兼容中的旧流程。新规范的全部差异、风险和实施顺序见 [site-system-implementation.md](site-system-implementation.md)，当前仅完成后端基础，尚不能按整套规范验收上线。
+工作区《ADTYAI_分站系统开发规范》是新的业务基线。旧 P11 说明描述的兼容流程已被下面的实现替换；差异和风险清单见 [site-system-implementation.md](site-system-implementation.md)。
 
-- 新增动态等级定义 `adty_site_tiers`，由 Root 通过 `GET/PUT /api/adty/admin/reseller/tiers` 管理。等级代码、名称、供货倍率、加价上限及保证金要求存表，不硬编码等级数值。修改定义时，在同一事务同步已分配该等级站点的倍率、上限和保证金要求；保证金要求变更不会增加实际余额。分配等级在锁定站点后读取当前有效定义，避免并发配置变更被旧值覆盖。新等级可自动/手动管理；综合评分、保证金资格审核及升降级预警仍待后续实现，尚未接入自动考核任务。
-- 新增 `adty_site_wallets`（经营/收益/保证金）和 `adty_site_wallet_ledgers`。钱包唯一绑定站点和类型，变动在事务内锁钱包并追加包含前后余额、业务来源和幂等键的流水；流水禁止通过模型更新或删除。取得锁后复查幂等记录，成功扣款的并发重试返回原流水。钱包及等级金额按对应列精度和范围校验，拒绝静默舍入或溢出。收益结算按本次结算行集合生成幂等键，同一截止日的迟到收益可以独立结算。
-- 站长查询 `GET /api/adty/site/wallets`、`GET /api/adty/site/wallet-ledgers`，只取服务端认定的本站，沿用当前开站协议校验，PAT 需要 `wallet:read`。Root 查询 `GET /api/adty/admin/sites/:id/wallets`、`GET /api/adty/admin/sites/:id/wallet-ledgers`，PAT 还需要 `option:read`，普通管理员不能使用。流水可按 `kind=operating|earnings|margin` 筛选及分页，响应不包含内部幂等键。
-- 查询旧站时，缺失的钱包显示零余额，不创建余额或历史流水。收益钱包当前只投影本次功能启用后的新结算，不回填旧佣金账户的历史余额，也不提供新的提现或转账入口；旧推广账户仍按原流程工作，两个数字不能视为两份可支取资产。
-- 手动等级和新等级管理模式不受旧月度档位及旧延迟生效任务覆盖；等级切换清除旧待生效档位，并立即失效站点/价格缓存。
-- 记账币种待业务确认；现有底座暂用 USD，规范人民币保证金示例未写成美元默认值。真实充值/消费同步经营钱包、独立透支债务、收益/保证金资金覆盖、冻结、财务调整、返佣及独立提现仍待接入。通用事务的 `AllowOverdraft` 仅是内部能力，尚不是规范要求的 Root 授权透支机制。
+- **等级自动考核已实现**：动态等级定义存在 `adty_site_tiers`，Root 用 `GET/PUT /api/adty/admin/reseller/tiers` 管理代码、名称、供货倍率、加价上限和保证金要求，不硬编码等级数值。主节点每小时跑一次自动考核（`service/adty_site_finance.go:795-833`），按 UTC 日期做周期 ID，同一站同一周期重复跑不会重复写等级、保证金要求或预警（`service/adty_site_finance.go:715-784`）。门槛是开站以来累计的三个指标：有效客户数、留存本金、已结算消费；取所有已启用等级里三项都满足的最高档（`service/adty_site_finance.go:580-661`）。手动钉住的站（`tier_mode=manual`）不会被自动考核覆盖；三项都达不到时通知 Root「未达最低档」，只预警、不关站（`service/adty_site_finance.go:766-793`）。
+- **等级落地**：切换等级会在同一事务更新站点的 `tier_cost_factor`、`tier_max_markup` 和保证金钱包的 `required_balance`；保证金要求变更只改应缴额，不会凭空增加余额（`service/adty_site_finance.go:679-698`）。手动等级模式不受旧月度业绩档位和旧延迟生效任务覆盖。
+- **三钱包已实现**：`adty_site_wallets`（经营 / 收益 / 保证金）和 `adty_site_wallet_ledgers`。钱包唯一绑定站点和类型，变动在事务内锁钱包并追加含前后余额、业务来源和幂等键的流水；流水禁止通过模型更新或删除，重复幂等键返回原流水。站点查询 `GET /api/adty/site/wallets`、`GET /api/adty/site/wallet-ledgers`（PAT `wallet:read`）；Root 查询 `GET /api/adty/admin/sites/:id/wallets`、`GET /api/adty/admin/sites/:id/wallet-ledgers`（PAT `option:read`），普通管理员不能使用。
+- **经营钱包本金已联动**：客户充值成功时按面额把本金记进经营钱包（`principal_credit`），消费结算时按「站点本金垫付」的部分扣经营钱包（`principal_consume`）。扣款允许透支，余额变负是对账信号，不是拒绝计费的理由（`service/adty_operating_principal.go:14-51`）。
+- **日结单已实现**：`adty_site_settlement_sheets` 保存每个站每个营业日的核对单，主节点每 10 分钟补齐到昨天，重复跑只刷新数字、不动钱包（`service/adty_site_settlement_sheet.go:56-171,379-395`）。营业日时区由 Root 存 `adty.business_timezone`，没设按 UTC（`service/adty_site_settlement_sheet.go:15-54`）。站长 `GET /api/adty/site/settlement-sheets`，Root 可查全部。
+- **旧站兼容**：查询旧站时缺失的钱包显示零余额，不创建余额或历史流水；收益钱包只投影功能启用后的新结算，不回填旧推广佣金账户。
+- **记账口径**：所有钱包、收益和结算金额按 USD 记账；规范里的人民币保证金示例没有写成美元默认值。`AllowOverdraft` 目前只给经营钱包和结算路径内部使用，不是面向客户的 Root 授权透支产品。
 
 ## 分组和后台权限
 
@@ -408,27 +446,44 @@ BEpusdt 使用官方 `POST /api/v1/pay/info`，只信任与冻结付款链接同
 - **超级管理员**（root）什么都能做。**普通管理员默认没有任何后台权限**，由超级管理员在「用户 → 编辑」里逐项打开，随时可以关。系统设置里的所有页面、易支付通道的新增和密钥、管理员任免、分组、官方价只有超级管理员能做。
 - 权限按「区域·动作」分，我们加的区域：
 
-| 区域 | 动作 |
+| 资源（权限项前缀） | 动作 |
 |---|---|
-| 用户 | 查看（列表、详情、余额流水）、编辑（资料、启停、新建、重置 2FA 和 Passkey、解绑、改密码）、改分组、调余额、删除 |
-| 日志和统计 | 查看所有人的日志、任务和全站统计 |
-| 模型 | 查看、编辑（模型、厂商、预填分组） |
-| 充值财务 | 查看订单和充值对账、手动补单、退款 |
-| 推广返佣 | 查看、审核（合作伙伴申请、提现）、标记已打款、调整（佣金、冻结结算、比例、停用推广员）、设置（含提现汇率） |
-| 支付通道 | 查看状态、操作（启停、测试） |
-| 分站 | 查看（站点、客户、统计）、审核（复核风控客户、处理举报）、调整（d、k 上限、可见范围、暂停、恢复）、设置（分站设置、开站邀请码）；开站、旧申请激活及关站迁移仅 Root |
+| 用户 `adty_user` | `read` 查看（列表、详情、余额流水）、`create` 新建账号、`write` 编辑（资料、启停、重置 2FA 和 Passkey、解绑、改密码）、`group` 改分组、`quota` 调余额、`delete` 删除 |
+| 日志和统计 `adty_log` | `read` 查看所有人的日志、任务和全站统计；`export` 导出所有人的用量日志 |
+| 模型 `adty_model` | `read` 查看；`create` 新建模型、厂商、预填分组（含上游同步新增）；`write` 编辑；`delete` 删除模型、厂商、预填分组 |
+| 充值财务 `adty_finance` | `read` 查看订单和充值对账；`manual_credit` 手动补单；`refund` 退款 |
+| 推广返佣 `adty_referral` | `read` 查看；`review` 审核合作伙伴申请和提现；`payout` 标记已打款；`adjust` 调整佣金、冻结结算、比例、停用推广员；`settings_read` 查看设置；`settings` 修改设置（含提现汇率） |
+| 支付通道 `adty_payment` | `read` 查看状态；`operate` 启停和测试 |
+| 分站 `adty_site` | `read` 查看站点、客户、统计；`create` 建站；`review` 审核旧申请、复核风控客户、处理举报；`adjust` 改 d、k 上限、可见范围、关站；`delete` 删除站点附属记录（域名、发件域名、公告）；`settings_read` 查看分站设置和邀请码；`settings` 修改分站设置；`settings_create` 新建邀请码；`settings_delete` 删除邀请码 |
 
-  上游原有的「渠道管理」「审计日志」「任务插件」三个区域照旧。
-- **预设**：编辑管理员时可以一键套用「客服」（用户·查看、日志·查看、充值财务·查看、推广·查看）、「运营」（客服加上 用户·编辑、渠道·查看和操作、模型·查看和编辑、支付通道·查看和操作）、「财务」（用户·查看和调余额、充值财务三项、推广的查看、审核、打款、调整），套用后还能再改。
+开站、旧申请激活和关站迁移仍只对 Root 开放，拥有 `adty_site:create` 的普通管理员也不能调用。
+
+上游原有的「渠道管理」「审计日志」「任务插件」三个区域照旧。
+
+- **预设**：编辑管理员时可以一键套用「客服」（用户·查看、日志·查看、充值财务·查看、推广·查看）、「运营」（客服加上 用户·编辑、渠道·查看和操作、模型·查看和编辑、支付通道·查看和操作）、「财务」（用户·查看和调余额、充值财务三项、推广的查看、审核、打款、调整）。套用会替换整张权限矩阵，套用后还能逐项改。
 - 侧边栏和页面按权限显示；没权限调到的接口返回 403，错误码 `ADTY_PERMISSION_DENIED`。
+
+**权限目录迁移（catalog v2）**：启动时 `MigrateAdtyActionCatalog` 会把旧的粗动作一次性展开成新动作——`adty_user:write → adty_user:create`、`adty_model:write → adty_model:create/delete`、`adty_log:read → adty_log:export`、`adty_site:adjust → adty_site:create/delete`、`adty_site:settings → adty_site:settings_read/settings_create/settings_delete`、`adty_referral:settings → adty_referral:settings_read`，渠道的敏感写也会展开（`service/authz/action_migration.go:14-73`）。展开只在版本号从旧值升到 2 时跑一次；完成状态存 `authz_action_catalog_states`（键 `adty_action_catalog`），之后撤销的新动作不会被再次派生。库里的版本比程序支持的版本新时拒绝启动；副本也要等迁移完成后才能加载权限（`service/authz/action_migration.go:75-86`）。
 
 任务 2.6、2.7。
 
-## 营销模块删除与优惠码保留
+## 登录方式
+
+- **账号密码**是唯一的登录凭据（`POST /api/user/login`），没有第三方账号登录。
+- **邮箱验证**用于注册和绑定/改绑邮箱：开启 `EmailVerificationEnabled` 时，注册必须提交邮箱和验证码；绑定邮箱走 `/api/oauth/email/bind/*`。它不是独立的登录方式。
+- **Passkey**：用户可以在个人页注册，之后用 `/api/user/login/passkey/begin|finish` 免密码登录；分站关闭 Passkey（`/api/status` 的 `passkey_login` 为 false）。
+- **TOTP**：登录第二因子（`POST /api/user/login/2fa`、`POST /api/user/login/verify`），也用于敏感操作的二次验证。
+- **第三方登录已全部退役**：GitHub、Discord、LinuxDO、微信、OIDC 和自定义 OAuth 的路由都已删除；`/api/oauth/:provider` 只挂着一个恒为关闭的 Telegram 占位，`/api/oauth/telegram/login` 直接返回 410（`oauth/telegram.go:11-49`、`router/api-router.go:50-60`）。
+- **Telegram 只做账号绑定和通知**：用户 `/api/adty/telegram/bind/start|confirm`，站长 `/api/adty/site/telegram/bind/start|confirm`。不做登录、找回密码或二次验证。
+- 历史 OAuth 身份行保留，升级不删除；新登录不再使用。分站 `/api/status` 会把历史第三方登录字段统一置 false（`service/adty_site_resolve.go:423-426`）。
+
+## 营销模块删除与优惠码退役
 
 按最新产品范围，独立营销中心、营销群发和自动邮件、注册营销同意、个人营销偏好、注册来源采集及统计已删除。`/marketing` 无页面，旧 `/api/adty/marketing` 与 `/api/adty/admin/marketing` 命名空间返回 JSON 404；插件及外置前端不能接管这些入口。旧营销权限不再列入权限目录。
 
-付费充值优惠码保留，平台配置位于「系统设置 → 计费 → 优惠码」（`/system-settings/billing/promo-codes`）。该页面沿用系统设置的 Root 权限；独立接口 `/api/adty/admin/promo-codes` 允许支付查看权限列出，创建和修改仅限 Root，访问令牌还需 `option:write`。支付查看权限不会开放 Root 系统设置页面或配置接口。历史开关 `adty_marketing_setting.promo_enabled` 保留原值；其他旧营销配置不注册，也不再存在同步、群发或触发任务。优惠码仅用于付费充值的额外加赠，报价、付款和核销约束沿用原链路；站长优惠码仍在站长中心。历史优惠码审计事件标识保留，便于查询连续记录。
+**付费充值优惠码已退役**：报价只要带码就返回 `ErrAdtyPromoRetired`（`service/adty_topup_quote.go:143-146`）；平台码和站长码的 POST/PUT/DELETE 全部走 `refuseAdtyPromoWrite`，写一条失败审计后返回退役错误（`controller/adty_promo.go:66-69,138-149,209-223`）。历史 `adty_promo_codes`、`adty_promo_redemptions` 行保留，不重算，也不影响新订单。现在只剩两个只读列表：`GET /api/adty/admin/promo-codes`（支付·查看，Root 页面不再提供新建入口）和 `GET /api/adty/site/promo-codes`（站长，PAT `wallet:read`）。历史开关 `adty_marketing_setting.promo_enabled` 保留原值，只影响历史行展示，不再参与报价或核销。历史优惠码审计事件标识保留。
+
+**现在能主动加额度的只有充值额度兑换码**（`adty_voucher`）：Root 设主站发行额度后，发主站用户本金码或指定分站的保证金码；站长用本站收益或 Root 授权的保证金冻结后，发本站客户码或本人消费码。兑换成功写正式订单、余额流水（`voucher`）和资金批次，**不加赠、不计邀请佣金**；完整码只在生成时返回一次，未兑换的可以冻结或取消，取消才释放来源。关站后未兑换的客户码由主站承接原受众，不会变成主站通用码。详见下面的「充值额度兑换码」。
 
 新库不再创建营销联系人、群发、发送、收件人、webhook、触发记录和注册来源七张表。升级不删除或改写这些旧表及历史行；优惠码与核销表继续迁移。真实 SQLite 3.50.4、MySQL 8.4.13、PostgreSQL 17.11 已覆盖本次迁移入口的新建、升级及两次迁移，保留历史数据和唯一约束。
 
@@ -440,7 +495,7 @@ BEpusdt 使用官方 `POST /api/v1/pay/info`，只信任与冻结付款链接同
 
 ## 网页客服、状态页、多语言、首页 SEO
 
-**网页客服（tawk.to）**：旧挂件配置仍可能存在，但不是统一客服中心。当前客服入口是站内工单；附件只允许图片。不要把 tawk.to 或 Telegram 登录当成工单或通知绑定。
+**网页客服（tawk.to）**：旧挂件配置仍可能存在，但不是统一客服中心。当前客服入口是站内工单；附件只允许图片。不要把 tawk.to 当成工单；Telegram 只做绑定和通知，不做登录。
 
 **服务状态页**：不建设公开平台服务状态页。已有 `/status` 或 Uptime Kuma 页面不得作为正式产品承诺，也不要在导航或文档里引导用户使用。
 
@@ -452,7 +507,7 @@ BEpusdt 使用官方 `POST /api/v1/pay/info`，只信任与冻结付款链接同
 - Go 返回首页时写进标题、描述、canonical（不带查询参数）、8 条 hreflang、Open Graph、Twitter 卡片，只在 `/` 写 WebSite 结构化数据；正文在构建时预渲染进 `web/dist/adty-home.json`，插在 `#root` 前面。
 - 后台「系统设置 → 站点 → Home Page SEO」：`adty_seo_setting.home_title`、`home_description`（按语言，没填用英文的，英文也没填时标题用 ADTY AI）、`og_image`（默认 `/adty-og.png`）。说明写的是 8 个首页网址。一次保存多个字段时，不会因为中途刷新设置把还没保存的草稿覆盖掉；站点设置页也一样。
 - 其余页面一律 noindex。服务器地址（`ServerAddress`）没设或还是 `http://localhost:3000` 时，不写 canonical、hreflang 和结构化数据；请求的域名和服务器地址不同时首页加 noindex。分站见「站长分站」。
-- 落地页保持白底。区块是首屏、支付方式、热门模型、三步、接入说明、卖点、返佣、常见问题。没有收尾的「今天就发出第一个请求」。接入说明链到 `/docs/claude-code`、`/docs/codex-cli`、`/docs/cherry-studio`、`/docs/openai-sdk`。
+- 落地页保持白底。页面只渲染五段：Hero（首屏）、Migration（迁移说明）、Endpoints（接入地址）、AffiliateBanner（返佣）、ClosingCta（收尾 CTA，标题是「Start with one request. / Decide about the invoice later.」），见 `web/src/features/adty-home/index.tsx:43-51` 和 `web/src/features/adty-home/components/closing-cta.tsx:47-49`。Hero 的「Read the docs」指向 `/docs`；三步、热门模型、卖点、常见问题等旧区块不在当前首页渲染。
 - `/robots.txt` 和 `/sitemap.xml` 都由 Go 返回。主站 robots 屏蔽 `/api/`、`/v1/`、`/pay/`，sitemap 只列允许索引的首页语言网址并附 hreflang；没开 SEO 的分站整站 `Disallow: /`，不列入 sitemap。
 - 方案第八节原先要求在 Nginx 配置 robots 和 sitemap；当前由应用按主站、分站和 SEO 设置生成，反代无需复制固定文件。
 
@@ -466,7 +521,7 @@ BEpusdt 使用官方 `POST /api/v1/pay/info`，只信任与冻结付款链接同
 
 **人工调额留痕**：后台「用户 → 编辑 → 调余额」原因必填（最多 200 字），带幂等键；写审计（带原因）、用户自己的日志（不带原因）和余额流水 `adty_balance_ledgers`（带原因，只给后台看，`GET /api/adty/admin/users/:id/ledger`）。非超级管理员不能调同级或更高角色的用户。「减少」不能减到 0 以下，「覆盖」不能写成负数（见「余额下限」）。任务 7.2。
 
-**防邮箱枚举**：邮箱已注册时，发注册验证码不发码、改发一封提醒信（10 分钟最多一封），接口照样返回成功；注册时邮箱已占用返回和「验证码错误」一样的提示；找回密码不管邮箱存不存在都返回成功；三封信都异步发。开了 Redis 但客户端没接上时，两个发码接口都返回 HTTP 503，不发信。验证码或重置码写不进共享存储时不发信；已注册邮箱和未知邮箱都返回同一个空成功，不用 503 区分。限制：用户名仍可以被枚举；登录后绑定邮箱、第三方登录仍会提示邮箱已被占用；提醒信的频率限制在进程内存里。任务 7.3。
+**防邮箱枚举**：邮箱已注册时，发注册验证码不发码、改发一封提醒信（10 分钟最多一封），接口照样返回成功；注册时邮箱已占用返回和「验证码错误」一样的提示；找回密码不管邮箱存不存在都返回成功；三封信都异步发。开了 Redis 但客户端没接上时，两个发码接口都返回 HTTP 503，不发信。验证码或重置码写不进共享存储时不发信；已注册邮箱和未知邮箱都返回同一个空成功，不用 503 区分。限制：用户名仍可以被枚举；登录后绑定邮箱仍会提示邮箱已被占用；提醒信的频率限制在进程内存里。任务 7.3。
 
 **密码重置链接**：新邮件把邮箱和重置凭证放在 `/user/reset` 的 URL fragment，首次文档请求不携带它们。页面在加载资源和分析脚本前捕获新 fragment 或历史 query 链接并清除地址栏，只在当前页面内存中保留表单所需值，不写浏览器持久存储或历史状态；刷新清洁后的网址需重新打开邮件链接。Go 和随仓 Nginx 配置对重置入口及尾斜杠入口返回 `no-referrer`，Nginx 访问日志移除历史重置 query 并遮蔽来自重置页的 Referer。旧邮件首次请求仍会经过外部代理，已有日志及仓外 CDN 的处理需单独核实。
 
@@ -498,21 +553,26 @@ Root 和获授用户读取权限的管理员在统一用户列表、搜索及详
 
 **Logo**：方案 H「层叠网关」。原稿和生成脚本在仓库外的 `C:\Users\Administrator\ai\adtyai-logo`（`source/build.py` 生成全部文件，说明见那里的 README.md）。`web/public` 里的文件：
 
-| 文件 | 用途 |
-|---|---|
-| `favicon.ico` | 浏览器标签图标（内含 16、32、48 三种） |
-| `favicon.svg` | 新式浏览器的矢量标签图标，跟随系统深浅色换底色 |
-| `favicon-16x16.png`、`favicon-32x32.png` | PNG 标签图标 |
-| `adty-apple-touch-icon.png` | iOS 添加到主屏幕（180×180） |
-| `site.webmanifest` | 安卓添加到主屏幕和 PWA 的清单 |
-| `android-chrome-192x192.png`、`android-chrome-512x512.png` | 安卓主屏图标（manifest 引用） |
-| `maskable-512x512.png` | 安卓自适应图标（manifest 引用） |
-| `safari-pinned-tab.svg` | Safari 固定标签（单色剪影） |
-| `mstile-150x150.png` | Windows 开始菜单磁贴 |
-| `logo.png` | 默认 Logo（180×180，简化版图形）：后台 Logo 没填时顶栏、侧边栏、页脚用它 |
-| `adty-logo.svg` | 首页预渲染顶栏里的小图标（24px，简化版图形） |
-| `adty-og.png` | 社交分享图（1200×630，只有图形和字标），SEO 设置 `og_image` 的默认值 |
-| `pay-card.png`、`pay-apple.png`、`pay-google.png`、`waffo-logo-*.svg` | 上游 Waffo 支付的图标，没用到，照上游保留 |
+| 文件 | 尺寸 / 格式 | 用途 |
+|---|---|---|
+| `favicon.ico` | 内含 16、32、48 | 浏览器标签图标（`web/index.html` 第一个 icon） |
+| `favicon-16x16.png`、`favicon-32x32.png`、`favicon-48x48.png` | 16×16、32×32、48×48 | PNG 标签图标 |
+| `favicon-128x128.png`、`favicon-256x256.png` | 128×128、256×256 | 高分辨率标签图标 / PWA |
+| `adty-apple-touch-icon.png` | 180×180 | iOS 添加到主屏幕 |
+| `site.webmanifest` | JSON | 安卓主屏和 PWA 清单，引用下面三个图标 |
+| `android-chrome-192x192.png`、`android-chrome-512x512.png` | 192×192、512×512 | 安卓主屏图标（manifest 引用） |
+| `maskable-512x512.png` | 512×512 | 安卓自适应图标（manifest 引用） |
+| `mstile-150x150.png` | 150×150 | Windows 开始菜单磁贴 |
+| `logo.png` | 522×128 | 默认 Logo（字标）：后台 Logo 没填时顶栏、侧边栏、页脚用它 |
+| `logo-dark.png` | 522×128 | 深色底用的默认字标 |
+| `adty-logo.png` | 1383×339 | 高分辨率字标（浅色底），后台 Logo 可填 `/adty-logo.png` |
+| `adty-logo-dark.png` | 1383×339 | 高分辨率字标（深色底） |
+| `adty-logo-480.png`、`adty-logo-960.png` | 480×118、960×235 | 按宽度缩放的导出 |
+| `adty-mark.png` | 364×256 | 单独的图形标记（不带字标） |
+| `adty-og.png` | 1200×630 | 社交分享图，SEO 设置 `og_image` 的默认值 |
+| `pay-card.png`、`pay-apple.png`、`pay-google.png`、`waffo-logo-*.svg` | 144×96 / 216×144 等 | 上游 Waffo 支付的图标，没用到，照上游保留 |
+
+2026-11-15 的 `2df2e4c` 删掉了 `favicon.svg`、`safari-pinned-tab.svg`、`adty-logo.svg`，`index.html` 也不再引用它们。现有 PNG 是从新字标导出的位图，不再提供 SVG。
 
 `.webmanifest` 在 Go 里登记成 `application/manifest+json`（`middleware/adty_static_types.go`），否则镜像里会被当成纯文本返回。
 
@@ -529,11 +589,41 @@ Root 和获授用户读取权限的管理员在统一用户列表、搜索及详
 
 订单管理沿用 `/recharge-audit` 书签与财务读取权限，统一展示主站和分站充值订单的站点名称、site_id、类型及完成时间；支持站点（含主站 0）、类型与既有筛选组合。归属取下单时的扩展订单快照，用户迁站不改写历史；无快照的旧订单显示“归属未知”。站长中心新增本站订单页签，只读且不加载全局异常支付面板；接口按当前 SQL 站长身份和冻结 site_id 隔离，PAT 需 `wallet:read`。当前只有充值订单来源。
 
-点击订单号打开详情：冻结订单与赠金快照、退款结果，以及独立分页的支付记录、消费余额流水、实际优惠码赠金、分站钱包流水、对账事件和财务审核。后台另有该订单的推广佣金与佣金钱包流水。每个分区提供真实总数，仅按订单号、供应商、用户和明确的佣金关联读取，不把同用户其他流水或分站日汇总收益算进本单。
+点击订单号打开详情：冻结订单与赠金快照、退款结果，以及独立分页的支付记录、消费余额流水、历史优惠码赠金、分站钱包流水、对账事件和财务审核。后台另有该订单的推广佣金与佣金钱包流水。每个分区提供真实总数，仅按订单号、供应商、用户和明确的佣金关联读取，不把同用户其他流水或分站日汇总收益算进本单。
 
 后台详情为 `GET /api/user/admin/finance/recharge-audit/:trade_no`，站长详情为 `GET /api/adty/site/orders/:trade_no`，支持 `section`、`p`、`page_size`。站长隐藏人工付款凭证、后台原因与操作人、用户跨站余额前后值及主站推广佣金；当前账号或权限变更后立即关闭原详情。
 
 支付事件追加到 `adty_order_payment_events`：六服务验签后的通知接收、可信查询的未付款/失败/核对拒绝、成功入账和重放。成功及重放与入账共享事务，记录失败则整单回滚；重复通知只入账一次。不保存原始载荷、商户密钥、供应商错误文本或人工凭证。新增记录以前的回调历史不能还原，页面明确提示历史记录可能不完整；现有赠金来源分配及其他资金规则仍按各自未闭事项实施，不用订单追溯替代。
+
+## 资金与运维补充
+
+### 日结单
+
+每个站每个营业日一张核对单，存 `adty_site_settlement_sheets`。主节点每 10 分钟补齐到昨天，重复跑只刷新数字、不加钱也不扣钱（`service/adty_site_settlement_sheet.go:56-171,379-395`）。营业日时区由 Root 存 `adty.business_timezone`，没设按 UTC；单子保留首次生成时的时区和窗口。内容有充值面额/实付、消费、供货成本、价差、赠金冻结/出资/释放、试用、邀请佣金、待覆盖、钱包增减、提现、财务调整和异常数。站长 `GET /api/adty/site/settlement-sheets`，Root 可查全部。
+
+### 资金异常与处置
+
+检测 9 类问题：余额与流水对不上、未结的短差占用、保证金异常、重复入账、重复退款、成功订单未记账、赠金保障不足、站点收益与供货成本不匹配、退款金额不匹配（`service/adty_fund_anomalies.go:14-24`）。Root 用 `GET /api/adty/admin/fund-anomalies?site_id=` 触发一次检测，结果写进 `adty_anomaly_dispositions`；`GET /api/adty/admin/fund-anomalies/dispositions` 看列表，`POST .../dispositions/:id/review` 把状态从 `open` 改成 `reviewing` 或 `closed`。`reviewing` 会限制该账号/订单/站点的相关资金写入，`closed` 解除；复核动作本身不动钱包和客户额度（`service/adty_site_finance.go:326-352`）。
+
+### 人工退款状态机
+
+一笔订单可以有多笔人工退款，存 `adty_manual_refunds`。状态：`submitted`（申请）→ `approved`（审核）→ 回收本金 / 处理赠金 / 处理佣金 → 记录外部打款 → `completed`；任一步可 `terminated` 终止。占用按 S/H/U 三个桶算：已完成的 S、进行中的 H、外部打款金额未知的 U，三者合计不能超过原单实付本金 L；终止的行释放占用（`model/adty_manual_refund.go:12-119,235-246`）。每一步都带幂等键和安全证明，接口在 `/api/adty/admin/topup/:trade_no/refunds/:refund_id/*`，都要「财务·退款」。
+
+### 充值额度兑换码
+
+全平台只有一种兑换码。用途有四种：主站用户本金码、分站保证金码（Root 发）、本站客户码、站长本人消费码（站长发）。发行来源是平台发行额度、站点收益或 Root 授权的保证金；平台额度用 `adty_voucher_liabilities` 控制上限，站点来源从对应钱包冻结。兑换写正式订单（provider=`voucher`）、`top_ups` 兼容投影、余额流水 `voucher` 和资金批次；**不加赠、不计邀请佣金**。完整码只在生成时返回一次，库里只存 hash 和后四位；未兑换的可以冻结或取消，取消释放来源；同一用户 15 分钟内最多试 8 次（`service/adty_voucher.go:20-24,137-271`）。
+
+### 资金批次与分摊
+
+`adty_fund_batches` 按 `(user_id, source, kind)` 记录每一笔入账的本金批次和赠金批次，字段 `original` / `remaining`，`site_id` 可以为 NULL（证不出站点时不猜）。消费按 FIFO 先扣本金、再扣赠金；升级前没有批次的历史余额会补一条 `legacy` 本金批次，否则老用户一笔都扣不出去。批次扣不动时返回 `ErrAdtyFundBatchShortfall`，外层钱包事务整笔回滚；退款按 `source` 回收对应批次。站点经营钱包的本金扣减和赠金保障释放都挂在这条分摊链上（`model/adty_fund_batch.go:28-39,246-274,379-445`）。
+
+### 数据保留与清理
+
+Root 在「数据保留」页按分类设保留期和动作：用户资料、登录/安全记录、API 调用日志、订单及支付事件、资金流水、客服工单、通知历史、操作审计、任务产物。主节点每 24 小时跑一次系统任务，按已设策略删除过期数据；**没设的分类不自动删**，订单、支付事件、资金流水和任务产物**永远不自动删**，通知历史按永久保留处理。API 日志和工单有 90 天安全下限；用户资料只清理已注销账号的剩余 PII，不删账号行（`service/adty_data_retention.go:17-27,79-140,597-627`）。接口 `GET/PUT /api/adty/admin/data-retention`、`GET /api/adty/admin/data-retention/runs`，仅 Root，PAT 需 `option:read/write`。
+
+### 按 API Key 限流
+
+单把 API Key 可以设每分钟请求上限，存 `adty_key_limits`（`token_id`、`per_minute`）。创建或编辑 Key 时传 `rate_limit_per_minute`，正数生效、0 删除限制；没有行的 Key 不受额外限制。它只加在 relay 入口（`/v1`、`/v1beta`、`/mj`、`/pg`、任务提交、插件和视频），不替代按用户限流。超限返回 429；计数存储不可用返回 503 `rate_limit_unavailable`，不放行；开 Redis 用 Redis，没开用进程内存（`middleware/adty_key_limit.go:16-98`）。
 
 ## 动态支付场景（FIN-F-01）
 
@@ -553,7 +643,7 @@ Root 在支付设置的 General 页新增、编辑、停用或删除支付场景
 
 站长可授予 `customers.disable`，员工逐次以 `site.staff.customer.manage` 验证本人，单次证明绑定动作与客户编号。员工不能替客户重置密码、取得客户凭据或代登；`POST /api/adty/staff/customers/:id/password-reset` 对已授权员工亦拒绝，不发送重置邮件或令牌。客户密码恢复由客户本人通过已验证的自助渠道完成。`POST /api/adty/staff/customers/:id/disable` 禁用客户并递增授权版本，旧会话失效；员工不能恢复客户。事务内重新核对授权、站点协议、客户归属并原子记录脱敏审计，不能修改站长、历史站长、管理员、员工或跨站客户，关闭中的站点拒绝客户写操作。
 
-客户调额的资金来源与资金承担规则仍待确认，不将 O-01 整项关闭，也不声称完成整个认证安全标准。
+员工给客户加额度（`approve` 通过）时，资金已由站点钱包按 **经营 → 收益 → 保证金** 的顺序出资：一个钱包够就扣一个；三个都不够就整笔拒绝，客户余额一分不动。出资和加额度在同一个事务里，批次记在申请单所在站（`service/adty_remaining_gaps.go:716-735,749-799`）。所以「凭空加额度」不再可能，O-01 的资金来源和承担规则按这条实现；整项认证安全标准仍不因本批关闭。
 
 ## 已排除的模型部署管理
 

@@ -34,9 +34,6 @@
       "name": "令牌管理"
     },
     {
-      "name": "兑换码"
-    },
-    {
       "name": "日志"
     },
     {
@@ -921,155 +918,11 @@
         ]
       }
     },
-    "/api/oauth/github": {
-      "get": {
-        "summary": "GitHub OAuth登录",
-        "deprecated": false,
-        "description": "🔓 无需鉴权（OAuth 回调）。创建本地登录 Session 时同样受 AUTH_SESSION_LIMIT 和 AUTH_SESSION_ISSUANCE_LIMIT 约束。",
-        "tags": [
-          "OAuth"
-        ],
-        "parameters": [
-          {
-            "name": "code",
-            "in": "query",
-            "description": "",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "成功",
-            "headers": {}
-          },
-          "409": {
-            "$ref": "#/components/responses/AuthSessionLimit"
-          },
-          "429": {
-            "$ref": "#/components/responses/AuthSessionIssuanceLimit"
-          }
-        },
-        "security": [
-          {
-            "Combination343": []
-          },
-          {
-            "Combination1243": []
-          }
-        ]
-      }
-    },
-    "/api/oauth/discord": {
-      "get": {
-        "summary": "Discord OAuth登录",
-        "deprecated": false,
-        "description": "🔓 无需鉴权（OAuth 回调）。创建本地登录 Session 时同样受 AUTH_SESSION_LIMIT 和 AUTH_SESSION_ISSUANCE_LIMIT 约束。",
-        "tags": [
-          "OAuth"
-        ],
-        "parameters": [
-          {
-            "name": "code",
-            "in": "query",
-            "description": "",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "成功",
-            "headers": {}
-          },
-          "409": {
-            "$ref": "#/components/responses/AuthSessionLimit"
-          },
-          "429": {
-            "$ref": "#/components/responses/AuthSessionIssuanceLimit"
-          }
-        },
-        "security": [
-          {
-            "Combination343": []
-          },
-          {
-            "Combination1243": []
-          }
-        ]
-      }
-    },
-    "/api/oauth/oidc": {
-      "get": {
-        "summary": "OIDC登录",
-        "deprecated": false,
-        "description": "🔓 无需鉴权（OAuth 回调）。创建本地登录 Session 时同样受 AUTH_SESSION_LIMIT 和 AUTH_SESSION_ISSUANCE_LIMIT 约束。",
-        "tags": [
-          "OAuth"
-        ],
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "成功",
-            "headers": {}
-          },
-          "409": {
-            "$ref": "#/components/responses/AuthSessionLimit"
-          },
-          "429": {
-            "$ref": "#/components/responses/AuthSessionIssuanceLimit"
-          }
-        },
-        "security": [
-          {
-            "Combination343": []
-          },
-          {
-            "Combination1243": []
-          }
-        ]
-      }
-    },
-    "/api/oauth/linuxdo": {
-      "get": {
-        "summary": "LinuxDO OAuth登录",
-        "deprecated": false,
-        "description": "🔓 无需鉴权（OAuth 回调）。创建本地登录 Session 时同样受 AUTH_SESSION_LIMIT 和 AUTH_SESSION_ISSUANCE_LIMIT 约束。",
-        "tags": [
-          "OAuth"
-        ],
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "成功",
-            "headers": {}
-          },
-          "409": {
-            "$ref": "#/components/responses/AuthSessionLimit"
-          },
-          "429": {
-            "$ref": "#/components/responses/AuthSessionIssuanceLimit"
-          }
-        },
-        "security": [
-          {
-            "Combination343": []
-          },
-          {
-            "Combination1243": []
-          }
-        ]
-      }
-    },
     "/api/oauth/state": {
       "post": {
         "summary": "生成OAuth State",
-        "deprecated": false,
-        "description": "创建一次性 OAuth AuthFlow。login 无需鉴权；bind 需要面板 Access Token 并绑定当前登录会话",
+        "deprecated": true,
+        "description": "创建一次性 OAuth AuthFlow。login 无需鉴权；bind 需要面板 Access Token 并绑定当前登录会话。注意：当前无已启用 provider（registry 仅注册恒为 disabled 的 Telegram），实际会返回 400。",
         "tags": [
           "OAuth"
         ],
@@ -1108,6 +961,10 @@
           "200": {
             "description": "成功",
             "headers": {}
+          },
+          "400": {
+            "description": "当前无已启用 provider，无法创建 OAuth State",
+            "headers": {}
           }
         },
         "security": [
@@ -1116,77 +973,6 @@
           },
           {
             "Combination1243": []
-          }
-        ]
-      }
-    },
-    "/api/oauth/wechat": {
-      "get": {
-        "summary": "微信OAuth登录",
-        "deprecated": false,
-        "description": "🔓 无需鉴权（OAuth 回调）。创建本地登录 Session 时同样受 AUTH_SESSION_LIMIT 和 AUTH_SESSION_ISSUANCE_LIMIT 约束。",
-        "tags": [
-          "OAuth"
-        ],
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "成功",
-            "headers": {}
-          },
-          "409": {
-            "$ref": "#/components/responses/AuthSessionLimit"
-          },
-          "429": {
-            "$ref": "#/components/responses/AuthSessionIssuanceLimit"
-          }
-        },
-        "security": [
-          {
-            "Combination343": []
-          },
-          {
-            "Combination1243": []
-          }
-        ]
-      }
-    },
-    "/api/oauth/wechat/bind": {
-      "post": {
-        "summary": "绑定微信",
-        "deprecated": false,
-        "description": "🔐 需要面板 Access Token",
-        "tags": [
-          "OAuth"
-        ],
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "code"
-                ],
-                "properties": {
-                  "code": {
-                    "type": "string"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "成功",
-            "headers": {}
-          }
-        },
-        "security": [
-          {
-            "AccessToken1": []
           }
         ]
       }
@@ -1236,64 +1022,160 @@
         ]
       }
     },
+    "/api/oauth/email/bind/start": {
+      "post": {
+        "summary": "开始绑定邮箱",
+        "deprecated": false,
+        "description": "🔐 需要面板 Access Token 和 X-Security-Proof（scope=account_bind，context 含 provider=email 与目标邮箱）。发送验证码并返回一次性 flow_token。",
+        "tags": [
+          "OAuth"
+        ],
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "email"
+                ],
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "format": "email"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "headers": {},
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数/校验失败（如 SECURITY_CONTEXT_INVALID）",
+            "headers": {}
+          },
+          "403": {
+            "description": "需要 X-Security-Proof 二次验证（SECURITY_PROOF_REQUIRED 等）",
+            "headers": {}
+          }
+        },
+        "security": [
+          {
+            "AccessToken1": [],
+            "SecurityProof": []
+          }
+        ]
+      }
+    },
+    "/api/oauth/email/bind/resend": {
+      "post": {
+        "summary": "重发邮箱绑定验证码",
+        "deprecated": false,
+        "description": "🔐 需要面板 Access Token。使用 bind/start 返回的 flow_token 重发验证码；受 resend_at 冷却限制。",
+        "tags": [
+          "OAuth"
+        ],
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "flow_token"
+                ],
+                "properties": {
+                  "flow_token": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "headers": {},
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数/校验失败（如 SECURITY_CONTEXT_INVALID）",
+            "headers": {}
+          },
+          "403": {
+            "description": "需要 X-Security-Proof 二次验证（SECURITY_PROOF_REQUIRED 等）",
+            "headers": {}
+          }
+        },
+        "security": [
+          {
+            "AccessToken1": [],
+            "SecurityProof": []
+          }
+        ]
+      }
+    },
     "/api/oauth/telegram/login": {
       "get": {
-        "summary": "Telegram登录",
-        "deprecated": false,
-        "description": "🔓 无需鉴权（OAuth 回调）。创建本地登录 Session 时同样受 AUTH_SESSION_LIMIT 和 AUTH_SESSION_ISSUANCE_LIMIT 约束。",
+        "summary": "Telegram登录（已下线）",
+        "deprecated": true,
+        "description": "已下线：该端点固定返回 410，响应体 code 为 TELEGRAM_LEGACY_AUTH_REMOVED。Telegram 仅作为通知渠道，不再提供登录或绑定。",
         "tags": [
           "OAuth"
         ],
         "parameters": [],
         "responses": {
-          "200": {
-            "description": "成功",
+          "410": {
+            "description": "已下线（TELEGRAM_LEGACY_AUTH_REMOVED）",
             "headers": {}
-          },
-          "409": {
-            "$ref": "#/components/responses/AuthSessionLimit"
-          },
-          "429": {
-            "$ref": "#/components/responses/AuthSessionIssuanceLimit"
           }
         },
-        "security": [
-          {
-            "Combination343": []
-          },
-          {
-            "Combination1243": []
-          }
-        ]
+        "security": []
       }
     },
     "/api/oauth/telegram/bind/start": {
       "post": {
-        "summary": "创建 Telegram 绑定流程",
-        "deprecated": false,
-        "description": "🔐 需要面板 Access Token；返回绑定 widget 使用的一次性 flow_token 与 callback_url",
+        "summary": "创建 Telegram 绑定流程（已下线）",
+        "deprecated": true,
+        "description": "已下线：该端点固定返回 410，响应体 code 为 TELEGRAM_LEGACY_AUTH_REMOVED。Telegram 仅作为通知渠道，不再提供登录或绑定。",
         "tags": [
           "OAuth"
         ],
         "parameters": [],
         "responses": {
-          "200": {
-            "description": "成功",
+          "410": {
+            "description": "已下线（TELEGRAM_LEGACY_AUTH_REMOVED）",
             "headers": {}
           }
         },
-        "security": [
-          {
-            "AccessToken1": []
-          }
-        ]
+        "security": []
       }
     },
     "/api/oauth/telegram/bind/{flow_token}": {
       "get": {
-        "summary": "完成 Telegram 绑定",
-        "deprecated": false,
-        "description": "Telegram widget 回调；通过一次性 flow_token 关联并重新校验创建该流程的登录会话。始终以 302 回到 /oauth/telegram：成功携带 telegram_bind=success，失败携带 telegram_bind=error、flow_token 和稳定 error_code（TELEGRAM_BIND_DISABLED、TELEGRAM_BIND_INVALID_REQUEST、TELEGRAM_BIND_FLOW_INVALID、TELEGRAM_BIND_SESSION_INVALID、TELEGRAM_BIND_ALREADY_BOUND、TELEGRAM_BIND_USER_DELETED、TELEGRAM_BIND_USER_DISABLED 或 TELEGRAM_BIND_INTERNAL_ERROR），不会透传底层错误文案。",
+        "summary": "完成 Telegram 绑定（已下线）",
+        "deprecated": true,
+        "description": "已下线：该端点固定返回 410，响应体 code 为 TELEGRAM_LEGACY_AUTH_REMOVED。Telegram 仅作为通知渠道，不再提供登录或绑定。",
         "tags": [
           "OAuth"
         ],
@@ -1308,8 +1190,8 @@
           }
         ],
         "responses": {
-          "302": {
-            "description": "重定向到 /oauth/telegram 的绑定结果回调",
+          "410": {
+            "description": "已下线（TELEGRAM_LEGACY_AUTH_REMOVED）",
             "headers": {}
           }
         },
@@ -1438,31 +1320,6 @@
     "/api/user/models": {
       "get": {
         "summary": "获取用户可用模型",
-        "deprecated": false,
-        "description": "🔐 需要登录（User权限）",
-        "tags": [
-          "用户管理"
-        ],
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "成功",
-            "headers": {}
-          }
-        },
-        "security": [
-          {
-            "Combination343": []
-          },
-          {
-            "Combination1243": []
-          }
-        ]
-      }
-    },
-    "/api/user/token": {
-      "get": {
-        "summary": "生成访问令牌",
         "deprecated": false,
         "description": "🔐 需要登录（User权限）",
         "tags": [
@@ -1617,70 +1474,6 @@
           "用户管理"
         ],
         "parameters": [],
-        "responses": {
-          "200": {
-            "description": "成功",
-            "headers": {}
-          }
-        },
-        "security": [
-          {
-            "Combination343": []
-          },
-          {
-            "Combination1243": []
-          }
-        ]
-      }
-    },
-    "/api/user/aff": {
-      "get": {
-        "summary": "获取邀请码",
-        "deprecated": false,
-        "description": "🔐 需要登录（User权限）",
-        "tags": [
-          "用户管理"
-        ],
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "成功",
-            "headers": {}
-          }
-        },
-        "security": [
-          {
-            "Combination343": []
-          },
-          {
-            "Combination1243": []
-          }
-        ]
-      }
-    },
-    "/api/user/aff_transfer": {
-      "post": {
-        "summary": "转换邀请额度",
-        "deprecated": false,
-        "description": "🔐 需要登录（User权限）",
-        "tags": [
-          "用户管理"
-        ],
-        "parameters": [],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "quota": {
-                    "type": "integer"
-                  }
-                }
-              }
-            }
-          }
-        },
         "responses": {
           "200": {
             "description": "成功",
@@ -1881,15 +1674,15 @@
     "/api/user/topup/complete": {
       "post": {
         "summary": "管理员完成充值",
-        "deprecated": false,
-        "description": "👨‍💼 需要管理员权限（Admin）",
+        "deprecated": true,
+        "description": "👨‍💼 需要管理员权限（Admin） 注意：该功能已关闭，请求固定返回 403（AdtyClosedFeature 中间件），不会执行任何支付逻辑。",
         "tags": [
           "用户管理"
         ],
         "parameters": [],
         "responses": {
-          "200": {
-            "description": "成功",
+          "403": {
+            "description": "功能已关闭（403）",
             "headers": {}
           }
         },
@@ -2241,15 +2034,15 @@
     "/api/user/stripe/pay": {
       "post": {
         "summary": "发起Stripe支付",
-        "deprecated": false,
-        "description": "🔐 需要登录（User权限）",
+        "deprecated": true,
+        "description": "🔐 需要登录（User权限） 注意：该功能已关闭，请求固定返回 403（AdtyClosedFeature 中间件），不会执行任何支付逻辑。",
         "tags": [
           "充值"
         ],
         "parameters": [],
         "responses": {
-          "200": {
-            "description": "成功",
+          "403": {
+            "description": "功能已关闭（403）",
             "headers": {}
           }
         },
@@ -2266,15 +2059,15 @@
     "/api/user/stripe/amount": {
       "post": {
         "summary": "获取Stripe支付金额",
-        "deprecated": false,
-        "description": "🔐 需要登录（User权限）",
+        "deprecated": true,
+        "description": "🔐 需要登录（User权限） 注意：该功能已关闭，请求固定返回 403（AdtyClosedFeature 中间件），不会执行任何支付逻辑。",
         "tags": [
           "充值"
         ],
         "parameters": [],
         "responses": {
-          "200": {
-            "description": "成功",
+          "403": {
+            "description": "功能已关闭（403）",
             "headers": {}
           }
         },
@@ -2291,15 +2084,15 @@
     "/api/user/creem/pay": {
       "post": {
         "summary": "发起Creem支付",
-        "deprecated": false,
-        "description": "🔐 需要登录（User权限）",
+        "deprecated": true,
+        "description": "🔐 需要登录（User权限） 注意：该功能已关闭，请求固定返回 403（AdtyClosedFeature 中间件），不会执行任何支付逻辑。",
         "tags": [
           "充值"
         ],
         "parameters": [],
         "responses": {
-          "200": {
-            "description": "成功",
+          "403": {
+            "description": "功能已关闭（403）",
             "headers": {}
           }
         },
@@ -2569,31 +2362,6 @@
     "/api/verify": {
       "post": {
         "summary": "通用安全验证",
-        "deprecated": false,
-        "description": "🔐 需要登录（User权限）",
-        "tags": [
-          "安全验证"
-        ],
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "成功",
-            "headers": {}
-          }
-        },
-        "security": [
-          {
-            "Combination343": []
-          },
-          {
-            "Combination1243": []
-          }
-        ]
-      }
-    },
-    "/api/verify/status": {
-      "get": {
-        "summary": "获取验证状态",
         "deprecated": false,
         "description": "🔐 需要登录（User权限）",
         "tags": [
@@ -3901,244 +3669,6 @@
         ]
       }
     },
-    "/api/redemption/": {
-      "get": {
-        "summary": "获取所有兑换码",
-        "deprecated": false,
-        "description": "👨‍💼 需要管理员权限（Admin）",
-        "tags": [
-          "兑换码"
-        ],
-        "parameters": [
-          {
-            "name": "p",
-            "in": "query",
-            "description": "",
-            "required": false,
-            "schema": {
-              "type": "integer"
-            }
-          },
-          {
-            "name": "page_size",
-            "in": "query",
-            "description": "",
-            "required": false,
-            "schema": {
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "成功",
-            "headers": {}
-          }
-        },
-        "security": [
-          {
-            "Combination343": []
-          },
-          {
-            "Combination1243": []
-          }
-        ]
-      },
-      "post": {
-        "summary": "创建兑换码",
-        "deprecated": false,
-        "description": "👨‍💼 需要管理员权限（Admin）",
-        "tags": [
-          "兑换码"
-        ],
-        "parameters": [],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/Redemption"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "成功",
-            "headers": {}
-          }
-        },
-        "security": [
-          {
-            "Combination343": []
-          },
-          {
-            "Combination1243": []
-          }
-        ]
-      },
-      "put": {
-        "summary": "更新兑换码",
-        "deprecated": false,
-        "description": "👨‍💼 需要管理员权限（Admin）",
-        "tags": [
-          "兑换码"
-        ],
-        "parameters": [],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/Redemption"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "成功",
-            "headers": {}
-          }
-        },
-        "security": [
-          {
-            "Combination343": []
-          },
-          {
-            "Combination1243": []
-          }
-        ]
-      }
-    },
-    "/api/redemption/search": {
-      "get": {
-        "summary": "搜索兑换码",
-        "deprecated": false,
-        "description": "👨‍💼 需要管理员权限（Admin）",
-        "tags": [
-          "兑换码"
-        ],
-        "parameters": [
-          {
-            "name": "keyword",
-            "in": "query",
-            "description": "",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "成功",
-            "headers": {}
-          }
-        },
-        "security": [
-          {
-            "Combination343": []
-          },
-          {
-            "Combination1243": []
-          }
-        ]
-      }
-    },
-    "/api/redemption/{id}": {
-      "get": {
-        "summary": "获取指定兑换码",
-        "deprecated": false,
-        "description": "👨‍💼 需要管理员权限（Admin）",
-        "tags": [
-          "兑换码"
-        ],
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "",
-            "required": true,
-            "example": 0,
-            "schema": {
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "成功",
-            "headers": {}
-          }
-        },
-        "security": [
-          {
-            "Combination343": []
-          },
-          {
-            "Combination1243": []
-          }
-        ]
-      },
-      "delete": {
-        "summary": "删除兑换码",
-        "deprecated": false,
-        "description": "👨‍💼 需要管理员权限（Admin）",
-        "tags": [
-          "兑换码"
-        ],
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "",
-            "required": true,
-            "example": 0,
-            "schema": {
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "成功",
-            "headers": {}
-          }
-        },
-        "security": [
-          {
-            "Combination343": []
-          },
-          {
-            "Combination1243": []
-          }
-        ]
-      }
-    },
-    "/api/redemption/invalid": {
-      "delete": {
-        "summary": "删除无效兑换码",
-        "deprecated": false,
-        "description": "👨‍💼 需要管理员权限（Admin）",
-        "tags": [
-          "兑换码"
-        ],
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "成功",
-            "headers": {}
-          }
-        },
-        "security": [
-          {
-            "Combination343": []
-          },
-          {
-            "Combination1243": []
-          }
-        ]
-      }
-    },
     "/api/log/": {
       "get": {
         "summary": "获取所有日志",
@@ -5408,29 +4938,30 @@
           }
         }
       },
-      "Redemption": {
+      "EmailBindingData": {
         "type": "object",
         "properties": {
-          "id": {
-            "type": "integer"
-          },
-          "name": {
+          "flow_token": {
             "type": "string"
           },
-          "key": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "current_email": {
             "type": "string"
           },
-          "status": {
+          "old_email_required": {
+            "type": "boolean"
+          },
+          "expires_at": {
             "type": "integer"
           },
-          "quota": {
+          "resend_at": {
             "type": "integer"
           },
-          "created_time": {
-            "type": "integer"
-          },
-          "redeemed_time": {
-            "type": "integer"
+          "notification_warning": {
+            "type": "boolean"
           }
         }
       }
@@ -5479,7 +5010,7 @@
       "RefreshCookie": {
         "type": "apiKey",
         "in": "cookie",
-        "name": "new_api_refresh",
+        "name": "adtyai_refresh",
         "description": "仅 refresh/logout 使用的 HttpOnly、SameSite=Strict Cookie"
       },
       "SecurityProof": {

@@ -153,6 +153,11 @@ jobs:
         working-directory: .
         run: node scripts/adty/ratchet.mjs copyright
 
+      # 本作业默认在 web/ 下跑，文档检查要在仓库根目录
+      - name: Check docs against code
+        working-directory: .
+        run: node scripts/adty/doc-refs.mjs
+
   e2e:
     name: Closed-loop payment, browser, and permission checks
     if: github.event.action != 'closed' || github.event.pull_request.merged == true

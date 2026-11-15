@@ -10,9 +10,9 @@ This is an AI API gateway/proxy built with Go. It aggregates 40+ upstream AI pro
 
 - **Backend**: Go 1.26 for the root module and `tokenkit/`, Go 1.25.1 for `relaykit/` (see each module’s `go.mod`), Gin web framework, GORM v2 ORM
 - **Frontend**: React 19, TypeScript, Rsbuild 2, TanStack Router/Query/Table, Zustand, Base UI, Tailwind CSS 4
-- **Databases**: SQLite, MySQL, PostgreSQL for the primary database (all three must be supported); a separately configured log database also supports ClickHouse
+- **Databases**: PostgreSQL is the ADTY formal database. SQLite and MySQL keep upstream compatibility code and upstream unit tests only, and are not acceptance evidence. A separately configured log database also supports ClickHouse
 - **Cache**: Redis (go-redis) + in-memory cache
-- **Auth**: Browser sessions, API tokens and personal access tokens, JWT, WebAuthn/Passkeys, TOTP, OAuth/OIDC; Casbin authorization in `service/authz/`
+- **Auth**: Browser sessions, API tokens and personal access tokens, JWT, WebAuthn/Passkeys, TOTP; Casbin authorization in `service/authz/`. The OAuth provider framework remains but has no usable provider: Telegram is a placeholder whose `IsEnabled()` is always false
 - **Extensions**: JavaScript task plugins executed by moejs
 - **Frontend package manager**: Bun (preferred over npm/yarn/pnpm)
 
@@ -55,9 +55,9 @@ This is an AI API gateway/proxy built with Go. It aggregates 40+ upstream AI pro
 
 ### Frontend (`web/src/i18n/`)
 - Library: `i18next` + `react-i18next`; interface-language detection is owned by `web/src/i18n/languages.ts`
-- Languages: en (base) and zh (fallback) are the formal interface languages. zh-TW, fr, ru, ja, ko, and vi packs remain for compatibility. The formal selector offers simplified Chinese and English only. First visit uses Chinese for a Chinese browser preference and English otherwise.
+- Languages: en (base) and zh (fallback) are the formal interface languages. The zh-TW, fr, ru, ja, ko, and vi JSON files are disk leftovers that can never be loaded: `LOADABLE_INTERFACE_LANGUAGE_CODES` in `web/src/i18n/languages.ts` lists only `zhCN` and `en`. Do not assume they take effect when changing code. The formal selector offers simplified Chinese and English only. First visit uses Chinese for a Chinese browser preference and English otherwise.
 - Translation files: `web/src/i18n/locales/{lang}.json` — flat JSON, keys are English source strings
-- Load one interface language at a time. `whenInterfaceLanguageReady()` loads the stored or browser language before the first paint; `changeLanguage` loads that pack before switching and writes `i18nextLng`. Do not import all eight locale files into the first bundle.
+- Load one interface language at a time. `whenInterfaceLanguageReady()` loads the stored or browser language before the first paint; `changeLanguage` loads that pack before switching and writes `i18nextLng`. Do not import every locale file into the first bundle; only the two loadable packs can ever render.
 - Usage: `useTranslation()` hook, call `t('English key')` in components
 - CLI tools: `bun run i18n:sync` (from `web/`)
 
@@ -73,8 +73,8 @@ This is an AI API gateway/proxy built with Go. It aggregates 40+ upstream AI pro
 
 ### Authentication Security (OWASP Mandatory)
 
-- Any implementation, modification, or review involving authentication-related flows MUST comply with the applicable requirements of the latest stable [OWASP Application Security Verification Standard (ASVS)](https://owasp.org/www-project-application-security-verification-standard/) and the relevant [OWASP Cheat Sheet Series](https://cheatsheetseries.owasp.org/). This applies to both backend and frontend changes, including registration, login/logout, password changes and recovery, email verification, MFA, WebAuthn/Passkeys, OAuth/OIDC, account linking/unlinking, sessions, JWTs, API credentials, and re-authentication for sensitive actions.
-- Before changing these flows, read the applicable OWASP guidance, starting with the [Authentication Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html) and [Session Management Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html). Consult the password storage, forgot password, MFA, OAuth, and CSRF guidance when those mechanisms are involved. Identify the applicable controls before implementation; existing code is not a justification for retaining or introducing an insecure pattern.
+- Any implementation, modification, or review involving authentication-related flows MUST comply with the applicable requirements of the latest stable [OWASP Application Security Verification Standard (ASVS)](https://owasp.org/www-project-application-security-verification-standard/) and the relevant [OWASP Cheat Sheet Series](https://cheatsheetseries.owasp.org/). This applies to both backend and frontend changes, including registration, login/logout, password changes and recovery, email verification, MFA, WebAuthn/Passkeys, account linking/unlinking, sessions, JWTs, API credentials, and re-authentication for sensitive actions.
+- Before changing these flows, read the applicable OWASP guidance, starting with the [Authentication Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html) and [Session Management Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html). Consult the password storage, forgot password, MFA, and CSRF guidance when those mechanisms are involved. Identify the applicable controls before implementation; existing code is not a justification for retaining or introducing an insecure pattern.
 - Enforce security controls on the server. Apply the relevant requirements for credential storage and transport, resistance to account enumeration and brute force, CSRF and replay protection, token/challenge expiry and single use where required, protocol-specific verification, session rotation and invalidation, and re-authentication for sensitive account changes. Frontend checks MUST NOT substitute for server-side enforcement, and recovery or alternative login paths MUST NOT bypass the required authentication assurance.
 - Authentication audit events MUST exclude passwords, verification codes, recovery codes, private keys, and usable session or authentication tokens. Record enough non-secret context to investigate authentication failures and sensitive account changes.
 - Verify affected security controls with focused regression tests, including applicable failure, expiry, replay, and bypass cases, following the existing backend/frontend test conventions. Record the OWASP references (including the ASVS version and requirement IDs when used), validation performed, and any unresolved gaps in the change summary or PR description. Do not claim compliance or completion while an applicable security requirement remains unmet or unverified.

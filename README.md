@@ -141,10 +141,10 @@ Accounts, channels, plugin installation states, usage, prices, and costs shown b
 | --- | --- |
 | Model access | Use OpenAI Chat Completions, Responses, Anthropic Messages, and Gemini APIs; stream responses and use tools, reasoning, and multimodal inputs where supported |
 | Routing | Configure model mappings, channel priorities and weights, retries, channel affinity, and multiple upstream keys |
-| Usage and costs | Manage quotas, subscriptions, usage logs, cache accounting, and expression-based pricing for different usage tiers |
-| Access control | Manage users, groups, fine-grained permissions, and API key restrictions; use OAuth/OIDC, passkeys, two-factor authentication, and login session management |
+| Usage and costs | Manage quotas, wallets, usage logs, cache accounting, and expression-based pricing for different usage tiers |
+| Access control | Manage users, groups, fine-grained permissions, and API key restrictions; use passkeys, two-factor authentication, email verification, and login session management |
 | Asynchronous tasks | Extend image, video, and other task APIs with JavaScript plugins, including task status and output retrieval |
-| Web console | Configure channels and models, inspect usage and audit logs; available in English, Simplified Chinese, Traditional Chinese, French, Japanese, Russian, and Vietnamese |
+| Web console | Configure channels and models, inspect usage and audit logs; the console interface is available in Simplified Chinese and English |
 
 ### Protocols and endpoints
 
@@ -179,7 +179,7 @@ Set `TZ` and `TRUSTED_PROXIES` for the network you are actually using. Do not co
 ### Make your first request
 
 1. Add a channel with your upstream API key, available models, and group assignment; run a channel test.
-2. Configure model pricing and ensure the user has quota or a valid subscription.
+2. Configure model pricing and ensure the user has available quota.
 3. Create an API key in the console with access to the same group and models.
 4. Set your client's base URL to `http://localhost:3000/v1` for OpenAI-compatible clients and use the **New API-issued key**.
 
@@ -213,14 +213,14 @@ The root [docker-compose.yml](./docker-compose.yml) is only a local example. It 
 
 | Component | Options |
 | --- | --- |
-| Main database | SQLite, MySQL ≥ 5.7.8, or PostgreSQL ≥ 9.6 |
+| Main database | PostgreSQL (the only production database; no version floor or ceiling, 17 recommended). SQLite and MySQL remain upstream-compatibility code and are refused at startup |
 | Separate log database | Configure with `LOG_SQL_DSN`; also supports ClickHouse |
 | Cache | Optional Redis plus in-memory caching; use shared Redis when application nodes need shared rate limits |
 | Container platforms | Linux amd64 / arm64 |
 
 | Variable | Purpose |
 | --- | --- |
-| `SQL_DSN` | Main database connection; unset uses SQLite |
+| `SQL_DSN` | Main database connection; startup fails when unset |
 | `LOG_SQL_DSN` | Optional separate log database connection |
 | `REDIS_CONN_STRING` | Redis connection string |
 | `SESSION_SECRET` | Persistent authentication secret; all nodes must use the same value |

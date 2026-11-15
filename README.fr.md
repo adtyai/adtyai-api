@@ -126,10 +126,10 @@ La version des images provient de la référence Git et du commit : `main-<SHA c
 | --- | --- |
 | Accès aux modèles | OpenAI Chat Completions, Responses, Anthropic Messages et Gemini ; streaming, outils, raisonnement et entrées multimodales selon le fournisseur |
 | Routage | Correspondance des noms de modèles, priorités et poids des canaux, tentatives supplémentaires, affinité de canal et gestion de plusieurs clés |
-| Usages et coûts | Quotas, abonnements, journaux d'utilisation, comptabilisation du cache et tarification par paliers fondée sur des expressions |
-| Contrôle d'accès | Utilisateurs, groupes, permissions fines et restrictions des clés API ; OAuth/OIDC, clés d'accès, double authentification et gestion des sessions |
+| Usages et coûts | Quotas, portefeuille, journaux d'utilisation, comptabilisation du cache et tarification par paliers fondée sur des expressions |
+| Contrôle d'accès | Utilisateurs, groupes, permissions fines et restrictions des clés API ; clés d'accès, double authentification, vérification par e-mail et gestion des sessions |
 | Tâches asynchrones | Extensions JavaScript pour les API de tâches d'image, de vidéo et autres, avec suivi d'état et récupération des résultats |
-| Console web | Gestion des canaux et modèles, journaux d'utilisation et d'audit ; interface en anglais, chinois simplifié et traditionnel, français, japonais, russe et vietnamien |
+| Console web | Gestion des canaux et modèles, journaux d'utilisation et d'audit ; interface disponible en chinois simplifié et en anglais uniquement |
 
 ### Protocoles et points d'accès
 
@@ -164,7 +164,7 @@ Réglez `TZ` et `TRUSTED_PROXIES` pour le réseau que vous utilisez vraiment. N'
 ### Première requête
 
 1. Ajoutez un canal avec votre clé API amont, ses modèles et son groupe, puis lancez un test du canal.
-2. Configurez les prix des modèles et vérifiez que l'utilisateur dispose d'un quota ou d'un abonnement valide.
+2. Configurez les prix des modèles et vérifiez que l'utilisateur dispose d'un quota disponible.
 3. Créez une clé API dans la console, autorisée à accéder au même groupe et aux mêmes modèles.
 4. Pour un client compatible OpenAI, utilisez `http://localhost:3000/v1` comme URL de base et la **clé émise par New API**.
 
@@ -198,14 +198,14 @@ Le [docker-compose.yml](./docker-compose.yml) à la racine n'est qu'un exemple l
 
 | Composant | Options |
 | --- | --- |
-| Base principale | SQLite, MySQL ≥ 5.7.8 ou PostgreSQL ≥ 9.6 |
+| Base principale | PostgreSQL (seule base de production ; aucune borne de version, 17 recommandée). SQLite et MySQL ne restent que pour la compatibilité amont et sont refusés au démarrage |
 | Base de journaux distincte | Configurée avec `LOG_SQL_DSN` ; prend aussi en charge ClickHouse |
 | Cache | Redis facultatif et cache mémoire ; partagez Redis si les nœuds doivent partager les limites de débit |
 | Plateformes des conteneurs | Linux amd64 / arm64 |
 
 | Variable | Rôle |
 | --- | --- |
-| `SQL_DSN` | Connexion à la base principale ; SQLite si non définie |
+| `SQL_DSN` | Connexion à la base principale ; le démarrage échoue si elle n'est pas définie |
 | `LOG_SQL_DSN` | Connexion facultative à une base de journaux distincte |
 | `REDIS_CONN_STRING` | Chaîne de connexion Redis |
 | `SESSION_SECRET` | Secret d'authentification persistant, identique sur tous les nœuds |

@@ -363,3 +363,75 @@ P6 移植旧项目前端时，不要把 `?aff=` 和 `features/auth/lib/storage.t
 - 保留：`GET /api/oauth/telegram/login`、`POST /api/oauth/telegram/bind/start`、`GET /api/oauth/telegram/bind/:flow_token` 的永久 410（`TELEGRAM_LEGACY_AUTH_REMOVED`）；`telegram_id` 列和历史绑定数据；用户通知 / 管理通知两个机器人及其 `telegram:*` 加密 Token（`model/adty_telegram.go`）；语言包旧键。
 - 测试：`controller/telegram_test.go` 由「登录/绑定/二次验证成功」改成「登录被拒、开关与凭据不可写、历史凭据被清理、旧路由仍是 410」；`controller/security_enrollment_test.go` 和 `controller/auth_flow_test.go` 里依赖 Telegram 登录成功的用例删除。
 - 提交：`ISS-R4-0121`
+
+## 第三方登录（GitHub / Discord / LinuxDO / OIDC / 自定义 OAuth / WeChat）
+
+站点要开多个分站，每个第三方登录都要在对应平台按分站域名逐个登记回调，维护成本过高。老板决定一次性下掉六种登录方式，只保留账号密码、邮箱验证和 Passkey。整个删掉的文件见 [deleted-paths.txt](deleted-paths.txt)。
+
+### 文件（后端）
+
+- `oauth/github.go`、`oauth/discord.go`、`oauth/linuxdo.go`、`oauth/oidc.go`、`oauth/generic.go`（通用自定义 OAuth provider）、`oauth/outbound.go`（换 token、取用户信息的出站请求），以及只测它们的 `oauth/canonical_redirect_test.go`、`oauth/linuxdo_redirect_test.go`、`oauth/oidc_test.go`、`oauth/oidc_flow_test.go`
+- `setting/system_setting/oidc.go`、`setting/system_setting/discord.go` 和 `setting/system_setting/oidc_test.go`：OIDC / Discord 的开关、显示名和凭据
+- `controller/custom_oauth.go`（自定义 provider 的增删改查、discovery、绑定和解绑）及 `custom_oauth_delete_test.go`、`custom_oauth_discovery_test.go`、`custom_oauth_slug_test.go`、`custom_oauth_unbind_test.go`
+- `controller/wechat.go`（微信扫码登录和绑定）及 `controller/wechat_site_register_test.go`
+- `model/custom_oauth_provider.go`、`model/user_oauth_binding.go`：两张表的模型
+- `controller/misc_oidc_test.go`、`controller/oidc_oauth_test.go`、`model/builtin_oauth_subject_test.go`、`model/oauth_binding_site_index_order_test.go`：只测这些 provider 的用例，随实现一起删
+
+### 路由
+
+删掉的注册：
+
+- `GET /api/oauth/wechat`、`POST /api/oauth/wechat/bind`
+- `/api/custom-oauth-provider/` 整个组（`middleware.RootAuth`）：`POST /discovery`、`GET /`、`GET /:id`、`POST /`、`PUT /:id`、`DELETE /:id`
+- `GET /api/user/oauth/bindings`、`DELETE /api/user/oauth/bindings/:provider_id`（自己的绑定，登录用户组）
+- `GET /api/user/:id/oauth/bindings`、`DELETE /api/user/:id/oauth/bindings/:provider_id`（管理员代查代解绑）
+
+`GET /api/oauth/:provider` 这条统一回调壳保留，但六个 provider 都不再注册，`/api/oauth/github`、`/api/oauth/discord`、`/api/oauth/oidc`、`/api/oauth/linuxdo` 现在都返回 400 `Unknown OAuth provider`（`controller.HandleOAuth` 在 `oauth.GetProvider` 里查不到就直接拒绝）。`router/adty_deleted_routes_test.go` 盯着上面这些路由不许回来，同时断言壳路由、`POST /api/oauth/state`、`/api/oauth/email/bind*` 和 Telegram 旧路由还在。
+
+### 表和列
+
+- `custom_oauth_providers`、`user_oauth_bindings`：`model/main.go` 的 `migrateDB` 不再 AutoMigrate 这两张表，`EnsureUserOAuthBindingSiteSubjectIndex` 也删了。已经存在的表和里面的历史数据不删（没有写 DropTable / DropColumn），只是不再读写。
+- `users` 的 `github_id`、`discord_id`、`oidc_id`、`wechat_id`、`linux_do_id`：列和历史数据保留，`model.User` 上的这些字段和 `builtinOAuthSubjectColumns` 的唯一性检查也保留；没有写删列迁移，只是不再有登录流程会写它们。
+
+### 配置项
+
+- `GitHubOAuthEnabled`、`GitHubClientId`、`GitHubClientSecret`
+- `LinuxDOOAuthEnabled`、`LinuxDOClientId`、`LinuxDOClientSecret`、`LinuxDOMinimumTrustLevel`
+- `WeChatAuthEnabled`、`WeChatServerAddress`、`WeChatServerToken`、`WeChatAccountQRCodeImageURL`
+- `discord.*`（`enabled`、`client_id`、`client_secret`）、`oidc.*`（`enabled`、`display_name`、`client_id`、`client_secret`、`well_known`、`authorization_endpoint`、`token_endpoint`、`user_info_endpoint`）
+
+`GET /api/status` 不再返回这些键（`github_oauth`、`github_client_id`、`discord_oauth`、`discord_client_id`、`linuxdo_oauth`、`linuxdo_client_id`、`linuxdo_minimum_trust_level`、`wechat_login`、`wechat_qrcode`），`model/option.go` 的 `InitOptionMap` / `updateOptionMap` 和 `controller/option.go` 里「没填 Client ID 不许打开」的校验一并删了；`common.GitHub*` / `LinuxDO*` / `WeChat*` 变量随后在 `b1d1049` 删掉（那时已经没人读）。数据库 options 表里的历史行保留，只是不再读取。
+
+### 前端
+
+- `web/src/lib/oauth.ts`（发起登录、轮询、换票）、`web/src/routes/(auth)/oauth.tsx`、`web/src/routes/oauth/$provider.tsx`（OAuth 落地页；`web/src/routeTree.gen.ts` 已重新生成）
+- `web/src/features/auth/lib/oauth.ts`、`oauth-callback-mode.ts`、`oauth-handoff.ts`、`oauth-popup.ts`、`oauth-bind-window.ts` 及各自测试，`web/src/features/auth/hooks/use-oauth-login.ts` 和它的测试
+- `web/src/features/auth/components/oauth-providers.tsx`、`oauth-callback-screen.tsx`
+- `web/src/features/system-settings/auth/custom-oauth/`（自定义 OAuth 管理页：provider 表格、表单、preset、discovery、访问策略模板、接口调用）和 `oauth-section.tsx`、`oauth-callback-url.ts`
+- 品牌图标 `web/src/assets/brand-icons/icon-github.tsx`、`icon-discord.tsx`、`icon-linuxdo.tsx`、`icon-wechat.tsx`（`index.ts` 的导出一起去掉）
+- `web/src/features/security/components/dialogs/wechat-bind-dialog.tsx`，以及用户绑定对话框里的第三方部分
+- `web/src/features/auth/lib/telegram-login.ts` 和它的测试：前端的 Telegram 登录入口，同一批删掉
+
+登录页、注册页只剩账号密码（注册带邮箱验证），安全页的账号绑定卡片只留邮箱、Passkey 和 2FA。前端语言包旧键按约定 B 保留。
+
+### 影响
+
+曾只用第三方登录、从来没设过密码的账号登录不了，只能用登录页的「忘记密码」走 `GET /api/reset_password` 发邮件，重设密码后再登。
+
+### 提交
+
+- `86536ce` `feat(auth)!: retire all third-party sign-in, leaving password and email only`
+- 整个删掉的文件和目录：[deleted-paths.txt](deleted-paths.txt)
+
+### 保留名单和理由
+
+- `oauth/telegram.go`：退役占位 provider，`IsEnabled()` 恒为 false，换 token / 取用户信息直接返回错误；注册它只为占住 `telegram` 这个名字，免得被自定义 OAuth Provider 顶替。登录链和二次验证的退役见上一节。
+- `model/adty_telegram.go` 的绑定和两个通知机器人及它们的加密 Token：通知通道，和登录无关，一字未动。
+- `GET /api/oauth/:provider` 回调壳、`POST /api/oauth/state`、`POST /api/oauth/email/bind/start`、`/api/oauth/email/bind/resend`、`/api/oauth/email/bind`：邮箱绑定和验证还在用三条 `/api/oauth/email/bind*`；壳和 state 现在没有启用的 provider 可走，除 `provider=telegram` 报 `TelegramConfigurationError()` 外一律 400 `Invalid parameters`。
+- Telegram 三个旧路由的永久 410（`TELEGRAM_LEGACY_AUTH_REMOVED`）：旧客户端和旧书签不该在合上游后复活。
+- `controller/oauth.go` 里绑定意图（`auth_flow` 的 `Intent == bind`）的分支：目前没有 provider 能走到，留着是为了不把通用回调和 state 的壳拆散。
+- `service/adty_site_resolve.go`：分站状态里仍把 `github_oauth`、`discord_oauth`、`linuxdo_oauth`、`telegram_oauth`、`wechat_login`、`oidc_enabled` 置 false，删掉 `custom_oauth_providers` 键，把 `wechat_qrcode` 置空——前端历史版本读这些键时得到「关」，不会报错。
+- `common.WeChatAccountQRCodeImageURL`：只剩一个空值，给上面那条归一用。
+- `users` 的五个历史绑定列和历史数据（见上面「表和列」）：没有删列迁移，旧库照常启动。
+- `router/adty_deleted_routes_test.go`：守卫测试，这些路由跟着上游回来会失败。
+- `web/src/i18n/locales/*.json` 里第三方登录相关的键：前端语言包只增不删（约定 B）。

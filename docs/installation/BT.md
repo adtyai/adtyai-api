@@ -34,7 +34,9 @@
 
 ## 步骤三：安装 New API
 
-### 方法一：使用宝塔应用商店（推荐）
+> ⚠️ **方法一和方法二只用于本地试用或单机试跑**：不设 `SQL_DSN` 时数据库退回 SQLite，也不会有 Redis，属于单机形态，不能作为生产部署。正式环境必须使用 PostgreSQL + Redis，并配置 `SESSION_COOKIE_SECURE`、`SESSION_COOKIE_TRUSTED_URL`（`deploy/adty/docker-compose.yml` 把 PostgreSQL 和 Redis 都列为必需依赖）。生产按 [ADTY 部署文档](../adty/deploy.md) 的 `deploy/adty/` 编排做，不要用本页的两段示例。
+
+### 方法一：使用宝塔应用商店（仅本地试用）
 
 1. 在宝塔面板 Docker 功能中，点击 **应用商店**
 2. 搜索并找到 **New-API**
@@ -48,7 +50,7 @@
 5. 点击 **确认** 开始安装
 6. 等待安装完成后，访问 `http://您的服务器IP:3000` 即可使用
 
-### 方法二：使用 Docker Compose
+### 方法二：使用 Docker Compose（仅本地试用）
 
 1. 在宝塔面板中创建网站目录，如 `/www/wwwroot/new-api`
 2. 创建 `docker-compose.yml` 文件：
@@ -69,7 +71,7 @@ services:
       - TZ=UTC
 ```
 
-正式环境不要用这段示例。生产编排在 `deploy/adty`，镜像由本仓库构建，数据库使用 PostgreSQL。`TZ` 按实际网络设置，不要把某个地区时区写成默认值。
+这段示例没有 `SQL_DSN` 和 `REDIS_CONN_STRING`，起的是 SQLite 单机形态，正式环境不要用。生产编排在 `deploy/adty`，镜像由本仓库构建，数据库必须 PostgreSQL、缓存必须 Redis，还要同时配 `SESSION_COOKIE_SECURE=true` 和 `SESSION_COOKIE_TRUSTED_URL`（正式 https origin，不带路径）。`TZ` 按实际网络设置，不要把某个地区时区写成默认值。
 
 1. 在终端中进入目录并启动：
 
@@ -84,12 +86,14 @@ docker-compose up -d
 
 ### 必要环境变量
 
-| 变量名                 | 说明                 | 是否必填   |
-| ------------------- | ------------------ | ------ |
-| `SESSION_SECRET`    | 会话密钥，多机部署必须一致      | **必填** |
-| `CRYPTO_SECRET`     | 加密密钥，使用 Redis 时必填  | 条件必填   |
-| `SQL_DSN`           | 数据库连接字符串（使用外部数据库时） | 可选     |
-| `REDIS_CONN_STRING` | Redis 连接字符串        | 可选     |
+| 变量名                          | 说明                                                                 | 是否必填               |
+| ---------------------------- | ------------------------------------------------------------------ | ------------------ |
+| `SESSION_SECRET`             | 会话密钥，多机部署必须一致                                                      | **必填**             |
+| `CRYPTO_SECRET`              | 加密密钥（Cloudflare Token、Turnstile secret 等敏感值）；不设时等于 `SESSION_SECRET` | 生产必填               |
+| `SQL_DSN`                    | 数据库连接串，生产必须是 `postgresql://…`；不设时退回 SQLite 单机形态，仅供试用                  | 生产必填（试用可空）         |
+| `REDIS_CONN_STRING`          | Redis 连接串，缓存、批量更新和限流都依赖它                                           | 生产必填（试用可空）         |
+| `SESSION_COOKIE_SECURE`      | 生产设 `true`，与下一项必须同时设                                               | 生产必填               |
+| `SESSION_COOKIE_TRUSTED_URL` | 正式 https origin，多个用英文逗号分隔，不带路径或通配符                                  | 生产必填（与上一项成对）       |
 
 ### 生成随机密钥
 
