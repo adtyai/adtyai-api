@@ -71,14 +71,21 @@ func TestWalletFundingRefundWithoutOperationKeyPG(t *testing.T) {
 	assert.EqualValues(t, 30_000, reloaded.Quota)
 }
 
-// 分摊表不存在时，退款照常放行，但必须在日志里留一条可聚合的痕迹。
+// 分摊表不存在时：退款照常放行（钱正确优先），但**启动时必须点名缺表**。
 //
 // 这条分支的取舍是「钱正确优先于账本完整」：报错会把退款一起回滚，用户白扣一次。
-// 但放行不等于没发生——「这次退款没有分摊记录可释放」是对账要能查到的事实，
-// 不能只活在代码注释里。
-func TestRefundWithoutAllocationTableStillTracesPG(t *testing.T) {
+// 但放行不等于没发生——缺表的库里**每一笔**退款都没有分摊可释放，整段部署窗口都
+// 不可对账，那是对账必须提前知道的事实，所以它被提到启动期（`ISS-R4-0061`）。
+//
+// 断言换过一次：原来断言的是 `logged.String()` 里出现过一句话——那只证明「进程
+// 内存里格式化过这个句子」，重启就没、轮转就没、也聚合不了。现在断言的是启动
+// 检查的**类型化结论**：缺表要返回 `ErrAdtyFundAllocationTableMissing` 并点名表名。
+func TestRefundWithoutAllocationTableIsNamedAtStartupPG(t *testing.T) {
 	db := announcementTestDB(t)
 	pgtest.RecordServerVersion(t, db)
+
+	// 判据只有「表在不在」：表在的时候一条告警都不许有，否则这条检查会变成噪声。
+	require.NoError(t, CheckAdtyStartupSchema(db), "表在的时候不能误报缺表")
 
 	user := ticketTestUser(t, db, "refund-no-table", 1)
 	require.NoError(t, db.Model(&model.User{}).Where("id = ?", user.Id).Update("quota", 0).Error)
@@ -88,15 +95,19 @@ func TestRefundWithoutAllocationTableStillTracesPG(t *testing.T) {
 	require.False(t, db.Migrator().HasTable(&model.AdtyFundAllocation{}))
 
 	logged := captureSysLog(t)
+	err := CheckAdtyStartupSchema(db)
+	require.ErrorIs(t, err, model.ErrAdtyFundAllocationTableMissing,
+		"缺表必须由启动检查点名，而不是等退款时才发现")
+	assert.Contains(t, logged.String(), "adty_fund_allocations",
+		"启动告警要指名缺的是哪张表，否则运维不知道要补哪条迁移")
+
+	// 运行期：钱照样退，不许因为缺表失败。
 	require.NoError(t, model.RefundUserQuotaForOperation(user.Id, 40_000, "request:no-table-1"),
 		"表不存在不能让退款失败——钱正确优先")
 
 	var after model.User
 	require.NoError(t, db.First(&after, user.Id).Error)
 	assert.EqualValues(t, 40_000, after.Quota, "钱照样退回去")
-	assert.Contains(t, logged.String(), "refund released without allocation table",
-		"留痕：没有分摊记录可释放这件事必须可查")
-	assert.Contains(t, logged.String(), "request:no-table-1", "痕迹要能定位到具体 operation")
 }
 
 // captureSysLog 用共享的日志 sink 收 SysLog/SysError 的输出。

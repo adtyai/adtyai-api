@@ -11,6 +11,30 @@ import (
 // find the pre-charge share it is supposed to act on.
 var ErrAdtyFundAllocationMissing = errors.New("adty fund allocation is missing")
 
+// ErrAdtyFundAllocationTableMissing 表示这次部署的前置结构没建：分摊表本身不存在。
+//
+// 它和 `ErrAdtyFundAllocationMissing` 不是一回事：后者是「表在，但这一笔找不到分摊」，
+// 是数据问题；这一条是「表根本不在」，是部署不完整（A.12.1 的必备结构没迁移）。
+// 两者要分开，因为后果完全不同——缺表的库里**每一笔**退款都没有分摊可释放，
+// 整段部署窗口都不可对账，那必须在启动时被点名，而不是逐笔在日志里发现。
+var ErrAdtyFundAllocationTableMissing = errors.New("adty_fund_allocations table is missing")
+
+// AdtyFundAllocationTableReady 报告退款释放所依赖的分摊表在不在。
+//
+// 判据只有「表在不在」一件事：不猜迁移版本、不看列、不看有没有数据——那些宽判据
+// 会在正常的库上误报（`ISS-R4-0062` 的启动告警就是这么变成噪声的）。缺表这件事
+// 本身已经足够精确：退款路径遇到缺表只能放行，所以它不会自己冒出来。
+func AdtyFundAllocationTableReady(db *gorm.DB) error {
+	if db == nil {
+		// 没有库连接时退款根本不会发生，这里不制造假警。
+		return nil
+	}
+	if !db.Migrator().HasTable(&AdtyFundAllocation{}) {
+		return ErrAdtyFundAllocationTableMissing
+	}
+	return nil
+}
+
 // AdtyFundAllocation is the per-request share of one fund batch. A.12.1 requires
 // every batch to keep its 冻结/预扣 relation, and A.12.2.6 requires cancellations,
 // pre-charge releases and refunds to return funds "按原分摊" instead of a
@@ -510,8 +534,15 @@ func ReleaseAdtyFundAllocationsTx(tx *gorm.DB, userID int, operationID string) e
 	// 真实场景是迁移没跑全的库（以及各自 AutoMigrate 的测试夹具）。
 	//
 	// **必须留痕**：放行钱不等于这件事没发生。表不存在意味着「这次退款没有
-	// 分摊记录可释放」，事后对账看不到任何痕迹——所以打一条可聚合的日志。
-	// 和 `fund_batch_gap` 同一条口径：差额要能聚合，不能只在日志里说一句就没了。
+	// 分摊记录可释放」，事后对账看不到任何痕迹。
+	//
+	// 但这一行**不是**可聚合的账：`common.SysError` 只是往进程日志写一行文本
+	// （`common/sys_log.go`），重启就没、轮转就没，也不能按用户/时段聚合。
+	// 往业务表写行这条路走不通——缺表的库里 `billing_operations` 与分摊表在同一次
+	// 迁移里，一样不存在，写它会失败并把退款一起回滚，那正是这条分支要避免的事。
+	// 所以真正的留痕提前到了启动期：`service.CheckAdtyStartupSchema` 缺表即点名，
+	// 让运维知道「从这次启动起，退款没有分摊可释放，整段窗口退款不可对账」。
+	// 这里这行只作补充证据：日志要是还在，它能指出**哪一笔**退款受影响。
 	if !tx.Migrator().HasTable(&AdtyFundAllocation{}) {
 		common.SysError(common.LogText(
 			"refund released without allocation table: user=%d operation=%s", userID, operationID))
