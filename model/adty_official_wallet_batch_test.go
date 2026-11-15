@@ -281,7 +281,7 @@ func TestAdjustUserQuotaWithLedgerDoesNotFirePrincipalSpentHook(t *testing.T) {
 
 	prev := AdtyAfterPrincipalSpentTx
 	called := 0
-	AdtyAfterPrincipalSpentTx = func(tx *gorm.DB, userID int, principalQuota int64) error {
+	AdtyAfterPrincipalSpentTx = func(tx *gorm.DB, userID int, operationKey string, principalQuota int64) error {
 		called++
 		t.Errorf("manual adjust fired principal-spent hook user=%d quota=%d", userID, principalQuota)
 		return nil

@@ -408,13 +408,22 @@ func SettleAdtyFundAllocationsTx(tx *gorm.DB, userID int, operationID string, ap
 		if applied == 0 {
 			return 0, nil
 		}
-		backed, err := consumeAdtyFundBatchesTx(tx, userID, applied, balanceBefore, true)
+		backed, err := consumeAdtyFundBatchesTx(tx, userID, applied, balanceBefore, true, operationID)
 		if err != nil {
 			return 0, err
 		}
 		return backed, nil
 	}
 
+	// principalSpent 累计这次结算真正从**非 legacy 本金批次**里扣掉的额度。
+	// 它就是站长该付给平台的那部分成本：结算结束后一次性交给
+	// AdtyAfterPrincipalSpentTx 去扣站点运营钱包。
+	//
+	// 为什么不在 deductAdtyFundBatchTx 里触发：那个函数是「减一个批次」的
+	// 通用动作，退款侧的调用点也用它；放在那里会让退款再扣一次运营钱包。
+	// 这里只有「消费」语义（applied > 0 的分摊转实扣），退款走的是 take<=0
+	// 的释放分支，一分都不会计进 principalSpent。
+	principalSpent := int64(0)
 	left := applied
 	for i := range shares {
 		held := shares[i].Held - shares[i].Settled
@@ -434,6 +443,9 @@ func SettleAdtyFundAllocationsTx(tx *gorm.DB, userID int, operationID string, ap
 		if err := deductAdtyFundBatchTx(tx, shares[i].BatchId, take); err != nil {
 			return 0, err
 		}
+		if shares[i].Kind == "principal" && shares[i].Source != "legacy" {
+			principalSpent += take
+		}
 		// 只消费了一部分时，把这份分摊收窄到实际消耗，held 与 settled 相等，
 		// 未用到的部分随之释放（批次没有扣过它，不需要回补）。
 		if err := tx.Model(&AdtyFundAllocation{}).
@@ -444,6 +456,12 @@ func SettleAdtyFundAllocationsTx(tx *gorm.DB, userID int, operationID string, ap
 		left -= take
 	}
 	if left <= 0 {
+		// 预扣登记的分摊正好覆盖实际消耗——最常见的形态。这里必须先把本金
+		// 消费交给站点侧，否则「有分摊行」的用户永远不扣运营钱包；补记分支
+		// 走的是下面同一个出口，两处都只经 adtyNotifyPrincipalSpentTx 一次。
+		if err := adtyNotifyPrincipalSpentTx(tx, userID, operationID, principalSpent); err != nil {
+			return 0, err
+		}
 		return applied, nil
 	}
 	// 已登记额度不够覆盖实际消耗：补记一条已结算分摊，再按 FIFO 扣批次。
@@ -469,6 +487,9 @@ func SettleAdtyFundAllocationsTx(tx *gorm.DB, userID int, operationID string, ap
 		take := min(held, left)
 		if err := deductAdtyFundBatchTx(tx, shares[i].BatchId, take); err != nil {
 			return 0, err
+		}
+		if shares[i].Kind == "principal" && shares[i].Source != "legacy" {
+			principalSpent += take
 		}
 		if err := tx.Model(&AdtyFundAllocation{}).
 			Where("id = ? AND held = ?", shares[i].Id, shares[i].Held).
@@ -496,6 +517,12 @@ func SettleAdtyFundAllocationsTx(tx *gorm.DB, userID int, operationID string, ap
 	}
 	if total.Held != backed {
 		return 0, adtyFundBatchShortfallError(total.Held - backed)
+	}
+	// 本金真的从批次里扣掉了，站点运营钱包必须同事务跟上：站长充值时就记过
+	// 一笔本金入账（operating:topup:<trade_no>），消费时不扣等于这笔钱白送。
+	// 放在收尾校验之后：校验失败整事务回滚，不会留下「钱包扣了账没扣」。
+	if err := adtyNotifyPrincipalSpentTx(tx, userID, operationID, principalSpent); err != nil {
+		return 0, err
 	}
 	return backed, nil
 }

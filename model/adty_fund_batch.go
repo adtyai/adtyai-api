@@ -167,7 +167,21 @@ func ensureAdtyLegacyBatchTx(tx *gorm.DB, userID int, topUp int64) error {
 
 // AdtyAfterPrincipalSpentTx runs in the charge transaction after non-legacy
 // principal lots are reduced. Gift consumption does not call it.
-var AdtyAfterPrincipalSpentTx func(tx *gorm.DB, userID int, principalQuota int64) error
+//
+// operationKey 是这笔消费的业务身份：结算路径传 operation key，直接扣费
+// （没有 operation 可言）传空串。实现方用它在站点钱包流水上做幂等键——
+// 同一笔 operation 重放不能把站长该付的钱扣两遍。
+var AdtyAfterPrincipalSpentTx func(tx *gorm.DB, userID int, operationKey string, principalQuota int64) error
+
+// adtyNotifyPrincipalSpentTx hands a charge's non-legacy principal portion to
+// the site side. Every settle exit goes through it, so one settled operation
+// debits the site operating wallet exactly once.
+func adtyNotifyPrincipalSpentTx(tx *gorm.DB, userID int, operationKey string, principalSpent int64) error {
+	if principalSpent <= 0 || AdtyAfterPrincipalSpentTx == nil {
+		return nil
+	}
+	return AdtyAfterPrincipalSpentTx(tx, userID, operationKey, principalSpent)
+}
 
 // AdtyBonusSpend is one source's bonus lot reduction in a usage charge.
 type AdtyBonusSpend struct {
@@ -187,7 +201,7 @@ var AdtyAfterBonusSpentTx func(tx *gorm.DB, userID int, spends []AdtyBonusSpend)
 // it returns ErrAdtyFundBatchShortfall so the surrounding wallet transaction
 // can roll back.
 func ConsumeAdtyFundBatchesTx(tx *gorm.DB, userID int, amount, balanceBefore int64) error {
-	_, err := consumeAdtyFundBatchesTx(tx, userID, amount, balanceBefore, true)
+	_, err := consumeAdtyFundBatchesTx(tx, userID, amount, balanceBefore, true, "")
 	return err
 }
 
@@ -197,7 +211,7 @@ func ConsumeAdtyFundBatchesTx(tx *gorm.DB, userID int, amount, balanceBefore int
 // It does fire the bonus-spent hook so an approved or official reduction that
 // consumes top-up bonus lots can release the corresponding site gift guarantee.
 func ConsumeAdtyFundBatchesQuietTx(tx *gorm.DB, userID int, amount, balanceBefore int64) error {
-	_, err := consumeAdtyFundBatchesTx(tx, userID, amount, balanceBefore, false)
+	_, err := consumeAdtyFundBatchesTx(tx, userID, amount, balanceBefore, false, "")
 	return err
 }
 
@@ -205,7 +219,11 @@ func ConsumeAdtyFundBatchesQuietTx(tx *gorm.DB, userID int, amount, balanceBefor
 // existed before any legacy top-up, not how much was debited. The difference is
 // the drift: money that sat on the account with no lot behind it. Callers that
 // only need the error discard it; settlement records it as fund_batch_gap.
-func consumeAdtyFundBatchesTx(tx *gorm.DB, userID int, amount, balanceBefore int64, notifyPrincipalSpent bool) (int64, error) {
+//
+// operationKey is passed through to the principal-spent hook so a settlement
+// whose operation has no shares still debits the site operating wallet exactly
+// once. Direct charges have no operation identity and pass "".
+func consumeAdtyFundBatchesTx(tx *gorm.DB, userID int, amount, balanceBefore int64, notifyPrincipalSpent bool, operationKey string) (int64, error) {
 	if tx == nil || userID <= 0 || amount <= 0 {
 		return 0, nil
 	}
@@ -291,8 +309,8 @@ func consumeAdtyFundBatchesTx(tx *gorm.DB, userID int, amount, balanceBefore int
 	// notifyPrincipalSpent gates only the usage-charge hook. The bonus hook
 	// still runs on the quiet path so manual/staff reductions release the
 	// corresponding site gift-guarantee without debiting the operating wallet.
-	if notifyPrincipalSpent && principalTaken > 0 && AdtyAfterPrincipalSpentTx != nil {
-		if err := AdtyAfterPrincipalSpentTx(tx, userID, principalTaken); err != nil {
+	if notifyPrincipalSpent && principalTaken > 0 {
+		if err := adtyNotifyPrincipalSpentTx(tx, userID, operationKey, principalTaken); err != nil {
 			return backed, err
 		}
 	}
@@ -372,7 +390,7 @@ func applyAdtyWalletDebitToBatchesTx(tx *gorm.DB, userID int, source string, pri
 	if remainingBefore < 0 {
 		remainingBefore = 0
 	}
-	_, err = consumeAdtyFundBatchesTx(tx, userID, leftover, remainingBefore, false)
+	_, err = consumeAdtyFundBatchesTx(tx, userID, leftover, remainingBefore, false, "")
 	return err
 }
 

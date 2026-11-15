@@ -663,14 +663,35 @@ func ApplyBillingSettlement(key string) (*BillingOperation, bool, error) {
 		//
 		// 团队 Key 由团队共享余额付款，成员的个人本金批次不参与——不跳过的话，
 		// 团队消费会吃掉员工自己的本金，那是「扣错人」而不是「多扣」。
+		// settled 是「这笔 operation 自己消耗了多少」，也是批次账本要同步的额度：
+		//
+		//   - request / mj / direct：预扣 base 已经在 PreConsume 阶段从余额扣掉、
+		//     但批次还没动过，所以这次要扣的是 base+charged；对应地，「这笔业务
+		//     动手之前」的余额是 balance+base。
+		//   - task：adjust / refund operation 的 base 就是 task.Quota，也就是
+		//     **提交时那个 request operation 已经结算过的额度**——批次在那里
+		//     已经扣过 base 了。再按 base+charged 扣一遍，同一笔本金会被扣第二次，
+		//     而且多扣的那块会因为 balanceBefore 里也含着 base 而被补建成一条凭空
+		//     出现的 legacy 批次，正好把本该记下来的漂移抹平。所以这里只结差额：
+		//     往上调 = charged，往下调 = 0（批次账本没有「回补」原语，宁可让
+		//     差额留在对账里可见，也不去扣一笔根本没发生的消耗）。
+		//
+		//   同一笔 operation 只会结算一次，这个额度同时也是站点运营钱包
+		//   （AdtyAfterPrincipalSpentTx）能扣的上限：站点侧不能比用户真实消耗
+		//   多付钱。
+		settledQuota, settledBalanceBefore := int64(base+charged), int64(balance+base)
+		if row.Kind == "task" {
+			// balance 是本次补/退之前读到的余额：task 的 base 不是本笔预扣，
+			// 「这笔业务动手之前」的余额就是 balance 本身。
+			settledQuota, settledBalanceBefore = max(0, int64(charged)), int64(balance)
+		}
 		var backedByBatches int64
 		if !teamPaid {
 			// 传的是「这次业务消耗之前」的钱包余额，不是此刻的余额：
 			// 预扣的 base 已经在 PreConsume 阶段扣掉了，若把此刻余额（可能已是 0）
 			// 传给「无批次时补建 legacy 批次」的分支，补出来的批次不够扣本次消耗，
 			// 结算会整笔失败——老用户（升级前就有额度、从来没批次）就再也结不了账。
-			// initial = 此刻余额 + base（预扣已扣） = balance + base。
-			backed, err := SettleAdtyFundAllocationsTx(tx, row.UserId, row.OperationKey, int64(base+charged), int64(balance+base))
+			backed, err := SettleAdtyFundAllocationsTx(tx, row.UserId, row.OperationKey, settledQuota, settledBalanceBefore)
 			if err != nil {
 				return err
 			}
@@ -680,7 +701,7 @@ func ApplyBillingSettlement(key string) (*BillingOperation, bool, error) {
 		// 从哪一笔开始漂」。团队 Key 由团队余额付款，个人批次不参与，gap 记 0。
 		row.FundBatchGap = 0
 		if !teamPaid {
-			row.FundBatchGap = int64(base+charged) - backedByBatches
+			row.FundBatchGap = settledQuota - backedByBatches
 		}
 		row.ReservedQuota, row.TokenReservedQuota = base, tokenBase
 		row.Shortfall, row.AppliedQuota = delta-charged, base+charged

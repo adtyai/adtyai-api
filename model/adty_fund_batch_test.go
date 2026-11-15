@@ -226,7 +226,7 @@ func TestConsumeFundBatchesShortfallDoesNotDropRemainder(t *testing.T) {
 		if err := tx.Model(&User{}).Where("id = ?", 17).Update("quota", 0).Error; err != nil {
 			return err
 		}
-		got, err := consumeAdtyFundBatchesTx(tx, 17, 50, 50, true)
+		got, err := consumeAdtyFundBatchesTx(tx, 17, 50, 50, true, "")
 		backed = got
 		return err
 	})
@@ -368,7 +368,7 @@ func TestConsumeFundBatchesShortfallDoesNotFireHook(t *testing.T) {
 	}).Error)
 	fired := 0
 	prev := AdtyAfterPrincipalSpentTx
-	AdtyAfterPrincipalSpentTx = func(tx *gorm.DB, userID int, principalQuota int64) error {
+	AdtyAfterPrincipalSpentTx = func(tx *gorm.DB, userID int, operationKey string, principalQuota int64) error {
 		fired++
 		return nil
 	}
@@ -394,7 +394,7 @@ func TestConsumeFundBatchesQuietTxFiresBonusHookNotPrincipalHook(t *testing.T) {
 	prevBonus := AdtyAfterBonusSpentTx
 	principalCalled := 0
 	var bonusSpends []AdtyBonusSpend
-	AdtyAfterPrincipalSpentTx = func(tx *gorm.DB, userID int, principalQuota int64) error {
+	AdtyAfterPrincipalSpentTx = func(tx *gorm.DB, userID int, operationKey string, principalQuota int64) error {
 		principalCalled++
 		t.Errorf("QuietTx fired principal-spent hook user=%d quota=%d", userID, principalQuota)
 		return nil
