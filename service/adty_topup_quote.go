@@ -149,6 +149,16 @@ func adtyQuotaQuoteForSite(site *model.AdtySite, userGroup string, faceUSD decim
 		return nil, err
 	}
 	if site != nil && bonus.IsPositive() {
+		// 策略上限（features.md「站长分站·加赠和试用额度」）：站点档位加赠 + 站长出资的优惠加赠
+		// 合计不得超过 面额 ×（主站同档比例 + max_site_bonus_extra）÷ 100。
+		// 这和下面的 SiteBonusEarningCovers 不是一回事：那个查站长的钱够不够垫这笔加赠，
+		// 这个查规则允许站长给多少。预算够不等于允许给。
+		if !adtySiteBonusWithinCap(faceUSD, bonus) {
+			return nil, common.NewMessage("This site's bonus exceeds the cap of {{cap}} USD for a {{face}} USD top-up", map[string]any{
+				"cap":  adtySiteBonusCapAmount(faceUSD).String(),
+				"face": faceUSD.String(),
+			})
+		}
 		if err := SiteBonusEarningCovers(site.Id, bonus); err != nil {
 			return nil, err
 		}
