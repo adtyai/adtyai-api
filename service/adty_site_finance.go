@@ -380,24 +380,39 @@ func notifyAdtyAnomalyDispositionTx(tx *gorm.DB, row model.AdtyAnomalyDispositio
 	return tx.Create(&notice).Error
 }
 
-// TransferAdtyEarningToMargin moves earning cash into margin and opens a new draw cycle.
+// TransferAdtyEarningToMargin moves earning cash into margin. Only the top-up
+// that refills the margin wallet to the tier deposit opens a new draw cycle;
+// every smaller credit just moves cash. Opening a cycle on any positive credit
+// would let a 0.00000001 transfer zero CycleUsedUSD and hand the 90% cap back.
 func TransferAdtyEarningToMargin(siteID, operator int, amount, tier decimal.Decimal, key string) error {
 	if !amount.IsPositive() || !tier.IsPositive() || strings.TrimSpace(key) == "" {
 		return ErrAdtySiteWalletInvalidOperation
+	}
+	earnKey, marginKey, err := adtyEarningToMarginKeys(siteID, key)
+	if err != nil {
+		return err
 	}
 	if err := EnsureAdtySiteWallets(siteID); err != nil {
 		return err
 	}
 	if err := model.DB.Transaction(func(tx *gorm.DB) error {
 		if _, err := applyAdtySiteWalletChangeTx(tx, siteID, model.AdtySiteWalletEarnings, amount.Neg(), AdtySiteWalletChange{
-			Type: "earning_to_margin", IdempotencyKey: key + ":earn", OperatorID: operator,
+			Type: "earning_to_margin", IdempotencyKey: earnKey, OperatorID: operator,
 		}); err != nil {
 			return err
 		}
-		_, err := applyAdtySiteWalletChangeTx(tx, siteID, model.AdtySiteWalletMargin, amount, AdtySiteWalletChange{
-			Type: "earning_to_margin", IdempotencyKey: key + ":margin", OperatorID: operator,
-			OpenMarginCycle: true, CycleTier: tier,
-		})
+		opensCycle, err := adtyEarningTopUpOpensMarginCycleTx(tx, siteID, amount, tier)
+		if err != nil {
+			return err
+		}
+		change := AdtySiteWalletChange{
+			Type: "earning_to_margin", IdempotencyKey: marginKey, OperatorID: operator,
+		}
+		if opensCycle {
+			change.OpenMarginCycle = true
+			change.CycleTier = tier
+		}
+		_, err = applyAdtySiteWalletChangeTx(tx, siteID, model.AdtySiteWalletMargin, amount, change)
 		return err
 	}); err != nil {
 		return err
@@ -409,6 +424,31 @@ func TransferAdtyEarningToMargin(siteID, operator int, amount, tier decimal.Deci
 		common.SysLog(common.LogText("gift fulfillment: resume after margin top-up site %d: %s", siteID, err.Error()))
 	}
 	return nil
+}
+
+// adtyEarningToMarginKeys scopes the client idempotency key to one site. The
+// ledger has a single global unique index on idempotency_key, so an unscoped
+// client string would let one site fail, pre-empt, or probe another site's
+// transfers. The 128 limit is the column width.
+func adtyEarningToMarginKeys(siteID int, key string) (string, string, error) {
+	scoped := "site:" + strconv.Itoa(siteID) + ":" + strings.TrimSpace(key)
+	earn, margin := scoped+":earn", scoped+":margin"
+	if len(earn) > 128 || len(margin) > 128 {
+		return "", "", ErrAdtySiteWalletIdempotencyKey
+	}
+	return earn, margin, nil
+}
+
+// adtyEarningTopUpOpensMarginCycleTx reports whether this credit is the top-up
+// that lifts the margin wallet from below the tier deposit to the deposit
+// itself. A credit landing on a wallet that already holds the deposit is not a
+// new cycle, so replaying it must not reset the cycle usage.
+func adtyEarningTopUpOpensMarginCycleTx(tx *gorm.DB, siteID int, amount, tier decimal.Decimal) (bool, error) {
+	var margin model.AdtySiteWallet
+	if err := model.AdtyLockForUpdate(tx).Where("site_id = ? AND kind = ?", siteID, model.AdtySiteWalletMargin).First(&margin).Error; err != nil {
+		return false, err
+	}
+	return margin.Balance.LessThan(tier) && margin.Balance.Add(amount).GreaterThanOrEqual(tier), nil
 }
 
 func ApplyAdtySiteWalletChange(siteID int, kind string, delta decimal.Decimal, change AdtySiteWalletChange) (*model.AdtySiteWalletLedger, error) {
