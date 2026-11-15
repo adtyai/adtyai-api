@@ -376,3 +376,47 @@ func TestLegacyUserWithoutBatchesCanSettlePG(t *testing.T) {
 		"批次合计必须等于活余额")
 	assert.Zero(t, sums.Principal, "本金批次应被吃干净")
 }
+
+// 老用户 + 预扣额超过半余额：这是生产上的常见形态，也是 63e169d 的回归点。
+//
+// 余额 100,000、预扣 80,000 之后只剩 20,000；如果补建 legacy 批次时用「此刻
+// 余额」，补出来的批次只有 20,000，扣不动 80,000，结算整笔失败。修法是补建
+// 基数取「这次业务消耗之前的余额」= 此刻余额 + 已预扣的 base。
+func TestLegacyUserPartialReserveSettlesPG(t *testing.T) {
+	dsn := requireAdtyOfficialPostgresAcceptanceDSN(t)
+	admin := connectAdtyPostgresAcceptanceInstance(t, dsn)
+	db := openAdtyThrowawayMigrateDatabase(t, admin, dsn)
+	require.NoError(t, db.AutoMigrate(&User{}, &AdtyFundBatch{}, &AdtyFundAllocation{},
+		&BillingOperation{}, &BillingOperationMovement{}))
+	common.BatchUpdateEnabled = false
+	common.RedisEnabled = false
+
+	const principal = 100_000
+	const reserved = 80_000
+	user := User{Username: "legacy-partial", Password: "pg-acceptance-pass", Quota: principal}
+	require.NoError(t, db.Create(&user).Error)
+
+	ok, err := TryReserveUserQuotaForOperation(user.Id, reserved, "request:legacy-partial-1")
+	require.NoError(t, err)
+	require.True(t, ok)
+
+	var afterReserve User
+	require.NoError(t, db.First(&afterReserve, user.Id).Error)
+	require.EqualValues(t, principal-reserved, afterReserve.Quota, "预扣 80,000 后剩 20,000")
+
+	op := BillingOperation{OperationKey: "request:legacy-partial-1", UserId: user.Id, Kind: "request",
+		ReservedQuota: reserved, ActualQuota: reserved, State: BillingSettlePending}
+	require.NoError(t, db.Create(&op).Error)
+	_, _, err = ApplyBillingSettlement(op.OperationKey)
+	require.NoError(t, err, "预扣额超过半余额时老用户也必须能结算")
+
+	var after User
+	require.NoError(t, db.First(&after, user.Id).Error)
+	assert.EqualValues(t, principal-reserved, after.Quota, "全部消费后余额为 20,000")
+
+	sums, err := SumAdtyFundBatchRemainingByKind(user.Id)
+	require.NoError(t, err)
+	assert.EqualValues(t, int64(after.Quota)+int64(after.QuotaPending), sums.Principal+sums.Bonus,
+		"补建批次扣完本次消耗后，剩余必须等于活余额")
+	assert.EqualValues(t, principal-reserved, sums.Principal)
+}
