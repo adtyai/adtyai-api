@@ -14,6 +14,9 @@ const (
 	AdtyLedgerTypeManualAdjust       = "manual_adjust"
 	AdtyLedgerTypeCommissionTransfer = "commission_transfer"
 	AdtyLedgerTypeSiteTrial          = "site_trial" // 站长送的试用额度（P11）
+	// AdtyLedgerTypeGiftFulfillment 是「待履约赠金补发」：客户已实付、当时因站长
+	// 保障不足被扣下，站长补足保证金后补进余额（ISS-R4-0076）。
+	AdtyLedgerTypeGiftFulfillment = "gift_fulfillment"
 )
 
 var ErrAdtyIdempotencyConflict = errors.New("idempotency key reused for a different operation")

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -45,6 +46,30 @@ var adtyNotifyGiftFulfillmentPending = func(ext *model.AdtyTopupOrder) {
 	}
 	if err := NotifyUser(owner.Id, owner.Email, setting, dto.NewNotify(dto.NotifyTypeChannelUpdate, subject, content, nil)); err != nil {
 		common.SysLog(common.LogText("gift fulfillment: notify owner %d: %s", owner.Id, err.Error()))
+	}
+}
+
+// adtyNotifyGiftFulfillmentFulfilled tells the customer that a 待履约 gift was
+// finally paid out after the site topped up its guarantee. Tests may replace it.
+var adtyNotifyGiftFulfillmentFulfilled = func(row *model.AdtyGiftFulfillment, quota int64) {
+	if row == nil || quota <= 0 {
+		return
+	}
+	usd := decimal.NewFromInt(quota).Div(decimal.NewFromFloat(common.QuotaPerUnit)).Round(2).StringFixed(2)
+	var customer model.User
+	if err := model.DB.Select("id", "email", "setting", "status").First(&customer, row.UserId).Error; err != nil {
+		common.SysLog(common.LogText("gift fulfillment: load customer %d: %s", row.UserId, err.Error()))
+		return
+	}
+	setting := customer.GetSetting()
+	subject := "Gift fulfilled"
+	content := "The site gift for order " + row.TradeNo + " is credited: +" + usd + " USD (" + strconv.FormatInt(quota, 10) + " quota)."
+	if stringsHasZH(setting.Language) {
+		subject = "赠金已履约"
+		content = "订单 " + row.TradeNo + " 的站长赠金已到账：+" + usd + " USD（" + strconv.FormatInt(quota, 10) + " 额度）。"
+	}
+	if err := NotifyUser(customer.Id, customer.Email, setting, dto.NewNotify(dto.NotifyTypeChannelUpdate, subject, content, nil)); err != nil {
+		common.SysLog(common.LogText("gift fulfillment: notify customer %d: %s", customer.Id, err.Error()))
 	}
 }
 
@@ -305,6 +330,192 @@ func upsertPendingGiftFulfillmentTx(tx *gorm.DB, ext *model.AdtyTopupOrder, bonu
 		History:         "[" + string(event) + "]",
 	}
 	return tx.Create(row).Error
+}
+
+// adtyGiftFulfillmentResumeLimit caps one resume sweep. Pending rows are rare
+// (one per order paid after cancel/expiry while the guarantee was short), so one
+// bounded batch is enough per top-up; the next top-up picks up whatever is left.
+const adtyGiftFulfillmentResumeLimit = 100
+
+// ResumePendingAdtyGiftFulfillments 兑现该站点所有「待履约」赠金。
+//
+// 待履约（pending）是「客户已实付、站长承诺、但保障不足被扣下」的那部分赠金
+// （ISS-R4-0076）。它此前没有出口：只有全额退款会把它转成 canceled，导致客户
+// 付了钱、平台记着欠、却永远不会到账。站长补足保证金后保障就有了，这里按
+// trade_no 重跑 reacquireAdtySiteGiftTx 取回保障，再把当时扣下的额度补进客户
+// 的余额与批次，状态转 fulfilled。
+//
+// 保障仍然不足时整笔跳过：不写额度、不改状态、不写批次，留待下次补足。
+// 每笔各起一个事务，一笔失败不影响同一站点的其它笔，也不会重复发放
+// （pending → fulfilled 的迁移在行锁内只发生一次）。
+func ResumePendingAdtyGiftFulfillments(siteID int) (int, error) {
+	if siteID <= 0 || model.DB == nil {
+		return 0, nil
+	}
+	var rows []model.AdtyGiftFulfillment
+	if err := model.DB.Where("site_id = ? AND status = ?", siteID, model.AdtyGiftFulfillmentPending).
+		Order("id asc").Limit(adtyGiftFulfillmentResumeLimit).Find(&rows).Error; err != nil {
+		return 0, err
+	}
+	fulfilled := 0
+	for i := range rows {
+		done, err := fulfillPendingAdtyGiftFulfillment(rows[i].TradeNo)
+		if err != nil {
+			if !errors.Is(err, errGiftGuaranteeShort) && !errors.Is(err, ErrAdtySiteWalletInsufficient) {
+				common.SysLog(common.LogText("gift fulfillment: resume %s: %s", rows[i].TradeNo, err.Error()))
+			}
+			continue
+		}
+		if done {
+			fulfilled++
+		}
+	}
+	return fulfilled, nil
+}
+
+// fulfillPendingAdtyGiftFulfillment 兑现一笔待履约赠金。返回 true 表示这一笔
+// 本来 pending、这次兑现成功。保障不足时返回 errGiftGuaranteeShort，
+// 调用方据此保持 pending。
+func fulfillPendingAdtyGiftFulfillment(tradeNo string) (bool, error) {
+	if tradeNo == "" || model.DB == nil {
+		return false, nil
+	}
+	var notify model.AdtyGiftFulfillment
+	var granted int64
+	fulfilled := false
+	err := model.DB.Transaction(func(tx *gorm.DB) error {
+		var row model.AdtyGiftFulfillment
+		if err := model.AdtyLockForUpdate(tx).Where("trade_no = ? AND status = ?", tradeNo, model.AdtyGiftFulfillmentPending).
+			Limit(1).Find(&row).Error; err != nil {
+			return err
+		}
+		if row.Id == 0 {
+			// 已兑现或已终结：重放的扫描不能再发一次。
+			return nil
+		}
+		var ext model.AdtyTopupOrder
+		if err := model.AdtyLockForUpdate(tx).Where("trade_no = ? AND user_id = ?", tradeNo, row.UserId).
+			Limit(1).Find(&ext).Error; err != nil {
+			return err
+		}
+		if ext.Id == 0 || ext.SiteId != row.SiteId {
+			return nil
+		}
+		// 本金已经全额退掉的单子不再补发：终结由退款钩子
+		// （cancelPendingGiftFulfillmentOnFullRefundTx）负责，这里只兜底。
+		// 部分退款不缩小这笔赠金——退款口径是「本金退、赠金不退」，赠金在实付时
+		// 就已成立，扣下的那部分仍要兑现。
+		if face := ext.FaceQuota(); face > 0 && ext.RefundQuota >= face {
+			return nil
+		}
+		// 当时被扣下的正是「本单赠送额度 - 已发放额度」。pending 行记的 bonus
+		// 额度是站长承诺额，本单赠送额度是实发上限，取小的那个才不会多发。
+		owed := min(row.BonusQuota, topUpBonusQuota(&ext))
+		if owed <= 0 {
+			return nil
+		}
+		if err := reacquireAdtySiteGiftTx(tx, &ext); err != nil {
+			return err
+		}
+		before, err := model.AdtyCreditUserQuotaTx(tx, row.UserId, owed)
+		if err != nil {
+			return err
+		}
+		if err := addAdtyGiftFulfilledBonusTx(tx, row.UserId, tradeNo, owed); err != nil {
+			return err
+		}
+		key := "gift-fulfill:" + common.Sha1([]byte(tradeNo))
+		if err := model.InsertAdtyLedgerTx(tx, &model.AdtyBalanceLedger{
+			UserId: row.UserId, DeltaQuota: owed, BalanceBefore: before, BalanceAfter: before + owed,
+			Type: model.AdtyLedgerTypeGiftFulfillment, RefType: "topup", RefId: tradeNo,
+			Reason: "site gift fulfilled after guarantee top-up", IdempotencyKey: &key,
+		}); err != nil {
+			return err
+		}
+		if err := tx.Model(&model.AdtyTopupOrder{}).Where("id = ?", ext.Id).Updates(map[string]any{
+			"gift_reserve_source":     ext.GiftReserveSource,
+			"gift_reserve_earning":    ext.GiftReserveEarning,
+			"gift_reserve_margin":     ext.GiftReserveMargin,
+			"gift_fulfillment_status": model.AdtyGiftFulfillmentFulfilled,
+		}).Error; err != nil {
+			return err
+		}
+		history := adtyGiftFulfillmentHistory(row.History, map[string]any{
+			"at": time.Now().Unix(), "action": "fulfilled", "quota": owed,
+			"source": ext.GiftReserveSource, "earning": ext.GiftReserveEarning.String(), "margin": ext.GiftReserveMargin.String(),
+		})
+		if err := tx.Model(&model.AdtyGiftFulfillment{}).Where("id = ?", row.Id).Updates(map[string]any{
+			"status": model.AdtyGiftFulfillmentFulfilled, "reason": "fulfilled after guarantee top-up", "history": history,
+		}).Error; err != nil {
+			return err
+		}
+		writeAdtyGiftOfficialAudit(row.UserId, row.SiteId, tradeNo, "adty.gift.fulfill",
+			"guarantee top-up released the pending gift",
+			map[string]any{"status": model.AdtyGiftFulfillmentPending, "quota": 0},
+			map[string]any{
+				"trade_no": tradeNo, "status": model.AdtyGiftFulfillmentFulfilled, "quota": owed,
+				"source": ext.GiftReserveSource, "earning": ext.GiftReserveEarning.String(), "margin": ext.GiftReserveMargin.String(),
+			})
+		fulfilled = true
+		granted = owed
+		notify = row
+		return nil
+	})
+	if err != nil {
+		return false, err
+	}
+	if fulfilled {
+		model.AdtySyncCreditUserQuotaCache(notify.UserId, granted, "gift fulfillment")
+		adtyNotifyGiftFulfillmentFulfilled(&notify, granted)
+	}
+	return fulfilled, nil
+}
+
+// addAdtyGiftFulfilledBonusTx 把补发的赠金加回本单的 bonus 批次。
+//
+// 不能直接用 CreateAdtyFundBatchesTx：同一 (user, source) 已有批次时它是空操作，
+// 补发的额度会从「Σ批次 == 余额」里漏掉，后续 gift_spend 按比例释放保障也就错了。
+// 所以先按 source 把 original/remaining 一起加上；本单从未落过 bonus 批次
+// （赠金被整笔扣下）时才新建。
+func addAdtyGiftFulfilledBonusTx(tx *gorm.DB, userID int, source string, quota int64) error {
+	if tx == nil || userID <= 0 || source == "" || quota <= 0 {
+		return nil
+	}
+	res := tx.Model(&model.AdtyFundBatch{}).
+		Where("user_id = ? AND source = ? AND kind = ?", userID, source, "bonus").
+		Updates(map[string]any{
+			"original":  gorm.Expr("original + ?", quota),
+			"remaining": gorm.Expr("remaining + ?", quota),
+		})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected > 0 {
+		return nil
+	}
+	// 没有 bonus 批次：本单收钱时赠金被整笔扣下，当时只落了本金批次。
+	// CreateAdtyFundBatchesTx 在这里不能用——它按 (user, source) 判重，
+	// 本金批次在就算「已存在」直接返回，补发的额度会静默丢掉。
+	return tx.Create(&model.AdtyFundBatch{
+		UserId: userID, Kind: "bonus", Source: source,
+		Original: quota, Remaining: quota, CreatedAt: common.GetTimestamp(),
+	}).Error
+}
+
+// adtyGiftFulfillmentHistory appends one event to the row's JSON history.
+func adtyGiftFulfillmentHistory(raw string, event map[string]any) string {
+	body, err := json.Marshal(event)
+	if err != nil {
+		return raw
+	}
+	raw = strings.TrimSpace(raw)
+	if raw == "" || raw == "[]" {
+		return "[" + string(body) + "]"
+	}
+	if strings.HasSuffix(raw, "]") {
+		return raw[:len(raw)-1] + "," + string(body) + "]"
+	}
+	return "[" + string(body) + "]"
 }
 
 func notifyPendingGiftFulfillmentAfterCredit(_ *model.TopUp, ext *model.AdtyTopupOrder, _ int) {
