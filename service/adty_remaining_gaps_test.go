@@ -47,6 +47,7 @@ func TestStaffBalanceRequestNeedsApproval(t *testing.T) {
 	require.NoError(t, db.Create(&site).Error)
 	require.NoError(t, db.Model(customer).Update("site_id", site.Id).Error)
 	require.NoError(t, db.Create(&model.AdtySiteStaff{SiteId: site.Id, OwnerUserId: owner.Id, UserId: staffUser.Id, Status: "enabled", Role: "support"}).Error)
+	fundStaffBalanceSite(t, db, site.Id, "gap")
 	request, err := SubmitAdtyStaffBalanceRequest(staffUser.Id, customer.Id, model.AdtyStaffBalanceIncrease, decimal.RequireFromString("2"), "staff-bal-inc-1")
 	require.NoError(t, err)
 	require.Equal(t, model.AdtyStaffBalancePending, request.Status)
@@ -547,7 +548,23 @@ func seedStaffBalanceActors(t *testing.T, db *gorm.DB, prefix string) (owner, st
 	require.NoError(t, db.Create(&site).Error)
 	require.NoError(t, db.Model(customer).Update("site_id", site.Id).Error)
 	require.NoError(t, db.Create(&model.AdtySiteStaff{SiteId: site.Id, OwnerUserId: owner.Id, UserId: staffUser.Id, Status: "enabled", Role: "support"}).Error)
+	fundStaffBalanceSite(t, db, site.Id, prefix)
 	return owner, staffUser, customer, site
+}
+
+// fundStaffBalanceSite 给站点的运营钱包放进足够的钱。
+//
+// 员工给客户加款必须有出资（`ISS-R4-0075`）。放进钱让既有用例继续只测
+// 「加款账务本身」；「钱包为空必须被拒」由
+// `adty_staff_balance_funding_pg_test.go` 单独覆盖。
+func fundStaffBalanceSite(t *testing.T, db *gorm.DB, siteID int, tag string) {
+	t.Helper()
+	require.NoError(t, EnsureAdtySiteWallets(siteID))
+	_, err := ApplyAdtySiteWalletChange(siteID, model.AdtySiteWalletOperating, decimal.NewFromInt(100), AdtySiteWalletChange{
+		Type: "seed", RefType: "test", RefID: tag, Reason: "seed operating balance for staff balance tests",
+		IdempotencyKey: "seed-operating-" + tag,
+	})
+	require.NoError(t, err)
 }
 
 func requireWalletMatchesStaffBatches(t *testing.T, db *gorm.DB, userID int) {

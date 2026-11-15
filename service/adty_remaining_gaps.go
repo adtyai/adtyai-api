@@ -1,6 +1,8 @@
 package service
 
 import (
+	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -711,6 +713,17 @@ func applyApprovedStaffBalanceTx(tx *gorm.DB, row model.AdtyStaffBalanceRequest,
 			return err
 		}
 	} else {
+		// **加额度必须先有出资**（`ISS-R4-0075`）。
+		//
+		// 修前这个分支只做两件事：加客户额度 + 建一条「无资金来源」的批次。
+		// 全函数没有任何出资调用，于是一个员工（或站长）可以无限次让平台凭空
+		// 给客户加钱——批次表还会把这笔钱记成「有背书的本金」，看起来完全正常。
+		//
+		// 现在按 operating → earnings → margin 的顺序从站点钱包出资，扣不动就
+		// 整笔拒绝。出资和加额度在**同一个事务**里，所以失败时客户余额一分不动。
+		if err := adtyFundStaffBalanceIncreaseTx(tx, row, delta); err != nil {
+			return err
+		}
 		before, err = model.AdtyCreditUserQuotaTx(tx, row.CustomerUserId, delta)
 		if err != nil {
 			return err
@@ -732,6 +745,58 @@ func applyApprovedStaffBalanceTx(tx *gorm.DB, row model.AdtyStaffBalanceRequest,
 // ReviewAdtyStaffBalanceRequest approves or rejects a pending request.
 // Site owners review their own site. Root reviews any site. Approval changes the customer quota once
 // through the official credit or debit path, writing the ledger and fund batches.
+// adtyStaffBalanceFundingOrder 是「员工加款从哪儿出钱」的顺序。
+//
+// 运营钱包先出（那是站点的经营结余），其次已结算收益，最后保证金。
+// 顺序有意义：保证金是履约担保，能不动就不动。
+var adtyStaffBalanceFundingOrder = []string{
+	model.AdtySiteWalletOperating,
+	model.AdtySiteWalletEarnings,
+	model.AdtySiteWalletMargin,
+}
+
+// adtyFundStaffBalanceIncreaseTx 为一次「员工给客户加款」找到出资并扣掉。
+//
+// 一个钱包扣不动就试下一个；三个都不够就返回 ErrAdtySiteWalletInsufficient，
+// 由调用方整笔回滚——**不允许凭空加额度**（`ISS-R4-0075`）。
+//
+// 金额用 `delta / QuotaPerUnit` 而不是 `row.AmountUSD`：`delta` 是真正要加给客户
+// 的额度，用它反算 USD 才能保证「站点扣了多少、客户得到多少」是同一笔。
+// QuotaPerUnit 固定 500000，这个除法是精确的（最多 6 位小数）。
+func adtyFundStaffBalanceIncreaseTx(tx *gorm.DB, row model.AdtyStaffBalanceRequest, delta int64) error {
+	if delta <= 0 {
+		return common.NewMessage("Invalid parameters")
+	}
+	if row.SiteId <= 0 {
+		return common.NewMessage("This request has no site to fund it")
+	}
+	var customer model.User
+	if err := tx.Select("id", "site_id").First(&customer, row.CustomerUserId).Error; err != nil {
+		return err
+	}
+	// 客户必须还在这个站点下：站点换了之后，旧站点不该继续为他的加款出钱。
+	if customer.SiteId != row.SiteId {
+		return common.NewMessage("No permission to perform this action")
+	}
+	amountUSD := decimal.NewFromInt(delta).Div(common.QuotaPerUnitDecimal())
+	key := adtyStaffBalanceLedgerKey(row)
+	for _, kind := range adtyStaffBalanceFundingOrder {
+		_, err := applyAdtySiteWalletChangeTx(tx, row.SiteId, kind, amountUSD.Neg(), AdtySiteWalletChange{
+			Type: "staff_balance", RefType: "staff_balance", RefID: strconv.FormatInt(row.Id, 10),
+			Reason:         "staff balance increase for customer " + strconv.Itoa(row.CustomerUserId),
+			IdempotencyKey: fmt.Sprintf("%s:fund:%s", key, kind),
+		})
+		if err == nil {
+			return nil
+		}
+		if errors.Is(err, ErrAdtySiteWalletInsufficient) {
+			continue
+		}
+		return err
+	}
+	return ErrAdtySiteWalletInsufficient
+}
+
 func ReviewAdtyStaffBalanceRequest(reviewerID int, reviewerRole string, requestID int64, approve bool) error {
 	var changedUserID int
 	err := model.DB.Transaction(func(tx *gorm.DB) error {
