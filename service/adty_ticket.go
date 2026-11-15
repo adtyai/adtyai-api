@@ -600,6 +600,7 @@ func writeAdtyTicketMessage(userId int, ticketId int64, body, idempotency, visib
 	}
 	var saved *model.AdtyTicketMessage
 	var notifyUser int
+	var notifyPurpose string
 	var notifyID int64
 	createdNew := false
 	var ticketSiteID int
@@ -640,9 +641,24 @@ func writeAdtyTicketMessage(userId int, ticketId int64, body, idempotency, visib
 		saved = &row
 		createdNew = true
 		ticketSiteID = ticket.SiteId
+		// 推送按「回复者的对端」分流，作者本人永不进队列。
+		//
+		// 以前不分方向：任何公开回帖都排给 ticket.UserId，于是客户自己补充一句会给
+		// 自己发一条提醒，而客服/站长那边一条都收不到（工单侧以前从不使用 admin
+		// purpose）。对端以 actor.User.Id 对 ticket.UserId 判定，不看角色——作者是
+		// 客户就通知处理人，其他人回帖（客服、站长、团队长）一律通知客户。
 		if visibility == model.AdtyTicketVisibilityPublic {
-			notifyUser = ticket.UserId
 			notifyID = ticket.Id
+			if actor.User.Id == ticket.UserId {
+				notifyUser = adtyTicketHandlerTx(tx, ticket)
+				notifyPurpose = model.AdtyTelegramPurposeAdmin
+			} else {
+				notifyUser = ticket.UserId
+				notifyPurpose = model.AdtyTelegramPurposeUser
+			}
+			if notifyUser == actor.User.Id {
+				notifyUser = 0
+			}
 		}
 		return nil
 	})
@@ -655,12 +671,30 @@ func writeAdtyTicketMessage(userId int, ticketId int64, body, idempotency, visib
 			},
 			model.AuditResultSuccess)
 	}
-	if err == nil && notifyUser > 0 && saved != nil {
-		_ = QueueAdtyTelegramNotice(notifyUser, model.AdtyTelegramPurposeUser,
+	if err == nil && notifyUser > 0 && saved != nil && notifyPurpose != "" {
+		_ = QueueAdtyTelegramNotice(notifyUser, notifyPurpose,
 			"工单 "+strconv.FormatInt(notifyID, 10)+" 有新回复。请在网站查看。\n\nTicket "+strconv.FormatInt(notifyID, 10)+" has a new reply. Open the website.",
 			"ticket:"+strconv.FormatInt(notifyID, 10)+":msg:"+strconv.FormatInt(saved.Id, 10))
 	}
 	return saved, err
+}
+
+// adtyTicketHandlerTx 回答「客户回帖该通知谁」：优先处理人，未分配则本站站长。
+//
+// 主站工单（site_id=0）在未分配时没有单一的处理人，这里返回 0 而不是挑一个——
+// 猜错人会变成骚扰，少一条提醒只是漏，两者代价不对等。
+func adtyTicketHandlerTx(tx *gorm.DB, ticket model.AdtyTicket) int {
+	if ticket.AssigneeId > 0 {
+		return ticket.AssigneeId
+	}
+	if ticket.SiteId <= 0 {
+		return 0
+	}
+	var site model.AdtySite
+	if err := tx.Where("id = ?", ticket.SiteId).Limit(1).Find(&site).Error; err != nil {
+		return 0
+	}
+	return site.OwnerUserId
 }
 
 func loadAdtyTicketActor(userId int) (adtyTicketActor, error) {
