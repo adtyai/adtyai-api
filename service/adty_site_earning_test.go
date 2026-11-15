@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/common/logsinktest"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/gin-gonic/gin"
@@ -1166,4 +1167,30 @@ func TestMidjourneyRefundKeepsSnapshotWhenKBelowOneOrDAboveOne(t *testing.T) {
 	require.NoError(t, db.Where("user_id = ? AND type = ?", customer.Id, model.LogTypeRefund).First(&log).Error)
 	assert.Contains(t, log.Other, `"site_markup":0.8`, "refund log must keep a k<1 submit snapshot")
 	assert.Contains(t, log.Other, `"site_cost_factor":1.5`, "refund log must keep a d>1 submit snapshot")
+}
+
+// TestTaskEarningOwnerSnapshotFailureIsCounted：任务差额结算解析收益归属失败时，日志要带站点与用户，
+// 并且和 AdtySiteEarningHook 里同一失败语义一样计入 earning_hook_failures——否则这笔漏记的收益
+// 既查不到也进不了日结算对账（adty_site_settlement_task 只捞 earning_hook_failures > 0 的站）。
+func TestTaskEarningOwnerSnapshotFailureIsCounted(t *testing.T) {
+	db := prepareSiteDB(t)
+	_, site := openActiveSite(t, db, "task-owner-failure")
+	customer := siteCustomer(t, db, site, "task-owner-failure-customer")
+	// 归属解析读的是 adty_site_ownerships；把这张表拿掉，site 行本身还在，计数才有落点。
+	require.NoError(t, db.Migrator().DropTable(&model.AdtySiteOwnership{}))
+	logs := logsinktest.Capture(t)
+	other := model.NewLogOther()
+	other.SetAdmin("site_id", site.Id)
+	other.SetAdmin("site_markup", 1.25)
+	other.SetAdmin("site_cost_factor", 0.8)
+	model.RecordTaskBillingLog(model.RecordTaskBillingLogParams{UserId: customer.Id, LogType: model.LogTypeConsume, Quota: int(perUnit("125")), Other: other})
+	var stored model.AdtySite
+	require.NoError(t, db.First(&stored, site.Id).Error)
+	assert.EqualValues(t, 1, stored.EarningHookFailures, "解析失败要计数，让这个站进对账")
+	text := logs.String()
+	assert.Contains(t, text, "task earning owner snapshot failed")
+	assert.Contains(t, text, fmt.Sprintf("site=%d", site.Id))
+	assert.Contains(t, text, fmt.Sprintf("user=%d", customer.Id))
+	assert.Contains(t, text, "kind="+model.AdtySiteEarningUsage)
+	assert.Empty(t, earningTotals(t, db, site.Id), "解析失败不能凭空写收益行")
 }

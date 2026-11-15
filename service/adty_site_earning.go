@@ -247,7 +247,14 @@ func adtyRecordTaskBillingEarning(params *model.RecordTaskBillingLogParams) {
 	}
 	ownerID, err := model.ResolveAdtySiteFinancialOwnerTx(model.DB, siteId, adtyAnyInt(adminInfo["site_owner_user_id"]))
 	if err != nil {
-		common.SysError("Task earning owner snapshot unavailable")
+		// 与下面 AdtySiteEarningHook 里同一失败语义对齐：日志要能定位到站和人，
+		// 计数要让这个站进对账（adty_site_settlement_task 会捞 earning_hook_failures > 0 的站）。
+		common.SysError(common.LogText("task earning owner snapshot failed site=%d user=%d kind=%s: %s",
+			siteId, params.UserId, kind, err.Error()))
+		if incErr := model.DB.Model(&model.AdtySite{}).Where("id = ?", siteId).
+			UpdateColumn("earning_hook_failures", gorm.Expr("earning_hook_failures + 1")).Error; incErr != nil {
+			common.SysError(common.LogText("count site earning failure site=%d: %s", siteId, incErr.Error()))
+		}
 		return
 	}
 	AdtySiteEarningHook(siteId, params.UserId, quota, k, d, kind, ownerID)
