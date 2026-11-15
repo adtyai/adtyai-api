@@ -358,6 +358,9 @@ func PostAdtyTicketImage(c *gin.Context) {
 	}
 	var body struct {
 		Data string `json:"data"`
+		// Visibility has no default: an upload must say whether the image
+		// belongs to a public reply or an internal note.
+		Visibility string `json:"visibility"`
 	}
 	// 请求体上限必须在这里，不能只靠 service 层那个 2MiB 检查。
 	//
@@ -379,7 +382,7 @@ func PostAdtyTicketImage(c *gin.Context) {
 		common.ApiErrorT(c, "Only images are accepted")
 		return
 	}
-	image, err := service.AddAdtyTicketImage(c.GetInt("id"), id, raw)
+	image, err := service.AddAdtyTicketImage(c.GetInt("id"), id, body.Visibility, raw)
 	if err != nil {
 		common.ApiError(c, err)
 		return

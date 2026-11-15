@@ -300,7 +300,7 @@ func GetAdtyTicket(userId int, ticketId int64) (*AdtyTicketDetail, error) {
 		return nil, err
 	}
 	var images []model.AdtyTicketImage
-	if err := model.DB.Select("id", "ticket_id", "message_id", "mime", "size", "width", "height", "sha256", "created_at").Where("ticket_id = ?", ticket.Id).Order("id ASC").Find(&images).Error; err != nil {
+	if err := model.DB.Select("id", "ticket_id", "message_id", "visibility", "mime", "size", "width", "height", "sha256", "created_at").Where("ticket_id = ? AND visibility IN ?", ticket.Id, visibility).Order("id ASC").Find(&images).Error; err != nil {
 		return nil, err
 	}
 	var events []model.AdtyTicketEvent
@@ -513,7 +513,14 @@ func idempotentAdtyTicketReopen(tx *gorm.DB, ticket model.AdtyTicket, current st
 	return lookup.Error == nil && lookup.RowsAffected > 0 && event.Action == "reopen"
 }
 
-func AddAdtyTicketImage(userId int, ticketId int64, data []byte) (*model.AdtyTicketImage, error) {
+// AddAdtyTicketImage stores an attachment under the same visibility as the
+// message it belongs to. The caller must declare visibility: there is no
+// default, because a default would read as "optional" and silently decide a
+// security question. Internal images require note permission.
+func AddAdtyTicketImage(userId int, ticketId int64, visibility string, data []byte) (*model.AdtyTicketImage, error) {
+	if visibility != model.AdtyTicketVisibilityPublic && visibility != model.AdtyTicketVisibilityNote {
+		return nil, ErrAdtyTicketInvalid
+	}
 	actor, err := loadAdtyTicketActor(userId)
 	if err != nil {
 		return nil, err
@@ -523,6 +530,9 @@ func AddAdtyTicketImage(userId int, ticketId int64, data []byte) (*model.AdtyTic
 		return nil, err
 	}
 	if !actor.canRead(ticket) {
+		return nil, ErrAdtyTicketForbidden
+	}
+	if visibility == model.AdtyTicketVisibilityNote && !actor.canNote(ticket) {
 		return nil, ErrAdtyTicketForbidden
 	}
 	policy := adtyTicketPolicy()
@@ -556,7 +566,7 @@ func AddAdtyTicketImage(userId int, ticketId int64, data []byte) (*model.AdtyTic
 	if err := os.WriteFile(filepath.Join(dir, name), stripped, 0o640); err != nil {
 		return nil, err
 	}
-	row := model.AdtyTicketImage{TicketId: ticket.Id, Mime: mime, Size: len(stripped), Width: width, Height: height, SHA256: hex.EncodeToString(sum[:]), Storage: name}
+	row := model.AdtyTicketImage{TicketId: ticket.Id, Visibility: visibility, Mime: mime, Size: len(stripped), Width: width, Height: height, SHA256: hex.EncodeToString(sum[:]), Storage: name}
 	err = model.DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(&row).Error; err != nil {
 			return err
@@ -581,6 +591,11 @@ func OpenAdtyTicketImage(userId int, ticketId, imageId int64) (string, string, e
 	var imageRow model.AdtyTicketImage
 	if err := model.DB.Where("id = ? AND ticket_id = ?", imageId, ticket.Id).First(&imageRow).Error; err != nil {
 		return "", "", err
+	}
+	// Same gate as the message list. Anything that is not explicitly public is
+	// treated as internal, so a row that skipped the backfill still fails closed.
+	if imageRow.Visibility != model.AdtyTicketVisibilityPublic && !actor.canNote(ticket) {
+		return "", "", ErrAdtyTicketForbidden
 	}
 	if strings.Contains(imageRow.Storage, "..") || strings.ContainsAny(imageRow.Storage, `/\`) {
 		return "", "", os.ErrNotExist

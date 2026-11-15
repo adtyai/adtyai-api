@@ -339,7 +339,10 @@ export function TicketCenter() {
                 reader.onload = () => {
                   const value = String(reader.result || '')
                   void api
-                    .post(`/api/adty/tickets/${selected}/images`, { data: value.slice(value.indexOf(',') + 1) })
+                    .post(`/api/adty/tickets/${selected}/images`, {
+                      data: value.slice(value.indexOf(',') + 1),
+                      visibility: 'public',
+                    })
                     .then(() => refresh())
                     .catch((cause) => setError(getServerErrorMessage(cause, t('Only images are accepted'))))
                 }

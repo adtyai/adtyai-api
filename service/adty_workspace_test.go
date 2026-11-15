@@ -168,13 +168,13 @@ func TestAdtyTicketNotesImagesAndRemovedStaff(t *testing.T) {
 	require.GreaterOrEqual(t, len(ownerView.Messages), 2)
 	assert.Contains(t, ownerView.Messages[1].Body, "internal only")
 
-	imageRow, err := AddAdtyTicketImage(customer.Id, ticket.Id, jpegWithMarker(t))
+	imageRow, err := AddAdtyTicketImage(customer.Id, ticket.Id, model.AdtyTicketVisibilityPublic, jpegWithMarker(t))
 	require.NoError(t, err)
 	_, _, err = OpenAdtyTicketImage(staffUser.Id, ticket.Id, imageRow.Id)
 	require.NoError(t, err)
-	_, err = AddAdtyTicketImage(customer.Id, ticket.Id, []byte("%PDF-1.4"))
+	_, err = AddAdtyTicketImage(customer.Id, ticket.Id, model.AdtyTicketVisibilityPublic, []byte("%PDF-1.4"))
 	require.ErrorIs(t, err, ErrAdtyTicketImage)
-	_, err = AddAdtyTicketImage(customer.Id, ticket.Id, tinyPNG(t))
+	_, err = AddAdtyTicketImage(customer.Id, ticket.Id, model.AdtyTicketVisibilityPublic, tinyPNG(t))
 	require.NoError(t, err)
 	require.NoError(t, db.Model(&model.AdtySiteStaff{}).Where("user_id = ?", staffUser.Id).Update("status", "deleted").Error)
 	_, _, err = OpenAdtyTicketImage(staffUser.Id, ticket.Id, imageRow.Id)
@@ -184,6 +184,78 @@ func TestAdtyTicketNotesImagesAndRemovedStaff(t *testing.T) {
 	var quota int
 	require.NoError(t, db.Model(&model.User{}).Where("id = ?", customer.Id).Select("quota").Scan(&quota).Error)
 	assert.Equal(t, 500000, quota)
+}
+
+func TestAdtyTicketImageVisibilityFollowsMessage(t *testing.T) {
+	db := prepareReferralDialectDB(t, "sqlite")
+	restore := SetAdtyTicketImageDirForTest(t.TempDir())
+	t.Cleanup(restore)
+	customer := referralUser(t, db, "ticket-image-customer")
+	owner := referralUser(t, db, "ticket-image-owner")
+	site := model.AdtySite{OwnerUserId: owner.Id, Subdomain: "ticket-image-site", Status: model.AdtySiteStatusActive}
+	require.NoError(t, db.Create(&site).Error)
+	require.NoError(t, db.Model(customer).Update("site_id", site.Id).Error)
+	staff := referralUser(t, db, "ticket-image-staff")
+	require.NoError(t, db.Create(&model.AdtySiteStaff{SiteId: site.Id, OwnerUserId: owner.Id, UserId: staff.Id, Role: "support", Status: "enabled", Permissions: `["customers.read"]`}).Error)
+
+	ticket, err := CreateAdtyTicket(customer.Id, AdtyTicketInput{Type: "billing", Title: "Charge", Body: "see screenshot", Idempotency: "image-visibility"})
+	require.NoError(t, err)
+	_, err = NoteAdtyTicket(staff.Id, ticket.Id, "internal screenshot below", "image-visibility-note")
+	require.NoError(t, err)
+	internalImage, err := AddAdtyTicketImage(staff.Id, ticket.Id, model.AdtyTicketVisibilityNote, jpegWithMarker(t))
+	require.NoError(t, err)
+	assert.Equal(t, model.AdtyTicketVisibilityNote, internalImage.Visibility)
+
+	// The screenshot attached to the internal note must not reach the customer,
+	// neither in the detail payload nor by direct image id.
+	customerView, err := GetAdtyTicket(customer.Id, ticket.Id)
+	require.NoError(t, err)
+	for _, image := range customerView.Images {
+		assert.NotEqual(t, internalImage.Id, image.Id)
+	}
+	_, _, err = OpenAdtyTicketImage(customer.Id, ticket.Id, internalImage.Id)
+	require.ErrorIs(t, err, ErrAdtyTicketForbidden)
+	path, mime, err := OpenAdtyTicketImage(staff.Id, ticket.Id, internalImage.Id)
+	require.NoError(t, err)
+	assert.FileExists(t, path)
+	assert.Equal(t, "image/jpeg", mime)
+
+	// Rows written before the column existed are hidden, never guessed at:
+	// the read gate already fails closed, and the backfill lands them on internal.
+	legacy := model.AdtyTicketImage{TicketId: ticket.Id, Mime: "image/png", Size: 3, SHA256: "legacy-row", Storage: "legacy-row.png"}
+	require.NoError(t, db.Create(&legacy).Error)
+	_, _, err = OpenAdtyTicketImage(customer.Id, ticket.Id, legacy.Id)
+	require.ErrorIs(t, err, ErrAdtyTicketForbidden)
+	require.NoError(t, model.BackfillAdtyTicketImageVisibility(db))
+	var backfilled model.AdtyTicketImage
+	require.NoError(t, db.First(&backfilled, legacy.Id).Error)
+	assert.Equal(t, model.AdtyTicketVisibilityNote, backfilled.Visibility)
+
+	// Public images keep working for the customer: the gate is per image, not a
+	// blanket lockdown of the whole attachment list.
+	publicImage, err := AddAdtyTicketImage(customer.Id, ticket.Id, model.AdtyTicketVisibilityPublic, tinyPNG(t))
+	require.NoError(t, err)
+	customerView, err = GetAdtyTicket(customer.Id, ticket.Id)
+	require.NoError(t, err)
+	visible := make([]int64, 0, len(customerView.Images))
+	for _, image := range customerView.Images {
+		visible = append(visible, image.Id)
+	}
+	assert.Contains(t, visible, publicImage.Id)
+	assert.NotContains(t, visible, internalImage.Id)
+	_, _, err = OpenAdtyTicketImage(customer.Id, ticket.Id, publicImage.Id)
+	require.NoError(t, err)
+	_, _, err = OpenAdtyTicketImage(staff.Id, ticket.Id, publicImage.Id)
+	require.NoError(t, err)
+
+	// Declaring internal requires note permission, and visibility is mandatory:
+	// no default may decide this for the caller.
+	_, err = AddAdtyTicketImage(customer.Id, ticket.Id, model.AdtyTicketVisibilityNote, tinyPNG(t))
+	require.ErrorIs(t, err, ErrAdtyTicketForbidden)
+	_, err = AddAdtyTicketImage(customer.Id, ticket.Id, "", tinyPNG(t))
+	require.ErrorIs(t, err, ErrAdtyTicketInvalid)
+	_, err = AddAdtyTicketImage(customer.Id, ticket.Id, "internal ", tinyPNG(t))
+	require.ErrorIs(t, err, ErrAdtyTicketInvalid)
 }
 
 func TestAdtyTranslationReuseVersionAndNoDebit(t *testing.T) {

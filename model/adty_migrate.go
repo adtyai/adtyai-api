@@ -83,6 +83,9 @@ func MigrateAdtyTablesOn(db *gorm.DB) error {
 	if err := RemapAdtyTicketLegacyStatuses(db); err != nil {
 		return err
 	}
+	if err := BackfillAdtyTicketImageVisibility(db); err != nil {
+		return err
+	}
 	if err := migrateAdtyReferralTablesOn(db); err != nil {
 		return err
 	}
