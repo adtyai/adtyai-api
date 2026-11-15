@@ -353,7 +353,7 @@ func TestAdtyWalletInsufficientQuota(t *testing.T) {
 
 // adtyWalletTask 建一个提交时已从钱包预扣 10,000 的任务：用户额度从 1,000,000 扣到 990,000，
 // 令牌、用户、渠道的已用额度都是 10,000。直接构造 model.Task，不设 BillingSource 和 SubscriptionId：
-// 不是订阅任务就走 taskAdjustFunding 的钱包分支，删订阅时动这两个字段也不用改这里。
+// 不是订阅任务就走钱包退款分支（`WalletFunding.Refund`），删订阅时动这两个字段也不用改这里。
 func adtyWalletTask(t *testing.T, userID, tokenID, channelID int) *model.Task {
 	t.Helper()
 	seedUser(t, userID, 990_000)
