@@ -8,6 +8,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/shopspring/decimal"
+	"gorm.io/gorm"
 )
 
 const (
@@ -600,28 +601,56 @@ func refundRowAmountMismatch(siteID int, ext *model.AdtyTopupOrder, rows []model
 	return adtyFundAnomalyItem{}, false
 }
 
+// adtyAnomalyDispositionOpen 是仍在等待复核的处置行状态。
+const adtyAnomalyDispositionOpen = "open"
+
+// upsertOpenAdtyAnomalyDisposition 记录一次检出，并保证同一异常只有一条 open 处置行。
+//
+// 查和写放在同一事务里，并按异常身份串行：手动刷新和定时扫描（或两个节点）同时
+// 发现同一条异常时，两边都会读到「没有 open 行」再各插一条。这一点没法交给唯一
+// 约束兜底——(kind, ref) 在本表里本来就可以重复（`batch_register` 按 note 区分
+// 发起人，同一条异常也会被重新检出），唯一索引会把它们一起挡住。
 func upsertOpenAdtyAnomalyDisposition(item adtyFundAnomalyItem) error {
 	kind, ref := strings.TrimSpace(item.Kind), strings.TrimSpace(item.Ref)
 	if kind == "" || ref == "" || item.SiteID <= 0 {
 		return common.NewMessage("Invalid parameters")
-	}
-	var existing []model.AdtyAnomalyDisposition
-	if err := model.DB.Where("kind = ? AND ref = ? AND status = ?", kind, ref, "open").Limit(1).Find(&existing).Error; err != nil {
-		return err
-	}
-	if len(existing) == 0 {
-		return model.DB.Create(&model.AdtyAnomalyDisposition{
-			Kind: kind, Ref: ref, Status: "open", Note: "detected",
-			SiteId: item.SiteID, AccountId: item.AccountID, OrderRef: strings.TrimSpace(item.OrderRef),
-			Difference: item.Difference, Evidence: item.Evidence,
-		}).Error
 	}
 	updates := map[string]any{
 		"site_id": item.SiteID, "account_id": item.AccountID,
 		"order_ref":  strings.TrimSpace(item.OrderRef),
 		"difference": item.Difference, "evidence": item.Evidence,
 	}
-	return model.DB.Model(&existing[0]).Updates(updates).Error
+	return model.DB.Transaction(func(tx *gorm.DB) error {
+		if err := lockAdtyOpenAnomalyDisposition(tx, kind, ref); err != nil {
+			return err
+		}
+		var existing []model.AdtyAnomalyDisposition
+		lookup := model.AdtyLockForUpdate(tx).
+			Where("kind = ? AND ref = ? AND status = ?", kind, ref, adtyAnomalyDispositionOpen).
+			Limit(1).Find(&existing)
+		if lookup.Error != nil {
+			return lookup.Error
+		}
+		if lookup.RowsAffected == 0 {
+			return tx.Create(&model.AdtyAnomalyDisposition{
+				Kind: kind, Ref: ref, Status: adtyAnomalyDispositionOpen, Note: "detected",
+				SiteId: item.SiteID, AccountId: item.AccountID, OrderRef: strings.TrimSpace(item.OrderRef),
+				Difference: item.Difference, Evidence: item.Evidence,
+			}).Error
+		}
+		return tx.Model(&existing[0]).Updates(updates).Error
+	})
+}
+
+// lockAdtyOpenAnomalyDisposition 让同一条异常的「查-插」互斥。生产库只有
+// PostgreSQL（CheckAdtyPostgreSQL），advisory lock 随事务结束释放，跨节点同样
+// 生效；SQLite 没有这把锁，但它单写，第二个写者会被挡住而不是提交出重复行。
+func lockAdtyOpenAnomalyDisposition(tx *gorm.DB, kind, ref string) error {
+	if !common.UsingMainDatabase(common.DatabaseTypePostgreSQL) {
+		return nil
+	}
+	key := "adty-anomaly-disposition\x1f" + kind + "\x1f" + ref
+	return tx.Exec("SELECT pg_advisory_xact_lock(hashtext(?))", key).Error
 }
 
 func mustAnomalyEvidence(fields map[string]any) string {

@@ -95,6 +95,7 @@ var (
 	// 团队充值取 64）。超长必须报出具体原因：只说 Invalid parameters 的话，
 	// 调用方会以为是业务冲突而不是入参问题。
 	ErrAdtyTeamIdempotencyKey = common.NewMessage("Idempotency-Key is too long (maximum 64 characters)")
+	ErrAdtyTeamKeyBound       = common.NewMessage("This API key is already bound to a team")
 )
 
 type AdtyTeamCreated struct {
@@ -907,8 +908,31 @@ func BindAdtyTeamKey(userId, tokenId int) error {
 		if lookup.RowsAffected == 0 {
 			return ErrAdtyTeamForbidden
 		}
+		// 绑定行从不删除：退团、撤销、解散都只把它改成 left。token_id 又是全表唯一，
+		// 所以同一个 Key 被重新启用后再绑定必须复用那一行；无条件 Create 只会撞唯一
+		// 索引，把「退团 → 重新启用 → 加入」这条正常路径变成永久 500。
+		var bound []model.AdtyTeamKey
+		lookupKey := model.AdtyLockForUpdate(tx).Where("token_id = ?", tokenId).Limit(1).Find(&bound)
+		if lookupKey.Error != nil {
+			return lookupKey.Error
+		}
+		if lookupKey.RowsAffected > 0 {
+			if bound[0].Status == model.AdtyTeamMemberActive {
+				return ErrAdtyTeamKeyBound
+			}
+			return tx.Model(&bound[0]).Updates(map[string]any{
+				"team_id": membership.TeamId, "user_id": userId, "status": model.AdtyTeamMemberActive,
+			}).Error
+		}
 		row := model.AdtyTeamKey{TokenId: tokenId, TeamId: membership.TeamId, UserId: userId, Status: model.AdtyTeamMemberActive}
-		return tx.Create(&row).Error
+		if err := tx.Create(&row).Error; err != nil {
+			// 同一个 Key 被并发绑定：另一事务刚插了行，这是可解释的业务拒绝，不是服务端故障。
+			if model.IsAdtyUniqueViolation(err) {
+				return ErrAdtyTeamKeyBound
+			}
+			return err
+		}
+		return nil
 	})
 }
 
