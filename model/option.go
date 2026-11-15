@@ -947,6 +947,13 @@ func updateOptionMap(key string, value string) (err error) {
 		common.ChannelDisableThreshold, _ = strconv.ParseFloat(value, 64)
 	case "QuotaPerUnit":
 		if err = rejectChangedQuotaPerUnit(value); err != nil {
+			// 拒绝的值不能留在 OptionMap 里：:596 已经把这个值无条件写进去了，
+			// 而配置页（controller/option.go）直接读 OptionMap 显示。留着它就成了
+			// 「界面显示 1000、实际换算 500000」。写回规范值，原值只留在日志里，
+			// 「显示什么」和「生效什么」只剩一种答案；错误照旧返回，调用方仍能
+			// 知道库里存的是非法值。
+			common.OptionMap[key] = strconv.Itoa(fixedQuotaPerUnit)
+			common.SysError(common.LogText("stored QuotaPerUnit %q is not 500000; showing the fixed value instead", value))
 			return err
 		}
 		common.QuotaPerUnit = fixedQuotaPerUnit
