@@ -66,9 +66,13 @@ func (w *WalletFunding) Settle(delta int) (int, error) {
 }
 
 func (w *WalletFunding) Refund() error {
-	if w.consumed <= 0 {
+	if w.consumed <= 0 && w.operationKey == "" {
 		return nil
 	}
-	// IncreaseUserQuota 是 quota += N 的非幂等操作，不能重试，否则会多退额度。
-	return model.IncreaseUserQuota(w.userId, w.consumed, false)
+	// 退钱和释放预扣分摊必须同一个事务：只退钱的话，预扣时登记的 held 会留在
+	// 库里，而可用批次额度算的是 `remaining - held`，那笔占用会永久占住容量。
+	// 实测见 model.RefundUserQuotaForOperation 的注释。
+	//
+	// 退额度是非幂等操作，不能重试，否则会多退。
+	return model.RefundUserQuotaForOperation(w.userId, w.consumed, w.operationKey)
 }

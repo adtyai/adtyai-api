@@ -82,6 +82,10 @@ func AllocateAdtyFundAllocationsTx(tx *gorm.DB, userID int, operationID string, 
 		return err
 	}
 	if len(batches) == 0 {
+		// 一条批次都没有的账户（升级前就有额度、退款也不补行）在预扣阶段不登记。
+		// **不要为了「顺手」在这里补建或登记**：那要等退款路径先能释放占用，
+		// 否则会把这些账户也拖进「退款后占用残留」的池子里。他们现在由结算路径的
+		// 补建兜住，是能正常消费的。
 		return nil
 	}
 	// 同一批次上别人还占着的额度必须先扣掉，否则两个并发预扣会把同一笔
@@ -178,8 +182,14 @@ func AllocateAdtyFundAllocationsTx(tx *gorm.DB, userID int, operationID string, 
 		// 余额，批次表就永远等于余额，`fund_batch_gap` 永远是 0，对账失去意义。
 		// 「有批次但少于余额」正是账本漂移的形状，它应当被**记录**，不是被悄悄修好。
 		//
-		// 总额为 0 覆盖两种正当情形：从来没有批次（存量老用户）、以及唯一那条
-		// legacy 批次已经被花光（退款回额度不会补批次）。
+		// 覆盖：
+		//   1. 唯一那条 legacy 批次已经被花光（退款回额度不会补批次）。
+		// 不覆盖：
+		//   2. 从来没有批次的老用户 —— 他们在上面的 `len(batches) == 0` 就返回了，
+		//      走不到这里；那类账户靠**结算路径**的补建兜住，不是靠这一处。
+		//
+		// 这么写是因为原来那句「覆盖两种正当情形」把边界说大了一圈，而它正是
+		// 讨论 drift 的前提。
 		if lotTotal == 0 && balanceBefore > 0 {
 			if err := ensureAdtyLegacyBatchTx(tx, userID, balanceBefore); err != nil {
 				return err
@@ -461,6 +471,16 @@ func deductAdtyFundBatchTx(tx *gorm.DB, batchID, amount int64) error {
 // 回补的东西。A.12.2.6 说的「预扣释放按原分摊返还」，返还的是那一份占用关系。
 func ReleaseAdtyFundAllocationsTx(tx *gorm.DB, userID int, operationID string) error {
 	if tx == nil || userID <= 0 || operationID == "" {
+		return nil
+	}
+	// 表不存在 = 从来没有登记过任何占用，所以没东西可释放。
+	//
+	// 这一条不能省成「报错」：退款路径和它同事务，报错会把退款一起回滚，
+	// 用户的钱就退不回去了。钱正确优先于账本完整——而这里两者其实一致，
+	// 因为登记和释放用的是同一张表，登记不进去的时候也就没有占用。
+	//
+	// 真实场景是迁移没跑全的库（以及各自 AutoMigrate 的测试夹具）。
+	if !tx.Migrator().HasTable(&AdtyFundAllocation{}) {
 		return nil
 	}
 	return tx.Model(&AdtyFundAllocation{}).

@@ -120,6 +120,11 @@ export default defineConfig(({ envMode }) => {
       // Production optimizations
       minify: isProd,
       target: 'web',
+      // adty: static assets can live on a separate CDN origin. Set PUBLIC_CDN_URL
+      // (e.g. https://static.adtyai.com) at build time and every /static/* URL in
+      // the emitted HTML and CSS is rewritten to that origin. Unset = same-origin,
+      // exactly like before.
+      assetPrefix: process.env.PUBLIC_CDN_URL || undefined,
       distPath: {
         root: 'dist',
       },

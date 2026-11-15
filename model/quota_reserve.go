@@ -119,6 +119,44 @@ func reserveUserQuotaDB(id int, quota int, operationID string) (bool, error) {
 	return reserved, err
 }
 
+// RefundUserQuotaForOperation 把一次预扣整笔退回，并在**同一个事务里**释放
+// 这次操作登记的分摊。
+//
+// 为什么必须同一事务：`IncreaseUserQuota` 只加 `users.quota`，预扣时登记的分摊
+// （held）留在库里，而 `AllocateAdtyFundAllocationsTx` 算可用额度用的是
+// `batch.Remaining - heldByBatch`，所以那笔占用会**永久**占住同一批次的容量。
+// 实测：余额 100000、预扣 50000、退款后 quota 回到 100000，残留 held 仍是 50000，
+// 下一次预扣 100000 只能登记 50000。失败退款每来一次，可用额度就少一块。
+//
+// operationKey 为空表示这次预扣没有登记过分摊（升级前的调用面），退钱即可。
+func RefundUserQuotaForOperation(id int, quota int, operationKey string) error {
+	if quota < 0 {
+		return errors.New("quota cannot be negative")
+	}
+	if quota == 0 {
+		// 仍然要释放：预扣为 0 也可能因为后续补扣登记过分摊。
+		if operationKey == "" {
+			return nil
+		}
+	} else if err := common.ValidateWalletQuota(quota); err != nil {
+		return err
+	}
+	return DB.Transaction(func(tx *gorm.DB) error {
+		if quota > 0 {
+			var user User
+			if err := lockForUpdate(tx).First(&user, id).Error; err != nil {
+				return err
+			}
+			// 退款必须直写数据库：这里已经在事务里，走批量队列会让「钱回来了」
+			// 和「占用释放了」不在同一个提交边界上。
+			if err := applyUserQuotaDeltaTx(tx, &user, quota, false); err != nil {
+				return err
+			}
+		}
+		return ReleaseAdtyFundAllocationsTx(tx, id, operationKey)
+	})
+}
+
 func reserveTokenQuotaDB(id int, quota int) (bool, error) {
 	reserved := false
 	err := DB.Transaction(func(tx *gorm.DB) error {

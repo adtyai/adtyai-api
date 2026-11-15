@@ -8,12 +8,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// 量一件事：请求预扣后走普通失败退款（`WalletFunding.Refund` → IncreaseUserQuota），
-// 预扣时登记的分摊（held）有没有被释放。
+// 请求预扣后走失败退款，预扣时登记的分摊必须一起释放。
 //
-// 这条不是「断言正确行为」，是**测量**：先读出一个数，再决定这条该派给谁、
-// 修在哪一层。所以断言写的是实测值，理由写在旁边。
-func TestRefundLeavesPrechargedAllocationsHeldPG(t *testing.T) {
+// 这条原本是**测量**：它先量出「退款后 held 仍残留」这个缺陷，钉住有问题的行为，
+// 注释里写明「修好之后它会红，届时改成断言 held 归零」。修好之后我按那句话改的——
+// 现在它是验收：held 归零，且同一批次的容量立刻全部可用。
+func TestRefundReleasesPrechargedAllocationsPG(t *testing.T) {
 	db := adtyTestDBWithSchema(t)
 	var version int
 	require.NoError(t, db.Raw("SHOW server_version_num").Scan(&version).Error)
@@ -40,28 +40,14 @@ func TestRefundLeavesPrechargedAllocationsHeldPG(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, ok)
 
-	var mid User
-	require.NoError(t, db.First(&mid, userID).Error)
-	t.Logf("quota after reserve = %d", mid.Quota)
-	var total int64
-	require.NoError(t, db.Model(&AdtyFundAllocation{}).Count(&total).Error)
-	t.Logf("total allocation rows in schema = %d", total)
-	var allocs []AdtyFundAllocation
-	require.NoError(t, db.Where("user_id = ?", userID).Find(&allocs).Error)
-	t.Logf("allocation rows after reserve: %d, op=%q", len(allocs), key)
-	var batches []AdtyFundBatch
-	require.NoError(t, db.Where("user_id = ?", userID).Find(&batches).Error)
-	for _, b := range batches {
-		t.Logf("batch id=%d kind=%s source=%s original=%d remaining=%d", b.Id, b.Kind, b.Source, b.Original, b.Remaining)
-	}
 	var reserved struct{ Held int64 }
 	require.NoError(t, db.Model(&AdtyFundAllocation{}).
 		Select("coalesce(sum(held - settled),0) as held").
 		Where("user_id = ?", userID).Scan(&reserved).Error)
 	require.EqualValues(t, amount, reserved.Held, "预扣必须登记分摊")
 
-	// 普通失败退款：`WalletFunding.Refund` 走的就是这一句。
-	require.NoError(t, IncreaseUserQuota(userID, amount, false))
+	// 普通失败退款：`WalletFunding.Refund` 现在走这一句（同一事务退钱 + 释放分摊）。
+	require.NoError(t, RefundUserQuotaForOperation(userID, amount, key))
 
 	// 这就是要塞进那条 SQL 的数：退款之后还挂着多少没释放的分摊。
 	var left struct {
@@ -73,15 +59,14 @@ func TestRefundLeavesPrechargedAllocationsHeldPG(t *testing.T) {
 			"from adty_fund_allocations where user_id = ? and operation_id = ?", userID, key,
 	).Scan(&left).Error)
 
-	assert.EqualValues(t, amount, left.Held,
-		"实测：普通失败退款不释放 held，预扣登记的分摊原样挂着")
+	assert.Zero(t, left.Held, "退款必须释放这次预扣登记的分摊")
 	assert.Zero(t, left.Settled)
 
 	var after User
 	require.NoError(t, db.First(&after, userID).Error)
 	assert.EqualValues(t, 100_000, after.Quota, "余额确实退回去了")
 
-	// 两边一起看才是完整现象：钱退了、分摊没退。
+	// 两边一起看才是完整现象：钱退了，占用也还回去了。
 	t.Logf("退款后 quota=%d, 残留 held=%d", after.Quota, left.Held)
 
 	// 残留的后果不是「账上多一行」：同一批次上别人还占着的额度必须先扣掉
@@ -96,13 +81,13 @@ func TestRefundLeavesPrechargedAllocationsHeldPG(t *testing.T) {
 	require.NoError(t, db.Model(&AdtyFundAllocation{}).
 		Select("coalesce(sum(held - settled),0) as held").
 		Where("user_id = ? AND operation_id = ?", userID, second).Scan(&secondHeld).Error)
-	assert.EqualValues(t, 50_000, secondHeld.Held,
-		"残留 50,000 让它只能登记一半：失败退款每来一次，可用批次容量就少一块")
-	t.Logf("第二次预扣 100000，实际只登记 %d", secondHeld.Held)
+	assert.EqualValues(t, 100_000, secondHeld.Held,
+		"退款释放了占用，同一批次的容量应当完整可用")
+	t.Logf("第二次预扣 100000，实际登记 %d", secondHeld.Held)
 
 	var stillStranded struct{ Held int64 }
 	require.NoError(t, db.Model(&AdtyFundAllocation{}).
 		Select("coalesce(sum(held - settled),0) as held").
 		Where("user_id = ? AND operation_id = ?", userID, key).Scan(&stillStranded).Error)
-	assert.EqualValues(t, 50_000, stillStranded.Held, "第一次的那份仍然挂着，不会自己消失")
+	assert.Zero(t, stillStranded.Held, "第一次那份不该再占着")
 }
