@@ -276,19 +276,24 @@ func adtyBonusUSDForSite(ext *model.AdtyTopupOrder) decimal.Decimal {
 	return bonus
 }
 
-// adtySiteBonusWithinCap：一笔分站充值的加赠合计（站点档位加赠 + 站长优惠加赠）不超过
+// adtySiteBonusCapAmount 是一笔分站充值允许的加赠上限（美元）：
 // 面额 ×（主站同档比例 + max_site_bonus_extra）÷ 100。max_site_bonus_extra 没设按 0。
-func adtySiteBonusCapAmount(face int64) decimal.Decimal {
+//
+// 面额按美元小数收：分站订单可能带小数面额（AdtyHostedQuoteForSite 把额度按每美元额度
+// 换回美元），档位查表仍按整数面额取不超过它的最大档，与 AdtyBonusFor 的口径一致。
+func adtySiteBonusCapAmount(faceUSD decimal.Decimal) decimal.Decimal {
 	extra := decimal.Zero
 	if value := resellerSetting().MaxSiteBonusExtra; value != nil {
 		extra = decimal.NewFromFloat(*value)
 	}
-	mainRate, _ := AdtyBonusFor(face)
-	return decimal.NewFromInt(face).Mul(mainRate.Add(extra)).Div(decimal.NewFromInt(100)).Round(8)
+	mainRate, _ := AdtyBonusFor(faceUSD.IntPart())
+	return faceUSD.Mul(mainRate.Add(extra)).Div(decimal.NewFromInt(100)).Round(8)
 }
 
-func adtySiteBonusWithinCap(face int64, totalBonus decimal.Decimal) bool {
-	return !totalBonus.GreaterThan(adtySiteBonusCapAmount(face))
+// adtySiteBonusWithinCap 判断一笔分站充值的加赠合计（站点档位加赠 + 站长出资的优惠加赠）
+// 是否落在 adtySiteBonusCapAmount 之内。报价时执行（adtyQuotaQuoteForSite），超出则拒绝报价。
+func adtySiteBonusWithinCap(faceUSD decimal.Decimal, totalBonus decimal.Decimal) bool {
+	return !totalBonus.GreaterThan(adtySiteBonusCapAmount(faceUSD))
 }
 
 // adtySiteBonusAfterCreditTx 在入账事务里记下站长出资的加赠（负数日汇总），供报表使用。

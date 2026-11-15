@@ -42,7 +42,10 @@ func AdtyUserSiteID(userId int) int {
 }
 
 // ValidateAdtySitePromoValue 站长保存码时先挡掉一定用不了的码：百分比码超过「主站最高档 + max_site_bonus_extra」时，
-// 在任何面额上都会超出上限。其余情况在报价时按这一单的站点档位和面额精确查（adtySiteBonusWithinCap）。
+// 在任何面额上都会超出上限。报价时的精确查在 adtyQuotaQuoteForSite：它把这一单的加赠合计
+// （站点档位加赠 + 站长出资的优惠加赠）交给 adtySiteBonusWithinCap 比上限，超出就拒绝报价。
+// 优惠码已退役（adtyPromoBonusFor 恒返回 ErrAdtyPromoRetired），所以今天合计数只含支付方式那一项；
+// 这里保留的是保存历史码时的旧校验，不是报价期的唯一防线。
 func ValidateAdtySitePromoValue(code *model.AdtyPromoCode) error {
 	if code.Kind != model.AdtyPromoKindPercent {
 		return nil // 固定金额随面额变化，只能在报价时查
