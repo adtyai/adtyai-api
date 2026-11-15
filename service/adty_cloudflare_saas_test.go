@@ -32,6 +32,8 @@ type fakeCloudflare struct {
 	nextId    int
 	// createDuplicate 为真时 POST 返回 1406（主机名已经在 Cloudflare 上）
 	createDuplicate bool
+	// rejectCreateHostname 非空时，这个名字的 POST 一律 400：模拟 Cloudflare 永久拒绝
+	rejectCreateHostname string
 	// rateLimitOnce 为真时下一个请求返回 429 和 Retry-After: 2
 	rateLimitOnce bool
 	// widgets：sitekey → domains；PUT 的响应带 secret
@@ -100,6 +102,11 @@ func (f *fakeCloudflare) serve(w http.ResponseWriter, r *http.Request) {
 		require.NoError(f.t, common.Unmarshal(body, &req))
 		assert.Equal(f.t, "http", req.SSL.Method)
 		assert.Equal(f.t, "dv", req.SSL.Type)
+		if f.rejectCreateHostname != "" && req.Hostname == f.rejectCreateHostname {
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = io.WriteString(w, `{"success":false,"errors":[{"code":1401,"message":"hostname is not allowed"}],"result":null}`)
+			return
+		}
 		if f.createDuplicate {
 			w.WriteHeader(http.StatusConflict)
 			_, _ = io.WriteString(w, `{"success":false,"errors":[{"code":1406,"message":"Duplicate custom hostname found."}],"result":null}`)
@@ -653,6 +660,42 @@ func TestCustomDomainReusesDuplicateHostname(t *testing.T) {
 	domain, err := AddAdtySiteDomain(context.Background(), owner.Id, "api.dup.org")
 	require.NoError(t, err)
 	assert.Equal(t, "cf-existing", domain.CFHostnameId, "1406 时按主机名查列表，沿用已有的 id")
+}
+
+// 一个被 Cloudflare 永久拒绝的主机名不能冻住整批：后面的域名照样 attach，
+// 它自己写 last_error，到期后标 failed（ISS-R4-0125）。
+func TestCustomDomainCheckKeepsGoingAfterPermanentAttachFailure(t *testing.T) {
+	db, fake := prepareDomainDB(t)
+	_, site := openActiveSite(t, db, "poison")
+	fake.rejectCreateHostname = "api.poison.org"
+	// 查询没有 ORDER BY，坏的那条要排在队头才复现「一处失败停住整批」。
+	now := time.Now().UTC().Truncate(time.Second).Unix()
+	bad := &model.AdtySiteDomain{SiteId: site.Id, Hostname: "api.poison.org", OwnershipToken: "tok-poison", Status: model.AdtySiteDomainPending, CreatedAt: now}
+	require.NoError(t, db.Create(bad).Error)
+	after := make([]*model.AdtySiteDomain, 0, 2)
+	for _, host := range []string{"api.after-one.org", "api.after-two.org"} {
+		row := &model.AdtySiteDomain{SiteId: site.Id, Hostname: host, OwnershipToken: "tok-" + host, Status: model.AdtySiteDomainPending, CreatedAt: now}
+		require.NoError(t, db.Create(row).Error)
+		after = append(after, row)
+	}
+
+	require.NoError(t, RunAdtySiteDomainCheckOnce(context.Background(), time.Unix(now, 0).Add(time.Hour)))
+
+	var storedBad model.AdtySiteDomain
+	require.NoError(t, db.First(&storedBad, bad.Id).Error)
+	assert.Equal(t, model.AdtySiteDomainPending, storedBad.Status)
+	assert.NotEmpty(t, storedBad.LastError, "失败必须留痕，否则站长只看到「一直没生效」")
+	for _, row := range after {
+		var stored model.AdtySiteDomain
+		require.NoError(t, db.First(&stored, row.Id).Error)
+		assert.NotEmpty(t, stored.CFHostnameId, "%s 排在失败行后面，仍然要被 attach", row.Hostname)
+	}
+
+	// 持续失败到超时：这一行自己也要被判 failed，站长才能重新提交自愈。
+	require.NoError(t, RunAdtySiteDomainCheckOnce(context.Background(), time.Unix(now, 0).Add(73*time.Hour)))
+	require.NoError(t, db.First(&storedBad, bad.Id).Error)
+	assert.Equal(t, model.AdtySiteDomainFailed, storedBad.Status)
+	assert.NotEmpty(t, storedBad.LastError)
 }
 
 func TestCloudflareRateLimitBacksOffByRetryAfter(t *testing.T) {
