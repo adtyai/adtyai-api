@@ -402,7 +402,7 @@ func ApproveAdtyTopUpManualRefund(tradeNo, refundID string, operatorID int, idem
 	}
 	var result *AdtyManualRefundResult
 	err = DB.Transaction(func(tx *gorm.DB) error {
-		_, ext, err := lockAdtyTopUpTx(tx, tradeNo)
+		topUp, ext, err := lockAdtyTopUpTx(tx, tradeNo)
 		if err != nil {
 			return err
 		}
@@ -418,6 +418,12 @@ func ApproveAdtyTopUpManualRefund(tradeNo, refundID string, operatorID int, idem
 		}
 		if row.Status != AdtyManualRefundStatusSubmitted {
 			return common.NewMessage("This refund cannot be approved")
+		}
+		// 与申请、完成两处同一道闸：审批推进前必须自己确认这笔单有现金背书。
+		// 补丁之前就已经 submitted 的行绕过了申请阶段的门，只能在这里拦。
+		// 幂等重放分支在上面已经 return，已审批的单不受影响。
+		if err := adtyEnsureCreditedOrder(topUp, ext); err != nil {
+			return err
 		}
 		now := common.GetTimestamp()
 		if err := tx.Model(row).Updates(map[string]any{
@@ -721,7 +727,7 @@ func RecordAdtyTopUpManualRefundPayout(tradeNo, refundID string, operatorID int,
 	}
 	var result *AdtyManualRefundResult
 	err = DB.Transaction(func(tx *gorm.DB) error {
-		_, ext, err := lockAdtyTopUpTx(tx, tradeNo)
+		topUp, ext, err := lockAdtyTopUpTx(tx, tradeNo)
 		if err != nil {
 			return err
 		}
@@ -735,6 +741,12 @@ func RecordAdtyTopUpManualRefundPayout(tradeNo, refundID string, operatorID int,
 			return nil
 		}
 		if err := adtyRequireApprovedManualRefund(row); err != nil {
+			return err
+		}
+		// 与申请、完成两处同一道闸：记录打款前必须自己确认这笔单有现金背书。
+		// 补丁之前就已经 approved 的行到这里会直接落一个线下付款事实。
+		// 幂等重放分支（PayoutRecordedAt > 0）在上面已经 return，不受影响。
+		if err := adtyEnsureCreditedOrder(topUp, ext); err != nil {
 			return err
 		}
 		now := common.GetTimestamp()
@@ -821,6 +833,7 @@ func CompleteAdtyTopUpManualRefund(tradeNo, refundID string, operatorID int, ide
 		// 申请阶段的那道闸挡不住「补丁之前就已经 approved」的单：它们仍在流程里，
 		// 完成时会直接走到付款。这里必须复核一次，而且要在任何扣减/写账之前。
 		// 幂等重放分支在上面已经 return，不会到这里，所以已完成的单不受影响。
+		// 本校验不是完成阶段专属：申请、审批、记录打款、完成四个入口各有一份（ISS-R4-0053）。
 		if err := adtyEnsureCreditedOrder(topUp, ext); err != nil {
 			return err
 		}
