@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/QuantumNous/new-api/common"
+	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
@@ -12,7 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func OaiResponsesCompactionHandler(c *gin.Context, resp *http.Response) (*dto.Usage, *types.NewAPIError) {
+func OaiResponsesCompactionHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {
 	defer service.CloseResponseBodyGracefully(resp)
 
 	responseBody, err := io.ReadAll(resp.Body)
@@ -40,6 +41,17 @@ func OaiResponsesCompactionHandler(c *gin.Context, resp *http.Response) (*dto.Us
 			usage.PromptTokensDetails.CacheWriteTokens = compactResp.Usage.InputTokensDetails.CacheWriteTokens
 			usage.PromptTokensDetails.CacheWriteTokensDetails = compactResp.Usage.InputTokensDetails.CacheWriteTokensDetails
 		}
+	}
+
+	// Upstream may omit usage, or send it as null: the compacted body has already
+	// been delivered, so settle the input instead of a zero bill. The compacted
+	// output is opaque ciphertext, so only the prompt side is estimated — the
+	// same fallback the non-streaming Responses path applies.
+	if usage.PromptTokens == 0 {
+		usage.PromptTokens = info.GetEstimatePromptTokens()
+	}
+	if usage.TotalTokens < usage.PromptTokens+usage.CompletionTokens {
+		usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
 	}
 
 	return &usage, nil
