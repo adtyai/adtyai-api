@@ -701,15 +701,33 @@ func adtyResendConfigured() bool {
 	return strings.TrimSpace(common.OptionMap["ResendApiKey"]) != ""
 }
 
+// adtyClearedSecretWarnings 把「装载时解不开、已被清空」的密钥摆到设置页上。
+//
+// 密钥被清空时只留一行 SysError，而运营看到的现象是「分站注册/签发全挂了」，
+// 根因却是另一条密钥解不开（ISS-R4-0122）。摆到设置页旁边，才知道要重填哪一条。
+func adtyClearedSecretWarnings() []string {
+	cleared := model.ClearedAdtyOptionSecrets()
+	if len(cleared) == 0 {
+		return nil
+	}
+	warnings := make([]string, 0, len(cleared))
+	for _, key := range cleared {
+		warnings = append(warnings,
+			"Stored credential "+key+" could not be decrypted and has been cleared: re-enter it. The other credential is unaffected.")
+	}
+	return warnings
+}
+
 // GetAdtyResellerSettings 读分站设置（分站·设置）。
 func GetAdtyResellerSettings(c *gin.Context) {
 	cfg := *adty_setting.GetResellerSetting()
+	warnings := append(adtyResellerSettingsWarnings(&cfg), adtyClearedSecretWarnings()...)
 	view := adtyResellerSettingsView{
 		CloudflareTokenConfigured: strings.TrimSpace(cfg.CloudflareApiToken) != "",
 		WidgetSecretConfigured:    map[string]bool{},
 		CloudflareConfigured:      cfg.CloudflareConfigured(),
 		TurnstileConfigured:       cfg.TurnstileConfigured(),
-		SettingsWarnings:          adtyResellerSettingsWarnings(&cfg),
+		SettingsWarnings:          warnings,
 		ResendConfigured:          adtyResendConfigured(),
 		MoneyConfigured:           cfg.ResellerMoneyConfigured(),
 		SiteAgreementVersion:      adty_setting.GetLegalSetting().SiteAgreementVersion,
