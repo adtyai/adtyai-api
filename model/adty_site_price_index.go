@@ -35,6 +35,8 @@ func EnsureAdtySitePriceUniqueIndex(db *gorm.DB) error {
 	if err := ensureAdtySitePriceModelUniqueIndex(db); err != nil {
 		return err
 	}
+	// ensureAdtySitePriceModelUniqueIndex only returns nil once the new index is
+	// verified current, so dropping the legacy index here cannot loosen uniqueness.
 	if db.Migrator().HasIndex(&AdtySitePrice{}, adtySitePriceLegacyIndex) {
 		if err := db.Migrator().DropIndex(&AdtySitePrice{}, adtySitePriceLegacyIndex); err != nil {
 			return fmt.Errorf("drop legacy site price unique index: %w", err)
@@ -68,10 +70,20 @@ func ensureAdtySitePriceModelUniqueIndex(db *gorm.DB) error {
 		sql = fmt.Sprintf("CREATE UNIQUE INDEX IF NOT EXISTS %s ON %s (%s)", index, table, columns)
 	}
 	if err := db.Exec(sql).Error; err != nil {
-		if db.Migrator().HasIndex(&AdtySitePrice{}, adtySitePriceUniqueIndex) {
-			return nil
-		}
 		return fmt.Errorf("create site price unique index: %w", err)
+	}
+	// Both MySQL and PostgreSQL treat "an index with this name already exists"
+	// as a skipped statement rather than an error, so a clean Exec does not mean
+	// the constraint is in place. Re-inspect the definition before claiming success.
+	installed, err := adtySitePriceUniqueIndexIsCurrent(db)
+	if err != nil {
+		return err
+	}
+	if !installed {
+		return fmt.Errorf(
+			"create site price unique index %s: existing index does not enforce uniqueness on (site_id, user_id, group, model)",
+			adtySitePriceUniqueIndex,
+		)
 	}
 	return nil
 }
