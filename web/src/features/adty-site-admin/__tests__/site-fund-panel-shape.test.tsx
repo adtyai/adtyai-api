@@ -65,7 +65,11 @@ it.each([
       </QueryClientProvider>
     )
     expect(await screen.findByText('Wallets')).toBeInTheDocument()
-    expect(await screen.findAllByText('No data')).not.toHaveLength(0)
+    // 「Issue margin code」在处置列表之后渲染：若处置列表抛错，整棵树会挂掉，
+    // 这一段就不存在了。只断言 'No data' 不够——它可能来自上面的钱包区块。
+    expect(
+      await screen.findAllByText('Issue margin code')
+    ).not.toHaveLength(0)
     client.clear()
   }
 )
@@ -101,3 +105,45 @@ it('still lists the wallets when the payload is an array', async () => {
   expect(await screen.findByText(/^margin 12\.50$/)).toBeInTheDocument()
   client.clear()
 })
+
+/**
+ * 异常处置列表和钱包列表一样，是「成功但形状不可信」的高危点：
+ * 崩了站长就看不出哪笔资金异常还没处置完。这次连 dispositions 一起兜底。
+ */
+it.each([
+  ['null', null],
+  ['an object', { items: [] }],
+  ['a string', 'unexpected'],
+])(
+  'survives a dispositions payload that is %s',
+  async (_label, dispositionsPayload) => {
+    useAuthStore.getState().auth.setUser({ id: 1, username: 'root', role: 100 })
+    vi.spyOn(api, 'get').mockImplementation(async (url) => {
+      const path = String(url)
+      if (path.endsWith('/wallets')) {
+        return { data: { success: true, data: [] } }
+      }
+      if (path.endsWith('/dispositions')) {
+        return { data: { success: true, data: dispositionsPayload } }
+      }
+      if (path.endsWith('/commission-margin')) {
+        return { data: { success: true, data: null } }
+      }
+      if (path.endsWith('/fund-anomalies')) {
+        return { data: { success: true, data: { kinds: [] } } }
+      }
+      return { data: { success: true, data: { items: [] } } }
+    })
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    render(
+      <QueryClientProvider client={client}>
+        <SiteFundPanel siteId={1} />
+      </QueryClientProvider>
+    )
+    expect(await screen.findByText('Wallets')).toBeInTheDocument()
+    expect(await screen.findAllByText('No data')).not.toHaveLength(0)
+    client.clear()
+  }
+)

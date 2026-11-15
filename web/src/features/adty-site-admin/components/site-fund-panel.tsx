@@ -110,6 +110,11 @@ export function SiteFundPanel(props: { siteId: number }) {
   // 缓存里可能留着旧形状的响应；列表只认数组，其它一律当空，否则 `.map` 会让整页白屏。
   const walletRows = Array.isArray(wallets.data) ? wallets.data : []
   const anomalyKinds = Array.isArray(anomalies.data) ? anomalies.data : []
+  // 异常处置列表同样是「成功但形状不可信」的高危点：崩了站长就看不出哪笔资金
+  // 异常还没处置完，所以和 wallets/anomalies 一样只认数组。
+  const dispositionRows = Array.isArray(dispositions.data)
+    ? dispositions.data
+    : []
   return (
     <section className='flex flex-col gap-3'>
       <h3 className='text-sm font-medium'>{t('Wallets')}</h3>
@@ -141,7 +146,7 @@ export function SiteFundPanel(props: { siteId: number }) {
           hint={t(
             'After earnings, the open margin cycle can cover the rest. No amount is set here.'
           )}
-          checked={marginAuth.data.allowed}
+          checked={marginAuth.data?.allowed === true}
           disabled={saveMargin.isPending}
           onCheckedChange={(value) => saveMargin.mutate(value)}
         />
@@ -161,11 +166,14 @@ export function SiteFundPanel(props: { siteId: number }) {
           ))}
         </ul>
       )}
-      {dispositions.isSuccess && dispositions.data.length > 0 && (
+      {dispositions.isSuccess && dispositionRows.length === 0 && (
+        <p className='text-sm'>{t('No data')}</p>
+      )}
+      {dispositions.isSuccess && dispositionRows.length > 0 && (
         <div className='flex flex-col gap-2'>
           <Label htmlFor='anomaly-note'>{t('Note')}</Label>
           <Input id='anomaly-note' value={note} onChange={(event) => setNote(event.target.value)} />
-          {dispositions.data.map((row) => (
+          {dispositionRows.map((row) => (
             <div key={row.id} className='flex flex-wrap items-center gap-2 text-sm'>
               <span className='font-mono text-xs'>{row.kind}</span>
               <span>{row.status}</span>
