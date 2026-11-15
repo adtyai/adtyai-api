@@ -120,7 +120,10 @@ func registerAdtyWorkspaceRoutes(apiRouter *gin.RouterGroup) {
 	}
 	apiRouter.POST("/adty/teams/:id/close", middleware.UserAuth(), controller.PostAdtyTeamClose)
 	apiRouter.POST("/adty/teams/:id/profile", middleware.UserAuth(), controller.PostAdtyTeamProfile)
-	apiRouter.POST("/adty/teams/:id/topups", middleware.UserAuth(), controller.PostAdtyTeamTopup)
+	// 团队充值下单同样是建单入口：每张单都会真实打一次支付网关，且 trade_no 由客户端的
+	// Idempotency-Key 决定，换一个 key 就是一张新单。必须和 hosted/pay、epay/pay 一样按用户限速
+	// （ISS-R4-0127）。
+	apiRouter.POST("/adty/teams/:id/topups", middleware.UserAuth(), middleware.UserCriticalRateLimit("CT:pay-team"), controller.PostAdtyTeamTopup)
 	apiRouter.GET("/adty/teams/:id/topups", middleware.UserAuth(), controller.GetAdtyTeamTopups)
 	apiRouter.POST("/adty/teams/:id/leave", middleware.UserAuth(), controller.PostAdtyTeamLeave)
 	apiRouter.POST("/adty/teams/:id/members/:userId/disable", middleware.UserAuth(), controller.PostAdtyTeamDisableMember)
