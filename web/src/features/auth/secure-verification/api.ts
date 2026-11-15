@@ -17,7 +17,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { api, isAuthBundle } from '@/lib/api'
-import { buildOAuthAuthorizationUrl } from '@/lib/oauth'
 import { isPasskeySupported } from '@/lib/passkey'
 import {
   AuthOperationError,
@@ -26,8 +25,6 @@ import {
 } from '@/lib/secure-verification'
 import type { AuthBundle } from '@/stores/auth-store'
 
-import { createOAuthAuthorization } from '../api'
-import { openOAuthPopup } from '../lib/oauth-popup'
 import { encryptPassword } from '../lib/password-encryption'
 import {
   beginPasskeyVerification,
@@ -39,7 +36,6 @@ import {
   type PasskeyDomains,
 } from '../passkey/assertion'
 import type { PasskeyOptionsPayload } from '../passkey/types'
-import type { SystemStatus } from '../types'
 import type {
   SecurityProof,
   LoginChallenge,
@@ -86,20 +82,22 @@ function withDeviceAvailability(
 ): VerificationRequirements {
   return {
     ...requirements,
-    methods: requirements.methods.map((option) => {
-      if (
-        option.method === 'passkey' &&
-        option.available &&
-        !passkeySupported
-      ) {
-        return {
-          ...option,
-          available: false,
-          reason: 'This device does not support Passkey verification.',
+    methods: requirements.methods
+      .filter((option) => option.method !== 'oauth')
+      .map((option) => {
+        if (
+          option.method === 'passkey' &&
+          option.available &&
+          !passkeySupported
+        ) {
+          return {
+            ...option,
+            available: false,
+            reason: 'This device does not support Passkey verification.',
+          }
         }
-      }
-      return option
-    }),
+        return option
+      }),
   }
 }
 
@@ -271,8 +269,7 @@ export async function verify(
         proof = await verifyPasskey(operation, signal, input.rpID, onDomains)
         break
       case 'oauth':
-        proof = await verifyOAuth(input.provider, operation, signal)
-        break
+        throw new AuthOperationError('OAuth verification is unavailable')
     }
     signal.throwIfAborted()
     if (
@@ -315,65 +312,4 @@ async function verifyPasskey(
     rememberPasskeyRPID(passkey.rpID)
   }
   return proof
-}
-
-async function verifyOAuth(
-  provider: string,
-  operation: VerificationOperation,
-  signal: AbortSignal
-): Promise<SecurityProof> {
-  const exchange = await openOAuthPopup({
-    provider,
-    intent: 'verify',
-    signal,
-    prepare: async (popupSignal) => {
-      const [authorization, status] = await Promise.all([
-        createOAuthAuthorization(provider, 'verify', operation, popupSignal),
-        authResult<SystemStatus>(
-          api.get('/api/status', {
-            ...authRequestOptions,
-            signal: popupSignal,
-            disableDuplicate: true,
-          })
-        ),
-      ])
-      return {
-        state: authorization.state,
-        url:
-          authorization.authorizationUrl ??
-          buildOAuthAuthorizationUrl(
-            provider,
-            authorization.state,
-            status,
-            authorization.redirectUri
-          ),
-      }
-    },
-  })
-  try {
-    const callback = exchange.callback
-    const proof = await authResult<SecurityProof>(
-      api.get(`/api/oauth/${provider}`, {
-        ...authRequestOptions,
-        singleUseAuthorization: true,
-        disableDuplicate: true,
-        signal: exchange.signal,
-        params: {
-          state: callback.state,
-          code: callback.code,
-          error: callback.error,
-          error_description: callback.errorDescription,
-        },
-      })
-    )
-    exchange.signal.throwIfAborted()
-    exchange.finish({ success: true })
-    return proof
-  } catch (error) {
-    const failure = AuthOperationError.from(
-      exchange.signal.aborted ? exchange.signal.reason : error
-    )
-    exchange.finish({ success: false, message: failure.message })
-    throw failure
-  }
 }

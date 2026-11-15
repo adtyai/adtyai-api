@@ -76,7 +76,7 @@ func (*adtyAtUsernameOAuthProvider) GetUserInfo(context.Context, *oauth.OAuthTok
 	return &oauth.OAuthUser{ProviderUserID: "external-at", Username: "a@b.co"}, nil
 }
 
-// 第三方登录建号不走 Validate，提供方给的用户名（OIDC 的 preferred_username 常是邮箱）要单独挡住。
+// 第三方登录建号不走 Validate，提供方给的用户名（常是邮箱）要单独挡住。
 func TestOAuthSignUpIgnoresUsernameWithAt(t *testing.T) {
 	setupAuthFlowControllerTest(t)
 	oldRegister := common.RegisterEnabled
@@ -89,7 +89,7 @@ func TestOAuthSignUpIgnoresUsernameWithAt(t *testing.T) {
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
 	c.Request = httptest.NewRequest(http.MethodGet, "/api/oauth/test", nil)
 
-	user, _, err := findOrCreateOAuthUser(c, provider, oauthUser, &oauth.OAuthToken{})
+	user, err := findOrCreateOAuthUser(c, provider, oauthUser)
 	require.NoError(t, err)
 	assert.Equal(t, "flow_1", user.Username)
 	assert.NotContains(t, user.Username, "@")

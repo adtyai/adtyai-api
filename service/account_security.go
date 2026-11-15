@@ -4,32 +4,10 @@ import (
 	"fmt"
 	"html"
 
-	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
-	"github.com/QuantumNous/new-api/oauth"
-	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/gin-gonic/gin"
 )
-
-func UnbindAccountOAuth(identity AuthIdentity, providerID int) error {
-	enabled := model.AccountLoginMethods{
-		Password: common.PasswordLoginEnabled,
-		Passkey:  system_setting.PasskeySettingsSnapshot().Enabled,
-		WeChat:   common.WeChatAuthEnabled,
-	}
-	for _, provider := range oauth.GetAllProviders() {
-		if !provider.IsEnabled() {
-			continue
-		}
-		if custom, ok := provider.(*oauth.GenericOAuthProvider); ok {
-			enabled.CustomProviderIDs = append(enabled.CustomProviderIDs, custom.GetProviderId())
-		} else {
-			enabled.OAuthColumns = append(enabled.OAuthColumns, provider.ProviderUserIDColumn())
-		}
-	}
-	return model.UnbindUserOAuthForSession(identity, providerID, enabled)
-}
 
 // AccountMailLanguage is the language of mail about a user's account: the
 // language the user saved, else the one the request stated.

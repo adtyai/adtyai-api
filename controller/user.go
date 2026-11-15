@@ -105,7 +105,7 @@ func Login(c *gin.Context) {
 	}
 	adtyClearLoginFailures(username)
 
-	setupLogin(&user, nil, c)
+	setupLogin(&user, c)
 }
 
 // loginMethodFromContext 根据请求路径推导登录方式，用于登录审计日志。
@@ -120,8 +120,6 @@ func loginMethodFromContext(c *gin.Context) string {
 		return "2fa"
 	case "/api/user/passkey/login/finish":
 		return "passkey"
-	case "/api/oauth/wechat":
-		return "wechat"
 	case "/api/oauth/telegram/login":
 		return "telegram"
 	case "/api/oauth/:provider":
@@ -153,16 +151,14 @@ func recordLoginAudit(user *model.User, c *gin.Context) {
 }
 
 // setupLogin evaluates the shared login policy after primary authentication.
-// Only a completed Passkey ceremony may go directly to session issuance. A
-// pending legacy GitHub binding rewrite travels inside the challenge and is
-// written only when the verification completes.
-func setupLogin(user *model.User, migration *service.LegacyGitHubMigration, c *gin.Context) {
+// Only a completed Passkey ceremony may go directly to session issuance.
+func setupLogin(user *model.User, c *gin.Context) {
 	// 二开：在发二次验证之前检查，不让别站的账号拿到 2FA 挑战（任务 11.2）
 	if user != nil && user.Id > 0 && !service.AdtySiteLoginAllowed(c, user.Id) {
 		common.ApiErrorT(c, "Username or password is incorrect, or user has been banned")
 		return
 	}
-	challenge, err := service.StartLoginVerification(user, loginMethodFromContext(c), migration)
+	challenge, err := service.StartLoginVerification(user, loginMethodFromContext(c))
 	if err != nil {
 		writeSecurityOperationError(c, err)
 		return

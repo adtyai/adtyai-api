@@ -18,7 +18,6 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { normalizeInterfaceLanguage } from '@/i18n/languages'
 import { api } from '@/lib/api'
-import type { CustomOAuthBinding } from '@/lib/oauth'
 import { authRequestOptions, authResult } from '@/lib/secure-verification'
 import type { LoginSession } from '@/stores/auth-store'
 
@@ -205,41 +204,6 @@ export function bindEmail(
   )
 }
 
-/**
- * Bind WeChat account
- */
-export function bindWeChat(
-  code: string,
-  proofToken: string,
-  signal: AbortSignal
-): Promise<AccountSecurityResult> {
-  return authResult(
-    api.post(
-      '/api/oauth/wechat/bind',
-      { code },
-      {
-        ...authRequestOptions,
-        headers: { 'X-Security-Proof': proofToken },
-        singleUseAuthorization: true,
-        signal,
-      }
-    )
-  )
-}
-
-export interface TelegramBindFlow {
-  flow_token: string
-  callback_url: string
-  expires_at: number
-}
-
-export async function startTelegramBind(): Promise<
-  ApiResponse<TelegramBindFlow>
-> {
-  const res = await api.post('/api/oauth/telegram/bind/start')
-  return res.data
-}
-
 // ============================================================================
 // Login Session APIs
 // ============================================================================
@@ -257,36 +221,4 @@ export async function revokeLoginSession(sid: string): Promise<ApiResponse> {
 export async function revokeOtherLoginSessions(): Promise<ApiResponse> {
   const res = await api.post('/api/user/sessions/revoke-others')
   return res.data
-}
-
-// ============================================================================
-// Custom OAuth Binding APIs
-// ============================================================================
-
-/**
- * Get current user's custom OAuth bindings
- */
-export async function getSelfOAuthBindings(): Promise<
-  ApiResponse<CustomOAuthBinding[]>
-> {
-  const res = await api.get('/api/user/oauth/bindings')
-  return res.data
-}
-
-/**
- * Unbind a custom OAuth provider for current user
- */
-export function unbindCustomOAuth(
-  providerId: number,
-  proofToken: string,
-  signal: AbortSignal
-): Promise<AccountSecurityResult> {
-  return authResult(
-    api.delete(`/api/user/oauth/bindings/${providerId}`, {
-      ...authRequestOptions,
-      headers: { 'X-Security-Proof': proofToken },
-      singleUseAuthorization: true,
-      signal,
-    })
-  )
 }

@@ -210,30 +210,6 @@ func UpdateUserSetting(userId int, setting dto.UserSetting) error {
 	return PublishUserAuthCache(userId)
 }
 
-// userBindColumns 允许通过 UpdateUserBindColumn 更新的第三方账号绑定列白名单。
-// 列名只可能来自代码内部的 provider 实现，白名单是防御纵深，不依赖调用方自律。
-var userBindColumns = map[string]bool{
-	"github_id":   true,
-	"discord_id":  true,
-	"oidc_id":     true,
-	"linux_do_id": true,
-	"wechat_id":   true,
-}
-
-// UpdateUserBindColumn 第三方账号绑定字段的专用更新。
-// 绑定操作必须只写绑定列：若改为“读取完整用户 → 改一个字段 → 整体更新”，
-// 读快照期间并发发生的封禁、降权或分组变更会被旧快照覆盖恢复。
-// 角色、状态、分组只允许通过各自带锁/CAS 的专用方法修改。
-func UpdateUserBindColumn(userId int, column string, value string) error {
-	if userId <= 0 {
-		return common.NewMessage("ID is empty!")
-	}
-	if !userBindColumns[column] {
-		return fmt.Errorf("invalid user bind column: %s", column)
-	}
-	return DB.Model(&User{}).Where("id = ?", userId).Update(column, value).Error
-}
-
 // 根据用户角色生成默认的边栏配置
 func generateDefaultSidebarConfigForRole(userRole int) string {
 	defaultConfig := map[string]any{}
@@ -946,12 +922,7 @@ func (user *User) ClearBinding(bindingType string) error {
 
 	bindingColumnMap := map[string]string{
 		"email":    "email",
-		"github":   "github_id",
-		"discord":  "discord_id",
-		"oidc":     "oidc_id",
-		"wechat":   "wechat_id",
 		"telegram": "telegram_id",
-		"linuxdo":  "linux_do_id",
 	}
 
 	column, ok := bindingColumnMap[bindingType]
@@ -1328,7 +1299,7 @@ func deleteUserAuthenticationData(tx *gorm.DB, userId int) error {
 			return err
 		}
 	}
-	return deleteUserOAuthBindingsByUserId(tx, userId)
+	return nil
 }
 
 // ValidateAndFill check password & user status
@@ -1393,38 +1364,6 @@ func (user *User) FillUserByEmail() error {
 	return nil
 }
 
-func (user *User) FillUserByGitHubId() error {
-	if user.GitHubId == "" {
-		return common.NewMessage("GitHub ID is empty!")
-	}
-	DB.Where("github_id = ? AND site_id = ?", user.GitHubId, user.SiteId).First(user)
-	return nil
-}
-
-func (user *User) FillUserByDiscordId() error {
-	if user.DiscordId == "" {
-		return common.NewMessage("Discord ID is empty!")
-	}
-	DB.Where("discord_id = ? AND site_id = ?", user.DiscordId, user.SiteId).First(user)
-	return nil
-}
-
-func (user *User) FillUserByOidcId() error {
-	if user.OidcId == "" {
-		return common.NewMessage("OIDC ID is empty!")
-	}
-	DB.Where("oidc_id = ? AND site_id = ?", user.OidcId, user.SiteId).First(user)
-	return nil
-}
-
-func (user *User) FillUserByWeChatId() error {
-	if user.WeChatId == "" {
-		return common.NewMessage("WeChat ID is empty!")
-	}
-	DB.Where("wechat_id = ? AND site_id = ?", user.WeChatId, user.SiteId).First(user)
-	return nil
-}
-
 func (user *User) FillUserByTelegramId() error {
 	if user.TelegramId == "" {
 		return common.NewMessage("Telegram ID is empty!")
@@ -1458,27 +1397,6 @@ func GetUniqueUserByEmail(email string, siteID int) (*User, error) {
 	default:
 		return nil, ErrEmailAmbiguous
 	}
-}
-
-// AssignBuiltinProviderIDsWithTx writes the built-in provider ids for a user
-// that was just inserted. A conditional unique index makes a repeated subject fail
-// inside this statement instead of landing on two users.
-func AssignBuiltinProviderIDsWithTx(tx *gorm.DB, user *User) error {
-	if tx == nil || user == nil || user.Id <= 0 {
-		return ErrAccountBindingChanged
-	}
-	err := tx.Model(&User{}).Where("id = ?", user.Id).Updates(map[string]any{
-		"github_id":   user.GitHubId,
-		"discord_id":  user.DiscordId,
-		"oidc_id":     user.OidcId,
-		"linux_do_id": user.LinuxDOId,
-		"wechat_id":   user.WeChatId,
-		"telegram_id": user.TelegramId,
-	}).Error
-	if isAdtyUniqueViolation(err) {
-		return ErrExternalIdentityAlreadyClaimed
-	}
-	return err
 }
 
 var builtinOAuthSubjectColumns = []string{"github_id", "discord_id", "oidc_id", "linux_do_id", "wechat_id", "telegram_id"}
@@ -1550,22 +1468,6 @@ func isOAuthSubjectTaken(column, subject string, siteID int, unscoped bool) bool
 	var count int64
 	query.Model(&User{}).Where(column+" = ? AND site_id = ?", subject, siteID).Count(&count)
 	return count > 0
-}
-
-func IsWeChatIdAlreadyTaken(wechatId string, siteID int) bool {
-	return isOAuthSubjectTaken("wechat_id", wechatId, siteID, true)
-}
-
-func IsGitHubIdAlreadyTaken(githubId string, siteID int) bool {
-	return isOAuthSubjectTaken("github_id", githubId, siteID, true)
-}
-
-func IsDiscordIdAlreadyTaken(discordId string, siteID int) bool {
-	return isOAuthSubjectTaken("discord_id", discordId, siteID, true)
-}
-
-func IsOidcIdAlreadyTaken(oidcId string, siteID int) bool {
-	return isOAuthSubjectTaken("oidc_id", oidcId, siteID, false)
 }
 
 func IsTelegramIdAlreadyTaken(telegramId string, siteID int) bool {
@@ -1973,18 +1875,6 @@ func GetUsernameById(id int, fromDB bool) (username string, err error) {
 	}
 
 	return username, nil
-}
-
-func IsLinuxDOIdAlreadyTaken(linuxDOId string, siteID int) bool {
-	return isOAuthSubjectTaken("linux_do_id", linuxDOId, siteID, true)
-}
-
-func (user *User) FillUserByLinuxDOId() error {
-	if user.LinuxDOId == "" {
-		return errors.New("linux do id is empty")
-	}
-	err := DB.Where("linux_do_id = ? AND site_id = ?", user.LinuxDOId, user.SiteId).First(user).Error
-	return err
 }
 
 func RootUserExists() bool {

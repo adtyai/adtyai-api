@@ -346,8 +346,6 @@ func migrateDB() error {
 		&TwoFA{},
 		&TwoFABackupCode{},
 		&Checkin{},
-		&CustomOAuthProvider{},
-		&UserOAuthBinding{},
 		&PerfMetric{},
 		&SystemInstance{},
 		&SystemTask{},
@@ -373,9 +371,6 @@ func migrateDB() error {
 		return err
 	}
 	if err := EnsureBuiltinOAuthSubjectIndexes(DB); err != nil {
-		return err
-	}
-	if err := EnsureUserOAuthBindingSiteSubjectIndex(DB); err != nil {
 		return err
 	}
 	if err := EnsureSiteEmailUniqueIndex(DB); err != nil {

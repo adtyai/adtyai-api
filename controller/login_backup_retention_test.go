@@ -55,7 +55,7 @@ func TestBackupCodeStaysUnusedUntilLoginSessionIsRetained(t *testing.T) {
 
 		require.NoError(t, model.DB.Model(&model.User{}).Where("id = ?", user.Id).Update("site_id", 0).Error)
 		user.SiteId = 0
-		next, err := service.StartLoginVerification(user, "password", nil)
+		next, err := service.StartLoginVerification(user, "password")
 		require.NoError(t, err)
 		kept := postBackupLogin(t, next.FlowToken, code, "shop.foreign.example")
 		assert.True(t, kept.Success, kept.Message)
@@ -71,7 +71,7 @@ func backupLoginChallenge(t *testing.T, code string) (*model.User, string) {
 	hash, err := common.HashBackupCode(code)
 	require.NoError(t, err)
 	require.NoError(t, model.DB.Create(&model.TwoFABackupCode{UserId: user.Id, CodeHash: hash}).Error)
-	challenge, err := service.StartLoginVerification(user, "password", nil)
+	challenge, err := service.StartLoginVerification(user, "password")
 	require.NoError(t, err)
 	require.NotNil(t, challenge)
 	return user, challenge.FlowToken

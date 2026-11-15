@@ -8,7 +8,6 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -40,7 +39,6 @@ type oauthStateRequest struct {
 type oauthFlowPayload struct {
 	BrowserBindingHash string                         `json:"browser_binding_hash,omitempty"`
 	Verification       *service.OAuthVerificationFlow `json:"verification,omitempty"`
-	OIDC               *oauth.OIDCOAuthFlow           `json:"oidc,omitempty"`
 	SessionIdentity    *service.AuthIdentity          `json:"session_identity,omitempty"`
 	Authorization      *model.AuthFlowAuthorization   `json:"authorization,omitempty"`
 	SiteID             int                            `json:"site_id,omitempty"`
@@ -68,7 +66,6 @@ func GenerateOAuthCode(c *gin.Context) {
 		writeSecurityOperationError(c, oauth.TelegramConfigurationError())
 		return
 	}
-	refreshCustomOAuthProvider(request.Provider)
 	provider := oauth.GetProvider(request.Provider)
 	if provider == nil || !provider.IsEnabled() ||
 		(request.Intent != model.AuthFlowIntentLogin && request.Intent != model.AuthFlowIntentBind && request.Intent != model.AuthFlowIntentVerify) ||
@@ -123,14 +120,6 @@ func GenerateOAuthCode(c *gin.Context) {
 		flowPayload.BrowserBindingHash = oauthLoginBrowserHash(browserToken)
 	}
 	bindingStarted := false
-	if request.Provider == "oidc" {
-		oidcFlow, err := oauth.NewOIDCOAuthFlow()
-		if err != nil {
-			common.ApiErrorT(c, "Failed to initialize OAuth")
-			return
-		}
-		flowPayload.OIDC = oidcFlow
-	}
 	if request.Intent == model.AuthFlowIntentBind || request.Intent == model.AuthFlowIntentVerify {
 		identity, ok := middleware.GetSessionAuthIdentity(c)
 		if !ok {
@@ -185,14 +174,6 @@ func GenerateOAuthCode(c *gin.Context) {
 	bindingStarted = request.Intent == model.AuthFlowIntentBind
 	data := gin.H{"flow_token": state, "expires_at": expiresAt.Unix(),
 		"redirect_uri": strings.TrimRight(system_setting.ServerAddress, "/") + "/oauth/" + url.PathEscape(request.Provider)}
-	if flowPayload.OIDC != nil {
-		authorizationURL, err := flowPayload.OIDC.AuthorizationURL(state)
-		if err != nil || authorizationURL == "" {
-			common.ApiErrorT(c, "Failed to initialize OAuth")
-			return
-		}
-		data["authorization_url"] = authorizationURL
-	}
 	if browserToken != "" {
 		// Reuse this host-only token across concurrent login tabs. Only its HMAC
 		// is kept in the immutable flow payload; a state alone cannot log in.
@@ -255,26 +236,13 @@ func prepareOAuthCallbackSite(c *gin.Context, payload *oauthFlowPayload, provide
 	return false
 }
 
-// refreshCustomOAuthProvider reloads custom providers from the database so a
-// disable on one instance is not ignored by another process's memory copy.
-func refreshCustomOAuthProvider(name string) {
-	if name == "" || (!oauth.IsCustomProvider(name) && !customOAuthRowExists(name)) {
-		return
-	}
-	if err := oauth.ReloadCustomProviders(); err != nil {
-		common.SysError(common.LogText("reload custom oauth providers: %s", err.Error()))
-	}
-}
-
-func customOAuthRowExists(name string) bool {
-	row, err := model.GetCustomOAuthProviderBySlug(name)
-	return err == nil && row != nil
-}
-
-// HandleOAuth handles OAuth callback for all standard OAuth providers
+// HandleOAuth handles the OAuth callback for every provider registered in the
+// oauth package. Only the retired Telegram placeholder is registered today, and
+// it reports itself as disabled, so this endpoint can no longer sign anyone in.
+// The generic state, site, and verification checks stay in place so that the
+// endpoint fails closed for any name that is not registered.
 func HandleOAuth(c *gin.Context) {
 	providerName := c.Param("provider")
-	refreshCustomOAuthProvider(providerName)
 	provider := oauth.GetProvider(providerName)
 	if provider == nil {
 		writeAccountStatusError(c, http.StatusBadRequest, "Unknown OAuth provider")
@@ -352,14 +320,6 @@ func HandleOAuth(c *gin.Context) {
 		return
 	}
 
-	if providerName == "oidc" {
-		var oidcPayload oauthFlowPayload
-		if err := common.UnmarshalJsonStr(pendingFlow.Payload, &oidcPayload); err != nil || oidcPayload.OIDC == nil {
-			writeSecurityOperationError(c, model.ErrAuthFlowInvalid)
-			return
-		}
-		c.Set(oauth.OIDCOAuthFlowContextKey, oidcPayload.OIDC)
-	}
 	// 3. Check if provider is enabled
 	if !provider.IsEnabled() {
 		common.ApiErrorT(c, "{{provider}} login and registration has not been enabled by administrator", providerParams(provider.GetName()))
@@ -387,22 +347,14 @@ func HandleOAuth(c *gin.Context) {
 	code := c.Query("code")
 	token, err := provider.ExchangeToken(c.Request.Context(), code, c)
 	if err != nil {
-		if providerName == "telegram" {
-			writeSecurityOperationError(c, err)
-			return
-		}
-		handleOAuthError(c, err)
+		writeSecurityOperationError(c, err)
 		return
 	}
 
 	// 6. Get user info
 	oauthUser, err := provider.GetUserInfo(c.Request.Context(), token)
 	if err != nil {
-		if providerName == "telegram" {
-			writeSecurityOperationError(c, err)
-			return
-		}
-		handleOAuthError(c, err)
+		writeSecurityOperationError(c, err)
 		return
 	}
 	if pendingFlow.Intent == model.AuthFlowIntentBind {
@@ -417,7 +369,7 @@ func HandleOAuth(c *gin.Context) {
 
 	switch flow.Intent {
 	case model.AuthFlowIntentLogin:
-		handleOAuthLogin(c, provider, oauthUser, token, flow)
+		handleOAuthLogin(c, provider, oauthUser, flow)
 	case model.AuthFlowIntentVerify:
 		handleOAuthVerification(c, providerName, oauthUser, flow)
 	}
@@ -439,14 +391,14 @@ func handleOAuthVerification(c *gin.Context, provider string, oauthUser *oauth.O
 	common.ApiSuccess(c, proof)
 }
 
-func handleOAuthLogin(c *gin.Context, provider oauth.Provider, oauthUser *oauth.OAuthUser, token *oauth.OAuthToken, flow *model.AuthFlow) {
+func handleOAuthLogin(c *gin.Context, provider oauth.Provider, oauthUser *oauth.OAuthUser, flow *model.AuthFlow) {
 	// 7. Find or create user
 	var payload oauthFlowPayload
 	if err := common.UnmarshalJsonStr(flow.Payload, &payload); err != nil {
 		writeSecurityOperationError(c, err)
 		return
 	}
-	user, migration, err := findOrCreateOAuthUser(c, provider, oauthUser, token)
+	user, err := findOrCreateOAuthUser(c, provider, oauthUser)
 	if err != nil {
 		if errors.Is(err, model.ErrEmailAlreadyTaken) {
 			common.ApiErrorT(c, "Email address is already in use")
@@ -461,8 +413,6 @@ func handleOAuthLogin(c *gin.Context, provider oauth.Provider, oauthUser *oauth.
 			common.ApiErrorT(c, "Accept the current site customer terms first")
 		case *OAuthEmailAlreadyTakenError:
 			common.ApiErrorT(c, "Email address is already in use")
-		case *OAuthLegacyBindingNotConfirmedError:
-			common.ApiErrorT(c, "This {{provider}} account cannot be linked to an existing account automatically, please sign in or register another way and then link {{provider}} in account settings", providerParams(provider.GetName()))
 		default:
 			writeSecurityOperationError(c, err)
 		}
@@ -476,10 +426,10 @@ func handleOAuthLogin(c *gin.Context, provider oauth.Provider, oauthUser *oauth.
 	}
 
 	// 9. Setup login
-	setupLogin(user, migration, c)
+	setupLogin(user, c)
 }
 
-// handleOAuthBind handles binding OAuth account to existing user
+// handleOAuthBind handles binding an external account to the signed-in user.
 func handleOAuthBind(c *gin.Context, providerName string, provider oauth.Provider, oauthUser *oauth.OAuthUser, flow *model.AuthFlow, state string, match model.AuthFlowMatch) (bool, bool) {
 	identity, ok := middleware.GetSessionAuthIdentity(c)
 	if !ok {
@@ -506,14 +456,15 @@ func handleOAuthBind(c *gin.Context, providerName string, provider oauth.Provide
 		common.ApiErrorT(c, "This {{provider}} account has already been bound", providerParams(provider.GetName()))
 		return false, false
 	}
+	// Telegram is the only provider still registered, and it is disabled, so a
+	// bind flow can no longer be started. Its historical binding column is the
+	// one exception kept wired here.
+	if providerName != "telegram" {
+		writeSecurityOperationError(c, model.ErrAuthFlowInvalid)
+		return false, false
+	}
 	_, err = model.ConsumeAuthFlowWithAction(state, match, func(tx *gorm.DB, _ *model.AuthFlow) error {
-		if providerName == "telegram" {
-			return model.BindTelegramForSessionWithTx(tx, identity, oauthUser.ProviderUserID)
-		}
-		if custom, ok := provider.(*oauth.GenericOAuthProvider); ok {
-			return model.UpdateUserOAuthBindingForSessionWithTx(tx, identity, custom.GetProviderId(), oauthUser.ProviderUserID)
-		}
-		return model.UpdateUserBindColumnForSessionWithTx(tx, identity, provider.ProviderUserIDColumn(), oauthUser.ProviderUserID)
+		return model.BindTelegramForSessionWithTx(tx, identity, oauthUser.ProviderUserID)
 	})
 	if err != nil {
 		writeSecurityOperationError(c, err)
@@ -529,94 +480,35 @@ func handleOAuthBind(c *gin.Context, providerName string, provider oauth.Provide
 	return true, notificationFailed
 }
 
-// findOrCreateOAuthUser finds the existing user or creates a new one. For a
-// legacy GitHub binding that still waits for the login verification, it also
-// returns the rewrite to carry into the challenge.
-func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *oauth.OAuthUser, token *oauth.OAuthToken) (*model.User, *service.LegacyGitHubMigration, error) {
+// findOrCreateOAuthUser finds the existing user on this site, or creates one
+// when registration is enabled.
+func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *oauth.OAuthUser) (*model.User, error) {
 	user := &model.User{}
 	siteID := service.AdtyRequestSiteID(c)
 	if provider.ProviderUserIDColumn() == "telegram_id" {
 		err := provider.FillUserByProviderID(user, oauthUser.ProviderUserID, siteID)
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil, oauth.ErrTelegramAccountNotBound
+			return nil, oauth.ErrTelegramAccountNotBound
 		}
-		return user, nil, err
+		return user, err
 	}
 
 	// Check if user already exists with new ID on this site.
 	if provider.IsUserIDTaken(oauthUser.ProviderUserID, siteID) {
 		err := provider.FillUserByProviderID(user, oauthUser.ProviderUserID, siteID)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		// Check if user has been deleted
 		if user.Id == 0 {
-			return nil, nil, &OAuthUserDeletedError{}
+			return nil, &OAuthUserDeletedError{}
 		}
-		return user, nil, nil
-	}
-
-	// Legacy GitHub bindings stored the login name, which only points at a
-	// candidate account. Values that are all digits are already numeric account
-	// IDs and never take part in the comparison. Only a candidate on the current
-	// site may be migrated; a main-site legacy binding must not attach to a
-	// sub-site login.
-	legacyID, _ := oauthUser.Extra["legacy_id"].(string)
-	if strings.ContainsFunc(legacyID, func(r rune) bool { return r < '0' || r > '9' }) && provider.IsUserIDTaken(legacyID, siteID) {
-		if err := provider.FillUserByProviderID(user, legacyID, siteID); err != nil {
-			return nil, nil, err
-		}
-		if user.Id != 0 {
-			state, err := model.GetUserVerificationState(user.Id)
-			if err != nil {
-				return nil, nil, err
-			}
-			if state.HasTwoFA || state.HasPasskey {
-				// The rewrite is written in the transaction that issues the session
-				// once the login verification completes.
-				return user, &service.LegacyGitHubMigration{GitHubID: oauthUser.ProviderUserID, LegacyID: legacyID}, nil
-			}
-			// Without a second factor, one of the addresses the provider has
-			// confirmed must match the account email. The list is fetched only here
-			// and never recorded.
-			reason, matched := "no_matching_evidence", false
-			if emailProvider, ok := provider.(oauth.VerifiedEmailProvider); ok && user.Email != "" {
-				emails, err := emailProvider.GetVerifiedEmails(c.Request.Context(), token)
-				if err != nil {
-					common.SysError(common.LogText("[OAuth] Failed to load verified emails for user %d: %s", user.Id, err.Error()))
-					reason = "verified_emails_unavailable"
-				}
-				accountEmail := model.NormalizeEmail(user.Email)
-				matched = slices.ContainsFunc(emails, func(email string) bool { return model.NormalizeEmail(email) == accountEmail })
-			}
-			if !matched {
-				recordLegacyGitHubBindingAudit(c, user, false, map[string]any{"legacy_id": legacyID, "provider_user_id": oauthUser.ProviderUserID, "reason": reason})
-				return nil, nil, &OAuthLegacyBindingNotConfirmedError{}
-			}
-			written := false
-			err = model.DB.Transaction(func(tx *gorm.DB) error {
-				var err error
-				written, err = model.MigrateLegacyGitHubBindingWithTx(tx, user.Id, legacyID, oauthUser.ProviderUserID)
-				return err
-			})
-			if err != nil {
-				return nil, nil, err
-			}
-			if written {
-				user.GitHubId = oauthUser.ProviderUserID
-				notificationFailed := service.NotifyAccountSecurityChange(service.AccountMailLanguage(c, user.Id), user.Email, user.Id, i18n.MsgSecurityEventLoginLinked, map[string]any{"Provider": provider.GetName()}) != nil
-				recordLegacyGitHubBindingAudit(c, user, true, map[string]any{
-					"legacy_id": legacyID, "provider_user_id": oauthUser.ProviderUserID,
-					"verified_email_matched": true, "notification_failed": notificationFailed,
-				})
-			}
-			return user, nil, nil
-		}
+		return user, nil
 	}
 
 	// User doesn't exist, create new user if registration is enabled
 	if !common.RegisterEnabled {
-		return nil, nil, &OAuthRegistrationDisabledError{}
+		return nil, &OAuthRegistrationDisabledError{}
 	}
 
 	// Set up new user
@@ -642,87 +534,38 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 	// 二开：和密码注册一样，分站上的新用户归当前站；closing 的站不再接受注册（任务 11.2）
 	siteId, registrable := service.AdtyRegisterSiteId(c)
 	if !registrable {
-		return nil, nil, &OAuthRegistrationDisabledError{}
+		return nil, &OAuthRegistrationDisabledError{}
 	}
 	user.SiteId = siteId
 	if oauthUser.Email != "" {
 		user.Email = model.NormalizeEmail(oauthUser.Email)
 		if err := model.EnsureEmailAvailable(user.Email, siteId, 0); err != nil {
 			if errors.Is(err, model.ErrEmailAlreadyTaken) {
-				return nil, nil, &OAuthEmailAlreadyTakenError{}
+				return nil, &OAuthEmailAlreadyTakenError{}
 			}
-			return nil, nil, err
+			return nil, err
 		}
 	}
 	user.Role = common.RoleCommonUser
 	user.Status = common.UserStatusEnabled
 	if !service.AdtyRegisterTermsAccepted(c, siteId) {
-		return nil, nil, &OAuthSiteTermsError{}
+		return nil, &OAuthSiteTermsError{}
 	}
 
-	// Use transaction to ensure user creation and OAuth binding are atomic
-	if genericProvider, ok := provider.(*oauth.GenericOAuthProvider); ok {
-		// Custom provider: create user and binding in a transaction
-		err := model.DB.Transaction(func(tx *gorm.DB) error {
-			// Create user
-			if err := user.InsertWithTx(tx, 0); err != nil {
-				return err
-			}
-
-			// Create OAuth binding
-			binding := &model.UserOAuthBinding{
-				UserId:         user.Id,
-				ProviderId:     genericProvider.GetProviderId(),
-				ProviderUserId: oauthUser.ProviderUserID,
-			}
-			if err := model.CreateUserOAuthBindingWithTx(tx, binding); err != nil {
-				return err
-			}
-
-			return nil
-		})
-		if err != nil {
-			return nil, nil, err
-		}
-
-		// Perform post-transaction tasks (logs, sidebar config)
-		user.FinalizeOAuthUserCreation(0)
-	} else {
-		// Built-in provider: create user and update provider ID in a transaction
-		err := model.DB.Transaction(func(tx *gorm.DB) error {
-			// Create user
-			if err := user.InsertWithTx(tx, 0); err != nil {
-				return err
-			}
-
-			// Set the provider user ID on the user model and update
-			provider.SetProviderUserID(user, oauthUser.ProviderUserID)
-			if err := model.AssignBuiltinProviderIDsWithTx(tx, user); err != nil {
-				return err
-			}
-
-			return nil
-		})
-		if err != nil {
-			return nil, nil, err
-		}
-
-		// Perform post-transaction tasks
-		user.FinalizeOAuthUserCreation(0)
+	// Create the user. The only provider still registered (Telegram) never
+	// reaches this path: it looks up an existing binding instead of creating one.
+	err := model.DB.Transaction(func(tx *gorm.DB) error {
+		return user.InsertWithTx(tx, 0)
+	})
+	if err != nil {
+		return nil, err
 	}
+
+	// Perform post-transaction tasks
+	user.FinalizeOAuthUserCreation(0)
 	service.AdtyAfterRegister(c, user)
 
-	return user, nil, nil
-}
-
-// recordLegacyGitHubBindingAudit records the outcome of a legacy GitHub binding
-// rewrite as an account binding event. No session exists yet on the login path,
-// so the row carries the user's own role instead of the request context.
-func recordLegacyGitHubBindingAudit(c *gin.Context, user *model.User, success bool, params map[string]any) {
-	params["provider"], params["legacy_migration"], params["success"] = "github", true, success
-	model.RecordOperationAuditLog(user.Id, user.Role, auditContentEN("user.binding_bind", params), c.ClientIP(), "user.binding_bind", params, nil, &model.AuditRequestInfo{
-		Method: c.Request.Method, Route: c.FullPath(), Path: c.FullPath(), Status: c.Writer.Status(), Success: success,
-	}, c)
+	return user, nil
 }
 
 // Error types for OAuth
@@ -748,26 +591,4 @@ type OAuthEmailAlreadyTakenError struct{}
 
 func (e *OAuthEmailAlreadyTakenError) Error() string {
 	return "email is already in use"
-}
-
-// OAuthLegacyBindingNotConfirmedError reports a legacy GitHub binding match that
-// neither a second factor nor a confirmed provider email backed.
-type OAuthLegacyBindingNotConfirmedError struct{}
-
-func (e *OAuthLegacyBindingNotConfirmedError) Error() string {
-	return "legacy binding was not confirmed"
-}
-
-// handleOAuthError handles OAuth errors and returns a web console message
-func handleOAuthError(c *gin.Context, err error) {
-	switch e := err.(type) {
-	case *oauth.OAuthError:
-		common.ApiError(c, e.Message)
-	case *oauth.AccessDeniedError:
-		common.ApiErrorMsg(c, e.Message)
-	case *oauth.TrustLevelError:
-		common.ApiErrorT(c, "Linux DO trust level does not meet the minimum required by administrator")
-	default:
-		writeSecurityOperationError(c, err)
-	}
 }

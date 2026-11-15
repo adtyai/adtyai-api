@@ -16,7 +16,7 @@ func precheckUserDeleteTables(t *testing.T, db interface{ AutoMigrate(...any) er
 	t.Helper()
 	require.NoError(t, db.AutoMigrate(
 		&User{}, &UserSession{}, &Token{}, &UserAccessToken{}, &ExternalIdentityClaim{}, &AdtySite{},
-		&TwoFA{}, &TwoFABackupCode{}, &PasskeyCredential{}, &AuthFlow{}, &UserOAuthBinding{},
+		&TwoFA{}, &TwoFABackupCode{}, &PasskeyCredential{}, &AuthFlow{},
 		&TopUp{}, &AdtyTopupOrder{}, &AdtyBalanceLedger{}, &BillingOperation{},
 		&AdtyBillingHold{}, &AdtyManualRefund{}, &AdtySiteWithdrawal{},
 		&AdtySiteInviteWithdrawal{}, &ReferralWithdrawal{}, &AdtyStaffBalanceRequest{},

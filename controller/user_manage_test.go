@@ -70,7 +70,7 @@ func setupManageUserTestDB(t *testing.T) *gorm.DB {
 			}
 		}
 	})
-	require.NoError(t, db.AutoMigrate(&model.User{}, &model.UserSession{}, &model.CasbinRule{}, &model.AuthzRole{}, &model.AuthFlow{}, &model.TwoFA{}, &model.TwoFABackupCode{}, &model.PasskeyCredential{}, &model.Token{}, &model.UserAccessToken{}, &model.AdtyBalanceLedger{}, &model.ExternalIdentityClaim{}, &model.UserOAuthBinding{}, &model.AuditIntent{})) // adty: ledger for task 7.2
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.UserSession{}, &model.CasbinRule{}, &model.AuthzRole{}, &model.AuthFlow{}, &model.TwoFA{}, &model.TwoFABackupCode{}, &model.PasskeyCredential{}, &model.Token{}, &model.UserAccessToken{}, &model.AdtyBalanceLedger{}, &model.ExternalIdentityClaim{}, &model.AuditIntent{})) // adty: ledger for task 7.2
 	require.NoError(t, logDB.AutoMigrate(&model.Log{}, &model.AuditLog{}))
 	versionQuery := "SELECT version()"
 	if dialect == "sqlite" {
@@ -283,13 +283,13 @@ func TestManageUserAccessChangeKeepsConcurrentProfile(t *testing.T) {
 func TestDeleteUserHardDeletesSoftDeletedAccount(t *testing.T) {
 	db := setupManageUserTestDB(t)
 	deleted := model.User{
-		Username: "soft-deleted-wechat", Password: "password", Role: common.RoleCommonUser,
-		Status: common.UserStatusEnabled, WeChatId: "wx-soft-deleted", Email: "soft-deleted@example.com",
+		Username: "soft-deleted-telegram", Password: "password", Role: common.RoleCommonUser,
+		Status: common.UserStatusEnabled, TelegramId: "tg-soft-deleted", Email: "soft-deleted@example.com",
 		Group: "default", AuthVersion: 1,
 	}
 	require.NoError(t, db.Create(&deleted).Error)
 	require.NoError(t, db.Delete(&deleted).Error)
-	require.True(t, model.IsWeChatIdAlreadyTaken("wx-soft-deleted", 0))
+	require.True(t, model.IsTelegramIdAlreadyTaken("tg-soft-deleted", 0))
 
 	identity, proof := manageUserProof(t, db, service.VerificationOperation{
 		Scope:   service.VerificationScopeAdminUserDelete,
@@ -312,7 +312,7 @@ func TestDeleteUserHardDeletesSoftDeletedAccount(t *testing.T) {
 	var remaining int64
 	require.NoError(t, db.Unscoped().Model(&model.User{}).Where("id = ?", deleted.Id).Count(&remaining).Error)
 	assert.Zero(t, remaining)
-	assert.False(t, model.IsWeChatIdAlreadyTaken("wx-soft-deleted", 0))
+	assert.False(t, model.IsTelegramIdAlreadyTaken("tg-soft-deleted", 0))
 }
 
 func TestManageUserDeleteReturnsImmediatelyAndUnknownActionFails(t *testing.T) {

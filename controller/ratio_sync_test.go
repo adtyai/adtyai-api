@@ -2,6 +2,7 @@ package controller
 
 import (
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -217,4 +218,13 @@ func TestFetchUpstreamRatiosBlocksPrivateTargets(t *testing.T) {
 	}
 	require.Zero(t, hits.Load())
 	require.NotContains(t, recorder.Body.String(), "hidden")
+}
+
+func portOf(t *testing.T, address string) int {
+	t.Helper()
+	_, portText, ok := strings.Cut(address, ":")
+	require.True(t, ok)
+	port, err := strconv.Atoi(portText)
+	require.NoError(t, err)
+	return port
 }

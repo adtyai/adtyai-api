@@ -76,7 +76,7 @@ func setupSecurityEnrollmentTest(t *testing.T) (*model.User, service.AuthIdentit
 	var version string
 	require.NoError(t, db.Raw(versionQuery).Scan(&version).Error)
 	t.Logf("database: %s %s", dialect, version)
-	require.NoError(t, db.AutoMigrate(&model.User{}, &model.UserSession{}, &model.TwoFA{}, &model.TwoFABackupCode{}, &model.PasskeyCredential{}, &model.AuthFlow{}, &model.UserOAuthBinding{}, &model.Option{}, &model.UserAccessToken{}, &model.ExternalIdentityClaim{}, &model.AdtySite{}, &model.AuditIntent{}))
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.UserSession{}, &model.TwoFA{}, &model.TwoFABackupCode{}, &model.PasskeyCredential{}, &model.AuthFlow{}, &model.Option{}, &model.UserAccessToken{}, &model.ExternalIdentityClaim{}, &model.AdtySite{}, &model.AuditIntent{}))
 	require.NoError(t, logDB.AutoMigrate(&model.AuditLog{}))
 	model.DB, model.LOG_DB = db, logDB
 	require.NoError(t, model.EnsureLegacyAccessTokenRetireAt(time.Now().Unix()))
@@ -202,7 +202,7 @@ func TestSecurityEnrollmentAccessTokenMethodPolicy(t *testing.T) {
 	for _, test := range []struct {
 		name, method                     string
 		password, passkey, twoFA, locked bool
-		disabledPasskey, oauth, wechat   bool
+		disabledPasskey, oauth           bool
 		available                        bool
 	}{
 		{name: "password", method: "password", password: true, oauth: true, available: true},
@@ -212,7 +212,7 @@ func TestSecurityEnrollmentAccessTokenMethodPolicy(t *testing.T) {
 		{name: "disabled passkey does not remove password", method: "passkey", password: true, passkey: true, disabledPasskey: true},
 		{name: "disabled passkey does not block password", method: "password", password: true, disabledPasskey: true, available: true},
 		{name: "linked oauth", method: "oauth", oauth: true, available: true},
-		{name: "wechat session cannot manage tokens", method: "oauth", wechat: true},
+		{name: "session method cannot manage tokens", method: "oauth"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			user, identity := setupSecurityEnrollmentTest(t)
@@ -235,9 +235,6 @@ func TestSecurityEnrollmentAccessTokenMethodPolicy(t *testing.T) {
 				oauth.Register("access-token-oauth", &enrollmentOAuthProvider{externalID: "linked-user"})
 				t.Cleanup(func() { oauth.Unregister("access-token-oauth") })
 			}
-			if test.wechat {
-				require.NoError(t, model.DB.Model(user).Update("wechat_id", "wechat-user").Error)
-			}
 			system_setting.GetPasskeySettings().Enabled = !test.disabledPasskey
 			passwordScope := service.VerificationScopePasswordChange
 			if !test.password {
@@ -255,7 +252,7 @@ func TestSecurityEnrollmentAccessTokenMethodPolicy(t *testing.T) {
 				} else {
 					assert.ErrorIs(t, err, service.ErrVerificationUnavailable)
 				}
-				if test.wechat {
+				{
 					input := service.VerificationInput{Scope: scope, Method: "session"}
 					switch scope {
 					case service.VerificationScopeAccountBind:
@@ -1352,13 +1349,11 @@ func TestSecurityEnrollmentOAuthVerificationNeverChangesLoginOrBindings(t *testi
 				replayed := securityEnrollmentRequest("GET", path, "", "", identity, handler)
 				assert.Equal(t, http.StatusForbidden, replayed.Code)
 			}
-			var users, sessions, bindings int64
+			var users, sessions int64
 			require.NoError(t, model.DB.Model(&model.User{}).Count(&users).Error)
 			require.NoError(t, model.DB.Model(&model.UserSession{}).Count(&sessions).Error)
-			require.NoError(t, model.DB.Model(&model.UserOAuthBinding{}).Count(&bindings).Error)
 			assert.EqualValues(t, 1, users)
 			assert.EqualValues(t, 1, sessions)
-			assert.Zero(t, bindings)
 			stored, err := model.GetUserById(user.Id, false)
 			require.NoError(t, err)
 			expectedBinding := "linked-user"
@@ -1572,59 +1567,6 @@ func TestSecurityEnrollmentOAuthQueriesReachHandlerWithoutLeakingToAccessLogs(t 
 	assert.NotContains(t, output.String(), "private-state")
 }
 
-func TestSecurityEnrollmentCustomOAuthUsesExistingBinding(t *testing.T) {
-	user, identity := setupSecurityEnrollmentTest(t)
-	require.NoError(t, model.DB.Model(user).Update("password", "").Error)
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		switch r.URL.Path {
-		case "/token":
-			assert.NoError(t, r.ParseForm())
-			assert.Equal(t, "custom-code", r.Form.Get("code"))
-			_, _ = w.Write([]byte(`{"access_token":"provider-access-token","token_type":"Bearer"}`))
-		case "/userinfo":
-			assert.Equal(t, "Bearer provider-access-token", r.Header.Get("Authorization"))
-			_, _ = w.Write([]byte(`{"sub":"custom-user","name":"Existing user"}`))
-		default:
-			w.WriteHeader(http.StatusNotFound)
-		}
-	}))
-	t.Cleanup(upstream.Close)
-	provider := oauth.NewGenericOAuthProvider(&model.CustomOAuthProvider{
-		Id: 42, Slug: "enrollment-custom", Name: "Custom provider", Enabled: true,
-		ClientId: "client", ClientSecret: "secret", UserIdField: "sub",
-		TokenEndpoint: upstream.URL + "/token", UserInfoEndpoint: upstream.URL + "/userinfo",
-	}).WithClient(upstream.Client())
-	oauth.RegisterCustom("enrollment-custom", provider)
-	t.Cleanup(func() { oauth.Unregister("enrollment-custom") })
-	require.NoError(t, model.DB.Create(&model.UserOAuthBinding{UserId: user.Id, ProviderId: 42, ProviderUserId: "custom-user"}).Error)
-	response := securityEnrollmentRequest("GET", "/api/verify/methods?scope=2fa.setup", "", "", identity, GetVerificationMethods)
-	assert.Contains(t, response.Body.String(), "enrollment-custom")
-	assert.NotContains(t, response.Body.String(), "custom-user")
-	response = securityEnrollmentRequest("POST", "/api/oauth/state", `{"provider":"enrollment-custom","intent":"verify","scope":"2fa.setup"}`, "", identity, GenerateOAuthCode)
-	var body securityEnrollmentResponse
-	require.NoError(t, common.Unmarshal(response.Body.Bytes(), &body))
-	require.True(t, body.Success, body.Message)
-	var started struct {
-		FlowToken string `json:"flow_token"`
-	}
-	require.NoError(t, common.Unmarshal(body.Data, &started))
-	response = securityEnrollmentRequest("GET", "/api/oauth/enrollment-custom?state="+started.FlowToken+"&code=custom-code", "", "", identity, func(c *gin.Context) {
-		c.Params = gin.Params{{Key: "provider", Value: "enrollment-custom"}}
-		HandleOAuth(c)
-	})
-	require.NoError(t, common.Unmarshal(response.Body.Bytes(), &body))
-	require.True(t, body.Success, body.Message)
-	var proof service.SecurityProof
-	require.NoError(t, common.Unmarshal(body.Data, &proof))
-	_, err := service.ConsumeOperationProof(proof.ProofToken, identity, service.VerificationOperation{Scope: "2fa.setup"})
-	require.NoError(t, err)
-	bindings, err := model.GetUserOAuthBindingsByUserId(user.Id)
-	require.NoError(t, err)
-	require.Len(t, bindings, 1)
-	assert.Equal(t, "custom-user", bindings[0].ProviderUserId)
-}
-
 func completeFirstSecurityFactor(t *testing.T, identity service.AuthIdentity, proof service.SecurityProof) {
 	t.Helper()
 	var response *httptest.ResponseRecorder
@@ -1679,10 +1621,10 @@ func completeFirstSecurityFactor(t *testing.T, identity service.AuthIdentity, pr
 }
 
 func TestSecurityEnrollmentNeverTrustsSessionForFirstFactor(t *testing.T) {
-	for _, scenario := range []string{"wechat only", "password", "passkey", "locked 2fa", "telegram", "github", "disabled custom binding", "no binding", "binding storage failure", "revoked session"} {
+	for _, scenario := range []string{"no factor", "password", "passkey", "locked 2fa", "telegram", "revoked session"} {
 		t.Run(scenario, func(t *testing.T) {
 			user, identity := setupSecurityEnrollmentTest(t)
-			require.NoError(t, model.DB.Model(user).Updates(map[string]any{"password": "", "wechat_id": "wechat-user"}).Error)
+			require.NoError(t, model.DB.Model(user).Update("password", "").Error)
 			switch scenario {
 			case "password":
 				require.NoError(t, model.DB.Model(user).Update("password", "stored-hash").Error)
@@ -1693,18 +1635,6 @@ func TestSecurityEnrollmentNeverTrustsSessionForFirstFactor(t *testing.T) {
 				require.NoError(t, model.DB.Create(&model.TwoFA{UserId: user.Id, Secret: "secret", IsEnabled: true, LockedUntil: &until}).Error)
 			case "telegram":
 				require.NoError(t, model.DB.Model(user).Update("telegram_id", "42").Error)
-			case "github":
-				require.NoError(t, model.DB.Model(user).Update("github_id", "42").Error)
-			case "disabled custom binding":
-				require.NoError(t, model.DB.Create(&model.UserOAuthBinding{UserId: user.Id, ProviderId: 42, ProviderUserId: "linked"}).Error)
-			case "no binding":
-				require.NoError(t, model.DB.Model(user).Update("wechat_id", "").Error)
-			case "binding storage failure":
-				require.NoError(t, model.DB.Callback().Query().Before("gorm:query").Register("wechat_bindings_failure", func(tx *gorm.DB) {
-					if tx.Statement.Table == "user_oauth_bindings" {
-						tx.AddError(errors.New("private binding failure"))
-					}
-				}))
 			case "revoked session":
 				_, err := model.RevokeAllUserSessions(user.Id, "test")
 				require.NoError(t, err)
@@ -1716,9 +1646,6 @@ func TestSecurityEnrollmentNeverTrustsSessionForFirstFactor(t *testing.T) {
 				}
 				_, err := service.VerifySecurityInput(identity, service.VerificationInput{Method: "session", Scope: scope, Context: context})
 				assert.Error(t, err, scope)
-			}
-			if scenario == "binding storage failure" {
-				require.NoError(t, model.DB.Callback().Query().Remove("wechat_bindings_failure"))
 			}
 			var count int64
 			require.NoError(t, model.DB.Model(&model.AuthFlow{}).Where("purpose = ?", model.AuthFlowPurposeSecurityProof).Count(&count).Error)

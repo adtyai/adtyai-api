@@ -26,7 +26,7 @@ func setupAccountDeletionPrecheck(t *testing.T) (*model.User, service.AuthIdenti
 	db.Logger = logger.Default.LogMode(logger.Silent)
 	require.NoError(t, db.AutoMigrate(
 		&model.User{}, &model.UserSession{}, &model.TwoFA{}, &model.TwoFABackupCode{},
-		&model.PasskeyCredential{}, &model.AuthFlow{}, &model.UserOAuthBinding{},
+		&model.PasskeyCredential{}, &model.AuthFlow{},
 		&model.Option{}, &model.UserAccessToken{}, &model.ExternalIdentityClaim{},
 		&model.AdtySite{}, &model.AuditIntent{}, &model.AuditLog{}, &model.Token{},
 		&model.TopUp{}, &model.AdtyTopupOrder{}, &model.AdtyBalanceLedger{},

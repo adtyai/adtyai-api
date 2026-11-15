@@ -190,11 +190,6 @@ func BindVerificationOperation(operation VerificationOperation) (VerificationBin
 			if len(fields) != 2 || common.Validate.Var(context.Email, "required,email") != nil || context.Code != "" {
 				return VerificationBinding{}, ErrVerificationContextInvalid
 			}
-		case "wechat":
-			context.Code = strings.TrimSpace(context.Code)
-			if len(fields) != 2 || context.Code == "" || len(context.Code) > 128 || context.Email != "" {
-				return VerificationBinding{}, ErrVerificationContextInvalid
-			}
 		default:
 			if len(fields) != 1 || context.Provider == "" || len(context.Provider) > 64 || oauth.GetProvider(context.Provider) == nil {
 				return VerificationBinding{}, ErrVerificationContextInvalid
@@ -498,38 +493,20 @@ func GetVerificationRequirements(identity AuthIdentity, scope string) (*Verifica
 	return requirements, nil
 }
 
+// verificationOAuthProviders lists the linked providers usable as a second
+// factor. Third-party sign-in is retired, so the only remaining candidate is the
+// Telegram binding column; the registry loop keeps the shape so a re-enabled
+// provider with a bind column would be picked up automatically.
 func verificationOAuthProviders(user *model.User) ([]VerificationOAuthProvider, error) {
-	bindings := map[int]string{}
-	if len(oauth.GetEnabledCustomProviders()) > 0 {
-		stored, err := model.GetUserOAuthBindingsByUserId(user.Id)
-		if err != nil {
-			return nil, err
-		}
-		for _, binding := range stored {
-			bindings[binding.ProviderId] = binding.ProviderUserId
-		}
-	}
 	providers := []VerificationOAuthProvider{}
 	for slug, provider := range oauth.GetAllProviders() {
 		if !provider.IsEnabled() {
 			continue
 		}
 		var userID string
-		if custom, ok := provider.(*oauth.GenericOAuthProvider); ok {
-			userID = bindings[custom.GetProviderId()]
-		} else {
-			switch provider.ProviderUserIDColumn() {
-			case "github_id":
-				userID = user.GitHubId
-			case "discord_id":
-				userID = user.DiscordId
-			case "oidc_id":
-				userID = user.OidcId
-			case "linux_do_id":
-				userID = user.LinuxDOId
-			case "telegram_id":
-				userID = user.TelegramId
-			}
+		switch provider.ProviderUserIDColumn() {
+		case "telegram_id":
+			userID = user.TelegramId
 		}
 		if userID != "" {
 			providers = append(providers, VerificationOAuthProvider{Slug: slug, Name: provider.GetName(), UserID: userID})

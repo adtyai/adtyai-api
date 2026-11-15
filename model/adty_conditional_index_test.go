@@ -5,12 +5,10 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gorm.io/gorm"
 )
 
 func TestConditionalIndexesDatabaseMatrix(t *testing.T) {
@@ -25,7 +23,7 @@ func TestConditionalIndexesDatabaseMatrix(t *testing.T) {
 				}
 				switch kind {
 				case "oauth":
-					require.NoError(t, db.AutoMigrate(&User{}, &UserSession{}))
+					require.NoError(t, db.AutoMigrate(&User{}))
 					require.NoError(t, EnsureBuiltinOAuthSubjectIndexes(db))
 					require.NoError(t, EnsureBuiltinOAuthSubjectIndexes(db))
 					for _, column := range []string{"github_id", "discord_id", "oidc_id", "linux_do_id", "wechat_id"} {
@@ -34,21 +32,14 @@ func TestConditionalIndexesDatabaseMatrix(t *testing.T) {
 							second := User{Username: column + "-2", Password: "password"}
 							require.NoError(t, db.Create(&first).Error)
 							require.NoError(t, db.Create(&second).Error)
-							identities := make([]AuthSessionIdentity, 2)
-							for i, user := range []User{first, second} {
-								session := UserSession{SID: fmt.Sprintf("%s-%d", column, i), UserID: user.Id, Version: 1, UserAuthVersion: 1, Status: UserSessionStatusActive, ExpiresAt: time.Now().Add(time.Hour).Unix()}
-								require.NoError(t, db.Create(&session).Error)
-								identities[i] = AuthSessionIdentity{UserID: user.Id, SessionID: session.SID, UserAuthVersion: 1, SessionVersion: 1}
-							}
+							users := []User{first, second}
 							start := make(chan struct{})
 							errs := make([]error, 2)
 							var wg sync.WaitGroup
-							for i := range identities {
+							for i := range users {
 								wg.Go(func() {
 									<-start
-									errs[i] = db.Transaction(func(tx *gorm.DB) error {
-										return UpdateUserBindColumnForSessionWithTx(tx, identities[i], column, "same-subject")
-									})
+									errs[i] = db.Model(&User{}).Where("id = ?", users[i].Id).Update(column, "same-subject").Error
 								})
 							}
 							close(start)
@@ -57,8 +48,6 @@ func TestConditionalIndexesDatabaseMatrix(t *testing.T) {
 							for _, err := range errs {
 								if err == nil {
 									wins++
-								} else {
-									assert.ErrorIs(t, err, ErrExternalIdentityAlreadyClaimed)
 								}
 							}
 							assert.Equal(t, 1, wins)

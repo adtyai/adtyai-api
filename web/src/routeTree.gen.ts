@@ -19,7 +19,6 @@ import { Route as RefundPolicyRouteImport } from './routes/refund-policy'
 import { Route as StatusRouteImport } from './routes/status'
 import { Route as UserAgreementRouteImport } from './routes/user-agreement'
 import { Route as authForgotPasswordRouteImport } from './routes/(auth)/forgot-password'
-import { Route as authOauthRouteImport } from './routes/(auth)/oauth'
 import { Route as authOtpRouteImport } from './routes/(auth)/otp'
 import { Route as authRegisterRouteImport } from './routes/(auth)/register'
 import { Route as authResetRouteImport } from './routes/(auth)/reset'
@@ -36,7 +35,6 @@ import { Route as AuthenticatedSystemSettingsRouteRouteImport } from './routes/_
 import { Route as AboutIndexRouteImport } from './routes/about/index'
 import { Route as DocsIndexRouteImport } from './routes/docs/index'
 import { Route as DocsSlugRouteImport } from './routes/docs/$slug'
-import { Route as OauthProviderRouteImport } from './routes/oauth/$provider'
 import { Route as PricingIndexRouteImport } from './routes/pricing/index'
 import { Route as RCodeRouteImport } from './routes/r/$code'
 import { Route as RankingsIndexRouteImport } from './routes/rankings/index'
@@ -135,11 +133,6 @@ const authForgotPasswordRoute = authForgotPasswordRouteImport.update({
   path: '/forgot-password',
   getParentRoute: () => authRouteRoute,
 } as any)
-const authOauthRoute = authOauthRouteImport.update({
-  id: '/oauth',
-  path: '/oauth',
-  getParentRoute: () => authRouteRoute,
-} as any)
 const authOtpRoute = authOtpRouteImport.update({
   id: '/otp',
   path: '/otp',
@@ -219,11 +212,6 @@ const DocsIndexRoute = DocsIndexRouteImport.update({
 const DocsSlugRoute = DocsSlugRouteImport.update({
   id: '/docs/$slug',
   path: '/docs/$slug',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const OauthProviderRoute = OauthProviderRouteImport.update({
-  id: '/oauth/$provider',
-  path: '/oauth/$provider',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PricingIndexRoute = PricingIndexRouteImport.update({
@@ -521,7 +509,6 @@ export interface FileRoutesByFullPath {
   '/user-agreement': typeof UserAgreementRoute
   '/system-settings': typeof AuthenticatedSystemSettingsRouteRouteWithChildren
   '/forgot-password': typeof authForgotPasswordRoute
-  '/oauth': typeof authOauthRoute
   '/otp': typeof authOtpRoute
   '/register': typeof authRegisterRoute
   '/reset': typeof authResetRoute
@@ -535,7 +522,6 @@ export interface FileRoutesByFullPath {
   '/chat2link': typeof AuthenticatedChat2linkRoute
   '/site-staff': typeof AuthenticatedSiteStaffRoute
   '/docs/$slug': typeof DocsSlugRoute
-  '/oauth/$provider': typeof OauthProviderRoute
   '/r/$code': typeof RCodeRoute
   '/team-register/$code': typeof TeamRegisterCodeRoute
   '/about/': typeof AboutIndexRoute
@@ -597,7 +583,6 @@ export interface FileRoutesByTo {
   '/status': typeof StatusRoute
   '/user-agreement': typeof UserAgreementRoute
   '/forgot-password': typeof authForgotPasswordRoute
-  '/oauth': typeof authOauthRoute
   '/otp': typeof authOtpRoute
   '/register': typeof authRegisterRoute
   '/reset': typeof authResetRoute
@@ -611,7 +596,6 @@ export interface FileRoutesByTo {
   '/chat2link': typeof AuthenticatedChat2linkRoute
   '/site-staff': typeof AuthenticatedSiteStaffRoute
   '/docs/$slug': typeof DocsSlugRoute
-  '/oauth/$provider': typeof OauthProviderRoute
   '/r/$code': typeof RCodeRoute
   '/team-register/$code': typeof TeamRegisterCodeRoute
   '/about': typeof AboutIndexRoute
@@ -677,7 +661,6 @@ export interface FileRoutesById {
   '/user-agreement': typeof UserAgreementRoute
   '/_authenticated/system-settings': typeof AuthenticatedSystemSettingsRouteRouteWithChildren
   '/(auth)/forgot-password': typeof authForgotPasswordRoute
-  '/(auth)/oauth': typeof authOauthRoute
   '/(auth)/otp': typeof authOtpRoute
   '/(auth)/register': typeof authRegisterRoute
   '/(auth)/reset': typeof authResetRoute
@@ -691,7 +674,6 @@ export interface FileRoutesById {
   '/_authenticated/chat2link': typeof AuthenticatedChat2linkRoute
   '/_authenticated/site-staff': typeof AuthenticatedSiteStaffRoute
   '/docs/$slug': typeof DocsSlugRoute
-  '/oauth/$provider': typeof OauthProviderRoute
   '/r/$code': typeof RCodeRoute
   '/team-register/$code': typeof TeamRegisterCodeRoute
   '/about/': typeof AboutIndexRoute
@@ -756,7 +738,6 @@ export interface FileRouteTypes {
     | '/user-agreement'
     | '/system-settings'
     | '/forgot-password'
-    | '/oauth'
     | '/otp'
     | '/register'
     | '/reset'
@@ -770,7 +751,6 @@ export interface FileRouteTypes {
     | '/chat2link'
     | '/site-staff'
     | '/docs/$slug'
-    | '/oauth/$provider'
     | '/r/$code'
     | '/team-register/$code'
     | '/about/'
@@ -832,7 +812,6 @@ export interface FileRouteTypes {
     | '/status'
     | '/user-agreement'
     | '/forgot-password'
-    | '/oauth'
     | '/otp'
     | '/register'
     | '/reset'
@@ -846,7 +825,6 @@ export interface FileRouteTypes {
     | '/chat2link'
     | '/site-staff'
     | '/docs/$slug'
-    | '/oauth/$provider'
     | '/r/$code'
     | '/team-register/$code'
     | '/about'
@@ -911,7 +889,6 @@ export interface FileRouteTypes {
     | '/user-agreement'
     | '/_authenticated/system-settings'
     | '/(auth)/forgot-password'
-    | '/(auth)/oauth'
     | '/(auth)/otp'
     | '/(auth)/register'
     | '/(auth)/reset'
@@ -925,7 +902,6 @@ export interface FileRouteTypes {
     | '/_authenticated/chat2link'
     | '/_authenticated/site-staff'
     | '/docs/$slug'
-    | '/oauth/$provider'
     | '/r/$code'
     | '/team-register/$code'
     | '/about/'
@@ -995,7 +971,6 @@ export interface RootRouteChildren {
   errors500Route: typeof errors500Route
   errors503Route: typeof errors503Route
   DocsSlugRoute: typeof DocsSlugRoute
-  OauthProviderRoute: typeof OauthProviderRoute
   RCodeRoute: typeof RCodeRoute
   TeamRegisterCodeRoute: typeof TeamRegisterCodeRoute
   AboutIndexRoute: typeof AboutIndexRoute
@@ -1076,13 +1051,6 @@ declare module '@tanstack/react-router' {
       path: '/forgot-password'
       fullPath: '/forgot-password'
       preLoaderRoute: typeof authForgotPasswordRouteImport
-      parentRoute: typeof authRouteRoute
-    }
-    '/(auth)/oauth': {
-      id: '/(auth)/oauth'
-      path: '/oauth'
-      fullPath: '/oauth'
-      preLoaderRoute: typeof authOauthRouteImport
       parentRoute: typeof authRouteRoute
     }
     '/(auth)/otp': {
@@ -1195,13 +1163,6 @@ declare module '@tanstack/react-router' {
       path: '/docs/$slug'
       fullPath: '/docs/$slug'
       preLoaderRoute: typeof DocsSlugRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/oauth/$provider': {
-      id: '/oauth/$provider'
-      path: '/oauth/$provider'
-      fullPath: '/oauth/$provider'
-      preLoaderRoute: typeof OauthProviderRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/pricing/': {
@@ -1552,7 +1513,6 @@ declare module '@tanstack/react-router' {
 
 interface authRouteRouteChildren {
   authForgotPasswordRoute: typeof authForgotPasswordRoute
-  authOauthRoute: typeof authOauthRoute
   authOtpRoute: typeof authOtpRoute
   authRegisterRoute: typeof authRegisterRoute
   authResetRoute: typeof authResetRoute
@@ -1563,7 +1523,6 @@ interface authRouteRouteChildren {
 
 const authRouteRouteChildren: authRouteRouteChildren = {
   authForgotPasswordRoute: authForgotPasswordRoute,
-  authOauthRoute: authOauthRoute,
   authOtpRoute: authOtpRoute,
   authRegisterRoute: authRegisterRoute,
   authResetRoute: authResetRoute,
@@ -1722,7 +1681,6 @@ const rootRouteChildren: RootRouteChildren = {
   errors500Route: errors500Route,
   errors503Route: errors503Route,
   DocsSlugRoute: DocsSlugRoute,
-  OauthProviderRoute: OauthProviderRoute,
   RCodeRoute: RCodeRoute,
   TeamRegisterCodeRoute: TeamRegisterCodeRoute,
   AboutIndexRoute: AboutIndexRoute,

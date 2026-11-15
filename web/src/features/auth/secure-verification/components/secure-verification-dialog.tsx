@@ -74,8 +74,7 @@ export function SecureVerificationDialog(props: SecureVerificationDialogProps) {
   if (input?.method === '2fa' || input?.method === 'email_code') {
     canVerify = canVerify && input.code.trim().length >= 6
   }
-  // Linked-account verification starts from the provider button itself.
-  const showSubmit = state.phase !== 'error' && input?.method !== 'oauth'
+  const showSubmit = state.phase !== 'error'
   const error = 'error' in state ? state.error : undefined
   const formId = `${inputId}-form`
 
@@ -92,12 +91,6 @@ export function SecureVerificationDialog(props: SecureVerificationDialogProps) {
         break
       case 'passkey':
         props.onInputChange({ method })
-        break
-      case 'oauth':
-        props.onInputChange({
-          method,
-          provider: ready?.requirements.oauth_providers[0]?.slug ?? '',
-        })
         break
     }
   }
@@ -263,35 +256,6 @@ export function SecureVerificationDialog(props: SecureVerificationDialogProps) {
                     'We will prompt your device to confirm using biometrics or your hardware key.'
                   )}
                 </p>
-              </TabsContent>
-              <TabsContent value='oauth' className='space-y-2'>
-                <p className='text-muted-foreground text-sm'>
-                  {t(
-                    'Continue with an account already linked to your profile.'
-                  )}
-                </p>
-                <div className='flex flex-wrap gap-2'>
-                  {ready.requirements.oauth_providers.map((provider) => (
-                    <Button
-                      key={provider.slug}
-                      type='button'
-                      disabled={verifying}
-                      onClick={() =>
-                        void props.onVerify({
-                          method: 'oauth',
-                          provider: provider.slug,
-                        })
-                      }
-                    >
-                      {verifying &&
-                        input.method === 'oauth' &&
-                        input.provider === provider.slug && (
-                          <Loader2 className='size-4 animate-spin' />
-                        )}
-                      {t('Continue with {{name}}', { name: provider.name })}
-                    </Button>
-                  ))}
-                </div>
               </TabsContent>
             </Tabs>
           )}

@@ -902,33 +902,3 @@ func TestSecurityAccountFirstPasswordRace(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, common.ValidatePasswordAndHash("first-password!42", stored.Password) || common.ValidatePasswordAndHash("second-password!42", stored.Password))
 }
-
-func TestSecurityAccountUnbindPreservesUsableLoginMethod(t *testing.T) {
-	for _, scenario := range []string{"password", "passkey", "email only", "twofa only", "disabled password", "disabled passkey"} {
-		t.Run(scenario, func(t *testing.T) {
-			user, identity := setupSecurityEnrollmentTest(t)
-			previousPasswordEnabled := common.PasswordLoginEnabled
-			t.Cleanup(func() { common.PasswordLoginEnabled = previousPasswordEnabled })
-			common.PasswordLoginEnabled = scenario != "disabled password"
-			require.NoError(t, model.DB.Create(&model.UserOAuthBinding{UserId: user.Id, ProviderId: 31, ProviderUserId: "linked-subject"}).Error)
-			if scenario != "password" && scenario != "disabled password" {
-				require.NoError(t, model.DB.Model(user).Updates(map[string]any{"password": "", "email": "verified@example.com"}).Error)
-			}
-			if scenario == "passkey" || scenario == "disabled passkey" {
-				require.NoError(t, model.DB.Create(&model.PasskeyCredential{UserID: user.Id, CredentialID: "existing-key", PublicKey: "public-key"}).Error)
-				system_setting.GetPasskeySettings().Enabled = scenario == "passkey"
-			}
-			if scenario == "twofa only" {
-				require.NoError(t, model.DB.Create(&model.TwoFA{UserId: user.Id, Secret: "JBSWY3DPEHPK3PXP", IsEnabled: true}).Error)
-			}
-			err := service.UnbindAccountOAuth(identity, 31)
-			if scenario == "password" || scenario == "passkey" {
-				require.NoError(t, err)
-			} else {
-				assert.ErrorIs(t, err, model.ErrLastLoginMethod)
-				var binding model.UserOAuthBinding
-				require.NoError(t, model.DB.Where("user_id = ? AND provider_id = ?", user.Id, 31).First(&binding).Error)
-			}
-		})
-	}
-}
