@@ -253,24 +253,25 @@ export function SummaryCards() {
   })
 
   return (
-    <div className='bg-card overflow-hidden rounded-2xl border shadow-xs'>
+    <div className='bg-card border-border overflow-hidden rounded-[14px] border'>
       <div className='grid xl:grid-cols-[minmax(0,1fr)_19rem]'>
-        <div className='flex flex-col gap-2.5 p-3 sm:gap-3 sm:p-5'>
+        <div className='flex flex-col gap-4 p-4 sm:p-5'>
           <div className='flex flex-wrap items-start justify-between gap-3'>
             <div className='flex flex-col gap-1'>
-              <h3 className='text-sm font-semibold sm:text-base'>
+              <h3 className='text-[15px] font-semibold tracking-tight'>
                 {t('Usage at a glance')}
               </h3>
-              <p className='text-muted-foreground text-xs sm:text-sm'>
+              <p className='text-dim text-[13px]'>
                 {t('Monitor balance, usage, and request volume')}
               </p>
             </div>
           </div>
-          <StaggerContainer className='grid grid-cols-3 gap-1.5 sm:gap-3'>
+          {/* Design system §4: one 14px shell, cells joined by 1px rules. */}
+          <StaggerContainer className='bg-border grid min-w-0 grid-cols-3 gap-px overflow-hidden rounded-[12px] border'>
             {items.map((it) => (
               <StaggerItem
                 key={it.key}
-                className='bg-background/60 rounded-lg border px-2 py-1.5 sm:rounded-xl sm:p-3'
+                className='bg-card min-w-0 px-3 py-3.5 sm:px-4'
               >
                 <StatCard
                   title={it.title}
@@ -288,10 +289,10 @@ export function SummaryCards() {
           </StaggerContainer>
         </div>
 
-        <div className='flex flex-col justify-between gap-3 border-t bg-[linear-gradient(135deg,color-mix(in_oklch,var(--overview-accent-2)_12%,var(--background))_0%,color-mix(in_oklch,oklch(0.82_0.04_155)_8%,var(--background))_48%,color-mix(in_oklch,var(--overview-accent-1)_7%,var(--background))_100%)] p-3 sm:gap-4 sm:p-5 xl:border-t-0 xl:border-l'>
-          <div className='flex flex-col gap-2 sm:gap-3'>
-            <div className='flex items-center justify-between'>
-              <span className='text-muted-foreground text-xs font-medium'>
+        <div className='flex flex-col justify-between gap-4 border-t p-4 sm:p-5 xl:border-t-0 xl:border-l'>
+          <div className='flex flex-col gap-3'>
+            <div className='flex items-center justify-between gap-2'>
+              <span className='text-faint text-[12px] font-medium'>
                 {t('Credit remaining')}
               </span>
               <span className='flex items-center gap-1.5'>
@@ -299,28 +300,33 @@ export function SummaryCards() {
                   className={cn('size-1.5 rounded-full', healthCfg.dotClass)}
                   aria-hidden='true'
                 />
-                <span className='text-muted-foreground text-[11px] font-medium'>
+                <span className='text-dim text-[11.5px] font-medium'>
                   {t(healthCfg.labelKey)}
                 </span>
               </span>
             </div>
 
-            <div className='font-mono text-xl font-semibold tracking-tight sm:text-2xl'>
-              {formatQuota(remainQuota)}
+            <div
+              className={cn(
+                'font-mono text-[26px] leading-none font-bold tracking-[-0.02em] tabular-nums',
+                user ? 'text-foreground' : 'text-faint'
+              )}
+            >
+              {user ? formatQuota(remainQuota) : '—'}
             </div>
 
-            <div className='grid grid-cols-2 gap-2'>
-              <div className='bg-background/60 rounded-lg px-2.5 py-2'>
-                <div className='text-muted-foreground flex items-center gap-1 text-[11px] leading-none font-medium'>
+            <div className='divide-border grid grid-cols-2 divide-x border-t pt-3'>
+              <div className='min-w-0 pr-3'>
+                <div className='text-faint flex items-center gap-1 text-[11.5px] leading-none font-medium'>
                   <Flame className='size-3 shrink-0' aria-hidden='true' />
                   <span className='truncate'>{t('7-day daily average')}</span>
                 </div>
-                <div className='text-foreground mt-1.5 truncate text-xs font-semibold tabular-nums'>
+                <div className='mt-1.5 truncate text-[13px] font-semibold tabular-nums'>
                   {formatQuota(usage.dailyAverage)}
                 </div>
               </div>
-              <div className='bg-background/60 rounded-lg px-2.5 py-2'>
-                <div className='text-muted-foreground flex items-center gap-1 text-[11px] leading-none font-medium'>
+              <div className='min-w-0 pl-3'>
+                <div className='text-faint flex items-center gap-1 text-[11.5px] leading-none font-medium'>
                   {runwayDays !== null && runwayDays < 3 ? (
                     <TrendingDown
                       className='size-3 shrink-0'
@@ -336,7 +342,7 @@ export function SummaryCards() {
                 </div>
                 <div
                   className={cn(
-                    'mt-1.5 truncate text-xs font-semibold tabular-nums',
+                    'mt-1.5 truncate text-[13px] font-semibold tabular-nums',
                     healthLevel === 'critical' && 'text-destructive',
                     healthLevel === 'caution' && 'text-warning'
                   )}
@@ -347,7 +353,11 @@ export function SummaryCards() {
             </div>
           </div>
 
-          <Button className='justify-between' render={<Link to='/wallet' />}>
+          <Button
+            variant='brand'
+            className='justify-between'
+            render={<Link to='/wallet' />}
+          >
             <span>{t('Wallet')}</span>
             <ArrowRight data-icon='inline-end' />
           </Button>

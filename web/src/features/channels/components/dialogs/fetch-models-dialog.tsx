@@ -249,7 +249,7 @@ export function FetchModelsDialog({
             <Button variant='outline' onClick={handleClose} disabled={isSaving}>
               {t('Cancel')}
             </Button>
-            <Button onClick={handleSave} disabled={isSaving}>
+            <Button variant='brand' onClick={handleSave} disabled={isSaving}>
               {isSaving && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
               {isSaving ? t('Saving...') : t('Save Models')}
             </Button>

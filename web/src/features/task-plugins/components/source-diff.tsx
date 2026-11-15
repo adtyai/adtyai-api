@@ -86,10 +86,10 @@ export function SourceDiff(props: SourceDiffProps) {
         let color = ''
         if (line.kind === 'added') {
           prefix = '+'
-          color = 'bg-green-500/10 text-green-700 dark:text-green-300'
+          color = 'bg-success-soft text-success'
         } else if (line.kind === 'removed') {
           prefix = '-'
-          color = 'bg-red-500/10 text-red-700 dark:text-red-300'
+          color = 'bg-destructive-soft text-destructive'
         }
         return (
           <div key={line.id} className={`px-3 whitespace-pre ${color}`}>

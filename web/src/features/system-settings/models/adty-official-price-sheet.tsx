@@ -189,7 +189,7 @@ export function OfficialPriceSheet(props: {
               <Label htmlFor='adty-official-override'>
                 {t('Manual override')}
               </Label>
-              <p className='text-muted-foreground text-xs'>
+              <p className='text-dim text-[12.5px]'>
                 {t('When on, the daily sync keeps these prices.')}
               </p>
             </div>
@@ -210,6 +210,7 @@ export function OfficialPriceSheet(props: {
               {t('Cancel')}
             </Button>
             <Button
+              variant='brand'
               type='submit'
               disabled={
                 sourceIdInvalid || priceErrors.size > 0 || props.isSaving

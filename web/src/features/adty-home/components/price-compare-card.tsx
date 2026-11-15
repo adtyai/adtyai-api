@@ -36,7 +36,7 @@ export function PriceCompareCard(props: { row: LandingPriceRow | null }) {
   return (
     <div
       data-testid='landing-price-card'
-      className='bg-card text-card-foreground w-72 rounded-xl border p-4 shadow-lg'
+      className='bg-card text-card-foreground w-72 rounded-[14px] border p-4 shadow-lg'
     >
       <div className='mb-3 flex items-center justify-between gap-2'>
         <span className='truncate font-mono text-sm font-medium'>

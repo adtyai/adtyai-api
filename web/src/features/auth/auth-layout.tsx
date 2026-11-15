@@ -66,29 +66,42 @@ export function AuthLayout({ children }: AuthLayoutProps) {
       </div>
       <aside
         aria-label={t('About this site')}
-        className='bg-muted/40 hidden flex-col justify-center border-r px-12 py-24 lg:flex xl:px-20'
+        className='bg-canvas relative isolate hidden flex-col justify-center overflow-hidden border-r px-12 py-24 lg:flex xl:px-20'
       >
-        <div className='flex max-w-md flex-col gap-6'>
-          <p className='text-3xl leading-tight font-semibold tracking-tight xl:text-4xl'>
+        <div
+          aria-hidden
+          className='pointer-events-none absolute inset-0 -z-10 [background-image:linear-gradient(to_right,var(--border)_1px,transparent_1px),linear-gradient(to_bottom,var(--border)_1px,transparent_1px)] [mask-image:radial-gradient(80%_70%_at_30%_20%,#000_0%,transparent_75%)] [background-size:56px_56px] opacity-60'
+        />
+        <div
+          aria-hidden
+          className='pointer-events-none absolute -bottom-40 -left-32 -z-10 size-[32rem] rounded-full bg-[radial-gradient(circle,var(--brand-soft),transparent_65%)]'
+        />
+        <div className='flex max-w-md flex-col gap-8'>
+          <p className='text-[2.25rem] leading-[1.12] font-extrabold tracking-[-0.035em] [text-wrap:balance] [word-break:keep-all] xl:text-[2.75rem]'>
             {t('Claude, GPT and Gemini with one API key')}
           </p>
-          <p className='text-muted-foreground text-base'>
+          <p className='text-muted-foreground max-w-sm text-[1.0625rem] leading-[1.7]'>
             {t(
               'Change the base URL and keep your code. Billed per request, no subscription.'
             )}
           </p>
-          <ul className='flex flex-col gap-3 text-sm'>
+          <ul className='flex flex-col gap-4 text-[0.9375rem]'>
             {highlights.map((item) => (
-              <li key={item} className='flex items-center gap-2'>
-                <Check className='text-success size-4' aria-hidden='true' />
+              <li key={item} className='flex items-start gap-3'>
+                <span className='bg-brand-soft mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full'>
+                  <Check
+                    className='text-brand-ink size-3 stroke-[2.5]'
+                    aria-hidden='true'
+                  />
+                </span>
                 {item}
               </li>
             ))}
           </ul>
         </div>
       </aside>
-      <main className='flex items-center pt-16 sm:pt-0'>
-        <div className='mx-auto flex w-full flex-col justify-center space-y-2 px-4 py-8 sm:w-[480px] sm:p-8'>
+      <main className='flex min-h-svh items-center justify-center px-5 py-24 sm:px-10 sm:py-16'>
+        <div className='mx-auto flex w-full max-w-[400px] flex-col justify-center'>
           {children}
         </div>
       </main>

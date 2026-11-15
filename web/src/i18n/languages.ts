@@ -24,20 +24,12 @@ export const INTERFACE_LANGUAGE_OPTIONS = [
 ] as const
 
 /**
- * Locale resource codes that may still exist on disk, including leftover
- * unofficial packs. These are not official product languages and must not be
- * offered in official selectors (A.20.1).
+ * Interface language packs the app can load. The product offers Simplified
+ * Chinese and English only (A.20.1); leftover JSON files may still sit on disk
+ * but `i18n/config.ts` no longer ships loaders for them, so they can never
+ * become the running language.
  */
-export const LOADABLE_INTERFACE_LANGUAGE_CODES = [
-  'zhCN',
-  'en',
-  'fr',
-  'ru',
-  'ja',
-  'ko',
-  'vi',
-  'zhTW',
-] as const
+export const LOADABLE_INTERFACE_LANGUAGE_CODES = ['zhCN', 'en'] as const
 
 export type InterfaceLanguageCode =
   (typeof INTERFACE_LANGUAGE_OPTIONS)[number]['code']

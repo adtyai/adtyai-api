@@ -205,7 +205,7 @@ export function TagBatchEditDialog({
             <Button variant='outline' onClick={handleClose} disabled={isSaving}>
               {t('Cancel')}
             </Button>
-            <Button onClick={handleSave} disabled={isSaving}>
+            <Button variant='brand' onClick={handleSave} disabled={isSaving}>
               {isSaving ? (
                 <Loader2 className='mr-2 h-4 w-4 animate-spin' />
               ) : null}
@@ -240,7 +240,7 @@ export function TagBatchEditDialog({
               onChange={(e) => setNewTag(e.target.value)}
               disabled={isSaving}
             />
-            <p className='text-muted-foreground text-xs'>
+            <p className='text-dim text-[12.5px]'>
               {t('Leave empty to disband the tag')}
             </p>
           </div>
@@ -258,7 +258,7 @@ export function TagBatchEditDialog({
               disabled={isSaving}
               rows={3}
             />
-            <p className='text-muted-foreground text-xs'>
+            <p className='text-dim text-[12.5px]'>
               {t(
                 'Current models for the longest channel in this tag. May not include all models from all channels.'
               )}
@@ -288,7 +288,7 @@ export function TagBatchEditDialog({
                 placeholder={t('Select groups (leave empty to keep current)')}
               />
             )}
-            <p className='text-muted-foreground text-xs'>
+            <p className='text-dim text-[12.5px]'>
               {t('User groups that can access channels with this tag')}
             </p>
           </div>

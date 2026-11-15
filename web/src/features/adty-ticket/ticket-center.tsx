@@ -73,7 +73,7 @@ export function TicketCenter() {
     queryFn: async () => {
       const response = await api.get('/api/adty/tickets', { params: queue ? { queue } : {} })
       const body = response.data as { success?: boolean; data?: TicketList; message?: string }
-      if (!body.success) throw new Error(body.message || 'Failed to load data')
+      if (!body.success) throw new Error(body.message || t('Failed to load data'))
       return {
         tickets: body.data?.tickets ?? [],
         can_note: Boolean(body.data?.can_note),
@@ -103,7 +103,7 @@ export function TicketCenter() {
     queryFn: async () => {
       const response = await api.get(`/api/adty/tickets/${selected}`)
       const payload = response.data as { success?: boolean; data?: TicketDetail; message?: string }
-      if (!payload.success || !payload.data) throw new Error(payload.message || 'Failed to load data')
+      if (!payload.success || !payload.data) throw new Error(payload.message || t('Failed to load data'))
       return payload.data
     },
   })
@@ -126,7 +126,7 @@ export function TicketCenter() {
         related_ref: related,
       })
       const payload = response.data as { success?: boolean; message?: string; data?: Ticket }
-      if (!payload.success || !payload.data) throw new Error(payload.message || 'Failed to save')
+      if (!payload.success || !payload.data) throw new Error(payload.message || t('Failed to save'))
       setTitle('')
       setBody('')
       setSelected(payload.data.id)
@@ -148,7 +148,7 @@ export function TicketCenter() {
         assignee_id: assigneeId ?? 0,
       })
       const payload = response.data as { success?: boolean; message?: string }
-      if (!payload.success) throw new Error(payload.message || 'Failed to save')
+      if (!payload.success) throw new Error(payload.message || t('Failed to save'))
       await refresh()
     } catch (cause) {
       setError(getServerErrorMessage(cause, t('Failed to save')))

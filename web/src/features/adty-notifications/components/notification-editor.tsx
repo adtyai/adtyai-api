@@ -156,7 +156,12 @@ export function NotificationEditor(props: {
                 {t('Save as draft')}
               </Button>
             )}
-            <Button type='submit' form={id} disabled={save.isPending}>
+            <Button
+              variant='brand'
+              type='submit'
+              form={id}
+              disabled={save.isPending}
+            >
               {t(
                 props.row?.status === 'draft'
                   ? 'Publish now'

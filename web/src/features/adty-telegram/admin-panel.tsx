@@ -47,7 +47,7 @@ export function TelegramAdminPanel() {
     queryFn: async () => {
       const response = await api.get('/api/adty/admin/telegram/bots')
       const body = response.data as { success?: boolean; data?: { bots?: BotView[] }; message?: string }
-      if (!body.success) throw new Error(body.message || 'Failed to load data')
+      if (!body.success) throw new Error(body.message || t('Failed to load data'))
       return body.data?.bots ?? []
     },
   })
@@ -73,7 +73,7 @@ export function TelegramAdminPanel() {
         { headers: { 'X-Security-Proof': proof.proof_token } }
       )
       const body = response.data as { success?: boolean; message?: string; data?: { webhook_secret?: string } }
-      if (!body.success) throw new Error(body.message || 'Failed to save')
+      if (!body.success) throw new Error(body.message || t('Failed to save'))
       setSecret(body.data?.webhook_secret || '')
       setToken('')
       await queryClient.invalidateQueries({ queryKey: ['adty-telegram-admin'] })

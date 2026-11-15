@@ -24,6 +24,7 @@ import { useAdtySite } from '@/features/adty-site/api'
 import { useStatus } from '@/hooks/use-status'
 import { useSystemConfig } from '@/hooks/use-system-config'
 import { ADTY_BRAND_NAME } from '@/lib/adty-brand'
+import { DEFAULT_LOGO } from '@/lib/constants'
 import { cn } from '@/lib/utils'
 
 interface FooterLink {
@@ -49,7 +50,7 @@ function FooterLinkItem(props: { link: FooterLink }) {
   const isExternal = props.link.href.startsWith('http')
   const label = t(props.link.text)
   const className =
-    'text-sm text-white/55 transition-colors duration-200 hover:text-white'
+    'text-muted-foreground hover:text-foreground text-[13px] transition-colors duration-200'
 
   if (props.link.href.startsWith('mailto:')) {
     return (
@@ -113,13 +114,13 @@ function LegalLinks(props: { leadingSeparator?: boolean }) {
       {items.map((item, index) => (
         <Fragment key={item.key}>
           {(props.leadingSeparator || index > 0) && (
-            <span aria-hidden='true' className='text-white/25'>
+            <span aria-hidden='true' className='text-border px-0.5'>
               ·
             </span>
           )}
           <Link
             to={item.href}
-            className='text-white/55 transition-colors duration-200 hover:text-white'
+            className='text-muted-foreground hover:text-foreground transition-colors duration-200'
           >
             {item.label}
           </Link>
@@ -146,31 +147,47 @@ export function Footer(props: FooterProps) {
 
   return (
     <footer
-      className={cn('relative z-10 bg-[#0d0d0d] text-white', props.className)}
+      className={cn('border-border bg-background border-t', props.className)}
     >
-      <div className='mx-auto max-w-6xl px-6 py-12 md:py-16'>
+      <div className='mx-auto w-full max-w-[1180px] px-5 py-12 sm:px-10 md:py-14'>
         <div className='flex flex-col justify-between gap-10 md:flex-row md:items-start'>
           <div className='shrink-0'>
             <Link to='/' className='group flex items-center gap-2.5'>
-              <img
-                src={displayLogo}
-                alt={displayName}
-                className='size-7 rounded-lg object-contain'
-              />
-              <span className='text-sm font-semibold tracking-tight text-white'>
-                {displayName}
-              </span>
+              {/* The default ADTY artwork already carries the wordmark, so the
+                  name is not repeated next to it; a site-configured logo keeps
+                  the accessible name through `alt`. */}
+              {displayLogo === DEFAULT_LOGO ? (
+                <>
+                  <img
+                    src={displayLogo}
+                    alt={displayName}
+                    className='h-7 w-auto max-w-none object-contain dark:hidden'
+                  />
+                  <img
+                    src='/logo-dark.png'
+                    alt=''
+                    aria-hidden='true'
+                    className='dark:block hidden h-7 w-auto max-w-none object-contain'
+                  />
+                </>
+              ) : (
+                <img
+                  src={displayLogo}
+                  alt={displayName}
+                  className='h-7 w-auto max-w-none object-contain dark:bg-white/10 dark:rounded-md dark:px-1 dark:py-0.5'
+                />
+              )}
             </Link>
-            <p className='mt-3 max-w-[240px] text-xs leading-relaxed text-white/45'>
+            <p className='text-muted-foreground mt-3 max-w-[260px] text-[13px] leading-relaxed'>
               {t('One API key for every model')}
             </p>
           </div>
 
           {isDemoSiteMode && displayColumns.length > 0 && (
-            <div className='grid grid-cols-3 gap-8 md:gap-16'>
+            <div className='grid grid-cols-2 gap-8 sm:grid-cols-3 md:gap-16'>
               {displayColumns.map((column) => (
                 <div key={column.title}>
-                  <p className='mb-3 text-xs font-medium tracking-wider text-white/40 uppercase'>
+                  <p className='text-muted-foreground mb-3 text-[11px] font-semibold tracking-[0.08em] uppercase'>
                     {t(column.title)}
                   </p>
                   <ul className='space-y-2.5'>
@@ -188,18 +205,18 @@ export function Footer(props: FooterProps) {
 
         {footerHtml && (
           <div
-            className='custom-footer mt-8 text-sm text-white/55'
+            className='custom-footer text-muted-foreground mt-8 text-[13px]'
             dangerouslySetInnerHTML={{ __html: footerHtml }}
           />
         )}
 
-        <div className='mt-12 flex flex-col items-center justify-between gap-x-3 gap-y-2 border-t border-white/10 pt-6 sm:flex-row'>
-          <div className='flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-xs text-white/40 sm:justify-start'>
-            <span>
-              &copy; {currentYear} {displayName}.{' '}
-              {props.copyright ?? t('footer.defaultCopyright')}
-            </span>
-            <LegalLinks leadingSeparator />
+        <div className='border-border text-muted-foreground mt-10 flex flex-col gap-2 border-t pt-6 text-xs sm:flex-row sm:items-center sm:justify-between'>
+          <span>
+            &copy; {currentYear} {displayName}.{' '}
+            {props.copyright ?? t('footer.defaultCopyright')}
+          </span>
+          <div className='flex flex-wrap items-center gap-y-1'>
+            <LegalLinks />
           </div>
         </div>
       </div>

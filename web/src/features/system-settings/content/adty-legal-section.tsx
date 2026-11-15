@@ -27,7 +27,8 @@ import { Textarea } from '@/components/ui/textarea'
 import {
   CONTENT_LANG_LABELS,
   CONTENT_LANGS,
-  type ContentLang,
+  STORED_CONTENT_LANGS,
+  type StoredContentLang,
 } from '@/lib/adty-lang'
 
 import { DraftNavigationProvider } from '../components/draft-navigation-provider'
@@ -50,7 +51,7 @@ type LegalKey = AdtyLegalField | VersionKey
 export type AdtyLegalDefaults = Record<AdtyLegalField, string> &
   Record<VersionKey, number>
 
-type LegalTexts = Partial<Record<ContentLang, string>>
+type LegalTexts = Partial<Record<StoredContentLang, string>>
 
 const FIELDS: AdtyLegalField[] = [
   'user_agreement',
@@ -75,7 +76,8 @@ function parseTexts(raw: string): LegalTexts {
 /** Saved form: trimmed, without empty languages, keys in a stable order. */
 function serializeTexts(texts: LegalTexts): string {
   const out: LegalTexts = {}
-  for (const lang of CONTENT_LANGS) {
+  // Legacy keys are preserved so an old translation is not erased by a save.
+  for (const lang of STORED_CONTENT_LANGS) {
     const value = texts[lang]?.trim()
     if (value) out[lang] = texts[lang]
   }

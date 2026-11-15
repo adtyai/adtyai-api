@@ -74,7 +74,7 @@ export function ChannelAdvancedSection(props: ChannelAdvancedSectionProps) {
             <div className='text-[13px] font-semibold'>
               {t('Advanced Settings')}
             </div>
-            <div className='text-muted-foreground text-xs'>
+            <div className='text-dim text-[12.5px]'>
               {props.summary ??
                 t(
                   'Request overrides, routing behavior, and upstream model automation'

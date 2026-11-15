@@ -33,6 +33,7 @@ import type {
   ModelAnalyticsChartTab,
   QuotaDataItem,
 } from '@/features/dashboard/types'
+import { useChartPalette } from '@/lib/chart-theme'
 import { useThemeRadiusPx } from '@/lib/theme-radius'
 import type { TimeGranularity } from '@/lib/time'
 import { VCHART_OPTION } from '@/lib/vchart'
@@ -96,15 +97,17 @@ export function ModelCharts(props: ModelChartsProps) {
     updateTheme()
   }, [resolvedTheme])
 
+  const palette = useChartPalette()
   const chartData = useMemo(
     () =>
       processChartData(
         props.loading ? [] : props.data,
         timeGranularity,
         t,
-        chartRadius
+        chartRadius,
+        palette
       ),
-    [props.data, props.loading, timeGranularity, t, chartRadius]
+    [props.data, props.loading, timeGranularity, t, chartRadius, palette]
   )
 
   const spec = chartData[CHART_SPEC_KEYS[activeTab]]
@@ -119,13 +122,13 @@ export function ModelCharts(props: ModelChartsProps) {
   ].join('-')
 
   return (
-    <div className='overflow-hidden rounded-lg border'>
+    <div className='bg-card border-border overflow-hidden rounded-[14px] border'>
       <div className='flex w-full flex-col gap-1.5 border-b px-3 py-2 sm:gap-3 sm:px-5 sm:py-3 lg:flex-row lg:items-center lg:justify-between'>
         <div className='flex items-center gap-2'>
           <IconBadge tone='chart-4' size='sm'>
             <PieChartIcon />
           </IconBadge>
-          <div className='text-sm font-semibold'>
+          <div className='text-[15px] font-semibold tracking-tight'>
             {t('Model Call Analytics')}
           </div>
           <span className='text-muted-foreground text-xs'>
@@ -133,7 +136,7 @@ export function ModelCharts(props: ModelChartsProps) {
           </span>
         </div>
 
-        <div className='bg-muted/60 inline-flex h-7 w-full overflow-x-auto rounded-lg border p-0.5 sm:h-8 sm:w-auto'>
+        <div className='bg-canvas inline-flex h-7 w-full overflow-x-auto rounded-[8px] border p-0.5 sm:h-8 sm:w-auto'>
           {MODEL_ANALYTICS_CHART_OPTIONS.map((tab) => (
             <button
               key={tab.value}

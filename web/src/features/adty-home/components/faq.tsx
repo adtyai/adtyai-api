@@ -85,7 +85,7 @@ export function Faq(props: { paymentMethodIds?: string[] }) {
       title={t('Frequently asked questions')}
       description={t('More answers are in the docs, or contact support.')}
     >
-      <Accordion className='rounded-xl border px-4'>
+      <Accordion className='rounded-[14px] border px-4'>
         {items.map((item) => (
           <AccordionItem key={item.id} value={item.id}>
             <AccordionTrigger className='py-4'>

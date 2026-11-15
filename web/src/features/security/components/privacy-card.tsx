@@ -80,6 +80,7 @@ export function PrivacyCard(props: PrivacyCardProps) {
       </div>
       <div className='mt-4 flex justify-end'>
         <Button
+          variant='brand'
           type='button'
           onClick={() => save.mutate()}
           disabled={save.isPending}

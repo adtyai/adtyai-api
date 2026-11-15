@@ -16,74 +16,74 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import type { ContentLang } from '@/lib/adty-lang'
+import type { StoredContentLang } from '@/lib/adty-lang'
 
+import enAgents from './en/agents.md?raw'
 import enCherryStudio from './en/cherry-studio.md?raw'
 import enClaudeCode from './en/claude-code.md?raw'
 import enCodexCli from './en/codex-cli.md?raw'
 import enErrorsAndLimits from './en/errors-and-limits.md?raw'
 import enFaq from './en/faq.md?raw'
 import enModels from './en/models.md?raw'
-import enAgents from './en/agents.md?raw'
 import enOpenaiSdk from './en/openai-sdk.md?raw'
-import enRoles from './en/roles.md?raw'
 import enQuickstart from './en/quickstart.md?raw'
+import enRoles from './en/roles.md?raw'
+import frAgents from './fr/agents.md?raw'
 import frCherryStudio from './fr/cherry-studio.md?raw'
 import frClaudeCode from './fr/claude-code.md?raw'
 import frCodexCli from './fr/codex-cli.md?raw'
 import frErrorsAndLimits from './fr/errors-and-limits.md?raw'
 import frFaq from './fr/faq.md?raw'
-import frAgents from './fr/agents.md?raw'
 import frOpenaiSdk from './fr/openai-sdk.md?raw'
 import frQuickstart from './fr/quickstart.md?raw'
+import jaAgents from './ja/agents.md?raw'
 import jaCherryStudio from './ja/cherry-studio.md?raw'
 import jaClaudeCode from './ja/claude-code.md?raw'
 import jaCodexCli from './ja/codex-cli.md?raw'
 import jaErrorsAndLimits from './ja/errors-and-limits.md?raw'
 import jaFaq from './ja/faq.md?raw'
-import jaAgents from './ja/agents.md?raw'
 import jaOpenaiSdk from './ja/openai-sdk.md?raw'
 import jaQuickstart from './ja/quickstart.md?raw'
+import koAgents from './ko/agents.md?raw'
 import koCherryStudio from './ko/cherry-studio.md?raw'
 import koClaudeCode from './ko/claude-code.md?raw'
 import koCodexCli from './ko/codex-cli.md?raw'
 import koErrorsAndLimits from './ko/errors-and-limits.md?raw'
 import koFaq from './ko/faq.md?raw'
-import koAgents from './ko/agents.md?raw'
 import koOpenaiSdk from './ko/openai-sdk.md?raw'
 import koQuickstart from './ko/quickstart.md?raw'
+import ruAgents from './ru/agents.md?raw'
 import ruCherryStudio from './ru/cherry-studio.md?raw'
 import ruClaudeCode from './ru/claude-code.md?raw'
 import ruCodexCli from './ru/codex-cli.md?raw'
 import ruErrorsAndLimits from './ru/errors-and-limits.md?raw'
 import ruFaq from './ru/faq.md?raw'
-import ruAgents from './ru/agents.md?raw'
 import ruOpenaiSdk from './ru/openai-sdk.md?raw'
 import ruQuickstart from './ru/quickstart.md?raw'
+import viAgents from './vi/agents.md?raw'
 import viCherryStudio from './vi/cherry-studio.md?raw'
 import viClaudeCode from './vi/claude-code.md?raw'
 import viCodexCli from './vi/codex-cli.md?raw'
 import viErrorsAndLimits from './vi/errors-and-limits.md?raw'
 import viFaq from './vi/faq.md?raw'
-import viAgents from './vi/agents.md?raw'
 import viOpenaiSdk from './vi/openai-sdk.md?raw'
 import viQuickstart from './vi/quickstart.md?raw'
+import zhAgents from './zh-CN/agents.md?raw'
 import zhCherryStudio from './zh-CN/cherry-studio.md?raw'
 import zhClaudeCode from './zh-CN/claude-code.md?raw'
 import zhCodexCli from './zh-CN/codex-cli.md?raw'
 import zhErrorsAndLimits from './zh-CN/errors-and-limits.md?raw'
 import zhFaq from './zh-CN/faq.md?raw'
 import zhModels from './zh-CN/models.md?raw'
-import zhAgents from './zh-CN/agents.md?raw'
 import zhOpenaiSdk from './zh-CN/openai-sdk.md?raw'
-import zhRoles from './zh-CN/roles.md?raw'
 import zhQuickstart from './zh-CN/quickstart.md?raw'
+import zhRoles from './zh-CN/roles.md?raw'
+import zhTwAgents from './zh-TW/agents.md?raw'
 import zhTwCherryStudio from './zh-TW/cherry-studio.md?raw'
 import zhTwClaudeCode from './zh-TW/claude-code.md?raw'
 import zhTwCodexCli from './zh-TW/codex-cli.md?raw'
 import zhTwErrorsAndLimits from './zh-TW/errors-and-limits.md?raw'
 import zhTwFaq from './zh-TW/faq.md?raw'
-import zhTwAgents from './zh-TW/agents.md?raw'
 import zhTwOpenaiSdk from './zh-TW/openai-sdk.md?raw'
 import zhTwQuickstart from './zh-TW/quickstart.md?raw'
 
@@ -107,7 +107,7 @@ export const DEFAULT_DOC_SLUG: DocSlug = 'quickstart'
 
 /** Markdown by content language; docs-complete.test.ts checks every required language. */
 const DOC_CONTENT: Partial<
-  Record<ContentLang, Partial<Record<DocSlug, string>>>
+  Record<StoredContentLang, Partial<Record<DocSlug, string>>>
 > = {
   en: {
     quickstart: enQuickstart,
@@ -212,7 +212,7 @@ export function isDocSlug(value: string): value is DocSlug {
 }
 
 /** The page in the reader's language, falling back to English. */
-export function getDocMarkdown(slug: DocSlug, lang: ContentLang): string {
+export function getDocMarkdown(slug: DocSlug, lang: StoredContentLang): string {
   return DOC_CONTENT[lang]?.[slug] ?? DOC_CONTENT.en?.[slug] ?? ''
 }
 

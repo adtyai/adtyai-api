@@ -16,6 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useLocation } from '@tanstack/react-router'
+
 import { CommandMenu } from '@/components/command-menu'
 import { AnimatedOutlet } from '@/components/page-transition'
 import { SkipToMain } from '@/components/skip-to-main'
@@ -27,6 +29,7 @@ import { getCookie } from '@/lib/cookies'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
 
+import { resolveSidebarView } from '../lib/sidebar-view-registry'
 import { AppHeader } from './app-header'
 import { AppSidebar } from './app-sidebar'
 
@@ -36,6 +39,10 @@ type AuthenticatedLayoutProps = {
 
 export function AuthenticatedLayout(props: AuthenticatedLayoutProps) {
   const defaultOpen = getCookie('sidebar_state') !== 'false'
+  const pathname = useLocation({ select: (location) => location.pathname })
+  // Nested workspaces (System settings) carry longer section names, so their
+  // drill-in navigation gets a wider rail (design system §3: 240px).
+  const wideSidebar = resolveSidebarView(pathname) !== null
   const signedIn = useAuthStore((s) => !!s.auth.user)
   // Unmount pages on sign-out, otherwise their queries refetch and toast "Session expired!" / "invalid access token"
   if (!signedIn) return null
@@ -43,7 +50,15 @@ export function AuthenticatedLayout(props: AuthenticatedLayoutProps) {
   return (
     <LayoutProvider>
       <SearchProvider>
-        <SidebarProvider defaultOpen={defaultOpen} className='flex-col'>
+        <SidebarProvider
+          defaultOpen={defaultOpen}
+          className='flex-col'
+          style={
+            wideSidebar
+              ? ({ '--sidebar-width': '15rem' } as React.CSSProperties)
+              : undefined
+          }
+        >
           <SkipToMain />
           <AppHeader />
           <div className='flex min-h-0 w-full flex-1'>

@@ -183,7 +183,7 @@ export function VendorLinkedModels({
           {t('Open filtered model list')}
         </Button>
       </div>
-      <p className='text-muted-foreground text-xs'>
+      <p className='text-dim text-[12.5px]'>
         {t(
           'Linked records are counted once. Matching rules show their covered models separately.'
         )}

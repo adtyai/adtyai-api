@@ -1787,7 +1787,7 @@ export function ParamOverrideEditorDialog(
           >
             {t('Cancel')}
           </Button>
-          <Button type='button' onClick={handleSave}>
+          <Button variant='brand' type='button' onClick={handleSave}>
             {t('Save')}
           </Button>
         </>
@@ -2243,9 +2243,7 @@ function RuleEditor(ruleEditorProps: RuleEditorProps) {
 
         {/* Mode description */}
         {MODE_DESCRIPTIONS[mode] && (
-          <p className='text-muted-foreground text-xs'>
-            {t(MODE_DESCRIPTIONS[mode])}
-          </p>
+          <p className='text-dim text-[12.5px]'>{t(MODE_DESCRIPTIONS[mode])}</p>
         )}
 
         {/* Description */}
@@ -2469,7 +2467,7 @@ function RuleEditor(ruleEditorProps: RuleEditorProps) {
           </div>
 
           {conditions.length === 0 ? (
-            <p className='text-muted-foreground text-xs'>
+            <p className='text-dim text-[12.5px]'>
               {t('When no conditions are set, the operation always executes.')}
             </p>
           ) : (
@@ -3042,7 +3040,7 @@ function PruneObjectsEditor(pruneObjectsEditorProps: PruneObjectsEditorProps) {
               </Button>
             </div>
             {draft.rules.length === 0 ? (
-              <p className='text-muted-foreground text-xs'>
+              <p className='text-dim text-[12.5px]'>
                 {t(
                   'Without additional conditions, only the type above is used for pruning.'
                 )}

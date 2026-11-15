@@ -69,34 +69,34 @@ function StatusGroup(props: { group: PublicStatusGroup; locale?: string }) {
     maximumFractionDigits: 2,
   })
   return (
-    <section aria-labelledby={headingId} className='rounded-xl border'>
+    <section aria-labelledby={headingId} className='border-border border-t'>
       <h3
         id={headingId}
-        className='bg-muted/40 border-b px-4 py-2.5 text-sm font-semibold'
+        className='text-muted-foreground py-3.5 text-[11px] font-semibold tracking-[0.08em] uppercase'
       >
         {props.group.name}
       </h3>
-      <ul>
+      <ul className='border-border border-t'>
         {props.group.monitors.map((monitor) => (
           <li
             key={monitor.name}
-            className='flex items-center justify-between gap-3 border-b px-4 py-3 last:border-b-0'
+            className='border-border flex items-center justify-between gap-3 border-b py-3.5 last:border-b-0'
           >
-            <span className='flex min-w-0 items-center gap-2.5'>
+            <span className='flex min-w-0 items-center gap-3'>
               <span
                 aria-hidden
                 className={cn(
-                  'size-2 shrink-0 rounded-full',
+                  'size-1.5 shrink-0 rounded-full',
                   STATE_DOT[monitor.state]
                 )}
               />
               <span className='truncate text-sm'>{monitor.name}</span>
             </span>
-            <span className='flex shrink-0 items-center gap-4 text-sm'>
+            <span className='flex shrink-0 items-center gap-6 text-[13px]'>
               <span className='text-muted-foreground'>
                 <StateLabel state={monitor.state} />
               </span>
-              <span className='w-20 text-right font-mono tabular-nums'>
+              <span className='w-16 text-right font-mono tabular-nums'>
                 {percent.format(monitor.uptime)}
               </span>
             </span>
@@ -147,18 +147,36 @@ export function StatusPage() {
   } else {
     const allUp = isAllOperational(uptime.data)
     content = (
-      <div className='space-y-6'>
-        <h2
+      <div className='space-y-8'>
+        <div
           className={cn(
-            'rounded-xl border px-4 py-3 text-base font-semibold',
-            allUp ? 'bg-success-soft' : 'bg-destructive-soft'
+            'flex items-center gap-3.5 rounded-[14px] border px-6 py-6',
+            allUp
+              ? 'border-success/25 bg-success-soft'
+              : 'border-brand/25 bg-brand-soft'
           )}
         >
-          {allUp ? t('All systems operational') : t('Some services are down')}
-        </h2>
-        {uptime.data.map((group) => (
-          <StatusGroup key={group.id} group={group} locale={locale} />
-        ))}
+          <span
+            aria-hidden
+            className={cn(
+              'size-2.5 shrink-0 rounded-full',
+              allUp ? 'bg-success' : 'bg-brand'
+            )}
+          />
+          <h2
+            className={cn(
+              'text-xl leading-tight font-semibold tracking-[-0.02em]',
+              allUp ? 'text-success' : 'text-brand-ink'
+            )}
+          >
+            {allUp ? t('All systems operational') : t('Some services are down')}
+          </h2>
+        </div>
+        <div className='space-y-6'>
+          {uptime.data.map((group) => (
+            <StatusGroup key={group.id} group={group} locale={locale} />
+          ))}
+        </div>
         <p className='text-muted-foreground text-xs'>
           {t('Uptime over the last 24 hours. Updated every minute.')}
         </p>
@@ -168,8 +186,8 @@ export function StatusPage() {
 
   return (
     <PublicLayout>
-      <div className='mx-auto max-w-3xl space-y-6 py-6'>
-        <h1 className='text-2xl font-semibold tracking-tight'>
+      <div className='mx-auto w-full max-w-[720px] space-y-8 py-4'>
+        <h1 className='text-[32px] leading-tight font-extrabold tracking-[-0.025em]'>
           {t('{{site}} status', { site: siteName })}
         </h1>
         {content}

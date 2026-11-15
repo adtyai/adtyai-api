@@ -62,7 +62,7 @@ export function ChannelPriorityDropHint(props: {
       className={cn(
         'text-popover-foreground p-3',
         props.container.dataset.priorityView !== 'table' &&
-          'bg-popover rounded-xl border shadow-xl'
+          'bg-popover rounded-[14px] border shadow-xl'
       )}
     >
       <Badge

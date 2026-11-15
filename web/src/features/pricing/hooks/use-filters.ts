@@ -48,10 +48,12 @@ type FilterState = {
 }
 
 function normalizeViewMode(value: unknown): ViewMode {
-  if (value === VIEW_MODES.TABLE) {
-    return VIEW_MODES.TABLE
+  // The price table is the public pricing page's default view; the card
+  // gallery stays one click away in the toolbar toggle.
+  if (value === VIEW_MODES.CARD) {
+    return VIEW_MODES.CARD
   }
-  return VIEW_MODES.CARD
+  return VIEW_MODES.TABLE
 }
 
 /**
@@ -167,8 +169,7 @@ export function useFilters(
     [updateFilters]
   )
   const setViewMode = useCallback(
-    (v: ViewMode) =>
-      updateFilters({ view: v === VIEW_MODES.CARD ? undefined : v }),
+    (v: ViewMode) => updateFilters({ view: v }),
     [updateFilters]
   )
   const setShowRechargePrice = useCallback(

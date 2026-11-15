@@ -20,7 +20,7 @@ import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
 import { CodeCard } from '../code-card'
-import { Hero } from '../hero'
+import { MigrationSection } from '../migration-section'
 
 describe('landing code card', () => {
   it('lets the client tabs shrink so Copy code stays in the card', () => {
@@ -29,21 +29,19 @@ describe('landing code card', () => {
     const tabs = screen.getByRole('tablist')
     expect(tabs.className).toContain('min-w-0')
     expect(tabs.className).toContain('flex-1')
-    expect(screen.getByRole('button', { name: 'Copy code' })).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Copy code' })
+    ).toBeInTheDocument()
   })
 
-  it('lets the hero code column shrink below the tab content width', () => {
-    render(
-      <Hero
-        signedIn={false}
-        baseUrl='https://example.test/v1'
-        prices={{ state: 'loading' }}
-        minTopUp={null}
-      />
-    )
+  it('scrolls long snippets inside the card instead of widening the page', () => {
+    render(<MigrationSection baseUrl='https://example.test/v1' />)
 
-    const copy = screen.getByRole('button', { name: 'Copy code' })
-    const column = copy.closest('.relative')
-    expect(column?.className).toContain('min-w-0')
+    expect(
+      screen.getByRole('button', { name: 'Copy code' })
+    ).toBeInTheDocument()
+    expect(screen.getByTestId('landing-code').className).toContain(
+      'overflow-x-auto'
+    )
   })
 })

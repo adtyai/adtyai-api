@@ -122,7 +122,7 @@ export function RateLimitDialog({
           >
             {t('Cancel')}
           </Button>
-          <Button type='submit' form={RATE_LIMIT_FORM_ID}>
+          <Button variant='brand' type='submit' form={RATE_LIMIT_FORM_ID}>
             {isEditMode ? t('Update') : t('Add')}
           </Button>
         </>

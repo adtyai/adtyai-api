@@ -693,7 +693,7 @@ export function AdvancedCustomEditorDialog({
           >
             {t('Cancel')}
           </Button>
-          <Button type='button' onClick={saveConfig}>
+          <Button variant='brand' type='button' onClick={saveConfig}>
             <Check data-icon='inline-start' />
             {t('Save changes')}
           </Button>
@@ -737,7 +737,7 @@ export function AdvancedCustomEditorDialog({
           <div className='flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
             <div>
               <p className='font-medium'>{t('Forwarding Routes')}</p>
-              <p className='text-muted-foreground text-xs'>
+              <p className='text-dim text-[12.5px]'>
                 {t('Add routes individually or replace them from a template.')}
               </p>
             </div>
@@ -1113,9 +1113,7 @@ function ManagementRouteEditor({
           </>
         ) : null}
       </div>
-      <p className='text-muted-foreground text-xs'>
-        {t(upstreamPathDescriptionKey)}
-      </p>
+      <p className='text-dim text-[12.5px]'>{t(upstreamPathDescriptionKey)}</p>
     </div>
   )
 }
@@ -1213,7 +1211,7 @@ function RouteGroupEditor({
 
       <div className={cn('px-3 py-2', !hideHeader && 'border-t')}>
         <div className='flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between'>
-          <p className='text-muted-foreground text-xs leading-relaxed'>
+          <p className='text-dim text-[12.5px] leading-relaxed'>
             {isModelListGroup
               ? t(
                   'This route discovers upstream OpenAI models and cannot be split or matched by client model rules.'
@@ -1531,7 +1529,7 @@ function RouteEditor({
               incomingPath
             )}
           />
-          <p className='text-muted-foreground text-xs leading-relaxed lg:hidden'>
+          <p className='text-dim text-[12.5px] leading-relaxed lg:hidden'>
             {t(upstreamPathDescriptionKey)}
           </p>
         </FieldBlock>
@@ -1622,7 +1620,7 @@ function RouteEditor({
               }
             />
           </div>
-          <p className='text-muted-foreground text-xs leading-relaxed lg:hidden'>
+          <p className='text-dim text-[12.5px] leading-relaxed lg:hidden'>
             {t(passThroughDescriptionKey)}
           </p>
         </FieldBlock>

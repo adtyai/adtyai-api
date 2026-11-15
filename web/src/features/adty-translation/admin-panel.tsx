@@ -94,7 +94,7 @@ export function TranslationAdminPanel() {
         { headers: { 'X-Security-Proof': proof.proof_token } }
       )
       const body = response.data as { success?: boolean; message?: string }
-      if (!body.success) throw new Error(body.message || 'Failed to save')
+      if (!body.success) throw new Error(body.message || t('Failed to save'))
       await queryClient.invalidateQueries({ queryKey: ['adty-translation'] })
     } catch (cause) {
       setError(getServerErrorMessage(cause, t('Failed to save')))
@@ -128,7 +128,12 @@ export function TranslationAdminPanel() {
           <Label htmlFor='translator-model'>{t('Model')}</Label>
           <Input id='translator-model' value={modelName} onChange={(event) => setModelName(event.target.value)} />
         </div>
-        <Button type='button' disabled={pending || modelName.trim() === ''} onClick={() => void save()}>
+        <Button
+          variant='brand'
+          type='button'
+          disabled={pending || modelName.trim() === ''}
+          onClick={() => void save()}
+        >
           {t('Save')}
         </Button>
         <Label htmlFor='translator-source'>{t('Chinese source')}</Label>

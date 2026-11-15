@@ -404,7 +404,7 @@ export function PasskeySection(props: PasskeySectionProps) {
               className={cn(
                 'lg:col-span-2',
                 hasDomainWarning
-                  ? 'border-warning/40 bg-warning/10 text-amber-800 dark:text-amber-200'
+                  ? 'border-warning/35 bg-warning-soft text-warning'
                   : 'border-info/30 bg-info/10 text-info'
               )}
             >
@@ -750,7 +750,7 @@ export function PasskeySection(props: PasskeySectionProps) {
                 <FormDescription
                   aria-live='polite'
                   className={cn(
-                    currentOriginMissing && 'text-amber-700 dark:text-amber-400'
+                    currentOriginMissing && 'text-warning'
                   )}
                 >
                   {currentOriginMissing

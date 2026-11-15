@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { Inbox } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -44,7 +45,9 @@ function PanelHeader(props: {
     <div className='flex flex-col gap-1'>
       <div className='text-sm font-semibold'>{props.title}</div>
       {props.description != null && (
-        <div className='text-muted-foreground text-xs'>{props.description}</div>
+        <div className='text-dim line-clamp-1 text-[13px]'>
+          {props.description}
+        </div>
       )}
     </div>
   )
@@ -68,7 +71,7 @@ export function PanelWrapper(props: PanelWrapperProps) {
   const resolvedEmptyMessage = props.emptyMessage ?? t('No data available')
   const height = props.height ?? 'h-64'
   const frameClassName = cn(
-    'overflow-hidden rounded-2xl border bg-card shadow-xs',
+    'bg-card border-border overflow-hidden rounded-[14px] border',
     props.className
   )
 
@@ -89,12 +92,18 @@ export function PanelWrapper(props: PanelWrapperProps) {
         <PanelHeader title={props.title} description={props.description} />
         <div
           className={cn(
-            'text-muted-foreground flex items-center justify-center px-4 text-sm',
+            'flex flex-col items-center justify-center gap-1.5 px-4 text-center',
             height,
             props.contentClassName
           )}
         >
-          {resolvedEmptyMessage}
+          <Inbox className='text-faint size-6' aria-hidden='true' />
+          <p className='text-[14px] font-semibold'>{resolvedEmptyMessage}</p>
+          {props.description != null && (
+            <p className='text-dim line-clamp-2 text-[13px]'>
+              {props.description}
+            </p>
+          )}
         </div>
       </div>
     )

@@ -434,7 +434,7 @@ export function ModelMappingEditor(props: ModelMappingEditorProps) {
         )}
 
         <TabsContent value='visual' className='space-y-2'>
-          <p className='text-muted-foreground text-xs'>
+          <p className='text-dim text-[12.5px]'>
             {t(
               'Users call the model on the left. The platform forwards the request to the upstream model on the right.'
             )}
@@ -450,7 +450,7 @@ export function ModelMappingEditor(props: ModelMappingEditorProps) {
                     onChange={(event) => setFilter(event.target.value)}
                   />
                   {filterKeyword && (
-                    <p className='text-muted-foreground text-xs'>
+                    <p className='text-dim text-[12.5px]'>
                       {t('Showing {{shown}} of {{total}} mappings', {
                         shown: visibleRows.length,
                         total: rows.length,

@@ -285,7 +285,7 @@ export function ChannelAffinitySection(props: Props) {
               <Label htmlFor='channel-affinity-rules-json'>
                 {t('Rules JSON')}
               </Label>
-              <p className='text-muted-foreground text-xs'>
+              <p className='text-dim text-[12.5px]'>
                 {t('Switch to visual mode to add rules or apply templates.')}
               </p>
               <JsonCodeEditor
@@ -351,7 +351,7 @@ export function ChannelAffinitySection(props: Props) {
               </Button>
             </div>
           </div>
-          <p className='text-muted-foreground text-xs'>
+          <p className='text-dim text-[12.5px]'>
             {t(
               'Refreshing updates the counts. Clearing cache makes subsequent requests select channels again.'
             )}

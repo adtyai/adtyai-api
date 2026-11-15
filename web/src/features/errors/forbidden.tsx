@@ -26,19 +26,23 @@ export function ForbiddenError() {
   const navigate = useNavigate()
   const { history } = useRouter()
   return (
-    <div className='h-svh'>
-      <div className='m-auto flex h-full w-full flex-col items-center justify-center gap-2'>
-        <h1 className='text-[7rem] leading-tight font-bold'>403</h1>
-        <span className='font-medium'>{t('Access Forbidden')}</span>
-        <p className='text-muted-foreground text-center'>
-          {t("You don't have necessary permission")} <br />
+    <div className='flex min-h-svh w-full items-center justify-center px-6 py-24'>
+      <div className='flex w-full max-w-lg flex-col items-center gap-4 text-center'>
+        <h1 className='text-faint/40 text-[120px] leading-[0.9] font-extrabold tracking-[-0.05em] tabular-nums select-none'>
+          403
+        </h1>
+        <p className='text-foreground text-lg font-semibold tracking-tight'>
+          {t('Access Forbidden')}
+        </p>
+        <p className='text-muted-foreground max-w-sm text-sm leading-relaxed'>
+          {t("You don't have necessary permission")}{' '}
           {t('to view this resource.')}
         </p>
-        <div className='mt-6 flex gap-4'>
+        <div className='mt-6 flex flex-wrap justify-center gap-3'>
           <Button variant='outline' onClick={() => history.go(-1)}>
             {t('Go Back')}
           </Button>
-          <Button onClick={() => navigate({ to: '/' })}>
+          <Button variant='brand' onClick={() => navigate({ to: '/' })}>
             {t('Back to Home')}
           </Button>
         </div>

@@ -21,6 +21,7 @@ import { PieChart } from 'lucide-react'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { chartPaletteRangeFaded, useChartPalette } from '@/lib/chart-theme'
 import { useChartTheme } from '@/lib/use-chart-theme'
 import { VCHART_OPTION } from '@/lib/vchart'
 
@@ -35,55 +36,23 @@ const PERIOD_DESCRIPTIONS: Record<RankingPeriod, string> = {
   year: 'Token share by model author across the past year',
 }
 
-/** Stable colour palette for vendors, used in both the share chart and the
- * legend dots. Falls back to a neutral palette for unknown vendors so that
- * future additions still render. */
-const VENDOR_COLOURS: Record<string, string> = {
-  OpenAI: '#10a37f',
-  Anthropic: '#d97757',
-  Google: '#4285f4',
-  DeepSeek: '#7c5cff',
-  Alibaba: '#ff9900',
-  xAI: '#1f2937',
-  Meta: '#1877f2',
-  Moonshot: '#ec4899',
-  Zhipu: '#06b6d4',
-  Mistral: '#ff7000',
-  ByteDance: '#3b82f6',
-  Tencent: '#22c55e',
-  MiniMax: '#a855f7',
-  Cohere: '#fb923c',
-  Baidu: '#ef4444',
-  Others: '#94a3b8',
-}
-
-const FALLBACK_PALETTE = [
-  '#0ea5e9',
-  '#22c55e',
-  '#a855f7',
-  '#f97316',
-  '#14b8a6',
-  '#eab308',
-  '#ec4899',
-  '#84cc16',
-  '#6366f1',
-  '#10b981',
-  '#f43f5e',
-  '#0891b2',
-  '#94a3b8',
-]
-
-function buildVendorColourMap(names: string[]): Record<string, string> {
+/**
+ * Vendor colours come from the shared brand palette (`lib/chart-theme`), used
+ * by both the share chart and the legend dots. Orange leads, grey fills the
+ * tail, so vendor identity is carried by position rather than a rainbow.
+ */
+function buildVendorColourMap(
+  names: string[],
+  palette: readonly string[]
+): Record<string, string> {
   const result: Record<string, string> = {}
-  let fallbackIdx = 0
-  for (const name of names) {
-    if (VENDOR_COLOURS[name]) {
-      result[name] = VENDOR_COLOURS[name]
-    } else {
-      result[name] = FALLBACK_PALETTE[fallbackIdx % FALLBACK_PALETTE.length]
-      fallbackIdx += 1
-    }
-  }
+  if (palette.length === 0) return result
+  // The list carries up to twelve vendors but the ramp only has five steps;
+  // fade each repeat so vendor six is not painted the same blue as vendor one.
+  const colours = chartPaletteRangeFaded(names.length, palette)
+  names.forEach((name, index) => {
+    result[name] = colours[index] as string
+  })
   return result
 }
 
@@ -103,6 +72,7 @@ type MarketShareSectionProps = {
 export function MarketShareSection(props: MarketShareSectionProps) {
   const { t } = useTranslation()
   const { resolvedTheme, themeReady } = useChartTheme()
+  const palette = useChartPalette()
   const chartTextColor =
     resolvedTheme === 'dark'
       ? 'rgba(255, 255, 255, 0.68)'
@@ -113,8 +83,12 @@ export function MarketShareSection(props: MarketShareSectionProps) {
       : 'rgba(15, 23, 42, 0.12)'
 
   const colourMap = useMemo(
-    () => buildVendorColourMap(props.history.vendors.map((v) => v.name)),
-    [props.history]
+    () =>
+      buildVendorColourMap(
+        props.history.vendors.map((v) => v.name),
+        palette
+      ),
+    [props.history, palette]
   )
 
   const orderedPoints = useMemo(() => {
@@ -212,7 +186,7 @@ export function MarketShareSection(props: MarketShareSectionProps) {
   const right = visible.slice(half)
 
   return (
-    <section className='bg-card overflow-hidden rounded-lg border'>
+    <section className='bg-card overflow-hidden rounded-[14px] border'>
       {/* Chart block ----------------------------------------------------- */}
       <header className='px-5 py-4'>
         <h2 className='text-foreground inline-flex items-center gap-2 text-base font-semibold'>
@@ -286,7 +260,7 @@ function VendorList(props: {
             aria-hidden
             className='size-2.5 shrink-0 rounded-full'
             style={{
-              backgroundColor: props.colourMap[vendor.vendor] ?? '#94a3b8',
+              backgroundColor: props.colourMap[vendor.vendor] ?? '#a3a3a3',
             }}
           />
           <VendorLink

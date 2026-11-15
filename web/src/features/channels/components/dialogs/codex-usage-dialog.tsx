@@ -419,6 +419,9 @@ function formatLabelValue(label: string, value: string) {
   return label.endsWith('：') ? `${label}${value}` : `${label} ${value}`
 }
 
+/* Mirrors `textColorMap` in `components/status-badge`: the accent buckets are
+ * one blue now, so they resolve to `--brand-ink` instead of pretending to be
+ * purple/pink in a chart tier that is actually a blue or a grey. */
 const percentTextClassName: Record<
   NonNullable<StatusBadgeProps['variant']>,
   string
@@ -428,21 +431,21 @@ const percentTextClassName: Record<
   danger: 'text-destructive',
   info: 'text-info',
   neutral: 'text-muted-foreground',
-  purple: 'text-chart-4',
+  purple: 'text-brand-ink',
   amber: 'text-warning',
   blue: 'text-chart-1',
-  cyan: 'text-chart-2',
+  cyan: 'text-brand-ink',
   green: 'text-success',
   grey: 'text-muted-foreground',
   indigo: 'text-chart-1',
   'light-blue': 'text-info',
   'light-green': 'text-emerald-500 dark:text-emerald-300',
-  lime: 'text-chart-3',
+  lime: 'text-brand-ink',
   orange: 'text-warning',
-  pink: 'text-chart-5',
+  pink: 'text-brand-ink',
   red: 'text-destructive',
-  teal: 'text-chart-2',
-  violet: 'text-chart-4',
+  teal: 'text-brand-ink',
+  violet: 'text-brand-ink',
   yellow: 'text-warning',
 }
 
@@ -833,7 +836,7 @@ function ResetCreditsPanel(props: {
       </div>
 
       <div className='flex flex-wrap items-center justify-between gap-2'>
-        <div className='text-muted-foreground text-xs leading-5'>
+        <div className='text-dim text-[12.5px] leading-5'>
           {t('Available credits are ordered by soonest expiration.')}
         </div>
         <Button

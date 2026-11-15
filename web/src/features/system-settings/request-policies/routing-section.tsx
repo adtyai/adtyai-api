@@ -226,7 +226,7 @@ function AffinitySettings() {
                         {mode === 'prefer' ? (
                           <span
                             id='global-session-prefer-description'
-                            className='text-muted-foreground text-xs font-normal'
+                            className='text-dim text-[12.5px] font-normal'
                           >
                             {t('Reduces cache hit rate')}
                           </span>

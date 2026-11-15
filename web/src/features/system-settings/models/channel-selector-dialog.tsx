@@ -333,7 +333,10 @@ export function ChannelSelectorDialog({
           <Button variant='outline' onClick={() => onOpenChange(false)}>
             {t('Cancel')}
           </Button>
-          <Button onClick={handleConfirm}>{t('Confirm Selection')}</Button>
+          <Button
+            variant='brand'
+            onClick={handleConfirm}>{t('Confirm Selection')}</Button
+          >
         </>
       }
     >

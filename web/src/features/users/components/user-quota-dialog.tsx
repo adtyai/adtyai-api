@@ -149,6 +149,7 @@ export function UserQuotaDialog(props: UserQuotaDialogProps) {
             {t('Cancel')}
           </Button>
           <Button
+            variant='brand'
             onClick={handleConfirm}
             disabled={loading || !reasonValid || floorBlocked}
           >

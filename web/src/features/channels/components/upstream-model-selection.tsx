@@ -148,7 +148,7 @@ function ModelCategory(props: ModelCategoryProps) {
                 <Tooltip>
                   <TooltipTrigger
                     render={
-                      <Info className='size-3.5 shrink-0 text-amber-500' />
+                      <Info className='size-3.5 shrink-0 text-warning' />
                     }
                   />
                   <TooltipContent>
@@ -378,7 +378,7 @@ export function UpstreamModelSelection(props: UpstreamModelSelectionProps) {
               value='removed'
               className='max-h-96 space-y-2 overflow-y-auto'
             >
-              <p className='text-muted-foreground text-xs'>
+              <p className='text-dim text-[12.5px]'>
                 {t(
                   'These models were not returned by the upstream. Uncheck to remove them, or select them again before saving. Model mapping source aliases are excluded.'
                 )}

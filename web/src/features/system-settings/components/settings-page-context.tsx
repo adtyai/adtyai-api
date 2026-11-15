@@ -33,12 +33,15 @@ type SettingsPageContextValue = {
   actionsContainer: HTMLDivElement | null
   titleStatusContainer: HTMLSpanElement | null
   suppressSectionHeader: boolean
+  /** Translated section title already rendered as the page heading. */
+  pageTitle: string | null
 }
 
 const SettingsPageContext = createContext<SettingsPageContextValue>({
   actionsContainer: null,
   titleStatusContainer: null,
   suppressSectionHeader: false,
+  pageTitle: null,
 })
 
 type SettingsPageProviderProps = {
@@ -46,6 +49,7 @@ type SettingsPageProviderProps = {
   titleStatusContainer?: HTMLSpanElement | null
   children: ReactNode
   suppressSectionHeader?: boolean
+  pageTitle?: string | null
 }
 
 export function SettingsPageProvider(props: SettingsPageProviderProps) {
@@ -55,6 +59,7 @@ export function SettingsPageProvider(props: SettingsPageProviderProps) {
         actionsContainer: props.actionsContainer,
         titleStatusContainer: props.titleStatusContainer ?? null,
         suppressSectionHeader: props.suppressSectionHeader ?? true,
+        pageTitle: props.pageTitle ?? null,
       }}
     >
       {props.children}
@@ -64,6 +69,11 @@ export function SettingsPageProvider(props: SettingsPageProviderProps) {
 
 export function useSuppressSettingsSectionHeader() {
   return useContext(SettingsPageContext).suppressSectionHeader
+}
+
+/** Section title already shown as the page heading, so a card never repeats it. */
+export function useSettingsPageTitle() {
+  return useContext(SettingsPageContext).pageTitle
 }
 
 type SettingsPageTitleStatusPortalProps = {
@@ -136,6 +146,7 @@ export function SettingsPageFormActions(props: SettingsPageFormActionsProps) {
         ref={props.saveButtonRef}
         type='button'
         size='sm'
+        variant='brand'
         onClick={props.onSave}
         disabled={props.isSaving || props.isSaveDisabled}
       >

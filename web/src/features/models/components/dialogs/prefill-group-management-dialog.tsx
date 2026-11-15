@@ -313,11 +313,9 @@ export function PrefillGroupManagementDialog({
                   <TableId value={group.id} />
                 </div>
                 {group.description ? (
-                  <p className='text-muted-foreground text-xs'>
-                    {group.description}
-                  </p>
+                  <p className='text-dim text-[12.5px]'>{group.description}</p>
                 ) : (
-                  <p className='text-muted-foreground text-xs italic'>
+                  <p className='text-dim text-[12.5px] italic'>
                     No description provided
                   </p>
                 )}

@@ -56,13 +56,13 @@ export function CodeCard(props: { baseUrl: string }) {
   )
 
   return (
-    <div className='dark bg-background text-foreground overflow-hidden rounded-xl border shadow-lg'>
+    <div className='dark bg-background text-foreground overflow-hidden rounded-[16px] border shadow-2xl'>
       <Tabs
         value={client}
         onValueChange={(value) => setClient(value as ClientSnippetId)}
       >
         <div className='flex min-w-0 items-center gap-2 border-b px-3 py-2'>
-          <TabsList className='h-8 min-w-0 w-auto flex-1 overflow-x-auto p-0.5'>
+          <TabsList className='h-8 w-auto min-w-0 flex-1 overflow-x-auto p-0.5'>
             {LANDING_CLIENTS.map((id) => (
               <TabsTrigger key={id} value={id} className='h-7 px-2.5 text-xs'>
                 {CLIENT_SNIPPET_LABELS[id]}
@@ -79,7 +79,7 @@ export function CodeCard(props: { baseUrl: string }) {
       </Tabs>
       <pre
         data-testid='landing-code'
-        className='overflow-x-auto p-4 font-mono text-xs leading-relaxed'
+        className='text-foreground/85 overflow-x-auto p-5 font-mono text-[13.5px] leading-[2]'
       >
         <code>{snippet}</code>
       </pre>

@@ -347,7 +347,7 @@ export function ThroughputBarChart(props: {
       yField: 'group',
       bar: {
         style: {
-          fill: '#6366f1',
+          fill: '#0070ec',
           ...(barRadius == null ? {} : { cornerRadius: barRadius }),
         },
       },

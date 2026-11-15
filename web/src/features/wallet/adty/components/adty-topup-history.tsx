@@ -101,19 +101,23 @@ export function AdtyTopupHistory() {
               cell: (row) =>
                 row.ext?.payment_scene
                   ? `${row.ext.payment_scene_name || row.ext.payment_scene} (${row.ext.payment_scene}) · v${row.ext.payment_scene_version}`
-                  : '-',
+                  : '—',
             },
             {
               id: 'face',
               header: t('Amount'),
+              className: 'text-right',
+              cellClassName: 'text-right tabular-nums',
               cell: (row) =>
-                row.ext ? formatUsd(Number(row.ext.face_usd), locale) : '-',
+                row.ext ? formatUsd(Number(row.ext.face_usd), locale) : '—',
             },
             {
               id: 'bonus',
               header: t('Bonus'),
+              className: 'text-right',
+              cellClassName: 'text-right tabular-nums',
               cell: (row) => {
-                if (!row.ext) return '-'
+                if (!row.ext) return '—'
                 const bonus =
                   Number(row.ext.bonus_usd) +
                   Number(row.ext.promo_bonus_usd || 0)
@@ -123,8 +127,10 @@ export function AdtyTopupHistory() {
             {
               id: 'paid',
               header: t('Paid'),
+              className: 'text-right',
+              cellClassName: 'text-right tabular-nums',
               cell: (row) => {
-                if (!row.ext) return '-'
+                if (!row.ext) return '—'
                 const paid = Number(row.ext.paid_amount)
                 const value =
                   paid > 0 ? row.ext.paid_amount : row.ext.pay_amount
@@ -148,7 +154,11 @@ export function AdtyTopupHistory() {
               cell: (row) => (
                 <span className='flex items-center gap-2'>
                   <code className='font-mono text-xs'>{row.trade_no}</code>
-                  <Link to='/profile' hash={`ticket-${row.trade_no}`} className='text-muted-foreground text-xs'>
+                  <Link
+                    to='/profile'
+                    hash={`ticket-${row.trade_no}`}
+                    className='text-muted-foreground text-xs'
+                  >
                     {t('Submit ticket')}
                   </Link>
                 </span>

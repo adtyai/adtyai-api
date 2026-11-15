@@ -66,7 +66,7 @@ export function MarketplacePluginCard(props: MarketplacePluginCardProps) {
       : null
 
   return (
-    <div className='flex h-full flex-col gap-2.5 rounded-xl border p-3'>
+    <div className='flex h-full flex-col gap-2.5 rounded-[14px] border p-3'>
       <div className='flex items-start justify-between gap-2'>
         <div className='flex min-w-0 flex-1 items-center gap-2.5'>
           <span className='mt-0.5 shrink-0'>

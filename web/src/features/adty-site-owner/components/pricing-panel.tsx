@@ -325,6 +325,7 @@ export function PricingPanel(props: { site: OwnerSite }) {
       </section>
       <div>
         <Button
+          variant='brand'
           disabled={closing || save.isPending}
           onClick={() => save.mutate()}
         >

@@ -90,6 +90,7 @@ export function PartnerCard(props: {
         )}
         footer={
           <Button
+            variant='brand'
             disabled={note.trim() === '' || apply.isPending}
             onClick={() => apply.mutate()}
           >

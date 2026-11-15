@@ -126,7 +126,10 @@ export function StaffPanel(props: { siteId: number }) {
     <div className='flex flex-col gap-4'>
       <div className='flex flex-wrap items-center justify-between gap-2'>
         <h2 className='text-lg font-medium'>{t('Staff accounts')}</h2>
-        <Button onClick={() => setEditing({ mode: 'create', staff: null })}>
+        <Button
+          variant='brand'
+          onClick={() => setEditing({ mode: 'create', staff: null })}
+        >
           {t('Create staff account')}
         </Button>
       </div>

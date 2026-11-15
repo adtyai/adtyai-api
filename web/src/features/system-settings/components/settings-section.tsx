@@ -18,36 +18,63 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { cn } from '@/lib/utils'
 
-import { useSuppressSettingsSectionHeader } from './settings-page-context'
+import {
+  useSettingsPageTitle,
+  useSuppressSettingsSectionHeader,
+} from './settings-page-context'
 
 type SettingsSectionProps = {
   title: string
+  /** Optional one-line explanation shown under the card title. */
+  description?: string
   titleProps?: React.HTMLAttributes<HTMLHeadingElement>
   children: React.ReactNode
   className?: string
 }
 
+/**
+ * A group of related settings, drawn as one bordered card (design system §3:
+ * 14px radius, 1px border, no shadow). Cards are separated by 16px of page
+ * rhythm, and the title is skipped when the page heading already says it.
+ */
 export function SettingsSection({
   title,
+  description,
   titleProps,
   children,
   className,
 }: SettingsSectionProps) {
   const suppressHeader = useSuppressSettingsSectionHeader()
+  const pageTitle = useSettingsPageTitle()
+  const showHeader = !suppressHeader || pageTitle !== title
 
   return (
-    <section className={cn('flex flex-col gap-4', className)}>
-      {!suppressHeader && (
-        <div className='flex flex-col gap-1'>
+    <section
+      data-slot='settings-section'
+      className={cn(
+        'border-border bg-card min-w-0 overflow-hidden rounded-[14px] border',
+        className
+      )}
+    >
+      {showHeader && (
+        <div className='border-border flex flex-col gap-1 border-b px-5 py-4 sm:px-6'>
           <h3
             {...titleProps}
-            className={cn('text-base font-semibold', titleProps?.className)}
+            className={cn(
+              'text-[15px] leading-snug font-semibold tracking-tight [word-break:keep-all]',
+              titleProps?.className
+            )}
           >
             {title}
           </h3>
+          {description ? (
+            <p className='text-dim text-[12.5px] leading-relaxed'>
+              {description}
+            </p>
+          ) : null}
         </div>
       )}
-      {children}
+      <div className='min-w-0 px-5 py-5 sm:px-6 sm:py-6'>{children}</div>
     </section>
   )
 }

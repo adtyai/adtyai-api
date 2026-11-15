@@ -143,7 +143,11 @@ export function PaymentOrphanReviewDialog(props: {
               {t(editable ? 'Cancel' : 'Close')}
             </Button>
             {editable && (
-              <Button disabled={!ready || mutation.isPending} onClick={save}>
+              <Button
+                variant='brand'
+                disabled={!ready || mutation.isPending}
+                onClick={save}
+              >
                 {t('Save review')}
               </Button>
             )}

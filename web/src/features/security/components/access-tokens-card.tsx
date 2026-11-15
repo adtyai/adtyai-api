@@ -218,6 +218,7 @@ export function AccessTokensCard() {
               {t('Access records')}
             </Button>
             <Button
+              variant='brand'
               size='sm'
               disabled={!catalog || atLimit || access.pending}
               onClick={() => setCreateOpen(true)}

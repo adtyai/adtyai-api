@@ -329,7 +329,7 @@ function ModelBackendProviderSection(props: { model: PricingModel }) {
   return (
     <section>
       <SectionTitle>{t('Model')}</SectionTitle>
-      <div className='border-border/60 bg-border/60 grid grid-cols-1 gap-px overflow-hidden rounded-lg border sm:grid-cols-2'>
+      <div className='border-border bg-border grid grid-cols-1 gap-px overflow-hidden rounded-[14px] border sm:grid-cols-2 [&>*:last-child:nth-child(odd)]:sm:col-span-2'>
         {cells}
       </div>
     </section>
@@ -508,48 +508,14 @@ function PriceSection(props: {
           </p>
         )}
         {dynamicSummary.primaryEntries.length > 0 ? (
-          <div
-            className={cn(
-              'grid gap-2',
-              dynamicSummary.primaryEntries.length > 1 && 'grid-cols-2'
-            )}
-          >
-            {dynamicSummary.primaryEntries.map((entry) => {
-              const unitLabelKey = getDynamicPriceUnitLabelKey(entry)
-              const unitLabel = taskUsageUnitLabel(
-                entry,
-                i18n.language,
-                unitLabelKey ? t(unitLabelKey) : tokenUnitLabel
-              )
-              return (
-                <div
-                  key={entry.key}
-                  className='bg-muted/20 rounded-lg border p-3'
-                >
-                  <div className='text-muted-foreground text-xs'>
-                    <DynamicPriceEntryLabel entry={entry} />
-                  </div>
-                  <div className='text-foreground mt-1 font-mono text-base font-semibold tabular-nums'>
-                    {entry.formattedRange ?? entry.formatted}
-                    <span className='text-muted-foreground/40 ml-1 text-xs font-normal'>
-                      / {unitLabel}
-                    </span>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        ) : (
-          <p className='text-muted-foreground text-sm'>
-            {dynamicSummary.hasUnconfiguredProviders
-              ? t('Not configured')
-              : t('Dynamic Pricing')}
-          </p>
-        )}
-        {dynamicSummary.secondaryEntries.length > 0 && (
-          <div className='bg-muted/20 mt-3 rounded-lg border px-3 py-2.5'>
-            <div className='space-y-1.5'>
-              {dynamicSummary.secondaryEntries.map((entry) => {
+          <div className='border-border overflow-hidden rounded-[14px] border'>
+            <div
+              className={cn(
+                'bg-border grid gap-px',
+                dynamicSummary.primaryEntries.length > 1 && 'grid-cols-2'
+              )}
+            >
+              {dynamicSummary.primaryEntries.map((entry) => {
                 const unitLabelKey = getDynamicPriceUnitLabelKey(entry)
                 const unitLabel = taskUsageUnitLabel(
                   entry,
@@ -557,24 +523,55 @@ function PriceSection(props: {
                   unitLabelKey ? t(unitLabelKey) : tokenUnitLabel
                 )
                 return (
-                  <div
-                    key={entry.key}
-                    className='flex items-baseline justify-between gap-4'
-                  >
-                    <span className='text-muted-foreground/70 text-sm'>
+                  <div key={entry.key} className='bg-card px-4 py-3.5'>
+                    <div className='text-muted-foreground text-xs'>
                       <DynamicPriceEntryLabel entry={entry} />
-                    </span>
-                    <span className='text-muted-foreground font-mono text-sm tabular-nums'>
+                    </div>
+                    <div className='text-foreground mt-1 font-mono text-base font-semibold tabular-nums'>
                       {entry.formattedRange ?? entry.formatted}
                       <span className='text-muted-foreground/40 ml-1 text-xs font-normal'>
                         / {unitLabel}
                       </span>
-                    </span>
+                    </div>
                   </div>
                 )
               })}
             </div>
+            {dynamicSummary.secondaryEntries.length > 0 && (
+              <div className='divide-border border-border bg-card divide-y border-t'>
+                {dynamicSummary.secondaryEntries.map((entry) => {
+                  const unitLabelKey = getDynamicPriceUnitLabelKey(entry)
+                  const unitLabel = taskUsageUnitLabel(
+                    entry,
+                    i18n.language,
+                    unitLabelKey ? t(unitLabelKey) : tokenUnitLabel
+                  )
+                  return (
+                    <div
+                      key={entry.key}
+                      className='flex items-baseline justify-between gap-4 px-4 py-2.5'
+                    >
+                      <span className='text-muted-foreground/70 text-sm'>
+                        <DynamicPriceEntryLabel entry={entry} />
+                      </span>
+                      <span className='text-muted-foreground font-mono text-sm tabular-nums'>
+                        {entry.formattedRange ?? entry.formatted}
+                        <span className='text-muted-foreground/40 ml-1 text-xs font-normal'>
+                          / {unitLabel}
+                        </span>
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </div>
+        ) : (
+          <p className='text-muted-foreground text-sm'>
+            {dynamicSummary.hasUnconfiguredProviders
+              ? t('Not configured')
+              : t('Dynamic Pricing')}
+          </p>
         )}
       </section>
     )
@@ -593,7 +590,7 @@ function PriceSection(props: {
     return (
       <section>
         <SectionTitle>{t('Base Price')}</SectionTitle>
-        <div className='flex items-baseline justify-between'>
+        <div className='border-border bg-card flex items-baseline justify-between gap-4 rounded-[14px] border px-4 py-3.5'>
           <span className='text-muted-foreground text-sm'>
             {t('Per request')}
           </span>
@@ -634,23 +631,23 @@ function PriceSection(props: {
   return (
     <section>
       <SectionTitle>{t('Base Price')}</SectionTitle>
-      <div className='grid grid-cols-2 gap-2'>
-        {primaryPriceTypes.map((item) => (
-          <div key={item.type} className='bg-muted/20 rounded-lg border p-3'>
-            <div className='text-muted-foreground text-xs'>{item.label}</div>
-            <div className='text-foreground mt-1 font-mono text-base font-semibold tabular-nums'>
-              {renderPrice(item.type)}
+      <div className='border-border overflow-hidden rounded-[14px] border'>
+        <div className='bg-border grid grid-cols-2 gap-px'>
+          {primaryPriceTypes.map((item) => (
+            <div key={item.type} className='bg-card px-4 py-3.5'>
+              <div className='text-muted-foreground text-xs'>{item.label}</div>
+              <div className='text-foreground mt-1 font-mono text-base font-semibold tabular-nums'>
+                {renderPrice(item.type)}
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
-      {secondaryItems.length > 0 && (
-        <div className='bg-muted/20 mt-3 rounded-lg border px-3 py-2.5'>
-          <div className='space-y-1.5'>
+          ))}
+        </div>
+        {secondaryItems.length > 0 && (
+          <div className='divide-border border-border bg-card divide-y border-t'>
             {secondaryItems.map((item) => (
               <div
                 key={item.type}
-                className='flex items-baseline justify-between gap-4'
+                className='flex items-baseline justify-between gap-4 px-4 py-2.5'
               >
                 <span className='text-muted-foreground/70 text-sm'>
                   {item.label}
@@ -661,8 +658,8 @@ function PriceSection(props: {
               </div>
             ))}
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </section>
   )
 }
@@ -1260,7 +1257,7 @@ export function ModelDetailsContent(props: ModelDetailsContentProps) {
         <TabsContent value='overview' className='space-y-6 outline-none'>
           <OverviewSummaryGrid model={props.model} />
 
-          <section className='bg-card/60 space-y-5 rounded-xl border p-4 shadow-sm'>
+          <section className='bg-card space-y-6 rounded-[14px] border p-5'>
             <SectionTitle>{t('Pricing')}</SectionTitle>
             {showBasePrices && (
               <PriceSection
@@ -1378,7 +1375,7 @@ export function ModelDetails() {
   if (isLoading) {
     return (
       <PublicLayout>
-        <div className='mx-auto max-w-5xl px-4 sm:px-6'>
+        <div className='mx-auto w-full max-w-[1000px]'>
           <Skeleton className='mb-4 h-5 w-16' />
           <div className='space-y-2'>
             <Skeleton className='h-7 w-64' />
@@ -1403,7 +1400,7 @@ export function ModelDetails() {
   if (!model) {
     return (
       <PublicLayout>
-        <div className='mx-auto max-w-2xl px-4 text-center sm:px-6'>
+        <div className='mx-auto max-w-2xl text-center'>
           <h2 className='mb-1 text-base font-semibold'>
             {t('Model not found')}
           </h2>
@@ -1420,7 +1417,7 @@ export function ModelDetails() {
 
   return (
     <PublicLayout>
-      <div className='mx-auto max-w-5xl px-4 sm:px-6'>
+      <div className='mx-auto w-full max-w-[1000px]'>
         <Button
           variant='ghost'
           size='sm'

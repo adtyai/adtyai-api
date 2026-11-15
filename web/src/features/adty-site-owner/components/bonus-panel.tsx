@@ -125,6 +125,7 @@ export function BonusPanel(props: { site: OwnerSite }) {
             </span>
           </div>
           <Button
+            variant='brand'
             size='sm'
             className='self-start'
             disabled={

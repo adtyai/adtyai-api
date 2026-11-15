@@ -231,6 +231,7 @@ export function BalanceQueryDialog(props: BalanceQueryDialogProps) {
 
         {/* Balance Update Button */}
         <Button
+          variant='brand'
           className='w-full'
           onClick={handleQueryBalance}
           disabled={isQuerying}

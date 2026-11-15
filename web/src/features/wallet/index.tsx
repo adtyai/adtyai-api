@@ -22,18 +22,19 @@ import { useTranslation } from 'react-i18next'
 
 import { ErrorState } from '@/components/error-state'
 import { SectionPageLayout } from '@/components/layout'
+import { Button } from '@/components/ui/button'
 import { getSelf } from '@/lib/api'
 
 import { adtyTopupQueryKeys, getAdtyTopupInfo } from './adty/api'
 import { AdtyPaymentDialogs } from './adty/components/adty-payment-dialogs'
 import { AdtyPendingBanner } from './adty/components/adty-pending-banner'
 import { AdtyRechargeCard } from './adty/components/adty-recharge-card'
-import { SiteCommissionPanel } from './adty/site-commission-panel'
-import { TeamPanel } from './adty/team-panel'
-import { VoucherRedeemCard } from './adty/voucher-redeem-card'
 import { AdtyTopupHistory } from './adty/components/adty-topup-history'
 import type { ActivePayment } from './adty/lib/active-payment'
+import { SiteCommissionPanel } from './adty/site-commission-panel'
+import { TeamPanel } from './adty/team-panel'
 import type { AdtyMethod, AdtyMethodKind, AdtyOrder } from './adty/types'
+import { VoucherRedeemCard } from './adty/voucher-redeem-card'
 import { WalletStatsCard } from './components/wallet-stats-card'
 import type { UserWalletData } from './types'
 
@@ -113,8 +114,27 @@ export function Wallet(props: WalletProps) {
     <>
       <SectionPageLayout>
         <SectionPageLayout.Title>{t('Wallet')}</SectionPageLayout.Title>
+        <SectionPageLayout.Description>
+          {t('Balance and top-up management')}
+        </SectionPageLayout.Description>
+        <SectionPageLayout.Actions>
+          <Button
+            variant='outline'
+            size='sm'
+            render={<a href='#wallet-history' />}
+          >
+            {t('Top-up history')}
+          </Button>
+          <Button
+            variant='brand'
+            size='sm'
+            render={<a href='#wallet-add-funds' />}
+          >
+            {t('Add credits')}
+          </Button>
+        </SectionPageLayout.Actions>
         <SectionPageLayout.Content>
-          <div className='mx-auto flex w-full max-w-7xl flex-col gap-4 sm:gap-5'>
+          <div className='mx-auto flex w-full max-w-7xl flex-col gap-4'>
             <WalletStatsCard user={user} loading={userLoading} />
             <VoucherRedeemCard onRedeemed={() => void fetchUser()} />
             <TeamPanel />

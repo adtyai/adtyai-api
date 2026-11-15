@@ -102,6 +102,7 @@ export function AccessTokenCreateDialog(props: AccessTokenCreateDialogProps) {
             {t('Cancel')}
           </Button>
           <Button
+            variant='brand'
             type='submit'
             form='access-token-create-form'
             disabled={props.pending}

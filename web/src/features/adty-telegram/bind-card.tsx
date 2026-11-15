@@ -52,7 +52,7 @@ export function TelegramBindCard(props: { purpose: 'user' | 'admin' }) {
     queryFn: async () => {
       const response = await api.get(props.purpose === 'admin' ? base : `${base}/me`)
       const body = response.data as { success?: boolean; data?: BindView; message?: string }
-      if (!body.success || !body.data) throw new Error(body.message || 'Failed to load data')
+      if (!body.success || !body.data) throw new Error(body.message || t('Failed to load data'))
       return body.data
     },
   })
@@ -67,7 +67,7 @@ export function TelegramBindCard(props: { purpose: 'user' | 'admin' }) {
     try {
       const response = await api.post(`${base}/bind/start`)
       const body = response.data as { success?: boolean; message?: string; data?: { code?: string } }
-      if (!body.success || !body.data?.code) throw new Error(body.message || 'Failed to save')
+      if (!body.success || !body.data?.code) throw new Error(body.message || t('Failed to save'))
       setCode(body.data.code)
     } catch (cause) {
       setError(getServerErrorMessage(cause, t('Failed to save')))
@@ -86,7 +86,7 @@ export function TelegramBindCard(props: { purpose: 'user' | 'admin' }) {
         telegram_user_id: Number(telegramId),
       })
       const body = response.data as { success?: boolean; message?: string }
-      if (!body.success) throw new Error(body.message || 'Failed to save')
+      if (!body.success) throw new Error(body.message || t('Failed to save'))
       setCode('')
       setTelegramId('')
       await queryClient.invalidateQueries({ queryKey: ['adty-telegram', props.purpose] })
@@ -132,7 +132,12 @@ export function TelegramBindCard(props: { purpose: 'user' | 'admin' }) {
               <Label htmlFor={`tg-id-${props.purpose}`}>{t('Telegram user id')}</Label>
               <Input id={`tg-id-${props.purpose}`} value={telegramId} inputMode='numeric' onChange={(event) => setTelegramId(event.target.value)} />
             </div>
-            <Button type='button' disabled={pending || code === '' || telegramId.trim() === ''} onClick={() => void confirm()}>
+            <Button
+              variant='brand'
+              type='button'
+              disabled={pending || code === '' || telegramId.trim() === ''}
+              onClick={() => void confirm()}
+            >
               {t('Confirm binding')}
             </Button>
           </div>

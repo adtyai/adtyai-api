@@ -65,9 +65,9 @@ interface MobileCardListProps<TData> {
 
 function ListSkeleton() {
   return (
-    <div className='divide-y overflow-hidden rounded-lg border'>
+    <div className='divide-border bg-card divide-y overflow-hidden rounded-[14px] border'>
       {[1, 2, 3, 4, 5].map((i) => (
-        <div key={i} className='px-3 py-2.5'>
+        <div key={i} className='px-4 py-3'>
           <div className='flex items-center justify-between'>
             <Skeleton className='h-4 w-32' />
             <Skeleton className='h-5 w-16 rounded-md' />
@@ -90,9 +90,9 @@ function ListSkeleton() {
 
 function FallbackListSkeleton() {
   return (
-    <div className='divide-y overflow-hidden rounded-lg border'>
+    <div className='divide-border bg-card divide-y overflow-hidden rounded-[14px] border'>
       {[1, 2, 3, 4, 5].map((i) => (
-        <div key={i} className='space-y-1.5 px-3 py-2.5'>
+        <div key={i} className='space-y-1.5 px-4 py-3'>
           {[1, 2, 3].map((j) => (
             <div key={j} className='flex items-center justify-between'>
               <Skeleton className='h-2.5 w-16' />
@@ -145,14 +145,18 @@ export function MobileCardList<TData>(props: MobileCardListProps<TData>) {
 
   if (!rows || rows.length === 0) {
     return (
-      <div className='rounded-lg border p-6'>
+      <div className='border-border bg-card rounded-[14px] border p-6'>
         <Empty className='border-none p-0'>
           <EmptyHeader>
-            <EmptyMedia variant='icon'>
-              <Database className='size-6' />
+            <EmptyMedia>
+              <Database className='text-faint size-6' />
             </EmptyMedia>
-            <EmptyTitle>{resolvedEmptyTitle}</EmptyTitle>
-            <EmptyDescription>{resolvedEmptyDescription}</EmptyDescription>
+            <EmptyTitle className='text-[14px] font-semibold'>
+              {resolvedEmptyTitle}
+            </EmptyTitle>
+            <EmptyDescription className='text-dim text-[13px]'>
+              {resolvedEmptyDescription}
+            </EmptyDescription>
           </EmptyHeader>
         </Empty>
       </div>
@@ -160,7 +164,7 @@ export function MobileCardList<TData>(props: MobileCardListProps<TData>) {
   }
 
   return (
-    <div className='divide-y overflow-hidden rounded-lg border'>
+    <div className='divide-border bg-card divide-y overflow-hidden rounded-[14px] border'>
       {enableRowSelection && (
         <label className='flex items-center gap-2 px-3 py-2 text-xs'>
           <Checkbox

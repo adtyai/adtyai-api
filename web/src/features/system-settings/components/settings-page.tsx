@@ -26,6 +26,7 @@ import { SectionPageLayout } from '@/components/layout'
 import { useSystemOptions, getOptionValue } from '../hooks/use-system-options'
 import type { SystemOption } from '../types'
 import { SettingsPageProvider } from './settings-page-context'
+import { SettingsPageSkeleton } from './settings-page-skeleton'
 
 type SettingsPageProps<
   TSettings extends Record<string, string | number | boolean | unknown[]>,
@@ -53,6 +54,8 @@ type SettingsPageProps<
 
 type SettingsPageFrameProps = {
   title: ReactNode
+  /** Plain-text version of `title`, used to avoid repeating it on cards. */
+  pageTitle?: string
   children: ReactNode
 }
 
@@ -66,6 +69,7 @@ function SettingsPageFrame(props: SettingsPageFrameProps) {
     <SettingsPageProvider
       actionsContainer={actionsContainer}
       titleStatusContainer={titleStatusContainer}
+      pageTitle={props.pageTitle}
     >
       <SectionPageLayout>
         <SectionPageLayout.Title>
@@ -117,6 +121,7 @@ export function SettingsPage<
   const params = useParams({ from: routePath as any })
   const activeSection = (params?.section ?? defaultSection) as TSectionId
   const sectionMeta = getSectionMeta(activeSection)
+  const sectionTitle = t(sectionMeta.titleKey)
 
   const settings = useMemo(() => {
     const baseSettings = getOptionValue(
@@ -130,17 +135,15 @@ export function SettingsPage<
 
   if (isLoading) {
     return (
-      <SettingsPageFrame title={t(sectionMeta.titleKey)}>
-        <div className='text-muted-foreground flex min-h-40 items-center justify-center text-sm'>
-          {t(loadingMessage)}
-        </div>
+      <SettingsPageFrame title={sectionTitle} pageTitle={sectionTitle}>
+        <SettingsPageSkeleton label={t(loadingMessage)} />
       </SettingsPageFrame>
     )
   }
 
   if (isError && !data) {
     return (
-      <SettingsPageFrame title={t(sectionMeta.titleKey)}>
+      <SettingsPageFrame title={sectionTitle} pageTitle={sectionTitle}>
         <ErrorState
           title={t('Failed to load settings')}
           onRetry={() => void refetch()}
@@ -156,7 +159,7 @@ export function SettingsPage<
   )
 
   return (
-    <SettingsPageFrame title={t(sectionMeta.titleKey)}>
+    <SettingsPageFrame title={sectionTitle} pageTitle={sectionTitle}>
       {sectionContent}
     </SettingsPageFrame>
   )

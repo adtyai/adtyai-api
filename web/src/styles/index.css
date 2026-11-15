@@ -21,6 +21,7 @@ For commercial licensing, please contact support@quantumnous.com
 @import './shadcn-tailwind.css';
 @import '@fontsource-variable/public-sans';
 @import '@fontsource-variable/inter';
+@import '@fontsource-variable/plus-jakarta-sans';
 @import '@fontsource-variable/jetbrains-mono';
 /* Editorial serif (Lora) backing the `serif` font axis and the Anthropic
  * preset's default typography. See `--font-serif` in theme.css for the
@@ -561,21 +562,10 @@ For commercial licensing, please contact support@quantumnous.com
 
 /* Micro-interactions — Vercel-style subtle hover/active feedback */
 @media (prefers-reduced-motion: no-preference) {
+  /* Design system §3: cards separate by surface color and a 1px border,
+     never by a shadow or a hover lift. */
   [data-slot='card']:not([data-card-hover='false']) {
-    transition:
-      transform 150ms ease,
-      box-shadow 150ms ease;
-  }
-
-  @media (min-width: 641px) {
-    [data-slot='card']:not([data-card-hover='false']):hover {
-      transform: translateY(-1px);
-      box-shadow: 0 4px 12px rgb(0 0 0 / 0.06);
-    }
-
-    .dark [data-slot='card']:not([data-card-hover='false']):hover {
-      box-shadow: 0 4px 12px rgb(0 0 0 / 0.3);
-    }
+    transition: border-color 150ms ease;
   }
 
   button:not(:disabled):active,

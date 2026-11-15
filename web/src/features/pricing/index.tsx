@@ -28,9 +28,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import {
   LoadingSkeleton,
   EmptyState,
-  SearchBar,
   PricingTable,
-  PricingSidebar,
   PricingToolbar,
   ModelCardGrid,
   ModelDetailsDrawer,
@@ -176,7 +174,7 @@ export function Pricing() {
   if (isLoading) {
     return (
       <PublicLayout showMainContainer={false}>
-        <div className='mx-auto w-full max-w-[1800px] px-3 pt-16 pb-8 sm:px-6 sm:pt-20 sm:pb-10 xl:px-8'>
+        <div className='mx-auto w-full max-w-[1180px] px-5 pt-[104px] pb-16 sm:px-10'>
           <LoadingSkeleton viewMode={viewMode} />
         </div>
       </PublicLayout>
@@ -186,23 +184,18 @@ export function Pricing() {
   return (
     <PublicLayout showMainContainer={false}>
       <div className='relative'>
-        <PageTransition className='relative mx-auto w-full max-w-[1800px] px-3 pt-16 pb-8 sm:px-6 sm:pt-20 sm:pb-10 xl:px-8'>
-          <header className='mx-auto mb-5 max-w-3xl pt-5 text-center sm:mb-10 sm:pt-10'>
-            <h1 className='text-[clamp(2rem,5.5vw,3.5rem)] leading-[1.15] font-bold tracking-tight'>
+        <PageTransition className='relative mx-auto w-full max-w-[1180px] px-5 pt-[104px] pb-16 sm:px-10'>
+          <header className='mb-8 max-w-2xl'>
+            <h1 className='text-[40px] leading-[1.08] font-extrabold tracking-[-0.03em] sm:text-[48px]'>
               {t('Model Square')}
             </h1>
-            <p className='text-muted-foreground/80 mt-3 text-sm sm:mt-4 sm:text-base'>
+            <p className='text-muted-foreground mt-3 text-[15px] leading-relaxed'>
               {t('This site currently has {{count}} models enabled', {
                 count: models?.length || 0,
               })}
             </p>
-            <p className='text-muted-foreground/60 mx-auto mt-2 max-w-2xl text-xs leading-relaxed sm:text-sm'>
-              {t(
-                'Discover curated AI models, compare pricing and capabilities, and choose the right model for every scenario.'
-              )}
-            </p>
             {officialPrices.updatedAt > 0 && (
-              <p className='text-muted-foreground/60 mt-1 text-xs'>
+              <p className='text-muted-foreground/70 mt-1 text-[11px]'>
                 {t('Official prices updated on {{date}}', {
                   date: new Intl.DateTimeFormat(
                     toIntlLocale(i18n.resolvedLanguage || i18n.language),
@@ -211,19 +204,26 @@ export function Pricing() {
                 })}
               </p>
             )}
-            <SearchBar
-              value={searchInput}
-              onChange={setSearchInput}
-              onClear={clearSearch}
-              placeholder={t(
-                'Search model name, provider, endpoint, or tag...'
-              )}
-              className='mx-auto mt-4 max-w-2xl sm:mt-6'
-            />
           </header>
 
-          <div className='grid gap-4 xl:grid-cols-[280px_minmax(0,1fr)]'>
-            <PricingSidebar
+          <main className='min-w-0 space-y-5'>
+            <PricingToolbar
+              searchValue={searchInput}
+              onSearchChange={setSearchInput}
+              onSearchClear={clearSearch}
+              searchPlaceholder={t(
+                'Search model name, provider, endpoint, or tag...'
+              )}
+              filteredCount={filteredModels.length}
+              totalCount={models?.length}
+              sortBy={sortBy}
+              onSortChange={setSortBy}
+              tokenUnit={tokenUnit}
+              onTokenUnitChange={setTokenUnit}
+              showRechargePrice={showRechargePrice}
+              onRechargePriceChange={setShowRechargePrice}
+              viewMode={viewMode}
+              onViewModeChange={setViewMode}
               quotaTypeFilter={quotaTypeFilter}
               endpointTypeFilter={endpointTypeFilter}
               vendorFilter={vendorFilter}
@@ -240,45 +240,12 @@ export function Pricing() {
               tags={availableTags}
               models={models || []}
               hasActiveFilters={hasActiveFilters}
+              activeFilterCount={activeFilterCount}
               onClearFilters={clearFilters}
-              className='hover-scrollbar sticky top-20 hidden max-h-[calc(100dvh-6rem)] self-start overflow-y-auto xl:block'
             />
 
-            <main className='min-w-0 space-y-4'>
-              <PricingToolbar
-                filteredCount={filteredModels.length}
-                totalCount={models?.length}
-                sortBy={sortBy}
-                onSortChange={setSortBy}
-                tokenUnit={tokenUnit}
-                onTokenUnitChange={setTokenUnit}
-                showRechargePrice={showRechargePrice}
-                onRechargePriceChange={setShowRechargePrice}
-                viewMode={viewMode}
-                onViewModeChange={setViewMode}
-                quotaTypeFilter={quotaTypeFilter}
-                endpointTypeFilter={endpointTypeFilter}
-                vendorFilter={vendorFilter}
-                groupFilter={groupFilter}
-                tagFilter={tagFilter}
-                onQuotaTypeChange={setQuotaTypeFilter}
-                onEndpointTypeChange={setEndpointTypeFilter}
-                onVendorChange={setVendorFilter}
-                onGroupChange={setGroupFilter}
-                onTagChange={setTagFilter}
-                vendors={vendors || []}
-                groups={availableGroups}
-                groupRatios={groupRatio}
-                tags={availableTags}
-                models={models || []}
-                hasActiveFilters={hasActiveFilters}
-                activeFilterCount={activeFilterCount}
-                onClearFilters={clearFilters}
-              />
-
-              {renderPricingContent()}
-            </main>
-          </div>
+            {renderPricingContent()}
+          </main>
 
           {selectedModel && (
             <ModelDetailsDrawer

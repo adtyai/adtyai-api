@@ -71,14 +71,21 @@ export function TableEmpty({
     description ?? t('No records found. Try adjusting your filters.')
   return (
     <TableRow>
-      <TableCell colSpan={colSpan} className='h-[400px] p-0'>
-        <Empty>
+      {/* Design system §4: empty states sit directly on the card surface —
+          a 24px faint glyph, a 14px/600 title and 13px dim copy. No gray
+          block behind the icon. */}
+      <TableCell colSpan={colSpan} className='h-[300px] p-0'>
+        <Empty className='border-0'>
           <EmptyHeader>
-            <EmptyMedia variant='icon'>
-              {icon || <Database className='size-6' />}
+            <EmptyMedia>
+              {icon || <Database className='text-faint size-6' />}
             </EmptyMedia>
-            <EmptyTitle>{resolvedTitle}</EmptyTitle>
-            <EmptyDescription>{resolvedDescription}</EmptyDescription>
+            <EmptyTitle className='text-[14px] font-semibold'>
+              {resolvedTitle}
+            </EmptyTitle>
+            <EmptyDescription className='text-dim text-[13px]'>
+              {resolvedDescription}
+            </EmptyDescription>
           </EmptyHeader>
           {children}
         </Empty>

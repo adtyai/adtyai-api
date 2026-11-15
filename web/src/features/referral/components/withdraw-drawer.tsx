@@ -338,6 +338,7 @@ export function WithdrawDrawer(props: WithdrawDrawerProps) {
               {t('Cancel')}
             </Button>
             <Button
+              variant='brand'
               type='submit'
               disabled={Boolean(error) || submit.isPending || upload.isPending}
             >

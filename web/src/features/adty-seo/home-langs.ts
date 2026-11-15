@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { normalizeInterfaceLanguage } from '@/i18n/languages'
-import type { ContentLang } from '@/lib/adty-lang'
+import type { StoredContentLang } from '@/lib/adty-lang'
 
 /** One language URL of the home page (adty task 9.3, decision 22). */
 export type HomeLang = {
@@ -25,14 +25,14 @@ export type HomeLang = {
   segment: string
   /** i18next interface language. */
   interfaceLang: string
-  contentLang: ContentLang
+  contentLang: StoredContentLang
 }
 
 /** Official home language URLs: `/` is English; Simplified Chinese is `/zh-cn`. */
-export const HOME_LANGS: readonly HomeLang[] = [
+export const HOME_LANGS = [
   { segment: '', interfaceLang: 'en', contentLang: 'en' },
   { segment: 'zh-cn', interfaceLang: 'zhCN', contentLang: 'zh-CN' },
-]
+] as const satisfies readonly HomeLang[]
 
 /**
  * Leftover unofficial home paths kept so old links do not 404. They are not

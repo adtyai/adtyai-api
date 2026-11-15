@@ -419,6 +419,7 @@ export function SyncWizardDialog(props: {
           )}
           {step === 2 && (
             <Button
+              variant='brand'
               disabled={
                 busy ||
                 updates.length === 0 ||
@@ -571,7 +572,7 @@ export function SyncWizardDialog(props: {
                     />
                     {t('Only show syncable models')}
                   </label>
-                  <p className='text-muted-foreground text-xs' role='status'>
+                  <p className='text-dim text-[12.5px]' role='status'>
                     {t(
                       '{{total}} models · {{syncable}} syncable · {{skipped}} skipped this time',
                       {
@@ -749,7 +750,7 @@ export function SyncWizardDialog(props: {
                   >
                     {t('Clear field selection')}
                   </Button>
-                  <p className='text-muted-foreground text-xs' role='status'>
+                  <p className='text-dim text-[12.5px]' role='status'>
                     {t('{{selected}} of {{total}} changed fields selected', {
                       selected: selectedFieldCount,
                       total: changedFieldCount,

@@ -16,144 +16,89 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { buttonVariants } from '@/components/ui/button'
-import { Skeleton } from '@/components/ui/skeleton'
-import { formatSavingsPercent } from '@/features/pricing/lib/adty-savings'
-import { toIntlLocale } from '@/i18n/languages'
-import { formatBillingCurrencyFromUSD } from '@/lib/currency'
-import { formatNumber } from '@/lib/format'
-
-import { paymentMethodSentence } from '../lib/payment-methods'
 import { cn } from '@/lib/utils'
 
-import type { LandingPrices } from '../hooks/use-landing-data'
-import { CodeCard } from './code-card'
-import { PriceCompareCard } from './price-compare-card'
-
-/** One figure of the stats strip; a skeleton while its data loads. */
-function Stat(props: { value: ReactNode | null; label: string }) {
-  return (
-    // The label comes first in the markup (dt before dd); the column is
-    // reversed so the figure sits on top.
-    <div className='flex flex-col-reverse gap-1'>
-      <dt className='text-muted-foreground text-xs'>{props.label}</dt>
-      <dd className='text-2xl font-semibold tracking-tight tabular-nums md:text-3xl'>
-        {props.value ?? <Skeleton className='h-8 w-16' aria-hidden />}
-      </dd>
-    </div>
-  )
-}
+/** Hero buttons take the sample's 50px height; `lg` is 40px. */
+const HERO_BUTTON = 'h-[50px] rounded-[11px] px-6 text-[15.5px] font-semibold'
 
 /**
- * First screen: headline, buttons and the stats strip on the left, the code
- * card with the official price card on the right (design §8.1).
+ * First screen (design sample: hero). One headline broken into two lines, a
+ * two-sentence lead, two buttons and a small note — nothing else. The grid
+ * and the warm corner light are the only decoration.
  */
-export function Hero(props: {
-  signedIn: boolean
-  baseUrl: string
-  prices: LandingPrices
-  /** USD; undefined while loading, null when not set. */
-  minTopUp: number | null | undefined
-  paymentMethodIds?: string[]
-}) {
-  const { t, i18n } = useTranslation()
-  const locale = toIntlLocale(i18n.resolvedLanguage || i18n.language)
-  const prices = props.prices
-  const ready = prices.state === 'ready' ? prices : null
-  const loading = prices.state === 'loading'
-
-  // A figure that can never be filled in (no prices for this viewer, no
-  // cheaper model, no minimum set) is left out instead of showing a guess.
-  const stats: { key: string; value: ReactNode | null; label: string }[] = []
-  if (ready || loading) {
-    stats.push({
-      key: 'models',
-      value: ready ? formatNumber(ready.modelCount, locale) : null,
-      label: t('Models available'),
-    })
-  }
-  if (props.minTopUp !== null && props.minTopUp !== 0) {
-    stats.push({
-      key: 'min-topup',
-      value:
-        props.minTopUp === undefined
-          ? null
-          : formatBillingCurrencyFromUSD(props.minTopUp),
-      label: t('Minimum top-up'),
-    })
-  }
-  if (loading || ready?.best) {
-    stats.push({
-      key: 'savings',
-      value: ready?.best ? (
-        <span className='text-success'>
-          {formatSavingsPercent(ready.best.savings, locale)}
-        </span>
-      ) : null,
-      label: t('Up to this much below official prices'),
-    })
-  }
+export function Hero(props: { signedIn: boolean }) {
+  const { t } = useTranslation()
 
   return (
     <section
       id='hero'
       aria-labelledby='hero-title'
-      className='mx-auto grid min-w-0 max-w-6xl items-center gap-12 px-4 pt-28 pb-16 md:px-6 lg:grid-cols-[1.1fr_1fr] lg:pt-32 lg:pb-20'
+      className='relative isolate flex min-h-svh flex-col justify-center overflow-hidden px-6 pt-32 pb-24 md:px-10'
     >
-      <div className='space-y-6'>
-        <p className='text-muted-foreground inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs'>
-          <span className='bg-success size-1.5 rounded-full' aria-hidden />
-          {t('Compatible with the OpenAI, Anthropic and Gemini APIs')}
-        </p>
+      <div
+        aria-hidden
+        className='pointer-events-none absolute inset-0 -z-10 [background-image:linear-gradient(to_right,var(--border)_1px,transparent_1px),linear-gradient(to_bottom,var(--border)_1px,transparent_1px)] [mask-image:radial-gradient(70%_76%_at_78%_22%,#000_0%,transparent_72%)] [background-size:72px_72px] opacity-60'
+      />
+      <div
+        aria-hidden
+        className='pointer-events-none absolute -top-[25rem] -right-[17.5rem] -z-10 size-[53.75rem] rounded-full bg-[radial-gradient(circle,var(--brand-soft),transparent_64%)]'
+      />
+      <div className='relative z-10 mx-auto w-full max-w-[1180px]'>
         <h1
           id='hero-title'
-          className='text-4xl font-semibold tracking-tight text-balance md:text-5xl'
+          className='text-[clamp(2.6rem,6vw,5.2rem)] leading-[1.02] font-extrabold tracking-[-0.045em] [text-wrap:balance] [word-break:keep-all]'
         >
-          {t('Claude, GPT and Gemini with one API key')}
+          <span className='block'>{t('One endpoint.')}</span>
+          <span className='text-neutral block'>{t('Every model.')}</span>
         </h1>
-        <p className='text-muted-foreground max-w-xl text-base text-pretty'>
+        <p className='text-muted-foreground mt-8 max-w-[37.5rem] text-[17px] leading-[1.7] text-pretty'>
           {t(
-            'Change one base_url and Claude Code, Codex CLI and the OpenAI SDK keep working. Pay as you go, below official prices.'
-          )}{' '}
-          {paymentMethodSentence(props.paymentMethodIds, t)}
-        </p>
-        <div className='flex flex-wrap gap-3'>
-          {props.signedIn ? (
-            <a href='/dashboard' className={buttonVariants({ size: 'lg' })}>
-              {t('Go to console')}
-            </a>
-          ) : (
-            <a href='/sign-up' className={buttonVariants({ size: 'lg' })}>
-              {t('Sign up')}
-            </a>
+            'Claude, GPT, Gemini, DeepSeek and the rest — behind the API you already integrate with.'
           )}
+        </p>
+        <div className='mt-10 flex flex-wrap gap-3.5'>
           <a
-            href='/pricing'
-            className={buttonVariants({ size: 'lg', variant: 'outline' })}
+            href={props.signedIn ? '/dashboard' : '/sign-up'}
+            className={cn(
+              buttonVariants({ variant: 'brand', size: 'lg' }),
+              HERO_BUTTON
+            )}
           >
-            {t('View pricing')}
+            {props.signedIn ? t('Go to console') : t('Get a key')}
+          </a>
+          <a
+            href='/docs'
+            className={cn(
+              buttonVariants({ variant: 'outline', size: 'lg' }),
+              HERO_BUTTON
+            )}
+          >
+            {t('Read the docs')}
           </a>
         </div>
-        {stats.length > 0 && (
-          <dl
-            data-testid='landing-stats'
-            className='flex flex-wrap gap-x-10 gap-y-4 border-t pt-6'
-          >
-            {stats.map((stat) => (
-              <Stat key={stat.key} value={stat.value} label={stat.label} />
-            ))}
-          </dl>
-        )}
+        <p className='text-neutral mt-6 text-[13.5px]'>
+          {t('No card required to start. Billed in USD, per request.')}
+        </p>
       </div>
-
-      <div className={cn('relative min-w-0', ready?.best && 'pb-24')}>
-        <CodeCard baseUrl={props.baseUrl} />
-        <div className='absolute right-2 bottom-0 sm:right-6'>
-          <PriceCompareCard row={ready?.best ?? null} />
-        </div>
+      <div
+        aria-hidden
+        className='text-neutral absolute inset-x-0 bottom-7 hidden justify-center md:flex'
+      >
+        <svg
+          width='22'
+          height='22'
+          viewBox='0 0 24 24'
+          fill='none'
+          stroke='currentColor'
+          strokeWidth='1.7'
+          strokeLinecap='round'
+          strokeLinejoin='round'
+        >
+          <path d='m6 9 6 6 6-6' />
+        </svg>
       </div>
     </section>
   )

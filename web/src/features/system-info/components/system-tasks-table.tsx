@@ -56,27 +56,27 @@ const STATUS_VARIANT: Record<SystemTaskStatus, 'secondary' | 'destructive'> = {
 
 const STATUS_CLASS_NAME: Record<SystemTaskStatus, string> = {
   pending:
-    'bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300',
+    'bg-warning-soft text-warning',
   running:
     'bg-sky-50 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300 [&_span]:bg-sky-500',
   succeeded:
-    'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300',
+    'bg-success-soft text-success',
   failed: '',
   cancelled: 'text-muted-foreground',
 }
 
 const STATUS_DOT_CLASS_NAME: Record<SystemTaskStatus, string> = {
-  pending: 'bg-amber-500',
+  pending: 'bg-warning',
   running: 'bg-sky-500',
-  succeeded: 'bg-emerald-500',
+  succeeded: 'bg-success',
   failed: 'bg-destructive',
   cancelled: 'bg-muted-foreground',
 }
 
 const PROGRESS_BAR_CLASS_NAME: Record<SystemTaskStatus, string> = {
-  pending: '[&_[data-slot=progress-indicator]]:bg-amber-500',
+  pending: '[&_[data-slot=progress-indicator]]:bg-warning',
   running: '[&_[data-slot=progress-indicator]]:bg-sky-500',
-  succeeded: '[&_[data-slot=progress-indicator]]:bg-emerald-500',
+  succeeded: '[&_[data-slot=progress-indicator]]:bg-success',
   failed: '[&_[data-slot=progress-indicator]]:bg-destructive',
   cancelled: '[&_[data-slot=progress-indicator]]:bg-muted-foreground',
 }

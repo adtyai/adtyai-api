@@ -52,13 +52,20 @@ import { useLogsViewScope, type LogsViewAccess } from './usage-logs-provider'
 const route = getRouteApi('/_authenticated/usage-logs/$section')
 
 const logTypeRowTint: Record<number, string> = {
-  [LOG_TYPE_ENUM.ERROR]: 'bg-rose-50/40 dark:bg-rose-950/20',
-  [LOG_TYPE_ENUM.REFUND]: 'bg-blue-50/30 dark:bg-blue-950/15',
+  [LOG_TYPE_ENUM.ERROR]: 'bg-destructive-soft/45',
+  [LOG_TYPE_ENUM.REFUND]: 'bg-info-soft/45',
 }
 
 // Warning tint for logs where a quota conversion saturated (admin-only marker).
 // Takes precedence over the per-type tint since it flags a billing anomaly.
-const quotaSaturationRowTint = 'bg-amber-50/60 dark:bg-amber-950/25'
+const quotaSaturationRowTint = 'bg-warning-soft/60'
+
+// Amounts, token counts and latencies read right-aligned in tabular digits.
+const USAGE_LOG_NUMERIC_COLUMNS = new Set([
+  'prompt_tokens',
+  'quota',
+  'use_time',
+])
 
 function getColumnVisibilityStorageKey(
   logCategory: LogCategory,
@@ -84,7 +91,11 @@ interface UsageLogsTableProps {
 export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
   const { t } = useTranslation()
   const getColumnClassName = useCallback(
-    () => (logCategory === 'common' ? 'py-2' : 'py-3.5'),
+    (columnId: string) =>
+      cn(
+        logCategory === 'common' ? 'py-1.5' : 'py-2.5',
+        USAGE_LOG_NUMERIC_COLUMNS.has(columnId) && 'text-right tabular-nums'
+      ),
     [logCategory]
   )
   const {
@@ -195,7 +206,7 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
 
   const isCommon = logCategory === 'common'
   const scrollRef = useRef<HTMLDivElement>(null)
-  const rowHeight = isCommon ? 52 : 64
+  const rowHeight = isCommon ? 44 : 56
   const reservedHeight = 520
   const rowVirtualizer = useVirtualizer({
     count: table.getRowModel().rows.length,

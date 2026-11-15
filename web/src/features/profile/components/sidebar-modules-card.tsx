@@ -245,7 +245,7 @@ export function SidebarModulesCard() {
           return (
             <div
               key={section.key}
-              className='bg-background/60 rounded-xl border p-3'
+              className='bg-background/60 rounded-[14px] border p-3'
             >
               <div className='flex items-start justify-between gap-3'>
                 <div className='min-w-0'>
@@ -293,7 +293,7 @@ export function SidebarModulesCard() {
           <Button variant='outline' onClick={handleReset}>
             {t('Reset to Default')}
           </Button>
-          <Button onClick={handleSave} disabled={loading}>
+          <Button variant='brand' onClick={handleSave} disabled={loading}>
             {loading ? t('Saving...') : t('Save Changes')}
           </Button>
         </div>

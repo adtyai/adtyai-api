@@ -119,9 +119,18 @@ export function SiteOwnerCenter(props: { section: SiteOwnerSectionId }) {
                     })
                   }
                 >
-                  <TabsList className='flex-wrap gap-1 group-data-horizontal/tabs:h-auto'>
+                  {/* Section nav: text tabs over a hairline, with a 2px brand
+                      underline on the active one (design system §4). */}
+                  <TabsList
+                    variant='line'
+                    className='border-border h-auto flex-wrap justify-start gap-x-6 gap-y-1 rounded-none border-b p-0 group-data-horizontal/tabs:h-auto [--tab-underline:var(--brand)]'
+                  >
                     {SITE_OWNER_SECTIONS.map((section) => (
-                      <TabsTrigger key={section} value={section}>
+                      <TabsTrigger
+                        key={section}
+                        value={section}
+                        className='text-dim hover:text-foreground data-active:text-foreground h-auto flex-none px-0 pt-0 pb-2.5 text-[13.5px] font-medium'
+                      >
                         {labels[section]}
                       </TabsTrigger>
                     ))}
@@ -129,7 +138,7 @@ export function SiteOwnerCenter(props: { section: SiteOwnerSectionId }) {
                   <TabsContent value='overview'>
                     <OverviewPanel />
                   </TabsContent>
-                  <TabsContent value='customers' className='flex flex-col gap-8'>
+                  <TabsContent value='customers' className='flex flex-col gap-5'>
                     <CustomersPanel />
                     <TeamRegistrationLinksPanel actor='owner' />
                     <SiteTeamDiscountPanel />
@@ -155,7 +164,7 @@ export function SiteOwnerCenter(props: { section: SiteOwnerSectionId }) {
                     <SiteSettingsPanel site={site.data} />
                   </TabsContent>
                   <TabsContent value='earnings'>
-                    <div className='flex flex-col gap-8'>
+                    <div className='flex flex-col gap-5'>
                       <EarningsPanel />
                       <SettlementSheetPanel />
                       <EarningToMarginPanel />

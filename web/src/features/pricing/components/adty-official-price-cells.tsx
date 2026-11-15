@@ -78,7 +78,7 @@ export function SavingsCell(props: {
   if (ratio == null) return null
   if (ratio < 0) return <span className='text-muted-foreground'>—</span>
   return (
-    <span className='text-success font-mono text-sm font-medium tabular-nums'>
+    <span className='text-brand-ink font-mono text-sm font-semibold tabular-nums'>
       {formatSavingsPercent(
         ratio,
         toIntlLocale(i18n.resolvedLanguage || i18n.language)

@@ -85,6 +85,7 @@ export function GroupTextDialog(props: GroupTextDialogProps) {
             {t('Cancel')}
           </Button>
           <Button
+            variant='brand'
             onClick={() => mutation.mutate()}
             disabled={!englishName || mutation.isPending}
           >

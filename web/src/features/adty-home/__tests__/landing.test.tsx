@@ -140,46 +140,43 @@ async function renderHome() {
 }
 
 describe('landing page', () => {
-  it('renders the hero, the blocks below it and the footer', async () => {
+  it('renders the hero, the migration block, the endpoints table, the referral strip and the closing card', async () => {
     await renderHome()
 
+    const hero = await screen.findByRole('heading', { level: 1 })
+    expect(hero).toHaveTextContent('One endpoint.')
+    expect(hero).toHaveTextContent('Every model.')
     expect(
-      await screen.findByRole('heading', {
-        level: 1,
-        name: 'Claude, GPT and Gemini with one API key',
-      })
+      screen.getByRole('region', { name: /It’s one line\./ })
     ).toBeInTheDocument()
     expect(
-      screen.getByRole('region', { name: 'Payment methods' })
-    ).toBeInTheDocument()
-    for (const name of [
-      'Popular model prices',
-      'Start in three steps',
-      'Setup guides',
-      'Why ADTY AI',
-      'Frequently asked questions',
-    ]) {
-      expect(screen.getByRole('region', { name })).toBeInTheDocument()
-    }
-    expect(
-      screen.getByText(
-        'Set ANTHROPIC_BASE_URL to this site, without /v1, and use your key.'
-      )
+      screen.getByRole('region', { name: /Four shapes\./ })
     ).toBeInTheDocument()
     expect(
-      screen.queryByRole('region', { name: 'Send your first request today' })
-    ).toBeNull()
-    expect(
-      screen.queryByText(
-        'After signing up, copy the base URL and a key from the console and you are ready.'
-      )
-    ).toBeNull()
+      screen.getByRole('region', { name: /Start with one request\./ })
+    ).toBeInTheDocument()
     expect(
       await screen.findByRole('region', {
         name: 'Invite friends, earn on every top-up',
       })
     ).toBeInTheDocument()
     expect(screen.getByRole('contentinfo')).toBeInTheDocument()
+  })
+
+  it('drops the blocks the minimal layout replaced', async () => {
+    await renderHome()
+
+    await screen.findByRole('heading', { level: 1 })
+    for (const name of [
+      'Popular model prices',
+      'Start in three steps',
+      'Setup guides',
+      'Why ADTY AI',
+      'Frequently asked questions',
+      'Payment methods',
+    ]) {
+      expect(screen.queryByRole('region', { name })).toBeNull()
+    }
   })
 
   it('puts the site API address into the code card', async () => {
@@ -203,23 +200,22 @@ describe('landing page', () => {
     )
   })
 
-  it('computes the stats strip from the prices and the minimum top-up', async () => {
+  it('lists the four endpoint shapes on the site address', async () => {
     await renderHome()
 
-    const stats = await screen.findByTestId('landing-stats')
-    await waitFor(() => expect(stats).toHaveTextContent('80%'))
-    expect(within(stats).getByText('2')).toBeInTheDocument()
-    expect(stats).toHaveTextContent(/\$5/)
-  })
-
-  it('shows savings only for models with an official price', async () => {
-    await renderHome()
-
-    const table = await screen.findByRole('region', {
-      name: 'Popular model prices',
+    const endpoints = await screen.findByRole('region', {
+      name: /Four shapes\./,
     })
-    expect(await within(table).findByText('gpt-x')).toBeInTheDocument()
-    expect(within(table).queryByText('no-official')).toBeNull()
+    expect(
+      within(endpoints).getAllByText('https://api.example.test/v1')
+    ).toHaveLength(2)
+    expect(
+      within(endpoints).getAllByText('https://api.example.test')
+    ).toHaveLength(2)
+    expect(within(endpoints).getByText('x-goog-api-key')).toBeInTheDocument()
+    expect(
+      within(endpoints).getByText('Anthropic Messages')
+    ).toBeInTheDocument()
   })
 
   it('leaves the upstream attribution, source link and support email out of the footer', async () => {
@@ -242,7 +238,7 @@ describe('landing page', () => {
     await renderHome()
 
     expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent(
-      'Claude, GPT and Gemini with one API key'
+      'One endpoint.'
     )
     expect(screen.queryByText('Loading...')).toBeNull()
   })
@@ -251,10 +247,20 @@ describe('landing page', () => {
     await renderHome()
 
     const hero = await screen.findByRole('region', {
-      name: 'Claude, GPT and Gemini with one API key',
+      name: /One endpoint\./,
     })
     expect(
-      within(hero).getByRole('link', { name: 'View pricing' })
+      within(hero).getByRole('link', { name: 'Get a key' })
+    ).toHaveAttribute('href', '/sign-up')
+    expect(
+      within(hero).getByRole('link', { name: 'Read the docs' })
+    ).toHaveAttribute('href', '/docs')
+
+    const closing = screen.getByRole('region', {
+      name: /Start with one request\./,
+    })
+    expect(
+      within(closing).getByRole('link', { name: 'See pricing' })
     ).toHaveAttribute('href', '/pricing')
   })
 })

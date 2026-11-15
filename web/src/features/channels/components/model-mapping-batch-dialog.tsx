@@ -386,12 +386,12 @@ export function ModelMappingBatchDialog(props: ModelMappingBatchDialogProps) {
               </p>
             )}
             {selected.length === 0 && (
-              <p className='text-muted-foreground text-xs'>
+              <p className='text-dim text-[12.5px]'>
                 {t('Example: users call gpt-4o; upstream receives gpt-4o-all.')}
               </p>
             )}
             {hasRule && derivation.unchanged.length > 0 && (
-              <p className='text-muted-foreground text-xs'>
+              <p className='text-dim text-[12.5px]'>
                 {t('{{count}} model(s) unchanged by the rule were skipped', {
                   count: derivation.unchanged.length,
                 })}

@@ -45,6 +45,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { NotificationManager } from '@/features/adty-notifications/components/notification-manager'
 import { useDraftNavigation } from '@/features/system-settings/hooks/use-draft-navigation'
 import { handleServerError } from '@/lib/handle-server-error'
+import { toSquareIconFile } from '@/lib/square-icon'
 import { STATUS_QUERY_KEY } from '@/lib/status-query'
 
 import {
@@ -109,10 +110,35 @@ function BrandCard(props: { site: OwnerSite }) {
     )
   }, [props.site.brand])
   const upload = useMutation({
-    mutationFn: (input: { key: 'logo_url' | 'favicon_url'; file: File }) =>
-      uploadLogo(input.file),
-    onSuccess: (url, input) =>
-      setBrand((prev) => ({ ...prev, [input.key]: url })),
+    mutationFn: async (input: {
+      key: 'logo_url' | 'favicon_url'
+      file: File
+    }) => {
+      const url = await uploadLogo(input.file)
+      // A logo doubles as the fallback tab icon: square it off when the site
+      // owner has not uploaded a dedicated favicon yet. Failures here are
+      // silent so the logo upload itself still succeeds.
+      let faviconUrl: string | null = null
+      if (input.key === 'logo_url' && !brand.favicon_url) {
+        const squareFile = await toSquareIconFile(input.file)
+        if (squareFile) {
+          try {
+            faviconUrl = await uploadLogo(squareFile)
+          } catch {
+            faviconUrl = null
+          }
+        }
+      }
+      return { key: input.key, url, faviconUrl }
+    },
+    onSuccess: ({ key, url, faviconUrl }) =>
+      setBrand((prev) => ({
+        ...prev,
+        [key]: url,
+        ...(key === 'logo_url' && faviconUrl && !prev.favicon_url
+          ? { favicon_url: faviconUrl }
+          : {}),
+      })),
     onError: (err) => handleServerError(err),
   })
   const save = useMutation({
@@ -207,7 +233,11 @@ function BrandCard(props: { site: OwnerSite }) {
           {t('Brand text is shown as plain text.')}
         </p>
         <div>
-          <Button disabled={save.isPending} onClick={() => save.mutate()}>
+          <Button
+            variant='brand'
+            disabled={save.isPending}
+            onClick={() => save.mutate()}
+          >
             {t('Save brand')}
           </Button>
         </div>

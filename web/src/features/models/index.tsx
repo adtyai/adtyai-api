@@ -86,6 +86,7 @@ function ModelsContent() {
   if (activeSection === 'vendors') {
     actions = (
       <Button
+        variant='brand'
         size='sm'
         disabled={!canCreate}
         onClick={() => {
@@ -108,6 +109,11 @@ function ModelsContent() {
         stackActionsOnMobile={activeSection === 'metadata'}
       >
         <SectionPageLayout.Title>{t(meta.titleKey)}</SectionPageLayout.Title>
+        <SectionPageLayout.Description>
+          {t(
+            'Manage metadata, pricing, and channel connections. Each section saves separately.'
+          )}
+        </SectionPageLayout.Description>
         <SectionPageLayout.Actions>{actions}</SectionPageLayout.Actions>
         <SectionPageLayout.Content>
           <div className='flex h-full min-h-0 flex-col gap-4'>

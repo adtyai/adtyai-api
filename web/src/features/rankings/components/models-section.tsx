@@ -21,6 +21,7 @@ import { BarChart3, Trophy } from 'lucide-react'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { chartPaletteRangeFaded, useChartPalette } from '@/lib/chart-theme'
 import { useChartTheme } from '@/lib/use-chart-theme'
 import { VCHART_OPTION } from '@/lib/vchart'
 
@@ -51,6 +52,7 @@ type ModelsSectionProps = {
 export function ModelsSection(props: ModelsSectionProps) {
   const { t } = useTranslation()
   const { resolvedTheme, themeReady } = useChartTheme()
+  const palette = useChartPalette()
   const chartTextColor =
     resolvedTheme === 'dark'
       ? 'rgba(255, 255, 255, 0.68)'
@@ -77,6 +79,13 @@ export function ModelsSection(props: ModelsSectionProps) {
     [props.rows]
   )
 
+  // Top-models leaders can outnumber the five ramp slots; fade the repeats so
+  // model six is not painted the exact same blue as model one.
+  const modelColourRange = useMemo(
+    () => chartPaletteRangeFaded(props.history.models.length, palette),
+    [props.history.models.length, palette]
+  )
+
   const spec = useMemo(() => {
     if (orderedPoints.length === 0) return null
     return {
@@ -87,6 +96,7 @@ export function ModelsSection(props: ModelsSectionProps) {
       seriesField: 'model',
       stack: true,
       legends: { visible: false },
+      color: { type: 'ordinal' as const, range: modelColourRange },
       axes: [
         {
           orient: 'bottom',
@@ -161,10 +171,10 @@ export function ModelsSection(props: ModelsSectionProps) {
       },
       animationAppear: { duration: 500 },
     }
-  }, [chartGridColor, chartTextColor, orderedPoints, t])
+  }, [chartGridColor, chartTextColor, modelColourRange, orderedPoints, t])
 
   return (
-    <section className='bg-card overflow-hidden rounded-lg border'>
+    <section className='bg-card overflow-hidden rounded-[14px] border'>
       {/* Chart block ----------------------------------------------------- */}
       <header className='flex items-start justify-between gap-4 px-5 py-4'>
         <div className='min-w-0 flex-1'>

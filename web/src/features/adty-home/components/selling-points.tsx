@@ -58,7 +58,7 @@ export function SellingPoints(props: { paymentMethodIds?: string[] }) {
     >
       <ul className='grid gap-4 sm:grid-cols-2 lg:grid-cols-4'>
         {points.map((point) => (
-          <li key={point.title} className='bg-card rounded-xl border p-5'>
+          <li key={point.title} className='bg-card rounded-[14px] border p-5'>
             <h3 className='mb-1.5 text-sm font-semibold'>{point.title}</h3>
             <p className='text-muted-foreground text-sm'>{point.body}</p>
           </li>

@@ -54,8 +54,8 @@ export function ComboboxInput({
   options,
   value = '',
   onValueChange,
-  placeholder = 'Select or type...',
-  emptyText = 'No option found.',
+  placeholder,
+  emptyText,
   className,
   popupClassName,
   id,
@@ -68,6 +68,7 @@ export function ComboboxInput({
   'aria-invalid': ariaInvalid,
 }: ComboboxInputProps) {
   const { t } = useTranslation()
+  const placeholderText = placeholder ?? t('Select or type...')
   const listId = React.useId()
   const [open, setOpen] = React.useState(false)
   const [searchValue, setSearchValue] = React.useState('')
@@ -245,7 +246,7 @@ export function ComboboxInput({
         aria-haspopup='listbox'
         aria-autocomplete='list'
         autoComplete='off'
-        placeholder={placeholder}
+        placeholder={placeholderText}
         value={displayValue}
         onChange={(e) => {
           const nextValue = e.target.value
@@ -339,7 +340,7 @@ export function ComboboxInput({
               </ul>
             ) : (
               <div className='px-2 py-6 text-center text-sm'>
-                {t(emptyText)}
+                {emptyText ? t(emptyText) : t('No option found.')}
                 {allowCustomValue && searchValue.trim() && (
                   <div className='text-muted-foreground mt-1 text-xs'>
                     {t('Press Enter to use "{{value}}"', {

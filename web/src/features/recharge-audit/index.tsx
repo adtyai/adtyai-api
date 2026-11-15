@@ -147,7 +147,7 @@ export function RechargeAudit(props: {
         )}
         {props.ownerMode !== true && summaryQuery.isPending && <LoadingState />}
         {props.ownerMode !== true && summaryQuery.data && (
-          <div className='grid gap-3 sm:grid-cols-3'>
+          <div className='border-border bg-border grid gap-px overflow-hidden rounded-[14px] border sm:grid-cols-3'>
             {[
               {
                 label: t('Orders'),
@@ -168,14 +168,17 @@ export function RechargeAudit(props: {
                 ),
               },
             ].map((item) => (
-              <Card key={item.label}>
-                <CardContent className='flex flex-col gap-1 py-4'>
-                  <span className='text-muted-foreground text-xs'>
-                    {item.label}
-                  </span>
-                  <span className='text-xl font-semibold'>{item.value}</span>
-                </CardContent>
-              </Card>
+              <div
+                key={item.label}
+                className='bg-card flex flex-col gap-1 px-5 py-4'
+              >
+                <span className='text-dim text-[12px] leading-none'>
+                  {item.label}
+                </span>
+                <span className='text-[19px] leading-tight font-semibold tabular-nums'>
+                  {item.value}
+                </span>
+              </div>
             ))}
           </div>
         )}
@@ -278,7 +281,7 @@ export function RechargeAudit(props: {
                   )
                 )}
               </NativeSelect>
-              <Button type='submit'>{t('Search')}</Button>
+              <Button variant='brand' type='submit'>{t('Search')}</Button>
             </form>
 
             {ordersQuery.isError && (
@@ -350,6 +353,8 @@ export function RechargeAudit(props: {
                     {
                       id: 'face',
                       header: t('Amount'),
+                      className: 'text-right',
+                      cellClassName: 'text-right tabular-nums',
                       cell: (row) =>
                         formatUsd(
                           Number(row.has_ext ? row.face_usd : row.amount),
@@ -359,13 +364,17 @@ export function RechargeAudit(props: {
                     {
                       id: 'bonus',
                       header: t('Bonus'),
+                      className: 'text-right',
+                      cellClassName: 'text-right tabular-nums',
                       cell: (row) => formatUsd(Number(row.bonus_usd), locale),
                     },
                     {
                       id: 'pay',
                       header: t('Payable / paid'),
+                      className: 'text-right',
+                      cellClassName: 'text-right tabular-nums',
                       cell: (row) => (
-                        <div className='flex flex-col text-xs'>
+                        <div className='flex flex-col items-end text-xs'>
                           <span>
                             {row.has_ext
                               ? `${row.pay_amount} ${row.pay_currency}`

@@ -25,6 +25,7 @@ import {
   CardTitle,
   CardDescription,
 } from '@/components/ui/card'
+import { cn } from '@/lib/utils'
 
 type SettingsCardProps = {
   title: string
@@ -33,6 +34,8 @@ type SettingsCardProps = {
   className?: string
 }
 
+/** Card shell for a group of settings: 14px radius, hairline border, and a
+ *  15px/600 title over a 20–24px padded body (design system §3). */
 export const SettingsCard = memo(function SettingsCard({
   title,
   description,
@@ -40,12 +43,21 @@ export const SettingsCard = memo(function SettingsCard({
   className,
 }: SettingsCardProps) {
   return (
-    <Card className={className}>
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-        {description && <CardDescription>{description}</CardDescription>}
+    <Card
+      data-card-hover='false'
+      className={cn('gap-0 overflow-hidden py-0', className)}
+    >
+      <CardHeader className='border-border gap-1 border-b px-5 py-4 sm:px-6'>
+        <CardTitle className='text-[15px] leading-snug font-semibold tracking-tight [word-break:keep-all]'>
+          {title}
+        </CardTitle>
+        {description ? (
+          <CardDescription className='text-dim text-[12.5px] leading-relaxed'>
+            {description}
+          </CardDescription>
+        ) : null}
       </CardHeader>
-      <CardContent>{children}</CardContent>
+      <CardContent className='px-5 py-5 sm:px-6'>{children}</CardContent>
     </Card>
   )
 })

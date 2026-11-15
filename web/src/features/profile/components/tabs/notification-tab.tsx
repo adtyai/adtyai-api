@@ -163,7 +163,7 @@ export function NotificationTab({
                   <ToggleGroupItem
                     key={method.value}
                     value={method.value}
-                    className='h-auto min-h-14 w-full flex-col gap-1.5 px-3 py-3 sm:min-h-16'
+                    className='h-auto min-h-14 w-full flex-col gap-1.5 px-3 py-3 sm:min-h-16 [--toggle-pressed-bg:var(--brand-soft)] [--toggle-pressed-border:color-mix(in_oklch,var(--brand)_35%,var(--border))] [--toggle-pressed-fg:var(--brand-ink)]'
                   >
                     <Icon className='h-4 w-4 sm:h-5 sm:w-5' />
                     <span className='max-w-full truncate text-xs font-medium sm:text-sm'>
@@ -440,7 +440,7 @@ export function NotificationTab({
 
       {/* Save Button */}
       <div className='flex justify-end'>
-        <Button onClick={handleSave} disabled={loading}>
+        <Button variant='brand' onClick={handleSave} disabled={loading}>
           {loading && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
           {loading ? t('Saving...') : t('Save Settings')}
         </Button>

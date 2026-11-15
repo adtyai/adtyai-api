@@ -166,9 +166,7 @@ export function AdtySiteSection(props: { defaultValues: AdtySiteDefaults }) {
               />
               {error && <p className='text-destructive text-xs'>{error}</p>}
               {!error && hints[item.field] && (
-                <p className='text-muted-foreground text-xs'>
-                  {hints[item.field]}
-                </p>
+                <p className='text-dim text-[12.5px]'>{hints[item.field]}</p>
               )}
             </div>
           )
@@ -178,7 +176,7 @@ export function AdtySiteSection(props: { defaultValues: AdtySiteDefaults }) {
             <Label htmlFor='adty-site-refund-policy'>
               {t('Show the refund policy')}
             </Label>
-            <p className='text-muted-foreground text-xs'>
+            <p className='text-dim text-[12.5px]'>
               {t(
                 'Adds the refund policy page, its footer link and the sign-up consent.'
               )}

@@ -46,18 +46,37 @@ type SettingsSwitchFieldProps = SettingsSwitchRowProps & {
 }
 
 const settingsSwitchRowClassName =
-  'flex min-w-0 flex-row items-center justify-between gap-4 py-2.5'
+  'flex min-w-0 flex-row items-center justify-between gap-4 py-3'
+
+/**
+ * Row typography shared by every settings form (design system §2):
+ * a 13.5px/600 label with its 12.5px `--dim` explanation directly below.
+ */
+const settingsFormFieldClassName = cn(
+  '[&_[data-slot=form-label]]:text-[13.5px]',
+  '[&_[data-slot=form-label]]:leading-snug',
+  '[&_[data-slot=form-label]]:font-semibold',
+  '[&_[data-slot=form-description]]:text-[12.5px]',
+  '[&_[data-slot=form-description]]:leading-relaxed',
+  '[&_[data-slot=form-description]]:text-dim',
+  // Sub-group headings inside a card follow the same scale as card titles.
+  '[&_h4]:text-[15px]',
+  '[&_h4]:font-semibold',
+  '[&_h4]:tracking-tight',
+  '[&_[data-slot=separator]]:my-1'
+)
 
 export function SettingsFormGrid(props: SettingsFormGridProps) {
   return (
     <div
       data-settings-form-span='full'
       className={cn(
-        'grid min-w-0 gap-x-5 gap-y-6 lg:grid-cols-2',
+        'grid min-w-0 gap-x-6 gap-y-5 lg:grid-cols-2',
         'lg:[&>[data-settings-form-span=full]]:col-span-2',
         '[&>[data-slot=form-item]]:min-w-0',
         'lg:[&>[data-slot=form-item]:has(textarea)]:col-span-2',
         'lg:[&>[data-slot=form-item]:has([data-slot=switch])]:col-span-2',
+        settingsFormFieldClassName,
         props.className
       )}
     >
@@ -120,13 +139,16 @@ export function SettingsSwitchField({
   return (
     <SettingsSwitchRow className={className} {...props}>
       <SettingsSwitchContent>
-        <Label htmlFor={controlId} className='text-sm font-medium'>
+        <Label
+          htmlFor={controlId}
+          className='text-[13.5px] leading-snug font-semibold'
+        >
           {label}
         </Label>
         {description ? (
           <p
             id={controlId ? `${controlId}-description` : undefined}
-            className='text-muted-foreground text-xs'
+            className='text-dim text-[12.5px] leading-relaxed'
           >
             {description}
           </p>
@@ -161,7 +183,7 @@ export function SettingsControlGroup({
     <div
       data-settings-form-span='full'
       className={cn(
-        'bg-muted/20 min-w-0 space-y-3 rounded-xl border px-3 py-2.5',
+        'bg-muted/20 min-w-0 space-y-3 rounded-[14px] border px-3 py-2.5',
         className
       )}
       {...props}
@@ -185,13 +207,14 @@ export function SettingsForm({ className, ...props }: ComponentProps<'form'>) {
   return (
     <form
       className={cn(
-        'grid min-w-0 gap-x-5 gap-y-6 lg:grid-cols-2',
+        'grid min-w-0 gap-x-6 gap-y-5 lg:grid-cols-2',
         'lg:[&>*:not([data-slot=form-item])]:col-span-2',
         'lg:[&>[data-settings-form-span=full]]:col-span-2',
         'lg:[&>[data-slot=alert]]:col-span-2',
         '[&>[data-slot=form-item]]:min-w-0',
         'lg:[&>[data-slot=form-item]:has(textarea)]:col-span-2',
         'lg:[&>[data-slot=form-item]:has([data-slot=switch])]:col-span-2',
+        settingsFormFieldClassName,
         className
       )}
       {...props}

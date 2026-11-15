@@ -67,14 +67,14 @@ describe('AdtyLegalSection', () => {
     render(<Fixture />)
     await user.selectOptions(screen.getByLabelText('Document'), 'refund_policy')
     await user.clear(screen.getByRole('textbox'))
-    await user.click(screen.getByRole('tab', { name: 'Français' }))
-    await user.type(screen.getByRole('textbox'), 'Remboursement')
+    await user.click(screen.getByRole('tab', { name: '简体中文' }))
+    await user.type(screen.getByRole('textbox'), '退款政策')
     await user.click(screen.getByRole('button', { name: 'Save Changes' }))
 
     expect(mutateAsync).toHaveBeenCalledTimes(1)
     expect(mutateAsync).toHaveBeenCalledWith({
       key: 'adty_legal_setting.refund_policy',
-      value: '{"fr":"Remboursement"}',
+      value: '{"zh-CN":"退款政策"}',
     })
   })
 

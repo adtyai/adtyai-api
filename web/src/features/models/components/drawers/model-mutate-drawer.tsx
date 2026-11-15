@@ -624,6 +624,7 @@ export function ModelMutateDrawer(props: {
                   {t('Close')}
                 </Button>
                 <Button
+                  variant='brand'
                   form='model-form'
                   type='submit'
                   disabled={

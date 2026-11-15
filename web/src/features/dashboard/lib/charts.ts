@@ -16,14 +16,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { dataScheme as vchartDefaultDataScheme } from '@visactor/vchart/esm/theme/color-scheme/builtin/default'
-
 import { MAX_CHART_TREND_POINTS } from '@/features/dashboard/constants'
 import type {
   QuotaDataItem,
   ProcessedChartData,
   ProcessedUserChartData,
 } from '@/features/dashboard/types'
+import { chartPaletteRange, readChartPalette } from '@/lib/chart-theme'
 import { getCurrencyDisplay } from '@/lib/currency'
 import { formatChartTime, type TimeGranularity } from '@/lib/time'
 
@@ -39,15 +38,13 @@ type TooltipLineItem = {
   shapeSize?: number
 }
 
+/**
+ * Ordinal colours for a chart with `domainLength` series. Charts share the
+ * brand blue → grey palette (`lib/chart-theme`) instead of VChart's default
+ * rainbow scheme, so blue stays the only accent on every screen.
+ */
 export function getDashboardChartColors(domainLength: number): string[] {
-  const scheme =
-    vchartDefaultDataScheme.find(
-      (item) => !item.maxDomainLength || domainLength <= item.maxDomainLength
-    ) ?? vchartDefaultDataScheme.at(-1)
-
-  return (scheme?.scheme ?? []).filter(
-    (color): color is string => typeof color === 'string'
-  )
+  return chartPaletteRange(domainLength)
 }
 
 function renderQuotaCompat(rawQuota: number, digits = 4): string {
@@ -71,7 +68,8 @@ export function processChartData(
   data: QuotaDataItem[],
   timeGranularity: TimeGranularity = 'day',
   t?: TFunction,
-  chartCornerRadius?: number
+  chartCornerRadius?: number,
+  palette: readonly string[] = readChartPalette()
 ): ProcessedChartData {
   const tt: TFunction = t ?? ((x) => x)
   const otherLabel = tt('Other')
@@ -270,10 +268,11 @@ export function processChartData(
     .map(([time]) => time)
   const sortedModels = [...allModels].sort()
   const modelColorDomain = [...new Set([...sortedModels, otherLabel])]
-  const modelColorRange = getDashboardChartColors(modelColorDomain.length)
+  const modelColorRange = chartPaletteRange(modelColorDomain.length, palette)
   const otherColor = modelColorRange[modelColorDomain.indexOf(otherLabel)]
+  // Neutral grey, not a new hue: "Other" is the residual, not a highlight.
   const otherTooltipColor =
-    typeof otherColor === 'string' ? otherColor : '#FF8A00'
+    typeof otherColor === 'string' ? otherColor : '#a3a3a3'
   const modelColor = {
     type: 'ordinal',
     domain: modelColorDomain,
@@ -693,26 +692,15 @@ export function processChartData(
   }
 }
 
-const USER_COLORS = [
-  '#5B8FF9',
-  '#5AD8A6',
-  '#F6BD16',
-  '#E8684A',
-  '#6DC8EC',
-  '#9270CA',
-  '#FF9D4D',
-  '#269A99',
-  '#FF99C3',
-  '#5D7092',
-]
-
 export function processUserChartData(
   data: QuotaDataItem[],
   timeGranularity: TimeGranularity = 'day',
   t?: TFunction,
-  limit = 10
+  limit = 10,
+  palette: readonly string[] = readChartPalette()
 ): ProcessedUserChartData {
   const tt: TFunction = t ?? ((x) => x)
+  const userColors = palette.length > 0 ? palette : readChartPalette()
   const { config } = getCurrencyDisplay()
   const quotaPerUnit = config.quotaPerUnit
 
@@ -732,7 +720,7 @@ export function processUserChartData(
         subtext: tt('No data available'),
       },
       legends: { visible: false },
-      color: { type: 'ordinal', range: USER_COLORS },
+      color: { type: 'ordinal', range: userColors },
       background: { fill: 'transparent' },
     },
     spec_user_trend: {
@@ -747,7 +735,7 @@ export function processUserChartData(
         subtext: tt('No data available'),
       },
       legends: { visible: true, selectMode: 'single' },
-      color: { type: 'ordinal', range: USER_COLORS },
+      color: { type: 'ordinal', range: userColors },
       point: { visible: false },
       background: { fill: 'transparent' },
     },
@@ -775,7 +763,7 @@ export function processUserChartData(
 
   const userColorMap = topUsers.reduce<Record<string, string>>(
     (acc, user, i) => {
-      acc[user] = USER_COLORS[i % USER_COLORS.length]
+      acc[user] = userColors[i % userColors.length]
       return acc
     },
     {}

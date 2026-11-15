@@ -102,7 +102,7 @@ function CardGridSkeleton(props: {
       {[1, 2, 3, 4, 5, 6].map((i) => (
         <div
           key={`${prefix}-${i}`}
-          className='space-y-3 rounded-lg border bg-(--table-row) p-3'
+          className='border-border space-y-3 rounded-[14px] border bg-(--table-row) p-4'
         >
           <div className='flex items-center justify-between gap-2'>
             <Skeleton className='h-4 w-32' />
@@ -160,14 +160,18 @@ export function DataTableCardGrid<TData>(props: DataTableCardGridProps<TData>) {
 
   if (!rows || rows.length === 0) {
     return (
-      <div className='rounded-lg border p-6'>
+      <div className='border-border bg-card rounded-[14px] border p-6'>
         <Empty className='border-none p-0'>
           <EmptyHeader>
-            <EmptyMedia variant='icon'>
-              {props.emptyIcon ?? <Database className='size-6' />}
+            <EmptyMedia>
+              {props.emptyIcon ?? <Database className='text-faint size-6' />}
             </EmptyMedia>
-            <EmptyTitle>{resolvedEmptyTitle}</EmptyTitle>
-            <EmptyDescription>{resolvedEmptyDescription}</EmptyDescription>
+            <EmptyTitle className='text-[14px] font-semibold'>
+              {resolvedEmptyTitle}
+            </EmptyTitle>
+            <EmptyDescription className='text-dim text-[13px]'>
+              {resolvedEmptyDescription}
+            </EmptyDescription>
           </EmptyHeader>
         </Empty>
       </div>
@@ -186,7 +190,11 @@ export function DataTableCardGrid<TData>(props: DataTableCardGridProps<TData>) {
             data-sortable-id={row.id}
             data-state={isSelected ? 'selected' : undefined}
             className={cn(
-              'rounded-lg border bg-(--data-table-card-bg,var(--table-row)) px-3 py-2.5 transition-[background-color,border-color] duration-150 data-[state=selected]:[--data-table-card-bg:color-mix(in_oklch,var(--primary)_7%,var(--table-row))] data-[state=selected]:border-primary/40',
+              // Design system §3: 14px radius, hairline border, and a hover
+              // that only shifts the border colour — never the geometry.
+              'border-border bg-card rounded-[14px] border px-4 py-3 transition-colors duration-150',
+              'hover:border-[color:color-mix(in_oklch,var(--border)_55%,var(--foreground))]',
+              'data-[state=selected]:border-brand/45 data-[state=selected]:bg-brand-soft',
               props.getRowClassName?.(row)
             )}
           >

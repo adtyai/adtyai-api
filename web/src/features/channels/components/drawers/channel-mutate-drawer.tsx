@@ -3386,7 +3386,7 @@ export function ChannelMutateDrawer({
                         aliases={upstreamAliases}
                       />
                       <div className='flex flex-wrap items-center justify-between gap-2'>
-                        <p className='text-muted-foreground text-xs'>
+                        <p className='text-dim text-[12.5px]'>
                           {t(
                             'Redirect fetched upstream names to the names your users call.'
                           )}
@@ -3427,14 +3427,14 @@ export function ChannelMutateDrawer({
                     </div>
                   )}
                 {isEditing && !previewModels && (
-                  <p className='text-muted-foreground text-xs'>
+                  <p className='text-dim text-[12.5px]'>
                     {t(
                       'Model discovery uses the saved channel connection settings.'
                     )}
                   </p>
                 )}
                 {!isEditing && isBatchMode && (
-                  <p className='text-muted-foreground text-xs'>
+                  <p className='text-dim text-[12.5px]'>
                     {t(
                       'Model discovery uses the first key; other keys are not tested.'
                     )}
@@ -3448,7 +3448,7 @@ export function ChannelMutateDrawer({
             <div className='space-y-3'>
               <div>
                 <p className='text-sm font-medium'>{t('Quick actions')}</p>
-                <p className='text-muted-foreground text-xs'>
+                <p className='text-dim text-[12.5px]'>
                   {t(
                     'Use presets or upstream discovery to populate the model list faster.'
                   )}
@@ -4483,7 +4483,7 @@ export function ChannelMutateDrawer({
                               <p className='text-sm font-medium'>
                                 {t('Current key')}
                               </p>
-                              <p className='text-muted-foreground text-xs'>
+                              <p className='text-dim text-[12.5px]'>
                                 {t(
                                   'Verification required to reveal the saved key.'
                                 )}
@@ -4540,7 +4540,7 @@ export function ChannelMutateDrawer({
               {currentType === 57 && (
                 <div className='border-border/60 flex flex-col gap-3 border-y py-4'>
                   <div className='flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between'>
-                    <div className='text-muted-foreground text-xs'>
+                    <div className='text-dim text-[12.5px]'>
                       {t(
                         'Codex channels use an OAuth JSON credential as the key.'
                       )}
@@ -5046,6 +5046,7 @@ export function ChannelMutateDrawer({
             )}
             {!showProviderPicker && (
               <Button
+                variant='brand'
                 form='channel-form'
                 type='submit'
                 disabled={

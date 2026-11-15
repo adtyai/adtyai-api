@@ -21,7 +21,6 @@ import { memo, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
-import { IconBadge } from '@/components/ui/icon-badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { getUptimeStatus } from '@/features/dashboard/api'
 import type {
@@ -33,10 +32,10 @@ import { cn } from '@/lib/utils'
 import { PanelWrapper } from '../ui/panel-wrapper'
 
 const STATUS_COLOR_MAP: Record<number, string> = {
-  1: 'bg-emerald-500',
-  0: 'bg-red-500',
-  2: 'bg-amber-500',
-  3: 'bg-blue-500',
+  1: 'bg-success',
+  0: 'bg-destructive',
+  2: 'bg-warning',
+  3: 'bg-info',
 }
 const DEFAULT_STATUS_COLOR = 'bg-muted-foreground/40'
 
@@ -98,9 +97,7 @@ export function UptimePanel() {
     <PanelWrapper
       title={
         <span className='flex items-center gap-2'>
-          <IconBadge tone='success' size='sm'>
-            <Activity />
-          </IconBadge>
+          <Activity className='text-faint size-3.5' aria-hidden='true' />
           {t('Uptime')}
         </span>
       }
@@ -129,9 +126,9 @@ export function UptimePanel() {
         <div>
           {groups.map((group, groupIdx) => (
             <div key={group.categoryName}>
-              <div className='bg-muted/30 border-border/60 border-b px-3 py-2 sm:px-5'>
+              <div className='bg-canvas border-b px-3 py-2 sm:px-5'>
                 <div className='flex items-center gap-2'>
-                  <h4 className='text-muted-foreground text-xs font-semibold tracking-wider uppercase'>
+                  <h4 className='text-faint text-[11px] font-semibold tracking-[0.08em] uppercase'>
                     {group.categoryName}
                   </h4>
                   <span className='text-muted-foreground/40 font-mono text-xs tabular-nums'>

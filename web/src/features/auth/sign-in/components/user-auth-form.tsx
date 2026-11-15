@@ -129,7 +129,6 @@ export function UserAuthForm({
     },
   })
 
-
   async function onSubmit(data: z.infer<typeof loginFormSchema>) {
     if (requiresLegalConsent && !agreedToLegal) {
       toast.error(legalConsentErrorMessage)
@@ -167,7 +166,6 @@ export function UserAuthForm({
       setIsLoading(false)
     }
   }
-
 
   async function handlePasskeyLogin() {
     if (requiresLegalConsent && !agreedToLegal) {
@@ -228,45 +226,41 @@ export function UserAuthForm({
     }
   }
 
-  const alternativeLoginMethods = (
-    <>
-      {passkeyLoginEnabled && (
-        <div className='mt-2 space-y-1'>
-          <Button
-            type='button'
-            variant='outline'
-            disabled={passkeyButtonDisabled}
-            onClick={handlePasskeyLogin}
-            className='h-11 w-full justify-center gap-2 rounded-lg'
-          >
-            {isPasskeyLoading ? (
-              <Loader2 className='h-4 w-4 animate-spin' />
-            ) : (
-              <KeyRound className='h-4 w-4' />
-            )}
-            {t('Sign in with Passkey')}
-          </Button>
-          <PasskeyDomainSelector
-            domains={passkeyDomains}
-            value={passkeyRPID}
-            onChange={setPasskeyRPID}
-            disabled={passkeyButtonDisabled}
-          />
-          {!passkeySupported && (
-            <p className='text-muted-foreground text-xs'>
-              {t('Passkey is not supported on this device.')}
-            </p>
-          )}
-        </div>
+  const alternativeLoginMethods = passkeyLoginEnabled ? (
+    <div className='mt-2 space-y-1'>
+      <Button
+        type='button'
+        variant='outline'
+        disabled={passkeyButtonDisabled}
+        onClick={handlePasskeyLogin}
+        className='h-10 w-full justify-center gap-2 rounded-lg'
+      >
+        {isPasskeyLoading ? (
+          <Loader2 className='h-4 w-4 animate-spin' />
+        ) : (
+          <KeyRound className='h-4 w-4' />
+        )}
+        {t('Sign in with Passkey')}
+      </Button>
+      <PasskeyDomainSelector
+        domains={passkeyDomains}
+        value={passkeyRPID}
+        onChange={setPasskeyRPID}
+        disabled={passkeyButtonDisabled}
+      />
+      {!passkeySupported && (
+        <p className='text-muted-foreground text-xs'>
+          {t('Passkey is not supported on this device.')}
+        </p>
       )}
-    </>
-  )
+    </div>
+  ) : null
 
   return (
     <Form {...form}>
       <form
         onSubmit={form.handleSubmit(onSubmit)}
-        className={cn('grid gap-4', className)}
+        className={cn('grid gap-4 [&_input]:h-10', className)}
         {...props}
       >
         {hasAlternativeLogin && alternativeLoginMethods}
@@ -318,7 +312,8 @@ export function UserAuthForm({
             {/* Submit Button */}
             <Button
               type='submit'
-              className='mt-2 w-full justify-center gap-2'
+              variant='brand'
+              className='mt-1 h-10 w-full justify-center gap-2 text-[0.9375rem]'
               disabled={isLoading}
             >
               {isLoading ? <Loader2 className='animate-spin' /> : <LogIn />}
@@ -348,7 +343,6 @@ export function UserAuthForm({
 
         {!hasAlternativeLogin && alternativeLoginMethods}
       </form>
-
     </Form>
   )
 }

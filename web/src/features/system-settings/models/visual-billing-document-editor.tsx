@@ -388,7 +388,7 @@ export function VisualBillingDocumentEditor(props: {
   return (
     <div className='space-y-3'>
       {props.document.root.kind === 'branch' && (
-        <p className='text-muted-foreground text-xs'>
+        <p className='text-dim text-[12.5px]'>
           {t(
             'Rules are checked in order. The first match determines the price.'
           )}

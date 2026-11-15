@@ -240,7 +240,7 @@ export function RequestSimulation(props: RequestSimulationProps) {
             </FieldDescription>
           </Field>
         )}
-        <p className='text-muted-foreground text-xs'>
+        <p className='text-dim text-[12.5px]'>
           {t(
             'Simulate a request including request rules and excluding group multipliers. Empty objects represent an empty request.'
           )}

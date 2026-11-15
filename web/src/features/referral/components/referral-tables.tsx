@@ -80,12 +80,22 @@ export function CommissionTable() {
           {
             id: 'order',
             header: t('Top-up'),
+            className: 'text-right',
+            cellClassName: 'text-right tabular-nums',
             cell: (row) => formatUsd(row.base_amount, locale),
           },
-          { id: 'rate', header: t('Rate'), cell: (row) => `${row.rate}%` },
+          {
+            id: 'rate',
+            header: t('Rate'),
+            className: 'text-right',
+            cellClassName: 'text-right tabular-nums',
+            cell: (row) => `${row.rate}%`,
+          },
           {
             id: 'amount',
             header: t('Commission'),
+            className: 'text-right',
+            cellClassName: 'text-right tabular-nums',
             cell: (row) => formatUsd(row.commission_amount, locale),
           },
           {
@@ -178,6 +188,8 @@ export function WithdrawalTable(props: { cancelWindowMinutes: number }) {
           {
             id: 'amount',
             header: t('Amount'),
+            className: 'text-right',
+            cellClassName: 'text-right tabular-nums',
             cell: (row) => {
               if (row.account_type === 'usdt') {
                 return t('{{amount}} → {{net}} USDT', {

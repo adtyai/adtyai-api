@@ -26,7 +26,9 @@ import { Textarea } from '@/components/ui/textarea'
 import {
   CONTENT_LANG_LABELS,
   CONTENT_LANGS,
+  STORED_CONTENT_LANGS,
   type ContentLang,
+  type StoredContentLang,
 } from '@/lib/adty-lang'
 
 import { SettingsPageFormActions } from '../components/settings-page-context'
@@ -34,7 +36,7 @@ import { SettingsSection } from '../components/settings-section'
 import { useUpdateOption } from '../hooks/use-update-option'
 import type { AdtySeoDefaults } from './adty-seo-defaults'
 
-type LangTexts = Partial<Record<ContentLang, string>>
+type LangTexts = Partial<Record<StoredContentLang, string>>
 type TextField = 'home_title' | 'home_description'
 
 /** Search engines cut longer titles and descriptions; only a hint. */
@@ -58,7 +60,8 @@ function parseTexts(raw: string): LangTexts {
 /** Saved form: trimmed, without empty languages, keys in a stable order. */
 function serializeTexts(texts: LangTexts): string {
   const out: LangTexts = {}
-  for (const lang of CONTENT_LANGS) {
+  // Legacy keys are preserved so an old translation is not erased by a save.
+  for (const lang of STORED_CONTENT_LANGS) {
     const value = texts[lang]?.trim()
     if (value) out[lang] = value
   }
@@ -214,7 +217,7 @@ export function AdtySeoSection(props: { defaultValues: AdtySeoDefaults }) {
               setDrafts((prev) => ({ ...prev, og_image: event.target.value }))
             }
           />
-          <p className='text-muted-foreground text-xs'>
+          <p className='text-dim text-[12.5px]'>
             {t(
               'Shown in link previews, 1200 by 630 pixels. A path starting with / is served by this site.'
             )}

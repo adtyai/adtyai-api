@@ -401,7 +401,7 @@ export function WaffoSettingsSection({
             >
               {t('Cancel')}
             </Button>
-            <Button type='button' onClick={saveMethod}>
+            <Button variant='brand' type='button' onClick={saveMethod}>
               {t('Confirm')}
             </Button>
           </>
@@ -460,7 +460,7 @@ export function WaffoSettingsSection({
                 </Button>
               ) : null}
             </div>
-            <p className='text-muted-foreground text-xs'>
+            <p className='text-dim text-[12.5px]'>
               {t(
                 'Supports PNG, JPG, SVG, or WebP. Recommended size: 128×128 or smaller.'
               )}

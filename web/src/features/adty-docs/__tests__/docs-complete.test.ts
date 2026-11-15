@@ -21,7 +21,7 @@ import { resolve } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-import { CONTENT_LANGS, type ContentLang } from '@/lib/adty-lang'
+import { LEGACY_CONTENT_LANGS, type ContentLang } from '@/lib/adty-lang'
 
 import { DOC_PAGES, getDocMarkdown, type DocSlug } from '../content'
 
@@ -31,14 +31,15 @@ const contentDir = resolve(import.meta.dirname, '../content')
  * 文档承诺的语言只有简中和英文（conventions.md 约定 E：正式语言只有 zh-CN 和
  * en；其余六种「不得在选择器、首页、文档和验收中承诺」）。
  *
- * 这里不是把 `CONTENT_LANGS` 改小——那是后端存储文案用的 8 种内容语言，
- * 群组名、法务页、SEO 都还在用。改的是**文档这一项的验收范围**：正式语言
- * 必须有全部 10 篇；其余六种保留仓库里已有的那 8 篇，只要求「在的不能是空的」。
+ * `CONTENT_LANGS` 现在就是这两项；仓库里遗留的六种文档 Markdown 仍被登记着
+ * （`LEGACY_CONTENT_LANGS`），但它们不再被产品承诺、也不会被界面选中。这里
+ * 只要求「已经存在的遗留页面不能是空的」，正式语言必须有全部 10 篇。
  */
-const OFFICIAL_DOC_LANGS = ['en', 'zh-CN'] as const satisfies readonly ContentLang[]
-const LEGACY_DOC_LANGS = CONTENT_LANGS.filter(
-  (lang) => !(OFFICIAL_DOC_LANGS as readonly string[]).includes(lang)
-)
+const OFFICIAL_DOC_LANGS = [
+  'en',
+  'zh-CN',
+] as const satisfies readonly ContentLang[]
+const LEGACY_DOC_LANGS = LEGACY_CONTENT_LANGS
 
 /** 某语言实际存在的页面（历史语言缺 models / roles 是预期状态）。 */
 function presentPagesOf(lang: string): DocSlug[] {
@@ -72,7 +73,10 @@ describe('docs content', () => {
       const present = presentPagesOf(lang)
       expect(present.length).toBeGreaterThan(0)
       for (const slug of present) {
-        const markdown = readFileSync(resolve(contentDir, lang, `${slug}.md`), 'utf8')
+        const markdown = readFileSync(
+          resolve(contentDir, lang, `${slug}.md`),
+          'utf8'
+        )
         expect(markdown.trim(), `${lang}/${slug}.md`).not.toBe('')
         expect(getDocMarkdown(slug, lang), `${lang}/${slug} registered`).toBe(
           markdown

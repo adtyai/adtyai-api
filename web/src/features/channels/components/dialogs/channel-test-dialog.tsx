@@ -990,7 +990,7 @@ function ChannelTestDialogContent({
                 className='w-full min-w-0'
                 placeholder={t('Auto detect (default)')}
               />
-              <p className='text-muted-foreground text-xs'>
+              <p className='text-dim text-[12.5px]'>
                 {t(
                   'Override the endpoint used for testing. Leave empty to auto detect.'
                 )}
@@ -1009,7 +1009,7 @@ function ChannelTestDialogContent({
                   {effectiveStreamTest ? t('Enabled') : t('Disabled')}
                 </span>
               </div>
-              <p className='text-muted-foreground text-xs'>
+              <p className='text-dim text-[12.5px]'>
                 {t('Enable streaming mode for the test request.')}
               </p>
             </div>
@@ -1019,7 +1019,7 @@ function ChannelTestDialogContent({
             <div className='flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between'>
               <div className='min-w-0 space-y-2'>
                 <p className='text-sm font-medium'>{t('Channel models')}</p>
-                <p className='text-muted-foreground text-xs'>
+                <p className='text-dim text-[12.5px]'>
                   {t('Select models to run batch tests.')}
                 </p>
                 <div className='flex flex-wrap items-center gap-2'>

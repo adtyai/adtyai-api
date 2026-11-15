@@ -150,7 +150,7 @@ export function CacheStatsDialog(props: Props) {
       contentHeight='auto'
       bodyClassName='space-y-4'
     >
-      <p className='text-muted-foreground text-xs'>
+      <p className='text-dim text-[12.5px]'>
         {t(
           'Hit criteria: If cached tokens exist in usage, it counts as a hit.'
         )}

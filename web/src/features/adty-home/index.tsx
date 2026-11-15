@@ -21,13 +21,10 @@ import { useApiBaseUrl } from '@/features/adty-site/api'
 import { useAuthStore } from '@/stores/auth-store'
 
 import { AffiliateBanner } from './components/affiliate-banner'
-import { ClientGuides } from './components/client-guides'
-import { Faq } from './components/faq'
+import { ClosingCta } from './components/closing-cta'
+import { EndpointsSection } from './components/endpoints-section'
 import { Hero } from './components/hero'
-import { PaymentStrip } from './components/payment-strip'
-import { PopularModels } from './components/popular-models'
-import { SellingPoints } from './components/selling-points'
-import { Steps } from './components/steps'
+import { MigrationSection } from './components/migration-section'
 import { useLandingData, type LandingData } from './hooks/use-landing-data'
 
 /**
@@ -43,26 +40,14 @@ export function LandingSections(props: {
 }) {
   return (
     <>
-      <Hero
-        signedIn={props.signedIn}
-        baseUrl={props.baseUrl}
-        prices={props.data.prices}
-        minTopUp={props.data.minTopUp}
-        paymentMethodIds={props.data.paymentMethodIds}
-      />
-      <PaymentStrip
-        supportHours={props.data.supportHours}
-        paymentMethodIds={props.data.paymentMethodIds}
-      />
-      <PopularModels prices={props.data.prices} />
-      <Steps paymentMethodIds={props.data.paymentMethodIds} />
-      <ClientGuides />
-      <SellingPoints paymentMethodIds={props.data.paymentMethodIds} />
+      <Hero signedIn={props.signedIn} />
+      <MigrationSection baseUrl={props.baseUrl} />
+      <EndpointsSection baseUrl={props.baseUrl} />
       <AffiliateBanner
         open={props.data.affiliate.open}
         rate={props.data.affiliate.rate}
       />
-      <Faq paymentMethodIds={props.data.paymentMethodIds} />
+      <ClosingCta signedIn={props.signedIn} />
     </>
   )
 }

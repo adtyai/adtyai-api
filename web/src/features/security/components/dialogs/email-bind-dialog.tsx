@@ -216,6 +216,7 @@ export function EmailBindDialog(props: EmailBindDialogProps) {
               </Button>
             ) : (
               <Button
+                variant='brand'
                 type='submit'
                 form='email-bind-form'
                 disabled={security.pending}

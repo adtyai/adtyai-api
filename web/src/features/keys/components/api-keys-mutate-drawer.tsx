@@ -837,6 +837,7 @@ export function ApiKeysMutateDrawer({
             {t('Close')}
           </SheetClose>
           <Button
+            variant='brand'
             type='button'
             onClick={form.handleSubmit(onSubmit, onInvalid)}
             disabled={!isFormInitialized || isSubmitting}

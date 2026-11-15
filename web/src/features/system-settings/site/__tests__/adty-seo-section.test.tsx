@@ -106,15 +106,15 @@ describe('home page SEO settings section', () => {
     const user = userEvent.setup()
     renderSection(savedOptions)
 
-    await user.click(screen.getByRole('tab', { name: 'Français' }))
-    await user.type(screen.getByLabelText('Title (Français)'), 'ADTY AI FR')
+    await user.click(screen.getByRole('tab', { name: '简体中文' }))
+    await user.clear(screen.getByLabelText('Title (简体中文)'))
+    await user.type(screen.getByLabelText('Title (简体中文)'), 'ADTY AI 新标题')
     await user.click(screen.getByRole('button', { name: 'Save Changes' }))
 
     expect(mutateAsync).toHaveBeenCalledTimes(1)
     expect(mutateAsync).toHaveBeenCalledWith({
       key: 'adty_seo_setting.home_title',
-      value:
-        '{"en":"ADTY AI - one key","zh-CN":"ADTY AI 一个密钥","fr":"ADTY AI FR"}',
+      value: '{"en":"ADTY AI - one key","zh-CN":"ADTY AI 新标题"}',
     })
   })
 
@@ -122,10 +122,10 @@ describe('home page SEO settings section', () => {
     const user = userEvent.setup()
     renderSection(savedOptions)
 
-    await user.click(screen.getByRole('tab', { name: /Fran/ }))
+    await user.click(screen.getByRole('tab', { name: '简体中文' }))
     await user.type(
       screen.getByRole('textbox', { name: /Title/ }),
-      'ADTY AI FR'
+      'ADTY AI 新标题'
     )
     await user.click(screen.getByRole('button', { name: 'Save Changes' }))
 

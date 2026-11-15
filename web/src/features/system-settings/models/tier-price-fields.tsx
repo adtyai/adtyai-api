@@ -104,7 +104,7 @@ function PriceField({
         aria-invalid={invalid || undefined}
         className='h-8 w-full'
       />
-      {hint && <p className='text-muted-foreground text-xs'>{hint}</p>}
+      {hint && <p className='text-dim text-[12.5px]'>{hint}</p>}
     </div>
   )
 }

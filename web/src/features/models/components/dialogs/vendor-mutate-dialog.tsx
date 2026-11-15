@@ -295,6 +295,7 @@ export function VendorMutateDialog(props: {
                   {t('Close')}
                 </Button>
                 <Button
+                  variant='brand'
                   type='submit'
                   form='vendor-mutate-form'
                   disabled={

@@ -18,6 +18,13 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { describe, expect, test } from 'vitest'
 
+import {
+  convertDetectedLanguage,
+  INTERFACE_LANGUAGE_OPTIONS,
+  LOADABLE_INTERFACE_LANGUAGE_CODES,
+  normalizeInterfaceLanguage,
+  toIntlLocale,
+} from './languages'
 import en from './locales/en.json'
 import fr from './locales/fr.json'
 import ja from './locales/ja.json'
@@ -26,13 +33,6 @@ import ru from './locales/ru.json'
 import vi from './locales/vi.json'
 import zhTW from './locales/zh-TW.json'
 import zhCN from './locales/zh.json'
-import {
-  convertDetectedLanguage,
-  INTERFACE_LANGUAGE_OPTIONS,
-  LOADABLE_INTERFACE_LANGUAGE_CODES,
-  normalizeInterfaceLanguage,
-  toIntlLocale,
-} from './languages'
 
 const officialChineseCases = [
   ['zhCN', 'zhCN'],
@@ -69,19 +69,10 @@ describe('INTERFACE_LANGUAGE_OPTIONS', () => {
     )
   })
 
-  test('keeps leftover unofficial locale resources on disk', () => {
-    expect([...LOADABLE_INTERFACE_LANGUAGE_CODES]).toEqual(
-      expect.arrayContaining([
-        'zhCN',
-        'en',
-        'fr',
-        'ru',
-        'ja',
-        'ko',
-        'vi',
-        'zhTW',
-      ])
-    )
+  test('loads only the two official packs, even if leftover files remain on disk', () => {
+    expect([...LOADABLE_INTERFACE_LANGUAGE_CODES]).toEqual(['zhCN', 'en'])
+    // The leftover JSON files are still imported here on purpose: they stay on
+    // disk, but no loader ships them, so they can never become the UI language.
     expect(zhCN).toBeTruthy()
     expect(en).toBeTruthy()
     expect(fr).toBeTruthy()
@@ -122,9 +113,12 @@ describe('normalizeInterfaceLanguage', () => {
     [' KO_kr ', 'en'],
     [' VI_vn ', 'en'],
     ['fr-FR-u-nu-latn', 'en'],
-  ])('maps unofficial or regional locale %s to official %s', (locale, language) => {
-    expect(normalizeInterfaceLanguage(locale)).toBe(language)
-  })
+  ])(
+    'maps unofficial or regional locale %s to official %s',
+    (locale, language) => {
+      expect(normalizeInterfaceLanguage(locale)).toBe(language)
+    }
+  )
 
   test.each(officialChineseCases)(
     'maps Chinese locale %s, including unofficial variants, to official %s',

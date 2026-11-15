@@ -117,7 +117,7 @@ const LazyFlowCharts = lazy(() =>
 
 function LogStatCardsFallback() {
   return (
-    <div className='overflow-hidden rounded-lg border'>
+    <div className='overflow-hidden rounded-[14px] border'>
       <div className='divide-border/60 grid min-w-0 grid-cols-2 divide-x sm:grid-cols-3 lg:grid-cols-7'>
         {LOG_STAT_CARD_FALLBACK_KEYS.map((key, index) => (
           <div
@@ -146,7 +146,7 @@ function LogStatCardsFallback() {
 
 function ModelChartsFallback() {
   return (
-    <div className='overflow-hidden rounded-lg border'>
+    <div className='overflow-hidden rounded-[14px] border'>
       <div className='flex items-center justify-between border-b px-4 py-3 sm:px-5'>
         <Skeleton className='h-5 w-32' />
         <Skeleton className='h-8 w-72' />
@@ -160,7 +160,7 @@ function ModelChartsFallback() {
 
 function PerformanceOverviewFallback() {
   return (
-    <div className='overflow-hidden rounded-lg border'>
+    <div className='overflow-hidden rounded-[14px] border'>
       <div className='flex flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 sm:px-5'>
         <div className='flex items-center gap-2'>
           <Skeleton className='h-4 w-24' />
@@ -181,18 +181,25 @@ function PerformanceOverviewFallback() {
   )
 }
 
-const SECTION_META: Record<DashboardSectionId, { titleKey: string }> = {
+const SECTION_META: Record<
+  DashboardSectionId,
+  { titleKey: string; descriptionKey: string }
+> = {
   overview: {
     titleKey: 'Overview',
+    descriptionKey: 'Monitor balance, usage, and request volume',
   },
   models: {
     titleKey: 'Model Call Analytics',
+    descriptionKey: 'Aggregated usage metrics and trend charts.',
   },
   flow: {
     titleKey: 'Flow',
+    descriptionKey: 'Filter the traffic flow view by time range and user.',
   },
   users: {
     titleKey: 'User Analytics',
+    descriptionKey: 'View user lists, details and balance history.',
   },
 }
 
@@ -330,28 +337,29 @@ export function Dashboard() {
   return (
     <SectionPageLayout>
       <SectionPageLayout.Title>{t(meta.titleKey)}</SectionPageLayout.Title>
-      <SectionPageLayout.Content>
-        <div className='space-y-3 sm:space-y-4'>
-          <div className='flex flex-wrap items-center justify-between gap-1.5 sm:gap-2'>
-            {showSectionTabs ? (
-              <Tabs value={activeSection} onValueChange={handleSectionChange}>
-                <TabsList className='max-w-full flex-wrap justify-start group-data-horizontal/tabs:h-auto'>
-                  {visibleSections.map((section) => (
-                    <TabsTrigger key={section} value={section}>
-                      {t(SECTION_META[section].titleKey)}
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
-              </Tabs>
-            ) : (
-              <div />
-            )}
-            {sectionActions != null && (
-              <div className='flex shrink-0 flex-wrap items-center gap-1.5 sm:gap-2'>
-                {sectionActions}
-              </div>
-            )}
+      <SectionPageLayout.Description>
+        {t(meta.descriptionKey)}
+      </SectionPageLayout.Description>
+      {sectionActions != null && (
+        <SectionPageLayout.Actions>
+          <div className='flex flex-wrap items-center justify-end gap-2'>
+            {sectionActions}
           </div>
+        </SectionPageLayout.Actions>
+      )}
+      <SectionPageLayout.Content>
+        <div className='flex flex-col gap-4'>
+          {showSectionTabs && (
+            <Tabs value={activeSection} onValueChange={handleSectionChange}>
+              <TabsList className='max-w-full flex-wrap justify-start group-data-horizontal/tabs:h-auto'>
+                {visibleSections.map((section) => (
+                  <TabsTrigger key={section} value={section}>
+                    {t(SECTION_META[section].titleKey)}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </Tabs>
+          )}
           {activeSection === 'models' && (
             <>
               <FadeIn>

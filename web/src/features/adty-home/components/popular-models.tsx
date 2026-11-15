@@ -70,11 +70,11 @@ export function PopularModels(props: { prices: LandingPrices }) {
       }
     >
       {message ? (
-        <p className='text-muted-foreground rounded-xl border px-4 py-10 text-center text-sm'>
+        <p className='text-muted-foreground rounded-[14px] border px-4 py-10 text-center text-sm'>
           {message}
         </p>
       ) : (
-        <div className='rounded-xl border'>
+        <div className='rounded-[14px] border'>
           <Table>
             <TableHeader>
               <TableRow>

@@ -59,7 +59,7 @@ export function Steps(props: { paymentMethodIds?: string[] }) {
     >
       <ol className='grid gap-4 md:grid-cols-3'>
         {steps.map((step, index) => (
-          <li key={step.title} className='bg-card rounded-xl border p-5'>
+          <li key={step.title} className='bg-card rounded-[14px] border p-5'>
             <span
               className='bg-primary text-primary-foreground mb-4 inline-flex size-6 items-center justify-center rounded-md text-xs font-semibold'
               aria-hidden

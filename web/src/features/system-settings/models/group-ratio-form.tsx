@@ -125,6 +125,7 @@ export const GroupRatioForm = memo(function GroupRatioForm({
       <Form {...form}>
         <SettingsPageActionsPortal>
           <Button
+            variant='brand'
             type='button'
             size='sm'
             onClick={form.handleSubmit(onSave, (errors) => {
@@ -372,7 +373,7 @@ function GroupPricingGuide({ open, onOpenChange }: GroupPricingGuideProps) {
                 <span className='bg-primary/10 ring-primary/40 rounded px-1.5 py-0.5 font-semibold ring-1'>
                   0.3
                 </span>{' '}
-                <span className='text-muted-foreground text-xs'>
+                <span className='text-dim text-[12.5px]'>
                   {t('(instead of {{ratio}})', { ratio: 0.5 })}
                 </span>
               </div>

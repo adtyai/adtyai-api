@@ -32,7 +32,7 @@ import zhCN from '@/i18n/locales/zh.json'
 
 import { renderAdtyHome, renderAllAdtyHomes } from '../prerender'
 
-const HERO_TITLE = 'Claude, GPT and Gemini with one API key'
+const HERO_TITLE = 'One endpoint.'
 
 const officialHeroByLang = {
   en: en.translation[HERO_TITLE],

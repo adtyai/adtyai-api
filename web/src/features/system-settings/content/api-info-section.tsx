@@ -404,7 +404,7 @@ export function ApiInfoSection({ enabled, data }: ApiInfoSectionProps) {
             >
               {t('Cancel')}
             </Button>
-            <Button type='submit' form={API_INFO_FORM_ID}>
+            <Button variant='brand' type='submit' form={API_INFO_FORM_ID}>
               {editingApiInfo ? t('Update') : t('Add')}
             </Button>
           </>

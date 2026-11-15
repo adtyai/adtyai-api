@@ -306,6 +306,7 @@ export function WithdrawalPanel(props: {
         }
         footer={
           <Button
+            variant='brand'
             disabled={
               pay.isPending ||
               upload.isPending ||

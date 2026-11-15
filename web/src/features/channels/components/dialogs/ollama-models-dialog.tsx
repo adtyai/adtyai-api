@@ -467,7 +467,7 @@ export function OllamaModelsDialog({
             <div className='flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between'>
               <div>
                 <p className='text-sm font-medium'>{t('Local models')}</p>
-                <p className='text-muted-foreground text-xs'>
+                <p className='text-dim text-[12.5px]'>
                   {t('Select models and apply to channel models list.')}
                 </p>
               </div>

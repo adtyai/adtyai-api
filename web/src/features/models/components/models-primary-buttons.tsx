@@ -74,7 +74,12 @@ export function ModelsPrimaryButtons() {
         </Button>
       )}
       {/* Create Model */}
-      <Button onClick={handleCreateModel} size='sm' disabled={!canCreate}>
+      <Button
+        variant='brand'
+        onClick={handleCreateModel}
+        size='sm'
+        disabled={!canCreate}
+      >
         <Plus className='h-4 w-4' />
         {t('Add Model')}
       </Button>

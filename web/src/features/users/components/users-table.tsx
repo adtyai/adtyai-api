@@ -290,6 +290,9 @@ export function UsersTable() {
           },
         ],
       }}
+      getColumnClassName={(columnId) =>
+        columnId === 'quota' ? 'text-right tabular-nums' : undefined
+      }
       getRowClassName={(row, { isMobile }) => {
         if (!isDisabledUserRow(row.original)) return undefined
         return isMobile ? DISABLED_ROW_MOBILE : DISABLED_ROW_DESKTOP

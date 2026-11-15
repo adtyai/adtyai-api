@@ -165,10 +165,10 @@ export function PasskeyCard({ loading: pageLoading }: PasskeyCardProps) {
     <>
       <Card data-card-hover='false' className='gap-0 overflow-hidden py-0'>
         <CardHeader className='p-3 sm:p-5'>
-          <CardTitle className='text-lg tracking-tight sm:text-xl'>
+          <CardTitle className='text-[15px] leading-snug font-semibold tracking-tight'>
             {t('Passkey Login')}
           </CardTitle>
-          <CardDescription className='text-xs sm:text-sm'>
+          <CardDescription className='text-dim text-[13px] leading-relaxed'>
             {t('Use Passkey to sign in without entering your password.')}
           </CardDescription>
         </CardHeader>
@@ -206,6 +206,7 @@ export function PasskeyCard({ loading: pageLoading }: PasskeyCardProps) {
 
               {!enabled && (
                 <Button
+                  variant='brand'
                   className='w-full sm:w-auto xl:w-full 2xl:w-auto'
                   onClick={handleRegister}
                   disabled={!supported || registering || verification.isActive}
@@ -270,7 +271,7 @@ export function PasskeyCard({ loading: pageLoading }: PasskeyCardProps) {
 
             {showUnsupportedNotice && (
               <div className='bg-muted/60 text-muted-foreground flex items-start gap-3 rounded-md p-4 text-sm'>
-                <ShieldAlert className='mt-0.5 h-4 w-4 flex-shrink-0 text-amber-500' />
+                <ShieldAlert className='mt-0.5 h-4 w-4 flex-shrink-0 text-warning' />
                 <div>
                   <p className='text-foreground font-medium'>
                     {t('Passkey not supported on this device')}

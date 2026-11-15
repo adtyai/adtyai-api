@@ -99,6 +99,11 @@ export function Referral() {
   return (
     <SectionPageLayout>
       <SectionPageLayout.Title>{t('Referral')}</SectionPageLayout.Title>
+      <SectionPageLayout.Description>
+        {t(
+          'Earn rewards when users join through your referral link. Transfer accumulated rewards to your balance anytime.'
+        )}
+      </SectionPageLayout.Description>
       <SectionPageLayout.Content>
         {profileQuery.isLoading && <LoadingState />}
         {profileQuery.isError && (

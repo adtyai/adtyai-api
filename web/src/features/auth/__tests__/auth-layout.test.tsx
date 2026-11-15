@@ -90,6 +90,13 @@ describe('auth layout', () => {
     ).not.toBeInTheDocument()
   })
 
+  it('holds the signed-out form in a 400px column next to the brand panel', async () => {
+    await renderLayout()
+
+    const form = await screen.findByRole('form', { name: 'Sign in form' })
+    expect(form.parentElement).toHaveClass('max-w-[400px]')
+  })
+
   it('hides the brand panel on small screens so the form keeps one column', async () => {
     await renderLayout()
 

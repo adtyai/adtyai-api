@@ -161,6 +161,7 @@ export function BEpusdtSettingsSection(props: BEpusdtSettingsSectionProps) {
       {props.inlineActions ? (
         <div className='mb-4 flex justify-end'>
           <Button
+            variant='brand'
             type='button'
             size='sm'
             onClick={save}

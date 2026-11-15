@@ -128,7 +128,7 @@ export function CopyChannelDialog({
             onChange={(e) => setSuffix(e.target.value)}
             disabled={isCopying}
           />
-          <p className='text-muted-foreground text-xs'>
+          <p className='text-dim text-[12.5px]'>
             {t('New name will be:')} {currentRow.name}
             {suffix}
           </p>

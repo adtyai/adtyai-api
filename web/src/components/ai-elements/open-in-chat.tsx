@@ -273,6 +273,7 @@ export const OpenInTrigger = ({ children, ...props }: OpenInTriggerProps) => {
 export type OpenInChatGPTProps = ComponentProps<typeof DropdownMenuItem>
 
 export const OpenInChatGPT = (props: OpenInChatGPTProps) => {
+  const { t } = useTranslation()
   const { query } = useOpenInContext()
   return (
     <DropdownMenuItem
@@ -287,7 +288,7 @@ export const OpenInChatGPT = (props: OpenInChatGPTProps) => {
       }
     >
       <span className='shrink-0'>{providers.chatgpt.icon}</span>
-      <span className='flex-1'>{providers.chatgpt.title}</span>
+      <span className='flex-1'>{t('Open in {{app}}', { app: 'ChatGPT' })}</span>
       <ExternalLinkIcon className='size-4 shrink-0' />
     </DropdownMenuItem>
   )
@@ -296,6 +297,7 @@ export const OpenInChatGPT = (props: OpenInChatGPTProps) => {
 export type OpenInClaudeProps = ComponentProps<typeof DropdownMenuItem>
 
 export const OpenInClaude = (props: OpenInClaudeProps) => {
+  const { t } = useTranslation()
   const { query } = useOpenInContext()
   return (
     <DropdownMenuItem
@@ -310,7 +312,7 @@ export const OpenInClaude = (props: OpenInClaudeProps) => {
       }
     >
       <span className='shrink-0'>{providers.claude.icon}</span>
-      <span className='flex-1'>{providers.claude.title}</span>
+      <span className='flex-1'>{t('Open in {{app}}', { app: 'Claude' })}</span>
       <ExternalLinkIcon className='size-4 shrink-0' />
     </DropdownMenuItem>
   )
@@ -319,6 +321,7 @@ export const OpenInClaude = (props: OpenInClaudeProps) => {
 export type OpenInT3Props = ComponentProps<typeof DropdownMenuItem>
 
 export const OpenInT3 = (props: OpenInT3Props) => {
+  const { t } = useTranslation()
   const { query } = useOpenInContext()
   return (
     <DropdownMenuItem
@@ -333,7 +336,7 @@ export const OpenInT3 = (props: OpenInT3Props) => {
       }
     >
       <span className='shrink-0'>{providers.t3.icon}</span>
-      <span className='flex-1'>{providers.t3.title}</span>
+      <span className='flex-1'>{t('Open in {{app}}', { app: 'T3 Chat' })}</span>
       <ExternalLinkIcon className='size-4 shrink-0' />
     </DropdownMenuItem>
   )
@@ -342,6 +345,7 @@ export const OpenInT3 = (props: OpenInT3Props) => {
 export type OpenInSciraProps = ComponentProps<typeof DropdownMenuItem>
 
 export const OpenInScira = (props: OpenInSciraProps) => {
+  const { t } = useTranslation()
   const { query } = useOpenInContext()
   return (
     <DropdownMenuItem
@@ -356,7 +360,7 @@ export const OpenInScira = (props: OpenInSciraProps) => {
       }
     >
       <span className='shrink-0'>{providers.scira.icon}</span>
-      <span className='flex-1'>{providers.scira.title}</span>
+      <span className='flex-1'>{t('Open in {{app}}', { app: 'Scira' })}</span>
       <ExternalLinkIcon className='size-4 shrink-0' />
     </DropdownMenuItem>
   )
@@ -365,6 +369,7 @@ export const OpenInScira = (props: OpenInSciraProps) => {
 export type OpenInv0Props = ComponentProps<typeof DropdownMenuItem>
 
 export const OpenInv0 = (props: OpenInv0Props) => {
+  const { t } = useTranslation()
   const { query } = useOpenInContext()
   return (
     <DropdownMenuItem
@@ -379,7 +384,7 @@ export const OpenInv0 = (props: OpenInv0Props) => {
       }
     >
       <span className='shrink-0'>{providers.v0.icon}</span>
-      <span className='flex-1'>{providers.v0.title}</span>
+      <span className='flex-1'>{t('Open in {{app}}', { app: 'v0' })}</span>
       <ExternalLinkIcon className='size-4 shrink-0' />
     </DropdownMenuItem>
   )
@@ -388,6 +393,7 @@ export const OpenInv0 = (props: OpenInv0Props) => {
 export type OpenInCursorProps = ComponentProps<typeof DropdownMenuItem>
 
 export const OpenInCursor = (props: OpenInCursorProps) => {
+  const { t } = useTranslation()
   const { query } = useOpenInContext()
   return (
     <DropdownMenuItem
@@ -402,7 +408,7 @@ export const OpenInCursor = (props: OpenInCursorProps) => {
       }
     >
       <span className='shrink-0'>{providers.cursor.icon}</span>
-      <span className='flex-1'>{providers.cursor.title}</span>
+      <span className='flex-1'>{t('Open in {{app}}', { app: 'Cursor' })}</span>
       <ExternalLinkIcon className='size-4 shrink-0' />
     </DropdownMenuItem>
   )

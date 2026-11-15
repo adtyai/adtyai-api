@@ -90,6 +90,11 @@ export function AuditLogs() {
   return (
     <SectionPageLayout fixedContent>
       <SectionPageLayout.Title>{t('Audit Logs')}</SectionPageLayout.Title>
+      <SectionPageLayout.Description>
+        {t(
+          'View audit records from user and admin roles. Root records are always excluded.'
+        )}
+      </SectionPageLayout.Description>
       <SectionPageLayout.Actions>
         {canReadAll && !accessRevoked && (
           <Tabs

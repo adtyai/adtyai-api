@@ -67,7 +67,7 @@ export function ClientGuides() {
     >
       <ul className='grid gap-4 sm:grid-cols-2'>
         {guides.map((guide) => (
-          <li key={guide.href} className='bg-card rounded-xl border p-5'>
+          <li key={guide.href} className='bg-card rounded-[14px] border p-5'>
             <h3 className='mb-1.5 text-sm font-semibold'>
               <a href={guide.href} className='hover:underline'>
                 {guide.name}

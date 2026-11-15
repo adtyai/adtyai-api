@@ -202,7 +202,7 @@ export function SettingsPanel(props: { canWrite: boolean }) {
         ))}
       </fieldset>
       <div>
-        <Button type='submit' disabled={disabled}>
+        <Button variant='brand' type='submit' disabled={disabled}>
           {t('Save Changes')}
         </Button>
       </div>

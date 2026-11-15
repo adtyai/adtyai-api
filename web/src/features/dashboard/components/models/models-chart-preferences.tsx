@@ -82,7 +82,7 @@ export function ModelsChartPreferences(props: ModelsChartPreferencesProps) {
       contentHeight='auto'
       bodyClassName='grid gap-3'
       footer={
-        <Button onClick={handleSave} type='button'>
+        <Button variant='brand' onClick={handleSave} type='button'>
           <Save className='mr-2 h-4 w-4' />
           {t('Save Preferences')}
         </Button>

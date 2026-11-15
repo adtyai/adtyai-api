@@ -35,6 +35,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { usePricingData } from '@/features/pricing/hooks/use-pricing-data'
 import {
   normalizeTierLabel,
   parseTaskTiersFromExpr,
@@ -43,7 +44,6 @@ import {
   formatTaskUsageUnitPrice,
   getTaskUsagePriceUnitLabelKey,
 } from '@/features/pricing/lib/dynamic-price'
-import { usePricingData } from '@/features/pricing/hooks/use-pricing-data'
 import { pluginUsageSchema } from '@/features/pricing/lib/plugin-pricing'
 import { taskUsageUnitLabel } from '@/features/pricing/lib/task-price-display'
 import type { BillingUsageSchema } from '@/features/pricing/types'
@@ -484,7 +484,7 @@ export function useCommonLogsColumns(
                             }
                           >
                             <GitBranch
-                              className='size-3.5 text-amber-500'
+                              className='text-warning size-3.5'
                               aria-hidden='true'
                             />
                           </PopoverTrigger>
@@ -505,7 +505,7 @@ export function useCommonLogsColumns(
                       {affinity && (
                         <button
                           type='button'
-                          className='absolute -top-1 -right-1 leading-none text-amber-500'
+                          className='text-warning absolute -top-1 -right-1 leading-none'
                           onClick={(e) => {
                             e.stopPropagation()
                             setAffinityTarget({
@@ -766,7 +766,8 @@ export function useCommonLogsColumns(
           return (
             <div className='flex flex-col gap-0.5'>
               <span className='font-mono text-xs font-medium tabular-nums'>
-                {formatInteger(promptTokens)} / {formatInteger(completionTokens)}
+                {formatInteger(promptTokens)} /{' '}
+                {formatInteger(completionTokens)}
               </span>
               {(cacheReadTokens > 0 || cacheWriteTokens > 0) && (
                 <div className='flex items-center gap-1 text-[11px]'>
@@ -847,7 +848,7 @@ export function useCommonLogsColumns(
           if (primary?.muted) {
             primaryTextClass = 'text-muted-foreground/60'
           } else if (primary?.danger) {
-            primaryTextClass = 'text-red-600 dark:text-red-400'
+            primaryTextClass = 'text-destructive'
           }
           let detailPreview = (
             <span className='text-muted-foreground/40'>—</span>

@@ -477,7 +477,12 @@ export function TeamPanel() {
                 {t('0.8 means pay 80% of the ordinary price; 1 means pay the ordinary (full) price.')}
               </p>
             </div>
-            <Button type='button' disabled={pending || name.trim() === ''} onClick={() => void create()}>
+            <Button
+              variant='brand'
+              type='button'
+              disabled={pending || name.trim() === ''}
+              onClick={() => void create()}
+            >
               {t('Create team')}
             </Button>
             <div className='flex flex-col gap-1'>

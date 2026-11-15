@@ -160,7 +160,7 @@ export function AffiliatePanel(props: {
             placeholder={t('Invite code or username')}
             aria-label={t('Search')}
           />
-          <Button type='submit'>{t('Search')}</Button>
+          <Button variant='brand' type='submit'>{t('Search')}</Button>
         </form>
       )}
       <StaticDataTable
@@ -337,6 +337,7 @@ export function AffiliatePanel(props: {
                 />
               </div>
               <Button
+                variant='brand'
                 disabled={
                   update.isPending || amount === '' || reason.trim() === ''
                 }

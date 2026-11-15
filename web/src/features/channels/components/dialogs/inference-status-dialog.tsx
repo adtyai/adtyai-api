@@ -501,7 +501,7 @@ export function InferenceStatusDialog(props: InferenceStatusDialogProps) {
             >
               <h3 className='font-medium'>{group.title}</h3>
               {group.hint && (
-                <p className='text-muted-foreground text-xs'>{group.hint}</p>
+                <p className='text-dim text-[12.5px]'>{group.hint}</p>
               )}
               <dl className='grid gap-2 sm:grid-cols-2'>
                 {group.rows.map((row) => {

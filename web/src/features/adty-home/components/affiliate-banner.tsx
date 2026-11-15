@@ -21,8 +21,9 @@ import { useTranslation } from 'react-i18next'
 import { buttonVariants } from '@/components/ui/button'
 
 /**
- * Black referral banner. Hidden while the program is off or its settings are
- * unknown; without a default rate it promises no number.
+ * Referral strip between the endpoints and the closing card. Hidden while the
+ * program is off or its settings are unknown; without a default rate it
+ * promises no number.
  */
 export function AffiliateBanner(props: { open: boolean; rate: number | null }) {
   const { t } = useTranslation()
@@ -32,27 +33,27 @@ export function AffiliateBanner(props: { open: boolean; rate: number | null }) {
     <section
       id='affiliate'
       aria-labelledby='affiliate-title'
-      className='mx-auto max-w-6xl px-4 pb-16 md:px-6 md:pb-20'
+      className='px-6 pb-24 md:px-10 md:pb-28'
     >
-      <div className='dark bg-background text-foreground flex flex-wrap items-center justify-between gap-6 rounded-xl border px-6 py-8 md:px-10'>
+      <div className='border-border mx-auto flex max-w-[1180px] flex-wrap items-center justify-between gap-6 border-t pt-10'>
         <div className='space-y-2'>
-          <h2 id='affiliate-title' className='text-xl font-semibold'>
+          <h2 id='affiliate-title' className='text-[15px] font-semibold'>
             {t('Invite friends, earn on every top-up')}
           </h2>
-          <p className='text-muted-foreground max-w-2xl text-sm'>
+          <p className='text-muted-foreground max-w-2xl text-sm leading-[1.7]'>
             {props.rate !== null
               ? t(
-                  'Earn {{rate}}% of every top-up the people you invite make, for as long as they stay. Withdraw to USDT, Alipay or WeChat Pay.',
+                  'Earn {{rate}}% of every top-up the people you invite make, for as long as they stay.',
                   { rate: props.rate }
                 )
               : t(
-                  'Earn a commission on every top-up the people you invite make, for as long as they stay. Withdraw to USDT, Alipay or WeChat Pay.'
+                  'Earn a commission on every top-up the people you invite make, for as long as they stay.'
                 )}
           </p>
         </div>
         <a
           href='/affiliate'
-          className={buttonVariants({ size: 'lg', variant: 'outline' })}
+          className={buttonVariants({ variant: 'outline', size: 'lg' })}
         >
           {t('Affiliate Program')}
         </a>

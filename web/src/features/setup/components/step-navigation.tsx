@@ -54,13 +54,13 @@ export function StepNavigation({
 
       <div className='flex flex-1 justify-end gap-2'>
         {!isLastStep && (
-          <Button type='button' onClick={onNext}>
+          <Button type='button' variant='brand' onClick={onNext}>
             {t('Next')}
           </Button>
         )}
 
         {isLastStep && (
-          <Button type='button' onClick={onSubmit} disabled={isSubmitting}>
+          <Button type='button' variant='brand' onClick={onSubmit} disabled={isSubmitting}>
             {isSubmitting ? (
               <>
                 <Loader2 className='mr-2 size-4 animate-spin' />

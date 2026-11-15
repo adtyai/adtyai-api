@@ -110,7 +110,7 @@ export function ChatDialog({
           >
             {t('Cancel')}
           </Button>
-          <Button type='submit' form={CHAT_DIALOG_FORM_ID}>
+          <Button variant='brand' type='submit' form={CHAT_DIALOG_FORM_ID}>
             {isEditMode ? t('Update') : t('Add')}
           </Button>
         </>

@@ -183,7 +183,12 @@ export function PaymentSceneEditor(props: {
         title={t(props.index < 0 ? 'New payment scene' : 'Edit payment scene')}
         onOpenChange={(open) => !open && close()}
         footer={
-          <Button type='submit' form={`${id}-form`} disabled={save.isPending}>
+          <Button
+            variant='brand'
+            type='submit'
+            form={`${id}-form`}
+            disabled={save.isPending}
+          >
             {t('Save payment scene')}
           </Button>
         }

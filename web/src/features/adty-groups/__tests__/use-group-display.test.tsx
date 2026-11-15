@@ -97,14 +97,16 @@ describe('useGroupDisplay', () => {
 })
 
 describe('toContentLang', () => {
+  // The product offers Simplified Chinese and English only, so every other
+  // interface code resolves to one of those two content languages.
   it.each([
     ['zhCN', 'zh-CN'],
-    ['zhTW', 'zh-TW'],
+    ['zhTW', 'zh-CN'],
     ['en', 'en'],
-    ['fr', 'fr'],
-    ['ja', 'ja'],
-    ['ru', 'ru'],
-    ['vi', 'vi'],
+    ['fr', 'en'],
+    ['ja', 'en'],
+    ['ru', 'en'],
+    ['vi', 'en'],
     ['xx', 'en'],
   ])('maps %s to %s', (input, expected) => {
     expect(toContentLang(input)).toBe(expected)

@@ -111,7 +111,7 @@ export function ForgotPasswordForm({
     <Form {...form}>
       <form
         onSubmit={form.handleSubmit(onSubmit)}
-        className={cn('grid gap-2', className)}
+        className={cn('grid gap-4 [&_input]:h-10', className)}
         {...props}
       >
         <FormField
@@ -152,7 +152,8 @@ export function ForgotPasswordForm({
 
         <Button
           type='submit'
-          className='mt-2'
+          variant='brand'
+          className='mt-1 h-10 w-full justify-center gap-2'
           disabled={isLoading || isActive || !turnstileReady}
         >
           {isActive

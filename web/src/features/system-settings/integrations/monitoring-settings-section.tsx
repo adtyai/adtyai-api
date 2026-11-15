@@ -175,7 +175,7 @@ export function MonitoringSettingsSection({
             onSave={form.handleSubmit(onSubmit)}
             isSaving={updateOption.isPending}
           />
-          <p className='text-muted-foreground text-xs'>
+          <p className='text-dim text-[12.5px]'>
             {t(
               'Collect relay latency and success-rate metrics for the model square.'
             )}

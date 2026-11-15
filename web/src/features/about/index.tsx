@@ -32,19 +32,17 @@ function EmptyAboutState() {
   const { t } = useTranslation()
 
   return (
-    <div className='flex min-h-[60vh] items-center justify-center p-8'>
-      <div className='max-w-2xl space-y-6 text-center'>
-        <div className='flex justify-center'>
-          <Construction className='text-muted-foreground h-24 w-24' />
-        </div>
-        <div className='space-y-2'>
-          <h2 className='text-2xl font-bold'>{t('No About Content Set')}</h2>
-          <p className='text-muted-foreground'>
-            {t(
-              'The administrator has not configured any about content yet. You can set it in the settings page, supporting HTML or URL.'
-            )}
-          </p>
-        </div>
+    <div className='flex min-h-[55vh] items-center justify-center px-6 py-16'>
+      <div className='flex max-w-[480px] flex-col items-center gap-5 text-center'>
+        <Construction className='text-faint size-20' aria-hidden='true' />
+        <h2 className='text-[22px] leading-tight font-bold tracking-[-0.02em]'>
+          {t('No About Content Set')}
+        </h2>
+        <p className='text-muted-foreground text-sm leading-relaxed'>
+          {t(
+            'The administrator has not configured any about content yet. You can set it in the settings page, supporting HTML or URL.'
+          )}
+        </p>
       </div>
     </div>
   )
@@ -65,7 +63,7 @@ export function About() {
   if (isLoading) {
     return (
       <PublicLayout>
-        <div className='mx-auto flex max-w-4xl flex-col gap-4 py-12'>
+        <div className='mx-auto flex max-w-[680px] flex-col gap-4 py-12'>
           <Skeleton className='h-8 w-[45%]' />
           <Skeleton className='h-4 w-full' />
           <Skeleton className='h-4 w-[90%]' />
@@ -111,11 +109,11 @@ export function About() {
 
   return (
     <PublicLayout>
-      <div className='mx-auto max-w-6xl px-4 py-8'>
+      <div className='mx-auto w-full max-w-[680px] py-10'>
         <RichContent
           mode='markdown'
           content={rawContent}
-          className='prose-neutral dark:prose-invert max-w-none'
+          className='prose-neutral dark:prose-invert max-w-none [&_li]:leading-[1.8] [&_p]:leading-[1.8]'
         />
       </div>
     </PublicLayout>

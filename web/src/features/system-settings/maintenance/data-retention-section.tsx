@@ -192,7 +192,7 @@ export function DataRetentionSection() {
               >
                 <div className='flex flex-col gap-1'>
                   <h4 className='font-medium'>{t(category.title)}</h4>
-                  <p className='text-muted-foreground text-xs'>{t(category.notes)}</p>
+                  <p className='text-dim text-[12.5px]'>{t(category.notes)}</p>
                 </div>
                 {!category.auto_cleanable ? (
                   <p className='text-sm'>
@@ -250,6 +250,7 @@ export function DataRetentionSection() {
                       </div>
                     )}
                     <Button
+                      variant='brand'
                       type='button'
                       onClick={() => saveCategory(category)}
                       disabled={!canSave || save.isPending}
@@ -259,14 +260,14 @@ export function DataRetentionSection() {
                   </div>
                 )}
                 {category.min_retention_days ? (
-                  <p className='text-muted-foreground text-xs'>
+                  <p className='text-dim text-[12.5px]'>
                     {t('Usage-log cleanup keeps a {{days}}-day safety floor.', {
                       days: category.min_retention_days,
                     })}
                   </p>
                 ) : null}
                 {!category.configured && category.auto_cleanable ? (
-                  <p className='text-muted-foreground text-xs'>
+                  <p className='text-dim text-[12.5px]'>
                     {t('Not configured: the official cleanup task will not delete this category.')}
                   </p>
                 ) : null}

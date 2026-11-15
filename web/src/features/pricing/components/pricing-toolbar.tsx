@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { ArrowUpDown, Check, Filter } from 'lucide-react'
+import { ArrowUpDown, Check, ChevronDown, Filter } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -43,13 +43,25 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { useGroupDisplay } from '@/features/adty-groups/hooks/use-group-display'
 import { cn } from '@/lib/utils'
 
-import { getSortLabels, type SortOption, type ViewMode } from '../constants'
+import {
+  FILTER_ALL,
+  getSortLabels,
+  type SortOption,
+  type ViewMode,
+} from '../constants'
 import type { PricingModel, PricingVendor, TokenUnit } from '../types'
 import { PricingSidebar } from './pricing-sidebar'
+import { SearchBar } from './search-bar'
 
 export interface PricingToolbarProps {
+  /** Search stays optional so the toolbar can render without a catalog table. */
+  searchValue?: string
+  onSearchChange?: (value: string) => void
+  onSearchClear?: () => void
+  searchPlaceholder?: string
   filteredCount: number
   totalCount?: number
   sortBy: string
@@ -82,19 +94,25 @@ export interface PricingToolbarProps {
 
 export function PricingToolbar(props: PricingToolbarProps) {
   const { t } = useTranslation()
+  const groupDisplay = useGroupDisplay()
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false)
   const sortLabels = getSortLabels(t)
+  const hasSearch =
+    props.searchValue !== undefined && props.onSearchChange !== undefined
+  const activeGroupLabel =
+    props.groupFilter === FILTER_ALL
+      ? t('All Groups')
+      : groupDisplay.name(props.groupFilter)
 
   return (
-    <div className='bg-card rounded-xl border p-3'>
-      <div className='flex flex-wrap items-center justify-between gap-3'>
-        <div className='flex items-center gap-2'>
+    <div className='bg-card rounded-[14px] border'>
+      <div className='flex flex-wrap items-center gap-2 p-2.5'>
+        <div className='flex min-w-0 flex-1 flex-wrap items-center gap-2'>
           <Button
             type='button'
             variant='outline'
-            size='sm'
             onClick={() => setMobileFiltersOpen(true)}
-            className='gap-1.5 xl:hidden'
+            className='h-9 gap-1.5 px-3 text-[13px]'
           >
             <Filter className='size-4' />
             {t('Filter')}
@@ -105,7 +123,64 @@ export function PricingToolbar(props: PricingToolbarProps) {
             )}
           </Button>
 
-          <div className='text-muted-foreground flex items-baseline gap-1 text-sm'>
+          {hasSearch && (
+            <SearchBar
+              value={props.searchValue ?? ''}
+              onChange={(value) => props.onSearchChange?.(value)}
+              onClear={() => props.onSearchClear?.()}
+              placeholder={props.searchPlaceholder}
+              className='min-w-0 flex-1 sm:max-w-[280px]'
+            />
+          )}
+
+          <DropdownMenu modal={false}>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  type='button'
+                  variant='outline'
+                  className='h-9 max-w-[200px] gap-1.5 px-3 text-[13px]'
+                />
+              }
+            >
+              <span className='text-muted-foreground shrink-0'>
+                {t('Group')}
+              </span>
+              <span className='min-w-0 truncate font-medium'>
+                {activeGroupLabel}
+              </span>
+              <ChevronDown className='text-muted-foreground/70 size-3.5 shrink-0' />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align='start' className='w-52'>
+              <DropdownMenuGroup>
+                {[FILTER_ALL, ...props.groups].map((group) => (
+                  <DropdownMenuItem
+                    key={group}
+                    onClick={() => props.onGroupChange(group)}
+                    className='gap-2'
+                  >
+                    <Check
+                      className={cn(
+                        'size-4 shrink-0',
+                        props.groupFilter === group
+                          ? 'opacity-100'
+                          : 'opacity-0'
+                      )}
+                    />
+                    <span className='truncate'>
+                      {group === FILTER_ALL
+                        ? t('All Groups')
+                        : groupDisplay.name(group)}
+                    </span>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+
+        <div className='ml-auto flex min-w-0 flex-wrap items-center gap-2'>
+          <div className='text-muted-foreground mr-1 flex items-baseline gap-1 text-[13px]'>
             <span className='text-foreground font-semibold tabular-nums'>
               {props.filteredCount.toLocaleString()}
             </span>
@@ -117,9 +192,6 @@ export function PricingToolbar(props: PricingToolbarProps) {
                 </span>
               )}
           </div>
-        </div>
-
-        <div className='flex min-w-0 flex-wrap items-center gap-2'>
           <ToggleGroup
             value={[props.showRechargePrice ? 'recharge' : 'standard']}
             onValueChange={(values) => {
@@ -155,8 +227,7 @@ export function PricingToolbar(props: PricingToolbarProps) {
                 <Button
                   type='button'
                   variant='outline'
-                  size='sm'
-                  className='h-8 gap-1.5 px-3 text-xs'
+                  className='h-9 gap-1.5 px-3 text-[13px]'
                 />
               }
             >

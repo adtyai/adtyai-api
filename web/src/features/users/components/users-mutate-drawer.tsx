@@ -693,6 +693,7 @@ export function UsersMutateDrawer({
               {t('Close')}
             </SheetClose>
             <Button
+              variant='brand'
               form='user-form'
               type='submit'
               disabled={isSubmitting || !canSubmit}

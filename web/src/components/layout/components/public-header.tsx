@@ -36,6 +36,8 @@ import { useAuthStore } from '@/stores/auth-store'
 
 import { defaultTopNavLinks } from '../config/top-nav.config'
 import type { TopNavLink } from '../types'
+import { DEFAULT_LOGO } from '@/lib/constants'
+
 import { HeaderLogo } from './header-logo'
 
 const AUTH_PROMPT_SECONDS = 5
@@ -99,19 +101,23 @@ export function PublicHeader(props: PublicHeaderProps) {
   const displaySiteName = customSiteName || systemName
   const links = dynamicLinks.length > 0 ? dynamicLinks : navLinks
 
-  let logoContent: ReactNode = (
+  // The bundled ADTY artwork already contains the wordmark, so the site name is
+  // only rendered as text when no logo artwork exists at all.
+  const hasSystemLogo = Boolean(systemLogo)
+  let logoContent: ReactNode = hasSystemLogo ? (
     <HeaderLogo
       src={systemLogo}
+      darkSrc={systemLogo === DEFAULT_LOGO ? '/logo-dark.png' : undefined}
       loading={loading}
       logoLoaded={logoLoaded}
-      className='size-full rounded-lg object-contain'
     />
-  )
+  ) : null
   if (customLogo) logoContent = customLogo
-  if (loading) logoContent = <Skeleton className='size-full rounded-lg' />
+  if (loading) logoContent = <Skeleton className='h-7 w-28 rounded-md' />
 
   let authContent = (
     <Button
+      variant='brand'
       size='sm'
       className='h-8 rounded-lg px-3.5 text-xs font-medium'
       render={<Link to='/sign-in' />}
@@ -199,46 +205,56 @@ export function PublicHeader(props: PublicHeaderProps) {
 
   return (
     <>
-      <header className='pointer-events-none fixed inset-x-0 top-0 z-50'>
+      <header
+        className={cn(
+          'pointer-events-none fixed inset-x-0 top-0 z-50 border-b transition-colors duration-500',
+          scrolled
+            ? 'border-transparent bg-transparent'
+            : 'border-border bg-background/85 backdrop-blur-[10px]'
+        )}
+      >
         <div
           className={cn(
             'pointer-events-auto mx-auto transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)]',
-            scrolled ? 'max-w-[52rem] px-3 pt-3' : 'max-w-7xl px-4 pt-0 md:px-6'
+            scrolled
+              ? 'w-full max-w-[1180px] px-3 pt-3 sm:px-4'
+              : 'w-full max-w-[1180px] px-5 sm:px-10'
           )}
         >
           <nav
             className={cn(
               'flex items-center justify-between gap-2 transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)]',
               scrolled
-                ? 'bg-background/60 ring-border/50 h-12 rounded-2xl pr-1.5 pl-4 shadow-[0_2px_16px_-6px_rgba(0,0,0,0.08),0_0_0_0.5px_rgba(0,0,0,0.02)] ring-[0.5px] backdrop-blur-2xl dark:shadow-[0_2px_16px_-6px_rgba(0,0,0,0.4)]'
-                : 'h-16 px-2'
+                ? 'bg-background/95 ring-border h-12 rounded-2xl pr-1.5 pl-4 shadow-[0_8px_24px_-12px_rgba(0,0,0,0.18)] ring-1 backdrop-blur-xl dark:shadow-[0_8px_24px_-12px_rgba(0,0,0,0.6)]'
+                : 'h-[66px]'
             )}
           >
             {/* Logo */}
             <div className='@container/system-brand flex min-w-0 flex-1 items-center gap-1 lg:min-w-36'>
               <Link
                 to={homeUrl}
+                aria-label={displaySiteName}
+                title={displaySiteName}
                 className='group flex min-w-0 items-center gap-2.5'
               >
-                <div className='flex size-7 shrink-0 items-center justify-center transition-all duration-300 group-hover:scale-105'>
+                <div className='flex h-7 shrink-0 items-center justify-center transition-all duration-300 group-hover:scale-105'>
                   {logoContent}
                 </div>
-                <span
-                  className='max-w-48 truncate text-sm font-semibold tracking-tight'
-                  title={displaySiteName}
-                >
-                  {loading ? (
-                    <Skeleton className='h-4 w-16' />
-                  ) : (
-                    displaySiteName
-                  )}
-                </span>
+                {!hasSystemLogo && !customLogo && (
+                  <span className='max-w-48 truncate text-sm font-semibold tracking-tight'>
+                    {loading ? (
+                      <Skeleton className='h-4 w-16' />
+                    ) : (
+                      displaySiteName
+                    )}
+                  </span>
+                )}
               </Link>
               <SystemUpdateAction presentation='version' />
             </div>
 
             {/* Desktop nav */}
-            <div className='hidden min-w-0 items-center gap-0.5 lg:flex'>
+            <div className='hidden min-w-0 shrink-0 items-center gap-0.5 lg:flex'>
               {links.map((link) => {
                 const isActive = pathname === link.href
                 if (link.external) {
@@ -253,7 +269,7 @@ export function PublicHeader(props: PublicHeaderProps) {
                       tabIndex={link.disabled ? -1 : undefined}
                       onClick={(event) => handleNavLinkClick(event, link)}
                       className={cn(
-                        'text-muted-foreground hover:text-foreground min-w-0 truncate rounded-lg px-3 py-1.5 text-sm font-medium transition-colors duration-200',
+                        'text-muted-foreground hover:text-foreground shrink-0 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-sm font-medium transition-colors duration-200',
                         link.disabled && 'pointer-events-none opacity-50'
                       )}
                     >
@@ -269,7 +285,7 @@ export function PublicHeader(props: PublicHeaderProps) {
                     disabled={link.disabled}
                     onClick={(event) => handleNavLinkClick(event, link)}
                     className={cn(
-                      'min-w-0 truncate rounded-lg px-3 py-1.5 text-sm font-medium transition-colors duration-200',
+                      'shrink-0 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-sm font-medium transition-colors duration-200',
                       isActive
                         ? 'text-foreground'
                         : 'text-muted-foreground hover:text-foreground',
@@ -409,7 +425,7 @@ export function PublicHeader(props: PublicHeaderProps) {
                 <Link
                   to={isAuthenticated ? '/dashboard' : '/sign-in'}
                   onClick={() => setMobileOpen(false)}
-                  className='bg-foreground text-background inline-flex h-10 items-center justify-center rounded-lg text-sm font-medium transition-opacity hover:opacity-90 active:opacity-80'
+                  className='bg-brand text-brand-foreground inline-flex h-10 items-center justify-center rounded-lg text-sm font-medium transition-opacity hover:opacity-90 active:opacity-80'
                 >
                   {isAuthenticated ? t('Go to Dashboard') : t('Sign in')}
                 </Link>

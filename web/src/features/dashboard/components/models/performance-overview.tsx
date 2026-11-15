@@ -17,11 +17,10 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
-import { Gauge, HeartPulse, Timer } from 'lucide-react'
+import { Activity } from 'lucide-react'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { IconBadge, type IconBadgeTone } from '@/components/ui/icon-badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { getPerfMetricsSummary } from '@/features/performance-metrics/api'
 import {
@@ -61,21 +60,25 @@ export function PerformanceOverview() {
 
   if (!loading && !hasData) {
     return (
-      <div className='text-muted-foreground overflow-hidden rounded-lg border px-4 py-3 text-center text-xs'>
-        {t('No performance data available')}
+      <div className='bg-card border-border flex flex-col items-center justify-center gap-1.5 rounded-[14px] border px-4 py-8 text-center'>
+        <Activity className='text-faint size-6' aria-hidden='true' />
+        <p className='text-[14px] font-semibold'>
+          {t('No performance data available')}
+        </p>
+        <p className='text-dim text-[13px]'>
+          {t('Performance metrics for the last 24 hours')}
+        </p>
       </div>
     )
   }
 
   return (
-    <div className='overflow-hidden rounded-lg border'>
+    <div className='bg-card border-border overflow-hidden rounded-[14px] border'>
       <div className='flex flex-wrap items-center gap-x-5 gap-y-2.5 px-4 py-2.5 sm:px-5 sm:py-3'>
         {/* Title */}
         <div className='flex items-center gap-1.5'>
-          <IconBadge tone='success' size='xs'>
-            <HeartPulse />
-          </IconBadge>
-          <span className='text-xs font-semibold whitespace-nowrap'>
+          <Activity className='text-faint size-3.5' aria-hidden='true' />
+          <span className='text-[13px] font-semibold whitespace-nowrap'>
             {t('Performance health')}
           </span>
         </div>
@@ -96,25 +99,19 @@ export function PerformanceOverview() {
         ) : (
           <div className='flex flex-wrap items-center gap-x-5 gap-y-2'>
             <InlineMetric
-              icon={HeartPulse}
               label={t('Success rate')}
               value={formatUptimePct(summary?.success_rate ?? Number.NaN)}
               valueClassName={getSuccessRateTextClass(
                 summary?.success_rate ?? Number.NaN
               )}
-              tone='success'
             />
             <InlineMetric
-              icon={Timer}
               label={t('Average latency')}
               value={formatLatency(summary?.avg_latency_ms ?? 0)}
-              tone='warning'
             />
             <InlineMetric
-              icon={Gauge}
               label={t('Throughput')}
               value={formatThroughput(summary?.avg_tps ?? 0)}
-              tone='info'
             />
           </div>
         )}
@@ -136,23 +133,16 @@ export function PerformanceOverview() {
 }
 
 function InlineMetric(props: {
-  icon: React.ComponentType<{ className?: string }>
   label: string
   value: string
   valueClassName?: string
-  tone: IconBadgeTone
 }) {
-  const Icon = props.icon
-
   return (
-    <div className='flex items-center gap-1.5'>
-      <IconBadge tone={props.tone} size='xs'>
-        <Icon />
-      </IconBadge>
-      <span className='text-muted-foreground text-[11px]'>{props.label}</span>
+    <div className='flex items-baseline gap-2'>
+      <span className='text-faint text-[12px]'>{props.label}</span>
       <span
         className={cn(
-          'font-mono text-xs font-semibold tabular-nums',
+          'font-mono text-[13px] font-semibold tabular-nums',
           props.valueClassName
         )}
       >

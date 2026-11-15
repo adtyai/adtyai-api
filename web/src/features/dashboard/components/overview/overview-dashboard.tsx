@@ -187,39 +187,24 @@ function buildCurlCommand(args: {
 
 function SetupGuideBackdrop(props: { compact?: boolean }) {
   return (
-    <>
-      <div
+    <div
+      className={cn(
+        'text-foreground/[0.035] pointer-events-none absolute inset-y-0 right-0 hidden overflow-hidden font-mono sm:block',
+        props.compact ? 'w-1/2 opacity-60' : 'w-[58%] opacity-80'
+      )}
+      aria-hidden='true'
+    >
+      <pre
         className={cn(
-          'pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_48%_120%_at_78%_0%,color-mix(in_oklch,var(--overview-accent-1)_14%,transparent)_0%,transparent_62%),linear-gradient(112deg,color-mix(in_oklch,var(--card)_94%,var(--overview-accent-2)_6%)_0%,color-mix(in_oklch,var(--card)_94%,var(--overview-accent-3)_6%)_48%,color-mix(in_oklch,var(--background)_90%,var(--overview-accent-1)_10%)_100%)] dark:opacity-60',
+          'absolute right-3 [mask-image:linear-gradient(90deg,transparent_0%,black_30%,black_82%,transparent_100%)] text-right tracking-[0.38em] whitespace-pre',
           props.compact
-            ? '[mask-image:linear-gradient(90deg,black_0%,black_48%,transparent_74%)] opacity-55'
-            : 'opacity-85'
+            ? '-top-6 text-[9px] leading-4'
+            : 'top-1 text-[11px] leading-5'
         )}
-        aria-hidden='true'
-      />
-      <div
-        className={cn(
-          'text-foreground/5 dark:text-foreground/8 pointer-events-none absolute inset-y-0 right-0 hidden overflow-hidden font-mono sm:block',
-          props.compact ? 'w-1/2 opacity-45' : 'w-[58%] opacity-75'
-        )}
-        aria-hidden='true'
       >
-        <pre
-          className={cn(
-            'absolute right-3 [mask-image:linear-gradient(90deg,transparent_0%,black_30%,black_82%,transparent_100%)] text-right tracking-[0.38em] whitespace-pre',
-            props.compact
-              ? '-top-6 text-[9px] leading-4'
-              : 'top-1 text-[11px] leading-5'
-          )}
-        >
-          {SETUP_GUIDE_CODE_PATTERN}
-        </pre>
-      </div>
-      <div
-        className='from-background/35 to-background/70 dark:from-background/20 dark:to-background/80 pointer-events-none absolute inset-0 bg-linear-to-b via-transparent'
-        aria-hidden='true'
-      />
-    </>
+        {SETUP_GUIDE_CODE_PATTERN}
+      </pre>
+    </div>
   )
 }
 
@@ -241,7 +226,7 @@ function StartStepItem(props: {
       )}
       <span
         className={cn(
-          'bg-background relative z-10 flex size-8 shrink-0 items-center justify-center rounded-lg border shadow-xs',
+          'bg-background relative z-10 flex size-8 shrink-0 items-center justify-center rounded-lg border',
           props.step.completed && 'border-success/30 bg-success/10'
         )}
       >
@@ -253,7 +238,7 @@ function StartStepItem(props: {
 
       <Link
         to={props.step.to}
-        className='bg-background/70 hover:bg-muted/50 focus-visible:ring-ring flex min-w-0 flex-1 items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-left shadow-xs transition-colors outline-none focus-visible:ring-2'
+        className='bg-background/70 hover:bg-muted/50 focus-visible:ring-ring flex min-w-0 flex-1 items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors outline-none focus-visible:ring-2'
       >
         <span className='flex min-w-0 items-start gap-2.5'>
           <span className='bg-muted mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg'>
@@ -329,7 +314,7 @@ function RequestPreview(props: {
       initial={shouldReduceMotion ? false : { opacity: 0, y: 10, scale: 0.98 }}
       animate={shouldReduceMotion ? undefined : { opacity: 1, y: 0, scale: 1 }}
       transition={MOTION_TRANSITION.slow}
-      className='bg-background/75 relative overflow-hidden rounded-2xl border p-3 shadow-sm backdrop-blur'
+      className='bg-background/75 border-border relative overflow-hidden rounded-[14px] border p-3 backdrop-blur'
     >
       {!shouldReduceMotion && (
         <motion.div
@@ -634,6 +619,9 @@ export function OverviewDashboard() {
   return (
     <SectionPageLayout>
       <SectionPageLayout.Title>{t('Overview')}</SectionPageLayout.Title>
+      <SectionPageLayout.Description>
+        {t('Monitor balance, usage, and request volume')}
+      </SectionPageLayout.Description>
       <SectionPageLayout.Actions>
         {setupStatusReady && setupComplete && (
           <Button
@@ -648,13 +636,20 @@ export function OverviewDashboard() {
             {t('Setup guide')}
           </Button>
         )}
+        <Button variant='outline' size='sm' render={<Link to='/docs' />}>
+          {t('Docs')}
+        </Button>
+        <Button variant='brand' size='sm' render={<Link to='/keys' />}>
+          <KeyRound data-icon='inline-start' />
+          {t('Create API Key')}
+        </Button>
       </SectionPageLayout.Actions>
       <SectionPageLayout.Content>
         <div className='flex flex-col gap-4'>
           <div id={setupGuideId} hidden={!setupGuideExpanded}>
             {setupGuideExpanded && (
               <CardStaggerContainer className='grid items-stretch gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]'>
-                <CardStaggerItem className='bg-card h-full overflow-hidden rounded-2xl border shadow-xs'>
+                <CardStaggerItem className='bg-card border-border h-full overflow-hidden rounded-[14px] border'>
                   <div className='relative h-full overflow-hidden p-4 sm:p-5'>
                     <SetupGuideBackdrop />
                     <div className='relative grid gap-5 lg:grid-cols-[minmax(0,1fr)_21rem]'>
@@ -688,14 +683,18 @@ export function OverviewDashboard() {
                               <ChevronUp data-icon='inline-start' />
                               {t('Hide setup guide')}
                             </Button>
-                            <Button size='sm' render={<Link to='/keys' />}>
+                            <Button
+                              variant='brand'
+                              size='sm'
+                              render={<Link to='/keys' />}
+                            >
                               <KeyRound data-icon='inline-start' />
                               {t('Create API Key')}
                             </Button>
                           </div>
                         </div>
 
-                        <ol className='bg-background/45 rounded-2xl border p-2 backdrop-blur'>
+                        <ol className='bg-background/45 border-border rounded-[14px] border p-2 backdrop-blur'>
                           {startSteps.map((step, index) => (
                             <StartStepItem
                               key={step.title}
@@ -715,7 +714,7 @@ export function OverviewDashboard() {
                   </div>
                 </CardStaggerItem>
 
-                <CardStaggerItem className='bg-card h-full rounded-2xl border p-4 shadow-xs sm:p-5'>
+                <CardStaggerItem className='bg-card border-border h-full rounded-[14px] border p-4 sm:p-5'>
                   <div className='flex h-full flex-col gap-4'>
                     <div className='flex flex-col gap-1'>
                       <div className='text-muted-foreground text-xs font-medium tracking-wider uppercase'>
@@ -737,12 +736,12 @@ export function OverviewDashboard() {
           </div>
           {!setupGuideExpanded && !setupComplete && (
             <CardStaggerContainer>
-              <CardStaggerItem className='bg-card overflow-hidden rounded-2xl border shadow-xs'>
+              <CardStaggerItem className='bg-card border-border overflow-hidden rounded-[14px] border'>
                 <div className='relative overflow-hidden px-4 py-3 sm:px-5'>
                   <SetupGuideBackdrop compact />
                   <div className='relative flex flex-wrap items-center justify-between gap-3'>
                     <div className='flex min-w-0 items-center gap-3'>
-                      <span className='bg-background/70 flex size-9 shrink-0 items-center justify-center rounded-xl border shadow-xs'>
+                      <span className='bg-background/70 flex size-9 shrink-0 items-center justify-center rounded-xl border'>
                         <Check
                           className='text-success size-4'
                           aria-hidden='true'

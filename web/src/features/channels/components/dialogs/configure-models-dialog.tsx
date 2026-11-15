@@ -110,6 +110,7 @@ export function ConfigureModelsDialog(props: ConfigureModelsDialogProps) {
             {t('Cancel')}
           </Button>
           <Button
+            variant='brand'
             type='button'
             onClick={() => {
               props.onApply(selected)

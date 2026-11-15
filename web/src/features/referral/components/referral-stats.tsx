@@ -19,7 +19,6 @@ For commercial licensing, please contact support@quantumnous.com
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
 import { formatUsd } from '@/features/wallet/adty/lib/money'
 import { toIntlLocale } from '@/i18n/languages'
 import { formatNumber } from '@/lib/format'
@@ -30,25 +29,27 @@ import type { ReferralProfile } from '../types'
 type StatItem = { label: string; value: string; negative?: boolean }
 
 function StatGrid(props: { items: StatItem[]; testId: string }) {
+  // Connected cells share hairlines instead of floating as four cards
+  // (design system §4: 统计卡四格等分，1px 分界线相连).
   return (
     <div
-      className='grid grid-cols-2 gap-3 lg:grid-cols-4'
+      className='border-border bg-border grid grid-cols-2 gap-px overflow-hidden rounded-[14px] border lg:grid-cols-4'
       data-testid={props.testId}
     >
       {props.items.map((item) => (
-        <Card key={item.label}>
-          <CardContent className='flex flex-col gap-1 py-4'>
-            <span className='text-muted-foreground text-xs'>{item.label}</span>
-            <span
-              className={cn(
-                'text-xl font-semibold',
-                item.negative && 'text-destructive'
-              )}
-            >
-              {item.value}
-            </span>
-          </CardContent>
-        </Card>
+        <div key={item.label} className='bg-card flex flex-col gap-1 px-5 py-4'>
+          <span className='text-dim text-[12px] leading-none'>
+            {item.label}
+          </span>
+          <span
+            className={cn(
+              'text-[19px] leading-tight font-semibold tabular-nums',
+              item.negative && 'text-destructive'
+            )}
+          >
+            {item.value}
+          </span>
+        </div>
       ))}
     </div>
   )
@@ -86,8 +87,15 @@ export function ReferralStats(props: {
         ]}
       />
       <div className='flex items-center justify-between'>
-        <h2 className='text-sm font-medium'>{t('Commission account')}</h2>
-        <Button size='sm' disabled={!canWithdraw} onClick={props.onWithdraw}>
+        <h2 className='text-[15px] font-semibold tracking-tight'>
+          {t('Commission account')}
+        </h2>
+        <Button
+          variant='brand'
+          size='sm'
+          disabled={!canWithdraw}
+          onClick={props.onWithdraw}
+        >
           {t('Withdraw')}
         </Button>
       </div>

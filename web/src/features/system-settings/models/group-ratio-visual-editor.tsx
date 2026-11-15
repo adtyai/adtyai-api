@@ -635,7 +635,7 @@ function GroupOverrideRules({
                                       {override.ratio}
                                       {baseRatio !== undefined &&
                                         baseRatio !== override.ratio && (
-                                          <span className='text-muted-foreground text-xs'>
+                                          <span className='text-dim text-[12.5px]'>
                                             {t('(instead of {{ratio}})', {
                                               ratio: baseRatio,
                                             })}
@@ -802,7 +802,7 @@ function GroupOverrideDialog({
           <Button variant='outline' onClick={() => onOpenChange(false)}>
             {t('Cancel')}
           </Button>
-          <Button onClick={handleSave}>
+          <Button variant='brand' onClick={handleSave}>
             {editData ? t('Update') : t('Add')}
           </Button>
         </>
@@ -818,7 +818,7 @@ function GroupOverrideDialog({
             placeholder={t('Select a group')}
             onValueChange={setTargetGroup}
           />
-          <p className='text-muted-foreground text-xs'>
+          <p className='text-dim text-[12.5px]'>
             {t('The token group that will have a custom ratio')}
           </p>
         </div>
@@ -834,7 +834,7 @@ function GroupOverrideDialog({
             }}
             placeholder={baseRatio === undefined ? '0.9' : String(baseRatio)}
           />
-          <p className='text-muted-foreground text-xs'>
+          <p className='text-dim text-[12.5px]'>
             {baseRatio !== undefined
               ? t('(instead of {{ratio}})', { ratio: baseRatio })
               : t(

@@ -91,7 +91,7 @@ export function AdtyQuickStartCard(props: {
   return (
     <section
       aria-labelledby='adty-quick-start-title'
-      className='bg-card flex flex-col gap-4 rounded-2xl border p-4 shadow-xs sm:p-5'
+      className='bg-card border-border flex flex-col gap-4 rounded-[14px] border p-4 sm:p-5'
     >
       <div className='flex flex-wrap items-center justify-between gap-3'>
         <h3
@@ -124,7 +124,7 @@ export function AdtyQuickStartCard(props: {
       </div>
 
       <div className='flex flex-col gap-1.5'>
-        <div className='bg-muted/50 flex items-center gap-3 rounded-lg border px-3 py-2'>
+        <div className='bg-canvas flex items-center gap-3 rounded-[8px] border px-3 py-2'>
           <span className='text-muted-foreground shrink-0 text-xs font-medium'>
             {t('Base URL')}
           </span>

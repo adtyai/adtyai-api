@@ -271,7 +271,7 @@ export function RuleEditorDialog(props: Props) {
           >
             {t('Cancel')}
           </Button>
-          <Button type='submit' form={RULE_FORM_ID}>
+          <Button variant='brand' type='submit' form={RULE_FORM_ID}>
             {t('Save')}
           </Button>
         </>
@@ -335,7 +335,7 @@ export function RuleEditorDialog(props: Props) {
           </NativeSelect>
           <p
             id='rule-session-mode-description'
-            className='text-muted-foreground text-xs'
+            className='text-dim text-[12.5px]'
           >
             {t('Global default: {{mode}}', {
               mode: policyLabel(t, props.globalSessionMode || 'prefer'),

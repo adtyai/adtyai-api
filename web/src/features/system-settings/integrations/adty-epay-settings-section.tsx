@@ -165,6 +165,7 @@ export function AdtyEpaySettingsSection(props: {
       {props.inlineActions ? (
         <div className='mb-4 flex justify-end'>
           <Button
+            variant='brand'
             type='button'
             size='sm'
             onClick={save}

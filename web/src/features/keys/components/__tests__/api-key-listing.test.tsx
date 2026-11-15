@@ -173,9 +173,9 @@ it('shows desktop remaining and used amounts side by side without labels, with t
 })
 
 it.each([
-  ['unused', 500000, 0, 100, 'text-emerald-500'],
-  ['low remaining', 150000, 350000, 30, 'text-amber-500'],
-  ['critical remaining', 50000, 450000, 10, 'text-rose-500'],
+  ['unused', 500000, 0, 100, 'text-success'],
+  ['low remaining', 150000, 350000, 30, 'text-warning'],
+  ['critical remaining', 50000, 450000, 10, 'text-destructive'],
   ['exhausted', 0, 500000, 0, null],
   ['overdrawn', -50000, 500000, 0, null],
   ['zero total', 0, 0, 0, null],
@@ -240,9 +240,7 @@ it.each([
   ['expired timestamp', { expired_time: now / 1000 - 1 }],
 ])('renders the %s progress bar in a neutral color', (_label, overrides) => {
   renderQuota({ ...key, ...overrides })
-  expect(screen.getByRole('progressbar')).toHaveClass(
-    'text-muted-foreground/60'
-  )
+  expect(screen.getByRole('progressbar')).toHaveClass('text-faint')
 })
 
 it('recalculates the progress when remaining quota is edited', () => {

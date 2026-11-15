@@ -74,12 +74,15 @@ export function Security() {
   } else {
     content = (
       <div className='grid gap-4 sm:gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.46fr)] xl:items-start'>
-        <div className='min-w-0 space-y-4 sm:space-y-6'>
+        <div className='min-w-0 space-y-4 sm:space-y-5'>
           <section
             aria-labelledby='security-authentication'
             className='space-y-3'
           >
-            <h3 id='security-authentication' className='text-sm font-semibold'>
+            <h3
+              id='security-authentication'
+              className='text-[15px] leading-snug font-semibold tracking-tight'
+            >
               {t('Login & Authentication')}
             </h3>
             <AccountActionCard
@@ -101,14 +104,20 @@ export function Security() {
             </TitledCard>
           </section>
           <section aria-labelledby='security-access' className='space-y-4'>
-            <h3 id='security-access' className='text-sm font-semibold'>
+            <h3
+              id='security-access'
+              className='text-[15px] leading-snug font-semibold tracking-tight'
+            >
               {t('Sessions & Access')}
             </h3>
             <LoginSessionsCard />
             <AccessTokensCard />
           </section>
           <section aria-labelledby='security-account' className='space-y-4'>
-            <h3 id='security-account' className='text-sm font-semibold'>
+            <h3
+              id='security-account'
+              className='text-[15px] leading-snug font-semibold tracking-tight'
+            >
               {t('Account Actions')}
             </h3>
             <AccountActionCard action='delete' username={profile.username} />
@@ -119,14 +128,20 @@ export function Security() {
           className='min-w-0 space-y-4 sm:space-y-6 xl:sticky xl:top-0'
         >
           <div className='space-y-3'>
-            <h3 id='security-verification' className='text-sm font-semibold'>
+            <h3
+              id='security-verification'
+              className='text-[15px] leading-snug font-semibold tracking-tight'
+            >
               {t('Security verification')}
             </h3>
             <PasskeyCard loading={loading} />
             <TwoFACard loading={loading} />
           </div>
           <section aria-labelledby='security-privacy' className='space-y-4'>
-            <h3 id='security-privacy' className='text-sm font-semibold'>
+            <h3
+              id='security-privacy'
+              className='text-[15px] leading-snug font-semibold tracking-tight'
+            >
               {t('Privacy')}
             </h3>
             <PrivacyCard profile={profile} onUpdate={refreshProfile} />
@@ -141,6 +156,9 @@ export function Security() {
       <SectionPageLayout.Title>
         {t('Security & Access')}
       </SectionPageLayout.Title>
+      <SectionPageLayout.Description>
+        {t('Manage your security settings and account access')}
+      </SectionPageLayout.Description>
       <SectionPageLayout.Content>
         <div className='mx-auto w-full max-w-7xl'>{content}</div>
       </SectionPageLayout.Content>

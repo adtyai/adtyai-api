@@ -395,7 +395,7 @@ export function UpstreamRatioSync() {
           disabled={isLoading || !Object.keys(selections).length}
           onChange={(mode) => handleAdjustPrices(Object.keys(selections), mode)}
         />
-        <span className='text-muted-foreground text-xs'>
+        <span className='text-dim text-[12.5px]'>
           {isValidPricingCurrency(currency)
             ? t('Current exchange rate: 1 USD = {{rate}} {{currency}}', {
                 rate: String(rate),
@@ -505,6 +505,7 @@ export function UpstreamRatioSync() {
           )}
         </div>
         <Button
+          variant='brand'
           onClick={handleApplySync}
           disabled={
             !pricingBaseline ||

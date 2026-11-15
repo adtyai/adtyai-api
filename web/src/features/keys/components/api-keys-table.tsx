@@ -82,7 +82,7 @@ function ApiKeysMobileSkeleton() {
       {API_KEYS_MOBILE_SKELETON_IDS.map((id) => (
         <div
           key={id}
-          className='border-border/60 bg-card space-y-2 rounded-xl border p-3.5'
+          className='border-border/60 bg-card space-y-2 rounded-[14px] border p-3.5'
         >
           <div className='flex items-center justify-between'>
             <Skeleton className='h-4 w-32' />
@@ -115,14 +115,16 @@ function ApiKeysMobileList({
 
   if (!rows.length) {
     return (
-      <div className='rounded-lg border p-8'>
+      <div className='bg-card border-border rounded-[14px] border px-6 py-10'>
         <Empty className='border-none p-0'>
           <EmptyHeader>
-            <EmptyMedia variant='icon'>
-              <Database className='size-6' />
+            <EmptyMedia>
+              <Database className='text-faint size-6' />
             </EmptyMedia>
-            <EmptyTitle>{t('No API Keys Found')}</EmptyTitle>
-            <EmptyDescription>
+            <EmptyTitle className='text-[14px] font-semibold'>
+              {t('No API Keys Found')}
+            </EmptyTitle>
+            <EmptyDescription className='text-dim text-[13px]'>
               {t(
                 'No API keys available. Create your first API key to get started.'
               )}
@@ -149,7 +151,7 @@ function ApiKeysMobileList({
           <div
             key={row.id}
             className={cn(
-              'border-border/60 bg-card min-w-0 space-y-2 rounded-xl border p-3.5 text-xs leading-4',
+              'border-border/60 bg-card min-w-0 space-y-2 rounded-[14px] border p-3.5 text-xs leading-4',
               isDisabledApiKeyRow(apiKey) && DISABLED_ROW_MOBILE
             )}
           >
@@ -377,6 +379,9 @@ export function ApiKeysTable() {
       }}
       mobile={
         <ApiKeysMobileList table={table} isLoading={isLoading} now={now} />
+      }
+      getColumnClassName={(columnId) =>
+        columnId === 'quota' ? 'text-right tabular-nums' : undefined
       }
       getRowClassName={(row) =>
         isDisabledApiKeyRow(row.original) ? DISABLED_ROW_DESKTOP : undefined

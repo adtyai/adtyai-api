@@ -26,7 +26,6 @@ import { ErrorState } from '@/components/error-state'
 import { SectionPageLayout } from '@/components/layout'
 import { LoadingState } from '@/components/loading-state'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { DraftNavigationProvider } from '@/features/system-settings/components/draft-navigation-provider'
 import { formatUsd } from '@/features/wallet/adty/lib/money'
@@ -88,6 +87,9 @@ export function AdminReferral() {
     <DraftNavigationProvider>
       <SectionPageLayout>
         <SectionPageLayout.Title>{t('Referral admin')}</SectionPageLayout.Title>
+        <SectionPageLayout.Description>
+          {t('Affiliates, commissions and withdrawal review.')}
+        </SectionPageLayout.Description>
         <SectionPageLayout.Content>
           <div className='flex flex-col gap-4'>
             {overview.isError && (
@@ -98,7 +100,7 @@ export function AdminReferral() {
             )}
             {overview.isPending && <LoadingState />}
             {data && (
-              <div className='grid grid-cols-2 gap-3 lg:grid-cols-6'>
+              <div className='border-border bg-border grid grid-cols-2 gap-px overflow-hidden rounded-[14px] border lg:grid-cols-3 xl:grid-cols-6'>
                 {[
                   {
                     label: t('Affiliates'),
@@ -125,16 +127,17 @@ export function AdminReferral() {
                     value: formatUsd(Number(data?.withdrawn ?? 0), locale),
                   },
                 ].map((item) => (
-                  <Card key={item.label}>
-                    <CardContent className='flex flex-col gap-1 py-4'>
-                      <span className='text-muted-foreground text-xs'>
-                        {item.label}
-                      </span>
-                      <span className='text-xl font-semibold'>
-                        {item.value}
-                      </span>
-                    </CardContent>
-                  </Card>
+                  <div
+                    key={item.label}
+                    className='bg-card flex flex-col gap-1 px-5 py-4'
+                  >
+                    <span className='text-dim text-[12px] leading-none'>
+                      {item.label}
+                    </span>
+                    <span className='text-[19px] leading-tight font-semibold tabular-nums'>
+                      {item.value}
+                    </span>
+                  </div>
                 ))}
               </div>
             )}
@@ -145,20 +148,37 @@ export function AdminReferral() {
               }}
             >
               <div className='flex flex-wrap items-center justify-between gap-2'>
-                <TabsList>
-                  <TabsTrigger value='withdrawals'>
+                <TabsList
+                  variant='line'
+                  className='border-border h-auto flex-wrap justify-start gap-x-6 gap-y-1 rounded-none border-b p-0 group-data-horizontal/tabs:h-auto [--tab-underline:var(--brand)]'
+                >
+                  <TabsTrigger
+                    value='withdrawals'
+                    className='text-dim hover:text-foreground data-active:text-foreground h-auto flex-none px-0 pt-0 pb-2.5 text-[13.5px] font-medium'
+                  >
                     {t('Withdrawals')}
                     {pendingWithdrawals > 0 && ` (${pendingWithdrawals})`}
                   </TabsTrigger>
-                  <TabsTrigger value='partners'>
+                  <TabsTrigger
+                    value='partners'
+                    className='text-dim hover:text-foreground data-active:text-foreground h-auto flex-none px-0 pt-0 pb-2.5 text-[13.5px] font-medium'
+                  >
                     {t('Partner applications')}
                     {pendingPartners > 0 && ` (${pendingPartners})`}
                   </TabsTrigger>
-                  <TabsTrigger value='affiliates'>
+                  <TabsTrigger
+                    value='affiliates'
+                    className='text-dim hover:text-foreground data-active:text-foreground h-auto flex-none px-0 pt-0 pb-2.5 text-[13.5px] font-medium'
+                  >
                     {t('Affiliates')}
                   </TabsTrigger>
                   {canReadSettings && (
-                    <TabsTrigger value='settings'>{t('Settings')}</TabsTrigger>
+                    <TabsTrigger
+                      value='settings'
+                      className='text-dim hover:text-foreground data-active:text-foreground h-auto flex-none px-0 pt-0 pb-2.5 text-[13.5px] font-medium'
+                    >
+                      {t('Settings')}
+                    </TabsTrigger>
                   )}
                 </TabsList>
                 {canAdjust && (

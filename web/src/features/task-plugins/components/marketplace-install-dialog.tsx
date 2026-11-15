@@ -401,7 +401,7 @@ function MarketplaceInstallContent(
         </TabsContent>
       </Tabs>
 
-      <Alert className='border-amber-500/20 bg-amber-500/5 py-2 [&>svg]:text-amber-600 dark:[&>svg]:text-amber-400'>
+      <Alert className='border-amber-500/20 bg-warning/5 py-2 [&>svg]:text-amber-600 dark:[&>svg]:text-amber-400'>
         <AlertTriangle />
         <AlertDescription className='text-foreground/80 text-xs leading-relaxed'>
           {t(

@@ -39,7 +39,7 @@ export function UsersPrimaryButtons() {
 
   return (
     <div className='flex gap-2'>
-      <Button size='sm' onClick={handleCreate}>
+      <Button variant='brand' size='sm' onClick={handleCreate}>
         <Plus className='h-4 w-4' />
         {t('Add User')}
       </Button>

@@ -182,6 +182,7 @@ export function ChangePasswordDialog(props: ChangePasswordDialogProps) {
               {t('Cancel')}
             </Button>
             <Button
+              variant='brand'
               type='submit'
               form='change-password-form'
               disabled={security.pending}

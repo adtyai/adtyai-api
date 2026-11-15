@@ -94,6 +94,11 @@ export function Channels() {
             {retryBadge}
           </span>
         </SectionPageLayout.Title>
+        <SectionPageLayout.Description>
+          {t(
+            'Configure endpoint routing, authentication and protocol conversion for different upstream services'
+          )}
+        </SectionPageLayout.Description>
         <SectionPageLayout.Actions>
           <ChannelsPrimaryButtons />
         </SectionPageLayout.Actions>

@@ -196,6 +196,7 @@ export function MarketplaceSourcesDialog(props: MarketplaceSourcesDialogProps) {
             {t('Cancel')}
           </Button>
           <Button
+            variant='brand'
             disabled={invalidRow || saveMutation.isPending}
             onClick={() =>
               saveMutation.mutate(

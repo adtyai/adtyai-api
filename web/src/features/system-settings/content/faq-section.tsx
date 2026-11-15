@@ -337,7 +337,7 @@ export function FAQSection({ enabled, data }: FAQSectionProps) {
             >
               {t('Cancel')}
             </Button>
-            <Button type='submit' form={FAQ_FORM_ID}>
+            <Button variant='brand' type='submit' form={FAQ_FORM_ID}>
               {editingFaq ? t('Update') : t('Add')}
             </Button>
           </>

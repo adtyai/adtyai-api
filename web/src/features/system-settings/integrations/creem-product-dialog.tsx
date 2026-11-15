@@ -133,7 +133,7 @@ export function CreemProductDialog({
           >
             {t('Cancel')}
           </Button>
-          <Button type='submit' form={CREEM_PRODUCT_FORM_ID}>
+          <Button variant='brand' type='submit' form={CREEM_PRODUCT_FORM_ID}>
             {isEditMode ? t('Update') : t('Add')}
           </Button>
         </>

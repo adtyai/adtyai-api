@@ -16,10 +16,21 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-/** Content languages the backend stores texts in (group names, legal pages, SEO). */
-export const CONTENT_LANGS = [
-  'en',
-  'zh-CN',
+/**
+ * Content languages the product edits (group names, legal pages, SEO). The
+ * product only supports Simplified Chinese and English, so those are the only
+ * tabs the admin editors offer.
+ */
+export const CONTENT_LANGS = ['en', 'zh-CN'] as const
+
+export type ContentLang = (typeof CONTENT_LANGS)[number]
+
+/**
+ * Leftover keys that may still sit inside stored JSON from before the product
+ * converged on two content languages. They are read back and preserved when
+ * saving, but never offered as a tab.
+ */
+export const LEGACY_CONTENT_LANGS = [
   'zh-TW',
   'fr',
   'ja',
@@ -28,31 +39,35 @@ export const CONTENT_LANGS = [
   'vi',
 ] as const
 
-export type ContentLang = (typeof CONTENT_LANGS)[number]
+export type LegacyContentLang = (typeof LEGACY_CONTENT_LANGS)[number]
+
+/** Every content-language key that can appear in stored texts. */
+export type StoredContentLang = ContentLang | LegacyContentLang
+
+/** Stable key order for saved JSON: offered languages first, then leftovers. */
+export const STORED_CONTENT_LANGS = [
+  ...CONTENT_LANGS,
+  ...LEGACY_CONTENT_LANGS,
+] as const satisfies readonly StoredContentLang[]
 
 /** Native names for the language tabs in admin editors; not translated. */
 export const CONTENT_LANG_LABELS: Record<ContentLang, string> = {
   en: 'English',
   'zh-CN': '简体中文',
-  'zh-TW': '繁體中文',
-  fr: 'Français',
-  ja: '日本語',
-  ko: '한국어',
-  ru: 'Русский',
-  vi: 'Tiếng Việt',
 }
 
-/** Maps an i18next interface language (zhCN, zhTW, …) to a content language. */
+/** Maps an i18next interface language (zhCN, zh, …) to a content language. */
 export function toContentLang(lng: string | undefined | null): ContentLang {
   if (lng === 'zhCN' || lng === 'zh' || lng === 'zh-CN') return 'zh-CN'
-  if (lng === 'zhTW' || lng === 'zh-TW') return 'zh-TW'
+  // Traditional Chinese is not a product language: it reads the Simplified text.
+  if (lng === 'zhTW' || lng === 'zh-TW') return 'zh-CN'
   const match = CONTENT_LANGS.find((lang) => lang === lng)
   return match ?? 'en'
 }
 
 /** Picks the text for a content language, then English; '' when neither is set. */
 export function pickContentText(
-  texts: Partial<Record<string, string>> | undefined | null,
+  texts: Partial<Record<StoredContentLang, string>> | undefined | null,
   lang: ContentLang
 ): string {
   const own = texts?.[lang]?.trim()

@@ -171,6 +171,7 @@ export function AdtyBonusRatesEditor(props: AdtyBonusRatesEditorProps) {
               {t('Cancel')}
             </Button>
             <Button
+              variant='brand'
               type='button'
               onClick={save}
               disabled={Boolean(amountError || rateError)}

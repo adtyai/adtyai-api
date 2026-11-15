@@ -177,7 +177,7 @@ export function PaymentMethodDialog({
           >
             {t('Cancel')}
           </Button>
-          <Button type='submit' form={PAYMENT_METHOD_FORM_ID}>
+          <Button variant='brand' type='submit' form={PAYMENT_METHOD_FORM_ID}>
             {isEditMode ? t('Update') : t('Add')}
           </Button>
         </>

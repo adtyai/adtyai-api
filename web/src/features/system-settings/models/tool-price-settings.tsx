@@ -399,6 +399,7 @@ export const ToolPriceSettings = memo(function ToolPriceSettings({
 
       <div className='flex justify-end'>
         <Button
+          variant='brand'
           onClick={handleSave}
           disabled={
             updateOption.isPending ||

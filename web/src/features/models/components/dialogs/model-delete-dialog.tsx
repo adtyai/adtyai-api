@@ -157,7 +157,7 @@ export function ModelDeleteDialog(props: ModelDeleteDialogProps) {
           <Label htmlFor={checkboxId} className='flex-wrap leading-normal'>
             {t('Also remove from all channels')}
             {!supportsChannelRemoval && (
-              <span className='text-muted-foreground text-xs font-normal'>
+              <span className='text-dim text-[12.5px] font-normal'>
                 {t('Only available for exact matching')}
               </span>
             )}

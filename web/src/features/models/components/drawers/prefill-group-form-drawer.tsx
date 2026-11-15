@@ -303,7 +303,7 @@ export function PrefillGroupFormDrawer({
                             <span className='font-medium'>{type.label}</span>
                             <span
                               data-prefill-description
-                              className='text-muted-foreground text-xs'
+                              className='text-dim text-[12.5px]'
                             >
                               {type.description}
                             </span>
@@ -331,7 +331,7 @@ export function PrefillGroupFormDrawer({
                                 </span>
                                 <span
                                   data-prefill-description
-                                  className='text-muted-foreground text-xs'
+                                  className='text-dim text-[12.5px]'
                                 >
                                   {type.description}
                                 </span>
@@ -415,6 +415,7 @@ export function PrefillGroupFormDrawer({
             {t('Cancel')}
           </SheetClose>
           <Button
+            variant='brand'
             type='submit'
             form='prefill-group-form'
             disabled={isSaving || !canSave}

@@ -27,15 +27,11 @@ import {
 } from './init-options'
 import { normalizeInterfaceLanguage } from './languages'
 
+// The product ships two interface languages only: Simplified Chinese and
+// English (conventions E / A.20.1). Leftover packs on disk are never loaded.
 const localeLoaders = {
   en: () => import('./locales/en.json'),
   zhCN: () => import('./locales/zh.json'),
-  fr: () => import('./locales/fr.json'),
-  ru: () => import('./locales/ru.json'),
-  ja: () => import('./locales/ja.json'),
-  ko: () => import('./locales/ko.json'),
-  vi: () => import('./locales/vi.json'),
-  zhTW: () => import('./locales/zh-TW.json'),
 } as const
 
 /** Load one language pack. The other languages stay out of the first page load. */

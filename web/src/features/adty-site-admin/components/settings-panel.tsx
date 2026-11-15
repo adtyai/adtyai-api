@@ -569,7 +569,7 @@ export function SettingsPanel(props: {
 
       {props.canWrite && (
         <div>
-          <Button type='submit' disabled={save.isPending}>
+          <Button variant='brand' type='submit' disabled={save.isPending}>
             {t('Save')}
           </Button>
         </div>

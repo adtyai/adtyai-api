@@ -98,7 +98,7 @@ const DEFAULT_FLOW_SANKEY_LABELS: FlowSankeyLabels = {
   share: 'Share',
 }
 
-const DEFAULT_FLOW_CHART_COLOR = '#1664FF'
+const DEFAULT_FLOW_CHART_COLOR = '#0070ec'
 
 // Fallback when the caller does not pass the theme's text color.
 const DEFAULT_FLOW_LABEL_COLOR = '#475569'

@@ -85,19 +85,19 @@ describe('white theme colors', () => {
     ['--card', '#ffffff', '#141414'],
     ['--popover', '#ffffff', '#141414'],
     ['--sidebar', '#ffffff', '#0a0a0a'],
-    ['--canvas', '#fafafa', '#0a0a0a'],
-    ['--border', '#e5e5e5', '#262626'],
-    ['--input', '#e5e5e5', '#262626'],
-    ['--foreground', '#0a0a0a', '#fafafa'],
-    ['--muted-foreground', '#737373', '#a3a3a3'],
+    ['--canvas', 'var(--soft)', '#0a0a0a'],
+    ['--border', 'var(--line)', 'var(--line)'],
+    ['--input', 'var(--line)', 'var(--line)'],
+    ['--foreground', 'var(--ink)', 'var(--ink)'],
+    ['--muted-foreground', 'var(--dim)', 'var(--dim)'],
     ['--primary', '#0a0a0a', '#fafafa'],
     ['--primary-foreground', '#ffffff', '#0a0a0a'],
-    ['--secondary', '#f5f5f5', '#1f1f1f'],
-    ['--muted', '#f5f5f5', '#1f1f1f'],
-    ['--accent', '#f5f5f5', '#1f1f1f'],
-    ['--sidebar-accent', '#f5f5f5', '#1f1f1f'],
-    ['--secondary-foreground', '#0a0a0a', '#fafafa'],
-    ['--sidebar-accent-foreground', '#0a0a0a', '#fafafa'],
+    ['--secondary', 'var(--soft2)', 'var(--soft2)'],
+    ['--muted', 'var(--soft2)', 'var(--soft2)'],
+    ['--accent', 'var(--soft2)', 'var(--soft2)'],
+    ['--sidebar-accent', 'var(--brand-soft)', 'var(--brand-soft)'],
+    ['--secondary-foreground', 'var(--ink)', 'var(--ink)'],
+    ['--sidebar-accent-foreground', 'var(--brand-ink)', 'var(--brand-ink)'],
     ['--sidebar-primary', '#0a0a0a', '#fafafa'],
     ['--ring', '#a3a3a3', '#525252'],
     ['--sidebar-ring', '#a3a3a3', '#525252'],
@@ -105,11 +105,11 @@ describe('white theme colors', () => {
     ['--warning', '#b45309', '#fbbf24'],
     ['--destructive', '#dc2626', '#f87171'],
     ['--info', '#1d4ed8', '#60a5fa'],
-    ['--chart-1', '#0a0a0a', '#e5e5e5'],
-    ['--chart-2', '#525252', '#d4d4d4'],
-    ['--chart-3', '#a3a3a3', '#a3a3a3'],
-    ['--chart-4', '#d4d4d4', '#525252'],
-    ['--chart-5', '#e5e5e5', '#0a0a0a'],
+    ['--chart-1', '#0070ec', '#3d94ff'],
+    ['--chart-2', '#4fa3ff', '#1a6fd4'],
+    ['--chart-3', '#8fc2ff', '#9a9a9a'],
+    ['--chart-4', '#a3a3a3', '#525252'],
+    ['--chart-5', '#d4d4d4', '#2a2a2a'],
   ])(
     '%s is %s in light mode and %s in dark mode',
     (name, lightHex, darkHex) => {
@@ -132,6 +132,56 @@ describe('white theme colors', () => {
       )
     }
   )
+
+  it.each([
+    ['--brand', '#0070ec', '#3d94ff'],
+    ['--brand-foreground', '#ffffff', '#08111c'],
+    ['--brand-hover', '#0060d8', '#58a6ff'],
+    ['--brand-soft', '#eef6ff', '#0d1b2b'],
+    ['--brand-ink', '#0059c7', '#8fc2ff'],
+  ])(
+    'the brand token %s is %s in light mode and %s in dark mode',
+    (name, lightHex, darkHex) => {
+      expect(light.get(name)).toBe(lightHex)
+      expect(dark.get(name)).toBe(darkHex)
+    }
+  )
+
+  it.each([
+    ['--ink', '#0f1a26', '#eef3f8'],
+    ['--ink-soft', '#30425a', '#c3d2e2'],
+    ['--dim', '#53667b', '#93a3b5'],
+    ['--faint', '#64798f', '#7a8d9f'],
+    ['--line', '#e6ecf2', '#232f3c'],
+    ['--line2', '#dce4ee', '#1b2530'],
+    ['--soft', '#f8fafc', '#0f1720'],
+    ['--soft2', '#eef3f8', '#1a2430'],
+  ])(
+    'the cool neutral %s is %s in light mode and %s in dark mode',
+    (name, lightHex, darkHex) => {
+      expect(light.get(name)).toBe(lightHex)
+      expect(dark.get(name)).toBe(darkHex)
+    }
+  )
+
+  it('resolves the sidebar selected state from the brand tokens', () => {
+    for (const vars of [light, dark]) {
+      expect(vars.get('--sidebar-accent')).toBe('var(--brand-soft)')
+      expect(vars.get('--sidebar-accent-foreground')).toBe('var(--brand-ink)')
+    }
+  })
+
+  it('exposes the brand tokens to Tailwind utilities', () => {
+    for (const name of [
+      'brand',
+      'brand-foreground',
+      'brand-hover',
+      'brand-soft',
+      'brand-ink',
+    ]) {
+      expect(themeInline.get(`--color-${name}`)).toBe(`var(--${name})`)
+    }
+  })
 
   it('keeps the overview accents gray in both modes', () => {
     for (const vars of [light, dark]) {
@@ -167,7 +217,7 @@ describe('white theme colors', () => {
 describe('white theme typography', () => {
   it('uses self-hosted Inter for the interface with CJK fallbacks', () => {
     expect(light.get('--font-ui-sans')).toBe(
-      "'inter variable', 'pingfang sc', 'microsoft yahei', system-ui, sans-serif"
+      "'plus jakarta sans variable', 'inter variable', 'pingfang sc', 'harmonyos sans sc', 'microsoft yahei', system-ui, sans-serif"
     )
     expect(light.get('--font-body')).toBe('var(--font-ui-sans)')
   })

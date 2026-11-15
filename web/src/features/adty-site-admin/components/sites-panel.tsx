@@ -192,7 +192,7 @@ export function SitesPanel(props: { onOpenSite: (site: AdminSite) => void }) {
           placeholder={t('Subdomain or owner username')}
           aria-label={t('Search')}
         />
-        <Button type='submit'>{t('Search')}</Button>
+        <Button variant='brand' type='submit'>{t('Search')}</Button>
       </form>
       {canCreate && (
         <form
@@ -221,23 +221,33 @@ export function SitesPanel(props: { onOpenSite: (site: AdminSite) => void }) {
             placeholder={t('Domain')}
             required
           />
-          <Button type='submit' disabled={openSite.isPending}>
+          <Button variant='brand' type='submit' disabled={openSite.isPending}>
             {t('Open a reseller site')}
           </Button>
         </form>
       )}
       {/* The ui/table primitives directly: StaticDataTable cannot put
-          aria-sort on the header cell of a sortable column. */}
-      <div className='overflow-x-auto rounded-lg border'>
-        <Table className='min-w-[860px]' aria-label={t('Reseller sites')}>
+          aria-sort on the header cell of a sortable column. The card is the
+          horizontal scroll viewport, so it needs an explicit `w-full min-w-0`
+          (a flex parent can otherwise squeeze it) and the table keeps its
+          max-content width instead of shrinking its columns. */}
+      <div className='border-border bg-card w-full min-w-0 overflow-x-auto overflow-y-hidden rounded-[14px] border'>
+        <Table
+          withContainer={false}
+          className='w-max min-w-full'
+          aria-label={t('Reseller sites')}
+        >
           <TableHeader>
             <TableRow>
               <TableHead>{t('Site')}</TableHead>
               <TableHead>{t('Owner')}</TableHead>
               <TableHead>{t('Status')}</TableHead>
-              <TableHead>{t('Cost factor')}</TableHead>
-              <TableHead>{t('Markup limit')}</TableHead>
-              <TableHead aria-sort={ariaSort(sort, 'customers')}>
+              <TableHead className='text-right'>{t('Cost factor')}</TableHead>
+              <TableHead className='text-right'>{t('Markup limit')}</TableHead>
+              <TableHead
+                className='text-right'
+                aria-sort={ariaSort(sort, 'customers')}
+              >
                 <SortHeader
                   label={t('Customers')}
                   sortKey='customers'
@@ -245,7 +255,10 @@ export function SitesPanel(props: { onOpenSite: (site: AdminSite) => void }) {
                   onSort={onSort}
                 />
               </TableHead>
-              <TableHead aria-sort={ariaSort(sort, 'topup')}>
+              <TableHead
+                className='text-right'
+                aria-sort={ariaSort(sort, 'topup')}
+              >
                 <SortHeader
                   label={t('Top-up')}
                   sortKey='topup'
@@ -253,7 +266,10 @@ export function SitesPanel(props: { onOpenSite: (site: AdminSite) => void }) {
                   onSort={onSort}
                 />
               </TableHead>
-              <TableHead aria-sort={ariaSort(sort, 'revenue')}>
+              <TableHead
+                className='text-right'
+                aria-sort={ariaSort(sort, 'revenue')}
+              >
                 <SortHeader
                   label={t('Revenue')}
                   sortKey='revenue'
@@ -261,7 +277,10 @@ export function SitesPanel(props: { onOpenSite: (site: AdminSite) => void }) {
                   onSort={onSort}
                 />
               </TableHead>
-              <TableHead aria-sort={ariaSort(sort, 'earning')}>
+              <TableHead
+                className='text-right'
+                aria-sort={ariaSort(sort, 'earning')}
+              >
                 <SortHeader
                   label={t('Earnings')}
                   sortKey='earning'
@@ -269,7 +288,10 @@ export function SitesPanel(props: { onOpenSite: (site: AdminSite) => void }) {
                   onSort={onSort}
                 />
               </TableHead>
-              <TableHead aria-sort={ariaSort(sort, 'growth')}>
+              <TableHead
+                className='text-right'
+                aria-sort={ariaSort(sort, 'growth')}
+              >
                 <SortHeader
                   label={t('Growth')}
                   sortKey='growth'
@@ -299,15 +321,25 @@ export function SitesPanel(props: { onOpenSite: (site: AdminSite) => void }) {
                   <TableCell>
                     <SiteStatusBadge status={row.status} />
                   </TableCell>
-                  <TableCell>
+                  <TableCell className='text-right tabular-nums'>
                     {row.cost_factor ?? row.tier_cost_factor ?? t('Global')}
                   </TableCell>
-                  <TableCell>{row.max_markup ?? t('Global')}</TableCell>
-                  <TableCell>{formatNumber(row.customers, locale)}</TableCell>
-                  <TableCell>{row.month_topup_usd ?? '0'}</TableCell>
-                  <TableCell>{row.month_revenue_usd ?? '0'}</TableCell>
-                  <TableCell>{row.month_earning_usd ?? '0'}</TableCell>
-                  <TableCell>
+                  <TableCell className='text-right tabular-nums'>
+                    {row.max_markup ?? t('Global')}
+                  </TableCell>
+                  <TableCell className='text-right tabular-nums'>
+                    {formatNumber(row.customers, locale)}
+                  </TableCell>
+                  <TableCell className='text-right tabular-nums'>
+                    {row.month_topup_usd ?? '0'}
+                  </TableCell>
+                  <TableCell className='text-right tabular-nums'>
+                    {row.month_revenue_usd ?? '0'}
+                  </TableCell>
+                  <TableCell className='text-right tabular-nums'>
+                    {row.month_earning_usd ?? '0'}
+                  </TableCell>
+                  <TableCell className='text-right tabular-nums'>
                     {row.growth_pct == null ? '-' : `${row.growth_pct}%`}
                   </TableCell>
                   <TableCell>

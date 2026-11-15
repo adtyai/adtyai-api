@@ -109,7 +109,11 @@ export function VoucherPanel() {
           onChange={(event) => setReason(event.target.value)}
         />
       </div>
-      <Button type='submit' disabled={pending || amount.trim() === '' || reason.trim() === ''}>
+      <Button
+        variant='brand'
+        type='submit'
+        disabled={pending || amount.trim() === '' || reason.trim() === ''}
+      >
         {t('Issue code')}
       </Button>
       {error && <p className='text-destructive text-sm'>{error}</p>}

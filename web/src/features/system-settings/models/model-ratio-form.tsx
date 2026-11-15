@@ -417,6 +417,7 @@ export const ModelRatioForm = memo(function ModelRatioForm({
               </>
             )}
             <Button
+              variant='brand'
               type='button'
               size='sm'
               onClick={handleSave}

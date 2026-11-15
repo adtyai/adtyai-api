@@ -182,7 +182,6 @@ export function SignUpForm({
     }
   }
 
-
   let verificationCodeAction: ReactNode = t('Send code')
   if (isActive) {
     verificationCodeAction = t('Resend ({{seconds}}s)', {
@@ -196,7 +195,7 @@ export function SignUpForm({
     <Form {...form}>
       <form
         onSubmit={form.handleSubmit(onSubmit)}
-        className={cn('grid gap-4', className)}
+        className={cn('grid gap-4 [&_input]:h-10', className)}
         {...props}
       >
         {/* Username Field */}
@@ -298,6 +297,7 @@ export function SignUpForm({
               <Button
                 variant='outline'
                 type='button'
+                className='h-10 shrink-0'
                 disabled={
                   isLoading ||
                   isSendingCode ||
@@ -355,7 +355,8 @@ export function SignUpForm({
         {/* Submit Button */}
         <Button
           type='submit'
-          className='mt-2 w-full justify-center gap-2'
+          variant='brand'
+          className='mt-1 h-10 w-full justify-center gap-2 text-[0.9375rem]'
           disabled={
             isLoading ||
             (requiresLegalConsent && !agreedToLegal) ||
@@ -367,7 +368,6 @@ export function SignUpForm({
           {t('Create account')}
         </Button>
       </form>
-
     </Form>
   )
 }

@@ -93,7 +93,7 @@ export function ChannelPriorityDemo(props: {
           'mb-3 grid gap-1.5 rounded-lg border p-3',
           same
             ? 'border-primary/30 bg-primary/5'
-            : 'border-amber-500/40 bg-amber-500/5'
+            : 'border-amber-500/40 bg-warning/5'
         )}
       >
         <p className='text-sm font-medium'>
@@ -109,7 +109,7 @@ export function ChannelPriorityDemo(props: {
       <ol
         aria-label={card ? t('Card view') : t('Table view')}
         className={cn(
-          'bg-muted/30 relative m-0 list-none overflow-hidden rounded-xl border p-0',
+          'bg-muted/30 relative m-0 list-none overflow-hidden rounded-[14px] border p-0',
           card ? 'h-60' : 'h-52'
         )}
       >
@@ -136,7 +136,7 @@ export function ChannelPriorityDemo(props: {
             aria-hidden
             role='presentation'
             className={cn(
-              'absolute z-20 rounded-full bg-amber-500',
+              'absolute z-20 rounded-full bg-warning',
               card
                 ? 'top-3 left-1/2 h-24 w-0.5'
                 : 'inset-x-3 top-[4.5rem] h-0.5'
@@ -198,7 +198,7 @@ export function ChannelPriorityDemo(props: {
                     'pointer-events-none absolute',
                     same
                       ? 'border-primary/60 bg-primary/10'
-                      : 'border-amber-500/60 bg-amber-500/10',
+                      : 'border-amber-500/60 bg-warning/10',
                     card &&
                       same &&
                       'inset-y-0 inset-x-6 border-x border-dashed',

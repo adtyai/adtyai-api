@@ -103,7 +103,7 @@ export function ConflictConfirmDialog(props: ConflictConfirmDialogProps) {
             cell: (conflict) => (
               <div className='space-y-2'>
                 {conflict.adjustment && (
-                  <p className='text-muted-foreground text-xs'>
+                  <p className='text-dim text-[12.5px]'>
                     {conflict.adjustment}
                   </p>
                 )}

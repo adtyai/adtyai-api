@@ -88,6 +88,7 @@ export function TwoFASetupDialog(props: TwoFASetupDialogProps) {
             </Button>
           ) : (
             <Button
+              variant='brand'
               onClick={() => void props.onEnable(code)}
               disabled={props.initializing || props.loading || !code}
             >

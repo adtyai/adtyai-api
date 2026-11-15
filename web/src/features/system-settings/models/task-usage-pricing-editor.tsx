@@ -143,7 +143,7 @@ function TaskBillingPreview(props: TaskBillingPreviewProps) {
     <div className='bg-muted/30 flex flex-col gap-3 rounded-md border p-3'>
       <div className='flex flex-col gap-1'>
         <h4 className='text-sm font-medium'>{t('Cost calculator')}</h4>
-        <p className='text-muted-foreground text-xs'>
+        <p className='text-dim text-[12.5px]'>
           {t(
             'Enter sample usage to estimate the cost. Group and request multipliers are not included.'
           )}
@@ -268,7 +268,7 @@ function TaskBillingPreview(props: TaskBillingPreviewProps) {
           <code className='font-mono text-xs break-words'>{formula}</code>
         </div>
       ) : (
-        <p className='text-muted-foreground text-xs'>
+        <p className='text-dim text-[12.5px]'>
           {t('Preview is unavailable for custom expressions.')}
         </p>
       )}
@@ -484,7 +484,7 @@ export const TaskUsagePricingEditor = memo(function TaskUsagePricingEditor(
           <>
             {enumFields.length > 0 ? (
               <div className='flex flex-col gap-3'>
-                <p className='text-muted-foreground text-xs'>
+                <p className='text-dim text-[12.5px]'>
                   {t(
                     'Set prices for each set of conditions below. Cost = usage × unit price + additional charge. Token prices are per million tokens.'
                   )}

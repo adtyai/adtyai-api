@@ -23,6 +23,7 @@ import {
 } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import * as React from 'react'
+import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -87,12 +88,13 @@ function PaginationLink({
 
 function PaginationPrevious({
   className,
-  text = 'Previous',
+  text,
   ...props
 }: React.ComponentProps<typeof PaginationLink> & { text?: string }) {
+  const { t } = useTranslation()
   return (
     <PaginationLink
-      aria-label='Go to previous page'
+      aria-label={t('Go to previous page')}
       size='default'
       className={cn('pl-1.5!', className)}
       {...props}
@@ -102,24 +104,25 @@ function PaginationPrevious({
         strokeWidth={2}
         data-icon='inline-start'
       />
-      <span className='hidden sm:block'>{text}</span>
+      <span className='hidden sm:block'>{text ?? t('Previous')}</span>
     </PaginationLink>
   )
 }
 
 function PaginationNext({
   className,
-  text = 'Next',
+  text,
   ...props
 }: React.ComponentProps<typeof PaginationLink> & { text?: string }) {
+  const { t } = useTranslation()
   return (
     <PaginationLink
-      aria-label='Go to next page'
+      aria-label={t('Go to next page')}
       size='default'
       className={cn('pr-1.5!', className)}
       {...props}
     >
-      <span className='hidden sm:block'>{text}</span>
+      <span className='hidden sm:block'>{text ?? t('Next')}</span>
       <HugeiconsIcon
         icon={ArrowRight01Icon}
         strokeWidth={2}
@@ -133,6 +136,7 @@ function PaginationEllipsis({
   className,
   ...props
 }: React.ComponentProps<'span'>) {
+  const { t } = useTranslation()
   return (
     <span
       aria-hidden
@@ -144,7 +148,7 @@ function PaginationEllipsis({
       {...props}
     >
       <HugeiconsIcon icon={MoreHorizontalCircle01Icon} strokeWidth={2} />
-      <span className='sr-only'>More pages</span>
+      <span className='sr-only'>{t('More pages')}</span>
     </span>
   )
 }

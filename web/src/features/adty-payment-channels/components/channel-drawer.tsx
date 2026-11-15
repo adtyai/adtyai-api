@@ -338,6 +338,7 @@ export function ChannelDrawer(props: ChannelDrawerProps) {
               {t('Cancel')}
             </Button>
             <Button
+              variant='brand'
               type='submit'
               disabled={!anyMethod || needsKey || save.isPending}
             >

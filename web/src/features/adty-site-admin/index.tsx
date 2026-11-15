@@ -67,6 +67,11 @@ export function SiteAdmin(props: { section: SiteAdminSectionId }) {
     <DraftNavigationProvider>
       <SectionPageLayout>
         <SectionPageLayout.Title>{t('Reseller sites')}</SectionPageLayout.Title>
+        <SectionPageLayout.Description>
+          {t(
+            'Open sites, approve or reject applications, review flagged customers and reports.'
+          )}
+        </SectionPageLayout.Description>
         <SectionPageLayout.Content>
           {props.section === 'sites' && <PausedSiteRepairPanel />}
           <Tabs
@@ -78,14 +83,21 @@ export function SiteAdmin(props: { section: SiteAdminSectionId }) {
               })
             }
           >
-            <TabsList>
+            <TabsList
+              variant='line'
+              className='border-border h-auto flex-wrap justify-start gap-x-6 gap-y-1 rounded-none border-b p-0 group-data-horizontal/tabs:h-auto [--tab-underline:var(--brand)]'
+            >
               {visible.map((section) => (
-                <TabsTrigger key={section.id} value={section.id}>
+                <TabsTrigger
+                  key={section.id}
+                  value={section.id}
+                  className='text-dim hover:text-foreground data-active:text-foreground h-auto flex-none px-0 pt-0 pb-2.5 text-[13.5px] font-medium'
+                >
                   {labels[section.id]}
                 </TabsTrigger>
               ))}
             </TabsList>
-            <TabsContent value='sites'>
+            <TabsContent value='sites' className='min-w-0'>
               <SitesPanel onOpenSite={(site) => setOpenSite(site.id)} />
             </TabsContent>
             <TabsContent value='overview'>
@@ -94,7 +106,7 @@ export function SiteAdmin(props: { section: SiteAdminSectionId }) {
             <TabsContent value='reviews'>
               <ReviewsPanel />
             </TabsContent>
-            <TabsContent value='settings' className='flex flex-col gap-6'>
+            <TabsContent value='settings' className='flex flex-col gap-5'>
               <SiteReferralCapPanel />
               <BusinessTimezonePanel />
               <WithdrawRulesPanel />

@@ -132,7 +132,13 @@ export function CustomersPanel() {
           <EmptyState className='min-h-32' title={t('No customers yet')} />
         }
         columns={[
-          { id: 'id', header: t('ID'), cell: (row) => row.id },
+          {
+            id: 'id',
+            header: t('ID'),
+            className: 'text-right',
+            cellClassName: 'text-right tabular-nums',
+            cell: (row) => row.id,
+          },
           {
             id: 'username',
             header: t('Username'),
@@ -144,7 +150,13 @@ export function CustomersPanel() {
             ),
           },
           { id: 'email', header: t('Email'), cell: (row) => row.email || '—' },
-          { id: 'balance', header: t('Balance'), cell: balanceCell },
+          {
+            id: 'balance',
+            header: t('Balance'),
+            className: 'text-right',
+            cellClassName: 'text-right tabular-nums',
+            cell: balanceCell,
+          },
           {
             id: 'joined',
             header: t('Signed up'),

@@ -70,7 +70,7 @@ afterEach(() => {
 })
 
 it.each(['site_agreement', 'site_customer_terms'])(
-  'publishes all eight languages and the version for %s through legal options',
+  'publishes every offered content language and the version for %s through legal options',
   async (field) => {
     const put = vi
       .spyOn(api, 'put')

@@ -78,6 +78,9 @@ export function TaskPlugins() {
     <>
       <SectionPageLayout fixedContent>
         <SectionPageLayout.Title>{t('Task Plugins')}</SectionPageLayout.Title>
+        <SectionPageLayout.Description>
+          {t('Install, configure, test, and remove task plugins.')}
+        </SectionPageLayout.Description>
         <SectionPageLayout.Actions>
           <div className='flex items-center gap-2'>
             <Switch
@@ -128,7 +131,7 @@ export function TaskPlugins() {
             </Popover>
           </div>
           {tab === 'installed' && (
-            <Button onClick={() => openUpload()}>
+            <Button variant='brand' onClick={() => openUpload()}>
               <Upload />
               {t('Upload plugin')}
             </Button>

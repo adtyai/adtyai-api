@@ -100,6 +100,7 @@ export function PricingTable(props: PricingTableProps) {
         emptyTitle={t('No Models Found')}
         emptyDescription={t('No models match your current filters.')}
         skeletonKeyPrefix='pricing-skeleton'
+        skeletonRowHeight='h-14'
         applyHeaderSize
         getColumnClassName={(_columnId, kind) =>
           kind === 'header' ? 'text-muted-foreground font-medium' : undefined
@@ -108,7 +109,7 @@ export function PricingTable(props: PricingTableProps) {
           <DataTableRow
             key={row.id}
             row={row}
-            className='hover:bg-muted/30 cursor-pointer transition-colors'
+            className='hover:bg-muted/30 cursor-pointer transition-colors [&>td]:h-14'
             onClick={() => handleRowClick(row.original)}
           />
         )}

@@ -128,7 +128,12 @@ export function SecureVerificationDialog(props: SecureVerificationDialogProps) {
             </Button>
           )}
           {showSubmit && (
-            <Button type='submit' form={formId} disabled={!canVerify}>
+            <Button
+              variant='brand'
+              type='submit'
+              form={formId}
+              disabled={!canVerify}
+            >
               {verifying && <Loader2 className='size-4 animate-spin' />}
               {t('Verify')}
             </Button>

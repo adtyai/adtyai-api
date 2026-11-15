@@ -63,9 +63,12 @@ export function DocPage(props: { slug: string }) {
 
   return (
     <PublicLayout>
-      <div className='mx-auto flex max-w-6xl flex-col gap-8 py-8 md:flex-row'>
-        <nav aria-label={t('Documentation')} className='md:w-52 md:shrink-0'>
-          <ul className='flex gap-1 overflow-x-auto md:sticky md:top-24 md:flex-col'>
+      <div className='mx-auto flex w-full max-w-[1180px] flex-col gap-10 py-2 md:flex-row md:gap-14 md:py-6'>
+        <nav
+          aria-label={t('Documentation')}
+          className='md:w-[180px] md:shrink-0'
+        >
+          <ul className='flex gap-1 overflow-x-auto md:sticky md:top-[104px] md:flex-col md:gap-0.5 md:overflow-visible'>
             {DOC_PAGES.map((page) => {
               const active = page === props.slug
               return (
@@ -75,8 +78,11 @@ export function DocPage(props: { slug: string }) {
                     params={{ slug: page }}
                     aria-current={active ? 'page' : undefined}
                     className={cn(
-                      'text-muted-foreground hover:bg-muted hover:text-foreground block rounded-md px-3 py-1.5 text-sm',
-                      active && 'bg-muted text-foreground font-medium'
+                      'text-muted-foreground block rounded-md px-3 py-1.5 text-[13px] whitespace-nowrap transition-colors',
+                      'md:rounded-none md:border-l-2 md:px-0 md:py-2 md:pl-3.5',
+                      active
+                        ? 'bg-muted text-foreground font-medium md:border-l-brand md:bg-transparent'
+                        : 'hover:text-foreground md:hover:border-border'
                     )}
                   >
                     {titles[page]}
@@ -86,12 +92,12 @@ export function DocPage(props: { slug: string }) {
             })}
           </ul>
         </nav>
-        <article className='min-w-0 flex-1'>
+        <article className='max-w-[680px] min-w-0 flex-1'>
           {known ? (
             <RichContent
               mode='markdown'
               content={markdown}
-              className='prose-neutral dark:prose-invert max-w-none'
+              className='prose-neutral dark:prose-invert max-w-none [&_li]:leading-[1.8] [&_p]:leading-[1.8]'
             />
           ) : (
             <EmptyState

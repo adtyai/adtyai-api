@@ -26,10 +26,21 @@ export function PrerenderHeader() {
   return (
     <header className='fixed inset-x-0 top-0 z-50'>
       <div className='mx-auto flex h-16 max-w-7xl items-center gap-2.5 px-6 md:px-8'>
-        <img src='/adty-logo.svg' alt='' className='size-6 rounded-lg' />
-        <span className='text-sm font-semibold tracking-tight'>
-          {ADTY_BRAND_NAME}
-        </span>
+        {/* The logo artwork already contains the ADTY wordmark; the brand name
+            stays in the markup for assistive tech only. */}
+        <img
+          src='/logo.png'
+          alt=''
+          aria-hidden='true'
+          className='h-6 w-auto max-w-none object-contain dark:hidden'
+        />
+        <img
+          src='/logo-dark.png'
+          alt=''
+          aria-hidden='true'
+          className='dark:block hidden h-6 w-auto max-w-none object-contain'
+        />
+        <span className='sr-only'>{ADTY_BRAND_NAME}</span>
       </div>
     </header>
   )

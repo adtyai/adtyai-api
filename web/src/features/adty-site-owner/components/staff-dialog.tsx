@@ -155,6 +155,7 @@ export function StaffDialog(props: {
             {t('Cancel')}
           </Button>
           <Button
+            variant='brand'
             type='submit'
             form='staff-account-form'
             disabled={save.isPending}

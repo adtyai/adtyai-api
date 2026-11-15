@@ -203,7 +203,11 @@ export function WithdrawalPanel() {
             <span>{t('I confirm the payee details before this request is frozen.')}</span>
           </label>
           <div>
-            <Button type='submit' disabled={!confirmed || submit.isPending}>
+            <Button
+              variant='brand'
+              type='submit'
+              disabled={!confirmed || submit.isPending}
+            >
               {t('Submit withdrawal')}
             </Button>
           </div>

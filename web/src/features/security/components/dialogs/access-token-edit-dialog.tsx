@@ -125,6 +125,7 @@ export function AccessTokenEditDialog(props: AccessTokenEditDialogProps) {
             {t('Cancel')}
           </Button>
           <Button
+            variant='brand'
             type='submit'
             form='access-token-edit-form'
             disabled={props.pending}

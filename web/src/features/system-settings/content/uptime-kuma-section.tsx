@@ -359,7 +359,7 @@ export function UptimeKumaSection({ enabled, data }: UptimeKumaSectionProps) {
             >
               {t('Cancel')}
             </Button>
-            <Button type='submit' form={UPTIME_KUMA_FORM_ID}>
+            <Button variant='brand' type='submit' form={UPTIME_KUMA_FORM_ID}>
               {editingGroup ? t('Update') : t('Add')}
             </Button>
           </>

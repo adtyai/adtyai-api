@@ -58,7 +58,7 @@ export function TwoFACard({ loading: pageLoading }: TwoFACardProps) {
   if (pageLoading || loading) {
     return (
       <Card data-card-hover='false' className='gap-0 overflow-hidden py-0'>
-        <CardHeader className='p-3 sm:p-5'>
+        <CardHeader className='p-5'>
           <Skeleton className='h-6 w-48' />
           <Skeleton className='mt-2 h-4 w-64' />
         </CardHeader>
@@ -87,10 +87,10 @@ export function TwoFACard({ loading: pageLoading }: TwoFACardProps) {
     <>
       <Card data-card-hover='false' className='gap-0 overflow-hidden py-0'>
         <CardHeader className='p-3 sm:p-5'>
-          <CardTitle className='text-lg tracking-tight sm:text-xl'>
+          <CardTitle className='text-[15px] leading-snug font-semibold tracking-tight'>
             {t('Two-Factor Authentication')}
           </CardTitle>
-          <CardDescription className='text-xs sm:text-sm'>
+          <CardDescription className='text-dim text-[13px] leading-relaxed'>
             {t('Add an extra layer of security to your account')}
           </CardDescription>
         </CardHeader>
@@ -130,7 +130,7 @@ export function TwoFACard({ loading: pageLoading }: TwoFACardProps) {
                       />
                     )}
                   </div>
-                  <p className='text-muted-foreground text-sm'>
+                  <p className='text-dim text-[13px] leading-relaxed'>
                     {status.enabled
                       ? t('Backup codes remaining: {{count}}', {
                           count: status.backup_codes_remaining,
@@ -142,6 +142,7 @@ export function TwoFACard({ loading: pageLoading }: TwoFACardProps) {
 
               {!status.enabled && (
                 <Button
+                  variant='brand'
                   className='w-full sm:w-auto xl:w-full 2xl:w-auto'
                   onClick={setup.start}
                   disabled={setup.active}

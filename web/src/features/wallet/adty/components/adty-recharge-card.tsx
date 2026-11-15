@@ -330,6 +330,7 @@ export function AdtyRechargeCard(props: AdtyRechargeCardProps) {
             </p>
           )}
           <Button
+            variant='brand'
             className='mt-2 sm:self-end'
             disabled={
               !validAmount ||

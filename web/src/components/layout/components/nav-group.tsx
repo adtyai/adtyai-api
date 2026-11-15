@@ -127,6 +127,7 @@ function SidebarMenuLink({ item, href }: { item: NavLink; href: string }) {
       <SidebarMenuButton
         isActive={checkIsActive(href, item)}
         tooltip={item.title}
+        title={item.title}
         render={
           <Link
             to={item.url}
@@ -163,7 +164,7 @@ function SidebarMenuCollapsible({
     >
       <CollapsibleTrigger
         className='group/collapsible-trigger'
-        render={<SidebarMenuButton tooltip={item.title} />}
+        render={<SidebarMenuButton tooltip={item.title} title={item.title} />}
       >
         {item.icon && <item.icon className='shrink-0' />}
         <span className='min-w-0 flex-1 truncate'>{item.title}</span>
@@ -176,6 +177,7 @@ function SidebarMenuCollapsible({
             <SidebarMenuSubItem key={subItem.title}>
               <SidebarMenuSubButton
                 isActive={checkIsActive(href, subItem)}
+                title={subItem.title}
                 render={
                   <Link
                     to={subItem.url}
@@ -214,6 +216,7 @@ function SidebarMenuCollapsedDropdown({
           render={
             <SidebarMenuButton
               tooltip={item.title}
+              title={item.title}
               isActive={checkIsActive(href, item)}
             />
           }

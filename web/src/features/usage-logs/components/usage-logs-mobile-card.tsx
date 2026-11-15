@@ -37,10 +37,8 @@ import type { LogCategory } from '../types'
 import { CommonLogMobileCard } from './common-log-mobile-card'
 
 const logTypeRowTint: Record<number, string> = {
-  [LOG_TYPE_ENUM.ERROR]:
-    'bg-rose-50/40 dark:bg-rose-950/20 border-rose-200/50 dark:border-rose-900/30',
-  [LOG_TYPE_ENUM.REFUND]:
-    'bg-blue-50/30 dark:bg-blue-950/15 border-blue-200/50 dark:border-blue-900/30',
+  [LOG_TYPE_ENUM.ERROR]: 'bg-destructive-soft/45 border-destructive/15',
+  [LOG_TYPE_ENUM.REFUND]: 'bg-info-soft/45 border-info/15',
 }
 
 interface UsageLogsMobileListProps<TData> {
@@ -61,7 +59,7 @@ function UsageLogsMobileSkeleton(props: { separate: boolean }) {
       className={
         props.separate
           ? 'min-w-0 space-y-3'
-          : 'border-border/50 bg-card overflow-hidden rounded-lg border'
+          : 'bg-card border-border overflow-hidden rounded-[14px] border'
       }
     >
       {[1, 2, 3].map((i) => (
@@ -69,8 +67,8 @@ function UsageLogsMobileSkeleton(props: { separate: boolean }) {
           key={i}
           className={
             props.separate
-              ? 'border-border/60 bg-card space-y-3 rounded-xl border p-3.5'
-              : 'border-border/40 space-y-2.5 border-b p-3 last:border-b-0'
+              ? 'bg-card border-border space-y-3 rounded-[14px] border p-3.5'
+              : 'border-border space-y-2.5 border-b p-3 last:border-b-0'
           }
         >
           <div className='flex items-center justify-between gap-3'>
@@ -295,7 +293,7 @@ export function UsageLogsMobileList<TData>({
             key={row.id}
             className={cn(
               logCategory === 'common'
-                ? 'border-border/60 bg-card min-w-0 rounded-xl border p-3.5'
+                ? 'border-border/60 bg-card min-w-0 rounded-[14px] border p-3.5'
                 : 'border-border/40 border-b border-l-2 border-l-transparent p-3 transition-colors last:border-b-0',
               tintClass
             )}

@@ -74,7 +74,7 @@ export function usePricingColumns(
           </div>
         )
       },
-      minSize: 200,
+      minSize: 170,
     },
 
     // Type column
@@ -84,7 +84,7 @@ export function usePricingColumns(
       cell: ({ row }) => (
         <ModelBillingModeBadge model={row.original} className='-ml-1.5' />
       ),
-      size: 110,
+      size: 132,
       enableSorting: false,
     },
 
@@ -98,18 +98,7 @@ export function usePricingColumns(
       cell: ({ row }) => (
         <ModelPriceCell model={row.original} options={options} />
       ),
-      size: 180,
-      enableSorting: false,
-    },
-
-    // Cached price column (Vercel AI Gateway style)
-    {
-      id: 'cached_price',
-      header: t('Cached'),
-      cell: ({ row }) => (
-        <CachedPriceCell model={row.original} options={options} />
-      ),
-      size: 110,
+      size: 150,
       enableSorting: false,
     },
 
@@ -122,7 +111,7 @@ export function usePricingColumns(
           official={options.officialPrices?.[row.original.model_name]}
         />
       ),
-      size: 140,
+      size: 112,
       enableSorting: false,
     },
 
@@ -137,7 +126,18 @@ export function usePricingColumns(
           selectedGroup={options.selectedGroup}
         />
       ),
-      size: 90,
+      size: 72,
+      enableSorting: false,
+    },
+
+    // Cached price column (Vercel AI Gateway style)
+    {
+      id: 'cached_price',
+      header: t('Cached'),
+      cell: ({ row }) => (
+        <CachedPriceCell model={row.original} options={options} />
+      ),
+      size: 92,
       enableSorting: false,
     },
 
@@ -165,7 +165,7 @@ export function usePricingColumns(
           </BadgeCell>
         )
       },
-      size: 130,
+      size: 100,
       enableSorting: false,
     },
 
@@ -189,7 +189,7 @@ export function usePricingColumns(
           />
         )
       },
-      size: 140,
+      size: 88,
       enableSorting: false,
     },
 
@@ -213,7 +213,7 @@ export function usePricingColumns(
           />
         )
       },
-      size: 130,
+      size: 96,
       enableSorting: false,
     },
 
@@ -235,7 +235,7 @@ export function usePricingColumns(
           />
         )
       },
-      size: 130,
+      size: 88,
       enableSorting: false,
     },
   ]

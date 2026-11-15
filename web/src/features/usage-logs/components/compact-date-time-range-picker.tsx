@@ -228,7 +228,12 @@ export function CompactDateTimeRangePicker({
           </div>
 
           <div className='flex justify-end'>
-            <Button size='sm' className='h-8' onClick={applyDraft}>
+            <Button
+              variant='brand'
+              size='sm'
+              className='h-8'
+              onClick={applyDraft}
+            >
               {t('Confirm')}
             </Button>
           </div>

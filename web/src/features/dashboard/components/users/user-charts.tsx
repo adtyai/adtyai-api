@@ -40,6 +40,7 @@ import type {
   ProcessedUserChartData,
   UserChartsFilters,
 } from '@/features/dashboard/types'
+import { useChartPalette } from '@/lib/chart-theme'
 import { requireServerSuccess } from '@/lib/server-error-message'
 import { getRollingDateRange, type TimeGranularity } from '@/lib/time'
 import { VCHART_OPTION } from '@/lib/vchart'
@@ -145,15 +146,17 @@ export function UserCharts(props: UserChartsProps) {
     staleTime: 60_000,
   })
 
+  const palette = useChartPalette()
   const chartData = useMemo(
     () =>
       processUserChartData(
         isLoading ? [] : (userData ?? []),
         timeGranularity,
         t,
-        topUserLimit
+        topUserLimit,
+        palette
       ),
-    [userData, isLoading, timeGranularity, t, topUserLimit]
+    [userData, isLoading, timeGranularity, t, topUserLimit, palette]
   )
 
   return (
@@ -236,7 +239,9 @@ export function UserCharts(props: UserChartsProps) {
                 <IconBadge tone='info' size='sm'>
                   <Users />
                 </IconBadge>
-                <div className='text-sm font-semibold'>{t(chart.labelKey)}</div>
+                <div className='text-[15px] font-semibold tracking-tight'>
+                  {t(chart.labelKey)}
+                </div>
               </div>
 
               <div className='h-[300px] p-1.5 sm:h-96 sm:p-2'>

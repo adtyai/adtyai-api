@@ -441,7 +441,7 @@ export function WaffoPancakeSettingsSection({
             </NativeSelectOption>
             <NativeSelectOption value='test'>{t('Test')}</NativeSelectOption>
           </NativeSelect>
-          <p className='text-muted-foreground text-xs'>
+          <p className='text-dim text-[12.5px]'>
             {t('Choose the environment that matches your merchant API key.')}
           </p>
         </div>
@@ -487,7 +487,7 @@ export function WaffoPancakeSettingsSection({
             <h4 className='font-medium'>
               {t('Bind a Pancake store + product')}
             </h4>
-            <p className='text-muted-foreground text-xs'>{bindStatusMessage}</p>
+            <p className='text-dim text-[12.5px]'>{bindStatusMessage}</p>
           </div>
 
           {/*
@@ -537,7 +537,7 @@ export function WaffoPancakeSettingsSection({
                   : `+ ${t('Create')} ${DEFAULT_NEW_PAIR_NAME}`}
               </Button>
             </div>
-            <p className='text-muted-foreground text-xs'>
+            <p className='text-dim text-[12.5px]'>
               {t(
                 "Used as SuccessURL on the new product. You'll be prompted to confirm if left blank."
               )}

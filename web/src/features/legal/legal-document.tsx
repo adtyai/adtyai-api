@@ -66,7 +66,7 @@ export function LegalDocument({
   if (isLoading || pending) {
     return (
       <PublicLayout>
-        <div className='mx-auto flex max-w-4xl flex-col gap-4 py-12'>
+        <div className='mx-auto flex max-w-[680px] flex-col gap-4 py-12'>
           <Skeleton className='h-8 w-[45%]' />
           <Skeleton className='h-4 w-full' />
           <Skeleton className='h-4 w-[90%]' />
@@ -79,7 +79,7 @@ export function LegalDocument({
   if (!success || !hasContent) {
     return (
       <PublicLayout>
-        <div className='mx-auto max-w-2xl py-12'>
+        <div className='mx-auto max-w-[680px] py-12'>
           <Card className='border-dashed'>
             <CardHeader className='flex flex-row items-center gap-4'>
               <div className='bg-muted rounded-lg p-2'>
@@ -101,7 +101,7 @@ export function LegalDocument({
   if (isUrl) {
     return (
       <PublicLayout>
-        <div className='mx-auto max-w-2xl py-12'>
+        <div className='mx-auto max-w-[680px] py-12'>
           <Card>
             <CardHeader>
               <CardTitle>{title}</CardTitle>
@@ -135,15 +135,15 @@ export function LegalDocument({
       {contentIsHtml ? (
         <RichContent mode='html' htmlVariant='isolated' content={rawContent} />
       ) : (
-        <div className='mx-auto max-w-4xl space-y-6 py-12'>
-          <div className='space-y-2'>
-            <h1 className='text-3xl font-semibold tracking-tight'>{title}</h1>
-          </div>
+        <div className='mx-auto max-w-[680px] space-y-8 py-10'>
+          <h1 className='text-[32px] leading-tight font-extrabold tracking-[-0.025em]'>
+            {title}
+          </h1>
 
           <RichContent
             mode='markdown'
             content={rawContent}
-            className='prose-neutral dark:prose-invert max-w-none'
+            className='prose-neutral dark:prose-invert max-w-none [&_li]:leading-[1.8] [&_p]:leading-[1.8]'
           />
         </div>
       )}

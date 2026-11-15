@@ -31,6 +31,7 @@ import {
   useContext,
   useMemo,
 } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import { Badge } from '@/components/ui/badge'
 import {
@@ -105,6 +106,7 @@ export type ChainOfThoughtHeaderProps = ComponentProps<
 
 export const ChainOfThoughtHeader = memo(
   ({ className, children, ...props }: ChainOfThoughtHeaderProps) => {
+    const { t } = useTranslation()
     const { isOpen, setIsOpen } = useChainOfThought()
 
     return (
@@ -118,7 +120,7 @@ export const ChainOfThoughtHeader = memo(
         >
           <BrainIcon className='size-4' />
           <span className='flex-1 text-left'>
-            {children ?? 'Chain of Thought'}
+            {children ?? t('Chain of Thought')}
           </span>
           <ChevronDownIcon
             className={cn(

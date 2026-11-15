@@ -167,6 +167,7 @@ export function ChannelsPrimaryButtons() {
         <Tooltip>
           <TooltipTrigger render={<span className='inline-flex' />}>
             <Button
+              variant='brand'
               onClick={() => {
                 if (!canCreate) return
                 setCurrentRow(null)

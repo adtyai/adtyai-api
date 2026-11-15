@@ -93,24 +93,33 @@ export function GeneralError({
     : t('Please try again later.')
 
   return (
-    <div className={cn('h-svh w-full', className)}>
-      <div className='m-auto flex h-full w-full flex-col items-center justify-center gap-2'>
+    <div
+      className={cn(
+        'flex min-h-svh w-full items-center justify-center px-6 py-24',
+        className
+      )}
+    >
+      <div className='flex w-full max-w-lg flex-col items-center gap-4 text-center'>
         {!minimal && status !== undefined && (
-          <h1 className='text-[7rem] leading-tight font-bold'>{status}</h1>
+          <h1 className='text-faint/40 text-[120px] leading-[0.9] font-extrabold tracking-[-0.05em] tabular-nums select-none'>
+            {status}
+          </h1>
         )}
-        <span className='font-medium'>{title}</span>
-        <p className='text-muted-foreground text-center'>
-          {t('We apologize for the inconvenience.')} <br /> {description}
+        <p className='text-foreground text-lg font-semibold tracking-tight'>
+          {title}
+        </p>
+        <p className='text-muted-foreground max-w-sm text-sm leading-relaxed'>
+          {t('We apologize for the inconvenience.')} {description}
         </p>
         {!minimal && supportEmail && (
-          <p className='text-muted-foreground text-center text-sm'>
+          <p className='text-muted-foreground text-xs leading-relaxed'>
             {t('If this keeps happening, please email {{email}}.', {
               email: supportEmail,
             })}
           </p>
         )}
         {!minimal && (
-          <div className='mt-6 flex flex-wrap justify-center gap-4'>
+          <div className='mt-6 flex flex-wrap justify-center gap-3'>
             <Button variant='outline' onClick={() => history.go(-1)}>
               {t('Go Back')}
             </Button>
@@ -122,7 +131,7 @@ export function GeneralError({
                 {t('Report an issue')}
               </Button>
             )}
-            <Button onClick={() => navigate({ to: '/' })}>
+            <Button variant='brand' onClick={() => navigate({ to: '/' })}>
               {t('Back to Home')}
             </Button>
           </div>
