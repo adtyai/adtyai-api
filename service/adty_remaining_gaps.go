@@ -688,7 +688,6 @@ func applyApprovedStaffBalanceTx(tx *gorm.DB, row model.AdtyStaffBalanceRequest,
 		}
 		return nil
 	}
-	rawBefore := int64(user.Quota)
 	var before, applied int64
 	if row.Direction == model.AdtyStaffBalanceDecrease {
 		var debited int64
@@ -700,7 +699,15 @@ func applyApprovedStaffBalanceTx(tx *gorm.DB, row model.AdtyStaffBalanceRequest,
 			return common.NewMessage("Customer balance is not enough")
 		}
 		applied = -debited
-		if err := model.ConsumeAdtyFundBatchesQuietTx(tx, row.CustomerUserId, debited, rawBefore); err != nil {
+		// 传 `before`，不传 `user.Quota`。
+		//
+		// `AdtyDebitUserQuotaTx` 已经把**逻辑余额**（quota + pending）当 before 返回了，
+		// 而准入判据用的也是逻辑余额。所以扣批次必须用同一把尺子——用 raw quota 会让
+		// 「钱主要在 quota_pending 里」的账户被判定为批次不够，整笔回滚，报
+		// `fund batches cannot cover the debit`。管理员没有绕法。
+		//
+		// 同一个函数、相隔几行，正确值和错误值同时在手上。
+		if err := model.ConsumeAdtyFundBatchesQuietTx(tx, row.CustomerUserId, debited, before); err != nil {
 			return err
 		}
 	} else {
