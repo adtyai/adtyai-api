@@ -41,9 +41,13 @@ type AdtyFundAllocation struct {
 func (AdtyFundAllocation) TableName() string { return "adty_fund_allocations" }
 
 // AllocateAdtyFundAllocationsTx records the pre-charge shares for one operation.
-// It spends principal before bonus and follows the batch FIFO order used by
-// ConsumeAdtyFundBatchesTx, so a later settlement can hand back exactly the
-// shares this operation took.
+// amount is the cumulative quota this operation should have reserved: a repeated
+// call only records the difference, so the top-up path can call it again with a
+// larger target without double-claiming a batch.
+//
+// It spends principal before bonus and follows the A.12.2 FIFO order, so a later
+// settlement can turn exactly these shares into real consumption and a release
+// can hand them back without guessing.
 //
 // A user without lots gets no shares: those accounts still settle through the
 // legacy path in ConsumeAdtyFundBatchesTx, which invents a lot on first spend.
@@ -54,13 +58,20 @@ func AllocateAdtyFundAllocationsTx(tx *gorm.DB, userID int, operationID string, 
 	if err := adtyRequireFundBatchTable(tx); err != nil {
 		return err
 	}
-	var existing int64
-	if err := tx.Model(&AdtyFundAllocation{}).Where("operation_id = ? AND user_id = ?", operationID, userID).Count(&existing).Error; err != nil {
+	// 同一 operation 可能多次预扣（发送前补扣、阶梯价上调）。amount 是累计应预扣
+	// 总额，这里只补差额，重复调用不会重复登记。
+	var taken struct {
+		Held    int64
+		Settled int64
+	}
+	if err := tx.Model(&AdtyFundAllocation{}).
+		Select("coalesce(sum(held),0) as held, coalesce(sum(settled),0) as settled").
+		Where("operation_id = ? AND user_id = ?", operationID, userID).
+		Scan(&taken).Error; err != nil {
 		return err
 	}
-	if existing > 0 {
-		// The operation already took its shares; re-reserving an operation must
-		// not double-claim the batch.
+	amount -= taken.Held + taken.Settled
+	if amount <= 0 {
 		return nil
 	}
 	var batches []AdtyFundBatch
@@ -70,9 +81,16 @@ func AllocateAdtyFundAllocationsTx(tx *gorm.DB, userID int, operationID string, 
 	if len(batches) == 0 {
 		return nil
 	}
+	var maxSeq struct{ Seq int }
+	if err := tx.Model(&AdtyFundAllocation{}).
+		Select("coalesce(max(seq),0) as seq").
+		Where("operation_id = ? AND user_id = ?", operationID, userID).
+		Scan(&maxSeq).Error; err != nil {
+		return err
+	}
 	pickAdtyFundBatchOrder(batches)
 	remaining := amount
-	seq := 0
+	seq := maxSeq.Seq
 	for _, batch := range batches {
 		if remaining <= 0 {
 			break
@@ -195,4 +213,134 @@ func adtyFundKindRank(row AdtyFundBatch) int {
 		return 0
 	}
 	return 1
+}
+
+// SettleAdtyFundAllocationsTx 把一次结算落到批次与分摊上。
+//
+// applied 是这次业务最终真正消耗的额度（= 预扣 base + 补扣 charged，全额退款时为 0）。
+// 规则：
+//   - 已登记的分摊按 seq 顺序把 held 转成 settled，对应金额从批次 remaining 扣掉；
+//   - applied 小于已登记额度时，剩下的部分只是释放（批次没被扣过，不需要回补）；
+//   - applied 大于已登记额度时（升级前的旧 operation、或补扣没登记成功），
+//     差额按 FIFO 现场补记一条已结算分摊再扣，保证 remaining 与 quota 同步。
+//
+// 扣批次用条件更新 + RowsAffected 校验：并发下扣不够就整事务回滚，
+// 不做静默重试——那会把「这次没扣成」伪装成「扣到别的地方去了」。
+func SettleAdtyFundAllocationsTx(tx *gorm.DB, userID int, operationID string, applied int64, balanceBefore int64) error {
+	if tx == nil || userID <= 0 {
+		return nil
+	}
+	if applied < 0 {
+		return ErrAdtyFundAllocationMissing
+	}
+	var shares []AdtyFundAllocation
+	if operationID != "" {
+		if err := lockForUpdate(tx).
+			Where("user_id = ? AND operation_id = ?", userID, operationID).
+			Order("seq ASC").Find(&shares).Error; err != nil {
+			return err
+		}
+	}
+	if len(shares) == 0 {
+		// 没有分摊：升级前的 operation 与 legacy 直接扣费仍然走原路径，
+		// 保留「首次消费时为旧余额补建 legacy 批次」的行为。
+		if applied == 0 {
+			return nil
+		}
+		return ConsumeAdtyFundBatchesTx(tx, userID, applied, balanceBefore)
+	}
+
+	left := applied
+	for i := range shares {
+		held := shares[i].Held - shares[i].Settled
+		if held <= 0 {
+			continue
+		}
+		take := min(held, left)
+		if take <= 0 {
+			// 本次没用到这部分：只释放，不动 remaining。
+			if err := tx.Model(&AdtyFundAllocation{}).
+				Where("id = ? AND held = ?", shares[i].Id, shares[i].Held).
+				Updates(map[string]any{"held": 0}).Error; err != nil {
+				return err
+			}
+			continue
+		}
+		if err := deductAdtyFundBatchTx(tx, shares[i].BatchId, take); err != nil {
+			return err
+		}
+		// 只消费了一部分时，把这份分摊收窄到实际消耗，held 与 settled 相等，
+		// 未用到的部分随之释放（批次没有扣过它，不需要回补）。
+		if err := tx.Model(&AdtyFundAllocation{}).
+			Where("id = ? AND held = ?", shares[i].Id, shares[i].Held).
+			Updates(map[string]any{"held": take, "settled": shares[i].Settled + take}).Error; err != nil {
+			return err
+		}
+		left -= take
+	}
+	if left <= 0 {
+		return nil
+	}
+	// 已登记额度不够覆盖实际消耗：补记一条已结算分摊，再按 FIFO 扣批次。
+	if err := AllocateAdtyFundAllocationsTx(tx, userID, operationID, applied); err != nil {
+		return err
+	}
+	if err := tx.Where("user_id = ? AND operation_id = ? AND settled = 0", userID, operationID).
+		Order("seq ASC").Find(&shares).Error; err != nil {
+		return err
+	}
+	for i := range shares {
+		if left <= 0 {
+			break
+		}
+		held := shares[i].Held - shares[i].Settled
+		if held <= 0 {
+			continue
+		}
+		take := min(held, left)
+		if err := deductAdtyFundBatchTx(tx, shares[i].BatchId, take); err != nil {
+			return err
+		}
+		if err := tx.Model(&AdtyFundAllocation{}).
+			Where("id = ? AND held = ?", shares[i].Id, shares[i].Held).
+			Updates(map[string]any{"held": take, "settled": shares[i].Settled + take}).Error; err != nil {
+			return err
+		}
+		left -= take
+	}
+	if left > 0 {
+		// 批次总量不足以覆盖实际消耗：账面已经不一致，必须让事务失败而不是悄悄放过。
+		return adtyFundBatchShortfallError(left)
+	}
+	return nil
+}
+
+// deductAdtyFundBatchTx 扣一个批次的 remaining。扣不动就报错，让调用方整事务回滚。
+func deductAdtyFundBatchTx(tx *gorm.DB, batchID, amount int64) error {
+	if amount <= 0 {
+		return nil
+	}
+	result := tx.Model(&AdtyFundBatch{}).
+		Where("id = ? AND remaining >= ?", batchID, amount).
+		Update("remaining", gorm.Expr("remaining - ?", amount))
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return ErrAdtyFundBatchShortfall
+	}
+	return nil
+}
+
+// ReleaseAdtyFundAllocationsTx 释放一次未成交业务的预扣分摊。
+//
+// 只动分摊行，不动批次：这些额度从来没有从 remaining 里扣走过，所以没有需要
+// 回补的东西。A.12.2.6 说的「预扣释放按原分摊返还」，返还的是那一份占用关系。
+func ReleaseAdtyFundAllocationsTx(tx *gorm.DB, userID int, operationID string) error {
+	if tx == nil || userID <= 0 || operationID == "" {
+		return nil
+	}
+	return tx.Model(&AdtyFundAllocation{}).
+		Where("user_id = ? AND operation_id = ? AND held > 0", userID, operationID).
+		Update("held", 0).Error
 }

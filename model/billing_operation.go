@@ -266,6 +266,11 @@ func ReserveBillingOperation(spec BillingOperation, target int) (*BillingOperati
 		if err := applyUserQuotaDeltaTx(tx, &user, -delta, common.BatchUpdateEnabled && common.RedisEnabled); err != nil {
 			return err
 		}
+		// 补扣同样要登记分摊：结算时按「预扣 + 补扣」总额扣批次，漏登记会让
+		// 实际消耗大于已登记额度。传累计 target，函数内部只补差额。
+		if err := AllocateAdtyFundAllocationsTx(tx, result.UserId, result.OperationKey, int64(target)); err != nil {
+			return err
+		}
 		result.ReservedQuota = target
 		if err := freezeBillingEarningRiskTx(tx, &result); err != nil {
 			return err
@@ -470,6 +475,12 @@ func ApplyBillingSettlement(key string) (*BillingOperation, bool, error) {
 					if refunds > 0 {
 						// A failure refund is final, including when an old success
 						// adjustment was queued before it and resumes after restart.
+						// The refund operation gives the reserved quota back, so this
+						// operation consumed nothing: release its shares without
+						// touching the batches.
+						if err := ReleaseAdtyFundAllocationsTx(tx, row.UserId, row.OperationKey); err != nil {
+							return err
+						}
 						row.State = BillingCanceled
 						return tx.Save(&row).Error
 					}
@@ -519,6 +530,12 @@ func ApplyBillingSettlement(key string) (*BillingOperation, bool, error) {
 			charged = max(0, min(balance, delta))
 		}
 		if err := applyUserQuotaDeltaTx(tx, &user, -charged, common.BatchUpdateEnabled && common.RedisEnabled); err != nil {
+			return err
+		}
+		// A.12.1/A.12.2.6：预扣阶段登记的分摊在这里转成实扣，同时把批次 remaining
+		// 扣掉。两者同一事务，失败一起回滚，不会出现「余额变了批次没变」。
+		// applied 是这次业务最终真正消耗的额度：预扣 base + 补扣 charged。
+		if err := SettleAdtyFundAllocationsTx(tx, row.UserId, row.OperationKey, int64(base+charged), int64(balance)); err != nil {
 			return err
 		}
 		row.ReservedQuota, row.TokenReservedQuota = base, tokenBase
