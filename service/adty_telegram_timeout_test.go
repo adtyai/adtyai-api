@@ -11,18 +11,23 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// 验的是**终止性**，不是功能：对端接受连接但永不响应时，调用必须在容差内
-// 返回错误，而不是把 goroutine 永久挂住。
+// 验的是**终止性**，而且走的是真实调用点（`adtyTelegramSendMessageHTTP` /
+// `adtyTelegramGetMeHTTP`），不是自己另调一个 client。
 //
-// 为什么这条比「能不能发」重要：投递任务是一条单线程串行的 goroutine，
-// 卡住之后队列只增不减、没有错误日志（函数没返回）、ticker 也不再触发。
-// 「没有新消息发出」的外观和「没有消息要发」完全一样，且不会自愈。
-func TestTelegramSendTimesOutOnSilentPeer(t *testing.T) {
+// 只证明「http.Client 会超时」没有意义——那验的是标准库。要证明的是
+// **这两处出站调用真的走那个带 Timeout 的 client**，所以 base URL 必须是变量
+// （`adtyTelegramAPIBase`），否则测试只能拼一个自己的 URL。
+//
+// 两条断言缺一不可：
+//  1. `err != nil` —— 证明它不是静默成功；
+//  2. 耗时 < 2s   —— 证明超时真的生效。
+//
+// **只断言第一条不够**：挂死的调用最终也会因底层 TCP 超时返回错误，但那是
+// 两分钟，不是我们设的那个值。
+func TestTelegramOutboundCallsGiveUpOnSilentPeer(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = listener.Close() })
-
-	// 只接受连接、永不写响应。
 	go func() {
 		for {
 			conn, acceptErr := listener.Accept()
@@ -33,32 +38,35 @@ func TestTelegramSendTimesOutOnSilentPeer(t *testing.T) {
 		}
 	}()
 
-	previous := adtyTelegramHTTP
+	previousBase, previousClient := adtyTelegramAPIBase, adtyTelegramHTTP
+	adtyTelegramAPIBase = "http://" + listener.Addr().String()
 	adtyTelegramHTTP = &http.Client{Timeout: 300 * time.Millisecond}
-	t.Cleanup(func() { adtyTelegramHTTP = previous })
+	t.Cleanup(func() {
+		adtyTelegramAPIBase, adtyTelegramHTTP = previousBase, previousClient
+	})
 
-	endpoint := "http://" + listener.Addr().String() + "/bot123:abc/getMe"
-	done := make(chan error, 1)
-	started := time.Now()
-	go func() {
-		request, reqErr := http.NewRequest(http.MethodGet, endpoint, nil)
-		if reqErr != nil {
-			done <- reqErr
-			return
-		}
-		response, doErr := adtyTelegramHTTP.Do(request)
-		if response != nil {
-			_ = response.Body.Close()
-		}
-		done <- doErr
-	}()
+	cases := map[string]func() error{
+		"sendMessage": func() error { return adtyTelegramSendMessageHTTP("123:abc", "@ops", "hello") },
+		"getMe": func() error {
+			_, _, getErr := adtyTelegramGetMeHTTP("123:abc")
+			return getErr
+		},
+	}
+	for name, call := range cases {
+		t.Run(name, func(t *testing.T) {
+			started := time.Now()
+			done := make(chan error, 1)
+			go func() { done <- call() }()
 
-	select {
-	case err := <-done:
-		require.Error(t, err, "对端不响应时必须返回错误")
-		assert.Less(t, time.Since(started), 5*time.Second, "必须按 timeout 返回，不能挂住")
-	case <-time.After(5 * time.Second):
-		t.Fatal("调用挂住了：timeout 没有生效，投递 goroutine 会永久停在这里")
+			select {
+			case callErr := <-done:
+				require.Error(t, callErr, "对端不响应时必须返回错误，不能静默成功")
+				assert.Less(t, time.Since(started), 2*time.Second,
+					"必须按 client 的 timeout 返回；等到 TCP 自己超时是两分钟，不是 15 秒")
+			case <-time.After(2 * time.Second):
+				t.Fatal("调用挂住了：这两处没有走那个带 Timeout 的 client")
+			}
+		})
 	}
 }
 

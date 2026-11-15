@@ -52,6 +52,13 @@ var AdtyTelegramGetMe = func(string) (int64, string, error) {
 // 所以超时不是「让失败更快」，是让整条重试机制保持活着。
 var adtyTelegramHTTP = &http.Client{Timeout: 15 * time.Second}
 
+// adtyTelegramAPIBase 是出站 API 的根地址，**留作变量给测试替换**。
+//
+// 写死字面量时，验超时的用例只能自己拼一个 URL 去调 client——那样验的是
+// `http.Client` 的通用行为，**不是「这两处调用真的走这个 client」**。
+// 同仓库的 `adtyModelsDevURL`（`service/adty_official_price.go`）就是这个形态。
+var adtyTelegramAPIBase = "https://api.telegram.org"
+
 // AdtyTelegramSender delivers a notice. Tests leave it unset so no message leaves the process.
 //
 // chat 是字符串而不是 int64：公告要发到分站自己的频道，站长手里只有 `@their_channel`
@@ -536,7 +543,7 @@ func adtyTelegramSendMessageHTTP(token, chat, text string) error {
 	payload.Set("chat_id", chat)
 	payload.Set("text", text)
 	payload.Set("disable_web_page_preview", "true")
-	endpoint := "https://api.telegram.org/bot" + token + "/sendMessage"
+	endpoint := adtyTelegramAPIBase + "/bot" + token + "/sendMessage"
 	response, err := adtyTelegramHTTP.PostForm(endpoint, payload)
 	if err != nil {
 		return err
@@ -585,7 +592,7 @@ func init() {
 }
 
 func adtyTelegramGetMeHTTP(token string) (int64, string, error) {
-	request, err := http.NewRequest(http.MethodGet, "https://api.telegram.org/bot"+token+"/getMe", nil)
+	request, err := http.NewRequest(http.MethodGet, adtyTelegramAPIBase+"/bot"+token+"/getMe", nil)
 	if err != nil {
 		return 0, "", ErrAdtyTelegramUnverified
 	}
