@@ -194,6 +194,22 @@ func CriticalRateLimit() func(c *gin.Context) {
 	return defNext
 }
 
+// 匿名支付回调按 IP 限流。网关回调要用 URL 里的 channelId 先查通道、再拿 merchant_key 验签，
+// 查库发生在验签之前，所以这条没有凭据的入口必须自己带资源约束：「签名挡得住伪造入账」
+// 挡不住「每次请求两条 SQL」——那是两个问题。
+//
+// 额度不套 CT：CT 是 20 次/20 分钟，按登录类入口的尝试量级定的；网关会重发回调，
+// 正常回调的突发行远高于此，套上去会把合法回调打成 429。这里按合法回调的突发量级留余量，
+// 同时把单 IP 的放大率封在 10 条 SQL/秒（每次回调两条）以内。
+var (
+	PaymentNotifyRateLimitNum            = 300
+	PaymentNotifyRateLimitDuration int64 = 60
+)
+
+func PaymentNotifyRateLimit() gin.HandlerFunc {
+	return rateLimitFactory(PaymentNotifyRateLimitNum, PaymentNotifyRateLimitDuration, "PN")
+}
+
 func UserCriticalRateLimit(scope string) func(c *gin.Context) {
 	if !common.CriticalRateLimitEnable {
 		return defNext

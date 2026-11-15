@@ -12,6 +12,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/controller"
+	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/service/authz"
@@ -262,6 +263,41 @@ func TestAdtyEpayNotify(t *testing.T) {
 		assert.Equal(t, "success", epayCallback(t, f, one.Id, "key-one", params(other.TradeNo, "pid-one", "730.00")))
 		assert.Equal(t, before+51_250_000, quotaOf(t, f, userID))
 	})
+}
+
+// 回调入口按 channelId 先查通道、再验签，所以不带凭据的请求也必须先被限流挡住：
+// 超过额度返回 429，handler 不再执行，那次通道查询也就不存在。GET 与 POST 指向同一个
+// handler，两条路由都要有这道约束。
+func TestAdtyEpayNotifyRateLimitedBeforeLookup(t *testing.T) {
+	oldNum, oldDuration := middleware.PaymentNotifyRateLimitNum, middleware.PaymentNotifyRateLimitDuration
+	middleware.PaymentNotifyRateLimitNum, middleware.PaymentNotifyRateLimitDuration = 2, 60
+	t.Cleanup(func() {
+		middleware.PaymentNotifyRateLimitNum, middleware.PaymentNotifyRateLimitDuration = oldNum, oldDuration
+	})
+
+	f := newAdtyGuardFixture(t)
+	clientIPs := map[string]string{http.MethodGet: "198.51.100.41", http.MethodPost: "198.51.100.42"}
+
+	for method, clientIP := range clientIPs {
+		t.Run(method, func(t *testing.T) {
+			send := func() *httptest.ResponseRecorder {
+				req := httptest.NewRequest(method, "/api/user/epay/notify/999999?pid=none&sign=bad&sign_type=MD5", nil)
+				req.RemoteAddr = clientIP + ":34567"
+				resp := httptest.NewRecorder()
+				f.engine.ServeHTTP(resp, req)
+				return resp
+			}
+			for i := range middleware.PaymentNotifyRateLimitNum {
+				resp := send()
+				require.Equal(t, http.StatusOK, resp.Code, "request %d must still reach the handler", i+1)
+				require.Equal(t, "fail", resp.Body.String(), "an unknown channel is refused after the lookup")
+			}
+			blocked := send()
+			require.Equal(t, http.StatusTooManyRequests, blocked.Code)
+			require.NotEmpty(t, blocked.Header().Get("Retry-After"))
+			require.Empty(t, blocked.Body.String(), "the handler never runs, so the channel lookup never happens")
+		})
+	}
 }
 
 func TestEpayAdmin(t *testing.T) {
