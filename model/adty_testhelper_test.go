@@ -20,5 +20,17 @@ func adtyTestDB(t *testing.T) *gorm.DB {
 	t.Cleanup(func() {
 		require.NoError(t, opened.Close())
 	})
+	migrateAdtyTestSchema(t, opened.DB)
 	return opened.DB
+}
+
+// migrateAdtyTestSchema 一次建齐计费链路会用到的表。
+//
+// 逐个测试自己挑表是个陷阱：实现每给扣费路径加一张表，就有一批测试在运行时
+// 撞出「adty fund batch table is missing」这种一句话错误，看不出缺的是哪张。
+// 这里统一建齐，测试只管造数据。
+func migrateAdtyTestSchema(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	require.NoError(t, db.AutoMigrate(&User{}, &Token{}, &TopUp{}, &Option{}, &Log{}))
+	require.NoError(t, MigrateAdtyTables())
 }

@@ -57,6 +57,10 @@ func TestMain(m *testing.M) {
 		&SystemTask{},
 		&SystemTaskLock{},
 		&UserAccessToken{},
+		// 扣费路径现在会写资金批次与分摊。SQLite 单测保留（上游资产），
+		// 所以这里也要把这两张表建出来，否则它们会在运行时撞「表不存在」。
+		&AdtyFundBatch{},
+		&AdtyFundAllocation{},
 	); err != nil {
 		panic("failed to migrate: " + err.Error())
 	}
