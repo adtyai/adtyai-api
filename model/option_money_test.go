@@ -45,6 +45,32 @@ func TestQuotaPerUnitLoadKeepsFixedScale(t *testing.T) {
 	assert.Equal(t, 500000.0, common.QuotaPerUnit)
 }
 
+// 被拒绝的 QuotaPerUnit 不能留在 OptionMap 里：配置页直接读它显示，
+// 留下非法值就成了「界面显示 1000、实际换算 500000」。ISS-R4-0083
+func TestRejectedQuotaPerUnitDoesNotStayInOptionMap(t *testing.T) {
+	if common.OptionMap == nil {
+		common.OptionMap = map[string]string{}
+	}
+	old := common.QuotaPerUnit
+	common.QuotaPerUnit = 500000
+	t.Cleanup(func() {
+		common.QuotaPerUnit = old
+		common.OptionMapRWMutex.Lock()
+		delete(common.OptionMap, "QuotaPerUnit")
+		common.OptionMapRWMutex.Unlock()
+	})
+
+	// 库里存着非法值时（旧版本写入、备份恢复、人工 SQL），
+	// loadOptionsFromDatabase 走的正是这条路径。
+	require.Error(t, updateOptionMap("QuotaPerUnit", "1000"))
+
+	common.OptionMapRWMutex.RLock()
+	shown := common.OptionMap["QuotaPerUnit"]
+	common.OptionMapRWMutex.RUnlock()
+	assert.Equal(t, "500000", shown, "配置页必须显示实际生效的比例")
+	assert.Equal(t, 500000.0, common.QuotaPerUnit)
+}
+
 func TestPriceAndTopupRatioKeepPreviousValue(t *testing.T) {
 	if common.OptionMap == nil {
 		common.OptionMap = map[string]string{}
