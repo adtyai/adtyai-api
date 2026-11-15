@@ -141,8 +141,10 @@ func settleAdtySite(siteId int, cutoff string, now int64) (bool, error) {
 			return err
 		}
 		for _, group := range groups {
-			account, err := adtyOwnerAccountTx(tx, group.OwnerID)
-			if err != nil {
+			// 仍然确保站长有推广员行：`SiteOwnerSince` 是「停止计佣」的判据
+			// （`service/referral_commission.go:71`），这条不能省。
+			// **但不往那个佣金账户记钱**——见下面。
+			if _, err := adtyOwnerAccountTx(tx, group.OwnerID); err != nil {
 				return err
 			}
 			walletTotal := decimal.Zero
@@ -157,6 +159,18 @@ func settleAdtySite(siteId int, cutoff string, now int64) (bool, error) {
 				ids = append(ids, row.Id)
 			}
 			if !walletTotal.IsZero() {
+				// **只记站点收益钱包一处**（`ISS-R4-0111`）。
+				//
+				// 这个钱包本身就能提现（`POST /api/adty/site/withdrawals`）。修前还在
+				// 下面把同一个 walletTotal 记进 referral 佣金账户，于是站长有了两个都能
+				// 提现的余额，各提一次就是双份现金。`docs/adty/features.md:216` 原文：
+				// 「站长收益提现不走这套 `referral_*` 账户」。
+				//
+				// **不加「站长一律拒绝 referral 提现」那道拦截**：`SiteOwnerSince` 记的是
+				// **开站时间**，不是**这笔钱的来源**。开站前挣的邀请佣金是合法保留的
+				// （features.md 同段），按开站时间一律拦截会把合法佣金静默锁死——比双提
+				// 更糟。防复发靠 `TestSiteEarningSettlementDoesNotCreditReferralAccountPG`。
+				//
 				// A later callback/review may produce another batch on the same
 				// cutoff. Its rows, rather than its date or amount, identify it.
 				slices.Sort(ids)
@@ -164,12 +178,6 @@ func settleAdtySite(siteId int, cutoff string, now int64) (bool, error) {
 				if _, err := applyAdtySiteWalletChangeTx(tx, site.Id, model.AdtySiteWalletEarnings, walletTotal, AdtySiteWalletChange{
 					Type: "site_earning_settlement", RefType: "site_earning", RefID: cutoff,
 					Reason: fmt.Sprintf("site earnings up to %s", cutoff), IdempotencyKey: batchKey, AllowOverdraft: true,
-				}); err != nil {
-					return err
-				}
-				if err := AdjustAccountTx(tx, account, decimal.Zero, walletTotal, decimal.Zero, decimal.Zero, model.ReferralCommissionLedger{
-					Type: "site_earning", RefType: "site", RefId: fmt.Sprint(site.Id),
-					ExternalRefId: fmt.Sprintf("site-earning:%d:%d:%s:%d", site.Id, group.OwnerID, cutoff, now), Remark: fmt.Sprintf("site earnings up to %s", cutoff),
 				}); err != nil {
 					return err
 				}

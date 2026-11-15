@@ -894,6 +894,9 @@ func TestForcedCloseDoesNotVoidOrClawBack(t *testing.T) {
 	db := prepareSiteDB(t)
 	owner, site := openActiveSite(t, db, "clawback")
 	customer := siteCustomer(t, db, site, "clawback-customer")
+	// 必须设价：k=1 时收益恒为 0，而这条用例要验的是「已结算收益不被关站清掉」，
+	// 没有非零收益就什么都验不到（这正是它此前一直红的原因，不是产品缺陷）。
+	sitePrice(t, db, site.Id, 0, "", "1.25")
 	saved := adtySiteEarningDayFn
 	t.Cleanup(func() { adtySiteEarningDayFn = saved })
 	adtySiteEarningDayFn = func() string { return "2026-09-01" }
@@ -906,7 +909,16 @@ func TestForcedCloseDoesNotVoidOrClawBack(t *testing.T) {
 	require.NoError(t, err)
 	affiliate, err := Referral.EnsureAffiliate(owner.Id)
 	require.NoError(t, err)
-	assert.InDelta(t, 20, account(t, db, affiliate.Id).AvailableAmount, 1e-9, "forced close must not deduct settled commission")
+	// **原断言是 `account(affiliate).AvailableAmount == 20`——那条断言的正是
+	// `ISS-R4-0111` 的缺陷行为**（结算把同一笔收益又记进 referral 佣金账户，于是
+	// 站长能在两本账上各提一次）。修掉二次入账之后，收益只落在站点收益钱包里，
+	// 所以这里改为断言钱包金额，并且断言 referral 账户**没有**被记钱。
+	assert.True(t, siteWalletBalance(t, db, site.Id, model.AdtySiteWalletEarnings).Equal(decimal.RequireFromString("20")),
+		"已结算收益必须留在站点收益钱包里")
+	assert.Zero(t, account(t, db, affiliate.Id).AvailableAmount,
+		"站点收益不得再记进 referral 佣金账户（ISS-R4-0111）")
+	assert.InDelta(t, 20, siteWalletBalance(t, db, site.Id, model.AdtySiteWalletEarnings).InexactFloat64(), 1e-9,
+		"forced close must not deduct settled earnings")
 	var rows []model.AdtySiteEarningDaily
 	require.NoError(t, db.Where("site_id = ? AND kind <> ?", site.Id, model.AdtySiteEarningTrial).Order("id").Find(&rows).Error)
 	require.Len(t, rows, 2)
@@ -927,6 +939,7 @@ func TestForcedCloseDoesNotVoidOrClawBack(t *testing.T) {
 	// 已结算 100、未结算加赠 -150、可提现仍是 100：关站不得当场结算负数，也不得扣回已结算佣金。
 	owner2, site2 := openActiveSite(t, db, "claw-debt")
 	customer2 := siteCustomer(t, db, site2, "claw-debt-customer")
+	sitePrice(t, db, site2.Id, 0, "", "1.25")
 	adtySiteEarningDayFn = func() string { return "2026-09-01" }
 	consumeOnSite(t, customer2, perUnit("500")) // k 默认 1，d 0.8 → +$100
 	_, err = RunAdtySiteSettlementOnce(time.Date(2026, 10, 1, 4, 0, 0, 0, time.Local))
@@ -935,10 +948,14 @@ func TestForcedCloseDoesNotVoidOrClawBack(t *testing.T) {
 	siteTopUp(t, customer2, site2, "EPU-claw-debt", 1500, "10") // bonus −$150，还在冻结期
 	affiliate2, err := Referral.EnsureAffiliate(owner2.Id)
 	require.NoError(t, err)
-	assert.InDelta(t, 100, account(t, db, affiliate2.Id).AvailableAmount, 1e-9)
+	// 同上：原断言看的是 referral 账户（0111 的缺陷行为），现在看站点收益钱包。
+	assert.True(t, siteWalletBalance(t, db, site2.Id, model.AdtySiteWalletEarnings).Equal(decimal.RequireFromString("100")))
+	assert.Zero(t, account(t, db, affiliate2.Id).AvailableAmount,
+		"站点收益不得再记进 referral 佣金账户（ISS-R4-0111）")
 	_, err = ScheduleAdtySiteClose(site2.Id, 1, AdtySiteClosePlan{ClawBack: true, Immediate: true})
 	require.NoError(t, err)
-	assert.InDelta(t, 100, account(t, db, affiliate2.Id).AvailableAmount, 1e-9, "forced close must not deduct settled commission")
+	assert.True(t, siteWalletBalance(t, db, site2.Id, model.AdtySiteWalletEarnings).Equal(decimal.RequireFromString("100")),
+		"forced close must not deduct settled earnings")
 	var bonus, usage model.AdtySiteEarningDaily
 	require.NoError(t, db.Where("site_id = ? AND kind = ?", site2.Id, model.AdtySiteEarningBonus).First(&bonus).Error)
 	require.NoError(t, db.Where("site_id = ? AND kind = ?", site2.Id, model.AdtySiteEarningUsage).First(&usage).Error)
