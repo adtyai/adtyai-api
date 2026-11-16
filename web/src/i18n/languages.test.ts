@@ -26,12 +26,6 @@ import {
   toIntlLocale,
 } from './languages'
 import en from './locales/en.json'
-import fr from './locales/fr.json'
-import ja from './locales/ja.json'
-import ko from './locales/ko.json'
-import ru from './locales/ru.json'
-import vi from './locales/vi.json'
-import zhTW from './locales/zh-TW.json'
 import zhCN from './locales/zh.json'
 
 const officialChineseCases = [
@@ -69,18 +63,10 @@ describe('INTERFACE_LANGUAGE_OPTIONS', () => {
     )
   })
 
-  test('loads only the two official packs, even if leftover files remain on disk', () => {
+  test('loads only the two official packs', () => {
     expect([...LOADABLE_INTERFACE_LANGUAGE_CODES]).toEqual(['zhCN', 'en'])
-    // The leftover JSON files are still imported here on purpose: they stay on
-    // disk, but no loader ships them, so they can never become the UI language.
     expect(zhCN).toBeTruthy()
     expect(en).toBeTruthy()
-    expect(fr).toBeTruthy()
-    expect(ru).toBeTruthy()
-    expect(ja).toBeTruthy()
-    expect(ko).toBeTruthy()
-    expect(vi).toBeTruthy()
-    expect(zhTW).toBeTruthy()
   })
 })
 

@@ -18,13 +18,7 @@ import (
 
 const (
 	LangZhCN    = "zh-CN"
-	LangZhTW    = "zh-TW"
 	LangEn      = "en"
-	LangFr      = "fr"
-	LangJa      = "ja"
-	LangRu      = "ru"
-	LangVi      = "vi"
-	LangKo      = "ko"
 	DefaultLang = LangEn // Fallback to English if language not supported
 )
 
@@ -46,8 +40,7 @@ func Init() error {
 		bundle.RegisterUnmarshalFunc("yaml", yaml.Unmarshal)
 
 		// Load embedded translation files
-		files := []string{"locales/zh-CN.yaml", "locales/zh-TW.yaml", "locales/en.yaml",
-			"locales/fr.yaml", "locales/ja.yaml", "locales/ko.yaml", "locales/ru.yaml", "locales/vi.yaml"}
+		files := []string{"locales/zh-CN.yaml", "locales/en.yaml"}
 		// 二开的提示放在独立文件里，上游的三个 yaml 不动（执行层决定 13）
 		files = append(files, adtyLocaleFiles...)
 		for _, file := range files {
@@ -58,8 +51,8 @@ func Init() error {
 			}
 		}
 
-		// Pre-create localizers for official languages and leftover packs kept on disk.
-		for _, lang := range LoadableLanguages() {
+		// Pre-create localizers for the official languages.
+		for _, lang := range SupportedLanguages() {
 			localizers[lang] = i18n.NewLocalizer(bundle, lang)
 		}
 
@@ -72,15 +65,6 @@ func Init() error {
 // GetLocalizer returns a localizer for the specified language
 func GetLocalizer(lang string) *i18n.Localizer {
 	return localizerFor(normalizeLang(lang))
-}
-
-func loadableLocalizer(lang string) *i18n.Localizer {
-	if code, ok := canonicalLoadableLang(lang); ok {
-		lang = code
-	} else {
-		lang = normalizeLang(lang)
-	}
-	return localizerFor(lang)
 }
 
 func localizerFor(lang string) *i18n.Localizer {
@@ -177,24 +161,6 @@ func safeTranslationFallback(lang string) string {
 		return fallbackTranslationZhCN
 	}
 	return fallbackTranslationEn
-}
-
-// TranslateLoadable translates a key using leftover locale packs still kept on
-// disk, without treating those packs as official product languages.
-func TranslateLoadable(lang, key string, args ...map[string]any) string {
-	if lang == "" {
-		lang = common.DefaultLanguage
-	}
-	loc := loadableLocalizer(lang)
-	config := &i18n.LocalizeConfig{MessageID: key}
-	if len(args) > 0 && args[0] != nil {
-		config.TemplateData = args[0]
-	}
-	msg, err := loc.Localize(config)
-	if err != nil {
-		return key
-	}
-	return msg
 }
 
 // userLangLoaderFunc is a function that loads user language from database/cache
@@ -298,46 +264,9 @@ func OfficialPreferenceLanguage(lang string) string {
 	return LangEn
 }
 
-// canonicalLoadableLang maps an explicit leftover or official code onto a
-// loadable locale pack so leftover YAML remains reachable for tests and
-// internal loaders. It is not an official product-language list.
-func canonicalLoadableLang(lang string) (string, bool) {
-	lang = strings.ToLower(strings.ReplaceAll(strings.TrimSpace(lang), "_", "-"))
-	if lang == "" {
-		return "", false
-	}
-	switch {
-	case lang == "zhtw" || strings.HasPrefix(lang, "zh-tw") || strings.HasPrefix(lang, "zh-hk") ||
-		strings.HasPrefix(lang, "zh-mo") || strings.HasPrefix(lang, "zh-hant"):
-		return LangZhTW, true
-	case strings.HasPrefix(lang, "zh"):
-		return LangZhCN, true
-	case strings.HasPrefix(lang, "en"):
-		return LangEn, true
-	case lang == LangFr || strings.HasPrefix(lang, "fr-"):
-		return LangFr, true
-	case lang == LangJa || strings.HasPrefix(lang, "ja-"):
-		return LangJa, true
-	case lang == LangRu || strings.HasPrefix(lang, "ru-"):
-		return LangRu, true
-	case lang == LangVi || strings.HasPrefix(lang, "vi-"):
-		return LangVi, true
-	case lang == LangKo || strings.HasPrefix(lang, "ko-"):
-		return LangKo, true
-	default:
-		return "", false
-	}
-}
-
 // SupportedLanguages returns the official product language list (A.20.1).
 func SupportedLanguages() []string {
 	return []string{LangZhCN, LangEn}
-}
-
-// LoadableLanguages is the official list plus leftover locale resources kept
-// on disk. It is not advertised as a product language promise.
-func LoadableLanguages() []string {
-	return []string{LangZhCN, LangZhTW, LangEn, LangFr, LangJa, LangKo, LangRu, LangVi}
 }
 
 // IsSupported reports whether a language normalizes to an official product language.

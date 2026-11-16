@@ -29,7 +29,7 @@ adtyai-api 是 [QuantumNous/new-api](https://github.com/QuantumNous/new-api) 的
 1. **数据库**：ADTY 的正式运行、部署、资金测试和验收只使用 PostgreSQL。不设最低版本或最高版本；记录实际 `server_version_num`，版本不同不算失败。建议版本为 17，新部署优先使用 17，16、18 或其他版本不排除在验收之外。上游 SQLite、MySQL 兼容代码和已有单测照旧保留，只避免破坏上游资产，不作为验收证据；缺失、未执行或失败不阻塞验收。资金测试使用隔离的 PostgreSQL 和真实 Redis。已有数据目录升级主要版本时，必须另建目录迁移并核对账目，不能直接换镜像启动。
 2. **对外的名字**：AGENTS.md 规定 New API 和 QuantumNous 的名称、标识「任何情况下不得修改」。本 fork 按执行层决定 21 和任务 8.9，把访客、调用方、上游服务商和浏览器能看到的名字换成了 ADTY AI 或 adtyai（cookie 名、错误类型、本地存储键、网页标题、Logo 等，改了哪些、哪些不改见 conventions.md 和任务 8.9）。LICENSE、NOTICE、THIRD-PARTY-LICENSES.md、源码版权头、页脚的上游署名、Go 模块路径 `github.com/QuantumNous/new-api` 都照旧保留。
 3. **docs/adty/ 下的文档**：AGENTS.md 说没有用户明确要求时不要在 `docs/` 下新建文件。`docs/adty/` 下的文档都是按实施方案（约定 A：工程文档放 `docs/adty/`）或用户的要求建的，以后改功能时要同步更新这里的文档。
-4. **语言**：正式语言只有简体中文和英文。已有八种语言包仍可留在仓库里，避免重写框架，但不是正式承诺。新的正式文案必须有中文和英文。根目录 AGENTS.md 已按这条同步。
+4. **语言**：正式语言只有简体中文和英文。仓库里也只保留这两种语言包，其余六种语言的语言包和文档已删除（见 [deleted-features.md](deleted-features.md)）。新的正式文案必须有中文和英文。根目录 AGENTS.md 已按这条同步。
 
 ## 各个文档的用途
 

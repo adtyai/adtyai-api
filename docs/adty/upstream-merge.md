@@ -36,7 +36,7 @@ git config remote.upstream.tagopt --no-tags
 4. 重新生成和刷新。下面的命令在 WSL 的测试副本 `~/adtyai/mirror/main` 里跑：写进任务脚本，经 wrun.sh 运行，它先把 Windows 仓库的工作区同步过去（约定 H）。
    - 在 `web` 里先 `bun install --frozen-lockfile`（上游常改依赖），再 `bun run build` 重新生成 `web/src/routeTree.gen.ts`，再 `bun run i18n:sync`。然后在副本根目录用 `bash ~/adtyai/bin/adty-pull.sh web/src/routeTree.gen.ts web/src/i18n/locales/*.json` 把 routeTree.gen.ts 和语言包拉回 Windows 仓库。
    - 刷新 `web/scripts/adty/upstream-en-keys.json`（任务 9.2 起有）：换成新标签的 `web/src/i18n/locales/en.json` 的键。
-   - 上游新加的后端键补进 fr、ja、ru、vi 四个上游 yaml（任务 9.1 起有）；`TestLocalesRenderEveryKey` 会列出缺哪些。
+   - 后端语言包只有 `i18n/locales/zh-CN.yaml`、`en.yaml` 和我们的 `adty.zh-CN.yaml`、`adty.en.yaml`；上游新加的键两种语言都要有，`TestLocalesRenderEveryKey` 会列出缺哪些。其余六种语言的 yaml 和前端语言包在删除清单里，合并脚本会自动去掉，不用补。
    - 刷新 check.sh 用的 lint 和版权头基线清单（任务 0.3）：在副本里 `node scripts/adty/ratchet.mjs --update`，用 adty-pull.sh 拉回 `scripts/adty/baseline-lint.txt` 和 `scripts/adty/baseline-copyright.txt`，再用 `git diff scripts/adty/` 确认新增的只有上游文件（见 [baseline.md](baseline.md) 的「基线清单」）。
 5. 在副本里跑 `bash scripts/adty/check.sh`。重点看：
    - 删除守卫测试（任务 1.6）：`TestAdtyDeletedRoutesAbsent`、`TestAdtyDeletedSchemaAbsent`、`TestAdtyDeletedOptionKeysAbsent`，以及前端的 `web/src/features/adty-guards/__tests__/deleted-features.test.ts`。

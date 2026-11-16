@@ -3,6 +3,7 @@ package i18n
 import (
 	"testing"
 
+	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -42,7 +43,6 @@ func TestNormalizeLangOfficialLanguages(t *testing.T) {
 		assert.Equal(t, tc.want, normalizeLang(tc.input), tc.input)
 	}
 	assert.ElementsMatch(t, []string{"zh-CN", "en"}, SupportedLanguages())
-	assert.ElementsMatch(t, []string{"zh-CN", "zh-TW", "en", "fr", "ja", "ko", "ru", "vi"}, LoadableLanguages())
 	assert.Equal(t, "zhCN", OfficialPreferenceLanguage("zh-TW"))
 	assert.Equal(t, "zhCN", OfficialPreferenceLanguage("zh-Hant-HK"))
 	assert.Equal(t, "en", OfficialPreferenceLanguage("fr"))
@@ -55,7 +55,7 @@ func TestNormalizeLangOfficialLanguages(t *testing.T) {
 		Translate("fr", MsgQuotaUserInsufficient, map[string]any{"Remaining": "$0.10"}))
 }
 
-// 验证码、找回密码、注册提醒、提现结果、通道维护这几封邮件在 7 种语言下都是译文：
+// 验证码、找回密码、注册提醒、提现结果、通道维护这几封邮件在简体中文和英文下都是译文：
 // 不是键名，没有未填的模板变量，除英文外也不是英文原文。
 func TestAdtyEmailsAllLanguages(t *testing.T) {
 	require.NoError(t, Init())
@@ -74,10 +74,10 @@ func TestAdtyEmailsAllLanguages(t *testing.T) {
 		MsgAdtyReferralWithdrawRejectedSubject, MsgAdtyReferralWithdrawRejectedBody,
 		MsgAdtyEpayMaintenanceSubject, MsgAdtyEpayMaintenanceBody,
 	}
-	for _, lang := range []string{"zh-CN", "zh-TW", "en", "fr", "ja", "ko", "ru", "vi"} {
+	for _, lang := range SupportedLanguages() {
 		for _, key := range keys {
-			text := TranslateLoadable(lang, key, params)
-			assert.NotEqual(t, key, text, "%s %s", lang, key)
+			text, ok := localizeOfficial(lang, key, &i18n.LocalizeConfig{MessageID: key, TemplateData: params})
+			assert.True(t, ok, "%s %s", lang, key)
 			assert.NotContains(t, text, "{{", "%s %s", lang, key)
 			assert.NotContains(t, text, "<no value>", "%s %s", lang, key)
 			if lang != LangEn {

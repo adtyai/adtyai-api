@@ -435,3 +435,14 @@ P6 移植旧项目前端时，不要把 `?aff=` 和 `features/auth/lib/storage.t
 - `users` 的五个历史绑定列和历史数据（见上面「表和列」）：没有删列迁移，旧库照常启动。
 - `router/adty_deleted_routes_test.go`：守卫测试，这些路由跟着上游回来会失败。
 - `web/src/i18n/locales/*.json` 里第三方登录相关的键：前端语言包只增不删（约定 B）。
+
+## 六种非正式语言的资源（2026-11-16）
+
+正式语言只有简体中文和英文。繁体中文、法语、日语、韩语、俄语、越南语的资源原来留在仓库里但不参与产品，现在删除。
+
+- 删除前端语言包 `web/src/i18n/locales/` 下的 `zh-TW.json`、`fr.json`、`ja.json`、`ko.json`、`ru.json`、`vi.json`，后端 `i18n/locales/` 下这六种语言的 yaml 和 `adty.*.yaml`，文档站 `web/src/features/adty-docs/content/` 下这六种语言的目录，以及 `docs/translation-glossary.fr.md`、`docs/translation-glossary.ru.md`。
+- `i18n/i18n.go` 只加载 `zh-CN.yaml` 和 `en.yaml`，删除只为读取这些语言包而存在的 `LoadableLanguages`、`TranslateLoadable`、`canonicalLoadableLang`、`loadableLocalizer` 和六个语言常量。文档站 `content/index.ts` 只登记两种语言的页面。
+- 保留语言码归一化：中文变体归简体中文，其余归英文，所以带旧语言码的请求、Cookie 和用户偏好照常工作；`toIntlLocale` 对旧界面码的映射也保留。
+- 保留分组名称、法律页面和首页 SEO 文本里按内容语言码存的键（`model.AdtyContentLangs`、前端 `LEGACY_CONTENT_LANGS`），以及首页旧语言路径（`/fr` 等）到正式语言的处理。
+- 保留根目录的 `README.fr.md`、`README.ja.md`、`README.zh_TW.md`，它们是上游项目说明。
+- 这些路径登记在 [deleted-paths.txt](deleted-paths.txt)，合并上游时不带回来。

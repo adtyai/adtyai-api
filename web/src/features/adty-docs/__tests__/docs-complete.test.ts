@@ -21,37 +21,17 @@ import { resolve } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-import { LEGACY_CONTENT_LANGS, type ContentLang } from '@/lib/adty-lang'
+import type { ContentLang } from '@/lib/adty-lang'
 
-import { DOC_PAGES, getDocMarkdown, type DocSlug } from '../content'
+import { DOC_PAGES, getDocMarkdown } from '../content'
 
 const contentDir = resolve(import.meta.dirname, '../content')
 
-/**
- * 文档承诺的语言只有简中和英文（conventions.md 约定 E：正式语言只有 zh-CN 和
- * en；其余六种「不得在选择器、首页、文档和验收中承诺」）。
- *
- * `CONTENT_LANGS` 现在就是这两项；仓库里遗留的六种文档 Markdown 仍被登记着
- * （`LEGACY_CONTENT_LANGS`），但它们不再被产品承诺、也不会被界面选中。这里
- * 只要求「已经存在的遗留页面不能是空的」，正式语言必须有全部 10 篇。
- */
+// 文档只有简体中文和英文（conventions.md 约定 E），两种语言都必须有全部页面。
 const OFFICIAL_DOC_LANGS = [
   'en',
   'zh-CN',
 ] as const satisfies readonly ContentLang[]
-const LEGACY_DOC_LANGS = LEGACY_CONTENT_LANGS
-
-/** 某语言实际存在的页面（历史语言缺 models / roles 是预期状态）。 */
-function presentPagesOf(lang: string): DocSlug[] {
-  return DOC_PAGES.filter((slug) => {
-    try {
-      readFileSync(resolve(contentDir, lang, `${slug}.md`), 'utf8')
-      return true
-    } catch {
-      return false
-    }
-  })
-}
 
 describe('docs content', () => {
   it.each(OFFICIAL_DOC_LANGS)('has every page in %s', (lang) => {
@@ -66,53 +46,10 @@ describe('docs content', () => {
     }
   })
 
-  // 历史语言不做全量承诺：仓库里有什么就验什么，缺的页面按「未承诺」处理。
-  it.each(LEGACY_DOC_LANGS)(
-    'keeps every existing %s page non-empty and registered',
-    (lang) => {
-      const present = presentPagesOf(lang)
-      expect(present.length).toBeGreaterThan(0)
-      for (const slug of present) {
-        const markdown = readFileSync(
-          resolve(contentDir, lang, `${slug}.md`),
-          'utf8'
-        )
-        expect(markdown.trim(), `${lang}/${slug}.md`).not.toBe('')
-        expect(getDocMarkdown(slug, lang), `${lang}/${slug} registered`).toBe(
-          markdown
-        )
-      }
-    }
-  )
-
-  it.each(LEGACY_DOC_LANGS)(
-    'translates every existing %s page instead of copying English',
-    (lang) => {
-      for (const slug of presentPagesOf(lang)) {
-        expect(getDocMarkdown(slug, lang), `${lang}/${slug}`).not.toBe(
-          getDocMarkdown(slug, 'en')
-        )
-      }
-    }
-  )
-
   it.each(OFFICIAL_DOC_LANGS)(
     'keeps the base URL placeholder in %s',
     (lang) => {
       for (const slug of DOC_PAGES) {
-        const english = getDocMarkdown(slug, 'en').split('{{BASE_URL}}').length
-        expect(
-          getDocMarkdown(slug, lang).split('{{BASE_URL}}').length,
-          `${lang}/${slug}`
-        ).toBe(english)
-      }
-    }
-  )
-
-  it.each(LEGACY_DOC_LANGS)(
-    'keeps the base URL placeholder in every existing %s page',
-    (lang) => {
-      for (const slug of presentPagesOf(lang)) {
         const english = getDocMarkdown(slug, 'en').split('{{BASE_URL}}').length
         expect(
           getDocMarkdown(slug, lang).split('{{BASE_URL}}').length,

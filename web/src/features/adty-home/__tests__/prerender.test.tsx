@@ -22,12 +22,6 @@ For commercial licensing, please contact support@quantumnous.com
 import { describe, expect, it } from 'vitest'
 
 import en from '@/i18n/locales/en.json'
-import fr from '@/i18n/locales/fr.json'
-import ja from '@/i18n/locales/ja.json'
-import ko from '@/i18n/locales/ko.json'
-import ru from '@/i18n/locales/ru.json'
-import vi from '@/i18n/locales/vi.json'
-import zhTW from '@/i18n/locales/zh-TW.json'
 import zhCN from '@/i18n/locales/zh.json'
 
 import { renderAdtyHome, renderAllAdtyHomes } from '../prerender'
@@ -44,13 +38,6 @@ describe('home page prerender', () => {
     const pages = await renderAllAdtyHomes()
 
     expect(Object.keys(pages).sort()).toEqual(['en', 'zh-CN'])
-    // Leftover unofficial locale files remain on disk (A.20.1).
-    expect(fr).toBeTruthy()
-    expect(ja).toBeTruthy()
-    expect(ko).toBeTruthy()
-    expect(ru).toBeTruthy()
-    expect(vi).toBeTruthy()
-    expect(zhTW).toBeTruthy()
   })
 
   it.each(Object.entries(officialHeroByLang))(

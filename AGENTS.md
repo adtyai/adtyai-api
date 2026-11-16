@@ -47,15 +47,15 @@ This is an AI API gateway/proxy built with Go. It aggregates 40+ upstream AI pro
 
 ### Backend (`i18n/`)
 - Library: `nicksnyder/go-i18n/v2`
-- Languages: the formal product languages are `zh-CN` and `en`. The existing packs for zh-TW, fr, ru, ja, ko, and vi stay loaded so the framework is not rewritten, but they are not a formal language promise and must not be offered as supported product languages.
+- Languages: the formal product languages are `zh-CN` and `en`. Only those two locale packs exist. The zh-TW, fr, ru, ja, ko, and vi packs were removed and are listed in `docs/adty/deleted-paths.txt`; do not restore them or offer them as supported product languages. A request in any other language is answered in `zh-CN` for a Chinese variant and in `en` otherwise.
 - Scope: text with no web console in between (errors returned to AI clients, emails, notifications), translated with `i18n.T` / `i18n.Translate`. Fixed templates are bilingual Chinese then English. Dynamic Chinese text uses the system translator; do not send passwords, codes, keys, internal notes, or raw model output.
-- Web console API messages are English source text built with `common.NewMessage` / `common.ApiErrorT` / `common.ApiSuccessT`; the frontend translates them, so add each formal key to `en.json` and `zh.json`. A retained locale file may receive the same key, but that does not make the language formal.
+- Web console API messages are English source text built with `common.NewMessage` / `common.ApiErrorT` / `common.ApiSuccessT`; the frontend translates them, so add each formal key to `en.json` and `zh.json`.
 - Stored log content is `[]*common.Message`; a fail reason written by the gateway is a fixed English sentence that is also a key in the frontend locale files
 - Server log lines are English text passed through `common.LogText`; `DEFAULT_LANGUAGE=zh-CN` prints the Chinese text of the lines that have one in `common/log_text.zh-CN.json`, and is the language of backend messages for a reader who states none
 
 ### Frontend (`web/src/i18n/`)
 - Library: `i18next` + `react-i18next`; interface-language detection is owned by `web/src/i18n/languages.ts`
-- Languages: en (base) and zh (fallback) are the formal interface languages. The zh-TW, fr, ru, ja, ko, and vi JSON files are disk leftovers that can never be loaded: `LOADABLE_INTERFACE_LANGUAGE_CODES` in `web/src/i18n/languages.ts` lists only `zhCN` and `en`. Do not assume they take effect when changing code. The formal selector offers simplified Chinese and English only. First visit uses Chinese for a Chinese browser preference and English otherwise.
+- Languages: en (base) and zh (fallback) are the formal interface languages. They are also the only locale files: the zh-TW, fr, ru, ja, ko, and vi JSON files were removed, and `LOADABLE_INTERFACE_LANGUAGE_CODES` in `web/src/i18n/languages.ts` lists only `zhCN` and `en`. The formal selector offers simplified Chinese and English only. First visit uses Chinese for a Chinese browser preference and English otherwise.
 - Translation files: `web/src/i18n/locales/{lang}.json` — flat JSON, keys are English source strings
 - Load one interface language at a time. `whenInterfaceLanguageReady()` loads the stored or browser language before the first paint; `changeLanguage` loads that pack before switching and writes `i18nextLng`. Do not import every locale file into the first bundle; only the two loadable packs can ever render.
 - Usage: `useTranslation()` hook, call `t('English key')` in components

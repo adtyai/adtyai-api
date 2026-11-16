@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import type { StoredContentLang } from '@/lib/adty-lang'
+import type { ContentLang } from '@/lib/adty-lang'
 
 import enAgents from './en/agents.md?raw'
 import enCherryStudio from './en/cherry-studio.md?raw'
@@ -28,46 +28,6 @@ import enModels from './en/models.md?raw'
 import enOpenaiSdk from './en/openai-sdk.md?raw'
 import enQuickstart from './en/quickstart.md?raw'
 import enRoles from './en/roles.md?raw'
-import frAgents from './fr/agents.md?raw'
-import frCherryStudio from './fr/cherry-studio.md?raw'
-import frClaudeCode from './fr/claude-code.md?raw'
-import frCodexCli from './fr/codex-cli.md?raw'
-import frErrorsAndLimits from './fr/errors-and-limits.md?raw'
-import frFaq from './fr/faq.md?raw'
-import frOpenaiSdk from './fr/openai-sdk.md?raw'
-import frQuickstart from './fr/quickstart.md?raw'
-import jaAgents from './ja/agents.md?raw'
-import jaCherryStudio from './ja/cherry-studio.md?raw'
-import jaClaudeCode from './ja/claude-code.md?raw'
-import jaCodexCli from './ja/codex-cli.md?raw'
-import jaErrorsAndLimits from './ja/errors-and-limits.md?raw'
-import jaFaq from './ja/faq.md?raw'
-import jaOpenaiSdk from './ja/openai-sdk.md?raw'
-import jaQuickstart from './ja/quickstart.md?raw'
-import koAgents from './ko/agents.md?raw'
-import koCherryStudio from './ko/cherry-studio.md?raw'
-import koClaudeCode from './ko/claude-code.md?raw'
-import koCodexCli from './ko/codex-cli.md?raw'
-import koErrorsAndLimits from './ko/errors-and-limits.md?raw'
-import koFaq from './ko/faq.md?raw'
-import koOpenaiSdk from './ko/openai-sdk.md?raw'
-import koQuickstart from './ko/quickstart.md?raw'
-import ruAgents from './ru/agents.md?raw'
-import ruCherryStudio from './ru/cherry-studio.md?raw'
-import ruClaudeCode from './ru/claude-code.md?raw'
-import ruCodexCli from './ru/codex-cli.md?raw'
-import ruErrorsAndLimits from './ru/errors-and-limits.md?raw'
-import ruFaq from './ru/faq.md?raw'
-import ruOpenaiSdk from './ru/openai-sdk.md?raw'
-import ruQuickstart from './ru/quickstart.md?raw'
-import viAgents from './vi/agents.md?raw'
-import viCherryStudio from './vi/cherry-studio.md?raw'
-import viClaudeCode from './vi/claude-code.md?raw'
-import viCodexCli from './vi/codex-cli.md?raw'
-import viErrorsAndLimits from './vi/errors-and-limits.md?raw'
-import viFaq from './vi/faq.md?raw'
-import viOpenaiSdk from './vi/openai-sdk.md?raw'
-import viQuickstart from './vi/quickstart.md?raw'
 import zhAgents from './zh-CN/agents.md?raw'
 import zhCherryStudio from './zh-CN/cherry-studio.md?raw'
 import zhClaudeCode from './zh-CN/claude-code.md?raw'
@@ -78,14 +38,6 @@ import zhModels from './zh-CN/models.md?raw'
 import zhOpenaiSdk from './zh-CN/openai-sdk.md?raw'
 import zhQuickstart from './zh-CN/quickstart.md?raw'
 import zhRoles from './zh-CN/roles.md?raw'
-import zhTwAgents from './zh-TW/agents.md?raw'
-import zhTwCherryStudio from './zh-TW/cherry-studio.md?raw'
-import zhTwClaudeCode from './zh-TW/claude-code.md?raw'
-import zhTwCodexCli from './zh-TW/codex-cli.md?raw'
-import zhTwErrorsAndLimits from './zh-TW/errors-and-limits.md?raw'
-import zhTwFaq from './zh-TW/faq.md?raw'
-import zhTwOpenaiSdk from './zh-TW/openai-sdk.md?raw'
-import zhTwQuickstart from './zh-TW/quickstart.md?raw'
 
 /** Doc pages in sidebar order; doc-page.tsx holds their titles. */
 export const DOC_PAGES = [
@@ -105,10 +57,8 @@ export type DocSlug = (typeof DOC_PAGES)[number]
 
 export const DEFAULT_DOC_SLUG: DocSlug = 'quickstart'
 
-/** Markdown by content language; docs-complete.test.ts checks every required language. */
-const DOC_CONTENT: Partial<
-  Record<StoredContentLang, Partial<Record<DocSlug, string>>>
-> = {
+/** Markdown by content language; docs-complete.test.ts checks both languages. */
+const DOC_CONTENT: Record<ContentLang, Record<DocSlug, string>> = {
   en: {
     quickstart: enQuickstart,
     models: enModels,
@@ -133,87 +83,15 @@ const DOC_CONTENT: Partial<
     'errors-and-limits': zhErrorsAndLimits,
     faq: zhFaq,
   },
-  fr: {
-    quickstart: frQuickstart,
-    models: enModels,
-    roles: enRoles,
-    'claude-code': frClaudeCode,
-    'codex-cli': frCodexCli,
-    'cherry-studio': frCherryStudio,
-    'openai-sdk': frOpenaiSdk,
-    agents: frAgents,
-    'errors-and-limits': frErrorsAndLimits,
-    faq: frFaq,
-  },
-  ja: {
-    quickstart: jaQuickstart,
-    models: enModels,
-    roles: enRoles,
-    'claude-code': jaClaudeCode,
-    'codex-cli': jaCodexCli,
-    'cherry-studio': jaCherryStudio,
-    'openai-sdk': jaOpenaiSdk,
-    agents: jaAgents,
-    'errors-and-limits': jaErrorsAndLimits,
-    faq: jaFaq,
-  },
-  ko: {
-    quickstart: koQuickstart,
-    models: enModels,
-    roles: enRoles,
-    'claude-code': koClaudeCode,
-    'codex-cli': koCodexCli,
-    'cherry-studio': koCherryStudio,
-    'openai-sdk': koOpenaiSdk,
-    agents: koAgents,
-    'errors-and-limits': koErrorsAndLimits,
-    faq: koFaq,
-  },
-  ru: {
-    quickstart: ruQuickstart,
-    models: enModels,
-    roles: enRoles,
-    'claude-code': ruClaudeCode,
-    'codex-cli': ruCodexCli,
-    'cherry-studio': ruCherryStudio,
-    'openai-sdk': ruOpenaiSdk,
-    agents: ruAgents,
-    'errors-and-limits': ruErrorsAndLimits,
-    faq: ruFaq,
-  },
-  vi: {
-    quickstart: viQuickstart,
-    models: enModels,
-    roles: enRoles,
-    'claude-code': viClaudeCode,
-    'codex-cli': viCodexCli,
-    'cherry-studio': viCherryStudio,
-    'openai-sdk': viOpenaiSdk,
-    agents: viAgents,
-    'errors-and-limits': viErrorsAndLimits,
-    faq: viFaq,
-  },
-  'zh-TW': {
-    quickstart: zhTwQuickstart,
-    models: zhModels,
-    roles: zhRoles,
-    'claude-code': zhTwClaudeCode,
-    'codex-cli': zhTwCodexCli,
-    'cherry-studio': zhTwCherryStudio,
-    'openai-sdk': zhTwOpenaiSdk,
-    agents: zhTwAgents,
-    'errors-and-limits': zhTwErrorsAndLimits,
-    faq: zhTwFaq,
-  },
 }
 
 export function isDocSlug(value: string): value is DocSlug {
   return DOC_PAGES.some((slug) => slug === value)
 }
 
-/** The page in the reader's language, falling back to English. */
-export function getDocMarkdown(slug: DocSlug, lang: StoredContentLang): string {
-  return DOC_CONTENT[lang]?.[slug] ?? DOC_CONTENT.en?.[slug] ?? ''
+/** The page in the reader's language. */
+export function getDocMarkdown(slug: DocSlug, lang: ContentLang): string {
+  return DOC_CONTENT[lang][slug]
 }
 
 /** Replaces {{BASE_URL}} with the site's API address (no trailing slash). */

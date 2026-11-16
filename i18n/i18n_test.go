@@ -15,6 +15,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/gin-gonic/gin"
+	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
@@ -115,10 +116,9 @@ func TestBackendMessageLanguage(t *testing.T) {
 	}
 }
 
-// Official and leftover locale packs must contain every declared keys.go
-// message, and every template must render. Leftover packs are checked through
-// TranslateLoadable, which still returns the raw key when a leftover pack
-// cannot localize. Official Translate no longer returns the raw key; that
+// Both official locale packs must contain every declared keys.go message, and
+// every template must render in its own pack. localizeOfficial is used rather
+// than Translate, which would fall back to the other official language; that
 // fallback is covered in TestTranslateFallback.
 func TestLocalesRenderEveryKey(t *testing.T) {
 	require.NoError(t, Init())
@@ -140,7 +140,7 @@ func TestLocalesRenderEveryKey(t *testing.T) {
 	slices.Sort(declared)
 
 	keysByLang := make(map[string][]string)
-	for _, lang := range LoadableLanguages() {
+	for _, lang := range SupportedLanguages() {
 		data, err := localeFS.ReadFile("locales/" + lang + ".yaml")
 		require.NoError(t, err)
 		var messages map[string]string
@@ -150,11 +150,11 @@ func TestLocalesRenderEveryKey(t *testing.T) {
 		}
 		slices.Sort(keysByLang[lang])
 	}
-	for _, lang := range LoadableLanguages() {
+	for _, lang := range SupportedLanguages() {
 		assert.Equal(t, declared, keysByLang[lang], lang)
 		for _, key := range keysByLang[lang] {
-			text := TranslateLoadable(lang, key, map[string]any{})
-			assert.NotEqual(t, key, text, "%s %s", lang, key)
+			text, ok := localizeOfficial(lang, key, &i18n.LocalizeConfig{MessageID: key, TemplateData: map[string]any{}})
+			assert.True(t, ok, "%s %s", lang, key)
 			assert.False(t, strings.Contains(text, "{{"), "%s %s: %s", lang, key, text)
 		}
 	}

@@ -660,3 +660,8 @@
 | `web/src/features/usage-logs/components/__tests__/mobile-filter.test.tsx` | 适配正式语言归一化及当前筛选文案 | 保留移动筛选行为检查 | Actions 43766575490 |
 | `web/src/features/users/components/__tests__/username-rules.test.tsx` | 密码夹具满足当前最小长度 | 用例继续验证用户名规则，不在无关密码校验处停止 | Actions 43766575490 |
 | `web/src/i18n/__tests__/translation-check.test.ts` | 子进程验证正式语言、语义英文、缺失中英翻译、原始键/带空白英文回退及技术名词空译文拒绝 | 防止翻译检查缩小语言范围或允许字面量时漏掉实际错误 | Actions 43766575490 |
+| `i18n/i18n.go` | 只加载 `zh-CN.yaml`、`en.yaml`；删除 `LangZhTW`、`LangFr`、`LangJa`、`LangRu`、`LangVi`、`LangKo`、`LoadableLanguages`、`TranslateLoadable`、`canonicalLoadableLang`、`loadableLocalizer` | 六种非正式语言的 yaml 已删除，这些符号只为读取它们而存在 | 语言清理 2026-11-16 |
+| `i18n/i18n_test.go` | `TestLocalesRenderEveryKey` 只检查两种正式语言，用 `localizeOfficial` 判断每个键能否在本语言包里渲染 | `TranslateLoadable` 已删除；`Translate` 会回退到另一种正式语言，不能发现单个语言包的渲染错误 | 语言清理 2026-11-16 |
+| `AGENTS.md`、`web/AGENTS.md` | 把六种语言包“留在仓库里”的说法改为已删除并登记在删除清单 | 规范要和仓库实际内容一致 | 语言清理 2026-11-16 |
+| `web/src/i18n/languages.test.ts`、`web/src/features/usage-logs/audit/__tests__/viewer.test.tsx`、`web/src/features/auth/secure-verification/__tests__/verification-flow.test.tsx` | 不再导入六种语言包；审计记录和邮箱验证码标签用例只保留简体中文和英文 | 被导入的语言包已删除 | 语言清理 2026-11-16 |
+| `web/src/features/channels/components/__tests__/model-mapping-batch-dialog.test.tsx`、`web/src/features/models/__tests__/model-listing.test.tsx` | 换行和截断用例改用简体中文包或英文原文，不再借用法语包 | 法语包已删除；断言的是样式类，与语言无关 | 语言清理 2026-11-16 |

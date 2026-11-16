@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
@@ -35,7 +36,7 @@ func TestAdtyLocalesRenderEveryKey(t *testing.T) {
 	})
 	slices.Sort(declared)
 	require.NotEmpty(t, adtyLocaleFiles)
-	assert.Len(t, adtyLocaleFiles, 8)
+	assert.Len(t, adtyLocaleFiles, 2)
 	for _, file := range adtyLocaleFiles {
 		data, err := localeFS.ReadFile(file)
 		require.NoError(t, err)
@@ -49,8 +50,9 @@ func TestAdtyLocalesRenderEveryKey(t *testing.T) {
 		assert.Equal(t, declared, keys, file)
 		lang := strings.TrimSuffix(strings.TrimPrefix(file, "locales/adty."), ".yaml")
 		for _, key := range keys {
-			text := TranslateLoadable(lang, key, map[string]any{"Name": "n", "Count": 1, "Amount": "1", "Txn": "t", "Reason": "r"})
-			assert.NotEqual(t, key, text, "%s %s", lang, key)
+			params := map[string]any{"Name": "n", "Count": 1, "Amount": "1", "Txn": "t", "Reason": "r"}
+			text, ok := localizeOfficial(lang, key, &i18n.LocalizeConfig{MessageID: key, TemplateData: params})
+			assert.True(t, ok, "%s %s", lang, key)
 			assert.NotContains(t, text, "{{", "%s %s", lang, key)
 		}
 	}
