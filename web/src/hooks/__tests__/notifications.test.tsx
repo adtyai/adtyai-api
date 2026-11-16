@@ -307,6 +307,64 @@ describe('account notification receipts', () => {
     expect(panel.result.current.unreadCount).toBe(1)
   })
 
+  it('reads an unread announcement before hiding it and drops it from the inbox', async () => {
+    // The server stops returning an announcement once this account hid it.
+    let hidden = false
+    vi.spyOn(api, 'get').mockImplementation(async () => ({
+      data: {
+        success: true,
+        data: {
+          notice: '',
+          notice_key: '',
+          read_keys: [],
+          announcements: hidden
+            ? []
+            : [
+                {
+                  id: 'publication:3',
+                  title: 'Old',
+                  read_key: announcementKey,
+                },
+              ],
+          next_before_id: 0,
+        },
+      },
+    }))
+    const post = vi.spyOn(api, 'post').mockImplementation(async (url) => {
+      if (url === '/api/adty/notifications/hide') hidden = true
+      return { data: { success: true, data: {} } }
+    })
+    account(103)
+    const mounted = mountAccountNotifications()
+    const panel = renderHook(() => useNotifications(), {
+      wrapper: mounted.wrapper,
+    })
+    await waitFor(() =>
+      expect(panel.result.current.announcements).toHaveLength(1)
+    )
+    act(() => panel.result.current.hideAnnouncement?.(announcementKey))
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith('/api/adty/notifications/hide', {
+        key: announcementKey,
+      })
+    )
+    expect(post.mock.calls[0]).toEqual([
+      '/api/adty/notifications/read',
+      { keys: [announcementKey] },
+    ])
+    await waitFor(() =>
+      expect(panel.result.current.announcements).toHaveLength(0)
+    )
+  })
+
+  it('offers no hide action to anonymous readers', () => {
+    const mounted = mountAccountNotifications()
+    const panel = renderHook(() => useNotifications(), {
+      wrapper: mounted.wrapper,
+    })
+    expect(panel.result.current.hideAnnouncement).toBeUndefined()
+  })
+
   it('exposes an inbox fetch failure and retries without inheriting anonymous receipts', async () => {
     vi.spyOn(api, 'get')
       .mockRejectedValueOnce(new Error('Inbox unavailable'))

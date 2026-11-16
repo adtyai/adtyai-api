@@ -535,6 +535,8 @@ func registerAdtyResellerRoutes(apiRouter *gin.RouterGroup) {
 	rootWallets.PUT("/:id/commission-margin", controller.PutAdtySiteCommissionMargin)
 	rootWallets.GET("/:id/wallets", controller.GetAdtyAdminSiteWallets)
 	rootWallets.GET("/:id/wallet-ledgers", controller.GetAdtyAdminSiteWalletLedger)
+	middleware.DeclareAdtyAccessTokenRoute("PUT", "/api/adty/admin/sites/:id/tier", "scope", "option:write")
+	rootWallets.PUT("/:id/tier", controller.PutAdtySiteTierAssignment)
 	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/admin/sites", "scope", "option:write")
 	rootWallets.POST("", controller.CreateAdtyAdminSite)
 	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/admin/sites/:id/review", "scope", "option:write")

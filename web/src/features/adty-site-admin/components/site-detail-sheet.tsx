@@ -80,6 +80,7 @@ import type { AdminSite } from '../types'
 import { CloseSiteDialog } from './close-site-dialog'
 
 import { SiteFundPanel } from './site-fund-panel'
+import { SiteTierControl } from './site-tier-control'
 import { SiteStatusBadge } from './site-status-badge'
 import { SiteVisibilityEditor } from './site-visibility-editor'
 
@@ -831,6 +832,7 @@ export function SiteDetailSheet(props: {
               </section>
               <SiteActions key={site.id} site={site} onDirtyChange={setDirty} />
               <RootBalanceRequests siteId={site.id} />
+              <SiteTierControl key={`${site.id}:${site.tier_mode}:${site.tier_code}`} site={site} />
               <SiteFundPanel siteId={site.id} />
               <SiteDomains
                 siteId={site.id}

@@ -88,6 +88,9 @@ interface NotificationPopoverProps {
   hasMore?: boolean
   loadingMore?: boolean
   onLoadMore?: () => void
+  /** Signed-in readers can hide one announcement from their own inbox. */
+  onHideAnnouncement?: (readKey: string) => void
+  hidingAnnouncement?: string
 }
 
 /**
@@ -271,10 +274,14 @@ function AnnouncementsContent({
   announcements,
   loading,
   t,
+  onHide,
+  hiding,
 }: {
   announcements: AnnouncementItem[]
   loading: boolean
   t: TFunction
+  onHide?: (readKey: string) => void
+  hiding?: string
 }) {
   if (loading) {
     return (
@@ -343,7 +350,22 @@ function AnnouncementsContent({
                       </div>
                     )}
 
-                    {item.read_key && <AnnouncementDetailButton readKey={item.read_key} />}
+                    {item.read_key && (
+                      <div className='flex flex-wrap gap-2'>
+                        <AnnouncementDetailButton readKey={item.read_key} />
+                        {onHide && (
+                          <Button
+                            type='button'
+                            size='sm'
+                            variant='ghost'
+                            disabled={hiding === item.read_key}
+                            onClick={() => onHide(String(item.read_key))}
+                          >
+                            {t('Hide')}
+                          </Button>
+                        )}
+                      </div>
+                    )}
                     {absoluteTime ? (
                       <div className='text-muted-foreground text-xs'>
                         {relativeTime ? `${relativeTime} • ` : null}
@@ -380,6 +402,8 @@ export function NotificationPopover({
   hasMore,
   loadingMore,
   onLoadMore,
+  onHideAnnouncement,
+  hidingAnnouncement,
 }: NotificationPopoverProps) {
   const { t } = useTranslation()
   return (
@@ -444,6 +468,8 @@ export function NotificationPopover({
                 announcements={announcements}
                 loading={loading}
                 t={t}
+                onHide={onHideAnnouncement}
+                hiding={hidingAnnouncement}
               />
               {hasMore && (
                 <Button

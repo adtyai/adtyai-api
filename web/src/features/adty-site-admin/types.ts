@@ -57,6 +57,10 @@ export type AdminSite = {
   max_markup: string | null
   tier_cost_factor: string | null
   tier_month: string
+  /** Assigned site level code; empty while no level applies. */
+  tier_code?: string
+  /** 'manual' when Root pinned the level, otherwise automatic. */
+  tier_mode?: string
   visibility: string
   allowed_groups?: string
   /** Brand JSON written by the owner (name, logo_url, tagline, notice, support_contact). */

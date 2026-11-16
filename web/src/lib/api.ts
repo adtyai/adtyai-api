@@ -100,6 +100,12 @@ export async function getAnnouncementDetail(
   return requireServerSuccess(response.data).data as Record<string, unknown>
 }
 
+/** Removes one announcement from this account's inbox; it does not affect other readers. */
+export async function hideNotification(key: string): Promise<void> {
+  const res = await api.post('/api/adty/notifications/hide', { key })
+  requireServerSuccess(res.data)
+}
+
 export async function readNotifications(keys: string[]): Promise<void> {
   const response = await api.post('/api/adty/notifications/read', { keys })
   requireServerSuccess(response.data)

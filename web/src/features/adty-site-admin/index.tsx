@@ -34,6 +34,7 @@ import { OverviewPanel } from './components/overview-panel'
 import { PausedSiteRepairPanel } from './components/paused-site-repair-panel'
 import { ReviewsPanel } from './components/reviews-panel'
 import { SettingsPanel } from './components/settings-panel'
+import { SiteTiersPanel } from './components/site-tiers-panel'
 import { SiteWithdrawalsPanel } from './components/site-withdrawals-panel'
 import { VoucherAdminPanel } from './components/voucher-admin-panel'
 import { SiteDetailSheet } from './components/site-detail-sheet'
@@ -114,6 +115,7 @@ export function SiteAdmin(props: { section: SiteAdminSectionId }) {
               <SiteReferralCapPanel />
               <BusinessTimezonePanel />
               <WithdrawRulesPanel />
+              <SiteTiersPanel />
               {user?.role === USER_ROLE.ROOT && (
                 <TeamRegistrationLinksPanel actor='root' />
               )}

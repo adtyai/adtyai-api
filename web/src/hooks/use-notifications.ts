@@ -29,9 +29,11 @@ import { useStatus } from '@/hooks/use-status'
 import {
   getNotice,
   getNotificationInbox,
+  hideNotification,
   readNotifications,
   type NotificationInbox,
 } from '@/lib/api'
+import { handleServerError } from '@/lib/handle-server-error'
 import { requireServerSuccess } from '@/lib/server-error-message'
 import { useAuthStore } from '@/stores/auth-store'
 import { useNotificationStore } from '@/stores/notification-store'
@@ -174,6 +176,30 @@ export function useNotifications() {
     [inbox.data]
   )
   const firstPage = inbox.data?.pages[0]
+  // Hiding marks the item read first, so a hidden announcement never stays in the unread count.
+  const hide = useMutation({
+    mutationFn: async (key: string) => {
+      if (!serverReadKeys.includes(key)) await readNotifications([key])
+      await hideNotification(key)
+    },
+    onSuccess: (_data, key) => {
+      queryClient.setQueryData<InfiniteData<NotificationInbox>>(
+        inboxKey,
+        (previous) =>
+          previous && {
+            ...previous,
+            pages: previous.pages.map((page) => ({
+              ...page,
+              announcements: page.announcements.filter(
+                (item) => String(item.read_key ?? '') !== key
+              ),
+            })),
+          }
+      )
+      void queryClient.invalidateQueries({ queryKey: inboxKey })
+    },
+    onError: (error) => handleServerError(error),
+  })
 
   // Notification store
   const {
@@ -324,5 +350,7 @@ export function useNotifications() {
     openPopover: handleOpenPopover,
     closePopover: () => setPopoverOpen(false),
     refetchNotice: userID > 0 ? inbox.refetch : refetchNotice,
+    hideAnnouncement: userID > 0 ? hide.mutate : undefined,
+    hidingAnnouncement: hide.isPending ? hide.variables : undefined,
   }
 }

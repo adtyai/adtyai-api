@@ -737,3 +737,43 @@ export async function saveAdminVoucherMarginAuthorization(
   )
   requireServerSuccess(res.data)
 }
+
+/** One site level (model.AdtySiteTier). Decimals are strings; empty cost factor or markup uses the default. */
+export type SiteTier = {
+  id?: number
+  code: string
+  name: string
+  min_effective_users: number
+  min_principal_usd: string
+  min_consumption_usd: string
+  cost_factor: string | null
+  max_markup: string | null
+  deposit_usd: string
+  enabled: boolean
+  sort_order: number
+}
+
+export async function getSiteTiers(): Promise<SiteTier[]> {
+  const res = await api.get<ApiResponse<SiteTier[]>>(`${BASE}/reseller/tiers`)
+  return listOrEmpty(requireServerSuccess(res.data).data)
+}
+
+/** Upserts one level by code; omitted levels are left unchanged, never deleted. */
+export async function saveSiteTier(tier: SiteTier): Promise<SiteTier[]> {
+  const res = await api.put<ApiResponse<SiteTier[]>>(`${BASE}/reseller/tiers`, {
+    tiers: [tier],
+  })
+  return listOrEmpty(requireServerSuccess(res.data).data)
+}
+
+export async function setSiteTierAssignment(
+  siteId: number,
+  code: string,
+  mode: 'auto' | 'manual'
+): Promise<void> {
+  const res = await api.put<ApiResponse<unknown>>(
+    `${BASE}/sites/${siteId}/tier`,
+    { code, mode }
+  )
+  requireServerSuccess(res.data)
+}
