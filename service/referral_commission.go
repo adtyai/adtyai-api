@@ -146,12 +146,9 @@ func ProcessAdtyTopUpCommission(tradeNo string) error {
 			return skip("no referral snapshot")
 		}
 		// 退款早于计佣：退掉的本金不计佣，没退的（用户花掉的）照算。全额退本金时跳过。
-		refundRatio := decimal.Zero
-		if status == model.TopUpStatusRefunded {
-			refundRatio = ext.RefundRatio()
-			if refundRatio.GreaterThanOrEqual(decimal.NewFromInt(1)) {
-				return skip("order refunded before commission")
-			}
+		refundRatio := ext.RefundRatio()
+		if refundRatio.GreaterThanOrEqual(decimal.NewFromInt(1)) {
+			return skip("order refunded before commission")
 		}
 		var bindings []model.ReferralBinding
 		if err := tx.Where("invitee_user_id = ?", topUps[0].UserId).Limit(1).Find(&bindings).Error; err != nil {
@@ -281,12 +278,43 @@ func referralRefundClawback(commission, ratio decimal.Decimal) decimal.Decimal {
 	return commission.Mul(ratio).RoundFloor(8)
 }
 
-// adtyReferralAfterRefundTx 在退款事务里按退掉的本金比例 ratio = P ÷ F 处理佣金（赠金不退，用户花掉的部分照样计佣）。
+// referralCommissionRefundBalanceTx reconstructs the entitlement still held as cash or paid allocation.
+// The accrual ledger preserves the initial net credit even after pending refunds reduce CommissionAmount.
+func referralCommissionRefundBalanceTx(tx *gorm.DB, commission *model.ReferralCommission) (remaining, recovered decimal.Decimal, err error) {
+	var entries []model.ReferralCommissionLedger
+	if err = tx.Where("commission_id = ? AND type IN ?", commission.Id,
+		[]string{"commission_accrue", "commission_clawback_partial", "commission_clawback", "commission_void"}).Order("id").Find(&entries).Error; err != nil {
+		return
+	}
+	remaining = moneyDec(commission.CommissionAmount)
+	for _, entry := range entries {
+		if entry.Type == "commission_accrue" {
+			remaining = moneyDec(entry.DeltaPending)
+			break
+		}
+	}
+	for _, entry := range entries {
+		if entry.Type != "commission_accrue" {
+			remaining = remaining.Add(moneyDec(entry.DeltaPending)).Add(moneyDec(entry.DeltaAvailable)).Add(moneyDec(entry.DeltaFrozen))
+		}
+	}
+	var rows []model.AdtyCommissionRecovery
+	if err = tx.Where("commission_id = ? AND kind = ?", commission.Id, adtyReferralCommissionRecoveryKind).Find(&rows).Error; err != nil {
+		return
+	}
+	for _, row := range rows {
+		recovered = recovered.Add(row.AmountUSD)
+	}
+	remaining = decimal.Max(remaining.Sub(recovered), decimal.Zero)
+	return
+}
+
+// adtyReferralAfterRefundTx 在退款事务里按累计退掉的本金比例 ratio = P ÷ F 处理佣金（赠金不退，用户花掉的部分照样计佣）。
 //   - ratio = 1：整笔处理。pending 作废并扣掉待结算；已经可提现或仍冻结的按实有余额冲回，不为负；
 //     已经提现的记 AdtyCommissionRecovery 追偿责任，不伪造可提现扣回。还没计佣时，计佣任务标 skipped。
-//   - 0 < ratio < 1：状态不改，按佣金 × ratio 处理，记一笔 commission_clawback_partial。pending 的佣金
-//     同时把佣金额减掉这部分，结算时只转剩下的；可提现或冻结按实有余额冲回；已提现记追偿。
-//     还没计佣时任务不动，计佣任务看到订单已退款，按 (1 − ratio) 计佣。
+//   - 0 < ratio < 1：用原始面额和比例快照算累计应扣，只收回尚未扣过的差额，记 commission_clawback_partial。
+//     pending 的佣金额随扣回减少，结算时只转剩下的；可提现或冻结按实有余额冲回；已提现记追偿。
+//     还没计佣时任务不动，计佣任务按 (1 − ratio) 计佣。
 //   - ratio = 0：什么都不做。
 //
 // 先锁计佣任务行：计佣任务处理时也先锁它，两边串行，不会漏扣或多计。
@@ -320,13 +348,19 @@ func adtyReferralAfterRefundTx(tx *gorm.DB, topUp *model.TopUp, ext *model.AdtyT
 		return err
 	}
 	for _, commission := range commissions {
-		amount := moneyDec(commission.CommissionAmount)
+		remaining, _, err := referralCommissionRefundBalanceTx(tx, &commission)
+		if err != nil {
+			return err
+		}
+		gross := ext.FaceUSD.Mul(ext.ReferralRate).Div(decimal.NewFromInt(100)).Round(8)
+		kept := gross.Sub(referralRefundClawback(gross, ratio))
+		amount := decimal.Max(remaining.Sub(kept), decimal.Zero)
 		account, err := lockReferralAccountTx(tx, commission.AffiliateId)
 		if err != nil {
 			return err
 		}
 		if !full {
-			if err := clawBackCommissionPartTx(tx, account, &commission, referralRefundClawback(amount, ratio), topUp.TradeNo); err != nil {
+			if err := clawBackCommissionPartTx(tx, account, &commission, amount, kept, topUp.TradeNo); err != nil {
 				return err
 			}
 			continue
@@ -358,14 +392,19 @@ func adtyReferralAfterRefundTx(tx *gorm.DB, topUp *model.TopUp, ext *model.AdtyT
 }
 
 // clawBackCommissionPartTx 部分扣回一笔佣金（退款只退了一部分本金）：状态不改。pending 的把佣金额和待结算一起减掉；
-// 可提现或冻结的按实有余额冲回（不为负）；已提现记追偿责任。void、clawed_back 不动。流水的外部引用带佣金 id，只记一次。
-func clawBackCommissionPartTx(tx *gorm.DB, account *model.ReferralCommissionAccount, commission *model.ReferralCommission, part decimal.Decimal, tradeNo string) error {
+// 可提现或冻结的按实有余额冲回（不为负）；已提现记追偿责任。void、clawed_back 不动。后续退款引用包含累计应留金额。
+func clawBackCommissionPartTx(tx *gorm.DB, account *model.ReferralCommissionAccount, commission *model.ReferralCommission, part, kept decimal.Decimal, tradeNo string) error {
 	if !part.IsPositive() {
 		return nil
 	}
 	entry := model.ReferralCommissionLedger{
 		CommissionId: commission.Id, Type: "commission_clawback_partial", RefType: "refund", RefId: tradeNo,
 		ExternalRefId: fmt.Sprintf("clawback_partial:%d", commission.Id), Remark: "order partially refunded",
+	}
+	if exists, err := referralLedgerExistsTx(tx, entry.ExternalRefId); err != nil {
+		return err
+	} else if exists {
+		entry.ExternalRefId += ":" + kept.StringFixed(8)
 	}
 	switch commission.Status {
 	case model.ReferralCommissionStatusPending:
@@ -399,8 +438,12 @@ func clawBackSettledCommissionTx(tx *gorm.DB, account *model.ReferralCommissionA
 	} else if exists {
 		return nil
 	}
+	remaining, recovered, err := referralCommissionRefundBalanceTx(tx, commission)
+	if err != nil {
+		return err
+	}
 	if commission.Status == model.ReferralCommissionStatusPaid {
-		if err := recordReferralCommissionRecoveryTx(tx, commission, part, tradeNo); err != nil {
+		if err := recordReferralCommissionRecoveryTx(tx, commission, recovered.Add(part), tradeNo); err != nil {
 			return err
 		}
 		return addReferralLedgerTx(tx, &entry)
@@ -409,24 +452,23 @@ func clawBackSettledCommissionTx(tx *gorm.DB, account *model.ReferralCommissionA
 	if err != nil {
 		return err
 	}
-	if withdrawnAlloc.IsNegative() {
-		withdrawnAlloc = decimal.Zero
-	}
-	if frozenAlloc.IsNegative() {
-		frozenAlloc = decimal.Zero
-	}
-	free := moneyDec(commission.CommissionAmount).Sub(frozenAlloc).Sub(withdrawnAlloc)
-	if free.IsNegative() {
-		free = decimal.Zero
-	}
+	withdrawnAlloc = decimal.Max(withdrawnAlloc.Sub(recovered), decimal.Zero)
+	frozenAlloc = decimal.Max(frozenAlloc, decimal.Zero)
+	free := decimal.Max(remaining.Sub(frozenAlloc).Sub(withdrawnAlloc), decimal.Zero)
 	parts := splitDecimalByWeights(part, []decimal.Decimal{withdrawnAlloc, frozenAlloc, free})
 	if parts[0].IsPositive() {
-		if err := recordReferralCommissionRecoveryTx(tx, commission, parts[0], tradeNo); err != nil {
+		if err := recordReferralCommissionRecoveryTx(tx, commission, recovered.Add(parts[0]), tradeNo); err != nil {
 			return err
 		}
 	}
 	deductFrozen := clawbackLimitedToBalance(account.FrozenAmount, parts[1])
 	deductAvailable := clawbackLimitedToBalance(account.AvailableAmount, parts[2])
+	// Keep paid allocations in the book value; remove only cash already clawed back.
+	// Withdrawal allocation uses CommissionAmount minus the original paid and frozen items.
+	booked := remaining.Add(recovered).Sub(deductFrozen).Sub(deductAvailable)
+	if err := tx.Model(&model.ReferralCommission{}).Where("id = ?", commission.Id).Update("commission_amount", moneyF(booked)).Error; err != nil {
+		return err
+	}
 	if deductFrozen.IsPositive() {
 		if err := shrinkFrozenWithdrawalOccupancyTx(tx, commission.Id, deductFrozen); err != nil {
 			return err

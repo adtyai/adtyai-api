@@ -344,9 +344,20 @@ func referralOrderMatrixDB(t *testing.T, dialect string) *gorm.DB {
 	require.NoError(t, err)
 	sqlDB.SetMaxOpenConns(4)
 	sqlDB.SetMaxIdleConns(4)
+	logDB := db
+	if dialect == "sqlite" {
+		// Official audit writes use an independent connection while the business
+		// transaction holds BEGIN IMMEDIATE, so they need a separate file.
+		logDB, err = gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "audit.db")), &gorm.Config{})
+		require.NoError(t, err)
+		logSQL, err := logDB.DB()
+		require.NoError(t, err)
+		t.Cleanup(func() { assert.NoError(t, logSQL.Close()) })
+		require.NoError(t, logDB.AutoMigrate(&model.AuditLog{}, &model.Log{}))
+	}
 	oldDB, oldLogDB := model.DB, model.LOG_DB
 	oldMain, oldLog := common.MainDatabaseType(), common.LogDatabaseType()
-	model.DB, model.LOG_DB = db, db
+	model.DB, model.LOG_DB = db, logDB
 	common.SetDatabaseTypes(common.DatabaseType(dialect), common.DatabaseType(dialect))
 	model.InitColumnNamesForTests()
 	t.Cleanup(func() {
@@ -565,6 +576,7 @@ func TestOpeningSiteAndCommissionTransferUseCompatibleLockOrder(t *testing.T) {
 				require.NoError(t, db.AutoMigrate(&model.User{}, &model.Log{}, &model.ReferralAffiliate{},
 					&model.ReferralCommissionAccount{}, &model.ReferralCommission{}, &model.ReferralWithdrawal{},
 					&model.ReferralWithdrawalItem{}, &model.ReferralCommissionLedger{}, &model.AdtyBalanceLedger{},
+					&model.AdtyFundBatch{}, &model.AdtyFundAllocation{}, &model.AdtyBillingHold{},
 					&model.AdtySite{}, &model.AdtySiteWallet{}, &model.AdtySiteAudit{}))
 			}
 			openingSiteAndCommissionTransfer(t, db, dialect)
@@ -1177,9 +1189,12 @@ func TestRefundClawsBackCommissionByRefundedShare(t *testing.T) {
 		_, err := RunReferralSettlementOnce(now, 50)
 		require.NoError(t, err)
 		setBalance(invitee, "2.5")
-		result, err := refundAdtyTopUp(t, "EPU-part-zero", "chargeback", 1, "k-part-zero")
+		_, err = refundAdtyTopUp(t, "EPU-part-zero", "chargeback", 1, "k-part-zero")
+		require.ErrorContains(t, err, "Refund amount must be positive")
+		ext, err := model.GetAdtyTopupOrder("EPU-part-zero")
 		require.NoError(t, err)
-		require.Zero(t, result.Occupancy.CompletedQuota)
+		require.Zero(t, ext.RefundQuota)
+		assert.EqualValues(t, perUnit("2.5"), floorBalance(t, invitee.Id), "rejected zero refunds do not reclaim the gift")
 		c := commissionFor(t, db, "EPU-part-zero")
 		assert.Equal(t, model.ReferralCommissionStatusPending, c.Status)
 		assert.InDelta(t, 10, c.CommissionAmount, 1e-9)
@@ -1200,7 +1215,17 @@ func TestRefundClawsBackCommissionByRefundedShare(t *testing.T) {
 			paidTopUp(t, invitee, tradeNo)
 			setBalance(invitee, tc.balance)
 			_, err := refundAdtyTopUp(t, tradeNo, "chargeback", 1, "k-part-job-"+tc.name)
-			require.NoError(t, err)
+			if tc.name == "0" {
+				require.ErrorContains(t, err, "Refund amount must be positive")
+			} else {
+				require.NoError(t, err)
+				var order model.TopUp
+				require.NoError(t, db.Where("trade_no = ?", tradeNo).First(&order).Error)
+				assert.Equal(t, common.TopUpStatusSuccess, order.Status, "partial manual refunds keep the credited order status")
+				ext, err := model.GetAdtyTopupOrder(tradeNo)
+				require.NoError(t, err)
+				require.EqualValues(t, perUnit("70"), ext.RefundQuota)
+			}
 			var job model.ReferralCommissionJob
 			require.NoError(t, db.Where("source_trade_no = ?", tradeNo).First(&job).Error)
 			assert.Equal(t, model.ReferralCommissionJobStatusPending, job.Status)
@@ -1210,6 +1235,153 @@ func TestRefundClawsBackCommissionByRefundedShare(t *testing.T) {
 			c := commissionFor(t, db, tradeNo)
 			assert.InDelta(t, tc.want, c.CommissionAmount, 1e-9)
 			assert.InDelta(t, tc.want, account(t, db, affiliate.Id).PendingAmount, 1e-9)
+		})
+	}
+}
+
+func TestReferralDelayedAccrualCumulativeRefunds(t *testing.T) {
+	for _, stage := range []string{"pending", "available", "frozen", "paid", "mixed"} {
+		t.Run(stage, func(t *testing.T) {
+			db := prepareReferralDB(t)
+			affiliate, invitee := inviterAndInvitee(t, db, "cumulative-"+stage)
+			const tradeNo = "EPU-cumulative"
+			paidTopUp(t, invitee, tradeNo)
+			_, err := completeManualRefundForTest(t, tradeNo, "partial refund", 1, "refund-first", decimal.NewFromInt(20))
+			require.NoError(t, err)
+			require.NoError(t, ProcessAdtyTopUpCommission(tradeNo))
+			require.Equal(t, 8.0, commissionFor(t, db, tradeNo).CommissionAmount)
+			require.Equal(t, 8.0, account(t, db, affiliate.Id).PendingAmount)
+
+			cfg := adty_setting.GetReferralSetting()
+			cfg.MinWithdrawUSD, cfg.USDTWithdrawFee = new(1.0), new(0.0)
+			var frozen *model.ReferralWithdrawal
+			if stage != "pending" {
+				settled, err := RunReferralSettlementOnce(time.Now().Unix()+8*86400, 50)
+				require.NoError(t, err)
+				require.Equal(t, 1, settled)
+			}
+			if stage == "paid" || stage == "mixed" {
+				amount := int64(8)
+				if stage == "mixed" {
+					amount = 4
+				}
+				_, err := Referral.CreateWithdrawal(ReferralWithdrawalCreateInput{UserId: affiliate.UserId,
+					Amount: decimal.NewFromInt(amount), AccountType: model.ReferralWithdrawToBalance, IdempotencyKey: "paid-before-second"})
+				require.NoError(t, err)
+			}
+			if stage == "frozen" || stage == "mixed" {
+				amount := int64(8)
+				if stage == "mixed" {
+					amount = 2
+				}
+				frozen = createReferralUSDTWithdrawal(t, affiliate.UserId, amount, "frozen-before-second")
+			}
+
+			// An unrelated commission must survive every refund and cannot fund this clawback.
+			paidTopUp(t, invitee, "EPU-cumulative-sibling")
+			require.NoError(t, ProcessAdtyTopUpCommission("EPU-cumulative-sibling"))
+			check := func(pending, available, frozenAmount, recovered float64) {
+				t.Helper()
+				acc := account(t, db, affiliate.Id)
+				assert.Equal(t, pending+10, acc.PendingAmount)
+				assert.Equal(t, available, acc.AvailableAmount)
+				assert.Equal(t, frozenAmount, acc.FrozenAmount)
+				var recoveries []model.AdtyCommissionRecovery
+				require.NoError(t, db.Where("trade_no = ? AND kind = ?", tradeNo, adtyReferralCommissionRecoveryKind).Find(&recoveries).Error)
+				total := decimal.Zero
+				for _, row := range recoveries {
+					total = total.Add(row.AmountUSD)
+				}
+				assert.True(t, decimal.NewFromFloat(recovered).Equal(total), "recovery: want %v, got %s", recovered, total)
+			}
+			for _, step := range []struct {
+				id     string
+				refund int64
+			}{{"second", 20}, {"third", 20}, {"full", 40}} {
+				_, err := completeManualRefundForTest(t, tradeNo, "later refund", 1, "refund-"+step.id, decimal.NewFromInt(step.refund))
+				require.NoError(t, err)
+				before := account(t, db, affiliate.Id)
+				var topUp model.TopUp
+				require.NoError(t, db.Where("trade_no = ?", tradeNo).First(&topUp).Error)
+				ext, err := model.GetAdtyTopupOrder(tradeNo)
+				require.NoError(t, err)
+				var ledgerCount, recoveryCount int64
+				require.NoError(t, db.Model(&model.ReferralCommissionLedger{}).Count(&ledgerCount).Error)
+				require.NoError(t, db.Model(&model.AdtyCommissionRecovery{}).Count(&recoveryCount).Error)
+				_, err = model.CompleteAdtyTopUpManualRefund(tradeNo, "refund-"+step.id, 1, "refund-"+step.id+":complete")
+				require.NoError(t, err)
+				require.NoError(t, db.Transaction(func(tx *gorm.DB) error { return adtyReferralAfterRefundTx(tx, &topUp, ext) }))
+				assert.Equal(t, before, account(t, db, affiliate.Id), "completion and hook replay must leave all balances unchanged")
+				var afterLedgers, afterRecoveries int64
+				require.NoError(t, db.Model(&model.ReferralCommissionLedger{}).Count(&afterLedgers).Error)
+				require.NoError(t, db.Model(&model.AdtyCommissionRecovery{}).Count(&afterRecoveries).Error)
+				assert.Equal(t, ledgerCount, afterLedgers)
+				assert.Equal(t, recoveryCount, afterRecoveries)
+
+				switch step.id {
+				case "second":
+					switch stage {
+					case "pending":
+						check(6, 0, 0, 0)
+						assert.Equal(t, 6.0, commissionFor(t, db, tradeNo).CommissionAmount)
+						// Settle just this commission; the sibling remains pending.
+						require.NoError(t, db.Model(&model.ReferralCommission{}).Where("source_trade_no = ?", "EPU-cumulative-sibling").Update("settle_at", time.Now().Unix()+30*86400).Error)
+						_, err := RunReferralSettlementOnce(time.Now().Unix()+8*86400, 50)
+						require.NoError(t, err)
+						_, err = Referral.CreateWithdrawal(ReferralWithdrawalCreateInput{UserId: affiliate.UserId, Amount: decimal.NewFromInt(3),
+							AccountType: model.ReferralWithdrawToBalance, IdempotencyKey: "paid-after-second"})
+						require.NoError(t, err)
+					case "available":
+						check(0, 6, 0, 0)
+						_, err := Referral.CreateWithdrawal(ReferralWithdrawalCreateInput{UserId: affiliate.UserId, Amount: decimal.NewFromInt(6),
+							AccountType: model.ReferralWithdrawToBalance, IdempotencyKey: "paid-after-second"})
+						require.NoError(t, err)
+						var items []model.ReferralWithdrawalItem
+						require.NoError(t, db.Where("status = ?", model.ReferralWithdrawalItemStatusWithdrawn).Find(&items).Error)
+						require.Len(t, items, 1)
+						assert.Equal(t, commissionFor(t, db, tradeNo).Id, items[0].CommissionId)
+						assert.Equal(t, 6.0, items[0].AllocatedAmount)
+					case "frozen":
+						check(0, 0, 6, 0)
+						require.NoError(t, db.First(frozen, frozen.Id).Error)
+						assert.Equal(t, 6.0, frozen.Amount)
+						require.NoError(t, Referral.ReviewWithdrawal(frozen.Id, 1, true, "", "", ""))
+						require.NoError(t, Referral.MarkWithdrawalPaid(frozen.Id, 1, "cumulative-payout", "", "", "", ""))
+					case "paid":
+						check(0, 0, 0, 2)
+					case "mixed":
+						check(0, 1.5, 1.5, 1)
+					}
+				case "third":
+					switch stage {
+					case "pending":
+						check(0, 2, 0, 1)
+					case "available", "frozen":
+						check(0, 0, 0, 2)
+					case "paid":
+						check(0, 0, 0, 4)
+					case "mixed":
+						check(0, 1, 1, 2)
+					}
+				case "full":
+					recovered := 8.0
+					switch stage {
+					case "pending":
+						recovered = 3
+					case "available", "frozen":
+						recovered = 6
+					case "mixed":
+						recovered = 4
+					}
+					check(0, 0, 0, recovered)
+					assert.Equal(t, model.ReferralCommissionStatusClawedBack, commissionFor(t, db, tradeNo).Status)
+					if stage == "mixed" {
+						require.NoError(t, db.First(frozen, frozen.Id).Error)
+						assert.Equal(t, model.ReferralWithdrawalStatusCanceled, frozen.Status)
+						assert.Zero(t, frozen.Amount)
+					}
+				}
+			}
 		})
 	}
 }
