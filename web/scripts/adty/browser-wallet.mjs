@@ -307,53 +307,10 @@ try {
       )
     }
   }
-  await page.goto(base + '/system-settings/billing/promo-codes')
-  const promoToggle = page.getByRole('switch', {
-    name: 'Allow users to enter promo codes',
-  })
-  await promoToggle.waitFor()
-  const wasEnabled = (await promoToggle.getAttribute('aria-checked')) === 'true'
-  await promoToggle.click()
-  const flagSaved = page.waitForResponse(
-    (response) =>
-      response.request().method() === 'PUT' &&
-      new URL(response.url()).pathname === '/api/option/'
-  )
-  await page.getByRole('button', { name: 'Save Changes', exact: true }).click()
-  assert.equal((await (await flagSaved).json()).success, true)
-  await page.reload()
-  await promoToggle.waitFor()
-  assert.equal(
-    await promoToggle.getAttribute('aria-checked'),
-    String(!wasEnabled)
-  )
-  await page
-    .getByRole('button', { name: 'New promo code', exact: true })
-    .click()
-  const promoDialog = page.getByRole('dialog', {
-    name: 'New promo code',
-    exact: true,
-  })
-  await promoDialog.getByLabel('Code', { exact: true }).fill('BROWSER10')
-  await promoDialog.getByLabel('Bonus %', { exact: true }).fill('10')
-  await promoDialog.getByRole('button', { name: 'Save', exact: true }).click()
-  await promoDialog.waitFor({ state: 'hidden' })
-  const promoRow = page.getByRole('row').filter({ hasText: 'BROWSER10' })
-  await promoRow.getByRole('button', { name: 'Edit', exact: true }).click()
-  const editPromo = page.getByRole('dialog', {
-    name: 'Edit promo code',
-    exact: true,
-  })
-  await editPromo
-    .getByLabel('Note', { exact: true })
-    .fill('Persisted browser promo edit')
-  await editPromo.getByRole('button', { name: 'Save', exact: true }).click()
-  await editPromo.waitFor({ state: 'hidden' })
-  const promoList = await api('get', '/api/adty/admin/promo-codes')
-  assert.equal(
-    promoList.items.find((code) => code.code === 'BROWSER10')?.note,
-    'Persisted browser promo edit'
-  )
+  for (const path of ['/api/adty/admin/promo-codes', '/api/adty/site/promo-codes']) {
+    const removed = await fetch(base + path, { headers: authHeaders })
+    assert.equal(removed.status, 404, path)
+  }
   await api('put', '/api/option/', {
     key: 'Notice',
     value: 'Local system announcement remains available',
@@ -365,7 +322,7 @@ try {
     'Local system announcement remains available'
   )
   console.log(
-    'PASS retired Marketing menu/page/API 404, billing promo flag save/reload, promo create/edit and preserved system announcement'
+    'PASS retired Marketing menu/page/API 404, removed promo code APIs 404 and preserved system announcement'
   )
   await page.goto(`${base}/wallet`)
   await page.getByLabel('Custom amount (USD)', { exact: true }).waitFor()

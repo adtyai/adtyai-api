@@ -493,3 +493,57 @@ P6 移植旧项目前端时，不要把 `?aff=` 和 `features/auth/lib/storage.t
 - 前端 `loginMethodLabel` 对 `oauth`、`oauth:github` 等的显示：历史会话和审计日志里还有这些值。
 - `service/codex_oauth.go`：Codex 渠道的凭据刷新，和用户登录无关。
 - 两份语言包里的旧文案：按约定 B 只增不删。
+
+## 四家托管支付、签到、支付合规确认、优惠码后台和公开状态页（2026-11-16）
+
+项目还没上线，没有这些功能的历史订单和数据。Stripe、Creem、Waffo、Waffo Pancake 决定不再接回，签到、支付合规确认、优惠码管理和公开状态页之前已经关掉或只剩空壳，这次连同代码一起删除。
+
+### 文件（后端）
+
+- 四家托管支付：`controller/topup_stripe.go`、`controller/topup_creem.go`、`controller/topup_waffo.go`、`controller/topup_waffo_pancake.go`、`controller/adty_hosted_payment.go`、`controller/adty_hosted_query.go`、`controller/adty_hosted_registry.go`、`controller/payment_webhook_availability.go`、`service/waffo_pancake.go`、`setting/payment_stripe.go`、`setting/payment_creem.go`、`setting/payment_waffo.go`、`setting/payment_waffo_pancake.go`、`constant/waffo_pay_method.go`
+- 签到：`controller/checkin.go`、`setting/operation_setting/checkin_setting.go`；`model/checkin.go` 只留表结构
+- 支付合规确认：`controller/payment_compliance.go`
+- 永久 403 中间件 `middleware/adty_closed_features.go`：挂在上面这些入口上，入口删掉后没有用处了
+- 优惠码管理：`controller/adty_promo.go`、`setting/adty_setting/promo.go`
+- 部分删除：`model/topup.go` 里上游单通道易支付、四家支付和管理员补单的入账与退款函数（`RechargeEpay`、`Recharge`、`RechargeCreem`、`RechargeWaffo`、`RechargeWaffoPancake`、`RefundWaffo`、`RefundWaffoPancake`、`ManualCompleteTopUp`）、用户充值记录查询（`GetUserTopUps`、`SearchUserTopUps`）和四家的 provider 常量；`controller/topup.go` 里上游单通道易支付的下单、回调、充值信息和管理员补单（路由在本次之前已经关闭）；`model/adty_topup_order.go`、`model/option.go`、`service/adty_payment_scene.go` 里拒绝四家的写入保护；`service/adty_team_pay.go` 的团队 Stripe 充值
+- 依赖：`go mod tidy` 移除 `stripe-go`、`waffo-go`、`waffo-pancake-sdk-go`、`randstr`，以及第三方登录框架删除后留下没用的 `go-oidc`、`golang.org/x/oauth2`、`moego`；`THIRD-PARTY-LICENSES.md` 同步删行
+- 只测这些代码的测试文件随实现删除；混在别的测试里的用例改成用 BEpusdt 或易支付，或者删掉对应用例。管理员查单测试改用可控的易支付查单结果
+
+### 路由
+
+- `POST /api/stripe/webhook`、`POST /api/creem/webhook`、`POST /api/waffo/webhook`、`POST /api/waffo-pancake/webhook/:env`
+- `POST /api/user/stripe/pay|amount`、`POST /api/user/creem/pay`、`POST /api/user/waffo/pay|amount`、`POST /api/user/waffo-pancake/pay|amount`、`POST /api/adty/topup/hosted/pay`
+- `POST /api/option/waffo-pancake/catalog|pair|save`
+- `GET`/`POST /api/user/checkin`
+- `GET`/`POST /api/user/epay/notify`（上游单通道回调；正式回调是 `/api/user/epay/notify/:channelId`）、`GET /api/user/topup/info`、`GET /api/user/topup/self`、`POST /api/user/amount`、`POST /api/user/topup/complete`
+- `POST /api/option/payment_compliance`
+- `GET`/`POST /api/adty/admin/promo-codes`、`PUT /api/adty/admin/promo-codes/:id`、`GET`/`POST /api/adty/site/promo-codes`、`PUT`/`DELETE /api/adty/site/promo-codes/:id`
+- 访问令牌规则、审计登记、`middleware/testdata/adty_admin_routes.txt` 和 `docs/openapi/api.json` 里对应的条目一起删除。`router/adty_deleted_routes_test.go` 盯着它们不许回来。
+
+### 配置项
+
+- `Stripe*`、`Creem*`、`Waffo*`、`WaffoPancake*`、`checkin_setting.*`、`payment_setting.compliance_*`、`adty_marketing_setting.promo_enabled` 不再注册。数据库里的旧行留着，启动加载时忽略；`adty_marketing_setting.*` 整组不能再通过设置接口写入。
+- `/api/status` 不再返回 `stripe_unit_price` 和 `checkin_enabled`，`/api/adty/topup/info` 不再返回 `compliance_confirmed`。
+
+### 二次验证
+
+- 删除站长二次验证动作 `promo`（只给优惠码管理用）。
+
+### 前端
+
+- 支付设置只剩通用、Epay、USDT 三个标签：删掉隐藏的 Stripe、Creem、Waffo、Waffo Pancake 标签和表单字段、Creem 商品编辑器、Waffo 设置、Pancake 绑定流程和“托管支付已退役”提示。
+- 支付方式图标改成下拉选择，只提供支付宝、微信、USDT 和通用卡片四个图标；`components/react-icon-by-name.tsx` 不再按名字动态加载 30 个 react-icons 图标包。支付方式类型去掉 `stripe` 和 `waffo_pancake`。
+- 钱包去掉托管支付弹窗和 `payWithHosted`，订单恢复只认 USDT 和易支付；删掉只给旧版上游钱包用的 `wallet/lib/payment.ts`、`wallet/lib/format.ts`、`wallet/constants.ts` 和 `wallet/types.ts` 里的旧接口类型。
+- 支付场景不再在前端过滤四家（`adty-payment-scenes/retired-providers.ts`），后端已经不认这些支付商。
+- 优惠码：系统设置的“优惠码”分区、站长中心的“优惠码”标签和 `features/adty-promo/` 删除。
+- 公开状态页：`routes/status.tsx` 和 `features/adty-status/` 删除，维护页去掉指向它的“了解更多”按钮。
+- `public/` 下没用到的 `pay-card.png`、`pay-apple.png`、`pay-google.png`、`waffo-logo-dark.svg`、`waffo-logo-light.svg` 删除。
+
+### 保留名单和理由
+
+- `users.checkin_quota` 列、`checkins` 表的迁移和退款时把签到赠送排除在本金之外的逻辑（`TestCheckinQuotaIsNotRefundedAsPrincipal`）：签到赠送的历史额度仍在钱包里时，退款不能把它当本金退。
+- `users.stripe_customer` 列：上游表结构，启动迁移照旧，不写删列。
+- 下单链路里的优惠码字段和拒绝逻辑（`AdtyPromoInput`、`ErrAdtyPromoRetired`、`PromoCodeUserRateLimit`）以及 `adty_promo_codes`、`adty_promo_redemptions` 表：和订单入账、退款缠在一起，另行评估。
+- 上游单通道易支付的设置（`PayAddress`、`EpayId`、`EpayKey`、`PayMethods`）和 `MigrateLegacyAdtyEpayChannel`：现在只给一次性迁移成多通道用，另行评估。
+- `/api/uptime/status` 和 Uptime Kuma 设置：后台仪表盘还在用。
+- 两份语言包里的旧文案：按约定 B 只增不删。

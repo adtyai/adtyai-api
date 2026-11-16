@@ -43,65 +43,8 @@ func TestTeamTopupStartsEpayWithoutGift(t *testing.T) {
 	require.Equal(t, order.TradeNo, replay.TradeNo)
 }
 
-type teamStripeProvider struct{ available bool }
-
-func (p teamStripeProvider) Name() string { return model.PaymentProviderStripe }
-func (p teamStripeProvider) Methods() []AdtyMethodInfo {
-	return []AdtyMethodInfo{{Id: model.PaymentMethodStripe, Available: p.available}}
-}
-func (p teamStripeProvider) AvailableFor(method string, quote *AdtyQuote) bool {
-	return p.available && method == model.PaymentMethodStripe && quote != nil && quote.PayAmount.IsPositive()
-}
-func (p teamStripeProvider) Cancel(*model.AdtyTopupOrder) error { return nil }
-
-func TestTeamTopupRejectsRetiredStripeCheckout(t *testing.T) {
-	db := prepareReferralDialectDB(t, "sqlite")
-	previous := AdtyPaymentProviderByName(model.PaymentProviderStripe)
-	RegisterAdtyPaymentProvider(teamStripeProvider{available: true})
-	t.Cleanup(func() {
-		if previous != nil {
-			RegisterAdtyPaymentProvider(previous)
-			return
-		}
-		RegisterAdtyPaymentProvider(teamStripeProvider{})
-	})
-	payment := operation_setting.GetPaymentSetting()
-	previousConfirmed, previousVersion := payment.ComplianceConfirmed, payment.ComplianceTermsVersion
-	payment.ComplianceConfirmed = true
-	payment.ComplianceTermsVersion = operation_setting.CurrentComplianceTermsVersion
-	t.Cleanup(func() {
-		payment.ComplianceConfirmed = previousConfirmed
-		payment.ComplianceTermsVersion = previousVersion
-	})
-	leader := referralUser(t, db, "team-stripe-leader")
-	created, err := CreateAdtyTeam(leader.Id, 0, "Stripe", decimal.NewFromInt(1))
-	require.NoError(t, err)
-	calls := 0
-	order, err := StartAdtyTeamStripeTopup(leader.Id, created.Team.Id, decimal.NewFromInt(1), decimal.RequireFromString("8.00"), "team-stripe-1", func(tradeNo string, money decimal.Decimal) (string, string, error) {
-		calls++
-		require.True(t, money.Equal(decimal.RequireFromString("8.00")))
-		return "https://checkout.stripe.test/" + tradeNo, "cs_team", nil
-	})
-	require.ErrorContains(t, err, "This payment method is not available")
-	require.Nil(t, order)
-	require.Zero(t, calls, "retired providers cannot open a checkout even if registered")
-	var orders int64
-	require.NoError(t, db.Model(&model.AdtyTopupOrder{}).Where("team_id = ?", created.Team.Id).Count(&orders).Error)
-	require.Zero(t, orders)
-	require.NoError(t, db.Model(&model.TopUp{}).Where("user_id = ?", leader.Id).Count(&orders).Error)
-	require.Zero(t, orders)
-}
-
 func TestTeamTopupStartsExistingBEpusdtWithoutGift(t *testing.T) {
 	db := prepareReferralDialectDB(t, "sqlite")
-	payment := operation_setting.GetPaymentSetting()
-	previousConfirmed, previousVersion := payment.ComplianceConfirmed, payment.ComplianceTermsVersion
-	payment.ComplianceConfirmed = true
-	payment.ComplianceTermsVersion = operation_setting.CurrentComplianceTermsVersion
-	t.Cleanup(func() {
-		payment.ComplianceConfirmed = previousConfirmed
-		payment.ComplianceTermsVersion = previousVersion
-	})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"status_code":200,"message":"success","data":{"trade_id":"tid-team","order_id":"team","amount":"1","actual_amount":"1.01","token":"TAddr","expiration_time":900,"status":1,"payment_url":"https://pay.example/usdt"}}`))
 	}))

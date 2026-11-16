@@ -50,16 +50,15 @@ func GetAdtyTopUpInfo(c *gin.Context) {
 		pending = view
 	}
 	common.ApiSuccess(c, gin.H{
-		"tiers":                tiers,
-		"bonus_rates":          bonusRates,
-		"min_topup":            operation_setting.MinTopUp,
-		"methods":              methods,
-		"scenes":               scenes,
-		"price_cny_per_usd":    operation_setting.Price,
-		"usdt_order_minutes":   setting.USDTOrderMinutes,
-		"epay_order_minutes":   setting.EpayOrderMinutes,
-		"pending":              pending,
-		"compliance_confirmed": operation_setting.IsPaymentComplianceConfirmed(),
+		"tiers":              tiers,
+		"bonus_rates":        bonusRates,
+		"min_topup":          operation_setting.MinTopUp,
+		"methods":            methods,
+		"scenes":             scenes,
+		"price_cny_per_usd":  operation_setting.Price,
+		"usdt_order_minutes": setting.USDTOrderMinutes,
+		"epay_order_minutes": setting.EpayOrderMinutes,
+		"pending":            pending,
 	})
 }
 
@@ -77,18 +76,12 @@ func adtyPromoInput(c *gin.Context, code string) service.AdtyPromoInput {
 
 // PostAdtyTopUpQuote 报价，同时返回这个金额下这种方式能不能用。
 func PostAdtyTopUpQuote(c *gin.Context) {
-	if !requirePaymentCompliance(c) {
-		return
-	}
 	var req adtyQuoteRequest
 	if err := common.DecodeJson(c.Request.Body, &req); err != nil {
 		common.ApiErrorT(c, "Invalid parameters")
 		return
 	}
 	quote, err := service.AdtyQuoteForSite(service.AdtyBillingSiteForUser(c.GetInt("id")), c.GetString("group"), req.Amount, req.Method, adtyPromoInput(c, req.PromoCode))
-	if provider := service.AdtyPaymentProviderForMethod(req.Method); provider != nil && provider.Name() != service.AdtyProviderBEpusdt && provider.Name() != service.AdtyProviderEpay {
-		quote, err = adtyHostedQuote(c, req)
-	}
 	if err != nil {
 		common.ApiError(c, err)
 		return

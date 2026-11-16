@@ -402,9 +402,6 @@ func adtyScheme() string {
 // 它只读请求上下文和进程内站点：不查库，也不拿 OptionMap 的锁。所以调用点在锁内锁外都对——
 // 现在 GetStatus 在拼响应之前就放掉了配置读锁（ISS-R4-0123）。
 func AdtyOverrideStatus(c *gin.Context, data map[string]any) {
-	// Check-in rewards are not a product. Hide the calendar even if an old
-	// option row still says the feature is on.
-	data["checkin_enabled"] = false
 	site := AdtySiteForRequest(c)
 	if site == nil {
 		return

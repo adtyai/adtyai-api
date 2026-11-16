@@ -5,7 +5,6 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
-	"github.com/QuantumNous/new-api/setting/adty_setting"
 	"github.com/shopspring/decimal"
 )
 
@@ -39,37 +38,6 @@ func AdtyUserSiteID(userId int) int {
 		return 0
 	}
 	return siteID
-}
-
-// ValidateAdtySitePromoValue 站长保存码时先挡掉一定用不了的码：百分比码超过「主站最高档 + max_site_bonus_extra」时，
-// 在任何面额上都会超出上限。报价时的精确查在 adtyQuotaQuoteForSite：它把这一单的加赠合计
-// （站点档位加赠 + 站长出资的优惠加赠）交给 adtySiteBonusWithinCap 比上限，超出就拒绝报价。
-// 优惠码已退役（adtyPromoBonusFor 恒返回 ErrAdtyPromoRetired），所以今天合计数只含支付方式那一项；
-// 这里保留的是保存历史码时的旧校验，不是报价期的唯一防线。
-func ValidateAdtySitePromoValue(code *model.AdtyPromoCode) error {
-	if code.Kind != model.AdtyPromoKindPercent {
-		return nil // 固定金额随面额变化，只能在报价时查
-	}
-	limit := decimal.Zero
-	if value := resellerSetting().MaxSiteBonusExtra; value != nil {
-		limit = decimal.NewFromFloat(*value)
-	}
-	highest := decimal.Zero
-	for _, rate := range adty_setting.GetTopupSetting().BonusRates {
-		highest = decimal.Max(highest, decimal.NewFromFloat(rate))
-	}
-	if code.Value.GreaterThan(highest.Add(limit)) {
-		return ErrAdtySitePromoOverCap
-	}
-	return nil
-}
-
-// AdtyPromoBonus 按码算优惠加赠：百分比按面额算，固定金额直接给，保留 8 位小数。
-func AdtyPromoBonus(code *model.AdtyPromoCode, faceUSD decimal.Decimal) decimal.Decimal {
-	if code.Kind == model.AdtyPromoKindPercent {
-		return faceUSD.Mul(code.Value).Div(decimal.NewFromInt(100)).Round(8)
-	}
-	return code.Value.Round(8)
 }
 
 // adtyPromoBonusFor refuses every new promo code. Historical redemption rows stay.

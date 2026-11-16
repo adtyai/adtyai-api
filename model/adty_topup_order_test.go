@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -264,79 +263,6 @@ func TestCompleteAdtyTopUpQuotaLimit(t *testing.T) {
 	assert.Equal(t, common.TopUpStatusPending, topUpStatus(t, db, "EPU-limit"))
 }
 
-func TestRechargeEpayRejectsMismatchedMoney(t *testing.T) {
-	db := prepareAdtyTopUpDB(t)
-	user := seedAdtyTopUpUser(t, db, "epay-money", 0)
-	require.NoError(t, db.Create(&TopUp{
-		UserId: user.Id, Amount: 2, Money: 10, TradeNo: "EPAY-SHORT",
-		PaymentMethod: "alipay", PaymentProvider: PaymentProviderEpay, Status: common.TopUpStatusPending,
-	}).Error)
-	_, err := RechargeEpay("EPAY-SHORT", "alipay", decimal.NewFromInt(1), "")
-	require.ErrorIs(t, err, ErrPaymentAmountMismatch)
-	assert.Zero(t, userQuota(t, db, user.Id))
-	assert.Equal(t, common.TopUpStatusPending, topUpStatus(t, db, "EPAY-SHORT"))
-
-	_, err = RechargeEpay("EPAY-SHORT", "alipay", decimal.RequireFromString("10.00"), "")
-	require.NoError(t, err)
-	assert.Equal(t, 1000000, userQuota(t, db, user.Id))
-	assert.Equal(t, common.TopUpStatusSuccess, topUpStatus(t, db, "EPAY-SHORT"))
-}
-
-func TestManualCompleteAlreadySuccessDoesNotWriteZeroLog(t *testing.T) {
-	db := prepareAdtyTopUpDB(t)
-	user := seedAdtyTopUpUser(t, db, "repeat-manual", 0)
-	require.NoError(t, db.Create(&TopUp{
-		UserId: user.Id, Amount: 2, Money: 2, TradeNo: "EPAY-REPEAT",
-		PaymentMethod: "alipay", PaymentProvider: PaymentProviderEpay, Status: common.TopUpStatusPending,
-	}).Error)
-	require.NoError(t, ManualCompleteTopUp("EPAY-REPEAT", "127.0.0.1"))
-	quota := userQuota(t, db, user.Id)
-	require.NotZero(t, quota)
-	var logs int64
-	require.NoError(t, db.Model(&Log{}).Where("type = ?", LogTypeTopup).Count(&logs).Error)
-	require.Equal(t, int64(1), logs)
-
-	require.NoError(t, ManualCompleteTopUp("EPAY-REPEAT", "127.0.0.1"))
-	require.NoError(t, db.Model(&Log{}).Where("type = ?", LogTypeTopup).Count(&logs).Error)
-	require.Equal(t, int64(1), logs)
-	assert.Equal(t, quota, userQuota(t, db, user.Id))
-	var zeroUser int64
-	require.NoError(t, db.Model(&Log{}).Where("user_id = ? AND type = ?", 0, LogTypeTopup).Count(&zeroUser).Error)
-	assert.Zero(t, zeroUser)
-}
-
-func TestManualCompleteCreemUsesStoredQuota(t *testing.T) {
-	db := prepareAdtyTopUpDB(t)
-	user := seedAdtyTopUpUser(t, db, "creem-manual", 0)
-	require.NoError(t, db.Create(&TopUp{
-		UserId: user.Id, Amount: 1000, Money: 2, TradeNo: "CREEM-MANUAL",
-		PaymentMethod: "creem", PaymentProvider: PaymentProviderCreem, Status: common.TopUpStatusPending,
-	}).Error)
-	require.NoError(t, ManualCompleteTopUp("CREEM-MANUAL", "127.0.0.1"))
-	assert.Equal(t, 1000, userQuota(t, db, user.Id))
-	assert.Equal(t, common.TopUpStatusSuccess, topUpStatus(t, db, "CREEM-MANUAL"))
-}
-
-func TestUpstreamPathsRejectAdtyOrders(t *testing.T) {
-	db := prepareAdtyTopUpDB(t)
-	user := seedAdtyTopUpUser(t, db, "upstream", 0)
-	seedAdtyOrder(t, user.Id, "EPY-upstream", PaymentProviderAdtyEpay, common.TopUpStatusPending)
-
-	_, err := RechargeEpay("EPY-upstream", "alipay", decimal.Zero, "")
-	require.ErrorIs(t, err, ErrPaymentMethodMismatch)
-	err = ManualCompleteTopUp("EPY-upstream", "")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "Recharge Audit")
-	assert.Equal(t, common.TopUpStatusPending, topUpStatus(t, db, "EPY-upstream"))
-
-	_, err = CompleteAdtyTopUp("EPY-upstream", AdtyPaymentFacts{
-		Provider: PaymentProviderAdtyEpay, Method: "alipay", PaidAmount: decimal.RequireFromString("730"),
-		PaidCurrency: "CNY", Source: AdtyPaymentSourceCallback,
-	}, "")
-	require.NoError(t, err)
-	assert.Equal(t, 51_250_000, userQuota(t, db, user.Id))
-}
-
 func TestExpireAdtyTopUpsOnlyOwnPendingPastExpiry(t *testing.T) {
 	db := prepareAdtyTopUpDB(t)
 	user := seedAdtyTopUpUser(t, db, "expire", 0)
@@ -345,7 +271,7 @@ func TestExpireAdtyTopUpsOnlyOwnPendingPastExpiry(t *testing.T) {
 	seedAdtyOrder(t, user.Id, "EPU-future", PaymentProviderAdtyBEpusdt, common.TopUpStatusPending)
 	paid := seedAdtyOrder(t, user.Id, "EPU-paid", PaymentProviderAdtyBEpusdt, common.TopUpStatusSuccess)
 	require.NoError(t, db.Model(paid).Update("expire_at", 100).Error)
-	require.NoError(t, db.Create(&TopUp{UserId: user.Id, TradeNo: "UPSTREAM-1", PaymentProvider: PaymentProviderEpay, Status: common.TopUpStatusPending}).Error)
+	require.NoError(t, db.Create(&TopUp{UserId: user.Id, TradeNo: "UPSTREAM-1", PaymentProvider: "epay", Status: common.TopUpStatusPending}).Error)
 
 	expired, err := ExpireAdtyTopUps(common.GetTimestamp(), 50)
 	require.NoError(t, err)
@@ -465,9 +391,6 @@ func TestRefundAdtyTopUpOnlyUnspentPrincipal(t *testing.T) {
 func TestCheckinQuotaIsNotRefundedAsPrincipal(t *testing.T) {
 	db := prepareAdtyTopUpDB(t)
 	require.NoError(t, db.AutoMigrate(&Checkin{}))
-	saved := *operation_setting.GetCheckinSetting()
-	*operation_setting.GetCheckinSetting() = operation_setting.CheckinSetting{Enabled: true, MinQuota: 5000, MaxQuota: 5000}
-	t.Cleanup(func() { *operation_setting.GetCheckinSetting() = saved })
 
 	q := func(usd string) int64 {
 		return decimal.RequireFromString(usd).Mul(decimal.NewFromFloat(common.QuotaPerUnit)).IntPart()
@@ -478,16 +401,6 @@ func TestCheckinQuotaIsNotRefundedAsPrincipal(t *testing.T) {
 		"quota": q("110") + 5000, "checkin_quota": 5000,
 	}).Error)
 	require.NoError(t, db.Create(&Checkin{UserId: user.Id, CheckinDate: "2020-01-01", QuotaAwarded: 5000, CreatedAt: 1}).Error)
-	_, err := UserCheckin(user.Id)
-	require.ErrorIs(t, err, ErrCheckinRetired)
-	var afterCall User
-	require.NoError(t, db.First(&afterCall, user.Id).Error)
-	require.Equal(t, int(q("110"))+5000, afterCall.Quota)
-	require.Equal(t, 5000, afterCall.CheckinQuota)
-	var awards int64
-	require.NoError(t, db.Model(&Checkin{}).Where("user_id = ?", user.Id).Count(&awards).Error)
-	require.EqualValues(t, 1, awards, "UserCheckin must not insert a new award")
-
 	reserved, err := TryReserveUserQuota(user.Id, int(q("100")))
 	require.NoError(t, err)
 	require.True(t, reserved)

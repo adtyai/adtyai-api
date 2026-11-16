@@ -36,6 +36,14 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 
 const createPaymentMethodDialogSchema = (t: (key: string) => string) =>
   z.object({
@@ -68,12 +76,20 @@ type PaymentMethodDialogProps = {
 
 const PAYMENT_TYPE_ICON_NAMES: Record<string, string> = {
   alipay: 'SiAlipay',
-  stripe: 'SiStripe',
-  waffo_pancake: 'LuCreditCard',
   wxpay: 'SiWechat',
 }
 
 const getDefaultIconName = (type: string) => PAYMENT_TYPE_ICON_NAMES[type] ?? ''
+
+const NO_ICON = 'none'
+
+// The icons ReactIconByName can draw: Alipay, WeChat Pay, USDT and a card.
+const PAYMENT_ICON_OPTIONS = [
+  { value: 'SiAlipay', labelKey: 'Alipay' },
+  { value: 'SiWechat', labelKey: 'WeChat Pay' },
+  { value: 'SiTether', labelKey: 'USDT' },
+  { value: 'LuCreditCard', labelKey: 'Card' },
+] as const
 
 export function PaymentMethodDialog({
   open,
@@ -97,18 +113,18 @@ export function PaymentMethodDialog({
       name: t('WeChat Pay'),
       value: 'wxpay',
     },
-    {
-      iconName: 'SiStripe',
-      label: `${t('Stripe')} (stripe)`,
-      name: t('Stripe'),
-      value: 'stripe',
-    },
-    {
-      iconName: 'LuCreditCard',
-      label: 'Waffo Pancake (waffo_pancake)',
-      name: 'Waffo Pancake',
-      value: 'waffo_pancake',
-    },
+  ]
+  const iconItems = [
+    { value: NO_ICON, label: t('No icon') },
+    ...PAYMENT_ICON_OPTIONS.map((option) => ({
+      value: option.value as string,
+      label: (
+        <span className='flex items-center gap-2'>
+          <ReactIconByName name={option.value} className='size-4' />
+          {t(option.labelKey)}
+        </span>
+      ),
+    })),
   ]
   const getPaymentTypeOption = (value: string) =>
     paymentTypeOptions.find((option) => option.value === value)
@@ -122,8 +138,6 @@ export function PaymentMethodDialog({
       min_topup: '',
     },
   })
-
-  const iconValue = form.watch('icon')
 
   useEffect(() => {
     if (editData) {
@@ -249,7 +263,7 @@ export function PaymentMethodDialog({
                 </FormControl>
                 <FormDescription className='leading-relaxed'>
                   {t(
-                    'Used to decide the payment flow. Built-in keys include stripe for Stripe and waffo_pancake for Waffo Pancake; other values are sent to Epay as the type parameter.'
+                    'Sent to Epay as the type parameter, for example alipay or wxpay.'
                   )}
                 </FormDescription>
                 <FormMessage />
@@ -263,26 +277,32 @@ export function PaymentMethodDialog({
             render={({ field }) => (
               <FormItem>
                 <FormLabel>{t('Icon')}</FormLabel>
-                <FormControl>
-                  <div className='flex items-center gap-2'>
-                    <Input
-                      placeholder={t('e.g., SiAlipay')}
-                      {...field}
-                      className='flex-1'
-                    />
-                    {iconValue && (
-                      <ReactIconByName
-                        name={iconValue}
-                        className='text-muted-foreground size-5 shrink-0'
-                        title={iconValue}
-                      />
-                    )}
-                  </div>
-                </FormControl>
+                <Select
+                  items={iconItems}
+                  value={field.value || NO_ICON}
+                  onValueChange={(value) =>
+                    field.onChange(
+                      !value || value === NO_ICON ? '' : String(value)
+                    )
+                  }
+                >
+                  <FormControl>
+                    <SelectTrigger className='w-full'>
+                      <SelectValue />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent alignItemWithTrigger={false}>
+                    <SelectGroup>
+                      {iconItems.map((item) => (
+                        <SelectItem key={item.value} value={item.value}>
+                          {item.label}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
                 <FormDescription>
-                  {t(
-                    'Enter a react-icons component name. Invalid names show no icon.'
-                  )}
+                  {t('Icon shown next to this payment method.')}
                 </FormDescription>
                 <FormMessage />
               </FormItem>

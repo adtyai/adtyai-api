@@ -24,7 +24,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
 import { api } from '@/lib/api'
 
-import { payWithBEpusdt, payWithEpay, payWithHosted } from '../api-pay'
+import { payWithBEpusdt, payWithEpay } from '../api-pay'
 import { AdtyRechargeCard } from '../components/adty-recharge-card'
 import type { AdtyTopupInfo } from '../types'
 
@@ -41,7 +41,6 @@ const info = {
   usdt_order_minutes: 15,
   epay_order_minutes: 10,
   pending: null,
-  compliance_confirmed: true,
   methods: [usdt, alipay],
   scenes: [
     {
@@ -88,13 +87,10 @@ beforeEach(() => {
         },
       }
     }
-    if (path.endsWith('/hosted/pay')) {
-      data = { order_id: 'SCENE1', pay_link: 'https://checkout.example/scene' }
-    }
     return {
       data: {
         success: true,
-        message: path.endsWith('/hosted/pay') ? 'success' : '',
+        message: '',
         data,
       },
       status: 200,
@@ -168,15 +164,13 @@ it('an empty authorized scene list keeps payment disabled even if old methods ar
   expect(screen.getByRole('button', { name: 'Pay now' })).toBeDisabled()
 })
 
-it('all wallet payment clients carry the selected scene to their native or unified HTTP endpoint', async () => {
+it('all wallet payment clients carry the selected scene to their HTTP endpoint', async () => {
   await payWithBEpusdt(100, 'usdt.trc20', '', 'limited')
   await payWithEpay(100, 'alipay', 'pc', [], '', 'limited')
-  await payWithHosted(100, 'stripe', '', 'limited')
   expect(
     requests.map((request) => [request.path, request.body.payment_scene])
   ).toEqual([
     ['/api/user/bepusdt/pay', 'limited'],
     ['/api/adty/epay/pay', 'limited'],
-    ['/api/adty/topup/hosted/pay', 'limited'],
   ])
 })

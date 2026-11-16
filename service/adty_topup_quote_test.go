@@ -11,19 +11,15 @@ import (
 )
 
 // confirmAdtyCompliance 打开支付合规和 USD 显示，结束时还原。
-func confirmAdtyCompliance(t *testing.T) {
+// setAdtyQuoteDefaults 把报价用到的全局设置定成测试基线（美元显示、汇率 7.3、最低 1 美元），结束时还原。
+func setAdtyQuoteDefaults(t *testing.T) {
 	t.Helper()
-	payment := operation_setting.GetPaymentSetting()
-	oldConfirmed, oldVersion := payment.ComplianceConfirmed, payment.ComplianceTermsVersion
-	payment.ComplianceConfirmed = true
-	payment.ComplianceTermsVersion = operation_setting.CurrentComplianceTermsVersion
 	general := operation_setting.GetGeneralSetting()
 	oldDisplay := general.QuotaDisplayType
 	general.QuotaDisplayType = operation_setting.QuotaDisplayTypeUSD
 	oldPrice, oldMin, oldPerUnit := operation_setting.Price, operation_setting.MinTopUp, common.QuotaPerUnit
 	operation_setting.Price, operation_setting.MinTopUp, common.QuotaPerUnit = 7.3, 1, 500000
 	t.Cleanup(func() {
-		payment.ComplianceConfirmed, payment.ComplianceTermsVersion = oldConfirmed, oldVersion
 		general.QuotaDisplayType = oldDisplay
 		operation_setting.Price, operation_setting.MinTopUp, common.QuotaPerUnit = oldPrice, oldMin, oldPerUnit
 	})
@@ -48,7 +44,7 @@ func TestAdtyBonusForNoTiersReturnsZero(t *testing.T) {
 }
 
 func TestAdtyQuoteWithoutBonusSetting(t *testing.T) {
-	confirmAdtyCompliance(t)
+	setAdtyQuoteDefaults(t)
 	setAdtyBonusRates(t, map[int]float64{})
 	quote, err := AdtyQuoteFor("default", 100, AdtyMethodUSDTTRC20, AdtyPromoInput{})
 	require.NoError(t, err)
@@ -78,7 +74,7 @@ func TestAdtyBonusForTiers(t *testing.T) {
 }
 
 func TestAdtyQuoteUSDT(t *testing.T) {
-	confirmAdtyCompliance(t)
+	setAdtyQuoteDefaults(t)
 	setAdtyBonusRates(t, testAdtyBonusRates)
 	SetAdtyMethodBonusForTest(t, "usdt", true, "0.025")
 	quote, err := AdtyQuoteFor("default", 100, AdtyMethodUSDTTRC20, AdtyPromoInput{})
@@ -91,7 +87,7 @@ func TestAdtyQuoteUSDT(t *testing.T) {
 }
 
 func TestAdtyQuoteEpay(t *testing.T) {
-	confirmAdtyCompliance(t)
+	setAdtyQuoteDefaults(t)
 	setAdtyBonusRates(t, testAdtyBonusRates)
 	SetAdtyMethodBonusForTest(t, AdtyMethodAlipay, true, "0.025")
 	quote, err := AdtyQuoteFor("default", 100, AdtyMethodAlipay, AdtyPromoInput{})
@@ -107,7 +103,7 @@ func TestAdtyQuoteEpay(t *testing.T) {
 }
 
 func TestAdtyQuoteRejections(t *testing.T) {
-	confirmAdtyCompliance(t)
+	setAdtyQuoteDefaults(t)
 	operation_setting.MinTopUp = 5
 	_, err := AdtyQuoteFor("default", 4, AdtyMethodUSDTTRC20, AdtyPromoInput{})
 	require.Error(t, err, "below the minimum")
@@ -119,14 +115,12 @@ func TestAdtyQuoteRejections(t *testing.T) {
 	require.Error(t, err, "tokens display mode")
 	operation_setting.GetGeneralSetting().QuotaDisplayType = operation_setting.QuotaDisplayTypeUSD
 
-	// 2026-11-01 取消了支付合规确认：没确认也能报价。
-	operation_setting.GetPaymentSetting().ComplianceConfirmed = false
 	_, err = AdtyQuoteFor("default", 10, AdtyMethodUSDTTRC20, AdtyPromoInput{})
-	require.NoError(t, err, "compliance confirmation is no longer required")
+	require.NoError(t, err, "USD display mode quotes again")
 }
 
 func TestAdtyQuoteUsesConfiguredRates(t *testing.T) {
-	confirmAdtyCompliance(t)
+	setAdtyQuoteDefaults(t)
 	setAdtyBonusRates(t, map[int]float64{10: 3})
 	SetAdtyMethodBonusForTest(t, "usdt", true, "0.03")
 	quote, err := AdtyQuoteFor("default", 10, AdtyMethodUSDTBEP20, AdtyPromoInput{})

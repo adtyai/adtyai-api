@@ -16,7 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import type { PromoCode, PromoCodeInput } from '@/features/adty-promo/api'
 import { api } from '@/lib/api'
 import { requireServerSuccess } from '@/lib/server-error-message'
 
@@ -487,47 +486,6 @@ export async function savePricing(
     proofHeaders(proof)
   )
   return requireServerSuccess(res.data).data
-}
-
-export async function getOwnerPromoCodes(
-  p: number
-): Promise<OwnerPage<PromoCode>> {
-  const res = await api.get<ApiResponse<OwnerPage<PromoCode>>>(
-    `${BASE}/promo-codes`,
-    { params: { p, page_size: OWNER_PAGE_SIZE } }
-  )
-  return requireServerSuccess(res.data).data
-}
-
-/** Proof: action `promo`, target = code id, or 0 when creating. */
-export async function saveOwnerPromoCode(
-  id: number | null,
-  input: PromoCodeInput,
-  proof: string
-): Promise<PromoCode> {
-  const res = id
-    ? await api.put<ApiResponse<PromoCode>>(
-        `${BASE}/promo-codes/${id}`,
-        input,
-        proofHeaders(proof)
-      )
-    : await api.post<ApiResponse<PromoCode>>(
-        `${BASE}/promo-codes`,
-        input,
-        proofHeaders(proof)
-      )
-  return requireServerSuccess(res.data).data
-}
-
-export async function deleteOwnerPromoCode(
-  id: number,
-  proof: string
-): Promise<void> {
-  const res = await api.delete<ApiResponse<unknown>>(
-    `${BASE}/promo-codes/${id}`,
-    proofHeaders(proof)
-  )
-  requireServerSuccess(res.data)
 }
 
 /**

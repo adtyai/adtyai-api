@@ -81,8 +81,10 @@ func OfficialRetiredObjects() []RetiredObject {
 			Title:         "签到奖励入口",
 			Status:        RetiredStatusItemizedC2Close,
 			RelatedIssues: []string{"ISS-R1-0062"},
-			KeepList:      "Historical checkins, checkin_quota, and refund-source protection stay. GET/POST /api/user/checkin remain official 403 rejection entries. Leftover i18n keys and historical option rows stay for upgrade compatibility. Historical funds are not rewritten or deleted.",
+			KeepList:      "Historical checkins, checkin_quota, and refund-source protection stay. GET/POST /api/user/checkin, the check-in setting, and the 403 rejection entries were deleted in the 2026-11 slimming and are listed in docs/adty/deleted-paths.txt. Leftover i18n keys and historical option rows stay for upgrade compatibility. Historical funds are not rewritten or deleted.",
 			VerifiedAbsent: []string{
+				"controller/checkin.go",
+				"setting/operation_setting/checkin_setting.go",
 				"web/src/features/profile/components/checkin-calendar-card.tsx",
 				"web/src/features/system-settings/general/checkin-settings-section.tsx",
 			},

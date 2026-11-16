@@ -95,7 +95,7 @@ func TestOwnerStaffLifecycleAndScope(t *testing.T) {
 	for _, suffix := range []string{"/topups", "/logs"} {
 		assert.Equal(t, http.StatusForbidden, f.siteJSON(t, http.MethodGet, path+suffix, "", login.AccessToken).Code)
 	}
-	for _, denied := range []string{"/api/adty/site/self", "/api/adty/site/staff", "/api/adty/site/earnings", "/api/adty/site/wallets", "/api/token/", "/api/user/topup/info", "/api/user/referral/profile"} {
+	for _, denied := range []string{"/api/adty/site/self", "/api/adty/site/staff", "/api/adty/site/earnings", "/api/adty/site/wallets", "/api/token/", "/api/adty/topup/info", "/api/user/referral/profile"} {
 		assert.Equal(t, http.StatusForbidden, f.siteJSON(t, http.MethodGet, denied, "", login.AccessToken).Code, denied)
 	}
 	staffPath := fmt.Sprintf("/api/adty/site/staff/%d", staff.Id)
@@ -419,10 +419,10 @@ func TestOwnerOrdersUseFrozenSiteScope(t *testing.T) {
 		{"order-main-site", 0, mine.Id, 13}, {"order-unknown-site", -1, mine.Id, 17},
 	} {
 		require.NoError(t, f.db.Create(&model.TopUp{TradeNo: fixture.trade, UserId: fixture.buyer, Status: common.TopUpStatusSuccess,
-			PaymentProvider: model.PaymentProviderStripe, Amount: fixture.face}).Error)
+			PaymentProvider: model.PaymentProviderAdtyEpay, Amount: fixture.face}).Error)
 		if fixture.siteID >= 0 {
 			require.NoError(t, f.db.Create(&model.AdtyTopupOrder{TradeNo: fixture.trade, UserId: fixture.buyer,
-				SiteId: fixture.siteID, Provider: model.PaymentProviderStripe, FaceUSD: decimal.NewFromInt(fixture.face)}).Error)
+				SiteId: fixture.siteID, Provider: model.PaymentProviderAdtyEpay, FaceUSD: decimal.NewFromInt(fixture.face)}).Error)
 		}
 	}
 	require.NoError(t, f.db.Model(&mine).Update("site_id", f.other.Id).Error)
@@ -481,8 +481,8 @@ func TestOrderDetailsRespectFrozenSiteAndRedactPrivateEvidence(t *testing.T) {
 		trade  string
 		siteID int
 	}{{"trace-mine", f.site.Id}, {"trace-other", f.other.Id}, {"trace-main", 0}} {
-		require.NoError(t, f.db.Create(&model.TopUp{TradeNo: order.trade, UserId: buyer.Id, PaymentProvider: model.PaymentProviderStripe, Status: common.TopUpStatusSuccess}).Error)
-		require.NoError(t, f.db.Create(&model.AdtyTopupOrder{TradeNo: order.trade, UserId: buyer.Id, SiteId: order.siteID, Provider: model.PaymentProviderStripe,
+		require.NoError(t, f.db.Create(&model.TopUp{TradeNo: order.trade, UserId: buyer.Id, PaymentProvider: model.PaymentProviderAdtyEpay, Status: common.TopUpStatusSuccess}).Error)
+		require.NoError(t, f.db.Create(&model.AdtyTopupOrder{TradeNo: order.trade, UserId: buyer.Id, SiteId: order.siteID, Provider: model.PaymentProviderAdtyEpay,
 			PaidSource: model.AdtyPaymentSourceManual, PaidTxHash: "private-manual-proof", ProviderPayload: "private-provider-payload", RefundReason: "private-refund-reason"}).Error)
 	}
 	require.NoError(t, f.db.Model(&buyer).Update("site_id", f.other.Id).Error)
@@ -642,12 +642,6 @@ func TestSensitiveOwnerActionsRequireVerify(t *testing.T) {
 	require.NoError(t, f.db.Model(&model.ReferralCommissionAccount{}).Where("user_id = ?", f.owner.Id).Update("available_amount", 100).Error)
 	domain := model.AdtySiteDomain{SiteId: f.site.Id, Hostname: "api.verify-brand.com", Status: "pending", CreatedAt: time.Now().Unix()}
 	require.NoError(t, f.db.Create(&domain).Error)
-	promo := model.AdtyPromoCode{Code: "VERIFY-EDIT", Kind: model.AdtyPromoKindPercent, Value: decimal.NewFromInt(1), SiteId: f.site.Id,
-		Funder: model.AdtyPromoFunderSiteOwner, Enabled: true, CreatedBy: f.owner.Id}
-	require.NoError(t, f.db.Create(&promo).Error)
-	doomed := model.AdtyPromoCode{Code: "VERIFY-DROP", Kind: model.AdtyPromoKindPercent, Value: decimal.NewFromInt(1), SiteId: f.site.Id,
-		Funder: model.AdtyPromoFunderSiteOwner, Enabled: true, CreatedBy: f.owner.Id}
-	require.NoError(t, f.db.Create(&doomed).Error)
 	// 没有 Resend 域名 id 的发件域名，删除时不调 Resend（测试不联网）。
 	require.NoError(t, f.db.Create(&model.AdtySiteSenderDomain{SiteId: f.site.Id, Domain: "mail.verify-brand.com", Status: model.AdtySenderDomainPending, CreatedAt: time.Now().Unix()}).Error)
 	cases := []struct {
@@ -690,20 +684,9 @@ func TestSensitiveOwnerActionsRequireVerify(t *testing.T) {
 	var prices int64
 	require.NoError(t, f.db.Model(&model.AdtySitePrice{}).Where("site_id = ?", f.site.Id).Count(&prices).Error)
 	assert.EqualValues(t, 2, prices)
-	retired := f.call(t, http.MethodPost, "/api/adty/site/promo-codes", `{"code":"verify-new","kind":"percent","value":"1","enabled":true}`, sessionProof(t, f.owner, service.AdtySiteOwnerActionPromo, 0))
-	assert.Contains(t, retired.Body.String(), "Promo codes are not available")
-	var created, dropped int64
-	require.NoError(t, f.db.Model(&model.AdtyPromoCode{}).Where("code = ?", "VERIFY-NEW").Count(&created).Error)
-	require.NoError(t, f.db.Model(&model.AdtyPromoCode{}).Where("id = ?", doomed.Id).Count(&dropped).Error)
-	assert.Zero(t, created, "a retired promo write must not create a code")
-	assert.EqualValues(t, 1, dropped, "a retired delete must not remove a historical code")
-	require.NoError(t, f.db.First(&promo, promo.Id).Error)
-	assert.True(t, promo.Enabled)
 	var sender model.AdtySiteSenderDomain
 	require.NoError(t, f.db.First(&sender, "site_id = ?", f.site.Id).Error)
 	assert.Equal(t, model.AdtySenderDomainDisabled, sender.Status)
-	foreign := f.call(t, http.MethodDelete, "/api/adty/site/promo-codes/999999", "", sessionProof(t, f.owner, service.AdtySiteOwnerActionPromo, 999999))
-	assert.Contains(t, foreign.Body.String(), "Promo codes are not available")
 
 	// 品牌和 SEO 开关不需要二次验证；品牌字段限制字数。
 	assert.Contains(t, f.call(t, http.MethodPut, "/api/adty/site/self", `{"brand":{"name":"Center AI"},"seo_index":true}`, "").Body.String(), `"success":true`)
@@ -912,8 +895,8 @@ func TestOwnerStatsAndEarnings(t *testing.T) {
 		{SiteId: f.other.Id, UserId: customer.Id, Day: today, Kind: model.AdtySiteEarningUsage, Revenue: decimal.NewFromInt(999), Earning: decimal.NewFromInt(999), Status: model.AdtySiteEarningPending},
 	}).Error)
 	now := time.Now().Unix()
-	require.NoError(t, f.db.Create(&model.TopUp{TradeNo: "stats-topup", UserId: customer.Id, Status: common.TopUpStatusSuccess, PaymentProvider: model.PaymentProviderStripe, Amount: 88}).Error)
-	require.NoError(t, f.db.Create(&model.AdtyTopupOrder{TradeNo: "stats-topup", UserId: customer.Id, SiteId: f.site.Id, Provider: model.PaymentProviderStripe, FaceUSD: decimal.NewFromInt(88), CreatedAt: now}).Error)
+	require.NoError(t, f.db.Create(&model.TopUp{TradeNo: "stats-topup", UserId: customer.Id, Status: common.TopUpStatusSuccess, PaymentProvider: model.PaymentProviderAdtyEpay, Amount: 88}).Error)
+	require.NoError(t, f.db.Create(&model.AdtyTopupOrder{TradeNo: "stats-topup", UserId: customer.Id, SiteId: f.site.Id, Provider: model.PaymentProviderAdtyEpay, FaceUSD: decimal.NewFromInt(88), CreatedAt: now}).Error)
 
 	statsResp := f.call(t, http.MethodGet, "/api/adty/site/stats", "", "")
 	require.Equal(t, http.StatusOK, statsResp.Code, statsResp.Body.String())
@@ -942,8 +925,8 @@ func TestOwnerExportStatsOmitsTopupUSD(t *testing.T) {
 		Revenue: decimal.NewFromInt(15), Earning: decimal.NewFromInt(6), Status: model.AdtySiteEarningPending,
 	}).Error)
 	now := time.Now().Unix()
-	require.NoError(t, f.db.Create(&model.TopUp{TradeNo: "export-stats-topup", UserId: customer.Id, Status: common.TopUpStatusSuccess, PaymentProvider: model.PaymentProviderStripe, Amount: 88}).Error)
-	require.NoError(t, f.db.Create(&model.AdtyTopupOrder{TradeNo: "export-stats-topup", UserId: customer.Id, SiteId: f.site.Id, Provider: model.PaymentProviderStripe, FaceUSD: decimal.NewFromInt(88), CreatedAt: now}).Error)
+	require.NoError(t, f.db.Create(&model.TopUp{TradeNo: "export-stats-topup", UserId: customer.Id, Status: common.TopUpStatusSuccess, PaymentProvider: model.PaymentProviderAdtyEpay, Amount: 88}).Error)
+	require.NoError(t, f.db.Create(&model.AdtyTopupOrder{TradeNo: "export-stats-topup", UserId: customer.Id, SiteId: f.site.Id, Provider: model.PaymentProviderAdtyEpay, FaceUSD: decimal.NewFromInt(88), CreatedAt: now}).Error)
 	resp := f.call(t, http.MethodGet, "/api/adty/site/export?kind=stats&from="+today+"&to="+today, "", "")
 	require.Equal(t, http.StatusOK, resp.Code, resp.Body.String())
 	body := resp.Body.String()
@@ -958,8 +941,8 @@ func TestOwnerExportStatsOmitsTopupUSD(t *testing.T) {
 func TestOwnerOrderTraceOmitsSiteWallet(t *testing.T) {
 	f := newOwnerFixture(t)
 	buyer := f.customer(t, f.site, "owner-trace-buyer", "owner-trace@example.com")
-	require.NoError(t, f.db.Create(&model.TopUp{TradeNo: "owner-trace-mine", UserId: buyer.Id, PaymentProvider: model.PaymentProviderStripe, Status: common.TopUpStatusSuccess}).Error)
-	require.NoError(t, f.db.Create(&model.AdtyTopupOrder{TradeNo: "owner-trace-mine", UserId: buyer.Id, SiteId: f.site.Id, Provider: model.PaymentProviderStripe, FaceUSD: decimal.NewFromInt(2)}).Error)
+	require.NoError(t, f.db.Create(&model.TopUp{TradeNo: "owner-trace-mine", UserId: buyer.Id, PaymentProvider: model.PaymentProviderAdtyEpay, Status: common.TopUpStatusSuccess}).Error)
+	require.NoError(t, f.db.Create(&model.AdtyTopupOrder{TradeNo: "owner-trace-mine", UserId: buyer.Id, SiteId: f.site.Id, Provider: model.PaymentProviderAdtyEpay, FaceUSD: decimal.NewFromInt(2)}).Error)
 	require.NoError(t, f.db.Create(&model.AdtySiteWalletLedger{SiteId: f.site.Id, WalletKind: "operating", Type: "adjustment", RefType: "topup", RefId: "owner-trace-mine", IdempotencyKey: "owner-hidden-operating", Delta: decimal.NewFromInt(-1)}).Error)
 	require.NoError(t, f.db.Create(&model.AdtySiteWalletLedger{SiteId: f.site.Id, WalletKind: "margin", Type: "commission_clawback", RefType: "site_invite", RefId: "owner-trace-mine", IdempotencyKey: "owner-hidden-margin", Delta: decimal.RequireFromString("0.5")}).Error)
 	require.NoError(t, f.db.Create(&model.AdtyBalanceLedger{UserId: buyer.Id, Type: "topup", RefType: "topup", RefId: "owner-trace-mine", DeltaQuota: 200}).Error)
@@ -1134,7 +1117,7 @@ func TestOwnerVoucherWritesRequireSecurityProof(t *testing.T) {
 	const issueBody = `{"purpose":"site_customer","amount_usd":"10.50","reason":"customer"}`
 	assert.Contains(t, f.call(t, http.MethodPost, issuePath, issueBody, "").Body.String(), "SECURITY_PROOF_REQUIRED")
 	assert.Contains(t, f.call(t, http.MethodPost, issuePath, issueBody, sessionProof(t, f.owner, service.AdtySiteOwnerActionVoucherIssue, f.other.Id)).Body.String(), "SECURITY_PROOF_CONTEXT_MISMATCH")
-	assert.Contains(t, f.call(t, http.MethodPost, issuePath, issueBody, sessionProof(t, f.owner, service.AdtySiteOwnerActionPromo, f.site.Id)).Body.String(), "SECURITY_PROOF_CONTEXT_MISMATCH")
+	assert.Contains(t, f.call(t, http.MethodPost, issuePath, issueBody, sessionProof(t, f.owner, service.AdtySiteOwnerActionTrial, f.site.Id)).Body.String(), "SECURITY_PROOF_CONTEXT_MISMATCH")
 
 	issued := f.call(t, http.MethodPost, issuePath, issueBody, sessionProof(t, f.owner, service.AdtySiteOwnerActionVoucherIssue, f.site.Id))
 	require.Contains(t, issued.Body.String(), `"success":true`, issued.Body.String())

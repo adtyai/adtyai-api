@@ -5,13 +5,13 @@
 几个通用的说明：
 
 - **额度和美元**：余额沿用上游的额度整数，1 美元 = 500000 额度。这个尺度固定，后台保存 `QuotaPerUnit` 时只接受 500000，已存的其他值加载时不生效。下文的算例都用美元写，括号里是额度。
-- **以约定 I 为准**：站长不可更换。优惠码报价和写入已退役，历史行保留。正式语言只有简体中文和英文。下文若仍写交接、优惠码可用或八种正式语言，那是旧说明，不能当成当前开发规则。当前边界见 [conventions.md](conventions.md) 的约定 I。
+- **以约定 I 为准**：站长不可更换。优惠码已退役（报价拒绝带码，管理接口和面板已删除），历史行保留。正式语言只有简体中文和英文。下文若仍写交接、优惠码可用或八种正式语言，那是旧说明，不能当成当前开发规则。当前边界见 [conventions.md](conventions.md) 的约定 I。
 - **后台设置**：我们的设置都存在 options 表里，键是「模块名.键」，例如 `adty_topup_setting.bonus_rates`。和钱有关的参数没有内置默认值，没设之前对应功能不开（约定 I）。
 - **后台权限**：后台接口按「区域·动作」授权，见「分组和后台权限」一节。下文写「需要 财务·退款」之类，指这个权限。
 - **密钥**：存进 options 的密钥，键名以 `Token`、`Key`、`Secret` 等结尾，`GET /api/option/` 不会返回它们；后台只能填新值，不显示旧值。
 - **主节点**：定时任务（结算、补查、同步、关站执行等）只在主节点跑。
 - **菜单折叠**：有子项的父菜单默认折叠，当前路由不会自动展开；点击文字、箭头或键盘操作切换，子项继续标记当前页。复用现有 Sidebar/Collapsible；真实组件回归覆盖通用菜单，生产浏览器覆盖桌面与移动对话预设及无业务写请求。
-- **签到入口退役**：个人页和计费设置不再展示签到，也不再发出签到请求；旧签到设置书签回到额度设置。历史签到额度、记录及退款来源保护保留，旧接口继续返回 403。
+- **签到已删除**：签到接口、签到设置和前端入口都已删除（2026-11-16）；旧签到设置书签回到额度设置。历史签到额度、记录及退款来源保护保留。
 - **公告已读角标（N-02）**：登录账号的 Notice 与 announcements 回执保存在服务端，按账号和当前 Host 隔离，同账号其他设备或标签页可在重新读取后同步；按公告内容版本计算，编辑同 ID 公告会重新计为未读。匿名访客仍用本地回执，历史匿名数据不会迁入登录账号。此项只补已读链，不包含 N-01 定向发布或 N-04 业务待办。
 - **定向通知（N-01，部分范围）**：Root 在系统设置→内容→公告的“定向通知”发布平台公告、系统通知、维护通知和经营规则调整；接收范围为全部用户、全部分站、指定单个分站。站长在站长中心→本站设置的“本站公告”管理自己站点的客户公告和经营说明，不能修改 Root 的通知。指定/全部分站的收件同时校验当前 Host 与 SQL 账号归属或站长身份；“全部用户”是 Root 明确授权全平台可见的范围。通知中心 Timeline 展示标题、发布人、类型、接收对象、时间及可选关联业务说明；每页 20 条，支持加载更多，角标包含后续页面未读数。登录账号才能收到新发布通知，匿名旧公告配置保持原有行为，旧公告开关不控制新发布通知。编辑会产生新的未读版本；版本冲突须重新读取，撤回后不再展示但保留发布及已读历史。表为 `adty_notification_publications`，管理接口分别为 `/api/adty/admin/notifications`（Root，PAT `option:read/write`）与 `/api/adty/site/notifications`（当前站长，PAT `wallet:read/write`）。指定业务范围的收件规则仍待确认，关联说明不构成收件筛选；员工授权与真实待办、外部邮件/短信/推送未由本批实现，N-01 不因本批部分范围关闭。
 
@@ -19,11 +19,11 @@
 
 ## 充值和加赠
 
-**做什么**：用户在钱包页（`/wallet`）选面额、选已配置的支付方式充值，支持 BEpusdt、易支付、Stripe、Creem、Waffo 和 Waffo Pancake。加赠按支付方式配置：主站由 Root 设每种方式的比例；分站要先由 Root 逐站授权支付方式，站长再在授权范围内设本站比例。优惠码已退役，报价和写入一律拒绝；能主动加额度的只有充值额度兑换码（`adty_voucher`）。
+**做什么**：用户在钱包页（`/wallet`）选面额、选已配置的支付方式充值，支持 BEpusdt 和易支付。加赠按支付方式配置：主站由 Root 设每种方式的比例；分站要先由 Root 逐站授权支付方式，站长再在授权范围内设本站比例。优惠码已退役，报价和写入一律拒绝；能主动加额度的只有充值额度兑换码（`adty_voucher`）。
 
 **规则**：
 
-- **面额**：普通自选面额为正整数美元，不低于最低充值额 `MinTopUp`（默认 1）；Creem 使用商品配置的固定美元面额，可以有小数。钱包总额不能超过 2^53 − 1 额度，下单时会检查。易支付还受通道的单笔和每日限额限制。
+- **面额**：普通自选面额为正整数美元，不低于最低充值额 `MinTopUp`（默认 1）。钱包总额不能超过 2^53 − 1 额度，下单时会检查。易支付还受通道的单笔和每日限额限制。
 - **加赠按支付方式**：三个配置键 `adty_topup_setting.method_bonus`（主站规则）、`adty_topup_setting.site_method_auth`（Root 对分站的逐站授权）、`adty_topup_setting.site_method_bonus`（站长在本站授权范围内的规则）。每条规则是 `{"enabled": bool, "rate": "0.025"}`，`rate` 是 **0–1 的小数比例**（0.025 = 2.5%），不是百分数，也不是金额档位；没有规则或 `enabled=false` 就不送（`setting/adty_setting/bonus_method.go:20-23,186-195`）。支付方式规范化成 `alipay`、`wxpay`、`usdt`，USDT 的 TRC20 / BEP20 / Polygon / X Layer **共用一条 `usdt` 规则**（`service/adty_method_bonus.go:15-26`）。
 - **金额档位已退役**：`adty_topup_setting.bonus_rates` 只剩历史值，结构体注释写明「已退役的金额档位，不参与新订单赠金」（`setting/adty_setting/topup.go:13`）。保存档位的 `SaveAdtySiteBonusRates` 一律返回 `ErrAdtyAmountTierRetired`（`service/adty_site_earning.go:370-376`）。旧档位唯一的用途是算分站加赠上限里的「主站同档比例」。
 - **Root 授权流程**：主站比例 Root 用 `PUT /api/adty/admin/bonus-methods {method, enabled, rate}`。分站先由 Root 调 `PUT /api/adty/admin/sites/:id/bonus-methods {method, allowed}` 逐站授权；站长再调 `PUT /api/adty/site/bonus-methods {method, enabled, rate}` 设本站规则。未授权的支付方式站长存不进去（`MergeSiteMethodBonus` 直接拒绝），也不会付赠金（`setting/adty_setting/bonus_method.go:103-132`、`service/adty_method_bonus.go:47-55`）。
@@ -38,7 +38,7 @@
   - 返佣只按面额算，不含任何加赠。
 - **保障冻结与待履约**：下单/入账时按「站长出资的加赠」从收益钱包冻结，不够再用 Root 授权的保证金（流水 `gift_reserve`）；取消、过期、替换时按原路释放（`gift_release`）；客户消费赠金时按比例释放（`gift_spend`）（`service/adty_method_bonus.go:127-246`、`service/adty_gift_fulfillment.go:534-616`）。如果客户在订单取消或过期之后才付款、而站长当时保障不足：**本金照常入账，赠金记成「待履约」**（`adty_gift_fulfillments`，状态 `pending`），不可消费；站长把收益转进保证金（`POST /api/adty/site/wallets/earning-to-margin`）后，系统立即重取保障并补发（`service/adty_gift_fulfillment.go:340-472`、`service/adty_site_finance.go:420-425`）。整笔退款会把 pending 取消。
 - **分站客户**：只用 Root 授权过的支付方式下站长自己的规则；站长没设或没开就不送，不存在「回落到主站规则」。
-- **优惠码**：已退役。报价带码直接返回 `ErrAdtyPromoRetired`（`service/adty_topup_quote.go:143-146`），后台和站长码的写入接口一律拒绝，只剩 GET 列表。历史订单和核销行保留、不重算。要主动加额度只能用充值额度兑换码。
+- **优惠码**：已退役。报价带码直接返回 `ErrAdtyPromoRetired`（`service/adty_topup_quote.go`）；平台和站长的优惠码管理接口及面板已删除（2026-11-16）。历史订单和核销行保留、不重算。要主动加额度只能用充值额度兑换码。
 
 **算例（主站，`method_bonus` = `usdt` 2.5%、`alipay` 1%）**：
 
@@ -53,16 +53,14 @@
 - 系统设置 → 计费 → 支付（只有超级管理员）：人民币单价 `Price`、最低充值 `MinTopUp`、金额按钮、各支付方式加赠、回调地址 `CustomCallbackAddress`。
 - 分站管理 → 站点明细：Root 逐站勾选可加赠的支付方式。
 - 站长中心 → 加赠（`/site-owner/bonus`）：已授权方式的开关和比例。
-- 优惠码页面只读，只列历史行。
 
-**默认**：没有任何支付方式规则，不送加赠。2026-11-01 起不再需要「支付合规确认」，支付默认就能用（见 deleted-features.md）。
+**默认**：没有任何支付方式规则，不送加赠。「支付合规确认」2026-11-01 取消，相关接口和设置 2026-11-16 删除，支付默认就能用（见 deleted-features.md）。
 
 **表和接口**：
 
 - 表：`top_ups`（上游充值记录，`Amount` 记美元面额、`Money` 记应付）、`adty_topup_orders`（面额、加赠、入账额度、站点、赠金保障来源与待履约状态）、`adty_gift_fulfillments`；`adty_promo_codes`、`adty_promo_redemptions` 只保留历史；兑换码用 `adty_vouchers`。
 - 用户：`GET /api/adty/topup/info`、`POST /api/adty/topup/quote`、`GET /api/adty/topup/orders/:trade_no`、`POST /api/adty/topup/orders/:trade_no/cancel`、`GET /api/adty/topup/pending`、`GET /api/adty/topup/self`。
 - 加赠配置：`PUT /api/adty/admin/bonus-methods`、`PUT /api/adty/admin/sites/:id/bonus-methods`（Root，PAT `option:write`）、`PUT /api/adty/site/bonus-methods`（站长，PAT `wallet:write`）。
-- 优惠码只剩 `GET /api/adty/admin/promo-codes`（支付·查看）和 `GET /api/adty/site/promo-codes`（站长，PAT `wallet:read`）；POST、PUT、DELETE 全部返回退役错误。
 
 **限制**：
 
@@ -100,13 +98,13 @@
 
 **充值对账**（`/recharge-audit`）：订单列表、汇总、对不上的回调（可以补入账或标已处理）、手动补单（必须填凭证和备注，不核对金额）、退款。
 
-**支付商与财务动作（M-04、FIN-F-02）**：筛选和订单动作取自后端注册服务能力，包含 BEpusdt、Epay、Stripe、Creem、Waffo、Waffo Pancake。支持的未入账订单可凭证补单，已入账订单可做账务退款，实际退钱仍需线下完成。六个服务均可通过 `POST /api/adty/admin/topup/:trade_no/query` 主动补查；该操作可能入账，必须具备「财务·手动补单」权限及对应 PAT scope。查询核对保存的订单事实并复用统一入账事务，重复请求不重复入账；未确认付款和查询失败分别显示，失败可以重试。缺扩展记录、替换、已退款等订单不显示不适用的动作。Epay 仅使用 HTTPS 查单，禁止重定向转发商户密钥；接口和审计不暴露原始支付查询错误。
+**支付商与财务动作（M-04、FIN-F-02）**：筛选和订单动作取自后端注册服务能力，包含 BEpusdt 和 Epay。支持的未入账订单可凭证补单，已入账订单可做账务退款，实际退钱仍需线下完成。两个服务均可通过 `POST /api/adty/admin/topup/:trade_no/query` 主动补查；该操作可能入账，必须具备「财务·手动补单」权限及对应 PAT scope。查询核对保存的订单事实并复用统一入账事务，重复请求不重复入账；未确认付款和查询失败分别显示，失败可以重试。缺扩展记录、替换、已退款等订单不显示不适用的动作。Epay 仅使用 HTTPS 查单，禁止重定向转发商户密钥；接口和审计不暴露原始支付查询错误。
 
 BEpusdt 使用官方 `POST /api/v1/pay/info`，只信任与冻结付款链接同源的 HTTPS 网关，不跟随重定向，也不向公开查询接口发送商户密钥。只有成功状态且本地订单号、网关单号、链、收款地址、USD 面额和应付 USDT 完全匹配才入账；确认中、过期、取消和失败不算成功。缺少原始网关事实或网关更换时保留人工对账，不猜测到账。查询响应没有原始链上 hash，记录来源为 query，不伪造交易 hash。停用新收款后仍能对原订单补查。后台复用每分钟最多20单、创建至少120秒、最近七天及至少60秒查询间隔的恢复任务；并发回调和补查共用唯一入账流水。
 
 **表和接口**：`adty_topup_orders`、`top_ups`、`adty_epay_channels`、`adty_epay_channel_methods`、`adty_payment_orphan_events`。下单 `POST /api/user/bepusdt/pay`、`POST /api/adty/epay/pay`；回调 `POST /api/user/bepusdt/notify`、`GET`/`POST /api/user/epay/notify/:channelId`；通道 `GET /api/adty/admin/epay/channels`、`POST /api/adty/admin/epay/channels/:id/status`、`POST /api/adty/admin/epay/channels/:id/test`（新增、编辑、删除 `POST /api/adty/admin/epay/channels`、`PUT`/`DELETE /api/adty/admin/epay/channels/:id` 只有超级管理员）；对账 `GET /api/user/admin/finance/recharge-audit`、`GET /api/user/admin/finance/payment-orphans`，补单 `POST /api/adty/admin/topup/:trade_no/complete`；付完跳回 `GET /pay/result/:token`。
 
-**补查边界**：易支付补查发现已付款但方式不符或入账失败，会写入人工审核；易支付订单过期以后不再补查。Stripe、Creem、Waffo、Waffo Pancake 对超过 120 秒且在七天恢复窗口内的待付、失败、过期、取消订单执行认证查询，每单至少间隔 60 秒，每轮最多 20 单；核对冻结的商户、环境、商品、订单、币种和金额后，调用相同入账事务。更早的订单通过支付商重送或有凭证的手动补单处理。存在尚未排除的撤销事件时，查询和成功回调都不能自动补入账。
+**补查边界**：易支付补查发现已付款但方式不符或入账失败，会写入人工审核；易支付订单过期以后不再补查。BEpusdt 对超过 120 秒且在七天恢复窗口内的待付、失败、过期、取消订单自动执行认证查询，每单至少间隔 60 秒，每轮最多 20 单；核对下单时冻结的 trade_id、收款地址和金额后，调用相同入账事务。更早的订单通过支付商重送或有凭证的手动补单处理。存在尚未排除的撤销事件时，查询和成功回调都不能自动补入账。
 
 **外部退款、撤销和拒付审核**：可信通知进入待核对事件，管理员填写原订单、支付商凭证、备注、累计实际撤销金额和币种。争议打开不等于已发生退款，可以先以 0 金额记录待核对事实。部分撤销保持待核对，保存审核不扣钱包、不自动触发整单退款。全额撤销以原单实际支付金额和币种为准；先通过原订单现有退款操作扣回可回收额度，再凭同单、同用户的真实退款流水结案。审核快照保存实际扣回额度、本金额度、按既定规则可覆盖的现金及未覆盖差额；差额只表示财务暴露，不创建负钱包或客户债务，也不与其他累计通知重复相加。从未入账的订单可在锁内核实后以「从未入账」结案，仍拦截迟到自动入账。忽略事件须说明它属于其他订单或撤销已取消，并提供凭证；该动作会解除此事件的入账拦截。结案事实不可改写，相同请求重放返回原审核，冲突请求被拒绝。
 
@@ -481,7 +479,7 @@ BEpusdt 使用官方 `POST /api/v1/pay/info`，只信任与冻结付款链接同
 
 按最新产品范围，独立营销中心、营销群发和自动邮件、注册营销同意、个人营销偏好、注册来源采集及统计已删除。`/marketing` 无页面，旧 `/api/adty/marketing` 与 `/api/adty/admin/marketing` 命名空间返回 JSON 404；插件及外置前端不能接管这些入口。旧营销权限不再列入权限目录。
 
-**付费充值优惠码已退役**：报价只要带码就返回 `ErrAdtyPromoRetired`（`service/adty_topup_quote.go:143-146`）；平台码和站长码的 POST/PUT/DELETE 全部走 `refuseAdtyPromoWrite`，写一条失败审计后返回退役错误（`controller/adty_promo.go:66-69,138-149,209-223`）。历史 `adty_promo_codes`、`adty_promo_redemptions` 行保留，不重算，也不影响新订单。现在只剩两个只读列表：`GET /api/adty/admin/promo-codes`（支付·查看，Root 页面不再提供新建入口）和 `GET /api/adty/site/promo-codes`（站长，PAT `wallet:read`）。历史开关 `adty_marketing_setting.promo_enabled` 保留原值，只影响历史行展示，不再参与报价或核销。历史优惠码审计事件标识保留。
+**付费充值优惠码已退役**：报价只要带码就返回 `ErrAdtyPromoRetired`（`service/adty_topup_quote.go`）。平台和站长的优惠码管理接口（列表、新建、修改、删除）、两个管理面板、只给它们用的站长二次验证动作 `promo`，以及没有任何读取方的开关 `adty_marketing_setting.promo_enabled` 已于 2026-11-16 删除（见 deleted-features.md）。历史 `adty_promo_codes`、`adty_promo_redemptions` 行保留，不重算，也不影响新订单。历史优惠码审计事件标识保留。
 
 **现在能主动加额度的只有充值额度兑换码**（`adty_voucher`）：Root 设主站发行额度后，发主站用户本金码或指定分站的保证金码；站长用本站收益或 Root 授权的保证金冻结后，发本站客户码或本人消费码。兑换成功写正式订单、余额流水（`voucher`）和资金批次，**不加赠、不计邀请佣金**；完整码只在生成时返回一次，未兑换的可以冻结或取消，取消才释放来源。关站后未兑换的客户码由主站承接原受众，不会变成主站通用码。详见下面的「充值额度兑换码」。
 
@@ -497,7 +495,7 @@ BEpusdt 使用官方 `POST /api/v1/pay/info`，只信任与冻结付款链接同
 
 **网页客服（tawk.to）**：旧挂件配置仍可能存在，但不是统一客服中心。当前客服入口是站内工单；附件只允许图片。不要把 tawk.to 当成工单；Telegram 只做绑定和通知，不做登录。
 
-**服务状态页**：不建设公开平台服务状态页。已有 `/status` 或 Uptime Kuma 页面不得作为正式产品承诺，也不要在导航或文档里引导用户使用。
+**服务状态页**：不建设公开平台服务状态页。前端原有的 `/status` 页面已删除（2026-11-16），维护页也不再链接它；`/api/uptime/status` 只给后台仪表盘用，不作为正式产品承诺。
 
 **多语言**：正式语言只有简体中文和英文。浏览器偏好为中文时用简体中文，否则用英文；手动选择优先。`zh-TW`、`fr`、`ja`、`ko`、`ru`、`vi` 的语言包和文档站内容已删除，仓库只保留两种正式语言；带这些语言码的请求和旧偏好按中文变体归简体中文、其余归英文处理。固定通知使用中文在前、英文在后的同一条模板。
 
@@ -570,7 +568,6 @@ Root 和获授用户读取权限的管理员在统一用户列表、搜索及详
 | `adty-logo-480.png`、`adty-logo-960.png` | 480×118、960×235 | 按宽度缩放的导出 |
 | `adty-mark.png` | 364×256 | 单独的图形标记（不带字标） |
 | `adty-og.png` | 1200×630 | 社交分享图，SEO 设置 `og_image` 的默认值 |
-| `pay-card.png`、`pay-apple.png`、`pay-google.png`、`waffo-logo-*.svg` | 144×96 / 216×144 等 | 上游 Waffo 支付的图标，没用到，照上游保留 |
 
 2026-11-15 的 `2df2e4c` 删掉了 `favicon.svg`、`safari-pinned-tab.svg`、`adty-logo.svg`，`index.html` 也不再引用它们。现有 PNG 是从新字标导出的位图，不再提供 SVG。
 

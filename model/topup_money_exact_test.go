@@ -33,8 +33,8 @@ func TestTopUpMoneyExactColumnPreservesLegacyRowsAndExactFace(t *testing.T) {
 
 	legacy := TopUp{
 		UserId: 7, Amount: 5_000_000, Money: 10.5,
-		TradeNo: "legacy-float-money", PaymentMethod: PaymentMethodStripe,
-		PaymentProvider: PaymentProviderStripe, CreateTime: 100, CompleteTime: 200,
+		TradeNo: "legacy-float-money", PaymentMethod: "alipay",
+		PaymentProvider: PaymentProviderAdtyEpay, CreateTime: 100, CompleteTime: 200,
 		Status: common.TopUpStatusSuccess,
 	}
 	require.NoError(t, db.Create(&legacyTopUpMoneyColumn{
@@ -82,7 +82,7 @@ func TestTopUpMoneyExactColumnPreservesLegacyRowsAndExactFace(t *testing.T) {
 	require.NoError(t, db.Raw(`SELECT money_exact::text FROM top_ups WHERE trade_no = ?`, row.TradeNo).Scan(&stored).Error)
 	assert.True(t, decimal.RequireFromString(stored).Equal(inexact))
 
-	listed, total, err := GetUserTopUps(row.UserId, &common.PageInfo{Page: 1, PageSize: 10})
+	listed, total, err := SearchAllTopUps(row.TradeNo, &common.PageInfo{Page: 1, PageSize: 10})
 	require.NoError(t, err)
 	require.EqualValues(t, 1, total)
 	require.Len(t, listed, 1)

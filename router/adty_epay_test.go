@@ -85,7 +85,6 @@ func epayOrders(t *testing.T, f *adtyGuardFixture, userID int) map[string]string
 
 func TestAdtyEpayPay(t *testing.T) {
 	f := newAdtyGuardFixture(t)
-	confirmRouterCompliance(t)
 	setRouterBonusRates(t)
 	shortEpayTimeouts(t)
 
@@ -211,7 +210,6 @@ func epayCallback(t *testing.T, f *adtyGuardFixture, channelID int, key string, 
 
 func TestAdtyEpayNotify(t *testing.T) {
 	f := newAdtyGuardFixture(t)
-	confirmRouterCompliance(t)
 	setRouterBonusRates(t)
 	gw := newFakeEpay(t, epayQR)
 	one := seedRouterEpayChannel(t, "one", gw.server.URL, model.AdtyEpayOrderModeAPI, 9)

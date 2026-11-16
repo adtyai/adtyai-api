@@ -49,7 +49,6 @@ const info: AdtyTopupInfo = {
   usdt_order_minutes: 15,
   epay_order_minutes: 10,
   pending: null,
-  compliance_confirmed: true,
 }
 
 function wrapper(props: { children: ReactNode }) {
@@ -243,21 +242,6 @@ describe('AdtyRechargeCard', () => {
       { wrapper }
     )
     expect(screen.getByRole('button', { name: /X Layer/ })).toBeDisabled()
-  })
-
-  it('opens top-up without a compliance confirmation', () => {
-    // adtyai dropped the payment compliance step on 2026-11-01.
-    render(
-      <AdtyRechargeCard
-        info={{ ...info, compliance_confirmed: false }}
-        loading={false}
-        paying={false}
-        onPay={() => {}}
-      />,
-      { wrapper }
-    )
-    expect(screen.queryByText('Top-up is not open yet')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Pay now' })).toBeInTheDocument()
   })
 })
 

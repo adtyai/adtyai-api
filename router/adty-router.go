@@ -35,7 +35,6 @@ func SetAdtyRouter(apiRouter *gin.RouterGroup) {
 	registerAdtyOfficialPriceRoutes(apiRouter)
 	registerAdtySiteRoutes(apiRouter)
 	registerAdtyLegalRoutes(apiRouter)
-	registerAdtyPromoRoutes(apiRouter)
 	registerAdtyResellerRoutes(apiRouter)
 	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/adty/notifications", "scope", "profile:read")
 	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/notifications/read", "scope", "profile:write")
@@ -121,7 +120,7 @@ func registerAdtyWorkspaceRoutes(apiRouter *gin.RouterGroup) {
 	apiRouter.POST("/adty/teams/:id/close", middleware.UserAuth(), controller.PostAdtyTeamClose)
 	apiRouter.POST("/adty/teams/:id/profile", middleware.UserAuth(), controller.PostAdtyTeamProfile)
 	// 团队充值下单同样是建单入口：每张单都会真实打一次支付网关，且 trade_no 由客户端的
-	// Idempotency-Key 决定，换一个 key 就是一张新单。必须和 hosted/pay、epay/pay 一样按用户限速
+	// Idempotency-Key 决定，换一个 key 就是一张新单。必须和 epay/pay 一样按用户限速
 	// （ISS-R4-0127）。
 	apiRouter.POST("/adty/teams/:id/topups", middleware.UserAuth(), middleware.UserCriticalRateLimit("CT:pay-team"), controller.PostAdtyTeamTopup)
 	apiRouter.GET("/adty/teams/:id/topups", middleware.UserAuth(), controller.GetAdtyTeamTopups)
@@ -226,7 +225,6 @@ func registerAdtyTopUpRoutes(apiRouter *gin.RouterGroup) {
 	apiRouter.POST("/adty/admin/billing/price-snapshot-backfill", middleware.RootAuth(), controller.PostAdtyPriceSnapshotBackfill)
 	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/adty/topup/info", "scope", "wallet:read")
 	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/topup/quote", "scope", "wallet:read")
-	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/topup/hosted/pay", "scope", "wallet:write")
 	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/adty/topup/orders/:trade_no", "scope", "wallet:read")
 	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/topup/orders/:trade_no/cancel", "scope", "wallet:write")
 	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/adty/topup/pending", "scope", "wallet:read")
@@ -242,7 +240,6 @@ func registerAdtyTopUpRoutes(apiRouter *gin.RouterGroup) {
 	topup := apiRouter.Group("/adty/topup", middleware.UserAuth(), middleware.AdtyRequireCurrentSiteTerms())
 	topup.GET("/info", controller.GetAdtyTopUpInfo)
 	topup.POST("/quote", middleware.PromoCodeUserRateLimit("CT:promo-quote"), controller.PostAdtyTopUpQuote)
-	topup.POST("/hosted/pay", middleware.UserCriticalRateLimit("CT:pay-hosted"), controller.PostAdtyHostedPayment)
 	topup.GET("/orders/:trade_no", controller.GetAdtyTopUpOrder)
 	topup.POST("/orders/:trade_no/cancel", middleware.CriticalRateLimit(), controller.CancelAdtyTopUpOrder)
 	topup.GET("/pending", controller.GetAdtyTopUpPending)
@@ -410,22 +407,6 @@ func registerAdtyLegalRoutes(apiRouter *gin.RouterGroup) {
 	apiRouter.GET("/adty/legal/:doc", controller.GetAdtyLegal)
 }
 
-// registerAdtyPromoRoutes keeps paid top-up promo codes separate from retired marketing.
-func registerAdtyPromoRoutes(apiRouter *gin.RouterGroup) {
-	admin := apiRouter.Group("/adty/admin/promo-codes", middleware.AdminAuth())
-	handlePermissionRoute(admin, http.MethodGet, "", authz.AdtyPaymentRead, controller.GetAdtyPromoCodes)
-	for _, route := range []struct {
-		method, path string
-		handler      gin.HandlerFunc
-	}{
-		{http.MethodPost, "", controller.PostAdtyPromoCode},
-		{http.MethodPut, "/:id", controller.PutAdtyPromoCode},
-	} {
-		middleware.DeclareAdtyAccessTokenRoute(route.method, "/api/adty/admin/promo-codes"+route.path, "scope", "option:write")
-		admin.Handle(route.method, route.path, middleware.RootAuth(), route.handler)
-	}
-}
-
 // registerAdtyResellerRoutes 挂站长分站（P11）。后台接口按「分站」权限注册（任务 11.9）；
 // 站长侧接口读 wallet:read、写 wallet:write（任务 11.1、11.6）。
 func registerAdtyResellerRoutes(apiRouter *gin.RouterGroup) {
@@ -443,11 +424,6 @@ func registerAdtyResellerRoutes(apiRouter *gin.RouterGroup) {
 		{http.MethodGet, "/domains", "wallet:read", []gin.HandlerFunc{controller.GetAdtySiteDomains}},
 		{http.MethodPost, "/domains", "wallet:write", []gin.HandlerFunc{middleware.UserCriticalRateLimit("CT:site-domain"), controller.AddAdtySiteDomain}},
 		{http.MethodDelete, "/domains/:id", "wallet:write", []gin.HandlerFunc{controller.RemoveAdtySiteDomainWithProof}},
-		// 站长出资的优惠码（任务 12.4）
-		{http.MethodGet, "/promo-codes", "wallet:read", []gin.HandlerFunc{controller.GetAdtySitePromoCodes}},
-		{http.MethodPost, "/promo-codes", "wallet:write", []gin.HandlerFunc{controller.PostAdtySitePromoCode}},
-		{http.MethodPut, "/promo-codes/:id", "wallet:write", []gin.HandlerFunc{controller.PutAdtySitePromoCode}},
-		{http.MethodDelete, "/promo-codes/:id", "wallet:write", []gin.HandlerFunc{controller.DeleteAdtySitePromoCode}},
 		// 站长中心（任务 11.6、11.7）。接受协议不走站长中心的协议门。
 		{http.MethodPost, "/terms/accept", "profile:write", []gin.HandlerFunc{controller.AcceptAdtySiteTerms}},
 		{http.MethodGet, "/self", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerSite}},

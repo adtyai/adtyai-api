@@ -44,11 +44,9 @@ func (w *auditResponseWriter) WriteString(s string) (int, error) {
 var auditRouteActions = map[string]string{
 	"POST /api/adty/admin/topup/:trade_no/query": "adty.topup.query",
 	// 用户管理
-	"POST /api/user/topup/complete":      "user.topup_complete",
 	"DELETE /api/user/:id/reset_passkey": "user.reset_passkey",
 
 	// 系统设置（root）
-	"POST /api/option/payment_compliance":       "option.payment_compliance",
 	"POST /api/option/rest_model_ratio":         "option.reset_ratio",
 	"DELETE /api/option/channel_affinity_cache": "option.clear_affinity_cache",
 

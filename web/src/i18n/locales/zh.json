@@ -9116,7 +9116,12 @@
     "Translate": "翻译",
     "Title is required": "请填写标题",
     "Content is required": "请填写内容",
-    "Enter the Telegram channel": "请填写 Telegram 频道"
+    "Enter the Telegram channel": "请填写 Telegram 频道",
+    "Configured as PayMethods JSON. The type value is sent to Epay as the type parameter.": "以 PayMethods JSON 保存，type 的值会作为 type 参数发给易支付。",
+    "Sent to Epay as the type parameter, for example alipay or wxpay.": "作为 type 参数发给易支付，例如 alipay、wxpay。",
+    "No icon": "不显示图标",
+    "Card": "银行卡",
+    "Icon shown next to this payment method.": "显示在支付方式名称旁边的图标。"
 },
   "Targeted notifications": "定向通知",
   "Site announcements": "本站公告",

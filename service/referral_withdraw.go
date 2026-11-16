@@ -257,8 +257,7 @@ func (s *ReferralService) CreateWithdrawal(input ReferralWithdrawalCreateInput) 
 			// 从而被记为 fund_batch_gap，对账口径从此不可用。source 用 ledger 的幂等键。
 			//
 			// 站点必须一起写（ISS-R4-0047）：这条批次背书的是**用户的**本金，归属跟着
-			// 用户当前所属站走，和 creditTopUpQuotaWithPrincipalBatch (model/topup.go)
-			// 以及用户调额的批次写入同一条口径。
+			// 用户当前所属站走，和用户调额的批次写入同一条口径。
 			//
 			// 两处修复各自都对，合起来才不一致：0086（w6）给这条路加了批次写入时
 			// 还没有 site 列；0047（w23）给对偶路径加了 site，但他没回来改这里。

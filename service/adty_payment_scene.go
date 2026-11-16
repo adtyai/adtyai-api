@@ -42,7 +42,7 @@ func GetAdtyPaymentScenes() (*AdtyPaymentScenes, error) {
 	if err == nil {
 		view.ProviderOptions = operableAdtyPaymentCapabilities()
 		for _, provider := range AdtyPaymentProviders() {
-			if !model.IsOperableAdtyPaymentProvider(provider.Name()) {
+			if !model.IsAdtyPaymentProvider(provider.Name()) {
 				continue
 			}
 			view.MethodOptions = append(view.MethodOptions, provider.Methods()...)
@@ -84,9 +84,6 @@ func SaveAdtyPaymentScenes(actorID int, expected int64, scenes []model.AdtyPayme
 			}
 		}
 		for _, provider := range scene.Providers {
-			if model.IsRetiredHostedPaymentProvider(provider) {
-				return nil, model.ErrRetiredHostedPaymentChannel
-			}
 			if !model.IsAdtyPaymentProvider(provider) {
 				return nil, common.NewMessage("Invalid parameters")
 			}
@@ -341,9 +338,6 @@ func CreateAdtyPaymentOrder(topUp *model.TopUp, ext *model.AdtyTopupOrder, key s
 		return common.NewMessage("Invalid parameters")
 	}
 	method := ext.Method
-	if ext.Provider == model.PaymentProviderCreem {
-		method = "creem:" + ext.ProviderProductId
-	}
 	quote := &AdtyQuote{FaceUSD: ext.FaceUSD, PayAmount: ext.PayAmount, PayCurrency: ext.PayCurrency}
 	config := &AdtyPaymentScenes{}
 	prepare := func(tx *gorm.DB) error {
@@ -415,7 +409,7 @@ func CreateAdtyPaymentOrder(topUp *model.TopUp, ext *model.AdtyTopupOrder, key s
 func operableAdtyPaymentCapabilities() []AdtyPaymentCapability {
 	out := make([]AdtyPaymentCapability, 0)
 	for _, item := range AdtyPaymentCapabilities() {
-		if model.IsOperableAdtyPaymentProvider(item.Provider) {
+		if model.IsAdtyPaymentProvider(item.Provider) {
 			out = append(out, item)
 		}
 	}

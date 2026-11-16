@@ -26,7 +26,7 @@ func TestOrderTraceDatabaseMatrix(t *testing.T) {
 			require.NoError(t, model.MigrateAdtyTables())
 			buyer := model.User{Username: "trace-buyer", SiteId: 9}
 			require.NoError(t, db.Create(&buyer).Error)
-			order := model.TopUp{TradeNo: "frozen-trace", UserId: buyer.Id, Status: model.TopUpStatusRefunded, PaymentProvider: model.PaymentProviderStripe}
+			order := model.TopUp{TradeNo: "frozen-trace", UserId: buyer.Id, Status: model.TopUpStatusRefunded, PaymentProvider: model.PaymentProviderAdtyEpay}
 			require.NoError(t, db.Create(&order).Error)
 			require.NoError(t, db.Create(&model.AdtyTopupOrder{TradeNo: order.TradeNo, UserId: buyer.Id, SiteId: 7, Provider: order.PaymentProvider,
 				FaceUSD: decimal.NewFromInt(2), BonusUSD: decimal.RequireFromString("0.2"), PromoBonusUSD: decimal.RequireFromString("0.1"),

@@ -13,7 +13,6 @@ import (
 
 func TestSiteCustomerTopupInfoUsesSiteBonus(t *testing.T) {
 	f := newOwnerFixture(t)
-	confirmRouterCompliance(t)
 	setRouterBonusRates(t)
 	customer := f.customer(t, f.site, "site-payer", "payer@example.com")
 	token := sessionTokenFor(t, customer)

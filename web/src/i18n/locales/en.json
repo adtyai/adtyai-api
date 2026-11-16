@@ -9116,7 +9116,12 @@
     "Translate": "Translate",
     "Title is required": "Title is required",
     "Content is required": "Content is required",
-    "Enter the Telegram channel": "Enter the Telegram channel"
+    "Enter the Telegram channel": "Enter the Telegram channel",
+    "Configured as PayMethods JSON. The type value is sent to Epay as the type parameter.": "Configured as PayMethods JSON. The type value is sent to Epay as the type parameter.",
+    "Sent to Epay as the type parameter, for example alipay or wxpay.": "Sent to Epay as the type parameter, for example alipay or wxpay.",
+    "No icon": "No icon",
+    "Card": "Card",
+    "Icon shown next to this payment method.": "Icon shown next to this payment method."
 },
   "Targeted notifications": "Targeted notifications",
   "Site announcements": "Site announcements",

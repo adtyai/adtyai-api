@@ -17,8 +17,7 @@ import (
 )
 
 func TestRechargeAuditProviderCapabilitiesDatabaseMatrix(t *testing.T) {
-	providers := []string{model.PaymentProviderAdtyBEpusdt, model.PaymentProviderAdtyEpay, model.PaymentProviderStripe,
-		model.PaymentProviderCreem, model.PaymentProviderWaffo, model.PaymentProviderWaffoPancake}
+	providers := []string{model.PaymentProviderAdtyBEpusdt, model.PaymentProviderAdtyEpay}
 	for _, dialect := range []struct{ kind, env string }{{"sqlite", ""}, {"mysql", "TEST_MYSQL_DSN"}, {"postgres", "TEST_POSTGRES_DSN"}} {
 		t.Run(dialect.kind, func(t *testing.T) {
 			if dialect.env != "" && os.Getenv(dialect.env) == "" {
@@ -37,14 +36,14 @@ func TestRechargeAuditProviderCapabilitiesDatabaseMatrix(t *testing.T) {
 				}
 			}
 			for _, order := range []model.TopUp{
-				{TradeNo: "missing-details", PaymentProvider: model.PaymentProviderStripe, Status: common.TopUpStatusPending},
+				{TradeNo: "missing-details", PaymentProvider: model.PaymentProviderAdtyEpay, Status: common.TopUpStatusPending},
 				{TradeNo: "legacy-payment", PaymentProvider: "legacy-payment", Status: common.TopUpStatusPending},
-				{TradeNo: "replaced-order", PaymentProvider: model.PaymentProviderCreem, Status: model.TopUpStatusReplaced},
+				{TradeNo: "replaced-order", PaymentProvider: model.PaymentProviderAdtyBEpusdt, Status: model.TopUpStatusReplaced},
 			} {
 				order.UserId = user.Id
 				require.NoError(t, db.Create(&order).Error)
 			}
-			require.NoError(t, db.Create(&model.AdtyTopupOrder{TradeNo: "replaced-order", UserId: user.Id, Provider: model.PaymentProviderCreem}).Error)
+			require.NoError(t, db.Create(&model.AdtyTopupOrder{TradeNo: "replaced-order", UserId: user.Id, Provider: model.PaymentProviderAdtyBEpusdt}).Error)
 			request := func(path string, handler gin.HandlerFunc, target any) {
 				t.Helper()
 				recorder := httptest.NewRecorder()
@@ -71,7 +70,7 @@ func TestRechargeAuditProviderCapabilitiesDatabaseMatrix(t *testing.T) {
 			request("/summary", GetRechargeAuditSummary, &summary)
 			require.True(t, summary.Success)
 			assert.ElementsMatch(t, providers, summary.Data.Providers)
-			require.Len(t, summary.Data.Capabilities, 6)
+			require.Len(t, summary.Data.Capabilities, 2)
 			for _, capability := range summary.Data.Capabilities {
 				assert.True(t, capability.Query, capability.Provider)
 				assert.True(t, capability.Complete, capability.Provider)
@@ -94,7 +93,7 @@ func TestRechargeAuditProviderCapabilitiesDatabaseMatrix(t *testing.T) {
 				request("/orders?page_size=50&provider="+provider, GetRechargeAudit, &listed)
 				require.True(t, listed.Success)
 				if provider == "" {
-					assert.Equal(t, 15, listed.Data.Total)
+					assert.Equal(t, 7, listed.Data.Total)
 				}
 				for _, order := range listed.Data.Items {
 					if provider != "" {
@@ -140,11 +139,11 @@ func TestRechargeAuditSiteOwnershipDatabaseMatrix(t *testing.T) {
 				{"legacy-unknown", -1, 7}, {"historical-site", 99, 11},
 			} {
 				require.NoError(t, db.Create(&model.TopUp{TradeNo: fixture.trade, UserId: user.Id,
-					PaymentProvider: model.PaymentProviderStripe, PaymentMethod: "stripe", Status: common.TopUpStatusSuccess,
+					PaymentProvider: model.PaymentProviderAdtyEpay, PaymentMethod: "alipay", Status: common.TopUpStatusSuccess,
 					Amount: fixture.face, Money: float64(fixture.face), CreateTime: int64(i + 1), CompleteTime: int64(i + 10)}).Error)
 				if fixture.siteID >= 0 {
 					require.NoError(t, db.Create(&model.AdtyTopupOrder{TradeNo: fixture.trade, UserId: user.Id, SiteId: fixture.siteID,
-						Provider: model.PaymentProviderStripe, FaceUSD: decimal.NewFromInt(fixture.face), BonusUSD: decimal.RequireFromString("0.5")}).Error)
+						Provider: model.PaymentProviderAdtyEpay, FaceUSD: decimal.NewFromInt(fixture.face), BonusUSD: decimal.RequireFromString("0.5")}).Error)
 				}
 			}
 			require.NoError(t, db.Model(&user).Update("site_id", 8).Error)

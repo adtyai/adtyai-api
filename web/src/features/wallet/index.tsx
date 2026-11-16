@@ -39,7 +39,7 @@ import { WalletStatsCard } from './components/wallet-stats-card'
 import type { UserWalletData } from './types'
 
 interface WalletProps {
-  /** Scrolls to the top-up history (kept for the Waffo return URL). */
+  /** Scrolls to the top-up history. */
   initialShowHistory?: boolean
 }
 
@@ -92,9 +92,8 @@ export function Wallet(props: WalletProps) {
   }
 
   const handleResume = (order: AdtyOrder) => {
-    let kind: AdtyMethodKind = 'hosted'
-    if (order.payment_provider === 'bepusdt') kind = 'usdt'
-    else if (order.payment_provider === 'adty_epay') kind = 'epay'
+    const kind: AdtyMethodKind =
+      order.payment_provider === 'bepusdt' ? 'usdt' : 'epay'
     setActivePayment({
       kind,
       method: order.payment_method,

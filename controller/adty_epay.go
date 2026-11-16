@@ -51,9 +51,6 @@ type adtyEpayPayRequest struct {
 
 // RequestAdtyEpayPay 挑通道下单，API 下单失败、超时或返回不对就换下一个通道。
 func RequestAdtyEpayPay(c *gin.Context) {
-	if !requirePaymentCompliance(c) {
-		return
-	}
 	var req adtyEpayPayRequest
 	if err := common.DecodeJson(c.Request.Body, &req); err != nil {
 		common.ApiErrorT(c, "Invalid parameters")

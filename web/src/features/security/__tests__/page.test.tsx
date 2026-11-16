@@ -112,9 +112,7 @@ async function renderPage(path = '/security') {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
-  client.setQueryData(['status'], {
-    checkin_enabled: false,
-  })
+  client.setQueryData(['status'], {})
   const root = createRootRoute()
   const security = createRoute({
     getParentRoute: () => root,

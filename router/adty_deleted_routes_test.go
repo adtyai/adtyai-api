@@ -21,7 +21,12 @@ func TestAdtyDeletedRoutesAbsent(t *testing.T) {
 	// Third-party sign-in (GitHub, Discord, LinuxDO, OIDC, custom OAuth, WeChat
 	// and Telegram) and its provider framework are gone; only the email binding
 	// routes remain under /api/oauth.
-	deletedPrefixes := []string{"/api/subscription", "/api/redemption", "/api/custom-oauth-provider"}
+	// Stripe, Creem, Waffo and Waffo Pancake, check-in, the payment compliance
+	// confirmation and the upstream single-channel Epay entries were deleted in
+	// the 2026-11 slimming (docs/adty/deleted-features.md).
+	deletedPrefixes := []string{"/api/subscription", "/api/redemption", "/api/custom-oauth-provider",
+		"/api/stripe", "/api/creem", "/api/waffo", "/api/user/stripe", "/api/user/creem", "/api/user/waffo",
+		"/api/option/waffo-pancake", "/api/user/checkin"}
 	deletedRoutes := []struct{ method, path string }{
 		{http.MethodPost, "/api/user/topup"},
 		{http.MethodGet, "/api/user/aff"},
@@ -39,6 +44,14 @@ func TestAdtyDeletedRoutesAbsent(t *testing.T) {
 		{http.MethodGet, "/api/oauth/telegram/login"},
 		{http.MethodPost, "/api/oauth/telegram/bind/start"},
 		{http.MethodGet, "/api/oauth/telegram/bind/:flow_token"},
+		{http.MethodPost, "/api/user/topup/complete"},
+		{http.MethodGet, "/api/user/topup/info"},
+		{http.MethodGet, "/api/user/topup/self"},
+		{http.MethodPost, "/api/user/amount"},
+		{http.MethodGet, "/api/user/epay/notify"},
+		{http.MethodPost, "/api/user/epay/notify"},
+		{http.MethodPost, "/api/option/payment_compliance"},
+		{http.MethodPost, "/api/adty/topup/hosted/pay"},
 	}
 	for _, route := range routes {
 		for _, prefix := range deletedPrefixes {

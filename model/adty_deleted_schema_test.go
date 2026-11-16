@@ -2,7 +2,6 @@ package model
 
 import (
 	"fmt"
-	"github.com/QuantumNous/new-api/setting/adty_setting"
 	"github.com/QuantumNous/new-api/setting/config"
 	mysqldriver "github.com/go-sql-driver/mysql"
 	"github.com/shopspring/decimal"
@@ -193,14 +192,12 @@ func TestMarketingRemovalDatabaseMatrix(t *testing.T) {
 			t.Run(fmt.Sprintf("%s/upgrade=%v", dialect, upgrade), func(t *testing.T) {
 				db := isolatedMigrationTestDatabase(t, dialect)
 				require.NoError(t, db.AutoMigrate(&Option{}))
-				oldPromo := *adty_setting.GetPromoSetting()
 				oldPolicy := requestPolicySnapshot.Load()
 				common.OptionMapRWMutex.Lock()
 				oldOptions := common.OptionMap
 				common.OptionMap = map[string]string{}
 				common.OptionMapRWMutex.Unlock()
 				t.Cleanup(func() {
-					*adty_setting.GetPromoSetting() = oldPromo
 					requestPolicySnapshot.Store(oldPolicy)
 					common.OptionMapRWMutex.Lock()
 					common.OptionMap = oldOptions
@@ -228,7 +225,7 @@ func TestMarketingRemovalDatabaseMatrix(t *testing.T) {
 					redemption.CodeId = promo.Id
 					require.NoError(t, db.Create(&redemption).Error)
 					require.NoError(t, db.Create(&[]Option{
-						{Key: adty_setting.PromoEnabledOptionKey, Value: "true"},
+						{Key: "adty_marketing_setting.promo_enabled", Value: "true"},
 						{Key: "adty_marketing_setting.enabled", Value: "true"},
 						{Key: "adty_marketing_setting.triggers_enabled", Value: "true"},
 					}).Error)
@@ -243,10 +240,8 @@ func TestMarketingRemovalDatabaseMatrix(t *testing.T) {
 					// The changed startup entry point is shared by every dialect. Full startup
 					// is also covered by TestAdtyDeletedSchemaAbsent and the PostgreSQL browser gate.
 					require.NoError(t, MigrateAdtyTables())
-					// Reset the flag before the real startup loader, excluding a stale value.
-					adty_setting.GetPromoSetting().PromoEnabled = false
+					// Historical marketing option rows, including the old promo switch, load without error.
 					loadOptionsFromDatabase()
-					assert.Equal(t, upgrade, adty_setting.GetPromoSetting().PromoEnabled)
 					for _, row := range legacy {
 						table := row.(interface{ TableName() string }).TableName()
 						assert.Equal(t, upgrade, db.Migrator().HasTable(table), table)
@@ -259,9 +254,7 @@ func TestMarketingRemovalDatabaseMatrix(t *testing.T) {
 					require.True(t, db.Migrator().HasTable(&AdtyPromoCode{}))
 					require.True(t, db.Migrator().HasTable(&AdtyPromoRedemption{}))
 					for key := range config.GlobalConfig.ExportAllConfigs() {
-						if strings.HasPrefix(key, "adty_marketing_setting.") {
-							assert.Equal(t, adty_setting.PromoEnabledOptionKey, key, "retired setting registered again")
-						}
+						assert.Falsef(t, strings.HasPrefix(key, "adty_marketing_setting."), "retired setting registered again: %s", key)
 					}
 					if upgrade {
 						var saved AdtyPromoCode

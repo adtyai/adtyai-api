@@ -26,7 +26,6 @@ const (
 	AdtySiteOwnerActionBonus         = "bonus"         // target：站点 id
 	AdtySiteOwnerActionTrial         = "trial"         // target：客户 id
 	AdtySiteOwnerActionDomain        = "domain.delete" // target：自定义域名 id
-	AdtySiteOwnerActionPromo         = "promo"         // target：优惠码 id，新建为 0
 	AdtySiteOwnerActionSender        = "sender.delete" // target：站点 id
 	AdtySiteOwnerActionStaffCreate   = "staff.create"  // target: site ID
 	AdtySiteOwnerActionStaffUpdate   = "staff.update"  // target: membership ID
@@ -37,7 +36,7 @@ const (
 	AdtySiteOwnerActionVoucherCancel = "voucher.cancel" // target: voucher ID
 )
 
-var adtySiteOwnerActions = []string{AdtySiteOwnerActionPricing, AdtySiteOwnerActionBonus, AdtySiteOwnerActionTrial, AdtySiteOwnerActionDomain, AdtySiteOwnerActionPromo, AdtySiteOwnerActionSender,
+var adtySiteOwnerActions = []string{AdtySiteOwnerActionPricing, AdtySiteOwnerActionBonus, AdtySiteOwnerActionTrial, AdtySiteOwnerActionDomain, AdtySiteOwnerActionSender,
 	AdtySiteOwnerActionStaffCreate, AdtySiteOwnerActionStaffUpdate, AdtySiteOwnerActionStaffPassword, AdtySiteOwnerActionStaffDelete,
 	AdtySiteOwnerActionVoucherIssue, AdtySiteOwnerActionVoucherFreeze, AdtySiteOwnerActionVoucherCancel}
 
@@ -68,7 +67,7 @@ func adtyBindSiteOwnerOperation(scope string, fields map[string]json.RawMessage,
 	if len(fields) != 2 || common.Unmarshal(raw, &context) != nil || !slices.Contains(actions, context.Action) || context.Target < 0 {
 		return nil, false
 	}
-	if context.Target == 0 && context.Action != AdtySiteOwnerActionPricing && context.Action != AdtySiteOwnerActionPromo {
+	if context.Target == 0 && context.Action != AdtySiteOwnerActionPricing {
 		return nil, false
 	}
 	return context, true

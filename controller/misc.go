@@ -126,7 +126,6 @@ func GetStatus(c *gin.Context) {
 
 		"usd_exchange_rate": operation_setting.USDExchangeRate,
 		"price":             operation_setting.Price,
-		"stripe_unit_price": setting.StripeUnitPrice,
 
 		// 面板启用开关
 		"api_info_enabled":      cs.ApiInfoEnabled,
@@ -148,7 +147,6 @@ func GetStatus(c *gin.Context) {
 		"setup":                     constant.Setup,
 		"user_agreement_enabled":    legalSetting.UserAgreement != "",
 		"privacy_policy_enabled":    legalSetting.PrivacyPolicy != "",
-		"checkin_enabled":           operation_setting.IsCheckinEnabled(),
 		"log_export_enabled":        operation_setting.GetLogSetting().UserExportEnabled,
 		"log_max_range_days":        operation_setting.GetLogSetting().MaxRangeDays,
 		"quota_remind_enabled":      common.QuotaRemindEnabled,

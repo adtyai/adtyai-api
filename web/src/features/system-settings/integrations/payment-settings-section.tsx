@@ -17,7 +17,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useQueryClient } from '@tanstack/react-query'
 import { useLocation, useNavigate } from '@tanstack/react-router'
 import { Code2, Eye, ShieldAlert } from 'lucide-react'
 import * as React from 'react'
@@ -39,18 +38,11 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
-import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { PaymentChannels } from '@/features/adty-payment-channels'
 import { PaymentSceneManager } from '@/features/adty-payment-scenes'
-import { getPaymentErrorTranslation } from '@/features/wallet/lib/payment'
-import { handleServerError } from '@/lib/handle-server-error'
 
-import {
-  SettingsForm,
-  SettingsSwitchContent,
-  SettingsSwitchItem,
-} from '../components/settings-form-layout'
+import { SettingsForm } from '../components/settings-form-layout'
 import { SettingsPageFormActions } from '../components/settings-page-context'
 import { SettingsSection } from '../components/settings-section'
 import { useUpdateOption } from '../hooks/use-update-option'
@@ -65,7 +57,6 @@ import {
   BEpusdtSettingsSection,
   type BEpusdtSettingsDefaults,
 } from './bepusdt-settings-section'
-import { CreemProductsVisualEditor } from './creem-products-visual-editor'
 import { PaymentMethodsVisualEditor } from './payment-methods-visual-editor'
 import {
   formatJsonForEditor,
@@ -73,25 +64,6 @@ import {
   normalizeJsonForComparison,
   removeTrailingSlash,
 } from './utils'
-import { saveWaffoPancakeConfig } from './waffo-pancake-api'
-import {
-  WaffoPancakeSettingsSection,
-  type WaffoPancakeBinding,
-  type WaffoPancakeSettingsValues,
-} from './waffo-pancake-settings-section'
-import {
-  type PayMethod,
-  WaffoSettingsSection,
-  type WaffoSettingsValues,
-} from './waffo-settings-section'
-
-/**
- * Stripe and Creem hosted payment channels were retired in ISS-R2-0023. Their
- * configuration tabs are kept behind this flag instead of being deleted so the
- * retirement stays traceable; the block renders nothing while it is false.
- */
-const LEGACY_HOSTED_PAYMENT_TABS_ENABLED = false
-
 function isHttpOriginUrl(value: string) {
   const trimmed = value.trim()
   if (!trimmed) return true
@@ -153,42 +125,6 @@ const paymentSchema = z.object({
       })
     }
   }),
-  StripeApiSecret: z.string(),
-  StripeWebhookSecret: z.string(),
-  StripePriceId: z.string(),
-  StripeUnitPrice: z.coerce.number().min(0),
-  StripeMinTopUp: z.coerce.number().min(0),
-  StripePromotionCodesEnabled: z.boolean(),
-  CreemApiKey: z.string(),
-  CreemWebhookSecret: z.string(),
-  CreemTestMode: z.boolean(),
-  CreemProducts: z.string().superRefine((value, ctx) => {
-    const error = getJsonError(value, (parsed) => Array.isArray(parsed))
-    if (error) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: error,
-      })
-    }
-  }),
-  WaffoEnabled: z.boolean(),
-  WaffoApiKey: z.string(),
-  WaffoPrivateKey: z.string(),
-  WaffoPublicCert: z.string(),
-  WaffoSandboxPublicCert: z.string(),
-  WaffoSandboxApiKey: z.string(),
-  WaffoSandboxPrivateKey: z.string(),
-  WaffoSandbox: z.boolean(),
-  WaffoMerchantId: z.string(),
-  WaffoCurrency: z.string(),
-  WaffoUnitPrice: z.coerce.number().min(0),
-  WaffoMinTopUp: z.coerce.number().min(1),
-  WaffoNotifyUrl: z.string(),
-  WaffoReturnUrl: z.string(),
-  WaffoPancakeMerchantID: z.string(),
-  WaffoPancakePrivateKey: z.string(),
-  WaffoPancakeReturnURL: z.string(),
-  WaffoPancakeEnvironment: z.enum(['test', 'prod']),
 })
 
 type PaymentFormValues = z.infer<typeof paymentSchema>
@@ -206,92 +142,28 @@ const providerSchemas = {
     EpayKey: true,
     CustomCallbackAddress: true,
   }),
-  stripe: paymentSchema.pick({
-    StripeApiSecret: true,
-    StripeWebhookSecret: true,
-    StripePriceId: true,
-    StripeUnitPrice: true,
-    StripeMinTopUp: true,
-    StripePromotionCodesEnabled: true,
-  }),
-  creem: paymentSchema.pick({
-    CreemApiKey: true,
-    CreemWebhookSecret: true,
-    CreemTestMode: true,
-    CreemProducts: true,
-  }),
-  waffo: paymentSchema.pick({
-    WaffoEnabled: true,
-    WaffoApiKey: true,
-    WaffoPrivateKey: true,
-    WaffoPublicCert: true,
-    WaffoSandboxPublicCert: true,
-    WaffoSandboxApiKey: true,
-    WaffoSandboxPrivateKey: true,
-    WaffoSandbox: true,
-    WaffoMerchantId: true,
-    WaffoCurrency: true,
-    WaffoUnitPrice: true,
-    WaffoMinTopUp: true,
-    WaffoNotifyUrl: true,
-    WaffoReturnUrl: true,
-  }),
-  'waffo-pancake': paymentSchema.pick({
-    WaffoPancakeMerchantID: true,
-    WaffoPancakePrivateKey: true,
-    WaffoPancakeReturnURL: true,
-    WaffoPancakeEnvironment: true,
-  }),
 }
 type PaymentTab = keyof typeof providerSchemas | 'usdt'
-const OPERABLE_PAYMENT_TABS = ['general', 'epay', 'usdt'] as const
-type OperablePaymentTab = (typeof OPERABLE_PAYMENT_TABS)[number]
+const PAYMENT_TABS = ['general', 'epay', 'usdt'] as const
 
-function isOperablePaymentTab(tab: string): tab is OperablePaymentTab {
-  return (OPERABLE_PAYMENT_TABS as readonly string[]).includes(tab)
+function isPaymentTab(tab: string): tab is PaymentTab {
+  return (PAYMENT_TABS as readonly string[]).includes(tab)
 }
 
-function isRetiredHostedPaymentOptionKey(key: string) {
-  return /^(Stripe|Creem|Waffo)/.test(key)
+function paymentTabSchema(tab: PaymentTab) {
+  return providerSchemas[tab === 'usdt' ? 'general' : tab]
 }
-
-function operablePaymentSchema(tab: PaymentTab) {
-  const operable = isOperablePaymentTab(tab) ? tab : 'general'
-  return providerSchemas[operable === 'usdt' ? 'general' : operable]
-}
-type WaffoFormFieldValues = Omit<WaffoSettingsValues, 'WaffoPayMethods'>
-type PaymentBaseFormValues = Omit<
-  PaymentFormValues,
-  keyof WaffoFormFieldValues | keyof WaffoPancakeSettingsValues
->
 
 const paymentTabContentClassName = 'mt-6 min-w-0'
 
 type PaymentSettingsSectionProps = {
-  defaultValues: PaymentBaseFormValues
-  waffoDefaultValues: WaffoSettingsValues
-  waffoPancakeDefaultValues: WaffoPancakeSettingsValues
-  waffoPancakeProvisionedStoreID?: string
-  waffoPancakeProvisionedProductID?: string
+  defaultValues: PaymentFormValues
   epayDefaultValues: AdtyEpaySettingsDefaults
   usdtDefaultValues: BEpusdtSettingsDefaults
 }
 
-function parseWaffoPayMethods(value: string): PayMethod[] {
-  try {
-    const parsed = JSON.parse(value || '[]')
-    return Array.isArray(parsed) ? parsed : []
-  } catch {
-    return []
-  }
-}
-
 export function PaymentSettingsSection({
   defaultValues,
-  waffoDefaultValues,
-  waffoPancakeDefaultValues,
-  waffoPancakeProvisionedStoreID,
-  waffoPancakeProvisionedProductID,
   epayDefaultValues,
   usdtDefaultValues,
 }: PaymentSettingsSectionProps) {
@@ -300,139 +172,38 @@ export function PaymentSettingsSection({
   const navigate = useNavigate({ from: '/system-settings/billing/$section' })
   const initialTab = React.useMemo(() => {
     const tab = new URLSearchParams(location.searchStr).get('tab')
-    return tab && isOperablePaymentTab(tab) ? tab : 'general'
+    return tab && isPaymentTab(tab) ? tab : 'general'
   }, [location.searchStr])
-  // 显式标成 PaymentTab 而不是让 TS 从 initialTab 推出收窄后的联合：
-  // 已退役的 tab（stripe / creem / waffo / waffo-pancake）仍保留保存分支与
-  // 比较判断，退役清理是独立的一张单，这里只保证类型不收窄到互相矛盾。
   const [activeTab, setActiveTab] = React.useState<PaymentTab>(initialTab)
-  const queryClient = useQueryClient()
   const updateOption = useUpdateOption()
-  const initialFormValues = React.useMemo<PaymentFormValues>(
-    () => ({
-      ...defaultValues,
-      ...waffoDefaultValues,
-      ...waffoPancakeDefaultValues,
-    }),
-    [defaultValues, waffoDefaultValues, waffoPancakeDefaultValues]
-  )
-  const initialRef = React.useRef(initialFormValues)
-  const waffoPayMethodsBaselineRef = React.useRef(
-    waffoDefaultValues.WaffoPayMethods
-  )
+  const initialRef = React.useRef(defaultValues)
   const defaultsSignature = React.useMemo(
-    () => JSON.stringify(initialFormValues),
-    [initialFormValues]
+    () => JSON.stringify(defaultValues),
+    [defaultValues]
   )
 
   const [payMethodsVisualMode, setPayMethodsVisualMode] = React.useState(true)
   const [amountOptionsVisualMode, setAmountOptionsVisualMode] =
     React.useState(true)
-  const [creemProductsVisualMode, setCreemProductsVisualMode] =
-    React.useState(true)
-  const [waffoPayMethods, setWaffoPayMethods] = React.useState<PayMethod[]>(
-    () => parseWaffoPayMethods(waffoDefaultValues.WaffoPayMethods)
-  )
-  const [waffoPancakeSelection, setWaffoPancakeSelection] =
-    React.useState<WaffoPancakeBinding>({
-      storeID: waffoPancakeProvisionedStoreID ?? '',
-      productID: waffoPancakeProvisionedProductID ?? '',
-    })
-  const [waffoPancakeSavedBinding, setWaffoPancakeSavedBinding] =
-    React.useState<WaffoPancakeBinding>({
-      storeID: waffoPancakeProvisionedStoreID ?? '',
-      productID: waffoPancakeProvisionedProductID ?? '',
-    })
-  const previousPancakeBindingRef = React.useRef(waffoPancakeSavedBinding)
 
   React.useEffect(() => {
     setActiveTab(initialTab)
   }, [initialTab])
 
-  React.useEffect(() => {
-    const previous = parseWaffoPayMethods(waffoPayMethodsBaselineRef.current)
-    waffoPayMethodsBaselineRef.current = waffoDefaultValues.WaffoPayMethods
-    setWaffoPayMethods((current) =>
-      JSON.stringify(current) === JSON.stringify(previous)
-        ? parseWaffoPayMethods(waffoDefaultValues.WaffoPayMethods)
-        : current
-    )
-  }, [waffoDefaultValues.WaffoPayMethods])
-
-  React.useEffect(() => {
-    const nextBinding = {
-      storeID: waffoPancakeProvisionedStoreID ?? '',
-      productID: waffoPancakeProvisionedProductID ?? '',
-    }
-    const previous = previousPancakeBindingRef.current
-    previousPancakeBindingRef.current = nextBinding
-    setWaffoPancakeSelection((current) =>
-      current.storeID === previous.storeID &&
-      current.productID === previous.productID
-        ? nextBinding
-        : current
-    )
-    setWaffoPancakeSavedBinding(nextBinding)
-  }, [waffoPancakeProvisionedProductID, waffoPancakeProvisionedStoreID])
-
   const form = useForm<PaymentFormValues>({
     resolver: zodResolver(
-      operablePaymentSchema(activeTab).passthrough()
+      paymentTabSchema(activeTab).passthrough()
     ) as unknown as Resolver<PaymentFormValues>,
     mode: 'onChange', // Enable real-time validation
     defaultValues: {
-      ...initialFormValues,
-      PayMethods: formatJsonForEditor(initialFormValues.PayMethods),
-      AmountOptions: formatJsonForEditor(initialFormValues.AmountOptions),
-      BonusRates: formatJsonForEditor(initialFormValues.BonusRates),
-      CreemProducts: formatJsonForEditor(initialFormValues.CreemProducts),
+      ...defaultValues,
+      PayMethods: formatJsonForEditor(defaultValues.PayMethods),
+      AmountOptions: formatJsonForEditor(defaultValues.AmountOptions),
+      BonusRates: formatJsonForEditor(defaultValues.BonusRates),
     },
   })
 
   const { isSubmitting } = form.formState
-
-  const setPaymentValue = React.useCallback(
-    (
-      key: keyof PaymentFormValues,
-      value: PaymentFormValues[keyof PaymentFormValues]
-    ) => {
-      form.setValue(
-        key as Parameters<typeof form.setValue>[0],
-        value as Parameters<typeof form.setValue>[1],
-        {
-          shouldDirty: true,
-          shouldValidate: true,
-        }
-      )
-    },
-    [form]
-  )
-
-  const setWaffoValue = React.useCallback(
-    <K extends keyof WaffoFormFieldValues>(
-      key: K,
-      value: WaffoFormFieldValues[K]
-    ) => {
-      setPaymentValue(
-        key as keyof PaymentFormValues,
-        value as PaymentFormValues[keyof PaymentFormValues]
-      )
-    },
-    [setPaymentValue]
-  )
-
-  const setWaffoPancakeValue = React.useCallback(
-    <K extends keyof WaffoPancakeSettingsValues>(
-      key: K,
-      value: WaffoPancakeSettingsValues[K]
-    ) => {
-      setPaymentValue(
-        key as keyof PaymentFormValues,
-        value as PaymentFormValues[keyof PaymentFormValues]
-      )
-    },
-    [setPaymentValue]
-  )
 
   React.useEffect(() => {
     const parsedDefaults = JSON.parse(defaultsSignature) as PaymentFormValues
@@ -443,7 +214,6 @@ export function PaymentSettingsSection({
         PayMethods: formatJsonForEditor(parsedDefaults.PayMethods),
         AmountOptions: formatJsonForEditor(parsedDefaults.AmountOptions),
         BonusRates: formatJsonForEditor(parsedDefaults.BonusRates),
-        CreemProducts: formatJsonForEditor(parsedDefaults.CreemProducts),
       },
       { keepDirtyValues: true }
     )
@@ -460,37 +230,6 @@ export function PaymentSettingsSection({
       PayMethods: values.PayMethods.trim(),
       AmountOptions: values.AmountOptions.trim(),
       BonusRates: values.BonusRates.trim(),
-      StripeApiSecret: values.StripeApiSecret.trim(),
-      StripeWebhookSecret: values.StripeWebhookSecret.trim(),
-      StripePriceId: values.StripePriceId.trim(),
-      StripeUnitPrice: values.StripeUnitPrice,
-      StripeMinTopUp: values.StripeMinTopUp,
-      StripePromotionCodesEnabled: values.StripePromotionCodesEnabled,
-      CreemApiKey: values.CreemApiKey.trim(),
-      CreemWebhookSecret: values.CreemWebhookSecret.trim(),
-      CreemTestMode: values.CreemTestMode,
-      CreemProducts: values.CreemProducts.trim(),
-      WaffoEnabled: values.WaffoEnabled,
-      WaffoSandbox: values.WaffoSandbox,
-      WaffoMerchantId: values.WaffoMerchantId.trim(),
-      WaffoCurrency: values.WaffoCurrency.trim() || 'USD',
-      WaffoUnitPrice: values.WaffoUnitPrice,
-      WaffoMinTopUp: values.WaffoMinTopUp,
-      WaffoNotifyUrl: values.WaffoNotifyUrl.trim(),
-      WaffoReturnUrl: values.WaffoReturnUrl.trim(),
-      WaffoPublicCert: values.WaffoPublicCert.trim(),
-      WaffoSandboxPublicCert: values.WaffoSandboxPublicCert.trim(),
-      WaffoApiKey: values.WaffoApiKey.trim(),
-      WaffoPrivateKey: values.WaffoPrivateKey.trim(),
-      WaffoSandboxApiKey: values.WaffoSandboxApiKey.trim(),
-      WaffoSandboxPrivateKey: values.WaffoSandboxPrivateKey.trim(),
-      WaffoPayMethods: JSON.stringify(waffoPayMethods),
-      WaffoPancakeMerchantID: values.WaffoPancakeMerchantID.trim(),
-      WaffoPancakePrivateKey: values.WaffoPancakePrivateKey.trim(),
-      WaffoPancakeReturnURL: removeTrailingSlash(
-        values.WaffoPancakeReturnURL.trim()
-      ),
-      WaffoPancakeEnvironment: values.WaffoPancakeEnvironment,
     }
 
     const initial = {
@@ -505,40 +244,6 @@ export function PaymentSettingsSection({
       PayMethods: initialRef.current.PayMethods.trim(),
       AmountOptions: initialRef.current.AmountOptions.trim(),
       BonusRates: initialRef.current.BonusRates.trim(),
-      StripeApiSecret: initialRef.current.StripeApiSecret.trim(),
-      StripeWebhookSecret: initialRef.current.StripeWebhookSecret.trim(),
-      StripePriceId: initialRef.current.StripePriceId.trim(),
-      StripeUnitPrice: initialRef.current.StripeUnitPrice,
-      StripeMinTopUp: initialRef.current.StripeMinTopUp,
-      StripePromotionCodesEnabled:
-        initialRef.current.StripePromotionCodesEnabled,
-      CreemApiKey: initialRef.current.CreemApiKey.trim(),
-      CreemWebhookSecret: initialRef.current.CreemWebhookSecret.trim(),
-      CreemTestMode: initialRef.current.CreemTestMode,
-      CreemProducts: initialRef.current.CreemProducts.trim(),
-      WaffoEnabled: initialRef.current.WaffoEnabled,
-      WaffoSandbox: initialRef.current.WaffoSandbox,
-      WaffoMerchantId: initialRef.current.WaffoMerchantId.trim(),
-      WaffoCurrency: initialRef.current.WaffoCurrency.trim() || 'USD',
-      WaffoUnitPrice: initialRef.current.WaffoUnitPrice,
-      WaffoMinTopUp: initialRef.current.WaffoMinTopUp,
-      WaffoNotifyUrl: initialRef.current.WaffoNotifyUrl.trim(),
-      WaffoReturnUrl: initialRef.current.WaffoReturnUrl.trim(),
-      WaffoPublicCert: initialRef.current.WaffoPublicCert.trim(),
-      WaffoSandboxPublicCert: initialRef.current.WaffoSandboxPublicCert.trim(),
-      WaffoApiKey: initialRef.current.WaffoApiKey.trim(),
-      WaffoPrivateKey: initialRef.current.WaffoPrivateKey.trim(),
-      WaffoSandboxApiKey: initialRef.current.WaffoSandboxApiKey.trim(),
-      WaffoSandboxPrivateKey: initialRef.current.WaffoSandboxPrivateKey.trim(),
-      WaffoPayMethods: JSON.stringify(
-        parseWaffoPayMethods(waffoPayMethodsBaselineRef.current)
-      ),
-      WaffoPancakeMerchantID: initialRef.current.WaffoPancakeMerchantID.trim(),
-      WaffoPancakePrivateKey: initialRef.current.WaffoPancakePrivateKey.trim(),
-      WaffoPancakeReturnURL: removeTrailingSlash(
-        initialRef.current.WaffoPancakeReturnURL.trim()
-      ),
-      WaffoPancakeEnvironment: initialRef.current.WaffoPancakeEnvironment,
     }
 
     const updates: Array<{ key: string; value: string | number | boolean }> = []
@@ -597,188 +302,24 @@ export function PaymentSettingsSection({
       })
     }
 
-    if (
-      sanitized.StripeApiSecret &&
-      sanitized.StripeApiSecret !== initial.StripeApiSecret
-    ) {
-      updates.push({ key: 'StripeApiSecret', value: sanitized.StripeApiSecret })
-    }
-
-    if (
-      sanitized.StripeWebhookSecret &&
-      sanitized.StripeWebhookSecret !== initial.StripeWebhookSecret
-    ) {
-      updates.push({
-        key: 'StripeWebhookSecret',
-        value: sanitized.StripeWebhookSecret,
-      })
-    }
-
-    if (sanitized.StripePriceId !== initial.StripePriceId) {
-      updates.push({ key: 'StripePriceId', value: sanitized.StripePriceId })
-    }
-
-    if (sanitized.StripeUnitPrice !== initial.StripeUnitPrice) {
-      updates.push({ key: 'StripeUnitPrice', value: sanitized.StripeUnitPrice })
-    }
-
-    if (sanitized.StripeMinTopUp !== initial.StripeMinTopUp) {
-      updates.push({ key: 'StripeMinTopUp', value: sanitized.StripeMinTopUp })
-    }
-
-    if (
-      sanitized.StripePromotionCodesEnabled !==
-      initial.StripePromotionCodesEnabled
-    ) {
-      updates.push({
-        key: 'StripePromotionCodesEnabled',
-        value: sanitized.StripePromotionCodesEnabled,
-      })
-    }
-
-    if (
-      sanitized.CreemApiKey &&
-      sanitized.CreemApiKey !== initial.CreemApiKey
-    ) {
-      updates.push({ key: 'CreemApiKey', value: sanitized.CreemApiKey })
-    }
-
-    if (
-      sanitized.CreemWebhookSecret &&
-      sanitized.CreemWebhookSecret !== initial.CreemWebhookSecret
-    ) {
-      updates.push({
-        key: 'CreemWebhookSecret',
-        value: sanitized.CreemWebhookSecret,
-      })
-    }
-
-    if (sanitized.CreemTestMode !== initial.CreemTestMode) {
-      updates.push({ key: 'CreemTestMode', value: sanitized.CreemTestMode })
-    }
-
-    if (
-      normalizeJsonForComparison(sanitized.CreemProducts) !==
-      normalizeJsonForComparison(initial.CreemProducts)
-    ) {
-      updates.push({ key: 'CreemProducts', value: sanitized.CreemProducts })
-    }
-
-    if (sanitized.WaffoEnabled !== initial.WaffoEnabled) {
-      updates.push({ key: 'WaffoEnabled', value: sanitized.WaffoEnabled })
-    }
-
-    if (sanitized.WaffoSandbox !== initial.WaffoSandbox) {
-      updates.push({ key: 'WaffoSandbox', value: sanitized.WaffoSandbox })
-    }
-
-    if (sanitized.WaffoMerchantId !== initial.WaffoMerchantId) {
-      updates.push({ key: 'WaffoMerchantId', value: sanitized.WaffoMerchantId })
-    }
-
-    if (sanitized.WaffoCurrency !== initial.WaffoCurrency) {
-      updates.push({ key: 'WaffoCurrency', value: sanitized.WaffoCurrency })
-    }
-
-    if (sanitized.WaffoUnitPrice !== initial.WaffoUnitPrice) {
-      updates.push({ key: 'WaffoUnitPrice', value: sanitized.WaffoUnitPrice })
-    }
-
-    if (sanitized.WaffoMinTopUp !== initial.WaffoMinTopUp) {
-      updates.push({ key: 'WaffoMinTopUp', value: sanitized.WaffoMinTopUp })
-    }
-
-    if (sanitized.WaffoNotifyUrl !== initial.WaffoNotifyUrl) {
-      updates.push({ key: 'WaffoNotifyUrl', value: sanitized.WaffoNotifyUrl })
-    }
-
-    if (sanitized.WaffoReturnUrl !== initial.WaffoReturnUrl) {
-      updates.push({ key: 'WaffoReturnUrl', value: sanitized.WaffoReturnUrl })
-    }
-
-    if (sanitized.WaffoPublicCert !== initial.WaffoPublicCert) {
-      updates.push({ key: 'WaffoPublicCert', value: sanitized.WaffoPublicCert })
-    }
-
-    if (sanitized.WaffoSandboxPublicCert !== initial.WaffoSandboxPublicCert) {
-      updates.push({
-        key: 'WaffoSandboxPublicCert',
-        value: sanitized.WaffoSandboxPublicCert,
-      })
-    }
-
-    if (sanitized.WaffoApiKey) {
-      updates.push({ key: 'WaffoApiKey', value: sanitized.WaffoApiKey })
-    }
-
-    if (sanitized.WaffoPrivateKey) {
-      updates.push({ key: 'WaffoPrivateKey', value: sanitized.WaffoPrivateKey })
-    }
-
-    if (sanitized.WaffoSandboxApiKey) {
-      updates.push({
-        key: 'WaffoSandboxApiKey',
-        value: sanitized.WaffoSandboxApiKey,
-      })
-    }
-
-    if (sanitized.WaffoSandboxPrivateKey) {
-      updates.push({
-        key: 'WaffoSandboxPrivateKey',
-        value: sanitized.WaffoSandboxPrivateKey,
-      })
-    }
-
-    if (
-      normalizeJsonForComparison(sanitized.WaffoPayMethods) !==
-      normalizeJsonForComparison(initial.WaffoPayMethods)
-    ) {
-      updates.push({ key: 'WaffoPayMethods', value: sanitized.WaffoPayMethods })
-    }
-
-    const hasWaffoPancakeChanges =
-      activeTab === 'waffo-pancake' &&
-      (sanitized.WaffoPancakeMerchantID !== initial.WaffoPancakeMerchantID ||
-        sanitized.WaffoPancakePrivateKey.length > 0 ||
-        sanitized.WaffoPancakeReturnURL !== initial.WaffoPancakeReturnURL ||
-        sanitized.WaffoPancakeEnvironment !== initial.WaffoPancakeEnvironment ||
-        waffoPancakeSelection.storeID !== waffoPancakeSavedBinding.storeID ||
-        waffoPancakeSelection.productID !== waffoPancakeSavedBinding.productID)
-
-    const fields = operablePaymentSchema(activeTab).shape
-    const providerUpdates = updates.filter((update) => {
-      if (isRetiredHostedPaymentOptionKey(update.key)) {
-        return false
-      }
+    const fields = paymentTabSchema(activeTab).shape
+    const tabUpdates = updates.filter((update) => {
       if (
         update.key === 'payment_setting.amount_options' ||
         update.key === 'adty_topup_setting.bonus_rates'
       ) {
         return activeTab === 'general'
       }
-      if (update.key === 'WaffoPayMethods') return false
       return update.key in fields
     })
 
-    if (providerUpdates.length === 0) {
+    if (tabUpdates.length === 0) {
       toast.info(t('No changes to save'))
       return
     }
 
-    const sensitiveFields = new Set<string>([
-      'EpayKey',
-      'StripeApiSecret',
-      'StripeWebhookSecret',
-      'CreemApiKey',
-      'CreemWebhookSecret',
-      'WaffoApiKey',
-      'WaffoPrivateKey',
-      'WaffoSandboxApiKey',
-      'WaffoSandboxPrivateKey',
-    ])
-    const savedSensitiveFields = new Set<keyof PaymentFormValues>()
-
-    for (const update of providerUpdates) {
+    let savedEpayKey = false
+    for (const update of tabUpdates) {
       await updateOption.mutateAsync(update)
       let field = update.key
       if (update.key === 'payment_setting.amount_options') {
@@ -790,117 +331,18 @@ export function PaymentSettingsSection({
         initialRef.current[field as keyof PaymentFormValues] =
           update.value as never
       }
-      if (update.key === 'WaffoPayMethods') {
-        waffoPayMethodsBaselineRef.current = update.value as string
-      }
-      if (sensitiveFields.has(field)) {
-        savedSensitiveFields.add(field as keyof PaymentFormValues)
+      if (field === 'EpayKey') {
+        savedEpayKey = true
       }
     }
 
-    for (const field of savedSensitiveFields) {
-      form.setValue(field, '' as never, {
+    // The saved secret is never shown again; clear the field after saving.
+    if (savedEpayKey) {
+      form.setValue('EpayKey', '', {
         shouldDirty: false,
         shouldValidate: false,
       })
     }
-
-    if (!hasWaffoPancakeChanges) {
-      return
-    }
-
-    if (!sanitized.WaffoPancakeMerchantID) {
-      toast.error(t('Merchant ID is required'))
-      return
-    }
-
-    if (!waffoPancakeSelection.storeID || !waffoPancakeSelection.productID) {
-      toast.error(t('Pick or create both a store and a product before saving.'))
-      return
-    }
-
-    try {
-      const body = await saveWaffoPancakeConfig({
-        merchantID: sanitized.WaffoPancakeMerchantID,
-        privateKey: sanitized.WaffoPancakePrivateKey,
-        returnURL: sanitized.WaffoPancakeReturnURL,
-        storeID: waffoPancakeSelection.storeID,
-        productID: waffoPancakeSelection.productID,
-        environment: sanitized.WaffoPancakeEnvironment,
-      })
-
-      if (
-        body?.message === 'success' &&
-        typeof body.data === 'object' &&
-        body.data
-      ) {
-        const saved = body.data as { product_id: string; store_id: string }
-        const savedBinding = {
-          storeID: saved.store_id,
-          productID: saved.product_id,
-        }
-        setWaffoPancakeSavedBinding(savedBinding)
-        setWaffoPancakeSelection(savedBinding)
-        initialRef.current.WaffoPancakeMerchantID =
-          sanitized.WaffoPancakeMerchantID
-        initialRef.current.WaffoPancakePrivateKey = ''
-        initialRef.current.WaffoPancakeReturnURL =
-          sanitized.WaffoPancakeReturnURL
-        initialRef.current.WaffoPancakeEnvironment =
-          sanitized.WaffoPancakeEnvironment
-        form.setValue('WaffoPancakePrivateKey', '', {
-          shouldDirty: false,
-          shouldValidate: false,
-        })
-        queryClient.invalidateQueries({
-          queryKey: ['system-options'],
-          refetchType: 'none',
-        })
-        toast.success(t('Waffo Pancake settings saved'))
-        return
-      }
-
-      const reason =
-        getPaymentErrorTranslation(body) ??
-        (typeof body?.data === 'string' ? body.data : undefined)
-      handleServerError(body, undefined, {
-        title: reason
-          ? `${t('Waffo Pancake save failed')}: ${reason}`
-          : t('Waffo Pancake save failed'),
-      })
-    } catch (error) {
-      handleServerError(
-        error,
-        `${t('Waffo Pancake save failed')}: ${
-          error instanceof Error ? error.message : String(error)
-        }`
-      )
-    }
-  }
-
-  const currentFormValues = form.watch()
-  const waffoValues: WaffoSettingsValues = {
-    WaffoEnabled: currentFormValues.WaffoEnabled,
-    WaffoApiKey: currentFormValues.WaffoApiKey,
-    WaffoPrivateKey: currentFormValues.WaffoPrivateKey,
-    WaffoPublicCert: currentFormValues.WaffoPublicCert,
-    WaffoSandboxPublicCert: currentFormValues.WaffoSandboxPublicCert,
-    WaffoSandboxApiKey: currentFormValues.WaffoSandboxApiKey,
-    WaffoSandboxPrivateKey: currentFormValues.WaffoSandboxPrivateKey,
-    WaffoSandbox: currentFormValues.WaffoSandbox,
-    WaffoMerchantId: currentFormValues.WaffoMerchantId,
-    WaffoCurrency: currentFormValues.WaffoCurrency,
-    WaffoUnitPrice: currentFormValues.WaffoUnitPrice,
-    WaffoMinTopUp: currentFormValues.WaffoMinTopUp,
-    WaffoNotifyUrl: currentFormValues.WaffoNotifyUrl,
-    WaffoReturnUrl: currentFormValues.WaffoReturnUrl,
-    WaffoPayMethods: JSON.stringify(waffoPayMethods),
-  }
-  const waffoPancakeValues: WaffoPancakeSettingsValues = {
-    WaffoPancakeMerchantID: currentFormValues.WaffoPancakeMerchantID,
-    WaffoPancakePrivateKey: currentFormValues.WaffoPancakePrivateKey,
-    WaffoPancakeReturnURL: currentFormValues.WaffoPancakeReturnURL,
-    WaffoPancakeEnvironment: currentFormValues.WaffoPancakeEnvironment,
   }
 
   return (
@@ -941,17 +383,6 @@ export function PaymentSettingsSection({
             <TabsContent value='general' className={paymentTabContentClassName}>
               <div className='space-y-4'>
                 <PaymentSceneManager />
-                <Alert>
-                  <ShieldAlert />
-                  <AlertTitle>
-                    {t('Hosted checkout channels are retired')}
-                  </AlertTitle>
-                  <AlertDescription>
-                    {t(
-                      'Stripe, Creem, and Waffo are no longer operable collection channels. Existing stored secrets stay in place and cannot be updated as live checkout settings.'
-                    )}
-                  </AlertDescription>
-                </Alert>
                 <div>
                   <h3 className='text-lg font-medium'>
                     {t('General Settings')}
@@ -1065,7 +496,7 @@ export function PaymentSettingsSection({
                       </FormControl>
                       <FormDescription>
                         {t(
-                          'Configured as PayMethods JSON. The type value decides which payment flow is used: stripe for Stripe, waffo_pancake for Waffo Pancake, and other values are sent to Epay as the type parameter.'
+                          'Configured as PayMethods JSON. The type value is sent to Epay as the type parameter.'
                         )}
                       </FormDescription>
                       <FormMessage />
@@ -1299,403 +730,6 @@ export function PaymentSettingsSection({
                 </div>
               </div>
             </TabsContent>
-
-            {LEGACY_HOSTED_PAYMENT_TABS_ENABLED && (
-              <>
-                <TabsContent
-                  value='stripe'
-                  className={paymentTabContentClassName}
-                >
-                  <div className='space-y-4'>
-                    <div>
-                      <h3 className='text-lg font-medium'>
-                        {t('Stripe Gateway')}
-                      </h3>
-                      <p className='text-muted-foreground text-sm'>
-                        {t('Configuration for Stripe payment integration')}
-                      </p>
-                    </div>
-
-                    <div className='rounded-md bg-blue-50 p-4 text-sm text-blue-900 dark:bg-blue-950 dark:text-blue-100'>
-                      <p className='mb-2 font-medium'>
-                        {t('Webhook Configuration:')}
-                      </p>
-                      <ul className='list-inside list-disc space-y-1'>
-                        <li>
-                          {t('Webhook URL:')}{' '}
-                          <code className='rounded bg-blue-100 px-1 py-0.5 text-xs dark:bg-blue-900'>
-                            {'<ServerAddress>/api/stripe/webhook'}
-                          </code>
-                        </li>
-                        <li>
-                          {t('Required events:')}{' '}
-                          <code className='rounded bg-blue-100 px-1 py-0.5 text-xs dark:bg-blue-900'>
-                            {t('checkout.session.completed')}
-                          </code>{' '}
-                          {t('and')}{' '}
-                          <code className='rounded bg-blue-100 px-1 py-0.5 text-xs dark:bg-blue-900'>
-                            {t('checkout.session.expired')}
-                          </code>
-                        </li>
-                        <li>
-                          {t('Configure at:')}{' '}
-                          <a
-                            href='https://dashboard.stripe.com/developers'
-                            target='_blank'
-                            rel='noreferrer'
-                            className='underline hover:no-underline'
-                          >
-                            {t('Stripe Dashboard')}
-                          </a>
-                        </li>
-                      </ul>
-                    </div>
-
-                    <div className='grid gap-6 md:grid-cols-3'>
-                      <FormField
-                        control={form.control}
-                        name='StripeApiSecret'
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>{t('API secret')}</FormLabel>
-                            <FormControl>
-                              <Input
-                                type='password'
-                                placeholder={t('sk_xxx or rk_xxx')}
-                                autoComplete='new-password'
-                                {...field}
-                                onChange={(event) =>
-                                  field.onChange(event.target.value)
-                                }
-                              />
-                            </FormControl>
-                            <FormDescription>
-                              {t(
-                                'Stripe API key (leave blank unless updating)'
-                              )}
-                            </FormDescription>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      <FormField
-                        control={form.control}
-                        name='StripeWebhookSecret'
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>{t('Webhook secret')}</FormLabel>
-                            <FormControl>
-                              <Input
-                                type='password'
-                                placeholder={t('whsec_xxx')}
-                                autoComplete='new-password'
-                                {...field}
-                                onChange={(event) =>
-                                  field.onChange(event.target.value)
-                                }
-                              />
-                            </FormControl>
-                            <FormDescription>
-                              {t(
-                                'Webhook signing secret (leave blank unless updating)'
-                              )}
-                            </FormDescription>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      <FormField
-                        control={form.control}
-                        name='StripePriceId'
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>{t('Price ID')}</FormLabel>
-                            <FormControl>
-                              <Input
-                                placeholder={t('price_xxx')}
-                                {...field}
-                                onChange={(event) =>
-                                  field.onChange(event.target.value)
-                                }
-                              />
-                            </FormControl>
-                            <FormDescription>
-                              {t('Stripe product price ID')}
-                            </FormDescription>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-
-                    <div className='grid gap-6 md:grid-cols-3'>
-                      <FormField
-                        control={form.control}
-                        name='StripeUnitPrice'
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>
-                              {t('Unit price (local currency / USD)')}
-                            </FormLabel>
-                            <FormControl>
-                              <Input
-                                type='number'
-                                step='0.01'
-                                min={0}
-                                {...safeNumberFieldProps(field)}
-                              />
-                            </FormControl>
-                            <FormDescription>
-                              {t('e.g., 8 means 8 local currency per USD')}
-                            </FormDescription>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      <FormField
-                        control={form.control}
-                        name='StripeMinTopUp'
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>{t('Minimum top-up (USD)')}</FormLabel>
-                            <FormControl>
-                              <Input
-                                type='number'
-                                step='0.01'
-                                min={0}
-                                {...safeNumberFieldProps(field)}
-                              />
-                            </FormControl>
-                            <FormDescription>
-                              {t('Minimum recharge amount in USD')}
-                            </FormDescription>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      <FormField
-                        control={form.control}
-                        name='StripePromotionCodesEnabled'
-                        render={({ field }) => (
-                          <SettingsSwitchItem>
-                            <SettingsSwitchContent>
-                              <FormLabel>{t('Promotion codes')}</FormLabel>
-                              <FormDescription>
-                                {t('Allow users to enter promo codes')}
-                              </FormDescription>
-                            </SettingsSwitchContent>
-                            <FormControl>
-                              <Switch
-                                checked={field.value}
-                                onCheckedChange={field.onChange}
-                              />
-                            </FormControl>
-                          </SettingsSwitchItem>
-                        )}
-                      />
-                    </div>
-                  </div>
-                </TabsContent>
-
-                <TabsContent
-                  value='creem'
-                  className={paymentTabContentClassName}
-                >
-                  <div className='space-y-4'>
-                    <div>
-                      <h3 className='text-lg font-medium'>
-                        {t('Creem Gateway')}
-                      </h3>
-                      <p className='text-muted-foreground text-sm'>
-                        {t('Configuration for Creem payment integration')}
-                      </p>
-                    </div>
-
-                    <div className='rounded-md bg-blue-50 p-4 text-sm text-blue-900 dark:bg-blue-950 dark:text-blue-100'>
-                      <p className='mb-2 font-medium'>
-                        {t('Webhook Configuration:')}
-                      </p>
-                      <ul className='list-inside list-disc space-y-1'>
-                        <li>
-                          {t('Webhook URL:')}{' '}
-                          <code className='rounded bg-blue-100 px-1 py-0.5 text-xs dark:bg-blue-900'>
-                            {'<ServerAddress>/api/creem/webhook'}
-                          </code>
-                        </li>
-                        <li>{t('Configure in your Creem dashboard')}</li>
-                      </ul>
-                    </div>
-
-                    <div className='grid gap-6 md:grid-cols-2'>
-                      <FormField
-                        control={form.control}
-                        name='CreemApiKey'
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>{t('API Key')}</FormLabel>
-                            <FormControl>
-                              <Input
-                                type='password'
-                                placeholder={t('Enter Creem API key')}
-                                autoComplete='new-password'
-                                {...field}
-                                onChange={(event) =>
-                                  field.onChange(event.target.value)
-                                }
-                              />
-                            </FormControl>
-                            <FormDescription>
-                              {t('Creem API key (leave blank unless updating)')}
-                            </FormDescription>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      <FormField
-                        control={form.control}
-                        name='CreemWebhookSecret'
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>{t('Webhook Secret')}</FormLabel>
-                            <FormControl>
-                              <Input
-                                type='password'
-                                placeholder={t('Enter webhook secret')}
-                                autoComplete='new-password'
-                                {...field}
-                                onChange={(event) =>
-                                  field.onChange(event.target.value)
-                                }
-                              />
-                            </FormControl>
-                            <FormDescription>
-                              {t(
-                                'Webhook signing secret (leave blank unless updating)'
-                              )}
-                            </FormDescription>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-
-                    <FormField
-                      control={form.control}
-                      name='CreemTestMode'
-                      render={({ field }) => (
-                        <SettingsSwitchItem>
-                          <SettingsSwitchContent>
-                            <FormLabel>{t('Test Mode')}</FormLabel>
-                            <FormDescription>
-                              {t('Enable test mode for Creem payments')}
-                            </FormDescription>
-                          </SettingsSwitchContent>
-                          <FormControl>
-                            <Switch
-                              checked={field.value}
-                              onCheckedChange={field.onChange}
-                            />
-                          </FormControl>
-                        </SettingsSwitchItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={form.control}
-                      name='CreemProducts'
-                      render={({ field }) => (
-                        <FormItem>
-                          <div className='mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between'>
-                            <FormLabel>{t('Products')}</FormLabel>
-                            <Button
-                              type='button'
-                              variant='outline'
-                              size='sm'
-                              onClick={() =>
-                                setCreemProductsVisualMode(
-                                  !creemProductsVisualMode
-                                )
-                              }
-                              className='w-full sm:w-auto'
-                            >
-                              {creemProductsVisualMode ? (
-                                <>
-                                  <Code2 className='mr-2 h-3 w-3' />
-                                  {t('JSON Editor')}
-                                </>
-                              ) : (
-                                <>
-                                  <Eye className='mr-2 h-3 w-3' />
-                                  {t('Visual Editor')}
-                                </>
-                              )}
-                            </Button>
-                          </div>
-                          <FormControl>
-                            {creemProductsVisualMode ? (
-                              <CreemProductsVisualEditor
-                                value={field.value}
-                                onChange={field.onChange}
-                              />
-                            ) : (
-                              <JsonCodeEditor
-                                value={field.value}
-                                onChange={field.onChange}
-                                name={field.name}
-                                onBlur={field.onBlur}
-                                textareaRef={field.ref}
-                                placeholder='[{"name":"Basic","productId":"prod_xxx","price":10,"quota":500000,"currency":"USD"}]'
-                                heightClassName='h-40 min-h-40 max-h-40'
-                                aria-invalid={Boolean(
-                                  form.formState.errors.CreemProducts
-                                )}
-                              />
-                            )}
-                          </FormControl>
-                          <FormDescription>
-                            {t(
-                              'Configure Creem products. Provide a JSON array.'
-                            )}
-                          </FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-                </TabsContent>
-
-                <TabsContent
-                  value='waffo-pancake'
-                  className={paymentTabContentClassName}
-                >
-                  <WaffoPancakeSettingsSection
-                    defaultValues={waffoPancakeDefaultValues}
-                    values={waffoPancakeValues}
-                    onValueChange={setWaffoPancakeValue}
-                    selectedBinding={waffoPancakeSelection}
-                    savedBinding={waffoPancakeSavedBinding}
-                    onSelectedBindingChange={setWaffoPancakeSelection}
-                  />
-                </TabsContent>
-
-                <TabsContent
-                  value='waffo'
-                  className={paymentTabContentClassName}
-                >
-                  <WaffoSettingsSection
-                    values={waffoValues}
-                    onValueChange={setWaffoValue}
-                    payMethods={waffoPayMethods}
-                    onPayMethodsChange={setWaffoPayMethods}
-                  />
-                </TabsContent>
-              </>
-            )}
           </Tabs>
         </SettingsForm>
       </Form>

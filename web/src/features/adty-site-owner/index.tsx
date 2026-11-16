@@ -44,7 +44,6 @@ import { WithdrawalPanel } from './components/withdrawal-panel'
 import { OverviewPanel } from './components/overview-panel'
 import { OwnerVerificationProvider } from './components/owner-verification'
 import { PricingPanel } from './components/pricing-panel'
-import { PromoCodesPanel } from './components/promo-codes-panel'
 import { SiteSettingsPanel } from './components/site-settings-panel'
 import { StaffPanel } from './components/staff-panel'
 import { TermsAcceptPanel } from './components/terms-accept-panel'
@@ -71,7 +70,6 @@ export function SiteOwnerCenter(props: { section: SiteOwnerSectionId }) {
     orders: t('Order management'),
     pricing: t('Pricing'),
     bonus: t('Bonuses'),
-    'promo-codes': t('Promo codes'),
     settings: t('Site settings'),
     earnings: t('Earnings'),
     vouchers: t('Recharge codes'),
@@ -153,9 +151,6 @@ export function SiteOwnerCenter(props: { section: SiteOwnerSectionId }) {
                   </TabsContent>
                   <TabsContent value='bonus'>
                     <BonusPanel site={site.data} />
-                  </TabsContent>
-                  <TabsContent value='promo-codes'>
-                    <PromoCodesPanel />
                   </TabsContent>
                   <TabsContent value='staff'>
                     <StaffPanel siteId={site.data.id} />

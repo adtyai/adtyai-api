@@ -86,11 +86,8 @@ func AdtyQuoteFor(userGroup string, face int64, method string, promo AdtyPromoIn
 
 // AdtyQuoteForSite 算一笔充值的报价；site 是客户所属的分站（主站传 nil），分站客户按站点的加赠档位算（11.5）。
 // promo 里带了码时校验并算优惠加赠（任务 12.4），优惠只多送额度，应付不变。
-// TOKENS 显示模式会改变金额含义，未确认支付合规时也不报价（controller 先拦，这里兜底）。
+// TOKENS 显示模式会改变金额含义，这种模式下不报价。
 func AdtyQuoteForSite(site *model.AdtySite, userGroup string, face int64, method string, promo AdtyPromoInput) (*AdtyQuote, error) {
-	if !operation_setting.IsPaymentComplianceConfirmed() {
-		return nil, common.NewMessage("Payment features are locked until the root administrator confirms the compliance terms.")
-	}
 	if operation_setting.GetQuotaDisplayType() == operation_setting.QuotaDisplayTypeTokens {
 		return nil, common.NewMessage("Top-up is unavailable while quota is displayed as tokens")
 	}
@@ -117,26 +114,6 @@ func AdtyQuoteForSite(site *model.AdtySite, userGroup string, face int64, method
 	quote.PayCurrency = AdtyCurrencyCNY
 	quote.PriceCNYPerUSD = price
 	quote.PayAmount = quote.FaceUSD.Mul(price).Mul(quote.TopupGroupRatio).Round(2)
-	return quote, nil
-}
-
-// AdtyHostedQuoteForSite freezes the purchased quota independently of the
-// provider's currency, product price, discounts, and payment amount.
-func AdtyHostedQuoteForSite(site *model.AdtySite, userGroup string, baseQuota, payAmount decimal.Decimal, currency string, promo AdtyPromoInput) (*AdtyQuote, error) {
-	if !operation_setting.IsPaymentComplianceConfirmed() {
-		return nil, common.NewMessage("Payment features are locked until the root administrator confirms the compliance terms.")
-	}
-	if !baseQuota.IsPositive() || !payAmount.IsPositive() || common.QuotaPerUnit <= 0 || strings.TrimSpace(currency) == "" {
-		return nil, model.ErrInvalidTopUpQuota
-	}
-	if _, err := common.WalletQuotaFromDecimalStrict(baseQuota); err != nil {
-		return nil, err
-	}
-	quote, err := adtyQuotaQuoteForSite(site, userGroup, baseQuota.Div(common.QuotaPerUnitDecimal()), "", promo)
-	if err != nil {
-		return nil, err
-	}
-	quote.PayAmount, quote.PayCurrency = payAmount, strings.ToUpper(strings.TrimSpace(currency))
 	return quote, nil
 }
 

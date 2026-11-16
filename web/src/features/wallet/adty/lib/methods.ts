@@ -26,10 +26,6 @@ export const METHOD_LABELS: Record<string, string> = {
   'usdt.xlayer': 'USDT · X Layer',
   alipay: 'Alipay',
   wxpay: 'WeChat Pay',
-  stripe: 'Stripe',
-  creem: 'Creem',
-  waffo: 'Waffo',
-  waffo_pancake: 'Waffo Pancake',
 }
 
 export const CHAIN_NAMES: Record<string, string> = {
@@ -40,7 +36,6 @@ export const CHAIN_NAMES: Record<string, string> = {
 }
 
 export function methodLabel(method: string): string {
-  if (method.startsWith('creem:')) return 'Creem'
   return METHOD_LABELS[method] ?? method
 }
 

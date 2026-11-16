@@ -63,3 +63,31 @@ func TestSearchUsersSortsBeforePagination(t *testing.T) {
 	assert.Equal(t, int64(42), total)
 	assert.Equal(t, []int{21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40}, collectUserIDs(users))
 }
+
+func TestAdminUserListHidesSameOrHigherRole(t *testing.T) {
+	rows := []*User{
+		{Username: "vis-common", Password: "x", Role: common.RoleCommonUser, Status: common.UserStatusEnabled},
+		{Username: "vis-admin", Password: "x", Role: common.RoleAdminUser, Status: common.UserStatusEnabled},
+		{Username: "vis-root", Password: "x", Role: common.RoleRootUser, Status: common.UserStatusEnabled},
+	}
+	for _, row := range rows {
+		require.NoError(t, DB.Create(row).Error)
+	}
+	t.Cleanup(func() {
+		for _, row := range rows {
+			require.NoError(t, DB.Unscoped().Delete(&User{}, row.Id).Error)
+		}
+	})
+
+	visible, _, err := SearchUsers("vis-", "", nil, nil, 0, 20, common.RoleAdminUser, nil)
+	require.NoError(t, err)
+	names := make([]string, 0, len(visible))
+	for _, row := range visible {
+		names = append(names, row.Username)
+	}
+	assert.Equal(t, []string{"vis-common"}, names)
+
+	all, _, err := SearchUsers("vis-", "", nil, nil, 0, 20, 0, nil)
+	require.NoError(t, err)
+	assert.Len(t, all, 3)
+}

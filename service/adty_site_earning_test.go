@@ -552,7 +552,7 @@ func TestTopUpStatsKeepUnrefundedFace(t *testing.T) {
 
 func TestSiteBonusCappedByMainPlusExtra(t *testing.T) {
 	db := prepareSiteDB(t)
-	confirmAdtyCompliance(t)
+	setAdtyQuoteDefaults(t)
 	setAdtyBonusRates(t, map[int]float64{100: 2.5, 500: 4})
 	_, site := openActiveSite(t, db, "bonus-cap")
 	// max_site_bonus_extra 是 2：$100 档最多 4.5%，$300 落在 $100 档，$500 档最多 6%，$50 没有主站档，最多 2%。

@@ -45,20 +45,7 @@ type PaymentMethodsVisualEditorProps = {
 
 const PAYMENT_TYPE_ICON_NAMES: Record<string, string> = {
   alipay: 'SiAlipay',
-  stripe: 'SiStripe',
-  waffo_pancake: 'LuCreditCard',
   wxpay: 'SiWechat',
-}
-
-const RETIRED_HOSTED_PAY_METHOD_TYPES = new Set([
-  'stripe',
-  'creem',
-  'waffo',
-  'waffo_pancake',
-])
-
-function isRetiredHostedPayMethodType(type: string) {
-  return RETIRED_HOSTED_PAY_METHOD_TYPES.has(type.trim().toLowerCase())
 }
 
 function getDefaultIconName(type: string) {
@@ -121,7 +108,6 @@ export function PaymentMethodsVisualEditor({
         'type' in item &&
         typeof item.name === 'string' &&
         typeof item.type === 'string' &&
-        !isRetiredHostedPayMethodType(item.type) &&
         (!('icon' in item) || typeof item.icon === 'string') &&
         (!('min_topup' in item) || typeof item.min_topup === 'string') &&
         (!('color' in item) || typeof item.color === 'string')

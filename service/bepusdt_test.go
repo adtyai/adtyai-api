@@ -127,7 +127,7 @@ func TestBEpusdtProviderQueryTrustAndOrderBinding(t *testing.T) {
 		case "url":
 			invalid.PayURL = ""
 		case "provider":
-			invalid.Provider = model.PaymentProviderStripe
+			invalid.Provider = model.PaymentProviderAdtyEpay
 		}
 		before := requests.Load()
 		_, err = query.Query(t.Context(), &invalid)

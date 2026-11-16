@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-export type AdtyMethodKind = 'usdt' | 'epay' | 'hosted'
+export type AdtyMethodKind = 'usdt' | 'epay'
 
 export type AdtyMethod = {
   id: string
@@ -100,7 +100,6 @@ export type AdtyTopupInfo = {
   usdt_order_minutes: number
   epay_order_minutes: number
   pending: AdtyOrder | null
-  compliance_confirmed: boolean
 }
 
 export type AdtyQuote = {

@@ -18,7 +18,6 @@
 | `multi_key_mode.go`  | 多渠道密钥的选择模式，如 `random`（随机）、`polling`（轮询）。                                                                                             |
 | `setup.go`           | 标识项目是否已完成初始化安装 (`Setup` 布尔值)。                                                                                                        |
 | `task.go`            | 各种任务(Task)平台、动作常量及模型与动作映射表，如 Suno、Midjourney 等。                                                                                     |
-| `waffo_pay_method.go` | Waffo 支付方式的展示名、图标与 API 参数映射，含默认支付方式列表 `DefaultWaffoPayMethods`。                                                                         |
 
 `README.md` 本身和 `channel_test.go`、`task_test.go` 是文档与测试文件，不是常量定义。原先的 `channel_setting.go`、`user_setting.go` 已随 DTO 一起迁到 `relaykit/dto/channel_settings.go`、`relaykit/dto/user_settings.go`，本目录不再有这两个文件。
 

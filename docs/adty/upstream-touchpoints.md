@@ -678,3 +678,22 @@
 | `middleware/adty_site_context.go` | 只改注释：`/api/oauth` 下只剩邮箱绑定 | 前缀规则不变 | 第三方登录框架删除 2026-11-16 |
 | `controller/auth_flow_test.go`、`controller/security_account_test.go`、`controller/security_enrollment_test.go`、`controller/adty_username_test.go`、`controller/telegram_test.go`、`service/security_verification_email_code_test.go` | 删除只测 OAuth 登录、绑定、二次验证的用例和测试 provider；方法清单断言去掉 `oauth`，无可用因素时期望方法不在清单里 | 被测功能已删除；其余安全断言保留 | 第三方登录框架删除 2026-11-16 |
 | `router/adty_deleted_routes_test.go`、`router/access_token_scope_test.go`、`router/adty_site_context_test.go` | 被删路由加入不得复活清单；免检名单去掉 Telegram 旧路由；站点前缀用例改用邮箱绑定路由 | 跟上路由变化，继续钉住前缀规则 | 第三方登录框架删除 2026-11-16 |
+| `router/api-router.go` | 删除四家支付的下单和回调、签到、上游单通道易支付回调、旧管理员补单（原来都挂 `AdtyClosedFeature`），以及 `/topup/info`、`/topup/self`、`/amount`、`/option/payment_compliance`、`/option/waffo-pancake/*` | 功能删除，403 占位也不再需要 | 四家托管支付等删除 2026-11-16 |
+| `controller/topup.go` | 删除上游单通道易支付下单、回调、充值信息、用户充值记录、`/amount`、管理员补单和 `paymentError`；只留订单锁和 `GetAllTopUps` | 入口早已关闭，函数没有调用方 | 四家托管支付等删除 2026-11-16 |
+| `model/topup.go` | 删除四家支付和上游单通道易支付的入账、退款、管理员补单、用户充值记录查询，以及四家的 provider/method 常量和只给它们用的辅助函数 | 没有调用方；项目未上线，没有这些支付商的历史订单 | 四家托管支付等删除 2026-11-16 |
+| `model/option.go` | 删除 `Stripe*`/`Creem*`/`Waffo*` 选项的注册与读写分支、Pancake 环境校验，以及拒绝写入这些键和 `PayMethods` 托管类型的保护 | 设置已删除 | 四家托管支付等删除 2026-11-16 |
+| `model/checkin.go` | 只留 `Checkin` 表结构和 `CheckinRecord`，删除签到、统计和查询函数 | 签到删除；表继续迁移，保留历史行 | 四家托管支付等删除 2026-11-16 |
+| `controller/misc.go` | `/api/status` 去掉 `stripe_unit_price` 和 `checkin_enabled` | 功能删除 | 四家托管支付等删除 2026-11-16 |
+| `controller/option.go` | 删除支付合规字段的写入保护；`adty_marketing_setting.*` 整组拒绝写入 | 合规确认和优惠码开关删除 | 四家托管支付等删除 2026-11-16 |
+| `setting/operation_setting/payment_setting.go` | 删除支付合规确认字段、条款版本和 `IsPaymentComplianceConfirmed` | 合规确认删除 | 四家托管支付等删除 2026-11-16 |
+| `middleware/access_token_routes.go`、`middleware/audit.go`、`middleware/testdata/adty_admin_routes.txt` | 删掉被删路由的访问令牌规则、审计登记和后台路由分类 | 跟上路由删除 | 四家托管支付等删除 2026-11-16 |
+| `go.mod`、`go.sum`、`THIRD-PARTY-LICENSES.md` | `go mod tidy` 去掉四家支付 SDK、`randstr` 和第三方登录留下的 `go-oidc`、`oauth2`、`moego` | 依赖没有使用方 | 四家托管支付等删除 2026-11-16 |
+| `service/referral_withdraw.go` | 只改注释：不再提已删的 `creditTopUpQuotaWithPrincipalBatch` | 函数已删除 | 四家托管支付等删除 2026-11-16 |
+| `web/src/components/react-icon-by-name.tsx` | 改成固定的四个支付图标（支付宝、微信、USDT、通用卡片），不再按名字动态加载 react-icons 图标包 | 图标选择器只保留这几种 | 四家托管支付等删除 2026-11-16 |
+| `web/src/features/system-settings/integrations/payment-settings-section.tsx`、`payment-method-dialog.tsx`、`payment-methods-visual-editor.tsx` | 删掉 Stripe、Creem、Waffo、Waffo Pancake 的表单、标签和类型；图标输入改成下拉选择 | 四家支付删除 | 四家托管支付等删除 2026-11-16 |
+| `web/src/features/system-settings/billing/index.tsx`、`billing/section-registry.tsx`、`types.ts`、`api.ts` | 删掉四家支付、支付合规和优惠码开关的默认值、类型、接口和“优惠码”分区 | 功能删除 | 四家托管支付等删除 2026-11-16 |
+| `web/src/features/wallet/index.tsx`、`wallet/types.ts` | 订单恢复只认 USDT 和易支付；类型文件只留钱包余额相关的两个类型 | 托管支付和旧版上游钱包接口删除 | 四家托管支付等删除 2026-11-16 |
+| `web/src/features/errors/maintenance-error.tsx` | 去掉指向 `/status` 的按钮 | 公开状态页删除 | 四家托管支付等删除 2026-11-16 |
+| `web/src/features/usage-logs/lib/format.ts`、`web/src/features/auth/secure-verification/types.ts` | 删掉 `option.payment_compliance` 审计动作名和站长二次验证动作 `promo` | 功能删除 | 四家托管支付等删除 2026-11-16 |
+| `web/src/i18n/locales/en.json`、`zh.json` | 新增支付方式类型说明、图标选择器的文案 | 图标改成下拉选择；旧键按约定 B 保留 | 四家托管支付等删除 2026-11-16 |
+| 测试：`controller/admin_finance_test.go`、`model/payment_method_guard_test.go`、`model/payment_orphan_resolution_test.go`、`model/topup_money_exact_test.go`、`model/user_pagination_test.go`、`router/access_token_scope_test.go`、`service/bepusdt_test.go`、`web/src/features/security/__tests__/page.test.tsx`、`web/src/features/system-settings/integrations/__tests__/payment-provider.test.tsx` | 删掉只测已删代码的用例；拿四家当“某个支付商”的用例改用 BEpusdt 或易支付；从 Pancake 测试文件里挪出无关的 `TestAdminUserListHidesSameOrHigherRole` | 跟上实现删除 | 四家托管支付等删除 2026-11-16 |

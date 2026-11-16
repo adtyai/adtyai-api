@@ -45,7 +45,7 @@ export async function verifyOrderTrace(context) {
   })
   for (const [trade, provider, method, currency] of [
     ['m03-callback-order', 'bepusdt', 'usdt.trc20', 'USDT'],
-    ['m03-manual-order', 'stripe', 'stripe', 'USD'],
+    ['m03-manual-order', 'adty_epay', 'alipay', 'CNY'],
   ]) {
     postgres(
       `INSERT INTO top_ups (user_id, amount, money, trade_no, payment_provider, payment_method, create_time, complete_time, status) VALUES (${buyer}, 2, 2, '${trade}', '${provider}', '${method}', 1767225600, 0, 'pending')`

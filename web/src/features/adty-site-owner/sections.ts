@@ -24,7 +24,6 @@ export const SITE_OWNER_SECTIONS = [
   'orders',
   'pricing',
   'bonus',
-  'promo-codes',
   'settings',
   'earnings',
   'vouchers',

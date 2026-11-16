@@ -54,14 +54,6 @@ func AdtyPaymentCapabilities() []AdtyPaymentCapability {
 			label = "BEpusdt"
 		case model.PaymentProviderAdtyEpay:
 			label = "Epay channels"
-		case model.PaymentProviderStripe:
-			label = "Stripe"
-		case model.PaymentProviderCreem:
-			label = "Creem"
-		case model.PaymentProviderWaffo:
-			label = "Waffo"
-		case model.PaymentProviderWaffoPancake:
-			label = "Waffo Pancake"
 		}
 		_, query := provider.(AdtyPaymentOrderQuerier)
 		capabilities = append(capabilities, AdtyPaymentCapability{

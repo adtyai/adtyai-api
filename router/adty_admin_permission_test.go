@@ -151,8 +151,8 @@ func TestRootBypassesGuard(t *testing.T) {
 
 func TestOrderTraceReadPermissionAndRevocation(t *testing.T) {
 	f := newAdtyGuardFixture(t)
-	require.NoError(t, f.db.Create(&model.TopUp{UserId: f.admin.Id, TradeNo: "authorized-detail", PaymentProvider: model.PaymentProviderStripe}).Error)
-	require.NoError(t, f.db.Create(&model.AdtyTopupOrder{UserId: f.admin.Id, TradeNo: "authorized-detail", Provider: model.PaymentProviderStripe}).Error)
+	require.NoError(t, f.db.Create(&model.TopUp{UserId: f.admin.Id, TradeNo: "authorized-detail", PaymentProvider: model.PaymentProviderAdtyEpay}).Error)
+	require.NoError(t, f.db.Create(&model.AdtyTopupOrder{UserId: f.admin.Id, TradeNo: "authorized-detail", Provider: model.PaymentProviderAdtyEpay}).Error)
 	path := "/api/user/admin/finance/recharge-audit/authorized-detail"
 	pat := createAdtyScopedToken(t, f.admin.Id, "adty_finance:read")
 	for _, credential := range []string{f.token, pat} {
@@ -422,12 +422,6 @@ func TestAdminRouteInventory(t *testing.T) {
 		key := fields[0] + " " + fields[1]
 		rule, exists := middleware.AccessTokenRouteRule(key)
 		require.True(t, exists, key)
-		if key == "POST /api/user/topup/complete" {
-			closed := httptest.NewRecorder()
-			engine.ServeHTTP(closed, httptest.NewRequest(http.MethodPost, "/api/user/topup/complete", nil))
-			assert.Equal(t, http.StatusForbidden, closed.Code, "the retired upstream completion route must remain closed")
-			continue
-		}
 		if key == "GET /api/group/" {
 			assert.Equal(t, "scope", rule.Kind(), key)
 			assert.Equal(t, "group:read", rule.Scope(), "the group entry delegates to the same live/PAT permission intersection")

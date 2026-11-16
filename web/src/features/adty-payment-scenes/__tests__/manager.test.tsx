@@ -250,35 +250,3 @@ it('names scene restrictions and selects a real provider when creating a scene',
     providers: ['bepusdt'],
   })
 })
-
-it('drops retired hosted providers when saving a historical scene and does not offer them', async () => {
-  config.scenes[0].providers = ['stripe', 'bepusdt', 'waffo']
-  const user = userEvent.setup()
-  renderManager()
-  await user.click(
-    await screen.findByRole('button', {
-      name: 'Edit payment scene Wallet top-up',
-    })
-  )
-  const dialog = within(screen.getByRole('dialog'))
-  await user.click(dialog.getByRole('combobox', { name: 'Payment providers' }))
-  expect(
-    screen.queryByRole('option', { name: 'Stripe' })
-  ).not.toBeInTheDocument()
-  expect(screen.getByRole('option', { name: 'BEpusdt' })).toBeInTheDocument()
-  await user.keyboard('{Escape}')
-  const name = dialog.getByRole('textbox', { name: 'Name' })
-  await user.clear(name)
-  await user.type(name, 'Official checkout')
-  await user.click(dialog.getByRole('button', { name: 'Save payment scene' }))
-  await user.click(
-    within(screen.getByRole('alertdialog')).getByRole('button', {
-      name: 'Continue',
-    })
-  )
-  await waitFor(() => expect(writes).toHaveLength(1))
-  expect(writes[0].scenes[0]).toMatchObject({
-    name: 'Official checkout',
-    providers: ['bepusdt'],
-  })
-})

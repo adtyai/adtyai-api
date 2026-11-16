@@ -1,10 +1,9 @@
 package router
 
 import (
-	"bytes"
+	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -24,11 +23,8 @@ import (
 	"gorm.io/gorm"
 )
 
-type financeQueryTransport func(*http.Request) (*http.Response, error)
-
 func TestPaymentScenesConstrainNativeEpayOrders(t *testing.T) {
 	f := newAdtyGuardFixture(t)
-	confirmRouterCompliance(t)
 	setRouterBonusRates(t)
 	shortEpayTimeouts(t)
 	allowedGateway := newFakeEpay(t, epayQR)
@@ -144,8 +140,15 @@ func TestVerifiedNonPaidCallbacksRemainTraceable(t *testing.T) {
 	assert.Zero(t, buyer.Quota)
 }
 
-func (transport financeQueryTransport) RoundTrip(request *http.Request) (*http.Response, error) {
-	return transport(request)
+// financeQueryProvider 给真实的易支付提供方换上可控的查单结果，
+// 这样查单接口的权限和「只入账一次」不依赖外部网关。
+type financeQueryProvider struct {
+	service.AdtyPaymentProvider
+	query func(*model.AdtyTopupOrder) (*model.AdtyPaymentFacts, error)
+}
+
+func (p financeQueryProvider) Query(_ context.Context, ext *model.AdtyTopupOrder) (*model.AdtyPaymentFacts, error) {
+	return p.query(ext)
 }
 
 func TestFinanceQueryRequiresWritePermissionAndCreditsOnce(t *testing.T) {
@@ -153,38 +156,32 @@ func TestFinanceQueryRequiresWritePermissionAndCreditsOnce(t *testing.T) {
 	buyer := adtySessionToken(t, f.db, "query-buyer", common.RoleCommonUser)
 	var user model.User
 	require.NoError(t, f.db.Where("username = ?", "query-buyer").First(&user).Error)
-	order := model.TopUp{UserId: user.Id, TradeNo: "creem-admin-query", Amount: 2, Money: 2.5,
-		PaymentProvider: model.PaymentProviderCreem, PaymentMethod: model.PaymentMethodCreem, Status: common.TopUpStatusExpired}
+	order := model.TopUp{UserId: user.Id, TradeNo: "EPY-admin-query", Amount: 2, Money: 14.6,
+		PaymentProvider: model.PaymentProviderAdtyEpay, PaymentMethod: "alipay", Status: common.TopUpStatusExpired}
 	ext := model.AdtyTopupOrder{TradeNo: order.TradeNo, UserId: user.Id, Provider: order.PaymentProvider, Method: order.PaymentMethod,
-		FaceUSD: decimal.NewFromInt(2), CreditQuota: 1000000, PayAmount: decimal.RequireFromString("2.5"), PayCurrency: "USD",
-		ProviderProductId: "prod_query", ProviderEnvironment: "test", GatewayTradeId: "ch_query"}
+		FaceUSD: decimal.NewFromInt(2), CreditQuota: 1000000, PayAmount: decimal.RequireFromString("14.60"), PayCurrency: "CNY",
+		TopupGroupRatio: decimal.NewFromInt(1), GatewayTradeId: "gw-query"}
 	require.NoError(t, model.CreateAdtyTopUp(&order, &ext))
-	oldKey, oldMode, oldTransport := setting.CreemApiKey, setting.CreemTestMode, http.DefaultTransport
-	setting.CreemApiKey, setting.CreemTestMode = "synthetic-admin-query", true
-	t.Cleanup(func() {
-		setting.CreemApiKey, setting.CreemTestMode, http.DefaultTransport = oldKey, oldMode, oldTransport
-	})
 	queries := 0
 	paid, wrongAmount, gatewayFails := false, false, false
-	http.DefaultTransport = financeQueryTransport(func(req *http.Request) (*http.Response, error) {
+	real := service.AdtyPaymentProviderByName(model.PaymentProviderAdtyEpay)
+	require.NotNil(t, real)
+	service.RegisterAdtyPaymentProvider(financeQueryProvider{AdtyPaymentProvider: real, query: func(queried *model.AdtyTopupOrder) (*model.AdtyPaymentFacts, error) {
 		queries++
-		require.Equal(t, "https://test-api.creem.io/v1/checkouts?checkout_id=ch_query", req.URL.String())
-		require.Equal(t, "synthetic-admin-query", req.Header.Get("x-api-key"))
+		require.Equal(t, order.TradeNo, queried.TradeNo)
 		if gatewayFails {
 			return nil, errors.New("query failed with secret query-string-key")
 		}
-		status, amount := "pending", 250
-		if paid {
-			status = "completed"
+		if !paid {
+			return nil, nil
 		}
+		amount := decimal.RequireFromString("14.60")
 		if wrongAmount {
-			amount = 251
+			amount = decimal.RequireFromString("14.61")
 		}
-		payload, err := common.Marshal(map[string]any{"id": "ch_query", "request_id": order.TradeNo, "status": status, "mode": "test", "units": 1,
-			"order": map[string]any{"id": "ord_query", "status": "paid", "type": "onetime", "mode": "test", "product": "prod_query", "currency": "USD", "amount": amount, "sub_total": amount, "amount_paid": amount}})
-		require.NoError(t, err)
-		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(bytes.NewReader(payload))}, nil
-	})
+		return &model.AdtyPaymentFacts{Provider: model.PaymentProviderAdtyEpay, Method: "alipay", PaidAmount: amount, PaidCurrency: "CNY", GatewayTradeId: "gw-query"}, nil
+	}})
+	t.Cleanup(func() { service.RegisterAdtyPaymentProvider(real) })
 	path := "/api/adty/admin/topup/" + order.TradeNo + "/query"
 	f.grant(t, authz.AdtyFinanceRead)
 	readPAT := createAdtyScopedToken(t, f.admin.Id, "adty_finance:read")
@@ -236,7 +233,6 @@ func TestFinanceQueryRequiresWritePermissionAndCreditsOnce(t *testing.T) {
 	require.NoError(t, f.db.Where("action = ?", "adty.topup.query").Find(&audits).Error)
 	assert.GreaterOrEqual(t, len(audits), 2)
 	for _, audit := range audits {
-		assert.NotContains(t, fmt.Sprint(audit), "synthetic-admin-query")
 		assert.NotContains(t, fmt.Sprint(audit), "query-string-key")
 	}
 	f.grant(t, authz.AdtyFinanceRead)
@@ -244,9 +240,9 @@ func TestFinanceQueryRequiresWritePermissionAndCreditsOnce(t *testing.T) {
 	seedRouterOrder(t, f.db, user.Id, "bepusdt-no-query", common.TopUpStatusPending, common.GetTimestamp()+900)
 	unsupported := adtyJSONWithProof(t, f.engine, http.MethodPost, "/api/adty/admin/topup/bepusdt-no-query/query", `{}`, f.root, financeProofForCredential(t, f, f.root, service.AdtyTopUpQueryOperation("bepusdt-no-query")))
 	assert.Contains(t, unsupported.Body.String(), `"success":false`)
-	require.NoError(t, f.db.Create(&model.TopUp{UserId: user.Id, TradeNo: "creem-missing-details", PaymentProvider: model.PaymentProviderCreem, PaymentMethod: model.PaymentMethodCreem, Status: common.TopUpStatusPending}).Error)
+	require.NoError(t, f.db.Create(&model.TopUp{UserId: user.Id, TradeNo: "epay-missing-details", PaymentProvider: model.PaymentProviderAdtyEpay, PaymentMethod: "alipay", Status: common.TopUpStatusPending}).Error)
 	require.NotPanics(t, func() {
-		missing := adtyJSONWithProof(t, f.engine, http.MethodPost, "/api/adty/admin/topup/creem-missing-details/query", `{}`, f.root, financeProofForCredential(t, f, f.root, service.AdtyTopUpQueryOperation("creem-missing-details")))
+		missing := adtyJSONWithProof(t, f.engine, http.MethodPost, "/api/adty/admin/topup/epay-missing-details/query", `{}`, f.root, financeProofForCredential(t, f, f.root, service.AdtyTopUpQueryOperation("epay-missing-details")))
 		assert.Equal(t, http.StatusOK, missing.Code)
 		assert.Contains(t, missing.Body.String(), `"success":false`)
 	})
@@ -266,15 +262,6 @@ func (p *fakeAdtyProvider) AvailableFor(string, *service.AdtyQuote) bool { retur
 func (p *fakeAdtyProvider) Cancel(ext *model.AdtyTopupOrder) error {
 	p.canceled = append(p.canceled, ext.TradeNo)
 	return p.cancelErr
-}
-
-func confirmRouterCompliance(t *testing.T) {
-	t.Helper()
-	payment := operation_setting.GetPaymentSetting()
-	oldConfirmed, oldVersion := payment.ComplianceConfirmed, payment.ComplianceTermsVersion
-	payment.ComplianceConfirmed = true
-	payment.ComplianceTermsVersion = operation_setting.CurrentComplianceTermsVersion
-	t.Cleanup(func() { payment.ComplianceConfirmed, payment.ComplianceTermsVersion = oldConfirmed, oldVersion })
 }
 
 // setRouterBonusRates 打开「按支付方式加赠 2.5%」，结束时还原。
@@ -313,7 +300,6 @@ func seedRouterOrder(t *testing.T, db *gorm.DB, userID int, tradeNo, status stri
 
 func TestAdtyWalletTopUpAPIs(t *testing.T) {
 	f := newAdtyGuardFixture(t)
-	confirmRouterCompliance(t)
 	setRouterBonusRates(t)
 	provider := &fakeAdtyProvider{name: model.PaymentProviderAdtyBEpusdt}
 	real := service.AdtyPaymentProviderByName(model.PaymentProviderAdtyBEpusdt)
@@ -371,8 +357,6 @@ func TestAdtyWalletTopUpAPIs(t *testing.T) {
 	require.NoError(t, f.db.Where("trade_no = ?", "EPU-wallet-new").First(&stored).Error)
 	assert.Equal(t, model.TopUpStatusCanceled, stored.Status)
 
-	// 2026-11-01 取消了支付合规确认：没确认也能报价和下单。
-	operation_setting.GetPaymentSetting().ComplianceConfirmed = false
 	open := adtyJSON(t, f.engine, http.MethodPost, "/api/adty/topup/quote", `{"amount":150,"method":"usdt.trc20"}`, owner)
 	assert.Contains(t, open.Body.String(), `"success":true`, open.Body.String())
 }
@@ -474,7 +458,7 @@ func TestRefundQuotaPOSTAppliesManualRefundWithoutCompleting(t *testing.T) {
 
 func TestPaymentOrphanReviewRequiresWritePermissionAndEvidence(t *testing.T) {
 	f := newAdtyGuardFixture(t)
-	event := &model.PaymentOrphanEvent{Provider: model.PaymentProviderStripe, ReferenceID: "review-router-order", EventID: "reversal:router-review", EventType: "dispute.open"}
+	event := &model.PaymentOrphanEvent{Provider: model.PaymentProviderAdtyEpay, ReferenceID: "review-router-order", EventID: "reversal:router-review", EventType: "dispute.open"}
 	require.NoError(t, model.RecordPaymentOrphanEvent(event))
 	path := fmt.Sprintf("/api/user/admin/finance/payment-orphans/%d/resolve", event.ID)
 	body := `{"status":"pending_review","trade_no":"review-router-order","external_amount":"0","external_currency":"USD","proof":"provider-dispute-open","note":"not an actual completed reversal"}`
@@ -711,7 +695,7 @@ func TestFinanceCreditResolveAndQueryRequireSecurityProof(t *testing.T) {
 	other := &model.PaymentOrphanEvent{Provider: model.PaymentProviderAdtyBEpusdt, EventType: "callback", ReferenceID: "EPU-proof-orphan-other",
 		Reason: "temporary failure", Payload: `{"actual_amount":100,"amount":100,"token":"TAddr","trade_id":"gw-other","block_transaction_id":"0xother"}`}
 	require.NoError(t, model.RecordPaymentOrphanEvent(other))
-	reviewEvent := &model.PaymentOrphanEvent{Provider: model.PaymentProviderStripe, ReferenceID: "review-proof-order", EventID: "reversal:router-proof", EventType: "dispute.open"}
+	reviewEvent := &model.PaymentOrphanEvent{Provider: model.PaymentProviderAdtyEpay, ReferenceID: "review-proof-order", EventID: "reversal:router-proof", EventType: "dispute.open"}
 	require.NoError(t, model.RecordPaymentOrphanEvent(reviewEvent))
 
 	creditPath := fmt.Sprintf("/api/user/admin/finance/payment-orphans/%d/credit", orphan.ID)

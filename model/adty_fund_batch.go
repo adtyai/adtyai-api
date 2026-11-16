@@ -158,17 +158,6 @@ func adtyMoveFundBatchesToSiteTx(tx *gorm.DB, userIDs []int, fromSite, toSite in
 		Update("site_id", toSite).Error
 }
 
-// adtyFundBatchSiteOfUserTx 读用户当前所属站，给没有其它站点上下文的写入路径
-// 兜底。用户行在读不到时返回错误：那说明调用方拿到的不是可用账户，静默写 NULL
-// 会把「漏填」伪装成「历史行」。
-func adtyFundBatchSiteOfUserTx(tx *gorm.DB, userID int) (*int, error) {
-	var user User
-	if err := tx.Select("id", "site_id").First(&user, userID).Error; err != nil {
-		return nil, err
-	}
-	return AdtyFundBatchSiteID(user.SiteId), nil
-}
-
 // adtyLegacyBatchSource 是「没有订单来源的额度」那一条批次的固定 source。
 // 每个用户只有一条（唯一索引 user_id + source + kind），补额度是往上加，
 // 不是新插一行——否则第二次补建就会撞唯一索引。

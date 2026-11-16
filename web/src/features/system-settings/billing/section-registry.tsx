@@ -20,7 +20,6 @@ import { parseCurrencyDisplayType } from '@/lib/currency'
 
 import { PricingSection } from '../general/pricing-section'
 import { QuotaSettingsSection } from '../general/quota-settings-section'
-import { AdtyPromoSettingsSection } from '../integrations/adty-promo-settings-section'
 import { PaymentSettingsSection } from '../integrations/payment-settings-section'
 import { AdtyOfficialPricesSection } from '../models/adty-official-prices-section'
 import { RatioSettingsCard } from '../models/ratio-settings-card'
@@ -143,43 +142,7 @@ const BILLING_SECTIONS = [
           PayMethods: settings.PayMethods,
           AmountOptions: settings['payment_setting.amount_options'],
           BonusRates: settings['adty_topup_setting.bonus_rates'],
-          StripeApiSecret: settings.StripeApiSecret,
-          StripeWebhookSecret: settings.StripeWebhookSecret,
-          StripePriceId: settings.StripePriceId,
-          StripeUnitPrice: settings.StripeUnitPrice,
-          StripeMinTopUp: settings.StripeMinTopUp,
-          StripePromotionCodesEnabled: settings.StripePromotionCodesEnabled,
-          CreemApiKey: settings.CreemApiKey,
-          CreemWebhookSecret: settings.CreemWebhookSecret,
-          CreemTestMode: settings.CreemTestMode,
-          CreemProducts: settings.CreemProducts,
         }}
-        waffoDefaultValues={{
-          WaffoEnabled: settings.WaffoEnabled ?? false,
-          WaffoApiKey: settings.WaffoApiKey ?? '',
-          WaffoPrivateKey: settings.WaffoPrivateKey ?? '',
-          WaffoPublicCert: settings.WaffoPublicCert ?? '',
-          WaffoSandboxPublicCert: settings.WaffoSandboxPublicCert ?? '',
-          WaffoSandboxApiKey: settings.WaffoSandboxApiKey ?? '',
-          WaffoSandboxPrivateKey: settings.WaffoSandboxPrivateKey ?? '',
-          WaffoSandbox: settings.WaffoSandbox ?? false,
-          WaffoMerchantId: settings.WaffoMerchantId ?? '',
-          WaffoCurrency: settings.WaffoCurrency ?? 'USD',
-          WaffoUnitPrice: settings.WaffoUnitPrice ?? 1,
-          WaffoMinTopUp: settings.WaffoMinTopUp ?? 1,
-          WaffoNotifyUrl: settings.WaffoNotifyUrl ?? '',
-          WaffoReturnUrl: settings.WaffoReturnUrl ?? '',
-          WaffoPayMethods: settings.WaffoPayMethods ?? '[]',
-        }}
-        waffoPancakeDefaultValues={{
-          WaffoPancakeMerchantID: settings.WaffoPancakeMerchantID ?? '',
-          WaffoPancakePrivateKey: settings.WaffoPancakePrivateKey ?? '',
-          WaffoPancakeReturnURL: settings.WaffoPancakeReturnURL ?? '',
-          WaffoPancakeEnvironment:
-            settings.WaffoPancakeEnvironment === 'test' ? 'test' : 'prod',
-        }}
-        waffoPancakeProvisionedStoreID={settings.WaffoPancakeStoreID ?? ''}
-        waffoPancakeProvisionedProductID={settings.WaffoPancakeProductID ?? ''}
         epayDefaultValues={{
           orderMinutes: settings['adty_topup_setting.epay_order_minutes'],
           channelTimeoutSeconds:
@@ -207,17 +170,6 @@ const BILLING_SECTIONS = [
     id: 'price-snapshot-backfill',
     titleKey: 'Historical price snapshots',
     build: () => <PriceSnapshotBackfillSection />,
-  },
-  {
-    id: 'promo-codes',
-    titleKey: 'Promo codes',
-    build: (settings: BillingSettings) => (
-      <AdtyPromoSettingsSection
-        defaultEnabled={
-          settings['adty_marketing_setting.promo_enabled'] ?? false
-        }
-      />
-    ),
   },
 ] as const
 

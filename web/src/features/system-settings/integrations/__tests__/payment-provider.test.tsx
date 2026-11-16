@@ -47,39 +47,6 @@ const defaults: ComponentProps<typeof PaymentSettingsSection> = {
     PayMethods: '[]',
     AmountOptions: '[10]',
     BonusRates: '{}',
-    StripeApiSecret: '',
-    StripeWebhookSecret: '',
-    StripePriceId: '',
-    StripeUnitPrice: 1,
-    StripeMinTopUp: 1,
-    StripePromotionCodesEnabled: false,
-    CreemApiKey: '',
-    CreemWebhookSecret: '',
-    CreemTestMode: false,
-    CreemProducts: '[]',
-  },
-  waffoDefaultValues: {
-    WaffoEnabled: false,
-    WaffoApiKey: '',
-    WaffoPrivateKey: '',
-    WaffoPublicCert: '',
-    WaffoSandboxPublicCert: '',
-    WaffoSandboxApiKey: '',
-    WaffoSandboxPrivateKey: '',
-    WaffoSandbox: false,
-    WaffoMerchantId: '',
-    WaffoCurrency: 'USD',
-    WaffoUnitPrice: 1,
-    WaffoMinTopUp: 1,
-    WaffoNotifyUrl: '',
-    WaffoReturnUrl: '',
-    WaffoPayMethods: '[]',
-  },
-  waffoPancakeDefaultValues: {
-    WaffoPancakeMerchantID: '',
-    WaffoPancakePrivateKey: '',
-    WaffoPancakeReturnURL: '',
-    WaffoPancakeEnvironment: 'prod',
   },
   epayDefaultValues: {
     orderMinutes: 10,
@@ -99,72 +66,33 @@ const defaults: ComponentProps<typeof PaymentSettingsSection> = {
   },
 }
 
-function Fixture(props: {
-  invalidOtherProvider?: boolean
-  pancakeConfigured?: boolean
-}) {
+function Fixture() {
   const [actions, setActions] = useState<HTMLDivElement | null>(null)
-  const [savedStripe, setSavedStripe] = useState('')
-  const [refreshedBindings, setRefreshedBindings] = useState(false)
-  const savedProduct = refreshedBindings ? 'prod_remote' : 'prod_saved'
+  const [savedPrice, setSavedPrice] = useState(1)
   return (
     <SettingsPageProvider actionsContainer={actions}>
       <div ref={setActions} />
-      <button type='button' onClick={() => setSavedStripe('price_remote')}>
-        Refresh saved Stripe
-      </button>
-      <button type='button' onClick={() => setRefreshedBindings(true)}>
-        Refresh provider bindings
+      <button type='button' onClick={() => setSavedPrice(2)}>
+        Refresh saved settings
       </button>
       <PaymentSettingsSection
         {...defaults}
         defaultValues={{
           ...defaults.defaultValues,
-          StripePriceId: savedStripe,
+          Price: savedPrice,
         }}
-        waffoDefaultValues={{
-          ...defaults.waffoDefaultValues,
-          WaffoMinTopUp: props.invalidOtherProvider ? 0 : 1,
-          WaffoPayMethods: JSON.stringify([
-            {
-              name: refreshedBindings ? 'Remote method' : 'Saved method',
-              icon: '',
-              payMethodType: 'card',
-              payMethodName: 'card',
-            },
-          ]),
-        }}
-        waffoPancakeDefaultValues={{
-          ...defaults.waffoPancakeDefaultValues,
-          WaffoPancakeMerchantID: props.pancakeConfigured ? 'MER_saved' : '',
-        }}
-        waffoPancakeProvisionedStoreID={
-          props.pancakeConfigured ? 'store_saved' : ''
-        }
-        waffoPancakeProvisionedProductID={
-          props.pancakeConfigured ? savedProduct : ''
-        }
       />
     </SettingsPageProvider>
   )
 }
 
-async function mount(
-  tab: string,
-  invalidOtherProvider = false,
-  pancakeConfigured = false
-) {
+async function mount(tab: string) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
   clients.push(client)
   const root = createRootRoute({
-    component: () => (
-      <Fixture
-        invalidOtherProvider={invalidOtherProvider}
-        pancakeConfigured={pancakeConfigured}
-      />
-    ),
+    component: () => <Fixture />,
   })
   const route = createRoute({
     getParentRoute: () => root,
@@ -209,14 +137,14 @@ it('exposes dynamic payment scene management on the Root general tab', async () 
   ).toBeVisible()
 })
 
-it('preserves an Epay draft when refreshed settings include another provider save', async () => {
+it('preserves an Epay draft when refreshed settings include another save', async () => {
   await mount('epay')
   await userEvent.type(
     screen.getByLabelText('Epay merchant ID'),
     'draft_merchant'
   )
   await userEvent.click(
-    screen.getByRole('button', { name: 'Refresh saved Stripe' })
+    screen.getByRole('button', { name: 'Refresh saved settings' })
   )
   expect(screen.getByLabelText('Epay merchant ID')).toHaveValue(
     'draft_merchant'
@@ -230,27 +158,18 @@ afterEach(() => {
   useAuthStore.getState().auth.reset()
 })
 
-it.each(['stripe', 'creem', 'waffo-pancake', 'waffo'])(
-  'does not offer retired %s checkout as an operable admin tab',
-  async (tab) => {
-    await mount(tab)
-    expect(screen.getByRole('tab', { name: 'General' })).toHaveAttribute(
-      'aria-selected',
-      'true'
-    )
-    expect(
-      screen.queryByRole('tab', { name: 'Stripe' })
-    ).not.toBeInTheDocument()
-    expect(screen.queryByRole('tab', { name: 'Creem' })).not.toBeInTheDocument()
-    expect(
-      screen.queryByRole('tab', { name: 'Waffo Pancake' })
-    ).not.toBeInTheDocument()
-    expect(screen.queryByRole('tab', { name: 'Waffo' })).not.toBeInTheDocument()
-    expect(
-      screen.getByText('Hosted checkout channels are retired')
-    ).toBeVisible()
-  }
-)
+it('falls back to the general tab for an unknown tab', async () => {
+  await mount('stripe')
+  expect(screen.getByRole('tab', { name: 'General' })).toHaveAttribute(
+    'aria-selected',
+    'true'
+  )
+  expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
+    'General',
+    'Epay',
+    'USDT',
+  ])
+})
 
 it('keeps USDT selected when switching from Epay and restores the previous tab on history back', async () => {
   const router = await mount('epay')
@@ -270,7 +189,7 @@ it('keeps USDT selected when switching from Epay and restores the previous tab o
   )
 })
 
-it('saves official Epay settings and never writes retired hosted payment keys', async () => {
+it('saves official Epay settings', async () => {
   const put = vi
     .spyOn(api, 'put')
     .mockResolvedValue({ data: { success: true } })
@@ -288,10 +207,4 @@ it('saves official Epay settings and never writes retired hosted payment keys', 
       value: 'epay_official',
     })
   )
-  expect(
-    put.mock.calls.some((call) => {
-      const option = call[1] as { key?: string } | undefined
-      return /^(Stripe|Creem|Waffo)/.test(String(option?.key ?? ''))
-    })
-  ).toBe(false)
 })

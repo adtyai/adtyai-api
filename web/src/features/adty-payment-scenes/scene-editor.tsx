@@ -56,10 +56,6 @@ import {
   type PaymentSceneConfig,
 } from './api'
 import {
-  dropRetiredHostedPaymentProviders,
-  dropRetiredHostedPaymentProvidersFromScenes,
-} from './retired-providers'
-import {
   paymentSceneSchema,
   sceneAudienceLabels,
   sceneUserLabels,
@@ -79,7 +75,7 @@ export function PaymentSceneEditor(props: {
   const form = useForm<PaymentScene>({
     resolver: zodResolver(paymentSceneSchema),
     defaultValues: props.config.scenes[props.index]
-      ? dropRetiredHostedPaymentProviders(props.config.scenes[props.index])
+      ? props.config.scenes[props.index]
       : {
           key: '',
           name: '',
@@ -115,12 +111,9 @@ export function PaymentSceneEditor(props: {
       if (user?.id !== props.userId || user.role < ROLE.SUPER_ADMIN) {
         throw new Error(t('Unauthorized, insufficient privileges'))
       }
-      const scenes = dropRetiredHostedPaymentProvidersFromScenes([
-        ...props.config.scenes,
-      ])
-      const next = dropRetiredHostedPaymentProviders(scene)
-      if (props.index < 0) scenes.push(next)
-      else scenes[props.index] = next
+      const scenes = [...props.config.scenes]
+      if (props.index < 0) scenes.push(scene)
+      else scenes[props.index] = scene
       return savePaymentScenes({ ...props.config, scenes })
     },
     onSuccess: () => {

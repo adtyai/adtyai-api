@@ -65,7 +65,6 @@ export type SiteOwnerAction =
   | 'bonus'
   | 'trial'
   | 'domain.delete'
-  | 'promo'
   | 'sender.delete'
   | 'staff.create'
   | 'staff.update'

@@ -10,7 +10,7 @@ import (
 )
 
 func TestQuoteUsesPaymentMethodRateNotAmountTier(t *testing.T) {
-	confirmAdtyCompliance(t)
+	setAdtyQuoteDefaults(t)
 	setAdtyBonusRates(t, map[int]float64{100: 50})
 	SetAdtyMethodBonusForTest(t, "usdt", true, "0.025")
 
@@ -22,7 +22,7 @@ func TestQuoteUsesPaymentMethodRateNotAmountTier(t *testing.T) {
 }
 
 func TestAmountTierDoesNotCreateBonus(t *testing.T) {
-	confirmAdtyCompliance(t)
+	setAdtyQuoteDefaults(t)
 	setAdtyBonusRates(t, map[int]float64{10: 8})
 	ClearAdtyMethodBonusForTest(t)
 
@@ -34,7 +34,7 @@ func TestAmountTierDoesNotCreateBonus(t *testing.T) {
 
 func TestSiteGiftQuoteRequiresEarningReserve(t *testing.T) {
 	db := prepareSiteDB(t)
-	confirmAdtyCompliance(t)
+	setAdtyQuoteDefaults(t)
 	// 主站 100 档 8% + max_site_bonus_extra 2 = 上限 10%，让 10% 这一档不撞策略上限，
 	// 用例断言的是「收益不够垫这笔加赠」，不是上限。
 	setAdtyBonusRates(t, map[int]float64{100: 8})
@@ -51,7 +51,7 @@ func TestSiteGiftQuoteRequiresEarningReserve(t *testing.T) {
 }
 
 func TestSameMethodSharesBonusAcrossChains(t *testing.T) {
-	confirmAdtyCompliance(t)
+	setAdtyQuoteDefaults(t)
 	setMainBonusForTest(t, "usdt", true, "0.02")
 	t.Cleanup(func() { setMainBonusForTest(t, "usdt", false, "0") })
 	trc, err := AdtyQuoteFor("default", 100, AdtyMethodUSDTTRC20, AdtyPromoInput{})
@@ -64,7 +64,7 @@ func TestSameMethodSharesBonusAcrossChains(t *testing.T) {
 
 func TestSiteGiftCanUseAuthorizedMarginFill(t *testing.T) {
 	db := prepareSiteDB(t)
-	confirmAdtyCompliance(t)
+	setAdtyQuoteDefaults(t)
 	// 上限 10%（主站 100 档 8% + extra 2），用例断言的是保证金补位，不是上限。
 	setAdtyBonusRates(t, map[int]float64{100: 8})
 	restoreSiteMethodSettings(t)
@@ -82,7 +82,7 @@ func TestSiteGiftCanUseAuthorizedMarginFill(t *testing.T) {
 // max_site_bonus_extra 设成 2，所以主站 100 档 2.5% 时 $100 的分站订单最多给 $4.5 加赠。
 func TestSiteBonusAboveCapIsRefusedAtQuote(t *testing.T) {
 	db := prepareSiteDB(t)
-	confirmAdtyCompliance(t)
+	setAdtyQuoteDefaults(t)
 	restoreSiteMethodSettings(t)
 	setAdtyBonusRates(t, map[int]float64{100: 2.5})
 	_, site := openActiveSite(t, db, "gift-over-cap")
@@ -96,7 +96,7 @@ func TestSiteBonusAboveCapIsRefusedAtQuote(t *testing.T) {
 
 func TestSiteBonusAtCapIsQuoted(t *testing.T) {
 	db := prepareSiteDB(t)
-	confirmAdtyCompliance(t)
+	setAdtyQuoteDefaults(t)
 	restoreSiteMethodSettings(t)
 	setAdtyBonusRates(t, map[int]float64{100: 2.5})
 	_, site := openActiveSite(t, db, "gift-at-cap")
@@ -111,7 +111,7 @@ func TestSiteBonusAtCapIsQuoted(t *testing.T) {
 }
 
 func TestPromoCodeIsRetiredOnQuote(t *testing.T) {
-	confirmAdtyCompliance(t)
+	setAdtyQuoteDefaults(t)
 	_, err := AdtyQuoteFor("default", 100, AdtyMethodAlipay, AdtyPromoInput{Code: "SAVE10"})
 	require.Error(t, err)
 }

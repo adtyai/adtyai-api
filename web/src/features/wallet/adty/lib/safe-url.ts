@@ -50,20 +50,3 @@ export function isDisplayablePaymentQr(
   }
   return !DANGEROUS_QR_SCHEME.test(trimmed)
 }
-
-/** Hosted checkouts use ordinary web links and never app schemes or credentials. */
-export function isSafeHostedPaymentUrl(
-  value: string | null | undefined
-): boolean {
-  if (!value || value.includes('\\')) return false
-  try {
-    const url = new URL(value)
-    return (
-      (url.protocol === 'https:' || url.protocol === 'http:') &&
-      !url.username &&
-      !url.password
-    )
-  } catch {
-    return false
-  }
-}

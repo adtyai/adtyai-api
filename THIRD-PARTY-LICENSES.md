@@ -25,7 +25,6 @@ Versions below are the resolved versions for the checked-in manifests and lockfi
 | backend  | production  | Go        | `github.com/aws/smithy-go`                              | `v1.24.2`                            | Apache-2.0              |
 | backend  | production  | Go        | `github.com/bytedance/gopkg`                            | `v0.1.3`                             | Apache-2.0              |
 | backend  | production  | Go        | `github.com/casbin/casbin/v2`                           | `v2.135.0`                           | Apache-2.0              |
-| backend  | production  | Go        | `github.com/coreos/go-oidc/v3`                          | `v3.21.0`                            | Apache-2.0              |
 | backend  | production  | Go        | `github.com/expr-lang/expr`                             | `v1.17.8`                            | MIT                     |
 | backend  | production  | Go        | `github.com/fxamacker/cbor/v2`                          | `v2.9.0`                             | MIT                     |
 | backend  | production  | Go        | `github.com/gin-contrib/cors`                           | `v1.7.2`                             | MIT                     |
@@ -61,19 +60,14 @@ Versions below are the resolved versions for the checked-in manifests and lockfi
 | backend  | production  | Go        | `github.com/shirou/gopsutil`                            | `v3.21.11+incompatible`              | BSD-3-Clause            |
 | backend  | production  | Go        | `github.com/shopspring/decimal`                         | `v1.4.0`                             | MIT                     |
 | backend  | test        | Go        | `github.com/stretchr/testify`                           | `v1.12.1` (root); `v1.11.1` (relaykit, tokenkit) | MIT              |
-| backend  | production  | Go        | `github.com/stripe/stripe-go/v81`                       | `v81.4.0`                            | MIT                     |
 | backend  | production  | Go        | `github.com/tcolgate/mp3`                               | `v0.0.0-20170426193717-e79c5a46d300` | MIT                     |
-| backend  | production  | Go        | `github.com/thanhpk/randstr`                            | `v1.0.6`                             | MIT                     |
 | backend  | production  | Go        | `github.com/tidwall/gjson`                              | `v1.19.0`                            | MIT                     |
 | backend  | production  | Go        | `github.com/tidwall/sjson`                              | `v1.2.5`                             | MIT                     |
 | backend  | production  | Go        | `github.com/tiktoken-go/tokenizer`                      | `v0.8.1`                             | MIT                     |
-| backend  | production  | Go        | `github.com/waffo-com/waffo-go`                         | `v1.3.2`                             | MIT                     |
-| backend  | production  | Go        | `github.com/waffo-com/waffo-pancake-sdk-go`             | `v0.3.1`                             | MIT                     |
 | backend  | production  | Go        | `github.com/yapingcat/gomedia`                          | `v0.0.0-20240906162731-17feea57090c` | MIT                     |
 | backend  | production  | Go        | `golang.org/x/crypto`                                   | `v0.57.0`                            | BSD-3-Clause            |
 | backend  | production  | Go        | `golang.org/x/image`                                    | `v0.45.0`                            | BSD-3-Clause            |
 | backend  | production  | Go        | `golang.org/x/net`                                      | `v0.60.0`                            | BSD-3-Clause            |
-| backend  | production  | Go        | `golang.org/x/oauth2`                                   | `v0.36.0`                            | BSD-3-Clause            |
 | backend  | production  | Go        | `golang.org/x/sync`                                     | `v0.23.0`                            | BSD-3-Clause            |
 | backend  | production  | Go        | `golang.org/x/sys`                                      | `v0.48.0`                            | BSD-3-Clause            |
 | backend  | production  | Go        | `golang.org/x/text`                                     | `v0.42.0`                            | BSD-3-Clause            |

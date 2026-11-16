@@ -129,7 +129,7 @@ func TestPaymentOrphanNeverCreditedPreservesFenceAndInvalidDismissalCannotReleas
 
 func TestPaymentOrphanReviewRollbackKeepsEvidenceAndStateAtomic(t *testing.T) {
 	db := prepareAdtyTopUpDB(t)
-	event := PaymentOrphanEvent{Provider: PaymentProviderStripe, ReferenceID: "missing-order", EventID: "reversal:missing", EventType: "dispute.open"}
+	event := PaymentOrphanEvent{Provider: PaymentProviderAdtyEpay, ReferenceID: "missing-order", EventID: "reversal:missing", EventType: "dispute.open"}
 	require.NoError(t, RecordPaymentOrphanEvent(&event))
 	const callback = "orphan_resolution_failure"
 	require.NoError(t, db.Callback().Update().Before("gorm:update").Register(callback, func(tx *gorm.DB) {
@@ -239,7 +239,7 @@ func TestPaymentOrphanDeliveryCanFillMissingBindingButCannotRebindReviewedEviden
 		conflict.ID = 0
 		switch field {
 		case "provider":
-			conflict.Provider = PaymentProviderStripe
+			conflict.Provider = PaymentProviderAdtyEpay
 		case "event_type":
 			conflict.EventType = "different-event"
 		case "reference_id":

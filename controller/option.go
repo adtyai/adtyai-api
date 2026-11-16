@@ -35,10 +35,6 @@ var completionRatioMetaOptionKeys = []string{
 	"AudioCompletionRatio",
 }
 
-func isPaymentComplianceOptionKey(key string) bool {
-	return strings.HasPrefix(key, "payment_setting.compliance_")
-}
-
 func collectModelNamesFromOptionValue(raw string, modelNames map[string]struct{}) {
 	if strings.TrimSpace(raw) == "" {
 		return
@@ -221,15 +217,11 @@ func UpdateOption(c *gin.Context) {
 			common.ApiErrorT(c, "Reseller settings can only be changed on the reseller settings page")
 			return
 		}
-		if isPaymentComplianceOptionKey(option.Key) {
-			common.ApiErrorT(c, "Compliance confirmation fields cannot be changed through the general settings API")
-			return
-		}
 		if strings.HasPrefix(option.Key, adty_setting.ReferralKeyPrefix) {
 			common.ApiErrorT(c, "Referral settings can only be changed on the referral settings page")
 			return
 		}
-		if strings.HasPrefix(option.Key, "adty_marketing_setting.") && option.Key != adty_setting.PromoEnabledOptionKey {
+		if strings.HasPrefix(option.Key, "adty_marketing_setting.") {
 			common.ApiErrorT(c, "Invalid parameters")
 			return
 		}

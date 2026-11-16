@@ -6,27 +6,17 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
-	"github.com/QuantumNous/new-api/setting/adty_setting"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
 
-func enablePromoCodes(t *testing.T) {
-	t.Helper()
-	cfg := adty_setting.GetPromoSetting()
-	saved := cfg.PromoEnabled
-	cfg.PromoEnabled = true
-	t.Cleanup(func() { cfg.PromoEnabled = saved })
-}
-
 func preparePromoDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db := adtyTestDB(t)
-	confirmAdtyCompliance(t)
+	setAdtyQuoteDefaults(t)
 	setAdtyBonusRates(t, testAdtyBonusRates)
-	enablePromoCodes(t)
 	oldRedis, oldBatch := common.RedisEnabled, common.BatchUpdateEnabled
 	common.RedisEnabled, common.BatchUpdateEnabled = false, false
 	t.Cleanup(func() { common.RedisEnabled, common.BatchUpdateEnabled = oldRedis, oldBatch })
@@ -96,9 +86,8 @@ func TestPromoCodesAreRetired(t *testing.T) {
 	assert.True(t, bonus.IsZero())
 }
 
-func TestPromoOffRejectsCodeOnQuote(t *testing.T) {
+func TestPromoCodeIsRejectedOnQuote(t *testing.T) {
 	db := preparePromoDB(t)
-	adty_setting.GetPromoSetting().PromoEnabled = false
 	user := promoUser(t, db, "promo-off")
 	promoCode(t, db, model.AdtyPromoCode{Code: "OFF10PCT", Kind: model.AdtyPromoKindPercent, Value: decimal.NewFromInt(10)})
 

@@ -50,14 +50,7 @@ function postgres(query) {
     throw new Error('Isolated PostgreSQL fixture or evidence query failed')
   }
 }
-const providers = [
-  'bepusdt',
-  'adty_epay',
-  'stripe',
-  'creem',
-  'waffo',
-  'waffo_pancake',
-]
+const providers = ['bepusdt', 'adty_epay']
 const browser = await chromium.launch({
   headless: true,
   ...(process.env.ADTY_CHROMIUM_PATH
@@ -124,7 +117,7 @@ try {
     await page.goto(`${base}/recharge-audit`)
     const select = page.getByRole('combobox', { name: 'Provider', exact: true })
     await select
-      .locator('option[value="waffo_pancake"]')
+      .locator('option[value="adty_epay"]')
       .waitFor({ state: 'attached' })
     assert.deepEqual(
       (
@@ -149,7 +142,7 @@ try {
           .count(),
         1
       )
-      if (provider === 'creem' || provider === 'bepusdt') {
+      if (provider === 'bepusdt') {
         await row
           .getByRole('button', { name: 'Query payment', exact: true })
           .click()

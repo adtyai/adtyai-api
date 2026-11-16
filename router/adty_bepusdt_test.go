@@ -142,7 +142,6 @@ func TestBEpusdtPayRedirectsThroughSignedResult(t *testing.T) {
 
 func TestBEpusdtPayCreatesOrderWithBonus(t *testing.T) {
 	f := newAdtyGuardFixture(t)
-	confirmRouterCompliance(t)
 	setRouterBonusRates(t)
 	useFakeBEpusdt(t)
 	token, _ := bepusdtBuyer(t, f, "usdt-buyer")
@@ -174,7 +173,6 @@ func TestBEpusdtPayHandlesGatewayFailure(t *testing.T) {
 
 func TestBEpusdtNotify(t *testing.T) {
 	f := newAdtyGuardFixture(t)
-	confirmRouterCompliance(t)
 	setRouterBonusRates(t)
 	useFakeBEpusdt(t)
 	token, userID := bepusdtBuyer(t, f, "usdt-notify")
@@ -262,7 +260,6 @@ func TestBEpusdtNotify(t *testing.T) {
 
 func TestBEpusdtCancelCallsGateway(t *testing.T) {
 	f := newAdtyGuardFixture(t)
-	confirmRouterCompliance(t)
 	gw := useFakeBEpusdt(t)
 	token, _ := bepusdtBuyer(t, f, "usdt-cancel")
 	view := payBEpusdt(t, f, token)

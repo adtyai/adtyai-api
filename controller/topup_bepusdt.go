@@ -27,9 +27,6 @@ type bepusdtPayRequest struct {
 
 // RequestBEpusdtPay 下单：报价、建单、调网关，把地址、数量、到期时间写回订单返回给前端。
 func RequestBEpusdtPay(c *gin.Context) {
-	if !requirePaymentCompliance(c) {
-		return
-	}
 	var req bepusdtPayRequest
 	if err := common.DecodeJson(c.Request.Body, &req); err != nil {
 		common.ApiErrorT(c, "Invalid parameters")

@@ -498,7 +498,6 @@ const AUDIT_TEMPLATES: Record<string, string> = {
   'option.passkey_domains_blocked':
     'Passkey domain change blocked: {{domains}}; affected {{known}}; unknown {{unknown}}',
   'option.passkey_domains_failed': 'Passkey domain update failed',
-  'option.payment_compliance': 'Confirmed payment compliance',
   'option.reset_ratio': 'Reset model ratios',
   'option.clear_affinity_cache': 'Cleared channel affinity cache',
   // Custom OAuth

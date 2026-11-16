@@ -50,13 +50,6 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.POST("/oauth/email/bind", middleware.UserAuth(), middleware.CriticalRateLimit(), middleware.UserCriticalRateLimit("account-security"), middleware.DisableCache(), controller.EmailBind)
 		apiRouter.GET("/ratio_config", middleware.CriticalRateLimit(), controller.GetRatioConfig)
 
-		// Retired hosted pay stays registered so a merge cannot silently
-		// restore the old handlers, and they reject before authentication.
-		apiRouter.POST("/stripe/webhook", middleware.AdtyClosedFeature)
-		apiRouter.POST("/creem/webhook", middleware.AdtyClosedFeature)
-		apiRouter.POST("/waffo/webhook", middleware.AdtyClosedFeature)
-		apiRouter.POST("/waffo-pancake/webhook/:env", middleware.AdtyClosedFeature)
-
 		// Universal secure verification routes
 		apiRouter.GET("/verify/methods", middleware.UserAuth(), middleware.DisableCache(), controller.GetVerificationMethods)
 		apiRouter.POST("/verify/email-code", middleware.UserAuth(), middleware.CriticalRateLimit(), middleware.UserCriticalRateLimit("security-verification"), middleware.EmailVerificationRateLimit(), middleware.DisableCache(), controller.SendSecurityEmailCode)
@@ -76,22 +69,6 @@ func SetApiRouter(router *gin.Engine) {
 			userRoute.POST("/passkey/login/begin", middleware.CriticalRateLimit(), middleware.DisableCache(), anonymousRequestBodyLimit, controller.PasskeyLoginBegin)
 			userRoute.POST("/passkey/login/finish", middleware.CriticalRateLimit(), middleware.DisableCache(), anonymousRequestBodyLimit, controller.PasskeyLoginFinish)
 			//userRoute.POST("/tokenlog", middleware.CriticalRateLimit(), controller.TokenLog)
-			// Official GET/POST /api/user/epay/notify/:channelId stays open
-			// in adty-router.go. The legacy single-channel notify is closed.
-			userRoute.POST("/epay/notify", middleware.AdtyClosedFeature)
-			userRoute.GET("/epay/notify", middleware.AdtyClosedFeature)
-			// Excluded money entries stay registered so a merge cannot silently
-			// restore the old handlers, and they reject before authentication.
-			userRoute.GET("/checkin", middleware.AdtyClosedFeature)
-			userRoute.POST("/checkin", middleware.AdtyClosedFeature)
-			userRoute.POST("/topup/complete", middleware.AdtyClosedFeature)
-			userRoute.POST("/stripe/pay", middleware.AdtyClosedFeature)
-			userRoute.POST("/stripe/amount", middleware.AdtyClosedFeature)
-			userRoute.POST("/creem/pay", middleware.AdtyClosedFeature)
-			userRoute.POST("/waffo/amount", middleware.AdtyClosedFeature)
-			userRoute.POST("/waffo/pay", middleware.AdtyClosedFeature)
-			userRoute.POST("/waffo-pancake/amount", middleware.AdtyClosedFeature)
-			userRoute.POST("/waffo-pancake/pay", middleware.AdtyClosedFeature)
 			userRoute.GET("/groups", controller.GetUserGroups)
 
 			selfRoute := userRoute.Group("/")
@@ -124,9 +101,6 @@ func SetApiRouter(router *gin.Engine) {
 				selfRoute.POST("/passkey/verify/begin", middleware.UserCriticalRateLimit("security-verification"), middleware.DisableCache(), controller.PasskeyVerifyBegin)
 				selfRoute.POST("/passkey/verify/finish", middleware.UserCriticalRateLimit("security-verification"), middleware.DisableCache(), controller.PasskeyVerifyFinish)
 				selfRoute.DELETE("/passkey", middleware.DisableCache(), controller.PasskeyDelete)
-				selfRoute.GET("/topup/info", controller.GetTopUpInfo)
-				selfRoute.GET("/topup/self", controller.GetUserTopUps)
-				selfRoute.POST("/amount", controller.RequestAmount)
 				selfRoute.PUT("/setting", controller.UpdateUserSetting)
 
 				// 2FA routes
@@ -172,17 +146,10 @@ func SetApiRouter(router *gin.Engine) {
 			optionRoute.PATCH("/model_pricing", controller.UpdateModelPricingConfig)
 			optionRoute.POST("/model_pricing/convert", controller.PreviewModelPricingConversion)
 			optionRoute.POST("/model_pricing/preview", controller.PreviewModelPricing)
-			optionRoute.POST("/payment_compliance", controller.ConfirmPaymentCompliance)
 			optionRoute.GET("/channel_affinity_cache", controller.GetChannelAffinityCacheStats)
 			optionRoute.DELETE("/channel_affinity_cache", controller.ClearChannelAffinityCache)
 			optionRoute.POST("/rest_model_ratio", controller.ResetModelRatio)
 		}
-
-		// Retired Waffo Pancake catalog tools stay registered but cannot
-		// turn hosted checkout back on for customers.
-		apiRouter.POST("/option/waffo-pancake/catalog", middleware.AdtyClosedFeature)
-		apiRouter.POST("/option/waffo-pancake/pair", middleware.AdtyClosedFeature)
-		apiRouter.POST("/option/waffo-pancake/save", middleware.AdtyClosedFeature)
 
 		performanceRoute := apiRouter.Group("/performance")
 		performanceRoute.Use(middleware.RootAuth())
