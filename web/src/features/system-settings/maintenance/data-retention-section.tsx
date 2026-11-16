@@ -25,6 +25,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { api } from '@/lib/api'
+import { formatTimestamp } from '@/lib/format'
 import { ROLE } from '@/lib/roles'
 import { getServerErrorMessage } from '@/lib/server-error-message'
 import { useAuthStore } from '@/stores/auth-store'
@@ -53,6 +54,23 @@ type RetentionSettings = {
 type Draft = {
   days: string
   action: string
+}
+
+/** GET /api/adty/admin/data-retention/runs (service.DataRetentionRunView). */
+type RetentionRun = {
+  id: number
+  started_at: number
+  finished_at: number
+  trigger: string
+  scope: string
+  items: Array<{
+    id: number
+    category: string
+    delete_count: number
+    deidentify_count: number
+    failure_count: number
+    skip_reason: string
+  }>
 }
 
 const ACTION_LABELS: Record<string, string> = {
@@ -99,6 +117,22 @@ export function DataRetentionSection() {
         throw new Error(body.message || 'Failed to load data')
       }
       return body.data
+    },
+    enabled: isRoot,
+  })
+  const runs = useQuery({
+    queryKey: ['adty-data-retention', 'runs'],
+    queryFn: async () => {
+      const response = await api.get('/api/adty/admin/data-retention/runs', {
+        params: { limit: 10 },
+      })
+      const body = response.data as {
+        success?: boolean
+        data?: { runs?: RetentionRun[] }
+        message?: string
+      }
+      if (!body.success) throw new Error(body.message || 'Failed to load data')
+      return Array.isArray(body.data?.runs) ? body.data.runs : []
     },
     enabled: isRoot,
   })
@@ -274,6 +308,61 @@ export function DataRetentionSection() {
               </div>
             )
           })}
+          <section
+            aria-label={t('Recent cleanup runs')}
+            className='flex flex-col gap-2'
+          >
+            <h4 className='font-medium'>{t('Recent cleanup runs')}</h4>
+            {runs.isError && (
+              <p className='text-destructive text-sm'>
+                {getServerErrorMessage(runs.error, t('Failed to load data'))}
+              </p>
+            )}
+            {runs.data?.length === 0 && (
+              <p className='text-muted-foreground text-sm'>
+                {t('No cleanup has run yet.')}
+              </p>
+            )}
+            {(runs.data ?? []).map((run) => {
+              const categoryTitle = (category: string) =>
+                t(
+                  categories.find((item) => item.category === category)
+                    ?.title ?? category
+                )
+              return (
+                <div
+                  key={run.id}
+                  className='flex flex-col gap-1 rounded-lg border p-3 text-sm'
+                >
+                  <p className='tabular-nums'>
+                    {formatTimestamp(run.started_at)} ·{' '}
+                    {run.trigger === 'manual'
+                      ? t('Started manually')
+                      : t('Scheduled')}
+                  </p>
+                  {run.items.length === 0 ? (
+                    <p className='text-muted-foreground'>
+                      {t('Nothing was due for cleanup.')}
+                    </p>
+                  ) : (
+                    <ul className='text-muted-foreground flex flex-col gap-0.5 tabular-nums'>
+                      {run.items.map((item) => (
+                        <li key={item.id}>
+                          {categoryTitle(item.category)}:{' '}
+                          {t('deleted {{deleted}}, de-identified {{deidentified}}, failed {{failed}}', {
+                            deleted: item.delete_count,
+                            deidentified: item.deidentify_count,
+                            failed: item.failure_count,
+                          })}
+                          {item.skip_reason ? ` · ${item.skip_reason}` : ''}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )
+            })}
+          </section>
         </div>
       </RetentionGate>
     </SettingsSection>

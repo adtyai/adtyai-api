@@ -102,6 +102,29 @@ func RecordAdtyGroupProbe(siteId int, group, modelName string, ok bool, now time
 	return RecordAdtyGroupHealth(siteId, group, modelName, model.AdtyGroupHealthProbe, outcome, now)
 }
 
+// AdtyGroupHealthConfig is what Root tunes for the API key group picker. The
+// defaults match listAdtyGroupHealth when nothing has been saved yet.
+type AdtyGroupHealthConfig struct {
+	SuccessMin   string `json:"success_min"`
+	StaleSeconds int    `json:"stale_seconds"`
+	HeartbeatAt  int64  `json:"heartbeat_at"`
+}
+
+func GetAdtyGroupHealthConfig() (AdtyGroupHealthConfig, error) {
+	var state model.AdtyGroupHealthState
+	if err := model.DB.Where("id = ?", 1).Limit(1).Find(&state).Error; err != nil {
+		return AdtyGroupHealthConfig{}, err
+	}
+	view := AdtyGroupHealthConfig{SuccessMin: state.SuccessMin, StaleSeconds: state.StaleSeconds, HeartbeatAt: state.HeartbeatAt}
+	if view.SuccessMin == "" {
+		view.SuccessMin = "0.95"
+	}
+	if view.StaleSeconds == 0 {
+		view.StaleSeconds = 6 * 3600
+	}
+	return view, nil
+}
+
 func PutAdtyGroupHealthConfig(successMin string, staleSeconds int) error {
 	value, err := decimal.NewFromString(successMin)
 	if err != nil || value.IsNegative() || value.GreaterThan(decimal.NewFromInt(1)) || staleSeconds < 60 {

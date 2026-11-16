@@ -107,6 +107,7 @@ func registerAdtyWorkspaceRoutes(apiRouter *gin.RouterGroup) {
 		{http.MethodPost, "/api/adty/admin/translation/run", "option:write"},
 		{http.MethodGet, "/api/adty/admin/translation/usage", "option:read"},
 		{http.MethodGet, "/api/adty/groups/health", "api_key:read"},
+		{http.MethodGet, "/api/adty/admin/group-health", "option:read"},
 		{http.MethodPut, "/api/adty/admin/group-health", "option:write"},
 		{http.MethodPost, "/api/adty/admin/group-health/probe", "option:write"},
 	} {
@@ -145,6 +146,7 @@ func registerAdtyWorkspaceRoutes(apiRouter *gin.RouterGroup) {
 	root.POST("/translation/test", controller.PostAdtyTranslationTest)
 	root.POST("/translation/run", controller.PostAdtyTranslationRun)
 	root.GET("/translation/usage", controller.GetAdtyTranslationUsage)
+	root.GET("/group-health", controller.GetAdtyAdminGroupHealth)
 	root.PUT("/group-health", controller.PutAdtyGroupHealth)
 	root.POST("/group-health/probe", controller.PostAdtyGroupProbe)
 	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/adty/admin/data-retention", "scope", "option:read")

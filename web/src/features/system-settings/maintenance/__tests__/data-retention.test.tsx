@@ -156,9 +156,36 @@ async function renderSection() {
 
 beforeEach(() => {
   useAuthStore.getState().auth.setUser({ id: 1, username: 'root', role: 100 })
-  vi.spyOn(api, 'get').mockResolvedValue({
-    data: { success: true, data: { categories } },
-  })
+  vi.spyOn(api, 'get').mockImplementation(async (url) =>
+    url === '/api/adty/admin/data-retention/runs'
+      ? {
+          data: {
+            success: true,
+            data: {
+              runs: [
+                {
+                  id: 5,
+                  started_at: 1,
+                  finished_at: 2,
+                  trigger: 'scheduled',
+                  scope: 'all',
+                  items: [
+                    {
+                      id: 9,
+                      category: 'login_security',
+                      delete_count: 12,
+                      deidentify_count: 0,
+                      failure_count: 1,
+                      skip_reason: '',
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        }
+      : { data: { success: true, data: { categories } } }
+  )
   vi.spyOn(api, 'put').mockResolvedValue({ data: { success: true } })
 })
 
@@ -211,4 +238,17 @@ test('hides configuration controls from non-Root operators', async () => {
     )
   ).toBeInTheDocument()
   expect(api.get).not.toHaveBeenCalled()
+})
+
+test('shows recent cleanup runs with counts per category', async () => {
+  await renderSection()
+  const runs = await screen.findByRole('region', {
+    name: 'Recent cleanup runs',
+  })
+  await waitFor(() =>
+    expect(runs).toHaveTextContent(
+      '登录/安全记录: deleted 12, de-identified 0, failed 1'
+    )
+  )
+  expect(runs).toHaveTextContent('Scheduled')
 })

@@ -494,6 +494,15 @@ func GetAdtyGroupHealth(c *gin.Context) {
 	common.ApiSuccess(c, gin.H{"scope": scope, "groups": rows})
 }
 
+func GetAdtyAdminGroupHealth(c *gin.Context) {
+	view, err := service.GetAdtyGroupHealthConfig()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, view)
+}
+
 func PutAdtyGroupHealth(c *gin.Context) {
 	var body struct {
 		SuccessMin   string `json:"success_min"`

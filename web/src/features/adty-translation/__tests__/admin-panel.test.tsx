@@ -26,11 +26,12 @@ import { api } from '@/lib/api'
 
 import { TranslationAdminPanel } from '../admin-panel'
 
+const verification = vi.hoisted(() => ({ requestVerification: vi.fn() }))
 vi.mock(
   '@/features/auth/secure-verification/hooks/use-secure-verification',
   () => ({
     useSecureVerification: () => ({
-      requestVerification: vi.fn(),
+      requestVerification: verification.requestVerification,
       dialogProps: {},
     }),
   })
@@ -90,7 +91,109 @@ describe('TranslationAdminPanel', () => {
         screen.queryByRole('button', { name: 'Retry' })
       ).not.toBeInTheDocument()
     )
-    expect(await screen.findByText(/Saved 1/)).toBeInTheDocument()
+    expect(await screen.findByText('Saved')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument()
+  })
+
+  it('saves the loaded configuration instead of overwriting it with fixed values', async () => {
+    verification.requestVerification.mockResolvedValue({ proof_token: 'proof' })
+    vi.spyOn(api, 'get').mockImplementation(async (url) =>
+      url === '/api/adty/admin/translation/usage'
+        ? {
+            data: {
+              success: true,
+              data: { day: '2026-11-17', calls: 4, failures: 1, latency_ms: 800 },
+            },
+          }
+        : {
+            data: {
+              success: true,
+              data: {
+                mode: 'independent',
+                protocol: 'anthropic',
+                base_url: 'https://translate.example.com',
+                model_name: 'translator-v2',
+                backup_model: 'translator-v1',
+                token_mask: '****abcd',
+                timeout_sec: 20,
+                concurrency: 3,
+                max_chars: 4000,
+                daily_quota: 50,
+                retry_limit: 2,
+                enabled: true,
+                saved_at: 1,
+                tested_at: 0,
+                translated_at: 0,
+              },
+            },
+          }
+    )
+    const put = vi
+      .spyOn(api, 'put')
+      .mockResolvedValue({ data: { success: true, data: {} } })
+    render(<TranslationAdminPanel />, { wrapper })
+    expect(await screen.findByText(/Calls 4/)).toBeInTheDocument()
+    expect(screen.getByText(/Average latency 200/)).toBeInTheDocument()
+    const user = userEvent.setup()
+    const model = await screen.findByLabelText('Model')
+    expect(model).toHaveValue('translator-v2')
+    await user.clear(model)
+    await user.type(model, 'translator-v3')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() =>
+      expect(put).toHaveBeenCalledWith(
+        '/api/adty/admin/translation',
+        {
+          mode: 'independent',
+          protocol: 'anthropic',
+          base_url: 'https://translate.example.com',
+          token: '',
+          model_name: 'translator-v3',
+          backup_model: 'translator-v1',
+          timeout_sec: 20,
+          concurrency: 3,
+          max_chars: 4000,
+          daily_quota: 50,
+          retry_limit: 2,
+          enabled: true,
+        },
+        { headers: { 'X-Security-Proof': 'proof' } }
+      )
+    )
+    expect(verification.requestVerification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scope: 'adty.notice.configure',
+        context: { action: 'translation.save', target: 'independent' },
+      })
+    )
+  })
+
+  it('tests the saved translator with its own verification', async () => {
+    verification.requestVerification.mockResolvedValue({ proof_token: 'proof' })
+    vi.spyOn(api, 'get').mockResolvedValue({
+      data: {
+        success: true,
+        data: { mode: 'platform', model_name: 'translator', saved_at: 1 },
+      },
+    })
+    const post = vi
+      .spyOn(api, 'post')
+      .mockResolvedValue({ data: { success: true, data: {} } })
+    render(<TranslationAdminPanel />, { wrapper })
+    await userEvent
+      .setup()
+      .click(await screen.findByRole('button', { name: 'Test connection' }))
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith(
+        '/api/adty/admin/translation/test',
+        undefined,
+        { headers: { 'X-Security-Proof': 'proof' } }
+      )
+    )
+    expect(verification.requestVerification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        context: { action: 'translation.test', target: 'translation' },
+      })
+    )
   })
 })

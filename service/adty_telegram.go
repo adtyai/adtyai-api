@@ -228,7 +228,9 @@ func TestAdtyTelegramBot(purpose string, userId int) error {
 	if err := model.DB.Model(&row).Update("tested_at", time.Now().Unix()).Error; err != nil {
 		return err
 	}
-	return QueueAdtyTelegramNotice(userId, purpose, "测试通知\n\nTest notice", "telegram-test:"+purpose+":"+strconv.Itoa(userId))
+	// Each test is its own delivery; a fixed key made every test after the first a silent duplicate.
+	eventKey := "telegram-test:" + purpose + ":" + strconv.Itoa(userId) + ":" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	return QueueAdtyTelegramNotice(userId, purpose, "测试通知\n\nTest notice", eventKey)
 }
 
 func StartAdtyTelegramBind(userId int, purpose string) (string, string, int64, error) {
