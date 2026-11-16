@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"github.com/QuantumNous/new-api/setting/config"
 	mysqldriver "github.com/go-sql-driver/mysql"
-	"github.com/shopspring/decimal"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm/clause"
 	"os"
@@ -186,6 +185,27 @@ type legacyAdtySignupSource struct {
 
 func (legacyAdtySignupSource) TableName() string { return "adty_signup_sources" }
 
+// 优惠码表在 2026-11 删除优惠码残留后不再新建；升级时旧表和旧行原样保留。
+type legacyAdtyPromoCode struct {
+	Id        int    `gorm:"primaryKey"`
+	Code      string `gorm:"type:varchar(64);uniqueIndex"`
+	Value     string `gorm:"type:varchar(32)"`
+	SiteId    int
+	CreatedAt int64
+}
+
+func (legacyAdtyPromoCode) TableName() string { return "adty_promo_codes" }
+
+type legacyAdtyPromoRedemption struct {
+	Id        int `gorm:"primaryKey"`
+	CodeId    int
+	UserId    int
+	TradeNo   string `gorm:"type:varchar(64);uniqueIndex"`
+	CreatedAt int64
+}
+
+func (legacyAdtyPromoRedemption) TableName() string { return "adty_promo_redemptions" }
+
 func TestMarketingRemovalDatabaseMatrix(t *testing.T) {
 	for _, dialect := range []string{"sqlite", "mysql", "postgres"} {
 		for _, upgrade := range []bool{false, true} {
@@ -211,19 +231,16 @@ func TestMarketingRemovalDatabaseMatrix(t *testing.T) {
 					&legacyAdtyMarketingCampaignRecipient{CampaignId: 7, UserId: 91, SendId: 8, Email: "history@example.test"},
 					&legacyAdtyMarketingTriggerSend{Rule: "winback", UserId: 91, Status: "sending", EmailId: "history-email", CreatedAt: 1234},
 					&legacyAdtySignupSource{UserId: 91, InviterUserId: 10, SiteId: 4, UtmSource: "historical", UtmCampaign: "archive", LandingPath: "/old-landing", ReferrerHost: "example.test", CreatedAt: 1234},
+					&legacyAdtyPromoCode{Id: 1, Code: "HISTORY10", Value: "10", SiteId: 4, CreatedAt: 1234},
+					&legacyAdtyPromoRedemption{Id: 1, CodeId: 1, UserId: 91, TradeNo: "history-order", CreatedAt: 1234},
 				}
 				before := map[string][]map[string]any{}
-				promo := AdtyPromoCode{Code: "HISTORY10", Kind: AdtyPromoKindPercent, Value: decimal.NewFromInt(10), MinFaceUSD: decimal.NewFromInt(50), MaxUses: 10, PerUserLimit: 1, UsedCount: 1, SiteId: 4, Funder: AdtyPromoFunderSiteOwner, Enabled: true, CreatedBy: 91, CreatedAt: 1234, UpdatedAt: 1234}
-				redemption := AdtyPromoRedemption{CodeId: 1, UserId: 91, TradeNo: "history-order", BonusUSD: decimal.NewFromInt(10), CreatedAt: 1234}
 				if upgrade {
 					require.NoError(t, db.AutoMigrate(legacy...))
-					require.NoError(t, db.AutoMigrate(&AdtyPromoCode{}, &AdtyPromoRedemption{}, &Option{}))
+					require.NoError(t, db.AutoMigrate(&Option{}))
 					for _, row := range legacy {
 						require.NoError(t, db.Create(row).Error)
 					}
-					require.NoError(t, db.Create(&promo).Error)
-					redemption.CodeId = promo.Id
-					require.NoError(t, db.Create(&redemption).Error)
 					require.NoError(t, db.Create(&[]Option{
 						{Key: "adty_marketing_setting.promo_enabled", Value: "true"},
 						{Key: "adty_marketing_setting.enabled", Value: "true"},
@@ -248,32 +265,11 @@ func TestMarketingRemovalDatabaseMatrix(t *testing.T) {
 						if upgrade {
 							var after []map[string]any
 							require.NoError(t, db.Table(table).Find(&after).Error)
-							assert.Equal(t, before[table], after, "historical marketing data changed: %s", table)
+							assert.Equal(t, before[table], after, "historical data changed: %s", table)
 						}
 					}
-					require.True(t, db.Migrator().HasTable(&AdtyPromoCode{}))
-					require.True(t, db.Migrator().HasTable(&AdtyPromoRedemption{}))
 					for key := range config.GlobalConfig.ExportAllConfigs() {
 						assert.Falsef(t, strings.HasPrefix(key, "adty_marketing_setting."), "retired setting registered again: %s", key)
-					}
-					if upgrade {
-						var saved AdtyPromoCode
-						require.NoError(t, db.First(&saved, promo.Id).Error)
-						assert.True(t, promo.Value.Equal(saved.Value))
-						assert.True(t, promo.MinFaceUSD.Equal(saved.MinFaceUSD))
-						saved.Value, saved.MinFaceUSD = promo.Value, promo.MinFaceUSD
-						assert.Equal(t, promo, saved)
-						var used AdtyPromoRedemption
-						require.NoError(t, db.First(&used, redemption.Id).Error)
-						assert.True(t, redemption.BonusUSD.Equal(used.BonusUSD))
-						used.BonusUSD = redemption.BonusUSD
-						assert.Equal(t, redemption, used)
-						duplicate := promo
-						duplicate.Id = 0
-						assert.Error(t, db.Create(&duplicate).Error, "promo code uniqueness must survive upgrades")
-						repeated := redemption
-						repeated.Id = 0
-						assert.Error(t, db.Create(&repeated).Error, "an order must not redeem twice after upgrade")
 					}
 				}
 			})

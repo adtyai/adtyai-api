@@ -14,7 +14,7 @@ func TestQuoteUsesPaymentMethodRateNotAmountTier(t *testing.T) {
 	setAdtyBonusRates(t, map[int]float64{100: 50})
 	SetAdtyMethodBonusForTest(t, "usdt", true, "0.025")
 
-	quote, err := AdtyQuoteFor("default", 100, AdtyMethodUSDTTRC20, AdtyPromoInput{})
+	quote, err := AdtyQuoteFor("default", 100, AdtyMethodUSDTTRC20)
 	require.NoError(t, err)
 	require.Equal(t, "2.5", quote.BonusUSD.String())
 	require.EqualValues(t, 51_250_000, quote.CreditQuota)
@@ -26,7 +26,7 @@ func TestAmountTierDoesNotCreateBonus(t *testing.T) {
 	setAdtyBonusRates(t, map[int]float64{10: 8})
 	ClearAdtyMethodBonusForTest(t)
 
-	quote, err := AdtyQuoteFor("default", 100, AdtyMethodAlipay, AdtyPromoInput{})
+	quote, err := AdtyQuoteFor("default", 100, AdtyMethodAlipay)
 	require.NoError(t, err)
 	require.True(t, quote.BonusUSD.IsZero())
 	require.EqualValues(t, 50_000_000, quote.CreditQuota)
@@ -45,7 +45,7 @@ func TestSiteGiftQuoteRequiresEarningReserve(t *testing.T) {
 	setting.SiteMethodBonus = map[int]map[string]adty_setting.MethodBonusRule{
 		site.Id: {"usdt": {Enabled: true, Rate: "0.10"}},
 	}
-	_, err := AdtyQuoteForSite(AdtySiteById(site.Id), "default", 100, AdtyMethodUSDTTRC20, AdtyPromoInput{})
+	_, err := AdtyQuoteForSite(AdtySiteById(site.Id), "default", 100, AdtyMethodUSDTTRC20)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "not covered", "上限不是这条用例要挡的东西")
 }
@@ -54,9 +54,9 @@ func TestSameMethodSharesBonusAcrossChains(t *testing.T) {
 	setAdtyQuoteDefaults(t)
 	setMainBonusForTest(t, "usdt", true, "0.02")
 	t.Cleanup(func() { setMainBonusForTest(t, "usdt", false, "0") })
-	trc, err := AdtyQuoteFor("default", 100, AdtyMethodUSDTTRC20, AdtyPromoInput{})
+	trc, err := AdtyQuoteFor("default", 100, AdtyMethodUSDTTRC20)
 	require.NoError(t, err)
-	bep, err := AdtyQuoteFor("default", 100, AdtyMethodUSDTBEP20, AdtyPromoInput{})
+	bep, err := AdtyQuoteFor("default", 100, AdtyMethodUSDTBEP20)
 	require.NoError(t, err)
 	require.True(t, trc.BonusUSD.Equal(bep.BonusUSD))
 	require.Equal(t, "2", trc.BonusUSD.String())
@@ -73,7 +73,7 @@ func TestSiteGiftCanUseAuthorizedMarginFill(t *testing.T) {
 	setSiteBonusForTest(t, site.Id, "usdt", true, "0.10")
 	adty_setting.AuthorizeSiteBonusMarginFill(site.Id, true)
 	require.NoError(t, OpenAdtyMarginCycle(site.Id, decimal.RequireFromString("20"), "gift-margin-cycle"))
-	quote, err := AdtyQuoteForSite(AdtySiteById(site.Id), "default", 100, AdtyMethodUSDTTRC20, AdtyPromoInput{})
+	quote, err := AdtyQuoteForSite(AdtySiteById(site.Id), "default", 100, AdtyMethodUSDTTRC20)
 	require.NoError(t, err)
 	require.Equal(t, "10", quote.BonusUSD.String())
 }
@@ -89,7 +89,7 @@ func TestSiteBonusAboveCapIsRefusedAtQuote(t *testing.T) {
 	authorizeSiteBonusForTest(t, site.Id, "usdt", true)
 	setSiteBonusForTest(t, site.Id, "usdt", true, "0.05") // $100 × 5% = $5 > $4.5
 
-	_, err := AdtyQuoteForSite(AdtySiteById(site.Id), "default", 100, AdtyMethodUSDTTRC20, AdtyPromoInput{})
+	_, err := AdtyQuoteForSite(AdtySiteById(site.Id), "default", 100, AdtyMethodUSDTTRC20)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "4.5", "报错要点出这一单的上限，运维才知道改哪一档")
 }
@@ -105,15 +105,9 @@ func TestSiteBonusAtCapIsQuoted(t *testing.T) {
 	adty_setting.AuthorizeSiteBonusMarginFill(site.Id, true)
 	require.NoError(t, OpenAdtyMarginCycle(site.Id, decimal.RequireFromString("20"), "gift-at-cap-cycle"))
 
-	quote, err := AdtyQuoteForSite(AdtySiteById(site.Id), "default", 100, AdtyMethodUSDTTRC20, AdtyPromoInput{})
+	quote, err := AdtyQuoteForSite(AdtySiteById(site.Id), "default", 100, AdtyMethodUSDTTRC20)
 	require.NoError(t, err)
 	require.Equal(t, "4.5", quote.BonusUSD.String())
-}
-
-func TestPromoCodeIsRetiredOnQuote(t *testing.T) {
-	setAdtyQuoteDefaults(t)
-	_, err := AdtyQuoteFor("default", 100, AdtyMethodAlipay, AdtyPromoInput{Code: "SAVE10"})
-	require.Error(t, err)
 }
 
 // 加赠配置现在只有一条写入口：以事务内加锁读到的当前值为基准合并，再由配置层

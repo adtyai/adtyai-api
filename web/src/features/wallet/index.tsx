@@ -79,7 +79,6 @@ export function Wallet(props: WalletProps) {
   const handlePay = (
     amount: number,
     method: AdtyMethod,
-    promoCode: string,
     paymentScene: string
   ) => {
     setActivePayment({
@@ -87,7 +86,6 @@ export function Wallet(props: WalletProps) {
       method: method.id,
       channelId: method.channel_id,
       amount,
-      promoCode,
       paymentScene,
     })
   }

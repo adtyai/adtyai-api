@@ -59,10 +59,6 @@ export function OrderDetailSummary(props: { detail: OrderTrace }) {
             t('Order bonus snapshot'),
             order.has_ext ? `${order.bonus_usd} USD` : '-',
           ],
-          [
-            t('Promo bonus'),
-            order.has_ext ? `${props.detail.promo_bonus_usd ?? '0'} USD` : '-',
-          ],
           [t('Created at'), formatTimestamp(order.create_time)],
           [
             t('Completed at'),

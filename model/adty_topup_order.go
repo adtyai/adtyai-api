@@ -76,11 +76,8 @@ type AdtyTopupOrder struct {
 	PaidSource            string          `json:"paid_source" gorm:"type:varchar(16)"`
 	ReferralAffiliateId   int             `json:"-" gorm:"index"`
 	ReferralRate          decimal.Decimal `json:"-" gorm:"type:decimal(10,4);not null;default:0"`
-	PromoCodeId           int             `json:"promo_code_id" gorm:"index;not null;default:0"`                                       // 优惠码（任务 12.4），0 表示没用
-	PromoBonusUSD         decimal.Decimal `json:"promo_bonus_usd" gorm:"column:promo_bonus_usd;type:decimal(20,8);not null;default:0"` // 下单时快照的优惠加赠，已含在 CreditQuota 里
-	PromoFunder           string          `json:"-" gorm:"type:varchar(16);not null;default:''"`                                       // 优惠码出资方快照：platform 或 site_owner
-	TeamId                int64           `json:"team_id" gorm:"index;not null;default:0"`                                             // 团队充值；0 表示个人订单
-	SiteId                int             `json:"-" gorm:"index"`                                                                      // 下单时客户所属的分站（P11）；加赠由这个站的站长出
+	TeamId                int64           `json:"team_id" gorm:"index;not null;default:0"` // 团队充值；0 表示个人订单
+	SiteId                int             `json:"-" gorm:"index"`                          // 下单时客户所属的分站（P11）；加赠由这个站的站长出
 	SiteOwnerUserId       int             `json:"-" gorm:"not null;default:0"`
 	LastQueryAt           int64           `json:"-"`
 	RefundedAt            int64           `json:"refunded_at"`
@@ -286,17 +283,9 @@ func CompleteAdtyTopUpTx(tx *gorm.DB, tradeNo string, facts AdtyPaymentFacts) (a
 		return false, 0, nil, nil, ErrInvalidTopUpQuota
 	}
 	now := common.GetTimestamp()
-	if err := LockAdtyPromoEligibilityTx(tx, ext.UserId); err != nil {
-		return false, 0, nil, nil, err
-	}
-	if ext.PromoCodeId > 0 {
-		if err := adtyRedeemPromoOrDropTx(tx, ext, now); err != nil {
-			return false, 0, nil, nil, err
-		}
-	}
 	credited = int(ext.CreditQuota)
 	if ext.TeamId > 0 {
-		if ext.BonusUSD.IsPositive() || ext.PromoBonusUSD.IsPositive() || !ext.BonusRate.IsZero() || int64(credited) != ext.FaceQuota() {
+		if ext.BonusUSD.IsPositive() || !ext.BonusRate.IsZero() || int64(credited) != ext.FaceQuota() {
 			return false, 0, nil, nil, errors.New("team top-up cannot include a gift")
 		}
 		if AdtyCreditTeamTopUpTx == nil {

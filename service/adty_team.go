@@ -568,7 +568,7 @@ func createAdtyTeamTopupOrder(leaderID int, teamID int64, amountUSD decimal.Deci
 		ext := &model.AdtyTopupOrder{
 			TradeNo: tradeNo, UserId: leaderID, TeamId: teamID, Provider: model.PaymentProviderAdtyEpay,
 			Method: "team", FaceUSD: amountUSD, BonusRate: decimal.Zero, BonusUSD: decimal.Zero,
-			PromoBonusUSD: decimal.Zero, CreditQuota: quota, PayAmount: amountUSD, PayCurrency: "USD",
+			CreditQuota: quota, PayAmount: amountUSD, PayCurrency: "USD",
 			TopupGroupRatio: decimal.NewFromInt(1),
 		}
 		if err := tx.Create(ext).Error; err != nil {

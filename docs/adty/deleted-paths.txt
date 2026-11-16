@@ -459,3 +459,11 @@ model/adty_epay_legacy_migration_test.go
 web/src/components/react-icon-by-name.tsx
 web/src/features/system-settings/integrations/payment-method-dialog.tsx
 web/src/features/system-settings/integrations/payment-methods-visual-editor.tsx
+
+# 下单流程里的优惠码（2026-11-16）
+model/adty_promo_code.go
+service/adty_promo.go
+service/adty_promo_test.go
+middleware/adty_promo_rate_limit.go
+middleware/adty_promo_rate_limit_test.go
+router/adty_promo_test.go

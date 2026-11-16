@@ -543,7 +543,7 @@ P6 移植旧项目前端时，不要把 `?aff=` 和 `features/auth/lib/storage.t
 
 - `users.checkin_quota` 列、`checkins` 表的迁移和退款时把签到赠送排除在本金之外的逻辑（`TestCheckinQuotaIsNotRefundedAsPrincipal`）：签到赠送的历史额度仍在钱包里时，退款不能把它当本金退。
 - `users.stripe_customer` 列：上游表结构，启动迁移照旧，不写删列。
-- 下单链路里的优惠码字段和拒绝逻辑（`AdtyPromoInput`、`ErrAdtyPromoRetired`、`PromoCodeUserRateLimit`）以及 `adty_promo_codes`、`adty_promo_redemptions` 表：和订单入账、退款缠在一起，另行评估。
+- 下单链路里的优惠码字段和拒绝逻辑（`AdtyPromoInput`、`ErrAdtyPromoRetired`、`PromoCodeUserRateLimit`）以及 `adty_promo_codes`、`adty_promo_redemptions` 表：随后在「下单流程里的优惠码」一节删除。
 - 上游单通道易支付的设置（`PayAddress`、`EpayId`、`EpayKey`、`PayMethods`）和 `MigrateLegacyAdtyEpayChannel`：随后在下一节删除。
 - `/api/uptime/status` 和 Uptime Kuma 设置：后台仪表盘还在用。
 - 两份语言包里的旧文案：按约定 B 只增不删。
@@ -568,4 +568,28 @@ P6 移植旧项目前端时，不要把 `?aff=` 和 `features/auth/lib/storage.t
 - 回调地址 `CustomCallbackAddress`（Epay 页签里的「回调地址」）：多通道易支付和 USDT 下单时拼回调地址要用。
 - `Price`（人民币单价）、`MinTopUp`（最低充值）、`USDExchangeRate`：报价和显示还在用。
 - 数据库里这几个键的旧行：启动加载时忽略，不写删除。
+- 两份语言包里的旧文案：按约定 B 只增不删。
+
+## 下单流程里的优惠码（2026-11-16）
+
+优惠码早已退役，报价只要带码就拒绝；管理面板和接口上一批已删。项目没上线，没有用过优惠码的订单，剩下的下单流程部分一起删掉。
+
+### 文件
+
+- `model/adty_promo_code.go`（优惠码和核销表、资格判断、核销、入账前的资格锁 `LockAdtyPromoEligibilityTx`）
+- `service/adty_promo.go`（`AdtyPromoInput`、`ErrAdtyPromo*`、`AdtyUserSiteID`）和它的测试
+- `middleware/adty_promo_rate_limit.go`（只对带码报价按用户限速）和它的测试
+- `router/adty_promo_test.go` 改名为 `router/adty_marketing_removed_test.go`，只留营销接口 404 的用例
+
+### 改动
+
+- 报价 `AdtyQuoteFor` / `AdtyQuoteForSite` 去掉优惠码参数；`/api/adty/topup/quote`、`/api/adty/epay/pay`、`/api/user/bepusdt/pay` 不再读 `promo_code`（带了也忽略），报价结果不再有 `promo_code_id`、`promo_bonus_usd`。
+- `adty_topup_orders` 去掉 `promo_code_id`、`promo_bonus_usd`、`promo_funder` 三个字段；入账不再核销优惠码，也不再先锁同指纹用户（那把锁只为「首单优惠」的资格判断）。
+- 站长出资的加赠只剩支付方式加赠：站长收益、赠金预留、资金异常检测里「站长出资优惠码」的部分删除。
+- 订单详情去掉「历史优惠码赠金」分区（`section=bonuses`）和 `promo_bonus_usd`；前端订单详情、钱包金额和充值记录不再加优惠赠金。
+- 新库不再创建 `adty_promo_codes`、`adty_promo_redemptions`。
+
+### 保留名单和理由
+
+- 升级库里的 `adty_promo_codes`、`adty_promo_redemptions` 表和 `adty_topup_orders` 的三个旧列：不写删表删列，代码不再读写（`TestMarketingRemovalDatabaseMatrix` 盯着升级时旧行不变）。
 - 两份语言包里的旧文案：按约定 B 只增不删。

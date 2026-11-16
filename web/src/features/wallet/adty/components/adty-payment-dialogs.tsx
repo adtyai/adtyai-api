@@ -37,7 +37,6 @@ export function AdtyPaymentDialogs(props: AdtyPaymentDialogsProps) {
         chain={payment.method}
         paymentScene={payment.paymentScene}
         amount={payment.amount}
-        promoCode={payment.promoCode}
         tradeNo={payment.tradeNo}
         onClose={props.onClose}
         onSettled={props.onSettled}
@@ -55,7 +54,6 @@ export function AdtyPaymentDialogs(props: AdtyPaymentDialogsProps) {
       channelId={payment.channelId}
       paymentScene={payment.paymentScene}
       amount={payment.amount}
-      promoCode={payment.promoCode}
       tradeNo={payment.tradeNo}
       onClose={props.onClose}
       onSettled={props.onSettled}

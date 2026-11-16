@@ -22,7 +22,6 @@ type bepusdtPayRequest struct {
 	PaymentScene string `json:"payment_scene"`
 	Amount       int64  `json:"amount"`
 	Chain        string `json:"chain"`
-	PromoCode    string `json:"promo_code"` // 任务 12.4
 }
 
 // RequestBEpusdtPay 下单：报价、建单、调网关，把地址、数量、到期时间写回订单返回给前端。
@@ -36,7 +35,7 @@ func RequestBEpusdtPay(c *gin.Context) {
 		common.ApiErrorT(c, "This payment method is not available")
 		return
 	}
-	quote, err := service.AdtyQuoteForSite(service.AdtyBillingSiteForUser(c.GetInt("id")), c.GetString("group"), req.Amount, req.Chain, adtyPromoInput(c, req.PromoCode))
+	quote, err := service.AdtyQuoteForSite(service.AdtyBillingSiteForUser(c.GetInt("id")), c.GetString("group"), req.Amount, req.Chain)
 	if err != nil {
 		common.ApiError(c, err)
 		return

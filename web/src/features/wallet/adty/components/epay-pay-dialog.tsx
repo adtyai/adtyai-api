@@ -42,8 +42,6 @@ type EpayPayDialogProps = {
   /** Channel picked on the wallet; failures do not switch to another one. */
   channelId?: number
   amount: number
-  /** adty task 12.4 */
-  promoCode?: string
   tradeNo?: string
   onClose: () => void
   onSettled: () => Promise<void> | void
@@ -91,7 +89,6 @@ export function EpayPayDialog(props: EpayPayDialogProps) {
         props.method,
         props.channelId,
         device,
-        props.promoCode ?? '',
         props.paymentScene
       ),
     onSuccess: (order) => {

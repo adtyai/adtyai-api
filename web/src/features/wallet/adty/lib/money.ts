@@ -17,16 +17,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 // formatNumber has no fixed-fraction option; USD amounts always show 2 decimals.
-/** Face plus tier bonus plus promo bonus, the dollars the user is told they receive. */
+/** Face plus bonus, the dollars the user is told they receive. */
 export function creditedUsdAmount(ext: {
   face_usd: string
   bonus_usd: string
-  promo_bonus_usd?: string
 }): string {
-  const total =
-    Number(ext.face_usd) +
-    Number(ext.bonus_usd) +
-    Number(ext.promo_bonus_usd || 0)
+  const total = Number(ext.face_usd) + Number(ext.bonus_usd)
   return total.toFixed(2)
 }
 

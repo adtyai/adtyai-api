@@ -50,13 +50,8 @@ type AdtyRechargeCardProps = {
   info: AdtyTopupInfo | undefined
   loading: boolean
   paying: boolean
-  /** Starts the payment for the chosen amount, method and promo code (P4 / P5 dialogs). */
-  onPay: (
-    amount: number,
-    method: AdtyMethod,
-    promoCode: string,
-    paymentScene: string
-  ) => void
+  /** Starts the payment for the chosen amount and method (USDT / Epay dialogs). */
+  onPay: (amount: number, method: AdtyMethod, paymentScene: string) => void
 }
 
 export function AdtyRechargeCard(props: AdtyRechargeCardProps) {
@@ -77,7 +72,6 @@ export function AdtyRechargeCard(props: AdtyRechargeCardProps) {
   const [selectedTier, setSelectedTier] = useState<number | null>(null)
   const [customAmount, setCustomAmount] = useState('')
   const [methodKey, setMethodKey] = useState<string | null>(null)
-  const promoCode = ''
 
   const methods =
     props.info?.scenes === undefined
@@ -104,13 +98,11 @@ export function AdtyRechargeCard(props: AdtyRechargeCardProps) {
       paymentScene,
       amount,
       methodKey,
-      promoCode,
     ],
     queryFn: () =>
       quoteAdtyTopup(
         amount,
         method?.id ?? '',
-        promoCode,
         paymentScene,
         method?.channel_id
       ),
@@ -119,18 +111,9 @@ export function AdtyRechargeCard(props: AdtyRechargeCardProps) {
   })
   const quote = quoteQuery.data?.quote
   const quoteAvailable = quoteQuery.data?.available ?? false
-  const promoError =
-    promoCode !== '' && quoteQuery.isError
-      ? getServerErrorMessage(
-          quoteQuery.error,
-          t('This promo code is not valid')
-        )
-      : ''
-  const quoteError =
-    quoteQuery.isError && !promoError
-      ? getServerErrorMessage(quoteQuery.error, t('Failed to load data'))
-      : ''
-  const promoBonus = Number(quote?.promo_bonus_usd ?? 0)
+  const quoteError = quoteQuery.isError
+    ? getServerErrorMessage(quoteQuery.error, t('Failed to load data'))
+    : ''
 
   if (props.loading) {
     return (
@@ -148,9 +131,7 @@ export function AdtyRechargeCard(props: AdtyRechargeCardProps) {
   }
 
   const bonusRate = validAmount ? bonusRateFor(amount, rates) : 0
-  const bonusUsd =
-    (validAmount ? bonusUsdFor(amount, rates) : 0) +
-    (promoCode !== '' && quote ? promoBonus : 0)
+  const bonusUsd = validAmount ? bonusUsdFor(amount, rates) : 0
   let creditText = '-'
   if (validAmount && bonusUsd > 0) {
     creditText = t('{{total}} (incl. {{bonus}} bonus)', {
@@ -329,7 +310,7 @@ export function AdtyRechargeCard(props: AdtyRechargeCardProps) {
               quoteQuery.isError
             }
             onClick={() =>
-              method && props.onPay(amount, method, promoCode, paymentScene)
+              method && props.onPay(amount, method, paymentScene)
             }
           >
             {props.paying ? t('Processing...') : t('Pay now')}

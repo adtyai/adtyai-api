@@ -37,7 +37,6 @@ export async function getAdtyTopupInfo(): Promise<AdtyTopupInfo> {
 export async function quoteAdtyTopup(
   amount: number,
   method: string,
-  promoCode = '',
   paymentScene = 'wallet_topup',
   channelId?: number
 ): Promise<{ quote: AdtyQuote; available: boolean }> {
@@ -47,7 +46,6 @@ export async function quoteAdtyTopup(
     amount,
     method,
     channel_id: channelId,
-    promo_code: promoCode,
     payment_scene: paymentScene,
   })
   return requireServerSuccess(res.data).data

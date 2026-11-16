@@ -263,17 +263,12 @@ func adtyRecordTaskBillingEarning(params *model.RecordTaskBillingLogParams) {
 	}
 }
 
-// adtyBonusUSDForSite 是一笔订单要由站长出的加赠（美元）：站点档位的加赠，加上站长出资优惠码的优惠加赠（12.4）。
-// 平台出资的优惠加赠不算；不是分站订单返回 0。入账时码已用完被去掉的优惠加赠，扩展行里已经是 0。
+// adtyBonusUSDForSite 是一笔订单要由站长出的加赠（美元），也就是分站订单的支付方式加赠；不是分站订单返回 0。
 func adtyBonusUSDForSite(ext *model.AdtyTopupOrder) decimal.Decimal {
 	if ext == nil || ext.SiteId <= 0 {
 		return decimal.Zero
 	}
-	bonus := decimal.Max(ext.BonusUSD, decimal.Zero)
-	if ext.PromoFunder == model.AdtyPromoFunderSiteOwner && ext.PromoBonusUSD.IsPositive() {
-		bonus = bonus.Add(ext.PromoBonusUSD)
-	}
-	return bonus
+	return decimal.Max(ext.BonusUSD, decimal.Zero)
 }
 
 // adtySiteBonusCapAmount 是一笔分站充值允许的加赠上限（美元）：

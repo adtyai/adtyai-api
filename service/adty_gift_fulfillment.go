@@ -287,7 +287,7 @@ func reacquireAdtySiteGiftTx(tx *gorm.DB, ext *model.AdtyTopupOrder) error {
 			map[string]any{"earning": "0", "margin": "0"},
 			map[string]any{
 				"trade_no": ext.TradeNo, "site_id": ext.SiteId, "bonus_usd": ext.BonusUSD.String(),
-				"promo_bonus_usd": ext.PromoBonusUSD.String(), "source": ext.GiftReserveSource,
+				"source":  ext.GiftReserveSource,
 				"earning": fromEarning.String(), "margin": fromMargin.String(),
 				"phase": "reacquire",
 			})

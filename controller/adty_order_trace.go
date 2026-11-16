@@ -82,9 +82,9 @@ func getAdtyOrderTrace(c *gin.Context, ownerSiteID *int) {
 		common.ApiError(c, err)
 		return
 	}
-	sections := []string{"payments", "wallet", "bonuses", "exceptions", "reviews"}
+	sections := []string{"payments", "wallet", "exceptions", "reviews"}
 	if ownerSiteID == nil {
-		sections = []string{"payments", "wallet", "bonuses", "site_wallet", "exceptions", "reviews", "commissions", "commission_movements"}
+		sections = []string{"payments", "wallet", "site_wallet", "exceptions", "reviews", "commissions", "commission_movements"}
 	}
 	section := c.DefaultQuery("section", "payments")
 	traceQuery, projection, ok := adtyOrderTraceQuery(section, order, ownerSiteID)
@@ -150,7 +150,7 @@ func getAdtyOrderTrace(c *gin.Context, ownerSiteID *int) {
 			}
 		}
 	}
-	common.ApiSuccess(c, gin.H{"order": order, "refund": refund, "promo_bonus_usd": ext.PromoBonusUSD,
+	common.ApiSuccess(c, gin.H{"order": order, "refund": refund,
 		"section": section, "sections": sections, "items": entries, "total": total, "page": page.GetPage(), "page_size": page.GetPageSize()})
 }
 
@@ -167,9 +167,6 @@ func adtyOrderTraceQuery(section string, order rechargeAuditOrder, ownerSiteID *
 	case "wallet":
 		return model.DB.Model(&model.AdtyBalanceLedger{}).Where("ref_type = ? AND ref_id = ? AND user_id = ?", "topup", order.TradeNo, order.UserId),
 			"id, 'Wallet movement' AS kind, type AS status, ref_id AS reference, delta_quota, balance_before, balance_after, operator_id, reason AS note, created_at", true
-	case "bonuses":
-		return model.DB.Model(&model.AdtyPromoRedemption{}).Where("trade_no = ? AND user_id = ?", order.TradeNo, order.UserId),
-			"id, 'Promo bonus' AS kind, bonus_usd AS amount, 'USD' AS currency, created_at", true
 	case "site_wallet":
 		if ownerSiteID != nil {
 			return nil, "", false

@@ -20,7 +20,6 @@ func TestTeamTopupOrderCreditsPrincipalWithoutGift(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, order.BonusUSD.IsZero())
 	require.True(t, order.BonusRate.IsZero())
-	require.True(t, order.PromoBonusUSD.IsZero())
 	require.EqualValues(t, 500000, order.CreditQuota)
 
 	replay, err := CreateAdtyTeamTopupOrder(leader.Id, created.Team.Id, decimal.NewFromInt(1), "team-pay-1")

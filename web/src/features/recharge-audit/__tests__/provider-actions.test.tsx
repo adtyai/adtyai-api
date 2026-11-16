@@ -119,7 +119,6 @@ function emptyTrace(ownerMode = false) {
         page_size: 20,
         total: 0,
         items: [],
-        promo_bonus_usd: '0',
       },
     },
   }

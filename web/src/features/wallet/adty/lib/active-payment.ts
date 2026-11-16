@@ -26,8 +26,6 @@ export type ActivePayment = {
   /** Epay channel the customer picked; the order uses only this channel. */
   channelId?: number
   amount: number
-  /** Promo code applied at order time (adty task 12.4); '' for none. */
-  promoCode?: string
   /** Set when resuming an order that already exists. */
   tradeNo?: string
 }

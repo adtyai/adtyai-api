@@ -251,8 +251,7 @@ func detectUnbookedSuccessfulOrders(siteID int) ([]adtyFundAnomalyItem, error) {
 
 func detectInsufficientGiftGuarantees(siteID int) ([]adtyFundAnomalyItem, error) {
 	var orders []model.AdtyTopupOrder
-	if err := model.DB.Where("site_id = ? AND (bonus_usd > 0 OR (promo_funder = ? AND promo_bonus_usd > 0))",
-		siteID, model.AdtyPromoFunderSiteOwner).Find(&orders).Error; err != nil {
+	if err := model.DB.Where("site_id = ? AND bonus_usd > 0", siteID).Find(&orders).Error; err != nil {
 		return nil, err
 	}
 	if len(orders) == 0 {
@@ -303,8 +302,6 @@ func detectInsufficientGiftGuarantees(siteID int) ([]adtyFundAnomalyItem, error)
 				"reserved_margin":  ext.GiftReserveMargin.String(),
 				"held_usd":         held.String(),
 				"bonus_usd":        ext.BonusUSD.String(),
-				"promo_bonus_usd":  ext.PromoBonusUSD.String(),
-				"promo_funder":     ext.PromoFunder,
 				"reason":           "site-funded gift guarantee is less than the official reserve",
 			}),
 		})

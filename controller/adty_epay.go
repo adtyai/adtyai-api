@@ -47,7 +47,6 @@ type adtyEpayPayRequest struct {
 	Device            string `json:"device"`
 	ChannelId         int    `json:"channel_id"` // 客户在钱包选的通道；0 表示自动挑
 	ExcludeChannelIds []int  `json:"exclude_channel_ids"`
-	PromoCode         string `json:"promo_code"` // 任务 12.4
 }
 
 // RequestAdtyEpayPay 易支付下单。客户选了通道（channel_id）就只用这个通道，失败直接提示客户换一个支付方式；
@@ -68,7 +67,7 @@ func RequestAdtyEpayPay(c *gin.Context) {
 	if req.Device != "mobile" {
 		req.Device = "pc"
 	}
-	quote, err := service.AdtyQuoteForSite(service.AdtyBillingSiteForUser(c.GetInt("id")), c.GetString("group"), req.Amount, req.Method, adtyPromoInput(c, req.PromoCode))
+	quote, err := service.AdtyQuoteForSite(service.AdtyBillingSiteForUser(c.GetInt("id")), c.GetString("group"), req.Amount, req.Method)
 	if err != nil {
 		common.ApiError(c, err)
 		return

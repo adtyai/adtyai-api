@@ -19,7 +19,7 @@ func TestRefundUsesPendingBatchDeltaWhenFlushHasDetachedQueue(t *testing.T) {
 		return decimal.RequireFromString(usd).Mul(decimal.NewFromFloat(common.QuotaPerUnit)).IntPart()
 	}
 	user := seedAdtyTopUpUser(t, db, "refund-detached", int(q("110")))
-	seedCreditedOrder(t, db, user.Id, "RF-detached", PaymentProviderAdtyBEpusdt, "100", "10", "0", "100")
+	seedCreditedOrder(t, db, user.Id, "RF-detached", PaymentProviderAdtyBEpusdt, "100", "10", "100")
 	require.NoError(t, DecreaseUserQuota(user.Id, int(q("30")), false))
 	batchUpdateLocks[BatchUpdateTypeUserQuota].Lock()
 	batchUpdateStores[BatchUpdateTypeUserQuota] = make(map[int]int)
@@ -48,7 +48,7 @@ func TestSpentCheckinGiftDoesNotProtectLaterTopUp(t *testing.T) {
 	reserved, err := TryReserveUserQuota(user.Id, 80)
 	require.NoError(t, err)
 	require.True(t, reserved)
-	seedCreditedOrder(t, db, user.Id, "RF-gift-spent", PaymentProviderAdtyBEpusdt, "1", "0", "0", "1")
+	seedCreditedOrder(t, db, user.Id, "RF-gift-spent", PaymentProviderAdtyBEpusdt, "1", "0", "1")
 	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
 		return creditTopUpQuota(tx, user.Id, 500000, nil)
 	}))

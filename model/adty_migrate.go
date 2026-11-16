@@ -60,7 +60,7 @@ func MigrateAdtyTablesOn(db *gorm.DB) error {
 	if err := db.AutoMigrate(&AdtyGroup{}, &AdtyTopupOrder{}, &AdtyOrderPaymentEvent{}, &PaymentOrphanEvent{}, &PaymentOrphanReview{}, &AdtyBalanceLedger{}, &BillingOperation{}, &BillingOperationMovement{}, &AdtySiteEarningEvent{}, &AdtyEpayChannel{}, &AdtyEpayChannelMethod{}, &AdtyUserFingerprint{}, &AdtyUserLimit{}, &AdtyOfficialPrice{}, &AdtyBillingHold{}, &AdtyFundBatch{}, &AdtyFundAllocation{}, &AdtyGiftFulfillment{}, &AdtyManualRefund{}, &AdtyStaffBalanceRequest{}, &AdtyPriceRevision{}, &AdtyNotificationHide{}, &AdtyGlossaryTerm{}, &AdtySiteReferralRate{}, &AdtySiteInvite{}, &AdtySiteInviteCommission{}, &AdtyCommissionRecovery{}, &AdtySiteInviteWithdrawal{}, &AdtySiteInviteWithdrawalItem{}, &AdtyAnomalyDisposition{}, &AdtyEmailChange{}, &AdtyAccountClosure{}, &AdtyNoticeTemplate{}, &AdtyKeyLimit{}, &AdtyModelAlias{}, &AdtyGroupConfig{}); err != nil {
 		return err
 	}
-	if err := db.AutoMigrate(&AdtyPromoCode{}, &AdtyPromoRedemption{}, &AdtyNotificationRead{}, &AdtyNotificationPublication{}, &AdtyVoucher{}, &AdtyVoucherLiability{}, &AdtyVoucherAuthorization{}, &AdtyVoucherCloseGrant{}, &AdtyTeam{}, &AdtyTeamMember{}, &AdtyTeamLedger{}, &AdtyTeamInvite{}, &AdtyTeamRegistrationLink{}, &AdtyTeamKey{}); err != nil {
+	if err := db.AutoMigrate(&AdtyNotificationRead{}, &AdtyNotificationPublication{}, &AdtyVoucher{}, &AdtyVoucherLiability{}, &AdtyVoucherAuthorization{}, &AdtyVoucherCloseGrant{}, &AdtyTeam{}, &AdtyTeamMember{}, &AdtyTeamLedger{}, &AdtyTeamInvite{}, &AdtyTeamRegistrationLink{}, &AdtyTeamKey{}); err != nil {
 		return err
 	}
 	if err := EnsureAdtyVoucherTradeNoUniqueIndex(db); err != nil {

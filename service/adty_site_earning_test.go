@@ -450,39 +450,6 @@ func TestTopupRefundReturnsOnlyReclaimedOwnerBonus(t *testing.T) {
 	assert.True(t, totals[model.AdtySiteEarningBonusReversal].IsZero(), "gift is not reclaimed until a principal refund completes")
 }
 
-// 赠金一部分站长出、一部分平台码出：只按站长出资额乘收回比例还给站长，平台码的赠金不还给任何人。
-// 付 $100，站长加赠 $10、平台优惠码 $10（G = $20），余额 $10：收回赠金 $10，比例 1/2，还给站长 $5。
-func TestTopupRefundScalesOnlyOwnerFundedBonus(t *testing.T) {
-	db := prepareSiteDB(t)
-	_, site := openActiveSite(t, db, "bonus-mixed")
-	customer := siteCustomer(t, db, site, "bonus-mixed-customer")
-	tradeNo := "EPU-site-bonus-mixed"
-	credit := perUnit("120")
-	require.NoError(t, model.CreateAdtyTopUp(
-		&model.TopUp{UserId: customer.Id, Amount: 100, TradeNo: tradeNo, PaymentMethod: "usdt.trc20", PaymentProvider: model.PaymentProviderAdtyBEpusdt, Status: common.TopUpStatusPending},
-		&model.AdtyTopupOrder{TradeNo: tradeNo, UserId: customer.Id, Provider: model.PaymentProviderAdtyBEpusdt, Method: "usdt.trc20",
-			FaceUSD: decimal.NewFromInt(100), BonusRate: usd("10"), BonusUSD: usd("10"), PromoBonusUSD: usd("10"),
-			PromoFunder: model.AdtyPromoFunderPlatform, CreditQuota: int64(credit),
-			PayAmount: decimal.NewFromInt(100), PayCurrency: "USDT", TopupGroupRatio: decimal.NewFromInt(1),
-			ExpireAt: time.Now().Unix() + 900, SiteId: site.Id},
-	))
-	_, err := model.CompleteAdtyTopUp(tradeNo, model.AdtyPaymentFacts{
-		Provider: model.PaymentProviderAdtyBEpusdt, PaidAmount: decimal.NewFromInt(100), FiatAmount: decimal.NewFromInt(100),
-		PaidCurrency: "USDT", Source: model.AdtyPaymentSourceCallback,
-	}, "")
-	require.NoError(t, err)
-	require.NoError(t, db.Model(&model.User{}).Where("id = ?", customer.Id).Update("quota", perUnit("10")).Error)
-
-	preview, err := model.PreviewAdtyTopUpRefund(tradeNo)
-	require.NoError(t, err)
-	assert.Zero(t, preview.RefundQuota, "leftover spendable is gift, so preview principal is 0")
-	_, err = model.RefundAdtyTopUp(tradeNo, "chargeback", 1, "refund-site-bonus-mixed", preview.RefundQuota)
-	require.Error(t, err, "a zero principal amount cannot complete a refund")
-	totals := earningTotals(t, db, site.Id)
-	assert.True(t, totals[model.AdtySiteEarningBonus].Equal(usd("-10")), "the owner paid only the site tier bonus")
-	assert.True(t, totals[model.AdtySiteEarningBonusReversal].IsZero(), "gift is not reclaimed until a principal refund completes")
-}
-
 // 客户花掉一部分后退款：赠金没花到（余额 ≥ 赠金），站长出的加赠全额还给站长，已经花掉部分的消费分成不扣。
 func TestPartialTopupRefundKeepsUsageEarning(t *testing.T) {
 	db := prepareSiteDB(t)
@@ -562,18 +529,18 @@ func TestSiteBonusCappedByMainPlusExtra(t *testing.T) {
 	assert.Error(t, ValidateAdtySiteBonusRates(map[int]float64{500: 6.5}))
 
 	require.ErrorIs(t, SaveAdtySiteBonusRates(site.Id, map[int]float64{100: 4}), ErrAdtyAmountTierRetired)
-	quote, err := AdtyQuoteForSite(AdtySiteById(site.Id), "default", 200, AdtyMethodUSDTTRC20, AdtyPromoInput{})
+	quote, err := AdtyQuoteForSite(AdtySiteById(site.Id), "default", 200, AdtyMethodUSDTTRC20)
 	require.NoError(t, err)
 	assert.True(t, quote.BonusUSD.IsZero(), "amount tiers no longer price a new order")
-	quote, err = AdtyQuoteFor("default", 200, AdtyMethodUSDTTRC20, AdtyPromoInput{})
+	quote, err = AdtyQuoteFor("default", 200, AdtyMethodUSDTTRC20)
 	require.NoError(t, err)
 	assert.True(t, quote.BonusUSD.IsZero())
 
 	SetAdtyMethodBonusForTest(t, "usdt", true, "0.025")
-	mainQuote, err := AdtyQuoteFor("default", 100, AdtyMethodUSDTTRC20, AdtyPromoInput{})
+	mainQuote, err := AdtyQuoteFor("default", 100, AdtyMethodUSDTTRC20)
 	require.NoError(t, err)
 	assert.True(t, mainQuote.BonusUSD.Equal(usd("2.5")))
-	unauthorized, err := AdtyQuoteForSite(AdtySiteById(site.Id), "default", 100, AdtyMethodUSDTTRC20, AdtyPromoInput{})
+	unauthorized, err := AdtyQuoteForSite(AdtySiteById(site.Id), "default", 100, AdtyMethodUSDTTRC20)
 	require.NoError(t, err)
 	assert.True(t, unauthorized.BonusUSD.IsZero(), "a site without Root authorization does not inherit the main method gift")
 }

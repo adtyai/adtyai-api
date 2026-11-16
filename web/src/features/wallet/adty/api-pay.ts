@@ -27,13 +27,11 @@ type ApiResponse<T> = { success: boolean; message?: string; data: T }
 export async function payWithBEpusdt(
   amount: number,
   chain: string,
-  promoCode = '',
   paymentScene = 'wallet_topup'
 ): Promise<AdtyOrder> {
   const res = await api.post<ApiResponse<AdtyOrder>>('/api/user/bepusdt/pay', {
     amount,
     chain,
-    promo_code: promoCode,
     payment_scene: paymentScene,
   })
   return requireServerSuccess(res.data).data
@@ -45,7 +43,6 @@ export async function payWithEpay(
   method: string,
   channelId: number | undefined,
   device: 'pc' | 'mobile',
-  promoCode = '',
   paymentScene = 'wallet_topup'
 ): Promise<AdtyOrder> {
   const res = await api.post<ApiResponse<AdtyOrder>>('/api/adty/epay/pay', {
@@ -53,7 +50,6 @@ export async function payWithEpay(
     method,
     device,
     channel_id: channelId,
-    promo_code: promoCode,
     payment_scene: paymentScene,
   })
   return requireServerSuccess(res.data).data

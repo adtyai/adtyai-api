@@ -192,7 +192,6 @@ export async function getRechargeAuditSummary(
 export type OrderTraceSection =
   | 'payments'
   | 'wallet'
-  | 'bonuses'
   | 'commissions'
   | 'commission_movements'
   | 'site_wallet'
@@ -262,7 +261,6 @@ export type OrderTrace = PageResponse<OrderTraceEntry> & {
   }
   section: OrderTraceSection
   sections: OrderTraceSection[]
-  promo_bonus_usd: string
 }
 
 export async function getOrderTrace(

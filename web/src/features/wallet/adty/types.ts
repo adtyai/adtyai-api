@@ -61,8 +61,6 @@ export type AdtyOrderExt = {
   face_usd: string
   bonus_rate: string
   bonus_usd: string
-  /** Extra promo credit already included in credit_quota. */
-  promo_bonus_usd: string
   credit_quota: number
   pay_amount: string
   pay_currency: string
@@ -115,9 +113,6 @@ export type AdtyQuote = {
   pay_currency: string
   price_cny_per_usd: string
   topup_group_ratio: string
-  /** adty task 12.4: extra credit from a promo code, already in credit_quota */
-  promo_code_id: number
-  promo_bonus_usd: string
 }
 
 export type AdtyPage<T> = {

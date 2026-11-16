@@ -239,7 +239,7 @@ func registerAdtyTopUpRoutes(apiRouter *gin.RouterGroup) {
 
 	topup := apiRouter.Group("/adty/topup", middleware.UserAuth(), middleware.AdtyRequireCurrentSiteTerms())
 	topup.GET("/info", controller.GetAdtyTopUpInfo)
-	topup.POST("/quote", middleware.PromoCodeUserRateLimit("CT:promo-quote"), controller.PostAdtyTopUpQuote)
+	topup.POST("/quote", controller.PostAdtyTopUpQuote)
 	topup.GET("/orders/:trade_no", controller.GetAdtyTopUpOrder)
 	topup.POST("/orders/:trade_no/cancel", middleware.CriticalRateLimit(), controller.CancelAdtyTopUpOrder)
 	topup.GET("/pending", controller.GetAdtyTopUpPending)

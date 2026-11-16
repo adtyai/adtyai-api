@@ -29,7 +29,7 @@ func TestOrderTraceDatabaseMatrix(t *testing.T) {
 			order := model.TopUp{TradeNo: "frozen-trace", UserId: buyer.Id, Status: model.TopUpStatusRefunded, PaymentProvider: model.PaymentProviderAdtyEpay}
 			require.NoError(t, db.Create(&order).Error)
 			require.NoError(t, db.Create(&model.AdtyTopupOrder{TradeNo: order.TradeNo, UserId: buyer.Id, SiteId: 7, Provider: order.PaymentProvider,
-				FaceUSD: decimal.NewFromInt(2), BonusUSD: decimal.RequireFromString("0.2"), PromoBonusUSD: decimal.RequireFromString("0.1"),
+				FaceUSD: decimal.NewFromInt(2), BonusUSD: decimal.RequireFromString("0.2"),
 				RefundedAt: 101, RefundQuota: 123, RefundAmount: decimal.NewFromInt(1), PayCurrency: "USD", RefundReason: "authorized-refund-reason", ProviderPayload: "secret-provider-payload"}).Error)
 			for i := range 21 {
 				require.NoError(t, db.Create(&model.AdtyOrderPaymentEvent{TradeNo: order.TradeNo, UserId: buyer.Id, SiteId: 7, Provider: order.PaymentProvider,
@@ -39,7 +39,6 @@ func TestOrderTraceDatabaseMatrix(t *testing.T) {
 			for _, ref := range []string{order.TradeNo, "unrelated-order"} {
 				require.NoError(t, db.Create(&model.AdtyBalanceLedger{UserId: buyer.Id, Type: "refund", RefType: "topup", RefId: ref, DeltaQuota: -123, BalanceBefore: 456, BalanceAfter: 333, Reason: "authorized-refund-reason", OperatorId: 41}).Error)
 			}
-			require.NoError(t, db.Create(&model.AdtyPromoRedemption{TradeNo: order.TradeNo, UserId: buyer.Id, BonusUSD: decimal.RequireFromString("0.1"), CreatedAt: 91}).Error)
 			commission := model.ReferralCommission{SourceType: model.ReferralSourceTopup, SourceOrderId: order.Id, SourceTradeNo: order.TradeNo, InviteeUserId: buyer.Id, CommissionAmount: 0.5, Status: "clawed_back", SettlementCurrency: "USD"}
 			require.NoError(t, db.Create(&commission).Error)
 			require.NoError(t, db.Create(&model.ReferralCommissionLedger{CommissionId: commission.Id, Type: "commission_clawback", RefId: order.TradeNo, ExternalRefId: "trace-clawback", DeltaAvailable: -0.5, SettlementCurrency: "USD"}).Error)
@@ -64,7 +63,6 @@ func TestOrderTraceDatabaseMatrix(t *testing.T) {
 						CommissionClawedUSD    string `json:"commission_clawed_usd"`
 						CommissionRecoveredUSD string `json:"commission_recovered_usd"`
 					}
-					PromoBonusUSD string `json:"promo_bonus_usd"`
 				}
 			}) {
 				t.Helper()
@@ -82,7 +80,6 @@ func TestOrderTraceDatabaseMatrix(t *testing.T) {
 							CommissionClawedUSD    string `json:"commission_clawed_usd"`
 							CommissionRecoveredUSD string `json:"commission_recovered_usd"`
 						}
-						PromoBonusUSD string `json:"promo_bonus_usd"`
 					}
 				}
 				require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &result), recorder.Body.String())
@@ -103,11 +100,10 @@ func TestOrderTraceDatabaseMatrix(t *testing.T) {
 			assert.Equal(t, "1", result.Data.Refund.RefundAmount)
 			assert.Equal(t, "0.2", result.Data.Refund.CommissionClawedUSD)
 			assert.Equal(t, "0.2", result.Data.Refund.CommissionRecoveredUSD)
-			assert.Equal(t, "0.1", result.Data.PromoBonusUSD)
 			_, result = read("/orders/frozen-trace?section=payments&page_size=20&p=2")
 			require.Len(t, result.Data.Items, 1)
 			assert.Equal(t, int64(1), result.Data.Items[0].Id)
-			for _, section := range []string{"wallet", "bonuses", "commissions", "commission_movements", "site_wallet", "exceptions", "reviews"} {
+			for _, section := range []string{"wallet", "commissions", "commission_movements", "site_wallet", "exceptions", "reviews"} {
 				_, result = read(fmt.Sprintf("/orders/frozen-trace?section=%s", section))
 				require.True(t, result.Success, section)
 				wantTotal := 1
@@ -120,6 +116,8 @@ func TestOrderTraceDatabaseMatrix(t *testing.T) {
 					assert.Equal(t, "-0.5", result.Data.Items[0].AvailableDelta.String())
 				}
 			}
+			_, result = read("/orders/frozen-trace?section=bonuses")
+			assert.False(t, result.Success, "the removed promo bonus section is unknown")
 			_, result = read("/orders/frozen-trace?section=unknown")
 			assert.False(t, result.Success)
 			recorder, result = read("/orders/missing-order")

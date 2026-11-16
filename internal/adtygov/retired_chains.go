@@ -146,7 +146,7 @@ func OfficialRetiredObjects() []RetiredObject {
 			ID:       "RETIRE-discount-editor",
 			Title:    "旧上游付费折扣编辑器及不符合规则的历史优惠入口",
 			Status:   RetiredStatusOfficiallyRetainedCompat,
-			KeepList: "The official keep list in deleted-features.md retains payment_setting.amount_discount because upstream code still reads the key; official quotes do not use it. Historical promo rows are not deleted. New promo writes remain rejected with ErrAdtyPromoRetired.",
+			KeepList: "The official keep list in deleted-features.md retains payment_setting.amount_discount because upstream code still reads the key; official quotes do not use it. Historical promo rows are not deleted. Promo code management and the promo fields on quotes and orders were deleted in the 2026-11 slimming.",
 			VerifiedAbsent: []string{
 				"web/src/features/system-settings/integrations/amount-discount-dialog.tsx",
 				"web/src/features/system-settings/integrations/amount-discount-visual-editor.tsx",

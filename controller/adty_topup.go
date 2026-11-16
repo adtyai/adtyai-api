@@ -67,12 +67,6 @@ type adtyQuoteRequest struct {
 	Amount       int64  `json:"amount"`
 	Method       string `json:"method"`
 	ChannelId    int    `json:"channel_id"` // 易支付：客户选的通道，0 表示不指定
-	PromoCode    string `json:"promo_code"` // 任务 12.4
-}
-
-// adtyPromoInput 是当前用户带的优惠码（任务 12.4）。
-func adtyPromoInput(c *gin.Context, code string) service.AdtyPromoInput {
-	return service.AdtyPromoInput{UserId: c.GetInt("id"), SiteId: service.AdtyUserSiteID(c.GetInt("id")), Code: code}
 }
 
 // PostAdtyTopUpQuote 报价，同时返回这个金额下这种方式能不能用。
@@ -82,7 +76,7 @@ func PostAdtyTopUpQuote(c *gin.Context) {
 		common.ApiErrorT(c, "Invalid parameters")
 		return
 	}
-	quote, err := service.AdtyQuoteForSite(service.AdtyBillingSiteForUser(c.GetInt("id")), c.GetString("group"), req.Amount, req.Method, adtyPromoInput(c, req.PromoCode))
+	quote, err := service.AdtyQuoteForSite(service.AdtyBillingSiteForUser(c.GetInt("id")), c.GetString("group"), req.Amount, req.Method)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -274,9 +268,6 @@ func createAdtyOrder(c *gin.Context, draft adtyOrderDraft) (*model.TopUp, *model
 		ExpireAt:        draft.expireAt,
 		ChannelId:       draft.channelID,
 		MethodLabel:     draft.methodLabel,
-		PromoCodeId:     quote.PromoCodeId,
-		PromoBonusUSD:   quote.PromoBonusUSD,
-		PromoFunder:     quote.PromoFunder,
 	}
 	if site := service.AdtyBillingSiteForUser(userID); site != nil {
 		ext.SiteId = site.Id // 分站客户的加赠由站长出（任务 11.5）

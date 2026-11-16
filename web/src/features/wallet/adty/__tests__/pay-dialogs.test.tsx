@@ -76,7 +76,6 @@ function order(
       face_usd: '100',
       bonus_rate: '2.5',
       bonus_usd: '2.5',
-      promo_bonus_usd: '0',
       credit_quota: 0,
       pay_amount: '100.01',
       pay_currency: 'USDT',
@@ -211,32 +210,6 @@ describe('EpayPayDialog', () => {
     )
     expect(screen.getByTestId('epay-amount')).toHaveTextContent('¥730.00')
     expect(screen.getByText('You get $102.50')).toBeVisible()
-  })
-
-  it('adds the promo bonus to the amount you get and the credited notice', async () => {
-    const pending = epayOrder('EPY-PROMO', { promo_bonus_usd: '10' })
-    const paid = {
-      ...pending,
-      status: 'success' as const,
-    }
-    pay.payWithEpay.mockResolvedValue(pending)
-    api.getAdtyOrder
-      .mockResolvedValueOnce(pending)
-      .mockResolvedValue(paid)
-    render(
-      <EpayPayDialog
-        method='alipay'
-        amount={100}
-        device='pc'
-        onClose={() => {}}
-        onSettled={() => {}}
-      />,
-      { wrapper }
-    )
-    expect(await screen.findByText('You get $112.50')).toBeVisible()
-    expect(
-      await screen.findByText('Credited $112.50', {}, { timeout: 6000 })
-    ).toBeVisible()
   })
 
   it('turns a payment link into a QR code when there is no QR code', async () => {

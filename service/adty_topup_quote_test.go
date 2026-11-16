@@ -46,7 +46,7 @@ func TestAdtyBonusForNoTiersReturnsZero(t *testing.T) {
 func TestAdtyQuoteWithoutBonusSetting(t *testing.T) {
 	setAdtyQuoteDefaults(t)
 	setAdtyBonusRates(t, map[int]float64{})
-	quote, err := AdtyQuoteFor("default", 100, AdtyMethodUSDTTRC20, AdtyPromoInput{})
+	quote, err := AdtyQuoteFor("default", 100, AdtyMethodUSDTTRC20)
 	require.NoError(t, err)
 	assert.True(t, quote.BonusUSD.IsZero())
 	assert.EqualValues(t, 50_000_000, quote.CreditQuota)
@@ -77,7 +77,7 @@ func TestAdtyQuoteUSDT(t *testing.T) {
 	setAdtyQuoteDefaults(t)
 	setAdtyBonusRates(t, testAdtyBonusRates)
 	SetAdtyMethodBonusForTest(t, "usdt", true, "0.025")
-	quote, err := AdtyQuoteFor("default", 100, AdtyMethodUSDTTRC20, AdtyPromoInput{})
+	quote, err := AdtyQuoteFor("default", 100, AdtyMethodUSDTTRC20)
 	require.NoError(t, err)
 	assert.Equal(t, "100", quote.PayAmount.String())
 	assert.Equal(t, AdtyCurrencyUSDT, quote.PayCurrency)
@@ -90,13 +90,13 @@ func TestAdtyQuoteEpay(t *testing.T) {
 	setAdtyQuoteDefaults(t)
 	setAdtyBonusRates(t, testAdtyBonusRates)
 	SetAdtyMethodBonusForTest(t, AdtyMethodAlipay, true, "0.025")
-	quote, err := AdtyQuoteFor("default", 100, AdtyMethodAlipay, AdtyPromoInput{})
+	quote, err := AdtyQuoteFor("default", 100, AdtyMethodAlipay)
 	require.NoError(t, err)
 	assert.Equal(t, "730.00", quote.PayAmount.StringFixed(2))
 	assert.Equal(t, AdtyCurrencyCNY, quote.PayCurrency)
 	assert.Equal(t, "7.3", quote.PriceCNYPerUSD.String())
 	assert.EqualValues(t, 51_250_000, quote.CreditQuota)
-	wx, err := AdtyQuoteFor("default", 100, AdtyMethodWxpay, AdtyPromoInput{})
+	wx, err := AdtyQuoteFor("default", 100, AdtyMethodWxpay)
 	require.NoError(t, err)
 	assert.Equal(t, "730.00", wx.PayAmount.StringFixed(2))
 	assert.Equal(t, AdtyCurrencyCNY, wx.PayCurrency)
@@ -105,17 +105,17 @@ func TestAdtyQuoteEpay(t *testing.T) {
 func TestAdtyQuoteRejections(t *testing.T) {
 	setAdtyQuoteDefaults(t)
 	operation_setting.MinTopUp = 5
-	_, err := AdtyQuoteFor("default", 4, AdtyMethodUSDTTRC20, AdtyPromoInput{})
+	_, err := AdtyQuoteFor("default", 4, AdtyMethodUSDTTRC20)
 	require.Error(t, err, "below the minimum")
-	_, err = AdtyQuoteFor("default", 10, "paypal", AdtyPromoInput{})
+	_, err = AdtyQuoteFor("default", 10, "paypal")
 	require.Error(t, err, "unknown method")
 
 	operation_setting.GetGeneralSetting().QuotaDisplayType = operation_setting.QuotaDisplayTypeTokens
-	_, err = AdtyQuoteFor("default", 10, AdtyMethodUSDTTRC20, AdtyPromoInput{})
+	_, err = AdtyQuoteFor("default", 10, AdtyMethodUSDTTRC20)
 	require.Error(t, err, "tokens display mode")
 	operation_setting.GetGeneralSetting().QuotaDisplayType = operation_setting.QuotaDisplayTypeUSD
 
-	_, err = AdtyQuoteFor("default", 10, AdtyMethodUSDTTRC20, AdtyPromoInput{})
+	_, err = AdtyQuoteFor("default", 10, AdtyMethodUSDTTRC20)
 	require.NoError(t, err, "USD display mode quotes again")
 }
 
@@ -123,7 +123,7 @@ func TestAdtyQuoteUsesConfiguredRates(t *testing.T) {
 	setAdtyQuoteDefaults(t)
 	setAdtyBonusRates(t, map[int]float64{10: 3})
 	SetAdtyMethodBonusForTest(t, "usdt", true, "0.03")
-	quote, err := AdtyQuoteFor("default", 10, AdtyMethodUSDTBEP20, AdtyPromoInput{})
+	quote, err := AdtyQuoteFor("default", 10, AdtyMethodUSDTBEP20)
 	require.NoError(t, err)
 	assert.Equal(t, "0.3", quote.BonusUSD.String())
 	assert.Equal(t, "0.03", quote.BonusRate.String())

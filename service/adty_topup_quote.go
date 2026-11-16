@@ -53,9 +53,6 @@ type AdtyQuote struct {
 	PayCurrency     string          `json:"pay_currency"`      // USDT | CNY
 	PriceCNYPerUSD  decimal.Decimal `json:"price_cny_per_usd"` // 只有易支付用
 	TopupGroupRatio decimal.Decimal `json:"topup_group_ratio"`
-	PromoCodeId     int             `json:"promo_code_id"`   // 用了优惠码时是码的 id（任务 12.4）
-	PromoBonusUSD   decimal.Decimal `json:"promo_bonus_usd"` // 优惠加赠，已含在 CreditQuota 里
-	PromoFunder     string          `json:"-"`               // 优惠码出资方，下单时快照进扩展行
 }
 
 // AdtyBonusFor 取「不超过面额的最大档位」的加赠比例，低于最小档不加赠。加赠保留 8 位小数。
@@ -80,14 +77,13 @@ func adtyBonusFromRates(rates map[int]float64, face int64) (rate, bonus decimal.
 }
 
 // AdtyQuoteFor 给一个分组的主站用户算一笔充值的报价。
-func AdtyQuoteFor(userGroup string, face int64, method string, promo AdtyPromoInput) (*AdtyQuote, error) {
-	return AdtyQuoteForSite(nil, userGroup, face, method, promo)
+func AdtyQuoteFor(userGroup string, face int64, method string) (*AdtyQuote, error) {
+	return AdtyQuoteForSite(nil, userGroup, face, method)
 }
 
 // AdtyQuoteForSite 算一笔充值的报价；site 是客户所属的分站（主站传 nil），分站客户按站点的加赠档位算（11.5）。
-// promo 里带了码时校验并算优惠加赠（任务 12.4），优惠只多送额度，应付不变。
 // TOKENS 显示模式会改变金额含义，这种模式下不报价。
-func AdtyQuoteForSite(site *model.AdtySite, userGroup string, face int64, method string, promo AdtyPromoInput) (*AdtyQuote, error) {
+func AdtyQuoteForSite(site *model.AdtySite, userGroup string, face int64, method string) (*AdtyQuote, error) {
 	if operation_setting.GetQuotaDisplayType() == operation_setting.QuotaDisplayTypeTokens {
 		return nil, common.NewMessage("Top-up is unavailable while quota is displayed as tokens")
 	}
@@ -98,7 +94,7 @@ func AdtyQuoteForSite(site *model.AdtySite, userGroup string, face int64, method
 	if face < int64(operation_setting.MinTopUp) || face <= 0 {
 		return nil, common.NewMessage("Top-up amount cannot be less than {{amount}}", map[string]any{"amount": operation_setting.MinTopUp})
 	}
-	quote, err := adtyQuotaQuoteForSite(site, userGroup, decimal.NewFromInt(face), method, promo)
+	quote, err := adtyQuotaQuoteForSite(site, userGroup, decimal.NewFromInt(face), method)
 	if err != nil {
 		return nil, err
 	}
@@ -117,17 +113,14 @@ func AdtyQuoteForSite(site *model.AdtySite, userGroup string, face int64, method
 	return quote, nil
 }
 
-func adtyQuotaQuoteForSite(site *model.AdtySite, userGroup string, faceUSD decimal.Decimal, method string, promo AdtyPromoInput) (*AdtyQuote, error) {
-	if strings.TrimSpace(promo.Code) != "" {
-		return nil, ErrAdtyPromoRetired
-	}
+func adtyQuotaQuoteForSite(site *model.AdtySite, userGroup string, faceUSD decimal.Decimal, method string) (*AdtyQuote, error) {
 	rate, bonus, err := AdtyPaymentMethodBonus(site, method, faceUSD)
 	if err != nil {
 		return nil, err
 	}
 	if site != nil && bonus.IsPositive() {
-		// 策略上限（features.md「站长分站·加赠和试用额度」）：站点档位加赠 + 站长出资的优惠加赠
-		// 合计不得超过 面额 ×（主站同档比例 + max_site_bonus_extra）÷ 100。
+		// 策略上限（features.md「站长分站·加赠和试用额度」）：站点加赠
+		// 不得超过 面额 ×（主站同档比例 + max_site_bonus_extra）÷ 100。
 		// 这和下面的 SiteBonusEarningCovers 不是一回事：那个查站长的钱够不够垫这笔加赠，
 		// 这个查规则允许站长给多少。预算够不等于允许给。
 		if !adtySiteBonusWithinCap(faceUSD, bonus) {

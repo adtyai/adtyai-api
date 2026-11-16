@@ -27,7 +27,7 @@ func AdtyBonusMethod(method string) string {
 
 // AdtyPaymentMethodBonus returns the snapshot rate and USD gift for one order.
 // Rate is a decimal fraction: 0.025 means 2.5% of the USD principal.
-// Amount-tier tables and paid promo codes do not affect this result.
+// Amount-tier tables do not affect this result.
 func AdtyPaymentMethodBonus(site *model.AdtySite, method string, faceUSD decimal.Decimal) (decimal.Decimal, decimal.Decimal, error) {
 	key := AdtyBonusMethod(method)
 	if key == "" || !faceUSD.IsPositive() {
@@ -122,8 +122,7 @@ func SiteBonusEarningCovers(siteID int, bonus decimal.Decimal) error {
 
 // ReserveAdtySiteGiftTx freezes the site-funded gift from the earning wallet,
 // then from an authorized margin cycle. The reserved amount is the same
-// site-funded total as adtyBonusUSDForSite: the payment-method gift plus any
-// owner-funded promo bonus. Platform-funded promo bonus is not reserved.
+// site-funded total as adtyBonusUSDForSite: the payment-method gift.
 func ReserveAdtySiteGiftTx(tx *gorm.DB, ext *model.AdtyTopupOrder) error {
 	if tx == nil || ext == nil || ext.SiteId <= 0 {
 		return nil
@@ -198,7 +197,7 @@ func ReserveAdtySiteGiftTx(tx *gorm.DB, ext *model.AdtyTopupOrder) error {
 			map[string]any{"earning": "0", "margin": "0"},
 			map[string]any{
 				"trade_no": ext.TradeNo, "site_id": ext.SiteId, "bonus_usd": ext.BonusUSD.String(),
-				"promo_bonus_usd": ext.PromoBonusUSD.String(), "source": ext.GiftReserveSource,
+				"source":  ext.GiftReserveSource,
 				"earning": fromEarning.String(), "margin": fromMargin.String(),
 				"method": ext.Method, "bonus_method": ext.BonusMethod,
 			})

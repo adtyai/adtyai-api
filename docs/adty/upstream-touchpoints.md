@@ -707,3 +707,5 @@
 | `web/src/i18n/locales/en.json`、`zh.json` | 把放在 `translation` 外面、前端从不加载的 37 个词条挪回去（其中 18 个原来缺失），整份按两格缩进重排；新增通知状态专用的 `Withdrawn notification` | 这些文字在中文界面一直显示英文；通知的「Withdrawn」和推广提现共用一个键，中文显示成「已提现」 | 旧单通道易支付设置删除 2026-11-16 |
 | `web/src/features/adty-notifications/components/notification-manager.tsx`、`__tests__/publishing.test.tsx` | 已撤回状态改用 `Withdrawn notification` 键 | 和推广提现的「已提现」分开 | 旧单通道易支付设置删除 2026-11-16 |
 | `web/src/features/recharge-audit/__tests__/provider-actions.test.tsx` | 假数据里的 Stripe、Creem、Waffo 换成 BEpusdt 和易支付 | 四家托管支付已删除 | 旧单通道易支付设置删除 2026-11-16 |
+| `web/src/features/wallet/index.tsx` | 发起支付时不再带优惠码 | 优惠码删除 | 下单流程优惠码删除 2026-11-16 |
+| `AGENTS.md` | 优惠码一条改成「已删除，升级库旧表不读不写」 | 跟上删除 | 下单流程优惠码删除 2026-11-16 |

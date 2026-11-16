@@ -21,7 +21,6 @@ import type { OrderTraceSection } from './api'
 export const ORDER_TRACE_SECTIONS: Record<OrderTraceSection, string> = {
   payments: 'Payment events and queries',
   wallet: 'Wallet credits, adjustments and refunds',
-  bonuses: 'Promo bonus records',
   commissions: 'Commission records',
   commission_movements: 'Commission wallet movements',
   site_wallet: 'Site wallet movements',

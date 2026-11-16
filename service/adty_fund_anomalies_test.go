@@ -38,8 +38,7 @@ func TestCollectAdtyFundAnomaliesCoversMissingG134Kinds(t *testing.T) {
 	require.NoError(t, db.Create(&model.AdtyTopupOrder{
 		TradeNo: giftTrade, UserId: customer.Id, SiteId: site.Id,
 		Provider: model.PaymentProviderAdtyBEpusdt, Method: "usdt.trc20",
-		FaceUSD: decimal.NewFromInt(20), BonusUSD: decimal.NewFromInt(1),
-		PromoBonusUSD: decimal.NewFromInt(2), PromoFunder: model.AdtyPromoFunderSiteOwner,
+		FaceUSD: decimal.NewFromInt(20), BonusUSD: decimal.NewFromInt(3),
 		CreditQuota: 11_500_000, GiftReserveEarning: decimal.NewFromInt(1),
 	}).Error)
 

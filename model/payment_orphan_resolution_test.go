@@ -28,7 +28,7 @@ func TestPaymentOrphanRefundUsesOriginalLedgerAndRecordsUncoveredCash(t *testing
 		t.Run(fmt.Sprint(balance), func(t *testing.T) {
 			db := prepareAdtyTopUpDB(t)
 			user := seedAdtyTopUpUser(t, db, "external-refund", balance)
-			seedCreditedOrder(t, db, user.Id, "external-refund", PaymentProviderAdtyBEpusdt, "100", "10", "0", "90")
+			seedCreditedOrder(t, db, user.Id, "external-refund", PaymentProviderAdtyBEpusdt, "100", "10", "90")
 			event := PaymentOrphanEvent{Provider: PaymentProviderAdtyBEpusdt, ReferenceID: "external-refund", EventID: "reversal:external-refund", EventType: "refund.completed"}
 			require.NoError(t, RecordPaymentOrphanEvent(&event))
 			request := PaymentOrphanReviewRequest{Status: PaymentOrphanStatusRefunded, TradeNo: event.ReferenceID, ExternalAmount: "90", ExternalCurrency: "USDT", Proof: "provider-refund-receipt", Note: "verified cumulative full reversal, spent principal is not recovered"}
@@ -86,7 +86,7 @@ func TestPaymentOrphanRefundUsesOriginalLedgerAndRecordsUncoveredCash(t *testing
 func TestPaymentOrphanPartialReviewIsImmutableAndDoesNotClawBackWallet(t *testing.T) {
 	db := prepareAdtyTopUpDB(t)
 	user := seedAdtyTopUpUser(t, db, "partial-external", 40_000_000)
-	seedCreditedOrder(t, db, user.Id, "partial-external", PaymentProviderAdtyBEpusdt, "100", "10", "0", "100")
+	seedCreditedOrder(t, db, user.Id, "partial-external", PaymentProviderAdtyBEpusdt, "100", "10", "100")
 	event := PaymentOrphanEvent{Provider: PaymentProviderAdtyBEpusdt, ReferenceID: "partial-external", EventID: "reversal:partial-external", EventType: "refund.completed"}
 	require.NoError(t, RecordPaymentOrphanEvent(&event))
 	request := PaymentOrphanReviewRequest{Status: PaymentOrphanStatusPendingReview, TradeNo: event.ReferenceID, ExternalAmount: "20", ExternalCurrency: "USDT", Proof: "partial-refund-20", Note: "partial refund requires reconciliation"}
@@ -152,7 +152,7 @@ func TestPaymentOrphanReviewRollbackKeepsEvidenceAndStateAtomic(t *testing.T) {
 func TestPaymentOrphanRefundRejectsUnrelatedLedgerAndUnboundedAmounts(t *testing.T) {
 	db := prepareAdtyTopUpDB(t)
 	user := seedAdtyTopUpUser(t, db, "refund-ledger-binding", 40_000_000)
-	seedCreditedOrder(t, db, user.Id, "refund-ledger-binding", PaymentProviderAdtyBEpusdt, "100", "10", "0", "100")
+	seedCreditedOrder(t, db, user.Id, "refund-ledger-binding", PaymentProviderAdtyBEpusdt, "100", "10", "100")
 	event := PaymentOrphanEvent{Provider: PaymentProviderAdtyBEpusdt, ReferenceID: "refund-ledger-binding", EventID: "reversal:ledger-binding", EventType: "refund.completed"}
 	require.NoError(t, RecordPaymentOrphanEvent(&event))
 	_, err := completeManualRefundForTest(t, event.ReferenceID, "provider reversal", 1, "ledger-binding-refund", decimal.RequireFromString("100"))

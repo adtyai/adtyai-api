@@ -10,7 +10,7 @@ import (
 func TestRefundAdtyTopUpAppliesWithoutCompleting(t *testing.T) {
 	db := prepareAdtyTopUpDB(t)
 	user := seedAdtyTopUpUser(t, db, "apply-quota", 0)
-	seedCreditedOrder(t, db, user.Id, "RF-apply-quota", PaymentProviderAdtyBEpusdt, "100", "10", "0", "100")
+	seedCreditedOrder(t, db, user.Id, "RF-apply-quota", PaymentProviderAdtyBEpusdt, "100", "10", "100")
 	before := userQuota(t, db, user.Id)
 
 	applied, err := RefundAdtyTopUp("RF-apply-quota", "customer request", 1, "apply-quota-1", 25_000_000)

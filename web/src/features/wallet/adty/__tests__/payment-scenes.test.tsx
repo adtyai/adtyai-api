@@ -82,8 +82,6 @@ beforeEach(() => {
           pay_currency: body.method === 'alipay' ? 'CNY' : 'USDT',
           price_cny_per_usd: '7',
           topup_group_ratio: '1',
-          promo_code_id: 0,
-          promo_bonus_usd: '0',
         },
       }
     }
@@ -141,7 +139,7 @@ it('switching scenes clears the selected method and sends the new scene with the
     expect(screen.getByRole('button', { name: 'Pay now' })).toBeEnabled()
   )
   await user.click(screen.getByRole('button', { name: 'Pay now' }))
-  expect(onPay).toHaveBeenCalledWith(100, alipay, '', 'limited')
+  expect(onPay).toHaveBeenCalledWith(100, alipay, 'limited')
 })
 
 it('an empty authorized scene list keeps payment disabled even if old methods are cached', () => {
@@ -165,8 +163,8 @@ it('an empty authorized scene list keeps payment disabled even if old methods ar
 })
 
 it('all wallet payment clients carry the selected scene to their HTTP endpoint', async () => {
-  await payWithBEpusdt(100, 'usdt.trc20', '', 'limited')
-  await payWithEpay(100, 'alipay', 7, 'pc', '', 'limited')
+  await payWithBEpusdt(100, 'usdt.trc20', 'limited')
+  await payWithEpay(100, 'alipay', 7, 'pc', 'limited')
   expect(
     requests.map((request) => [request.path, request.body.payment_scene])
   ).toEqual([

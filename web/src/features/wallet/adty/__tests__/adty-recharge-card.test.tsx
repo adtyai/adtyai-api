@@ -70,9 +70,8 @@ describe('bonus tiers', () => {
 })
 
 describe('AdtyRechargeCard', () => {
-  it('does not offer a promo code and pays without one', async () => {
-    api.quoteAdtyTopup.mockImplementation(
-      async (_amount: number, _method: string, promo: string) => ({
+  it('pays the chosen amount and method', async () => {
+    api.quoteAdtyTopup.mockImplementation(async () => ({
         available: true,
         quote: {
           face_usd: '100',
@@ -83,11 +82,8 @@ describe('AdtyRechargeCard', () => {
           pay_currency: 'USDT',
           price_cny_per_usd: '0',
           topup_group_ratio: '1',
-          promo_code_id: promo ? 3 : 0,
-          promo_bonus_usd: promo ? '10' : '0',
         },
-      })
-    )
+      }))
     const user = userEvent.setup()
     const onPay = vi.fn()
     render(
@@ -101,17 +97,11 @@ describe('AdtyRechargeCard', () => {
     )
     await user.click(screen.getByRole('button', { name: /\$100/ }))
     await user.click(screen.getByRole('button', { name: /TRC20/ }))
-    expect(screen.queryByLabelText('Promo code (optional)')).not.toBeInTheDocument()
     expect(screen.getByTestId('adty-credit')).toHaveTextContent('$102.50')
     const pay = screen.getByRole('button', { name: 'Pay now' })
     await waitFor(() => expect(pay).toBeEnabled())
     await user.click(pay)
-    expect(onPay).toHaveBeenCalledWith(
-      100,
-      info.methods[0],
-      '',
-      'wallet_topup'
-    )
+    expect(onPay).toHaveBeenCalledWith(100, info.methods[0], 'wallet_topup')
   })
 
   it('lists one button per Epay channel and pays through the chosen one', async () => {
@@ -126,8 +116,6 @@ describe('AdtyRechargeCard', () => {
         pay_currency: 'CNY',
         price_cny_per_usd: '7.3',
         topup_group_ratio: '1',
-        promo_code_id: 0,
-        promo_bonus_usd: '0',
       },
     })
     const channels: AdtyTopupInfo = {
@@ -179,7 +167,6 @@ describe('AdtyRechargeCard', () => {
       expect(api.quoteAdtyTopup).toHaveBeenLastCalledWith(
         100,
         'alipay',
-        '',
         'wallet_topup',
         9
       )
@@ -190,15 +177,13 @@ describe('AdtyRechargeCard', () => {
     expect(onPay).toHaveBeenCalledWith(
       100,
       channels.methods[1],
-      '',
       'wallet_topup'
     )
   })
 
-  it('pays a valid amount without a promo field', async () => {
+  it('enables payment for a valid tier amount', async () => {
     api.quoteAdtyTopup.mockImplementation(
-      async (_amount: number, _method: string, promo: string) => {
-        if (promo) throw new Error('This promo code is not valid')
+      async () => {
         return {
           available: true,
           quote: {
@@ -210,8 +195,6 @@ describe('AdtyRechargeCard', () => {
             pay_currency: 'USDT',
             price_cny_per_usd: '0',
             topup_group_ratio: '1',
-            promo_code_id: 0,
-            promo_bonus_usd: '0',
           },
         }
       }
@@ -228,7 +211,6 @@ describe('AdtyRechargeCard', () => {
     )
     await user.click(screen.getByRole('button', { name: /^\$10Bonus/ }))
     await user.click(screen.getByRole('button', { name: /TRC20/ }))
-    expect(screen.queryByLabelText('Promo code (optional)')).not.toBeInTheDocument()
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Pay now' })).toBeEnabled()
     )
@@ -262,8 +244,6 @@ describe('AdtyRechargeCard', () => {
         pay_currency: 'CNY',
         price_cny_per_usd: '7.3',
         topup_group_ratio: '1',
-        promo_code_id: 0,
-        promo_bonus_usd: '0',
       },
     })
     const user = userEvent.setup()
@@ -285,7 +265,7 @@ describe('AdtyRechargeCard', () => {
       )
     )
     await user.click(screen.getByRole('button', { name: 'Pay now' }))
-    expect(onPay).toHaveBeenCalledWith(100, info.methods[2], '', 'wallet_topup')
+    expect(onPay).toHaveBeenCalledWith(100, info.methods[2], 'wallet_topup')
   })
 
   it('shows plain amounts without bonus text when no bonus tiers are set', async () => {

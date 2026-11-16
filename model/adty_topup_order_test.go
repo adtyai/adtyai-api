@@ -18,7 +18,7 @@ func TestRefundAdtyTopUpDoesNotDebitWhenCacheIsDown(t *testing.T) {
 	resetBatchUpdateTestState(t)
 	common.BatchUpdateEnabled = true
 	user := seedAdtyTopUpUser(t, db, "refund-atomic", 55000000)
-	seedCreditedOrder(t, db, user.Id, "RF-atomic", PaymentProviderAdtyBEpusdt, "100", "10", "0", "100")
+	seedCreditedOrder(t, db, user.Id, "RF-atomic", PaymentProviderAdtyBEpusdt, "100", "10", "100")
 	require.NoError(t, DecreaseUserQuota(user.Id, 15000000, false))
 	_, err := GetUserCache(user.Id)
 	require.NoError(t, err)
@@ -325,18 +325,18 @@ func TestRefundAdtyTopUp(t *testing.T) {
 	require.ErrorIs(t, err, ErrAdtyIdempotencyConflict)
 }
 
-// seedCreditedOrder 建一笔已到账的订单：面额 face 美元、赠金 bonus 美元（含优惠加赠 promo），实付 paid。
-func seedCreditedOrder(t *testing.T, db *gorm.DB, userID int, tradeNo, provider, face, bonus, promo, paid string) {
+// seedCreditedOrder 建一笔已到账的订单：面额 face 美元、赠金 bonus 美元，实付 paid。
+func seedCreditedOrder(t *testing.T, db *gorm.DB, userID int, tradeNo, provider, face, bonus, paid string) {
 	t.Helper()
 	ext := seedAdtyOrder(t, userID, tradeNo, provider, common.TopUpStatusSuccess)
-	faceUSD, bonusUSD, promoUSD := decimal.RequireFromString(face), decimal.RequireFromString(bonus), decimal.RequireFromString(promo)
-	credit := faceUSD.Add(bonusUSD).Add(promoUSD).Mul(decimal.NewFromFloat(common.QuotaPerUnit)).Floor().IntPart()
+	faceUSD, bonusUSD := decimal.RequireFromString(face), decimal.RequireFromString(bonus)
+	credit := faceUSD.Add(bonusUSD).Mul(decimal.NewFromFloat(common.QuotaPerUnit)).Floor().IntPart()
 	currency := "USDT"
 	if provider == PaymentProviderAdtyEpay {
 		currency = "CNY"
 	}
 	require.NoError(t, db.Model(ext).Updates(map[string]any{
-		"face_usd": faceUSD, "bonus_usd": bonusUSD, "promo_bonus_usd": promoUSD, "credit_quota": credit,
+		"face_usd": faceUSD, "bonus_usd": bonusUSD, "credit_quota": credit,
 		"paid_amount": decimal.RequireFromString(paid), "paid_currency": currency,
 	}).Error)
 }
@@ -347,33 +347,33 @@ func TestRefundAdtyTopUpOnlyUnspentPrincipal(t *testing.T) {
 		return decimal.RequireFromString(usd).Mul(decimal.NewFromFloat(common.QuotaPerUnit)).IntPart()
 	}
 	cases := []struct {
-		name, provider, face, bonus, promo, paid string
-		balance                                  int64
-		deducted, bonusQuota, refundQuota        int64
-		refund                                   string
+		name, provider, face, bonus, paid string
+		balance                           int64
+		deducted, bonusQuota, refundQuota int64
+		refund                            string
 	}{
 		// 付 100 得 110：余额 80 → 扣 80、退 70；余额 5 → 扣 5、退 0；余额 110 → 扣 110、退 100。
-		{name: "spent-30", provider: PaymentProviderAdtyBEpusdt, face: "100", bonus: "10", promo: "0", paid: "100", balance: q("80"), deducted: q("80"), bonusQuota: q("10"), refundQuota: q("70"), refund: "70"},
-		{name: "spent-105", provider: PaymentProviderAdtyBEpusdt, face: "100", bonus: "10", promo: "0", paid: "100", balance: q("5"), deducted: q("5"), bonusQuota: q("10"), refundQuota: 0, refund: "0"},
-		{name: "untouched", provider: PaymentProviderAdtyBEpusdt, face: "100", bonus: "10", promo: "0", paid: "100", balance: q("110"), deducted: q("110"), bonusQuota: q("10"), refundQuota: q("100"), refund: "100"},
+		{name: "spent-30", provider: PaymentProviderAdtyBEpusdt, face: "100", bonus: "10", paid: "100", balance: q("80"), deducted: q("80"), bonusQuota: q("10"), refundQuota: q("70"), refund: "70"},
+		{name: "spent-105", provider: PaymentProviderAdtyBEpusdt, face: "100", bonus: "10", paid: "100", balance: q("5"), deducted: q("5"), bonusQuota: q("10"), refundQuota: 0, refund: "0"},
+		{name: "untouched", provider: PaymentProviderAdtyBEpusdt, face: "100", bonus: "10", paid: "100", balance: q("110"), deducted: q("110"), bonusQuota: q("10"), refundQuota: q("100"), refund: "100"},
 		// USDT 按网关给的小数位向下取整：14.123457 × 70 / 100 = 9.8864199 → 9.886419。
-		{name: "usdt-floor", provider: PaymentProviderAdtyBEpusdt, face: "100", bonus: "10", promo: "0", paid: "14.123457", balance: q("80"), deducted: q("80"), bonusQuota: q("10"), refundQuota: q("70"), refund: "9.886419"},
+		{name: "usdt-floor", provider: PaymentProviderAdtyBEpusdt, face: "100", bonus: "10", paid: "14.123457", balance: q("80"), deducted: q("80"), bonusQuota: q("10"), refundQuota: q("70"), refund: "9.886419"},
 		// 网关只给 2 位小数：33.33 × 33.333333 / 100 = 11.1099… → 11.10。
-		{name: "usdt-2dp", provider: PaymentProviderAdtyBEpusdt, face: "100", bonus: "10", promo: "0", paid: "33.33", balance: q("43.333333"), deducted: q("43.333333"), bonusQuota: q("10"), refundQuota: q("33.333333"), refund: "11.1"},
+		{name: "usdt-2dp", provider: PaymentProviderAdtyBEpusdt, face: "100", bonus: "10", paid: "33.33", balance: q("43.333333"), deducted: q("43.333333"), bonusQuota: q("10"), refundQuota: q("33.333333"), refund: "11.1"},
 		// 人民币 2 位小数向下取整：730 × 33.333333 / 100 = 243.3333… → 243.33。
-		{name: "cny-floor", provider: PaymentProviderAdtyEpay, face: "100", bonus: "10", promo: "0", paid: "730", balance: q("43.333333"), deducted: q("43.333333"), bonusQuota: q("10"), refundQuota: q("33.333333"), refund: "243.33"},
-		{name: "cny-full", provider: PaymentProviderAdtyEpay, face: "100", bonus: "10", promo: "0", paid: "730", balance: q("110"), deducted: q("110"), bonusQuota: q("10"), refundQuota: q("100"), refund: "730"},
-		// 优惠码加赠也算赠金：100 + 2.5 + 7，余额 80 → 退 80 − 9.5 = 70.5。
-		{name: "promo-bonus", provider: PaymentProviderAdtyBEpusdt, face: "100", bonus: "2.5", promo: "7", paid: "100", balance: q("80"), deducted: q("80"), bonusQuota: q("9.5"), refundQuota: q("70.5"), refund: "70.5"},
+		{name: "cny-floor", provider: PaymentProviderAdtyEpay, face: "100", bonus: "10", paid: "730", balance: q("43.333333"), deducted: q("43.333333"), bonusQuota: q("10"), refundQuota: q("33.333333"), refund: "243.33"},
+		{name: "cny-full", provider: PaymentProviderAdtyEpay, face: "100", bonus: "10", paid: "730", balance: q("110"), deducted: q("110"), bonusQuota: q("10"), refundQuota: q("100"), refund: "730"},
+		// 赠金带小数：100 + 9.5，余额 80 → 退 80 − 9.5 = 70.5。
+		{name: "fractional-bonus", provider: PaymentProviderAdtyBEpusdt, face: "100", bonus: "9.5", paid: "100", balance: q("80"), deducted: q("80"), bonusQuota: q("9.5"), refundQuota: q("70.5"), refund: "70.5"},
 		// 余额为 0 或负数：不扣、不退，余额不变，订单照样 refunded。
-		{name: "zero-balance", provider: PaymentProviderAdtyBEpusdt, face: "100", bonus: "10", promo: "0", paid: "100", balance: 0, deducted: 0, bonusQuota: q("10"), refundQuota: 0, refund: "0"},
-		{name: "negative-balance", provider: PaymentProviderAdtyBEpusdt, face: "100", bonus: "10", promo: "0", paid: "100", balance: -q("3"), deducted: 0, bonusQuota: q("10"), refundQuota: 0, refund: "0"},
+		{name: "zero-balance", provider: PaymentProviderAdtyBEpusdt, face: "100", bonus: "10", paid: "100", balance: 0, deducted: 0, bonusQuota: q("10"), refundQuota: 0, refund: "0"},
+		{name: "negative-balance", provider: PaymentProviderAdtyBEpusdt, face: "100", bonus: "10", paid: "100", balance: -q("3"), deducted: 0, bonusQuota: q("10"), refundQuota: 0, refund: "0"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			user := seedAdtyTopUpUser(t, db, "unspent-"+tc.name, 0)
 			tradeNo := "RF-" + tc.name
-			seedCreditedOrder(t, db, user.Id, tradeNo, tc.provider, tc.face, tc.bonus, tc.promo, tc.paid)
+			seedCreditedOrder(t, db, user.Id, tradeNo, tc.provider, tc.face, tc.bonus, tc.paid)
 			require.NoError(t, db.Model(&User{}).Where("id = ?", user.Id).Update("quota", tc.balance).Error)
 
 			preview, err := PreviewAdtyTopUpRefund(tradeNo)
@@ -396,7 +396,7 @@ func TestCheckinQuotaIsNotRefundedAsPrincipal(t *testing.T) {
 		return decimal.RequireFromString(usd).Mul(decimal.NewFromFloat(common.QuotaPerUnit)).IntPart()
 	}
 	user := seedAdtyTopUpUser(t, db, "checkin-refund", 0)
-	seedCreditedOrder(t, db, user.Id, "RF-checkin", PaymentProviderAdtyBEpusdt, "100", "10", "0", "100")
+	seedCreditedOrder(t, db, user.Id, "RF-checkin", PaymentProviderAdtyBEpusdt, "100", "10", "100")
 	require.NoError(t, db.Model(&User{}).Where("id = ?", user.Id).Updates(map[string]any{
 		"quota": q("110") + 5000, "checkin_quota": 5000,
 	}).Error)
@@ -419,7 +419,7 @@ func TestCheckinQuotaIsNotRefundedAsPrincipal(t *testing.T) {
 	assert.Equal(t, 5000, stored.CheckinQuota)
 
 	untouched := seedAdtyTopUpUser(t, db, "checkin-full", 0)
-	seedCreditedOrder(t, db, untouched.Id, "RF-checkin-full", PaymentProviderAdtyBEpusdt, "100", "10", "0", "100")
+	seedCreditedOrder(t, db, untouched.Id, "RF-checkin-full", PaymentProviderAdtyBEpusdt, "100", "10", "100")
 	require.NoError(t, db.Model(&User{}).Where("id = ?", untouched.Id).Updates(map[string]any{
 		"quota": q("110") + 5000, "checkin_quota": 5000,
 	}).Error)
@@ -436,8 +436,8 @@ func TestCheckinQuotaIsNotRefundedAsPrincipal(t *testing.T) {
 func TestRefundAdtyTopUpTakesOnlyThisOrderCredit(t *testing.T) {
 	db := prepareAdtyTopUpDB(t)
 	user := seedAdtyTopUpUser(t, db, "two-orders", 0)
-	seedCreditedOrder(t, db, user.Id, "RF-two-a", PaymentProviderAdtyBEpusdt, "100", "10", "0", "100")
-	seedCreditedOrder(t, db, user.Id, "RF-two-b", PaymentProviderAdtyBEpusdt, "100", "10", "0", "100")
+	seedCreditedOrder(t, db, user.Id, "RF-two-a", PaymentProviderAdtyBEpusdt, "100", "10", "100")
+	seedCreditedOrder(t, db, user.Id, "RF-two-b", PaymentProviderAdtyBEpusdt, "100", "10", "100")
 	require.NoError(t, db.Model(&User{}).Where("id = ?", user.Id).Update("quota", 110_000_000).Error)
 
 	result, err := PreviewAdtyTopUpRefund("RF-two-a")
@@ -460,7 +460,7 @@ func TestRefundAdtyTopUpUsesCachedBalanceUnderBatchUpdates(t *testing.T) {
 		return decimal.RequireFromString(usd).Mul(decimal.NewFromFloat(common.QuotaPerUnit)).IntPart()
 	}
 	user := seedAdtyTopUpUser(t, db, "refund-batch", 0)
-	seedCreditedOrder(t, db, user.Id, "RF-batch", PaymentProviderAdtyBEpusdt, "100", "10", "0", "100")
+	seedCreditedOrder(t, db, user.Id, "RF-batch", PaymentProviderAdtyBEpusdt, "100", "10", "100")
 	require.NoError(t, db.Model(&User{}).Where("id = ?", user.Id).Update("quota", q("110")).Error)
 	// 花掉 $30：缓存余额 $80，数据库还是 $110（批量还没刷）。
 	reserved, err := TryReserveUserQuota(user.Id, int(q("30")))
@@ -501,7 +501,7 @@ func TestRefundAdtyTopUpWithRedis(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			user := seedAdtyTopUpUser(t, db, "redis-"+tc.name, 0)
 			tradeNo := "RFR-" + tc.name
-			seedCreditedOrder(t, db, user.Id, tradeNo, PaymentProviderAdtyBEpusdt, "100", "10", "0", "100")
+			seedCreditedOrder(t, db, user.Id, tradeNo, PaymentProviderAdtyBEpusdt, "100", "10", "100")
 			require.NoError(t, db.Model(&User{}).Where("id = ?", user.Id).Update("quota", tc.balance).Error)
 			_, err := GetUserCache(user.Id) // 缓存从数据库水合
 			require.NoError(t, err)

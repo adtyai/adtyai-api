@@ -55,12 +55,11 @@ func StartAdtyTeamTopupPayment(leaderID int, teamID int64, amountUSD decimal.Dec
 	if err := model.DB.First(&leader, leaderID).Error; err != nil {
 		return nil, err
 	}
-	quote, err := AdtyQuoteForSite(AdtyBillingSiteForUser(leaderID), leader.Group, amountUSD.IntPart(), method, AdtyPromoInput{})
+	quote, err := AdtyQuoteForSite(AdtyBillingSiteForUser(leaderID), leader.Group, amountUSD.IntPart(), method)
 	if err != nil {
 		return nil, err
 	}
-	quote.BonusRate, quote.BonusUSD, quote.PromoBonusUSD = decimal.Zero, decimal.Zero, decimal.Zero
-	quote.PromoCodeId, quote.PromoFunder = 0, ""
+	quote.BonusRate, quote.BonusUSD = decimal.Zero, decimal.Zero
 	faceQuota, err := common.WalletQuotaFromDecimalStrict(quote.FaceUSD.Mul(common.QuotaPerUnitDecimal()).Floor())
 	if err != nil || faceQuota <= 0 {
 		return nil, ErrAdtyTeamInvalid
@@ -90,7 +89,7 @@ func StartAdtyTeamTopupPayment(leaderID int, teamID int64, amountUSD decimal.Dec
 	ext := &model.AdtyTopupOrder{
 		TradeNo: tradeNo, UserId: leaderID, TeamId: teamID, Provider: model.PaymentProviderAdtyEpay,
 		Method: method, FaceUSD: quote.FaceUSD, BonusRate: decimal.Zero, BonusUSD: decimal.Zero,
-		PromoBonusUSD: decimal.Zero, CreditQuota: quote.CreditQuota, PayAmount: quote.PayAmount,
+		CreditQuota: quote.CreditQuota, PayAmount: quote.PayAmount,
 		PayCurrency: quote.PayCurrency, PriceSnapshot: quote.PriceCNYPerUSD, TopupGroupRatio: quote.TopupGroupRatio,
 		ChannelId: channel.Id, MethodLabel: channelMethod.DisplayName,
 	}
@@ -148,12 +147,11 @@ func startAdtyTeamBEpusdtTopup(leaderID int, teamID int64, amountUSD decimal.Dec
 	if err := model.DB.First(&leader, leaderID).Error; err != nil {
 		return nil, err
 	}
-	quote, err := AdtyQuoteForSite(AdtyBillingSiteForUser(leaderID), leader.Group, amountUSD.IntPart(), method, AdtyPromoInput{})
+	quote, err := AdtyQuoteForSite(AdtyBillingSiteForUser(leaderID), leader.Group, amountUSD.IntPart(), method)
 	if err != nil {
 		return nil, err
 	}
-	quote.BonusRate, quote.BonusUSD, quote.PromoBonusUSD = decimal.Zero, decimal.Zero, decimal.Zero
-	quote.PromoCodeId, quote.PromoFunder = 0, ""
+	quote.BonusRate, quote.BonusUSD = decimal.Zero, decimal.Zero
 	faceQuota, err := common.WalletQuotaFromDecimalStrict(quote.FaceUSD.Mul(common.QuotaPerUnitDecimal()).Floor())
 	if err != nil || faceQuota <= 0 {
 		return nil, ErrAdtyTeamInvalid
@@ -171,7 +169,7 @@ func startAdtyTeamBEpusdtTopup(leaderID int, teamID int64, amountUSD decimal.Dec
 	ext := &model.AdtyTopupOrder{
 		TradeNo: tradeNo, UserId: leaderID, TeamId: teamID, Provider: model.PaymentProviderAdtyBEpusdt,
 		Method: method, FaceUSD: quote.FaceUSD, BonusRate: decimal.Zero, BonusUSD: decimal.Zero,
-		PromoBonusUSD: decimal.Zero, CreditQuota: quote.CreditQuota, PayAmount: quote.PayAmount,
+		CreditQuota: quote.CreditQuota, PayAmount: quote.PayAmount,
 		PayCurrency: quote.PayCurrency, PriceSnapshot: quote.PriceCNYPerUSD, TopupGroupRatio: quote.TopupGroupRatio,
 	}
 	if site := AdtyBillingSiteForUser(leaderID); site != nil {

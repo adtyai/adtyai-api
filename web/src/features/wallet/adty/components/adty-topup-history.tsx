@@ -119,10 +119,7 @@ export function AdtyTopupHistory() {
               cellClassName: 'text-right tabular-nums',
               cell: (row) => {
                 if (!row.ext) return '—'
-                const bonus =
-                  Number(row.ext.bonus_usd) +
-                  Number(row.ext.promo_bonus_usd || 0)
-                return formatUsd(bonus, locale)
+                return formatUsd(Number(row.ext.bonus_usd), locale)
               },
             },
             {

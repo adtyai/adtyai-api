@@ -161,7 +161,7 @@ func TestMigrateAdtyTablesOnUsesOnlyCallerConnectionPG(t *testing.T) {
 	required := []any{
 		&AdtyFundBatch{}, &AdtyFundAllocation{}, &AdtyBillingHold{},
 		&AdtySite{}, &AdtySitePrice{}, &AdtySiteEarningDaily{},
-		&AdtyVoucher{}, &AdtyTeamMember{}, &AdtyTicket{}, &AdtyPromoCode{},
+		&AdtyVoucher{}, &AdtyTeamMember{}, &AdtyTicket{},
 	}
 	for _, entity := range required {
 		assert.True(t, target.Migrator().HasTable(entity),

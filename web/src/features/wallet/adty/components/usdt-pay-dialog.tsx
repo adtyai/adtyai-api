@@ -41,8 +41,6 @@ type UsdtPayDialogProps = {
   paymentScene?: string
   chain: string
   amount: number
-  /** adty task 12.4 */
-  promoCode?: string
   /** Resume this order instead of creating a new one. */
   tradeNo?: string
   onClose: () => void
@@ -68,12 +66,7 @@ export function UsdtPayDialog(props: UsdtPayDialogProps) {
 
   const create = useMutation({
     mutationFn: () =>
-      payWithBEpusdt(
-        props.amount,
-        props.chain,
-        props.promoCode ?? '',
-        props.paymentScene
-      ),
+      payWithBEpusdt(props.amount, props.chain, props.paymentScene),
     onSuccess: (order) => {
       setTradeNo(order.trade_no)
       if (order.ext) {
