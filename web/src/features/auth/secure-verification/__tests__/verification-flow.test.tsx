@@ -36,7 +36,6 @@ import type {
 const passwordRequirements: VerificationRequirements = {
   scope: 'passkey.register',
   methods: [{ method: 'password', available: true }],
-  oauth_providers: [],
   password_encryption_enabled: false,
 }
 
@@ -267,7 +266,6 @@ it('keeps the requested channel context fixed while verification is open', async
       data: {
         scope: 'channel.key.read',
         methods: [{ method: '2fa', available: true }],
-        oauth_providers: [],
         password_encryption_enabled: false,
       },
     },
@@ -475,7 +473,6 @@ it('prefers re-entering the account password when a Passkey is also available', 
           { method: 'email_code', available: true },
           { method: 'password', available: true },
         ],
-        oauth_providers: [],
         password_encryption_enabled: false,
       },
     },
@@ -514,7 +511,6 @@ it('requests and submits an email verification code through the existing APIs', 
           { method: 'password', available: true },
           { method: 'email_code', available: true },
         ],
-        oauth_providers: [],
         password_encryption_enabled: false,
       },
     },

@@ -81,7 +81,6 @@ function renderPermissions(viewerRole: number, allowed?: boolean) {
           data: {
             scope: 'admin.user.update',
             methods: [{ method: '2fa', available: true }],
-            oauth_providers: [],
             password_encryption_enabled: false,
           },
         },

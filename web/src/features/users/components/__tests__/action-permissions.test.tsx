@@ -77,7 +77,6 @@ function mount(drawer?: 'create' | 'update') {
           data: {
             scope: 'admin.user.update',
             methods: [{ method: '2fa', available: true }],
-            oauth_providers: [],
             password_encryption_enabled: false,
           },
         },

@@ -1,7 +1,6 @@
 package controller
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -9,10 +8,8 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
-	"github.com/QuantumNous/new-api/oauth"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // 用户名不能含 @（执行层决定 16、任务 8.7）：登录框按 username = ? OR email = ? 取第一条，
@@ -68,29 +65,4 @@ func TestUsernameWithAtRejectedOnAccountCreation(t *testing.T) {
 			assert.Contains(t, body, "excludes", "rejected by the username rule, not by a later step")
 		})
 	}
-}
-
-type adtyAtUsernameOAuthProvider struct{ authFlowTestOAuthProvider }
-
-func (*adtyAtUsernameOAuthProvider) GetUserInfo(context.Context, *oauth.OAuthToken) (*oauth.OAuthUser, error) {
-	return &oauth.OAuthUser{ProviderUserID: "external-at", Username: "a@b.co"}, nil
-}
-
-// 第三方登录建号不走 Validate，提供方给的用户名（常是邮箱）要单独挡住。
-func TestOAuthSignUpIgnoresUsernameWithAt(t *testing.T) {
-	setupAuthFlowControllerTest(t)
-	oldRegister := common.RegisterEnabled
-	common.RegisterEnabled = true
-	t.Cleanup(func() { common.RegisterEnabled = oldRegister })
-
-	provider := &adtyAtUsernameOAuthProvider{}
-	oauthUser, err := provider.GetUserInfo(context.Background(), nil)
-	require.NoError(t, err)
-	c, _ := gin.CreateTestContext(httptest.NewRecorder())
-	c.Request = httptest.NewRequest(http.MethodGet, "/api/oauth/test", nil)
-
-	user, err := findOrCreateOAuthUser(c, provider, oauthUser)
-	require.NoError(t, err)
-	assert.Equal(t, "flow_1", user.Username)
-	assert.NotContains(t, user.Username, "@")
 }

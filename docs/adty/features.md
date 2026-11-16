@@ -473,7 +473,7 @@ BEpusdt 使用官方 `POST /api/v1/pay/info`，只信任与冻结付款链接同
 - **邮箱验证**用于注册和绑定/改绑邮箱：开启 `EmailVerificationEnabled` 时，注册必须提交邮箱和验证码；绑定邮箱走 `/api/oauth/email/bind/*`。它不是独立的登录方式。
 - **Passkey**：用户可以在个人页注册，之后用 `/api/user/login/passkey/begin|finish` 免密码登录；分站关闭 Passkey（`/api/status` 的 `passkey_login` 为 false）。
 - **TOTP**：登录第二因子（`POST /api/user/login/2fa`、`POST /api/user/login/verify`），也用于敏感操作的二次验证。
-- **第三方登录已全部退役**：GitHub、Discord、LinuxDO、微信、OIDC 和自定义 OAuth 的路由都已删除；`/api/oauth/:provider` 只挂着一个恒为关闭的 Telegram 占位，`/api/oauth/telegram/login` 直接返回 410（`oauth/telegram.go:11-49`、`router/api-router.go:50-60`）。
+- **没有第三方登录**：GitHub、Discord、LinuxDO、微信、OIDC、自定义 OAuth 和 Telegram 登录都已删除，OAuth 框架（`oauth/` 包、`/api/oauth/state`、`/api/oauth/:provider`、Telegram 旧路由）也已删除。二次验证只有密码、邮箱验证码、TOTP 和 Passkey，不再有“已绑定的第三方账号”这一项。
 - **Telegram 只做账号绑定和通知**：用户 `/api/adty/telegram/bind/start|confirm`，站长 `/api/adty/site/telegram/bind/start|confirm`。不做登录、找回密码或二次验证。
 - 历史 OAuth 身份行保留，升级不删除；新登录不再使用。分站 `/api/status` 会把历史第三方登录字段统一置 false（`service/adty_site_resolve.go:423-426`）。
 

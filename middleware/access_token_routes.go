@@ -42,21 +42,18 @@ func accessTokenScopeRule(scope string) accessTokenRouteRule {
 // DeclareAccessTokenPermissionRoute when they are registered.
 var accessTokenRouteRules = map[string]accessTokenRouteRule{
 	// router/api-router.go: top level
-	"GET /api/models":                     accessTokenScopeRule("profile:read"),
-	"GET /api/status/test":                accessTokenScopeRule("log:read"),
-	"GET /api/pricing":                    accessTokenAnyRule,
-	"GET /api/perf-metrics/summary":       accessTokenAnyRule,
-	"GET /api/perf-metrics":               accessTokenAnyRule,
-	"GET /api/rankings":                   accessTokenAnyRule,
-	"POST /api/oauth/state":               accessTokenSessionRule,
-	"POST /api/oauth/email/bind/start":    accessTokenScopeRule("account_security:write"),
-	"POST /api/oauth/email/bind/resend":   accessTokenScopeRule("account_security:write"),
-	"POST /api/oauth/email/bind":          accessTokenScopeRule("account_security:write"),
-	"POST /api/oauth/telegram/bind/start": accessTokenSessionRule,
-	"GET /api/oauth/:provider":            accessTokenSessionRule,
-	"GET /api/verify/methods":             accessTokenAnyRule,
-	"POST /api/verify":                    accessTokenAnyRule,
-	"POST /api/verify/email-code":         accessTokenSessionRule,
+	"GET /api/models":                   accessTokenScopeRule("profile:read"),
+	"GET /api/status/test":              accessTokenScopeRule("log:read"),
+	"GET /api/pricing":                  accessTokenAnyRule,
+	"GET /api/perf-metrics/summary":     accessTokenAnyRule,
+	"GET /api/perf-metrics":             accessTokenAnyRule,
+	"GET /api/rankings":                 accessTokenAnyRule,
+	"POST /api/oauth/email/bind/start":  accessTokenScopeRule("account_security:write"),
+	"POST /api/oauth/email/bind/resend": accessTokenScopeRule("account_security:write"),
+	"POST /api/oauth/email/bind":        accessTokenScopeRule("account_security:write"),
+	"GET /api/verify/methods":           accessTokenAnyRule,
+	"POST /api/verify":                  accessTokenAnyRule,
+	"POST /api/verify/email-code":       accessTokenSessionRule,
 
 	// router/api-router.go: /api/user (self)
 	"GET /api/user/sessions":                 accessTokenSessionRule,

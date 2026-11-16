@@ -460,3 +460,36 @@ P6 移植旧项目前端时，不要把 `?aff=` 和 `features/auth/lib/storage.t
 - 移除不再使用的依赖：`ai`、`auto-skeleton-react`、`input-otp`、`nanoid`、`react-resizable-panels`、`sse.js`、`stream-markdown-parser`、`tokenlens`、`use-stick-to-bottom`、`@xyflow/react`、`embla-carousel-react`，并从 `THIRD-PARTY-LICENSES.md` 去掉对应行。`web/src/styles/index.css` 去掉只给 `auto-skeleton-react` 用的样式。
 - 保留只被测试引用的文件（如 `risk-acknowledgement-dialog.tsx`、`theme-quick-switcher.tsx`）和未使用的导出，另行判断。
 - 这些路径登记在 [deleted-paths.txt](deleted-paths.txt)。以后要用其中的基础组件时，从上游或组件库重新加入并从清单里去掉对应路径。
+
+## 第三方登录框架（2026-11-16）
+
+六种第三方登录删掉以后，OAuth 框架只剩一个永远不可用的 Telegram 占位。这次把框架本身也删掉。
+
+### 文件
+
+- `oauth/`（provider 接口、注册表、Telegram 占位、token 类型）
+- `controller/oauth.go`（`GenerateOAuthCode`、`HandleOAuth` 和登录、绑定、二次验证三种回调分支，`findOrCreateOAuthUser`）、`controller/telegram.go`（Telegram 旧路由的 410）
+- `service/oauth_verification.go`（用已绑定的第三方账号做二次验证）
+- `controller/oauth_site_flow_test.go`、`controller/oauth_site_identity_test.go`、`controller/oauth_site_register_test.go`：测 OAuth 登录把账号归到发起登录的分站，随实现一起删
+
+### 路由
+
+- `POST /api/oauth/state`、`GET /api/oauth/:provider`
+- `GET /api/oauth/telegram/login`、`POST /api/oauth/telegram/bind/start`、`GET /api/oauth/telegram/bind/:flow_token`（原来固定返回 410）
+- 访问令牌规则里对应的条目一起删除。`router/adty_deleted_routes_test.go` 盯着它们不许回来。
+
+### 二次验证
+
+- 删除验证方法 `oauth` 和验证范围 `account.binding.unbind`（按 `provider_id` 解绑第三方账号，已经没有入口）。`account.binding.bind` 只接受 `provider=email`。
+- `/api/verify/methods` 不再返回 `oauth_providers`；重要操作的方法清单是密码（有密码时）、邮箱验证码（有邮箱时）、已登记的 TOTP 和 Passkey。
+- 原来没有密码的账号会多列一个“已绑定的第三方账号”方法。现在所有建号入口（注册、管理员建号、团队注册、员工账号、初始化）都要求密码，不会再产生这种账号；历史上只用第三方登录建的账号可以走“忘记密码”重设密码，有邮箱时也能用邮箱验证码。
+- 前端二次验证去掉 `oauth` 方法、`oauth_providers` 字段和只为它存在的错误码映射（`TELEGRAM_OAUTH_*`、`TELEGRAM_ACCOUNT_NOT_BOUND`、`TELEGRAM_LEGACY_AUTH_REMOVED`、`OAUTH_ACCOUNT_MISMATCH`）。
+
+### 保留名单和理由
+
+- `/api/oauth/email/bind/start|resend` 和 `/api/oauth/email/bind`：邮箱绑定，路径沿用旧前缀；站点上下文中间件对 `/api/oauth` 前缀的处理（分站限流、自定义域名拒绝）不变，`TestCustomDomainRejectsOAuthPath` 改用邮箱绑定路由钉住。
+- `users` 的 `github_id`、`discord_id`、`oidc_id`、`wechat_id`、`linux_do_id`、`telegram_id` 列、`external_identity_claims` 表和它们的唯一索引：历史数据，启动迁移照旧，不写删列。
+- `Telegram*` 选项的写入拒绝和启动时清理历史 `telegram.client_*` 凭据（`TestTelegramOAuthOptionsCannotBeWritten`、`TestTelegramOAuthLegacyCredentialsArePurged`）。
+- 前端 `loginMethodLabel` 对 `oauth`、`oauth:github` 等的显示：历史会话和审计日志里还有这些值。
+- `service/codex_oauth.go`：Codex 渠道的凭据刷新，和用户登录无关。
+- 两份语言包里的旧文案：按约定 B 只增不删。

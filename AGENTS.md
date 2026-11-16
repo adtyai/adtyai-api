@@ -12,7 +12,7 @@ This is an AI API gateway/proxy built with Go. It aggregates 40+ upstream AI pro
 - **Frontend**: React 19, TypeScript, Rsbuild 2, TanStack Router/Query/Table, Zustand, Base UI, Tailwind CSS 4
 - **Databases**: PostgreSQL is the ADTY formal database. SQLite and MySQL keep upstream compatibility code and upstream unit tests only, and are not acceptance evidence. A separately configured log database also supports ClickHouse
 - **Cache**: Redis (go-redis) + in-memory cache
-- **Auth**: Browser sessions, API tokens and personal access tokens, JWT, WebAuthn/Passkeys, TOTP; Casbin authorization in `service/authz/`. The OAuth provider framework remains but has no usable provider: Telegram is a placeholder whose `IsEnabled()` is always false
+- **Auth**: Browser sessions, API tokens and personal access tokens, JWT, WebAuthn/Passkeys, TOTP; Casbin authorization in `service/authz/`. There is no third-party sign-in: the OAuth provider framework (`oauth/`, `/api/oauth/state`, `/api/oauth/:provider`) was removed. Only email binding keeps its historical `/api/oauth/email/bind*` path
 - **Extensions**: JavaScript task plugins executed by moejs
 - **Frontend package manager**: Bun (preferred over npm/yarn/pnpm)
 

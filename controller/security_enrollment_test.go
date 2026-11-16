@@ -2,7 +2,6 @@ package controller
 
 import (
 	"bytes"
-	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -27,7 +26,6 @@ import (
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
-	"github.com/QuantumNous/new-api/oauth"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/fxamacker/cbor/v2"
@@ -211,7 +209,7 @@ func TestSecurityEnrollmentAccessTokenMethodPolicy(t *testing.T) {
 		{name: "locked twofa does not remove password", method: "2fa", password: true, twoFA: true, locked: true},
 		{name: "disabled passkey does not remove password", method: "passkey", password: true, passkey: true, disabledPasskey: true},
 		{name: "disabled passkey does not block password", method: "password", password: true, disabledPasskey: true, available: true},
-		{name: "session method cannot manage tokens", method: "oauth"},
+		{name: "passwordless account cannot manage tokens", method: "password"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			user, identity := setupSecurityEnrollmentTest(t)
@@ -235,15 +233,18 @@ func TestSecurityEnrollmentAccessTokenMethodPolicy(t *testing.T) {
 				passwordScope = service.VerificationScopePasswordSet
 			}
 			for _, scope := range []string{service.VerificationScopeAccessTokenGenerate, service.VerificationScopeAccessTokenUpdate, service.VerificationScopeAccessTokenRevoke,
-				service.VerificationScopeAccountBind, service.VerificationScopeAccountUnbind, passwordScope} {
+				service.VerificationScopeAccountBind, passwordScope} {
 				requirements, err := service.GetVerificationRequirements(identity, scope)
 				require.NoError(t, err)
-				want := importantOperationMethodsForTest(t, test.password, false, test.twoFA, test.passkey, test.locked, test.disabledPasskey, test.available)
+				want := importantOperationMethodsForTest(t, test.password, false, test.twoFA, test.passkey, test.locked, test.disabledPasskey)
 				assertVerificationMethods(t, requirements.Methods, want)
 				_, err = service.RequireVerificationMethod(identity, scope, test.method)
-				if test.available {
+				switch {
+				case test.available:
 					require.NoError(t, err)
-				} else {
+				case !test.password && !test.passkey && !test.twoFA:
+					assert.ErrorIs(t, err, service.ErrProofMethod)
+				default:
 					assert.ErrorIs(t, err, service.ErrVerificationUnavailable)
 				}
 				{
@@ -251,8 +252,6 @@ func TestSecurityEnrollmentAccessTokenMethodPolicy(t *testing.T) {
 					switch scope {
 					case service.VerificationScopeAccountBind:
 						input.Context = []byte(`{"provider":"email","email":"new@example.com"}`)
-					case service.VerificationScopeAccountUnbind:
-						input.Context = []byte(`{"provider_id":1}`)
 					case service.VerificationScopeAccessTokenGenerate:
 						input.Context = []byte(`{"scopes":["profile:read"],"expires_at":0}`)
 					case service.VerificationScopeAccessTokenUpdate:
@@ -489,23 +488,19 @@ func TestSecurityEnrollmentAccessTokenStepUpBoundaries(t *testing.T) {
 		assert.Zero(t, proofs)
 	})
 
-	t.Run("OAuth-only accounts have no method for a token", func(t *testing.T) {
+	t.Run("passwordless accounts without factors have no method for a token", func(t *testing.T) {
 		user, _ := setupSecurityEnrollmentTest(t)
 		require.NoError(t, model.DB.Model(user).Updates(map[string]any{"password": "", "github_id": "linked-user"}).Error)
-		oauth.Register("enrollment-oauth", &enrollmentOAuthProvider{externalID: "linked-user"})
-		t.Cleanup(func() { oauth.Unregister("enrollment-oauth") })
 		raw, _ := createScopedAccessToken(t, user.Id, 0, "account_security:write")
 		router := newAccessTokenTestRouter()
 		body := decodeSecurityEnrollmentResponse(t, accessTokenRequest(router, http.MethodGet, "/api/verify/methods?scope=2fa.setup", raw, "", ""))
 		require.True(t, body.Success, body.Message)
 		var requirements service.VerificationRequirements
 		require.NoError(t, common.Unmarshal(body.Data, &requirements))
-		require.Len(t, requirements.Methods, 1)
-		assert.Equal(t, service.VerificationMethodOAuth, requirements.Methods[0].Method)
-		assert.False(t, requirements.Methods[0].Available)
-		assert.Empty(t, requirements.OAuthProviders)
+		assert.Empty(t, requirements.Methods, "a leftover third-party binding is not a verification method")
 		body = decodeSecurityEnrollmentResponse(t, accessTokenRequest(router, http.MethodPost, "/api/verify", raw, "", `{"scope":"2fa.setup","method":"oauth"}`))
-		assert.Equal(t, "SECURITY_METHOD_UNAVAILABLE", body.Code)
+		assert.False(t, body.Success)
+		assert.NotEmpty(t, body.Code)
 	})
 
 	t.Run("a proof stays with the token that obtained it", func(t *testing.T) {
@@ -651,7 +646,7 @@ func TestSecurityEnrollmentMethodPolicy(t *testing.T) {
 		{name: "locked twofa still offers password and passkey", password: true, passkey: true, twoFA: true, locked: true, method: "2fa"},
 		{name: "disabled passkey does not remove password", password: true, passkey: true, disabledPasskey: true, method: "passkey"},
 		{name: "disabled registration does not request a password", password: true, disabledPasskey: true, method: "password"},
-		{name: "passwordless account without providers is unavailable", method: "oauth"},
+		{name: "passwordless account without enrolled factors has no method", method: "password"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			user, identity := setupSecurityEnrollmentTest(t)
@@ -672,7 +667,7 @@ func TestSecurityEnrollmentMethodPolicy(t *testing.T) {
 			system_setting.GetPasskeySettings().Enabled = !test.disabledPasskey
 			requirements, err := service.GetVerificationRequirements(identity, "passkey.register")
 			require.NoError(t, err)
-			want := importantOperationMethodsForTest(t, test.password, false, test.twoFA, test.passkey, test.locked, test.disabledPasskey, test.available)
+			want := importantOperationMethodsForTest(t, test.password, false, test.twoFA, test.passkey, test.locked, test.disabledPasskey)
 			if test.disabledPasskey {
 				for i := range want {
 					want[i].Available = false
@@ -681,17 +676,19 @@ func TestSecurityEnrollmentMethodPolicy(t *testing.T) {
 			}
 			assertVerificationMethods(t, requirements.Methods, want)
 			_, err = service.RequireVerificationMethod(identity, "passkey.register", test.method)
-			if test.available {
+			switch {
+			case test.available:
 				require.NoError(t, err)
-			} else if test.method == service.VerificationMethodOAuth || test.method == "oauth" {
-				assert.ErrorIs(t, err, service.ErrVerificationUnavailable)
-			} else {
+			case !test.password && !test.passkey && !test.twoFA:
+				// No usable factor: the method is not offered at all.
+				assert.ErrorIs(t, err, service.ErrProofMethod)
+			default:
 				assert.ErrorIs(t, err, service.ErrVerificationUnavailable)
 			}
 			if test.passkey && !test.twoFA && !test.disabledPasskey {
 				requirements, err = service.GetVerificationRequirements(identity, "2fa.setup")
 				require.NoError(t, err)
-				assertVerificationMethods(t, requirements.Methods, importantOperationMethodsForTest(t, test.password, false, false, true, false, false, true))
+				assertVerificationMethods(t, requirements.Methods, importantOperationMethodsForTest(t, test.password, false, false, true, false, false))
 			}
 		})
 	}
@@ -955,15 +952,12 @@ func TestSecurityEnrollmentProofStorageErrorsFailClosed(t *testing.T) {
 
 func TestSecurityEnrollmentVerificationTransportsRejectInvalidContext(t *testing.T) {
 	_, identity := setupSecurityEnrollmentTest(t)
-	oauth.Register("enrollment-oauth", &enrollmentOAuthProvider{externalID: "linked-user"})
-	t.Cleanup(func() { oauth.Unregister("enrollment-oauth") })
 	for _, test := range []struct {
 		path, body string
 		handler    gin.HandlerFunc
 	}{
 		{"/api/verify", `{"method":"password","scope":"passkey.register","context":{"user_id":999},"password":"enrollment-password"}`, UniversalVerify},
 		{"/api/user/passkey/verify/begin", `{"scope":"passkey.register","context":{"user_id":999}}`, PasskeyVerifyBegin},
-		{"/api/oauth/state", `{"provider":"enrollment-oauth","intent":"verify","scope":"passkey.register","context":{"user_id":999}}`, GenerateOAuthCode},
 	} {
 		t.Run(test.path, func(t *testing.T) {
 			response := securityEnrollmentRequest("POST", test.path, test.body, "", identity, test.handler)
@@ -1279,18 +1273,6 @@ func TestSecurityEnrollmentSetupAndEnableRollback(t *testing.T) {
 	require.NoError(t, service.FinishTwoFASetup(identity, setup.FlowToken, code))
 }
 
-type enrollmentOAuthProvider struct {
-	authFlowTestOAuthProvider
-	externalID string
-	disabled   bool
-}
-
-func (*enrollmentOAuthProvider) ProviderUserIDColumn() string { return "github_id" }
-func (p *enrollmentOAuthProvider) IsEnabled() bool            { return !p.disabled }
-func (p *enrollmentOAuthProvider) GetUserInfo(context.Context, *oauth.OAuthToken) (*oauth.OAuthUser, error) {
-	return &oauth.OAuthUser{ProviderUserID: p.externalID, Email: "same@example.com"}, nil
-}
-
 func TestSecurityEnrollmentEncryptedPasswordVerification(t *testing.T) {
 	_, identity := setupSecurityEnrollmentTest(t)
 	keyID, publicPEM := common.PasswordEncryptionPublicKey()
@@ -1389,7 +1371,6 @@ func TestSecurityEnrollmentDatabaseErrorsAreNotReturned(t *testing.T) {
 		{"2fa status", "GET", "/api/user/2fa/status", "", "two_fas", false, Get2FAStatus},
 		{"2fa setup", "POST", "/api/user/2fa/setup", "", "two_fas", true, Setup2FA},
 		{"2fa flow", "POST", "/api/user/2fa/setup", "", "auth_flows", true, Setup2FA},
-		{"oauth state", "POST", "/api/oauth/state", `{"provider":"enrollment-oauth","intent":"verify","scope":"2fa.setup"}`, "users", false, GenerateOAuthCode},
 		{"channel key", "POST", "/api/channel/1/key", "", "channels", false, func(c *gin.Context) {
 			c.Params = gin.Params{{Key: "id", Value: "1"}}
 			GetChannelKey(c)
@@ -1397,8 +1378,6 @@ func TestSecurityEnrollmentDatabaseErrorsAreNotReturned(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			_, identity := setupSecurityEnrollmentTest(t)
-			oauth.Register("enrollment-oauth", &enrollmentOAuthProvider{externalID: "linked-user"})
-			t.Cleanup(func() { oauth.Unregister("enrollment-oauth") })
 			proof := issueSecurityEnrollmentProof(t, identity, service.VerificationOperation{Scope: service.VerificationScopeTwoFASetup}, service.VerificationMethodPassword)
 			privateError := errors.New("database connection failed: private-db-host private_table SELECT secret_column")
 			callback := func(tx *gorm.DB) {
@@ -1433,7 +1412,6 @@ func TestSecurityEnrollmentPublicErrorsDiscardWrappedDetails(t *testing.T) {
 		{service.ErrVerificationFailed, "SECURITY_VERIFICATION_FAILED", service.ErrVerificationFailed.Error()},
 		{service.ErrVerificationLocked, "SECURITY_VERIFICATION_LOCKED", service.ErrVerificationLocked.Error()},
 		{service.ErrVerificationCodeLocked, "SECURITY_EMAIL_CODE_LOCKED", service.ErrVerificationCodeLocked.Error()},
-		{service.ErrOAuthAccountMismatch, "OAUTH_ACCOUNT_MISMATCH", service.ErrOAuthAccountMismatch.Error()},
 		{model.ErrTwoFASetupInvalid, "TWOFA_SETUP_INVALID", model.ErrTwoFASetupInvalid.Error()},
 	} {
 		t.Run(test.code, func(t *testing.T) {
@@ -1666,7 +1644,7 @@ func TestRootAccountDeleteStaysForbidden(t *testing.T) {
 // importantOperationMethodsForTest is the G.14 method list for a non-Root user.
 // 2FA/Passkey are optional extras. oauthAvailable is used only when the account
 // has no password.
-func importantOperationMethodsForTest(t *testing.T, hasPassword, hasEmail, hasTwoFA, hasPasskey, twoFALocked, passkeyDisabled, oauthAvailable bool) []service.VerificationMethodOption {
+func importantOperationMethodsForTest(t *testing.T, hasPassword, hasEmail, hasTwoFA, hasPasskey, twoFALocked, passkeyDisabled bool) []service.VerificationMethodOption {
 	t.Helper()
 	var methods []service.VerificationMethodOption
 	if hasPassword {
@@ -1688,9 +1666,6 @@ func importantOperationMethodsForTest(t *testing.T, hasPassword, hasEmail, hasTw
 			option.Available, option.Reason = false, "Passkey authentication is disabled."
 		}
 		methods = append(methods, option)
-	}
-	if !hasPassword {
-		methods = append(methods, service.VerificationMethodOption{Method: service.VerificationMethodOAuth, Available: oauthAvailable})
 	}
 	return methods
 }

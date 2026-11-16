@@ -57,7 +57,6 @@ function mockVerification(scope: string, proofToken: string) {
           data: {
             scope,
             methods: [{ method: '2fa', available: true }],
-            oauth_providers: [],
             password_encryption_enabled: false,
           },
         },

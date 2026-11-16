@@ -71,7 +71,6 @@ function setupPasskeyNetwork() {
           : {
               scope: operation.scope,
               methods: [{ method: 'passkey', available: true }],
-              oauth_providers: [],
               password_encryption_enabled: false,
             },
     },

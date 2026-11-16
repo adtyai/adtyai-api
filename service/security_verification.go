@@ -7,14 +7,12 @@ import (
 	"fmt"
 	"html"
 	"slices"
-	"sort"
 	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
-	"github.com/QuantumNous/new-api/oauth"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 	"gorm.io/gorm"
 )
@@ -23,7 +21,6 @@ const (
 	VerificationMethodTwoFA              = "2fa"
 	VerificationMethodPasskey            = "passkey"
 	VerificationMethodPassword           = "password"
-	VerificationMethodOAuth              = "oauth"
 	VerificationMethodEmailCode          = "email_code"
 	VerificationMethodSession            = "session"
 	VerificationMethodRootExempt         = "root_exempt"
@@ -39,7 +36,6 @@ const (
 	VerificationScopeAccessTokenRevoke   = "access_token.revoke"
 	VerificationScopeAccessTokenUpdate   = "access_token.update"
 	VerificationScopeAccountBind         = "account.binding.bind"
-	VerificationScopeAccountUnbind       = "account.binding.unbind"
 	VerificationScopePasswordSet         = "account.password.set"
 	VerificationScopePasswordChange      = "account.password.change"
 	VerificationScopeAccountDelete       = "account.delete"
@@ -85,10 +81,6 @@ type AccountBindingContext struct {
 	Provider string `json:"provider"`
 	Email    string `json:"email,omitempty"`
 	Code     string `json:"code,omitempty"`
-}
-
-type AccountUnbindingContext struct {
-	ProviderID int `json:"provider_id"`
 }
 
 type AdminUserContext struct {
@@ -184,21 +176,12 @@ func BindVerificationOperation(operation VerificationOperation) (VerificationBin
 			return VerificationBinding{}, ErrVerificationContextInvalid
 		}
 		context.Provider = strings.TrimSpace(context.Provider)
-		switch context.Provider {
-		case "email":
-			context.Email = model.NormalizeEmail(context.Email)
-			if len(fields) != 2 || common.Validate.Var(context.Email, "required,email") != nil || context.Code != "" {
-				return VerificationBinding{}, ErrVerificationContextInvalid
-			}
-		default:
-			if len(fields) != 1 || context.Provider == "" || len(context.Provider) > 64 || oauth.GetProvider(context.Provider) == nil {
-				return VerificationBinding{}, ErrVerificationContextInvalid
-			}
+		// Email is the only account binding left; third-party providers were retired.
+		if context.Provider != "email" {
+			return VerificationBinding{}, ErrVerificationContextInvalid
 		}
-		normalized = context
-	case VerificationScopeAccountUnbind:
-		var context AccountUnbindingContext
-		if len(fields) != 1 || common.Unmarshal(fields["provider_id"], &context.ProviderID) != nil || context.ProviderID <= 0 {
+		context.Email = model.NormalizeEmail(context.Email)
+		if len(fields) != 2 || common.Validate.Var(context.Email, "required,email") != nil || context.Code != "" {
 			return VerificationBinding{}, ErrVerificationContextInvalid
 		}
 		normalized = context
@@ -320,17 +303,10 @@ type VerificationMethodOption struct {
 	Reason    string `json:"reason,omitempty"`
 }
 
-type VerificationOAuthProvider struct {
-	Slug   string `json:"slug"`
-	Name   string `json:"name"`
-	UserID string `json:"-"`
-}
-
 type VerificationRequirements struct {
-	Scope                     string                      `json:"scope"`
-	Methods                   []VerificationMethodOption  `json:"methods"`
-	OAuthProviders            []VerificationOAuthProvider `json:"oauth_providers"`
-	PasswordEncryptionEnabled bool                        `json:"password_encryption_enabled"`
+	Scope                     string                     `json:"scope"`
+	Methods                   []VerificationMethodOption `json:"methods"`
+	PasswordEncryptionEnabled bool                       `json:"password_encryption_enabled"`
 }
 
 // securityVerificationPolicy is the only operation-to-method policy. Device
@@ -355,7 +331,7 @@ func securityVerificationPolicy(scope string, state model.UserVerificationState)
 	case VerificationScopePasskeyRegister, VerificationScopeTwoFASetup,
 		VerificationScopeAccessTokenGenerate, VerificationScopeAccessTokenUpdate, VerificationScopeAccessTokenRevoke,
 		VerificationScopeAPIKeyRead,
-		VerificationScopeAccountBind, VerificationScopeAccountUnbind,
+		VerificationScopeAccountBind,
 		VerificationScopePasswordSet, VerificationScopePasswordChange, VerificationScopeAccountDelete,
 		VerificationScopeAdminUserCreate, VerificationScopeAdminUserUpdate, VerificationScopeAdminUserDelete,
 		VerificationScopeAdminUserManage, VerificationScopeAdminUserPasskeyReset,
@@ -448,11 +424,11 @@ func GetVerificationRequirements(identity AuthIdentity, scope string) (*Verifica
 	if err != nil {
 		return nil, err
 	}
-	requirements := &VerificationRequirements{Scope: scope, Methods: methods, OAuthProviders: []VerificationOAuthProvider{}, PasswordEncryptionEnabled: common.PasswordLoginEncryptionEnabled}
+	requirements := &VerificationRequirements{Scope: scope, Methods: methods, PasswordEncryptionEnabled: common.PasswordLoginEncryptionEnabled}
 	for i := range methods {
 		if methods[i].Method == VerificationMethodPassword && !common.PasswordLoginEnabled {
 			switch scope {
-			case VerificationScopeAccountBind, VerificationScopeAccountUnbind, VerificationScopePasswordSet, VerificationScopePasswordChange, VerificationScopeAccountDelete,
+			case VerificationScopeAccountBind, VerificationScopePasswordSet, VerificationScopePasswordChange, VerificationScopeAccountDelete,
 				VerificationScopeAdminUserCreate, VerificationScopeAdminUserUpdate, VerificationScopeAdminUserDelete,
 				VerificationScopeAdminUserManage, VerificationScopeAdminUserPasskeyReset,
 				VerificationScopeAdminUserTwoFADisable, VerificationScopeAdminUserBindingClear,
@@ -464,56 +440,8 @@ func GetVerificationRequirements(identity AuthIdentity, scope string) (*Verifica
 				}
 			}
 		}
-		if methods[i].Method != VerificationMethodOAuth {
-			continue
-		}
-		// OAuth verification completes through a browser popup bound to a login
-		// session, which an access token cannot provide.
-		if _, ok := model.ParseAccessTokenSessionID(identity.SessionID); ok {
-			methods[i].Available, methods[i].Reason = false, "OAuth verification requires a browser sign-in. Enable two-factor authentication or a Passkey to continue."
-			continue
-		}
-		user, err := model.GetUserById(identity.UserID, false)
-		if err != nil {
-			return nil, err
-		}
-		requirements.OAuthProviders, err = verificationOAuthProviders(user)
-		if err != nil {
-			return nil, err
-		}
-		if len(requirements.OAuthProviders) == 0 {
-			methods[i].Available, methods[i].Reason = false, "No linked OAuth provider is available."
-			if user.TelegramId != "" {
-				if err := oauth.TelegramConfigurationError(); err != nil {
-					methods[i].Reason = err.Error()
-				}
-			}
-		}
 	}
 	return requirements, nil
-}
-
-// verificationOAuthProviders lists the linked providers usable as a second
-// factor. Third-party sign-in is retired, so the only remaining candidate is the
-// Telegram binding column; the registry loop keeps the shape so a re-enabled
-// provider with a bind column would be picked up automatically.
-func verificationOAuthProviders(user *model.User) ([]VerificationOAuthProvider, error) {
-	providers := []VerificationOAuthProvider{}
-	for slug, provider := range oauth.GetAllProviders() {
-		if !provider.IsEnabled() {
-			continue
-		}
-		var userID string
-		switch provider.ProviderUserIDColumn() {
-		case "telegram_id":
-			userID = user.TelegramId
-		}
-		if userID != "" {
-			providers = append(providers, VerificationOAuthProvider{Slug: slug, Name: provider.GetName(), UserID: userID})
-		}
-	}
-	sort.Slice(providers, func(i, j int) bool { return providers[i].Slug < providers[j].Slug })
-	return providers, nil
 }
 
 func RequireVerificationMethod(identity AuthIdentity, scope, method string) (*VerificationRequirements, error) {
@@ -727,7 +655,7 @@ func VerifySecurityInput(identity AuthIdentity, input VerificationInput) (*Secur
 		}
 	case VerificationMethodEmailCode:
 		return completeSecurityVerificationWithEmailCode(identity, binding, input)
-	case VerificationMethodPasskey, VerificationMethodOAuth:
+	case VerificationMethodPasskey:
 		return nil, ErrVerificationFlowRequired
 	default:
 		return nil, ErrProofMethod
@@ -802,36 +730,19 @@ func CheckLoginTwoFactor(twoFA *model.TwoFA, code string) (string, int64, error)
 	return common.NormalizeBackupCode(code), 0, nil
 }
 
-func GetOAuthVerificationBinding(identity AuthIdentity, scope, provider string) (string, error) {
-	requirements, err := RequireVerificationMethod(identity, scope, VerificationMethodOAuth)
-	if err != nil {
-		return "", err
-	}
-	for _, linked := range requirements.OAuthProviders {
-		if linked.Slug == provider {
-			return linked.UserID, nil
-		}
-	}
-	return "", ErrVerificationUnavailable
-}
-
 // importantOperationMethods is the G.14 step-up list for important operations:
 // password first when the account has one, email_code when a bound email can
-// receive a code, then any enrolled 2FA/Passkey as optional extras. OAuth stays
-// a fallback only for passwordless accounts. Completing any one method is enough.
+// receive a code, then any enrolled 2FA/Passkey as optional extras. Completing
+// any one method is enough.
 func importantOperationMethods(state model.UserVerificationState, enrolled []string) []string {
-	methods := make([]string, 0, 2+len(enrolled)+1)
+	methods := make([]string, 0, 2+len(enrolled))
 	if state.HasPassword {
 		methods = append(methods, VerificationMethodPassword)
 	}
 	if state.HasEmail {
 		methods = append(methods, VerificationMethodEmailCode)
 	}
-	methods = append(methods, enrolled...)
-	if !state.HasPassword {
-		methods = append(methods, VerificationMethodOAuth)
-	}
-	return methods
+	return append(methods, enrolled...)
 }
 
 // SecurityStepUpCodeKey scopes a step-up email code to the request site, the

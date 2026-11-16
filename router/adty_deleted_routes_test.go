@@ -18,9 +18,9 @@ func TestAdtyDeletedRoutesAbsent(t *testing.T) {
 	routes := newAccessTokenScopeTestEngine(t).Routes()
 	require.NotEmpty(t, routes)
 
-	// Third-party sign-in (GitHub, Discord, LinuxDO, OIDC, custom OAuth and
-	// WeChat) is gone; only the password login, email binding and the retired
-	// Telegram legacy routes remain under /api/oauth.
+	// Third-party sign-in (GitHub, Discord, LinuxDO, OIDC, custom OAuth, WeChat
+	// and Telegram) and its provider framework are gone; only the email binding
+	// routes remain under /api/oauth.
 	deletedPrefixes := []string{"/api/subscription", "/api/redemption", "/api/custom-oauth-provider"}
 	deletedRoutes := []struct{ method, path string }{
 		{http.MethodPost, "/api/user/topup"},
@@ -34,6 +34,11 @@ func TestAdtyDeletedRoutesAbsent(t *testing.T) {
 		{http.MethodDelete, "/api/user/oauth/bindings/:provider_id"},
 		{http.MethodGet, "/api/user/:id/oauth/bindings"},
 		{http.MethodDelete, "/api/user/:id/oauth/bindings/:provider_id"},
+		{http.MethodPost, "/api/oauth/state"},
+		{http.MethodGet, "/api/oauth/:provider"},
+		{http.MethodGet, "/api/oauth/telegram/login"},
+		{http.MethodPost, "/api/oauth/telegram/bind/start"},
+		{http.MethodGet, "/api/oauth/telegram/bind/:flow_token"},
 	}
 	for _, route := range routes {
 		for _, prefix := range deletedPrefixes {
@@ -52,17 +57,11 @@ func TestAdtyDeletedRoutesAbsent(t *testing.T) {
 		return route.Method == http.MethodGet && route.Path == "/api/user/topup"
 	}))
 
-	// The generic registry callback, the flow starter, the email binding routes
-	// and the retired Telegram legacy routes stay registered.
+	// The email binding routes keep their historical /api/oauth path.
 	for _, kept := range []struct{ method, path string }{
-		{http.MethodGet, "/api/oauth/:provider"},
-		{http.MethodPost, "/api/oauth/state"},
 		{http.MethodPost, "/api/oauth/email/bind/start"},
 		{http.MethodPost, "/api/oauth/email/bind/resend"},
 		{http.MethodPost, "/api/oauth/email/bind"},
-		{http.MethodGet, "/api/oauth/telegram/login"},
-		{http.MethodPost, "/api/oauth/telegram/bind/start"},
-		{http.MethodGet, "/api/oauth/telegram/bind/:flow_token"},
 		{http.MethodPost, "/api/user/login"},
 		{http.MethodPost, "/api/user/register"},
 	} {

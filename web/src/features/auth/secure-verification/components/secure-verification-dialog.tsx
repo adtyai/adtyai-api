@@ -50,7 +50,6 @@ const methodLabels: Record<VerificationMethod, string> = {
   passkey: 'Passkey',
   password: 'Password',
   email_code: 'Email verification code',
-  oauth: 'Linked account',
   session: 'Login session',
   root_exempt: 'Root exemption',
 }

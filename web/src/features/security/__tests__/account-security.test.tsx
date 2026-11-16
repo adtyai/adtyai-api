@@ -73,7 +73,6 @@ it('requires verification after username confirmation and cancels without deleti
       data: {
         scope: 'account.delete',
         methods: [{ method: '2fa', available: true }],
-        oauth_providers: [],
         password_encryption_enabled: false,
       },
     },
@@ -132,7 +131,6 @@ it.each(['2fa', 'passkey'])(
             { method: '2fa', available: true },
             { method: 'passkey', available: true },
           ],
-          oauth_providers: [],
           password_encryption_enabled: false,
         },
       },
@@ -219,7 +217,6 @@ it.each(['unmount', 'account change'])(
         data: {
           scope: 'account.delete',
           methods: [{ method: 'password', available: true }],
-          oauth_providers: [],
           password_encryption_enabled: false,
         },
       },
@@ -305,7 +302,6 @@ it('disables 2FA through a Passkey proof without asking for an authenticator cod
           { method: '2fa', available: true },
           { method: 'passkey', available: true },
         ],
-        oauth_providers: [],
         password_encryption_enabled: false,
       },
     },
@@ -376,7 +372,6 @@ it('regenerates backup codes through scoped verification and keeps the result vi
       data: {
         scope: '2fa.backup_codes.regenerate',
         methods: [{ method: '2fa', available: true }],
-        oauth_providers: [],
         password_encryption_enabled: false,
       },
     },
@@ -441,7 +436,6 @@ it('allows a common new password after verifying the current password once', asy
       data: {
         scope: 'account.password.change',
         methods: [{ method: 'password', available: true }],
-        oauth_providers: [],
         password_encryption_enabled: false,
       },
     },
@@ -535,7 +529,6 @@ it.each(['button', 'escape'])(
         data: {
           scope: 'account.password.change',
           methods: [{ method: '2fa', available: true }],
-          oauth_providers: [],
           password_encryption_enabled: false,
         },
       },
@@ -590,7 +583,6 @@ it.each(['unmount', 'account change'])(
         data: {
           scope: 'account.password.change',
           methods: [{ method: 'password', available: true }],
-          oauth_providers: [],
           password_encryption_enabled: false,
         },
       },
@@ -662,7 +654,6 @@ it('sets a first password after verifying an existing factor without asking for 
       data: {
         scope: 'account.password.set',
         methods: [{ method: '2fa', available: true }],
-        oauth_providers: [],
         password_encryption_enabled: false,
       },
     },
@@ -721,7 +712,6 @@ it('confirms both email addresses after identity verification and freezes the su
       data: {
         scope: 'account.binding.bind',
         methods: [{ method: 'password', available: true }],
-        oauth_providers: [],
         password_encryption_enabled: false,
       },
     },

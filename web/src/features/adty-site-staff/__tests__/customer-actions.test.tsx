@@ -90,7 +90,6 @@ beforeEach(() => {
       data = {
         scope: 'site.staff.customer.manage',
         methods: [{ method: 'password', available: true }],
-        oauth_providers: [],
         password_encryption_enabled: false,
       }
     } else if (path.endsWith('/staff/self')) {

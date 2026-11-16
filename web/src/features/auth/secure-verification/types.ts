@@ -23,7 +23,6 @@ export type VerificationMethod =
   | 'passkey'
   | 'password'
   | 'email_code'
-  | 'oauth'
   | 'session'
   | 'root_exempt'
 export type SecurityProofScope =
@@ -37,7 +36,6 @@ export type SecurityProofScope =
   | 'access_token.update'
   | 'access_token.revoke'
   | 'account.binding.bind'
-  | 'account.binding.unbind'
   | 'account.password.set'
   | 'account.password.change'
   | 'account.delete'
@@ -83,7 +81,6 @@ export type VerificationOperation =
       scope: 'account.binding.bind'
       context: { provider: string; email?: string; code?: string }
     }
-  | { scope: 'account.binding.unbind'; context: { provider_id: number } }
   | { scope: 'admin.user.create'; context: { role: number } }
   | {
       scope:
@@ -129,7 +126,11 @@ export type VerificationOperation =
   | {
       scope: 'adty.notice.configure'
       context: {
-        action: 'telegram.save' | 'telegram.test' | 'translation.save' | 'translation.test'
+        action:
+          | 'telegram.save'
+          | 'telegram.test'
+          | 'translation.save'
+          | 'translation.test'
         target: string
       }
     }
@@ -152,7 +153,6 @@ export type VerificationOperation =
         SecurityProofScope,
         | 'channel.key.read'
         | 'account.binding.bind'
-        | 'account.binding.unbind'
         | 'access_token.generate'
         | 'access_token.update'
         | 'access_token.revoke'
@@ -181,7 +181,6 @@ export interface SecurityProof {
 export interface VerificationRequirements {
   scope: SecurityProofScope | 'auth.login'
   methods: { method: VerificationMethod; available: boolean; reason?: string }[]
-  oauth_providers: { slug: string; name: string }[]
   password_encryption_enabled: boolean
 }
 
@@ -190,7 +189,6 @@ export type VerificationInput =
   | { method: 'password'; password: string }
   | { method: 'email_code'; code: string }
   | { method: 'passkey'; rpID?: string }
-  | { method: 'oauth'; provider: string }
   | { method: 'session' }
   | { method: 'root_exempt' }
 

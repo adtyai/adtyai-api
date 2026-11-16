@@ -363,3 +363,12 @@ web/src/features/rankings/lib/index.ts
 web/src/features/usage-logs/lib/index.ts
 web/src/i18n/static-keys.ts
 web/src/lib/use-controllable-state.ts
+
+# 第三方登录框架（2026-11-16）
+oauth/
+controller/oauth.go
+controller/telegram.go
+service/oauth_verification.go
+controller/oauth_site_flow_test.go
+controller/oauth_site_identity_test.go
+controller/oauth_site_register_test.go

@@ -82,22 +82,20 @@ function withDeviceAvailability(
 ): VerificationRequirements {
   return {
     ...requirements,
-    methods: requirements.methods
-      .filter((option) => option.method !== 'oauth')
-      .map((option) => {
-        if (
-          option.method === 'passkey' &&
-          option.available &&
-          !passkeySupported
-        ) {
-          return {
-            ...option,
-            available: false,
-            reason: 'This device does not support Passkey verification.',
-          }
+    methods: requirements.methods.map((option) => {
+      if (
+        option.method === 'passkey' &&
+        option.available &&
+        !passkeySupported
+      ) {
+        return {
+          ...option,
+          available: false,
+          reason: 'This device does not support Passkey verification.',
         }
-        return option
-      }),
+      }
+      return option
+    }),
   }
 }
 
@@ -137,7 +135,6 @@ export async function getLoginVerificationRequirements(
     {
       scope: 'auth.login',
       methods: challenge.methods,
-      oauth_providers: [],
       password_encryption_enabled: false,
     },
     supported
@@ -268,8 +265,6 @@ export async function verify(
       case 'passkey':
         proof = await verifyPasskey(operation, signal, input.rpID, onDomains)
         break
-      case 'oauth':
-        throw new AuthOperationError('OAuth verification is unavailable')
     }
     signal.throwIfAborted()
     if (

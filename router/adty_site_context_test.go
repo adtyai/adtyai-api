@@ -265,7 +265,7 @@ func TestCustomDomainServesAccountAPI(t *testing.T) {
 	assert.NotEqual(t, http.StatusForbidden, f.do(t, http.MethodGet, "shop.sites.example.com", "/api/user/self", "").Code)
 }
 
-func TestCustomDomainRejectsOAuth(t *testing.T) {
+func TestCustomDomainRejectsOAuthPath(t *testing.T) {
 	f := newSiteFixture(t)
 	saved := service.AdtyLoadCustomDomains
 	service.AdtyLoadCustomDomains = func() (map[string]int, error) {
@@ -277,19 +277,15 @@ func TestCustomDomainRejectsOAuth(t *testing.T) {
 	})
 	service.InvalidateAdtySiteCache()
 
-	body := `{"provider":"github","intent":"login"}`
-	var before int64
-	require.NoError(t, f.db.Model(&model.AuthFlow{}).Count(&before).Error)
-	custom := f.do(t, http.MethodPost, "api.customer-brand.com", "/api/oauth/state", body)
+	// /api/oauth now only holds email binding; the host rules for the prefix are unchanged.
+	const path = "/api/oauth/email/bind/start"
+	body := `{"email":"someone@example.com"}`
+	custom := f.do(t, http.MethodPost, "api.customer-brand.com", path, body)
 	assert.Equal(t, http.StatusForbidden, custom.Code, custom.Body.String())
-	assert.Equal(t, http.StatusForbidden, f.do(t, http.MethodGet, "api.customer-brand.com", "/api/oauth/github", "").Code)
-	var after int64
-	require.NoError(t, f.db.Model(&model.AuthFlow{}).Count(&after).Error)
-	assert.Equal(t, before, after, "a custom domain must not create an OAuth flow")
-	assert.Equal(t, http.StatusNotFound, f.do(t, http.MethodPost, "stranger.example.net", "/api/oauth/state", body).Code)
-	assert.Equal(t, http.StatusForbidden, f.do(t, http.MethodPost, "gone.sites.example.com", "/api/oauth/state", body).Code)
+	assert.Equal(t, http.StatusNotFound, f.do(t, http.MethodPost, "stranger.example.net", path, body).Code)
+	assert.Equal(t, http.StatusForbidden, f.do(t, http.MethodPost, "gone.sites.example.com", path, body).Code)
 
-	platform := f.do(t, http.MethodPost, "shop.sites.example.com", "/api/oauth/state", body)
+	platform := f.do(t, http.MethodPost, "shop.sites.example.com", path, body)
 	assert.NotEqual(t, http.StatusForbidden, platform.Code, platform.Body.String())
 	assert.NotEqual(t, http.StatusNotFound, platform.Code, platform.Body.String())
 }

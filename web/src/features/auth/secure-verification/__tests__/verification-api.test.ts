@@ -54,7 +54,6 @@ it('allows a security key when the browser has WebAuthn but no platform authenti
       data: {
         scope: 'passkey.delete',
         methods: [{ method: 'passkey', available: true }],
-        oauth_providers: [],
         password_encryption_enabled: false,
       },
     },

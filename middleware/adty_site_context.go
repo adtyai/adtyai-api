@@ -163,8 +163,7 @@ func AdtyRequireCurrentSiteTerms() gin.HandlerFunc {
 // adtyCustomDomainAdminAPI 是自定义域名上仍然拒绝的平台级管理接口。
 // 其余 /api 路径都按客户端体验放行（登录、注册、充值、用量、令牌等）。
 //
-// /api/oauth 暂时也在这里：第三方登录回跳依赖平台子域名的 host-only Cookie，
-// 自定义域名上的 OAuth 留给后续单独支持（见 TestCustomDomainRejectsOAuth）。
+// /api/oauth 下现在只剩邮箱绑定（第三方登录已删除），它在自定义域名上仍按原规则拒绝。
 func adtyCustomDomainAdminAPI(path string) bool {
 	prefixes := []string{
 		"/api/adty/admin", "/api/channel", "/api/option", "/api/deployments",

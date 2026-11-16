@@ -167,7 +167,7 @@ func TestPasswordlessAccountUsesEmailCodeWithoutPassword(t *testing.T) {
 
 	requirements, err := GetVerificationRequirements(identity, VerificationScopePasswordSet)
 	require.NoError(t, err)
-	assert.Equal(t, []string{VerificationMethodEmailCode, VerificationMethodOAuth}, methodNames(requirements))
+	assert.Equal(t, []string{VerificationMethodEmailCode}, methodNames(requirements))
 	_, err = RequireVerificationMethod(identity, VerificationScopePasswordSet, VerificationMethodPassword)
 	assert.ErrorIs(t, err, ErrProofMethod)
 

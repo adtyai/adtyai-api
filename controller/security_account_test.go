@@ -24,7 +24,6 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
-	"github.com/QuantumNous/new-api/oauth"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/system_setting"
@@ -368,12 +367,9 @@ func TestSecurityAccountRequiresProofBeforeMutation(t *testing.T) {
 		handler          gin.HandlerFunc
 	}{
 		{"password", "/api/user/self", `{"password":"account-password!42","original_password":"enrollment-password"}`, UpdateSelf},
-		{"oauth binding", "/api/oauth/state", `{"provider":"security-account-test","intent":"bind"}`, GenerateOAuthCode},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			user, identity := setupSecurityEnrollmentTest(t)
-			oauth.Register("security-account-test", &authFlowTestOAuthProvider{})
-			t.Cleanup(func() { oauth.Unregister("security-account-test") })
 			response := securityEnrollmentRequest(http.MethodPost, test.path, test.body, "", identity, test.handler)
 			var result securityEnrollmentResponse
 			require.NoError(t, common.Unmarshal(response.Body.Bytes(), &result))
@@ -757,7 +753,7 @@ func TestSecurityAccountMailsFollowTheOwnersLanguage(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			saveLanguage(tc.saved)
 			c, _ := gin.CreateTestContext(httptest.NewRecorder())
-			c.Request = httptest.NewRequest(http.MethodGet, "/api/oauth/github", nil)
+			c.Request = httptest.NewRequest(http.MethodGet, "/api/user/self", nil)
 			if tc.acceptLanguage != "" {
 				c.Request.Header.Set("Accept-Language", tc.acceptLanguage)
 			}
@@ -830,53 +826,6 @@ func TestSecurityAccountEmailRejectsChangedAuthorization(t *testing.T) {
 			current, err := model.GetUserById(user.Id, false)
 			require.NoError(t, err)
 			assert.Equal(t, scenario == "notification failure", current.Email == flow.Email)
-		})
-	}
-}
-
-// Third-party bind is retired: only the Telegram placeholder is registered and
-// its bind column is the one exception left. The flow checks in front of that
-// path still have to reject stale, foreign and expired callbacks.
-func TestSecurityAccountOAuthBindingRejectsInvalidFlow(t *testing.T) {
-	for _, scenario := range []string{"other session", "wrong provider", "expired", "old flow", "mfa enabled"} {
-		t.Run(scenario, func(t *testing.T) {
-			user, identity := setupSecurityEnrollmentTest(t)
-			oauth.Register("account-oauth", &enrollmentOAuthProvider{externalID: "new-binding"})
-			oauth.Register("other-oauth", &enrollmentOAuthProvider{externalID: "wrong-binding"})
-			t.Cleanup(func() { oauth.Unregister("account-oauth"); oauth.Unregister("other-oauth") })
-			operation := service.VerificationOperation{Scope: service.VerificationScopeAccountBind, Context: []byte(`{"provider":"account-oauth"}`)}
-			proof := issueSecurityEnrollmentProof(t, identity, operation, service.VerificationMethodPassword)
-			response := securityEnrollmentRequest("POST", "/api/oauth/state", `{"provider":"account-oauth","intent":"bind"}`, proof, identity, GenerateOAuthCode)
-			var result securityEnrollmentResponse
-			require.NoError(t, common.Unmarshal(response.Body.Bytes(), &result))
-			require.True(t, result.Success, response.Body.String())
-			var started struct {
-				FlowToken string `json:"flow_token"`
-			}
-			require.NoError(t, common.Unmarshal(result.Data, &started))
-			flow, err := model.GetAuthFlow(started.FlowToken, model.AuthFlowMatch{Purpose: model.AuthFlowPurposeOAuth})
-			require.NoError(t, err)
-			provider := "account-oauth"
-			switch scenario {
-			case "other session":
-				identity.SessionID = "different-session"
-			case "wrong provider":
-				provider = "other-oauth"
-			case "expired":
-				require.NoError(t, model.DB.Model(flow).Update("expires_at", time.Now().Add(-time.Second)).Error)
-			case "old flow":
-				require.NoError(t, model.DB.Model(flow).Update("payload", "{}").Error)
-			case "mfa enabled":
-				require.NoError(t, model.DB.Create(&model.TwoFA{UserId: user.Id, Secret: "JBSWY3DPEHPK3PXP", IsEnabled: true}).Error)
-			}
-			handler := func(c *gin.Context) { c.Params = gin.Params{{Key: "provider", Value: provider}}; HandleOAuth(c) }
-			path := "/api/oauth/" + provider + "?state=" + started.FlowToken + "&code=provider-code"
-			response = securityEnrollmentRequest("GET", path, "", "", identity, handler)
-			require.NoError(t, common.Unmarshal(response.Body.Bytes(), &result))
-			assert.False(t, result.Success, response.Body.String())
-			current, err := model.GetUserById(user.Id, false)
-			require.NoError(t, err)
-			assert.NotEqual(t, "new-binding", current.GitHubId)
 		})
 	}
 }

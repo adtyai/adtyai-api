@@ -119,7 +119,6 @@ it('consumes Passkey authorization at setup and activates using only the dedicat
           data: {
             scope: '2fa.setup',
             methods: [{ method: 'passkey', available: true }],
-            oauth_providers: [],
             password_encryption_enabled: false,
           },
         },
@@ -234,7 +233,6 @@ it('reports registration failure without treating a successful password check as
           data: {
             scope: 'passkey.register',
             methods: [{ method: 'password', available: true }],
-            oauth_providers: [],
             password_encryption_enabled: false,
           },
         },
@@ -334,7 +332,6 @@ it.each(['proof', 'setup'] as const)(
             data: {
               scope: '2fa.setup',
               methods: [{ method: 'password', available: true }],
-              oauth_providers: [],
               password_encryption_enabled: false,
             },
           },
@@ -454,7 +451,6 @@ it.each(['wrong code', 'response lost'] as const)(
             data: {
               scope: '2fa.setup',
               methods: [{ method: 'password', available: true }],
-              oauth_providers: [],
               password_encryption_enabled: false,
             },
           },

@@ -55,7 +55,6 @@ function channelVerification() {
       data: {
         scope: 'channel.key.read',
         methods: [{ method: '2fa', available: true }],
-        oauth_providers: [],
         password_encryption_enabled: false,
       },
     },

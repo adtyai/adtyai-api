@@ -669,3 +669,12 @@
 | `web/src/styles/index.css` | 删除 `.auto-skeleton-fade` 规则 | 只给 `auto-skeleton-react` 用，组件和依赖已删除 | 前端死代码清理 2026-11-16 |
 | `THIRD-PARTY-LICENSES.md` | 去掉上面 11 个依赖的行 | 清单只列 `web/package.json` 的直接依赖 | 前端死代码清理 2026-11-16 |
 | `web/AGENTS.md` | 去掉关于 `static-keys.ts` 的说明，更新日志加一条 | 文件已删除 | 前端死代码清理 2026-11-16 |
+| `router/api-router.go` | 删除 `POST /api/oauth/state`、`GET /api/oauth/:provider`、三条 Telegram 旧路由和 `oauth` 包的空导入 | OAuth 框架整体删除，只留邮箱绑定 | 第三方登录框架删除 2026-11-16 |
+| `middleware/access_token_routes.go` | 删除上面三条路由的访问令牌规则 | 路由已删除 | 第三方登录框架删除 2026-11-16 |
+| `controller/secure_verification.go` | 删除 Telegram OAuth、外部身份已被认领、OAuth 账号不匹配的错误码分支 | 这些错误只会由已删的 OAuth 流程产生 | 第三方登录框架删除 2026-11-16 |
+| `service/security_verification.go` | 删除验证方法 `oauth`、范围 `account.binding.unbind`、`VerificationOAuthProvider`、`oauth_providers`；`account.binding.bind` 只接受 email | 第三方账号不再能当二次验证方法 | 第三方登录框架删除 2026-11-16 |
+| `service/access_token_scope.go` | 删除 `account.binding.unbind` 的范围映射 | 范围已删除 | 第三方登录框架删除 2026-11-16 |
+| `service/adty_site_resolve.go` | 删除只给 OAuth 回调用的 `AdtyOAuthSiteTermsContextKey`，条款版本只读查询参数 | OAuth 回调已删除 | 第三方登录框架删除 2026-11-16 |
+| `middleware/adty_site_context.go` | 只改注释：`/api/oauth` 下只剩邮箱绑定 | 前缀规则不变 | 第三方登录框架删除 2026-11-16 |
+| `controller/auth_flow_test.go`、`controller/security_account_test.go`、`controller/security_enrollment_test.go`、`controller/adty_username_test.go`、`controller/telegram_test.go`、`service/security_verification_email_code_test.go` | 删除只测 OAuth 登录、绑定、二次验证的用例和测试 provider；方法清单断言去掉 `oauth`，无可用因素时期望方法不在清单里 | 被测功能已删除；其余安全断言保留 | 第三方登录框架删除 2026-11-16 |
+| `router/adty_deleted_routes_test.go`、`router/access_token_scope_test.go`、`router/adty_site_context_test.go` | 被删路由加入不得复活清单；免检名单去掉 Telegram 旧路由；站点前缀用例改用邮箱绑定路由 | 跟上路由变化，继续钉住前缀规则 | 第三方登录框架删除 2026-11-16 |

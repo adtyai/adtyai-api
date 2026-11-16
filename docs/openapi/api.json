@@ -918,65 +918,6 @@
         ]
       }
     },
-    "/api/oauth/state": {
-      "post": {
-        "summary": "生成OAuth State",
-        "deprecated": true,
-        "description": "创建一次性 OAuth AuthFlow。login 无需鉴权；bind 需要面板 Access Token 并绑定当前登录会话。注意：当前无已启用 provider（registry 仅注册恒为 disabled 的 Telegram），实际会返回 400。",
-        "tags": [
-          "OAuth"
-        ],
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "provider",
-                  "intent"
-                ],
-                "properties": {
-                  "provider": {
-                    "type": "string"
-                  },
-                  "intent": {
-                    "type": "string",
-                    "enum": [
-                      "login",
-                      "bind"
-                    ]
-                  },
-                  "aff": {
-                    "type": "string",
-                    "description": "仅 login intent 可用的 affiliate code"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "成功",
-            "headers": {}
-          },
-          "400": {
-            "description": "当前无已启用 provider，无法创建 OAuth State",
-            "headers": {}
-          }
-        },
-        "security": [
-          {
-            "Combination343": []
-          },
-          {
-            "Combination1243": []
-          }
-        ]
-      }
-    },
     "/api/oauth/email/bind": {
       "post": {
         "summary": "绑定邮箱",
@@ -1133,69 +1074,6 @@
             "SecurityProof": []
           }
         ]
-      }
-    },
-    "/api/oauth/telegram/login": {
-      "get": {
-        "summary": "Telegram登录（已下线）",
-        "deprecated": true,
-        "description": "已下线：该端点固定返回 410，响应体 code 为 TELEGRAM_LEGACY_AUTH_REMOVED。Telegram 仅作为通知渠道，不再提供登录或绑定。",
-        "tags": [
-          "OAuth"
-        ],
-        "parameters": [],
-        "responses": {
-          "410": {
-            "description": "已下线（TELEGRAM_LEGACY_AUTH_REMOVED）",
-            "headers": {}
-          }
-        },
-        "security": []
-      }
-    },
-    "/api/oauth/telegram/bind/start": {
-      "post": {
-        "summary": "创建 Telegram 绑定流程（已下线）",
-        "deprecated": true,
-        "description": "已下线：该端点固定返回 410，响应体 code 为 TELEGRAM_LEGACY_AUTH_REMOVED。Telegram 仅作为通知渠道，不再提供登录或绑定。",
-        "tags": [
-          "OAuth"
-        ],
-        "parameters": [],
-        "responses": {
-          "410": {
-            "description": "已下线（TELEGRAM_LEGACY_AUTH_REMOVED）",
-            "headers": {}
-          }
-        },
-        "security": []
-      }
-    },
-    "/api/oauth/telegram/bind/{flow_token}": {
-      "get": {
-        "summary": "完成 Telegram 绑定（已下线）",
-        "deprecated": true,
-        "description": "已下线：该端点固定返回 410，响应体 code 为 TELEGRAM_LEGACY_AUTH_REMOVED。Telegram 仅作为通知渠道，不再提供登录或绑定。",
-        "tags": [
-          "OAuth"
-        ],
-        "parameters": [
-          {
-            "name": "flow_token",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "410": {
-            "description": "已下线（TELEGRAM_LEGACY_AUTH_REMOVED）",
-            "headers": {}
-          }
-        },
-        "security": []
       }
     },
     "/api/user/self/groups": {

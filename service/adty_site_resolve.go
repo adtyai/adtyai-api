@@ -508,15 +508,7 @@ func AdtyRegisterTermsAccepted(c *gin.Context, siteId int) bool {
 	return adtyRequestSiteTermsVersion(c) == AdtyCurrentSiteCustomerTermsVersion()
 }
 
-// AdtyOAuthSiteTermsContextKey is set only by the OAuth callback after loading
-// its immutable flow. A present empty value must override callback query input.
-const AdtyOAuthSiteTermsContextKey = "adty_oauth_site_terms_version"
-
 func adtyRequestSiteTermsVersion(c *gin.Context) string {
-	if value, present := c.Get(AdtyOAuthSiteTermsContextKey); present {
-		version, _ := value.(string)
-		return strings.TrimSpace(version)
-	}
 	return strings.TrimSpace(c.Query("site_terms_version"))
 }
 
