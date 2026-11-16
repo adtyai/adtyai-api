@@ -335,6 +335,72 @@ describe('RechargeAudit', () => {
     expect(api.runTopupManualRefundStep.mock.calls[0][2]).toBe('payout')
   })
 
+  it.each([
+    ['failed', true],
+    ['success', false],
+  ])(
+    'offers termination with a note when the payout is %s',
+    async (payoutStatus, allowed) => {
+      api.listTopupManualRefunds.mockResolvedValue({
+        facts: {
+          trade_no: 'EPY7001',
+          site_id: 7,
+          user_id: 7,
+          face_usd: '100',
+          manual_refunds: [
+            {
+              refund_id: 'refund-2',
+              trade_no: 'EPY7001',
+              status: 'approved',
+              request_usd: '40',
+              request_quota: 20000000,
+              reason: 'chargeback',
+              approved_at: 2,
+              payout_status: payoutStatus,
+            },
+          ],
+        },
+      })
+      api.runTopupManualRefundStep.mockResolvedValue({
+        refund: { refund_id: 'refund-2', status: 'terminated' },
+      })
+      const user = userEvent.setup()
+      renderPage({ read: true, refund: true })
+      await user.click(await screen.findByRole('button', { name: 'Refund' }))
+      const dialog = await screen.findByRole('dialog', {
+        name: 'Manual refund',
+      })
+      const terminate = await within(dialog).findByRole('button', {
+        name: 'Terminate refund',
+      })
+      if (!allowed) {
+        expect(terminate).toBeDisabled()
+        return
+      }
+      await user.click(terminate)
+      const confirm = await screen.findByRole('alertdialog', {
+        name: 'Terminate refund',
+      })
+      await user.type(
+        within(confirm).getByLabelText('Note (optional)'),
+        'customer withdrew'
+      )
+      await user.click(
+        within(confirm).getByRole('button', { name: 'Terminate refund' })
+      )
+      await waitFor(() =>
+        expect(api.runTopupManualRefundStep).toHaveBeenCalled()
+      )
+      expect(api.runTopupManualRefundStep.mock.calls[0]).toEqual([
+        'EPY7001',
+        'refund-2',
+        'terminate',
+        { idempotency_key: 'refund-2:terminate', note: 'customer withdrew' },
+        'proof',
+      ])
+    }
+  )
+
   it('requires a reason and USD amount before applying', async () => {
     api.refundTopup.mockResolvedValue({
       refund: {

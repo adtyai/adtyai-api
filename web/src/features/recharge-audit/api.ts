@@ -287,21 +287,28 @@ export async function getPaymentOrphans(status: string, page: number) {
   return requireServerSuccess(res.data).data
 }
 
-export async function creditPaymentOrphan(id: number, note: string) {
+export async function creditPaymentOrphan(
+  id: number,
+  note: string,
+  proofToken: string
+) {
   const res = await api.post<ApiResponse<null>>(
     `/api/user/admin/finance/payment-orphans/${id}/credit`,
-    { note }
+    { note },
+    proofHeaders(proofToken)
   )
   requireServerSuccess(res.data)
 }
 
 export async function resolvePaymentOrphan(
   id: number,
-  review: PaymentOrphanReviewRequest
+  review: PaymentOrphanReviewRequest,
+  proofToken: string
 ) {
   const res = await api.post<ApiResponse<PaymentOrphanReview>>(
     `/api/user/admin/finance/payment-orphans/${id}/resolve`,
-    review
+    review,
+    proofHeaders(proofToken)
   )
   return requireServerSuccess(res.data).data
 }
@@ -309,18 +316,22 @@ export async function resolvePaymentOrphan(
 export async function completeTopupManually(
   tradeNo: string,
   proof: string,
-  note: string
+  note: string,
+  proofToken: string
 ) {
   const res = await api.post<ApiResponse<{ already_done: boolean }>>(
     `/api/adty/admin/topup/${encodeURIComponent(tradeNo)}/complete`,
-    { proof, note }
+    { proof, note },
+    proofHeaders(proofToken)
   )
   return requireServerSuccess(res.data).data
 }
 
-export async function queryTopupPayment(tradeNo: string) {
+export async function queryTopupPayment(tradeNo: string, proofToken: string) {
   const res = await api.post<ApiResponse<{ status: string }>>(
-    `/api/adty/admin/topup/${encodeURIComponent(tradeNo)}/query`
+    `/api/adty/admin/topup/${encodeURIComponent(tradeNo)}/query`,
+    undefined,
+    proofHeaders(proofToken)
   )
   return requireServerSuccess(res.data).data
 }
@@ -397,6 +408,9 @@ export type ManualRefundRecord = {
   reason: string
   applied_at?: number
   approved_at?: number
+  approve_note?: string
+  terminated_at?: number
+  terminate_note?: string
   reclaimed_at?: number
   deducted_principal_quota?: number
   shortfall_quota?: number

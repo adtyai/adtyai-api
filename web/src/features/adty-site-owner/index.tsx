@@ -167,7 +167,7 @@ export function SiteOwnerCenter(props: { section: SiteOwnerSectionId }) {
                     </div>
                   </TabsContent>
                   <TabsContent value='vouchers'>
-                    <VoucherPanel />
+                    <VoucherPanel siteId={site.data.id} />
                   </TabsContent>
                   <TabsContent value='notices'>
                     <TelegramBindCard purpose='admin' />

@@ -26,8 +26,11 @@ import { NativeSelect } from '@/components/ui/native-select'
 import { api } from '@/lib/api'
 import { getServerErrorMessage } from '@/lib/server-error-message'
 
-export function VoucherPanel() {
+import { useOwnerVerification } from './owner-verification'
+
+export function VoucherPanel(props: { siteId: number }) {
   const { t } = useTranslation()
+  const owner = useOwnerVerification()
   const [purpose, setPurpose] = useState('site_customer')
   const [amount, setAmount] = useState('')
   const [reason, setReason] = useState('')
@@ -36,16 +39,23 @@ export function VoucherPanel() {
   const [pending, setPending] = useState(false)
 
   const submit = async () => {
-    setPending(true)
     setError('')
     setCode('')
+    // Issuing freezes earnings, so the owner verifies first; the proof is bound to this site.
+    const proof = await owner.verify('voucher.issue', props.siteId)
+    if (!proof) return
+    setPending(true)
     try {
-      const response = await api.post('/api/adty/site/vouchers', {
-        purpose,
-        amount_usd: amount.trim(),
-        source: 'earnings',
-        reason: reason.trim(),
-      })
+      const response = await api.post(
+        '/api/adty/site/vouchers',
+        {
+          purpose,
+          amount_usd: amount.trim(),
+          source: 'earnings',
+          reason: reason.trim(),
+        },
+        { headers: { 'X-Security-Proof': proof } }
+      )
       const body = response.data as {
         success?: boolean
         message?: string
@@ -112,7 +122,12 @@ export function VoucherPanel() {
       <Button
         variant='brand'
         type='submit'
-        disabled={pending || amount.trim() === '' || reason.trim() === ''}
+        disabled={
+          pending ||
+          owner.verifying ||
+          amount.trim() === '' ||
+          reason.trim() === ''
+        }
       >
         {t('Issue code')}
       </Button>

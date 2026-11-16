@@ -35,6 +35,8 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import { SecureVerificationDialog } from '@/features/auth/secure-verification/components/secure-verification-dialog'
+import { useSecureVerification } from '@/features/auth/secure-verification/hooks/use-secure-verification'
 import { formatTimestamp } from '@/lib/format'
 import { handleServerError } from '@/lib/handle-server-error'
 
@@ -65,9 +67,21 @@ export function PaymentOrphanPanel(props: PaymentOrphanPanelProps) {
     void queryClient.invalidateQueries({ queryKey: ['recharge-audit'] })
     void invalidateSidebarBadges(queryClient)
   }
+  const verification = useSecureVerification()
   const credit = useMutation({
-    mutationFn: (id: number) => creditPaymentOrphan(id, ''),
-    onSuccess: () => {
+    mutationFn: async (id: number) => {
+      const proof = await verification.requestVerification({
+        scope: 'adty.payment_orphan.credit',
+        context: { id },
+        title: t('Confirm it is you'),
+        description: t('Crediting a payment requires a fresh verification.'),
+      })
+      if (!proof?.proof_token) return false
+      await creditPaymentOrphan(id, '', proof.proof_token)
+      return true
+    },
+    onSuccess: (done) => {
+      if (!done) return
       toast.success(t('Order credited'))
       void refresh()
     },
@@ -75,6 +89,7 @@ export function PaymentOrphanPanel(props: PaymentOrphanPanelProps) {
   })
   return (
     <>
+      <SecureVerificationDialog {...verification.dialogProps} />
       <Card>
         <CardHeader className='flex flex-row flex-wrap items-start justify-between gap-3'>
           <div>

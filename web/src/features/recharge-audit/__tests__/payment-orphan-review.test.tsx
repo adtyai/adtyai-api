@@ -36,6 +36,22 @@ const api = vi.hoisted(() => ({
   resolvePaymentOrphan: vi.fn(),
 }))
 vi.mock('../api', () => api)
+const verification = vi.hoisted(() => ({ requestVerification: vi.fn() }))
+vi.mock(
+  '@/features/auth/secure-verification/hooks/use-secure-verification',
+  () => ({
+    useSecureVerification: () => ({
+      requestVerification: verification.requestVerification,
+      dialogProps: { state: { phase: 'idle' } },
+      isActive: false,
+      cancel: vi.fn(),
+    }),
+  })
+)
+vi.mock(
+  '@/features/auth/secure-verification/components/secure-verification-dialog',
+  () => ({ SecureVerificationDialog: () => null })
+)
 
 const event: PaymentOrphanEvent = {
   id: 11,
@@ -89,7 +105,11 @@ async function fillEvidence(dialog: HTMLElement) {
   )
 }
 
-beforeEach(() => api.resolvePaymentOrphan.mockResolvedValue(undefined))
+beforeEach(() => {
+  api.resolvePaymentOrphan.mockResolvedValue(undefined)
+  api.creditPaymentOrphan.mockResolvedValue(undefined)
+  verification.requestVerification.mockResolvedValue({ proof_token: 'proof' })
+})
 afterEach(() => {
   cleanup()
   vi.clearAllMocks()
@@ -130,15 +150,77 @@ it('saves a partial reversal as pending review with exact decimal facts and evid
   )
   await user.click(within(dialog).getByRole('button', { name: 'Save review' }))
   await waitFor(() =>
-    expect(api.resolvePaymentOrphan).toHaveBeenCalledWith(11, {
-      status: 'pending_review',
-      trade_no: 'PCK001',
-      external_amount: '12.3400',
-      external_currency: 'CNY',
-      proof: 'provider-proof-001',
-      note: 'Checked external reversal',
+    expect(api.resolvePaymentOrphan).toHaveBeenCalledWith(
+      11,
+      {
+        status: 'pending_review',
+        trade_no: 'PCK001',
+        external_amount: '12.3400',
+        external_currency: 'CNY',
+        proof: 'provider-proof-001',
+        note: 'Checked external reversal',
+      },
+      'proof'
+    )
+  )
+  expect(verification.requestVerification).toHaveBeenCalledWith(
+    expect.objectContaining({
+      scope: 'adty.payment_orphan.resolve',
+      context: {
+        id: 11,
+        status: 'pending_review',
+        trade_no: 'PCK001',
+        external_amount: '12.3400',
+        external_currency: 'CNY',
+        proof: 'provider-proof-001',
+        note: 'Checked external reversal',
+      },
     })
   )
+})
+
+it('does not save the review when verification is cancelled', async () => {
+  verification.requestVerification.mockResolvedValueOnce(null)
+  show()
+  const dialog = await openReview()
+  await fillEvidence(dialog)
+  const user = userEvent.setup()
+  await user.type(
+    within(dialog).getByLabelText('External reversal currency'),
+    'CNY'
+  )
+  await user.click(within(dialog).getByRole('button', { name: 'Save review' }))
+  await waitFor(() =>
+    expect(verification.requestVerification).toHaveBeenCalledOnce()
+  )
+  expect(api.resolvePaymentOrphan).not.toHaveBeenCalled()
+  expect(dialog).toBeVisible()
+})
+
+it('verifies before crediting a payment event', async () => {
+  show({ ...event, can_credit: true })
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole('button', { name: 'Credit' }))
+  await waitFor(() =>
+    expect(api.creditPaymentOrphan).toHaveBeenCalledWith(11, '', 'proof')
+  )
+  expect(verification.requestVerification).toHaveBeenCalledWith(
+    expect.objectContaining({
+      scope: 'adty.payment_orphan.credit',
+      context: { id: 11 },
+    })
+  )
+})
+
+it('does not credit when verification is cancelled', async () => {
+  verification.requestVerification.mockResolvedValueOnce(null)
+  show({ ...event, can_credit: true })
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole('button', { name: 'Credit' }))
+  await waitFor(() =>
+    expect(verification.requestVerification).toHaveBeenCalledOnce()
+  )
+  expect(api.creditPaymentOrphan).not.toHaveBeenCalled()
 })
 
 it.each(['refunded', 'never_credited'])(
@@ -168,7 +250,8 @@ it.each(['refunded', 'never_credited'])(
     await waitFor(() =>
       expect(api.resolvePaymentOrphan).toHaveBeenCalledWith(
         11,
-        expect.objectContaining({ status, external_amount: '0.01' })
+        expect.objectContaining({ status, external_amount: '0.01' }),
+        'proof'
       )
     )
   }
@@ -196,15 +279,19 @@ it('requires a dismissal reason, explains the removed block, and omits reversal 
   )
   await user.click(save)
   await waitFor(() =>
-    expect(api.resolvePaymentOrphan).toHaveBeenCalledWith(11, {
-      status: 'dismissed',
-      trade_no: 'PCK001',
-      external_amount: '0',
-      external_currency: '',
-      proof: 'provider-proof-001',
-      note: 'Checked external reversal',
-      dismissal_reason: 'not_this_order',
-    })
+    expect(api.resolvePaymentOrphan).toHaveBeenCalledWith(
+      11,
+      {
+        status: 'dismissed',
+        trade_no: 'PCK001',
+        external_amount: '0',
+        external_currency: '',
+        proof: 'provider-proof-001',
+        note: 'Checked external reversal',
+        dismissal_reason: 'not_this_order',
+      },
+      'proof'
+    )
   )
 })
 

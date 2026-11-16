@@ -9146,6 +9146,15 @@
     "All order types": "All order types",
     "Withdrawn notification": "Withdrawn",
     "View reseller configuration without changing it.": "View reseller configuration without changing it.",
-    "Change reseller settings. Secrets remain Root-only.": "Change reseller settings. Secrets remain Root-only."
+    "Change reseller settings. Secrets remain Root-only.": "Change reseller settings. Secrets remain Root-only.",
+    "Querying the provider may credit the order, so it requires a fresh verification.": "Querying the provider may credit the order, so it requires a fresh verification.",
+    "Completing an order manually requires a fresh verification.": "Completing an order manually requires a fresh verification.",
+    "Refund terminated": "Refund terminated",
+    "This refund was terminated. Principal already taken back is not returned.": "This refund was terminated. Principal already taken back is not returned.",
+    "Terminate refund": "Terminate refund",
+    "Terminating releases the refund occupancy. Principal already taken back is not returned to the customer.": "Terminating releases the refund occupancy. Principal already taken back is not returned to the customer.",
+    "Note (optional)": "Note (optional)",
+    "Crediting a payment requires a fresh verification.": "Crediting a payment requires a fresh verification.",
+    "Saving a payment review requires a fresh verification.": "Saving a payment review requires a fresh verification."
   }
 }

@@ -27,6 +27,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { NativeSelect } from '@/components/ui/native-select'
 import { Textarea } from '@/components/ui/textarea'
+import { SecureVerificationDialog } from '@/features/auth/secure-verification/components/secure-verification-dialog'
+import { useSecureVerification } from '@/features/auth/secure-verification/hooks/use-secure-verification'
 import { DraftDiscardDialog } from '@/features/system-settings/components/draft-discard-dialog'
 import { formatQuota, formatTimestamp } from '@/lib/format'
 import { handleServerError } from '@/lib/handle-server-error'
@@ -76,10 +78,23 @@ export function PaymentOrphanReviewDialog(props: {
     (key) =>
       draft[key as keyof typeof draft] !== initial[key as keyof typeof initial]
   )
+  const verification = useSecureVerification()
   const mutation = useMutation({
-    mutationFn: (request: PaymentOrphanReviewRequest) =>
-      resolvePaymentOrphan(props.event.id, request),
-    onSuccess: () => {
+    mutationFn: async (request: PaymentOrphanReviewRequest) => {
+      const proof = await verification.requestVerification({
+        scope: 'adty.payment_orphan.resolve',
+        context: { id: props.event.id, ...request },
+        title: t('Confirm it is you'),
+        description: t(
+          'Saving a payment review requires a fresh verification.'
+        ),
+      })
+      if (!proof?.proof_token) return false
+      await resolvePaymentOrphan(props.event.id, request, proof.proof_token)
+      return true
+    },
+    onSuccess: (done) => {
+      if (!done) return
       toast.success(t('Review saved'))
       props.onDone()
       props.onClose()
@@ -154,6 +169,7 @@ export function PaymentOrphanReviewDialog(props: {
           </>
         }
       >
+        <SecureVerificationDialog {...verification.dialogProps} />
         <div className='space-y-2'>
           <Label htmlFor={`${id}-order`}>{t('Order number')}</Label>
           <Input id={`${id}-order`} value={props.event.reference_id} readOnly />

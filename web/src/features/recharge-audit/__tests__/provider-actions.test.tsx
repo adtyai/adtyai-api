@@ -33,6 +33,23 @@ import { useAuthStore } from '@/stores/auth-store'
 
 import { RechargeAudit } from '../index'
 
+const verification = vi.hoisted(() => ({ requestVerification: vi.fn() }))
+vi.mock(
+  '@/features/auth/secure-verification/hooks/use-secure-verification',
+  () => ({
+    useSecureVerification: () => ({
+      requestVerification: verification.requestVerification,
+      dialogProps: { state: { phase: 'idle' } },
+      isActive: false,
+      cancel: vi.fn(),
+    }),
+  })
+)
+vi.mock(
+  '@/features/auth/secure-verification/components/secure-verification-dialog',
+  () => ({ SecureVerificationDialog: () => null })
+)
+
 const providers = [
   { provider: 'bepusdt', label: 'BEpusdt', query: true },
   { provider: 'adty_epay', label: 'Epay channels', query: true },
@@ -225,6 +242,7 @@ it('closes details immediately when the account changes and ignores its late res
 
 beforeEach(() => {
   localStorage.clear()
+  verification.requestVerification.mockResolvedValue({ proof_token: 'proof' })
   vi.spyOn(api, 'get').mockImplementation(async (url, config) => {
     const ownerMode = url.startsWith('/api/adty/site/orders')
     if (
@@ -545,7 +563,15 @@ it('keeps a failed provider query open for retry and distinguishes an unconfirme
     await within(dialog).findByText('No confirmed payment found')
   ).toBeVisible()
   expect(api.post).toHaveBeenCalledWith(
-    '/api/adty/admin/topup/trade-adty_epay-pending/query'
+    '/api/adty/admin/topup/trade-adty_epay-pending/query',
+    undefined,
+    { headers: { 'X-Security-Proof': 'proof' } }
+  )
+  expect(verification.requestVerification).toHaveBeenCalledWith(
+    expect.objectContaining({
+      scope: 'adty.topup.query',
+      context: { trade_no: 'trade-adty_epay-pending' },
+    })
   )
   await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
   await waitFor(() =>

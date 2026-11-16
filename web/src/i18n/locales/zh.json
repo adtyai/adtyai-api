@@ -9146,6 +9146,15 @@
     "All order types": "全部订单类型",
     "Withdrawn notification": "已撤回",
     "View reseller configuration without changing it.": "查看分站设置，不能修改。",
-    "Change reseller settings. Secrets remain Root-only.": "修改分站设置。密钥仍只有 Root 能改。"
+    "Change reseller settings. Secrets remain Root-only.": "修改分站设置。密钥仍只有 Root 能改。",
+    "Querying the provider may credit the order, so it requires a fresh verification.": "查询支付渠道可能会给订单入账，需要重新验证身份。",
+    "Completing an order manually requires a fresh verification.": "人工补单需要重新验证身份。",
+    "Refund terminated": "退款已终止",
+    "This refund was terminated. Principal already taken back is not returned.": "这笔退款已终止，已扣回的本金不会退还。",
+    "Terminate refund": "终止退款",
+    "Terminating releases the refund occupancy. Principal already taken back is not returned to the customer.": "终止后会释放这笔退款占用的额度，已扣回的本金不会退还给客户。",
+    "Note (optional)": "备注（选填）",
+    "Crediting a payment requires a fresh verification.": "给这笔支付入账需要重新验证身份。",
+    "Saving a payment review requires a fresh verification.": "保存支付复核需要重新验证身份。"
   }
 }

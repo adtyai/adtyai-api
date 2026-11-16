@@ -70,6 +70,9 @@ export type SiteOwnerAction =
   | 'staff.update'
   | 'staff.password'
   | 'staff.delete'
+  | 'voucher.issue'
+  | 'voucher.freeze'
+  | 'voucher.cancel'
 
 /** ManageUser actions that change a user's status or role and need step-up. */
 export type AdminUserManageAction = 'disable' | 'enable' | 'promote' | 'demote'

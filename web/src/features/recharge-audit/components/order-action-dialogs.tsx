@@ -59,9 +59,10 @@ type OrderActionProps = {
 
 export function QueryPaymentDialog(props: OrderActionProps) {
   const { t } = useTranslation()
+  const verification = useSecureVerification()
   const mutation = useMutation({
     meta: { errorToast: false },
-    mutationFn: () => {
+    mutationFn: async () => {
       if (
         !props.order?.actions.query ||
         !canAdmin(
@@ -71,13 +72,26 @@ export function QueryPaymentDialog(props: OrderActionProps) {
       ) {
         throw new Error(t('No permission to perform this action'))
       }
-      return queryTopupPayment(props.order.trade_no)
+      const tradeNo = props.order.trade_no
+      const proof = await verification.requestVerification({
+        scope: 'adty.topup.query',
+        context: { trade_no: tradeNo },
+        title: t('Confirm it is you'),
+        description: t(
+          'Querying the provider may credit the order, so it requires a fresh verification.'
+        ),
+      })
+      // Cancelling the verification leaves the dialog as it was.
+      if (!proof?.proof_token) return null
+      return queryTopupPayment(tradeNo, proof.proof_token)
     },
-    onSuccess: () => props.onDone(),
+    onSuccess: (data) => {
+      if (data) props.onDone()
+    },
   })
   const resetQuery = mutation.reset
   useEffect(() => resetQuery(), [props.order?.trade_no, resetQuery])
-  const completed = mutation.isSuccess && mutation.data.status === 'success'
+  const completed = mutation.data?.status === 'success'
   return (
     <ConfirmDialog
       open={props.order !== null}
@@ -91,6 +105,7 @@ export function QueryPaymentDialog(props: OrderActionProps) {
       isLoading={mutation.isPending}
       disabled={completed}
     >
+      <SecureVerificationDialog {...verification.dialogProps} />
       <code className='text-xs break-all'>{props.order?.trade_no}</code>
       {mutation.isError && (
         <Alert variant='destructive'>
@@ -99,7 +114,7 @@ export function QueryPaymentDialog(props: OrderActionProps) {
           </AlertDescription>
         </Alert>
       )}
-      {mutation.isSuccess && (
+      {mutation.data && (
         <Alert>
           <AlertDescription>
             {completed ? t('Order completed') : t('No confirmed payment found')}
@@ -113,6 +128,7 @@ export function QueryPaymentDialog(props: OrderActionProps) {
 /** Manual completion after checking the payment at the provider. */
 export function ManualCompleteDialog(props: OrderActionProps) {
   const { t } = useTranslation()
+  const verification = useSecureVerification()
   const [proof, setProof] = useState('')
   const [note, setNote] = useState('')
   useEffect(() => {
@@ -120,13 +136,29 @@ export function ManualCompleteDialog(props: OrderActionProps) {
     setNote('')
   }, [props.order])
   const mutation = useMutation({
-    mutationFn: () =>
-      completeTopupManually(
-        props.order?.trade_no ?? '',
-        proof.trim(),
-        note.trim()
-      ),
-    onSuccess: () => {
+    mutationFn: async () => {
+      const tradeNo = props.order?.trade_no ?? ''
+      const evidence = proof.trim()
+      const reason = note.trim()
+      const verified = await verification.requestVerification({
+        scope: 'adty.topup.manual_complete',
+        context: { trade_no: tradeNo, proof: evidence, note: reason },
+        title: t('Confirm it is you'),
+        description: t(
+          'Completing an order manually requires a fresh verification.'
+        ),
+      })
+      if (!verified?.proof_token) return false
+      await completeTopupManually(
+        tradeNo,
+        evidence,
+        reason,
+        verified.proof_token
+      )
+      return true
+    },
+    onSuccess: (done) => {
+      if (!done) return
       toast.success(t('Order completed'))
       props.onDone()
       props.onOpenChange(false)
@@ -158,6 +190,7 @@ export function ManualCompleteDialog(props: OrderActionProps) {
         </>
       }
     >
+      <SecureVerificationDialog {...verification.dialogProps} />
       <div className='space-y-2'>
         <Label htmlFor='manual-proof'>
           {t('Proof (transaction hash or platform order number)')}
@@ -197,6 +230,8 @@ export function RefundDialog(props: OrderActionProps) {
   const [payoutAt, setPayoutAt] = useState('')
   const [payoutVoucher, setPayoutVoucher] = useState('')
   const [payoutStatus, setPayoutStatus] = useState('success')
+  const [terminateOpen, setTerminateOpen] = useState(false)
+  const [terminateNote, setTerminateNote] = useState('')
   const typedAmount = refundUsd.trim()
   const typedReady = /^\d+(\.\d{1,8})?$/.test(typedAmount)
   useEffect(() => {
@@ -208,6 +243,8 @@ export function RefundDialog(props: OrderActionProps) {
     setPayoutAt('')
     setPayoutVoucher('')
     setPayoutStatus('success')
+    setTerminateOpen(false)
+    setTerminateNote('')
     setIdempotencyKey(crypto.randomUUID())
   }, [props.order])
   const preview = useQuery({
@@ -293,12 +330,16 @@ export function RefundDialog(props: OrderActionProps) {
         body.voucher = payoutVoucher.trim()
         body.paid_at = payoutAt.trim() ? Math.floor(new Date(payoutAt).getTime() / 1000) : 0
       }
+      // The proof binds the note, so the body and the proof context carry the same text.
+      const note = step === 'terminate' ? terminateNote.trim() : ''
+      if (note) body.note = note
       const proof = await verification.requestVerification({
         scope: 'adty.topup.manual_refund_step',
         context: {
           trade_no: props.order?.trade_no,
           refund_id: selected.refund_id,
           step,
+          note: note || undefined,
           payout_status: step === 'payout' ? payoutStatus : undefined,
           payout_currency: step === 'payout' ? payoutCurrency.trim() : undefined,
           payout_amount: step === 'payout' ? payoutAmount.trim() : undefined,
@@ -318,9 +359,12 @@ export function RefundDialog(props: OrderActionProps) {
       )
     },
     onSuccess: (_data, step) => {
-      toast.success(
-        step === 'complete' ? t('Refund completed') : t('Refund step recorded')
-      )
+      const done: Partial<Record<typeof step, string>> = {
+        complete: t('Refund completed'),
+        terminate: t('Refund terminated'),
+      }
+      toast.success(done[step] ?? t('Refund step recorded'))
+      if (step === 'terminate') setTerminateNote('')
       refresh()
     },
     onError: (error) => {
@@ -516,6 +560,18 @@ export function RefundDialog(props: OrderActionProps) {
               {t('Internal reclaim')}: {selected.reclaimed_at ? t('recorded') : t('pending')}. {t('Offline payout')}: {selected.payout_status || t('pending')}. {t('Gift')}: {selected.bonus_at ? t('recorded') : t('pending')}. {t('Commission')}: {selected.commission_at ? t('recorded') : t('pending')}.
             </p>
           )}
+          {selected?.status === 'terminated' && (
+            <Alert>
+              <AlertDescription>
+                {t(
+                  'This refund was terminated. Principal already taken back is not returned.'
+                )}
+                {selected.terminate_note
+                  ? ` ${t('Note')}: ${selected.terminate_note}`
+                  : ''}
+              </AlertDescription>
+            </Alert>
+          )}
           {selected && selected.status !== 'completed' && selected.status !== 'terminated' && (
             <div className='flex flex-wrap gap-2'>
               <Button
@@ -553,8 +609,42 @@ export function RefundDialog(props: OrderActionProps) {
               >
                 {t('Complete refund')}
               </Button>
+              <Button
+                variant='destructive'
+                disabled={!canStep(selected.payout_status !== 'success')}
+                onClick={() => setTerminateOpen(true)}
+              >
+                {t('Terminate refund')}
+              </Button>
             </div>
           )}
+          <ConfirmDialog
+            open={terminateOpen}
+            onOpenChange={setTerminateOpen}
+            title={t('Terminate refund')}
+            desc={t(
+              'Terminating releases the refund occupancy. Principal already taken back is not returned to the customer.'
+            )}
+            confirmText={t('Terminate refund')}
+            destructive
+            handleConfirm={() => {
+              // Close first so the verification dialog opens over the refund dialog.
+              setTerminateOpen(false)
+              stepMutation.mutate('terminate')
+            }}
+          >
+            <div className='space-y-2'>
+              <Label htmlFor='refund-terminate-note'>
+                {t('Note (optional)')}
+              </Label>
+              <Textarea
+                id='refund-terminate-note'
+                value={terminateNote}
+                onChange={(event) => setTerminateNote(event.target.value)}
+                rows={3}
+              />
+            </div>
+          </ConfirmDialog>
           {selected && selected.status !== 'completed' && selected.status !== 'terminated' && !!selected.approved_at && (
             <div className='space-y-2'>
               <Label htmlFor='payout-currency'>{t('Offline payout currency')}</Label>
