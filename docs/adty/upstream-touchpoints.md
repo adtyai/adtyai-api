@@ -665,3 +665,7 @@
 | `AGENTS.md`、`web/AGENTS.md` | 把六种语言包“留在仓库里”的说法改为已删除并登记在删除清单 | 规范要和仓库实际内容一致 | 语言清理 2026-11-16 |
 | `web/src/i18n/languages.test.ts`、`web/src/features/usage-logs/audit/__tests__/viewer.test.tsx`、`web/src/features/auth/secure-verification/__tests__/verification-flow.test.tsx` | 不再导入六种语言包；审计记录和邮箱验证码标签用例只保留简体中文和英文 | 被导入的语言包已删除 | 语言清理 2026-11-16 |
 | `web/src/features/channels/components/__tests__/model-mapping-batch-dialog.test.tsx`、`web/src/features/models/__tests__/model-listing.test.tsx` | 换行和截断用例改用简体中文包或英文原文，不再借用法语包 | 法语包已删除；断言的是样式类，与语言无关 | 语言清理 2026-11-16 |
+| `web/package.json`、`web/bun.lock` | 移除 `ai`、`auto-skeleton-react`、`input-otp`、`nanoid`、`react-resizable-panels`、`sse.js`、`stream-markdown-parser`、`tokenlens`、`use-stick-to-bottom`、`@xyflow/react`、`embla-carousel-react` | 引用它们的文件已全部删除（见 deleted-features.md） | 前端死代码清理 2026-11-16 |
+| `web/src/styles/index.css` | 删除 `.auto-skeleton-fade` 规则 | 只给 `auto-skeleton-react` 用，组件和依赖已删除 | 前端死代码清理 2026-11-16 |
+| `THIRD-PARTY-LICENSES.md` | 去掉上面 11 个依赖的行 | 清单只列 `web/package.json` 的直接依赖 | 前端死代码清理 2026-11-16 |
+| `web/AGENTS.md` | 去掉关于 `static-keys.ts` 的说明，更新日志加一条 | 文件已删除 | 前端死代码清理 2026-11-16 |

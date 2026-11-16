@@ -103,8 +103,6 @@ Versions below are the resolved versions for the checked-in manifests and lockfi
 | web      | production  | npm       | `@tanstack/react-virtual`                               | `3.14.6`                             | MIT                     |
 | web      | production  | npm       | `@visactor/react-vchart`                                | `2.1.4`                              | MIT                     |
 | web      | production  | npm       | `@visactor/vchart`                                      | `2.1.4`                              | MIT                     |
-| web      | production  | npm       | `ai`                                                    | `7.0.136`                            | Apache-2.0              |
-| web      | production  | npm       | `auto-skeleton-react`                                   | `1.0.5`                              | MIT                     |
 | web      | production  | npm       | `axios`                                                 | `1.20.0`                             | MIT                     |
 | web      | production  | npm       | `class-variance-authority`                              | `0.7.1`                              | Apache-2.0              |
 | web      | production  | npm       | `clsx`                                                  | `2.1.1`                              | MIT                     |
@@ -112,12 +110,10 @@ Versions below are the resolved versions for the checked-in manifests and lockfi
 | web      | production  | npm       | `dayjs`                                                 | `1.11.21`                            | MIT                     |
 | web      | production  | npm       | `dompurify`                                             | `3.4.17`                             | Apache-2.0 OR MPL-2.0   |
 | web      | production  | npm       | `i18next`                                               | `26.5.3`                             | MIT                     |
-| web      | production  | npm       | `input-otp`                                             | `1.5.0`                              | MIT                     |
 | web      | production  | npm       | `katex`                                                 | `0.18.2`                             | MIT                     |
 | web      | production  | npm       | `lucide-react`                                          | `1.25.0`                             | ISC                     |
 | web      | production  | npm       | `marked`                                                | `18.0.6`                             | MIT                     |
 | web      | production  | npm       | `motion`                                                | `12.42.2`                            | MIT                     |
-| web      | production  | npm       | `nanoid`                                                | `5.1.16`                             | MIT                     |
 | web      | production  | npm       | `node-forge`                                            | `1.4.3`                              | BSD-3-Clause OR GPL-2.0 |
 | web      | production  | npm       | `qrcode.react`                                          | `4.2.0`                              | ISC                     |
 | web      | production  | npm       | `react`                                                 | `19.2.7`                             | MIT                     |
@@ -126,18 +122,13 @@ Versions below are the resolved versions for the checked-in manifests and lockfi
 | web      | production  | npm       | `react-hook-form`                                       | `7.82.0`                             | MIT                     |
 | web      | production  | npm       | `react-i18next`                                         | `17.1.0`                             | MIT                     |
 | web      | production  | npm       | `react-icons`                                           | `5.7.0`                              | MIT                     |
-| web      | production  | npm       | `react-resizable-panels`                                | `4.14.6`                             | MIT                     |
 | web      | production  | npm       | `react-top-loading-bar`                                 | `3.0.2`                              | MIT                     |
 | web      | production  | npm       | `recharts`                                              | `3.9.1`                              | MIT                     |
 | web      | production  | npm       | `shiki`                                                 | `4.3.1`                              | MIT                     |
 | web      | production  | npm       | `sonner`                                                | `2.0.7`                              | MIT                     |
-| web      | production  | npm       | `sse.js`                                                | `2.8.0`                              | Apache-2.0              |
-| web      | production  | npm       | `stream-markdown-parser`                                | `1.2.18`                             | MIT                     |
 | web      | production  | npm       | `tailwind-merge`                                        | `3.6.0`                              | MIT                     |
 | web      | production  | npm       | `tailwindcss`                                           | `4.3.3`                              | MIT                     |
-| web      | production  | npm       | `tokenlens`                                             | `1.3.1`                              | MIT                     |
 | web      | production  | npm       | `tw-animate-css`                                        | `1.4.0`                              | MIT                     |
-| web      | production  | npm       | `use-stick-to-bottom`                                   | `1.1.6`                              | MIT                     |
 | web      | production  | npm       | `vaul`                                                  | `1.1.2`                              | MIT                     |
 | web      | production  | npm       | `yace`                                                  | `1.1.1`                              | MIT                     |
 | web      | production  | npm       | `yaml`                                                  | `2.9.0`                              | ISC                     |
@@ -156,8 +147,6 @@ Versions below are the resolved versions for the checked-in manifests and lockfi
 | web      | development | npm       | `@types/node-forge`                                     | `1.3.14`                             | MIT                     |
 | web      | development | npm       | `@types/react`                                          | `19.2.17`                            | MIT                     |
 | web      | development | npm       | `@types/react-dom`                                      | `19.2.3`                             | MIT                     |
-| web      | development | npm       | `@xyflow/react`                                         | `12.11.2`                            | MIT                     |
-| web      | development | npm       | `embla-carousel-react`                                  | `8.6.0`                              | MIT                     |
 | web      | development | npm       | `jsdom`                                                 | `29.1.1`                             | MIT                     |
 | web      | development | npm       | `knip`                                                  | `6.27.0`                             | ISC                     |
 | web      | development | npm       | `oxfmt`                                                 | `0.72.0`                             | MIT                     |

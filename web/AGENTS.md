@@ -68,7 +68,7 @@
   各 feature 的 `constants.ts` 中常出现「枚举/状态 + 展示文案」或「成功/错误消息」，须统一约定以免遗漏 i18n、用法混乱：
   - **成功/错误/提示类消息**（如 `SUCCESS_MESSAGES`、`ERROR_MESSAGES`）：常量值仅表示 **i18n 键**（与英文 fallback 同字面量）。展示时**必须**通过 `t()` 使用，例如 `toast.success(t(SUCCESS_MESSAGES.API_KEY_CREATED))`、`toast.error(t(ERROR_MESSAGES.UNEXPECTED))`，**禁止**直接 `toast.success(SUCCESS_MESSAGES.xxx)` 当作最终文案。
   - **状态/选项的 label**：在常量中统一用 **labelKey**（字符串，即 i18n 键），组件中通过 `t(config.labelKey)` 渲染；或约定用 `label` 存与 en 一致的 key 字符串，组件用 `t(config.label)`。同一 feature 内只采用一种方式，避免混用。
-  - **新增此类常量时**：新 key 必须在两个正式语言包 `src/i18n/locales/en.json` 和 `zh.json` 中有非空文本；除品牌和技术名词外，中文不得等于英文显示值或英文原始键。英文显示值可以不同于语义键。CI 的两个 workflow 都跑 `node scripts/adty/i18n-check.mjs` 检查这一点。`src/i18n/static-keys.ts` 的 `STATIC_I18N_KEYS` 目前全仓没有 import，只是人工登记，不参与提取或校验。
+  - **新增此类常量时**：新 key 必须在两个正式语言包 `src/i18n/locales/en.json` 和 `zh.json` 中有非空文本；除品牌和技术名词外，中文不得等于英文显示值或英文原始键。英文显示值可以不同于语义键。CI 的两个 workflow 都跑 `node scripts/adty/i18n-check.mjs` 检查这一点。
 
 **数字格式化与 Intl 语言参数（强制）**
 
@@ -239,3 +239,4 @@
 - **2026-11-12**：站长不可更换。正式语言为简体中文和英文。工单、通知机器人和分组健康沿用现有组件，不另造视觉系统。镜像版本规则与构建工作流一致，仓库内 `VERSION` 保持为空。
 - **2026-11-16**：翻译门禁与实际可加载的中英语言包一致，允许语义化英文显示值，并拒绝中文保留英文显示值或原始键的回退。
 - **2026-11-16**：删除繁体中文、法语、日语、韩语、俄语、越南语的语言包和文档站内容，仓库只保留简体中文和英文。
+- **2026-11-16**：删除没有任何引用的前端文件：`components/ai-elements` 只保留 `code-block`，未使用的 `components/ui` 基础组件、品牌图标、首页未渲染的区块和 `i18n/static-keys.ts`；移除 11 个不再使用的依赖。需要这些基础组件时从上游或组件库重新加入，并从删除清单里去掉对应路径。

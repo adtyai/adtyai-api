@@ -446,3 +446,17 @@ P6 移植旧项目前端时，不要把 `?aff=` 和 `features/auth/lib/storage.t
 - 保留分组名称、法律页面和首页 SEO 文本里按内容语言码存的键（`model.AdtyContentLangs`、前端 `LEGACY_CONTENT_LANGS`），以及首页旧语言路径（`/fr` 等）到正式语言的处理。
 - 保留根目录的 `README.fr.md`、`README.ja.md`、`README.zh_TW.md`，它们是上游项目说明。
 - 这些路径登记在 [deleted-paths.txt](deleted-paths.txt)，合并上游时不带回来。
+
+## 没有任何引用的前端文件（2026-11-16）
+
+按 knip 的结果删除 103 个文件，删除后类型检查、生产构建和全部前端测试通过。这些文件没有任何页面、组件或测试引用。
+
+- `web/src/components/ai-elements/`：聊天界面组件，Playground 删除后只有 `code-block.tsx` 还在用；除它和它的两个测试外全部删除，包括只被自己的测试引用的 `prompt-input.tsx`、`response*.ts(x)`。
+- `web/src/components/ui/` 下没有引用的基础组件：`aspect-ratio`、`breadcrumb`、`carousel`、`context-menu`、`direction`、`hover-card`、`input-otp`、`kbd`、`menubar`、`navigation-menu`、`pagination`、`resizable`、`slider`。
+- `web/src/assets/` 下没有引用的品牌图标和 Logo 组件，`web/src/components/layout/components/` 下的 `glow`、`logo`、`mockup`、`navbar`、`section`，以及 `animate-in-view`、`auto-skeleton`、`coming-soon`、`model-group-selector.tsx`、`lib/use-controllable-state.ts`。
+- `web/src/features/adty-home/components/` 下首页没有渲染的区块：`client-guides`、`faq`、`landing-section`、`payment-strip`、`popular-models`、`price-compare-card`、`price-text`、`selling-points`、`steps`。
+- 没有引用的汇总导出文件：`features/auth/index.ts`、`features/pricing/hooks/index.ts`、`features/pricing/lib/index.ts`、`features/rankings/lib/index.ts`、`features/usage-logs/lib/index.ts`，以及 `features/adty-promo/lib/dates.ts`。
+- `web/src/i18n/static-keys.ts`：人工登记的文案清单，没有读取方，不参与提取或校验。
+- 移除不再使用的依赖：`ai`、`auto-skeleton-react`、`input-otp`、`nanoid`、`react-resizable-panels`、`sse.js`、`stream-markdown-parser`、`tokenlens`、`use-stick-to-bottom`、`@xyflow/react`、`embla-carousel-react`，并从 `THIRD-PARTY-LICENSES.md` 去掉对应行。`web/src/styles/index.css` 去掉只给 `auto-skeleton-react` 用的样式。
+- 保留只被测试引用的文件（如 `risk-acknowledgement-dialog.tsx`、`theme-quick-switcher.tsx`）和未使用的导出，另行判断。
+- 这些路径登记在 [deleted-paths.txt](deleted-paths.txt)。以后要用其中的基础组件时，从上游或组件库重新加入并从清单里去掉对应路径。
