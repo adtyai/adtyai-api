@@ -40,9 +40,11 @@ import { cn } from '@/lib/utils'
 
 import { quoteAdtyTopup } from '../api'
 import { bonusRateFor, bonusUsdFor } from '../lib/bonus'
-import { methodLabel } from '../lib/methods'
+import { paymentMethodKey } from '../lib/methods'
 import { formatPaymentAmount, formatUsd } from '../lib/money'
 import type { AdtyMethod, AdtyTopupInfo } from '../types'
+
+import { PaymentMethodButtons } from './payment-method-buttons'
 
 type AdtyRechargeCardProps = {
   info: AdtyTopupInfo | undefined
@@ -55,24 +57,6 @@ type AdtyRechargeCardProps = {
     promoCode: string,
     paymentScene: string
   ) => void
-}
-
-/** Epay lists one button per channel, so a method id alone is not unique. */
-function paymentMethodKey(method: AdtyMethod): string {
-  return `${method.id}:${method.channel_id ?? 0}`
-}
-
-/** Repeated names get a number (Alipay 1, Alipay 2) so every button reads differently. */
-function paymentMethodLabels(labels: string[]): string[] {
-  const total = new Map<string, number>()
-  for (const label of labels) total.set(label, (total.get(label) ?? 0) + 1)
-  const seen = new Map<string, number>()
-  return labels.map((label) => {
-    if ((total.get(label) ?? 0) < 2) return label
-    const next = (seen.get(label) ?? 0) + 1
-    seen.set(label, next)
-    return `${label} ${next}`
-  })
 }
 
 export function AdtyRechargeCard(props: AdtyRechargeCardProps) {
@@ -101,9 +85,6 @@ export function AdtyRechargeCard(props: AdtyRechargeCardProps) {
       : (scene?.methods ?? [])
   const method =
     methods.find((item) => paymentMethodKey(item) === methodKey) ?? null
-  const methodLabels = paymentMethodLabels(
-    methods.map((item) => item.label || t(methodLabel(item.id)))
-  )
   const fixedAmount =
     method?.face_usd === undefined ? undefined : Number(method.face_usd)
   const amount =
@@ -295,32 +276,11 @@ export function AdtyRechargeCard(props: AdtyRechargeCardProps) {
           <Label className='text-muted-foreground text-xs font-medium tracking-wider uppercase'>
             {t('Payment method')}
           </Label>
-          <div className='grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6'>
-            {methods.map((item, index) => (
-              <Button
-                key={paymentMethodKey(item)}
-                variant='outline'
-                disabled={!item.available}
-                aria-pressed={methodKey === paymentMethodKey(item)}
-                className={cn(
-                  'h-auto min-h-12 flex-col items-start px-3 py-2 text-left whitespace-normal',
-                  methodKey === paymentMethodKey(item)
-                    ? 'border-foreground bg-foreground/5'
-                    : 'border-muted'
-                )}
-                onClick={() => setMethodKey(paymentMethodKey(item))}
-              >
-                <span className='text-sm font-medium'>
-                  {methodLabels[index]}
-                </span>
-                {!item.available && (
-                  <span className='text-muted-foreground text-xs'>
-                    {t('Unavailable')}
-                  </span>
-                )}
-              </Button>
-            ))}
-          </div>
+          <PaymentMethodButtons
+            methods={methods}
+            selected={methodKey}
+            onSelect={setMethodKey}
+          />
         </section>
 
         <section

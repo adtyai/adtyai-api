@@ -50,6 +50,8 @@ export type AdtyOrderStatus =
   | 'refunded'
 
 export type AdtyOrderExt = {
+  /** Epay button name at order time, for example Alipay 1. */
+  method_label?: string
   payment_scene?: string
   payment_scene_name?: string
   payment_scene_version?: number

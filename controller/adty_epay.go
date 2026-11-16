@@ -39,9 +39,6 @@ func adtyEpayTimeouts() (perChannel, total time.Duration) {
 	return perChannel, total
 }
 
-// adtyEpayChosenChannelUnavailable 是客户选的通道下不了单时的提示：不替客户换通道，让客户自己换一个按钮。
-const adtyEpayChosenChannelUnavailable = "This payment channel is not available right now. Choose another payment method."
-
 type adtyEpayPayRequest struct {
 	PaymentScene      string `json:"payment_scene"`
 	Amount            int64  `json:"amount"`
@@ -87,7 +84,7 @@ func RequestAdtyEpayPay(c *gin.Context) {
 	}
 	allowedChannels, ok := service.AdtyEpayChannelAllowed(scene, req.ChannelId)
 	if !ok {
-		common.ApiErrorT(c, adtyEpayChosenChannelUnavailable)
+		common.ApiError(c, service.ErrAdtyEpayChosenChannelUnavailable)
 		return
 	}
 	maxAttempts := adtyEpayMaxAttempts
@@ -127,6 +124,7 @@ func RequestAdtyEpayPay(c *gin.Context) {
 			quote:        quote,
 			expireAt:     time.Now().Unix() + int64(minutes*60),
 			channelID:    channel.Id,
+			methodLabel:  method.DisplayName,
 		})
 		if errors.Is(err, model.ErrAdtyEpayDailyLimit) {
 			continue
@@ -173,7 +171,7 @@ func RequestAdtyEpayPay(c *gin.Context) {
 		return
 	}
 	if req.ChannelId > 0 {
-		common.ApiErrorT(c, adtyEpayChosenChannelUnavailable)
+		common.ApiError(c, service.ErrAdtyEpayChosenChannelUnavailable)
 		return
 	}
 	common.ApiErrorT(c, "This payment method is not available")

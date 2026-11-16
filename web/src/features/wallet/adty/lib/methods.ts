@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import type { AdtyOrderStatus } from '../types'
+import type { AdtyMethod, AdtyOrderStatus } from '../types'
 
 /** Display names; the method IDs are what the API stores. */
 export const METHOD_LABELS: Record<string, string> = {
@@ -37,6 +37,24 @@ export const CHAIN_NAMES: Record<string, string> = {
 
 export function methodLabel(method: string): string {
   return METHOD_LABELS[method] ?? method
+}
+
+/** Epay lists one button per channel, so a method id alone is not unique. */
+export function paymentMethodKey(method: AdtyMethod): string {
+  return `${method.id}:${method.channel_id ?? 0}`
+}
+
+/** Repeated names get a number (Alipay 1, Alipay 2) so every button reads differently. */
+export function paymentMethodLabels(labels: string[]): string[] {
+  const total = new Map<string, number>()
+  for (const label of labels) total.set(label, (total.get(label) ?? 0) + 1)
+  const seen = new Map<string, number>()
+  return labels.map((label) => {
+    if ((total.get(label) ?? 0) < 2) return label
+    const next = (seen.get(label) ?? 0) + 1
+    seen.set(label, next)
+    return `${label} ${next}`
+  })
 }
 
 export const ORDER_STATUS_LABELS: Record<AdtyOrderStatus, string> = {

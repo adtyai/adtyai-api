@@ -341,7 +341,10 @@ export function RechargeAudit(props: {
                       header: t('Payment method'),
                       cell: (row) => (
                         <div className='flex flex-col'>
-                          <span>{t(methodLabel(row.payment_method))}</span>
+                          <span>
+                            {row.method_label ||
+                              t(methodLabel(row.payment_method))}
+                          </span>
                           {row.channel_name && (
                             <span className='text-muted-foreground text-xs'>
                               {row.channel_name}

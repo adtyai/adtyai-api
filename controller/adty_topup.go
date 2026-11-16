@@ -194,6 +194,7 @@ type adtyOrderDraft struct {
 	quote        *service.AdtyQuote
 	expireAt     int64
 	channelID    int
+	methodLabel  string // 易支付通道方式的显示名称，下单时记进订单
 }
 
 // newAdtyTradeNo 生成 <前缀><uid><6 位随机><unix>，易支付要求不超过 32 位。
@@ -272,6 +273,7 @@ func createAdtyOrder(c *gin.Context, draft adtyOrderDraft) (*model.TopUp, *model
 		TopupGroupRatio: quote.TopupGroupRatio,
 		ExpireAt:        draft.expireAt,
 		ChannelId:       draft.channelID,
+		MethodLabel:     draft.methodLabel,
 		PromoCodeId:     quote.PromoCodeId,
 		PromoBonusUSD:   quote.PromoBonusUSD,
 		PromoFunder:     quote.PromoFunder,

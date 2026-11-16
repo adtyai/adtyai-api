@@ -115,6 +115,83 @@ describe('TeamPanel', () => {
     expect(screen.queryByRole('button', { name: 'Join team' })).not.toBeInTheDocument()
   })
 
+  it('lets the leader top up through the chosen Epay channel button', async () => {
+    vi.spyOn(api, 'get').mockImplementation(async (url) => {
+      const path = String(url)
+      if (path === '/api/adty/teams/mine') {
+        return {
+          data: {
+            success: true,
+            data: {
+              team: {
+                team_id: 3,
+                name: 'Alpha',
+                role: 'leader',
+                discount: '1',
+                shared_quota: 10,
+                status: 'active',
+              },
+            },
+          },
+        }
+      }
+      if (path === '/api/adty/topup/info') {
+        return {
+          data: {
+            success: true,
+            data: {
+              methods: [],
+              scenes: [
+                {
+                  key: 'wallet_topup',
+                  name: 'Wallet top-up',
+                  min_usd: '0',
+                  max_usd: '0',
+                  methods: [
+                    { id: 'usdt.trc20', kind: 'usdt', available: true },
+                    {
+                      id: 'alipay',
+                      kind: 'epay',
+                      available: true,
+                      label: '支付宝1',
+                      channel_id: 7,
+                    },
+                    {
+                      id: 'alipay',
+                      kind: 'epay',
+                      available: true,
+                      label: '支付宝2',
+                      channel_id: 9,
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        }
+      }
+      return { data: { success: true, data: { items: [] } } }
+    })
+    const post = vi
+      .spyOn(api, 'post')
+      .mockResolvedValue({ data: { success: true, data: {} } })
+    const user = userEvent.setup()
+    render(<TeamPanel />, { wrapper })
+    await user.type(await screen.findByLabelText('Team top-up'), '10')
+    const topup = screen.getByRole('button', { name: 'Team top-up' })
+    expect(topup).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'USDT · TRC20' })).toBeVisible()
+    await user.click(screen.getByRole('button', { name: '支付宝2' }))
+    await user.click(topup)
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith(
+        '/api/adty/teams/3/topups',
+        { amount_usd: '10', method: 'alipay', channel_id: 9 },
+        expect.anything()
+      )
+    )
+  })
+
   it('labels the create-team price as a post-discount payment ratio and defaults to paying the ordinary price', async () => {
     mockMineTeamGet(() => ({
       data: { success: true, data: { team: null } },

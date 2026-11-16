@@ -45,6 +45,7 @@ type rechargeAuditOrder struct {
 	PaidTxHash          string               `json:"paid_tx_hash"`
 	PaidSource          string               `json:"paid_source"`
 	ChannelId           int                  `json:"channel_id"`
+	MethodLabel         string               `json:"method_label"`
 	ChannelName         string               `json:"channel_name"`
 	Anomaly             string               `json:"anomaly"`
 	Actions             rechargeAuditActions `json:"actions" gorm:"-"`
@@ -146,7 +147,7 @@ const rechargeAuditSelect = `t.id, t.user_id, COALESCE(u.username, '') AS userna
 	COALESCE(a.pay_amount, 0) AS pay_amount, COALESCE(a.pay_currency, '') AS pay_currency,
 	COALESCE(a.paid_amount, 0) AS paid_amount, COALESCE(a.paid_currency, '') AS paid_currency,
 	COALESCE(a.paid_tx_hash, '') AS paid_tx_hash, COALESCE(a.paid_source, '') AS paid_source,
-	COALESCE(a.channel_id, 0) AS channel_id`
+	COALESCE(a.channel_id, 0) AS channel_id, COALESCE(a.method_label, '') AS method_label`
 
 // GetRechargeAudit 分页列出充值订单，带面额、加赠、应付、实付和异常标记。
 func GetRechargeAudit(c *gin.Context) {

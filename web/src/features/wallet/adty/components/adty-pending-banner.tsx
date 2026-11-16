@@ -42,7 +42,8 @@ export function AdtyPendingBanner(props: AdtyPendingBannerProps) {
       <AlertDescription className='flex flex-wrap items-center justify-between gap-3'>
         <span>
           {t('{{method}}, ${{amount}}, order {{tradeNo}}', {
-            method: t(methodLabel(order.payment_method)),
+            method:
+              order.ext.method_label || t(methodLabel(order.payment_method)),
             amount: order.ext.face_usd,
             tradeNo: order.trade_no,
           })}

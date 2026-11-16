@@ -317,6 +317,9 @@ func adtyEpaySceneChannelMethods(scene model.AdtyPaymentScene, method AdtyMethod
 	return out, nil
 }
 
+// ErrAdtyEpayChosenChannelUnavailable 是客户选的易支付通道下不了单时的提示：不替客户换通道，让客户自己换一个按钮。
+var ErrAdtyEpayChosenChannelUnavailable = common.NewMessage("This payment channel is not available right now. Choose another payment method.")
+
 // AdtyEpayChannelAllowed 检查客户选的通道在这个场景里能不能用，返回挑通道时的候选范围。
 // channelID 为 0 表示不指定，候选就是场景限定的通道（空表示不限）。
 func AdtyEpayChannelAllowed(scene *model.AdtyPaymentScene, channelID int) ([]int, bool) {

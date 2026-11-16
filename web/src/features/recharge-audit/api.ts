@@ -61,6 +61,8 @@ export type RechargeAuditOrder = {
   paid_source: string
   channel_id: number
   channel_name: string
+  /** Epay button name at order time, for example Alipay 1. */
+  method_label?: string
   anomaly: '' | 'missing_ext' | 'paid_mismatch'
   actions: { complete: boolean; refund: boolean; query: boolean }
 }

@@ -12,9 +12,11 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// StartAdtyTeamTopupPayment opens an epay order for a team.
+// StartAdtyTeamTopupPayment opens an epay or USDT order for a team.
 // The payable amount uses the configured top-up price. The order has no gift.
-func StartAdtyTeamTopupPayment(leaderID int, teamID int64, amountUSD decimal.Decimal, method, key, clientIP string) (*model.AdtyTopupOrder, error) {
+// A positive channelID pins the Epay order to that channel: if it cannot take
+// the order, the leader is asked to choose another payment method.
+func StartAdtyTeamTopupPayment(leaderID int, teamID int64, amountUSD decimal.Decimal, method string, channelID int, key, clientIP string) (*model.AdtyTopupOrder, error) {
 	method, key = strings.TrimSpace(method), strings.TrimSpace(key)
 	if leaderID <= 0 || teamID <= 0 || !amountUSD.IsPositive() || !amountUSD.Equal(decimal.NewFromInt(amountUSD.IntPart())) || key == "" {
 		return nil, ErrAdtyTeamInvalid
@@ -30,7 +32,8 @@ func StartAdtyTeamTopupPayment(leaderID int, teamID int64, amountUSD decimal.Dec
 	}
 	tradeNo := adtyTeamTopupTradeNo("TTEP", teamID, key)
 	existing, conflict, err := adtyClaimTeamTopupReplay(tradeNo, adtyTeamTopupLegacyTradeNo("TTEP", key), func(o *model.AdtyTopupOrder) bool {
-		return o.TeamId == teamID && o.UserId == leaderID && o.FaceUSD.Equal(amountUSD) && o.Method == method
+		return o.TeamId == teamID && o.UserId == leaderID && o.FaceUSD.Equal(amountUSD) && o.Method == method &&
+			(channelID <= 0 || o.ChannelId == channelID)
 	})
 	if err != nil {
 		return nil, err
@@ -63,11 +66,19 @@ func StartAdtyTeamTopupPayment(leaderID int, teamID int64, amountUSD decimal.Dec
 		return nil, ErrAdtyTeamInvalid
 	}
 	quote.CreditQuota = int64(faceQuota)
-	if _, err := AuthorizeAdtyPaymentScene(leaderID, "wallet_topup", model.PaymentProviderAdtyEpay, method, quote); err != nil {
+	scene, err := AuthorizeAdtyPaymentScene(leaderID, "wallet_topup", model.PaymentProviderAdtyEpay, method, quote)
+	if err != nil {
 		return nil, err
 	}
-	channel, channelMethod, err := PickAdtyEpayChannel(method, quote.PayAmount, "pc", nil, time.Now().Unix())
+	allowed, ok := AdtyEpayChannelAllowed(scene, channelID)
+	if !ok {
+		return nil, ErrAdtyEpayChosenChannelUnavailable
+	}
+	channel, channelMethod, err := PickAdtyEpayChannel(method, quote.PayAmount, "pc", nil, time.Now().Unix(), allowed)
 	if err != nil {
+		if channelID > 0 {
+			return nil, ErrAdtyEpayChosenChannelUnavailable
+		}
 		return nil, err
 	}
 	payMoney, _ := quote.PayAmount.Float64()
@@ -81,7 +92,7 @@ func StartAdtyTeamTopupPayment(leaderID int, teamID int64, amountUSD decimal.Dec
 		Method: method, FaceUSD: quote.FaceUSD, BonusRate: decimal.Zero, BonusUSD: decimal.Zero,
 		PromoBonusUSD: decimal.Zero, CreditQuota: quote.CreditQuota, PayAmount: quote.PayAmount,
 		PayCurrency: quote.PayCurrency, PriceSnapshot: quote.PriceCNYPerUSD, TopupGroupRatio: quote.TopupGroupRatio,
-		ChannelId: channel.Id,
+		ChannelId: channel.Id, MethodLabel: channelMethod.DisplayName,
 	}
 	if site := AdtyBillingSiteForUser(leaderID); site != nil {
 		ext.SiteId = site.Id
@@ -96,6 +107,9 @@ func StartAdtyTeamTopupPayment(leaderID int, teamID int64, amountUSD decimal.Dec
 	})
 	if err != nil {
 		_ = model.UpdatePendingTopUpStatus(tradeNo, model.PaymentProviderAdtyEpay, common.TopUpStatusFailed)
+		if channelID > 0 {
+			return nil, ErrAdtyEpayChosenChannelUnavailable
+		}
 		return nil, err
 	}
 	if err := model.UpdateAdtyTopupOrderFields(tradeNo, map[string]any{

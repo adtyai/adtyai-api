@@ -26,9 +26,12 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { api } from '@/lib/api'
 import { getServerErrorMessage } from '@/lib/server-error-message'
+
+import { adtyTopupQueryKeys, getAdtyTopupInfo } from './api'
+import { PaymentMethodButtons } from './components/payment-method-buttons'
+import { paymentMethodKey } from './lib/methods'
 
 type TeamMember = {
   user_id: number
@@ -86,10 +89,20 @@ export function TeamPanel() {
       return body.data?.team ?? null
     },
   })
+  const topupInfo = useQuery({
+    queryKey: adtyTopupQueryKeys.info,
+    queryFn: getAdtyTopupInfo,
+  })
+  const topupMethods = (
+    topupInfo.data?.scenes?.find((scene) => scene.key === 'wallet_topup')
+      ?.methods ??
+    topupInfo.data?.methods ??
+    []
+  ).filter((method) => method.face_usd === undefined)
   const [name, setName] = useState('')
   const [rename, setRename] = useState('')
   const [topupAmount, setTopupAmount] = useState('')
-  const [topupMethod, setTopupMethod] = useState('alipay')
+  const [topupMethodKey, setTopupMethodKey] = useState<string | null>(null)
   const [discount, setDiscount] = useState('1')
   const [invite, setInvite] = useState('')
   const [issued, setIssued] = useState('')
@@ -98,6 +111,9 @@ export function TeamPanel() {
   const [confirmClose, setConfirmClose] = useState(false)
   const [error, setError] = useState('')
   const [pending, setPending] = useState(false)
+  const topupMethod =
+    topupMethods.find((method) => paymentMethodKey(method) === topupMethodKey) ??
+    null
 
   const refresh = () => void queryClient.invalidateQueries({ queryKey: ['adty-team'] })
   const team = mine.data
@@ -250,19 +266,13 @@ export function TeamPanel() {
               <Input id='team-topup' value={topupAmount} inputMode='decimal' autoComplete='off' onChange={(event) => setTopupAmount(event.target.value)} />
             </div>
             <div className='flex flex-col gap-1'>
-              <Label htmlFor='team-topup-method'>{t('Payment method')}</Label>
-              <NativeSelect
-                id='team-topup-method'
-                value={topupMethod}
-                onChange={(event) => setTopupMethod(event.target.value)}
-              >
-                <NativeSelectOption value='alipay'>{t('Alipay')}</NativeSelectOption>
-                <NativeSelectOption value='wxpay'>{t('WeChat Pay')}</NativeSelectOption>
-                <NativeSelectOption value='usdt.trc20'>{t('USDT · TRC20')}</NativeSelectOption>
-                <NativeSelectOption value='usdt.bep20'>{t('USDT · BEP20')}</NativeSelectOption>
-                <NativeSelectOption value='usdt.polygon'>{t('USDT · Polygon')}</NativeSelectOption>
-                <NativeSelectOption value='usdt.xlayer'>{t('USDT · X Layer')}</NativeSelectOption>
-              </NativeSelect>
+              <Label>{t('Payment method')}</Label>
+              <PaymentMethodButtons
+                methods={topupMethods}
+                selected={topupMethodKey}
+                onSelect={setTopupMethodKey}
+                disabled={pending}
+              />
             </div>
             <p className='text-muted-foreground text-sm'>
               {t('A team top-up does not include a payment-method gift. The order stays pending until payment completion credits the shared balance.')}
@@ -270,12 +280,17 @@ export function TeamPanel() {
             <Button
               type='button'
               variant='outline'
-              disabled={pending || topupAmount.trim() === ''}
+              disabled={pending || topupAmount.trim() === '' || topupMethod === null}
               onClick={() =>
                 void run(async () => {
+                  if (!topupMethod) return
                   const response = await api.post(
                     `/api/adty/teams/${team.team_id}/topups`,
-                    { amount_usd: topupAmount.trim(), method: topupMethod },
+                    {
+                      amount_usd: topupAmount.trim(),
+                      method: topupMethod.id,
+                      channel_id: topupMethod.channel_id,
+                    },
                     { headers: { 'Idempotency-Key': crypto.randomUUID() } }
                   )
                   if (!response.data?.success) throw new Error(response.data?.message || 'Failed to save')

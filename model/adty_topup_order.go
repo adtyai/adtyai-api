@@ -68,6 +68,7 @@ type AdtyTopupOrder struct {
 	QRCode                string          `json:"qr_code" gorm:"column:qr_code;type:text"`
 	URLScheme             string          `json:"url_scheme" gorm:"column:url_scheme;type:text"`
 	ChannelId             int             `json:"channel_id" gorm:"index"`
+	MethodLabel           string          `json:"method_label" gorm:"type:varchar(64);not null;default:''"` // 下单时通道方式的显示名称（快照）
 	UnpaidCounted         bool            `json:"-"`
 	PaidAmount            decimal.Decimal `json:"paid_amount" gorm:"type:decimal(20,8);not null;default:0"`
 	PaidCurrency          string          `json:"paid_currency" gorm:"type:varchar(16)"`

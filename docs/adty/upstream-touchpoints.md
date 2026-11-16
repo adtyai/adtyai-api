@@ -698,3 +698,4 @@
 | `web/src/i18n/locales/en.json`、`zh.json` | 新增支付方式类型说明、图标选择器的文案 | 图标改成下拉选择；旧键按约定 B 保留 | 四家托管支付等删除 2026-11-16 |
 | 测试：`controller/admin_finance_test.go`、`model/payment_method_guard_test.go`、`model/payment_orphan_resolution_test.go`、`model/topup_money_exact_test.go`、`model/user_pagination_test.go`、`router/access_token_scope_test.go`、`service/bepusdt_test.go`、`web/src/features/security/__tests__/page.test.tsx`、`web/src/features/system-settings/integrations/__tests__/payment-provider.test.tsx` | 删掉只测已删代码的用例；拿四家当“某个支付商”的用例改用 BEpusdt 或易支付；从 Pancake 测试文件里挪出无关的 `TestAdminUserListHidesSameOrHigherRole` | 跟上实现删除 | 四家托管支付等删除 2026-11-16 |
 | `web/src/features/wallet/index.tsx`、`web/src/i18n/locales/en.json`、`zh.json` | 发起支付时带上客户选的易支付通道；新增通道显示名称、换支付方式的文案 | 钱包按易支付通道平铺，失败让客户自己换 | 易支付通道平铺 2026-11-16 |
+| `controller/admin_finance.go` | 充值对账和站长订单列表多返回 `method_label`（下单时的易支付显示名称） | 多个易支付商户时对账要分清 | 易支付通道平铺 2026-11-16 |

@@ -257,7 +257,28 @@ func TestAdtyEpayChosenChannel(t *testing.T) {
 	view := decodeAdtyData[model.AdtyTopUpView](t, pay(backup.Id).Body)
 	require.NotNil(t, view.Ext)
 	assert.Equal(t, backup.Id, view.Ext.ChannelId)
+	assert.Equal(t, "支付宝2", view.Ext.MethodLabel, "the order keeps the button name it was placed with")
 	assert.Contains(t, view.Ext.QRCode, "https://qr.example/")
+
+	// 后台改名不影响已经下的单，对账按下单时的名字对得上
+	require.NoError(t, f.db.Model(&model.AdtyEpayChannelMethod{}).Where("channel_id = ? AND method = ?", backup.Id, "alipay").Update("display_name", "改过的名字").Error)
+	f.grant(t, authz.AdtyFinanceRead)
+	audit := decodeAdtyData[struct {
+		Items []struct {
+			TradeNo     string `json:"trade_no"`
+			MethodLabel string `json:"method_label"`
+			ChannelId   int    `json:"channel_id"`
+		} `json:"items"`
+	}](t, adtyJSON(t, f.engine, http.MethodGet, "/api/user/admin/finance/recharge-audit?page_size=50", "", f.token).Body)
+	found := false
+	for _, item := range audit.Items {
+		if item.TradeNo == view.TradeNo {
+			found = true
+			assert.Equal(t, "支付宝2", item.MethodLabel)
+			assert.Equal(t, backup.Id, item.ChannelId)
+		}
+	}
+	assert.True(t, found, "the order is in the recharge audit list")
 }
 
 func epayCallback(t *testing.T, f *adtyGuardFixture, channelID int, key string, values map[string]string) string {
