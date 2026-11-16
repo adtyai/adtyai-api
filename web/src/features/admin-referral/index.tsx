@@ -42,6 +42,11 @@ import {
   runSettlement,
 } from './api'
 import { AffiliatePanel } from './components/affiliate-panel'
+import {
+  AuditLogPanel,
+  CommissionJobsPanel,
+  LedgerPanel,
+} from './components/records-panels'
 import { SettingsPanel } from './components/settings-panel'
 import { WithdrawalPanel } from './components/withdrawal-panel'
 
@@ -172,6 +177,24 @@ export function AdminReferral() {
                   >
                     {t('Affiliates')}
                   </TabsTrigger>
+                  <TabsTrigger
+                    value='commission-jobs'
+                    className='text-dim hover:text-foreground data-active:text-foreground h-auto flex-none px-0 pt-0 pb-2.5 text-[13.5px] font-medium'
+                  >
+                    {t('Commission jobs')}
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value='ledgers'
+                    className='text-dim hover:text-foreground data-active:text-foreground h-auto flex-none px-0 pt-0 pb-2.5 text-[13.5px] font-medium'
+                  >
+                    {t('Commission ledger')}
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value='audit-logs'
+                    className='text-dim hover:text-foreground data-active:text-foreground h-auto flex-none px-0 pt-0 pb-2.5 text-[13.5px] font-medium'
+                  >
+                    {t('Admin activity')}
+                  </TabsTrigger>
                   {canReadSettings && (
                     <TabsTrigger
                       value='settings'
@@ -204,6 +227,15 @@ export function AdminReferral() {
               </TabsContent>
               <TabsContent value='affiliates'>
                 <AffiliatePanel canReview={canReview} canAdjust={canAdjust} />
+              </TabsContent>
+              <TabsContent value='commission-jobs'>
+                <CommissionJobsPanel canRetry={canAdjust} />
+              </TabsContent>
+              <TabsContent value='ledgers'>
+                <LedgerPanel />
+              </TabsContent>
+              <TabsContent value='audit-logs'>
+                <AuditLogPanel />
               </TabsContent>
               {canReadSettings && (
                 <TabsContent value='settings' keepMounted>

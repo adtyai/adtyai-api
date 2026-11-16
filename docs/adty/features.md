@@ -208,7 +208,7 @@ BEpusdt 使用官方 `POST /api/v1/pay/info`，只信任与冻结付款链接同
 
 **规则**：
 
-- **谁有推广链接**：主站用户注册时自动成为推广员（8 位邀请码，直接是已通过）。分站客户不自动建推广员。
+- **谁有推广链接**：主站用户注册时自动成为推广员（8 位邀请码，直接是已通过）。分站客户不能成为推广员：打开推广页也不会建推广员和邀请码（`service/referral.go` 的 `EnsureAffiliate` 直接拒绝），所以主站用户不会通过分站客户的链接给分站客户计佣。
 - **比例**：全局 `adty_referral_setting.default_rate`（百分数，10 表示 10%，没有默认值）；单个推广员可以单设（合作伙伴审批或后台调整时设，传空就回到全局）。下单时把推广员和比例快照进订单，之后改比例不影响已下的单。
 - **佣金** = 面额 × 快照比例 ÷ 100（8 位小数），不含任何加赠。永久计佣，没有期限。
 - **绑定**：打开 `/r/<邀请码>` 或任意页面带 `?ref=<邀请码>`，写一个签名 cookie `adty_ref`，有效期 `cookie_ttl_days`（默认 30 天），以最后一次点击为准；注册时绑定，绑定后不能改。拒绝自己邀请自己和互相邀请。部署时必须固定 `CRYPTO_SECRET` 或 `SESSION_SECRET`，否则重启后 cookie 全部失效。
@@ -225,18 +225,17 @@ BEpusdt 使用官方 `POST /api/v1/pay/info`，只信任与冻结付款链接同
 
 **算例**：面额 $100（不管送了多少）× 10% = $10 佣金，7 天后转成可提现。USDT 提现 $150、手续费 2：实到 148 USDT。收款码提现 $50、汇率 7.1：锁定 ¥355.00。
 
-**后台**：推广管理（`/admin-referral`）：提现审核、合作伙伴申请、推广员（调比例、停结算、停提现、恢复邀请返佣）、设置，以及「立即结算」按钮。用户侧：`/referral`（推广页和提现）、公开页 `/affiliate`、落地 `/r/$code`。
+**后台**：推广管理（`/admin-referral`）：提现审核、合作伙伴申请、推广员（调比例、停结算、停提现、恢复邀请返佣）、计佣任务（按状态筛选，默认看失败的；失败或卡住的任务可以「重新执行」，需要「推广·调整」，已计佣或已跳过的不会重复计佣）、佣金流水（四个余额的每笔变动，可按推广员筛选）、后台操作记录（审核、推广员调整、调佣金、改提现汇率）、设置，以及「立即结算」按钮。接口 `GET /api/user/admin/referral/commission-jobs`、`POST .../commission-jobs/retry`、`GET .../ledgers`、`GET .../audit-logs`。用户侧：`/referral`（推广页和提现）、公开页 `/affiliate`、落地 `/r/$code`。
 
-**默认**：总开关 `adty_referral_setting.enabled` 默认关；关着时点击、绑定、下单快照、提现全部不工作，站长的分站收益也提不了现。没有内置值的四项：`default_rate`（没设不能打开总开关）、`min_withdraw_usd`（没设不能提到 USDT 和收款码）、`usdt_withdraw_fee`（没设不能提到 USDT）、`withdraw_cny_rate`（没设不能提到收款码）。
+**默认**：总开关 `adty_referral_setting.enabled` 默认关；关着时点击、绑定、下单快照、推广佣金提现全部不工作；站长收益走独立的分站提现（见「站长收益提现」），不受这个开关影响。没有内置值的四项：`default_rate`（没设不能打开总开关）、`min_withdraw_usd`（没设不能提到 USDT 和收款码）、`usdt_withdraw_fee`（没设不能提到 USDT）、`withdraw_cny_rate`（没设不能提到收款码）。
 
 **表和接口**：`referral_affiliates`、`referral_bindings`、`referral_clicks`、`referral_commission_accounts`、`referral_commissions`、`referral_commission_ledgers`、`referral_commission_jobs`、`referral_withdrawals` 等 12 张表，加上 `adty_user_fingerprints`。公开 `POST /api/adty/referral/click`、`GET /api/adty/referral/public-settings`；用户 `GET /api/user/referral/profile`、`POST /api/user/referral/apply`、`GET`/`POST /api/user/referral/withdrawals`、`POST /api/user/referral/withdrawals/:id/cancel`；后台都在 `/api/user/admin/referral/` 下。
 
 **限制**：
 
-- 分站客户打开推广页时也会建一个推广员和邀请码；如果有主站用户用这个链接注册，他的充值会给这个分站客户计佣。方案只排除了「被邀请人是分站客户」，没提到这种情况，待定。
 - 上线时要先把批量注册阈值设成 0，真实 IP 验证通过后再改回 3（见上线清单）。代码默认是 3。
 
-任务 6.1–6.8、11.1。和方案不一致：方案说合作伙伴比例 15–20，代码只限制 0–100；方案 11.1 要求「站长首次提现必须人工审核」：现在站长收益走独立提现，每笔都由 Root 审核后打款，不再转进推广佣金余额（见「站长收益提现」）。
+任务 6.1–6.8、11.1。和方案不一致：方案说合作伙伴比例 15–20，代码只限制 0–100（2026-11-17 用户确认保持现状，由 Root 自己填）；方案 11.1 要求「站长首次提现必须人工审核」：现在站长收益走独立提现，每笔都由 Root 审核后打款，不再转进推广佣金余额（见「站长收益提现」）。
 
 ## 分站邀请佣金
 
