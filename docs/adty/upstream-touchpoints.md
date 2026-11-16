@@ -710,3 +710,10 @@
 | `web/src/features/wallet/index.tsx` | 发起支付时不再带优惠码 | 优惠码删除 | 下单流程优惠码删除 2026-11-16 |
 | `AGENTS.md` | 优惠码一条改成「已删除，升级库旧表不读不写」 | 跟上删除 | 下单流程优惠码删除 2026-11-16 |
 | `service/security_verification_email_code_test.go` | 删除只核对草稿函数 `sensitiveActionNeedsProof`、`sensitiveProofMethods` 的用例 | 草稿函数已删除 | 二开死函数清理 2026-11-16 |
+| `web/src/components/notification-popover.tsx` | 公告条目在「详情」旁加「隐藏」按钮，新增 `onHideAnnouncement`、`hidingAnnouncement` 属性 | 登录用户可以隐藏单条公告 | 补界面 2026-11-17 |
+| `web/src/components/layout/components/app-header.tsx`、`public-header.tsx` | 给 `NotificationPopover` 传 `onHideAnnouncement`、`hidingAnnouncement` | 同上 | 补界面 2026-11-17 |
+| `web/src/hooks/use-notifications.ts` | 新增 `hideAnnouncement`：未读的先标已读，再调隐藏接口，并从收件箱缓存里去掉 | 同上；隐藏后不留未读角标 | 补界面 2026-11-17 |
+| `web/src/lib/api.ts` | 新增 `hideNotification`（`POST /api/adty/notifications/hide`） | 同上 | 补界面 2026-11-17 |
+| `web/src/features/auth/secure-verification/types.ts` | `SiteOwnerAction` 加 `voucher.issue`、`voucher.freeze`、`voucher.cancel` | 站长签发、冻结、取消兑换码要二次验证 | 补界面 2026-11-17 |
+| `web/src/features/system-settings/operations/section-registry.tsx` | 运维设置加「分组健康」分区（`GroupHealthSection`） | 分组健康阈值后台可改 | 补界面 2026-11-17 |
+| `web/src/i18n/locales/en.json`、`zh.json` | 追加补界面用到的词条，补上数据保留页缺的中文 | 新界面要有中英文 | 补界面 2026-11-17 |

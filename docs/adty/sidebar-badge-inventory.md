@@ -124,6 +124,8 @@ that number in.
 - 数据来源: `adty_site_withdrawals.status`.
 - 角色范围: Root = global. Site owners are applicants, not reviewers,
   so they do not receive a 待审核 count for their own submissions.
+- 处理入口: Reseller sites → Withdrawals (`/site-admin/withdrawals`,
+  Root only), listed by `GET /api/adty/admin/site-withdrawals`.
   Staff and ordinary users are omitted. Mid-payout `paying` is an
   official state but is not confirmed as part of 待审核; see B.6.
 - 计数规则: Number of pending rows in scope.
