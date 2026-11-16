@@ -69,6 +69,9 @@ func TestAnnouncementDraftIsInvisibleUntilPublishedPG(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "published", published.Status)
 	assert.NotZero(t, published.PublishedAt, "发布时才有发布时间")
+	var stored model.AdtyNotificationPublication
+	require.NoError(t, db.First(&stored, draft.Id).Error)
+	assert.Equal(t, published.PublishedAt, stored.PublishedAt, "草稿发布时发布时间要写进库")
 	assert.EqualValues(t, 1, countTelegramDeliveries(t, db), "发布才推一次")
 
 	public, err = model.ListAdtyNotificationsForSite(0, 50)
@@ -84,6 +87,9 @@ func TestAnnouncementDraftIsInvisibleUntilPublishedPG(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "published", edited.Status)
 	assert.EqualValues(t, earlier, edited.PublishedAt, "编辑不刷新发布时间")
+	var reloaded model.AdtyNotificationPublication
+	require.NoError(t, db.First(&reloaded, draft.Id).Error)
+	assert.Equal(t, earlier, reloaded.PublishedAt, "编辑后库里的发布时间也不变")
 	assert.EqualValues(t, 1, countTelegramDeliveries(t, db), "推过的公告编辑不重推")
 }
 

@@ -52,6 +52,9 @@ func UpdateAdtyNotificationPublication(row *AdtyNotificationPublication, revisio
 			"kind": row.Kind, "title": row.Title, "content": row.Content, "business": row.Business,
 			"status": row.Status, "revision": revision + 1, "updated_at": row.UpdatedAt, "updated_by": row.UpdatedBy,
 			"read_key": row.ReadKey, "telegram_channel": row.TelegramChannel,
+			// A draft gets its publish time when it is first published through this update;
+			// later edits carry the stored value forward unchanged.
+			"published_at": row.PublishedAt,
 		})
 	if result.Error != nil {
 		return result.Error
