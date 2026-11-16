@@ -517,7 +517,7 @@ func TestAdtyActionCatalogMigrationDatabaseMatrix(t *testing.T) {
 					{AdtyLogRead, []Permission{AdtyLogExport}},
 					{ChannelSensitiveWrite, []Permission{ChannelCreate, ChannelDelete}},
 					{AdtySiteAdjust, []Permission{AdtySiteCreate, AdtySiteDelete}},
-					{AdtySiteSettings, []Permission{AdtySiteSettingsRead, AdtySiteSettingsCreate, AdtySiteSettingsDelete}},
+					{AdtySiteSettings, []Permission{AdtySiteSettingsRead}},
 					{AdtyReferralSettings, []Permission{AdtyReferralSettingsRead}},
 				}
 				var rules []model.CasbinRule
@@ -555,7 +555,6 @@ func TestAdtyActionCatalogMigrationDatabaseMatrix(t *testing.T) {
 					{204, AdtyLogExport, false}, {205, Permission{Resource: "adty_marketing", Action: ActionCreate}, false},
 					{206, ChannelCreate, true}, {206, ChannelDelete, true},
 					{207, AdtySiteCreate, true}, {208, AdtySiteSettingsRead, false},
-					{208, AdtySiteSettingsCreate, true},
 				} {
 					assert.Equal(t, check.allow, Can(check.id, common.RoleAdminUser, check.p), check)
 				}

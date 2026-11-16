@@ -614,3 +614,11 @@ P6 移植旧项目前端时，不要把 `?aff=` 和 `features/auth/lib/storage.t
 - `ApplyAdtySite`、`NewAdtySiteInviteCode`、`SaveAdtySiteInviteCode`：自助开站退役记录（`RETIRE-site-self-apply`）里写明历史申请和邀请码数据保留，测试用它们造历史数据。
 - `internal/adtygov`：治理记录，只由测试核对。
 - 上游文件里的 79 个只被测试调用、190 个连测试都不调用的函数：不动。
+
+## 后台邀请码接口（2026-11-16）
+
+自助开站和邀请码开站已经退役，后台的邀请码接口只剩列表和三个永远返回 403 的写入口，也没有界面。
+
+- 删除 `GET`/`POST /api/adty/admin/reseller/invite-codes`、`PUT`/`DELETE /api/adty/admin/reseller/invite-codes/:id` 和对应的处理函数、访问令牌规则；`router/adty_deleted_routes_test.go` 盯着它们不许回来。
+- 删除只给它们用的权限动作 `adty_site:settings_create`、`adty_site:settings_delete`；旧的 `adty_site:settings` 迁移时只展开成 `settings_read`。`settings_read`、`settings` 的说明不再提邀请码。
+- 保留：`adty_site_invite_codes` 表和历史行、`ApplyAdtySite` 与生成邀请码的服务函数（自助开站退役记录要求保留历史数据，测试用它们造历史数据）。

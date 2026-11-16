@@ -52,6 +52,10 @@ func TestAdtyDeletedRoutesAbsent(t *testing.T) {
 		{http.MethodPost, "/api/user/epay/notify"},
 		{http.MethodPost, "/api/option/payment_compliance"},
 		{http.MethodPost, "/api/adty/topup/hosted/pay"},
+		{http.MethodGet, "/api/adty/admin/reseller/invite-codes"},
+		{http.MethodPost, "/api/adty/admin/reseller/invite-codes"},
+		{http.MethodPut, "/api/adty/admin/reseller/invite-codes/:id"},
+		{http.MethodDelete, "/api/adty/admin/reseller/invite-codes/:id"},
 	}
 	for _, route := range routes {
 		for _, prefix := range deletedPrefixes {

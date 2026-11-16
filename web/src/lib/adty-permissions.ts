@@ -61,8 +61,6 @@ export const ADTY_PERMISSIONS = {
   SITE_ADJUST: { resource: 'adty_site', action: 'adjust' },
   SITE_DELETE: { resource: 'adty_site', action: 'delete' },
   SITE_SETTINGS_READ: { resource: 'adty_site', action: 'settings_read' },
-  SITE_SETTINGS_CREATE: { resource: 'adty_site', action: 'settings_create' },
-  SITE_SETTINGS_DELETE: { resource: 'adty_site', action: 'settings_delete' },
   SITE_SETTINGS: { resource: 'adty_site', action: 'settings' },
   CHANNEL_READ: { resource: 'channel', action: 'read' },
   CHANNEL_OPERATE: { resource: 'channel', action: 'operate' },

@@ -9144,6 +9144,8 @@
     "Completed at": "完成时间",
     "Unknown site": "归属未知",
     "All order types": "全部订单类型",
-    "Withdrawn notification": "已撤回"
+    "Withdrawn notification": "已撤回",
+    "View reseller configuration without changing it.": "查看分站设置，不能修改。",
+    "Change reseller settings. Secrets remain Root-only.": "修改分站设置。密钥仍只有 Root 能改。"
   }
 }

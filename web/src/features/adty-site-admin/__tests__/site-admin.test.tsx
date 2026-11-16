@@ -1305,8 +1305,6 @@ describe('invite code actions', () => {
     asSiteAdmin([
       'settings_read',
       'settings',
-      'settings_create',
-      'settings_delete',
     ])
     await renderSiteSettingsPage('settings')
     expect(

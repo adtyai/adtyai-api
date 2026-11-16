@@ -394,7 +394,7 @@ BEpusdt 使用官方 `POST /api/v1/pay/info`，只信任与冻结付款链接同
 
 ### 主站的分站管理
 
-分站管理（`/site-admin/<分区>`），权限按「分站」的 read、create、review、adjust、delete、settings_read、settings、settings_create、settings_delete 细分：
+分站管理（`/site-admin/<分区>`），权限按「分站」的 read、create、review、adjust、delete、settings_read、settings 细分：
 
 - 站点列表和明细（状态、站长、域名、d、k 上限、客户），通过或驳回旧申请，改 d 和 k 上限，关站，一键下线公告（`DELETE /api/adty/admin/sites/:id/notice`，只清空公告，写审计）。
 - 设置：`adty_reseller_setting` 的全部填写项（Cloudflare Token 只写不读；没填时显示「未配置」，依赖它的开关打不开），用量卡片（Resend 发件域名按状态计数和最近一次「名额已满」的时间；每个 Turnstile widget 已登记的域名数 / 10，第一个 widget 含主站域名和根域名，剩余少于 5 个时提醒）。
@@ -454,7 +454,7 @@ BEpusdt 使用官方 `POST /api/v1/pay/info`，只信任与冻结付款链接同
 | 充值财务 `adty_finance` | `read` 查看订单和充值对账；`manual_credit` 手动补单；`refund` 退款 |
 | 推广返佣 `adty_referral` | `read` 查看；`review` 审核合作伙伴申请和提现；`payout` 标记已打款；`adjust` 调整佣金、冻结结算、比例、停用推广员；`settings_read` 查看设置；`settings` 修改设置（含提现汇率） |
 | 支付通道 `adty_payment` | `read` 查看状态；`operate` 启停和测试 |
-| 分站 `adty_site` | `read` 查看站点、客户、统计；`create` 建站；`review` 审核旧申请、复核风控客户、处理举报；`adjust` 改 d、k 上限、可见范围、关站；`delete` 删除站点附属记录（域名、发件域名、公告）；`settings_read` 查看分站设置和邀请码；`settings` 修改分站设置；`settings_create` 新建邀请码；`settings_delete` 删除邀请码 |
+| 分站 `adty_site` | `read` 查看站点、客户、统计；`create` 建站；`review` 审核旧申请、复核风控客户、处理举报；`adjust` 改 d、k 上限、可见范围、关站；`delete` 删除站点附属记录（域名、发件域名、公告）；`settings_read` 查看分站设置；`settings` 修改分站设置 |
 
 开站、旧申请激活和关站迁移仍只对 Root 开放，拥有 `adty_site:create` 的普通管理员也不能调用。
 
@@ -463,7 +463,7 @@ BEpusdt 使用官方 `POST /api/v1/pay/info`，只信任与冻结付款链接同
 - **预设**：编辑管理员时可以一键套用「客服」（用户·查看、日志·查看、充值财务·查看、推广·查看）、「运营」（客服加上 用户·编辑、渠道·查看和操作、模型·查看和编辑、支付通道·查看和操作）、「财务」（用户·查看和调余额、充值财务三项、推广的查看、审核、打款、调整）。套用会替换整张权限矩阵，套用后还能逐项改。
 - 侧边栏和页面按权限显示；没权限调到的接口返回 403，错误码 `ADTY_PERMISSION_DENIED`。
 
-**权限目录迁移（catalog v2）**：启动时 `MigrateAdtyActionCatalog` 会把旧的粗动作一次性展开成新动作——`adty_user:write → adty_user:create`、`adty_model:write → adty_model:create/delete`、`adty_log:read → adty_log:export`、`adty_site:adjust → adty_site:create/delete`、`adty_site:settings → adty_site:settings_read/settings_create/settings_delete`、`adty_referral:settings → adty_referral:settings_read`，渠道的敏感写也会展开（`service/authz/action_migration.go:14-73`）。展开只在版本号从旧值升到 2 时跑一次；完成状态存 `authz_action_catalog_states`（键 `adty_action_catalog`），之后撤销的新动作不会被再次派生。库里的版本比程序支持的版本新时拒绝启动；副本也要等迁移完成后才能加载权限（`service/authz/action_migration.go:75-86`）。
+**权限目录迁移（catalog v2）**：启动时 `MigrateAdtyActionCatalog` 会把旧的粗动作一次性展开成新动作——`adty_user:write → adty_user:create`、`adty_model:write → adty_model:create/delete`、`adty_log:read → adty_log:export`、`adty_site:adjust → adty_site:create/delete`、`adty_site:settings → adty_site:settings_read`、`adty_referral:settings → adty_referral:settings_read`，渠道的敏感写也会展开（`service/authz/action_migration.go:14-73`）。展开只在版本号从旧值升到 2 时跑一次；完成状态存 `authz_action_catalog_states`（键 `adty_action_catalog`），之后撤销的新动作不会被再次派生。库里的版本比程序支持的版本新时拒绝启动；副本也要等迁移完成后才能加载权限（`service/authz/action_migration.go:75-86`）。
 
 任务 2.6、2.7。
 

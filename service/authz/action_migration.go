@@ -31,7 +31,7 @@ func MigrateAdtyActionCatalog(db *gorm.DB) error {
 			AdtyLogRead:           {AdtyLogExport},
 			ChannelSensitiveWrite: {ChannelCreate, ChannelDelete},
 			AdtySiteAdjust:        {AdtySiteCreate, AdtySiteDelete},
-			AdtySiteSettings:      {AdtySiteSettingsRead, AdtySiteSettingsCreate, AdtySiteSettingsDelete},
+			AdtySiteSettings:      {AdtySiteSettingsRead},
 			AdtyReferralSettings:  {AdtyReferralSettingsRead},
 		}
 		type subjectPermission struct {

@@ -402,7 +402,6 @@ func TestSiteAdminPermissions(t *testing.T) {
 		{http.MethodPut, "/api/adty/admin/sites/1/status", `{"status":"paused"}`},
 		{http.MethodGet, "/api/adty/admin/reseller/settings", ``},
 		{http.MethodPut, "/api/adty/admin/reseller/settings", `{}`},
-		{http.MethodPost, "/api/adty/admin/reseller/invite-codes", `{}`},
 	} {
 		assert.Equal(t, http.StatusForbidden, adtyJSON(t, f.engine, call.method, call.path, call.body, f.token).Code, call.method+" "+call.path)
 	}
@@ -451,19 +450,6 @@ func TestSiteAdminPermissions(t *testing.T) {
 	settings := adtyJSON(t, f.engine, http.MethodPut, "/api/adty/admin/reseller/settings", `{"enabled":false}`, f.token)
 	assert.Equal(t, http.StatusOK, settings.Code, settings.Body.String())
 	assert.Contains(t, settings.Body.String(), `"success":true`)
-	code := adtyJSON(t, f.engine, http.MethodPost, "/api/adty/admin/reseller/invite-codes", `{"max_uses":2,"cost_factor":"0.6"}`, f.token)
-	assert.Equal(t, http.StatusForbidden, code.Code, "settings write cannot replace invite creation")
-	f.grant(t, authz.AdtySiteSettingsCreate)
-	code = adtyJSON(t, f.engine, http.MethodPost, "/api/adty/admin/reseller/invite-codes", `{"max_uses":2,"cost_factor":"0.6"}`, f.token)
-	assert.Equal(t, http.StatusForbidden, code.Code, "invite-code minting is retired even with the create grant")
-	assert.Contains(t, code.Body.String(), "Unauthorized, insufficient privileges")
-	var minted int64
-	require.NoError(t, f.db.Model(&model.AdtySiteInviteCode{}).Count(&minted).Error)
-	assert.Zero(t, minted)
-	updated := adtyJSON(t, f.engine, http.MethodPut, "/api/adty/admin/reseller/invite-codes/1", `{"max_uses":9}`, f.token)
-	assert.Equal(t, http.StatusForbidden, updated.Code)
-	deleted := adtyJSON(t, f.engine, http.MethodDelete, "/api/adty/admin/reseller/invite-codes/1", "", f.token)
-	assert.Equal(t, http.StatusForbidden, deleted.Code)
 }
 
 func TestResellerSettingsDelegation(t *testing.T) {
@@ -613,8 +599,6 @@ func TestResellerSettingsDelegation(t *testing.T) {
 				}
 			})
 		}
-		assert.Equal(t, http.StatusForbidden, adtyJSON(t, f.engine, http.MethodGet, "/api/adty/admin/reseller/invite-codes", "", rootReadPAT).Code)
-		assert.Equal(t, http.StatusForbidden, adtyJSON(t, f.engine, http.MethodPost, "/api/adty/admin/reseller/invite-codes", `{"max_uses":1}`, rootWritePAT).Code)
 		assert.Equal(t, http.StatusNotFound, adtyJSON(t, f.engine, http.MethodPost, path, `{}`, settingsPAT).Code)
 		assert.Equal(t, http.StatusForbidden, adtyJSON(t, f.engine, http.MethodGet, "/api/option/", "", settingsPAT).Code)
 		f.grant(t)

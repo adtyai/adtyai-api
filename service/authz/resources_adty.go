@@ -12,20 +12,18 @@ const (
 	ResourceAdtyPayment  = "adty_payment"
 	ResourceAdtySite     = "adty_site"
 
-	ActionGroup          = "group"
-	ActionQuota          = "quota"
-	ActionDelete         = "delete"
-	ActionManualCredit   = "manual_credit"
-	ActionRefund         = "refund"
-	ActionReview         = "review"
-	ActionPayout         = "payout"
-	ActionAdjust         = "adjust"
-	ActionSettings       = "settings"
-	ActionSend           = "send"
-	ActionExport         = "export"
-	ActionSettingsRead   = "settings_read"
-	ActionSettingsCreate = "settings_create"
-	ActionSettingsDelete = "settings_delete"
+	ActionGroup        = "group"
+	ActionQuota        = "quota"
+	ActionDelete       = "delete"
+	ActionManualCredit = "manual_credit"
+	ActionRefund       = "refund"
+	ActionReview       = "review"
+	ActionPayout       = "payout"
+	ActionAdjust       = "adjust"
+	ActionSettings     = "settings"
+	ActionSend         = "send"
+	ActionExport       = "export"
+	ActionSettingsRead = "settings_read"
 )
 
 var (
@@ -58,15 +56,13 @@ var (
 	AdtyPaymentRead    = Permission{Resource: ResourceAdtyPayment, Action: ActionRead}
 	AdtyPaymentOperate = Permission{Resource: ResourceAdtyPayment, Action: ActionOperate}
 
-	AdtySiteRead           = Permission{Resource: ResourceAdtySite, Action: ActionRead}
-	AdtySiteReview         = Permission{Resource: ResourceAdtySite, Action: ActionReview}
-	AdtySiteAdjust         = Permission{Resource: ResourceAdtySite, Action: ActionAdjust}
-	AdtySiteSettings       = Permission{Resource: ResourceAdtySite, Action: ActionSettings}
-	AdtySiteCreate         = Permission{Resource: ResourceAdtySite, Action: ActionCreate}
-	AdtySiteDelete         = Permission{Resource: ResourceAdtySite, Action: ActionDelete}
-	AdtySiteSettingsRead   = Permission{Resource: ResourceAdtySite, Action: ActionSettingsRead}
-	AdtySiteSettingsCreate = Permission{Resource: ResourceAdtySite, Action: ActionSettingsCreate}
-	AdtySiteSettingsDelete = Permission{Resource: ResourceAdtySite, Action: ActionSettingsDelete}
+	AdtySiteRead         = Permission{Resource: ResourceAdtySite, Action: ActionRead}
+	AdtySiteReview       = Permission{Resource: ResourceAdtySite, Action: ActionReview}
+	AdtySiteAdjust       = Permission{Resource: ResourceAdtySite, Action: ActionAdjust}
+	AdtySiteSettings     = Permission{Resource: ResourceAdtySite, Action: ActionSettings}
+	AdtySiteCreate       = Permission{Resource: ResourceAdtySite, Action: ActionCreate}
+	AdtySiteDelete       = Permission{Resource: ResourceAdtySite, Action: ActionDelete}
+	AdtySiteSettingsRead = Permission{Resource: ResourceAdtySite, Action: ActionSettingsRead}
 )
 
 var adtyResources = []ResourceDefinition{
@@ -139,10 +135,8 @@ var adtyResources = []ResourceDefinition{
 			{Action: ActionReview, LabelKey: "Review reseller sites", DescriptionKey: "Approve or reject applications, review flagged customers and reports."},
 			{Action: ActionAdjust, LabelKey: "Adjust reseller sites", DescriptionKey: "Change a site's cost factor, markup limit and visibility, pause, resume or close sites."},
 			{Action: ActionDelete, LabelKey: "Delete reseller site records", DescriptionKey: "Remove site domains, sender domains and notices."},
-			{Action: ActionSettingsRead, LabelKey: "View reseller settings", DescriptionKey: "View reseller configuration and site invite codes without changing them."},
-			{Action: ActionSettings, LabelKey: "Reseller settings", DescriptionKey: "Change reseller settings and update site invite codes. Secrets remain Root-only."},
-			{Action: ActionSettingsCreate, LabelKey: "Create site invite codes", DescriptionKey: "Create reseller site invite codes."},
-			{Action: ActionSettingsDelete, LabelKey: "Delete site invite codes", DescriptionKey: "Delete reseller site invite codes."},
+			{Action: ActionSettingsRead, LabelKey: "View reseller settings", DescriptionKey: "View reseller configuration without changing it."},
+			{Action: ActionSettings, LabelKey: "Reseller settings", DescriptionKey: "Change reseller settings. Secrets remain Root-only."},
 		},
 	},
 }

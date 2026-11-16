@@ -573,10 +573,6 @@ func registerAdtyResellerRoutes(apiRouter *gin.RouterGroup) {
 		{http.MethodGet, "/reseller/usage", authz.AdtySiteRead, controller.GetAdtyResellerUsage},
 		{http.MethodGet, "/reseller/settings", authz.AdtySiteSettingsRead, controller.GetAdtyResellerSettings},
 		{http.MethodPut, "/reseller/settings", authz.AdtySiteSettings, controller.UpdateAdtyResellerSettings},
-		{http.MethodGet, "/reseller/invite-codes", authz.AdtySiteSettingsRead, controller.GetAdtySiteInviteCodes},
-		{http.MethodPost, "/reseller/invite-codes", authz.AdtySiteSettingsCreate, controller.CreateAdtySiteInviteCode},
-		{http.MethodPut, "/reseller/invite-codes/:id", authz.AdtySiteSettings, controller.UpdateAdtySiteInviteCode},
-		{http.MethodDelete, "/reseller/invite-codes/:id", authz.AdtySiteSettingsDelete, controller.DeleteAdtySiteInviteCode},
 	} {
 		handlePermissionRoute(admin, route.method, route.path, route.permission, route.handler)
 	}

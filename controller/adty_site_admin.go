@@ -2,7 +2,6 @@ package controller
 
 import (
 	"cmp"
-	"net/http"
 	"slices"
 	"strconv"
 	"strings"
@@ -916,40 +915,6 @@ func adtyConfigValueEqual(parsed, requested string) bool {
 	right, _ := common.Marshal(b)
 	return string(left) == string(right)
 }
-
-// GetAdtySiteInviteCodes 列出开站邀请码（分站·设置）。
-func GetAdtySiteInviteCodes(c *gin.Context) {
-	pageInfo := common.GetPageQuery(c)
-	var total int64
-	if err := model.DB.Model(&model.AdtySiteInviteCode{}).Count(&total).Error; err != nil {
-		common.ApiError(c, err)
-		return
-	}
-	var codes []model.AdtySiteInviteCode
-	if err := model.DB.Order("id DESC").Limit(pageInfo.GetPageSize()).Offset(pageInfo.GetStartIdx()).Find(&codes).Error; err != nil {
-		common.ApiError(c, err)
-		return
-	}
-	pageInfo.SetTotal(int(total))
-	pageInfo.SetItems(codes)
-	common.ApiSuccess(c, pageInfo)
-}
-
-// rejectRetiredSiteInviteWrite is the closed door for invite-code minting,
-// updates, and deletes. Historical invite-code rows stay; this is not an
-// official opening path (A.10-01 / SITE-002). Same wording as POST /api/adty/site/apply.
-func rejectRetiredSiteInviteWrite(c *gin.Context) {
-	c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"success": false, "message": "Unauthorized, insufficient privileges"})
-}
-
-// CreateAdtySiteInviteCode is retired; invite-code minting is no longer an official opening path.
-func CreateAdtySiteInviteCode(c *gin.Context) { rejectRetiredSiteInviteWrite(c) }
-
-// UpdateAdtySiteInviteCode is retired; historical invite-code rows are not rewritten here.
-func UpdateAdtySiteInviteCode(c *gin.Context) { rejectRetiredSiteInviteWrite(c) }
-
-// DeleteAdtySiteInviteCode is retired; historical invite-code rows stay.
-func DeleteAdtySiteInviteCode(c *gin.Context) { rejectRetiredSiteInviteWrite(c) }
 
 // ReviewAdtySiteCustomer 复核风控客户（分站·审核）：POST /api/adty/admin/sites/customers/:id/review {convert_skipped}。
 // 认可后之后的消费正常计收益；convert_skipped 时还没结算的 skipped 收益改成 usage。

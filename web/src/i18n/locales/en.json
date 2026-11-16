@@ -9144,6 +9144,8 @@
     "Completed at": "Completed at",
     "Unknown site": "Unknown site",
     "All order types": "All order types",
-    "Withdrawn notification": "Withdrawn"
+    "Withdrawn notification": "Withdrawn",
+    "View reseller configuration without changing it.": "View reseller configuration without changing it.",
+    "Change reseller settings. Secrets remain Root-only.": "Change reseller settings. Secrets remain Root-only."
   }
 }
