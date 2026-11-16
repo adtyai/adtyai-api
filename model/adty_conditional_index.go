@@ -93,16 +93,6 @@ func ensureConditionalUniqueIndexOn(db *gorm.DB, table, index string, prefixColu
 	return db.Exec(fmt.Sprintf("CREATE UNIQUE INDEX %s ON %s (%s)", quotedIndex, quotedTable, quotedIndexColumns)).Error
 }
 
-func dropIndexIfExists(db *gorm.DB, table any, index string) error {
-	if db == nil || index == "" {
-		return nil
-	}
-	if !db.Migrator().HasIndex(table, index) {
-		return nil
-	}
-	return db.Migrator().DropIndex(table, index)
-}
-
 func dropMySQLGeneratedColumnIfExists(db *gorm.DB, table, column string) error {
 	if db == nil || db.Dialector.Name() != "mysql" || table == "" || column == "" {
 		return nil

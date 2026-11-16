@@ -232,17 +232,6 @@ func lockAdtyManualRefundByIDTx(tx *gorm.DB, tradeNo, refundID string) (*AdtyMan
 	return nil, rows, common.NewMessage("Refund not found")
 }
 
-func adtyManualRefundCapRemaining(face, completed, held, unknown int64) int64 {
-	if face <= 0 {
-		return 0
-	}
-	used := completed + held + unknown
-	if used < 0 || used >= face {
-		return 0
-	}
-	return face - used
-}
-
 func adtyFindManualRefundByIDTx(tx *gorm.DB, refundID string) (*AdtyManualRefund, error) {
 	if err := adtyRequireManualRefundTable(tx); err != nil {
 		return nil, err

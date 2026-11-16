@@ -88,12 +88,6 @@ func ListAdtyLedgers(userId int, pageInfo *common.PageInfo) ([]AdtyBalanceLedger
 	return rows, total, err
 }
 
-// lockUserQuotaTx 锁用户行，返回当前额度（入账、退款、调额都最后才锁用户行）。
-func lockUserQuotaTx(tx *gorm.DB, userId int) (int64, error) {
-	balance, _, err := lockUserQuotaForRefundTx(tx, userId)
-	return balance, err
-}
-
 // lockUserQuotaForRefundTx 锁用户行，返回余额和还在钱包里的签到赠送。
 func lockUserQuotaForRefundTx(tx *gorm.DB, userId int) (balance, checkin int64, err error) {
 	var users []User

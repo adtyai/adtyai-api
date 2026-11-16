@@ -593,3 +593,24 @@ P6 移植旧项目前端时，不要把 `?aff=` 和 `features/auth/lib/storage.t
 
 - 升级库里的 `adty_promo_codes`、`adty_promo_redemptions` 表和 `adty_topup_orders` 的三个旧列：不写删表删列，代码不再读写（`TestMarketingRemovalDatabaseMatrix` 盯着升级时旧行不变）。
 - 两份语言包里的旧文案：按约定 B 只增不删。
+
+## 二开代码里的死函数（2026-11-16）
+
+用 `deadcode` 从 `main` 出发找不可达的函数，再对照上游 v1.0.0-rc.47 的文件清单，只处理二开自己的文件；上游文件里的不可达函数不动，免得以后合并上游时到处冲突。
+
+### 删除
+
+- 连测试都不调用的 16 个函数：`ParseOfficialPlanHeadings`、`lockUserQuotaTx`、`dropIndexIfExists`、`adtyManualRefundCapRemaining`、`migrateAdtyReferralTables`、`seedAdtyPaymentScenes`、`RecordAdtyRefundProof`、`AdtyTicketStatusIsLive`、`adtyDuplicateEventTrades`、`initGroupHealthThreshold`、`siteCommissionWithdrawnOutstanding`、`AdtySiteBonusRates`、`EvaluateAdtySiteTier`、`AdtySiteForEmail`、`adtyTaskRecalcGroupRatio`，以及测试夹具里没人调用的 `fundSettleFixture.settle`。
+- `service/adty_remaining_gaps.go` 里 65 个未导出函数：文件开头写明它们是「剩余缺口的草稿，不是已上线的接口或功能」，只有测试在调用。对应测试里只测这些草稿的四个用例整个删掉，混合用例只删草稿那几行；邀请绑定的用例改用正式的 `BindSiteInviteFromIP`。
+- 只为测试存在的探针：`AdtyGroupHealthDoesNotReroute`（读令牌分组）、`AdtyTranslationCallsDoNotDebit`（读余额）。
+- `ValidateAdtySiteSVG` 和它的白名单：Logo 上传早就只收 PNG、JPEG、WebP。
+- `service/adty_fund_fifo.go`（`ConsumeFundFIFO`）和它的测试：生产按数据库里的资金批次扣，不用这个内存模型。
+- 随之没人用的变量和常量：`officialHeading`、`adtySvixTolerance`、`errAdtySvixInvalid`、`adtyTelegramBound`、`ErrAdtySiteLogoUnsafe`。
+
+### 保留名单和理由
+
+- 带 `ForTest` 的钩子、`model/adty_testsupport.go`、`model/adty_pg_acceptance.go`、`internal/pgtest`、`common/logsinktest`：跨包共用的测试工具，本来就只给测试用。
+- 被大量测试拿来造数据的服务函数（如 `OpenAdtyMarginCycle`、`ApplyAdtySiteWalletChange`、`CreateAdtyTopUp`、`JoinAdtyTeam`）：删了要重写大量测试，收益小。
+- `ApplyAdtySite`、`NewAdtySiteInviteCode`、`SaveAdtySiteInviteCode`：自助开站退役记录（`RETIRE-site-self-apply`）里写明历史申请和邀请码数据保留，测试用它们造历史数据。
+- `internal/adtygov`：治理记录，只由测试核对。
+- 上游文件里的 79 个只被测试调用、190 个连测试都不调用的函数：不动。

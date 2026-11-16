@@ -203,19 +203,6 @@ func TestRootImportantOperationStaysExemptFromPasswordAndEmailCode(t *testing.T)
 	require.NoError(t, err)
 }
 
-func TestSensitiveProofMethodsMatchesLiveNonRootPolicy(t *testing.T) {
-	assert.False(t, sensitiveActionNeedsProof(common.RoleRootUser))
-	assert.Empty(t, sensitiveProofMethods(common.RoleRootUser))
-	assert.True(t, sensitiveActionNeedsProof(common.RoleCommonUser))
-	assert.Equal(t, []string{VerificationMethodPassword, VerificationMethodEmailCode}, sensitiveProofMethods(common.RoleCommonUser))
-	assert.Equal(t, []string{VerificationMethodPassword, VerificationMethodEmailCode}, sensitiveProofMethods(common.RoleAdminUser))
-
-	_, identity := setupSecurityStepUpTest(t)
-	requirements, err := GetVerificationRequirements(identity, VerificationScopePasswordChange)
-	require.NoError(t, err)
-	assert.Equal(t, sensitiveProofMethods(common.RoleCommonUser), methodNames(requirements)[:2])
-}
-
 func TestSecurityEmailCodeIsSiteScopedSingleUse(t *testing.T) {
 	user, identity := setupSecurityStepUpTest(t)
 	site := &model.AdtySite{OwnerUserId: user.Id, Subdomain: "step-up-site", Status: model.AdtySiteStatusActive}

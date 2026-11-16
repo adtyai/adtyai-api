@@ -706,12 +706,6 @@ func recordAdtySiteTierEvaluationTx(tx *gorm.DB, siteID int, periodID string, no
 	}).Error
 }
 
-// EvaluateAdtySiteTier assigns the highest enabled grade that the site's
-// lifetime totals currently meet. A Root manual pin is left untouched.
-func EvaluateAdtySiteTier(siteID int, now int64) (*model.AdtySite, error) {
-	return EvaluateAdtySiteTierAt(siteID, now, AdtySiteTierPeriodID(now))
-}
-
 // EvaluateAdtySiteTierAt is the same evaluation keyed by an explicit period ID.
 // Re-running the same site and period does not repeat the grade write, margin
 // mutation, or lowest-grade warning.

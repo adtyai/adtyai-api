@@ -527,10 +527,6 @@ func clawConvertedSiteCommissionTx(tx *gorm.DB, row *model.AdtySiteInviteCommiss
 	return shortfall, nil
 }
 
-func siteCommissionWithdrawnOutstanding(tx *gorm.DB, commissionID int64, withdrawn decimal.Decimal) (decimal.Decimal, error) {
-	return model.SiteInviteCommissionWithdrawnLive(tx, commissionID, withdrawn)
-}
-
 // consumeSiteCommissionHoldTx settles a frozen hold. release returns it to the
 // original wallet. A deduction removes it from that wallet.
 func consumeSiteCommissionHoldTx(tx *gorm.DB, row *model.AdtySiteInviteCommission, amount decimal.Decimal, release bool, idemBase string) error {

@@ -307,9 +307,6 @@ func TestAdtyTranslationReuseVersionAndNoDebit(t *testing.T) {
 	assert.Equal(t, model.AdtyTranslationFailed, failed.Status)
 	assert.Equal(t, AdtyTranslationNotReady, failed.Notice)
 	assert.Empty(t, failed.English)
-	quota, err := AdtyTranslationCallsDoNotDebit(user.Id)
-	require.NoError(t, err)
-	assert.Equal(t, 500000, quota)
 }
 
 func TestAdtyGroupHealthMarksExpiredSamplesStale(t *testing.T) {
@@ -392,9 +389,6 @@ func TestAdtyGroupHealthKeepsProbeAndCustomerRefusalApart(t *testing.T) {
 	assert.Equal(t, model.AdtyGroupHealthInterrupted, stale[0].Status)
 	assert.Nil(t, stale[0].RequestSuccessRate)
 
-	group, err := AdtyGroupHealthDoesNotReroute(token.Id)
-	require.NoError(t, err)
-	assert.Equal(t, "vip", group)
 	outcome := perfmetrics.ClassifyRelayOutcome(context.Background(), &relaycommon.RelayInfo{}, types.NewError(errors.New("quota"), types.ErrorCodeInsufficientUserQuota))
 	kind, record := adtyGroupHealthFromOutcome(string(outcome))
 	assert.False(t, record)

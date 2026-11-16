@@ -119,16 +119,6 @@ func NormalizeAdtyTicketStatus(status string, assigneeId int) string {
 	}
 }
 
-// AdtyTicketStatusIsLive reports whether an official (or leftover) status is still open for handling.
-func AdtyTicketStatusIsLive(status string, assigneeId int) bool {
-	switch NormalizeAdtyTicketStatus(status, assigneeId) {
-	case AdtyTicketNew, AdtyTicketPendingAssignment, AdtyTicketInProgress, AdtyTicketWaitingUser, AdtyTicketWaitingInternal:
-		return true
-	default:
-		return false
-	}
-}
-
 // RemapAdtyTicketLegacyStatuses rewrites leftover open/assigned rows into official
 // states. Tickets are never deleted. The mapping is idempotent.
 func RemapAdtyTicketLegacyStatuses(db *gorm.DB) error {

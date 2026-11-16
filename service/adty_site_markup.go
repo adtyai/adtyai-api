@@ -741,13 +741,6 @@ func AdtyStampTaskSiteBilling(c *gin.Context, bc *model.TaskBillingContext) {
 	}
 }
 
-// adtyTaskRecalcGroupRatio 是任务按 token 重算时的分组倍率（service/task_billing.go）：
-// 提交时已经按供货倍率和加价比例乘进快照的任务（SiteMarkup > 0）用快照里的分组倍率，不再乘；
-// 主站客户的任务照上游用当前分组倍率；没有快照的分站任务按当前公式乘一次。
-func adtyTaskRecalcGroupRatio(task *model.Task, group string, groupRatio float64) float64 {
-	return adtyTaskRecalcGroupRatioDecimal(task, group, decimal.NewFromFloat(groupRatio)).InexactFloat64()
-}
-
 func adtyTaskRecalcGroupRatioDecimal(task *model.Task, group string, groupRatio decimal.Decimal) decimal.Decimal {
 	if task != nil {
 		if bc := task.PrivateData.BillingContext; bc != nil {

@@ -212,8 +212,3 @@ func (c *AdtyResendClient) GetDomain(ctx context.Context, domainID string) (Adty
 func (c *AdtyResendClient) DeleteDomain(ctx context.Context, domainID string) error {
 	return c.do(ctx, http.MethodDelete, "/domains/"+url.PathEscape(domainID), nil, "", nil)
 }
-
-// adtySvixTolerance 是 webhook 时间戳允许的偏差，超出的当成重放拒绝。
-const adtySvixTolerance = 5 * time.Minute
-
-var errAdtySvixInvalid = errors.New("invalid webhook signature")

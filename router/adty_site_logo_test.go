@@ -20,37 +20,6 @@ import (
 
 // 站长品牌图片上传：PNG、JPEG、WebP，最大 200 KB，存 uploads/site-assets；不接受 SVG。
 
-func TestSiteLogoSVGRules(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		svg  string
-		want error
-	}{
-		{"plain shapes", `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="#f00"/></svg>`, nil},
-		{"gradient by local id", `<svg xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="g"><stop offset="0" stop-color="#000"/></linearGradient></defs><rect fill="url(#g)" width="1" height="1"/></svg>`, nil},
-		{"script element", `<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>`, service.ErrAdtySiteLogoUnsafe},
-		{"script with namespace prefix", `<svg xmlns="http://www.w3.org/2000/svg" xmlns:x="http://www.w3.org/2000/svg"><x:script>alert(1)</x:script></svg>`, service.ErrAdtySiteLogoUnsafe},
-		{"event handler", `<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"><rect width="1" height="1"/></svg>`, service.ErrAdtySiteLogoUnsafe},
-		{"foreignObject", `<svg xmlns="http://www.w3.org/2000/svg"><foreignObject><div>x</div></foreignObject></svg>`, service.ErrAdtySiteLogoUnsafe},
-		{"link with javascript href", `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"><a xlink:href="javascript:alert(1)"><rect width="1" height="1"/></a></svg>`, service.ErrAdtySiteLogoUnsafe},
-		{"external image", `<svg xmlns="http://www.w3.org/2000/svg"><image href="https://evil.example/x.png"/></svg>`, service.ErrAdtySiteLogoUnsafe},
-		{"external url in fill", `<svg xmlns="http://www.w3.org/2000/svg"><rect fill="url(https://evil.example/x#g)" width="1" height="1"/></svg>`, service.ErrAdtySiteLogoUnsafe},
-		{"style element", `<svg xmlns="http://www.w3.org/2000/svg"><style>rect{fill:red}</style></svg>`, service.ErrAdtySiteLogoUnsafe},
-		{"doctype with entity", `<?xml version="1.0"?><!DOCTYPE svg [<!ENTITY x SYSTEM "file:///etc/passwd">]><svg xmlns="http://www.w3.org/2000/svg"><text>&x;</text></svg>`, service.ErrAdtySiteLogoUnsafe},
-		{"not svg at all", `<html><body>hi</body></html>`, service.ErrAdtySiteLogoType},
-		{"broken xml", `<svg xmlns="http://www.w3.org/2000/svg"><rect`, service.ErrAdtySiteLogoType},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			err := service.ValidateAdtySiteSVG([]byte(tc.svg))
-			if tc.want == nil {
-				assert.NoError(t, err)
-				return
-			}
-			assert.ErrorIs(t, err, tc.want)
-		})
-	}
-}
-
 func uploadLogo(t *testing.T, f *ownerFixture, name string, data []byte) *httptest.ResponseRecorder {
 	t.Helper()
 	var body bytes.Buffer

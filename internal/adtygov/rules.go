@@ -7,8 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
-	"regexp"
 	"strings"
 )
 
@@ -32,8 +30,6 @@ type officialRuleID struct {
 	Title  string `json:"title"`
 	Source string `json:"source"`
 }
-
-var officialHeading = regexp.MustCompile(`^#{3,4} (([GA])\.\d+(?:\.\d+)?)\s+(\S.*)$`)
 
 // OfficialRuleMappings returns the in-repo mapping of official volume-1 rule IDs
 // to the official E.2 checkpoint list.
@@ -81,35 +77,6 @@ func DecodeRuleCatalog(r io.Reader) ([]RuleMapping, error) {
 	}
 	if len(out) == 0 {
 		return nil, fmt.Errorf("rule catalog is empty")
-	}
-	return out, nil
-}
-
-// ParseOfficialPlanHeadings extracts official G/A heading rule IDs from a
-// volume-1 plan fragment. Callers pass a path; this does not import or freeze
-// an external issues/ledger file.
-func ParseOfficialPlanHeadings(planPath string) ([]officialRuleID, error) {
-	data, err := os.ReadFile(planPath)
-	if err != nil {
-		return nil, err
-	}
-	body := string(data)
-	if idx := strings.Index(body, "# 卷一"); idx >= 0 {
-		body = body[idx:]
-		if end := strings.Index(body[1:], "\n# "); end >= 0 {
-			body = body[:end+1]
-		}
-	}
-	var out []officialRuleID
-	for _, line := range strings.Split(body, "\n") {
-		m := officialHeading.FindStringSubmatch(strings.TrimRight(line, "\r"))
-		if m == nil {
-			continue
-		}
-		out = append(out, officialRuleID{RuleID: m[1], Title: strings.TrimSpace(m[3]), Source: "volume1"})
-	}
-	if len(out) == 0 {
-		return nil, fmt.Errorf("no official G/A headings in %s", planPath)
 	}
 	return out, nil
 }

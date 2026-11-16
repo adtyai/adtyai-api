@@ -178,14 +178,6 @@ func adtyDuplicateEventTradeNos(siteID int, outcome, eventType string) ([]string
 	return trades, nil
 }
 
-func adtyDuplicateEventTrades(siteID int, outcome, eventType string) (int64, error) {
-	trades, err := adtyDuplicateEventTradeNos(siteID, outcome, eventType)
-	if err != nil {
-		return 0, err
-	}
-	return int64(len(trades)), nil
-}
-
 type adtySuccessOrderRow struct {
 	TradeNo     string
 	UserId      int

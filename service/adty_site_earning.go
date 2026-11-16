@@ -329,19 +329,6 @@ func adtySiteBonusAfterRefundTx(tx *gorm.DB, topUp *model.TopUp, ext *model.Adty
 	return releaseUnusedSiteGiftGuaranteeTx(tx, ext)
 }
 
-// AdtySiteBonusRates 是站点的加赠档位（站长设的 JSON：档位美元 → 百分比）；空就不送。
-func AdtySiteBonusRates(site *model.AdtySite) map[int]float64 {
-	rates := map[int]float64{}
-	if site == nil || strings.TrimSpace(site.BonusRates) == "" {
-		return rates
-	}
-	if err := common.UnmarshalJsonStr(site.BonusRates, &rates); err != nil {
-		common.SysError(common.LogText("invalid site bonus rates site=%d: %s", site.Id, err.Error()))
-		return map[int]float64{}
-	}
-	return rates
-}
-
 // ValidateAdtySiteBonusRates 检查站长要保存的加赠档位：每一档不能超过「主站同档比例 + max_site_bonus_extra」。
 // 主站同档按 AdtyBonusFor 取（不超过这个面额的最高档）。max_site_bonus_extra 没设就是 0。
 func ValidateAdtySiteBonusRates(rates map[int]float64) error {

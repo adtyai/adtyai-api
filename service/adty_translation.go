@@ -431,11 +431,3 @@ func adtyTranslationKeepsFacts(source, english string) bool {
 	}
 	return adtyTranslationKeepsGlossary(source, english)
 }
-
-func AdtyTranslationCallsDoNotDebit(userId int) (int, error) {
-	var user model.User
-	if err := model.DB.Select("quota").First(&user, userId).Error; err != nil {
-		return 0, err
-	}
-	return user.Quota, nil
-}

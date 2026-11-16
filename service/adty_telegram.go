@@ -22,7 +22,6 @@ import (
 
 const adtyTelegramReply = "此机器人仅用于通知，请前往网站操作\n\nThis bot only sends notifications. Please use the website."
 const adtyTelegramStaged = "已收到绑定请求，请回到网站确认。\n\nBinding request received. Confirm it on the website."
-const adtyTelegramBound = "绑定已确认。\n\nBinding confirmed."
 
 var (
 	ErrAdtyTelegramInvalid    = common.NewMessage("Invalid parameters")

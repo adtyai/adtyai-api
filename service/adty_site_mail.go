@@ -763,18 +763,6 @@ func adtyNotifySiteCostFactor(site *model.AdtySite) {
 	})
 }
 
-// AdtySiteForEmail 是这个邮箱在指定站点上的账号所属的站点；查不到返回 nil。
-func AdtySiteForEmail(email string, siteID int) *model.AdtySite {
-	if !resellerSetting().Enabled || strings.TrimSpace(email) == "" {
-		return nil
-	}
-	user, err := model.GetUniqueUserByEmail(model.NormalizeEmail(email), siteID)
-	if err != nil {
-		return nil
-	}
-	return AdtySiteById(user.SiteId)
-}
-
 // 支付跳回（任务 11.3，执行层决定 30）。易支付的 return_url 一律是主站的 /pay/result/<订单号>.<签名>：
 // 网关会往 return_url 后面加自己的参数，所以不带 query；签名防止拿别人的订单号探测订单属于哪个站。
 // 分站客户在主站没有登录会话（会话按 Host），这里不能靠登录判断订单归属，靠的是签名：只有我们生成的地址才会跳。

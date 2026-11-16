@@ -1,7 +1,6 @@
 package service
 
 import (
-	"strconv"
 	"time"
 
 	perfmetrics "github.com/QuantumNous/new-api/pkg/perf_metrics"
@@ -303,20 +302,4 @@ func openAdtyGroupHealthAlert(siteId int, group, kind string) error {
 
 func closeAdtyGroupHealthAlert(siteId int, group string) error {
 	return model.DB.Model(&model.AdtyGroupHealthAlert{}).Where("site_id = ? AND group_name = ? AND open = ?", siteId, group, true).Update("open", false).Error
-}
-
-func AdtyGroupHealthDoesNotReroute(tokenId int) (string, error) {
-	var token model.Token
-	if err := model.DB.Select("group").First(&token, tokenId).Error; err != nil {
-		return "", err
-	}
-	return token.Group, nil
-}
-
-func initGroupHealthThreshold(value string) string {
-	parsed, err := strconv.ParseFloat(value, 64)
-	if err != nil {
-		return "0.95"
-	}
-	return strconv.FormatFloat(parsed, 'f', -1, 64)
 }

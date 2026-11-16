@@ -467,3 +467,7 @@ service/adty_promo_test.go
 middleware/adty_promo_rate_limit.go
 middleware/adty_promo_rate_limit_test.go
 router/adty_promo_test.go
+
+# 二开代码里的死函数（2026-11-16）
+service/adty_fund_fifo.go
+service/adty_fund_fifo_test.go

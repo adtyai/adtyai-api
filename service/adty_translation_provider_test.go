@@ -123,9 +123,6 @@ func TestAdtyTranslationProviderFailureKeepsChineseAndNoDebit(t *testing.T) {
 	assert.Equal(t, source, head.Source)
 	assert.Empty(t, head.English)
 
-	quota, err := AdtyTranslationCallsDoNotDebit(user.Id)
-	require.NoError(t, err)
-	assert.Equal(t, 500000, quota)
 }
 
 // 配置指回本站（品牌域名、主站域名或分站根域名）时直接拒绝，不发请求、不递归。

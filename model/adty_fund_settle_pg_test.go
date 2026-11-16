@@ -43,17 +43,6 @@ func (f *fundSettleFixture) reserve(t *testing.T, quota int, key string) {
 	require.True(t, ok)
 }
 
-func (f *fundSettleFixture) settle(t *testing.T, key string, actual int) {
-	t.Helper()
-	op := BillingOperation{
-		OperationKey: key, UserId: f.user.Id, Kind: "request",
-		ReservedQuota: actual + 0, ActualQuota: actual, State: BillingSettlePending,
-	}
-	require.NoError(t, f.db.Create(&op).Error)
-	_, _, err := ApplyBillingSettlement(key)
-	require.NoError(t, err)
-}
-
 func (f *fundSettleFixture) remaining(t *testing.T) int64 {
 	t.Helper()
 	var row AdtyFundBatch

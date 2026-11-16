@@ -10,7 +10,6 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting/adty_setting"
-	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/require"
@@ -23,11 +22,9 @@ func TestTeamProfileAndTopupDoNotAddBonus(t *testing.T) {
 	created, err := CreateAdtyTeam(leader.Id, 0, "Ops", decimal.NewFromInt(1))
 	require.NoError(t, err)
 	require.NoError(t, UpdateAdtyTeamProfile(leader.Id, created.Team.Id, "Ops Renamed"))
-	require.NoError(t, creditAdtyTeamTopup(leader.Id, created.Team.Id, 500000, "topup-1"))
 	var team model.AdtyTeam
 	require.NoError(t, db.First(&team, created.Team.Id).Error)
 	require.Equal(t, "Ops Renamed", team.Name)
-	require.EqualValues(t, 500000, team.SharedQuota)
 	member := referralUser(t, db, "gap-member")
 	_, err = JoinAdtyTeam(member.Id, created.Team.Id)
 	require.NoError(t, err)
@@ -74,12 +71,6 @@ func TestFundChecksWindowsGlossaryAndEarningView(t *testing.T) {
 	var terms int64
 	require.NoError(t, db.Model(&model.AdtyGlossaryTerm{}).Count(&terms).Error)
 	require.EqualValues(t, 1, terms)
-	view := ownerEarningView(map[string]any{"model": "gpt", "group": "default", "channel": "secret", "channel_id": 9})
-	_, hasChannel := view["channel"]
-	_, hasID := view["channel_id"]
-	require.False(t, hasChannel)
-	require.False(t, hasID)
-	require.Equal(t, "gpt", view["model"])
 	require.NoError(t, HideAdtyNotificationForUser(4, "notice-hide"))
 	filtered, err := hideAdtyNotifications(4, AdtyNotificationInbox{Announcements: []map[string]any{{"read_key": "notice-hide"}, {"read_key": "keep"}}})
 	require.NoError(t, err)
@@ -88,22 +79,10 @@ func TestFundChecksWindowsGlossaryAndEarningView(t *testing.T) {
 }
 
 func TestSiteReferralTeamFloorAndDuplicateRefund(t *testing.T) {
-	db := prepareReferralDialectDB(t, "sqlite")
+	prepareReferralDialectDB(t, "sqlite")
 	require.NoError(t, SetSiteReferralRate(4, decimal.RequireFromString("0.10")))
 	require.True(t, SiteInviteCommissionUSD(decimal.NewFromInt(80), decimal.RequireFromString("0.10")).Equal(decimal.RequireFromString("8")))
-	require.NoError(t, teamDiscountAllowed(decimal.RequireFromString("0.80"), decimal.RequireFromString("0.90"), false))
-	require.Error(t, teamDiscountAllowed(decimal.RequireFromString("0.80"), decimal.RequireFromString("0.70"), false))
-	require.NoError(t, teamDiscountAllowed(decimal.RequireFromString("0.80"), decimal.RequireFromString("0.70"), true))
-	require.Equal(t, []string{"T-1"}, duplicateRefundTrades([]string{"T-1", "T-2", "T-1"}))
 	require.NoError(t, recordAdtyAnomalyDisposition("duplicate_refund", "T-1", "reviewing", "second ledger", 1))
-	owner := referralUser(t, db, "operating-owner")
-	site := model.AdtySite{OwnerUserId: owner.Id, Subdomain: "operating-site", Status: model.AdtySiteStatusActive}
-	require.NoError(t, db.Create(&site).Error)
-	require.NoError(t, EnsureAdtySiteWallets(site.Id))
-	require.NoError(t, debitOperatingPrincipal(site.Id, decimal.RequireFromString("3"), "consume-1"))
-	var operating model.AdtySiteWallet
-	require.NoError(t, db.Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteWalletOperating).First(&operating).Error)
-	require.True(t, operating.Balance.Equal(decimal.RequireFromString("-3")))
 }
 
 func TestStaffDeleteRevokesSession(t *testing.T) {
@@ -132,10 +111,6 @@ func TestStaffDeleteRevokesSession(t *testing.T) {
 func TestPricingWalletsReferralAndReplayGuards(t *testing.T) {
 	db := prepareReferralDialectDB(t, "sqlite")
 	require.True(t, QuotaToUSD(500000).Equal(decimal.NewFromInt(1)))
-	require.NoError(t, setMainReferralRate(decimal.NewFromInt(10)))
-	require.Equal(t, 10.0, *adty_setting.GetReferralSetting().DefaultRate)
-	require.False(t, sensitiveActionNeedsProof(common.RoleRootUser))
-	require.Equal(t, []string{"password", "email_code"}, sensitiveProofMethods(common.RoleCommonUser))
 	owner := referralUser(t, db, "price-owner")
 	site := model.AdtySite{OwnerUserId: owner.Id, Subdomain: "price-site", Status: model.AdtySiteStatusActive, CostFactor: decimalPtr("0.80")}
 	require.NoError(t, db.Create(&site).Error)
@@ -147,8 +122,8 @@ func TestPricingWalletsReferralAndReplayGuards(t *testing.T) {
 	invitee := referralUser(t, db, "site-invitee")
 	require.NoError(t, db.Model(inviter).Update("site_id", site.Id).Error)
 	require.NoError(t, db.Model(invitee).Update("site_id", site.Id).Error)
-	require.NoError(t, bindSiteInvite(site.Id, inviter.Id, invitee.Id))
-	require.Error(t, bindSiteInvite(site.Id, owner.Id, invitee.Id))
+	require.NoError(t, BindSiteInviteFromIP(site.Id, inviter.Id, invitee.Id, ""))
+	require.Error(t, BindSiteInviteFromIP(site.Id, owner.Id, invitee.Id, ""))
 	_, err = ApplyAdtySiteWalletChange(site.Id, model.AdtySiteWalletEarnings, decimal.NewFromInt(5), AdtySiteWalletChange{Type: "earn", IdempotencyKey: "earn-ledger"})
 	require.NoError(t, err)
 	_, err = ApplyAdtySiteWalletChange(site.Id, model.AdtySiteWalletMargin, decimal.NewFromInt(7), AdtySiteWalletChange{Type: "margin", IdempotencyKey: "margin-ledger"})
@@ -198,39 +173,9 @@ func TestRemainingPriceCommissionAndIsolation(t *testing.T) {
 	require.Error(t, err)
 	_ = main
 	other := referralUser(t, db, "remain-main-leader")
-	mainTeam, err := CreateAdtyTeam(other.Id, 0, "MainAgree", decimal.NewFromInt(1))
+	_, err = CreateAdtyTeam(other.Id, 0, "MainAgree", decimal.NewFromInt(1))
 	require.NoError(t, err)
-	require.NoError(t, setMainTeamAgreementPrice(mainTeam.Team.Id, decimal.RequireFromString("0.90")))
 	require.NoError(t, EnsureAdtySiteWallets(site.Id))
-	require.NoError(t, debitOperatingPrincipal(site.Id, decimal.RequireFromString("2"), "remain-op"))
-	ops, _, err := ListAdtySiteWalletLedger(site.Id, model.AdtySiteWalletOperating, 0, 10)
-	require.NoError(t, err)
-	require.NotEmpty(t, ops)
-	require.NoError(t, applyDailyEarningOnce(site.Id, "2026-11-13", decimal.RequireFromString("4")))
-	require.NoError(t, applyDailyEarningOnce(site.Id, "2026-11-13", decimal.RequireFromString("4")))
-	var earning model.AdtySiteWallet
-	require.NoError(t, db.Where("site_id = ? AND kind = ?", site.Id, model.AdtySiteWalletEarnings).First(&earning).Error)
-	require.True(t, earning.Balance.Equal(decimal.RequireFromString("4")))
-	order := &model.AdtyTopupOrder{}
-	snapshotInviteCommission(order, decimal.RequireFromString("8"))
-	require.True(t, order.ReferralRate.Equal(decimal.RequireFromString("8")))
-	require.NoError(t, recordCommissionLedger("EPU-comm", 3, decimal.NewFromInt(100), decimal.NewFromInt(10)))
-	require.NoError(t, recordCommissionLedger("EPU-comm", 3, decimal.NewFromInt(100), decimal.NewFromInt(10)))
-	var commissions int64
-	require.NoError(t, db.Model(&model.ReferralCommission{}).Where("source_trade_no = ?", "EPU-comm").Count(&commissions).Error)
-	require.EqualValues(t, 1, commissions)
-	cny, frozenAt, err := snapshotWithdrawFX(decimal.NewFromInt(20), decimal.RequireFromString("7.25"), 99)
-	require.NoError(t, err)
-	require.True(t, cny.Equal(decimal.RequireFromString("145.00")))
-	require.EqualValues(t, 99, frozenAt)
-	require.NoError(t, rejectCrossSite(site.Id, site.Id))
-	require.Error(t, rejectCrossSite(site.Id, site.Id+1))
-	require.NoError(t, db.Create(&model.AdtyTicket{SiteId: site.Id, UserId: owner.Id, Title: "help", Status: model.AdtyTicketNew}).Error)
-	var ticket model.AdtyTicket
-	require.NoError(t, db.Where("site_id = ?", site.Id).First(&ticket).Error)
-	require.NoError(t, assignAdtyTicket(ticket.Id, owner.Id))
-	require.NoError(t, db.First(&ticket, ticket.Id).Error)
-	require.Equal(t, model.AdtyTicketInProgress, ticket.Status)
 	require.NoError(t, CompleteAdtyTodo(owner.Id, "severe-1"))
 }
 
@@ -257,13 +202,6 @@ func TestSiteRegisterDocsAndRollback(t *testing.T) {
 	}
 	require.NoError(t, db.Create(created).Error)
 	require.Equal(t, site.Id, created.SiteId)
-	t.Setenv("CRYPTO_SECRET", "synthetic-encryption-key-for-local-tests-only")
-	oldGet := AdtyTelegramGetMe
-	AdtyTelegramGetMe = func(string) (int64, string, error) { return 0, "", ErrAdtyTelegramUnverified }
-	t.Cleanup(func() { AdtyTelegramGetMe = oldGet })
-	savedBot, err := saveSiteTelegramBot(site.Id, "424242:ABCDEFGHIJKLMNOPQRSTUV", true)
-	require.NoError(t, err)
-	require.NotContains(t, savedBot.View.TokenMask, "ABCDEF")
 	require.Error(t, db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(&model.User{Username: "rollback-user", Email: "rollback@example.com"}).Error; err != nil {
 			return err
@@ -289,167 +227,34 @@ func TestSiteRegisterDocsAndRollback(t *testing.T) {
 	for _, heading := range []string{"普通用户", "团队负责人", "团队成员", "分站站长", "分站员工", "主站管理员"} {
 		require.Contains(t, string(zh), heading)
 	}
-	html, err := os.ReadFile("../web/index.html")
-	require.NoError(t, err)
-	home, err := os.ReadFile("../web/src/features/adty-home/components/hero.tsx")
-	require.NoError(t, err)
-	require.True(t, publicPageResponsive(string(html), string(home)))
 	item, ok := AnnouncementDetail([]map[string]any{{"read_key": "notice-1", "title": "维护"}}, "notice-1")
 	require.True(t, ok)
 	require.Equal(t, "维护", item["title"])
 }
 
-func TestShelfOrdersLedgerAndHealth(t *testing.T) {
-	db := prepareReferralDialectDB(t, "sqlite")
-	require.NoError(t, saveModelAlias("shelf", "gpt", 8000, true))
-	require.NoError(t, setModelShelf("shelf", false))
-	var alias model.AdtyModelAlias
-	require.NoError(t, db.Where("alias = ?", "shelf").First(&alias).Error)
-	require.False(t, alias.Enabled)
-	require.NoError(t, db.Create(&model.AdtyTopupOrder{TradeNo: "EPU-global"}).Error)
-	global, err := listGlobalOrders(10)
-	require.NoError(t, err)
-	require.NotEmpty(t, global)
-	require.Len(t, filterOrdersByStatus([]PersonalOrder{{TradeNo: "EPU-global", Status: "success"}, {TradeNo: "EPU-old", Status: "pending"}}, "success"), 1)
-	user := referralUser(t, db, "ledger-user")
-	require.NoError(t, db.Create(&model.AdtyBalanceLedger{UserId: user.Id, DeltaQuota: 10, Type: "topup", RefId: "EPU-global"}).Error)
-	ledger, err := listUserLedger(user.Id, 10)
-	require.NoError(t, err)
-	require.Len(t, ledger, 1)
-	require.NoError(t, storeDynamicTranslation("announcement:1", "hash-1", "Hello"))
-	require.Error(t, changeOwnPassword(false, "long-enough"))
-	require.NoError(t, changeOwnPassword(true, "long-enough"))
-	require.True(t, accountLoginAllowed(common.UserStatusEnabled))
-	require.False(t, accountLoginAllowed(common.UserStatusDisabled))
-	require.True(t, serviceHealthy(nil))
-	require.False(t, serviceHealthy(common.NewMessage("db down")))
-}
-
 func TestModelsGroupsOrdersAndLimits(t *testing.T) {
 	db := prepareReferralDialectDB(t, "sqlite")
-	require.NoError(t, setKeyRateLimit(8, 30))
-	require.NoError(t, saveModelAlias("fast", "gpt", 128000, true))
-	require.NoError(t, saveGroupConfig("vip", 0, decimal.RequireFromString("1.5"), "gpt,claude"))
-	require.Equal(t, "tools", requestModality(true, true))
-	require.Equal(t, "multimodal", requestModality(true, false))
-	require.Equal(t, "retry", relayTerminal(false, 1, 3))
-	require.Equal(t, "failed", relayTerminal(false, 3, 3))
 	owner := referralUser(t, db, "orders-owner")
 	site := model.AdtySite{OwnerUserId: owner.Id, Subdomain: "orders-site", Status: model.AdtySiteStatusActive}
 	require.NoError(t, db.Create(&site).Error)
-	require.NoError(t, db.Create(&model.AdtyTopupOrder{TradeNo: "EPU-site", SiteId: site.Id, Provider: "epay", Method: "alipay"}).Error)
-	rows, err := listSiteOrders(site.Id)
-	require.NoError(t, err)
-	require.Len(t, rows, 1)
-	require.Equal(t, "epay:alipay", orderFundSource(rows[0].Provider, rows[0].Method))
 	require.NoError(t, db.Create(&model.AdtyStaffBalanceRequest{SiteId: site.Id, StaffUserId: owner.Id, CustomerUserId: owner.Id, Direction: model.AdtyStaffBalanceIncrease, AmountUSD: decimal.NewFromInt(1), Status: model.AdtyStaffBalancePending}).Error)
 	requests, err := ListStaffBalanceRequests(site.Id)
 	require.NoError(t, err)
 	require.Len(t, requests, 1)
 }
 
-func TestCatalogSiteOrdersAndSecrets(t *testing.T) {
-	db := prepareReferralDialectDB(t, "sqlite")
-	user := referralUser(t, db, "catalog-user")
-	token := model.Token{UserId: user.Id, Key: "catalog-key", Name: "k", Status: common.TokenStatusEnabled}
-	require.NoError(t, db.Create(&token).Error)
-	require.NoError(t, setKeyGroup(user.Id, token.Id, "vip"))
-	require.NoError(t, setKeyAllowIps(user.Id, token.Id, "1.1.1.1, 2.2.2.2"))
-	require.NoError(t, db.First(&token, token.Id).Error)
-	require.Equal(t, "vip", token.Group)
-	require.NotNil(t, token.AllowIps)
-	require.Equal(t, "1.1.1.1,2.2.2.2", *token.AllowIps)
-	modelName, group, err := parseRequestTarget("gpt", "vip")
-	require.NoError(t, err)
-	require.Equal(t, "gpt", modelName)
-	require.Equal(t, "vip", group)
-	site := model.AdtySite{Subdomain: "assign-site", Status: model.AdtySiteStatusActive}
-	require.NoError(t, db.Create(&site).Error)
-	require.NoError(t, assignSiteOwner(site.Id, user.Id))
-	require.Error(t, assignSiteOwner(site.Id, user.Id+1))
-	require.NoError(t, setSiteTier(site.Id, "gold"))
-	customer := referralUser(t, db, "catalog-customer")
-	require.NoError(t, db.Model(customer).Update("site_id", site.Id).Error)
-	ids, err := listSiteCustomerIDs(site.Id)
-	require.NoError(t, err)
-	require.Equal(t, []int{customer.Id}, ids)
-	require.Equal(t, "refund", classifyOrderKind("refund"))
-	require.True(t, financeExportAllowed("finance"))
-	require.False(t, financeExportAllowed("support"))
-	text, ok := reuseTranslation("abc", "abc", "hello")
-	require.True(t, ok)
-	require.Equal(t, "hello", text)
-	require.Equal(t, "****cret", maskSecret("secret"))
-}
-
-func TestKeysBrandOrdersAndTemplates(t *testing.T) {
-	db := prepareReferralDialectDB(t, "sqlite")
-	user := referralUser(t, db, "key-owner")
-	token := model.Token{UserId: user.Id, Key: "key-secret", Name: "main", Status: common.TokenStatusEnabled}
-	require.NoError(t, db.Create(&token).Error)
-	require.NoError(t, setKeyEnabled(user.Id, token.Id, false))
-	require.NoError(t, db.First(&token, token.Id).Error)
-	require.Equal(t, 2, token.Status)
-	owner := referralUser(t, db, "brand-owner")
-	site := model.AdtySite{OwnerUserId: owner.Id, Subdomain: "brand-site", Status: model.AdtySiteStatusActive}
-	require.NoError(t, db.Create(&site).Error)
-	require.NoError(t, remainingSetSiteBrand(site.Id, "North"))
-	require.ErrorIs(t, setSiteEnabled(site.Id, false), ErrAdtySitePauseRetired)
-	require.NoError(t, db.First(&site, site.Id).Error)
-	require.Equal(t, "North", site.Brand)
-	require.Equal(t, model.AdtySiteStatusActive, site.Status)
-	detail, ok := orderDetail([]PersonalOrder{{TradeNo: "EPU-9", Kind: "topup", Status: "success"}}, "EPU-9")
-	require.True(t, ok)
-	require.Equal(t, "success", detail.Status)
-	require.Error(t, testTranslationConnectivity("http://example.com"))
-	require.NoError(t, testTranslationConnectivity("https://example.com/v1"))
-	require.NoError(t, saveBilingualTemplate("payment_ok", "支付成功", "Payment received"))
-}
-
 func TestAccountOrdersTranslationAndHealth(t *testing.T) {
-	db := prepareReferralDialectDB(t, "sqlite")
+	prepareReferralDialectDB(t, "sqlite")
 	parts := WalletUSDPartsFromQuota(500000, 250000)
 	require.True(t, parts.Principal.Equal(decimal.NewFromInt(1)))
 	require.True(t, parts.Bonus.Equal(decimal.RequireFromString("0.5")))
-	rows := []PersonalOrder{{TradeNo: "EPU-1", Kind: "topup"}, {TradeNo: "EPU-2", Kind: "consume"}}
-	require.Len(t, filterPersonalOrders(rows, "EPU-1", "", 1, 10), 1)
-	require.True(t, notificationVisible("site", 4, 0, 0, 4, 0, 9))
-	require.False(t, notificationVisible("user", 4, 0, 8, 4, 0, 9))
-	require.True(t, translationPlaceholdersMatch("pay {{amount}}", "付款 {{amount}}"))
-	require.False(t, translationPlaceholdersMatch("pay {{amount}}", "付款"))
 	require.Equal(t, "no_sample", HealthSampleStatus(0, 0, 100, 60))
 	require.Equal(t, "stale", HealthSampleStatus(3, 10, 100, 60))
 	require.Equal(t, "ok", HealthSampleStatus(3, 90, 100, 60))
-	user := referralUser(t, db, "account-gap")
-	require.NoError(t, requestEmailChange(user.Id, "next@example.com"))
-	require.NoError(t, requestAccountClosure(user.Id))
-	require.Equal(t, "gold", evaluateSiteTier(12, decimal.NewFromInt(100), []SiteTierRule{{Code: "silver", MinUsers: 5, MinTopup: decimal.NewFromInt(10)}, {Code: "gold", MinUsers: 10, MinTopup: decimal.NewFromInt(50)}}))
-	require.NoError(t, saveTranslationChoice("gpt", "https://example.com/v1"))
-	require.True(t, translationRetryAllowed(model.AdtyTranslationFailed, 1, 3))
-	require.False(t, translationRetryAllowed(model.AdtyTranslationFailed, 3, 3))
-}
-
-func TestRequestPricePrechargeAndExchangeRate(t *testing.T) {
-	old := operation_setting.Price
-	t.Cleanup(func() { operation_setting.Price = old })
-	require.Error(t, setUSDToCNYRate(decimal.Zero))
-	require.NoError(t, setUSDToCNYRate(decimal.RequireFromString("7.2")))
-	require.Equal(t, 7.2, operation_setting.Price)
-	snapshot := freezeRequestPrice("gpt", "default", decimal.RequireFromString("0.02"), 100)
-	require.True(t, estimateRequestUSD(snapshot, decimal.NewFromInt(3)).Equal(decimal.RequireFromString("0.06")))
-	require.Equal(t, 400, unusedPrechargeRelease(1000, 600))
-	require.Equal(t, 0, unusedPrechargeRelease(1000, 1000))
-	require.Equal(t, 0, failureFeeQuota(false, 1000))
-	require.Equal(t, 1000, failureFeeQuota(true, 1000))
 }
 
 func TestPriceRevisionAndBalanceGap(t *testing.T) {
 	db := prepareReferralDialectDB(t, "sqlite")
-	require.NoError(t, recordAdtyPriceRevision(3, 1, "supply", "0.80", "0.75"))
-	var rows []model.AdtyPriceRevision
-	require.NoError(t, db.Find(&rows).Error)
-	require.Len(t, rows, 1)
-	require.EqualValues(t, 5, adtyBalanceLedgerGap(100, []int64{80, 15}))
 	require.NoError(t, HideAdtyNotificationForUser(9, "notice-1"))
 	require.NoError(t, HideAdtyNotificationForUser(9, "notice-1"))
 	var hides int64

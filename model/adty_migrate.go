@@ -118,11 +118,6 @@ func migrateAdtySiteTablesOn(db *gorm.DB) error {
 	return nil
 }
 
-// migrateAdtyReferralTables 建推广返佣的 12 张表（任务 6.1）。
-func migrateAdtyReferralTables() error {
-	return migrateAdtyReferralTablesOn(DB)
-}
-
 func migrateAdtyReferralTablesOn(db *gorm.DB) error {
 	return db.AutoMigrate(ReferralTables()...)
 }

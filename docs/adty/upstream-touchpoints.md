@@ -709,3 +709,4 @@
 | `web/src/features/recharge-audit/__tests__/provider-actions.test.tsx` | 假数据里的 Stripe、Creem、Waffo 换成 BEpusdt 和易支付 | 四家托管支付已删除 | 旧单通道易支付设置删除 2026-11-16 |
 | `web/src/features/wallet/index.tsx` | 发起支付时不再带优惠码 | 优惠码删除 | 下单流程优惠码删除 2026-11-16 |
 | `AGENTS.md` | 优惠码一条改成「已删除，升级库旧表不读不写」 | 跟上删除 | 下单流程优惠码删除 2026-11-16 |
+| `service/security_verification_email_code_test.go` | 删除只核对草稿函数 `sensitiveActionNeedsProof`、`sensitiveProofMethods` 的用例 | 草稿函数已删除 | 二开死函数清理 2026-11-16 |

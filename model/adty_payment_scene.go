@@ -37,10 +37,6 @@ type AdtyPaymentSceneConfig struct {
 
 var ErrAdtyPaymentSceneConflict = errors.New("payment scene configuration version conflict")
 
-func seedAdtyPaymentScenes() error {
-	return seedAdtyPaymentScenesOn(DB)
-}
-
 func seedAdtyPaymentScenesOn(db *gorm.DB) error {
 	scenes := []AdtyPaymentScene{{
 		Key: "wallet_topup", Name: "Wallet top-up", Business: "wallet_topup", Enabled: true,

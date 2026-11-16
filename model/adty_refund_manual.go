@@ -1046,13 +1046,3 @@ func GetAdtyTopUpManualRefund(tradeNo, refundID string) (*AdtyManualRefundResult
 	}
 	return &AdtyManualRefundResult{Refund: &row, Occupancy: facts.Occupancy, Facts: facts, Commission: facts.Commission}, nil
 }
-
-// RecordAdtyRefundProof stores a voucher on the original order only. It does
-// not record an offline payout step or complete a manual refund.
-func RecordAdtyRefundProof(tradeNo, proof string) error {
-	proof = strings.TrimSpace(proof)
-	if tradeNo == "" || proof == "" || len(proof) > 255 {
-		return common.NewMessage("Invalid parameters")
-	}
-	return DB.Model(&AdtyTopupOrder{}).Where("trade_no = ?", tradeNo).Update("refund_proof", proof).Error
-}
