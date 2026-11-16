@@ -349,11 +349,6 @@ func InitResources() error {
 		}
 	}
 	model.InitOptionMap()
-	if common.IsMasterNode {
-		if err := model.MigrateLegacyAdtyEpayChannel(); err != nil {
-			return err
-		}
-	}
 
 	// 清理旧的磁盘缓存文件
 	common.CleanupOldCacheFiles()

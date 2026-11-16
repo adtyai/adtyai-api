@@ -38,13 +38,9 @@ import { PaymentSettingsSection } from '../payment-settings-section'
 const clients: QueryClient[] = []
 const defaults: ComponentProps<typeof PaymentSettingsSection> = {
   defaultValues: {
-    PayAddress: '',
-    EpayId: '',
-    EpayKey: '',
     Price: 1,
     MinTopUp: 1,
     CustomCallbackAddress: '',
-    PayMethods: '[]',
     AmountOptions: '[10]',
     BonusRates: '{}',
   },
@@ -140,14 +136,14 @@ it('exposes dynamic payment scene management on the Root general tab', async () 
 it('preserves an Epay draft when refreshed settings include another save', async () => {
   await mount('epay')
   await userEvent.type(
-    screen.getByLabelText('Epay merchant ID'),
-    'draft_merchant'
+    screen.getByLabelText('Callback address'),
+    'https://draft.example.com'
   )
   await userEvent.click(
     screen.getByRole('button', { name: 'Refresh saved settings' })
   )
-  expect(screen.getByLabelText('Epay merchant ID')).toHaveValue(
-    'draft_merchant'
+  expect(screen.getByLabelText('Callback address')).toHaveValue(
+    'https://draft.example.com'
   )
 })
 
@@ -195,16 +191,16 @@ it('saves official Epay settings', async () => {
     .mockResolvedValue({ data: { success: true } })
   await mount('epay')
   await userEvent.type(
-    screen.getByLabelText('Epay merchant ID'),
-    'epay_official'
+    screen.getByLabelText('Callback address'),
+    'https://api.example.com'
   )
   await userEvent.click(
     screen.getAllByRole('button', { name: 'Save Changes' })[0]
   )
   await waitFor(() =>
     expect(put).toHaveBeenCalledWith('/api/option/', {
-      key: 'EpayId',
-      value: 'epay_official',
+      key: 'CustomCallbackAddress',
+      value: 'https://api.example.com',
     })
   )
 })

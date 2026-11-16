@@ -699,3 +699,11 @@
 | 测试：`controller/admin_finance_test.go`、`model/payment_method_guard_test.go`、`model/payment_orphan_resolution_test.go`、`model/topup_money_exact_test.go`、`model/user_pagination_test.go`、`router/access_token_scope_test.go`、`service/bepusdt_test.go`、`web/src/features/security/__tests__/page.test.tsx`、`web/src/features/system-settings/integrations/__tests__/payment-provider.test.tsx` | 删掉只测已删代码的用例；拿四家当“某个支付商”的用例改用 BEpusdt 或易支付；从 Pancake 测试文件里挪出无关的 `TestAdminUserListHidesSameOrHigherRole` | 跟上实现删除 | 四家托管支付等删除 2026-11-16 |
 | `web/src/features/wallet/index.tsx`、`web/src/i18n/locales/en.json`、`zh.json` | 发起支付时带上客户选的易支付通道；新增通道显示名称、换支付方式的文案 | 钱包按易支付通道平铺，失败让客户自己换 | 易支付通道平铺 2026-11-16 |
 | `controller/admin_finance.go` | 充值对账和站长订单列表多返回 `method_label`（下单时的易支付显示名称） | 多个易支付商户时对账要分清 | 易支付通道平铺 2026-11-16 |
+| `setting/operation_setting/payment_setting_old.go` | 删除 `PayAddress`、`EpayId`、`EpayKey`、`PayMethods` 和 `UpdatePayMethodsByJsonString`、`PayMethods2JsonString`、`ContainsPayMethod`；只留回调地址、单价、最低充值、汇率 | 只剩一次性迁移在读，迁移已删除 | 旧单通道易支付设置删除 2026-11-16 |
+| `model/option.go` | 删除 `PayAddress`、`EpayId`、`EpayKey`、`PayMethods` 的注册、校验和读写分支 | 设置已删除 | 旧单通道易支付设置删除 2026-11-16 |
+| `main.go` | 启动时不再调用 `MigrateLegacyAdtyEpayChannel` | 迁移已删除 | 旧单通道易支付设置删除 2026-11-16 |
+| `web/src/features/system-settings/integrations/payment-settings-section.tsx`、`billing/index.tsx`、`billing/section-registry.tsx`、`types.ts`、`integrations/__tests__/payment-provider.test.tsx` | 删掉旧易支付网关地址、商户号、密钥和「支付方式」字段；测试改用回调地址 | 旧设置删除 | 旧单通道易支付设置删除 2026-11-16 |
+| `web/package.json`、`web/bun.lock`、`THIRD-PARTY-LICENSES.md` | 删除 `react-icons` | 不再有使用方 | 旧单通道易支付设置删除 2026-11-16 |
+| `web/src/i18n/locales/en.json`、`zh.json` | 把放在 `translation` 外面、前端从不加载的 37 个词条挪回去（其中 18 个原来缺失），整份按两格缩进重排；新增通知状态专用的 `Withdrawn notification` | 这些文字在中文界面一直显示英文；通知的「Withdrawn」和推广提现共用一个键，中文显示成「已提现」 | 旧单通道易支付设置删除 2026-11-16 |
+| `web/src/features/adty-notifications/components/notification-manager.tsx`、`__tests__/publishing.test.tsx` | 已撤回状态改用 `Withdrawn notification` 键 | 和推广提现的「已提现」分开 | 旧单通道易支付设置删除 2026-11-16 |
+| `web/src/features/recharge-audit/__tests__/provider-actions.test.tsx` | 假数据里的 Stripe、Creem、Waffo 换成 BEpusdt 和易支付 | 四家托管支付已删除 | 旧单通道易支付设置删除 2026-11-16 |

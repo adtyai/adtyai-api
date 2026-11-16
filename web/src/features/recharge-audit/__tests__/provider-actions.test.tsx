@@ -36,10 +36,6 @@ import { RechargeAudit } from '../index'
 const providers = [
   { provider: 'bepusdt', label: 'BEpusdt', query: true },
   { provider: 'adty_epay', label: 'Epay channels', query: true },
-  { provider: 'stripe', label: 'Stripe', query: true },
-  { provider: 'creem', label: 'Creem', query: true },
-  { provider: 'waffo', label: 'Waffo', query: true },
-  { provider: 'waffo_pancake', label: 'Waffo Pancake', query: true },
 ]
 const clients: QueryClient[] = []
 const orders = providers.flatMap((provider, index) =>
@@ -106,7 +102,9 @@ function emptyTrace(ownerMode = false) {
     data: {
       success: true,
       data: {
-        order: orders.find((item) => item.trade_no === 'trade-stripe-success'),
+        order: orders.find(
+          (item) => item.trade_no === 'trade-adty_epay-success'
+        ),
         refund: {
           refunded_at: 0,
           refund_quota: 0,
@@ -138,7 +136,7 @@ function currentGetMock() {
 it('uses the owner detail endpoint and hides platform commission sections', async () => {
   const originalGet = currentGetMock()
   vi.mocked(api.get).mockImplementation(async (url, config) => {
-    if (url === '/api/adty/site/orders/trade-stripe-success') {
+    if (url === '/api/adty/site/orders/trade-adty_epay-success') {
       return emptyTrace(true)
     }
     return originalGet(url, config)
@@ -146,7 +144,7 @@ it('uses the owner detail endpoint and hides platform commission sections', asyn
   renderAudit(false, true)
   const user = userEvent.setup()
   await user.click(
-    await screen.findByRole('button', { name: 'trade-stripe-success' })
+    await screen.findByRole('button', { name: 'trade-adty_epay-success' })
   )
   const dialog = within(
     await screen.findByRole('dialog', { name: 'Order details' })
@@ -168,7 +166,9 @@ it('shows a retry after detail loading fails and displays the recovered empty re
   const originalGet = currentGetMock()
   let failed = true
   vi.mocked(api.get).mockImplementation(async (url, config) => {
-    if (url === '/api/user/admin/finance/recharge-audit/trade-stripe-success') {
+    if (
+      url === '/api/user/admin/finance/recharge-audit/trade-adty_epay-success'
+    ) {
       if (failed) {
         return { data: { success: false, message: 'Synthetic detail failure' } }
       }
@@ -179,7 +179,7 @@ it('shows a retry after detail loading fails and displays the recovered empty re
   renderAudit(false)
   const user = userEvent.setup()
   await user.click(
-    await screen.findByRole('button', { name: 'trade-stripe-success' })
+    await screen.findByRole('button', { name: 'trade-adty_epay-success' })
   )
   const dialog = within(
     await screen.findByRole('dialog', { name: 'Order details' })
@@ -194,7 +194,9 @@ it('closes details immediately when the account changes and ignores its late res
   const originalGet = currentGetMock()
   let finish: ((value: ReturnType<typeof emptyTrace>) => void) | undefined
   vi.mocked(api.get).mockImplementation(async (url, config) => {
-    if (url === '/api/user/admin/finance/recharge-audit/trade-stripe-success') {
+    if (
+      url === '/api/user/admin/finance/recharge-audit/trade-adty_epay-success'
+    ) {
       return await new Promise<ReturnType<typeof emptyTrace>>((resolve) => {
         finish = resolve
       })
@@ -204,7 +206,7 @@ it('closes details immediately when the account changes and ignores its late res
   renderAudit(false)
   const user = userEvent.setup()
   await user.click(
-    await screen.findByRole('button', { name: 'trade-stripe-success' })
+    await screen.findByRole('button', { name: 'trade-adty_epay-success' })
   )
   expect(
     await screen.findByRole('dialog', { name: 'Order details' })
@@ -268,7 +270,7 @@ beforeEach(() => {
       | { provider?: string; site_id?: number }
       | undefined
     const items = orders.filter((order) => {
-      if (ownerMode && order.payment_provider !== 'stripe') {
+      if (ownerMode && order.trade_no !== 'trade-adty_epay-success') {
         return false
       }
       if (params?.provider && order.payment_provider !== params.provider) {
@@ -309,14 +311,16 @@ it('shows order site snapshots, explicit unknown ownership, type and completion 
 it('opens order details from the order number and paginates the selected trace section', async () => {
   const originalGet = currentGetMock()
   vi.mocked(api.get).mockImplementation(async (url, config) => {
-    if (url === '/api/user/admin/finance/recharge-audit/trade-stripe-success') {
+    if (
+      url === '/api/user/admin/finance/recharge-audit/trade-adty_epay-success'
+    ) {
       const params = config?.params as { section: string; p: number }
       return {
         data: {
           success: true,
           data: {
             order: orders.find(
-              (item) => item.trade_no === 'trade-stripe-success'
+              (item) => item.trade_no === 'trade-adty_epay-success'
             ),
             refund: {
               refunded_at: 0,
@@ -359,7 +363,7 @@ it('opens order details from the order number and paginates the selected trace s
   renderAudit(false)
   const user = userEvent.setup()
   await user.click(
-    await screen.findByRole('button', { name: 'trade-stripe-success' })
+    await screen.findByRole('button', { name: 'trade-adty_epay-success' })
   )
   const dialog = within(
     await screen.findByRole('dialog', { name: 'Order details' })
@@ -385,7 +389,7 @@ it('opens order details from the order number and paginates the selected trace s
 it('sends the main site zero and order type filters and displays only matching orders', async () => {
   const user = userEvent.setup()
   renderAudit(false)
-  await screen.findByText('trade-creem-pending')
+  await screen.findByText('trade-adty_epay-pending')
   const site = screen.getByRole('combobox', { name: 'Site' })
   await user.selectOptions(site, '0')
   await user.selectOptions(
@@ -406,22 +410,24 @@ it('sends the main site zero and order type filters and displays only matching o
   )
   expect(await screen.findByText('trade-bepusdt-pending')).toBeVisible()
   await waitFor(() =>
-    expect(screen.queryByText('trade-creem-pending')).not.toBeInTheDocument()
+    expect(
+      screen.queryByText('trade-adty_epay-pending')
+    ).not.toBeInTheDocument()
   )
   await user.selectOptions(site, '')
-  expect(await screen.findByText('trade-creem-pending')).toBeVisible()
+  expect(await screen.findByText('trade-adty_epay-pending')).toBeVisible()
 })
 
 it('uses site-scoped reads and hides global anomalies and all financial actions in owner mode', async () => {
   renderAudit(true, true)
-  expect(await screen.findByText('trade-stripe-success')).toBeVisible()
+  expect(await screen.findByText('trade-adty_epay-success')).toBeVisible()
   await waitFor(() =>
     expect(api.get).toHaveBeenCalledWith(
       '/api/adty/site/orders',
       expect.anything()
     )
   )
-  expect(screen.queryByText('trade-creem-pending')).not.toBeInTheDocument()
+  expect(screen.queryByText('trade-adty_epay-pending')).not.toBeInTheDocument()
   expect(
     screen.queryByRole('combobox', { name: 'Site' })
   ).not.toBeInTheDocument()
@@ -452,41 +458,35 @@ afterEach(() => {
   localStorage.clear()
 })
 
-it('offers all six registered providers and sends the selected provider to the API', async () => {
+it('offers the registered providers and sends the selected provider to the API', async () => {
   const user = userEvent.setup()
   renderAudit()
   const filter = await screen.findByRole('combobox', { name: 'Provider' })
-  await screen.findByRole('option', { name: 'Waffo Pancake' })
+  await screen.findByRole('option', { name: 'Epay channels' })
   for (const provider of providers) {
     expect(
       within(filter).getByRole('option', { name: provider.label })
     ).toHaveValue(provider.provider)
   }
-  await user.selectOptions(filter, 'stripe')
+  await user.selectOptions(filter, 'adty_epay')
   await waitFor(() =>
     expect(api.get).toHaveBeenCalledWith(
       '/api/user/admin/finance/recharge-audit',
       expect.objectContaining({
-        params: expect.objectContaining({ provider: 'stripe', p: 1 }),
+        params: expect.objectContaining({ provider: 'adty_epay', p: 1 }),
       })
     )
   )
-  expect(await screen.findByText('trade-stripe-pending')).toBeVisible()
+  expect(await screen.findByText('trade-adty_epay-pending')).toBeVisible()
   await waitFor(() =>
-    expect(screen.queryByText('trade-creem-pending')).not.toBeInTheDocument()
+    expect(screen.queryByText('trade-bepusdt-pending')).not.toBeInTheDocument()
   )
 })
 
-it('shows Hosted completion, query and offline refund actions while respecting per-order capabilities', async () => {
+it('shows completion, query and offline refund actions while respecting per-order capabilities', async () => {
   renderAudit()
-  await screen.findByText('trade-creem-pending')
-  for (const provider of [
-    'bepusdt',
-    'stripe',
-    'creem',
-    'waffo',
-    'waffo_pancake',
-  ]) {
+  await screen.findByText('trade-adty_epay-pending')
+  for (const provider of ['bepusdt', 'adty_epay']) {
     const pending = within(
       screen.getByRole('row', { name: new RegExp(`trade-${provider}-pending`) })
     )
@@ -510,7 +510,7 @@ it('shows Hosted completion, query and offline refund actions while respecting p
 
 it('hides all write actions from a read-only finance user', async () => {
   renderAudit(false)
-  await screen.findByText('trade-creem-pending')
+  await screen.findByText('trade-adty_epay-pending')
   for (const name of ['Complete', 'Refund', 'Query payment']) {
     expect(screen.queryByRole('button', { name })).not.toBeInTheDocument()
   }
@@ -526,7 +526,9 @@ it('keeps a failed provider query open for retry and distinguishes an unconfirme
       data: { success: true, data: { status: 'pending' } },
     })
   renderAudit()
-  const row = await screen.findByRole('row', { name: /trade-creem-pending/ })
+  const row = await screen.findByRole('row', {
+    name: /trade-adty_epay-pending/,
+  })
   await user.click(within(row).getByRole('button', { name: 'Query payment' }))
   const dialog = await screen.findByRole('alertdialog', {
     name: 'Query payment',
@@ -544,7 +546,7 @@ it('keeps a failed provider query open for retry and distinguishes an unconfirme
     await within(dialog).findByText('No confirmed payment found')
   ).toBeVisible()
   expect(api.post).toHaveBeenCalledWith(
-    '/api/adty/admin/topup/trade-creem-pending/query'
+    '/api/adty/admin/topup/trade-adty_epay-pending/query'
   )
   await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
   await waitFor(() =>
@@ -557,7 +559,9 @@ it('removes the query dialog when finance write permission is revoked', async ()
   const user = userEvent.setup()
   const post = vi.spyOn(api, 'post')
   renderAudit()
-  const row = await screen.findByRole('row', { name: /trade-creem-pending/ })
+  const row = await screen.findByRole('row', {
+    name: /trade-adty_epay-pending/,
+  })
   await user.click(within(row).getByRole('button', { name: 'Query payment' }))
   expect(
     await screen.findByRole('alertdialog', { name: 'Query payment' })

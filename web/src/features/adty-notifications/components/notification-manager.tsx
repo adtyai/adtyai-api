@@ -164,7 +164,10 @@ function NotificationManagement(props: {
                     }
                     if (row.status === 'withdrawn') {
                       return (
-                        <StatusBadge label={t('Withdrawn')} variant='neutral' />
+                        <StatusBadge
+                          label={t('Withdrawn notification')}
+                          variant='neutral'
+                        />
                       )
                     }
                     return (

@@ -297,7 +297,7 @@ it('confirms withdrawal, retries a failed request and retains the withdrawn hist
       name: 'Continue',
     })
   )
-  await within(table).findByText('Withdrawn')
+  await within(table).findByText('Withdrawn notification')
   expect(
     within(table).queryByRole('button', { name: 'Edit' })
   ).not.toBeInTheDocument()

@@ -292,13 +292,9 @@ export type BillingSettings = {
   MaxTokenAutoGroups: number
   DefaultUseAutoGroup: boolean
   'group_ratio_setting.group_special_usable_group': string
-  PayAddress: string
-  EpayId: string
-  EpayKey: string
   Price: number
   MinTopUp: number
   CustomCallbackAddress: string
-  PayMethods: string
   'payment_setting.amount_options': string
   'payment_setting.amount_discount': string
   'adty_topup_setting.bonus_rates': string

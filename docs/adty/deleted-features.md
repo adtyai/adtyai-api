@@ -544,6 +544,28 @@ P6 移植旧项目前端时，不要把 `?aff=` 和 `features/auth/lib/storage.t
 - `users.checkin_quota` 列、`checkins` 表的迁移和退款时把签到赠送排除在本金之外的逻辑（`TestCheckinQuotaIsNotRefundedAsPrincipal`）：签到赠送的历史额度仍在钱包里时，退款不能把它当本金退。
 - `users.stripe_customer` 列：上游表结构，启动迁移照旧，不写删列。
 - 下单链路里的优惠码字段和拒绝逻辑（`AdtyPromoInput`、`ErrAdtyPromoRetired`、`PromoCodeUserRateLimit`）以及 `adty_promo_codes`、`adty_promo_redemptions` 表：和订单入账、退款缠在一起，另行评估。
-- 上游单通道易支付的设置（`PayAddress`、`EpayId`、`EpayKey`、`PayMethods`）和 `MigrateLegacyAdtyEpayChannel`：现在只给一次性迁移成多通道用，另行评估。
+- 上游单通道易支付的设置（`PayAddress`、`EpayId`、`EpayKey`、`PayMethods`）和 `MigrateLegacyAdtyEpayChannel`：随后在下一节删除。
 - `/api/uptime/status` 和 Uptime Kuma 设置：后台仪表盘还在用。
+- 两份语言包里的旧文案：按约定 B 只增不删。
+
+## 上游单通道易支付的旧设置和「支付方式」编辑器（2026-11-16）
+
+钱包和团队充值的支付按钮早就来自易支付多通道和 USDT 链，上游单通道易支付的设置只剩启动时的一次性迁移在读：把旧的网关地址、商户号、密钥和「支付方式」列表转成一个叫「Legacy Epay」的通道。项目没上线，没有旧配置要迁；留着反而有隐患——在这几个旧输入框里填了值，下次重启会自动多出一个通道。
+
+### 文件
+
+- `model/adty_epay_legacy_migration.go` 和它的测试（`MigrateLegacyAdtyEpayChannel`，`main.go` 不再调用）
+- `web/src/features/system-settings/integrations/payment-method-dialog.tsx`、`payment-methods-visual-editor.tsx`（「支付方式」可视化编辑器和弹窗）
+- `web/src/components/react-icon-by-name.tsx`：只给上面的编辑器显示图标
+- 部分删除：`setting/operation_setting/payment_setting_old.go` 的 `PayAddress`、`EpayId`、`EpayKey`、`PayMethods` 和三个读写函数；`model/option.go` 里这几个键的注册、校验和读写分支；支付设置「通用」页签的「支付方式」字段和「Epay」页签的网关地址、商户号、密钥三个输入框
+
+### 依赖
+
+- `react-icons` 不再有使用方，从 `web/package.json`、`bun.lock` 和 `THIRD-PARTY-LICENSES.md` 删除。
+
+### 保留名单和理由
+
+- 回调地址 `CustomCallbackAddress`（Epay 页签里的「回调地址」）：多通道易支付和 USDT 下单时拼回调地址要用。
+- `Price`（人民币单价）、`MinTopUp`（最低充值）、`USDExchangeRate`：报价和显示还在用。
+- 数据库里这几个键的旧行：启动加载时忽略，不写删除。
 - 两份语言包里的旧文案：按约定 B 只增不删。

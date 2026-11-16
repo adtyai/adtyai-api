@@ -452,3 +452,10 @@ web/src/features/wallet/lib/format.ts
 web/src/features/wallet/lib/payment.test.ts
 web/src/features/wallet/lib/payment.ts
 web/src/routes/status.tsx
+
+# 上游单通道易支付的旧设置和「支付方式」编辑器（2026-11-16）
+model/adty_epay_legacy_migration.go
+model/adty_epay_legacy_migration_test.go
+web/src/components/react-icon-by-name.tsx
+web/src/features/system-settings/integrations/payment-method-dialog.tsx
+web/src/features/system-settings/integrations/payment-methods-visual-editor.tsx

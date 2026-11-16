@@ -115,7 +115,6 @@ Versions below are the resolved versions for the checked-in manifests and lockfi
 | web      | production  | npm       | `react-dom`                                             | `19.2.7`                             | MIT                     |
 | web      | production  | npm       | `react-hook-form`                                       | `7.82.0`                             | MIT                     |
 | web      | production  | npm       | `react-i18next`                                         | `17.1.0`                             | MIT                     |
-| web      | production  | npm       | `react-icons`                                           | `5.7.0`                              | MIT                     |
 | web      | production  | npm       | `react-top-loading-bar`                                 | `3.0.2`                              | MIT                     |
 | web      | production  | npm       | `recharts`                                              | `3.9.1`                              | MIT                     |
 | web      | production  | npm       | `shiki`                                                 | `4.3.1`                              | MIT                     |

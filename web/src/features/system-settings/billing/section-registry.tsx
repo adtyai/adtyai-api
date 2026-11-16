@@ -133,13 +133,9 @@ const BILLING_SECTIONS = [
     build: (settings: BillingSettings) => (
       <PaymentSettingsSection
         defaultValues={{
-          PayAddress: settings.PayAddress,
-          EpayId: settings.EpayId,
-          EpayKey: settings.EpayKey,
           Price: settings.Price,
           MinTopUp: settings.MinTopUp,
           CustomCallbackAddress: settings.CustomCallbackAddress,
-          PayMethods: settings.PayMethods,
           AmountOptions: settings['payment_setting.amount_options'],
           BonusRates: settings['adty_topup_setting.bonus_rates'],
         }}
