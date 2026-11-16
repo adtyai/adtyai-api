@@ -215,6 +215,8 @@ func registerAdtyTopUpRoutes(apiRouter *gin.RouterGroup) {
 	apiRouter.GET("/adty/admin/business-timezone", middleware.RootAuth(), controller.GetAdtyBusinessTimezone)
 	apiRouter.PUT("/adty/admin/business-timezone", middleware.RootAuth(), controller.PutAdtyBusinessTimezone)
 	apiRouter.GET("/adty/admin/settlement-sheets", middleware.RootAuth(), controller.GetAdtyAdminSettlementSheets)
+	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/adty/admin/site-withdrawals", "scope", "option:read")
+	apiRouter.GET("/adty/admin/site-withdrawals", middleware.RootAuth(), controller.GetAdtyAdminSiteWithdrawals)
 	apiRouter.PUT("/adty/admin/site-withdrawals/rules", middleware.RootAuth(), controller.PutAdtySiteWithdrawRules)
 	apiRouter.POST("/adty/admin/site-withdrawals/:id/paying", middleware.RootAuth(), controller.PostAdtySiteWithdrawalPaying)
 	apiRouter.POST("/adty/admin/site-withdrawals/:id/reject", middleware.RootAuth(), controller.PostAdtySiteWithdrawalReject)
@@ -432,6 +434,7 @@ func registerAdtyResellerRoutes(apiRouter *gin.RouterGroup) {
 		{http.MethodGet, "/earnings", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerEarnings}},
 		{http.MethodGet, "/settlement-sheets", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerSettlementSheets}},
 		{http.MethodGet, "/earnings/lines", "wallet:read", []gin.HandlerFunc{controller.GetAdtyOwnerEarningLines}},
+		{http.MethodGet, "/vouchers", "wallet:read", []gin.HandlerFunc{controller.GetAdtySiteVouchers}},
 		{http.MethodPost, "/vouchers", "wallet:write", []gin.HandlerFunc{controller.PostAdtySiteVoucher}},
 		{http.MethodPost, "/vouchers/:id/cancel", "wallet:write", []gin.HandlerFunc{controller.PostAdtyVoucherCancel}},
 		{http.MethodPost, "/vouchers/:id/freeze", "wallet:write", []gin.HandlerFunc{controller.PostAdtyVoucherFreeze}},
@@ -542,11 +545,19 @@ func registerAdtyResellerRoutes(apiRouter *gin.RouterGroup) {
 	middleware.DeclareAdtyAccessTokenRoute("PUT", "/api/adty/admin/vouchers/limit", "scope", "option:write")
 	middleware.DeclareAdtyAccessTokenRoute("PUT", "/api/adty/admin/vouchers/sites/:id/margin", "scope", "option:write")
 	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/admin/vouchers/:id/freeze", "scope", "option:write")
+	middleware.DeclareAdtyAccessTokenRoute("POST", "/api/adty/admin/vouchers/:id/cancel", "scope", "option:write")
+	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/adty/admin/vouchers", "scope", "option:read")
+	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/adty/admin/vouchers/limit", "scope", "option:read")
+	middleware.DeclareAdtyAccessTokenRoute("GET", "/api/adty/admin/vouchers/sites/:id/margin", "scope", "option:read")
 	rootVouchers := apiRouter.Group("/adty/admin/vouchers", middleware.RootAuth())
+	rootVouchers.GET("", controller.GetAdtyAdminVouchers)
 	rootVouchers.POST("", controller.PostAdtyAdminVoucher)
+	rootVouchers.GET("/limit", controller.GetAdtyVoucherIssuanceLimit)
 	rootVouchers.PUT("/limit", controller.PutAdtyVoucherIssuanceLimit)
+	rootVouchers.GET("/sites/:id/margin", controller.GetAdtyVoucherMarginAuthorization)
 	rootVouchers.PUT("/sites/:id/margin", controller.PutAdtyVoucherMarginAuthorization)
 	rootVouchers.POST("/:id/freeze", controller.PostAdtyVoucherFreeze)
+	rootVouchers.POST("/:id/cancel", controller.PostAdtyAdminVoucherCancel)
 
 	admin := apiRouter.Group("/adty/admin", middleware.AdminAuth())
 	for _, route := range []struct {

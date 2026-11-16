@@ -1,4 +1,8 @@
 import type { SiteWalletLedgerPage } from '@/features/adty-ledger/site-wallet-labels'
+import type {
+  VoucherIssued,
+  VoucherPage,
+} from '@/features/adty-ledger/voucher-labels'
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -582,4 +586,154 @@ export async function saveResellerSettings(
     body
   )
   return requireServerSuccess(res.data).data
+}
+
+/** One site earnings withdrawal in Root's review list. Amounts are USD. */
+export type AdminSiteWithdrawal = {
+  id: number
+  site_id: number
+  owner_user_id: number
+  subdomain: string
+  amount_usd: string
+  fee_usd: string
+  net_usd: string
+  method: string
+  network: string
+  account_no: string
+  account_name: string
+  rate: string
+  payout_amount: string
+  payout_currency: string
+  status: string
+  tx_id: string
+  proof_note: string
+  reviewer_id: number
+  reviewed_at: number
+  paid_at: number
+  created_at: number
+}
+
+export async function getAdminSiteWithdrawals(
+  status: string,
+  page: number,
+  pageSize: number
+): Promise<{ total: number; items: AdminSiteWithdrawal[] }> {
+  const res = await api.get<
+    ApiResponse<{ total: number; items: AdminSiteWithdrawal[] }>
+  >(`${BASE}/site-withdrawals`, {
+    params: { status: status || undefined, p: page, page_size: pageSize },
+  })
+  return requireServerSuccess(res.data).data
+}
+
+export async function markSiteWithdrawalPaying(id: number): Promise<void> {
+  const res = await api.post<ApiResponse<unknown>>(
+    `${BASE}/site-withdrawals/${id}/paying`
+  )
+  requireServerSuccess(res.data)
+}
+
+export async function markSiteWithdrawalPaid(
+  id: number,
+  body: { tx_id: string; proof: string }
+): Promise<void> {
+  const res = await api.post<ApiResponse<unknown>>(
+    `${BASE}/site-withdrawals/${id}/paid`,
+    body
+  )
+  requireServerSuccess(res.data)
+}
+
+export async function rejectSiteWithdrawal(
+  id: number,
+  reason: string
+): Promise<void> {
+  const res = await api.post<ApiResponse<unknown>>(
+    `${BASE}/site-withdrawals/${id}/reject`,
+    { reason }
+  )
+  requireServerSuccess(res.data)
+}
+
+export type VoucherIssuance = {
+  limit_usd: string
+  frozen_usd: string
+  spent_usd: string
+}
+
+export async function getAdminVouchers(
+  filters: { status: string; purpose: string },
+  page: number,
+  pageSize: number
+): Promise<VoucherPage> {
+  const res = await api.get<ApiResponse<VoucherPage>>(`${BASE}/vouchers`, {
+    params: {
+      status: filters.status || undefined,
+      purpose: filters.purpose || undefined,
+      p: page,
+      page_size: pageSize,
+    },
+  })
+  return requireServerSuccess(res.data).data
+}
+
+export async function getVoucherIssuance(): Promise<VoucherIssuance> {
+  const res = await api.get<ApiResponse<VoucherIssuance>>(
+    `${BASE}/vouchers/limit`
+  )
+  return requireServerSuccess(res.data).data
+}
+
+export async function saveVoucherIssuanceLimit(
+  limitUsd: string
+): Promise<void> {
+  const res = await api.put<ApiResponse<unknown>>(`${BASE}/vouchers/limit`, {
+    limit_usd: limitUsd,
+  })
+  requireServerSuccess(res.data)
+}
+
+export async function issueMainUserVoucher(body: {
+  amount_usd: string
+  reason: string
+}): Promise<VoucherIssued> {
+  const res = await api.post<ApiResponse<VoucherIssued>>(`${BASE}/vouchers`, {
+    purpose: 'main_user',
+    ...body,
+  })
+  return requireServerSuccess(res.data).data
+}
+
+export async function freezeAdminVoucher(id: number): Promise<void> {
+  const res = await api.post<ApiResponse<unknown>>(
+    `${BASE}/vouchers/${id}/freeze`
+  )
+  requireServerSuccess(res.data)
+}
+
+export async function cancelAdminVoucher(id: number): Promise<void> {
+  const res = await api.post<ApiResponse<unknown>>(
+    `${BASE}/vouchers/${id}/cancel`
+  )
+  requireServerSuccess(res.data)
+}
+
+export async function getAdminVoucherMarginAuthorization(
+  siteId: number
+): Promise<{ site_id: number; allowed: boolean }> {
+  const res = await api.get<ApiResponse<{ site_id: number; allowed: boolean }>>(
+    `${BASE}/vouchers/sites/${siteId}/margin`
+  )
+  return requireServerSuccess(res.data).data
+}
+
+export async function saveAdminVoucherMarginAuthorization(
+  siteId: number,
+  allowed: boolean
+): Promise<void> {
+  const res = await api.put<ApiResponse<unknown>>(
+    `${BASE}/vouchers/sites/${siteId}/margin`,
+    { allowed }
+  )
+  requireServerSuccess(res.data)
 }

@@ -423,6 +423,71 @@ func generateAdtyVoucherTradeNo(hash string, attempt int) string {
 	return "VCH" + sum[:20]
 }
 
+// AdtyVoucherListFilter narrows a voucher list; empty fields do not filter.
+type AdtyVoucherListFilter struct {
+	Status   string
+	Purpose  string
+	IssuerId int
+	SiteId   int // codes funded by this site's wallets
+}
+
+// ListAdtyVouchers lists codes newest first. Only the tail of each code is
+// stored, so the full code can never be shown again after issuance.
+func ListAdtyVouchers(filter AdtyVoucherListFilter, offset, limit int) ([]model.AdtyVoucher, int64, error) {
+	switch filter.Status {
+	case "", model.AdtyVoucherStatusPending, model.AdtyVoucherStatusFrozen, model.AdtyVoucherStatusRedeemed, model.AdtyVoucherStatusCancelled:
+	default:
+		return nil, 0, common.NewMessage("Invalid parameters")
+	}
+	switch filter.Purpose {
+	case "", model.AdtyVoucherPurposeMainUser, model.AdtyVoucherPurposeSiteMargin, model.AdtyVoucherPurposeSiteCustomer, model.AdtyVoucherPurposeSiteOwner:
+	default:
+		return nil, 0, common.NewMessage("Invalid parameters")
+	}
+	query := model.DB.Model(&model.AdtyVoucher{})
+	if filter.Status != "" {
+		query = query.Where("status = ?", filter.Status)
+	}
+	if filter.Purpose != "" {
+		query = query.Where("purpose = ?", filter.Purpose)
+	}
+	if filter.IssuerId > 0 {
+		query = query.Where("issuer_id = ?", filter.IssuerId)
+	}
+	if filter.SiteId > 0 {
+		query = query.Where("source_site_id = ?", filter.SiteId)
+	}
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	items := make([]model.AdtyVoucher, 0)
+	err := query.Order("id desc").Offset(offset).Limit(limit).Find(&items).Error
+	return items, total, err
+}
+
+// AdtyVoucherIssuance is the main-site issuance cap and the part already
+// frozen by unredeemed codes or spent by redeemed ones.
+type AdtyVoucherIssuance struct {
+	LimitUSD  string `json:"limit_usd"`
+	FrozenUSD string `json:"frozen_usd"`
+	SpentUSD  string `json:"spent_usd"`
+}
+
+func LoadAdtyVoucherIssuance() (AdtyVoucherIssuance, error) {
+	var row model.AdtyVoucherLiability
+	if err := model.DB.Where("scope = ?", "main").Limit(1).Find(&row).Error; err != nil {
+		return AdtyVoucherIssuance{}, err
+	}
+	return AdtyVoucherIssuance{LimitUSD: row.LimitUSD.String(), FrozenUSD: row.FrozenUSD.String(), SpentUSD: row.SpentUSD.String()}, nil
+}
+
+// AdtyVoucherMarginAuthorized reports whether Root lets the site freeze its
+// margin to issue codes.
+func AdtyVoucherMarginAuthorized(siteId int) bool {
+	return adtyVoucherMarginAuthorized(model.DB, siteId)
+}
+
 func FreezeAdtyVoucher(actorId int, voucherId int64) error {
 	var snapshot model.AdtyVoucher
 	err := model.DB.Transaction(func(tx *gorm.DB) error {

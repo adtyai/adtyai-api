@@ -837,6 +837,23 @@ describe('reseller settings', () => {
     expect(canOpenSiteAdminSection({ ...user, role: 100 }, section)).toBe(true)
   })
 
+  it('shows withdrawal review and recharge codes to Root only', () => {
+    const user = {
+      id: 2,
+      username: 'delegated',
+      role: 10,
+      permissions: { admin_permissions: { adty_site: { read: true } } },
+    }
+    for (const id of ['withdrawals', 'vouchers']) {
+      const section = SITE_ADMIN_SECTIONS.find((item) => item.id === id)
+      if (!section) throw new Error(`${id} section is missing`)
+      expect(canOpenSiteAdminSection(user, section)).toBe(false)
+      expect(canOpenSiteAdminSection({ ...user, role: 100 }, section)).toBe(
+        true
+      )
+    }
+  })
+
   it('lets a settings-only admin edit ordinary fields without requesting site-read usage', async () => {
     useAuthStore.getState().auth.setUser({
       id: 2,

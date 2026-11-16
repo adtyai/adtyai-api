@@ -34,6 +34,8 @@ import { OverviewPanel } from './components/overview-panel'
 import { PausedSiteRepairPanel } from './components/paused-site-repair-panel'
 import { ReviewsPanel } from './components/reviews-panel'
 import { SettingsPanel } from './components/settings-panel'
+import { SiteWithdrawalsPanel } from './components/site-withdrawals-panel'
+import { VoucherAdminPanel } from './components/voucher-admin-panel'
 import { SiteDetailSheet } from './components/site-detail-sheet'
 import { SiteReferralCapPanel } from './components/site-referral-cap-panel'
 import { SitesPanel } from './components/sites-panel'
@@ -58,6 +60,8 @@ export function SiteAdmin(props: { section: SiteAdminSectionId }) {
     overview: t('Overview'),
     reviews: t('Risk reviews and reports'),
     settings: t('Settings'),
+    withdrawals: t('Withdrawals'),
+    vouchers: t('Recharge codes'),
   }
   const visible = SITE_ADMIN_SECTIONS.filter((section) =>
     canOpenSiteAdminSection(user, section)
@@ -119,6 +123,12 @@ export function SiteAdmin(props: { section: SiteAdminSectionId }) {
                 canWrite={canSettings}
                 canWriteSecrets={canWriteSecrets}
               />
+            </TabsContent>
+            <TabsContent value='withdrawals'>
+              <SiteWithdrawalsPanel />
+            </TabsContent>
+            <TabsContent value='vouchers'>
+              <VoucherAdminPanel />
             </TabsContent>
           </Tabs>
           <SiteDetailSheet

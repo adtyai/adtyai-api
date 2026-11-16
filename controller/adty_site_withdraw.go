@@ -109,6 +109,17 @@ func PutAdtySiteWithdrawRules(c *gin.Context) {
 	common.ApiSuccess(c, gin.H{"saved": true})
 }
 
+// GetAdtyAdminSiteWithdrawals is Root's review list across all sites.
+func GetAdtyAdminSiteWithdrawals(c *gin.Context) {
+	page := common.GetPageQuery(c)
+	items, total, err := service.ListAdtySiteWithdrawalsForAdmin(strings.TrimSpace(c.Query("status")), page.GetStartIdx(), page.GetPageSize())
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"total": total, "items": items, "page": page.GetPage(), "page_size": page.GetPageSize()})
+}
+
 func PostAdtySiteWithdrawalPaying(c *gin.Context) {
 	reviewAdtySiteWithdrawal(c, "paying")
 }

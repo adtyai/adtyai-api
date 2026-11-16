@@ -22,6 +22,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
+import { siteWithdrawalStatusLabel } from '@/features/adty-ledger/site-wallet-labels'
 import { handleServerError } from '@/lib/handle-server-error'
 
 import {
@@ -220,7 +221,8 @@ export function WithdrawalPanel() {
             className='flex flex-wrap items-center justify-between gap-2 text-sm tabular-nums'
           >
             <span>
-              {row.amount_usd} USD · {row.method} · {row.status}
+              {row.amount_usd} USD · {row.method} ·{' '}
+              {siteWithdrawalStatusLabel(t, row.status)}
             </span>
             {row.status === 'pending' && (
               <Button

@@ -20,6 +20,10 @@ import type {
   SiteWallet,
   SiteWalletLedgerPage,
 } from '@/features/adty-ledger/site-wallet-labels'
+import type {
+  VoucherIssued,
+  VoucherPage,
+} from '@/features/adty-ledger/voucher-labels'
 import { api } from '@/lib/api'
 import { requireServerSuccess } from '@/lib/server-error-message'
 
@@ -196,6 +200,53 @@ export async function getOwnerWalletLedger(
     { params: { kind: kind || undefined, p: page, page_size: pageSize } }
   )
   return requireServerSuccess(res.data).data
+}
+
+/** Codes this owner issued from the site's wallets, and whether margin may fund new ones. */
+export async function getOwnerVouchers(
+  page: number,
+  pageSize: number
+): Promise<VoucherPage & { margin_allowed: boolean }> {
+  const res = await api.get<
+    ApiResponse<VoucherPage & { margin_allowed: boolean }>
+  >(`${BASE}/vouchers`, { params: { p: page, page_size: pageSize } })
+  return requireServerSuccess(res.data).data
+}
+
+export async function issueOwnerVoucher(
+  body: { purpose: string; amount_usd: string; source: string; reason: string },
+  proof: string
+): Promise<VoucherIssued> {
+  const res = await api.post<ApiResponse<VoucherIssued>>(
+    `${BASE}/vouchers`,
+    body,
+    proofHeaders(proof)
+  )
+  return requireServerSuccess(res.data).data
+}
+
+export async function freezeOwnerVoucher(
+  id: number,
+  proof: string
+): Promise<void> {
+  const res = await api.post<ApiResponse<unknown>>(
+    `${BASE}/vouchers/${id}/freeze`,
+    undefined,
+    proofHeaders(proof)
+  )
+  requireServerSuccess(res.data)
+}
+
+export async function cancelOwnerVoucher(
+  id: number,
+  proof: string
+): Promise<void> {
+  const res = await api.post<ApiResponse<unknown>>(
+    `${BASE}/vouchers/${id}/cancel`,
+    undefined,
+    proofHeaders(proof)
+  )
+  requireServerSuccess(res.data)
 }
 
 export async function cancelSiteWithdrawal(id: number): Promise<void> {

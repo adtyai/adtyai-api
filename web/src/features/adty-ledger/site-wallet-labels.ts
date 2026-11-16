@@ -111,3 +111,24 @@ export function siteWalletLedgerTypeLabel(t: TFunction, type: string): string {
       return type
   }
 }
+
+/** Site earnings withdrawal statuses (model/adty_site_withdrawal.go). */
+export function siteWithdrawalStatusLabel(
+  t: TFunction,
+  status: string
+): string {
+  switch (status) {
+    case 'pending':
+      return t('Pending review')
+    case 'paying':
+      return t('Paying')
+    case 'paid':
+      return t('Paid out')
+    case 'rejected':
+      return t('Rejected')
+    case 'cancelled':
+      return t('Cancelled')
+    default:
+      return status
+  }
+}

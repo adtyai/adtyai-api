@@ -151,6 +151,55 @@ func ListAdtySiteWithdrawals(siteID, ownerID int) ([]model.AdtySiteWithdrawal, e
 	return rows, err
 }
 
+// AdtySiteWithdrawalAdminRow is one withdrawal in Root's review list. The
+// subdomain lets the reviewer tell sites apart without opening each one.
+type AdtySiteWithdrawalAdminRow struct {
+	model.AdtySiteWithdrawal
+	Subdomain string `json:"subdomain"`
+}
+
+// ListAdtySiteWithdrawalsForAdmin lists every site's withdrawals, newest
+// first, optionally narrowed to one status.
+func ListAdtySiteWithdrawalsForAdmin(status string, offset, limit int) ([]AdtySiteWithdrawalAdminRow, int64, error) {
+	switch status {
+	case "", model.AdtySiteWithdrawPending, model.AdtySiteWithdrawPaying, model.AdtySiteWithdrawPaid,
+		model.AdtySiteWithdrawRejected, model.AdtySiteWithdrawCancelled:
+	default:
+		return nil, 0, common.NewMessage("Invalid parameters")
+	}
+	query := model.DB.Model(&model.AdtySiteWithdrawal{})
+	if status != "" {
+		query = query.Where("status = ?", status)
+	}
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var rows []model.AdtySiteWithdrawal
+	if err := query.Order("id desc").Offset(offset).Limit(limit).Find(&rows).Error; err != nil {
+		return nil, 0, err
+	}
+	siteIDs := make([]int, 0, len(rows))
+	for _, row := range rows {
+		siteIDs = append(siteIDs, row.SiteId)
+	}
+	subdomains := map[int]string{}
+	if len(siteIDs) > 0 {
+		var sites []model.AdtySite
+		if err := model.DB.Select("id", "subdomain").Where("id IN ?", siteIDs).Find(&sites).Error; err != nil {
+			return nil, 0, err
+		}
+		for _, site := range sites {
+			subdomains[site.Id] = site.Subdomain
+		}
+	}
+	items := make([]AdtySiteWithdrawalAdminRow, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, AdtySiteWithdrawalAdminRow{AdtySiteWithdrawal: row, Subdomain: subdomains[row.SiteId]})
+	}
+	return items, total, nil
+}
+
 func CreateAdtySiteWithdrawal(input AdtySiteWithdrawInput) (*model.AdtySiteWithdrawal, error) {
 	method := strings.ToLower(strings.TrimSpace(input.Method))
 	if method != "alipay" && method != "usdt" {

@@ -327,7 +327,7 @@ BEpusdt 使用官方 `POST /api/v1/pay/info`，只信任与冻结付款链接同
 - **资金**：申请时当场从 earnings 钱包余额扣下，写流水 `earning_withdraw_freeze`；幂等键重复提交返回原单。
 - **状态机**：`pending` →（Root 标记打款中）`paying` →（Root 记录打款）`paid`；`pending` 可由站长 `POST /api/adty/site/withdrawals/:id/cancel` 撤销，或由 Root `reject` 驳回，两条都把金额退回 earnings（`earning_withdraw_release`）。USDT 标记 `paid` 必须填交易号；两种方式至少要有交易号或凭证（`service/adty_site_withdraw.go:236-317`）。
 - **算例**：申请 $150、`fee_usd` = 2、`usdt_usd_rate` = 1：实付 148 USDT。申请 $50、`fee_usd` = 2、`alipay_cny_rate` = 7.1：实付 (50 − 2) × 7.1 = **¥340.80**。
-- **接口**：站长 `GET /api/adty/site/withdrawals`、`GET /api/adty/site/withdrawals/rules`、`POST /api/adty/site/withdrawals`、`POST /api/adty/site/withdrawals/:id/cancel`；Root `POST /api/adty/admin/site-withdrawals/:id/paying|reject|paid`。
+- **接口**：站长 `GET /api/adty/site/withdrawals`、`GET /api/adty/site/withdrawals/rules`、`POST /api/adty/site/withdrawals`、`POST /api/adty/site/withdrawals/:id/cancel`；Root `GET /api/adty/admin/site-withdrawals`（全部站点，可按 `status` 筛选，带站点子域名）、`POST /api/adty/admin/site-withdrawals/:id/paying|reject|paid`。界面：分站后台「提现」分区（只有 Root 看得到），按状态筛选，标记打款中、记录打款（USDT 必须填交易哈希）、驳回（必须填理由）；站长在「收益」页看到的状态改成文字。
 
 ### 站长中心
 
@@ -611,6 +611,11 @@ Root 和获授用户读取权限的管理员在统一用户列表、搜索及详
 ### 充值额度兑换码
 
 全平台只有一种兑换码。用途有四种：主站用户本金码、分站保证金码（Root 发）、本站客户码、站长本人消费码（站长发）。发行来源是平台发行额度、站点收益或 Root 授权的保证金；平台额度用 `adty_voucher_liabilities` 控制上限，站点来源从对应钱包冻结。兑换写正式订单（provider=`voucher`）、`top_ups` 兼容投影、余额流水 `voucher` 和资金批次；**不加赠、不计邀请佣金**。完整码只在生成时返回一次，库里只存 hash 和后四位；未兑换的可以冻结或取消，取消释放来源；同一用户 15 分钟内最多试 8 次（`service/adty_voucher.go:20-24,137-271`）。
+
+接口与界面：
+
+- Root：`GET /api/adty/admin/vouchers`（按 `status`、`purpose` 筛选）、`GET`/`PUT /api/adty/admin/vouchers/limit`（读取时返回额度、未兑换占用、已兑换）、`POST /api/adty/admin/vouchers`、`POST /api/adty/admin/vouchers/:id/freeze`、`POST /api/adty/admin/vouchers/:id/cancel`、`GET`/`PUT /api/adty/admin/vouchers/sites/:id/margin`。分站后台「兑换码」分区（只有 Root 看得到）管发行额度、签发主站用户码、查看全部兑换码并冻结或取消；分站详情的资金区签发保证金码，并有「允许用保证金发兑换码」开关。
+- 站长：`GET /api/adty/site/vouchers` 列出本人从本站钱包签发的码，并返回是否允许用保证金发行；签发、冻结、取消都要重新验证身份（`site.owner.manage`，动作 `voucher.issue` 绑定站点、`voucher.freeze`/`voucher.cancel` 绑定兑换码）。站长中心「充值码」页签可以选出资来源（Root 授权后才有保证金）、查看已签发的码并冻结或取消。
 
 ### 资金批次与分摊
 

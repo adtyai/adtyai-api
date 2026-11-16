@@ -1,6 +1,8 @@
 package controller
 
 import (
+	"strings"
+
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
@@ -151,4 +153,69 @@ func PutAdtyVoucherIssuanceLimit(c *gin.Context) {
 		return
 	}
 	common.ApiSuccess(c, gin.H{"limit_usd": limit.String()})
+}
+
+// GetAdtyAdminVouchers lists every code for Root, optionally by status and purpose.
+func GetAdtyAdminVouchers(c *gin.Context) {
+	page := common.GetPageQuery(c)
+	items, total, err := service.ListAdtyVouchers(service.AdtyVoucherListFilter{
+		Status: strings.TrimSpace(c.Query("status")), Purpose: strings.TrimSpace(c.Query("purpose")),
+	}, page.GetStartIdx(), page.GetPageSize())
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"total": total, "items": items, "page": page.GetPage(), "page_size": page.GetPageSize()})
+}
+
+// GetAdtySiteVouchers lists the codes this owner issued from this site's
+// wallets, and whether Root allows issuing from margin.
+func GetAdtySiteVouchers(c *gin.Context) {
+	site, ok := adtyOwnerSiteOr403(c)
+	if !ok {
+		return
+	}
+	page := common.GetPageQuery(c)
+	items, total, err := service.ListAdtyVouchers(service.AdtyVoucherListFilter{
+		Status: strings.TrimSpace(c.Query("status")), IssuerId: c.GetInt("id"), SiteId: site.Id,
+	}, page.GetStartIdx(), page.GetPageSize())
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{
+		"total": total, "items": items, "page": page.GetPage(), "page_size": page.GetPageSize(),
+		"margin_allowed": service.AdtyVoucherMarginAuthorized(site.Id),
+	})
+}
+
+func GetAdtyVoucherIssuanceLimit(c *gin.Context) {
+	view, err := service.LoadAdtyVoucherIssuance()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, view)
+}
+
+func GetAdtyVoucherMarginAuthorization(c *gin.Context) {
+	siteId, ok := adtyPathId(c)
+	if !ok {
+		return
+	}
+	common.ApiSuccess(c, gin.H{"site_id": siteId, "allowed": service.AdtyVoucherMarginAuthorized(siteId)})
+}
+
+// PostAdtyAdminVoucherCancel lets Root cancel any unredeemed code and release
+// its source. The route is Root-only, so no owner step-up applies.
+func PostAdtyAdminVoucherCancel(c *gin.Context) {
+	id, ok := adtyPathId(c)
+	if !ok {
+		return
+	}
+	if err := service.CancelAdtyVoucher(c.GetInt("id"), int64(id)); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"id": id, "status": model.AdtyVoucherStatusCancelled})
 }
