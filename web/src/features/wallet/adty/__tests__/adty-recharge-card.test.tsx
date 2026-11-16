@@ -114,6 +114,87 @@ describe('AdtyRechargeCard', () => {
     )
   })
 
+  it('lists one button per Epay channel and pays through the chosen one', async () => {
+    api.quoteAdtyTopup.mockResolvedValue({
+      available: true,
+      quote: {
+        face_usd: '100',
+        bonus_rate: '0',
+        bonus_usd: '0',
+        credit_quota: 50000000,
+        pay_amount: '730',
+        pay_currency: 'CNY',
+        price_cny_per_usd: '7.3',
+        topup_group_ratio: '1',
+        promo_code_id: 0,
+        promo_bonus_usd: '0',
+      },
+    })
+    const channels: AdtyTopupInfo = {
+      ...info,
+      methods: [
+        {
+          id: 'alipay',
+          kind: 'epay',
+          available: true,
+          label: '支付宝1',
+          channel_id: 7,
+        },
+        {
+          id: 'alipay',
+          kind: 'epay',
+          available: true,
+          label: '支付宝2',
+          channel_id: 9,
+        },
+        { id: 'wxpay', kind: 'epay', available: true, channel_id: 7 },
+        { id: 'wxpay', kind: 'epay', available: true, channel_id: 9 },
+      ],
+    }
+    const user = userEvent.setup()
+    const onPay = vi.fn()
+    render(
+      <AdtyRechargeCard
+        info={channels}
+        loading={false}
+        paying={false}
+        onPay={onPay}
+      />,
+      { wrapper }
+    )
+    expect(screen.getByRole('button', { name: '支付宝1' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'WeChat Pay 1' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'WeChat Pay 2' })).toBeVisible()
+    await user.click(screen.getByRole('button', { name: /\$100/ }))
+    await user.click(screen.getByRole('button', { name: '支付宝2' }))
+    expect(screen.getByRole('button', { name: '支付宝2' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    )
+    expect(screen.getByRole('button', { name: '支付宝1' })).toHaveAttribute(
+      'aria-pressed',
+      'false'
+    )
+    await waitFor(() =>
+      expect(api.quoteAdtyTopup).toHaveBeenLastCalledWith(
+        100,
+        'alipay',
+        '',
+        'wallet_topup',
+        9
+      )
+    )
+    const pay = screen.getByRole('button', { name: 'Pay now' })
+    await waitFor(() => expect(pay).toBeEnabled())
+    await user.click(pay)
+    expect(onPay).toHaveBeenCalledWith(
+      100,
+      channels.methods[1],
+      '',
+      'wallet_topup'
+    )
+  })
+
   it('pays a valid amount without a promo field', async () => {
     api.quoteAdtyTopup.mockImplementation(
       async (_amount: number, _method: string, promo: string) => {

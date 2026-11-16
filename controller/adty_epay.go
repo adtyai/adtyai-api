@@ -39,17 +39,22 @@ func adtyEpayTimeouts() (perChannel, total time.Duration) {
 	return perChannel, total
 }
 
+// adtyEpayChosenChannelUnavailable 是客户选的通道下不了单时的提示：不替客户换通道，让客户自己换一个按钮。
+const adtyEpayChosenChannelUnavailable = "This payment channel is not available right now. Choose another payment method."
+
 type adtyEpayPayRequest struct {
 	PaymentScene      string `json:"payment_scene"`
 	Amount            int64  `json:"amount"`
 	Method            string `json:"method"`
 	PaymentMethod     string `json:"payment_method"`
 	Device            string `json:"device"`
+	ChannelId         int    `json:"channel_id"` // 客户在钱包选的通道；0 表示自动挑
 	ExcludeChannelIds []int  `json:"exclude_channel_ids"`
 	PromoCode         string `json:"promo_code"` // 任务 12.4
 }
 
-// RequestAdtyEpayPay 挑通道下单，API 下单失败、超时或返回不对就换下一个通道。
+// RequestAdtyEpayPay 易支付下单。客户选了通道（channel_id）就只用这个通道，失败直接提示客户换一个支付方式；
+// 没选通道时自动挑，API 下单失败、超时或返回不对就换下一个通道。
 func RequestAdtyEpayPay(c *gin.Context) {
 	var req adtyEpayPayRequest
 	if err := common.DecodeJson(c.Request.Body, &req); err != nil {
@@ -80,6 +85,15 @@ func RequestAdtyEpayPay(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	allowedChannels, ok := service.AdtyEpayChannelAllowed(scene, req.ChannelId)
+	if !ok {
+		common.ApiErrorT(c, adtyEpayChosenChannelUnavailable)
+		return
+	}
+	maxAttempts := adtyEpayMaxAttempts
+	if req.ChannelId > 0 {
+		maxAttempts = 1
+	}
 	if err := replaceOtherPendingAdtyOrders(c); err != nil {
 		if errors.Is(err, service.ErrAdtyPaymentDetected) {
 			common.ApiErrorT(c, "A transfer has been detected. Please wait")
@@ -99,8 +113,8 @@ func RequestAdtyEpayPay(c *gin.Context) {
 	channelTimeout, totalTimeout := adtyEpayTimeouts()
 	deadline := time.Now().Add(totalTimeout)
 	callback := strings.TrimRight(service.GetCallbackAddress(), "/")
-	for attempt := 0; attempt < adtyEpayMaxAttempts && time.Now().Before(deadline); attempt++ {
-		channel, method, err := service.PickAdtyEpayChannel(req.Method, quote.PayAmount, req.Device, exclude, time.Now().Unix(), scene.ChannelIDs)
+	for attempt := 0; attempt < maxAttempts && time.Now().Before(deadline); attempt++ {
+		channel, method, err := service.PickAdtyEpayChannel(req.Method, quote.PayAmount, req.Device, exclude, time.Now().Unix(), allowedChannels)
 		if err != nil {
 			break
 		}
@@ -156,6 +170,10 @@ func RequestAdtyEpayPay(c *gin.Context) {
 			return
 		}
 		common.ApiSuccess(c, view)
+		return
+	}
+	if req.ChannelId > 0 {
+		common.ApiErrorT(c, adtyEpayChosenChannelUnavailable)
 		return
 	}
 	common.ApiErrorT(c, "This payment method is not available")

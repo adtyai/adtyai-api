@@ -38,13 +38,15 @@ export async function quoteAdtyTopup(
   amount: number,
   method: string,
   promoCode = '',
-  paymentScene = 'wallet_topup'
+  paymentScene = 'wallet_topup',
+  channelId?: number
 ): Promise<{ quote: AdtyQuote; available: boolean }> {
   const res = await api.post<
     ApiResponse<{ quote: AdtyQuote; available: boolean }>
   >('/api/adty/topup/quote', {
     amount,
     method,
+    channel_id: channelId,
     promo_code: promoCode,
     payment_scene: paymentScene,
   })

@@ -85,6 +85,7 @@ export function Wallet(props: WalletProps) {
     setActivePayment({
       kind: method.kind,
       method: method.id,
+      channelId: method.channel_id,
       amount,
       promoCode,
       paymentScene,

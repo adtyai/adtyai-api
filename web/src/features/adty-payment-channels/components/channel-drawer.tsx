@@ -55,6 +55,7 @@ const METHODS: Array<{ id: EpayMethodConfig['method']; label: string }> = [
 function emptyMethod(method: EpayMethodConfig['method']): EpayMethodConfig {
   return {
     method,
+    display_name: '',
     type_code: method,
     min_cny: '0',
     max_cny: '0',
@@ -263,6 +264,27 @@ export function ChannelDrawer(props: ChannelDrawerProps) {
                   />
                   {t(METHODS[index].label)}
                 </label>
+                {m.enabled && (
+                  <div className='space-y-1'>
+                    <Label htmlFor={`name-${m.method}`} className='text-xs'>
+                      {t('Display name')}
+                    </Label>
+                    <Input
+                      id={`name-${m.method}`}
+                      value={m.display_name ?? ''}
+                      maxLength={32}
+                      placeholder={t(METHODS[index].label)}
+                      onChange={(e) =>
+                        setMethod(index, { display_name: e.target.value })
+                      }
+                    />
+                    <p className='text-muted-foreground text-xs'>
+                      {t(
+                        'Shown to customers on the wallet page, for example Alipay 1. Leave empty to show the method name.'
+                      )}
+                    </p>
+                  </div>
+                )}
                 {m.enabled && (
                   <div className='grid grid-cols-2 gap-2 sm:grid-cols-4'>
                     <div className='space-y-1'>

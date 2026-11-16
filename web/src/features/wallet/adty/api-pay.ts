@@ -39,12 +39,12 @@ export async function payWithBEpusdt(
   return requireServerSuccess(res.data).data
 }
 
-/** Creates an Alipay / WeChat order on the best epay channel. */
+/** Creates an Alipay / WeChat order on the channel the customer picked. */
 export async function payWithEpay(
   amount: number,
   method: string,
+  channelId: number | undefined,
   device: 'pc' | 'mobile',
-  excludeChannelIds: number[],
   promoCode = '',
   paymentScene = 'wallet_topup'
 ): Promise<AdtyOrder> {
@@ -52,7 +52,7 @@ export async function payWithEpay(
     amount,
     method,
     device,
-    exclude_channel_ids: excludeChannelIds,
+    channel_id: channelId,
     promo_code: promoCode,
     payment_scene: paymentScene,
   })

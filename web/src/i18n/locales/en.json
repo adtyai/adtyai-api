@@ -9121,7 +9121,12 @@
     "Sent to Epay as the type parameter, for example alipay or wxpay.": "Sent to Epay as the type parameter, for example alipay or wxpay.",
     "No icon": "No icon",
     "Card": "Card",
-    "Icon shown next to this payment method.": "Icon shown next to this payment method."
+    "Icon shown next to this payment method.": "Icon shown next to this payment method.",
+    "This payment channel is not available right now. Choose another payment method.": "This payment channel is not available right now. Choose another payment method.",
+    "The display name can be at most 32 characters": "The display name can be at most 32 characters",
+    "Choose another payment method": "Choose another payment method",
+    "The payment link is not safe to open. Choose another payment method.": "The payment link is not safe to open. Choose another payment method.",
+    "Shown to customers on the wallet page, for example Alipay 1. Leave empty to show the method name.": "Shown to customers on the wallet page, for example Alipay 1. Leave empty to show the method name."
 },
   "Targeted notifications": "Targeted notifications",
   "Site announcements": "Site announcements",

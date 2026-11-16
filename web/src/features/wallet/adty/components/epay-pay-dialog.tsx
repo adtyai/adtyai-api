@@ -39,6 +39,8 @@ import type { AdtyOrder, AdtyOrderExt } from '../types'
 type EpayPayDialogProps = {
   paymentScene?: string
   method: string
+  /** Channel picked on the wallet; failures do not switch to another one. */
+  channelId?: number
   amount: number
   /** adty task 12.4 */
   promoCode?: string
@@ -70,7 +72,6 @@ export function EpayPayDialog(props: EpayPayDialogProps) {
   const { t } = useTranslation()
   const device = props.device ?? detectPayDevice()
   const [tradeNo, setTradeNo] = useState<string | undefined>(props.tradeNo)
-  const [excluded, setExcluded] = useState<number[]>([])
   const [blocked, setBlocked] = useState(false)
   const setPaymentDialogOpen = useAdtyUiStore(
     (state) => state.setPaymentDialogOpen
@@ -84,12 +85,12 @@ export function EpayPayDialog(props: EpayPayDialogProps) {
   }, [setPaymentDialogOpen])
 
   const create = useMutation({
-    mutationFn: (exclude: number[]) =>
+    mutationFn: () =>
       payWithEpay(
         props.amount,
         props.method,
+        props.channelId,
         device,
-        exclude,
         props.promoCode ?? '',
         props.paymentScene
       ),
@@ -110,7 +111,7 @@ export function EpayPayDialog(props: EpayPayDialogProps) {
   })
   const { mutate: createOrder } = create
   useEffect(() => {
-    if (!props.tradeNo) createOrder([])
+    if (!props.tradeNo) createOrder()
   }, [props.tradeNo, createOrder])
 
   const orderQuery = useQuery({
@@ -172,17 +173,6 @@ export function EpayPayDialog(props: EpayPayDialogProps) {
     mutationFn: (no: string) => cancelAdtyOrder(no),
   })
 
-  const changeChannel = async () => {
-    if (!tradeNo || !ext) return
-    await cancel.mutateAsync(tradeNo)
-    const next = [...excluded, ext.channel_id]
-    setExcluded(next)
-    settledRef.current = false
-    jumpedRef.current = ''
-    setTradeNo(undefined)
-    createOrder(next)
-  }
-
   const cancelOrder = async () => {
     if (tradeNo) await cancel.mutateAsync(tradeNo)
     clearPendingPayment(window.localStorage)
@@ -217,9 +207,9 @@ export function EpayPayDialog(props: EpayPayDialogProps) {
             <Button
               variant='outline'
               disabled={cancel.isPending || create.isPending}
-              onClick={() => void changeChannel()}
+              onClick={() => void cancelOrder()}
             >
-              {t('Try another channel')}
+              {t('Choose another payment method')}
             </Button>
             <Button
               variant='ghost'
@@ -257,7 +247,9 @@ export function EpayPayDialog(props: EpayPayDialogProps) {
       {unsafeLink && (
         <Alert variant='destructive'>
           <AlertDescription>
-            {t('The payment link is not safe to open. Try another channel.')}
+            {t(
+              'The payment link is not safe to open. Choose another payment method.'
+            )}
           </AlertDescription>
         </Alert>
       )}

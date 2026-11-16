@@ -18,6 +18,8 @@ type AdtyMethodInfo struct {
 	Label     string `json:"label,omitempty"`
 	FaceUSD   string `json:"face_usd,omitempty"`
 	Currency  string `json:"currency"`
+	// ChannelId 只在钱包场景里的易支付方式上有：客户选哪个按钮就固定走哪个通道。
+	ChannelId int `json:"channel_id,omitempty"`
 }
 
 // AdtyPaymentProvider 是一个支付商（P4 的 BEpusdt、P5 的易支付）。

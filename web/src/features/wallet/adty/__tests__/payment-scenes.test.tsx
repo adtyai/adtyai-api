@@ -166,7 +166,7 @@ it('an empty authorized scene list keeps payment disabled even if old methods ar
 
 it('all wallet payment clients carry the selected scene to their HTTP endpoint', async () => {
   await payWithBEpusdt(100, 'usdt.trc20', '', 'limited')
-  await payWithEpay(100, 'alipay', 'pc', [], '', 'limited')
+  await payWithEpay(100, 'alipay', 7, 'pc', '', 'limited')
   expect(
     requests.map((request) => [request.path, request.body.payment_scene])
   ).toEqual([

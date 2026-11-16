@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
@@ -59,6 +60,7 @@ type adtyEpayChannelRequest struct {
 	UnpaidThreshold int    `json:"unpaid_threshold"`
 	Methods         []struct {
 		Method        string          `json:"method"`
+		DisplayName   string          `json:"display_name"`
 		TypeCode      string          `json:"type_code"`
 		MinCNY        decimal.Decimal `json:"min_cny"`
 		MaxCNY        decimal.Decimal `json:"max_cny"`
@@ -67,6 +69,9 @@ type adtyEpayChannelRequest struct {
 		ReturnType    string          `json:"return_type"`
 	} `json:"methods"`
 }
+
+// adtyEpayDisplayNameMaxRunes 限制钱包按钮上的名字长度。
+const adtyEpayDisplayNameMaxRunes = 32
 
 func (req *adtyEpayChannelRequest) toChannel() (*model.AdtyEpayChannel, error) {
 	req.GatewayURL = strings.TrimSpace(req.GatewayURL)
@@ -103,8 +108,12 @@ func (req *adtyEpayChannelRequest) toChannel() (*model.AdtyEpayChannel, error) {
 		if m.Enabled {
 			enabled++
 		}
+		displayName := strings.TrimSpace(m.DisplayName)
+		if utf8.RuneCountInString(displayName) > adtyEpayDisplayNameMaxRunes {
+			return nil, common.NewMessage("The display name can be at most 32 characters")
+		}
 		channel.Methods = append(channel.Methods, model.AdtyEpayChannelMethod{
-			Method: m.Method, TypeCode: strings.TrimSpace(m.TypeCode),
+			Method: m.Method, DisplayName: displayName, TypeCode: strings.TrimSpace(m.TypeCode),
 			MinCNY: m.MinCNY.Round(2), MaxCNY: m.MaxCNY.Round(2), DailyLimitCNY: m.DailyLimitCNY.Round(2),
 			Enabled: m.Enabled, ReturnType: strings.TrimSpace(m.ReturnType),
 		})

@@ -192,6 +192,74 @@ func TestAdtyEpayPay(t *testing.T) {
 	})
 }
 
+// 钱包里每个通道一个按钮，名字用后台设的显示名称。客户选了哪个通道就只用哪个：
+// 这个通道下不了单就提示换一个支付方式，不替客户换到别的通道。
+func TestAdtyEpayChosenChannel(t *testing.T) {
+	f := newAdtyGuardFixture(t)
+	setRouterBonusRates(t)
+	shortEpayTimeouts(t)
+	brokenGateway := newFakeEpay(t, func(url.Values) (int, string, time.Duration) { return 200, `{"code":"error","msg":"busy"}`, 0 })
+	backupGateway := newFakeEpay(t, epayQR)
+	broken := seedRouterEpayChannel(t, "chosen-broken", brokenGateway.server.URL, model.AdtyEpayOrderModeAPI, 9)
+	backup := seedRouterEpayChannel(t, "chosen-backup", backupGateway.server.URL, model.AdtyEpayOrderModeAPI, 5)
+	t.Cleanup(func() {
+		_ = model.SetAdtyEpayChannelStatus(broken.Id, model.AdtyEpayStatusDisabled, "manual")
+		_ = model.SetAdtyEpayChannelStatus(backup.Id, model.AdtyEpayStatusDisabled, "manual")
+	})
+	for id, name := range map[int]string{broken.Id: "支付宝1", backup.Id: "支付宝2"} {
+		require.NoError(t, f.db.Model(&model.AdtyEpayChannelMethod{}).Where("channel_id = ? AND method = ?", id, "alipay").Update("display_name", name).Error)
+	}
+	token, userID := bepusdtBuyer(t, f, "epay-chosen")
+
+	info := decodeAdtyData[struct {
+		Methods []service.AdtyMethodInfo `json:"methods"`
+	}](t, adtyJSON(t, f.engine, http.MethodGet, "/api/adty/topup/info", "", token).Body)
+	var tiles []service.AdtyMethodInfo
+	for _, method := range info.Methods {
+		if method.ChannelId == broken.Id || method.ChannelId == backup.Id {
+			tiles = append(tiles, method)
+		}
+	}
+	assert.Equal(t, []service.AdtyMethodInfo{
+		{Id: "alipay", Kind: "epay", Available: true, Label: "支付宝1", Currency: "CNY", ChannelId: broken.Id},
+		{Id: "alipay", Kind: "epay", Available: true, Label: "支付宝2", Currency: "CNY", ChannelId: backup.Id},
+	}, tiles, "one button per channel, higher priority first")
+
+	quote := func(channelID int) bool {
+		body := fmt.Sprintf(`{"amount":100,"method":"alipay","channel_id":%d}`, channelID)
+		return decodeAdtyData[struct {
+			Available bool `json:"available"`
+		}](t, adtyJSON(t, f.engine, http.MethodPost, "/api/adty/topup/quote", body, token).Body).Available
+	}
+	assert.True(t, quote(backup.Id))
+	require.NoError(t, f.db.Model(&model.AdtyEpayChannelMethod{}).Where("channel_id = ? AND method = ?", backup.Id, "alipay").Update("max_cny", 1).Error)
+	assert.False(t, quote(backup.Id), "the chosen channel's own limit decides availability")
+	assert.True(t, quote(0), "without a choice any channel may take the payment")
+	require.NoError(t, f.db.Model(&model.AdtyEpayChannelMethod{}).Where("channel_id = ? AND method = ?", backup.Id, "alipay").Update("max_cny", 0).Error)
+
+	pay := func(channelID int) *httptest.ResponseRecorder {
+		body := fmt.Sprintf(`{"amount":100,"method":"alipay","device":"pc","channel_id":%d}`, channelID)
+		return adtyJSON(t, f.engine, http.MethodPost, "/api/adty/epay/pay", body, token)
+	}
+	failed := pay(broken.Id)
+	assert.Contains(t, failed.Body.String(), `"success":false`)
+	assert.Contains(t, failed.Body.String(), "This payment channel is not available right now")
+	backupGateway.mu.Lock()
+	assert.Empty(t, backupGateway.orders, "a chosen channel never falls back to another one")
+	backupGateway.mu.Unlock()
+	statuses := epayOrders(t, f, userID)
+	require.Len(t, statuses, 1)
+	for _, status := range statuses {
+		assert.Equal(t, common.TopUpStatusFailed, status)
+	}
+	assert.Contains(t, pay(999999).Body.String(), "This payment channel is not available right now")
+
+	view := decodeAdtyData[model.AdtyTopUpView](t, pay(backup.Id).Body)
+	require.NotNil(t, view.Ext)
+	assert.Equal(t, backup.Id, view.Ext.ChannelId)
+	assert.Contains(t, view.Ext.QRCode, "https://qr.example/")
+}
+
 func epayCallback(t *testing.T, f *adtyGuardFixture, channelID int, key string, values map[string]string) string {
 	t.Helper()
 	sign, err := service.EpaySign(values, key)
@@ -332,6 +400,25 @@ func TestEpayAdmin(t *testing.T) {
 		stored, err := model.GetAdtyEpayChannel(created.Id)
 		require.NoError(t, err)
 		assert.Equal(t, "k-secret", stored.MerchantKey, "an empty key keeps the stored one")
+	})
+
+	t.Run("display names", func(t *testing.T) {
+		path := fmt.Sprintf("/api/adty/admin/epay/channels/%d", created.Id)
+		keep := strings.Replace(body, `"merchant_key":"k-secret"`, `"merchant_key":""`, 1)
+		named := strings.Replace(keep, `{"method":"alipay","enabled":true}`, `{"method":"alipay","display_name":"  支付宝1  ","enabled":true}`, 1)
+		resp := adtyJSON(t, f.engine, http.MethodPut, path, named, f.root)
+		require.Contains(t, resp.Body.String(), `"success":true`, resp.Body.String())
+		stored, err := model.GetAdtyEpayChannel(created.Id)
+		require.NoError(t, err)
+		assert.Equal(t, "支付宝1", stored.MethodFor("alipay").DisplayName)
+		assert.Empty(t, stored.MethodFor("wxpay").DisplayName)
+
+		tooLong := strings.Replace(keep, `{"method":"alipay","enabled":true}`, `{"method":"alipay","display_name":"`+strings.Repeat("长", 33)+`","enabled":true}`, 1)
+		resp = adtyJSON(t, f.engine, http.MethodPut, path, tooLong, f.root)
+		assert.Contains(t, resp.Body.String(), `"success":false`)
+		stored, err = model.GetAdtyEpayChannel(created.Id)
+		require.NoError(t, err)
+		assert.Equal(t, "支付宝1", stored.MethodFor("alipay").DisplayName, "a rejected save keeps the old name")
 	})
 
 	t.Run("test order disables an unsupported method", func(t *testing.T) {

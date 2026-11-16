@@ -23,6 +23,8 @@ type ApiResponse<T> = { success: boolean; message?: string; data: T }
 
 export type EpayMethodConfig = {
   method: 'alipay' | 'wxpay'
+  /** Name customers see on the wallet button, for example Alipay 1. */
+  display_name?: string
   type_code: string
   min_cny: string
   max_cny: string

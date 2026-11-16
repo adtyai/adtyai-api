@@ -66,6 +66,7 @@ type adtyQuoteRequest struct {
 	PaymentScene string `json:"payment_scene"`
 	Amount       int64  `json:"amount"`
 	Method       string `json:"method"`
+	ChannelId    int    `json:"channel_id"` // 易支付：客户选的通道，0 表示不指定
 	PromoCode    string `json:"promo_code"` // 任务 12.4
 }
 
@@ -94,8 +95,10 @@ func PostAdtyTopUpQuote(c *gin.Context) {
 			return
 		}
 		if provider.Name() == service.AdtyProviderEpay {
-			_, _, err := service.PickAdtyEpayChannel(req.Method, quote.PayAmount, "desktop", nil, time.Now().Unix(), scene.ChannelIDs)
-			available = err == nil
+			if allowed, ok := service.AdtyEpayChannelAllowed(scene, req.ChannelId); ok {
+				_, _, err := service.PickAdtyEpayChannel(req.Method, quote.PayAmount, "desktop", nil, time.Now().Unix(), allowed)
+				available = err == nil
+			}
 		} else {
 			available = provider.AvailableFor(req.Method, quote)
 		}

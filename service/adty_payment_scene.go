@@ -268,21 +268,13 @@ func AdtyPaymentScenesForUser(userID int) ([]AdtyPaymentSceneView, error) {
 				if !method.Available || !adtySceneMethod(scene, provider.Name(), method.Id, method.Currency) {
 					continue
 				}
-				if method.Kind == "epay" && len(scene.ChannelIDs) > 0 {
-					channels, err := model.ListAdtyEpayChannels()
+				if method.Kind == "epay" {
+					channelMethods, err := adtyEpaySceneChannelMethods(scene, method)
 					if err != nil {
 						return nil, err
 					}
-					allowed := false
-					for _, channel := range channels {
-						if slices.Contains(scene.ChannelIDs, channel.Id) && channel.Status == model.AdtyEpayStatusEnabled && channel.MethodFor(method.Id) != nil {
-							allowed = true
-							break
-						}
-					}
-					if !allowed {
-						continue
-					}
+					view.Methods = append(view.Methods, channelMethods...)
+					continue
 				}
 				if method.FaceUSD != "" {
 					face, err := decimal.NewFromString(method.FaceUSD)
@@ -298,6 +290,46 @@ func AdtyPaymentScenesForUser(userID int) ([]AdtyPaymentSceneView, error) {
 		}
 	}
 	return views, nil
+}
+
+// adtyEpaySceneChannelMethods 把一种易支付方式按通道展开成钱包里的按钮：每个启用的、
+// 支持这种方式的、场景允许的通道各一个，名字用后台设的显示名称。顺序同挑通道（优先级高的在前）。
+func adtyEpaySceneChannelMethods(scene model.AdtyPaymentScene, method AdtyMethodInfo) ([]AdtyMethodInfo, error) {
+	channels, err := model.ListAdtyEpayChannels()
+	if err != nil {
+		return nil, err
+	}
+	out := []AdtyMethodInfo{}
+	for i := range channels {
+		channel := &channels[i]
+		if channel.Status != model.AdtyEpayStatusEnabled || (len(scene.ChannelIDs) > 0 && !slices.Contains(scene.ChannelIDs, channel.Id)) {
+			continue
+		}
+		channelMethod := channel.MethodFor(method.Id)
+		if channelMethod == nil {
+			continue
+		}
+		entry := method
+		entry.ChannelId = channel.Id
+		entry.Label = channelMethod.DisplayName
+		out = append(out, entry)
+	}
+	return out, nil
+}
+
+// AdtyEpayChannelAllowed 检查客户选的通道在这个场景里能不能用，返回挑通道时的候选范围。
+// channelID 为 0 表示不指定，候选就是场景限定的通道（空表示不限）。
+func AdtyEpayChannelAllowed(scene *model.AdtyPaymentScene, channelID int) ([]int, bool) {
+	if channelID <= 0 {
+		if scene == nil {
+			return nil, true
+		}
+		return scene.ChannelIDs, true
+	}
+	if scene != nil && len(scene.ChannelIDs) > 0 && !slices.Contains(scene.ChannelIDs, channelID) {
+		return nil, false
+	}
+	return []int{channelID}, true
 }
 
 func authorizeAdtyPaymentScene(db *gorm.DB, config *AdtyPaymentScenes, userID int, key, provider, method string, quote *AdtyQuote, lockUser bool) (*model.AdtyPaymentScene, *model.User, error) {

@@ -57,6 +57,24 @@ type AdtyRechargeCardProps = {
   ) => void
 }
 
+/** Epay lists one button per channel, so a method id alone is not unique. */
+function paymentMethodKey(method: AdtyMethod): string {
+  return `${method.id}:${method.channel_id ?? 0}`
+}
+
+/** Repeated names get a number (Alipay 1, Alipay 2) so every button reads differently. */
+function paymentMethodLabels(labels: string[]): string[] {
+  const total = new Map<string, number>()
+  for (const label of labels) total.set(label, (total.get(label) ?? 0) + 1)
+  const seen = new Map<string, number>()
+  return labels.map((label) => {
+    if ((total.get(label) ?? 0) < 2) return label
+    const next = (seen.get(label) ?? 0) + 1
+    seen.set(label, next)
+    return `${label} ${next}`
+  })
+}
+
 export function AdtyRechargeCard(props: AdtyRechargeCardProps) {
   const { t, i18n } = useTranslation()
   const locale = toIntlLocale(i18n.resolvedLanguage || i18n.language)
@@ -74,14 +92,18 @@ export function AdtyRechargeCard(props: AdtyRechargeCardProps) {
   )
   const [selectedTier, setSelectedTier] = useState<number | null>(null)
   const [customAmount, setCustomAmount] = useState('')
-  const [methodId, setMethodId] = useState<string | null>(null)
+  const [methodKey, setMethodKey] = useState<string | null>(null)
   const promoCode = ''
 
   const methods =
     props.info?.scenes === undefined
       ? (props.info?.methods ?? [])
       : (scene?.methods ?? [])
-  const method = methods.find((item) => item.id === methodId) ?? null
+  const method =
+    methods.find((item) => paymentMethodKey(item) === methodKey) ?? null
+  const methodLabels = paymentMethodLabels(
+    methods.map((item) => item.label || t(methodLabel(item.id)))
+  )
   const fixedAmount =
     method?.face_usd === undefined ? undefined : Number(method.face_usd)
   const amount =
@@ -100,11 +122,17 @@ export function AdtyRechargeCard(props: AdtyRechargeCardProps) {
       'quote',
       paymentScene,
       amount,
-      methodId,
+      methodKey,
       promoCode,
     ],
     queryFn: () =>
-      quoteAdtyTopup(amount, methodId ?? '', promoCode, paymentScene),
+      quoteAdtyTopup(
+        amount,
+        method?.id ?? '',
+        promoCode,
+        paymentScene,
+        method?.channel_id
+      ),
     enabled: validAmount && method !== null && method.available,
     meta: { errorToast: false },
   })
@@ -187,7 +215,7 @@ export function AdtyRechargeCard(props: AdtyRechargeCardProps) {
               disabled={props.paying}
               onChange={(event) => {
                 setSceneKey(event.target.value)
-                setMethodId(null)
+                setMethodKey(null)
               }}
             >
               {scenes.map((item) => (
@@ -268,22 +296,22 @@ export function AdtyRechargeCard(props: AdtyRechargeCardProps) {
             {t('Payment method')}
           </Label>
           <div className='grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6'>
-            {methods.map((item) => (
+            {methods.map((item, index) => (
               <Button
-                key={item.id}
+                key={paymentMethodKey(item)}
                 variant='outline'
                 disabled={!item.available}
-                aria-pressed={methodId === item.id}
+                aria-pressed={methodKey === paymentMethodKey(item)}
                 className={cn(
                   'h-auto min-h-12 flex-col items-start px-3 py-2 text-left whitespace-normal',
-                  methodId === item.id
+                  methodKey === paymentMethodKey(item)
                     ? 'border-foreground bg-foreground/5'
                     : 'border-muted'
                 )}
-                onClick={() => setMethodId(item.id)}
+                onClick={() => setMethodKey(paymentMethodKey(item))}
               >
                 <span className='text-sm font-medium'>
-                  {item.label || t(methodLabel(item.id))}
+                  {methodLabels[index]}
                 </span>
                 {!item.available && (
                   <span className='text-muted-foreground text-xs'>

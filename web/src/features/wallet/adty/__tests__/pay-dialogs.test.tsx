@@ -303,7 +303,7 @@ describe('EpayPayDialog', () => {
     )
     expect(
       await screen.findByText(
-        'The payment link is not safe to open. Try another channel.'
+        'The payment link is not safe to open. Choose another payment method.'
       )
     ).toBeVisible()
     expect(navigate).not.toHaveBeenCalled()
@@ -325,43 +325,37 @@ describe('EpayPayDialog', () => {
     )
     expect(
       await screen.findByText(
-        'The payment link is not safe to open. Try another channel.'
+        'The payment link is not safe to open. Choose another payment method.'
       )
     ).toBeVisible()
     expect(screen.queryByTestId('epay-qr')).not.toBeInTheDocument()
   })
 
-  it('trying another channel cancels and reorders without that channel', async () => {
-    const first = epayOrder('EPY5', { qr_code: 'https://qr/1', channel_id: 3 })
-    const second = epayOrder('EPY6', { qr_code: 'https://qr/2', channel_id: 4 })
-    pay.payWithEpay.mockResolvedValueOnce(first).mockResolvedValueOnce(second)
-    api.getAdtyOrder.mockImplementation(async (tradeNo: string) =>
-      tradeNo === 'EPY5' ? first : second
-    )
+  it('orders on the chosen channel and lets the customer pick another method', async () => {
+    const first = epayOrder('EPY5', { qr_code: 'https://qr/1', channel_id: 4 })
+    pay.payWithEpay.mockResolvedValueOnce(first)
+    api.getAdtyOrder.mockResolvedValue(first)
     api.cancelAdtyOrder.mockResolvedValue(undefined)
+    const onClose = vi.fn()
     const user = userEvent.setup()
     render(
       <EpayPayDialog
         method='alipay'
+        channelId={4}
         amount={100}
         device='pc'
-        onClose={() => {}}
+        onClose={onClose}
         onSettled={() => {}}
       />,
       { wrapper }
     )
     await screen.findByTestId('epay-qr')
+    expect(pay.payWithEpay.mock.calls[0][2]).toBe(4)
     await user.click(
-      screen.getByRole('button', { name: 'Try another channel' })
+      screen.getByRole('button', { name: 'Choose another payment method' })
     )
-    await waitFor(() => expect(pay.payWithEpay).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(onClose).toHaveBeenCalled())
     expect(api.cancelAdtyOrder).toHaveBeenCalledWith('EPY5')
-    expect(pay.payWithEpay.mock.calls[1][3]).toEqual([3])
-    await waitFor(() =>
-      expect(screen.getByTestId('epay-qr')).toHaveAttribute(
-        'data-value',
-        'https://qr/2'
-      )
-    )
+    expect(pay.payWithEpay).toHaveBeenCalledTimes(1)
   })
 })

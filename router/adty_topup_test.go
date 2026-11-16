@@ -33,7 +33,7 @@ func TestPaymentScenesConstrainNativeEpayOrders(t *testing.T) {
 		return 200, `{}`, 0
 	})
 	allowed := seedRouterEpayChannel(t, "scene-allowed", allowedGateway.server.URL, model.AdtyEpayOrderModeAPI, 1)
-	seedRouterEpayChannel(t, "scene-forbidden", forbiddenGateway.server.URL, model.AdtyEpayOrderModeAPI, 99)
+	forbidden := seedRouterEpayChannel(t, "scene-forbidden", forbiddenGateway.server.URL, model.AdtyEpayOrderModeAPI, 99)
 	buyer, userID := bepusdtBuyer(t, f, "scene-epay-buyer")
 	body := fmt.Sprintf(`{"expected_version":1,"scenes":[{"key":"limited","name":"Limited checkout","business":"wallet_topup","enabled":true,"providers":["adty_epay"],"methods":["alipay"],"channel_ids":[%d],"currencies":["CNY"],"site_scope":"main","site_ids":[],"user_types":["main_customer"],"min_usd":"50","max_usd":"100"}]}`, allowed.Id)
 	saved := adtyJSON(t, f.engine, http.MethodPut, "/api/adty/admin/payment-scenes", body, f.root)
@@ -51,6 +51,19 @@ func TestPaymentScenesConstrainNativeEpayOrders(t *testing.T) {
 	var count int64
 	require.NoError(t, f.db.Model(&model.TopUp{}).Where("user_id = ?", userID).Count(&count).Error)
 	require.Zero(t, count, "denied native requests cannot create orders")
+	forbiddenChoice := fmt.Sprintf(`{"amount":100,"method":"alipay","payment_scene":"limited","channel_id":%d}`, forbidden.Id)
+	assert.Contains(t, adtyJSON(t, f.engine, http.MethodPost, "/api/adty/epay/pay", forbiddenChoice, buyer).Body.String(), `"success":false`)
+	info := decodeAdtyData[struct {
+		Scenes []service.AdtyPaymentSceneView `json:"scenes"`
+	}](t, adtyJSON(t, f.engine, http.MethodGet, "/api/adty/topup/info", "", buyer).Body)
+	for _, scene := range info.Scenes {
+		if scene.Key != "limited" {
+			continue
+		}
+		for _, method := range scene.Methods {
+			assert.NotEqual(t, forbidden.Id, method.ChannelId, "a channel outside the scene is not offered")
+		}
+	}
 	valid := `{"amount":100,"method":"alipay","payment_scene":"limited"}`
 	require.NoError(t, f.db.Model(&model.AdtyEpayChannelMethod{}).Where("channel_id = ? AND method = ?", allowed.Id, "alipay").Update("min_cny", 999999).Error)
 	quoted := adtyJSON(t, f.engine, http.MethodPost, "/api/adty/topup/quote", valid, buyer)

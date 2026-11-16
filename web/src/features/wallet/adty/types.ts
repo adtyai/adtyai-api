@@ -26,6 +26,8 @@ export type AdtyMethod = {
   /** Fixed product face value in USD. */
   face_usd?: number | string
   currency?: string
+  /** Epay only: the channel this button pays through. */
+  channel_id?: number
 }
 
 export type AdtyPaymentScene = {

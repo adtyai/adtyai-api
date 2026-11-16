@@ -67,6 +67,8 @@ type AdtyEpayChannelMethod struct {
 	DailyLimitCNY decimal.Decimal `json:"daily_limit_cny" gorm:"column:daily_limit_cny;type:decimal(20,2);not null;default:0"`
 	ReturnType    string          `json:"return_type" gorm:"type:varchar(16)"`
 	Enabled       bool            `json:"enabled"`
+	// DisplayName 是钱包里给客户看的名字，比如「支付宝1」；空着就按方式显示。
+	DisplayName string `json:"display_name" gorm:"type:varchar(64);not null;default:''"`
 }
 
 func (AdtyEpayChannelMethod) TableName() string {

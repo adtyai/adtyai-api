@@ -23,6 +23,8 @@ export type ActivePayment = {
   paymentScene?: string
   kind: AdtyMethodKind
   method: string
+  /** Epay channel the customer picked; the order uses only this channel. */
+  channelId?: number
   amount: number
   /** Promo code applied at order time (adty task 12.4); '' for none. */
   promoCode?: string

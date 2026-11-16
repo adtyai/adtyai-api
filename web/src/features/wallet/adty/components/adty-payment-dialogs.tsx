@@ -47,8 +47,12 @@ export function AdtyPaymentDialogs(props: AdtyPaymentDialogsProps) {
   }
   return (
     <EpayPayDialog
-      key={payment.tradeNo ?? `${payment.method}-${payment.amount}`}
+      key={
+        payment.tradeNo ??
+        `${payment.method}-${payment.channelId ?? 0}-${payment.amount}`
+      }
       method={payment.method}
+      channelId={payment.channelId}
       paymentScene={payment.paymentScene}
       amount={payment.amount}
       promoCode={payment.promoCode}

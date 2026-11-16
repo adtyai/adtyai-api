@@ -9121,7 +9121,12 @@
     "Sent to Epay as the type parameter, for example alipay or wxpay.": "作为 type 参数发给易支付，例如 alipay、wxpay。",
     "No icon": "不显示图标",
     "Card": "银行卡",
-    "Icon shown next to this payment method.": "显示在支付方式名称旁边的图标。"
+    "Icon shown next to this payment method.": "显示在支付方式名称旁边的图标。",
+    "This payment channel is not available right now. Choose another payment method.": "这个支付通道暂时不可用，请换一个支付方式。",
+    "The display name can be at most 32 characters": "显示名称最多 32 个字",
+    "Choose another payment method": "换一个支付方式",
+    "The payment link is not safe to open. Choose another payment method.": "支付链接不安全，无法打开，请换一个支付方式。",
+    "Shown to customers on the wallet page, for example Alipay 1. Leave empty to show the method name.": "客户在钱包页看到的名字，例如“支付宝1”。留空就显示支付方式名称。"
 },
   "Targeted notifications": "定向通知",
   "Site announcements": "本站公告",
