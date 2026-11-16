@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, expect, it, vi } from 'vitest'
 
 import { api } from '@/lib/api'
@@ -102,7 +103,76 @@ it('still lists the wallets when the payload is an array', async () => {
       <SiteFundPanel siteId={1} />
     </QueryClientProvider>
   )
-  expect(await screen.findByText(/^margin 12\.50$/)).toBeInTheDocument()
+  expect(
+    await screen.findByText(/^Margin wallet: 12\.50 USD$/)
+  ).toBeInTheDocument()
+  client.clear()
+})
+
+it('pages the wallet ledger and filters it by wallet', async () => {
+  useAuthStore.getState().auth.setUser({ id: 1, username: 'root', role: 100 })
+  const get = vi.spyOn(api, 'get').mockImplementation(async (url) => {
+    const path = String(url)
+    if (path.endsWith('/wallet-ledgers')) {
+      return {
+        data: {
+          success: true,
+          data: {
+            total: 1,
+            page: 1,
+            page_size: 20,
+            items: [
+              {
+                id: 9,
+                site_id: 1,
+                wallet_id: 3,
+                wallet_kind: 'earnings',
+                delta: '-5.5',
+                hold_delta: '0',
+                balance_before: '20',
+                balance_after: '14.5',
+                type: 'earning_withdraw_freeze',
+                ref_type: 'site_withdraw',
+                ref_id: 'wd-1',
+                reason: '',
+                operator_id: 7,
+                allow_overdraft: false,
+                created_at: 1,
+              },
+            ],
+          },
+        },
+      }
+    }
+    if (path.endsWith('/wallets')) return { data: { success: true, data: [] } }
+    if (path.endsWith('/commission-margin')) {
+      return { data: { success: true, data: { site_id: 1, allowed: false } } }
+    }
+    return { data: { success: true, data: { items: [] } } }
+  })
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  render(
+    <QueryClientProvider client={client}>
+      <SiteFundPanel siteId={1} />
+    </QueryClientProvider>
+  )
+  const table = await screen.findByRole('table', { name: 'Wallet ledger' })
+  expect(table).toHaveTextContent('Earnings withdrawal')
+  expect(table).toHaveTextContent('-5.5 USD')
+  expect(table).toHaveTextContent('20 → 14.5')
+  expect(table).toHaveTextContent('#7')
+  expect(get).toHaveBeenCalledWith('/api/adty/admin/sites/1/wallet-ledgers', {
+    params: { kind: undefined, p: 1, page_size: 20 },
+  })
+  await userEvent.setup().selectOptions(
+    screen.getByRole('combobox', { name: 'Wallet' }),
+    'operating'
+  )
+  expect(get).toHaveBeenCalledWith('/api/adty/admin/sites/1/wallet-ledgers', {
+    params: { kind: 'operating', p: 1, page_size: 20 },
+  })
   client.clear()
 })
 

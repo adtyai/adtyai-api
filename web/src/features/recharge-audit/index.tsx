@@ -56,6 +56,7 @@ import {
 } from './components/order-action-dialogs'
 import { OrderDetailDialog } from './components/order-detail-dialog'
 import { PaymentOrphanPanel } from './components/payment-orphan-panel'
+import { SiteEarningReviewPanel } from './components/site-earning-review-panel'
 
 const PAGE_SIZE = 20
 const STATUSES: AdtyOrderStatus[] = [
@@ -526,6 +527,9 @@ export function RechargeAudit(props: {
         </Card>
 
         {!props.ownerMode && <PaymentOrphanPanel canCredit={canComplete} />}
+        {!props.ownerMode && (
+          <SiteEarningReviewPanel canResolve={canComplete} />
+        )}
       </div>
       {viewing &&
         user &&

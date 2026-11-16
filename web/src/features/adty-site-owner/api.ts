@@ -16,6 +16,10 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import type {
+  SiteWallet,
+  SiteWalletLedgerPage,
+} from '@/features/adty-ledger/site-wallet-labels'
 import { api } from '@/lib/api'
 import { requireServerSuccess } from '@/lib/server-error-message'
 
@@ -173,6 +177,25 @@ export async function transferEarningToMargin(amountUsd: string): Promise<void> 
     { headers: { 'Idempotency-Key': crypto.randomUUID() } }
   )
   requireServerSuccess(res.data)
+}
+
+/** Earnings and margin wallets; the server never returns the operating wallet here. */
+export async function getOwnerWallets(): Promise<SiteWallet[]> {
+  const res = await api.get<ApiResponse<SiteWallet[]>>(`${BASE}/wallets`)
+  const data = requireServerSuccess(res.data).data
+  return Array.isArray(data) ? data : []
+}
+
+export async function getOwnerWalletLedger(
+  kind: string,
+  page: number,
+  pageSize: number
+): Promise<SiteWalletLedgerPage> {
+  const res = await api.get<ApiResponse<SiteWalletLedgerPage>>(
+    `${BASE}/wallet-ledgers`,
+    { params: { kind: kind || undefined, p: page, page_size: pageSize } }
+  )
+  return requireServerSuccess(res.data).data
 }
 
 export async function cancelSiteWithdrawal(id: number): Promise<void> {

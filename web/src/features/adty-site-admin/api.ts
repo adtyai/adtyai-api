@@ -1,3 +1,4 @@
+import type { SiteWalletLedgerPage } from '@/features/adty-ledger/site-wallet-labels'
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -128,6 +129,7 @@ export type AdminWallet = {
   id: number
   kind: string
   balance: string
+  frozen_usd?: string
   cycle_tier_usd: string
   cycle_used_usd: string
 }
@@ -154,6 +156,20 @@ export async function getAdminSiteWallets(
     `${BASE}/sites/${siteId}/wallets`
   )
   return listOrEmpty(requireServerSuccess(res.data).data)
+}
+
+/** Root only: every wallet kind of one site, newest first. */
+export async function getAdminSiteWalletLedger(
+  siteId: number,
+  kind: string,
+  page: number,
+  pageSize: number
+): Promise<SiteWalletLedgerPage> {
+  const res = await api.get<ApiResponse<SiteWalletLedgerPage>>(
+    `${BASE}/sites/${siteId}/wallet-ledgers`,
+    { params: { kind: kind || undefined, p: page, page_size: pageSize } }
+  )
+  return requireServerSuccess(res.data).data
 }
 
 export async function getAdminAnomalyDispositions(

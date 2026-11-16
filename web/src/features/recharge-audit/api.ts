@@ -313,6 +313,49 @@ export async function resolvePaymentOrphan(
   return requireServerSuccess(res.data).data
 }
 
+/** A historical task earning whose original charge is missing (needs_review). */
+export type SiteEarningReview = {
+  operation_key: string
+  root_operation_key: string
+  site_id: number
+  site_owner_user_id: number
+  user_id: number
+  quota: number
+  markup: number
+  cost_factor: number
+  risk_flag: string
+  review_status: string
+  day: string
+  created_at: number
+}
+
+export type SiteEarningDecision = 'released' | 'skipped'
+
+export async function getSiteEarningReviews(page: number, pageSize: number) {
+  const res = await api.get<
+    ApiResponse<{ total: number; items: SiteEarningReview[] }>
+  >('/api/user/admin/finance/site-earning-reviews', {
+    params: { p: page, page_size: pageSize },
+  })
+  return requireServerSuccess(res.data).data
+}
+
+export async function resolveSiteEarningReview(
+  body: {
+    operation_key: string
+    original_charge: SiteEarningDecision
+    reason: string
+  },
+  proofToken: string
+) {
+  const res = await api.post<ApiResponse<unknown>>(
+    '/api/user/admin/finance/site-earning-reviews/resolve',
+    body,
+    proofHeaders(proofToken)
+  )
+  requireServerSuccess(res.data)
+}
+
 export async function completeTopupManually(
   tradeNo: string,
   proof: string,

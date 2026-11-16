@@ -274,7 +274,10 @@ beforeEach(() => {
         },
       }
     }
-    if (url === '/api/user/admin/finance/payment-orphans') {
+    if (
+      url === '/api/user/admin/finance/payment-orphans' ||
+      url === '/api/user/admin/finance/site-earning-reviews'
+    ) {
       return { data: { success: true, data: { items: [], total: 0 } } }
     }
     if (

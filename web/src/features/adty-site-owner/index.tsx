@@ -50,6 +50,7 @@ import { TermsAcceptPanel } from './components/terms-accept-panel'
 import { TelegramBindCard } from '@/features/adty-telegram/bind-card'
 
 import { VoucherPanel } from './components/voucher-panel'
+import { WalletLedgerPanel } from './components/wallet-ledger-panel'
 import { SITE_OWNER_SECTIONS, type SiteOwnerSectionId } from './sections'
 
 /** Site owner center (task 11.6): one page with a tab per section. */
@@ -164,6 +165,7 @@ export function SiteOwnerCenter(props: { section: SiteOwnerSectionId }) {
                       <SettlementSheetPanel />
                       <EarningToMarginPanel />
                       <WithdrawalPanel />
+                      <WalletLedgerPanel />
                     </div>
                   </TabsContent>
                   <TabsContent value='vouchers'>

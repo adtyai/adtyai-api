@@ -31,6 +31,7 @@ const api = vi.hoisted(() => ({
   getRechargeAudit: vi.fn(),
   getRechargeAuditSummary: vi.fn(),
   getPaymentOrphans: vi.fn(),
+  getSiteEarningReviews: vi.fn().mockResolvedValue({ total: 0, items: [] }),
   previewTopupRefund: vi.fn(),
   refundTopup: vi.fn(),
   listTopupManualRefunds: vi.fn(),

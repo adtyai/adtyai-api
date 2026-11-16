@@ -26,6 +26,8 @@ import { LoadingState } from '@/components/loading-state'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { siteWalletKindLabel } from '@/features/adty-ledger/site-wallet-labels'
+import { SiteWalletLedger } from '@/features/adty-ledger/site-wallet-ledger'
 import { handleServerError } from '@/lib/handle-server-error'
 import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
@@ -34,6 +36,7 @@ import {
   getAdminAnomalyDispositions,
   getAdminFundAnomalies,
   getAdminSiteCommissionMargin,
+  getAdminSiteWalletLedger,
   getAdminSiteWallets,
   issueAdminMarginVoucher,
   reviewAdminAnomalyDisposition,
@@ -127,7 +130,10 @@ export function SiteFundPanel(props: { siteId: number }) {
         <ul className='flex flex-col gap-1 text-sm tabular-nums'>
           {walletRows.map((wallet) => (
             <li key={wallet.id}>
-              {wallet.kind} {wallet.balance}
+              {siteWalletKindLabel(t, wallet.kind)}: {wallet.balance} USD
+              {Number(wallet.frozen_usd) > 0
+                ? ` · ${t('Frozen')} ${wallet.frozen_usd}`
+                : ''}
               {wallet.kind === 'margin' && wallet.cycle_tier_usd
                 ? ` · ${wallet.cycle_used_usd}/${wallet.cycle_tier_usd}`
                 : ''}
@@ -135,6 +141,15 @@ export function SiteFundPanel(props: { siteId: number }) {
           ))}
         </ul>
       )}
+      <SiteWalletLedger
+        label={t('Wallet ledger')}
+        queryKey={siteAdminKeys.list('wallet-ledger', { siteId: props.siteId })}
+        kinds={['operating', 'earnings', 'margin']}
+        fetchPage={(kind, page, pageSize) =>
+          getAdminSiteWalletLedger(props.siteId, kind, page, pageSize)
+        }
+        showOperator
+      />
       <h3 className='text-sm font-medium'>{t('Commission coverage')}</h3>
       {marginAuth.isPending && <LoadingState />}
       {marginAuth.isError && (
