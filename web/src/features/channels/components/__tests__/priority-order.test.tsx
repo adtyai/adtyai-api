@@ -209,12 +209,16 @@ async function mount(view: 'table' | 'card' = 'card', enabled = true) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
+  await router.load()
   render(
     <QueryClientProvider client={client}>
       <RouterProvider router={router} />
     </QueryClientProvider>
   )
   await screen.findByRole('button', { name: 'Drag mode' })
+  if (localStorage.getItem('enable-tag-mode') !== 'true') {
+    await screen.findByText('Channel 3')
+  }
   if (enabled) {
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Drag mode' })).toBeEnabled()

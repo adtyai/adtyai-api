@@ -93,7 +93,8 @@ func setupResponsesWSRequestTest(t *testing.T) (*model.User, *model.Token) {
 		setting.ModelRequestRateLimitMutex.Unlock()
 		require.NoError(t, sqlDB.Close())
 	})
-	require.NoError(t, db.AutoMigrate(&model.User{}, &model.Token{}, &model.BillingOperation{}, &model.BillingOperationMovement{}, &model.AdtySiteEarningEvent{}))
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.Token{}, &model.BillingOperation{}, &model.BillingOperationMovement{}, &model.AdtySiteEarningEvent{},
+		&model.AdtyKeyLimit{}, &model.Model{}, &model.AdtyFundBatch{}, &model.AdtyFundAllocation{}, &model.AdtyBillingHold{}))
 	// The shared in-memory limiter outlives each database fixture. Give every
 	// user a separate quota bucket, including when the tests run with -count.
 	user := &model.User{Id: 5062000 + int(responsesWSTestUserSequence.Add(1)), Username: "responses-ws-user", Status: common.UserStatusEnabled, Group: "default", Quota: 1000, AuthVersion: 1}

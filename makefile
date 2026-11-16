@@ -1,5 +1,7 @@
 WEB_DIR = ./web
 API_DIR = .
+# The PostgreSQL integration suite exceeds Go's default 10-minute package limit.
+GO_TEST_TIMEOUT ?= 30m
 DEV_WEB_PORT ?= 5173
 DEV_COMPOSE_FILE = docker-compose.dev.yml
 DEV_POSTGRES_SERVICE = postgres
@@ -56,11 +58,11 @@ test:
 	@echo "Testing root Go module..."
 	@root_module=$$(GOWORK=off go list -m); \
 		root_packages=$$(GOWORK=off go list -e ./... | grep -vxF "$$root_module"); \
-		GOWORK=off go test $$root_packages
+		GOWORK=off go test -timeout=$(GO_TEST_TIMEOUT) $$root_packages
 	@echo "Testing relaykit Go module..."
-	@cd relaykit && GOWORK=off go test ./...
+	@cd relaykit && GOWORK=off go test -timeout=$(GO_TEST_TIMEOUT) ./...
 	@echo "Testing tokenkit Go module..."
-	@cd tokenkit && GOWORK=off go test ./...
+	@cd tokenkit && GOWORK=off go test -timeout=$(GO_TEST_TIMEOUT) ./...
 
 reset-setup:
 	@echo "Resetting local setup wizard state..."

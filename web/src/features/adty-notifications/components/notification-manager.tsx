@@ -156,24 +156,21 @@ function NotificationManagement(props: {
                 {
                   id: 'status',
                   header: t('Status'),
-                  cell: (row) => (
-                    <StatusBadge
-                      label={t(
-                        row.status === 'draft'
-                          ? 'Draft'
-                          : row.status === 'withdrawn'
-                            ? 'Withdrawn'
-                            : 'Published'
-                      )}
-                      variant={
-                        row.status === 'draft'
-                          ? 'warning'
-                          : row.status === 'withdrawn'
-                            ? 'neutral'
-                            : 'success'
-                      }
-                    />
-                  ),
+                  cell: (row) => {
+                    if (row.status === 'draft') {
+                      return (
+                        <StatusBadge label={t('Draft')} variant='warning' />
+                      )
+                    }
+                    if (row.status === 'withdrawn') {
+                      return (
+                        <StatusBadge label={t('Withdrawn')} variant='neutral' />
+                      )
+                    }
+                    return (
+                      <StatusBadge label={t('Published')} variant='success' />
+                    )
+                  },
                 },
                 {
                   id: 'actions',

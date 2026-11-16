@@ -260,7 +260,11 @@ func TestRealtimeRefundKeepsRiskDispositionWithoutInitialEarningEvent(t *testing
 			require.NoError(t, err)
 			affiliate, err := Referral.EnsureAffiliate(owner.Id)
 			require.NoError(t, err)
-			assert.InDelta(t, 18, account(t, db, affiliate.Id).AvailableAmount, 1e-9)
+			// The later $50 request at markup 1.25 earns $50 - $40 = $10.
+			assert.Equal(t, "10", siteWalletBalance(t, db, site.Id, model.AdtySiteWalletEarnings).String(),
+				"the refund preserves the later request's earnings in the site wallet")
+			assert.Zero(t, account(t, db, affiliate.Id).AvailableAmount,
+				"site earnings must not also credit the referral account")
 			var original model.AdtySiteEarningEvent
 			require.NoError(t, db.Where("operation_key = ?", "request:"+info.RequestId).First(&original).Error)
 			assert.Equal(t, "self_use", original.RiskFlag)

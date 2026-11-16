@@ -61,7 +61,10 @@ function renderCreateDrawer() {
 async function submitNewUser(username: string) {
   const user = userEvent.setup()
   await user.type(await screen.findByLabelText('Username'), username)
-  await user.type(screen.getByLabelText(/^Password/), 'password-123')
+  await user.type(
+    screen.getByLabelText(/^Password/, { selector: 'input' }),
+    'Valid-password-123!'
+  )
   await user.click(screen.getByRole('button', { name: 'Save changes' }))
 }
 

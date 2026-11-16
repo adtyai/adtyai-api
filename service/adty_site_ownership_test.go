@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting/adty_setting"
+	"github.com/glebarez/sqlite"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -26,6 +28,21 @@ type siteOwnershipFixture struct {
 func newSiteOwnershipFixture(t *testing.T, dialect string) siteOwnershipFixture {
 	t.Helper()
 	db := prepareReferralDialectDB(t, dialect)
+	if dialect == "sqlite" {
+		// Independent official audit writes must not wait on the business
+		// transaction's BEGIN IMMEDIATE lock in ownership races.
+		logDB, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "audit.db")), &gorm.Config{})
+		require.NoError(t, err)
+		require.NoError(t, logDB.AutoMigrate(&model.AuditLog{}, &model.Log{}))
+		previousLogDB := model.LOG_DB
+		model.LOG_DB = logDB
+		logSQL, err := logDB.DB()
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			model.LOG_DB = previousLogDB
+			assert.NoError(t, logSQL.Close())
+		})
+	}
 	cfg := adty_setting.GetResellerSetting()
 	saved := *cfg
 	t.Cleanup(func() { *cfg = saved; InvalidateAdtySiteCache() })

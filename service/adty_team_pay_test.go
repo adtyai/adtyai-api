@@ -54,7 +54,7 @@ func (p teamStripeProvider) AvailableFor(method string, quote *AdtyQuote) bool {
 }
 func (p teamStripeProvider) Cancel(*model.AdtyTopupOrder) error { return nil }
 
-func TestTeamTopupStartsExistingStripeCheckoutWithoutGift(t *testing.T) {
+func TestTeamTopupRejectsRetiredStripeCheckout(t *testing.T) {
 	db := prepareReferralDialectDB(t, "sqlite")
 	previous := AdtyPaymentProviderByName(model.PaymentProviderStripe)
 	RegisterAdtyPaymentProvider(teamStripeProvider{available: true})
@@ -82,25 +82,14 @@ func TestTeamTopupStartsExistingStripeCheckoutWithoutGift(t *testing.T) {
 		require.True(t, money.Equal(decimal.RequireFromString("8.00")))
 		return "https://checkout.stripe.test/" + tradeNo, "cs_team", nil
 	})
-	require.NoError(t, err)
-	require.Equal(t, 1, calls)
-	require.Equal(t, created.Team.Id, order.TeamId)
-	require.Equal(t, model.PaymentProviderStripe, order.Provider)
-	require.Equal(t, model.PaymentMethodStripe, order.Method)
-	require.True(t, order.BonusUSD.IsZero())
-	require.True(t, order.BonusRate.IsZero())
-	require.True(t, order.PromoBonusUSD.IsZero())
-	require.EqualValues(t, 500000, order.CreditQuota)
-	require.Equal(t, "https://checkout.stripe.test/"+order.TradeNo, order.PayURL)
-	require.Equal(t, "cs_team", order.GatewayTradeId)
-
-	replay, err := StartAdtyTeamStripeTopup(leader.Id, created.Team.Id, decimal.NewFromInt(1), decimal.RequireFromString("8.00"), "team-stripe-1", func(string, decimal.Decimal) (string, string, error) {
-		calls++
-		return "", "", nil
-	})
-	require.NoError(t, err)
-	require.Equal(t, 1, calls)
-	require.Equal(t, order.TradeNo, replay.TradeNo)
+	require.ErrorContains(t, err, "This payment method is not available")
+	require.Nil(t, order)
+	require.Zero(t, calls, "retired providers cannot open a checkout even if registered")
+	var orders int64
+	require.NoError(t, db.Model(&model.AdtyTopupOrder{}).Where("team_id = ?", created.Team.Id).Count(&orders).Error)
+	require.Zero(t, orders)
+	require.NoError(t, db.Model(&model.TopUp{}).Where("user_id = ?", leader.Id).Count(&orders).Error)
+	require.Zero(t, orders)
 }
 
 func TestTeamTopupStartsExistingBEpusdtWithoutGift(t *testing.T) {

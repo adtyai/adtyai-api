@@ -114,9 +114,10 @@ func TestCalculateTextQuotaSummaryOpenRouterCacheCreateInexactPrice(t *testing.T
 		completionTokens   = 50
 	)
 
+	// Cost inversion applies only when the channel uses a current default model ratio.
 	relayInfo := &relaycommon.RelayInfo{
 		FinalRequestRelayFormat: types.RelayFormatClaude,
-		OriginModelName:         "claude-3-5-sonnet-20241022",
+		OriginModelName:         "claude-sonnet-4-6",
 		ChannelMeta: &relaycommon.ChannelMeta{
 			ChannelType: constant.ChannelTypeOpenRouter,
 		},

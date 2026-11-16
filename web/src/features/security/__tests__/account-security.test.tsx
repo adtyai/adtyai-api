@@ -84,7 +84,9 @@ it('requires verification after username confirmation and cancels without deleti
   const user = userEvent.setup()
   render(<DeleteAccountDialog open username='user' onOpenChange={vi.fn()} />)
   expect(screen.getByRole('button', { name: 'Delete Account' })).toBeDisabled()
-  await user.type(screen.getByRole('textbox'), 'user')
+  await user.type(screen.getByPlaceholderText('user'), 'user')
+  expect(screen.getByRole('button', { name: 'Delete Account' })).toBeDisabled()
+  await user.type(screen.getByLabelText('Email confirmation code'), '654321')
   await user.click(screen.getByRole('button', { name: 'Delete Account' }))
   expect(
     await screen.findByRole('textbox', {
@@ -169,12 +171,13 @@ it.each(['2fa', 'passkey'])(
         <DeleteAccountDialog open username='user' onOpenChange={close} />
       </QueryClientProvider>
     )
-    await user.type(screen.getByRole('textbox'), 'user')
+    await user.type(screen.getByPlaceholderText('user'), 'user')
+    await user.type(screen.getByLabelText('Email confirmation code'), '654321')
     await user.click(screen.getByRole('button', { name: 'Delete Account' }))
-    expect(await screen.findByRole('tab', { name: 'Passkey' })).toHaveAttribute(
-      'aria-selected',
-      'true'
-    )
+    await screen.findByRole('tab', { name: 'Passkey' })
+    if (method === 'passkey') {
+      await user.click(screen.getByRole('tab', { name: 'Passkey' }))
+    }
     if (method === '2fa') {
       await user.click(screen.getByRole('tab', { name: 'Authenticator code' }))
       await user.type(
@@ -192,6 +195,7 @@ it.each(['2fa', 'passkey'])(
     expect(remove).toHaveBeenCalledExactlyOnceWith(
       '/api/user/self',
       expect.objectContaining({
+        data: { verification_code: '654321' },
         headers: { 'X-Security-Proof': 'delete-proof' },
         singleUseAuthorization: true,
         signal: expect.any(AbortSignal),
@@ -242,7 +246,8 @@ it.each(['unmount', 'account change'])(
     const view = render(
       <DeleteAccountDialog open username='user' onOpenChange={vi.fn()} />
     )
-    await user.type(screen.getByRole('textbox'), 'user')
+    await user.type(screen.getByPlaceholderText('user'), 'user')
+    await user.type(screen.getByLabelText('Email confirmation code'), '654321')
     await user.click(screen.getByRole('button', { name: 'Delete Account' }))
     await user.type(
       await screen.findByLabelText('Password', { selector: 'input' }),
@@ -261,7 +266,8 @@ it.each(['unmount', 'account change'])(
           .getState()
           .auth.setUser({ id: 2, username: 'second-user', role: 1 })
       )
-      expect(screen.getByRole('textbox')).toHaveValue('')
+      expect(screen.getByPlaceholderText('user')).toHaveValue('')
+      expect(screen.getByLabelText('Email confirmation code')).toHaveValue('')
     }
     expect(remove.mock.calls[0][1]?.signal?.aborted).toBe(true)
     await act(async () => resolveDeletion(response))
@@ -341,7 +347,8 @@ it('disables 2FA through a Passkey proof without asking for an authenticator cod
   )
   await user.click(screen.getByRole('checkbox'))
   await user.click(screen.getByRole('button', { name: 'Disable 2FA' }))
-  expect(await screen.findByRole('tab', { name: 'Passkey' })).toHaveAttribute(
+  await user.click(await screen.findByRole('tab', { name: 'Passkey' }))
+  expect(screen.getByRole('tab', { name: 'Passkey' })).toHaveAttribute(
     'aria-selected',
     'true'
   )

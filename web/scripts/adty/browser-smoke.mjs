@@ -79,9 +79,9 @@ const port = await reserveLocalPort()
 const baseURL = `http://127.0.0.1:${port}`
 const output = { text: '' }
 const preview = spawn(
-  process.env.ADTY_BUN_PATH ?? 'bun',
+  process.execPath,
   [
-    'run',
+    resolve(webRoot, 'node_modules/@rsbuild/core/bin/rsbuild.js'),
     'preview',
     '--host',
     '127.0.0.1',
@@ -115,13 +115,16 @@ try {
   await page
     .getByRole('heading', {
       level: 1,
-      name: 'Claude, GPT and Gemini with one API key',
+      name: 'One endpoint. Every model.',
     })
     .waitFor({ state: 'visible', timeout: 30_000 })
-  const pricingLink = page.getByRole('link', { name: 'View pricing' })
-  await pricingLink.waitFor({ state: 'visible' })
-  if ((await pricingLink.getAttribute('href')) !== '/pricing') {
-    throw new Error('Production homepage pricing link did not render correctly')
+  const signupLink = page.locator('#hero').getByRole('link', {
+    name: 'Get a key',
+    exact: true,
+  })
+  await signupLink.waitFor({ state: 'visible' })
+  if ((await signupLink.getAttribute('href')) !== '/sign-up') {
+    throw new Error('Production homepage signup link did not render correctly')
   }
   if (pageErrors.length > 0) {
     throw new Error(`Browser runtime errors:\n${pageErrors.join('\n')}`)

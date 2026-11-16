@@ -812,12 +812,8 @@ func TestSecurityEnrollmentChannelProofRejectsMismatchesBeforeConsumption(t *tes
 	user, identity := setupSecurityEnrollmentTest(t)
 	require.NoError(t, model.DB.Model(user).Update("role", common.RoleRootUser).Error)
 	require.NoError(t, model.PublishUserAuthCache(user.Id))
-	twoFA := &model.TwoFA{UserId: user.Id, Secret: "JBSWY3DPEHPK3PXP", IsEnabled: true}
-	require.NoError(t, model.DB.Create(twoFA).Error)
 	operation := service.VerificationOperation{Scope: service.VerificationScopeChannelKeyRead, Context: []byte(`{"channel_id":123}`)}
-	code, err := totp.GenerateCode(twoFA.Secret, time.Now())
-	require.NoError(t, err)
-	proof, err := service.VerifySecurityInput(identity, service.VerificationInput{Method: "2fa", Scope: operation.Scope, Context: operation.Context, Code: code})
+	proof, err := service.VerifySecurityInput(identity, service.VerificationInput{Method: service.VerificationMethodRootExempt, Scope: operation.Scope, Context: operation.Context})
 	require.NoError(t, err)
 	for _, test := range []struct {
 		name      string
@@ -837,10 +833,10 @@ func TestSecurityEnrollmentChannelProofRejectsMismatchesBeforeConsumption(t *tes
 			assert.ErrorIs(t, err, test.err)
 		})
 	}
-	require.NoError(t, model.DB.Model(twoFA).Update("is_enabled", false).Error)
+	require.NoError(t, model.DB.Model(user).Update("role", common.RoleAdminUser).Error)
 	_, err = service.ConsumeOperationProof(proof.ProofToken, identity, operation)
-	assert.ErrorIs(t, err, service.ErrProofMethod)
-	require.NoError(t, model.DB.Model(twoFA).Update("is_enabled", true).Error)
+	assert.ErrorIs(t, err, service.ErrVerificationForbidden)
+	require.NoError(t, model.DB.Model(user).Update("role", common.RoleRootUser).Error)
 	authorization, err := service.ConsumeOperationProof(proof.ProofToken, identity, operation)
 	require.NoError(t, err)
 	assert.Positive(t, authorization.ProofID)
@@ -1031,10 +1027,8 @@ func TestSecurityEnrollmentPendingPasskeyRejectsChangedAuthorization(t *testing.
 	}
 }
 
-func TestSecurityEnrollmentPasskeyProofProtectsChannelKeyRead(t *testing.T) {
+func TestSecurityEnrollmentPasskeyFlowAndRootChannelKeyProof(t *testing.T) {
 	user, identity := setupSecurityEnrollmentTest(t)
-	require.NoError(t, model.DB.Model(user).Update("role", common.RoleRootUser).Error)
-	require.NoError(t, model.PublishUserAuthCache(user.Id))
 	require.NoError(t, model.DB.AutoMigrate(&model.Channel{}))
 	for _, channel := range []model.Channel{
 		{Id: 123, Name: "first", Key: "first-channel-secret", Type: 1, Status: 1},
@@ -1079,13 +1073,13 @@ func TestSecurityEnrollmentPasskeyProofProtectsChannelKeyRead(t *testing.T) {
 	require.NoError(t, common.Unmarshal(response.Body.Bytes(), &body))
 	assert.False(t, body.Success)
 
-	response = securityEnrollmentRequest("POST", "/api/user/passkey/verify/begin", `{"scope":"channel.key.read","context":{"channel_id":123}}`, "", identity, PasskeyVerifyBegin)
+	response = securityEnrollmentRequest("POST", "/api/user/passkey/verify/begin", `{"scope":"passkey.delete"}`, "", identity, PasskeyVerifyBegin)
 	require.NoError(t, common.Unmarshal(response.Body.Bytes(), &body))
 	require.True(t, body.Success, body.Message)
 	require.NoError(t, common.Unmarshal(body.Data, &begin))
 	assertionBody, err := common.Marshal(map[string]any{
 		"flow_token": begin.FlowToken, "credential": securityPasskeyResponse(t, key, begin.Options.PublicKey.Challenge, false, 1),
-		"scope": "passkey.delete", "context": map[string]any{"channel_id": 456},
+		"scope": "password.change", "context": map[string]any{"channel_id": 456},
 	})
 	require.NoError(t, err)
 	response = securityEnrollmentRequest("POST", "/api/user/passkey/verify/finish", string(assertionBody), "", identity, PasskeyVerifyFinish)
@@ -1094,7 +1088,19 @@ func TestSecurityEnrollmentPasskeyProofProtectsChannelKeyRead(t *testing.T) {
 	var proof service.SecurityProof
 	require.NoError(t, common.Unmarshal(body.Data, &proof))
 	assert.Equal(t, "passkey", proof.Method)
-	assert.Equal(t, "channel.key.read", proof.Scope, "finish cannot replace the operation approved at begin")
+	assert.Equal(t, "passkey.delete", proof.Scope, "finish cannot replace the operation approved at begin")
+	_, err = service.ConsumeOperationProof(proof.ProofToken, identity, service.VerificationOperation{Scope: "passkey.delete"})
+	require.NoError(t, err)
+
+	// Root uses a scope-bound exemption for channel keys, even with a passkey enrolled.
+	require.NoError(t, model.DB.Model(user).Update("role", common.RoleRootUser).Error)
+	require.NoError(t, model.PublishUserAuthCache(user.Id))
+	rootProof, err := service.VerifySecurityInput(identity, service.VerificationInput{
+		Method: service.VerificationMethodRootExempt, Scope: service.VerificationScopeChannelKeyRead,
+		Context: []byte(`{"channel_id":123}`),
+	})
+	require.NoError(t, err)
+	proof = *rootProof
 
 	router := gin.New()
 	router.POST("/api/channel/:id/key", middleware.RootAuth(), middleware.SecureVerificationRequired(), GetChannelKey)
@@ -1133,6 +1139,8 @@ func TestSecurityEnrollmentPasskeyProofProtectsChannelKeyRead(t *testing.T) {
 	assert.NotContains(t, string(encodedLogs), "first-channel-secret")
 	assert.NotContains(t, string(encodedLogs), proof.ProofToken)
 
+	require.NoError(t, model.DB.Model(user).Update("role", common.RoleCommonUser).Error)
+	require.NoError(t, model.PublishUserAuthCache(user.Id))
 	response = securityEnrollmentRequest("POST", "/api/user/passkey/verify/begin", `{"scope":"passkey.delete"}`, "", identity, PasskeyVerifyBegin)
 	require.NoError(t, common.Unmarshal(response.Body.Bytes(), &body))
 	require.True(t, body.Success, body.Message)

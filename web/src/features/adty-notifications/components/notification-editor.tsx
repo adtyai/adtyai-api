@@ -128,6 +128,12 @@ export function NotificationEditor(props: {
     else props.onClose()
   }
   const errors = form.formState.errors
+  let submitLabel = 'Publish notification'
+  if (props.row?.status === 'draft') {
+    submitLabel = 'Publish now'
+  } else if (props.row) {
+    submitLabel = 'Save changes'
+  }
   return (
     <>
       <Dialog
@@ -162,13 +168,7 @@ export function NotificationEditor(props: {
               form={id}
               disabled={save.isPending}
             >
-              {t(
-                props.row?.status === 'draft'
-                  ? 'Publish now'
-                  : props.row
-                    ? 'Save changes'
-                    : 'Publish notification'
-              )}
+              {t(submitLabel)}
             </Button>
           </>
         }

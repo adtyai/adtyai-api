@@ -22,6 +22,7 @@ import (
 	"github.com/QuantumNous/new-api/relay/helper"
 	kittypes "github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
@@ -31,6 +32,9 @@ import (
 
 // 上游 code 21 表示任务已存在。重试不能再扣钱包，也不能为同一 mj_id 再插一行。
 func TestMidjourneyCode21DoesNotChargeOrDuplicate(t *testing.T) {
+	previousPrices := ratio_setting.ModelPrice2JSONString()
+	require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(`{"mj_imagine":0.1}`))
+	t.Cleanup(func() { require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(previousPrices)) })
 	opened, err := model.OpenAdtyTestDatabase()
 	if errors.Is(err, model.ErrAdtyTestDSNUnset) {
 		t.Skip("ADTY_TEST_PG_DSN 未设置，需要 PostgreSQL 才能跑这个测试")
@@ -148,6 +152,9 @@ func TestMidjourneyCode21DoesNotChargeOrDuplicate(t *testing.T) {
 }
 
 func TestSimpleChangeUsesContentWhenTaskIdIsAbsent(t *testing.T) {
+	previousPrices := ratio_setting.ModelPrice2JSONString()
+	require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(`{"mj_upscale":0.1}`))
+	t.Cleanup(func() { require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(previousPrices)) })
 	mode := relayconstant.Path2RelayMode("/mj/submit/simple-change")
 	require.Equal(t, relayconstant.RelayModeMidjourneySimpleChange, mode)
 	modelName, mjErr, ok := service.GetMjRequestModel(mode, &dto.MidjourneyRequest{Content: "origin-simple U2"})
@@ -163,7 +170,8 @@ func TestSimpleChangeUsesContentWhenTaskIdIsAbsent(t *testing.T) {
 	t.Cleanup(func() {
 		require.NoError(t, opened.Close())
 	})
-	require.NoError(t, opened.DB.AutoMigrate(&model.User{}, &model.Token{}, &model.Channel{}, &model.Midjourney{}, &model.Log{}, &model.BillingOperation{}, &model.BillingOperationMovement{}, &model.AdtySiteEarningEvent{}))
+	require.NoError(t, opened.DB.AutoMigrate(&model.User{}, &model.Token{}, &model.Channel{}, &model.Midjourney{}, &model.Log{}, &model.BillingOperation{}, &model.BillingOperationMovement{}, &model.AdtySiteEarningEvent{},
+		&model.AdtyFundBatch{}, &model.AdtyFundAllocation{}, &model.AdtyBillingHold{}))
 
 	oldRedis := common.RedisEnabled
 	oldBatch := common.BatchUpdateEnabled

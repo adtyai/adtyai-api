@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -110,6 +111,21 @@ func TestStaffCustomerActionsDatabaseMatrix(t *testing.T) {
 	for _, dialect := range []string{"sqlite", "mysql", "postgres"} {
 		t.Run(dialect, func(t *testing.T) {
 			db := prepareReferralDialectDB(t, dialect)
+			if dialect == "sqlite" {
+				// The independent audit writer needs its own file: sharing the
+				// business file blocks it behind BEGIN IMMEDIATE and delays revocation.
+				logDB, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "audit.db")), &gorm.Config{})
+				require.NoError(t, err)
+				require.NoError(t, logDB.AutoMigrate(&model.AuditLog{}))
+				previousLogDB := model.LOG_DB
+				model.LOG_DB = logDB
+				logSQL, err := logDB.DB()
+				require.NoError(t, err)
+				t.Cleanup(func() {
+					model.LOG_DB = previousLogDB
+					assert.NoError(t, logSQL.Close())
+				})
+			}
 			owner := referralUser(t, db, "customer-action-owner")
 			site := model.AdtySite{OwnerUserId: owner.Id, Subdomain: "customer-actions", Status: model.AdtySiteStatusActive, AgreementVer: AdtyCurrentSiteAgreementVersion()}
 			require.NoError(t, db.Create(&site).Error)

@@ -25,8 +25,8 @@ jobs:
     name: Backend vet, build, and test
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
-    # 上游 ci.yml 的后端 15 分钟；这里还多跑了 govulncheck 和闭环检查
-    timeout-minutes: 25
+    # PostgreSQL 集成测试会超过 Go 默认的单包 10 分钟；还需预留构建、扫描和闭环检查时间。
+    timeout-minutes: 45
     env:
       GOWORK: 'off'
       # 一次性测试库密码，只给 CI 用，不是生产密码。
@@ -68,6 +68,11 @@ jobs:
         run: |
           mkdir -p web/dist
           touch web/dist/index.html
+
+      - name: Install backup script test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes python3 libpq5
 
       - name: Vet root module
         run: go vet ./...
@@ -156,7 +161,7 @@ jobs:
         working-directory: web
         run: bun run test
 
-      # 任务 9.2：我们加的前端语言键 8 种语言都要有、而且不等于英文
+      # 正式语言为简体中文和英文，和界面实际可加载的语言保持一致。
       - name: Check our frontend translations
         working-directory: web
         run: node scripts/adty/i18n-check.mjs

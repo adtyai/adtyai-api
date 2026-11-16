@@ -68,12 +68,12 @@
   各 feature 的 `constants.ts` 中常出现「枚举/状态 + 展示文案」或「成功/错误消息」，须统一约定以免遗漏 i18n、用法混乱：
   - **成功/错误/提示类消息**（如 `SUCCESS_MESSAGES`、`ERROR_MESSAGES`）：常量值仅表示 **i18n 键**（与英文 fallback 同字面量）。展示时**必须**通过 `t()` 使用，例如 `toast.success(t(SUCCESS_MESSAGES.API_KEY_CREATED))`、`toast.error(t(ERROR_MESSAGES.UNEXPECTED))`，**禁止**直接 `toast.success(SUCCESS_MESSAGES.xxx)` 当作最终文案。
   - **状态/选项的 label**：在常量中统一用 **labelKey**（字符串，即 i18n 键），组件中通过 `t(config.labelKey)` 渲染；或约定用 `label` 存与 en 一致的 key 字符串，组件用 `t(config.label)`。同一 feature 内只采用一种方式，避免混用。
-  - **新增此类常量时**：新 key 必须出现在全部 8 个语言包（`src/i18n/locales/*.json`）里，且译文不得与英文相同；CI 的两个 workflow 都跑 `node scripts/adty/i18n-check.mjs` 检查这一点。`src/i18n/static-keys.ts` 的 `STATIC_I18N_KEYS` 目前全仓没有 import，只是人工登记，不参与提取或校验。
+  - **新增此类常量时**：新 key 必须在两个正式语言包 `src/i18n/locales/en.json` 和 `zh.json` 中有非空文本；除品牌和技术名词外，中文不得等于英文显示值或英文原始键。英文显示值可以不同于语义键。CI 的两个 workflow 都跑 `node scripts/adty/i18n-check.mjs` 检查这一点。`src/i18n/static-keys.ts` 的 `STATIC_I18N_KEYS` 目前全仓没有 import，只是人工登记，不参与提取或校验。
 
 **数字格式化与 Intl 语言参数（强制）**
 
 - 普通数字、紧凑数字展示必须优先复用 `@/lib/format` 的 `formatNumber` / `formatCompactNumber`；金额、余额与额度使用已有 `@/lib/currency` 或对应业务封装，保留精度、单位与换算语义。已有封装无法表达的格式选项才可直接使用 `Intl.NumberFormat`，不能为统一调用方式改变数值显示精度。
-- 正式产品语言只有简体中文和英文。语言选择器不得把繁体中文、法语、日语、韩语、俄语、越南语展示为已开放语言。这些语言包可以留在仓库里，避免重写 i18n 框架，但不能在文档、首页或选择器里承诺。新增 key 仍必须写进全部 8 个语言包且译文不同于英文，`scripts/adty/i18n-check.mjs` 会强制；只写 `en`/`zh` 会 CI 失败。
+- 正式产品语言只有简体中文和英文。语言选择器不得把繁体中文、法语、日语、韩语、俄语、越南语展示为已开放语言。这些语言包可以留在仓库里，避免重写 i18n 框架，但不能在文档、首页或选择器里承诺。新增正式文案必须覆盖 `en`/`zh`；保留的六份语言包不参与正式翻译验收。
 - `zhCN` / `zhTW` 是项目的界面语言码，不是合法的 BCP 47 标签。来自界面语言的参数，无论直接引用、解构、变量别名或函数透传，在进入 `Intl.*`、`toLocaleString` / `toLocaleDateString` / `toLocaleTimeString` 或公共格式化函数前，必须使用 `@/i18n/languages` 的 `toIntlLocale()` 转换。禁止自行编写 `zhCN` 等语言码映射。
 - React 组件通过 `useTranslation()` 订阅语言，在渲染时计算 `const locale = toIntlLocale(i18n.resolvedLanguage || i18n.language)`，例如 `formatNumber(value, locale)`。不得把当前语言固定在模块常量或初始 state 中；语言切换后格式必须更新。明确使用运行环境默认语言或固定协议语言的场景，可省略 locale、传 `undefined` 或使用合法的固定标签。
 - `bun run lint` / `bun run lint:fix` 启用 **`project/intl-locale` error**，检查上述调用中的原始 `language` / `resolvedLanguage`、本地变量赋值与解构别名，以及非法固定标签；不得通过 lint-disable 绕过。静态检查不追踪跨函数或跨模块的数据流，调用方仍须遵守转换约定。
@@ -237,3 +237,4 @@
 - **2026-11-04**：界面语言包按当前语言加载，首屏等待该语言包；使用日志只渲染可见行；未变化的价目与状态不重复重建。
 - **2026-11-10**：同步分站交接、员工授权、历史资金归属和构建版本号约定。
 - **2026-11-12**：站长不可更换。正式语言为简体中文和英文。工单、通知机器人和分组健康沿用现有组件，不另造视觉系统。镜像版本规则与构建工作流一致，仓库内 `VERSION` 保持为空。
+- **2026-11-16**：翻译门禁与实际可加载的中英语言包一致，允许语义化英文显示值，并拒绝中文保留英文显示值或原始键的回退。

@@ -120,7 +120,7 @@ exec "$REAL_NODE" "$@"
 }
 
 func TestPluginValidationCIRunsAfterInstallBeforeTypecheck(t *testing.T) {
-	for _, fixture := range []struct{ file, job string }{{"ci.yml", "frontend"}, {"adty-ghcr.yml", "test"}} {
+	for _, fixture := range []struct{ file, job string }{{"ci.yml", "frontend"}, {"adty-ghcr.yml", "test-frontend"}} {
 		t.Run(fixture.file, func(t *testing.T) {
 			body, err := os.ReadFile(filepath.Join("../.github/workflows", fixture.file))
 			require.NoError(t, err)

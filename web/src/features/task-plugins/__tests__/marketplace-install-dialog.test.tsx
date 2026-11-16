@@ -25,7 +25,7 @@ import {
 } from '@tanstack/react-query'
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { Toaster } from 'sonner'
+import { Toaster, toast } from 'sonner'
 import { afterEach, expect, test, vi } from 'vitest'
 
 import {
@@ -107,6 +107,7 @@ function renderDialog(
   }
 }
 afterEach(() => {
+  toast.dismiss()
   clients.forEach((client) => client.clear())
   clients.length = 0
   vi.unstubAllGlobals()
@@ -467,7 +468,9 @@ test('an install that needs activation reports what the activated version cannot
   await user.click(install)
 
   expect(api.activateTaskPlugin).toHaveBeenCalledWith('demo', '1.1')
-  expect(await screen.findByText('Installed Demo v1.1')).toBeVisible()
+  await waitFor(() =>
+    expect(screen.getByText('Installed Demo v1.1')).toBeVisible()
+  )
   expect(screen.getByText('demo-video: No price set')).toBeVisible()
 })
 

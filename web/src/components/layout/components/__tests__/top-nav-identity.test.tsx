@@ -209,7 +209,7 @@ describe.each(navigationCases)('$name stable link identity', (navigation) => {
     const updateLinks = await renderNavigation(navigation)
     const internal = navigation.query('Internal duplicate')[1]
     const external = navigation.query('External duplicate')[1]
-    internal.focus()
+    await act(async () => internal.focus())
 
     await updateLinks([
       { id: 'custom:prepended', title: 'Prepended', href: '/prepended' },
@@ -227,7 +227,7 @@ describe.each(navigationCases)('$name stable link identity', (navigation) => {
     const updateLinks = await renderNavigation(navigation)
     const internal = navigation.query('Internal duplicate')[1]
     const external = navigation.query('External duplicate')[1]
-    internal.focus()
+    await act(async () => internal.focus())
 
     await updateLinks([originalLinks[1], originalLinks[3]])
 

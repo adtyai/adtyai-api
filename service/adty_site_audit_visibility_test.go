@@ -46,9 +46,9 @@ type siteAuditFixture struct {
 	AdminID int
 }
 
-// setupSiteAuditFixture 起一个和 `service/referral_test.go` 同形的单文件 SQLite
-// 夹具：WAL + BEGIN IMMEDIATE + 4 条连接，只有 busy_timeout 从 10s 缩到 300ms
-// （等多久不改变机制，只决定这条用例跑几秒）。
+// setupSiteAuditFixture 保留通用返佣夹具分库前的单文件 SQLite 故障场景：
+// WAL + BEGIN IMMEDIATE + 4 条连接，busy_timeout 从 10s 缩到 300ms。
+// 等待时间不改变自锁机制，只决定这条故障注入用例跑几秒。
 //
 // logTarget:
 //   - "same-file"：`LOG_DB` 和 `DB` 是同一个连接——缺陷现场，日志写入必被自锁挡住；

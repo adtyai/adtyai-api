@@ -469,8 +469,10 @@ describe('useAdminReferralBadge', () => {
     asAdmin({ read: true })
     serveSidebarBadges({ referral_partners: 2 })
     const { client } = renderWithReferralBadge(<div />)
-    expect(await screen.findByTestId('referral-sidebar-badge')).toHaveTextContent(
-      '2'
+    await waitFor(() =>
+      expect(screen.getByTestId('referral-sidebar-badge')).toHaveTextContent(
+        '2'
+      )
     )
     http.failNext = true
     await act(async () => {
@@ -505,8 +507,10 @@ describe('official referral sidebar badge refresh', () => {
     renderWithReferralBadge(
       <AffiliatePanel canReview canAdjust={false} partnerOnly />
     )
-    expect(await screen.findByTestId('referral-sidebar-badge')).toHaveTextContent(
-      '2'
+    await waitFor(() =>
+      expect(screen.getByTestId('referral-sidebar-badge')).toHaveTextContent(
+        '2'
+      )
     )
     await user.click(await screen.findByRole('button', { name: 'Review' }))
     await user.type(screen.getByLabelText('Partner rate (%)'), '16')
@@ -530,8 +534,10 @@ describe('official referral sidebar badge refresh', () => {
     })
     const user = userEvent.setup()
     renderWithReferralBadge(<WithdrawalPanel canReview canPayout />)
-    expect(await screen.findByTestId('referral-sidebar-badge')).toHaveTextContent(
-      '2'
+    await waitFor(() =>
+      expect(screen.getByTestId('referral-sidebar-badge')).toHaveTextContent(
+        '2'
+      )
     )
     const afterLoad = badgeGets()
     await user.click(await screen.findByRole('button', { name: 'Approve' }))
@@ -552,11 +558,15 @@ describe('official referral sidebar badge refresh', () => {
     })
     const user = userEvent.setup()
     renderWithReferralBadge(<WithdrawalPanel canReview canPayout />)
-    expect(await screen.findByTestId('referral-sidebar-badge')).toHaveTextContent(
-      '1'
+    await waitFor(() =>
+      expect(screen.getByTestId('referral-sidebar-badge')).toHaveTextContent(
+        '1'
+      )
     )
     const afterLoad = badgeGets()
-    await user.click(await screen.findByRole('button', { name: 'Mark as paid' }))
+    await user.click(
+      await screen.findByRole('button', { name: 'Mark as paid' })
+    )
     await user.click(screen.getByRole('button', { name: 'Confirm' }))
     await waitFor(() =>
       expect(screen.getByTestId('referral-sidebar-badge')).toHaveTextContent('')
@@ -573,8 +583,10 @@ describe('official referral sidebar badge refresh', () => {
     })
     const user = userEvent.setup()
     renderWithReferralBadge(<AdminReferral />)
-    expect(await screen.findByTestId('referral-sidebar-badge')).toHaveTextContent(
-      '4'
+    await waitFor(() =>
+      expect(screen.getByTestId('referral-sidebar-badge')).toHaveTextContent(
+        '4'
+      )
     )
     const afterLoad = badgeGets()
     await user.click(screen.getByRole('button', { name: 'Run settlement now' }))
@@ -590,8 +602,10 @@ describe('official referral sidebar badge refresh', () => {
     serveSidebarBadges({ referral_partners: 3 })
     const user = userEvent.setup()
     renderWithReferralBadge(<AdminReferral />)
-    expect(await screen.findByTestId('referral-sidebar-badge')).toHaveTextContent(
-      '3'
+    await waitFor(() =>
+      expect(screen.getByTestId('referral-sidebar-badge')).toHaveTextContent(
+        '3'
+      )
     )
     await user.click(screen.getByRole('tab', { name: 'Partner applications' }))
     expect(screen.getByTestId('referral-sidebar-badge')).toHaveTextContent('3')

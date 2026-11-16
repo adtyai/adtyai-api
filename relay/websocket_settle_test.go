@@ -35,7 +35,8 @@ func TestWssHelperSettlementFailureRemainsPendingUntilRecovery(t *testing.T) {
 	oldRedis, oldBatch := common.RedisEnabled, common.BatchUpdateEnabled
 	common.RedisEnabled, common.BatchUpdateEnabled = false, false
 	t.Cleanup(func() { common.RedisEnabled, common.BatchUpdateEnabled = oldRedis, oldBatch })
-	require.NoError(t, opened.DB.AutoMigrate(&model.User{}, &model.Token{}, &model.Log{}, &model.Channel{}, &model.Task{}, &model.Midjourney{}, &model.BillingOperation{}, &model.BillingOperationMovement{}, &model.AdtySiteEarningEvent{}))
+	require.NoError(t, opened.DB.AutoMigrate(&model.User{}, &model.Token{}, &model.Log{}, &model.Channel{}, &model.Task{}, &model.Midjourney{}, &model.BillingOperation{}, &model.BillingOperationMovement{}, &model.AdtySiteEarningEvent{},
+		&model.AdtyFundBatch{}, &model.AdtyFundAllocation{}, &model.AdtyBillingHold{}))
 	user := model.User{Username: "ws-settle-failure", Password: "x", Group: "default", Quota: 1_000_000,
 		Status: common.UserStatusEnabled, Role: common.RoleCommonUser}
 	require.NoError(t, opened.DB.Create(&user).Error)

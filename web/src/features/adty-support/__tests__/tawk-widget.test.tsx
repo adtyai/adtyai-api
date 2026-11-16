@@ -70,7 +70,9 @@ function wrapperFor(i18n: I18n) {
     })
     return (
       <I18nextProvider i18n={i18n}>
-        <QueryClientProvider client={client}>{props.children}</QueryClientProvider>
+        <QueryClientProvider client={client}>
+          {props.children}
+        </QueryClientProvider>
       </I18nextProvider>
     )
   }
@@ -141,8 +143,7 @@ describe('TawkWidget', () => {
 
     first.unmount()
     render(<TawkWidget />, { wrapper })
-    await act(async () => {})
-    expect(tawkScripts()).toHaveLength(1)
+    await waitFor(() => expect(tawkScripts()).toHaveLength(1))
   })
 
   it('hides the widget while a payment dialog is open and shows it after', async () => {
@@ -235,7 +236,9 @@ describe('TawkWidget', () => {
     http.get.mockResolvedValue(site('64f0abc', '1h9xyz'))
     render(<TawkWidget />, { wrapper: wrapperFor(createTestI18n('en')) })
     await waitFor(() => expect(tawkScripts()).toHaveLength(1))
-    expect((tawkScripts()[0] as HTMLScriptElement).dataset.tawkLocale).toBe('en')
+    expect((tawkScripts()[0] as HTMLScriptElement).dataset.tawkLocale).toBe(
+      'en'
+    )
   })
 
   it('updates the widget language when the official UI language changes', async () => {
@@ -266,7 +269,9 @@ describe('TawkWidget', () => {
     const i18n = createTestI18n('fr')
     render(<TawkWidget />, { wrapper: wrapperFor(i18n) })
     await waitFor(() => expect(tawkScripts()).toHaveLength(1))
-    expect((tawkScripts()[0] as HTMLScriptElement).dataset.tawkLocale).toBe('en')
+    expect((tawkScripts()[0] as HTMLScriptElement).dataset.tawkLocale).toBe(
+      'en'
+    )
 
     await act(async () => {
       await i18n.changeLanguage('ja')
@@ -307,7 +312,9 @@ describe('official Tawk locale mapping and settings hook', () => {
 
   it('rewrites widget-settings language to the official Tawk tag', () => {
     const rewritten = rewriteTawkWidgetSettings(
-      { data: { widget: { language: 'ja', name: 'keep' }, settingsVersion: 4 } },
+      {
+        data: { widget: { language: 'ja', name: 'keep' }, settingsVersion: 4 },
+      },
       'zh_cn'
     ) as { data: { widget: { language: string; name: string } } }
     expect(rewritten.data.widget.language).toBe('zh_cn')
@@ -316,11 +323,12 @@ describe('official Tawk locale mapping and settings hook', () => {
 
   it('hooks fetch so Tawk widget-settings load the official locale', async () => {
     const previous = window.fetch
-    window.fetch = vi.fn(async () =>
-      new Response(JSON.stringify({ data: { widget: { language: 'ja' } } }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      })
+    window.fetch = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ data: { widget: { language: 'ja' } } }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
     )
     const restore = installTawkSettingsLocaleHook(() => 'zh_cn')
     try {
@@ -331,7 +339,9 @@ describe('official Tawk locale mapping and settings hook', () => {
         data: { widget: { language: 'zh_cn' } },
       })
       const other = await window.fetch('https://example.com/other')
-      expect(await other.json()).toEqual({ data: { widget: { language: 'ja' } } })
+      expect(await other.json()).toEqual({
+        data: { widget: { language: 'ja' } },
+      })
     } finally {
       restore()
       window.fetch = previous

@@ -70,7 +70,7 @@ func setupManageUserTestDB(t *testing.T) *gorm.DB {
 			}
 		}
 	})
-	require.NoError(t, db.AutoMigrate(&model.User{}, &model.UserSession{}, &model.CasbinRule{}, &model.AuthzRole{}, &model.AuthFlow{}, &model.TwoFA{}, &model.TwoFABackupCode{}, &model.PasskeyCredential{}, &model.Token{}, &model.UserAccessToken{}, &model.AdtyBalanceLedger{}, &model.ExternalIdentityClaim{}, &model.AuditIntent{})) // adty: ledger for task 7.2
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.UserSession{}, &model.CasbinRule{}, &model.AuthzRole{}, &model.AuthFlow{}, &model.TwoFA{}, &model.TwoFABackupCode{}, &model.PasskeyCredential{}, &model.Token{}, &model.UserAccessToken{}, &model.AdtyBalanceLedger{}, &model.AdtyFundBatch{}, &model.AdtyFundAllocation{}, &model.AdtyBillingHold{}, &model.ExternalIdentityClaim{}, &model.AuditIntent{})) // adty: ledger for task 7.2
 	require.NoError(t, logDB.AutoMigrate(&model.Log{}, &model.AuditLog{}))
 	versionQuery := "SELECT version()"
 	if dialect == "sqlite" {
@@ -124,7 +124,7 @@ func performVerifiedManageUserRequest(t *testing.T, body string, identity servic
 	return recorder
 }
 
-// manageUserProof signs the root operator in and issues a password-method proof
+// manageUserProof signs the root operator in and issues a root-exemption proof
 // bound to one ManageUser operation.
 func manageUserProof(t *testing.T, db *gorm.DB, operation service.VerificationOperation) (service.AuthIdentity, string) {
 	t.Helper()
@@ -136,7 +136,7 @@ func manageUserProof(t *testing.T, db *gorm.DB, operation service.VerificationOp
 	require.NoError(t, err)
 	binding, err := service.BindVerificationOperation(operation)
 	require.NoError(t, err)
-	proof, _, err := service.IssueSecurityProof(identity, service.VerificationMethodPassword, binding)
+	proof, _, err := service.IssueSecurityProof(identity, service.VerificationMethodRootExempt, binding)
 	require.NoError(t, err)
 	return identity, proof
 }

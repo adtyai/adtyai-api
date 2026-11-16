@@ -297,6 +297,16 @@ func TestPasswordResetCommitOutcome(t *testing.T) {
 		t.Run(failure, func(t *testing.T) {
 			mailbox := emailEnumDB(t)
 			db := model.DB
+			if failure == "publish_query" {
+				server := miniredis.RunT(t)
+				client := redis.NewClient(&redis.Options{Addr: server.Addr()})
+				previousEnabled, previousClient := common.RedisEnabled, common.RDB
+				t.Cleanup(func() {
+					common.RedisEnabled, common.RDB = previousEnabled, previousClient
+					_ = client.Close()
+				})
+				common.RedisEnabled, common.RDB = true, client
+			}
 			if failure == "notification" {
 				// The real local SMTP server does not advertise AUTH. This makes
 				// notification delivery fail at SMTP negotiation without external mail.

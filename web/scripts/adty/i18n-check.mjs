@@ -22,16 +22,17 @@ For commercial licensing, please contact support@quantumnous.com
 //
 // "Our keys" are the en.json keys that are not in upstream-en-keys.json (the
 // en.json key list of upstream v1.0.0-rc.47, refreshed on every upstream
-// merge). Each of them must be in all eight locale files with a value that
-// differs from English: `bun run i18n:sync` fills missing keys with the
-// English text, so checking for missing keys alone is not enough.
+// merge). Each must have non-empty English and Simplified Chinese text.
+// Only these two formal packs can load in the product; retained legacy packs
+// are not an acceptance requirement. Chinese must differ from the English text
+// and source key except for literal names: i18n:sync can leave fallback text.
 // Exits with 1 when anything is wrong. Run from the web directory.
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 const webDir = resolve(import.meta.dirname, '../..')
 const localesDir = resolve(webDir, 'src/i18n/locales')
-const LOCALES = ['en', 'zh', 'zh-TW', 'fr', 'ja', 'ko', 'ru', 'vi']
+const LOCALES = ['en', 'zh']
 
 // Copied from BRAND_AND_LITERAL_KEYS in scripts/sync-i18n.mjs, which is not
 // exported; importing that file would run its main() and rewrite every
@@ -136,6 +137,8 @@ const ADTY_LITERAL_KEYS = [
   'Codex CLI',
   'Cherry Studio',
   'OpenAI SDK',
+  'OpenAI Responses',
+  'Anthropic Messages',
   'CC Switch',
   // Network labels, amount formats and an ID name with no words to translate
   'USDT · TRC20',
@@ -148,26 +151,6 @@ const ADTY_LITERAL_KEYS = [
   '{{amount}} → {{net}} USDT',
   'models.dev ID',
 ]
-
-// Words spelled the same in a language as in English; the value is the
-// correct translation, so it may equal the English text there.
-const SAME_AS_ENGLISH = {
-  fr: [
-    'Bonus',
-    'Bonus %',
-    'Bonus (USD)',
-    'Commission',
-    'Date',
-    'Description ({{language}})',
-    'Document',
-    'Documentation',
-    'Global',
-    'Site',
-    'Sites',
-    'Support',
-    'maintenance',
-  ],
-}
 
 const LITERAL_KEYS = new Set([...UPSTREAM_LITERAL_KEYS, ...ADTY_LITERAL_KEYS])
 
@@ -185,21 +168,22 @@ const locales = Object.fromEntries(
   LOCALES.map((name) => [name, readTranslations(name)])
 )
 const english = locales.en
-const ourKeys = Object.keys(english).filter((key) => !upstreamKeys.has(key))
+const ourKeys = [
+  ...new Set(LOCALES.flatMap((name) => Object.keys(locales[name]))),
+].filter((key) => !upstreamKeys.has(key))
 
 const problems = []
 for (const key of ourKeys) {
-  if (english[key] !== key) {
-    problems.push(`en: value differs from its key: ${JSON.stringify(key)}`)
-  }
-  if (LITERAL_KEYS.has(key)) continue
-  for (const name of LOCALES.slice(1)) {
+  for (const name of LOCALES) {
     const value = locales[name][key]
-    if (value === undefined) {
+    if (typeof value !== 'string' || value.trim() === '') {
       problems.push(`${name}: missing ${JSON.stringify(key)}`)
     } else if (
-      value === english[key] &&
-      !SAME_AS_ENGLISH[name]?.includes(key)
+      name !== 'en' &&
+      !LITERAL_KEYS.has(key) &&
+      (value.trim() === key.trim() ||
+        (typeof english[key] === 'string' &&
+          value.trim() === english[key].trim()))
     ) {
       problems.push(`${name}: same as English ${JSON.stringify(key)}`)
     }

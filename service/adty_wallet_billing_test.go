@@ -695,10 +695,11 @@ func TestAdtyFixedAudioPriceIsCharged(t *testing.T) {
 		} {
 			t.Run(protocol+"/"+tc.name, func(t *testing.T) {
 				db := prepareFloorDB(t)
+				require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(fmt.Sprintf(`{"default":%g}`, tc.groupRatio)))
 				user, token := floorCustomer(t, db, nil, "fixedaudio", 100_000)
 				ctx, info, _ := floorRelay(t, user, token)
 				info.PriceData.ModelPrice = tc.price
-				info.PriceData.GroupRatioInfo.GroupRatio = tc.groupRatio
+				info.PriceData.SetBilledModelPrice(decimal.NewFromFloat(tc.price))
 				require.Nil(t, PreConsumeBilling(ctx, 4_000, info))
 				if protocol == "audio" {
 					require.NoError(t, PostAudioConsumeQuota(ctx, info, floorUsage(), nil))

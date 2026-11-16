@@ -18,7 +18,6 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { RotateCcw, Save } from 'lucide-react'
 import {
-  createContext,
   useContext,
   type ComponentProps,
   type ReactNode,
@@ -29,20 +28,7 @@ import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 
-type SettingsPageContextValue = {
-  actionsContainer: HTMLDivElement | null
-  titleStatusContainer: HTMLSpanElement | null
-  suppressSectionHeader: boolean
-  /** Translated section title already rendered as the page heading. */
-  pageTitle: string | null
-}
-
-const SettingsPageContext = createContext<SettingsPageContextValue>({
-  actionsContainer: null,
-  titleStatusContainer: null,
-  suppressSectionHeader: false,
-  pageTitle: null,
-})
+import { SettingsPageContext } from '../hooks/use-settings-page-context'
 
 type SettingsPageProviderProps = {
   actionsContainer: HTMLDivElement | null
@@ -65,15 +51,6 @@ export function SettingsPageProvider(props: SettingsPageProviderProps) {
       {props.children}
     </SettingsPageContext.Provider>
   )
-}
-
-export function useSuppressSettingsSectionHeader() {
-  return useContext(SettingsPageContext).suppressSectionHeader
-}
-
-/** Section title already shown as the page heading, so a card never repeats it. */
-export function useSettingsPageTitle() {
-  return useContext(SettingsPageContext).pageTitle
 }
 
 type SettingsPageTitleStatusPortalProps = {

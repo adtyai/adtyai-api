@@ -33,9 +33,9 @@ import (
 	pancake "github.com/waffo-com/waffo-pancake-sdk-go"
 )
 
-// Only the provider HTTP boundary and its public trust anchor are replaced.
-// The SDK, signature verification, order matching and wallet transaction run normally.
-func TestPancakeHostedTokensCheckoutAndSignedFrozenFacts(t *testing.T) {
+// Retired public routes stay closed even when the SDK can verify a historical
+// order using its frozen store and buyer identity.
+func TestPancakeRetiredCheckoutAndSignedFrozenFacts(t *testing.T) {
 	confirmPaymentComplianceForTest(t)
 	db := adtyTestDB(t)
 	require.NoError(t, db.AutoMigrate(&model.User{}, &model.TopUp{}, &model.Log{}))
@@ -79,9 +79,23 @@ func TestPancakeHostedTokensCheckoutAndSignedFrozenFacts(t *testing.T) {
 		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(bytes.NewBufferString(response))}, nil
 	})
 	created := callStripe(t, PostAdtyHostedPayment, user.Id, `{"amount":2,"method":"waffo_pancake"}`)
-	require.Contains(t, created.Body.String(), "https://checkout.example/pancake")
-	var order model.TopUp
-	require.NoError(t, db.Where("user_id = ?", user.Id).First(&order).Error)
+	require.Contains(t, created.Body.String(), "Unsupported payment channel")
+	var orderCount int64
+	require.NoError(t, db.Model(&model.TopUp{}).Count(&orderCount).Error)
+	require.Zero(t, orderCount, "a retired checkout must not create an order")
+	order := model.TopUp{UserId: user.Id, TradeNo: "pancake-historical-frozen", Amount: 2, Money: 2.5,
+		PaymentProvider: model.PaymentProviderWaffoPancake, PaymentMethod: model.PaymentMethodWaffoPancake, Status: common.TopUpStatusPending}
+	extSeed := model.AdtyTopupOrder{TradeNo: order.TradeNo, UserId: user.Id, Provider: order.PaymentProvider, Method: order.PaymentMethod,
+		FaceUSD: decimal.NewFromInt(2), BonusUSD: decimal.RequireFromString("0.2"), CreditQuota: 1100000,
+		PayAmount: decimal.RequireFromString("2.5"), PayCurrency: "USD", ProviderMerchantId: setting.WaffoPancakeStoreID,
+		ProviderProductId: setting.WaffoPancakeProductID, ProviderEnvironment: "test"}
+	require.NoError(t, model.CreateAdtyTopUp(&order, &extSeed))
+	session, err := service.CreateWaffoPancakeCheckoutSession(t.Context(), &service.WaffoPancakeCreateSessionParams{
+		ProductID: extSeed.ProviderProductId, BuyerIdentity: service.WaffoPancakeBuyerIdentityFromUserID(user.Id),
+		OrderMerchantExternalID: order.TradeNo, PriceSnapshot: &service.WaffoPancakePriceSnapshot{Amount: "2.50", TaxCategory: "saas"},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "https://checkout.example/pancake#token=synthetic-buyer-token", session.CheckoutURL)
 	ext, err := model.GetAdtyTopupOrder(order.TradeNo)
 	require.NoError(t, err)
 	require.EqualValues(t, 2, order.Amount)
@@ -98,6 +112,7 @@ func TestPancakeHostedTokensCheckoutAndSignedFrozenFacts(t *testing.T) {
 	data := map[string]any{"orderId": "ORD_AbCdEfGhIjKlMnOpQrStUv", "orderMerchantExternalId": order.TradeNo,
 		"merchantProvidedBuyerIdentity": service.WaffoPancakeBuyerIdentityFromUserID(user.Id), "currency": "USD", "amount": "2.50", "orderMetadata": map[string]string{"adty_product": ext.ProviderProductId}}
 	envelope := map[string]any{"id": "evt_pancake_frozen", "eventId": "PAY_AbCdEfGhIjKlMnOpQrStUv", "eventType": "order.completed", "mode": "test", "storeId": ext.ProviderMerchantId, "data": data}
+	var verificationErr, identityErr error
 	post := func(path string, signingKey *rsa.PrivateKey, timestamp int64) *httptest.ResponseRecorder {
 		payload, marshalErr := common.Marshal(envelope)
 		require.NoError(t, marshalErr)
@@ -105,7 +120,13 @@ func TestPancakeHostedTokensCheckoutAndSignedFrozenFacts(t *testing.T) {
 		signature, signErr := rsa.SignPKCS1v15(rand.Reader, signingKey, crypto.SHA256, digest[:])
 		require.NoError(t, signErr)
 		req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(payload))
-		req.Header.Set("X-Waffo-Signature", fmt.Sprintf("t=%d,v1=%s", timestamp, base64.StdEncoding.EncodeToString(signature)))
+		signatureHeader := fmt.Sprintf("t=%d,v1=%s", timestamp, base64.StdEncoding.EncodeToString(signature))
+		req.Header.Set("X-Waffo-Signature", signatureHeader)
+		verified, err := verifyWaffoPancakeWebhook(string(payload), signatureHeader)
+		verificationErr, identityErr = err, nil
+		if err == nil {
+			_, identityErr = service.ResolveWaffoPancakeTradeNo(verified)
+		}
 		recorder := httptest.NewRecorder()
 		engine := gin.New()
 		engine.POST("/api/waffo-pancake/webhook/:env", WaffoPancakeWebhook)
@@ -115,9 +136,13 @@ func TestPancakeHostedTokensCheckoutAndSignedFrozenFacts(t *testing.T) {
 	wrongKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 	path := "/api/waffo-pancake/webhook/test"
-	require.Equal(t, http.StatusUnauthorized, post(path, wrongKey, time.Now().UnixMilli()).Code)
-	require.Equal(t, http.StatusUnauthorized, post(path, key, time.Now().Add(-time.Hour).UnixMilli()).Code)
-	post("/api/waffo-pancake/webhook/prod", key, time.Now().UnixMilli())
+	require.Equal(t, http.StatusForbidden, post(path, wrongKey, time.Now().UnixMilli()).Code)
+	require.Error(t, verificationErr, "the SDK rejects an untrusted signing key")
+	require.Equal(t, http.StatusForbidden, post(path, key, time.Now().Add(-time.Hour).UnixMilli()).Code)
+	require.Error(t, verificationErr, "the SDK rejects an expired signature")
+	require.Equal(t, http.StatusForbidden, post("/api/waffo-pancake/webhook/prod", key, time.Now().UnixMilli()).Code)
+	require.NoError(t, verificationErr, "the SDK uses the historical order's frozen store")
+	require.NoError(t, identityErr)
 	require.Zero(t, reloadUserQuota(t, db, user.Id))
 	for _, field := range []string{"amount", "currency", "orderMetadata", "merchantProvidedBuyerIdentity", "storeId", "mode"} {
 		target := data
@@ -139,40 +164,49 @@ func TestPancakeHostedTokensCheckoutAndSignedFrozenFacts(t *testing.T) {
 		case "mode":
 			target[field] = "prod"
 		}
-		post(path, key, time.Now().UnixMilli())
+		require.Equal(t, http.StatusForbidden, post(path, key, time.Now().UnixMilli()).Code)
+		if field == "storeId" {
+			require.Error(t, verificationErr)
+		}
+		if field == "merchantProvidedBuyerIdentity" {
+			require.NoError(t, verificationErr)
+			require.Error(t, identityErr)
+		}
 		require.Zero(t, reloadUserQuota(t, db, user.Id), field)
 		target[field] = original
 	}
 	data["taxAmount"], data["subtotal"], data["total"] = "0.40", "2.50", "2.91"
-	require.Equal(t, http.StatusBadRequest, post(path, key, time.Now().UnixMilli()).Code)
+	require.Equal(t, http.StatusForbidden, post(path, key, time.Now().UnixMilli()).Code)
 	require.Zero(t, reloadUserQuota(t, db, user.Id))
 	delete(data, "total")
-	require.Equal(t, http.StatusBadRequest, post(path, key, time.Now().UnixMilli()).Code)
+	require.Equal(t, http.StatusForbidden, post(path, key, time.Now().UnixMilli()).Code)
 	require.Zero(t, reloadUserQuota(t, db, user.Id))
 	delete(data, "subtotal")
-	require.Equal(t, http.StatusBadRequest, post(path, key, time.Now().UnixMilli()).Code)
+	require.Equal(t, http.StatusForbidden, post(path, key, time.Now().UnixMilli()).Code)
 	require.Zero(t, reloadUserQuota(t, db, user.Id))
 	data["subtotal"], data["total"] = "2.50", "2.90"
-	require.Equal(t, http.StatusOK, post(path, key, time.Now().UnixMilli()).Code)
-	require.Equal(t, int(ext.CreditQuota), reloadUserQuota(t, db, user.Id))
-	require.Equal(t, http.StatusOK, post(path, key, time.Now().UnixMilli()).Code)
-	require.Equal(t, int(ext.CreditQuota), reloadUserQuota(t, db, user.Id))
+	require.Equal(t, http.StatusForbidden, post(path, key, time.Now().UnixMilli()).Code)
+	require.NoError(t, verificationErr)
+	require.NoError(t, identityErr)
+	require.Zero(t, reloadUserQuota(t, db, user.Id))
+	require.Equal(t, http.StatusForbidden, post(path, key, time.Now().UnixMilli()).Code)
+	require.Zero(t, reloadUserQuota(t, db, user.Id))
 	frozen, err := model.GetAdtyTopupOrder(order.TradeNo)
 	require.NoError(t, err)
-	require.Equal(t, "2.9", frozen.PaidAmount.String())
+	require.True(t, frozen.PaidAmount.IsZero())
 	require.Equal(t, "2", frozen.FaceUSD.String())
-	// One signed refund request is one receipt. Provider retries retain their
-	// own receipt without creating another reconciliation item or wallet change.
+	// Retired routes reject signed payment and refund retries before recording
+	// receipts, reconciliation items, or wallet changes.
 	envelope["eventType"] = "refund.succeeded"
 	data["refundTicketMerchantExternalId"] = "pancake-refund-receipt"
-	for attempt := int64(1); attempt <= 2; attempt++ {
-		require.Equal(t, http.StatusOK, post(path, key, time.Now().UnixMilli()).Code)
+	for range 2 {
+		require.Equal(t, http.StatusForbidden, post(path, key, time.Now().UnixMilli()).Code)
 		var receipts, reviews int64
 		require.NoError(t, db.Model(&model.AdtyOrderPaymentEvent{}).Where("trade_no = ? AND outcome = ? AND event_type = ?", order.TradeNo, "received", "refund.succeeded").Count(&receipts).Error)
-		require.Equal(t, attempt, receipts)
+		require.Zero(t, receipts)
 		require.NoError(t, db.Model(&model.PaymentOrphanEvent{}).Where("reference_id = ? AND event_type = ?", order.TradeNo, "refund.succeeded").Count(&reviews).Error)
-		require.EqualValues(t, 1, reviews)
-		require.Equal(t, int(ext.CreditQuota), reloadUserQuota(t, db, user.Id))
+		require.Zero(t, reviews)
+		require.Zero(t, reloadUserQuota(t, db, user.Id))
 	}
 }
 
@@ -230,7 +264,7 @@ func TestWaffoSignedPaymentUsesFrozenEnvironmentMerchantAndAmount(t *testing.T) 
 	_ = ext
 }
 
-func TestHostedOrderFreezesTheAmountSentInTheCurrencyMinorUnit(t *testing.T) {
+func TestRetiredHostedOrderNormalizesMinorUnitsWithoutCreatingCheckout(t *testing.T) {
 	confirmPaymentComplianceForTest(t)
 	sceneTestSetting(t, &setting.WaffoEnabled, true)
 	sceneTestSetting(t, &setting.WaffoSandbox, true)
@@ -261,17 +295,17 @@ func TestHostedOrderFreezesTheAmountSentInTheCurrencyMinorUnit(t *testing.T) {
 			ctx.Set("id", user.Id)
 			order := model.TopUp{UserId: user.Id, TradeNo: "minor-unit-" + tc.provider + tc.currency, Amount: 1,
 				Money: 2.8405, PaymentProvider: tc.provider, PaymentMethod: tc.provider, Status: common.TopUpStatusPending}
-			require.NoError(t, createAdtyHostedOrder(ctx, &order, decimal.NewFromInt(500000), tc.currency, "", "test", ""))
-			ext, err := model.GetAdtyTopupOrder(order.TradeNo)
-			require.NoError(t, err)
-			require.Equal(t, tc.want, ext.PayAmount.String())
+			err := createAdtyHostedOrder(ctx, &order, decimal.NewFromInt(500000), tc.currency, "", "test", "")
+			require.ErrorContains(t, err, "This payment method is not available")
 			paid, err := decimal.NewFromString(tc.want)
 			require.NoError(t, err)
 			require.True(t, paid.Equal(decimal.NewFromFloat(order.Money)))
-			_, err = model.CompleteAdtyTopUp(order.TradeNo, model.AdtyPaymentFacts{Provider: tc.provider, Method: tc.provider,
-				PaidAmount: paid, PaidCurrency: tc.currency, Environment: "test", MerchantId: ext.ProviderMerchantId,
-				GatewayTradeId: "minor-unit-payment", TxHash: "minor-unit-payment", Source: model.AdtyPaymentSourceCallback}, "")
-			require.NoError(t, err)
+			var orders int64
+			require.NoError(t, db.Model(&model.TopUp{}).Where("trade_no = ?", order.TradeNo).Count(&orders).Error)
+			require.Zero(t, orders)
+			require.NoError(t, db.Model(&model.AdtyTopupOrder{}).Where("trade_no = ?", order.TradeNo).Count(&orders).Error)
+			require.Zero(t, orders)
+			require.Zero(t, reloadUserQuota(t, db, user.Id))
 		})
 	}
 }

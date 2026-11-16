@@ -21,7 +21,7 @@ import { cn } from '@/lib/utils'
 import {
   useSettingsPageTitle,
   useSuppressSettingsSectionHeader,
-} from './settings-page-context'
+} from '../hooks/use-settings-page-context'
 
 type SettingsSectionProps = {
   title: string

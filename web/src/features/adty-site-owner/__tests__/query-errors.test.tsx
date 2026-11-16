@@ -141,7 +141,7 @@ it.each([
       screen.queryByRole('button', { name: 'Retry' })
     ).not.toBeInTheDocument()
   )
-  expect(await screen.findByText(entry.ready)).toBeInTheDocument()
+  expect((await screen.findAllByText(entry.ready)).length).toBeGreaterThan(0)
   client.clear()
 })
 

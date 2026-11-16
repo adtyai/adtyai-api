@@ -77,6 +77,8 @@ fi
 
 if [ "$run_backend" -eq 1 ]; then
   export GOWORK=off
+  # 与 make test 一致：真实 PostgreSQL 集成用例会超过 Go 默认的单包 10 分钟。
+  test_timeout=${GO_TEST_TIMEOUT:-30m}
   if [ -z "${ADTY_TEST_PG_DSN:-}" ]; then
     echo "check.sh: ADTY_TEST_PG_DSN 未设置，分组测试需要 PostgreSQL，不能跳过" >&2
     exit 1
@@ -98,7 +100,7 @@ if [ "$run_backend" -eq 1 ]; then
   fi
   # 包名按空白拆开传给 go test
   # shellcheck disable=SC2086
-  go test $pkgs
+  go test -timeout="$test_timeout" $pkgs
 
   for module in relaykit tokenkit; do
     step "$module：go vet ./..."
@@ -106,7 +108,7 @@ if [ "$run_backend" -eq 1 ]; then
     step "$module：go build ./..."
     (cd "$module" && go build ./...)
     step "$module：go test ./..."
-    (cd "$module" && go test ./...)
+    (cd "$module" && go test -timeout="$test_timeout" ./...)
   done
 fi
 
@@ -129,7 +131,7 @@ if [ "$run_frontend" -eq 1 ]; then
   node scripts/adty/ratchet.mjs lint
   step "web：bun run test"
   (cd web && bun run test)
-  step "web：我们的语言键 8 种语言齐全（scripts/adty/i18n-check.mjs，含 ko）"
+  step "web：我们的语言键在简体中文和英文中齐全（scripts/adty/i18n-check.mjs）"
   (cd web && node scripts/adty/i18n-check.mjs)
   step "web：bun run copyright:check（和 scripts/adty/baseline-copyright.txt 比较）"
   node scripts/adty/ratchet.mjs copyright

@@ -171,7 +171,7 @@ test('lists every retention category and does not offer a notification cleanup p
     )
   ).toBeInTheDocument()
   expect(
-    screen.getByText(
+    await screen.findByText(
       'Permanent retention. Automatic cleanup tasks must not delete notification history. Only the user may manually delete their own deletable messages.'
     )
   ).toBeInTheDocument()
@@ -206,7 +206,9 @@ test('hides configuration controls from non-Root operators', async () => {
   useAuthStore.getState().auth.setUser({ id: 2, username: 'admin', role: 10 })
   await renderSection()
   expect(
-    await screen.findByText('Only Root can view and change data retention periods.')
+    await screen.findByText(
+      'Only Root can view and change data retention periods.'
+    )
   ).toBeInTheDocument()
   expect(api.get).not.toHaveBeenCalled()
 })

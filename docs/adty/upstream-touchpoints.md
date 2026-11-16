@@ -608,5 +608,55 @@
 | `web/src/routeTree.gen.ts` | `bun run build` 重新生成，去掉 `/(auth)/oauth` 和 `/oauth/$provider` | 两个路由文件删了（约定 B）；上游重新生成时会带回 `/oauth/:provider` 的条目 | 86536ce |
 | `web/src/features/auth/api.test.ts`、`web/src/features/auth/secure-verification/__tests__/{verification-api.test.ts,verification-flow.test.tsx}`、`web/src/features/auth/sign-up/__tests__/username-rules.test.tsx`、`web/src/features/security/__tests__/{enrollment.test.tsx,page.test.tsx}` | 删 Telegram、OIDC 登录、`useOAuthLogin`、`consumeOAuthLoginRedirect` 和 `oauth` 二次验证的用例，其余夹具去掉 provider 字段 | 被测的入口删了；上游这些用例会回来，它们引用已删的 `hooks/use-oauth-login` 和 `lib/oauth*` | 86536ce |
 | `web/public/`（22 个品牌资产：删 `adty-logo.svg`、`favicon.svg`、`safari-pinned-tab.svg`，新增 `adty-logo.png`、`adty-logo-480.png`、`adty-logo-960.png`、`adty-logo-dark.png`、`adty-mark.png`、`logo-dark.png`、`favicon-48x48.png`、`favicon-128x128.png`、`favicon-256x256.png` 等）、`web/index.html`、`web/package.json`、`web/bun.lock`、`web/src/features/adty-home/`、`web/src/styles/{theme.css,index.css}`、`web/src/lib/{chart-theme.ts,colors.ts,square-icon.ts}`，以及 `web/src` 其余改样式的文件（这个提交共动 301 个 `web/src` 文件） | 一行汇总，不逐条登记：① 品牌资产从 SVG 换 PNG（`web/public/`，`web/index.html` 改图标 link，去掉 mask-icon 和 SVG favicon）；② 首页区块重组，`adty-home/index.tsx` 从 Hero、PaymentStrip、PopularModels、Steps、ClientGuides、SellingPoints、Faq 改成 Hero、MigrationSection、EndpointsSection、AffiliateBanner、ClosingCta 五段（旧组件文件还在，但不再渲染）；③ 图表五级色从灰阶换成品牌主色阶（`theme.css` 的 `--chart-1..3` 是 `#0070ec`、`#4fa3ff`、`#8fc2ff`，`--chart-4/5` 仍灰，暗色另有取值），新增 `web/src/lib/chart-theme.ts` 统一取色，`colors.ts` 的装饰色按深浅落到 brand；④ 字体加 `@fontsource-variable/plus-jakarta-sans`，`--font-ui-sans` 改成 Plus Jakarta Sans 优先，卡片不再 hover 上浮；⑤ 其余大量组件（`components/ui`、`features/system-settings`、`features/channels`、`features/dashboard` 等）跟着换成 `--brand*`、`--ink*`、`--line*` 变量 | 301 个文件不能逐条写，这一行只保证「改过」有案可查；合上游时按目录逐个 `git diff 2df2e4c -- <目录>` 对照，别把已经下线的旧首页组件挂回 `adty-home/index.tsx`，也别把 `theme.css` 的灰阶图表色和 `#0a0a0a` 前景色合回来 | 2df2e4c |
+| `.github/workflows/adty-ghcr.yml` | 后端作业超时改为 45 分钟；安装备份测试依赖；正式翻译检查说明改为简体中文和英文 | PostgreSQL 全量集成测试超过默认单包 10 分钟，备份检查需要 Python 和 libpq；语言说明与实际可加载语言一致 | Actions 43766575490 |
+| `.github/workflows/ci.yml` | 后端作业超时改为 45 分钟；前端显式使用 `web/.node-version` | PR 和 push 使用同一套测试时间预算及 Node 版本 | Actions 43766575490 |
+| `go.mod` | Go 补丁版本及 Heroku 提示升级为 1.26.11 | 修复漏洞扫描发现的可达标准库漏洞 | Actions 43766575490 |
+| `Dockerfile` | Go 构建阶段升级为 1.26.11，并固定对应镜像 digest | 发布二进制与 CI 使用同一已修补 Go 版本 | Actions 43766575490 |
+| `Dockerfile.dev` | Go 构建阶段升级为 1.26.11，并固定对应镜像 digest | 开发镜像同样使用已修补 Go 版本 | Actions 43766575490 |
+| `makefile` | 三个 Go 模块的测试使用可覆盖的 `GO_TEST_TIMEOUT`，默认 30 分钟 | 真实 PostgreSQL 集成测试超过 Go 默认单包 10 分钟；保留全部测试 | Actions 43766575490 |
+| `common/adty_deploy_constraints_test.go` | 插件验证顺序断言查找拆分后的前端作业名 | CI 已拆分前后端，旧作业名让静态检查误报 | Actions 43766575490 |
+| `controller/adty_action_proof_test.go` | Root 证明夹具使用现有的 `root_exempt` 方法 | 与现行 Root 证明策略一致，保留权限重查及删除凭证断言 | Actions 43766575490 |
+| `controller/adty_email_enum_test.go` | 密码重置提交结果测试补齐审计表和可触发发布失败的登录方式 | 用例必须进入待验证的查询失败分支，保留提交和失败计数检查 | Actions 43766575490 |
+| `controller/adty_hosted_checkout_test.go` | 退役支付下单与公开回调断言拒绝且不入账；历史订单直接准备夹具，并继续验证 SDK 签名和冻结事实 | 已关闭支付方式不能为了旧用例重新开放；保留金额、身份、重放和零入账约束 | Actions 43766575490 |
+| `controller/billing_option_test.go` | 预扣策略夹具补齐资金批次、分摊和挂账表 | 当前结算路径会访问这些表，不能因夹具缺表误判策略失败 | Actions 43766575490 |
+| `controller/plugin_native_e2e_test.go` | 原生插件结算夹具补齐资金批次、分摊和挂账表 | 实际扣费路径需要完整资金模型 | Actions 43766575490 |
+| `controller/relay_task_plugin_test.go` | 即时任务结算夹具补齐资金操作、批次、分摊和挂账表 | 保留真实结算及幂等断言，避免旧夹具缺表 | Actions 43766575490 |
+| `controller/responses_websocket_test.go` | WebSocket 夹具补齐密钥限额、资金批次、分摊和挂账表 | 每次请求重查授权、限流及结算需要这些现有表 | Actions 43766575490 |
+| `controller/security_account_test.go` | MFA 变更夹具同步增加认证版本，并确认旧会话失效 | 模拟正式因子注册的版本轮换，保留撤权、审计和删除拒绝断言 | Actions 43766575490 |
+| `controller/security_enrollment_test.go` | Passkey 流程使用普通用户允许的操作；Root 渠道密钥证明使用既有 `root_exempt`，撤销 Root 后拒绝消费 | 跟随现行验证协议，保留范围绑定、重放拒绝、权限重查和日志脱敏检查 | Actions 43766575490 |
+| `controller/user_manage_test.go` | Root 权限证明改为 `root_exempt`；补齐审计及资金相关夹具表 | 与现有权限策略及同事务记录路径一致 | Actions 43766575490 |
+| `middleware/distributor_test.go` | 传统中文偏好按正式简体中文回退断言 | 产品只开放简体中文和英文，保留语言包不代表可加载 | Actions 43766575490 |
+| `middleware/task_plugin_origin_task_test.go` | 来源任务渠道固定夹具补齐模型上架表 | 渠道选择现在需要模型可用性数据，保留固定渠道优先级断言 | Actions 43766575490 |
+| `relay/mjproxy_handler_test.go` | 补齐资金相关表，并为 Midjourney 计费显式设置模型价格 | 默认价格目录不再自带该测试模型，不能依赖隐式价格 | Actions 43766575490 |
+| `relay/relay_task_test.go` | 任务退款夹具补齐资金批次、分摊和挂账表 | 退款与恢复走现有资金路径，原夹具不完整 | Actions 43766575490 |
+| `relay/websocket_settle_test.go` | WebSocket 结算恢复夹具补齐资金批次、分摊和挂账表 | 保留结算失败待恢复及重试后的资金断言 | Actions 43766575490 |
+| `scripts/adty/check.sh` | 后端测试超时与 make 对齐为默认 30 分钟；语言检查提示改为两种正式语言 | 本地与 CI 使用相同测试预算和语言边界 | Actions 43766575490 |
+| `service/adty_site_earning_test.go` | 风险退款断言按既有分站收益规则计算，并确认不写主站返佣账户 | 客户邀请佣金已独立，不能继续期望旧的重复主站返佣 | Actions 43766575490 |
+| `service/adty_site_finance_test.go` | SQLite 员工操作用例使用独立审计库文件 | 独立审计连接不能争用业务事务写锁；保留并发撤权与回滚断言 | Actions 43766575490 |
+| `service/adty_site_audit_visibility_test.go` | 更新夹具注释，说明同文件 SQLite 自锁是保留的故障注入场景 | 通用返佣夹具已分库；专用用例仍须覆盖审计自锁与缺表时的可定位错误 | Actions 43766575490 |
+| `service/adty_site_ownership_test.go` | SQLite 归属并发夹具使用独立审计库文件，并在清理时恢复连接 | 避免业务事务锁阻塞独立审计写入，保留所有权串行化与失败回滚断言 | Actions 43766575490 |
+| `service/adty_team_pay_test.go` | 废弃 Stripe 下单断言不可用、无 checkout 且无订单写入 | 跟随现行关闭策略，不能重新启用退役支付入口 | Actions 43766575490 |
+| `service/adty_wallet_billing_test.go` | 固定音频价格同时初始化精确金额与分组配置 | 实际计费以精确价格及请求捕获的分组为准，保留原金额断言 | Actions 43766575490 |
+| `service/openrouter_cache_create_tokens_test.go` | 缓存计费夹具使用当前默认模型 `claude-sonnet-4-6` | 保留成本反推语义，避免依赖已退出默认目录的模型 | Actions 43766575490 |
 | `service/referral_commission.go` | 延迟计佣始终读取已完成退款比例；连续退款按原面额和比例快照计算累计应留佣金，用计佣、扣回及追偿账本只补扣差额；同步缩减已追回现金的可分配金额 | 部分人工退款后订单仍为 success，不能全额多发佣金；后续退款不能重复套累计比例、漏扣或重新提现已追回现金 | Actions 43766575490 |
 | `service/referral_test.go` | 锁序夹具补齐资金表，SQLite 共用夹具分离业务与审计库文件；零金额退款断言拒绝且佣金不变；补实际完成退款后延迟计佣、连续部分退款、重放、结算及冻结/已付/混合提现到全额退款回归 | 独立审计写入不能争用业务事务的 SQLite 写锁；PostgreSQL 验证累计佣金、差额追偿、提现分配及无关佣金隔离，保留锁序、幂等及资金断言 | Actions 43766575490 |
+| `web/scripts/adty/browser-smoke.mjs` | 生产冒烟检查当前首页标题和注册链接，直接启动 Rsbuild 预览进程 | 首页已改版；退出时应能终止实际预览进程并关闭输出流 | Actions 43766575490 |
+| `web/AGENTS.md` | 翻译要求改为实际可加载的中英语言包，说明语义英文显示值与中文回退规则 | 避免继续要求未加载的六份旧语言包，与运行时和 CI 门禁一致 | Actions 43766575490 |
+| `web/scripts/adty/i18n-check.mjs` | 检查中英键并集、非空文本和中文回退，允许语义化英文显示值；去掉首尾空白后同时拒绝英文显示值和原始键 | 两种正式语言与运行时一致；英文显示值不必等于内部语义键，中文不能借原始键或空白绕过检查 | Actions 43766575490 |
+| `web/src/components/layout/components/__tests__/top-nav-identity.test.tsx` | 焦点变更等待 React 提交后再检查键盘菜单 | 保留身份菜单及焦点行为断言，避免异步竞态 | Actions 43766575490 |
+| `web/src/features/admin-referral/__tests__/admin-referral.test.tsx` | 等待真实状态徽标渲染并限定重复空状态的查询范围 | 避免请求尚未完成或其他区域文字造成误判 | Actions 43766575490 |
+| `web/src/features/adty-notifications/components/notification-editor.tsx` | 发布按钮文案使用普通分支计算 | 消除新增嵌套三元 lint 错误，保留原文案和行为 | Actions 43766575490 |
+| `web/src/features/adty-notifications/components/notification-manager.tsx` | 通知状态徽标使用明确分支 | 消除新增嵌套三元 lint 错误，复用既有状态徽标 | Actions 43766575490 |
+| `web/src/features/adty-site-owner/__tests__/query-errors.test.tsx` | 错误断言与当前正式语言文案一致 | 跟随语言归一化，保留请求失败显示检查 | Actions 43766575490 |
+| `web/src/features/adty-site-owner/components/stat-grid.tsx` | 尾部占位格使用固定 key | 消除数组下标 key 的新增 lint 错误，布局不变 | Actions 43766575490 |
+| `web/src/features/adty-support/__tests__/tawk-widget.test.tsx` | 等待客服脚本注入，并按当前语言回退断言 | 异步配置完成后才可检查注入结果 | Actions 43766575490 |
+| `web/src/features/channels/components/__tests__/priority-order.test.tsx` | 等待渠道行加载后再执行排序断言 | 保留排序契约，避免空表阶段提前断言 | Actions 43766575490 |
+| `web/src/features/security/__tests__/account-security.test.tsx` | 删除账号夹具按现有流程提供独立邮箱确认码和显式验证方法 | 保留单次删除证明、取消及迟到响应保护 | Actions 43766575490 |
+| `web/src/features/system-settings/components/settings-page-context.tsx` | 共享 context 与 hooks 移至独立 hook 模块，只导出组件 | 满足 React 热更新 lint 规则，组件仍共享同一个 context | Actions 43766575490 |
+| `web/src/features/system-settings/components/settings-section.tsx` | hooks 从新模块导入 | 与 context 拆分保持一致 | Actions 43766575490 |
+| `web/src/features/system-settings/hooks/use-settings-page-context.ts` | 承载原设置页 context 和两个 hooks | 组件文件只导出组件，保留默认值和公开行为 | Actions 43766575490 |
+| `web/src/features/system-settings/maintenance/__tests__/data-retention.test.tsx` | 等待保留期数据加载后再验证 | 保留清理边界断言，避免初始默认值竞态 | Actions 43766575490 |
+| `web/src/features/task-plugins/__tests__/marketplace-install-dialog.test.tsx` | 测试结束清理全局 toast，等待新安装结果可见 | 防止前一个用例通知堆积影响当前安装断言 | Actions 43766575490 |
+| `web/src/features/usage-logs/components/__tests__/mobile-filter.test.tsx` | 适配正式语言归一化及当前筛选文案 | 保留移动筛选行为检查 | Actions 43766575490 |
+| `web/src/features/users/components/__tests__/username-rules.test.tsx` | 密码夹具满足当前最小长度 | 用例继续验证用户名规则，不在无关密码校验处停止 | Actions 43766575490 |
+| `web/src/i18n/__tests__/translation-check.test.ts` | 子进程验证正式语言、语义英文、缺失中英翻译、原始键/带空白英文回退及技术名词空译文拒绝 | 防止翻译检查缩小语言范围或允许字面量时漏掉实际错误 | Actions 43766575490 |

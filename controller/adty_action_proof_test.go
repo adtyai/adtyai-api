@@ -124,7 +124,7 @@ func TestAdtyDeletePATUsesOwnBoundProofDatabaseMatrix(t *testing.T) {
 					raw, token := createScopedAccessToken(t, operator.Id, 0, grant.scope)
 					require.NoError(t, model.DB.Model(token).Update("scope_version", grant.version).Error)
 					router := newAccessTokenTestRouter()
-					body := fmt.Sprintf(`{"scope":"admin.user.delete","method":"password","password":"enrollment-password","context":{"user_id":%d}}`, target.Id)
+					body := fmt.Sprintf(`{"scope":"admin.user.delete","method":"root_exempt","context":{"user_id":%d}}`, target.Id)
 					response := accessTokenRequest(router, http.MethodPost, "/api/verify", raw, "", body)
 					verified := decodeSecurityEnrollmentResponse(t, response)
 					if !grant.allow {

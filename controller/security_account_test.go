@@ -71,14 +71,24 @@ func TestSecurityAccountDeletionRequiresScopedProof(t *testing.T) {
 				t.Cleanup(func() { common.PasswordLoginEnabled = previous })
 			case "factor added":
 				require.NoError(t, model.DB.Create(&model.TwoFA{UserId: user.Id, Secret: "JBSWY3DPEHPK3PXP", IsEnabled: true}).Error)
+				// Factor enrollment rotates the user's authentication version.
+				require.NoError(t, model.DB.Model(user).Update("auth_version", user.AuthVersion+1).Error)
 			}
 			response := securityEnrollmentRequest("DELETE", "/api/user/self", "", proof, identity, DeleteSelf)
 			assert.Equal(t, http.StatusForbidden, response.Code, response.Body.String())
 			stored, err := model.GetUserById(user.Id, false)
 			require.NoError(t, err)
-			assert.Equal(t, identity.UserAuthVersion, stored.AuthVersion)
+			expectedVersion := identity.UserAuthVersion
+			if scenario == "factor added" {
+				expectedVersion++
+			}
+			assert.Equal(t, expectedVersion, stored.AuthVersion)
 			_, _, err = service.ValidateLoginSession(originalIdentity)
-			assert.NoError(t, err)
+			if scenario == "factor added" {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
 			var audit model.AuditLog
 			require.NoError(t, model.LOG_DB.Where("action = ?", "user.account_delete").Last(&audit).Error)
 			assert.False(t, audit.Success)
@@ -804,6 +814,7 @@ func TestSecurityAccountEmailRejectsChangedAuthorization(t *testing.T) {
 				require.NoError(t, model.DB.Model(user).Update("email", "changed@example.com").Error)
 			case "mfa enabled":
 				require.NoError(t, model.DB.Create(&model.TwoFA{UserId: user.Id, Secret: "JBSWY3DPEHPK3PXP", IsEnabled: true}).Error)
+				require.NoError(t, model.DB.Model(user).Update("auth_version", user.AuthVersion+1).Error)
 			case "notification failure":
 				common.SMTPServer = ""
 			}

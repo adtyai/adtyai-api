@@ -35,7 +35,9 @@ export function OwnerStatGrid(props: { items: OwnerStat[]; label: string }) {
     >
       {props.items.map((item) => (
         <div key={item.label} className='bg-card flex flex-col gap-1 px-5 py-4'>
-          <span className='text-dim text-[12px] leading-none'>{item.label}</span>
+          <span className='text-dim text-[12px] leading-none'>
+            {item.label}
+          </span>
           <span
             data-negative={item.negative ? 'true' : undefined}
             className={cn(
@@ -48,15 +50,11 @@ export function OwnerStatGrid(props: { items: OwnerStat[]; label: string }) {
         </div>
       ))}
       {/* Keep the trailing cells white when a row is not full; no copy. */}
-      {Array.from({ length: (4 - (props.items.length % 4)) % 4 }).map(
-        (_, index) => (
-          <div
-            key={`stat-filler-${index}`}
-            aria-hidden
-            className='bg-card px-5 py-4'
-          />
-        )
-      )}
+      {['stat-filler-a', 'stat-filler-b', 'stat-filler-c']
+        .slice(0, (4 - (props.items.length % 4)) % 4)
+        .map((key) => (
+          <div key={key} aria-hidden className='bg-card px-5 py-4' />
+        ))}
     </section>
   )
 }
